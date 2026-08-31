@@ -18,7 +18,7 @@ docker exec talent-pg psql -U talent -d talent \
   -c "create extension if not exists pg_trgm"
 
 cp .env.example .env.local
-# 只有 DATABASE_URL 是必填的
+# 用上面这条 docker 命令的话不用改；连别的库就改 DATABASE_URL
 
 npm install
 uv sync
