@@ -1,0 +1,206 @@
+import { cn, DropdownMenu, Text } from "@cloudflare/kumo";
+import {
+	CaretDownIcon,
+	EyeSlashIcon,
+	WarningIcon,
+} from "@phosphor-icons/react";
+import type { Chip, ChipMode } from "#/search/parse";
+import type { TermPlan } from "#/search/result";
+
+/**
+ * 查询条件：一个概念词一枚 chip，可改强度、可删。
+ *
+ * 它们是查询的唯一编辑入口，不是结果的复述：用户可以逐项改强度、停用或删除，
+ * 不必重写整句。停用（`~`，见 parse.ts）保留词和强度，只让它退出本次检索，
+ * 用于快速判断某个条件是否过窄。
+ */
+
+const MODE_LABEL: Record<ChipMode, string> = {
+	must: "必须",
+	boost: "加分",
+	exclude: "排除",
+};
+
+const MODE_HINT: Record<ChipMode, string> = {
+	must: "仅显示具备这项经历的人",
+	boost: "具备这项经历的人优先显示",
+	exclude: "不显示具备这项经历的人",
+};
+
+/**
+ * 强度写在符号上，不写在颜色上。
+ *
+ * 全站的色相已经各有其主：橙是受控字段命中、蓝是选中、黄是整词退子串。再给
+ * chip 发三个颜色，等于让同一片橙在表格里和查询条里说两件事。`+` 和 `-` 是
+ * 搜索框里几十年的老约定，不需要教，也不占用任何一个色相。
+ *
+ * 「必须」不带符号：它是默认，而默认不该有标记——大多数查询整条都是必须词，
+ * 一排 `=` 号只会让人以为那是要读的内容。
+ */
+const MODE_SIGN: Record<ChipMode, string> = {
+	must: "",
+	boost: "+",
+	exclude: "−",
+};
+
+const MODE_STYLE: Record<ChipMode, string> = {
+	must: "bg-kumo-fill text-kumo-default",
+	boost: "border border-kumo-line text-kumo-default",
+	// 划掉：排除词的意思正是「把它划掉」，这一层不必再解释一遍
+	exclude: "border border-kumo-line text-kumo-subtle line-through",
+};
+
+/**
+ * 停用的样子：虚线边 + 次要色，底色一律去掉。
+ *
+ * 不用划掉——那是排除词的意思（「干过的人不要」），两件事撞在同一个记号上
+ * 会让人以为停用一个词等于排除它，而那正好是反的。也不用透明度：`opacity`
+ * 会把里面那个强度符号一起调淡，而重新启用之后它是必须还是加分，恰恰是
+ * 停用期间最该看得清的一件事。虚线是「这里有个位置，但现在是空的」的通用画法。
+ */
+const OFF_STYLE = "border border-kumo-line border-dashed text-kumo-subtle";
+
+const MODES = ["must", "boost", "exclude"] as const;
+
+export function QueryChips({
+	chips,
+	terms,
+	onChange,
+}: {
+	chips: Chip[];
+	/** 服务端算出来的检索计划，只用来取「整词退到了哪个子串」 */
+	terms: TermPlan[];
+	onChange: (next: Chip[]) => void;
+}) {
+	if (chips.length === 0) return null;
+
+	const replace = (i: number, mode: ChipMode) =>
+		onChange(chips.map((c, j) => (j === i ? { ...c, mode } : c)));
+	const remove = (i: number) => onChange(chips.filter((_, j) => j !== i));
+	// 停用只加/去一个字段，强度始终原样保留
+	const toggle = (i: number) =>
+		onChange(
+			chips.map((c, j) =>
+				j === i
+					? {
+							term: c.term,
+							mode: c.mode,
+							...(!c.off && { off: true as const }),
+						}
+					: c,
+			),
+		);
+
+	return (
+		<div className="flex flex-wrap items-center gap-1.5">
+			{chips.map((chip, i) => {
+				const plan = terms.find((t) => t.term === chip.term);
+				// 排除词不参与松弛（见 search.ts），所以它这里永远是 undefined
+				const relaxed = plan && plan.effective !== chip.term;
+				return (
+					<DropdownMenu key={`${chip.off ? "~" : ""}${chip.mode}:${chip.term}`}>
+						<DropdownMenu.Trigger
+							render={
+								<button
+									className={cn(
+										// 24px 高（12px 字 + 上下 6px）：20px 的 chip 摆在一条
+										// 56px 的工具条里像一排掉在底下的碎屑，24px 才和旁边
+										// 那个 sm 按钮站在同一档上。命中区仍然是 40px。
+										"relative flex items-center gap-1 rounded-control px-2.5 py-1 text-xs",
+										"after:pointer-events-none after:absolute after:-inset-x-1 after:-inset-y-2 after:content-['']",
+										"[@media(hover:hover)]:hover:brightness-95",
+										chip.off ? OFF_STYLE : MODE_STYLE[chip.mode],
+									)}
+									type="button"
+								>
+									{MODE_SIGN[chip.mode] && (
+										<span className="font-mono text-kumo-subtle">
+											{MODE_SIGN[chip.mode]}
+										</span>
+									)}
+									<span>{chip.term}</span>
+									{chip.off && <EyeSlashIcon size={12} />}
+									{relaxed && (
+										<WarningIcon
+											className="text-kumo-warning"
+											size={12}
+											weight="fill"
+										/>
+									)}
+									<CaretDownIcon className="text-kumo-subtle" size={10} />
+								</button>
+							}
+						/>
+						<DropdownMenu.Content>
+							{/*
+							 * 松弛是关于这一枚 chip 的事实，说明和修改入口放在一起：
+							 * 「这个词被换成了什么」就该长在
+							 * 它自己身上；而且这里正好是能立刻改它的地方——看到说明和
+							 * 动手改之间不隔一次寻找。
+							 */}
+							{relaxed && (
+								<>
+									<DropdownMenu.Label>
+										<span className="flex max-w-64 items-start gap-1.5 whitespace-normal text-kumo-subtle text-xs">
+											<WarningIcon
+												className="mt-0.5 shrink-0 text-kumo-warning"
+												size={13}
+												weight="fill"
+											/>
+											<span>
+												未找到「{chip.term}」的直接匹配，当前按「
+												{plan?.effective}」搜索。
+											</span>
+										</span>
+									</DropdownMenu.Label>
+									<DropdownMenu.Separator />
+								</>
+							)}
+							{chip.off && (
+								<>
+									<DropdownMenu.Label>
+										<span className="max-w-64 whitespace-normal text-kumo-subtle text-xs">
+											此条件当前未生效。重新启用后仍为「
+											{MODE_LABEL[chip.mode]}」条件。
+										</span>
+									</DropdownMenu.Label>
+									<DropdownMenu.Separator />
+								</>
+							)}
+							<DropdownMenu.RadioGroup
+								onValueChange={(mode) => replace(i, mode as ChipMode)}
+								value={chip.mode}
+							>
+								{MODES.map((mode) => (
+									<DropdownMenu.RadioItem key={mode} value={mode}>
+										<span className="flex flex-col">
+											<Text as="span" size="sm">
+												{MODE_LABEL[mode]}
+											</Text>
+											<Text as="span" size="xs" variant="secondary">
+												{MODE_HINT[mode]}
+											</Text>
+										</span>
+										<DropdownMenu.RadioItemIndicator />
+									</DropdownMenu.RadioItem>
+								))}
+							</DropdownMenu.RadioGroup>
+							{/*
+							 * 停用和删除挨着放，但不是一档事，所以只有删除是危险色：
+							 * 停用改的是这一次检索，删除改的是查询本身，而后者不可撤销
+							 * （词没了，强度也一起没了）。
+							 */}
+							<DropdownMenu.Separator />
+							<DropdownMenu.Item onClick={() => toggle(i)}>
+								{chip.off ? "重新启用" : "暂不使用"}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item onClick={() => remove(i)} variant="danger">
+								删除条件
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu>
+				);
+			})}
+		</div>
+	);
+}

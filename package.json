@@ -1,0 +1,61 @@
+{
+  "name": "talent-search",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "dev": "vite dev --port 3100",
+    "build": "vite build",
+    "preview": "vite preview",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "format": "biome check --write",
+    "check": "biome check",
+    "typecheck": "tsc --noEmit",
+    "test": "node --env-file-if-exists=.env.local --env-file-if-exists=.env --import tsx --test tests/*.test.ts*",
+    "test:etl": "uv run python -m unittest discover -s etl -p 'test_*.py'",
+    "query": "node --env-file-if-exists=.env.local --env-file-if-exists=.env --import tsx scripts/query.ts",
+    "check:bundle": "tsx scripts/check-bundle.ts",
+    "verify": "npm run check && npm run typecheck && npm run test:etl && npm test && npm run build && npm run check:bundle"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.41",
+    "@cloudflare/kumo": "^2.12.0",
+    "@phosphor-icons/react": "^2.1.10",
+    "@tailwindcss/vite": "4.3.3",
+    "@tanstack/react-router": "1.170.18",
+    "@tanstack/react-start": "1.168.32",
+    "ai": "7.0.85",
+    "drizzle-orm": "0.45.2",
+    "pg": "8.22.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwindcss": "4.3.3",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.5",
+    "@types/node": "26.1.1",
+    "@types/pg": "8.20.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.4",
+    "dotenv": "17.4.2",
+    "drizzle-kit": "0.31.10",
+    "tsx": "4.23.1",
+    "typescript": "6.0.3",
+    "vite": "8.1.5"
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  }
+}

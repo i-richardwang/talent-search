@@ -1,0 +1,213 @@
+/* 顺序有讲究：Kumo 的 @theme 令牌必须先于 tailwindcss 注册。 */
+@import "@cloudflare/kumo/styles";
+@import "tailwindcss";
+
+/* Kumo 的类名藏在编译后的 JS 里，Tailwind v4 默认不扫 node_modules，必须显式声明来源，
+   否则组件内部（弹层定位、动画等）会掉样式。路径相对本文件。 */
+@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+
+@theme {
+	/*
+	 * 拉丁字族在前、中文字族在后：拉丁串用拉丁字形，汉字回落到中文字族。
+	 * 不下载 webfont——这是 95% 中文的内网工具，为拉丁字体付网络代价没有道理，
+	 * 而中文 webfont 动辄几 MB，更不可能。
+	 */
+	--font-sans:
+		-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI",
+		"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC",
+		sans-serif;
+
+	/*
+	 * 层级尺度。全站只有这三档，代码里不许出现别的 z 值。
+	 *
+	 * 档位这么少，是因为 Kumo 的 Popover/Tooltip/Select/Dialog 内容 portal 到
+	 * document.body 且**自身不带 z-index**，而 CSS 的绘制顺序里
+	 * 「z-index: auto 的定位元素」排在「z-index > 0 的定位元素」之前——
+	 * 页面里随便哪个裸 z-10 都能盖住所有弹层。
+	 *
+	 * 所以约束有两层：
+	 * 1. 这三个值本身（下面），让 app 内部的层级关系有唯一解释；
+	 * 2. app 外壳根节点带 `isolate`，把这三个值全部关进一个层叠上下文里。
+	 *    关进去之后，body 下的 portal 天然画在整个外壳之上，
+	 *    无论外壳内部用到多大的 z——这类遮挡从结构上不可能发生。
+	 *
+	 * 没有「浮层」这一档：窄屏那两个盖住主区的侧栏是 Kumo 的 Dialog，
+	 * 层级和遮罩都归它自己管，外壳这边只要被 `isolate` 关住就够了。
+	 */
+	--z-index-raise: 1; /* 同一平面内的前后：时间轴节点压住脊线 */
+	--z-index-stick: 20; /* 吸顶：表格表头、详情栏的头 */
+	--z-index-escape: 40; /* 跳过导航链接。它必须压过外壳里的一切 */
+
+	/*
+	 * 圆角三档。control 与 sheet 直接对齐 Kumo 自己在用的 rounded-sm 4px
+	 * 和 rounded-md 6px；我们画的面和它的
+	 * 按钮、输入框、弹层永远挨着坐，边角必须是同一种语言。项目自定一个
+	 * 别处都没有的值，得到的不是克制，是全场唯一对不上的那个角。
+	 *
+	 * 分档的依据是「这是一个面，还是一块被标记的文字」：
+	 * control 给贴着文字的可交互物——键帽、原文标记、姓名链接、小图标按钮，
+	 * 它们本来就只有一两个字高，6px 会把它们圆成药丸；
+	 * sheet 给真正的面——左栏的选项行、时间轴上的一段经历、跳过导航那块牌子。
+	 *
+	 * panel 只有一个用处：工作台那块浮在画布上的内容面板。它是全站最大的一个
+	 * 圆角，也只该有一个东西大到配得上它。
+	 */
+	--radius-control: 4px;
+	--radius-sheet: 6px;
+	--radius-panel: 10px;
+}
+
+/*
+ * Kumo 的深浅色有两套机制，必须同时满足：
+ *
+ * 1. 绝大部分语义令牌用 `light-dark()` 表达（theme-kumo.css 里 54 处），
+ *    由 `color-scheme` 决议——声明 `light dark` 就跟随系统。
+ * 2. 但 kumo-binding.css 里还有 7 条规则硬绑 `[data-mode="dark"]`
+ *    （骨架屏底色与微光、Tooltip/Popover 的 outline-offset 等）。这个属性
+ *    只有宿主写上去才存在，光靠 color-scheme 永远触发不了。
+ *
+ * 所以 <html> 上的 data-mode 由 __root.tsx 的首屏内联脚本按系统偏好写入。
+ * 这里保留 color-scheme 作为兜底：脚本被 CSP 拦掉或没跑成时，
+ * 第 1 套机制照常工作，界面只是少了那 7 条的深色修正，不会整体失色。
+ */
+:root {
+	color-scheme: light dark;
+}
+
+@layer base {
+	/*
+	 * 画布压暗一档。这是整个界面「浮起来的面板」能不能成立的唯一前提。
+	 *
+	 * Kumo 自己的浅色画布是 oklch(98.75%)，而面板是 #fff = 100%。**差 1.25%，
+	 * 屏幕上看不出来**——于是那块面板既没有浮起也没有边界，剩下的只有一条
+	 * 发丝线，正好退化成「铺满窗口、靠线切开的平面」，也就是后台的长相。
+	 * 深色那一边本来就是 10% vs 17%，差 7%，成立，所以只改浅色。
+	 *
+	 * 3.5% 是台阶的下限：再浅读不出层，再深画布就变成一块灰底，
+	 * 面板反而像贴在上面的纸。选择器带 :not 是为了压过 Kumo 在 base 层里
+	 * 那条同名声明（`:root, [data-theme="kumo"]`），同时不碰深色。
+	 */
+	:root:not([data-mode="dark"]) {
+		--color-kumo-canvas: oklch(96.5% 0 0);
+	}
+
+	/* macOS 上关掉次像素渲染，中文小字号更干净 */
+	body {
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	/*
+	 * 按压反馈是全站一条规则，不是每个按钮各写一次的类名。
+	 *
+	 * Kumo 的 Button 只有 hover 和 focus 两态（源码里 active: 下只有一条
+	 * ring），按下去没有任何回应。在一个主要靠点的工作台里，这会让每一次
+	 * 点击都像没接住。放在 base 层用元素选择器，是因为它该覆盖所有按钮类
+	 * 元素——包括 Select 触发器、Popover 触发器、Switch 这些不是我写的。
+	 *
+	 * 只动 scale：它和 opacity 一样走合成器，不引起重排。90ms 是按下去
+	 * 「跟手」的上限，再长就成了动画表演。下面的 reduced-motion 会把这段
+	 * 时长压到 0，规则本身仍然生效。
+	 */
+	button,
+	summary,
+	[role="button"] {
+		/* 去掉移动端 300ms 双击缩放延迟 */
+		touch-action: manipulation;
+		transition-property: scale;
+		transition-duration: 90ms;
+	}
+
+	/*
+	 * `data-press="off"` 是这条规则的出口：整行宽的列表项要走它
+	 * （224px 的东西缩 3%，文字横移三四个像素，读起来是这一行在抖）。
+	 * 按压缩放是给紧凑控件的反馈，尺寸越大越不成立。
+	 */
+	button:active:not(:disabled, [data-press="off"]),
+	summary:active,
+	[role="button"]:active:not([data-press="off"]) {
+		scale: 0.97;
+	}
+
+	/*
+	 * 自绘控件的焦点态。Kumo 组件自带焦点环；手写的选项、清除、展开入口和
+	 * 姓名链接由这一条统一补齐。
+	 *
+	 * 用 :where() 把特异性压到 0，好让 Kumo 组件自己的焦点样式照常覆盖它；
+	 * 只有 :focus-visible，鼠标点击不出环。
+	 */
+	:where(a, button, summary, [role="button"]):focus-visible {
+		outline: 2px solid var(--color-kumo-brand);
+		outline-offset: 2px;
+	}
+}
+
+/*
+ * 全站唯一的展示级字号，只给零态那一句主标题用。
+ *
+ * Kumo 的 Text 是给密集界面的四档（xs/sm/base/lg），最大 16px——拿它当
+ * 落地页标题，标题和正文几乎一样重，第一屏就没有层次。与其在那里写一个
+ * text-[28px] 的魔法值，不如把这一档命名下来：全站只此一处，加一处就得
+ * 先回答「为什么它也是展示级」。
+ *
+ * 这里没有负字距。收紧字距是拉丁排印的规矩——字号越大，同样的字距看起来
+ * 越松。汉字不吃这一套：字面本来就撑满字身，再收就是挤笔画，在 28px 上看
+ * 起来像渲染出错。而这句标题是纯汉字。balance 让它断行断得均匀，不留孤字。
+ */
+@utility display-1 {
+	font-size: 1.75rem;
+	line-height: 1.35;
+	text-wrap: balance;
+}
+
+/*
+ * 中文阅读文本。Kumo 的 text-sm 行高是 1.18，那是拉丁密集界面的值；
+ * 汉字笔画密度高得多，成段阅读需要 1.7–1.8 才不糊成一团。
+ * 只给「要读」的文本用（简历原文），扫读行仍然保持紧凑。
+ *
+ * 行长封顶写在这里，不写在每个用到的地方：详情栏的宽度是浮动的（它吸收中栏
+ * 用不掉的富余，见 route.tsx），宽屏上不封顶就是一行六十多个汉字，眼睛跟不住
+ * 换行。34rem 在 14px 下约 38 个汉字，落在中文舒适行长 30–40 字里。
+ * 栏宽窄于它时这条不起作用，所以它只在需要的时候存在。
+ */
+@utility read-cjk {
+	line-height: 1.8;
+	text-wrap: pretty;
+	max-width: 34rem;
+}
+
+/*
+ * 换人时详情区的淡入。
+ *
+ * 签名微交互是「↑↓ 换人的连续感」，它由两件事合成：中栏那根选中轨
+ * （在 result-list.tsx 里，位置做 transition 所以是平移不是闪现）
+ * 和这里的淡入。短而浅是硬要求：连按 ↑↓ 时每一帧都要在下一次按键之前
+ * 结束，否则动画会排队，手感立刻变粘。
+ * 6px 的位移只是给眼睛一个方向暗示，不是表演。
+ */
+@keyframes settle {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+
+@utility settle {
+	animation: settle 160ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	/* biome-ignore-start lint/complexity/noImportantStyles: 减弱动效是无障碍兜底，必须压过工具类 */
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+	/* biome-ignore-end lint/complexity/noImportantStyles: 见上 */
+}
