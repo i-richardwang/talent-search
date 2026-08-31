@@ -63,8 +63,7 @@
   - **模型给的词要过一遍 `parseQuery`**：它保证模型给的词和用户敲的词走同一条路，
     `toQuery` 写进 URL 再 `parseChips` 读回来必然一致。少了这一道会得到一枚点一下
     就变形的 chip。
-  - 密钥走 `.env.local`，和 `DATABASE_URL` 同一个待遇。`#/server/llm` 在
-    `tests/boundary.test.ts` 的服务端名单里：页面从它取一个值就等于把密钥发给浏览器。
+  - 密钥走 `.env.local`，和 `DATABASE_URL` 同一个待遇。
   - 查询理解端点只用 POST，输入与模型输出都要有硬上限。公开部署时还必须在网关层限流；
     进程内计数器无法覆盖多实例，不能冒充部署级限流。
 - **打分不许写进 SQL。** `search.ts` 只产出事实（哪段命中了哪个词、多少月、什么时候结束），
@@ -117,15 +116,14 @@
   「金」会把干过「资金」「基金」的人整片剔掉，而界面上只显示用户写的那个词）；
   带筛选则会让「只看在职经历」放出本来被排掉的人。`search.ts` 先取完整排除名单，
   再从事实中统一剔除，排名和五个分面共同消费剩下的同一份事实。
-- **页面不许从带 `db` 的模块取值。** `#/db` 拉进 `pg`，`pg` 用 `Buffer`，浏览器里没有
-  `Buffer`。`src/routes/**` 和 `src/components/**` 只要从 `#/db` / `#/db/schema` /
-  `#/search/search` import 一个**值**（哪怕只是 `emptyFacets` 这种空对象工厂），整条链
-  就被打进客户端 bundle，水合第一步抛 `Can't find variable: Buffer`。
-  `import type` 不算——编译期就擦掉了。所以检索结果的**形状**住在 `#/search/result`
+- **服务端模块自己声明身份**：`#/db`、`#/search/search`、`#/server/llm`、`#/server/turn`
+  顶上都有一行 `import "@tanstack/react-start/server-only"`。页面从它们取**值**会让构建
+  失败，并打印从入口到违规那一行的完整 import 链。新写一个碰数据库连接或密钥的模块，
+  就给它加上那一行。
+  `#/db/schema` 不标：它只依赖同构的 `drizzle-orm/pg-core`，而且 `drizzle-kit` 以 CJS
+  加载它，标记只导出 `import` 条件，加上去 `db:push` 起不来。
+  `import type` 一律不算，编译期就擦掉了——所以检索结果的**形状**住在 `#/search/result`
   （一行 SQL 都没有），`#/search/search` 只出 `search()` 和 `sanitizeFilters`。
-  这一条 SSR 看不出来（直出跑在 Node 里，`curl` 拿到的 HTML 一切齐全），
-  tsc / biome / build 也全绿，只有真在浏览器里打开才看得见——所以由
-  `tests/boundary.test.ts` 钉住，不靠自觉。
 - **服务端函数是可以被直接调用的端点。** 页面那侧的 `validateView` 管 URL，
   `search.ts` 的 `sanitizeFilters` 管进程边界，两道都要有：少了后者，
   `minMonths: "abc"` 会进入数值比较并安静地筛掉所有人。
@@ -406,21 +404,12 @@
   - `src/db/index.ts` 只出连接，表定义一律从 `#/db/schema` 取。
   - **页面取服务端的值，只有 `src/server/functions.ts` 一个口子。** 干活的逻辑住在
     服务端专属模块（`search.ts` / `turn.ts` / `llm.ts`），页面一律不 import 它们。
-    - `createServerFn` 切走的只是 handler 的**函数体**。同一个文件里 handler
-      **之外**的代码照进客户端 bundle——一个碰 `db` 的导出就能把 `db/index.ts`
-      顶层的 `new Pool()` 和 `if (!DATABASE_URL) throw` 打进客户端主 chunk，
-      浏览器一求值就抛，水合整个不发生。
-    - 这个失败模式没有任何常规关卡看得见：SSR 跑在 Node 里，直出的 HTML 完全
-      正常，`curl` 什么都发现不了，tsc、biome、build、测试全绿。所以有两道专门的
-      关卡——`tests/boundary.test.ts` 查 import 图，`npm run check:bundle` 查构建
-      产物本身。框架自带的 `importProtection` 顶不了这一道（实测设成 `error`
-      也放行，Start 1.168）。
-    - 因此 `RPC_BOUNDARY` 只该有一个成员。想开第二个边界文件之前，先把那个
-      文件里碰服务端模块的代码搬进服务端专属模块。
+    `createServerFn` 切走的只是 handler 的**函数体**，所以这个文件里服务端模块的值
+    只许出现在 `.handler()` 里面。
   - 加筛选维度只改 `-lib/view-params.ts`（类型 + 校验 + `toFilters`）、`-lib/filters.ts`
     与 `search.ts` 的分面；路由的 `loaderDeps` 直接就是整份 search，不必跟着列字段。
 - **检索语义有集成测试**（`tests/search.test.ts`）：它在临时 schema 上建一份合成夹具跑真 SQL，
   建表语句由 `schema.ts` 现场推导，不手抄。改 AND 语义、打分公式、路径判定或 `relaxTerm` 之前先看它。
   夹具是编造的人名工号，与人才库无关。
-- 提交前：`npm run verify`（= `check` + `typecheck` + `test:etl` + `test`）。
+- 提交前：`npm run verify`（= `check` + `typecheck` + `test:etl` + `test` + `build`）。
   `npm test` 需要一个可连的本地 Postgres（读 `.env.local` 的 `DATABASE_URL`）。

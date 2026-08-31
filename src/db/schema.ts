@@ -1,9 +1,9 @@
 import { sql } from "drizzle-orm";
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
 	boolean,
 	check,
 	date,
+	foreignKey,
 	index,
 	integer,
 	jsonb,
@@ -11,6 +11,7 @@ import {
 	serial,
 	text,
 	timestamp,
+	unique,
 } from "drizzle-orm/pg-core";
 import type { IntentFilters } from "#/search/intent";
 import type { Chip } from "#/search/parse";
@@ -138,8 +139,8 @@ export type Experience = typeof experience.$inferSelect;
  *    新记录，于是「模型判成必须、人改成加分」这类修正会自己长在库里。
  *    这是这个产品唯一能自己产出的模型评估数据，写进 URL 就等于每次导航扔一次。
  *
- * 不可变是硬约束：这张表**只 INSERT**，唯一的例外是把 `chips` 从 null 补成
- * 理解结果（见下）。
+ * 这张表**只 INSERT**，唯一的例外是把 `chips` 从 null 补成理解结果（见下）。
+ * 这一条由应用代码保证；库强制的是下面那三条约束。
  */
 export const searchTurn = pgTable(
 	"search_turn",
@@ -150,21 +151,9 @@ export const searchTurn = pgTable(
 		 * 它们共享同一个 root——「最近搜索」按它去重，一个任务只出现一次，
 		 * 并且停在它最后的样子上。
 		 */
-		rootTurnId: text("root_turn_id")
-			.notNull()
-			// 自引用：链头这一行的 root 就是它自己。同一条 INSERT 里成立——
-			// 外键在语句结束时才检查，那时这一行已经在表里了。
-			.references((): AnyPgColumn => searchTurn.id, { onDelete: "cascade" }),
-		/**
-		 * 从哪一条派生。root 自己为 null。追加条件时要读父记录的 chips。
-		 *
-		 * 外键不是为了将来会有删除功能，是为了现在：没有它，一个伪造的
-		 * parent_turn_id 能写进来，而这条链此后指向一个不存在的父亲。
-		 */
-		parentTurnId: text("parent_turn_id").references(
-			(): AnyPgColumn => searchTurn.id,
-			{ onDelete: "cascade" },
-		),
+		rootTurnId: text("root_turn_id").notNull(),
+		/** 从哪一条派生。链头为 null。追加条件时要读父记录的 chips。 */
+		parentTurnId: text("parent_turn_id"),
 		/**
 		 * 用户敲的原话。null 表示这条不是从一句话来的（点了词汇表，或者只改了
 		 * 一枚 chip）——那种记录没有可重新理解的输入，界面上也不给那个入口。
@@ -201,6 +190,31 @@ export const searchTurn = pgTable(
 			"search_turn_has_input",
 			sql`${t.rawText} is not null or ${t.chips} is not null`,
 		),
+		/*
+		 * 自引用：链头这一行的 root 就是它自己。同一条 INSERT 里成立——外键在
+		 * 语句结束时才检查，那时这一行已经在表里了。
+		 */
+		foreignKey({
+			name: "search_turn_root",
+			columns: [t.rootTurnId],
+			foreignColumns: [t.id],
+		}).onDelete("cascade"),
+		/*
+		 * **派生链的完整性由外键保证，不由应用代码保证。**
+		 *
+		 * 「我的 root 必须等于父亲的 root」是这条链唯一的不变量，而它正好是一条
+		 * 复合外键：指向 `(id, root_turn_id)`，于是「父亲存在」和「跟父亲同一条链」
+		 * 一起成立。写错的后果是「最近搜索」把同一次找人任务列成两行，界面上
+		 * 看不出异常——这种错必须在写入那一刻就写不进去。
+		 *
+		 * 链头的 parent 为 null，复合外键遇 null 不检查，自然放行。
+		 */
+		unique("search_turn_id_root").on(t.id, t.rootTurnId),
+		foreignKey({
+			name: "search_turn_parent",
+			columns: [t.parentTurnId, t.rootTurnId],
+			foreignColumns: [t.id, t.rootTurnId],
+		}).onDelete("cascade"),
 		// 「最近搜索」：按 root 取每条链最新的那一条
 		index("search_turn_recent").on(t.rootTurnId, t.createdAt),
 	],

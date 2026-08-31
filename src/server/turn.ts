@@ -5,16 +5,11 @@
  * 「撤销」「最近搜索」「模型判错了多少次」这些事才有东西可依附。写进 URL 的
  * 条件串做不到其中任何一件：它一次性，改一下就没了。
  *
- * **这个文件只导出普通函数，一个 `createServerFn` 都没有**，和 `search.ts`
- * `llm.ts` 一样是服务端专属模块（见 `tests/boundary.test.ts` 的 `SERVER_ONLY`）。
- * 暴露给页面的那一层住在 `functions.ts`：整个应用只有那一个 RPC 边界。
- *
- * 这条规矩不是洁癖。`createServerFn` 的 handler 会被插件切走，但同一个文件里
- * handler **之外**的代码照样进客户端 bundle——这里的 `getRow` 碰 `db`，而
- * `db` 在模块顶层就 `new Pool()` 并且没有 DATABASE_URL 就抛。放在一个页面
- * import 得到的文件里，浏览器一求值就死，而 SSR 直出的 HTML 完全正常。
+ * 这里只有普通函数，一个 `createServerFn` 都没有。暴露给页面的那一层住在
+ * `functions.ts`：整个应用只有那一个 RPC 边界。
  */
 
+import "@tanstack/react-start/server-only";
 import { randomBytes } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";

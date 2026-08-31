@@ -2,16 +2,19 @@
  * **应用唯一的 RPC 边界。** 页面能从服务端取值的地方只有这一个文件；真正干活的
  * 逻辑住在 `search.ts` / `turn.ts` / `llm.ts` 那几个服务端专属模块里。
  *
- * 只有一个边界文件是有理由的：`createServerFn` 的 handler 被插件切走，但同一个
- * 文件里 handler **之外**的代码照进客户端 bundle。所以这里的规矩是——
- * **服务端模块的值只许出现在 `.handler()` 里面**，一个都不许漏到外面。多开一个
- * 边界文件就多一处能违反这条规矩的地方，而违反的表现是浏览器白屏、SSR 正常。
+ * `createServerFn` 切走的只是 handler 的**函数体**，所以这里的规矩是：
+ * **服务端模块的值只许出现在 `.handler()` 里面。**
  */
 
 import { createServerFn } from "@tanstack/react-start";
 import { asc, eq } from "drizzle-orm";
 import { db } from "#/db";
-import { employee, experience } from "#/db/schema";
+import {
+	type Employee,
+	type Experience,
+	employee,
+	experience,
+} from "#/db/schema";
 import { CHIP_MAX, parseChips, queryText, toQuery } from "#/search/parse";
 import type { SearchOutcome } from "#/search/result";
 import {
@@ -76,22 +79,32 @@ export const fetchOverview = createServerFn({ method: "GET" }).handler(
 	async () => overview(),
 );
 
-/** 单人时间线：在职与入职前经历连续排列 */
+/**
+ * 单人详情：完整档案加一条在职与入职前连起来的时间线。
+ *
+ * 整行出门是有意的：`employee` 的列集合本来就是按详情页要显示什么定的，
+ * 所以 `Employee` 就是这个响应的形状，不是省事。收窄的那条路在 `result.ts`
+ * 的 `ResultEmployee`（列表一次传最多 500 人，只传表格画得出来的几列）。
+ */
 export const fetchEmployee = createServerFn({ method: "GET" })
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
-	.handler(async ({ data }) => {
-		const [emp] = await db
-			.select()
-			.from(employee)
-			.where(eq(employee.empId, data.empId));
-		if (!emp) return null;
-		const timeline = await db
-			.select()
-			.from(experience)
-			.where(eq(experience.empId, data.empId))
-			.orderBy(asc(experience.startDate), asc(experience.id));
-		return { employee: emp, timeline };
-	});
+	.handler(
+		async ({
+			data,
+		}): Promise<{ employee: Employee; timeline: Experience[] } | null> => {
+			const [emp] = await db
+				.select()
+				.from(employee)
+				.where(eq(employee.empId, data.empId));
+			if (!emp) return null;
+			const timeline = await db
+				.select()
+				.from(experience)
+				.where(eq(experience.empId, data.empId))
+				.orderBy(asc(experience.startDate), asc(experience.id));
+			return { employee: emp, timeline };
+		},
+	);
 
 /**
  * 提交一次查询：落一条记录，返回它的 id。

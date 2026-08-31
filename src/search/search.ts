@@ -5,6 +5,8 @@
  * 这个文件里没有任何权重、没有 AND 判定、没有分面口径——它只回答「命中了什么」。
  * 「怎么找到人」和「找到之后怎么排」分别演进；取数方式变化时，排名逻辑不动。
  */
+
+import "@tanstack/react-start/server-only";
 import { inArray, type SQL, sql } from "drizzle-orm";
 import { db } from "#/db";
 import { employee, experience } from "#/db/schema";

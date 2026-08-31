@@ -14,6 +14,8 @@
  *    这一条的份量来自它站在关键路径上：查询理解**同步挡在用户和结果之间**，
  *    人敲完那句话要等它回来才看得见结果，一次抛出就是一次白等。
  */
+
+import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { intentSchema } from "#/search/intent";

@@ -155,6 +155,15 @@ etl/load.py ──COPY──▶ employee / experience
 记录不可变，改查询一律派生新记录（push 导航，所以后退键就是撤销）。唯一的可变位是
 把 `chips` 从 `null` 补成理解结果，`update ... where chips is null` 保证只补一次。
 
+数据库强制以下不变量：
+
+- 一条记录必须有 `raw_text` 或 `chips` 之一，两者全空的记录不存在；
+- `root_turn_id` 必须指向一条真实存在的记录；
+- `(parent_turn_id, root_turn_id)` 必须指向 `(id, root_turn_id)`——父记录存在，
+  且派生记录与父记录同属一条链。链头的 `parent_turn_id` 为空，复合外键不检查。
+
+「只 INSERT」没有库级约束，由应用代码保证。
+
 这样做换来三件用 URL 存查询做不到的事：原话留得住所以能重新理解；同一个
 `/s/:id` 必然是同一批人，因为记录不可变而不是因为凑巧没人再调模型；
 改条件（模型判成必须、人改成加分）自己留在库里，那是这个产品唯一能产出的
@@ -231,7 +240,7 @@ Postgres 的 `to_tsvector` 不对中文切词，`pg_trgm` 相似度也不能提�
 - 右栏：证据说明或个人时间线；
 - `xl` 以下左右两栏使用 Kumo Dialog，宽屏保持非模态常驻栏。
 
-客户端只能从 `src/search/result.ts` 获取运行时值，不能从带数据库连接的模块导入值。`tests/boundary.test.ts` 负责守住这一边界。
+客户端只能从 `src/search/result.ts` 获取运行时值。带数据库连接或密钥的模块都用 `import "@tanstack/react-start/server-only"` 标记自己，页面从它们取值会让构建失败。
 
 ## 7. 验收
 

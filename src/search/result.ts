@@ -1,15 +1,9 @@
 /**
  * 一次检索的结果长什么样——服务端与页面之间的契约。
  *
- * 单独成文件是为了守住一条边界：`search.ts` 里有 `db`，而 `db` 拉进来的是
- * `pg`，`pg` 用 `Buffer`——浏览器里没有 `Buffer`，所以页面只要从 `search.ts`
- * 取走**一个值**（哪怕只是一个空对象工厂），整条链就会被打进客户端 bundle，
- * 水合第一步就抛 `Can't find variable: Buffer`。而 SSR 跑在 Node 里，直出
- * 完全正常，tsc / biome / build 也全绿——只有真在浏览器里打开才看得见。
- *
- * 所以这里只放**形状**和无副作用的空值工厂，一行 SQL 都不许有；页面可以
- * 安全地从这里取值，带数据库连接的查询实现留在 `search.ts`。
- * `tests/boundary.test.ts` 钉住这条。
+ * 单独成文件是为了给页面一处能安全取值的地方：`search.ts` 带 `db`，标了
+ * `server-only`，页面从它取一个值会让构建失败。所以这里只放**形状**和无副作用
+ * 的空值工厂，一行 SQL 都不许有；查询实现留在 `search.ts`。
  */
 import type { Employee } from "#/db/schema";
 import type { ChipMode } from "./parse";

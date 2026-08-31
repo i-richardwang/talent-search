@@ -96,7 +96,7 @@ src/routes/-components/      两屏共用的界面组件
 src/routes/-lib/             视图状态、筛选表、键盘流等非组件模块
 src/components/              跨路由 React 组件
 src/lib/                     跨层纯函数
-tests/                       单元、渲染、边界与真 SQL 集成测试
+tests/                       单元、渲染与真 SQL 集成测试
 ```
 
 核心边界：
@@ -107,9 +107,9 @@ tests/                       单元、渲染、边界与真 SQL 集成测试
   的一行（原话、理解结果、降级标记、父记录），地址是 `/s/:turnId`；筛选与翻页
   留在 query string 里。前者值得留存、可重新理解、可分享出去必然复现，
   后者一次性。见 `src/server/turn.ts` 与 `src/routes/-lib/view-params.ts`。
-- 页面经 `src/server/functions.ts` 与 `src/server/turn.ts` 访问数据库；
+- 页面访问数据库只有 `src/server/functions.ts` 一个口子；带连接或密钥的模块标了
+  `server-only`，页面从它们取值会让构建失败。页面可读取的结果形状在 `src/search/result.ts`；
 - `src/search/search.ts` 只产出命中事实，`src/search/rank.ts` 负责判定、打分、排序与分面；
-- 页面可读取的结果形状位于 `src/search/result.ts`，不会把数据库依赖打进客户端；
 - Kumo 是唯一的界面组件库，组件属性以本地 CLI 文档为准。
 
 ## 查询行为
