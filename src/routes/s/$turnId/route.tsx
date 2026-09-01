@@ -9,6 +9,7 @@ import {
 	useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { buttonVariants } from "#/components/ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "#/components/ui/dialog";
 import { Kbd } from "#/components/ui/kbd";
 import { cn } from "#/lib/utils";
@@ -227,7 +228,12 @@ function Workbench() {
 		<div className="isolate flex min-h-dvh">
 			{/* 必须是文档里第一个可聚焦元素，否则「跳过」的东西已经先被 Tab 过一遍了 */}
 			<a
-				className="sr-only rounded-md border bg-card px-3 py-2 focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-escape"
+				className={buttonVariants({
+					className:
+						"sr-only no-underline focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-escape",
+					size: "sm",
+					variant: "outline",
+				})}
 				href="#results"
 			>
 				跳到搜索结果
@@ -297,7 +303,8 @@ function Workbench() {
 				 * 它是「用熟之后才会用上」的东西：第一次来的人不会找它，
 				 * 用熟的人记住了也不再看。挂在名单尽头，两种人都不被打扰。
 				 */}
-				<footer className="mx-auto flex w-full max-w-page flex-wrap items-center gap-x-4 gap-y-1.5 px-4 pb-8 text-muted-foreground text-xs">
+				{/* 触屏上这三个键一个都按不了，那时它只是三行占地方的灰字 */}
+				<footer className="mx-auto hidden w-full max-w-page flex-wrap items-center gap-x-4 gap-y-1.5 px-4 pb-8 text-muted-foreground text-xs pointer-fine:flex">
 					{KEYS.map(([key, what]) => (
 						<span className="flex items-center gap-1.5" key={key}>
 							<Kbd>{key}</Kbd>
@@ -321,6 +328,14 @@ function Workbench() {
 					className={cn(
 						"sticky top-0 h-dvh shrink-0 overflow-hidden",
 						"transition-[width] duration-200 ease-out",
+						/*
+						 * 服务端一律按宽屏渲染（`useIsWide`），而**首屏可以直接落在
+						 * 某个人身上**——`/s/:id/p/:empId` 正是粘给同事的那种链接。
+						 * 手机上那一帧会是一块 28rem 的栏顶在 390px 的屏幕旁边，
+						 * 横着溢出，水合之后才换成 Dialog。这条 CSS 让那一帧收起来：
+						 * 断点和 `useIsWide` 同值，两边说的是同一件事。
+						 */
+						"max-xl:hidden",
 						open ? `${PANEL_W} border-border border-l bg-card` : "w-0",
 					)}
 				>

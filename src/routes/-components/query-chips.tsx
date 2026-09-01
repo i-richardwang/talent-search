@@ -62,8 +62,14 @@ const MODE_VARIANT: Record<ChipMode, "secondary" | "outline"> = {
 	exclude: "outline",
 };
 
-/** 排除词划掉：排除的意思正是「把它划掉」，这一层不必再解释一遍。 */
-const EXCLUDE_STYLE = "text-muted-foreground line-through";
+/**
+ * 排除词划掉：排除的意思正是「把它划掉」，这一层不必再解释一遍。
+ *
+ * 只划掉，不降色。降色是**停用**那一档的语言（见下面的 `OFF_STYLE`），
+ * 两件事借同一个记号，一枚划掉又发灰的 chip 就说不清自己是「不要这种人」
+ * 还是「这条先不算」——而这两句话的意思正好相反。
+ */
+const EXCLUDE_STYLE = "line-through";
 
 /**
  * 停用的样子：虚线边 + 次要色。
