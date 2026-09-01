@@ -20,3 +20,10 @@
 组件不依赖 Next.js（那部分只在 coss 的 `packages/ui/src/shared/` 和 `fonts/` 里），
 所以在 Vite + TanStack Start 下直接可用。运行时依赖是 `@base-ui/react`、
 `class-variance-authority`、`clsx`、`tailwind-merge` 和 `lucide-react`。
+
+抄进来的文件**一个字都不改**，包括 lint 意见不同的那几处：`InputGroup` 与
+`Group` 用 `<div role="group">`（`useSemanticElements` 想要 `<fieldset>`，
+但那是表单分组，不是控件分组），`InputGroupAddon` 在 `<div>` 上挂 `onMouseDown`
+把焦点还给输入框（`noStaticElementInteractions` 只看元素不看用途）。
+这两条在 `biome.json` 里对本目录关掉——改代码去迎合 lint 会让下一次升级
+产生冲突，而冲突点恰恰是这些无关紧要的地方。

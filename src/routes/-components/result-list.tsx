@@ -20,13 +20,56 @@ import type { SearchResult, TermPlan } from "#/search/result";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 import { emptyState } from "../-lib/empty-state";
 import type { View } from "../-lib/view-params";
-import { EvidenceLine, MissedTerms } from "./evidence";
+import { EvidenceLine, MissedTerms, StrengthLegend } from "./evidence";
 
 /** 一块卡片的内边距。骨架屏和候选人共用，加载完成的那一帧才不会抖。 */
 const PAD = "px-4 py-3.5";
 
 /** 首次检索的骨架块数。之后跟着上一次的结果数走，列表高度就不会每次跳。 */
 const SKELETON_ROWS = 5;
+
+/**
+ * 名单的表头：这份名单有多少人、按什么排、那三颗点各是什么意思。
+ *
+ * 三样都是**关于这份名单**的，所以它们跟着名单走。放进查询台的角落，报数就会
+ * 随着 chips 换行上下漂，而它回答的本来也不是「我搜了什么」。
+ *
+ * 图例必须和它解释的那些点同屏，所以只能排在这里；和报数并作一行，
+ * 名单上方就只多这一行，不是两行。
+ */
+export function ResultHeader({
+	loading,
+	total,
+	terms,
+}: {
+	loading: boolean;
+	total: number;
+	terms: TermPlan[];
+}) {
+	// 没有条件就没有名单可介绍，也没有点可解释
+	if (!loading && terms.length === 0) return null;
+	return (
+		<div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5 px-1">
+			<p
+				aria-live="polite"
+				className="text-muted-foreground text-sm"
+				role="status"
+			>
+				{loading ? (
+					"搜索中…"
+				) : (
+					<>
+						<b className="text-foreground tabular-nums">{total}</b> 人
+						{/* 一份排过序的名单必须说出自己按什么排，否则「从上往下看」
+						    这个动作没有依据。一个人都没有时不说，那时没有顺序可言。 */}
+						{total > 0 && " · 按相关度排序"}
+					</>
+				)}
+			</p>
+			{terms.length > 0 && <StrengthLegend />}
+		</div>
+	);
+}
 
 /**
  * 候选人名单。
@@ -84,39 +127,44 @@ export function ResultList({
 		if (!loading && results.length > 0) lastRows.current = results.length;
 	}, [loading, results.length]);
 
+	const head = <ResultHeader loading={loading} terms={terms} total={total} />;
+
 	// 检索中绝不闪现「没有结果」。
 	if (loading) {
 		const pending = pendingTerms(chips);
 		return (
-			<div className="flex flex-col gap-2">
-				{Array.from(
-					{ length: Math.min(lastRows.current, RESULT_PAGE) },
-					(_, row) => (
-						// biome-ignore lint/suspicious/noArrayIndexKey: 骨架块没有身份
-						<Card className={PAD} key={row}>
-							<div className="flex items-center gap-3">
-								<Skeleton className="h-4 w-24" />
-								<Skeleton className="h-3 w-44" />
-							</div>
-							{/* 骨架屏画的是**这次查询会有几条证据**，不是一个通用的方块堆：
+			<div>
+				{head}
+				<div className="flex flex-col gap-2">
+					{Array.from(
+						{ length: Math.min(lastRows.current, RESULT_PAGE) },
+						(_, row) => (
+							// biome-ignore lint/suspicious/noArrayIndexKey: 骨架块没有身份
+							<Card className={PAD} key={row}>
+								<div className="flex items-center gap-3">
+									<Skeleton className="h-4 w-24" />
+									<Skeleton className="h-3 w-44" />
+								</div>
+								{/* 骨架屏画的是**这次查询会有几条证据**，不是一个通用的方块堆：
 							    条件数取自记录上的 chips，所以加载完成时块高不变。 */}
-							{pending.length > 0 && (
-								<>
-									<Separator className="my-3" />
-									<div className="space-y-2">
-										{pending.map((t) => (
-											<div className="flex items-center gap-2.5" key={t.term}>
-												<Skeleton className="size-2 rounded-full" />
-												<Skeleton className="h-3 w-16" />
-												<Skeleton className="h-3 flex-1" />
-											</div>
-										))}
-									</div>
-								</>
-							)}
-						</Card>
-					),
-				)}
+								{pending.length > 0 && (
+									<>
+										<Separator className="my-3" />
+										<div className="space-y-2">
+											{pending.map((t) => (
+												<div className="flex items-center gap-2.5" key={t.term}>
+													<Skeleton className="size-2 rounded-full" />
+													<Skeleton className="h-3 w-16" />
+													<Skeleton className="h-3 flex-1" />
+												</div>
+											))}
+										</div>
+									</>
+								)}
+							</Card>
+						),
+					)}
+				</div>
 			</div>
 		);
 	}
@@ -134,25 +182,29 @@ export function ResultList({
 			onFocusQuery,
 		});
 		return (
-			<Empty className="rounded-2xl border border-border border-dashed">
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<SearchXIcon />
-					</EmptyMedia>
-					<EmptyTitle>{state.title}</EmptyTitle>
-					<EmptyDescription>{state.hint}</EmptyDescription>
-				</EmptyHeader>
-				<EmptyContent>
-					<Button onClick={state.action.onClick} variant="outline">
-						{state.action.label}
-					</Button>
-				</EmptyContent>
-			</Empty>
+			<div>
+				{head}
+				<Empty className="rounded-2xl border border-border border-dashed">
+					<EmptyHeader>
+						<EmptyMedia variant="icon">
+							<SearchXIcon />
+						</EmptyMedia>
+						<EmptyTitle>{state.title}</EmptyTitle>
+						<EmptyDescription>{state.hint}</EmptyDescription>
+					</EmptyHeader>
+					<EmptyContent>
+						<Button onClick={state.action.onClick} variant="outline">
+							{state.action.label}
+						</Button>
+					</EmptyContent>
+				</Empty>
+			</div>
 		);
 	}
 
 	return (
 		<div>
+			{head}
 			<ul className="flex flex-col gap-2">
 				{results.map((r, rank) => {
 					const selected = r.employee.empId === empId;

@@ -15,7 +15,6 @@ import { cn } from "#/lib/utils";
 import { emptyFacets, type SearchResult } from "#/search/result";
 import { interpretTurn, loadWorkbench } from "#/server/functions";
 import { Brand } from "../../-components/brand";
-import { StrengthLegend } from "../../-components/evidence";
 import { QueryDeck } from "../../-components/query-deck";
 import { ResultList } from "../../-components/result-list";
 import { useCommit } from "../../-lib/commit";
@@ -250,7 +249,6 @@ function Workbench() {
 					fields={filterFields(facets, view)}
 					inputRef={inputRef}
 					interpreting={interpreting}
-					loading={loading}
 					onChangeQuery={reviseChips}
 					onChangeView={updateView}
 					onQuery={(input) => commit(input, { parentTurnId: turn.id, view })}
@@ -262,7 +260,6 @@ function Workbench() {
 					rawText={rawText}
 					strongCount={facets.strong.on}
 					terms={terms}
-					total={result?.total ?? 0}
 					view={view}
 				/>
 
@@ -274,15 +271,6 @@ function Workbench() {
 					   焦点仍在链接上，下一次 Tab 又回到顶栏 */
 					tabIndex={-1}
 				>
-					{/*
-					 * 图例排在名单正上方，和它要解释的那些点同时在屏幕上。
-					 * 没有条件就没有点可解释，那时它自己消失——见 evidence.tsx。
-					 */}
-					{terms.length > 0 && (
-						<div className="mb-2.5 px-1">
-							<StrengthLegend />
-						</div>
-					)}
 					<ResultList
 						canMore={canLoadMore(view, result?.total ?? 0)}
 						chips={chips}

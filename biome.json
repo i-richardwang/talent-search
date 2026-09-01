@@ -17,6 +17,19 @@
 			"preset": "recommended"
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["src/components/ui/**"],
+			"linter": {
+				"rules": {
+					"a11y": {
+						"noStaticElementInteractions": "off",
+						"useSemanticElements": "off"
+					}
+				}
+			}
+		}
+	],
 	"css": {
 		"parser": {
 			"tailwindDirectives": true
