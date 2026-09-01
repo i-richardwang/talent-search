@@ -6,14 +6,12 @@ import {
 } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { CareerBar } from "#/components/career-bar";
-import { Dot, ROUTE_LABEL } from "#/components/evidence";
 import { buildHitIndex, Timeline } from "#/components/timeline";
 import { buttonVariants } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
-import { duration, seqLabel } from "#/lib/format";
-import { strengthOf } from "#/search/evidence";
+import { seqLabel } from "#/lib/format";
 import { fetchEmployee } from "#/server/functions";
 
 export const Route = createFileRoute("/s/$turnId/p/$empId")({
@@ -89,7 +87,6 @@ function Person() {
 	const rank =
 		search?.results.findIndex((r) => r.employee.empId === e.empId) ?? -1;
 	const result = rank >= 0 ? search?.results[rank] : undefined;
-	const terms = search?.terms ?? [];
 	// 轨迹条和时间轴共用：一份索引，两个视图
 	const hitIndex = buildHitIndex(result?.hits ?? []);
 
@@ -166,47 +163,22 @@ function Person() {
 				</dl>
 
 				{/*
-				 * 「这个词的证据有多硬」在这一段里只画一遍：每条行首那颗点，
-				 * 和证据行、时间轴、图例是同一颗。再给一个按强度上色的 Badge，
-				 * 就成了点、颜色、route 名把同一件事画三遍。
+				 * 名次。这一栏里唯一一句名单上没有的话，所以它单独一行，不进分区。
+				 *
+				 * 那份名单是按分排的，但分数本身不上屏：它是路权重 × 时长因子再乘上
+				 * 加分项的积，没有任何刻度让人校准「1.35 算高还是低」，摆上去只是一个
+				 * 看着精确、读不出意思的数。名次不一样——它有刻度，分母就在旁边。
+				 *
+				 * 逐词的命中摘要不在这里画。名单上那张卡片已经逐词说过一遍，而且说得
+				 * 更细（它给出命中的**字段值**，这里只能给路名和累计时长）——人正是从
+				 * 那张卡片点进来的，进来之后看到一份更少的复述，这一栏就白开了。
+				 * 这一栏的价值是**逐段核对**：轨迹条给形状，时间轴给每一段的原文。
 				 */}
-				{result && terms.length > 0 && (
-					<Section title="匹配依据">
-						{/*
-						 * 名次写在证据前面。
-						 *
-						 * 那份名单是按分排的，但分数本身不上屏：它是路权重 × 时长因子
-						 * 再乘上加分项的积，没有任何刻度让人校准「1.35 算高还是低」，
-						 * 摆上去只是一个看着精确、读不出意思的数。名次不一样——它有刻度
-						 * （分母就在旁边），而分数由什么构成，下面这几行逐词说得比数清楚。
-						 */}
-						<p className="text-muted-foreground text-xs">
-							本次结果第 <b className="tabular-nums">{rank + 1}</b> 位，共{" "}
-							<b className="tabular-nums">{search?.total ?? 0}</b> 人
-						</p>
-						<ul className="mt-2 space-y-2">
-							{terms.map((t, i) => {
-								const basis = result.basis[i];
-								const primaryRoute = basis?.routes[0];
-								return (
-									<li className="flex items-baseline gap-2" key={t.term}>
-										<Dot
-											className="translate-y-1"
-											strength={
-												primaryRoute ? strengthOf(primaryRoute) : undefined
-											}
-										/>
-										<span className="text-sm">{t.term}</span>
-										<span className="text-muted-foreground text-xs">
-											{basis
-												? `${basis.routes.map((route) => ROUTE_LABEL[route]).join("、")} · 累计 ${duration(basis.months)} · ${basis.endDate ? `最近至 ${basis.endDate.slice(0, 7)}` : "目前仍有相关经历"}`
-												: "未匹配"}
-										</span>
-									</li>
-								);
-							})}
-						</ul>
-					</Section>
+				{rank >= 0 && (
+					<p className="mt-4 text-muted-foreground text-xs">
+						本次结果第 <b className="tabular-nums">{rank + 1}</b> 位，共{" "}
+						<b className="tabular-nums">{search?.total ?? 0}</b> 人
+					</p>
 				)}
 
 				<Section title="任职经历">
