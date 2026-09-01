@@ -17,8 +17,7 @@ import { fetchEmployee } from "#/server/functions";
 
 /**
  * 面板顶上那条吸顶的头。**骨架和真身共用**——面板开着的时候换人是连着做的，
- * 顶部每换一次跳一下就会被反复看到，而两处各写一遍的话没有任何东西保证它们同高。
- * 同一个理由下 `result-list.tsx` 的 `PAD` 也是一个常量。
+ * 顶部每换一次跳一下就会被反复看到，而两处各写一遍没有任何东西保证它们同高。
  */
 const HEAD = "sticky top-0 z-stick border-border border-b bg-card px-5 py-4";
 

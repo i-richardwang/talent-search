@@ -32,11 +32,8 @@ import {
 } from "../../-lib/view-params";
 
 /**
- * 没有结果时也要有稳定的身份：每次渲染新建 `[]` 会让 `useKeyboardFlow` 的
- * effect 反复解绑重绑（`results` 在它的依赖数组里，见 -lib/keyboard-flow.ts）。
- *
- * 分面没有这个问题——它不进任何 effect 的依赖，只被当场读掉——所以它不配一个
- * 常量。同一个理由套到不产生效果的地方，会让下一个人以为凡是空值都得提出去。
+ * 没有结果时也要有稳定的身份：`results` 在 `useKeyboardFlow` 的依赖数组里
+ * （见 -lib/keyboard-flow.ts），每次渲染新建 `[]` 会让那个 effect 反复解绑重绑。
  */
 const NO_RESULTS: SearchResult[] = [];
 

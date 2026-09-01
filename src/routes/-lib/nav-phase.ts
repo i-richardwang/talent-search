@@ -14,8 +14,6 @@ export type NavPhase = {
 	/** 下面那份名单已经不成立了：画骨架屏 */
 	navigating: boolean;
 };
-// 两者互斥。翻页也会改 `n`，所以它同时满足 `viewChanged`——不排掉的话，
-// 「留在原地」和「塌成骨架屏」会同时为真，而后者赢，翻一页就把人扔回页首。
 
 /** 一次导航的两头各落在哪：哪条查询记录、什么视图。 */
 export type Spot = {
@@ -40,6 +38,8 @@ export function navPhase(
 	const growing = sameTurn && onlyMore(next.view, prev?.view);
 	return {
 		growing,
+		// 两者互斥，而翻页要先判。翻页也会改 `n`，所以它同时满足 `viewChanged`；
+		// 两个一起为真时「塌成骨架屏」赢，翻一页就把人扔回页首。
 		navigating: !growing && (!sameTurn || viewChanged(next.view, prev?.view)),
 	};
 }

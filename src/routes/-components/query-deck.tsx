@@ -1,4 +1,5 @@
 import { AlertCircleIcon, RotateCwIcon } from "lucide-react";
+import { QueryBar } from "#/components/query-bar";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Frame, FramePanel } from "#/components/ui/frame";
@@ -7,7 +8,6 @@ import type { TermPlan } from "#/search/result";
 import type { FilterField } from "../-lib/filters";
 import type { View } from "../-lib/view-params";
 import { FilterBar } from "./filter-bar";
-import { QueryBar } from "./query-bar";
 import { QueryChips } from "./query-chips";
 
 /**
