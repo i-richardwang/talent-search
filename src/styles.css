@@ -1,94 +1,228 @@
-/* 顺序有讲究：Kumo 的 @theme 令牌必须先于 tailwindcss 注册。 */
-@import "@cloudflare/kumo/styles";
+/*
+ * 全站样式。三段：coss 的令牌与深浅色、这个产品自己的尺度、以及少数几条
+ * 必须写成规则而不是类名的行为（按压、焦点、减弱动效）。
+ *
+ * coss ui 的组件是**源码进仓库**的（`src/components/ui/`），不是编译好的包，
+ * 所以不需要 `@source` 去扫 node_modules——Tailwind 扫 src 就够了。
+ */
 @import "tailwindcss";
 
-/* Kumo 的类名藏在编译后的 JS 里，Tailwind v4 默认不扫 node_modules，必须显式声明来源，
-   否则组件内部（弹层定位、动画等）会掉样式。路径相对本文件。 */
-@source "../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}";
+/*
+ * coss 的深色走 class，不走 `light-dark()`。所以 `<html>` 上那个 `dark` 类
+ * 是**唯一**的开关，由 `__root.tsx` 的首屏内联脚本按系统偏好写入，没有别的
+ * 兜底机制——这一点和上一套不同，那边即使脚本没跑成，令牌自己也会跟随系统。
+ */
+@custom-variant dark (&:is(.dark *));
 
-@theme {
+@theme inline {
 	/*
 	 * 拉丁字族在前、中文字族在后：拉丁串用拉丁字形，汉字回落到中文字族。
 	 * 不下载 webfont——这是 95% 中文的内网工具，为拉丁字体付网络代价没有道理，
 	 * 而中文 webfont 动辄几 MB，更不可能。
+	 *
+	 * heading 和 sans 是同一份：coss 的组件里有 `font-heading`（它自己配的是
+	 * Inter 的另一档），这里不引第二个字族，所以让它落回同一个栈。定义它是
+	 * 必要的——不定义，`font-heading` 就是一个静默失效的类名。
 	 */
 	--font-sans:
 		-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI",
 		"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC",
 		sans-serif;
+	--font-heading: var(--font-sans);
+
+	/* coss 的语义色。只映射这套界面真正用到的那些——图表色、代码高亮色和
+	   侧栏的整组令牌没有读者，不搬过来。 */
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-info: var(--info);
+	--color-info-foreground: var(--info-foreground);
+	--color-success: var(--success);
+	--color-success-foreground: var(--success-foreground);
+	--color-warning: var(--warning);
+	--color-warning-foreground: var(--warning-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+
+	/*
+	 * 画布：整个应用坐在上面的那一层底。
+	 *
+	 * 它必须比 `--card` 暗一档，否则卡片既没有浮起也没有边界，一列候选人退化成
+	 * 「铺满窗口、靠发丝线切开的平面」，也就是后台的长相。coss 的 `--background`
+	 * 和 `--card` 在浅色下都是纯白，差 0——所以这个台阶得自己指过来。
+	 *
+	 * 指向 `--sidebar` 而不是新配一个灰：那正是 coss 自己给「内容之外那一层底」
+	 * 配好的一档（浅色 neutral-50，深色比 background 更暗），深浅两边的关系已经
+	 * 调过。这里只是给它起一个说得出口的名字——这一层装的是页面的地，
+	 * 卡片、查询台和详情面板都浮在它上面。
+	 */
+	--color-canvas: var(--sidebar);
+
+	/*
+	 * 高度。在 Tailwind 自带的 `shadow-xs`（卡片静置时那一点点）之上，
+	 * 这里只加两档，都很浅。
+	 *
+	 * 分层不能全交给发丝线：线只说明「这里是边界」，说明不了「谁在上面」，
+	 * 而「全是 1px 线切出来的平面」正是管理后台的长相。详情面板和名单不在
+	 * 同一个平面，这件事必须让人不用读就知道，一条边框说不出来。
+	 *
+	 * 两档都压得很浅、而且偏冷：中性灰阴影在浅色底上会发脏，用带一点蓝的
+	 * 黑（`--color-neutral-950` 本身偏冷）低透明度叠两层，近处那层收边、
+	 * 远处那层给体积。深色下阴影几乎不可见，所以那边靠边框接管——
+	 * 这也是下面 `.dark` 里 `--border` 要比浅色更明显一档的原因。
+	 */
+	--shadow-lift:
+		0 1px 2px --alpha(var(--color-neutral-950) / 5%),
+		0 2px 8px --alpha(var(--color-neutral-950) / 4%);
+	--shadow-over:
+		0 1px 3px --alpha(var(--color-neutral-950) / 6%),
+		0 12px 32px -8px --alpha(var(--color-neutral-950) / 12%);
+
+	/*
+	 * 版心。`--container-*` 而不是 `--spacing-*`：`max-w-<名字>` 只认前一个
+	 * 命名空间，写成后者的话 `max-w-page` 会静默变成一个不存在的类。
+	 *
+	 * 单列布局里它是唯一决定「这一屏有多宽」的数，所以给它一个名字，
+	 * 而不是让 `max-w-[46rem]` 散落在顶栏、名单、页脚三个地方——那三处必须
+	 * 分毫不差地对齐，写三遍就是留三个会各自漂移的副本。
+	 *
+	 * 46rem：一条证据行的预算（条件词 + 来源 + 字段值 + 右端时长）在 14px 下
+	 * 约 25 个汉字不截断，再加上卡片左右各 20px 的内边距。再宽，右端的时长
+	 * 就离字段值太远，眼睛得横着走一段空白才读得到它。
+	 */
+	--container-page: 46rem;
+
+	/* coss 的圆角尺度，原样采用。组件自己就按这四档画，项目再定一套只会
+	   让我画的面和它的按钮、输入框、弹层永远差一点。 */
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+
+	/* coss 的 Skeleton 靠它扫光。没有这条，骨架屏就是一块死灰。 */
+	--animate-skeleton: skeleton 2s -1s infinite linear;
+	@keyframes skeleton {
+		to {
+			background-position: -200% 0;
+		}
+	}
 
 	/*
 	 * 层级尺度。全站只有这三档，代码里不许出现别的 z 值。
 	 *
-	 * 档位这么少，是因为 Kumo 的 Popover/Tooltip/Select/Dialog 内容 portal 到
-	 * document.body 且**自身不带 z-index**，而 CSS 的绘制顺序里
-	 * 「z-index: auto 的定位元素」排在「z-index > 0 的定位元素」之前——
-	 * 页面里随便哪个裸 z-10 都能盖住所有弹层。
+	 * 档位这么少，是因为弹层的层级不归这套尺度管。coss 的 Dialog 遮罩、
+	 * 视口和 Tooltip 定位器都硬写着 `z-50`，而它们 portal 到 `document.body`——
+	 * 也就是说「弹层在最上面」这件事由那个 50 保证，不由这里的数字保证。
 	 *
-	 * 所以约束有两层：
-	 * 1. 这三个值本身（下面），让 app 内部的层级关系有唯一解释；
-	 * 2. app 外壳根节点带 `isolate`，把这三个值全部关进一个层叠上下文里。
-	 *    关进去之后，body 下的 portal 天然画在整个外壳之上，
-	 *    无论外壳内部用到多大的 z——这类遮挡从结构上不可能发生。
-	 *
-	 * 没有「浮层」这一档：窄屏那两个盖住主区的侧栏是 Kumo 的 Dialog，
-	 * 层级和遮罩都归它自己管，外壳这边只要被 `isolate` 关住就够了。
+	 * 所以这三档只回答一个问题：**外壳内部**谁压着谁。它们不需要多，也不该多。
+	 * app 外壳根节点带 `isolate`，把这三个值关进一个层叠上下文里，于是它们
+	 * 无论取多大都出不去、盖不到 body 下的弹层——这条护栏让「不小心写了个
+	 * 更大的数就遮住对话框」从结构上不可能发生，而不是靠记得别超过 50。
 	 */
 	--z-index-raise: 1; /* 同一平面内的前后：时间轴节点压住脊线 */
-	--z-index-stick: 20; /* 吸顶：表格表头、详情栏的头 */
+	--z-index-stick: 20; /* 吸顶：查询台、详情面板的头 */
 	--z-index-escape: 40; /* 跳过导航链接。它必须压过外壳里的一切 */
-
-	/*
-	 * 圆角三档。control 与 sheet 直接对齐 Kumo 自己在用的 rounded-sm 4px
-	 * 和 rounded-md 6px；我们画的面和它的
-	 * 按钮、输入框、弹层永远挨着坐，边角必须是同一种语言。项目自定一个
-	 * 别处都没有的值，得到的不是克制，是全场唯一对不上的那个角。
-	 *
-	 * 分档的依据是「这是一个面，还是一块被标记的文字」：
-	 * control 给贴着文字的可交互物——键帽、原文标记、姓名链接、小图标按钮，
-	 * 它们本来就只有一两个字高，6px 会把它们圆成药丸；
-	 * sheet 给真正的面——左栏的选项行、时间轴上的一段经历、跳过导航那块牌子。
-	 *
-	 * panel 只有一个用处：工作台那块浮在画布上的内容面板。它是全站最大的一个
-	 * 圆角，也只该有一个东西大到配得上它。
-	 */
-	--radius-control: 4px;
-	--radius-sheet: 6px;
-	--radius-panel: 10px;
 }
 
-/*
- * Kumo 的深浅色有两套机制，必须同时满足：
- *
- * 1. 绝大部分语义令牌用 `light-dark()` 表达（theme-kumo.css 里 54 处），
- *    由 `color-scheme` 决议——声明 `light dark` 就跟随系统。
- * 2. 但 kumo-binding.css 里还有 7 条规则硬绑 `[data-mode="dark"]`
- *    （骨架屏底色与微光、Tooltip/Popover 的 outline-offset 等）。这个属性
- *    只有宿主写上去才存在，光靠 color-scheme 永远触发不了。
- *
- * 所以 <html> 上的 data-mode 由 __root.tsx 的首屏内联脚本按系统偏好写入。
- * 这里保留 color-scheme 作为兜底：脚本被 CSP 拦掉或没跑成时，
- * 第 1 套机制照常工作，界面只是少了那 7 条的深色修正，不会整体失色。
- */
+/* coss 的色值。原样搬，不改一个数——改了就不再是这套设计系统了。 */
 :root {
-	color-scheme: light dark;
+	--radius: 0.625rem;
+	--background: var(--color-white);
+	--foreground: var(--color-neutral-800);
+	--card: var(--color-white);
+	--popover: var(--color-white);
+	--popover-foreground: var(--color-neutral-800);
+	--primary: var(--color-neutral-800);
+	--primary-foreground: var(--color-neutral-50);
+	--secondary: --alpha(var(--color-black) / 4%);
+	--secondary-foreground: var(--color-neutral-800);
+	--muted: --alpha(var(--color-black) / 4%);
+	--muted-foreground: color-mix(
+		in srgb,
+		var(--color-neutral-500) 90%,
+		var(--color-black)
+	);
+	--accent: --alpha(var(--color-black) / 4%);
+	--accent-foreground: var(--color-neutral-800);
+	--destructive: var(--color-red-500);
+	--destructive-foreground: var(--color-red-700);
+	--info: var(--color-blue-500);
+	--info-foreground: var(--color-blue-700);
+	--success: var(--color-emerald-500);
+	--success-foreground: var(--color-emerald-700);
+	--warning: var(--color-amber-500);
+	--warning-foreground: var(--color-amber-700);
+	--border: --alpha(var(--color-black) / 8%);
+	--input: --alpha(var(--color-black) / 10%);
+	--ring: var(--color-neutral-400);
+	--sidebar: var(--color-neutral-50);
+}
+
+.dark {
+	--background: color-mix(
+		in srgb,
+		var(--color-neutral-950) 96%,
+		var(--color-white)
+	);
+	--foreground: var(--color-neutral-100);
+	--card: color-mix(in srgb, var(--background) 98%, var(--color-white));
+	--popover: color-mix(in srgb, var(--background) 96%, var(--color-white));
+	--popover-foreground: var(--color-neutral-100);
+	--primary: var(--color-neutral-100);
+	--primary-foreground: var(--color-neutral-800);
+	--secondary: --alpha(var(--color-white) / 4%);
+	--secondary-foreground: var(--color-neutral-100);
+	--muted: --alpha(var(--color-white) / 4%);
+	--muted-foreground: color-mix(
+		in srgb,
+		var(--color-neutral-500) 90%,
+		var(--color-white)
+	);
+	--accent: --alpha(var(--color-white) / 4%);
+	--accent-foreground: var(--color-neutral-100);
+	--destructive: color-mix(
+		in srgb,
+		var(--color-red-500) 90%,
+		var(--color-white)
+	);
+	--destructive-foreground: var(--color-red-400);
+	--info: var(--color-blue-500);
+	--info-foreground: var(--color-blue-400);
+	--success: var(--color-emerald-500);
+	--success-foreground: var(--color-emerald-400);
+	--warning: var(--color-amber-500);
+	--warning-foreground: var(--color-amber-400);
+	--border: --alpha(var(--color-white) / 6%);
+	--input: --alpha(var(--color-white) / 8%);
+	--ring: var(--color-neutral-500);
+	--sidebar: color-mix(
+		in srgb,
+		var(--color-neutral-950) 97%,
+		var(--color-white)
+	);
 }
 
 @layer base {
 	/*
-	 * 画布压暗一档。这是整个界面「浮起来的面板」能不能成立的唯一前提。
-	 *
-	 * Kumo 自己的浅色画布是 oklch(98.75%)，而面板是 #fff = 100%。**差 1.25%，
-	 * 屏幕上看不出来**——于是那块面板既没有浮起也没有边界，剩下的只有一条
-	 * 发丝线，正好退化成「铺满窗口、靠线切开的平面」，也就是后台的长相。
-	 * 深色那一边本来就是 10% vs 17%，差 7%，成立，所以只改浅色。
-	 *
-	 * 3.5% 是台阶的下限：再浅读不出层，再深画布就变成一块灰底，
-	 * 面板反而像贴在上面的纸。选择器带 :not 是为了压过 Kumo 在 base 层里
-	 * 那条同名声明（`:root, [data-theme="kumo"]`），同时不碰深色。
+	 * coss 的组件默认边框色靠这一条。它们的类名里大量是裸的 `border`
+	 * （只给宽度，不给颜色），没有这一条就会落到 Tailwind 的 currentColor 上，
+	 * 于是每个按钮的边框都变成它自己的文字色。
 	 */
-	:root:not([data-mode="dark"]) {
-		--color-kumo-canvas: oklch(96.5% 0 0);
+	* {
+		@apply border-border outline-ring/50;
 	}
 
 	/* macOS 上关掉次像素渲染，中文小字号更干净 */
@@ -100,10 +234,10 @@
 	/*
 	 * 按压反馈是全站一条规则，不是每个按钮各写一次的类名。
 	 *
-	 * Kumo 的 Button 只有 hover 和 focus 两态（源码里 active: 下只有一条
-	 * ring），按下去没有任何回应。在一个主要靠点的工作台里，这会让每一次
-	 * 点击都像没接住。放在 base 层用元素选择器，是因为它该覆盖所有按钮类
-	 * 元素——包括 Select 触发器、Popover 触发器、Switch 这些不是我写的。
+	 * coss 的 Button 把过渡限定在 `transition-shadow` 上，按下去只有环的变化，
+	 * 没有位移。在一个主要靠点的工作台里，这会让每一次点击都像没接住。放在
+	 * base 层用元素选择器，是因为它该覆盖所有按钮类元素——包括 Menu 触发器、
+	 * Dialog 触发器这些不是我写的。
 	 *
 	 * 只动 scale：它和 opacity 一样走合成器，不引起重排。90ms 是按下去
 	 * 「跟手」的上限，再长就成了动画表演。下面的 reduced-motion 会把这段
@@ -120,8 +254,8 @@
 
 	/*
 	 * `data-press="off"` 是这条规则的出口：整行宽的列表项要走它
-	 * （224px 的东西缩 3%，文字横移三四个像素，读起来是这一行在抖）。
-	 * 按压缩放是给紧凑控件的反馈，尺寸越大越不成立。
+	 * （一块 500px 宽的候选人卡片缩 3%，文字横移七八个像素，读起来是这一块
+	 * 在抖）。按压缩放是给紧凑控件的反馈，尺寸越大越不成立。
 	 */
 	button:active:not(:disabled, [data-press="off"]),
 	summary:active,
@@ -130,45 +264,76 @@
 	}
 
 	/*
-	 * 自绘控件的焦点态。Kumo 组件自带焦点环；手写的选项、清除、展开入口和
-	 * 姓名链接由这一条统一补齐。
+	 * 自绘控件的焦点态。coss 组件自带 `focus-visible:ring-2 ring-ring`；
+	 * 手写的选项、清除、展开入口和姓名链接由这一条统一补齐，用的是同一个
+	 * `--ring`，所以两者长得一样。
 	 *
-	 * 用 :where() 把特异性压到 0，好让 Kumo 组件自己的焦点样式照常覆盖它；
-	 * 只有 :focus-visible，鼠标点击不出环。
+	 * 用 `:where()` 把特异性压到 0，好让 coss 组件自己的焦点样式照常覆盖它；
+	 * 只有 `:focus-visible`，鼠标点击不出环。
 	 */
 	:where(a, button, summary, [role="button"]):focus-visible {
-		outline: 2px solid var(--color-kumo-brand);
+		outline: 2px solid var(--color-ring);
 		outline-offset: 2px;
 	}
 }
 
 /*
- * 全站唯一的展示级字号，只给零态那一句主标题用。
+ * 字阶。全站只有这五档，`text-*` 工具类只在这五档之外的**非文本**场景用
+ * （行高固定的徽标、等宽数字之类）。
  *
- * Kumo 的 Text 是给密集界面的四档（xs/sm/base/lg），最大 16px——拿它当
- * 落地页标题，标题和正文几乎一样重，第一屏就没有层次。与其在那里写一个
- * text-[28px] 的魔法值，不如把这一档命名下来：全站只此一处，加一处就得
- * 先回答「为什么它也是展示级」。
+ * 层级不是靠「有几档」建立的，是靠**相邻两档拉得够开**。三档挤在
+ * 12 / 14 / 16 里只差 2px，而汉字在小字号上没有拉丁字母那种 x-height 差异，
+ * 扫过去就是一片没有重量差的灰。所以顶端拉到 30 / 22 / 17，底端压到 11，
+ * 中间只留一个 14 的正文。
  *
- * 这里没有负字距。收紧字距是拉丁排印的规矩——字号越大，同样的字距看起来
- * 越松。汉字不吃这一套：字面本来就撑满字身，再收就是挤笔画，在 28px 上看
- * 起来像渲染出错。而这句标题是纯汉字。balance 让它断行断得均匀，不留孤字。
+ * 汉字全程不收字距。收紧字距是拉丁排印的规矩（字号越大同样的字距越松），
+ * 汉字字面本来就撑满字身，再收就是挤笔画。唯一的例外是下面的 `label`，
+ * 那里是**放开**字距，不是收紧。
  */
 @utility display-1 {
-	font-size: 1.75rem;
-	line-height: 1.35;
+	font-size: 1.875rem;
+	line-height: 1.3;
 	text-wrap: balance;
 }
 
+/** 一屏之内唯一的主角：详情面板上那个人的姓名。 */
+@utility title-1 {
+	font-size: 1.375rem;
+	line-height: 1.4;
+}
+
+/** 一块之内的主角：候选人卡片上的姓名。比正文重两档，扫名单靠它。 */
+@utility title-2 {
+	font-size: 1.0625rem;
+	line-height: 1.5;
+}
+
 /*
- * 中文阅读文本。Kumo 的 text-sm 行高是 1.18，那是拉丁密集界面的值；
+ * 分区标签：「匹配依据」「任职经历」「筛选」这一类。
+ *
+ * 它必须一眼被认成**不是内容**，而「12px + 次要色」做不到：正文里的上下文、
+ * 时长、来源标签也是 12px + 次要色，标签和内容长得一模一样时，分区的边界
+ * 就只剩那条发丝线在扛。
+ *
+ * 这里给它三样正文永远不会有的东西：11px、600 字重、0.08em 字距。放开字距
+ * 在汉字上正是「这是标牌」的传统信号（展板、书脊、章节页都这么排），而且
+ * 短标签才用得起——它只出现在 2–5 个字上，不会影响任何一段要读的文本。
+ */
+@utility label {
+	font-size: 0.6875rem;
+	line-height: 1.45;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+}
+
+/*
+ * 中文阅读文本。Tailwind 的 `text-sm` 行高是 1.43，那是拉丁密集界面的值；
  * 汉字笔画密度高得多，成段阅读需要 1.7–1.8 才不糊成一团。
  * 只给「要读」的文本用（简历原文），扫读行仍然保持紧凑。
  *
- * 行长封顶写在这里，不写在每个用到的地方：详情栏的宽度是浮动的（它吸收中栏
- * 用不掉的富余，见 route.tsx），宽屏上不封顶就是一行六十多个汉字，眼睛跟不住
- * 换行。34rem 在 14px 下约 38 个汉字，落在中文舒适行长 30–40 字里。
- * 栏宽窄于它时这条不起作用，所以它只在需要的时候存在。
+ * 行长封顶写在这里，不写在每个用到的地方。34rem 在 14px 下约 38 个汉字，
+ * 落在中文舒适行长 30–40 字里。容器窄于它时这条不起作用，
+ * 所以它只在需要的时候存在。
  */
 @utility read-cjk {
 	line-height: 1.8;
@@ -179,7 +344,7 @@
 /*
  * 换人时详情区的淡入。
  *
- * 签名微交互是「↑↓ 换人的连续感」，它由两件事合成：中栏那根选中轨
+ * 签名微交互是「↑↓ 换人的连续感」，它由两件事合成：名单那根选中轨
  * （在 result-list.tsx 里，位置做 transition 所以是平移不是闪现）
  * 和这里的淡入。短而浅是硬要求：连按 ↑↓ 时每一帧都要在下一次按键之前
  * 结束，否则动画会排队，手感立刻变粘。

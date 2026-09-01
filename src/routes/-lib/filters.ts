@@ -18,7 +18,7 @@ type FilterOption = {
 	label: string;
 	/**
 	 * 选了这一项之后还剩多少**人**——口径由 rank.ts 的 computeFacets 保证，
-	 * 和中栏那个「共 N 人」是同一个单位。全站计数只有「人」这一个单位。
+	 * 和查询台右上角那个人数是同一个单位。全站计数只有「人」这一个单位。
 	 */
 	n: number;
 };

@@ -1,5 +1,3 @@
-import { cn, Dialog } from "@cloudflare/kumo";
-import { UsersThreeIcon } from "@phosphor-icons/react";
 import {
 	createFileRoute,
 	Link,
@@ -11,18 +9,17 @@ import {
 	useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { Dialog, DialogPopup, DialogTitle } from "#/components/ui/dialog";
+import { Kbd } from "#/components/ui/kbd";
+import { cn } from "#/lib/utils";
 import { emptyFacets, type SearchResult } from "#/search/result";
 import { interpretTurn, loadWorkbench } from "#/server/functions";
-import { FilterRail } from "../../-components/filter-rail";
-import { QueryBar } from "../../-components/query-bar";
-import { ResultHead } from "../../-components/result-head";
-import {
-	mainBasis,
-	pendingTerms,
-	ResultList,
-} from "../../-components/result-list";
+import { Brand } from "../../-components/brand";
+import { StrengthLegend } from "../../-components/evidence";
+import { QueryDeck } from "../../-components/query-deck";
+import { ResultList } from "../../-components/result-list";
 import { useCommit } from "../../-lib/commit";
-import { activeFilters, filterFields } from "../../-lib/filters";
+import { filterFields } from "../../-lib/filters";
 import { useKeyboardFlow } from "../../-lib/keyboard-flow";
 import { useIsWide } from "../../-lib/media";
 import {
@@ -37,15 +34,41 @@ import {
 } from "../../-lib/view-params";
 
 // 没有结果时也要有稳定的身份：每次渲染新建 [] / {} 会让依赖它们的
-// useEffect 反复解绑重绑，左栏也跟着整树重算。
+// useEffect 反复解绑重绑。
 const NO_RESULTS: SearchResult[] = [];
 const NO_FACETS = emptyFacets();
+
+/**
+ * 详情面板的宽度。外层负责收展（0 ↔ 这个值），内层写死它顶住内容，
+ * 于是收展过程中里面的东西不会跟着被压扁再弹开。两处必须是同一个值，
+ * 所以只有一个值——写两遍的话，某一次只改了一处，表现是面板展开到一半
+ * 时内容先横移一下再归位，而那种抖动没有任何检查会报。
+ *
+ * 28rem 起步：xl（1280）上给名单留下 800，版心 736 还剩两边各 32 的余量。
+ * 2xl 上放宽到 32rem——简历原文是这块面板里唯一成段读的东西，宽一点就少
+ * 几次换行；再宽没有意义，`read-cjk` 已经把行长封在 34rem 了。
+ */
+const PANEL_W = "w-[28rem] 2xl:w-[32rem]";
+
+/** 手不用离开键盘就能扫完一份名单，这三个键是全部。 */
+const KEYS = [
+	["/", "添加条件"],
+	["↑↓", "切换员工"],
+	["Esc", "关闭详情"],
+] as const;
 
 /** 理解失败时说什么。和提交失败分开：一个是这句话没读懂，一个是没送出去。 */
 const INTERPRET_FAILED = "没能理解这句话，请重试或换一种说法。";
 
 /**
- * 工作台外壳：顶栏 + 三栏（筛选 / 结果 / 详情）。
+ * 工作台：**一列名单，加一块从右侧推进来的详情**。
+ *
+ * 不做并排的竖栏。三条栏全屏铺满、靠发丝线切开是管理后台的形状，而换一套
+ * 组件库改不掉形状。这里只有一列：页面像一份文档一样整页滚动，查询台吸在
+ * 顶上，详情**在选中一个人的时候才存在**。
+ *
+ * 最后那一条是硬要求。一块常驻的栏空着的时候必须找东西去填，而要靠填充物
+ * 才不空的栏，就是它本来不该常驻的证据。
  *
  * 地址是 `/s/:turnId`——**turnId 指的是一条查询记录**，不是一串检索参数
  * （见 `-lib/view-params.ts` 开头那段分界）。所以刷新、后退、把链接粘给同事
@@ -53,7 +76,7 @@ const INTERPRET_FAILED = "没能理解这句话，请重试或换一种说法。
  * 不产生新记录。
  *
  * `/s/:id` 与 `/s/:id/p/:empId` 共用这一层，检索结果挂在这里——所以换人
- * 只换详情栏，不重跑 SQL。
+ * 只换详情，不重跑 SQL。
  */
 export const Route = createFileRoute("/s/$turnId")({
 	validateSearch: validateView,
@@ -78,11 +101,11 @@ export const Route = createFileRoute("/s/$turnId")({
 function TurnNotFound() {
 	return (
 		<div className="flex h-dvh flex-col items-center justify-center gap-3 p-6">
-			<p className="text-kumo-default">这条搜索记录不存在</p>
-			<p className="text-kumo-subtle text-sm">
+			<p className="text-foreground">这条搜索记录不存在</p>
+			<p className="text-muted-foreground text-sm">
 				链接可能已失效，或记录已被清理。
 			</p>
-			<Link className="text-kumo-link text-sm hover:underline" to="/">
+			<Link className="text-foreground text-sm hover:underline" to="/">
 				开始一次新搜索
 			</Link>
 		</div>
@@ -103,7 +126,7 @@ function Workbench() {
 	/*
 	 * 两种 pending 不是一回事，所以这里要把它们分开。
 	 *
-	 * 改筛选：旧结果已经不成立了，表格该塌成骨架屏。
+	 * 改筛选：旧结果已经不成立了，列表该塌成骨架屏。
 	 * 只是再翻一页：已经看到的人必须留在原地——列表在按下按钮的一瞬间塌掉，
 	 * 等于每翻一页就把人扔回页首，滚动位置和刚才看到哪儿全没了。
 	 *
@@ -112,7 +135,7 @@ function Workbench() {
 	 * validateView，免得拿裸的 URL 值去比（`n` 在一边是数字一边是字符串）。
 	 *
 	 * 换人（`/s/x/p/a` → `/s/x/p/b`）路径也变了，但结果表一行都不用重画，
-	 * 所以要先看 turn 变没变——只比 pathname 会让扫表格的每一下都把表清空。
+	 * 所以要先看 turn 变没变——只比 pathname 会让扫名单的每一下都把列表清空。
 	 */
 	const nav = useRouterState({
 		select: (s) => ({
@@ -179,17 +202,17 @@ function Workbench() {
 		};
 	}, [settledChips, turnId, navigate, router]);
 
+	// 键盘流的 `/` 要能聚焦到查询台那个框
 	const inputRef = useRef<HTMLInputElement>(null);
-	// xl 以上左栏常驻，这个开关只在 xl 以下有意义
-	const [railOpen, setRailOpen] = useState(false);
 	const wide = useIsWide();
 
 	const chips = settledChips ?? [];
 	const terms = result?.terms ?? [];
 	const results = result?.results ?? NO_RESULTS;
 	const facets = result?.facets ?? NO_FACETS;
-	// 理解中和检索中在表格里是同一件事：下面这张表还不成立，画骨架屏。
+	// 理解中和检索中在列表里是同一件事：下面这份名单还不成立，画骨架屏。
 	const loading = navigating || interpreting;
+	const open = Boolean(empId);
 
 	/**
 	 * 改视图。**不产生新的查询记录**——同一条查询，换个看法。
@@ -203,253 +226,171 @@ function Workbench() {
 	const reviseChips = (next: typeof chips) =>
 		commit({ kind: "chips", chips: next }, { parentTurnId: turn.id, view });
 
-	// 筛选维度在这里算一次：左栏要拿它渲染，中栏的窄屏把手要拿它数「筛了几项」。
-	// 两处各算一遍就有了两份可能不一致的同名东西。
-	const fields = filterFields(facets, view);
-
-	/*
-	 * 中栏有几列概念词。理解完成之前取自记录上还没有的 chips，所以先按
-	 * 一列算——那正是「正在理解」时表头该有的样子：一列占位，不假装知道
-	 * 最后会有几个词。
-	 */
-	const columns = pendingTerms(chips).length;
-
 	useKeyboardFlow({ inputRef, results, empId, turnId, view });
-
-	// 筛选开着还能换人的只剩一条路：浏览器前进后退换掉了 URL。对话框是模态的，
-	// 背景既点不到也 Tab 不进，正常操作走不到这里。真走到了就把筛选收起来，
-	// 两个对话框叠着没有意义。
-	useEffect(() => {
-		if (empId) setRailOpen(false);
-	}, [empId]);
-
-	// 同一份左栏，两种容器：宽屏是常驻栏，窄屏是对话框。内容一份，布局各给各的。
-	const railProps = {
-		fields,
-		hasQuery: terms.length > 0,
-		onChange: updateView,
-		view,
-		strongCount: facets.strong.on,
-	};
 
 	return (
 		/*
 		 * `isolate` 是这一层最重要的一个类。
 		 *
-		 * Kumo 的 Popover / Tooltip / Select / Dialog 内容 portal 到 document.body，而且
-		 * **自身不带 z-index**。CSS 的绘制顺序里「z-index: auto 的定位元素」排在
-		 * 「z-index > 0 的定位元素」之前，所以只要外壳里有任何一个正数 z，
-		 * 它就会盖住所有弹层。
+		 * coss 的 Dialog 遮罩与 Tooltip 定位器 portal 到 document.body，各自带着
+		 * 一个写死的 z-50。外壳内部那三档 z（见 styles.css）最大只到 40，所以
+		 * 今天它们不会打架——但那是靠「记得别超过 50」维持的，而这种约束迟早
+		 * 会被一个随手写下的 z-[60] 破掉。
 		 *
-		 * 在这里开一个层叠上下文，把外壳内部那三档 z 全部关进去。关进去之后，
+		 * 在这里开一个层叠上下文，把外壳内部的 z 全部关进去。关进去之后，
 		 * body 下的 portal 永远画在整个外壳之上，无论内部用到多大的 z——
-		 * 这类遮挡从结构上不可能发生，不必给每个弹层补一个更大的数字。
+		 * 这类遮挡从结构上不可能发生，不必再去记那个上限。
 		 */
-		<div className="isolate flex h-dvh flex-col">
+		<div className="isolate flex min-h-dvh">
 			{/* 必须是文档里第一个可聚焦元素，否则「跳过」的东西已经先被 Tab 过一遍了 */}
 			<a
-				className="sr-only rounded-sheet bg-kumo-base px-3 py-2 focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-escape"
+				className="sr-only rounded-md border bg-card px-3 py-2 focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-escape"
 				href="#results"
 			>
 				跳到搜索结果
 			</a>
 
-			{/*
-			 * 顶栏只剩身份和查询。控件属于左栏，图例属于详情栏，这里不放。
-			 *
-			 * 顶栏没有底色也没有下边框：它坐在画布上，不是一条独立的条。
-			 * 「这里到哪儿为止」由下面那块面板的上边缘回答，画两遍就成了两条线。
-			 *
-			 * 顶栏的左边不留内边距，品牌块自己占住左栏那么宽（224 / 240）再加
-			 * 12px 的间隙——于是查询框的左边缘正好落在下面那块面板的左边缘上，
-			 * 而品牌文字的左边缘落在全局那条 16px 竖线上。品牌块不能是自然宽：
-			 * 那样查询框的起点跟着产品名的字数走，不跟任何东西对齐。
-			 */}
-			<header className="flex h-14 shrink-0 items-center gap-3 pr-3">
-				<Link
-					className="flex shrink-0 items-center gap-2 px-4 text-kumo-default no-underline xl:w-56 2xl:w-60"
-					to="/"
+			<div className="flex min-w-0 flex-1 flex-col">
+				{/*
+				 * 品牌行滚上去就不见了。它是身份，不是控件——把它钉死在顶上
+				 * 只会在每一屏都占掉 56px 去重复一句用户早就知道的话。
+				 * 真正必须一直在的是下面那块查询台，所以吸顶的是它。
+				 */}
+				<div className="mx-auto flex h-14 w-full max-w-page shrink-0 items-center px-4">
+					<Brand />
+				</div>
+				<QueryDeck
+					chips={chips}
+					degraded={turn.degraded}
+					error={commitError ?? (interpretFailed ? INTERPRET_FAILED : null)}
+					fields={filterFields(facets, view)}
+					inputRef={inputRef}
+					interpreting={interpreting}
+					loading={loading}
+					onChangeQuery={reviseChips}
+					onChangeView={updateView}
+					onQuery={(input) => commit(input, { parentTurnId: turn.id, view })}
+					onReinterpret={
+						rawText
+							? () => commit({ kind: "sentence", text: rawText })
+							: undefined
+					}
+					rawText={rawText}
+					strongCount={facets.strong.on}
+					terms={terms}
+					total={result?.total ?? 0}
+					view={view}
+				/>
+
+				<main
+					aria-label="搜索结果"
+					className="mx-auto w-full max-w-page px-4 pt-4 pb-16"
+					id="results"
+					/* 跳过导航的落点必须可聚焦，否则点了链接只滚动、
+					   焦点仍在链接上，下一次 Tab 又回到顶栏 */
+					tabIndex={-1}
 				>
 					{/*
-					 * 全站唯一一处品牌色。它和「橙 = 受控字段命中」那套编码不冲突：
-					 * 编码活在面板**里面**（点、色块、时间轴），这里是画布上的
-					 * 身份标记，两者永远不并排出现。
+					 * 图例排在名单正上方，和它要解释的那些点同时在屏幕上。
+					 * 没有条件就没有点可解释，那时它自己消失——见 evidence.tsx。
 					 */}
-					<UsersThreeIcon
-						className="text-kumo-brand"
-						size={20}
-						weight="duotone"
+					{terms.length > 0 && (
+						<div className="mb-2.5 px-1">
+							<StrengthLegend />
+						</div>
+					)}
+					<ResultList
+						canMore={canLoadMore(view, result?.total ?? 0)}
+						chips={chips}
+						empId={empId}
+						growing={growing}
+						loading={loading}
+						onChange={updateView}
+						onFocusQuery={() => inputRef.current?.focus()}
+						onMore={() => updateView(morePage(view))}
+						onReviseQuery={reviseChips}
+						results={results}
+						terms={terms}
+						tooWide={result?.tooWide ?? false}
+						total={result?.total ?? 0}
+						turnId={turnId}
+						view={view}
+						withoutStrong={facets.strong.off}
 					/>
-					{/* 这一页的 h1。视觉不变，但大纲得从这里起头——
-					    详情栏的姓名是这一页里的一节，不是整页的标题。 */}
-					<h1 className="font-semibold text-lg">人才搜索</h1>
-				</Link>
-				<QueryBar
-					// 顶栏这个框是「加条件」：整句同样要过理解，所以它也派生一条
-					// 挂在当前记录上的新记录，新词接在已有条件后面（见 interpretTurn）。
-					inputRef={inputRef}
-					onQuery={(input) => commit(input, { parentTurnId: turn.id, view })}
-					variant="header"
-				/>
-			</header>
-
-			{/*
-			 * 工作台的骨架：左栏留在画布上，中栏和详情栏一起装进一块**浮起来的
-			 * 面板**（圆角 + 发丝边框 + base 底色，四周留 8px 让画布透出来）。
-			 *
-			 * 这是整个界面「像产品」还是「像后台」的分界。铺满窗口、只靠发丝线
-			 * 切开的平面是终端和管理后台的长相；内容住在一块有边界的面板里、
-			 * 面板浮在略深的画布上，才是这一类工作台的通用结构。
-			 *
-			 * 左栏不进面板，也不需要自己的底色和右边框：它就在画布上，
-			 * 面板的左边缘就是它们之间的界线。少一条线，少一层底色。
-			 *
-			 * 左边不留内边距——左栏自己的 16px 内边距就是全局那条竖线，
-			 * 和顶栏对齐。窄屏左栏收进对话框，那时才补 `pl-3` 把面板摆正。
-			 */}
-			<div className="flex min-h-0 flex-1 gap-3 pr-3 pb-3 max-xl:pl-3">
-				{wide ? (
-					// 常驻左栏。14 → 15rem，上限就是最长的那个序列标签，再宽是空的。
-					// `max-xl:hidden` 是首帧护栏：窄屏第一帧按宽屏渲染（见 -lib/media.ts），
-					// 靠它挡住，挂载后就走下面那一支了。
-					<FilterRail
-						className="max-xl:hidden w-56 shrink-0 2xl:w-60"
-						{...railProps}
-					/>
-				) : (
-					<Dialog.Root onOpenChange={setRailOpen} open={railOpen}>
-						{/* 限高，滚动交给左栏自己的 overflow-y-auto */}
-						<Dialog className="max-h-[85dvh]">
-							{/*
-							 * 对话框的可及名称只能来自 Dialog.Title——Kumo 的 Dialog
-							 * 不透传 aria-label。左栏自己那个「筛选」标题是内容的一
-							 * 部分，这一句是容器的名字，两者角色不同。
-							 */}
-							<Dialog.Title className="sr-only">筛选</Dialog.Title>
-							{/* 对话框自带 base 底色，左栏在这里不另铺一层 */}
-							<FilterRail {...railProps} />
-						</Dialog>
-					</Dialog.Root>
-				)}
+				</main>
 
 				{/*
-				 * 内容面板：中栏和详情栏共用一个边界。它们是同一件事的两半
-				 * （看哪些人 / 看这一个人），中间一条发丝线就够，不该是两块
-				 * 各自浮着的板子——那会让详情栏读起来像另一个应用的窗口。
-				 * `overflow-hidden` 是圆角能成立的前提。
+				 * 快捷键写在页脚，不写在任何一个常驻的角落里。
+				 *
+				 * 它是「用熟之后才会用上」的东西：第一次来的人不会找它，
+				 * 用熟的人记住了也不再看。挂在名单尽头，两种人都不被打扰。
 				 */}
-				<div className="flex min-w-0 flex-1 overflow-hidden rounded-panel border border-kumo-hairline bg-kumo-base">
-					<main
-						aria-label="搜索结果"
-						/*
-						 * `grow-0` + basis：宽度不够时照常收缩（xl 上 614px，表格
-						 * 自己横滚），有富余时不再长。富余归详情栏——留在这里就是
-						 * 表格右边那片对不齐的空白，连滚动条都画在它的最外侧。
-						 *
-						 * xl 以下详情栏是隐藏的，富余没有第二个接收方，所以 `mx-auto`
-						 * 把它分到两边：中栏在面板里居中成一列。
-						 */
-						className={cn(
-							"flex min-w-0 flex-col",
-							columns > 0 ? "shrink grow-0 max-xl:mx-auto" : "flex-1",
-						)}
-						id="results"
-						style={columns > 0 ? { flexBasis: mainBasis(columns) } : undefined}
-						/* 跳过导航的落点必须可聚焦，否则点了链接只滚动、
-						   焦点仍在链接上，下一次 Tab 又回到顶栏 */
-						tabIndex={-1}
-					>
-						<ResultHead
-							activeFilters={activeFilters(fields).length}
-							chips={chips}
-							degraded={turn.degraded}
-							error={commitError ?? (interpretFailed ? INTERPRET_FAILED : null)}
-							interpreting={interpreting}
-							loading={loading}
-							onChangeQuery={reviseChips}
-							onOpenFilters={() => setRailOpen(true)}
-							onReinterpret={
-								rawText
-									? () => commit({ kind: "sentence", text: rawText })
-									: undefined
-							}
-							rawText={rawText}
-							terms={terms}
-							total={result?.total ?? 0}
-						/>
-						{/* 表格默认吃满中栏——批量筛人时横向对比才是主任务 */}
-						<div className="min-h-0 flex-1 overflow-auto">
-							<ResultList
-								canMore={canLoadMore(view, result?.total ?? 0)}
-								chips={chips}
-								empId={empId}
-								growing={growing}
-								loading={loading}
-								onChange={updateView}
-								onFocusQuery={() => inputRef.current?.focus()}
-								onMore={() => updateView(morePage(view))}
-								onReviseQuery={reviseChips}
-								results={results}
-								terms={terms}
-								tooWide={result?.tooWide ?? false}
-								total={result?.total ?? 0}
-								turnId={turnId}
-								view={view}
-								withoutStrong={facets.strong.off}
-							/>
-						</div>
-					</main>
-
-					{wide ? (
-						/*
-						 * 宽屏的第三栏是常驻的、**非模态**的：开着也能继续用 ↑↓ 扫表格，
-						 * 内容跟着换。这一点不能丢，所以宽屏不用 Dialog。
-						 *
-						 * 三栏在 xl（1280）才展开，不是 lg。1024 上摆不下：左栏 224 +
-						 * 详情栏 416 再扣掉面板的边距与边框之后中栏只剩 366，
-						 * 而表格的 min-width 是 600。
-						 *
-						 * 26 → 34rem 之后就停。中文阅读的舒适行长是 30-40 字。
-						 */
-						<aside
-							aria-label="员工详情"
-							className={cn(
-								"max-xl:hidden overflow-y-auto overscroll-contain",
-								"shrink-0 basis-[26rem]",
-								columns > 0 && "grow",
-								// 在面板内部，底色由面板给；只留那条把两半分开的线
-								"border-kumo-hairline border-l",
-							)}
-						>
-							<Outlet />
-						</aside>
-					) : (
-						/*
-						 * 窄屏没有第三栏的余地，它盖住整个工作台——那就该是个真模态：
-						 * 焦点关在里面、背景不可 Tab、Esc 收起、关掉还焦。这些由 Dialog
-						 * 提供，不自己搭。关掉等于回到列表，所以是一次 replace 导航。
-						 */
-						<Dialog.Root
-							onOpenChange={(open) => {
-								if (!open)
-									navigate({
-										to: "/s/$turnId",
-										params: { turnId },
-										search: view,
-										replace: true,
-									});
-							}}
-							open={Boolean(empId)}
-						>
-							{/* 限高并自己滚：详情栏那个吸顶的头就贴在这个滚动容器上 */}
-							<Dialog className="max-h-[85dvh] overflow-y-auto" size="xl">
-								<Dialog.Title className="sr-only">员工详情</Dialog.Title>
-								<Outlet />
-							</Dialog>
-						</Dialog.Root>
-					)}
-				</div>
+				<footer className="mx-auto flex w-full max-w-page flex-wrap items-center gap-x-4 gap-y-1.5 px-4 pb-8 text-muted-foreground text-xs">
+					{KEYS.map(([key, what]) => (
+						<span className="flex items-center gap-1.5" key={key}>
+							<Kbd>{key}</Kbd>
+							{what}
+						</span>
+					))}
+				</footer>
 			</div>
+
+			{wide ? (
+				/*
+				 * 宽屏：详情**把名单推开**，不盖在上面。
+				 *
+				 * 推开而不是浮盖，是因为这两者要一起看——扫名单和核对证据是同一个
+				 * 判断的两半，遮住一半就得反复开合。所以它是一个真正占位的兄弟节点，
+				 * 名单在旁边完整可读、↑↓ 照常换人。
+				 *
+				 * 宽度做 transition 而不是位移：占位变了，中间那一列才会自己重新
+				 * 居中。内层写死宽度、外层 `overflow-hidden`，于是收展过程中里面的
+				 * 内容不会跟着被压扁再弹开。
+				 *
+				 * 关着的时候宽度是 0——**它在没选人的时候根本不存在**，
+				 * 所以不必去想「空着的时候摆点什么」。
+				 */
+				<aside
+					aria-label="员工详情"
+					className={cn(
+						"sticky top-0 h-dvh shrink-0 overflow-hidden",
+						"transition-[width] duration-200 ease-out",
+						open
+							? `${PANEL_W} border-border border-l bg-card shadow-over`
+							: "w-0",
+					)}
+				>
+					<div
+						className={cn(PANEL_W, "h-full overflow-y-auto overscroll-contain")}
+					>
+						<Outlet />
+					</div>
+				</aside>
+			) : (
+				/*
+				 * 窄屏没有推开的余地，它盖住整块——那就该是个真模态：焦点关在里面、
+				 * 背景不可 Tab、Esc 收起、关掉还焦。这些由 Dialog 提供，不自己搭。
+				 * 关掉等于回到名单，所以是一次 replace 导航。
+				 */
+				<Dialog
+					onOpenChange={(o) => {
+						if (!o)
+							navigate({
+								to: "/s/$turnId",
+								params: { turnId },
+								search: view,
+								replace: true,
+							});
+					}}
+					open={open}
+				>
+					{/* 限高并自己滚：详情那个吸顶的头就贴在这个滚动容器上 */}
+					<DialogPopup className="max-h-[85dvh] max-w-2xl overflow-y-auto p-0">
+						<DialogTitle className="sr-only">员工详情</DialogTitle>
+						<Outlet />
+					</DialogPopup>
+				</Dialog>
+			)}
 		</div>
 	);
 }

@@ -149,7 +149,7 @@ describe("带子的几何", () => {
 		assert.equal(missed?.top, "3px");
 	});
 
-	test("受控字段命中才是橙的，未命中段永远不上色", () => {
+	test("受控字段命中才是绿的，未命中段永远不上色", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
@@ -160,11 +160,11 @@ describe("带子的几何", () => {
 		const classes = [...html.matchAll(/<button[^>]*class="([^"]*)"/g)].map(
 			(m) => m[1] ?? "",
 		);
-		assert.ok(classes[0]?.includes("bg-kumo-badge-orange"));
-		assert.ok(!classes[1]?.includes("orange"));
+		assert.ok(classes[0]?.includes("bg-success"));
+		assert.ok(!classes[1]?.includes("bg-success"));
 	});
 
-	test("简历原文那一路不是橙的——强度编码在这里和点阵同义", () => {
+	test("简历原文那一路不是绿的——强度编码在这里和点阵同义", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
@@ -173,7 +173,7 @@ describe("带子的几何", () => {
 			/>,
 		);
 		const first = html.match(/<button[^>]*class="([^"]*)"/)?.[1] ?? "";
-		assert.ok(!first.includes("orange"));
+		assert.ok(!first.includes("bg-success"));
 		assert.ok(first.includes("ring"));
 	});
 
@@ -181,7 +181,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar hireDate="2020-01-01" hitIndex={new Map()} rows={rows} />,
 		);
-		assert.ok(html.includes("bg-kumo-contrast"));
+		assert.ok(html.includes("bg-foreground"));
 		assert.match(html, /入职 2020/);
 	});
 
@@ -189,7 +189,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar hireDate="1999-01-01" hitIndex={new Map()} rows={rows} />,
 		);
-		assert.ok(!html.includes("bg-kumo-contrast"));
+		assert.ok(!html.includes("bg-foreground"));
 		assert.ok(!html.includes("入职"));
 	});
 

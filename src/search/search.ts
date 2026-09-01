@@ -129,7 +129,7 @@ export function sanitizeLimit(v: unknown): number {
  *
  * **探的是整个语料，不带当前筛选。** 词退到哪一步只能由查询串和语料决定：
  * 让筛选参与，同一句话在不同筛选下会变成不同的词，于是收窄筛选反而可能
- * 搜出更多人；左栏分面又按当前词计算，它承诺的「点了还剩几人」会随之失真。
+ * 搜出更多人；分面又按当前词计算，它承诺的「点了还剩几人」会随之失真。
  */
 async function relaxTerm(term: string) {
 	const windows: string[] = [];
@@ -310,7 +310,7 @@ export async function search(
 	limit: number = RESULT_PAGE,
 ): Promise<SearchOutcome> {
 	// 停用的 chip 在这里就消失了，此后整条链路都看不见它——检索、打分、分面、
-	// 表格列一个都不必知道「停用」这回事。这是它能只花一个字段的原因。
+	// 证据行一个都不必知道「停用」这回事。这是它能只花一个字段的原因。
 	const active = activeChips(chips);
 	const matched = active.filter(
 		(c): c is Chip & { mode: "must" | "boost" } => c.mode !== "exclude",
@@ -350,7 +350,7 @@ export async function search(
 		fetchFacts(terms),
 		fetchExcluded(excludeTerms),
 	]);
-	// 太宽的那一支：词是解析出来了（中栏还要拿它排列），只是没有结果可给。
+	// 太宽的那一支：词是解析出来了（证据行还要拿它排列），只是没有结果可给。
 	if (all === null)
 		return {
 			terms,

@@ -255,7 +255,7 @@ function facetCount(
  * 五个维度的候选与人数。
  *
  * 计数的口径是「在当前这次检索里，选了这一项之后还剩多少人」；算不出人的选项
- * 根本不会出现——这是左栏能变短的原因。
+ * 根本不会出现——这是筛选项列表能变短的原因。
  */
 function computeFacets(
 	facts: Fact[],
@@ -376,7 +376,7 @@ export function pageHits(
 		acc.push(...list.slice(0, perTerm));
 		out.set(emp, acc);
 	}
-	// 词序即列序：表格每一列对应一个概念词，证据按词下标排好再交出去
+	// 词序即行序：结果里每个人的每条证据对应一个概念词，按词下标排好再交出去
 	for (const list of out.values())
 		list.sort(
 			(a, b) =>

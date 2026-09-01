@@ -1,9 +1,15 @@
-import { cn, DropdownMenu, Text } from "@cloudflare/kumo";
+import { ChevronDownIcon, EyeOffIcon, TriangleAlertIcon } from "lucide-react";
 import {
-	CaretDownIcon,
-	EyeSlashIcon,
-	WarningIcon,
-} from "@phosphor-icons/react";
+	Menu,
+	MenuGroupLabel,
+	MenuItem,
+	MenuPopup,
+	MenuRadioGroup,
+	MenuRadioItem,
+	MenuSeparator,
+	MenuTrigger,
+} from "#/components/ui/menu";
+import { cn } from "#/lib/utils";
 import type { Chip, ChipMode } from "#/search/parse";
 import type { TermPlan } from "#/search/result";
 
@@ -30,8 +36,8 @@ const MODE_HINT: Record<ChipMode, string> = {
 /**
  * 强度写在符号上，不写在颜色上。
  *
- * 全站的色相已经各有其主：橙是受控字段命中、蓝是选中、黄是整词退子串。再给
- * chip 发三个颜色，等于让同一片橙在表格里和查询条里说两件事。`+` 和 `-` 是
+ * 全站的色相已经各有其主：绿是受控字段命中、蓝是选中、amber 是整词退子串。
+ * 再给 chip 发三个颜色，等于让同一片绿在证据行里和查询条里说两件事。`+` 和 `-` 是
  * 搜索框里几十年的老约定，不需要教，也不占用任何一个色相。
  *
  * 「必须」不带符号：它是默认，而默认不该有标记——大多数查询整条都是必须词，
@@ -44,10 +50,10 @@ const MODE_SIGN: Record<ChipMode, string> = {
 };
 
 const MODE_STYLE: Record<ChipMode, string> = {
-	must: "bg-kumo-fill text-kumo-default",
-	boost: "border border-kumo-line text-kumo-default",
+	must: "bg-secondary text-secondary-foreground",
+	boost: "border border-input text-foreground",
 	// 划掉：排除词的意思正是「把它划掉」，这一层不必再解释一遍
-	exclude: "border border-kumo-line text-kumo-subtle line-through",
+	exclude: "border border-input text-muted-foreground line-through",
 };
 
 /**
@@ -58,7 +64,7 @@ const MODE_STYLE: Record<ChipMode, string> = {
  * 会把里面那个强度符号一起调淡，而重新启用之后它是必须还是加分，恰恰是
  * 停用期间最该看得清的一件事。虚线是「这里有个位置，但现在是空的」的通用画法。
  */
-const OFF_STYLE = "border border-kumo-line border-dashed text-kumo-subtle";
+const OFF_STYLE = "border border-input border-dashed text-muted-foreground";
 
 const MODES = ["must", "boost", "exclude"] as const;
 
@@ -98,107 +104,90 @@ export function QueryChips({
 				// 排除词不参与松弛（见 search.ts），所以它这里永远是 undefined
 				const relaxed = plan && plan.effective !== chip.term;
 				return (
-					<DropdownMenu key={`${chip.off ? "~" : ""}${chip.mode}:${chip.term}`}>
-						<DropdownMenu.Trigger
-							render={
-								<button
-									className={cn(
-										// 24px 高（12px 字 + 上下 6px）：20px 的 chip 摆在一条
-										// 56px 的工具条里像一排掉在底下的碎屑，24px 才和旁边
-										// 那个 sm 按钮站在同一档上。命中区仍然是 40px。
-										"relative flex items-center gap-1 rounded-control px-2.5 py-1 text-xs",
-										"after:pointer-events-none after:absolute after:-inset-x-1 after:-inset-y-2 after:content-['']",
-										"[@media(hover:hover)]:hover:brightness-95",
-										chip.off ? OFF_STYLE : MODE_STYLE[chip.mode],
-									)}
-									type="button"
-								>
-									{MODE_SIGN[chip.mode] && (
-										<span className="font-mono text-kumo-subtle">
-											{MODE_SIGN[chip.mode]}
-										</span>
-									)}
-									<span>{chip.term}</span>
-									{chip.off && <EyeSlashIcon size={12} />}
-									{relaxed && (
-										<WarningIcon
-											className="text-kumo-warning"
-											size={12}
-											weight="fill"
-										/>
-									)}
-									<CaretDownIcon className="text-kumo-subtle" size={10} />
-								</button>
-							}
-						/>
-						<DropdownMenu.Content>
+					<Menu key={`${chip.off ? "~" : ""}${chip.mode}:${chip.term}`}>
+						<MenuTrigger
+							className={cn(
+								// 24px 高（12px 字 + 上下 6px）：查询台上它和范围条件那排
+								// 按钮挨着排（filter-bar.tsx 的 PILL），尺寸必须一模一样——
+								// 差一个像素，一行里就看得出是两套东西。命中区仍然是 40px。
+								"relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs",
+								"after:pointer-events-none after:absolute after:-inset-x-1 after:-inset-y-2 after:content-['']",
+								"[@media(hover:hover)]:hover:brightness-95",
+								chip.off ? OFF_STYLE : MODE_STYLE[chip.mode],
+							)}
+						>
+							{MODE_SIGN[chip.mode] && (
+								<span className="font-mono text-muted-foreground">
+									{MODE_SIGN[chip.mode]}
+								</span>
+							)}
+							<span>{chip.term}</span>
+							{chip.off && <EyeOffIcon className="size-3" />}
+							{relaxed && <TriangleAlertIcon className="size-3 text-warning" />}
+							<ChevronDownIcon className="size-2.5 text-muted-foreground" />
+						</MenuTrigger>
+						<MenuPopup align="start">
 							{/*
 							 * 松弛是关于这一枚 chip 的事实，说明和修改入口放在一起：
-							 * 「这个词被换成了什么」就该长在
-							 * 它自己身上；而且这里正好是能立刻改它的地方——看到说明和
-							 * 动手改之间不隔一次寻找。
+							 * 「这个词被换成了什么」就该长在它自己身上；而且这里正好是
+							 * 能立刻改它的地方——看到说明和动手改之间不隔一次寻找。
 							 */}
 							{relaxed && (
 								<>
-									<DropdownMenu.Label>
-										<span className="flex max-w-64 items-start gap-1.5 whitespace-normal text-kumo-subtle text-xs">
-											<WarningIcon
-												className="mt-0.5 shrink-0 text-kumo-warning"
-												size={13}
-												weight="fill"
-											/>
+									<MenuGroupLabel>
+										<span className="flex max-w-64 items-start gap-1.5 whitespace-normal text-muted-foreground text-xs">
+											<TriangleAlertIcon className="mt-px size-3.5 shrink-0 text-warning" />
 											<span>
 												未找到「{chip.term}」的直接匹配，当前按「
 												{plan?.effective}」搜索。
 											</span>
 										</span>
-									</DropdownMenu.Label>
-									<DropdownMenu.Separator />
+									</MenuGroupLabel>
+									<MenuSeparator />
 								</>
 							)}
 							{chip.off && (
 								<>
-									<DropdownMenu.Label>
-										<span className="max-w-64 whitespace-normal text-kumo-subtle text-xs">
+									<MenuGroupLabel>
+										<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
 											此条件当前未生效。重新启用后仍为「
 											{MODE_LABEL[chip.mode]}」条件。
 										</span>
-									</DropdownMenu.Label>
-									<DropdownMenu.Separator />
+									</MenuGroupLabel>
+									<MenuSeparator />
 								</>
 							)}
-							<DropdownMenu.RadioGroup
+							<MenuRadioGroup
 								onValueChange={(mode) => replace(i, mode as ChipMode)}
 								value={chip.mode}
 							>
 								{MODES.map((mode) => (
-									<DropdownMenu.RadioItem key={mode} value={mode}>
-										<span className="flex flex-col">
-											<Text as="span" size="sm">
-												{MODE_LABEL[mode]}
-											</Text>
-											<Text as="span" size="xs" variant="secondary">
+									<MenuRadioItem key={mode} value={mode}>
+										{/* 两行一格：标题说这一档叫什么，副行说它会做什么。
+										    改强度是这个菜单唯一的主任务，值得占两行。 */}
+										<span className="flex flex-col py-0.5">
+											<span className="text-sm">{MODE_LABEL[mode]}</span>
+											<span className="text-muted-foreground text-xs">
 												{MODE_HINT[mode]}
-											</Text>
+											</span>
 										</span>
-										<DropdownMenu.RadioItemIndicator />
-									</DropdownMenu.RadioItem>
+									</MenuRadioItem>
 								))}
-							</DropdownMenu.RadioGroup>
+							</MenuRadioGroup>
 							{/*
 							 * 停用和删除挨着放，但不是一档事，所以只有删除是危险色：
 							 * 停用改的是这一次检索，删除改的是查询本身，而后者不可撤销
 							 * （词没了，强度也一起没了）。
 							 */}
-							<DropdownMenu.Separator />
-							<DropdownMenu.Item onClick={() => toggle(i)}>
+							<MenuSeparator />
+							<MenuItem onClick={() => toggle(i)}>
 								{chip.off ? "重新启用" : "暂不使用"}
-							</DropdownMenu.Item>
-							<DropdownMenu.Item onClick={() => remove(i)} variant="danger">
+							</MenuItem>
+							<MenuItem onClick={() => remove(i)} variant="destructive">
 								删除条件
-							</DropdownMenu.Item>
-						</DropdownMenu.Content>
-					</DropdownMenu>
+							</MenuItem>
+						</MenuPopup>
+					</Menu>
 				);
 			})}
 		</div>

@@ -1,6 +1,7 @@
-import { Button, cn, Input } from "@cloudflare/kumo";
-import { MagnifyingGlassIcon, PlusIcon } from "@phosphor-icons/react";
+import { PlusIcon, SearchIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { Button } from "#/components/ui/button";
+import { Input } from "#/components/ui/input";
 import type { QueryInput } from "#/search/parse";
 
 /**
@@ -39,14 +40,10 @@ export function QueryBar({
 	const [busy, setBusy] = useState(false);
 
 	return (
+		// 吃满容器：它住在版心里，左右边缘就是名单卡片的左右边缘，
+		// 不必自己再限一次宽。
 		<form
-			className={cn(
-				"flex gap-2",
-				// 限宽但不居中：顶栏左边只有一个品牌，查询框紧跟着它排，
-				// 和下面左栏的左边缘是同一条线。居中会在两侧留出两个空洞，
-				// 而这套设计里没有任何东西该住在那里。
-				header ? "min-w-0 max-w-2xl flex-1" : "w-full",
-			)}
+			className="flex w-full gap-2"
 			onSubmit={async (e) => {
 				e.preventDefault();
 				const q = draft.trim();
@@ -74,16 +71,17 @@ export function QueryBar({
 				}}
 				placeholder={header ? "添加岗位、经验或能力" : "输入岗位、经验或能力"}
 				ref={inputRef}
-				size={header ? "sm" : "lg"}
+				/* 工作台里它也走默认档，不缩成 `sm`：查询台上这个框是这一屏
+				   唯一的输入入口，缩一档只会让它读起来像一个次要的过滤框。 */
+				size={header ? "default" : "lg"}
 				value={draft}
 			/>
 			<Button
-				icon={header ? PlusIcon : MagnifyingGlassIcon}
 				loading={busy}
-				size={header ? "sm" : "lg"}
-				type="submit"
-				variant="primary"
+				render={<button type="submit" />}
+				size={header ? "default" : "lg"}
 			>
+				{header ? <PlusIcon /> : <SearchIcon />}
 				{header ? "添加" : "搜索"}
 			</Button>
 		</form>

@@ -1,15 +1,16 @@
-import { UsersThreeIcon } from "@phosphor-icons/react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { fetchOverview, recentSearches } from "#/server/functions";
+import { Brand } from "./-components/brand";
 import { ZeroState } from "./-components/zero-state";
 import { useCommit } from "./-lib/commit";
 
 /**
  * 零态：还没有查询的时候。
  *
- * 它是一个**独立的页面**，不是工作台的一个分支：这两屏没有任何共用的结构，
- * 一个是居中的单列，一个是三栏工作台。用一个 `有查询 ? 三栏 : 零态` 的三元
- * 把它们装进同一个组件，只是把两个页面挤在了一起。
+ * 它是一个**独立的页面**，不是工作台的一个分支。两屏现在都是单列了，但共用的
+ * 只是版心宽度那一个数——这一屏没有名单、没有筛选、没有吸顶的查询台，
+ * 输入框是居中的主角而不是一条工具栏。用一个 `有查询 ? A : B` 的三元把它们
+ * 装进同一个组件，只是把两个页面挤在了一起。
  *
  * 语料概览和最近搜索一起取：两条查询互不依赖，串行等于白等一跳。
  */
@@ -31,20 +32,11 @@ function Home() {
 	const { commit, pending, error } = useCommit();
 
 	return (
-		<div className="flex h-dvh flex-col">
-			{/* 顶栏和工作台是同一条 56px、同一个左起点，两屏之间只有下面那块内容在变 */}
-			<header className="flex h-14 shrink-0 items-center gap-3 pr-3">
-				<Link
-					className="flex shrink-0 items-center gap-2 px-4 text-kumo-default no-underline"
-					to="/"
-				>
-					<UsersThreeIcon
-						className="text-kumo-brand"
-						size={20}
-						weight="duotone"
-					/>
-					<h1 className="font-semibold text-lg">人才搜索</h1>
-				</Link>
+		<div className="flex min-h-dvh flex-col">
+			{/* 品牌行和工作台是同一条高度、同一条版心左起点：两屏之间
+			    只有下面那块内容在变，身份的位置一动不动 */}
+			<header className="mx-auto flex h-14 w-full max-w-page shrink-0 items-center px-4">
+				<Brand />
 			</header>
 			<ZeroState
 				error={error}

@@ -1,6 +1,6 @@
-import { cn } from "@cloudflare/kumo";
 import type { Experience } from "#/db/schema";
 import { duration, period } from "#/lib/format";
+import { cn } from "#/lib/utils";
 import { bestStrength } from "#/search/evidence";
 import type { Hit } from "#/search/result";
 import { BAND_FILL } from "./evidence";
@@ -16,11 +16,11 @@ import { BAND_FILL } from "./evidence";
  * 编码分两层，各管一件事，互不挪用：
  *
  * - **高度管「这一段命中了没有」**：命中段占满整条轨，未命中段是轨中间的一道
- *   细线。不靠颜色分是因为 Kumo 的几档灰全挤在 92%–93.5% 之间（hairline 93.5 /
- *   fill 92.2 / line 是 10% 的黑）——做 8px 的点够用，做色带分不开。
+ *   细线。不靠颜色分是因为这套系统的几档中性灰（border 是 8% 的黑、muted 是 4%）
+ *   彼此只差几个百分点——做 8px 的点够用，做一条 8px 高的色带分不开。
  * - **颜色管「这一段的证据有多硬」**：三档取自点阵那一套（evidence.tsx 的
- *   BAND_FILL），所以橙色在这里仍然只表示受控字段命中，和表格、时间轴、图例
- *   完全同义。未命中段永远不上色，不存在「橙 = 命中」这层含义。
+ *   BAND_FILL），所以绿色在这里仍然只表示受控字段命中，和证据行、时间轴、
+ *   图例完全同义。未命中段永远不上色，不存在「绿 = 命中」这层含义。
  *
  * 带子不按 kind 切段（在职与入职前连续排，理由见 timeline.tsx），转折点由
  * 那根「入职」竖线说明——一条线，不是两条带子。
@@ -125,7 +125,7 @@ export function CareerBar({
 							// 方角：色块最窄只有 2px，任何圆角都只会把它啃掉一半
 							className={cn(
 								"absolute after:absolute after:-inset-x-1 after:-inset-y-4 after:content-['']",
-								strength ? BAND_FILL[strength] : "bg-kumo-hairline",
+								strength ? BAND_FILL[strength] : "bg-border",
 							)}
 							/* 一条轨只有 8px 高，按压缩放会让整条带子抖一下 */
 							data-press="off"
@@ -159,18 +159,18 @@ export function CareerBar({
 				{hireAt !== null && (
 					<span
 						aria-hidden="true"
-						className="absolute top-0 bottom-0 w-px bg-kumo-contrast"
+						className="absolute top-0 bottom-0 w-px bg-foreground"
 						style={{ left: `${hireFrac * 100}%` }}
 					/>
 				)}
 			</div>
 
 			{/*
-			 * 刻度只有三个：起点年、入职年、至今。年份密排会把 26rem 宽的详情栏塞满
+			 * 刻度只有三个：起点年、入职年、至今。年份密排会把 28rem 宽的详情面板塞满
 			 * 数字，而这条带子要回答的是「大致在哪几年」——精确的那一份就在下面每张
 			 * 卡片的第二行，一个都没丢。
 			 */}
-			<figcaption className="relative mt-1.5 h-4 text-kumo-subtle text-xs tabular-nums">
+			<figcaption className="relative mt-1.5 h-4 text-muted-foreground text-xs tabular-nums">
 				<span className="absolute left-0">{Math.floor(from / 12)}</span>
 				{showHireLabel && hireAt !== null && (
 					<span

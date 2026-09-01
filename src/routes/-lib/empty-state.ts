@@ -3,7 +3,7 @@ import type { TermPlan } from "#/search/result";
 import { CLEARED_FILTERS, hasFilters, type View } from "./view-params";
 
 /**
- * 空表格里该说什么，以及给一条什么样的出路。
+ * 名单空了该说什么，以及给一条什么样的出路。
  *
  * 每一支都配一个能一键走的动作——空态最要命的不是没有结果，是没人知道下一步
  * 该改哪。`tooWide` 排在最前：它是唯一一种「你写的没错，只是太宽」的情况，

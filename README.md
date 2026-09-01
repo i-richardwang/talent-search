@@ -3,7 +3,6 @@
 面向 HR 与业务负责人的人才搜索工具。它从组织内任职和入职前工作经历中寻找候选人，并把每项匹配还原到可核对的经历证据。
 
 - 产品目标与范围：[docs/PROJECT.md](docs/PROJECT.md)
-- 数据、检索和界面设计：[docs/PLAN.md](docs/PLAN.md)
 - 工程约束：[AGENTS.md](AGENTS.md)
 
 ## 本地运行
@@ -79,7 +78,7 @@ npm run verify       # 格式、类型、ETL、SQL/组件测试和生产构建
 
 表结构的唯一事实源是 `src/db/schema.ts`。Python 不建表，也不生成迁移；完整导入由 `etl/run.py` 统一执行。
 
-字段去向与数据模型见 [docs/PLAN.md](docs/PLAN.md#2-数据流)。
+字段去向与约束见 [`src/db/schema.ts`](src/db/schema.ts)：每一列的含义、公司内与入职前各自往哪个字段落、以及每个索引为什么在那里，都写在那一列旁边。
 
 ## 代码结构
 
@@ -94,7 +93,7 @@ src/server/                  服务端函数、查询记录与唯一的模型适
 src/routes/                  零态与搜索工作台
 src/routes/-components/      两屏共用的界面组件
 src/routes/-lib/             视图状态、筛选表、键盘流等非组件模块
-src/components/              跨路由 React 组件
+src/components/ui/           coss ui 的组件源码（抄来的，见其 NOTICE.md）
 src/lib/                     跨层纯函数
 tests/                       单元、渲染与真 SQL 集成测试
 ```
@@ -110,7 +109,10 @@ tests/                       单元、渲染与真 SQL 集成测试
 - 页面访问数据库只有 `src/server/functions.ts` 一个口子；带连接或密钥的模块标了
   `server-only`，页面从它们取值会让构建失败。页面可读取的结果形状在 `src/search/result.ts`；
 - `src/search/search.ts` 只产出命中事实，`src/search/rank.ts` 负责判定、打分、排序与分面；
-- Kumo 是唯一的界面组件库，组件属性以本地 CLI 文档为准。
+- 界面组件来自 [coss ui](https://coss.com/ui)，源码进仓库放在 `src/components/ui/`。
+
+更细的工程约定在 [AGENTS.md](AGENTS.md)，它只收「代码里放不下」的那些；
+「某处为什么这么写」一律写在那处的注释里。
 
 ## 查询行为
 

@@ -1,5 +1,5 @@
-import { Button, Text } from "@cloudflare/kumo";
 import { Link } from "@tanstack/react-router";
+import { Button } from "#/components/ui/button";
 import { grouped, since } from "#/lib/format";
 import type { QueryInput } from "#/search/parse";
 import type { Overview } from "#/search/result";
@@ -44,12 +44,28 @@ export function ZeroState({
 		 * 溢出的上半截会被裁掉且滚不回去——矮视口下标题就没了。
 		 * `my-auto` 在有余量时照样居中，没余量时退化成 0，内容完整可滚。
 		 */
-		<div className="flex flex-1 justify-center overflow-y-auto px-6 py-8">
-			<div className="my-auto w-full max-w-xl pb-8">
-				{/* 全站唯一的展示级标题：不走 Kumo 的密集四档，见 styles.css 的 display-1 */}
-				<h2 className="display-1 font-semibold text-kumo-default">搜索人才</h2>
+		<div className="mx-auto flex w-full max-w-page flex-1 flex-col px-4 pb-16">
+			{/*
+			 * 上四下六，不是正中。视觉重心比几何中心高一点，才读得出「稳」——
+			 * 正中会让整块看起来往下坠，这是排版里的老规矩。用 `mt-[12vh]` 而不是
+			 * `justify-center`：内容长过视口时它退化成一个固定的上边距，
+			 * 整块照样滚得到底，而 `items-center` 配 `overflow` 会把溢出的上半截
+			 * 裁掉且滚不回去。
+			 */}
+			<div className="mt-[12vh]">
+				{/* 全站唯一的展示级标题，见 styles.css 的 display-1 */}
+				<h2 className="display-1 font-semibold">搜索人才</h2>
+				{/*
+				 * 副标题说的是**这个工具搜的是什么**，不是一句口号。
+				 * 「搜索人才」四个字已经在品牌那儿了，这里再写一遍是复述；
+				 * 而「搜的是经历不是标签」正是它和一个花名册筛选器的全部区别，
+				 * 不说的话第一句话很容易被敲成「张三」。
+				 */}
+				<p className="mt-2 text-muted-foreground text-sm">
+					用一句话描述你要找的经历，逐条看命中在哪一段任职上。
+				</p>
 
-				<div className="mt-6">
+				<div className="mt-5">
 					<QueryBar onQuery={onQuery} variant="hero" />
 				</div>
 
@@ -58,7 +74,7 @@ export function ZeroState({
 				 * 界面上其余部分一切正常——不说的话人只会以为自己没点上，再点一次。
 				 */}
 				{error && (
-					<p className="mt-2 text-kumo-danger text-sm" role="alert">
+					<p className="mt-2 text-destructive-foreground text-sm" role="alert">
 						{error}
 					</p>
 				)}
@@ -71,16 +87,13 @@ export function ZeroState({
 				 * 经历，不是花名册，两个数一起才说明白它在什么之上做检索。
 				 */}
 				{overview && (
-					// mt 挂在外层：Kumo 的 `Text` 刻意不收 className
-					<div className="mt-2">
-						<Text as="p" size="xs" variant="secondary">
-							数据范围：
-							<span className="tabular-nums">{grouped(overview.people)}</span>{" "}
-							名员工 ·{" "}
-							<span className="tabular-nums">{grouped(overview.segments)}</span>{" "}
-							段经历
-						</Text>
-					</div>
+					<p className="mt-2.5 text-muted-foreground text-xs">
+						数据范围：
+						<span className="tabular-nums">{grouped(overview.people)}</span>{" "}
+						名员工 ·{" "}
+						<span className="tabular-nums">{grouped(overview.segments)}</span>{" "}
+						段经历
+					</p>
 				)}
 
 				{/*
@@ -93,15 +106,18 @@ export function ZeroState({
 				 * 列表读起来就是同一件事重复了六遍。
 				 */}
 				{recent.length > 0 && (
-					<div className="mt-8">
-						<Text as="p" size="xs" variant="secondary">
-							最近搜索
-						</Text>
-						<ul className="mt-2 flex flex-col">
+					<div className="mt-10">
+						<p className="label text-muted-foreground">最近搜索</p>
+						{/*
+						 * 画成卡片，和名单上的候选人是同一族（同样的圆角、边框、
+						 * 底色、悬停升起）。点进去看到的就是那份名单，两处长一个样，
+						 * 中间没有要学的转换。
+						 */}
+						<ul className="mt-2.5 flex flex-col gap-1.5">
 							{recent.map((r) => (
 								<li key={r.turnId}>
 									<Link
-										className="-mx-2 flex items-baseline gap-3 rounded-control px-2 py-1.5 text-kumo-default no-underline [@media(hover:hover)]:hover:bg-kumo-fill"
+										className="flex items-baseline gap-3 rounded-lg border border-border/60 bg-card px-3.5 py-2.5 text-foreground no-underline shadow-xs transition-[box-shadow,border-color] [@media(hover:hover)]:hover:border-border [@media(hover:hover)]:hover:shadow-lift"
 										params={{ turnId: r.turnId }}
 										to="/s/$turnId"
 									>
@@ -112,9 +128,9 @@ export function ZeroState({
 										<span className="min-w-0 flex-1 truncate text-sm">
 											{r.chips.map((c) => c.term).join(" · ")}
 										</span>
-										<Text as="span" size="xs" variant="secondary">
+										<span className="shrink-0 text-muted-foreground text-xs">
 											{since(r.createdAt, now)}
-										</Text>
+										</span>
 									</Link>
 								</li>
 							))}
@@ -131,18 +147,16 @@ export function ZeroState({
 				 * 同一个东西在两个地方长同一个样子，中间没有需要学的转换。
 				 */}
 				{overview && overview.seqs.length > 0 && (
-					<div className="mt-6">
-						<Text as="p" size="xs" variant="secondary">
-							常用方向
-						</Text>
-						<div className="mt-2 flex flex-wrap gap-1.5">
+					<div className="mt-10">
+						<p className="label text-muted-foreground">常用方向</p>
+						<div className="mt-2.5 flex flex-wrap gap-1.5">
 							{overview.seqs.map((seq) => (
 								<button
 									/* 尺寸**和字号**都跟着查询 chip 走（query-chips.tsx）：
 									   点下去得到的正是那一枚 chip，两处长得不一样就多出一次
 									   要学的转换。所以这里是 12px + px-2.5 py-1 = 24px 高，
 									   一个像素都不许差；命中区仍然由伪元素撑到 40px。 */
-									className="relative rounded-control bg-kumo-fill px-2.5 py-1 text-kumo-default text-xs after:pointer-events-none after:absolute after:-inset-x-1 after:-inset-y-2 after:content-[''] [@media(hover:hover)]:hover:brightness-95"
+									className="relative rounded-md bg-secondary px-2.5 py-1 text-secondary-foreground text-xs after:pointer-events-none after:absolute after:-inset-x-1 after:-inset-y-2 after:content-[''] [@media(hover:hover)]:hover:brightness-95"
 									key={seq}
 									onClick={() =>
 										onQuery({
@@ -159,11 +173,9 @@ export function ZeroState({
 					</div>
 				)}
 
-				<div className="mt-6">
-					<Text as="p" size="xs" variant="secondary">
-						搜索示例
-					</Text>
-					<div className="mt-2 flex flex-wrap gap-2">
+				<div className="mt-10">
+					<p className="label text-muted-foreground">搜索示例</p>
+					<div className="mt-2.5 flex flex-wrap gap-2">
 						{EXAMPLES.map((ex) => (
 							/*
 							 * 点一条示例就直接搜，不是把它填进输入框——例子的意义是

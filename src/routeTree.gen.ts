@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
-import { Route as STurnIdIndexRouteImport } from './routes/s/$turnId/index'
 import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -24,11 +23,6 @@ const STurnIdRouteRoute = STurnIdRouteRouteImport.update({
   path: '/s/$turnId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const STurnIdIndexRoute = STurnIdIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => STurnIdRouteRoute,
-} as any)
 const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
   id: '/p/$empId',
   path: '/p/$empId',
@@ -38,27 +32,25 @@ const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
-  '/s/$turnId/': typeof STurnIdIndexRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/s/$turnId': typeof STurnIdIndexRoute
+  '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
-  '/s/$turnId/': typeof STurnIdIndexRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/s/$turnId' | '/s/$turnId/' | '/s/$turnId/p/$empId'
+  fullPaths: '/' | '/s/$turnId' | '/s/$turnId/p/$empId'
   fileRoutesByTo: FileRoutesByTo
   to: '/' | '/s/$turnId' | '/s/$turnId/p/$empId'
-  id: '__root__' | '/' | '/s/$turnId' | '/s/$turnId/' | '/s/$turnId/p/$empId'
+  id: '__root__' | '/' | '/s/$turnId' | '/s/$turnId/p/$empId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -82,13 +74,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof STurnIdRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/s/$turnId/': {
-      id: '/s/$turnId/'
-      path: '/'
-      fullPath: '/s/$turnId/'
-      preLoaderRoute: typeof STurnIdIndexRouteImport
-      parentRoute: typeof STurnIdRouteRoute
-    }
     '/s/$turnId/p/$empId': {
       id: '/s/$turnId/p/$empId'
       path: '/p/$empId'
@@ -100,12 +85,10 @@ declare module '@tanstack/react-router' {
 }
 
 interface STurnIdRouteRouteChildren {
-  STurnIdIndexRoute: typeof STurnIdIndexRoute
   STurnIdPEmpIdRoute: typeof STurnIdPEmpIdRoute
 }
 
 const STurnIdRouteRouteChildren: STurnIdRouteRouteChildren = {
-  STurnIdIndexRoute: STurnIdIndexRoute,
   STurnIdPEmpIdRoute: STurnIdPEmpIdRoute,
 }
 

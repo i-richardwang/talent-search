@@ -198,7 +198,7 @@ export function parseChips(raw: string): Chip[] {
 	return chips;
 }
 
-/** 把停用的那些摘掉。检索、表格列、分面都只看这一份。 */
+/** 把停用的那些摘掉。检索、证据行、分面都只看这一份。 */
 export function activeChips(chips: Chip[]): Chip[] {
 	return chips.filter((c) => !c.off);
 }

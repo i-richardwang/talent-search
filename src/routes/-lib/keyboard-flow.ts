@@ -6,7 +6,7 @@ import type { View } from "./view-params";
 /**
  * `/` 聚焦搜索，↑↓ / jk 换人，Esc 关闭详情。批量筛人时手不用离开键盘。
  *
- * 窄屏那两个浮层的 Esc 不归这里：它们是 Kumo 的 `Dialog`，自带 Esc 关闭、焦点
+ * 窄屏那个详情浮层的 Esc 不归这里：它是 coss 的 `Dialog`，自带 Esc 关闭、焦点
  * 陷阱与还焦。下面的 `busy` 判定已经把焦点落在 `[role=dialog]` 里的按键让了出去，
  * 所以这里再写一遍只会和它抢。
  */
@@ -20,7 +20,7 @@ export function useKeyboardFlow({
 	inputRef: React.RefObject<HTMLInputElement | null>;
 	results: SearchResult[];
 	empId: string | undefined;
-	/** 换人只换详情栏，仍然停在这一条查询记录上 */
+	/** 换人只换详情面板，仍然停在这一条查询记录上 */
 	turnId: string;
 	view: View;
 }) {
@@ -41,7 +41,7 @@ export function useKeyboardFlow({
 					el.isContentEditable ||
 					el.closest('[role="listbox"],[role="dialog"],[role="menu"]') !==
 						null);
-			// 焦点走进详情栏之后，↑↓ 归那一栏：简历原文动辄十几段，
+			// 焦点走进详情面板之后，↑↓ 归它：简历原文动辄十几段，
 			// 读到一半按方向键却换了个人，是这套快捷键最容易伤人的地方。
 			const reading =
 				el instanceof HTMLElement && el.closest("[data-pane=detail]") !== null;
@@ -54,7 +54,7 @@ export function useKeyboardFlow({
 			}
 			// Esc 由外到内退：输入框交还焦点 → 关闭详情。
 			if (e.key === "Escape") {
-				// 输入框里的 Esc 交还焦点，否则打完字要用鼠标才能回到表格
+				// 输入框里的 Esc 交还焦点，否则打完字要用鼠标才能回到名单
 				if (el instanceof HTMLElement && el.tagName === "INPUT") {
 					el.blur();
 					return;
@@ -106,7 +106,7 @@ export function useKeyboardFlow({
 				search: view,
 				replace: true,
 			});
-			// 行上有 scroll-mt，落点会避开吸顶的表头；CSS.escape 与表格那边同源
+			// 块上有 scroll-my，落点会离容器边缘留一点余量；CSS.escape 与列表那边同源
 			document
 				.querySelector(`[data-emp="${CSS.escape(target)}"]`)
 				?.scrollIntoView({ block: "nearest" });

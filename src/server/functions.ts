@@ -58,7 +58,7 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 			 * 还没理解完：不跑检索，先把工作台交出去。
 			 *
 			 * 这一支是整套设计里那句「转圈发生在结果将要出现的地方」的落点——
-			 * 页面拿着一条只有原话的记录就能把三栏画出来，模型那一跳由界面
+			 * 页面拿着一条只有原话的记录就能把工作台画出来，模型那一跳由界面
 			 * 自己去补（`interpretTurn`），而不是让导航停在原地等它。
 			 */
 			if (!turn.chips) return { turn, result: null };
@@ -84,7 +84,7 @@ export const fetchOverview = createServerFn({ method: "GET" }).handler(
  *
  * 整行出门是有意的：`employee` 的列集合本来就是按详情页要显示什么定的，
  * 所以 `Employee` 就是这个响应的形状，不是省事。收窄的那条路在 `result.ts`
- * 的 `ResultEmployee`（列表一次传最多 500 人，只传表格画得出来的几列）。
+ * 的 `ResultEmployee`（列表一次传最多 500 人，只传结果那一块画得出来的几个字段）。
  */
 export const fetchEmployee = createServerFn({ method: "GET" })
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
