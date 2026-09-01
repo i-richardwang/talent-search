@@ -1,3 +1,4 @@
+import { Dot } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
 import { Group } from "#/components/ui/group";
 import {
@@ -10,7 +11,6 @@ import { Toggle } from "#/components/ui/toggle";
 import { cn } from "#/lib/utils";
 import { activeFilters, type FilterField } from "../-lib/filters";
 import { CLEARED_FILTERS, type View } from "../-lib/view-params";
-import { Dot } from "./evidence";
 
 /**
  * 范围条件：一个维度一段，五段连成**一条分段控件**，排在概念条件（chips）后面。

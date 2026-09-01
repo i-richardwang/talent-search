@@ -5,6 +5,9 @@ import {
 	useLoaderData,
 } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
+import { CareerBar } from "#/components/career-bar";
+import { Dot, ROUTE_LABEL } from "#/components/evidence";
+import { buildHitIndex, Timeline } from "#/components/timeline";
 import { buttonVariants } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
@@ -12,9 +15,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { duration, seqLabel } from "#/lib/format";
 import { strengthOf } from "#/search/evidence";
 import { fetchEmployee } from "#/server/functions";
-import { CareerBar } from "../../-components/career-bar";
-import { Dot, ROUTE_LABEL } from "../../-components/evidence";
-import { buildHitIndex, Timeline } from "../../-components/timeline";
 
 export const Route = createFileRoute("/s/$turnId/p/$empId")({
 	loader: async ({ params }) => {

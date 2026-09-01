@@ -1,6 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { SearchXIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
+import {
+	EvidenceLine,
+	MissedTerms,
+	StrengthLegend,
+} from "#/components/evidence";
 import { Button } from "#/components/ui/button";
 import { Card } from "#/components/ui/card";
 import {
@@ -20,7 +25,6 @@ import type { SearchResult, TermPlan } from "#/search/result";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 import { emptyState } from "../-lib/empty-state";
 import type { View } from "../-lib/view-params";
-import { EvidenceLine, MissedTerms, StrengthLegend } from "./evidence";
 
 /** 一块卡片的内边距。骨架屏和候选人共用，加载完成的那一帧才不会抖。 */
 const PAD = "px-4 py-3.5";

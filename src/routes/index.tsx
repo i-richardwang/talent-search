@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Brand } from "#/components/brand";
 import { fetchOverview, recentSearches } from "#/server/functions";
-import { Brand } from "./-components/brand";
 import { ZeroState } from "./-components/zero-state";
 import { useCommit } from "./-lib/commit";
 

@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Highlight } from "#/routes/-components/evidence";
+import { Highlight } from "#/components/evidence";
 
 const marks = (text: string, term: string) => {
 	const html = renderToStaticMarkup(<Highlight term={term} text={text} />);

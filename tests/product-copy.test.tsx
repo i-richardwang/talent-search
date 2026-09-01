@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { StrengthLegend } from "#/routes/-components/evidence";
+import { StrengthLegend } from "#/components/evidence";
 import { QueryDeck } from "#/routes/-components/query-deck";
 import { ResultHeader } from "#/routes/-components/result-list";
 import { ZeroState } from "#/routes/-components/zero-state";

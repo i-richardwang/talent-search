@@ -12,8 +12,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { CareerBar, packLanes, ym } from "#/components/career-bar";
 import type { Experience } from "#/db/schema";
-import { CareerBar, packLanes, ym } from "#/routes/-components/career-bar";
 import type { Hit } from "#/search/result";
 
 function exp(

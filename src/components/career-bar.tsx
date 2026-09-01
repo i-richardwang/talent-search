@@ -1,9 +1,9 @@
+import { BAND_FILL } from "#/components/evidence";
 import type { Experience } from "#/db/schema";
 import { duration, period } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { bestStrength } from "#/search/evidence";
 import type { Hit } from "#/search/result";
-import { BAND_FILL } from "./evidence";
 
 /**
  * 职业轨迹条：把一个人的经历段按**真实年份**画成一条带子。

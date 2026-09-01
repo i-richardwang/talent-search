@@ -9,13 +9,13 @@ import {
 	useRouterState,
 } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { Brand } from "#/components/brand";
 import { buttonVariants } from "#/components/ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "#/components/ui/dialog";
 import { Kbd } from "#/components/ui/kbd";
 import { cn } from "#/lib/utils";
 import { emptyFacets, type SearchResult } from "#/search/result";
 import { interpretTurn, loadWorkbench } from "#/server/functions";
-import { Brand } from "../../-components/brand";
 import { QueryDeck } from "../../-components/query-deck";
 import { ResultList } from "../../-components/result-list";
 import { useCommit } from "../../-lib/commit";

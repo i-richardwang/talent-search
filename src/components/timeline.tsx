@@ -1,9 +1,9 @@
+import { Dot, Highlight, ROUTE_LABEL } from "#/components/evidence";
 import { Badge } from "#/components/ui/badge";
 import type { CompanyMeta, Experience } from "#/db/schema";
 import { duration, period, seqLabel } from "#/lib/format";
 import { bestStrength } from "#/search/evidence";
 import type { Hit } from "#/search/result";
-import { Dot, Highlight, ROUTE_LABEL } from "./evidence";
 
 /** 命中段按 experienceId 索引，一段可能同时命中多个概念词 */
 type HitIndex = Map<number, Hit[]>;

@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EvidenceLine, MissedTerms } from "#/routes/-components/evidence";
+import { EvidenceLine, MissedTerms } from "#/components/evidence";
 import type { Hit, TermBasis } from "#/search/result";
 import type { Route } from "#/search/weights";
 import { visibleText } from "./render";

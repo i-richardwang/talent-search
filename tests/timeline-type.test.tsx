@@ -15,8 +15,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { Timeline } from "#/components/timeline";
 import type { Experience } from "#/db/schema";
-import { Timeline } from "#/routes/-components/timeline";
 
 const seg = (over: Partial<Experience> = {}): Experience =>
 	({
