@@ -11,7 +11,7 @@ import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StrengthLegend } from "#/components/evidence";
 import { QueryDeck } from "#/routes/-components/query-deck";
-import { ResultHeader } from "#/routes/-components/result-list";
+import { ResultHeader, ResultList } from "#/routes/-components/result-list";
 import { ZeroState } from "#/routes/-components/zero-state";
 import { filterFields } from "#/routes/-lib/filters";
 import { emptyFacets } from "#/search/result";
@@ -104,6 +104,36 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		);
 		assert.match(text, /做过线下渠道运营、带过团队的人/);
 		assert.match(text, /正在理解/);
+	});
+
+	test("一个人都没有时不报数，空态自己会说", () => {
+		/*
+		 * 「0 人」摆在空态上面是同一件事的第一遍，而这个判断留在调用点
+		 * （result-list.tsx 的空态分支干脆不写表头），不是一条藏在 ResultHeader
+		 * 里的守卫——所以它只能在这里钉住。
+		 */
+		const text = seen(
+			<ResultList
+				canMore={false}
+				chips={[{ term: "量子炼金", mode: "must" }]}
+				empId={undefined}
+				growing={false}
+				loading={false}
+				onChange={() => {}}
+				onFocusQuery={() => {}}
+				onMore={() => {}}
+				onReviseQuery={() => {}}
+				results={[]}
+				terms={[{ term: "量子炼金", effective: "量子炼金", mode: "must" }]}
+				tooWide={false}
+				total={0}
+				turnId="t1"
+				view={{}}
+				withoutStrong={0}
+			/>,
+		);
+		assert.doesNotMatch(text, /0\s*人/);
+		assert.doesNotMatch(text, /按相关度排序/);
 	});
 
 	test("点阵图例说明判断依据，不要求用户理解字段治理", () => {

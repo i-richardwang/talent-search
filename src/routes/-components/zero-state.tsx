@@ -6,6 +6,7 @@ import type { QueryInput } from "#/search/parse";
 import type { Overview } from "#/search/result";
 import type { RecentSearch } from "#/server/turn";
 import { QueryBar } from "./query-bar";
+import { CHIP_SIZE, MODE_VARIANT } from "./query-chips";
 
 /**
  * 整句的例子。这两条各带一样词汇表给不了的东西：一句话里放多个条件，
@@ -125,8 +126,8 @@ export function ZeroState({
 						<p className="label text-muted-foreground">常用方向</p>
 						<div className="mt-2.5 flex flex-wrap gap-1.5">
 							{overview.seqs.map((seq) => (
-								/* 和查询 chip 同一个组件、同一个尺码（query-chips.tsx）：
-								   点下去得到的正是那一枚 chip。 */
+								/* 外观取自 chip 自己（query-chips.tsx），不重抄一份：
+								   点下去得到的正是一枚「必须」chip。 */
 								<Button
 									key={seq}
 									onClick={() =>
@@ -135,8 +136,8 @@ export function ZeroState({
 											chips: [{ term: seq, mode: "must" }],
 										})
 									}
-									size="xs"
-									variant="secondary"
+									size={CHIP_SIZE}
+									variant={MODE_VARIANT.must}
 								>
 									{seq}
 								</Button>

@@ -31,10 +31,14 @@ import {
 	validateView,
 } from "../../-lib/view-params";
 
-// 没有结果时也要有稳定的身份：每次渲染新建 [] / {} 会让依赖它们的
-// useEffect 反复解绑重绑。
+/**
+ * 没有结果时也要有稳定的身份：每次渲染新建 `[]` 会让 `useKeyboardFlow` 的
+ * effect 反复解绑重绑（`results` 在它的依赖数组里，见 -lib/keyboard-flow.ts）。
+ *
+ * 分面没有这个问题——它不进任何 effect 的依赖，只被当场读掉——所以它不配一个
+ * 常量。同一个理由套到不产生效果的地方，会让下一个人以为凡是空值都得提出去。
+ */
 const NO_RESULTS: SearchResult[] = [];
-const NO_FACETS = emptyFacets();
 
 /**
  * 详情面板的宽度。外层收展（0 ↔ 这个值），内层写死它顶住内容，收展过程中里面的
@@ -128,7 +132,7 @@ function Workbench() {
 	const chips = settledChips ?? [];
 	const terms = result?.terms ?? [];
 	const results = result?.results ?? NO_RESULTS;
-	const facets = result?.facets ?? NO_FACETS;
+	const facets = result?.facets ?? emptyFacets();
 	// 理解中和检索中在列表里是同一件事：下面这份名单还不成立，画骨架屏。
 	const loading = navigating || interpreting;
 	const open = Boolean(empId);

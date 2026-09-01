@@ -56,11 +56,18 @@ const MODE_SIGN: Record<ChipMode, string> = {
  * 「必须」是实心的次要底（它是默认，也是最常见的一档），另两档是描边——
  * 描边和实心的差别足够读出「这一枚不一样」，而且不占任何一个色相。
  */
-const MODE_VARIANT: Record<ChipMode, "secondary" | "outline"> = {
+export const MODE_VARIANT: Record<ChipMode, "secondary" | "outline"> = {
 	must: "secondary",
 	boost: "outline",
 	exclude: "outline",
 };
+
+/**
+ * chip 的尺码。导出是因为零态那排「常用方向」点下去得到的**正是一枚必须词
+ * chip**，所以它照这两个值画（`CHIP_SIZE` + `MODE_VARIANT.must`），不另抄一份——
+ * 抄一份的话，chip 的静息态一改，零态就静默漂移，而唯一的防线是一句跨文件的注释。
+ */
+export const CHIP_SIZE = "xs" as const;
 
 /**
  * 排除词划掉：排除的意思正是「把它划掉」，这一层不必再解释一遍。
@@ -127,7 +134,7 @@ export function QueryChips({
 										chip.mode === "exclude" && EXCLUDE_STYLE,
 										chip.off && OFF_STYLE,
 									)}
-									size="xs"
+									size={CHIP_SIZE}
 									variant={chip.off ? "outline" : MODE_VARIANT[chip.mode]}
 								/>
 							}

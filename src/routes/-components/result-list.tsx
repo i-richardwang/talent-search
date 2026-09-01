@@ -40,6 +40,10 @@ const SKELETON_ROWS = 5;
  *
  * 图例必须和它解释的那些点同屏，所以只能排在这里；和报数并作一行，
  * 名单上方就只多这一行，不是两行。
+ *
+ * **一个人都没有时不画它**——那句话空态自己会说，「0 人」摆在空态上面是同一件事
+ * 的第一遍。这个判断留在调用点：空态那一支干脆不写它，比在这里加一条
+ * 「渲染出来等于什么都没有」的守卫诚实——后者会让调用点看起来画了一个表头。
  */
 export function ResultHeader({
 	loading,
@@ -50,9 +54,6 @@ export function ResultHeader({
 	total: number;
 	terms: TermPlan[];
 }) {
-	// 没有条件就没有名单可介绍，也没有点可解释；一个人都没有时也不报数——
-	// 那句话空态自己会说，而「0 人」摆在空态上面是同一件事的第一遍。
-	if (!loading && (terms.length === 0 || total === 0)) return null;
 	return (
 		<div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5 px-1">
 			<p
@@ -187,25 +188,23 @@ export function ResultList({
 			onFocusQuery,
 		});
 		return (
-			<div>
-				{head}
-				{/* 不给它补边框：coss 的 Empty 本来就是一块居中的内容，不是一张卡片。
-			    手画一圈虚线只是在名单该在的位置上摆一个假的名单形状。 */}
-				<Empty>
-					<EmptyHeader>
-						<EmptyMedia variant="icon">
-							<SearchXIcon />
-						</EmptyMedia>
-						<EmptyTitle>{state.title}</EmptyTitle>
-						<EmptyDescription>{state.hint}</EmptyDescription>
-					</EmptyHeader>
-					<EmptyContent>
-						<Button onClick={state.action.onClick} variant="outline">
-							{state.action.label}
-						</Button>
-					</EmptyContent>
-				</Empty>
-			</div>
+			/* 没有表头：一个人都没有时不报数（见 ResultHeader）。
+			   也不给 Empty 补边框——coss 的 Empty 本来就是一块居中的内容，不是一张
+			   卡片，手画一圈虚线只是在名单该在的位置上摆一个假的名单形状。 */
+			<Empty>
+				<EmptyHeader>
+					<EmptyMedia variant="icon">
+						<SearchXIcon />
+					</EmptyMedia>
+					<EmptyTitle>{state.title}</EmptyTitle>
+					<EmptyDescription>{state.hint}</EmptyDescription>
+				</EmptyHeader>
+				<EmptyContent>
+					<Button onClick={state.action.onClick} variant="outline">
+						{state.action.label}
+					</Button>
+				</EmptyContent>
+			</Empty>
 		);
 	}
 

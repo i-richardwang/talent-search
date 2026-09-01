@@ -12,7 +12,15 @@ import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { seqLabel } from "#/lib/format";
+import { cn } from "#/lib/utils";
 import { fetchEmployee } from "#/server/functions";
+
+/**
+ * 面板顶上那条吸顶的头。**骨架和真身共用**——面板开着的时候换人是连着做的，
+ * 顶部每换一次跳一下就会被反复看到，而两处各写一遍的话没有任何东西保证它们同高。
+ * 同一个理由下 `result-list.tsx` 的 `PAD` 也是一个常量。
+ */
+const HEAD = "sticky top-0 z-stick border-border border-b bg-card px-5 py-4";
 
 export const Route = createFileRoute("/s/$turnId/p/$empId")({
 	loader: async ({ params }) => {
@@ -43,16 +51,14 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 });
 
 /**
- * 换人途中的详情面板。头的高度必须和真正的头一模一样——面板开着的时候换人是
- * 连着做的，顶部每换一次跳一下就会被反复看到。
- *
- * 所以骨架块住在真正那两个标签里，高度用 `h-lh` 取各自的行高：字阶改了它跟着改，
+ * 换人途中的详情面板。头的高度必须和真正的头一模一样，所以外壳共用 `HEAD`，
+ * 骨架块住在真正那两个标签里、高度用 `h-lh` 取各自的行高——字阶改了它跟着改，
  * 不必回来对一个像素值。
  */
 function PersonPending() {
 	return (
 		<div className="pb-12" data-pane="detail">
-			<div className="sticky top-0 z-stick border-border border-b bg-card px-5 py-4">
+			<div className={HEAD}>
 				<h2 className="title-1">
 					<Skeleton className="h-lh w-32" />
 				</h2>
@@ -106,7 +112,7 @@ function Person() {
 			 * 姓名和工号一起吸顶，其余全部交给下面滚。滚到第八段经历时还需要
 			 * 一直在的，只有「我在看谁」。
 			 */}
-			<div className="sticky top-0 z-stick flex items-start justify-between gap-2 border-border border-b bg-card px-5 py-4">
+			<div className={cn(HEAD, "flex items-start justify-between gap-2")}>
 				<div className="min-w-0">
 					{/*
 					 * 全站最重的一档字，只此一处。它必须比周围重两档以上，
@@ -181,44 +187,34 @@ function Person() {
 					</p>
 				)}
 
-				<Section title="任职经历">
+				{/*
+				 * 这一栏唯一的分区，靠一条发丝线和一个小标签分开，不靠再嵌一层
+				 * 带底色的卡片——这块面板自己就是 card 那一层底，里面再叠一层
+				 * 就是背景打架。
+				 *
+				 * 标签走 `label` 档（11px / 600 / 放开字距，见 styles.css）：
+				 * 它必须一眼被认成「不是内容」，而正文里的次要信息也是 12px 次要色，
+				 * 只靠字号和颜色分不开。
+				 */}
+				<section className="mt-7">
+					<Separator />
+					<h3 className="label mt-4 text-muted-foreground">任职经历</h3>
 					{/*
 					 * 先给形状，再给细节：轨迹条一眼看出这个人在哪几年、跨了几家、
 					 * 命中的那段落在职业生涯的什么位置，卡片回答那一段具体是什么。
 					 * 两者共用同一份 hitIndex，所以「哪几段命中」只算一次。
 					 */}
-					<CareerBar
-						hireDate={e.hireDate}
-						hitIndex={hitIndex}
-						rows={timeline}
-					/>
-					<Timeline hitIndex={hitIndex} rows={timeline} />
-				</Section>
+					<div className="mt-2.5">
+						<CareerBar
+							hireDate={e.hireDate}
+							hitIndex={hitIndex}
+							rows={timeline}
+						/>
+						<Timeline hitIndex={hitIndex} rows={timeline} />
+					</div>
+				</section>
 			</div>
 		</div>
-	);
-}
-
-/**
- * 分区靠一条发丝线和小标题，不靠再嵌一层带底色的卡片——这块面板自己
- * 就是 card 那一层底，里面再叠一层就是背景打架。
- */
-function Section({
-	title,
-	children,
-}: {
-	title: string;
-	children: React.ReactNode;
-}) {
-	return (
-		<section className="mt-7">
-			<Separator />
-			{/* 分区标签走 `label` 档（11px / 600 / 放开字距，见 styles.css）：
-			    它必须一眼被认成「不是内容」，而正文里的次要信息也是 12px 次要色，
-			    只靠字号和颜色分不开。 */}
-			<h3 className="label mt-4 text-muted-foreground">{title}</h3>
-			<div className="mt-2.5">{children}</div>
-		</section>
 	);
 }
 

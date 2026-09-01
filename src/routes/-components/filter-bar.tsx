@@ -33,19 +33,17 @@ export function FilterBar({
 	view,
 	onChange,
 	strongCount,
-	className,
 }: {
 	fields: FilterField[];
 	view: View;
 	onChange: (next: Partial<View>) => void;
 	/** 打开「匹配来源」之后还剩多少人，口径同其余四维 */
 	strongCount: number;
-	className?: string;
 }) {
 	const count = activeFilters(fields).length;
 
 	return (
-		<div className={cn("flex flex-wrap items-center gap-2", className)}>
+		<div className="flex flex-wrap items-center gap-2">
 			{/* max-w-full + 每段 min-w-0：段多的时候整条一起收窄并截断，
 			    不换行——一条断成两截的段控就不再是一个整体了。 */}
 			<Group className="max-w-full">
