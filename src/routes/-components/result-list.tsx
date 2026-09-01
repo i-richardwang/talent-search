@@ -289,10 +289,12 @@ export function ResultList({
 												boost={term.mode === "boost"}
 												hit={hit}
 												key={term.term}
-												term={term.effective}
+												/* 行标签用实际命中的说法（同义词或松弛后的子串），
+												   不用要求的主词：高亮的前提是这个串真的在字段值里。 */
+												term={hit.matched}
 											/>
 										))}
-										<MissedTerms terms={missed.map((t) => t.effective)} />
+										<MissedTerms terms={missed.map((t) => t.term)} />
 									</div>
 								</>
 							)}
@@ -338,8 +340,8 @@ export function ResultList({
  * 这次查询要画哪几条证据。
  *
  * 取自查询记录上的 chips，不等服务端返回 `terms`：改筛选那一帧服务端还是
- * 旧值，骨架屏的块高会先跳一下再回来。这里给的是未经语料松弛的原词
- * （`effective` 先等于 `term`），而松弛只改文案不改条数。
+ * 旧值，骨架屏的块高会先跳一下再回来。骨架只数条数，所以说法只放主词即可
+ * （松弛与同义只改文案不改条数）。
  *
  * 排除词和停用的词都不占一行：前者不产出证据，后者根本不参与这次检索。
  */
@@ -347,6 +349,12 @@ function pendingTerms(chips: Chip[]): TermPlan[] {
 	return activeChips(chips).flatMap((c) =>
 		c.mode === "exclude"
 			? []
-			: [{ term: c.term, effective: c.term, mode: c.mode }],
+			: [
+					{
+						term: c.term,
+						members: [{ text: c.term, effective: c.term, tier: "full" }],
+						mode: c.mode,
+					} satisfies TermPlan,
+				],
 	);
 }

@@ -11,6 +11,7 @@ import { ROUTE_WEIGHTS, type Route } from "#/search/weights";
 const hit = (term: string, route: Route): Hit => ({
 	experienceId: 1,
 	term,
+	matched: term,
 	route,
 	kind: "internal",
 	startDate: "2020-01-01",
@@ -22,7 +23,11 @@ const hit = (term: string, route: Route): Hit => ({
 });
 
 const terms = (...t: string[]): TermPlan[] =>
-	t.map((term) => ({ term, effective: term, mode: "must" }));
+	t.map((term) => ({
+		term,
+		members: [{ text: term, effective: term, tier: "full" }],
+		mode: "must",
+	}));
 
 describe("强度分档", () => {
 	test("受控字段是序列与岗位，且它们权重最高", () => {

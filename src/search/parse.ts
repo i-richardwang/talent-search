@@ -108,28 +108,50 @@ export function parseQuery(raw: string): string[] {
 }
 
 /**
- * 一个概念词的要求强度。
+ * 一条要求的强度。
  *
- * - `must`：这个人必须有一段经历命中它。多个 must 之间是 AND。
- * - `boost`：命中了加分，不命中也留在结果里。它是「这个人还得会点 X」和
+ * - `must`：这个人必须有一段经历满足它。多条 must 之间是 AND。
+ * - `boost`：满足了加分，不满足也留在结果里。它是「这个人还得会点 X」和
  *   「会 X 更好」之间的差别，而招聘里这两句话不是一句话。
- * - `exclude`：命中它的人整个不要。
+ * - `exclude`：命中它的**经历段**丧失为任何要求作证的资格。否决的是证据，
+ *   不是人——实习起步、后来真干了八年算法的人留下，因为他有别的硬证据；
+ *   只有那段实习的人自然出不来，因为他没有证据了。检索对象是经历，
+ *   排除也一样（见 AGENTS.md「从经历找人」）。
  */
 export type ChipMode = "must" | "boost" | "exclude";
 
+/** 一条要求最多几个说法（主词 + alts + near 合计）。再多就不是一条要求了。 */
+export const MEMBER_MAX = 4;
+
 /**
- * 一枚查询 chip：界面上可点、可改、可删的最小单位。
+ * 一枚查询 chip：**一条要求**，界面上可点、可改、可删的最小单位。
  *
- * `off` 是**停用**，和三档强度正交：这个词还在查询里、还画在屏幕上，但这一次
- * 检索完全当它不存在。招聘检索是反复试的——加一个词发现只剩三个人，想知道
+ * 一条要求可以有多个**说法**，满足其一即满足这条要求（说法之间 OR，
+ * 要求之间 AND）。说法按出处分两档，档位即出处：
+ *
+ * - `term` 与 `alts`：用户自己说的。`alts` 是「A 或 B 均可」里并列的那些，
+ *   和主词同权重——用户的判断不打折；
+ * - `near`：查询理解替库补的相近说法（库里写「深度学习」而用户说「算法」），
+ *   按 `FORM_WEIGHTS.near` 降档计分。**排除词永远没有 near**：进门的词可以扩
+ *   （捞错了，人在名单上，看一眼就能纠正），赶人的词必须准（否决错了，
+ *   人不在名单上，永远没人知道）。这条不对称在本文件的 parseChips 强制，
+ *   因为它是全站唯一的解析入口。
+ *
+ * `off` 是**停用**，和三档强度正交：这条要求还在查询里、还画在屏幕上，但这一次
+ * 检索完全当它不存在。招聘检索是反复试的——加一条发现只剩三个人，想知道
  * 是不是它太窄。删掉再手打回来会丢掉它的强度，也丢掉「我试过这个」这件事；
  * 靠浏览器后退能退，但没人会想到那是个办法。所以停用是一等状态，不是删除的替代。
  */
-export type Chip = { term: string; mode: ChipMode; off?: true };
+export type Chip = {
+	term: string;
+	alts?: string[];
+	near?: string[];
+	mode: ChipMode;
+	off?: true;
+};
 
 /**
- * 一次查询变更的**来源**。改查询只有一件事——产出 chips 写进 URL；
- * 变的只是这些 chips 从哪来，而这两处来源的代价差着四个数量级。
+ * 一次查询输入的**来源**。两条路径最终都产出 chips，区别是原料与成本：
  *
  * - `sentence`：一句大白话，要先过查询理解（服务端那一跳，模型不可用时
  *   自己退回规则解析）。
@@ -144,6 +166,12 @@ export type Chip = { term: string; mode: ChipMode; off?: true };
 export type QueryInput =
 	| { kind: "sentence"; text: string }
 	| { kind: "chips"; chips: Chip[] };
+
+/**
+ * 一次查询记录的变更。重新理解不携带原话：服务端从父记录读取，调用方因此
+ * 不可能把另一句话伪装成「同一句重译」。
+ */
+export type QueryChange = QueryInput | { kind: "reinterpret" };
 
 /**
  * 强度在查询串里的写法。放在词前面一个字符，因为 URL 要能读、能手改、能粘给同事。
@@ -166,16 +194,33 @@ const MODE_SIGN: Record<ChipMode, string> = {
  */
 const OFF_SIGN = "~";
 
+/** 相近说法（near 档）在查询串里的记号，贴在那个说法自己前面：`算法/?深度学习`。 */
+const NEAR_SIGN = "?";
+
+/**
+ * 同一条要求里说法之间的边界：`/` 是我们自己写回去的形态，「或（者）」是
+ * 用户嘴里的形态。两者都只在 parseChips 这一层生效——parseQuery 看到的
+ * 永远是单个说法。
+ */
+const MEMBER_SPLIT = /\/|或者|或/;
+
 /**
  * 查询串 → chips。这是「查询」这个概念在全站的唯一解析入口。
  *
- * 半角逗号是**强度分组**的边界，其余分隔符（顿号、全角逗号、空格……）仍然
- * 交给 parseQuery 切词。所以一句原话进来只会得到一组 must，而我们自己写回
- * URL 的 `渠道运营,+带团队,-实习` 三组各有各的强度——同一个函数吃两种输入，
- * 不必在别处判断「这是原话还是 chip 串」。
+ * 半角逗号是**要求**之间的边界（AND），组内的 `/` 与「或」是**说法**之间的
+ * 边界（OR）；其余分隔符（顿号、全角逗号、空格……）仍然交给 parseQuery 切词。
+ * 所以一句原话进来得到几条 must 要求，「大模型或推荐系统」得到**一条**带两个
+ * 说法的要求，而我们自己写回的 `算法/?深度学习,+带团队,-实习` 各归各——
+ * 同一个函数吃两种输入，不必在别处判断「这是原话还是 chip 串」。
  *
- * 去重跨强度生效，先出现的那一枚赢：同一个词既必须又排除是自相矛盾的输入，
- * 与其猜用户想要哪个，不如让它保持第一次写下的样子，界面上看得见、改得动。
+ * 没有说法记号的组里，每个词各自成一条要求。这条分叉保证「渠道运营、带团队」
+ * 仍然是两条 AND 要求，而不是被并成一条 OR。
+ *
+ * 去重跨强度、跨说法生效，先出现的那一个赢：同一个词既必须又排除是自相矛盾的
+ * 输入，与其猜用户想要哪个，不如让它保持第一次写下的样子，界面上看得见、改得动。
+ *
+ * 排除组的 `?` 说法在这里被丢弃——不对称原则（见 Chip 的注释）必须落在唯一的
+ * 解析入口上，否则总有一条路把带 near 的排除词放进来。
  */
 export function parseChips(raw: string): Chip[] {
 	const chips: Chip[] = [];
@@ -188,12 +233,47 @@ export function parseChips(raw: string): Chip[] {
 		const off = g[0] === OFF_SIGN;
 		if (off) g = g.slice(1).trim();
 		const mode = MODE_PREFIX[g[0] ?? ""] ?? "must";
-		for (const term of parseQuery(mode === "must" ? g : g.slice(1))) {
-			if (seen.has(term)) continue;
-			seen.add(term);
-			chips.push({ term, mode, ...(off && { off: true as const }) });
-			if (chips.length === CHIP_MAX) return chips;
+		if (mode !== "must") g = g.slice(1);
+
+		const chunks = g.split(MEMBER_SPLIT);
+		if (chunks.length === 1 && !g.trimStart().startsWith(NEAR_SIGN)) {
+			for (const term of parseQuery(g)) {
+				if (seen.has(term)) continue;
+				seen.add(term);
+				chips.push({ term, mode, ...(off && { off: true as const }) });
+				if (chips.length === CHIP_MAX) return chips;
+			}
+			continue;
 		}
+
+		const full: string[] = [];
+		const near: string[] = [];
+		for (const rawChunk of chunks) {
+			let chunk = rawChunk.trim();
+			const isNear = chunk.startsWith(NEAR_SIGN);
+			if (isNear) chunk = chunk.slice(1).trim();
+			// 排除组的 near 直接丢弃（不是降级成 full——那等于替用户把否决面扩大）
+			if (isNear && mode === "exclude") continue;
+			for (const t of parseQuery(chunk)) {
+				if (seen.has(t)) continue;
+				seen.add(t);
+				(isNear ? near : full).push(t);
+			}
+		}
+		// 说法全是 near 时把第一个提为主词：一条要求必须有一个能当标签的词。
+		// 提升即升档（它成了 full）——宁可多给一点权重，也不造一枚没有主词的 chip。
+		const [term, ...alts] = full.length > 0 ? full : near.splice(0, 1);
+		if (!term) continue;
+		const keptAlts = alts.slice(0, MEMBER_MAX - 1);
+		const keptNear = near.slice(0, MEMBER_MAX - 1 - keptAlts.length);
+		chips.push({
+			term,
+			...(keptAlts.length > 0 && { alts: keptAlts }),
+			...(keptNear.length > 0 && { near: keptNear }),
+			mode,
+			...(off && { off: true as const }),
+		});
+		if (chips.length === CHIP_MAX) return chips;
 	}
 	return chips;
 }
@@ -204,12 +284,22 @@ export function activeChips(chips: Chip[]): Chip[] {
 }
 
 /**
- * chips → 查询串。URL 由它写，所以 `parseChips(toQuery(c))` 必须等于 `c`——
- * 往返不成立的话，改一枚 chip 会把别的 chip 也改掉，而这在界面上无从察觉。
- * tests/parse.test.ts 钉住这条。
+ * chips → 规范查询串。服务端入参收窄、查询合并和命令行都通过这套表示交换
+ * 条件，所以 `parseChips(toQuery(c))` 必须等于 `c`。
+ *
+ * 说法的写法：full 说法直接用 `/` 连（`大模型/推荐系统`），near 说法各自带
+ * `?`（`算法/?深度学习`）。near 排在最后——它们是补充，不是并列。
  */
 export function toQuery(chips: Chip[]): string {
 	return chips
-		.map((c) => (c.off ? OFF_SIGN : "") + MODE_SIGN[c.mode] + c.term)
+		.map(
+			(c) =>
+				(c.off ? OFF_SIGN : "") +
+				MODE_SIGN[c.mode] +
+				[c.term, ...(c.alts ?? [])].join("/") +
+				(c.near?.length
+					? `/${c.near.map((n) => NEAR_SIGN + n).join("/")}`
+					: ""),
+		)
 		.join(",");
 }

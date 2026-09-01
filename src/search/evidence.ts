@@ -19,8 +19,8 @@ export function strengthOf(route: Route): Strength {
 /**
  * 每个概念词取展示列表中的第一条命中。hits 已按词序、路径强度、单段时长排好。
  *
- * AND 语义下每个必须词必有命中（rank.ts 的 complete），`undefined` 也是加分词
- * 留下的类型残留；调用方兜底渲染即可，不必为这个分支做设计。
+ * AND 语义下每个必须词必有命中（rank.ts 的 complete）；加分词可以没有命中，
+ * 所以返回值保留 `undefined`，调用方按未命中渲染。
  */
 export function bestHitPerTerm(hits: Hit[], terms: TermPlan[]) {
 	return terms.map((t) => hits.find((h) => h.term === t.term));

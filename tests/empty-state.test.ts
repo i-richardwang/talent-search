@@ -20,7 +20,7 @@ import type { TermPlan } from "#/search/result";
 
 const must = (term: string): TermPlan => ({
 	term,
-	effective: term,
+	members: [{ text: term, effective: term, tier: "full" }],
 	mode: "must",
 });
 

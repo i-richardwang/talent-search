@@ -21,10 +21,12 @@ const INTERPRET_FAILED = "没能理解这句话，请重试或换一种说法。
 export function useInterpretation(
 	turnId: string,
 	settledChips: Chip[] | null,
-): { interpreting: boolean; error: string | null } {
+): { interpreting: boolean; error: string | null; retry: () => void } {
 	const navigate = useNavigate();
 	const router = useRouter();
-	const [failed, setFailed] = useState(false);
+	const [attempt, setAttempt] = useState(0);
+	const [failedKey, setFailedKey] = useState<string | null>(null);
+	const key = `${turnId}#${attempt}`;
 
 	useEffect(() => {
 		if (settledChips !== null) return;
@@ -47,15 +49,17 @@ export function useInterpretation(
 				else router.invalidate();
 			})
 			.catch(() => {
-				if (alive) setFailed(true);
+				if (alive) setFailedKey(key);
 			});
 		return () => {
 			alive = false;
 		};
-	}, [settledChips, turnId, navigate, router]);
+	}, [settledChips, turnId, key, navigate, router]);
 
+	const failed = settledChips === null && failedKey === key;
 	return {
 		interpreting: settledChips === null && !failed,
 		error: failed ? INTERPRET_FAILED : null,
+		retry: () => setAttempt((a) => a + 1),
 	};
 }

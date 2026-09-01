@@ -163,6 +163,30 @@ class ExternalTest(unittest.TestCase):
         self.assertEqual(out.iloc[0].end_date, pd.Timestamp("2021-01-01"))
         self.assertIn("无入职日 1 段，已拒绝导入", said)
 
+    def test_explicit_end_after_hire_date_is_rejected(self) -> None:
+        """结束日晚于入职日的段和在职经历重叠，「入职前」就读不通了——
+        和倒置日期同一档事：不猜哪个日期对，拒绝并出声。"""
+        rows = externals(
+            [
+                {
+                    "emp_id": "E1",
+                    "start_date": "2019-01-01",
+                    "end_date": "2021-06-01",
+                },
+                # 恰等于入职日是合法边界（封口补出来的正是这个值）
+                {
+                    "emp_id": "E1",
+                    "start_date": "2018-01-01",
+                    "end_date": "2021-01-01",
+                },
+            ]
+        )
+
+        out, said = quiet(build_external, rows, {"E1": pd.Timestamp("2021-01-01")})
+
+        self.assertEqual(out.end_date.tolist(), [pd.Timestamp("2021-01-01")])
+        self.assertIn("晚于入职日 1 段，已拒绝导入", said)
+
     def test_unemployed_segment_carries_no_description(self) -> None:
         rows = externals(
             [
@@ -241,7 +265,6 @@ class EmployeeTest(unittest.TestCase):
 
 class PopulationTest(unittest.TestCase):
     def test_segments_outside_the_population_are_dropped(self) -> None:
-        """人群由 employees 说了算——留着孤儿段只会撞外键，报一条读不懂的错。"""
         data = SourceData(
             employees=people([{"emp_id": "E1", "name": "在册"}]),
             assignments=assignments(
@@ -258,6 +281,51 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(employee.emp_id.tolist(), ["E1"])
         self.assertEqual(experience.emp_id.tolist(), ["E1"])
         self.assertIn("不属于本次人群", said)
+
+
+class DuplicateProfileTest(unittest.TestCase):
+    def test_exact_duplicate_rows_dedupe_and_say_so(self) -> None:
+        data = SourceData(
+            employees=people(
+                [
+                    {"emp_id": "E1", "name": "重复导出"},
+                    {"emp_id": "E1", "name": "重复导出"},
+                ]
+            ),
+            assignments=assignments([{"emp_id": "E1", "start_date": "2020-01-01"}]),
+            external=externals([]),
+        )
+
+        (employee, experience), said = quiet(build, data, AS_OF)
+
+        self.assertEqual(employee.emp_id.tolist(), ["E1"])
+        self.assertEqual(experience.emp_id.tolist(), ["E1"])
+        self.assertIn("整行重复 1 行", said)
+
+    def test_conflicting_profiles_reject_the_person_and_their_segments(self) -> None:
+        data = SourceData(
+            employees=people(
+                [
+                    {"emp_id": "E1", "name": "一个名字"},
+                    {"emp_id": "E1", "name": "另一个名字"},
+                    {"emp_id": "E2", "name": "无辜路人"},
+                ]
+            ),
+            assignments=assignments(
+                [
+                    {"emp_id": "E1", "start_date": "2020-01-01"},
+                    {"emp_id": "E2", "start_date": "2020-01-01"},
+                ]
+            ),
+            external=externals([]),
+        )
+
+        (employee, experience), said = quiet(build, data, AS_OF)
+
+        self.assertEqual(employee.emp_id.tolist(), ["E2"])
+        self.assertEqual(experience.emp_id.tolist(), ["E2"])
+        self.assertIn("字段冲突 1 人", said)
+        self.assertIn("E1", said)
 
 
 class ContractTest(unittest.TestCase):

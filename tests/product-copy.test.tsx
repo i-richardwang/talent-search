@@ -42,7 +42,13 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		const text = seen(
 			<ResultHeader
 				loading={false}
-				terms={[{ term: "算法", effective: "算法", mode: "must" }]}
+				terms={[
+					{
+						term: "算法",
+						members: [{ text: "算法", effective: "算法", tier: "full" }],
+						mode: "must",
+					},
+				]}
 				total={12}
 			/>,
 		);
@@ -76,7 +82,13 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				view={{}}
 				onReinterpret={() => {}}
 				rawText="最好懂算法、不要实习"
-				terms={[{ term: "算法", effective: "算法", mode: "must" }]}
+				terms={[
+					{
+						term: "算法",
+						members: [{ text: "算法", effective: "算法", tier: "full" }],
+						mode: "must",
+					},
+				]}
 			/>,
 		);
 		assert.match(text, /未能识别这句话里的语气/);
@@ -124,7 +136,15 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onMore={() => {}}
 				onReviseQuery={() => {}}
 				results={[]}
-				terms={[{ term: "量子炼金", effective: "量子炼金", mode: "must" }]}
+				terms={[
+					{
+						term: "量子炼金",
+						members: [
+							{ text: "量子炼金", effective: "量子炼金", tier: "full" },
+						],
+						mode: "must",
+					},
+				]}
 				tooWide={false}
 				total={0}
 				turnId="t1"

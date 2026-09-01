@@ -218,13 +218,13 @@ describe("整词搜不到时退到语料里的子串", () => {
 	test("「线下渠道运营」退成「渠道运营」并如实上报", async () => {
 		const { terms, results } = await search(parseChips("线下渠道运营"));
 		assert.equal(terms[0]?.term, "线下渠道运营");
-		assert.equal(terms[0]?.effective, "渠道运营");
+		assert.equal(terms[0]?.members[0]?.effective, "渠道运营");
 		assert.ok(results.some((r) => r.employee.empId === "T006"));
 	});
 
 	test("语料里完全没有的词不做无意义的退让", async () => {
 		const { terms, results } = await search(parseChips("量子炼金"));
-		assert.equal(terms[0]?.effective, "量子炼金");
+		assert.equal(terms[0]?.members[0]?.effective, "量子炼金");
 		assert.equal(results.length, 0);
 	});
 
@@ -242,8 +242,8 @@ describe("整词搜不到时退到语料里的子串", () => {
 		]) {
 			const got = await search(parseChips("线下渠道运营"), filters);
 			assert.equal(
-				got.terms[0]?.effective,
-				plain.terms[0]?.effective,
+				got.terms[0]?.members[0]?.effective,
+				plain.terms[0]?.members[0]?.effective,
 				`筛选 ${JSON.stringify(filters)} 改变了检索词`,
 			);
 		}
@@ -277,7 +277,7 @@ describe("通配符只能是字面量", () => {
 	test("下划线不匹配任意一个字", async () => {
 		// 库里有「算法工程师」，但「算_法」不该因此命中
 		const { terms, results } = await search(parseChips("算_法"));
-		assert.equal(terms[0]?.effective, "算_法");
+		assert.equal(terms[0]?.members[0]?.effective, "算_法");
 		assert.equal(results.length, 0);
 	});
 });
@@ -560,17 +560,30 @@ describe("加分词", () => {
 	});
 });
 
-describe("排除词", () => {
-	test("命中排除词的人整个不进结果", async () => {
+describe("排除词：否决证据段，不否决人", () => {
+	test("命中排除词的段丧失作证资格；只有这类证据的人自然出局", async () => {
+		// T003 唯一的「算法」证据在一段同时写着「运营支持」的简历原文上：
+		// 那一段被「-运营」否决之后，他没有证据了，过不了 AND。
 		const loose = await search(parseChips("算法"));
 		const tight = await search(parseChips("算法,-运营"));
 		const ids = tight.results.map((r) => r.employee.empId);
 		assert.ok(
-			loose.results.some((r) => r.employee.empId === "T001"),
-			"不排除时 T001 在结果里",
+			loose.results.some((r) => r.employee.empId === "T003"),
+			"不排除时 T003 在结果里",
 		);
-		assert.ok(!ids.includes("T001"), "他有一段运营经历，应当被排掉");
-		assert.ok(ids.includes("T002"), "只有算法、没有运营的人留下");
+		assert.ok(!ids.includes("T003"), "唯一证据被否决的人应当出局");
+	});
+
+	test("别的段还有证据的人留下——排除砍的是证据，不是人", async () => {
+		// T001 的「算法」证据在序列段上，被否决的是他那段「运营专员」经历。
+		// 人级排除会把这种人整个剔掉，违背「排除只否决证据段」的语义。
+		const { results } = await search(parseChips("算法,-运营"));
+		const t001 = results.find((r) => r.employee.empId === "T001");
+		assert.ok(t001, "有独立算法证据的人不因一段运营经历被整个排掉");
+		assert.ok(
+			t001.hits.every((h) => h.title !== "运营专员"),
+			"被否决的段也不能再出现在证据行里",
+		);
 	});
 
 	test("总数与分面跟着一起减，不会出现「点了还剩 N 人」点下去不是 N", async () => {
@@ -698,5 +711,102 @@ describe("零态的语料概览", () => {
 	test("会被切词切走的序列名不出现在词汇表里", async () => {
 		const o = await overview();
 		assert.ok(!o.seqs.includes("安全与风险合规"));
+	});
+});
+
+/**
+ * 一条要求的多个说法。
+ *
+ * 说法之间是 OR、要求之间仍是 AND；near 说法降档计分（FORM_WEIGHTS）。
+ * 打分公式在 rank.test.ts 里钉死，这里验的是取数层：每个说法各自取事实、
+ * 档位与「命中的是哪个说法」原样到达打分层与证据行。
+ */
+describe("一条要求的多个说法", () => {
+	before(async () => {
+		await seed([
+			{
+				empId: "M001",
+				name: "只有相近说法命中",
+				segments: [{ seqL2: "深度学习", months: 36 }],
+			},
+			{
+				empId: "M002",
+				name: "原词命中",
+				segments: [{ seqL2: "机甲算法", months: 36 }],
+			},
+			{
+				empId: "M003",
+				name: "另一段命中排除的第二个说法",
+				segments: [
+					{ seqL2: "机甲算法", months: 36 },
+					{ seqL2: "下棋", months: 12 },
+				],
+			},
+			{
+				empId: "M004",
+				name: "同一段命中两个说法",
+				segments: [{ seqL2: "机甲算法与深度学习", months: 12 }],
+			},
+			{
+				empId: "M005",
+				name: "相近说法命中更硬字段",
+				segments: [{ org: "机甲算法部门", seqL2: "深度学习", months: 12 }],
+			},
+		]);
+	});
+
+	test("并列说法满足其一即满足要求，不会拆成两条都要", async () => {
+		const { terms, results } = await search(parseChips("机甲算法/深度学习"));
+		assert.equal(terms.length, 1, "一条要求，不是两条");
+		const ids = results.map((r) => r.employee.empId);
+		assert.ok(ids.includes("M001") && ids.includes("M002"));
+	});
+
+	test("near 说法捞得到人，但同等条件下排在原词命中之后", async () => {
+		const { results } = await search(parseChips("机甲算法/?深度学习"));
+		const rank = results.map((r) => r.employee.empId);
+		assert.ok(rank.includes("M001"), "相近说法必须能捞到人");
+		assert.ok(
+			rank.indexOf("M002") < rank.indexOf("M001"),
+			"两人月数相同且都是序列命中，原词档必须在前",
+		);
+	});
+
+	test("证据行说出实际命中的说法，而不是要求的主词", async () => {
+		const { results } = await search(parseChips("机甲算法/?深度学习"));
+		const m1 = results.find((r) => r.employee.empId === "M001");
+		assert.equal(m1?.hits[0]?.term, "机甲算法", "行归属仍是这条要求");
+		assert.equal(m1?.hits[0]?.matched, "深度学习", "但命中的字必须如实说");
+	});
+
+	test("同一段命中同一要求的两个说法，只贡献一次", async () => {
+		// 说法之间是 OR，不是两条证据：不去重的话 termValue 会把这 12 个月
+		// 累加成 24，分数、展示的累计月数、证据行全跟着说谎。
+		const { results } = await search(parseChips("机甲算法/深度学习"));
+		const m4 = results.find((r) => r.employee.empId === "M004");
+		assert.equal(m4?.basis[0]?.months, 12, "月份只能计一次");
+		assert.equal(m4?.hits.length, 1, "证据行只列这一段一次");
+	});
+
+	test("同段并中 full 与 near 时留下的是更硬的 full 说法", async () => {
+		const { results } = await search(parseChips("机甲算法/?深度学习"));
+		const m4 = results.find((r) => r.employee.empId === "M004");
+		assert.equal(m4?.hits[0]?.matched, "机甲算法");
+	});
+
+	test("说法档位与字段强度一起决定同段留下哪一次命中", async () => {
+		const { results } = await search(parseChips("机甲算法/?深度学习"));
+		const m5 = results.find((r) => r.employee.empId === "M005");
+		assert.equal(m5?.hits[0]?.matched, "深度学习");
+		assert.equal(m5?.hits[0]?.route, "seq");
+	});
+
+	test("排除组的说法取并集，但仍然只否决段", async () => {
+		const { results } = await search(parseChips("机甲算法,-机甲拳击/下棋"));
+		const ids = results.map((r) => r.employee.empId);
+		// M003 的「下棋」段被第二个说法否决，但他的「机甲算法」证据无恙
+		assert.ok(ids.includes("M003"), "无关段被否决不影响这个人");
+		const m3 = results.find((r) => r.employee.empId === "M003");
+		assert.ok(m3?.hits.every((h) => h.seq !== "下棋"));
 	});
 });

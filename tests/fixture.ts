@@ -5,31 +5,47 @@
  * 在这里不可能发生。索引一概不建：夹具只有十几行，全表扫比建索引快，
  * 而索引不参与被测的语义。
  */
+import type { SQL } from "drizzle-orm";
 import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
-import { employee, experience } from "#/db/schema";
+import { employee, experience, searchTurn } from "#/db/schema";
 
 const SCHEMA = `talent_test_${process.pid}`;
 
 function ddl(schema: string, table: PgTable) {
-	const { name, columns, checks, foreignKeys } = getTableConfig(table);
+	const { name, columns, checks, foreignKeys, uniqueConstraints } =
+		getTableConfig(table);
+	const dialect = new PgDialect();
 	const cols = columns.map((c) => {
 		const parts = [`"${c.name}"`, c.getSQLType()];
 		if (c.primary) parts.push("primary key");
 		if (c.notNull && !c.primary) parts.push("not null");
 		if (c.default !== undefined) {
-			const d = typeof c.default === "string" ? `'${c.default}'` : c.default;
+			// 三种形态：字符串字面量、SQL 表达式（defaultNow）、jsonb 的对象默认值
+			const d =
+				typeof c.default === "string"
+					? `'${c.default}'`
+					: typeof c.default === "object" && c.default !== null
+						? "queryChunks" in c.default
+							? dialect.sqlToQuery(c.default as SQL).sql
+							: `'${JSON.stringify(c.default)}'`
+						: c.default;
 			parts.push(`default ${d}`);
 		}
 		return parts.join(" ");
 	});
-	const dialect = new PgDialect();
 	const constraints = checks.map((c) => {
 		const expression = dialect
 			.sqlToQuery(c.value)
 			.sql.replaceAll(`"${name}".`, "");
 		return `constraint "${c.name}" check (${expression})`;
 	});
+	// unique 不只是约束：search_turn 的复合外键引用 (id, root_turn_id)，
+	// 没有对应的 unique，外键本身就建不起来
+	for (const u of uniqueConstraints) {
+		const cols = u.columns.map((c) => `"${c.name}"`).join(", ");
+		constraints.push(`constraint "${u.name}" unique (${cols})`);
+	}
 	for (const foreignKey of foreignKeys) {
 		const reference = foreignKey.reference();
 		const foreignName = getTableConfig(reference.foreignTable).name;
@@ -60,7 +76,8 @@ export async function setup() {
 	const admin = new Pool({ connectionString: base });
 	await admin.query(`drop schema if exists ${SCHEMA} cascade`);
 	await admin.query(`create schema ${SCHEMA}`);
-	for (const t of [employee, experience]) await admin.query(ddl(SCHEMA, t));
+	for (const t of [employee, experience, searchTurn])
+		await admin.query(ddl(SCHEMA, t));
 	await admin.end();
 
 	const url = new URL(base);

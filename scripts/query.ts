@@ -11,7 +11,17 @@ const { terms, results, total } = await search(parseChips(q));
 const ms = Date.now() - t0;
 
 const shown = terms
-	.map((t) => (t.term === t.effective ? t.term : `${t.term}→${t.effective}`))
+	.map((t) =>
+		t.members
+			.map((m) =>
+				m.effective === m.text
+					? m.tier === "near"
+						? `≈${m.text}`
+						: m.text
+					: `${m.text}→${m.effective}`,
+			)
+			.join("/"),
+	)
 	.join(", ");
 const top = results.slice(0, Number(process.env.TOPN ?? 8));
 

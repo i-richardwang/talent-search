@@ -8,7 +8,12 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { type Fact, gapMonths, pageHits, rank } from "#/search/rank";
 import type { SearchFilters, TermPlan } from "#/search/result";
-import { RECENCY_FLOOR, ROUTE_WEIGHTS, TENURE_FLOOR } from "#/search/weights";
+import {
+	FORM_WEIGHTS,
+	RECENCY_FLOOR,
+	ROUTE_WEIGHTS,
+	TENURE_FLOOR,
+} from "#/search/weights";
 
 /** 钉死的「今天」：近因因子让分数依赖当前时间，测试不能跟着日历漂 */
 const NOW = new Date(2026, 0, 1);
@@ -18,6 +23,8 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 	return {
 		id: nextId++,
 		termIdx: 0,
+		memberIdx: 0,
+		tier: "full",
 		route: "seq",
 		months: 24,
 		endDate: null,
@@ -30,7 +37,11 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 }
 
 const terms = (...modes: TermPlan["mode"][]): TermPlan[] =>
-	modes.map((mode, i) => ({ term: `词${i}`, effective: `词${i}`, mode }));
+	modes.map((mode, i) => ({
+		term: `词${i}`,
+		members: [{ text: `词${i}`, effective: `词${i}`, tier: "full" }],
+		mode,
+	}));
 
 const run = (facts: Fact[], t = terms("must"), f: SearchFilters = {}) =>
 	rank(facts, t, f, NOW);
@@ -240,6 +251,34 @@ describe("排名依据", () => {
 		]);
 		assert.equal(ranked[0]?.basis[0]?.external, true);
 		assert.equal(ranked[0]?.basis[0]?.months, 24);
+	});
+});
+
+describe("说法的档位（字眼档位 × 路权重）", () => {
+	test("同一路上，相近说法的命中低于原词命中", () => {
+		const full = scoreOf([fact({ empId: "A" })]);
+		const near = scoreOf([fact({ empId: "B", tier: "near", memberIdx: 1 })]);
+		assert.ok(near < full);
+		assert.ok(near > 0, "降档不是不算");
+	});
+
+	test("相近说法的受控命中，基础强度高于原词的部门命中", () => {
+		// 登记字段说他真在干这个，词的距离只是翻译损耗——方向见 weights.ts
+		assert.ok(FORM_WEIGHTS.near * ROUTE_WEIGHTS.seq > ROUTE_WEIGHTS.org);
+	});
+
+	test("时长与近因只跟着最硬那条证据：原词命中在场时，相近命中不续时长", () => {
+		const mixed = scoreOf([
+			fact({ empId: "A", months: 12 }),
+			fact({ empId: "A", tier: "near", memberIdx: 1, months: 240 }),
+		]);
+		const clean = scoreOf([fact({ empId: "B", months: 12 })]);
+		assert.equal(mixed, clean);
+	});
+
+	test("证据要求看的是路（受控字段），与说法档位正交", () => {
+		const facts = [fact({ empId: "A", tier: "near", memberIdx: 1 })];
+		assert.equal(run(facts, terms("must"), { strong: true }).total, 1);
 	});
 });
 

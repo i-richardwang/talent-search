@@ -132,15 +132,16 @@ export type Experience = typeof experience.$inferSelect;
  * 1. **原话留得住。** `raw_text` 是用户自己敲的那句话。把它丢掉（比如只往
  *    URL 里写理解后的 chips），「重新理解」就永远做不到了——没有输入可重放，
  *    模型改好了也惠及不到任何一条已经存在的查询。
- * 2. **理解的结果是记录，不是缓存。** 打开同一条 `/s/:id` 必然得到同一批人，
- *    这是分享和复盘要的确定性；而它由「这一行是不可变的」保证，不由「凑巧
- *    没人再调模型」保证。想重新理解，就派生一条新记录。
+ * 2. **理解的结果是记录，不是缓存。** 同一条 `/s/:id` 永远问的是同一个问题
+ *    （同一句原话、同一份 chips）；名单本身跟着语料和时间走，本来就该走——
+ *    可复现的是条件，不是那批人。「问题不变」由「这一行是不可变的」保证，
+ *    不由「凑巧没人再调模型」保证。想重新理解，就派生一条新记录。
  * 3. **改条件留得下痕迹。** 每次改 chip 都派生一条挂在 `parent_turn_id` 上的
  *    新记录，于是「模型判成必须、人改成加分」这类修正会自己长在库里。
  *    这是这个产品唯一能自己产出的模型评估数据，写进 URL 就等于每次导航扔一次。
  *
  * 这张表**只 INSERT**，唯一的例外是把 `chips` 从 null 补成理解结果（见下）。
- * 这一条由应用代码保证；库强制的是下面那三条约束。
+ * 这一条由应用代码保证；库负责输入完整性与链关系。
  */
 export const searchTurn = pgTable(
 	"search_turn",
@@ -152,8 +153,19 @@ export const searchTurn = pgTable(
 		 * 并且停在它最后的样子上。
 		 */
 		rootTurnId: text("root_turn_id").notNull(),
-		/** 从哪一条派生。链头为 null。追加条件时要读父记录的 chips。 */
+		/** 历史上的上一步。链头为 null；浏览器后退与最近搜索沿这条链工作。 */
 		parentTurnId: text("parent_turn_id"),
+		/**
+		 * 这句原话理解完成后，要接在哪一份既有条件后面。
+		 *
+		 * 它和 `parent_turn_id` 回答两件不同的事：parent 是浏览器后退要回到的
+		 * 上一步，base 是这句话的语义上下文。普通追加时两者相同；重新理解时
+		 * parent 指向上一版理解，base 沿用上一版当时的上下文。把两者分开存，
+		 * 连续重新理解多少次都不会把已经替换的条件带回来。
+		 *
+		 * 点词汇表或直接改 chip 的记录已经带着完整 chips，不需要 base。
+		 */
+		baseTurnId: text("base_turn_id"),
 		/**
 		 * 用户敲的原话。null 表示这条不是从一句话来的（点了词汇表，或者只改了
 		 * 一枚 chip）——那种记录没有可重新理解的输入，界面上也不给那个入口。
@@ -190,6 +202,10 @@ export const searchTurn = pgTable(
 			"search_turn_has_input",
 			sql`${t.rawText} is not null or ${t.chips} is not null`,
 		),
+		check(
+			"search_turn_base_requires_text",
+			sql`${t.baseTurnId} is null or ${t.rawText} is not null`,
+		),
 		/*
 		 * 自引用：链头这一行的 root 就是它自己。同一条 INSERT 里成立——外键在
 		 * 语句结束时才检查，那时这一行已经在表里了。
@@ -213,6 +229,12 @@ export const searchTurn = pgTable(
 		foreignKey({
 			name: "search_turn_parent",
 			columns: [t.parentTurnId, t.rootTurnId],
+			foreignColumns: [t.id, t.rootTurnId],
+		}).onDelete("cascade"),
+		/* 语义基线必须和这条记录在同一条链上；null 表示从空条件开始。 */
+		foreignKey({
+			name: "search_turn_base",
+			columns: [t.baseTurnId, t.rootTurnId],
 			foreignColumns: [t.id, t.rootTurnId],
 		}).onDelete("cascade"),
 		// 「最近搜索」：按 root 取每条链最新的那一条

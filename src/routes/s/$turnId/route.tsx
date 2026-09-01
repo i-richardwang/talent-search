@@ -66,7 +66,7 @@ const KEYS = [
  *
  * 地址是 `/s/:turnId`——**turnId 指的是一条查询记录**，不是一串检索参数
  * （见 `-lib/view-params.ts` 开头那段分界）。所以刷新、后退、把链接粘给同事
- * 都落在同一条记录上，必然是同一批人；而改一个筛选只动 query string，
+ * 都落在同一条记录上，问的必然是同一个问题；而改一个筛选只动 query string，
  * 不产生新记录。
  *
  * `/s/:id` 与 `/s/:id/p/:empId` 共用这一层，检索结果挂在这里——所以换人
@@ -117,10 +117,11 @@ function Workbench() {
 	const { commit, error: commitError } = useCommit();
 
 	const { growing, navigating } = useNavPhase();
-	const { interpreting, error: interpretError } = useInterpretation(
-		turnId,
-		settledChips,
-	);
+	const {
+		interpreting,
+		error: interpretError,
+		retry: retryInterpret,
+	} = useInterpretation(turnId, settledChips);
 
 	// 键盘流的 `/` 要能聚焦到查询台那个框
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -182,6 +183,7 @@ function Workbench() {
 					chips={chips}
 					degraded={turn.degraded}
 					error={commitError ?? interpretError}
+					onRetry={interpretError ? retryInterpret : undefined}
 					fields={filterFields(facets, view)}
 					inputRef={inputRef}
 					interpreting={interpreting}
@@ -190,7 +192,11 @@ function Workbench() {
 					onQuery={(input) => commit(input, { parentTurnId: turn.id, view })}
 					onReinterpret={
 						rawText
-							? () => commit({ kind: "sentence", text: rawText })
+							? () =>
+									commit(
+										{ kind: "reinterpret" },
+										{ parentTurnId: turn.id, view },
+									)
 							: undefined
 					}
 					rawText={rawText}

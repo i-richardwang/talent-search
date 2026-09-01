@@ -21,6 +21,8 @@ import {
 } from "./result";
 import {
 	BOOST_WEIGHT,
+	FORM_WEIGHTS,
+	type FormTier,
 	isControlledRoute,
 	MIN_MONTHS_BUCKETS,
 	RECENCY_FLOOR,
@@ -32,16 +34,20 @@ import {
 } from "./weights";
 
 /**
- * 一段经历对一个概念词的命中。这是检索层唯一的产物：**事实，不含任何评分**。
+ * 一段经历对一条要求的命中。这是检索层唯一的产物：**事实，不含任何评分**。
  *
- * 字段只有两类：打分要用的（route / months / endDate）和分面要分组的
+ * 字段只有两类：打分要用的（route / tier / months / endDate）和分面要分组的
  * （seq / companyTag / kind / months）。`id` 只用来在定好名次之后回表取展示用的
- * 原文，不参与任何计算。
+ * 原文；`memberIdx` 只用来在出结果时说出「命中的是哪个说法」——都不参与计算。
  */
 export type Fact = {
 	id: number;
 	empId: string;
 	termIdx: number;
+	/** 命中的是这条要求的第几个说法（TermPlan.members 的下标） */
+	memberIdx: number;
+	/** 那个说法的档位。权重直接从它查，不用回 TermPlan 找。 */
+	tier: FormTier;
 	route: Route;
 	months: number;
 	/** null 表示至今 */
@@ -51,6 +57,14 @@ export type Fact = {
 	companyTag: string | null;
 	kind: "internal" | "external";
 };
+
+/**
+ * 一条证据的强度 = 字眼档位 × 路权重。两个都是「这条证据有多能说明他真的
+ * 做过用户要的那件事」的因子：前者管词离用户的意思多远，后者管字段是谁写的。
+ */
+function evidenceWeight(f: Fact) {
+	return FORM_WEIGHTS[f.tier] * ROUTE_WEIGHTS[f.route];
+}
 
 /**
  * 饱和函数：`x / (x + half)` 抬到地板之上。恒在 [floor, 1) 内、处处单调、
@@ -77,21 +91,23 @@ export function gapMonths(endDate: string | null, now: Date) {
 }
 
 /**
- * 一个概念词对一个人的分数 = **强度 × 时长 × 近因**，三个都是有界因子。
+ * 一条要求对一个人的分数 = **强度 × 时长 × 近因**，三个都是有界因子。
  *
- * **强度**取该人所有命中段里最硬的一路。做过三段算法不比做过一段更「做过」，
- * 所以强度不累加，它回答的是「这条证据有多能说明他真的做过」。
+ * **强度**取该人所有命中段里最硬的一条证据（字眼档位 × 路权重，见
+ * evidenceWeight）。做过三段算法不比做过一段更「做过」，所以强度不累加，
+ * 它回答的是「最硬的那条证据有多能说明他真的做过」。
  *
- * **时长与近因只看最硬那一路的段。** 这两样是「那条证据」的属性：拿简历里提过
- * 一句的段去给序列命中续时长，是把两种强度的证据混成一份。规则简单的好处是
- * 分数永远解释得清——它回答的始终是「最硬的那条证据有多硬、有多久、有多近」。
+ * **时长与近因只看并列最硬的那些段。** 这两样是「那条证据」的属性：拿简历里
+ * 提过一句的段去给序列命中续时长，是把两种强度的证据混成一份。规则简单的
+ * 好处是分数永远解释得清——它回答的始终是「最硬的那条证据有多硬、有多久、
+ * 有多近」。
  *
- * 两个因子的地板刻意抬得很高，好让它们**永远压不过路权重**（论证见 weights.ts
+ * 两个因子的地板刻意抬得很高，好让它们**永远压不过证据强度**（论证见 weights.ts
  * 的 TENURE_FLOOR）：它们决定的是同一档证据内部的先后，不是证据的档次。
  */
 function termValue(facts: Fact[], term: string, now: Date) {
 	let strength = 0;
-	for (const f of facts) strength = Math.max(strength, ROUTE_WEIGHTS[f.route]);
+	for (const f of facts) strength = Math.max(strength, evidenceWeight(f));
 	let months = 0;
 	let gap = Number.POSITIVE_INFINITY;
 	const routes = new Set<Route>();
@@ -99,7 +115,7 @@ function termValue(facts: Fact[], term: string, now: Date) {
 	// 只有全部段都来自入职前，这个累计值才配叫「前」（见 result.ts 的 external）
 	let external = true;
 	for (const f of facts) {
-		if (ROUTE_WEIGHTS[f.route] < strength) continue;
+		if (evidenceWeight(f) < strength) continue;
 		routes.add(f.route);
 		months += f.months;
 		if (f.kind !== "external") external = false;
@@ -366,7 +382,7 @@ export function pageHits(
 	for (const list of byKey.values()) {
 		list.sort(
 			(a, b) =>
-				ROUTE_WEIGHTS[b.route] - ROUTE_WEIGHTS[a.route] ||
+				evidenceWeight(b) - evidenceWeight(a) ||
 				b.months - a.months ||
 				a.id - b.id,
 		);
@@ -376,12 +392,12 @@ export function pageHits(
 		acc.push(...list.slice(0, perTerm));
 		out.set(emp, acc);
 	}
-	// 词序即行序：结果里每个人的每条证据对应一个概念词，按词下标排好再交出去
+	// 词序即行序：结果里每个人的每条证据对应一条要求，按要求下标排好再交出去
 	for (const list of out.values())
 		list.sort(
 			(a, b) =>
 				a.termIdx - b.termIdx ||
-				ROUTE_WEIGHTS[b.route] - ROUTE_WEIGHTS[a.route] ||
+				evidenceWeight(b) - evidenceWeight(a) ||
 				b.months - a.months,
 		);
 	return out;

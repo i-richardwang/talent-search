@@ -26,6 +26,7 @@ import { visibleText } from "./render";
 const hit = (over: Partial<Hit> = {}): Hit => ({
 	experienceId: 1,
 	term: "算法",
+	matched: "算法",
 	route: "seq" as Route,
 	kind: "internal",
 	startDate: "2020-01-01",

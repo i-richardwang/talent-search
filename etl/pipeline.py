@@ -172,6 +172,13 @@ def build_external(
         out.end_date.notna() & (out.end_date < out.start_date),
         "入职前经历日期倒置",
     )
+    # 入职前经历不能越过已知入职日；开放区间封到入职日的边界合法。
+    hire = pd.to_datetime(out.emp_id.map(hire_dates), errors="coerce")
+    out = _reject(
+        out,
+        out.end_date.notna() & hire.notna() & (out.end_date > hire),
+        "入职前经历结束日晚于入职日",
+    )
 
     out["title"] = out.title.where(~out.unemployed, UNEMPLOYED)
     out["description"] = out.description.where(~out.unemployed, "")
@@ -224,7 +231,7 @@ def build_employee(rows: pd.DataFrame, internal: pd.DataFrame) -> pd.DataFrame:
     """
     fields = ["emp_id", "name", "education_level", "school", "recruitment"]
     out = _text(_dates(rows, "hire_date"), fields)
-    out = out.drop_duplicates("emp_id").sort_values("emp_id").set_index("emp_id")
+    out = out.sort_values("emp_id").set_index("emp_id")
 
     last = (
         internal.sort_values("start_date")
@@ -265,6 +272,19 @@ def build(
     employees = data.employees.copy()
     employees["emp_id"] = employees.emp_id.map(clean_scalar)
     employees = employees[employees.emp_id != ""]
+
+    # 完全重复是导出毛刺；同工号冲突无法确定权威值，整个人退出本次人群。
+    before = len(employees)
+    employees = employees.drop_duplicates()
+    if len(employees) < before:
+        print(f"  员工档案整行重复 {before - len(employees)} 行，已去重")
+    conflict = employees.emp_id.duplicated(keep=False)
+    if conflict.any():
+        ids = sorted(set(employees.emp_id[conflict]))
+        shown = "、".join(ids[:5]) + ("…" if len(ids) > 5 else "")
+        print(f"  员工档案字段冲突 {len(ids)} 人（{shown}），已连同其经历拒绝导入")
+        employees = employees[~conflict]
+
     population = set(employees.emp_id)
     print(f"  人群 {len(population)} 人")
 
@@ -285,12 +305,15 @@ def build(
     idle = int((outside.title == UNEMPLOYED).sum()) if len(outside) else 0
     print(f"  入职前 {len(outside)} 段（其中待业 {idle} 段）")
 
-    experience = pd.concat(
-        [
-            internal.reindex(columns=EXPERIENCE_OUT),
-            outside.reindex(columns=EXPERIENCE_OUT),
-        ],
-        ignore_index=True,
+    parts = [
+        frame.reindex(columns=EXPERIENCE_OUT)
+        for frame in (internal, outside)
+        if not frame.empty
+    ]
+    experience = (
+        pd.concat(parts, ignore_index=True)
+        if parts
+        else pd.DataFrame(columns=EXPERIENCE_OUT)
     )
     experience = experience.sort_values(["emp_id", "start_date"]).reset_index(drop=True)
     return employee.reindex(columns=EMPLOYEE_OUT), experience

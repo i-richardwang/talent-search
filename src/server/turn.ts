@@ -19,15 +19,15 @@ import { type Intent, resolveIntent } from "#/search/intent";
 import {
 	type Chip,
 	parseChips,
-	type QueryInput,
+	type QueryChange,
 	toQuery,
 } from "#/search/parse";
-import { companyTags } from "#/search/search";
+import { companyTags, probeTerms } from "#/search/search";
 import { understand } from "./llm";
 
 /**
  * 记录 id 会出现在 URL 里，所以要短、要能双击选中、要不带 `-` 和 `_` 之外的
- * 记号。11 个 base64url 字符是 66 bit，对一个内部工具的记录量来说，碰撞概率
+ * 记号。11 个 base64url 字符承载 64 bit 随机量，对一个内部工具的记录量来说，碰撞概率
  * 远低于「主键冲突时 INSERT 报错」这条兜底本身的成本。
  */
 function newId() {
@@ -58,9 +58,9 @@ function toTurn(row: SearchTurn): Turn {
  * 落一条记录。**只 INSERT，不改已有的行**——记录是不可变的，「改查询」的
  * 意思是派生一条新的挂在 `parentTurnId` 上。
  *
- * 这一点是整套设计的支点：不可变才能让 `/s/:id` 永远指向同一批人（分享、
- * 刷新、后退都成立），也才能让「上一步是什么样」这件事自然留在库里，
- * 而不需要另外记一份操作日志。
+ * 这一点是整套设计的支点：不可变才能让 `/s/:id` 永远指向同一个问题（分享、
+ * 刷新、后退都成立——复现的是条件，名单跟着语料和时间走），也才能让
+ * 「上一步是什么样」这件事自然留在库里，而不需要另外记一份操作日志。
  */
 async function insertTurn(row: {
 	parent: SearchTurn | null;
@@ -68,6 +68,7 @@ async function insertTurn(row: {
 	chips: Chip[] | null;
 	filters?: Intent["filters"];
 	degraded?: boolean;
+	baseTurnId?: string | null;
 }): Promise<Turn> {
 	const id = newId();
 	const [inserted] = await db
@@ -78,6 +79,7 @@ async function insertTurn(row: {
 			// 里一次找人任务只占一行，停在它最后的样子上。
 			rootTurnId: row.parent ? row.parent.rootTurnId : id,
 			parentTurnId: row.parent?.id ?? null,
+			baseTurnId: row.baseTurnId ?? null,
 			rawText: row.rawText,
 			chips: row.chips,
 			filters: row.filters ?? {},
@@ -106,18 +108,59 @@ async function getRow(id: string): Promise<SearchTurn | null> {
  * 白等十几秒。
  */
 export async function createTurn(
-	input: QueryInput,
+	input: QueryChange,
 	parentTurnId?: string,
 ): Promise<{ turnId: string }> {
 	const parent = parentTurnId ? await getRow(parentTurnId) : null;
 	// 说了从哪派生却找不到那一条：不能当成「那就开条新的吧」。那样人会得到
 	// 一条丢了全部已有条件的查询，而屏幕上没有任何东西说明条件去哪了。
 	if (parentTurnId && !parent) throw new Error("要修改的查询记录不存在");
-	const turn =
-		input.kind === "sentence"
-			? await insertTurn({ parent, rawText: input.text, chips: null })
-			: await insertTurn({ parent, rawText: null, chips: input.chips });
+	// 派生只能建立在一份已经成型的条件上。否则子记录先去理解时看不到父 chips，
+	// 会安静地从空条件开始；这不是并发问题，而是一条不完整的记录。
+	if (parent && parent.chips === null)
+		throw new Error("查询仍在理解中，暂时不能派生新记录");
+
+	let turn: Turn;
+	if (input.kind === "reinterpret") {
+		if (!parent?.rawText) throw new Error("重新理解需要一条由整句产生的父记录");
+		turn = await insertTurn({
+			parent,
+			baseTurnId: parent.baseTurnId,
+			rawText: parent.rawText,
+			chips: null,
+		});
+	} else if (input.kind === "sentence") {
+		turn = await insertTurn({
+			parent,
+			baseTurnId: parent?.id ?? null,
+			rawText: input.text,
+			chips: null,
+		});
+	} else {
+		turn = await insertTurn({ parent, rawText: null, chips: input.chips });
+	}
 	return { turnId: turn.id };
+}
+
+/**
+ * 相近说法（near）落库前的语料体检：模型译的词必须在库里真实命中过才配上屏。
+ *
+ * 语料就是词典——和 relaxTerm、companyTags 同一条原则。搜不到人的翻译留下来，
+ * 界面上就多一个看着在参与、实际什么都没捞到的说法；在这里删掉，检索层也就
+ * 不必为 near 准备松弛（体检过的词要么还在语料里，要么语料变了、它安静地
+ * 不命中，两种都不需要二次降级）。只体检 near：full 说法是用户自己写的，
+ * 搜不到时走松弛并在 chip 上明说，那是另一条已有的路。
+ */
+async function vetNearMembers(chips: Chip[]): Promise<Chip[]> {
+	const nearTexts = [...new Set(chips.flatMap((c) => c.near ?? []))];
+	if (nearTexts.length === 0) return chips;
+	const found = await probeTerms(nearTexts);
+	return chips.map((c) => {
+		if (!c.near) return c;
+		const near = c.near.filter((n) => found.has(n));
+		const { near: _drop, ...rest } = c;
+		return near.length > 0 ? { ...rest, near } : rest;
+	});
 }
 
 /**
@@ -128,8 +171,9 @@ export async function createTurn(
  * 那次更新自己就落空了，不会把先到的结果覆盖掉。理解一旦落下就不再变，
  * 记录重新变回不可变的。
  *
- * 追加条件（在工作台里再敲一句话）在这里合并：新词接在父记录的 chips 后面，
- * 去重交给 `parseChips`。合并放在理解之后，是因为要合并的正是理解的产物。
+ * 追加条件（在工作台里再敲一句话）在这里合并：新词接在 `baseTurnId` 指向的
+ * chips 后面，去重交给 `parseChips`。重新理解沿用同一个 base，只替换这句话
+ * 产生的条件；历史父链不参与语义合并。
  */
 export async function resolveTurn(
 	turnId: string,
@@ -143,14 +187,13 @@ export async function resolveTurn(
 	const tags = await companyTags();
 	const intent = resolveIntent(text, await understand(text, tags), tags);
 
-	const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
-	const chips = parent?.chips
+	const base = row.baseTurnId ? await getRow(row.baseTurnId) : null;
+	const merged = base?.chips
 		? parseChips(
-				[toQuery(parent.chips), toQuery(intent.chips)]
-					.filter(Boolean)
-					.join(","),
+				[toQuery(base.chips), toQuery(intent.chips)].filter(Boolean).join(","),
 			)
 		: intent.chips;
+	const chips = await vetNearMembers(merged);
 
 	await db
 		.update(searchTurn)

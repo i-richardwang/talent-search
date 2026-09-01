@@ -32,7 +32,7 @@ const MODE_LABEL: Record<ChipMode, string> = {
 const MODE_HINT: Record<ChipMode, string> = {
 	must: "仅显示具备这项经历的人",
 	boost: "具备这项经历的人优先显示",
-	exclude: "不显示具备这项经历的人",
+	exclude: "这类经历不再作为证据；仅有这类经历的人不再显示",
 };
 
 /**
@@ -87,26 +87,37 @@ export function QueryChips({
 	const replace = (i: number, mode: ChipMode) =>
 		onChange(chips.map((c, j) => (j === i ? { ...c, mode } : c)));
 	const remove = (i: number) => onChange(chips.filter((_, j) => j !== i));
-	// 停用只加/去一个字段，强度始终原样保留
+	// 停用只加/去一个字段，强度和说法始终原样保留
 	const toggle = (i: number) =>
 		onChange(
-			chips.map((c, j) =>
-				j === i
-					? {
-							term: c.term,
-							mode: c.mode,
-							...(!c.off && { off: true as const }),
-						}
-					: c,
-			),
+			chips.map((c, j) => {
+				if (j !== i) return c;
+				const { off: _off, ...rest } = c;
+				return { ...rest, ...(!c.off && { off: true as const }) };
+			}),
+		);
+	// 去掉这一条要求上模型补的全部相近说法。逐个删不值得一层子菜单：
+	// 相近说法最多两三个，嫌它捞得太宽时用户要的是「只按我说的搜」。
+	const dropNear = (i: number) =>
+		onChange(
+			chips.map((c, j) => {
+				if (j !== i) return c;
+				const { near: _near, ...rest } = c;
+				return rest;
+			}),
 		);
 
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			{chips.map((chip, i) => {
 				const plan = terms.find((t) => t.term === chip.term);
-				// 排除词不参与松弛（见 search.ts），所以它这里永远是 undefined
-				const relaxed = plan && plan.effective !== chip.term;
+				// 只有 full 说法会被松弛（near 落库前已过语料体检，检索时原样用；
+				// 排除词完全不参与，所以它这里永远是空的）
+				const relaxedMembers =
+					plan?.members.filter(
+						(m) => m.tier === "full" && m.effective !== m.text,
+					) ?? [];
+				const relaxed = relaxedMembers.length > 0;
 				return (
 					<Menu key={`${chip.off ? "~" : ""}${chip.mode}:${chip.term}`}>
 						<MenuTrigger
@@ -126,7 +137,15 @@ export function QueryChips({
 									{MODE_SIGN[chip.mode]}
 								</span>
 							)}
-							<span>{chip.term}</span>
+							{/* 并列说法（或）与主词同权重，平着写；相近说法是补充，
+							    降色并带 ≈——它得在 chip 上看得见，否则「为什么多了
+							    这批人」在界面上无从解释。 */}
+							<span>{[chip.term, ...(chip.alts ?? [])].join(" / ")}</span>
+							{chip.near && chip.near.length > 0 && (
+								<span className="text-muted-foreground">
+									≈{chip.near.join("/")}
+								</span>
+							)}
 							{chip.off && <EyeOffIcon />}
 							{relaxed && <TriangleAlertIcon className="text-warning" />}
 							<ChevronDownIcon />
@@ -143,9 +162,24 @@ export function QueryChips({
 										<span className="flex max-w-64 items-start gap-1.5 whitespace-normal text-muted-foreground text-xs">
 											<TriangleAlertIcon className="mt-px size-3.5 shrink-0 text-warning" />
 											<span>
-												未找到「{chip.term}」的直接匹配，当前按「
-												{plan?.effective}」搜索。
+												{relaxedMembers
+													.map(
+														(m) =>
+															`未找到「${m.text}」的直接匹配，当前按「${m.effective}」搜索。`,
+													)
+													.join("")}
 											</span>
+										</span>
+									</MenuGroupLabel>
+									<MenuSeparator />
+								</>
+							)}
+							{chip.near && chip.near.length > 0 && (
+								<>
+									<MenuGroupLabel>
+										<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
+											同时按相近说法「{chip.near.join("」「")}
+											」检索，按较低权重计分。
 										</span>
 									</MenuGroupLabel>
 									<MenuSeparator />
@@ -185,6 +219,9 @@ export function QueryChips({
 							 * （词没了，强度也一起没了）。
 							 */}
 							<MenuSeparator />
+							{chip.near && chip.near.length > 0 && (
+								<MenuItem onClick={() => dropNear(i)}>只按我写的词搜</MenuItem>
+							)}
 							<MenuItem onClick={() => toggle(i)}>
 								{chip.off ? "重新启用" : "暂不使用"}
 							</MenuItem>

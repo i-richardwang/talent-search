@@ -112,7 +112,7 @@ describe("查询 chips", () => {
 		]);
 	});
 
-	test("往返：写进 URL 再读回来必须一模一样", () => {
+	test("规范查询串往返必须一模一样", () => {
 		for (const raw of [
 			"渠道运营,+带团队,-实习",
 			"算法",
@@ -123,7 +123,7 @@ describe("查询 chips", () => {
 		}
 	});
 
-	test("原话也能往返：第一次搜完写回 URL，刷新读回来还是同几个词", () => {
+	test("原话解析出的 chips 也能规范往返", () => {
 		const chips = parseChips("算法、产品都做过的人");
 		assert.deepEqual(parseChips(toQuery(chips)), chips);
 	});
@@ -156,7 +156,7 @@ describe("停用的词", () => {
 		]);
 	});
 
-	test("往返：停用状态也得原样写回 URL 再读回来", () => {
+	test("往返：停用状态也得原样序列化再读回来", () => {
 		for (const raw of ["~算法", "~+运营,城市经营", "~-实习,~+数据分析"]) {
 			const chips = parseChips(raw);
 			assert.deepEqual(parseChips(toQuery(chips)), chips, raw);
@@ -172,6 +172,56 @@ describe("停用的词", () => {
 		assert.deepEqual(activeChips(chips), [
 			{ term: "算法", mode: "must" },
 			{ term: "产品", mode: "must" },
+		]);
+	});
+});
+
+/**
+ * 一条要求的多个说法：组内 `/` 与「或」是 OR，`?` 前缀是相近档（near）。
+ * 语义（怎么检索、怎么计分）在 search/rank 那两层钉，这里只钉解析与往返。
+ */
+describe("说法（成员）语法", () => {
+	test("「或」并列的说法归成一条要求", () => {
+		assert.deepEqual(parseChips("大模型或推荐系统,带团队"), [
+			{ term: "大模型", alts: ["推荐系统"], mode: "must" },
+			{ term: "带团队", mode: "must" },
+		]);
+	});
+
+	test("`/` 与 `?` 是我们自己写回的形态，读回来逐位一致", () => {
+		for (const raw of [
+			"算法/?深度学习/?机器学习",
+			"大模型/推荐系统,+带团队",
+			"~算法/?深度学习",
+			"-实习/外包",
+		]) {
+			const chips = parseChips(raw);
+			assert.deepEqual(parseChips(toQuery(chips)), chips, raw);
+		}
+	});
+
+	test("排除组的 near 说法直接丢弃：赶人的词必须准", () => {
+		assert.deepEqual(parseChips("-实习/?实习生"), [
+			{ term: "实习", mode: "exclude" },
+		]);
+	});
+
+	test("说法跨组去重，先出现的赢", () => {
+		assert.deepEqual(parseChips("算法/?深度学习,深度学习"), [
+			{ term: "算法", near: ["深度学习"], mode: "must" },
+		]);
+	});
+
+	test("全是 near 时第一个提为主词：一条要求必须有标签", () => {
+		assert.deepEqual(parseChips("?深度学习/?机器学习"), [
+			{ term: "深度学习", near: ["机器学习"], mode: "must" },
+		]);
+	});
+
+	test("没有说法记号的顿号句仍是几条 AND 要求，不被并成 OR", () => {
+		assert.deepEqual(parseChips("渠道运营、带团队"), [
+			{ term: "渠道运营", mode: "must" },
+			{ term: "带团队", mode: "must" },
 		]);
 	});
 });

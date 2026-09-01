@@ -16,8 +16,8 @@ import type { QueryInput } from "#/search/parse";
  *   清空，因为已经搜过的条件在 chip 上看得见、改得动——把原话再留在框里，
  *   等于同一份东西摆两遍，而那两遍还会不一致（改了 chip，框里还是老句子）。
  *
- * 所以这里没有「把 URL 同步回输入框」的 effect：查询的唯一表示是 chips，
- * 前进后退换掉 URL 时跟着变的是它们，不是这个框。
+ * 所以这里不把查询记录同步回输入框：工作台上的唯一可编辑表示是 chips，
+ * 前进后退换记录时跟着变的是它们，不是这个框。
  *
  * 框和按钮是**一块面**（`InputGroup`），不是并排的两块。它们是一个动作的两半，
  * 中间隔一道 8px 的缝就成了两件事，而且会得到两条顶光边、两个圆角、两套焦点环。
@@ -39,11 +39,14 @@ export function QueryBar({
 	onQuery,
 	inputRef,
 	variant,
+	disabled = false,
 }: {
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
 	/** 键盘流的 `/` 要能聚焦到它。零态没有那套快捷键，所以是可选的。 */
 	inputRef?: React.RefObject<HTMLInputElement | null>;
 	variant: "hero" | "header";
+	/** 父查询还没形成 chips 时不能再派生下一条。 */
+	disabled?: boolean;
 }) {
 	const header = variant === "header";
 	const [draft, setDraft] = useState("");
@@ -58,7 +61,7 @@ export function QueryBar({
 			onSubmit={async (e) => {
 				e.preventDefault();
 				const q = draft.trim();
-				if (!q || busy) return;
+				if (!q || busy || disabled) return;
 				setBusy(true);
 				try {
 					// 提交期间人还能接着敲。清空只针对**刚才提交的那句**，
@@ -81,6 +84,7 @@ export function QueryBar({
 				</InputGroupAddon>
 				<InputGroupInput
 					aria-label={header ? "添加搜索条件" : "搜索人才"}
+					disabled={disabled}
 					onChange={(e) => {
 						draftRef.current = e.target.value;
 						setDraft(e.target.value);
@@ -94,6 +98,7 @@ export function QueryBar({
 				/>
 				<InputGroupAddon align="inline-end">
 					<Button
+						disabled={disabled}
 						loading={busy}
 						render={<button type="submit" />}
 						size={header ? "xs" : "sm"}

@@ -110,8 +110,8 @@ export const fetchEmployee = createServerFn({ method: "GET" })
  * 提交一次查询：落一条记录，返回它的 id。
  *
  * 入参收窄放在这里而不是 `createTurn` 里，因为不可信的只有跨进程这一跳——
- * `chips` 来自客户端，和 URL、模型输出一样要过 `parseChips`，切法、赘字剥法、
- * 数量上限于是和别处完全一致。
+ * `chips` 来自客户端，必须过 `parseChips`；切法、赘字剥法与数量上限因此只有
+ * 一个执行点。
  */
 export const commitTurn = createServerFn({ method: "POST" })
 	.validator((d: { parentTurnId?: unknown; input: unknown }) => {
@@ -120,19 +120,34 @@ export const commitTurn = createServerFn({ method: "POST" })
 			typeof d.parentTurnId === "string" && d.parentTurnId
 				? d.parentTurnId
 				: undefined;
+		if (input.kind === "reinterpret") {
+			if (!parentTurnId) throw new Error("重新理解需要一条父记录");
+			return { parentTurnId, input: { kind: "reinterpret" as const } };
+		}
 		if (input.kind === "sentence") {
 			const text = queryText(input.text);
 			if (!text) throw new Error("查询为空");
-			return { parentTurnId, input: { kind: "sentence" as const, text } };
+			return {
+				parentTurnId,
+				input: { kind: "sentence" as const, text },
+			};
 		}
+		const strings = (v: unknown) =>
+			Array.isArray(v)
+				? v.filter((x): x is string => typeof x === "string" && x !== "")
+				: [];
 		const chips = parseChips(
 			toQuery(
 				(Array.isArray(input.chips) ? input.chips : [])
 					.slice(0, CHIP_MAX)
 					.map((c) => {
 						const chip = (c ?? {}) as Record<string, unknown>;
+						const alts = strings(chip.alts);
+						const near = strings(chip.near);
 						return {
 							term: String(chip.term ?? ""),
+							...(alts.length > 0 && { alts }),
+							...(near.length > 0 && { near }),
 							mode:
 								chip.mode === "boost" || chip.mode === "exclude"
 									? chip.mode
@@ -143,7 +158,10 @@ export const commitTurn = createServerFn({ method: "POST" })
 			),
 		);
 		if (chips.length === 0) throw new Error("查询为空");
-		return { parentTurnId, input: { kind: "chips" as const, chips } };
+		return {
+			parentTurnId,
+			input: { kind: "chips" as const, chips },
+		};
 	})
 	.handler(({ data }) => createTurn(data.input, data.parentTurnId));
 

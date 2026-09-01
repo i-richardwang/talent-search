@@ -33,8 +33,11 @@ export function emptyState({
 	if (tooWide) {
 		return {
 			title: "搜索条件覆盖的人太多",
-			hint: "请再加一项条件，把范围收窄之后再看。",
-			action: { label: "添加条件", onClick: onFocusQuery },
+			// 出路只能是改词，不能是加条件：太宽由「每个词各自命中多少段」触发
+			// （fetchFacts 不带筛选、按词并联取数），再加一个词或一个筛选都只会
+			// 让取数更多，照着「加条件收窄」去做的人永远走不出这一屏。
+			hint: "请把过宽的词换成更具体的说法，或先停用它。",
+			action: { label: "调整条件", onClick: onFocusQuery },
 		};
 	}
 	if (terms.length === 0) {

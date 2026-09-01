@@ -16,6 +16,7 @@ import { type Fact, pageHits, rank } from "./rank";
 import {
 	emptyFacets,
 	type Hit,
+	type MemberPlan,
 	type Overview,
 	type SearchFilters,
 	type SearchOutcome,
@@ -24,10 +25,12 @@ import {
 } from "./result";
 import {
 	FACT_MAX,
+	FORM_WEIGHTS,
 	HITS_PER_TERM,
 	RESULT_MAX,
 	RESULT_PAGE,
 	ROUTE_ORDER,
+	ROUTE_WEIGHTS,
 	type Route,
 } from "./weights";
 
@@ -153,14 +156,31 @@ async function relaxTerm(term: string) {
 }
 
 /**
- * 命中的事实。**不带任何筛选**——筛选、排除、AND、打分全在 rank.ts 里对这一份
- * 事实求值。
+ * 这些词里，哪些在语料里真实命中过至少一段经历。
  *
- * 不带筛选是刻意的：分面要回答「摘掉这一维之后还剩几人」，它需要看到被筛掉的
- * 那些行。名次与分面都由这一份事实求值，因此不会形成两套筛选口径。
+ * 查询理解落库前拿它给模型译的相近说法做体检（`server/turn.ts`）：语料就是
+ * 词典，库里搜不到人的翻译不配上屏——和 relaxTerm、companyTags 同一条原则。
+ * 体检过的 near 说法检索时不再松弛：松弛一个翻译是二次降级，两步之后
+ * 屏幕上的词和实际检索的词就没有可追的关系了。
  */
+export async function probeTerms(texts: string[]): Promise<Set<string>> {
+	if (texts.length === 0) return new Set();
+	const rows = await db.execute<{ t: string }>(sql`
+		select c.t from (values ${sql.join(
+			texts.map((t) => sql`(${t}, ${`%${escapeLike(t)}%`})`),
+			sql`, `,
+		)}) as c(t, pat)
+		where exists (
+			select 1 from experience e where ${matchExpr(sql`c.pat`)}
+		)`);
+	return new Set(rows.rows.map((r) => r.t));
+}
+
 /**
  * 命中的经历段。**返回 null 表示这次查询太宽**，不抛异常。
+ *
+ * 取数不带筛选：分面要回答「摘掉这一维之后还剩几人」，它需要看到被筛掉的
+ * 那些行。筛选、AND、人员打分、排序与分面都在 rank.ts 对这份事实求值。
  *
  * 「你写的词覆盖了半个库」是一种查询结果，和「没有人符合」是同一档东西：
  * 用户什么都没做错，只是需要再加一个条件。抛异常会把它送进错误边界，
@@ -168,17 +188,33 @@ async function relaxTerm(term: string) {
  * 是一个报错页，而旁边就摆着一整套为空结果写好的引导文案。
  */
 async function fetchFacts(terms: TermPlan[]): Promise<Fact[] | null> {
-	const perTerm = terms.map(
-		(t, i) => sql`
-			select ${i}::int as term_idx, e.id, e.emp_id, e.months, e.end_date,
+	// 每条要求按说法展开：说法之间是 OR，但各自单独取，因为「命中的是哪个说法」
+	// 要进证据行，而档位权重也按说法算。
+	const perMember = terms.flatMap((t, i) =>
+		t.members.map(
+			(m, j) => sql`
+			select ${i}::int as term_idx, ${j}::int as member_idx,
+				${FORM_WEIGHTS[m.tier]}::float as tier_w,
+				e.id, e.emp_id, e.months, e.end_date,
 				e.seq_l1, e.seq_l2, e.kind,
 				e.org_meta ->> 'company_tag' as company_tag,
-				${routeExpr(like(t.effective))} as route
+				${routeExpr(like(m.effective))} as route
 			from experience e
-			where ${matchExpr(like(t.effective))}`,
+			where ${matchExpr(like(m.effective))}`,
+		),
 	);
+	// 同一段被同一条要求的几个说法各命一次时只算最硬的那一次。打分层按事实
+	// 累加月份（rank.ts 的 termValue），同段两行会把 12 个月数成 24；证据行
+	// 也会把同一段列两遍。「贡献一次」的单位是 (要求, 段)，保留的是证据最强
+	// 的那行（字眼档位 × 路权重，说法序做稳定并列）。去重必须在 SQL 里做完
+	// 再过保险丝：在内存里去重的话，三个说法的宽词会把 FACT_MAX 提前引爆三倍。
+	const routeWeight = sql`case route ${sql.join(
+		ROUTE_ORDER.map((r) => sql`when ${r} then ${ROUTE_WEIGHTS[r]}::float`),
+		sql` `,
+	)} end`;
 	const rows = await db.execute<{
 		term_idx: number;
+		member_idx: number;
 		id: number;
 		emp_id: string;
 		months: number;
@@ -189,8 +225,13 @@ async function fetchFacts(terms: TermPlan[]): Promise<Fact[] | null> {
 		company_tag: string | null;
 		route: Route;
 	}>(sql`
-		with hits as (${sql.join(perTerm, sql` union all `)})
-		select * from hits where route is not null limit ${FACT_MAX + 1}`);
+		with hits as (${sql.join(perMember, sql` union all `)})
+		select distinct on (term_idx, id)
+			term_idx, member_idx, id, emp_id, months, end_date,
+			seq_l1, seq_l2, kind, company_tag, route
+		from hits where route is not null
+		order by term_idx, id, tier_w * (${routeWeight}) desc, member_idx
+		limit ${FACT_MAX + 1}`);
 
 	if (rows.rows.length > FACT_MAX) return null;
 
@@ -198,6 +239,8 @@ async function fetchFacts(terms: TermPlan[]): Promise<Fact[] | null> {
 		id: r.id,
 		empId: r.emp_id,
 		termIdx: r.term_idx,
+		memberIdx: r.member_idx,
+		tier: terms[r.term_idx]?.members[r.member_idx]?.tier ?? "full",
 		route: r.route,
 		months: r.months,
 		endDate: r.end_date,
@@ -209,22 +252,28 @@ async function fetchFacts(terms: TermPlan[]): Promise<Fact[] | null> {
 }
 
 /**
- * 命中排除词的人。他们整个不进结果——不进名次，也不进分面。
+ * 被排除词否决的**经历段**。这些段丧失为任何要求作证的资格；人不被判决——
+ * 没了这些段还有别的证据的人照常进结果，只有这些段的人过不了 AND，自然出局。
+ * 排除因此和「从经历找人」是同一个语义，不是一套针对人的黑名单。
  *
- * **不带当前筛选。** 排除问的是「这个人有没有干过 X」，答案只能由这个人的全部
- * 经历决定。让筛选参与，「只看在职经历」就会让入职前的那段实习不再算数，
- * 于是收窄一个筛选反而放出更多本来被排掉的人——和 relaxTerm 那里同一个道理。
+ * **不带当前筛选。** 否决问的是「这一段是不是 X」，答案只能由这段经历自己决定。
+ * 让筛选参与，「只看在职经历」就会让入职前那段实习重新有资格作证，
+ * 于是收窄一个筛选反而放出更多本来站不住的证据——和 relaxTerm 那里同一个道理。
+ *
+ * **词也只用用户自己说的（主词与 alts），不扩不松。** 进门的词可以扩——捞错了，
+ * 人在名单上，看一眼就能纠正；赶人的词必须准——否决错了，证据无声消失，
+ * 永远没人知道。
  */
-async function fetchExcluded(terms: string[]): Promise<Set<string>> {
-	if (terms.length === 0) return new Set();
+async function fetchVetoed(texts: string[]): Promise<Set<number>> {
+	if (texts.length === 0) return new Set();
 	const pred = sql.join(
-		terms.map((t) => sql`(${matchExpr(like(t))})`),
+		texts.map((t) => sql`(${matchExpr(like(t))})`),
 		sql` or `,
 	);
-	const rows = await db.execute<{ emp_id: string }>(
-		sql`select distinct e.emp_id from experience e where ${pred}`,
+	const rows = await db.execute<{ id: number }>(
+		sql`select e.id from experience e where ${pred}`,
 	);
-	return new Set(rows.rows.map((r) => r.emp_id));
+	return new Set(rows.rows.map((r) => r.id));
 }
 
 /**
@@ -315,11 +364,12 @@ export async function search(
 	const matched = active.filter(
 		(c): c is Chip & { mode: "must" | "boost" } => c.mode !== "exclude",
 	);
-	const excludeTerms = active.flatMap((c) =>
-		c.mode === "exclude" ? [c.term] : [],
+	// 否决只认用户自己说的词；parseChips 已保证排除要求没有 near。
+	const vetoTexts = active.flatMap((c) =>
+		c.mode === "exclude" ? [c.term, ...(c.alts ?? [])] : [],
 	);
-	// 一个可匹配的词都没有（空查询、整句只写了排除词，或者剩下的词全被停用了）
-	// 就没有可排的人。排除词自己不产出任何人，它只会从别的词捞上来的人里剔掉一些。
+	// 一条可匹配的要求都没有（空查询、整句只写了排除词，或者全被停用了）
+	// 就没有可排的人。排除词自己不产出任何人，它只否决证据段。
 	if (matched.length === 0)
 		return {
 			terms: [],
@@ -330,25 +380,33 @@ export async function search(
 		};
 
 	/*
-	 * 每个词的松弛探测互不依赖，一次并发打完，别串成 n 次往返。
+	 * 每个说法的松弛探测互不依赖，一次并发打完，别串成 n 次往返。
 	 *
-	 * **排除词不松弛。** 松弛是「整词搜不到就退到语料里真实存在的子串」，用在
-	 * 排除上会变成一把没瞄准的枪：「量子炼金」退成「金」之后，所有干过「资金」
-	 * 「基金」的人会被整片剔掉，而界面上只显示用户写的那个词。搜不到的排除词
-	 * 什么人都排不掉，这正是它该有的样子。
+	 * **只有 full 说法松弛。** near 说法在理解落库前已过语料体检（probeTerms），
+	 * 检索时原样用——松弛一个翻译是二次降级。**排除词完全不松弛**：松弛用在
+	 * 否决上是一把没瞄准的枪（「量子炼金」退成「金」会把「资金」「基金」的
+	 * 经历整片否决，而界面上只显示用户写的那个词）。搜不到的排除词什么段都
+	 * 否决不了，这正是它该有的样子。
 	 */
 	const terms: TermPlan[] = await Promise.all(
-		matched.map(async (c) => ({
-			term: c.term,
-			effective: await relaxTerm(c.term),
-			mode: c.mode,
-		})),
+		matched.map(async (c) => {
+			const members: MemberPlan[] = await Promise.all(
+				[c.term, ...(c.alts ?? [])].map(async (text) => ({
+					text,
+					effective: await relaxTerm(text),
+					tier: "full" as const,
+				})),
+			);
+			for (const text of c.near ?? [])
+				members.push({ text, effective: text, tier: "near" });
+			return { term: c.term, members, mode: c.mode };
+		}),
 	);
 
-	// 事实与排除名单互不依赖，同时发出去
-	const [all, excluded] = await Promise.all([
+	// 事实与否决段集合互不依赖，同时发出去
+	const [all, vetoed] = await Promise.all([
 		fetchFacts(terms),
-		fetchExcluded(excludeTerms),
+		fetchVetoed(vetoTexts),
 	]);
 	// 太宽的那一支：词是解析出来了（证据行还要拿它排列），只是没有结果可给。
 	if (all === null)
@@ -359,7 +417,7 @@ export async function search(
 			total: 0,
 			tooWide: true,
 		};
-	const facts = excluded.size ? all.filter((f) => !excluded.has(f.empId)) : all;
+	const facts = vetoed.size ? all.filter((f) => !vetoed.has(f.id)) : all;
 
 	const { ranked, facets, total } = rank(facts, terms, filters, new Date());
 	const page = ranked.slice(0, sanitizeLimit(limit));
@@ -400,6 +458,10 @@ export async function search(
 			hits.push({
 				experienceId: s.id,
 				term: terms[f.termIdx]?.term ?? "",
+				matched:
+					terms[f.termIdx]?.members[f.memberIdx]?.effective ??
+					terms[f.termIdx]?.term ??
+					"",
 				route: f.route,
 				kind: s.kind,
 				startDate: s.startDate,

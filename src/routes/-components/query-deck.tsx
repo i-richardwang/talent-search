@@ -35,6 +35,7 @@ export function QueryDeck({
 	rawText,
 	degraded,
 	error,
+	onRetry,
 	onReinterpret,
 	fields,
 	view,
@@ -55,6 +56,8 @@ export function QueryDeck({
 	/** 这次理解退回了本地规则解析，语气没人翻译 */
 	degraded: boolean;
 	error: string | null;
+	/** 理解失败时的重试动作。 */
+	onRetry?: () => void;
 	/** 拿原话再理解一次，落成一条新记录。没有原话时不给这个入口。 */
 	onReinterpret?: () => void;
 	fields: FilterField[];
@@ -74,7 +77,12 @@ export function QueryDeck({
 			<div className="mx-auto w-full max-w-page px-4 py-2.5">
 				<Frame>
 					<FramePanel className="flex flex-col gap-2.5 p-2.5">
-						<QueryBar inputRef={inputRef} onQuery={onQuery} variant="header" />
+						<QueryBar
+							disabled={interpreting}
+							inputRef={inputRef}
+							onQuery={onQuery}
+							variant="header"
+						/>
 						{interpreting ? (
 							/*
 							 * 理解中显示的是用户自己那句话，不是占位方块——这一格接下来
@@ -149,7 +157,20 @@ export function QueryDeck({
 				{error && (
 					<Alert className="mt-2" variant="error">
 						<AlertCircleIcon />
-						<AlertDescription>{error}</AlertDescription>
+						<AlertDescription className="flex items-baseline gap-2">
+							<span className="min-w-0 flex-1">{error}</span>
+							{onRetry && (
+								<Button
+									className="h-auto shrink-0 p-0 text-xs"
+									onClick={onRetry}
+									size="xs"
+									variant="link"
+								>
+									<RotateCwIcon />
+									重试
+								</Button>
+							)}
+						</AlertDescription>
 					</Alert>
 				)}
 			</div>

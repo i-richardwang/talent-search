@@ -71,9 +71,37 @@ describe("每个词都过一遍本地切词", () => {
 		assert.deepEqual(chips, [{ term: "算法", mode: "must" }]);
 	});
 
-	test("产出能原样写进 URL 再读回来", () => {
-		// chips 是查询的唯一表示，写进 URL 再解析回来必须逐位相同，
-		// 否则粘给同事的链接和自己屏幕上的不是同一次检索。
+	test("并列说法（alts）挂在同一条要求上，不拆成两条都要", () => {
+		const { chips } = of(
+			terms({ term: "大模型", mode: "must", alts: ["推荐系统"], near: null }),
+		);
+		assert.deepEqual(chips, [
+			{ term: "大模型", alts: ["推荐系统"], mode: "must" },
+		]);
+	});
+
+	test("相近说法（near）跟着要求走，并各自过一遍切词", () => {
+		const { chips } = of(
+			terms({
+				term: "算法",
+				mode: "must",
+				alts: null,
+				near: ["做过深度学习的", "机器学习"],
+			}),
+		);
+		assert.deepEqual(chips, [
+			{ term: "算法", near: ["深度学习", "机器学习"], mode: "must" },
+		]);
+	});
+
+	test("排除条件的 near 被丢弃：赶人的词必须准", () => {
+		const { chips } = of(
+			terms({ term: "实习", mode: "exclude", alts: null, near: ["实习生"] }),
+		);
+		assert.deepEqual(chips, [{ term: "实习", mode: "exclude" }]);
+	});
+
+	test("产出能原样序列化再读回来", () => {
 		const { chips } = of(
 			terms(
 				{ term: "渠道运营", mode: "must" },
@@ -209,7 +237,9 @@ describe("模型不可用或没有给出可用条件", () => {
 describe("发给模型的形状", () => {
 	test("合法输出解析得过", () => {
 		const parsed = intentSchema(TAGS).safeParse({
-			terms: [{ term: "渠道运营", mode: "must" }],
+			terms: [
+				{ term: "渠道运营", mode: "must", alts: null, near: ["用户增长"] },
+			],
 			kind: null,
 			minMonths: 12,
 			companyTag: "知名公司",
@@ -247,14 +277,19 @@ describe("发给模型的形状", () => {
 		);
 	});
 
-	test("词数有硬上限，不只写在提示里", () => {
+	test("词数上限不写进 schema：多给一条不该让整句理解作废", () => {
+		// 上限的事实源是 parseChips（CHIP_MAX），toIntent 会走它收窄。写成
+		// schema 约束就是第二份契约：模型多给一条，整条响应作废、退回规则
+		// 解析——而收窄本来只会丢掉多出来的那几条。
 		const base = { kind: null, minMonths: null, companyTag: null };
 		assert.ok(
-			!intentSchema(TAGS).safeParse({
+			intentSchema(TAGS).safeParse({
 				...base,
 				terms: Array.from({ length: 9 }, (_, i) => ({
 					term: `条件${i}`,
 					mode: "must",
+					alts: null,
+					near: null,
 				})),
 			}).success,
 		);
@@ -267,7 +302,7 @@ describe("发给模型的形状", () => {
 		assert.ok(
 			intentSchema(TAGS).safeParse({
 				...base,
-				terms: [{ term: long, mode: "must" }],
+				terms: [{ term: long, mode: "must", alts: null, near: null }],
 			}).success,
 		);
 		// 收窄发生在 parseQuery：超过 24 字的不是概念，是被误当成词的正文。

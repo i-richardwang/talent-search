@@ -7,11 +7,17 @@
  */
 import type { Employee } from "#/db/schema";
 import type { ChipMode } from "./parse";
-import type { Route } from "./weights";
+import type { FormTier, Route } from "./weights";
 
 export type Hit = {
 	experienceId: number;
 	term: string;
+	/**
+	 * 实际命中的那个说法的检索形态（同义词或松弛后的子串）。证据行拿它当行标签
+	 * 和高亮词——屏幕上标出的必须是字段值里真实存在的那串字，标 `term` 的话，
+	 * 用户写「算法」而字段里是「深度学习」，一行证据里就找不到自己说的词了。
+	 */
+	matched: string;
 	route: Route;
 	kind: "internal" | "external";
 	startDate: string;
@@ -62,16 +68,28 @@ export type TermBasis = {
 };
 
 /**
- * 一个参与匹配的概念词：原词、整词搜不到时实际用来检索的形态（见 search.ts 的
- * relaxTerm），以及它是必须还是加分。
+ * 一条要求的一个说法。`text` 是记录上的词，`effective` 是实际检索用的形态——
+ * full 说法整词搜不到时会被松弛成语料里存在的子串（见 search.ts 的 relaxTerm），
+ * near 说法恒等于原文（它在理解落库前已过语料体检，不再二次降级）。
+ */
+export type MemberPlan = {
+	text: string;
+	effective: string;
+	/** 档位即出处：full=用户说的，near=模型译的。权重见 weights.ts 的 FORM_WEIGHTS。 */
+	tier: FormTier;
+};
+
+/**
+ * 一条参与匹配的要求：标签（用户的主词）、它的全部说法（OR），以及它是必须
+ * 还是加分。
  *
- * 排除词不在这里——它只用来把人剔掉，不占证据行的一行，也没有「命中了多久」可言。
- * 所以这个类型的 mode 排除了 `"exclude"`：把一个画不出来的东西放进画得出来的
- * 列表里，早晚会有人去渲染它。
+ * 排除词不在这里——它只用来否决证据段，不占证据行的一行，也没有「命中了多久」
+ * 可言。所以这个类型的 mode 排除了 `"exclude"`：把一个画不出来的东西放进
+ * 画得出来的列表里，早晚会有人去渲染它。
  */
 export type TermPlan = {
 	term: string;
-	effective: string;
+	members: MemberPlan[];
 	mode: Exclude<ChipMode, "exclude">;
 };
 
@@ -141,7 +159,7 @@ export type Overview = {
  *
  * `tooWide` 和「没有人符合」并列，是一种**结果**而不是一次失败：命中的经历段
  * 超过了 `FACT_MAX`，词已经解析出来了（证据行照常排列），只是不给结果，
- * 请用户再加一个条件。它走空态那套引导，不走错误边界。
+ * 请用户把过宽的词换掉或停用。它走空态那套引导，不走错误边界。
  */
 export type SearchOutcome = {
 	terms: TermPlan[];

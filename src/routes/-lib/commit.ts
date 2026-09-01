@@ -14,7 +14,7 @@
  */
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { type QueryInput, toQuery } from "#/search/parse";
+import { type QueryChange, toQuery } from "#/search/parse";
 import { commitTurn } from "#/server/functions";
 import type { View } from "./view-params";
 
@@ -39,16 +39,24 @@ export function useCommit() {
 	 *   失败了还把人刚敲的话吞掉，就连重试都没得重试。
 	 */
 	const commit = async (
-		input: QueryInput,
+		input: QueryChange,
 		opts: { parentTurnId?: string; view?: View } = {},
 	) => {
-		const key = input.kind === "sentence" ? input.text : toQuery(input.chips);
+		const key =
+			input.kind === "sentence"
+				? input.text
+				: input.kind === "chips"
+					? toQuery(input.chips)
+					: "reinterpret";
 		if (pending !== null) return false;
 		setPending(key);
 		setError(null);
 		try {
 			const { turnId } = await commitTurn({
-				data: { parentTurnId: opts.parentTurnId, input },
+				data: {
+					parentTurnId: opts.parentTurnId,
+					input,
+				},
 			});
 			await navigate({
 				to: "/s/$turnId",

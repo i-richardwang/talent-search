@@ -21,6 +21,7 @@ import {
 	type ChipMode,
 	parseChips,
 	parseQuery,
+	toQuery,
 } from "./parse";
 import type { SearchFilters } from "./result";
 
@@ -83,12 +84,31 @@ export function intentSchema(companyTags: readonly string[]) {
 					mode: z
 						.enum(MODES)
 						.describe(
-							"must=必须做过；boost=最好有，没有也留下；exclude=做过的人不要",
+							"must=必须做过；boost=最好有，没有也留下；exclude=这类经历不作数",
+						),
+					/*
+					 * alts 与 near 都是**这一条要求的其他说法**（满足其一即可），
+					 * 区别只在出处：alts 是用户嘴里明确并列的（「A 或 B 均可」），
+					 * 满权重；near 是模型替库补的翻译，降档计分（值多少分归
+					 * weights.ts，模型只交词不交数——判断进提示词，度量衡进代码）。
+					 * 上限、去重、排除词剥 near，全在 parseChips 那一个入口做，
+					 * 这里同样只在 describe 里写建议，不写成 schema 约束。
+					 */
+					alts: z
+						.array(z.string())
+						.nullable()
+						.describe(
+							"用户明确说了「或 / 均可」的并列说法。没有就填 null，不要自己造",
+						),
+					near: z
+						.array(z.string())
+						.nullable()
+						.describe(
+							"库里可能写成的相近说法（如用户说「算法」而库里写「深度学习」），最多两个，拿不准就 null；exclude 条件一律 null",
 						),
 				}),
 			)
-			.max(CHIP_MAX)
-			.describe("检索条件，按句子里出现的顺序"),
+			.describe(`检索条件，按句子里出现的顺序，最多 ${CHIP_MAX} 条`),
 		kind: z
 			.enum(["internal", "external"])
 			.nullable()
@@ -120,32 +140,40 @@ function text(v: unknown) {
 /**
  * 模型输出 → 查询条件。入参是 `unknown`，任何一处不合规都当没填，不抛。
  *
- * **每个词都过一遍 `parseQuery`。** 这不是多余的一步：它保证模型给出的词和
- * 用户自己敲出来的词走的是同一条路——切法一致、赘字剥法一致、长度上限一致，
- * 于是 `toQuery` 写进 URL、`parseChips` 再读回来必然是同一组 chip。少了这一道，
- * 模型返回「安全与风险合规」会得到一枚点一下就变形的 chip（`parseQuery` 会按
- * 连接词「与」把它切成两个），而屏幕上写的和实际检索的不是一回事。
+ * **每个说法都过一遍 `parseQuery`，整体再走一遍 `parseChips(toQuery(...))`。**
+ * 前一道保证模型给出的词和用户自己敲出来的词切法、赘字剥法、长度上限一致；
+ * 后一道把去重、条数与说法上限、「排除词不许有 near」这些规矩全部交给全站
+ * 唯一的解析入口执行一遍——这里自己再写一套，就是同一批规矩两个执行点。
+ * 少了这两道，模型返回「安全与风险合规」会得到一枚点一下就变形的 chip
+ * （`parseQuery` 会按连接词「与」把它切成两个），而屏幕上写的和实际检索的
+ * 不是一回事。
  *
- * 切出多个词时它们共享同一个强度：一句「不要实习和外包」拆成两个排除词，
- * 语义没有走样。
+ * 主词切出多个词时，第一个带上这条要求的 alts/near，其余各自成条、共享强度：
+ * 一句「不要实习和外包」拆成两个排除词，语义没有走样。
  */
 export function toIntent(raw: unknown, companyTags: readonly string[]): Intent {
 	const o = (raw ?? {}) as Record<string, unknown>;
-	const chips: Chip[] = [];
-	const seen = new Set<string>();
+	const texts = (v: unknown) =>
+		Array.isArray(v) ? v.flatMap((x) => parseQuery(text(x) ?? "")) : [];
+	const drafts: Chip[] = [];
 	for (const item of Array.isArray(o.terms) ? o.terms : []) {
 		const t = (item ?? {}) as Record<string, unknown>;
 		const mode = MODES.includes(t.mode as ChipMode)
 			? (t.mode as ChipMode)
 			: "must";
-		for (const term of parseQuery(text(t.term) ?? "")) {
-			if (seen.has(term)) continue;
-			seen.add(term);
-			chips.push({ term, mode });
-			if (chips.length === CHIP_MAX) break;
-		}
-		if (chips.length === CHIP_MAX) break;
+		const [head, ...rest] = parseQuery(text(t.term) ?? "");
+		if (!head) continue;
+		const alts = texts(t.alts);
+		const near = texts(t.near);
+		drafts.push({
+			term: head,
+			...(alts.length > 0 && { alts }),
+			...(near.length > 0 && { near }),
+			mode,
+		});
+		for (const term of rest) drafts.push({ term, mode });
 	}
+	const chips = parseChips(toQuery(drafts));
 
 	const months = Number(o.minMonths);
 	const tag = text(o.companyTag);
