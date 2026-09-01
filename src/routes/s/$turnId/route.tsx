@@ -5,32 +5,30 @@ import {
 	Outlet,
 	useNavigate,
 	useParams,
-	useRouter,
-	useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { Brand } from "#/components/brand";
 import { buttonVariants } from "#/components/ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "#/components/ui/dialog";
 import { Kbd } from "#/components/ui/kbd";
 import { cn } from "#/lib/utils";
 import { emptyFacets, type SearchResult } from "#/search/result";
-import { interpretTurn, loadWorkbench } from "#/server/functions";
+import { loadWorkbench } from "#/server/functions";
 import { QueryDeck } from "../../-components/query-deck";
 import { ResultList } from "../../-components/result-list";
 import { useCommit } from "../../-lib/commit";
 import { filterFields } from "../../-lib/filters";
+import { useInterpretation } from "../../-lib/interpret";
 import { useKeyboardFlow } from "../../-lib/keyboard-flow";
 import { useIsWide } from "../../-lib/media";
+import { useNavPhase } from "../../-lib/nav-phase";
 import {
 	canLoadMore,
 	morePage,
-	onlyMore,
 	pageLimit,
 	toFilters,
 	type View,
 	validateView,
-	viewChanged,
 } from "../../-lib/view-params";
 
 // 没有结果时也要有稳定的身份：每次渲染新建 [] / {} 会让依赖它们的
@@ -54,9 +52,6 @@ const KEYS = [
 	["↑↓", "切换员工"],
 	["Esc", "关闭详情"],
 ] as const;
-
-/** 理解失败时说什么。和提交失败分开：一个是这句话没读懂，一个是没送出去。 */
-const INTERPRET_FAILED = "没能理解这句话，请重试或换一种说法。";
 
 /**
  * 工作台：**一列名单，加一块从右侧推进来的详情**。
@@ -117,80 +112,14 @@ function Workbench() {
 	const { id: turnId, rawText, chips: settledChips } = turn;
 	const view = Route.useSearch();
 	const navigate = useNavigate();
-	const router = useRouter();
 	const { empId } = useParams({ strict: false });
 	const { commit, error: commitError } = useCommit();
 
-	/*
-	 * 两种 pending 要分开：改筛选时旧结果已经不成立，列表该塌成骨架屏；
-	 * 只是再翻一页时已经看到的人必须留在原地，否则每翻一页就把人扔回页首。
-	 *
-	 * `location` 是要去的地方，`resolvedLocation` 是还挂在屏幕上的那一个，
-	 * 差别正好回答「这次导航在干什么」。两边都过一遍 validateView，免得拿裸的
-	 * URL 值去比（`n` 在一边是数字一边是字符串）。
-	 *
-	 * 换人时路径也变了但结果表一行都不用重画，所以要先看 turn 变没变——
-	 * 只比 pathname 会让扫名单的每一下都把列表清空。
-	 */
-	const nav = useRouterState({
-		select: (s) => ({
-			loading: s.isLoading,
-			next: {
-				turn: turnOf(s.location.pathname),
-				view: validateView(s.location.search),
-			},
-			prev: s.resolvedLocation && {
-				turn: turnOf(s.resolvedLocation.pathname),
-				view: validateView(s.resolvedLocation.search),
-			},
-		}),
-	});
-	const growing =
-		nav.loading &&
-		nav.prev?.turn === nav.next.turn &&
-		onlyMore(nav.next.view, nav.prev?.view);
-	const navigating =
-		nav.loading &&
-		(nav.prev?.turn !== nav.next.turn ||
-			viewChanged(nav.next.view, nav.prev?.view));
-
-	/*
-	 * 还没理解完的记录：模型那一跳最长要 60 秒，不能挡在导航前面。提交只落一条
-	 * 记录（一次 INSERT），工作台立刻出现，理解在这里补——所以转圈发生在结果将要
-	 * 出现的地方，而不是发生在按钮上。写成 effect 而不是放进 loader 就是这个意思。
-	 *
-	 * 服务端那侧只补 `chips is null` 的行，所以重复触发（严格模式双次挂载、两个
-	 * 标签页开着同一条记录）都拿回同一份结果。
-	 */
-	const [interpretFailed, setInterpretFailed] = useState(false);
-	const interpreting = settledChips === null && !interpretFailed;
-	useEffect(() => {
-		if (settledChips !== null) return;
-		let alive = true;
-		interpretTurn({ data: { turnId } })
-			.then(({ filters }) => {
-				if (!alive) return;
-				/*
-				 * 模型顺带认出来的筛选（只看入职前、公司档、最短时长）在这里
-				 * **一次性播进 URL**，此后 URL 就是筛选的唯一事实源。不这样做
-				 * 的话，它们既在记录上又在 URL 上：用户把「只看入职前」关掉，
-				 * 刷新一次又自己回来了。
-				 */
-				if (Object.keys(filters).length > 0)
-					navigate({
-						to: ".",
-						search: (o) => ({ ...o, ...filters }),
-						replace: true,
-					});
-				else router.invalidate();
-			})
-			.catch(() => {
-				if (alive) setInterpretFailed(true);
-			});
-		return () => {
-			alive = false;
-		};
-	}, [settledChips, turnId, navigate, router]);
+	const { growing, navigating } = useNavPhase();
+	const { interpreting, error: interpretError } = useInterpretation(
+		turnId,
+		settledChips,
+	);
 
 	// 键盘流的 `/` 要能聚焦到查询台那个框
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -251,7 +180,7 @@ function Workbench() {
 				<QueryDeck
 					chips={chips}
 					degraded={turn.degraded}
-					error={commitError ?? (interpretFailed ? INTERPRET_FAILED : null)}
+					error={commitError ?? interpretError}
 					fields={filterFields(facets, view)}
 					inputRef={inputRef}
 					interpreting={interpreting}
@@ -372,15 +301,4 @@ function Workbench() {
 			)}
 		</div>
 	);
-}
-
-/**
- * 从路径里取这次导航落在哪条查询记录上。
- *
- * pending 期间拿不到 `params`（那是导航完成之后的事），只有一个 pathname，
- * 所以这里手工取第二段。`/s/:turnId` 与 `/s/:turnId/p/:empId` 都落在同一段上，
- * 于是「换人」不会被当成「换查询」。
- */
-function turnOf(pathname: string) {
-	return pathname.split("/")[2];
 }
