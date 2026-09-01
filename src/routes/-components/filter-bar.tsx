@@ -1,4 +1,5 @@
 import { ChevronDownIcon, XIcon } from "lucide-react";
+import { Button } from "#/components/ui/button";
 import {
 	Menu,
 	MenuPopup,
@@ -22,9 +23,9 @@ import { Dot } from "./evidence";
  * 是什么，这是摊开时最重要的那一半），**人数留在弹层里**（它只在「要不要点
  * 这一项」的那一刻有用，而那一刻弹层正开着）。
  *
- * 按钮和 chip 是同一族：同样 24px 高、同样 12px 字、同样的圆角。它们在一行里
- * 挨着排，说的是同一件事——这次检索的条件。一边画成 chip 一边画成表单控件，
- * 只会让人以为它们的作用范围不一样。
+ * 这一行里的每一枚都是 `Button size="xs"`，和 chips 用的是同一个尺码
+ * （见 query-chips.tsx）。它们说的是同一件事——这次检索的条件——所以尺寸、
+ * 圆角、焦点环、按压态和触控目标全部由同一个组件给，不靠两处手写去对齐。
  */
 export function FilterBar({
 	fields,
@@ -49,22 +50,18 @@ export function FilterBar({
 			))}
 			<StrengthToggle n={strongCount} onChange={onChange} view={view} />
 			{count > 0 && (
-				<button
-					/* 视觉 12px，命中区 40px：小控件不该按尺寸缩水触控目标 */
-					className="relative ml-0.5 rounded-sm text-muted-foreground text-xs after:absolute after:-inset-y-3 after:inset-x-0 after:content-[''] hover:text-foreground hover:underline"
+				<Button
+					className="text-muted-foreground"
 					onClick={() => onChange(CLEARED_FILTERS)}
-					type="button"
+					size="xs"
+					variant="link"
 				>
 					清除 {count} 项
-				</button>
+				</Button>
 			)}
 		</div>
 	);
 }
-
-/** 触发器和 chip 共用的尺寸。差一个像素，一行里就看得出来是两套东西。 */
-const PILL =
-	"relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs after:pointer-events-none after:absolute after:-inset-x-1 after:-inset-y-2 after:content-[''] [@media(hover:hover)]:hover:brightness-95";
 
 function FilterMenu({
 	field,
@@ -79,12 +76,9 @@ function FilterMenu({
 	return (
 		<Menu>
 			<MenuTrigger
-				className={cn(
-					PILL,
-					selected
-						? "bg-secondary font-medium text-secondary-foreground"
-						: "border border-input text-muted-foreground",
-				)}
+				render={
+					<Button size="xs" variant={selected ? "secondary" : "outline"} />
+				}
 			>
 				{/*
 				 * 选中之后按钮上写的是**值**，不是「序列：值」。维度名在没选的时候
@@ -95,7 +89,7 @@ function FilterMenu({
 				<span className="max-w-40 truncate">
 					{selected ? selected.label : field.title}
 				</span>
-				<ChevronDownIcon className="size-2.5 shrink-0 opacity-60" />
+				<ChevronDownIcon />
 			</MenuTrigger>
 			<MenuPopup align="start" className="max-h-80 overflow-y-auto">
 				<FilterOptions field={field} onChange={onChange} />
@@ -169,24 +163,19 @@ function StrengthToggle({
 	// 已经点亮的那一枚永远留着：否则筛到 0 人之后就没有任何东西能取消它了。
 	if (!on && n === 0) return null;
 	return (
-		<button
+		<Button
 			aria-pressed={on}
-			className={cn(
-				PILL,
-				on
-					? "bg-secondary font-medium text-secondary-foreground"
-					: "border border-input text-muted-foreground",
-			)}
 			onClick={() => onChange({ strong: on ? undefined : true })}
-			type="button"
+			size="xs"
+			variant={on ? "secondary" : "outline"}
 		>
 			<Dot strength="controlled" />
 			<span>岗位或序列命中</span>
 			{on ? (
-				<XIcon className="size-2.5 shrink-0 opacity-60" />
+				<XIcon />
 			) : (
 				<span className="text-muted-foreground tabular-nums">{n}</span>
 			)}
-		</button>
+		</Button>
 	);
 }

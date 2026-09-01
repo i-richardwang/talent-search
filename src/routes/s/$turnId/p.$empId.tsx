@@ -5,6 +5,8 @@ import {
 	useLoaderData,
 } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
+import { buttonVariants } from "#/components/ui/button";
+import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { duration, seqLabel } from "#/lib/format";
@@ -43,15 +45,22 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 });
 
 /**
- * 换人途中的详情面板。头的高度保持不变——面板开着的时候换人是连着做的，
- * 顶部每换一次跳一下，就会被反复看到。
+ * 换人途中的详情面板。头的高度必须和真正的头一模一样——面板开着的时候换人是
+ * 连着做的，顶部每换一次跳一下就会被反复看到。
+ *
+ * 所以骨架块住在真正那两个标签里，高度用 `h-lh` 取各自的行高：字阶改了它跟着改，
+ * 不必回来对一个像素值。
  */
 function PersonPending() {
 	return (
 		<div className="pb-12" data-pane="detail">
 			<div className="sticky top-0 z-stick border-border border-b bg-card px-5 py-4">
-				<Skeleton className="h-5 w-32" />
-				<Skeleton className="mt-2 h-3 w-48" />
+				<h2 className="title-1">
+					<Skeleton className="h-lh w-32" />
+				</h2>
+				<p className="mt-0.5 text-sm">
+					<Skeleton className="h-lh w-48" />
+				</p>
 			</div>
 			<div className="flex flex-col gap-3 px-5 py-5">
 				<Skeleton className="h-3 w-48" />
@@ -86,8 +95,8 @@ function Person() {
 
 	return (
 		/*
-		 * key + settle 是签名微交互的另一半：↑↓ 连着换人时，这一栏整体
-		 * 淡入一次，给出「换了一个人」的确认。另一半是名单那根平移的选中轨。
+		 * key + settle：↑↓ 连着换人时，这一栏整体淡入一次，给出「换了一个人」
+		 * 的确认。这是全站唯一的动效——名单那边靠选中态本身说话，不再叠第二个。
 		 * 动画短到 160ms，因为它必须在下一次按键之前结束。
 		 */
 		<div className="settle pb-12" data-pane="detail" key={e.empId}>
@@ -114,22 +123,25 @@ function Person() {
 						{e.curLevel && ` · ${e.curLevel}`}
 					</p>
 				</div>
-				{/* 用 Link 本身当按钮：<a> 里嵌 <button> 是非法嵌套 */}
+				{/* 用 Link 本身当按钮：<a> 里嵌 <button> 是非法嵌套。
+				    触控目标由 buttonVariants 里的 pointer-coarse 规则撑开。 */}
 				<Tooltip>
 					<TooltipTrigger
 						render={
 							<Link
 								aria-label="关闭详情"
-								/* 视觉 32px，命中区 40px：小控件不该按尺寸缩水触控目标，
-								   用一个伪元素往外撑，不影响布局 */
-								className="-mr-1 relative flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground no-underline after:absolute after:-inset-1 after:content-[''] [@media(hover:hover)]:hover:bg-accent [@media(hover:hover)]:hover:text-foreground"
+								className={buttonVariants({
+									className: "-mr-1 text-muted-foreground no-underline",
+									size: "icon-sm",
+									variant: "ghost",
+								})}
 								from="/s/$turnId/p/$empId"
 								params={(prev) => prev}
 								replace
 								search={(prev) => prev}
 								to="/s/$turnId"
 							>
-								<XIcon className="size-4" />
+								<XIcon />
 							</Link>
 						}
 					/>
@@ -227,11 +239,12 @@ function Section({
 	children: React.ReactNode;
 }) {
 	return (
-		<section className="mt-7 border-border border-t pt-4">
+		<section className="mt-7">
+			<Separator />
 			{/* 分区标签走 `label` 档（11px / 600 / 放开字距，见 styles.css）：
 			    它必须一眼被认成「不是内容」，而正文里的次要信息也是 12px 次要色，
 			    只靠字号和颜色分不开。 */}
-			<h3 className="label text-muted-foreground">{title}</h3>
+			<h3 className="label mt-4 text-muted-foreground">{title}</h3>
 			<div className="mt-2.5">{children}</div>
 		</section>
 	);

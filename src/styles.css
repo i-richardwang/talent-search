@@ -1,6 +1,9 @@
 /*
- * 全站样式。三段：coss 的令牌与深浅色、这个产品自己的尺度、以及少数几条
- * 必须写成规则而不是类名的行为（按压、焦点、减弱动效）。
+ * 全站样式。三段：coss 的令牌与深浅色、这个产品自己的尺度（版心、字阶）、
+ * 以及两条必须写成规则而不是类名的行为（焦点、减弱动效）。
+ *
+ * 面和控件的长相不在这里，也不在路由组件里——它们全部由 `src/components/ui/`
+ * 提供。这个文件只喂给那些组件它们要读的令牌。
  *
  * coss ui 的组件是**源码进仓库**的（`src/components/ui/`），不是编译好的包，
  * 所以不需要 `@source` 去扫 node_modules——Tailwind 扫 src 就够了。
@@ -13,6 +16,12 @@
  * 兜底机制——这一点和上一套不同，那边即使脚本没跑成，令牌自己也会跟随系统。
  */
 @custom-variant dark (&:is(.dark *));
+
+/*
+ * 只在真有指针的设备上出悬停态。触屏上 `:hover` 会在点过之后粘住，
+ * 于是刚点过的那一块一直亮着，看起来像还选着。
+ */
+@custom-variant hoverable (@media (hover: hover));
 
 @theme inline {
 	/*
@@ -35,6 +44,7 @@
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
 	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
 	--color-popover: var(--popover);
 	--color-popover-foreground: var(--popover-foreground);
 	--color-primary: var(--primary);
@@ -70,26 +80,6 @@
 	 * 卡片、查询台和详情面板都浮在它上面。
 	 */
 	--color-canvas: var(--sidebar);
-
-	/*
-	 * 高度。在 Tailwind 自带的 `shadow-xs`（卡片静置时那一点点）之上，
-	 * 这里只加两档，都很浅。
-	 *
-	 * 分层不能全交给发丝线：线只说明「这里是边界」，说明不了「谁在上面」，
-	 * 而「全是 1px 线切出来的平面」正是管理后台的长相。详情面板和名单不在
-	 * 同一个平面，这件事必须让人不用读就知道，一条边框说不出来。
-	 *
-	 * 两档都压得很浅、而且偏冷：中性灰阴影在浅色底上会发脏，用带一点蓝的
-	 * 黑（`--color-neutral-950` 本身偏冷）低透明度叠两层，近处那层收边、
-	 * 远处那层给体积。深色下阴影几乎不可见，所以那边靠边框接管——
-	 * 这也是下面 `.dark` 里 `--border` 要比浅色更明显一档的原因。
-	 */
-	--shadow-lift:
-		0 1px 2px --alpha(var(--color-neutral-950) / 5%),
-		0 2px 8px --alpha(var(--color-neutral-950) / 4%);
-	--shadow-over:
-		0 1px 3px --alpha(var(--color-neutral-950) / 6%),
-		0 12px 32px -8px --alpha(var(--color-neutral-950) / 12%);
 
 	/*
 	 * 版心。`--container-*` 而不是 `--spacing-*`：`max-w-<名字>` 只认前一个
@@ -143,6 +133,7 @@
 	--background: var(--color-white);
 	--foreground: var(--color-neutral-800);
 	--card: var(--color-white);
+	--card-foreground: var(--color-neutral-800);
 	--popover: var(--color-white);
 	--popover-foreground: var(--color-neutral-800);
 	--primary: var(--color-neutral-800);
@@ -179,6 +170,7 @@
 	);
 	--foreground: var(--color-neutral-100);
 	--card: color-mix(in srgb, var(--background) 98%, var(--color-white));
+	--card-foreground: var(--color-neutral-100);
 	--popover: color-mix(in srgb, var(--background) 96%, var(--color-white));
 	--popover-foreground: var(--color-neutral-100);
 	--primary: var(--color-neutral-100);
@@ -229,38 +221,6 @@
 	body {
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
-	}
-
-	/*
-	 * 按压反馈是全站一条规则，不是每个按钮各写一次的类名。
-	 *
-	 * coss 的 Button 把过渡限定在 `transition-shadow` 上，按下去只有环的变化，
-	 * 没有位移。在一个主要靠点的工作台里，这会让每一次点击都像没接住。放在
-	 * base 层用元素选择器，是因为它该覆盖所有按钮类元素——包括 Menu 触发器、
-	 * Dialog 触发器这些不是我写的。
-	 *
-	 * 只动 scale：它和 opacity 一样走合成器，不引起重排。90ms 是按下去
-	 * 「跟手」的上限，再长就成了动画表演。下面的 reduced-motion 会把这段
-	 * 时长压到 0，规则本身仍然生效。
-	 */
-	button,
-	summary,
-	[role="button"] {
-		/* 去掉移动端 300ms 双击缩放延迟 */
-		touch-action: manipulation;
-		transition-property: scale;
-		transition-duration: 90ms;
-	}
-
-	/*
-	 * `data-press="off"` 是这条规则的出口：整行宽的列表项要走它
-	 * （一块 500px 宽的候选人卡片缩 3%，文字横移七八个像素，读起来是这一块
-	 * 在抖）。按压缩放是给紧凑控件的反馈，尺寸越大越不成立。
-	 */
-	button:active:not(:disabled, [data-press="off"]),
-	summary:active,
-	[role="button"]:active:not([data-press="off"]) {
-		scale: 0.97;
 	}
 
 	/*
@@ -342,13 +302,11 @@
 }
 
 /*
- * 换人时详情区的淡入。
+ * 换人时详情区的淡入。全站唯一的动效。
  *
- * 签名微交互是「↑↓ 换人的连续感」，它由两件事合成：名单那根选中轨
- * （在 result-list.tsx 里，位置做 transition 所以是平移不是闪现）
- * 和这里的淡入。短而浅是硬要求：连按 ↑↓ 时每一帧都要在下一次按键之前
- * 结束，否则动画会排队，手感立刻变粘。
- * 6px 的位移只是给眼睛一个方向暗示，不是表演。
+ * ↑↓ 连着扫名单时，右边这一栏整体换掉一次，淡入给出「换了一个人」的确认。
+ * 短而浅是硬要求：连按时每一帧都要在下一次按键之前结束，否则动画会排队，
+ * 手感立刻变粘。6px 的位移只是给眼睛一个方向暗示，不是表演。
  */
 @keyframes settle {
 	from {

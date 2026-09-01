@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EvidenceLine } from "#/routes/-components/evidence";
+import { EvidenceLine, MissedTerms } from "#/routes/-components/evidence";
 import type { Hit, TermBasis } from "#/search/result";
 import type { Route } from "#/search/weights";
 import { visibleText } from "./render";
@@ -46,13 +46,12 @@ const basis = (over: Partial<TermBasis> = {}): TermBasis => ({
 	...over,
 });
 
-const markup = (h: Hit | undefined, b?: TermBasis | null) =>
+const markup = (h: Hit, b?: TermBasis | null) =>
 	renderToStaticMarkup(
 		<EvidenceLine basis={b} boost={false} hit={h} term="算法" />,
 	);
 
-const seen = (h: Hit | undefined, b?: TermBasis | null) =>
-	visibleText(markup(h, b));
+const seen = (h: Hit, b?: TermBasis | null) => visibleText(markup(h, b));
 
 describe("一行证据看得见的部分", () => {
 	test("有命中就必须看得见时长，不能只剩一颗点", () => {
@@ -89,13 +88,8 @@ describe("一行证据看得见的部分", () => {
 		assert.match(seen(hit({ kind: "external" }), null), /前 2\.3 年/);
 	});
 
-	test("条件词本身永远在，命中与否都在——它是上下对比的那条竖线", () => {
+	test("条件词本身永远在——它是上下对比的那条竖线", () => {
 		assert.match(seen(hit(), basis()), /算法/);
-		assert.match(seen(undefined, null), /算法/);
-	});
-
-	test("没有命中要说「未命中」，不是留一片空白让人以为还没加载完", () => {
-		assert.match(seen(undefined, null), /未命中/);
 	});
 
 	test("命中的词在字段值里被标出来——这一行存在的全部意义", () => {
@@ -134,5 +128,19 @@ describe("一行证据看得见的部分", () => {
 		// 这一路没有可标的字段值，所以这里不经过 Highlight，是完整的一串
 		assert.match(said, /算法工程师/);
 		assert.match(said, /某部门/);
+	});
+});
+
+describe("没命中的条件收成一行", () => {
+	const missed = (terms: string[]) =>
+		visibleText(renderToStaticMarkup(<MissedTerms terms={terms} />));
+
+	test("没命中要说出来，不是留一片空白让人以为还没加载完", () => {
+		assert.match(missed(["算法", "风控"]), /未命中/);
+		assert.match(missed(["算法", "风控"]), /算法、风控/);
+	});
+
+	test("全部命中时它不占位——一行说不出东西的灰字比不写更糟", () => {
+		assert.equal(missed([]), "");
 	});
 });

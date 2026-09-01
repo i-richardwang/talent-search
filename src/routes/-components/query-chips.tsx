@@ -1,4 +1,5 @@
 import { ChevronDownIcon, EyeOffIcon, TriangleAlertIcon } from "lucide-react";
+import { Button } from "#/components/ui/button";
 import {
 	Menu,
 	MenuGroupLabel,
@@ -49,22 +50,30 @@ const MODE_SIGN: Record<ChipMode, string> = {
 	exclude: "−",
 };
 
-const MODE_STYLE: Record<ChipMode, string> = {
-	must: "bg-secondary text-secondary-foreground",
-	boost: "border border-input text-foreground",
-	// 划掉：排除词的意思正是「把它划掉」，这一层不必再解释一遍
-	exclude: "border border-input text-muted-foreground line-through",
+/**
+ * 强度落在 Button 的 variant 上，不另配一套底色。
+ *
+ * 「必须」是实心的次要底（它是默认，也是最常见的一档），另两档是描边——
+ * 描边和实心的差别足够读出「这一枚不一样」，而且不占任何一个色相。
+ */
+const MODE_VARIANT: Record<ChipMode, "secondary" | "outline"> = {
+	must: "secondary",
+	boost: "outline",
+	exclude: "outline",
 };
 
+/** 排除词划掉：排除的意思正是「把它划掉」，这一层不必再解释一遍。 */
+const EXCLUDE_STYLE = "text-muted-foreground line-through";
+
 /**
- * 停用的样子：虚线边 + 次要色，底色一律去掉。
+ * 停用的样子：虚线边 + 次要色。
  *
  * 不用划掉——那是排除词的意思（「干过的人不要」），两件事撞在同一个记号上
  * 会让人以为停用一个词等于排除它，而那正好是反的。也不用透明度：`opacity`
  * 会把里面那个强度符号一起调淡，而重新启用之后它是必须还是加分，恰恰是
  * 停用期间最该看得清的一件事。虚线是「这里有个位置，但现在是空的」的通用画法。
  */
-const OFF_STYLE = "border border-input border-dashed text-muted-foreground";
+const OFF_STYLE = "border-dashed text-muted-foreground";
 
 const MODES = ["must", "boost", "exclude"] as const;
 
@@ -106,15 +115,16 @@ export function QueryChips({
 				return (
 					<Menu key={`${chip.off ? "~" : ""}${chip.mode}:${chip.term}`}>
 						<MenuTrigger
-							className={cn(
-								// 24px 高（12px 字 + 上下 6px）：查询台上它和范围条件那排
-								// 按钮挨着排（filter-bar.tsx 的 PILL），尺寸必须一模一样——
-								// 差一个像素，一行里就看得出是两套东西。命中区仍然是 40px。
-								"relative flex items-center gap-1 rounded-md px-2.5 py-1 text-xs",
-								"after:pointer-events-none after:absolute after:-inset-x-1 after:-inset-y-2 after:content-['']",
-								"[@media(hover:hover)]:hover:brightness-95",
-								chip.off ? OFF_STYLE : MODE_STYLE[chip.mode],
-							)}
+							render={
+								<Button
+									className={cn(
+										chip.mode === "exclude" && EXCLUDE_STYLE,
+										chip.off && OFF_STYLE,
+									)}
+									size="xs"
+									variant={chip.off ? "outline" : MODE_VARIANT[chip.mode]}
+								/>
+							}
 						>
 							{MODE_SIGN[chip.mode] && (
 								<span className="font-mono text-muted-foreground">
@@ -122,9 +132,9 @@ export function QueryChips({
 								</span>
 							)}
 							<span>{chip.term}</span>
-							{chip.off && <EyeOffIcon className="size-3" />}
-							{relaxed && <TriangleAlertIcon className="size-3 text-warning" />}
-							<ChevronDownIcon className="size-2.5 text-muted-foreground" />
+							{chip.off && <EyeOffIcon />}
+							{relaxed && <TriangleAlertIcon className="text-warning" />}
+							<ChevronDownIcon />
 						</MenuTrigger>
 						<MenuPopup align="start">
 							{/*

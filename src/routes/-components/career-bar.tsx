@@ -52,15 +52,13 @@ export function ym(date: string) {
  * 把重叠的经历段分到不同的轨上。
  *
  * **重叠在真实数据里是常态，不是脏数据**：入职前经历来自工作经历表、在职经历
- * 来自异动流程，同一段时间在两张表里各登记一次很正常（同一家公司入职前后各
- * 一条，起始月甚至相同）。单轨绝对定位下，后画的那条会把前一条整个盖住——
- * 带子少画了一段经历，而看的人完全无从察觉。
+ * 来自异动流程，同一段时间在两张表里各登记一次很正常。单轨绝对定位下后画的那条
+ * 会把前一条整个盖住——带子少画了一段经历，而看的人完全无从察觉。
  *
- * 贪心装箱：按开始时间排，每一段放进第一条「已经空出来」的轨。这样重叠的
- * 段被摞起来，眼睛看到的就是「这两段是并行的」——那是事实，不是缺陷。
- * 不重叠的人只会得到一条轨，带子还是一条线。
+ * 贪心装箱：按开始时间排，每一段放进第一条已经空出来的轨。不重叠的人只会得到
+ * 一条轨，带子还是一条线。
  *
- * 导出是为了单测：这段几何算错了页面上只是"看起来怪"，没有任何断言会红。
+ * 导出是为了单测：这段几何算错了页面上只是「看起来怪」，没有任何断言会红。
  */
 export function packLanes(spans: { start: number; end: number }[]): number[] {
 	const laneEnds: number[] = [];
@@ -127,8 +125,6 @@ export function CareerBar({
 								"absolute after:absolute after:-inset-x-1 after:-inset-y-4 after:content-['']",
 								strength ? BAND_FILL[strength] : "bg-border",
 							)}
-							/* 一条轨只有 8px 高，按压缩放会让整条带子抖一下 */
-							data-press="off"
 							key={x.id}
 							/* 点色块滚到对应的那张卡片：带子给形状，卡片给细节，
 							   两者之间要有一条路，否则带子只是装饰。 */
@@ -145,7 +141,6 @@ export function CareerBar({
 								top: strength ? laneTop : laneTop + (LANE_H - MISS_H) / 2,
 								height: strength ? LANE_H : MISS_H,
 							}}
-							title={`${x.org} · ${x.title} · ${period(x.startDate, x.endDate)}`}
 							type="button"
 						/>
 					);
