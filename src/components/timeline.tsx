@@ -1,4 +1,4 @@
-import { Dot, Highlight, ROUTE_LABEL } from "#/components/evidence";
+import { Dot, ROUTE_LABEL, relevance } from "#/components/evidence";
 import { Badge } from "#/components/ui/badge";
 import type { CompanyMeta, Experience } from "#/db/schema";
 import { duration, period, seqLabel } from "#/lib/format";
@@ -61,9 +61,6 @@ function Segment({
 	// 这一段最硬的那一路。节点就是全站那颗点，不另画一套。
 	const strength = bestStrength(hits);
 	const seq = seqLabel(x.seqL1, x.seqL2, x.seqL3);
-	// 简历路的命中不一定排在第一条：这一段可能先因序列命中了别的词。
-	// 只要有任意一个词是从原文命中的，就得把那个词在原文里标出来。
-	const claimed = hits?.find((h) => h.route === "description");
 
 	return (
 		<li
@@ -133,14 +130,15 @@ function Segment({
 				 * 要连读的段落再降字号就伤可读性，而层次由颜色扛得住——
 				 * 一张卡片里最长、最不可信的那块不该和标题一样重。
 				 * read-cjk 的 1.8 行高是它能被成段读下去的前提。
+				 *
+				 * 命中是语义的，原文里不一定出现条件那几个字，所以这里不做高亮：
+				 * 标出一个并不在原文里的词，比不标更误导。原文整段摆出来让人自己
+				 * 判断「配合算法团队」这种主语是别人的句子算不算数——这正是这一路
+				 * 权重最低的原因。
 				 */}
 				{x.description && (
 					<p className="read-cjk mt-2 text-muted-foreground text-sm" lang="zh">
-						{claimed ? (
-							<Highlight term={claimed.term} text={x.description} />
-						) : (
-							x.description
-						)}
+						{x.description}
 					</p>
 				)}
 
@@ -154,7 +152,7 @@ function Segment({
 }
 
 /**
- * 这一段为哪些概念词提供了证据，以及走的哪一路。
+ * 这一段为哪些概念词提供了证据、走的哪一路、有多像。
  *
  * 全部 outline，不按强度上色：强度是从 route 推导的，而 route 就写在标签正文里，
  * 上色等于同一份数据画两遍。强度归节点管（一段一个），路径归标签管
@@ -168,7 +166,7 @@ function MatchedTerms({ hits }: { hits: Hit[] }) {
 		<div className="mt-2 flex flex-wrap items-center gap-1.5">
 			{unique.map((h) => (
 				<Badge key={h.term} variant="outline">
-					{h.term} · {ROUTE_LABEL[h.route]}
+					{h.term} · {ROUTE_LABEL[h.route]} · {relevance(h.relevance)}
 				</Badge>
 			))}
 		</div>

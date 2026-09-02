@@ -46,8 +46,9 @@ function hit(experienceId: number, route: Hit["route"]): Hit {
 	return {
 		experienceId,
 		term: "渠道运营",
-		matched: "渠道运营",
+		member: "渠道运营",
 		route,
+		relevance: 1,
 		kind: "internal",
 		startDate: "2020-01-01",
 		endDate: null,

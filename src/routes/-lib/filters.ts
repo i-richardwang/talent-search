@@ -1,5 +1,5 @@
 /**
- * 四个筛选维度的唯一事实源。
+ * 筛选维度的唯一事实源。
  *
  * URL 里存的是 `kind=internal`、`minMonths=12`，界面上要显示的是「公司内经历」
  * 「1 年」。这两者之间没有任何类型约束，只有一张手写的对照表——写错、漏改、
@@ -8,6 +8,9 @@
  *
  * 这里给出的是描述，不是组件：谁来渲染、渲染成一列按钮还是别的什么，
  * 由界面层决定；值怎么解释、清空要写回什么，只在这一个文件里定义。
+ *
+ * 两类维度：**分面**（有候选列表和人数，渲染成选择器）与**文本条件**
+ * （公司名 / 学校名，来自查询理解或链接，只能看见和清掉）。
  */
 import { duration } from "#/lib/format";
 import type { Facets } from "#/search/result";
@@ -24,7 +27,14 @@ type FilterOption = {
 };
 
 export type FilterField = {
-	key: "seq" | "companyTag" | "kind" | "minMonths";
+	key:
+		| "seq"
+		| "companyTag"
+		| "kind"
+		| "minMonths"
+		| "level"
+		| "recruitment"
+		| "education";
 	/**
 	 * 这一组的标题。有了它，选项文案才能缩短：「经历时长」下面写「1 年」就够了，
 	 * 不必每一项都重复成「至少 1 年」。
@@ -35,6 +45,14 @@ export type FilterField = {
 	options: FilterOption[];
 	/** 选中或清空时要写回 URL 的更新 */
 	set: (v: string | undefined) => Partial<View>;
+};
+
+/** 文本条件：一个已经生效的精确条件，只能看见和清掉。 */
+export type TextFilter = {
+	key: "org" | "school";
+	title: string;
+	value: string;
+	clear: Partial<View>;
 };
 
 const KIND_LABEL: Record<"internal" | "external", string> = {
@@ -54,9 +72,28 @@ function ensureSelected(options: FilterOption[], value: string, label: string) {
 	return [{ value, label, n: 0 }, ...options];
 }
 
+/** 取值即标签的那几维（公司档、职级、招聘渠道、学历）共用这一个形状。 */
+function plain(
+	key: "companyTag" | "level" | "recruitment" | "education",
+	title: string,
+	facet: { value: string; n: number }[],
+	value: string,
+): FilterField {
+	return {
+		key,
+		title,
+		value,
+		options: ensureSelected(
+			facet.map((f) => ({ value: f.value, label: f.value, n: f.n })),
+			value,
+			value,
+		),
+		set: (v) => ({ [key]: v }),
+	};
+}
+
 export function filterFields(facets: Facets, view: View): FilterField[] {
 	const seq = view.seq ?? "";
-	const companyTag = view.companyTag ?? "";
 	const kind = view.kind ?? "";
 	const minMonths = view.minMonths ? String(view.minMonths) : "";
 
@@ -77,21 +114,7 @@ export function filterFields(facets: Facets, view: View): FilterField[] {
 			),
 			set: (v) => ({ seq: v }),
 		},
-		{
-			key: "companyTag",
-			title: "入职前公司",
-			value: companyTag,
-			options: ensureSelected(
-				facets.companyTag.map((t) => ({
-					value: t.value,
-					label: t.value,
-					n: t.n,
-				})),
-				companyTag,
-				companyTag,
-			),
-			set: (v) => ({ companyTag: v }),
-		},
+		plain("level", "职级", facets.level, view.level ?? ""),
 		{
 			key: "kind",
 			title: "经历来源",
@@ -122,11 +145,39 @@ export function filterFields(facets: Facets, view: View): FilterField[] {
 			),
 			set: (v) => ({ minMonths: Number(v) || undefined }),
 		},
+		plain("companyTag", "入职前公司", facets.companyTag, view.companyTag ?? ""),
+		plain(
+			"recruitment",
+			"招聘渠道",
+			facets.recruitment,
+			view.recruitment ?? "",
+		),
+		plain("education", "学历", facets.education, view.education ?? ""),
 	];
 }
 
+/** 已生效的文本条件。没生效的不出现——它们没有候选列表可展开。 */
+export function textFilters(view: View): TextFilter[] {
+	const out: TextFilter[] = [];
+	if (view.org)
+		out.push({
+			key: "org",
+			title: "待过",
+			value: view.org,
+			clear: { org: undefined },
+		});
+	if (view.school)
+		out.push({
+			key: "school",
+			title: "学校",
+			value: view.school,
+			clear: { school: undefined },
+		});
+	return out;
+}
+
 type ActiveFilter = {
-	key: FilterField["key"];
+	key: FilterField["key"] | TextFilter["key"];
 	label: string;
 	/** 单独摘掉这一个筛选 */
 	clear: Partial<View>;
@@ -139,12 +190,18 @@ type ActiveFilter = {
  * （比如某个公司档在这次检索里一个人都没有）。宁可显示一个丑的原始值，
  * 也不能悄悄当它不存在，否则界面上没有任何东西能解释「为什么只剩 3 个人」。
  */
-export function activeFilters(fields: FilterField[]): ActiveFilter[] {
-	return fields
-		.filter((f) => f.value !== "")
-		.map((f) => ({
-			key: f.key,
-			label: f.options.find((o) => o.value === f.value)?.label ?? f.value,
-			clear: f.set(undefined),
-		}));
+export function activeFilters(
+	fields: FilterField[],
+	texts: TextFilter[] = [],
+): ActiveFilter[] {
+	return [
+		...fields
+			.filter((f) => f.value !== "")
+			.map((f) => ({
+				key: f.key,
+				label: f.options.find((o) => o.value === f.value)?.label ?? f.value,
+				clear: f.set(undefined),
+			})),
+		...texts.map((t) => ({ key: t.key, label: t.value, clear: t.clear })),
+	];
 }

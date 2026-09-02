@@ -7,25 +7,20 @@ const q = process.argv.slice(2).join(" ");
 if (!q) throw new Error('用法：npx tsx scripts/query.ts "查询词"');
 
 const t0 = Date.now();
-const { terms, results, total } = await search(parseChips(q));
+const outcome = await search({
+	evidence: parseChips(q),
+	scope: {},
+	notices: [],
+});
+if (outcome.order !== "relevance")
+	throw new Error("概念词查询必须产生相关度结果");
+const { terms, results, total } = outcome;
 const ms = Date.now() - t0;
 
-const shown = terms
-	.map((t) =>
-		t.members
-			.map((m) =>
-				m.effective === m.text
-					? m.tier === "near"
-						? `≈${m.text}`
-						: m.text
-					: `${m.text}→${m.effective}`,
-			)
-			.join("/"),
-	)
-	.join(", ");
+const shown = terms.map((t) => t.members.join("/")).join(", ");
 const top = results.slice(0, Number(process.env.TOPN ?? 8));
 
-console.log(`查询「${q}」→ 概念词 [${shown}]`);
+console.log(`查询「${q}」→ 要求 [${shown}]`);
 // 报 total 不报 results.length：后者被 RESULT_LIMIT 截过，命中五百人也只会说 50，
 // 而这个脚本正是拿来调权重和跑验收用例的——对着一个恒等于页大小的数调参没有意义。
 // 「人」这个单位在全站只有一个口径，命令行也不例外。
@@ -41,7 +36,7 @@ for (const r of top) {
 		seen.add(h.term);
 		const span = `${h.startDate.slice(0, 7)}~${h.endDate?.slice(0, 7) ?? "至今"}`;
 		console.log(
-			`     ${h.term} ←[${h.route}] ${span} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
+			`     ${h.term} ←[${h.route} ${(h.relevance * 100).toFixed(0)}%] ${span} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
 		);
 	}
 }

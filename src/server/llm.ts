@@ -4,21 +4,24 @@
  *
  * 三条硬约束：
  *
- * 1. **发出去的只有两样东西**：用户自己敲的那句话，以及语料里的公司档取值。
- *    姓名、工号、任何一个人的经历都不出这台机器。这也正是「查询理解可以做、
- *    结果重排不做」的分界：重排必须把候选人的经历发给模型。
+ * 1. **发出去的只有两样东西**：用户自己敲的那句话，以及语料里几维筛选的取值
+ *    （公司档、职级、招聘渠道、学历）。姓名、工号、任何一个人的经历都不出这台
+ *    机器。这也正是「查询理解可以做、结果重排不做」的分界：重排必须把候选人的
+ *    经历发给模型。
  * 2. **没配就当没有。** 端点或模型名缺失时自动退回本地规则解析；API key
  *    只在端点需要鉴权时配置。
  * 3. **不抛。** 超时、限流、模型抽风、返回一坨不是 JSON 的东西，一律返回 null
  *    交给上层降级。降级之后检索照常可用，只是语气（「最好」「不要」）没人翻译。
- *    这一条的份量来自它站在关键路径上：查询理解**同步挡在用户和结果之间**，
- *    人敲完那句话要等它回来才看得见结果，一次抛出就是一次白等。
+ *    这一条的份量来自它站在结果的关键路径上：工作台虽然已经打开，名单仍要等
+ *    它回来才成立。一次抛出不能让界面把服务故障误报成「没有这样的人」。
  */
 
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
-import { intentSchema, type PriorTerm } from "#/search/intent";
+import { intentSchema, type Vocabulary } from "#/search/intent";
+import type { SearchDelta } from "#/search/spec";
+import { unsupportedOf } from "#/search/spec";
 
 /**
  * OpenAI 兼容端点。用兼容层而不是绑某一家的 SDK：换模型（公网 provider、
@@ -75,40 +78,71 @@ function getModel() {
 	return model;
 }
 
+/**
+ * 判断进提示词，度量衡进代码。这里写的全是**逐查询的判断**：一个片段是要求、
+ * 是筛选还是不支持，哪种语气是哪档强度。相似多少算命中、太宽算多宽、
+ * 各路证据值多少分，一个数字都不在这里——它们住在 weights.ts。
+ */
 const SYSTEM = `你在把 HR 的一句大白话翻译成人才库的检索条件。
 
-库里存的是每个人的经历段：公司内的任职（序列、岗位、部门）和入职前的工作经历。
-检索按**概念词**逐个匹配这些字段。
+库里存的是每个人的经历段：公司内的任职（序列、岗位、部门、职级）和入职前的
+工作经历（公司、岗位、简历描述）。检索按**语义**匹配：每条要求和每段经历的原文
+由模型判定是不是一回事——所以「算法」自己就能找到岗位写着「推荐算法工程师」
+的人，你不必替库补同义词。但模型判定的是「同一件事」，不是「相关领域」：
+「深度学习」找不到只写着「算法」的人，所以尽量用库里岗位或序列会用的说法，
+不要为了扩大召回补同义词，语义匹配本身负责这件事。
 
-规则：
-- 每个概念词是一个岗位、方向或能力，两到八个字。用库里会写的说法，
-  比如「渠道运营」「风控」「团队管理」，不要写成「做过渠道运营的人」。
-- 一句话里的不同条件拆成不同的词，不要合并成一个长短语。
+你的工作是**路由**：句子里的每个片段只能去三个地方之一。
+
+一、terms（语义要求）——「做过什么」：方向、领域、技能、职责。
+- 每条写成库里岗位或序列会用的说法，两到十二个字：「渠道运营」「支付风控」
+  「团队管理」，不要写成「做过渠道运营的人」。缩写展开成全称（BD → 商务拓展，
+  PM 按上下文写成产品经理或项目经理）。
+- 一句话里的不同条件拆成不同的条目，不要合并成一个长短语。
 - 用户明确说「或」「均可」「都行」的并列选项放进同一条的 alts——它们满足其一
   即可，拆成两条就变成了都要。没有明确并列就填 null。
-- near 是你替库补的**相近说法**：库里可能写「深度学习」「机器学习」而用户说的是
-  「算法」。最多两个，宁缺毋滥——它用来放宽召回，按降档计分，给错了会把不相干
-  的人抬进名单。exclude 条件的 near 一律 null：排除是否决，否决的词必须是用户
-  自己说的。
 - 强度按语气判断：默认 must；「最好」「优先」「加分」是 boost；
   「不要」「排除」「没做过」是 exclude——exclude 的意思是这类经历不作为证据，
   不是把沾过的人拉黑。
-- 句式词（帮我找、有没有、的人、经验、背景）不是概念词，丢掉。
-- 通用职级词（经理、负责人、专家、总监、主管）不要单独成词：库里一半的岗位名
-  都带它们，单独一条几乎不筛人。把它折进更具体的说法（「算法团队负责人」
-  而不是「算法」+「负责人」两条）；只有当整句话里再没有别的可用条件时才保留。
-- 只在句子里明确说了的时候才填 kind / minMonths / companyTag，否则一律 null。
-  不要从概念词去推断它们。`;
+- 只有功能词的片段**不能单独成条**：「经理」「负责人」「总监」「运营」「技术」
+  「管理」单独出现时几乎不筛人。要么把它并进相邻的领域词（「算法团队负责人」
+  而不是「算法」+「负责人」），要么按下面的规则送去 level；实在无处可去就放进
+  unsupported 让用户补充。
+- 句式词（帮我找、有没有、的人、经验、背景）不是要求，丢掉。
+
+二、结构化范围——「是谁、在哪、多久、什么级别」。有字段就走对应字段，
+**专有名词永远不进 terms**：公司名、学校名在向量空间里和同类名字是邻居，
+语义匹配会把竞品全捞进来。
+- kind：internal 是当前公司的内部任职；external 是加入当前公司之前的外部工作经历。
+  「入职前」「外部经历」只能填 external，「公司内」「内部任职」只能填 internal。
+- minMonths：「三年以上」「至少两年」→ 单段最短月数。
+- companyTag：「大厂」「外企」这类公司档，只能从给定取值里选。
+- level：只接受用户明确说出的一个精确当前职级，且只能从给定取值里选。
+  「P7 以上 / 以下」是范围，当前结构不能准确表示，整段放进 unsupported；
+  「高级」「资深」「总监」对不上唯一取值时也放进 unsupported，不要硬凑。
+- recruitment：「校招进来的」「社招」，只能从给定取值里选。
+- education：「硕士」「博士」，只能从给定取值里选。
+- org：用户点名的公司或部门，原样照抄（「待过字节」「在增长中心干过」）。
+- school：用户点名的学校，原样照抄。
+- 只在句子里明确说了的时候才填，否则一律 null。不要从要求去推断筛选。
+
+三、unsupported——库里没有这一维的条件：地点、年龄、性别、行业、性质、
+「像某某一样」、对不上取值的职级。**原样照抄到这里**，绝不折进 terms：折进去
+会让描述里提到过那个词的段被无声捞进来，而用户以为条件生效了。`;
 
 /**
- * 纠正理解的上下文：上一版理解成了什么（`PriorTerm[]`，即模型自己的输出
- * 形状），以及用户对它的那句纠正。两样都来自用户自己的输入和它的派生物——
- * 发出去的东西没有变多，仍然只有用户的话和公司档取值。
+ * 纠正理解的上下文：上一版对这句话的完整理解，以及用户的纠正说明。范围条件
+ * 也必须带上，否则「P7 被理解成岗位词」这类路由错误没有可供模型修正的旧结果。
+ * 两样都来自用户自己的输入和它的派生物，不会多发送个人数据。
  */
-export type Correction = { previous: PriorTerm[]; note: string };
+export type Correction = { previous: SearchDelta; note: string };
+
+function listed(what: string, values: readonly string[]) {
+	return `${what}的可选取值：${values.join("、") || "（无）"}`;
+}
 
 /**
- * 一句话 → 模型给出的原始对象。调用方必须再过一遍 `toIntent` 收窄。
+ * 一句话 → 模型给出的原始对象。调用方必须再过一遍 `toDelta` 收窄。
  *
  * 返回 null 表示「这次用不了模型」，不区分是没配置还是失败——对调用方来说
  * 两者要做的事完全一样（退回规则解析），区分只会多一个没人用的分支。
@@ -120,28 +154,49 @@ export type Correction = { previous: PriorTerm[]; note: string };
  */
 export async function understand(
 	text: string,
-	companyTags: readonly string[],
+	vocab: Vocabulary,
 	correction?: Correction,
 ): Promise<unknown | null> {
 	const m = getModel();
 	if (!m) return null;
-	// 上一版理解按模型自己的输出格式给（terms 的 JSON），不用教任何记号
+	// 上一版按模型的输出字段还原，不把内部的 evidence/scope/notices 名字泄漏进提示词。
 	const corrected = correction
-		? `\n\n上一次对这句话的理解（字段含义与你的输出相同）：${JSON.stringify(correction.previous)}` +
+		? `\n\n上一次对这句话的理解（字段含义与你的输出相同）：${JSON.stringify({
+				terms: correction.previous.evidence.map((item) => ({
+					term: item.term,
+					mode: item.mode,
+					alts: item.alts ?? null,
+				})),
+				kind: correction.previous.scope.kind ?? null,
+				minMonths: correction.previous.scope.minMonths ?? null,
+				companyTag: correction.previous.scope.companyTag ?? null,
+				level: correction.previous.scope.level ?? null,
+				recruitment: correction.previous.scope.recruitment ?? null,
+				education: correction.previous.scope.education ?? null,
+				org: correction.previous.scope.org ?? null,
+				school: correction.previous.scope.school ?? null,
+				unsupported: unsupportedOf(correction.previous),
+			})}` +
 			`\n用户指出理解得不对，补充说：${correction.note}` +
 			"\n请据此重新给出这句话的完整理解，不要只翻译补充说明本身。"
 		: "";
 	try {
 		const { output } = await generateText({
 			model: m,
-			output: Output.object({ schema: intentSchema(companyTags) }),
+			output: Output.object({ schema: intentSchema(vocab) }),
 			system: SYSTEM,
-			prompt: `公司档的可选取值：${companyTags.join("、") || "（无）"}\n\n这句话：${text}${corrected}`,
+			prompt: [
+				listed("companyTag", vocab.companyTags),
+				listed("level", vocab.levels),
+				listed("recruitment", vocab.recruitments),
+				listed("education", vocab.educations),
+				`\n这句话：${text}${corrected}`,
+			].join("\n"),
 			// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件
 			temperature: 0,
 			maxRetries: 1,
 			maxOutputTokens: MAX_OUTPUT_TOKENS,
-			abortSignal: AbortSignal.timeout(TIMEOUT_MS),
+			timeout: TIMEOUT_MS,
 		});
 		return output;
 	} catch (e) {

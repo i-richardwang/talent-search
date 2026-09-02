@@ -13,11 +13,12 @@ import { Dialog, DialogPopup, DialogTitle } from "#/components/ui/dialog";
 import { Kbd } from "#/components/ui/kbd";
 import { cn } from "#/lib/utils";
 import { emptyFacets, type SearchResult } from "#/search/result";
+import { emptySpec, fellBack, type SearchSpec } from "#/search/spec";
 import { loadWorkbench } from "#/server/functions";
 import { QueryDeck } from "../../-components/query-deck";
 import { ResultList } from "../../-components/result-list";
 import { useCommit } from "../../-lib/commit";
-import { filterFields } from "../../-lib/filters";
+import { filterFields, textFilters } from "../../-lib/filters";
 import { useInterpretation } from "../../-lib/interpret";
 import { useKeyboardFlow } from "../../-lib/keyboard-flow";
 import { useIsWide } from "../../-lib/media";
@@ -36,6 +37,7 @@ import {
  * （见 -lib/keyboard-flow.ts），每次渲染新建 `[]` 会让那个 effect 反复解绑重绑。
  */
 const NO_RESULTS: SearchResult[] = [];
+const EMPTY_SPEC = emptySpec();
 
 /**
  * 详情面板的宽度。外层收展（0 ↔ 这个值），内层写死它顶住内容，收展过程中里面的
@@ -110,7 +112,7 @@ function Workbench() {
 	const { turn, result } = Route.useLoaderData();
 	// `turnId` 就是 `turn.id`：loader 正是按路径上那一段查出这条记录的，
 	// 再从 params 取一次就是同一个值的第二个名字。
-	const { id: turnId, rawText, chips: settledChips } = turn;
+	const { id: turnId, rawText, spec: settledSpec } = turn;
 	const view = Route.useSearch();
 	const navigate = useNavigate();
 	const { empId } = useParams({ strict: false });
@@ -121,14 +123,13 @@ function Workbench() {
 		interpreting,
 		error: interpretError,
 		retry: retryInterpret,
-	} = useInterpretation(turnId, settledChips);
+	} = useInterpretation(turnId, settledSpec);
 
 	// 键盘流的 `/` 要能聚焦到查询台那个框
 	const inputRef = useRef<HTMLInputElement>(null);
 	const wide = useIsWide();
 
-	const chips = settledChips ?? [];
-	const terms = result?.terms ?? [];
+	const spec = settledSpec ?? EMPTY_SPEC;
 	const results = result?.results ?? NO_RESULTS;
 	const facets = result?.facets ?? emptyFacets();
 	// 理解中和检索中在列表里是同一件事：下面这份名单还不成立，画骨架屏。
@@ -144,8 +145,8 @@ function Workbench() {
 		navigate({ to: ".", search: (old) => ({ ...old, n: undefined, ...next }) });
 
 	// 改查询：派生一条挂在当前记录上的新记录。push，所以后退键就是撤销。
-	const reviseChips = (next: typeof chips) =>
-		commit({ kind: "chips", chips: next }, { parentTurnId: turn.id, view });
+	const reviseSpec = (next: SearchSpec) =>
+		commit({ kind: "spec", spec: next }, { parentTurnId: turn.id });
 
 	useKeyboardFlow({ inputRef, results, empId, turnId, view });
 
@@ -181,38 +182,33 @@ function Workbench() {
 				</div>
 				{/* 纠正草稿属于一条查询记录，换记录时不能带到下一句话。 */}
 				<QueryDeck
-					chips={chips}
-					degraded={turn.degraded}
 					error={commitError ?? interpretError}
 					onRetry={interpretError ? retryInterpret : undefined}
 					fields={filterFields(facets, view)}
+					textFilters={textFilters(view)}
 					inputRef={inputRef}
 					interpreting={interpreting}
 					key={turn.id}
-					onChangeQuery={reviseChips}
+					onChangeSpec={reviseSpec}
 					onChangeView={updateView}
-					onQuery={(input) => commit(input, { parentTurnId: turn.id, view })}
+					onQuery={(input) => commit(input, { parentTurnId: turn.id })}
 					onCorrect={
-						rawText && settledChips
+						rawText && settledSpec
 							? (note) =>
 									commit(
 										{ kind: "reinterpret", note },
-										{ parentTurnId: turn.id, view },
+										{ parentTurnId: turn.id },
 									)
 							: undefined
 					}
 					onReinterpret={
-						rawText && turn.degraded
-							? () =>
-									commit(
-										{ kind: "reinterpret" },
-										{ parentTurnId: turn.id, view },
-									)
+						rawText && fellBack(spec)
+							? () => commit({ kind: "reinterpret" }, { parentTurnId: turn.id })
 							: undefined
 					}
 					rawText={rawText}
+					spec={spec}
 					strongCount={facets.strong.on}
-					terms={terms}
 					view={view}
 				/>
 
@@ -226,18 +222,15 @@ function Workbench() {
 				>
 					<ResultList
 						canMore={canLoadMore(view, result?.total ?? 0)}
-						chips={chips}
 						empId={empId}
 						growing={growing}
 						loading={loading}
 						onChange={updateView}
 						onFocusQuery={() => inputRef.current?.focus()}
 						onMore={() => updateView(morePage(view))}
-						onReviseQuery={reviseChips}
-						results={results}
-						terms={terms}
-						overflowTerms={result?.overflowTerms ?? []}
-						total={result?.total ?? 0}
+						onReviseQuery={(evidence) => reviseSpec({ ...spec, evidence })}
+						outcome={result}
+						spec={spec}
 						turnId={turnId}
 						view={view}
 						withoutStrong={facets.strong.off}

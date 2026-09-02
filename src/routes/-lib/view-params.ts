@@ -6,8 +6,9 @@
  *
  * - **turnId 回答「我要找什么人」**：一句原话加上对它的理解，不可变、可分享、
  *   可重新理解。它值得被存下来，所以它有一行数据库记录。
- * - **query string 回答「我怎么看这批人」**：筛掉一个序列、翻下一页、看某个人。
- *   它一次性、随手改、粘给同事也无所谓，所以它就该住在 URL 里，不值得留存。
+ * - **query string 回答「我怎么看这批人」**：筛掉一个序列、翻下一页。它一次性、
+ *   随手改、粘给同事也无所谓，所以它就该住在 URL 里，不值得留存。当前员工同样
+ *   是视图状态，但由 `/p/:empId` 子路由表达，不属于这份筛选参数。
  *
  * 两样东西挤进同一个参数会让「改一个筛选」和「换一个查询」在代码里长得一模
  * 一样，而在产品上它们是两件完全不同的事：一个是重新看一遍同一批候选，
@@ -23,7 +24,14 @@ export type View = {
 	companyTag?: string;
 	minMonths?: number;
 	kind?: "internal" | "external";
-	/** 只看每个词都命中受控字段的人。和其余四维一样是服务端筛选。 */
+	level?: string;
+	recruitment?: string;
+	education?: string;
+	/** 待过的公司或部门名里含这几个字。精确条件，没有分面。 */
+	org?: string;
+	/** 学校名里含这几个字。精确条件，没有分面。 */
+	school?: string;
+	/** 只看每个词都命中受控字段的人。和其余维一样是服务端筛选。 */
 	strong?: boolean;
 	/**
 	 * 已经翻出来多少人。默认（缺省）就是一页。
@@ -54,6 +62,11 @@ export function validateView(s: Record<string, unknown>): View {
 		companyTag: text(s.companyTag),
 		minMonths: Number.isInteger(months) && months > 0 ? months : undefined,
 		kind: s.kind === "internal" || s.kind === "external" ? s.kind : undefined,
+		level: text(s.level),
+		recruitment: text(s.recruitment),
+		education: text(s.education),
+		org: text(s.org),
+		school: text(s.school),
 		strong: s.strong === true || s.strong === "true" ? true : undefined,
 		n: pageSize(s.n),
 	};
@@ -90,14 +103,21 @@ export function morePage(v: View): Partial<View> {
 	return { n: Math.min(pageLimit(v) + RESULT_PAGE, RESULT_MAX) };
 }
 
-/** 除翻页之外的全部视图状态。加一个筛选维度要记得加进来。 */
-const FILTER_KEYS = [
+/** 收窄人群的筛选维度。`CLEARED_FILTERS` 与 `hasFilters` 都从它派生，加一维只改这里。 */
+const POPULATION_KEYS = [
 	"seq",
 	"companyTag",
 	"minMonths",
 	"kind",
-	"strong",
+	"level",
+	"recruitment",
+	"education",
+	"org",
+	"school",
 ] as const;
+
+/** 除翻页之外的全部视图状态。 */
+const FILTER_KEYS = [...POPULATION_KEYS, "strong"] as const;
 
 /**
  * 这一次导航是不是「只是再看一页」。
@@ -131,6 +151,11 @@ export function toFilters(v: View): SearchFilters {
 		companyTag: v.companyTag,
 		minMonths: v.minMonths,
 		kind: v.kind,
+		level: v.level,
+		recruitment: v.recruitment,
+		education: v.education,
+		org: v.org,
+		school: v.school,
 		strong: v.strong,
 	};
 }
@@ -138,16 +163,13 @@ export function toFilters(v: View): SearchFilters {
 /**
  * 筛选的「全部清空」。工具栏的「清除筛选」和空结果态的逃生按钮都用它，
  * 免得两处各写一份、加字段时漏掉一处。
- * `strong` 不在其中：它答的是「证据够不够硬」，和收窄人群的四维不是一档。
+ * `strong` 不在其中：它答的是「证据够不够硬」，和收窄人群的那几维不是一档。
  */
-export const CLEARED_FILTERS = {
-	seq: undefined,
-	companyTag: undefined,
-	minMonths: undefined,
-	kind: undefined,
-} satisfies Partial<View>;
+export const CLEARED_FILTERS = Object.fromEntries(
+	POPULATION_KEYS.map((k) => [k, undefined]),
+) as { [K in (typeof POPULATION_KEYS)[number]]: undefined };
 
 /** 是否有任何收窄人群的筛选生效 */
 export function hasFilters(v: View) {
-	return Boolean(v.seq || v.companyTag || v.minMonths || v.kind);
+	return POPULATION_KEYS.some((k) => v[k] !== undefined);
 }

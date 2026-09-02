@@ -28,12 +28,39 @@ describe("提交查询的服务端边界", () => {
 			},
 		);
 		assert.deepEqual(
-			validateCommit({ input: { kind: "chips", q: "*+经理" } }),
+			validateCommit({
+				input: {
+					kind: "spec",
+					spec: {
+						evidence: [
+							{
+								term: "经理",
+								mode: "boost",
+								off: true,
+								wide: true,
+							},
+						],
+						scope: {},
+						notices: [],
+					},
+				},
+			}),
 			{
 				parentTurnId: undefined,
 				input: {
-					kind: "chips",
-					chips: [{ term: "经理", mode: "boost", off: true, wide: true }],
+					kind: "spec",
+					spec: {
+						evidence: [
+							{
+								term: "经理",
+								mode: "boost",
+								off: true,
+								wide: true,
+							},
+						],
+						scope: {},
+						notices: [],
+					},
 				},
 			},
 		);
@@ -45,8 +72,8 @@ describe("提交查询的服务端边界", () => {
 			/查询格式无效/,
 		);
 		assert.throws(
-			() => validateCommit({ input: { kind: "chips", q: {} } }),
-			/查询格式无效/,
+			() => validateCommit({ input: { kind: "spec", spec: {} } }),
+			/查询为空/,
 		);
 	});
 });

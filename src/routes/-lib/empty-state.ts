@@ -1,18 +1,21 @@
 import type { Chip } from "#/search/parse";
-import type { TermPlan } from "#/search/result";
+import type { SearchOverflow, TermPlan } from "#/search/result";
+import type { SearchScope } from "#/search/spec";
 import { CLEARED_FILTERS, hasFilters, type View } from "./view-params";
 
 /**
  * 名单空了该说什么，以及给一条什么样的出路。
  *
  * 每一支都配一个能一键走的动作——空态最要命的不是没有结果，是没人知道下一步
- * 该改哪。`overflowTerms` 排在最前：它表示匹配事实多到不能完整排名，和
+ * 该改哪。`overflow` 排在最前：它表示候选事实多到不能完整排名，和
  * 「一个人都没有」正相反，所以不能并进下面那几支。
  */
 export function emptyState({
 	terms,
 	chips,
-	overflowTerms,
+	scope,
+	unsupported,
+	overflow,
 	withoutStrong,
 	view,
 	onChange,
@@ -21,8 +24,9 @@ export function emptyState({
 }: {
 	terms: TermPlan[];
 	chips: Chip[];
-	/** 超过事实行保险丝时，按实际贡献选出的要求。 */
-	overflowTerms: string[];
+	scope: SearchScope;
+	unsupported: string[];
+	overflow: SearchOverflow | null;
 	withoutStrong: number;
 	view: View;
 	/** 改视图：筛选、翻页。不产生新的查询记录。 */
@@ -31,13 +35,19 @@ export function emptyState({
 	onReviseQuery: (next: Chip[]) => void;
 	onFocusQuery: () => void;
 }) {
-	if (overflowTerms.length > 0) {
+	if (overflow?.kind === "evidence") {
 		return {
 			title: "匹配证据过多",
-			hint: `「${overflowTerms.join("」「")}」产生的匹配证据最多，请换成更具体的说法，或先停用。`,
+			hint: `「${overflow.terms.join("」「")}」产生的匹配证据最多，请换成更具体的说法，或先停用。`,
 			action: { label: "调整条件", onClick: onFocusQuery },
 		};
 	}
+	if (overflow?.kind === "population")
+		return {
+			title: "查询范围过大",
+			hint: "请添加更具体的范围条件或经历要求，再查看完整结果。",
+			action: { label: "添加条件", onClick: onFocusQuery },
+		};
 	if (terms.length === 0) {
 		if (chips.some((chip) => chip.off && chip.mode !== "exclude")) {
 			return {
@@ -61,6 +71,28 @@ export function emptyState({
 				action: { label: "添加条件", onClick: onFocusQuery },
 			};
 		}
+		if (Object.keys(scope).length > 0) {
+			if (hasFilters(view))
+				return {
+					title: "当前筛选下无结果",
+					hint: "清除筛选后可查看符合查询范围的结果。",
+					action: {
+						label: "清除筛选",
+						onClick: () => onChange(CLEARED_FILTERS),
+					},
+				};
+			return {
+				title: "没有符合查询范围的员工",
+				hint: "请移除一项范围条件，或添加经历要求重新搜索。",
+				action: { label: "调整条件", onClick: onFocusQuery },
+			};
+		}
+		if (unsupported.length > 0)
+			return {
+				title: "这些条件暂不支持",
+				hint: "请补充岗位、经验或能力；未支持的条件不会参与搜索。",
+				action: { label: "添加条件", onClick: onFocusQuery },
+			};
 		return {
 			title: "未识别到有效的搜索条件",
 			hint: "请输入岗位、经验或能力，例如「渠道运营、带团队」。",

@@ -6,7 +6,7 @@ import {
 	InputGroupAddon,
 	InputGroupInput,
 } from "#/components/ui/input-group";
-import type { QueryInput } from "#/search/parse";
+import type { QueryInput } from "#/search/spec";
 
 /**
  * 输入框。两种用法，差别只有一处：**它写查询还是加查询**。

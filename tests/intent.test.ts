@@ -9,26 +9,45 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
 	intentSchema,
-	priorUnderstanding,
 	resolveIntent,
-	toIntent,
+	toDelta,
+	type Vocabulary,
 } from "#/search/intent";
 import { parseChips, toQuery } from "#/search/parse";
+import { unsupportedOf } from "#/search/spec";
 
-const TAGS = ["头部互联网T1", "知名公司", "外包公司"];
-const of = (raw: unknown) => toIntent(raw, TAGS);
+const VOCAB: Vocabulary = {
+	companyTags: ["头部互联网T1", "知名公司", "外包公司"],
+	levels: ["P5", "P6", "P7", "P8"],
+	recruitments: ["校招", "社招"],
+	educations: ["本科", "硕士", "博士"],
+};
+const of = (raw: unknown) => toDelta(raw, VOCAB);
 const terms = (...ts: unknown[]) => ({ terms: ts });
+/** 一份只有筛选的合法输出，逐项覆盖 */
+const NONE = {
+	terms: [],
+	kind: null,
+	minMonths: null,
+	companyTag: null,
+	level: null,
+	recruitment: null,
+	education: null,
+	org: null,
+	school: null,
+	unsupported: [],
+};
 
 describe("强度", () => {
 	test("三档语气都翻译得出来", () => {
-		const { chips } = of(
+		const { evidence } = of(
 			terms(
 				{ term: "渠道运营", mode: "must" },
 				{ term: "团队管理", mode: "boost" },
 				{ term: "实习", mode: "exclude" },
 			),
 		);
-		assert.deepEqual(chips, [
+		assert.deepEqual(evidence, [
 			{ term: "渠道运营", mode: "must" },
 			{ term: "团队管理", mode: "boost" },
 			{ term: "实习", mode: "exclude" },
@@ -38,128 +57,145 @@ describe("强度", () => {
 	test("认不出的强度按必须算，不是丢掉这个词", () => {
 		// 丢掉会静默放宽 AND 语义（少一个约束，结果集变大），而屏幕上看不出
 		// 哪个条件被吃了。当成必须最多是收得太紧，那是看得见、点得掉的。
-		const { chips } = of(terms({ term: "风控", mode: "很重要" }));
-		assert.deepEqual(chips, [{ term: "风控", mode: "must" }]);
+		const { evidence } = of(terms({ term: "风控", mode: "很重要" }));
+		assert.deepEqual(evidence, [{ term: "风控", mode: "must" }]);
 	});
 });
 
 describe("每个词都过一遍本地切词", () => {
 	test("模型带上句式赘字也不要紧，照样剥干净", () => {
-		const { chips } = of(terms({ term: "做过渠道运营的人", mode: "must" }));
-		assert.deepEqual(chips, [{ term: "渠道运营", mode: "must" }]);
+		const { evidence } = of(terms({ term: "做过渠道运营的人", mode: "must" }));
+		assert.deepEqual(evidence, [{ term: "渠道运营", mode: "must" }]);
 	});
 
 	test("会被切词切开的词就地切开，强度跟着走", () => {
 		// 「安全与风险合规」在本地会按连接词「与」切成两个。不切的话得到的是
 		// 一枚点一下就变形的 chip：屏幕上写的和实际检索的不是同一个东西。
-		const { chips } = of(terms({ term: "安全与风险合规", mode: "exclude" }));
-		assert.deepEqual(chips, [
+		const { evidence } = of(terms({ term: "安全与风险合规", mode: "exclude" }));
+		assert.deepEqual(evidence, [
 			{ term: "安全", mode: "exclude" },
 			{ term: "风险合规", mode: "exclude" },
 		]);
 	});
 
 	test("切完什么都不剩的词直接消失", () => {
-		const { chips } = of(
+		const { evidence } = of(
 			terms({ term: "的人", mode: "must" }, { term: "  ", mode: "must" }),
 		);
-		assert.deepEqual(chips, []);
+		assert.deepEqual(evidence, []);
 	});
 
 	test("同一个词只留一枚，先出现的强度算数", () => {
-		const { chips } = of(
+		const { evidence } = of(
 			terms(
 				{ term: "算法", mode: "must" },
 				{ term: "做过算法", mode: "boost" },
 			),
 		);
-		assert.deepEqual(chips, [{ term: "算法", mode: "must" }]);
+		assert.deepEqual(evidence, [{ term: "算法", mode: "must" }]);
 	});
 
 	test("并列说法（alts）挂在同一条要求上，不拆成两条都要", () => {
-		const { chips } = of(
-			terms({ term: "大模型", mode: "must", alts: ["推荐系统"], near: null }),
+		const { evidence } = of(
+			terms({ term: "大模型", mode: "must", alts: ["推荐系统"] }),
 		);
-		assert.deepEqual(chips, [
+		assert.deepEqual(evidence, [
 			{ term: "大模型", alts: ["推荐系统"], mode: "must" },
 		]);
 	});
 
-	test("相近说法（near）跟着要求走，并各自过一遍切词", () => {
-		const { chips } = of(
-			terms({
-				term: "算法",
-				mode: "must",
-				alts: null,
-				near: ["做过深度学习的", "机器学习"],
-			}),
+	test("并列说法也各自过一遍切词", () => {
+		const { evidence } = of(
+			terms({ term: "算法", mode: "must", alts: ["做过深度学习的"] }),
 		);
-		assert.deepEqual(chips, [
-			{ term: "算法", near: ["深度学习", "机器学习"], mode: "must" },
+		assert.deepEqual(evidence, [
+			{ term: "算法", alts: ["深度学习"], mode: "must" },
 		]);
 	});
 
-	test("排除条件的 near 被丢弃：赶人的词必须准", () => {
-		const { chips } = of(
-			terms({ term: "实习", mode: "exclude", alts: null, near: ["实习生"] }),
-		);
-		assert.deepEqual(chips, [{ term: "实习", mode: "exclude" }]);
-	});
-
 	test("产出能原样序列化再读回来", () => {
-		const { chips } = of(
+		const { evidence } = of(
 			terms(
 				{ term: "渠道运营", mode: "must" },
 				{ term: "带过团队", mode: "boost" },
 				{ term: "外包", mode: "exclude" },
 			),
 		);
-		assert.deepEqual(parseChips(toQuery(chips)), chips);
+		assert.deepEqual(parseChips(toQuery(evidence)), evidence);
 	});
 });
 
 describe("筛选只认库里真有的取值", () => {
 	test("经历类型只有两种", () => {
-		assert.equal(of({ ...terms(), kind: "external" }).filters.kind, "external");
-		assert.equal(of({ ...terms(), kind: "外部" }).filters.kind, undefined);
+		assert.equal(of({ ...NONE, kind: "external" }).scope.kind, "external");
+		assert.equal(of({ ...NONE, kind: "外部" }).scope.kind, undefined);
 	});
 
-	test("最短时长是任意正整数月数，不是左栏那四个档", () => {
-		assert.equal(of({ ...terms(), minMonths: 24 }).filters.minMonths, 24);
-		// 左栏那四个档是分面的桶，不是这一维的值域（见 `MIN_MONTHS_BUCKETS`）。
-		assert.equal(of({ ...terms(), minMonths: 18 }).filters.minMonths, 18);
-		assert.equal(of({ ...terms(), minMonths: 30 }).filters.minMonths, 30);
+	test("最短时长是任意正整数月数，不是分面那四个档", () => {
+		assert.equal(of({ ...NONE, minMonths: 24 }).scope.minMonths, 24);
+		// 分面那四个档是桶，不是这一维的值域（见 `MIN_MONTHS_BUCKETS`）。
+		assert.equal(of({ ...NONE, minMonths: 18 }).scope.minMonths, 18);
+		assert.equal(of({ ...NONE, minMonths: 30 }).scope.minMonths, 30);
 	});
 
 	test("月数不是正整数就当没填，和 URL 校验、服务端收窄同一条口径", () => {
 		for (const bad of [-12, 0, 1.5, Number.NaN, "半年", null])
 			assert.equal(
-				of({ ...terms(), minMonths: bad }).filters.minMonths,
+				of({ ...NONE, minMonths: bad }).scope.minMonths,
 				undefined,
 				`minMonths=${String(bad)}`,
 			);
 	});
 
-	test("公司档必须来自语料，模型凭常识造的词一律不认", () => {
-		assert.equal(
-			of({ ...terms(), companyTag: "知名公司" }).filters.companyTag,
-			"知名公司",
-		);
+	test("公司档、职级、招聘渠道、学历必须来自语料，凭常识造的词一律不认", () => {
+		const { scope } = of({
+			...NONE,
+			companyTag: "知名公司",
+			level: "P7",
+			recruitment: "校招",
+			education: "硕士",
+		});
+		assert.deepEqual(scope, {
+			companyTag: "知名公司",
+			level: "P7",
+			recruitment: "校招",
+			education: "硕士",
+		});
 		// 造出来的档筛不到任何人，而界面上那一维会显示成一个选中了却空着的筛选
-		assert.equal(
-			of({ ...terms(), companyTag: "一线大厂" }).filters.companyTag,
-			undefined,
+		assert.deepEqual(
+			of({
+				...NONE,
+				companyTag: "一线大厂",
+				level: "总监",
+				recruitment: "内推",
+				education: "大专",
+			}).scope,
+			{},
 		);
 	});
 
+	test("公司名与学校名是自由文本，原样照抄，只剥空白", () => {
+		const { scope } = of({ ...NONE, org: " 字节 ", school: "清华" });
+		assert.deepEqual(scope, { org: "字节", school: "清华" });
+		assert.deepEqual(of({ ...NONE, org: "  ", school: 42 }).scope, {});
+	});
+
 	test("没说的维度不填，null 不是一个筛选值", () => {
-		const { filters } = of({
-			...terms(),
-			kind: null,
-			minMonths: null,
-			companyTag: null,
+		assert.deepEqual(of(NONE).scope, {});
+	});
+});
+
+describe("没处放的条件", () => {
+	test("原样带出来，去重、剥空白", () => {
+		const delta = of({
+			...NONE,
+			unsupported: ["北京", " 北京", "35 岁以下", ""],
 		});
-		assert.deepEqual(filters, {});
+		assert.deepEqual(unsupportedOf(delta), ["北京", "35 岁以下"]);
+	});
+
+	test("不是数组就当没有", () => {
+		assert.deepEqual(unsupportedOf(of({ ...NONE, unsupported: "北京" })), []);
 	});
 });
 
@@ -168,15 +204,17 @@ describe("模型是不可信输入", () => {
 		for (const raw of [null, undefined, 0, "", [], "一句话", { terms: 42 }]) {
 			assert.deepEqual(
 				of(raw),
-				{ chips: [], filters: {}, degraded: false },
+				{ evidence: [], scope: {}, notices: [] },
 				`${JSON.stringify(raw)} 应当被当成没填`,
 			);
 		}
 	});
 
 	test("数组里混进垃圾只丢那一项，其余照常", () => {
-		const { chips } = of(terms(null, { term: 123 }, { term: "算法" }, "算法"));
-		assert.deepEqual(chips, [{ term: "算法", mode: "must" }]);
+		const { evidence } = of(
+			terms(null, { term: 123 }, { term: "算法" }, "算法"),
+		);
+		assert.deepEqual(evidence, [{ term: "算法", mode: "must" }]);
 	});
 
 	test("绕过 schema 直接传入时也只收约定数量", () => {
@@ -186,7 +224,7 @@ describe("模型是不可信输入", () => {
 				mode: "must",
 			})),
 		);
-		assert.equal(of(raw).chips.length, 8);
+		assert.equal(of(raw).evidence.length, 8);
 	});
 });
 
@@ -194,150 +232,118 @@ describe("模型不可用或没有给出可用条件", () => {
 	/*
 	 * `degraded` 不是一个日志字段，是结果正确性的一部分：退回规则解析之后
 	 * 语气读不出来，「最好」「不要」会被一律判成必须条件。所以每一条回退
-	 * 分支都要把这一位置上，界面才有东西可说（见 result-head.tsx）。
+	 * 分支都要把这一位置上，界面才有东西可说。
 	 */
 	test("调用失败时保留本地解析结果，并记成降级", () => {
-		assert.deepEqual(resolveIntent("渠道运营,+团队管理", null, TAGS), {
-			chips: [
+		assert.deepEqual(resolveIntent("渠道运营,+团队管理", null, VOCAB), {
+			evidence: [
 				{ term: "渠道运营", mode: "must" },
 				{ term: "团队管理", mode: "boost" },
 			],
-			filters: {},
-			degraded: true,
+			scope: {},
+			notices: [{ kind: "fallback" }],
 		});
 	});
 
 	test("合法空对象收窄后没有任何效果时同样回退，不吞掉输入", () => {
-		assert.deepEqual(
-			resolveIntent(
-				"渠道运营",
-				{ terms: [], kind: null, minMonths: null, companyTag: null },
-				TAGS,
-			),
-			{
-				chips: [{ term: "渠道运营", mode: "must" }],
-				filters: {},
-				degraded: true,
-			},
-		);
+		assert.deepEqual(resolveIntent("渠道运营", NONE, VOCAB), {
+			evidence: [{ term: "渠道运营", mode: "must" }],
+			scope: {},
+			notices: [{ kind: "fallback" }],
+		});
 	});
 
 	test("只识别出筛选不算降级：模型确实读懂了这句话", () => {
 		assert.deepEqual(
-			resolveIntent(
-				"只看入职前",
-				{
-					terms: [],
-					kind: "external",
-					minMonths: null,
-					companyTag: null,
-				},
-				TAGS,
-			),
-			{ chips: [], filters: { kind: "external" }, degraded: false },
+			resolveIntent("只看入职前", { ...NONE, kind: "external" }, VOCAB),
+			{
+				evidence: [],
+				scope: { kind: "external" },
+				notices: [],
+			},
+		);
+	});
+
+	test("只识别出不支持条件也算完整理解，不把原话伪造成语义要求", () => {
+		assert.deepEqual(
+			resolveIntent("北京的候选人", { ...NONE, unsupported: ["北京"] }, VOCAB),
+			{
+				evidence: [],
+				scope: {},
+				notices: [{ kind: "unsupported", text: "北京" }],
+			},
 		);
 	});
 });
 
 describe("发给模型的形状", () => {
 	test("合法输出解析得过", () => {
-		const parsed = intentSchema(TAGS).safeParse({
-			terms: [
-				{ term: "渠道运营", mode: "must", alts: null, near: ["用户增长"] },
-			],
-			kind: null,
+		const parsed = intentSchema(VOCAB).safeParse({
+			...NONE,
+			terms: [{ term: "渠道运营", mode: "must", alts: null }],
 			minMonths: 12,
 			companyTag: "知名公司",
+			level: "P7",
+			org: "字节",
+			unsupported: ["北京"],
 		});
 		assert.ok(parsed.success);
 	});
 
-	test("语料里没有的公司档在 schema 这一层就被挡住", () => {
-		const parsed = intentSchema(TAGS).safeParse({
-			terms: [],
-			kind: null,
-			minMonths: null,
-			companyTag: "一线大厂",
-		});
-		assert.ok(!parsed.success);
+	test("语料里没有的取值在 schema 这一层就被挡住", () => {
+		assert.ok(
+			!intentSchema(VOCAB).safeParse({ ...NONE, companyTag: "一线大厂" })
+				.success,
+		);
+		assert.ok(
+			!intentSchema(VOCAB).safeParse({ ...NONE, level: "总监" }).success,
+		);
 	});
 
-	test("语料里一个公司档都没有时，这一维只能是 null", () => {
-		const schema = intentSchema([]);
-		assert.ok(
-			schema.safeParse({
-				terms: [],
-				kind: null,
-				minMonths: null,
-				companyTag: null,
-			}).success,
-		);
-		assert.ok(
-			!schema.safeParse({
-				terms: [],
-				kind: null,
-				minMonths: null,
-				companyTag: "知名公司",
-			}).success,
-		);
+	test("语料里一维一个取值都没有时，这一维只能是 null", () => {
+		const schema = intentSchema({
+			companyTags: [],
+			levels: [],
+			recruitments: [],
+			educations: [],
+		});
+		assert.ok(schema.safeParse(NONE).success);
+		assert.ok(!schema.safeParse({ ...NONE, companyTag: "知名公司" }).success);
 	});
 
 	test("词数上限不写进 schema：多给一条不该让整句理解作废", () => {
-		// 上限的事实源是 parseChips（CHIP_MAX），toIntent 会走它收窄。写成
+		// 上限的事实源是 parseChips（CHIP_MAX），toDelta 会走它收窄。写成
 		// schema 约束就是第二份契约：模型多给一条，整条响应作废、退回规则
 		// 解析——而收窄本来只会丢掉多出来的那几条。
-		const base = { kind: null, minMonths: null, companyTag: null };
 		assert.ok(
-			intentSchema(TAGS).safeParse({
-				...base,
+			intentSchema(VOCAB).safeParse({
+				...NONE,
 				terms: Array.from({ length: 9 }, (_, i) => ({
 					term: `条件${i}`,
 					mode: "must",
 					alts: null,
-					near: null,
 				})),
 			}).success,
 		);
 	});
 
 	test("词长不写进 schema：那是 parseQuery 的事，不该卡住整条响应", () => {
-		const base = { kind: null, minMonths: null, companyTag: null };
 		const long = "供应链金融风控建模"; // 九个字，一个词，没有可切之处
 		// 准入放行——一个长词不该让整句话的理解一起丢掉，退回规则解析。
 		assert.ok(
-			intentSchema(TAGS).safeParse({
-				...base,
-				terms: [{ term: long, mode: "must", alts: null, near: null }],
+			intentSchema(VOCAB).safeParse({
+				...NONE,
+				terms: [{ term: long, mode: "must", alts: null }],
 			}).success,
 		);
 		// 收窄发生在 parseQuery：超过 24 字的不是概念，是被误当成词的正文。
 		assert.deepEqual(
-			of(terms({ term: "算".repeat(25), mode: "must" })).chips,
+			of(terms({ term: "算".repeat(25), mode: "must" })).evidence,
 			[],
 		);
 		// 八字以上但仍然是一个词的，收窄不该丢，准入更不该拦。
-		assert.deepEqual(of(terms({ term: long, mode: "must" })).chips, [
+		assert.deepEqual(of(terms({ term: long, mode: "must" })).evidence, [
 			{ term: long, mode: "must" },
-		]);
-	});
-});
-
-describe("纠正理解的上一版理解（priorUnderstanding）", () => {
-	test("父减基线：基线里的条件不冒充这句话的理解", () => {
-		const base = parseChips("算法");
-		const parent = parseChips("算法,渠道运营/?线下推广");
-		assert.deepEqual(priorUnderstanding(parent, base), [
-			{ term: "渠道运营", mode: "must", alts: null, near: ["线下推广"] },
-		]);
-	});
-
-	test("形状是模型自己的输出格式，停用与太宽的记号不进来", () => {
-		// 上一版理解里有被量宽自动停用的词：它仍是模型当时的理解，进上下文，
-		// 但 off / wide 是用户和尺子的表态，不是理解的一部分
-		const parent = parseChips("*+经理,大模型/多模态");
-		assert.deepEqual(priorUnderstanding(parent, []), [
-			{ term: "经理", mode: "boost", alts: null, near: null },
-			{ term: "大模型", mode: "must", alts: ["多模态"], near: null },
 		]);
 	});
 });

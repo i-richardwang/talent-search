@@ -20,16 +20,20 @@ const { createTurn, listRecent, loadTurn, resolveTurn } = await import(
 	"#/server/turn"
 );
 
+const violates = (constraint: string) => (error: unknown) =>
+	(error as { cause?: { constraint?: string } }).cause?.constraint ===
+	constraint;
+
 async function sentence(text: string, parent?: string) {
 	const { turnId } = await createTurn({ kind: "sentence", text }, parent);
-	const { chips } = await resolveTurn(turnId);
-	return { turnId, chips, terms: chips.map((c) => c.term) };
+	const spec = await resolveTurn(turnId);
+	return { turnId, spec, terms: spec.evidence.map((c) => c.term) };
 }
 
 async function reinterpret(parent: string) {
 	const { turnId } = await createTurn({ kind: "reinterpret" }, parent);
-	const { chips } = await resolveTurn(turnId);
-	return { turnId, terms: chips.map((c) => c.term) };
+	const spec = await resolveTurn(turnId);
+	return { turnId, terms: spec.evidence.map((c) => c.term) };
 }
 
 describe("整句的追加", () => {
@@ -41,6 +45,31 @@ describe("整句的追加", () => {
 		assert.deepEqual(child.terms, ["算法", "渠道运营"]);
 		const row = await loadTurn(child.turnId);
 		assert.equal(row?.rootTurnId, root.turnId, "追加不开新链");
+	});
+
+	test("结构化范围与提示随完整查询一起继承，不借 URL 或旁路字段回填", async () => {
+		const root = await createTurn({
+			kind: "spec",
+			spec: {
+				evidence: [{ term: "算法", mode: "must" }],
+				scope: { kind: "external", minMonths: 24 },
+				notices: [{ kind: "unsupported", text: "北京" }],
+			},
+		});
+		const child = await createTurn(
+			{ kind: "sentence", text: "渠道运营" },
+			root.turnId,
+		);
+		const spec = await resolveTurn(child.turnId);
+		assert.deepEqual(spec.scope, { kind: "external", minMonths: 24 });
+		assert.deepEqual(spec.notices, [
+			{ kind: "unsupported", text: "北京" },
+			{ kind: "fallback" },
+		]);
+		assert.deepEqual(
+			spec.evidence.map((item) => item.term),
+			["算法", "渠道运营"],
+		);
 	});
 });
 
@@ -104,9 +133,9 @@ describe("整句的重译", () => {
 		assert.equal(row?.note, "指的是线下渠道");
 		// 模型不可用时纠正说明被忽略，退回原话的规则解析——理解仍要能完成，
 		// 说明里的词不许混进条件（它是修改意见，不是新查询）
-		const { chips } = await resolveTurn(turnId);
+		const spec = await resolveTurn(turnId);
 		assert.deepEqual(
-			chips.map((c) => c.term),
+			spec.evidence.map((c) => c.term),
 			["渠道运营"],
 		);
 	});
@@ -120,8 +149,16 @@ describe("整句的重译", () => {
 			id: "nd_model",
 			rootTurnId: "nd_model",
 			rawText: "产品经理",
-			chips: [{ term: "产品经理", mode: "must" }],
-			degraded: false,
+			delta: {
+				evidence: [{ term: "产品经理", mode: "must" }],
+				scope: {},
+				notices: [],
+			},
+			spec: {
+				evidence: [{ term: "产品经理", mode: "must" }],
+				scope: {},
+				notices: [],
+			},
 		});
 		await assert.rejects(createTurn({ kind: "reinterpret" }, "nd_model"));
 		const { turnId } = await createTurn(
@@ -135,7 +172,14 @@ describe("整句的重译", () => {
 		await assert.rejects(createTurn({ kind: "reinterpret" }));
 		const root = await sentence("算法");
 		const direct = await createTurn(
-			{ kind: "chips", chips: [{ term: "算法", mode: "must" }] },
+			{
+				kind: "spec",
+				spec: {
+					evidence: [{ term: "算法", mode: "must" }],
+					scope: {},
+					notices: [],
+				},
+			},
 			root.turnId,
 		);
 		await assert.rejects(createTurn({ kind: "reinterpret" }, direct.turnId));
@@ -146,6 +190,46 @@ describe("整句的重译", () => {
 		);
 		await assert.rejects(
 			createTurn({ kind: "sentence", text: "带团队" }, pending.turnId),
+		);
+	});
+});
+
+describe("查询记录状态", () => {
+	test("数据库只接受待理解、已理解和直接查询三种形状", async () => {
+		const { db } = await import("#/db");
+		const { searchTurn } = await import("#/db/schema");
+		const spec = {
+			evidence: [{ term: "算法", mode: "must" as const }],
+			scope: {},
+			notices: [],
+		};
+
+		await assert.rejects(
+			db.insert(searchTurn).values({
+				id: "invalid_resolved",
+				rootTurnId: "invalid_resolved",
+				rawText: "算法",
+				spec,
+			}),
+			violates("search_turn_state"),
+		);
+		await assert.rejects(
+			db.insert(searchTurn).values({
+				id: "invalid_direct_delta",
+				rootTurnId: "invalid_direct_delta",
+				delta: spec,
+				spec,
+			}),
+			violates("search_turn_state"),
+		);
+		await assert.rejects(
+			db.insert(searchTurn).values({
+				id: "invalid_pending_delta",
+				rootTurnId: "invalid_pending_delta",
+				rawText: "算法",
+				delta: spec,
+			}),
+			violates("search_turn_state"),
 		);
 	});
 });

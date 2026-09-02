@@ -21,7 +21,13 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { cn } from "#/lib/utils";
 import { bestHitPerTerm } from "#/search/evidence";
 import { activeChips, type Chip } from "#/search/parse";
-import type { SearchResult, TermPlan } from "#/search/result";
+import type {
+	RankedResult,
+	SearchOutcome,
+	SearchResult,
+	TermPlan,
+} from "#/search/result";
+import { type SearchSpec, unsupportedOf } from "#/search/spec";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 import { emptyState } from "../-lib/empty-state";
 import type { View } from "../-lib/view-params";
@@ -31,6 +37,12 @@ const PAD = "px-4 py-3.5";
 
 /** 首次检索的骨架块数。之后跟着上一次的结果数走，列表高度就不会每次跳。 */
 const SKELETON_ROWS = 5;
+const EMPTY_RESULTS: SearchResult[] = [];
+const EMPTY_TERMS: TermPlan[] = [];
+
+function isRanked(result: SearchResult): result is RankedResult {
+	return "score" in result;
+}
 
 /**
  * 名单的表头：这份名单有多少人、按什么排、那三颗点各是什么意思。
@@ -45,10 +57,12 @@ const SKELETON_ROWS = 5;
  */
 export function ResultHeader({
 	loading,
+	order,
 	total,
 	terms,
 }: {
 	loading: boolean;
+	order: "relevance" | "employee";
 	total: number;
 	terms: TermPlan[];
 }) {
@@ -66,7 +80,7 @@ export function ResultHeader({
 						<b className="text-foreground tabular-nums">{total}</b> 人
 						{/* 一份排过序的名单必须说出自己按什么排，否则「从上往下看」
 						    这个动作没有依据。 */}
-						{" · 按相关度排序"}
+						{order === "relevance" ? " · 按相关度排序" : " · 按工号排序"}
 					</>
 				)}
 			</p>
@@ -84,29 +98,23 @@ export function ResultHeader({
  * 于是必须点进详情才知道。
  */
 export function ResultList({
-	results,
-	terms,
+	outcome,
 	empId,
 	loading,
-	total,
 	canMore,
 	growing,
 	onMore,
 	withoutStrong,
-	chips,
-	overflowTerms,
+	spec,
 	turnId,
 	view,
 	onChange,
 	onReviseQuery,
 	onFocusQuery,
 }: {
-	results: SearchResult[];
-	terms: TermPlan[];
+	outcome: SearchOutcome | null;
 	empId: string | undefined;
 	loading: boolean;
-	/** 命中的总人数，翻页之前。列表里最多只有已经翻出来的那些。 */
-	total: number;
 	/** 还翻得动吗。翻不动的原因有两种（看完了 / 到上限了），文案在页脚分。 */
 	canMore: boolean;
 	/** 正在翻下一页：已经看到的人留在原地，只有按钮转圈 */
@@ -115,15 +123,18 @@ export function ResultList({
 	/** 关掉「匹配来源」之后能看到多少人。空态要给出的那条路走不走得通，全看它。 */
 	withoutStrong: number;
 	/** 这条查询记录上的条件。骨架屏的行数由它算，不等服务端。 */
-	chips: Chip[];
-	/** 超过事实行保险丝时，按贡献选出的要求；空态据此给出具体出口。 */
-	overflowTerms: string[];
+	spec: SearchSpec;
 	turnId: string;
 	view: View;
 	onChange: (next: Partial<View>) => void;
 	onReviseQuery: (next: Chip[]) => void;
 	onFocusQuery: () => void;
 }) {
+	const results = outcome?.results ?? EMPTY_RESULTS;
+	const terms = outcome?.terms ?? EMPTY_TERMS;
+	const order = outcome?.order ?? "relevance";
+	const total = outcome?.total ?? 0;
+	const chips = spec.evidence;
 	// 上一次真正画出来的块数，见 SKELETON_ROWS。写在 effect 里而不是渲染中，
 	// 渲染要保持纯：同一份 props 渲染两遍必须得到同一棵树。
 	const lastRows = useRef(SKELETON_ROWS);
@@ -131,7 +142,9 @@ export function ResultList({
 		if (!loading && results.length > 0) lastRows.current = results.length;
 	}, [loading, results.length]);
 
-	const head = <ResultHeader loading={loading} terms={terms} total={total} />;
+	const head = (
+		<ResultHeader loading={loading} order={order} terms={terms} total={total} />
+	);
 
 	// 检索中绝不闪现「没有结果」。
 	if (loading) {
@@ -178,7 +191,9 @@ export function ResultList({
 		const state = emptyState({
 			terms,
 			chips,
-			overflowTerms,
+			scope: spec.scope,
+			unsupported: unsupportedOf(spec),
+			overflow: outcome?.overflow ?? null,
 			withoutStrong,
 			view,
 			onChange,
@@ -213,11 +228,14 @@ export function ResultList({
 			<ul className="flex flex-col gap-2">
 				{results.map((r, rank) => {
 					const selected = r.employee.empId === empId;
-					const best = bestHitPerTerm(r.hits, terms);
+					const ranked = isRanked(r) ? r : null;
+					const best = bestHitPerTerm(ranked?.hits ?? [], terms);
 					// 命中的逐条画，没命中的收成一行。「未命中」这三个字重复五遍
 					// 没有任何可读的东西，只是把每一块撑高一倍。
 					const hits = terms.flatMap((t, i) =>
-						best[i] ? [{ basis: r.basis[i], hit: best[i], term: t }] : [],
+						best[i]
+							? [{ basis: ranked?.basis[i] ?? null, hit: best[i], term: t }]
+							: [],
 					);
 					const missed = terms.filter((_, i) => !best[i]);
 					return (
@@ -289,9 +307,7 @@ export function ResultList({
 												boost={term.mode === "boost"}
 												hit={hit}
 												key={term.term}
-												/* 行标签用实际命中的说法（同义词或松弛后的子串），
-												   不用要求的主词：高亮的前提是这个串真的在字段值里。 */
-												term={hit.matched}
+												term={term.term}
 											/>
 										))}
 										<MissedTerms terms={missed.map((t) => t.term)} />
@@ -340,8 +356,7 @@ export function ResultList({
  * 这次查询要画哪几条证据。
  *
  * 取自查询记录上的 chips，不等服务端返回 `terms`：改筛选那一帧服务端还是
- * 旧值，骨架屏的块高会先跳一下再回来。骨架只数条数，所以说法只放主词即可
- * （松弛与同义只改文案不改条数）。
+ * 旧值，骨架屏的块高会先跳一下再回来。骨架只数条数，所以说法只放主词即可。
  *
  * 排除词和停用的词都不占一行：前者不产出证据，后者根本不参与这次检索。
  */
@@ -349,12 +364,6 @@ function pendingTerms(chips: Chip[]): TermPlan[] {
 	return activeChips(chips).flatMap((c) =>
 		c.mode === "exclude"
 			? []
-			: [
-					{
-						term: c.term,
-						members: [{ text: c.term, effective: c.term, tier: "full" }],
-						mode: c.mode,
-					} satisfies TermPlan,
-				],
+			: [{ term: c.term, members: [c.term], mode: c.mode } satisfies TermPlan],
 	);
 }

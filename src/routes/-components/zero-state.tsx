@@ -4,9 +4,10 @@ import { QueryBar } from "#/components/query-bar";
 import { Button } from "#/components/ui/button";
 import { Card } from "#/components/ui/card";
 import { grouped, since } from "#/lib/format";
-import type { QueryInput } from "#/search/parse";
 import type { Overview } from "#/search/result";
+import type { QueryInput, SearchSpec } from "#/search/spec";
 import type { RecentSearch } from "#/server/turn";
+import { scopeEntries, scopeLabel } from "../-lib/scope-label";
 
 /**
  * 整句的例子。这两条各带一样词汇表给不了的东西：一句话里放多个条件，
@@ -14,6 +15,14 @@ import type { RecentSearch } from "#/server/turn";
  * 单个词由下面那排从语料算出来的真实词汇负责，手写的示例不碰数据。
  */
 const EXAMPLES = ["做过线下渠道运营、带过团队的人", "算法、产品、后端都做过的"];
+
+function recentLabel(spec: SearchSpec, rawText: string | null) {
+	const evidence = spec.evidence.map((item) => item.term);
+	const scope = scopeEntries(spec.scope).map(({ key, value }) =>
+		scopeLabel(key, value),
+	);
+	return [...evidence, ...scope].join(" · ") || rawText || "未生效的条件";
+}
 
 export function ZeroState({
 	onQuery,
@@ -105,7 +114,7 @@ export function ZeroState({
 									>
 										{/* 条件是主行：点进去看到的就是这几枚 chip。 */}
 										<span className="min-w-0 flex-1 truncate text-sm">
-											{r.chips.map((c) => c.term).join(" · ")}
+											{recentLabel(r.spec, r.rawText)}
 										</span>
 										<span className="shrink-0 text-muted-foreground text-xs">
 											{since(r.createdAt, now)}
@@ -132,8 +141,12 @@ export function ZeroState({
 									key={seq}
 									onClick={() =>
 										onQuery({
-											kind: "chips",
-											chips: [{ term: seq, mode: "must" }],
+											kind: "spec",
+											spec: {
+												evidence: [{ term: seq, mode: "must" }],
+												scope: {},
+												notices: [],
+											},
 										})
 									}
 									size={CHIP_SIZE}

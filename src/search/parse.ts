@@ -120,32 +120,17 @@ export function parseQuery(raw: string): string[] {
  */
 export type ChipMode = "must" | "boost" | "exclude";
 
-/** 一条要求最多几个说法（主词 + alts + near 合计）。再多就不是一条要求了。 */
+/** 一条要求最多几个说法（主词 + alts 合计）。再多就不是一条要求了。 */
 export const MEMBER_MAX = 4;
-
-/**
- * 一条规范查询串（`toQuery` 的产物）的长度上限，由部件推导：最多 `CHIP_MAX`
- * 条要求 × 每条 `MEMBER_MAX` 个说法 ×（词长上限 + 记号与分隔符）。
- *
- * 合法的序列化到不了这个数，所以在这里截断的必然不是合法查询串——它挡的是
- * 直接打服务端端点的超长载荷，不会腰斩任何一次真实提交。写成推导而不是
- * 拍一个整数，是让它跟着上面三个上限自己走，不产生第四份要同步的契约。
- */
-export const QUERY_MAX = CHIP_MAX * MEMBER_MAX * (MAX_TERM_LEN + 3);
 
 /**
  * 一枚查询 chip：**一条要求**，界面上可点、可改、可删的最小单位。
  *
  * 一条要求可以有多个**说法**，满足其一即满足这条要求（说法之间 OR，
- * 要求之间 AND）。说法按出处分两档，档位即出处：
- *
- * - `term` 与 `alts`：用户自己说的。`alts` 是「A 或 B 均可」里并列的那些，
- *   和主词同权重——用户的判断不打折；
- * - `near`：查询理解替库补的相近说法（库里写「深度学习」而用户说「算法」），
- *   按 `FORM_WEIGHTS.near` 降档计分。**排除词永远没有 near**：进门的词可以扩
- *   （捞错了，人在名单上，看一眼就能纠正），赶人的词必须准（否决错了，
- *   人不在名单上，永远没人知道）。这条不对称在本文件的 parseChips 强制，
- *   因为它是全站唯一的解析入口。
+ * 要求之间 AND）。`term` 是主词、`alts` 是「A 或 B 均可」里并列的那些，
+ * 全都是用户自己说的、同权重。**说法就是嵌入的文本**：屏幕上写的那几个字
+ * 和拿去比相似度的那几个字是同一串，没有第二份看不见的检索词——
+ * 相近的说法不必再由谁替库补，向量空间里「算法」离「深度学习工程师」本来就近。
  *
  * `off` 是**停用**，和三档强度正交：这条要求还在查询里、还画在屏幕上，但这一次
  * 检索完全当它不存在。招聘检索是反复试的——加一条发现只剩三个人，想知道
@@ -161,39 +146,10 @@ export const QUERY_MAX = CHIP_MAX * MEMBER_MAX * (MAX_TERM_LEN + 3);
 export type Chip = {
 	term: string;
 	alts?: string[];
-	near?: string[];
 	mode: ChipMode;
 	off?: true;
 	wide?: true;
 };
-
-/**
- * 一次查询输入的**来源**。两条路径最终都产出 chips，区别是原料与成本：
- *
- * - `sentence`：一句大白话，要先过查询理解（服务端那一跳，模型不可用时
- *   自己退回规则解析）。
- * - `chips`：已经是条件了。零态那排序列按钮点下去就是一枚 chip，
- *   它是查询理解的**产物**，再送回去让模型猜一遍只会变坏。
- *
- * 做成判别联合而不是两个回调，是因为两者的签名都是「给我一个 string」——
- * 接错哪一个，类型、渲染、构建全绿，只有行为静默改变：整句走了 chips 那条，
- * 语气（「最好」「不要」）会被一律判成「必须」，而结果看上去完全正常。
- * 有了这个标签，接错就是一个编译错误。
- */
-export type QueryInput =
-	| { kind: "sentence"; text: string }
-	| { kind: "chips"; chips: Chip[] };
-
-/**
- * 一次查询记录的变更。重新理解不携带原话：服务端从父记录读取，调用方因此
- * 不可能把另一句话伪装成「同一句重译」。
- *
- * `note` 是**纠正理解**的补充说明（「算法指的是推荐算法」）。没有新信息的
- * 重跑大概率拿回同一份错的理解，所以理解错了的那条路必须让用户把模型缺的
- * 那句话说出来；不带 note 的重译只在降级时有意义（第一次模型根本没参与，
- * 再试一次是真的可能不同）。
- */
-export type QueryChange = QueryInput | { kind: "reinterpret"; note?: string };
 
 /**
  * 强度在查询串里的写法。放在词前面一个字符，因为 URL 要能读、能手改、能粘给同事。
@@ -224,9 +180,6 @@ const OFF_SIGN = "~";
  */
 const WIDE_SIGN = "*";
 
-/** 相近说法（near 档）在查询串里的记号，贴在那个说法自己前面：`算法/?深度学习`。 */
-const NEAR_SIGN = "?";
-
 /**
  * 同一条要求里说法之间的边界：`/` 是我们自己写回去的形态，「或（者）」是
  * 用户嘴里的形态。两者都只在 parseChips 这一层生效——parseQuery 看到的
@@ -240,7 +193,7 @@ const MEMBER_SPLIT = /\/|或者|或/;
  * 半角逗号是**要求**之间的边界（AND），组内的 `/` 与「或」是**说法**之间的
  * 边界（OR）；其余分隔符（顿号、全角逗号、空格……）仍然交给 parseQuery 切词。
  * 所以一句原话进来得到几条 must 要求，「大模型或推荐系统」得到**一条**带两个
- * 说法的要求，而我们自己写回的 `算法/?深度学习,+带团队,-实习` 各归各——
+ * 说法的要求，而我们自己写回的 `大模型/推荐系统,+带团队,-实习` 各归各——
  * 同一个函数吃两种输入，不必在别处判断「这是原话还是 chip 串」。
  *
  * 没有说法记号的组里，每个词各自成一条要求。这条分叉保证「渠道运营、带团队」
@@ -248,9 +201,6 @@ const MEMBER_SPLIT = /\/|或者|或/;
  *
  * 去重跨强度、跨说法生效，先出现的那一个赢：同一个词既必须又排除是自相矛盾的
  * 输入，与其猜用户想要哪个，不如让它保持第一次写下的样子，界面上看得见、改得动。
- *
- * 排除组的 `?` 说法在这里被丢弃——不对称原则（见 Chip 的注释）必须落在唯一的
- * 解析入口上，否则总有一条路把带 near 的排除词放进来。
  */
 export function parseChips(raw: string): Chip[] {
 	const chips: Chip[] = [];
@@ -267,7 +217,7 @@ export function parseChips(raw: string): Chip[] {
 		if (mode !== "must") g = g.slice(1);
 
 		const chunks = g.split(MEMBER_SPLIT);
-		if (chunks.length === 1 && !g.trimStart().startsWith(NEAR_SIGN)) {
+		if (chunks.length === 1) {
 			for (const term of parseQuery(g)) {
 				if (seen.has(term)) continue;
 				seen.add(term);
@@ -282,30 +232,20 @@ export function parseChips(raw: string): Chip[] {
 			continue;
 		}
 
-		const full: string[] = [];
-		const near: string[] = [];
-		for (const rawChunk of chunks) {
-			let chunk = rawChunk.trim();
-			const isNear = chunk.startsWith(NEAR_SIGN);
-			if (isNear) chunk = chunk.slice(1).trim();
-			// 排除组的 near 直接丢弃（不是降级成 full——那等于替用户把否决面扩大）
-			if (isNear && mode === "exclude") continue;
+		const members: string[] = [];
+		for (const chunk of chunks) {
 			for (const t of parseQuery(chunk)) {
 				if (seen.has(t)) continue;
 				seen.add(t);
-				(isNear ? near : full).push(t);
+				members.push(t);
 			}
 		}
-		// 说法全是 near 时把第一个提为主词：一条要求必须有一个能当标签的词。
-		// 提升即升档（它成了 full）——宁可多给一点权重，也不造一枚没有主词的 chip。
-		const [term, ...alts] = full.length > 0 ? full : near.splice(0, 1);
+		const [term, ...alts] = members;
 		if (!term) continue;
 		const keptAlts = alts.slice(0, MEMBER_MAX - 1);
-		const keptNear = near.slice(0, MEMBER_MAX - 1 - keptAlts.length);
 		chips.push({
 			term,
 			...(keptAlts.length > 0 && { alts: keptAlts }),
-			...(keptNear.length > 0 && { near: keptNear }),
 			mode,
 			...(off && { off: true as const }),
 			...(wide && { wide: true as const }),
@@ -322,10 +262,7 @@ export function activeChips(chips: Chip[]): Chip[] {
 
 /**
  * chips → 规范查询串。服务端入参收窄、查询合并和命令行都通过这套表示交换
- * 条件，所以 `parseChips(toQuery(c))` 必须等于 `c`。
- *
- * 说法的写法：full 说法直接用 `/` 连（`大模型/推荐系统`），near 说法各自带
- * `?`（`算法/?深度学习`）。near 排在最后——它们是补充，不是并列。
+ * 条件，所以 `parseChips(toQuery(c))` 必须等于 `c`。说法用 `/` 连（`大模型/推荐系统`）。
  */
 export function toQuery(chips: Chip[]): string {
 	return chips
@@ -333,10 +270,7 @@ export function toQuery(chips: Chip[]): string {
 			(c) =>
 				(c.wide ? WIDE_SIGN : c.off ? OFF_SIGN : "") +
 				MODE_SIGN[c.mode] +
-				[c.term, ...(c.alts ?? [])].join("/") +
-				(c.near?.length
-					? `/${c.near.map((n) => NEAR_SIGN + n).join("/")}`
-					: ""),
+				[c.term, ...(c.alts ?? [])].join("/"),
 		)
 		.join(",");
 }

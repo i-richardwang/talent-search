@@ -1,3 +1,4 @@
+import { XIcon } from "lucide-react";
 import { Dot } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
 import { Group } from "#/components/ui/group";
@@ -9,7 +10,11 @@ import {
 } from "#/components/ui/select";
 import { Toggle } from "#/components/ui/toggle";
 import { cn } from "#/lib/utils";
-import { activeFilters, type FilterField } from "../-lib/filters";
+import {
+	activeFilters,
+	type FilterField,
+	type TextFilter,
+} from "../-lib/filters";
 import { CLEARED_FILTERS, type View } from "../-lib/view-params";
 
 /**
@@ -30,17 +35,24 @@ import { CLEARED_FILTERS, type View } from "../-lib/view-params";
  */
 export function FilterBar({
 	fields,
+	textFilters,
 	view,
 	onChange,
 	strongCount,
 }: {
 	fields: FilterField[];
+	/**
+	 * 公司名 / 学校名这类精确条件。它们没有候选列表可展开，只在生效时出现，
+	 * 长成一段能一键摘掉的段——和分面同在一条段控上，因为它们同样是
+	 * 「在这批人里再看哪一部分」。
+	 */
+	textFilters: TextFilter[];
 	view: View;
 	onChange: (next: Partial<View>) => void;
-	/** 打开「匹配来源」之后还剩多少人，口径同其余四维 */
+	/** 打开「匹配来源」之后还剩多少人，口径同其余各维 */
 	strongCount: number;
 }) {
-	const count = activeFilters(fields).length;
+	const count = activeFilters(fields, textFilters).length;
 
 	return (
 		<div className="flex flex-wrap items-center gap-2">
@@ -49,6 +61,19 @@ export function FilterBar({
 			<Group className="max-w-full">
 				{fields.map((field) => (
 					<FilterSelect field={field} key={field.key} onChange={onChange} />
+				))}
+				{textFilters.map((t) => (
+					<Button
+						key={t.key}
+						onClick={() => onChange(t.clear)}
+						size="sm"
+						title={`取消「${t.title} ${t.value}」`}
+						variant="outline"
+					>
+						<span className="text-muted-foreground">{t.title}</span>
+						<span className="truncate">{t.value}</span>
+						<XIcon />
+					</Button>
 				))}
 				<StrengthToggle n={strongCount} onChange={onChange} view={view} />
 			</Group>

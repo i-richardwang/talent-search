@@ -1,4 +1,4 @@
-import { ChevronDownIcon, EyeOffIcon, TriangleAlertIcon } from "lucide-react";
+import { ChevronDownIcon, EyeOffIcon } from "lucide-react";
 import { CHIP_SIZE, MODE_VARIANT } from "#/components/chip";
 import { Button } from "#/components/ui/button";
 import {
@@ -13,7 +13,6 @@ import {
 } from "#/components/ui/menu";
 import { cn } from "#/lib/utils";
 import type { Chip, ChipMode } from "#/search/parse";
-import type { TermPlan } from "#/search/result";
 
 /**
  * 查询条件：一个概念词一枚 chip，可改强度、可删。
@@ -38,7 +37,7 @@ const MODE_HINT: Record<ChipMode, string> = {
 /**
  * 强度写在符号上，不写在颜色上。
  *
- * 全站的色相已经各有其主：绿是受控字段命中、蓝是选中、amber 是整词退子串。
+ * 全站的色相已经各有其主：绿是受控字段命中、蓝是选中、amber 是查询上的提示。
  * 再给 chip 发三个颜色，等于让同一片绿在证据行里和查询条里说两件事。`+` 和 `-` 是
  * 搜索框里几十年的老约定，不需要教，也不占用任何一个色相。
  *
@@ -74,13 +73,10 @@ const MODES = ["must", "boost", "exclude"] as const;
 
 export function QueryChips({
 	chips,
-	terms,
 	onChange,
 	trailing,
 }: {
 	chips: Chip[];
-	/** 服务端算出来的检索计划，只用来取「整词退到了哪个子串」 */
-	terms: TermPlan[];
 	onChange: (next: Chip[]) => void;
 	/**
 	 * 跟在最后一枚 chip 后面的入口（查询台拿它放「理解得不对？」）。
@@ -95,7 +91,7 @@ export function QueryChips({
 		onChange(chips.map((c, j) => (j === i ? { ...c, mode } : c)));
 	const remove = (i: number) => onChange(chips.filter((_, j) => j !== i));
 	// 停用只加/去一个字段，强度和说法始终原样保留。重新启用连 wide 一起摘：
-	// 那是「我知道它宽，照跑」，此后它就是一枚普通 chip，理解层不再自动碰它。
+	// 那是「我知道它宽，照跑」；显式启用后的条件按普通 chip 处理。
 	const toggle = (i: number) =>
 		onChange(
 			chips.map((c, j) => {
@@ -104,28 +100,9 @@ export function QueryChips({
 				return { ...rest, ...(!c.off && { off: true as const }) };
 			}),
 		);
-	// 去掉这一条要求上模型补的全部相近说法。逐个删不值得一层子菜单：
-	// 相近说法最多两三个，嫌它捞得太宽时用户要的是「只按我说的搜」。
-	const dropNear = (i: number) =>
-		onChange(
-			chips.map((c, j) => {
-				if (j !== i) return c;
-				const { near: _near, ...rest } = c;
-				return rest;
-			}),
-		);
-
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			{chips.map((chip, i) => {
-				const plan = terms.find((t) => t.term === chip.term);
-				// 只有 full 说法会被松弛（near 落库前已过语料体检，检索时原样用；
-				// 排除词完全不参与，所以它这里永远是空的）
-				const relaxedMembers =
-					plan?.members.filter(
-						(m) => m.tier === "full" && m.effective !== m.text,
-					) ?? [];
-				const relaxed = relaxedMembers.length > 0;
 				return (
 					<Menu key={`${chip.off ? "~" : ""}${chip.mode}:${chip.term}`}>
 						<MenuTrigger
@@ -145,57 +122,15 @@ export function QueryChips({
 									{MODE_SIGN[chip.mode]}
 								</span>
 							)}
-							{/* 并列说法（或）与主词同权重，平着写；相近说法是补充，
-							    降色并带 ≈——它得在 chip 上看得见，否则「为什么多了
-							    这批人」在界面上无从解释。 */}
+							{/* 并列说法（或）与主词同权重，平着写 */}
 							<span>{[chip.term, ...(chip.alts ?? [])].join(" / ")}</span>
-							{chip.near && chip.near.length > 0 && (
-								<span className="text-muted-foreground">
-									≈{chip.near.join("/")}
-								</span>
-							)}
 							{/* 「太宽」是成因，得用字说；只给一个停用图标的话，
 							    自动停的和自己停的在屏幕上就分不出来了 */}
 							{chip.wide && <span className="text-xs">太宽</span>}
 							{chip.off && <EyeOffIcon />}
-							{relaxed && <TriangleAlertIcon className="text-warning" />}
 							<ChevronDownIcon />
 						</MenuTrigger>
 						<MenuPopup align="start">
-							{/*
-							 * 松弛是关于这一枚 chip 的事实，说明和修改入口放在一起：
-							 * 「这个词被换成了什么」就该长在它自己身上；而且这里正好是
-							 * 能立刻改它的地方——看到说明和动手改之间不隔一次寻找。
-							 */}
-							{relaxed && (
-								<>
-									<MenuGroupLabel>
-										<span className="flex max-w-64 items-start gap-1.5 whitespace-normal text-muted-foreground text-xs">
-											<TriangleAlertIcon className="mt-px size-3.5 shrink-0 text-warning" />
-											<span>
-												{relaxedMembers
-													.map(
-														(m) =>
-															`未找到「${m.text}」的直接匹配，当前按「${m.effective}」搜索。`,
-													)
-													.join("")}
-											</span>
-										</span>
-									</MenuGroupLabel>
-									<MenuSeparator />
-								</>
-							)}
-							{chip.near && chip.near.length > 0 && (
-								<>
-									<MenuGroupLabel>
-										<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
-											同时按相近说法「{chip.near.join("」「")}
-											」检索，按较低权重计分。
-										</span>
-									</MenuGroupLabel>
-									<MenuSeparator />
-								</>
-							)}
 							{chip.off && (
 								<>
 									<MenuGroupLabel>
@@ -232,9 +167,6 @@ export function QueryChips({
 							 * （词没了，强度也一起没了）。
 							 */}
 							<MenuSeparator />
-							{chip.near && chip.near.length > 0 && (
-								<MenuItem onClick={() => dropNear(i)}>只按我写的词搜</MenuItem>
-							)}
 							<MenuItem onClick={() => toggle(i)}>
 								{chip.off ? "重新启用" : "暂不使用"}
 							</MenuItem>

@@ -15,14 +15,11 @@ import {
 	employee,
 	experience,
 } from "#/db/schema";
-import { parseChips, QUERY_MAX, queryText } from "#/search/parse";
+import { sanitizeFilters, sanitizeLimit } from "#/search/params";
+import { queryText } from "#/search/parse";
 import type { SearchOutcome } from "#/search/result";
-import {
-	overview,
-	sanitizeFilters,
-	sanitizeLimit,
-	search,
-} from "#/search/search";
+import { overview, search } from "#/search/search";
+import { hasMeaning, sanitizeSpec } from "#/search/spec";
 import {
 	createTurn,
 	listRecent,
@@ -36,7 +33,7 @@ import {
  *
  * **入参里没有检索条件，只有一个 id。** 条件从库里那条记录上取，客户端伪造
  * 不了，也不必再收窄一遍——它在写进记录的时候（`commitTurn`）已经过了
- * `parseChips`。URL 上剩下的那几个参数只描述「怎么看这批人」，
+ * `sanitizeSpec`。URL 上剩下的那几个参数只描述「怎么看这批人」，
  * 所以它们仍然要过 `sanitizeFilters` / `sanitizeLimit`。
  *
  * 记录和结果一次往返一起取：分成两个端点的话，界面要么串行等两跳，
@@ -61,10 +58,10 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 			 * 页面拿着一条只有原话的记录就能把工作台画出来，模型那一跳由界面
 			 * 自己去补（`interpretTurn`），而不是让导航停在原地等它。
 			 */
-			if (!turn.chips) return { turn, result: null };
+			if (!turn.spec) return { turn, result: null };
 			return {
 				turn,
-				result: await search(turn.chips, data.filters, data.limit),
+				result: await search(turn.spec, data.filters, data.limit),
 			};
 		},
 	);
@@ -109,9 +106,8 @@ export const fetchEmployee = createServerFn({ method: "GET" })
 /**
  * 提交一次查询：落一条记录，返回它的 id。
  *
- * 入参收窄放在这里而不是 `createTurn` 里，因为不可信的只有跨进程这一跳——
- * `chips` 来自客户端，必须过 `parseChips`；切法、赘字剥法与数量上限因此只有
- * 一个执行点。
+ * 入参收窄放在这里而不是 `createTurn` 里，因为不可信的只有跨进程这一跳。
+ * 整份 `SearchSpec` 在这里一次收窄，证据、范围与提示不会各走一条旁路。
  */
 export function validateCommit(d: unknown) {
 	const data = (d ?? {}) as Record<string, unknown>;
@@ -137,21 +133,12 @@ export function validateCommit(d: unknown) {
 			input: { kind: "sentence" as const, text },
 		};
 	}
-	if (input.kind !== "chips" || typeof input.q !== "string")
-		throw new Error("查询格式无效");
-	/*
-	 * chips 走**规范查询串**进出：客户端在边界上 `toQuery`，这里 `parseChips`。
-	 * chip 的词汇表因此只有一份——在这里逐字段挑一遍就是第二份契约，chip
-	 * 每长一个带序列化的新字段，挑字段的代码就会把它静默丢一次；而查询串
-	 * 的往返保真恰好是 `parseChips(toQuery(c)) === c` 这条全站不变量。
-	 * 截断上限见 `QUERY_MAX`：合法序列化到不了那个数，截掉的只会是打端点
-	 * 的超长载荷。
-	 */
-	const chips = parseChips(input.q.slice(0, QUERY_MAX));
-	if (chips.length === 0) throw new Error("查询为空");
+	if (input.kind !== "spec") throw new Error("查询格式无效");
+	const spec = sanitizeSpec(input.spec);
+	if (!hasMeaning(spec)) throw new Error("查询为空");
 	return {
 		parentTurnId,
-		input: { kind: "chips" as const, chips },
+		input: { kind: "spec" as const, spec },
 	};
 }
 
@@ -165,6 +152,6 @@ export const interpretTurn = createServerFn({ method: "POST" })
 	.handler(({ data }) => resolveTurn(data.turnId));
 
 /** 零态的「最近搜索」。 */
-export const recentSearches = createServerFn({ method: "GET" }).handler(
-	listRecent,
+export const recentSearches = createServerFn({ method: "GET" }).handler(() =>
+	listRecent(),
 );

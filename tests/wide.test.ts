@@ -39,28 +39,23 @@ async function sentence(text: string) {
 
 describe("太宽的词在理解时停用", () => {
 	test("超过占比的用户词整条停用并注明成因，别的词照常参与", async () => {
-		const { chips } = await sentence("灵能驾驶, 机甲算法");
-		assert.deepEqual(chips, [
+		const { evidence } = await sentence("灵能驾驶, 机甲算法");
+		assert.deepEqual(evidence, [
 			{ term: "灵能驾驶", mode: "must", off: true, wide: true },
 			{ term: "机甲算法", mode: "must" },
 		]);
 	});
 
 	test("太宽的排除词一样停：它会把大量证据无声否决掉", async () => {
-		const { chips } = await sentence("机甲算法, -灵能驾驶");
-		assert.deepEqual(chips, [
+		const { evidence } = await sentence("机甲算法, -灵能驾驶");
+		assert.deepEqual(evidence, [
 			{ term: "机甲算法", mode: "must" },
 			{ term: "灵能驾驶", mode: "exclude", off: true, wide: true },
 		]);
 	});
 
-	test("太宽的相近说法直接摘掉：没过质检的翻译不上屏", async () => {
-		const { chips } = await sentence("机甲算法/?灵能驾驶");
-		assert.deepEqual(chips, [{ term: "机甲算法", mode: "must" }]);
-	});
-
 	test("量的是人不是段：一个人囤再多命中段，词也不算宽", async () => {
-		const { chips } = await sentence("幽冥测绘");
-		assert.deepEqual(chips, [{ term: "幽冥测绘", mode: "must" }]);
+		const { evidence } = await sentence("幽冥测绘");
+		assert.deepEqual(evidence, [{ term: "幽冥测绘", mode: "must" }]);
 	});
 });

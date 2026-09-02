@@ -17,7 +17,7 @@ export function strengthOf(route: Route): Strength {
 }
 
 /**
- * 每个概念词取展示列表中的第一条命中。hits 已按词序、路径强度、单段时长排好。
+ * 每个概念词取展示列表中的第一条命中。hits 已按词序、证据强度、单段时长排好。
  *
  * AND 语义下每个必须词必有命中（rank.ts 的 complete）；加分词可以没有命中，
  * 所以返回值保留 `undefined`，调用方按未命中渲染。

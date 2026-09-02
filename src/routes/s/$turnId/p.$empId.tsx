@@ -91,14 +91,17 @@ function Person() {
 	const { result: search } = useLoaderData({ from: "/s/$turnId" });
 	const rank =
 		search?.results.findIndex((r) => r.employee.empId === e.empId) ?? -1;
-	const result = rank >= 0 ? search?.results[rank] : undefined;
+	const result =
+		search?.order === "relevance" && rank >= 0
+			? search.results[rank]
+			: undefined;
 	// 轨迹条和时间轴共用：一份索引，两个视图
 	const hitIndex = buildHitIndex(result?.hits ?? []);
 
 	return (
 		/*
 		 * key + settle：↑↓ 连着换人时，这一栏整体淡入一次，给出「换了一个人」
-		 * 的确认。这是全站唯一的动效——名单那边靠选中态本身说话，不再叠第二个。
+		 * 的确认。这是全站唯一的动效；名单用选中态表达同一件事。
 		 * 动画短到 160ms，因为它必须在下一次按键之前结束。
 		 */
 		<div className="settle pb-12" data-pane="detail" key={e.empId}>

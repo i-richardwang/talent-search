@@ -14,9 +14,9 @@
  */
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { type QueryChange, toQuery } from "#/search/parse";
+import { toQuery } from "#/search/parse";
+import type { QueryInput } from "#/search/spec";
 import { commitTurn } from "#/server/functions";
-import type { View } from "./view-params";
 
 /** 落记录失败时说什么。区分不了原因，也不必区分：能做的只有重试。 */
 const FAILED = "没能提交这次搜索，请重试。";
@@ -32,21 +32,19 @@ export function useCommit() {
 
 	/**
 	 * @param parentTurnId 从哪一条派生。工作台里的改动都有父记录，零态没有。
-	 * @param view 带过去的视图状态。改查询时筛选留着（还在看同一类人），
-	 *   但翻页数不留：换了问题还拉 150 人回来，比第一次检索慢三倍，
-	 *   而人根本没要求看那么多。
+	 * 新问题从默认视图开始；上一条记录的 URL 状态不属于查询语义，不能跟着复制。
 	 * @returns 成功与否。零态的输入框据此决定要不要清空——这一步会失败，
 	 *   失败了还把人刚敲的话吞掉，就连重试都没得重试。
 	 */
 	const commit = async (
-		input: QueryChange,
-		opts: { parentTurnId?: string; view?: View } = {},
+		input: QueryInput,
+		opts: { parentTurnId?: string } = {},
 	) => {
 		const key =
 			input.kind === "sentence"
 				? input.text
-				: input.kind === "chips"
-					? toQuery(input.chips)
+				: input.kind === "spec"
+					? `${toQuery(input.spec.evidence)}:${JSON.stringify(input.spec.scope)}:${JSON.stringify(input.spec.notices)}`
 					: `reinterpret:${input.note ?? ""}`;
 		if (pending !== null) return false;
 		setPending(key);
@@ -55,19 +53,13 @@ export function useCommit() {
 			const { turnId } = await commitTurn({
 				data: {
 					parentTurnId: opts.parentTurnId,
-					// chips 在边界上序列化成规范查询串：线上只有 parseChips 认识的
-					// 那一种词汇表，服务端不必逐字段挑（挑就是第二份契约，见
-					// functions.ts）。sentence 与 reinterpret 本来就是字符串，原样走。
-					input:
-						input.kind === "chips"
-							? { kind: "chips", q: toQuery(input.chips) }
-							: input,
+					input,
 				},
 			});
 			await navigate({
 				to: "/s/$turnId",
 				params: { turnId },
-				search: { ...opts.view, n: undefined },
+				search: {},
 			});
 			return true;
 		} catch {

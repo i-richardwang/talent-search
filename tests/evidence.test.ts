@@ -1,18 +1,19 @@
 /**
- * 证据强度模型。这层没有数据库，但它决定了界面上「橙点 / 灰点 / 空心圈」
+ * 证据强度模型。这层没有数据库，但它决定了界面上「绿点 / 灰点 / 空心圈」
  * 分别是什么意思——权重一改，这里必须跟着重新论证。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { bestHitPerTerm, strengthOf } from "#/search/evidence";
+import { bestHitPerTerm, bestStrength, strengthOf } from "#/search/evidence";
 import type { Hit, TermPlan } from "#/search/result";
 import { ROUTE_WEIGHTS, type Route } from "#/search/weights";
 
 const hit = (term: string, route: Route): Hit => ({
 	experienceId: 1,
 	term,
-	matched: term,
+	member: term,
 	route,
+	relevance: 1,
 	kind: "internal",
 	startDate: "2020-01-01",
 	endDate: null,
@@ -23,11 +24,7 @@ const hit = (term: string, route: Route): Hit => ({
 });
 
 const terms = (...t: string[]): TermPlan[] =>
-	t.map((term) => ({
-		term,
-		members: [{ text: term, effective: term, tier: "full" }],
-		mode: "must",
-	}));
+	t.map((term) => ({ term, members: [term], mode: "must" }));
 
 describe("强度分档", () => {
 	test("受控字段是序列与岗位，且它们权重最高", () => {
@@ -66,6 +63,14 @@ describe("强度分档", () => {
 				description: "claimed",
 			},
 		);
+	});
+
+	test("一段经历按它最硬的那一路上色", () => {
+		assert.equal(
+			bestStrength([hit("算法", "description"), hit("运营", "org")]),
+			"org",
+		);
+		assert.equal(bestStrength([]), undefined);
 	});
 });
 

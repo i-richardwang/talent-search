@@ -5,20 +5,20 @@
  * `server-only`，页面从它取一个值会让构建失败。所以这里只放**形状**和无副作用
  * 的空值工厂，一行 SQL 都不许有；查询实现留在 `search.ts`。
  */
-import type { Employee } from "#/db/schema";
+import type { Employee, Route } from "#/db/schema";
 import type { ChipMode } from "./parse";
-import type { FormTier, Route } from "./weights";
 
 export type Hit = {
 	experienceId: number;
 	term: string;
 	/**
-	 * 实际命中的那个说法的检索形态（同义词或松弛后的子串）。证据行拿它当行标签
-	 * 和高亮词——屏幕上标出的必须是字段值里真实存在的那串字，标 `term` 的话，
-	 * 用户写「算法」而字段里是「深度学习」，一行证据里就找不到自己说的词了。
+	 * 实际命中的那个说法（主词或某个并列说法）。证据行拿它当行标签：
+	 * 用户写「大模型/多模态」，一行证据得说清楚是哪一个说法把这段找出来的。
 	 */
-	matched: string;
+	member: string;
 	route: Route;
+	/** 该说法与这一段这一路原文的相关度，[RELEVANCE_MIN, 1]。 */
+	relevance: number;
 	kind: "internal" | "external";
 	startDate: string;
 	endDate: string | null;
@@ -40,48 +40,42 @@ type ResultEmployee = Pick<
 	"empId" | "name" | "curDept" | "curTitle" | "curLevel"
 >;
 
-export type SearchResult = {
+export type PopulationResult = {
 	employee: ResultEmployee;
+};
+
+export type RankedResult = PopulationResult & {
 	score: number;
 	basis: (TermBasis | null)[];
 	hits: Hit[];
 };
 
+export type SearchResult = PopulationResult | RankedResult;
+
 /** 一个概念词实际参与排名的聚合依据。 */
 export type TermBasis = {
 	term: string;
-	/** 实际参与累计的并列最强路径；序列与岗位可能同时出现 */
-	routes: Route[];
-	/** 最强命中路径上所有经历段的累计月数 */
+	/** 参与累计的那一路：最硬那条证据走的路 */
+	route: Route;
+	/** 最硬那条证据的相关度 */
+	relevance: number;
+	/** 并列最硬的证据段的累计月数 */
 	months: number;
-	/** 最强命中路径最近一次结束时间；null 表示目前仍有相关经历 */
+	/** 并列最硬的证据段里最近一次结束时间；null 表示目前仍有相关经历 */
 	endDate: string | null;
 	/**
 	 * 累计进 `months` 的段是否**全部**来自入职前。
 	 *
-	 * 证据行那一端显示的是累计值，而累计可能横跨在职与入职前（同一路在两种 kind
-	 * 上都命中得了）。所以「前」这个前缀不能由某一段的 kind 决定——那会给一个
-	 * 跨了两边的数加上只描述其中一半的标签。判定属于累计发生的地方（rank.ts），
-	 * 不属于显示层。
+	 * 证据行那一端显示的是累计值，而累计可能横跨在职与入职前。所以「前」这个
+	 * 前缀不能由某一段的 kind 决定——那会给一个跨了两边的数加上只描述其中一半的
+	 * 标签。判定属于累计发生的地方（rank.ts），不属于显示层。
 	 */
 	external: boolean;
 };
 
 /**
- * 一条要求的一个说法。`text` 是记录上的词，`effective` 是实际检索用的形态——
- * full 说法整词搜不到时会被松弛成语料里存在的子串（见 search.ts 的 relaxTerm），
- * near 说法恒等于原文（它在理解落库前已过语料体检，不再二次降级）。
- */
-export type MemberPlan = {
-	text: string;
-	effective: string;
-	/** 档位即出处：full=用户说的，near=模型译的。权重见 weights.ts 的 FORM_WEIGHTS。 */
-	tier: FormTier;
-};
-
-/**
- * 一条参与匹配的要求：标签（用户的主词）、它的全部说法（OR），以及它是必须
- * 还是加分。
+ * 一条参与匹配的要求：标签（用户的主词）、它的全部说法（OR，都是原文、都会
+ * 被嵌成向量），以及它是必须还是加分。
  *
  * 排除词不在这里——它只用来否决证据段，不占证据行的一行，也没有「命中了多久」
  * 可言。所以这个类型的 mode 排除了 `"exclude"`：把一个画不出来的东西放进
@@ -89,10 +83,19 @@ export type MemberPlan = {
  */
 export type TermPlan = {
 	term: string;
-	members: MemberPlan[];
+	members: string[];
 	mode: Exclude<ChipMode, "exclude">;
 };
 
+/**
+ * 筛选。前七维收窄的是**人群**，都对完整候选事实求值（放到客户端就只能筛
+ * 已经翻出来的那几页，而其余维数的是全部命中的人——同一排控件会出现两种口径）。
+ *
+ * `org` 与 `school` 是**精确文本条件**，不是分面：公司名、学校名是专有名词，
+ * 永远不进向量（「字节」和「腾讯」在向量空间里是邻居）。它们答的是
+ * 「这个人有没有在名字含 X 的地方待过 / 是不是 X 毕业的」，按人判，
+ * 在取数的 SQL 里生效。
+ */
 export type SearchFilters = {
 	seqL1?: string;
 	seqL2?: string;
@@ -102,12 +105,17 @@ export type SearchFilters = {
 	minMonths?: number;
 	/** 只看在职经历或只看入职前 */
 	kind?: "internal" | "external";
-	/**
-	 * 每个概念词都要有受控字段（序列或岗位）的命中。
-	 *
-	 * 和其余四维一样在服务端对完整候选事实求值：放到客户端就只能筛已经翻出来的那几页，
-	 * 而其余四维数的是全部命中的人——同一排控件会出现两种口径。
-	 */
+	/** 当前职级（employee.cur_level） */
+	level?: string;
+	/** 招聘渠道（校招 / 社招 …） */
+	recruitment?: string;
+	/** 学历 */
+	education?: string;
+	/** 待过的部门或公司名里含这几个字 */
+	org?: string;
+	/** 学校名里含这几个字 */
+	school?: string;
+	/** 每个必须词都要有受控字段（序列或岗位）的命中。 */
 	strong?: boolean;
 };
 
@@ -127,6 +135,9 @@ export type Facets = {
 	companyTag: { value: string; n: number }[];
 	kind: { value: "internal" | "external"; n: number }[];
 	minMonths: { value: number; n: number }[];
+	level: { value: string; n: number }[];
+	recruitment: { value: string; n: number }[];
+	education: { value: string; n: number }[];
 	/**
 	 * 「证据要求」这一维的两头：打开还剩多少人（on），关掉能看到多少人（off）。
 	 * 两个数都按分面的 except 口径算，也就是都把证据要求自己摘掉之后再数。
@@ -139,7 +150,7 @@ export type Facets = {
  *
  * 第二样才是重点。第一次进来的人卡在「我该输入什么」上，而这不是文案能解决的
  * 问题——他缺的是这套语料的词汇表。二级序列正好是它：受控字段、人人都有、
- * 而且拿它当概念词一定命中（`seq` 是权重最高的那一路）。
+ * 而且拿它当概念词一定命中（序列原文和它自己的相关度是 1）。
  *
  * **刻意不带人数。** 「算法 128」里的 128 是「有过算法序列经历的人数」，
  * 而点下去得到的是一次检索，它还会从岗位、部门、简历原文命中另一批人，
@@ -157,22 +168,30 @@ export type Overview = {
 /**
  * 一次检索的完整产出。
  *
- * 匹配事实超过 `FACT_MAX` 时仍然是一种**结果**，不是一次失败：词已经解析
- * 出来，只是不把截断的数据交给排名。`overflowTerms` 按事实行贡献点出需要
- * 具体化的要求，页面用它走空态引导，不走错误边界。
+ * 候选事实超过 `FACT_MAX` 时仍然是一种**结果**，不是一次失败：页面用
+ * `overflow` 说明该具体化语义要求还是收窄结构化范围，不把截断数据交给排名。
  */
-export type SearchOutcome = {
-	terms: TermPlan[];
-	results: SearchResult[];
+export type SearchOverflow =
+	| { kind: "evidence"; terms: string[] }
+	| { kind: "population" };
+
+type Outcome = {
 	facets: Facets;
-	/** 命中的总人数，截断之前。results 最多只有 limit 个。 */
 	total: number;
-	/**
-	 * 事实行超过保险丝时，按贡献从大到小选出的要求；正常结果恒为空数组。
-	 * 它量的是 `(要求, 经历段)`，与 chip 上按人数占比标出的 `wide` 无关。
-	 */
-	overflowTerms: string[];
+	overflow: SearchOverflow | null;
 };
+
+export type SearchOutcome =
+	| (Outcome & {
+			order: "relevance";
+			terms: TermPlan[];
+			results: RankedResult[];
+	  })
+	| (Outcome & {
+			order: "employee";
+			terms: [];
+			results: PopulationResult[];
+	  });
 
 /** 空分面。检索还没跑或没解析出概念词时用它，界面才不必区分「没有」和「还没算」。 */
 export function emptyFacets(): Facets {
@@ -181,6 +200,9 @@ export function emptyFacets(): Facets {
 		companyTag: [],
 		kind: [],
 		minMonths: [],
+		level: [],
+		recruitment: [],
+		education: [],
 		strong: { on: 0, off: 0 },
 	};
 }

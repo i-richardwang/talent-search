@@ -14,12 +14,21 @@ import { QueryDeck } from "#/routes/-components/query-deck";
 import { ResultHeader, ResultList } from "#/routes/-components/result-list";
 import { ZeroState } from "#/routes/-components/zero-state";
 import { filterFields } from "#/routes/-lib/filters";
+import { scopeEntries, scopeLabel } from "#/routes/-lib/scope-label";
 import { emptyFacets } from "#/search/result";
 import { visibleText } from "./render";
 
 const seen = (node: React.ReactNode) => visibleText(renderToStaticMarkup(node));
 
 describe("产品文案使用常规 SaaS 语言", () => {
+	test("查询范围使用稳定的人话与顺序，不把存储值露给最近搜索", () => {
+		const labels = scopeEntries({ level: "P7", kind: "external" }).map(
+			({ key, value }) => scopeLabel(key, value),
+		);
+		assert.deepEqual(labels, ["入职前经历", "当前职级 · P7"]);
+		assert.doesNotMatch(labels.join(" "), /external/);
+	});
+
 	test("首页使用功能名称，不写口号或对话式提问", () => {
 		const text = seen(
 			<ZeroState
@@ -42,10 +51,11 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		const text = seen(
 			<ResultHeader
 				loading={false}
+				order="relevance"
 				terms={[
 					{
 						term: "算法",
-						members: [{ text: "算法", effective: "算法", tier: "full" }],
+						members: ["算法"],
 						mode: "must",
 					},
 				]}
@@ -69,26 +79,23 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		 */
 		const text = seen(
 			<QueryDeck
-				chips={[{ term: "算法", mode: "must" }]}
-				degraded
 				error={null}
 				interpreting={false}
-				onChangeQuery={() => {}}
+				onChangeSpec={() => {}}
 				onChangeView={() => {}}
 				onQuery={() => true}
 				inputRef={{ current: null }}
 				fields={filterFields(emptyFacets(), {})}
 				strongCount={0}
+				textFilters={[]}
 				view={{}}
 				onReinterpret={() => {}}
 				rawText="最好懂算法、不要实习"
-				terms={[
-					{
-						term: "算法",
-						members: [{ text: "算法", effective: "算法", tier: "full" }],
-						mode: "must",
-					},
-				]}
+				spec={{
+					evidence: [{ term: "算法", mode: "must" }],
+					scope: {},
+					notices: [{ kind: "fallback" }],
+				}}
 			/>,
 		);
 		assert.match(text, /未能识别这句话里的语气/);
@@ -99,19 +106,18 @@ describe("产品文案使用常规 SaaS 语言", () => {
 	test("理解中显示的是用户自己那句话，不是一排占位方块", () => {
 		const text = seen(
 			<QueryDeck
-				chips={[]}
-				degraded={false}
 				error={null}
 				interpreting
-				onChangeQuery={() => {}}
+				onChangeSpec={() => {}}
 				onChangeView={() => {}}
 				onQuery={() => true}
 				inputRef={{ current: null }}
 				fields={filterFields(emptyFacets(), {})}
 				strongCount={0}
+				textFilters={[]}
 				view={{}}
 				rawText="做过线下渠道运营、带过团队的人"
-				terms={[]}
+				spec={{ evidence: [], scope: {}, notices: [] }}
 			/>,
 		);
 		assert.match(text, /做过线下渠道运营、带过团队的人/);
@@ -127,7 +133,6 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		const text = seen(
 			<ResultList
 				canMore={false}
-				chips={[{ term: "量子炼金", mode: "must" }]}
 				empId={undefined}
 				growing={false}
 				loading={false}
@@ -135,18 +140,19 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onFocusQuery={() => {}}
 				onMore={() => {}}
 				onReviseQuery={() => {}}
-				overflowTerms={[]}
-				results={[]}
-				terms={[
-					{
-						term: "量子炼金",
-						members: [
-							{ text: "量子炼金", effective: "量子炼金", tier: "full" },
-						],
-						mode: "must",
-					},
-				]}
-				total={0}
+				outcome={{
+					order: "relevance",
+					terms: [{ term: "量子炼金", members: ["量子炼金"], mode: "must" }],
+					results: [],
+					facets: emptyFacets(),
+					total: 0,
+					overflow: null,
+				}}
+				spec={{
+					evidence: [{ term: "量子炼金", mode: "must" }],
+					scope: {},
+					notices: [],
+				}}
 				turnId="t1"
 				view={{}}
 				withoutStrong={0}

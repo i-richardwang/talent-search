@@ -7,6 +7,8 @@ dist/
 .env.local
 .venv/
 __pycache__/
+# 嵌入向量的本地缓存（etl/embed.py）
+.cache/
 
 # 员工数据一律不进版本库
 data/

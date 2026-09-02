@@ -27,6 +27,12 @@ const FACETS: Facets = {
 		{ value: 12, n: 33 },
 		{ value: 24, n: 18 },
 	],
+	level: [
+		{ value: "P6", n: 20 },
+		{ value: "P7", n: 9 },
+	],
+	recruitment: [{ value: "校招", n: 5 }],
+	education: [{ value: "硕士", n: 8 }],
 	strong: { on: 18, off: 43 },
 };
 
@@ -105,7 +111,15 @@ describe("控件侧", () => {
 	test("每一组都有标题，选项文案才能缩短", () => {
 		assert.deepEqual(
 			filterFields(FACETS, {}).map((f) => f.title),
-			["序列", "入职前公司", "经历来源", "经历时长"],
+			[
+				"序列",
+				"职级",
+				"经历来源",
+				"经历时长",
+				"入职前公司",
+				"招聘渠道",
+				"学历",
+			],
 		);
 	});
 
@@ -123,7 +137,7 @@ describe("控件侧", () => {
 		assert.equal(seq?.options[0]?.n, 114);
 	});
 
-	test("四个维度都带人数，没有哪一组是空着的", () => {
+	test("每个维度都带人数，没有哪一组是空着的", () => {
 		// 同一列里并置的兄弟项出现不同的结构，读起来是「数据缺了」，
 		// 而不是「这里本来就没有」
 		for (const f of filterFields(FACETS, {})) {

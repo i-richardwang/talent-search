@@ -21,8 +21,6 @@ import {
 } from "./result";
 import {
 	BOOST_WEIGHT,
-	FORM_WEIGHTS,
-	type FormTier,
 	isControlledRoute,
 	MIN_MONTHS_BUCKETS,
 	RECENCY_FLOOR,
@@ -36,34 +34,41 @@ import {
 /**
  * 一段经历对一条要求的命中。这是检索层唯一的产物：**事实，不含任何评分**。
  *
- * 字段只有两类：打分要用的（route / tier / months / endDate）和分面要分组的
- * （seq / companyTag / kind / months）。`id` 只用来在定好名次之后回表取展示用的
- * 原文；`memberIdx` 只用来在出结果时说出「命中的是哪个说法」——都不参与计算。
+ * 字段只有两类：打分要用的（route / relevance / months / endDate）和分面要分组的
+ * （seq / companyTag / kind / months，以及三个跟人走的：level / recruitment /
+ * education）。`id` 只用来在定好名次之后回表取展示用的原文；`memberIdx`
+ * 只用来在出结果时说出「命中的是哪个说法」——都不参与计算。
  */
-export type Fact = {
-	id: number;
+export type PopulationFact = {
 	empId: string;
-	termIdx: number;
-	/** 命中的是这条要求的第几个说法（TermPlan.members 的下标） */
-	memberIdx: number;
-	/** 那个说法的档位。权重直接从它查，不用回 TermPlan 找。 */
-	tier: FormTier;
-	route: Route;
 	months: number;
-	/** null 表示至今 */
-	endDate: string | null;
 	seqL1: string;
 	seqL2: string;
 	companyTag: string | null;
 	kind: "internal" | "external";
+	level: string;
+	recruitment: string;
+	education: string;
+};
+
+export type Fact = PopulationFact & {
+	id: number;
+	termIdx: number;
+	/** 命中的是这条要求的第几个说法（TermPlan.members 的下标） */
+	memberIdx: number;
+	route: Route;
+	/** 说法与这一路原文的相关度，已过 RELEVANCE_MIN */
+	relevance: number;
+	/** null 表示至今 */
+	endDate: string | null;
 };
 
 /**
- * 一条证据的强度 = 字眼档位 × 路权重。两个都是「这条证据有多能说明他真的
- * 做过用户要的那件事」的因子：前者管词离用户的意思多远，后者管字段是谁写的。
+ * 一条证据的强度 = 路权重 × 相关度。两个都是「这条证据有多能说明他真的
+ * 做过用户要的那件事」的因子：前者管字段是谁写的，后者管原文离用户的意思多远。
  */
 function evidenceWeight(f: Fact) {
-	return FORM_WEIGHTS[f.tier] * ROUTE_WEIGHTS[f.route];
+	return ROUTE_WEIGHTS[f.route] * f.relevance;
 }
 
 /**
@@ -93,7 +98,7 @@ export function gapMonths(endDate: string | null, now: Date) {
 /**
  * 一条要求对一个人的分数 = **强度 × 时长 × 近因**，三个都是有界因子。
  *
- * **强度**取该人所有命中段里最硬的一条证据（字眼档位 × 路权重，见
+ * **强度**取该人所有命中段里最硬的一条证据（路权重 × 相关度，见
  * evidenceWeight）。做过三段算法不比做过一段更「做过」，所以强度不累加，
  * 它回答的是「最硬的那条证据有多能说明他真的做过」。
  *
@@ -106,17 +111,18 @@ export function gapMonths(endDate: string | null, now: Date) {
  * 的 TENURE_FLOOR）：它们决定的是同一档证据内部的先后，不是证据的档次。
  */
 function termValue(facts: Fact[], term: string, now: Date) {
-	let strength = 0;
-	for (const f of facts) strength = Math.max(strength, evidenceWeight(f));
+	let best: Fact | undefined;
+	for (const f of facts)
+		if (!best || evidenceWeight(f) > evidenceWeight(best)) best = f;
+	if (!best) return { score: 0, basis: null };
+	const strength = evidenceWeight(best);
 	let months = 0;
 	let gap = Number.POSITIVE_INFINITY;
-	const routes = new Set<Route>();
 	let endDate: string | null | undefined;
 	// 只有全部段都来自入职前，这个累计值才配叫「前」（见 result.ts 的 external）
 	let external = true;
 	for (const f of facts) {
 		if (evidenceWeight(f) < strength) continue;
-		routes.add(f.route);
 		months += f.months;
 		if (f.kind !== "external") external = false;
 		gap = Math.min(gap, gapMonths(f.endDate, now));
@@ -124,7 +130,6 @@ function termValue(facts: Fact[], term: string, now: Date) {
 		else if (endDate !== null && (!endDate || f.endDate > endDate))
 			endDate = f.endDate;
 	}
-	if (routes.size === 0) return { score: 0, basis: null };
 	return {
 		score:
 			strength *
@@ -132,7 +137,8 @@ function termValue(facts: Fact[], term: string, now: Date) {
 			decay(gap, RECENCY_HALF, RECENCY_FLOOR),
 		basis: {
 			term,
-			routes: [...routes].sort(),
+			route: best.route,
+			relevance: best.relevance,
 			months,
 			endDate: endDate ?? null,
 			external,
@@ -143,7 +149,7 @@ function termValue(facts: Fact[], term: string, now: Date) {
 /** 一个人在一次检索里的全部事实：概念词下标 → 命中的段 */
 type Person = Map<number, Fact[]>;
 
-/** 按人、按词把事实归拢。`keep` 在这一步生效，此后不再有「哪些事实算数」的问题。 */
+/** 按人、按词归拢通过 `keep` 的事实；后续计算只读取这份稳定集合。 */
 function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 	const byEmp = new Map<string, Person>();
 	for (const f of facts) {
@@ -196,15 +202,23 @@ function score(p: Person, terms: TermPlan[], now: Date) {
 	return { score: s, basis };
 }
 
-/** 五个筛选维度。`Facets` 的键与它逐字一致。 */
-type Dim = "seq" | "companyTag" | "kind" | "minMonths" | "strong";
+/** 筛选维度。`Facets` 的键与它逐字一致。 */
+type Dim =
+	| "seq"
+	| "companyTag"
+	| "kind"
+	| "minMonths"
+	| "level"
+	| "recruitment"
+	| "education"
+	| "strong";
 
 /**
  * 筛选谓词。`except` 是它存在的全部理由：算「序列」这一维的候选时必须把序列
  * 自己的筛选摘掉，不摘的话选中一项之后其余项的计数全是 0，用户点不动第二次。
  */
 function keeps(f: SearchFilters, except?: Dim) {
-	return (x: Fact) => {
+	return (x: PopulationFact) => {
 		if (except !== "seq" && f.seqL1 && x.seqL1 !== f.seqL1) return false;
 		if (except !== "seq" && f.seqL2 && x.seqL2 !== f.seqL2) return false;
 		if (except !== "kind" && f.kind && x.kind !== f.kind) return false;
@@ -216,12 +230,54 @@ function keeps(f: SearchFilters, except?: Dim) {
 			x.companyTag !== f.companyTag
 		)
 			return false;
+		if (except !== "level" && f.level && x.level !== f.level) return false;
+		if (
+			except !== "recruitment" &&
+			f.recruitment &&
+			x.recruitment !== f.recruitment
+		)
+			return false;
+		if (except !== "education" && f.education && x.education !== f.education)
+			return false;
 		return true;
 	};
 }
 
 /** 合成 key 的分隔符：序列名里出现「/」并不稀奇，得用一个不可能出现在数据里的字符 */
 const SEP = "\u0001";
+
+function facetValues(fact: PopulationFact, dim: Exclude<Dim, "strong">) {
+	switch (dim) {
+		case "seq":
+			return fact.seqL1 && fact.seqL2 ? [fact.seqL1 + SEP + fact.seqL2] : [];
+		case "companyTag":
+			return fact.companyTag && fact.companyTag !== "未知"
+				? [fact.companyTag]
+				: [];
+		case "kind":
+			return [fact.kind];
+		case "minMonths":
+			return MIN_MONTHS_BUCKETS.filter((months) => fact.months >= months).map(
+				String,
+			);
+		case "level":
+			return fact.level ? [fact.level] : [];
+		case "recruitment":
+			return fact.recruitment ? [fact.recruitment] : [];
+		case "education":
+			return fact.education ? [fact.education] : [];
+	}
+}
+
+function sortFacets(facets: Facets) {
+	facets.seq.sort((x, y) => y.n - x.n);
+	facets.companyTag.sort((x, y) => y.n - x.n);
+	facets.recruitment.sort((x, y) => y.n - x.n);
+	facets.education.sort((x, y) => y.n - x.n);
+	facets.level.sort((x, y) => x.value.localeCompare(y.value, "zh-Hans-CN"));
+	facets.minMonths.sort((x, y) => x.value - y.value);
+	return facets;
+}
 
 /**
  * 某一维的「选了这一项之后还剩几个人」。
@@ -268,7 +324,7 @@ function facetCount(
 }
 
 /**
- * 五个维度的候选与人数。
+ * 各维度的候选与人数。
  *
  * 计数的口径是「在当前这次检索里，选了这一项之后还剩多少人」；算不出人的选项
  * 根本不会出现——这是筛选项列表能变短的原因。
@@ -282,8 +338,8 @@ function computeFacets(
 
 	// 两级都要有值：只有一级的话选项值会编码成 "技术/"，而筛选用真值判断 seqL2，
 	// 空串是 falsy，点下去这一维根本不生效。
-	for (const [v, n] of facetCount(facts, terms, filters, "seq", (f) =>
-		f.seqL1 && f.seqL2 ? [f.seqL1 + SEP + f.seqL2] : [],
+	for (const [v, n] of facetCount(facts, terms, filters, "seq", (fact) =>
+		facetValues(fact, "seq"),
 	)) {
 		const [seqL1 = "", seqL2 = ""] = v.split(SEP);
 		out.seq.push({ seqL1, seqL2, n });
@@ -294,19 +350,30 @@ function computeFacets(
 		terms,
 		filters,
 		"companyTag",
-		(f) => (f.companyTag && f.companyTag !== "未知" ? [f.companyTag] : []),
+		(fact) => facetValues(fact, "companyTag"),
 	))
 		out.companyTag.push({ value, n });
 
-	for (const [value, n] of facetCount(facts, terms, filters, "kind", (f) => [
-		f.kind,
-	]))
+	for (const [value, n] of facetCount(facts, terms, filters, "kind", (fact) =>
+		facetValues(fact, "kind"),
+	))
 		out.kind.push({ value: value as "internal" | "external", n });
 
-	for (const [value, n] of facetCount(facts, terms, filters, "minMonths", (f) =>
-		MIN_MONTHS_BUCKETS.filter((th) => f.months >= th).map(String),
+	for (const [value, n] of facetCount(
+		facts,
+		terms,
+		filters,
+		"minMonths",
+		(fact) => facetValues(fact, "minMonths"),
 	))
 		out.minMonths.push({ value: Number(value), n });
+
+	// 三个跟人走的维度：空值不是一个可点的选项
+	for (const dim of ["level", "recruitment", "education"] as const)
+		for (const [value, n] of facetCount(facts, terms, filters, dim, (fact) =>
+			facetValues(fact, dim),
+		))
+			out[dim].push({ value, n });
 
 	// 「证据要求」这一维的两头：打开还剩几个（on）、关掉能看到几个（off）。
 	// 两个数都把证据要求自己摘掉之后再算。
@@ -316,11 +383,53 @@ function computeFacets(
 		if (complete(p, terms, true)) out.strong.on++;
 	}
 
-	// 人多的排前面；时长档位反过来按档位排，它是有序的量，不是并列的类别
-	out.seq.sort((x, y) => y.n - x.n);
-	out.companyTag.sort((x, y) => y.n - x.n);
-	out.minMonths.sort((x, y) => x.value - y.value);
-	return out;
+	// 人多的排前面；时长档位反过来按档位排，它是有序的量，不是并列的类别。
+	// 职级按名字排：它也是有序的量（P5 < P6），而人数多的档不一定是低的档。
+	return sortFacets(out);
+}
+
+/** 结构化范围没有语义证据；按人判定筛选并复用同一份分面取值与排序规则。 */
+export function rankPopulation(
+	facts: PopulationFact[],
+	filters: SearchFilters,
+): { empIds: string[]; facets: Facets; total: number } {
+	const effective = { ...filters, strong: undefined };
+	const empIds = [
+		...new Set(facts.filter(keeps(effective)).map((fact) => fact.empId)),
+	].sort();
+	const facets = emptyFacets();
+	for (const dim of [
+		"seq",
+		"companyTag",
+		"kind",
+		"minMonths",
+		"level",
+		"recruitment",
+		"education",
+	] as const) {
+		const people = new Map<string, Set<string>>();
+		const keep = keeps(effective, dim);
+		for (const fact of facts) {
+			if (!keep(fact)) continue;
+			for (const value of facetValues(fact, dim)) {
+				const ids = people.get(value) ?? new Set<string>();
+				ids.add(fact.empId);
+				people.set(value, ids);
+			}
+		}
+		for (const [value, ids] of people) {
+			const n = ids.size;
+			if (dim === "seq") {
+				const [seqL1 = "", seqL2 = ""] = value.split(SEP);
+				facets.seq.push({ seqL1, seqL2, n });
+			} else if (dim === "kind") {
+				facets.kind.push({ value: value as "internal" | "external", n });
+			} else if (dim === "minMonths") {
+				facets.minMonths.push({ value: Number(value), n });
+			} else facets[dim].push({ value, n });
+		}
+	}
+	return { empIds, facets: sortFacets(facets), total: empIds.length };
 }
 
 type Ranked = {

@@ -83,11 +83,14 @@ let recalled = 0;
 let expected = 0;
 try {
 	for (const c of cases) {
-		const { results, total, overflowTerms } = await search(
-			parseChips(c.query),
+		const outcome = await search(
+			{ evidence: parseChips(c.query), scope: {}, notices: [] },
 			{},
 			RESULT_MAX,
 		);
+		if (outcome.order !== "relevance")
+			throw new Error(`${c.name}：概念词用例没有产生相关度结果`);
+		const { results, total, overflow } = outcome;
 		const rankOf = new Map(results.map((r, i) => [r.employee.empId, i + 1]));
 		const found = c.expect.filter((id) => rankOf.has(id));
 		recalled += found.length;
@@ -98,8 +101,8 @@ try {
 		console.log(
 			`${found.length === c.expect.length ? "✓" : "✗"} ${c.name}` +
 				`  召回 ${found.length}/${c.expect.length}，命中 ${total} 人${
-					overflowTerms.length > 0
-						? `（匹配事实过多：${overflowTerms.join("、")}）`
+					overflow?.kind === "evidence"
+						? `（匹配事实过多：${overflow.terms.join("、")}）`
 						: ""
 				}`,
 		);

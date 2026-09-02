@@ -1,24 +1,28 @@
 import { sql } from "drizzle-orm";
 import {
-	boolean,
 	check,
 	date,
 	foreignKey,
+	halfvec,
 	index,
 	integer,
 	jsonb,
 	pgTable,
+	primaryKey,
+	real,
 	serial,
 	text,
 	timestamp,
 	unique,
 } from "drizzle-orm/pg-core";
-import type { IntentFilters } from "#/search/intent";
-import type { Chip } from "#/search/parse";
+import type { SearchDelta, SearchSpec } from "#/search/spec";
 
 /*
- * 中文检索一律走 pg_trgm 的 ILIKE：Postgres 的 to_tsvector 不切中文词，
- * 整句会变成一个 token，全文索引在这里没有意义。
+ * 检索的匹配单元是**语义**，不是字符串：语料里每一串原文各存一个向量
+ * （`phrase`），经历段按四路指向它们（`experience_phrase`）；查询里的每条要求
+ * 先按向量召回候选说法，再由重排模型判定相关度
+ * 过阈值判定。原文字段仍然原样保留——它们是证据，用户核对的是它们；
+ * 向量只是找到它们的手段。
  */
 
 /** 外部段的公司规范字段，来自工作经历表。只存时间轴上真正显示的三项。 */
@@ -84,38 +88,10 @@ export const experience = pgTable(
 		),
 		index("experience_emp").on(t.empId, t.startDate),
 		/*
-		 * 检索是 `ilike '%词%'`（中文没法用 to_tsvector，见 AGENTS.md），
-		 * 这一组 GIN trgm 索引是它唯一能走的加速路径。
-		 *
-		 * **它有一条写死在 pg_trgm 里的天花板：三字符。** 两个汉字切不出任何
-		 * trigram，于是 2 字概念词——恰好是最常见的那一档——必然顺扫。
-		 * 本机 32136 段实测：`%渠道运营%` 走索引 0.63ms，`%风控%` 顺扫 5.9ms，
-		 * `%算法%` 顺扫 14.9ms；整条检索 70~125ms，现在完全够用。
-		 *
-		 * 所以这组索引不是「中文检索解决了」，是「长词快、短词靠表小」。语料
-		 * 涨一个数量级之后，短词 × 七个字段的顺扫就是墙，那时要换的是中文双字
-		 * 索引（pg_bigm）或者真正的分词器，不是更大的机器。现在不预埋：
-		 * 表 24MB，这组索引已经 14MB，为一个还没到的规模再加一套是纯负债。
+		 * 语义命中不走这张表的索引（见 phrase / experience_phrase）。这里剩下的两个是
+		 * 按人取时间线和按序列做等值筛选用的。公司名 / 学校名那两个精确条件
+		 * 走 ILIKE 顺扫：三万段一次几毫秒，不值得为它们建索引。
 		 */
-		index("experience_desc_trgm").using(
-			"gin",
-			sql`${t.description} gin_trgm_ops`,
-		),
-		index("experience_path_trgm").using("gin", sql`${t.orgPath} gin_trgm_ops`),
-		index("experience_title_trgm").using("gin", sql`${t.title} gin_trgm_ops`),
-		index("experience_org_trgm").using("gin", sql`${t.org} gin_trgm_ops`),
-		/*
-		 * 序列三级也要 trgm，尽管 experience_seq 那个 btree 已经在了。
-		 *
-		 * 命中判定是**七个字段**的 OR（`ROUTE_FIELDS` 展开的那七个），而 OR 里只要有
-		 * **一个字段**不可索引，整条 OR 就退化成顺扫——也就是说少了这三个索引，
-		 * 上面四个 trgm 一次都用不上。失效的单位是字段，不是路；完整索引下的
-		 * 执行计划应使用 BitmapOr，缺字段索引时会退化为 Seq Scan。
-		 * btree 那个是给 seq_l1 = ? 的等值筛选用的，两者不能互相替代。
-		 */
-		index("experience_seq1_trgm").using("gin", sql`${t.seqL1} gin_trgm_ops`),
-		index("experience_seq2_trgm").using("gin", sql`${t.seqL2} gin_trgm_ops`),
-		index("experience_seq3_trgm").using("gin", sql`${t.seqL3} gin_trgm_ops`),
 		index("experience_seq").on(t.seqL1, t.seqL2),
 	],
 );
@@ -124,23 +100,123 @@ export type Employee = typeof employee.$inferSelect;
 export type Experience = typeof experience.$inferSelect;
 
 /**
+ * 向量的维数。它是嵌入空间的属性，不是产品常量；换空间就要改这里并整库重灌。
+ */
+export const EMBED_DIM = 1024;
+
+/**
+ * 当前语料的嵌入空间身份证。ETL 每次整库重灌时只写一行；查询进程在第一次
+ * 嵌入前核对 space/model/dimension，并用 canary 检查端点实际输出仍在同一空间。
+ */
+export const embeddingSpace = pgTable("embedding_space", {
+	spaceId: text("space_id").primaryKey(),
+	model: text("model").notNull(),
+	dimension: integer("dimension").notNull(),
+	canaryText: text("canary_text").notNull(),
+	canaryEmbedding: halfvec("canary_embedding", {
+		dimensions: EMBED_DIM,
+	}).notNull(),
+});
+
+/**
+ * 一段经历的四路语义：序列、岗位、部门 / 公司、简历描述。字段来源决定证据
+ * 可信度（weights.ts 的 ROUTE_WEIGHTS），所以四路**各自**嵌一个向量，不混成
+ * 一个：混了之后「登记字段说他做过」和「简历里提过一句」在向量空间里就分不开；
+ * 序列和岗位也不拼在一起——短文本的相似度最锐利，「算法」对「算法工程师」
+ * 是一回事，对「技术 · 算法 · 推荐 / 高级算法工程师」这一长串就被稀释了。
+ */
+export const ROUTES = ["seq", "title", "org", "description"] as const;
+export type Route = (typeof ROUTES)[number];
+
+/**
+ * 语料里出现过的每一串**原文**及其向量。序列名、岗位名、部门路径、简历描述
+ * 去重后各占一行——向量是文本的属性，不是经历段的属性：三万段经历只有两万种
+ * 说法，同一串字嵌两遍既浪费端点，也让召回扫描多跑四倍。
+ *
+ * 用 halfvec：bge-m3 的向量存半精度对余弦相似度的影响在小数点后三位，
+ * 换来的是一半的扫描量。这张表现在**没有向量索引**：召回要的是「相似度过
+ * 地板的全部说法」，而 HNSW 回答的是「最近的 k 个」，两者不是一个问题；
+ * 两万行的精确扫描本机是几十毫秒。语料涨一个数量级再上 HNSW 加迭代扫描
+ * （pgvector 0.8+），到时候改的是这里和 phrases.ts 的召回 SQL，排名与分面不动。
+ */
+export const phrase = pgTable("phrase", {
+	id: serial("id").primaryKey(),
+	text: text("text").notNull().unique(),
+	embedding: halfvec("embedding", { dimensions: EMBED_DIM }).notNull(),
+});
+
+/**
+ * 一段经历在四路上各说了哪一串字。一段最多四行：`seq`（序列三级）、`title`
+ * （岗位）、`org`（部门路径或公司名）、`description`（简历描述）。哪一路的
+ * 原文是空的就没有那一行——不嵌空串，也不存零向量。
+ */
+export const experiencePhrase = pgTable(
+	"experience_phrase",
+	{
+		experienceId: integer("experience_id")
+			.notNull()
+			.references(() => experience.id, { onDelete: "cascade" }),
+		route: text("route", { enum: ROUTES }).notNull(),
+		phraseId: integer("phrase_id")
+			.notNull()
+			.references(() => phrase.id, { onDelete: "cascade" }),
+	},
+	(t) => [
+		primaryKey({ columns: [t.experienceId, t.route] }),
+		// 命中的说法 → 说了它的经历段，取数就是沿这条边走
+		index("experience_phrase_phrase").on(t.phraseId),
+		check(
+			"experience_phrase_route_valid",
+			sql`${t.route} in ('seq', 'title', 'org', 'description')`,
+		),
+	],
+);
+
+/**
+ * 重排模型对「查询词 × 语料说法」打过的分（见 phrases.ts）。
+ *
+ * 同一个重排空间对同一对文本的分数是确定的，所以它是永久缓存：翻页、改筛选、
+ * 换个人再搜同一个词，都不必再打端点。按空间身份键入，换模型行为时自然失效；
+ * 语料重灌时 phrase 表 truncate 会把它级联清空——分数是对旧 id 打的。
+ * 只存打过分的对：召回没捞到的说法不在这里，也不该在，那是召回的事。
+ */
+export const phraseRelevance = pgTable(
+	"phrase_relevance",
+	{
+		space: text("space").notNull(),
+		query: text("query").notNull(),
+		phraseId: integer("phrase_id")
+			.notNull()
+			.references(() => phrase.id, { onDelete: "cascade" }),
+		relevance: real("relevance").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.space, t.query, t.phraseId] }),
+		check(
+			"phrase_relevance_range",
+			sql`${t.relevance} >= 0 and ${t.relevance} <= 1`,
+		),
+	],
+);
+
+/**
  * 一次「我要找什么人」的记录。**查询的身份就是这一行**，URL 里的 `/s/:id`
  * 指的是它，不是一串可以被任意改写的检索参数。
  *
  * 这张表存在的理由，是把三件本来会互相锁死的事拆开：
  *
  * 1. **原话留得住。** `raw_text` 是用户自己敲的那句话。把它丢掉（比如只往
- *    URL 里写理解后的 chips），「重新理解」就永远做不到了——没有输入可重放，
+ *    URL 里写理解后的条件），「重新理解」就永远做不到了——没有输入可重放，
  *    模型改好了也惠及不到任何一条已经存在的查询。
  * 2. **理解的结果是记录，不是缓存。** 同一条 `/s/:id` 永远问的是同一个问题
- *    （同一句原话、同一份 chips）；名单本身跟着语料和时间走，本来就该走——
+ *    （同一句原话、同一份 SearchSpec）；名单本身跟着语料和时间走，本来就该走——
  *    可复现的是条件，不是那批人。「问题不变」由「这一行是不可变的」保证，
  *    不由「凑巧没人再调模型」保证。想重新理解，就派生一条新记录。
- * 3. **改条件留得下痕迹。** 每次改 chip 都派生一条挂在 `parent_turn_id` 上的
+ * 3. **改条件留得下痕迹。** 每次改条件都派生一条挂在 `parent_turn_id` 上的
  *    新记录，于是「模型判成必须、人改成加分」这类修正会自己长在库里。
  *    这是这个产品唯一能自己产出的模型评估数据，写进 URL 就等于每次导航扔一次。
  *
- * 这张表**只 INSERT**，唯一的例外是把 `chips` 从 null 补成理解结果（见下）。
+ * 这张表**只 INSERT**，唯一的例外是把 `delta` / `spec` 从 null 补成理解结果。
  * 这一条由应用代码保证；库负责输入完整性与链关系。
  */
 export const searchTurn = pgTable(
@@ -163,12 +239,12 @@ export const searchTurn = pgTable(
 		 * parent 指向上一版理解，base 沿用上一版当时的上下文。把两者分开存，
 		 * 连续重新理解多少次都不会把已经替换的条件带回来。
 		 *
-		 * 点词汇表或直接改 chip 的记录已经带着完整 chips，不需要 base。
+		 * 点词汇表或直接改条件的记录已经带着完整 spec，不需要 base。
 		 */
 		baseTurnId: text("base_turn_id"),
 		/**
 		 * 用户敲的原话。null 表示这条不是从一句话来的（点了词汇表，或者只改了
-		 * 一枚 chip）——那种记录没有可重新理解的输入，界面上也不给那个入口。
+		 * 一个条件）——那种记录没有可重新理解的输入，界面上也不给那个入口。
 		 */
 		rawText: text("raw_text"),
 		/**
@@ -181,35 +257,34 @@ export const searchTurn = pgTable(
 		 */
 		note: text("note"),
 		/**
-		 * 理解结果，也是这次检索真正用的条件。
+		 * 这句原话自己的理解。它让重译能够精确替换这句，而不用从合并结果反推。
 		 *
-		 * **null 表示「还没理解」**，是这张表唯一的可变位：整句提交时先落一行
+		 * **null 表示「还没理解」**：整句提交时先落一行
 		 * 只有 `raw_text` 的记录（一次 INSERT，毫秒级），页面立刻就能进工作台，
 		 * 模型那一跳在工作台里就地完成再把这一列补上。没有第二个状态列——
 		 * 「有没有理解过」这件事由这一列自己回答，不需要一个会卡在中间态的枚举。
 		 */
-		chips: jsonb("chips").$type<Chip[]>(),
-		/** 模型从句子里认出来的筛选。理解之后一次性播进 URL，此后以 URL 为准。 */
-		filters: jsonb("filters").$type<IntentFilters>().notNull().default({}),
+		delta: jsonb("delta").$type<SearchDelta>(),
 		/**
-		 * 这次理解降级了没有：模型不可用、或者没给出任何可用条件，于是退回了
-		 * 本地规则解析。规则解析读不出语气，「不要实习」会变成必须词——
-		 * 结果是错的而界面上看不出来，所以这一位必须存下来并且明说。
+		 * 查询的完整不可变快照。证据、原话产生的结构化范围和未生效提示都在这里；
+		 * URL 只保存查看结果的临时状态，不保存查询含义。
 		 */
-		degraded: boolean("degraded").notNull().default(false),
+		spec: jsonb("spec").$type<SearchSpec>(),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
 	},
 	(t) => [
-		/*
-		 * 一条记录至少要有一样东西说明它想找什么：整句来的有 raw_text，
-		 * 点词汇表或改 chip 来的有 chips。两样都空的记录打开就是一个
-		 * 空工作台，而它会一直挂在「最近搜索」里。
-		 */
 		check(
-			"search_turn_has_input",
-			sql`${t.rawText} is not null or ${t.chips} is not null`,
+			"search_turn_state",
+			sql`(
+					${t.rawText} is null and ${t.delta} is null and ${t.spec} is not null
+				) or (
+					${t.rawText} is not null and (
+						(${t.delta} is null and ${t.spec} is null) or
+						(${t.delta} is not null and ${t.spec} is not null)
+					)
+				)`,
 		),
 		check(
 			"search_turn_base_requires_text",

@@ -9,12 +9,18 @@ import {
 	InputGroupAddon,
 	InputGroupInput,
 } from "#/components/ui/input-group";
-import type { Chip, QueryInput } from "#/search/parse";
-import type { TermPlan } from "#/search/result";
-import type { FilterField } from "../-lib/filters";
+import {
+	fellBack,
+	hasMeaning,
+	type QueryInput,
+	type SearchSpec,
+	unsupportedOf,
+} from "#/search/spec";
+import type { FilterField, TextFilter } from "../-lib/filters";
 import type { View } from "../-lib/view-params";
 import { FilterBar } from "./filter-bar";
 import { QueryChips } from "./query-chips";
+import { QueryScope } from "./query-scope";
 
 /**
  * 查询台：这一屏**唯一**的操作面。
@@ -32,27 +38,25 @@ import { QueryChips } from "./query-chips";
  * 表头（`result-list.tsx` 的 `ResultHeader`），不是这块操作面上的一个角。
  */
 export function QueryDeck({
-	terms,
-	chips,
-	onChangeQuery,
+	spec,
+	onChangeSpec,
 	onQuery,
 	inputRef,
 	interpreting,
 	rawText,
-	degraded,
 	error,
 	onRetry,
 	onReinterpret,
 	onCorrect,
 	fields,
+	textFilters,
 	view,
 	onChangeView,
 	strongCount,
 }: {
-	terms: TermPlan[];
 	/** 查询条件，来自这条查询记录。理解完成之前是空的。 */
-	chips: Chip[];
-	onChangeQuery: (next: Chip[]) => void;
+	spec: SearchSpec;
+	onChangeSpec: (next: SearchSpec) => void;
 	/** 往当前查询上再加一句话，派生一条新记录 */
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
 	inputRef: React.RefObject<HTMLInputElement | null>;
@@ -60,8 +64,6 @@ export function QueryDeck({
 	interpreting: boolean;
 	/** 用户敲的原话。有它才谈得上「重新理解」。 */
 	rawText: string | null;
-	/** 这次理解退回了本地规则解析，语气没人翻译 */
-	degraded: boolean;
 	error: string | null;
 	/** 理解失败时的重试动作。 */
 	onRetry?: () => void;
@@ -75,11 +77,16 @@ export function QueryDeck({
 	 */
 	onCorrect?: (note: string) => boolean | Promise<boolean>;
 	fields: FilterField[];
+	/** 已生效的公司名 / 学校名条件 */
+	textFilters: TextFilter[];
 	view: View;
 	onChangeView: (next: Partial<View>) => void;
 	strongCount: number;
 }) {
-	const hasQuery = terms.length > 0 || chips.length > 0;
+	const chips = spec.evidence;
+	const degraded = fellBack(spec);
+	const unsupported = unsupportedOf(spec);
+	const hasQuery = hasMeaning(spec);
 	// 纠正框收在一个入口后面：它是偶发动作，常驻一个输入框会和上面那个
 	// 「添加条件」的框摆成两个平级的口，而两者的分量差着一个量级。
 	const [correcting, setCorrecting] = useState(false);
@@ -93,8 +100,8 @@ export function QueryDeck({
 	return (
 		/*
 		 * 吸顶层的底是半透明加模糊：名单从它下面穿过去，实色底会把那一下切得很硬，
-		 * 滚到一半的卡片在一条看不见的线上凭空消失。分层到此为止，不再补一条
-		 * `border-b`——下面那块托盘自己就是边界，两道边界画的是同一件事。
+		 * 滚到一半的卡片在一条看不见的线上凭空消失。下面的托盘承担这一层的
+		 * 唯一边界，整块操作面因此保持一个轮廓。
 		 */
 		<div className="sticky top-0 z-stick bg-canvas/85 backdrop-blur-md">
 			<div className="mx-auto w-full max-w-page px-4 py-2.5">
@@ -126,8 +133,7 @@ export function QueryDeck({
 								<>
 									<QueryChips
 										chips={chips}
-										onChange={onChangeQuery}
-										terms={terms}
+										onChange={(evidence) => onChangeSpec({ ...spec, evidence })}
 										trailing={
 											onCorrect &&
 											!correcting && (
@@ -141,6 +147,10 @@ export function QueryDeck({
 												</Button>
 											)
 										}
+									/>
+									<QueryScope
+										onChange={(scope) => onChangeSpec({ ...spec, scope })}
+										scope={spec.scope}
 									/>
 									{onCorrect && correcting && (
 										<form
@@ -197,14 +207,15 @@ export function QueryDeck({
 										</form>
 									)}
 									{/*
-									 * 范围条件排在概念条件下面，不并排：chips 决定「找谁」，
-									 * 筛选决定「在这批人里再看哪一部分」。并排会让人以为删一枚
-									 * chip 和取消一个筛选是同一量级的动作，而前者会换掉整份名单。
+									 * URL 视图筛选排在查询条件下面：上面改的是问题本身，下面只是
+									 * 换一种看法。两者不并排，避免把派生新记录和改当前视图读成
+									 * 同一量级的动作。
 									 */}
 									<FilterBar
 										fields={fields}
 										onChange={onChangeView}
 										strongCount={strongCount}
+										textFilters={textFilters}
 										view={view}
 									/>
 								</>
@@ -221,6 +232,18 @@ export function QueryDeck({
 						 * 面板里的一行小字，不是一整块 amber 的 Alert。满宽的警示块会成为
 						 * 整屏第二重的东西，为的却是一句注解。
 						 */}
+						{/*
+						 * 没处放的条件同样是这几枚 chip 的脚注：用户写了「北京的」，
+						 * 屏幕上的条件里没有它，不说一句的话他会以为它生效了。
+						 */}
+						{unsupported.length > 0 && !interpreting && (
+							<div className="flex items-baseline gap-1.5 px-1 text-muted-foreground text-xs">
+								<AlertCircleIcon className="size-3.5 shrink-0 translate-y-0.5 text-warning" />
+								<span className="min-w-0 flex-1">
+									「{unsupported.join("」「")}」暂不支持作为条件，本次未生效。
+								</span>
+							</div>
+						)}
 						{degraded && !interpreting && (
 							<div className="flex items-baseline gap-1.5 px-1 text-muted-foreground text-xs">
 								<AlertCircleIcon className="size-3.5 shrink-0 translate-y-0.5 text-warning" />

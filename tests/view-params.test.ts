@@ -75,14 +75,12 @@ describe("枚举与开关", () => {
 
 describe("URL 状态翻成检索条件", () => {
 	test("序列在 URL 里是一个值，到检索条件是两列", () => {
-		assert.deepEqual(toFilters({ seq: "技术/数据科学" }), {
-			seqL1: "技术",
-			seqL2: "数据科学",
-			companyTag: undefined,
-			minMonths: undefined,
-			kind: undefined,
-			strong: undefined,
-		});
+		const f = toFilters({ seq: "技术/数据科学" });
+		assert.equal(f.seqL1, "技术");
+		assert.equal(f.seqL2, "数据科学");
+		// 其余维度没写就是没写：不能变成空串去和列比较
+		for (const [k, v] of Object.entries(f))
+			if (k !== "seqL1" && k !== "seqL2") assert.equal(v, undefined, k);
 	});
 
 	test("只给一级也成立：那就是只按一级收窄", () => {
@@ -99,11 +97,16 @@ describe("URL 状态翻成检索条件", () => {
 });
 
 describe("有没有生效的筛选", () => {
-	test("四个收窄维度任一生效即为真", () => {
+	test("任一收窄维度生效即为真", () => {
 		assert.ok(hasFilters({ seq: "技术/数据科学" }));
 		assert.ok(hasFilters({ companyTag: "大厂" }));
 		assert.ok(hasFilters({ minMonths: 12 }));
 		assert.ok(hasFilters({ kind: "internal" }));
+		assert.ok(hasFilters({ level: "P7" }));
+		assert.ok(hasFilters({ recruitment: "校招" }));
+		assert.ok(hasFilters({ education: "硕士" }));
+		assert.ok(hasFilters({ org: "支付" }));
+		assert.ok(hasFilters({ school: "浙江大学" }));
 	});
 
 	test("查询词和证据要求都不算筛选——空态要靠它区分「筛太窄」和「词太窄」", () => {

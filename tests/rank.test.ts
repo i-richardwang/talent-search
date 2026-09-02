@@ -6,11 +6,17 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { type Fact, gapMonths, pageHits, rank } from "#/search/rank";
+import {
+	type Fact,
+	gapMonths,
+	pageHits,
+	rank,
+	rankPopulation,
+} from "#/search/rank";
 import type { SearchFilters, TermPlan } from "#/search/result";
 import {
-	FORM_WEIGHTS,
 	RECENCY_FLOOR,
+	RELEVANCE_MIN,
 	ROUTE_WEIGHTS,
 	TENURE_FLOOR,
 } from "#/search/weights";
@@ -24,24 +30,23 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 		id: nextId++,
 		termIdx: 0,
 		memberIdx: 0,
-		tier: "full",
 		route: "seq",
+		relevance: 1,
 		months: 24,
 		endDate: null,
 		seqL1: "技术",
 		seqL2: "算法",
 		companyTag: null,
 		kind: "internal",
+		level: "",
+		recruitment: "",
+		education: "",
 		...p,
 	};
 }
 
 const terms = (...modes: TermPlan["mode"][]): TermPlan[] =>
-	modes.map((mode, i) => ({
-		term: `词${i}`,
-		members: [{ text: `词${i}`, effective: `词${i}`, tier: "full" }],
-		mode,
-	}));
+	modes.map((mode, i) => ({ term: `词${i}`, members: [`词${i}`], mode }));
 
 const run = (facts: Fact[], t = terms("must"), f: SearchFilters = {}) =>
 	rank(facts, t, f, NOW);
@@ -170,7 +175,8 @@ describe("排名依据", () => {
 		assert.deepEqual(ranked[0]?.basis, [
 			{
 				term: "词0",
-				routes: ["seq"],
+				route: "seq",
+				relevance: 1,
 				months: 145,
 				endDate: null,
 				external: false,
@@ -193,7 +199,8 @@ describe("排名依据", () => {
 		assert.deepEqual(ranked[0]?.basis, [
 			{
 				term: "词0",
-				routes: ["seq"],
+				route: "seq",
+				relevance: 1,
 				months: 24,
 				endDate: null,
 				external: false,
@@ -202,25 +209,17 @@ describe("排名依据", () => {
 		]);
 	});
 
-	test("并列最强的序列与岗位共同累计，并在依据里同时说明", () => {
+	test("并列最强的序列与岗位共同累计", () => {
 		const { ranked } = run([
 			fact({ empId: "A", route: "seq", months: 12 }),
 			fact({ empId: "A", route: "title", months: 18 }),
 			fact({ empId: "A", route: "org", months: 60 }),
 		]);
-		assert.deepEqual(ranked[0]?.basis, [
-			{
-				term: "词0",
-				routes: ["seq", "title"],
-				months: 30,
-				endDate: null,
-				external: false,
-			},
-		]);
+		assert.equal(ranked[0]?.basis[0]?.months, 30);
 	});
 
 	/**
-	 * 表格那一格显示的是累计值，「前」这个前缀因此不能由某一段的 kind 决定。
+	 * 证据行那一格显示的是累计值，「前」这个前缀因此不能由某一段的 kind 决定。
 	 * 判定必须和累计发生在同一个循环里，否则一个跨了在职与入职前的累计
 	 * 会被贴上只描述其中一半的标签。
 	 */
@@ -254,30 +253,48 @@ describe("排名依据", () => {
 	});
 });
 
-describe("说法的档位（字眼档位 × 路权重）", () => {
-	test("同一路上，相近说法的命中低于原词命中", () => {
-		const full = scoreOf([fact({ empId: "A" })]);
-		const near = scoreOf([fact({ empId: "B", tier: "near", memberIdx: 1 })]);
-		assert.ok(near < full);
-		assert.ok(near > 0, "降档不是不算");
+describe("相关度（路权重 × 相关度）", () => {
+	test("同一路上，相关度低的命中低于高的", () => {
+		const exact = scoreOf([fact({ empId: "A", relevance: 1 })]);
+		const near = scoreOf([fact({ empId: "B", relevance: 0.7 })]);
+		assert.ok(near < exact);
+		assert.ok(near > 0, "过了阈值就不是不算");
 	});
 
-	test("相近说法的受控命中，基础强度高于原词的部门命中", () => {
-		// 登记字段说他真在干这个，词的距离只是翻译损耗——方向见 weights.ts
-		assert.ok(FORM_WEIGHTS.near * ROUTE_WEIGHTS.seq > ROUTE_WEIGHTS.org);
+	test("刚过阈值的受控命中，基础强度仍高于相似 1.0 的部门命中", () => {
+		// 登记字段说他真在干这个，相关度只是翻译损耗——方向见 weights.ts
+		assert.ok(RELEVANCE_MIN * ROUTE_WEIGHTS.seq > ROUTE_WEIGHTS.org);
 	});
 
-	test("时长与近因只跟着最硬那条证据：原词命中在场时，相近命中不续时长", () => {
+	test("时长与近因只跟着最硬那条证据：高相似在场时，低相似不续时长", () => {
 		const mixed = scoreOf([
 			fact({ empId: "A", months: 12 }),
-			fact({ empId: "A", tier: "near", memberIdx: 1, months: 240 }),
+			fact({ empId: "A", relevance: 0.7, months: 240 }),
 		]);
 		const clean = scoreOf([fact({ empId: "B", months: 12 })]);
 		assert.equal(mixed, clean);
 	});
 
-	test("证据要求看的是路（受控字段），与说法档位正交", () => {
-		const facts = [fact({ empId: "A", tier: "near", memberIdx: 1 })];
+	test("相关度不受地板保护：又长又新的相近命中可以反超又短又旧的原词命中", () => {
+		const longNear = scoreOf([
+			fact({ empId: "A", relevance: 0.7, months: 240 }),
+		]);
+		const shortExact = scoreOf([
+			fact({ empId: "B", relevance: 1, months: 1, endDate: yearsAgo(30) }),
+		]);
+		assert.ok(longNear > shortExact);
+	});
+
+	test("依据里带着最硬那条证据的相关度", () => {
+		const { ranked } = run([
+			fact({ empId: "A", relevance: 0.65 }),
+			fact({ empId: "A", relevance: 0.9 }),
+		]);
+		assert.equal(ranked[0]?.basis[0]?.relevance, 0.9);
+	});
+
+	test("证据要求看的是路（受控字段），与相关度正交", () => {
+		const facts = [fact({ empId: "A", relevance: 0.65 })];
 		assert.equal(run(facts, terms("must"), { strong: true }).total, 1);
 	});
 });
@@ -362,15 +379,19 @@ describe("必须、加分与证据要求", () => {
 
 describe("分面与名次是同一个口径", () => {
 	const facts = [
-		fact({ empId: "A", seqL1: "技术", seqL2: "算法" }),
-		fact({ empId: "B", seqL1: "技术", seqL2: "算法" }),
-		fact({ empId: "C", seqL1: "运营", seqL2: "渠道" }),
+		fact({ empId: "A", seqL1: "技术", seqL2: "算法", level: "P6" }),
+		fact({ empId: "B", seqL1: "技术", seqL2: "算法", level: "P7" }),
+		fact({ empId: "C", seqL1: "运营", seqL2: "渠道", level: "P7" }),
 	];
 
 	test("分面数的是这次检索里的人，加起来对得上总数", () => {
 		const { facets, total } = run(facts);
 		assert.equal(total, 3);
 		assert.equal(facets.seq.find((s) => s.seqL2 === "算法")?.n, 2);
+		assert.deepEqual(facets.level, [
+			{ value: "P6", n: 1 },
+			{ value: "P7", n: 2 },
+		]);
 		assert.equal(facets.strong.off, total, "关掉证据要求就是当前全部");
 	});
 
@@ -387,9 +408,51 @@ describe("分面与名次是同一个口径", () => {
 		);
 	});
 
+	test("跟人走的维度同样收窄别的维度", () => {
+		const { facets, total } = run(facts, terms("must"), { level: "P7" });
+		assert.equal(total, 2);
+		assert.equal(facets.seq.find((s) => s.seqL2 === "算法")?.n, 1);
+		assert.equal(facets.level.find((l) => l.value === "P6")?.n, 1);
+	});
+
+	test("空的人员属性不是一个可点的选项", () => {
+		const { facets } = run([fact({ empId: "A" })]);
+		assert.deepEqual(facets.level, []);
+		assert.deepEqual(facets.recruitment, []);
+	});
+
 	test("算不出人的选项根本不出现", () => {
 		const { facets } = run(facts);
 		assert.ok(facets.seq.every((s) => s.n > 0));
+	});
+});
+
+describe("结构化范围的人群排序", () => {
+	const facts = [
+		fact({ empId: "B", seqL2: "算法", kind: "external", level: "P7" }),
+		fact({ empId: "A", seqL2: "算法", kind: "internal", level: "P6" }),
+		fact({ empId: "A", seqL2: "渠道", kind: "external", level: "P6" }),
+	];
+
+	test("没有语义证据时按工号稳定排序，不制造分数或证据强度", () => {
+		const result = rankPopulation(facts, { strong: true });
+		assert.deepEqual(result.empIds, ["A", "B"]);
+		assert.equal(result.total, 2);
+		assert.deepEqual(result.facets.strong, { on: 0, off: 0 });
+	});
+
+	test("筛选要求同一经历段满足，分面仍摘掉自己的维度", () => {
+		const result = rankPopulation(facts, {
+			seqL1: "技术",
+			seqL2: "算法",
+			kind: "external",
+		});
+		assert.deepEqual(result.empIds, ["B"]);
+		assert.equal(
+			result.facets.kind.find((item) => item.value === "internal")?.n,
+			1,
+		);
+		assert.equal(result.facets.seq.find((item) => item.seqL2 === "渠道")?.n, 1);
 	});
 });
 

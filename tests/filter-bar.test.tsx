@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FilterBar } from "#/routes/-components/filter-bar";
-import { filterFields } from "#/routes/-lib/filters";
+import { filterFields, textFilters } from "#/routes/-lib/filters";
 import type { View } from "#/routes/-lib/view-params";
 import type { Facets } from "#/search/result";
 import { visibleText } from "./render";
@@ -37,6 +37,9 @@ const FACETS: Facets = {
 		{ value: 6, n: 40 },
 		{ value: 12, n: 33 },
 	],
+	level: [{ value: "P6", n: 20 }],
+	recruitment: [],
+	education: [],
 	strong: { on: 7, off: 31 },
 };
 
@@ -47,6 +50,7 @@ const render = (view: View) =>
 				fields={filterFields(FACETS, view)}
 				onChange={() => {}}
 				strongCount={7}
+				textFilters={textFilters(view)}
 				view={view}
 			/>,
 		),
@@ -74,6 +78,7 @@ describe("不点开也知道能筛什么", () => {
 					fields={filterFields({ ...FACETS, companyTag: [] }, {})}
 					onChange={() => {}}
 					strongCount={7}
+					textFilters={[]}
 					view={{}}
 				/>,
 			),
@@ -136,6 +141,7 @@ describe("不给死路", () => {
 					fields={filterFields(FACETS, {})}
 					onChange={() => {}}
 					strongCount={0}
+					textFilters={[]}
 					view={{}}
 				/>,
 			),
@@ -150,6 +156,7 @@ describe("不给死路", () => {
 					fields={filterFields(FACETS, { strong: true })}
 					onChange={() => {}}
 					strongCount={0}
+					textFilters={[]}
 					view={{ strong: true }}
 				/>,
 			),

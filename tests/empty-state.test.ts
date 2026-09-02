@@ -1,5 +1,5 @@
 /**
- * 七种空结果的说法与出口。
+ * 各种空结果的说法与出口。
  *
  * 空态是这个界面里唯一「没有数据可看」的时刻，它说什么就是产品在这一刻的
  * 全部价值。而这几种成因长得一模一样（都是零行），说错了没有任何断言会红，
@@ -16,11 +16,11 @@ import { describe, test } from "node:test";
 import { emptyState } from "#/routes/-lib/empty-state";
 import type { View } from "#/routes/-lib/view-params";
 import { type Chip, parseChips } from "#/search/parse";
-import type { TermPlan } from "#/search/result";
+import type { SearchOverflow, TermPlan } from "#/search/result";
 
 const must = (term: string): TermPlan => ({
 	term,
-	members: [{ text: term, effective: term, tier: "full" }],
+	members: [term],
 	mode: "must",
 });
 
@@ -28,9 +28,11 @@ const must = (term: string): TermPlan => ({
 function run(args: {
 	terms?: TermPlan[];
 	q?: string;
-	overflowTerms?: string[];
+	overflow?: SearchOverflow;
 	withoutStrong?: number;
 	view?: View;
+	scope?: { kind?: "internal" | "external" };
+	unsupported?: string[];
 }) {
 	let changed: Partial<View> | undefined;
 	let revised: Chip[] | undefined;
@@ -38,7 +40,9 @@ function run(args: {
 	const state = emptyState({
 		terms: args.terms ?? [],
 		chips: parseChips(args.q ?? ""),
-		overflowTerms: args.overflowTerms ?? [],
+		scope: args.scope ?? {},
+		unsupported: args.unsupported ?? [],
+		overflow: args.overflow ?? null,
 		withoutStrong: args.withoutStrong ?? 0,
 		view: args.view ?? {},
 		onChange: (next) => {
@@ -60,7 +64,7 @@ describe("匹配事实超过保险丝", () => {
 		const s = run({
 			terms: [must("运营")],
 			q: "运营",
-			overflowTerms: ["运营"],
+			overflow: { kind: "evidence", terms: ["运营"] },
 		});
 		assert.equal(s.title, "匹配证据过多");
 		assert.equal(s.focused, true, "出口是调整贡献事实最多的条件");
@@ -71,7 +75,7 @@ describe("匹配事实超过保险丝", () => {
 		const s = run({
 			terms: [must("运营")],
 			q: "运营",
-			overflowTerms: ["运营"],
+			overflow: { kind: "evidence", terms: ["运营"] },
 			view: { seq: "技术/后端" },
 		});
 		assert.equal(s.title, "匹配证据过多");
@@ -81,14 +85,24 @@ describe("匹配事实超过保险丝", () => {
 		const s = run({
 			terms: [must("算法"), must("经理")],
 			q: "算法,经理",
-			overflowTerms: ["经理"],
+			overflow: { kind: "evidence", terms: ["经理"] },
 		});
 		assert.match(s.hint, /「经理」/);
 		assert.doesNotMatch(s.hint, /算法/, "贡献较少的词不背锅");
 	});
+
+	test("结构化范围过大时要求继续收窄，不冒充范围内没人", () => {
+		const s = run({
+			scope: { kind: "external" },
+			overflow: { kind: "population" },
+		});
+		assert.equal(s.title, "查询范围过大");
+		assert.equal(s.focused, true);
+		assert.equal(s.changed, undefined);
+	});
 });
 
-describe("没词可搜的三种成因", () => {
+describe("没有语义证据的成因", () => {
 	test("条件全被停用：说的是停用，出口是一键开回来", () => {
 		const s = run({ q: "~渠道运营,~+带团队" });
 		assert.match(s.title, /没有启用/);
@@ -118,6 +132,16 @@ describe("没词可搜的三种成因", () => {
 		const s = run({ q: "帮我找一下" });
 		assert.equal(s.title, "未识别到有效的搜索条件");
 		assert.equal(s.focused, true);
+	});
+
+	test("只有结构化范围：说明范围内没人，不冒充解析失败", () => {
+		const s = run({ scope: { kind: "external" } });
+		assert.equal(s.title, "没有符合查询范围的员工");
+	});
+
+	test("只有不支持条件：明确说未生效，不把原话伪造成搜索词", () => {
+		const s = run({ unsupported: ["北京"] });
+		assert.equal(s.title, "这些条件暂不支持");
 	});
 });
 

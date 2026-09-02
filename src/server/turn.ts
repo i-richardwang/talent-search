@@ -1,51 +1,33 @@
-/**
- * 查询记录的读写：一次查询是**库里的一行**，不是地址栏里的一串条件。
- *
- * 这条设计换来的是查询有身份——一行有 id、有父记录、有原话，于是「重新理解」
- * 「撤销」「最近搜索」「模型判错了多少次」这些事才有东西可依附。写进 URL 的
- * 条件串做不到其中任何一件：它一次性，改一下就没了。
- *
- * 这里只有普通函数，一个 `createServerFn` 都没有。暴露给页面的那一层住在
- * `functions.ts`：整个应用只有那一个 RPC 边界。
- */
-
+/** 查询记录的持久化与派生规则。记录不可变；唯一更新是补全待理解记录。 */
 import "@tanstack/react-start/server-only";
 import { randomBytes } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
+import { resolveIntent } from "#/search/intent";
+import type { Chip } from "#/search/parse";
+import { probeWide, vocabulary } from "#/search/search";
 import {
-	type Intent,
-	priorUnderstanding,
-	resolveIntent,
-} from "#/search/intent";
-import {
-	type Chip,
-	parseChips,
-	type QueryChange,
-	toQuery,
-} from "#/search/parse";
-import { companyTags, probeTerms, probeWide } from "#/search/search";
+	emptySpec,
+	fellBack,
+	mergeSpec,
+	type QueryInput,
+	type SearchDelta,
+	type SearchSpec,
+} from "#/search/spec";
 import { type Correction, understand } from "./llm";
 
-/**
- * 记录 id 会出现在 URL 里，所以要短、要能双击选中、要不带 `-` 和 `_` 之外的
- * 记号。11 个 base64url 字符承载 64 bit 随机量，对一个内部工具的记录量来说，碰撞概率
- * 远低于「主键冲突时 INSERT 报错」这条兜底本身的成本。
- */
 function newId() {
 	return randomBytes(8).toString("base64url");
 }
 
-/** 界面要用的一条记录。数据库行原样传，只多一个「还没理解」的判定。 */
 export type Turn = {
 	id: string;
 	rootTurnId: string;
 	rawText: string | null;
-	/** null 表示还没理解——界面据此渲染「正在理解…」并触发 `interpretTurn` */
-	chips: Chip[] | null;
-	degraded: boolean;
+	/** null 表示模型理解尚未落下。 */
+	spec: SearchSpec | null;
 };
 
 function toTurn(row: SearchTurn): Turn {
@@ -53,25 +35,15 @@ function toTurn(row: SearchTurn): Turn {
 		id: row.id,
 		rootTurnId: row.rootTurnId,
 		rawText: row.rawText,
-		chips: row.chips,
-		degraded: row.degraded,
+		spec: row.spec,
 	};
 }
 
-/**
- * 落一条记录。**只 INSERT，不改已有的行**——记录是不可变的，「改查询」的
- * 意思是派生一条新的挂在 `parentTurnId` 上。
- *
- * 这一点是整套设计的支点：不可变才能让 `/s/:id` 永远指向同一个问题（分享、
- * 刷新、后退都成立——复现的是条件，名单跟着语料和时间走），也才能让
- * 「上一步是什么样」这件事自然留在库里，而不需要另外记一份操作日志。
- */
 async function insertTurn(row: {
 	parent: SearchTurn | null;
 	rawText: string | null;
-	chips: Chip[] | null;
-	filters?: Intent["filters"];
-	degraded?: boolean;
+	delta?: SearchDelta | null;
+	spec?: SearchSpec | null;
 	baseTurnId?: string | null;
 	note?: string | null;
 }): Promise<Turn> {
@@ -80,16 +52,13 @@ async function insertTurn(row: {
 		.insert(searchTurn)
 		.values({
 			id,
-			// 链头自己就是 root；派生出来的记录跟着父亲走，于是「最近搜索」
-			// 里一次找人任务只占一行，停在它最后的样子上。
 			rootTurnId: row.parent ? row.parent.rootTurnId : id,
 			parentTurnId: row.parent?.id ?? null,
 			baseTurnId: row.baseTurnId ?? null,
 			rawText: row.rawText,
 			note: row.note ?? null,
-			chips: row.chips,
-			filters: row.filters ?? {},
-			degraded: row.degraded ?? false,
+			delta: row.delta ?? null,
+			spec: row.spec ?? null,
 		})
 		.returning();
 	if (!inserted) throw new Error("写入查询记录失败");
@@ -101,234 +70,131 @@ async function getRow(id: string): Promise<SearchTurn | null> {
 	return row ?? null;
 }
 
-/**
- * 开一次新查询，或从已有的一条派生一次修改。
- *
- * **整句只落原话，不在这里等模型。** 一次 INSERT 是毫秒级的，于是从零态
- * 点下「搜索」到工作台出现之间没有等待——理解那一跳挪到工作台里就地完成
- * （`interpretTurn`），转圈发生在结果将要出现的地方，而不是发生在按钮上。
- * 这是把模型调用从「挡在用户和界面之间」挪成「界面已经在了，内容在填」。
- *
- * 已经成型的 chips 直接落地：那是查询理解的产物（点词汇表、改一枚 chip 的
- * 强度），送回去让模型再猜一遍只会变坏，还要为一个从语料里取出来的词
- * 白等十几秒。
- */
+/** 落一条新查询或从既有记录派生一条，不在导航前等待模型。 */
 export async function createTurn(
-	input: QueryChange,
+	input: QueryInput,
 	parentTurnId?: string,
 ): Promise<{ turnId: string }> {
 	const parent = parentTurnId ? await getRow(parentTurnId) : null;
-	// 说了从哪派生却找不到那一条：不能当成「那就开条新的吧」。那样人会得到
-	// 一条丢了全部已有条件的查询，而屏幕上没有任何东西说明条件去哪了。
 	if (parentTurnId && !parent) throw new Error("要修改的查询记录不存在");
-	// 派生只能建立在一份已经成型的条件上。否则子记录先去理解时看不到父 chips，
-	// 会安静地从空条件开始；这不是并发问题，而是一条不完整的记录。
-	if (parent && parent.chips === null)
+	if (parent && parent.spec === null)
 		throw new Error("查询仍在理解中，暂时不能派生新记录");
 
 	let turn: Turn;
 	if (input.kind === "reinterpret") {
-		if (!parent?.rawText) throw new Error("重新理解需要一条由整句产生的父记录");
-		// 无说明的重跑只对降级记录有意义：温度为 0，同样的输入必然给回同样的
-		// 输出，裸重跑一份模型参与过的理解只会多一行一模一样的记录。理解错了
-		// 的出路是带着纠正说明来。服务端函数是可直接调用的端点，这条契约
-		// 必须立在派生规则住的地方，不能只靠界面把按钮藏起来。
-		if (!input.note && !parent.degraded)
+		if (!parent?.rawText || !parent.delta)
+			throw new Error("重新理解需要一条由整句产生的父记录");
+		if (!input.note && !fellBack(parent.delta))
 			throw new Error("这条理解没有降级，重新理解需要附带纠正说明");
 		turn = await insertTurn({
 			parent,
 			baseTurnId: parent.baseTurnId,
 			rawText: parent.rawText,
 			note: input.note ?? null,
-			chips: null,
 		});
 	} else if (input.kind === "sentence") {
 		turn = await insertTurn({
 			parent,
 			baseTurnId: parent?.id ?? null,
 			rawText: input.text,
-			chips: null,
 		});
 	} else {
-		turn = await insertTurn({ parent, rawText: null, chips: input.chips });
+		turn = await insertTurn({ parent, rawText: null, spec: input.spec });
 	}
 	return { turnId: turn.id };
 }
 
-/**
- * 相近说法（near）落库前的语料体检：模型译的词必须在库里真实命中过才配上屏。
- *
- * 语料就是词典——和 relaxTerm、companyTags 同一条原则。搜不到人的翻译留下来，
- * 界面上就多一个看着在参与、实际什么都没捞到的说法；在这里删掉，检索层也就
- * 不必为 near 准备松弛（体检过的词要么还在语料里，要么语料变了、它安静地
- * 不命中，两种都不需要二次降级）。只体检 near：full 说法是用户自己写的，
- * 搜不到时走松弛并在 chip 上明说，那是另一条已有的路。
- */
-async function vetNearMembers(chips: Chip[]): Promise<Chip[]> {
-	const nearTexts = [...new Set(chips.flatMap((c) => c.near ?? []))];
-	if (nearTexts.length === 0) return chips;
-	const found = await probeTerms(nearTexts);
-	return chips.map((c) => {
-		if (!c.near) return c;
-		const near = c.near.filter((n) => found.has(n));
-		const { near: _drop, ...rest } = c;
-		return near.length > 0 ? { ...rest, near } : rest;
-	});
-}
-
-/**
- * 太宽的词在这里量出来、**可见地**停下。
- *
- * 宽是语料的事实（`probeWide`，阈值在 weights.ts 的 `WIDE_SHARE`），处置分
- * 两档，分界线还是那条「档位即出处」：
- *
- * - 模型补的相近说法（near）太宽：直接摘掉，和 probeTerms 体检同一档——
- *   没过质检的翻译从未上过屏，消失不需要交代；
- * - 用户自己的词（term/alts）太宽：**整条要求停用并注明成因**（off + wide），
- *   查询照常跑。用户的词一个都不许无声地动——chip 上带着「太宽」的解释，
- *   换词还是坚持启用由用户定，重新启用后不再自动碰它。
- *
- * 排除词一样量：一个太宽的排除词会把半个语料的证据无声否决掉，比宽的正向词
- * 危害更大（赶人的词必须准）。只量**这一次新理解出的**条件，不碰合并基线里
- * 已有的——那里面的停用与启用是用户已经表过态的东西。
- */
-async function benchWide(chips: Chip[]): Promise<Chip[]> {
+/** 量宽只作用于新句产生的证据，不改写基线中用户已经确认过的状态。 */
+async function benchWide(evidence: Chip[]): Promise<Chip[]> {
 	const texts = [
-		...new Set(
-			chips.flatMap((c) => [c.term, ...(c.alts ?? []), ...(c.near ?? [])]),
-		),
+		...new Set(evidence.flatMap((item) => [item.term, ...(item.alts ?? [])])),
 	];
 	const wide = await probeWide(texts);
-	if (wide.size === 0) return chips;
-	return chips.map((c) => {
-		const near = (c.near ?? []).filter((n) => !wide.has(n));
-		const { near: _drop, ...rest } = c;
-		const kept = near.length > 0 ? { ...rest, near } : rest;
-		return [c.term, ...(c.alts ?? [])].some((t) => wide.has(t))
-			? { ...kept, off: true as const, wide: true as const }
-			: kept;
-	});
+	if (wide.size === 0) return evidence;
+	return evidence.map((item) =>
+		[item.term, ...(item.alts ?? [])].some((term) => wide.has(term))
+			? { ...item, off: true as const, wide: true as const }
+			: item,
+	);
 }
 
 /**
- * 把一条只有原话的记录补上理解结果。
- *
- * 这是 `search_turn` 唯一一处 UPDATE，而且只补 `chips is null` 的那一行：
- * 谓词写在 WHERE 里，所以两个标签页同时打开同一条待理解的记录时，晚到的
- * 那次更新自己就落空了，不会把先到的结果覆盖掉。理解一旦落下就不再变，
- * 记录重新变回不可变的。
- *
- * 追加条件（在工作台里再敲一句话）在这里合并：新词接在 `baseTurnId` 指向的
- * chips 后面，去重交给 `parseChips`。重新理解沿用同一个 base，只替换这句话
- * 产生的条件；历史父链不参与语义合并。
+ * 补全一次自然语言理解。delta 保存这句话自己的产物，spec 保存合并后的完整含义；
+ * 并发更新通过 `spec is null` 保证先到者获胜，晚到者读回同一份最终结果。
  */
-export async function resolveTurn(
-	turnId: string,
-): Promise<{ chips: Chip[]; filters: Intent["filters"] }> {
+export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const row = await getRow(turnId);
 	if (!row) throw new Error("查询记录不存在");
-	// 已经理解过了：直接回放，不再打模型。并发的第二次调用走这一支。
-	if (row.chips) return { chips: row.chips, filters: row.filters };
+	if (row.spec) return row.spec;
 
-	const text = row.rawText ?? "";
-	const tags = await companyTags();
+	const vocab = await vocabulary();
 	const base = row.baseTurnId ? await getRow(row.baseTurnId) : null;
-	// 纠正理解：交给模型的「上一版理解」只有这句话**自己**的产出——父记录的
-	// chips 减去基线（析法与理由见 priorUnderstanding）。模型不可用时纠正说明
-	// 被忽略（规则解析消化不了元信息），退回原话的规则解析并照常标降级。
 	let correction: Correction | undefined;
 	if (row.note) {
 		const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
-		if (parent?.chips)
+		if (parent?.delta) {
 			correction = {
-				previous: priorUnderstanding(parent.chips, base?.chips ?? []),
+				previous: parent.delta,
 				note: row.note,
 			};
+		}
 	}
-	const intent = resolveIntent(
-		text,
-		await understand(text, tags, correction),
-		tags,
-	);
-	// 量宽在合并之前：只对这句话新产出的条件动手，基线里的是用户表过态的
-	const checked = await benchWide(intent.chips);
 
-	const merged = base?.chips
-		? parseChips(
-				[toQuery(base.chips), toQuery(checked)].filter(Boolean).join(","),
-			)
-		: checked;
-	const chips = await vetNearMembers(merged);
+	const understood = resolveIntent(
+		row.rawText ?? "",
+		await understand(row.rawText ?? "", vocab, correction),
+		vocab,
+	);
+	const delta: SearchDelta = {
+		...understood,
+		evidence: await benchWide(understood.evidence),
+	};
+	const spec = mergeSpec(base?.spec ?? emptySpec(), delta);
 
 	await db
 		.update(searchTurn)
-		.set({ chips, filters: intent.filters, degraded: intent.degraded })
-		.where(and(eq(searchTurn.id, row.id), isNull(searchTurn.chips)));
+		.set({ delta, spec })
+		.where(and(eq(searchTurn.id, row.id), isNull(searchTurn.spec)));
 
-	// 落空的那次（另一个标签页先写了）要读回真正生效的那一份，
-	// 否则两边会各自按自己算出来的条件去检索同一个 id。
-	const settled = await getRow(row.id);
-	return {
-		chips: settled?.chips ?? chips,
-		filters: settled?.filters ?? intent.filters,
-	};
+	return (await getRow(row.id))?.spec ?? spec;
 }
 
-/** 读一条记录。工作台的 loader 用它，读不到就是 404。 */
 export async function loadTurn(id: string): Promise<Turn | null> {
 	const row = await getRow(id);
 	return row ? toTurn(row) : null;
 }
 
-/** 「最近搜索」给几条。零态一屏之内扫得完，再多就成了要读的正文。 */
 const RECENT_MAX = 8;
 
 export type RecentSearch = {
 	turnId: string;
-	/** 这条链上最后一次查询的样子 */
-	chips: Chip[];
-	/**
-	 * 这条链**最初**那句话——后面几步是「加了个词」「改了个强度」，
-	 * 而这次搜索是从哪句话开始的，只有链头知道。点词汇表开始的链没有原话，
-	 * 列表就直接显示条件。
-	 */
+	spec: SearchSpec;
 	rawText: string | null;
 	createdAt: string;
 };
 
-/**
- * 最近搜索：每条链一行，停在它**最后**的样子上。
- *
- * 按 `root_turn_id` 去重而不是把每一条记录都列出来——一次找人任务会派生出
- * 五六条记录（加了个词、改了个强度），全列出来的话列表里全是同一次搜索的
- * 中间态。人要回到的是「昨天那次找运营的活儿」，不是它的第三步。
- *
- * 还没理解完的记录不进来（`chips is not null`）：它还没有可显示的条件，
- * 而这个列表的每一行都要能一眼看出「那次我在找什么」。
- */
+/** 每条派生链只展示最后一份完整查询；打开 turnId 即可精确回放全部条件。 */
 export async function listRecent(): Promise<RecentSearch[]> {
 	const rows = await db.execute<{
 		id: string;
-		chips: Chip[];
+		spec: SearchSpec;
 		created_at: Date;
 		root_raw_text: string | null;
 	}>(sql`
-			select latest.id, latest.chips, latest.created_at,
+			select latest.id, latest.spec, latest.created_at,
 				root.raw_text as root_raw_text
 			from (
-				select distinct on (root_turn_id) id, root_turn_id, chips, created_at
-				from search_turn where chips is not null
+				select distinct on (root_turn_id) id, root_turn_id, spec, created_at
+				from search_turn where spec is not null
 				order by root_turn_id, created_at desc
 			) latest
 			join search_turn root on root.id = latest.root_turn_id
 			order by latest.created_at desc
 			limit ${RECENT_MAX}`);
-	return rows.rows.map((r) => ({
-		turnId: r.id,
-		chips: r.chips,
-		rawText: r.root_raw_text,
-		// 统一成 ISO 串再出门：pg 把 timestamptz 解析成 Date，而这一条要
-		// 穿过 SSR 序列化到浏览器，Date 在那一步会变成一个不受控的字符串。
-		createdAt: new Date(r.created_at).toISOString(),
+	return rows.rows.map((row) => ({
+		turnId: row.id,
+		spec: row.spec,
+		rawText: row.root_raw_text,
+		createdAt: new Date(row.created_at).toISOString(),
 	}));
 }

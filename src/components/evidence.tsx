@@ -20,7 +20,7 @@ const STRENGTH_LABEL: Record<Strength, string> = {
 
 const STRENGTH_HINT: Record<Strength, string> = {
 	controlled: "来自任职记录",
-	org: "部门或公司名称中包含相关词",
+	org: "部门或公司名称与条件相近",
 	claimed: "来自入职前简历原文",
 };
 
@@ -30,8 +30,8 @@ const STRENGTH_HINT: Record<Strength, string> = {
  * 三档强度用**填充方式**而不是三种颜色区分：实心 / 实心灰 / 空心构成一个不依赖
  * 色觉的序列，打印成黑白或色弱下顺序依然成立。色相只是最硬那一档的加成。
  *
- * 最硬那一档用 `success`，不用 `warning`：amber 已经归「整词退子串」和
- * 「未识别语气」两条提示所有，拿它画受控命中会让「最可信」和「有问题」共用一个
+ * 最硬那一档用 `success`，不用 `warning`：amber 已经归「未识别语气」和
+ * 「没处放的条件」两条提示所有，拿它画受控命中会让「最可信」和「有问题」共用一个
  * 颜色，而它们在同一屏上并排出现。
  *
  * 8px 是这个编码可判读的下限——再小，空心和实心灰在正常观看距离上分不开，
@@ -108,19 +108,27 @@ export function StrengthLegend() {
 }
 
 /**
- * 命中的那一段经历里，**实际匹配上的是哪个字段**——「凭什么算命中」在行内当场
- * 答完，不必点进详情。
+ * 相关度的显示形态：整数百分比。它是一个用户能理解的量（「这段经历和你的
+ * 条件有多像」），所以直接给数；「同义 / 相近」这类档位会额外制造一套刻度。
+ */
+export function relevance(value: number) {
+	return `${Math.round(value * 100)}%`;
+}
+
+/**
+ * 命中的那一段经历里，**实际拿去比相关度的是哪个字段**——「凭什么算命中」在
+ * 行内当场答完，不必点进详情。
  *
  * 取的是命中那一路自己的字段值，不是固定取岗位。给错字段比不给更坏：屏幕上会
- * 出现一个不含查询词的岗位名，读起来像是系统匹配错了。
+ * 出现一个和条件毫不相干的岗位名，读起来像是系统匹配错了。
  *
- * `description` 这一路只有 `label` 没有 `value`：命中事实里不带原文片段
- * （见 `search/result.ts` 的 `Hit`），所以这里不假装引用一句话。可核对的完整原文
+ * `description` 这一路只有 `label` 没有 `value`：命中事实里不带原文（见
+ * `search/result.ts` 的 `Hit`），所以这里不假装引用一句话。可核对的完整原文
  * 在详情栏的时间线上。
  */
 function matchedField(hit: Hit): {
 	label: string;
-	/** 命中词就在这个字符串里，所以它值得被标出来。没有可标的就是 null。 */
+	/** 拿去比相关度的那串字。没有可给的就是 null。 */
 	value: string | null;
 	/** 这一段经历的身份，用来回答「这是哪儿的事」。 */
 	context: string;
@@ -139,14 +147,15 @@ function matchedField(hit: Hit): {
 }
 
 /**
- * 一个人一个条件的一行证据。四段固定的槽，所有人的所有行共用同一套列位置——
+ * 一个人一个条件的一行证据。五段固定的槽，所有人的所有行共用同一套列位置——
  * 这是把表格旋转成块之后仍然能上下扫的原因，只不过那条竖线上现在写着凭据。
  *
- *   [点] [条件词]  [命中的字段值 · 这段经历在哪]              [时长]
+ *   [点] [条件词]  [命中的字段值 · 这段经历在哪]    [相关度]  [时长]
  *
- * 时长取 `basis.months`，也就是最强那一路上的累计月数，正是参与打分的那个值；
- * 取单段月数会让两个排名不同的人显示同一个数，而这个界面的说服力全在于
- * 「看得见的东西能解释看到的名次」。
+ * 相关度取 `basis.relevance`（最硬那条证据的相关度），时长取 `basis.months`（并列
+ * 最硬的那些段的累计月数）——正是参与打分的那两个值；取样例段的数会让两个
+ * 排名不同的人显示同一个数，而这个界面的说服力全在于「看得见的东西能解释
+ * 看到的名次」。
  *
  * 只画命中。没命中的条件由 `MissedTerms` 收成一行。
  */
@@ -156,7 +165,7 @@ export function EvidenceLine({
 	hit,
 	basis,
 }: {
-	/** 展示用的词（可能是整词退化之后的子串，见 search.ts 的 relaxTerm） */
+	/** 这一行属于哪条要求（主词） */
 	term: string;
 	/** 加分词。必须词是默认，默认不该有标记。 */
 	boost: boolean;
@@ -174,6 +183,7 @@ export function EvidenceLine({
 
 	const field = matchedField(hit);
 	const months = basis?.months ?? hit.months;
+	const rel = basis?.relevance ?? hit.relevance;
 	const external = basis ? basis.external : hit.kind === "external";
 	const ongoing = (basis ? basis.endDate : hit.endDate) === null;
 
@@ -184,7 +194,7 @@ export function EvidenceLine({
 			<span className="flex min-w-0 flex-1 items-baseline gap-1.5">
 				{/*
 				 * 来源标签在字段值前面，不在后面：读到那串岗位名之前就得先知道
-				 * 「这是岗位还是序列」，否则「区域安全」四个字读完了还要回头找
+				 * 「这是岗位还是部门」，否则「区域安全」四个字读完了还要回头找
 				 * 它是从哪儿来的。12px 次要色，它是标签不是内容。
 				 */}
 				<span className="shrink-0 text-muted-foreground text-xs">
@@ -196,9 +206,7 @@ export function EvidenceLine({
 					</span>
 				) : (
 					<span className="min-w-0 truncate">
-						{/* 命中词就在这个串里，标出来——这一行的存在意义就是让人
-						    一眼看到「算法工程师」里的「算法」。 */}
-						<Highlight term={term} text={field.value} />
+						{field.value}
 						{/*
 						 * 上下文靠**留白加变色**接上去，不用 ` · `。
 						 *
@@ -209,9 +217,20 @@ export function EvidenceLine({
 						 * 一个 8px 的空档配上降一档的字色，分层是明确的，
 						 * 而且不必再发明第二个分隔符。
 						 */}
-						<span className="ml-2 text-muted-foreground">{field.context}</span>
+						{field.context && (
+							<span className="ml-2 text-muted-foreground">
+								{field.context}
+							</span>
+						)}
 					</span>
 				)}
+			</span>
+			{/* 相关度：这一行凭什么算命中的第二半。它是参与打分的那个数。 */}
+			<span
+				className="w-9 shrink-0 text-right text-muted-foreground text-xs tabular-nums"
+				title="与条件的相关度"
+			>
+				{relevance(rel)}
 			</span>
 			<span
 				className={cn(
@@ -224,42 +243,6 @@ export function EvidenceLine({
 			</span>
 		</div>
 	);
-}
-
-/**
- * 在原文里标出命中的词。简历原文这一路最不可信，必须把原文摆出来让人自己判断
- * 「配合算法团队」这种主语是别人的句子算不算数——所以**每一处**都要标：
- * 只标第一处会让人以为只提过一次，而「提过几次」正是判断依据之一。
- *
- * 标记不带颜色。amber 在这套界面里已经有主，拿它标命中等于把「命中」说成
- * 「警告」。底色加一档、字色提到正文色，在一段次要色的正文里已经足够跳出来。
- */
-export function Highlight({ text, term }: { text: string; term: string }) {
-	if (!term || !text) return <>{text}</>;
-
-	const haystack = text.toLowerCase();
-	const needle = term.toLowerCase();
-	const parts: React.ReactNode[] = [];
-	let cursor = 0;
-
-	for (;;) {
-		const i = haystack.indexOf(needle, cursor);
-		if (i < 0) break;
-		if (i > cursor) parts.push(text.slice(cursor, i));
-		parts.push(
-			<mark
-				className="rounded-sm bg-muted px-0.5 font-medium text-foreground"
-				key={i}
-			>
-				{text.slice(i, i + term.length)}
-			</mark>,
-		);
-		cursor = i + term.length;
-	}
-
-	if (parts.length === 0) return <>{text}</>;
-	if (cursor < text.length) parts.push(text.slice(cursor));
-	return <>{parts}</>;
 }
 
 /**
