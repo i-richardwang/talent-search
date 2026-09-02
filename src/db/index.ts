@@ -16,8 +16,8 @@ export type DbExecutor = Pick<
 >;
 
 /**
- * 在同一代语料上完成一组读取。embedding_space 是换代门闩：ETL 先独占锁它，
- * 所有跨语句读取先共享锁它，因此重灌只能发生在整组读取之前或之后。
+ * 在同一代语料上完成一组读取。embedding_space 是换代门闩：ETL 的发布事务
+ * 先独占锁它，所有跨语句读取先共享锁它，因此换代只能发生在整组读取之前或之后。
  */
 export function withCorpusSnapshot<T>(
 	read: (store: DbExecutor) => Promise<T>,

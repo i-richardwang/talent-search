@@ -1,9 +1,8 @@
-"""把管线产出的两张表写入 Postgres，再把经历原文去重成说法、各嵌一个向量。
+"""把完整语料准备在连接私有的暂存表中，再原子发布到 Postgres。
 
-表结构由 Drizzle 维护（`npm run db:push`），这里只负责灌数据；整库幂等重灌。
-
-**嵌入端点在写库之前就要探一次**：向量是检索的前提，灌完三万段才发现端点
-没起来，等于白等一次 COPY 再从头来。
+表结构由 Drizzle 维护（`npm run db:push`），这里只负责整库幂等重灌。嵌入和
+校验发生在公开语料之外；只有最终发布会短暂挡住检索，因此端点延迟或失败不会
+让正在服务的语料变成空库，也不会让读者等待整轮嵌入。
 """
 
 from __future__ import annotations
@@ -22,15 +21,32 @@ from sources import load_source
 # 只有这几列允许为空；其余文本列的缺失一律写成空串，不写 NULL
 NULLABLE = {"hire_date", "start_date", "end_date", "org_meta"}
 
-#: 一次拿多少种说法去嵌入。只影响进度打印的粒度，不影响结果。
+# 同一数据库一次只准备一代语料；会话锁跨过暂存与发布两个事务。
+CORPUS_RELOAD_LOCK = int.from_bytes(b"talent", "big")
+
+# 一次拿多少种说法去嵌入。只影响进度打印的粒度，不影响结果。
 EMBED_CHUNK = 512
 CANARY_TEXT = "talent-search embedding canary"
 
-#: `route_texts` 要读的字段，和下面那条 select 的列序一致。
-FIELDS = ("kind", "org", "org_path", "title", "seq_l1", "seq_l2", "seq_l3", "description")
+# `route_texts` 要读的字段，和暂存经历查询的列序一致。
+FIELDS = (
+    "kind",
+    "org",
+    "org_path",
+    "title",
+    "seq_l1",
+    "seq_l2",
+    "seq_l3",
+    "description",
+)
+
+STAGED_EMPLOYEE = "staged_employee"
+STAGED_EXPERIENCE = "staged_experience"
+STAGED_PHRASE = "staged_phrase"
+STAGED_LINK = "staged_experience_phrase"
 
 
-def copy_frame(cur, table: str, df, cols: list[str]) -> None:
+def _copy_frame(cur, table: str, df, cols: list[str]) -> None:
     out = df[cols].copy()
     for col in cols:
         if col not in NULLABLE:
@@ -46,92 +62,167 @@ def copy_frame(cur, table: str, df, cols: list[str]) -> None:
         cp.write(buf.read())
 
 
-def embed_phrases(cur) -> tuple[int, int]:
-    """把每段经历的四路原文去重成「说法」，各嵌一次，再把段按路指向说法。
-    返回（说法数，段到说法的边数）。
-
-    读回库里的行而不是用管线的 DataFrame：边要挂在 `experience.id` 上，
-    而 id 是 COPY 时才分配的。
-    """
-    cur.execute(f"select id, {', '.join(FIELDS)} from experience order by id")
-    links: list[tuple[int, str, str]] = []
-    for exp_id, *values in cur.fetchall():
+def _phrase_plan(rows: list[tuple]) -> tuple[list[str], list[tuple[int, str, int]]]:
+    """把经历行规划成稳定去重的说法和指向说法 id 的边。"""
+    raw_links: list[tuple[int, str, str]] = []
+    for exp_id, *values in rows:
         fields = SimpleNamespace(**dict(zip(FIELDS, values, strict=True)))
         for route, text in route_texts(fields).items():
-            links.append((exp_id, route, text))
-    texts = list(dict.fromkeys(text for _, _, text in links))
+            raw_links.append((exp_id, route, text))
+
+    texts = list(dict.fromkeys(text for _, _, text in raw_links))
+    id_of = {text: phrase_id for phrase_id, text in enumerate(texts, start=1)}
+    links = [(exp_id, route, id_of[text]) for exp_id, route, text in raw_links]
+    return texts, links
+
+
+def _stage_phrases(cur) -> tuple[int, int]:
+    """嵌入暂存经历的四路原文，返回（说法数，段到说法的边数）。"""
+    cur.execute(
+        f"select id, {', '.join(FIELDS)} from {STAGED_EXPERIENCE} order by id"
+    )
+    texts, links = _phrase_plan(cur.fetchall())
 
     for start in range(0, len(texts), EMBED_CHUNK):
         chunk = texts[start : start + EMBED_CHUNK]
         vectors = embed(chunk)
         buf = io.StringIO()
         writer = csv.writer(buf)
-        for text, vector in zip(chunk, vectors, strict=True):
-            writer.writerow([text, f"[{','.join(map(str, vector))}]"])
+        for phrase_id, (text, vector) in enumerate(
+            zip(chunk, vectors, strict=True), start=start + 1
+        ):
+            writer.writerow([phrase_id, text, f"[{','.join(map(str, vector))}]"])
         buf.seek(0)
-        with cur.copy("copy phrase (text, embedding) from stdin with (format csv)") as cp:
+        with cur.copy(
+            f"copy {STAGED_PHRASE} (id, text, embedding) from stdin with (format csv)"
+        ) as cp:
             cp.write(buf.read())
-        # 进度得当场刷出去：stdout 重定向到文件时按块缓冲，不刷就是跑完前一片空白
-        print(f"  已嵌入 {min(start + EMBED_CHUNK, len(texts))}/{len(texts)} 种说法", flush=True)
+        print(
+            f"  已嵌入 {min(start + EMBED_CHUNK, len(texts))}/{len(texts)} 种说法",
+            flush=True,
+        )
 
-    cur.execute("select text, id from phrase")
-    id_of = dict(cur.fetchall())
     buf = io.StringIO()
-    for exp_id, route, text in links:
-        buf.write(f"{exp_id},{route},{id_of[text]}\n")
+    writer = csv.writer(buf)
+    writer.writerows(links)
     buf.seek(0)
     with cur.copy(
-        "copy experience_phrase (experience_id, route, phrase_id) from stdin with (format csv)"
+        f"copy {STAGED_LINK} (experience_id, route, phrase_id) from stdin with (format csv)"
     ) as cp:
         cp.write(buf.read())
     return len(texts), len(links)
 
 
-def load(source_name: str) -> None:
-    print(f"读取数据源 {source_name}…")
-    data = load_source(source_name).extract()
+def _create_staging_tables(cur) -> None:
+    for staged, public in (
+        (STAGED_EMPLOYEE, "employee"),
+        (STAGED_EXPERIENCE, "experience"),
+        (STAGED_PHRASE, "phrase"),
+        (STAGED_LINK, "experience_phrase"),
+    ):
+        cur.execute(
+            f"create temp table {staged} (like {public}) on commit preserve rows"
+        )
 
-    print("\n切段与校验…")
-    employee, experience = build(data)
 
-    print("\n探嵌入端点…")
-    canary = probe(CANARY_TEXT)
-    print(
-        f"  {C.EMBED_SPACE_ID} · {C.EMBED_MODEL} @ {C.EMBED_BASE_URL}，"
-        f"{len(canary)} 维；缓存 {C.EMBED_CACHE_PATH}"
+def _stage_corpus(cur, employee, experience) -> tuple[int, int]:
+    _copy_frame(cur, STAGED_EMPLOYEE, employee, EMPLOYEE_OUT)
+    staged_experience = experience.assign(id=range(1, len(experience) + 1))
+    _copy_frame(cur, STAGED_EXPERIENCE, staged_experience, ["id", *EXPERIENCE_OUT])
+    return _stage_phrases(cur)
+
+
+def _reset_identity(cur, table: str) -> None:
+    cur.execute(
+        f"""
+        select setval(
+          pg_get_serial_sequence('{table}', 'id')::regclass,
+          coalesce((select max(id) from {table}), 1),
+          exists(select 1 from {table})
+        )
+        """
     )
 
-    print("\n写入 Postgres…")
+
+def _publish_corpus(cur, canary: list[float]) -> tuple[int, list[tuple[str, int]]]:
+    # 检索先锁 embedding_space 再读语料；发布沿用同一顺序，等待已有读者结束后
+    # 一次替换完整代际，不会形成跨表锁环。
+    cur.execute("lock table embedding_space in access exclusive mode")
+    cur.execute(
+        "truncate experience, employee, phrase, embedding_space restart identity cascade"
+    )
+
+    for public, staged, cols in (
+        ("employee", STAGED_EMPLOYEE, EMPLOYEE_OUT),
+        ("experience", STAGED_EXPERIENCE, ["id", *EXPERIENCE_OUT]),
+        ("phrase", STAGED_PHRASE, ["id", "text", "embedding"]),
+        (
+            "experience_phrase",
+            STAGED_LINK,
+            ["experience_id", "route", "phrase_id"],
+        ),
+    ):
+        collist = ", ".join(cols)
+        cur.execute(
+            f"insert into {public} ({collist}) select {collist} from {staged}"
+        )
+
+    _reset_identity(cur, "experience")
+    _reset_identity(cur, "phrase")
+    cur.execute(
+        "insert into embedding_space "
+        "(space_id, model, dimension, canary_text, canary_embedding) "
+        "values (%s, %s, %s, %s, %s::halfvec)",
+        (
+            C.EMBED_SPACE_ID,
+            C.EMBED_MODEL,
+            C.EMBED_DIM,
+            CANARY_TEXT,
+            f"[{','.join(map(str, canary))}]",
+        ),
+    )
+
+    cur.execute("select count(*) from employee")
+    employee_count = cur.fetchone()[0]
+    cur.execute("select kind, count(*) from experience group by kind order by 1")
+    return employee_count, cur.fetchall()
+
+
+def load(source_name: str) -> None:
+    print(f"读取数据源 {source_name}…")
     with psycopg.connect(C.require_database_url()) as conn, conn.cursor() as cur:
-        # 查询先读 embedding_space，再读其余语料表；重灌也从同一张表起锁，
-        # 于是它只会等待完整查询结束，不会先锁住 phrase 再和查询互相等待。
-        cur.execute("lock table embedding_space in access exclusive mode")
-        # phrase 级联清掉 experience_phrase 和 phrase_relevance：重排分是对旧 id 打的
-        cur.execute(
-            "truncate experience, employee, phrase, embedding_space restart identity cascade"
-        )
-        cur.execute(
-            "insert into embedding_space "
-            "(space_id, model, dimension, canary_text, canary_embedding) "
-            "values (%s, %s, %s, %s, %s::halfvec)",
-            (
-                C.EMBED_SPACE_ID,
-                C.EMBED_MODEL,
-                C.EMBED_DIM,
-                CANARY_TEXT,
-                f"[{','.join(map(str, canary))}]",
-            ),
-        )
-        copy_frame(cur, "employee", employee, EMPLOYEE_OUT)
-        copy_frame(cur, "experience", experience, EXPERIENCE_OUT)
-        print("\n嵌入经历原文…")
-        phrases, links = embed_phrases(cur)
-        cur.execute("select count(*) from employee")
-        n_emp = cur.fetchone()[0]
-        cur.execute("select kind, count(*) from experience group by kind order by 1")
-        rows = cur.fetchall()
+        cur.execute("select pg_advisory_lock(%s)", (CORPUS_RELOAD_LOCK,))
+        # 会话锁跨事务保留；先结束取得锁时开启的事务，避免在读取数据源和调用
+        # 模型期间留下一个 idle in transaction 的数据库会话。
         conn.commit()
-    print(f"  employee {n_emp} 行")
-    for kind, n in rows:
-        print(f"  experience[{kind}] {n} 行")
-    print(f"  phrase {phrases} 行，experience_phrase {links} 行")
+
+        data = load_source(source_name).extract()
+
+        print("\n切段与校验…")
+        employee, experience = build(data)
+
+        print("\n探嵌入端点…")
+        canary = probe(CANARY_TEXT)
+        print(
+            f"  {C.EMBED_SPACE_ID} · {C.EMBED_MODEL} @ {C.EMBED_BASE_URL}，"
+            f"{len(canary)} 维；缓存 {C.EMBED_CACHE_PATH}"
+        )
+
+        print("\n准备语料…")
+        _create_staging_tables(cur)
+        # LIKE 公开表只为取得列定义；单独结束这笔短事务，不把它取得的表锁
+        # 带进后面的模型调用。
+        conn.commit()
+        phrase_count, link_count = _stage_corpus(cur, employee, experience)
+        # 暂存行按 preserve rows 跨事务保留，发布事务只包含本地 INSERT，
+        # 不夹带任何模型调用。
+        conn.commit()
+
+        print("\n发布语料…")
+        employee_count, experience_counts = _publish_corpus(cur, canary)
+        conn.commit()
+
+    print(f"  employee {employee_count} 行")
+    for kind, count in experience_counts:
+        print(f"  experience[{kind}] {count} 行")
+    print(f"  phrase {phrase_count} 行，experience_phrase {link_count} 行")
