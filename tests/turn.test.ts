@@ -23,7 +23,7 @@ const { createTurn, listRecent, loadTurn, resolveTurn } = await import(
 async function sentence(text: string, parent?: string) {
 	const { turnId } = await createTurn({ kind: "sentence", text }, parent);
 	const { chips } = await resolveTurn(turnId);
-	return { turnId, terms: chips.map((c) => c.term) };
+	return { turnId, chips, terms: chips.map((c) => c.term) };
 }
 
 async function reinterpret(parent: string) {
@@ -88,6 +88,47 @@ describe("整句的重译", () => {
 		);
 		assert.equal(rows.length, 1, "一次找人任务只占一行");
 		assert.equal(rows[0]?.turnId, redo.turnId, "停在最后的样子上");
+	});
+
+	test("纠正带着说明落库：原话仍是父亲那句，说明单独存", async () => {
+		const { db } = await import("#/db");
+		const { searchTurn } = await import("#/db/schema");
+		const root = await sentence("渠道运营");
+		const { turnId } = await createTurn(
+			{ kind: "reinterpret", note: "指的是线下渠道" },
+			root.turnId,
+		);
+		const rows = await db.select().from(searchTurn);
+		const row = rows.find((r) => r.id === turnId);
+		assert.equal(row?.rawText, "渠道运营", "被纠正的是原话，不是说明");
+		assert.equal(row?.note, "指的是线下渠道");
+		// 模型不可用时纠正说明被忽略，退回原话的规则解析——理解仍要能完成，
+		// 说明里的词不许混进条件（它是修改意见，不是新查询）
+		const { chips } = await resolveTurn(turnId);
+		assert.deepEqual(
+			chips.map((c) => c.term),
+			["渠道运营"],
+		);
+	});
+
+	test("没降级的理解不许无说明重跑：温度为 0，重跑只会复读", async () => {
+		// 离线跑不出「模型参与过」的记录（规则解析必然降级），直接落一行模拟：
+		// 服务端函数是可直接调用的端点，这条契约必须在 createTurn 里立住
+		const { db } = await import("#/db");
+		const { searchTurn } = await import("#/db/schema");
+		await db.insert(searchTurn).values({
+			id: "nd_model",
+			rootTurnId: "nd_model",
+			rawText: "产品经理",
+			chips: [{ term: "产品经理", mode: "must" }],
+			degraded: false,
+		});
+		await assert.rejects(createTurn({ kind: "reinterpret" }, "nd_model"));
+		const { turnId } = await createTurn(
+			{ kind: "reinterpret", note: "指的是硬件产品" },
+			"nd_model",
+		);
+		assert.ok(turnId, "带纠正说明才是有意义的重新理解");
 	});
 
 	test("只有已经理解完成的整句记录可以重译", async () => {

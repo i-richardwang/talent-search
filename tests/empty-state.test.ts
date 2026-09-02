@@ -28,7 +28,7 @@ const must = (term: string): TermPlan => ({
 function run(args: {
 	terms?: TermPlan[];
 	q?: string;
-	tooWide?: boolean;
+	overflowTerms?: string[];
 	withoutStrong?: number;
 	view?: View;
 }) {
@@ -38,7 +38,7 @@ function run(args: {
 	const state = emptyState({
 		terms: args.terms ?? [],
 		chips: parseChips(args.q ?? ""),
-		tooWide: args.tooWide ?? false,
+		overflowTerms: args.overflowTerms ?? [],
 		withoutStrong: args.withoutStrong ?? 0,
 		view: args.view ?? {},
 		onChange: (next) => {
@@ -55,22 +55,36 @@ function run(args: {
 	return { ...state, changed, revised, focused };
 }
 
-describe("词太宽", () => {
-	test("这是一种结果，不是一次失败：给的是收窄的下一步", () => {
-		const s = run({ terms: [must("运营")], q: "运营", tooWide: true });
-		assert.match(s.title, /太多/);
-		assert.equal(s.focused, true, "出口是去补一个条件");
-		assert.equal(s.changed, undefined, "不该去动筛选——筛选不是病因");
-	});
-
-	test("排在最前：它和「筛选太窄」同时成立时，说的必须是宽", () => {
+describe("匹配事实超过保险丝", () => {
+	test("这是一种结果，不是一次失败：给的是具体化条件的下一步", () => {
 		const s = run({
 			terms: [must("运营")],
 			q: "运营",
-			tooWide: true,
+			overflowTerms: ["运营"],
+		});
+		assert.equal(s.title, "匹配证据过多");
+		assert.equal(s.focused, true, "出口是调整贡献事实最多的条件");
+		assert.equal(s.changed, undefined, "不该去动筛选——筛选不是病因");
+	});
+
+	test("排在最前：它和「筛选太窄」同时成立时，先说明取数上限", () => {
+		const s = run({
+			terms: [must("运营")],
+			q: "运营",
+			overflowTerms: ["运营"],
 			view: { seq: "技术/后端" },
 		});
-		assert.match(s.title, /太多/);
+		assert.equal(s.title, "匹配证据过多");
+	});
+
+	test("只点名实际贡献事实行最多的要求", () => {
+		const s = run({
+			terms: [must("算法"), must("经理")],
+			q: "算法,经理",
+			overflowTerms: ["经理"],
+		});
+		assert.match(s.hint, /「经理」/);
+		assert.doesNotMatch(s.hint, /算法/, "贡献较少的词不背锅");
 	});
 });
 

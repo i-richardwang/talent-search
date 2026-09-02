@@ -18,7 +18,7 @@
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
-import { intentSchema } from "#/search/intent";
+import { intentSchema, type PriorTerm } from "#/search/intent";
 
 /**
  * OpenAI 兼容端点。用兼容层而不是绑某一家的 SDK：换模型（公网 provider、
@@ -94,27 +94,49 @@ const SYSTEM = `你在把 HR 的一句大白话翻译成人才库的检索条件
   「不要」「排除」「没做过」是 exclude——exclude 的意思是这类经历不作为证据，
   不是把沾过的人拉黑。
 - 句式词（帮我找、有没有、的人、经验、背景）不是概念词，丢掉。
+- 通用职级词（经理、负责人、专家、总监、主管）不要单独成词：库里一半的岗位名
+  都带它们，单独一条几乎不筛人。把它折进更具体的说法（「算法团队负责人」
+  而不是「算法」+「负责人」两条）；只有当整句话里再没有别的可用条件时才保留。
 - 只在句子里明确说了的时候才填 kind / minMonths / companyTag，否则一律 null。
   不要从概念词去推断它们。`;
+
+/**
+ * 纠正理解的上下文：上一版理解成了什么（`PriorTerm[]`，即模型自己的输出
+ * 形状），以及用户对它的那句纠正。两样都来自用户自己的输入和它的派生物——
+ * 发出去的东西没有变多，仍然只有用户的话和公司档取值。
+ */
+export type Correction = { previous: PriorTerm[]; note: string };
 
 /**
  * 一句话 → 模型给出的原始对象。调用方必须再过一遍 `toIntent` 收窄。
  *
  * 返回 null 表示「这次用不了模型」，不区分是没配置还是失败——对调用方来说
  * 两者要做的事完全一样（退回规则解析），区分只会多一个没人用的分支。
+ *
+ * 带 `correction` 时是**纠正理解**：同一句话重来一遍没有意义（温度为 0，
+ * 重跑就是重掷一枚灌了铅的骰子），有意义的是把用户指出的差错交给模型。
+ * 输出仍然是这句话的**完整**理解，不是只翻译那句纠正——纠正是修改意见，
+ * 不是新查询。
  */
 export async function understand(
 	text: string,
 	companyTags: readonly string[],
+	correction?: Correction,
 ): Promise<unknown | null> {
 	const m = getModel();
 	if (!m) return null;
+	// 上一版理解按模型自己的输出格式给（terms 的 JSON），不用教任何记号
+	const corrected = correction
+		? `\n\n上一次对这句话的理解（字段含义与你的输出相同）：${JSON.stringify(correction.previous)}` +
+			`\n用户指出理解得不对，补充说：${correction.note}` +
+			"\n请据此重新给出这句话的完整理解，不要只翻译补充说明本身。"
+		: "";
 	try {
 		const { output } = await generateText({
 			model: m,
 			output: Output.object({ schema: intentSchema(companyTags) }),
 			system: SYSTEM,
-			prompt: `公司档的可选取值：${companyTags.join("、") || "（无）"}\n\n这句话：${text}`,
+			prompt: `公司档的可选取值：${companyTags.join("、") || "（无）"}\n\n这句话：${text}${corrected}`,
 			// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件
 			temperature: 0,
 			maxRetries: 1,

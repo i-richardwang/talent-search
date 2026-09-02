@@ -172,6 +172,15 @@ export const searchTurn = pgTable(
 		 */
 		rawText: text("raw_text"),
 		/**
+		 * 纠正理解时用户补的那句说明（「算法指的是推荐算法」）。
+		 *
+		 * 它不是新查询，是**关于上一次理解的元信息**，所以不写进 raw_text——
+		 * raw_text 永远是被理解的那句原话，链头展示、再次纠正都取它。理解时
+		 * 这句说明连同上一版理解一起交给模型（`server/llm.ts`）；模型不可用而
+		 * 退回规则解析时它被忽略（规则解析没有能力消化元信息），降级照常明说。
+		 */
+		note: text("note"),
+		/**
 		 * 理解结果，也是这次检索真正用的条件。
 		 *
 		 * **null 表示「还没理解」**，是这张表唯一的可变位：整句提交时先落一行
@@ -205,6 +214,11 @@ export const searchTurn = pgTable(
 		check(
 			"search_turn_base_requires_text",
 			sql`${t.baseTurnId} is null or ${t.rawText} is not null`,
+		),
+		// 纠正的对象是「对一句话的理解」，没有原话就没有可纠正的东西
+		check(
+			"search_turn_note_requires_text",
+			sql`${t.note} is null or ${t.rawText} is not null`,
 		),
 		/*
 		 * 自引用：链头这一行的 root 就是它自己。同一条 INSERT 里成立——外键在

@@ -7,7 +7,12 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { intentSchema, resolveIntent, toIntent } from "#/search/intent";
+import {
+	intentSchema,
+	priorUnderstanding,
+	resolveIntent,
+	toIntent,
+} from "#/search/intent";
 import { parseChips, toQuery } from "#/search/parse";
 
 const TAGS = ["头部互联网T1", "知名公司", "外包公司"];
@@ -313,6 +318,26 @@ describe("发给模型的形状", () => {
 		// 八字以上但仍然是一个词的，收窄不该丢，准入更不该拦。
 		assert.deepEqual(of(terms({ term: long, mode: "must" })).chips, [
 			{ term: long, mode: "must" },
+		]);
+	});
+});
+
+describe("纠正理解的上一版理解（priorUnderstanding）", () => {
+	test("父减基线：基线里的条件不冒充这句话的理解", () => {
+		const base = parseChips("算法");
+		const parent = parseChips("算法,渠道运营/?线下推广");
+		assert.deepEqual(priorUnderstanding(parent, base), [
+			{ term: "渠道运营", mode: "must", alts: null, near: ["线下推广"] },
+		]);
+	});
+
+	test("形状是模型自己的输出格式，停用与太宽的记号不进来", () => {
+		// 上一版理解里有被量宽自动停用的词：它仍是模型当时的理解，进上下文，
+		// 但 off / wide 是用户和尺子的表态，不是理解的一部分
+		const parent = parseChips("*+经理,大模型/多模态");
+		assert.deepEqual(priorUnderstanding(parent, []), [
+			{ term: "经理", mode: "boost", alts: null, near: null },
+			{ term: "大模型", mode: "must", alts: ["多模态"], near: null },
 		]);
 	});
 });

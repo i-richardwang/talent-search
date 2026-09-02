@@ -135,6 +135,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onFocusQuery={() => {}}
 				onMore={() => {}}
 				onReviseQuery={() => {}}
+				overflowTerms={[]}
 				results={[]}
 				terms={[
 					{
@@ -145,7 +146,6 @@ describe("产品文案使用常规 SaaS 语言", () => {
 						mode: "must",
 					},
 				]}
-				tooWide={false}
 				total={0}
 				turnId="t1"
 				view={{}}

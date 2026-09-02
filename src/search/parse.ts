@@ -124,6 +124,16 @@ export type ChipMode = "must" | "boost" | "exclude";
 export const MEMBER_MAX = 4;
 
 /**
+ * 一条规范查询串（`toQuery` 的产物）的长度上限，由部件推导：最多 `CHIP_MAX`
+ * 条要求 × 每条 `MEMBER_MAX` 个说法 ×（词长上限 + 记号与分隔符）。
+ *
+ * 合法的序列化到不了这个数，所以在这里截断的必然不是合法查询串——它挡的是
+ * 直接打服务端端点的超长载荷，不会腰斩任何一次真实提交。写成推导而不是
+ * 拍一个整数，是让它跟着上面三个上限自己走，不产生第四份要同步的契约。
+ */
+export const QUERY_MAX = CHIP_MAX * MEMBER_MAX * (MAX_TERM_LEN + 3);
+
+/**
  * 一枚查询 chip：**一条要求**，界面上可点、可改、可删的最小单位。
  *
  * 一条要求可以有多个**说法**，满足其一即满足这条要求（说法之间 OR，
@@ -141,6 +151,12 @@ export const MEMBER_MAX = 4;
  * 检索完全当它不存在。招聘检索是反复试的——加一条发现只剩三个人，想知道
  * 是不是它太窄。删掉再手打回来会丢掉它的强度，也丢掉「我试过这个」这件事；
  * 靠浏览器后退能退，但没人会想到那是个办法。所以停用是一等状态，不是删除的替代。
+ *
+ * `wide` 是停用的**成因注记**：这个词在语料里命中的人太多（超过
+ * `WIDE_SHARE`），几乎不筛人，理解落库时被自动停用（`server/turn.ts` 的
+ * benchWide）。它只与 `off` 同现——用户重新启用即是「我知道它宽，照跑」，
+ * 两个标记一起摘掉，此后不再自动碰它。单独一个布尔而不是给 off 发枚举值，
+ * 是因为「谁停的」不改变停用的语义，只改变 chip 上那句解释。
  */
 export type Chip = {
 	term: string;
@@ -148,6 +164,7 @@ export type Chip = {
 	near?: string[];
 	mode: ChipMode;
 	off?: true;
+	wide?: true;
 };
 
 /**
@@ -170,8 +187,13 @@ export type QueryInput =
 /**
  * 一次查询记录的变更。重新理解不携带原话：服务端从父记录读取，调用方因此
  * 不可能把另一句话伪装成「同一句重译」。
+ *
+ * `note` 是**纠正理解**的补充说明（「算法指的是推荐算法」）。没有新信息的
+ * 重跑大概率拿回同一份错的理解，所以理解错了的那条路必须让用户把模型缺的
+ * 那句话说出来；不带 note 的重译只在降级时有意义（第一次模型根本没参与，
+ * 再试一次是真的可能不同）。
  */
-export type QueryChange = QueryInput | { kind: "reinterpret" };
+export type QueryChange = QueryInput | { kind: "reinterpret"; note?: string };
 
 /**
  * 强度在查询串里的写法。放在词前面一个字符，因为 URL 要能读、能手改、能粘给同事。
@@ -193,6 +215,14 @@ const MODE_SIGN: Record<ChipMode, string> = {
  * 在界面上安静得没有任何提示。
  */
 const OFF_SIGN = "~";
+
+/**
+ * 太宽停用的写法：`*` 替掉 `~` 站在最前面（`*+运营` 是因太宽被自动停用的
+ * 加分词）。是**替掉**不是叠加：wide 蕴含 off，`~*` 就成了同一枚 chip 的
+ * 第二种写法，往返不再是恒等式。选 `*` 是因为它在检索语境里的老义项就是
+ * 「什么都匹配」——这枚 chip 正是匹配得太多才被停下的。
+ */
+const WIDE_SIGN = "*";
 
 /** 相近说法（near 档）在查询串里的记号，贴在那个说法自己前面：`算法/?深度学习`。 */
 const NEAR_SIGN = "?";
@@ -228,9 +258,10 @@ export function parseChips(raw: string): Chip[] {
 	for (const group of raw.split(",")) {
 		let g = group.trim();
 		if (!g) continue;
-		// 先剥停用，再剥强度：两个记号的顺序是定死的（`~+X`），反过来不认，
-		// 否则同一枚 chip 会有两种写法，往返就不再是恒等式。
-		const off = g[0] === OFF_SIGN;
+		// 先剥停用（`~` 或 `*`，互斥），再剥强度：记号顺序是定死的（`~+X`），
+		// 反过来不认，否则同一枚 chip 会有两种写法，往返就不再是恒等式。
+		const wide = g[0] === WIDE_SIGN;
+		const off = wide || g[0] === OFF_SIGN;
 		if (off) g = g.slice(1).trim();
 		const mode = MODE_PREFIX[g[0] ?? ""] ?? "must";
 		if (mode !== "must") g = g.slice(1);
@@ -240,7 +271,12 @@ export function parseChips(raw: string): Chip[] {
 			for (const term of parseQuery(g)) {
 				if (seen.has(term)) continue;
 				seen.add(term);
-				chips.push({ term, mode, ...(off && { off: true as const }) });
+				chips.push({
+					term,
+					mode,
+					...(off && { off: true as const }),
+					...(wide && { wide: true as const }),
+				});
 				if (chips.length === CHIP_MAX) return chips;
 			}
 			continue;
@@ -272,6 +308,7 @@ export function parseChips(raw: string): Chip[] {
 			...(keptNear.length > 0 && { near: keptNear }),
 			mode,
 			...(off && { off: true as const }),
+			...(wide && { wide: true as const }),
 		});
 		if (chips.length === CHIP_MAX) return chips;
 	}
@@ -294,7 +331,7 @@ export function toQuery(chips: Chip[]): string {
 	return chips
 		.map(
 			(c) =>
-				(c.off ? OFF_SIGN : "") +
+				(c.wide ? WIDE_SIGN : c.off ? OFF_SIGN : "") +
 				MODE_SIGN[c.mode] +
 				[c.term, ...(c.alts ?? [])].join("/") +
 				(c.near?.length

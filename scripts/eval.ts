@@ -83,7 +83,7 @@ let recalled = 0;
 let expected = 0;
 try {
 	for (const c of cases) {
-		const { results, total, tooWide } = await search(
+		const { results, total, overflowTerms } = await search(
 			parseChips(c.query),
 			{},
 			RESULT_MAX,
@@ -97,7 +97,11 @@ try {
 			.join(" ");
 		console.log(
 			`${found.length === c.expect.length ? "✓" : "✗"} ${c.name}` +
-				`  召回 ${found.length}/${c.expect.length}，命中 ${total} 人${tooWide ? "（太宽）" : ""}`,
+				`  召回 ${found.length}/${c.expect.length}，命中 ${total} 人${
+					overflowTerms.length > 0
+						? `（匹配事实过多：${overflowTerms.join("、")}）`
+						: ""
+				}`,
 		);
 		console.log(`   ${marks}`);
 	}

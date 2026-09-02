@@ -47,7 +47,7 @@ export function useCommit() {
 				? input.text
 				: input.kind === "chips"
 					? toQuery(input.chips)
-					: "reinterpret";
+					: `reinterpret:${input.note ?? ""}`;
 		if (pending !== null) return false;
 		setPending(key);
 		setError(null);
@@ -55,7 +55,13 @@ export function useCommit() {
 			const { turnId } = await commitTurn({
 				data: {
 					parentTurnId: opts.parentTurnId,
-					input,
+					// chips 在边界上序列化成规范查询串：线上只有 parseChips 认识的
+					// 那一种词汇表，服务端不必逐字段挑（挑就是第二份契约，见
+					// functions.ts）。sentence 与 reinterpret 本来就是字符串，原样走。
+					input:
+						input.kind === "chips"
+							? { kind: "chips", q: toQuery(input.chips) }
+							: input,
 				},
 			});
 			await navigate({

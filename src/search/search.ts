@@ -32,6 +32,7 @@ import {
 	ROUTE_ORDER,
 	ROUTE_WEIGHTS,
 	type Route,
+	WIDE_SHARE,
 } from "./weights";
 
 /**
@@ -177,17 +178,75 @@ export async function probeTerms(texts: string[]): Promise<Set<string>> {
 }
 
 /**
- * 命中的经历段。**返回 null 表示这次查询太宽**，不抛异常。
+ * 这些词里，哪些在语料里命中的**人**占比超过了 `WIDE_SHARE`——也就是**太宽**。
  *
- * 取数不带筛选：分面要回答「摘掉这一维之后还剩几人」，它需要看到被筛掉的
- * 那些行。筛选、AND、人员打分、排序与分面都在 rank.ts 对这份事实求值。
+ * 单位是人，不是经历段。尺子的读数必须和它标签上的单位一致：这把尺支撑的
+ * 承诺是「几乎筛不掉人」，而按段量的话，一个囤了九段命中经历的人会被数成
+ * 九个——段占比很高、名单上却只多他一个人的词，根本不宽。
  *
- * 「你写的词覆盖了半个库」是一种查询结果，和「没有人符合」是同一档东西：
- * 用户什么都没做错，只是需要再加一个条件。抛异常会把它送进错误边界，
- * 于是这个产品最容易被触发的一种状态——搜「运营」这种两字宽词——渲染出来的
- * 是一个报错页，而旁边就摆着一整套为空结果写好的引导文案。
+ * 宽是语料的事实，不是能预先列举的判断：同一个词在两份语料里的覆盖面可以差
+ * 一个数量级。理解落库前拿它给新解析出的词量宽（`server/turn.ts` 的
+ * benchWide，超标的可见地停用）。和 probeTerms 一样只探语料、不带筛选——
+ * 宽不宽只由词和语料决定。
  */
-async function fetchFacts(terms: TermPlan[]): Promise<Fact[] | null> {
+export async function probeWide(texts: string[]): Promise<Set<string>> {
+	if (texts.length === 0) return new Set();
+	const rows = await db.execute<{ t: string }>(sql`
+		with total as (select count(distinct emp_id)::float as n from experience)
+		select c.t from (values ${sql.join(
+			texts.map((t) => sql`(${t}, ${`%${escapeLike(t)}%`})`),
+			sql`, `,
+		)}) as c(t, pat), total
+		where (select count(distinct e.emp_id) from experience e
+			where ${matchExpr(sql`c.pat`)})
+			> total.n * ${WIDE_SHARE}`);
+	return new Set(rows.rows.map((r) => r.t));
+}
+
+type FactRow = {
+	term_idx: number;
+	member_idx: number;
+	id: number;
+	emp_id: string;
+	months: number;
+	end_date: string | null;
+	seq_l1: string;
+	seq_l2: string;
+	kind: "internal" | "external";
+	company_tag: string | null;
+	route: Route;
+};
+
+type FactLoad =
+	| { kind: "loaded"; facts: Fact[] }
+	| { kind: "overflow"; termIndexes: number[] };
+
+/**
+ * 从各要求的事实行数里找出造成超载的主要贡献者。
+ *
+ * 按贡献从大到小摘，直到剩余事实能进保险丝；同样行数按查询顺序稳定并列。
+ * 返回时再恢复查询顺序，让界面上的点名顺序和 chips 一致。这把尺只解释
+ * `FACT_MAX`，不借用按人数占比计算的 `probeWide`。
+ */
+export function overflowContributors(
+	counts: readonly { termIdx: number; facts: number }[],
+	limit: number = FACT_MAX,
+): number[] {
+	let remaining = counts.reduce((sum, c) => sum + c.facts, 0);
+	if (remaining <= limit) return [];
+	const selected: number[] = [];
+	for (const count of [...counts].sort(
+		(a, b) => b.facts - a.facts || a.termIdx - b.termIdx,
+	)) {
+		selected.push(count.termIdx);
+		remaining -= count.facts;
+		if (remaining <= limit) break;
+	}
+	return selected.sort((a, b) => a - b);
+}
+
+/** 同一要求、同一经历段只留证据最硬的那个说法。 */
+function canonicalFacts(terms: TermPlan[]) {
 	// 每条要求按说法展开：说法之间是 OR，但各自单独取，因为「命中的是哪个说法」
 	// 要进证据行，而档位权重也按说法算。
 	const perMember = terms.flatMap((t, i) =>
@@ -212,43 +271,55 @@ async function fetchFacts(terms: TermPlan[]): Promise<Fact[] | null> {
 		ROUTE_ORDER.map((r) => sql`when ${r} then ${ROUTE_WEIGHTS[r]}::float`),
 		sql` `,
 	)} end`;
-	const rows = await db.execute<{
-		term_idx: number;
-		member_idx: number;
-		id: number;
-		emp_id: string;
-		months: number;
-		end_date: string | null;
-		seq_l1: string;
-		seq_l2: string;
-		kind: "internal" | "external";
-		company_tag: string | null;
-		route: Route;
-	}>(sql`
-		with hits as (${sql.join(perMember, sql` union all `)})
+	return sql`
 		select distinct on (term_idx, id)
 			term_idx, member_idx, id, emp_id, months, end_date,
 			seq_l1, seq_l2, kind, company_tag, route
-		from hits where route is not null
-		order by term_idx, id, tier_w * (${routeWeight}) desc, member_idx
-		limit ${FACT_MAX + 1}`);
+		from (${sql.join(perMember, sql` union all `)}) hits
+		where route is not null
+		order by term_idx, id, tier_w * (${routeWeight}) desc, member_idx`;
+}
 
-	if (rows.rows.length > FACT_MAX) return null;
+/**
+ * 命中的经历事实。超过内存保险丝时返回真正贡献事实行的要求，不截断结果。
+ *
+ * 取数不带筛选：分面要回答「摘掉这一维之后还剩几人」，它需要看到被筛掉的
+ * 那些行。筛选、AND、人员打分、排序与分面都在 rank.ts 对这份事实求值。
+ */
+async function fetchFacts(terms: TermPlan[]): Promise<FactLoad> {
+	const rows = await db.execute<FactRow>(sql`
+		select * from (${canonicalFacts(terms)}) facts limit ${FACT_MAX + 1}`);
 
-	return rows.rows.map((r) => ({
-		id: r.id,
-		empId: r.emp_id,
-		termIdx: r.term_idx,
-		memberIdx: r.member_idx,
-		tier: terms[r.term_idx]?.members[r.member_idx]?.tier ?? "full",
-		route: r.route,
-		months: r.months,
-		endDate: r.end_date,
-		seqL1: r.seq_l1,
-		seqL2: r.seq_l2,
-		companyTag: r.company_tag,
-		kind: r.kind,
-	}));
+	if (rows.rows.length > FACT_MAX) {
+		const counts = await db.execute<{ term_idx: number; facts: number }>(sql`
+			select term_idx, count(*)::int as facts
+			from (${canonicalFacts(terms)}) facts
+			group by term_idx`);
+		return {
+			kind: "overflow",
+			termIndexes: overflowContributors(
+				counts.rows.map((r) => ({ termIdx: r.term_idx, facts: r.facts })),
+			),
+		};
+	}
+
+	return {
+		kind: "loaded",
+		facts: rows.rows.map((r) => ({
+			id: r.id,
+			empId: r.emp_id,
+			termIdx: r.term_idx,
+			memberIdx: r.member_idx,
+			tier: terms[r.term_idx]?.members[r.member_idx]?.tier ?? "full",
+			route: r.route,
+			months: r.months,
+			endDate: r.end_date,
+			seqL1: r.seq_l1,
+			seqL2: r.seq_l2,
+			companyTag: r.company_tag,
+			kind: r.kind,
+		})),
+	};
 }
 
 /**
@@ -376,7 +447,7 @@ export async function search(
 			results: [],
 			facets: emptyFacets(),
 			total: 0,
-			tooWide: false,
+			overflowTerms: [],
 		};
 
 	/*
@@ -404,25 +475,30 @@ export async function search(
 	);
 
 	// 事实与否决段集合互不依赖，同时发出去
-	const [all, vetoed] = await Promise.all([
+	const [loaded, vetoed] = await Promise.all([
 		fetchFacts(terms),
 		fetchVetoed(vetoTexts),
 	]);
-	// 太宽的那一支：词是解析出来了（证据行还要拿它排列），只是没有结果可给。
-	if (all === null)
+	if (loaded.kind === "overflow") {
+		const contributors = new Set(loaded.termIndexes);
 		return {
 			terms,
 			results: [],
 			facets: emptyFacets(),
 			total: 0,
-			tooWide: true,
+			overflowTerms: terms
+				.filter((_, index) => contributors.has(index))
+				.map((term) => term.term),
 		};
-	const facts = vetoed.size ? all.filter((f) => !vetoed.has(f.id)) : all;
+	}
+	const facts = vetoed.size
+		? loaded.facts.filter((f) => !vetoed.has(f.id))
+		: loaded.facts;
 
 	const { ranked, facets, total } = rank(facts, terms, filters, new Date());
 	const page = ranked.slice(0, sanitizeLimit(limit));
 	if (page.length === 0)
-		return { terms, results: [], facets, total, tooWide: false };
+		return { terms, results: [], facets, total, overflowTerms: [] };
 
 	const empIds = page.map((r) => r.empId);
 	const evidence = pageHits(facts, filters, new Set(empIds), HITS_PER_TERM);
@@ -474,5 +550,5 @@ export async function search(
 		}
 		results.push({ employee: emp, score: row.score, basis: row.basis, hits });
 	}
-	return { terms, results, facets, total, tooWide: false };
+	return { terms, results, facets, total, overflowTerms: [] };
 }

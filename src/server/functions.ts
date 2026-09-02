@@ -15,7 +15,7 @@ import {
 	employee,
 	experience,
 } from "#/db/schema";
-import { CHIP_MAX, parseChips, queryText, toQuery } from "#/search/parse";
+import { parseChips, QUERY_MAX, queryText } from "#/search/parse";
 import type { SearchOutcome } from "#/search/result";
 import {
 	overview,
@@ -113,56 +113,50 @@ export const fetchEmployee = createServerFn({ method: "GET" })
  * `chips` 来自客户端，必须过 `parseChips`；切法、赘字剥法与数量上限因此只有
  * 一个执行点。
  */
-export const commitTurn = createServerFn({ method: "POST" })
-	.validator((d: { parentTurnId?: unknown; input: unknown }) => {
-		const input = (d.input ?? {}) as Record<string, unknown>;
-		const parentTurnId =
-			typeof d.parentTurnId === "string" && d.parentTurnId
-				? d.parentTurnId
-				: undefined;
-		if (input.kind === "reinterpret") {
-			if (!parentTurnId) throw new Error("重新理解需要一条父记录");
-			return { parentTurnId, input: { kind: "reinterpret" as const } };
-		}
-		if (input.kind === "sentence") {
-			const text = queryText(input.text);
-			if (!text) throw new Error("查询为空");
-			return {
-				parentTurnId,
-				input: { kind: "sentence" as const, text },
-			};
-		}
-		const strings = (v: unknown) =>
-			Array.isArray(v)
-				? v.filter((x): x is string => typeof x === "string" && x !== "")
-				: [];
-		const chips = parseChips(
-			toQuery(
-				(Array.isArray(input.chips) ? input.chips : [])
-					.slice(0, CHIP_MAX)
-					.map((c) => {
-						const chip = (c ?? {}) as Record<string, unknown>;
-						const alts = strings(chip.alts);
-						const near = strings(chip.near);
-						return {
-							term: String(chip.term ?? ""),
-							...(alts.length > 0 && { alts }),
-							...(near.length > 0 && { near }),
-							mode:
-								chip.mode === "boost" || chip.mode === "exclude"
-									? chip.mode
-									: ("must" as const),
-							...(chip.off === true && { off: true as const }),
-						};
-					}),
-			),
-		);
-		if (chips.length === 0) throw new Error("查询为空");
+export function validateCommit(d: unknown) {
+	const data = (d ?? {}) as Record<string, unknown>;
+	const input = (data.input ?? {}) as Record<string, unknown>;
+	const parentTurnId =
+		typeof data.parentTurnId === "string" && data.parentTurnId
+			? data.parentTurnId
+			: undefined;
+	if (input.kind === "reinterpret") {
+		if (!parentTurnId) throw new Error("重新理解需要一条父记录");
+		// 纠正说明和原话同一条文本边界；空串收成「没带说明」，不收成空纠正
+		const note = queryText(input.note);
 		return {
 			parentTurnId,
-			input: { kind: "chips" as const, chips },
+			input: { kind: "reinterpret" as const, ...(note && { note }) },
 		};
-	})
+	}
+	if (input.kind === "sentence") {
+		const text = queryText(input.text);
+		if (!text) throw new Error("查询为空");
+		return {
+			parentTurnId,
+			input: { kind: "sentence" as const, text },
+		};
+	}
+	if (input.kind !== "chips" || typeof input.q !== "string")
+		throw new Error("查询格式无效");
+	/*
+	 * chips 走**规范查询串**进出：客户端在边界上 `toQuery`，这里 `parseChips`。
+	 * chip 的词汇表因此只有一份——在这里逐字段挑一遍就是第二份契约，chip
+	 * 每长一个带序列化的新字段，挑字段的代码就会把它静默丢一次；而查询串
+	 * 的往返保真恰好是 `parseChips(toQuery(c)) === c` 这条全站不变量。
+	 * 截断上限见 `QUERY_MAX`：合法序列化到不了那个数，截掉的只会是打端点
+	 * 的超长载荷。
+	 */
+	const chips = parseChips(input.q.slice(0, QUERY_MAX));
+	if (chips.length === 0) throw new Error("查询为空");
+	return {
+		parentTurnId,
+		input: { kind: "chips" as const, chips },
+	};
+}
+
+export const commitTurn = createServerFn({ method: "POST" })
+	.validator(validateCommit)
 	.handler(({ data }) => createTurn(data.input, data.parentTurnId));
 
 /** 把一条只有原话的记录补上理解结果。工作台挂载后就地调它，不挡导航。 */

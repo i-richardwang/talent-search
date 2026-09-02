@@ -1,8 +1,14 @@
 import { AlertCircleIcon, RotateCwIcon } from "lucide-react";
+import { useState } from "react";
 import { QueryBar } from "#/components/query-bar";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Frame, FramePanel } from "#/components/ui/frame";
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupInput,
+} from "#/components/ui/input-group";
 import type { Chip, QueryInput } from "#/search/parse";
 import type { TermPlan } from "#/search/result";
 import type { FilterField } from "../-lib/filters";
@@ -37,6 +43,7 @@ export function QueryDeck({
 	error,
 	onRetry,
 	onReinterpret,
+	onCorrect,
 	fields,
 	view,
 	onChangeView,
@@ -60,12 +67,28 @@ export function QueryDeck({
 	onRetry?: () => void;
 	/** 拿原话再理解一次，落成一条新记录。没有原话时不给这个入口。 */
 	onReinterpret?: () => void;
+	/**
+	 * 纠正理解：带着一句补充说明重新理解原话。和 `onReinterpret` 不是一回事——
+	 * 那个是降级后的重跑（第一次模型没参与，再试一次是真的可能不同），这个是
+	 * 「模型理解错了」的出路：同一句话原样重问只会拿回同一份错的理解，
+	 * 用户手里那句「算法指的是推荐算法」才是模型缺的东西。
+	 */
+	onCorrect?: (note: string) => boolean | Promise<boolean>;
 	fields: FilterField[];
 	view: View;
 	onChangeView: (next: Partial<View>) => void;
 	strongCount: number;
 }) {
 	const hasQuery = terms.length > 0 || chips.length > 0;
+	// 纠正框收在一个入口后面：它是偶发动作，常驻一个输入框会和上面那个
+	// 「添加条件」的框摆成两个平级的口，而两者的分量差着一个量级。
+	const [correcting, setCorrecting] = useState(false);
+	const [note, setNote] = useState("");
+	const [sending, setSending] = useState(false);
+	const closeCorrection = () => {
+		setCorrecting(false);
+		setNote("");
+	};
 
 	return (
 		/*
@@ -105,7 +128,74 @@ export function QueryDeck({
 										chips={chips}
 										onChange={onChangeQuery}
 										terms={terms}
+										trailing={
+											onCorrect &&
+											!correcting && (
+												<Button
+													className="h-auto p-0 text-muted-foreground text-xs"
+													onClick={() => setCorrecting(true)}
+													size="xs"
+													variant="link"
+												>
+													理解得不对？
+												</Button>
+											)
+										}
 									/>
+									{onCorrect && correcting && (
+										<form
+											className="flex items-center gap-1.5"
+											onSubmit={async (e) => {
+												e.preventDefault();
+												const n = note.trim();
+												if (!n || sending) return;
+												setSending(true);
+												try {
+													// 成功才清空：这一步会失败，失败还把人刚敲的
+													// 说明吞掉，就连重试都没得重试
+													if (await onCorrect(n)) {
+														closeCorrection();
+													}
+												} finally {
+													setSending(false);
+												}
+											}}
+										>
+											<InputGroup className="flex-1">
+												<InputGroupInput
+													aria-label="纠正对这句话的理解"
+													autoFocus
+													onChange={(e) => setNote(e.target.value)}
+													onKeyDown={(e) => {
+														if (e.key === "Escape" && !sending)
+															closeCorrection();
+													}}
+													placeholder="哪里理解错了？补一句说明，例如：算法指的是推荐算法"
+													value={note}
+												/>
+												<InputGroupAddon align="inline-end">
+													<Button
+														disabled={!note.trim()}
+														loading={sending}
+														render={<button type="submit" />}
+														size="xs"
+														variant="secondary"
+													>
+														<RotateCwIcon />
+														重新理解
+													</Button>
+												</InputGroupAddon>
+											</InputGroup>
+											<Button
+												disabled={sending}
+												onClick={closeCorrection}
+												size="xs"
+												variant="ghost"
+											>
+												取消
+											</Button>
+										</form>
+									)}
 									{/*
 									 * 范围条件排在概念条件下面，不并排：chips 决定「找谁」，
 									 * 筛选决定「在这批人里再看哪一部分」。并排会让人以为删一枚

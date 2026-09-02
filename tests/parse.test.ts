@@ -176,6 +176,28 @@ describe("停用的词", () => {
 	});
 });
 
+describe("太宽停用（`*`）", () => {
+	test("`*` 蕴含停用，成因与强度都留着", () => {
+		assert.deepEqual(parseChips("算法,*+运营"), [
+			{ term: "算法", mode: "must" },
+			{ term: "运营", mode: "boost", off: true, wide: true },
+		]);
+	});
+
+	test("往返：wide 状态要能穿过合并（序列化再读回）", () => {
+		for (const raw of ["*运营", "算法,*+经理", "*-管理"]) {
+			const chips = parseChips(raw);
+			assert.deepEqual(parseChips(toQuery(chips)), chips, raw);
+		}
+	});
+
+	test("activeChips 一样摘掉它：wide 是停用的一种成因，不是新档位", () => {
+		assert.deepEqual(activeChips(parseChips("算法,*运营")), [
+			{ term: "算法", mode: "must" },
+		]);
+	});
+});
+
 /**
  * 一条要求的多个说法：组内 `/` 与「或」是 OR，`?` 前缀是相近档（near）。
  * 语义（怎么检索、怎么计分）在 search/rank 那两层钉，这里只钉解析与往返。

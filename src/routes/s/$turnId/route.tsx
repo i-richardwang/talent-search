@@ -179,6 +179,7 @@ function Workbench() {
 				<div className="mx-auto flex h-14 w-full max-w-page shrink-0 items-center px-4">
 					<Brand />
 				</div>
+				{/* 纠正草稿属于一条查询记录，换记录时不能带到下一句话。 */}
 				<QueryDeck
 					chips={chips}
 					degraded={turn.degraded}
@@ -187,11 +188,21 @@ function Workbench() {
 					fields={filterFields(facets, view)}
 					inputRef={inputRef}
 					interpreting={interpreting}
+					key={turn.id}
 					onChangeQuery={reviseChips}
 					onChangeView={updateView}
 					onQuery={(input) => commit(input, { parentTurnId: turn.id, view })}
+					onCorrect={
+						rawText && settledChips
+							? (note) =>
+									commit(
+										{ kind: "reinterpret", note },
+										{ parentTurnId: turn.id, view },
+									)
+							: undefined
+					}
 					onReinterpret={
-						rawText
+						rawText && turn.degraded
 							? () =>
 									commit(
 										{ kind: "reinterpret" },
@@ -225,7 +236,7 @@ function Workbench() {
 						onReviseQuery={reviseChips}
 						results={results}
 						terms={terms}
-						tooWide={result?.tooWide ?? false}
+						overflowTerms={result?.overflowTerms ?? []}
 						total={result?.total ?? 0}
 						turnId={turnId}
 						view={view}

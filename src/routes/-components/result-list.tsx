@@ -94,7 +94,7 @@ export function ResultList({
 	onMore,
 	withoutStrong,
 	chips,
-	tooWide,
+	overflowTerms,
 	turnId,
 	view,
 	onChange,
@@ -116,8 +116,8 @@ export function ResultList({
 	withoutStrong: number;
 	/** 这条查询记录上的条件。骨架屏的行数由它算，不等服务端。 */
 	chips: Chip[];
-	/** 词太宽，命中的经历段超过了上限：有词、没有结果，走空态的引导。 */
-	tooWide: boolean;
+	/** 超过事实行保险丝时，按贡献选出的要求；空态据此给出具体出口。 */
+	overflowTerms: string[];
 	turnId: string;
 	view: View;
 	onChange: (next: Partial<View>) => void;
@@ -178,7 +178,7 @@ export function ResultList({
 		const state = emptyState({
 			terms,
 			chips,
-			tooWide,
+			overflowTerms,
 			withoutStrong,
 			view,
 			onChange,

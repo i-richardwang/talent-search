@@ -15,15 +15,19 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
-import { type Intent, resolveIntent } from "#/search/intent";
+import {
+	type Intent,
+	priorUnderstanding,
+	resolveIntent,
+} from "#/search/intent";
 import {
 	type Chip,
 	parseChips,
 	type QueryChange,
 	toQuery,
 } from "#/search/parse";
-import { companyTags, probeTerms } from "#/search/search";
-import { understand } from "./llm";
+import { companyTags, probeTerms, probeWide } from "#/search/search";
+import { type Correction, understand } from "./llm";
 
 /**
  * 记录 id 会出现在 URL 里，所以要短、要能双击选中、要不带 `-` 和 `_` 之外的
@@ -69,6 +73,7 @@ async function insertTurn(row: {
 	filters?: Intent["filters"];
 	degraded?: boolean;
 	baseTurnId?: string | null;
+	note?: string | null;
 }): Promise<Turn> {
 	const id = newId();
 	const [inserted] = await db
@@ -81,6 +86,7 @@ async function insertTurn(row: {
 			parentTurnId: row.parent?.id ?? null,
 			baseTurnId: row.baseTurnId ?? null,
 			rawText: row.rawText,
+			note: row.note ?? null,
 			chips: row.chips,
 			filters: row.filters ?? {},
 			degraded: row.degraded ?? false,
@@ -123,10 +129,17 @@ export async function createTurn(
 	let turn: Turn;
 	if (input.kind === "reinterpret") {
 		if (!parent?.rawText) throw new Error("重新理解需要一条由整句产生的父记录");
+		// 无说明的重跑只对降级记录有意义：温度为 0，同样的输入必然给回同样的
+		// 输出，裸重跑一份模型参与过的理解只会多一行一模一样的记录。理解错了
+		// 的出路是带着纠正说明来。服务端函数是可直接调用的端点，这条契约
+		// 必须立在派生规则住的地方，不能只靠界面把按钮藏起来。
+		if (!input.note && !parent.degraded)
+			throw new Error("这条理解没有降级，重新理解需要附带纠正说明");
 		turn = await insertTurn({
 			parent,
 			baseTurnId: parent.baseTurnId,
 			rawText: parent.rawText,
+			note: input.note ?? null,
 			chips: null,
 		});
 	} else if (input.kind === "sentence") {
@@ -164,6 +177,40 @@ async function vetNearMembers(chips: Chip[]): Promise<Chip[]> {
 }
 
 /**
+ * 太宽的词在这里量出来、**可见地**停下。
+ *
+ * 宽是语料的事实（`probeWide`，阈值在 weights.ts 的 `WIDE_SHARE`），处置分
+ * 两档，分界线还是那条「档位即出处」：
+ *
+ * - 模型补的相近说法（near）太宽：直接摘掉，和 probeTerms 体检同一档——
+ *   没过质检的翻译从未上过屏，消失不需要交代；
+ * - 用户自己的词（term/alts）太宽：**整条要求停用并注明成因**（off + wide），
+ *   查询照常跑。用户的词一个都不许无声地动——chip 上带着「太宽」的解释，
+ *   换词还是坚持启用由用户定，重新启用后不再自动碰它。
+ *
+ * 排除词一样量：一个太宽的排除词会把半个语料的证据无声否决掉，比宽的正向词
+ * 危害更大（赶人的词必须准）。只量**这一次新理解出的**条件，不碰合并基线里
+ * 已有的——那里面的停用与启用是用户已经表过态的东西。
+ */
+async function benchWide(chips: Chip[]): Promise<Chip[]> {
+	const texts = [
+		...new Set(
+			chips.flatMap((c) => [c.term, ...(c.alts ?? []), ...(c.near ?? [])]),
+		),
+	];
+	const wide = await probeWide(texts);
+	if (wide.size === 0) return chips;
+	return chips.map((c) => {
+		const near = (c.near ?? []).filter((n) => !wide.has(n));
+		const { near: _drop, ...rest } = c;
+		const kept = near.length > 0 ? { ...rest, near } : rest;
+		return [c.term, ...(c.alts ?? [])].some((t) => wide.has(t))
+			? { ...kept, off: true as const, wide: true as const }
+			: kept;
+	});
+}
+
+/**
  * 把一条只有原话的记录补上理解结果。
  *
  * 这是 `search_turn` 唯一一处 UPDATE，而且只补 `chips is null` 的那一行：
@@ -185,14 +232,32 @@ export async function resolveTurn(
 
 	const text = row.rawText ?? "";
 	const tags = await companyTags();
-	const intent = resolveIntent(text, await understand(text, tags), tags);
-
 	const base = row.baseTurnId ? await getRow(row.baseTurnId) : null;
+	// 纠正理解：交给模型的「上一版理解」只有这句话**自己**的产出——父记录的
+	// chips 减去基线（析法与理由见 priorUnderstanding）。模型不可用时纠正说明
+	// 被忽略（规则解析消化不了元信息），退回原话的规则解析并照常标降级。
+	let correction: Correction | undefined;
+	if (row.note) {
+		const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
+		if (parent?.chips)
+			correction = {
+				previous: priorUnderstanding(parent.chips, base?.chips ?? []),
+				note: row.note,
+			};
+	}
+	const intent = resolveIntent(
+		text,
+		await understand(text, tags, correction),
+		tags,
+	);
+	// 量宽在合并之前：只对这句话新产出的条件动手，基线里的是用户表过态的
+	const checked = await benchWide(intent.chips);
+
 	const merged = base?.chips
 		? parseChips(
-				[toQuery(base.chips), toQuery(intent.chips)].filter(Boolean).join(","),
+				[toQuery(base.chips), toQuery(checked)].filter(Boolean).join(","),
 			)
-		: intent.chips;
+		: checked;
 	const chips = await vetNearMembers(merged);
 
 	await db

@@ -76,23 +76,31 @@ export function QueryChips({
 	chips,
 	terms,
 	onChange,
+	trailing,
 }: {
 	chips: Chip[];
 	/** 服务端算出来的检索计划，只用来取「整词退到了哪个子串」 */
 	terms: TermPlan[];
 	onChange: (next: Chip[]) => void;
+	/**
+	 * 跟在最后一枚 chip 后面的入口（查询台拿它放「理解得不对？」）。
+	 * 放进同一个 flex-wrap 里它才和 chips 一起换行——另起一行的话，
+	 * 一句关于这排 chip 的话就漂到别的东西旁边去了。
+	 */
+	trailing?: React.ReactNode;
 }) {
 	if (chips.length === 0) return null;
 
 	const replace = (i: number, mode: ChipMode) =>
 		onChange(chips.map((c, j) => (j === i ? { ...c, mode } : c)));
 	const remove = (i: number) => onChange(chips.filter((_, j) => j !== i));
-	// 停用只加/去一个字段，强度和说法始终原样保留
+	// 停用只加/去一个字段，强度和说法始终原样保留。重新启用连 wide 一起摘：
+	// 那是「我知道它宽，照跑」，此后它就是一枚普通 chip，理解层不再自动碰它。
 	const toggle = (i: number) =>
 		onChange(
 			chips.map((c, j) => {
 				if (j !== i) return c;
-				const { off: _off, ...rest } = c;
+				const { off: _off, wide: _wide, ...rest } = c;
 				return { ...rest, ...(!c.off && { off: true as const }) };
 			}),
 		);
@@ -146,6 +154,9 @@ export function QueryChips({
 									≈{chip.near.join("/")}
 								</span>
 							)}
+							{/* 「太宽」是成因，得用字说；只给一个停用图标的话，
+							    自动停的和自己停的在屏幕上就分不出来了 */}
+							{chip.wide && <span className="text-xs">太宽</span>}
 							{chip.off && <EyeOffIcon />}
 							{relaxed && <TriangleAlertIcon className="text-warning" />}
 							<ChevronDownIcon />
@@ -189,8 +200,10 @@ export function QueryChips({
 								<>
 									<MenuGroupLabel>
 										<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
-											此条件当前未生效。重新启用后仍为「
-											{MODE_LABEL[chip.mode]}」条件。
+											{chip.wide
+												? "这个词命中的人太多，几乎筛不掉谁，已自动停用。" +
+													"换个更具体的说法效果更好；重新启用后将照常参与检索。"
+												: `此条件当前未生效。重新启用后仍为「${MODE_LABEL[chip.mode]}」条件。`}
 										</span>
 									</MenuGroupLabel>
 									<MenuSeparator />
@@ -232,6 +245,7 @@ export function QueryChips({
 					</Menu>
 				);
 			})}
+			{trailing}
 		</div>
 	);
 }

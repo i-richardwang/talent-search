@@ -132,6 +132,41 @@ export function intentSchema(companyTags: readonly string[]) {
 	});
 }
 
+/**
+ * 纠正理解时给模型看的「上一版理解」的形状：就是 `intentSchema` 里 terms 的
+ * 一项——模型自己的输出格式，一个记号都不用教。
+ */
+export type PriorTerm = {
+	term: string;
+	mode: ChipMode;
+	alts: string[] | null;
+	near: string[] | null;
+};
+
+/**
+ * 从父记录的 chips 里析出「这句话自己的理解」，作为纠正的上下文。
+ *
+ * 两条规矩：
+ *
+ * - **父减基线。** 父记录的 chips 是「基线 + 这句话的理解」合并的产物；把基线
+ *   里的条件也冒充成对这句话的理解，模型就要替一句从没说过它们的话负责，
+ *   纠正会被不相干的词带偏。纠正记录抄的正是父记录的 baseTurnId，所以父当年
+ *   合并用的基线就在手边，按词减掉即可，不需要多存一份「合并前的理解」。
+ * - **停用状态不进来。** off / wide 是用户和量尺对 chip 的表态，不是模型对
+ *   句子的理解；线格式的 `~` `*` 记号更不该要求模型看懂。
+ */
+export function priorUnderstanding(parent: Chip[], base: Chip[]): PriorTerm[] {
+	const inherited = new Set(base.map((c) => c.term));
+	return parent
+		.filter((c) => !inherited.has(c.term))
+		.map((c) => ({
+			term: c.term,
+			mode: c.mode,
+			alts: c.alts ?? null,
+			near: c.near ?? null,
+		}));
+}
+
 /** 非空字符串，两头空白不算内容 */
 function text(v: unknown) {
 	return typeof v === "string" && v.trim() ? v.trim() : undefined;

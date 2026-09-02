@@ -6,13 +6,13 @@ import { CLEARED_FILTERS, hasFilters, type View } from "./view-params";
  * 名单空了该说什么，以及给一条什么样的出路。
  *
  * 每一支都配一个能一键走的动作——空态最要命的不是没有结果，是没人知道下一步
- * 该改哪。`tooWide` 排在最前：它是唯一一种「你写的没错，只是太宽」的情况，
- * 要说的话和「一个人都没有」正相反，所以不能并进下面那几支。
+ * 该改哪。`overflowTerms` 排在最前：它表示匹配事实多到不能完整排名，和
+ * 「一个人都没有」正相反，所以不能并进下面那几支。
  */
 export function emptyState({
 	terms,
 	chips,
-	tooWide,
+	overflowTerms,
 	withoutStrong,
 	view,
 	onChange,
@@ -21,7 +21,8 @@ export function emptyState({
 }: {
 	terms: TermPlan[];
 	chips: Chip[];
-	tooWide: boolean;
+	/** 超过事实行保险丝时，按实际贡献选出的要求。 */
+	overflowTerms: string[];
 	withoutStrong: number;
 	view: View;
 	/** 改视图：筛选、翻页。不产生新的查询记录。 */
@@ -30,13 +31,10 @@ export function emptyState({
 	onReviseQuery: (next: Chip[]) => void;
 	onFocusQuery: () => void;
 }) {
-	if (tooWide) {
+	if (overflowTerms.length > 0) {
 		return {
-			title: "搜索条件覆盖的人太多",
-			// 出路只能是改词，不能是加条件：太宽由「每个词各自命中多少段」触发
-			// （fetchFacts 不带筛选、按词并联取数），再加一个词或一个筛选都只会
-			// 让取数更多，照着「加条件收窄」去做的人永远走不出这一屏。
-			hint: "请把过宽的词换成更具体的说法，或先停用它。",
+			title: "匹配证据过多",
+			hint: `「${overflowTerms.join("」「")}」产生的匹配证据最多，请换成更具体的说法，或先停用。`,
 			action: { label: "调整条件", onClick: onFocusQuery },
 		};
 	}

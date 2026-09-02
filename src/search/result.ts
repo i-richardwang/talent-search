@@ -157,9 +157,9 @@ export type Overview = {
 /**
  * 一次检索的完整产出。
  *
- * `tooWide` 和「没有人符合」并列，是一种**结果**而不是一次失败：命中的经历段
- * 超过了 `FACT_MAX`，词已经解析出来了（证据行照常排列），只是不给结果，
- * 请用户把过宽的词换掉或停用。它走空态那套引导，不走错误边界。
+ * 匹配事实超过 `FACT_MAX` 时仍然是一种**结果**，不是一次失败：词已经解析
+ * 出来，只是不把截断的数据交给排名。`overflowTerms` 按事实行贡献点出需要
+ * 具体化的要求，页面用它走空态引导，不走错误边界。
  */
 export type SearchOutcome = {
 	terms: TermPlan[];
@@ -167,7 +167,11 @@ export type SearchOutcome = {
 	facets: Facets;
 	/** 命中的总人数，截断之前。results 最多只有 limit 个。 */
 	total: number;
-	tooWide: boolean;
+	/**
+	 * 事实行超过保险丝时，按贡献从大到小选出的要求；正常结果恒为空数组。
+	 * 它量的是 `(要求, 经历段)`，与 chip 上按人数占比标出的 `wide` 无关。
+	 */
+	overflowTerms: string[];
 };
 
 /** 空分面。检索还没跑或没解析出概念词时用它，界面才不必区分「没有」和「还没算」。 */

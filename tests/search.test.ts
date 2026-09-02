@@ -16,7 +16,9 @@ const teardown = await setup();
 after(teardown);
 
 // import 必须在 setup() 之后：#/db 在模块求值时就绑死了连接串
-const { overview, search, sanitizeLimit } = await import("#/search/search");
+const { overflowContributors, overview, search, sanitizeLimit } = await import(
+	"#/search/search"
+);
 const { db } = await import("#/db");
 const { RESULT_PAGE, RESULT_MAX } = await import("#/search/weights");
 
@@ -67,6 +69,35 @@ before(async () => {
 			segments: [{ seqL2: "渠道运营", months: 36 }],
 		},
 	]);
+});
+
+describe("事实行保险丝", () => {
+	test("按事实贡献选择最少数量的主要要求，不借用人数覆盖率", () => {
+		assert.deepEqual(
+			overflowContributors(
+				[
+					{ termIdx: 0, facts: 40 },
+					{ termIdx: 1, facts: 120 },
+					{ termIdx: 2, facts: 90 },
+				],
+				100,
+			),
+			[1, 2],
+		);
+	});
+
+	test("没有超过上限时不虚构贡献者", () => {
+		assert.deepEqual(
+			overflowContributors(
+				[
+					{ termIdx: 0, facts: 40 },
+					{ termIdx: 1, facts: 60 },
+				],
+				100,
+			),
+			[],
+		);
+	});
 });
 
 describe("经历数据约束", () => {
