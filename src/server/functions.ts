@@ -8,7 +8,7 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { asc, eq } from "drizzle-orm";
-import { db } from "#/db";
+import { withCorpusSnapshot } from "#/db";
 import {
 	type Employee,
 	type Experience,
@@ -86,21 +86,22 @@ export const fetchOverview = createServerFn({ method: "GET" }).handler(
 export const fetchEmployee = createServerFn({ method: "GET" })
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
 	.handler(
-		async ({
+		({
 			data,
-		}): Promise<{ employee: Employee; timeline: Experience[] } | null> => {
-			const [emp] = await db
-				.select()
-				.from(employee)
-				.where(eq(employee.empId, data.empId));
-			if (!emp) return null;
-			const timeline = await db
-				.select()
-				.from(experience)
-				.where(eq(experience.empId, data.empId))
-				.orderBy(asc(experience.startDate), asc(experience.id));
-			return { employee: emp, timeline };
-		},
+		}): Promise<{ employee: Employee; timeline: Experience[] } | null> =>
+			withCorpusSnapshot(async (store) => {
+				const [emp] = await store
+					.select()
+					.from(employee)
+					.where(eq(employee.empId, data.empId));
+				if (!emp) return null;
+				const timeline = await store
+					.select()
+					.from(experience)
+					.where(eq(experience.empId, data.empId))
+					.orderBy(asc(experience.startDate), asc(experience.id));
+				return { employee: emp, timeline };
+			}),
 	);
 
 /**

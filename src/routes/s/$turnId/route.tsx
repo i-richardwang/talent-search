@@ -13,7 +13,7 @@ import { Dialog, DialogPopup, DialogTitle } from "#/components/ui/dialog";
 import { Kbd } from "#/components/ui/kbd";
 import { cn } from "#/lib/utils";
 import { emptyFacets, type SearchResult } from "#/search/result";
-import { emptySpec, fellBack, type SearchSpec } from "#/search/spec";
+import { emptySpec, type SearchSpec } from "#/search/spec";
 import { loadWorkbench } from "#/server/functions";
 import { QueryDeck } from "../../-components/query-deck";
 import { ResultList } from "../../-components/result-list";
@@ -76,7 +76,7 @@ const KEYS = [
  */
 export const Route = createFileRoute("/s/$turnId")({
 	validateSearch: validateView,
-	// 每个字段都参与检索：五维决定筛选，n 决定要拉多少人，所以整份 view 就是依赖。
+	// 每个字段都参与检索：范围字段决定筛选，n 决定要拉多少人，所以整份 view 就是依赖。
 	// 查询本身不在依赖里——它由路径上的 turnId 决定。
 	loaderDeps: ({ search }) => search,
 	loader: async ({ params, deps }) => {
@@ -112,7 +112,7 @@ function Workbench() {
 	const { turn, result } = Route.useLoaderData();
 	// `turnId` 就是 `turn.id`：loader 正是按路径上那一段查出这条记录的，
 	// 再从 params 取一次就是同一个值的第二个名字。
-	const { id: turnId, rawText, spec: settledSpec } = turn;
+	const { id: turnId, rawText, spec: settledSpec, canReinterpret } = turn;
 	const view = Route.useSearch();
 	const navigate = useNavigate();
 	const { empId } = useParams({ strict: false });
@@ -202,7 +202,7 @@ function Workbench() {
 							: undefined
 					}
 					onReinterpret={
-						rawText && fellBack(spec)
+						rawText && canReinterpret
 							? () => commit({ kind: "reinterpret" }, { parentTurnId: turn.id })
 							: undefined
 					}

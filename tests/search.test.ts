@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { sql } from "drizzle-orm";
 import { parseChips } from "#/search/parse";
-import { fakeSimilarity, seed, setup } from "./fixture";
+import { fakeSimilarity, holdNextRerank, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -24,6 +24,7 @@ after(teardown);
 const { overflowContributors, overview, probeWide, search, vocabulary } =
 	await import("#/search/search");
 const { db } = await import("#/db");
+const { pool } = await import("#/db");
 const run = async (
 	evidence: ReturnType<typeof parseChips>,
 	filters = {},
@@ -41,6 +42,86 @@ const run = async (
 };
 const { RESULT_PAGE, RECALL_MIN, RELEVANCE_MIN, RELEVANCE_MIN_EXCLUDE } =
 	await import("#/search/weights");
+
+describe("语料快照", () => {
+	test("整库重灌会等待正在检索的旧语料，不在一次结果里混代", async () => {
+		await seed([
+			{
+				empId: "SNAP001",
+				name: "快照测试",
+				segments: [{ title: "快照一致性专用", months: 12 }],
+			},
+		]);
+		const gate = holdNextRerank();
+		const pendingSearch = run(parseChips("快照一致性专用"));
+		await gate.entered;
+
+		const writer = await pool.connect();
+		let reload: Promise<unknown> | null = null;
+		try {
+			await writer.query("begin");
+			const pid = (
+				await writer.query<{ pid: number }>("select pg_backend_pid() as pid")
+			).rows[0]?.pid;
+			if (!pid) throw new Error("无法取得测试写连接的 pid");
+			reload = (async () => {
+				await writer.query(
+					"lock table embedding_space in access exclusive mode",
+				);
+				await writer.query(
+					"truncate experience, employee, phrase, embedding_space restart identity cascade",
+				);
+			})();
+
+			let waiting = false;
+			for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
+				const state = await db.execute<{ waiting: boolean }>(sql`
+					select wait_event_type = 'Lock' as waiting
+					from pg_stat_activity where pid = ${pid}`);
+				waiting = state.rows[0]?.waiting ?? false;
+				if (!waiting) await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+			assert.ok(waiting, "整库重灌应等待检索释放语料快照");
+
+			gate.release();
+			const result = await pendingSearch;
+			assert.equal(result.results[0]?.employee.empId, "SNAP001");
+			await reload;
+			await writer.query("rollback");
+			reload = null;
+		} finally {
+			gate.release();
+			if (reload) await reload;
+			await writer.query("rollback").catch(() => {});
+			writer.release();
+		}
+	});
+
+	test("同一新词并发检索共享确定性缓存，不因写入竞争失败", async () => {
+		await seed([
+			{
+				empId: "CACHE001",
+				name: "缓存并发测试",
+				segments: [{ title: "缓存并发专用", months: 12 }],
+			},
+		]);
+		const gate = holdNextRerank();
+		const first = run(parseChips("缓存并发专用"));
+		await gate.entered;
+		let secondError: unknown;
+		try {
+			const second = await run(parseChips("缓存并发专用"));
+			assert.equal(second.results[0]?.employee.empId, "CACHE001");
+		} catch (error) {
+			secondError = error;
+		} finally {
+			gate.release();
+		}
+		const result = await first;
+		if (secondError) throw secondError;
+		assert.equal(result.results[0]?.employee.empId, "CACHE001");
+	});
+});
 
 before(async () => {
 	await seed([

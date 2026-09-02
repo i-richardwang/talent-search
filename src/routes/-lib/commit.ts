@@ -13,7 +13,7 @@
  * 效果，是记录不可变换来的——上一步的样子还完整地在库里。
  */
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toQuery } from "#/search/parse";
 import type { QueryInput } from "#/search/spec";
 import { commitTurn } from "#/server/functions";
@@ -23,6 +23,7 @@ const FAILED = "没能提交这次搜索，请重试。";
 
 export function useCommit() {
 	const navigate = useNavigate();
+	const inFlight = useRef(false);
 	/**
 	 * **正在飞的那一条**，不是一个布尔：零态那排示例要靠它认出该转圈的是哪一条，
 	 * 也要靠它把其余几条禁掉——两条同时在飞，先回来的会被后回来的覆盖。
@@ -46,7 +47,8 @@ export function useCommit() {
 				: input.kind === "spec"
 					? `${toQuery(input.spec.evidence)}:${JSON.stringify(input.spec.scope)}:${JSON.stringify(input.spec.notices)}`
 					: `reinterpret:${input.note ?? ""}`;
-		if (pending !== null) return false;
+		if (inFlight.current) return false;
+		inFlight.current = true;
 		setPending(key);
 		setError(null);
 		try {
@@ -71,6 +73,7 @@ export function useCommit() {
 			setError(FAILED);
 			return false;
 		} finally {
+			inFlight.current = false;
 			setPending(null);
 		}
 	};

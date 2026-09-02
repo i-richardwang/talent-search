@@ -103,6 +103,9 @@ def load(source_name: str) -> None:
 
     print("\n写入 Postgres…")
     with psycopg.connect(C.require_database_url()) as conn, conn.cursor() as cur:
+        # 查询先读 embedding_space，再读其余语料表；重灌也从同一张表起锁，
+        # 于是它只会等待完整查询结束，不会先锁住 phrase 再和查询互相等待。
+        cur.execute("lock table embedding_space in access exclusive mode")
         # phrase 级联清掉 experience_phrase 和 phrase_relevance：重排分是对旧 id 打的
         cur.execute(
             "truncate experience, employee, phrase, embedding_space restart identity cascade"
@@ -123,12 +126,11 @@ def load(source_name: str) -> None:
         copy_frame(cur, "experience", experience, EXPERIENCE_OUT)
         print("\n嵌入经历原文…")
         phrases, links = embed_phrases(cur)
-        conn.commit()
-
         cur.execute("select count(*) from employee")
         n_emp = cur.fetchone()[0]
         cur.execute("select kind, count(*) from experience group by kind order by 1")
         rows = cur.fetchall()
+        conn.commit()
     print(f"  employee {n_emp} 行")
     for kind, n in rows:
         print(f"  experience[{kind}] {n} 行")

@@ -82,6 +82,7 @@ describe("整句的重译", () => {
 		assert.deepEqual(redo.terms, ["渠道运营"]);
 		const rows = await db.select().from(searchTurn);
 		assert.equal(rows.find((r) => r.id === redo.turnId)?.rawText, "渠道运营");
+		assert.equal((await loadTurn(root.turnId))?.canReinterpret, true);
 	});
 
 	test("链中段重译沿用这句话原本的合并基线", async () => {
@@ -168,6 +169,38 @@ describe("整句的重译", () => {
 		assert.ok(turnId, "带纠正说明才是有意义的重新理解");
 	});
 
+	test("直接重试只看当前这句话是否降级，不被基线里的旧提示误导", async () => {
+		const { db } = await import("#/db");
+		const { searchTurn } = await import("#/db/schema");
+		const root = await sentence("算法");
+		await db.insert(searchTurn).values({
+			id: "model_child_after_fallback",
+			rootTurnId: root.turnId,
+			parentTurnId: root.turnId,
+			baseTurnId: root.turnId,
+			rawText: "渠道运营",
+			delta: {
+				evidence: [{ term: "渠道运营", mode: "must" }],
+				scope: {},
+				notices: [],
+			},
+			spec: {
+				evidence: [
+					{ term: "算法", mode: "must" },
+					{ term: "渠道运营", mode: "must" },
+				],
+				scope: {},
+				notices: [{ kind: "fallback" }],
+			},
+		});
+
+		const row = await loadTurn("model_child_after_fallback");
+		assert.equal(row?.canReinterpret, false);
+		await assert.rejects(
+			createTurn({ kind: "reinterpret" }, "model_child_after_fallback"),
+		);
+	});
+
 	test("只有已经理解完成的整句记录可以重译", async () => {
 		await assert.rejects(createTurn({ kind: "reinterpret" }));
 		const root = await sentence("算法");
@@ -231,5 +264,45 @@ describe("查询记录状态", () => {
 			}),
 			violates("search_turn_state"),
 		);
+	});
+
+	test("待理解记录不在缺失基线时悄悄退回空查询", async () => {
+		const { db } = await import("#/db");
+		const { searchTurn } = await import("#/db/schema");
+		await db.insert(searchTurn).values([
+			{
+				id: "pending_base",
+				rootTurnId: "pending_base",
+				rawText: "算法",
+			},
+			{
+				id: "pending_child",
+				rootTurnId: "pending_base",
+				parentTurnId: "pending_base",
+				baseTurnId: "pending_base",
+				rawText: "渠道运营",
+			},
+		]);
+
+		await assert.rejects(resolveTurn("pending_child"), /合并基线尚未理解完成/);
+	});
+
+	test("纠正记录不在缺失上一版理解时当作普通查询", async () => {
+		const { db } = await import("#/db");
+		const { searchTurn } = await import("#/db/schema");
+		await db.insert(searchTurn).values({
+			id: "direct_parent",
+			rootTurnId: "direct_parent",
+			spec: { evidence: [], scope: {}, notices: [] },
+		});
+		await db.insert(searchTurn).values({
+			id: "invalid_correction",
+			rootTurnId: "direct_parent",
+			parentTurnId: "direct_parent",
+			rawText: "算法",
+			note: "指的是推荐算法",
+		});
+
+		await assert.rejects(resolveTurn("invalid_correction"), /缺少上一版理解/);
 	});
 });

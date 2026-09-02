@@ -26,4 +26,10 @@ test("空间校验拒绝错误身份与零向量，修复后可以直接重试",
 		update embedding_space
 		set canary_embedding = ${`[${fakeEmbedding(canary).join(",")}]`}::halfvec`);
 	assert.equal((await embed(["算法"])).length, 1);
+
+	const changedCanary = "changed canary under the same identity";
+	await db.execute(sql`
+		update embedding_space set canary_text = ${changedCanary},
+			canary_embedding = ${`[${fakeEmbedding(changedCanary).join(",")}]`}::halfvec`);
+	await assert.rejects(embed(["渠道运营"]), /身份在进程运行期间发生变化/);
 });

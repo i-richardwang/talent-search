@@ -13,7 +13,7 @@
 
 import "@tanstack/react-start/server-only";
 import { inArray, type SQL, sql } from "drizzle-orm";
-import { db } from "#/db";
+import { type DbExecutor, withCorpusSnapshot } from "#/db";
 import { employee, experience } from "#/db/schema";
 import { seqLabel } from "#/lib/format";
 import type { Vocabulary } from "./intent";
@@ -63,6 +63,11 @@ function like(term: string) {
 	return sql`${`%${escapeLike(term)}%`}`;
 }
 
+function required<T>(value: T | undefined, message: string): T {
+	if (value === undefined) throw new Error(message);
+	return value;
+}
+
 /**
  * 这些词里，哪些在语料里命中的**人**占比超过了 `WIDE_SHARE`——也就是**太宽**。
  *
@@ -75,15 +80,24 @@ function like(term: string) {
  * benchWide，超标的可见地停用）。只探语料、不带筛选——宽不宽只由词和语料决定。
  * 命中口径和检索完全相同（同一个 `admit`），否则量出来的宽和搜出来的宽不是一回事。
  */
-export async function probeWide(texts: string[]): Promise<Set<string>> {
+export async function probeWide(
+	texts: string[],
+	store?: DbExecutor,
+): Promise<Set<string>> {
 	if (texts.length === 0) return new Set();
-	const admitted = await admit(texts, RELEVANCE_MIN);
+	if (!store)
+		return withCorpusSnapshot((snapshot) => probeWide(texts, snapshot));
+	const admitted = await admit(texts, RELEVANCE_MIN, store);
 	const rows = texts.flatMap((t, i) =>
-		(admitted.get(t) ?? []).map((hit) => ({ termIdx: i, memberIdx: 0, hit })),
+		(admitted.get(t) ?? []).map((hit) => ({
+			termIdx: i,
+			memberIdx: 0,
+			hit,
+		})),
 	);
 	const table = admittedTable(rows);
 	if (!table) return new Set();
-	const wide = await db.execute<{ term_idx: number }>(sql`
+	const wide = await store.execute<{ term_idx: number }>(sql`
 		with total as (select count(distinct emp_id)::float as n from experience),
 		q(term_idx, member_idx, phrase_id, relevance) as ${table}
 		select q.term_idx from q
@@ -91,7 +105,7 @@ export async function probeWide(texts: string[]): Promise<Set<string>> {
 		join experience e on e.id = ep.experience_id, total
 		group by q.term_idx, total.n
 		having count(distinct e.emp_id) > total.n * ${WIDE_SHARE}`);
-	return new Set(wide.rows.map((r) => texts[r.term_idx] as string));
+	return new Set(wide.rows.map((row) => texts[row.term_idx] as string));
 }
 
 type FactRow = {
@@ -231,6 +245,7 @@ function canonicalFacts(
  * 只有跟人走的精确条件（searchScope）在这里生效——它们没有分面。
  */
 async function fetchFacts(
+	store: DbExecutor,
 	terms: TermPlan[],
 	admitted: Map<string, Admitted[]>,
 	scope: SearchScope,
@@ -244,12 +259,12 @@ async function fetchFacts(
 		),
 	);
 	if (!table) return { kind: "loaded", facts: [] };
-	const rows = await db.execute<FactRow>(sql`
+	const rows = await store.execute<FactRow>(sql`
 		select * from (${canonicalFacts(table, scope, view)}) facts
 		limit ${FACT_MAX + 1}`);
 
 	if (rows.rows.length > FACT_MAX) {
-		const counts = await db.execute<{ term_idx: number; facts: number }>(sql`
+		const counts = await store.execute<{ term_idx: number; facts: number }>(sql`
 			select term_idx, count(*)::int as facts
 			from (${canonicalFacts(table, scope, view)}) facts
 			group by term_idx`);
@@ -294,16 +309,21 @@ async function fetchFacts(
  *
  * **门槛比进门高**（RELEVANCE_MIN_EXCLUDE）：进门的词可以扩，赶人的词必须准。
  */
-async function fetchVetoed(texts: string[]): Promise<Set<number>> {
+async function fetchVetoed(
+	store: DbExecutor,
+	texts: string[],
+	admitted: Map<string, Admitted[]>,
+): Promise<Set<number>> {
 	if (texts.length === 0) return new Set();
-	const admitted = await admit(texts, RELEVANCE_MIN_EXCLUDE);
 	const table = admittedTable(
 		texts.flatMap((t, i) =>
-			(admitted.get(t) ?? []).map((hit) => ({ termIdx: i, memberIdx: 0, hit })),
+			(admitted.get(t) ?? [])
+				.filter((hit) => hit.relevance >= RELEVANCE_MIN_EXCLUDE)
+				.map((hit) => ({ termIdx: i, memberIdx: 0, hit })),
 		),
 	);
 	if (!table) return new Set();
-	const rows = await db.execute<{ id: number }>(sql`
+	const rows = await store.execute<{ id: number }>(sql`
 		with q(term_idx, member_idx, phrase_id, relevance) as ${table}
 		select distinct ep.experience_id as id
 		from q join experience_phrase ep on ep.phrase_id = q.phrase_id`);
@@ -324,21 +344,43 @@ const VOCAB_MAX = 100;
  * 筛不到任何人，而界面上那一维会显示成一个选中了却空着的筛选。语料就是词典。
  * 空串与「未知」不是取值。
  */
-export async function vocabulary(): Promise<Vocabulary> {
-	const column = async (expr: SQL, from: SQL) => {
-		const rows = await db.execute<{ v: string }>(sql`
-			select v from (select ${expr} as v, count(*) as n from ${from} group by 1) c
-			where v is not null and v not in ('', '未知')
-			order by n desc, v limit ${VOCAB_MAX}`);
-		return rows.rows.map((r) => r.v);
+export async function vocabulary(store?: DbExecutor): Promise<Vocabulary> {
+	if (store) return vocabularyFrom(store);
+	return withCorpusSnapshot((snapshot) => vocabularyFrom(snapshot));
+}
+
+async function vocabularyFrom(store: DbExecutor): Promise<Vocabulary> {
+	const rows = await store.execute<{
+		company_tags: string[];
+		levels: string[];
+		recruitments: string[];
+		educations: string[];
+	}>(sql`
+		select
+			array(select v from (
+				select org_meta ->> 'company_tag' as v, count(*) as n
+				from experience group by 1
+			) c where v is not null and v not in ('', '未知')
+			order by n desc, v limit ${VOCAB_MAX}) as company_tags,
+			array(select v from (
+				select cur_level as v, count(*) as n from employee group by 1
+			) c where v is not null and v not in ('', '未知')
+			order by n desc, v limit ${VOCAB_MAX}) as levels,
+			array(select v from (
+				select recruitment as v, count(*) as n from employee group by 1
+			) c where v is not null and v not in ('', '未知')
+			order by n desc, v limit ${VOCAB_MAX}) as recruitments,
+			array(select v from (
+				select education_level as v, count(*) as n from employee group by 1
+			) c where v is not null and v not in ('', '未知')
+			order by n desc, v limit ${VOCAB_MAX}) as educations`);
+	const row = rows.rows[0];
+	return {
+		companyTags: row?.company_tags ?? [],
+		levels: row?.levels ?? [],
+		recruitments: row?.recruitments ?? [],
+		educations: row?.educations ?? [],
 	};
-	const [companyTags, levels, recruitments, educations] = await Promise.all([
-		column(sql`org_meta ->> 'company_tag'`, sql`experience`),
-		column(sql`cur_level`, sql`employee`),
-		column(sql`recruitment`, sql`employee`),
-		column(sql`education_level`, sql`employee`),
-	]);
-	return { companyTags, levels, recruitments, educations };
 }
 
 /** 零态的词汇表最多给几个。一屏之内扫得完，再多就成了要读的正文。 */
@@ -354,27 +396,28 @@ const OVERVIEW_SEQS = 12;
  * 过不了的直接不出现。
  */
 export async function overview(): Promise<Overview> {
-	const [scale, seqs] = await Promise.all([
-		db.execute<{ people: number; segments: number }>(sql`
-			select count(distinct emp_id)::int as people, count(*)::int as segments
-			from experience`),
-		// 多取一些再筛：体检刷掉几个之后仍然要能凑满一屏
-		db.execute<{ seq_l2: string }>(sql`
-			select seq_l2, count(distinct emp_id) as n from experience
-			where seq_l2 <> '' group by seq_l2
-			order by n desc limit ${OVERVIEW_SEQS * 3}`),
-	]);
-	const clean = seqs.rows
-		.map((r) => r.seq_l2)
-		.filter((name) => {
+	return withCorpusSnapshot(async (store) => {
+		const rows = await store.execute<{
+			people: number;
+			segments: number;
+			seqs: string[];
+		}>(sql`
+				select count(distinct emp_id)::int as people, count(*)::int as segments,
+					array(select seq_l2 from experience where seq_l2 <> ''
+						group by seq_l2 order by count(distinct emp_id) desc
+						limit ${OVERVIEW_SEQS * 3}) as seqs
+				from experience`);
+		const row = rows.rows[0];
+		const clean = (row?.seqs ?? []).filter((name) => {
 			const terms = parseQuery(name);
 			return terms.length === 1 && terms[0] === name;
 		});
-	return {
-		people: scale.rows[0]?.people ?? 0,
-		segments: scale.rows[0]?.segments ?? 0,
-		seqs: clean.slice(0, OVERVIEW_SEQS),
-	};
+		return {
+			people: row?.people ?? 0,
+			segments: row?.segments ?? 0,
+			seqs: clean.slice(0, OVERVIEW_SEQS),
+		};
+	});
 }
 
 /**
@@ -382,11 +425,12 @@ export async function overview(): Promise<Overview> {
  * 或证据段身份，不参与语义打分与证据展示；只用于人员筛选和分面计数。
  */
 async function searchScopeOnly(
+	store: DbExecutor,
 	scope: SearchScope,
 	view: SearchFilters,
 	limit: number,
 ): Promise<SearchOutcome> {
-	const rows = await db.execute<PopulationRow>(sql`
+	const rows = await store.execute<PopulationRow>(sql`
 		select e.emp_id, e.months, e.seq_l1, e.seq_l2, e.kind,
 			e.org_meta ->> 'company_tag' as company_tag,
 			p.cur_level as level, p.recruitment, p.education_level as education
@@ -424,7 +468,7 @@ async function searchScopeOnly(
 	const employees =
 		pageIds.length === 0
 			? []
-			: await db
+			: await store
 					.select({
 						empId: employee.empId,
 						name: employee.name,
@@ -438,10 +482,9 @@ async function searchScopeOnly(
 	return {
 		order: "employee",
 		terms: [],
-		results: pageIds.flatMap((empId) => {
-			const person = byId.get(empId);
-			return person ? [{ employee: person }] : [];
-		}),
+		results: pageIds.map((empId) => ({
+			employee: required(byId.get(empId), `结构化结果缺少员工 ${empId}`),
+		})),
 		facets,
 		total,
 		overflow: null,
@@ -475,7 +518,9 @@ export async function search(
 	);
 	// 结构化范围本身就是完整的候选定义，不需要伪造一个向量词来启动检索。
 	if (terms.length === 0 && Object.keys(spec.scope).length > 0)
-		return searchScopeOnly(spec.scope, filters, sanitizeLimit(limit));
+		return withCorpusSnapshot((store) =>
+			searchScopeOnly(store, spec.scope, filters, sanitizeLimit(limit)),
+		);
 	// 没有正向证据也没有结构化范围时，排除词自己不产出候选人。
 	if (terms.length === 0)
 		return {
@@ -487,55 +532,65 @@ export async function search(
 			overflow: null,
 		};
 
-	// 正向要求的判定与否决段集合互不依赖，同时发出去
-	const [admitted, vetoed] = await Promise.all([
-		admit(
-			terms.flatMap((t) => t.members),
+	return withCorpusSnapshot(async (store) => {
+		const positiveTexts = terms.flatMap((term) => term.members);
+		const admitted = await admit(
+			[...positiveTexts, ...vetoTexts],
 			RELEVANCE_MIN,
-		),
-		fetchVetoed(vetoTexts),
-	]);
-	const loaded = await fetchFacts(terms, admitted, spec.scope, filters);
-	if (loaded.kind === "overflow") {
-		const contributors = new Set(loaded.termIndexes);
-		return {
-			order: "relevance",
+			store,
+		);
+		const vetoed = await fetchVetoed(store, vetoTexts, admitted);
+		const loaded = await fetchFacts(
+			store,
 			terms,
-			results: [],
-			facets: emptyFacets(),
-			total: 0,
-			overflow: {
-				kind: "evidence",
-				terms: terms
-					.filter((_, index) => contributors.has(index))
-					.map((term) => term.term),
-			},
-		};
-	}
-	const facts = vetoed.size
-		? loaded.facts.filter((f) => !vetoed.has(f.id))
-		: loaded.facts;
+			admitted,
+			spec.scope,
+			filters,
+		);
+		if (loaded.kind === "overflow") {
+			const contributors = new Set(loaded.termIndexes);
+			return {
+				order: "relevance",
+				terms,
+				results: [],
+				facets: emptyFacets(),
+				total: 0,
+				overflow: {
+					kind: "evidence",
+					terms: terms
+						.filter((_, index) => contributors.has(index))
+						.map((term) => term.term),
+				},
+			};
+		}
+		const facts = vetoed.size
+			? loaded.facts.filter((fact) => !vetoed.has(fact.id))
+			: loaded.facts;
 
-	const { ranked, facets, total } = rank(facts, terms, filters, new Date());
-	const page = ranked.slice(0, sanitizeLimit(limit));
-	if (page.length === 0)
-		return {
-			order: "relevance",
-			terms,
-			results: [],
-			facets,
-			total,
-			overflow: null,
-		};
+		const { ranked, facets, total } = rank(facts, terms, filters, new Date());
+		const page = ranked.slice(0, sanitizeLimit(limit));
+		if (page.length === 0)
+			return {
+				order: "relevance",
+				terms,
+				results: [],
+				facets,
+				total,
+				overflow: null,
+			};
 
-	const empIds = page.map((r) => r.empId);
-	const evidence = pageHits(facts, filters, new Set(empIds), HITS_PER_TERM);
+		const empIds = page.map((row) => row.empId);
+		const evidence = pageHits(facts, filters, new Set(empIds), HITS_PER_TERM);
 
-	// 名次确定后按 id 读取展示原文；命中判定只产生事实，不承担内容读取。
-	const ids = [...new Set([...evidence.values()].flat().map((f) => f.id))];
-	const [segments, employees] = await Promise.all([
-		db.select().from(experience).where(inArray(experience.id, ids)),
-		db
+		// 名次确定后按 id 读取展示原文；命中判定只产生事实，不承担内容读取。
+		const ids = [
+			...new Set([...evidence.values()].flat().map((fact) => fact.id)),
+		];
+		const segments = await store
+			.select()
+			.from(experience)
+			.where(inArray(experience.id, ids));
+		const employees = await store
 			.select({
 				empId: employee.empId,
 				name: employee.name,
@@ -544,44 +599,63 @@ export async function search(
 				curLevel: employee.curLevel,
 			})
 			.from(employee)
-			.where(inArray(employee.empId, empIds)),
-	]);
+			.where(inArray(employee.empId, empIds));
 
-	const segById = new Map(segments.map((s) => [s.id, s]));
-	const empById = new Map(employees.map((e) => [e.empId, e]));
+		const segById = new Map(segments.map((segment) => [segment.id, segment]));
+		const empById = new Map(employees.map((person) => [person.empId, person]));
 
-	const results: RankedResult[] = [];
-	for (const row of page) {
-		const emp = empById.get(row.empId);
-		if (!emp) continue;
-		const hits: Hit[] = [];
-		for (const f of evidence.get(row.empId) ?? []) {
-			const s = segById.get(f.id);
-			const plan = terms[f.termIdx];
-			if (!s || !plan) continue;
-			hits.push({
-				experienceId: s.id,
-				term: plan.term,
-				member: plan.members[f.memberIdx] ?? plan.term,
-				route: f.route,
-				relevance: f.relevance,
-				kind: s.kind,
-				startDate: s.startDate,
-				endDate: s.endDate,
-				org: s.org,
-				title: s.title,
-				seq: seqLabel(s.seqL1, s.seqL2, s.seqL3),
-				months: s.months,
+		const results: RankedResult[] = [];
+		for (const row of page) {
+			const emp = required(
+				empById.get(row.empId),
+				`相关度结果缺少员工 ${row.empId}`,
+			);
+			const hits: Hit[] = [];
+			const personEvidence = required(
+				evidence.get(row.empId),
+				`相关度结果缺少员工 ${row.empId} 的证据`,
+			);
+			for (const fact of personEvidence) {
+				const segment = required(
+					segById.get(fact.id),
+					`证据结果缺少经历段 ${fact.id}`,
+				);
+				const plan = required(
+					terms[fact.termIdx],
+					`证据结果引用了未知要求 ${fact.termIdx}`,
+				);
+				hits.push({
+					experienceId: segment.id,
+					term: plan.term,
+					member: required(
+						plan.members[fact.memberIdx],
+						`证据结果引用了未知说法 ${fact.memberIdx}`,
+					),
+					route: fact.route,
+					relevance: fact.relevance,
+					kind: segment.kind,
+					startDate: segment.startDate,
+					endDate: segment.endDate,
+					org: segment.org,
+					title: segment.title,
+					seq: seqLabel(segment.seqL1, segment.seqL2, segment.seqL3),
+					months: segment.months,
+				});
+			}
+			results.push({
+				employee: emp,
+				score: row.score,
+				basis: row.basis,
+				hits,
 			});
 		}
-		results.push({ employee: emp, score: row.score, basis: row.basis, hits });
-	}
-	return {
-		order: "relevance",
-		terms,
-		results,
-		facets,
-		total,
-		overflow: null,
-	};
+		return {
+			order: "relevance",
+			terms,
+			results,
+			facets,
+			total,
+			overflow: null,
+		};
+	});
 }

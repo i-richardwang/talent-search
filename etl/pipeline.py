@@ -3,10 +3,11 @@
 这里不出现任何一家公司的字段名、字典码或组织名。它只做「无论数据从哪来都
 必须做」的那几件事：
 
-1. 区间合法性——没有开始日、结束早于开始、生效日在未来的记录一律**拒绝导入
-   并报出数量**，不猜日期，也不靠 `max(1, ...)` 把错误区间伪装成一月经历；
-2. 开放区间封口——公司内的末段封到 `as_of`，入职前的末段封到入职日；
-3. 相邻段合并——`segment_key` 相同的相邻段是同一件事，不是两段经历；
+1. 区间合法性——日期格式错误、没有开始日、结束早于开始、生效日在未来的记录
+   一律**拒绝导入并报出数量**，不猜日期，也不靠 `max(1, ...)` 把错误区间伪装
+   成一月经历；
+2. 开放区间封口——公司内开放段计算时封到 `as_of`，入职前开放段封到入职日；
+3. 相邻段合并——`segment_key` 相同且时间连续或重叠的记录合成一段经历；
 4. 时长与当前信息派生。
 
 这几件事只写一遍，接第二个数据源时才不会长出第二套「什么算一段经历」。
@@ -18,6 +19,7 @@ import json
 from datetime import timedelta
 
 import pandas as pd
+from pandas.api.types import is_bool
 
 from contract import SourceData
 
@@ -76,13 +78,25 @@ def duration_months(start: pd.Timestamp, end: pd.Timestamp) -> int:
     return months if months > 0 else 1
 
 
-def _dates(frame: pd.DataFrame, *columns: str) -> pd.DataFrame:
+def _parse_dates(
+    frame: pd.DataFrame, *columns: str
+) -> tuple[pd.DataFrame, pd.Series]:
+    """解析日期，并单独返回「有原值但解析失败」的行。
+
+    空值是契约允许的未知或开放区间；格式错误不是。两者不能都收成 NaT，否则
+    错误结束日会被当成开放区间封口，错误历史段会被当成当前经历。
+    """
     out = frame.copy()
+    invalid = pd.Series(False, index=out.index)
     for column in columns:
-        out[column] = pd.to_datetime(
-            out[column].replace("", None), errors="coerce"
+        raw = out[column]
+        blank = raw.isna() | raw.map(
+            lambda value: isinstance(value, str) and not value.strip()
         )
-    return out
+        parsed = pd.to_datetime(raw.mask(blank), errors="coerce")
+        invalid |= ~blank & parsed.isna()
+        out[column] = parsed
+    return out, invalid
 
 
 def _text(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -103,54 +117,87 @@ def _reject(frame: pd.DataFrame, bad: pd.Series, why: str) -> pd.DataFrame:
 
 
 def build_internal(rows: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
-    out = _text(_dates(rows, "start_date", "end_date"), TEXT_FIELDS)
+    dated, invalid = _parse_dates(rows, "start_date", "end_date")
+    out = _text(dated, TEXT_FIELDS)
     out["segment_key"] = out.segment_key.map(clean_scalar)
 
+    out = _reject(out, invalid, "公司内经历日期格式无效")
     out = _reject(out, out.start_date.isna(), "公司内经历缺少开始日期")
     out = _reject(out, out.start_date > as_of, "公司内经历生效日在未来")
+    out = _reject(
+        out,
+        out.end_date.notna() & (out.end_date > as_of),
+        "公司内经历结束日在未来",
+    )
     out = _reject(
         out,
         out.end_date.notna() & (out.end_date < out.start_date),
         "公司内经历日期倒置",
     )
 
-    out = merge_adjacent(out.sort_values(["emp_id", "start_date"]), as_of)
+    missing_key = out.segment_key == ""
+    if missing_key.any():
+        print(
+            f"  公司内经历缺少 segment_key {int(missing_key.sum())} 段，已保留为独立经历"
+        )
+
+    out = _merge_adjacent(out.sort_values(["emp_id", "start_date"]), as_of)
     out["kind"] = "internal"
     out["description"] = ""
     out["org_meta"] = None
     return out
 
 
-def merge_adjacent(rows: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
+def _merge_adjacent(rows: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
     """合并 `segment_key` 相同的相邻段，并按合并后的区间重算时长。
 
-    合并后的段取**第一段的起始**和**最后一段的结束**：末段结束为空表示至今，
-    重算时长时封到 `as_of`。
+    相同 key 只说明内容相同；时间连续或重叠才说明它们是同一段经历。合并区间取
+    最早开始和最晚结束，只要其中一段开放，合并结果就开放；重算时长封到 `as_of`。
     """
     if rows.empty:
         out = rows.copy()
         out["months"] = pd.Series(dtype="int64")
         return out.reset_index(drop=True)
 
-    df = rows.reset_index(drop=True)
-    key = df[["emp_id", "segment_key"]]
-    group = (~(key == key.shift()).all(axis=1)).cumsum()
+    df = rows.sort_values(
+        ["emp_id", "segment_key", "start_date", "end_date"], na_position="last"
+    ).copy()
+    df["_merge_key"] = [
+        ("segment", key) if key else ("row", index)
+        for index, key in zip(df.index, df.segment_key, strict=True)
+    ]
+    merged_rows: list[dict] = []
+    for _, same_segment in df.groupby(["emp_id", "_merge_key"], sort=False):
+        current: dict | None = None
+        for row in same_segment.drop(columns="_merge_key").to_dict("records"):
+            if current is None:
+                current = row
+                continue
+            current_end = as_of if pd.isna(current["end_date"]) else current["end_date"]
+            if row["start_date"] > current_end + timedelta(days=1):
+                merged_rows.append(current)
+                current = row
+                continue
+            current["end_date"] = (
+                pd.NaT
+                if pd.isna(current["end_date"]) or pd.isna(row["end_date"])
+                else max(current["end_date"], row["end_date"])
+            )
+        if current is not None:
+            merged_rows.append(current)
 
-    agg = df.groupby(group).agg(
-        {c: "first" for c in df.columns if c != "end_date"}
-    )
-    agg["end_date"] = df.groupby(group).end_date.apply(lambda v: v.iloc[-1])
-    agg["months"] = [
+    merged = pd.DataFrame(merged_rows, columns=rows.columns)
+    merged["months"] = [
         duration_months(
             pd.Timestamp(row.start_date),
             as_of if pd.isna(row.end_date) else pd.Timestamp(row.end_date),
         )
-        for row in agg.itertuples()
+        for row in merged.itertuples()
     ]
-    merged = len(df) - len(agg)
-    if merged:
-        print(f"  合并内容相同的相邻段 {merged} 条")
-    return agg.reset_index(drop=True)
+    merged_count = len(df) - len(merged)
+    if merged_count:
+        print(f"  合并内容相同的相邻段 {merged_count} 条")
+    return merged.sort_values(["emp_id", "start_date"]).reset_index(drop=True)
 
 
 # ------------------------------------------------------------------ 入职前经历
@@ -159,12 +206,17 @@ def merge_adjacent(rows: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
 def build_external(
     rows: pd.DataFrame, hire_dates: dict[str, pd.Timestamp]
 ) -> pd.DataFrame:
+    dated, invalid = _parse_dates(rows, "start_date", "end_date")
     out = _text(
-        _dates(rows, "start_date", "end_date"),
+        dated,
         ["org", "title", "description", "company_tag", "industry", "nature"],
     )
-    out["unemployed"] = out.unemployed.fillna(False).astype(bool)
-
+    out = _reject(out, invalid, "入职前经历日期格式无效")
+    valid_unemployed = out.unemployed.isna() | out.unemployed.map(is_bool)
+    out = _reject(out, ~valid_unemployed, "入职前经历待业标记无效")
+    out["unemployed"] = out.unemployed.map(
+        lambda value: False if pd.isna(value) else bool(value)
+    )
     out = _reject(out, out.start_date.isna(), "入职前经历缺少开始日期")
     out = close_external_intervals(out, hire_dates)
     out = _reject(
@@ -223,22 +275,36 @@ def _org_meta(row) -> str | None:
 # -------------------------------------------------------------------- 员工表
 
 
+def _normalize_employee_rows(rows: pd.DataFrame) -> pd.DataFrame:
+    fields = ["emp_id", "name", "education_level", "school", "recruitment"]
+    dated, invalid_hire_date = _parse_dates(rows, "hire_date")
+    out = _text(dated, fields)
+    if invalid_hire_date.any():
+        print(
+            f"  员工档案入职日期格式无效 {int(invalid_hire_date.sum())} 行，入职日已留空"
+        )
+    return out
+
+
 def build_employee(rows: pd.DataFrame, internal: pd.DataFrame) -> pd.DataFrame:
-    """档案字段来自源，`cur_*` 一律从最后一段公司内经历派生。
+    """档案字段来自源，`cur_*` 一律从唯一的开放公司内经历派生。
 
     当前部门、岗位、序列、职级不从源的快照里另取一份：那样库里就有两个「他现在
-    在哪」，而时间线和结果行会各读一个。
+    在哪」，而时间线和结果行会各读一个。没有开放段就没有当前岗位；同时存在多段
+    开放经历时，单值当前字段无法表达事实，因此留空并报出数据冲突，不猜一段。
     """
-    fields = ["emp_id", "name", "education_level", "school", "recruitment"]
-    out = _text(_dates(rows, "hire_date"), fields)
-    out = out.sort_values("emp_id").set_index("emp_id")
+    out = _normalize_employee_rows(rows).sort_values("emp_id").set_index("emp_id")
 
-    last = (
-        internal.sort_values("start_date")
-        .groupby("emp_id")
-        .last()
-        .reindex(out.index)
-        if len(internal)
+    active = internal[internal.end_date.isna()]
+    ambiguous = active.emp_id.value_counts()
+    ambiguous = set(ambiguous[ambiguous > 1].index)
+    if ambiguous:
+        shown = "、".join(sorted(ambiguous)[:5]) + ("…" if len(ambiguous) > 5 else "")
+        print(f"  当前公司内经历冲突 {len(ambiguous)} 人（{shown}），当前字段已留空")
+        active = active[~active.emp_id.isin(ambiguous)]
+    current = (
+        active.set_index("emp_id").reindex(out.index)
+        if len(active)
         else pd.DataFrame(index=out.index, columns=TEXT_FIELDS)
     )
 
@@ -246,12 +312,12 @@ def build_employee(rows: pd.DataFrame, internal: pd.DataFrame) -> pd.DataFrame:
         {
             "emp_id": out.index,
             "name": out.name.values,
-            "cur_dept": last.org.fillna("").values,
-            "cur_title": last.title.fillna("").values,
-            "cur_seq_l1": last.seq_l1.fillna("").values,
-            "cur_seq_l2": last.seq_l2.fillna("").values,
-            "cur_seq_l3": last.seq_l3.fillna("").values,
-            "cur_level": last.level.fillna("").values,
+            "cur_dept": current.org.fillna("").values,
+            "cur_title": current.title.fillna("").values,
+            "cur_seq_l1": current.seq_l1.fillna("").values,
+            "cur_seq_l2": current.seq_l2.fillna("").values,
+            "cur_seq_l3": current.seq_l3.fillna("").values,
+            "cur_level": current.level.fillna("").values,
             "hire_date": out.hire_date.dt.date.values,
             "education_level": out.education_level.values,
             "school": out.school.values,
@@ -267,10 +333,10 @@ def build(
     data: SourceData, as_of: pd.Timestamp | None = None
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """源契约 → 可直接 COPY 进库的两张表。"""
-    as_of = as_of or pd.Timestamp.today().normalize()
+    if as_of is None:
+        as_of = pd.Timestamp.today().normalize()
 
-    employees = data.employees.copy()
-    employees["emp_id"] = employees.emp_id.map(clean_scalar)
+    employees = _normalize_employee_rows(data.employees)
     employees = employees[employees.emp_id != ""]
 
     # 完全重复是导出毛刺；同工号冲突无法确定权威值，整个人退出本次人群。

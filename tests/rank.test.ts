@@ -136,6 +136,10 @@ describe("近因", () => {
 		}
 	});
 
+	test("无效日期不冒充仍在做", () => {
+		assert.throws(() => gapMonths("not-a-date", NOW), /无效结束日期/);
+	});
+
 	test("还在做的高于早就不做的", () => {
 		const now = scoreOf([fact({ empId: "A" })]);
 		const old = scoreOf([fact({ empId: "B", endDate: yearsAgo(3) })]);
@@ -424,6 +428,34 @@ describe("分面与名次是同一个口径", () => {
 	test("算不出人的选项根本不出现", () => {
 		const { facets } = run(facts);
 		assert.ok(facets.seq.every((s) => s.n > 0));
+	});
+
+	test("人数并列时按值稳定排序，不跟着事实输入顺序漂移", () => {
+		const tied = [
+			fact({
+				empId: "A",
+				seqL1: "运营",
+				seqL2: "渠道",
+				companyTag: "大厂",
+				kind: "external",
+			}),
+			fact({
+				empId: "B",
+				seqL1: "技术",
+				seqL2: "算法",
+				companyTag: "外企",
+				kind: "internal",
+			}),
+		];
+		const project = (input: Fact[]) => {
+			const facets = run(input).facets;
+			return {
+				seq: facets.seq.map((item) => `${item.seqL1}/${item.seqL2}`),
+				companyTag: facets.companyTag.map((item) => item.value),
+				kind: facets.kind.map((item) => item.value),
+			};
+		};
+		assert.deepEqual(project(tied), project([...tied].reverse()));
 	});
 });
 

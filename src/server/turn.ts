@@ -2,7 +2,7 @@
 import "@tanstack/react-start/server-only";
 import { randomBytes } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { db } from "#/db";
+import { type DbExecutor, db, withCorpusSnapshot } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
 import { resolveIntent } from "#/search/intent";
@@ -28,6 +28,8 @@ export type Turn = {
 	rawText: string | null;
 	/** null 表示模型理解尚未落下。 */
 	spec: SearchSpec | null;
+	/** 当前这句话是否因模型不可用而值得直接重试。 */
+	canReinterpret: boolean;
 };
 
 function toTurn(row: SearchTurn): Turn {
@@ -36,6 +38,7 @@ function toTurn(row: SearchTurn): Turn {
 		rootTurnId: row.rootTurnId,
 		rawText: row.rawText,
 		spec: row.spec,
+		canReinterpret: row.delta ? fellBack(row.delta) : false,
 	};
 }
 
@@ -105,11 +108,11 @@ export async function createTurn(
 }
 
 /** 量宽只作用于新句产生的证据，不改写基线中用户已经确认过的状态。 */
-async function benchWide(evidence: Chip[]): Promise<Chip[]> {
+async function benchWide(evidence: Chip[], store: DbExecutor): Promise<Chip[]> {
 	const texts = [
 		...new Set(evidence.flatMap((item) => [item.term, ...(item.alts ?? [])])),
 	];
-	const wide = await probeWide(texts);
+	const wide = await probeWide(texts, store);
 	if (wide.size === 0) return evidence;
 	return evidence.map((item) =>
 		[item.term, ...(item.alts ?? [])].some((term) => wide.has(term))
@@ -126,37 +129,46 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const row = await getRow(turnId);
 	if (!row) throw new Error("查询记录不存在");
 	if (row.spec) return row.spec;
+	if (row.rawText === null) throw new Error("待理解记录缺少原话");
+	const rawText = row.rawText;
 
-	const vocab = await vocabulary();
-	const base = row.baseTurnId ? await getRow(row.baseTurnId) : null;
+	let baseSpec = emptySpec();
+	if (row.baseTurnId) {
+		const base = await getRow(row.baseTurnId);
+		if (!base?.spec) throw new Error("查询的合并基线尚未理解完成");
+		baseSpec = base.spec;
+	}
 	let correction: Correction | undefined;
-	if (row.note) {
+	if (row.note !== null) {
 		const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
-		if (parent?.delta) {
-			correction = {
-				previous: parent.delta,
-				note: row.note,
-			};
-		}
+		if (!parent?.delta) throw new Error("纠正记录缺少上一版理解");
+		correction = { previous: parent.delta, note: row.note };
 	}
 
-	const understood = resolveIntent(
-		row.rawText ?? "",
-		await understand(row.rawText ?? "", vocab, correction),
-		vocab,
+	const delta = await withCorpusSnapshot(
+		async (store): Promise<SearchDelta> => {
+			const vocab = await vocabulary(store);
+			const understood = resolveIntent(
+				rawText,
+				await understand(rawText, vocab, correction),
+				vocab,
+			);
+			return {
+				...understood,
+				evidence: await benchWide(understood.evidence, store),
+			};
+		},
 	);
-	const delta: SearchDelta = {
-		...understood,
-		evidence: await benchWide(understood.evidence),
-	};
-	const spec = mergeSpec(base?.spec ?? emptySpec(), delta);
+	const spec = mergeSpec(baseSpec, delta);
 
 	await db
 		.update(searchTurn)
 		.set({ delta, spec })
 		.where(and(eq(searchTurn.id, row.id), isNull(searchTurn.spec)));
 
-	return (await getRow(row.id))?.spec ?? spec;
+	const resolved = await getRow(row.id);
+	if (!resolved?.spec) throw new Error("查询理解结果未能落库");
+	return resolved.spec;
 }
 
 export async function loadTurn(id: string): Promise<Turn | null> {
@@ -186,10 +198,10 @@ export async function listRecent(): Promise<RecentSearch[]> {
 			from (
 				select distinct on (root_turn_id) id, root_turn_id, spec, created_at
 				from search_turn where spec is not null
-				order by root_turn_id, created_at desc
+				order by root_turn_id, created_at desc, id desc
 			) latest
 			join search_turn root on root.id = latest.root_turn_id
-			order by latest.created_at desc
+			order by latest.created_at desc, latest.id desc
 			limit ${RECENT_MAX}`);
 	return rows.rows.map((row) => ({
 		turnId: row.id,

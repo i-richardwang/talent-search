@@ -88,7 +88,7 @@ function decay(x: number, half: number, floor: number) {
 export function gapMonths(endDate: string | null, now: Date) {
 	if (!endDate) return 0;
 	const match = /^(\d{4})-(\d{2})/.exec(endDate);
-	if (!match) return 0;
+	if (!match) throw new Error(`无效结束日期：${endDate}`);
 	const year = Number(match[1]);
 	const month = Number(match[2]) - 1;
 	const m = (now.getFullYear() - year) * 12 + (now.getMonth() - month);
@@ -270,10 +270,20 @@ function facetValues(fact: PopulationFact, dim: Exclude<Dim, "strong">) {
 }
 
 function sortFacets(facets: Facets) {
-	facets.seq.sort((x, y) => y.n - x.n);
-	facets.companyTag.sort((x, y) => y.n - x.n);
-	facets.recruitment.sort((x, y) => y.n - x.n);
-	facets.education.sort((x, y) => y.n - x.n);
+	const byCountAndValue = <T extends { n: number; value: string }>(
+		x: T,
+		y: T,
+	) => y.n - x.n || x.value.localeCompare(y.value, "zh-Hans-CN");
+	facets.seq.sort(
+		(x, y) =>
+			y.n - x.n ||
+			x.seqL1.localeCompare(y.seqL1, "zh-Hans-CN") ||
+			x.seqL2.localeCompare(y.seqL2, "zh-Hans-CN"),
+	);
+	facets.companyTag.sort(byCountAndValue);
+	facets.kind.sort(byCountAndValue);
+	facets.recruitment.sort(byCountAndValue);
+	facets.education.sort(byCountAndValue);
 	facets.level.sort((x, y) => x.value.localeCompare(y.value, "zh-Hans-CN"));
 	facets.minMonths.sort((x, y) => x.value - y.value);
 	return facets;
@@ -456,7 +466,7 @@ export function rank(
 		ranked.push({ empId, ...score(p, terms, now) });
 	}
 	// 同分按工号，排序才是确定的：翻页靠把 limit 调大重查，前一页必须逐位不变
-	ranked.sort((a, b) => b.score - a.score || (a.empId < b.empId ? -1 : 1));
+	ranked.sort((a, b) => b.score - a.score || a.empId.localeCompare(b.empId));
 	return {
 		ranked,
 		facets: computeFacets(facts, terms, filters),

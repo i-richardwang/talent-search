@@ -40,8 +40,8 @@ export type FilterField = {
 	 * 不必每一项都重复成「至少 1 年」。
 	 */
 	title: string;
-	/** 当前值。空串表示未选——URL 里是 undefined，控件要的是 ""。 */
-	value: string;
+	/** 当前值。null 表示未选，与 Select 的 clearable 值语义一致。 */
+	value: string | null;
 	options: FilterOption[];
 	/** 选中或清空时要写回 URL 的更新 */
 	set: (v: string | undefined) => Partial<View>;
@@ -67,7 +67,11 @@ const KIND_LABEL: Record<"internal" | "external", string> = {
  * 选中的那一项自己会从列表里消失——然后就没有任何东西能取消它了。
  * 这里把它补回来，计数为 0，界面上照样是选中态。
  */
-function ensureSelected(options: FilterOption[], value: string, label: string) {
+function ensureSelected(
+	options: FilterOption[],
+	value: string | null,
+	label: string,
+) {
 	if (!value || options.some((o) => o.value === value)) return options;
 	return [{ value, label, n: 0 }, ...options];
 }
@@ -77,7 +81,7 @@ function plain(
 	key: "companyTag" | "level" | "recruitment" | "education",
 	title: string,
 	facet: { value: string; n: number }[],
-	value: string,
+	value: string | null,
 ): FilterField {
 	return {
 		key,
@@ -86,16 +90,16 @@ function plain(
 		options: ensureSelected(
 			facet.map((f) => ({ value: f.value, label: f.value, n: f.n })),
 			value,
-			value,
+			value ?? "",
 		),
 		set: (v) => ({ [key]: v }),
 	};
 }
 
 export function filterFields(facets: Facets, view: View): FilterField[] {
-	const seq = view.seq ?? "";
-	const kind = view.kind ?? "";
-	const minMonths = view.minMonths ? String(view.minMonths) : "";
+	const seq = view.seq ?? null;
+	const kind = view.kind ?? null;
+	const minMonths = view.minMonths ? String(view.minMonths) : null;
 
 	return [
 		{
@@ -110,11 +114,11 @@ export function filterFields(facets: Facets, view: View): FilterField[] {
 					n: s.n,
 				})),
 				seq,
-				seq.replace("/", " · "),
+				seq?.replace("/", " · ") ?? "",
 			),
 			set: (v) => ({ seq: v }),
 		},
-		plain("level", "职级", facets.level, view.level ?? ""),
+		plain("level", "职级", facets.level, view.level ?? null),
 		{
 			key: "kind",
 			title: "经历来源",
@@ -126,7 +130,7 @@ export function filterFields(facets: Facets, view: View): FilterField[] {
 					n: k.n,
 				})),
 				kind,
-				KIND_LABEL[kind as "internal" | "external"] ?? kind,
+				(kind && KIND_LABEL[kind]) ?? kind ?? "",
 			),
 			set: (v) => ({ kind: v as View["kind"] }),
 		},
@@ -145,14 +149,19 @@ export function filterFields(facets: Facets, view: View): FilterField[] {
 			),
 			set: (v) => ({ minMonths: Number(v) || undefined }),
 		},
-		plain("companyTag", "入职前公司", facets.companyTag, view.companyTag ?? ""),
+		plain(
+			"companyTag",
+			"入职前公司",
+			facets.companyTag,
+			view.companyTag ?? null,
+		),
 		plain(
 			"recruitment",
 			"招聘渠道",
 			facets.recruitment,
-			view.recruitment ?? "",
+			view.recruitment ?? null,
 		),
-		plain("education", "学历", facets.education, view.education ?? ""),
+		plain("education", "学历", facets.education, view.education ?? null),
 	];
 }
 
@@ -195,13 +204,16 @@ export function activeFilters(
 	texts: TextFilter[] = [],
 ): ActiveFilter[] {
 	return [
-		...fields
-			.filter((f) => f.value !== "")
-			.map((f) => ({
-				key: f.key,
-				label: f.options.find((o) => o.value === f.value)?.label ?? f.value,
-				clear: f.set(undefined),
-			})),
+		...fields.flatMap((f) => {
+			if (f.value === null) return [];
+			return [
+				{
+					key: f.key,
+					label: f.options.find((o) => o.value === f.value)?.label ?? f.value,
+					clear: f.set(undefined),
+				},
+			];
+		}),
 		...texts.map((t) => ({ key: t.key, label: t.value, clear: t.clear })),
 	];
 }

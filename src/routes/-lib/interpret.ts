@@ -31,9 +31,9 @@ export function useInterpretation(
 		if (settledSpec !== null) return;
 		let alive = true;
 		interpretTurn({ data: { turnId } })
-			.then(() => {
+			.then(async () => {
 				if (!alive) return;
-				router.invalidate();
+				await router.invalidate();
 			})
 			.catch(() => {
 				if (alive) setFailedKey(key);

@@ -25,7 +25,13 @@ from pathlib import Path
 import pandas as pd
 
 import config as C
-from contract import ASSIGNMENT_COLUMNS, EMPLOYEE_COLUMNS, EXTERNAL_COLUMNS, SourceData
+from contract import (
+    ASSIGNMENT_COLUMNS,
+    EMPLOYEE_COLUMNS,
+    EXTERNAL_COLUMNS,
+    SourceData,
+    conform,
+)
 
 #: 不配 TALENT_CSV_DIR 时读的合成样例。它进版本库，因为里面没有一个真人。
 SAMPLE_DIR = Path(__file__).resolve().parent / "sample"
@@ -33,16 +39,21 @@ SAMPLE_DIR = Path(__file__).resolve().parent / "sample"
 TRUE_VALUES = {"true", "1", "y", "yes", "是"}
 
 
-def _read(directory: Path, name: str, columns: list[str]) -> pd.DataFrame:
+def _read(
+    directory: Path,
+    name: str,
+    columns: list[str],
+    optional: frozenset[str] = frozenset(),
+) -> pd.DataFrame:
     path = directory / name
     if not path.exists():
         raise SystemExit(f"源文件缺失：{path}")
     frame = pd.read_csv(path, dtype=str, keep_default_na=False)
     frame.columns = [c.lstrip("﻿").strip() for c in frame.columns]
-    for column in columns:
+    for column in optional:
         if column not in frame.columns:
             frame[column] = ""
-    return frame
+    return conform(frame, columns, name)
 
 
 def extract() -> SourceData:
@@ -52,7 +63,12 @@ def extract() -> SourceData:
     print(f"  源目录 {directory}")
 
     employees = _read(directory, "employees.csv", EMPLOYEE_COLUMNS)
-    assignments = _read(directory, "assignments.csv", ASSIGNMENT_COLUMNS)
+    assignments = _read(
+        directory,
+        "assignments.csv",
+        ASSIGNMENT_COLUMNS,
+        frozenset({"segment_key"}),
+    )
     external = _read(directory, "external.csv", EXTERNAL_COLUMNS)
 
     # 没给 segment_key 就按「部门 + 岗位」判断相邻段是不是同一件事

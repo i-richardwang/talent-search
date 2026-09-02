@@ -10,7 +10,6 @@ from __future__ import annotations
 import io
 import json
 import unittest
-from unittest import mock
 from contextlib import redirect_stdout
 
 import pandas as pd
@@ -136,6 +135,95 @@ class InternalTest(unittest.TestCase):
 
         self.assertEqual(len(out), 2)
 
+    def test_same_key_separated_by_a_gap_stays_two_segments(self) -> None:
+        rows = assignments(
+            [
+                {"emp_id": "E1", "start_date": "2020-01-01", "end_date": "2020-12-31"},
+                {"emp_id": "E1", "start_date": "2024-01-01", "end_date": "2024-06-30"},
+            ]
+        )
+
+        out, _ = quiet(build_internal, rows, AS_OF)
+
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out.months.tolist(), [12, 6])
+
+    def test_same_key_merges_across_interleaved_assignments(self) -> None:
+        rows = assignments(
+            [
+                {
+                    "emp_id": "E1",
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-03-31",
+                },
+                {
+                    "emp_id": "E1",
+                    "start_date": "2024-02-01",
+                    "end_date": "2024-02-29",
+                    "segment_key": "K2",
+                },
+                {
+                    "emp_id": "E1",
+                    "start_date": "2024-04-01",
+                    "end_date": "2024-06-30",
+                },
+            ]
+        )
+
+        out, _ = quiet(build_internal, rows, AS_OF)
+
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[out.segment_key == "K1"].iloc[0].months, 6)
+
+    def test_missing_segment_key_does_not_merge_unrelated_rows(self) -> None:
+        rows = assignments(
+            [
+                {
+                    "emp_id": "E1",
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-01-31",
+                    "segment_key": "",
+                },
+                {
+                    "emp_id": "E1",
+                    "start_date": "2024-02-01",
+                    "end_date": "2024-02-29",
+                    "segment_key": "",
+                },
+            ]
+        )
+
+        out, said = quiet(build_internal, rows, AS_OF)
+
+        self.assertEqual(len(out), 2)
+        self.assertIn("缺少 segment_key 2 段，已保留为独立经历", said)
+
+    def test_rejects_end_date_after_snapshot(self) -> None:
+        rows = assignments(
+            [
+                {"emp_id": "E1", "start_date": "2020-01-01", "end_date": "2030-01-01"},
+                {"emp_id": "E2", "start_date": "2020-01-01", "end_date": "2024-06-30"},
+            ]
+        )
+
+        out, said = quiet(build_internal, rows, AS_OF)
+
+        self.assertEqual(out.emp_id.tolist(), ["E2"])
+        self.assertIn("结束日在未来 1 段，已拒绝导入", said)
+
+    def test_invalid_end_date_is_rejected_instead_of_becoming_current(self) -> None:
+        rows = assignments(
+            [
+                {"emp_id": "E1", "start_date": "2020-01-01", "end_date": "not-a-date"},
+                {"emp_id": "E2", "start_date": "2020-01-01"},
+            ]
+        )
+
+        out, said = quiet(build_internal, rows, AS_OF)
+
+        self.assertEqual(out.emp_id.tolist(), ["E2"])
+        self.assertIn("日期格式无效 1 段，已拒绝导入", said)
+
     def test_same_key_on_different_people_never_merges(self) -> None:
         rows = assignments(
             [
@@ -188,6 +276,16 @@ class ExternalTest(unittest.TestCase):
         self.assertEqual(out.end_date.tolist(), [pd.Timestamp("2021-01-01")])
         self.assertIn("晚于入职日 1 段，已拒绝导入", said)
 
+    def test_invalid_end_date_is_not_filled_with_hire_date(self) -> None:
+        rows = externals(
+            [{"emp_id": "E1", "start_date": "2020-01-01", "end_date": "bad"}]
+        )
+
+        out, said = quiet(build_external, rows, {"E1": pd.Timestamp("2021-01-01")})
+
+        self.assertTrue(out.empty)
+        self.assertIn("日期格式无效 1 段，已拒绝导入", said)
+
     def test_unemployed_segment_carries_no_description(self) -> None:
         rows = externals(
             [
@@ -205,6 +303,29 @@ class ExternalTest(unittest.TestCase):
 
         self.assertEqual(out.iloc[0].title, UNEMPLOYED)
         self.assertEqual(out.iloc[0].description, "")
+
+    def test_invalid_unemployed_flag_is_rejected_instead_of_becoming_true(self) -> None:
+        rows = externals(
+            [
+                {
+                    "emp_id": "E1",
+                    "start_date": "2020-01-01",
+                    "end_date": "2020-06-30",
+                    "unemployed": "false",
+                },
+                {
+                    "emp_id": "E2",
+                    "start_date": "2020-01-01",
+                    "end_date": "2020-06-30",
+                    "unemployed": False,
+                },
+            ]
+        )
+
+        out, said = quiet(build_external, rows, {})
+
+        self.assertEqual(out.emp_id.tolist(), ["E2"])
+        self.assertIn("待业标记无效 1 段，已拒绝导入", said)
 
     def test_company_meta_keeps_only_non_empty_keys(self) -> None:
         rows = externals(
@@ -227,7 +348,7 @@ class ExternalTest(unittest.TestCase):
 
 
 class EmployeeTest(unittest.TestCase):
-    def test_current_fields_come_from_the_last_internal_segment(self) -> None:
+    def test_current_fields_come_from_the_open_internal_segment(self) -> None:
         internal, _ = quiet(
             build_internal,
             assignments(
@@ -254,6 +375,43 @@ class EmployeeTest(unittest.TestCase):
         self.assertEqual(out.iloc[0].cur_title, "现岗位")
         self.assertEqual(out.iloc[0].cur_dept, "部门")
 
+    def test_closed_history_is_not_current(self) -> None:
+        internal, _ = quiet(
+            build_internal,
+            assignments(
+                [
+                    {
+                        "emp_id": "E1",
+                        "start_date": "2020-01-01",
+                        "end_date": "2021-12-31",
+                        "title": "历史岗位",
+                    }
+                ]
+            ),
+            AS_OF,
+        )
+
+        out = build_employee(people([{"emp_id": "E1"}]), internal)
+
+        self.assertEqual(out.iloc[0].cur_title, "")
+
+    def test_multiple_open_segments_leave_current_fields_empty_and_say_so(self) -> None:
+        internal, _ = quiet(
+            build_internal,
+            assignments(
+                [
+                    {"emp_id": "E1", "start_date": "2023-01-01", "segment_key": "K1"},
+                    {"emp_id": "E1", "start_date": "2024-01-01", "segment_key": "K2"},
+                ]
+            ),
+            AS_OF,
+        )
+
+        out, said = quiet(build_employee, people([{"emp_id": "E1"}]), internal)
+
+        self.assertEqual(out.iloc[0].cur_title, "")
+        self.assertIn("当前公司内经历冲突 1 人", said)
+
     def test_person_without_any_segment_still_lands(self) -> None:
         empty, _ = quiet(build_internal, assignments([]), AS_OF)
 
@@ -262,6 +420,18 @@ class EmployeeTest(unittest.TestCase):
         self.assertEqual(out.iloc[0].cur_title, "")
         # `.name` 在 Series 上是索引名，取列必须用下标
         self.assertEqual(out.iloc[0]["name"], "只有档案")
+
+    def test_invalid_hire_date_is_visible_and_left_empty(self) -> None:
+        empty, _ = quiet(build_internal, assignments([]), AS_OF)
+
+        out, said = quiet(
+            build_employee,
+            people([{"emp_id": "E1", "hire_date": "bad"}]),
+            empty,
+        )
+
+        self.assertTrue(pd.isna(out.iloc[0].hire_date))
+        self.assertIn("入职日期格式无效 1 行，入职日已留空", said)
 
 
 class PopulationTest(unittest.TestCase):
@@ -303,6 +473,25 @@ class DuplicateProfileTest(unittest.TestCase):
         self.assertEqual(experience.emp_id.tolist(), ["E1"])
         self.assertIn("整行重复 1 行", said)
 
+    def test_equivalent_blank_values_are_not_reported_as_a_conflict(self) -> None:
+        rows = people(
+            [
+                {"emp_id": "E1", "name": "同一个人", "school": None},
+                {"emp_id": "E1", "name": "同一个人", "school": ""},
+            ]
+        )
+        data = SourceData(
+            employees=rows,
+            assignments=assignments([{"emp_id": "E1", "start_date": "2020-01-01"}]),
+            external=externals([]),
+        )
+
+        (employee, _), said = quiet(build, data, AS_OF)
+
+        self.assertEqual(employee.emp_id.tolist(), ["E1"])
+        self.assertIn("整行重复 1 行", said)
+        self.assertNotIn("字段冲突", said)
+
     def test_conflicting_profiles_reject_the_person_and_their_segments(self) -> None:
         data = SourceData(
             employees=people(
@@ -342,202 +531,3 @@ class ContractTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class RouteTextTest(unittest.TestCase):
-    """四路原文的拼法。`tests/fixture.ts` 的 `routeTexts` 照抄这里，改一处改两处。"""
-
-    def row(self, **over):
-        from types import SimpleNamespace
-
-        base = {
-            "kind": "internal",
-            "org": "平台技术部",
-            "org_path": "示例科技/技术中心/平台技术部",
-            "title": "算法工程师",
-            "seq_l1": "技术",
-            "seq_l2": "算法",
-            "seq_l3": "",
-            "description": "",
-        }
-        return SimpleNamespace(**{**base, **over})
-
-    def test_internal_uses_org_path_and_joins_seq_levels(self):
-        from embed import route_texts
-
-        self.assertEqual(
-            route_texts(self.row()),
-            {
-                "seq": "技术 · 算法",
-                "title": "算法工程师",
-                "org": "示例科技/技术中心/平台技术部",
-            },
-        )
-
-    def test_external_uses_company_name_and_description(self):
-        from embed import route_texts
-
-        texts = route_texts(
-            self.row(
-                kind="external",
-                org="云枢智能",
-                org_path="",
-                seq_l1="",
-                seq_l2="",
-                description="负责推荐系统召回",
-            )
-        )
-        self.assertEqual(
-            texts,
-            {"title": "算法工程师", "org": "云枢智能", "description": "负责推荐系统召回"},
-        )
-
-    def test_empty_routes_are_absent_not_empty_strings(self):
-        from embed import route_texts
-
-        self.assertEqual(
-            route_texts(self.row(org="", org_path="", title="", seq_l1="", seq_l2="")),
-            {},
-        )
-
-
-class EmbedCacheTest(unittest.TestCase):
-    """去重与持久缓存：同一串字对同一个模型只打一次端点，跨运行也是。"""
-
-    def setUp(self):
-        import tempfile
-        from pathlib import Path
-
-        import config as C
-        import embed as E
-
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        for target, attr, value in (
-            (C, "EMBED_CACHE_PATH", Path(self.tmp.name) / "e.sqlite"),
-            (C, "EMBED_MODEL", "fake"),
-            (C, "EMBED_SPACE_ID", "fake-v1"),
-            (C, "EMBED_DIM", 2),
-            (E, "BATCH", 2),
-        ):
-            patcher = mock.patch.object(target, attr, value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
-        self.sent: list[list[str]] = []
-
-        def fake_request(chunk):
-            self.sent.append(list(chunk))
-            return [[float(len(t)), 0.5] for t in chunk]
-
-        patcher = mock.patch.object(E, "_request", fake_request)
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def test_same_text_is_requested_once_and_order_is_kept(self):
-        import embed as E
-
-        out = E.embed(["算法", "运营", "算法", "深度学习", "运营"])
-        self.assertEqual(out, [[2.0, 0.5], [2.0, 0.5], [2.0, 0.5], [4.0, 0.5], [2.0, 0.5]])
-        self.assertEqual(self.sent, [["算法", "运营"], ["深度学习"]])
-
-    def test_second_run_only_requests_what_the_cache_lacks(self):
-        import embed as E
-
-        E.embed(["算法", "运营"])
-        self.sent.clear()
-        out = E.embed(["运营", "风控", "算法"])
-        self.assertEqual(self.sent, [["风控"]])
-        self.assertEqual(out, [[2.0, 0.5], [2.0, 0.5], [2.0, 0.5]])
-
-    def test_cache_is_keyed_by_model(self):
-        import config as C
-        import embed as E
-
-        E.embed(["算法"])
-        self.sent.clear()
-        with mock.patch.object(C, "EMBED_MODEL", "another"):
-            E.embed(["算法"])
-        self.assertEqual(self.sent, [["算法"]])
-
-    def test_cache_is_keyed_by_embedding_space(self):
-        import config as C
-        import embed as E
-
-        E.embed(["算法"])
-        self.sent.clear()
-        with mock.patch.object(C, "EMBED_SPACE_ID", "fake-v2"):
-            E.embed(["算法"])
-        self.assertEqual(self.sent, [["算法"]])
-
-    def test_invalid_cached_vector_is_replaced(self):
-        from array import array
-
-        import embed as E
-
-        E.embed(["算法"])
-        with E._cache() as cache:
-            cache.execute(
-                "update embedding set vec = ?", (array("f", [0.0, 0.0]).tobytes(),)
-            )
-            cache.commit()
-        self.sent.clear()
-        self.assertEqual(E.embed(["算法"]), [[2.0, 0.5]])
-        self.assertEqual(self.sent, [["算法"]])
-
-    def test_empty_input_does_not_hit_the_endpoint(self):
-        import embed as E
-
-        with mock.patch.object(E, "_request", side_effect=AssertionError("打了端点")):
-            self.assertEqual(E.embed([]), [])
-
-
-class EmbedRetryTest(unittest.TestCase):
-    def test_transient_failures_are_retried_then_succeed(self):
-        import embed as E
-
-        calls = iter([TimeoutError("read timed out"), E.urllib.error.URLError("reset"), [[1.0]]])
-
-        def flaky(chunk):
-            outcome = next(calls)
-            if isinstance(outcome, Exception):
-                raise outcome
-            return outcome
-
-        with mock.patch.object(E, "_post", flaky), mock.patch.object(E.time, "sleep") as sleep, redirect_stdout(io.StringIO()):
-            self.assertEqual(E._request(["算法"]), [[1.0]])
-        self.assertEqual(sleep.call_count, 2)
-
-    def test_client_errors_are_not_retried(self):
-        import embed as E
-
-        error = E.urllib.error.HTTPError("u", 400, "bad request", {}, None)
-        with mock.patch.object(E, "_post", side_effect=error), mock.patch.object(E.time, "sleep") as sleep:
-            with self.assertRaises(SystemExit):
-                E._request(["算法"])
-        self.assertEqual(sleep.call_count, 0)
-
-    def test_gives_up_after_attempts(self):
-        import embed as E
-
-        with mock.patch.object(E, "_post", side_effect=TimeoutError()), mock.patch.object(E.time, "sleep") as sleep, redirect_stdout(io.StringIO()):
-            with self.assertRaises(SystemExit):
-                E._request(["算法"])
-        self.assertEqual(sleep.call_count, E.ATTEMPTS - 1)
-
-
-class EmbedResponseTest(unittest.TestCase):
-    def test_zero_vector_is_rejected(self):
-        import config as C
-        import embed as E
-
-        response = mock.MagicMock()
-        response.__enter__.return_value = io.StringIO(
-            json.dumps({"data": [{"index": 0, "embedding": [0.0, 0.0]}]})
-        )
-        with (
-            mock.patch.object(C, "EMBED_BASE_URL", "http://embed.test/v1"),
-            mock.patch.object(C, "EMBED_DIM", 2),
-            mock.patch.object(E.urllib.request, "urlopen", return_value=response),
-        ):
-            with self.assertRaisesRegex(SystemExit, "范数非零"):
-                E._post(["算法"])

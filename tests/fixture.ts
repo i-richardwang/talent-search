@@ -118,7 +118,30 @@ export function fakeEmbedding(text: string): number[] {
 export function fakeSimilarity(a: string, b: string) {
 	const va = fakeEmbedding(a);
 	const vb = fakeEmbedding(b);
-	return va.reduce((s, x, i) => s + x * (vb[i] ?? 0), 0);
+	const similarity = va.reduce((s, x, i) => s + x * (vb[i] ?? 0), 0);
+	return Math.min(1, Math.max(0, similarity));
+}
+
+type RerankGate = {
+	enter: () => void;
+	wait: Promise<void>;
+};
+
+let nextRerankGate: RerankGate | null = null;
+
+/** 暂停下一次重排请求，用来观察检索事务进行到模型调用期间的数据库状态。 */
+export function holdNextRerank() {
+	if (nextRerankGate) throw new Error("已经有一条重排请求在等待");
+	let enter = () => {};
+	let release = () => {};
+	const entered = new Promise<void>((resolve) => {
+		enter = resolve;
+	});
+	const wait = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	nextRerankGate = { enter, wait };
+	return { entered, release };
 }
 
 /** OpenAI 兼容的 `/embeddings` 与 Cohere 式的 `/rerank`，只认这两个路径。 */
@@ -135,12 +158,18 @@ function startModelServer() {
 		req.on("data", (chunk) => {
 			body += chunk;
 		});
-		req.on("end", () => {
+		req.on("end", async () => {
 			const json = (payload: unknown) =>
 				res
 					.writeHead(200, { "content-type": "application/json" })
 					.end(JSON.stringify(payload));
 			if (req.url === "/rerank") {
+				const gate = nextRerankGate;
+				nextRerankGate = null;
+				if (gate) {
+					gate.enter();
+					await gate.wait;
+				}
 				const { query, documents } = JSON.parse(body) as {
 					query: string;
 					documents: string[];

@@ -17,7 +17,7 @@
 
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
-import { db } from "#/db";
+import { type DbExecutor, db } from "#/db";
 import { embed, vectorLiteral } from "#/server/embed";
 import { rerank, rerankSpaceId } from "#/server/rerank";
 import { RECALL_MAX, RECALL_MIN } from "./weights";
@@ -31,13 +31,16 @@ type Candidate = { phrase_id: number; text: string };
  * 每个查询词在语料里的候选说法：向量召回，按相似度取前 `RECALL_MAX` 个。
  * 所有词一次嵌完、一条 SQL 取完，不串成 n 次往返。
  */
-async function recall(texts: string[]): Promise<Map<string, Candidate[]>> {
-	const vectors = await embed(texts);
+async function recall(
+	store: DbExecutor,
+	texts: string[],
+): Promise<Map<string, Candidate[]>> {
+	const vectors = await embed(texts, store);
 	const q = sql`(values ${sql.join(
 		vectors.map((v, i) => sql`(${i}::int, ${vectorLiteral(v)}::halfvec)`),
 		sql`, `,
 	)})`;
-	const rows = await db.execute<Candidate & { ord: number }>(sql`
+	const rows = await store.execute<Candidate & { ord: number }>(sql`
 		with q(ord, v) as ${q}
 		select q.ord, c.phrase_id, c.text
 		from q cross join lateral (
@@ -56,77 +59,108 @@ async function recall(texts: string[]): Promise<Map<string, Candidate[]>> {
 }
 
 /**
- * 一个查询词对一批候选的相关度：能从缓存拿的拿，拿不到的打端点并写回。
- * 写回用 `on conflict do nothing`——两次并发检索同一个新词时，后到的那份
- * 分数和先到的一样，丢掉就是。
- */
-async function relevanceOf(
-	query: string,
-	candidates: Candidate[],
-): Promise<Map<number, number>> {
-	const out = new Map<number, number>();
-	if (candidates.length === 0) return out;
-	const space = rerankSpaceId();
-	const ids = candidates.map((c) => c.phrase_id);
-	const cached = await db.execute<{ phrase_id: number; relevance: number }>(sql`
-		select phrase_id, relevance from phrase_relevance
-		where space = ${space} and query = ${query}
-		and phrase_id in (${sql.join(
-			ids.map((id) => sql`${id}`),
-			sql`, `,
-		)})`);
-	for (const r of cached.rows) out.set(r.phrase_id, Number(r.relevance));
-
-	const missing = candidates.filter((c) => !out.has(c.phrase_id));
-	if (missing.length > 0) {
-		const scores = await rerank(
-			query,
-			missing.map((c) => c.text),
-		);
-		for (const [i, c] of missing.entries())
-			out.set(c.phrase_id, scores[i] as number);
-		await db.execute(sql`
-			insert into phrase_relevance (space, query, phrase_id, relevance)
-			values ${sql.join(
-				missing.map(
-					(c, i) =>
-						sql`(${space}, ${query}, ${c.phrase_id}, ${scores[i] as number})`,
-				),
-				sql`, `,
-			)}
-			on conflict do nothing`);
-	}
-	return out;
-}
-
-/**
  * 每个查询词命中了语料里的哪些说法（相关度不低于 `min`），按相关度从高到低。
- * 词与词之间互不影响，各自判定；同一个词出现两次只算一次。
+ * 所有词的缓存一次读完，缺失部分并行重排后一次写回；同一个词只算一次。
+ * 写回用 `on conflict do nothing`：并发检索得到的是同一确定分数，后到者可丢。
  */
 export async function admit(
 	texts: string[],
 	min: number,
+	store: DbExecutor = db,
 ): Promise<Map<string, Admitted[]>> {
 	const unique = [...new Set(texts)];
 	const out = new Map<string, Admitted[]>();
 	if (unique.length === 0) return out;
-	const candidates = await recall(unique);
-	await Promise.all(
-		unique.map(async (text) => {
-			const list = candidates.get(text) ?? [];
-			const scores = await relevanceOf(text, list);
-			out.set(
-				text,
-				list
-					.map((c) => ({
-						phraseId: c.phrase_id,
-						relevance: scores.get(c.phrase_id) as number,
-					}))
-					.filter((a) => a.relevance >= min)
-					.sort((a, b) => b.relevance - a.relevance),
-			);
-		}),
+	const candidates = await recall(store, unique);
+	const scores = new Map(
+		unique.map((text) => [text, new Map<number, number>()]),
 	);
+	const pairs = unique.flatMap((text, ord) =>
+		(candidates.get(text) ?? []).map((candidate) => ({
+			ord,
+			text,
+			candidate,
+		})),
+	);
+	const space = rerankSpaceId();
+	if (pairs.length > 0) {
+		const cached = await store.execute<{
+			ord: number;
+			phrase_id: number;
+			relevance: number;
+		}>(sql`
+			with q(ord, query, phrase_id) as (values ${sql.join(
+				pairs.map(
+					({ ord, text, candidate }) =>
+						sql`(${ord}::int, ${text}, ${candidate.phrase_id}::int)`,
+				),
+				sql`, `,
+			)})
+			select q.ord, q.phrase_id, r.relevance
+			from q join phrase_relevance r
+				on r.space = ${space} and r.query = q.query and r.phrase_id = q.phrase_id`);
+		for (const row of cached.rows)
+			scores
+				.get(unique[row.ord] as string)
+				?.set(row.phrase_id, Number(row.relevance));
+	}
+
+	const missing = unique.map((text) => ({
+		text,
+		candidates: (candidates.get(text) ?? []).filter(
+			(candidate) => !scores.get(text)?.has(candidate.phrase_id),
+		),
+	}));
+	const ranked = await Promise.all(
+		missing.map(async ({ text, candidates: list }) => ({
+			text,
+			candidates: list,
+			scores:
+				list.length === 0
+					? []
+					: await rerank(
+							text,
+							list.map((candidate) => candidate.text),
+						),
+		})),
+	);
+	const fresh = ranked.flatMap(({ text, candidates: list, scores: values }) =>
+		list.map((candidate, index) => ({
+			text,
+			phraseId: candidate.phrase_id,
+			relevance: values[index] as number,
+		})),
+	);
+	for (const row of fresh)
+		scores.get(row.text)?.set(row.phraseId, row.relevance);
+	if (fresh.length > 0)
+		await store.execute(sql`
+			insert into phrase_relevance (space, query, phrase_id, relevance)
+			values ${sql.join(
+				fresh.map(
+					(row) =>
+						sql`(${space}, ${row.text}, ${row.phraseId}, ${row.relevance})`,
+				),
+				sql`, `,
+			)}
+			on conflict do nothing`);
+
+	for (const text of unique) {
+		const relevance = scores.get(text);
+		if (!relevance) throw new Error(`查询词「${text}」缺少重排结果集`);
+		out.set(
+			text,
+			(candidates.get(text) ?? [])
+				.map((candidate) => {
+					const score = relevance.get(candidate.phrase_id);
+					if (score === undefined)
+						throw new Error(`说法 ${candidate.phrase_id} 缺少重排分数`);
+					return { phraseId: candidate.phrase_id, relevance: score };
+				})
+				.filter((hit) => hit.relevance >= min)
+				.sort((a, b) => b.relevance - a.relevance),
+		);
+	}
 	return out;
 }
 

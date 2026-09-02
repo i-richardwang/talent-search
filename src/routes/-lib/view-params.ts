@@ -15,6 +15,7 @@
  * 一个是换一个问题。
  */
 
+import { filterText } from "#/search/params";
 import type { SearchFilters } from "#/search/result";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 
@@ -43,11 +44,6 @@ export type View = {
 	n?: number;
 };
 
-/** 非空字符串，两头的空白不算内容 */
-function text(v: unknown) {
-	return typeof v === "string" && v.trim() ? v.trim() : undefined;
-}
-
 /**
  * URL 是不可信输入：逐个字段收窄，非法值一律当没填。
  *
@@ -58,15 +54,15 @@ function text(v: unknown) {
 export function validateView(s: Record<string, unknown>): View {
 	const months = Number(s.minMonths);
 	return {
-		seq: text(s.seq),
-		companyTag: text(s.companyTag),
+		seq: filterText(s.seq),
+		companyTag: filterText(s.companyTag),
 		minMonths: Number.isInteger(months) && months > 0 ? months : undefined,
 		kind: s.kind === "internal" || s.kind === "external" ? s.kind : undefined,
-		level: text(s.level),
-		recruitment: text(s.recruitment),
-		education: text(s.education),
-		org: text(s.org),
-		school: text(s.school),
+		level: filterText(s.level),
+		recruitment: filterText(s.recruitment),
+		education: filterText(s.education),
+		org: filterText(s.org),
+		school: filterText(s.school),
 		strong: s.strong === true || s.strong === "true" ? true : undefined,
 		n: pageSize(s.n),
 	};

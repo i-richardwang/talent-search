@@ -18,7 +18,7 @@ import {
 import { CLEARED_FILTERS, type View } from "../-lib/view-params";
 
 /**
- * 范围条件：一个维度一段，五段连成**一条分段控件**，排在概念条件（chips）后面。
+ * 范围条件：一个维度一段，连成**一条分段控件**，排在概念条件（chips）后面。
  *
  * 连起来是关键。这一排和 chips 那一排都是「可点开的小按钮」，各自独立摆着的
  * 时候，两类条件在屏幕上长得一模一样，唯一的分组线索是换行——而换行是布局的
@@ -26,7 +26,7 @@ import { CLEARED_FILTERS, type View } from "../-lib/view-params";
  * 一条带两个圆头的段控是一个整体，散着的 chip 是一枚一枚的词。
  *
  * 不给它一条常驻的竖栏。一条从头到尾占着的侧栏是后台导航的形状，会把一个
- * 单列的搜索工具画成管理后台，而这五个维度的使用频率远不到需要永久占位。
+ * 单列的搜索工具画成管理后台，而这些维度的使用频率远不到需要永久占位。
  *
  * 收进弹层要付一样代价：摊开的列表里「每个选项后面还剩几个人」是一直可见的。
  * 这里把它拆成两半买回来——**选中的值直接长在段上**（不点开也知道现在筛的
@@ -91,9 +91,6 @@ export function FilterBar({
 	);
 }
 
-/** 弹层里那一项「不筛这一维」。Select 选中项再点一次不会触发变化，得给它一行。 */
-const ANY = "__any__";
-
 function FilterSelect({
 	field,
 	onChange,
@@ -106,10 +103,8 @@ function FilterSelect({
 
 	return (
 		<Select
-			onValueChange={(v) =>
-				onChange(field.set(typeof v === "string" && v !== ANY ? v : undefined))
-			}
-			value={field.value ?? ANY}
+			onValueChange={(value) => onChange(field.set(value ?? undefined))}
+			value={field.value}
 		>
 			<SelectTrigger className="min-w-0" size="sm">
 				{/*
@@ -126,7 +121,7 @@ function FilterSelect({
 				</span>
 			</SelectTrigger>
 			<SelectPopup className="max-h-80">
-				<SelectItem value={ANY}>
+				<SelectItem value={null}>
 					<span className="text-muted-foreground">不限{field.title}</span>
 				</SelectItem>
 				{field.options.map((o) => (
@@ -170,7 +165,7 @@ function StrengthToggle({
 }) {
 	const on = Boolean(view.strong);
 	// 一个人都数不出来时不给这一段——点下去必然清空名单，那是一条死路。
-	// 其余四维靠「数不出人的选项根本不进分面」自动做到这件事（见 result.ts），
+	// 其余选择维度靠「数不出人的选项根本不进分面」自动做到这件事（见 result.ts），
 	// 只有这一维是布尔的，没有选项列表可以空，所以得在这里挡一次。
 	// 已经点亮的那一段永远留着：否则筛到 0 人之后就没有任何东西能取消它了。
 	if (!on && n === 0) return null;

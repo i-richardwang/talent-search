@@ -31,6 +31,25 @@ const BATCH = 100;
 const TIMEOUT_MS = positiveInt(process.env.RERANK_TIMEOUT_MS, 30_000);
 const CONCURRENCY = positiveInt(process.env.RERANK_CONCURRENCY, 4);
 
+let activeRequests = 0;
+const waitingRequests: Array<() => void> = [];
+
+async function withRequestSlot<T>(request: () => Promise<T>): Promise<T> {
+	if (activeRequests < CONCURRENCY) activeRequests++;
+	else
+		await new Promise<void>((resolve) => {
+			// 释放方把当前占用的名额直接交给队首，因此这里恢复后不再递增。
+			waitingRequests.push(resolve);
+		});
+	try {
+		return await request();
+	} finally {
+		const next = waitingRequests.shift();
+		if (next) next();
+		else activeRequests--;
+	}
+}
+
 /** 校验端点配置并返回缓存使用的重排空间身份。 */
 export function rerankSpaceId() {
 	if (!BASE_URL || !RERANK_MODEL || !RERANK_SPACE_ID)
@@ -101,7 +120,9 @@ export async function rerank(
 			while (cursor < batches.length) {
 				const batch = batches[cursor++];
 				if (!batch) return;
-				const scores = await rerankBatch(query, batch.documents);
+				const scores = await withRequestSlot(() =>
+					rerankBatch(query, batch.documents),
+				);
 				scores.forEach((score, index) => {
 					out[batch.start + index] = score;
 				});

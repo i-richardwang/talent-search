@@ -84,7 +84,7 @@ describe("已生效的筛选怎么说人话", () => {
 		);
 	});
 
-	test("没筛就一个都没有；strong 是服务端筛选，但不计入收窄四维", () => {
+	test("没筛就一个都没有；strong 是服务端筛选，但不计入范围筛选", () => {
 		assert.deepEqual(labels({}), []);
 		assert.deepEqual(labels({ strong: true }), []);
 	});
@@ -123,8 +123,8 @@ describe("控件侧", () => {
 		);
 	});
 
-	test('未选中时值是空串——Select 要的是 ""，URL 里是 undefined', () => {
-		for (const f of filterFields(FACETS, {})) assert.equal(f.value, "");
+	test("未选中时值是 null，与 Select 的 clearable 值一致", () => {
+		for (const f of filterFields(FACETS, {})) assert.equal(f.value, null);
 	});
 
 	test("选中时值与 URL 一致，包括数字要转成字符串", () => {

@@ -57,7 +57,7 @@ const render = (view: View) =>
 	);
 
 describe("不点开也知道能筛什么", () => {
-	test("五个维度各有一枚按钮，名字就写在上面", () => {
+	test("有候选的维度各有一枚按钮，名字就写在上面", () => {
 		const seen = render({});
 		for (const title of [
 			"序列",
@@ -133,7 +133,7 @@ describe("证据要求", () => {
 
 describe("不给死路", () => {
 	test("一个人都数不出来时，证据要求那枚按钮不出现", () => {
-		// 点下去必然清空名单。其余四维靠「数不出人的选项不进分面」自动做到
+		// 点下去必然清空名单。其余选择维度靠「数不出人的选项不进分面」自动做到
 		// 这件事，只有这一维是布尔的，没有选项列表可以空。
 		const seen = visibleText(
 			renderToStaticMarkup(

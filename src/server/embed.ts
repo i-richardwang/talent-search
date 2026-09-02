@@ -17,7 +17,7 @@
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { cosineSimilarity, embedMany } from "ai";
-import { db } from "#/db";
+import { type DbExecutor, db } from "#/db";
 import { EMBED_DIM, embeddingSpace } from "#/db/schema";
 
 const BASE_URL = process.env.EMBED_BASE_URL;
@@ -77,15 +77,19 @@ async function request(values: string[]) {
 	return embeddings;
 }
 
-let spaceVerified = false;
-let spaceVerification: Promise<void> | null = null;
+const verifiedSpaceIdentities = new Map<string, string>();
+const spaceVerifications = new Map<string, Promise<void>>();
 
-async function verifySpace() {
+async function storedSpace(store: DbExecutor) {
 	getModel();
-	const rows = await db.select().from(embeddingSpace).limit(2);
+	const rows = await store.select().from(embeddingSpace).limit(2);
 	const stored = rows[0];
 	if (!stored || rows.length !== 1)
 		throw new Error("语料没有唯一的嵌入空间元数据，请重新运行 ETL");
+	return stored;
+}
+
+async function verifySpace(stored: Awaited<ReturnType<typeof storedSpace>>) {
 	if (
 		stored.spaceId !== SPACE_ID ||
 		stored.model !== MODEL ||
@@ -104,22 +108,46 @@ async function verifySpace() {
 		);
 }
 
-async function ensureSpace() {
-	if (spaceVerified) return;
-	spaceVerification ??= verifySpace()
-		.then(() => {
-			spaceVerified = true;
-		})
-		.finally(() => {
-			spaceVerification = null;
-		});
-	await spaceVerification;
+async function ensureSpace(store: DbExecutor) {
+	const stored = await storedSpace(store);
+	const identity = [
+		stored.spaceId,
+		stored.model,
+		stored.dimension,
+		stored.canaryText,
+		stored.canaryEmbedding.join(","),
+	].join("\u0001");
+	const verified = verifiedSpaceIdentities.get(stored.spaceId);
+	if (verified === identity) return;
+	if (verified)
+		throw new Error(
+			`嵌入空间 ${stored.spaceId} 的身份在进程运行期间发生变化，请更换 EMBED_SPACE_ID`,
+		);
+	let verification = spaceVerifications.get(stored.spaceId);
+	if (!verification) {
+		verification = verifySpace(stored)
+			.then(() => {
+				verifiedSpaceIdentities.set(stored.spaceId, identity);
+			})
+			.finally(() => {
+				spaceVerifications.delete(stored.spaceId);
+			});
+		spaceVerifications.set(stored.spaceId, verification);
+	}
+	await verification;
+	if (verifiedSpaceIdentities.get(stored.spaceId) !== identity)
+		throw new Error(
+			`嵌入空间 ${stored.spaceId} 的身份在并发校验期间发生变化，请更换 EMBED_SPACE_ID`,
+		);
 }
 
 /** 文本 → 向量，按入参顺序返回。空数组直接返回，不打端点。 */
-export async function embed(texts: string[]): Promise<number[][]> {
+export async function embed(
+	texts: string[],
+	store: DbExecutor = db,
+): Promise<number[][]> {
 	if (texts.length === 0) return [];
-	await ensureSpace();
+	await ensureSpace(store);
 	const missing = [...new Set(texts.filter((t) => !cache.has(t)))];
 	if (missing.length > 0) {
 		const embeddings = await request(missing);
@@ -130,7 +158,11 @@ export async function embed(texts: string[]): Promise<number[][]> {
 			cache.set(text, v);
 		});
 	}
-	return texts.map((t) => cache.get(t) as number[]);
+	return texts.map((text) => {
+		const vector = cache.get(text);
+		if (!vector) throw new Error(`查询词「${text}」缺少嵌入向量`);
+		return vector;
+	});
 }
 
 /** 向量的 SQL 字面量形态：pgvector 认 `[0.1,0.2,…]`，调用方再加 `::halfvec` 转型。 */
