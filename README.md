@@ -21,11 +21,11 @@ docker exec talent-pg psql -U talent -d talent \
 cp .env.example .env.local
 # 用上面这条 docker 命令的话数据库不用改；EMBED_* / RERANK_* 指向你的模型端点
 
-npm install
+bun install
 uv sync
-npm run db:push
+bun run db:push
 uv run python etl/run.py   # 不配数据源时导入仓库自带的合成样例；会把每段经历送去嵌入
-npm run dev
+bun run dev
 ```
 
 嵌入端点会收到每个人的经历原文，建议放在本地或内网；用公网服务意味着把经历交给第三方，
@@ -84,13 +84,13 @@ ETL 分成两层，接数据只碰下面那一层：
 ## 常用命令
 
 ```bash
-npm run dev          # 开发服务器
-npm run query -- "算法、产品、后端都做过的"
-npm run db:push      # 从 src/db/schema.ts 同步表结构
-npm run verify       # 格式、类型、ETL、SQL/组件测试和生产构建
+bun run dev          # 开发服务器
+bun run query "算法和后端都做过的"
+bun run db:push      # 从 src/db/schema.ts 同步表结构
+bun run verify       # 格式、类型、ETL、SQL/组件测试和生产构建
 ```
 
-`npm test` 使用临时 schema 运行真实 SQL 集成测试，需要 `.env.local` 中有可连接的 `DATABASE_URL`（带 pgvector）。嵌入由测试进程内的一个假端点提供，不需要真模型。
+`bun run test` 使用临时 schema 运行真实 SQL 集成测试，需要 `.env.local` 中有可连接的 `DATABASE_URL`（带 pgvector）。嵌入由测试进程内的一个假端点提供，不需要真模型。
 
 ## 数据边界
 

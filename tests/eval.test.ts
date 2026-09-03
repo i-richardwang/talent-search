@@ -35,11 +35,11 @@ function run(expect: string) {
 		file,
 		JSON.stringify([{ name: "评估退出码", query: "算法", expect: [expect] }]),
 	);
-	const child = spawn(
-		process.execPath,
-		["--import", "tsx", "scripts/eval.ts", file],
-		{ cwd: process.cwd(), env: process.env, stdio: "inherit" },
-	);
+	const child = spawn(process.execPath, ["scripts/eval.ts", file], {
+		cwd: process.cwd(),
+		env: process.env,
+		stdio: "inherit",
+	});
 	return new Promise<number | null>((resolve, reject) => {
 		child.once("error", reject);
 		child.once("close", resolve);

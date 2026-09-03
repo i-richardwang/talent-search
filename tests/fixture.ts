@@ -221,6 +221,9 @@ function startModelServer() {
  *
  * `#/db`、`#/server/embed`、`#/server/rerank` 都是模块级单例，一旦 import 就绑死了环境变量——
  * 所以顺序不能反，调用方必须 `await setup()` 之后再动态 import 被测代码。
+ *
+ * 也因此**一个测试文件独占一个进程**：单例只绑第一次 setup 的环境，同进程里的第二个文件
+ * 连不上自己的 schema。
  */
 export async function setup() {
 	const base = process.env.DATABASE_URL;

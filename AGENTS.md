@@ -27,7 +27,7 @@
     **天然**被忽略，「忘了加 ignore」这件事不可能发生。
   - **管线不许为某一个源开分支。** 源之间的差异用契约的取值表达（比如 `segment_key`），
     不用 `if source == ...`。
-- **公开表结构的唯一事实源是 `src/db/schema.ts`**，改完跑 `npm run db:push`。Python 不建
+- **公开表结构的唯一事实源是 `src/db/schema.ts`**，改完跑 `bun run db:push`。Python 不建
   公开表、不改结构，只能从公开表 `LIKE` 出连接私有的暂存表并 INSERT；**不生成迁移文件**
   ——两套改表机制并存就是同一件事两个入口。
 - **`embedding_space` 同时是整代语料的换代门闩。** 跨语句读取统一走
@@ -362,11 +362,11 @@
 ## 提交前
 
 ```bash
-npm run verify   # check + typecheck + test:etl + test + build
+bun run verify   # check + typecheck + test:etl + test + build
 ```
 
-`npm test` 需要一个可连的本地 Postgres（读 `.env.local` 的 `DATABASE_URL`）。检索语义有集成测试
+`bun run test` 需要一个可连的本地 Postgres（读 `.env.local` 的 `DATABASE_URL`）。检索语义有集成测试
 （`tests/search.test.ts`）：它在临时 schema 上建一份合成夹具跑真 SQL，建表语句由 `schema.ts` 现场
 推导，不手抄；嵌入和重排由进程内的假端点提供（字符袋向量，相关度可以手算），它钉的是机制，
-不是语义质量——语义质量归 `npm run eval` 和真模型。改 AND 语义、打分公式、阈值或路径判定
+不是语义质量——语义质量归 `bun run eval` 和真模型。改 AND 语义、打分公式、阈值或路径判定
 之前先看它。

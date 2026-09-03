@@ -1,10 +1,10 @@
-/** 命令行跑一条查询，用于验收用例与调参：npm run query -- "算法 产品 后端" */
+/** 命令行跑一条查询，用于验收用例与调参：bun run query "算法 产品 后端" */
 import { pool } from "#/db";
 import { parseChips } from "#/search/parse";
 import { search } from "#/search/search";
 
 const q = process.argv.slice(2).join(" ");
-if (!q) throw new Error('用法：npx tsx scripts/query.ts "查询词"');
+if (!q) throw new Error('用法：bun run query "查询词"');
 
 const t0 = Date.now();
 const outcome = await search({

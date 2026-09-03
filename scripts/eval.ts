@@ -1,8 +1,8 @@
 /**
  * 检索质量验收：拿业务方给的「已知答案的找人问题」跑真检索，报召回与名次。
  *
- * 用法：npm run eval            # 读 evals/*.json
- *      npm run eval -- 文件.json
+ * 用法：bun run eval            # 读 evals/*.json
+ *      bun run eval 文件.json
  *
  * 用例文件是一个 JSON 数组，每项：
  *   { "name": "找有支付风控经验的人",
