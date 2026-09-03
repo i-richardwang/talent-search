@@ -37,7 +37,7 @@ const FACETS: Facets = {
 };
 
 const labels = (search: Parameters<typeof filterFields>[1]) =>
-	activeFilters(filterFields(FACETS, search)).map((f) => f.label);
+	activeFilters(filterFields(FACETS, search), []).map((f) => f.label);
 
 describe("已生效的筛选怎么说人话", () => {
 	test("URL 里的裸值一律翻成界面文案", () => {
@@ -99,6 +99,7 @@ describe("摘掉一个筛选写回什么", () => {
 	test("每个标签只清自己那一个字段，别的原样留着", () => {
 		const active = activeFilters(
 			filterFields(FACETS, { seq: "技术/数据科学", minMonths: 12 }),
+			[],
 		);
 		assert.deepEqual(
 			active.map((f) => f.clear),
@@ -123,8 +124,8 @@ describe("控件侧", () => {
 		);
 	});
 
-	test("未选中时值是 null，与 Select 的 clearable 值一致", () => {
-		for (const f of filterFields(FACETS, {})) assert.equal(f.value, null);
+	test("未选中时值是 undefined，和「清空」写的是同一个东西", () => {
+		for (const f of filterFields(FACETS, {})) assert.equal(f.value, undefined);
 	});
 
 	test("选中时值与 URL 一致，包括数字要转成字符串", () => {

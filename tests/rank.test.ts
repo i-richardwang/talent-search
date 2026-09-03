@@ -425,9 +425,17 @@ describe("分面与名次是同一个口径", () => {
 		assert.deepEqual(facets.recruitment, []);
 	});
 
-	test("算不出人的选项根本不出现", () => {
+	test("和这次查询无关的值不进列表", () => {
+		// 全站几百个二级序列，列出来只是几千行噪音
 		const { facets } = run(facts);
 		assert.ok(facets.seq.every((s) => s.n > 0));
+	});
+
+	test("被别的维度挤到 0 的选项留在原地，不消失", () => {
+		// 列表在手底下换形状，比列表长一点难用得多：消失的那一行是用户自己
+		// 刚做的事的后果，藏起来就没法回头
+		const { facets } = run(facts, terms("must"), { level: "P6" });
+		assert.equal(facets.seq.find((s) => s.seqL2 === "渠道")?.n, 0);
 	});
 
 	test("人数并列时按值稳定排序，不跟着事实输入顺序漂移", () => {

@@ -51,7 +51,7 @@ function run(args: {
 		onReviseQuery: (next) => {
 			revised = next;
 		},
-		onFocusQuery: () => {
+		onEditQuery: () => {
 			focused = true;
 		},
 	});

@@ -9,14 +9,13 @@ import { resolveIntent } from "#/search/intent";
 import type { Chip } from "#/search/parse";
 import { probeWide, vocabulary } from "#/search/search";
 import {
-	emptySpec,
 	fellBack,
-	mergeSpec,
+	normalizeSpec,
 	type QueryInput,
 	type SearchDelta,
 	type SearchSpec,
 } from "#/search/spec";
-import { type Correction, understand } from "./llm";
+import { understand } from "./llm";
 
 function newId() {
 	return randomBytes(8).toString("base64url");
@@ -47,8 +46,6 @@ async function insertTurn(row: {
 	rawText: string | null;
 	delta?: SearchDelta | null;
 	spec?: SearchSpec | null;
-	baseTurnId?: string | null;
-	note?: string | null;
 }): Promise<Turn> {
 	const id = newId();
 	const [inserted] = await db
@@ -57,9 +54,7 @@ async function insertTurn(row: {
 			id,
 			rootTurnId: row.parent ? row.parent.rootTurnId : id,
 			parentTurnId: row.parent?.id ?? null,
-			baseTurnId: row.baseTurnId ?? null,
 			rawText: row.rawText,
-			note: row.note ?? null,
 			delta: row.delta ?? null,
 			spec: row.spec ?? null,
 		})
@@ -87,22 +82,19 @@ export async function createTurn(
 	if (input.kind === "reinterpret") {
 		if (!parent?.rawText || !parent.delta)
 			throw new Error("重新理解需要一条由整句产生的父记录");
-		if (!input.note && !fellBack(parent.delta))
-			throw new Error("这条理解没有降级，重新理解需要附带纠正说明");
-		turn = await insertTurn({
-			parent,
-			baseTurnId: parent.baseTurnId,
-			rawText: parent.rawText,
-			note: input.note ?? null,
-		});
+		if (!fellBack(parent.delta))
+			throw new Error("这条理解没有降级，重新理解不会得到不同的结果");
+		turn = await insertTurn({ parent, rawText: parent.rawText });
 	} else if (input.kind === "sentence") {
+		turn = await insertTurn({ parent, rawText: input.text });
+	} else {
+		// 改一枚条件不改「问的是什么」，原话原样带下来——它是这条查询的门面，
+		// 屏幕上那一行、最近搜索里那一条读的都是它。
 		turn = await insertTurn({
 			parent,
-			baseTurnId: parent?.id ?? null,
-			rawText: input.text,
+			rawText: parent?.rawText ?? null,
+			spec: input.spec,
 		});
-	} else {
-		turn = await insertTurn({ parent, rawText: null, spec: input.spec });
 	}
 	return { turnId: turn.id };
 }
@@ -132,25 +124,12 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	if (row.rawText === null) throw new Error("待理解记录缺少原话");
 	const rawText = row.rawText;
 
-	let baseSpec = emptySpec();
-	if (row.baseTurnId) {
-		const base = await getRow(row.baseTurnId);
-		if (!base?.spec) throw new Error("查询的合并基线尚未理解完成");
-		baseSpec = base.spec;
-	}
-	let correction: Correction | undefined;
-	if (row.note !== null) {
-		const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
-		if (!parent?.delta) throw new Error("纠正记录缺少上一版理解");
-		correction = { previous: parent.delta, note: row.note };
-	}
-
 	const delta = await withCorpusSnapshot(
 		async (store): Promise<SearchDelta> => {
 			const vocab = await vocabulary(store);
 			const understood = resolveIntent(
 				rawText,
-				await understand(rawText, vocab, correction),
+				await understand(rawText, vocab),
 				vocab,
 			);
 			return {
@@ -159,7 +138,7 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 			};
 		},
 	);
-	const spec = mergeSpec(baseSpec, delta);
+	const spec = normalizeSpec(delta);
 
 	await db
 		.update(searchTurn)

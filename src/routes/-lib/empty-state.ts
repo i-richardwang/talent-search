@@ -20,7 +20,7 @@ export function emptyState({
 	view,
 	onChange,
 	onReviseQuery,
-	onFocusQuery,
+	onEditQuery,
 }: {
 	terms: TermPlan[];
 	chips: Chip[];
@@ -33,20 +33,20 @@ export function emptyState({
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：派生一条新记录。「把停用的条件全启用」走这条。 */
 	onReviseQuery: (next: Chip[]) => void;
-	onFocusQuery: () => void;
+	onEditQuery: () => void;
 }) {
 	if (overflow?.kind === "evidence") {
 		return {
 			title: "匹配证据过多",
 			hint: `「${overflow.terms.join("」「")}」产生的匹配证据最多，请换成更具体的说法，或先停用。`,
-			action: { label: "调整条件", onClick: onFocusQuery },
+			action: { label: "调整条件", onClick: onEditQuery },
 		};
 	}
 	if (overflow?.kind === "population")
 		return {
 			title: "查询范围过大",
 			hint: "请添加更具体的范围条件或经历要求，再查看完整结果。",
-			action: { label: "添加条件", onClick: onFocusQuery },
+			action: { label: "添加条件", onClick: onEditQuery },
 		};
 	if (terms.length === 0) {
 		if (chips.some((chip) => chip.off && chip.mode !== "exclude")) {
@@ -68,7 +68,7 @@ export function emptyState({
 			return {
 				title: "缺少搜索条件",
 				hint: "当前只有排除条件，请添加至少一项岗位、经验或能力。",
-				action: { label: "添加条件", onClick: onFocusQuery },
+				action: { label: "添加条件", onClick: onEditQuery },
 			};
 		}
 		if (Object.keys(scope).length > 0) {
@@ -84,27 +84,27 @@ export function emptyState({
 			return {
 				title: "没有符合查询范围的员工",
 				hint: "请移除一项范围条件，或添加经历要求重新搜索。",
-				action: { label: "调整条件", onClick: onFocusQuery },
+				action: { label: "调整条件", onClick: onEditQuery },
 			};
 		}
 		if (unsupported.length > 0)
 			return {
 				title: "这些条件暂不支持",
 				hint: "请补充岗位、经验或能力；未支持的条件不会参与搜索。",
-				action: { label: "添加条件", onClick: onFocusQuery },
+				action: { label: "添加条件", onClick: onEditQuery },
 			};
 		return {
 			title: "未识别到有效的搜索条件",
-			hint: "请输入岗位、经验或能力，例如「渠道运营、带团队」。",
-			action: { label: "重新输入", onClick: onFocusQuery },
+			hint: "请用一句话说要找什么样的人，例如「做过渠道运营、带过团队」。",
+			action: { label: "重新输入", onClick: onEditQuery },
 		};
 	}
 	if (withoutStrong > 0) {
 		return {
-			title: "没有符合当前匹配来源要求的结果",
-			hint: `放宽匹配来源后可查看 ${withoutStrong} 人。`,
+			title: "没有任职记录能证明的结果",
+			hint: `关掉「只看任职记录可查的」后可查看 ${withoutStrong} 人。`,
 			action: {
-				label: "放宽匹配来源",
+				label: "关掉这项要求",
 				onClick: () => onChange({ strong: undefined }),
 			},
 		};
@@ -122,6 +122,6 @@ export function emptyState({
 	return {
 		title: "没有符合全部必选条件的结果",
 		hint: "把较次要的条件改为「加分」，可以保留没有这段经历的人。",
-		action: { label: "调整条件", onClick: onFocusQuery },
+		action: { label: "调整条件", onClick: onEditQuery },
 	};
 }

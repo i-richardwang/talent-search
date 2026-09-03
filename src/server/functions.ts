@@ -109,12 +109,7 @@ export function validateCommit(d: unknown) {
 			: undefined;
 	if (input.kind === "reinterpret") {
 		if (!parentTurnId) throw new Error("重新理解需要一条父记录");
-		// 纠正说明和原话同一条文本边界；空串收成「没带说明」，不收成空纠正
-		const note = queryText(input.note);
-		return {
-			parentTurnId,
-			input: { kind: "reinterpret" as const, ...(note && { note }) },
-		};
+		return { parentTurnId, input: { kind: "reinterpret" as const } };
 	}
 	if (input.kind === "sentence") {
 		const text = queryText(input.text);

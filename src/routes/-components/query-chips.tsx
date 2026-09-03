@@ -16,8 +16,11 @@ import type { Chip, ChipMode } from "#/search/parse";
 /**
  * 查询条件：一个概念词一枚 chip，可改强度、可删。
  *
- * 它们是查询的唯一编辑入口，不是结果的复述：用户可以逐项改强度、停用或删除，
- * 不必重写整句。停用（`~`，见 parse.ts）保留词和强度，只让它退出本次检索，
+ * 它是**系统读出来的东西**，不是查询本身——查询是上面那句原话（见
+ * `query-deck.tsx`）。所以这里只做微调：改强度、停用、删掉一枚，都比重写整句
+ * 快。说不清哪儿错了的时候，出路在那句话上，不在这排 chip 上。
+ *
+ * 停用（`~`，见 parse.ts）保留词和强度，只让它退出本次检索，
  * 用于快速判断某个条件是否过窄。
  */
 
@@ -88,16 +91,9 @@ const MODES = ["must", "boost", "exclude"] as const;
 export function QueryChips({
 	chips,
 	onChange,
-	trailing,
 }: {
 	chips: Chip[];
 	onChange: (next: Chip[]) => void;
-	/**
-	 * 跟在最后一枚 chip 后面的入口（查询台拿它放「理解得不对？」）。
-	 * 放进同一个 flex-wrap 里它才和 chips 一起换行——另起一行的话，
-	 * 一句关于这排 chip 的话就漂到别的东西旁边去了。
-	 */
-	trailing?: React.ReactNode;
 }) {
 	if (chips.length === 0) return null;
 
@@ -191,7 +187,6 @@ export function QueryChips({
 					</Menu>
 				);
 			})}
-			{trailing}
 		</div>
 	);
 }

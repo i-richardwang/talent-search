@@ -205,9 +205,9 @@ export const phraseRelevance = pgTable(
  *
  * 这张表存在的理由，是把三件本来会互相锁死的事拆开：
  *
- * 1. **原话留得住。** `raw_text` 是用户自己敲的那句话。把它丢掉（比如只往
- *    URL 里写理解后的条件），「重新理解」就永远做不到了——没有输入可重放，
- *    模型改好了也惠及不到任何一条已经存在的查询。
+ * 1. **原话留得住。** `raw_text` 是用户自己敲的那句话，也是工作台上唯一可以
+ *    改写的查询表示。把它丢掉（比如只往 URL 里写理解后的条件），改问题就只剩
+ *    增删几枚条件，而模型读错一个词的时候，那几枚条件里没有一枚说得清哪儿错了。
  * 2. **理解的结果是记录，不是缓存。** 同一条 `/s/:id` 永远问的是同一个问题
  *    （同一句原话、同一份 SearchSpec）；名单本身跟着语料和时间走，本来就该走——
  *    可复现的是条件，不是那批人。「问题不变」由「这一行是不可变的」保证，
@@ -232,32 +232,15 @@ export const searchTurn = pgTable(
 		/** 历史上的上一步。链头为 null；浏览器后退与最近搜索沿这条链工作。 */
 		parentTurnId: text("parent_turn_id"),
 		/**
-		 * 这句原话理解完成后，要接在哪一份既有条件后面。
+		 * 这条查询在问的那句话。**一条查询的门面**：工作台顶上显示的是它，
+		 * 「最近搜索」里认出「这是我搜过的那句」靠的也是它，改一枚条件时
+		 * 原样传给下一条——问的是什么没变，只是读法调了一下。
 		 *
-		 * 它和 `parent_turn_id` 回答两件不同的事：parent 是浏览器后退要回到的
-		 * 上一步，base 是这句话的语义上下文。普通追加时两者相同；重新理解时
-		 * parent 指向上一版理解，base 沿用上一版当时的上下文。把两者分开存，
-		 * 连续重新理解多少次都不会把已经替换的条件带回来。
-		 *
-		 * 点词汇表或直接改条件的记录已经带着完整 spec，不需要 base。
-		 */
-		baseTurnId: text("base_turn_id"),
-		/**
-		 * 用户敲的原话。null 表示这条不是从一句话来的（点了词汇表，或者只改了
-		 * 一个条件）——那种记录没有可重新理解的输入，界面上也不给那个入口。
+		 * 只有点词汇表落下的记录没有原话：那一步本来就不是用一句话问的。
 		 */
 		rawText: text("raw_text"),
 		/**
-		 * 纠正理解时用户补的那句说明（「算法指的是推荐算法」）。
-		 *
-		 * 它不是新查询，是**关于上一次理解的元信息**，所以不写进 raw_text——
-		 * raw_text 永远是被理解的那句原话，链头展示、再次纠正都取它。理解时
-		 * 这句说明连同上一版理解一起交给模型（`server/llm.ts`）；模型不可用而
-		 * 退回规则解析时它被忽略（规则解析没有能力消化元信息），降级照常明说。
-		 */
-		note: text("note"),
-		/**
-		 * 这句原话自己的理解。它让重译能够精确替换这句，而不用从合并结果反推。
+		 * 这句原话自己的理解。降级与否记在这里，界面据此决定给不给「重新理解」。
 		 *
 		 * **null 表示「还没理解」**：整句提交时先落一行
 		 * 只有 `raw_text` 的记录（一次 INSERT，毫秒级），页面立刻就能进工作台，
@@ -275,25 +258,19 @@ export const searchTurn = pgTable(
 			.defaultNow(),
 	},
 	(t) => [
+		/*
+		 * 待理解的记录**只有**一句原话；落定的记录必然有 spec。理解产物
+		 * （delta）不能凭空存在，也不能少了被理解的那句话。
+		 */
 		check(
 			"search_turn_state",
 			sql`(
-					${t.rawText} is null and ${t.delta} is null and ${t.spec} is not null
+					${t.spec} is null and ${t.rawText} is not null and ${t.delta} is null
 				) or (
-					${t.rawText} is not null and (
-						(${t.delta} is null and ${t.spec} is null) or
-						(${t.delta} is not null and ${t.spec} is not null)
+					${t.spec} is not null and (
+						${t.delta} is null or ${t.rawText} is not null
 					)
 				)`,
-		),
-		check(
-			"search_turn_base_requires_text",
-			sql`${t.baseTurnId} is null or ${t.rawText} is not null`,
-		),
-		// 纠正的对象是「对一句话的理解」，没有原话就没有可纠正的东西
-		check(
-			"search_turn_note_requires_text",
-			sql`${t.note} is null or ${t.rawText} is not null`,
 		),
 		/*
 		 * 自引用：链头这一行的 root 就是它自己。同一条 INSERT 里成立——外键在
@@ -318,12 +295,6 @@ export const searchTurn = pgTable(
 		foreignKey({
 			name: "search_turn_parent",
 			columns: [t.parentTurnId, t.rootTurnId],
-			foreignColumns: [t.id, t.rootTurnId],
-		}).onDelete("cascade"),
-		/* 语义基线必须和这条记录在同一条链上；null 表示从空条件开始。 */
-		foreignKey({
-			name: "search_turn_base",
-			columns: [t.baseTurnId, t.rootTurnId],
 			foreignColumns: [t.id, t.rootTurnId],
 		}).onDelete("cascade"),
 		// 「最近搜索」：按 root 取每条链最新的那一条

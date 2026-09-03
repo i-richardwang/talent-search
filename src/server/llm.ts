@@ -21,8 +21,6 @@ import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { intentSchema, type Vocabulary } from "#/search/intent";
-import type { SearchDelta } from "#/search/spec";
-import { unsupportedOf } from "#/search/spec";
 
 /**
  * OpenAI 兼容端点。用兼容层而不是绑某一家的 SDK：换模型（公网 provider、
@@ -131,13 +129,6 @@ const SYSTEM = `你在把 HR 的一句大白话翻译成人才库的检索条件
 「像某某一样」、对不上取值的职级。**原样照抄到这里**，绝不折进 terms：折进去
 会让描述里提到过那个词的段被无声捞进来，而用户以为条件生效了。`;
 
-/**
- * 纠正理解的上下文：上一版对这句话的完整理解，以及用户的纠正说明。范围条件
- * 也必须带上，否则「P7 被理解成岗位词」这类路由错误没有可供模型修正的旧结果。
- * 两样都来自用户自己的输入和它的派生物，不会多发送个人数据。
- */
-export type Correction = { previous: SearchDelta; note: string };
-
 function listed(what: string, values: readonly string[]) {
 	return `${what}的可选取值：${values.join("、") || "（无）"}`;
 }
@@ -147,40 +138,13 @@ function listed(what: string, values: readonly string[]) {
  *
  * 返回 null 表示「这次用不了模型」，不区分是没配置还是失败——对调用方来说
  * 两者要做的事完全一样（退回规则解析），区分只会多一个没人用的分支。
- *
- * 带 `correction` 时是**纠正理解**：同一句话重来一遍没有意义（温度为 0，
- * 重跑就是重掷一枚灌了铅的骰子），有意义的是把用户指出的差错交给模型。
- * 输出仍然是这句话的**完整**理解，不是只翻译那句纠正——纠正是修改意见，
- * 不是新查询。
  */
 export async function understand(
 	text: string,
 	vocab: Vocabulary,
-	correction?: Correction,
 ): Promise<unknown | null> {
 	const m = getModel();
 	if (!m) return null;
-	// 上一版按模型的输出字段还原，不把内部的 evidence/scope/notices 名字泄漏进提示词。
-	const corrected = correction
-		? `\n\n上一次对这句话的理解（字段含义与你的输出相同）：${JSON.stringify({
-				terms: correction.previous.evidence.map((item) => ({
-					term: item.term,
-					mode: item.mode,
-					alts: item.alts ?? null,
-				})),
-				kind: correction.previous.scope.kind ?? null,
-				minMonths: correction.previous.scope.minMonths ?? null,
-				companyTag: correction.previous.scope.companyTag ?? null,
-				level: correction.previous.scope.level ?? null,
-				recruitment: correction.previous.scope.recruitment ?? null,
-				education: correction.previous.scope.education ?? null,
-				org: correction.previous.scope.org ?? null,
-				school: correction.previous.scope.school ?? null,
-				unsupported: unsupportedOf(correction.previous),
-			})}` +
-			`\n用户指出理解得不对，补充说：${correction.note}` +
-			"\n请据此重新给出这句话的完整理解，不要只翻译补充说明本身。"
-		: "";
 	try {
 		const { output } = await generateText({
 			model: m,
@@ -191,7 +155,7 @@ export async function understand(
 				listed("level", vocab.levels),
 				listed("recruitment", vocab.recruitments),
 				listed("education", vocab.educations),
-				`\n这句话：${text}${corrected}`,
+				`\n这句话：${text}`,
 			].join("\n"),
 			// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件
 			temperature: 0,

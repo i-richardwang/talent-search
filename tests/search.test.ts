@@ -667,18 +667,21 @@ describe("分面", () => {
 		assert.equal(seqOf(facets).get("技术/算法"), 3);
 	});
 
-	test("别的维度的筛选照常收窄候选", async () => {
-		// 只看入职前时，三位只有内部事实的人不能为任何序列贡献计数
+	test("别的维度的筛选照常收窄计数，但不让选项消失", async () => {
+		// 只看入职前时，三位只有内部事实的人不能为任何序列贡献计数；
+		// 「运营/渠道」因此归零，但它留在列表里（界面上是禁用的那一行）——
+		// 列表只随查询变形，不随筛选变形，见 rank.ts 的 facetCount
 		const { facets } = await run(parseChips("算法"), { kind: "external" });
 		assert.equal(seqOf(facets).get("技术/算法"), 1);
-		assert.equal(seqOf(facets).get("运营/渠道"), undefined);
+		assert.equal(seqOf(facets).get("运营/渠道"), 0);
 	});
 
-	test("数不出人的选项根本不出现——分面能变短靠的是这个", async () => {
+	test("和这次查询无关的值不进列表——分面比全站短靠的是这个", async () => {
+		// 没有筛选时值域和计数是同一个口径，所以这里一个 0 都不该有
 		const { facets } = await run(parseChips("算法"));
 		assert.ok(
 			facets.seq.every((s) => s.n > 0),
-			"计数为 0 的选项不该被送到界面上",
+			"没筛任何东西时不该出现计数为 0 的选项",
 		);
 		assert.ok(
 			facets.companyTag.every((t) => t.value !== "" && t.value !== "未知"),

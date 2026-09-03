@@ -1,37 +1,28 @@
-import { ArrowUpIcon, SearchIcon } from "lucide-react";
-import { useImperativeHandle, useRef, useState } from "react";
+import { ArrowUpIcon } from "lucide-react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import {
 	InputGroup,
 	InputGroupAddon,
-	InputGroupInput,
 	InputGroupTextarea,
 } from "#/components/ui/input-group";
 import type { QueryInput } from "#/search/spec";
 
 /** 外面能对这个框做的事。填入不提交：例子是起点，不是答案。 */
 export type QueryBarHandle = {
-	/** 聚焦，并选中框里已有的内容——从外面来的聚焦总是为了改写它。 */
-	focus: () => void;
 	/** 填一句话进去并聚焦，光标落在末尾。不提交。 */
 	fill: (text: string) => void;
 };
 
 /**
- * 输入框。两种用法，差别不只是尺码，是**它写查询还是加查询**。
+ * 写查询的那个框。**全站只有这一个形状**：零态写下第一句，工作台改写同一句，
+ * 两处做的是同一件事——把「我要找什么人」说成一句话——所以它们不该长成两样。
  *
- * - `hero`（零态）：这是第一句话，写下整个查询。所以它是一块**面**：多行的
- *   `textarea` 加一条底栏（`InputGroupAddon align="block-end"`，coss 自己给
- *   这种组合备好的排法）。一句话里要放好几个条件，单行框写到一半就看不见
- *   开头了；而这一屏只有这一件事可做，它有资格占掉那么大一块。
- * - `header`（工作台）：查询已经变成一排 chip 了，这里只负责往上加。单行、
- *   走默认档，提交完就清空——已经搜过的条件在 chip 上看得见、改得动，
- *   把原话再留在框里等于同一份东西摆两遍，而那两遍还会不一致。
+ * 是一块**面**，不是一条横带：多行的 `textarea` 加一条底栏
+ * （`InputGroupAddon align="block-end"`，coss 自己给这种组合备好的排法）。
+ * 一句话里要放好几个条件，单行框写到一半就看不见开头了。
  *
- * 所以这里不把查询记录同步回输入框：工作台上的唯一可编辑表示是 chips，
- * 前进后退换记录时跟着变的是它们，不是这个框。
- *
- * 框和按钮是**一块面**（`InputGroup`），不是并排的两块。它们是一个动作的两半，
+ * 框和按钮是一块面（`InputGroup`），不是并排的两块。它们是一个动作的两半，
  * 中间隔一道 8px 的缝就成了两件事，而且会得到两条顶光边、两个圆角、两套焦点环。
  * 收进同一块面之后焦点环也只有一个——它长在整块面上，落在框里还是按钮上都对。
  *
@@ -48,54 +39,48 @@ export type QueryBarHandle = {
  * 出去的永远是 `sentence`：框里是一句话，标签就在造出它的地方打上，
  * 不由上游去猜。
  *
- * 草稿归它自己，外面只能通过 `QueryBarHandle` 做那两个动作——**填一句进来**
- * 和**聚焦**。写成一个受控的 value 的话，两个用法各要一份草稿状态和一份清空
- * 逻辑，而「提交成功才清空」这条规则就得在每个调用方各写一遍。
+ * 草稿归它自己。写成一个受控的 value 的话，两个用法各要一份草稿状态和一份
+ * 清空逻辑，而「提交成功才清空」这条规则就得在每个调用方各写一遍。
  */
 export function QueryBar({
 	onQuery,
 	ref,
-	variant,
-	disabled = false,
+	initial = "",
+	onCancel,
 }: {
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
-	/** 键盘流的 `/` 要聚焦到它，零态的示例要往里填。都不用时可以不给。 */
+	/** 零态的例子要往里填。工作台不用——它靠挂载时的 `initial` 就位。 */
 	ref?: React.Ref<QueryBarHandle>;
-	variant: "hero" | "header";
-	/** 父查询还没形成 chips 时不能再派生下一条。 */
-	disabled?: boolean;
+	/** 打开时框里已有的话。工作台带着当前这句原话进来，于是「改」就是改它。 */
+	initial?: string;
+	/** 有出路才给取消：工作台的改写可以收起来，零态没有可退回的地方。 */
+	onCancel?: () => void;
 }) {
-	const header = variant === "header";
-	const [draft, setDraft] = useState("");
-	const draftRef = useRef("");
+	const [draft, setDraft] = useState(initial);
+	const draftRef = useRef(initial);
 	const [busy, setBusy] = useState(false);
-	const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const formRef = useRef<HTMLFormElement>(null);
+
+	// 挂载即就位：这个框只在「现在就要写这句话」的时候存在——零态整屏就这一件
+	// 事，工作台上它是点了「改一改」才展开的。光标落在末尾，于是带着原话打开
+	// 之后可以直接接着写。
+	useEffect(() => {
+		const el = inputRef.current;
+		if (!el) return;
+		el.focus();
+		el.setSelectionRange(el.value.length, el.value.length);
+	}, []);
 
 	// 光标不用手动摆：受控的 value 变长之后浏览器把插入点留在末尾，
 	// 而 `focus()` 先发生，所以填完就能接着敲。
 	useImperativeHandle(ref, () => ({
-		focus: () => {
-			inputRef.current?.focus();
-			inputRef.current?.select();
-		},
 		fill: (text) => {
 			draftRef.current = text;
 			setDraft(text);
 			inputRef.current?.focus();
 		},
 	}));
-
-	const shared = {
-		disabled,
-		onChange: (
-			e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-		) => {
-			draftRef.current = e.target.value;
-			setDraft(e.target.value);
-		},
-		value: draft,
-	};
 
 	return (
 		// 吃满容器：它住在版心里，左右边缘就是名单卡片的左右边缘，
@@ -105,7 +90,7 @@ export function QueryBar({
 			onSubmit={async (e) => {
 				e.preventDefault();
 				const q = draft.trim();
-				if (!q || busy || disabled) return;
+				if (!q || busy) return;
 				setBusy(true);
 				try {
 					// 提交期间人还能接着敲。清空只针对**刚才提交的那句**，
@@ -122,75 +107,58 @@ export function QueryBar({
 			ref={formRef}
 		>
 			<InputGroup>
-				{header ? (
-					<>
-						{/* 放大镜在框里，不在右端：它说的是「这个框是用来搜的」，
-						    而右端那一格说的是按下去会发生什么，两件事，各占一头。 */}
-						<InputGroupAddon align="inline-start">
-							<SearchIcon />
-						</InputGroupAddon>
-						<InputGroupInput
-							aria-label="添加搜索条件"
-							placeholder="添加岗位、经验或能力"
-							ref={inputRef as React.Ref<HTMLInputElement>}
-							/* 不缩成 `sm`：查询台上这个框是这一屏唯一的输入入口，
-							   缩一档只会让它读起来像一个次要的过滤框。 */
-							size="default"
-							{...shared}
-						/>
-						<InputGroupAddon align="inline-end">
-							<Button
-								disabled={disabled}
-								loading={busy}
-								render={<button type="submit" />}
-								size="xs"
-								variant="secondary"
-							>
-								添加
-							</Button>
-						</InputGroupAddon>
-					</>
-				) : (
-					<>
-						<InputGroupTextarea
-							aria-label="搜索人才"
-							/* 进这一屏只有一件事可做，让人再点一下框纯属多余。工作台上
-							   不自动聚焦——那一屏的主体是名单，抢焦点会把手机的软键盘
-							   顶上来，把刚搜到的人挡掉一半。 */
-							autoFocus
-							onKeyDown={(e) => {
-								// 回车即搜，Shift+回车换行。`isComposing` 那一条是给中文
-								// 输入法的：选字时的回车是「确认这个词」，不是「搜」，
-								// 不挡住的话每打一个词就会提交一次。
-								if (e.key !== "Enter" || e.shiftKey) return;
-								if (e.nativeEvent.isComposing) return;
-								e.preventDefault();
-								formRef.current?.requestSubmit();
-							}}
-							/* 只说格式——一句话，而且一句里可以放好几个条件。「找什么样的
-							   人」由这一屏的标题去问，两处各说一半，不互相重复。 */
-							placeholder="用一句话说，条件可以放好几个"
-							ref={inputRef as React.Ref<HTMLTextAreaElement>}
-							{...shared}
-						/>
-						{/* 底栏而不是右端的一格：这块面高得多，一个贴在右边缘中间的
-						    按钮会浮在一大片空白里。coss 的 `block-end` 就是给这种
-						    「上面写字、下面一条动作栏」备的排法。 */}
-						<InputGroupAddon align="block-end">
-							<Button
-								aria-label="搜索"
-								className="ms-auto"
-								disabled={disabled || draft.trim() === ""}
-								loading={busy}
-								render={<button type="submit" />}
-								size="icon-sm"
-								variant="secondary"
-							>
-								<ArrowUpIcon />
-							</Button>
-						</InputGroupAddon>
-					</>
-				)}
+				<InputGroupTextarea
+					aria-label="搜索人才"
+					onChange={(e) => {
+						draftRef.current = e.target.value;
+						setDraft(e.target.value);
+					}}
+					onKeyDown={(e) => {
+						if (e.key === "Escape" && onCancel && !busy) {
+							e.preventDefault();
+							onCancel();
+							return;
+						}
+						// 回车即搜，Shift+回车换行。`isComposing` 那一条是给中文
+						// 输入法的：选字时的回车是「确认这个词」，不是「搜」，
+						// 不挡住的话每打一个词就会提交一次。
+						if (e.key !== "Enter" || e.shiftKey) return;
+						if (e.nativeEvent.isComposing) return;
+						e.preventDefault();
+						formRef.current?.requestSubmit();
+					}}
+					/* 只说格式——一句话，而且一句里可以放好几个条件。「找什么样的
+					   人」由这一屏的标题去问，两处各说一半，不互相重复。 */
+					placeholder="用一句话说，条件可以放好几个"
+					ref={inputRef}
+					value={draft}
+				/>
+				{/* 底栏而不是右端的一格：这块面高得多，一个贴在右边缘中间的
+				    按钮会浮在一大片空白里。coss 的 `block-end` 就是给这种
+				    「上面写字、下面一条动作栏」备的排法。 */}
+				<InputGroupAddon align="block-end">
+					{onCancel && (
+						<Button
+							disabled={busy}
+							onClick={onCancel}
+							size="sm"
+							variant="ghost"
+						>
+							取消
+						</Button>
+					)}
+					<Button
+						aria-label="搜索"
+						className="ms-auto"
+						disabled={draft.trim() === ""}
+						loading={busy}
+						render={<button type="submit" />}
+						size="icon-sm"
+						variant="secondary"
+					>
+						<ArrowUpIcon />
+					</Button>
+				</InputGroupAddon>
 			</InputGroup>
 		</form>
 	);

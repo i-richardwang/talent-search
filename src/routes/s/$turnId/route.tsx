@@ -5,8 +5,7 @@ import {
 	useNavigate,
 	useParams,
 } from "@tanstack/react-router";
-import { useRef } from "react";
-import type { QueryBarHandle } from "#/components/query-bar";
+import { useCallback, useRef } from "react";
 import { buttonVariants } from "#/components/ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "#/components/ui/dialog";
 import { Kbd } from "#/components/ui/kbd";
@@ -15,7 +14,8 @@ import { emptyFacets, type SearchResult } from "#/search/result";
 import { emptySpec, type SearchSpec } from "#/search/spec";
 import { loadWorkbench } from "#/server/functions";
 import { DeadEnd } from "../../-components/dead-end";
-import { QueryDeck } from "../../-components/query-deck";
+import { FilterRail, FilterSheet } from "../../-components/filter-rail";
+import { QueryDeck, type QueryDeckHandle } from "../../-components/query-deck";
 import { ResultList } from "../../-components/result-list";
 import { useCommit } from "../../-lib/commit";
 import { filterFields, textFilters } from "../../-lib/filters";
@@ -44,7 +44,7 @@ const PANEL_W = "w-detail 2xl:w-detail-wide";
 
 /** 手不用离开键盘就能扫完一份名单，这三个键是全部。 */
 const KEYS = [
-	["/", "添加条件"],
+	["/", "改问题"],
 	["↑↓", "切换员工"],
 	["Esc", "关闭详情"],
 ] as const;
@@ -113,13 +113,17 @@ function Workbench() {
 		retry: retryInterpret,
 	} = useInterpretation(turnId, settledSpec);
 
-	// 键盘流的 `/` 要能聚焦到查询台那个框
-	const inputRef = useRef<QueryBarHandle>(null);
+	// 键盘流的 `/` 和空名单上那条出路，都落到查询台的改写框上
+	const deck = useRef<QueryDeckHandle>(null);
+	const editQuery = useCallback(() => deck.current?.edit(), []);
 	const wide = useIsWide();
 
 	const spec = settledSpec ?? EMPTY_SPEC;
 	const results = result?.results ?? NO_RESULTS;
 	const facets = result?.facets ?? emptyFacets();
+	// 同一份筛选，宽屏摊成一条栏、窄屏收成一个按钮，两处画的是同一组值
+	const fields = filterFields(facets, view);
+	const texts = textFilters(view);
 	// 理解中和检索中在列表里是同一件事：下面这份名单还不成立，画骨架屏。
 	const loading = navigating || interpreting;
 	const open = Boolean(empId);
@@ -136,7 +140,7 @@ function Workbench() {
 	const reviseSpec = (next: SearchSpec) =>
 		commit({ kind: "spec", spec: next }, { parentTurnId: turn.id });
 
-	useKeyboardFlow({ inputRef, results, empId, turnId, view });
+	useKeyboardFlow({ onEditQuery: editQuery, results, empId, turnId, view });
 
 	return (
 		<div className="mx-auto flex w-full max-w-app flex-1">
@@ -153,37 +157,30 @@ function Workbench() {
 				跳到搜索结果
 			</a>
 
+			{/*
+			 * 左筛选、右详情，中间是那条唯一的名单列。两侧都是辅助面，都吸顶、
+			 * 都自己滚、都靠一条发丝线和中间分开——形状一致，是因为它们在这一屏上
+			 * 的地位一致：都不改「问的是什么」，只改看到的是哪一部分、哪一个人。
+			 */}
+			<FilterRail fields={fields} onChange={updateView} textFilters={texts} />
+
 			<div className="flex min-w-0 flex-1 flex-col">
-				{/* 纠正草稿属于一条查询记录，换记录时不能带到下一句话。 */}
+				{/* 改写框里的草稿属于一条查询记录，换记录时不能带到下一句话。 */}
 				<QueryDeck
 					error={commitError ?? interpretError}
-					onRetry={interpretError ? retryInterpret : undefined}
-					fields={filterFields(facets, view)}
-					textFilters={textFilters(view)}
-					inputRef={inputRef}
 					interpreting={interpreting}
 					key={turn.id}
 					onChangeSpec={reviseSpec}
-					onChangeView={updateView}
 					onQuery={(input) => commit(input, { parentTurnId: turn.id })}
-					onCorrect={
-						rawText && settledSpec
-							? (note) =>
-									commit(
-										{ kind: "reinterpret", note },
-										{ parentTurnId: turn.id },
-									)
-							: undefined
-					}
 					onReinterpret={
-						rawText && canReinterpret
+						canReinterpret
 							? () => commit({ kind: "reinterpret" }, { parentTurnId: turn.id })
 							: undefined
 					}
+					onRetry={interpretError ? retryInterpret : undefined}
 					rawText={rawText}
+					ref={deck}
 					spec={spec}
-					strongCount={facets.strong.on}
-					view={view}
 				/>
 
 				<main
@@ -194,17 +191,27 @@ function Workbench() {
 					   焦点仍在链接上，下一次 Tab 又回到顶栏 */
 					tabIndex={-1}
 				>
+					{/* lg 以下没有并排一条栏的余地，同一份筛选收成一个按钮 */}
+					<div className="mb-3 lg:hidden">
+						<FilterSheet
+							fields={fields}
+							onChange={updateView}
+							textFilters={texts}
+						/>
+					</div>
+
 					<ResultList
 						canMore={canLoadMore(view, result?.total ?? 0)}
 						empId={empId}
 						growing={growing}
 						loading={loading}
 						onChange={updateView}
-						onFocusQuery={() => inputRef.current?.focus()}
+						onEditQuery={editQuery}
 						onMore={() => updateView(morePage(view))}
 						onReviseQuery={(evidence) => reviseSpec({ ...spec, evidence })}
 						outcome={result}
 						spec={spec}
+						strongOn={facets.strong.on}
 						turnId={turnId}
 						view={view}
 						withoutStrong={facets.strong.off}

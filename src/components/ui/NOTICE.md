@@ -34,8 +34,8 @@
 所以在 Vite + TanStack Start 下直接可用。运行时依赖是 `@base-ui/react`、
 `class-variance-authority`、`clsx`、`tailwind-merge` 和 `lucide-react`。
 
-除上面记下的那一个属性之外，抄进来的文件**一个字都不改**，包括 lint 意见不同的那几处：`InputGroup` 与
-`Group` 用 `<div role="group">`（`useSemanticElements` 想要 `<fieldset>`，
+除上面记下的那一个属性之外，抄进来的文件**一个字都不改**，包括 lint 意见不同的那几处：
+`InputGroup` 用 `<div role="group">`（`useSemanticElements` 想要 `<fieldset>`，
 但那是表单分组，不是控件分组），`InputGroupAddon` 在 `<div>` 上挂 `onMouseDown`
 把焦点还给输入框（`noStaticElementInteractions` 只看元素不看用途）。
 这两条在 `biome.json` 里对本目录关掉——改代码去迎合 lint 会让下一次升级

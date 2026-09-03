@@ -290,11 +290,25 @@ function sortFacets(facets: Facets) {
 }
 
 /**
- * 某一维的「选了这一项之后还剩几个人」。
+ * 某一维的选项与人数。
  *
- * 口径与主检索逐字相同：同一个 `complete`、同一份事实，区别只在把这一维自己的
- * 筛选摘掉、并且额外把事实限制在候选值上。`values` 返回数组是为了「最短时长」——
- * 一段 36 个月的经历同时算进 6/12/24/36 四个档。
+ * **有哪些行和每行几个人是两个口径**，这是这个函数的全部内容：
+ *
+ * - 值域（有哪些行）：只看这次查询，不看任何分面筛选。
+ * - 人数（每行几个）：摘掉这一维自己的筛选，带上其余各维——不摘的话选中一项
+ *   之后其余项全是 0，用户点不动第二次。
+ *
+ * 合成一个口径（只留数得出人的值）会让列表在手底下换形状：在职级里点一下 P6，
+ * 序列那一栏凡是没有 P6 的行当场消失，而屏幕上没有任何东西说这是刚才那一下
+ * 造成的。分开之后，被别的筛选挤成 0 的行留在原地写着 0——它是用户自己刚做的
+ * 事的后果，藏起来就没法回头（界面上那一行是禁用的，见 `filter-rail.tsx`）。
+ *
+ * 数不出人的值仍然不进值域：全站几百个二级序列，和这次查询无关的那些列出来
+ * 只是几千行噪音。公司名 / 学校名那两个精确条件在 SQL 里就把人裁掉了，所以它们
+ * 照样收窄值域——那是「换了一批候选」，不是「在同一批里挑一部分」。
+ *
+ * 代价是同一份事实要走两遍。没有任何分面筛选时两遍结果相同，但那是运行时才
+ * 知道的事，为它加一条快路要多养一个「两遍必须等价」的不变量。
  */
 function facetCount(
 	facts: Fact[],
@@ -303,8 +317,31 @@ function facetCount(
 	dim: Dim,
 	values: (f: Fact) => string[],
 ) {
-	const keep = keeps(filters, dim);
-	const strong = dim !== "strong" && Boolean(filters.strong);
+	const domain = tally(facts, terms, () => true, false, values);
+	const live = tally(
+		facts,
+		terms,
+		keeps(filters, dim),
+		dim !== "strong" && Boolean(filters.strong),
+		values,
+	);
+	return new Map([...domain.keys()].map((v) => [v, live.get(v) ?? 0]));
+}
+
+/**
+ * 按值分桶，数出每个值下有多少人满足这次查询。数不出人的值不出现。
+ *
+ * 口径与主检索逐字相同：同一个 `complete`、同一份事实，区别只在额外把事实
+ * 限制在候选值上。`values` 返回数组是为了「最短时长」——一段 36 个月的经历
+ * 同时算进 6/12/24/36 四个档。
+ */
+function tally(
+	facts: Fact[],
+	terms: TermPlan[],
+	keep: (f: PopulationFact) => boolean,
+	strong: boolean,
+	values: (f: Fact) => string[],
+) {
 	const byValue = new Map<string, Map<string, Person>>();
 	for (const f of facts) {
 		if (!keep(f)) continue;
@@ -334,10 +371,11 @@ function facetCount(
 }
 
 /**
- * 各维度的候选与人数。
+ * 各维度的选项与人数。
  *
- * 计数的口径是「在当前这次检索里，选了这一项之后还剩多少人」；算不出人的选项
- * 根本不会出现——这是筛选项列表能变短的原因。
+ * 计数的口径是「在当前这次筛选下，选了这一项之后还剩多少人」；有哪些选项则
+ * 只由这次查询决定，不随筛选变（见 `facetCount`）——一条会在手底下换形状的
+ * 筛选栏，比一条长一点的更难用。
  */
 function computeFacets(
 	facts: Fact[],

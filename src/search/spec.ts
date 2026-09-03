@@ -10,7 +10,13 @@ export type SearchSpec = {
 	notices: SearchNotice[];
 };
 
-/** 一句原话自身产生的理解。保存它是为了重译时能精确替换这一句，而不是从快照反推。 */
+/**
+ * 一句原话自身的理解：模型或规则解析对这一句给出的结果，原样落在这条记录上。
+ *
+ * 它和 `spec` 的区别不是形状，是**出处**——`spec` 可能被人逐枚改过条件，而它
+ * 永远是那次理解的原样。所以「这条查询还能不能重新理解」只能问它
+ * （`server/turn.ts`）：问 `spec` 的话，改过条件的记录也会被当成理解的产物。
+ */
 export type SearchDelta = SearchSpec;
 
 /**
@@ -35,7 +41,7 @@ export type SearchNotice =
 export type QueryInput =
 	| { kind: "sentence"; text: string }
 	| { kind: "spec"; spec: SearchSpec }
-	| { kind: "reinterpret"; note?: string };
+	| { kind: "reinterpret" };
 
 export function emptySpec(): SearchSpec {
 	return { evidence: [], scope: {}, notices: [] };
@@ -63,14 +69,12 @@ export function hasMeaning(spec: SearchSpec) {
 }
 
 /**
- * 追加一句话只在这里合并。证据按全站规范查询串去重；一个结构化维度只能有一个
- * 当前值，新句明确提到同一维时替换旧值；提示按内容去重并保留基线。
+ * 一份理解 → 一份可执行的查询含义。证据按全站规范查询串走一遍往返，同一个词
+ * 只留一枚；提示按内容去重。模型和规则解析都可能把同一个意思说两遍，
+ * 而屏幕上重复的两枚 chip 既解释不清也删不干净。
  */
-export function mergeSpec(base: SearchSpec, delta: SearchDelta): SearchSpec {
-	const evidence = parseChips(
-		[toQuery(base.evidence), toQuery(delta.evidence)].filter(Boolean).join(","),
-	);
-	const notices = [...base.notices, ...delta.notices].filter(
+export function normalizeSpec(delta: SearchDelta): SearchSpec {
+	const notices = delta.notices.filter(
 		(n, i, all) =>
 			all.findIndex(
 				(x) =>
@@ -79,7 +83,11 @@ export function mergeSpec(base: SearchSpec, delta: SearchDelta): SearchSpec {
 						(n.kind === "unsupported" && x.text === n.text)),
 			) === i,
 	);
-	return { evidence, scope: { ...base.scope, ...delta.scope }, notices };
+	return {
+		evidence: parseChips(toQuery(delta.evidence)),
+		scope: { ...delta.scope },
+		notices,
+	};
 }
 
 const MODES = new Set(["must", "boost", "exclude"]);
@@ -136,7 +144,7 @@ export function sanitizeSpec(raw: unknown): SearchSpec {
 		}
 	}
 
-	return mergeSpec(emptySpec(), {
+	return normalizeSpec({
 		evidence: parseChips(toQuery(drafts)),
 		scope,
 		notices,

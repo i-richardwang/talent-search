@@ -20,11 +20,11 @@ describe("提交查询的服务端边界", () => {
 		assert.deepEqual(
 			validateCommit({
 				parentTurnId: "parent",
-				input: { kind: "reinterpret", note: " 指的是推荐算法 " },
+				input: { kind: "reinterpret" },
 			}),
 			{
 				parentTurnId: "parent",
-				input: { kind: "reinterpret", note: "指的是推荐算法" },
+				input: { kind: "reinterpret" },
 			},
 		);
 		assert.deepEqual(

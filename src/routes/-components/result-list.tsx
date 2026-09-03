@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { SearchXIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import {
+	Dot,
 	EvidenceLine,
 	MissedTerms,
 	StrengthLegend,
@@ -18,6 +19,7 @@ import {
 } from "#/components/ui/empty";
 import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
+import { Toggle } from "#/components/ui/toggle";
 import { cn } from "#/lib/utils";
 import { bestHitPerTerm } from "#/search/evidence";
 import { activeChips, type Chip } from "#/search/parse";
@@ -45,13 +47,14 @@ function isRanked(result: SearchResult): result is RankedResult {
 }
 
 /**
- * 名单的表头：这份名单有多少人、按什么排、那三颗点各是什么意思。
+ * 名单的表头：这份名单有多少人、按什么排、那三颗点各是什么意思，以及要不要
+ * 只留任职记录能证明的那些人。
  *
- * 三样都是**关于这份名单**的，所以它们跟着名单走。放进查询台的角落，报数就会
+ * 四样都是**关于这份名单**的，所以它们跟着名单走。放进查询台的角落，报数就会
  * 随着 chips 换行上下漂，而它回答的本来也不是「我搜了什么」。
  *
- * 图例必须和它解释的那些点同屏，所以只能排在这里；和报数并作一行，
- * 名单上方就只多这一行，不是两行。
+ * 图例必须和它解释的那些点同屏，所以只能排在这里；而那个开关要求的正是图例里
+ * 第一颗点，两者挨着放，开关就不必再解释一遍自己是什么意思。
  *
  * 它只在有名单可介绍的时候出现，而那个判断归调用点——见下面空态那一支。
  */
@@ -60,14 +63,21 @@ export function ResultHeader({
 	order,
 	total,
 	terms,
+	view,
+	onChange,
+	strongOn,
 }: {
 	loading: boolean;
 	order: "relevance" | "employee";
 	total: number;
 	terms: TermPlan[];
+	view: View;
+	onChange: (next: Partial<View>) => void;
+	/** 只留受控证据之后还剩多少人 */
+	strongOn: number;
 }) {
 	return (
-		<div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5 px-1">
+		<div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-1">
 			<p
 				aria-live="polite"
 				className="text-muted-foreground text-sm"
@@ -84,8 +94,61 @@ export function ResultHeader({
 					</>
 				)}
 			</p>
-			{terms.length > 0 && <StrengthLegend />}
+			{terms.length > 0 && (
+				<div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+					<StrengthLegend />
+					<ProvenOnly n={strongOn} onChange={onChange} view={view} />
+				</div>
+			)}
 		</div>
+	);
+}
+
+/**
+ * 只看任职记录可查的。
+ *
+ * 四路证据的可信度差得很远（`search/weights.ts`）：序列和岗位是 HR 系统登记的
+ * 任职记录，一段一个值、可追溯；部门和公司说的是团队在做什么，不是他本人；
+ * 简历原文是本人自述，没有校验——「配合算法团队做过对接」的主语是别人，却照样
+ * 会被算成一条「算法」证据。打开这个开关，每一条必须条件都得有受控证据才算数
+ * （`search/rank.ts` 的 `complete`）。
+ *
+ * 名字说的是**留下什么**，不是命中了哪个字段：「序列」是 HR 的字段名，招聘的人
+ * 不认得它，而「任职记录能查到」是他每天都在做的那个判断。
+ *
+ * 它不是一个筛选维度，所以不在左栏里：左栏那几维是「在这批人里再看哪一部分」，
+ * 而它改的是**什么才算命中**，和左边那句报数、右边那三颗点是同一件事。
+ *
+ * 只有开关两态，没有值可选，所以不做成选择器——为一个布尔量弹一层，是多点
+ * 一下换零信息。`Toggle` 是这件事的原生形状：按下态由组件自己用 `data-pressed`
+ * 表示，不必手写 `aria-pressed` 再自配一套底色。
+ */
+function ProvenOnly({
+	view,
+	onChange,
+	n,
+}: {
+	view: View;
+	onChange: (next: Partial<View>) => void;
+	n: number;
+}) {
+	const on = Boolean(view.strong);
+	// 一个人都数不出来时不给这个开关——点下去必然清空名单，那是一条死路。
+	// 左栏那几维是把数到 0 的那一行禁用掉（`filter-rail.tsx`），而这一档是布尔的，
+	// 没有行可以禁用，只能整个不出现。
+	// 已经打开的永远留着：否则筛到 0 人之后就没有任何东西能关掉它了。
+	if (!on && n === 0) return null;
+	return (
+		<Toggle
+			onPressedChange={(next) => onChange({ strong: next || undefined })}
+			pressed={on}
+			size="sm"
+			variant="outline"
+		>
+			<Dot strength="controlled" />
+			<span>只看任职记录可查的</span>
+			{!on && <span className="text-muted-foreground tabular-nums">{n}</span>}
+		</Toggle>
 	);
 }
 
@@ -105,12 +168,13 @@ export function ResultList({
 	growing,
 	onMore,
 	withoutStrong,
+	strongOn,
 	spec,
 	turnId,
 	view,
 	onChange,
 	onReviseQuery,
-	onFocusQuery,
+	onEditQuery,
 }: {
 	outcome: SearchOutcome | null;
 	empId: string | undefined;
@@ -120,15 +184,17 @@ export function ResultList({
 	/** 正在翻下一页：已经看到的人留在原地，只有按钮转圈 */
 	growing: boolean;
 	onMore: () => void;
-	/** 关掉「匹配来源」之后能看到多少人。空态要给出的那条路走不走得通，全看它。 */
+	/** 关掉「只看任职记录可查的」之后能看到多少人。空态那条出路走不走得通全看它。 */
 	withoutStrong: number;
+	/** 打开它之后还剩多少人。表头那个开关关着时报的就是这个数。 */
+	strongOn: number;
 	/** 这条查询记录上的条件。骨架屏的行数由它算，不等服务端。 */
 	spec: SearchSpec;
 	turnId: string;
 	view: View;
 	onChange: (next: Partial<View>) => void;
 	onReviseQuery: (next: Chip[]) => void;
-	onFocusQuery: () => void;
+	onEditQuery: () => void;
 }) {
 	const results = outcome?.results ?? EMPTY_RESULTS;
 	const terms = outcome?.terms ?? EMPTY_TERMS;
@@ -143,7 +209,15 @@ export function ResultList({
 	}, [loading, results.length]);
 
 	const head = (
-		<ResultHeader loading={loading} order={order} terms={terms} total={total} />
+		<ResultHeader
+			loading={loading}
+			onChange={onChange}
+			order={order}
+			strongOn={strongOn}
+			terms={terms}
+			total={total}
+			view={view}
+		/>
 	);
 
 	// 检索中绝不闪现「没有结果」。
@@ -198,7 +272,7 @@ export function ResultList({
 			view,
 			onChange,
 			onReviseQuery,
-			onFocusQuery,
+			onEditQuery,
 		});
 		return (
 			/* 空态上不报数：一个人都没有这件事下面那句话自己会说，顶上再来一行

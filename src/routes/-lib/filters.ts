@@ -9,8 +9,8 @@
  * 这里给出的是描述，不是组件：谁来渲染、渲染成一列按钮还是别的什么，
  * 由界面层决定；值怎么解释、清空要写回什么，只在这一个文件里定义。
  *
- * 两类维度：**分面**（有候选列表和人数，渲染成选择器）与**文本条件**
- * （公司名 / 学校名，来自查询理解或链接，只能看见和清掉）。
+ * 两类维度：**分面**（有候选列表和人数）与**文本条件**（公司名 / 学校名，
+ * 来自查询理解或链接，没有候选列表，只能看见和清掉）。
  */
 import { duration } from "#/lib/format";
 import type { Facets } from "#/search/result";
@@ -36,12 +36,17 @@ export type FilterField = {
 		| "recruitment"
 		| "education";
 	/**
-	 * 这一组的标题。有了它，选项文案才能缩短：「经历时长」下面写「1 年」就够了，
-	 * 不必每一项都重复成「至少 1 年」。
+	 * 这一组的标题。它是筛选栏里的分区标签，管着下面那几行选项——有了它，
+	 * 选项文案才能缩短：「经历时长」下面写「1 年」就够了，不必每一项都重复成
+	 * 「至少 1 年」。
+	 *
+	 * **标题要说清是什么的。** 「来源」「时长」在一栏里挨着排的时候各自都读得通，
+	 * 但名单表头上还有一处「匹配来源」（那是证据来自哪个字段，见 `evidence.tsx`），
+	 * 同一屏上两个「来源」指的是完全不同的两件事。
 	 */
 	title: string;
-	/** 当前值。null 表示未选，与 Select 的 clearable 值语义一致。 */
-	value: string | null;
+	/** 当前值。未选就是 `undefined`——和 `set` 里「清空」用的是同一个写法。 */
+	value: string | undefined;
 	options: FilterOption[];
 	/** 选中或清空时要写回 URL 的更新 */
 	set: (v: string | undefined) => Partial<View>;
@@ -63,13 +68,14 @@ const KIND_LABEL: Record<"internal" | "external", string> = {
 /**
  * 保证当前选中的那一项一定在列表里。
  *
- * 分面只返回还数得出人的选项，所以两个筛选叠在一起把结果打到 0 时，
- * 选中的那一项自己会从列表里消失——然后就没有任何东西能取消它了。
- * 这里把它补回来，计数为 0，界面上照样是选中态。
+ * 分面的值域由**这次查询**决定（`rank.ts` 的 `facetCount`），而 URL 上的筛选
+ * 会跟着人走到下一条查询记录上——上一次搜「算法」时选的序列，在这次搜「财务」
+ * 的候选里可能一个人都没有，于是它从列表里消失，然后就没有任何东西能取消它了。
+ * 这里把它补回来，计数为 0，界面上照样是选中态、照样点得动。
  */
 function ensureSelected(
 	options: FilterOption[],
-	value: string | null,
+	value: string | undefined,
 	label: string,
 ) {
 	if (!value || options.some((o) => o.value === value)) return options;
@@ -81,7 +87,7 @@ function plain(
 	key: "companyTag" | "level" | "recruitment" | "education",
 	title: string,
 	facet: { value: string; n: number }[],
-	value: string | null,
+	value: string | undefined,
 ): FilterField {
 	return {
 		key,
@@ -97,9 +103,9 @@ function plain(
 }
 
 export function filterFields(facets: Facets, view: View): FilterField[] {
-	const seq = view.seq ?? null;
-	const kind = view.kind ?? null;
-	const minMonths = view.minMonths ? String(view.minMonths) : null;
+	const seq = view.seq;
+	const kind = view.kind;
+	const minMonths = view.minMonths ? String(view.minMonths) : undefined;
 
 	return [
 		{
@@ -118,7 +124,7 @@ export function filterFields(facets: Facets, view: View): FilterField[] {
 			),
 			set: (v) => ({ seq: v }),
 		},
-		plain("level", "职级", facets.level, view.level ?? null),
+		plain("level", "职级", facets.level, view.level),
 		{
 			key: "kind",
 			title: "经历来源",
@@ -130,7 +136,7 @@ export function filterFields(facets: Facets, view: View): FilterField[] {
 					n: k.n,
 				})),
 				kind,
-				(kind && KIND_LABEL[kind]) ?? kind ?? "",
+				(kind && KIND_LABEL[kind]) ?? "",
 			),
 			set: (v) => ({ kind: v as View["kind"] }),
 		},
@@ -149,19 +155,9 @@ export function filterFields(facets: Facets, view: View): FilterField[] {
 			),
 			set: (v) => ({ minMonths: Number(v) || undefined }),
 		},
-		plain(
-			"companyTag",
-			"入职前公司",
-			facets.companyTag,
-			view.companyTag ?? null,
-		),
-		plain(
-			"recruitment",
-			"招聘渠道",
-			facets.recruitment,
-			view.recruitment ?? null,
-		),
-		plain("education", "学历", facets.education, view.education ?? null),
+		plain("companyTag", "入职前公司", facets.companyTag, view.companyTag),
+		plain("recruitment", "招聘渠道", facets.recruitment, view.recruitment),
+		plain("education", "学历", facets.education, view.education),
 	];
 }
 
@@ -201,11 +197,11 @@ type ActiveFilter = {
  */
 export function activeFilters(
 	fields: FilterField[],
-	texts: TextFilter[] = [],
+	texts: TextFilter[],
 ): ActiveFilter[] {
 	return [
 		...fields.flatMap((f) => {
-			if (f.value === null) return [];
+			if (!f.value) return [];
 			return [
 				{
 					key: f.key,

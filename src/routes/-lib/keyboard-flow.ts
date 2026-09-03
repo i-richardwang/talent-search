@@ -1,24 +1,24 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import type { QueryBarHandle } from "#/components/query-bar";
 import type { SearchResult } from "#/search/result";
 import type { View } from "./view-params";
 
 /**
- * `/` 聚焦搜索，↑↓ / jk 换人，Esc 关闭详情。批量筛人时手不用离开键盘。
+ * `/` 改问题，↑↓ / jk 换人，Esc 关闭详情。批量筛人时手不用离开键盘。
  *
  * 窄屏那个详情浮层的 Esc 不归这里：它是 coss 的 `Dialog`，自带 Esc 关闭、焦点
  * 陷阱与还焦。下面的 `busy` 判定已经把焦点落在 `[role=dialog]` 里的按键让了出去，
  * 所以这里再写一遍只会和它抢。
  */
 export function useKeyboardFlow({
-	inputRef,
+	onEditQuery,
 	results,
 	empId,
 	turnId,
 	view,
 }: {
-	inputRef: React.RefObject<QueryBarHandle | null>;
+	/** 展开查询台上那句话的改写框（见 `-components/query-deck.tsx`）。 */
+	onEditQuery: () => void;
 	results: SearchResult[];
 	empId: string | undefined;
 	/** 换人只换详情面板，仍然停在这一条查询记录上 */
@@ -30,8 +30,9 @@ export function useKeyboardFlow({
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.metaKey || e.ctrlKey || e.altKey) return;
-			// 输入法组合输入期间的按键归输入法。今天中文只会打在 <Input> 里，
-			// busy 已经兜住，但这道保险不依赖"输入一定发生在 input 元素里"。
+			// 输入法组合输入期间的按键归输入法。今天中文只会打在改写框那个
+			// <textarea> 里，busy 已经兜住，但这道保险不依赖「输入一定发生在
+			// 表单元素里」。
 			if (e.isComposing || e.keyCode === 229) return;
 			const el = document.activeElement;
 			// 正在输入，或焦点落在下拉／弹层里时，键盘归它们
@@ -49,17 +50,12 @@ export function useKeyboardFlow({
 
 			if (e.key === "/" && !busy) {
 				e.preventDefault();
-				inputRef.current?.focus();
+				onEditQuery();
 				return;
 			}
-			// Esc 由外到内退：输入框交还焦点 → 关闭详情。
 			if (e.key === "Escape") {
-				// 输入框里的 Esc 交还焦点，否则打完字要用鼠标才能回到名单
-				if (el instanceof HTMLElement && el.tagName === "INPUT") {
-					el.blur();
-					return;
-				}
-				// 下拉／对话框里的 Esc 归它们自己处理，别抢
+				// 输入框、下拉、对话框里的 Esc 归它们自己：改写框用它收起来，
+				// 弹层用它关掉。抢过来只会让 Esc 在同一次按键里做两件事。
 				if (busy) return;
 				if (empId) {
 					e.preventDefault();
@@ -114,5 +110,5 @@ export function useKeyboardFlow({
 
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [inputRef, results, empId, turnId, view, navigate]);
+	}, [onEditQuery, results, empId, turnId, view, navigate]);
 }

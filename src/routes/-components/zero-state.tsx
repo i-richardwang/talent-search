@@ -89,7 +89,7 @@ export function ZeroState({
 			<EmptyContent className="max-w-(--container-page) gap-8">
 				{/* 报错紧贴着输入面，因为它说的就是这块面刚才发生了什么。 */}
 				<div className="flex w-full flex-col gap-2">
-					<QueryBar onQuery={onQuery} ref={bar} variant="hero" />
+					<QueryBar onQuery={onQuery} ref={bar} />
 					{/* 提交失败时界面其余部分一切正常，不说的话人只会以为自己没点上。 */}
 					{error && (
 						<p

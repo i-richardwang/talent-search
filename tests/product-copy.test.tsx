@@ -13,7 +13,6 @@ import { StrengthLegend } from "#/components/evidence";
 import { QueryDeck } from "#/routes/-components/query-deck";
 import { ResultHeader, ResultList } from "#/routes/-components/result-list";
 import { ZeroState } from "#/routes/-components/zero-state";
-import { filterFields } from "#/routes/-lib/filters";
 import { scopeEntries, scopeLabel } from "#/routes/-lib/scope-label";
 import { emptyFacets } from "#/search/result";
 import { visibleText } from "./render";
@@ -47,7 +46,10 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		const text = seen(
 			<ResultHeader
 				loading={false}
+				onChange={() => {}}
 				order="relevance"
+				strongOn={0}
+				view={{}}
 				terms={[
 					{
 						term: "算法",
@@ -78,13 +80,8 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				error={null}
 				interpreting={false}
 				onChangeSpec={() => {}}
-				onChangeView={() => {}}
 				onQuery={() => true}
-				inputRef={{ current: null }}
-				fields={filterFields(emptyFacets(), {})}
-				strongCount={0}
-				textFilters={[]}
-				view={{}}
+				ref={{ current: null }}
 				onReinterpret={() => {}}
 				rawText="最好懂算法、不要实习"
 				spec={{
@@ -105,13 +102,8 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				error={null}
 				interpreting
 				onChangeSpec={() => {}}
-				onChangeView={() => {}}
 				onQuery={() => true}
-				inputRef={{ current: null }}
-				fields={filterFields(emptyFacets(), {})}
-				strongCount={0}
-				textFilters={[]}
-				view={{}}
+				ref={{ current: null }}
 				rawText="做过线下渠道运营、带过团队的人"
 				spec={{ evidence: [], scope: {}, notices: [] }}
 			/>,
@@ -133,9 +125,10 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				growing={false}
 				loading={false}
 				onChange={() => {}}
-				onFocusQuery={() => {}}
+				onEditQuery={() => {}}
 				onMore={() => {}}
 				onReviseQuery={() => {}}
+				strongOn={0}
 				outcome={{
 					order: "relevance",
 					terms: [{ term: "量子炼金", members: ["量子炼金"], mode: "must" }],
