@@ -167,7 +167,9 @@ export function QueryBar({
 								e.preventDefault();
 								formRef.current?.requestSubmit();
 							}}
-							placeholder="用一句话说要找什么样的人"
+							/* 只说格式——一句话，而且一句里可以放好几个条件。「找什么样的
+							   人」由这一屏的标题去问，两处各说一半，不互相重复。 */
+							placeholder="用一句话说，条件可以放好几个"
 							ref={inputRef as React.Ref<HTMLTextAreaElement>}
 							{...shared}
 						/>

@@ -26,6 +26,16 @@ function recentLabel(spec: SearchSpec, rawText: string | null) {
  *
  * 列表由根路由的 loader 送进来（`__root.tsx`），所以这里**没有取数，也就没有
  * 「正在取」这一档**：弹层打开即是最新的一份，不会每打开一次先转一圈。
+ *
+ * 两层浮层都走 `positionMethod="fixed"`。锚点在吸顶的顶栏里：它在视口里不动，
+ * 在文档里一直动。浮层默认按文档坐标定位（`absolute`），于是每滚一帧都要重算
+ * 一次位置去追锚点，而 coss 的定位器带 `transition-[top,left,…]`，每次重算都被
+ * 补间——滚动时浮层就在上下游。换成视口坐标之后，锚点不动，算出来的数就不变，
+ * 没有要重算的，也就没有要补间的。
+ *
+ * 浮层 portal 在 `<body>` 上（组件自带的去处），于是它是独立的一层，永远盖在
+ * 页面之上，不和页面里的任何东西比 z——吸顶的查询台和它同为 `z-stick` 而在 DOM
+ * 里更靠后，只要两者同处一个层叠上下文就会把它盖掉。
  */
 export function RecentPopover({ recent }: { recent: RecentSearch[] | null }) {
 	return (
@@ -42,10 +52,10 @@ export function RecentPopover({ recent }: { recent: RecentSearch[] | null }) {
 						</PopoverTrigger>
 					}
 				/>
-				<TooltipPopup>最近搜索</TooltipPopup>
+				<TooltipPopup positionMethod="fixed">最近搜索</TooltipPopup>
 			</Tooltip>
 
-			<PopoverPopup align="end" className="w-80">
+			<PopoverPopup align="end" className="w-80" positionMethod="fixed">
 				<RecentList recent={recent} />
 			</PopoverPopup>
 		</Popover>

@@ -35,9 +35,11 @@ export function PopoverPopup({
 	tooltipStyle = false,
 	anchor,
 	portalProps,
+	positionMethod,
 	...props
 }: PopoverPrimitive.Popup.Props & {
 	portalProps?: PopoverPrimitive.Portal.Props;
+	positionMethod?: PopoverPrimitive.Positioner.Props["positionMethod"];
 	side?: PopoverPrimitive.Positioner.Props["side"];
 	align?: PopoverPrimitive.Positioner.Props["align"];
 	sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
@@ -53,6 +55,7 @@ export function PopoverPopup({
 				anchor={anchor}
 				className="z-50 h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
 				data-slot="popover-positioner"
+				positionMethod={positionMethod}
 				side={side}
 				sideOffset={sideOffset}
 			>
