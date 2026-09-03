@@ -1,5 +1,4 @@
 import { ChevronDownIcon, EyeOffIcon } from "lucide-react";
-import { CHIP_SIZE, MODE_VARIANT } from "#/components/chip";
 import { Button } from "#/components/ui/button";
 import {
 	Menu,
@@ -21,6 +20,21 @@ import type { Chip, ChipMode } from "#/search/parse";
  * 不必重写整句。停用（`~`，见 parse.ts）保留词和强度，只让它退出本次检索，
  * 用于快速判断某个条件是否过窄。
  */
+
+/**
+ * 一枚 chip 的静息外观：强度落在 Button 的 variant 上，不另配一套底色。
+ * 「必须」是实心的次要底（它是默认，也是最常见的一档），另两档是描边——
+ * 描边和实心的差别足够读出「这一枚不一样」，而且不占任何一个色相
+ * （全站的色相已经各有其主，见 `evidence.tsx`）。
+ */
+const MODE_VARIANT: Record<ChipMode, "secondary" | "outline"> = {
+	must: "secondary",
+	boost: "outline",
+	exclude: "outline",
+};
+
+/** chip 的尺码。和 `MODE_VARIANT` 一起，构成 chip 静息态的全部外观。 */
+const CHIP_SIZE = "xs" as const;
 
 const MODE_LABEL: Record<ChipMode, string> = {
 	must: "必须",

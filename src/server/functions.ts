@@ -18,7 +18,7 @@ import {
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import { queryText } from "#/search/parse";
 import type { SearchOutcome } from "#/search/result";
-import { overview, search } from "#/search/search";
+import { search } from "#/search/search";
 import { hasMeaning, sanitizeSpec } from "#/search/spec";
 import {
 	createTurn,
@@ -65,16 +65,6 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 			};
 		},
 	);
-
-/**
- * 语料概览：零态用它回答「这个库里有什么」。
- *
- * 不带任何入参，因为它问的是整个语料——一旦让它跟着某次查询走，它就变成
- * 分面的另一份实现了，而分面已经有一份，两份迟早不一致。
- */
-export const fetchOverview = createServerFn({ method: "GET" }).handler(
-	async () => overview(),
-);
 
 /**
  * 单人详情：完整档案加一条在职与入职前连起来的时间线。
@@ -152,7 +142,7 @@ export const interpretTurn = createServerFn({ method: "POST" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
 	.handler(({ data }) => resolveTurn(data.turnId));
 
-/** 零态的「最近搜索」。 */
+/** 顶栏「最近」入口的列表。点开时才调，不由任何 loader 预取。 */
 export const recentSearches = createServerFn({ method: "GET" }).handler(() =>
 	listRecent(),
 );

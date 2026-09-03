@@ -1,13 +1,12 @@
 import {
 	createFileRoute,
-	Link,
 	notFound,
 	Outlet,
 	useNavigate,
 	useParams,
 } from "@tanstack/react-router";
 import { useRef } from "react";
-import { Brand } from "#/components/brand";
+import type { QueryBarHandle } from "#/components/query-bar";
 import { buttonVariants } from "#/components/ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "#/components/ui/dialog";
 import { Kbd } from "#/components/ui/kbd";
@@ -15,6 +14,7 @@ import { cn } from "#/lib/utils";
 import { emptyFacets, type SearchResult } from "#/search/result";
 import { emptySpec, type SearchSpec } from "#/search/spec";
 import { loadWorkbench } from "#/server/functions";
+import { DeadEnd } from "../../-components/dead-end";
 import { QueryDeck } from "../../-components/query-deck";
 import { ResultList } from "../../-components/result-list";
 import { useCommit } from "../../-lib/commit";
@@ -39,15 +39,8 @@ import {
 const NO_RESULTS: SearchResult[] = [];
 const EMPTY_SPEC = emptySpec();
 
-/**
- * 详情面板的宽度。外层收展（0 ↔ 这个值），内层写死它顶住内容，收展过程中里面的
- * 东西才不会被压扁再弹开。两处必须同值，所以只有一个值。
- *
- * 28rem 起步：xl（1280）上给名单留下 800，版心 736 还剩两边各 32 的余量。
- * 2xl 放宽到 32rem——简历原文是这块面板里唯一成段读的东西；再宽没有意义，
- * `read-cjk` 已经把行长封在 34rem 了。
- */
-const PANEL_W = "w-[28rem] 2xl:w-[32rem]";
+/** 详情面板的宽度。两处必须同值，值在 styles.css（页宽列也从它算出来）。 */
+const PANEL_W = "w-detail 2xl:w-detail-wide";
 
 /** 手不用离开键盘就能扫完一份名单，这三个键是全部。 */
 const KEYS = [
@@ -96,15 +89,10 @@ export const Route = createFileRoute("/s/$turnId")({
 
 function TurnNotFound() {
 	return (
-		<div className="flex h-dvh flex-col items-center justify-center gap-3 p-6">
-			<p className="text-foreground">这条搜索记录不存在</p>
-			<p className="text-muted-foreground text-sm">
-				链接可能已失效，或记录已被清理。
-			</p>
-			<Link className="text-foreground text-sm hover:underline" to="/">
-				开始一次新搜索
-			</Link>
-		</div>
+		<DeadEnd
+			description="链接可能已失效，或记录已被清理。"
+			title="这条搜索记录不存在"
+		/>
 	);
 }
 
@@ -126,7 +114,7 @@ function Workbench() {
 	} = useInterpretation(turnId, settledSpec);
 
 	// 键盘流的 `/` 要能聚焦到查询台那个框
-	const inputRef = useRef<HTMLInputElement>(null);
+	const inputRef = useRef<QueryBarHandle>(null);
 	const wide = useIsWide();
 
 	const spec = settledSpec ?? EMPTY_SPEC;
@@ -151,13 +139,7 @@ function Workbench() {
 	useKeyboardFlow({ inputRef, results, empId, turnId, view });
 
 	return (
-		/*
-		 * `isolate` 在这里开一个层叠上下文，把外壳内部那三档 z 全部关进去。
-		 * coss 的 Dialog 遮罩与 Tooltip 定位器 portal 到 document.body 且写死 z-50；
-		 * 关进去之后它们永远画在外壳之上，无论内部用到多大的 z——这类遮挡从结构上
-		 * 不可能发生，不必再去记那个上限。
-		 */
-		<div className="isolate flex min-h-dvh">
+		<div className="mx-auto flex w-full max-w-app flex-1">
 			{/* 必须是文档里第一个可聚焦元素，否则「跳过」的东西已经先被 Tab 过一遍了 */}
 			<a
 				className={buttonVariants({
@@ -172,14 +154,6 @@ function Workbench() {
 			</a>
 
 			<div className="flex min-w-0 flex-1 flex-col">
-				{/*
-				 * 品牌行滚上去就不见了。它是身份，不是控件——钉在顶上只会在每一屏
-				 * 都占掉 56px 去重复一句用户早就知道的话。真正必须一直在的是下面
-				 * 那块查询台，所以吸顶的是它，不是这一行。
-				 */}
-				<div className="mx-auto flex h-14 w-full max-w-page shrink-0 items-center px-4">
-					<Brand />
-				</div>
 				{/* 纠正草稿属于一条查询记录，换记录时不能带到下一句话。 */}
 				<QueryDeck
 					error={commitError ?? interpretError}
@@ -266,7 +240,7 @@ function Workbench() {
 				<aside
 					aria-label="员工详情"
 					className={cn(
-						"sticky top-0 h-dvh shrink-0 overflow-hidden",
+						"sticky top-(--header-height) h-[calc(100dvh-var(--header-height))] shrink-0 overflow-hidden",
 						"transition-[width] duration-200 ease-out",
 						/*
 						 * 服务端一律按宽屏渲染（`useIsWide`），而**首屏可以直接落在

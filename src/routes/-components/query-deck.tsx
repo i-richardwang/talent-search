@@ -1,6 +1,6 @@
 import { AlertCircleIcon, RotateCwIcon } from "lucide-react";
 import { useState } from "react";
-import { QueryBar } from "#/components/query-bar";
+import { QueryBar, type QueryBarHandle } from "#/components/query-bar";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Frame, FramePanel } from "#/components/ui/frame";
@@ -59,7 +59,7 @@ export function QueryDeck({
 	onChangeSpec: (next: SearchSpec) => void;
 	/** 往当前查询上再加一句话，派生一条新记录 */
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
-	inputRef: React.RefObject<HTMLInputElement | null>;
+	inputRef: React.RefObject<QueryBarHandle | null>;
 	/** 还在等模型把这句话翻译成条件 */
 	interpreting: boolean;
 	/** 用户敲的原话。有它才谈得上「重新理解」。 */
@@ -103,14 +103,14 @@ export function QueryDeck({
 		 * 滚到一半的卡片在一条看不见的线上凭空消失。下面的托盘承担这一层的
 		 * 唯一边界，整块操作面因此保持一个轮廓。
 		 */
-		<div className="sticky top-0 z-stick bg-canvas/85 backdrop-blur-md">
+		<div className="sticky top-(--header-height) z-stick bg-canvas/85 backdrop-blur-md">
 			<div className="mx-auto w-full max-w-page px-4 py-2.5">
 				<Frame>
 					<FramePanel className="flex flex-col gap-2.5 p-2.5">
 						<QueryBar
 							disabled={interpreting}
-							inputRef={inputRef}
 							onQuery={onQuery}
+							ref={inputRef}
 							variant="header"
 						/>
 						{interpreting ? (

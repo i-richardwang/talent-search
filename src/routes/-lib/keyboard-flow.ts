@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import type { QueryBarHandle } from "#/components/query-bar";
 import type { SearchResult } from "#/search/result";
 import type { View } from "./view-params";
 
@@ -17,7 +18,7 @@ export function useKeyboardFlow({
 	turnId,
 	view,
 }: {
-	inputRef: React.RefObject<HTMLInputElement | null>;
+	inputRef: React.RefObject<QueryBarHandle | null>;
 	results: SearchResult[];
 	empId: string | undefined;
 	/** 换人只换详情面板，仍然停在这一条查询记录上 */
@@ -49,7 +50,6 @@ export function useKeyboardFlow({
 			if (e.key === "/" && !busy) {
 				e.preventDefault();
 				inputRef.current?.focus();
-				inputRef.current?.select();
 				return;
 			}
 			// Esc 由外到内退：输入框交还焦点 → 关闭详情。

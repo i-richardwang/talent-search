@@ -1,19 +1,15 @@
 import {
 	createRootRoute,
 	HeadContent,
-	Link,
+	Outlet,
 	Scripts,
 } from "@tanstack/react-router";
-import { SearchXIcon } from "lucide-react";
-import {
-	Empty,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyMedia,
-	EmptyTitle,
-} from "#/components/ui/empty";
 import { TooltipProvider } from "#/components/ui/tooltip";
+import { recentSearches } from "#/server/functions";
 import appCss from "../styles.css?url";
+import { AppHeader } from "./-components/app-header";
+import { DeadEnd } from "./-components/dead-end";
+import { PageFrame } from "./-components/page-frame";
 
 /**
  * 把系统深浅色偏好写成 <html> 上的 `dark` 类，并跟着系统切换实时更新。
@@ -37,9 +33,57 @@ export const Route = createRootRoute({
 		],
 		links: [{ rel: "stylesheet", href: appCss }],
 	}),
+	/**
+	 * 历史记录取在这里：它是**外壳的数据**，两屏都用，不属于其中任何一屏。
+	 *
+	 * 根路由的 loader 每次导航都会重跑（`staleTime` 默认 0），而在新的一份回来
+	 * 之前，这个 match 上挂的**还是上一份数据**——于是列表在换屏时不清空、不闪，
+	 * 直出的那一版也已经带着记录。这正是搜完一次要的行为：落到 `/s/:turnId` 的
+	 * 同时，那一列里已经有刚搜的那条。
+	 *
+	 * 取不到就是 `null`，不往上抛：一份取不到的历史记录不该把整页换成错误页，
+	 * 这一屏的正事（敲一句话去搜）跟它没有关系。
+	 */
+	loader: () =>
+		recentSearches().then(
+			(items) => items,
+			() => null,
+		),
 	shellComponent: RootDocument,
+	component: RootComponent,
 	notFoundComponent: NotFound,
 });
+
+/**
+ * 外壳：页框、顶栏，和这一屏。
+ *
+ * 它挂在**根路由**上，所以根 match 在导航之间不重挂——顶栏里开着的弹层不会被
+ * 换屏关掉，外壳的数据也不会跟着重取。
+ *
+ * `<main>` 撑开剩下的高度（body 是一根竖列），零态那块因此在顶栏以下真正居中，
+ * 而不是靠某个视口高度减去顶栏高度的算式。
+ */
+function RootComponent() {
+	const recent = Route.useLoaderData();
+	return (
+		/*
+		 * `isolate` 在这里开一个层叠上下文，把 z 尺度那几档全部关进去。
+		 * coss 的 Dialog 遮罩与 Tooltip 定位器 portal 到 document.body 且写死 z-50；
+		 * 关进去之后它们永远画在外壳之上，无论内部用到多大的 z——这类遮挡从结构上
+		 * 不可能发生，不必再去记那个上限。
+		 *
+		 * `overflow-clip` 是给页框的：那两根线画在页宽列**外面** 12px 处，窄窗口下
+		 * 会伸到视口之外，不剪掉就多一条横向滚动条。它不是滚动容器，吸顶照常。
+		 */
+		<div className="relative isolate flex flex-1 flex-col overflow-clip">
+			<PageFrame />
+			<AppHeader recent={recent} />
+			<main className="flex flex-1 flex-col">
+				<Outlet />
+			</main>
+		</div>
+	);
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
@@ -69,7 +113,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			 * 整页滚：滚动条是全局那一根，Home/End、空格翻页、移动端的下拉回弹
 			 * 全都白拿。
 			 */}
-			<body className="min-h-dvh bg-canvas text-foreground">
+			<body className="flex min-h-dvh flex-col bg-canvas text-foreground">
 				<TooltipProvider>{children}</TooltipProvider>
 				<Scripts />
 			</body>
@@ -78,24 +122,5 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 }
 
 function NotFound() {
-	return (
-		<div className="flex h-dvh items-center justify-center p-6">
-			<Empty>
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<SearchXIcon />
-					</EmptyMedia>
-					<EmptyTitle>页面不存在</EmptyTitle>
-					<EmptyDescription>链接无效或页面已被移除。</EmptyDescription>
-				</EmptyHeader>
-				<Link
-					className="text-sm underline underline-offset-4 hover:text-primary"
-					search={{}}
-					to="/"
-				>
-					返回人才搜索
-				</Link>
-			</Empty>
-		</div>
-	);
+	return <DeadEnd description="链接无效或页面已被移除。" title="页面不存在" />;
 }

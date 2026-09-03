@@ -1,7 +1,7 @@
 /** 时间的中文写法。扫读列全靠它对齐，错一个字就得停下来算。 */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { duration, grouped, period, seqLabel, years } from "#/lib/format";
+import { duration, period, seqLabel, years } from "#/lib/format";
 
 describe("时长", () => {
 	test("不满一年只说月", () => {
@@ -75,15 +75,5 @@ describe("序列三级拼一行", () => {
 	test("外部经历三级全空，拼出来是空串而不是分隔符", () => {
 		assert.equal(seqLabel("", "", ""), "");
 		assert.equal(seqLabel(null, null, null), "");
-	});
-});
-
-describe("千分位", () => {
-	test("四位起分组", () => {
-		assert.equal(grouped(0), "0");
-		assert.equal(grouped(999), "999");
-		assert.equal(grouped(1234), "1,234");
-		assert.equal(grouped(12345), "12,345");
-		assert.equal(grouped(1000000), "1,000,000");
 	});
 });

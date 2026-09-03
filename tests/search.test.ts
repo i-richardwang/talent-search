@@ -21,8 +21,9 @@ const teardown = await setup();
 after(teardown);
 
 // import 必须在 setup() 之后：#/db 与 #/server/embed 在模块求值时就绑死了环境变量
-const { overflowContributors, overview, probeWide, search, vocabulary } =
-	await import("#/search/search");
+const { overflowContributors, probeWide, search, vocabulary } = await import(
+	"#/search/search"
+);
 const { db } = await import("#/db");
 const { pool } = await import("#/db");
 const run = async (
@@ -959,52 +960,6 @@ describe("停用的词", () => {
 		assert.deepEqual(terms, []);
 		assert.deepEqual(results, []);
 		assert.equal(total, 0);
-	});
-});
-
-/**
- * 零态的语料概览。
- *
- * 它给出的每一个方向都是一个**入口**：点下去就是一次检索。所以这里钉的不是
- * 「查询跑不跑得动」，而是「这些入口落不落得到人」——一个点下去得到零结果、
- * 或者被切词切成两半的入口，比不给这个入口更糟。
- */
-describe("零态的语料概览", () => {
-	before(async () => {
-		await seed([
-			{
-				empId: "V001",
-				name: "带连接词的序列",
-				// 「与」是 parseQuery 的分隔符：这个序列名当概念词会被切成两半，
-				// 所以它一定不能出现在零态的词汇表里。
-				segments: [{ seqL1: "安全", seqL2: "安全与风险合规", months: 24 }],
-			},
-		]);
-	});
-
-	test("规模数的是人和段", async () => {
-		const o = await overview();
-		assert.ok(o.people > 0);
-		assert.ok(o.segments >= o.people, "段数不可能少于人数");
-	});
-
-	test("每个方向都搜得到人，而且原样就是一个概念词", async () => {
-		const o = await overview();
-		assert.ok(o.seqs.length > 0, "有语料就该给得出方向");
-		for (const seq of o.seqs) {
-			const { terms, total } = await run(parseChips(seq));
-			assert.deepEqual(
-				terms.map((t) => t.term),
-				[seq],
-				`「${seq}」点下去被切词切走了`,
-			);
-			assert.ok(total > 0, `「${seq}」点下去一个人都没有`);
-		}
-	});
-
-	test("会被切词切走的序列名不出现在词汇表里", async () => {
-		const o = await overview();
-		assert.ok(!o.seqs.includes("安全与风险合规"));
 	});
 });
 

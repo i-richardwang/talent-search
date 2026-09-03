@@ -18,7 +18,7 @@ import { employee, experience } from "#/db/schema";
 import { seqLabel } from "#/lib/format";
 import type { Vocabulary } from "./intent";
 import { sanitizeLimit } from "./params";
-import { activeChips, parseQuery } from "./parse";
+import { activeChips } from "./parse";
 import { type Admitted, admit, admittedTable } from "./phrases";
 import {
 	type Fact,
@@ -30,7 +30,6 @@ import {
 import {
 	emptyFacets,
 	type Hit,
-	type Overview,
 	type RankedResult,
 	type SearchFilters,
 	type SearchOutcome,
@@ -381,43 +380,6 @@ async function vocabularyFrom(store: DbExecutor): Promise<Vocabulary> {
 		recruitments: row?.recruitments ?? [],
 		educations: row?.educations ?? [],
 	};
-}
-
-/** 零态的词汇表最多给几个。一屏之内扫得完，再多就成了要读的正文。 */
-const OVERVIEW_SEQS = 12;
-
-/**
- * 语料概览：库有多大，以及这个库认识哪些词（见 result.ts 的 `Overview`）。
- *
- * 词汇表取二级序列，但**只留能原样当概念词用的那些**：`parseQuery` 会把
- * 「安全与风险合规」按连接词「与」切成两个词，于是点一下得到的查询和屏幕上
- * 写的那个词不是同一回事。零态的全部作用是给人一个可靠的起点，给出一个
- * 点下去就变形的起点比不给更糟，所以这里拿 `parseQuery` 自己做一次体检，
- * 过不了的直接不出现。
- */
-export async function overview(): Promise<Overview> {
-	return withCorpusSnapshot(async (store) => {
-		const rows = await store.execute<{
-			people: number;
-			segments: number;
-			seqs: string[];
-		}>(sql`
-				select count(distinct emp_id)::int as people, count(*)::int as segments,
-					array(select seq_l2 from experience where seq_l2 <> ''
-						group by seq_l2 order by count(distinct emp_id) desc
-						limit ${OVERVIEW_SEQS * 3}) as seqs
-				from experience`);
-		const row = rows.rows[0];
-		const clean = (row?.seqs ?? []).filter((name) => {
-			const terms = parseQuery(name);
-			return terms.length === 1 && terms[0] === name;
-		});
-		return {
-			people: row?.people ?? 0,
-			segments: row?.segments ?? 0,
-			seqs: clean.slice(0, OVERVIEW_SEQS),
-		};
-	});
 }
 
 /**

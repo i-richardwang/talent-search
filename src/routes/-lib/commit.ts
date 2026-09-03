@@ -14,7 +14,6 @@
  */
 import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { toQuery } from "#/search/parse";
 import type { QueryInput } from "#/search/spec";
 import { commitTurn } from "#/server/functions";
 
@@ -23,12 +22,8 @@ const FAILED = "没能提交这次搜索，请重试。";
 
 export function useCommit() {
 	const navigate = useNavigate();
+	// 一次只许飞一条：两条同时在飞，先回来的会被后回来的覆盖。
 	const inFlight = useRef(false);
-	/**
-	 * **正在飞的那一条**，不是一个布尔：零态那排示例要靠它认出该转圈的是哪一条，
-	 * 也要靠它把其余几条禁掉——两条同时在飞，先回来的会被后回来的覆盖。
-	 */
-	const [pending, setPending] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	/**
@@ -41,15 +36,8 @@ export function useCommit() {
 		input: QueryInput,
 		opts: { parentTurnId?: string } = {},
 	) => {
-		const key =
-			input.kind === "sentence"
-				? input.text
-				: input.kind === "spec"
-					? `${toQuery(input.spec.evidence)}:${JSON.stringify(input.spec.scope)}:${JSON.stringify(input.spec.notices)}`
-					: `reinterpret:${input.note ?? ""}`;
 		if (inFlight.current) return false;
 		inFlight.current = true;
-		setPending(key);
 		setError(null);
 		try {
 			const { turnId } = await commitTurn({
@@ -74,9 +62,8 @@ export function useCommit() {
 			return false;
 		} finally {
 			inFlight.current = false;
-			setPending(null);
 		}
 	};
 
-	return { pending, error, commit };
+	return { error, commit };
 }

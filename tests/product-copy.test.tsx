@@ -29,22 +29,18 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.doesNotMatch(labels.join(" "), /external/);
 	});
 
-	test("首页使用功能名称，不写口号或对话式提问", () => {
-		const text = seen(
-			<ZeroState
-				error={null}
-				onQuery={() => true}
-				overview={{ people: 12, segments: 34, seqs: ["算法"] }}
-				pending={null}
-				recent={[]}
-			/>,
-		);
-		assert.match(text, /搜索人才/);
+	test("首页不写口号、不写对话式提问，也不复述自己是干什么的", () => {
+		const text = seen(<ZeroState error={null} onQuery={() => true} />);
 		assert.doesNotMatch(text, /你想找什么样的人|找到合适的人|查看相关人选/);
-		assert.match(text, /数据范围：\s*12 名员工 · 34 段经历/);
-		assert.match(text, /常用方向/);
-		assert.match(text, /搜索示例/);
 		assert.doesNotMatch(text, /语料|概念词|受控字段/);
+		/*
+		 * 零态只有一个动作：把要找的人说出来。屏幕上除了输入框和几句可以照着
+		 * 改的例子之外不该有别的小节——多一个小标题，那个动作就多一份被分掉的
+		 * 注意力，而这一屏没有第二件值得做的事。
+		 */
+		assert.doesNotMatch(text, /最近搜索|常用方向|搜索示例|数据范围/);
+		// 例子是整句，不是单个词：一句话里能放多个条件这件事只有它说得出来。
+		assert.match(text, /做过.+、.+的人/);
 	});
 
 	test("结果数量使用中性状态，不暴露检索术语", () => {
