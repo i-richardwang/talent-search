@@ -401,8 +401,7 @@ describe("分面与名次是同一个口径", () => {
 
 	test("算某一维时摘掉这一维自己的筛选，否则选中之后就切不动了", () => {
 		const { facets, total } = run(facts, terms("must"), {
-			seqL1: "技术",
-			seqL2: "算法",
+			seq: [{ l1: "技术", l2: "算法" }],
 		});
 		assert.equal(total, 2, "结果本身是被筛过的");
 		assert.equal(
@@ -412,8 +411,23 @@ describe("分面与名次是同一个口径", () => {
 		);
 	});
 
+	test("一维之内多选是「或」：两个职级都要，人就是两边的并集", () => {
+		const both = run(facts, terms("must"), { level: ["P6", "P7"] });
+		const p6 = run(facts, terms("must"), { level: ["P6"] });
+		const p7 = run(facts, terms("must"), { level: ["P7"] });
+		assert.equal(both.total, p6.total + p7.total);
+	});
+
+	test("维度之间是「与」：两维各选一项，人得同时满足", () => {
+		const { total } = run(facts, terms("must"), {
+			level: ["P7"],
+			seq: [{ l1: "技术", l2: "渠道" }],
+		});
+		assert.equal(total, 0, "没有人既是 P7 又在这条序列上");
+	});
+
 	test("跟人走的维度同样收窄别的维度", () => {
-		const { facets, total } = run(facts, terms("must"), { level: "P7" });
+		const { facets, total } = run(facts, terms("must"), { level: ["P7"] });
 		assert.equal(total, 2);
 		assert.equal(facets.seq.find((s) => s.seqL2 === "算法")?.n, 1);
 		assert.equal(facets.level.find((l) => l.value === "P6")?.n, 1);
@@ -434,7 +448,7 @@ describe("分面与名次是同一个口径", () => {
 	test("被别的维度挤到 0 的选项留在原地，不消失", () => {
 		// 列表在手底下换形状，比列表长一点难用得多：消失的那一行是用户自己
 		// 刚做的事的后果，藏起来就没法回头
-		const { facets } = run(facts, terms("must"), { level: "P6" });
+		const { facets } = run(facts, terms("must"), { level: ["P6"] });
 		assert.equal(facets.seq.find((s) => s.seqL2 === "渠道")?.n, 0);
 	});
 
@@ -483,8 +497,7 @@ describe("结构化范围的人群排序", () => {
 
 	test("筛选要求同一经历段满足，分面仍摘掉自己的维度", () => {
 		const result = rankPopulation(facts, {
-			seqL1: "技术",
-			seqL2: "算法",
+			seq: [{ l1: "技术", l2: "算法" }],
 			kind: "external",
 		});
 		assert.deepEqual(result.empIds, ["B"]);

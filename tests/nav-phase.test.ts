@@ -10,7 +10,7 @@ import { describe, test } from "node:test";
 import { navPhase, type Spot } from "#/routes/-lib/nav-phase";
 
 const spot = (turn: string, view: Spot["view"] = {}): Spot => ({ turn, view });
-const QUERY = { seq: "技术/后端" };
+const QUERY = { seq: [{ l1: "技术", l2: "后端" }] };
 
 describe("导航相位", () => {
 	test("没在飞就什么都不是", () => {
@@ -29,6 +29,35 @@ describe("导航相位", () => {
 			growing: false,
 			navigating: false,
 		});
+	});
+
+	test("多选维度按值比，不按引用——每次导航都是一份新解析出来的 View", () => {
+		// URL 每解析一次就是一个新数组。按引用比的话，一模一样的视图也会判成
+		// 「筛选变了」，于是名单每换一个人就塌成骨架屏一次。
+		assert.deepEqual(
+			navPhase(
+				true,
+				spot("a", { seq: [{ l1: "技术", l2: "后端" }] }),
+				spot("a", { seq: [{ l1: "技术", l2: "后端" }] }),
+			),
+			{ growing: false, navigating: false },
+		);
+	});
+
+	test("同一维选中的项变了就是改筛选", () => {
+		assert.deepEqual(
+			navPhase(
+				true,
+				spot("a", {
+					seq: [
+						{ l1: "技术", l2: "后端" },
+						{ l1: "技术", l2: "前端" },
+					],
+				}),
+				spot("a", { seq: [{ l1: "技术", l2: "后端" }] }),
+			),
+			{ growing: false, navigating: true },
+		);
 	});
 
 	test("再翻一页：已经看到的人留在原地，只有按钮转圈", () => {

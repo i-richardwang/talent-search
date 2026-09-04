@@ -7,8 +7,14 @@ import {
 } from "@tanstack/react-router";
 import { useCallback, useRef } from "react";
 import { buttonVariants } from "#/components/ui/button";
-import { Dialog, DialogPopup, DialogTitle } from "#/components/ui/dialog";
+import {
+	Dialog,
+	DialogPanel,
+	DialogPopup,
+	DialogTitle,
+} from "#/components/ui/dialog";
 import { Kbd } from "#/components/ui/kbd";
+import { ScrollArea } from "#/components/ui/scroll-area";
 import { cn } from "#/lib/utils";
 import { emptyFacets, type SearchResult } from "#/search/result";
 import { emptySpec, type SearchSpec } from "#/search/spec";
@@ -148,7 +154,7 @@ function Workbench() {
 			<a
 				className={buttonVariants({
 					className:
-						"sr-only no-underline focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-escape",
+						"sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-escape",
 					size: "sm",
 					variant: "outline",
 				})}
@@ -260,10 +266,15 @@ function Workbench() {
 						open ? `${PANEL_W} border-border border-l bg-card` : "w-0",
 					)}
 				>
-					<div
-						className={cn(PANEL_W, "h-full overflow-y-auto overscroll-contain")}
-					>
-						<Outlet />
+					{/*
+					 * 里面这一层固定宽：外面那层在做宽度动画，内容跟着一起被挤扁的话
+					 * 每一帧都要重排一次文字。滚动归 `ScrollArea`，理由和左栏同一条
+					 * （AGENTS.md「自己滚的面一律 `ScrollArea`」）。
+					 */}
+					<div className={cn(PANEL_W, "h-full")}>
+						<ScrollArea overscrollContain>
+							<Outlet />
+						</ScrollArea>
 					</div>
 				</aside>
 			) : (
@@ -284,10 +295,16 @@ function Workbench() {
 					}}
 					open={open}
 				>
-					{/* 限高并自己滚：详情那个吸顶的头就贴在这个滚动容器上 */}
-					<DialogPopup className="max-h-[85dvh] max-w-2xl overflow-y-auto p-0">
+					{/*
+					 * 限高并自己滚。滚的那一层是 `DialogPanel`（也就是 `ScrollArea`），
+					 * 详情那个吸顶的头贴在它上面——所以关掉 `scrollFade`，那层遮罩会把
+					 * 吸顶的头一起蒙掉。`p-0` 是因为内边距由详情自己给。
+					 */}
+					<DialogPopup className="max-h-[85dvh] max-w-2xl">
 						<DialogTitle className="sr-only">员工详情</DialogTitle>
-						<Outlet />
+						<DialogPanel className="p-0" scrollFade={false}>
+							<Outlet />
+						</DialogPanel>
 					</DialogPopup>
 				</Dialog>
 			)}

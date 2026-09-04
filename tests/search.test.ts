@@ -658,8 +658,7 @@ describe("分面", () => {
 
 	test("算某一维时要摘掉这一维自己的筛选，否则选中之后就切不动了", async () => {
 		const { facets, results } = await run(parseChips("算法"), {
-			seqL1: "技术",
-			seqL2: "算法",
+			seq: [{ l1: "技术", l2: "算法" }],
 		});
 		assert.equal(results.length, 3, "结果本身是被筛过的");
 		// 但序列这一维的候选不受它自己影响，别的序列还看得见、点得动

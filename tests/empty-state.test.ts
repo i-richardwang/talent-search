@@ -76,7 +76,7 @@ describe("匹配事实超过保险丝", () => {
 			terms: [must("运营")],
 			q: "运营",
 			overflow: { kind: "evidence", terms: ["运营"] },
-			view: { seq: "技术/后端" },
+			view: { seq: [{ l1: "技术", l2: "后端" }] },
 		});
 		assert.equal(s.title, "匹配证据过多");
 	});
@@ -161,7 +161,7 @@ describe("有词但没人的三种成因", () => {
 		const s = run({
 			terms: [must("算法")],
 			q: "算法",
-			view: { seq: "技术/后端" },
+			view: { seq: [{ l1: "技术", l2: "后端" }] },
 		});
 		assert.equal(s.changed?.seq, undefined);
 		assert.ok(!("strong" in (s.changed ?? {})), "证据要求不归「清除筛选」管");

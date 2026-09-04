@@ -273,6 +273,19 @@
 		@apply border-border outline-ring/50;
 	}
 
+	/*
+	 * 滚动条占的那一格宽度永远留着。没有这一条的话，不滚的页面（零态、空结果）
+	 * 切到要滚的页面（名单）时整页会横着跳一格——跳走的包括页框那两根线和顶栏，
+	 * 而它们是全屏最不该动的东西。
+	 *
+	 * 覆盖式滚动条的系统上（macOS 默认）这一格宽度本来就是 0，这条不占任何东西；
+	 * 它治的是常显滚动条的那些环境。Base UI 开模态锁滚动时用的也是这一条
+	 * （`useScrollLock`），而且会先读原值再还原，所以常驻它不会和弹层打架。
+	 */
+	html {
+		scrollbar-gutter: stable;
+	}
+
 	/* macOS 上关掉次像素渲染，中文小字号更干净 */
 	body {
 		-webkit-font-smoothing: antialiased;

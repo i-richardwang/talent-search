@@ -15,19 +15,24 @@
  * 一个是换一个问题。
  */
 
-import { filterText } from "#/search/params";
-import type { SearchFilters } from "#/search/result";
+import { filterText, filterTextList, seqPicks } from "#/search/params";
+import type { SearchFilters, SeqPick } from "#/search/result";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 
 export type View = {
-	/** 序列筛选编码成 "一级/二级"：二级序列名跨一级会重名（技术/数据科学 与 商业分析/数据科学） */
-	seq?: string;
-	companyTag?: string;
+	/** 选中的序列，每一项是一对值（形状和理由见 `SeqPick`）。 */
+	seq?: SeqPick[];
+	companyTag?: string[];
+	/**
+	 * 命中段至少多少个月。**单值**，因为它是一条阈值不是一个集合：
+	 * 「至少 6 个月」或「至少 1 年」加起来还是「至少 6 个月」。
+	 */
 	minMonths?: number;
+	/** 只看在职经历或只看入职前。**单值**：两个都要就是不筛。 */
 	kind?: "internal" | "external";
-	level?: string;
-	recruitment?: string;
-	education?: string;
+	level?: string[];
+	recruitment?: string[];
+	education?: string[];
 	/** 待过的公司或部门名里含这几个字。精确条件，没有分面。 */
 	org?: string;
 	/** 学校名里含这几个字。精确条件，没有分面。 */
@@ -54,13 +59,13 @@ export type View = {
 export function validateView(s: Record<string, unknown>): View {
 	const months = Number(s.minMonths);
 	return {
-		seq: filterText(s.seq),
-		companyTag: filterText(s.companyTag),
+		seq: seqPicks(s.seq),
+		companyTag: filterTextList(s.companyTag),
 		minMonths: Number.isInteger(months) && months > 0 ? months : undefined,
 		kind: s.kind === "internal" || s.kind === "external" ? s.kind : undefined,
-		level: filterText(s.level),
-		recruitment: filterText(s.recruitment),
-		education: filterText(s.education),
+		level: filterTextList(s.level),
+		recruitment: filterTextList(s.recruitment),
+		education: filterTextList(s.education),
 		org: filterText(s.org),
 		school: filterText(s.school),
 		strong: s.strong === true || s.strong === "true" ? true : undefined,
@@ -125,25 +130,36 @@ const FILTER_KEYS = [...POPULATION_KEYS, "strong"] as const;
 export function onlyMore(next: View, prev: View | undefined) {
 	if (!prev) return false;
 	if (pageLimit(next) <= pageLimit(prev)) return false;
-	return FILTER_KEYS.every((k) => next[k] === prev[k]);
+	return FILTER_KEYS.every((k) => same(next[k], prev[k]));
 }
 
 /** 当前导航是否会改变结果表；只切换详情路由时为 false。 */
 export function viewChanged(next: View, prev: View | undefined) {
 	if (!prev) return true;
 	if (pageLimit(next) !== pageLimit(prev)) return true;
-	return FILTER_KEYS.some((key) => next[key] !== prev[key]);
+	return FILTER_KEYS.some((key) => !same(next[key], prev[key]));
 }
 
 /**
- * 视图状态 → 检索条件。序列在 URL 里是 "一级/二级" 一个值，检索条件里是两列，
- * 拆分只发生在这里。
+ * 同一维的两个值算不算没变。集合维度是数组，`===` 比的是引用，而 URL 每解析
+ * 一次就是一批新对象——照引用比，光是换一个人看详情都会判成「筛选变了」，名单
+ * 于是塌成骨架屏一次。
+ *
+ * 比的就是它写进地址栏之后的样子：顺序和字段序都由 `filters.ts` 的 `toggle`
+ * 与 `seqPicks` 定死，同一组选择只有一种写法。
+ */
+function same(a: View[keyof View], b: View[keyof View]) {
+	if (!Array.isArray(a) || !Array.isArray(b)) return a === b;
+	return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * 视图状态 → 检索条件。两者的字段一一对应，这里只是把「怎么看这批人」里
+ * 收窄人群的那几维挑出来——翻页数不是检索条件。
  */
 export function toFilters(v: View): SearchFilters {
-	const [seqL1, seqL2] = v.seq?.split("/") ?? [];
 	return {
-		seqL1,
-		seqL2,
+		seq: v.seq,
 		companyTag: v.companyTag,
 		minMonths: v.minMonths,
 		kind: v.kind,

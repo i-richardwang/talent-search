@@ -88,8 +88,23 @@ export type TermPlan = {
 };
 
 /**
+ * 选中的一条序列。二级序列名跨一级会重名（技术/数据科学 与 商业分析/数据科学），
+ * 所以它是一对值，不是一个名字。
+ *
+ * 从 URL 到 SQL 谓词全程都是这个形状，中间不拼成字符串再切开：序列名里出现斜杠
+ * 并不稀奇（见 `rank.ts` 的 `SEP`），任何拼接式的编码都会在某个名字上切错，
+ * 而切错的表现是一份说不通的名单，不是一个报错。
+ */
+export type SeqPick = { l1: string; l2: string };
+
+/**
  * 筛选。前七维收窄的是**人群**，都对完整候选事实求值（放到客户端就只能筛
  * 已经翻出来的那几页，而其余维数的是全部命中的人——同一排控件会出现两种口径）。
+ *
+ * **一维之内是「或」，维度之间是「与」**——分面检索的标准口径，也是分面计数
+ * 摘掉自己那一维的原因（`rank.ts` 的 `keeps`）：「P6 旁边那个 20」说的正是
+ * 「再勾上 P6 会多出这些人」。集合的那几维因此是列表；阈值（`minMonths`）和
+ * 二选一（`kind`）不是集合，多选对它们没有意义，所以是单值。
  *
  * `org` 与 `school` 是**精确文本条件**，不是分面：公司名、学校名是专有名词，
  * 永远不进向量（「字节」和「腾讯」在向量空间里是邻居）。它们答的是
@@ -97,20 +112,19 @@ export type TermPlan = {
  * 在取数的 SQL 里生效。
  */
 export type SearchFilters = {
-	seqL1?: string;
-	seqL2?: string;
+	seq?: SeqPick[];
 	/** 入职前公司档：头部互联网T1 / 知名公司 … */
-	companyTag?: string;
+	companyTag?: string[];
 	/** 命中段至少多少个月 */
 	minMonths?: number;
 	/** 只看在职经历或只看入职前 */
 	kind?: "internal" | "external";
 	/** 当前职级（employee.cur_level） */
-	level?: string;
+	level?: string[];
 	/** 招聘渠道（校招 / 社招 …） */
-	recruitment?: string;
+	recruitment?: string[];
 	/** 学历 */
-	education?: string;
+	education?: string[];
 	/** 待过的部门或公司名里含这几个字 */
 	org?: string;
 	/** 学校名里含这几个字 */

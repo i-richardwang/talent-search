@@ -156,7 +156,19 @@ describe("不点开就知道现在筛的是什么", () => {
 
 	test("选中的那一项被提到前面，不会掉进「更多」里", () => {
 		// 它排第几由人数决定；一旦掉出摊开的那几项，就再也取消不掉了
-		const seen = render({ seq: "技术/序列8" });
+		const seen = render({ seq: [{ l1: "技术", l2: "序列8" }] });
+		assert.ok(seen.includes("技术 · 序列8"), seen);
+	});
+
+	test("同一维选中的几项都在场，都不会掉进「更多」里", () => {
+		// 一维之内可以多选，选中的每一项都得留着——藏起来的那一项取消不掉
+		const seen = render({
+			seq: [
+				{ l1: "技术", l2: "序列7" },
+				{ l1: "技术", l2: "序列8" },
+			],
+		});
+		assert.ok(seen.includes("技术 · 序列7"), seen);
 		assert.ok(seen.includes("技术 · 序列8"), seen);
 	});
 
@@ -171,6 +183,15 @@ describe("清除", () => {
 		assert.ok(render({ kind: "internal" }).includes("清除 1 项"));
 		assert.ok(
 			render({ kind: "internal", minMonths: 12 }).includes("清除 2 项"),
+		);
+		// 同一维里选中的每一个值各算一项
+		assert.ok(
+			render({
+				seq: [
+					{ l1: "技术", l2: "序列0" },
+					{ l1: "技术", l2: "序列1" },
+				],
+			}).includes("清除 2 项"),
 		);
 	});
 

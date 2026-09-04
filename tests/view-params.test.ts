@@ -49,16 +49,67 @@ describe("最短时长只收正整数", () => {
 
 describe("文本字段", () => {
 	test("两头的空白不算内容", () => {
-		assert.equal(validateView({ seq: "   " }).seq, undefined);
-		assert.equal(validateView({ seq: " 技术/后端 " }).seq, "技术/后端");
-	});
-
-	test("非字符串一律当没填", () => {
-		assert.equal(validateView({ companyTag: ["大厂"] }).companyTag, undefined);
+		assert.equal(validateView({ org: "   " }).org, undefined);
+		assert.equal(validateView({ org: " 字节 " }).org, "字节");
 	});
 
 	test("任意长的 URL 文本不会原样进入检索", () => {
 		assert.equal(validateView({ org: "甲".repeat(300) }).org?.length, 200);
+	});
+});
+
+/**
+ * 序列。它在地址栏里是一对值而不是一个拼起来的名字——序列名里出现斜杠并不稀奇，
+ * 拼接式的编码会在某个名字上切错，而切错的表现是一份说不通的名单，不是一个报错。
+ */
+describe("序列是一对值", () => {
+	test("两级都在才算数，两头的空白不算内容", () => {
+		assert.deepEqual(
+			validateView({ seq: [{ l1: " 技术 ", l2: "后端" }] }).seq,
+			[{ l1: "技术", l2: "后端" }],
+		);
+	});
+
+	test("缺一级的丢掉——半个条件比没有条件更难解释", () => {
+		assert.equal(validateView({ seq: [{ l1: "技术" }] }).seq, undefined);
+		assert.equal(validateView({ seq: [{ l2: "后端" }] }).seq, undefined);
+		assert.equal(validateView({ seq: ["技术/后端"] }).seq, undefined);
+	});
+
+	test("名字里带斜杠也原样留着，没有任何地方会去切它", () => {
+		assert.deepEqual(
+			validateView({ seq: [{ l1: "技术", l2: "前端/H5" }] }).seq,
+			[{ l1: "技术", l2: "前端/H5" }],
+		);
+	});
+});
+
+/**
+ * 集合维度。它们在 URL 上是列表，而「一项都没选」和「这一维不筛」必须是同一个
+ * 写法——留一个空数组下去，`hasFilters` 会说有筛选，空态就会给出一条清筛选的
+ * 出路，而那条路点下去什么都不会变。
+ */
+describe("可多选的维度", () => {
+	test("多个值原样通过", () => {
+		assert.deepEqual(validateView({ level: ["P6", "P7"] }).level, ["P6", "P7"]);
+	});
+
+	test("不是列表的一律当没填——单个字符串也不行", () => {
+		assert.equal(validateView({ level: "P6" }).level, undefined);
+		assert.equal(validateView({ level: 6 }).level, undefined);
+	});
+
+	test("重复的值只留一个", () => {
+		assert.deepEqual(validateView({ education: ["硕士", "硕士"] }).education, [
+			"硕士",
+		]);
+	});
+
+	test("清干净之后一项不剩，就是这一维没填", () => {
+		assert.equal(
+			validateView({ companyTag: ["", "  ", 7] }).companyTag,
+			undefined,
+		);
 	});
 });
 
@@ -78,37 +129,25 @@ describe("枚举与开关", () => {
 });
 
 describe("URL 状态翻成检索条件", () => {
-	test("序列在 URL 里是一个值，到检索条件是两列", () => {
-		const f = toFilters({ seq: "技术/数据科学" });
-		assert.equal(f.seqL1, "技术");
-		assert.equal(f.seqL2, "数据科学");
-		// 其余维度没写就是没写：不能变成空串去和列比较
+	test("只挑收窄人群的那几维，翻页数不是检索条件", () => {
+		const f = toFilters({ seq: [{ l1: "技术", l2: "数据科学" }], n: 100 });
+		assert.deepEqual(f.seq, [{ l1: "技术", l2: "数据科学" }]);
+		assert.ok(!("n" in f));
+		// 其余维度没写就是没写：不能变成空串或空列表去和列比较
 		for (const [k, v] of Object.entries(f))
-			if (k !== "seqL1" && k !== "seqL2") assert.equal(v, undefined, k);
-	});
-
-	test("只给一级也成立：那就是只按一级收窄", () => {
-		const f = toFilters({ seq: "技术" });
-		assert.equal(f.seqL1, "技术");
-		assert.equal(f.seqL2, undefined);
-	});
-
-	test("没有序列时两列都不设，不能变成空串去和列比较", () => {
-		const f = toFilters({});
-		assert.equal(f.seqL1, undefined);
-		assert.equal(f.seqL2, undefined);
+			if (k !== "seq") assert.equal(v, undefined, k);
 	});
 });
 
 describe("有没有生效的筛选", () => {
 	test("任一收窄维度生效即为真", () => {
-		assert.ok(hasFilters({ seq: "技术/数据科学" }));
-		assert.ok(hasFilters({ companyTag: "大厂" }));
+		assert.ok(hasFilters({ seq: [{ l1: "技术", l2: "数据科学" }] }));
+		assert.ok(hasFilters({ companyTag: ["大厂"] }));
 		assert.ok(hasFilters({ minMonths: 12 }));
 		assert.ok(hasFilters({ kind: "internal" }));
-		assert.ok(hasFilters({ level: "P7" }));
-		assert.ok(hasFilters({ recruitment: "校招" }));
-		assert.ok(hasFilters({ education: "硕士" }));
+		assert.ok(hasFilters({ level: ["P7"] }));
+		assert.ok(hasFilters({ recruitment: ["校招"] }));
+		assert.ok(hasFilters({ education: ["硕士"] }));
 		assert.ok(hasFilters({ org: "支付" }));
 		assert.ok(hasFilters({ school: "浙江大学" }));
 	});
@@ -179,7 +218,7 @@ describe("还能不能再翻", () => {
  * 会挂在屏幕上假装还成立。
  */
 describe("翻页与换查询要分得开", () => {
-	const base = { seq: "技术/后端" };
+	const base = { seq: [{ l1: "技术", l2: "后端" }] };
 
 	test("只有 n 变大才算翻页", () => {
 		assert.equal(onlyMore({ ...base, n: 100 }, base), true);
@@ -188,7 +227,25 @@ describe("翻页与换查询要分得开", () => {
 	});
 
 	test("查询或筛选跟着变了就不是翻页", () => {
-		assert.equal(onlyMore({ ...base, seq: "技术/前端", n: 100 }, base), false);
+		assert.equal(
+			onlyMore({ ...base, seq: [{ l1: "技术", l2: "前端" }], n: 100 }, base),
+			false,
+		);
+		assert.equal(
+			onlyMore(
+				{
+					...base,
+					seq: [
+						{ l1: "技术", l2: "后端" },
+						{ l1: "技术", l2: "前端" },
+					],
+					n: 100,
+				},
+				base,
+			),
+			false,
+			"同一维多选一项也是改筛选",
+		);
 		assert.equal(onlyMore({ ...base, seq: undefined, n: 100 }, base), false);
 		assert.equal(onlyMore({ ...base, strong: true, n: 100 }, base), false);
 	});
@@ -199,7 +256,15 @@ describe("翻页与换查询要分得开", () => {
 
 	test("只切换详情路由不触发结果骨架屏", () => {
 		assert.equal(viewChanged(base, base), false);
-		assert.equal(viewChanged({ ...base, seq: "技术/前端" }, base), true);
+		assert.equal(
+			viewChanged({ seq: [{ l1: "技术", l2: "后端" }] }, base),
+			false,
+			"每次导航都是新解析出来的数组，按引用比会让名单一直塌",
+		);
+		assert.equal(
+			viewChanged({ ...base, seq: [{ l1: "技术", l2: "前端" }] }, base),
+			true,
+		);
 		assert.equal(viewChanged({ ...base, n: 100 }, base), true);
 	});
 });

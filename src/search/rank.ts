@@ -219,28 +219,29 @@ type Dim =
  */
 function keeps(f: SearchFilters, except?: Dim) {
 	return (x: PopulationFact) => {
-		if (except !== "seq" && f.seqL1 && x.seqL1 !== f.seqL1) return false;
-		if (except !== "seq" && f.seqL2 && x.seqL2 !== f.seqL2) return false;
+		if (
+			except !== "seq" &&
+			f.seq?.length &&
+			!f.seq.some((s) => s.l1 === x.seqL1 && s.l2 === x.seqL2)
+		)
+			return false;
 		if (except !== "kind" && f.kind && x.kind !== f.kind) return false;
 		if (except !== "minMonths" && f.minMonths && x.months < f.minMonths)
 			return false;
-		if (
-			except !== "companyTag" &&
-			f.companyTag &&
-			x.companyTag !== f.companyTag
-		)
+		if (except !== "companyTag" && !oneOf(f.companyTag, x.companyTag))
 			return false;
-		if (except !== "level" && f.level && x.level !== f.level) return false;
-		if (
-			except !== "recruitment" &&
-			f.recruitment &&
-			x.recruitment !== f.recruitment
-		)
+		if (except !== "level" && !oneOf(f.level, x.level)) return false;
+		if (except !== "recruitment" && !oneOf(f.recruitment, x.recruitment))
 			return false;
-		if (except !== "education" && f.education && x.education !== f.education)
+		if (except !== "education" && !oneOf(f.education, x.education))
 			return false;
 		return true;
 	};
+}
+
+/** 一维之内多选是「或」：没选就是不筛，选了就得是其中之一。 */
+function oneOf(picked: string[] | undefined, value: string | null) {
+	return !picked?.length || (value !== null && picked.includes(value));
 }
 
 /** 合成 key 的分隔符：序列名里出现「/」并不稀奇，得用一个不可能出现在数据里的字符 */

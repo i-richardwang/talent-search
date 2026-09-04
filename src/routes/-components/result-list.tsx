@@ -17,7 +17,6 @@ import {
 	EmptyMedia,
 	EmptyTitle,
 } from "#/components/ui/empty";
-import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Toggle } from "#/components/ui/toggle";
 import { cn } from "#/lib/utils";
@@ -56,6 +55,9 @@ function isRanked(result: SearchResult): result is RankedResult {
  * 图例必须和它解释的那些点同屏，所以只能排在这里；而那个开关要求的正是图例里
  * 第一颗点，两者挨着放，开关就不必再解释一遍自己是什么意思。
  *
+ * 「按什么排」是**整份名单**的性质，一句话说完就够：名次由每个人在这一列里的位置
+ * 给出（AGENTS.md「分数不上屏」），这里只需要说清那个顺序是按什么排的。
+ *
  * 它只在有名单可介绍的时候出现，而那个判断归调用点——见下面空态那一支。
  */
 export function ResultHeader({
@@ -88,8 +90,6 @@ export function ResultHeader({
 				) : (
 					<>
 						<b className="text-foreground tabular-nums">{total}</b> 人
-						{/* 一份排过序的名单必须说出自己按什么排，否则「从上往下看」
-						    这个动作没有依据。 */}
 						{order === "relevance" ? " · 按相关度排序" : " · 按工号排序"}
 					</>
 				)}
@@ -147,7 +147,16 @@ function ProvenOnly({
 		>
 			<Dot strength="controlled" />
 			<span>只看任职记录可查的</span>
-			{!on && <span className="text-muted-foreground tabular-nums">{n}</span>}
+			{/*
+			 * 数字位一直占着。按下去之后这个数就没意义了（开着的时候表头那个总数
+			 * 就是它），但位子不留着的话按钮当场变窄，它左边的图例跟着往右滑——
+			 * 而位移的正是人刚点下去的那个东西。
+			 */}
+			<span
+				className={cn("text-muted-foreground tabular-nums", on && "invisible")}
+			>
+				{n}
+			</span>
 		</Toggle>
 	);
 }
@@ -239,18 +248,15 @@ export function ResultList({
 								{/* 骨架屏画的是**这次查询会有几条证据**，不是一个通用的方块堆：
 							    条件数取自记录上的 chips，所以加载完成时块高不变。 */}
 								{pending.length > 0 && (
-									<>
-										<Separator className="my-3" />
-										<div className="space-y-2">
-											{pending.map((t) => (
-												<div className="flex items-center gap-2.5" key={t.term}>
-													<Skeleton className="size-2 rounded-full" />
-													<Skeleton className="h-3 w-16" />
-													<Skeleton className="h-3 flex-1" />
-												</div>
-											))}
-										</div>
-									</>
+									<div className="mt-3 space-y-2">
+										{pending.map((t) => (
+											<div className="flex items-center gap-2.5" key={t.term}>
+												<Skeleton className="size-2 rounded-full" />
+												<Skeleton className="h-3 w-16" />
+												<Skeleton className="h-3 flex-1" />
+											</div>
+										))}
+									</div>
 								)}
 							</Card>
 						),
@@ -300,7 +306,7 @@ export function ResultList({
 		<div>
 			{head}
 			<ul className="flex flex-col gap-2">
-				{results.map((r, rank) => {
+				{results.map((r) => {
 					const selected = r.employee.empId === empId;
 					const ranked = isRanked(r) ? r : null;
 					const best = bestHitPerTerm(ranked?.hits ?? [], terms);
@@ -331,14 +337,6 @@ export function ResultList({
 							render={<li />}
 						>
 							<div className="flex items-baseline gap-2.5">
-								{/*
-								 * 名次。一列卡片本身看不出有序，而它是排过序的，
-								 * 「从上往下看」这个动作的意义全靠这个顺序。
-								 * 详情面板里那句「第 N 位」是同一个数。
-								 */}
-								<span className="w-5 shrink-0 text-right text-muted-foreground text-xs tabular-nums">
-									{rank + 1}
-								</span>
 								<Link
 									aria-current={selected ? "page" : undefined}
 									/*
@@ -348,8 +346,11 @@ export function ResultList({
 									 *
 									 * replace：点一块是「看哪一个」，不是一次导航。扫过三十个人
 									 * 不该在历史栈里压三十条，否则后退键就废了。
+									 *
+									 * 悬停的反馈归卡片（它整块换底色，而鼠标落在哪里命中的都是
+									 * 这条链接）；焦点环归这里，那件事卡片没有替它说。
 									 */
-									className="title-2 shrink-0 truncate rounded-sm font-semibold after:absolute after:inset-0 after:content-[''] hover:underline"
+									className="title-2 shrink-0 truncate rounded-sm font-semibold after:absolute after:inset-0 after:content-['']"
 									params={{ turnId, empId: r.employee.empId }}
 									replace
 									search={(prev) => prev}
@@ -368,25 +369,23 @@ export function ResultList({
 							 * 这是把表格旋转成块之后仍然能上下扫的依据，只不过那条竖线上
 							 * 现在写着凭据。
 							 *
-							 * 和上面那一行之间隔一条线：卡片的头说「这是谁」，身子说
-							 * 「凭什么是他」，两件事。
+							 * 和上面那一行之间空 12px：证据行彼此是 6px，两倍就读成另一段。
+							 * 头和身子的分界靠字重字号的落差，够了（AGENTS.md「线只画在有
+							 * 结构含义的地方」）。
 							 */}
 							{terms.length > 0 && (
-								<>
-									<Separator className="my-3" />
-									<div className="space-y-1.5">
-										{hits.map(({ term, hit, basis }) => (
-											<EvidenceLine
-												basis={basis}
-												boost={term.mode === "boost"}
-												hit={hit}
-												key={term.term}
-												term={term.term}
-											/>
-										))}
-										<MissedTerms terms={missed.map((t) => t.term)} />
-									</div>
-								</>
+								<div className="mt-3 space-y-1.5">
+									{hits.map(({ term, hit, basis }) => (
+										<EvidenceLine
+											basis={basis}
+											boost={term.mode === "boost"}
+											hit={hit}
+											key={term.term}
+											term={term.term}
+										/>
+									))}
+									<MissedTerms terms={missed.map((t) => t.term)} />
+								</div>
 							)}
 						</Card>
 					);
@@ -395,7 +394,9 @@ export function ResultList({
 
 			{total > RESULT_PAGE && (
 				/*
-				 * 列表的结尾必须回答「我看完了吗」，所以永远同时说出两个数。
+				 * 列表的结尾必须回答「我看完了吗」，所以永远同时说出两个数。总数在表头
+				 * 也说过一次，但这一段只在超过一页（20 人）时才出现，那时表头早滚出屏幕
+				 * 了——两个数从来不同屏，不是同一句话说了两遍。
 				 * 翻不动的时候不留一个按不动的按钮，改说原因——「看完了」和
 				 * 「到上限了」是两件事，后者要给出路，前者不必。
 				 */

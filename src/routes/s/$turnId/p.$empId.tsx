@@ -85,15 +85,21 @@ function DetailNotFound() {
 	);
 }
 
+/**
+ * 一个人的详情。它答的是**逐段核对**：身份、四条事实，然后轨迹条给形状、时间轴给
+ * 每一段的原文。
+ *
+ * 名单上那张卡片已经逐词给过命中摘要，而且给得更细（它有命中的字段值）；名次和分数
+ * 同样在名单那侧。这一栏只放卡片给不了的东西——理由见 AGENTS.md 的「同一份数据只画
+ * 一遍」与「分数不上屏」。
+ */
 function Person() {
 	const { employee: e, timeline } = Route.useLoaderData();
 	// 命中证据来自父路由已经拿到的检索结果——不为了标记而再查一次库
 	const { result: search } = useLoaderData({ from: "/s/$turnId" });
-	const rank =
-		search?.results.findIndex((r) => r.employee.empId === e.empId) ?? -1;
 	const result =
-		search?.order === "relevance" && rank >= 0
-			? search.results[rank]
+		search?.order === "relevance"
+			? search.results.find((r) => r.employee.empId === e.empId)
 			: undefined;
 	// 轨迹条和时间轴共用：一份索引，两个视图
 	const hitIndex = buildHitIndex(result?.hits ?? []);
@@ -136,7 +142,7 @@ function Person() {
 							<Link
 								aria-label="关闭详情"
 								className={buttonVariants({
-									className: "-mr-1 text-muted-foreground no-underline",
+									className: "-mr-1 text-muted-foreground",
 									size: "icon-sm",
 									variant: "ghost",
 								})}
@@ -169,25 +175,6 @@ function Person() {
 						{[e.educationLevel, e.school].filter(Boolean).join(" · ") || "—"}
 					</Fact>
 				</dl>
-
-				{/*
-				 * 名次。这一栏里唯一一句名单上没有的话，所以它单独一行，不进分区。
-				 *
-				 * 那份名单是按分排的，但分数本身不上屏：它是路权重 × 时长因子再乘上
-				 * 加分项的积，没有任何刻度让人校准「1.35 算高还是低」，摆上去只是一个
-				 * 看着精确、读不出意思的数。名次不一样——它有刻度，分母就在旁边。
-				 *
-				 * 逐词的命中摘要不在这里画。名单上那张卡片已经逐词说过一遍，而且说得
-				 * 更细（它给出命中的**字段值**，这里只能给路名和累计时长）——人正是从
-				 * 那张卡片点进来的，进来之后看到一份更少的复述，这一栏就白开了。
-				 * 这一栏的价值是**逐段核对**：轨迹条给形状，时间轴给每一段的原文。
-				 */}
-				{rank >= 0 && (
-					<p className="mt-4 text-muted-foreground text-xs">
-						本次结果第 <b className="tabular-nums">{rank + 1}</b> 位，共{" "}
-						<b className="tabular-nums">{search?.total ?? 0}</b> 人
-					</p>
-				)}
 
 				{/*
 				 * 这一栏唯一的分区，靠一条发丝线和一个小标签分开，不靠再嵌一层

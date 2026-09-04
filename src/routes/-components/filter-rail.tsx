@@ -2,9 +2,10 @@ import { ListFilterIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "#/components/ui/popover";
+import { ScrollArea } from "#/components/ui/scroll-area";
 import { cn } from "#/lib/utils";
 import {
-	activeFilters,
+	activeCount,
 	type FilterField,
 	type TextFilter,
 } from "../-lib/filters";
@@ -38,22 +39,30 @@ export function FilterRail(props: FilterProps) {
 	if (!hasAnything(props)) return null;
 	return (
 		/*
-		 * 和详情面板同一套：吸顶、限高、自己滚、靠一条边分层，不靠投影。
-		 * `w-rail` 是版心算式里的那一项（styles.css），改宽度只改那一个数。
+		 * 和详情面板同一套：吸顶、限高、`ScrollArea` 自己滚、靠一条边分层，不靠投影。
+		 * `w-rail` 是版心算式里的那一项（styles.css），改宽度只改那一个数——所以这一栏
+		 * 的宽度不能让滚动条来定（AGENTS.md「自己滚的面一律 `ScrollArea`」）。
 		 */
 		<aside
 			aria-label="筛选"
 			className={cn(
 				"sticky top-(--header-height) hidden h-[calc(100dvh-var(--header-height))] w-rail shrink-0",
-				/*
+				"overflow-hidden border-border border-r lg:block",
+			)}
+		>
+			<ScrollArea overscrollContain scrollFade>
+				{/*
 				 * 左右等距，而且是 16：栏里每一行自己带 8px 的行内边距，加起来正好是
 				 * `app-column` 的 24px——于是这一栏的选项文字和顶栏左端落在同一条线上，
 				 * 而每一行的底色在这一栏里左右留白相同。这一栏的左沿就是页框那根线。
-				 */
-				"overflow-y-auto overscroll-contain border-border border-r p-4 lg:block",
-			)}
-		>
-			<FilterList {...props} />
+				 *
+				 * 内边距在这里而不是 `aside` 上：滚动条钉在 `aside` 的边上，留白给到
+				 * 内容这一层，那条拇指才落在这 16px 里，压不到字。
+				 */}
+				<div className="p-4">
+					<FilterList {...props} />
+				</div>
+			</ScrollArea>
 		</aside>
 	);
 }
@@ -64,7 +73,7 @@ export function FilterRail(props: FilterProps) {
  */
 export function FilterSheet(props: FilterProps) {
 	if (!hasAnything(props)) return null;
-	const count = activeFilters(props.fields, props.textFilters).length;
+	const count = activeCount(props.fields, props.textFilters);
 	return (
 		<Popover>
 			<PopoverTrigger
@@ -77,7 +86,11 @@ export function FilterSheet(props: FilterProps) {
 					</Button>
 				}
 			/>
-			<PopoverPopup align="start" className="max-h-96 w-72 overflow-y-auto p-2">
+			{/*
+			 * 高度不写死：弹层自己知道离屏幕边还有多少（`--available-height`），
+			 * 内边距也由它给——它和左栏一样是 16，同一份东西在两处读起来才一样。
+			 */}
+			<PopoverPopup align="start" className="w-72">
 				<FilterList {...props} />
 			</PopoverPopup>
 		</Popover>
@@ -101,11 +114,19 @@ function hasAnything({ fields, textFilters }: FilterProps) {
 }
 
 function FilterList({ fields, textFilters, onChange }: FilterProps) {
-	const count = activeFilters(fields, textFilters).length;
+	const count = activeCount(fields, textFilters);
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex items-baseline justify-between gap-2 px-2">
+			{/*
+			 * 行高写死。「清除」有和没有的时候这一行必须一样高，否则下面每一维都
+			 * 跟着上下跳一次——而它出现的那一刻，正是人刚点完一个筛选、眼睛还盯着
+			 * 那一列人数的时候，跳的是他正在读的东西。
+			 *
+			 * 20px 取自这一行里较高的那个盒子：12px 的按钮字（行高 16）加上下各 1px
+			 * 描边是 18，留 2px 余量。标题那 11px 的字比它矮，撑不到。
+			 */}
+			<div className="flex h-5 items-baseline justify-between gap-2 px-2">
 				<span className="label text-muted-foreground">筛选</span>
 				{count > 0 && (
 					<Button
@@ -153,32 +174,26 @@ function FilterFacet({
 
 	const rest = field.options.length - VISIBLE;
 	/*
-	 * 收起时只摊开前几项，但**选中的那一项永远在场**：它排在第几位由分面的
+	 * 收起时只摊开前几项，但**选中的项永远在场**：它排在第几位由分面的
 	 * 人数决定，一旦掉出前几项就再也取消不掉了。提到最前面而不是把列表撑开，
 	 * 是因为「现在筛的是什么」比「还能筛什么」先被读到。
 	 */
-	const visible = all
-		? field.options
-		: field.options.slice(0, VISIBLE).some((o) => o.value === field.value)
-			? field.options.slice(0, VISIBLE)
-			: [
-					...field.options.filter((o) => o.value === field.value),
-					...field.options.slice(0, VISIBLE - 1),
-				];
+	const visible = all ? field.options : collapse(field);
 
 	return (
 		<FilterGroup title={field.title}>
 			{visible.map((o) => {
-				const selected = o.value === field.value;
+				const selected = field.values.includes(o.value);
 				return (
 					<Row
 						/* 数到 0 的行留着但点不动：它说的是「这个值存在，只是和你现在
 						   的筛选冲突」。选中的那一行永远点得动，否则就取消不掉了。 */
 						disabled={o.n === 0 && !selected}
 						key={o.value}
-						/* 再点一次就是取消：这一维只能选一个，所以「不限」不必单占一行，
-						   而选中的那一行本来就是最容易被再点一次的地方。 */
-						onClick={() => onChange(field.set(selected ? undefined : o.value))}
+						/* 再点一次就是取消，所以「不限」不必单占一行——选中的那一行
+						   本来就是最容易被再点一次的地方。一维之内能同时选中几项，
+						   由这一维自己说了算（`-lib/filters.ts`）。 */
+						onClick={() => onChange(field.toggle(o.value))}
 						selected={selected}
 					>
 						<span className="min-w-0 flex-1 truncate text-start">
@@ -203,6 +218,19 @@ function FilterFacet({
 			)}
 		</FilterGroup>
 	);
+}
+
+/**
+ * 收起时摊开哪几项：前 VISIBLE 项，加上被挤在后面的那些选中项——它们提到最前面。
+ * 选中的一个都不能藏，藏起来就取消不掉了。
+ */
+function collapse({ options, values }: FilterField) {
+	const head = options.slice(0, VISIBLE);
+	const buried = options.filter(
+		(o) => values.includes(o.value) && !head.includes(o),
+	);
+	if (buried.length === 0) return head;
+	return [...buried, ...head.slice(0, Math.max(VISIBLE - buried.length, 0))];
 }
 
 /** 一维一组：分区标签 + 若干行。标签走全站的 `label` 档，一眼是「不是内容」。 */
