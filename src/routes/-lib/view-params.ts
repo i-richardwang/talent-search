@@ -15,24 +15,12 @@
  * 一个是换一个问题。
  */
 
-import { filterText, filterTextList, seqPicks } from "#/search/params";
-import type { SearchFilters, SeqPick } from "#/search/result";
+import { filterText, type Picked, parsePicked } from "#/search/dimensions";
+import { hasPopulationFilters, POPULATION_KEYS } from "#/search/params";
+import type { SearchFilters } from "#/search/result";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 
-export type View = {
-	/** 选中的序列，每一项是一对值（形状和理由见 `SeqPick`）。 */
-	seq?: SeqPick[];
-	companyTag?: string[];
-	/**
-	 * 命中段至少多少个月。**单值**，因为它是一条阈值不是一个集合：
-	 * 「至少 6 个月」或「至少 1 年」加起来还是「至少 6 个月」。
-	 */
-	minMonths?: number;
-	/** 只看在职经历或只看入职前。**单值**：两个都要就是不筛。 */
-	kind?: "internal" | "external";
-	level?: string[];
-	recruitment?: string[];
-	education?: string[];
+export type View = Picked & {
 	/** 待过的公司或部门名里含这几个字。精确条件，没有分面。 */
 	org?: string;
 	/** 学校名里含这几个字。精确条件，没有分面。 */
@@ -50,22 +38,13 @@ export type View = {
 };
 
 /**
- * URL 是不可信输入：逐个字段收窄，非法值一律当没填。
- *
- * `minMonths` 收得最紧，因为它是唯一参与数值比较的筛选：负数会让筛选
- * 变成恒真（`months >= -999`），小数会让筛选项渲染出「1 年 0.5 个月」这种
- * 档位——两者都不会报错，只会安静地给出说不通的结果。
+ * URL 是不可信输入：非法值一律当没填。维度那七项怎么收窄写在它们自己的声明里
+ * （`dimensions.ts`），这里只收不属于那一族的几项——URL 与 RPC 两处因此收的是
+ * 同一份，不会有一处先松下来。
  */
 export function validateView(s: Record<string, unknown>): View {
-	const months = Number(s.minMonths);
 	return {
-		seq: seqPicks(s.seq),
-		companyTag: filterTextList(s.companyTag),
-		minMonths: Number.isInteger(months) && months > 0 ? months : undefined,
-		kind: s.kind === "internal" || s.kind === "external" ? s.kind : undefined,
-		level: filterTextList(s.level),
-		recruitment: filterTextList(s.recruitment),
-		education: filterTextList(s.education),
+		...parsePicked(s),
 		org: filterText(s.org),
 		school: filterText(s.school),
 		strong: s.strong === true || s.strong === "true" ? true : undefined,
@@ -104,19 +83,6 @@ export function morePage(v: View): Partial<View> {
 	return { n: Math.min(pageLimit(v) + RESULT_PAGE, RESULT_MAX) };
 }
 
-/** 收窄人群的筛选维度。`CLEARED_FILTERS` 与 `hasFilters` 都从它派生，加一维只改这里。 */
-const POPULATION_KEYS = [
-	"seq",
-	"companyTag",
-	"minMonths",
-	"kind",
-	"level",
-	"recruitment",
-	"education",
-	"org",
-	"school",
-] as const;
-
 /** 除翻页之外的全部视图状态。 */
 const FILTER_KEYS = [...POPULATION_KEYS, "strong"] as const;
 
@@ -154,22 +120,12 @@ function same(a: View[keyof View], b: View[keyof View]) {
 }
 
 /**
- * 视图状态 → 检索条件。两者的字段一一对应，这里只是把「怎么看这批人」里
- * 收窄人群的那几维挑出来——翻页数不是检索条件。
+ * 视图状态 → 检索条件。除翻页之外逐字相同：视图多出来的只有「看到第几页」，
+ * 那不是检索条件。逐字段抄一遍的话，加一维就会有一处忘了跟上。
  */
 export function toFilters(v: View): SearchFilters {
-	return {
-		seq: v.seq,
-		companyTag: v.companyTag,
-		minMonths: v.minMonths,
-		kind: v.kind,
-		level: v.level,
-		recruitment: v.recruitment,
-		education: v.education,
-		org: v.org,
-		school: v.school,
-		strong: v.strong,
-	};
+	const { n: _page, ...filters } = v;
+	return filters;
 }
 
 /**
@@ -181,7 +137,10 @@ export const CLEARED_FILTERS = Object.fromEntries(
 	POPULATION_KEYS.map((k) => [k, undefined]),
 ) as { [K in (typeof POPULATION_KEYS)[number]]: undefined };
 
-/** 是否有任何收窄人群的筛选生效 */
+/**
+ * 是否有任何收窄人群的筛选生效。口径与检索侧同一份（`search/params.ts` 的
+ * `POPULATION_KEYS`）：视图和检索对「什么算筛选」说的必须是同一句话。
+ */
 export function hasFilters(v: View) {
-	return POPULATION_KEYS.some((k) => v[k] !== undefined);
+	return hasPopulationFilters(toFilters(v));
 }

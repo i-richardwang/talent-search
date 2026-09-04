@@ -1,13 +1,13 @@
 /**
- * 自然语言查询 → 概念词。解析是本地、确定性的，不调用外部模型。
+ * 自然语言查询 → 要求。解析是本地、确定性的，不调用外部模型。
  *
  * "做过线下渠道运营、带过团队的人" → ["线下渠道运营", "带过团队"]
  *
- * 每个概念词还带一个**要求强度**（见下面的 parseChips）：默认「必须」，
+ * 每条要求还带一个**要求强度**（见下面的 parseChips）：默认「必须」，
  * 也可以是「加分」或「排除」。检索的语义由它决定，不由这里的切词决定。
  */
 
-/** 分隔符：标点与连接词都视为概念之间的边界 */
+/** 分隔符：标点与连接词都视为要求之间的边界 */
 const SPLIT = /[,，、;；/|\s]+|(?:和|与|并且|同时|以及|的)/g;
 
 /** 整块都是这些词时丢弃：它们表达句式，不表达检索意图 */
@@ -49,7 +49,7 @@ const STOPWORDS = new Set([
 ]);
 
 /**
- * 贴在概念词前后的句式碎片。切分只认标点，"后端都做过"这类会连在一起，
+ * 贴在要求前后的句式碎片。切分只认标点，"后端都做过"这类会连在一起，
  * 得把两头的赘字剥掉才剩下真正要搜的词。
  */
 const HEAD =
@@ -62,7 +62,7 @@ const TAIL = new RegExp(
 		"|(?:的人|的|员工|同学|经验|经历|背景|工作|岗位|方向|相关))+$",
 );
 
-/** 概念词的长度上限。超过这个长度的不是概念，是一段被误当成词的正文。 */
+/** 要求的长度上限。超过这个长度的不是要求，是一段被误当成词的正文。 */
 export const QUERY_TEXT_MAX = 200;
 export const CHIP_MAX = 8;
 const MAX_TERM_LEN = 24;
@@ -80,7 +80,7 @@ export function queryText(value: unknown): string | undefined {
  * 剥完不足 2 字，且剥掉的只有**一个字**时，判定为剥错了词内字：那一个字
  * 多半是"有赞"的"有"、"做市商"的"做"，不是句式。这时原样保留，因为交出
  * 一个碎片会静默改变 AND 语义（少一个约束，结果集变大），而界面上看不出
- * 哪个概念被吃了。
+ * 哪条要求被吃了。
  *
  * 剥掉的是多字句式（"帮我找|人"）则照剥不误——剩下的"人"会被停用词滤掉，
  * 这正是要的结果。
@@ -126,6 +126,13 @@ export const MEMBER_MAX = 4;
 /**
  * 一枚查询 chip：**一条要求**，界面上可点、可改、可删的最小单位。
  *
+ * 它是**只读的**，而且只可能由 `parseChips` 造出来——查询的唯一表示是那串
+ * 规范查询串（`SearchSpec.evidence`），chip 只是它解析出来的视图。改一条已有
+ * 查询一律走下面那三个编辑函数（串进串出），不许在别处拼一个 chip 对象再存
+ * 回去：那样每加一个字段，都会有某个拼装点忘记带上它，而屏幕上只表现为
+ * 「我的说法怎么少了一个」——没有任何检查会红。（`toQuery` 是另一件事：
+ * 它给的是「外部意图第一次变成查询」那一道门，见下面。）
+ *
  * 一条要求可以有多个**说法**，满足其一即满足这条要求（说法之间 OR，
  * 要求之间 AND）。`term` 是主词、`alts` 是「A 或 B 均可」里并列的那些，
  * 全都是用户自己说的、同权重。**说法就是嵌入的文本**：屏幕上写的那几个字
@@ -137,18 +144,29 @@ export const MEMBER_MAX = 4;
  * 是不是它太窄。删掉再手打回来会丢掉它的强度，也丢掉「我试过这个」这件事；
  * 靠浏览器后退能退，但没人会想到那是个办法。所以停用是一等状态，不是删除的替代。
  *
- * `wide` 是停用的**成因注记**：这个词在语料里命中的人太多（超过
- * `WIDE_SHARE`），几乎不筛人，理解落库时被自动停用（`server/turn.ts` 的
- * benchWide）。它只与 `off` 同现——用户重新启用即是「我知道它宽，照跑」，
- * 两个标记一起摘掉，此后不再自动碰它。单独一个布尔而不是给 off 发枚举值，
- * 是因为「谁停的」不改变停用的语义，只改变 chip 上那句解释。
+ * **为什么停用只有一个布尔、没有成因**：一个词太宽而被自动停用，那是关于
+ * **语料**的一条事实（`WIDE_SHARE`，见 `search.ts` 的 probeWide），不是这条
+ * 要求的性质。它属于这次理解的注解（`SearchNotice` 的 `wide`），和「没处放的
+ * 条件」「没识别出语气」同一档。写在 chip 上的话，一条会随语料换代而失效的
+ * 判断就被冻进了不可变的条件里，而这个产品对 `/s/:id` 的承诺只到条件为止。
  */
-export type Chip = {
+export type Chip = Readonly<{
+	term: string;
+	alts?: readonly string[];
+	mode: ChipMode;
+	off?: true;
+}>;
+
+/**
+ * 一条**还没进过解析**的要求：外部意图（模型输出、命令行）第一次变成查询时的
+ * 中间形态。它和 `Chip` 形状相同而含义不同——chip 是解析的产物、可信；draft 是
+ * 待收窄的输入，必须经 `toQuery` → `parseChips` 走一遍才算数。
+ */
+export type ChipDraft = {
 	term: string;
 	alts?: string[];
 	mode: ChipMode;
 	off?: true;
-	wide?: true;
 };
 
 /**
@@ -171,14 +189,6 @@ const MODE_SIGN: Record<ChipMode, string> = {
  * 在界面上安静得没有任何提示。
  */
 const OFF_SIGN = "~";
-
-/**
- * 太宽停用的写法：`*` 替掉 `~` 站在最前面（`*+运营` 是因太宽被自动停用的
- * 加分词）。是**替掉**不是叠加：wide 蕴含 off，`~*` 就成了同一枚 chip 的
- * 第二种写法，往返不再是恒等式。选 `*` 是因为它在检索语境里的老义项就是
- * 「什么都匹配」——这枚 chip 正是匹配得太多才被停下的。
- */
-const WIDE_SIGN = "*";
 
 /**
  * 同一条要求里说法之间的边界：`/` 是我们自己写回去的形态，「或（者）」是
@@ -208,10 +218,9 @@ export function parseChips(raw: string): Chip[] {
 	for (const group of raw.split(",")) {
 		let g = group.trim();
 		if (!g) continue;
-		// 先剥停用（`~` 或 `*`，互斥），再剥强度：记号顺序是定死的（`~+X`），
-		// 反过来不认，否则同一枚 chip 会有两种写法，往返就不再是恒等式。
-		const wide = g[0] === WIDE_SIGN;
-		const off = wide || g[0] === OFF_SIGN;
+		// 先剥停用，再剥强度：记号顺序是定死的（`~+X`），反过来不认，
+		// 否则同一枚 chip 会有两种写法，往返就不再是恒等式。
+		const off = g[0] === OFF_SIGN;
 		if (off) g = g.slice(1).trim();
 		const mode = MODE_PREFIX[g[0] ?? ""] ?? "must";
 		if (mode !== "must") g = g.slice(1);
@@ -225,7 +234,6 @@ export function parseChips(raw: string): Chip[] {
 					term,
 					mode,
 					...(off && { off: true as const }),
-					...(wide && { wide: true as const }),
 				});
 				if (chips.length === CHIP_MAX) return chips;
 			}
@@ -248,7 +256,6 @@ export function parseChips(raw: string): Chip[] {
 			...(keptAlts.length > 0 && { alts: keptAlts }),
 			mode,
 			...(off && { off: true as const }),
-			...(wide && { wide: true as const }),
 		});
 		if (chips.length === CHIP_MAX) return chips;
 	}
@@ -261,16 +268,80 @@ export function activeChips(chips: Chip[]): Chip[] {
 }
 
 /**
- * chips → 规范查询串。服务端入参收窄、查询合并和命令行都通过这套表示交换
- * 条件，所以 `parseChips(toQuery(c))` 必须等于 `c`。说法用 `/` 连（`大模型/推荐系统`）。
+ * chips（或还没解析过的 draft）→ 查询串。说法用 `/` 连（`大模型/推荐系统`）。
+ *
+ * 对 chip 而言 `parseChips(toQuery(c))` 必须等于 `c`；对 draft 而言这只是
+ * 「把一份外部意图写成查询」的第一步，收窄由紧跟着的 `parseChips` 做。
+ * 想改一条**已有**查询，用下面的 `editChip` / `dropChip` / `enableAll`。
  */
-export function toQuery(chips: Chip[]): string {
+export function toQuery(chips: readonly ChipDraft[] | readonly Chip[]): string {
 	return chips
 		.map(
 			(c) =>
-				(c.wide ? WIDE_SIGN : c.off ? OFF_SIGN : "") +
+				(c.off ? OFF_SIGN : "") +
 				MODE_SIGN[c.mode] +
 				[c.term, ...(c.alts ?? [])].join("/"),
 		)
 		.join(",");
+}
+
+/**
+ * 规范查询串的长度上限。**由部件推导，不是另立一个数**：最多 `CHIP_MAX` 条
+ * 要求，每条最多 `MEMBER_MAX` 个说法、每个说法不超过 `MAX_TERM_LEN`，
+ * 再给每条留两个记号位和分隔符。写死一个整数的话，调大说法上限那天，
+ * 这条边界就会在别处安静地把查询截断。
+ */
+export const QUERY_MAX = CHIP_MAX * (MEMBER_MAX * (MAX_TERM_LEN + 1) + 2);
+
+/** 不可信入参 → 一条长度有界的查询串。含义上的收窄由 `canonical` 做。 */
+export function queryString(value: unknown): string {
+	return typeof value === "string" ? value.slice(0, QUERY_MAX) : "";
+}
+
+/**
+ * 规范化：任意查询串 → 它唯一的规范写法。落库、比较、往返都以这一份为准。
+ * `canonical(canonical(q)) === canonical(q)`，`tests/parse.test.ts` 钉住。
+ */
+export function canonical(query: string): string {
+	return toQuery(parseChips(query));
+}
+
+/**
+ * 改一条已有查询：**串进、串出**。
+ *
+ * 这三个函数是全站改动查询证据的唯一手段。它们从解析出来的 chip 出发、原样
+ * 带着其余字段写回去，所以「改强度时把说法丢了」这类错在这里写不出来——
+ * 而这正是它们存在的理由：曾经每个调用点各自拼一个 chip 对象，`{term, mode}`
+ * 拼漏一个 `alts` 就是一次静默的查询改写。
+ *
+ * `index` 是 chip 在这条查询里的位置。编辑不重排、不增删（`dropChip` 除外），
+ * 所以调用方拿到的下标在同一份查询里一直有效。
+ */
+export function editChip(
+	query: string,
+	index: number,
+	patch: { mode?: ChipMode; off?: boolean },
+): string {
+	return toQuery(
+		parseChips(query).map((chip, i) => {
+			if (i !== index) return chip;
+			const { off: _off, ...rest } = chip;
+			const off = patch.off ?? Boolean(chip.off);
+			return {
+				...rest,
+				...(patch.mode && { mode: patch.mode }),
+				...(off && { off: true as const }),
+			};
+		}),
+	);
+}
+
+/** 删掉一条要求。词和它的强度一起没了，这一步不可撤销（后退键除外）。 */
+export function dropChip(query: string, index: number): string {
+	return toQuery(parseChips(query).filter((_, i) => i !== index));
+}
+
+/** 把停用的全部启用。强度与说法原样留着——启用不是重写。 */
+export function enableAll(query: string): string {
+	return toQuery(parseChips(query).map(({ off: _off, ...rest }) => rest));
 }

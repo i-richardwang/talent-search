@@ -16,9 +16,19 @@ import { inArray, type SQL, sql } from "drizzle-orm";
 import { type DbExecutor, withCorpusSnapshot } from "#/db";
 import { employee, experience } from "#/db/schema";
 import { seqLabel } from "#/lib/format";
+import {
+	DIM_KEYS,
+	DIMENSIONS,
+	type DimKey,
+	type DimSource,
+	dimId,
+	dimPicked,
+	type Picked,
+} from "./dimensions";
+import { emptyReason } from "./empty";
 import type { Vocabulary } from "./intent";
 import { sanitizeLimit } from "./params";
-import { activeChips } from "./parse";
+import { activeChips, parseChips } from "./parse";
 import { type Admitted, admit, admittedTable } from "./phrases";
 import {
 	type Fact,
@@ -77,7 +87,11 @@ function required<T>(value: T | undefined, message: string): T {
  * 宽是语料的事实，不是能预先列举的判断：同一个词在两份语料里的覆盖面可以差
  * 一个数量级。理解落库前拿它给新解析出的词量宽（`server/turn.ts` 的
  * benchWide，超标的可见地停用）。只探语料、不带筛选——宽不宽只由词和语料决定。
- * 命中口径和检索完全相同（同一个 `admit`），否则量出来的宽和搜出来的宽不是一回事。
+ *
+ * 命中口径必须和这些词**自己**的检索口径相同（这里按 `RELEVANCE_MIN` 量，
+ * 所以只能量按同一条线进门的词），否则量出来的宽和搜出来的宽不是一回事：
+ * 排除词按 `RELEVANCE_MIN_EXCLUDE` 判，拿这把尺去量它，读数天然偏大。
+ * 谁该被量由调用方决定（`server/turn.ts` 的 benchWide）。
  */
 export async function probeWide(
 	texts: string[],
@@ -114,29 +128,10 @@ type FactRow = {
 	route: Route;
 	relevance: number;
 	emp_id: string;
-	months: number;
 	end_date: string | null;
-	seq_l1: string;
-	seq_l2: string;
-	kind: "internal" | "external";
-	company_tag: string | null;
-	level: string;
-	recruitment: string;
-	education: string;
-};
+} & DimSource;
 
-type PopulationRow = Pick<
-	FactRow,
-	| "emp_id"
-	| "months"
-	| "seq_l1"
-	| "seq_l2"
-	| "kind"
-	| "company_tag"
-	| "level"
-	| "recruitment"
-	| "education"
->;
+type PopulationRow = { emp_id: string } & DimSource;
 
 type FactLoad =
 	| { kind: "loaded"; facts: Fact[] }
@@ -167,33 +162,93 @@ export function overflowContributors(
 }
 
 /**
+ * 一段经历上供分面用的那几列，别名直接取 JS 里的字段名。
+ *
+ * 取回来的行**就是** `DimSource`，所以没有第二段「把 company_tag 抄成
+ * companyTag」的映射——那种映射抄错一个字段不会报错，只会让这一维在内存里
+ * 恒空，而屏幕上只是少一栏候选。`Record<keyof DimSource, SQL>` 让漏一列直接红。
+ */
+const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
+	months: sql`e.months`,
+	seqL1: sql`e.seq_l1`,
+	seqL2: sql`e.seq_l2`,
+	kind: sql`e.kind`,
+	companyTag: sql`e.org_meta ->> 'company_tag'`,
+	level: sql`p.cur_level`,
+	recruitment: sql`p.recruitment`,
+	education: sql`p.education_level`,
+};
+
+/** 事实列的 select 片段。两处取数共用，形状因此不可能分家。 */
+const factSelect = sql.join(
+	Object.entries(FACT_COLUMNS).map(
+		(entry) => sql`${entry[1]} as "${sql.raw(entry[0])}"`,
+	),
+	sql`, `,
+);
+
+/**
+ * 每一维拿来比较的那个表达式，由上面的事实列拼出来——集合维给的是它的**身份**
+ * （和 `dimensions.ts` 里 `id()` 算出来的必须是同一个字符串），阈值维给的是被
+ * 比较的那个量。
+ *
+ * 谓词本身不写在这里，它由维度自己的 `match` 家族推出来（见 `dimCond`）：漏一维
+ * 会被 `Record` 拦住，写歪一维会被「同一个条件下推还是在内存里筛」那条检索测试
+ * 拦住。
+ */
+const DIM_COLUMN: Record<DimKey, SQL> = {
+	// 序列的身份是两列拼出来的，分隔符和 `dimensions.ts` 的 `id()` 必须是同一个
+	seq: sql`${FACT_COLUMNS.seqL1} || chr(1) || ${FACT_COLUMNS.seqL2}`,
+	minMonths: FACT_COLUMNS.months,
+	kind: FACT_COLUMNS.kind,
+	level: FACT_COLUMNS.level,
+	companyTag: FACT_COLUMNS.companyTag,
+	recruitment: FACT_COLUMNS.recruitment,
+	education: FACT_COLUMNS.education,
+};
+
+/** 一维的下推谓词。两个家族各写一次，和维度有几个无关。 */
+function dimCond<K extends DimKey>(key: K, picked: Picked[K]): SQL | null {
+	const column = DIM_COLUMN[key];
+	if (DIMENSIONS[key].match === "atLeast")
+		return sql`${column} >= ${picked as number}`;
+	const ids = dimPicked(key, picked).map((value) => dimId(key, value));
+	return ids.length > 0
+		? sql`${column} in (${sql.join(
+				ids.map((id) => sql`${id}`),
+				sql`, `,
+			)})`
+		: null;
+}
+
+/**
  * 跟人走的精确条件（公司名 / 学校名）。它们是专有名词，永远不进向量：
  * 「字节」和「腾讯」在向量空间里是邻居，语义匹配会把竞品全捞进来。
  * 在取数里就按人裁掉，分面随之只数剩下的人——这正是「选了这一项之后
  * 还剩几人」该有的口径。
+ *
+ * 维度那七项在这里同样下推：它们来自那句原话，是问题的一部分，不会在这次
+ * 结果页上再变。URL 上的筛选**不能**这样下推，因为筛选栏还要回答「再勾一项
+ * 会剩几人」，那个数只有把没筛之前的完整事实端在手里才算得出来（`rank.ts`）。
  */
 function searchScope(
 	f: SearchScope,
 	view: Pick<SearchFilters, "org" | "school">,
 ): SQL {
 	const conds: SQL[] = [];
-	if (f.kind) conds.push(sql`e.kind = ${f.kind}`);
-	if (f.minMonths) conds.push(sql`e.months >= ${f.minMonths}`);
-	if (f.companyTag)
-		conds.push(sql`e.org_meta ->> 'company_tag' = ${f.companyTag}`);
-	if (f.level) conds.push(sql`p.cur_level = ${f.level}`);
-	if (f.recruitment) conds.push(sql`p.recruitment = ${f.recruitment}`);
-	if (f.education) conds.push(sql`p.education_level = ${f.education}`);
-	if (f.org)
-		conds.push(sql`exists (
+	for (const key of DIM_KEYS) {
+		if (f[key] === undefined) continue;
+		const cond = dimCond(key, f[key]);
+		if (cond) conds.push(cond);
+	}
+	// 范围里的和 URL 上的各自成条件、AND 到一起：两者生命周期不同，但都要满足。
+	for (const value of [f.org, view.org])
+		if (value)
+			conds.push(sql`exists (
 			select 1 from experience x where x.emp_id = p.emp_id
-			and (x.org ilike ${like(f.org)} or x.org_path ilike ${like(f.org)}))`);
-	if (f.school) conds.push(sql`p.school ilike ${like(f.school)}`);
-	if (view.org)
-		conds.push(sql`exists (
-			select 1 from experience x where x.emp_id = p.emp_id
-			and (x.org ilike ${like(view.org)} or x.org_path ilike ${like(view.org)}))`);
-	if (view.school) conds.push(sql`p.school ilike ${like(view.school)}`);
+			and (x.org ilike ${like(value)} or x.org_path ilike ${like(value)}))`);
+	for (const value of [f.school, view.school])
+		if (value) conds.push(sql`p.school ilike ${like(value)}`);
 	return conds.length > 0 ? sql`where ${sql.join(conds, sql` and `)}` : sql``;
 }
 
@@ -224,9 +279,7 @@ function canonicalFacts(
 		with q(term_idx, member_idx, phrase_id, relevance) as ${table}
 		select distinct on (q.term_idx, e.id)
 			q.term_idx, q.member_idx, e.id, ep.route, q.relevance,
-			e.emp_id, e.months, e.end_date, e.seq_l1, e.seq_l2, e.kind,
-			e.org_meta ->> 'company_tag' as company_tag,
-			p.cur_level as level, p.recruitment, p.education_level as education
+			e.emp_id, e.end_date, ${factSelect}
 		from q
 		join experience_phrase ep on ep.phrase_id = q.phrase_id
 		join experience e on e.id = ep.experience_id
@@ -277,23 +330,16 @@ async function fetchFacts(
 
 	return {
 		kind: "loaded",
-		facts: rows.rows.map((r) => ({
-			id: r.id,
-			empId: r.emp_id,
-			termIdx: r.term_idx,
-			memberIdx: r.member_idx,
-			route: r.route,
-			relevance: Number(r.relevance),
-			months: r.months,
-			endDate: r.end_date,
-			seqL1: r.seq_l1,
-			seqL2: r.seq_l2,
-			companyTag: r.company_tag,
-			kind: r.kind,
-			level: r.level,
-			recruitment: r.recruitment,
-			education: r.education,
-		})),
+		facts: rows.rows.map(
+			({ emp_id, term_idx, member_idx, end_date, ...dims }) => ({
+				...dims,
+				empId: emp_id,
+				termIdx: term_idx,
+				memberIdx: member_idx,
+				relevance: Number(dims.relevance),
+				endDate: end_date,
+			}),
+		),
 	};
 }
 
@@ -337,6 +383,23 @@ async function fetchVetoed(
 const VOCAB_MAX = 100;
 
 /**
+ * 模型能从语料里挑取值的那几维，以及各自的取值住在哪张表上。
+ *
+ * 不是每一维都在这里：序列是模型自己说不清的（它得先知道全套序列树），
+ * 时长是连续量，经历来源是二选一。**取值表达式不重写**——和取数、下推谓词
+ * 用的是同一份 `FACT_COLUMNS`，公司档哪天从 `org_meta` 挪成一列，改一处。
+ */
+const VOCAB_SOURCE = {
+	companyTag: sql`experience e`,
+	level: sql`employee p`,
+	recruitment: sql`employee p`,
+	education: sql`employee p`,
+} satisfies Partial<Record<DimKey, SQL>>;
+
+type VocabKey = keyof typeof VOCAB_SOURCE;
+const VOCAB_KEYS = Object.keys(VOCAB_SOURCE) as VocabKey[];
+
+/**
  * 查询理解能用的筛选词汇表——**语料里真实存在的取值**。
  *
  * 模型只能从这里挑，不许凭常识造一个「一线大厂」或「P8」出来：造出来的值
@@ -349,37 +412,21 @@ export async function vocabulary(store?: DbExecutor): Promise<Vocabulary> {
 }
 
 async function vocabularyFrom(store: DbExecutor): Promise<Vocabulary> {
-	const rows = await store.execute<{
-		company_tags: string[];
-		levels: string[];
-		recruitments: string[];
-		educations: string[];
-	}>(sql`
-		select
-			array(select v from (
-				select org_meta ->> 'company_tag' as v, count(*) as n
-				from experience group by 1
+	const rows = await store.execute<Record<VocabKey, string[]>>(sql`
+		select ${sql.join(
+			VOCAB_KEYS.map(
+				(key) => sql`array(select v from (
+				select ${FACT_COLUMNS[key]} as v, count(*) as n
+				from ${VOCAB_SOURCE[key]} group by 1
 			) c where v is not null and v not in ('', '未知')
-			order by n desc, v limit ${VOCAB_MAX}) as company_tags,
-			array(select v from (
-				select cur_level as v, count(*) as n from employee group by 1
-			) c where v is not null and v not in ('', '未知')
-			order by n desc, v limit ${VOCAB_MAX}) as levels,
-			array(select v from (
-				select recruitment as v, count(*) as n from employee group by 1
-			) c where v is not null and v not in ('', '未知')
-			order by n desc, v limit ${VOCAB_MAX}) as recruitments,
-			array(select v from (
-				select education_level as v, count(*) as n from employee group by 1
-			) c where v is not null and v not in ('', '未知')
-			order by n desc, v limit ${VOCAB_MAX}) as educations`);
+			order by n desc, v limit ${VOCAB_MAX}) as "${sql.raw(key)}"`,
+			),
+			sql`, `,
+		)}`);
 	const row = rows.rows[0];
-	return {
-		companyTags: row?.company_tags ?? [],
-		levels: row?.levels ?? [],
-		recruitments: row?.recruitments ?? [],
-		educations: row?.educations ?? [],
-	};
+	return Object.fromEntries(
+		VOCAB_KEYS.map((key) => [key, row?.[key] ?? []]),
+	) as unknown as Vocabulary;
 }
 
 /**
@@ -388,14 +435,13 @@ async function vocabularyFrom(store: DbExecutor): Promise<Vocabulary> {
  */
 async function searchScopeOnly(
 	store: DbExecutor,
-	scope: SearchScope,
+	spec: SearchSpec,
 	view: SearchFilters,
 	limit: number,
 ): Promise<SearchOutcome> {
+	const scope = spec.scope;
 	const rows = await store.execute<PopulationRow>(sql`
-		select e.emp_id, e.months, e.seq_l1, e.seq_l2, e.kind,
-			e.org_meta ->> 'company_tag' as company_tag,
-			p.cur_level as level, p.recruitment, p.education_level as education
+		select e.emp_id, ${factSelect}
 		from experience e join employee p on p.emp_id = e.emp_id
 		${searchScope(scope, view)}
 		order by e.id limit ${FACT_MAX + 1}`);
@@ -406,18 +452,18 @@ async function searchScopeOnly(
 			results: [],
 			facets: emptyFacets(),
 			total: 0,
-			overflow: { kind: "population" },
+			empty: emptyReason({
+				spec,
+				filters: view,
+				terms: [],
+				total: 0,
+				withoutStrong: 0,
+				overflow: { kind: "overflowPopulation" },
+			}),
 		};
-	const facts: PopulationFact[] = rows.rows.map((row) => ({
-		empId: row.emp_id,
-		months: row.months,
-		seqL1: row.seq_l1,
-		seqL2: row.seq_l2,
-		companyTag: row.company_tag,
-		kind: row.kind,
-		level: row.level,
-		recruitment: row.recruitment,
-		education: row.education,
+	const facts: PopulationFact[] = rows.rows.map(({ emp_id, ...dims }) => ({
+		...dims,
+		empId: emp_id,
 	}));
 	const scopedView = {
 		...view,
@@ -449,7 +495,14 @@ async function searchScopeOnly(
 		})),
 		facets,
 		total,
-		overflow: null,
+		empty: emptyReason({
+			spec,
+			filters: view,
+			terms: [],
+			total,
+			withoutStrong: 0,
+			overflow: null,
+		}),
 	};
 }
 
@@ -469,7 +522,7 @@ export async function search(
 ): Promise<SearchOutcome> {
 	// 停用的 chip 在这里就消失了，此后整条链路都看不见它——检索、打分、分面、
 	// 证据行一个都不必知道「停用」这回事。这是它能只花一个字段的原因。
-	const active = activeChips(spec.evidence);
+	const active = activeChips(parseChips(spec.evidence));
 	const terms: TermPlan[] = active.flatMap((c) =>
 		c.mode === "exclude"
 			? []
@@ -481,7 +534,7 @@ export async function search(
 	// 结构化范围本身就是完整的候选定义，不需要伪造一个向量词来启动检索。
 	if (terms.length === 0 && Object.keys(spec.scope).length > 0)
 		return withCorpusSnapshot((store) =>
-			searchScopeOnly(store, spec.scope, filters, sanitizeLimit(limit)),
+			searchScopeOnly(store, spec, filters, sanitizeLimit(limit)),
 		);
 	// 没有正向证据也没有结构化范围时，排除词自己不产出候选人。
 	if (terms.length === 0)
@@ -491,7 +544,14 @@ export async function search(
 			results: [],
 			facets: emptyFacets(),
 			total: 0,
-			overflow: null,
+			empty: emptyReason({
+				spec,
+				filters,
+				terms,
+				total: 0,
+				withoutStrong: 0,
+				overflow: null,
+			}),
 		};
 
 	return withCorpusSnapshot(async (store) => {
@@ -517,12 +577,19 @@ export async function search(
 				results: [],
 				facets: emptyFacets(),
 				total: 0,
-				overflow: {
-					kind: "evidence",
-					terms: terms
-						.filter((_, index) => contributors.has(index))
-						.map((term) => term.term),
-				},
+				empty: emptyReason({
+					spec,
+					filters,
+					terms,
+					total: 0,
+					withoutStrong: 0,
+					overflow: {
+						kind: "overflowEvidence",
+						terms: terms
+							.filter((_, index) => contributors.has(index))
+							.map((term) => term.term),
+					},
+				}),
 			};
 		}
 		const facts = vetoed.size
@@ -530,6 +597,14 @@ export async function search(
 			: loaded.facts;
 
 		const { ranked, facets, total } = rank(facts, terms, filters, new Date());
+		const empty = emptyReason({
+			spec,
+			filters,
+			terms,
+			total,
+			withoutStrong: facets.strong.off,
+			overflow: null,
+		});
 		const page = ranked.slice(0, sanitizeLimit(limit));
 		if (page.length === 0)
 			return {
@@ -538,7 +613,7 @@ export async function search(
 				results: [],
 				facets,
 				total,
-				overflow: null,
+				empty,
 			};
 
 		const empIds = page.map((row) => row.empId);
@@ -617,7 +692,7 @@ export async function search(
 			results,
 			facets,
 			total,
-			overflow: null,
+			empty,
 		};
 	});
 }

@@ -151,10 +151,10 @@ export async function understand(
 			output: Output.object({ schema: intentSchema(vocab) }),
 			system: SYSTEM,
 			prompt: [
-				listed("companyTag", vocab.companyTags),
-				listed("level", vocab.levels),
-				listed("recruitment", vocab.recruitments),
-				listed("education", vocab.educations),
+				listed("companyTag", vocab.companyTag),
+				listed("level", vocab.level),
+				listed("recruitment", vocab.recruitment),
+				listed("education", vocab.education),
 				`\n这句话：${text}`,
 			].join("\n"),
 			// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件

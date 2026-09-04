@@ -2,7 +2,7 @@
  * 打分、AND 判定、排序、分面——一次检索里除了「取数」之外的全部逻辑。
  *
  * 这个文件**没有 SQL，也没有数据库**。检索层只负责回答「哪些经历段命中了哪个
- * 概念词」这个纯事实问题，剩下的全部在这里对内存里的事实求值。
+ * 要求」这个纯事实问题，剩下的全部在这里对内存里的事实求值。
  *
  * 打分是纯函数，调权重不必连接数据库；排名与分面对同一份事实做不同分组，
  * 两者的口径由结构保证一致。
@@ -13,6 +13,17 @@
  * 「事实从哪来」，这个文件不动。
  */
 import {
+	DIM_KEYS,
+	type DimKey,
+	type DimSource,
+	type DimUnit,
+	dimCompare,
+	dimId,
+	dimMatches,
+	dimValues,
+	type Facet,
+} from "./dimensions";
+import {
 	emptyFacets,
 	type Facets,
 	type SearchFilters,
@@ -22,7 +33,6 @@ import {
 import {
 	BOOST_WEIGHT,
 	isControlledRoute,
-	MIN_MONTHS_BUCKETS,
 	RECENCY_FLOOR,
 	RECENCY_HALF,
 	ROUTE_WEIGHTS,
@@ -35,21 +45,11 @@ import {
  * 一段经历对一条要求的命中。这是检索层唯一的产物：**事实，不含任何评分**。
  *
  * 字段只有两类：打分要用的（route / relevance / months / endDate）和分面要分组的
- * （seq / companyTag / kind / months，以及三个跟人走的：level / recruitment /
- * education）。`id` 只用来在定好名次之后回表取展示用的原文；`memberIdx`
- * 只用来在出结果时说出「命中的是哪个说法」——都不参与计算。
+ * （那几维要读哪些列由 `DimSource` 声明，跟着维度走）。`id` 只用来在定好名次
+ * 之后回表取展示用的原文；`memberIdx` 只用来在出结果时说出「命中的是哪个
+ * 说法」——都不参与计算。
  */
-export type PopulationFact = {
-	empId: string;
-	months: number;
-	seqL1: string;
-	seqL2: string;
-	companyTag: string | null;
-	kind: "internal" | "external";
-	level: string;
-	recruitment: string;
-	education: string;
-};
+export type PopulationFact = DimSource & { empId: string };
 
 export type Fact = PopulationFact & {
 	id: number;
@@ -146,7 +146,7 @@ function termValue(facts: Fact[], term: string, now: Date) {
 	};
 }
 
-/** 一个人在一次检索里的全部事实：概念词下标 → 命中的段 */
+/** 一个人在一次检索里的全部事实：要求下标 → 命中的段 */
 type Person = Map<number, Fact[]>;
 
 /** 按人、按词归拢通过 `keep` 的事实；后续计算只读取这份稳定集合。 */
@@ -202,92 +202,19 @@ function score(p: Person, terms: TermPlan[], now: Date) {
 	return { score: s, basis };
 }
 
-/** 筛选维度。`Facets` 的键与它逐字一致。 */
-type Dim =
-	| "seq"
-	| "companyTag"
-	| "kind"
-	| "minMonths"
-	| "level"
-	| "recruitment"
-	| "education"
-	| "strong";
+/** 算某一维的候选时要摘掉的那一维（口径见 `facetCount`）。 */
+type Except = DimKey | "strong";
 
 /**
- * 筛选谓词。`except` 是它存在的全部理由：算「序列」这一维的候选时必须把序列
- * 自己的筛选摘掉，不摘的话选中一项之后其余项的计数全是 0，用户点不动第二次。
+ * 筛选谓词。逐维求值，谓词本身由 `dimensions.ts` 的声明给出——这里不认识任何
+ * 一个具体维度，所以加一维不必来改它。
+ *
+ * `except` 是它带参数的全部理由：算「序列」这一维的候选时必须把序列自己的筛选
+ * 摘掉，不摘的话选中一项之后其余项的计数全是 0，用户点不动第二次。
  */
-function keeps(f: SearchFilters, except?: Dim) {
-	return (x: PopulationFact) => {
-		if (
-			except !== "seq" &&
-			f.seq?.length &&
-			!f.seq.some((s) => s.l1 === x.seqL1 && s.l2 === x.seqL2)
-		)
-			return false;
-		if (except !== "kind" && f.kind && x.kind !== f.kind) return false;
-		if (except !== "minMonths" && f.minMonths && x.months < f.minMonths)
-			return false;
-		if (except !== "companyTag" && !oneOf(f.companyTag, x.companyTag))
-			return false;
-		if (except !== "level" && !oneOf(f.level, x.level)) return false;
-		if (except !== "recruitment" && !oneOf(f.recruitment, x.recruitment))
-			return false;
-		if (except !== "education" && !oneOf(f.education, x.education))
-			return false;
-		return true;
-	};
-}
-
-/** 一维之内多选是「或」：没选就是不筛，选了就得是其中之一。 */
-function oneOf(picked: string[] | undefined, value: string | null) {
-	return !picked?.length || (value !== null && picked.includes(value));
-}
-
-/** 合成 key 的分隔符：序列名里出现「/」并不稀奇，得用一个不可能出现在数据里的字符 */
-const SEP = "\u0001";
-
-function facetValues(fact: PopulationFact, dim: Exclude<Dim, "strong">) {
-	switch (dim) {
-		case "seq":
-			return fact.seqL1 && fact.seqL2 ? [fact.seqL1 + SEP + fact.seqL2] : [];
-		case "companyTag":
-			return fact.companyTag && fact.companyTag !== "未知"
-				? [fact.companyTag]
-				: [];
-		case "kind":
-			return [fact.kind];
-		case "minMonths":
-			return MIN_MONTHS_BUCKETS.filter((months) => fact.months >= months).map(
-				String,
-			);
-		case "level":
-			return fact.level ? [fact.level] : [];
-		case "recruitment":
-			return fact.recruitment ? [fact.recruitment] : [];
-		case "education":
-			return fact.education ? [fact.education] : [];
-	}
-}
-
-function sortFacets(facets: Facets) {
-	const byCountAndValue = <T extends { n: number; value: string }>(
-		x: T,
-		y: T,
-	) => y.n - x.n || x.value.localeCompare(y.value, "zh-Hans-CN");
-	facets.seq.sort(
-		(x, y) =>
-			y.n - x.n ||
-			x.seqL1.localeCompare(y.seqL1, "zh-Hans-CN") ||
-			x.seqL2.localeCompare(y.seqL2, "zh-Hans-CN"),
-	);
-	facets.companyTag.sort(byCountAndValue);
-	facets.kind.sort(byCountAndValue);
-	facets.recruitment.sort(byCountAndValue);
-	facets.education.sort(byCountAndValue);
-	facets.level.sort((x, y) => x.value.localeCompare(y.value, "zh-Hans-CN"));
-	facets.minMonths.sort((x, y) => x.value - y.value);
-	return facets;
+function keeps(f: SearchFilters, except?: Except) {
+	return (x: PopulationFact) =>
+		DIM_KEYS.every((key) => key === except || dimMatches(key, f[key], x));
 }
 
 /**
@@ -311,62 +238,61 @@ function sortFacets(facets: Facets) {
  * 代价是同一份事实要走两遍。没有任何分面筛选时两遍结果相同，但那是运行时才
  * 知道的事，为它加一条快路要多养一个「两遍必须等价」的不变量。
  */
-function facetCount(
+function facetCount<K extends DimKey>(
 	facts: Fact[],
 	terms: TermPlan[],
 	filters: SearchFilters,
-	dim: Dim,
-	values: (f: Fact) => string[],
-) {
-	const domain = tally(facts, terms, () => true, false, values);
+	key: K,
+): Facet<K>[] {
+	const domain = tally(facts, terms, () => true, false, key);
 	const live = tally(
 		facts,
 		terms,
-		keeps(filters, dim),
-		dim !== "strong" && Boolean(filters.strong),
-		values,
+		keeps(filters, key),
+		Boolean(filters.strong),
+		key,
 	);
-	return new Map([...domain.keys()].map((v) => [v, live.get(v) ?? 0]));
+	return [...domain].map(([id, { value }]) => ({
+		value,
+		n: live.get(id)?.n ?? 0,
+	}));
 }
 
-/**
- * 按值分桶，数出每个值下有多少人满足这次查询。数不出人的值不出现。
- *
- * 口径与主检索逐字相同：同一个 `complete`、同一份事实，区别只在额外把事实
- * 限制在候选值上。`values` 返回数组是为了「最短时长」——一段 36 个月的经历
- * 同时算进 6/12/24/36 四个档。
- */
-function tally(
+function tally<K extends DimKey>(
 	facts: Fact[],
 	terms: TermPlan[],
 	keep: (f: PopulationFact) => boolean,
 	strong: boolean,
-	values: (f: Fact) => string[],
+	key: K,
 ) {
-	const byValue = new Map<string, Map<string, Person>>();
+	const byValue = new Map<
+		string,
+		{ value: DimUnit[K]; people: Map<string, Person> }
+	>();
 	for (const f of facts) {
 		if (!keep(f)) continue;
-		for (const v of values(f)) {
-			let people = byValue.get(v);
-			if (!people) {
-				people = new Map();
-				byValue.set(v, people);
+		for (const value of dimValues(key, f)) {
+			const id = dimId(key, value);
+			let bucket = byValue.get(id);
+			if (!bucket) {
+				bucket = { value, people: new Map() };
+				byValue.set(id, bucket);
 			}
-			let p = people.get(f.empId);
+			let p = bucket.people.get(f.empId);
 			if (!p) {
 				p = new Map();
-				people.set(f.empId, p);
+				bucket.people.set(f.empId, p);
 			}
 			const list = p.get(f.termIdx);
 			if (list) list.push(f);
 			else p.set(f.termIdx, [f]);
 		}
 	}
-	const out = new Map<string, number>();
-	for (const [v, people] of byValue) {
+	const out = new Map<string, { value: DimUnit[K]; n: number }>();
+	for (const [id, bucket] of byValue) {
 		let n = 0;
-		for (const p of people.values()) if (complete(p, terms, strong)) n++;
-		if (n > 0) out.set(v, n);
+		for (const p of bucket.people.values()) if (complete(p, terms, strong)) n++;
+		if (n > 0) out.set(id, { value: bucket.value, n });
 	}
 	return out;
 }
@@ -384,45 +310,8 @@ function computeFacets(
 	filters: SearchFilters,
 ): Facets {
 	const out = emptyFacets();
-
-	// 两级都要有值：只有一级的话选项值会编码成 "技术/"，而筛选用真值判断 seqL2，
-	// 空串是 falsy，点下去这一维根本不生效。
-	for (const [v, n] of facetCount(facts, terms, filters, "seq", (fact) =>
-		facetValues(fact, "seq"),
-	)) {
-		const [seqL1 = "", seqL2 = ""] = v.split(SEP);
-		out.seq.push({ seqL1, seqL2, n });
-	}
-
-	for (const [value, n] of facetCount(
-		facts,
-		terms,
-		filters,
-		"companyTag",
-		(fact) => facetValues(fact, "companyTag"),
-	))
-		out.companyTag.push({ value, n });
-
-	for (const [value, n] of facetCount(facts, terms, filters, "kind", (fact) =>
-		facetValues(fact, "kind"),
-	))
-		out.kind.push({ value: value as "internal" | "external", n });
-
-	for (const [value, n] of facetCount(
-		facts,
-		terms,
-		filters,
-		"minMonths",
-		(fact) => facetValues(fact, "minMonths"),
-	))
-		out.minMonths.push({ value: Number(value), n });
-
-	// 三个跟人走的维度：空值不是一个可点的选项
-	for (const dim of ["level", "recruitment", "education"] as const)
-		for (const [value, n] of facetCount(facts, terms, filters, dim, (fact) =>
-			facetValues(fact, dim),
-		))
-			out[dim].push({ value, n });
+	for (const key of DIM_KEYS)
+		fill(out, key, facetCount(facts, terms, filters, key));
 
 	// 「证据要求」这一维的两头：打开还剩几个（on）、关掉能看到几个（off）。
 	// 两个数都把证据要求自己摘掉之后再算。
@@ -431,10 +320,19 @@ function computeFacets(
 		out.strong.off++;
 		if (complete(p, terms, true)) out.strong.on++;
 	}
+	return out;
+}
 
-	// 人多的排前面；时长档位反过来按档位排，它是有序的量，不是并列的类别。
-	// 职级按名字排：它也是有序的量（P5 < P6），而人数多的档不一定是低的档。
-	return sortFacets(out);
+/**
+ * 把一维的候选放进结果，顺带按这一维自己的规则排好。
+ *
+ * 每一维的取值类型各不相同，而循环里的 `key` 是联合——TS 收不拢这份对应关系，
+ * 只能在这一处断言。断言之外没有别的地方需要知道「哪一维是什么形状」。
+ */
+function fill(out: Facets, key: DimKey, rows: Facet[]) {
+	Object.assign(out, {
+		[key]: rows.sort((a, b) => dimCompare(key, a, b)),
+	});
 }
 
 /** 结构化范围没有语义证据；按人判定筛选并复用同一份分面取值与排序规则。 */
@@ -447,38 +345,27 @@ export function rankPopulation(
 		...new Set(facts.filter(keeps(effective)).map((fact) => fact.empId)),
 	].sort();
 	const facets = emptyFacets();
-	for (const dim of [
-		"seq",
-		"companyTag",
-		"kind",
-		"minMonths",
-		"level",
-		"recruitment",
-		"education",
-	] as const) {
-		const people = new Map<string, Set<string>>();
-		const keep = keeps(effective, dim);
+	for (const key of DIM_KEYS) {
+		const rows = new Map<string, Facet>();
+		const keep = keeps(effective, key);
+		const seen = new Map<string, Set<string>>();
 		for (const fact of facts) {
 			if (!keep(fact)) continue;
-			for (const value of facetValues(fact, dim)) {
-				const ids = people.get(value) ?? new Set<string>();
+			for (const value of dimValues(key, fact)) {
+				const id = dimId(key, value);
+				rows.set(id, { value, n: 0 });
+				const ids = seen.get(id) ?? new Set<string>();
 				ids.add(fact.empId);
-				people.set(value, ids);
+				seen.set(id, ids);
 			}
 		}
-		for (const [value, ids] of people) {
-			const n = ids.size;
-			if (dim === "seq") {
-				const [seqL1 = "", seqL2 = ""] = value.split(SEP);
-				facets.seq.push({ seqL1, seqL2, n });
-			} else if (dim === "kind") {
-				facets.kind.push({ value: value as "internal" | "external", n });
-			} else if (dim === "minMonths") {
-				facets.minMonths.push({ value: Number(value), n });
-			} else facets[dim].push({ value, n });
-		}
+		fill(
+			facets,
+			key,
+			[...rows].map(([id, row]) => ({ ...row, n: seen.get(id)?.size ?? 0 })),
+		);
 	}
-	return { empIds, facets: sortFacets(facets), total: empIds.length };
+	return { empIds, facets, total: empIds.length };
 }
 
 type Ranked = {
@@ -521,6 +408,9 @@ export function rank(
  * 会换位置。这里刻意不用词分：词分是**人**的属性（累计、近因都跨段），
  * 而这里要选的是单独一段，两者不是同一个量。
  */
+/** 「这个人的这条要求」的复合 key：工号里不可能出现的字符。 */
+const PER_TERM = "\u0001";
+
 export function pageHits(
 	facts: Fact[],
 	filters: SearchFilters,
@@ -531,7 +421,7 @@ export function pageHits(
 	const byKey = new Map<string, Fact[]>();
 	for (const f of facts) {
 		if (!empIds.has(f.empId) || !keep(f)) continue;
-		const k = f.empId + SEP + f.termIdx;
+		const k = f.empId + PER_TERM + f.termIdx;
 		const list = byKey.get(k);
 		if (list) list.push(f);
 		else byKey.set(k, [f]);

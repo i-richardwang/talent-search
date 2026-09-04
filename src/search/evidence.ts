@@ -17,7 +17,7 @@ export function strengthOf(route: Route): Strength {
 }
 
 /**
- * 每个概念词取展示列表中的第一条命中。hits 已按词序、证据强度、单段时长排好。
+ * 每条要求取展示列表中的第一条命中。hits 已按词序、证据强度、单段时长排好。
  *
  * AND 语义下每个必须词必有命中（rank.ts 的 complete）；加分词可以没有命中，
  * 所以返回值保留 `undefined`，调用方按未命中渲染。
@@ -30,7 +30,7 @@ export function bestHitPerTerm(hits: Hit[], terms: TermPlan[]) {
 const RANK: Record<Strength, number> = { controlled: 0, org: 1, claimed: 2 };
 
 /**
- * 一段经历为若干概念词提供了证据时，这段经历本身有多硬。
+ * 一段经历为若干条要求提供了证据时，这段经历本身有多硬。
  *
  * 取最硬的一路而不是最软的：这一段确实用受控字段证明了某个词，
  * 它另外还顺带在原文里提到了别的词，不该因此被降级。

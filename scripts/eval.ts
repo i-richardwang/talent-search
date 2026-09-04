@@ -20,7 +20,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "#/db";
-import { parseChips } from "#/search/parse";
+import { canonical, parseChips } from "#/search/parse";
 import { search } from "#/search/search";
 import { RESULT_MAX } from "#/search/weights";
 
@@ -84,13 +84,13 @@ let expected = 0;
 try {
 	for (const c of cases) {
 		const outcome = await search(
-			{ evidence: parseChips(c.query), scope: {}, notices: [] },
+			{ evidence: canonical(c.query), scope: {}, notices: [] },
 			{},
 			RESULT_MAX,
 		);
 		if (outcome.order !== "relevance")
-			throw new Error(`${c.name}：概念词用例没有产生相关度结果`);
-		const { results, total, overflow } = outcome;
+			throw new Error(`${c.name}：要求用例没有产生相关度结果`);
+		const { results, total, empty } = outcome;
 		const rankOf = new Map(results.map((r, i) => [r.employee.empId, i + 1]));
 		const found = c.expect.filter((id) => rankOf.has(id));
 		recalled += found.length;
@@ -101,8 +101,8 @@ try {
 		console.log(
 			`${found.length === c.expect.length ? "✓" : "✗"} ${c.name}` +
 				`  召回 ${found.length}/${c.expect.length}，命中 ${total} 人${
-					overflow?.kind === "evidence"
-						? `（匹配事实过多：${overflow.terms.join("、")}）`
+					empty?.kind === "overflowEvidence"
+						? `（匹配事实过多：${empty.terms.join("、")}）`
 						: ""
 				}`,
 		);

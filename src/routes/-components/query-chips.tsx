@@ -11,10 +11,10 @@ import {
 	MenuTrigger,
 } from "#/components/ui/menu";
 import { cn } from "#/lib/utils";
-import type { Chip, ChipMode } from "#/search/parse";
+import { type ChipMode, dropChip, editChip, parseChips } from "#/search/parse";
 
 /**
- * 查询条件：一个概念词一枚 chip，可改强度、可删。
+ * 查询条件：一条要求一枚 chip，可改强度、可删。
  *
  * 它是**系统读出来的东西**，不是查询本身——查询是上面那句原话（见
  * `query-deck.tsx`）。所以这里只做微调：改强度、停用、删掉一枚，都比重写整句
@@ -22,6 +22,10 @@ import type { Chip, ChipMode } from "#/search/parse";
  *
  * 停用（`~`，见 parse.ts）保留词和强度，只让它退出本次检索，
  * 用于快速判断某个条件是否过窄。
+ *
+ * 三个动作（改强度、停用、删除）都改的是**那串查询**，不是屏幕上这几个对象：
+ * 组件收一串、发一串，chip 只是它解析出来的视图。所以「改强度时把说法弄丢了」
+ * 这类事在这里写不出来——它根本没有拼 chip 的机会。
  */
 
 /**
@@ -89,30 +93,30 @@ const OFF_STYLE = "border-dashed text-muted-foreground";
 const MODES = ["must", "boost", "exclude"] as const;
 
 export function QueryChips({
-	chips,
+	query,
+	wide,
 	onChange,
 }: {
-	chips: Chip[];
-	onChange: (next: Chip[]) => void;
+	/** 这条查询的证据要求（规范查询串）。chips 由它现解，不另存一份。 */
+	query: string;
+	/** 这次理解里被判成太宽的词。它解释「这一枚为什么是停用的」，不改变停用本身。 */
+	wide: ReadonlySet<string>;
+	onChange: (next: string) => void;
 }) {
+	const chips = parseChips(query);
 	if (chips.length === 0) return null;
 
+	// 三个动作都是串进串出（`parse.ts` 的编辑 API）：改强度不碰说法、
+	// 停用不碰强度，靠的是那一层原样带着其余字段写回去，不是这里记得带全。
 	const replace = (i: number, mode: ChipMode) =>
-		onChange(chips.map((c, j) => (j === i ? { ...c, mode } : c)));
-	const remove = (i: number) => onChange(chips.filter((_, j) => j !== i));
-	// 停用只加/去一个字段，强度和说法始终原样保留。重新启用连 wide 一起摘：
-	// 那是「我知道它宽，照跑」；显式启用后的条件按普通 chip 处理。
-	const toggle = (i: number) =>
-		onChange(
-			chips.map((c, j) => {
-				if (j !== i) return c;
-				const { off: _off, wide: _wide, ...rest } = c;
-				return { ...rest, ...(!c.off && { off: true as const }) };
-			}),
-		);
+		onChange(editChip(query, i, { mode }));
+	const remove = (i: number) => onChange(dropChip(query, i));
+	const toggle = (i: number, off: boolean) =>
+		onChange(editChip(query, i, { off: !off }));
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			{chips.map((chip, i) => {
+				const tooWide = wide.has(chip.term);
 				return (
 					<Menu key={`${chip.off ? "~" : ""}${chip.mode}:${chip.term}`}>
 						<MenuTrigger
@@ -136,7 +140,7 @@ export function QueryChips({
 							<span>{[chip.term, ...(chip.alts ?? [])].join(" / ")}</span>
 							{/* 「太宽」是成因，得用字说；只给一个停用图标的话，
 							    自动停的和自己停的在屏幕上就分不出来了 */}
-							{chip.wide && <span className="text-xs">太宽</span>}
+							{chip.off && tooWide && <span className="text-xs">太宽</span>}
 							{chip.off && <EyeOffIcon />}
 							<ChevronDownIcon />
 						</MenuTrigger>
@@ -145,7 +149,7 @@ export function QueryChips({
 								<>
 									<MenuGroupLabel>
 										<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
-											{chip.wide
+											{tooWide
 												? "这个词命中的人太多，几乎筛不掉谁，已自动停用。" +
 													"换个更具体的说法效果更好；重新启用后将照常参与检索。"
 												: `此条件当前未生效。重新启用后仍为「${MODE_LABEL[chip.mode]}」条件。`}
@@ -177,7 +181,7 @@ export function QueryChips({
 							 * （词没了，强度也一起没了）。
 							 */}
 							<MenuSeparator />
-							<MenuItem onClick={() => toggle(i)}>
+							<MenuItem onClick={() => toggle(i, Boolean(chip.off))}>
 								{chip.off ? "重新启用" : "暂不使用"}
 							</MenuItem>
 							<MenuItem onClick={() => remove(i)} variant="destructive">

@@ -21,14 +21,14 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { Toggle } from "#/components/ui/toggle";
 import { cn } from "#/lib/utils";
 import { bestHitPerTerm } from "#/search/evidence";
-import { activeChips, type Chip } from "#/search/parse";
+import { activeChips, type Chip, parseChips } from "#/search/parse";
 import type {
 	RankedResult,
 	SearchOutcome,
 	SearchResult,
 	TermPlan,
 } from "#/search/result";
-import { type SearchSpec, unsupportedOf } from "#/search/spec";
+import type { SearchSpec } from "#/search/spec";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 import { emptyState } from "../-lib/empty-state";
 import type { View } from "../-lib/view-params";
@@ -176,7 +176,6 @@ export function ResultList({
 	canMore,
 	growing,
 	onMore,
-	withoutStrong,
 	strongOn,
 	spec,
 	turnId,
@@ -193,8 +192,6 @@ export function ResultList({
 	/** 正在翻下一页：已经看到的人留在原地，只有按钮转圈 */
 	growing: boolean;
 	onMore: () => void;
-	/** 关掉「只看任职记录可查的」之后能看到多少人。空态那条出路走不走得通全看它。 */
-	withoutStrong: number;
 	/** 打开它之后还剩多少人。表头那个开关关着时报的就是这个数。 */
 	strongOn: number;
 	/** 这条查询记录上的条件。骨架屏的行数由它算，不等服务端。 */
@@ -202,14 +199,15 @@ export function ResultList({
 	turnId: string;
 	view: View;
 	onChange: (next: Partial<View>) => void;
-	onReviseQuery: (next: Chip[]) => void;
+	/** 改查询：给一串新的证据要求，派生一条新记录。 */
+	onReviseQuery: (next: string) => void;
 	onEditQuery: () => void;
 }) {
 	const results = outcome?.results ?? EMPTY_RESULTS;
 	const terms = outcome?.terms ?? EMPTY_TERMS;
 	const order = outcome?.order ?? "relevance";
 	const total = outcome?.total ?? 0;
-	const chips = spec.evidence;
+	const chips = parseChips(spec.evidence);
 	// 上一次真正画出来的块数，见 SKELETON_ROWS。写在 effect 里而不是渲染中，
 	// 渲染要保持纯：同一份 props 渲染两遍必须得到同一棵树。
 	const lastRows = useRef(SKELETON_ROWS);
@@ -268,14 +266,10 @@ export function ResultList({
 
 	if (results.length === 0) {
 		// 空态永远给一条出路，而且是能一键走的那条——不是让人自己回去猜该改哪。
-		const state = emptyState({
-			terms,
-			chips,
-			scope: spec.scope,
-			unsupported: unsupportedOf(spec),
-			overflow: outcome?.overflow ?? null,
-			withoutStrong,
-			view,
+		// 成因由检索层给（`search/empty.ts`），这里只把它翻译成一句话和一个按钮；
+		// 检索还没跑（换查询的头一帧）时按「还没有条件」说。
+		const state = emptyState(outcome?.empty ?? { kind: "noConditions" }, {
+			evidence: spec.evidence,
 			onChange,
 			onReviseQuery,
 			onEditQuery,
@@ -395,7 +389,7 @@ export function ResultList({
 			{total > RESULT_PAGE && (
 				/*
 				 * 列表的结尾必须回答「我看完了吗」，所以永远同时说出两个数。总数在表头
-				 * 也说过一次，但这一段只在超过一页（20 人）时才出现，那时表头早滚出屏幕
+				 * 也说过一次，但这一段只在超过一页（RESULT_PAGE 人）时才出现，那时表头早滚出屏幕
 				 * 了——两个数从来不同屏，不是同一句话说了两遍。
 				 * 翻不动的时候不留一个按不动的按钮，改说原因——「看完了」和
 				 * 「到上限了」是两件事，后者要给出路，前者不必。

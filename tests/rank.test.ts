@@ -391,7 +391,7 @@ describe("分面与名次是同一个口径", () => {
 	test("分面数的是这次检索里的人，加起来对得上总数", () => {
 		const { facets, total } = run(facts);
 		assert.equal(total, 3);
-		assert.equal(facets.seq.find((s) => s.seqL2 === "算法")?.n, 2);
+		assert.equal(facets.seq.find((s) => s.value.l2 === "算法")?.n, 2);
 		assert.deepEqual(facets.level, [
 			{ value: "P6", n: 1 },
 			{ value: "P7", n: 2 },
@@ -405,7 +405,7 @@ describe("分面与名次是同一个口径", () => {
 		});
 		assert.equal(total, 2, "结果本身是被筛过的");
 		assert.equal(
-			facets.seq.find((s) => s.seqL2 === "渠道")?.n,
+			facets.seq.find((s) => s.value.l2 === "渠道")?.n,
 			1,
 			"别的序列还得看得见、点得动",
 		);
@@ -429,7 +429,7 @@ describe("分面与名次是同一个口径", () => {
 	test("跟人走的维度同样收窄别的维度", () => {
 		const { facets, total } = run(facts, terms("must"), { level: ["P7"] });
 		assert.equal(total, 2);
-		assert.equal(facets.seq.find((s) => s.seqL2 === "算法")?.n, 1);
+		assert.equal(facets.seq.find((s) => s.value.l2 === "算法")?.n, 1);
 		assert.equal(facets.level.find((l) => l.value === "P6")?.n, 1);
 	});
 
@@ -449,7 +449,7 @@ describe("分面与名次是同一个口径", () => {
 		// 列表在手底下换形状，比列表长一点难用得多：消失的那一行是用户自己
 		// 刚做的事的后果，藏起来就没法回头
 		const { facets } = run(facts, terms("must"), { level: ["P6"] });
-		assert.equal(facets.seq.find((s) => s.seqL2 === "渠道")?.n, 0);
+		assert.equal(facets.seq.find((s) => s.value.l2 === "渠道")?.n, 0);
 	});
 
 	test("人数并列时按值稳定排序，不跟着事实输入顺序漂移", () => {
@@ -472,7 +472,7 @@ describe("分面与名次是同一个口径", () => {
 		const project = (input: Fact[]) => {
 			const facets = run(input).facets;
 			return {
-				seq: facets.seq.map((item) => `${item.seqL1}/${item.seqL2}`),
+				seq: facets.seq.map((item) => `${item.value.l1}/${item.value.l2}`),
 				companyTag: facets.companyTag.map((item) => item.value),
 				kind: facets.kind.map((item) => item.value),
 			};
@@ -505,7 +505,10 @@ describe("结构化范围的人群排序", () => {
 			result.facets.kind.find((item) => item.value === "internal")?.n,
 			1,
 		);
-		assert.equal(result.facets.seq.find((item) => item.seqL2 === "渠道")?.n, 1);
+		assert.equal(
+			result.facets.seq.find((item) => item.value.l2 === "渠道")?.n,
+			1,
+		);
 	});
 });
 

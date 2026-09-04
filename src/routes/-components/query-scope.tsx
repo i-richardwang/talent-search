@@ -1,7 +1,7 @@
 import { XIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import type { SearchScope } from "#/search/spec";
-import { scopeEntries, scopeLabel } from "../-lib/scope-label";
+import { scopeEntries } from "../-lib/scope-label";
 
 /** 原话中的结构化条件是查询本身的一部分，必须和语义条件一样可见、可删。 */
 export function QueryScope({
@@ -16,19 +16,15 @@ export function QueryScope({
 
 	return (
 		<fieldset aria-label="查询范围" className="flex flex-wrap gap-1.5">
-			{entries.map(({ key, value }) => (
+			{entries.map(({ id, label, without }) => (
 				<Button
-					aria-label={`移除条件：${scopeLabel(key, value)}`}
-					key={key}
-					onClick={() => {
-						const next = { ...scope };
-						delete next[key];
-						onChange(next);
-					}}
+					aria-label={`移除条件：${label}`}
+					key={id}
+					onClick={() => onChange(without)}
 					size="xs"
 					variant="outline"
 				>
-					{scopeLabel(key, value)}
+					{label}
 					<XIcon />
 				</Button>
 			))}

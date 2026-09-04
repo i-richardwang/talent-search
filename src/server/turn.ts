@@ -6,13 +6,14 @@ import { type DbExecutor, db, withCorpusSnapshot } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
 import { resolveIntent } from "#/search/intent";
-import type { Chip } from "#/search/parse";
+import { editChip, parseChips } from "#/search/parse";
 import { probeWide, vocabulary } from "#/search/search";
 import {
 	fellBack,
 	normalizeSpec,
 	type QueryInput,
 	type SearchDelta,
+	type SearchNotice,
 	type SearchSpec,
 } from "#/search/spec";
 import { understand } from "./llm";
@@ -99,18 +100,45 @@ export async function createTurn(
 	return { turnId: turn.id };
 }
 
-/** 量宽只作用于新句产生的证据，不改写基线中用户已经确认过的状态。 */
-async function benchWide(evidence: Chip[], store: DbExecutor): Promise<Chip[]> {
+/**
+ * 给这句话新解析出的词量一遍宽度：命中的人多到几乎不筛人的，**可见地**停用，
+ * 并留下一条说明成因的注解。
+ *
+ * **只量进门的词。** 宽度这把尺答的是「它还筛不筛得掉人」，那是准入的问题；
+ * 排除词答的是「哪一段不作数」，命中面广恰恰是它在起作用，量它等于用一把
+ * 反向的尺去停掉一条正在生效的条件。门槛也对不上：`probeWide` 按
+ * `RELEVANCE_MIN` 量，而排除按更高的 `RELEVANCE_MIN_EXCLUDE` 判——
+ * 量出来的宽根本不是它搜出来的宽。
+ *
+ * 成因落在 notices 上，不落在 chip 上：宽是**语料**的事实，会随语料换代失效，
+ * 而 chips 是记录里不可变的那一半（论证在 `parse.ts` 的 Chip）。
+ */
+async function benchWide(
+	evidence: string,
+	store: DbExecutor,
+): Promise<{ evidence: string; notices: SearchNotice[] }> {
+	const chips = parseChips(evidence);
+	const admitting = chips.map((chip) => chip.mode !== "exclude" && !chip.off);
 	const texts = [
-		...new Set(evidence.flatMap((item) => [item.term, ...(item.alts ?? [])])),
+		...new Set(
+			chips.flatMap((chip, i) =>
+				admitting[i] ? [chip.term, ...(chip.alts ?? [])] : [],
+			),
+		),
 	];
 	const wide = await probeWide(texts, store);
-	if (wide.size === 0) return evidence;
-	return evidence.map((item) =>
-		[item.term, ...(item.alts ?? [])].some((term) => wide.has(term))
-			? { ...item, off: true as const, wide: true as const }
-			: item,
-	);
+	if (wide.size === 0) return { evidence, notices: [] };
+
+	let query = evidence;
+	const notices: SearchNotice[] = [];
+	chips.forEach((chip, index) => {
+		if (!admitting[index]) return;
+		if (![chip.term, ...(chip.alts ?? [])].some((text) => wide.has(text)))
+			return;
+		query = editChip(query, index, { off: true });
+		notices.push({ kind: "wide", term: chip.term });
+	});
+	return { evidence: query, notices };
 }
 
 /**
@@ -132,9 +160,11 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 				await understand(rawText, vocab),
 				vocab,
 			);
+			const benched = await benchWide(understood.evidence, store);
 			return {
 				...understood,
-				evidence: await benchWide(understood.evidence, store),
+				evidence: benched.evidence,
+				notices: [...understood.notices, ...benched.notices],
 			};
 		},
 	);
@@ -161,31 +191,32 @@ export type RecentSearch = {
 	turnId: string;
 	spec: SearchSpec;
 	rawText: string | null;
-	createdAt: string;
 };
 
-/** 每条派生链只展示最后一份完整查询；打开 turnId 即可精确回放全部条件。 */
+/**
+ * 每条派生链只展示最后一份完整查询；打开 turnId 即可精确回放全部条件。
+ *
+ * 原话取的是**这一条自己的** `raw_text`，不回溯根记录：改一枚 chip 派生出来的
+ * 记录会把原话原样带下来（见 `createTurn`），而重新说一句话派生出来的记录带的
+ * 是新的那句——两种情况下它都和这里显示的 spec 出自同一次提问。回溯根记录则会
+ * 在后一种情况下拿旧话去给新条件当门面。
+ */
 export async function listRecent(): Promise<RecentSearch[]> {
 	const rows = await db.execute<{
 		id: string;
 		spec: SearchSpec;
-		created_at: Date;
-		root_raw_text: string | null;
+		raw_text: string | null;
 	}>(sql`
-			select latest.id, latest.spec, latest.created_at,
-				root.raw_text as root_raw_text
-			from (
-				select distinct on (root_turn_id) id, root_turn_id, spec, created_at
+			select id, spec, raw_text from (
+				select distinct on (root_turn_id) id, root_turn_id, spec, raw_text, created_at
 				from search_turn where spec is not null
 				order by root_turn_id, created_at desc, id desc
 			) latest
-			join search_turn root on root.id = latest.root_turn_id
 			order by latest.created_at desc, latest.id desc
 			limit ${RECENT_MAX}`);
 	return rows.rows.map((row) => ({
 		turnId: row.id,
 		spec: row.spec,
-		rawText: row.root_raw_text,
-		createdAt: new Date(row.created_at).toISOString(),
+		rawText: row.raw_text,
 	}));
 }

@@ -7,7 +7,7 @@
 
 ## 本地运行
 
-需要 Node.js 22、uv、装了 [pgvector](https://github.com/pgvector/pgvector) 的 Postgres 17，
+需要 [Bun](https://bun.sh) 1.4+、uv、装了 [pgvector](https://github.com/pgvector/pgvector) 的 Postgres 17，
 以及两个模型端点：OpenAI 兼容的嵌入（`/embeddings`，`BAAI/bge-m3`）和 Cohere 式的
 重排（`/rerank`，`BAAI/bge-reranker-v2-m3`）。内网自建或公网服务均可，同一家服务商通常两个都有。
 
@@ -125,8 +125,8 @@ tests/                       单元、渲染与真 SQL 集成测试
 - **数据源与管线之间只有一份契约。** 适配器交出三张摊平的表，管线负责所有人都逃不掉的
   那几条不变量。接第二个数据源时不会长出第二套「什么算一段经历」。见 `etl/contract.py`。
 - **查询是一条记录，视图是几个 URL 参数。** 一次「我要找什么人」落成 `search_turn`
-  的一行：`SearchSpec` 完整保存证据要求、结构化范围与未生效提示，`SearchDelta`
-  保存当前原话自己的理解供重译替换。地址是 `/s/:turnId`；只影响查看方式的分面、
+  的一行：`SearchSpec` 完整保存证据要求（一串规范查询串）、结构化范围与注解，
+  `SearchDelta` 保存当前原话自己的理解供重译替换。地址是 `/s/:turnId`；只影响查看方式的分面、
   翻页留在 query string，当前员工由 `/p/:empId` 子路由表达。见 `src/search/spec.ts`、`src/server/turn.ts` 与
   `src/routes/-lib/view-params.ts`。
 - 页面访问数据库只有 `src/server/functions.ts` 一个口子；带连接或密钥的模块标了

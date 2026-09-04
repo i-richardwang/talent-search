@@ -8,6 +8,8 @@
  */
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
+import { parseChips } from "#/search/parse";
+import type { SearchSpec } from "#/search/spec";
 import { setup } from "./fixture";
 
 const teardown = await setup();
@@ -24,16 +26,20 @@ const violates = (constraint: string) => (error: unknown) =>
 	(error as { cause?: { constraint?: string } }).cause?.constraint ===
 	constraint;
 
+/** 记录上存的是规范查询串；用例关心的是它解析出来的那几条要求。 */
+const termsOf = (spec: SearchSpec) =>
+	parseChips(spec.evidence).map((chip) => chip.term);
+
 async function sentence(text: string, parent?: string) {
 	const { turnId } = await createTurn({ kind: "sentence", text }, parent);
 	const spec = await resolveTurn(turnId);
-	return { turnId, spec, terms: spec.evidence.map((c) => c.term) };
+	return { turnId, spec, terms: termsOf(spec) };
 }
 
 async function reinterpret(parent: string) {
 	const { turnId } = await createTurn({ kind: "reinterpret" }, parent);
 	const spec = await resolveTurn(turnId);
-	return { turnId, terms: spec.evidence.map((c) => c.term) };
+	return { turnId, terms: termsOf(spec) };
 }
 
 describe("整句的改写", () => {
@@ -53,7 +59,7 @@ describe("整句的改写", () => {
 		const root = await createTurn({
 			kind: "spec",
 			spec: {
-				evidence: [{ term: "算法", mode: "must" }],
+				evidence: "算法",
 				scope: { kind: "external", minMonths: 24 },
 				notices: [{ kind: "unsupported", text: "北京" }],
 			},
@@ -65,10 +71,7 @@ describe("整句的改写", () => {
 		const spec = await resolveTurn(child.turnId);
 		assert.deepEqual(spec.scope, {});
 		assert.deepEqual(spec.notices, [{ kind: "fallback" }]);
-		assert.deepEqual(
-			spec.evidence.map((item) => item.term),
-			["渠道运营"],
-		);
+		assert.deepEqual(termsOf(spec), ["渠道运营"]);
 	});
 });
 
@@ -79,7 +82,7 @@ describe("只改条件", () => {
 			{
 				kind: "spec",
 				spec: {
-					evidence: [{ term: "算法", mode: "boost" }],
+					evidence: "+算法",
 					scope: {},
 					notices: [],
 				},
@@ -110,6 +113,27 @@ describe("整句的重译", () => {
 		assert.deepEqual(redo.terms, ["渠道运营"]);
 	});
 
+	test("那一行的门面和它的条件出自同一次提问", async () => {
+		const root = await sentence("算法");
+		const rewritten = await sentence("渠道运营", root.turnId);
+		const [row] = (await listRecent()).filter(
+			(r) => r.turnId === rewritten.turnId,
+		);
+		// 曾经这里回溯根记录取原话，于是改写之后拿旧话给新条件当门面：
+		// 屏幕上写着「算法」，点进去搜的是渠道运营，而两边都不会报错。
+		assert.equal(row?.rawText, "渠道运营");
+	});
+
+	test("改一枚 chip 不换门面：问的还是那句话", async () => {
+		const root = await sentence("算法");
+		const { turnId } = await createTurn(
+			{ kind: "spec", spec: { ...root.spec, evidence: "+算法" } },
+			root.turnId,
+		);
+		const [row] = (await listRecent()).filter((r) => r.turnId === turnId);
+		assert.equal(row?.rawText, "算法", "调条件不是重新问一遍");
+	});
+
 	test("重译不脱链：最近搜索里仍是一行，停在重译后的样子", async () => {
 		const before = await listRecent();
 		const root = await sentence("产品经理");
@@ -132,12 +156,12 @@ describe("整句的重译", () => {
 			rootTurnId: "nd_model",
 			rawText: "产品经理",
 			delta: {
-				evidence: [{ term: "产品经理", mode: "must" }],
+				evidence: "产品经理",
 				scope: {},
 				notices: [],
 			},
 			spec: {
-				evidence: [{ term: "产品经理", mode: "must" }],
+				evidence: "产品经理",
 				scope: {},
 				notices: [],
 			},
@@ -155,12 +179,12 @@ describe("整句的重译", () => {
 			parentTurnId: root.turnId,
 			rawText: "渠道运营",
 			delta: {
-				evidence: [{ term: "渠道运营", mode: "must" }],
+				evidence: "渠道运营",
 				scope: {},
 				notices: [],
 			},
 			spec: {
-				evidence: [{ term: "渠道运营", mode: "must" }],
+				evidence: "渠道运营",
 				scope: {},
 				notices: [{ kind: "fallback" }],
 			},
@@ -180,7 +204,7 @@ describe("整句的重译", () => {
 			{
 				kind: "spec",
 				spec: {
-					evidence: [{ term: "算法", mode: "must" }],
+					evidence: "算法",
 					scope: {},
 					notices: [],
 				},
@@ -204,7 +228,7 @@ describe("查询记录状态", () => {
 		const { db } = await import("#/db");
 		const { searchTurn } = await import("#/db/schema");
 		const spec = {
-			evidence: [{ term: "算法", mode: "must" as const }],
+			evidence: "算法",
 			scope: {},
 			notices: [],
 		};

@@ -6,7 +6,11 @@
  * 的空值工厂，一行 SQL 都不许有；查询实现留在 `search.ts`。
  */
 import type { Employee, Route } from "#/db/schema";
+import { DIM_KEYS, type DimKey, type DimUnit, type Picked } from "./dimensions";
+import type { EmptyReason } from "./empty";
 import type { ChipMode } from "./parse";
+
+export type { SeqPick } from "./dimensions";
 
 export type Hit = {
 	experienceId: number;
@@ -52,7 +56,7 @@ export type RankedResult = PopulationResult & {
 
 export type SearchResult = PopulationResult | RankedResult;
 
-/** 一个概念词实际参与排名的聚合依据。 */
+/** 一条要求实际参与排名的聚合依据。 */
 export type TermBasis = {
 	term: string;
 	/** 参与累计的那一路：最硬那条证据走的路 */
@@ -88,43 +92,18 @@ export type TermPlan = {
 };
 
 /**
- * 选中的一条序列。二级序列名跨一级会重名（技术/数据科学 与 商业分析/数据科学），
- * 所以它是一对值，不是一个名字。
+ * 一次检索的筛选条件。
  *
- * 从 URL 到 SQL 谓词全程都是这个形状，中间不拼成字符串再切开：序列名里出现斜杠
- * 并不稀奇（见 `rank.ts` 的 `SEP`），任何拼接式的编码都会在某个名字上切错，
- * 而切错的表现是一份说不通的名单，不是一个报错。
- */
-export type SeqPick = { l1: string; l2: string };
-
-/**
- * 筛选。前七维收窄的是**人群**，都对完整候选事实求值（放到客户端就只能筛
- * 已经翻出来的那几页，而其余维数的是全部命中的人——同一排控件会出现两种口径）。
- *
- * **一维之内是「或」，维度之间是「与」**——分面检索的标准口径，也是分面计数
- * 摘掉自己那一维的原因（`rank.ts` 的 `keeps`）：「P6 旁边那个 20」说的正是
- * 「再勾上 P6 会多出这些人」。集合的那几维因此是列表；阈值（`minMonths`）和
- * 二选一（`kind`）不是集合，多选对它们没有意义，所以是单值。
+ * 七个可分面的维度由 `dimensions.ts` 声明（`Picked`），这里只加上不属于那一族
+ * 的三项。**全部在服务端求值**：放到客户端就只能筛已经翻出来的那几页，而其余维
+ * 数的是全部命中的人——同一排控件会出现两种口径。
  *
  * `org` 与 `school` 是**精确文本条件**，不是分面：公司名、学校名是专有名词，
  * 永远不进向量（「字节」和「腾讯」在向量空间里是邻居）。它们答的是
  * 「这个人有没有在名字含 X 的地方待过 / 是不是 X 毕业的」，按人判，
  * 在取数的 SQL 里生效。
  */
-export type SearchFilters = {
-	seq?: SeqPick[];
-	/** 入职前公司档：头部互联网T1 / 知名公司 … */
-	companyTag?: string[];
-	/** 命中段至少多少个月 */
-	minMonths?: number;
-	/** 只看在职经历或只看入职前 */
-	kind?: "internal" | "external";
-	/** 当前职级（employee.cur_level） */
-	level?: string[];
-	/** 招聘渠道（校招 / 社招 …） */
-	recruitment?: string[];
-	/** 学历 */
-	education?: string[];
+export type SearchFilters = Picked & {
 	/** 待过的部门或公司名里含这几个字 */
 	org?: string;
 	/** 学校名里含这几个字 */
@@ -145,14 +124,7 @@ export type SearchFilters = {
  * 被别的维度挤到 0 的那些留在列表里，`n` 就是 0。两个口径为什么必须分开，
  * 以及每一维要怎么算才配得上它们，见 rank.ts 的 facetCount。
  */
-export type Facets = {
-	seq: { seqL1: string; seqL2: string; n: number }[];
-	companyTag: { value: string; n: number }[];
-	kind: { value: "internal" | "external"; n: number }[];
-	minMonths: { value: number; n: number }[];
-	level: { value: string; n: number }[];
-	recruitment: { value: string; n: number }[];
-	education: { value: string; n: number }[];
+export type Facets = { [K in DimKey]: { value: DimUnit[K]; n: number }[] } & {
 	/**
 	 * 「证据要求」这一维的两头：打开还剩多少人（on），关掉能看到多少人（off）。
 	 * 两个数都按分面的 except 口径算，也就是都把证据要求自己摘掉之后再数。
@@ -163,17 +135,15 @@ export type Facets = {
 /**
  * 一次检索的完整产出。
  *
- * 候选事实超过 `FACT_MAX` 时仍然是一种**结果**，不是一次失败：页面用
- * `overflow` 说明该具体化语义要求还是收窄结构化范围，不把截断数据交给排名。
+ * `empty` 是「这份名单为什么是空的」，有人时为 `null`。它由检索层给出而不是
+ * 由界面反推（论证见 `empty.ts`）——候选事实超过 `FACT_MAX` 也是它的一种取值：
+ * 那仍然是一种**结果**，不是一次失败，页面据此说该具体化语义要求还是收窄范围，
+ * 而不是把截断的数据交给排名。
  */
-export type SearchOverflow =
-	| { kind: "evidence"; terms: string[] }
-	| { kind: "population" };
-
 type Outcome = {
 	facets: Facets;
 	total: number;
-	overflow: SearchOverflow | null;
+	empty: EmptyReason | null;
 };
 
 export type SearchOutcome =
@@ -188,16 +158,14 @@ export type SearchOutcome =
 			results: PopulationResult[];
 	  });
 
-/** 空分面。检索还没跑或没解析出概念词时用它，界面才不必区分「没有」和「还没算」。 */
+/** 空分面。检索还没跑或没解析出要求时用它，界面才不必区分「没有」和「还没算」。 */
 export function emptyFacets(): Facets {
 	return {
-		seq: [],
-		companyTag: [],
-		kind: [],
-		minMonths: [],
-		level: [],
-		recruitment: [],
-		education: [],
+		// 每一维一个空列表。逐维手写的话，加一维忘了这里不会报错，只会在
+		// 「还没算」的那一帧上少一栏。
+		...(Object.fromEntries(DIM_KEYS.map((key) => [key, []])) as unknown as {
+			[K in DimKey]: { value: DimUnit[K]; n: number }[];
+		}),
 		strong: { on: 0, off: 0 },
 	};
 }

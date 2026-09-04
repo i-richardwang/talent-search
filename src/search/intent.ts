@@ -3,11 +3,12 @@
  * 不可信输出收窄成产品能够保存和执行的形状，不包含网络调用。
  */
 import { z } from "zod";
+import { parsePicked } from "./dimensions";
 import {
 	CHIP_MAX,
-	type Chip,
+	type ChipDraft,
 	type ChipMode,
-	parseChips,
+	canonical,
 	parseQuery,
 	toQuery,
 } from "./parse";
@@ -17,10 +18,10 @@ const MODES = ["must", "boost", "exclude"] as const;
 
 /** 模型选择结构化值时只能看语料真实拥有的词表。 */
 export type Vocabulary = {
-	companyTags: readonly string[];
-	levels: readonly string[];
-	recruitments: readonly string[];
-	educations: readonly string[];
+	companyTag: readonly string[];
+	level: readonly string[];
+	recruitment: readonly string[];
+	education: readonly string[];
 };
 
 function pick(values: readonly string[], description: string) {
@@ -71,21 +72,18 @@ export function intentSchema(vocab: Vocabulary) {
 			.nullable()
 			.describe("单段经历至少做满几个月。没说就填 null"),
 		companyTag: pick(
-			vocab.companyTags,
+			vocab.companyTag,
 			"入职前待过的公司档，只能从给定取值里选。没说就填 null",
 		),
 		level: pick(
-			vocab.levels,
+			vocab.level,
 			"当前职级，只能选择一个精确取值。范围说法（如 P7 以上）或无法映射的头衔放进 unsupported",
 		),
 		recruitment: pick(
-			vocab.recruitments,
+			vocab.recruitment,
 			"招聘渠道，只能从给定取值里选。没说就填 null",
 		),
-		education: pick(
-			vocab.educations,
-			"学历，只能从给定取值里选。没说就填 null",
-		),
+		education: pick(vocab.education, "学历，只能从给定取值里选。没说就填 null"),
 		org: z
 			.string()
 			.nullable()
@@ -115,7 +113,7 @@ export function toDelta(raw: unknown, vocab: Vocabulary): SearchDelta {
 		Array.isArray(input)
 			? input.flatMap((item) => parseQuery(text(item) ?? ""))
 			: [];
-	const drafts: Chip[] = [];
+	const drafts: ChipDraft[] = [];
 
 	for (const item of Array.isArray(value.terms) ? value.terms : []) {
 		const term = (item ?? {}) as Record<string, unknown>;
@@ -129,32 +127,36 @@ export function toDelta(raw: unknown, vocab: Vocabulary): SearchDelta {
 		for (const part of rest) drafts.push({ term: part, mode });
 	}
 
-	const scope: SearchScope = {};
-	if (value.kind === "internal" || value.kind === "external")
-		scope.kind = value.kind;
-	const months = Number(value.minMonths);
-	if (Number.isInteger(months) && months > 0) scope.minMonths = months;
+	/**
+	 * 模型一维只给一个值（提示词就是这么写的），而维度的取值形状是集合——
+	 * 在这里裹成一项。提示词没跟着改：让模型开始产出并列取值是另一件事，
+	 * 它会改变模型行为，得单独验，不能顺手搭在一次重构里。
+	 */
 	const listed = (input: unknown, values: readonly string[]) => {
 		const candidate = text(input);
-		return candidate && values.includes(candidate) ? candidate : undefined;
+		return candidate && values.includes(candidate) ? [candidate] : undefined;
 	};
-	const assignments: [keyof SearchScope, string | undefined][] = [
-		["companyTag", listed(value.companyTag, vocab.companyTags)],
-		["level", listed(value.level, vocab.levels)],
-		["recruitment", listed(value.recruitment, vocab.recruitments)],
-		["education", listed(value.education, vocab.educations)],
-		["org", text(value.org)],
-		["school", text(value.school)],
-	];
-	for (const [key, candidate] of assignments)
-		if (candidate) Object.assign(scope, { [key]: candidate });
+	const scope: SearchScope = {
+		...parsePicked({
+			kind: value.kind,
+			minMonths: value.minMonths,
+			companyTag: listed(value.companyTag, vocab.companyTag),
+			level: listed(value.level, vocab.level),
+			recruitment: listed(value.recruitment, vocab.recruitment),
+			education: listed(value.education, vocab.education),
+		}),
+	};
+	const org = text(value.org);
+	if (org) scope.org = org;
+	const school = text(value.school);
+	if (school) scope.school = school;
 
 	const unsupported = Array.isArray(value.unsupported)
 		? [...new Set(value.unsupported.map(text).filter((x): x is string => !!x))]
 		: [];
 
 	return {
-		evidence: parseChips(toQuery(drafts)),
+		evidence: canonical(toQuery(drafts)),
 		scope,
 		notices: unsupported.map((message) => ({
 			kind: "unsupported" as const,
@@ -175,14 +177,14 @@ export function resolveIntent(
 	if (raw !== null) {
 		const delta = toDelta(raw, vocab);
 		if (
-			delta.evidence.length > 0 ||
+			delta.evidence !== "" ||
 			Object.keys(delta.scope).length > 0 ||
 			delta.notices.length > 0
 		)
 			return delta;
 	}
 	return {
-		evidence: parseChips(query),
+		evidence: canonical(query),
 		scope: {},
 		notices: [{ kind: "fallback" }],
 	};

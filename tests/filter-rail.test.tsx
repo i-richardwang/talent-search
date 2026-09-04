@@ -19,8 +19,7 @@ import type { Facets } from "#/search/result";
 import { visibleText } from "./render";
 
 const SEQ = Array.from({ length: 9 }, (_, i) => ({
-	seqL1: "技术",
-	seqL2: `序列${i}`,
+	value: { l1: "技术", l2: `序列${i}` },
 	n: 100 - i,
 }));
 

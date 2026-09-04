@@ -3,14 +3,21 @@ import { describe, test } from "node:test";
 import {
 	activeChips,
 	CHIP_MAX,
+	canonical,
+	dropChip,
+	editChip,
+	enableAll,
+	MEMBER_MAX,
 	parseChips,
 	parseQuery,
+	QUERY_MAX,
 	QUERY_TEXT_MAX,
+	queryString,
 	queryText,
 	toQuery,
 } from "#/search/parse";
 
-test("按标点与连接词切成概念词", () => {
+test("按标点与连接词切成要求", () => {
 	assert.deepEqual(parseQuery("算法、产品、后端都做过的"), [
 		"算法",
 		"产品",
@@ -30,14 +37,14 @@ test("末尾的语气词不能连词一起剥掉", () => {
 	assert.deepEqual(parseQuery("安全"), ["安全"]);
 });
 
-test("只剩句式词时不产生概念词", () => {
+test("只剩句式词时不产生要求", () => {
 	assert.deepEqual(parseQuery("帮我找人"), []);
 	assert.deepEqual(parseQuery(""), []);
 });
 
 /**
  * 剥赘字最容易剥进词里。这几个词在招聘场景里都是高频的，剥错一个字之后
- * 检索的就不再是用户要的那个概念，而界面上没有任何提示。
+ * 检索的就不再是用户要的那条要求，而界面上没有任何提示。
  */
 test("单字赘尾不剥：末尾的「人」多半是词的一半", () => {
 	assert.deepEqual(parseQuery("机器人"), ["机器人"]);
@@ -60,7 +67,7 @@ test("剥掉的是多字句式就照剥，剩下的停用词自然被滤掉", ()
 	assert.deepEqual(parseQuery("找人"), []);
 });
 
-test("超长的一段正文不是概念词", () => {
+test("超长的一段正文不是要求", () => {
 	// 一次粘贴进来的正文会被原样送去嵌入，再拿一个「段落向量」去和短短的岗位名比
 	assert.deepEqual(parseQuery("算法".repeat(150)), []);
 	assert.deepEqual(parseQuery("产品经理"), ["产品经理"]);
@@ -176,28 +183,6 @@ describe("停用的词", () => {
 	});
 });
 
-describe("太宽停用（`*`）", () => {
-	test("`*` 蕴含停用，成因与强度都留着", () => {
-		assert.deepEqual(parseChips("算法,*+运营"), [
-			{ term: "算法", mode: "must" },
-			{ term: "运营", mode: "boost", off: true, wide: true },
-		]);
-	});
-
-	test("往返：wide 状态要能穿过合并（序列化再读回）", () => {
-		for (const raw of ["*运营", "算法,*+经理", "*-管理"]) {
-			const chips = parseChips(raw);
-			assert.deepEqual(parseChips(toQuery(chips)), chips, raw);
-		}
-	});
-
-	test("activeChips 一样摘掉它：wide 是停用的一种成因，不是新档位", () => {
-		assert.deepEqual(activeChips(parseChips("算法,*运营")), [
-			{ term: "算法", mode: "must" },
-		]);
-	});
-});
-
 /**
  * 一条要求的多个说法：组内 `/` 与「或」是 OR。
  * 语义（怎么检索、怎么计分）在 search/rank 那两层钉，这里只钉解析与往返。
@@ -239,5 +224,81 @@ describe("说法（成员）语法", () => {
 			{ term: "渠道运营", mode: "must" },
 			{ term: "带团队", mode: "must" },
 		]);
+	});
+});
+
+/**
+ * 改一条已有查询：串进串出。
+ *
+ * 这一组钉的不是某个按钮的行为，是**编辑不许有第二种做法**这条不变量。
+ * 曾经每个调用点各自拼一个 chip 对象写回去，于是「一键启用全部条件」把并列
+ * 说法拼没了——`{term, mode}` 少写一个 `alts`，类型检查、构建、界面测试全绿，
+ * 只有用户看得见自己的说法少了一个。所以编辑只有这三个函数，它们从解析出来的
+ * chip 出发、原样带着其余字段写回去，没有拼装的机会。
+ */
+describe("查询编辑", () => {
+	const Q = "大模型/多模态,~+带团队/带项目,-实习";
+
+	test("改强度不碰说法，也不碰停用", () => {
+		assert.equal(
+			editChip(Q, 1, { mode: "must" }),
+			"大模型/多模态,~带团队/带项目,-实习",
+		);
+	});
+
+	test("停用与启用不碰强度：`~+X` 开回来还是加分词", () => {
+		const off = editChip("+带团队", 0, { off: true });
+		assert.equal(off, "~+带团队");
+		assert.equal(editChip(off, 0, { off: false }), "+带团队");
+	});
+
+	test("删掉一条只删这一条", () => {
+		assert.equal(dropChip(Q, 1), "大模型/多模态,-实习");
+	});
+
+	test("一键启用保住每一条的强度和全部说法", () => {
+		assert.equal(
+			enableAll("~大模型/多模态,~+带团队/带项目,-实习"),
+			"大模型/多模态,+带团队/带项目,-实习",
+		);
+	});
+
+	test("任何一次编辑之后仍然是规范串，改的只有目标那一枚", () => {
+		const chips = parseChips(Q);
+		for (const [i] of chips.entries())
+			for (const patch of [
+				{ mode: "boost" as const },
+				{ off: true },
+				{ off: false },
+			]) {
+				const next = editChip(Q, i, patch);
+				assert.equal(canonical(next), next, `${i} ${JSON.stringify(patch)}`);
+				assert.deepEqual(
+					parseChips(next).filter((_, j) => j !== i),
+					chips.filter((_, j) => j !== i),
+					"别的要求一个字段都不该动",
+				);
+			}
+	});
+});
+
+describe("规范化与长度边界", () => {
+	test("规范化是幂等的：同一份含义只有一种写法", () => {
+		for (const raw of [
+			"做过渠道运营、带过团队的人",
+			"大模型或推荐系统, +带团队 ,-实习",
+			"~+运营",
+		]) {
+			const once = canonical(raw);
+			assert.equal(canonical(once), once, raw);
+			assert.deepEqual(parseChips(once), parseChips(raw), raw);
+		}
+	});
+
+	test("查询串的上限由部件推导，不是另立的一个数", () => {
+		assert.equal(QUERY_MAX, CHIP_MAX * (MEMBER_MAX * 25 + 2));
+		// 收窄只保证载荷有界；含义上的上限（几条要求、几个说法）仍归 parseChips
+		assert.equal(queryString(123), "");
+		assert.equal(queryString("算".repeat(QUERY_MAX + 10)).length, QUERY_MAX);
 	});
 });

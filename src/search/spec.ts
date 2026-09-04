@@ -1,11 +1,22 @@
-import { type Chip, parseChips, queryText, toQuery } from "./parse";
+import { type Picked, parsePicked } from "./dimensions";
+import { canonical, parseChips, queryString, queryText } from "./parse";
 
 /**
  * 一条查询的完整含义。它是查询记录的唯一事实源，也是查询台编辑、最近搜索回放、
  * 搜索执行共同使用的边界；不能执行的部分同样属于这份含义，不能散落在旁路字段里。
  */
 export type SearchSpec = {
-	evidence: Chip[];
+	/**
+	 * 证据要求，写成**规范查询串**（`大模型/推荐系统,+带团队,~-实习`）。
+	 *
+	 * 存串不存对象数组，是因为这条串本来就是全站唯一的查询表示：URL 能读、
+	 * 命令行能敲、服务端和页面共用同一个 `parseChips` 解它。存成对象数组的话
+	 * 同一份含义就有了两种写法（谁的字段顺序、谁带不带 `off`），而每一处要
+	 * 「改一枚 chip」的代码都得自己拼一个对象——拼漏一个字段就是一次静默的
+	 * 查询改写。chips 由 `parseChips` 现解，编辑走 `editChip` / `dropChip` /
+	 * `enableAll`（都是串进串出）。
+	 */
+	evidence: string;
 	scope: SearchScope;
 	notices: SearchNotice[];
 };
@@ -20,22 +31,31 @@ export type SearchSpec = {
 export type SearchDelta = SearchSpec;
 
 /**
- * 查询自身的结构化范围。这里的条件来自用户原话，会随 turnId 保存；URL 上同名的
- * 字段只是结果视图的临时收窄，两者在搜索时取交集，但生命周期完全不同。
+ * 查询自身的结构化范围。
+ *
+ * 它和 URL 上的筛选是**同一批维度的两种生命周期**：这里的条件来自用户原话、
+ * 随 turnId 保存，那边的来自地址栏、一次性，搜索时取交集。所以两者形状相同
+ * （`Picked`，见 `dimensions.ts`）——同一维在两处各写一份形状，是这个项目
+ * 以前每加一维都要改十几处的根。
  */
-export type SearchScope = {
-	kind?: "internal" | "external";
-	minMonths?: number;
-	companyTag?: string;
-	level?: string;
-	recruitment?: string;
-	education?: string;
+export type SearchScope = Picked & {
+	/** 待过的部门或公司名里含这几个字 */
 	org?: string;
+	/** 学校名里含这几个字 */
 	school?: string;
 };
 
+/**
+ * 关于**这一次理解**的注解。三种都不是查询条件本身，而是「这句话被读成这样」
+ * 的旁注：屏幕上它们是 chips 的脚注，不是一条要求。
+ *
+ * `wide` 记的是「这个词在当前语料里命中的人太多」（`WIDE_SHARE`）。它住在
+ * 这里而不是 chip 上：那是关于语料的事实，会随语料换代失效，而 chips 是
+ * 记录里不可变的那一半。词是否因此没参与检索，由 chip 自己的 `off` 说。
+ */
 export type SearchNotice =
 	| { kind: "unsupported"; text: string }
+	| { kind: "wide"; term: string }
 	| { kind: "fallback" };
 
 export type QueryInput =
@@ -44,7 +64,7 @@ export type QueryInput =
 	| { kind: "reinterpret" };
 
 export function emptySpec(): SearchSpec {
-	return { evidence: [], scope: {}, notices: [] };
+	return { evidence: "", scope: {}, notices: [] };
 }
 
 export function unsupportedOf(spec: SearchSpec) {
@@ -60,74 +80,58 @@ export function fellBack(spec: SearchSpec) {
 	return spec.notices.some((n) => n.kind === "fallback");
 }
 
+/** 这次理解里被判定为太宽的词。界面据此解释「它为什么是停用的」。 */
+export function wideTerms(spec: SearchSpec) {
+	return spec.notices.flatMap((n) => (n.kind === "wide" ? [n.term] : []));
+}
+
 export function hasMeaning(spec: SearchSpec) {
 	return (
-		spec.evidence.length > 0 ||
+		spec.evidence !== "" ||
 		Object.keys(spec.scope).length > 0 ||
 		spec.notices.length > 0
 	);
 }
 
 /**
- * 一份理解 → 一份可执行的查询含义。证据按全站规范查询串走一遍往返，同一个词
- * 只留一枚；提示按内容去重。模型和规则解析都可能把同一个意思说两遍，
- * 而屏幕上重复的两枚 chip 既解释不清也删不干净。
+ * 一份理解 → 一份可执行的查询含义。证据走一遍规范化（同一个词只留一枚），
+ * 提示按内容去重。模型和规则解析都可能把同一个意思说两遍，而屏幕上重复的
+ * 两枚 chip 既解释不清也删不干净。
+ *
+ * **注解只解释在场的东西**：指向已经不在查询里的词的 `wide` 注解在这里被丢掉。
+ * 用户删掉那枚 chip 之后，脚注里还留着一句解释它为什么被停用的话，说的是一个
+ * 屏幕上不存在的东西。
  */
 export function normalizeSpec(delta: SearchDelta): SearchSpec {
+	const evidence = canonical(delta.evidence);
+	const present = new Set(parseChips(evidence).map((chip) => chip.term));
 	const notices = delta.notices.filter(
 		(n, i, all) =>
-			all.findIndex(
-				(x) =>
-					x.kind === n.kind &&
-					(x.kind !== "unsupported" ||
-						(n.kind === "unsupported" && x.text === n.text)),
-			) === i,
+			(n.kind !== "wide" || present.has(n.term)) &&
+			all.findIndex((x) => sameNotice(x, n)) === i,
 	);
-	return {
-		evidence: parseChips(toQuery(delta.evidence)),
-		scope: { ...delta.scope },
-		notices,
-	};
+	return { evidence, scope: { ...delta.scope }, notices };
 }
 
-const MODES = new Set(["must", "boost", "exclude"]);
+function sameNotice(a: SearchNotice, b: SearchNotice) {
+	if (a.kind !== b.kind) return false;
+	if (a.kind === "unsupported" && b.kind === "unsupported")
+		return a.text === b.text;
+	if (a.kind === "wide" && b.kind === "wide") return a.term === b.term;
+	return true;
+}
 
 /** 不可信的 RPC 入参 → 完整查询；所有查询编辑都在这一边界整体收窄。 */
 export function sanitizeSpec(raw: unknown): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;
-	const drafts: Chip[] = [];
-	for (const item of Array.isArray(value.evidence) ? value.evidence : []) {
-		const x = (item ?? {}) as Record<string, unknown>;
-		const term = queryText(x.term);
-		if (!term) continue;
-		const alts = Array.isArray(x.alts)
-			? x.alts.flatMap((a) => {
-					const text = queryText(a);
-					return text ? [text] : [];
-				})
-			: undefined;
-		drafts.push({
-			term,
-			...(alts?.length && { alts }),
-			mode: MODES.has(String(x.mode)) ? (x.mode as Chip["mode"]) : "must",
-			...(x.off === true && { off: true as const }),
-			...(x.wide === true && x.off === true && { wide: true as const }),
-		});
-	}
+	// 证据只有一种入参形态：那串查询。逐字段挑 chip 是第二份契约，
+	// 新加一个字段必然有一处忘记跟上。
+	const evidence = queryString(value.evidence);
 
 	const source = (value.scope ?? {}) as Record<string, unknown>;
 	const text = (x: unknown) => queryText(x);
-	const months = Number(source.minMonths);
 	const scope: SearchScope = {
-		kind:
-			source.kind === "internal" || source.kind === "external"
-				? source.kind
-				: undefined,
-		minMonths: Number.isInteger(months) && months > 0 ? months : undefined,
-		companyTag: text(source.companyTag),
-		level: text(source.level),
-		recruitment: text(source.recruitment),
-		education: text(source.education),
+		...parsePicked(source),
 		org: text(source.org),
 		school: text(source.school),
 	};
@@ -142,11 +146,11 @@ export function sanitizeSpec(raw: unknown): SearchSpec {
 			const message = text(x.text);
 			if (message) notices.push({ kind: "unsupported", text: message });
 		}
+		if (x.kind === "wide") {
+			const term = text(x.term);
+			if (term) notices.push({ kind: "wide", term });
+		}
 	}
 
-	return normalizeSpec({
-		evidence: parseChips(toQuery(drafts)),
-		scope,
-		notices,
-	});
+	return normalizeSpec({ evidence, scope, notices });
 }

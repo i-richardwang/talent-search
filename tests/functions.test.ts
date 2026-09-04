@@ -32,16 +32,9 @@ describe("提交查询的服务端边界", () => {
 				input: {
 					kind: "spec",
 					spec: {
-						evidence: [
-							{
-								term: "经理",
-								mode: "boost",
-								off: true,
-								wide: true,
-							},
-						],
+						evidence: "~+经理",
 						scope: {},
-						notices: [],
+						notices: [{ kind: "wide", term: "经理" }],
 					},
 				},
 			}),
@@ -50,16 +43,9 @@ describe("提交查询的服务端边界", () => {
 				input: {
 					kind: "spec",
 					spec: {
-						evidence: [
-							{
-								term: "经理",
-								mode: "boost",
-								off: true,
-								wide: true,
-							},
-						],
+						evidence: "~+经理",
 						scope: {},
-						notices: [],
+						notices: [{ kind: "wide", term: "经理" }],
 					},
 				},
 			},

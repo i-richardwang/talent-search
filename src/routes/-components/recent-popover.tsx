@@ -3,21 +3,23 @@ import { HistoryIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "#/components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
+import { parseChips } from "#/search/parse";
 import type { SearchSpec } from "#/search/spec";
 import type { RecentSearch } from "#/server/turn";
-import { scopeEntries, scopeLabel } from "../-lib/scope-label";
+import { scopeEntries } from "../-lib/scope-label";
 
 /**
- * 一条记录的样子：条件词和范围，就是点进去会看到的那几枚 chip。
- * 一条都没有的记录（理解完发现没有可用条件）仍然存在，落到原话上——
- * 它至少能让人认出「这是我搜过的那句」。
+ * 一行记录读的是**原话**——和查询台上那一行是同一样东西（见 `query-deck.tsx`）。
+ * 回头找一次搜过的东西，认出来靠的是自己当时怎么说的，不是系统把它读成的那几个词：
+ * 条件词是原话的解释，点进去就在屏幕上，这里再摆一遍只会把「我问的」换成「它懂的」。
+ *
+ * 只有点词汇表落下的记录没有原话，那种记录的门面本来就是条件本身，落到条件词和范围上。
  */
 function recentLabel(spec: SearchSpec, rawText: string | null) {
-	const evidence = spec.evidence.map((item) => item.term);
-	const scope = scopeEntries(spec.scope).map(({ key, value }) =>
-		scopeLabel(key, value),
-	);
-	return [...evidence, ...scope].join(" · ") || rawText || "未生效的条件";
+	if (rawText) return rawText;
+	const evidence = parseChips(spec.evidence).map((chip) => chip.term);
+	const scope = scopeEntries(spec.scope).map((entry) => entry.label);
+	return [...evidence, ...scope].join(" · ") || "未生效的条件";
 }
 
 /**
@@ -74,24 +76,27 @@ function RecentList({ recent }: { recent: RecentSearch[] | null }) {
 
 	return (
 		<nav aria-label="最近搜索" className="flex flex-col gap-0.5">
-			{recent.map((record) => (
-				/*
-				 * 每一行是一枚 ghost 按钮 render 成 Link，只把居中改成靠左：悬停、
-				 * 按压、焦点环全走组件自己那一套，和界面上其余可点的东西同一副长相。
-				 * `data-status` 是 Link 自己标的，当前这条因此看得出来。
-				 */
-				<Button
-					className="w-full justify-start data-[status=active]:bg-accent data-[status=active]:text-accent-foreground"
-					key={record.turnId}
-					render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}
-					size="sm"
-					variant="ghost"
-				>
-					<span className="truncate">
-						{recentLabel(record.spec, record.rawText)}
-					</span>
-				</Button>
-			))}
+			{recent.map((record) => {
+				const label = recentLabel(record.spec, record.rawText);
+				return (
+					/*
+					 * 每一行是一枚 ghost 按钮 render 成 Link，只把居中改成靠左：悬停、
+					 * 按压、焦点环全走组件自己那一套，和界面上其余可点的东西同一副长相。
+					 * `data-status` 是 Link 自己标的，当前这条因此看得出来。
+					 * 一句话在 w-80 里放不下就截断，`title` 让悬停能看全。
+					 */
+					<Button
+						className="w-full justify-start data-[status=active]:bg-accent data-[status=active]:text-accent-foreground"
+						key={record.turnId}
+						render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}
+						size="sm"
+						title={label}
+						variant="ghost"
+					>
+						<span className="truncate">{label}</span>
+					</Button>
+				);
+			})}
 		</nav>
 	);
 }

@@ -3,7 +3,7 @@
  *
  * 产品工作区只保留完成当前任务所需的信息，不用价值主张或口号替用户下结论。
  * 这几处分别是第一次进入、第一次看到结果、第一次学习证据点阵的入口；
- * 任一处退回「语料 / 概念词 / 受控字段 / 命中」这套内部语言，整条体验就会
+ * 任一处退回「语料 / 受控字段」这套内部语言，整条体验就会
  * 要求用户先理解系统，再开始找人。
  */
 import assert from "node:assert/strict";
@@ -13,7 +13,7 @@ import { StrengthLegend } from "#/components/evidence";
 import { QueryDeck } from "#/routes/-components/query-deck";
 import { ResultHeader, ResultList } from "#/routes/-components/result-list";
 import { ZeroState } from "#/routes/-components/zero-state";
-import { scopeEntries, scopeLabel } from "#/routes/-lib/scope-label";
+import { scopeEntries } from "#/routes/-lib/scope-label";
 import { emptyFacets } from "#/search/result";
 import { visibleText } from "./render";
 
@@ -21,17 +21,18 @@ const seen = (node: React.ReactNode) => visibleText(renderToStaticMarkup(node));
 
 describe("产品文案使用常规 SaaS 语言", () => {
 	test("查询范围使用稳定的人话与顺序，不把存储值露给最近搜索", () => {
-		const labels = scopeEntries({ level: "P7", kind: "external" }).map(
-			({ key, value }) => scopeLabel(key, value),
+		const labels = scopeEntries({ level: ["P7"], kind: "external" }).map(
+			(entry) => entry.label,
 		);
-		assert.deepEqual(labels, ["入职前经历", "当前职级 · P7"]);
+		// 顺序就是维度表里的声明顺序，不是范围对象上碰巧的字段序
+		assert.deepEqual(labels, ["当前职级 · P7", "入职前经历"]);
 		assert.doesNotMatch(labels.join(" "), /external/);
 	});
 
 	test("首页不写口号、不写对话式提问，也不复述自己是干什么的", () => {
 		const text = seen(<ZeroState error={null} onQuery={() => true} />);
 		assert.doesNotMatch(text, /你想找什么样的人|找到合适的人|查看相关人选/);
-		assert.doesNotMatch(text, /语料|概念词|受控字段/);
+		assert.doesNotMatch(text, /语料|受控字段/);
 		/*
 		 * 零态只有一个动作：把要找的人说出来。屏幕上除了输入框和几句可以照着
 		 * 改的例子之外不该有别的小节——多一个小标题，那个动作就多一份被分掉的
@@ -85,7 +86,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onReinterpret={() => {}}
 				rawText="最好懂算法、不要实习"
 				spec={{
-					evidence: [{ term: "算法", mode: "must" }],
+					evidence: "算法",
 					scope: {},
 					notices: [{ kind: "fallback" }],
 				}}
@@ -105,7 +106,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onQuery={() => true}
 				ref={{ current: null }}
 				rawText="做过线下渠道运营、带过团队的人"
-				spec={{ evidence: [], scope: {}, notices: [] }}
+				spec={{ evidence: "", scope: {}, notices: [] }}
 			/>,
 		);
 		assert.match(text, /做过线下渠道运营、带过团队的人/);
@@ -135,16 +136,15 @@ describe("产品文案使用常规 SaaS 语言", () => {
 					results: [],
 					facets: emptyFacets(),
 					total: 0,
-					overflow: null,
+					empty: { kind: "unmet" },
 				}}
 				spec={{
-					evidence: [{ term: "量子炼金", mode: "must" }],
+					evidence: "量子炼金",
 					scope: {},
 					notices: [],
 				}}
 				turnId="t1"
 				view={{}}
-				withoutStrong={0}
 			/>,
 		);
 		assert.doesNotMatch(text, /0\s*人/);

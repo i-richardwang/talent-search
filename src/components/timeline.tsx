@@ -5,7 +5,7 @@ import { duration, period, seqLabel } from "#/lib/format";
 import { bestStrength } from "#/search/evidence";
 import type { Hit } from "#/search/result";
 
-/** 命中段按 experienceId 索引，一段可能同时命中多个概念词 */
+/** 命中段按 experienceId 索引，一段可能同时命中多条要求 */
 type HitIndex = Map<number, Hit[]>;
 
 export function buildHitIndex(hits: Hit[]): HitIndex {
@@ -152,7 +152,7 @@ function Segment({
 }
 
 /**
- * 这一段为哪些概念词提供了证据、走的哪一路、有多像。
+ * 这一段为哪些要求提供了证据、走的哪一路、有多像。
  *
  * 全部 outline，不按强度上色：强度是从 route 推导的，而 route 就写在标签正文里，
  * 上色等于同一份数据画两遍。强度归节点管（一段一个），路径归标签管
