@@ -306,9 +306,10 @@ export type Seed = {
 };
 
 /**
- * 四路原文的拼法，**照抄 `etl/embed.py` 的 `route_texts`**。它是一份测试数据，
- * 不是第二个实现：那边改了拼法这边要跟着改，否则夹具嵌的和 ETL 嵌的不是
- * 同一种字符串。
+ * 四路原文的拼法。语料侧的那一份是 `etl/embed.py` 的 `route_texts`——跨语言，
+ * 这边调不到它，于是两侧各自对同一份契约求值：`etl/route_texts.contract.json`。
+ * 改拼法就是改那份契约，改完两边一起红（`tests/route-texts.test.ts` 与
+ * `etl/test_embed.py` 各钉一头），不靠「记得同步」。
  */
 export function routeTexts(s: {
 	kind: "internal" | "external";

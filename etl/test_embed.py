@@ -11,60 +11,28 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+#: 四路原文的拼法契约，语料侧与测试夹具侧共用。见 `etl/route_texts.contract.json`。
+CONTRACT = json.loads(
+    (Path(__file__).parent / "route_texts.contract.json").read_text(encoding="utf-8")
+)
+
 
 class RouteTextTest(unittest.TestCase):
-    """四路原文的拼法。`tests/fixture.ts` 的 `routeTexts` 照抄这里，改一处改两处。"""
+    """四路原文的拼法。
 
-    def row(self, **over):
-        base = {
-            "kind": "internal",
-            "org": "平台技术部",
-            "org_path": "示例科技/技术中心/平台技术部",
-            "title": "算法工程师",
-            "seq_l1": "技术",
-            "seq_l2": "算法",
-            "seq_l3": "",
-            "description": "",
-        }
-        return SimpleNamespace(**{**base, **over})
+    用例和期望的输出都在 `etl/route_texts.contract.json` 里，不写在这里：
+    测试夹具（`tests/fixture.ts`）为了造语料也要拼一遍同样的字符串，那边是
+    TypeScript，没法调这里的函数。两侧于是各自对同一份契约求值——谁改了拼法而
+    另一侧没跟上，就红在同一个文件上，而不是等到夹具嵌的和 ETL 嵌的悄悄不是
+    一种字符串。
+    """
 
-    def test_internal_uses_org_path_and_joins_seq_levels(self):
+    def test_matches_the_contract(self):
         from embed import route_texts
 
-        self.assertEqual(
-            route_texts(self.row()),
-            {
-                "seq": "技术 · 算法",
-                "title": "算法工程师",
-                "org": "示例科技/技术中心/平台技术部",
-            },
-        )
-
-    def test_external_uses_company_name_and_description(self):
-        from embed import route_texts
-
-        texts = route_texts(
-            self.row(
-                kind="external",
-                org="云枢智能",
-                org_path="",
-                seq_l1="",
-                seq_l2="",
-                description="负责推荐系统召回",
-            )
-        )
-        self.assertEqual(
-            texts,
-            {"title": "算法工程师", "org": "云枢智能", "description": "负责推荐系统召回"},
-        )
-
-    def test_empty_routes_are_absent_not_empty_strings(self):
-        from embed import route_texts
-
-        self.assertEqual(
-            route_texts(self.row(org="", org_path="", title="", seq_l1="", seq_l2="")),
-            {},
-        )
+        for case in CONTRACT["cases"]:
+            with self.subTest(case["name"]):
+                self.assertEqual(route_texts(SimpleNamespace(**case["row"])), case["texts"])
 
 
 class EmbedCacheTest(unittest.TestCase):

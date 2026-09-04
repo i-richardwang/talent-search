@@ -80,10 +80,13 @@
   `embedding_space`，查询进程首次嵌入前逐项核对并重新嵌 canary；不一致直接拒绝检索，
   不允许用空名单冒充答案。`EMBED_DIM` 仍须与 schema 同步。重排缓存按
   `RERANK_SPACE_ID` 键入；重排行为变化就换 id，语料重灌仍会随 phrase 级联清空旧分。
-- **四路原文的拼法只有一个主人：`etl/embed.py` 的 `route_texts`。** 序列三级用「 · 」连、
+- **四路原文的拼法写在契约里：`etl/route_texts.contract.json`。** 序列三级用「 · 」连、
   部门在公司内用 `org_path`、空文本不存向量——这些决定了库里的向量是从什么字符串来的。
-  `tests/fixture.ts` 的 `routeTexts` 是它的**抄本**，不是第二个实现；改那边必须改这边，
-  否则夹具嵌的和 ETL 嵌的不是一种字符串，测试全绿而线上不同。
+  语料侧（`etl/embed.py` 的 `route_texts`）和测试夹具（`tests/fixture.ts` 的 `routeTexts`）
+  跨语言、谁也调不了谁，于是两侧各自对这份契约求值，两头各有一条测试钉着
+  （`etl/test_embed.py`、`tests/route-texts.test.ts`）。改拼法就是改契约，改完两边一起红；
+  只改一侧的话，症状是夹具嵌的和 ETL 嵌的不是一种字符串，测试全绿而线上不同。
+  契约是**手写**的，不由任何一侧生成——生成的话，改坏了只要重跑一次生成就绿了。
 - **专有名词永远不进向量。** 公司名、学校名在向量空间里和同类名字是邻居，语义匹配会把竞品
   一起捞进来；它们走 `org` / `school` 两个精确条件（`ILIKE`，输入必须过 `escapeLike`）。
   这条的执行点在查询理解的提示词里（路由规则）和 `intentSchema` 里（单独的字段），
