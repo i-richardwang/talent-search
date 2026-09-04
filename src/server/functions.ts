@@ -16,7 +16,7 @@ import {
 	experience,
 } from "#/db/schema";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
-import { queryText } from "#/search/parse";
+import { boundedText } from "#/search/parse";
 import type { SearchOutcome } from "#/search/result";
 import { search } from "#/search/search";
 import { hasMeaning, sanitizeSpec } from "#/search/spec";
@@ -112,7 +112,7 @@ export function validateCommit(d: unknown) {
 		return { parentTurnId, input: { kind: "reinterpret" as const } };
 	}
 	if (input.kind === "sentence") {
-		const text = queryText(input.text);
+		const text = boundedText(input.text);
 		if (!text) throw new Error("查询为空");
 		return {
 			parentTurnId,

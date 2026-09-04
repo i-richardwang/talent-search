@@ -3,7 +3,8 @@
  * 不可信输出收窄成产品能够保存和执行的形状，不包含网络调用。
  */
 import { z } from "zod";
-import { parsePicked } from "./dimensions";
+import { parsePicked, type VocabKey } from "./dimensions";
+import { narrowsPopulation } from "./params";
 import {
 	CHIP_MAX,
 	type ChipDraft,
@@ -16,13 +17,8 @@ import type { SearchDelta, SearchScope } from "./spec";
 
 const MODES = ["must", "boost", "exclude"] as const;
 
-/** 模型选择结构化值时只能看语料真实拥有的词表。 */
-export type Vocabulary = {
-	companyTag: readonly string[];
-	level: readonly string[];
-	recruitment: readonly string[];
-	education: readonly string[];
-};
+/** 模型选择结构化值时只能看语料真实拥有的词表。哪几维有词表见 `VOCAB_KEYS`。 */
+export type Vocabulary = { [K in VocabKey]: readonly string[] };
 
 function pick(values: readonly string[], description: string) {
 	return (
@@ -128,9 +124,9 @@ export function toDelta(raw: unknown, vocab: Vocabulary): SearchDelta {
 	}
 
 	/**
-	 * 模型一维只给一个值（提示词就是这么写的），而维度的取值形状是集合——
-	 * 在这里裹成一项。提示词没跟着改：让模型开始产出并列取值是另一件事，
-	 * 它会改变模型行为，得单独验，不能顺手搭在一次重构里。
+	 * 模型一维只给一个值——提示词就是这么要求的，而维度的取值形状是集合，所以
+	 * 在这里裹成一项。要让模型改口产出并列取值，得改提示词并单独验模型行为，
+	 * 那是模型侧的事，这一层给不出来。
 	 */
 	const listed = (input: unknown, values: readonly string[]) => {
 		const candidate = text(input);
@@ -178,7 +174,7 @@ export function resolveIntent(
 		const delta = toDelta(raw, vocab);
 		if (
 			delta.evidence !== "" ||
-			Object.keys(delta.scope).length > 0 ||
+			narrowsPopulation(delta.scope) ||
 			delta.notices.length > 0
 		)
 			return delta;

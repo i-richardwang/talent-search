@@ -12,7 +12,8 @@
  * - `values` 一处声明，供出三样东西——分面有哪些候选、每个候选几个人、以及
  *   「这个人过不过这一维的筛选」。它们过去是三段各自手写的代码，而三者一旦
  *   对不上，症状是分面预告的数点下去得不到（`tests/search.test.ts` 钉着这条）。
- * - `parse` 供出 URL 与 RPC 两处清洗。
+ * - `parse` 供出唯一那处清洗（`params.ts` 的 `parsePopulation`），URL、RPC、
+ *   查询范围三处都走它。
  * - `label` / `option` / `text` 供出筛选栏标题、选项文案与范围标签。
  * - SQL 那一份在 `search.ts`：谓词由这里的 `match` 家族和那里的一条列表达式
  *   一起推出来，不是第二份手写实现。它没法住在这里——这个文件要进客户端。
@@ -30,6 +31,7 @@
  * 形状盖住两件不同的事。它们是另一类，见 `SearchFilters`。
  */
 import { duration } from "#/lib/format";
+import { boundedText } from "./parse";
 import { MIN_MONTHS_BUCKETS } from "./weights";
 
 /**
@@ -125,21 +127,12 @@ type Dimension<K extends DimKey> = Match<K> & {
 	compare: (a: Facet<K>, b: Facet<K>) => number;
 };
 
-const FILTER_TEXT_MAX = 200;
-
 /**
  * 一维最多能同时选中几项。分面里最长的那一维（序列）也就几十项，全勾上都到不了
  * 这个数——超过它的只可能是手拼的 URL，而每多一项，取数之后的每一条事实都要多比
  * 一次。
  */
 const FILTER_LIST_MAX = 64;
-
-/** URL 与 RPC 共用的筛选文本边界，避免任意长字符串进入 ILIKE 与 SSR 载荷。 */
-export function filterText(input: unknown): string | undefined {
-	return typeof input === "string" && input.trim()
-		? input.trim().slice(0, FILTER_TEXT_MAX)
-		: undefined;
-}
 
 /**
  * 集合维的取值。空列表收成 `undefined`——「一项都没选」和「这一维不筛」是同
@@ -149,7 +142,7 @@ function textList(input: unknown): string[] | undefined {
 	if (!Array.isArray(input)) return undefined;
 	const out = [
 		...new Set(
-			input.map(filterText).filter((v): v is string => v !== undefined),
+			input.map(boundedText).filter((v): v is string => v !== undefined),
 		),
 	].slice(0, FILTER_LIST_MAX);
 	return out.length > 0 ? out : undefined;
@@ -180,7 +173,7 @@ function plain(label: string) {
  *
  * 顺序就是筛选栏里从上到下的顺序，也是查询范围标签的顺序。
  */
-export const DIMENSIONS = {
+export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	seq: {
 		label: "序列",
 		match: "set",
@@ -195,8 +188,8 @@ export const DIMENSIONS = {
 			const out: SeqPick[] = [];
 			for (const item of raw.slice(0, FILTER_LIST_MAX)) {
 				const pick = (item ?? {}) as Record<string, unknown>;
-				const l1 = filterText(pick.l1);
-				const l2 = filterText(pick.l2);
+				const l1 = boundedText(pick.l1);
+				const l2 = boundedText(pick.l2);
 				if (l1 && l2 && !out.some((s) => s.l1 === l1 && s.l2 === l2))
 					out.push({ l1, l2 });
 			}
@@ -264,21 +257,33 @@ export const DIMENSIONS = {
 		...plain("学历"),
 		values: (f) => (f.education ? [f.education] : []),
 	},
-} as const satisfies { [K in DimKey]: Dimension<K> };
+};
 
 /** 全部维度，按声明顺序。加一维只要在上面加一段，其余各处跟着长。 */
 export const DIM_KEYS = Object.keys(DIMENSIONS) as DimKey[];
 
-function dimension<K extends DimKey>(key: K) {
-	return DIMENSIONS[key] as unknown as Dimension<K>;
-}
+/**
+ * 有语料词表的那几维：查询理解时模型只能从库里真实存在的取值里挑。其余三维挑
+ * 不了——序列要先知道全套序列树，经历来源是二选一，经历时长是连续量。
+ *
+ * 取值从哪张表数出来是 SQL 那一半的事（`search.ts` 的 `VOCAB_SOURCE`），那份表
+ * 按这里穷尽；词表本身的形状（`intent.ts` 的 `Vocabulary`）也从这里长出来。
+ */
+export const VOCAB_KEYS = [
+	"companyTag",
+	"level",
+	"recruitment",
+	"education",
+] as const satisfies readonly DimKey[];
+
+export type VocabKey = (typeof VOCAB_KEYS)[number];
 
 /** 一段经历在这一维上的候选取值。空值不出现：它说的是「没记录」，不是取值。 */
 export function dimValues<K extends DimKey>(
 	key: K,
 	fact: DimSource,
 ): DimUnit[K][] {
-	const dim = dimension(key);
+	const dim = DIMENSIONS[key];
 	return dim.match === "set"
 		? dim.values(fact)
 		: (MIN_MONTHS_BUCKETS.filter(
@@ -293,7 +298,7 @@ export function dimMatches<K extends DimKey>(
 	fact: DimSource,
 ): boolean {
 	if (picked === undefined) return true;
-	const dim = dimension(key);
+	const dim = DIMENSIONS[key];
 	if (dim.match === "atLeast") return dim.measure(fact) >= (picked as number);
 	const ids = new Set(dimPicked(key, picked).map((v) => dim.id(v)));
 	return dim.values(fact).some((v) => ids.has(dim.id(v)));
@@ -310,7 +315,7 @@ export function dimPicked<K extends DimKey>(
 
 /** 分桶与比较用的内部身份。 */
 export function dimId<K extends DimKey>(key: K, value: DimUnit[K]): string {
-	return dimension(key).id(value);
+	return DIMENSIONS[key].id(value);
 }
 
 /** 候选怎么排。 */
@@ -319,25 +324,25 @@ export function dimCompare<K extends DimKey>(
 	a: Facet<K>,
 	b: Facet<K>,
 ): number {
-	return dimension(key).compare(a, b);
+	return DIMENSIONS[key].compare(a, b);
 }
 
 /** 一个取值在筛选栏里怎么写。 */
 export function dimOption<K extends DimKey>(key: K, value: DimUnit[K]): string {
-	return dimension(key).option(value);
+	return DIMENSIONS[key].option(value);
 }
 
 /** 一个取值单独拎出来怎么念（查询范围的标签）。 */
 export function dimText<K extends DimKey>(key: K, value: DimUnit[K]): string {
-	const dim = dimension(key);
+	const dim = DIMENSIONS[key];
 	return dim.text?.(value) ?? `${dim.label} · ${dim.option(value)}`;
 }
 
-/** 不可信输入 → 一次完整的选择。URL 与 RPC 两处清洗都从这里来。 */
+/** 不可信输入 → 一次完整的选择。全站唯一那处清洗（`parsePopulation`）从这里来。 */
 export function parsePicked(raw: Record<string, unknown>): Picked {
 	const out: Record<string, unknown> = {};
 	for (const key of DIM_KEYS) {
-		const value = dimension(key).parse(raw[key]);
+		const value = DIMENSIONS[key].parse(raw[key]);
 		if (value !== undefined) out[key] = value;
 	}
 	return out as Picked;
@@ -358,9 +363,4 @@ export function dropValue<P extends Picked, K extends DimKey>(
 	if (rest.length === 0 || !Array.isArray(picked[key])) delete next[key];
 	else Object.assign(next, { [key]: rest });
 	return next;
-}
-
-/** 有没有在任何一维上选过东西。 */
-export function hasPicked(picked: Picked): boolean {
-	return DIM_KEYS.some((key) => picked[key] !== undefined);
 }

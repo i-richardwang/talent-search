@@ -16,7 +16,7 @@ import { CLEARED_FILTERS, type View } from "./view-params";
  *
  * 表是**穷尽的** `Record`：检索层多一种成因，这里少写一句话，`tsc` 当场就红。
  */
-export type EmptyCopy = {
+type EmptyCopy = {
 	title: string;
 	hint: string;
 	action: { label: string; onClick: () => void };

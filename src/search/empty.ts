@@ -14,7 +14,7 @@
  * 一键出路住在 `routes/-lib/empty-state.ts`，那是产品文案，跟着界面改。
  * 它是纯函数、不带 `db`，所以页面可以从这里取值（分界见 `result.ts`）。
  */
-import { hasPopulationFilters } from "./params";
+import { narrowsPopulation } from "./params";
 import { parseChips } from "./parse";
 import type { SearchFilters, TermPlan } from "./result";
 import { type SearchSpec, unsupportedOf } from "./spec";
@@ -23,7 +23,7 @@ import { type SearchSpec, unsupportedOf } from "./spec";
  * 取数撞上保险丝。它是检索自己才知道的一件事——`emptyReason` 推不出来，所以
  * 由调用方交进来；单独取个名字是为了让参数说得出「这里只能是这两支」。
  */
-export type EmptyOverflow =
+type EmptyOverflow =
 	| { kind: "overflowEvidence"; terms: string[] }
 	| { kind: "overflowPopulation" };
 
@@ -77,8 +77,8 @@ export function emptyReason(input: {
 		if (chips.some((chip) => chip.off && chip.mode !== "exclude"))
 			return { kind: "allDisabled" };
 		if (chips.length > 0) return { kind: "excludeOnly" };
-		if (Object.keys(spec.scope).length > 0)
-			return hasPopulationFilters(filters)
+		if (narrowsPopulation(spec.scope))
+			return narrowsPopulation(filters)
 				? { kind: "filtered" }
 				: { kind: "scopeEmpty" };
 		if (unsupportedOf(spec).length > 0) return { kind: "unsupportedOnly" };
@@ -87,6 +87,6 @@ export function emptyReason(input: {
 
 	if (filters.strong && withoutStrong > 0)
 		return { kind: "strongEmpty", without: withoutStrong };
-	if (hasPopulationFilters(filters)) return { kind: "filtered" };
+	if (narrowsPopulation(filters)) return { kind: "filtered" };
 	return { kind: "unmet" };
 }

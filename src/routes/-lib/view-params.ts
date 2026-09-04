@@ -15,18 +15,16 @@
  * 一个是换一个问题。
  */
 
-import { filterText, type Picked, parsePicked } from "#/search/dimensions";
-import { hasPopulationFilters, POPULATION_KEYS } from "#/search/params";
+import {
+	narrowsPopulation,
+	POPULATION_KEYS,
+	parsePopulation,
+} from "#/search/params";
 import type { SearchFilters } from "#/search/result";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 
-export type View = Picked & {
-	/** 待过的公司或部门名里含这几个字。精确条件，没有分面。 */
-	org?: string;
-	/** 学校名里含这几个字。精确条件，没有分面。 */
-	school?: string;
-	/** 只看每个词都命中受控字段的人。和其余维一样是服务端筛选。 */
-	strong?: boolean;
+/** 地址栏上的视图：一份筛选，加上翻到第几页。筛选那几项不在这里重写一遍。 */
+export type View = SearchFilters & {
 	/**
 	 * 已经翻出来多少人。默认（缺省）就是一页。
 	 *
@@ -44,9 +42,7 @@ export type View = Picked & {
  */
 export function validateView(s: Record<string, unknown>): View {
 	return {
-		...parsePicked(s),
-		org: filterText(s.org),
-		school: filterText(s.school),
+		...parsePopulation(s),
 		strong: s.strong === true || s.strong === "true" ? true : undefined,
 		n: pageSize(s.n),
 	};
@@ -142,5 +138,5 @@ export const CLEARED_FILTERS = Object.fromEntries(
  * `POPULATION_KEYS`）：视图和检索对「什么算筛选」说的必须是同一句话。
  */
 export function hasFilters(v: View) {
-	return hasPopulationFilters(toFilters(v));
+	return narrowsPopulation(toFilters(v));
 }

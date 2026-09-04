@@ -8,7 +8,7 @@ import { onlyMore, type View, validateView, viewChanged } from "./view-params";
  * 一页时已经看到的人必须留在原地，否则每翻一页就把人扔回页首。而换人（只换
  * 详情路由）两件事都不是——结果表一行都不用重画。
  */
-export type NavPhase = {
+type NavPhase = {
 	/** 正在翻下一页：已经看到的人留在原地，只有按钮转圈 */
 	growing: boolean;
 	/** 下面那份名单已经不成立了：画骨架屏 */

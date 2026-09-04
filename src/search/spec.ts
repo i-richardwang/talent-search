@@ -1,5 +1,6 @@
-import { type Picked, parsePicked } from "./dimensions";
-import { canonical, parseChips, queryString, queryText } from "./parse";
+import type { Picked } from "./dimensions";
+import { narrowsPopulation, parsePopulation } from "./params";
+import { boundedText, canonical, parseChips, queryString } from "./parse";
 
 /**
  * 一条查询的完整含义。它是查询记录的唯一事实源，也是查询台编辑、最近搜索回放、
@@ -39,9 +40,15 @@ export type SearchDelta = SearchSpec;
  * 以前每加一维都要改十几处的根。
  */
 export type SearchScope = Picked & {
-	/** 待过的部门或公司名里含这几个字 */
+	/**
+	 * 待过的部门或公司名里含这几个字。
+	 *
+	 * `org` 与 `school` 是**精确文本条件**，不是维度：公司名、学校名是专有名词，
+	 * 永远不进向量（「字节」和「腾讯」在向量空间里是邻居）。它们答的是「这个人
+	 * 有没有在名字含 X 的地方待过 / 是不是 X 毕业的」，按人判，在取数的 SQL 里生效。
+	 */
 	org?: string;
-	/** 学校名里含这几个字 */
+	/** 学校名里含这几个字。和 `org` 同一类。 */
 	school?: string;
 };
 
@@ -88,7 +95,7 @@ export function wideTerms(spec: SearchSpec) {
 export function hasMeaning(spec: SearchSpec) {
 	return (
 		spec.evidence !== "" ||
-		Object.keys(spec.scope).length > 0 ||
+		narrowsPopulation(spec.scope) ||
 		spec.notices.length > 0
 	);
 }
@@ -128,26 +135,18 @@ export function sanitizeSpec(raw: unknown): SearchSpec {
 	// 新加一个字段必然有一处忘记跟上。
 	const evidence = queryString(value.evidence);
 
-	const source = (value.scope ?? {}) as Record<string, unknown>;
-	const text = (x: unknown) => queryText(x);
-	const scope: SearchScope = {
-		...parsePicked(source),
-		org: text(source.org),
-		school: text(source.school),
-	};
-	for (const key of Object.keys(scope) as (keyof SearchScope)[])
-		if (scope[key] === undefined) delete scope[key];
+	const scope = parsePopulation((value.scope ?? {}) as Record<string, unknown>);
 
 	const notices: SearchNotice[] = [];
 	for (const item of Array.isArray(value.notices) ? value.notices : []) {
 		const x = (item ?? {}) as Record<string, unknown>;
 		if (x.kind === "fallback") notices.push({ kind: "fallback" });
 		if (x.kind === "unsupported") {
-			const message = text(x.text);
+			const message = boundedText(x.text);
 			if (message) notices.push({ kind: "unsupported", text: message });
 		}
 		if (x.kind === "wide") {
-			const term = text(x.term);
+			const term = boundedText(x.term);
 			if (term) notices.push({ kind: "wide", term });
 		}
 	}

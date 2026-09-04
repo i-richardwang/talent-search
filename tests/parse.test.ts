@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
 	activeChips,
+	boundedText,
 	CHIP_MAX,
 	canonical,
 	dropChip,
@@ -11,9 +12,8 @@ import {
 	parseChips,
 	parseQuery,
 	QUERY_MAX,
-	QUERY_TEXT_MAX,
 	queryString,
-	queryText,
+	TEXT_MAX,
 	toQuery,
 } from "#/search/parse";
 
@@ -76,8 +76,8 @@ test("超长的一段正文不是要求", () => {
 describe("查询 chips", () => {
 	test("查询文本和 chip 数量都有统一上限", () => {
 		assert.equal(
-			queryText(`  ${"词".repeat(QUERY_TEXT_MAX + 10)}  `)?.length,
-			QUERY_TEXT_MAX,
+			boundedText(`  ${"词".repeat(TEXT_MAX + 10)}  `)?.length,
+			TEXT_MAX,
 		);
 		const raw = Array.from({ length: CHIP_MAX + 3 }, (_, i) => `条件${i}`).join(
 			",",
@@ -231,8 +231,8 @@ describe("说法（成员）语法", () => {
  * 改一条已有查询：串进串出。
  *
  * 这一组钉的不是某个按钮的行为，是**编辑不许有第二种做法**这条不变量。
- * 曾经每个调用点各自拼一个 chip 对象写回去，于是「一键启用全部条件」把并列
- * 说法拼没了——`{term, mode}` 少写一个 `alts`，类型检查、构建、界面测试全绿，
+ * 每个调用点各自拼一个 chip 对象写回去的话，「一键启用全部条件」就会把并列
+ * 说法拼没——`{term, mode}` 少写一个 `alts`，类型检查、构建、界面测试全绿，
  * 只有用户看得见自己的说法少了一个。所以编辑只有这三个函数，它们从解析出来的
  * chip 出发、原样带着其余字段写回去，没有拼装的机会。
  */

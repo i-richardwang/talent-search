@@ -24,10 +24,12 @@ import {
 	dimId,
 	dimPicked,
 	type Picked,
+	VOCAB_KEYS,
+	type VocabKey,
 } from "./dimensions";
 import { emptyReason } from "./empty";
 import type { Vocabulary } from "./intent";
-import { sanitizeLimit } from "./params";
+import { narrowsPopulation, sanitizeLimit } from "./params";
 import { activeChips, parseChips } from "./parse";
 import { type Admitted, admit, admittedTable } from "./phrases";
 import {
@@ -383,21 +385,17 @@ async function fetchVetoed(
 const VOCAB_MAX = 100;
 
 /**
- * 模型能从语料里挑取值的那几维，以及各自的取值住在哪张表上。
+ * 词表里的取值各自住在哪张表上。哪几维有词表由 `VOCAB_KEYS` 说，这里按它穷尽。
  *
- * 不是每一维都在这里：序列是模型自己说不清的（它得先知道全套序列树），
- * 时长是连续量，经历来源是二选一。**取值表达式不重写**——和取数、下推谓词
- * 用的是同一份 `FACT_COLUMNS`，公司档哪天从 `org_meta` 挪成一列，改一处。
+ * **取值表达式不重写**——和取数、下推谓词用的是同一份 `FACT_COLUMNS`，公司档
+ * 哪天从 `org_meta` 挪成一列，改一处。
  */
-const VOCAB_SOURCE = {
+const VOCAB_SOURCE: Record<VocabKey, SQL> = {
 	companyTag: sql`experience e`,
 	level: sql`employee p`,
 	recruitment: sql`employee p`,
 	education: sql`employee p`,
-} satisfies Partial<Record<DimKey, SQL>>;
-
-type VocabKey = keyof typeof VOCAB_SOURCE;
-const VOCAB_KEYS = Object.keys(VOCAB_SOURCE) as VocabKey[];
+};
 
 /**
  * 查询理解能用的筛选词汇表——**语料里真实存在的取值**。
@@ -424,9 +422,9 @@ async function vocabularyFrom(store: DbExecutor): Promise<Vocabulary> {
 			sql`, `,
 		)}`);
 	const row = rows.rows[0];
-	return Object.fromEntries(
-		VOCAB_KEYS.map((key) => [key, row?.[key] ?? []]),
-	) as unknown as Vocabulary;
+	const vocab = {} as Vocabulary;
+	for (const key of VOCAB_KEYS) vocab[key] = row?.[key] ?? [];
+	return vocab;
 }
 
 /**
@@ -532,7 +530,7 @@ export async function search(
 		c.mode === "exclude" ? [c.term, ...(c.alts ?? [])] : [],
 	);
 	// 结构化范围本身就是完整的候选定义，不需要伪造一个向量词来启动检索。
-	if (terms.length === 0 && Object.keys(spec.scope).length > 0)
+	if (terms.length === 0 && narrowsPopulation(spec.scope))
 		return withCorpusSnapshot((store) =>
 			searchScopeOnly(store, spec, filters, sanitizeLimit(limit)),
 		);

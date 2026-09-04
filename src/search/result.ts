@@ -6,9 +6,10 @@
  * 的空值工厂，一行 SQL 都不许有；查询实现留在 `search.ts`。
  */
 import type { Employee, Route } from "#/db/schema";
-import { DIM_KEYS, type DimKey, type DimUnit, type Picked } from "./dimensions";
+import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
 import type { ChipMode } from "./parse";
+import type { SearchScope } from "./spec";
 
 export type { SeqPick } from "./dimensions";
 
@@ -44,7 +45,7 @@ type ResultEmployee = Pick<
 	"empId" | "name" | "curDept" | "curTitle" | "curLevel"
 >;
 
-export type PopulationResult = {
+type PopulationResult = {
 	employee: ResultEmployee;
 };
 
@@ -92,22 +93,16 @@ export type TermPlan = {
 };
 
 /**
- * 一次检索的筛选条件。
+ * 一次检索的筛选条件：查询范围那一批条件（`SearchScope`），加上证据强度。
  *
- * 七个可分面的维度由 `dimensions.ts` 声明（`Picked`），这里只加上不属于那一族
- * 的三项。**全部在服务端求值**：放到客户端就只能筛已经翻出来的那几页，而其余维
- * 数的是全部命中的人——同一排控件会出现两种口径。
+ * 收窄人群的那几项在这里不重写一遍——范围和筛选是同一批维度的两种生命周期，
+ * 各写一份形状的话，加一维就会有一处忘了跟上。`strong` 不属于那一批：它答的是
+ * 「什么才算命中」，不是在这批人里再看哪一部分。
  *
- * `org` 与 `school` 是**精确文本条件**，不是分面：公司名、学校名是专有名词，
- * 永远不进向量（「字节」和「腾讯」在向量空间里是邻居）。它们答的是
- * 「这个人有没有在名字含 X 的地方待过 / 是不是 X 毕业的」，按人判，
- * 在取数的 SQL 里生效。
+ * **全部在服务端求值**：放到客户端就只能筛已经翻出来的那几页，而其余维数的是
+ * 全部命中的人——同一排控件会出现两种口径。
  */
-export type SearchFilters = Picked & {
-	/** 待过的部门或公司名里含这几个字 */
-	org?: string;
-	/** 学校名里含这几个字 */
-	school?: string;
+export type SearchFilters = SearchScope & {
 	/** 每个必须词都要有受控字段（序列或岗位）的命中。 */
 	strong?: boolean;
 };
@@ -124,7 +119,7 @@ export type SearchFilters = Picked & {
  * 被别的维度挤到 0 的那些留在列表里，`n` 就是 0。两个口径为什么必须分开，
  * 以及每一维要怎么算才配得上它们，见 rank.ts 的 facetCount。
  */
-export type Facets = { [K in DimKey]: { value: DimUnit[K]; n: number }[] } & {
+export type Facets = { [K in DimKey]: Facet<K>[] } & {
 	/**
 	 * 「证据要求」这一维的两头：打开还剩多少人（on），关掉能看到多少人（off）。
 	 * 两个数都按分面的 except 口径算，也就是都把证据要求自己摘掉之后再数。
@@ -160,12 +155,10 @@ export type SearchOutcome =
 
 /** 空分面。检索还没跑或没解析出要求时用它，界面才不必区分「没有」和「还没算」。 */
 export function emptyFacets(): Facets {
-	return {
-		// 每一维一个空列表。逐维手写的话，加一维忘了这里不会报错，只会在
-		// 「还没算」的那一帧上少一栏。
-		...(Object.fromEntries(DIM_KEYS.map((key) => [key, []])) as unknown as {
-			[K in DimKey]: { value: DimUnit[K]; n: number }[];
-		}),
-		strong: { on: 0, off: 0 },
-	};
+	// 每一维一个空列表。逐维手写的话，加一维忘了这里不会报错，只会在
+	// 「还没算」的那一帧上少一栏。
+	const facets = {} as Facets;
+	for (const key of DIM_KEYS) facets[key] = [];
+	facets.strong = { on: 0, off: 0 };
+	return facets;
 }

@@ -62,15 +62,21 @@ const TAIL = new RegExp(
 		"|(?:的人|的|员工|同学|经验|经历|背景|工作|岗位|方向|相关))+$",
 );
 
-/** 要求的长度上限。超过这个长度的不是要求，是一段被误当成词的正文。 */
-export const QUERY_TEXT_MAX = 200;
+/**
+ * 不可信文本的长度上限。超过这个长度的不是一个词、一个公司名或一句提示，
+ * 是一段被误当成它们的正文。
+ */
+export const TEXT_MAX = 200;
 export const CHIP_MAX = 8;
 const MAX_TERM_LEN = 24;
 
-/** URL 与服务端端点共用同一条文本边界。 */
-export function queryText(value: unknown): string | undefined {
+/**
+ * 不可信入参 → 一段收进边界的短文本。查询里的词、范围里的公司名与学校名、
+ * URL 上的筛选值走的是同一条边界：它们的不可信程度是一样的。
+ */
+export function boundedText(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
-	const normalized = value.trim().slice(0, QUERY_TEXT_MAX);
+	const normalized = value.trim().slice(0, TEXT_MAX);
 	return normalized || undefined;
 }
 
@@ -92,7 +98,7 @@ function keepIfMeaningful(stripped: string, original: string) {
 
 export function parseQuery(raw: string): string[] {
 	const terms: string[] = [];
-	for (const chunk of raw.slice(0, QUERY_TEXT_MAX).split(SPLIT)) {
+	for (const chunk of raw.slice(0, TEXT_MAX).split(SPLIT)) {
 		const whole = chunk.trim();
 		let term = keepIfMeaningful(whole.replace(HEAD, ""), whole);
 		// 剥两头可能反复出现（"后端都做过的人"），剥到不再变短为止
@@ -311,8 +317,8 @@ export function canonical(query: string): string {
  *
  * 这三个函数是全站改动查询证据的唯一手段。它们从解析出来的 chip 出发、原样
  * 带着其余字段写回去，所以「改强度时把说法丢了」这类错在这里写不出来——
- * 而这正是它们存在的理由：曾经每个调用点各自拼一个 chip 对象，`{term, mode}`
- * 拼漏一个 `alts` 就是一次静默的查询改写。
+ * 而这正是它们存在的理由：调用点各自拼一个 chip 对象的话，`{term, mode}` 拼漏
+ * 一个 `alts` 就是一次静默的查询改写。
  *
  * `index` 是 chip 在这条查询里的位置。编辑不重排、不增删（`dropChip` 除外），
  * 所以调用方拿到的下标在同一份查询里一直有效。

@@ -125,7 +125,7 @@ export const embeddingSpace = pgTable("embedding_space", {
  * 序列和岗位也不拼在一起——短文本的相似度最锐利，「算法」对「算法工程师」
  * 是一回事，对「技术 · 算法 · 推荐 / 高级算法工程师」这一长串就被稀释了。
  */
-export const ROUTES = ["seq", "title", "org", "description"] as const;
+const ROUTES = ["seq", "title", "org", "description"] as const;
 export type Route = (typeof ROUTES)[number];
 
 /**
