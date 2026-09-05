@@ -1,5 +1,5 @@
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
-import { years } from "#/lib/format";
+import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { type Strength, strengthOf } from "#/search/evidence";
 import type { Hit, TermBasis } from "#/search/result";
@@ -17,6 +17,12 @@ const STRENGTH_LABEL: Record<Strength, string> = {
 	org: "部门或公司",
 	claimed: "简历原文",
 };
+
+/**
+ * 条件词那一列的宽度。命中行和「未命中」那一行共用——差一档，那条竖线上的
+ * 内容就会在同一块卡片里错开，而这一列存在的全部理由就是它上下对齐。
+ */
+const TERM_W = "w-22";
 
 const STRENGTH_HINT: Record<Strength, string> = {
 	controlled: "来自任职记录",
@@ -91,17 +97,18 @@ export function StrengthLegend() {
 		<dl className="flex flex-wrap items-center gap-x-4 gap-y-1">
 			<dt className="label text-muted-foreground">匹配来源</dt>
 			{(["controlled", "org", "claimed"] as const).map((s) => (
-				<Tooltip key={s}>
-					<TooltipTrigger
-						render={
-							<dd className="flex items-center gap-1.5 text-muted-foreground text-xs">
-								<Dot strength={s} />
-								{STRENGTH_LABEL[s]}
-							</dd>
-						}
-					/>
-					<TooltipPopup>{STRENGTH_HINT[s]}</TooltipPopup>
-				</Tooltip>
+				<dd className="text-muted-foreground text-xs" key={s}>
+					<Tooltip>
+						{/* 触发器留着 `TooltipTrigger` 自己的 `<button>`：这三条说明正是
+						    「不确定这颗点是什么」的人要读的，而键盘只走得到可聚焦的
+						    元素。焦点环由 styles.css 那条 `:where(a, button)` 补齐。 */}
+						<TooltipTrigger className="flex cursor-help items-center gap-1.5">
+							<Dot strength={s} />
+							{STRENGTH_LABEL[s]}
+						</TooltipTrigger>
+						<TooltipPopup>{STRENGTH_HINT[s]}</TooltipPopup>
+					</Tooltip>
+				</dd>
 			))}
 		</dl>
 	);
@@ -142,7 +149,7 @@ function matchedField(hit: Hit): {
 		case "org":
 			return { label, value: hit.org, context: hit.title };
 		case "description":
-			return { label, value: null, context: `${hit.title} · ${hit.org}` };
+			return { label, value: null, context: dots(hit.title, hit.org) };
 	}
 }
 
@@ -171,8 +178,15 @@ export function EvidenceLine({
 	boost: boolean;
 	/** 展示用的样例段：点的强度、命中字段、这段经历的身份都来自它 */
 	hit: Hit;
-	/** 打分用的聚合值。缺席时退回样例段，这一行不会因此空掉。 */
-	basis: TermBasis | null | undefined;
+	/**
+	 * 打分用的聚合值：相关度、并列最硬那些段的累计月数、是否仍在进行。
+	 *
+	 * 它不可空。一条要求有没有 `basis` 和它有没有样例段是同一件事（两者出自
+	 * 同一次筛选），所以「有 hit 没有 basis」的那一行不存在——调用点只在两样
+	 * 都在时才画这一行。给它配一份退回样例段的算法，等于替一个到不了的分支
+	 * 造一套第二口径的数，而那套数一旦真被用上就和名次对不上了。
+	 */
+	basis: TermBasis;
 }) {
 	const name = (
 		<span className="flex min-w-0 items-center gap-1.5">
@@ -182,15 +196,12 @@ export function EvidenceLine({
 	);
 
 	const field = matchedField(hit);
-	const months = basis?.months ?? hit.months;
-	const rel = basis?.relevance ?? hit.relevance;
-	const external = basis ? basis.external : hit.kind === "external";
-	const ongoing = (basis ? basis.endDate : hit.endDate) === null;
+	const ongoing = basis.endDate === null;
 
 	return (
 		<div className="flex items-baseline gap-2.5 text-sm">
 			<Dot className="translate-y-1" strength={strengthOf(hit.route)} />
-			<span className="w-[5.5rem] shrink-0">{name}</span>
+			<span className={cn(TERM_W, "shrink-0")}>{name}</span>
 			<span className="flex min-w-0 flex-1 items-baseline gap-1.5">
 				{/*
 				 * 来源标签在字段值前面，不在后面：读到那串岗位名之前就得先知道
@@ -211,7 +222,7 @@ export function EvidenceLine({
 						 * 上下文靠**留白加变色**接上去，不用 ` · `。
 						 *
 						 * 分隔点在这里是二义的：序列自己就是用 ` · ` 连三级的
-						 * （lib/format 的 seqLabel），再拿同一个符号接部门，屏幕上
+						 * （lib/format 的 `dots`），再拿同一个符号接部门，屏幕上
 						 * 得到的是「技术 · 算法 · 乘客定价」——读者没有任何线索
 						 * 判断哪一截还是序列、哪一截已经是部门了。
 						 * 一个 8px 的空档配上降一档的字色，分层是明确的，
@@ -225,12 +236,15 @@ export function EvidenceLine({
 					</span>
 				)}
 			</span>
-			{/* 相关度：这一行凭什么算命中的第二半。它是参与打分的那个数。 */}
-			<span
-				className="w-9 shrink-0 text-right text-muted-foreground text-xs tabular-nums"
-				title="与条件的相关度"
-			>
-				{relevance(rel)}
+			{/*
+			 * 相关度：这一行凭什么算命中的第二半。它是参与打分的那个数。
+			 *
+			 * 不给它挂说明。这一列在一屏几十块卡片上重复几十遍，配一个能聚焦的
+			 * 触发器就是往名单里塞几十个 Tab 停靠点，而扫名单靠的是 ↑↓；
+			 * 它是什么由恒定的列位和那个 % 号说。
+			 */}
+			<span className="w-9 shrink-0 text-right text-muted-foreground text-xs tabular-nums">
+				{relevance(basis.relevance)}
 			</span>
 			<span
 				className={cn(
@@ -238,8 +252,8 @@ export function EvidenceLine({
 					ongoing ? "text-foreground" : "text-muted-foreground",
 				)}
 			>
-				{external && <span className="text-muted-foreground">前 </span>}
-				{years(months)}
+				{basis.external && <span className="text-muted-foreground">前 </span>}
+				{years(basis.months)}
 			</span>
 		</div>
 	);
@@ -260,7 +274,7 @@ export function MissedTerms({ terms }: { terms: string[] }) {
 	return (
 		<div className="flex items-baseline gap-2.5 text-muted-foreground text-sm">
 			<Dot className="translate-y-1" strength={undefined} />
-			<span className="w-[5.5rem] shrink-0">未命中</span>
+			<span className={cn(TERM_W, "shrink-0")}>未命中</span>
 			<span className="min-w-0 flex-1 truncate">{terms.join("、")}</span>
 		</div>
 	);

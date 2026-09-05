@@ -14,6 +14,7 @@
  * 语义质量；语义质量归 eval 和真模型。查询侧走的是真正的 HTTP 客户端代码
  * （`src/server/embed.ts`、`src/server/rerank.ts`），只有对面那台机器是假的。
  */
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { SQL } from "drizzle-orm";
 import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
@@ -30,7 +31,13 @@ import {
 	searchTurn,
 } from "#/db/schema";
 
-const SCHEMA = `talent_test_${process.pid}`;
+/**
+ * 每个测试文件一个 schema。名字带进程号**和**一段随机：`bun test --parallel`
+ * 只隔离模块注册表与环境变量，几个文件会落在同一个 worker 进程上，光靠进程号
+ * 两个文件就会抢同一个 schema——后建的那个 `drop ... cascade` 会把前一个正在
+ * 用的表整片删掉，症状是另一个文件里毫不相干的一条断言报「表不存在」。
+ */
+const SCHEMA = `talent_test_${process.pid}_${randomBytes(4).toString("hex")}`;
 
 function ddl(schema: string, table: PgTable) {
 	const { name, columns, checks, foreignKeys, uniqueConstraints, primaryKeys } =
@@ -69,8 +76,7 @@ function ddl(schema: string, table: PgTable) {
 		const cols = pk.columns.map((c) => `"${c.name}"`).join(", ");
 		constraints.push(`primary key (${cols})`);
 	}
-	// unique 不只是约束：search_turn 的复合外键引用 (id, root_turn_id)，
-	// 没有对应的 unique，外键本身就建不起来
+	// 表级 unique（列上那些由 `c.isUnique` 建）
 	for (const u of uniqueConstraints) {
 		const cols = u.columns.map((c) => `"${c.name}"`).join(", ");
 		constraints.push(`constraint "${u.name}" unique (${cols})`);
@@ -113,6 +119,12 @@ export function fakeEmbedding(text: string): number[] {
 	const norm = Math.hypot(...v) || 1;
 	return v.map((x) => x / norm);
 }
+
+/**
+ * 语料侧写进 `embedding_space` 的 canary 原文。查询侧首次嵌入前会重嵌它核对
+ * 端点还在同一个空间里，所以测试模拟一次发布时也得原样写回这一串。
+ */
+export const CANARY = "talent-search embedding canary";
 
 /** 两串字在假嵌入下的余弦，测试里用来解释断言的边界。 */
 export function fakeSimilarity(a: string, b: string) {
@@ -222,8 +234,8 @@ function startModelServer() {
  * `#/db`、`#/server/embed`、`#/server/rerank` 都是模块级单例，一旦 import 就绑死了环境变量——
  * 所以顺序不能反，调用方必须 `await setup()` 之后再动态 import 被测代码。
  *
- * 也因此**一个测试文件独占一个进程**：单例只绑第一次 setup 的环境，同进程里的第二个文件
- * 连不上自己的 schema。
+ * `bun test --parallel` 给每个文件一份独立的模块注册表与环境变量，所以单例这一条
+ * 逐文件成立；但**进程是共用的**，schema 名因此不能只靠进程号区分（见 `SCHEMA`）。
  */
 export async function setup() {
 	const base = process.env.DATABASE_URL;
@@ -246,7 +258,6 @@ export async function setup() {
 		searchTurn,
 	])
 		await admin.query(ddl(SCHEMA, t));
-	const canaryText = "talent-search embedding canary";
 	await admin.query(
 		`insert into ${SCHEMA}.embedding_space
 			(space_id, model, dimension, canary_text, canary_embedding)
@@ -255,8 +266,8 @@ export async function setup() {
 			"fake-v1",
 			"fake",
 			EMBED_DIM,
-			canaryText,
-			`[${fakeEmbedding(canaryText).join(",")}]`,
+			CANARY,
+			`[${fakeEmbedding(CANARY).join(",")}]`,
 		],
 	);
 	await admin.end();
@@ -281,6 +292,17 @@ export async function setup() {
 		await a.end();
 	};
 }
+
+/**
+ * 「这次写入被哪条约束拦下了」。
+ *
+ * 认的是 Postgres 报回来的**约束名**，不是错误文案里恰好出现了那几个字：
+ * 文案里能出现约束名的错有好几种（比如提到同一张表的另一条约束），认串就会
+ * 出现「拦是拦住了，但不是被这一条拦住的」而测试照样绿。
+ */
+export const violates = (constraint: string) => (error: unknown) =>
+	(error as { cause?: { constraint?: string } }).cause?.constraint ===
+	constraint;
 
 /** 一个人 + 他的若干段经历。字段用默认值兜底，测试里只写与断言相关的那几个。 */
 export type Seed = {

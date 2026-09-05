@@ -1,11 +1,30 @@
 /**
- * 序列三级拼成一行：空的那一级不占位。
+ * 并列的几样拼成一行：空的那几样不占位。
  *
- * 序列常常只有一级或两级（外部经历三级全空），所以过滤是规则的一部分，
- * 不是防御。分隔符和全站其余的并列信息一致，都是 ` · `。
+ * ` · ` 是全站唯一的并列分隔符——序列三级、部门与职位、学历与学校、公司标签、
+ * 历史记录里的条件，读起来都是「这几样并排」这一件事，各处再各挑一个符号
+ * （`/`、`,`、`|`）只会让人以为那是几种不同的关系。
+ *
+ * 过滤空值是规则的一部分，不是防御：这些字段大量地本来就没有（外部经历没有
+ * 序列三级，很多人没有职级），把空的留下就会得到 ` ·  · ` 这种悬空的点。
  */
-export function seqLabel(...levels: (string | null)[]) {
-	return levels.filter(Boolean).join(" · ");
+export function dots(...parts: (string | null | undefined)[]) {
+	return parts.filter(Boolean).join(" · ");
+}
+
+/**
+ * 一个人现在在哪儿：部门 · 职位 · 职级。
+ *
+ * 名单卡片和详情面板的抬头说的是同一句话，而它们是这个人在两块屏幕上的同一个
+ * 身份——两处各拼一遍的话，哪天决定把职级去掉，改一处忘一处的表现是同一个人
+ * 在两块屏幕上写着不一样的头衔。
+ */
+export function positionLabel(e: {
+	curDept: string;
+	curTitle: string;
+	curLevel: string;
+}) {
+	return dots(e.curDept, e.curTitle, e.curLevel);
 }
 
 /** 起止：2021-03 – 2024-10 / 2021-03 – 至今 */

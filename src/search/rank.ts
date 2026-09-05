@@ -149,6 +149,17 @@ function termValue(facts: Fact[], term: string, now: Date) {
 /** 一个人在一次检索里的全部事实：要求下标 → 命中的段 */
 type Person = Map<number, Fact[]>;
 
+/** 把一个人的事实按要求归拢。AND 判定问的是「每条要求都有段吗」。 */
+function byTerm(facts: readonly Fact[]): Person {
+	const p: Person = new Map();
+	for (const f of facts) {
+		const list = p.get(f.termIdx);
+		if (list) list.push(f);
+		else p.set(f.termIdx, [f]);
+	}
+	return p;
+}
+
 /** 按人、按词归拢通过 `keep` 的事实；后续计算只读取这份稳定集合。 */
 function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 	const byEmp = new Map<string, Person>();
@@ -202,7 +213,7 @@ function score(p: Person, terms: TermPlan[], now: Date) {
 	return { score: s, basis };
 }
 
-/** 算某一维的候选时要摘掉的那一维（口径见 `facetCount`）。 */
+/** 算某一维的候选时要摘掉的那一维（口径见 `facetRows`）。 */
 type Except = DimKey | "strong";
 
 /**
@@ -237,20 +248,25 @@ function keeps(f: SearchFilters, except?: Except) {
  *
  * 代价是同一份事实要走两遍。没有任何分面筛选时两遍结果相同，但那是运行时才
  * 知道的事，为它加一条快路要多养一个「两遍必须等价」的不变量。
+ *
+ * **语义检索和结构化范围走的是同一份实现**，差别只在 `admits`：前者要凑齐
+ * 全部必须词（AND），后者没有语义证据可言、人人算数。各写一份的话，同一栏
+ * 筛选在两种查询下是两种东西——一种点得动，另一种选中一项之后其余项归零。
  */
-function facetCount<K extends DimKey>(
-	facts: Fact[],
-	terms: TermPlan[],
-	filters: SearchFilters,
+function facetRows<K extends DimKey, F extends PopulationFact>(
+	facts: readonly F[],
 	key: K,
+	filters: SearchFilters,
+	admits: (person: readonly F[], strong: boolean) => boolean,
 ): Facet<K>[] {
-	const domain = tally(facts, terms, () => true, false, key);
-	const live = tally(
+	const domain = tally(
 		facts,
-		terms,
-		keeps(filters, key),
-		Boolean(filters.strong),
 		key,
+		() => true,
+		(p) => admits(p, false),
+	);
+	const live = tally(facts, key, keeps(filters, key), (p) =>
+		admits(p, Boolean(filters.strong)),
 	);
 	return [...domain].map(([id, { value }]) => ({
 		value,
@@ -258,16 +274,20 @@ function facetCount<K extends DimKey>(
 	}));
 }
 
-function tally<K extends DimKey>(
-	facts: Fact[],
-	terms: TermPlan[],
-	keep: (f: PopulationFact) => boolean,
-	strong: boolean,
+/**
+ * 一维上「哪个取值下有几个人」。`keep` 决定哪些事实参与，`admits` 决定一个人
+ * 在这个取值下算不算数。数不出人的取值不进结果——值域与计数的差别由调用方
+ * 用两套参数跑两遍表达，不在这里分叉。
+ */
+function tally<K extends DimKey, F extends PopulationFact>(
+	facts: readonly F[],
 	key: K,
+	keep: (f: F) => boolean,
+	admits: (person: readonly F[]) => boolean,
 ) {
 	const byValue = new Map<
 		string,
-		{ value: DimUnit[K]; people: Map<string, Person> }
+		{ value: DimUnit[K]; people: Map<string, F[]> }
 	>();
 	for (const f of facts) {
 		if (!keep(f)) continue;
@@ -278,20 +298,15 @@ function tally<K extends DimKey>(
 				bucket = { value, people: new Map() };
 				byValue.set(id, bucket);
 			}
-			let p = bucket.people.get(f.empId);
-			if (!p) {
-				p = new Map();
-				bucket.people.set(f.empId, p);
-			}
-			const list = p.get(f.termIdx);
+			const list = bucket.people.get(f.empId);
 			if (list) list.push(f);
-			else p.set(f.termIdx, [f]);
+			else bucket.people.set(f.empId, [f]);
 		}
 	}
 	const out = new Map<string, { value: DimUnit[K]; n: number }>();
 	for (const [id, bucket] of byValue) {
 		let n = 0;
-		for (const p of bucket.people.values()) if (complete(p, terms, strong)) n++;
+		for (const person of bucket.people.values()) if (admits(person)) n++;
 		if (n > 0) out.set(id, { value: bucket.value, n });
 	}
 	return out;
@@ -301,7 +316,7 @@ function tally<K extends DimKey>(
  * 各维度的选项与人数。
  *
  * 计数的口径是「在当前这次筛选下，选了这一项之后还剩多少人」；有哪些选项则
- * 只由这次查询决定，不随筛选变（见 `facetCount`）——一条会在手底下换形状的
+ * 只由这次查询决定，不随筛选变（见 `facetRows`）——一条会在手底下换形状的
  * 筛选栏，比一条长一点的更难用。
  */
 function computeFacets(
@@ -311,7 +326,13 @@ function computeFacets(
 ): Facets {
 	const out = emptyFacets();
 	for (const key of DIM_KEYS)
-		fill(out, key, facetCount(facts, terms, filters, key));
+		fill(
+			out,
+			key,
+			facetRows(facts, key, filters, (person, strong) =>
+				complete(byTerm(person), terms, strong),
+			),
+		);
 
 	// 「证据要求」这一维的两头：打开还剩几个（on）、关掉能看到几个（off）。
 	// 两个数都把证据要求自己摘掉之后再算。
@@ -335,7 +356,14 @@ function fill(out: Facets, key: DimKey, rows: Facet[]) {
 	});
 }
 
-/** 结构化范围没有语义证据；按人判定筛选并复用同一份分面取值与排序规则。 */
+/**
+ * 结构化范围没有语义证据：一段经历落在范围里，这个人就算数。
+ *
+ * 「证据够不够硬」问的不是这批事实，所以证据要求在这里被摘掉；其余各维走的是
+ * 和语义检索**同一份** `facetRows`——值域只看这次查询、计数摘掉这一维自己的
+ * 筛选。两条路各写一份分面的话，同一栏筛选在结构化查询下会变成「点一项，
+ * 其余项当场消失」。
+ */
 export function rankPopulation(
 	facts: PopulationFact[],
 	filters: SearchFilters,
@@ -345,26 +373,12 @@ export function rankPopulation(
 		...new Set(facts.filter(keeps(effective)).map((fact) => fact.empId)),
 	].sort();
 	const facets = emptyFacets();
-	for (const key of DIM_KEYS) {
-		const rows = new Map<string, Facet>();
-		const keep = keeps(effective, key);
-		const seen = new Map<string, Set<string>>();
-		for (const fact of facts) {
-			if (!keep(fact)) continue;
-			for (const value of dimValues(key, fact)) {
-				const id = dimId(key, value);
-				rows.set(id, { value, n: 0 });
-				const ids = seen.get(id) ?? new Set<string>();
-				ids.add(fact.empId);
-				seen.set(id, ids);
-			}
-		}
+	for (const key of DIM_KEYS)
 		fill(
 			facets,
 			key,
-			[...rows].map(([id, row]) => ({ ...row, n: seen.get(id)?.size ?? 0 })),
+			facetRows(facts, key, effective, () => true),
 		);
-	}
 	return { empIds, facets, total: empIds.length };
 }
 
@@ -418,27 +432,27 @@ export function pageHits(
 	perTerm: number,
 ): Map<string, Fact[]> {
 	const keep = keeps(filters);
-	const byKey = new Map<string, Fact[]>();
+	// 桶自己带着它是谁的：从第一条事实上反读工号的话，「空桶怎么办」就成了一个
+	// 得回答的问题，而空桶根本造不出来。
+	const byKey = new Map<string, { empId: string; facts: Fact[] }>();
 	for (const f of facts) {
 		if (!empIds.has(f.empId) || !keep(f)) continue;
 		const k = f.empId + PER_TERM + f.termIdx;
-		const list = byKey.get(k);
-		if (list) list.push(f);
-		else byKey.set(k, [f]);
+		const bucket = byKey.get(k);
+		if (bucket) bucket.facts.push(f);
+		else byKey.set(k, { empId: f.empId, facts: [f] });
 	}
 	const out = new Map<string, Fact[]>();
-	for (const list of byKey.values()) {
+	for (const { empId, facts: list } of byKey.values()) {
 		list.sort(
 			(a, b) =>
 				evidenceWeight(b) - evidenceWeight(a) ||
 				b.months - a.months ||
 				a.id - b.id,
 		);
-		const emp = list[0]?.empId;
-		if (emp === undefined) continue;
-		const acc = out.get(emp) ?? [];
+		const acc = out.get(empId) ?? [];
 		acc.push(...list.slice(0, perTerm));
-		out.set(emp, acc);
+		out.set(empId, acc);
 	}
 	// 词序即行序：结果里每个人的每条证据对应一条要求，按要求下标排好再交出去
 	for (const list of out.values())

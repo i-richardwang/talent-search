@@ -68,7 +68,24 @@ const TAIL = new RegExp(
  */
 export const TEXT_MAX = 200;
 export const CHIP_MAX = 8;
-const MAX_TERM_LEN = 24;
+
+/**
+ * 一个词最长几个字。上限住在这里，`intentSchema` 只在 `describe` 里写建议：
+ * 写成 schema 约束的话，模型多给一个长词就是整条响应作废、整句话退回规则解析，
+ * 而收窄本来只会丢掉那一个词。
+ */
+export const MAX_TERM_LEN = 24;
+
+/**
+ * 词首的记号位：`~`（停用）与 `+` `-`（强度）在查询串里是**语法**，
+ * 所以一个词永远不以它们开头，剥在这里——`parseQuery` 是全站唯一产出词的地方，
+ * 模型给的词和用户敲的词都从这一个口子出来。
+ *
+ * 不剥的话 `大模型/+带团队` 里的 `+带团队` 会原样变成一个词，写回查询串就成了
+ * `大模型/+带团队`，再解析一次那个 `+` 变回强度符号，说法凭空少一个——
+ * 而往返恒等式（`parseChips(toQuery(parseChips(q)))`）是这条串能当查询用的前提。
+ */
+const LEADING_SIGN = /^[~+-]+/;
 
 /**
  * 不可信入参 → 一段收进边界的短文本。查询里的词、范围里的公司名与学校名、
@@ -99,7 +116,7 @@ function keepIfMeaningful(stripped: string, original: string) {
 export function parseQuery(raw: string): string[] {
 	const terms: string[] = [];
 	for (const chunk of raw.slice(0, TEXT_MAX).split(SPLIT)) {
-		const whole = chunk.trim();
+		const whole = chunk.trim().replace(LEADING_SIGN, "");
 		let term = keepIfMeaningful(whole.replace(HEAD, ""), whole);
 		// 剥两头可能反复出现（"后端都做过的人"），剥到不再变短为止
 		for (let prev = ""; term !== prev; ) {
@@ -124,7 +141,8 @@ export function parseQuery(raw: string): string[] {
  *   只有那段实习的人自然出不来，因为他没有证据了。检索对象是经历，
  *   排除也一样（见 AGENTS.md「从经历找人」）。
  */
-export type ChipMode = "must" | "boost" | "exclude";
+export const CHIP_MODES = ["must", "boost", "exclude"] as const;
+export type ChipMode = (typeof CHIP_MODES)[number];
 
 /** 一条要求最多几个说法（主词 + alts 合计）。再多就不是一条要求了。 */
 export const MEMBER_MAX = 4;
@@ -138,6 +156,11 @@ export const MEMBER_MAX = 4;
  * 回去：那样每加一个字段，都会有某个拼装点忘记带上它，而屏幕上只表现为
  * 「我的说法怎么少了一个」——没有任何检查会红。（`toQuery` 是另一件事：
  * 它给的是「外部意图第一次变成查询」那一道门，见下面。）
+ *
+ * **词里不含语法。** 一个说法永远不以 `~` `+` `-` 开头：这三个记号在查询串里
+ * 是停用与强度，落进词里就会在下一次解析时变回记号。剥记号只发生在
+ * `parseQuery`（见上面的 `LEADING_SIGN`），所以这条对模型给的词和用户敲的词
+ * 一样成立，往返恒等式也因此对**任何**输入串都成立。
  *
  * 一条要求可以有多个**说法**，满足其一即满足这条要求（说法之间 OR，
  * 要求之间 AND）。`term` 是主词、`alts` 是「A 或 B 均可」里并列的那些，

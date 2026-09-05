@@ -8,6 +8,7 @@ import {
 	dropChip,
 	editChip,
 	enableAll,
+	MAX_TERM_LEN,
 	MEMBER_MAX,
 	parseChips,
 	parseQuery,
@@ -16,6 +17,7 @@ import {
 	TEXT_MAX,
 	toQuery,
 } from "#/search/parse";
+import { hasMeaning } from "#/search/spec";
 
 test("按标点与连接词切成要求", () => {
 	assert.deepEqual(parseQuery("算法、产品、后端都做过的"), [
@@ -296,9 +298,84 @@ describe("规范化与长度边界", () => {
 	});
 
 	test("查询串的上限由部件推导，不是另立的一个数", () => {
-		assert.equal(QUERY_MAX, CHIP_MAX * (MEMBER_MAX * 25 + 2));
+		// 写死 25 的话，调大词长那天这条边界会在别处安静地把查询截断
+		assert.equal(QUERY_MAX, CHIP_MAX * (MEMBER_MAX * (MAX_TERM_LEN + 1) + 2));
 		// 收窄只保证载荷有界；含义上的上限（几条要求、几个说法）仍归 parseChips
 		assert.equal(queryString(123), "");
 		assert.equal(queryString("算".repeat(QUERY_MAX + 10)).length, QUERY_MAX);
+	});
+});
+
+/**
+ * 往返恒等式对**任何**输入串都得成立，不只对我们自己写回去的那些。
+ *
+ * 这三条不变量是「查询的唯一表示是那串规范查询串」的全部内容：规范化幂等、
+ * 解析→写回→再解析不变、`hasMeaning` 和解析结果说的是同一件事。它们只要有
+ * 一条在某个输入上破了，症状就是「我的说法怎么少了一个」或者「明明有条件却
+ * 说查询为空」——类型、构建、界面测试全绿。
+ *
+ * 所以这里不举例子，拿一批**故意写歪的**串逐条过：记号混进说法里、说法里
+ * 又有停用号、重复说法、空说法、一个字、超长、各种分隔符、中英文混排。
+ */
+describe("规范查询串的不变量", () => {
+	const ADVERSARIAL = [
+		"",
+		" ",
+		",,,",
+		"//",
+		"~",
+		"+",
+		"-",
+		"~+",
+		"+b",
+		"a/+b",
+		"大模型/+带团队",
+		"大模型/~带团队",
+		"~-实习/+实习",
+		"+++算法",
+		"-~算法",
+		"算法/算法",
+		"算法//带团队",
+		"算法, 算法",
+		"算法/",
+		"/算法",
+		"a",
+		"算",
+		"算法".repeat(MAX_TERM_LEN),
+		`+${"算法".repeat(MAX_TERM_LEN)}`,
+		"算法、产品，后端 增长",
+		"大模型或者推荐系统",
+		"~+带团队,-实习,大模型/多模态",
+		"algorithm/machine learning",
+		"C++/Java",
+		"帮我找做过算法的人",
+		"a".repeat(QUERY_MAX + 10),
+		[...Array(CHIP_MAX + 3).keys()].map((i) => `词${i}${i}`).join(","),
+	];
+
+	test("规范化是幂等的", () => {
+		for (const raw of ADVERSARIAL)
+			assert.equal(canonical(canonical(raw)), canonical(raw), raw);
+	});
+
+	test("解析→写回→再解析一个字段都不差", () => {
+		for (const raw of ADVERSARIAL) {
+			const chips = parseChips(raw);
+			assert.deepEqual(parseChips(toQuery(chips)), chips, raw);
+		}
+	});
+
+	test("说法永远不以记号开头：记号是语法，不是字", () => {
+		for (const raw of ADVERSARIAL)
+			for (const chip of parseChips(raw))
+				for (const member of [chip.term, ...(chip.alts ?? [])])
+					assert.doesNotMatch(member, /^[~+-]/, `${raw} → ${member}`);
+	});
+
+	test("解析不出条件的串就是空查询，没有第三种状态", () => {
+		for (const raw of ADVERSARIAL) {
+			const spec = { evidence: canonical(raw), scope: {}, notices: [] };
+			assert.equal(hasMeaning(spec), parseChips(spec.evidence).length > 0, raw);
+		}
 	});
 });

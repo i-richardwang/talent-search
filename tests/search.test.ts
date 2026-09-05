@@ -6,23 +6,20 @@
  * 有没有原样传到打分那一层。列名或日期序列化错误只有走真 SQL 才看得见，
  * 而纯函数测试对它完全无感。
  *
+ * 另外三件事各有自己的文件，因为它们要的语料和这里不是一份：换代门闩
+ * （`search-snapshot.test.ts`，其中一条真的把整库换掉了）、写入约束
+ * （`search-constraints.test.ts`）、分面口径（`facets.test.ts`，那条穷举
+ * 不变量需要一份说得清的语料）。
+ *
  * 嵌入是假的（见 fixture.ts 的 `fakeEmbedding`）：相关度 = 共有字数 / √(字数×字数)，
- * 所以每条断言旁边都算得出那个数。「算法」对「算法工程师」是 0.63，过 0.6 的
- * 阈值；对「算法平台运维工程师」是 0.47，不过。种子里的文本都按这把尺挑过，
- * 它们钉的是机制，不是语义。
+ * 所以每条断言旁边都算得出那个数。「算法」对「算法工程师」是 2/√(2×5) ≈ 0.63，
+ * 过 `RELEVANCE_MIN`；对「算法平台运维工程师」是 2/√(2×9) ≈ 0.47，不过。
+ * 种子里的文本都按这把尺挑过，它们钉的是机制，不是语义。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { sql } from "drizzle-orm";
-import {
-	DIM_KEYS,
-	type DimKey,
-	type DimUnit,
-	dimId,
-	isMulti,
-} from "#/search/dimensions";
-import type { SearchFilters } from "#/search/result";
-import { fakeSimilarity, holdNextRerank, seed, setup } from "./fixture";
+import { NOT_A_VALUE, VOCAB_KEYS } from "#/search/dimensions";
+import { fakeSimilarity, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -31,8 +28,6 @@ after(teardown);
 const { overflowContributors, probeWide, search, vocabulary } = await import(
 	"#/search/search"
 );
-const { db } = await import("#/db");
-const { pool } = await import("#/db");
 const run = async (evidence: string, filters = {}, limit?: number) => {
 	const outcome = await search(
 		{ evidence, scope: {}, notices: [] },
@@ -46,86 +41,6 @@ const run = async (evidence: string, filters = {}, limit?: number) => {
 };
 const { RESULT_PAGE, RECALL_MIN, RELEVANCE_MIN, RELEVANCE_MIN_EXCLUDE } =
 	await import("#/search/weights");
-
-describe("语料快照", () => {
-	test("整库重灌会等待正在检索的旧语料，不在一次结果里混代", async () => {
-		await seed([
-			{
-				empId: "SNAP001",
-				name: "快照测试",
-				segments: [{ title: "快照一致性专用", months: 12 }],
-			},
-		]);
-		const gate = holdNextRerank();
-		const pendingSearch = run("快照一致性专用");
-		await gate.entered;
-
-		const writer = await pool.connect();
-		let reload: Promise<unknown> | null = null;
-		try {
-			await writer.query("begin");
-			const pid = (
-				await writer.query<{ pid: number }>("select pg_backend_pid() as pid")
-			).rows[0]?.pid;
-			if (!pid) throw new Error("无法取得测试写连接的 pid");
-			reload = (async () => {
-				await writer.query(
-					"lock table embedding_space in access exclusive mode",
-				);
-				await writer.query(
-					"truncate experience, employee, phrase, embedding_space restart identity cascade",
-				);
-			})();
-
-			let waiting = false;
-			for (let attempt = 0; attempt < 100 && !waiting; attempt++) {
-				const state = await db.execute<{ waiting: boolean }>(sql`
-					select wait_event_type = 'Lock' as waiting
-					from pg_stat_activity where pid = ${pid}`);
-				waiting = state.rows[0]?.waiting ?? false;
-				if (!waiting) await new Promise((resolve) => setTimeout(resolve, 5));
-			}
-			assert.ok(waiting, "整库重灌应等待检索释放语料快照");
-
-			gate.release();
-			const result = await pendingSearch;
-			assert.equal(result.results[0]?.employee.empId, "SNAP001");
-			await reload;
-			await writer.query("rollback");
-			reload = null;
-		} finally {
-			gate.release();
-			if (reload) await reload;
-			await writer.query("rollback").catch(() => {});
-			writer.release();
-		}
-	});
-
-	test("同一新词并发检索共享确定性缓存，不因写入竞争失败", async () => {
-		await seed([
-			{
-				empId: "CACHE001",
-				name: "缓存并发测试",
-				segments: [{ title: "缓存并发专用", months: 12 }],
-			},
-		]);
-		const gate = holdNextRerank();
-		const first = run("缓存并发专用");
-		await gate.entered;
-		let secondError: unknown;
-		try {
-			const second = await run("缓存并发专用");
-			assert.equal(second.results[0]?.employee.empId, "CACHE001");
-		} catch (error) {
-			secondError = error;
-		} finally {
-			gate.release();
-		}
-		const result = await first;
-		if (secondError) throw secondError;
-		assert.equal(result.results[0]?.employee.empId, "CACHE001");
-	});
-});
 
 before(async () => {
 	await seed([
@@ -211,79 +126,6 @@ describe("事实行保险丝", () => {
 				100,
 			),
 			[],
-		);
-	});
-});
-
-describe("检索数据约束", () => {
-	const insert = (
-		kind: string,
-		start: string,
-		end: string | null,
-		months: number,
-	) =>
-		db.execute(sql`
-			insert into experience (emp_id, kind, start_date, end_date, months)
-			values ('T001', ${kind}, ${start}, ${end}, ${months})`);
-	const violates = (constraint: string) => (error: unknown) =>
-		error instanceof Error &&
-		error.cause instanceof Error &&
-		error.cause.message.includes(constraint);
-
-	test("经历来源只能是公司内或入职前", async () => {
-		await assert.rejects(
-			insert("contractor", "2020-01-01", null, 1),
-			violates("experience_kind_valid"),
-		);
-	});
-
-	test("经历时长必须为正数", async () => {
-		await assert.rejects(
-			insert("internal", "2020-01-01", null, 0),
-			violates("experience_months_positive"),
-		);
-	});
-
-	test("结束日期不能早于开始日期", async () => {
-		await assert.rejects(
-			insert("external", "2020-02-01", "2020-01-01", 1),
-			violates("experience_dates_ordered"),
-		);
-	});
-
-	test("经历必须属于已存在的员工", async () => {
-		await assert.rejects(
-			db.execute(sql`
-				insert into experience (emp_id, kind, start_date, months)
-				values ('不存在', 'internal', '2020-01-01', 1)`),
-			violates("experience_emp_id_employee_emp_id_fk"),
-		);
-	});
-
-	test("说法只能挂在四路之一上", async () => {
-		await assert.rejects(
-			db.execute(sql`
-				insert into experience_phrase (experience_id, route, phrase_id)
-				values (1, 'summary', (select min(id) from phrase))`),
-			violates("experience_phrase_route_valid"),
-		);
-	});
-
-	test("同一串字只存一次：说法表按原文唯一", async () => {
-		await assert.rejects(
-			db.execute(sql`
-				insert into phrase (text, embedding)
-				select text, embedding from phrase limit 1`),
-			violates("phrase_text_unique"),
-		);
-	});
-
-	test("重排相关度只能落在零到一之间", async () => {
-		await assert.rejects(
-			db.execute(sql`
-				insert into phrase_relevance (space, query, phrase_id, relevance)
-				select 'fake-v1', '非法分数', min(id), 1.1 from phrase`),
-			violates("phrase_relevance_range"),
 		);
 	});
 });
@@ -384,6 +226,72 @@ describe("结构化范围是独立的候选定义", () => {
 	});
 });
 
+/**
+ * 结构化范围的分面和语义检索的分面是**同一件东西**：值域只随查询变，计数随
+ * 筛选变。两条路各写一份求值器的话，同一栏筛选在结构化查询下会变成「点一项，
+ * 别的维度里凑不出人的行当场消失」——而那正是筛选栏不能被信任的样子。
+ */
+describe("结构化范围的分面口径", () => {
+	before(async () => {
+		await seed([
+			{
+				empId: "S001",
+				name: "范围甲",
+				curLevel: "P4",
+				recruitment: "校招",
+				segments: [
+					{
+						kind: "external",
+						title: "星际护卫",
+						months: 12,
+						companyTag: "星域联盟",
+					},
+				],
+			},
+			{
+				empId: "S002",
+				name: "范围乙",
+				curLevel: "P9",
+				recruitment: "社招",
+				segments: [
+					{
+						kind: "external",
+						title: "星际护卫",
+						months: 12,
+						companyTag: "星域联盟",
+					},
+				],
+			},
+		]);
+	});
+
+	test("点了一维之后，别的维度被挤成 0 的行留在原地", async () => {
+		const scope = { companyTag: ["星域联盟"] };
+		const base = await search({ evidence: "", scope, notices: [] });
+		assert.equal(base.total, 2);
+		assert.deepEqual(base.facets.recruitment, [
+			{ value: "社招", n: 1 },
+			{ value: "校招", n: 1 },
+		]);
+
+		const picked = await search(
+			{ evidence: "", scope, notices: [] },
+			{
+				level: ["P4"],
+			},
+		);
+		assert.equal(picked.total, 1);
+		assert.deepEqual(
+			picked.facets.recruitment,
+			[
+				{ value: "校招", n: 1 },
+				{ value: "社招", n: 0 },
+			],
+			"值域只随查询变：被职级挤到 0 的那一行写着 0，不消失",
+		);
+	});
+});
+
 describe("命中路径判定", () => {
 	test("一段同时几路过阈值时取加权相关度最高的那一路", async () => {
 		// 「安全」对部门「安全部」0.82 × 0.5，对描述「安全巡检」0.71 × 0.25：
@@ -478,16 +386,16 @@ describe("筛选条件", () => {
 	test("最短时长会滤掉短段", async () => {
 		const { results } = await run("算法", { minMonths: 30 });
 		assert.ok(results.some((r) => r.employee.empId === "T005"));
-		const hit = results
+		const basis = results
 			.find((r) => r.employee.empId === "T005")
-			?.hits.find((h) => h.term === "算法");
-		assert.equal(hit?.months, 36);
+			?.basis.find((b) => b?.term === "算法");
+		assert.equal(basis?.months, 36);
 	});
 
 	test("收窄筛选只会让人变少，不会变多", async () => {
 		const plain = await run("算法");
 		const narrowed = await run("算法", { kind: "external" });
-		assert.ok(narrowed.total <= plain.total);
+		assert.ok(narrowed.total < plain.total, "这个筛选真的筛掉了人");
 	});
 });
 
@@ -586,225 +494,26 @@ describe("跟人走的筛选", () => {
 		assert.equal((await run("潜水", { school: "明_大学" })).total, 0);
 	});
 
-	test("词汇表只给语料里真有的取值", async () => {
-		const v = await vocabulary();
-		assert.deepEqual(v.level, ["P7", "P6"]);
-		assert.deepEqual(v.recruitment, ["校招", "社招"]);
-		assert.deepEqual(v.education, ["硕士", "本科"]);
-	});
-});
-
-/**
- * 筛选面板的候选与计数。
- *
- * 这组测试钉的是口径：每一项后面的数是「选了它之后还剩多少**人**」，
- * 和表头那句「N 人」同一个单位，所以它必须和主检索用同一套 AND 语义。
- * 如果误计为经历段，分面会远大于结果人数，两个数字互相拆台。
- */
-describe("分面", () => {
-	before(async () => {
-		await seed([
-			// 跟人走的那三维也要有值：不然「分面口径 ≡ 主检索口径」那条穷举
-			// 在它们身上一个候选都拿不到，会安静地少验三维。
-			{
-				empId: "F001",
-				name: "分面甲",
-				curLevel: "P6",
-				recruitment: "校招",
-				education: "本科",
-				segments: [{ seqL1: "技术", seqL2: "算法", months: 36 }],
-			},
-			{
-				empId: "F002",
-				name: "分面乙",
-				curLevel: "P7",
-				recruitment: "社招",
-				education: "硕士",
-				segments: [{ seqL1: "技术", seqL2: "算法", months: 36 }],
-			},
-			{
-				empId: "F003",
-				name: "分面丙",
-				curLevel: "P7",
-				recruitment: "校招",
-				education: "硕士",
-				segments: [
-					{ seqL1: "运营", seqL2: "渠道", title: "算法运维", months: 36 },
-				],
-			},
-			{
-				empId: "F004",
-				name: "分面丁",
-				segments: [
-					{
-						kind: "external",
-						seqL1: "技术",
-						seqL2: "算法",
-						months: 36,
-						companyTag: "头部互联网T1",
-					},
-				],
-			},
-		]);
-	});
-
-	const seqOf = (facets: Awaited<ReturnType<typeof search>>["facets"]) =>
-		new Map(facets.seq.map((s) => [`${s.value.l1}/${s.value.l2}`, s.n]));
-
-	test("数的是人，而且只数这一次检索里的人", async () => {
-		const { facets } = await run("算法");
-		// 全库还有别的人序列里写着算法，但他们没有 seq_l1，进不了这一维；
-		// 关键是这个数不可能超过命中总人数
-		assert.equal(seqOf(facets).get("技术/算法"), 3);
-		assert.equal(seqOf(facets).get("运营/渠道"), 1);
-	});
-
-	test("口径和主检索一致：一个人要在这一项里凑齐全部要求才算数", async () => {
-		// F003 一段之内既有岗位「算法运维」又有序列「渠道」，两个词都落在「运营/渠道」里
-		const { facets } = await run("算法 渠道");
-		assert.equal(seqOf(facets).get("运营/渠道"), 1);
-		// F001/F002 在「技术/算法」里凑不齐「渠道」，这一项一个人都不剩
-		assert.equal(seqOf(facets).get("技术/算法"), undefined);
-	});
-
-	test("算某一维时要摘掉这一维自己的筛选，否则选中之后就切不动了", async () => {
-		const { facets, results } = await run("算法", {
-			seq: [{ l1: "技术", l2: "算法" }],
-		});
-		assert.equal(results.length, 3, "结果本身是被筛过的");
-		// 但序列这一维的候选不受它自己影响，别的序列还看得见、点得动
-		assert.equal(seqOf(facets).get("运营/渠道"), 1);
-		assert.equal(seqOf(facets).get("技术/算法"), 3);
-	});
-
-	test("别的维度的筛选照常收窄计数，但不让选项消失", async () => {
-		// 只看入职前时，三位只有内部事实的人不能为任何序列贡献计数；
-		// 「运营/渠道」因此归零，但它留在列表里（界面上是禁用的那一行）——
-		// 列表只随查询变形，不随筛选变形，见 rank.ts 的 facetCount
-		const { facets } = await run("算法", { kind: "external" });
-		assert.equal(seqOf(facets).get("技术/算法"), 1);
-		assert.equal(seqOf(facets).get("运营/渠道"), 0);
-	});
-
-	test("和这次查询无关的值不进列表——分面比全站短靠的是这个", async () => {
-		// 没有筛选时值域和计数是同一个口径，所以这里一个 0 都不该有
-		const { facets } = await run("算法");
-		assert.ok(
-			facets.seq.every((s) => s.n > 0),
-			"没筛任何东西时不该出现计数为 0 的选项",
-		);
-		assert.ok(
-			facets.companyTag.every((t) => t.value !== "" && t.value !== "未知"),
-			"空档和未知档不是可点的筛选项",
-		);
-	});
-
-	test("公司档与经历类型同样跟着查询走", async () => {
-		const { facets } = await run("算法");
-		assert.deepEqual(facets.companyTag, [{ value: "头部互联网T1", n: 1 }]);
-		// F004 的入职前经历，加上 T003 那段简历原文里提到算法的入职前经历
-		assert.equal(facets.kind.find((k) => k.value === "external")?.n, 2);
-	});
-
-	test("没有要求就没有候选，不拿全库的数字充数", async () => {
-		const { facets } = await run("帮我找一下的人");
-		assert.deepEqual(facets.seq, []);
-		assert.deepEqual(facets.minMonths, []);
-	});
-});
-
-/**
- * 命中总数与「证据要求」。
- *
- * 这两件事同源，所以放在一起钉：顶上那句「N 人」报的必须是截断**之前**
- * 的人数，不能是 `results.length`（那是已经翻出来的那几页有多长），
- * 否则同一屏上分面 416、名单 50，两个数互相拆台。同样地，「证据要求」
- * 必须落在服务端，放到客户端它就只能筛那被截断的 50 个人。
- */
-/**
- * **分面的口径 ≡ 主检索的口径。** 这一条以前没有任何东西在验：分面和排名各自
- * 对同一份事实求值，一致性靠「两个函数长得像」。可它是筛选栏能不能被信任的
- * 全部依据——「P6 旁边那个 20」说的是「再勾上 P6 会剩下这些人」，说错了屏幕上
- * 什么都看不出来，只有点下去才发现数对不上，而那时候人已经在怀疑整份名单了。
- *
- * 所以这里不举例子，穷举：拿一次真实检索的每一维、每一个候选值，逐个真的搜
- * 一遍，比对「预告的人数」和「真搜出来的总数」。
- */
-describe("分面预告的数就是点下去会得到的数", () => {
-	const QUERY = "算法/运营";
-
-	/** 把一个候选取值写成这一维的一次选择。集合维给一项，单值维给它本身。 */
-	const pick = <K extends DimKey>(key: K, value: DimUnit[K]): SearchFilters =>
-		({ [key]: isMulti(key) ? [value] : value }) as SearchFilters;
-
-	test("每一维的每一个值都对得上", async () => {
-		const base = await run(QUERY);
-		// 逐维手写的话，加一维就会有一维没人验——而这条不变量正是加一维时
-		// 最容易碰坏的东西。遍历维度表，新维度自动进这个循环。
-		const checks: { label: string; n: number; filters: SearchFilters }[] = [
-			...DIM_KEYS.flatMap((key) =>
-				base.facets[key].map((row) => ({
-					label: `${key} ${dimId(key, row.value)}`,
-					n: row.n,
-					filters: pick(key, row.value),
-				})),
-			),
-			{
-				label: "strong on",
-				n: base.facets.strong.on,
-				filters: { strong: true },
-			},
-			{ label: "strong off", n: base.facets.strong.off, filters: {} },
-		];
-		assert.ok(checks.length > 8, "夹具至少要给出几维可点的候选");
-		for (const check of checks) {
-			const { total } = await run(QUERY, check.filters);
-			assert.equal(total, check.n, check.label);
-		}
-	});
-
 	/**
-	 * 同一个条件，作为查询范围（下推给 SQL）和作为筛选（在内存里求值），
-	 * 必须选出同一批人。
-	 *
-	 * 这是「一份声明、两个求值器」的全部赌注：两个求值器读的是同一段声明，
-	 * 但它们分别落在 `search.ts` 的列表达式和 `dimensions.ts` 的 `values` 上，
-	 * 写歪一个不会有任何东西报错——名单会安静地少几个人。
+	 * 词表是模型挑筛选值时唯一能看的东西。逐维手写断言的话，加一维就会有一维
+	 * 没人验，而症状是模型对那一维永远挑不出值——不报错，只是少认一维。
 	 */
-	test("同一个条件下推给数据库还是在内存里筛，选出的是同一批人", async () => {
-		const base = await run(QUERY);
-		const covered = new Set<DimKey>();
-		for (const key of DIM_KEYS)
-			for (const row of base.facets[key]) {
-				covered.add(key);
-				const filtered = await run(QUERY, pick(key, row.value));
-				const scoped = await search(
-					{ evidence: QUERY, scope: pick(key, row.value), notices: [] },
-					{},
+	test("每一维都有词表，取值都是语料里真有的", async () => {
+		const v = await vocabulary();
+		assert.deepEqual(Object.keys(v).sort(), [...VOCAB_KEYS].sort());
+		for (const key of VOCAB_KEYS) {
+			assert.ok(v[key].length > 0, `${key} 一个取值都没数出来`);
+			assert.ok(!v[key].includes(""), `${key} 把空串当成了取值`);
+			for (const notValue of NOT_A_VALUE)
+				assert.ok(
+					!v[key].includes(notValue),
+					`${key} 把「${notValue}」当成了取值`,
 				);
-				assert.deepEqual(
-					scoped.results.map((r) => r.employee.empId),
-					filtered.results.map((r) => r.employee.empId),
-					`${key} ${dimId(key, row.value)}`,
-				);
-			}
-		// 哪一维在这次查询里一个候选都没有，这条不变量就没验到它——而
-		// 「列表达式写歪了」正是要靠它才看得见的东西。
-		assert.deepEqual([...covered].sort(), [...DIM_KEYS].sort());
-	});
-
-	test("已经筛着的时候，别的维度报的仍是「再勾上它会剩几人」", async () => {
-		const picked: SearchFilters = { kind: "internal" };
-		const base = await run(QUERY, picked);
-		for (const row of base.facets.level) {
-			const { total } = await run(QUERY, { ...picked, level: [row.value] });
-			assert.equal(total, row.n, `level ${row.value}`);
 		}
-		// 自己这一维摘掉自己：选中一项之后，同维其余项报的不是 0
-		for (const row of base.facets.kind) {
-			const { total } = await run(QUERY, { ...picked, kind: row.value });
-			assert.equal(total, row.n, `kind ${row.value}`);
-		}
+		assert.ok(v.level.includes("P6") && v.level.includes("P7"));
+		assert.ok(v.recruitment.includes("校招") && v.recruitment.includes("社招"));
+		assert.ok(v.education.includes("硕士") && v.education.includes("本科"));
+		assert.ok(v.companyTag.includes("星域联盟"));
 	});
 });
 
@@ -910,16 +619,32 @@ describe("为什么没有人", () => {
 	});
 
 	test("证据要求滤空时，带上关掉之后能看到几个", async () => {
-		const outcome = await search(
-			{ evidence: "算法/运营", scope: {}, notices: [] },
-			{ strong: true, seq: [{ l1: "外部", l2: "考古" }] },
+		// W001 的唯一证据在简历原文里，打开证据要求就一个人不剩——而「关掉能
+		// 看到 1 个」正是这条成因要带出去的数。
+		await seed([
+			{
+				empId: "W001",
+				name: "只在简历里提过",
+				segments: [
+					{
+						kind: "external",
+						org: "某厂",
+						description: "幽蓝抄写",
+						months: 24,
+					},
+				],
+			},
+		]);
+		const loose = await run("幽蓝抄写");
+		assert.equal(loose.total, 1);
+		const strict = await run("幽蓝抄写", { strong: true });
+		assert.equal(strict.total, 0);
+		assert.deepEqual(strict.empty, { kind: "strongEmpty", without: 1 });
+		assert.equal(
+			strict.facets.strong.off,
+			1,
+			"报的就是关掉之后真能看到的那个数",
 		);
-		if (outcome.empty?.kind === "strongEmpty")
-			assert.equal(
-				outcome.empty.without,
-				outcome.facets.strong.off,
-				"报出来的数就是关掉之后真的能看到的那个",
-			);
 	});
 });
 
@@ -984,6 +709,21 @@ describe("排除词：否决证据段，不否决人", () => {
 					},
 				],
 			},
+			{
+				empId: "X002",
+				name: "入职前只实习过",
+				segments: [
+					{ kind: "external", org: "某厂", title: "机甲实习", months: 6 },
+				],
+			},
+			{
+				empId: "X003",
+				name: "实习起步，后来真干过",
+				segments: [
+					{ kind: "external", org: "某厂", title: "机甲实习", months: 6 },
+					{ kind: "external", org: "另一厂", title: "深海造船", months: 24 },
+				],
+			},
 		]);
 	});
 
@@ -1029,6 +769,43 @@ describe("排除词：否决证据段，不否决人", () => {
 			terms.map((t) => t.term),
 			["算法"],
 		);
+	});
+
+	/**
+	 * 结构化范围也是一份候选定义，排除词在它上面同样只否决**段**。
+	 *
+	 * 两条路径共用一套否决（`search.ts` 的 keepUnvetoed）：各写一份的话，
+	 * 「只看入职前经历，不要实习」会安静地当那个排除词不存在——屏幕上那枚
+	 * chip 好端端画着，名单里却全是实习生。
+	 */
+	test("只有范围加一个排除词时，被否决的段照样不算数", async () => {
+		const scoped = await search({
+			evidence: "-机甲实习",
+			scope: { kind: "external" },
+			notices: [],
+		});
+		const ids = scoped.results.map((r) => r.employee.empId);
+		assert.ok(!ids.includes("X002"), "只有这一段的人失去全部凭据，出局");
+		assert.ok(ids.includes("X003"), "还有别的段的人留下——砍的是段不是人");
+		const loose = await search({
+			evidence: "",
+			scope: { kind: "external" },
+			notices: [],
+		});
+		assert.ok(
+			loose.results.map((r) => r.employee.empId).includes("X002"),
+			"不写排除词时他本来在名单上",
+		);
+	});
+
+	test("范围跑过了就报范围的结果，不报「你只写了排除词」", async () => {
+		const outcome = await search({
+			evidence: "-机甲实习",
+			scope: { kind: "external", minMonths: 999 },
+			notices: [],
+		});
+		assert.equal(outcome.total, 0);
+		assert.deepEqual(outcome.empty, { kind: "scopeEmpty" });
 	});
 
 	test("整句只有排除词时不返回任何人——它只会剔人，不会捞人", async () => {
@@ -1132,11 +909,13 @@ describe("一条要求的多个说法", () => {
 		assert.ok(ids.includes("M001") && ids.includes("M002"));
 	});
 
-	test("证据行说出实际命中的说法，而不是要求的主词", async () => {
+	test("证据行归的是这条要求，哪个说法命中的不占一行标签", async () => {
 		const { results } = await run("机甲算法/深度学习");
 		const m1 = results.find((r) => r.employee.empId === "M001");
-		assert.equal(m1?.hits[0]?.term, "机甲算法", "行归属仍是这条要求");
-		assert.equal(m1?.hits[0]?.member, "深度学习", "但命中的说法必须如实说");
+		// 命中的是第二个说法「深度学习」，但一行证据答的是「这条要求怎么满足的」，
+		// 而这条要求的名字是它的主词——说法只是它的几种写法之一。
+		assert.equal(m1?.hits[0]?.term, "机甲算法");
+		assert.equal(m1?.hits[0]?.route, "seq");
 	});
 
 	test("同一段命中同一要求的两个说法，只贡献一次", async () => {

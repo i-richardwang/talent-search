@@ -135,8 +135,9 @@ type Dimension<K extends DimKey> = Match<K> & {
 const FILTER_LIST_MAX = 64;
 
 /**
- * 集合维的取值。空列表收成 `undefined`——「一项都没选」和「这一维不筛」是同
- * 一件事，留一个空数组在 URL 上只会让 `hasFilters` 说谎。
+ * 一列不可信的文本。空列表收成 `undefined`——「一项都没选」和「这一维不筛」是同
+ * 一件事，留一个空数组在 URL 上只会让筛选栏数出一项没有行可以点掉的筛选（`activeCount`）。哪些串不算这一维的
+ * 取值由维度自己说（`plain` 的 `isValue`）。
  */
 function textList(input: unknown): string[] | undefined {
 	if (!Array.isArray(input)) return undefined;
@@ -151,19 +152,44 @@ function textList(input: unknown): string[] | undefined {
 /** 合成 id 的分隔符：序列名里出现「/」并不稀奇，得用数据里不可能出现的字符。 */
 const SEP = "\u0001";
 
+/**
+ * 取值即标签的那几维里，这些串**不是取值**：「未知」说的是「这一项没被标过」，
+ * 不是一个公司档、一个学历。
+ *
+ * 它声明在这一处，三个求值器都从它派生——分面候选（`values`）、不可信输入的
+ * 清洗（`parse`）、以及给模型的语料词表（`search.ts` 的 `vocabulary`）。
+ * 分家的话，一个「未知」能被写进 URL、下推成 `in ('未知')` 选中一批行，
+ * 而内存里的谓词当场把它们否掉——屏幕上是一个选中了却空着的筛选。
+ */
+export const NOT_A_VALUE = ["未知"] as const;
+
 const byCountThenValue = (
 	a: { value: string; n: number },
 	b: { value: string; n: number },
 ) => b.n - a.n || a.value.localeCompare(b.value, "zh-Hans-CN");
 
-/** 取值即标签的那几个集合维（公司档、招聘渠道、学历）共用这一份声明。 */
-function plain(label: string) {
+/**
+ * 取值即标签的那几个集合维（职级、公司档、招聘渠道、学历）共用这一份声明：
+ * 从事实的哪一列读、哪些串不算取值，都只说一次。
+ */
+function plain(label: string, column: (fact: DimSource) => string | null) {
+	const isValue = (v: string | null): v is string =>
+		Boolean(v) && !(NOT_A_VALUE as readonly string[]).includes(v as string);
 	return {
 		label,
 		match: "set" as const,
+		values: (fact: DimSource) => {
+			const value = column(fact);
+			return isValue(value) ? [value] : [];
+		},
 		id: (v: string) => v,
 		option: (v: string) => v,
-		parse: textList,
+		parse: (raw: unknown) => {
+			// 筛掉不算取值的之后可能一个不剩：那和「这一维不筛」是同一件事，
+			// 留一个空数组会让「有没有筛选」说谎。
+			const values = textList(raw)?.filter(isValue);
+			return values && values.length > 0 ? values : undefined;
+		},
 		compare: byCountThenValue,
 	};
 }
@@ -202,8 +228,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	},
 
 	level: {
-		...plain("职级"),
-		values: (f) => (f.level ? [f.level] : []),
+		...plain("职级", (f) => f.level),
 		text: (v) => `当前职级 · ${v}`,
 		// 职级按名字排：它是有序的量（P5 < P6），人多的档不一定是低的档
 		compare: (a, b) => a.value.localeCompare(b.value, "zh-Hans-CN"),
@@ -241,22 +266,13 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	},
 
 	companyTag: {
-		...plain("入职前公司"),
-		// 「未知」不是一个可点的选项：它说的是这段经历没被标过，不是一个公司档
-		values: (f) =>
-			f.companyTag && f.companyTag !== "未知" ? [f.companyTag] : [],
+		...plain("入职前公司", (f) => f.companyTag),
 		text: (v) => `公司档 · ${v}`,
 	},
 
-	recruitment: {
-		...plain("招聘渠道"),
-		values: (f) => (f.recruitment ? [f.recruitment] : []),
-	},
+	recruitment: plain("招聘渠道", (f) => f.recruitment),
 
-	education: {
-		...plain("学历"),
-		values: (f) => (f.education ? [f.education] : []),
-	},
+	education: plain("学历", (f) => f.education),
 };
 
 /** 全部维度，按声明顺序。加一维只要在上面加一段，其余各处跟着长。 */
@@ -300,15 +316,12 @@ export function dimMatches<K extends DimKey>(
 	if (picked === undefined) return true;
 	const dim = DIMENSIONS[key];
 	if (dim.match === "atLeast") return dim.measure(fact) >= (picked as number);
-	const ids = new Set(dimPicked(key, picked).map((v) => dim.id(v)));
+	const ids = new Set(dimPicked<K>(picked).map((v) => dim.id(v)));
 	return dim.values(fact).some((v) => ids.has(dim.id(v)));
 }
 
 /** 这一维选中的那些取值，摊平成一列——集合维给多个，单值维给一个。 */
-export function dimPicked<K extends DimKey>(
-	_key: K,
-	picked: Picked[K],
-): DimUnit[K][] {
+export function dimPicked<K extends DimKey>(picked: Picked[K]): DimUnit[K][] {
 	if (picked === undefined) return [];
 	return (Array.isArray(picked) ? picked : [picked]) as DimUnit[K][];
 }
@@ -358,7 +371,7 @@ export function dropValue<P extends Picked, K extends DimKey>(
 	value: DimUnit[K],
 ): P {
 	const id = dimId(key, value);
-	const rest = dimPicked(key, picked[key]).filter((v) => dimId(key, v) !== id);
+	const rest = dimPicked(picked[key]).filter((v) => dimId(key, v) !== id);
 	const next = { ...picked };
 	if (rest.length === 0 || !Array.isArray(picked[key])) delete next[key];
 	else Object.assign(next, { [key]: rest });

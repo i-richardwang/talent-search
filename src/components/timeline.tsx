@@ -1,7 +1,7 @@
 import { Dot, ROUTE_LABEL, relevance } from "#/components/evidence";
 import { Badge } from "#/components/ui/badge";
 import type { CompanyMeta, Experience } from "#/db/schema";
-import { duration, period, seqLabel } from "#/lib/format";
+import { dots, duration, period } from "#/lib/format";
 import { bestStrength } from "#/search/evidence";
 import type { Hit } from "#/search/result";
 
@@ -60,7 +60,7 @@ function Segment({
 	const external = x.kind === "external";
 	// 这一段最硬的那一路。节点就是全站那颗点，不另画一套。
 	const strength = bestStrength(hits);
-	const seq = seqLabel(x.seqL1, x.seqL2, x.seqL3);
+	const seq = dots(x.seqL1, x.seqL2, x.seqL3);
 
 	return (
 		<li
@@ -92,7 +92,7 @@ function Segment({
 				{!isLast && <span className="w-px flex-1 bg-border" />}
 			</span>
 
-			<div className="min-w-0 rounded-md px-3 py-2">
+			<div className="min-w-0 px-3 py-2">
 				<div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
 					<span className="font-semibold text-sm">{x.org}</span>
 					<span className="text-sm">{x.title}</span>
@@ -116,7 +116,7 @@ function Segment({
 				 */}
 				<div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-muted-foreground text-xs">
 					<span className="font-mono tabular-nums">
-						{period(x.startDate, x.endDate)} · {duration(x.months)}
+						{dots(period(x.startDate, x.endDate), duration(x.months))}
 					</span>
 					{seq && <span>{seq}</span>}
 					{x.orgMeta && <CompanyLine meta={x.orgMeta} />}
@@ -166,7 +166,7 @@ function MatchedTerms({ hits }: { hits: Hit[] }) {
 		<div className="mt-2 flex flex-wrap items-center gap-1.5">
 			{unique.map((h) => (
 				<Badge key={h.term} variant="outline">
-					{h.term} · {ROUTE_LABEL[h.route]} · {relevance(h.relevance)}
+					{dots(h.term, ROUTE_LABEL[h.route], relevance(h.relevance))}
 				</Badge>
 			))}
 		</div>
@@ -174,10 +174,13 @@ function MatchedTerms({ hits }: { hits: Hit[] }) {
 }
 
 function CompanyLine({ meta }: { meta: CompanyMeta }) {
-	const parts = [meta.company_tag, meta.industry, meta.nature].filter(
-		(v) => v && v !== "未知",
+	// 「未知」是源里的占位串，不是一个能读的值：它和空值一样不该占一格
+	const line = dots(
+		...[meta.company_tag, meta.industry, meta.nature].map((v) =>
+			v === "未知" ? "" : v,
+		),
 	);
-	if (!parts.length) return null;
+	if (!line) return null;
 	// 字号和颜色都由那一行的容器给：它和起止年月、序列是同一类标注，见上
-	return <span>{parts.join(" · ")}</span>;
+	return <span>{line}</span>;
 }

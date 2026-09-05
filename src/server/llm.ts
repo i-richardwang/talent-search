@@ -21,6 +21,7 @@ import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { intentSchema, type Vocabulary } from "#/search/intent";
+import { positiveInt } from "./env";
 
 /**
  * OpenAI 兼容端点。用兼容层而不是绑某一家的 SDK：换模型（公网 provider、
@@ -40,12 +41,6 @@ const MODEL = process.env.LLM_MODEL;
  */
 const STRUCTURED = process.env.LLM_STRUCTURED_OUTPUTS !== "false";
 
-/** 正整数环境变量。缺失、空、非法一律用默认值——配错一个数不该让整条降级。 */
-function intEnv(name: string, fallback: number) {
-	const n = Number(process.env[name]);
-	return Number.isInteger(n) && n > 0 ? n : fallback;
-}
-
 /**
  * 超时与输出预算。这两个值描述的是**端点后面那个模型有多慢、多啰嗦**，
  * 和 base URL、模型名一样属于端点配置，不是产品常量——这个文件不该知道
@@ -59,8 +54,8 @@ function intEnv(name: string, fallback: number) {
  * 超时同理：同一个模型单次可以从几秒跳到几十秒，该给多少只有部署那一侧知道。
  * 两个默认值都取宽，让「配上端点就能用」先成立。
  */
-const TIMEOUT_MS = intEnv("LLM_TIMEOUT_MS", 60_000);
-const MAX_OUTPUT_TOKENS = intEnv("LLM_MAX_OUTPUT_TOKENS", 8_000);
+const TIMEOUT_MS = positiveInt(process.env.LLM_TIMEOUT_MS, 60_000);
+const MAX_OUTPUT_TOKENS = positiveInt(process.env.LLM_MAX_OUTPUT_TOKENS, 8_000);
 
 // provider 延迟到首次使用时创建，未配置模型的进程可以安全导入本模块。
 let model: ReturnType<ReturnType<typeof createOpenAICompatible>> | null = null;

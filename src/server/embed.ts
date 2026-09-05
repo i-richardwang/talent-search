@@ -19,24 +19,19 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { cosineSimilarity, embedMany } from "ai";
 import { type DbExecutor, db } from "#/db";
 import { EMBED_DIM, embeddingSpace } from "#/db/schema";
+import { positiveInt } from "./env";
 
 const BASE_URL = process.env.EMBED_BASE_URL;
 const API_KEY = process.env.EMBED_API_KEY;
 const MODEL = process.env.EMBED_MODEL;
 const SPACE_ID = process.env.EMBED_SPACE_ID;
 
-function positiveInt(value: string | undefined, fallback: number) {
-	const parsed = Number(value);
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
-
 const TIMEOUT_MS = positiveInt(process.env.EMBED_TIMEOUT_MS, 30_000);
 
 /**
  * 同一串字永远得到同一个向量，所以缓存在语义上不可见。它省的是**每次导航**
  * 的一跳：翻页、改筛选都要重跑检索，而检索要先嵌入查询词——不缓存的话
- * 每按一次筛选都等一次模型。上限只是防止进程长期运行时无限长；
- * 超过就整个清掉，不做 LRU——这点数据不值一套淘汰逻辑。
+ * 每按一次筛选都等一次模型。上限只是防止进程长期运行时无限长。
  */
 const CACHE_MAX = 4096;
 const cache = new Map<string, number[]>();
@@ -58,14 +53,20 @@ function getModel() {
 	return model;
 }
 
-async function request(values: string[]) {
+/**
+ * 一批文本 → 每个文本一个向量。返回的是**按文本键入的表**，不是一列向量：
+ * 端点少给一个、多给一个或者换了顺序，都会让下游拿一个词的向量去搜另一个词，
+ * 而错位的名单看起来完全正常。键入之后这种错只能表现为「少了谁」，在这里就报。
+ */
+async function request(values: string[]): Promise<Map<string, number[]>> {
 	const { embeddings } = await embedMany({
 		model: getModel(),
 		values,
 		maxRetries: 1,
 		abortSignal: AbortSignal.timeout(TIMEOUT_MS),
 	});
-	for (const vector of embeddings)
+	const out = new Map<string, number[]>();
+	for (const [index, vector] of embeddings.entries()) {
 		if (
 			vector.length !== EMBED_DIM ||
 			vector.some((value) => !Number.isFinite(value)) ||
@@ -74,7 +75,14 @@ async function request(values: string[]) {
 			throw new Error(
 				`嵌入端点返回了无效向量：期望 ${EMBED_DIM} 个有限数值且范数非零`,
 			);
-	return embeddings;
+		const text = values[index];
+		if (text !== undefined) out.set(text, vector);
+	}
+	if (out.size !== new Set(values).size)
+		throw new Error(
+			`嵌入端点返回 ${embeddings.length} 个向量，送去的是 ${values.length} 个文本`,
+		);
+	return out;
 }
 
 const verifiedSpaceIdentities = new Map<string, string>();
@@ -98,7 +106,7 @@ async function verifySpace(stored: Awaited<ReturnType<typeof storedSpace>>) {
 		throw new Error(
 			`查询端嵌入空间 ${SPACE_ID}/${MODEL}/${EMBED_DIM} 与语料 ${stored.spaceId}/${stored.model}/${stored.dimension} 不一致`,
 		);
-	const [fresh] = await request([stored.canaryText]);
+	const fresh = (await request([stored.canaryText])).get(stored.canaryText);
 	const similarity = fresh
 		? cosineSimilarity(fresh, stored.canaryEmbedding)
 		: Number.NaN;
@@ -141,28 +149,46 @@ async function ensureSpace(store: DbExecutor) {
 		);
 }
 
-/** 文本 → 向量，按入参顺序返回。空数组直接返回，不打端点。 */
+/**
+ * 文本 → 向量，按入参顺序返回。空数组直接返回，不打端点。
+ *
+ * **一次调用自洽**：这一批的向量先各自落到它要填的位置上，缓存才轮到被淘汰。
+ * 反过来先淘汰的话，同一次调用里本来命中缓存的那几个词会跟着整批清空一起没了，
+ * 而它们的向量刚刚还在手边——症状是「加一个新词，旧词就查不到向量了」。
+ *
+ * `cacheMax` 只有测试会传：淘汰这条路径要把缓存填满才走得到，而按真实上限填
+ * 一次要往端点推四千个向量。它不是一项配置——进程里只有一个上限。
+ */
 export async function embed(
 	texts: string[],
 	store: DbExecutor = db,
+	cacheMax: number = CACHE_MAX,
 ): Promise<number[][]> {
 	if (texts.length === 0) return [];
 	await ensureSpace(store);
-	const missing = [...new Set(texts.filter((t) => !cache.has(t)))];
-	if (missing.length > 0) {
-		const embeddings = await request(missing);
-		if (cache.size + missing.length > CACHE_MAX) cache.clear();
-		missing.forEach((text, i) => {
-			const v = embeddings[i];
-			if (!v) throw new Error("嵌入端点漏掉了一个向量");
-			cache.set(text, v);
-		});
+	const out = new Array<number[]>(texts.length);
+	// 同一个词可能出现在好几个位置（几条要求并列同一个说法），一次嵌入填全部
+	const pending = new Map<string, number[]>();
+	for (const [index, text] of texts.entries()) {
+		const cached = cache.get(text);
+		if (cached) {
+			out[index] = cached;
+			continue;
+		}
+		const slots = pending.get(text);
+		if (slots) slots.push(index);
+		else pending.set(text, [index]);
 	}
-	return texts.map((text) => {
-		const vector = cache.get(text);
-		if (!vector) throw new Error(`查询词「${text}」缺少嵌入向量`);
-		return vector;
-	});
+	if (pending.size > 0) {
+		const fresh = await request([...pending.keys()]);
+		// 装不下就整个清掉，不做 LRU——这点数据不值一套淘汰逻辑
+		if (cache.size + fresh.size > cacheMax) cache.clear();
+		for (const [text, vector] of fresh) {
+			cache.set(text, vector);
+			for (const index of pending.get(text) ?? []) out[index] = vector;
+		}
+	}
+	return out;
 }
 
 /** 向量的 SQL 字面量形态：pgvector 认 `[0.1,0.2,…]`，调用方再加 `::halfvec` 转型。 */

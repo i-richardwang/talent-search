@@ -36,8 +36,9 @@ export type SearchDelta = SearchSpec;
  *
  * 它和 URL 上的筛选是**同一批维度的两种生命周期**：这里的条件来自用户原话、
  * 随 turnId 保存，那边的来自地址栏、一次性，搜索时取交集。所以两者形状相同
- * （`Picked`，见 `dimensions.ts`）——同一维在两处各写一份形状，是这个项目
- * 以前每加一维都要改十几处的根。
+ * （`Picked`，见 `dimensions.ts`）：同一维在两处各写一份形状的话，加一维就得
+ * 手工重演两遍，而漏掉的那一遍不会报错，只会让那一维在其中一条生命周期里
+ * 安静地失效。
  */
 export type SearchScope = Picked & {
 	/**
@@ -92,9 +93,14 @@ export function wideTerms(spec: SearchSpec) {
 	return spec.notices.flatMap((n) => (n.kind === "wide" ? [n.term] : []));
 }
 
+/**
+ * 这份查询说了点什么吗。证据那一项问的是**解析出来的条件**，不是那串字非空：
+ * 一串解析不出任何要求的字（比如只有几个记号）在检索里等于空查询，
+ * 两处答案不一致的话，界面会放行一次什么都搜不到的提交。
+ */
 export function hasMeaning(spec: SearchSpec) {
 	return (
-		spec.evidence !== "" ||
+		parseChips(spec.evidence).length > 0 ||
 		narrowsPopulation(spec.scope) ||
 		spec.notices.length > 0
 	);

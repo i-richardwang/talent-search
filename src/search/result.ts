@@ -11,26 +11,17 @@ import type { EmptyReason } from "./empty";
 import type { ChipMode } from "./parse";
 import type { SearchScope } from "./spec";
 
-export type { SeqPick } from "./dimensions";
-
 export type Hit = {
 	experienceId: number;
 	term: string;
-	/**
-	 * 实际命中的那个说法（主词或某个并列说法）。证据行拿它当行标签：
-	 * 用户写「大模型/多模态」，一行证据得说清楚是哪一个说法把这段找出来的。
-	 */
-	member: string;
 	route: Route;
 	/** 该说法与这一段这一路原文的相关度，[RELEVANCE_MIN, 1]。 */
 	relevance: number;
-	kind: "internal" | "external";
 	startDate: string;
 	endDate: string | null;
 	org: string;
 	title: string;
 	seq: string;
-	months: number;
 };
 
 /**
@@ -40,7 +31,7 @@ export type Hit = {
  * 成倍放大（见 weights.ts 的 RESULT_MAX）。这里显式列出列表所需字段；详情面板的
  * 完整档案由 fetchEmployee 单独取，两条路径各自只传自己的读者需要的数据。
  */
-type ResultEmployee = Pick<
+export type ResultEmployee = Pick<
 	Employee,
 	"empId" | "name" | "curDept" | "curTitle" | "curLevel"
 >;
@@ -117,7 +108,7 @@ export type SearchFilters = SearchScope & {
  * 和这次检索无关的值不会出现在这里——这是筛选比全库短的原因：序列全库有几十个，
  * 落到一次具体检索上通常只剩几个。但**有哪些选项只由这次查询决定，不随筛选变**：
  * 被别的维度挤到 0 的那些留在列表里，`n` 就是 0。两个口径为什么必须分开，
- * 以及每一维要怎么算才配得上它们，见 rank.ts 的 facetCount。
+ * 以及每一维要怎么算才配得上它们，见 rank.ts 的 facetRows。
  */
 export type Facets = { [K in DimKey]: Facet<K>[] } & {
 	/**

@@ -13,11 +13,19 @@
  * 重排的分数按（重排空间，查询词，说法）永久缓存在 `phrase_relevance` 里：翻页、
  * 改筛选或再次搜索同一个词时直接命中缓存。只有召回出来却没打过分的对
  * 才会出去。
+ *
+ * **两次快照，模型调用夹在中间。** 换代门闩（`#/db` 的 `withCorpusSnapshot`）
+ * 上的独占锁是排队的，所以一次慢端点调用如果发生在门闩内，它挡住的不是自己
+ * 这一次检索，而是排在等待发布的 ETL 后面的每一个新读者。于是这里把一次准入
+ * 拆成三段：嵌入在门闩外 → 第一次快照做召回和读缓存 → 重排在门闩外 →
+ * 调用方的那次快照（第二次）核对语料还是不是同一代，是就接着取数。
+ * 计划里带的是 phrase id，语料换过一代它们就指向别的说法了，所以核对不能省，
+ * 只能重算（`withAdmission`）。
  */
 
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
-import { type DbExecutor, db } from "#/db";
+import { type DbExecutor, withCorpusSnapshot } from "#/db";
 import { embed, vectorLiteral } from "#/server/embed";
 import { rerank, rerankSpaceId } from "#/server/rerank";
 import { RECALL_MAX, RECALL_MIN } from "./weights";
@@ -25,22 +33,40 @@ import { RECALL_MAX, RECALL_MIN } from "./weights";
 /** 一个查询词命中的一条说法。 */
 export type Admitted = { phraseId: number; relevance: number };
 
-type Candidate = { phrase_id: number; text: string };
+/**
+ * 一个查询词在这一代语料里的候选说法与它们的分数。分数表的键集合最终**就是**
+ * 候选集合（缓存里读到的 + 这次打出来的），命中名单直接由它得出，不必再拿
+ * 候选去查一次分数——查不到该怎么办这个问题因此不存在。
+ */
+type Recalled = {
+	text: string;
+	candidates: { phraseId: number; text: string }[];
+	scores: Map<number, number>;
+};
 
 /**
  * 每个查询词在语料里的候选说法：向量召回，按相似度取前 `RECALL_MAX` 个。
- * 所有词一次嵌完、一条 SQL 取完，不串成 n 次往返。
+ * 所有词一条 SQL 取完，不串成 n 次往返。向量是门闩外嵌好的。
  */
 async function recall(
 	store: DbExecutor,
 	texts: string[],
-): Promise<Map<string, Candidate[]>> {
-	const vectors = await embed(texts, store);
+	vectors: number[][],
+): Promise<Recalled[]> {
+	const out: Recalled[] = texts.map((text) => ({
+		text,
+		candidates: [],
+		scores: new Map(),
+	}));
 	const q = sql`(values ${sql.join(
 		vectors.map((v, i) => sql`(${i}::int, ${vectorLiteral(v)}::halfvec)`),
 		sql`, `,
 	)})`;
-	const rows = await store.execute<Candidate & { ord: number }>(sql`
+	const rows = await store.execute<{
+		ord: number;
+		phrase_id: number;
+		text: string;
+	}>(sql`
 		with q(ord, v) as ${q}
 		select q.ord, c.phrase_id, c.text
 		from q cross join lateral (
@@ -50,118 +76,167 @@ async function recall(
 			order by p.embedding <=> q.v
 			limit ${RECALL_MAX}
 		) c`);
-	const out = new Map<string, Candidate[]>(texts.map((t) => [t, []]));
-	for (const r of rows.rows)
-		out
-			.get(texts[r.ord] as string)
-			?.push({ phrase_id: r.phrase_id, text: r.text });
+	for (const row of rows.rows)
+		out[row.ord]?.candidates.push({
+			phraseId: row.phrase_id,
+			text: row.text,
+		});
 	return out;
 }
 
+/** 这些「查询词 × 说法」以前打过分吗。一条 SQL 读完全部。 */
+async function cachedScores(
+	store: DbExecutor,
+	space: string,
+	recalled: Recalled[],
+) {
+	const pairs = recalled.flatMap((r, ord) =>
+		r.candidates.map((candidate) => ({ ord, query: r.text, candidate })),
+	);
+	if (pairs.length === 0) return;
+	const cached = await store.execute<{
+		ord: number;
+		phrase_id: number;
+		relevance: number;
+	}>(sql`
+		with q(ord, query, phrase_id) as (values ${sql.join(
+			pairs.map(
+				({ ord, query, candidate }) =>
+					sql`(${ord}::int, ${query}, ${candidate.phraseId}::int)`,
+			),
+			sql`, `,
+		)})
+		select q.ord, q.phrase_id, r.relevance
+		from q join phrase_relevance r
+			on r.space = ${space} and r.query = q.query and r.phrase_id = q.phrase_id`);
+	for (const row of cached.rows)
+		recalled[row.ord]?.scores.set(row.phrase_id, row.relevance);
+}
+
+/** 这次新打出来的分。等进了门闩、确认还是同一代语料，才写回缓存。 */
+type FreshScore = { query: string; phraseId: number; relevance: number };
+
+/** 一次准入的完整计划：它站在哪一代语料上，各词命中了什么，欠着哪些缓存写。 */
+type Plan = {
+	generation: string;
+	admitted: Map<string, Admitted[]>;
+	fresh: FreshScore[];
+};
+
 /**
- * 每个查询词命中了语料里的哪些说法（相关度不低于 `min`），按相关度从高到低。
- * 所有词的缓存一次读完，缺失部分并行重排后一次写回；同一个词只算一次。
- * 写回用 `on conflict do nothing`：并发检索得到的是同一确定分数，后到者可丢。
+ * 召回 + 判定，两个模型端点都在门闩外打。
+ *
+ * 返回的计划带着它站的那一代语料：里面的 phrase id 只在那一代里有意义。
  */
-export async function admit(
+async function planAdmission(
 	texts: string[],
 	min: number,
-	store: DbExecutor = db,
-): Promise<Map<string, Admitted[]>> {
+	space: string,
+): Promise<Plan> {
 	const unique = [...new Set(texts)];
-	const out = new Map<string, Admitted[]>();
-	if (unique.length === 0) return out;
-	const candidates = await recall(store, unique);
-	const scores = new Map(
-		unique.map((text) => [text, new Map<number, number>()]),
+	const vectors = await embed(unique);
+	const { generation, recalled } = await withCorpusSnapshot(
+		async (store, generation) => {
+			const recalled = await recall(store, unique, vectors);
+			await cachedScores(store, space, recalled);
+			return { generation, recalled };
+		},
 	);
-	const pairs = unique.flatMap((text, ord) =>
-		(candidates.get(text) ?? []).map((candidate) => ({
-			ord,
-			text,
-			candidate,
-		})),
-	);
-	const space = rerankSpaceId();
-	if (pairs.length > 0) {
-		const cached = await store.execute<{
-			ord: number;
-			phrase_id: number;
-			relevance: number;
-		}>(sql`
-			with q(ord, query, phrase_id) as (values ${sql.join(
-				pairs.map(
-					({ ord, text, candidate }) =>
-						sql`(${ord}::int, ${text}, ${candidate.phrase_id}::int)`,
-				),
-				sql`, `,
-			)})
-			select q.ord, q.phrase_id, r.relevance
-			from q join phrase_relevance r
-				on r.space = ${space} and r.query = q.query and r.phrase_id = q.phrase_id`);
-		for (const row of cached.rows)
-			scores
-				.get(unique[row.ord] as string)
-				?.set(row.phrase_id, Number(row.relevance));
-	}
 
-	const missing = unique.map((text) => ({
-		text,
-		candidates: (candidates.get(text) ?? []).filter(
-			(candidate) => !scores.get(text)?.has(candidate.phrase_id),
+	const fresh: FreshScore[] = [];
+	await Promise.all(
+		recalled.map(async (r) => {
+			const missing = r.candidates.filter(
+				(candidate) => !r.scores.has(candidate.phraseId),
+			);
+			if (missing.length === 0) return;
+			const values = await rerank(
+				r.text,
+				missing.map((candidate) => candidate.text),
+			);
+			missing.forEach((candidate, index) => {
+				const relevance = values[index] as number;
+				r.scores.set(candidate.phraseId, relevance);
+				fresh.push({ query: r.text, phraseId: candidate.phraseId, relevance });
+			});
+		}),
+	);
+
+	return {
+		generation,
+		admitted: new Map(
+			recalled.map((r) => [
+				r.text,
+				[...r.scores]
+					.filter(([, relevance]) => relevance >= min)
+					.map(([phraseId, relevance]) => ({ phraseId, relevance }))
+					.sort((a, b) => b.relevance - a.relevance),
+			]),
 		),
-	}));
-	const ranked = await Promise.all(
-		missing.map(async ({ text, candidates: list }) => ({
-			text,
-			candidates: list,
-			scores:
-				list.length === 0
-					? []
-					: await rerank(
-							text,
-							list.map((candidate) => candidate.text),
-						),
-		})),
-	);
-	const fresh = ranked.flatMap(({ text, candidates: list, scores: values }) =>
-		list.map((candidate, index) => ({
-			text,
-			phraseId: candidate.phrase_id,
-			relevance: values[index] as number,
-		})),
-	);
-	for (const row of fresh)
-		scores.get(row.text)?.set(row.phraseId, row.relevance);
-	if (fresh.length > 0)
-		await store.execute(sql`
-			insert into phrase_relevance (space, query, phrase_id, relevance)
-			values ${sql.join(
-				fresh.map(
-					(row) =>
-						sql`(${space}, ${row.text}, ${row.phraseId}, ${row.relevance})`,
-				),
-				sql`, `,
-			)}
-			on conflict do nothing`);
+		fresh,
+	};
+}
 
-	for (const text of unique) {
-		const relevance = scores.get(text);
-		if (!relevance) throw new Error(`查询词「${text}」缺少重排结果集`);
-		out.set(
-			text,
-			(candidates.get(text) ?? [])
-				.map((candidate) => {
-					const score = relevance.get(candidate.phrase_id);
-					if (score === undefined)
-						throw new Error(`说法 ${candidate.phrase_id} 缺少重排分数`);
-					return { phraseId: candidate.phrase_id, relevance: score };
-				})
-				.filter((hit) => hit.relevance >= min)
-				.sort((a, b) => b.relevance - a.relevance),
-		);
+/**
+ * 写回重排缓存。`on conflict do nothing`：同一个重排空间对同一对文本的分数是
+ * 确定的，并发检索算出来的是同一个数，后到者可丢。
+ */
+async function cacheScores(
+	store: DbExecutor,
+	space: string,
+	fresh: FreshScore[],
+) {
+	if (fresh.length === 0) return;
+	await store.execute(sql`
+		insert into phrase_relevance (space, query, phrase_id, relevance)
+		values ${sql.join(
+			fresh.map(
+				(row) =>
+					sql`(${space}, ${row.query}, ${row.phraseId}, ${row.relevance})`,
+			),
+			sql`, `,
+		)}
+		on conflict do nothing`);
+}
+
+/**
+ * 一次准入连着一次换代门闩内的取数，最多重来这么多次。
+ *
+ * 换代是分钟级的一件事（一次整库重灌），一次检索连撞三回不再是巧合，
+ * 而是某处不停地在重灌——继续重试只会把它磨成一串白打的端点调用。
+ */
+const PLAN_ATTEMPTS = 3;
+
+/**
+ * 在同一代语料上完成「准入 + 取数」。准入在门闩外算（要打两个模型端点），
+ * 取数在门闩内做。
+ *
+ * 两段之间语料可能换代，而计划里的 phrase id 是上一代的：照着取数就是拿旧 id
+ * 去指新说法，得到的是一份看起来完全正常的错名单。所以进门闩第一件事是核对
+ * 代号，对不上就整个重算——重排缓存也在核对之后才写，旧 id 的分数不该落进新
+ * 一代的缓存里。
+ */
+export async function withAdmission<T>(
+	texts: string[],
+	min: number,
+	use: (store: DbExecutor, admitted: Map<string, Admitted[]>) => Promise<T>,
+): Promise<T> {
+	// 一个词都没有就没有召回，计划里也就没有任何指向某一代语料的 id：直接进门闩。
+	if (texts.length === 0)
+		return withCorpusSnapshot((store) => use(store, new Map()));
+	// 重排端点没配就在这里抛，不进语料快照：没有判定这一步，召回出来的候选里
+	// 一半是「前端」对「后端」这种反义，装作能用等于给一份错名单。
+	const space = rerankSpaceId();
+	for (let attempt = 0; attempt < PLAN_ATTEMPTS; attempt++) {
+		const plan = await planAdmission(texts, min, space);
+		const done = await withCorpusSnapshot(async (store, generation) => {
+			if (generation !== plan.generation) return null;
+			await cacheScores(store, space, plan.fresh);
+			return { value: await use(store, plan.admitted) };
+		});
+		if (done) return done.value;
 	}
-	return out;
+	throw new Error(`语料连续 ${PLAN_ATTEMPTS} 次在检索期间换代，这次检索放弃`);
 }
 
 /**

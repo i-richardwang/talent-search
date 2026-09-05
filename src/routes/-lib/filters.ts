@@ -58,9 +58,10 @@ export type TextFilter = {
  * 候选行：分面给出的那些，加上**选中却在这次查询里数不出人的**那些——后者补在
  * 最前面，计数 0。
  *
- * 分面的值域由这次查询决定（`rank.ts` 的 `facetCount`），而 URL 上的筛选会跟着
- * 人走到下一条查询记录上：上一次搜「算法」时选的序列，在这次搜「财务」的候选里
- * 可能一个人都没有，于是它从列表里消失，然后就没有任何东西能取消它了。
+ * 分面的值域由这次查询在**当下这一代语料**上的结果决定（`rank.ts` 的
+ * `facetRows`），而 URL 上的筛选是链接的一部分：它会被收藏、被粘给同事，也会
+ * 被人手改。语料换过一代之后，同一条记录跑出来的候选里可能已经没有那个值了。
+ * 不补这一行，那个筛选照旧生效（名单里少了人），列表里却没有任何东西能取消它。
  */
 function rows(key: DimKey, candidates: Facet[], picked: unknown[]): Facet[] {
 	const absent = picked.filter(
@@ -84,7 +85,7 @@ function rows(key: DimKey, candidates: Facet[], picked: unknown[]): Facet[] {
  * 当成筛选变了。
  */
 function field(key: DimKey, facets: Facets, view: View): FilterField {
-	const picked = dimPicked(key, view[key]);
+	const picked = dimPicked(view[key]);
 	const all = rows(key, facets[key] as Facet[], picked);
 	const values = picked.map((v) => dimId(key, v));
 	return {

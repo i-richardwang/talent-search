@@ -306,11 +306,12 @@ export function ResultList({
 					const best = bestHitPerTerm(ranked?.hits ?? [], terms);
 					// 命中的逐条画，没命中的收成一行。「未命中」这三个字重复五遍
 					// 没有任何可读的东西，只是把每一块撑高一倍。
-					const hits = terms.flatMap((t, i) =>
-						best[i]
-							? [{ basis: ranked?.basis[i] ?? null, hit: best[i], term: t }]
-							: [],
-					);
+					// 样例段和聚合依据出自同一次筛选，所以这两样要么都在、要么都不在。
+					const hits = terms.flatMap((t, i) => {
+						const hit = best[i];
+						const basis = ranked?.basis[i];
+						return hit && basis ? [{ basis, hit, term: t }] : [];
+					});
 					const missed = terms.filter((_, i) => !best[i]);
 					return (
 						<Card

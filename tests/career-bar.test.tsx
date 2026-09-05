@@ -13,51 +13,10 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CareerBar, packLanes, ym } from "#/components/career-bar";
-import type { Experience } from "#/db/schema";
-import type { Hit } from "#/search/result";
+import { experience, hit } from "./rows";
 
-function exp(
-	id: number,
-	startDate: string,
-	endDate: string | null,
-	extra: Partial<Experience> = {},
-): Experience {
-	return {
-		id,
-		empId: "T0001",
-		kind: "internal",
-		startDate,
-		endDate,
-		org: "云梯物流",
-		orgPath: "",
-		orgMeta: null,
-		title: "渠道运营",
-		seqL1: "",
-		seqL2: "",
-		seqL3: "",
-		level: "",
-		description: "",
-		months: 12,
-		...extra,
-	};
-}
-
-function hit(experienceId: number, route: Hit["route"]): Hit {
-	return {
-		experienceId,
-		term: "渠道运营",
-		member: "渠道运营",
-		route,
-		relevance: 1,
-		kind: "internal",
-		startDate: "2020-01-01",
-		endDate: null,
-		org: "云梯物流",
-		title: "渠道运营",
-		seq: "",
-		months: 12,
-	};
-}
+const exp = (id: number, startDate: string, endDate: string | null) =>
+	experience({ id, startDate, endDate });
 
 /** 渲染出来的每个色块，按 DOM 顺序 */
 function blocks(html: string) {
@@ -140,7 +99,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
-				hitIndex={new Map([[1, [hit(1, "seq")]]])}
+				hitIndex={new Map([[1, [hit({ route: "seq" })]]])}
 				rows={rows}
 			/>,
 		);
@@ -155,7 +114,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
-				hitIndex={new Map([[1, [hit(1, "seq")]]])}
+				hitIndex={new Map([[1, [hit({ route: "seq" })]]])}
 				rows={rows}
 			/>,
 		);
@@ -170,7 +129,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
-				hitIndex={new Map([[1, [hit(1, "description")]]])}
+				hitIndex={new Map([[1, [hit({ route: "description" })]]])}
 				rows={rows}
 			/>,
 		);

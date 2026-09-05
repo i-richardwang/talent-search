@@ -1,3 +1,4 @@
+import { dots } from "#/lib/format";
 import {
 	DIM_KEYS,
 	dimId,
@@ -17,7 +18,7 @@ import type { SearchScope } from "#/search/spec";
 export function scopeEntries(scope: SearchScope) {
 	const out: { id: string; label: string; without: SearchScope }[] = [];
 	for (const key of DIM_KEYS)
-		for (const value of dimPicked(key, scope[key]))
+		for (const value of dimPicked(scope[key]))
 			out.push({
 				id: `${key}:${dimId(key, value)}`,
 				label: dimText(key, value),
@@ -27,13 +28,13 @@ export function scopeEntries(scope: SearchScope) {
 	if (scope.org)
 		out.push({
 			id: "org",
-			label: `组织 · ${scope.org}`,
+			label: dots("组织", scope.org),
 			without: { ...scope, org: undefined },
 		});
 	if (scope.school)
 		out.push({
 			id: "school",
-			label: `学校 · ${scope.school}`,
+			label: dots("学校", scope.school),
 			without: { ...scope, school: undefined },
 		});
 	return out;

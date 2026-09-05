@@ -5,23 +5,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { bestHitPerTerm, bestStrength, strengthOf } from "#/search/evidence";
-import type { Hit, TermPlan } from "#/search/result";
+import type { TermPlan } from "#/search/result";
 import { ROUTE_WEIGHTS, type Route } from "#/search/weights";
+import { hit as row } from "./rows";
 
-const hit = (term: string, route: Route): Hit => ({
-	experienceId: 1,
-	term,
-	member: term,
-	route,
-	relevance: 1,
-	kind: "internal",
-	startDate: "2020-01-01",
-	endDate: null,
-	org: "",
-	title: "",
-	seq: "",
-	months: 12,
-});
+const hit = (term: string, route: Route) => row({ term, route });
 
 const terms = (...t: string[]): TermPlan[] =>
 	t.map((term) => ({ term, members: [term], mode: "must" }));

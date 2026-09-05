@@ -11,7 +11,7 @@
  * 两份推理迟早分叉，而分叉的表现是一句说错的话，不是一次报错。
  *
  * 这个文件只答「为什么」，不答「说什么」：每一种成因对应的标题、提示和那条
- * 一键出路住在 `routes/-lib/empty-state.ts`，那是产品文案，跟着界面改。
+ * 一键出路住在 `routes/s/$turnId/-lib/empty-state.ts`，那是产品文案，跟着界面改。
  * 它是纯函数、不带 `db`，所以页面可以从这里取值（分界见 `result.ts`）。
  */
 import { narrowsPopulation } from "./params";
@@ -71,22 +71,28 @@ export function emptyReason(input: {
 	if (input.overflow) return input.overflow;
 	if (total > 0) return null;
 
-	if (terms.length === 0) {
-		const chips = parseChips(spec.evidence);
-		// 排除词的停用不算「我把条件停了」：它本来就不产出人
-		if (chips.some((chip) => chip.off && chip.mode !== "exclude"))
-			return { kind: "allDisabled" };
-		if (chips.length > 0) return { kind: "excludeOnly" };
-		if (narrowsPopulation(spec.scope))
-			return narrowsPopulation(filters)
-				? { kind: "filtered" }
-				: { kind: "scopeEmpty" };
-		if (unsupportedOf(spec).length > 0) return { kind: "unsupportedOnly" };
-		return { kind: "noConditions" };
+	// **跑过一次检索，就报这次检索的结果。** 下面那几支答的是「什么都没能产出
+	// 候选人」，而语义要求和结构化范围各自都是一份完整的候选定义——只要有一份
+	// 在场，检索就真的跑过了，成因得从它找出来的那批人里说。顺序反过来的话，
+	// 「只看入职前经历，不要实习」会被报成「你只写了排除词」，而那句话的出路
+	// （补一条要求）和真正的出路（放宽范围）正好不是一回事。
+	if (terms.length > 0) {
+		if (filters.strong && withoutStrong > 0)
+			return { kind: "strongEmpty", without: withoutStrong };
+		if (narrowsPopulation(filters)) return { kind: "filtered" };
+		return { kind: "unmet" };
 	}
+	if (narrowsPopulation(spec.scope))
+		return narrowsPopulation(filters)
+			? { kind: "filtered" }
+			: { kind: "scopeEmpty" };
 
-	if (filters.strong && withoutStrong > 0)
-		return { kind: "strongEmpty", without: withoutStrong };
-	if (narrowsPopulation(filters)) return { kind: "filtered" };
-	return { kind: "unmet" };
+	// 什么都没跑：条件要么被自己停用了，要么本来就产不出候选人。
+	const chips = parseChips(spec.evidence);
+	// 排除词的停用不算「我把条件停了」：它本来就不产出人
+	if (chips.some((chip) => chip.off && chip.mode !== "exclude"))
+		return { kind: "allDisabled" };
+	if (chips.length > 0) return { kind: "excludeOnly" };
+	if (unsupportedOf(spec).length > 0) return { kind: "unsupportedOnly" };
+	return { kind: "noConditions" };
 }

@@ -8,10 +8,16 @@ import { XIcon } from "lucide-react";
 import { CareerBar } from "#/components/career-bar";
 import { buildHitIndex, Timeline } from "#/components/timeline";
 import { buttonVariants } from "#/components/ui/button";
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyTitle,
+} from "#/components/ui/empty";
 import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
-import { seqLabel } from "#/lib/format";
+import { dots, positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { fetchEmployee } from "#/server/functions";
 
@@ -74,14 +80,18 @@ function PersonPending() {
 	);
 }
 
+/**
+ * 走到头了。和另外两处死路（页面不存在、记录不存在）同一个组件族，只是不给媒介：
+ * 那枚带叠卡的图标说的是「这里本该有一批东西」，而这一栏本该只有一个人。
+ */
 function DetailNotFound() {
 	return (
-		<div className="px-5 py-10 text-center">
-			<p className="text-muted-foreground text-sm">未找到这位员工</p>
-			<p className="text-muted-foreground text-xs">
-				该员工记录不存在或已失效。
-			</p>
-		</div>
+		<Empty>
+			<EmptyHeader>
+				<EmptyTitle>未找到这位员工</EmptyTitle>
+				<EmptyDescription>该员工记录不存在或已失效。</EmptyDescription>
+			</EmptyHeader>
+		</Empty>
 	);
 }
 
@@ -127,11 +137,10 @@ function Person() {
 					 * 否则这一块读起来是一张字号全同的表单打印件。
 					 */}
 					<h2 className="title-1 truncate font-semibold">{e.name}</h2>
+					{/* 工号单独一段是因为它要 mono；其余接在后面，分隔符和全站一致。 */}
 					<p className="mt-0.5 truncate text-muted-foreground text-sm">
 						<span className="font-mono">{e.empId}</span>
-						{" · "}
-						{e.curDept} · {e.curTitle}
-						{e.curLevel && ` · ${e.curLevel}`}
+						{` · ${positionLabel(e)}`}
 					</p>
 				</div>
 				{/* 用 Link 本身当按钮：<a> 里嵌 <button> 是非法嵌套。
@@ -163,7 +172,7 @@ function Person() {
 			<div className="px-5 pt-5">
 				<dl className="grid grid-cols-2 gap-x-4 gap-y-3.5">
 					<Fact label="当前序列">
-						{seqLabel(e.curSeqL1, e.curSeqL2, e.curSeqL3) || "—"}
+						{dots(e.curSeqL1, e.curSeqL2, e.curSeqL3) || "—"}
 					</Fact>
 					{/* 日期用等宽数字：时间轴上的年月也是这个待遇，
 					    同一个人的两处日期不该一处对得齐、一处对不齐 */}
@@ -172,7 +181,7 @@ function Person() {
 					</Fact>
 					<Fact label="招聘来源">{e.recruitment || "—"}</Fact>
 					<Fact label="教育背景">
-						{[e.educationLevel, e.school].filter(Boolean).join(" · ") || "—"}
+						{dots(e.educationLevel, e.school) || "—"}
 					</Fact>
 				</dl>
 

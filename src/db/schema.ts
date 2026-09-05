@@ -13,7 +13,6 @@ import {
 	serial,
 	text,
 	timestamp,
-	unique,
 } from "drizzle-orm/pg-core";
 import type { SearchDelta, SearchSpec } from "#/search/spec";
 
@@ -86,13 +85,16 @@ export const experience = pgTable(
 			"experience_dates_ordered",
 			sql`${t.endDate} is null or ${t.endDate} >= ${t.startDate}`,
 		),
-		index("experience_emp").on(t.empId, t.startDate),
 		/*
-		 * 语义命中不走这张表的索引（见 phrase / experience_phrase）。这里剩下的两个是
-		 * 按人取时间线和按序列做等值筛选用的。公司名 / 学校名那两个精确条件
-		 * 走 ILIKE 顺扫：三万段一次几毫秒，不值得为它们建索引。
+		 * 这张表只建一个索引：按人取时间线。语义命中不走它（见 phrase /
+		 * experience_phrase），其余谓词一律顺扫——三万段一次几毫秒。
+		 *
+		 * 序列筛选尤其不建：它下推出去的是 `seq_l1 || chr(1) || seq_l2 in (...)`
+		 * 一个表达式（身份得和 `dimensions.ts` 的 `id()` 是同一个字符串），而
+		 * `(seq_l1, seq_l2)` 上的 btree 回答不了表达式上的等值——建了也只是一张
+		 * 没有读者的索引，写入时照样维护。
 		 */
-		index("experience_seq").on(t.seqL1, t.seqL2),
+		index("experience_emp").on(t.empId, t.startDate),
 	],
 );
 
@@ -212,9 +214,10 @@ export const phraseRelevance = pgTable(
  *    （同一句原话、同一份 SearchSpec）；名单本身跟着语料和时间走，本来就该走——
  *    可复现的是条件，不是那批人。「问题不变」由「这一行是不可变的」保证，
  *    不由「凑巧没人再调模型」保证。想重新理解，就派生一条新记录。
- * 3. **改条件留得下痕迹。** 每次改条件都派生一条挂在 `parent_turn_id` 上的
- *    新记录，于是「模型判成必须、人改成加分」这类修正会自己长在库里。
- *    这是这个产品唯一能自己产出的模型评估数据，写进 URL 就等于每次导航扔一次。
+ * 3. **改条件留得下痕迹。** 每次改条件都派生一条新记录，同一条链上于是躺着
+ *    「模型判成必须、人改成加分」这类修正的前后两份——链头是哪一条由
+ *    `root_turn_id` 说。这是这个产品唯一能自己产出的模型评估数据，写进 URL
+ *    就等于每次导航扔一次。
  *
  * 这张表**只 INSERT**，唯一的例外是把 `delta` / `spec` 从 null 补成理解结果。
  * 这一条由应用代码保证；库负责输入完整性与链关系。
@@ -229,14 +232,14 @@ export const searchTurn = pgTable(
 		 * 并且停在它最后的样子上。
 		 */
 		rootTurnId: text("root_turn_id").notNull(),
-		/** 历史上的上一步。链头为 null；浏览器后退与最近搜索沿这条链工作。 */
-		parentTurnId: text("parent_turn_id"),
 		/**
 		 * 这条查询在问的那句话。**一条查询的门面**：工作台顶上显示的是它，
 		 * 「最近搜索」里认出「这是我搜过的那句」靠的也是它，改一枚条件时
 		 * 原样传给下一条——问的是什么没变，只是读法调了一下。
 		 *
-		 * 只有点词汇表落下的记录没有原话：那一步本来就不是用一句话问的。
+		 * 链头那条**改条件**的记录没有原话：它不是由一句话问出来的（工作台里的
+		 * 每一次改条件都挂在某条原话下面，所以只有从零态直接提交一份条件时才会
+		 * 出现这种记录）。
 		 */
 		rawText: text("raw_text"),
 		/**
@@ -273,29 +276,18 @@ export const searchTurn = pgTable(
 				)`,
 		),
 		/*
-		 * 自引用：链头这一行的 root 就是它自己。同一条 INSERT 里成立——外键在
-		 * 语句结束时才检查，那时这一行已经在表里了。
+		 * **链的完整性由外键保证，不由应用代码保证。** 自引用：每一行的 root 必须
+		 * 是一条真实存在的记录，链头那一行的 root 就是它自己——同一条 INSERT 里
+		 * 成立，外键在语句结束时才检查，那时这一行已经在表里了。
+		 *
+		 * 写错的后果是「最近搜索」把同一次找人任务列成两行，或者列出一条指向
+		 * 不存在的链头的记录，界面上都看不出异常——这种错必须在写入那一刻就
+		 * 写不进去。
 		 */
 		foreignKey({
 			name: "search_turn_root",
 			columns: [t.rootTurnId],
 			foreignColumns: [t.id],
-		}).onDelete("cascade"),
-		/*
-		 * **派生链的完整性由外键保证，不由应用代码保证。**
-		 *
-		 * 「我的 root 必须等于父亲的 root」是这条链唯一的不变量，而它正好是一条
-		 * 复合外键：指向 `(id, root_turn_id)`，于是「父亲存在」和「跟父亲同一条链」
-		 * 一起成立。写错的后果是「最近搜索」把同一次找人任务列成两行，界面上
-		 * 看不出异常——这种错必须在写入那一刻就写不进去。
-		 *
-		 * 链头的 parent 为 null，复合外键遇 null 不检查，自然放行。
-		 */
-		unique("search_turn_id_root").on(t.id, t.rootTurnId),
-		foreignKey({
-			name: "search_turn_parent",
-			columns: [t.parentTurnId, t.rootTurnId],
-			foreignColumns: [t.id, t.rootTurnId],
 		}).onDelete("cascade"),
 		// 「最近搜索」：按 root 取每条链最新的那一条
 		index("search_turn_recent").on(t.rootTurnId, t.createdAt),

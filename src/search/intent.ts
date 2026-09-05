@@ -4,18 +4,17 @@
  */
 import { z } from "zod";
 import { parsePicked, type VocabKey } from "./dimensions";
-import { narrowsPopulation } from "./params";
 import {
+	boundedText,
 	CHIP_MAX,
+	CHIP_MODES,
 	type ChipDraft,
 	type ChipMode,
 	canonical,
 	parseQuery,
 	toQuery,
 } from "./parse";
-import type { SearchDelta, SearchScope } from "./spec";
-
-const MODES = ["must", "boost", "exclude"] as const;
+import { hasMeaning, type SearchDelta, type SearchScope } from "./spec";
 
 /** 模型选择结构化值时只能看语料真实拥有的词表。哪几维有词表见 `VOCAB_KEYS`。 */
 export type Vocabulary = { [K in VocabKey]: readonly string[] };
@@ -43,7 +42,7 @@ export function intentSchema(vocab: Vocabulary) {
 							"一个方向、领域或能力，两到十二个字，写成库里岗位或序列会用的说法；缩写展开（BD → 商务拓展）",
 						),
 					mode: z
-						.enum(MODES)
+						.enum(CHIP_MODES)
 						.describe(
 							"must=必须做过；boost=最好有，没有也留下；exclude=这类经历不作数",
 						),
@@ -98,25 +97,30 @@ export function intentSchema(vocab: Vocabulary) {
 	});
 }
 
-function text(value: unknown) {
-	return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
+/**
+ * 一句话最多留几条「没处放的条件」。
+ *
+ * 它是载荷的闸，不是判断：这几条会原样存进不可变记录、随查询画在屏幕上，
+ * 而模型抽风时 `unsupported` 是最容易变成一整段正文的那一栏。八条已经比
+ * 一句话里说得出的条件多了。
+ */
+const UNSUPPORTED_MAX = 8;
 
 /** 模型输出 → 一句话自己的查询增量。任何不合规字段都被局部丢弃，不牵连整句。 */
 export function toDelta(raw: unknown, vocab: Vocabulary): SearchDelta {
 	const value = (raw ?? {}) as Record<string, unknown>;
 	const parseTexts = (input: unknown) =>
 		Array.isArray(input)
-			? input.flatMap((item) => parseQuery(text(item) ?? ""))
+			? input.flatMap((item) => parseQuery(boundedText(item) ?? ""))
 			: [];
 	const drafts: ChipDraft[] = [];
 
 	for (const item of Array.isArray(value.terms) ? value.terms : []) {
 		const term = (item ?? {}) as Record<string, unknown>;
-		const mode = MODES.includes(term.mode as ChipMode)
+		const mode = CHIP_MODES.includes(term.mode as ChipMode)
 			? (term.mode as ChipMode)
 			: "must";
-		const [head, ...rest] = parseQuery(text(term.term) ?? "");
+		const [head, ...rest] = parseQuery(boundedText(term.term) ?? "");
 		if (!head) continue;
 		const alts = parseTexts(term.alts);
 		drafts.push({ term: head, ...(alts.length > 0 && { alts }), mode });
@@ -129,7 +133,7 @@ export function toDelta(raw: unknown, vocab: Vocabulary): SearchDelta {
 	 * 那是模型侧的事，这一层给不出来。
 	 */
 	const listed = (input: unknown, values: readonly string[]) => {
-		const candidate = text(input);
+		const candidate = boundedText(input);
 		return candidate && values.includes(candidate) ? [candidate] : undefined;
 	};
 	const scope: SearchScope = {
@@ -142,14 +146,24 @@ export function toDelta(raw: unknown, vocab: Vocabulary): SearchDelta {
 			education: listed(value.education, vocab.education),
 		}),
 	};
-	const org = text(value.org);
+	// 公司名、学校名和「没处放的条件」走的是和 URL、RPC 同一条边界
+	// （`boundedText`）：模型输出是不可信输入，上游声明过 schema 不能省掉这一道。
+	const org = boundedText(value.org);
 	if (org) scope.org = org;
-	const school = text(value.school);
+	const school = boundedText(value.school);
 	if (school) scope.school = school;
 
-	const unsupported = Array.isArray(value.unsupported)
-		? [...new Set(value.unsupported.map(text).filter((x): x is string => !!x))]
-		: [];
+	const unsupported = (
+		Array.isArray(value.unsupported)
+			? [
+					...new Set(
+						value.unsupported
+							.map(boundedText)
+							.filter((x): x is string => x !== undefined),
+					),
+				]
+			: []
+	).slice(0, UNSUPPORTED_MAX);
 
 	return {
 		evidence: canonical(toQuery(drafts)),
@@ -172,12 +186,7 @@ export function resolveIntent(
 ): SearchDelta {
 	if (raw !== null) {
 		const delta = toDelta(raw, vocab);
-		if (
-			delta.evidence !== "" ||
-			narrowsPopulation(delta.scope) ||
-			delta.notices.length > 0
-		)
-			return delta;
+		if (hasMeaning(delta)) return delta;
 	}
 	return {
 		evidence: canonical(query),

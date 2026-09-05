@@ -1,5 +1,6 @@
 /** 命令行跑一条查询，用于验收用例与调参：bun run query "算法 产品 后端" */
 import { pool } from "#/db";
+import { period } from "#/lib/format";
 import { canonical } from "#/search/parse";
 import { search } from "#/search/search";
 
@@ -34,9 +35,10 @@ for (const r of top) {
 	for (const h of r.hits) {
 		if (seen.has(h.term)) continue;
 		seen.add(h.term);
-		const span = `${h.startDate.slice(0, 7)}~${h.endDate?.slice(0, 7) ?? "至今"}`;
+		// 起止用界面上那一份写法（`lib/format.ts`）：命令行是拿来核对结果的，
+		// 两处把同一段经历写成两个样子，对起来就得先在脑子里换一次算。
 		console.log(
-			`     ${h.term} ←[${h.route} ${(h.relevance * 100).toFixed(0)}%] ${span} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
+			`     ${h.term} ←[${h.route} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
 		);
 	}
 }

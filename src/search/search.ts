@@ -9,13 +9,18 @@
  * 各自相关度多少，由 `phrases.ts` 回答（向量召回 + 重排判定）；这里拿到那批
  * 「命中的说法」，沿 `experience_phrase` 走到经历段和人。「算法」因此找得到
  * 岗位写着「深度学习工程师」的段，不需要谁替库补同义词。
+ *
+ * 取数**站在一代语料上**，但准入不在门闩里：判定要打两个模型端点，而换代门闩
+ * 上的独占锁是排队的，押着它等模型等于让一次端点抖动挡住全部检索。所以这里
+ * 每一条取数路径都从 `withAdmission` 进去——它在门闩外算好命中的说法，进门闩
+ * 时核对语料还是不是同一代（论证在 `phrases.ts` 和 `#/db`）。
  */
 
 import "@tanstack/react-start/server-only";
 import { inArray, type SQL, sql } from "drizzle-orm";
 import { type DbExecutor, withCorpusSnapshot } from "#/db";
 import { employee, experience } from "#/db/schema";
-import { seqLabel } from "#/lib/format";
+import { dots } from "#/lib/format";
 import {
 	DIM_KEYS,
 	DIMENSIONS,
@@ -23,15 +28,16 @@ import {
 	type DimSource,
 	dimId,
 	dimPicked,
+	NOT_A_VALUE,
 	type Picked,
 	VOCAB_KEYS,
 	type VocabKey,
 } from "./dimensions";
 import { emptyReason } from "./empty";
 import type { Vocabulary } from "./intent";
-import { narrowsPopulation, sanitizeLimit } from "./params";
+import { narrowsPopulation } from "./params";
 import { activeChips, parseChips } from "./parse";
-import { type Admitted, admit, admittedTable } from "./phrases";
+import { type Admitted, admittedTable, withAdmission } from "./phrases";
 import {
 	type Fact,
 	type PopulationFact,
@@ -41,8 +47,10 @@ import {
 } from "./rank";
 import {
 	emptyFacets,
+	type Facets,
 	type Hit,
 	type RankedResult,
+	type ResultEmployee,
 	type SearchFilters,
 	type SearchOutcome,
 	type TermPlan,
@@ -74,11 +82,6 @@ function like(term: string) {
 	return sql`${`%${escapeLike(term)}%`}`;
 }
 
-function required<T>(value: T | undefined, message: string): T {
-	if (value === undefined) throw new Error(message);
-	return value;
-}
-
 /**
  * 这些词里，哪些在语料里命中的**人**占比超过了 `WIDE_SHARE`——也就是**太宽**。
  *
@@ -95,32 +98,29 @@ function required<T>(value: T | undefined, message: string): T {
  * 排除词按 `RELEVANCE_MIN_EXCLUDE` 判，拿这把尺去量它，读数天然偏大。
  * 谁该被量由调用方决定（`server/turn.ts` 的 benchWide）。
  */
-export async function probeWide(
-	texts: string[],
-	store?: DbExecutor,
-): Promise<Set<string>> {
+export async function probeWide(texts: string[]): Promise<Set<string>> {
 	if (texts.length === 0) return new Set();
-	if (!store)
-		return withCorpusSnapshot((snapshot) => probeWide(texts, snapshot));
-	const admitted = await admit(texts, RELEVANCE_MIN, store);
-	const rows = texts.flatMap((t, i) =>
-		(admitted.get(t) ?? []).map((hit) => ({
-			termIdx: i,
-			memberIdx: 0,
-			hit,
-		})),
-	);
-	const table = admittedTable(rows);
-	if (!table) return new Set();
-	const wide = await store.execute<{ term_idx: number }>(sql`
-		with total as (select count(distinct emp_id)::float as n from experience),
-		q(term_idx, member_idx, phrase_id, relevance) as ${table}
-		select q.term_idx from q
-		join experience_phrase ep on ep.phrase_id = q.phrase_id
-		join experience e on e.id = ep.experience_id, total
-		group by q.term_idx, total.n
-		having count(distinct e.emp_id) > total.n * ${WIDE_SHARE}`);
-	return new Set(wide.rows.map((row) => texts[row.term_idx] as string));
+	return withAdmission(texts, RELEVANCE_MIN, async (store, admitted) => {
+		const table = admittedTable(
+			texts.flatMap((t, i) =>
+				(admitted.get(t) ?? []).map((hit) => ({
+					termIdx: i,
+					memberIdx: 0,
+					hit,
+				})),
+			),
+		);
+		if (!table) return new Set<string>();
+		const wide = await store.execute<{ term_idx: number }>(sql`
+			with total as (select count(distinct emp_id)::float as n from experience),
+			q(term_idx, member_idx, phrase_id, relevance) as ${table}
+			select q.term_idx from q
+			join experience_phrase ep on ep.phrase_id = q.phrase_id
+			join experience e on e.id = ep.experience_id, total
+			group by q.term_idx, total.n
+			having count(distinct e.emp_id) > total.n * ${WIDE_SHARE}`);
+		return new Set(wide.rows.map((row) => texts[row.term_idx] as string));
+	});
 }
 
 type FactRow = {
@@ -133,7 +133,43 @@ type FactRow = {
 	end_date: string | null;
 } & DimSource;
 
-type PopulationRow = { emp_id: string } & DimSource;
+type PopulationRow = { id: number; emp_id: string } & DimSource;
+
+/**
+ * 一份没有人的结果的公共部分：没有人、没有候选、总数为零，只差一句「为什么」。
+ *
+ * 它出现在三个地方（一条要求都没解析出来、取数撞上保险丝的两条路），各写一遍
+ * 的话，`Facets` 或 `SearchOutcome` 上加一个字段就会有一处忘了跟上，而少一个
+ * 字段的空结果在屏幕上和别的空结果长得一模一样。分面必须现造一个：它是可变的。
+ */
+function noOne(): { results: []; facets: Facets; total: number } {
+	return { results: [], facets: emptyFacets(), total: 0 };
+}
+
+/**
+ * 摘掉被排除词否决的那些段。语义检索和结构化范围两条路共用这一步——
+ * 「命中排除词的段丧失作证资格」对人口事实同样成立：一段被否决了，它就不能
+ * 再算作这个人落在范围里的凭据。各写一份的话，「只写范围加一个排除词」
+ * 会安静地当那个排除词不存在。
+ */
+function keepUnvetoed<F extends { id: number }>(
+	facts: F[],
+	vetoed: Set<number>,
+): F[] {
+	return vetoed.size === 0 ? facts : facts.filter((f) => !vetoed.has(f.id));
+}
+
+/**
+ * 结果列表要画的那几列。列的集合由 `result.ts` 的 `ResultEmployee` 说了算，
+ * 这里按它取——两条路径各抄一份的话，加一列就会有一条路径少画一样东西。
+ */
+const RESULT_COLUMNS = {
+	empId: employee.empId,
+	name: employee.name,
+	curDept: employee.curDept,
+	curTitle: employee.curTitle,
+	curLevel: employee.curLevel,
+} satisfies Record<keyof ResultEmployee, unknown>;
 
 type FactLoad =
 	| { kind: "loaded"; facts: Fact[] }
@@ -214,7 +250,7 @@ function dimCond<K extends DimKey>(key: K, picked: Picked[K]): SQL | null {
 	const column = DIM_COLUMN[key];
 	if (DIMENSIONS[key].match === "atLeast")
 		return sql`${column} >= ${picked as number}`;
-	const ids = dimPicked(key, picked).map((value) => dimId(key, value));
+	const ids = dimPicked(picked).map((value) => dimId(key, value));
 	return ids.length > 0
 		? sql`${column} in (${sql.join(
 				ids.map((id) => sql`${id}`),
@@ -338,7 +374,6 @@ async function fetchFacts(
 				empId: emp_id,
 				termIdx: term_idx,
 				memberIdx: member_idx,
-				relevance: Number(dims.relevance),
 				endDate: end_date,
 			}),
 		),
@@ -402,44 +437,51 @@ const VOCAB_SOURCE: Record<VocabKey, SQL> = {
  *
  * 模型只能从这里挑，不许凭常识造一个「一线大厂」或「P8」出来：造出来的值
  * 筛不到任何人，而界面上那一维会显示成一个选中了却空着的筛选。语料就是词典。
- * 空串与「未知」不是取值。
+ *
+ * 「哪些串不算这一维的取值」（空串、`NOT_A_VALUE`）不在这里判断，它是维度
+ * 自己的声明：词表、内存判定、URL 清洗三处各写一份的话，模型能挑一个内存
+ * 谓词当场否掉的值，而屏幕上是一个选中了却空着的筛选。
+ *
+ * 一维一条 SQL：四条小查询在同一次快照里跑完，换来的是每一维的取值原样成行，
+ * 不必把四个数组拼进一行再逐维拆开。
  */
-export async function vocabulary(store?: DbExecutor): Promise<Vocabulary> {
-	if (store) return vocabularyFrom(store);
-	return withCorpusSnapshot((snapshot) => vocabularyFrom(snapshot));
-}
-
-async function vocabularyFrom(store: DbExecutor): Promise<Vocabulary> {
-	const rows = await store.execute<Record<VocabKey, string[]>>(sql`
-		select ${sql.join(
-			VOCAB_KEYS.map(
-				(key) => sql`array(select v from (
-				select ${FACT_COLUMNS[key]} as v, count(*) as n
-				from ${VOCAB_SOURCE[key]} group by 1
-			) c where v is not null and v not in ('', '未知')
-			order by n desc, v limit ${VOCAB_MAX}) as "${sql.raw(key)}"`,
-			),
-			sql`, `,
-		)}`);
-	const row = rows.rows[0];
-	const vocab = {} as Vocabulary;
-	for (const key of VOCAB_KEYS) vocab[key] = row?.[key] ?? [];
-	return vocab;
+export async function vocabulary(): Promise<Vocabulary> {
+	return withCorpusSnapshot(async (store) => {
+		const vocab = {} as Vocabulary;
+		for (const key of VOCAB_KEYS) {
+			const column = FACT_COLUMNS[key];
+			const rows = await store.execute<{ value: string }>(sql`
+				select ${column} as value, count(*) as n
+				from ${VOCAB_SOURCE[key]}
+				where ${column} is not null and ${column} not in (${sql.join(
+					["", ...NOT_A_VALUE].map((v) => sql`${v}`),
+					sql`, `,
+				)})
+				group by 1 order by n desc, value limit ${VOCAB_MAX}`);
+			vocab[key] = rows.rows.map((row) => row.value);
+		}
+		return vocab;
+	});
 }
 
 /**
  * 无语义要求时，每段符合查询范围的经历就是一条人口事实。它没有 route、相关度
  * 或证据段身份，不参与语义打分与证据展示；只用于人员筛选和分面计数。
+ *
+ * 排除词在这条路上同样否决证据段：一段命中了排除词就不再算这个人落在范围里
+ * 的凭据，只有这一段的人自然出局。两条路径共用 `keepUnvetoed`——各写一份的话，
+ * 「只写范围加一个排除词」会安静地当排除词不存在。
  */
 async function searchScopeOnly(
 	store: DbExecutor,
 	spec: SearchSpec,
 	view: SearchFilters,
 	limit: number,
+	vetoed: Set<number>,
 ): Promise<SearchOutcome> {
 	const scope = spec.scope;
 	const rows = await store.execute<PopulationRow>(sql`
-		select e.emp_id, ${factSelect}
+		select e.id, e.emp_id, ${factSelect}
 		from experience e join employee p on p.emp_id = e.emp_id
 		${searchScope(scope, view)}
 		order by e.id limit ${FACT_MAX + 1}`);
@@ -447,9 +489,7 @@ async function searchScopeOnly(
 		return {
 			order: "employee",
 			terms: [],
-			results: [],
-			facets: emptyFacets(),
-			total: 0,
+			...noOne(),
 			empty: emptyReason({
 				spec,
 				filters: view,
@@ -459,38 +499,29 @@ async function searchScopeOnly(
 				overflow: { kind: "overflowPopulation" },
 			}),
 		};
-	const facts: PopulationFact[] = rows.rows.map(({ emp_id, ...dims }) => ({
-		...dims,
-		empId: emp_id,
-	}));
-	const scopedView = {
-		...view,
-		org: undefined,
-		school: undefined,
-		strong: undefined,
-	};
+	const facts: PopulationFact[] = keepUnvetoed(rows.rows, vetoed).map(
+		({ id: _id, emp_id, ...dims }) => ({ ...dims, empId: emp_id }),
+	);
+	// org / school 已经在 SQL 里按人裁过；证据要求由 rankPopulation 摘掉——
+	// 没有语义证据可言的路上，「证据够不够硬」问的不是这批事实。
+	const scopedView = { ...view, org: undefined, school: undefined };
 	const { empIds, facets, total } = rankPopulation(facts, scopedView);
 	const pageIds = empIds.slice(0, limit);
 	const employees =
 		pageIds.length === 0
 			? []
 			: await store
-					.select({
-						empId: employee.empId,
-						name: employee.name,
-						curDept: employee.curDept,
-						curTitle: employee.curTitle,
-						curLevel: employee.curLevel,
-					})
+					.select(RESULT_COLUMNS)
 					.from(employee)
 					.where(inArray(employee.empId, pageIds));
 	const byId = new Map(employees.map((row) => [row.empId, row]));
 	return {
 		order: "employee",
 		terms: [],
-		results: pageIds.map((empId) => ({
-			employee: required(byId.get(empId), `结构化结果缺少员工 ${empId}`),
-		})),
+		results: pageIds.flatMap((empId) => {
+			const person = byId.get(empId);
+			return person ? [{ employee: person }] : [];
+		}),
 		facets,
 		total,
 		empty: emptyReason({
@@ -504,6 +535,12 @@ async function searchScopeOnly(
 	};
 }
 
+/**
+ * 一次检索的取数与排名。`limit` 与 `filters` 都当作**可信入参**：跨进程那一跳
+ * 的收窄在 `server/functions.ts` 做完了（`sanitizeFilters` / `sanitizeLimit`），
+ * 脚本传的是常量。同一件事收两遍的话，两份口径迟早不一样，而不一样的那一份
+ * 不会报错。
+ */
 export async function search(
 	/** 完整查询语义来自不可变记录；filters 只描述这一次怎样查看结果。 */
 	spec: SearchSpec,
@@ -529,19 +566,12 @@ export async function search(
 	const vetoTexts = active.flatMap((c) =>
 		c.mode === "exclude" ? [c.term, ...(c.alts ?? [])] : [],
 	);
-	// 结构化范围本身就是完整的候选定义，不需要伪造一个向量词来启动检索。
-	if (terms.length === 0 && narrowsPopulation(spec.scope))
-		return withCorpusSnapshot((store) =>
-			searchScopeOnly(store, spec, filters, sanitizeLimit(limit)),
-		);
 	// 没有正向证据也没有结构化范围时，排除词自己不产出候选人。
-	if (terms.length === 0)
+	if (terms.length === 0 && !narrowsPopulation(spec.scope))
 		return {
 			order: "relevance",
-			terms: [],
-			results: [],
-			facets: emptyFacets(),
-			total: 0,
+			terms,
+			...noOne(),
 			empty: emptyReason({
 				spec,
 				filters,
@@ -552,145 +582,122 @@ export async function search(
 			}),
 		};
 
-	return withCorpusSnapshot(async (store) => {
-		const positiveTexts = terms.flatMap((term) => term.members);
-		const admitted = await admit(
-			[...positiveTexts, ...vetoTexts],
-			RELEVANCE_MIN,
-			store,
-		);
-		const vetoed = await fetchVetoed(store, vetoTexts, admitted);
-		const loaded = await fetchFacts(
-			store,
-			terms,
-			admitted,
-			spec.scope,
-			filters,
-		);
-		if (loaded.kind === "overflow") {
-			const contributors = new Set(loaded.termIndexes);
-			return {
-				order: "relevance",
-				terms,
-				results: [],
-				facets: emptyFacets(),
-				total: 0,
-				empty: emptyReason({
-					spec,
-					filters,
-					terms,
-					total: 0,
-					withoutStrong: 0,
-					overflow: {
-						kind: "overflowEvidence",
-						terms: terms
-							.filter((_, index) => contributors.has(index))
-							.map((term) => term.term),
-					},
-				}),
-			};
-		}
-		const facts = vetoed.size
-			? loaded.facts.filter((fact) => !vetoed.has(fact.id))
-			: loaded.facts;
+	// 准入（要打两个模型端点）在换代门闩外算，取数在门闩内做，见 phrases.ts。
+	// 正向要求和排除词一起进准入：它们查的是同一批说法，判定线的差别在
+	// fetchVetoed 里，不在这里。
+	return withAdmission(
+		[...terms.flatMap((term) => term.members), ...vetoTexts],
+		RELEVANCE_MIN,
+		async (store, admitted) => {
+			const vetoed = await fetchVetoed(store, vetoTexts, admitted);
+			// 结构化范围本身就是完整的候选定义，不必伪造一个向量词来启动检索。
+			if (terms.length === 0)
+				return searchScopeOnly(store, spec, filters, limit, vetoed);
 
-		const { ranked, facets, total } = rank(facts, terms, filters, new Date());
-		const empty = emptyReason({
-			spec,
-			filters,
-			terms,
-			total,
-			withoutStrong: facets.strong.off,
-			overflow: null,
-		});
-		const page = ranked.slice(0, sanitizeLimit(limit));
-		if (page.length === 0)
+			const loaded = await fetchFacts(
+				store,
+				terms,
+				admitted,
+				spec.scope,
+				filters,
+			);
+			if (loaded.kind === "overflow") {
+				const contributors = new Set(loaded.termIndexes);
+				return {
+					order: "relevance",
+					terms,
+					...noOne(),
+					empty: emptyReason({
+						spec,
+						filters,
+						terms,
+						total: 0,
+						withoutStrong: 0,
+						overflow: {
+							kind: "overflowEvidence",
+							terms: terms
+								.filter((_, index) => contributors.has(index))
+								.map((term) => term.term),
+						},
+					}),
+				};
+			}
+			const facts = keepUnvetoed(loaded.facts, vetoed);
+
+			const { ranked, facets, total } = rank(facts, terms, filters, new Date());
+			const empty = emptyReason({
+				spec,
+				filters,
+				terms,
+				total,
+				withoutStrong: facets.strong.off,
+				overflow: null,
+			});
+			const page = ranked.slice(0, limit);
+			if (page.length === 0)
+				return {
+					order: "relevance",
+					terms,
+					results: [],
+					facets,
+					total,
+					empty,
+				};
+
+			const empIds = page.map((row) => row.empId);
+			const evidence = pageHits(facts, filters, new Set(empIds), HITS_PER_TERM);
+
+			// 名次确定后按 id 读取展示原文；命中判定只产生事实，不承担内容读取。
+			const ids = [
+				...new Set([...evidence.values()].flat().map((fact) => fact.id)),
+			];
+			const segments = await store
+				.select()
+				.from(experience)
+				.where(inArray(experience.id, ids));
+			const employees = await store
+				.select(RESULT_COLUMNS)
+				.from(employee)
+				.where(inArray(employee.empId, empIds));
+
+			const segById = new Map(segments.map((segment) => [segment.id, segment]));
+			const empById = new Map(
+				employees.map((person) => [person.empId, person]),
+			);
+
+			// 名次已经定好，回表只是按 id 把要画的原文取回来：这一页就是取得回来的
+			// 那些行，取数和定名次读的是同一次快照里的同一批 id。
+			const results: RankedResult[] = page.flatMap((row) => {
+				const person = empById.get(row.empId);
+				if (!person) return [];
+				const hits = (evidence.get(row.empId) ?? []).flatMap<Hit>((fact) => {
+					const segment = segById.get(fact.id);
+					const plan = terms[fact.termIdx];
+					if (!segment || !plan) return [];
+					return [
+						{
+							experienceId: segment.id,
+							term: plan.term,
+							route: fact.route,
+							relevance: fact.relevance,
+							startDate: segment.startDate,
+							endDate: segment.endDate,
+							org: segment.org,
+							title: segment.title,
+							seq: dots(segment.seqL1, segment.seqL2, segment.seqL3),
+						},
+					];
+				});
+				return [{ employee: person, score: row.score, basis: row.basis, hits }];
+			});
 			return {
 				order: "relevance",
 				terms,
-				results: [],
+				results,
 				facets,
 				total,
 				empty,
 			};
-
-		const empIds = page.map((row) => row.empId);
-		const evidence = pageHits(facts, filters, new Set(empIds), HITS_PER_TERM);
-
-		// 名次确定后按 id 读取展示原文；命中判定只产生事实，不承担内容读取。
-		const ids = [
-			...new Set([...evidence.values()].flat().map((fact) => fact.id)),
-		];
-		const segments = await store
-			.select()
-			.from(experience)
-			.where(inArray(experience.id, ids));
-		const employees = await store
-			.select({
-				empId: employee.empId,
-				name: employee.name,
-				curDept: employee.curDept,
-				curTitle: employee.curTitle,
-				curLevel: employee.curLevel,
-			})
-			.from(employee)
-			.where(inArray(employee.empId, empIds));
-
-		const segById = new Map(segments.map((segment) => [segment.id, segment]));
-		const empById = new Map(employees.map((person) => [person.empId, person]));
-
-		const results: RankedResult[] = [];
-		for (const row of page) {
-			const emp = required(
-				empById.get(row.empId),
-				`相关度结果缺少员工 ${row.empId}`,
-			);
-			const hits: Hit[] = [];
-			const personEvidence = required(
-				evidence.get(row.empId),
-				`相关度结果缺少员工 ${row.empId} 的证据`,
-			);
-			for (const fact of personEvidence) {
-				const segment = required(
-					segById.get(fact.id),
-					`证据结果缺少经历段 ${fact.id}`,
-				);
-				const plan = required(
-					terms[fact.termIdx],
-					`证据结果引用了未知要求 ${fact.termIdx}`,
-				);
-				hits.push({
-					experienceId: segment.id,
-					term: plan.term,
-					member: required(
-						plan.members[fact.memberIdx],
-						`证据结果引用了未知说法 ${fact.memberIdx}`,
-					),
-					route: fact.route,
-					relevance: fact.relevance,
-					kind: segment.kind,
-					startDate: segment.startDate,
-					endDate: segment.endDate,
-					org: segment.org,
-					title: segment.title,
-					seq: seqLabel(segment.seqL1, segment.seqL2, segment.seqL3),
-					months: segment.months,
-				});
-			}
-			results.push({
-				employee: emp,
-				score: row.score,
-				basis: row.basis,
-				hits,
-			});
-		}
-		return {
-			order: "relevance",
-			terms,
-			results,
-			facets,
-			total,
-			empty,
-		};
-	});
+		},
+	);
 }

@@ -12,16 +12,12 @@
  */
 
 import "@tanstack/react-start/server-only";
+import { positiveInt } from "./env";
 
 const BASE_URL = process.env.RERANK_BASE_URL || process.env.EMBED_BASE_URL;
 const API_KEY = process.env.RERANK_API_KEY || process.env.EMBED_API_KEY;
 const RERANK_MODEL = process.env.RERANK_MODEL ?? "";
 const RERANK_SPACE_ID = process.env.RERANK_SPACE_ID ?? "";
-
-function positiveInt(value: string | undefined, fallback: number) {
-	const parsed = Number(value);
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
-}
 
 /**
  * 一次请求送多少个候选。端点对单次文档数有上限（各家 100 到 1000 不等），
@@ -50,7 +46,13 @@ async function withRequestSlot<T>(request: () => Promise<T>): Promise<T> {
 	}
 }
 
-/** 校验端点配置并返回缓存使用的重排空间身份。 */
+/**
+ * 校验端点配置并返回缓存使用的重排空间身份。
+ *
+ * 唯一的调用点在编排那一侧（`search/phrases.ts` 的 `withAdmission`）：没配这件事
+ * 要在进语料快照之前就抛出来，而且分数是按这个身份缓存的，编排本来就要拿到它。
+ * 同一件事在两处各查一遍，只会让人以为「没配」有两种不同的表现。
+ */
 export function rerankSpaceId() {
 	if (!BASE_URL || !RERANK_MODEL || !RERANK_SPACE_ID)
 		throw new Error(
@@ -107,27 +109,15 @@ export async function rerank(
 	query: string,
 	documents: string[],
 ): Promise<number[]> {
-	rerankSpaceId();
 	if (documents.length === 0) return [];
-	const batches: { start: number; documents: string[] }[] = [];
-	for (let start = 0; start < documents.length; start += BATCH) {
-		batches.push({ start, documents: documents.slice(start, start + BATCH) });
-	}
-	const out = new Array<number>(documents.length);
-	let cursor = 0;
-	await Promise.all(
-		Array.from({ length: Math.min(CONCURRENCY, batches.length) }, async () => {
-			while (cursor < batches.length) {
-				const batch = batches[cursor++];
-				if (!batch) return;
-				const scores = await withRequestSlot(() =>
-					rerankBatch(query, batch.documents),
-				);
-				scores.forEach((score, index) => {
-					out[batch.start + index] = score;
-				});
-			}
-		}),
+	const batches: string[][] = [];
+	for (let start = 0; start < documents.length; start += BATCH)
+		batches.push(documents.slice(start, start + BATCH));
+	// 全部批次一起交出去，实际并发由那把进程级信号量说了算。这里再搭一套
+	// worker 池的话，实际上限是两个数的关系，而调其中一个不会改变它。
+	const scored = await Promise.all(
+		batches.map((batch) => withRequestSlot(() => rerankBatch(query, batch))),
 	);
-	return out;
+	// 批次按顺序切、按顺序拼，位置对应关系因此不必再算一遍下标
+	return scored.flat();
 }

@@ -1,7 +1,7 @@
 /** 时间的中文写法。扫读列全靠它对齐，错一个字就得停下来算。 */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { duration, period, seqLabel, years } from "#/lib/format";
+import { dots, duration, period, years } from "#/lib/format";
 
 describe("时长", () => {
 	test("不满一年只说月", () => {
@@ -62,18 +62,15 @@ describe("表格里的年", () => {
 	});
 });
 
-describe("序列三级拼一行", () => {
-	test("空的那一级不占位，也不留下多余的分隔符", () => {
-		assert.equal(
-			seqLabel("技术", "数据科学", "算法"),
-			"技术 · 数据科学 · 算法",
-		);
-		assert.equal(seqLabel("技术", "数据科学", ""), "技术 · 数据科学");
-		assert.equal(seqLabel("技术", "", "算法"), "技术 · 算法");
+describe("并列的几样拼一行", () => {
+	test("空的那几样不占位，也不留下多余的分隔符", () => {
+		assert.equal(dots("技术", "数据科学", "算法"), "技术 · 数据科学 · 算法");
+		assert.equal(dots("技术", "数据科学", ""), "技术 · 数据科学");
+		assert.equal(dots("技术", "", "算法"), "技术 · 算法");
 	});
 
-	test("外部经历三级全空，拼出来是空串而不是分隔符", () => {
-		assert.equal(seqLabel("", "", ""), "");
-		assert.equal(seqLabel(null, null, null), "");
+	test("全空拼出来是空串，不是一串光秃秃的分隔符", () => {
+		assert.equal(dots("", "", ""), "");
+		assert.equal(dots(null, null, null), "");
 	});
 });

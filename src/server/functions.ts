@@ -15,11 +15,10 @@ import {
 	employee,
 	experience,
 } from "#/db/schema";
+import { validateCommit } from "#/search/commit-input";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
-import { boundedText } from "#/search/parse";
 import type { SearchOutcome } from "#/search/result";
 import { search } from "#/search/search";
-import { hasMeaning, sanitizeSpec } from "#/search/spec";
 import {
 	createTurn,
 	listRecent,
@@ -94,40 +93,7 @@ export const fetchEmployee = createServerFn({ method: "GET" })
 			}),
 	);
 
-/**
- * 提交一次查询：落一条记录，返回它的 id。
- *
- * 入参收窄放在这里而不是 `createTurn` 里，因为不可信的只有跨进程这一跳。
- * 整份 `SearchSpec` 在这里一次收窄，证据、范围与提示不会各走一条旁路。
- */
-export function validateCommit(d: unknown) {
-	const data = (d ?? {}) as Record<string, unknown>;
-	const input = (data.input ?? {}) as Record<string, unknown>;
-	const parentTurnId =
-		typeof data.parentTurnId === "string" && data.parentTurnId
-			? data.parentTurnId
-			: undefined;
-	if (input.kind === "reinterpret") {
-		if (!parentTurnId) throw new Error("重新理解需要一条父记录");
-		return { parentTurnId, input: { kind: "reinterpret" as const } };
-	}
-	if (input.kind === "sentence") {
-		const text = boundedText(input.text);
-		if (!text) throw new Error("查询为空");
-		return {
-			parentTurnId,
-			input: { kind: "sentence" as const, text },
-		};
-	}
-	if (input.kind !== "spec") throw new Error("查询格式无效");
-	const spec = sanitizeSpec(input.spec);
-	if (!hasMeaning(spec)) throw new Error("查询为空");
-	return {
-		parentTurnId,
-		input: { kind: "spec" as const, spec },
-	};
-}
-
+/** 提交一次查询：落一条记录，返回它的 id。入参收窄在 `search/commit-input.ts`。 */
 export const commitTurn = createServerFn({ method: "POST" })
 	.validator(validateCommit)
 	.handler(({ data }) => createTurn(data.input, data.parentTurnId));

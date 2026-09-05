@@ -2,7 +2,7 @@
 import "@tanstack/react-start/server-only";
 import { randomBytes } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { type DbExecutor, db, withCorpusSnapshot } from "#/db";
+import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
 import { resolveIntent } from "#/search/intent";
@@ -42,26 +42,28 @@ function toTurn(row: SearchTurn): Turn {
 	};
 }
 
+/**
+ * 落一条新记录，交出它的 id。
+ *
+ * 父记录只决定这一条挂在**哪条链**上（`root_turn_id`）和原话从哪儿来；
+ * 「上一步是谁」不进库——后退是浏览器的事，「最近搜索」按 root 去重，
+ * 没有第三个读者会问这条边。
+ */
 async function insertTurn(row: {
 	parent: SearchTurn | null;
 	rawText: string | null;
-	delta?: SearchDelta | null;
 	spec?: SearchSpec | null;
-}): Promise<Turn> {
+}): Promise<string> {
 	const id = newId();
-	const [inserted] = await db
-		.insert(searchTurn)
-		.values({
-			id,
-			rootTurnId: row.parent ? row.parent.rootTurnId : id,
-			parentTurnId: row.parent?.id ?? null,
-			rawText: row.rawText,
-			delta: row.delta ?? null,
-			spec: row.spec ?? null,
-		})
-		.returning();
-	if (!inserted) throw new Error("写入查询记录失败");
-	return toTurn(inserted);
+	// delta 不在这里落：它是**理解的产物**，只可能由 resolveTurn 补上去。
+	// 给它开一个入口，就等于让「还没理解」和「理解过了」多一种写法。
+	await db.insert(searchTurn).values({
+		id,
+		rootTurnId: row.parent ? row.parent.rootTurnId : id,
+		rawText: row.rawText,
+		spec: row.spec ?? null,
+	});
+	return id;
 }
 
 async function getRow(id: string): Promise<SearchTurn | null> {
@@ -79,25 +81,24 @@ export async function createTurn(
 	if (parent && parent.spec === null)
 		throw new Error("查询仍在理解中，暂时不能派生新记录");
 
-	let turn: Turn;
 	if (input.kind === "reinterpret") {
 		if (!parent?.rawText || !parent.delta)
 			throw new Error("重新理解需要一条由整句产生的父记录");
 		if (!fellBack(parent.delta))
 			throw new Error("这条理解没有降级，重新理解不会得到不同的结果");
-		turn = await insertTurn({ parent, rawText: parent.rawText });
-	} else if (input.kind === "sentence") {
-		turn = await insertTurn({ parent, rawText: input.text });
-	} else {
-		// 改一枚条件不改「问的是什么」，原话原样带下来——它是这条查询的门面，
-		// 屏幕上那一行、最近搜索里那一条读的都是它。
-		turn = await insertTurn({
+		return { turnId: await insertTurn({ parent, rawText: parent.rawText }) };
+	}
+	if (input.kind === "sentence")
+		return { turnId: await insertTurn({ parent, rawText: input.text }) };
+	// 改一枚条件不改「问的是什么」，原话原样带下来——它是这条查询的门面，
+	// 屏幕上那一行、最近搜索里那一条读的都是它。
+	return {
+		turnId: await insertTurn({
 			parent,
 			rawText: parent?.rawText ?? null,
 			spec: input.spec,
-		});
-	}
-	return { turnId: turn.id };
+		}),
+	};
 }
 
 /**
@@ -115,7 +116,6 @@ export async function createTurn(
  */
 async function benchWide(
 	evidence: string,
-	store: DbExecutor,
 ): Promise<{ evidence: string; notices: SearchNotice[] }> {
 	const chips = parseChips(evidence);
 	const admitting = chips.map((chip) => chip.mode !== "exclude" && !chip.off);
@@ -126,7 +126,7 @@ async function benchWide(
 			),
 		),
 	];
-	const wide = await probeWide(texts, store);
+	const wide = await probeWide(texts);
 	if (wide.size === 0) return { evidence, notices: [] };
 
 	let query = evidence;
@@ -152,22 +152,22 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	if (row.rawText === null) throw new Error("待理解记录缺少原话");
 	const rawText = row.rawText;
 
-	const delta = await withCorpusSnapshot(
-		async (store): Promise<SearchDelta> => {
-			const vocab = await vocabulary(store);
-			const understood = resolveIntent(
-				rawText,
-				await understand(rawText, vocab),
-				vocab,
-			);
-			const benched = await benchWide(understood.evidence, store);
-			return {
-				...understood,
-				evidence: benched.evidence,
-				notices: [...understood.notices, ...benched.notices],
-			};
-		},
+	// 三段各自站在自己的那一代语料上，中间不押着门闩：词表是一次短读取，
+	// 模型那一跳在门闩外（它可以慢到一分钟），量宽自己走一遍准入
+	// （`search/phrases.ts` 的 withAdmission）。押着门闩等模型的话，一次理解
+	// 就能把排在待发布 ETL 后面的每一个检索一起堵住。
+	const vocab = await vocabulary();
+	const understood = resolveIntent(
+		rawText,
+		await understand(rawText, vocab),
+		vocab,
 	);
+	const benched = await benchWide(understood.evidence);
+	const delta: SearchDelta = {
+		...understood,
+		evidence: benched.evidence,
+		notices: [...understood.notices, ...benched.notices],
+	};
 	const spec = normalizeSpec(delta);
 
 	await db

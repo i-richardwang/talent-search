@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
 import { parseChips } from "#/search/parse";
 import type { SearchSpec } from "#/search/spec";
-import { setup } from "./fixture";
+import { setup, violates } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -21,10 +21,6 @@ delete process.env.LLM_BASE_URL;
 const { createTurn, listRecent, loadTurn, resolveTurn } = await import(
 	"#/server/turn"
 );
-
-const violates = (constraint: string) => (error: unknown) =>
-	(error as { cause?: { constraint?: string } }).cause?.constraint ===
-	constraint;
 
 /** 记录上存的是规范查询串；用例关心的是它解析出来的那几条要求。 */
 const termsOf = (spec: SearchSpec) =>
@@ -166,7 +162,10 @@ describe("整句的重译", () => {
 				notices: [],
 			},
 		});
-		await assert.rejects(createTurn({ kind: "reinterpret" }, "nd_model"));
+		await assert.rejects(
+			createTurn({ kind: "reinterpret" }, "nd_model"),
+			/这条理解没有降级/,
+		);
 	});
 
 	test("直接重试只看当前这句话是否降级，不被合并结果里的旧提示误导", async () => {
@@ -176,7 +175,6 @@ describe("整句的重译", () => {
 		await db.insert(searchTurn).values({
 			id: "model_child_after_fallback",
 			rootTurnId: root.turnId,
-			parentTurnId: root.turnId,
 			rawText: "渠道运营",
 			delta: {
 				evidence: "渠道运营",
@@ -194,11 +192,15 @@ describe("整句的重译", () => {
 		assert.equal(row?.canReinterpret, false);
 		await assert.rejects(
 			createTurn({ kind: "reinterpret" }, "model_child_after_fallback"),
+			/这条理解没有降级/,
 		);
 	});
 
 	test("只有已经理解完成的整句记录可以重译", async () => {
-		await assert.rejects(createTurn({ kind: "reinterpret" }));
+		await assert.rejects(
+			createTurn({ kind: "reinterpret" }),
+			/重新理解需要一条由整句产生的父记录/,
+		);
 		const root = await sentence("算法");
 		const direct = await createTurn(
 			{
@@ -211,7 +213,10 @@ describe("整句的重译", () => {
 			},
 			root.turnId,
 		);
-		await assert.rejects(createTurn({ kind: "reinterpret" }, direct.turnId));
+		await assert.rejects(
+			createTurn({ kind: "reinterpret" }, direct.turnId),
+			/重新理解需要一条由整句产生的父记录/,
+		);
 
 		const pending = await createTurn(
 			{ kind: "sentence", text: "渠道运营" },
@@ -219,7 +224,29 @@ describe("整句的重译", () => {
 		);
 		await assert.rejects(
 			createTurn({ kind: "sentence", text: "带团队" }, pending.turnId),
+			/查询仍在理解中/,
 		);
+	});
+});
+
+describe("理解只落一次", () => {
+	/**
+	 * 工作台挂载后就地补理解，而同一条 `/s/:id` 可能被同时打开两次（两个标签页、
+	 * 一次刷新）。记录是不可变的，所以这两跳不能各写一份：`where spec is null`
+	 * 让先到的赢，后到的读回同一份最终结果。写成「后到的覆盖」的话，同一条
+	 * 查询的条件会在两次刷新之间悄悄变一次，而 URL 承诺的正是它不变。
+	 */
+	test("并发理解同一条记录：先写的赢，后到的读回同一份", async () => {
+		const { turnId } = await createTurn({
+			kind: "sentence",
+			text: "算法、渠道运营",
+		});
+		const [first, second] = await Promise.all([
+			resolveTurn(turnId),
+			resolveTurn(turnId),
+		]);
+		assert.deepEqual(first, second, "两跳必须读到同一份 spec");
+		assert.deepEqual((await loadTurn(turnId))?.spec, first, "落库的就是那一份");
 	});
 });
 

@@ -11,33 +11,20 @@
  * 屏幕上会出现一个和条件毫不相干的岗位名，读起来像是系统匹配错了——
  * 所以每一路都单独钉一遍。
  *
- * 点是 aria-hidden 的，说明文字全在类名和 title 里——正好是 `visibleText`
- * 要防的形态：属性完整、人眼却什么都看不到。所以断言的一律是可见文本，
- * 只有「近因」那一档因为编码在字色上，才去看类名。
+ * 点是 aria-hidden 的，强度全在类名里——正好是 `visibleText` 要防的形态：
+ * 属性完整、人眼却什么都看不到。所以断言的一律是可见文本，只有「近因」那一档
+ * 因为编码在字色上，才去看类名。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EvidenceLine, MissedTerms } from "#/components/evidence";
 import type { Hit, TermBasis } from "#/search/result";
-import type { Route } from "#/search/weights";
 import { visibleText } from "./render";
+import { hit as row } from "./rows";
 
-const hit = (over: Partial<Hit> = {}): Hit => ({
-	experienceId: 1,
-	term: "算法",
-	member: "算法",
-	route: "seq" as Route,
-	relevance: 0.83,
-	kind: "internal",
-	startDate: "2020-01-01",
-	endDate: null,
-	org: "某部门",
-	title: "算法工程师",
-	seq: "技术 · 算法",
-	months: 27,
-	...over,
-});
+const hit = (over: Partial<Hit> = {}) =>
+	row({ relevance: 0.83, org: "某部门", ...over });
 
 const basis = (over: Partial<TermBasis> = {}): TermBasis => ({
 	term: "算法",
@@ -49,22 +36,21 @@ const basis = (over: Partial<TermBasis> = {}): TermBasis => ({
 	...over,
 });
 
-const markup = (h: Hit, b?: TermBasis | null) =>
+const markup = (h: Hit, b: TermBasis) =>
 	renderToStaticMarkup(
 		<EvidenceLine basis={b} boost={false} hit={h} term="算法" />,
 	);
 
-const seen = (h: Hit, b?: TermBasis | null) => visibleText(markup(h, b));
+const seen = (h: Hit, b: TermBasis) => visibleText(markup(h, b));
 
 describe("一行证据看得见的部分", () => {
 	test("有命中就必须看得见时长，不能只剩一颗点", () => {
 		assert.match(seen(hit(), basis()), /2\.3 年/);
 	});
 
-	test("显示的是参与打分的累计月数，不是随便挑的那一段", () => {
-		// 同一个人：最强那一路上累计 60 个月，样例段只有其中 27 个月。
-		// 显示 27 会让他和一个真的只做过 27 个月的人在名单上完全一样。
-		assert.match(seen(hit({ months: 27 }), basis({ months: 60 })), /5\.0 年/);
+	test("显示的是参与打分的累计月数", () => {
+		// 时长只住在 basis 上：样例段自己不带月数，界面没有第二个数可挑。
+		assert.match(seen(hit(), basis({ months: 60 })), /5\.0 年/);
 	});
 
 	test("相关度显示成百分比，取的是参与打分的那条证据", () => {
@@ -80,16 +66,10 @@ describe("一行证据看得见的部分", () => {
 		assert.match(seen(hit({ relevance: 1 }), basis({ relevance: 1 })), /100%/);
 	});
 
-	test("「前」由累计的那些段一起决定，不由样例段的 kind 决定", () => {
-		// 样例段是入职前的，但累计里还有在职的段——这个数不配叫「前」
-		assert.doesNotMatch(
-			seen(hit({ kind: "external" }), basis({ external: false })),
-			/前 2\.3 年/,
-		);
-		assert.match(
-			seen(hit({ kind: "internal" }), basis({ external: true })),
-			/前 2\.3 年/,
-		);
+	test("「前」由累计的那些段一起决定", () => {
+		// 累计里只要有在职的段，这个数就不配叫「前」
+		assert.doesNotMatch(seen(hit(), basis({ external: false })), /前 2\.3 年/);
+		assert.match(seen(hit(), basis({ external: true })), /前 2\.3 年/);
 	});
 
 	test("还在做的把数字提到正文色，做完了的留在次要色", () => {
@@ -98,11 +78,6 @@ describe("一行证据看得见的部分", () => {
 			markup(hit(), basis({ endDate: "2021-06-01" })),
 			/text-muted-foreground/,
 		);
-	});
-
-	test("没有聚合值时退回样例段，这一行不会因此空掉", () => {
-		assert.match(seen(hit({ kind: "external" }), null), /前 2\.3 年/);
-		assert.match(seen(hit({ relevance: 0.7 }), null), /70%/);
 	});
 
 	test("条件词本身永远在——它是上下对比的那条竖线", () => {

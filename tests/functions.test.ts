@@ -1,12 +1,12 @@
-/** 服务端函数的进程边界：不可信载荷必须先收成领域里的判别联合。 */
+/**
+ * 服务端函数的进程边界：不可信载荷必须先收成领域里的判别联合。
+ *
+ * 收窄是纯函数（`search/commit-input.ts`），所以这里不起数据库、不起假端点——
+ * 一条收窄规则不该要一个 Postgres 才验得动。
+ */
 import assert from "node:assert/strict";
-import { after, describe, test } from "node:test";
-import { setup } from "./fixture";
-
-const teardown = await setup();
-after(teardown);
-
-const { validateCommit } = await import("#/server/functions");
+import { describe, test } from "node:test";
+import { validateCommit } from "#/search/commit-input";
 
 describe("提交查询的服务端边界", () => {
 	test("三种输入各自只接受自己的形状", () => {
