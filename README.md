@@ -62,7 +62,7 @@ ETL 分成两层，接数据只碰下面那一层：
 | `EMBED_BASE_URL` | 是 | OpenAI 兼容的嵌入端点；经历原文会送到这里 |
 | `EMBED_MODEL` | 是 | 嵌入模型名，ETL 与查询侧必须一致 |
 | `EMBED_SPACE_ID` | 是 | 嵌入空间的稳定身份；模型行为变化时换值并重跑 ETL |
-| `EMBED_DIM` | 是 | 向量维数，须与 `src/db/schema.ts` 一致，默认 1024 |
+| `EMBED_DIM` | 否 | 只有 ETL 读它，默认 1024；查询侧读 `src/db/schema.ts` 里那个常量，不读环境变量。改维数要两处一起改，对不上会被启动时的空间核验拦下 |
 | `EMBED_API_KEY` | 否 | 端点需要鉴权时填写 |
 | `EMBED_TIMEOUT_S` | 否 | ETL 单次嵌入请求的超时，默认 120 |
 | `EMBED_TIMEOUT_MS` | 否 | 查询侧嵌入请求的超时，默认 30000 |
@@ -85,12 +85,13 @@ ETL 分成两层，接数据只碰下面那一层：
 
 ```bash
 bun run dev          # 开发服务器
-bun run query "算法和后端都做过的"
-bun run db:push      # 从 src/db/schema.ts 同步表结构
+bun run query "算法和后端都做过的"   # 跑一条查询；TOPN=20 可以多打印几个人
+bun run eval         # 拿 evals/ 里的已知答案量召回与名次
+bun run db:push      # 从 src/db/schema.ts 同步表结构；拉到改过 schema 的提交后要跑一次
 bun run verify       # 格式、类型、ETL、SQL/组件测试和生产构建
 ```
 
-`bun run test` 使用临时 schema 运行真实 SQL 集成测试，需要 `.env.local` 中有可连接的 `DATABASE_URL`（带 pgvector）。嵌入由测试进程内的一个假端点提供，不需要真模型。
+`bun run test` 使用临时 schema 运行真实 SQL 集成测试，需要 `.env.local` 中有可连接的 `DATABASE_URL`（带 pgvector）。嵌入和重排由测试进程内的假端点提供（字符袋向量，相关度可以手算），不需要真模型。
 
 ## 数据边界
 
@@ -104,19 +105,24 @@ bun run verify       # 格式、类型、ETL、SQL/组件测试和生产构建
 ## 代码结构
 
 ```text
+etl/config.py                环境变量读入一处，其余模块只读它
 etl/contract.py              源契约：适配器要交出的三张表
 etl/pipeline.py              通用切段、校验与派生
 etl/sources/                 数据源适配器（默认不进版本库）
 etl/embed.py                 四路原文的拼法、嵌入调用与本地向量缓存
-etl/load.py                  批量写库、说法去重与写向量
+etl/load.py                  批量写库、说法去重、写向量与原子发布
+etl/run.py                   完整导入的唯一入口
 src/db/                      Drizzle 表结构与数据库连接
 src/search/                  查询解析、判定（召回 + 重排）、排名、分面与结果契约
 src/server/                  服务端函数、查询记录与三个模型适配层（查询理解、嵌入、重排）
 src/routes/                  零态与搜索工作台
-src/routes/-components/      路由私有的界面组件
-src/routes/-lib/             视图状态、筛选表、键盘流等非组件模块
+src/routes/-components/      两屏共用的外壳件（顶栏、历史弹层、页框、零态、死链）
+src/routes/-lib/             两屏共用的非组件模块（提交查询、值→标签）
+src/routes/s/$turnId/        工作台这一条路由，私有的组件与模块在它的 -components/ 与 -lib/ 下
 src/components/ui/           coss ui 的组件源码（抄来的，见其 NOTICE.md）
 src/lib/                     跨层纯函数
+scripts/                     命令行入口：query（跑一条查询）、eval（检索质量验收）
+evals/                       验收用例（真题不进版本库，仓库只带 sample.json）
 tests/                       单元、渲染与真 SQL 集成测试
 ```
 
@@ -128,7 +134,7 @@ tests/                       单元、渲染与真 SQL 集成测试
   的一行：`SearchSpec` 完整保存证据要求（一串规范查询串）、结构化范围与注解，
   `SearchDelta` 保存当前原话自己的理解供重译替换。地址是 `/s/:turnId`；只影响查看方式的分面、
   翻页留在 query string，当前员工由 `/p/:empId` 子路由表达。见 `src/search/spec.ts`、`src/server/turn.ts` 与
-  `src/routes/-lib/view-params.ts`。
+  `src/routes/s/$turnId/-lib/view-params.ts`。
 - 页面访问数据库只有 `src/server/functions.ts` 一个口子；带连接或密钥的模块标了
   `server-only`，页面从它们取值会让构建失败。页面可读取的结果形状在 `src/search/result.ts`；
 - `src/search/search.ts` 只产出命中事实，`src/search/rank.ts` 负责判定、打分、排序与分面；
