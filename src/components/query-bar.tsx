@@ -63,8 +63,8 @@ export function QueryBar({
 	const formRef = useRef<HTMLFormElement>(null);
 
 	// 挂载即就位：这个框只在「现在就要写这句话」的时候存在——零态整屏就这一件
-	// 事，工作台上它是点了「改一改」才展开的。光标落在末尾，于是带着原话打开
-	// 之后可以直接接着写。
+	// 事，工作台上它是点了那支铅笔（「改写这句话」）才展开的。光标落在末尾，
+	// 于是带着原话打开之后可以直接接着写。
 	useEffect(() => {
 		const el = inputRef.current;
 		if (!el) return;
@@ -83,8 +83,8 @@ export function QueryBar({
 	}));
 
 	return (
-		// 吃满容器：它住在版心里，左右边缘就是名单卡片的左右边缘，
-		// 不必自己再限一次宽。
+		// 吃满容器：宽度由摆它的那一屏说了算——零态摆在版心里，工作台摆在抬头
+		// 那条带里——所以这里不自己再限一次宽。
 		<form
 			className="w-full"
 			onSubmit={async (e) => {

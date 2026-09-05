@@ -19,6 +19,7 @@ import {
 } from "#/components/ui/empty";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Toggle } from "#/components/ui/toggle";
+import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { bestHitPerTerm } from "#/search/evidence";
 import { activeChips, type Chip, parseChips } from "#/search/parse";
@@ -38,8 +39,6 @@ const PAD = "px-4 py-3.5";
 
 /** 首次检索的骨架块数。之后跟着上一次的结果数走，列表高度就不会每次跳。 */
 const SKELETON_ROWS = 5;
-const EMPTY_RESULTS: SearchResult[] = [];
-const EMPTY_TERMS: TermPlan[] = [];
 
 function isRanked(result: SearchResult): result is RankedResult {
 	return "score" in result;
@@ -65,7 +64,7 @@ export function ResultHeader({
 	order,
 	total,
 	terms,
-	view,
+	strong,
 	onChange,
 	strongOn,
 }: {
@@ -73,18 +72,15 @@ export function ResultHeader({
 	order: "relevance" | "employee";
 	total: number;
 	terms: TermPlan[];
-	view: View;
+	/** 「只看任职记录可查的」开着没有。它是这份名单的性质，不是一份视图状态。 */
+	strong: boolean;
 	onChange: (next: Partial<View>) => void;
 	/** 只留受控证据之后还剩多少人 */
 	strongOn: number;
 }) {
 	return (
 		<div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-1">
-			<p
-				aria-live="polite"
-				className="text-muted-foreground text-sm"
-				role="status"
-			>
+			<p className="text-muted-foreground text-sm" role="status">
 				{loading ? (
 					"搜索中…"
 				) : (
@@ -97,7 +93,7 @@ export function ResultHeader({
 			{terms.length > 0 && (
 				<div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
 					<StrengthLegend />
-					<ProvenOnly n={strongOn} onChange={onChange} view={view} />
+					<ProvenOnly n={strongOn} on={strong} onChange={onChange} />
 				</div>
 			)}
 		</div>
@@ -124,15 +120,14 @@ export function ResultHeader({
  * 表示，不必手写 `aria-pressed` 再自配一套底色。
  */
 function ProvenOnly({
-	view,
+	on,
 	onChange,
 	n,
 }: {
-	view: View;
+	on: boolean;
 	onChange: (next: Partial<View>) => void;
 	n: number;
 }) {
-	const on = Boolean(view.strong);
 	// 一个人都数不出来时不给这个开关——点下去必然清空名单，那是一条死路。
 	// 左栏那几维是把数到 0 的那一行禁用掉（`filter-rail.tsx`），而这一档是布尔的，
 	// 没有行可以禁用，只能整个不出现。
@@ -179,12 +174,13 @@ export function ResultList({
 	strongOn,
 	spec,
 	turnId,
-	view,
+	strong,
 	onChange,
 	onReviseQuery,
 	onEditQuery,
 }: {
-	outcome: SearchOutcome | null;
+	/** 这次检索的结果。还没跑出来的那一份是 `NO_OUTCOME`，不是 `null`。 */
+	outcome: SearchOutcome;
 	empId: string | undefined;
 	loading: boolean;
 	/** 还翻得动吗。翻不动的原因有两种（看完了 / 到上限了），文案在页脚分。 */
@@ -197,16 +193,14 @@ export function ResultList({
 	/** 这条查询记录上的条件。骨架屏的行数由它算，不等服务端。 */
 	spec: SearchSpec;
 	turnId: string;
-	view: View;
+	/** 「只看任职记录可查的」开着没有，给表头那个开关。 */
+	strong: boolean;
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：给一串新的证据要求，派生一条新记录。 */
 	onReviseQuery: (next: string) => void;
 	onEditQuery: () => void;
 }) {
-	const results = outcome?.results ?? EMPTY_RESULTS;
-	const terms = outcome?.terms ?? EMPTY_TERMS;
-	const order = outcome?.order ?? "relevance";
-	const total = outcome?.total ?? 0;
+	const { results, terms, order, total } = outcome;
 	const chips = parseChips(spec.evidence);
 	// 上一次真正画出来的块数，见 SKELETON_ROWS。写在 effect 里而不是渲染中，
 	// 渲染要保持纯：同一份 props 渲染两遍必须得到同一棵树。
@@ -220,10 +214,10 @@ export function ResultList({
 			loading={loading}
 			onChange={onChange}
 			order={order}
+			strong={strong}
 			strongOn={strongOn}
 			terms={terms}
 			total={total}
-			view={view}
 		/>
 	);
 
@@ -268,7 +262,7 @@ export function ResultList({
 		// 空态永远给一条出路，而且是能一键走的那条——不是让人自己回去猜该改哪。
 		// 成因由检索层给（`search/empty.ts`），这里只把它翻译成一句话和一个按钮；
 		// 检索还没跑（换查询的头一帧）时按「还没有条件」说。
-		const state = emptyState(outcome?.empty ?? { kind: "noConditions" }, {
+		const state = emptyState(outcome.empty ?? { kind: "noConditions" }, {
 			evidence: spec.evidence,
 			onChange,
 			onReviseQuery,
@@ -318,9 +312,10 @@ export function ResultList({
 							className={cn(
 								PAD,
 								"transition-[border-color,background-color]",
-								// ↑↓ 换人时 scrollIntoView 把卡片推到视口边缘上，留一点余量。
-								// 查询台是吸顶的，所以上边的余量得比它高。
-								"scroll-mt-40 scroll-mb-4",
+								// ↑↓ 换人时 scrollIntoView 把卡片推到视口边缘上，两头各留一档余量。
+								// 上边还要让开顶栏——它是这一屏唯一吸顶的东西，高度只有
+								// `--header-height` 一个出处（查询台跟着名单一起滚走）。
+								"scroll-mt-[calc(var(--header-height)+--spacing(4))] scroll-mb-4",
 								selected
 									? // 蓝调环：绿在这套设计里只表达「受控字段命中」。
 										"border-info/40 ring-1 ring-info/30"
@@ -354,8 +349,7 @@ export function ResultList({
 									{r.employee.name}
 								</Link>
 								<span className="min-w-0 truncate text-muted-foreground text-sm">
-									{r.employee.curDept} · {r.employee.curTitle}
-									{r.employee.curLevel && ` · ${r.employee.curLevel}`}
+									{positionLabel(r.employee)}
 								</span>
 							</div>
 

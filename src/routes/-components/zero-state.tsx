@@ -1,5 +1,7 @@
+import { AlertCircleIcon } from "lucide-react";
 import { useRef } from "react";
 import { QueryBar, type QueryBarHandle } from "#/components/query-bar";
+import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import {
 	Empty,
@@ -90,14 +92,14 @@ export function ZeroState({
 				{/* 报错紧贴着输入面，因为它说的就是这块面刚才发生了什么。 */}
 				<div className="flex w-full flex-col gap-2">
 					<QueryBar onQuery={onQuery} ref={bar} />
-					{/* 提交失败时界面其余部分一切正常，不说的话人只会以为自己没点上。 */}
+					{/* 提交失败时界面其余部分一切正常，不说的话人只会以为自己没点上。
+					    它是页面级的事件，所以是一块 `Alert`——和工作台上同一个
+					    `useCommit().error` 长一个样，两屏不为同一件事各画一种。 */}
 					{error && (
-						<p
-							className="px-3 text-destructive-foreground text-sm"
-							role="alert"
-						>
-							{error}
-						</p>
+						<Alert variant="error">
+							<AlertCircleIcon />
+							<AlertDescription>{error}</AlertDescription>
+						</Alert>
 					)}
 				</div>
 

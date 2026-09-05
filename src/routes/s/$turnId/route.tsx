@@ -16,19 +16,19 @@ import {
 import { Kbd } from "#/components/ui/kbd";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { cn } from "#/lib/utils";
-import { emptyFacets, type SearchResult } from "#/search/result";
+import { emptyFacets, type SearchOutcome } from "#/search/result";
 import { emptySpec, type SearchSpec } from "#/search/spec";
 import { loadWorkbench } from "#/server/functions";
 import { DeadEnd } from "../../-components/dead-end";
-import { FilterRail, FilterSheet } from "../../-components/filter-rail";
-import { QueryDeck, type QueryDeckHandle } from "../../-components/query-deck";
-import { ResultList } from "../../-components/result-list";
 import { useCommit } from "../../-lib/commit";
-import { filterFields, textFilters } from "../../-lib/filters";
-import { useInterpretation } from "../../-lib/interpret";
-import { useKeyboardFlow } from "../../-lib/keyboard-flow";
-import { useIsWide } from "../../-lib/media";
-import { useNavPhase } from "../../-lib/nav-phase";
+import { FilterRail, FilterSheet } from "./-components/filter-rail";
+import { QueryDeck, type QueryDeckHandle } from "./-components/query-deck";
+import { ResultList } from "./-components/result-list";
+import { filterFields, textFilters } from "./-lib/filters";
+import { useInterpretation } from "./-lib/interpret";
+import { useKeyboardFlow } from "./-lib/keyboard-flow";
+import { useIsWide } from "./-lib/media";
+import { useNavPhase } from "./-lib/nav-phase";
 import {
 	canLoadMore,
 	morePage,
@@ -36,13 +36,24 @@ import {
 	toFilters,
 	type View,
 	validateView,
-} from "../../-lib/view-params";
+} from "./-lib/view-params";
 
 /**
- * 没有结果时也要有稳定的身份：`results` 在 `useKeyboardFlow` 的依赖数组里
- * （见 -lib/keyboard-flow.ts），每次渲染新建 `[]` 会让那个 effect 反复解绑重绑。
+ * 还没有结果的那一份。检索没跑（换查询的头一帧）时顶上去，于是**下面每一层拿到
+ * 的都是一份完整的结果**，不必各写一次「没有就当空的」——写两次就是两份对
+ * 「空」的定义。
+ *
+ * 它是个模块级常量而不是每次现造：`results` 在 `useKeyboardFlow` 的依赖数组里，
+ * 每次渲染新建 `[]` 会让那个 effect 反复解绑重绑。
  */
-const NO_RESULTS: SearchResult[] = [];
+const NO_OUTCOME: SearchOutcome = {
+	order: "relevance",
+	terms: [],
+	results: [],
+	facets: emptyFacets(),
+	total: 0,
+	empty: null,
+};
 const EMPTY_SPEC = emptySpec();
 
 /** 详情面板的宽度。两处必须同值，值在 styles.css（页宽列也从它算出来）。 */
@@ -111,7 +122,7 @@ function TurnNotFound() {
 
 function Workbench() {
 	const { turn, result } = Route.useLoaderData();
-	// `turnId` 就是 `turn.id`：loader 正是按路径上那一段查出这条记录的，
+	// 记录的 id 只从这里取。loader 正是按路径上那一段查出这条记录的，
 	// 再从 params 取一次就是同一个值的第二个名字。
 	const { id: turnId, rawText, spec: settledSpec, canReinterpret } = turn;
 	const view = Route.useSearch();
@@ -132,8 +143,8 @@ function Workbench() {
 	const wide = useIsWide();
 
 	const spec = settledSpec ?? EMPTY_SPEC;
-	const results = result?.results ?? NO_RESULTS;
-	const facets = result?.facets ?? emptyFacets();
+	const outcome = result ?? NO_OUTCOME;
+	const { results, facets, total } = outcome;
 	// 同一份筛选，宽屏摊成一条栏、窄屏收成一个按钮，两处画的是同一组值
 	const fields = filterFields(facets, view);
 	const texts = textFilters(view);
@@ -151,7 +162,7 @@ function Workbench() {
 
 	// 改查询：派生一条挂在当前记录上的新记录。push，所以后退键就是撤销。
 	const reviseSpec = (next: SearchSpec) =>
-		commit({ kind: "spec", spec: next }, { parentTurnId: turn.id });
+		commit({ kind: "spec", spec: next }, { parentTurnId: turnId });
 
 	useKeyboardFlow({ onEditQuery: editQuery, results, empId, turnId, view });
 
@@ -174,12 +185,12 @@ function Workbench() {
 			<QueryDeck
 				error={commitError ?? interpretError}
 				interpreting={interpreting}
-				key={turn.id}
+				key={turnId}
 				onChangeSpec={reviseSpec}
-				onQuery={(input) => commit(input, { parentTurnId: turn.id })}
+				onQuery={(input) => commit(input, { parentTurnId: turnId })}
 				onReinterpret={
 					canReinterpret
-						? () => commit({ kind: "reinterpret" }, { parentTurnId: turn.id })
+						? () => commit({ kind: "reinterpret" }, { parentTurnId: turnId })
 						: undefined
 				}
 				onRetry={interpretError ? retryInterpret : undefined}
@@ -220,7 +231,7 @@ function Workbench() {
 						</div>
 
 						<ResultList
-							canMore={canLoadMore(view, result?.total ?? 0)}
+							canMore={canLoadMore(view, total)}
 							empId={empId}
 							growing={growing}
 							loading={loading}
@@ -228,11 +239,11 @@ function Workbench() {
 							onEditQuery={editQuery}
 							onMore={() => updateView(morePage(view))}
 							onReviseQuery={(evidence) => reviseSpec({ ...spec, evidence })}
-							outcome={result}
+							outcome={outcome}
 							spec={spec}
+							strong={Boolean(view.strong)}
 							strongOn={facets.strong.on}
 							turnId={turnId}
-							view={view}
 						/>
 					</main>
 
@@ -308,11 +319,16 @@ function Workbench() {
 						open={open}
 					>
 						{/*
-						 * 限高并自己滚。滚的那一层是 `DialogPanel`（也就是 `ScrollArea`），
-						 * 详情那个吸顶的头贴在它上面——所以关掉 `scrollFade`，那层遮罩会把
-						 * 吸顶的头一起蒙掉。`p-0` 是因为内边距由详情自己给。
+						 * 限高不写在这里：`DialogPopup` 自带 `max-h-full`，而它住在一个
+						 * `fixed inset-0 p-4` 的视口里——高度上限已经是「视口减去那圈
+						 * 边距」，再挑一个 dvh 的百分数只是又一个说不出理由的数。
+						 * 宽度是布局，覆盖得起（默认 `max-w-lg` 对一份档案太窄）。
+						 *
+						 * 自己滚的那一层是 `DialogPanel`（也就是 `ScrollArea`），详情那个
+						 * 吸顶的头贴在它上面——所以关掉 `scrollFade`，那层遮罩会把吸顶的
+						 * 头一起蒙掉。`p-0` 是因为内边距由详情自己给。
 						 */}
-						<DialogPopup className="max-h-[85dvh] max-w-2xl">
+						<DialogPopup className="max-w-2xl">
 							<DialogTitle className="sr-only">员工详情</DialogTitle>
 							<DialogPanel className="p-0" scrollFade={false}>
 								<Outlet />

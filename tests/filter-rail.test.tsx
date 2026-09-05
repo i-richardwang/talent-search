@@ -12,9 +12,9 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { FilterRail } from "#/routes/-components/filter-rail";
-import { filterFields, textFilters } from "#/routes/-lib/filters";
-import type { View } from "#/routes/-lib/view-params";
+import { FilterRail } from "#/routes/s/$turnId/-components/filter-rail";
+import { filterFields, textFilters } from "#/routes/s/$turnId/-lib/filters";
+import type { View } from "#/routes/s/$turnId/-lib/view-params";
 import type { Facets } from "#/search/result";
 import { visibleText } from "./render";
 
@@ -40,16 +40,17 @@ const FACETS: Facets = {
 	strong: { on: 7, off: 31 },
 };
 
-const render = (view: View, facets: Facets = FACETS) =>
-	visibleText(
-		renderToStaticMarkup(
-			<FilterRail
-				fields={filterFields(facets, view)}
-				onChange={() => {}}
-				textFilters={textFilters(view)}
-			/>,
-		),
+const markup = (view: View, facets: Facets = FACETS) =>
+	renderToStaticMarkup(
+		<FilterRail
+			fields={filterFields(facets, view)}
+			onChange={() => {}}
+			textFilters={textFilters(view)}
+		/>,
 	);
+
+const render = (view: View, facets: Facets = FACETS) =>
+	visibleText(markup(view, facets));
 
 describe("不点开就知道能筛什么", () => {
 	test("维度名和它的选项同时在场", () => {
@@ -177,8 +178,7 @@ describe("不点开就知道现在筛的是什么", () => {
 });
 
 describe("清除", () => {
-	test("没筛就不出现清除，筛了就说清有几项", () => {
-		assert.ok(!render({}).includes("清除"));
+	test("筛了就说清有几项", () => {
 		assert.ok(render({ kind: "internal" }).includes("清除 1 项"));
 		assert.ok(
 			render({ kind: "internal", minMonths: 12 }).includes("清除 2 项"),
@@ -194,8 +194,22 @@ describe("清除", () => {
 		);
 	});
 
+	/*
+	 * 一项都没有时它只占位、不出面：这一行的高度得由按钮自己给，否则「清除」
+	 * 一出现，下面每一维都跟着往下跳一次（`filter-rail.tsx`）。`invisible` 是
+	 * `visibility: hidden`，屏幕和 Tab 序里都没有它——而这里跑不了 CSS，
+	 * 所以只能验那个类名。
+	 */
+	test("一项都没筛的时候，清除占着位子但不出面", () => {
+		assert.match(markup({}), /class="[^"]*\binvisible\b/);
+		assert.doesNotMatch(
+			markup({ kind: "internal" }),
+			/class="[^"]*\binvisible\b/,
+		);
+	});
+
 	test("「只看任职记录可查的」不进计数——它问的不是人群多大", () => {
 		// 它也不在这条栏上（见 result-list.tsx 的 ProvenOnly）
-		assert.ok(!render({ strong: true }).includes("清除"));
+		assert.match(markup({ strong: true }), /class="[^"]*\binvisible\b/);
 	});
 });

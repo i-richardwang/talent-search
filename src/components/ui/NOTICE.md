@@ -1,14 +1,20 @@
 # 这一目录是抄来的
 
-`src/components/ui/*.tsx` 与 `src/lib/utils.ts` 逐字取自 coss ui 的组件注册表：
+`src/components/ui/*.tsx` 与 `src/lib/utils.ts` 取自 coss ui 的组件注册表，
+来源是 <https://github.com/cosscom/coss>，路径 `apps/ui/registry/default/ui/` 与
+`apps/ui/registry/default/lib/utils.ts`。
 
-- 来源：<https://github.com/cosscom/coss>，路径 `apps/ui/registry/default/ui/` 与
-  `apps/ui/registry/default/lib/utils.ts`
-- 改动只有两处，都记在这里：
+**和上游的差异只有三类，没有第四类：**
 
-  1. import 别名：`@/registry/default/lib/utils` → `#/lib/utils`，
-     `@/registry/default/ui/*` → `#/components/ui/*`
-  2. `popover.tsx` 与 `tooltip.tsx` 各多转发一个定位器属性 `positionMethod`
+1. import 别名：`@/registry/default/lib/utils` → `#/lib/utils`，
+   `@/registry/default/ui/*` → `#/components/ui/*`；
+2. `popover.tsx` 与 `tooltip.tsx` 各多转发一个定位器属性 `positionMethod`；
+3. biome 的格式化产物：制表符缩进，以及 import / export 成员的排序
+   （`menu.tsx` 那一长串重导出因此和上游顺序不同）。这一类**不是手改的**——
+   跑一次 `bun run format` 就会重新长成这样，所以不必也不该把它改回去。
+
+于是升级的判据是 `diff -w`：空白无关的差异只应剩下第 1、2 类，多出任何一行都是
+这次升级带进来的上游改动，得看明白再收。
 
 第 2 条的理由：上游这两个包装件把它要用的定位器属性一个个列出来转发
 （`side` / `align` / `sideOffset` / `alignOffset` / `anchor`），`positionMethod`
@@ -34,7 +40,7 @@
 所以在 Vite + TanStack Start 下直接可用。运行时依赖是 `@base-ui/react`、
 `class-variance-authority`、`clsx`、`tailwind-merge` 和 `lucide-react`。
 
-除上面记下的那一个属性之外，抄进来的文件**一个字都不改**，包括 lint 意见不同的那几处：
+**逻辑一个字都不改**，包括 lint 意见不同的那几处：
 `InputGroup` 用 `<div role="group">`（`useSemanticElements` 想要 `<fieldset>`，
 但那是表单分组，不是控件分组），`InputGroupAddon` 在 `<div>` 上挂 `onMouseDown`
 把焦点还给输入框（`noStaticElementInteractions` 只看元素不看用途）。

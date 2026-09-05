@@ -11,14 +11,13 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
 	canLoadMore,
-	hasFilters,
 	morePage,
 	onlyMore,
 	pageLimit,
 	toFilters,
 	validateView,
 	viewChanged,
-} from "#/routes/-lib/view-params";
+} from "#/routes/s/$turnId/-lib/view-params";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 
 describe("最短时长只收正整数", () => {
@@ -86,8 +85,8 @@ describe("序列是一对值", () => {
 
 /**
  * 集合维度。它们在 URL 上是列表，而「一项都没选」和「这一维不筛」必须是同一个
- * 写法——留一个空数组下去，`hasFilters` 会说有筛选，空态就会给出一条清筛选的
- * 出路，而那条路点下去什么都不会变。
+ * 写法——留一个空数组下去，筛选栏就会数出一项已生效的筛选，而屏幕上没有任何
+ * 一行是选中的，也就没有任何东西点得掉它。
  */
 describe("可多选的维度", () => {
 	test("多个值原样通过", () => {
@@ -136,25 +135,6 @@ describe("URL 状态翻成检索条件", () => {
 		// 其余维度没写就是没写：不能变成空串或空列表去和列比较
 		for (const [k, v] of Object.entries(f))
 			if (k !== "seq") assert.equal(v, undefined, k);
-	});
-});
-
-describe("有没有生效的筛选", () => {
-	test("任一收窄维度生效即为真", () => {
-		assert.ok(hasFilters({ seq: [{ l1: "技术", l2: "数据科学" }] }));
-		assert.ok(hasFilters({ companyTag: ["大厂"] }));
-		assert.ok(hasFilters({ minMonths: 12 }));
-		assert.ok(hasFilters({ kind: "internal" }));
-		assert.ok(hasFilters({ level: ["P7"] }));
-		assert.ok(hasFilters({ recruitment: ["校招"] }));
-		assert.ok(hasFilters({ education: ["硕士"] }));
-		assert.ok(hasFilters({ org: "支付" }));
-		assert.ok(hasFilters({ school: "浙江大学" }));
-	});
-
-	test("查询词和证据要求都不算筛选——空态要靠它区分「筛太窄」和「词太窄」", () => {
-		assert.ok(!hasFilters({}));
-		assert.ok(!hasFilters({ strong: true }));
 	});
 });
 

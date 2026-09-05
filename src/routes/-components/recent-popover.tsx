@@ -3,6 +3,7 @@ import { HistoryIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "#/components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
+import { dots } from "#/lib/format";
 import { parseChips } from "#/search/parse";
 import type { SearchSpec } from "#/search/spec";
 import type { RecentSearch } from "#/server/turn";
@@ -13,13 +14,14 @@ import { scopeEntries } from "../-lib/scope-label";
  * 回头找一次搜过的东西，认出来靠的是自己当时怎么说的，不是系统把它读成的那几个词：
  * 条件词是原话的解释，点进去就在屏幕上，这里再摆一遍只会把「我问的」换成「它懂的」。
  *
- * 只有点词汇表落下的记录没有原话，那种记录的门面本来就是条件本身，落到条件词和范围上。
+ * 没有原话的记录只有一种：直接拿一份条件调 RPC 落下的（`kind: "spec"` 且没有父
+ * 记录），界面产生不出来。它的门面本来就是条件本身，所以落到条件词和范围上。
  */
 function recentLabel(spec: SearchSpec, rawText: string | null) {
 	if (rawText) return rawText;
 	const evidence = parseChips(spec.evidence).map((chip) => chip.term);
 	const scope = scopeEntries(spec.scope).map((entry) => entry.label);
-	return [...evidence, ...scope].join(" · ") || "未生效的条件";
+	return dots(...evidence, ...scope) || "未生效的条件";
 }
 
 /**
@@ -36,8 +38,8 @@ function recentLabel(spec: SearchSpec, rawText: string | null) {
  * 没有要重算的，也就没有要补间的。
  *
  * 浮层 portal 在 `<body>` 上（组件自带的去处），于是它是独立的一层，永远盖在
- * 页面之上，不和页面里的任何东西比 z——吸顶的查询台和它同为 `z-stick` 而在 DOM
- * 里更靠后，只要两者同处一个层叠上下文就会把它盖掉。
+ * 页面之上，不和页面里的任何东西比 z——顶栏自己就是 `z-stick`，而这个弹层的锚点
+ * 正在顶栏里：同处一个层叠上下文的话，DOM 里更靠后的兄弟就会把它盖掉。
  */
 export function RecentPopover({ recent }: { recent: RecentSearch[] | null }) {
 	return (

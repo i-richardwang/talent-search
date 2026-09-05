@@ -60,8 +60,10 @@ export const Route = createRootRoute({
  * 它挂在**根路由**上，所以根 match 在导航之间不重挂——顶栏里开着的弹层不会被
  * 换屏关掉，外壳的数据也不会跟着重取。
  *
- * `<main>` 撑开剩下的高度（body 是一根竖列），零态那块因此在顶栏以下真正居中，
- * 而不是靠某个视口高度减去顶栏高度的算式。
+ * 外壳自己是一根竖列，`<main>` 由每一屏自己给：地标只能有一个，而「哪一块是
+ * 正文」在两屏上不是同一块——零态是那块居中的输入面，工作台是中间那条名单列
+ * （左筛选、右详情都是辅助面）。两屏的 `<main>` 都 `flex-1`，于是零态那块在
+ * 顶栏以下真正居中，而不是靠某个视口高度减去顶栏高度的算式。
  */
 function RootComponent() {
 	const recent = Route.useLoaderData();
@@ -78,9 +80,7 @@ function RootComponent() {
 		<div className="relative isolate flex flex-1 flex-col overflow-clip">
 			<PageFrame />
 			<AppHeader recent={recent} />
-			<main className="flex flex-1 flex-col">
-				<Outlet />
-			</main>
+			<Outlet />
 		</div>
 	);
 }

@@ -17,26 +17,7 @@ import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Timeline } from "#/components/timeline";
 import type { Experience } from "#/db/schema";
-
-const seg = (over: Partial<Experience> = {}): Experience =>
-	({
-		id: 1,
-		empId: "T0001",
-		kind: "internal",
-		startDate: "2020-01-01",
-		endDate: null,
-		org: "某部门",
-		orgPath: "某事业部/某部门",
-		orgMeta: null,
-		title: "某岗位",
-		seqL1: "技术",
-		seqL2: "算法",
-		seqL3: "",
-		level: "M3",
-		description: "",
-		months: 24,
-		...over,
-	}) as Experience;
+import { experience as seg } from "./rows";
 
 const html = (rows: Experience[]) =>
 	renderToStaticMarkup(<Timeline hitIndex={new Map()} rows={rows} />);

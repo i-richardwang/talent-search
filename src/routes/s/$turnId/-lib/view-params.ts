@@ -15,11 +15,7 @@
  * 一个是换一个问题。
  */
 
-import {
-	narrowsPopulation,
-	POPULATION_KEYS,
-	parsePopulation,
-} from "#/search/params";
+import { POPULATION_KEYS, parsePopulation } from "#/search/params";
 import type { SearchFilters } from "#/search/result";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 
@@ -108,7 +104,7 @@ export function viewChanged(next: View, prev: View | undefined) {
  * 于是塌成骨架屏一次。
  *
  * 比的就是它写进地址栏之后的样子：顺序和字段序都由 `filters.ts` 的 `toggle`
- * 与 `seqPicks` 定死，同一组选择只有一种写法。
+ * 与 `write` 定死（写回一律取候选自己的顺序），同一组选择只有一种写法。
  */
 function same(a: View[keyof View], b: View[keyof View]) {
 	if (!Array.isArray(a) || !Array.isArray(b)) return a === b;
@@ -132,11 +128,3 @@ export function toFilters(v: View): SearchFilters {
 export const CLEARED_FILTERS = Object.fromEntries(
 	POPULATION_KEYS.map((k) => [k, undefined]),
 ) as { [K in (typeof POPULATION_KEYS)[number]]: undefined };
-
-/**
- * 是否有任何收窄人群的筛选生效。口径与检索侧同一份（`search/params.ts` 的
- * `POPULATION_KEYS`）：视图和检索对「什么算筛选」说的必须是同一句话。
- */
-export function hasFilters(v: View) {
-	return narrowsPopulation(toFilters(v));
-}

@@ -12,20 +12,19 @@ import {
 	unsupportedOf,
 	wideTerms,
 } from "#/search/spec";
-import { HEADER_QUERY_SLOT } from "./app-header";
+import { HEADER_QUERY_SLOT } from "../../../-components/app-header";
 import { QueryChips } from "./query-chips";
 import { QueryScope } from "./query-scope";
 
-/** 从外面打开改写：键盘流的 `/`，以及空名单上那条「改一改」的出路。 */
+/** 从外面打开改写：键盘流的 `/`，以及空名单上那几条通向改写的出路。 */
 export type QueryDeckHandle = { edit: () => void };
 
 /**
  * 名单的抬头：**我问的那句话**，和系统把它读成的条件。
  *
- * 它不是一块面，也不吸顶。这两样以前都有，两样都是同一个错误的两半：那句话是
- * **只读的显示**，却被画进了输入框那块面（`Frame`+`FramePanel`，正是 `QueryBar`
- * 的材质），于是它一边长成能打字的样子，一边点下去只会弹出另一个框；而一块
- * 永远不变的东西吸在顶栏底下，等于把整屏最贵的那一条横带包给了一件不动的事。
+ * 它不是一块面，也不吸顶。那句话是**只读的显示**：给它配上输入框那块面的材质，
+ * 它就一边长成能打字的样子、一边点下去只弹出另一个框；把它吸在顶栏底下，则是
+ * 把整屏最贵的那条横带包给一件永远不变的东西。
  * 同类产品在这里只有两种答案，没有第三种：要么它是**真的输入框**（Pin、
  * Remote：顶部那条永远能打字，不回显上一句），要么它是**标题**（Wellfound 的
  * 搜索名、Perplexity 的问题：纯文字加一颗小铅笔，输入框在别处）。这里选后者，
@@ -43,7 +42,7 @@ export type QueryDeckHandle = { edit: () => void };
  *    「这份名单是什么」。它归名单，不归这里。
  *
  * 「换个看法」不在这里。筛选不改问题，只是在同一批候选里再看哪一部分，连查询
- * 记录都不产生（见 `-lib/commit.ts` 开头）——「记录还是视图」是这个产品最要紧的
+ * 记录都不产生（见 `routes/-lib/commit.ts` 开头）——「记录还是视图」是这个产品最要紧的
  * 一条界线，屏幕上由位置说出来：这块抬头里的动作会派生新记录，名单左边那条
  * 筛选栏（`filter-rail.tsx`）只动 URL。两者共用一块面的话，这条界线就只剩
  * 文案在扛。
@@ -72,7 +71,14 @@ export function QueryDeck({
 	ref: React.Ref<QueryDeckHandle>;
 	/** 还在等模型把这句话翻译成条件 */
 	interpreting: boolean;
-	/** 这条查询在问的那句话。只有点词汇表落下的记录没有。 */
+	/**
+	 * 这条查询在问的那句话。
+	 *
+	 * 界面产生的每条记录都有原话：零态敲的是句子，工作台上改 chip 派生出来的那条
+	 * 继承父记录的原话。为 `null` 的只有一种——直接拿一份条件调 RPC 落下的记录
+	 * （`kind: "spec"` 且没有父记录）。所以这里不给它配一套「没有原话时长什么样」
+	 * 的抬头：整格空着，条件由下面那排 chips 自己说。
+	 */
 	rawText: string | null;
 	error: string | null;
 	/** 理解失败时的重试动作。 */
@@ -119,7 +125,7 @@ export function QueryDeck({
 		 * 左筛选栏和右详情面板都在这条查询**之内**：左边筛的是这条查询的结果，
 		 * 右边看的是这份结果里的某一个人，两者都只动 URL 上的视图参数，不产生新的
 		 * 查询记录。而改这句话会派生一条新记录——「记录还是视图」这条界线在屏幕上
-		 * 由位置说出来（见 `-lib/commit.ts` 开头），那就不能把父级和它的两个子级
+		 * 由位置说出来（见 `routes/-lib/commit.ts` 开头），那就不能把父级和它的两个子级
 		 * 并排摆成三栏的抬头。摆成三栏之后要做的第一件事必然是「让三栏起始高度
 		 * 对齐」，而那正是在替一个错的层级关系描边。
 		 *
@@ -131,8 +137,8 @@ export function QueryDeck({
 		 * 从这条带**下面**才开始这件事本身。
 		 *
 		 * `app-column` 是顶栏用的那个盒子：于是这句话的左沿和顶栏那个应用名同线，
-		 * 也和左栏里每一行选项的左沿同线。它不再和名单卡片共边——共边是同一栏里
-		 * 的事，而它已经不在那一栏里了。
+		 * 也和左栏里每一行选项的左沿同线。和名单卡片共边是同一栏里的事，而这条带
+		 * 管着的正是包含那一栏在内的三栏。
 		 */
 		<header className="app-column flex flex-col gap-3 py-4">
 			{/*
@@ -154,12 +160,13 @@ export function QueryDeck({
 						   一块只读的面留下的那种死白。 */
 						<div className="flex w-fit max-w-full items-start gap-1">
 							{/*
-							 * 标题是**文字**，铅笔才是按钮。以前整行都是一颗按钮，
-							 * 那是把只读的显示做成控件的最后一点残留：一行悬停时
-							 * 整条发亮的灰底，读起来仍然像个能打字的框。字号只上到
-							 * 17（`title-2`）——汉字系统字没有拉丁 display 字那种
-							 * 放大之后还成立的字形，这句话的重量由它独占整条带、
-							 * 上下留白和左边缘与顶栏同线给出，不由字号硬撑。
+							 * 标题是**文字**，铅笔才是按钮。整行做成一颗按钮的话，
+							 * 悬停时那条通栏发亮的灰底会让它重新读成一个能打字的
+							 * 框——而它是只读的。
+							 *
+							 * 字号只上到 17（`title-2`）——汉字系统字没有拉丁 display
+							 * 字那种放大之后还成立的字形，这句话的重量由它独占整条
+							 * 带、上下留白和左边缘与顶栏同线给出，不由字号硬撑。
 							 *
 							 * 全宽的带子里正文仍然要有度量：17px 的汉字排到一千多
 							 * 像素是没法读的一行，所以封在版心那个数上——名单和
@@ -172,7 +179,6 @@ export function QueryDeck({
 								/* 理解中显示的仍是这句话，不是占位方块——下面那一格
 								   接下来会变成 chips，而 chips 正是从它翻译出来的。 */
 								<span
-									aria-live="polite"
 									className="shrink-0 py-1 text-muted-foreground text-xs"
 									role="status"
 								>
@@ -232,12 +238,7 @@ export function QueryDeck({
 						<Footnote>
 							未能识别这句话里的语气，「最好」「不要」都已按必须条件处理。
 							{onReinterpret && (
-								<Button
-									className="h-auto p-0 text-xs"
-									onClick={onReinterpret}
-									size="xs"
-									variant="link"
-								>
+								<Button onClick={onReinterpret} size="xs" variant="link">
 									<RotateCwIcon />
 									重新理解
 								</Button>
@@ -255,7 +256,7 @@ export function QueryDeck({
 						<span className="min-w-0 flex-1">{error}</span>
 						{onRetry && (
 							<Button
-								className="h-auto shrink-0 p-0 text-xs"
+								className="shrink-0"
 								onClick={onRetry}
 								size="xs"
 								variant="link"

@@ -11,8 +11,12 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { activeCount, filterFields, textFilters } from "#/routes/-lib/filters";
-import type { View } from "#/routes/-lib/view-params";
+import {
+	activeCount,
+	filterFields,
+	textFilters,
+} from "#/routes/s/$turnId/-lib/filters";
+import type { View } from "#/routes/s/$turnId/-lib/view-params";
 import type { Facets } from "#/search/result";
 
 const FACETS: Facets = {

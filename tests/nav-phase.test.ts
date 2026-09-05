@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { navPhase, type Spot } from "#/routes/-lib/nav-phase";
+import { navPhase, type Spot } from "#/routes/s/$turnId/-lib/nav-phase";
 
 const spot = (turn: string, view: Spot["view"] = {}): Spot => ({ turn, view });
 const QUERY = { seq: [{ l1: "技术", l2: "后端" }] };

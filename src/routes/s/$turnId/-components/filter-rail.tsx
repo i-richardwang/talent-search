@@ -20,11 +20,11 @@ import { CLEARED_FILTERS, type View } from "../-lib/view-params";
  * 人得先决定点开哪一维，才看得到自己该不该点开它。
  *
  * 摊开的东西必须**站得住**：这一栏的行只在换查询时变，点任何一个筛选都不会让
- * 别的行消失（口径在 `search/rank.ts` 的 `facetCount`）。被别的筛选挤到 0 的行
+ * 别的行消失（口径在 `search/rank.ts` 的 `facetRows`）。被别的筛选挤到 0 的行
  * 留在原地、写着 0、点不动——那是用户自己刚做的事的后果，藏起来就没法回头。
  *
  * 它在名单**外面**，因为它不改问题，只改看法，连查询记录都不产生
- * （见 `-lib/commit.ts` 开头）。「记录还是视图」是这个产品最要紧的一条界线，
+ * （见 `routes/-lib/commit.ts` 开头）。「记录还是视图」是这个产品最要紧的一条界线，
  * 屏幕上由位置说出来：查询台里的动作会派生新记录，这条栏里的只动 URL。
  *
  * 左筛选、右详情，中间是那条唯一的名单列——两侧都是辅助面，都吸顶、都自己滚，
@@ -119,25 +119,22 @@ function FilterList({ fields, textFilters, onChange }: FilterProps) {
 	return (
 		<div className="flex flex-col gap-4">
 			{/*
-			 * 行高写死。「清除」有和没有的时候这一行必须一样高，否则下面每一维都
-			 * 跟着上下跳一次——而它出现的那一刻，正是人刚点完一个筛选、眼睛还盯着
-			 * 那一列人数的时候，跳的是他正在读的东西。
-			 *
-			 * 20px 取自这一行里较高的那个盒子：12px 的按钮字（行高 16）加上下各 1px
-			 * 描边是 18，留 2px 余量。标题那 11px 的字比它矮，撑不到。
+			 * 「清除」一直在，一项都没有时只是看不见——这一行的高度因此由按钮自己
+			 * 给出，不由「这一刻有没有它」给出。它出现的那一刻，正是人刚点完一个
+			 * 筛选、眼睛还盯着那一列人数的时候，那一跳跳的是他正在读的东西。
+			 * `invisible` 是 `visibility: hidden`，同时把它从 Tab 序和读屏里拿掉，
+			 * 所以留下的是一格高度，不是一个藏起来还按得到的按钮。
 			 */}
-			<div className="flex h-5 items-baseline justify-between gap-2 px-2">
+			<div className="flex items-center justify-between gap-2 px-2">
 				<span className="label text-muted-foreground">筛选</span>
-				{count > 0 && (
-					<Button
-						className="h-auto p-0 text-xs"
-						onClick={() => onChange(CLEARED_FILTERS)}
-						size="xs"
-						variant="link"
-					>
-						清除 {count} 项
-					</Button>
-				)}
+				<Button
+					className={cn(count === 0 && "invisible")}
+					onClick={() => onChange(CLEARED_FILTERS)}
+					size="xs"
+					variant="link"
+				>
+					清除 {count} 项
+				</Button>
 			</div>
 
 			{textFilters.map((t) => (
@@ -233,7 +230,12 @@ function collapse({ options, values }: FilterField) {
 	return [...buried, ...head.slice(0, Math.max(VISIBLE - buried.length, 0))];
 }
 
-/** 一维一组：分区标签 + 若干行。标签走全站的 `label` 档，一眼是「不是内容」。 */
+/**
+ * 一维一组：分区标签 + 若干行。标签走全站的 `label` 档，一眼是「不是内容」。
+ *
+ * 它是 `h2`：这一屏的 `h1` 是查询台上那句原话，而这几组是它下面的第一层分区。
+ * 跳到 `h3` 的话，读屏按标题跳时会报出一层根本不存在的中间标题。
+ */
 function FilterGroup({
 	title,
 	children,
@@ -243,7 +245,7 @@ function FilterGroup({
 }) {
 	return (
 		<section className="flex flex-col gap-0.5">
-			<h3 className="label px-2 pb-1 text-muted-foreground">{title}</h3>
+			<h2 className="label px-2 pb-1 text-muted-foreground">{title}</h2>
 			{children}
 		</section>
 	);

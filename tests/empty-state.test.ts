@@ -10,8 +10,11 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { emptyState } from "#/routes/-lib/empty-state";
-import type { View } from "#/routes/-lib/view-params";
+import { emptyState } from "#/routes/s/$turnId/-lib/empty-state";
+import {
+	CLEARED_FILTERS,
+	type View,
+} from "#/routes/s/$turnId/-lib/view-params";
 import type { EmptyReason } from "#/search/empty";
 
 /** 跑一次空态，把按钮按下去，回收它想改的东西 */
@@ -95,7 +98,9 @@ describe("其余各支各说各的", () => {
 
 	test("筛选太窄：一键清筛选，但不动证据要求", () => {
 		const s = run({ kind: "filtered" });
-		assert.equal(s.changed?.seq, undefined);
+		// 按下去必须真的改视图，而且清的是**全部**收窄维度：漏掉一维，人点完
+		// 名单照旧是空的，而屏幕上那条出路刚承诺过它能走通。
+		assert.deepEqual(s.changed, CLEARED_FILTERS);
 		assert.ok(!("strong" in (s.changed ?? {})), "证据要求不归「清除筛选」管");
 	});
 

@@ -1,7 +1,7 @@
 import { XIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import type { SearchScope } from "#/search/spec";
-import { scopeEntries } from "../-lib/scope-label";
+import { scopeEntries } from "../../../-lib/scope-label";
 
 /** 原话中的结构化条件是查询本身的一部分，必须和语义条件一样可见、可删。 */
 export function QueryScope({

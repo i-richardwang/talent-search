@@ -31,8 +31,10 @@ export function AppHeader({ recent }: { recent: RecentSearch[] | null }) {
 	return (
 		<header className="sticky top-0 z-stick bg-canvas/80 backdrop-blur-sm before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-border/64">
 			<div className="app-column flex h-(--header-height) items-center gap-2">
+				{/* 悬停给下划线，走 coss `link` 那一档的做法：这是套中性色系统，
+				    没有一个比正文更重的前景色可以换过去。 */}
 				<Link
-					className="flex shrink-0 items-center gap-2 font-heading font-semibold text-sm hover:text-primary"
+					className="flex shrink-0 items-center gap-2 font-heading font-semibold text-sm underline-offset-4 hover:underline"
 					to="/"
 				>
 					<UsersRoundIcon className="size-4 text-muted-foreground" />

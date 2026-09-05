@@ -10,10 +10,13 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StrengthLegend } from "#/components/evidence";
-import { QueryDeck } from "#/routes/-components/query-deck";
-import { ResultHeader, ResultList } from "#/routes/-components/result-list";
 import { ZeroState } from "#/routes/-components/zero-state";
 import { scopeEntries } from "#/routes/-lib/scope-label";
+import { QueryDeck } from "#/routes/s/$turnId/-components/query-deck";
+import {
+	ResultHeader,
+	ResultList,
+} from "#/routes/s/$turnId/-components/result-list";
 import { emptyFacets } from "#/search/result";
 import { visibleText } from "./render";
 
@@ -49,8 +52,8 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				loading={false}
 				onChange={() => {}}
 				order="relevance"
+				strong={false}
 				strongOn={0}
-				view={{}}
 				terms={[
 					{
 						term: "算法",
@@ -129,6 +132,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onEditQuery={() => {}}
 				onMore={() => {}}
 				onReviseQuery={() => {}}
+				strong={false}
 				strongOn={0}
 				outcome={{
 					order: "relevance",
@@ -144,9 +148,10 @@ describe("产品文案使用常规 SaaS 语言", () => {
 					notices: [],
 				}}
 				turnId="t1"
-				view={{}}
 			/>,
 		);
+		// 先确认画出来的确实是空态那一支：两条 doesNotMatch 在一片空白上也成立
+		assert.match(text, /没有符合全部必选条件的结果/);
 		assert.doesNotMatch(text, /0\s*人/);
 		assert.doesNotMatch(text, /按相关度排序/);
 	});

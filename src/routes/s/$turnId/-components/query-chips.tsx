@@ -11,7 +11,13 @@ import {
 	MenuTrigger,
 } from "#/components/ui/menu";
 import { cn } from "#/lib/utils";
-import { type ChipMode, dropChip, editChip, parseChips } from "#/search/parse";
+import {
+	CHIP_MODES,
+	type ChipMode,
+	dropChip,
+	editChip,
+	parseChips,
+} from "#/search/parse";
 
 /**
  * 查询条件：一条要求一枚 chip，可改强度、可删。
@@ -64,8 +70,12 @@ const MODE_HINT: Record<ChipMode, string> = {
  *
  * 「必须」不带符号：它是默认，而默认不该有标记——大多数查询整条都是必须词，
  * 一排 `=` 号只会让人以为那是要读的内容。
+ *
+ * 这是 `parse.ts` 里那套记号的**排印**：查询串里的减号是 ASCII 的 `-`（URL 要
+ * 读得出、手改得动），屏幕上画的是真正的减号 U+2212——它和加号同宽同高，
+ * 一列 chip 的符号位才对得齐。语法归 `parse.ts`，字形归这里。
  */
-const MODE_SIGN: Record<ChipMode, string> = {
+const MODE_GLYPH: Record<ChipMode, string> = {
 	must: "",
 	boost: "+",
 	exclude: "−",
@@ -89,8 +99,6 @@ const EXCLUDE_STYLE = "line-through";
  * 停用期间最该看得清的一件事。虚线是「这里有个位置，但现在是空的」的通用画法。
  */
 const OFF_STYLE = "border-dashed text-muted-foreground";
-
-const MODES = ["must", "boost", "exclude"] as const;
 
 export function QueryChips({
 	query,
@@ -131,9 +139,9 @@ export function QueryChips({
 								/>
 							}
 						>
-							{MODE_SIGN[chip.mode] && (
+							{MODE_GLYPH[chip.mode] && (
 								<span className="font-mono text-muted-foreground">
-									{MODE_SIGN[chip.mode]}
+									{MODE_GLYPH[chip.mode]}
 								</span>
 							)}
 							{/* 并列说法（或）与主词同权重，平着写 */}
@@ -162,7 +170,7 @@ export function QueryChips({
 								onValueChange={(mode) => replace(i, mode as ChipMode)}
 								value={chip.mode}
 							>
-								{MODES.map((mode) => (
+								{CHIP_MODES.map((mode) => (
 									<MenuRadioItem key={mode} value={mode}>
 										{/* 两行一格：标题说这一档叫什么，副行说它会做什么。
 										    改强度是这个菜单唯一的主任务，值得占两行。 */}
