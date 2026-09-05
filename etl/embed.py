@@ -28,23 +28,44 @@ import random
 import sqlite3
 import time
 from array import array
+from collections.abc import Mapping
 import urllib.error
 import urllib.request
 
 import config as C
 
-#: 一次请求送多少段。bge-m3 在 CPU 上一批几十条是延迟与吞吐的平衡点，
-#: 再大只是让单次请求更容易超时。
+#: 一次请求送多少段。bge-m3 在 CPU 上一批几十条是延迟与吞吐的平衡点，再大只是
+#: 让单次请求更容易超时。整条链路只有这一个批量：调用方把整份语料一次交给
+#: `embed`，请求批量、缓存连接的寿命和进度打印都由它决定，调用方只交整份语料。
 BATCH = 32
 
+#: `route_texts` 读的字段。取数据的那一侧（`load.py` 从暂存经历表里查）照它
+#: 取列，两边就不会各写一份「四路原文要哪些字段」。
+ROUTE_FIELDS = (
+    "kind",
+    "org",
+    "org_path",
+    "title",
+    "seq_l1",
+    "seq_l2",
+    "seq_l3",
+    "description",
+)
 
-def route_texts(row) -> dict[str, str]:
+
+def route_texts(row: Mapping[str, str]) -> dict[str, str]:
     """一段经历的四路原文。空的那一路不出现在结果里。"""
     texts = {
-        "seq": " · ".join(s for s in (row.seq_l1, row.seq_l2, row.seq_l3) if s),
-        "title": row.title,
-        "org": row.org_path if row.kind == "internal" and row.org_path else row.org,
-        "description": row.description,
+        "seq": " · ".join(
+            s for s in (row["seq_l1"], row["seq_l2"], row["seq_l3"]) if s
+        ),
+        "title": row["title"],
+        "org": (
+            row["org_path"]
+            if row["kind"] == "internal" and row["org_path"]
+            else row["org"]
+        ),
+        "description": row["description"],
     }
     return {route: text for route, text in texts.items() if text}
 
@@ -57,6 +78,9 @@ def embed(texts: list[str]) -> list[list[float]]:
     ETL 更是把整份语料再问一遍。缓存按（嵌入空间、模型、文本）键入，换空间
     自然失效。
     查询侧的进程内缓存（`src/server/embed.ts`）是同一个道理。
+
+    进度只报没命中缓存的那几种：要等端点的就是它们，按总数报会让一次全命中的
+    重跑看起来仍在打端点。
     """
     unique = list(dict.fromkeys(texts))
     with _cache() as cache:
@@ -67,6 +91,9 @@ def embed(texts: list[str]) -> list[list[float]]:
             fresh = list(zip(chunk, _request(chunk), strict=True))
             _store(cache, fresh)
             vectors.update(fresh)
+            print(
+                f"  已嵌入 {start + len(chunk)}/{len(missing)} 种新说法", flush=True
+            )
     return [vectors[t] for t in texts]
 
 
@@ -105,8 +132,10 @@ def _cached(cache: sqlite3.Connection, texts: list[str]) -> dict[str, list[float
         for sha, blob in rows:
             vec = array("f")
             try:
+                # vec 是 not null 的 blob，读出来一定是 bytes，只可能长度不成
+                # 整数个 float——那是一条写坏的缓存，删掉重嵌。
                 vec.frombytes(blob)
-            except (TypeError, ValueError):
+            except ValueError:
                 invalid.append((_cache_key(), sha))
                 continue
             vector = vec.tolist()

@@ -25,13 +25,7 @@ from pathlib import Path
 import pandas as pd
 
 import config as C
-from contract import (
-    ASSIGNMENT_COLUMNS,
-    EMPLOYEE_COLUMNS,
-    EXTERNAL_COLUMNS,
-    SourceData,
-    conform,
-)
+from contract import SourceData
 
 #: 不配 TALENT_CSV_DIR 时读的合成样例。它进版本库，因为里面没有一个真人。
 SAMPLE_DIR = Path(__file__).resolve().parent / "sample"
@@ -40,11 +34,13 @@ TRUE_VALUES = {"true", "1", "y", "yes", "是"}
 
 
 def _read(
-    directory: Path,
-    name: str,
-    columns: list[str],
-    optional: frozenset[str] = frozenset(),
+    directory: Path, name: str, optional: frozenset[str] = frozenset()
 ) -> pd.DataFrame:
+    """读一个 CSV，只做 CSV 自己表达不了的事：去掉 BOM、补上可省的列。
+
+    列齐不齐由契约（`SourceData`）判，不在这里判一遍：两处判，改契约列的人
+    就得记得改两处，而只有一处会红。
+    """
     path = directory / name
     if not path.exists():
         raise SystemExit(f"源文件缺失：{path}")
@@ -53,7 +49,7 @@ def _read(
     for column in optional:
         if column not in frame.columns:
             frame[column] = ""
-    return conform(frame, columns, name)
+    return frame
 
 
 def extract() -> SourceData:
@@ -62,22 +58,18 @@ def extract() -> SourceData:
         print("  未配置 TALENT_CSV_DIR，读取仓库自带的合成样例")
     print(f"  源目录 {directory}")
 
-    employees = _read(directory, "employees.csv", EMPLOYEE_COLUMNS)
-    assignments = _read(
-        directory,
-        "assignments.csv",
-        ASSIGNMENT_COLUMNS,
-        frozenset({"segment_key"}),
-    )
-    external = _read(directory, "external.csv", EXTERNAL_COLUMNS)
+    employees = _read(directory, "employees.csv")
+    assignments = _read(directory, "assignments.csv", frozenset({"segment_key"}))
+    external = _read(directory, "external.csv")
 
     # 没给 segment_key 就按「部门 + 岗位」判断相邻段是不是同一件事
-    blank = assignments.segment_key.str.strip() == ""
+    blank = assignments["segment_key"].str.strip() == ""
     assignments.loc[blank, "segment_key"] = (
-        assignments.org.str.strip() + "|" + assignments.title.str.strip()
+        assignments["org"].str.strip() + "|" + assignments["title"].str.strip()
     )
 
-    external["unemployed"] = external.unemployed.str.strip().str.lower().isin(
-        TRUE_VALUES
+    # CSV 里没有布尔，只有字面量
+    external["unemployed"] = (
+        external["unemployed"].str.strip().str.lower().isin(TRUE_VALUES)
     )
     return SourceData(employees, assignments, external)

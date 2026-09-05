@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import csv
 import io
-from types import SimpleNamespace
 
+import pandas as pd
 import psycopg
 
 import config as C
-from embed import embed, probe, route_texts
+from embed import ROUTE_FIELDS, embed, probe, route_texts
 from pipeline import EMPLOYEE_OUT, EXPERIENCE_OUT, build
 from sources import load_source
 
@@ -24,21 +24,7 @@ NULLABLE = {"hire_date", "start_date", "end_date", "org_meta"}
 # 同一数据库一次只准备一代语料；会话锁跨过暂存与发布两个事务。
 CORPUS_RELOAD_LOCK = int.from_bytes(b"talent", "big")
 
-# 一次拿多少种说法去嵌入。只影响进度打印的粒度，不影响结果。
-EMBED_CHUNK = 512
 CANARY_TEXT = "talent-search embedding canary"
-
-# `route_texts` 要读的字段，和暂存经历查询的列序一致。
-FIELDS = (
-    "kind",
-    "org",
-    "org_path",
-    "title",
-    "seq_l1",
-    "seq_l2",
-    "seq_l3",
-    "description",
-)
 
 STAGED_EMPLOYEE = "staged_employee"
 STAGED_EXPERIENCE = "staged_experience"
@@ -46,7 +32,9 @@ STAGED_PHRASE = "staged_phrase"
 STAGED_LINK = "staged_experience_phrase"
 
 
-def _copy_frame(cur, table: str, df, cols: list[str]) -> None:
+def _copy_frame(
+    cur: psycopg.Cursor, table: str, df: pd.DataFrame, cols: list[str]
+) -> None:
     out = df[cols].copy()
     for col in cols:
         if col not in NULLABLE:
@@ -66,7 +54,7 @@ def _phrase_plan(rows: list[tuple]) -> tuple[list[str], list[tuple[int, str, int
     """把经历行规划成稳定去重的说法和指向说法 id 的边。"""
     raw_links: list[tuple[int, str, str]] = []
     for exp_id, *values in rows:
-        fields = SimpleNamespace(**dict(zip(FIELDS, values, strict=True)))
+        fields = dict(zip(ROUTE_FIELDS, values, strict=True))
         for route, text in route_texts(fields).items():
             raw_links.append((exp_id, route, text))
 
@@ -76,31 +64,29 @@ def _phrase_plan(rows: list[tuple]) -> tuple[list[str], list[tuple[int, str, int
     return texts, links
 
 
-def _stage_phrases(cur) -> tuple[int, int]:
-    """嵌入暂存经历的四路原文，返回（说法数，段到说法的边数）。"""
+def _stage_phrases(cur: psycopg.Cursor) -> tuple[int, int]:
+    """嵌入暂存经历的四路原文，返回（说法数，段到说法的边数）。
+
+    整份语料一次交给 `embed`：批量、缓存与进度是它的事，这里只管把结果写进
+    暂存表——在外面再切一层批就等于同一件事有两个尺寸。
+    """
     cur.execute(
-        f"select id, {', '.join(FIELDS)} from {STAGED_EXPERIENCE} order by id"
+        f"select id, {', '.join(ROUTE_FIELDS)} from {STAGED_EXPERIENCE} order by id"
     )
     texts, links = _phrase_plan(cur.fetchall())
 
-    for start in range(0, len(texts), EMBED_CHUNK):
-        chunk = texts[start : start + EMBED_CHUNK]
-        vectors = embed(chunk)
-        buf = io.StringIO()
-        writer = csv.writer(buf)
-        for phrase_id, (text, vector) in enumerate(
-            zip(chunk, vectors, strict=True), start=start + 1
-        ):
-            writer.writerow([phrase_id, text, f"[{','.join(map(str, vector))}]"])
-        buf.seek(0)
-        with cur.copy(
-            f"copy {STAGED_PHRASE} (id, text, embedding) from stdin with (format csv)"
-        ) as cp:
-            cp.write(buf.read())
-        print(
-            f"  已嵌入 {min(start + EMBED_CHUNK, len(texts))}/{len(texts)} 种说法",
-            flush=True,
-        )
+    vectors = embed(texts)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    for phrase_id, (text, vector) in enumerate(
+        zip(texts, vectors, strict=True), start=1
+    ):
+        writer.writerow([phrase_id, text, f"[{','.join(map(str, vector))}]"])
+    buf.seek(0)
+    with cur.copy(
+        f"copy {STAGED_PHRASE} (id, text, embedding) from stdin with (format csv)"
+    ) as cp:
+        cp.write(buf.read())
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -113,7 +99,7 @@ def _stage_phrases(cur) -> tuple[int, int]:
     return len(texts), len(links)
 
 
-def _create_staging_tables(cur) -> None:
+def _create_staging_tables(cur: psycopg.Cursor) -> None:
     for staged, public in (
         (STAGED_EMPLOYEE, "employee"),
         (STAGED_EXPERIENCE, "experience"),
@@ -125,14 +111,16 @@ def _create_staging_tables(cur) -> None:
         )
 
 
-def _stage_corpus(cur, employee, experience) -> tuple[int, int]:
+def _stage_corpus(
+    cur: psycopg.Cursor, employee: pd.DataFrame, experience: pd.DataFrame
+) -> tuple[int, int]:
     _copy_frame(cur, STAGED_EMPLOYEE, employee, EMPLOYEE_OUT)
     staged_experience = experience.assign(id=range(1, len(experience) + 1))
     _copy_frame(cur, STAGED_EXPERIENCE, staged_experience, ["id", *EXPERIENCE_OUT])
     return _stage_phrases(cur)
 
 
-def _reset_identity(cur, table: str) -> None:
+def _reset_identity(cur: psycopg.Cursor, table: str) -> None:
     cur.execute(
         f"""
         select setval(
@@ -144,7 +132,9 @@ def _reset_identity(cur, table: str) -> None:
     )
 
 
-def _publish_corpus(cur, canary: list[float]) -> tuple[int, list[tuple[str, int]]]:
+def _publish_corpus(
+    cur: psycopg.Cursor, canary: list[float]
+) -> tuple[int, list[tuple[str, int]]]:
     # 检索先锁 embedding_space 再读语料；发布沿用同一顺序，等待已有读者结束后
     # 一次替换完整代际，不会形成跨表锁环。
     cur.execute("lock table embedding_space in access exclusive mode")

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from typing import Protocol
 
 import pandas as pd
 from pandas.api.types import is_bool
@@ -106,10 +107,15 @@ def _text(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return out
 
 
-def _reject(frame: pd.DataFrame, bad: pd.Series, why: str) -> pd.DataFrame:
-    """剔除并报数。**拒绝必须出声**——静默丢数据的管线没人能验收。"""
+def _reject(
+    frame: pd.DataFrame, bad: pd.Series, why: str, unit: str = "段"
+) -> pd.DataFrame:
+    """剔除并报数。**拒绝必须出声**——静默丢数据的管线没人能验收。
+
+    经历按段数，员工档案按行数：报告里的量词得和被拒的东西对得上。
+    """
     if bad.any():
-        print(f"  {why} {int(bad.sum())} 段，已拒绝导入")
+        print(f"  {why} {int(bad.sum())} {unit}，已拒绝导入")
     return frame[~bad].copy()
 
 
@@ -154,6 +160,8 @@ def _merge_adjacent(rows: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
     相同 key 只说明内容相同；时间连续或重叠才说明它们是同一段经历。合并区间取
     最早开始和最晚结束，只要其中一段开放，合并结果就开放；重算时长封到 `as_of`。
     """
+    # 空表不能走下面的分组：`pd.DataFrame([], columns=...)` 会把日期列退回
+    # object，之后按开始日排序的就不再是日期。
     if rows.empty:
         out = rows.copy()
         out["months"] = pd.Series(dtype="int64")
@@ -261,7 +269,15 @@ def close_external_intervals(
     )
 
 
-def _org_meta(row) -> str | None:
+class _CompanyRow(Protocol):
+    """`_org_meta` 只读这三项。`itertuples` 的行是动态命名元组，按结构声明。"""
+
+    company_tag: str
+    industry: str
+    nature: str
+
+
+def _org_meta(row: _CompanyRow) -> str | None:
     """公司属性只存非空项。整体为空时写 NULL，不写 `{}`。"""
     meta = {
         "company_tag": row.company_tag,
@@ -287,13 +303,16 @@ def _normalize_employee_rows(rows: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_employee(rows: pd.DataFrame, internal: pd.DataFrame) -> pd.DataFrame:
-    """档案字段来自源，`cur_*` 一律从唯一的开放公司内经历派生。
+    """档案字段来自归一化后的源行，`cur_*` 一律从唯一的开放公司内经历派生。
+
+    行在进来之前已经过 `_normalize_employee_rows`：归一化是每一批档案都要做的
+    第一件事，做在入口一次，这里再做一遍就是同一件事有两个位置。
 
     当前部门、岗位、序列、职级不从源的快照里另取一份：那样库里就有两个「他现在
     在哪」，而时间线和结果行会各读一个。没有开放段就没有当前岗位；同时存在多段
     开放经历时，单值当前字段无法表达事实，因此留空并报出数据冲突，不猜一段。
     """
-    out = _normalize_employee_rows(rows).sort_values("emp_id").set_index("emp_id")
+    out = rows.sort_values("emp_id").set_index("emp_id")
 
     active = internal[internal.end_date.isna()]
     ambiguous = active.emp_id.value_counts()
@@ -302,11 +321,7 @@ def build_employee(rows: pd.DataFrame, internal: pd.DataFrame) -> pd.DataFrame:
         shown = "、".join(sorted(ambiguous)[:5]) + ("…" if len(ambiguous) > 5 else "")
         print(f"  当前公司内经历冲突 {len(ambiguous)} 人（{shown}），当前字段已留空")
         active = active[~active.emp_id.isin(ambiguous)]
-    current = (
-        active.set_index("emp_id").reindex(out.index)
-        if len(active)
-        else pd.DataFrame(index=out.index, columns=TEXT_FIELDS)
-    )
+    current = active.set_index("emp_id").reindex(out.index)
 
     return pd.DataFrame(
         {
@@ -337,7 +352,9 @@ def build(
         as_of = pd.Timestamp.today().normalize()
 
     employees = _normalize_employee_rows(data.employees)
-    employees = employees[employees.emp_id != ""]
+    employees = _reject(
+        employees, employees.emp_id == "", "员工档案缺少工号", unit="行"
+    )
 
     # 完全重复是导出毛刺；同工号冲突无法确定权威值，整个人退出本次人群。
     before = len(employees)
@@ -368,7 +385,7 @@ def build(
     }
 
     outside = build_external(external, hire_dates)
-    idle = int((outside.title == UNEMPLOYED).sum()) if len(outside) else 0
+    idle = int((outside.title == UNEMPLOYED).sum())
     print(f"  入职前 {len(outside)} 段（其中待业 {idle} 段）")
 
     parts = [

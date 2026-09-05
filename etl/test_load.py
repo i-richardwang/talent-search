@@ -37,7 +37,7 @@ def experience_row(
 
 
 class PhrasePlanTest(unittest.TestCase):
-    def test_repeated_text_has_one_phrase_and_multiple_edges(self):
+    def test_repeated_text_has_one_phrase_and_multiple_edges(self) -> None:
         texts, links = _phrase_plan(
             [
                 experience_row(1),
@@ -75,12 +75,12 @@ class PhrasePlanTest(unittest.TestCase):
             ],
         )
 
-    def test_empty_corpus_has_no_phrases_or_edges(self):
+    def test_empty_corpus_has_no_phrases_or_edges(self) -> None:
         self.assertEqual(_phrase_plan([]), ([], []))
 
 
 class ReloadLifecycleTest(unittest.TestCase):
-    def test_imports_are_serialized_and_publish_starts_after_staging_commit(self):
+    def test_imports_are_serialized_and_publish_starts_after_staging_commit(self) -> None:
         events: list[str] = []
         source = mock.MagicMock()
         source.extract.side_effect = lambda: events.append("extract") or "raw"
@@ -88,9 +88,15 @@ class ReloadLifecycleTest(unittest.TestCase):
         connection = mock.MagicMock()
         connection.__enter__.return_value = connection
         connection.commit.side_effect = lambda: events.append("commit")
+        statements: list[tuple[str, tuple | None]] = []
         cursor = mock.MagicMock()
         cursor.__enter__.return_value = cursor
-        cursor.execute.side_effect = lambda *_: events.append("lock")
+
+        def execute(sql: str, params: tuple | None = None) -> None:
+            statements.append((sql, params))
+            events.append("lock")
+
+        cursor.execute.side_effect = execute
         connection.cursor.return_value = cursor
 
         with (
@@ -132,6 +138,13 @@ class ReloadLifecycleTest(unittest.TestCase):
         ):
             loader.load("sample")
 
+        # 串行化靠**会话级** advisory lock：它要跨过暂存与发布两个事务，换成
+        # pg_advisory_xact_lock 或 try 版本，下面的第一次 commit 就把它松开了，
+        # 两代语料会赛跑。所以这里对语句本身和锁的键较真。
+        self.assertEqual(
+            statements,
+            [("select pg_advisory_lock(%s)", (loader.CORPUS_RELOAD_LOCK,))],
+        )
         self.assertEqual(
             events,
             [

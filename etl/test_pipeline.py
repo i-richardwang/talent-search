@@ -17,6 +17,7 @@ import pandas as pd
 from contract import SourceData
 from pipeline import (
     UNEMPLOYED,
+    _normalize_employee_rows,
     build,
     build_employee,
     build_external,
@@ -81,10 +82,21 @@ def people(rows: list[dict]) -> pd.DataFrame:
     return pd.DataFrame([{**base, **row} for row in rows])
 
 
+def profiles(rows: list[dict]) -> pd.DataFrame:
+    """已归一化的档案行。`build_employee` 收的就是这个，不是源里的原样。"""
+    frame, _ = quiet(_normalize_employee_rows, people(rows))
+    return frame
+
+
 class DurationTest(unittest.TestCase):
     def test_rejects_reversed_range(self) -> None:
         with self.assertRaises(ValueError):
             duration_months(pd.Timestamp("2024-02-01"), pd.Timestamp("2024-01-31"))
+
+    def test_single_day_counts_as_one_month(self) -> None:
+        # 不足一月的区间四舍五入是 0 个月，但这段经历确实存在
+        day = pd.Timestamp("2024-03-01")
+        self.assertEqual(duration_months(day, day), 1)
 
     def test_null_scalar_never_becomes_nan_text(self) -> None:
         self.assertEqual(clean_scalar(float("nan")), "")
@@ -122,6 +134,21 @@ class InternalTest(unittest.TestCase):
         self.assertTrue(pd.isna(out.iloc[0].end_date))
         # 合并后按「第一段起始 → as_of」重算，不是两段月数相加
         self.assertEqual(out.iloc[0].months, 6)
+
+    def test_overlapping_same_key_segments_become_one(self) -> None:
+        rows = assignments(
+            [
+                {"emp_id": "E1", "start_date": "2024-01-01", "end_date": "2024-03-31"},
+                {"emp_id": "E1", "start_date": "2024-02-01", "end_date": "2024-02-15"},
+            ]
+        )
+
+        out, _ = quiet(build_internal, rows, AS_OF)
+
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out.iloc[0].start_date, pd.Timestamp("2024-01-01"))
+        self.assertEqual(out.iloc[0].end_date, pd.Timestamp("2024-03-31"))
+        self.assertEqual(out.iloc[0].months, 3)
 
     def test_different_key_stays_two_segments(self) -> None:
         rows = assignments(
@@ -370,7 +397,7 @@ class EmployeeTest(unittest.TestCase):
             AS_OF,
         )
 
-        out = build_employee(people([{"emp_id": "E1"}]), internal)
+        out = build_employee(profiles([{"emp_id": "E1"}]), internal)
 
         self.assertEqual(out.iloc[0].cur_title, "现岗位")
         self.assertEqual(out.iloc[0].cur_dept, "部门")
@@ -391,7 +418,7 @@ class EmployeeTest(unittest.TestCase):
             AS_OF,
         )
 
-        out = build_employee(people([{"emp_id": "E1"}]), internal)
+        out = build_employee(profiles([{"emp_id": "E1"}]), internal)
 
         self.assertEqual(out.iloc[0].cur_title, "")
 
@@ -407,7 +434,7 @@ class EmployeeTest(unittest.TestCase):
             AS_OF,
         )
 
-        out, said = quiet(build_employee, people([{"emp_id": "E1"}]), internal)
+        out, said = quiet(build_employee, profiles([{"emp_id": "E1"}]), internal)
 
         self.assertEqual(out.iloc[0].cur_title, "")
         self.assertIn("当前公司内经历冲突 1 人", said)
@@ -415,19 +442,15 @@ class EmployeeTest(unittest.TestCase):
     def test_person_without_any_segment_still_lands(self) -> None:
         empty, _ = quiet(build_internal, assignments([]), AS_OF)
 
-        out = build_employee(people([{"emp_id": "E1", "name": "只有档案"}]), empty)
+        out = build_employee(profiles([{"emp_id": "E1", "name": "只有档案"}]), empty)
 
         self.assertEqual(out.iloc[0].cur_title, "")
         # `.name` 在 Series 上是索引名，取列必须用下标
         self.assertEqual(out.iloc[0]["name"], "只有档案")
 
     def test_invalid_hire_date_is_visible_and_left_empty(self) -> None:
-        empty, _ = quiet(build_internal, assignments([]), AS_OF)
-
         out, said = quiet(
-            build_employee,
-            people([{"emp_id": "E1", "hire_date": "bad"}]),
-            empty,
+            _normalize_employee_rows, people([{"emp_id": "E1", "hire_date": "bad"}])
         )
 
         self.assertTrue(pd.isna(out.iloc[0].hire_date))
@@ -435,6 +458,18 @@ class EmployeeTest(unittest.TestCase):
 
 
 class PopulationTest(unittest.TestCase):
+    def test_profiles_without_an_emp_id_are_rejected_and_said(self) -> None:
+        data = SourceData(
+            employees=people([{"emp_id": "E1"}, {"emp_id": ""}, {"emp_id": "   "}]),
+            assignments=assignments([{"emp_id": "E1", "start_date": "2020-01-01"}]),
+            external=externals([]),
+        )
+
+        (employee, _), said = quiet(build, data, AS_OF)
+
+        self.assertEqual(employee.emp_id.tolist(), ["E1"])
+        self.assertIn("员工档案缺少工号 2 行，已拒绝导入", said)
+
     def test_segments_outside_the_population_are_dropped(self) -> None:
         data = SourceData(
             employees=people([{"emp_id": "E1", "name": "在册"}]),
