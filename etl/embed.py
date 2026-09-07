@@ -22,17 +22,13 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
-import random
 import sqlite3
-import time
 from array import array
 from collections.abc import Mapping
-import urllib.error
-import urllib.request
 
 import config as C
+from endpoint import post_json, retrying
 
 #: 一次请求送多少段。bge-m3 在 CPU 上一批几十条是延迟与吞吐的平衡点，再大只是
 #: 让单次请求更容易超时。整条链路只有这一个批量：调用方把整份语料一次交给
@@ -158,31 +154,9 @@ def _store(cache: sqlite3.Connection, fresh: list[tuple[str, list[float]]]) -> N
     cache.commit()
 
 
-#: 一次请求最多试几次，以及第一次重试前等多久（之后每次翻倍，带随机抖动）。
-#: 公网端点偶发超时和 429 / 5xx 是常态，不是错误；一次抖动不该让二十分钟的
-#: 灌库整个回滚。4xx 里除了限流都是我们自己的问题，重试没有意义。
-ATTEMPTS = 5
-BACKOFF_S = 1.0
-
-
 def _request(chunk: list[str]) -> list[list[float]]:
     """一次请求，向量按送去的顺序返回；瞬时故障按指数退避重试。"""
-    for attempt in range(1, ATTEMPTS + 1):
-        try:
-            return _post(chunk)
-        except urllib.error.HTTPError as error:
-            transient = error.code == 429 or error.code >= 500
-            if not transient or attempt == ATTEMPTS:
-                raise SystemExit(f"嵌入端点返回 HTTP {error.code}：{error.reason}") from None
-            reason: str = f"HTTP {error.code}"
-        except (urllib.error.URLError, TimeoutError) as error:
-            if attempt == ATTEMPTS:
-                raise SystemExit(f"嵌入端点不可用（{C.EMBED_BASE_URL}）：{error}") from None
-            reason = str(error)
-        delay = BACKOFF_S * 2 ** (attempt - 1) * (1 + random.random() * 0.5)
-        print(f"  嵌入请求失败（{reason}），{delay:.0f} 秒后重试 {attempt}/{ATTEMPTS - 1}", flush=True)
-        time.sleep(delay)
-    raise AssertionError("unreachable")
+    return retrying("嵌入", C.EMBED_BASE_URL, lambda: _post(chunk))
 
 
 def probe(text: str) -> list[float]:
@@ -206,21 +180,12 @@ def _valid_vector(vector: object) -> bool:
 
 def _post(chunk: list[str]) -> list[list[float]]:
     base = C.require_embed_base_url()
-    body = json.dumps({"model": C.EMBED_MODEL, "input": chunk}).encode()
-    request = urllib.request.Request(
+    payload = post_json(
         f"{base.rstrip('/')}/embeddings",
-        data=body,
-        headers={
-            "content-type": "application/json",
-            **(
-                {"authorization": f"Bearer {C.EMBED_API_KEY}"}
-                if C.EMBED_API_KEY
-                else {}
-            ),
-        },
+        {"model": C.EMBED_MODEL, "input": chunk},
+        C.EMBED_API_KEY,
+        C.EMBED_TIMEOUT_S,
     )
-    with urllib.request.urlopen(request, timeout=C.EMBED_TIMEOUT_S) as resp:
-        payload = json.load(resp)
     try:
         data = sorted(payload["data"], key=lambda d: d["index"])
     except (KeyError, TypeError):

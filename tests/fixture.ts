@@ -8,9 +8,9 @@
  *
  * **嵌入和重排由一个进程内的假端点提供**（见 `fakeEmbedding`）：它按字符袋算
  * 向量，重排分数就是同一个余弦，于是相关度是可以手算的——「算法」对
- * 「算法工程师」是 2/√(2×5) ≈ 0.63，对「运营」是 0。召回地板不高于判定线
- * （`RECALL_MIN <= RELEVANCE_MIN`，search.test.ts 钉着），所以在这里进门线就是
- * `RELEVANCE_MIN` 一个数。测试用它钉**机制**（阈值、AND、否决、分面），不钉
+ * 「算法工程师」是 2/√(2×5) ≈ 0.63，对「运营」是 0。召回下限不高于判定线
+ * （`RECALL_MIN <= RELEVANCE_MIN`，search.test.ts 有断言），所以在这里通过的阈值就是
+ * `RELEVANCE_MIN` 一个数。测试用它测**机制**（阈值、AND、否决、分面），不测
  * 语义质量；语义质量归 eval 和真模型。查询侧走的是真正的 HTTP 客户端代码
  * （`src/server/embed.ts`、`src/server/rerank.ts`），只有对面那台机器是假的。
  */
@@ -294,7 +294,7 @@ export async function setup() {
 }
 
 /**
- * 「这次写入被哪条约束拦下了」。
+ * 「这次写入被哪条约束拒绝了」。
  *
  * 认的是 Postgres 报回来的**约束名**，不是错误文案里恰好出现了那几个字：
  * 文案里能出现约束名的错有好几种（比如提到同一张表的另一条约束），认串就会
@@ -324,6 +324,10 @@ export type Seed = {
 		seqL2?: string;
 		description?: string;
 		companyTag?: string;
+		/** 抽取的能力词。真语料里由 etl/extract.py 从 description 读出来；夹具直接给。 */
+		skills?: string[];
+		/** 抽取的做过的事。领域是说法，参与方式落在边上（真语料里由 conform 收窄取值）。 */
+		did?: { involvement: string; domain: string }[];
 	}>;
 };
 
@@ -331,7 +335,7 @@ export type Seed = {
  * 四路原文的拼法。语料侧的那一份是 `etl/embed.py` 的 `route_texts`——跨语言，
  * 这边调不到它，于是两侧各自对同一份契约求值：`etl/route_texts.contract.json`。
  * 改拼法就是改那份契约，改完两边一起红（`tests/route-texts.test.ts` 与
- * `etl/test_embed.py` 各钉一头），不靠「记得同步」。
+ * `etl/test_embed.py` 各测一头），不靠「记得同步」。
  */
 export function routeTexts(s: {
 	kind: "internal" | "external";
@@ -403,14 +407,33 @@ export async function seed(rows: Seed[]) {
 			),
 		)
 		.returning();
-	// 说法去重后各嵌一次，经历段按路指向它们——和 etl/load.py 同一个形状
-	const links = inserted.flatMap((s) =>
-		routeTexts({ ...s, seqL3: s.seqL3 }).map(([route, text]) => ({
+	// 说法去重后各嵌一次，经历段按路指向它们——和 etl/load.py 同一个形状。
+	// 抽取的两路夹具直接给：seed 的入参和 inserted 顺序一致，按下标对回去。
+	const specs = rows.flatMap((r) => r.segments);
+	const links = inserted.flatMap((s, i) => {
+		const spec = specs[i];
+		const extracted: [Route, string, string | null][] = [
+			...(spec?.skills ?? []).map((t): [Route, string, null] => [
+				"skill",
+				t,
+				null,
+			]),
+			...(spec?.did ?? []).map((d): [Route, string, string] => [
+				"did",
+				d.domain,
+				d.involvement,
+			]),
+		];
+		const original = routeTexts({ ...s, seqL3: s.seqL3 }).map(
+			([route, text]): [Route, string, null] => [route, text, null],
+		);
+		return [...original, ...extracted].map(([route, text, involvement]) => ({
 			experienceId: s.id,
 			route,
 			text,
-		})),
-	);
+			involvement,
+		}));
+	});
 	const texts = [...new Set(links.map((l) => l.text))];
 	if (texts.length === 0) return;
 	const phrases = await db
@@ -425,6 +448,7 @@ export async function seed(rows: Seed[]) {
 			experienceId: l.experienceId,
 			route: l.route,
 			phraseId: idOf.get(l.text) as number,
+			involvement: l.involvement,
 		})),
 	);
 }

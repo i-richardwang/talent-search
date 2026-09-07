@@ -1,12 +1,12 @@
 /**
  * 检索语义的集成测试。跑在临时 schema 上的真 SQL、真 pgvector。
  *
- * 打分本身不在这里——它是纯函数，钉在 `tests/rank.test.ts`，不必起数据库。
+ * 打分本身不在这里——它是纯函数，在 `tests/rank.test.ts` 里测，不必起数据库。
  * 这里管的是打分**够得着的事实**：哪一路过了阈值、相关度、月数和结束日期
  * 有没有原样传到打分那一层。列名或日期序列化错误只有走真 SQL 才看得见，
  * 而纯函数测试对它完全无感。
  *
- * 另外三件事各有自己的文件，因为它们要的语料和这里不是一份：换代门闩
+ * 另外三件事各有自己的文件，因为它们要的语料和这里不是一份：语料锁
  * （`search-snapshot.test.ts`，其中一条真的把整库换掉了）、写入约束
  * （`search-constraints.test.ts`）、分面口径（`facets.test.ts`，那条穷举
  * 不变量需要一份说得清的语料）。
@@ -14,7 +14,7 @@
  * 嵌入是假的（见 fixture.ts 的 `fakeEmbedding`）：相关度 = 共有字数 / √(字数×字数)，
  * 所以每条断言旁边都算得出那个数。「算法」对「算法工程师」是 2/√(2×5) ≈ 0.63，
  * 过 `RELEVANCE_MIN`；对「算法平台运维工程师」是 2/√(2×9) ≈ 0.47，不过。
- * 种子里的文本都按这把尺挑过，它们钉的是机制，不是语义。
+ * 种子里的文本都按这把尺挑过，它们测的是机制，不是语义。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
@@ -98,7 +98,77 @@ before(async () => {
 			name: "同权重路径稳定并列",
 			segments: [{ seqL2: "算法", title: "算法", months: 36 }],
 		},
+		{
+			empId: "T009",
+			name: "能力词与做过的事是从简历里抽出来的",
+			segments: [
+				{
+					kind: "external",
+					months: 36,
+					org: "某公司",
+					description: "负责服务端",
+					skills: ["Python", "Spark"],
+					did: [{ involvement: "从零搭建", domain: "推荐系统" }],
+				},
+			],
+		},
+		{
+			empId: "T010",
+			name: "岗位名恰好和别人的能力词是同一串字",
+			segments: [{ title: "Python", months: 36 }],
+		},
 	]);
+});
+
+describe("抽取的两路", () => {
+	test("能力词命中时证据行带回命中的那条说法", async () => {
+		const { results } = await run("Python");
+		const hit = results
+			.find((r) => r.employee.empId === "T009")
+			?.hits.find((h) => h.term === "Python");
+		assert.equal(hit?.route, "skill");
+		assert.equal(hit?.phrase, "Python");
+	});
+
+	test("同一段可以有多条能力词，各自独立作证", async () => {
+		// 主键是（段、路、说法）三列：两条能力词落在同一段上，AND 要两个都过
+		const { results } = await run("Python Spark");
+		assert.ok(results.some((r) => r.employee.empId === "T009"));
+	});
+
+	test("做过的事只拿领域比相关度，参与方式随命中带回来", async () => {
+		const { results } = await run("推荐系统");
+		const hit = results
+			.find((r) => r.employee.empId === "T009")
+			?.hits.find((h) => h.term === "推荐系统");
+		assert.equal(hit?.route, "did");
+		assert.equal(hit?.phrase, "推荐系统");
+		assert.equal(hit?.involvement, "从零搭建");
+	});
+
+	test("参与方式不进向量：查它本身命不中做过的事", async () => {
+		const { results } = await run("从零搭建");
+		const hit = results
+			.find((r) => r.employee.empId === "T009")
+			?.hits.find((h) => h.route === "did");
+		assert.equal(hit, undefined);
+	});
+
+	test("同一串字既是岗位名又是能力词时各归各的路，原文路不带说法文本", async () => {
+		const { results } = await run("Python");
+		const hit = results
+			.find((r) => r.employee.empId === "T010")
+			?.hits.find((h) => h.term === "Python");
+		assert.equal(hit?.route, "title");
+		assert.equal(hit?.phrase, null);
+		assert.equal(hit?.involvement, null);
+	});
+
+	test("能力词和简历原文同档：受控命中仍排在前面", async () => {
+		const { results } = await run("Python");
+		const rank = results.map((r) => r.employee.empId);
+		assert.ok(rank.indexOf("T010") < rank.indexOf("T009"));
+	});
 });
 
 describe("事实行保险丝", () => {
@@ -131,8 +201,8 @@ describe("事实行保险丝", () => {
 });
 
 describe("语义命中", () => {
-	test("假端点下进门线只有一个数：召回地板不高于判定线", () => {
-		// 假重排分数就是假余弦。召回地板必须覆盖判定线，下面每条断言才由
+	test("假端点下通过的阈值只有一个数：召回下限不高于判定线", () => {
+		// 假重排分数就是假余弦。召回下限必须覆盖判定线，下面每条断言才由
 		// RELEVANCE_MIN 这一个成员门槛决定。
 		assert.ok(RECALL_MIN <= RELEVANCE_MIN);
 	});
@@ -151,7 +221,7 @@ describe("语义命中", () => {
 		assert.ok(!results.some((r) => r.employee.empId === "T007"));
 	});
 
-	test("语料里完全不相干的词一个人都捞不到", async () => {
+	test("语料里完全不相干的词一个人都匹配不到", async () => {
 		const { results } = await run("量子炼金");
 		assert.equal(results.length, 0);
 	});
@@ -199,10 +269,10 @@ describe("结构化范围是独立的候选定义", () => {
 		assert.equal(outcome.order, "employee");
 		assert.deepEqual(
 			outcome.results.map((result) => result.employee.empId),
-			["T001", "T003"],
+			["T001", "T003", "T009"],
 		);
 		assert.ok(outcome.results.every((result) => !("hits" in result)));
-		assert.deepEqual(outcome.facets.kind, [{ value: "external", n: 2 }]);
+		assert.deepEqual(outcome.facets.kind, [{ value: "external", n: 3 }]);
 	});
 
 	test("查询范围是硬约束，视图只能继续收窄，不能换掉它", async () => {
@@ -324,7 +394,7 @@ describe("命中路径判定", () => {
 /**
  * 打分够得着的事实。
  *
- * 打分公式本身在 rank.test.ts 里钉死，这里只验一件事：**月数和结束日期确实
+ * 打分公式本身在 rank.test.ts 里测，这里只验一件事：**月数和结束日期确实
  * 原样穿过了 SQL 到达打分层**。这两个字段任何一个在取数那一层丢掉或者写错列名，
  * 纯函数测试都照样全绿，而界面上的表现是「排序看起来有点怪」——没有任何断言会红。
  */
@@ -543,7 +613,7 @@ describe("命中总数", () => {
 	/**
 	 * 翻页。
 	 *
-	 * 这里要钉住的不是「第二页能不能拉到」，而是**第二页是第一页的延长，不是
+	 * 这里要测的不是「第二页能不能拉到」，而是**第二页是第一页的延长，不是
 	 * 另一次排序**：分页靠把 limit 调大重查，所以前 50 名必须逐位不变。
 	 * 一旦哪天改成 offset 续拉，这条会红——那正是它存在的理由。
 	 */
@@ -602,7 +672,7 @@ describe("证据要求", () => {
 
 /**
  * 空名单的成因由检索层给出，不由界面反推（论证在 `search/empty.ts`）。
- * 这里钉的是「它真的接上了这次检索的事实」——判定本身的分支在
+ * 这里测的是「它真的接上了这次检索的事实」——判定本身的分支在
  * `tests/empty.test.ts`，那一层不连库。
  */
 describe("为什么没有人", () => {
@@ -661,7 +731,7 @@ describe("加分词", () => {
 		const { results } = await run("算法,+运营");
 		const rank = results.map((r) => r.employee.empId);
 		// T001 的「算法」是相似 1.0 的序列命中，T002 是相似 0.63 的岗位命中，
-		// T001 本就靠前；这里要钉的是命中加分词的人不会掉到后面
+		// T001 本就靠前；这里要测的是命中加分词的人不会掉到后面
 		assert.ok(rank.indexOf("T001") < rank.indexOf("T002"));
 	});
 
@@ -727,7 +797,7 @@ describe("排除词：否决证据段，不否决人", () => {
 		]);
 	});
 
-	test("否决的阈值比进门高", () => {
+	test("否决的阈值比正向要求高", () => {
 		assert.ok(RELEVANCE_MIN_EXCLUDE > RELEVANCE_MIN);
 	});
 
@@ -751,7 +821,7 @@ describe("排除词：否决证据段，不否决人", () => {
 	});
 
 	test("相似但没到否决阈值的段不被否决", async () => {
-		// T003 的描述「算法运营」对「运营」是 0.71，过进门线、不过否决线
+		// T003 的描述「算法运营」对「运营」是 0.71，过判定线、不过否决线
 		assert.ok(fakeSimilarity("运营", "算法运营") < RELEVANCE_MIN_EXCLUDE);
 		const { results } = await run("算法,-运营");
 		assert.ok(results.some((r) => r.employee.empId === "T003"));
@@ -808,7 +878,7 @@ describe("排除词：否决证据段，不否决人", () => {
 		assert.deepEqual(outcome.empty, { kind: "scopeEmpty" });
 	});
 
-	test("整句只有排除词时不返回任何人——它只会剔人，不会捞人", async () => {
+	test("整句只有排除词时不返回任何人——它只会剔人，不会加人", async () => {
 		const { terms, results } = await run("-算法");
 		assert.equal(terms.length, 0);
 		assert.equal(results.length, 0);

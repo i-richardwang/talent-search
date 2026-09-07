@@ -10,6 +10,8 @@ export const ROUTE_LABEL: Record<Route, string> = {
 	title: "岗位",
 	org: "部门或公司",
 	description: "简历原文",
+	skill: "能力词",
+	did: "做过的事",
 };
 
 const STRENGTH_LABEL: Record<Strength, string> = {
@@ -34,9 +36,9 @@ const STRENGTH_HINT: Record<Strength, string> = {
  * 证据强度点：这套界面的设计签名。
  *
  * 三档强度用**填充方式**而不是三种颜色区分：实心 / 实心灰 / 空心构成一个不依赖
- * 色觉的序列，打印成黑白或色弱下顺序依然成立。色相只是最硬那一档的加成。
+ * 色觉的序列，打印成黑白或色弱下顺序依然成立。色相只是最强那一档的加成。
  *
- * 最硬那一档用 `success`，不用 `warning`：amber 已经归「未识别语气」和
+ * 最强那一档用 `success`，不用 `warning`：amber 已经归「未识别语气」和
  * 「没处放的条件」两条提示所有，拿它画受控命中会让「最可信」和「有问题」共用一个
  * 颜色，而它们在同一屏上并排出现。
  *
@@ -123,6 +125,14 @@ export function relevance(value: number) {
 }
 
 /**
+ * 抽取的两路命中的那条说法怎么念：能力词就是它自己；做过的事在领域前面
+ * 加上参与方式，「从零搭建 · 推荐系统」。这是参与方式唯一被拼进文本的地方。
+ */
+export function phraseLabel(hit: Hit) {
+	return hit.phrase === null ? null : dots(hit.involvement, hit.phrase);
+}
+
+/**
  * 命中的那一段经历里，**实际拿去比相关度的是哪个字段**——「凭什么算命中」在
  * 行内当场答完，不必点进详情。
  *
@@ -131,7 +141,8 @@ export function relevance(value: number) {
  *
  * `description` 这一路只有 `label` 没有 `value`：命中事实里不带原文（见
  * `search/result.ts` 的 `Hit`），所以这里不假装引用一句话。可核对的完整原文
- * 在详情栏的时间线上。
+ * 在详情栏的时间线上。抽取的两路给的是命中的那条说法（`phraseLabel`）：它是
+ * 用户核对「模型读出来的对不对」的对象，原文同样在时间线上。
  */
 function matchedField(hit: Hit): {
 	label: string;
@@ -150,6 +161,13 @@ function matchedField(hit: Hit): {
 			return { label, value: hit.org, context: hit.title };
 		case "description":
 			return { label, value: null, context: dots(hit.title, hit.org) };
+		case "skill":
+		case "did":
+			return {
+				label,
+				value: phraseLabel(hit),
+				context: dots(hit.title, hit.org),
+			};
 	}
 }
 
@@ -159,8 +177,8 @@ function matchedField(hit: Hit): {
  *
  *   [点] [条件词]  [命中的字段值 · 这段经历在哪]    [相关度]  [时长]
  *
- * 相关度取 `basis.relevance`（最硬那条证据的相关度），时长取 `basis.months`（并列
- * 最硬的那些段的累计月数）——正是参与打分的那两个值；取样例段的数会让两个
+ * 相关度取 `basis.relevance`（最强那条证据的相关度），时长取 `basis.months`（并列
+ * 最强的那些段的累计月数）——正是参与打分的那两个值；取样例段的数会让两个
  * 排名不同的人显示同一个数，而这个界面的说服力全在于「看得见的东西能解释
  * 看到的名次」。
  *
@@ -179,7 +197,7 @@ export function EvidenceLine({
 	/** 展示用的样例段：点的强度、命中字段、这段经历的身份都来自它 */
 	hit: Hit;
 	/**
-	 * 打分用的聚合值：相关度、并列最硬那些段的累计月数、是否仍在进行。
+	 * 打分用的聚合值：相关度、并列最强那些段的累计月数、是否仍在进行。
 	 *
 	 * 它不可空。一条要求有没有 `basis` 和它有没有样例段是同一件事（两者出自
 	 * 同一次筛选），所以「有 hit 没有 basis」的那一行不存在——调用点只在两样

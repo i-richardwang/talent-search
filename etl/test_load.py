@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from unittest import mock
 
 import load as loader
+from extract import EMPTY, Extraction
 from load import _phrase_plan
 
 
@@ -50,7 +51,8 @@ class PhrasePlanTest(unittest.TestCase):
                     seq_l2="",
                     description="负责推荐系统召回",
                 ),
-            ]
+            ],
+            [EMPTY, EMPTY],
         )
 
         self.assertEqual(
@@ -66,17 +68,45 @@ class PhrasePlanTest(unittest.TestCase):
         self.assertEqual(
             links,
             [
-                (1, "seq", 1),
-                (1, "title", 2),
-                (1, "org", 3),
-                (2, "title", 2),
-                (2, "org", 4),
-                (2, "description", 5),
+                (1, "seq", 1, None),
+                (1, "title", 2, None),
+                (1, "org", 3, None),
+                (2, "title", 2, None),
+                (2, "org", 4, None),
+                (2, "description", 5, None),
             ],
         )
 
     def test_empty_corpus_has_no_phrases_or_edges(self) -> None:
-        self.assertEqual(_phrase_plan([]), ([], []))
+        self.assertEqual(_phrase_plan([], []), ([], []))
+
+    def test_extracted_tags_share_the_phrase_table_with_raw_routes(self) -> None:
+        # 能力词「算法工程师」和第 1 段的岗位名是同一串字：只嵌一次，两条边各成一条边
+        texts, links = _phrase_plan(
+            [
+                experience_row(1),
+                experience_row(
+                    2,
+                    kind="external",
+                    org="云枢智能",
+                    org_path="",
+                    seq_l1="",
+                    seq_l2="",
+                    description="负责推荐系统召回",
+                ),
+            ],
+            [
+                EMPTY,
+                Extraction(("算法工程师", "召回"), (("负责建设", "推荐系统"),)),
+            ],
+        )
+        self.assertEqual(texts.count("算法工程师"), 1)
+        # 做过的事的说法只是领域，参与方式落在边上；原文路的边那一列是 None
+        self.assertEqual(texts[-2:], ["召回", "推荐系统"])
+        self.assertEqual(
+            [link for link in links if link[0] == 2 and link[1] in ("skill", "did")],
+            [(2, "skill", 2, None), (2, "skill", 6, None), (2, "did", 7, "负责建设")],
+        )
 
 
 class ReloadLifecycleTest(unittest.TestCase):
@@ -126,7 +156,7 @@ class ReloadLifecycleTest(unittest.TestCase):
             mock.patch.object(
                 loader,
                 "_stage_corpus",
-                side_effect=lambda *_: events.append("stage") or (3, 4),
+                side_effect=lambda *_: events.append("stage") or (3, 4, 1),
             ),
             mock.patch.object(
                 loader,

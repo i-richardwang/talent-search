@@ -18,10 +18,11 @@ import type { SearchDelta, SearchSpec } from "#/search/spec";
 
 /*
  * 检索的匹配单元是**语义**，不是字符串：语料里每一串原文各存一个向量
- * （`phrase`），经历段按四路指向它们（`experience_phrase`）；查询里的每条要求
+ * （`phrase`），经历段按六路指向它们（`experience_phrase`）；查询里的每条要求
  * 先按向量召回候选说法，再由重排模型判定相关度
  * 过阈值判定。原文字段仍然原样保留——它们是证据，用户核对的是它们；
- * 向量只是找到它们的手段。
+ * 向量只是找到它们的手段。六路里有两路（能力词、做过的事）不是原文，
+ * 是模型对入职前简历描述的读法，它们同样只指回那一段经历。
  */
 
 /** 外部段的公司规范字段，来自工作经历表。只存时间轴上真正显示的三项。 */
@@ -121,14 +122,29 @@ export const embeddingSpace = pgTable("embedding_space", {
 });
 
 /**
- * 一段经历的四路语义：序列、岗位、部门 / 公司、简历描述。字段来源决定证据
- * 可信度（weights.ts 的 ROUTE_WEIGHTS），所以四路**各自**嵌一个向量，不混成
- * 一个：混了之后「登记字段说他做过」和「简历里提过一句」在向量空间里就分不开；
+ * 一段经历的六路语义：序列、岗位、部门 / 公司、简历描述，以及从简历描述里
+ * 抽出来的能力词与做过的事。字段来源决定证据可信度（weights.ts 的
+ * ROUTE_WEIGHTS），所以各路**各自**嵌一个向量，不混成一个：混了之后
+ * 「登记字段说他做过」和「简历里提过一句」在向量空间里就分不开；
  * 序列和岗位也不拼在一起——短文本的相似度最锐利，「算法」对「算法工程师」
  * 是一回事，对「技术 · 算法 · 推荐 / 高级算法工程师」这一长串就被稀释了。
+ *
+ * `skill` 与 `did` 是模型从 `description` 里读出来的（`etl/extract.py`）：
+ * 一整段几百字的自述池化成一个向量分不清主语和重点，「配合算法团队」会和
+ * 「算法」相近；抽成短说法之后重排模型判得准。它们的**来源**仍是自述，所以
+ * 和 `description` 同一档强度。`did` 的说法只是领域（「推荐系统」），参与
+ * 方式存在边上（下面 `involvement` 列）。
  */
-const ROUTES = ["seq", "title", "org", "description"] as const;
+const ROUTES = ["seq", "title", "org", "description", "skill", "did"] as const;
 export type Route = (typeof ROUTES)[number];
+/**
+ * 文本不在经历行上的那两路。原文四路命中后回表就能取到被比较的那串字；这两路
+ * 的说法只存在 `phrase` 里，事实行得把文本一起带回来（search.ts 的 `phrase` 列）。
+ */
+export const EXTRACTED_ROUTES = [
+	"skill",
+	"did",
+] as const satisfies readonly Route[];
 
 /**
  * 语料里出现过的每一串**原文**及其向量。序列名、岗位名、部门路径、简历描述
@@ -137,7 +153,7 @@ export type Route = (typeof ROUTES)[number];
  *
  * 用 halfvec：bge-m3 的向量存半精度对余弦相似度的影响在小数点后三位，
  * 换来的是一半的扫描量。这张表**不建向量索引**：召回要的是「相似度过
- * 地板的全部说法」，而 HNSW 回答的是「最近的 k 个」，两者不是一个问题；
+ * 下限的全部说法」，而 HNSW 回答的是「最近的 k 个」，两者不是一个问题；
  * 两万行的精确扫描本机是几十毫秒。语料涨一个数量级再上 HNSW 加迭代扫描
  * （pgvector 0.8+），到时候改的是这里和 phrases.ts 的召回 SQL，排名与分面不动。
  */
@@ -148,9 +164,12 @@ export const phrase = pgTable("phrase", {
 });
 
 /**
- * 一段经历在四路上各说了哪一串字。一段最多四行：`seq`（序列三级）、`title`
- * （岗位）、`org`（部门路径或公司名）、`description`（简历描述）。哪一路的
- * 原文是空的就没有那一行——不嵌空串，也不存零向量。
+ * 一段经历在各路上说了哪些字。原文四路一段各最多一行：`seq`（序列三级）、
+ * `title`（岗位）、`org`（部门路径或公司名）、`description`（简历描述）；
+ * 抽取的两路一段可以有多行：`skill` 一个能力词一行，`did` 一件事一行。
+ * 哪一路是空的就没有那一行——不嵌空串，也不存零向量。
+ *
+ * 主键因此是三列：同一段、同一路可以指向多条说法，但同一条说法不指两遍。
  */
 export const experiencePhrase = pgTable(
 	"experience_phrase",
@@ -162,14 +181,29 @@ export const experiencePhrase = pgTable(
 		phraseId: integer("phrase_id")
 			.notNull()
 			.references(() => phrase.id, { onDelete: "cascade" }),
+		/**
+		 * 只有 `did` 那一路带：这件事是从零搭建还是参与执行。它是证据行上的
+		 * 前缀（「从零搭建 · 推荐系统」），不是说法的一部分：说法进向量、比
+		 * 相关度，参与方式不进。它只有几种取值，拼进说法的话同一种参与方式
+		 * 的任何领域在重排模型眼里都相近，「从零搭建 · 风险商家审核平台」会
+		 * 命中「从零搭建推荐系统」。取值收窄在 `etl/extract.py` 的 `conform`，
+		 * 模型判断不出时为空、只显示领域；主键是（段、路、说法），一段对
+		 * 同一个领域只留一条。
+		 */
+		involvement: text("involvement"),
 	},
 	(t) => [
-		primaryKey({ columns: [t.experienceId, t.route] }),
+		primaryKey({ columns: [t.experienceId, t.route, t.phraseId] }),
 		// 命中的说法 → 说了它的经历段，取数就是沿这条边走
 		index("experience_phrase_phrase").on(t.phraseId),
+		/*
+		 * 约束名带着路的数目：drizzle-kit push 不比较 check 的表达式，只认名字，
+		 * 同名改表达式它会报「已应用」而库里还是旧的——发布时被旧约束报错才发现。
+		 * 加一路就改名，push 才会先删旧的再建新的。
+		 */
 		check(
-			"experience_phrase_route_valid",
-			sql`${t.route} in ('seq', 'title', 'org', 'description')`,
+			"experience_phrase_route_valid_6",
+			sql`${t.route} in ('seq', 'title', 'org', 'description', 'skill', 'did')`,
 		),
 	],
 );
@@ -180,7 +214,7 @@ export const experiencePhrase = pgTable(
  * 同一个重排空间对同一对文本的分数是确定的，所以它是永久缓存：翻页、改筛选、
  * 换个人再搜同一个词，都不必再打端点。按空间身份键入，换模型行为时自然失效；
  * 语料重灌时 phrase 表 truncate 会把它级联清空——分数是对旧 id 打的。
- * 只存打过分的对：召回没捞到的说法不在这里，也不该在，那是召回的事。
+ * 只存打过分的对：召回没取到的说法不在这里，也不该在，那是召回的事。
  */
 export const phraseRelevance = pgTable(
 	"phrase_relevance",

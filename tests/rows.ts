@@ -19,6 +19,8 @@ export const hit = (over: Partial<Hit> = {}): Hit => ({
 	term: "算法",
 	route: "seq",
 	relevance: 1,
+	phrase: null,
+	involvement: null,
 	startDate: "2020-01-01",
 	endDate: null,
 	org: "云梯物流",

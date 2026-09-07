@@ -37,6 +37,14 @@ describe("强度分档", () => {
 		);
 	});
 
+	test("抽取的两路来源仍是自述，和简历原文同档同权", () => {
+		// 强度只看字段来源：模型读得再好也不会让自述变成登记
+		assert.equal(strengthOf("skill"), "claimed");
+		assert.equal(strengthOf("did"), "claimed");
+		assert.equal(ROUTE_WEIGHTS.skill, ROUTE_WEIGHTS.description);
+		assert.equal(ROUTE_WEIGHTS.did, ROUTE_WEIGHTS.description);
+	});
+
 	test("每一路都归到确切的一档，不是「属于三档之一」", () => {
 		// 断言整张映射表而不是逐个判断「在集合里」：后者被任何兜底分支保证为真，
 		// 加一路而没决定它多硬时照样绿。这里少一路多一路都会红。
@@ -48,12 +56,14 @@ describe("强度分档", () => {
 				seq: "controlled",
 				title: "controlled",
 				org: "org",
+				skill: "claimed",
+				did: "claimed",
 				description: "claimed",
 			},
 		);
 	});
 
-	test("一段经历按它最硬的那一路上色", () => {
+	test("一段经历按它最强的那一路上色", () => {
 		assert.equal(
 			bestStrength([hit("算法", "description"), hit("运营", "org")]),
 			"org",

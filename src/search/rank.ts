@@ -59,6 +59,14 @@ export type Fact = PopulationFact & {
 	route: Route;
 	/** 说法与这一路原文的相关度，已过 RELEVANCE_MIN */
 	relevance: number;
+	/**
+	 * 命中的那条说法的文本，只有抽取的两路带（其余路的文本就是经历行上的
+	 * 字段，回表取得到；简历原文太长，不随事实行走）。不参与计算，只为在
+	 * 证据行上说出「命中的是哪个能力词」。
+	 */
+	phrase: string | null;
+	/** 做过的事那一路的参与方式（「从零搭建」），其余路为 null。只为证据行显示。 */
+	involvement: string | null;
 	/** null 表示至今 */
 	endDate: string | null;
 };
@@ -72,14 +80,14 @@ function evidenceWeight(f: Fact) {
 }
 
 /**
- * 饱和函数：`x / (x + half)` 抬到地板之上。恒在 [floor, 1) 内、处处单调、
+ * 饱和函数：`x / (x + half)` 抬到下限之上。恒在 [floor, 1) 内、处处单调、
  * 没有断崖，所以拿它当因子永远不会把一段人口压平（见 weights.ts 的 TENURE_HALF）。
  */
 function saturate(x: number, half: number, floor: number) {
 	return floor + (1 - floor) * (x / (x + half));
 }
 
-/** 衰减函数：`half / (half + x)` 抬到地板之上。saturate 的镜像，x 越大越低。 */
+/** 衰减函数：`half / (half + x)` 抬到下限之上。saturate 的镜像，x 越大越低。 */
 function decay(x: number, half: number, floor: number) {
 	return floor + (1 - floor) * (half / (half + x));
 }
@@ -98,16 +106,16 @@ export function gapMonths(endDate: string | null, now: Date) {
 /**
  * 一条要求对一个人的分数 = **强度 × 时长 × 近因**，三个都是有界因子。
  *
- * **强度**取该人所有命中段里最硬的一条证据（路权重 × 相关度，见
+ * **强度**取该人所有命中段里最强的一条证据（路权重 × 相关度，见
  * evidenceWeight）。做过三段算法不比做过一段更「做过」，所以强度不累加，
- * 它回答的是「最硬的那条证据有多能说明他真的做过」。
+ * 它回答的是「最强的那条证据有多能说明他真的做过」。
  *
- * **时长与近因只看并列最硬的那些段。** 这两样是「那条证据」的属性：拿简历里
+ * **时长与近因只看并列最强的那些段。** 这两样是「那条证据」的属性：拿简历里
  * 提过一句的段去给序列命中续时长，是把两种强度的证据混成一份。规则简单的
- * 好处是分数永远解释得清——它回答的始终是「最硬的那条证据有多硬、有多久、
+ * 好处是分数永远解释得清——它回答的始终是「最强的那条证据有多强、有多久、
  * 有多近」。
  *
- * 两个因子的地板刻意抬得很高，好让它们**永远压不过证据强度**（论证见 weights.ts
+ * 两个因子的下限刻意抬得很高，好让它们**永远压不过证据强度**（论证见 weights.ts
  * 的 TENURE_FLOOR）：它们决定的是同一档证据内部的先后，不是证据的档次。
  */
 function termValue(facts: Fact[], term: string, now: Date) {
@@ -181,7 +189,7 @@ function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
  * 这个人算不算数：**每个必须词**都得命中（AND 语义）；开了证据要求就还得
  * 每个必须词都有受控命中。
  *
- * 加分词不参与，这就是它「加分」的全部含义：只进分数，不进门槛。证据要求同样
+ * 加分词不参与，这就是它「加分」的全部含义：只进分数，不进判定。证据要求同样
  * 只管必须词——要求一个可有可无的词必须有受控证据，是自相矛盾的。
  */
 function complete(p: Person, terms: TermPlan[], strong: boolean) {
@@ -392,7 +400,7 @@ type Ranked = {
  * 一次检索的名次与分面。两者出自同一份事实，所以口径不可能分家。
  *
  * `now` 是入参而不是函数体里的 `new Date()`：近因让分数依赖「今天」，而依赖
- * 当前时间的函数是测不动的。调用方传一次，测试传一个钉死的日期。
+ * 当前时间的函数是测不动的。调用方传一次，测试传一个固定的日期。
  */
 export function rank(
 	facts: Fact[],

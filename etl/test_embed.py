@@ -12,6 +12,7 @@ from unittest import mock
 
 import config as C
 import embed as E
+import endpoint
 
 #: 四路原文的拼法契约，语料侧与测试夹具侧共用。见 `etl/route_texts.contract.json`。
 CONTRACT = json.loads(
@@ -123,7 +124,7 @@ class EmbedCacheTest(unittest.TestCase):
 
 class EmbedRetryTest(unittest.TestCase):
     def test_transient_failures_are_retried_then_succeed(self) -> None:
-        calls = iter([TimeoutError("read timed out"), E.urllib.error.URLError("reset"), [[1.0]]])
+        calls = iter([TimeoutError("read timed out"), endpoint.urllib.error.URLError("reset"), [[1.0]]])
 
         def flaky(chunk):
             outcome = next(calls)
@@ -131,22 +132,22 @@ class EmbedRetryTest(unittest.TestCase):
                 raise outcome
             return outcome
 
-        with mock.patch.object(E, "_post", flaky), mock.patch.object(E.time, "sleep") as sleep, redirect_stdout(io.StringIO()):
+        with mock.patch.object(E, "_post", flaky), mock.patch.object(endpoint.time, "sleep") as sleep, redirect_stdout(io.StringIO()):
             self.assertEqual(E._request(["算法"]), [[1.0]])
         self.assertEqual(sleep.call_count, 2)
 
     def test_client_errors_are_not_retried(self) -> None:
-        error = E.urllib.error.HTTPError("u", 400, "bad request", {}, None)
-        with mock.patch.object(E, "_post", side_effect=error), mock.patch.object(E.time, "sleep") as sleep:
+        error = endpoint.urllib.error.HTTPError("u", 400, "bad request", {}, None)
+        with mock.patch.object(E, "_post", side_effect=error), mock.patch.object(endpoint.time, "sleep") as sleep:
             with self.assertRaises(SystemExit):
                 E._request(["算法"])
         self.assertEqual(sleep.call_count, 0)
 
     def test_gives_up_after_attempts(self) -> None:
-        with mock.patch.object(E, "_post", side_effect=TimeoutError()), mock.patch.object(E.time, "sleep") as sleep, redirect_stdout(io.StringIO()):
+        with mock.patch.object(E, "_post", side_effect=TimeoutError()), mock.patch.object(endpoint.time, "sleep") as sleep, redirect_stdout(io.StringIO()):
             with self.assertRaises(SystemExit):
                 E._request(["算法"])
-        self.assertEqual(sleep.call_count, E.ATTEMPTS - 1)
+        self.assertEqual(sleep.call_count, endpoint.ATTEMPTS - 1)
 
 
 class EmbedResponseTest(unittest.TestCase):
@@ -155,7 +156,7 @@ class EmbedResponseTest(unittest.TestCase):
         response.__enter__.return_value = io.StringIO(
             json.dumps({"data": [{"index": 0, "embedding": [0.0, 0.0]}]})
         )
-        with mock.patch.object(E.urllib.request, "urlopen", return_value=response):
+        with mock.patch.object(endpoint.urllib.request, "urlopen", return_value=response):
             with self.assertRaisesRegex(SystemExit, "范数非零"):
                 E._post(["算法"])
 

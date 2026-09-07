@@ -1,7 +1,7 @@
 /**
  * 打分与排序。**不连数据库**，全部语义以纯函数方式验证。
  *
- * 这里钉的是「一份事实应该排出什么名次」；「事实本身对不对」是 search.test.ts
+ * 这里测的是「一份事实应该排出什么名次」；「事实本身对不对」是 search.test.ts
  * 的事，两边不重叠。
  */
 import assert from "node:assert/strict";
@@ -21,7 +21,7 @@ import {
 	TENURE_FLOOR,
 } from "#/search/weights";
 
-/** 钉死的「今天」：近因因子让分数依赖当前时间，测试不能跟着日历漂 */
+/** 固定的「今天」：近因因子让分数依赖当前时间，测试不能跟着日历漂 */
 const NOW = new Date(2026, 0, 1);
 
 let nextId = 1;
@@ -32,6 +32,8 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 		memberIdx: 0,
 		route: "seq",
 		relevance: 1,
+		phrase: null,
+		involvement: null,
 		months: 24,
 		endDate: null,
 		seqL1: "技术",
@@ -83,15 +85,15 @@ describe("证据强度不可被时长或近因压过", () => {
 		assert.ok(org > desc);
 	});
 
-	test("两个地板的乘积必须大于相邻路权重的比值，否则上面两条迟早会红", () => {
-		// 把常数本身也钉住：改地板的人不一定会去跑上面那两条的边界值
+	test("两个下限的乘积必须大于相邻路权重的比值，否则上面两条迟早会红", () => {
+		// 对常数本身也断言：改下限的人不一定会去跑上面那两条的边界值
 		const weights = Object.values(ROUTE_WEIGHTS).sort((a, b) => b - a);
 		const worst = Math.min(
 			...weights.slice(1).map((w, i) => w / (weights[i] as number)),
 		);
 		assert.ok(
 			TENURE_FLOOR * RECENCY_FLOOR > worst,
-			`地板乘积 ${TENURE_FLOOR * RECENCY_FLOOR} 必须大于 ${worst}`,
+			`下限乘积 ${TENURE_FLOOR * RECENCY_FLOOR} 必须大于 ${worst}`,
 		);
 	});
 });
@@ -118,7 +120,7 @@ describe("时长", () => {
 		assert.ok(huge < ROUTE_WEIGHTS.seq, `${huge} 必须小于路权重本身`);
 	});
 
-	test("有地板：一段很短的经历不归零", () => {
+	test("有下限：一段很短的经历不归零", () => {
 		const tiny = scoreOf([fact({ empId: "A", months: 1 })]);
 		assert.ok(tiny >= ROUTE_WEIGHTS.seq * TENURE_FLOOR * 0.999);
 	});
@@ -146,7 +148,7 @@ describe("近因", () => {
 		assert.ok(now > old);
 	});
 
-	test("越久越低，但有地板——五年前干过也还是干过", () => {
+	test("越久越低，但有下限——五年前干过也还是干过", () => {
 		const three = scoreOf([fact({ empId: "A", endDate: yearsAgo(3) })]);
 		const ten = scoreOf([fact({ empId: "B", endDate: yearsAgo(10) })]);
 		const ancient = scoreOf([fact({ empId: "C", endDate: yearsAgo(40) })]);
@@ -270,7 +272,7 @@ describe("相关度（路权重 × 相关度）", () => {
 		assert.ok(RELEVANCE_MIN * ROUTE_WEIGHTS.seq > ROUTE_WEIGHTS.org);
 	});
 
-	test("时长与近因只跟着最硬那条证据：高相似在场时，低相似不续时长", () => {
+	test("时长与近因只跟着最强那条证据：高相似在场时，低相似不续时长", () => {
 		const mixed = scoreOf([
 			fact({ empId: "A", months: 12 }),
 			fact({ empId: "A", relevance: 0.7, months: 240 }),
@@ -279,7 +281,7 @@ describe("相关度（路权重 × 相关度）", () => {
 		assert.equal(mixed, clean);
 	});
 
-	test("相关度不受地板保护：又长又新的相近命中可以反超又短又旧的原词命中", () => {
+	test("相关度不受下限保护：又长又新的相近命中可以反超又短又旧的原词命中", () => {
 		const longNear = scoreOf([
 			fact({ empId: "A", relevance: 0.7, months: 240 }),
 		]);
@@ -289,7 +291,7 @@ describe("相关度（路权重 × 相关度）", () => {
 		assert.ok(longNear > shortExact);
 	});
 
-	test("依据里带着最硬那条证据的相关度", () => {
+	test("依据里带着最强那条证据的相关度", () => {
 		const { ranked } = run([
 			fact({ empId: "A", relevance: 0.65 }),
 			fact({ empId: "A", relevance: 0.9 }),
@@ -303,7 +305,7 @@ describe("相关度（路权重 × 相关度）", () => {
 	});
 });
 
-describe("时长与近因只算最硬那一路的段", () => {
+describe("时长与近因只算最强那一路的段", () => {
 	test("简历里提过一句，不给序列命中续时长", () => {
 		const mixed = scoreOf([
 			fact({ empId: "A", route: "seq", months: 12 }),

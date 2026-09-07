@@ -7,7 +7,7 @@ dist/
 .env.local
 .venv/
 __pycache__/
-# 嵌入向量的本地缓存（etl/embed.py）
+# 模型调用的本地缓存：嵌入向量（etl/embed.py）与抽取结果（etl/extract.py）
 .cache/
 
 # 员工数据一律不进版本库

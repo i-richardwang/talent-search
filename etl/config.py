@@ -1,4 +1,4 @@
-"""ETL 的运行配置：连哪个库、用哪个数据源、向量从哪个端点来。
+"""ETL 的运行配置：连哪个库、用哪个数据源、向量与抽取从哪个端点来。
 
 源文件路径**不在这里**。它们属于某一套数据的形态，归各自的适配器
 （`etl/sources/<name>.py`）自己声明——写在这里的话，公开仓库就得为每一个
@@ -38,6 +38,40 @@ EMBED_CACHE_PATH = Path(
     or PROJECT_ROOT / ".cache" / "embeddings.sqlite"
 ).expanduser()
 
+#: 抽取端点（可选）。从这里出去的是入职前经历的岗位、公司与简历描述——和嵌入
+#: 端点同一条数据边界，放内网还是公网由部署方决定。OpenAI 兼容的
+#: `/chat/completions`。三个身份变量缺一个就当没配：ETL 打印说明后跳过，能力词与
+#: 做过的事两路为空，检索照常可用。
+#: 空间 id 只进本地缓存的键：改提示词、改参与方式的枚举就换一个值，旧抽取自然失效。
+#: 它不落库——查询侧没有任何东西读它，标签落库之后就只是说法。
+EXTRACT_BASE_URL = os.environ.get("EXTRACT_BASE_URL", "").strip()
+EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "").strip()
+EXTRACT_SPACE_ID = os.environ.get("EXTRACT_SPACE_ID", "").strip()
+EXTRACT_API_KEY = os.environ.get("EXTRACT_API_KEY", "").strip()
+EXTRACT_TIMEOUT_S = int(os.environ.get("EXTRACT_TIMEOUT_S", "").strip() or "120")
+EXTRACT_CONCURRENCY = int(os.environ.get("EXTRACT_CONCURRENCY", "").strip() or "4")
+#: 输出预算按「思考轨迹也算输出」给：推理模型在第一个字符之前先烧掉几百到
+#: 上千 token；给小了它在思考阶段撞上限，返回空内容而不报错。
+EXTRACT_MAX_OUTPUT_TOKENS = int(
+    os.environ.get("EXTRACT_MAX_OUTPUT_TOKENS", "").strip() or "4000"
+)
+#: 推理模型的思考开关。设了才随请求发出（`enable_thinking`，SiliconFlow 等网关认它）；
+#: 不设就不发，标准 OpenAI 端点不会收到一个它不认的字段。抽取这件事不需要思考轨迹，
+#: 而思考会先把输出预算烧光、返回空内容，所以带思考的模型应当设成 false。
+EXTRACT_ENABLE_THINKING: bool | None = (
+    None
+    if not os.environ.get("EXTRACT_ENABLE_THINKING", "").strip()
+    else os.environ["EXTRACT_ENABLE_THINKING"].strip().lower() == "true"
+)
+#: 端点不支持 `response_format: json_schema` 时设为 false，退回 json_object。
+EXTRACT_STRUCTURED_OUTPUTS = (
+    os.environ.get("EXTRACT_STRUCTURED_OUTPUTS", "").strip().lower() != "false"
+)
+EXTRACT_CACHE_PATH = Path(
+    os.environ.get("EXTRACT_CACHE_PATH", "").strip()
+    or PROJECT_ROOT / ".cache" / "extractions.sqlite"
+).expanduser()
+
 
 def env_path(name: str) -> Path | None:
     """读一个目录/文件路径型环境变量。适配器声明自己的路径时用它。"""
@@ -57,3 +91,7 @@ def require_embed_base_url() -> str:
             "缺少配置：EMBED_BASE_URL、EMBED_MODEL 与 EMBED_SPACE_ID（见 .env.example）"
         )
     return EMBED_BASE_URL
+
+
+def extract_configured() -> bool:
+    return bool(EXTRACT_BASE_URL and EXTRACT_MODEL and EXTRACT_SPACE_ID)

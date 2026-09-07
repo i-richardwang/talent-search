@@ -17,6 +17,10 @@ export type Hit = {
 	route: Route;
 	/** 该说法与这一段这一路原文的相关度，[RELEVANCE_MIN, 1]。 */
 	relevance: number;
+	/** 命中的那条说法，只有抽取的两路带；其余路的字段值就在这条 Hit 的 seq / title / org 上。 */
+	phrase: string | null;
+	/** 做过的事那一路带的参与方式，证据行上作说法的前缀；其余路为 null。 */
+	involvement: string | null;
 	startDate: string;
 	endDate: string | null;
 	org: string;
@@ -51,13 +55,13 @@ export type SearchResult = PopulationResult | RankedResult;
 /** 一条要求实际参与排名的聚合依据。 */
 export type TermBasis = {
 	term: string;
-	/** 参与累计的那一路：最硬那条证据走的路 */
+	/** 参与累计的那一路：最强那条证据走的路 */
 	route: Route;
-	/** 最硬那条证据的相关度 */
+	/** 最强那条证据的相关度 */
 	relevance: number;
-	/** 并列最硬的证据段的累计月数 */
+	/** 并列最强的证据段的累计月数 */
 	months: number;
-	/** 并列最硬的证据段里最近一次结束时间；null 表示目前仍有相关经历 */
+	/** 并列最强的证据段里最近一次结束时间；null 表示目前仍有相关经历 */
 	endDate: string | null;
 	/**
 	 * 累计进 `months` 的段是否**全部**来自入职前。

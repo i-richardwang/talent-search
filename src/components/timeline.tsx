@@ -1,4 +1,9 @@
-import { Dot, ROUTE_LABEL, relevance } from "#/components/evidence";
+import {
+	Dot,
+	phraseLabel,
+	ROUTE_LABEL,
+	relevance,
+} from "#/components/evidence";
 import { Badge } from "#/components/ui/badge";
 import type { CompanyMeta, Experience } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
@@ -58,7 +63,7 @@ function Segment({
 	isLast: boolean;
 }) {
 	const external = x.kind === "external";
-	// 这一段最硬的那一路。节点就是全站那颗点，不另画一套。
+	// 这一段最强的那一路。节点就是全站那颗点，不另画一套。
 	const strength = bestStrength(hits);
 	const seq = dots(x.seqL1, x.seqL2, x.seqL3);
 
@@ -77,7 +82,7 @@ function Segment({
 			{/*
 			 * 脊线与节点都由这一列的中线负责，不用魔法偏移量对齐。
 			 *
-			 * 节点直接用全站那颗 Dot，说的是同一件事：这一段的证据有多硬。
+			 * 节点直接用全站那颗 Dot，说的是同一件事：这一段的证据有多强。
 			 * 另画一颗「命中/未命中」的点会让实心绿在证据行里是强证据、在这里是
 			 * 任意证据，用户学的编码一换视图就失效。
 			 *
@@ -156,7 +161,7 @@ function Segment({
  *
  * 全部 outline，不按强度上色：强度是从 route 推导的，而 route 就写在标签正文里，
  * 上色等于同一份数据画两遍。强度归节点管（一段一个），路径归标签管
- * （一段可能有几个词各走各的路），两者不重叠。
+ * （一段可能有几个词各成一条边），两者不重叠。
  */
 function MatchedTerms({ hits }: { hits: Hit[] }) {
 	const seen = new Set<string>();
@@ -166,7 +171,14 @@ function MatchedTerms({ hits }: { hits: Hit[] }) {
 		<div className="mt-2 flex flex-wrap items-center gap-1.5">
 			{unique.map((h) => (
 				<Badge key={h.term} variant="outline">
-					{dots(h.term, ROUTE_LABEL[h.route], relevance(h.relevance))}
+					{dots(
+						h.term,
+						ROUTE_LABEL[h.route],
+						// 抽取的两路把命中的那条说法也写上：时间线上这一段的原文在
+						// 旁边，标签得说出模型从里面读出了什么，用户才核对得了。
+						phraseLabel(h),
+						relevance(h.relevance),
+					)}
 				</Badge>
 			))}
 		</div>

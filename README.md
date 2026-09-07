@@ -62,7 +62,7 @@ ETL 分成两层，接数据只碰下面那一层：
 | `EMBED_BASE_URL` | 是 | OpenAI 兼容的嵌入端点；经历原文会送到这里 |
 | `EMBED_MODEL` | 是 | 嵌入模型名，ETL 与查询侧必须一致 |
 | `EMBED_SPACE_ID` | 是 | 嵌入空间的稳定身份；模型行为变化时换值并重跑 ETL |
-| `EMBED_DIM` | 否 | 只有 ETL 读它，默认 1024；查询侧读 `src/db/schema.ts` 里那个常量，不读环境变量。改维数要两处一起改，对不上会被启动时的空间核验拦下 |
+| `EMBED_DIM` | 否 | 只有 ETL 读它，默认 1024；查询侧读 `src/db/schema.ts` 里那个常量，不读环境变量。改维数要两处一起改，对不上会被启动时的空间核验报错 |
 | `EMBED_API_KEY` | 否 | 端点需要鉴权时填写 |
 | `EMBED_TIMEOUT_S` | 否 | ETL 单次嵌入请求的超时，默认 120 |
 | `EMBED_TIMEOUT_MS` | 否 | 查询侧嵌入请求的超时，默认 30000 |
@@ -71,6 +71,14 @@ ETL 分成两层，接数据只碰下面那一层：
 | `RERANK_SPACE_ID` | 是 | 重排空间的稳定身份；缓存按它隔离 |
 | `RERANK_BASE_URL` / `RERANK_API_KEY` | 否 | 重排端点与密钥，默认沿用 `EMBED_*` |
 | `RERANK_TIMEOUT_MS` / `RERANK_CONCURRENCY` | 否 | 重排超时与最大并发，默认 30000 / 4 |
+| `EXTRACT_BASE_URL` | 否 | OpenAI 兼容的聊天端点（`/chat/completions`）；ETL 用它从入职前简历描述抽能力词和做过的事，描述原文会送到这里 |
+| `EXTRACT_MODEL` | 否 | 抽取模型名。与 `EXTRACT_BASE_URL`、`EXTRACT_SPACE_ID` 三者缺一就不抽，ETL 会打印跳过 |
+| `EXTRACT_SPACE_ID` | 否 | 抽取的稳定身份，只作本地缓存的键；改提示词或参与方式的枚举时换值并重跑 ETL |
+| `EXTRACT_API_KEY` | 否 | 端点需要鉴权时填写 |
+| `EXTRACT_ENABLE_THINKING` | 否 | 带思考的模型设为 `false`，否则思考会先烧光输出预算；不设就不发这个字段 |
+| `EXTRACT_STRUCTURED_OUTPUTS` | 否 | 端点不支持 JSON Schema 时设为 `false` |
+| `EXTRACT_TIMEOUT_S` / `EXTRACT_CONCURRENCY` / `EXTRACT_MAX_OUTPUT_TOKENS` | 否 | 端点属性，默认 120 / 4 / 4000 |
+| `EXTRACT_CACHE_PATH` | 否 | 抽取结果的本地缓存（SQLite），默认 `.cache/extractions.sqlite` |
 | `TALENT_SOURCE` | 否 | 数据源适配器名，默认 `csv_dir` |
 | `TALENT_CSV_DIR` | 否 | `csv_dir` 的源目录，默认读仓库自带的合成样例 |
 | `LLM_BASE_URL` | 否 | OpenAI 兼容端点；未配置时使用本地规则解析 |
@@ -79,7 +87,7 @@ ETL 分成两层，接数据只碰下面那一层：
 | `LLM_STRUCTURED_OUTPUTS` | 否 | 端点不支持 JSON Schema 时设为 `false` |
 | `LLM_TIMEOUT_MS` / `LLM_MAX_OUTPUT_TOKENS` | 否 | 端点属性，默认 60000 / 8000 |
 
-查询理解只发送用户输入和库内几维筛选的取值（公司档、职级、招聘渠道、学历），不发送姓名、工号或个人经历，因此可以走公网端点。模型不可用时，检索自动使用确定性的本地解析。嵌入与重排端点相反：嵌入从 ETL 收到经历原文，重排在查询时收到语料里的岗位名、部门路径和简历描述，放在哪由部署方按数据政策决定；没配它们检索直接报错，不降级。
+查询理解只发送用户输入和库内几维筛选的取值（公司档、职级、招聘渠道、学历），不发送姓名、工号或个人经历，因此可以走公网端点。模型不可用时，检索自动使用确定性的本地解析。嵌入、抽取与重排端点相反：嵌入和抽取从 ETL 收到经历原文，重排在查询时收到语料里的岗位名、部门路径、简历描述和抽出来的说法，放在哪由部署方按数据政策决定；没配嵌入或重排检索直接报错，不降级；没配抽取则 ETL 打印说明后跳过，能力词与做过的事两路为空。
 
 ## 常用命令
 
@@ -95,7 +103,7 @@ bun run verify       # 格式、类型、ETL、SQL/组件测试和生产构建
 
 ## 数据边界
 
-真实员工数据不进入版本库。ETL 从配置的数据源读取，完成校验、切段与描述对齐后，写入 Postgres，并把每段经历的四路原文（序列、岗位、部门或公司、简历描述）去重成「说法」送到嵌入端点换成向量；查询时召回的说法会送到重排端点判定相关度。除了这两个端点，个人经历不出这台机器；端点选内网还是公网由部署方决定。仓库里的样例和测试夹具全部是合成数据。
+真实员工数据不进入版本库。ETL 从配置的数据源读取，完成校验、切段与描述对齐后，写入 Postgres，并把每段经历的四路原文（序列、岗位、部门或公司、简历描述）去重成「说法」送到嵌入端点换成向量；配了抽取端点时，入职前经历的简历描述还会送去读成能力词和做过的事，作为另外两路说法一并嵌入。查询时召回的说法会送到重排端点判定相关度。除了这三个端点，个人经历不出这台机器；端点选内网还是公网由部署方决定。仓库里的样例和测试夹具全部是合成数据。
 
 公开表结构的唯一事实源是 `src/db/schema.ts`。Python 不维护公开表，也不生成迁移；完整导入由 `etl/run.py` 统一执行。
 导入先在数据库连接私有的暂存表里完成嵌入与校验，再用一个短事务原子发布。准备失败不影响正在服务的语料；发布期间，已有检索读完旧代，后续检索只会看到完整的新代。
@@ -109,7 +117,9 @@ etl/config.py                环境变量读入一处，其余模块只读它
 etl/contract.py              源契约：适配器要交出的三张表
 etl/pipeline.py              通用切段、校验与派生
 etl/sources/                 数据源适配器（默认不进版本库）
+etl/endpoint.py              两处模型调用共用的 JSON POST 与重试
 etl/embed.py                 四路原文的拼法、嵌入调用与本地向量缓存
+etl/extract.py               入职前简历描述 → 能力词与做过的事：提示词、收窄与本地缓存
 etl/load.py                  批量写库、说法去重、写向量与原子发布
 etl/run.py                   完整导入的唯一入口
 src/db/                      Drizzle 表结构与数据库连接
@@ -122,7 +132,7 @@ src/routes/s/$turnId/        工作台这一条路由，私有的组件与模块
 src/components/ui/           coss ui 的组件源码（抄来的，见其 NOTICE.md）
 src/lib/                     跨层纯函数
 scripts/                     命令行入口：query（跑一条查询）、eval（检索质量验收）
-evals/                       验收用例（真题不进版本库，仓库只带 sample.json）
+evals/                       验收用例（真实评估用例不进版本库，仓库只带 sample.json）
 tests/                       单元、渲染与真 SQL 集成测试
 ```
 

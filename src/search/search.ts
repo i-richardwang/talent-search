@@ -10,16 +10,16 @@
  * 「命中的说法」，沿 `experience_phrase` 走到经历段和人。「算法」因此找得到
  * 岗位写着「深度学习工程师」的段，不需要谁替库补同义词。
  *
- * 取数**站在一代语料上**，但准入不在门闩里：判定要打两个模型端点，而换代门闩
+ * 取数**站在一版语料上**，但准入不在语料锁里：判定要打两个模型端点，而语料锁
  * 上的独占锁是排队的，押着它等模型等于让一次端点抖动挡住全部检索。所以这里
- * 每一条取数路径都从 `withAdmission` 进去——它在门闩外算好命中的说法，进门闩
- * 时核对语料还是不是同一代（论证在 `phrases.ts` 和 `#/db`）。
+ * 每一条取数路径都从 `withAdmission` 进去——它在语料锁外算好命中的说法，进语料锁
+ * 时核对语料还是不是同一版（论证在 `phrases.ts` 和 `#/db`）。
  */
 
 import "@tanstack/react-start/server-only";
 import { inArray, type SQL, sql } from "drizzle-orm";
 import { type DbExecutor, withCorpusSnapshot } from "#/db";
-import { employee, experience } from "#/db/schema";
+import { EXTRACTED_ROUTES, employee, experience } from "#/db/schema";
 import { dots } from "#/lib/format";
 import {
 	DIM_KEYS,
@@ -94,7 +94,7 @@ function like(term: string) {
  * benchWide，超标的可见地停用）。只探语料、不带筛选——宽不宽只由词和语料决定。
  *
  * 命中口径必须和这些词**自己**的检索口径相同（这里按 `RELEVANCE_MIN` 量，
- * 所以只能量按同一条线进门的词），否则量出来的宽和搜出来的宽不是一回事：
+ * 所以只能量按同一条阈值线通过的词），否则量出来的宽和搜出来的宽不是一回事：
  * 排除词按 `RELEVANCE_MIN_EXCLUDE` 判，拿这把尺去量它，读数天然偏大。
  * 谁该被量由调用方决定（`server/turn.ts` 的 benchWide）。
  */
@@ -129,6 +129,8 @@ type FactRow = {
 	id: number;
 	route: Route;
 	relevance: number;
+	phrase: string | null;
+	involvement: string | null;
 	emp_id: string;
 	end_date: string | null;
 } & DimSource;
@@ -261,7 +263,7 @@ function dimCond<K extends DimKey>(key: K, picked: Picked[K]): SQL | null {
 
 /**
  * 跟人走的精确条件（公司名 / 学校名）。它们是专有名词，永远不进向量：
- * 「字节」和「腾讯」在向量空间里是邻居，语义匹配会把竞品全捞进来。
+ * 「字节」和「腾讯」在向量空间里是邻居，语义匹配会把竞品全匹配进来。
  * 在取数里就按人裁掉，分面随之只数剩下的人——这正是「选了这一项之后
  * 还剩几人」该有的口径。
  *
@@ -291,11 +293,11 @@ function searchScope(
 }
 
 /**
- * 同一要求、同一经历段只留证据最硬的那一次命中。
+ * 同一要求、同一经历段只留证据最强的那一次命中。
  *
  * 每条要求按说法展开：说法之间是 OR，但各自单独判定，因为「命中的是哪个说法」
  * 要进证据行。一段几路都可能命中、几个说法都可能命中，这里按
- * `路权重 × 相关度` 只留最硬的一行。打分层按事实累加月份（rank.ts 的
+ * `路权重 × 相关度` 只留最强的一行。打分层按事实累加月份（rank.ts 的
  * termValue），同段两行会把 12 个月数成 24；证据行也会把同一段列两遍。
  * 去重必须在 SQL 里做完再过保险丝：在内存里去重的话，三个说法的宽词会把
  * FACT_MAX 提前引爆三倍。
@@ -317,9 +319,15 @@ function canonicalFacts(
 		with q(term_idx, member_idx, phrase_id, relevance) as ${table}
 		select distinct on (q.term_idx, e.id)
 			q.term_idx, q.member_idx, e.id, ep.route, q.relevance,
+			case when ep.route in (${sql.join(
+				EXTRACTED_ROUTES.map((r) => sql`${r}`),
+				sql`, `,
+			)}) then ph.text end as phrase,
+			ep.involvement,
 			e.emp_id, e.end_date, ${factSelect}
 		from q
 		join experience_phrase ep on ep.phrase_id = q.phrase_id
+		join phrase ph on ph.id = ep.phrase_id
 		join experience e on e.id = ep.experience_id
 		join employee p on p.emp_id = e.emp_id
 		${searchScope(scope, view)}
@@ -389,7 +397,7 @@ async function fetchFacts(
  * 让筛选参与，「只看在职经历」就会让入职前那段实习重新有资格作证，
  * 于是收窄一个筛选反而放出更多本来站不住的证据。
  *
- * **门槛比进门高**（RELEVANCE_MIN_EXCLUDE）：进门的词可以扩，赶人的词必须准。
+ * **门槛比正向要求高**（RELEVANCE_MIN_EXCLUDE）：正向要求可以放宽，排除词必须准。
  */
 async function fetchVetoed(
 	store: DbExecutor,
@@ -582,7 +590,7 @@ export async function search(
 			}),
 		};
 
-	// 准入（要打两个模型端点）在换代门闩外算，取数在门闩内做，见 phrases.ts。
+	// 准入（要打两个模型端点）在语料锁外算，取数在语料锁内做，见 phrases.ts。
 	// 正向要求和排除词一起进准入：它们查的是同一批说法，判定线的差别在
 	// fetchVetoed 里，不在这里。
 	return withAdmission(
@@ -680,6 +688,8 @@ export async function search(
 							term: plan.term,
 							route: fact.route,
 							relevance: fact.relevance,
+							phrase: fact.phrase,
+							involvement: fact.involvement,
 							startDate: segment.startDate,
 							endDate: segment.endDate,
 							org: segment.org,

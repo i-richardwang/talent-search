@@ -5,7 +5,7 @@
  * 库里之后都只会表现为「名单有点怪」，没有任何断言会红。所以它们归约束，不归
  * 应用代码：ETL 换一个适配器、检索换一种取数，这道关卡都还在。
  *
- * 认的是约束**名**（`fixture.ts` 的 `violates`）：认文案的话，被另一条约束拦下
+ * 认的是约束**名**（`fixture.ts` 的 `violates`）：认文案的话，被另一条约束拒绝
  * 也可能凑巧含着这几个字，测试照样绿。
  */
 import assert from "node:assert/strict";
@@ -74,7 +74,7 @@ describe("检索数据约束", () => {
 			db.execute(sql`
 				insert into experience_phrase (experience_id, route, phrase_id)
 				values (1, 'summary', (select min(id) from phrase))`),
-			violates("experience_phrase_route_valid"),
+			violates("experience_phrase_route_valid_6"),
 		);
 	});
 
