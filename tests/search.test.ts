@@ -132,7 +132,7 @@ describe("抽取的两路", () => {
 
 	test("同一段可以有多条能力词，各自独立作证", async () => {
 		// 主键是（段、路、说法）三列：两条能力词落在同一段上，AND 要两个都过
-		const { results } = await run("Python Spark");
+		const { results } = await run("Python,Spark");
 		assert.ok(results.some((r) => r.employee.empId === "T009"));
 	});
 
@@ -239,21 +239,21 @@ describe("语义命中", () => {
 
 describe("AND 语义", () => {
 	test("每条要求都要命中，缺一个就被淘汰", async () => {
-		const { results } = await run("算法 运营");
+		const { results } = await run("算法,运营");
 		const ids = results.map((r) => r.employee.empId);
 		assert.ok(ids.includes("T001"), "两词都命中的人应当在结果里");
 		assert.ok(!ids.includes("T002"), "只命中「算法」的人必须被淘汰");
 	});
 
 	test("两个词可以落在不同的经历段上", async () => {
-		const { results } = await run("算法 运营");
+		const { results } = await run("算法,运营");
 		const t001 = results.find((r) => r.employee.empId === "T001");
 		const segs = new Set(t001?.hits.map((h) => h.experienceId));
 		assert.equal(segs.size, 2, "两个词应当来自两段不同的经历");
 	});
 
 	test("没有可检索要求时不返回任何人", async () => {
-		const { terms, results } = await run("帮我找一下的人");
+		const { terms, results } = await run("~算法,~运营");
 		assert.equal(terms.length, 0);
 		assert.equal(results.length, 0);
 	});
@@ -382,7 +382,7 @@ describe("命中路径判定", () => {
 	});
 
 	test("受控字段命中排在仅简历自述之前", async () => {
-		const { results } = await run("算法 运营");
+		const { results } = await run("算法,运营");
 		const rank = results.map((r) => r.employee.empId);
 		assert.ok(
 			rank.indexOf("T001") < rank.indexOf("T003"),
@@ -699,8 +699,8 @@ describe("命中总数", () => {
 
 describe("证据要求", () => {
 	test("打开之后只剩每个词都有受控命中的人", async () => {
-		const loose = await run("算法 运营");
-		const strict = await run("算法 运营", { strong: true });
+		const loose = await run("算法,运营");
+		const strict = await run("算法,运营", { strong: true });
 		const ids = strict.results.map((r) => r.employee.empId);
 		assert.ok(ids.includes("T001"), "序列 + 岗位命中，应当留下");
 		assert.ok(!ids.includes("T003"), "两个词都只在简历原文里，应当被排除");
@@ -708,18 +708,18 @@ describe("证据要求", () => {
 	});
 
 	test("那一项的两头：打开还剩几个、关掉能看到几个", async () => {
-		const { facets, total } = await run("算法 运营");
+		const { facets, total } = await run("算法,运营");
 		assert.equal(facets.strong.off, total, "关掉就是当前全部");
 		assert.equal(
 			facets.strong.on,
-			(await run("算法 运营", { strong: true })).total,
+			(await run("算法,运营", { strong: true })).total,
 			"打开的预告数必须等于真打开之后的结果",
 		);
 	});
 
 	test("它自己开着的时候，那一项的预告数不受自己影响", async () => {
-		const on = await run("算法 运营", { strong: true });
-		const off = await run("算法 运营");
+		const on = await run("算法,运营", { strong: true });
+		const off = await run("算法,运营");
 		assert.equal(on.facets.strong.off, off.total);
 		assert.equal(on.facets.strong.on, off.facets.strong.on);
 	});

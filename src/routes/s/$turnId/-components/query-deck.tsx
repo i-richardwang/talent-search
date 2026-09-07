@@ -5,7 +5,6 @@ import { QueryBar } from "#/components/query-bar";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import {
-	fellBack,
 	hasMeaning,
 	type QueryInput,
 	type SearchSpec,
@@ -61,7 +60,6 @@ export function QueryDeck({
 	rawText,
 	error,
 	onRetry,
-	onReinterpret,
 }: {
 	/** 查询条件，来自这条查询记录。理解完成之前是空的。 */
 	spec: SearchSpec;
@@ -83,10 +81,7 @@ export function QueryDeck({
 	error: string | null;
 	/** 理解失败时的重试动作。 */
 	onRetry?: () => void;
-	/** 降级之后拿原话再跑一次模型。同一句话，不是新问题，所以不走改写。 */
-	onReinterpret?: () => void;
 }) {
-	const degraded = fellBack(spec);
 	const unsupported = unsupportedOf(spec);
 	const settled = hasMeaning(spec) && !interpreting;
 	const [editing, setEditing] = useState(false);
@@ -223,26 +218,6 @@ export function QueryDeck({
 					{unsupported.length > 0 && (
 						<Footnote>
 							「{unsupported.join("」「")}」暂不支持作为条件，本次未生效。
-						</Footnote>
-					)}
-					{/*
-					 * 降级必须说出来。规则解析读不出语气，「最好」「不要」会被一律
-					 * 判成必须词——结果是错的而 chips 看起来完全正常。只在服务端记
-					 * 一行日志不算说出来：拿到错结果的人不看日志。
-					 *
-					 * 但它同样是**关于这几枚 chip 的一条脚注**，不是页面级事件，
-					 * 所以是一行小字，不是一整块 amber 的 Alert——满宽的警示块会
-					 * 成为整屏第二重的东西，为的却是一句注解。
-					 */}
-					{degraded && (
-						<Footnote>
-							未能识别这句话里的语气，「最好」「不要」都已按必须条件处理。
-							{onReinterpret && (
-								<Button onClick={onReinterpret} size="xs" variant="link">
-									<RotateCwIcon />
-									重新理解
-								</Button>
-							)}
 						</Footnote>
 					)}
 				</>

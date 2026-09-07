@@ -11,68 +11,42 @@ import {
 	MAX_TERM_LEN,
 	MEMBER_MAX,
 	parseChips,
-	parseQuery,
 	QUERY_MAX,
 	queryString,
 	TEXT_MAX,
+	termOf,
 	toQuery,
 } from "#/search/parse";
 import { hasMeaning } from "#/search/spec";
 
-test("按标点与连接词切成要求", () => {
-	assert.deepEqual(parseQuery("算法、产品、后端都做过的"), [
-		"算法",
-		"产品",
-		"后端",
-	]);
-	assert.deepEqual(parseQuery("数据分析 城市经营"), ["数据分析", "城市经营"]);
-});
-
-test("剥掉句首动词与句尾赘字", () => {
-	assert.deepEqual(parseQuery("找做过安全运营的人"), ["安全运营"]);
-	assert.deepEqual(parseQuery("带过团队的城市经理"), ["团队", "城市经理"]);
-});
-
-test("末尾的语气词不能连词一起剥掉", () => {
-	// 尾字剥离只认独立的语气词：「安全」的「全」是词的一部分，剥了就剩「安」
-	assert.deepEqual(parseQuery("做过客服、现在做安全的"), ["客服", "安全"]);
-	assert.deepEqual(parseQuery("安全"), ["安全"]);
-});
-
-test("只剩句式词时不产生要求", () => {
-	assert.deepEqual(parseQuery("帮我找人"), []);
-	assert.deepEqual(parseQuery(""), []);
-});
-
 /**
- * 剥赘字最容易剥进词里。这几个词在招聘场景里都是高频的，剥错一个字之后
- * 检索的就不再是用户要的那条要求，而界面上没有任何提示。
+ * 说法只做边界工作，不改写字面：屏幕上写的那几个字和拿去比相似度的那几个字
+ * 必须是同一串。任何「剥掉句式」「切开连接词」都是一次看不见的查询变更。
  */
-test("单字赘尾不剥：末尾的「人」多半是词的一半", () => {
-	assert.deepEqual(parseQuery("机器人"), ["机器人"]);
-	assert.deepEqual(parseQuery("负责人"), ["负责人"]);
-	assert.deepEqual(parseQuery("经纪人"), ["经纪人"]);
-});
+describe("说法的边界", () => {
+	test("字面原样保留，只去掉两头的空白", () => {
+		assert.equal(termOf("  安全运营 "), "安全运营");
+		assert.equal(termOf("做过安全运营的人"), "做过安全运营的人");
+		assert.equal(termOf("machine learning"), "machine learning");
+	});
 
-test("跟着「的」的「人」才是赘尾", () => {
-	assert.deepEqual(parseQuery("带过团队的人"), ["团队"]);
-	assert.deepEqual(parseQuery("做过风控的人"), ["风控"]);
-});
+	test("记号是语法不是字：词首的记号剥掉", () => {
+		assert.equal(termOf("+带团队"), "带团队");
+		assert.equal(termOf("~-实习"), "实习");
+	});
 
-test("剥掉一个字就不足两字时，原样保留而不是交出碎片", () => {
-	// 碎片会静默少掉一个 AND 约束，结果集变大而界面上看不出来
-	assert.deepEqual(parseQuery("有赞"), ["有赞"]);
-});
-
-test("剥掉的是多字句式就照剥，剩下的停用词自然被滤掉", () => {
-	assert.deepEqual(parseQuery("帮我找人"), []);
-	assert.deepEqual(parseQuery("找人"), []);
-});
-
-test("超长的一段正文不是要求", () => {
-	// 一次粘贴进来的正文会被原样送去嵌入，再拿一个「段落向量」去和短短的岗位名比
-	assert.deepEqual(parseQuery("算法".repeat(150)), []);
-	assert.deepEqual(parseQuery("产品经理"), ["产品经理"]);
+	test("单字和超长正文都不是说法", () => {
+		// 单字对语义匹配说不出任何东西；一段粘贴进来的正文会被原样送去嵌入，
+		// 再拿一个「段落向量」去和短短的岗位名比
+		assert.equal(termOf("算"), undefined);
+		assert.equal(termOf("算法".repeat(MAX_TERM_LEN)), undefined);
+		assert.equal(
+			termOf("算法".repeat(MAX_TERM_LEN / 2)),
+			"算法".repeat(MAX_TERM_LEN / 2),
+		);
+		assert.equal(termOf(""), undefined);
+		assert.equal(termOf(123), undefined);
+	});
 });
 
 describe("查询 chips", () => {
@@ -87,10 +61,10 @@ describe("查询 chips", () => {
 		assert.equal(parseChips(raw).length, CHIP_MAX);
 	});
 
-	test("一句原话进来全是「必须」——默认语义不变", () => {
-		assert.deepEqual(parseChips("做过线下渠道运营、带过团队的人"), [
+	test("没有记号就是「必须」——默认语义不变", () => {
+		assert.deepEqual(parseChips("线下渠道运营,带团队"), [
 			{ term: "线下渠道运营", mode: "must" },
-			{ term: "团队", mode: "must" },
+			{ term: "带团队", mode: "must" },
 		]);
 	});
 
@@ -102,10 +76,9 @@ describe("查询 chips", () => {
 		]);
 	});
 
-	test("一组里切出多个词时，整组共用同一个强度", () => {
+	test("逗号之外的分隔都是字的一部分：没有第二套切词", () => {
 		assert.deepEqual(parseChips("+算法、产品"), [
-			{ term: "算法", mode: "boost" },
-			{ term: "产品", mode: "boost" },
+			{ term: "算法、产品", mode: "boost" },
 		]);
 	});
 
@@ -132,9 +105,13 @@ describe("查询 chips", () => {
 		}
 	});
 
-	test("原话解析出的 chips 也能规范往返", () => {
-		const chips = parseChips("算法、产品都做过的人");
+	test("规范化只改写法不改字：含空格与顿号的说法原样往返", () => {
+		const chips = parseChips(" 算法、产品 , machine learning ");
 		assert.deepEqual(parseChips(toQuery(chips)), chips);
+		assert.equal(
+			canonical(" 算法、产品 , machine learning "),
+			"算法、产品,machine learning",
+		);
 	});
 });
 
@@ -186,12 +163,12 @@ describe("停用的词", () => {
 });
 
 /**
- * 一条要求的多个说法：组内 `/` 与「或」是 OR。
+ * 一条要求的多个说法：组内 `/` 是 OR。
  * 语义（怎么检索、怎么计分）在 search/rank 那两层测，这里只测解析与往返。
  */
 describe("说法（成员）语法", () => {
-	test("「或」并列的说法归成一条要求", () => {
-		assert.deepEqual(parseChips("大模型或推荐系统,带团队"), [
+	test("`/` 并列的说法归成一条要求", () => {
+		assert.deepEqual(parseChips("大模型/推荐系统,带团队"), [
 			{ term: "大模型", alts: ["推荐系统"], mode: "must" },
 			{ term: "带团队", mode: "must" },
 		]);
@@ -221,10 +198,9 @@ describe("说法（成员）语法", () => {
 		]);
 	});
 
-	test("没有说法记号的顿号句仍是几条 AND 要求，不被并成 OR", () => {
-		assert.deepEqual(parseChips("渠道运营、带团队"), [
-			{ term: "渠道运营", mode: "must" },
-			{ term: "带团队", mode: "must" },
+	test("「或」是自然语言，不是语法：翻译它是模型的事", () => {
+		assert.deepEqual(parseChips("大模型或推荐系统"), [
+			{ term: "大模型或推荐系统", mode: "must" },
 		]);
 	});
 });
@@ -287,8 +263,8 @@ describe("查询编辑", () => {
 describe("规范化与长度边界", () => {
 	test("规范化是幂等的：同一份含义只有一种写法", () => {
 		for (const raw of [
-			"做过渠道运营、带过团队的人",
-			"大模型或推荐系统, +带团队 ,-实习",
+			"渠道运营 , 带团队",
+			"大模型/推荐系统, +带团队 ,-实习",
 			"~+运营",
 		]) {
 			const once = canonical(raw);

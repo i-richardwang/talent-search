@@ -1,5 +1,5 @@
 /**
- * 自然语言理解的可信边界。模型只负责把一句话路由成 SearchDelta；这里负责把
+ * 自然语言理解的可信边界。模型只负责把一句话路由成一份 SearchSpec；这里负责把
  * 不可信输出收窄成产品能够保存和执行的形状，不包含网络调用。
  */
 import { z } from "zod";
@@ -11,10 +11,10 @@ import {
 	type ChipDraft,
 	type ChipMode,
 	canonical,
-	parseQuery,
+	termOf,
 	toQuery,
 } from "./parse";
-import { hasMeaning, type SearchDelta, type SearchScope } from "./spec";
+import type { SearchScope, SearchSpec } from "./spec";
 
 /** 模型选择结构化值时只能看语料真实拥有的词表。哪几维有词表见 `VOCAB_KEYS`。 */
 export type Vocabulary = { [K in VocabKey]: readonly string[] };
@@ -29,7 +29,7 @@ function pick(values: readonly string[], description: string) {
 
 /**
  * 发给模型的输出形状。字段全部出现、以 null 表示未提及，兼容结构化输出端点的
- * 必填字段要求。词长只在描述里建议，真正的阈值由 parseQuery 单独负责。
+ * 必填字段要求。词长只在描述里建议，真正的阈值由 `termOf` 单独负责。
  */
 export function intentSchema(vocab: Vocabulary) {
 	return z.object({
@@ -106,25 +106,22 @@ export function intentSchema(vocab: Vocabulary) {
  */
 const UNSUPPORTED_MAX = 8;
 
-/** 模型输出 → 一句话自己的查询增量。任何不合规字段都被局部丢弃，不牵连整句。 */
-export function toDelta(raw: unknown, vocab: Vocabulary): SearchDelta {
+/** 模型输出 → 这句话的查询。任何不合规字段都被局部丢弃，不牵连整句。 */
+export function toSpec(raw: unknown, vocab: Vocabulary): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;
-	const parseTexts = (input: unknown) =>
-		Array.isArray(input)
-			? input.flatMap((item) => parseQuery(boundedText(item) ?? ""))
-			: [];
 	const drafts: ChipDraft[] = [];
 
 	for (const item of Array.isArray(value.terms) ? value.terms : []) {
-		const term = (item ?? {}) as Record<string, unknown>;
-		const mode = CHIP_MODES.includes(term.mode as ChipMode)
-			? (term.mode as ChipMode)
+		const entry = (item ?? {}) as Record<string, unknown>;
+		const term = termOf(entry.term);
+		if (!term) continue;
+		const mode = CHIP_MODES.includes(entry.mode as ChipMode)
+			? (entry.mode as ChipMode)
 			: "must";
-		const [head, ...rest] = parseQuery(boundedText(term.term) ?? "");
-		if (!head) continue;
-		const alts = parseTexts(term.alts);
-		drafts.push({ term: head, ...(alts.length > 0 && { alts }), mode });
-		for (const part of rest) drafts.push({ term: part, mode });
+		const alts = Array.isArray(entry.alts)
+			? entry.alts.map(termOf).filter((x): x is string => x !== undefined)
+			: [];
+		drafts.push({ term, ...(alts.length > 0 && { alts }), mode });
 	}
 
 	/**
@@ -172,25 +169,5 @@ export function toDelta(raw: unknown, vocab: Vocabulary): SearchDelta {
 			kind: "unsupported" as const,
 			text: message,
 		})),
-	};
-}
-
-/**
- * 模型不可用，或它没有留下任何信息时，用本地解析保住原话并显式记录降级。
- * unsupported-only 是完整且有意义的理解，不能被兜底改写成一条语义要求。
- */
-export function resolveIntent(
-	query: string,
-	raw: unknown | null,
-	vocab: Vocabulary,
-): SearchDelta {
-	if (raw !== null) {
-		const delta = toDelta(raw, vocab);
-		if (hasMeaning(delta)) return delta;
-	}
-	return {
-		evidence: canonical(query),
-		scope: {},
-		notices: [{ kind: "fallback" }],
 	};
 }

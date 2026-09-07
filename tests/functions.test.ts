@@ -9,22 +9,12 @@ import { describe, test } from "node:test";
 import { validateCommit } from "#/search/commit-input";
 
 describe("提交查询的服务端边界", () => {
-	test("三种输入各自只接受自己的形状", () => {
+	test("两种输入各自只接受自己的形状", () => {
 		assert.deepEqual(
 			validateCommit({ input: { kind: "sentence", text: " 算法 " } }),
 			{
 				parentTurnId: undefined,
 				input: { kind: "sentence", text: "算法" },
-			},
-		);
-		assert.deepEqual(
-			validateCommit({
-				parentTurnId: "parent",
-				input: { kind: "reinterpret" },
-			}),
-			{
-				parentTurnId: "parent",
-				input: { kind: "reinterpret" },
 			},
 		);
 		assert.deepEqual(

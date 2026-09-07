@@ -1,66 +1,13 @@
 /**
- * 自然语言查询 → 要求。解析是本地、确定性的，不调用外部模型。
+ * 查询串的语法与解析。解析是本地、确定性的，不含任何自然语言理解——
+ * 自然语言由模型翻译（`intent.ts`），这里只认下面这套记号：
  *
- * "做过线下渠道运营、带过团队的人" → ["线下渠道运营", "带过团队"]
+ *     大模型/推荐系统,+带团队,~-实习
  *
- * 每条要求还带一个**要求强度**（见下面的 parseChips）：默认「必须」，
- * 也可以是「加分」或「排除」。检索的语义由它决定，不由这里的切词决定。
+ * 半角逗号隔开**要求**（AND），`/` 隔开一条要求里的**说法**（OR），词前的
+ * `+` `-` 是强度、`~` 是停用。除此之外没有别的语法：一个说法就是记号后面
+ * 那几个字本身，不切词、不剥句式、不去停用词。
  */
-
-/** 分隔符：标点与连接词都视为要求之间的边界 */
-const SPLIT = /[,，、;；/|\s]+|(?:和|与|并且|同时|以及|的)/g;
-
-/** 整块都是这些词时丢弃：它们表达句式，不表达检索意图 */
-const STOPWORDS = new Set([
-	"做过",
-	"干过",
-	"待过",
-	"有",
-	"过",
-	"的",
-	"人",
-	"员工",
-	"同学",
-	"背景",
-	"经验",
-	"经历",
-	"找",
-	"查",
-	"搜",
-	"找人",
-	"帮我",
-	"我要",
-	"想找",
-	"需要",
-	"希望",
-	"最好",
-	"都",
-	"既",
-	"又",
-	"而且",
-	"以上",
-	"相关",
-	"方面",
-	"工作",
-	"曾经",
-	"现在",
-	"目前",
-	"谁",
-]);
-
-/**
- * 贴在要求前后的句式碎片。切分只认标点，"后端都做过"这类会连在一起，
- * 得把两头的赘字剥掉才剩下真正要搜的词。
- */
-const HEAD =
-	/^(?:帮我|我要|想找|需要|找一?些?|查一?下?|搜一?下?|有没有|谁|做过|干过|带过|待过|现在|目前|曾经|做|干|有)+/;
-const TAIL = new RegExp(
-	// 要么是"（都/也）做过"这类动词短语，要么是"的人 / 经验 / 背景"这类名词赘尾。
-	// 单字不能单独剥：末尾的"全"多半是"安全"的一半，末尾的"人"多半是
-	// "机器人 / 负责人 / 经纪人"的一半。所以"人"只在跟着"的"时才算赘尾。
-	"(?:(?:都|也|全)?(?:做过|干过|待过|带过|有过)" +
-		"|(?:的人|的|员工|同学|经验|经历|背景|工作|岗位|方向|相关))+$",
-);
 
 /**
  * 不可信文本的长度上限。超过这个长度的不是一个词、一个公司名或一句提示，
@@ -70,18 +17,21 @@ export const TEXT_MAX = 200;
 export const CHIP_MAX = 8;
 
 /**
- * 一个词最长几个字。上限住在这里，`intentSchema` 只在 `describe` 里写建议：
- * 写成 schema 约束的话，模型多给一个长词就是整条响应作废、整句话退回规则解析，
- * 而收窄本来只会丢掉那一个词。
+ * 一个说法最长几个字。上限住在这里，`intentSchema` 只在 `describe` 里写建议：
+ * 写成 schema 约束的话，模型多给一个长词就是整条响应作废，而收窄本来只会
+ * 丢掉那一个词。
  */
 export const MAX_TERM_LEN = 24;
 
+/** 一个说法最短几个字。单字对语义匹配说不出任何东西。 */
+const MIN_TERM_LEN = 2;
+
 /**
  * 词首的记号位：`~`（停用）与 `+` `-`（强度）在查询串里是**语法**，
- * 所以一个词永远不以它们开头，剥在这里——`parseQuery` 是全站唯一产出词的地方，
- * 模型给的词和用户敲的词都从这一个口子出来。
+ * 所以一个说法永远不以它们开头，剥在这里——`termOf` 是全站唯一产出说法的地方，
+ * 模型给的词和查询串里读出来的词都从这一个口子出来。
  *
- * 不剥的话 `大模型/+带团队` 里的 `+带团队` 会原样变成一个词，写回查询串就成了
+ * 不剥的话模型给出 `+带团队` 这样的词会原样变成一个说法，写回查询串就成了
  * `大模型/+带团队`，再解析一次那个 `+` 变回强度符号，说法凭空少一个——
  * 而往返恒等式（`parseChips(toQuery(parseChips(q)))`）是这条串能当查询用的前提。
  */
@@ -98,36 +48,17 @@ export function boundedText(value: unknown): string | undefined {
 }
 
 /**
- * 剥赘字不能把词本身剥没。
+ * 不可信的一段字 → 一个说法，或者什么都不是。
  *
- * 剥完不足 2 字，且剥掉的只有**一个字**时，判定为剥错了词内字：那一个字
- * 多半是"有赞"的"有"、"做市商"的"做"，不是句式。这时原样保留，因为交出
- * 一个碎片会静默改变 AND 语义（少一个约束，结果集变大），而界面上看不出
- * 哪条要求被吃了。
- *
- * 剥掉的是多字句式（"帮我找|人"）则照剥不误——剩下的"人"会被停用词滤掉，
- * 这正是要的结果。
+ * 这是全站唯一产出说法的地方：模型输出的每个词、查询串里的每一段都经过它。
+ * 它只做边界工作——剥记号、限长度——不改写字面：屏幕上写的那几个字和拿去
+ * 比相似度的那几个字是同一串，改写发生在哪里都是一次看不见的查询变更。
  */
-function keepIfMeaningful(stripped: string, original: string) {
-	if (stripped.length >= 2) return stripped;
-	return original.length - stripped.length <= 1 ? original : stripped;
-}
-
-export function parseQuery(raw: string): string[] {
-	const terms: string[] = [];
-	for (const chunk of raw.slice(0, TEXT_MAX).split(SPLIT)) {
-		const whole = chunk.trim().replace(LEADING_SIGN, "");
-		let term = keepIfMeaningful(whole.replace(HEAD, ""), whole);
-		// 剥两头可能反复出现（"后端都做过的人"），剥到不再变短为止
-		for (let prev = ""; term !== prev; ) {
-			prev = term;
-			term = keepIfMeaningful(term.replace(TAIL, "").trim(), term);
-		}
-		if (!term || STOPWORDS.has(term) || term.length < 2) continue;
-		if (term.length > MAX_TERM_LEN) continue;
-		if (!terms.includes(term)) terms.push(term);
-	}
-	return terms;
+export function termOf(value: unknown): string | undefined {
+	const text = boundedText(value)?.replace(LEADING_SIGN, "").trim();
+	if (!text || text.length < MIN_TERM_LEN || text.length > MAX_TERM_LEN)
+		return undefined;
+	return text;
 }
 
 /**
@@ -159,8 +90,8 @@ export const MEMBER_MAX = 4;
  *
  * **词里不含语法。** 一个说法永远不以 `~` `+` `-` 开头：这三个记号在查询串里
  * 是停用与强度，落进词里就会在下一次解析时变回记号。剥记号只发生在
- * `parseQuery`（见上面的 `LEADING_SIGN`），所以这条对模型给的词和用户敲的词
- * 一样成立，往返恒等式也因此对**任何**输入串都成立。
+ * `termOf`（见上面的 `LEADING_SIGN`），所以这条对模型给的词和查询串里读出来
+ * 的词一样成立，往返恒等式也因此对**任何**输入串都成立。
  *
  * 一条要求可以有多个**说法**，满足其一即满足这条要求（说法之间 OR，
  * 要求之间 AND）。`term` 是主词、`alts` 是「A 或 B 均可」里并列的那些，
@@ -176,7 +107,7 @@ export const MEMBER_MAX = 4;
  * **为什么停用只有一个布尔、没有成因**：一个词太宽而被自动停用，那是关于
  * **语料**的一条事实（`WIDE_SHARE`，见 `search.ts` 的 probeWide），不是这条
  * 要求的性质。它属于这次理解的注解（`SearchNotice` 的 `wide`），和「没处放的
- * 条件」「没识别出语气」同一档。写在 chip 上的话，一条会随语料重灌后失效的
+ * 条件」同一档。写在 chip 上的话，一条会随语料重灌后失效的
  * 判断就被冻进了不可变的条件里，而这个产品对 `/s/:id` 的承诺只到条件为止。
  */
 export type Chip = Readonly<{
@@ -187,7 +118,7 @@ export type Chip = Readonly<{
 }>;
 
 /**
- * 一条**还没进过解析**的要求：外部意图（模型输出、命令行）第一次变成查询时的
+ * 一条**还没进过解析**的要求：模型输出第一次变成查询时的
  * 中间形态。它和 `Chip` 形状相同而含义不同——chip 是解析的产物、可信；draft 是
  * 待收窄的输入，必须经 `toQuery` → `parseChips` 走一遍才算数。
  */
@@ -219,24 +150,11 @@ const MODE_SIGN: Record<ChipMode, string> = {
  */
 const OFF_SIGN = "~";
 
-/**
- * 同一条要求里说法之间的边界：`/` 是我们自己写回去的形态，「或（者）」是
- * 用户嘴里的形态。两者都只在 parseChips 这一层生效——parseQuery 看到的
- * 永远是单个说法。
- */
-const MEMBER_SPLIT = /\/|或者|或/;
+/** 同一条要求里说法之间的边界。 */
+const MEMBER_SPLIT = "/";
 
 /**
  * 查询串 → chips。这是「查询」这个概念在全站的唯一解析入口。
- *
- * 半角逗号是**要求**之间的边界（AND），组内的 `/` 与「或」是**说法**之间的
- * 边界（OR）；其余分隔符（顿号、全角逗号、空格……）仍然交给 parseQuery 切词。
- * 所以一句原话进来得到几条 must 要求，「大模型或推荐系统」得到**一条**带两个
- * 说法的要求，而我们自己写回的 `大模型/推荐系统,+带团队,-实习` 各归各——
- * 同一个函数吃两种输入，不必在别处判断「这是原话还是 chip 串」。
- *
- * 没有说法记号的组里，每个词各自成一条要求。这条分叉保证「渠道运营、带团队」
- * 仍然是两条 AND 要求，而不是被并成一条 OR。
  *
  * 去重跨强度、跨说法生效，先出现的那一个赢：同一个词既必须又排除是自相矛盾的
  * 输入，与其猜用户想要哪个，不如让它保持第一次写下的样子，界面上看得见、改得动。
@@ -254,28 +172,12 @@ export function parseChips(raw: string): Chip[] {
 		const mode = MODE_PREFIX[g[0] ?? ""] ?? "must";
 		if (mode !== "must") g = g.slice(1);
 
-		const chunks = g.split(MEMBER_SPLIT);
-		if (chunks.length === 1) {
-			for (const term of parseQuery(g)) {
-				if (seen.has(term)) continue;
-				seen.add(term);
-				chips.push({
-					term,
-					mode,
-					...(off && { off: true as const }),
-				});
-				if (chips.length === CHIP_MAX) return chips;
-			}
-			continue;
-		}
-
 		const members: string[] = [];
-		for (const chunk of chunks) {
-			for (const t of parseQuery(chunk)) {
-				if (seen.has(t)) continue;
-				seen.add(t);
-				members.push(t);
-			}
+		for (const chunk of g.split(MEMBER_SPLIT)) {
+			const term = termOf(chunk);
+			if (!term || seen.has(term)) continue;
+			seen.add(term);
+			members.push(term);
 		}
 		const [term, ...alts] = members;
 		if (!term) continue;

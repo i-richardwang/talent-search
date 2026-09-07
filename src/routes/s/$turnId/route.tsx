@@ -124,7 +124,7 @@ function Workbench() {
 	const { turn, result } = Route.useLoaderData();
 	// 记录的 id 只从这里取。loader 正是按路径上那一段查出这条记录的，
 	// 再从 params 取一次就是同一个值的第二个名字。
-	const { id: turnId, rawText, spec: settledSpec, canReinterpret } = turn;
+	const { id: turnId, rawText, spec: settledSpec } = turn;
 	const view = Route.useSearch();
 	const navigate = useNavigate();
 	const { empId } = useParams({ strict: false });
@@ -188,11 +188,6 @@ function Workbench() {
 				key={turnId}
 				onChangeSpec={reviseSpec}
 				onQuery={(input) => commit(input, { parentTurnId: turnId })}
-				onReinterpret={
-					canReinterpret
-						? () => commit({ kind: "reinterpret" }, { parentTurnId: turnId })
-						: undefined
-				}
 				onRetry={interpretError ? retryInterpret : undefined}
 				rawText={rawText}
 				ref={deck}

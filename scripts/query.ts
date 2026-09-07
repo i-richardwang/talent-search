@@ -1,4 +1,4 @@
-/** 命令行跑一条查询，用于验收用例与调参：bun run query "算法 产品 后端" */
+/** 命令行按查询串语法跑一条查询，用于验收用例与调参：bun run query "算法,+产品,-后端" */
 import { pool } from "#/db";
 import { dots, period } from "#/lib/format";
 import { canonical } from "#/search/parse";

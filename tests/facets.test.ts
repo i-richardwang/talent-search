@@ -117,7 +117,7 @@ describe("候选与计数", () => {
 
 	test("口径和主检索一致：一个人要在这一项里凑齐全部要求才算数", async () => {
 		// F003 一段之内既有岗位「算法运维」又有序列「渠道」，两个词都落在「运营/渠道」里
-		const { facets } = await run("算法 渠道");
+		const { facets } = await run("算法,渠道");
 		assert.equal(seqOf(facets).get("运营/渠道"), 1);
 		// F001/F002 在「技术/算法」里凑不齐「渠道」，这一项一个人都不剩
 		assert.equal(seqOf(facets).get("技术/算法"), undefined);

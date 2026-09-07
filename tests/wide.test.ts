@@ -14,7 +14,6 @@ import { seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-delete process.env.LLM_BASE_URL;
 const { createTurn, resolveTurn } = await import("#/server/turn");
 
 before(async () => {
@@ -65,15 +64,6 @@ describe("太宽的词在理解时停用", () => {
 		const spec = await sentence("幽冥测绘");
 		assert.equal(spec.evidence, "幽冥测绘");
 		assert.deepEqual(wideTerms(spec), []);
-	});
-
-	test("停用的词不量宽：这一次它根本不参与检索", async () => {
-		// 用户自己敲的 `~` 就是停用（原话走的是同一个 parseChips）。停用说的是
-		// 「这一次当它不存在」，量它得到的注解会解释一件没发生的事，而重新启用
-		// 之后那句解释还挂在那儿——注解只解释在场的东西。
-		const spec = await sentence("~灵能驾驶, 机甲算法");
-		assert.equal(spec.evidence, "~灵能驾驶,机甲算法");
-		assert.deepEqual(wideTerms(spec), [], "停用的词不该收到一条宽度注解");
 	});
 
 	test("成因只解释在场的东西：那枚 chip 被删掉，注解跟着走", async () => {

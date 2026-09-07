@@ -14,7 +14,7 @@ import {
 	text,
 	timestamp,
 } from "drizzle-orm/pg-core";
-import type { SearchDelta, SearchSpec } from "#/search/spec";
+import type { SearchSpec } from "#/search/spec";
 
 /*
  * 检索的匹配单元是**语义**，不是字符串：语料里每一串原文各存一个向量
@@ -256,13 +256,13 @@ export const phraseRelevance = pgTable(
  * 2. **理解的结果是记录，不是缓存。** 同一条 `/s/:id` 永远问的是同一个问题
  *    （同一句原话、同一份 SearchSpec）；名单本身跟着语料和时间走，本来就该走——
  *    可复现的是条件，不是那批人。「问题不变」由「这一行是不可变的」保证，
- *    不由「凑巧没人再调模型」保证。想重新理解，就派生一条新记录。
+ *    不由「凑巧没人再调模型」保证。想换一种读法，就改写那句话派生一条新记录。
  * 3. **改条件留得下痕迹。** 每次改条件都派生一条新记录，同一条链上于是躺着
  *    「模型判成必须、人改成加分」这类修正的前后两份——链头是哪一条由
  *    `root_turn_id` 说。这是这个产品唯一能自己产出的模型评估数据，写进 URL
  *    就等于每次导航扔一次。
  *
- * 这张表**只 INSERT**，唯一的例外是把 `delta` / `spec` 从 null 补成理解结果。
+ * 这张表**只 INSERT**，唯一的例外是把 `spec` 从 null 补成理解结果。
  * 这一条由应用代码保证；库负责输入完整性与链关系。
  */
 export const searchTurn = pgTable(
@@ -270,7 +270,7 @@ export const searchTurn = pgTable(
 	{
 		id: text("id").primaryKey(),
 		/**
-		 * 这条链的头。一次找人任务会派生出一串记录（加条件、改强度、重新理解），
+		 * 这条链的头。一次找人任务会派生出一串记录（加条件、改强度、改写那句话），
 		 * 它们共享同一个 root——「最近搜索」按它去重，一个任务只出现一次，
 		 * 并且停在它最后的样子上。
 		 */
@@ -286,17 +286,13 @@ export const searchTurn = pgTable(
 		 */
 		rawText: text("raw_text"),
 		/**
-		 * 这句原话自己的理解。降级与否记在这里，界面据此决定给不给「重新理解」。
-		 *
-		 * **null 表示「还没理解」**：整句提交时先落一行
-		 * 只有 `raw_text` 的记录（一次 INSERT，毫秒级），页面立刻就能进工作台，
-		 * 模型那一跳在工作台里就地完成再把这一列补上。没有第二个状态列——
-		 * 「有没有理解过」这件事由这一列自己回答，不需要一个会卡在中间态的枚举。
-		 */
-		delta: jsonb("delta").$type<SearchDelta>(),
-		/**
 		 * 查询的完整不可变快照。证据、原话产生的结构化范围和未生效提示都在这里；
 		 * URL 只保存查看结果的临时状态，不保存查询含义。
+		 *
+		 * **null 表示「还没理解」**：整句提交时先落一行只有 `raw_text` 的记录
+		 * （一次 INSERT，毫秒级），页面立刻就能进工作台，模型那一跳在工作台里
+		 * 就地完成再把这一列补上。没有第二个状态列——「有没有理解过」这件事由
+		 * 这一列自己回答，不需要一个会卡在中间态的枚举。
 		 */
 		spec: jsonb("spec").$type<SearchSpec>(),
 		createdAt: timestamp("created_at", { withTimezone: true })
@@ -304,19 +300,10 @@ export const searchTurn = pgTable(
 			.defaultNow(),
 	},
 	(t) => [
-		/*
-		 * 待理解的记录**只有**一句原话；落定的记录必然有 spec。理解产物
-		 * （delta）不能凭空存在，也不能少了被理解的那句话。
-		 */
+		/* 待理解的记录必然有那句原话：没有原话就没有东西可理解。 */
 		check(
 			"search_turn_state",
-			sql`(
-					${t.spec} is null and ${t.rawText} is not null and ${t.delta} is null
-				) or (
-					${t.spec} is not null and (
-						${t.delta} is null or ${t.rawText} is not null
-					)
-				)`,
+			sql`${t.spec} is not null or ${t.rawText} is not null`,
 		),
 		/*
 		 * **链的完整性由外键保证，不由应用代码保证。** 自引用：每一行的 root 必须

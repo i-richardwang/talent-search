@@ -6,13 +6,15 @@
  * 在这里不可能发生。索引一概不建：夹具只有十几行，全表扫比建索引快，
  * 而索引不参与被测的语义。
  *
- * **嵌入和重排由一个进程内的假端点提供**（见 `fakeEmbedding`）：它按字符袋算
- * 向量，重排分数就是同一个余弦，于是相关度是可以手算的——「算法」对
+ * **三个模型端点由一个进程内的假端点提供。** 嵌入按字符袋算向量（见
+ * `fakeEmbedding`），重排分数就是同一个余弦，于是相关度是可以手算的——「算法」对
  * 「算法工程师」是 2/√(2×5) ≈ 0.63，对「运营」是 0。召回下限不高于判定线
  * （`RECALL_MIN <= RELEVANCE_MIN`，search.test.ts 有断言），所以在这里通过的阈值就是
- * `RELEVANCE_MIN` 一个数。测试用它测**机制**（阈值、AND、否决、分面），不测
- * 语义质量；语义质量归 eval 和真模型。查询侧走的是真正的 HTTP 客户端代码
- * （`src/server/embed.ts`、`src/server/rerank.ts`），只有对面那台机器是假的。
+ * `RELEVANCE_MIN` 一个数。查询理解按查询串语法读那句话（见 `fakeIntent`），
+ * 于是一句「算法, -实习」得到的条件是可以预先写出来的。测试用它们测**机制**
+ * （阈值、AND、否决、分面、记录派生），不测语义质量；语义质量归 eval 和真模型。
+ * 查询侧走的是真正的 HTTP 客户端代码（`src/server/embed.ts`、`src/server/rerank.ts`、
+ * `src/server/llm.ts`），只有对面那台机器是假的。
  */
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
@@ -156,12 +158,63 @@ export function holdNextRerank() {
 	return { entered, release };
 }
 
-/** OpenAI 兼容的 `/embeddings` 与 Cohere 式的 `/rerank`，只认这两个路径。 */
+/**
+ * 假理解：把那句话当查询串读（`,` 分要求、`/` 分说法、`+` `-` 定强度），
+ * 交出真模型会交出的那份结构化对象。范围一律不填——这里测的是记录与
+ * 检索机制，范围的收窄在 intent.test.ts 里对着 `toSpec` 直接测。
+ */
+function fakeIntent(text: string) {
+	const MODE: Record<string, string> = { "+": "boost", "-": "exclude" };
+	const terms = text
+		.split(",")
+		.map((group) => group.trim())
+		.filter(Boolean)
+		.map((group) => {
+			const mode = MODE[group[0] ?? ""] ?? "must";
+			const [term, ...alts] = (mode === "must" ? group : group.slice(1))
+				.split("/")
+				.map((member) => member.trim());
+			return { term, mode, alts: alts.length > 0 ? alts : null };
+		});
+	return {
+		terms,
+		kind: null,
+		minMonths: null,
+		companyTag: null,
+		level: null,
+		recruitment: null,
+		education: null,
+		org: null,
+		school: null,
+		unsupported: [],
+	};
+}
+
+/** 那句话在提示词里的位置，和 `src/server/llm.ts` 的 `understand` 写的一致。 */
+const SENTENCE_PREFIX = "这句话：";
+
+let intentBroken = false;
+
+/**
+ * 让查询理解端点以 500 失败，直到调用返回的恢复函数为止。按「次」失败不够：
+ * 客户端会重试一次，第二次成功就看不到失败的那条路了。
+ */
+export function breakUnderstanding(): () => void {
+	intentBroken = true;
+	return () => {
+		intentBroken = false;
+	};
+}
+
+/**
+ * OpenAI 兼容的 `/embeddings` 与 `/chat/completions`，加上 Cohere 式的
+ * `/rerank`，只认这三个路径。
+ */
 function startModelServer() {
 	const server = createServer((req, res) => {
 		if (
 			req.method !== "POST" ||
-			!["/embeddings", "/rerank"].includes(req.url ?? "")
+			!["/embeddings", "/rerank", "/chat/completions"].includes(req.url ?? "")
 		) {
 			res.writeHead(404).end();
 			return;
@@ -191,6 +244,42 @@ function startModelServer() {
 						index,
 						relevance_score: fakeSimilarity(query, d),
 					})),
+				});
+				return;
+			}
+			if (req.url === "/chat/completions") {
+				if (intentBroken) {
+					res.writeHead(500).end("假模型按要求失败");
+					return;
+				}
+				const { messages } = JSON.parse(body) as {
+					messages: { role: string; content: string }[];
+				};
+				const prompt = messages
+					.filter((m) => m.role === "user")
+					.at(-1)?.content;
+				const at = prompt?.lastIndexOf(SENTENCE_PREFIX) ?? -1;
+				if (prompt === undefined || at < 0) {
+					res.writeHead(400).end("提示词里没有那句话");
+					return;
+				}
+				const text = prompt.slice(at + SENTENCE_PREFIX.length);
+				json({
+					id: "fake",
+					object: "chat.completion",
+					created: 0,
+					model: "fake",
+					choices: [
+						{
+							index: 0,
+							message: {
+								role: "assistant",
+								content: JSON.stringify(fakeIntent(text)),
+							},
+							finish_reason: "stop",
+						},
+					],
+					usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
 				});
 				return;
 			}
@@ -228,10 +317,10 @@ function startModelServer() {
 }
 
 /**
- * 建好临时 schema、起好假模型端点，把 DATABASE_URL / EMBED_* / RERANK_* 指过去，
- * 然后才 import 检索模块。
+ * 建好临时 schema、起好假模型端点，把 DATABASE_URL / EMBED_* / RERANK_* / LLM_*
+ * 指过去，然后才 import 检索模块。
  *
- * `#/db`、`#/server/embed`、`#/server/rerank` 都是模块级单例，一旦 import 就绑死了环境变量——
+ * `#/db`、`#/server/embed`、`#/server/rerank`、`#/server/llm` 都是模块级单例，一旦 import 就绑死了环境变量——
  * 所以顺序不能反，调用方必须 `await setup()` 之后再动态 import 被测代码。
  *
  * `bun test --parallel` 给每个文件一份独立的模块注册表与环境变量，所以单例这一条
@@ -282,6 +371,8 @@ export async function setup() {
 	process.env.EMBED_SPACE_ID = "fake-v1";
 	process.env.RERANK_MODEL = "fake";
 	process.env.RERANK_SPACE_ID = "fake-v1";
+	process.env.LLM_BASE_URL = modelServer.url;
+	process.env.LLM_MODEL = "fake";
 
 	return async function teardown() {
 		const { pool } = await import("#/db");

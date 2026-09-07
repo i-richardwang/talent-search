@@ -22,10 +22,6 @@ export function validateCommit(d: unknown): {
 		typeof data.parentTurnId === "string" && data.parentTurnId
 			? data.parentTurnId
 			: undefined;
-	if (input.kind === "reinterpret") {
-		if (!parentTurnId) throw new Error("重新理解需要一条父记录");
-		return { parentTurnId, input: { kind: "reinterpret" } };
-	}
 	if (input.kind === "sentence") {
 		const text = boundedText(input.text);
 		if (!text) throw new Error("查询为空");

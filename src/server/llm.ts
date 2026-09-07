@@ -9,12 +9,13 @@
  *    （公司档、职级、招聘渠道、学历）。姓名、工号、任何一个人的经历都不出这台
  *    机器。因此查询理解可以直接使用公网端点；重排必须发送候选经历，端点位置
  *    需要由部署方的数据政策决定。
- * 2. **没配就当没有。** 端点或模型名缺失时自动退回本地规则解析；API key
- *    只在端点需要鉴权时配置。
- * 3. **不抛。** 超时、限流、模型输出异常、返回一坨不是 JSON 的东西，一律返回 null
- *    交给上层降级。降级之后检索照常可用，只是语气（「最好」「不要」）没人翻译。
- *    这一条的份量来自它站在结果的关键路径上：工作台虽然已经打开，名单仍要等
- *    它回来才成立。一次抛出不能让界面把服务故障误报成「没有这样的人」。
+ * 2. **没配就抛，不降级。** 一句话只有模型能读成条件：语气（「最好」「不要」）、
+ *    范围（「入职前」「三年以上」）和没处放的条件全靠它分拣。没有第二种读法能
+ *    给出同一份结果，所以也没有第二条路——装作能用给出的是一份语义相反的名单，
+ *    而它在屏幕上和正确的名单长得一模一样。API key 只在端点需要鉴权时配置。
+ * 3. **失败就抛，带着诊断。** 超时、限流、模型输出异常，一律作为错误交给调用方。
+ *    调用方（`server/turn.ts`）让这条记录停在「待理解」，界面据此画出错误与重试，
+ *    而不是把故障画成「没有这样的人」。
  */
 
 import "@tanstack/react-start/server-only";
@@ -35,9 +36,8 @@ const MODEL = process.env.LLM_MODEL;
  * 端点支不支持 `response_format: json_schema`。
  *
  * 兼容层默认**关**这个开关，关着的时候它只发 `{"type":"json_object"}`——schema
- * 根本没出门，模型全靠 prompt 自觉，字段名和取值一走样就整条降级。所以这里默认
- * 打开；碰上老网关不认 json_schema，把 `LLM_STRUCTURED_OUTPUTS=false` 设上即可。
- * 两种情况都不会坏事：不支持时请求报错，照样退回规则解析。
+ * 根本没出门，模型全靠 prompt 自觉，字段名和取值一走样就整条理解失败。所以这里
+ * 默认打开；碰上老网关不认 json_schema，把 `LLM_STRUCTURED_OUTPUTS=false` 设上即可。
  */
 const STRUCTURED = process.env.LLM_STRUCTURED_OUTPUTS !== "false";
 
@@ -60,15 +60,17 @@ const MAX_OUTPUT_TOKENS = positiveInt(process.env.LLM_MAX_OUTPUT_TOKENS, 8_000);
 // provider 延迟到首次使用时创建，未配置模型的进程可以安全导入本模块。
 let model: ReturnType<ReturnType<typeof createOpenAICompatible>> | null = null;
 function getModel() {
-	if (!model && BASE_URL && MODEL) {
-		const provider = createOpenAICompatible({
+	if (!BASE_URL || !MODEL)
+		throw new Error(
+			"查询理解端点未配置：需要 LLM_BASE_URL 与 LLM_MODEL（见 .env.example）",
+		);
+	if (!model)
+		model = createOpenAICompatible({
 			name: "talent-llm",
 			baseURL: BASE_URL,
 			supportsStructuredOutputs: STRUCTURED,
 			...(API_KEY && { apiKey: API_KEY }),
-		});
-		model = provider(MODEL);
-	}
+		})(MODEL);
 	return model;
 }
 
@@ -129,17 +131,19 @@ function listed(what: string, values: readonly string[]) {
 }
 
 /**
- * 一句话 → 模型给出的原始对象。调用方必须再过一遍 `toDelta` 收窄。
+ * 一句话 → 模型给出的原始对象。调用方必须再过一遍 `toSpec` 收窄。
  *
- * 返回 null 表示「这次用不了模型」，不区分是没配置还是失败——对调用方来说
- * 两者要做的事完全一样（退回规则解析），区分只会多一个没人用的分支。
+ * 结构化输出失败时真正说明问题的是 `usage` 和 `finishReason`——
+ * `finishReason: "length"` 配上 `reasoningTokens` 吃掉几乎整个 `outputTokens`，
+ * 一眼就是「预算被思考轨迹烧光」，而异常本身只会说「没有生成对象」。AI SDK
+ * 把这些挂在 `NoObjectGeneratedError` 上，这里把它们写进错误消息，查日志的人
+ * 不必再去翻一次 SDK 的异常结构。
  */
 export async function understand(
 	text: string,
 	vocab: Vocabulary,
-): Promise<unknown | null> {
+): Promise<unknown> {
 	const m = getModel();
-	if (!m) return null;
 	try {
 		const { output } = await generateText({
 			model: m,
@@ -160,25 +164,11 @@ export async function understand(
 		});
 		return output;
 	} catch (e) {
-		/*
-		 * 降级是正常路径的一部分，但不该静默：查不出「今天模型一直在超时」
-		 * 会让人以为是解析变笨了。
-		 *
-		 * 光打异常不够。结构化输出失败时真正说明问题的是 `usage` 和
-		 * `finishReason`——`finishReason: "length"` 配上 `reasoningTokens`
-		 * 吃掉几乎整个 `outputTokens`，一眼就是「预算被思考轨迹烧光」，
-		 * 而异常本身只会说「没有生成对象」。AI SDK 把这些挂在
-		 * `NoObjectGeneratedError` 上。
-		 */
-		if (NoObjectGeneratedError.isInstance(e))
-			console.warn("[llm] 查询理解失败，退回规则解析：模型没有给出合法对象", {
-				finishReason: e.finishReason,
-				usage: e.usage,
-				// 截断：这是模型原样的输出，只用来判断「它到底说了什么」
-				text: e.text?.slice(0, 200),
-				cause: e.cause,
-			});
-		else console.warn("[llm] 查询理解失败，退回规则解析：", e);
-		return null;
+		if (!NoObjectGeneratedError.isInstance(e)) throw e;
+		throw new Error(
+			`查询理解模型没有给出合法对象：finishReason=${e.finishReason}，` +
+				`usage=${JSON.stringify(e.usage)}，text=${JSON.stringify(e.text?.slice(0, 200))}`,
+			{ cause: e },
+		);
 	}
 }

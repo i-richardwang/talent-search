@@ -5,14 +5,12 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
-import { resolveIntent } from "#/search/intent";
+import { toSpec } from "#/search/intent";
 import { editChip, parseChips } from "#/search/parse";
 import { probeWide, vocabulary } from "#/search/search";
 import {
-	fellBack,
 	normalizeSpec,
 	type QueryInput,
-	type SearchDelta,
 	type SearchNotice,
 	type SearchSpec,
 } from "#/search/spec";
@@ -28,8 +26,6 @@ export type Turn = {
 	rawText: string | null;
 	/** null 表示模型理解尚未落下。 */
 	spec: SearchSpec | null;
-	/** 当前这句话是否因模型不可用而值得直接重试。 */
-	canReinterpret: boolean;
 };
 
 function toTurn(row: SearchTurn): Turn {
@@ -38,7 +34,6 @@ function toTurn(row: SearchTurn): Turn {
 		rootTurnId: row.rootTurnId,
 		rawText: row.rawText,
 		spec: row.spec,
-		canReinterpret: row.delta ? fellBack(row.delta) : false,
 	};
 }
 
@@ -55,8 +50,6 @@ async function insertTurn(row: {
 	spec?: SearchSpec | null;
 }): Promise<string> {
 	const id = newId();
-	// delta 不在这里落：它是**理解的产物**，只可能由 resolveTurn 补上去。
-	// 给它开一个入口，就等于让「还没理解」和「理解过了」多一种写法。
 	await db.insert(searchTurn).values({
 		id,
 		rootTurnId: row.parent ? row.parent.rootTurnId : id,
@@ -81,13 +74,6 @@ export async function createTurn(
 	if (parent && parent.spec === null)
 		throw new Error("查询仍在理解中，暂时不能派生新记录");
 
-	if (input.kind === "reinterpret") {
-		if (!parent?.rawText || !parent.delta)
-			throw new Error("重新理解需要一条由整句产生的父记录");
-		if (!fellBack(parent.delta))
-			throw new Error("这条理解没有降级，重新理解不会得到不同的结果");
-		return { turnId: await insertTurn({ parent, rawText: parent.rawText }) };
-	}
 	if (input.kind === "sentence")
 		return { turnId: await insertTurn({ parent, rawText: input.text }) };
 	// 改一枚条件不改「问的是什么」，原话原样带下来——它是这条查询的门面，
@@ -118,7 +104,7 @@ async function benchWide(
 	evidence: string,
 ): Promise<{ evidence: string; notices: SearchNotice[] }> {
 	const chips = parseChips(evidence);
-	const admitting = chips.map((chip) => chip.mode !== "exclude" && !chip.off);
+	const admitting = chips.map((chip) => chip.mode !== "exclude");
 	const texts = [
 		...new Set(
 			chips.flatMap((chip, i) =>
@@ -142,8 +128,9 @@ async function benchWide(
 }
 
 /**
- * 补全一次自然语言理解。delta 保存这句话自己的产物，spec 保存合并后的完整含义；
- * 并发更新通过 `spec is null` 保证先到者获胜，晚到者读回同一份最终结果。
+ * 补全一次自然语言理解。模型那一跳失败就原样抛出，记录停在「待理解」，
+ * 界面据此画出错误与重试；并发更新通过 `spec is null` 保证先到者获胜，
+ * 晚到者读回同一份最终结果。
  */
 export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const row = await getRow(turnId);
@@ -157,22 +144,17 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	// （`search/phrases.ts` 的 withAdmission）。持着语料锁等模型的话，一次理解
 	// 就能把排在待发布 ETL 后面的每一个检索一起堵住。
 	const vocab = await vocabulary();
-	const understood = resolveIntent(
-		rawText,
-		await understand(rawText, vocab),
-		vocab,
-	);
+	const understood = toSpec(await understand(rawText, vocab), vocab);
 	const benched = await benchWide(understood.evidence);
-	const delta: SearchDelta = {
+	const spec = normalizeSpec({
 		...understood,
 		evidence: benched.evidence,
 		notices: [...understood.notices, ...benched.notices],
-	};
-	const spec = normalizeSpec(delta);
+	});
 
 	await db
 		.update(searchTurn)
-		.set({ delta, spec })
+		.set({ spec })
 		.where(and(eq(searchTurn.id, row.id), isNull(searchTurn.spec)));
 
 	const resolved = await getRow(row.id);

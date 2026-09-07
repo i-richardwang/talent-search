@@ -73,30 +73,26 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.doesNotMatch(text, /找到 12 人|命中 12 人/);
 	});
 
-	test("降级必须说出来，并且给出一步可执行的动作", () => {
+	test("理解失败必须说出来，并且给出一步可执行的动作", () => {
 		/*
-		 * 模型不可用时服务端退回本地规则解析，而规则解析读不出语气：
-		 * 「最好」「不要」会被一律判成必须条件。结果是错的而 chips 看起来正常，
-		 * 所以这一句是「不静默降级」这条产品原则唯一的落点。
+		 * 一句话只有模型能读成条件。它失败时记录停在「待理解」，屏幕上必须是
+		 * 一条看得见的错误加一个重试——不是一份空名单，空名单在这个界面里的
+		 * 意思是「没有这样的人」。
 		 */
 		const text = seen(
 			<QueryDeck
-				error={null}
+				error="没能理解这句话，请重试或换一种说法。"
 				interpreting={false}
 				onChangeSpec={() => {}}
 				onQuery={() => true}
+				onRetry={() => {}}
 				ref={{ current: null }}
-				onReinterpret={() => {}}
 				rawText="最好懂算法、不要实习"
-				spec={{
-					evidence: "算法",
-					scope: {},
-					notices: [{ kind: "fallback" }],
-				}}
+				spec={{ evidence: "", scope: {}, notices: [] }}
 			/>,
 		);
-		assert.match(text, /未能识别这句话里的语气/);
-		assert.match(text, /重新理解/);
+		assert.match(text, /没能理解这句话/);
+		assert.match(text, /重试/);
 		assert.doesNotMatch(text, /降级|规则解析|模型/, "别把内部实现讲给用户听");
 	});
 

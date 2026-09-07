@@ -23,15 +23,6 @@ export type SearchSpec = {
 };
 
 /**
- * 一句原话自身的理解：模型或规则解析对这一句给出的结果，原样落在这条记录上。
- *
- * 它和 `spec` 的区别不是形状，是**出处**——`spec` 可能被人逐枚改过条件，而它
- * 永远是那次理解的原样。所以「这条查询还能不能重新理解」只能问它
- * （`server/turn.ts`）：问 `spec` 的话，改过条件的记录也会被当成理解的产物。
- */
-export type SearchDelta = SearchSpec;
-
-/**
  * 查询自身的结构化范围。
  *
  * 它和 URL 上的筛选是**同一批维度的两种生命周期**：这里的条件来自用户原话、
@@ -54,7 +45,7 @@ export type SearchScope = Picked & {
 };
 
 /**
- * 关于**这一次理解**的注解。三种都不是查询条件本身，而是「这句话被读成这样」
+ * 关于**这一次理解**的注解。两种都不是查询条件本身，而是「这句话被读成这样」
  * 的旁注：屏幕上它们是 chips 的脚注，不是一条要求。
  *
  * `wide` 记的是「这个词在当前语料里命中的人太多」（`WIDE_SHARE`）。它住在
@@ -63,13 +54,11 @@ export type SearchScope = Picked & {
  */
 export type SearchNotice =
 	| { kind: "unsupported"; text: string }
-	| { kind: "wide"; term: string }
-	| { kind: "fallback" };
+	| { kind: "wide"; term: string };
 
 export type QueryInput =
 	| { kind: "sentence"; text: string }
-	| { kind: "spec"; spec: SearchSpec }
-	| { kind: "reinterpret" };
+	| { kind: "spec"; spec: SearchSpec };
 
 export function emptySpec(): SearchSpec {
 	return { evidence: "", scope: {}, notices: [] };
@@ -82,10 +71,6 @@ export function unsupportedOf(spec: SearchSpec) {
 				n.kind === "unsupported",
 		)
 		.map((n) => n.text);
-}
-
-export function fellBack(spec: SearchSpec) {
-	return spec.notices.some((n) => n.kind === "fallback");
 }
 
 /** 这次理解里被判定为太宽的词。界面据此解释「它为什么是停用的」。 */
@@ -108,30 +93,29 @@ export function hasMeaning(spec: SearchSpec) {
 
 /**
  * 一份理解 → 一份可执行的查询含义。证据走一遍规范化（同一个词只留一枚），
- * 提示按内容去重。模型和规则解析都可能把同一个意思说两遍，而屏幕上重复的
- * 两枚 chip 既解释不清也删不干净。
+ * 提示按内容去重。模型可能把同一个意思说两遍，而屏幕上重复的两枚 chip
+ * 既解释不清也删不干净。
  *
  * **注解只解释在场的东西**：指向已经不在查询里的词的 `wide` 注解在这里被丢掉。
  * 用户删掉那枚 chip 之后，脚注里还留着一句解释它为什么被停用的话，说的是一个
  * 屏幕上不存在的东西。
  */
-export function normalizeSpec(delta: SearchDelta): SearchSpec {
-	const evidence = canonical(delta.evidence);
+export function normalizeSpec(spec: SearchSpec): SearchSpec {
+	const evidence = canonical(spec.evidence);
 	const present = new Set(parseChips(evidence).map((chip) => chip.term));
-	const notices = delta.notices.filter(
+	const notices = spec.notices.filter(
 		(n, i, all) =>
 			(n.kind !== "wide" || present.has(n.term)) &&
 			all.findIndex((x) => sameNotice(x, n)) === i,
 	);
-	return { evidence, scope: { ...delta.scope }, notices };
+	return { evidence, scope: { ...spec.scope }, notices };
 }
 
 function sameNotice(a: SearchNotice, b: SearchNotice) {
 	if (a.kind !== b.kind) return false;
 	if (a.kind === "unsupported" && b.kind === "unsupported")
 		return a.text === b.text;
-	if (a.kind === "wide" && b.kind === "wide") return a.term === b.term;
-	return true;
+	return a.kind === "wide" && b.kind === "wide" && a.term === b.term;
 }
 
 /** 不可信的 RPC 入参 → 完整查询；所有查询编辑都在这一边界整体收窄。 */
@@ -146,7 +130,6 @@ export function sanitizeSpec(raw: unknown): SearchSpec {
 	const notices: SearchNotice[] = [];
 	for (const item of Array.isArray(value.notices) ? value.notices : []) {
 		const x = (item ?? {}) as Record<string, unknown>;
-		if (x.kind === "fallback") notices.push({ kind: "fallback" });
 		if (x.kind === "unsupported") {
 			const message = boundedText(x.text);
 			if (message) notices.push({ kind: "unsupported", text: message });

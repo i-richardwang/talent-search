@@ -7,12 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import {
-	intentSchema,
-	resolveIntent,
-	toDelta,
-	type Vocabulary,
-} from "#/search/intent";
+import { intentSchema, toSpec, type Vocabulary } from "#/search/intent";
 import { parseChips, toQuery } from "#/search/parse";
 import { unsupportedOf } from "#/search/spec";
 
@@ -22,8 +17,8 @@ const VOCAB: Vocabulary = {
 	recruitment: ["校招", "社招"],
 	education: ["本科", "硕士", "博士"],
 };
-const of = (raw: unknown) => toDelta(raw, VOCAB);
-/** 证据落在 delta 上是一串规范查询串；断言的是它解析出来的那几条要求。 */
+const of = (raw: unknown) => toSpec(raw, VOCAB);
+/** 证据落在 spec 上是一串规范查询串；断言的是它解析出来的那几条要求。 */
 const chipsOf = (raw: unknown) => parseChips(of(raw).evidence);
 const terms = (...ts: unknown[]) => ({ terms: ts });
 /** 一份只有筛选的合法输出，逐项覆盖 */
@@ -64,37 +59,24 @@ describe("强度", () => {
 	});
 });
 
-describe("每个词都过一遍本地切词", () => {
-	test("模型带上句式赘字也不要紧，照样剥干净", () => {
-		const evidence = chipsOf(terms({ term: "做过渠道运营的人", mode: "must" }));
-		assert.deepEqual(evidence, [{ term: "渠道运营", mode: "must" }]);
-	});
-
-	test("会被切词切开的词就地切开，强度跟着走", () => {
-		// 「安全与风险合规」在本地会按连接词「与」切成两个。不切的话得到的是
-		// 一枚点一下就变形的 chip：屏幕上写的和实际检索的不是同一个东西。
+describe("每个词都过一遍同一道边界", () => {
+	test("模型给的字面原样保留：改写发生在哪里都是一次看不见的查询变更", () => {
 		const evidence = chipsOf(
-			terms({ term: "安全与风险合规", mode: "exclude" }),
+			terms({ term: " 安全与风险合规 ", mode: "exclude" }),
 		);
-		assert.deepEqual(evidence, [
-			{ term: "安全", mode: "exclude" },
-			{ term: "风险合规", mode: "exclude" },
-		]);
+		assert.deepEqual(evidence, [{ term: "安全与风险合规", mode: "exclude" }]);
 	});
 
-	test("切完什么都不剩的词直接消失", () => {
+	test("空白和单字不是说法，直接消失", () => {
 		const evidence = chipsOf(
-			terms({ term: "的人", mode: "must" }, { term: "  ", mode: "must" }),
+			terms({ term: "的", mode: "must" }, { term: "  ", mode: "must" }),
 		);
 		assert.deepEqual(evidence, []);
 	});
 
 	test("同一个词只留一枚，先出现的强度算数", () => {
 		const evidence = chipsOf(
-			terms(
-				{ term: "算法", mode: "must" },
-				{ term: "做过算法", mode: "boost" },
-			),
+			terms({ term: "算法", mode: "must" }, { term: "算法", mode: "boost" }),
 		);
 		assert.deepEqual(evidence, [{ term: "算法", mode: "must" }]);
 	});
@@ -108,9 +90,9 @@ describe("每个词都过一遍本地切词", () => {
 		]);
 	});
 
-	test("并列说法也各自过一遍切词", () => {
+	test("并列说法也各自过一遍边界：记号剥掉，垃圾丢掉", () => {
 		const evidence = chipsOf(
-			terms({ term: "算法", mode: "must", alts: ["做过深度学习的"] }),
+			terms({ term: "算法", mode: "must", alts: ["+深度学习", "  ", 7] }),
 		);
 		assert.deepEqual(evidence, [
 			{ term: "算法", alts: ["深度学习"], mode: "must" },
@@ -193,11 +175,11 @@ describe("筛选只认库里真有的取值", () => {
 
 describe("没处放的条件", () => {
 	test("原样带出来，去重、剥空白", () => {
-		const delta = of({
+		const spec = of({
 			...NONE,
 			unsupported: ["北京", " 北京", "35 岁以下", ""],
 		});
-		assert.deepEqual(unsupportedOf(delta), ["北京", "35 岁以下"]);
+		assert.deepEqual(unsupportedOf(spec), ["北京", "35 岁以下"]);
 	});
 
 	test("不是数组就当没有", () => {
@@ -234,48 +216,21 @@ describe("模型是不可信输入", () => {
 	});
 });
 
-describe("模型不可用或没有给出可用条件", () => {
-	/*
-	 * `degraded` 不是一个日志字段，是结果正确性的一部分：退回规则解析之后
-	 * 语气读不出来，「最好」「不要」会被一律判成必须条件。所以每一条回退
-	 * 分支都要把这一位置上，界面才有东西可说。
-	 */
-	test("调用失败时保留本地解析结果，并记成降级", () => {
-		assert.deepEqual(resolveIntent("渠道运营,+团队管理", null, VOCAB), {
-			evidence: "渠道运营,+团队管理",
-			scope: {},
-			notices: [{ kind: "fallback" }],
+describe("模型读出的每一种东西都是完整理解", () => {
+	test("只识别出筛选：证据为空，范围成立", () => {
+		assert.deepEqual(of({ ...NONE, kind: "external" }), {
+			evidence: "",
+			scope: { kind: "external" },
+			notices: [],
 		});
 	});
 
-	test("合法空对象收窄后没有任何效果时同样回退，不吞掉输入", () => {
-		assert.deepEqual(resolveIntent("渠道运营", NONE, VOCAB), {
-			evidence: "渠道运营",
+	test("只识别出不支持条件：不把原话伪造成语义要求", () => {
+		assert.deepEqual(of({ ...NONE, unsupported: ["北京"] }), {
+			evidence: "",
 			scope: {},
-			notices: [{ kind: "fallback" }],
+			notices: [{ kind: "unsupported", text: "北京" }],
 		});
-	});
-
-	test("只识别出筛选不算降级：模型确实读懂了这句话", () => {
-		assert.deepEqual(
-			resolveIntent("只看入职前", { ...NONE, kind: "external" }, VOCAB),
-			{
-				evidence: "",
-				scope: { kind: "external" },
-				notices: [],
-			},
-		);
-	});
-
-	test("只识别出不支持条件也算完整理解，不把原话伪造成语义要求", () => {
-		assert.deepEqual(
-			resolveIntent("北京的候选人", { ...NONE, unsupported: ["北京"] }, VOCAB),
-			{
-				evidence: "",
-				scope: {},
-				notices: [{ kind: "unsupported", text: "北京" }],
-			},
-		);
 	});
 });
 
@@ -315,9 +270,9 @@ describe("发给模型的形状", () => {
 	});
 
 	test("词数上限不写进 schema：多给一条不该让整句理解作废", () => {
-		// 上限的事实源是 parseChips（CHIP_MAX），toDelta 会走它收窄。写成
-		// schema 约束就是第二份契约：模型多给一条，整条响应作废、退回规则
-		// 解析——而收窄本来只会丢掉多出来的那几条。
+		// 上限的事实源是 parseChips（CHIP_MAX），toSpec 会走它收窄。写成
+		// schema 约束就是第二份契约：模型多给一条，整条响应作废、整句理解
+		// 失败——而收窄本来只会丢掉多出来的那几条。
 		assert.ok(
 			intentSchema(VOCAB).safeParse({
 				...NONE,
@@ -330,16 +285,16 @@ describe("发给模型的形状", () => {
 		);
 	});
 
-	test("词长不写进 schema：那是 parseQuery 的事，不该卡住整条响应", () => {
-		const long = "供应链金融风控建模"; // 九个字，一个词，没有可切之处
-		// 准入放行——一个长词不该让整句话的理解一起丢掉，退回规则解析。
+	test("词长不写进 schema：那是 termOf 的事，不该卡住整条响应", () => {
+		const long = "供应链金融风控建模"; // 九个字，一个词
+		// 准入放行——一个长词不该让整句话的理解一起丢掉。
 		assert.ok(
 			intentSchema(VOCAB).safeParse({
 				...NONE,
 				terms: [{ term: long, mode: "must", alts: null }],
 			}).success,
 		);
-		// 收窄发生在 parseQuery：超过 24 字的不是要求，是被误当成词的正文。
+		// 收窄发生在 termOf：超过 24 字的不是要求，是被误当成词的正文。
 		assert.deepEqual(
 			chipsOf(terms({ term: "算".repeat(25), mode: "must" })),
 			[],
