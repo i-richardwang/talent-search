@@ -162,6 +162,18 @@ class EmbedRetryTest(unittest.TestCase):
         # 没有 Retry-After 时也按限流的起步等，不是抖动那一秒
         self.assertGreaterEqual(waits[1], endpoint.RATE_LIMIT_BACKOFF_S * 2)
 
+    def test_connection_dropped_mid_response_is_retried(self) -> None:
+        calls = iter([endpoint.http.client.RemoteDisconnected("closed"), [[1.0]]])
+
+        def flaky(chunk):
+            outcome = next(calls)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        with mock.patch.object(E, "_post", flaky), mock.patch.object(endpoint.time, "sleep"), redirect_stdout(io.StringIO()):
+            self.assertEqual(E._request(["算法"]), [[1.0]])
+
     def test_gives_up_after_attempts(self) -> None:
         with mock.patch.object(E, "_post", side_effect=TimeoutError()), mock.patch.object(endpoint.time, "sleep") as sleep, redirect_stdout(io.StringIO()):
             with self.assertRaises(SystemExit):

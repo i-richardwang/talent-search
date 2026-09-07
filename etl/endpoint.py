@@ -7,6 +7,7 @@ JSON，各归各的模块。这里只有两件对两个端点都成立的事：�
 
 from __future__ import annotations
 
+import http.client
 import json
 import random
 import time
@@ -60,7 +61,14 @@ def retrying[T](what: str, where: str, once: Callable[[], T]) -> T:
                 if error.code == 429
                 else _backoff(BACKOFF_S, attempt)
             )
-        except (urllib.error.URLError, TimeoutError) as error:
+        # 连不上是 URLError；连上了、响应读到一半对方断开（RemoteDisconnected、
+        # IncompleteRead）urllib 不包装，原样抛 http.client 与 socket 的异常。都是瞬断。
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            http.client.HTTPException,
+        ) as error:
             if attempt == ATTEMPTS:
                 raise SystemExit(f"{what}端点不可用（{where}）：{error}") from None
             reason = str(error)
