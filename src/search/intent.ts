@@ -6,9 +6,12 @@ import { z } from "zod";
 import { parsePicked, type VocabKey } from "./dimensions";
 import {
 	boundedText,
+	MEMBER_MAX,
+	MEMBER_TIERS,
 	REQUIREMENT_MAX,
 	REQUIREMENT_MODES,
 	requirementsOf,
+	SAID_MAX,
 } from "./requirement";
 import type { SearchScope, SearchSpec } from "./spec";
 
@@ -32,21 +35,28 @@ export function intentSchema(vocab: Vocabulary) {
 		terms: z
 			.array(
 				z.object({
-					term: z
-						.string()
+					members: z
+						.array(
+							z.object({
+								text: z
+									.string()
+									.describe(
+										"一个方向、领域或能力，两到十二个字，写成库里岗位或序列会用的说法；缩写展开（BD → 商务拓展）",
+									),
+								tier: z
+									.enum(MEMBER_TIERS)
+									.describe(
+										"said=用户自己说的；same=同一件事的另一种叫法；near=相近但不是同一件事",
+									),
+							}),
+						)
 						.describe(
-							"一个方向、领域或能力，两到十二个字，写成库里岗位或序列会用的说法；缩写展开（BD → 商务拓展）",
+							`这条要求的说法，满足其一即可。用户自己的话标 said、排在前面，最多 ${SAID_MAX} 个（用户说了「或 / 均可」才有几个）；再补 same 或 near 的变体，全部合计不超过 ${MEMBER_MAX} 个`,
 						),
 					mode: z
 						.enum(REQUIREMENT_MODES)
 						.describe(
 							"must=必须做过；boost=最好有，没有也留下；exclude=这类经历不作数",
-						),
-					alts: z
-						.array(z.string())
-						.nullable()
-						.describe(
-							"用户明确说了「或 / 均可」的并列说法。没有就填 null，不要自行扩写同义词",
 						),
 				}),
 			)
@@ -106,17 +116,8 @@ const UNSUPPORTED_MAX = 8;
 export function toSpec(raw: unknown, vocab: Vocabulary): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;
 
-	// 模型按「主词 + 并列说法」作答（那是给它的提问方式），查询里它们是同权重的
-	// 说法。收窄——词长、去重、条数——归 `requirementsOf`，这里只换形状。
-	const requirements = requirementsOf(
-		(Array.isArray(value.terms) ? value.terms : []).map((item) => {
-			const entry = (item ?? {}) as Record<string, unknown>;
-			return {
-				members: [entry.term, ...(Array.isArray(entry.alts) ? entry.alts : [])],
-				mode: entry.mode,
-			};
-		}),
-	);
+	// 模型按查询自己的形状作答，收窄——词长、去重、条数——归 `requirementsOf`。
+	const requirements = requirementsOf(value.terms);
 
 	/**
 	 * 模型一维只给一个值——提示词就是这么要求的，而维度的取值形状是集合，所以

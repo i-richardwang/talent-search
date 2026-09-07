@@ -12,7 +12,11 @@ import { hit as row } from "./rows";
 const hit = (term: string, route: Route) => row({ term, route });
 
 const terms = (...t: string[]): TermPlan[] =>
-	t.map((term) => ({ term, members: [term], mode: "must" }));
+	t.map((term) => ({
+		term,
+		members: [{ text: term, tier: "said" }],
+		mode: "must",
+	}));
 
 describe("强度分档", () => {
 	test("受控字段是序列与岗位，且它们权重最高", () => {

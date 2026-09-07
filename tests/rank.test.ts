@@ -29,7 +29,7 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 	return {
 		id: nextId++,
 		termIdx: 0,
-		memberIdx: 0,
+		member: { text: "词0", tier: "said" },
 		route: "seq",
 		relevance: 1,
 		phrase: null,
@@ -49,7 +49,11 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 }
 
 const terms = (...modes: TermPlan["mode"][]): TermPlan[] =>
-	modes.map((mode, i) => ({ term: `词${i}`, members: [`词${i}`], mode }));
+	modes.map((mode, i) => ({
+		term: `词${i}`,
+		members: [{ text: `词${i}`, tier: "said" }],
+		mode,
+	}));
 
 const run = (facts: Fact[], t = terms("must"), f: SearchFilters = {}) =>
 	rank(facts, t, f, NOW);
@@ -96,6 +100,44 @@ describe("证据强度不可被时长或近因压过", () => {
 			TENURE_FLOOR * RECENCY_FLOOR > worst,
 			`下限乘积 ${TENURE_FLOOR * RECENCY_FLOOR} 必须大于 ${worst}`,
 		);
+	});
+});
+
+/**
+ * 变体的折扣。它和相关度同一类（翻译损耗），不是证据档位，所以它**不**受
+ * 「时长压不过档位」那条保护——但两个下限的乘积 0.56 划出了它翻得过去的范围。
+ * 具体哪一档翻得过去、什么条件下翻得过去，写在 weights.ts 的 MEMBER_TIER_WEIGHTS。
+ */
+describe("说法的来源", () => {
+	const via = (tier: Fact["member"]["tier"]) => ({
+		text: "词0",
+		tier,
+	});
+
+	test("同一段原文，靠原话命中的分数高于靠变体命中的，near 低于 same", () => {
+		const said = scoreOf([fact({ empId: "A", member: via("said") })]);
+		const same = scoreOf([fact({ empId: "A", member: via("same") })]);
+		const near = scoreOf([fact({ empId: "A", member: via("near") })]);
+		assert.ok(said > same && same > near, `${said} > ${same} > ${near}`);
+	});
+
+	test("near 在受控字段上的命中仍压过原话在部门名上的命中：折的是翻译，不是字段", () => {
+		const nearSeq = scoreOf([
+			fact({ empId: "A", route: "seq", member: via("near") }),
+		]);
+		const saidOrg = scoreOf([fact({ empId: "B", route: "org" })]);
+		assert.ok(nearSeq > saidOrg);
+	});
+
+	test("同一段几个说法都命中时取最强的那个说法，不叠加", () => {
+		const both = scoreOf([
+			fact({ empId: "A", member: via("said") }),
+			fact({ empId: "A", member: via("near") }),
+		]);
+		const one = scoreOf([fact({ empId: "A", member: via("said") })]);
+		// 同段两行本该在取数 SQL 里就去重掉（search.ts 的 canonicalFacts），
+		// 这里只保证万一漏到内存里，强度按最强的那条算，月份也不因此翻倍。
+		assert.equal(both, one);
 	});
 });
 
@@ -183,6 +225,7 @@ describe("排名依据", () => {
 			{
 				term: "词0",
 				route: "seq",
+				member: { text: "词0", tier: "said" },
 				relevance: 1,
 				months: 145,
 				endDate: null,
@@ -207,6 +250,7 @@ describe("排名依据", () => {
 			{
 				term: "词0",
 				route: "seq",
+				member: { text: "词0", tier: "said" },
 				relevance: 1,
 				months: 24,
 				endDate: null,

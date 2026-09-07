@@ -23,6 +23,7 @@ import {
 	dimValues,
 	type Facet,
 } from "./dimensions";
+import type { Member } from "./requirement";
 import {
 	emptyFacets,
 	type Facets,
@@ -33,6 +34,7 @@ import {
 import {
 	BOOST_WEIGHT,
 	isControlledRoute,
+	MEMBER_TIER_WEIGHTS,
 	RECENCY_FLOOR,
 	RECENCY_HALF,
 	ROUTE_WEIGHTS,
@@ -44,18 +46,18 @@ import {
 /**
  * 一段经历对一条要求的命中。这是检索层唯一的产物：**事实，不含任何评分**。
  *
- * 字段只有两类：打分要用的（route / relevance / months / endDate）和分面要分组的
- * （那几维要读哪些列由 `DimSource` 声明，跟着维度走）。`id` 只用来在定好名次
- * 之后回表取展示用的原文；`memberIdx` 只用来在出结果时说出「命中的是哪个
- * 说法」——都不参与计算。
+ * 字段只有两类：打分要用的（route / member.tier / relevance / months / endDate）
+ * 和分面要分组的（那几维要读哪些列由 `DimSource` 声明，跟着维度走）。`id` 只用来
+ * 在定好名次之后回表取展示用的原文；`member.text` 只在证据行上说出「命中的是
+ * 哪个说法」——都不参与计算。
  */
 export type PopulationFact = DimSource & { empId: string };
 
 export type Fact = PopulationFact & {
 	id: number;
 	termIdx: number;
-	/** 命中的是这条要求的第几个说法（TermPlan.members 的下标） */
-	memberIdx: number;
+	/** 命中的是这条要求的哪个说法。tier 进分，text 进证据行。 */
+	member: Member;
 	route: Route;
 	/** 说法与这一路原文的相关度，已过 RELEVANCE_MIN */
 	relevance: number;
@@ -72,11 +74,14 @@ export type Fact = PopulationFact & {
 };
 
 /**
- * 一条证据的强度 = 路权重 × 相关度。两个都是「这条证据有多能说明他真的
- * 做过用户要的那件事」的因子：前者管字段是谁写的，后者管原文离用户的意思多远。
+ * 一条证据的强度 = 路权重 × 相关度 × 说法权重。三个都是「这条证据有多能说明
+ * 他真的做过用户要的那件事」的因子：路权重管字段是谁写的，相关度管原文离
+ * 说法多远，说法权重管说法离用户的原话多远（变体打折，见 weights.ts）。
  */
 function evidenceWeight(f: Fact) {
-	return ROUTE_WEIGHTS[f.route] * f.relevance;
+	return (
+		ROUTE_WEIGHTS[f.route] * f.relevance * MEMBER_TIER_WEIGHTS[f.member.tier]
+	);
 }
 
 /**
@@ -146,6 +151,7 @@ function termValue(facts: Fact[], term: string, now: Date) {
 		basis: {
 			term,
 			route: best.route,
+			member: best.member,
 			relevance: best.relevance,
 			months,
 			endDate: endDate ?? null,

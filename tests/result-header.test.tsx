@@ -12,7 +12,9 @@ import { ResultHeader } from "#/routes/s/$turnId/-components/result-list";
 import type { TermPlan } from "#/search/result";
 import { visibleText } from "./render";
 
-const TERMS: TermPlan[] = [{ term: "算法", members: ["算法"], mode: "must" }];
+const TERMS: TermPlan[] = [
+	{ term: "算法", members: [{ text: "算法", tier: "said" }], mode: "must" },
+];
 
 const render = (strong: boolean, strongOn: number, terms = TERMS) =>
 	visibleText(

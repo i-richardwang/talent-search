@@ -1070,3 +1070,77 @@ describe("一条要求的多个说法", () => {
 		assert.ok(m3?.hits.every((h) => h.seq !== "下棋"));
 	});
 });
+
+/**
+ * 模型补的变体。用户用词不一定准，只按原话找会漏人；但补来的词分数低于原话，
+ * 证据行要说出「拿去比的是哪个词」。分数怎么折在 rank.test.ts 用纯事实测，
+ * 这里测它们真的走到了取数、命中标记和名次上。
+ */
+describe("变体", () => {
+	before(async () => {
+		await seed([
+			{
+				empId: "V001",
+				name: "原话命中",
+				segments: [{ seqL2: "星舰算法", months: 36 }],
+			},
+			{
+				empId: "V004",
+				name: "原话命中但又短又旧",
+				segments: [{ seqL2: "星舰算法", months: 3, endDate: "2015-01-01" }],
+			},
+			{
+				empId: "V002",
+				name: "只有变体命中",
+				segments: [{ seqL2: "星舰推演", months: 36 }],
+			},
+			{
+				empId: "V003",
+				name: "变体上干了很久",
+				segments: [{ seqL2: "星舰推演", months: 120 }],
+			},
+		]);
+	});
+
+	test("只靠变体找到的人也在名单上，排在同等条件下靠原话找到的人后面", async () => {
+		const { results } = await run("星舰算法/~星舰推演");
+		const ids = results.map((r) => r.employee.empId);
+		assert.ok(ids.includes("V002"), "变体把用户没说准的人找了回来");
+		assert.ok(
+			ids.indexOf("V001") < ids.indexOf("V002"),
+			"同样 36 个月，原话命中的在前",
+		);
+	});
+
+	test("证据行说出命中的是哪个说法，相关度仍是那段原文对那个说法的数", async () => {
+		const { results } = await run("星舰算法/~星舰推演");
+		const v2 = results.find((r) => r.employee.empId === "V002");
+		assert.deepEqual(v2?.hits[0]?.member, { text: "星舰推演", tier: "near" });
+		assert.equal(v2?.basis[0]?.member.tier, "near");
+		// 折扣进的是分数，不是相关度：屏幕上那个百分比对着的是「这段原文像不像
+		// 那个说法」，折一遍之后它就不再是任何一个能核对的数了。
+		assert.equal(v2?.hits[0]?.relevance, 1);
+		const v1 = results.find((r) => r.employee.empId === "V001");
+		assert.deepEqual(v1?.hits[0]?.member, { text: "星舰算法", tier: "said" });
+	});
+
+	test("变体的折扣是翻译损耗，不是证据档位：又久又新的变体命中能反超又短又旧的原话命中", async () => {
+		const { results } = await run("星舰算法/~星舰推演");
+		const ids = results.map((r) => r.employee.empId);
+		assert.ok(
+			ids.indexOf("V003") < ids.indexOf("V004"),
+			"十年且仍在做的「星舰推演」压过十年前做了三个月的「星舰算法」",
+		);
+		assert.ok(
+			ids.indexOf("V001") < ids.indexOf("V003"),
+			"但压不过同样仍在做、三年的「星舰算法」：时长与近因各自的下限让折扣只在这个范围里翻盘",
+		);
+	});
+
+	test("排除词按说法取并集，变体一样否决段", async () => {
+		const { results } = await run("星舰算法/~星舰推演,-星舰推演");
+		// 排除组自己带的说法和正向要求里的变体撞了词：跨要求去重，先出现的赢，
+		// 排除组因此是空的——名单和不写排除时一样。
+		assert.ok(results.some((r) => r.employee.empId === "V002"));
+	});
+});

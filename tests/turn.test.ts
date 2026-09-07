@@ -20,7 +20,7 @@ const { createTurn, listRecent, loadTurn, resolveTurn } = await import(
 );
 
 const termsOf = (spec: SearchSpec) =>
-	spec.requirements.map((r) => r.members[0]);
+	spec.requirements.map((r) => r.members[0].text);
 
 async function sentence(text: string, parent?: string) {
 	const { turnId } = await createTurn({ kind: "sentence", text }, parent);

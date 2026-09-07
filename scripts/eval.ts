@@ -6,9 +6,12 @@
  *
  * 用例文件是一个 JSON 数组，每项：
  *   { "name": "找有支付风控经验的人",
- *     "query": "支付/风控,+带团队",        // 一行查询语法，见 search/query-syntax.ts
- *     "expect": ["E1001", "E2042"] }       // 已确认应当出现的工号
+ *     "query": "支付/风控/~风险控制,+带团队",  // 一行查询语法，见 search/query-syntax.ts
+ *     "expect": ["E1001", "E2042"],        // 已确认应当出现的工号
+ *     "reject": ["E3007"] }                // 可选：已确认不该出现的工号
  *
+ * `reject` 量的是精度。补变体这类改动同时可能找回漏掉的人和放进不相干的人，
+ * 只报召回的话，往查询里多塞几个词永远是「变好」。
  * 真实评估用例不进版本库（题目和答案指向真人）；仓库只带 `evals/sample.json`——
  * 全部指向合成样例语料（etl/sources/sample/）的可执行基线，干净克隆也能跑通。
  *
@@ -24,7 +27,7 @@ import { parseQuery } from "#/search/query-syntax";
 import { search } from "#/search/search";
 import { RESULT_MAX } from "#/search/weights";
 
-type Case = { name: string; query: string; expect: string[] };
+type Case = { name: string; query: string; expect: string[]; reject: string[] };
 
 /**
  * 形状校验从严：尺子最大的罪是给虚假读数。没有 expect 的题会得出 0/0，
@@ -56,7 +59,18 @@ function loadCases(file: string): Case[] {
 		const expect = rawExpect.map((x) => x.trim());
 		if (new Set(expect).size !== expect.length)
 			throw new Error(`${where}「${name}」：expect 里有重复工号`);
-		return { name, query: c.query, expect };
+		const rawReject = c.reject ?? [];
+		if (
+			!Array.isArray(rawReject) ||
+			!rawReject.every(
+				(x): x is string => typeof x === "string" && Boolean(x.trim()),
+			)
+		)
+			throw new Error(`${where}「${name}」：reject 只能是工号数组`);
+		const reject = rawReject.map((x) => x.trim());
+		if (reject.some((id) => expect.includes(id)))
+			throw new Error(`${where}「${name}」：同一个工号不能既 expect 又 reject`);
+		return { name, query: c.query, expect, reject };
 	});
 }
 
@@ -81,6 +95,7 @@ const cases: Case[] = files.flatMap(loadCases);
 
 let recalled = 0;
 let expected = 0;
+let intruded = 0;
 try {
 	for (const c of cases) {
 		const outcome = await search(
@@ -93,14 +108,24 @@ try {
 		const { results, total, empty } = outcome;
 		const rankOf = new Map(results.map((r, i) => [r.employee.empId, i + 1]));
 		const found = c.expect.filter((id) => rankOf.has(id));
+		const intruders = c.reject.filter((id) => rankOf.has(id));
 		recalled += found.length;
 		expected += c.expect.length;
-		const marks = c.expect
-			.map((id) => (rankOf.has(id) ? `${id}@${rankOf.get(id)}` : `${id}✗`))
-			.join(" ");
+		intruded += intruders.length;
+		const marks = [
+			...c.expect.map((id) =>
+				rankOf.has(id) ? `${id}@${rankOf.get(id)}` : `${id}✗`,
+			),
+			...intruders.map((id) => `${id}!@${rankOf.get(id)}`),
+		].join(" ");
+		const ok = found.length === c.expect.length && intruders.length === 0;
 		console.log(
-			`${found.length === c.expect.length ? "✓" : "✗"} ${c.name}` +
-				`  召回 ${found.length}/${c.expect.length}，命中 ${total} 人${
+			`${ok ? "✓" : "✗"} ${c.name}` +
+				`  召回 ${found.length}/${c.expect.length}` +
+				(c.reject.length > 0
+					? `，误召 ${intruders.length}/${c.reject.length}`
+					: "") +
+				`，命中 ${total} 人${
 					empty?.kind === "overflowEvidence"
 						? `（匹配事实过多：${empty.terms.join("、")}）`
 						: ""
@@ -109,9 +134,9 @@ try {
 		console.log(`   ${marks}`);
 	}
 	console.log(
-		`\n总召回 ${recalled}/${expected}（${expected ? Math.round((recalled / expected) * 100) : 0}%），共 ${cases.length} 题`,
+		`\n总召回 ${recalled}/${expected}（${expected ? Math.round((recalled / expected) * 100) : 0}%），误召 ${intruded}，共 ${cases.length} 题`,
 	);
-	if (recalled !== expected) process.exitCode = 1;
+	if (recalled !== expected || intruded > 0) process.exitCode = 1;
 } finally {
 	await pool.end();
 }

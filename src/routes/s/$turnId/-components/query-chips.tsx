@@ -12,10 +12,13 @@ import {
 } from "#/components/ui/menu";
 import { cn } from "#/lib/utils";
 import {
+	isVariant,
 	REQUIREMENT_MODES,
 	type Requirement,
 	type RequirementMode,
+	type Variant,
 	withOff,
+	withoutVariant,
 } from "#/search/requirement";
 
 /**
@@ -28,8 +31,13 @@ import {
  * 停用（见 `requirement.ts`）保留词和强度，只让它退出本次检索，
  * 用于快速判断某个条件是否过窄。
  *
- * 三个动作（改强度、停用、删除）都是对要求列表的一次 map 或 filter：
- * 改的那一条从原对象展开，其余字段原样带着，没有拼装的机会。
+ * chip 上只写用户自己的说法。模型补的变体（`Member.tier` 不是 said 的那些）
+ * 收在菜单里：它们是系统替用户加的，摆在 chip 上会把「我说的」和「它补的」
+ * 混成一排；藏起来不让看则是让一个不该出现的人在屏幕上找不到是哪个词招来的。
+ * 所以菜单里逐条列出、逐条可删，chip 上只留一个记号说「这里还有」。
+ *
+ * 四个动作（改强度、停用、删除、删一个变体）都是对要求列表的一次 map 或
+ * filter：改的那一条从原对象展开，其余字段原样带着，没有拼装的机会。
  */
 
 /**
@@ -97,6 +105,18 @@ const EXCLUDE_STYLE = "line-through";
  */
 const OFF_STYLE = "border-dashed text-muted-foreground";
 
+/**
+ * 变体在菜单里的档位说明。用字不用分数：分数在 `weights.ts`，会调；
+ * 这里答的是「它和你说的是什么关系」。
+ */
+const TIER_LABEL: Record<Variant["tier"], string> = {
+	same: "同义",
+	near: "相近",
+};
+
+/** chip 上「这里还有变体」的记号。≈ 是「差不多」最省字的写法，证据行上也用它。 */
+const VARIANT_GLYPH = "≈";
+
 export function QueryChips({
 	requirements,
 	wide,
@@ -117,8 +137,10 @@ export function QueryChips({
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			{requirements.map((chip, i) => {
-				const term = chip.members[0];
+				const term = chip.members[0].text;
 				const tooWide = wide.has(term);
+				const said = chip.members.filter((m) => !isVariant(m));
+				const variants = chip.members.filter(isVariant);
 				return (
 					<Menu key={`${chip.off ? "~" : ""}${chip.mode}:${term}`}>
 						<MenuTrigger
@@ -138,8 +160,13 @@ export function QueryChips({
 									{MODE_GLYPH[chip.mode]}
 								</span>
 							)}
-							{/* 并列说法（或）与主词同权重，平着写 */}
-							<span>{chip.members.join(" / ")}</span>
+							{/* 用户自己的几个说法（或）同权重，平着写；变体不上 chip */}
+							<span>{said.map((m) => m.text).join(" / ")}</span>
+							{variants.length > 0 && (
+								<span className="font-mono text-muted-foreground">
+									{VARIANT_GLYPH}
+								</span>
+							)}
 							{/* 「太宽」是成因，得用字说；只给一个停用图标的话，
 							    自动停的和自己停的在屏幕上就分不出来了 */}
 							{chip.off && tooWide && <span className="text-xs">太宽</span>}
@@ -179,6 +206,30 @@ export function QueryChips({
 									</MenuRadioItem>
 								))}
 							</MenuRadioGroup>
+							{variants.length > 0 && (
+								<>
+									<MenuSeparator />
+									<MenuGroupLabel>也按这些说法找</MenuGroupLabel>
+									{variants.map((m) => (
+										<MenuItem
+											key={m.text}
+											onClick={() => replaceAt(i, withoutVariant(chip, m.text))}
+										>
+											{/* 一行三段：变体、它和原话的关系、点了会怎样。
+											    删是这一行唯一的动作，所以整行可点，末尾说明白。 */}
+											<span className="flex flex-1 items-baseline gap-2">
+												<span>{m.text}</span>
+												<span className="text-muted-foreground text-xs">
+													{TIER_LABEL[m.tier]}
+												</span>
+												<span className="ml-auto text-muted-foreground text-xs">
+													不按它找
+												</span>
+											</span>
+										</MenuItem>
+									))}
+								</>
+							)}
 							{/*
 							 * 停用和删除挨着放，但不是一档事，所以只有删除是危险色：
 							 * 停用改的是这一次检索，删除改的是查询本身，而后者不可撤销

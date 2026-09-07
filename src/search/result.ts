@@ -8,12 +8,14 @@
 import type { Employee, Route } from "#/db/schema";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
-import type { RequirementMode } from "./requirement";
+import type { Member, RequirementMode } from "./requirement";
 import type { SearchScope } from "./spec";
 
 export type Hit = {
 	experienceId: number;
 	term: string;
+	/** 命中的是这条要求的哪个说法。是变体时证据行要标出来：「≈ 推荐算法」。 */
+	member: Member;
 	route: Route;
 	/** 该说法与这一段这一路原文的相关度，[RELEVANCE_MIN, 1]。 */
 	relevance: number;
@@ -57,6 +59,8 @@ export type TermBasis = {
 	term: string;
 	/** 参与累计的那一路：最强那条证据走的路 */
 	route: Route;
+	/** 最强那条证据靠的说法 */
+	member: Member;
 	/** 最强那条证据的相关度 */
 	relevance: number;
 	/** 并列最强的证据段的累计月数 */
@@ -74,8 +78,8 @@ export type TermBasis = {
 };
 
 /**
- * 一条参与匹配的要求：标签（用户的主词）、它的全部说法（OR，都是原文、都会
- * 被嵌成向量），以及它是必须还是加分。
+ * 一条参与匹配的要求：标签（用户的主词）、它的全部说法（OR，都会被嵌成向量，
+ * 各自带着从哪来），以及它是必须还是加分。
  *
  * 排除词不在这里——它只用来否决证据段，不占证据行的一行，也没有「命中了多久」
  * 可言。所以这个类型的 mode 排除了 `"exclude"`：把一个画不出来的东西放进
@@ -83,7 +87,7 @@ export type TermBasis = {
  */
 export type TermPlan = {
 	term: string;
-	members: string[];
+	members: Member[];
 	mode: Exclude<RequirementMode, "exclude">;
 };
 

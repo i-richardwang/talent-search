@@ -57,7 +57,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				terms={[
 					{
 						term: "算法",
-						members: ["算法"],
+						members: [{ text: "算法", tier: "said" }],
 						mode: "must",
 					},
 				]}
@@ -132,14 +132,22 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				strongOn={0}
 				outcome={{
 					order: "relevance",
-					terms: [{ term: "量子炼金", members: ["量子炼金"], mode: "must" }],
+					terms: [
+						{
+							term: "量子炼金",
+							members: [{ text: "量子炼金", tier: "said" }],
+							mode: "must",
+						},
+					],
 					results: [],
 					facets: emptyFacets(),
 					total: 0,
 					empty: { kind: "unmet" },
 				}}
 				spec={{
-					requirements: [{ members: ["量子炼金"], mode: "must" }],
+					requirements: [
+						{ members: [{ text: "量子炼金", tier: "said" }], mode: "must" },
+					],
 					scope: {},
 					notices: [],
 				}}

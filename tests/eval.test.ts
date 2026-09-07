@@ -21,6 +21,11 @@ before(async () => {
 			name: "评估样例",
 			segments: [{ seqL2: "算法", months: 12 }],
 		},
+		{
+			empId: "V002",
+			name: "只被变体找到",
+			segments: [{ seqL2: "运算", months: 12 }],
+		},
 	]);
 });
 
@@ -29,11 +34,13 @@ before(async () => {
  * 它会卡住本进程的事件循环，端点答不了，子进程退不了，两边互相等。
  * 返回退出码；子进程的输出直通终端，失败时能直接看到它报了什么。
  */
-function run(expect: string) {
-	const file = join(dir, `${expect}.json`);
+function run(expect: string, reject: string[] = []) {
+	const file = join(dir, `${expect}-${reject.join("-")}.json`);
 	writeFileSync(
 		file,
-		JSON.stringify([{ name: "评估退出码", query: "算法", expect: [expect] }]),
+		JSON.stringify([
+			{ name: "评估退出码", query: "算法/~运算", expect: [expect], reject },
+		]),
 	);
 	const child = spawn(process.execPath, ["scripts/eval.ts", file], {
 		cwd: process.cwd(),
@@ -53,5 +60,10 @@ describe("评估门禁", () => {
 
 	test("漏掉任一已知答案时失败", async () => {
 		assert.equal(await run("V999"), 1);
+	});
+
+	test("放进了已确认不该出现的人也失败：只报召回的话多塞词永远是「变好」", async () => {
+		assert.equal(await run("V001", ["V002"]), 1);
+		assert.equal(await run("V001", ["V999"]), 0);
 	});
 });

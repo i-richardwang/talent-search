@@ -1,12 +1,13 @@
 /**
  * 匹配权重。调参不改查询代码，只改这里。
  *
- * 一条证据 = **路权重 × 相关度** × 时长 × 近因。前两项回答「这条证据有多能说明
- * 他真的做过用户要的那件事」：路权重管字段是谁写的，相关度管这段原文和
- * 用户的意思是不是一回事。
+ * 一条证据 = **路权重 × 相关度 × 说法权重** × 时长 × 近因。前三项回答「这条证据
+ * 有多能说明他真的做过用户要的那件事」：路权重管字段是谁写的，相关度管这段原文和
+ * 说法是不是一回事，说法权重管说法是用户自己说的还是模型替他补的。
  */
 
 import type { Route } from "#/db/schema";
+import type { MemberTier } from "./requirement";
 
 export type { Route } from "#/db/schema";
 
@@ -48,6 +49,25 @@ export const ROUTE_WEIGHTS: Record<Route, number> = {
 export const ROUTE_ORDER = (Object.keys(ROUTE_WEIGHTS) as Route[]).sort(
 	(a, b) => ROUTE_WEIGHTS[b] - ROUTE_WEIGHTS[a],
 );
+
+/**
+ * 说法按来源打的折：一段经历靠哪个说法命中，相关度就乘上那个说法的权重。
+ *
+ * 用户原话是 1，模型补的变体打折：靠原话找到的人排在只靠变体找到的人前面，
+ * 后者不丢。这个折**和相关度同一类**，是翻译损耗，不是证据档位：它不受
+ * `TENURE_FLOOR` 那条「时长压不过档位」的保护。但两个下限的乘积是 0.56，
+ * 所以 near 的 0.7 只在原话命中**又短又旧**时才翻得过去——在「推荐算法」上
+ * 干了十年、还在做的人，压得过十年前做了三个月「算法」的人，压不过做了三年
+ * 「算法」、也还在做的人。same 的 0.9 在下限之上，时长和近因都能翻它。
+ *
+ * 只有档位、没有小数，因为档位由模型判（同一件事 / 相近），数字归代码：
+ * 让模型直接给 0.73 这种数，同一句话跑两次会变。三个数用评估集调。
+ */
+export const MEMBER_TIER_WEIGHTS: Record<MemberTier, number> = {
+	said: 1.0,
+	same: 0.9,
+	near: 0.7,
+};
 
 export type Strength = "controlled" | "org" | "claimed";
 

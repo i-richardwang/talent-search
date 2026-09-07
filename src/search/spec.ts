@@ -89,7 +89,7 @@ export function hasMeaning(spec: SearchSpec) {
  */
 export function normalizeSpec(spec: SearchSpec): SearchSpec {
 	const requirements = requirementsOf(spec.requirements);
-	const present = new Set(requirements.map((r) => r.members[0]));
+	const present = new Set(requirements.map((r) => r.members[0].text));
 	const notices = spec.notices.filter(
 		(n, i, all) =>
 			(n.kind !== "wide" || present.has(n.term)) &&

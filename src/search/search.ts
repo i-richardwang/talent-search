@@ -8,7 +8,8 @@
  * 命中的判定是**语义**的，而且不在这个文件里：一个查询词在语料里对应哪些说法、
  * 各自相关度多少，由 `phrases.ts` 回答（向量召回 + 重排判定）；这里拿到那批
  * 「命中的说法」，沿 `experience_phrase` 走到经历段和人。「算法」因此找得到
- * 岗位写着「深度学习工程师」的段，不需要谁替库补同义词。
+ * 岗位写着「推荐算法工程师」的段；找不到的那些（只写着「算法」的人对「深度学习」）
+ * 由查询理解补的变体去够，见 `requirement.ts` 的 `MemberTier`。
  *
  * 取数**站在一版语料上**，但准入不在语料锁里：判定要打两个模型端点，而语料锁
  * 上的独占锁是排队的，押着它等模型等于让一次端点抖动挡住全部检索。所以这里
@@ -59,6 +60,7 @@ import type { SearchScope, SearchSpec } from "./spec";
 import {
 	FACT_MAX,
 	HITS_PER_TERM,
+	MEMBER_TIER_WEIGHTS,
 	RELEVANCE_MIN,
 	RELEVANCE_MIN_EXCLUDE,
 	RESULT_PAGE,
@@ -107,13 +109,14 @@ export async function probeWide(texts: string[]): Promise<Set<string>> {
 					termIdx: i,
 					memberIdx: 0,
 					hit,
+					weight: 1,
 				})),
 			),
 		);
 		if (!table) return new Set<string>();
 		const wide = await store.execute<{ term_idx: number }>(sql`
 			with total as (select count(distinct emp_id)::float as n from experience),
-			q(term_idx, member_idx, phrase_id, relevance) as ${table}
+			q(term_idx, member_idx, phrase_id, relevance, weight) as ${table}
 			select q.term_idx from q
 			join experience_phrase ep on ep.phrase_id = q.phrase_id
 			join experience e on e.id = ep.experience_id, total
@@ -306,7 +309,8 @@ function searchScope(
  *
  * 每条要求按说法展开：说法之间是 OR，但各自单独判定，因为「命中的是哪个说法」
  * 要进证据行。一段几路都可能命中、几个说法都可能命中，这里按
- * `路权重 × 相关度` 只留最强的一行。打分层按事实累加月份（rank.ts 的
+ * `路权重 × 相关度 × 说法权重` 只留最强的一行——和 rank.ts 的 evidenceWeight
+ * 同一个式子，否则这里留下的和那边选出来的不是同一条证据。打分层按事实累加月份（rank.ts 的
  * termValue），同段两行会把 12 个月数成 24；证据行也会把同一段列两遍。
  * 去重必须在 SQL 里做完再过保险丝：在内存里去重的话，三个说法的宽词会把
  * FACT_MAX 提前引爆三倍。
@@ -325,7 +329,7 @@ function canonicalFacts(
 		sql` `,
 	)} end`;
 	return sql`
-		with q(term_idx, member_idx, phrase_id, relevance) as ${table}
+		with q(term_idx, member_idx, phrase_id, relevance, weight) as ${table}
 		select distinct on (q.term_idx, e.id)
 			q.term_idx, q.member_idx, e.id, ep.route, q.relevance,
 			case when ep.route in (${sql.join(
@@ -340,7 +344,7 @@ function canonicalFacts(
 		join experience e on e.id = ep.experience_id
 		join employee p on p.emp_id = e.emp_id
 		${searchScope(scope, view)}
-		order by q.term_idx, e.id, (${routeWeight}) * q.relevance desc,
+		order by q.term_idx, e.id, (${routeWeight}) * q.relevance * q.weight desc,
 			q.member_idx, ${routeOrder}`;
 }
 
@@ -361,7 +365,12 @@ async function fetchFacts(
 	const table = admittedTable(
 		terms.flatMap((t, termIdx) =>
 			t.members.flatMap((m, memberIdx) =>
-				(admitted.get(m) ?? []).map((hit) => ({ termIdx, memberIdx, hit })),
+				(admitted.get(m.text) ?? []).map((hit) => ({
+					termIdx,
+					memberIdx,
+					hit,
+					weight: MEMBER_TIER_WEIGHTS[m.tier],
+				})),
 			),
 		),
 	);
@@ -385,14 +394,21 @@ async function fetchFacts(
 
 	return {
 		kind: "loaded",
-		facts: rows.rows.map(
-			({ emp_id, term_idx, member_idx, end_date, ...dims }) => ({
-				...dims,
-				empId: emp_id,
-				termIdx: term_idx,
-				memberIdx: member_idx,
-				endDate: end_date,
-			}),
+		facts: rows.rows.flatMap(
+			({ emp_id, term_idx, member_idx, end_date, ...dims }) => {
+				const member = terms[term_idx]?.members[member_idx];
+				if (!member)
+					throw new Error(`取数返回了不存在的说法 ${term_idx}/${member_idx}`);
+				return [
+					{
+						...dims,
+						empId: emp_id,
+						termIdx: term_idx,
+						member,
+						endDate: end_date,
+					},
+				];
+			},
 		),
 	};
 }
@@ -418,12 +434,12 @@ async function fetchVetoed(
 		texts.flatMap((t, i) =>
 			(admitted.get(t) ?? [])
 				.filter((hit) => hit.relevance >= RELEVANCE_MIN_EXCLUDE)
-				.map((hit) => ({ termIdx: i, memberIdx: 0, hit })),
+				.map((hit) => ({ termIdx: i, memberIdx: 0, hit, weight: 1 })),
 		),
 	);
 	if (!table) return new Set();
 	const rows = await store.execute<{ id: number }>(sql`
-		with q(term_idx, member_idx, phrase_id, relevance) as ${table}
+		with q(term_idx, member_idx, phrase_id, relevance, weight) as ${table}
 		select distinct ep.experience_id as id
 		from q join experience_phrase ep on ep.phrase_id = q.phrase_id`);
 	return new Set(rows.rows.map((r) => r.id));
@@ -578,10 +594,10 @@ export async function search(
 	const terms: TermPlan[] = active.flatMap((r) =>
 		r.mode === "exclude"
 			? []
-			: [{ term: r.members[0], members: [...r.members], mode: r.mode }],
+			: [{ term: r.members[0].text, members: [...r.members], mode: r.mode }],
 	);
 	const vetoTexts = active.flatMap((r) =>
-		r.mode === "exclude" ? r.members : [],
+		r.mode === "exclude" ? r.members.map((m) => m.text) : [],
 	);
 	// 没有正向证据也没有结构化范围时，排除词自己不产出候选人。
 	if (terms.length === 0 && !narrowsPopulation(spec.scope))
@@ -603,7 +619,7 @@ export async function search(
 	// 正向要求和排除词一起进准入：它们查的是同一批说法，判定线的差别在
 	// fetchVetoed 里，不在这里。
 	return withAdmission(
-		[...terms.flatMap((term) => term.members), ...vetoTexts],
+		[...terms.flatMap((term) => term.members.map((m) => m.text)), ...vetoTexts],
 		RELEVANCE_MIN,
 		async (store, admitted) => {
 			const vetoed = await fetchVetoed(store, vetoTexts, admitted);
@@ -695,6 +711,7 @@ export async function search(
 						{
 							experienceId: segment.id,
 							term: plan.term,
+							member: fact.member,
 							route: fact.route,
 							relevance: fact.relevance,
 							phrase: fact.phrase,

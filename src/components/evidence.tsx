@@ -2,6 +2,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { type Strength, strengthOf } from "#/search/evidence";
+import { isVariant } from "#/search/requirement";
 import type { Hit, TermBasis } from "#/search/result";
 import type { Route } from "#/search/weights";
 
@@ -175,7 +176,12 @@ function matchedField(hit: Hit): {
  * 一个人一个条件的一行证据。五段固定的槽，所有人的所有行共用同一套列位置——
  * 这是把表格旋转成块之后仍然能上下扫的原因，只不过那条竖线上现在写着凭据。
  *
- *   [点] [条件词]  [命中的字段值 · 这段经历在哪]    [相关度]  [时长]
+ *   [点] [条件词]  [≈ 变体] [命中的字段值 · 这段经历在哪]    [相关度]  [时长]
+ *
+ * 靠模型补的变体命中时，字段值前面先写「≈ 推荐算法」：这一行凭什么算命中，
+ * 第一个要答的就是「拿去比的是哪个词」——用户说的是「算法」，比的是
+ * 「推荐算法」，不说清的话相关度那个数对着的是一个屏幕上没有的词。
+ * 靠原话命中的不写：默认不该有记号。
  *
  * 相关度取 `basis.relevance`（最强那条证据的相关度），时长取 `basis.months`（并列
  * 最强的那些段的累计月数）——正是参与打分的那两个值；取样例段的数会让两个
@@ -221,6 +227,11 @@ export function EvidenceLine({
 			<Dot className="translate-y-1" strength={strengthOf(hit.route)} />
 			<span className={cn(TERM_W, "shrink-0")}>{name}</span>
 			<span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+				{isVariant(hit.member) && (
+					<span className="shrink-0 text-muted-foreground text-xs">
+						≈ {hit.member.text}
+					</span>
+				)}
 				{/*
 				 * 来源标签在字段值前面，不在后面：读到那串岗位名之前就得先知道
 				 * 「这是岗位还是部门」，否则「区域安全」四个字读完了还要回头找

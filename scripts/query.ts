@@ -18,7 +18,10 @@ if (outcome.order !== "relevance")
 const { terms, results, total } = outcome;
 const ms = Date.now() - t0;
 
-const shown = terms.map((t) => t.members.join("/")).join(", ");
+const SIGN = { said: "", same: "=", near: "~" } as const;
+const shown = terms
+	.map((t) => t.members.map((m) => SIGN[m.tier] + m.text).join("/"))
+	.join(", ");
 const top = results.slice(0, Number(process.env.TOPN ?? 8));
 
 console.log(`查询「${q}」→ 要求 [${shown}]`);
@@ -38,7 +41,7 @@ for (const r of top) {
 		// 起止用界面上那一份写法（`lib/format.ts`）：命令行是拿来核对结果的，
 		// 两处把同一段经历写成两个样子，对起来就得先在脑子里换一次算。
 		console.log(
-			`     ${h.term} ←[${h.route}${h.phrase ? `「${dots(h.involvement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
+			`     ${h.term}${h.member.tier === "said" ? "" : ` ≈${h.member.text}`} ←[${h.route}${h.phrase ? `「${dots(h.involvement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
 		);
 	}
 }

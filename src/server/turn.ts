@@ -91,6 +91,10 @@ export async function createTurn(
  * 给这句话新解析出的词量一遍宽度：命中的人多到几乎不筛人的，**可见地**停用，
  * 并留下一条说明成因的注解。
  *
+ * 用户自己的说法太宽，停整条要求并注明；模型补的变体太宽，只丢那个变体，
+ * 不注明——它是替用户补的、用户没见过，一个用户没说过的宽词不该把整条要求
+ * 停掉，也没有「你说的词太宽」可解释。
+ *
  * **只量正向要求的词。** 宽度这把尺答的是「它还筛不筛得掉人」，那是准入的问题；
  * 排除词答的是「哪一段不作数」，命中面广恰恰是它在起作用，量它等于用一把
  * 反向的尺去停掉一条正在生效的条件。门槛也对不上：`probeWide` 按
@@ -105,14 +109,23 @@ async function benchWide(
 ): Promise<{ requirements: Requirement[]; notices: SearchNotice[] }> {
 	const admitting = requirements.filter((r) => r.mode !== "exclude");
 	const wide = await probeWide([
-		...new Set(admitting.flatMap((r) => r.members)),
+		...new Set(admitting.flatMap((r) => r.members.map((m) => m.text))),
 	]);
 	const notices: SearchNotice[] = [];
-	const benched = requirements.map((r) => {
-		if (r.mode === "exclude" || !r.members.some((text) => wide.has(text)))
-			return r;
-		notices.push({ kind: "wide", term: r.members[0] });
-		return withOff(r, true);
+	const benched = requirements.map((r): Requirement => {
+		if (r.mode === "exclude") return r;
+		const [first, ...rest] = r.members;
+		const kept: Requirement = {
+			...r,
+			members: [
+				first,
+				...rest.filter((m) => m.tier === "said" || !wide.has(m.text)),
+			],
+		};
+		if (!r.members.some((m) => m.tier === "said" && wide.has(m.text)))
+			return kept;
+		notices.push({ kind: "wide", term: first.text });
+		return withOff(kept, true);
 	});
 	return { requirements: benched, notices };
 }

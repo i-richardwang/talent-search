@@ -429,7 +429,7 @@ function pendingTerms(requirements: readonly Requirement[]): TermPlan[] {
 			? []
 			: [
 					{
-						term: r.members[0],
+						term: r.members[0].text,
 						members: [r.members[0]],
 						mode: r.mode,
 					} satisfies TermPlan,

@@ -29,6 +29,7 @@ const hit = (over: Partial<Hit> = {}) =>
 const basis = (over: Partial<TermBasis> = {}): TermBasis => ({
 	term: "算法",
 	route: "seq",
+	member: { text: "算法", tier: "said" },
 	relevance: 0.83,
 	months: 27,
 	endDate: null,
@@ -64,6 +65,12 @@ describe("一行证据看得见的部分", () => {
 		);
 		// 一字不差就是 100%
 		assert.match(seen(hit({ relevance: 1 }), basis({ relevance: 1 })), /100%/);
+	});
+
+	test("靠变体命中的写出「≈ 那个说法」，靠原话命中的不写", () => {
+		const near = hit({ member: { text: "推荐算法", tier: "near" } });
+		assert.match(seen(near, basis()), /≈ 推荐算法/);
+		assert.doesNotMatch(seen(hit(), basis()), /≈/);
 	});
 
 	test("「前」由累计的那些段一起决定", () => {

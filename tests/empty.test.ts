@@ -14,7 +14,7 @@ import type { SearchNotice, SearchScope } from "#/search/spec";
 
 const must = (term: string): TermPlan => ({
 	term,
-	members: [term],
+	members: [{ text: term, tier: "said" }],
 	mode: "must",
 });
 

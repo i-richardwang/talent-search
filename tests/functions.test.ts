@@ -22,7 +22,13 @@ describe("提交查询的服务端边界", () => {
 				input: {
 					kind: "spec",
 					spec: {
-						requirements: [{ members: ["经理"], mode: "boost", off: true }],
+						requirements: [
+							{
+								members: [{ text: "经理", tier: "said" }],
+								mode: "boost",
+								off: true,
+							},
+						],
 						scope: {},
 						notices: [{ kind: "wide", term: "经理" }],
 					},
@@ -33,7 +39,13 @@ describe("提交查询的服务端边界", () => {
 				input: {
 					kind: "spec",
 					spec: {
-						requirements: [{ members: ["经理"], mode: "boost", off: true }],
+						requirements: [
+							{
+								members: [{ text: "经理", tier: "said" }],
+								mode: "boost",
+								off: true,
+							},
+						],
 						scope: {},
 						notices: [{ kind: "wide", term: "经理" }],
 					},

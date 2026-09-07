@@ -4,14 +4,16 @@
  * 用它的是命令行（`scripts/query.ts`）、验收用例（`scripts/eval.ts`）和测试
  * 夹具——那几处要一口气写下几条要求，一行字比一段 JSON 顺手。
  *
- *     大模型/推荐系统,+带团队,~-实习
+ *     大模型/推荐系统,+带团队/=团队管理/~带过人,~-实习
  *
- * 半角逗号隔开**要求**（AND），`/` 隔开一条要求里的**说法**（OR），词前的
- * `+` `-` 是强度、`~` 是停用（叠在强度符号前面）。除此之外没有别的语法：
- * 一个说法就是记号后面那几个字本身，不切词、不剥句式、不去停用词——
- * 自然语言由模型翻译（`intent.ts`），这里只认记号。
+ * 半角逗号隔开**要求**（AND），`/` 隔开一条要求里的**说法**（OR）。要求开头的
+ * `+` `-` 是强度、`~` 是停用（叠在强度符号前面）。说法开头的 `=` 是「同一件事的
+ * 另一种叫法」、`~` 是「相近」（`Member.tier`），没有记号的就是用户自己的说法。
+ * 除此之外没有别的语法：一个说法就是记号后面那几个字本身，不切词、不剥句式、
+ * 不去停用词——自然语言由模型翻译（`intent.ts`），这里只认记号。
  */
 import {
+	type MemberTier,
 	type Requirement,
 	type RequirementMode,
 	requirementsOf,
@@ -22,6 +24,7 @@ const MODE_SIGN: Record<string, RequirementMode> = {
 	"-": "exclude",
 };
 const OFF_SIGN = "~";
+const TIER_SIGN: Record<string, MemberTier> = { "=": "same", "~": "near" };
 const REQUIREMENT_SPLIT = ",";
 const MEMBER_SPLIT = "/";
 
@@ -33,7 +36,12 @@ export function parseQuery(text: string): Requirement[] {
 		if (off) g = g.slice(1).trim();
 		const mode = MODE_SIGN[g[0] ?? ""] ?? "must";
 		if (mode !== "must") g = g.slice(1);
-		return { members: g.split(MEMBER_SPLIT), mode, ...(off && { off: true }) };
+		const members = g.split(MEMBER_SPLIT).map((raw) => {
+			const m = raw.trim();
+			const tier = TIER_SIGN[m[0] ?? ""] ?? "said";
+			return { text: tier === "said" ? m : m.slice(1), tier };
+		});
+		return { members, mode, ...(off && { off: true }) };
 	});
 	return requirementsOf(drafts);
 }

@@ -165,13 +165,8 @@ export function holdNextRerank() {
  * 范围的收窄在 intent.test.ts 里对着 `toSpec` 直接测。
  */
 function fakeIntent(text: string) {
-	const terms = parseQuery(text).map(({ members: [term, ...alts], mode }) => ({
-		term,
-		mode,
-		alts: alts.length > 0 ? alts : null,
-	}));
 	return {
-		terms,
+		terms: parseQuery(text),
 		kind: null,
 		minMonths: null,
 		companyTag: null,

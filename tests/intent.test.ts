@@ -19,6 +19,12 @@ const VOCAB: Vocabulary = {
 const of = (raw: unknown) => toSpec(raw, VOCAB);
 const chipsOf = (raw: unknown) => of(raw).requirements;
 const terms = (...ts: unknown[]) => ({ terms: ts });
+const said = (text: string) => ({ text, tier: "said" as const });
+/** 模型给一条要求的最简写法：一个用户说法，配一档强度 */
+const one = (text: string, mode: unknown = "must") => ({
+	members: [said(text)],
+	mode,
+});
 /** 一份只有筛选的合法输出，逐项覆盖 */
 const NONE = {
 	terms: [],
@@ -36,66 +42,72 @@ const NONE = {
 describe("强度", () => {
 	test("三档语气都翻译得出来", () => {
 		const evidence = chipsOf(
-			terms(
-				{ term: "渠道运营", mode: "must" },
-				{ term: "团队管理", mode: "boost" },
-				{ term: "实习", mode: "exclude" },
-			),
+			terms(one("渠道运营"), one("团队管理", "boost"), one("实习", "exclude")),
 		);
 		assert.deepEqual(evidence, [
-			{ members: ["渠道运营"], mode: "must" },
-			{ members: ["团队管理"], mode: "boost" },
-			{ members: ["实习"], mode: "exclude" },
+			{ members: [said("渠道运营")], mode: "must" },
+			{ members: [said("团队管理")], mode: "boost" },
+			{ members: [said("实习")], mode: "exclude" },
 		]);
 	});
 
 	test("认不出的强度按必须算，不是丢掉这个词", () => {
 		// 丢掉会静默放宽 AND 语义（少一个约束，结果集变大），而屏幕上看不出
 		// 哪个条件被吃了。当成必须最多是收得太紧，那是看得见、点得掉的。
-		const evidence = chipsOf(terms({ term: "风控", mode: "很重要" }));
-		assert.deepEqual(evidence, [{ members: ["风控"], mode: "must" }]);
+		const evidence = chipsOf(terms(one("风控", "很重要")));
+		assert.deepEqual(evidence, [{ members: [said("风控")], mode: "must" }]);
 	});
 });
 
 describe("每个词都过一遍同一道边界", () => {
 	test("模型给的字面原样保留：改写发生在哪里都是一次看不见的查询变更", () => {
-		const evidence = chipsOf(
-			terms({ term: " 安全与风险合规 ", mode: "exclude" }),
-		);
+		const evidence = chipsOf(terms(one(" 安全与风险合规 ", "exclude")));
 		assert.deepEqual(evidence, [
-			{ members: ["安全与风险合规"], mode: "exclude" },
+			{ members: [said("安全与风险合规")], mode: "exclude" },
 		]);
 	});
 
 	test("空白和单字不是说法，直接消失", () => {
-		const evidence = chipsOf(
-			terms({ term: "的", mode: "must" }, { term: "  ", mode: "must" }),
-		);
+		const evidence = chipsOf(terms(one("的"), one("  ")));
 		assert.deepEqual(evidence, []);
 	});
 
 	test("同一个词只留一枚，先出现的强度算数", () => {
-		const evidence = chipsOf(
-			terms({ term: "算法", mode: "must" }, { term: "算法", mode: "boost" }),
-		);
-		assert.deepEqual(evidence, [{ members: ["算法"], mode: "must" }]);
+		const evidence = chipsOf(terms(one("算法"), one("算法", "boost")));
+		assert.deepEqual(evidence, [{ members: [said("算法")], mode: "must" }]);
 	});
 
-	test("并列说法（alts）和主词是同一条要求的几个说法，不拆成两条都要", () => {
+	test("用户说了「或」的几个说法是同一条要求的几个 said，不拆成两条都要", () => {
 		const evidence = chipsOf(
-			terms({ term: "大模型", mode: "must", alts: ["推荐系统"] }),
+			terms({ members: [said("大模型"), said("推荐系统")], mode: "must" }),
 		);
 		assert.deepEqual(evidence, [
-			{ members: ["大模型", "推荐系统"], mode: "must" },
+			{ members: [said("大模型"), said("推荐系统")], mode: "must" },
 		]);
 	});
 
-	test("并列说法也各自过一遍边界：垃圾丢掉，其余原样", () => {
+	test("模型补的变体带着来源落到用户说法后面；垃圾丢掉，其余原样", () => {
 		const evidence = chipsOf(
-			terms({ term: "算法", mode: "must", alts: ["深度学习", "  ", 7] }),
+			terms({
+				members: [
+					{ text: "推荐算法", tier: "near" },
+					said("算法"),
+					{ text: "  ", tier: "same" },
+					7,
+					{ text: "算法工程", tier: "same" },
+				],
+				mode: "must",
+			}),
 		);
 		assert.deepEqual(evidence, [
-			{ members: ["算法", "深度学习"], mode: "must" },
+			{
+				members: [
+					said("算法"),
+					{ text: "推荐算法", tier: "near" },
+					{ text: "算法工程", tier: "same" },
+				],
+				mode: "must",
+			},
 		]);
 	});
 });
@@ -189,18 +201,13 @@ describe("模型是不可信输入", () => {
 
 	test("数组里混进垃圾只丢那一项，其余照常", () => {
 		const evidence = chipsOf(
-			terms(null, { term: 123 }, { term: "算法" }, "算法"),
+			terms(null, { members: [{ text: 123 }] }, one("算法"), "算法"),
 		);
-		assert.deepEqual(evidence, [{ members: ["算法"], mode: "must" }]);
+		assert.deepEqual(evidence, [{ members: [said("算法")], mode: "must" }]);
 	});
 
 	test("绕过 schema 直接传入时也只收约定数量", () => {
-		const raw = terms(
-			...Array.from({ length: 12 }, (_, i) => ({
-				term: `条件${i}`,
-				mode: "must",
-			})),
-		);
+		const raw = terms(...Array.from({ length: 12 }, (_, i) => one(`条件${i}`)));
 		assert.equal(chipsOf(raw).length, 8);
 	});
 });
@@ -227,7 +234,12 @@ describe("发给模型的形状", () => {
 	test("合法输出解析得过", () => {
 		const parsed = intentSchema(VOCAB).safeParse({
 			...NONE,
-			terms: [{ term: "渠道运营", mode: "must", alts: null }],
+			terms: [
+				{
+					members: [said("渠道运营"), { text: "渠道拓展", tier: "near" }],
+					mode: "must",
+				},
+			],
 			minMonths: 12,
 			companyTag: "知名公司",
 			level: "P7",
@@ -265,11 +277,7 @@ describe("发给模型的形状", () => {
 		assert.ok(
 			intentSchema(VOCAB).safeParse({
 				...NONE,
-				terms: Array.from({ length: 9 }, (_, i) => ({
-					term: `条件${i}`,
-					mode: "must",
-					alts: null,
-				})),
+				terms: Array.from({ length: 9 }, (_, i) => one(`条件${i}`)),
 			}).success,
 		);
 	});
@@ -280,17 +288,14 @@ describe("发给模型的形状", () => {
 		assert.ok(
 			intentSchema(VOCAB).safeParse({
 				...NONE,
-				terms: [{ term: long, mode: "must", alts: null }],
+				terms: [one(long)],
 			}).success,
 		);
 		// 收窄发生在 termOf：超过 24 字的不是要求，是被误当成词的正文。
-		assert.deepEqual(
-			chipsOf(terms({ term: "算".repeat(25), mode: "must" })),
-			[],
-		);
+		assert.deepEqual(chipsOf(terms(one("算".repeat(25)))), []);
 		// 八字以上但仍然是一个词的，收窄不该丢，准入更不该拦。
-		assert.deepEqual(chipsOf(terms({ term: long, mode: "must" })), [
-			{ members: [long], mode: "must" },
+		assert.deepEqual(chipsOf(terms(one(long))), [
+			{ members: [said(long)], mode: "must" },
 		]);
 	});
 });

@@ -75,7 +75,23 @@ describe("太宽的词在理解时停用", () => {
 		});
 		assert.deepEqual(wideTerms(kept), []);
 		assert.deepEqual(kept.requirements, [
-			{ members: ["机甲算法"], mode: "must" },
+			{ members: [{ text: "机甲算法", tier: "said" }], mode: "must" },
 		]);
+	});
+});
+
+describe("变体太宽", () => {
+	test("只丢那个变体，要求本身照常参与，也不注明", async () => {
+		// 变体是模型替用户补的、用户没见过：一个用户没说过的宽词不该把整条
+		// 要求停掉，也没有「你说的词太宽」可解释。
+		const spec = await sentence("机甲算法/~灵能驾驶");
+		assert.deepEqual(spec.requirements, parseQuery("机甲算法"));
+		assert.deepEqual(wideTerms(spec), []);
+	});
+
+	test("用户自己的说法太宽才停整条，停的时候变体一起停、不丢", async () => {
+		const spec = await sentence("灵能驾驶/~机甲算法");
+		assert.deepEqual(spec.requirements, parseQuery("~灵能驾驶/~机甲算法"));
+		assert.deepEqual(wideTerms(spec), ["灵能驾驶"]);
 	});
 });

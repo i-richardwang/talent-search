@@ -18,7 +18,7 @@ import { scopeEntries } from "../-lib/scope-label";
  */
 function recentLabel(spec: SearchSpec, rawText: string | null) {
 	if (rawText) return rawText;
-	const terms = spec.requirements.map((r) => r.members[0]);
+	const terms = spec.requirements.map((r) => r.members[0].text);
 	const scope = scopeEntries(spec.scope).map((entry) => entry.label);
 	return dots(...terms, ...scope) || "未生效的条件";
 }
