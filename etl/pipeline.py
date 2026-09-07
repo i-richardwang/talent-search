@@ -110,7 +110,7 @@ def _text(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
 def _reject(
     frame: pd.DataFrame, bad: pd.Series, why: str, unit: str = "段"
 ) -> pd.DataFrame:
-    """剔除并报数。**拒绝必须出声**——静默丢数据的管线没人能验收。
+    """剔除并报数。**拒绝必须报告**——静默丢数据的管线没人能验收。
 
     经历按段数，员工档案按行数：报告里的量词得和被拒的东西对得上。
     """

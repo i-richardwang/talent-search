@@ -1,10 +1,10 @@
 /**
- * 换代门闩。
+ * 语料锁。
  *
- * 门闩要同时成立两件相反的事：一次跨语句读取只看得见一代语料，而**模型调用
+ * 语料锁要同时成立两件相反的事：一次跨语句读取只看得见一版语料，而**模型调用
  * 不许押着它**——独占锁是排队的，一次慢端点会挡住等着发布的 ETL，那个 ETL 又
- * 挡住排在它后面的每一个新读者。所以准入（召回 + 重排）在门闩外算完，进门闩
- * 时核对语料还是不是同一代（见 `search/phrases.ts`）。
+ * 挡住排在它后面的每一个新读者。所以准入（召回 + 重排）在语料锁外算完，进语料锁
+ * 时核对语料还是不是同一版（见 `search/phrases.ts`）。
  *
  * 这几条自己起一个 schema：其中一条真的把整库换掉了，和别的用例共用种子的话，
  * 后面每一条断言都会莫名其妙地少几个人。
@@ -30,7 +30,7 @@ const run = async (evidence: string) => {
 };
 
 describe("语料快照", () => {
-	/** 一次真发布：独占锁、整库换代、重写 embedding_space 那一行，然后重新种。 */
+	/** 一次真发布：独占锁、整库重灌、重写 embedding_space 那一行，然后重新种。 */
 	async function republish(rows: Parameters<typeof seed>[0]) {
 		const writer = await pool.connect();
 		try {
@@ -77,7 +77,7 @@ describe("语料快照", () => {
 		await gate.entered;
 
 		// 重排正卡在假端点里。这时候一次发布必须当场拿到独占锁：拿不到就说明
-		// 模型调用被押在门闩内，一次端点抖动会变成全站检索不可用。
+		// 模型调用被押在语料锁内，一次端点抖动会变成全站检索不可用。
 		const writer = await pool.connect();
 		try {
 			await writer.query("begin");
@@ -93,23 +93,23 @@ describe("语料快照", () => {
 		assert.equal(result.results[0]?.employee.empId, "SNAP001");
 	});
 
-	test("重排跨过一次换代时，结果不混代", async () => {
+	test("重排跨过一次重灌时，结果不混版", async () => {
 		await seed([
 			{
 				empId: "GEN001",
-				name: "换代前",
-				segments: [{ title: "换代专用", months: 12 }],
+				name: "重灌前",
+				segments: [{ title: "重灌专用", months: 12 }],
 			},
 		]);
 		const gate = holdNextRerank();
-		const pending = run("换代专用");
+		const pending = run("重灌专用");
 		await gate.entered;
-		// 整库换代：`restart identity` 让 phrase 的 id 从头再来，于是上一代算出来的
+		// 整库重灌：`restart identity` 让 phrase 的 id 从头再来，于是上一版算出来的
 		// 那批 id 现在指向的是别的说法。照着它取数会得到一份看起来完全正常的错名单。
 		await republish([
 			{
 				empId: "GEN002",
-				name: "换代后",
+				name: "重灌后",
 				segments: [{ title: "另一种说法", months: 12 }],
 			},
 		]);
@@ -119,11 +119,11 @@ describe("语料快照", () => {
 		assert.equal(result.total, 0);
 	});
 
-	test("一次快照里的多条语句只看得见一代语料", async () => {
+	test("一次快照里的多条语句只看得见一版语料", async () => {
 		await seed([
 			{
 				empId: "ONEGEN",
-				name: "一代语料",
+				name: "一版语料",
 				segments: [{ title: "单代读取专用", months: 12 }],
 			},
 		]);
@@ -138,8 +138,8 @@ describe("语料快照", () => {
 				await writer.query<{ pid: number }>("select pg_backend_pid() as pid")
 			).rows[0]?.pid;
 			assert.ok(pid, "取不到测试写连接的 pid");
-			// 发布事务在这次读取**中途**开始排队：门闩已经被这次读取共享锁着，
-			// 它只能等在门口。锁的顺序反过来的话，第二条语句会看见另一代语料。
+			// 发布事务在这次读取**中途**开始排队：语料锁已经被这次读取共享锁着，
+			// 它只能等在门口。锁的顺序反过来的话，第二条语句会看见另一版语料。
 			const locking: Promise<unknown>[] = [];
 			await withCorpusSnapshot(async (store) => {
 				const before = await count(store);

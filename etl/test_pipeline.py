@@ -281,7 +281,7 @@ class ExternalTest(unittest.TestCase):
 
     def test_explicit_end_after_hire_date_is_rejected(self) -> None:
         """结束日晚于入职日的段和在职经历重叠，「入职前」就读不通了——
-        和倒置日期同一档事：不猜哪个日期对，拒绝并出声。"""
+        和倒置日期同一档事：不猜哪个日期对，拒绝并报告。"""
         rows = externals(
             [
                 {

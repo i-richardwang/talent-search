@@ -7,7 +7,7 @@
  * 出去，类型检查和构建都不会响。
  *
  * 另一半是**多选**：一维之内选中哪几项、再点一次减掉哪一项、写回 URL 的是什么。
- * 这些是纯函数，比 DOM 更该被直接测；画出来的样子钉在 `tests/filter-rail.test.tsx`。
+ * 这些是纯函数，比 DOM 更该被直接测；画出来的样子在 `tests/filter-rail.test.tsx` 里测。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";

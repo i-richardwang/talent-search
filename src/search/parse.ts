@@ -176,7 +176,7 @@ export const MEMBER_MAX = 4;
  * **为什么停用只有一个布尔、没有成因**：一个词太宽而被自动停用，那是关于
  * **语料**的一条事实（`WIDE_SHARE`，见 `search.ts` 的 probeWide），不是这条
  * 要求的性质。它属于这次理解的注解（`SearchNotice` 的 `wide`），和「没处放的
- * 条件」「没识别出语气」同一档。写在 chip 上的话，一条会随语料换代而失效的
+ * 条件」「没识别出语气」同一档。写在 chip 上的话，一条会随语料重灌后失效的
  * 判断就被冻进了不可变的条件里，而这个产品对 `/s/:id` 的承诺只到条件为止。
  */
 export type Chip = Readonly<{
@@ -329,7 +329,7 @@ export function queryString(value: unknown): string {
 
 /**
  * 规范化：任意查询串 → 它唯一的规范写法。落库、比较、往返都以这一份为准。
- * `canonical(canonical(q)) === canonical(q)`，`tests/parse.test.ts` 钉住。
+ * `canonical(canonical(q)) === canonical(q)`，`tests/parse.test.ts` 有断言。
  */
 export function canonical(query: string): string {
 	return toQuery(parseChips(query));

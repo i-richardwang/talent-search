@@ -58,7 +58,7 @@ export type SearchScope = Picked & {
  * 的旁注：屏幕上它们是 chips 的脚注，不是一条要求。
  *
  * `wide` 记的是「这个词在当前语料里命中的人太多」（`WIDE_SHARE`）。它住在
- * 这里而不是 chip 上：那是关于语料的事实，会随语料换代失效，而 chips 是
+ * 这里而不是 chip 上：那是关于语料的事实，会随语料重灌后失效，而 chips 是
  * 记录里不可变的那一半。词是否因此没参与检索，由 chip 自己的 `off` 说。
  */
 export type SearchNotice =

@@ -120,7 +120,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		/*
 		 * 「0 人」摆在空态上面是同一件事的第一遍，而这个判断留在调用点
 		 * （result-list.tsx 的空态分支干脆不写表头），不是一条藏在 ResultHeader
-		 * 里的守卫——所以它只能在这里钉住。
+		 * 里的守卫——所以它只能在这里有断言。
 		 */
 		const text = seen(
 			<ResultList

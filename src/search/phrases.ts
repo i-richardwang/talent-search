@@ -14,12 +14,12 @@
  * 改筛选或再次搜索同一个词时直接命中缓存。只有召回出来却没打过分的对
  * 才会出去。
  *
- * **两次快照，模型调用夹在中间。** 换代门闩（`#/db` 的 `withCorpusSnapshot`）
- * 上的独占锁是排队的，所以一次慢端点调用如果发生在门闩内，它挡住的不是自己
+ * **两次快照，模型调用夹在中间。** 语料锁（`#/db` 的 `withCorpusSnapshot`）
+ * 上的独占锁是排队的，所以一次慢端点调用如果发生在语料锁内，它挡住的不是自己
  * 这一次检索，而是排在等待发布的 ETL 后面的每一个新读者。于是这里把一次准入
- * 拆成三段：嵌入在门闩外 → 第一次快照做召回和读缓存 → 重排在门闩外 →
- * 调用方的那次快照（第二次）核对语料还是不是同一代，是就接着取数。
- * 计划里带的是 phrase id，语料换过一代它们就指向别的说法了，所以核对不能省，
+ * 拆成三段：嵌入在语料锁外 → 第一次快照做召回和读缓存 → 重排在语料锁外 →
+ * 调用方的那次快照（第二次）核对语料还是不是同一版，是就接着取数。
+ * 计划里带的是 phrase id，语料重灌过一次它们就指向别的说法了，所以核对不能省，
  * 只能重算（`withAdmission`）。
  */
 
@@ -34,7 +34,7 @@ import { RECALL_MAX, RECALL_MIN } from "./weights";
 export type Admitted = { phraseId: number; relevance: number };
 
 /**
- * 一个查询词在这一代语料里的候选说法与它们的分数。分数表的键集合最终**就是**
+ * 一个查询词在这一版语料里的候选说法与它们的分数。分数表的键集合最终**就是**
  * 候选集合（缓存里读到的 + 这次打出来的），命中名单直接由它得出，不必再拿
  * 候选去查一次分数——查不到该怎么办这个问题因此不存在。
  */
@@ -46,7 +46,7 @@ type Recalled = {
 
 /**
  * 每个查询词在语料里的候选说法：向量召回，按相似度取前 `RECALL_MAX` 个。
- * 所有词一条 SQL 取完，不串成 n 次往返。向量是门闩外嵌好的。
+ * 所有词一条 SQL 取完，不串成 n 次往返。向量是语料锁外嵌好的。
  */
 async function recall(
 	store: DbExecutor,
@@ -113,10 +113,10 @@ async function cachedScores(
 		recalled[row.ord]?.scores.set(row.phrase_id, row.relevance);
 }
 
-/** 这次新打出来的分。等进了门闩、确认还是同一代语料，才写回缓存。 */
+/** 这次新打出来的分。等进了语料锁、确认还是同一版语料，才写回缓存。 */
 type FreshScore = { query: string; phraseId: number; relevance: number };
 
-/** 一次准入的完整计划：它站在哪一代语料上，各词命中了什么，欠着哪些缓存写。 */
+/** 一次准入的完整计划：它站在哪一版语料上，各词命中了什么，欠着哪些缓存写。 */
 type Plan = {
 	generation: string;
 	admitted: Map<string, Admitted[]>;
@@ -124,9 +124,9 @@ type Plan = {
 };
 
 /**
- * 召回 + 判定，两个模型端点都在门闩外打。
+ * 召回 + 判定，两个模型端点都在语料锁外打。
  *
- * 返回的计划带着它站的那一代语料：里面的 phrase id 只在那一代里有意义。
+ * 返回的计划带着它站的那一版语料：里面的 phrase id 只在那一版里有意义。
  */
 async function planAdmission(
 	texts: string[],
@@ -200,28 +200,28 @@ async function cacheScores(
 }
 
 /**
- * 一次准入连着一次换代门闩内的取数，最多重来这么多次。
+ * 一次准入连着一次语料锁内的取数，最多重来这么多次。
  *
- * 换代是分钟级的一件事（一次整库重灌），一次检索连撞三回不再是巧合，
+ * 整库重灌是分钟级的一件事，一次检索连撞三回不再是巧合，
  * 而是某处不停地在重灌——继续重试只会把它磨成一串白打的端点调用。
  */
 const PLAN_ATTEMPTS = 3;
 
 /**
- * 在同一代语料上完成「准入 + 取数」。准入在门闩外算（要打两个模型端点），
- * 取数在门闩内做。
+ * 在同一版语料上完成「准入 + 取数」。准入在语料锁外算（要打两个模型端点），
+ * 取数在语料锁内做。
  *
- * 两段之间语料可能换代，而计划里的 phrase id 是上一代的：照着取数就是拿旧 id
- * 去指新说法，得到的是一份看起来完全正常的错名单。所以进门闩第一件事是核对
+ * 两段之间语料可能被重灌，而计划里的 phrase id 是上一版的：照着取数就是拿旧 id
+ * 去指新说法，得到的是一份看起来完全正常的错名单。所以进语料锁第一件事是核对
  * 代号，对不上就整个重算——重排缓存也在核对之后才写，旧 id 的分数不该落进新
- * 一代的缓存里。
+ * 一版的缓存里。
  */
 export async function withAdmission<T>(
 	texts: string[],
 	min: number,
 	use: (store: DbExecutor, admitted: Map<string, Admitted[]>) => Promise<T>,
 ): Promise<T> {
-	// 一个词都没有就没有召回，计划里也就没有任何指向某一代语料的 id：直接进门闩。
+	// 一个词都没有就没有召回，计划里也就没有任何指向某一版语料的 id：直接进语料锁。
 	if (texts.length === 0)
 		return withCorpusSnapshot((store) => use(store, new Map()));
 	// 重排端点没配就在这里抛，不进语料快照：没有判定这一步，召回出来的候选里
@@ -236,7 +236,7 @@ export async function withAdmission<T>(
 		});
 		if (done) return done.value;
 	}
-	throw new Error(`语料连续 ${PLAN_ATTEMPTS} 次在检索期间换代，这次检索放弃`);
+	throw new Error(`语料连续 ${PLAN_ATTEMPTS} 次在检索期间重灌，这次检索放弃`);
 }
 
 /**

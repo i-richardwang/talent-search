@@ -29,7 +29,7 @@ function pick(values: readonly string[], description: string) {
 
 /**
  * 发给模型的输出形状。字段全部出现、以 null 表示未提及，兼容结构化输出端点的
- * 必填字段要求。词长只在描述里建议，真正的度量衡由 parseQuery 单独负责。
+ * 必填字段要求。词长只在描述里建议，真正的阈值由 parseQuery 单独负责。
  */
 export function intentSchema(vocab: Vocabulary) {
 	return z.object({
@@ -101,7 +101,7 @@ export function intentSchema(vocab: Vocabulary) {
  * 一句话最多留几条「没处放的条件」。
  *
  * 它是载荷的闸，不是判断：这几条会原样存进不可变记录、随查询画在屏幕上，
- * 而模型抽风时 `unsupported` 是最容易变成一整段正文的那一栏。八条已经比
+ * 而模型输出异常时 `unsupported` 是最容易变成一整段正文的那一栏。八条已经比
  * 一句话里说得出的条件多了。
  */
 const UNSUPPORTED_MAX = 8;

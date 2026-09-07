@@ -105,13 +105,13 @@ export async function createTurn(
  * 给这句话新解析出的词量一遍宽度：命中的人多到几乎不筛人的，**可见地**停用，
  * 并留下一条说明成因的注解。
  *
- * **只量进门的词。** 宽度这把尺答的是「它还筛不筛得掉人」，那是准入的问题；
+ * **只量正向要求的词。** 宽度这把尺答的是「它还筛不筛得掉人」，那是准入的问题；
  * 排除词答的是「哪一段不作数」，命中面广恰恰是它在起作用，量它等于用一把
  * 反向的尺去停掉一条正在生效的条件。门槛也对不上：`probeWide` 按
  * `RELEVANCE_MIN` 量，而排除按更高的 `RELEVANCE_MIN_EXCLUDE` 判——
  * 量出来的宽根本不是它搜出来的宽。
  *
- * 成因落在 notices 上，不落在 chip 上：宽是**语料**的事实，会随语料换代失效，
+ * 成因落在 notices 上，不落在 chip 上：宽是**语料**的事实，会随语料重灌后失效，
  * 而 chips 是记录里不可变的那一半（论证在 `parse.ts` 的 Chip）。
  */
 async function benchWide(
@@ -152,9 +152,9 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	if (row.rawText === null) throw new Error("待理解记录缺少原话");
 	const rawText = row.rawText;
 
-	// 三段各自站在自己的那一代语料上，中间不押着门闩：词表是一次短读取，
-	// 模型那一跳在门闩外（它可以慢到一分钟），量宽自己走一遍准入
-	// （`search/phrases.ts` 的 withAdmission）。押着门闩等模型的话，一次理解
+	// 三段各自站在自己的那一版语料上，中间不持着语料锁：词表是一次短读取，
+	// 模型那一跳在语料锁外（它可以慢到一分钟），量宽自己走一遍准入
+	// （`search/phrases.ts` 的 withAdmission）。持着语料锁等模型的话，一次理解
 	// 就能把排在待发布 ETL 后面的每一个检索一起堵住。
 	const vocab = await vocabulary();
 	const understood = resolveIntent(
