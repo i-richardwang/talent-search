@@ -14,11 +14,16 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 
-#: 一次请求最多试几次，以及第一次重试前等多久（之后每次翻倍，带随机抖动）。
-#: 公网端点偶发超时和 429 / 5xx 是常态，不是错误；一次抖动不该让二十分钟的
+#: 一次请求最多试几次，以及瞬时故障第一次重试前等多久（`_backoff`）。
+#: 公网端点偶发超时和 5xx 是常态，不是错误；一次抖动不该让二十分钟的
 #: 灌库整个回滚。4xx 里除了限流都是我们自己的问题，重试没有意义。
 ATTEMPTS = 5
 BACKOFF_S = 1.0
+#: 限流（429）不是抖动，是按分钟计的配额用完了：一秒后再问只会再撞一次。
+#: 从这个数起翻倍，四次重试合计两分多钟，够一个配额窗口过去；端点给了
+#: Retry-After 就按它说的等。持续限流仍然会耗尽重试而退出——那是并发调太高，
+#: 该改 `EXTRACT_CONCURRENCY`，不该由重试掩盖。
+RATE_LIMIT_BACKOFF_S = 10.0
 
 
 def post_json(url: str, body: object, api_key: str, timeout_s: int) -> object:
@@ -50,14 +55,32 @@ def retrying[T](what: str, where: str, once: Callable[[], T]) -> T:
                     f"{what}端点返回 HTTP {error.code}：{error.reason}"
                 ) from None
             reason: str = f"HTTP {error.code}"
+            delay = (
+                max(_retry_after(error), _backoff(RATE_LIMIT_BACKOFF_S, attempt))
+                if error.code == 429
+                else _backoff(BACKOFF_S, attempt)
+            )
         except (urllib.error.URLError, TimeoutError) as error:
             if attempt == ATTEMPTS:
                 raise SystemExit(f"{what}端点不可用（{where}）：{error}") from None
             reason = str(error)
-        delay = BACKOFF_S * 2 ** (attempt - 1) * (1 + random.random() * 0.5)
+            delay = _backoff(BACKOFF_S, attempt)
         print(
             f"  {what}请求失败（{reason}），{delay:.0f} 秒后重试 {attempt}/{ATTEMPTS - 1}",
             flush=True,
         )
         time.sleep(delay)
     raise AssertionError("unreachable")
+
+
+def _backoff(base: float, attempt: int) -> float:
+    """第 `attempt` 次重试前等多久：从 `base` 起每次翻倍，带随机抖动。"""
+    return base * 2 ** (attempt - 1) * (1 + random.random() * 0.5)
+
+
+def _retry_after(error: urllib.error.HTTPError) -> float:
+    """端点在 Retry-After 里说的秒数；没说或说得不是数就是 0。"""
+    try:
+        return float(error.headers.get("Retry-After", ""))
+    except (TypeError, ValueError):
+        return 0.0

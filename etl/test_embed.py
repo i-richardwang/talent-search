@@ -143,6 +143,25 @@ class EmbedRetryTest(unittest.TestCase):
                 E._request(["算法"])
         self.assertEqual(sleep.call_count, 0)
 
+    def test_rate_limit_waits_longer_and_honors_retry_after(self) -> None:
+        limited = endpoint.urllib.error.HTTPError(
+            "u", 429, "too many", {"Retry-After": "45"}, None
+        )
+        calls = iter([limited, endpoint.urllib.error.HTTPError("u", 429, "too many", {}, None), [[1.0]]])
+
+        def flaky(chunk):
+            outcome = next(calls)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        with mock.patch.object(E, "_post", flaky), mock.patch.object(endpoint.time, "sleep") as sleep, redirect_stdout(io.StringIO()):
+            self.assertEqual(E._request(["算法"]), [[1.0]])
+        waits = [call.args[0] for call in sleep.call_args_list]
+        self.assertGreaterEqual(waits[0], 45)
+        # 没有 Retry-After 时也按限流的起步等，不是抖动那一秒
+        self.assertGreaterEqual(waits[1], endpoint.RATE_LIMIT_BACKOFF_S * 2)
+
     def test_gives_up_after_attempts(self) -> None:
         with mock.patch.object(E, "_post", side_effect=TimeoutError()), mock.patch.object(endpoint.time, "sleep") as sleep, redirect_stdout(io.StringIO()):
             with self.assertRaises(SystemExit):
