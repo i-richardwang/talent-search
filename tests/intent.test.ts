@@ -8,7 +8,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { intentSchema, toSpec, type Vocabulary } from "#/search/intent";
-import { parseChips, toQuery } from "#/search/parse";
 import { unsupportedOf } from "#/search/spec";
 
 const VOCAB: Vocabulary = {
@@ -18,8 +17,7 @@ const VOCAB: Vocabulary = {
 	education: ["本科", "硕士", "博士"],
 };
 const of = (raw: unknown) => toSpec(raw, VOCAB);
-/** 证据落在 spec 上是一串规范查询串；断言的是它解析出来的那几条要求。 */
-const chipsOf = (raw: unknown) => parseChips(of(raw).evidence);
+const chipsOf = (raw: unknown) => of(raw).requirements;
 const terms = (...ts: unknown[]) => ({ terms: ts });
 /** 一份只有筛选的合法输出，逐项覆盖 */
 const NONE = {
@@ -45,9 +43,9 @@ describe("强度", () => {
 			),
 		);
 		assert.deepEqual(evidence, [
-			{ term: "渠道运营", mode: "must" },
-			{ term: "团队管理", mode: "boost" },
-			{ term: "实习", mode: "exclude" },
+			{ members: ["渠道运营"], mode: "must" },
+			{ members: ["团队管理"], mode: "boost" },
+			{ members: ["实习"], mode: "exclude" },
 		]);
 	});
 
@@ -55,7 +53,7 @@ describe("强度", () => {
 		// 丢掉会静默放宽 AND 语义（少一个约束，结果集变大），而屏幕上看不出
 		// 哪个条件被吃了。当成必须最多是收得太紧，那是看得见、点得掉的。
 		const evidence = chipsOf(terms({ term: "风控", mode: "很重要" }));
-		assert.deepEqual(evidence, [{ term: "风控", mode: "must" }]);
+		assert.deepEqual(evidence, [{ members: ["风控"], mode: "must" }]);
 	});
 });
 
@@ -64,7 +62,9 @@ describe("每个词都过一遍同一道边界", () => {
 		const evidence = chipsOf(
 			terms({ term: " 安全与风险合规 ", mode: "exclude" }),
 		);
-		assert.deepEqual(evidence, [{ term: "安全与风险合规", mode: "exclude" }]);
+		assert.deepEqual(evidence, [
+			{ members: ["安全与风险合规"], mode: "exclude" },
+		]);
 	});
 
 	test("空白和单字不是说法，直接消失", () => {
@@ -78,36 +78,25 @@ describe("每个词都过一遍同一道边界", () => {
 		const evidence = chipsOf(
 			terms({ term: "算法", mode: "must" }, { term: "算法", mode: "boost" }),
 		);
-		assert.deepEqual(evidence, [{ term: "算法", mode: "must" }]);
+		assert.deepEqual(evidence, [{ members: ["算法"], mode: "must" }]);
 	});
 
-	test("并列说法（alts）挂在同一条要求上，不拆成两条都要", () => {
+	test("并列说法（alts）和主词是同一条要求的几个说法，不拆成两条都要", () => {
 		const evidence = chipsOf(
 			terms({ term: "大模型", mode: "must", alts: ["推荐系统"] }),
 		);
 		assert.deepEqual(evidence, [
-			{ term: "大模型", alts: ["推荐系统"], mode: "must" },
+			{ members: ["大模型", "推荐系统"], mode: "must" },
 		]);
 	});
 
-	test("并列说法也各自过一遍边界：记号剥掉，垃圾丢掉", () => {
+	test("并列说法也各自过一遍边界：垃圾丢掉，其余原样", () => {
 		const evidence = chipsOf(
-			terms({ term: "算法", mode: "must", alts: ["+深度学习", "  ", 7] }),
+			terms({ term: "算法", mode: "must", alts: ["深度学习", "  ", 7] }),
 		);
 		assert.deepEqual(evidence, [
-			{ term: "算法", alts: ["深度学习"], mode: "must" },
+			{ members: ["算法", "深度学习"], mode: "must" },
 		]);
-	});
-
-	test("产出能原样序列化再读回来", () => {
-		const evidence = chipsOf(
-			terms(
-				{ term: "渠道运营", mode: "must" },
-				{ term: "带过团队", mode: "boost" },
-				{ term: "外包", mode: "exclude" },
-			),
-		);
-		assert.deepEqual(parseChips(toQuery(evidence)), evidence);
 	});
 });
 
@@ -192,7 +181,7 @@ describe("模型是不可信输入", () => {
 		for (const raw of [null, undefined, 0, "", [], "一句话", { terms: 42 }]) {
 			assert.deepEqual(
 				of(raw),
-				{ evidence: "", scope: {}, notices: [] },
+				{ requirements: [], scope: {}, notices: [] },
 				`${JSON.stringify(raw)} 应当被当成没填`,
 			);
 		}
@@ -202,7 +191,7 @@ describe("模型是不可信输入", () => {
 		const evidence = chipsOf(
 			terms(null, { term: 123 }, { term: "算法" }, "算法"),
 		);
-		assert.deepEqual(evidence, [{ term: "算法", mode: "must" }]);
+		assert.deepEqual(evidence, [{ members: ["算法"], mode: "must" }]);
 	});
 
 	test("绕过 schema 直接传入时也只收约定数量", () => {
@@ -219,7 +208,7 @@ describe("模型是不可信输入", () => {
 describe("模型读出的每一种东西都是完整理解", () => {
 	test("只识别出筛选：证据为空，范围成立", () => {
 		assert.deepEqual(of({ ...NONE, kind: "external" }), {
-			evidence: "",
+			requirements: [],
 			scope: { kind: "external" },
 			notices: [],
 		});
@@ -227,7 +216,7 @@ describe("模型读出的每一种东西都是完整理解", () => {
 
 	test("只识别出不支持条件：不把原话伪造成语义要求", () => {
 		assert.deepEqual(of({ ...NONE, unsupported: ["北京"] }), {
-			evidence: "",
+			requirements: [],
 			scope: {},
 			notices: [{ kind: "unsupported", text: "北京" }],
 		});
@@ -270,7 +259,7 @@ describe("发给模型的形状", () => {
 	});
 
 	test("词数上限不写进 schema：多给一条不该让整句理解作废", () => {
-		// 上限的事实源是 parseChips（CHIP_MAX），toSpec 会走它收窄。写成
+		// 上限的事实源是 requirementsOf（REQUIREMENT_MAX），toSpec 会走它收窄。写成
 		// schema 约束就是第二份契约：模型多给一条，整条响应作废、整句理解
 		// 失败——而收窄本来只会丢掉多出来的那几条。
 		assert.ok(
@@ -301,7 +290,7 @@ describe("发给模型的形状", () => {
 		);
 		// 八字以上但仍然是一个词的，收窄不该丢，准入更不该拦。
 		assert.deepEqual(chipsOf(terms({ term: long, mode: "must" })), [
-			{ term: long, mode: "must" },
+			{ members: [long], mode: "must" },
 		]);
 	});
 });

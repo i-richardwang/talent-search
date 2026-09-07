@@ -3,7 +3,7 @@
  * 这里只收不属于那一族的几项。
  */
 import { DIM_KEYS, parsePicked } from "./dimensions";
-import { boundedText } from "./parse";
+import { boundedText } from "./requirement";
 import type { SearchFilters } from "./result";
 import type { SearchScope } from "./spec";
 import { RESULT_MAX, RESULT_PAGE } from "./weights";

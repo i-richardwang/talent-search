@@ -36,7 +36,6 @@ import {
 import { emptyReason } from "./empty";
 import type { Vocabulary } from "./intent";
 import { narrowsPopulation } from "./params";
-import { activeChips, parseChips } from "./parse";
 import { type Admitted, admittedTable, withAdmission } from "./phrases";
 import {
 	type Fact,
@@ -45,6 +44,7 @@ import {
 	rank,
 	rankPopulation,
 } from "./rank";
+import { activeRequirements } from "./requirement";
 import {
 	emptyFacets,
 	type Facets,
@@ -572,16 +572,16 @@ export async function search(
 	 */
 	limit: number = RESULT_PAGE,
 ): Promise<SearchOutcome> {
-	// 停用的 chip 在这里就消失了，此后整条链路都看不见它——检索、打分、分面、
+	// 停用的要求在这里就消失了，此后整条链路都看不见它——检索、打分、分面、
 	// 证据行一个都不必知道「停用」这回事。这是它能只花一个字段的原因。
-	const active = activeChips(parseChips(spec.evidence));
-	const terms: TermPlan[] = active.flatMap((c) =>
-		c.mode === "exclude"
+	const active = activeRequirements(spec.requirements);
+	const terms: TermPlan[] = active.flatMap((r) =>
+		r.mode === "exclude"
 			? []
-			: [{ term: c.term, members: [c.term, ...(c.alts ?? [])], mode: c.mode }],
+			: [{ term: r.members[0], members: [...r.members], mode: r.mode }],
 	);
-	const vetoTexts = active.flatMap((c) =>
-		c.mode === "exclude" ? [c.term, ...(c.alts ?? [])] : [],
+	const vetoTexts = active.flatMap((r) =>
+		r.mode === "exclude" ? r.members : [],
 	);
 	// 没有正向证据也没有结构化范围时，排除词自己不产出候选人。
 	if (terms.length === 0 && !narrowsPopulation(spec.scope))

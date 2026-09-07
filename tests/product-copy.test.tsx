@@ -88,7 +88,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onRetry={() => {}}
 				ref={{ current: null }}
 				rawText="最好懂算法、不要实习"
-				spec={{ evidence: "", scope: {}, notices: [] }}
+				spec={{ requirements: [], scope: {}, notices: [] }}
 			/>,
 		);
 		assert.match(text, /没能理解这句话/);
@@ -105,7 +105,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onQuery={() => true}
 				ref={{ current: null }}
 				rawText="做过线下渠道运营、带过团队的人"
-				spec={{ evidence: "", scope: {}, notices: [] }}
+				spec={{ requirements: [], scope: {}, notices: [] }}
 			/>,
 		);
 		assert.match(text, /做过线下渠道运营、带过团队的人/);
@@ -139,7 +139,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 					empty: { kind: "unmet" },
 				}}
 				spec={{
-					evidence: "量子炼金",
+					requirements: [{ members: ["量子炼金"], mode: "must" }],
 					scope: {},
 					notices: [],
 				}}

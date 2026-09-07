@@ -1,6 +1,6 @@
 /**
  * 查询记录的派生语义。跑在临时 schema 上的真 SQL，理解走夹具里的假模型端点
- * （按查询串语法读那句话，见 `fixture.ts` 的 `fakeIntent`）。
+ * （按一行查询语法读那句话，见 `fixture.ts` 的 `fakeIntent`）。
  *
  * 派生有两种：**改写**（把这条查询问的那句话换一句，条件整份重来）和
  * **改条件**（不动那句话，只调几枚 chip）。两者都挂在同一条链上——「最近搜索」
@@ -8,7 +8,7 @@
  */
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
-import { parseChips } from "#/search/parse";
+import { parseQuery } from "#/search/query-syntax";
 import type { SearchSpec } from "#/search/spec";
 import { breakUnderstanding, setup, violates } from "./fixture";
 
@@ -19,9 +19,8 @@ const { createTurn, listRecent, loadTurn, resolveTurn } = await import(
 	"#/server/turn"
 );
 
-/** 记录上存的是规范查询串；用例关心的是它解析出来的那几条要求。 */
 const termsOf = (spec: SearchSpec) =>
-	parseChips(spec.evidence).map((chip) => chip.term);
+	spec.requirements.map((r) => r.members[0]);
 
 async function sentence(text: string, parent?: string) {
 	const { turnId } = await createTurn({ kind: "sentence", text }, parent);
@@ -46,7 +45,7 @@ describe("整句的改写", () => {
 		const root = await createTurn({
 			kind: "spec",
 			spec: {
-				evidence: "算法",
+				requirements: parseQuery("算法"),
 				scope: { kind: "external", minMonths: 24 },
 				notices: [{ kind: "unsupported", text: "北京" }],
 			},
@@ -69,7 +68,7 @@ describe("只改条件", () => {
 			{
 				kind: "spec",
 				spec: {
-					evidence: "+算法",
+					requirements: parseQuery("+算法"),
 					scope: {},
 					notices: [],
 				},
@@ -95,7 +94,10 @@ describe("门面", () => {
 	test("改一枚 chip 不换门面：问的还是那句话", async () => {
 		const root = await sentence("算法");
 		const { turnId } = await createTurn(
-			{ kind: "spec", spec: { ...root.spec, evidence: "+算法" } },
+			{
+				kind: "spec",
+				spec: { ...root.spec, requirements: parseQuery("+算法") },
+			},
 			root.turnId,
 		);
 		const [row] = (await listRecent()).filter((r) => r.turnId === turnId);

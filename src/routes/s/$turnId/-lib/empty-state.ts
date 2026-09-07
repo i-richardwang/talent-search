@@ -1,5 +1,5 @@
 import type { EmptyReason } from "#/search/empty";
-import { enableAll } from "#/search/parse";
+import { type Requirement, withOff } from "#/search/requirement";
 import { CLEARED_FILTERS, type View } from "./view-params";
 
 /**
@@ -23,12 +23,12 @@ type EmptyCopy = {
 };
 
 type Handlers = {
-	/** 这条查询的证据要求（规范查询串）。「把停用的全部启用」改的是它。 */
-	evidence: string;
+	/** 这条查询的证据要求。「把停用的全部启用」改的是它。 */
+	requirements: readonly Requirement[];
 	/** 改视图：筛选、翻页。不产生新的查询记录。 */
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：派生一条新记录。 */
-	onReviseQuery: (next: string) => void;
+	onReviseQuery: (next: Requirement[]) => void;
 	onEditQuery: () => void;
 };
 
@@ -55,9 +55,9 @@ const COPY: {
 		action: {
 			label: "启用全部条件",
 			// 启用是**改查询**，不是改视图：条件变了，找的就是另一批人。所以它
-			// 派生一条新记录。走 `enableAll`（串进串出）而不是在这里重拼一遍
-			// chips：重拼的那一版会丢掉并列说法，而屏幕上只看得出「少了一个」。
-			onClick: () => h.onReviseQuery(enableAll(h.evidence)),
+			// 派生一条新记录。
+			onClick: () =>
+				h.onReviseQuery(h.requirements.map((r) => withOff(r, false))),
 		},
 	}),
 	excludeOnly: (_reason, h) => ({

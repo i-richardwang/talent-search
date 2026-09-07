@@ -19,6 +19,7 @@ import {
 	isMulti,
 } from "#/search/dimensions";
 import { parsePopulation } from "#/search/params";
+import { parseQuery } from "#/search/query-syntax";
 import type { SearchFilters } from "#/search/result";
 import { seed, setup } from "./fixture";
 
@@ -27,8 +28,11 @@ after(teardown);
 
 const { search } = await import("#/search/search");
 
-const run = async (evidence: string, filters: SearchFilters = {}) => {
-	const outcome = await search({ evidence, scope: {}, notices: [] }, filters);
+const run = async (query: string, filters: SearchFilters = {}) => {
+	const outcome = await search(
+		{ requirements: parseQuery(query), scope: {}, notices: [] },
+		filters,
+	);
 	if (outcome.order !== "relevance")
 		throw new Error("要求查询未进入相关度路径");
 	return outcome;
@@ -228,7 +232,11 @@ describe("分面预告的数就是点下去会得到的数", () => {
 				covered.add(key);
 				const filtered = await run(QUERY, pick(key, row.value));
 				const scoped = await search(
-					{ evidence: QUERY, scope: pick(key, row.value), notices: [] },
+					{
+						requirements: parseQuery(QUERY),
+						scope: pick(key, row.value),
+						notices: [],
+					},
 					{},
 				);
 				assert.deepEqual(

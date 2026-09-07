@@ -6,7 +6,7 @@
  *
  * 用例文件是一个 JSON 数组，每项：
  *   { "name": "找有支付风控经验的人",
- *     "query": "支付/风控,+带团队",        // chip 语法，走 parseChips
+ *     "query": "支付/风控,+带团队",        // 一行查询语法，见 search/query-syntax.ts
  *     "expect": ["E1001", "E2042"] }       // 已确认应当出现的工号
  *
  * 真实评估用例不进版本库（题目和答案指向真人）；仓库只带 `evals/sample.json`——
@@ -14,13 +14,13 @@
  *
  * 这把尺子存在的意义：提示词、权重、说法档位都会被大幅调整，而每次调整既可能
  * 找回漏掉的人、也可能放进不相干的人——没有基线就分不清是变好还是变坏。
- * query 用 chip 语法而不是原话，是刻意的：这里量的是**检索与排序**，不含模型
+ * query 用一行查询语法而不是原话，是刻意的：这里量的是**检索与排序**，不含模型
  * 理解那一跳的方差；理解的对错由 tests/intent.test.ts 和人工评审管。
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "#/db";
-import { canonical, parseChips } from "#/search/parse";
+import { parseQuery } from "#/search/query-syntax";
 import { search } from "#/search/search";
 import { RESULT_MAX } from "#/search/weights";
 
@@ -40,7 +40,7 @@ function loadCases(file: string): Case[] {
 		if (typeof c.name !== "string" || !c.name.trim())
 			throw new Error(`${where}：name 必须是非空字符串`);
 		const name = c.name.trim();
-		if (typeof c.query !== "string" || parseChips(c.query).length === 0)
+		if (typeof c.query !== "string" || parseQuery(c.query).length === 0)
 			throw new Error(`${where}「${name}」：query 解析不出任何条件`);
 		const rawExpect = c.expect;
 		if (
@@ -84,7 +84,7 @@ let expected = 0;
 try {
 	for (const c of cases) {
 		const outcome = await search(
-			{ evidence: canonical(c.query), scope: {}, notices: [] },
+			{ requirements: parseQuery(c.query), scope: {}, notices: [] },
 			{},
 			RESULT_MAX,
 		);

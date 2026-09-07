@@ -16,14 +16,16 @@ import {
 	type View,
 } from "#/routes/s/$turnId/-lib/view-params";
 import type { EmptyReason } from "#/search/empty";
+import { parseQuery } from "#/search/query-syntax";
+import type { Requirement } from "#/search/requirement";
 
 /** 跑一次空态，把按钮按下去，回收它想改的东西 */
-function run(reason: EmptyReason, evidence = "") {
+function run(reason: EmptyReason, query = "") {
 	let changed: Partial<View> | undefined;
-	let revised: string | undefined;
+	let revised: Requirement[] | undefined;
 	let focused = false;
 	const copy = emptyState(reason, {
-		evidence,
+		requirements: parseQuery(query),
 		onChange: (next) => {
 			changed = next;
 		},
@@ -59,17 +61,17 @@ describe("条件全被停用", () => {
 	test("说的是停用，出口是一键开回来，而且是改查询不是改视图", () => {
 		const s = run({ kind: "allDisabled" }, "~渠道运营,~+带团队");
 		assert.match(s.title, /没有启用/);
-		assert.equal(s.revised, "渠道运营,+带团队", "启用要保住原来的强度");
+		assert.deepEqual(
+			s.revised,
+			parseQuery("渠道运营,+带团队"),
+			"启用要保住原来的强度",
+		);
 		assert.equal(s.changed, undefined, "改条件不是改视图");
 	});
 
 	test("启用不是重写：说法一个都不能少", () => {
 		const s = run({ kind: "allDisabled" }, "~大模型/多模态,~+带团队/带项目");
-		assert.equal(
-			s.revised,
-			"大模型/多模态,+带团队/带项目",
-			"一键启用若重拼 chip，并列说法就会掉，屏幕上只看得出「少了一个」",
-		);
+		assert.deepEqual(s.revised, parseQuery("大模型/多模态,+带团队/带项目"));
 	});
 });
 

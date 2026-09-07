@@ -4,7 +4,6 @@ import { Button } from "#/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "#/components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { dots } from "#/lib/format";
-import { parseChips } from "#/search/parse";
 import type { SearchSpec } from "#/search/spec";
 import type { RecentSearch } from "#/server/turn";
 import { scopeEntries } from "../-lib/scope-label";
@@ -19,9 +18,9 @@ import { scopeEntries } from "../-lib/scope-label";
  */
 function recentLabel(spec: SearchSpec, rawText: string | null) {
 	if (rawText) return rawText;
-	const evidence = parseChips(spec.evidence).map((chip) => chip.term);
+	const terms = spec.requirements.map((r) => r.members[0]);
 	const scope = scopeEntries(spec.scope).map((entry) => entry.label);
-	return dots(...evidence, ...scope) || "未生效的条件";
+	return dots(...terms, ...scope) || "未生效的条件";
 }
 
 /**

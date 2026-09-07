@@ -8,7 +8,7 @@
 import type { Employee, Route } from "#/db/schema";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
-import type { ChipMode } from "./parse";
+import type { RequirementMode } from "./requirement";
 import type { SearchScope } from "./spec";
 
 export type Hit = {
@@ -84,7 +84,7 @@ export type TermBasis = {
 export type TermPlan = {
 	term: string;
 	members: string[];
-	mode: Exclude<ChipMode, "exclude">;
+	mode: Exclude<RequirementMode, "exclude">;
 };
 
 /**

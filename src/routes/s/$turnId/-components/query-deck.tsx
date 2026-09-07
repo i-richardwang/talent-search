@@ -201,8 +201,10 @@ export function QueryDeck({
 					    分成两条横带只会让人以为那是两类东西。 */}
 					<div className="flex flex-wrap items-center gap-1.5">
 						<QueryChips
-							onChange={(evidence) => onChangeSpec({ ...spec, evidence })}
-							query={spec.evidence}
+							onChange={(requirements) =>
+								onChangeSpec({ ...spec, requirements })
+							}
+							requirements={spec.requirements}
 							wide={new Set(wideTerms(spec))}
 						/>
 						<QueryScope

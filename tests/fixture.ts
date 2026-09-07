@@ -10,7 +10,7 @@
  * `fakeEmbedding`），重排分数就是同一个余弦，于是相关度是可以手算的——「算法」对
  * 「算法工程师」是 2/√(2×5) ≈ 0.63，对「运营」是 0。召回下限不高于判定线
  * （`RECALL_MIN <= RELEVANCE_MIN`，search.test.ts 有断言），所以在这里通过的阈值就是
- * `RELEVANCE_MIN` 一个数。查询理解按查询串语法读那句话（见 `fakeIntent`），
+ * `RELEVANCE_MIN` 一个数。查询理解按一行查询语法读那句话（见 `fakeIntent`），
  * 于是一句「算法, -实习」得到的条件是可以预先写出来的。测试用它们测**机制**
  * （阈值、AND、否决、分面、记录派生），不测语义质量；语义质量归 eval 和真模型。
  * 查询侧走的是真正的 HTTP 客户端代码（`src/server/embed.ts`、`src/server/rerank.ts`、
@@ -32,6 +32,7 @@ import {
 	type Route,
 	searchTurn,
 } from "#/db/schema";
+import { parseQuery } from "#/search/query-syntax";
 
 /**
  * 每个测试文件一个 schema。名字带进程号**和**一段随机：`bun test --parallel`
@@ -159,23 +160,16 @@ export function holdNextRerank() {
 }
 
 /**
- * 假理解：把那句话当查询串读（`,` 分要求、`/` 分说法、`+` `-` 定强度），
- * 交出真模型会交出的那份结构化对象。范围一律不填——这里测的是记录与
- * 检索机制，范围的收窄在 intent.test.ts 里对着 `toSpec` 直接测。
+ * 假理解：把那句话按一行查询语法读（`search/query-syntax.ts`），交出真模型
+ * 会交出的那份结构化对象。范围一律不填——这里测的是记录与检索机制，
+ * 范围的收窄在 intent.test.ts 里对着 `toSpec` 直接测。
  */
 function fakeIntent(text: string) {
-	const MODE: Record<string, string> = { "+": "boost", "-": "exclude" };
-	const terms = text
-		.split(",")
-		.map((group) => group.trim())
-		.filter(Boolean)
-		.map((group) => {
-			const mode = MODE[group[0] ?? ""] ?? "must";
-			const [term, ...alts] = (mode === "must" ? group : group.slice(1))
-				.split("/")
-				.map((member) => member.trim());
-			return { term, mode, alts: alts.length > 0 ? alts : null };
-		});
+	const terms = parseQuery(text).map(({ members: [term, ...alts], mode }) => ({
+		term,
+		mode,
+		alts: alts.length > 0 ? alts : null,
+	}));
 	return {
 		terms,
 		kind: null,

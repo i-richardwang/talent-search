@@ -19,6 +19,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { NOT_A_VALUE, VOCAB_KEYS } from "#/search/dimensions";
+import { parseQuery } from "#/search/query-syntax";
 import { fakeSimilarity, seed, setup } from "./fixture";
 
 const teardown = await setup();
@@ -28,9 +29,9 @@ after(teardown);
 const { overflowContributors, probeWide, search, vocabulary } = await import(
 	"#/search/search"
 );
-const run = async (evidence: string, filters = {}, limit?: number) => {
+const run = async (query: string, filters = {}, limit?: number) => {
 	const outcome = await search(
-		{ evidence, scope: {}, notices: [] },
+		{ requirements: parseQuery(query), scope: {}, notices: [] },
 		filters,
 		limit,
 	);
@@ -262,7 +263,7 @@ describe("AND 语义", () => {
 describe("结构化范围是独立的候选定义", () => {
 	test("没有语义要求也能按范围找到人，不调用向量词伪造候选", async () => {
 		const outcome = await search({
-			evidence: "",
+			requirements: parseQuery(""),
 			scope: { kind: "external" },
 			notices: [],
 		});
@@ -277,7 +278,11 @@ describe("结构化范围是独立的候选定义", () => {
 
 	test("查询范围是硬约束，视图只能继续收窄，不能换掉它", async () => {
 		const outcome = await search(
-			{ evidence: "", scope: { kind: "external" }, notices: [] },
+			{
+				requirements: parseQuery(""),
+				scope: { kind: "external" },
+				notices: [],
+			},
 			{ kind: "internal" },
 		);
 		assert.equal(outcome.total, 0);
@@ -285,7 +290,7 @@ describe("结构化范围是独立的候选定义", () => {
 
 	test("有语义要求时，范围约束的是能够作证的经历段", async () => {
 		const outcome = await search({
-			evidence: "算法",
+			requirements: parseQuery("算法"),
 			scope: { kind: "external" },
 			notices: [],
 		});
@@ -337,7 +342,11 @@ describe("结构化范围的分面口径", () => {
 
 	test("点了一维之后，别的维度被挤成 0 的行留在原地", async () => {
 		const scope = { companyTag: ["星域联盟"] };
-		const base = await search({ evidence: "", scope, notices: [] });
+		const base = await search({
+			requirements: parseQuery(""),
+			scope,
+			notices: [],
+		});
 		assert.equal(base.total, 2);
 		assert.deepEqual(base.facets.recruitment, [
 			{ value: "社招", n: 1 },
@@ -345,7 +354,7 @@ describe("结构化范围的分面口径", () => {
 		]);
 
 		const picked = await search(
-			{ evidence: "", scope, notices: [] },
+			{ requirements: parseQuery(""), scope, notices: [] },
 			{
 				level: ["P4"],
 			},
@@ -905,7 +914,7 @@ describe("排除词：否决证据段，不否决人", () => {
 	 */
 	test("只有范围加一个排除词时，被否决的段照样不算数", async () => {
 		const scoped = await search({
-			evidence: "-机甲实习",
+			requirements: parseQuery("-机甲实习"),
 			scope: { kind: "external" },
 			notices: [],
 		});
@@ -913,7 +922,7 @@ describe("排除词：否决证据段，不否决人", () => {
 		assert.ok(!ids.includes("X002"), "只有这一段的人失去全部凭据，出局");
 		assert.ok(ids.includes("X003"), "还有别的段的人留下——砍的是段不是人");
 		const loose = await search({
-			evidence: "",
+			requirements: parseQuery(""),
 			scope: { kind: "external" },
 			notices: [],
 		});
@@ -925,7 +934,7 @@ describe("排除词：否决证据段，不否决人", () => {
 
 	test("范围跑过了就报范围的结果，不报「你只写了排除词」", async () => {
 		const outcome = await search({
-			evidence: "-机甲实习",
+			requirements: parseQuery("-机甲实习"),
 			scope: { kind: "external", minMonths: 999 },
 			notices: [],
 		});

@@ -22,7 +22,7 @@ import { Toggle } from "#/components/ui/toggle";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { bestHitPerTerm } from "#/search/evidence";
-import { activeChips, type Chip, parseChips } from "#/search/parse";
+import { activeRequirements, type Requirement } from "#/search/requirement";
 import type {
 	RankedResult,
 	SearchOutcome,
@@ -196,12 +196,11 @@ export function ResultList({
 	/** 「只看任职记录可查的」开着没有，给表头那个开关。 */
 	strong: boolean;
 	onChange: (next: Partial<View>) => void;
-	/** 改查询：给一串新的证据要求，派生一条新记录。 */
-	onReviseQuery: (next: string) => void;
+	/** 改查询：给一份新的证据要求，派生一条新记录。 */
+	onReviseQuery: (next: Requirement[]) => void;
 	onEditQuery: () => void;
 }) {
 	const { results, terms, order, total } = outcome;
-	const chips = parseChips(spec.evidence);
 	// 上一次真正画出来的块数，见 SKELETON_ROWS。写在 effect 里而不是渲染中，
 	// 渲染要保持纯：同一份 props 渲染两遍必须得到同一棵树。
 	const lastRows = useRef(SKELETON_ROWS);
@@ -223,7 +222,7 @@ export function ResultList({
 
 	// 检索中绝不闪现「没有结果」。
 	if (loading) {
-		const pending = pendingTerms(chips);
+		const pending = pendingTerms(spec.requirements);
 		return (
 			<div>
 				{head}
@@ -263,7 +262,7 @@ export function ResultList({
 		// 成因由检索层给（`search/empty.ts`），这里只把它翻译成一句话和一个按钮；
 		// 检索还没跑（换查询的头一帧）时按「还没有条件」说。
 		const state = emptyState(outcome.empty ?? { kind: "noConditions" }, {
-			evidence: spec.evidence,
+			requirements: spec.requirements,
 			onChange,
 			onReviseQuery,
 			onEditQuery,
@@ -419,15 +418,21 @@ export function ResultList({
 /**
  * 这次查询要画哪几条证据。
  *
- * 取自查询记录上的 chips，不等服务端返回 `terms`：改筛选那一帧服务端还是
+ * 取自查询记录上的要求，不等服务端返回 `terms`：改筛选那一帧服务端还是
  * 旧值，骨架屏的块高会先跳一下再回来。骨架只数条数，所以说法只放主词即可。
  *
  * 排除词和停用的词都不占一行：前者不产出证据，后者根本不参与这次检索。
  */
-function pendingTerms(chips: Chip[]): TermPlan[] {
-	return activeChips(chips).flatMap((c) =>
-		c.mode === "exclude"
+function pendingTerms(requirements: readonly Requirement[]): TermPlan[] {
+	return activeRequirements(requirements).flatMap((r) =>
+		r.mode === "exclude"
 			? []
-			: [{ term: c.term, members: [c.term], mode: c.mode } satisfies TermPlan],
+			: [
+					{
+						term: r.members[0],
+						members: [r.members[0]],
+						mode: r.mode,
+					} satisfies TermPlan,
+				],
 	);
 }

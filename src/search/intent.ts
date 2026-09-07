@@ -6,14 +6,10 @@ import { z } from "zod";
 import { parsePicked, type VocabKey } from "./dimensions";
 import {
 	boundedText,
-	CHIP_MAX,
-	CHIP_MODES,
-	type ChipDraft,
-	type ChipMode,
-	canonical,
-	termOf,
-	toQuery,
-} from "./parse";
+	REQUIREMENT_MAX,
+	REQUIREMENT_MODES,
+	requirementsOf,
+} from "./requirement";
 import type { SearchScope, SearchSpec } from "./spec";
 
 /** 模型选择结构化值时只能看语料真实拥有的词表。哪几维有词表见 `VOCAB_KEYS`。 */
@@ -42,7 +38,7 @@ export function intentSchema(vocab: Vocabulary) {
 							"一个方向、领域或能力，两到十二个字，写成库里岗位或序列会用的说法；缩写展开（BD → 商务拓展）",
 						),
 					mode: z
-						.enum(CHIP_MODES)
+						.enum(REQUIREMENT_MODES)
 						.describe(
 							"must=必须做过；boost=最好有，没有也留下；exclude=这类经历不作数",
 						),
@@ -54,7 +50,7 @@ export function intentSchema(vocab: Vocabulary) {
 						),
 				}),
 			)
-			.describe(`语义要求，按句子里出现的顺序，最多 ${CHIP_MAX} 条`),
+			.describe(`语义要求，按句子里出现的顺序，最多 ${REQUIREMENT_MAX} 条`),
 		kind: z
 			.enum(["internal", "external"])
 			.nullable()
@@ -109,20 +105,18 @@ const UNSUPPORTED_MAX = 8;
 /** 模型输出 → 这句话的查询。任何不合规字段都被局部丢弃，不牵连整句。 */
 export function toSpec(raw: unknown, vocab: Vocabulary): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;
-	const drafts: ChipDraft[] = [];
 
-	for (const item of Array.isArray(value.terms) ? value.terms : []) {
-		const entry = (item ?? {}) as Record<string, unknown>;
-		const term = termOf(entry.term);
-		if (!term) continue;
-		const mode = CHIP_MODES.includes(entry.mode as ChipMode)
-			? (entry.mode as ChipMode)
-			: "must";
-		const alts = Array.isArray(entry.alts)
-			? entry.alts.map(termOf).filter((x): x is string => x !== undefined)
-			: [];
-		drafts.push({ term, ...(alts.length > 0 && { alts }), mode });
-	}
+	// 模型按「主词 + 并列说法」作答（那是给它的提问方式），查询里它们是同权重的
+	// 说法。收窄——词长、去重、条数——归 `requirementsOf`，这里只换形状。
+	const requirements = requirementsOf(
+		(Array.isArray(value.terms) ? value.terms : []).map((item) => {
+			const entry = (item ?? {}) as Record<string, unknown>;
+			return {
+				members: [entry.term, ...(Array.isArray(entry.alts) ? entry.alts : [])],
+				mode: entry.mode,
+			};
+		}),
+	);
 
 	/**
 	 * 模型一维只给一个值——提示词就是这么要求的，而维度的取值形状是集合，所以
@@ -163,7 +157,7 @@ export function toSpec(raw: unknown, vocab: Vocabulary): SearchSpec {
 	).slice(0, UNSUPPORTED_MAX);
 
 	return {
-		evidence: canonical(toQuery(drafts)),
+		requirements,
 		scope,
 		notices: unsupported.map((message) => ({
 			kind: "unsupported" as const,

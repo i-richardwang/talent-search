@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
 import { sql } from "drizzle-orm";
 import { EMBED_DIM } from "#/db/schema";
+import { parseQuery } from "#/search/query-syntax";
 import { CANARY, fakeEmbedding, holdNextRerank, seed, setup } from "./fixture";
 
 const teardown = await setup();
@@ -22,8 +23,12 @@ after(teardown);
 const { search } = await import("#/search/search");
 const { db, pool, withCorpusSnapshot } = await import("#/db");
 
-const run = async (evidence: string) => {
-	const outcome = await search({ evidence, scope: {}, notices: [] });
+const run = async (query: string) => {
+	const outcome = await search({
+		requirements: parseQuery(query),
+		scope: {},
+		notices: [],
+	});
 	if (outcome.order !== "relevance")
 		throw new Error("要求查询未进入相关度路径");
 	return outcome;

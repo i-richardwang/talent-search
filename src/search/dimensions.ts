@@ -31,7 +31,7 @@
  * 形状盖住两件不同的事。它们是另一类，见 `SearchFilters`。
  */
 import { duration } from "#/lib/format";
-import { boundedText } from "./parse";
+import { boundedText } from "./requirement";
 import { MIN_MONTHS_BUCKETS } from "./weights";
 
 /**

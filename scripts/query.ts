@@ -1,7 +1,7 @@
-/** 命令行按查询串语法跑一条查询，用于验收用例与调参：bun run query "算法,+产品,-后端" */
+/** 命令行跑一条查询，用于验收用例与调参：bun run query "算法,+产品,-后端"（语法见 `search/query-syntax.ts`） */
 import { pool } from "#/db";
 import { dots, period } from "#/lib/format";
-import { canonical } from "#/search/parse";
+import { parseQuery } from "#/search/query-syntax";
 import { search } from "#/search/search";
 
 const q = process.argv.slice(2).join(" ");
@@ -9,7 +9,7 @@ if (!q) throw new Error('用法：bun run query "查询词"');
 
 const t0 = Date.now();
 const outcome = await search({
-	evidence: canonical(q),
+	requirements: parseQuery(q),
 	scope: {},
 	notices: [],
 });

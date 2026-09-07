@@ -15,7 +15,6 @@
  * 它是纯函数、不带 `db`，所以页面可以从这里取值（分界见 `result.ts`）。
  */
 import { narrowsPopulation } from "./params";
-import { parseChips } from "./parse";
 import type { SearchFilters, TermPlan } from "./result";
 import { type SearchSpec, unsupportedOf } from "./spec";
 
@@ -88,11 +87,11 @@ export function emptyReason(input: {
 			: { kind: "scopeEmpty" };
 
 	// 什么都没跑：条件要么被自己停用了，要么本来就产不出候选人。
-	const chips = parseChips(spec.evidence);
+	const { requirements } = spec;
 	// 排除词的停用不算「我把条件停了」：它本来就不产出人
-	if (chips.some((chip) => chip.off && chip.mode !== "exclude"))
+	if (requirements.some((r) => r.off && r.mode !== "exclude"))
 		return { kind: "allDisabled" };
-	if (chips.length > 0) return { kind: "excludeOnly" };
+	if (requirements.length > 0) return { kind: "excludeOnly" };
 	if (unsupportedOf(spec).length > 0) return { kind: "unsupportedOnly" };
 	return { kind: "noConditions" };
 }

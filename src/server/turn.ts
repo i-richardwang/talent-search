@@ -6,7 +6,7 @@ import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
 import { toSpec } from "#/search/intent";
-import { editChip, parseChips } from "#/search/parse";
+import { type Requirement, withOff } from "#/search/requirement";
 import { probeWide, vocabulary } from "#/search/search";
 import {
 	normalizeSpec,
@@ -97,34 +97,24 @@ export async function createTurn(
  * `RELEVANCE_MIN` 量，而排除按更高的 `RELEVANCE_MIN_EXCLUDE` 判——
  * 量出来的宽根本不是它搜出来的宽。
  *
- * 成因落在 notices 上，不落在 chip 上：宽是**语料**的事实，会随语料重灌后失效，
- * 而 chips 是记录里不可变的那一半（论证在 `parse.ts` 的 Chip）。
+ * 成因落在 notices 上，不落在要求上：宽是**语料**的事实，会随语料重灌后失效，
+ * 而要求是记录里不可变的那一半（论证在 `requirement.ts`）。
  */
 async function benchWide(
-	evidence: string,
-): Promise<{ evidence: string; notices: SearchNotice[] }> {
-	const chips = parseChips(evidence);
-	const admitting = chips.map((chip) => chip.mode !== "exclude");
-	const texts = [
-		...new Set(
-			chips.flatMap((chip, i) =>
-				admitting[i] ? [chip.term, ...(chip.alts ?? [])] : [],
-			),
-		),
-	];
-	const wide = await probeWide(texts);
-	if (wide.size === 0) return { evidence, notices: [] };
-
-	let query = evidence;
+	requirements: Requirement[],
+): Promise<{ requirements: Requirement[]; notices: SearchNotice[] }> {
+	const admitting = requirements.filter((r) => r.mode !== "exclude");
+	const wide = await probeWide([
+		...new Set(admitting.flatMap((r) => r.members)),
+	]);
 	const notices: SearchNotice[] = [];
-	chips.forEach((chip, index) => {
-		if (!admitting[index]) return;
-		if (![chip.term, ...(chip.alts ?? [])].some((text) => wide.has(text)))
-			return;
-		query = editChip(query, index, { off: true });
-		notices.push({ kind: "wide", term: chip.term });
+	const benched = requirements.map((r) => {
+		if (r.mode === "exclude" || !r.members.some((text) => wide.has(text)))
+			return r;
+		notices.push({ kind: "wide", term: r.members[0] });
+		return withOff(r, true);
 	});
-	return { evidence: query, notices };
+	return { requirements: benched, notices };
 }
 
 /**
@@ -145,10 +135,10 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	// 就能把排在待发布 ETL 后面的每一个检索一起堵住。
 	const vocab = await vocabulary();
 	const understood = toSpec(await understand(rawText, vocab), vocab);
-	const benched = await benchWide(understood.evidence);
+	const benched = await benchWide(understood.requirements);
 	const spec = normalizeSpec({
 		...understood,
-		evidence: benched.evidence,
+		requirements: benched.requirements,
 		notices: [...understood.notices, ...benched.notices],
 	});
 

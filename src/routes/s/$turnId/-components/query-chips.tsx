@@ -12,12 +12,11 @@ import {
 } from "#/components/ui/menu";
 import { cn } from "#/lib/utils";
 import {
-	CHIP_MODES,
-	type ChipMode,
-	dropChip,
-	editChip,
-	parseChips,
-} from "#/search/parse";
+	REQUIREMENT_MODES,
+	type Requirement,
+	type RequirementMode,
+	withOff,
+} from "#/search/requirement";
 
 /**
  * 查询条件：一条要求一枚 chip，可改强度、可删。
@@ -26,12 +25,11 @@ import {
  * `query-deck.tsx`）。所以这里只做微调：改强度、停用、删掉一枚，都比重写整句
  * 快。说不清哪儿错了的时候，出路在那句话上，不在这排 chip 上。
  *
- * 停用（`~`，见 parse.ts）保留词和强度，只让它退出本次检索，
+ * 停用（见 `requirement.ts`）保留词和强度，只让它退出本次检索，
  * 用于快速判断某个条件是否过窄。
  *
- * 三个动作（改强度、停用、删除）都改的是**那串查询**，不是屏幕上这几个对象：
- * 组件收一串、发一串，chip 只是它解析出来的视图。所以「改强度时把说法弄丢了」
- * 这类事在这里写不出来——它根本没有拼 chip 的机会。
+ * 三个动作（改强度、停用、删除）都是对要求列表的一次 map 或 filter：
+ * 改的那一条从原对象展开，其余字段原样带着，没有拼装的机会。
  */
 
 /**
@@ -40,7 +38,7 @@ import {
  * 描边和实心的差别足够读出「这一枚不一样」，而且不占任何一个色相
  * （全站的色相已经各有其主，见 `evidence.tsx`）。
  */
-const MODE_VARIANT: Record<ChipMode, "secondary" | "outline"> = {
+const MODE_VARIANT: Record<RequirementMode, "secondary" | "outline"> = {
 	must: "secondary",
 	boost: "outline",
 	exclude: "outline",
@@ -49,13 +47,13 @@ const MODE_VARIANT: Record<ChipMode, "secondary" | "outline"> = {
 /** chip 的尺码。和 `MODE_VARIANT` 一起，构成 chip 静息态的全部外观。 */
 const CHIP_SIZE = "xs" as const;
 
-const MODE_LABEL: Record<ChipMode, string> = {
+const MODE_LABEL: Record<RequirementMode, string> = {
 	must: "必须",
 	boost: "加分",
 	exclude: "排除",
 };
 
-const MODE_HINT: Record<ChipMode, string> = {
+const MODE_HINT: Record<RequirementMode, string> = {
 	must: "仅显示具备这项经历的人",
 	boost: "具备这项经历的人优先显示",
 	exclude: "这类经历不再作为证据；仅有这类经历的人不再显示",
@@ -71,11 +69,10 @@ const MODE_HINT: Record<ChipMode, string> = {
  * 「必须」不带符号：它是默认，而默认不该有标记——大多数查询整条都是必须词，
  * 一排 `=` 号只会让人以为那是要读的内容。
  *
- * 这是 `parse.ts` 里那套记号的**排印**：查询串里的减号是 ASCII 的 `-`（URL 要
- * 读得出、手改得动），屏幕上画的是真正的减号 U+2212——它和加号同宽同高，
- * 一列 chip 的符号位才对得齐。语法归 `parse.ts`，字形归这里。
+ * 减号画的是真正的减号 U+2212，不是 ASCII 的 `-`：它和加号同宽同高，
+ * 一列 chip 的符号位才对得齐。
  */
-const MODE_GLYPH: Record<ChipMode, string> = {
+const MODE_GLYPH: Record<RequirementMode, string> = {
 	must: "",
 	boost: "+",
 	exclude: "−",
@@ -101,32 +98,29 @@ const EXCLUDE_STYLE = "line-through";
 const OFF_STYLE = "border-dashed text-muted-foreground";
 
 export function QueryChips({
-	query,
+	requirements,
 	wide,
 	onChange,
 }: {
-	/** 这条查询的证据要求（规范查询串）。chips 由它现解，不另存一份。 */
-	query: string;
+	/** 这条查询的证据要求，一条一枚 chip。 */
+	requirements: readonly Requirement[];
 	/** 这次理解里被判成太宽的词。它解释「这一枚为什么是停用的」，不改变停用本身。 */
 	wide: ReadonlySet<string>;
-	onChange: (next: string) => void;
+	onChange: (next: Requirement[]) => void;
 }) {
-	const chips = parseChips(query);
-	if (chips.length === 0) return null;
+	if (requirements.length === 0) return null;
 
-	// 三个动作都是串进串出（`parse.ts` 的编辑 API）：改强度不碰说法、
-	// 停用不碰强度，靠的是那一层原样带着其余字段写回去，不是这里记得带全。
-	const replace = (i: number, mode: ChipMode) =>
-		onChange(editChip(query, i, { mode }));
-	const remove = (i: number) => onChange(dropChip(query, i));
-	const toggle = (i: number, off: boolean) =>
-		onChange(editChip(query, i, { off: !off }));
+	const replaceAt = (i: number, next: Requirement) =>
+		onChange(requirements.map((r, j) => (j === i ? next : r)));
+	const remove = (i: number) =>
+		onChange(requirements.filter((_, j) => j !== i));
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
-			{chips.map((chip, i) => {
-				const tooWide = wide.has(chip.term);
+			{requirements.map((chip, i) => {
+				const term = chip.members[0];
+				const tooWide = wide.has(term);
 				return (
-					<Menu key={`${chip.off ? "~" : ""}${chip.mode}:${chip.term}`}>
+					<Menu key={`${chip.off ? "~" : ""}${chip.mode}:${term}`}>
 						<MenuTrigger
 							render={
 								<Button
@@ -145,7 +139,7 @@ export function QueryChips({
 								</span>
 							)}
 							{/* 并列说法（或）与主词同权重，平着写 */}
-							<span>{[chip.term, ...(chip.alts ?? [])].join(" / ")}</span>
+							<span>{chip.members.join(" / ")}</span>
 							{/* 「太宽」是成因，得用字说；只给一个停用图标的话，
 							    自动停的和自己停的在屏幕上就分不出来了 */}
 							{chip.off && tooWide && <span className="text-xs">太宽</span>}
@@ -167,10 +161,12 @@ export function QueryChips({
 								</>
 							)}
 							<MenuRadioGroup
-								onValueChange={(mode) => replace(i, mode as ChipMode)}
+								onValueChange={(mode) =>
+									replaceAt(i, { ...chip, mode: mode as RequirementMode })
+								}
 								value={chip.mode}
 							>
-								{CHIP_MODES.map((mode) => (
+								{REQUIREMENT_MODES.map((mode) => (
 									<MenuRadioItem key={mode} value={mode}>
 										{/* 两行一格：标题说这一档叫什么，副行说它会做什么。
 										    改强度是这个菜单唯一的主任务，值得占两行。 */}
@@ -189,7 +185,7 @@ export function QueryChips({
 							 * （词没了，强度也一起没了）。
 							 */}
 							<MenuSeparator />
-							<MenuItem onClick={() => toggle(i, Boolean(chip.off))}>
+							<MenuItem onClick={() => replaceAt(i, withOff(chip, !chip.off))}>
 								{chip.off ? "重新启用" : "暂不使用"}
 							</MenuItem>
 							<MenuItem onClick={() => remove(i)} variant="destructive">

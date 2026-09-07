@@ -1,23 +1,14 @@
 import type { Picked } from "./dimensions";
 import { narrowsPopulation, parsePopulation } from "./params";
-import { boundedText, canonical, parseChips, queryString } from "./parse";
+import { boundedText, type Requirement, requirementsOf } from "./requirement";
 
 /**
  * 一条查询的完整含义。它是查询记录的唯一事实源，也是查询台编辑、最近搜索回放、
  * 搜索执行共同使用的边界；不能执行的部分同样属于这份含义，不能散落在旁路字段里。
  */
 export type SearchSpec = {
-	/**
-	 * 证据要求，写成**规范查询串**（`大模型/推荐系统,+带团队,~-实习`）。
-	 *
-	 * 存串不存对象数组，是因为这条串本来就是全站唯一的查询表示：URL 能读、
-	 * 命令行能敲、服务端和页面共用同一个 `parseChips` 解它。存成对象数组的话
-	 * 同一份含义就有了两种写法（谁的字段顺序、谁带不带 `off`），而每一处要
-	 * 「改一枚 chip」的代码都得自己拼一个对象——拼漏一个字段就是一次静默的
-	 * 查询改写。chips 由 `parseChips` 现解，编辑走 `editChip` / `dropChip` /
-	 * `enableAll`（都是串进串出）。
-	 */
-	evidence: string;
+	/** 证据要求，按句子里出现的顺序。形状与不变量见 `requirement.ts`。 */
+	requirements: Requirement[];
 	scope: SearchScope;
 	notices: SearchNotice[];
 };
@@ -61,7 +52,7 @@ export type QueryInput =
 	| { kind: "spec"; spec: SearchSpec };
 
 export function emptySpec(): SearchSpec {
-	return { evidence: "", scope: {}, notices: [] };
+	return { requirements: [], scope: {}, notices: [] };
 }
 
 export function unsupportedOf(spec: SearchSpec) {
@@ -78,22 +69,18 @@ export function wideTerms(spec: SearchSpec) {
 	return spec.notices.flatMap((n) => (n.kind === "wide" ? [n.term] : []));
 }
 
-/**
- * 这份查询说了点什么吗。证据那一项问的是**解析出来的条件**，不是那串字非空：
- * 一串解析不出任何要求的字（比如只有几个记号）在检索里等于空查询，
- * 两处答案不一致的话，界面会放行一次什么都搜不到的提交。
- */
+/** 这份查询说了点什么吗。说了才值得落一条记录、跑一次检索。 */
 export function hasMeaning(spec: SearchSpec) {
 	return (
-		parseChips(spec.evidence).length > 0 ||
+		spec.requirements.length > 0 ||
 		narrowsPopulation(spec.scope) ||
 		spec.notices.length > 0
 	);
 }
 
 /**
- * 一份理解 → 一份可执行的查询含义。证据走一遍规范化（同一个词只留一枚），
- * 提示按内容去重。模型可能把同一个意思说两遍，而屏幕上重复的两枚 chip
+ * 一份理解 → 一份可执行的查询含义。要求走一遍收窄（同一个词只留一枚），
+ * 注解按内容去重。模型可能把同一个意思说两遍，而屏幕上重复的两枚 chip
  * 既解释不清也删不干净。
  *
  * **注解只解释在场的东西**：指向已经不在查询里的词的 `wide` 注解在这里被丢掉。
@@ -101,14 +88,14 @@ export function hasMeaning(spec: SearchSpec) {
  * 屏幕上不存在的东西。
  */
 export function normalizeSpec(spec: SearchSpec): SearchSpec {
-	const evidence = canonical(spec.evidence);
-	const present = new Set(parseChips(evidence).map((chip) => chip.term));
+	const requirements = requirementsOf(spec.requirements);
+	const present = new Set(requirements.map((r) => r.members[0]));
 	const notices = spec.notices.filter(
 		(n, i, all) =>
 			(n.kind !== "wide" || present.has(n.term)) &&
 			all.findIndex((x) => sameNotice(x, n)) === i,
 	);
-	return { evidence, scope: { ...spec.scope }, notices };
+	return { requirements, scope: { ...spec.scope }, notices };
 }
 
 function sameNotice(a: SearchNotice, b: SearchNotice) {
@@ -121,10 +108,7 @@ function sameNotice(a: SearchNotice, b: SearchNotice) {
 /** 不可信的 RPC 入参 → 完整查询；所有查询编辑都在这一边界整体收窄。 */
 export function sanitizeSpec(raw: unknown): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;
-	// 证据只有一种入参形态：那串查询。逐字段挑 chip 是第二份契约，
-	// 新加一个字段必然有一处忘记跟上。
-	const evidence = queryString(value.evidence);
-
+	const requirements = requirementsOf(value.requirements);
 	const scope = parsePopulation((value.scope ?? {}) as Record<string, unknown>);
 
 	const notices: SearchNotice[] = [];
@@ -140,5 +124,5 @@ export function sanitizeSpec(raw: unknown): SearchSpec {
 		}
 	}
 
-	return normalizeSpec({ evidence, scope, notices });
+	return normalizeSpec({ requirements, scope, notices });
 }

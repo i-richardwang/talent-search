@@ -93,7 +93,7 @@ ETL 分成两层，接数据只碰下面那一层：
 
 ```bash
 bun run dev          # 开发服务器
-bun run query "算法,+后端"           # 按查询串语法跑一条查询；TOPN=20 可以多打印几个人
+bun run query "算法,+后端"           # 跑一条查询（一行语法见 src/search/query-syntax.ts）；TOPN=20 可以多打印几个人
 bun run eval         # 拿 evals/ 里的已知答案量召回与名次
 bun run db:push      # 从 src/db/schema.ts 同步表结构；拉到改过 schema 的提交后要跑一次
 uv run python etl/aliases.py   # 整理能力词：向量圈组、模型判断同一项能力的写法，建议追加进对照表；看一遍后重跑 ETL
@@ -145,7 +145,7 @@ tests/                       单元、渲染与真 SQL 集成测试
 - **数据源与管线之间只有一份契约。** 适配器交出三张摊平的表，管线负责所有人都逃不掉的
   那几条不变量。接第二个数据源时不会长出第二套「什么算一段经历」。见 `etl/contract.py`。
 - **查询是一条记录，视图是几个 URL 参数。** 一次「我要找什么人」落成 `search_turn`
-  的一行：`SearchSpec` 完整保存证据要求（一串规范查询串）、结构化范围与注解。
+  的一行：`SearchSpec` 完整保存证据要求（`Requirement[]`）、结构化范围与注解。
   地址是 `/s/:turnId`；只影响查看方式的分面、
   翻页留在 query string，当前员工由 `/p/:empId` 子路由表达。见 `src/search/spec.ts`、`src/server/turn.ts` 与
   `src/routes/s/$turnId/-lib/view-params.ts`。
