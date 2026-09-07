@@ -4,9 +4,10 @@
 岗位 → 公司序列）。它们各有各的提示词、schema 与收窄，这里只有对两者都成立
 的事：发 `/chat/completions`、要 JSON、并发、进度，以及按身份键入的 SQLite 缓存。
 
-**缓存里存的是模型的原话**，收窄在调用方读出时做：改收窄规则不必换身份。身份
-由调用方给（`identity`），里面应当带上凡是会改变模型回答的东西——抽取空间、
-模型名、以及提示词依赖的语料（序列树）。同一段文字、同一个身份，永远同一份回答。
+**缓存里存的是模型的原话**，收窄在调用方读出时做：改收窄规则不动缓存。缓存的
+键是模型名、系统提示词与 schema 的摘要加上那段文字：会改变回答的东西都在键里，
+改了提示词（含对齐提示词里列出的序列树）旧回答自然失效，不用人记得换什么身份。
+同一段文字、同一份提示词、同一个模型，永远同一份回答。
 
 **模型输出是不可信输入。** 响应不是 JSON 的段打印说明后放弃、不进缓存，下次
 重跑再问；一个异常的响应不该让二十分钟的灌库回滚。
@@ -25,12 +26,13 @@ from endpoint import post_json, retrying
 
 
 def complete(
-    identity: str, system: str, schema: Mapping[str, object], texts: list[str], what: str
+    system: str, schema: Mapping[str, object], texts: list[str], what: str
 ) -> dict[str, object]:
     """对每段文字要一份 JSON；返回文字 → 模型原话，放弃的段不在里面。
 
     先查缓存、再去重、最后才打端点；`what` 是进度和报错里的名字（「抽取」「对齐」）。
     """
+    identity = _identity(system, schema)
     unique = list(dict.fromkeys(texts))
     with _cache() as cache:
         payloads = _cached(cache, identity, unique)
@@ -50,6 +52,12 @@ def complete(
                 if done % 20 == 0 or done == len(missing):
                     print(f"  已{what} {done}/{len(missing)} 段", flush=True)
     return payloads
+
+
+def _identity(system: str, schema: Mapping[str, object]) -> str:
+    return _sha(
+        f"{C.EXTRACT_MODEL}\x1f{system}\x1f{json.dumps(schema, ensure_ascii=False, sort_keys=True)}"
+    )
 
 
 def _cache() -> sqlite3.Connection:

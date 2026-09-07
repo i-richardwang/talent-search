@@ -40,13 +40,11 @@ EMBED_CACHE_PATH = Path(
 
 #: 抽取端点（可选）。从这里出去的是入职前经历的岗位、公司与简历描述——和嵌入
 #: 端点同一条数据边界，放内网还是公网由部署方决定。OpenAI 兼容的
-#: `/chat/completions`。三个身份变量缺一个就当没配：ETL 打印说明后跳过，能力词与
-#: 做过的事两路为空，检索照常可用。
-#: 空间 id 只进本地缓存的键：改提示词、改参与方式的枚举就换一个值，旧抽取自然失效。
-#: 它不落库——查询侧没有任何东西读它，标签落库之后就只是说法。
+#: `/chat/completions`。地址和模型名缺一个就当没配：ETL 打印说明后跳过，能力词与
+#: 做过的事两路为空、入职前经历不对齐序列，检索照常可用。
+#: 本地缓存按模型名和提示词键入（`chat.py`），没有单独的身份变量要维护。
 EXTRACT_BASE_URL = os.environ.get("EXTRACT_BASE_URL", "").strip()
 EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "").strip()
-EXTRACT_SPACE_ID = os.environ.get("EXTRACT_SPACE_ID", "").strip()
 EXTRACT_API_KEY = os.environ.get("EXTRACT_API_KEY", "").strip()
 EXTRACT_TIMEOUT_S = int(os.environ.get("EXTRACT_TIMEOUT_S", "").strip() or "120")
 EXTRACT_CONCURRENCY = int(os.environ.get("EXTRACT_CONCURRENCY", "").strip() or "4")
@@ -94,4 +92,4 @@ def require_embed_base_url() -> str:
 
 
 def extract_configured() -> bool:
-    return bool(EXTRACT_BASE_URL and EXTRACT_MODEL and EXTRACT_SPACE_ID)
+    return bool(EXTRACT_BASE_URL and EXTRACT_MODEL)

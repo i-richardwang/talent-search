@@ -23,7 +23,6 @@ def setUpModule() -> None:
             C,
             EXTRACT_BASE_URL="http://extract.test/v1",
             EXTRACT_MODEL="fake",
-            EXTRACT_SPACE_ID="fake-v1",
             EXTRACT_CONCURRENCY=2,
         )
     )
@@ -114,7 +113,7 @@ class AlignTest(unittest.TestCase):
             out = A.align(frame)
         self.assertEqual(list(out.seq_inferred_l1), [""])
 
-    def test_cache_identity_changes_with_the_tree(self) -> None:
+    def test_cache_key_changes_with_the_tree(self) -> None:
         frame = corpus(("算法工程师", ""))
         with mock.patch.object(chat, "_request", return_value={"l1": "", "l2": ""}) as request, \
              redirect_stdout(io.StringIO()):

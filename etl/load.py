@@ -226,7 +226,7 @@ def load(source_name: str) -> None:
         )
         if C.extract_configured():
             print(
-                f"\n抽取端点 {C.EXTRACT_SPACE_ID} · {C.EXTRACT_MODEL} @ {C.EXTRACT_BASE_URL}；"
+                f"\n抽取端点 {C.EXTRACT_MODEL} @ {C.EXTRACT_BASE_URL}；"
                 f"缓存 {C.EXTRACT_CACHE_PATH}"
             )
             print("\n入职前经历对齐公司序列…")
@@ -235,7 +235,7 @@ def load(source_name: str) -> None:
             # 打印说明后跳过，不静默：检索仍然可用，但「为什么简历里写了却搜不到
             # 能力词」「为什么按序列筛不到入职前的经历」得有地方看见。
             print(
-                "\n未配置抽取端点（EXTRACT_BASE_URL / EXTRACT_MODEL / EXTRACT_SPACE_ID），"
+                "\n未配置抽取端点（EXTRACT_BASE_URL / EXTRACT_MODEL），"
                 "能力词与做过的事两路为空，入职前经历不对齐序列"
             )
 

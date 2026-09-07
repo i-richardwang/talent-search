@@ -21,7 +21,6 @@ def setUpModule() -> None:
             C,
             EXTRACT_BASE_URL="http://extract.test/v1",
             EXTRACT_MODEL="fake",
-            EXTRACT_SPACE_ID="fake-v1",
             EXTRACT_CONCURRENCY=2,
         )
     )
@@ -137,12 +136,12 @@ class ExtractTest(unittest.TestCase):
              mock.patch.object(X, "MAX_TAG_LEN", 1), redirect_stdout(io.StringIO()):
             self.assertEqual(X.extract(rows)[0], X.EMPTY)
 
-    def test_cache_is_keyed_by_space(self) -> None:
+    def test_changing_the_prompt_asks_again(self) -> None:
         rows = [external("负责推荐系统召回")]
         with mock.patch.object(chat, "_request", return_value={"skills": [], "did": []}) as request, \
              redirect_stdout(io.StringIO()):
             X.extract(rows)
-            with mock.patch.object(C, "EXTRACT_SPACE_ID", "fake-v2"):
+            with mock.patch.object(X, "SYSTEM", X.SYSTEM + "\n- 再多一条规则"):
                 X.extract(rows)
         self.assertEqual(request.call_count, 2)
 

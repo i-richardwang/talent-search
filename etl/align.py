@@ -18,13 +18,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import unicodedata
 from collections.abc import Mapping
 
 import pandas as pd
 
-import config as C
 from chat import complete
 from extract import prompt_input
 from pipeline import UNEMPLOYED
@@ -82,8 +80,8 @@ def conform(raw: object, tree: set[SeqPair]) -> SeqPair:
 def align(experience: pd.DataFrame) -> pd.DataFrame:
     """把对到了的入职前段写进 `seq_inferred_l1 / seq_inferred_l2`；其余段保持空。
 
-    待业段没有岗位可对，不去问。缓存身份里带着序列树的摘要：树变了，旧回答
-    是对着另一棵树给的，自然失效。
+    待业段没有岗位可对，不去问。序列树写在提示词里，也就在缓存的键里：树变了，
+    旧回答是对着另一棵树给的，自然失效。
     """
     out = experience.copy()
     tree = seq_tree(out)
@@ -93,14 +91,7 @@ def align(experience: pd.DataFrame) -> pd.DataFrame:
 
     asked = out.index[(out.kind == "external") & (out.title != UNEMPLOYED)]
     texts = [prompt_input(out.loc[i]) for i in asked]
-    tree_sha = hashlib.sha256("\n".join(f"{l1}\x1f{l2}" for l1, l2 in tree).encode())
-    payloads = complete(
-        f"{C.EXTRACT_SPACE_ID}\x1f{C.EXTRACT_MODEL}\x1f序列对齐\x1f{tree_sha.hexdigest()}",
-        system_prompt(tree),
-        SCHEMA,
-        texts,
-        "对齐",
-    )
+    payloads = complete(system_prompt(tree), SCHEMA, texts, "对齐")
     tree_set = set(tree)
     aligned = 0
     for i, text in zip(asked, texts, strict=True):

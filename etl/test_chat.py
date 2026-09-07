@@ -47,27 +47,29 @@ class CompleteTest(unittest.TestCase):
             mock.patch.object(C, "EXTRACT_CACHE_PATH", Path(tmp.name) / "x.sqlite")
         )
 
-    def complete(self, identity: str, texts: list[str]) -> dict[str, object]:
+    def complete(self, system: str, texts: list[str]) -> dict[str, object]:
         with redirect_stdout(io.StringIO()):
-            return chat.complete(identity, "系统提示", SCHEMA, texts, "抽取")
+            return chat.complete(system, SCHEMA, texts, "抽取")
 
     def test_same_text_is_asked_once_and_answered_for_every_position(self) -> None:
         with mock.patch.object(chat, "_request", return_value={"a": 1}) as request:
-            got = self.complete("id", ["甲", "乙", "甲"])
+            got = self.complete("提示", ["甲", "乙", "甲"])
         self.assertEqual(request.call_count, 2)
         self.assertEqual(got, {"甲": {"a": 1}, "乙": {"a": 1}})
 
-    def test_second_run_reads_the_cache_and_identity_separates_answers(self) -> None:
+    def test_second_run_reads_the_cache_and_another_prompt_or_model_asks_again(self) -> None:
         with mock.patch.object(chat, "_request", return_value={"a": 1}) as request:
-            self.complete("id", ["甲"])
-            self.assertEqual(self.complete("id", ["甲"]), {"甲": {"a": 1}})
-            self.complete("id-2", ["甲"])
-        self.assertEqual(request.call_count, 2)
+            self.complete("提示", ["甲"])
+            self.assertEqual(self.complete("提示", ["甲"]), {"甲": {"a": 1}})
+            self.complete("另一份提示", ["甲"])
+            with mock.patch.object(C, "EXTRACT_MODEL", "another"):
+                self.complete("提示", ["甲"])
+        self.assertEqual(request.call_count, 3)
 
     def test_rejected_text_is_not_cached(self) -> None:
         with mock.patch.object(chat, "_request", return_value=None) as request:
-            self.assertEqual(self.complete("id", ["甲"]), {})
-            self.complete("id", ["甲"])
+            self.assertEqual(self.complete("提示", ["甲"]), {})
+            self.complete("提示", ["甲"])
         self.assertEqual(request.call_count, 2)
 
 

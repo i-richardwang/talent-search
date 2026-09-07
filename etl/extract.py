@@ -8,8 +8,7 @@
 `description` 同档（`src/search/weights.ts`）。
 
 **判断进提示词，阈值进代码**：什么算能力词、哪种语气是哪种参与方式，是逐段的
-判断，写在下面的提示词里，可以大改（换提示词就换 `EXTRACT_SPACE_ID`，旧缓存
-自然失效）；一条说法最长几个字、一段最多几条、参与方式只认哪几种，是全站的
+判断，写在下面的提示词里，可以大改（缓存按提示词键入，改了旧抽取自然失效）；一条说法最长几个字、一段最多几条、参与方式只认哪几种，是全站的
 阈值，写在 `conform` 里，改了不必换 id——缓存里存的是模型的原话（`chat.py`），
 `conform` 每次重灌都重新收窄一遍。
 
@@ -67,15 +66,17 @@ SYSTEM = f"""你在读一段员工入职前的工作经历，把它整理成人�
 
 输出 JSON：{{"skills": ["..."], "did": [{{"involvement": "...", "domain": "..."}}]}}
 
-skills（能力词）：这个人在这段经历里实际用到或负责的技能、技术、方法与业务领域。
-- 短名词，一般不超过八个字，例如「推荐算法」「Python」「支付风控」「渠道拓展」「数据仓库」。
+skills（能力词）：这个人在这段经历里实际用到或负责的技能、技术、方法与业务领域，写成招聘要求里会出现的那种词。
+- 一个词只是一项技能、一种工具、一种方法或一个业务领域的通名，一般不超过八个字，例如「推荐算法」「Python」「支付风控」「渠道拓展」「数据仓库」。
+- 去掉动作、修饰语和项目名，只留领域本身：「国际风控系统搭建」写「风控」，「推荐专项需求核心开发」写「推荐系统」，「从 0 到 1 打造数据平台」写「数据平台」。
+- 一段话里同一项能力只写一次；一句描述里有几项能力就拆成几个词。
 - 只写本人做的事。主语是别人或团队的（「配合算法团队」「公司拥有……」）不算这个人的能力。
-- 不写：公司名、产品名、学校名；年限、职级、「高级」「资深」这类级别词；「沟通能力强」「责任心」这类自评；岗位名本身。
+- 不写：公司名、产品名、学校名；年限、职级、「高级」「资深」这类级别词；「沟通能力强」「责任心」这类自评；岗位名本身；「搭建」「优化」「提升」「推进」「落地」这类动作。
 - 没有可写的就给空数组。
 
 did（做过的事）：这个人在这段经历里做过的具体事，每件写成一种参与方式加一个领域。
 - involvement 只能取以下五种之一：{"；".join(f"{a}（{g}）" for a, g in INVOLVEMENT_GUIDE.items())}。
-- domain 是这件事的对象，短名词，例如「推荐系统」「支付成功率」「数据平台」。
+- domain 是这件事的对象的通名，例如「推荐系统」「支付成功率」「数据平台」；不带公司名、产品名和「核心」「专项」「国际」这类修饰，动作已经在 involvement 里，不再写进 domain。
 - 判断不出参与方式就把 involvement 写成空字符串，不要硬选。
 - 没有具体的事就给空数组。"""
 
@@ -161,13 +162,7 @@ def extract(rows: list[Mapping[str, str]]) -> list[Extraction]:
         else None
         for row in rows
     ]
-    payloads = complete(
-        f"{C.EXTRACT_SPACE_ID}\x1f{C.EXTRACT_MODEL}",
-        SYSTEM,
-        SCHEMA,
-        [text for text in asked if text],
-        "抽取",
-    )
+    payloads = complete(SYSTEM, SCHEMA, [text for text in asked if text], "抽取")
     return [
         conform(payloads[text], row["org"]) if text and text in payloads else EMPTY
         for row, text in zip(rows, asked, strict=True)

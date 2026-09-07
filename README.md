@@ -72,8 +72,7 @@ ETL 分成两层，接数据只碰下面那一层：
 | `RERANK_BASE_URL` / `RERANK_API_KEY` | 否 | 重排端点与密钥，默认沿用 `EMBED_*` |
 | `RERANK_TIMEOUT_MS` / `RERANK_CONCURRENCY` | 否 | 重排超时与最大并发，默认 30000 / 4 |
 | `EXTRACT_BASE_URL` | 否 | OpenAI 兼容的聊天端点（`/chat/completions`）；ETL 用它从入职前简历描述抽能力词和做过的事，并把入职前岗位对到公司序列。岗位名、公司名和描述原文会送到这里 |
-| `EXTRACT_MODEL` | 否 | 抽取模型名。与 `EXTRACT_BASE_URL`、`EXTRACT_SPACE_ID` 三者缺一就不抽也不对齐，ETL 会打印跳过 |
-| `EXTRACT_SPACE_ID` | 否 | 抽取的稳定身份，只作本地缓存的键；改提示词或参与方式的枚举时换值并重跑 ETL |
+| `EXTRACT_MODEL` | 否 | 抽取模型名。与 `EXTRACT_BASE_URL` 缺一就不抽也不对齐，ETL 会打印跳过。本地缓存按模型名和提示词键入，改提示词后重跑 ETL 即可 |
 | `EXTRACT_API_KEY` | 否 | 端点需要鉴权时填写 |
 | `EXTRACT_ENABLE_THINKING` | 否 | 带思考的模型设为 `false`，否则思考会先烧光输出预算；不设就不发这个字段 |
 | `EXTRACT_STRUCTURED_OUTPUTS` | 否 | 端点不支持 JSON Schema 时设为 `false` |
