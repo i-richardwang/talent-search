@@ -16,7 +16,12 @@
 
 **向量圈组，模型下结论，人有否决权。** 相似度阈值只决定圈子多大，圈进了不相干的词
 由模型拆开（「推荐系统」和「搜索推荐」是邻居，不是同一项能力）；模型每次只看一组
-几个词，不是整份词表。标准词必须是组里的一个词，模型另造的一律不认。
+几个词，不是整份词表。标准词不由模型选：就是组心，这组里人最多的词——留给模型
+选的时候它会把通用词并进具体词（「搜索」→「搜索结果页」）。模型只回答组里哪些词
+和组心是同一项能力。
+
+**只整理有读者的组。** 筛选栏按人数排，两个单人词合成一个双人词没人会点；组心
+至少 `HEAD_MIN` 人的组才问模型，建议的行数也才是人看得完的量。
 """
 
 from __future__ import annotations
@@ -39,23 +44,21 @@ from extract import Extraction, tag
 SIMILARITY = 0.8
 #: 一组最多几个词。圈子再大就是阈值定低了，模型面对二十个词会成片地判成同一项。
 GROUP_MAX = 12
+#: 组心至少几个人才值得整理。
+HEAD_MIN = 3
 
-SYSTEM = """你在整理人才库从简历里抽出来的能力词。下面每行是一个能力词和写了它的人数。判断其中哪些说的是同一项能力、只是写法不同（同义词、中英文、缩写、多了无意义的修饰），选一个最通用的写法当标准词。
+SYSTEM = """你在整理人才库从简历里抽出来的能力词。第一行是标准词，后面每行是一个候选词，括号里是写了它的人数。判断哪些候选词和标准词说的是同一项能力、只是写法不同（同义词、中英文、缩写、多了无意义的修饰）。
 
-输出 JSON：{"canonical": "标准词", "aliases": ["写法一", "写法二"]}
+输出 JSON：{"aliases": ["候选词一", "候选词二"]}
 
-- canonical 必须原样取自下面的词，优先人数多、写法最通用的那个。
-- aliases 只放和 canonical 是同一项能力的词，不放 canonical 本身。
-- 相关但不是同一项能力的不放：「推荐系统」和「搜索推荐」是两件事，「Python」和「数据分析」也是。
-- 一个都不是同一项能力就把 aliases 给空数组。"""
+- 只放和标准词是同一项能力的候选词，原样照抄。
+- 相关但不是同一项能力的不放：标准词的下位词或上位词（「推荐系统」和「视频推荐」）、相邻的另一件事（「推荐系统」和「搜索推荐」，「Python」和「数据分析」）都不是。
+- 一个都不是就给空数组。"""
 
 SCHEMA = {
     "type": "object",
-    "properties": {
-        "canonical": {"type": "string"},
-        "aliases": {"type": "array", "items": {"type": "string"}},
-    },
-    "required": ["canonical", "aliases"],
+    "properties": {"aliases": {"type": "array", "items": {"type": "string"}}},
+    "required": ["aliases"],
     "additionalProperties": False,
 }
 
@@ -108,16 +111,19 @@ def write(path: Path, table: Mapping[str, str]) -> None:
 def groups(
     words: list[str], counts: list[int], vectors: np.ndarray
 ) -> list[list[str]]:
-    """把相似的词圈成组，每组至少两个词。
+    """把相似的词圈成组，每组第一个词是组心，后面至少一个候选。
 
     人最多的词先做组心，把还没分组、和它相似度够的词收进来。组和组不串：
     「数据分析 - 数据监控 - 监控告警」这种一环扣一环的链不会连成一大组。
+    人不够 `HEAD_MIN` 的词不做组心，只能被收进别人的组。
     """
     unit = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
     order = sorted(range(len(words)), key=lambda i: (-counts[i], words[i]))
     free = np.ones(len(words), dtype=bool)
     out: list[list[str]] = []
     for head in order:
+        if counts[head] < HEAD_MIN:
+            break
         if not free[head]:
             continue
         free[head] = False
@@ -131,24 +137,21 @@ def groups(
     return out
 
 
-def conform(raw: object, group: list[str]) -> tuple[str, list[str]] | None:
-    """把模型的原话收窄成（标准词，别名）。标准词不在组里就当模型没说。"""
+def conform(raw: object, group: list[str]) -> list[str]:
+    """把模型的原话收窄成组心的别名：只认组里的候选词，其余当模型没说。"""
     if not isinstance(raw, Mapping):
-        return None
-    canonical = tag(raw.get("canonical"))
-    if canonical not in group:
-        return None
+        return []
     proposed = raw.get("aliases")
-    aliases = [
+    return [
         alias
         for alias in dict.fromkeys(tag(a) for a in (proposed if isinstance(proposed, list) else []))
-        if alias in group and alias != canonical
+        if alias in group[1:]
     ]
-    return canonical, aliases
 
 
 def _prompt_input(group: list[str], count: Mapping[str, int]) -> str:
-    return "\n".join(f"{word}（{count[word]} 人）" for word in group)
+    head, *candidates = group
+    return "\n".join([f"标准词：{head}", *(f"{word}（{count[word]} 人）" for word in candidates)])
 
 
 def _vocabulary() -> tuple[list[str], list[int], np.ndarray]:
@@ -203,13 +206,13 @@ def main() -> None:
         return
     count = dict(zip(words, counts, strict=True))
     circles = groups(words, counts, vectors)
-    print(f"相似度 {SIMILARITY} 以上圈成 {len(circles)} 组，问模型…")
+    print(f"组心至少 {HEAD_MIN} 人、相似度 {SIMILARITY} 以上，圈成 {len(circles)} 组，问模型…")
     inputs = [_prompt_input(group, count) for group in circles]
     payloads = complete(SYSTEM, SCHEMA, inputs, "整理")
     proposals = [
-        verdict
+        (group[0], found)
         for group, text in zip(circles, inputs, strict=True)
-        if (verdict := conform(payloads.get(text), group)) and verdict[1]
+        if (found := conform(payloads.get(text), group))
     ]
     added, skipped = merge(table, proposals)
     if added:

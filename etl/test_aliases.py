@@ -87,15 +87,16 @@ class GroupsTest(unittest.TestCase):
                 [0.0, 1.0, 0.0],
             ]
         )
-        with mock.patch.object(A, "SIMILARITY", 0.85):
+        with mock.patch.object(A, "SIMILARITY", 0.85), mock.patch.object(A, "HEAD_MIN", 3):
             got = A.groups(words, counts, vectors)
-        # 推荐算法人最多先做组心，收进推荐系统；个性化推荐离推荐算法不够近，不进这一组
+        # 推荐算法人最多先做组心，收进推荐系统；个性化推荐离推荐算法不够近，不进这一组，
+        # 而它自己只有一个人，不够做组心
         self.assertEqual(got, [["推荐算法", "推荐系统"]])
 
     def test_group_size_is_capped(self) -> None:
         words = [f"词{i}" for i in range(20)]
         vectors = np.ones((20, 2))
-        with mock.patch.object(A, "GROUP_MAX", 5):
+        with mock.patch.object(A, "GROUP_MAX", 5), mock.patch.object(A, "HEAD_MIN", 1):
             got = A.groups(words, [1] * 20, vectors)
         self.assertEqual([len(g) for g in got], [5, 5, 5, 5])
 
@@ -103,18 +104,18 @@ class GroupsTest(unittest.TestCase):
 class ConformTest(unittest.TestCase):
     group = ["推荐系统", "推荐算法", "搜索推荐"]
 
-    def test_canonical_from_group_and_aliases_within_group(self) -> None:
+    def test_only_candidates_from_the_group_neither_head_nor_strangers(self) -> None:
         self.assertEqual(
             A.conform(
-                {"canonical": " 推荐系统", "aliases": ["推荐算法", "推荐系统", "别的词", "推荐算法"]},
+                {"aliases": [" 推荐算法", "推荐系统", "别的词", "推荐算法"]},
                 self.group,
             ),
-            ("推荐系统", ["推荐算法"]),
+            ["推荐算法"],
         )
 
-    def test_canonical_outside_the_group_is_ignored(self) -> None:
-        self.assertIsNone(A.conform({"canonical": "推荐", "aliases": ["推荐算法"]}, self.group))
-        self.assertIsNone(A.conform("推荐系统", self.group))
+    def test_garbage_is_nothing(self) -> None:
+        self.assertEqual(A.conform({"aliases": "推荐算法"}, self.group), [])
+        self.assertEqual(A.conform("推荐系统", self.group), [])
 
 
 class MergeTest(unittest.TestCase):
@@ -152,7 +153,7 @@ class MainTest(unittest.TestCase):
 
         def fake(system: str, schema: object, text: str, what: str) -> object:
             asked.append(text)
-            return {"canonical": "推荐算法", "aliases": ["推荐系统"]}
+            return {"aliases": ["推荐系统"]}
 
         out = io.StringIO()
         with (
@@ -163,7 +164,7 @@ class MainTest(unittest.TestCase):
             redirect_stdout(out),
         ):
             A.main()
-        self.assertEqual(asked, ["推荐算法（5 人）\n推荐系统（3 人）"])
+        self.assertEqual(asked, ["标准词：推荐算法\n推荐系统（3 人）"])
         self.assertEqual(A.read(path), {"推荐系统": "推荐算法"})
         self.assertIn("推荐系统 → 推荐算法", out.getvalue())
 
