@@ -42,6 +42,8 @@ export const experience = (over: Partial<Experience> = {}): Experience => ({
 	seqL1: "技术",
 	seqL2: "算法",
 	seqL3: "",
+	seqInferredL1: "",
+	seqInferredL2: "",
 	level: "M3",
 	description: "",
 	months: 24,

@@ -51,6 +51,9 @@ EXPERIENCE_OUT = [
     "seq_l1",
     "seq_l2",
     "seq_l3",
+    # 入职前的段由模型对到公司序列树上的一对（etl/align.py）；登记的三列永远只有登记值
+    "seq_inferred_l1",
+    "seq_inferred_l2",
     "level",
     "description",
     "months",
@@ -399,6 +402,8 @@ def build(
         else pd.DataFrame(columns=EXPERIENCE_OUT)
     )
     experience = experience.sort_values(["emp_id", "start_date"]).reset_index(drop=True)
+    # 两个来源都不登记推断的序列：灌库前由 align 填（load.py），没配端点时就是空
+    experience[["seq_inferred_l1", "seq_inferred_l2"]] = ""
     return employee.reindex(columns=EMPLOYEE_OUT), experience
 
 

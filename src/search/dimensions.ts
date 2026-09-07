@@ -88,6 +88,7 @@ export type Picked = {
 /** 分面取值要读一段经历上的这几列。事实的形状因此跟着声明走。 */
 export type DimSource = {
 	months: number;
+	/** 登记的序列，入职前的段是模型对齐的序列（`search.ts` 的 `FACT_COLUMNS`） */
 	seqL1: string;
 	seqL2: string;
 	companyTag: string | null;

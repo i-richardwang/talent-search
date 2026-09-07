@@ -61,4 +61,23 @@ describe("时间轴卡片的字号层次", () => {
 	test("公司内的段不画「入职前」", () => {
 		assert.ok(!html([seg()]).includes("入职前"));
 	});
+
+	test("入职前的段写的是对齐的序列并标明是推断；登记的序列照原样写", () => {
+		const aligned = html([
+			seg({
+				kind: "external",
+				seqL1: "",
+				seqL2: "",
+				seqL3: "",
+				seqInferredL1: "技术",
+				seqInferredL2: "算法",
+			}),
+		]);
+		assert.ok(aligned.includes("技术 · 算法（按岗位名对齐）"));
+		const unaligned = html([
+			seg({ kind: "external", seqL1: "", seqL2: "", seqL3: "" }),
+		]);
+		assert.ok(!unaligned.includes("按岗位名对齐"));
+		assert.ok(html([seg()]).includes("<span>技术 · 算法</span>"));
+	});
 });

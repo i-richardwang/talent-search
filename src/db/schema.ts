@@ -71,9 +71,18 @@ export const experience = pgTable(
 		orgMeta: jsonb("org_meta").$type<CompanyMeta>(),
 		/** 岗位名，原始写法，不改写 */
 		title: text("title").notNull().default(""),
+		/** 内部：HR 登记的序列三级。外部段这三列永远是空——登记值不和推断值混在一列 */
 		seqL1: text("seq_l1").notNull().default(""),
 		seqL2: text("seq_l2").notNull().default(""),
 		seqL3: text("seq_l3").notNull().default(""),
+		/**
+		 * 外部：模型按岗位名、公司名与描述对到公司序列树上的一对一级二级
+		 * （`etl/align.py`），两列要么都有要么都空。只有序列筛选读它（search.ts 的
+		 * `FACT_COLUMNS`：登记的优先，没有才读这两列），人页上标「按岗位名对齐」；
+		 * 不进 `seq` 那一路——那一路按受控强度打分，推断混进去就和登记分不开了。
+		 */
+		seqInferredL1: text("seq_inferred_l1").notNull().default(""),
+		seqInferredL2: text("seq_inferred_l2").notNull().default(""),
 		level: text("level").notNull().default(""),
 		/** 外部：简历中该段公司的职责描述 */
 		description: text("description").notNull().default(""),

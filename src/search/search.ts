@@ -210,8 +210,10 @@ export function overflowContributors(
  */
 const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	months: sql`e.months`,
-	seqL1: sql`e.seq_l1`,
-	seqL2: sql`e.seq_l2`,
+	// 序列筛选认登记的，登记为空（入职前的段）才认模型对齐的；两对各自成对，不会
+	// 一级来自登记、二级来自对齐。证据路 `seq` 不读这里，只嵌登记值。
+	seqL1: sql`coalesce(nullif(e.seq_l1, ''), e.seq_inferred_l1)`,
+	seqL2: sql`coalesce(nullif(e.seq_l2, ''), e.seq_inferred_l2)`,
 	kind: sql`e.kind`,
 	companyTag: sql`e.org_meta ->> 'company_tag'`,
 	level: sql`p.cur_level`,

@@ -14,6 +14,7 @@ import pandas as pd
 import psycopg
 
 import config as C
+from align import align
 from embed import ROUTE_FIELDS, embed, probe, route_texts
 from extract import EMPTY, Extraction, extract
 from pipeline import EMPLOYEE_OUT, EXPERIENCE_OUT, build
@@ -228,12 +229,14 @@ def load(source_name: str) -> None:
                 f"\n抽取端点 {C.EXTRACT_SPACE_ID} · {C.EXTRACT_MODEL} @ {C.EXTRACT_BASE_URL}；"
                 f"缓存 {C.EXTRACT_CACHE_PATH}"
             )
+            print("\n入职前经历对齐公司序列…")
+            experience = align(experience)
         else:
-            # 打印说明后跳过，不静默：这两路为空时检索仍然可用，但「为什么简历里写了
-            # 却搜不到能力词」得有地方看见。
+            # 打印说明后跳过，不静默：检索仍然可用，但「为什么简历里写了却搜不到
+            # 能力词」「为什么按序列筛不到入职前的经历」得有地方看见。
             print(
                 "\n未配置抽取端点（EXTRACT_BASE_URL / EXTRACT_MODEL / EXTRACT_SPACE_ID），"
-                "能力词与做过的事两路为空"
+                "能力词与做过的事两路为空，入职前经历不对齐序列"
             )
 
         print("\n准备语料…")

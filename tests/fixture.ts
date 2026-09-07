@@ -322,6 +322,9 @@ export type Seed = {
 		title?: string;
 		seqL1?: string;
 		seqL2?: string;
+		/** 入职前的段由模型对齐的序列（真语料里由 etl/align.py 写；夹具直接给）。 */
+		seqInferredL1?: string;
+		seqInferredL2?: string;
 		description?: string;
 		companyTag?: string;
 		/** 抽取的能力词。真语料里由 etl/extract.py 从 description 读出来；夹具直接给。 */
@@ -393,6 +396,8 @@ export async function seed(rows: Seed[]) {
 						title: s.title ?? "",
 						seqL1: s.seqL1 ?? "",
 						seqL2: s.seqL2 ?? "",
+						seqInferredL1: s.seqInferredL1 ?? "",
+						seqInferredL2: s.seqInferredL2 ?? "",
 						description: s.description ?? "",
 						months: s.months,
 						orgMeta: s.companyTag

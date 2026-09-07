@@ -1,4 +1,4 @@
-"""入职前经历 → 能力词与做过的事。语料侧唯一一处调用抽取端点的地方。
+"""入职前经历 → 能力词与做过的事。
 
 原文四路里只有简历描述是自由文本，而它整段池化成一个向量分不清主语和重点：
 「配合算法团队完成上线」会和「算法」相近，主语却是别人。这里让模型把一段
@@ -10,7 +10,7 @@
 **判断进提示词，阈值进代码**：什么算能力词、哪种语气是哪种参与方式，是逐段的
 判断，写在下面的提示词里，可以大改（换提示词就换 `EXTRACT_SPACE_ID`，旧缓存
 自然失效）；一条说法最长几个字、一段最多几条、参与方式只认哪几种，是全站的
-阈值，写在 `conform` 里，改了不必换 id——缓存里存的是模型的原话，
+阈值，写在 `conform` 里，改了不必换 id——缓存里存的是模型的原话（`chat.py`），
 `conform` 每次重灌都重新收窄一遍。
 
 **模型输出是不可信输入。** schema 里不写枚举、不写长度上限：写了，模型多给
@@ -24,17 +24,13 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
-import sqlite3
 import unicodedata
 from collections.abc import Mapping
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import config as C
-from endpoint import post_json, retrying
+from chat import complete
 
 #: 一条说法最长几个字。能力词和领域都是短名词；超过这个数的通常是模型把
 #: 半句话原样抄了下来，那不是标签，是另一段原文。
@@ -158,10 +154,6 @@ def conform(raw: object, org: str) -> Extraction:
 def extract(rows: list[Mapping[str, str]]) -> list[Extraction]:
     """按入参顺序返回每段的抽取。只有入职前且有描述的段会去问端点。
     每行读 `kind`、`org`、`title`、`description` 四个键。
-
-    和 `embed` 一样先查缓存、再去重、最后才打端点；缓存里存的是模型的原话
-    （JSON 字符串），按（抽取空间、模型、那段话）键入，读出来再 `conform`。
-    进度只报没命中缓存的那几段。
     """
     asked = [
         prompt_input(row)
@@ -169,132 +161,14 @@ def extract(rows: list[Mapping[str, str]]) -> list[Extraction]:
         else None
         for row in rows
     ]
-    unique = list(dict.fromkeys(text for text in asked if text))
-    with _cache() as cache:
-        payloads = _cached(cache, unique)
-        missing = [t for t in unique if t not in payloads]
-        done = 0
-        with ThreadPoolExecutor(max_workers=C.EXTRACT_CONCURRENCY) as pool:
-            for text, payload in zip(missing, pool.map(_request, missing), strict=True):
-                done += 1
-                if payload is None:
-                    continue
-                _store(cache, text, payload)
-                payloads[text] = payload
-                if done % 20 == 0 or done == len(missing):
-                    print(f"  已抽取 {done}/{len(missing)} 段新描述", flush=True)
-    out: list[Extraction] = []
-    for row, text in zip(rows, asked, strict=True):
-        payload = payloads.get(text) if text else None
-        out.append(conform(payload, row["org"]) if payload is not None else EMPTY)
-    return out
-
-
-def _cache() -> sqlite3.Connection:
-    C.EXTRACT_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(C.EXTRACT_CACHE_PATH)
-    conn.execute(
-        "create table if not exists extraction ("
-        " identity text not null, sha text not null, payload text not null,"
-        " primary key (identity, sha))"
+    payloads = complete(
+        f"{C.EXTRACT_SPACE_ID}\x1f{C.EXTRACT_MODEL}",
+        SYSTEM,
+        SCHEMA,
+        [text for text in asked if text],
+        "抽取",
     )
-    return conn
-
-
-def _sha(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()
-
-
-def _cache_key() -> str:
-    return f"{C.EXTRACT_SPACE_ID}\x1f{C.EXTRACT_MODEL}"
-
-
-def _cached(cache: sqlite3.Connection, texts: list[str]) -> dict[str, object]:
-    out: dict[str, object] = {}
-    by_sha = {_sha(t): t for t in texts}
-    shas = list(by_sha)
-    for start in range(0, len(shas), 500):
-        part = shas[start : start + 500]
-        placeholders = ",".join("?" for _ in part)
-        rows = cache.execute(
-            f"select sha, payload from extraction where identity = ? and sha in ({placeholders})",
-            [_cache_key(), *part],
-        ).fetchall()
-        invalid: list[tuple[str, str]] = []
-        for sha, payload in rows:
-            try:
-                out[by_sha[sha]] = json.loads(payload)
-            except ValueError:
-                # 写坏的缓存：删掉重抽
-                invalid.append((_cache_key(), sha))
-        cache.executemany(
-            "delete from extraction where identity = ? and sha = ?", invalid
-        )
-    return out
-
-
-def _store(cache: sqlite3.Connection, text: str, payload: object) -> None:
-    cache.execute(
-        "insert into extraction (identity, sha, payload) values (?, ?, ?) "
-        "on conflict (identity, sha) do update set payload = excluded.payload",
-        (_cache_key(), _sha(text), json.dumps(payload, ensure_ascii=False)),
-    )
-    cache.commit()
-
-
-def _request(text: str) -> object | None:
-    """一段描述的抽取。瞬时故障重试；模型给回的不是 JSON 就打印说明后放弃这一段。
-
-    放弃这一段而不是整次导入：一个异常的响应不该让二十分钟的灌库回滚。
-    放弃的段不进缓存，下次重跑会再问一遍。
-    """
-    return retrying("抽取", C.EXTRACT_BASE_URL, lambda: _post(text))
-
-
-def _post(text: str) -> object | None:
-    response_format: dict[str, object] = (
-        {
-            "type": "json_schema",
-            "json_schema": {"name": "extraction", "strict": True, "schema": SCHEMA},
-        }
-        if C.EXTRACT_STRUCTURED_OUTPUTS
-        else {"type": "json_object"}
-    )
-    payload = post_json(
-        f"{C.EXTRACT_BASE_URL.rstrip('/')}/chat/completions",
-        {
-            "model": C.EXTRACT_MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM},
-                {"role": "user", "content": text},
-            ],
-            "response_format": response_format,
-            "max_tokens": C.EXTRACT_MAX_OUTPUT_TOKENS,
-            "temperature": 0,
-            **(
-                {"enable_thinking": C.EXTRACT_ENABLE_THINKING}
-                if C.EXTRACT_ENABLE_THINKING is not None
-                else {}
-            ),
-        },
-        C.EXTRACT_API_KEY,
-        C.EXTRACT_TIMEOUT_S,
-    )
-    try:
-        choice = payload["choices"][0]
-        content = choice["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        raise SystemExit("抽取端点响应缺少 choices[0].message.content") from None
-    if not content:
-        # 推理模型在思考阶段撞上输出预算时就是这个样子：不报错，content 为空
-        print(
-            f"  抽取返回空内容（finish_reason={choice.get('finish_reason')}），"
-            "这段两路为空；若 finish_reason 是 length，调大 EXTRACT_MAX_OUTPUT_TOKENS",
-            flush=True,
-        )
-        return None
-    try:
-        return json.loads(content)
-    except ValueError:
-        print("  抽取返回的不是 JSON，这段两路为空", flush=True)
-        return None
+    return [
+        conform(payloads[text], row["org"]) if text and text in payloads else EMPTY
+        for row, text in zip(rows, asked, strict=True)
+    ]

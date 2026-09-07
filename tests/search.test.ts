@@ -587,6 +587,61 @@ describe("跟人走的筛选", () => {
 	});
 });
 
+describe("入职前经历对齐的序列", () => {
+	before(async () => {
+		await seed([
+			{
+				empId: "A001",
+				name: "入职前在别处做算法",
+				segments: [
+					{
+						kind: "external",
+						months: 36,
+						org: "某公司",
+						title: "深海算法工程师",
+						seqInferredL1: "技术",
+						seqInferredL2: "深海算法",
+					},
+				],
+			},
+			{
+				empId: "A002",
+				name: "入职前经历无法对齐",
+				segments: [
+					{
+						kind: "external",
+						months: 36,
+						org: "某公司",
+						title: "深海算法工程师",
+					},
+				],
+			},
+		]);
+	});
+
+	test("序列筛选把对齐的段算进去，无法对齐的段不算", async () => {
+		const seq = [{ l1: "技术", l2: "深海算法" }];
+		const { results } = await run("深海算法工程师", { seq });
+		assert.deepEqual(
+			results.map((r) => r.employee.empId).filter((id) => id.startsWith("A")),
+			["A001"],
+		);
+	});
+
+	test("分面里对齐的序列和登记的序列是同一个口径", async () => {
+		const { facets } = await run("深海算法工程师");
+		const seq = facets.seq.find((s) => s.value.l2 === "深海算法");
+		assert.deepEqual(seq, { value: { l1: "技术", l2: "深海算法" }, n: 1 });
+	});
+
+	test("对齐的序列不做证据：命中的只有岗位名那一路", async () => {
+		const { results } = await run("深海算法");
+		const hit = results.find((r) => r.employee.empId === "A001");
+		assert.ok(hit);
+		assert.ok(hit.hits.every((h) => h.route !== "seq"));
+	});
+});
+
 describe("命中总数", () => {
 	before(async () => {
 		await seed(

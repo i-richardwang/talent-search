@@ -148,6 +148,12 @@ class ReloadLifecycleTest(unittest.TestCase):
                 "probe",
                 side_effect=lambda _: events.append("probe") or [0.1],
             ),
+            mock.patch.object(loader.C, "extract_configured", return_value=True),
+            mock.patch.object(
+                loader,
+                "align",
+                side_effect=lambda frame: events.append("align") or frame,
+            ),
             mock.patch.object(
                 loader,
                 "_create_staging_tables",
@@ -183,6 +189,8 @@ class ReloadLifecycleTest(unittest.TestCase):
                 "extract",
                 "build",
                 "probe",
+                # 对齐是模型调用，和探端点一样落在两笔事务之间，不在任何事务里
+                "align",
                 "create staging",
                 "commit",
                 "stage",

@@ -1,17 +1,16 @@
-"""抽取的收窄规则、缓存、哪些段会去问端点，以及端点响应的处理。"""
+"""抽取的收窄规则、哪些段会去问端点、缓存身份与读出时的收窄。"""
 
 from __future__ import annotations
 
 import io
-import json
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+import chat
 import config as C
-import endpoint
 import extract as X
 
 
@@ -115,11 +114,11 @@ class ExtractTest(unittest.TestCase):
         ]
         asked: list[str] = []
 
-        def fake(text: str) -> object:
+        def fake(system: str, schema: object, text: str, what: str) -> object:
             asked.append(text)
             return {"skills": ["召回"], "did": [{"involvement": "负责建设", "domain": "推荐系统"}]}
 
-        with mock.patch.object(X, "_request", fake), redirect_stdout(io.StringIO()):
+        with mock.patch.object(chat, "_request", fake), redirect_stdout(io.StringIO()):
             got = X.extract(rows)
         self.assertEqual(asked, ["岗位：算法工程师\n公司：云枢智能\n描述：负责推荐系统召回"])
         self.assertEqual(got[:2], [X.EMPTY, X.EMPTY])
@@ -128,71 +127,24 @@ class ExtractTest(unittest.TestCase):
     def test_second_run_reads_the_cache_and_reconforms(self) -> None:
         rows = [external("负责推荐系统召回")]
         with mock.patch.object(
-            X, "_request", return_value={"skills": ["召回", "云枢智能"], "did": []}
+            chat, "_request", return_value={"skills": ["召回", "云枢智能"], "did": []}
         ) as request, redirect_stdout(io.StringIO()):
             X.extract(rows)
             X.extract(rows)
         self.assertEqual(request.call_count, 1)
         # 缓存里是模型原话，收窄在读出时做：改了收窄规则不必换空间 id
-        with mock.patch.object(X, "_request", side_effect=AssertionError("打了端点")), \
+        with mock.patch.object(chat, "_request", side_effect=AssertionError("打了端点")), \
              mock.patch.object(X, "MAX_TAG_LEN", 1), redirect_stdout(io.StringIO()):
             self.assertEqual(X.extract(rows)[0], X.EMPTY)
 
     def test_cache_is_keyed_by_space(self) -> None:
         rows = [external("负责推荐系统召回")]
-        with mock.patch.object(X, "_request", return_value={"skills": [], "did": []}) as request, \
+        with mock.patch.object(chat, "_request", return_value={"skills": [], "did": []}) as request, \
              redirect_stdout(io.StringIO()):
             X.extract(rows)
             with mock.patch.object(C, "EXTRACT_SPACE_ID", "fake-v2"):
                 X.extract(rows)
         self.assertEqual(request.call_count, 2)
-
-    def test_rejected_segment_is_not_cached(self) -> None:
-        rows = [external("负责推荐系统召回")]
-        with mock.patch.object(X, "_request", return_value=None) as request, \
-             redirect_stdout(io.StringIO()):
-            self.assertEqual(X.extract(rows), [X.EMPTY])
-            X.extract(rows)
-        self.assertEqual(request.call_count, 2)
-
-
-def chat_response(content: str | None, finish_reason: str = "stop") -> mock.MagicMock:
-    response = mock.MagicMock()
-    response.__enter__.return_value = io.StringIO(
-        json.dumps(
-            {"choices": [{"finish_reason": finish_reason, "message": {"content": content}}]}
-        )
-    )
-    return response
-
-
-class PostTest(unittest.TestCase):
-    def test_parses_json_content(self) -> None:
-        with mock.patch.object(
-            endpoint.urllib.request, "urlopen", return_value=chat_response('{"skills":["a"],"did":[]}')
-        ):
-            self.assertEqual(X._post("x"), {"skills": ["a"], "did": []})
-
-    def test_empty_content_is_reported_and_dropped(self) -> None:
-        out = io.StringIO()
-        with mock.patch.object(
-            endpoint.urllib.request, "urlopen", return_value=chat_response("", "length")
-        ), redirect_stdout(out):
-            self.assertIsNone(X._post("x"))
-        self.assertIn("EXTRACT_MAX_OUTPUT_TOKENS", out.getvalue())
-
-    def test_non_json_content_is_reported_and_dropped(self) -> None:
-        with mock.patch.object(
-            endpoint.urllib.request, "urlopen", return_value=chat_response("好的，以下是……")
-        ), redirect_stdout(io.StringIO()):
-            self.assertIsNone(X._post("x"))
-
-    def test_missing_choices_is_fatal(self) -> None:
-        response = mock.MagicMock()
-        response.__enter__.return_value = io.StringIO(json.dumps({"error": "x"}))
-        with mock.patch.object(endpoint.urllib.request, "urlopen", return_value=response):
-            with self.assertRaises(SystemExit):
-                X._post("x")
 
 
 if __name__ == "__main__":

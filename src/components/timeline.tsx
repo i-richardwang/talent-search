@@ -65,7 +65,10 @@ function Segment({
 	const external = x.kind === "external";
 	// 这一段最强的那一路。节点就是全站那颗点，不另画一套。
 	const strength = bestStrength(hits);
-	const seq = dots(x.seqL1, x.seqL2, x.seqL3);
+	// 入职前的段没有登记的序列，有的是模型对齐的一对；下面标出来，它是推断
+	const seq = external
+		? dots(x.seqInferredL1, x.seqInferredL2)
+		: dots(x.seqL1, x.seqL2, x.seqL3);
 
 	return (
 		<li
@@ -123,7 +126,7 @@ function Segment({
 					<span className="font-mono tabular-nums">
 						{dots(period(x.startDate, x.endDate), duration(x.months))}
 					</span>
-					{seq && <span>{seq}</span>}
+					{seq && <span>{external ? `${seq}（按岗位名对齐）` : seq}</span>}
 					{x.orgMeta && <CompanyLine meta={x.orgMeta} />}
 				</div>
 
