@@ -216,6 +216,10 @@ const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	seqL2: sql`coalesce(nullif(e.seq_l2, ''), e.seq_inferred_l2)`,
 	kind: sql`e.kind`,
 	companyTag: sql`e.org_meta ->> 'company_tag'`,
+	// 一段的能力词是一列，不是一个值；说法表里已是对照表换过的标准词
+	skills: sql`array(
+		select ph.text from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
+		where ep.experience_id = e.id and ep.route = 'skill' order by ph.text)`,
 	level: sql`p.cur_level`,
 	recruitment: sql`p.recruitment`,
 	education: sql`p.education_level`,
@@ -232,35 +236,38 @@ const factSelect = sql.join(
 /**
  * 每一维拿来比较的那个表达式，由上面的事实列拼出来——集合维给的是它的**身份**
  * （和 `dimensions.ts` 里 `id()` 算出来的必须是同一个字符串），阈值维给的是被
- * 比较的那个量。
+ * 比较的那个量。一段一个值的写 `one`，一段一列值的（能力词）写 `any`：内存里
+ * `values()` 本来就返回一列，SQL 这边得说清楚列在哪一层。
  *
  * 谓词本身不写在这里，它由维度自己的 `match` 家族推出来（见 `dimCond`）：漏一维
  * 会被 `Record` 拦住，写歪一维会被「同一个条件下推还是在内存里筛」那条检索测试
  * 拦住。
  */
-const DIM_COLUMN: Record<DimKey, SQL> = {
+const DIM_COLUMN: Record<DimKey, { one: SQL } | { any: SQL }> = {
 	// 序列的身份是两列拼出来的，分隔符和 `dimensions.ts` 的 `id()` 必须是同一个
-	seq: sql`${FACT_COLUMNS.seqL1} || chr(1) || ${FACT_COLUMNS.seqL2}`,
-	minMonths: FACT_COLUMNS.months,
-	kind: FACT_COLUMNS.kind,
-	level: FACT_COLUMNS.level,
-	companyTag: FACT_COLUMNS.companyTag,
-	recruitment: FACT_COLUMNS.recruitment,
-	education: FACT_COLUMNS.education,
+	seq: { one: sql`${FACT_COLUMNS.seqL1} || chr(1) || ${FACT_COLUMNS.seqL2}` },
+	minMonths: { one: FACT_COLUMNS.months },
+	kind: { one: FACT_COLUMNS.kind },
+	level: { one: FACT_COLUMNS.level },
+	companyTag: { one: FACT_COLUMNS.companyTag },
+	skill: { any: FACT_COLUMNS.skills },
+	recruitment: { one: FACT_COLUMNS.recruitment },
+	education: { one: FACT_COLUMNS.education },
 };
 
 /** 一维的下推谓词。两个家族各写一次，和维度有几个无关。 */
 function dimCond<K extends DimKey>(key: K, picked: Picked[K]): SQL | null {
 	const column = DIM_COLUMN[key];
-	if (DIMENSIONS[key].match === "atLeast")
-		return sql`${column} >= ${picked as number}`;
-	const ids = dimPicked(picked).map((value) => dimId(key, value));
-	return ids.length > 0
-		? sql`${column} in (${sql.join(
-				ids.map((id) => sql`${id}`),
-				sql`, `,
-			)})`
-		: null;
+	if (DIMENSIONS[key].match === "atLeast") {
+		// 阈值比的是一个量，一列值没有「至少」可言；声明成 any 是声明错了
+		if ("any" in column) throw new Error(`${key} 是阈值维，列不能是 any`);
+		return sql`${column.one} >= ${picked as number}`;
+	}
+	const ids = dimPicked(picked).map((value) => sql`${dimId(key, value)}`);
+	if (ids.length === 0) return null;
+	return "any" in column
+		? sql`${column.any} && array[${sql.join(ids, sql`, `)}]::text[]`
+		: sql`${column.one} in (${sql.join(ids, sql`, `)})`;
 }
 
 /**
@@ -269,7 +276,7 @@ function dimCond<K extends DimKey>(key: K, picked: Picked[K]): SQL | null {
  * 在取数里就按人裁掉，分面随之只数剩下的人——这正是「选了这一项之后
  * 还剩几人」该有的口径。
  *
- * 维度那七项在这里同样下推：它们来自那句原话，是问题的一部分，不会在这次
+ * 维度那八项在这里同样下推：它们来自那句原话，是问题的一部分，不会在这次
  * 结果页上再变。URL 上的筛选**不能**这样下推，因为筛选栏还要回答「再勾一项
  * 会剩几人」，那个数只有把没筛之前的完整事实端在手里才算得出来（`rank.ts`）。
  */

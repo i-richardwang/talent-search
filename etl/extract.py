@@ -107,19 +107,19 @@ def prompt_input(row: Mapping[str, str]) -> str:
     return f"岗位：{row['title']}\n公司：{row['org']}\n描述：{row['description']}"
 
 
-def _tag(value: object) -> str:
+def tag(value: object) -> str:
     """一条说法的规范写法：NFKC 折叠全半角，压掉多余空白。"""
     if not isinstance(value, str):
         return ""
     return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value)).strip(" ·,，;；")
 
 
-def _keep(tag: str, org: str) -> bool:
+def _keep(word: str, org: str) -> bool:
     # 公司名永远不进向量：专有名词在向量空间里和同类名字是邻居。模型偶尔会把
     # 公司名当领域吐回来，这里按原文的公司名兜一道。
-    if not tag or len(tag) > MAX_TAG_LEN:
+    if not word or len(word) > MAX_TAG_LEN:
         return False
-    return not (org and (tag in org or org in tag))
+    return not (org and (word in org or org in word))
 
 
 def _items(value: object) -> list[object]:
@@ -133,9 +133,9 @@ def conform(raw: object, org: str) -> Extraction:
     skills: list[str] = []
     # 只认数组：字符串也可迭代，"Python" 会被拆成六个单字标签
     for item in _items(raw.get("skills")):
-        tag = _tag(item)
-        if _keep(tag, org) and tag not in skills:
-            skills.append(tag)
+        skill = tag(item)
+        if _keep(skill, org) and skill not in skills:
+            skills.append(skill)
         if len(skills) == MAX_SKILLS:
             break
     did: list[tuple[str | None, str]] = []
@@ -143,8 +143,8 @@ def conform(raw: object, org: str) -> Extraction:
     for item in _items(raw.get("did")):
         if not isinstance(item, Mapping):
             continue
-        involvement = _tag(item.get("involvement"))
-        domain = _tag(item.get("domain"))
+        involvement = tag(item.get("involvement"))
+        domain = tag(item.get("domain"))
         if _keep(domain, org) and all(d != domain for _, d in did):
             did.append((involvement if involvement in INVOLVEMENTS else None, domain))
         if len(did) == MAX_DID:

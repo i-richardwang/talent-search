@@ -36,6 +36,7 @@ const FACETS: Facets = {
 	],
 	level: [{ value: "P6", n: 20 }],
 	recruitment: [],
+	skill: [],
 	education: [],
 	strong: { on: 7, off: 31 },
 };
@@ -78,6 +79,7 @@ describe("不点开就知道能筛什么", () => {
 			minMonths: [],
 			level: [],
 			recruitment: [],
+			skill: [],
 			education: [],
 			strong: { on: 0, off: 0 },
 		};

@@ -51,6 +51,7 @@ export type DimUnit = {
 	kind: "internal" | "external";
 	minMonths: number;
 	companyTag: string;
+	skill: string;
 	recruitment: string;
 	education: string;
 };
@@ -67,6 +68,7 @@ const MULTI_KEYS = [
 	"seq",
 	"level",
 	"companyTag",
+	"skill",
 	"recruitment",
 	"education",
 ] as const;
@@ -92,6 +94,8 @@ export type DimSource = {
 	seqL1: string;
 	seqL2: string;
 	companyTag: string | null;
+	/** 这一段抽出来的能力词，已按对照表换成标准词（`etl/aliases.py`）。没有就是空数组 */
+	skills: string[];
 	kind: "internal" | "external";
 	level: string;
 	recruitment: string;
@@ -196,7 +200,7 @@ function plain(label: string, column: (fact: DimSource) => string | null) {
 }
 
 /**
- * 七个维度。这张表是它们在全站的唯一定义。
+ * 八个维度。这张表是它们在全站的唯一定义。
  *
  * 顺序就是筛选栏里从上到下的顺序，也是查询范围标签的顺序。
  */
@@ -269,6 +273,21 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	companyTag: {
 		...plain("入职前公司", (f) => f.companyTag),
 		text: (v) => `公司档 · ${v}`,
+	},
+
+	skill: {
+		label: "入职前能力",
+		match: "set",
+		// 唯一一段有多个取值的维。能力词只从入职前经历的简历描述里抽（etl/extract.py），
+		// 而只有三分之一的人有描述：勾任何一项都把没写简历的人整个筛掉。这一维能回答
+		// 「谁写过」，回答不了「谁不会」——搜索框里敲能力词没有这个问题，没简历的人
+		// 靠岗位名排后面，不消失。
+		values: (f) => f.skills,
+		id: (v) => v,
+		option: (v) => v,
+		text: (v) => `能力 · ${v}`,
+		parse: textList,
+		compare: byCountThenValue,
 	},
 
 	recruitment: plain("招聘渠道", (f) => f.recruitment),

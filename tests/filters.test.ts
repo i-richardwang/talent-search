@@ -39,6 +39,7 @@ const FACETS: Facets = {
 		{ value: "P7", n: 9 },
 	],
 	recruitment: [{ value: "校招", n: 5 }],
+	skill: [{ value: "推荐系统", n: 3 }],
 	education: [{ value: "硕士", n: 8 }],
 	strong: { on: 18, off: 43 },
 };
@@ -207,6 +208,7 @@ describe("控件侧", () => {
 				"经历来源",
 				"经历时长",
 				"入职前公司",
+				"入职前能力",
 				"招聘渠道",
 				"学历",
 			],

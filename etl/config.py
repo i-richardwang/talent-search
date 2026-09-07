@@ -91,5 +91,13 @@ def require_embed_base_url() -> str:
     return EMBED_BASE_URL
 
 
+#: 能力词的对照表（别名 → 标准词），`etl/aliases.py` 读写。和数据源一样是一家公司的
+#: 内部词表，默认放在不进版本库的 etl/sources/ 下；没有这份文件就不归并。
+SKILL_ALIASES_PATH = Path(
+    os.environ.get("SKILL_ALIASES", "").strip()
+    or PROJECT_ROOT / "etl" / "sources" / "skill_aliases.csv"
+)
+
+
 def extract_configured() -> bool:
     return bool(EXTRACT_BASE_URL and EXTRACT_MODEL)

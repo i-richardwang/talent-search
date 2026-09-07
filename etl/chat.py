@@ -50,7 +50,7 @@ def complete(
                 _store(cache, identity, text, payload)
                 payloads[text] = payload
                 if done % 20 == 0 or done == len(missing):
-                    print(f"  已{what} {done}/{len(missing)} 段", flush=True)
+                    print(f"  已{what} {done}/{len(missing)}", flush=True)
     return payloads
 
 

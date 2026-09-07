@@ -74,6 +74,8 @@ before(async () => {
 					seqL2: "算法",
 					months: 36,
 					companyTag: "头部互联网T1",
+					// 能力词那一维是一段多个值：两个词都得成为候选，各数一个人
+					skills: ["推荐系统", "Python"],
 				},
 			],
 		},
@@ -82,7 +84,13 @@ before(async () => {
 			empId: "U001",
 			name: "公司档没标过",
 			segments: [
-				{ kind: "external", title: "算法", months: 12, companyTag: "未知" },
+				{
+					kind: "external",
+					title: "算法",
+					months: 12,
+					companyTag: "未知",
+					skills: ["推荐系统"],
+				},
 			],
 		},
 	]);
@@ -91,6 +99,13 @@ before(async () => {
 describe("候选与计数", () => {
 	const seqOf = (facets: Awaited<ReturnType<typeof search>>["facets"]) =>
 		new Map(facets.seq.map((s) => [`${s.value.l1}/${s.value.l2}`, s.n]));
+
+	test("能力词一段多个值：每个词各成候选，按人数而不是按边数", async () => {
+		const { facets } = await run("算法");
+		const skills = new Map(facets.skill.map((s) => [s.value, s.n]));
+		assert.equal(skills.get("推荐系统"), 2);
+		assert.equal(skills.get("Python"), 1);
+	});
 
 	test("数的是人，而且只数这一次检索里的人", async () => {
 		const { facets } = await run("算法");
