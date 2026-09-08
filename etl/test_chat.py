@@ -47,9 +47,11 @@ class CompleteTest(unittest.TestCase):
             mock.patch.object(C, "EXTRACT_CACHE_PATH", Path(tmp.name) / "x.sqlite")
         )
 
-    def complete(self, system: str, texts: list[str]) -> dict[str, object]:
+    def complete(
+        self, system: str, texts: list[str], model: str = "fake"
+    ) -> dict[str, object]:
         with redirect_stdout(io.StringIO()):
-            return chat.complete(system, SCHEMA, texts, "抽取")
+            return chat.complete(model, system, SCHEMA, texts, "抽取")
 
     def test_same_text_is_asked_once_and_answered_for_every_position(self) -> None:
         with mock.patch.object(chat, "_request", return_value={"a": 1}) as request:
@@ -62,8 +64,7 @@ class CompleteTest(unittest.TestCase):
             self.complete("提示", ["甲"])
             self.assertEqual(self.complete("提示", ["甲"]), {"甲": {"a": 1}})
             self.complete("另一份提示", ["甲"])
-            with mock.patch.object(C, "EXTRACT_MODEL", "another"):
-                self.complete("提示", ["甲"])
+            self.complete("提示", ["甲"], model="another")
         self.assertEqual(request.call_count, 3)
 
     def test_rejected_text_is_not_cached(self) -> None:
@@ -77,7 +78,7 @@ def post(content: str | None, finish_reason: str = "stop") -> object | None:
     with mock.patch.object(
         endpoint.urllib.request, "urlopen", return_value=chat_response(content, finish_reason)
     ):
-        return chat._post("系统提示", SCHEMA, "x", "抽取")
+        return chat._post("fake", "系统提示", SCHEMA, "x", "抽取")
 
 
 class PostTest(unittest.TestCase):
@@ -99,7 +100,7 @@ class PostTest(unittest.TestCase):
         response.__enter__.return_value = io.StringIO(json.dumps({"error": "x"}))
         with mock.patch.object(endpoint.urllib.request, "urlopen", return_value=response):
             with self.assertRaises(SystemExit):
-                chat._post("系统提示", SCHEMA, "x", "抽取")
+                chat._post("fake", "系统提示", SCHEMA, "x", "抽取")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,7 @@ def setUpModule() -> None:
             C,
             EXTRACT_BASE_URL="http://extract.test/v1",
             EXTRACT_MODEL="fake",
+            REVIEW_MODEL="review-fake",
             EXTRACT_CONCURRENCY=2,
         )
     )
@@ -121,14 +122,27 @@ class GroupsTest(unittest.TestCase):
 class ConformTest(unittest.TestCase):
     group = ["推荐系统", "推荐算法", "搜索推荐"]
 
-    def test_only_candidates_from_the_group_neither_head_nor_strangers(self) -> None:
+    def test_only_candidates_judged_true_neither_head_nor_strangers(self) -> None:
+        judged = lambda word, alias: {"word": word, "why": "…", "alias": alias}
         self.assertEqual(
-            A.conform({"aliases": [" 推荐算法", "推荐系统", "别的词", "推荐算法"]}, self.group),
+            A.conform(
+                {
+                    "judgments": [
+                        judged(" 推荐算法", True),
+                        judged("搜索推荐", False),
+                        judged("推荐系统", True),
+                        judged("别的词", True),
+                        judged("推荐算法", True),
+                    ]
+                },
+                self.group,
+            ),
             ["推荐算法"],
         )
 
     def test_garbage_is_nothing(self) -> None:
-        self.assertEqual(A.conform({"aliases": "推荐算法"}, self.group), [])
+        self.assertEqual(A.conform({"judgments": "推荐算法"}, self.group), [])
+        self.assertEqual(A.conform({"judgments": [{"word": "推荐算法", "alias": "true"}]}, self.group), [])
         self.assertEqual(A.conform("推荐系统", self.group), [])
 
 
@@ -175,9 +189,9 @@ class ReviewTest(unittest.TestCase):
         }
         asked: list[str] = []
 
-        def fake(system: str, schema: object, text: str, what: str) -> object:
-            asked.append(text)
-            return {"aliases": ["推荐系统"]}
+        def fake(model: str, system: str, schema: object, text: str, what: str) -> object:
+            asked.append((model, text))
+            return {"judgments": [{"word": "推荐系统", "why": "同义", "alias": True}]}
 
         out = io.StringIO()
         with (
@@ -190,7 +204,7 @@ class ReviewTest(unittest.TestCase):
         ):
             got = A.review(cur, extractions, ["u1", "u2", "u3", "u4", "u5"])
         # Python 一天前整理过不做组心，Java 只有一个人；到期的组心只有推荐算法（4 人）
-        self.assertEqual(asked, ["标准词：推荐算法\n推荐系统（4 人）"])
+        self.assertEqual(asked, [("review-fake", "标准词：推荐算法\n推荐系统（4 人）")])
         self.assertEqual(
             {w: c for w, c, _ in cur.written},
             {"推荐算法": "推荐算法", "推荐系统": "推荐算法"},

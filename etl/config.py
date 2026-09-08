@@ -65,6 +65,10 @@ EXTRACT_ENABLE_THINKING: bool | None = (
 EXTRACT_STRUCTURED_OUTPUTS = (
     os.environ.get("EXTRACT_STRUCTURED_OUTPUTS", "").strip().lower() != "false"
 )
+#: 整理能力词写法的模型（可选，缺省就是抽取模型）。这一步只有两百来组、每组几十个字，
+#: 却要在「团队培训」和「团队管理」之间划线——小模型判不动这条线，大模型在这里花不了
+#: 多少钱。抽取要跑几千段，仍然用小模型。
+REVIEW_MODEL = os.environ.get("REVIEW_MODEL", "").strip() or EXTRACT_MODEL
 EXTRACT_CACHE_PATH = Path(
     os.environ.get("EXTRACT_CACHE_PATH", "").strip()
     or PROJECT_ROOT / ".cache" / "extractions.sqlite"

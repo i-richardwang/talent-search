@@ -23,6 +23,7 @@ from collections.abc import Mapping
 
 import pandas as pd
 
+import config as C
 from chat import complete
 from extract import prompt_input
 from pipeline import UNEMPLOYED
@@ -92,7 +93,7 @@ def align(experience: pd.DataFrame) -> pd.DataFrame:
 
     asked = out.index[(out.kind == "external") & (out.title != UNEMPLOYED)]
     texts = [prompt_input(out.loc[i]) for i in asked]
-    payloads = complete(system_prompt(tree), SCHEMA, texts, "对齐")
+    payloads = complete(C.EXTRACT_MODEL, system_prompt(tree), SCHEMA, texts, "对齐")
     tree_set = set(tree)
     aligned = 0
     for i, text in zip(asked, texts, strict=True):

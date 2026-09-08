@@ -1,8 +1,9 @@
 """语料侧调用聊天端点的那一层：一段文字进、一份 JSON 出，结果缓存在本地。
 
-两处用它——`extract.py`（简历描述 → 能力词与做过的事）和 `align.py`（入职前
-岗位 → 公司序列）。它们各有各的提示词、schema 与收窄，这里只有对两者都成立
-的事：发 `/chat/completions`、要 JSON、并发、进度，以及按身份键入的 SQLite 缓存。
+三处用它——`extract.py`（简历描述 → 能力词与做过的事）、`align.py`（入职前
+岗位 → 公司序列）和 `aliases.py`（能力词的写法归并）。它们各有各的模型、提示词、
+schema 与收窄，这里只有对三者都成立的事：发 `/chat/completions`、要 JSON、并发、
+进度，以及按身份键入的 SQLite 缓存。
 
 **缓存里存的是模型的原话**，收窄在调用方读出时做：改收窄规则不动缓存。缓存的
 键是模型名、系统提示词与 schema 的摘要加上那段文字：会改变回答的东西都在键里，
@@ -26,13 +27,17 @@ from endpoint import post_json, retrying
 
 
 def complete(
-    system: str, schema: Mapping[str, object], texts: list[str], what: str
+    model: str,
+    system: str,
+    schema: Mapping[str, object],
+    texts: list[str],
+    what: str,
 ) -> dict[str, object]:
     """对每段文字要一份 JSON；返回文字 → 模型原话，放弃的段不在里面。
 
     先查缓存、再去重、最后才打端点；`what` 是进度和报错里的名字（「抽取」「对齐」）。
     """
-    identity = _identity(system, schema)
+    identity = _identity(model, system, schema)
     unique = list(dict.fromkeys(texts))
     with _cache() as cache:
         payloads = _cached(cache, identity, unique)
@@ -41,7 +46,7 @@ def complete(
         with ThreadPoolExecutor(max_workers=C.EXTRACT_CONCURRENCY) as pool:
             for text, payload in zip(
                 missing,
-                pool.map(lambda t: _request(system, schema, t, what), missing),
+                pool.map(lambda t: _request(model, system, schema, t, what), missing),
                 strict=True,
             ):
                 done += 1
@@ -54,9 +59,9 @@ def complete(
     return payloads
 
 
-def _identity(system: str, schema: Mapping[str, object]) -> str:
+def _identity(model: str, system: str, schema: Mapping[str, object]) -> str:
     return _sha(
-        f"{C.EXTRACT_MODEL}\x1f{system}\x1f{json.dumps(schema, ensure_ascii=False, sort_keys=True)}"
+        f"{model}\x1f{system}\x1f{json.dumps(schema, ensure_ascii=False, sort_keys=True)}"
     )
 
 
@@ -113,14 +118,16 @@ def _store(
 
 
 def _request(
-    system: str, schema: Mapping[str, object], text: str, what: str
+    model: str, system: str, schema: Mapping[str, object], text: str, what: str
 ) -> object | None:
     """一段文字的回答。瞬时故障重试；模型给回的不是 JSON 就打印说明后放弃这一段。"""
-    return retrying(what, C.EXTRACT_BASE_URL, lambda: _post(system, schema, text, what))
+    return retrying(
+        what, C.EXTRACT_BASE_URL, lambda: _post(model, system, schema, text, what)
+    )
 
 
 def _post(
-    system: str, schema: Mapping[str, object], text: str, what: str
+    model: str, system: str, schema: Mapping[str, object], text: str, what: str
 ) -> object | None:
     response_format: dict[str, object] = (
         {
@@ -133,7 +140,7 @@ def _post(
     payload = post_json(
         f"{C.EXTRACT_BASE_URL.rstrip('/')}/chat/completions",
         {
-            "model": C.EXTRACT_MODEL,
+            "model": model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": text},

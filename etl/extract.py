@@ -162,7 +162,9 @@ def extract(rows: list[Mapping[str, str]]) -> list[Extraction]:
         else None
         for row in rows
     ]
-    payloads = complete(SYSTEM, SCHEMA, [text for text in asked if text], "抽取")
+    payloads = complete(
+        C.EXTRACT_MODEL, SYSTEM, SCHEMA, [text for text in asked if text], "抽取"
+    )
     return [
         conform(payloads[text], row["org"]) if text and text in payloads else EMPTY
         for row, text in zip(rows, asked, strict=True)

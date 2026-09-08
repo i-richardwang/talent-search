@@ -91,7 +91,7 @@ class AlignTest(unittest.TestCase):
         frame = corpus(("推荐算法工程师", "负责召回"), (UNEMPLOYED, ""), ("厨师", ""))
         asked: list[str] = []
 
-        def fake(system: str, schema: object, text: str, what: str) -> object:
+        def fake(model: str, system: str, schema: object, text: str, what: str) -> object:
             asked.append(text)
             return {"l1": "技术", "l2": "算法"} if "推荐" in text else {"l1": "", "l2": ""}
 

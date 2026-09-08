@@ -74,6 +74,7 @@ ETL 分成两层，接数据只碰下面那一层：
 | `EXTRACT_BASE_URL` | 否 | OpenAI 兼容的聊天端点（`/chat/completions`）；ETL 用它从入职前简历描述抽能力词和做过的事，把入职前岗位对到公司序列，并整理能力词的不同写法。岗位名、公司名和描述原文会送到这里 |
 | `EXTRACT_MODEL` | 否 | 抽取模型名。与 `EXTRACT_BASE_URL` 缺一就不抽也不对齐，ETL 会打印跳过。本地缓存按模型名和提示词键入，改提示词后重跑 ETL 即可 |
 | `EXTRACT_API_KEY` | 否 | 端点需要鉴权时填写 |
+| `REVIEW_MODEL` | 否 | 整理能力词写法用的模型，同一个端点；不设就用 `EXTRACT_MODEL`。这一步只有两百来组，却要在「团队培训」和「团队管理」之间划线，小模型划不动，值得单独给一个大的 |
 | `EXTRACT_ENABLE_THINKING` | 否 | 带思考的模型设为 `false`，否则思考会先烧光输出预算；不设就不发这个字段 |
 | `EXTRACT_STRUCTURED_OUTPUTS` | 否 | 端点不支持 JSON Schema 时设为 `false` |
 | `EXTRACT_TIMEOUT_S` / `EXTRACT_CONCURRENCY` / `EXTRACT_MAX_OUTPUT_TOKENS` | 否 | 端点属性，默认 120 / 4 / 4000 |

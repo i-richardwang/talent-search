@@ -13,7 +13,10 @@
 **向量圈组，模型下结论。** 相似度阈值只决定圈子多大，圈进了不相干的词由模型拆开
 （「推荐系统」和「搜索推荐」是邻居，不是同一项能力）；模型每次只看一组几个词，不是
 整份词表。标准词不由模型选：就是组心，这组里人最多的词——留给模型选的时候它会
-把通用词并进具体词（「搜索」→「搜索结果页」）。模型只回答组里哪些词和组心是同一项能力。
+把通用词并进具体词（「搜索」→「搜索结果页」）。模型只回答组里哪些词该并进组心。
+并不并的判据是筛选栏的用法：招聘的人点标准词时想不想看到写了候选词的人——限定了
+行业或对象的具体种类要并（「销售团队管理」→「团队管理」），只是其中一个环节的不并
+（「团队培训」）。这条线小模型划不动，所以这一步用 `REVIEW_MODEL`。
 
 **一个词一周只判一次。** 问过模型的组心记下时间，`REVIEW_INTERVAL` 之内不再做组心；
 陪它一起被看的候选词不记——它们只是参考，下一轮可能自己做组心。这样每轮只问新词
@@ -32,6 +35,7 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import psycopg
 
+import config as C
 from chat import complete
 from embed import embed
 from extract import Extraction, tag
@@ -47,18 +51,42 @@ GROUP_MAX = 12
 #: 组心至少几个人才值得整理。
 HEAD_MIN = 3
 
-SYSTEM = """你在整理人才库从简历里抽出来的能力词。第一行是标准词，后面每行是一个候选词，括号里是写了它的人数。判断哪些候选词和标准词说的是同一项能力、只是写法不同（同义词、中英文、缩写、多了无意义的修饰）。
+SYSTEM = """你在整理人才库从简历里抽出来的能力词，整理的结果给筛选栏用：招聘的人点一个标准词，看到所有具备这项能力的人。第一行是标准词，后面每行是一个候选词，括号里是写了它的人数。逐个判断每个候选词该不该并进标准词。
 
-输出 JSON：{"aliases": ["候选词一", "候选词二"]}
+该并的：写了候选词的人，招聘的人按标准词找人时也会想看到他。
+- 同一件事的不同写法：同义词、中英文、缩写、语序颠倒、多了「工作」「能力」「统筹」这类字。「人员管理」「员工管理」「小组管理」都并进「团队管理」。
+- 标准词的一个具体种类，只是限定了行业、对象或产品：「销售团队管理」并进「团队管理」，「产品数据分析」并进「数据分析」，「品牌战略」并进「品牌策略」。
 
-- 只放和标准词是同一项能力的候选词，原样照抄。
-- 相关但不是同一项能力的不放：标准词的下位词或上位词（「推荐系统」和「视频推荐」）、相邻的另一件事（「推荐系统」和「搜索推荐」，「Python」和「数据分析」）都不是。
-- 一个都不是就给空数组。"""
+不该并的：
+- 只是标准词里的某一个环节或活动，做过它不等于具备整项能力：「团队培训」「团队建设」「团队 SOP 管理」不并进「团队管理」；「数据统计」「数据处理」「数据分析报告」不并进「数据分析」。
+- 相邻的另一件事，招聘时是另一个要求：「营销策略」「销售策略」不并进「运营策略」；「品牌营销」「广告策略」不并进「品牌策略」。
+- 比标准词更宽的词：「增长」不并进「用户增长」，「管理」不并进「团队管理」。
 
+每个候选词先用一句话说它属于上面哪一种，再下结论。输出 JSON：
+{"judgments": [{"word": "候选词", "why": "一句话", "alias": true 或 false}]}
+候选词原样照抄，每个候选词都要有一条。"""
+
+#: 逐词给理由再下结论，不是直接列名单：让模型一次列名单，它面对十来个相近的候选
+#: 会整片说是或整片说否；逐词说完理由再判，每个词各判各的。理由只为约束判断，
+#: 收窄时不读。
 SCHEMA = {
     "type": "object",
-    "properties": {"aliases": {"type": "array", "items": {"type": "string"}}},
-    "required": ["aliases"],
+    "properties": {
+        "judgments": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "word": {"type": "string"},
+                    "why": {"type": "string"},
+                    "alias": {"type": "boolean"},
+                },
+                "required": ["word", "why", "alias"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["judgments"],
     "additionalProperties": False,
 }
 
@@ -144,15 +172,18 @@ def groups(
 
 
 def conform(raw: object, group: list[str]) -> list[str]:
-    """把模型的原话收窄成组心的别名：只认组里的候选词，其余当模型没说。"""
+    """把模型的原话收窄成组心的别名：只认组里的候选词里判成 true 的，其余当模型没说。"""
     if not isinstance(raw, Mapping):
         return []
-    proposed = raw.get("aliases")
-    return [
-        alias
-        for alias in dict.fromkeys(tag(a) for a in (proposed if isinstance(proposed, list) else []))
-        if alias in group[1:]
-    ]
+    judgments = raw.get("judgments")
+    out: list[str] = []
+    for item in judgments if isinstance(judgments, list) else []:
+        if not isinstance(item, Mapping) or item.get("alias") is not True:
+            continue
+        word = tag(item.get("word"))
+        if word in group[1:] and word not in out:
+            out.append(word)
+    return out
 
 
 def merge(table: Table, head: str, aliases: list[str], now: datetime) -> list[str]:
@@ -198,7 +229,7 @@ def review(
     table = read(cur)
     extractions = [apply(mapping(table), e) for e in extractions]
     words, counts = _vocabulary(extractions, emp_ids)
-    print(f"  能力词 {len(words)} 个，对照表已有 {len(table)} 个词的决定")
+    print(f"  能力词 {len(words)} 个，对照表已有 {len(table)} 个词的决定；整理模型 {C.REVIEW_MODEL}")
     if not words:
         return extractions
     due = {
@@ -211,7 +242,7 @@ def review(
     )
     count = dict(zip(words, counts, strict=True))
     inputs = [_prompt_input(group, count) for group in circles]
-    payloads = complete(SYSTEM, SCHEMA, inputs, "整理")
+    payloads = complete(C.REVIEW_MODEL, SYSTEM, SCHEMA, inputs, "整理")
     changed: list[str] = []
     merged: list[tuple[str, str]] = []
     for group, text in zip(circles, inputs, strict=True):

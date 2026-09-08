@@ -113,7 +113,7 @@ class ExtractTest(unittest.TestCase):
         ]
         asked: list[str] = []
 
-        def fake(system: str, schema: object, text: str, what: str) -> object:
+        def fake(model: str, system: str, schema: object, text: str, what: str) -> object:
             asked.append(text)
             return {"skills": ["召回"], "did": [{"involvement": "负责建设", "domain": "推荐系统"}]}
 
