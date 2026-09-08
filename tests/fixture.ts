@@ -30,12 +30,12 @@ import {
 	employee,
 	experience,
 	experiencePhrase,
-	importRun,
 	phrase,
 	phraseRelevance,
 	type Route,
 	searchTurn,
 	skillAlias,
+	taskRun,
 } from "#/db/schema";
 import { parseQuery } from "#/search/query-syntax";
 
@@ -60,6 +60,16 @@ function ddl(schema: string, table: PgTable) {
 				`constraint "${c.uniqueName ?? `${name}_${c.name}_unique`}" unique`,
 			);
 		if (c.notNull && !c.primary) parts.push("not null");
+		if (c.generated) {
+			// 库自己算的列（experience.key）。表达式是 SQL 或字符串，照 drizzle 的形态取
+			const as =
+				typeof c.generated.as === "function"
+					? c.generated.as()
+					: c.generated.as;
+			const expression =
+				typeof as === "string" ? as : dialect.sqlToQuery(as as SQL).sql;
+			parts.push(`generated always as (${expression}) stored`);
+		}
 		if (c.default !== undefined) {
 			// 三种形态：字符串字面量、SQL 表达式（defaultNow）、jsonb 的对象默认值
 			const d =
@@ -368,7 +378,7 @@ export async function setup() {
 		skillAlias,
 		embeddingCache,
 		completionCache,
-		importRun,
+		taskRun,
 	])
 		await admin.query(ddl(SCHEMA, t));
 	await admin.query(
@@ -513,7 +523,7 @@ export async function seed(rows: Seed[]) {
 			),
 		)
 		.returning();
-	// 说法去重后各嵌一次，经历段按路指向它们——和 src/corpus/load.ts 同一个形状。
+	// 说法去重后各嵌一次，经历段按路指向它们——和 src/corpus/derive.ts 同一个形状。
 	// 抽取的两路夹具直接给：seed 的入参和 inserted 顺序一致，按下标对回去。
 	const specs = rows.flatMap((r) => r.segments);
 	const links = inserted.flatMap((s, i) => {

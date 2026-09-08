@@ -3,7 +3,7 @@
  *
  * 它有两个作用：**契约的可执行说明**——想接自己的人事数据，最省事的路径就是从
  * 上游导出这三张表；以及**开箱可跑**——不配任何环境变量时读仓库自带的合成样例，
- * `bun run import` 直接能把库填满。
+ * `bun run sync` 直接能把库填满。
  *
  *     <TALENT_CSV_DIR>/
  *       employees.csv    emp_id,name,hire_date,education_level,school,recruitment

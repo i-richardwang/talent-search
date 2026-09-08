@@ -6,8 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import type { Extraction } from "#/corpus/extract";
-import { answerChat, setup } from "./fixture";
+import { answerChat, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -219,22 +218,29 @@ describe("记账", () => {
 });
 
 describe("整轮整理", () => {
-	before(() =>
-		seedTable([
+	before(async () => {
+		await seedTable([
 			["Py", "Python", OLD],
 			// 一天前整理过：这一轮它不做组心，即使人数够
 			["Python", "Python", new Date(Date.now() - 86_400_000)],
-		]),
-	);
+		]);
+		// 库里能力词那一路上此刻有的词。派生写边时已经按对照表换过词，所以没有「Py」
+		await seed(
+			[
+				["团队管理"],
+				["团队管理工作"],
+				["团队管理", "团队管理工作", "Python"],
+				["团队管理", "团队管理工作", "Python"],
+				["团队管理", "团队管理工作", "Java"],
+			].map((skills, index) => ({
+				empId: `u${index + 1}`,
+				name: `人${index + 1}`,
+				segments: [{ kind: "external", months: 12, skills }],
+			})),
+		);
+	});
 
-	test("先套旧决定，只问到期的组心，结果写回表", async () => {
-		const extractions: Extraction[] = [
-			{ skills: ["团队管理", "Py"], did: [] },
-			{ skills: ["团队管理工作"], did: [] },
-			{ skills: ["团队管理", "团队管理工作", "Python"], did: [] },
-			{ skills: ["团队管理", "团队管理工作", "Py"], did: [] },
-			{ skills: ["团队管理", "团队管理工作", "Java"], did: [] },
-		];
+	test("只问到期的组心，决定写回表，边改指标准词", async () => {
 		const asked: string[] = [];
 		const restore = answerChat((_system, prompt) => {
 			asked.push(prompt);
@@ -244,14 +250,8 @@ describe("整轮整理", () => {
 		});
 		const said: string[] = [];
 		const connection = await client();
-		let got: Extraction[];
 		try {
-			got = await review(
-				connection,
-				extractions,
-				["u1", "u2", "u3", "u4", "u5"],
-				(line) => said.push(line),
-			);
+			await review(connection, (line) => said.push(line));
 		} finally {
 			connection.release();
 		}
@@ -259,9 +259,6 @@ describe("整轮整理", () => {
 
 		// 到期的组心只有「团队管理」：Python 一天前刚整理过，Java 只有一个人
 		assert.deepEqual(asked, ["标准词：团队管理\n团队管理工作（4 人）"]);
-		// 旧决定（Py → Python）和新决定都套到了这一轮的能力词上
-		assert.deepEqual(got[0]?.skills, ["团队管理", "Python"]);
-		assert.deepEqual(got[1]?.skills, ["团队管理"]);
 		assert.match(said.join("\n"), /团队管理工作 → 团队管理/);
 
 		const later = await client();
@@ -270,6 +267,22 @@ describe("整轮整理", () => {
 			assert.equal(table.get("团队管理工作")?.canonical, "团队管理");
 			assert.equal(table.get("团队管理")?.canonical, "团队管理");
 			assert.equal(table.get("Py")?.canonical, "Python");
+			// 能力词那一路上再也没有别名：五个人里写了「团队管理工作」的四个都指向了标准词
+			const { rows } = await later.query<{ word: string; people: string }>(
+				`select p.text as word, count(distinct e.emp_id) as people
+				 from experience_phrase ep
+				 join phrase p on p.id = ep.phrase_id
+				 join experience e on e.id = ep.experience_id
+				 where ep.route = 'skill' group by p.text order by p.text`,
+			);
+			assert.deepEqual(
+				rows.map((row) => [row.word, Number(row.people)]),
+				[
+					["Java", 1],
+					["Python", 2],
+					["团队管理", 5],
+				],
+			);
 		} finally {
 			later.release();
 		}

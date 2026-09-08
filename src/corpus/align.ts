@@ -18,7 +18,7 @@
  */
 
 import { z } from "zod";
-import { complete, extractModel } from "#/server/chat";
+import { complete, extractModel, identityOf } from "#/server/chat";
 import { promptInput } from "./extract";
 import { type ExperienceRow, UNEMPLOYED } from "./pipeline";
 import type { Report } from "./report";
@@ -26,7 +26,7 @@ import type { Report } from "./report";
 const SCHEMA = z.object({ l1: z.string(), l2: z.string() });
 
 /** 树上的一对：一级 · 二级。 */
-type SeqPair = [string, string];
+export type SeqPair = [string, string];
 
 /** 拼一对序列时的分隔符：控制字符，序列名里不可能出现它。 */
 const PAIR = "\u001f";
@@ -35,7 +35,9 @@ const PAIR = "\u001f";
  * 公司内任职段登记过的（一级，二级）全集，去重排序。只有一级的登记不算：
  * 对齐要的是能进筛选的一对，而序列筛选只认成对的值。
  */
-export function seqTree(experience: ExperienceRow[]): SeqPair[] {
+export function seqTree(
+	experience: Pick<ExperienceRow, "kind" | "seq_l1" | "seq_l2">[],
+): SeqPair[] {
 	const pairs = new Set<string>();
 	for (const row of experience)
 		if (row.kind === "internal" && row.seq_l1 && row.seq_l2)
@@ -76,21 +78,24 @@ export function conform(raw: unknown, tree: SeqPair[]): SeqPair {
 	return known.has(`${pair[0]}${PAIR}${pair[1]}`) ? pair : ["", ""];
 }
 
+/** 对齐这一步的身份：模型、带着这棵树的提示词、schema。派生版本的一部分。 */
+export function alignIdentity(tree: SeqPair[]): string {
+	return identityOf(extractModel(), systemPrompt(tree), SCHEMA);
+}
+
 /**
  * 把对到了的入职前段写进 `seq_inferred_l1 / seq_inferred_l2`；其余段保持空。
  *
  * 待业段没有岗位可对，不去问。序列树写在提示词里，也就在缓存的键里：树变了，
- * 旧回答是对着另一棵树给的，自然失效。
+ * 旧回答是对着另一棵树给的，自然失效。树是空的（语料里没有登记的序列）就
+ * 什么都对不上，直接原样返回。
  */
-export async function align(
-	experience: ExperienceRow[],
+export async function align<Row extends ExperienceRow>(
+	experience: Row[],
+	tree: SeqPair[],
 	report: Report,
-): Promise<ExperienceRow[]> {
-	const tree = seqTree(experience);
-	if (tree.length === 0) {
-		report("  语料里没有登记的序列，入职前经历无法对齐");
-		return experience;
-	}
+): Promise<Row[]> {
+	if (tree.length === 0) return experience;
 
 	const asked = experience.map((row) =>
 		row.kind === "external" && row.title !== UNEMPLOYED

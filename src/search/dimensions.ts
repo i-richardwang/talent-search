@@ -94,7 +94,7 @@ export type DimSource = {
 	seqL1: string;
 	seqL2: string;
 	companyTag: string | null;
-	/** 这一段抽出来的能力词，已按对照表换成标准词（`src/corpus/aliases.ts` 每次灌库前自动整理）。没有就是空数组 */
+	/** 这一段抽出来的能力词，已按对照表换成标准词（`src/corpus/aliases.ts` 的整理任务定期归并）。没有就是空数组 */
 	skills: string[];
 	kind: "internal" | "external";
 	level: string;

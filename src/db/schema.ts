@@ -51,11 +51,31 @@ export const employee = pgTable("employee", {
 /**
  * 经历段。在职（internal）与入职前（external）同一张表，靠 kind 区分，
  * 搜索天然跨两者。
+ *
+ * 一行分两半。**原始的一半**由同步写（`src/corpus/sync.ts`）：数据源给的字段经
+ * 切段校验之后的样子。**派生的一半**由派生任务写（`src/corpus/derive.ts`）：
+ * 对齐到的序列 `seq_inferred_*`，以及说明「派生到哪一版了」的 `derived_*`。
+ *
+ * **段的身份是内容**（`key`）：原始那一半所有列的摘要，由库自己算，同步按它
+ * 认「这一段还在不在」。表达式只用不变的函数（生成列的要求）：日期按天数算，
+ * 日期转文字和 `concat_ws` 都依赖会话设置，不算不变。于是同步只增删变了的段，没变的段连同它的派生结果原样
+ * 留下——派生是几十分钟的模型调用，不能每次同步都重来。描述改了一个字就是新段，
+ * 旧段连同它的说法边一起删掉，没有「改了但没重新派生」这种半旧不新的行。
+ *
+ * `derived_identity` 是派生所依赖的一切的摘要（抽取与对齐的提示词、嵌入空间；
+ * 见 `derive.ts`）。它和当下的身份不相等的段就是待派生的段，改一次提示词等于
+ * 全部待派生，不用人去清什么。
  */
 export const experience = pgTable(
 	"experience",
 	{
 		id: serial("id").primaryKey(),
+		key: text("key")
+			.notNull()
+			.unique()
+			.generatedAlwaysAs(
+				sql`md5(emp_id || E'\\x1f' || kind || E'\\x1f' || (start_date - date '1970-01-01')::text || E'\\x1f' || coalesce((end_date - date '1970-01-01')::text, '') || E'\\x1f' || org || E'\\x1f' || org_path || E'\\x1f' || coalesce(org_meta::text, '') || E'\\x1f' || title || E'\\x1f' || seq_l1 || E'\\x1f' || seq_l2 || E'\\x1f' || seq_l3 || E'\\x1f' || level || E'\\x1f' || description)`,
+			),
 		empId: text("emp_id")
 			.notNull()
 			.references(() => employee.empId, { onDelete: "cascade" }),
@@ -87,8 +107,13 @@ export const experience = pgTable(
 		/** 外部：简历中该段公司的职责描述 */
 		description: text("description").notNull().default(""),
 		months: integer("months").notNull(),
+		/** 派生到了哪一版；null 是还没派生过 */
+		derivedIdentity: text("derived_identity"),
+		derivedAt: timestamp("derived_at", { withTimezone: true }),
 	},
 	(t) => [
+		// 派生任务每一轮问的都是「哪些段还不是这一版」
+		index("experience_derived").on(t.derivedIdentity),
 		check("experience_kind_valid", sql`${t.kind} in ('internal', 'external')`),
 		check("experience_months_positive", sql`${t.months} > 0`),
 		check(
@@ -120,8 +145,9 @@ export type Experience = typeof experience.$inferSelect;
 export const EMBED_DIM = 1024;
 
 /**
- * 当前语料的嵌入空间身份证。每次整库重灌时只写一行；查询进程在第一次
- * 嵌入前核对 space/model/dimension，并用 canary 检查端点实际输出仍在同一空间。
+ * 当前语料的嵌入空间身份证，只有一行。派生任务在第一次嵌入前写它、换了嵌入
+ * 空间时重写它（`src/corpus/derive.ts`）；查询进程在第一次嵌入前核对
+ * space/model/dimension，并用 canary 检查端点实际输出仍在同一空间。
  */
 export const embeddingSpace = pgTable("embedding_space", {
 	spaceId: text("space_id").primaryKey(),
@@ -138,7 +164,7 @@ export const embeddingSpace = pgTable("embedding_space", {
  *
  * 同一个模型对同一串字的向量是确定的，所以这张表可以永久留着：重置语料、重跑
  * 灌库都不必再打一次端点，一份语料几万种说法只在第一次出去过。它记的是**关于
- * 文本的事实**，不是语料的一部分——发布语料时 truncate 的那几张表里没有它，
+ * 文本的事实**，不是语料的一部分：换嵌入空间时清的是 `phrase`，不是它，
  * 和 `skill_alias` 同一个性质。
  *
  * 键是文本的 sha256 而不是文本本身：简历描述整段进说法表，几千字一条的有的是，
@@ -173,23 +199,28 @@ export const completionCache = pgTable(
 	(t) => [primaryKey({ columns: [t.identity, t.textSha] })],
 );
 
+/** 语料侧的三种任务。同步读数据源；派生问模型、嵌入、连边；整理归并能力词的写法。 */
+export const TASK_KINDS = ["sync", "derive", "review"] as const;
+export type TaskKind = (typeof TASK_KINDS)[number];
+
 /**
- * 一次整库导入。**导入是这个应用自己的一次运行，不是外面某个脚本干的事**，
- * 所以它像查询记录一样落在库里：管理页 `/imports` 上那个按钮按下去有没有反应、
- * 现在跑到哪一步、上一次是什么时候跑的、为什么失败，都只有这张表回答得了。
+ * 语料侧任务的一次运行。同步是命令行跑的脚本，派生和整理是应用进程里的后台
+ * 任务（`src/server/jobs.ts`），三者都像查询记录一样落在库里：任务台 `/tasks`
+ * 上「现在跑到哪一步、上一次是什么时候、为什么失败」都只有这张表回答得了。
  *
  * `log` 就是命令行里会滚过去的那些行（拒绝了几段、合并了哪些写法、各表几行）。
  * 不另存一份计数：那些数就在最后几行里，两份表示迟早对不上。
  *
  * `finished_at is null` 只说明**这一行没写完**，它分不出「正在跑」和「跑到一半
  * 进程没了」。那件事不在这张表里：谁活着是连接的属性，问那把咨询锁
- * （`src/corpus/session.ts` 的 `importRunning`）。两件事各有各的出处，于是没有
- * 一个要靠人事后来对齐的中间状态。
+ * （`src/corpus/session.ts` 的 `corpusSessionActive`）。两件事各有各的出处，于是
+ * 没有一个要靠人事后来对齐的中间状态。
  */
-export const importRun = pgTable("import_run", {
+export const taskRun = pgTable("task_run", {
 	id: serial("id").primaryKey(),
-	/** 这一次读的是哪个适配器（`TALENT_SOURCE`） */
-	source: text("source").notNull(),
+	kind: text("kind", { enum: TASK_KINDS }).notNull(),
+	/** 同步：读的是哪个适配器（`TALENT_SOURCE`）；其余两种是空串 */
+	source: text("source").notNull().default(""),
 	startedAt: timestamp("started_at", { withTimezone: true })
 		.notNull()
 		.defaultNow(),
@@ -202,14 +233,14 @@ export const importRun = pgTable("import_run", {
 /**
  * 能力词的对照表：一个词对到哪个标准词，以及它上次被整理的时间。
  *
- * 能力词是模型从简历里抽出来的开放词表，同一项能力有多种写法。每次灌库前
- * 自动整理（`src/corpus/aliases.ts`）：相似的词圈成组，模型判断哪些只是写法不同，合并
- * 的结果写在这里，灌库时按它把能力词换成标准词。`canonical` 等于 `word` 表示这个
- * 词整理过、就是标准词；一个词一周内只整理一次（`reviewed_at`）。
+ * 能力词是模型从简历里抽出来的开放词表，同一项能力有多种写法。整理任务定期
+ * 跑（`src/corpus/aliases.ts`）：相似的词圈成组，模型判断哪些只是写法不同，合并
+ * 的结果写在这里，能力词那一路的边随之改指标准词。`canonical` 等于 `word` 表示
+ * 这个词整理过、就是标准词；一个词一周内只整理一次（`reviewed_at`）。
  *
- * 这张表记的是关于词的决定，不是语料：整库重灌不清它，决定累积。只有导入写它；
- * 查询侧读到的能力词说法已经是标准词，应用里只有管理页 `/skills` 读这张表，
- * 给人看机器并了什么。
+ * 这张表记的是关于词的决定，不是语料：换数据源、换嵌入空间都不清它，决定累积。
+ * 只有整理任务写它；查询侧读到的能力词说法已经是标准词，应用里只有管理页
+ * `/skills` 读这张表，给人看机器并了什么。
  */
 export const skillAlias = pgTable("skill_alias", {
 	word: text("word").primaryKey(),
@@ -309,7 +340,7 @@ export const experiencePhrase = pgTable(
  *
  * 同一个重排空间对同一对文本的分数是确定的，所以它是永久缓存：翻页、改筛选、
  * 换个人再搜同一个词，都不必再打端点。按空间身份键入，换模型行为时自然失效；
- * 语料重灌时 phrase 表 truncate 会把它级联清空——分数是对旧 id 打的。
+ * 说法的 id 是稳定的（`phrase` 只增不改），只有换嵌入空间清 `phrase` 表时它才跟着级联清空。
  * 只存打过分的对：召回没取到的说法不在这里，也不该在，那是召回的事。
  */
 export const phraseRelevance = pgTable(

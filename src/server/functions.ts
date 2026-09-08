@@ -19,8 +19,9 @@ import { validateCommit } from "#/search/commit-input";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search } from "#/search/search";
-import { importState, startImport } from "./import";
+import { type JobKind, requestJob } from "./jobs";
 import { listSkills } from "./skills";
+import { tasksState } from "./tasks";
 import {
 	createTurn,
 	listRecent,
@@ -119,20 +120,26 @@ export const skillTable = createServerFn({ method: "GET" }).handler(() =>
 	listSkills(),
 );
 
-/** 管理页「导入」的全部数据：最近一次的全过程，加上更早几次的结果。 */
-export const importStatus = createServerFn({ method: "GET" }).handler(() =>
-	importState(),
+/** 任务台的全部数据：三种任务各自最近一次的全过程、更早几次的结果、派生的活量。 */
+export const tasksStatus = createServerFn({ method: "GET" }).handler(() =>
+	tasksState(),
 );
 
 /**
- * 开一次导入，立刻返回。
+ * 现在就跑一次派生或整理，立刻返回。
  *
- * **不等它跑完**：一次导入是几十分钟，而这是一次 HTTP 往返。进度由 `import_run`
- * 那一行自己长出来，页面重新载入这个状态就看得见。已经有一次在跑时返回
- * `started: false`，界面照它说明原因——把这件事画成一个转不完的圈是骗人。
+ * **不等它跑完**：一轮是几分钟到几十分钟，而这是一次 HTTP 往返。进度由
+ * `task_run` 那一行自己长出来，页面重新载入状态就看得见。排着或在跑的已经有
+ * 一个时返回 `queued: false`，界面照它说明原因——把这件事画成一个转不完的圈是骗人。
  */
-export const beginImport = createServerFn({ method: "POST" }).handler(
-	async (): Promise<{ started: boolean }> => ({
-		started: (await startImport()) !== null,
-	}),
-);
+export const requestTask = createServerFn({ method: "POST" })
+	.validator((kind: JobKind) => {
+		if (kind !== "derive" && kind !== "review")
+			throw new Error(`没有这种后台任务：${String(kind)}`);
+		return kind;
+	})
+	.handler(
+		async ({ data }): Promise<{ queued: boolean }> => ({
+			queued: await requestJob(data),
+		}),
+	);

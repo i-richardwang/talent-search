@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { DatabaseIcon, TagsIcon, UsersRoundIcon } from "lucide-react";
+import { ActivityIcon, TagsIcon, UsersRoundIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import type { RecentSearch } from "#/server/turn";
@@ -70,16 +70,16 @@ export function AppHeader({ recent }: { recent: RecentSearch[] | null }) {
 						<TooltipTrigger
 							render={
 								<Button
-									aria-label="导入"
-									render={<Link to="/imports" />}
+									aria-label="任务"
+									render={<Link to="/tasks" />}
 									size="icon-sm"
 									variant="ghost"
 								/>
 							}
 						>
-							<DatabaseIcon />
+							<ActivityIcon />
 						</TooltipTrigger>
-						<TooltipPopup positionMethod="fixed">导入</TooltipPopup>
+						<TooltipPopup positionMethod="fixed">任务</TooltipPopup>
 					</Tooltip>
 				</div>
 			</div>

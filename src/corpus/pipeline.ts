@@ -55,7 +55,7 @@ export type ExperienceRow = {
 	seq_l1: string;
 	seq_l2: string;
 	seq_l3: string;
-	/** 推断的那两级由 `align.ts` 在灌库前填，管线一律交空 */
+	/** 推断的那两级由派生时的 `align.ts` 填，管线一律交空 */
 	seq_inferred_l1: string;
 	seq_inferred_l2: string;
 	level: string;
@@ -107,7 +107,7 @@ function parseDate(value: string): Maybe {
  * 这台机器墙上的今天，表示成管线里日期通用的样子：UTC 午夜、只有年月日。
  *
  * 取**本地**日历日，不取 UTC 日历日：源里的日期是人事系统按当地日历登记的，
- * 跑导入的人看的也是墙上那本日历。取 UTC 的话，东八区每天早上八点前「今天」
+ * 跑同步的人看的也是墙上那本日历。取 UTC 的话，东八区每天早上八点前「今天」
  * 还是昨天，当天生效的任职段会被判成「生效日在未来」拒掉。
  */
 function today(): Date {
@@ -504,7 +504,7 @@ function few(ids: string[]): string {
 /**
  * 源契约 → 可以直接写库的两张表。
  *
- * `asOf` 是这一次导入眼里的「今天」：公司内的开放段算时长封到它，生效日晚于它
+ * `asOf` 是这一次同步眼里的「今天」：公司内的开放段算时长封到它，生效日晚于它
  * 的记录是脏数据。默认取当天，调用方给一个固定值就能让整条管线可复现。
  */
 export function build(

@@ -115,7 +115,7 @@ describe("对齐", () => {
 				? { l1: "技术", l2: "算法" }
 				: { l1: "", l2: "" };
 		});
-		const out = await align(rows, quiet);
+		const out = await align(rows, seqTree(rows), quiet);
 		restore();
 
 		assert.equal(asked.length, 2);
@@ -137,22 +137,20 @@ describe("对齐", () => {
 		);
 	});
 
-	test("语料里没有登记的序列时，一次端点都不打", async () => {
+	test("树是空的时候，一次端点都不打", async () => {
 		const rows = corpus(["算法工程师", ""]).filter(
 			(row) => row.kind === "external",
 		);
 		const restore = answerChat(() => {
 			throw new Error("不该打端点");
 		});
-		const said: string[] = [];
-		const out = await align(rows, (line) => said.push(line));
+		const out = await align(rows, seqTree(rows), quiet);
 		restore();
 
 		assert.deepEqual(
 			out.map((row) => row.seq_inferred_l1),
 			[""],
 		);
-		assert.match(said.join("\n"), /没有登记的序列/);
 	});
 
 	test("树变了就重新问：树写在提示词里，也就在缓存的键里", async () => {
@@ -162,12 +160,12 @@ describe("对齐", () => {
 			asked++;
 			return { l1: "", l2: "" };
 		});
-		await align(rows, quiet);
-		await align(rows, quiet);
+		await align(rows, seqTree(rows), quiet);
+		await align(rows, seqTree(rows), quiet);
 		assert.equal(asked, 1);
 
 		const grown = [...rows, segment({ seq_l1: "技术", seq_l2: "数据" })];
-		await align(grown, quiet);
+		await align(grown, seqTree(grown), quiet);
 		restore();
 		assert.equal(asked, 2);
 	});

@@ -1,15 +1,17 @@
 /**
- * 能力词的对照表：别名 → 标准词，每次导入前自动整理。
+ * 能力词的对照表：别名 → 标准词，由整理任务定期整理。
  *
  * 抽出来的能力词是开放词表，同一项能力有好几种写法（「推荐算法」「个性化推荐」
  * 「Recommendation」）。检索不在乎——它们在向量空间里本来就是邻居；在乎的是筛选栏
  * 「入职前能力」那一栏（`src/search/dimensions.ts`）：它按词数人，写法不合并就是一串
  * 各有一两个人的项，没法点。
  *
- * 整理在导入前、抽取后做（`review`）：先按库里已有的对照表把这一轮的能力词换成
- * 标准词，再把剩下的词按向量圈成组，每组问一次模型哪些只是同一项能力的不同写法，
- * 合并的结果写回对照表（`skill_alias`，`src/db/schema.ts`），最后按合并后的表把
- * 能力词换成标准词交给导入。全程无人；对照表记的是关于词的决定，整库重灌不清它。
+ * 整理是一个后台任务（`review`，由 `src/server/jobs.ts` 定期跑）：读库里此刻
+ * 能力词那一路上的词和各自的人数，按向量圈成组，每组问一次模型哪些只是同一项
+ * 能力的不同写法，合并的结果写回对照表（`skill_alias`，`src/db/schema.ts`），
+ * 并把指向别名的边改指标准词。派生任务写新段的边时按对照表换词（`apply`），
+ * 所以库里能力词那一路永远只有标准词。全程无人；对照表记的是关于词的决定，
+ * 换数据源、换嵌入空间都不清它。
  *
  * **向量圈组，模型下结论。** 相似度阈值只决定圈子多大，圈进了不相干的词由模型拆开
  * （「推荐系统」和「搜索推荐」是邻居，不是同一项能力）；模型每次只看一组几个词，不是
@@ -21,7 +23,7 @@
  *
  * **一个词一周只判一次。** 问过模型的组心记下时间，`REVIEW_INTERVAL` 之内不再做组心；
  * 陪它一起被看的候选词不记——它们只是参考，下一轮可能自己做组心。这样每轮只问新词
- * 和到期的词，重跑导入不重问。
+ * 和到期的词，每天那一轮不重问。
  *
  * **只整理有读者的组。** 筛选栏按人数排，两个单人词合成一个双人词没人会点；组心
  * 至少 `HEAD_MIN` 人的组才问模型。
@@ -257,37 +259,64 @@ function promptInput(group: string[], count: Map<string, number>): string {
 	].join("\n");
 }
 
-/** 这一轮的能力词和各自的人数。 */
-function vocabulary(extractions: Extraction[], empIds: string[]) {
-	const people = new Map<string, Set<string>>();
-	for (const [index, extraction] of extractions.entries())
-		for (const skill of extraction.skills) {
-			const holders = people.get(skill) ?? new Set<string>();
-			holders.add(empIds[index] as string);
-			people.set(skill, holders);
-		}
-	const words = [...people.keys()].sort((a, b) => a.localeCompare(b));
+/** 库里此刻能力词那一路上的词和各自的人数，按词排序。 */
+async function vocabulary(client: CorpusClient) {
+	const { rows } = await client.query<{ word: string; people: string }>(
+		`select p.text as word, count(distinct e.emp_id) as people
+		 from experience_phrase ep
+		 join phrase p on p.id = ep.phrase_id
+		 join experience e on e.id = ep.experience_id
+		 where ep.route = 'skill'
+		 group by p.text
+		 order by p.text`,
+	);
 	return {
-		words,
-		counts: words.map((word) => people.get(word)?.size ?? 0),
+		words: rows.map((row) => row.word),
+		counts: rows.map((row) => Number(row.people)),
 	};
 }
 
-/** 整理这一轮的能力词，返回换成标准词之后的抽取结果。过程报出来，决定写回表。 */
+/**
+ * 把指向这些别名的边改指各自的标准词。
+ *
+ * 标准词一定已经是一条说法：它是组心，组心来自这一轮的词表，词表来自边。同一段
+ * 既写了别名又写了标准词的，改指之后两条边撞成一条，撞的那条丢掉即可。
+ */
+async function repoint(client: CorpusClient, moves: [string, string][]) {
+	if (moves.length === 0) return;
+	const words = moves.map(([word]) => word);
+	const canonicals = moves.map(([, canonical]) => canonical);
+	await client.query(
+		`insert into experience_phrase (experience_id, route, phrase_id, involvement)
+		 select ep.experience_id, 'skill', c.id, null
+		 from experience_phrase ep
+		 join phrase w on w.id = ep.phrase_id
+		 join unnest($1::text[], $2::text[]) as m(word, canonical) on m.word = w.text
+		 join phrase c on c.text = m.canonical
+		 where ep.route = 'skill'
+		 on conflict do nothing`,
+		[words, canonicals],
+	);
+	await client.query(
+		`delete from experience_phrase ep
+		 using phrase w
+		 where ep.route = 'skill' and w.id = ep.phrase_id and w.text = any($1::text[])`,
+		[words],
+	);
+}
+
+/** 整理一轮：到期的词圈组问模型，决定写回表，边改指标准词。过程报出来。 */
 export async function review(
 	client: CorpusClient,
-	extractions: Extraction[],
-	empIds: string[],
 	report: Report,
-): Promise<Extraction[]> {
+): Promise<void> {
 	const now = new Date();
 	const table = await read(client);
-	let out = extractions.map((extraction) => apply(mapping(table), extraction));
-	const { words, counts } = vocabulary(out, empIds);
+	const { words, counts } = await vocabulary(client);
 	report(
 		`  能力词 ${words.length} 个，对照表已有 ${table.size} 个词的决定；整理模型 ${reviewModel()}`,
 	);
-	if (words.length === 0) return out;
+	if (words.length === 0) return;
 
 	const overdue = now.getTime() - REVIEW_INTERVAL_DAYS * 86_400_000;
 	const due = new Set(
@@ -324,13 +353,30 @@ export async function review(
 			changed.set(word, decision);
 		merged.push(...aliases.map((alias): [string, string] => [alias, head]));
 	}
-	await write(client, [...changed]);
+	/*
+	 * 决定和边在同一笔事务里：写了决定没改边，筛选栏里别名和标准词就各数各的人，
+	 * 而派生按新表写的新段又只有标准词——同一个词两种答案。
+	 */
+	await client.query("begin");
+	try {
+		await write(client, [...changed]);
+		await repoint(
+			client,
+			[...changed]
+				.filter(([word, decision]) => decision.canonical !== word)
+				.map(([word, decision]): [string, string] => [
+					word,
+					decision.canonical,
+				]),
+		);
+		await client.query("commit");
+	} catch (error) {
+		await client.query("rollback");
+		throw error;
+	}
 	report(
 		merged.length ? `  合并 ${merged.length} 个写法：` : "  没有要合并的写法",
 	);
 	for (const [alias, canonical] of merged)
 		report(`    ${alias} → ${canonical}`);
-
-	out = out.map((extraction) => apply(mapping(table), extraction));
-	return out;
 }

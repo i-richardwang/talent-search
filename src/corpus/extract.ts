@@ -12,7 +12,7 @@
  * 判断，写在下面的提示词里，可以大改（缓存按提示词键入，改了旧抽取自然失效）；
  * 一条说法最长几个字、一段最多几条、参与方式只认哪几种，是全站的阈值，写在
  * `conform` 里，改了不必换 id——缓存里存的是模型的原话（`src/server/chat.ts`），
- * `conform` 每次重灌都重新收窄一遍。
+ * `conform` 每次派生都重新收窄一遍。
  *
  * **模型输出是不可信输入。** schema 里不写枚举、不写长度上限：写了，模型多给
  * 一个字整条响应就作废，而收窄只会丢掉那一条（AGENTS.md「限制只写在收窄的
@@ -23,7 +23,7 @@
  */
 
 import { z } from "zod";
-import { complete, extractModel } from "#/server/chat";
+import { complete, extractModel, identityOf } from "#/server/chat";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
 
@@ -148,6 +148,11 @@ export function conform(raw: unknown, org: string): Extraction {
 			});
 	}
 	return { skills, did };
+}
+
+/** 抽取这一步的身份：模型、提示词、schema。派生版本的一部分。 */
+export function extractIdentity(): string {
+	return identityOf(extractModel(), SYSTEM, SCHEMA);
 }
 
 /**

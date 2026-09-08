@@ -32,6 +32,7 @@ export const hit = (over: Partial<Hit> = {}): Hit => ({
 
 export const experience = (over: Partial<Experience> = {}): Experience => ({
 	id: 1,
+	key: "",
 	empId: "T0001",
 	kind: "internal",
 	startDate: "2020-01-01",
@@ -48,5 +49,7 @@ export const experience = (over: Partial<Experience> = {}): Experience => ({
 	level: "M3",
 	description: "",
 	months: 24,
+	derivedIdentity: null,
+	derivedAt: null,
 	...over,
 });

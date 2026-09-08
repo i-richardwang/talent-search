@@ -20,7 +20,8 @@
     "check": "biome check",
     "typecheck": "tsc --noEmit",
     "test": "bun test --parallel --env-file=.env.local tests/",
-    "import": "bun --env-file=.env.local scripts/import.ts",
+    "sync": "bun --env-file=.env.local scripts/sync.ts",
+    "derive": "bun --env-file=.env.local scripts/derive.ts",
     "query": "bun scripts/query.ts",
     "eval": "bun scripts/eval.ts",
     "verify": "bun run check && bun run typecheck && bun run test && bun run build"
@@ -40,6 +41,7 @@
     "hyparquet-compressors": "1.1.1",
     "lucide-react": "1.38.0",
     "pg": "8.22.0",
+    "pg-boss": "12.30.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "3.6.0",

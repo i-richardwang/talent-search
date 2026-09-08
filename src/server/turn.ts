@@ -101,7 +101,7 @@ export async function createTurn(
  * `RELEVANCE_MIN` 量，而排除按更高的 `RELEVANCE_MIN_EXCLUDE` 判——
  * 量出来的宽根本不是它搜出来的宽。
  *
- * 成因落在 notices 上，不落在要求上：宽是**语料**的事实，会随语料重灌后失效，
+ * 成因落在 notices 上，不落在要求上：宽是**语料**的事实，会随语料变化后失效，
  * 而要求是记录里不可变的那一半（论证在 `requirement.ts`）。
  */
 async function benchWide(
@@ -142,10 +142,10 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	if (row.rawText === null) throw new Error("待理解记录缺少原话");
 	const rawText = row.rawText;
 
-	// 三段各自站在自己的那一版语料上，中间不持着语料锁：词表是一次短读取，
-	// 模型那一跳在语料锁外（它可以慢到一分钟），量宽自己走一遍准入
-	// （`search/phrases.ts` 的 withAdmission）。持着语料锁等模型的话，一次理解
-	// 就能把排在待发布导入后面的每一个检索一起堵住。
+	// 三段各自站在自己的语料快照上，中间不占着快照：词表是一次短读取，
+	// 模型那一跳在快照外（它可以慢到一分钟），量宽自己走一遍准入
+	// （`search/phrases.ts` 的 withAdmission）。占着快照等模型的话，一次理解
+	// 就占着池里的一条连接一分钟。
 	const vocab = await vocabulary();
 	const understood = toSpec(await understand(rawText, vocab), vocab);
 	const benched = await benchWide(understood.requirements);

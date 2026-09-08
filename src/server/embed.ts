@@ -6,7 +6,7 @@
  *
  * 三条硬约束：
  *
- * 1. **端点收得到经历原文。** 查询侧出去的只有查询词，但导入从同一个端点
+ * 1. **端点收得到经历原文。** 查询侧出去的只有查询词，但派生从同一个端点
  *    出去的是每个人的经历原文——`EMBED_BASE_URL` 指向公网就等于把简历交给第三方。
  *    放内网还是公网是部署方按数据政策做的决定，README 把这个差别写在配置表旁边。
  * 2. **没配就抛，不降级。** 检索没了向量什么都做不了：装作能用只会返回一份
@@ -67,7 +67,7 @@ export function embedSpace(): { spaceId: string; model: string } {
 	return { spaceId, model };
 }
 
-/** 端点地址，只为让导入把「向哪台机器要向量」说出来。 */
+/** 端点地址，只为让派生把「向哪台机器要向量」说出来。 */
 export function embedEndpoint(): string {
 	return configured().baseURL;
 }
@@ -129,7 +129,7 @@ async function storedSpace(store: DbExecutor) {
 	const rows = await store.select().from(embeddingSpace).limit(2);
 	const stored = rows[0];
 	if (!stored || rows.length !== 1)
-		throw new Error("语料没有唯一的嵌入空间元数据，请重新导入");
+		throw new Error("语料没有唯一的嵌入空间元数据，等派生跑一轮");
 	return stored;
 }
 
@@ -150,7 +150,7 @@ async function verifySpace(stored: Awaited<ReturnType<typeof storedSpace>>) {
 		: Number.NaN;
 	if (!Number.isFinite(similarity) || similarity < 0.999)
 		throw new Error(
-			"嵌入端点的实际输出与语料 canary 不一致，请更换 EMBED_SPACE_ID 并重新导入",
+			"嵌入端点的实际输出与语料 canary 不一致，请更换 EMBED_SPACE_ID，派生会重算",
 		);
 }
 
@@ -234,7 +234,7 @@ export async function embed(
  *
  * 语料侧用它：那一侧的缓存在库里（`corpus/embed.ts`），而**空间那一行正是它写的**
  * ——发布前拿现在这个端点的真实输出当 canary，核对是查询侧后来的事。
- * `maxRetries` 由调用方给：一次检索和一轮导入愿意等的时间不是一个量级。
+ * `maxRetries` 由调用方给：一次检索和一轮派生愿意等的时间不是一个量级。
  */
 export async function embedFresh(
 	values: string[],
