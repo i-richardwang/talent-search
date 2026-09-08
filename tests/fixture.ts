@@ -31,6 +31,7 @@ import {
 	phraseRelevance,
 	type Route,
 	searchTurn,
+	skillAlias,
 } from "#/db/schema";
 import { parseQuery } from "#/search/query-syntax";
 
@@ -334,6 +335,7 @@ export async function setup() {
 		experiencePhrase,
 		phraseRelevance,
 		searchTurn,
+		skillAlias,
 	])
 		await admin.query(ddl(SCHEMA, t));
 	await admin.query(

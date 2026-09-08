@@ -19,6 +19,7 @@ import { validateCommit } from "#/search/commit-input";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search } from "#/search/search";
+import { listSkills } from "./skills";
 import {
 	createTurn,
 	listRecent,
@@ -110,4 +111,9 @@ export const interpretTurn = createServerFn({ method: "POST" })
  */
 export const recentSearches = createServerFn({ method: "GET" }).handler(() =>
 	listRecent(),
+);
+
+/** 管理页「能力词」的全部数据：对照表和语料里的词数，一次取齐。 */
+export const skillTable = createServerFn({ method: "GET" }).handler(() =>
+	listSkills(),
 );

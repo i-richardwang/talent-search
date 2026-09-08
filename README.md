@@ -127,7 +127,7 @@ etl/run.py                   完整导入的唯一入口
 src/db/                      Drizzle 表结构与数据库连接
 src/search/                  查询解析、判定（召回 + 重排）、排名、分面与结果契约
 src/server/                  服务端函数、查询记录与三个模型适配层（查询理解、嵌入、重排）
-src/routes/                  零态与搜索工作台
+src/routes/                  零态、搜索工作台，以及管理页 /skills（能力词对照表，只读）
 src/routes/-components/      两屏共用的外壳件（顶栏、历史弹层、页框、零态、死链）
 src/routes/-lib/             两屏共用的非组件模块（提交查询、值→标签）
 src/routes/s/$turnId/        工作台这一条路由，私有的组件与模块在它的 -components/ 与 -lib/ 下

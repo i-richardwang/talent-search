@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
 import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SkillsRoute = SkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
   getParentRoute: () => rootRouteImport,
 } as any)
 const STurnIdRouteRoute = STurnIdRouteRouteImport.update({
@@ -31,30 +37,34 @@ const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/skills': typeof SkillsRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/skills': typeof SkillsRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/skills': typeof SkillsRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/s/$turnId' | '/s/$turnId/p/$empId'
+  fullPaths: '/' | '/skills' | '/s/$turnId' | '/s/$turnId/p/$empId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/s/$turnId' | '/s/$turnId/p/$empId'
-  id: '__root__' | '/' | '/s/$turnId' | '/s/$turnId/p/$empId'
+  to: '/' | '/skills' | '/s/$turnId' | '/s/$turnId/p/$empId'
+  id: '__root__' | '/' | '/skills' | '/s/$turnId' | '/s/$turnId/p/$empId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SkillsRoute: typeof SkillsRoute
   STurnIdRouteRoute: typeof STurnIdRouteRouteWithChildren
 }
 
@@ -65,6 +75,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/skills': {
+      id: '/skills'
+      path: '/skills'
+      fullPath: '/skills'
+      preLoaderRoute: typeof SkillsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/s/$turnId': {
@@ -98,6 +115,7 @@ const STurnIdRouteRouteWithChildren = STurnIdRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SkillsRoute: SkillsRoute,
   STurnIdRouteRoute: STurnIdRouteRouteWithChildren,
 }
 export const routeTree = rootRouteImport

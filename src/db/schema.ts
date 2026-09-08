@@ -138,8 +138,9 @@ export const embeddingSpace = pgTable("embedding_space", {
  * 的结果写在这里，灌库时按它把能力词换成标准词。`canonical` 等于 `word` 表示这个
  * 词整理过、就是标准词；一个词一周内只整理一次（`reviewed_at`）。
  *
- * 这张表记的是关于词的决定，不是语料：整库重灌不清它，决定累积。唯一的写者和
- * 读者都是 ETL，查询侧读到的能力词说法已经是标准词。
+ * 这张表记的是关于词的决定，不是语料：整库重灌不清它，决定累积。只有 ETL 写它；
+ * 查询侧读到的能力词说法已经是标准词，应用里只有管理页 `/skills` 读这张表，
+ * 给人看机器并了什么。
  */
 export const skillAlias = pgTable("skill_alias", {
 	word: text("word").primaryKey(),
