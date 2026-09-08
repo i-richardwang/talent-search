@@ -145,7 +145,7 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	// 三段各自站在自己的那一版语料上，中间不持着语料锁：词表是一次短读取，
 	// 模型那一跳在语料锁外（它可以慢到一分钟），量宽自己走一遍准入
 	// （`search/phrases.ts` 的 withAdmission）。持着语料锁等模型的话，一次理解
-	// 就能把排在待发布 ETL 后面的每一个检索一起堵住。
+	// 就能把排在待发布导入后面的每一个检索一起堵住。
 	const vocab = await vocabulary();
 	const understood = toSpec(await understand(rawText, vocab), vocab);
 	const benched = await benchWide(understood.requirements);

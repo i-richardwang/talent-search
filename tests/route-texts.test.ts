@@ -1,55 +1,77 @@
 /**
- * 夹具拼出来的四路原文，必须和语料侧拼出来的是同一种字符串。
+ * 四路原文的拼法。
  *
- * 查询侧嵌的是用户的说法，语料侧嵌的是 `etl/embed.py` 的 `route_texts` 拼出来的
- * 字符串——集成测试要造语料，就得在 TypeScript 里再拼一遍（`tests/fixture.ts` 的
- * `routeTexts`）。跨语言，谁也调不了谁，所以两侧各自对同一份契约求值：
- * `etl/route_texts.contract.json`。
- *
- * 这份契约是手写的，不由任何一侧生成。生成的话，改坏了拼法只要重跑一次生成就
- * 「绿」了，而那正是它要拦的事。改拼法就是改契约，然后两边一起红。
+ * 它决定了库里那些向量是从什么字符串来的：序列三级用「 · 」连、公司内用完整
+ * 部门路径、空的那一路不嵌。灌库和测试夹具用的是同一个函数，所以这里测的不是
+ * 「两处一不一致」，而是**拼法本身**——改了它，库里的向量和查询词就不再可比，
+ * 而症状只是结果悄悄变差。
  */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
-import type { Route } from "#/db/schema";
-import { routeTexts } from "./fixture";
+import { type RouteSource, routeTexts } from "#/corpus/route-texts";
 
-type Case = {
-	name: string;
-	/** 字段名是经历表的列名；夹具拿到的是 drizzle 行，改成它的写法。 */
-	row: Record<string, string>;
-	texts: Partial<Record<Route, string>>;
-};
-
-const contract = JSON.parse(
-	readFileSync(
-		new URL("../etl/route_texts.contract.json", import.meta.url),
-		"utf8",
-	),
-) as { cases: Case[] };
+const of = (row: Partial<RouteSource>) =>
+	Object.fromEntries(
+		routeTexts({
+			kind: "internal",
+			org: "",
+			orgPath: "",
+			title: "",
+			seqL1: "",
+			seqL2: "",
+			seqL3: "",
+			description: "",
+			...row,
+		}),
+	);
 
 describe("四路原文的拼法", () => {
-	for (const { name, row, texts } of contract.cases)
-		test(name, () => {
-			assert.deepEqual(
-				Object.fromEntries(
-					routeTexts({
-						kind: row.kind as "internal" | "external",
-						org: row.org ?? "",
-						orgPath: row.org_path ?? "",
-						title: row.title ?? "",
-						seqL1: row.seq_l1 ?? "",
-						seqL2: row.seq_l2 ?? "",
-						seqL3: row.seq_l3 ?? "",
-						description: row.description ?? "",
-					}),
-				),
-				texts,
-			);
-		});
+	test("公司内经历嵌完整部门路径，序列按级连起来", () => {
+		assert.deepEqual(
+			of({
+				org: "平台技术部",
+				orgPath: "示例科技/技术中心/平台技术部",
+				title: "算法工程师",
+				seqL1: "技术",
+				seqL2: "算法",
+			}),
+			{
+				seq: "技术 · 算法",
+				title: "算法工程师",
+				org: "示例科技/技术中心/平台技术部",
+			},
+		);
+	});
 
-	test("契约本身不能是空的——它是两侧唯一的共同约束", () => {
-		assert.ok(contract.cases.length > 0);
+	test("序列有三级就连三级", () => {
+		assert.equal(
+			of({ seqL1: "技术", seqL2: "算法", seqL3: "推荐" }).seq,
+			"技术 · 算法 · 推荐",
+		);
+	});
+
+	test("公司内经历缺部门路径时落回部门名", () => {
+		assert.equal(of({ org: "平台技术部", orgPath: "" }).org, "平台技术部");
+	});
+
+	test("入职前经历嵌公司名与简历描述，有部门路径也不用", () => {
+		assert.deepEqual(
+			of({
+				kind: "external",
+				org: "云枢智能",
+				orgPath: "云枢智能/算法部",
+				title: "算法工程师",
+				description: "负责推荐系统召回",
+			}),
+			{
+				title: "算法工程师",
+				org: "云枢智能",
+				description: "负责推荐系统召回",
+			},
+		);
+	});
+
+	test("空的那一路不出现，一行全空就一路都没有", () => {
+		assert.deepEqual(of({}), {});
 	});
 });

@@ -22,7 +22,7 @@ import type { SkillEntry, SkillTable } from "#/server/skills";
 /**
  * 能力词对照表的管理页：机器把哪些写法并成了哪个词。
  *
- * 只读。整理是 ETL 自动做的（`etl/aliases.py`），这一页存在的理由是让管理员
+ * 只读。整理是每次导入前自动做的（`src/corpus/aliases.ts`），这一页存在的理由是让管理员
  * 看得见它在做什么——筛选栏「入职前能力」上一个词后面的人数，是几种写法加起来
  * 的，这里能看到是哪几种。没有改的入口：改了下一轮灌库就被机器盖回去，一个
  * 会被静默撤销的编辑框比没有更糟。
@@ -89,7 +89,7 @@ export function SkillList({ entries }: { entries: SkillEntry[] }) {
 						</EmptyTitle>
 						<EmptyDescription>
 							{entries.length === 0
-								? "配置抽取端点后跑一次 ETL，机器会开始整理。"
+								? "配置抽取端点后跑一次导入，机器会开始整理。"
 								: "换个写法试试，别名也在匹配范围里。"}
 						</EmptyDescription>
 					</EmptyHeader>

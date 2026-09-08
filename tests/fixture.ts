@@ -21,12 +21,16 @@ import { createServer } from "node:http";
 import type { SQL } from "drizzle-orm";
 import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
+import { routeTexts } from "#/corpus/route-texts";
 import {
+	completionCache,
 	EMBED_DIM,
+	embeddingCache,
 	embeddingSpace,
 	employee,
 	experience,
 	experiencePhrase,
+	importRun,
 	phrase,
 	phraseRelevance,
 	type Route,
@@ -183,6 +187,25 @@ function fakeIntent(text: string) {
 /** 那句话在提示词里的位置，和 `src/server/llm.ts` 的 `understand` 写的一致。 */
 const SENTENCE_PREFIX = "这句话：";
 
+/**
+ * 语料侧那三处聊天调用（抽取、对齐、整理）的假回答。
+ *
+ * 查询理解认得出自己的提示词（那句话前面有 `SENTENCE_PREFIX`），剩下的都是语料侧
+ * 的。它们的回答不像查询理解那样能从输入算出来——「这段描述里有哪些能力词」本来
+ * 就是判断——所以由测试自己给，顺便把问过什么收下来断言。
+ */
+let chatAnswer: ((system: string, prompt: string) => unknown) | null = null;
+
+/** 装一份语料侧聊天端点的回答，返回拆掉它的函数。 */
+export function answerChat(
+	fn: (system: string, prompt: string) => unknown,
+): () => void {
+	chatAnswer = fn;
+	return () => {
+		chatAnswer = null;
+	};
+}
+
 let intentBroken = false;
 
 /**
@@ -249,11 +272,21 @@ function startModelServer() {
 					.filter((m) => m.role === "user")
 					.at(-1)?.content;
 				const at = prompt?.lastIndexOf(SENTENCE_PREFIX) ?? -1;
-				if (prompt === undefined || at < 0) {
-					res.writeHead(400).end("提示词里没有那句话");
+				const system = messages.find((m) => m.role === "system")?.content ?? "";
+				const content =
+					prompt === undefined
+						? undefined
+						: at >= 0
+							? JSON.stringify(
+									fakeIntent(prompt.slice(at + SENTENCE_PREFIX.length)),
+								)
+							: chatAnswer
+								? JSON.stringify(chatAnswer(system, prompt))
+								: undefined;
+				if (content === undefined) {
+					res.writeHead(400).end("没有人认领这份提示词");
 					return;
 				}
-				const text = prompt.slice(at + SENTENCE_PREFIX.length);
 				json({
 					id: "fake",
 					object: "chat.completion",
@@ -262,10 +295,7 @@ function startModelServer() {
 					choices: [
 						{
 							index: 0,
-							message: {
-								role: "assistant",
-								content: JSON.stringify(fakeIntent(text)),
-							},
+							message: { role: "assistant", content },
 							finish_reason: "stop",
 						},
 					],
@@ -336,6 +366,9 @@ export async function setup() {
 		phraseRelevance,
 		searchTurn,
 		skillAlias,
+		embeddingCache,
+		completionCache,
+		importRun,
 	])
 		await admin.query(ddl(SCHEMA, t));
 	await admin.query(
@@ -364,6 +397,18 @@ export async function setup() {
 	process.env.RERANK_SPACE_ID = "fake-v1";
 	process.env.LLM_BASE_URL = modelServer.url;
 	process.env.LLM_MODEL = "fake";
+	// 语料侧那三处聊天调用也指向同一台假端点，回答由 `answerChat` 装
+	process.env.EXTRACT_BASE_URL = modelServer.url;
+	process.env.EXTRACT_MODEL = "fake";
+	process.env.REVIEW_MODEL = "review-fake";
+	process.env.EXTRACT_CONCURRENCY = "2";
+	/*
+	 * 数据源钉死在仓库自带的合成样例上。`.env.local` 里指的是真人事数据，而
+	 * `bun run test` 就是带着它跑的——不钉死的话，一次跑测试会去读真数据、
+	 * 把真语料嵌一遍。
+	 */
+	process.env.TALENT_SOURCE = "csv-dir";
+	process.env.TALENT_CSV_DIR = "";
 
 	return async function teardown() {
 		const { pool } = await import("#/db");
@@ -404,43 +449,17 @@ export type Seed = {
 		title?: string;
 		seqL1?: string;
 		seqL2?: string;
-		/** 入职前的段由模型对齐的序列（真语料里由 etl/align.py 写；夹具直接给）。 */
+		/** 入职前的段由模型对齐的序列（真语料里由 src/corpus/align.ts 写；夹具直接给）。 */
 		seqInferredL1?: string;
 		seqInferredL2?: string;
 		description?: string;
 		companyTag?: string;
-		/** 抽取的能力词。真语料里由 etl/extract.py 从 description 读出来；夹具直接给。 */
+		/** 抽取的能力词。真语料里由 src/corpus/extract.ts 从 description 读出来；夹具直接给。 */
 		skills?: string[];
 		/** 抽取的做过的事。领域是说法，参与方式落在边上（真语料里由 conform 收窄取值）。 */
 		did?: { involvement: string; domain: string }[];
 	}>;
 };
-
-/**
- * 四路原文的拼法。语料侧的那一份是 `etl/embed.py` 的 `route_texts`——跨语言，
- * 这边调不到它，于是两侧各自对同一份契约求值：`etl/route_texts.contract.json`。
- * 改拼法就是改那份契约，改完两边一起红（`tests/route-texts.test.ts` 与
- * `etl/test_embed.py` 各测一头），不靠「记得同步」。
- */
-export function routeTexts(s: {
-	kind: "internal" | "external";
-	org: string;
-	orgPath: string;
-	title: string;
-	seqL1: string;
-	seqL2: string;
-	seqL3: string;
-	description: string;
-}) {
-	const seq = [s.seqL1, s.seqL2, s.seqL3].filter(Boolean).join(" · ");
-	const org = s.kind === "internal" && s.orgPath ? s.orgPath : s.org;
-	return Object.entries({
-		seq,
-		title: s.title,
-		org,
-		description: s.description,
-	}).filter(([, text]) => text) as [Route, string][];
-}
 
 export async function seed(rows: Seed[]) {
 	const { db } = await import("#/db");
@@ -494,7 +513,7 @@ export async function seed(rows: Seed[]) {
 			),
 		)
 		.returning();
-	// 说法去重后各嵌一次，经历段按路指向它们——和 etl/load.py 同一个形状。
+	// 说法去重后各嵌一次，经历段按路指向它们——和 src/corpus/load.ts 同一个形状。
 	// 抽取的两路夹具直接给：seed 的入参和 inserted 顺序一致，按下标对回去。
 	const specs = rows.flatMap((r) => r.segments);
 	const links = inserted.flatMap((s, i) => {
@@ -511,7 +530,7 @@ export async function seed(rows: Seed[]) {
 				d.involvement,
 			]),
 		];
-		const original = routeTexts({ ...s, seqL3: s.seqL3 }).map(
+		const original = routeTexts(s).map(
 			([route, text]): [Route, string, null] => [route, text, null],
 		);
 		return [...original, ...extracted].map(([route, text, involvement]) => ({

@@ -1,10 +1,10 @@
 # 合成样例数据
 
 这里的二十个人、他们的部门、岗位、序列和公司全部是编的，与任何真实组织无关。
-它存在只为一件事：`uv run python etl/run.py` 不配任何环境变量就能把库填满，
+它存在只为一件事：`bun run import` 不配任何环境变量就能把库填满，
 界面、检索和排序立刻有东西可看。
 
-列名就是 `etl/contract.py` 的契约列，格式见 `etl/sources/csv_dir.py`。
+列名就是 `src/corpus/contract.ts` 的契约列，格式见 `src/corpus/sources/csv-dir.ts`。
 接自己的数据时把 `TALENT_CSV_DIR` 指向你自己的目录，或者写一个私有适配器。
 
 入职前经历的描述里故意写了几句能抽出能力词和做过的事的话（「从 0 到 1 搭建实时推荐系统」

@@ -1,10 +1,12 @@
 /**
- * 唯一一处把文本变成向量的地方（查询侧）。**薄到没有逻辑**：拿字符串去、
- * 拿向量回来。语料侧的向量由 ETL 用同一个端点、同一个模型产出（`etl/embed.py`）。
+ * 唯一一处把文本变成向量的地方。**薄到没有逻辑**：拿字符串去、拿向量回来。
+ * 查询侧走 `embed`（进程内缓存 + 空间核验），语料侧走 `embedFresh`
+ * （`src/corpus/embed.ts` 在外面加库里的缓存）——**同一个端点、同一份配置、
+ * 同一个模型**，于是「语料和查询属于同一个嵌入空间」不是一条要记住的约定。
  *
  * 三条硬约束：
  *
- * 1. **端点收得到经历原文。** 这里出去的只有查询词，但 ETL 从同一个端点
+ * 1. **端点收得到经历原文。** 查询侧出去的只有查询词，但导入从同一个端点
  *    出去的是每个人的经历原文——`EMBED_BASE_URL` 指向公网就等于把简历交给第三方。
  *    放内网还是公网是部署方按数据政策做的决定，README 把这个差别写在配置表旁边。
  * 2. **没配就抛，不降级。** 检索没了向量什么都做不了：装作能用只会返回一份
@@ -35,6 +37,13 @@ const TIMEOUT_MS = positiveInt(process.env.EMBED_TIMEOUT_MS, 30_000);
 const CACHE_MAX = 4096;
 const cache = new Map<string, number[]>();
 
+/**
+ * 一次检索里嵌入失败重试几次。查询侧只重一次：人在等着，第二次还不行就把错误
+ * 交上去，界面画得出「出错了，重试」。语料侧的那个数在 `corpus/embed.ts` 里，
+ * 它面对的是一轮跑几十分钟的批量作业，值得等得更久。
+ */
+const QUERY_RETRIES = 1;
+
 let model: ReturnType<
 	ReturnType<typeof createOpenAICompatible>["embeddingModel"]
 > | null = null;
@@ -57,11 +66,14 @@ function getModel() {
  * 端点少给一个、多给一个或者换了顺序，都会让下游拿一个词的向量去搜另一个词，
  * 而错位的名单看起来完全正常。键入之后这种错只能表现为「少了谁」，在这里就报。
  */
-async function request(values: string[]): Promise<Map<string, number[]>> {
+async function request(
+	values: string[],
+	maxRetries: number,
+): Promise<Map<string, number[]>> {
 	const { embeddings } = await embedMany({
 		model: getModel(),
 		values,
-		maxRetries: 1,
+		maxRetries,
 		abortSignal: AbortSignal.timeout(TIMEOUT_MS),
 	});
 	const out = new Map<string, number[]>();
@@ -92,7 +104,7 @@ async function storedSpace(store: DbExecutor) {
 	const rows = await store.select().from(embeddingSpace).limit(2);
 	const stored = rows[0];
 	if (!stored || rows.length !== 1)
-		throw new Error("语料没有唯一的嵌入空间元数据，请重新运行 ETL");
+		throw new Error("语料没有唯一的嵌入空间元数据，请重新导入");
 	return stored;
 }
 
@@ -105,13 +117,15 @@ async function verifySpace(stored: Awaited<ReturnType<typeof storedSpace>>) {
 		throw new Error(
 			`查询端嵌入空间 ${SPACE_ID}/${MODEL}/${EMBED_DIM} 与语料 ${stored.spaceId}/${stored.model}/${stored.dimension} 不一致`,
 		);
-	const fresh = (await request([stored.canaryText])).get(stored.canaryText);
+	const fresh = (await request([stored.canaryText], QUERY_RETRIES)).get(
+		stored.canaryText,
+	);
 	const similarity = fresh
 		? cosineSimilarity(fresh, stored.canaryEmbedding)
 		: Number.NaN;
 	if (!Number.isFinite(similarity) || similarity < 0.999)
 		throw new Error(
-			"嵌入端点的实际输出与语料 canary 不一致，请更换 EMBED_SPACE_ID 并重新运行 ETL",
+			"嵌入端点的实际输出与语料 canary 不一致，请更换 EMBED_SPACE_ID 并重新导入",
 		);
 }
 
@@ -179,7 +193,7 @@ export async function embed(
 		else pending.set(text, [index]);
 	}
 	if (pending.size > 0) {
-		const fresh = await request([...pending.keys()]);
+		const fresh = await request([...pending.keys()], QUERY_RETRIES);
 		// 装不下就整个清掉，不做 LRU——这点数据不值一套淘汰逻辑
 		if (cache.size + fresh.size > cacheMax) cache.clear();
 		for (const [text, vector] of fresh) {
@@ -188,6 +202,27 @@ export async function embed(
 		}
 	}
 	return out;
+}
+
+/**
+ * 一批文本 → 按入参顺序的向量，不查任何缓存、不核对嵌入空间。
+ *
+ * 语料侧用它：那一侧的缓存在库里（`corpus/embed.ts`），而**空间那一行正是它写的**
+ * ——发布前拿现在这个端点的真实输出当 canary，核对是查询侧后来的事。
+ * `maxRetries` 由调用方给：一次检索和一轮导入愿意等的时间不是一个量级。
+ */
+export async function embedFresh(
+	values: string[],
+	maxRetries: number,
+): Promise<number[][]> {
+	if (values.length === 0) return [];
+	const vectors = await request(values, maxRetries);
+	return values.map((text) => {
+		const vector = vectors.get(text);
+		if (!vector)
+			throw new Error(`嵌入端点漏掉了一个文本：${text.slice(0, 40)}`);
+		return vector;
+	});
 }
 
 /** 向量的 SQL 字面量形态：pgvector 认 `[0.1,0.2,…]`，调用方再加 `::halfvec` 转型。 */

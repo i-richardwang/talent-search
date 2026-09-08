@@ -1,15 +1,11 @@
 node_modules/
+.recovered/
 dist/
 .output/
 .nitro/
 .tanstack/
 .env
 .env.local
-.venv/
-__pycache__/
-# 模型调用的本地缓存：嵌入向量（etl/embed.py）与抽取结果（etl/extract.py）
-.cache/
-
 # 员工数据一律不进版本库
 data/
 *.parquet
@@ -18,11 +14,11 @@ data/
 
 # 数据源适配器默认是私有的：字段名、字典码、组织口径本身就是内部信息。
 # 白名单式规则——新写一个适配器天然不进仓库，「忘了加 ignore」不可能发生。
-etl/sources/*
-!etl/sources/__init__.py
-!etl/sources/csv_dir.py
-!etl/sources/sample/
-!etl/sources/sample/*.csv
+src/corpus/sources/*
+!src/corpus/sources/csv-dir.ts
+!src/corpus/sources/sample/
+!src/corpus/sources/sample/*.csv
+!src/corpus/sources/sample/README.md
 
 # 检索质量验收集：真题的题目和已知答案都指向真人，不进版本库。
 # sample.json 例外——它只指向合成样例语料，是干净克隆也能跑通的基线。

@@ -19,6 +19,7 @@ import { validateCommit } from "#/search/commit-input";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search } from "#/search/search";
+import { importState, startImport } from "./import";
 import { listSkills } from "./skills";
 import {
 	createTurn,
@@ -116,4 +117,22 @@ export const recentSearches = createServerFn({ method: "GET" }).handler(() =>
 /** 管理页「能力词」的全部数据：对照表和语料里的词数，一次取齐。 */
 export const skillTable = createServerFn({ method: "GET" }).handler(() =>
 	listSkills(),
+);
+
+/** 管理页「导入」的全部数据：最近一次的全过程，加上更早几次的结果。 */
+export const importStatus = createServerFn({ method: "GET" }).handler(() =>
+	importState(),
+);
+
+/**
+ * 开一次导入，立刻返回。
+ *
+ * **不等它跑完**：一次导入是几十分钟，而这是一次 HTTP 往返。进度由 `import_run`
+ * 那一行自己长出来，页面重新载入这个状态就看得见。已经有一次在跑时返回
+ * `started: false`，界面照它说明原因——把这件事画成一个转不完的圈是骗人。
+ */
+export const beginImport = createServerFn({ method: "POST" }).handler(
+	async (): Promise<{ started: boolean }> => ({
+		started: (await startImport()) !== null,
+	}),
 );

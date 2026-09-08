@@ -20,10 +20,10 @@
     "check": "biome check",
     "typecheck": "tsc --noEmit",
     "test": "bun test --parallel --env-file=.env.local tests/",
-    "test:etl": "uv run python -m unittest discover -s etl -p 'test_*.py'",
+    "import": "bun --env-file=.env.local scripts/import.ts",
     "query": "bun scripts/query.ts",
     "eval": "bun scripts/eval.ts",
-    "verify": "bun run check && bun run typecheck && bun run test:etl && bun run test && bun run build"
+    "verify": "bun run check && bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.41",
@@ -34,7 +34,10 @@
     "ai": "7.0.85",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "csv-parse": "7.0.2",
     "drizzle-orm": "0.45.2",
+    "hyparquet": "1.30.0",
+    "hyparquet-compressors": "1.1.1",
     "lucide-react": "1.38.0",
     "pg": "8.22.0",
     "react": "19.2.8",

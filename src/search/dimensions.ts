@@ -94,7 +94,7 @@ export type DimSource = {
 	seqL1: string;
 	seqL2: string;
 	companyTag: string | null;
-	/** 这一段抽出来的能力词，已按对照表换成标准词（`etl/aliases.py` 每次灌库前自动整理）。没有就是空数组 */
+	/** 这一段抽出来的能力词，已按对照表换成标准词（`src/corpus/aliases.ts` 每次灌库前自动整理）。没有就是空数组 */
 	skills: string[];
 	kind: "internal" | "external";
 	level: string;
@@ -278,7 +278,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	skill: {
 		label: "入职前能力",
 		match: "set",
-		// 唯一一段有多个取值的维。能力词只从入职前经历的简历描述里抽（etl/extract.py），
+		// 唯一一段有多个取值的维。能力词只从入职前经历的简历描述里抽（src/corpus/extract.ts），
 		// 而只有三分之一的人有描述：勾任何一项都把没写简历的人整个筛掉。这一维能回答
 		// 「谁写过」，回答不了「谁不会」——搜索框里敲能力词没有这个问题，没简历的人
 		// 靠岗位名排后面，不消失。

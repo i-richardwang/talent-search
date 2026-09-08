@@ -77,7 +77,7 @@ export const experience = pgTable(
 		seqL3: text("seq_l3").notNull().default(""),
 		/**
 		 * 外部：模型按岗位名、公司名与描述对到公司序列树上的一对一级二级
-		 * （`etl/align.py`），两列要么都有要么都空。只有序列筛选读它（search.ts 的
+		 * （`src/corpus/align.ts`），两列要么都有要么都空。只有序列筛选读它（search.ts 的
 		 * `FACT_COLUMNS`：登记的优先，没有才读这两列），人页上标「按岗位名对齐」；
 		 * 不进 `seq` 那一路——那一路按受控强度打分，推断混进去就和登记分不开了。
 		 */
@@ -113,11 +113,14 @@ export type Experience = typeof experience.$inferSelect;
 
 /**
  * 向量的维数。它是嵌入空间的属性，不是产品常量；换空间就要改这里并整库重灌。
+ *
+ * **全库唯一的一处。** 灌库侧和查询侧在同一个进程里，都从这里取值，没有第二个
+ * 地方声明它，也没有必须与它保持一致的环境变量。
  */
 export const EMBED_DIM = 1024;
 
 /**
- * 当前语料的嵌入空间身份证。ETL 每次整库重灌时只写一行；查询进程在第一次
+ * 当前语料的嵌入空间身份证。每次整库重灌时只写一行；查询进程在第一次
  * 嵌入前核对 space/model/dimension，并用 canary 检查端点实际输出仍在同一空间。
  */
 export const embeddingSpace = pgTable("embedding_space", {
@@ -131,14 +134,86 @@ export const embeddingSpace = pgTable("embedding_space", {
 });
 
 /**
+ * 端点算过的向量，按（嵌入空间、模型、文本）留着。
+ *
+ * 同一个模型对同一串字的向量是确定的，所以这张表可以永久留着：重置语料、重跑
+ * 灌库都不必再打一次端点，一份语料几万种说法只在第一次出去过。它记的是**关于
+ * 文本的事实**，不是语料的一部分——发布语料时 truncate 的那几张表里没有它，
+ * 和 `skill_alias` 同一个性质。
+ *
+ * 键是文本的 sha256 而不是文本本身：简历描述整段进说法表，几千字一条的有的是，
+ * 而 btree 索引项过长会直接写不进去。文本不另存一份——查它的人手里就有原文。
+ */
+export const embeddingCache = pgTable(
+	"embedding_cache",
+	{
+		spaceId: text("space_id").notNull(),
+		model: text("model").notNull(),
+		textSha: text("text_sha").notNull(),
+		embedding: halfvec("embedding", { dimensions: EMBED_DIM }).notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.spaceId, t.model, t.textSha] })],
+);
+
+/**
+ * 聊天端点回过的话，按（提示词身份、文本）留着。抽取、序列对齐、能力词整理
+ * 三处共用（`src/server/chat.ts`）。
+ *
+ * `identity` 是模型名、系统提示词与 schema 的摘要：会改变回答的东西都在键里，
+ * 改了提示词（含对齐提示词里列出的那棵序列树）旧回答自然失效，不用人记得换
+ * 什么身份。存的是**模型的原话**，收窄在读出时做，所以改收窄规则不动这张表。
+ */
+export const completionCache = pgTable(
+	"completion_cache",
+	{
+		identity: text("identity").notNull(),
+		textSha: text("text_sha").notNull(),
+		payload: jsonb("payload").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.identity, t.textSha] })],
+);
+
+/**
+ * 一次整库导入。**导入是这个应用自己的一次运行，不是外面某个脚本干的事**，
+ * 所以它像查询记录一样落在库里：管理页 `/imports` 上那个按钮按下去有没有反应、
+ * 现在跑到哪一步、上一次是什么时候跑的、为什么失败，都只有这张表回答得了。
+ *
+ * `log` 就是命令行里会滚过去的那些行（拒绝了几段、合并了哪些写法、各表几行）。
+ * 不另存一份计数：那些数就在最后几行里，两份表示迟早对不上。
+ *
+ * `finished_at is null` 表示还在跑。进程中途没了的话这一行会一直停在那里，
+ * 所以下一次导入拿到串行锁之后先把这种行标成中断——**拿得到锁就说明没有任何
+ * 一次导入还活着**，这是那一刻唯一能确定的事，也确实足够。
+ */
+export const importRun = pgTable(
+	"import_run",
+	{
+		id: serial("id").primaryKey(),
+		/** 这一次读的是哪个适配器（`TALENT_SOURCE`） */
+		source: text("source").notNull(),
+		startedAt: timestamp("started_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		finishedAt: timestamp("finished_at", { withTimezone: true }),
+		log: text("log").array().notNull(),
+		/** 失败原因；成功的那一行是 null */
+		error: text("error"),
+	},
+	// 「最近几次导入」：按开始时间倒着取前几行
+	(t) => [index("import_run_recent").on(t.startedAt)],
+);
+
+export type ImportRun = typeof importRun.$inferSelect;
+
+/**
  * 能力词的对照表：一个词对到哪个标准词，以及它上次被整理的时间。
  *
- * 能力词是模型从简历里抽出来的开放词表，同一项能力有多种写法。ETL 每次灌库前
- * 自动整理（`etl/aliases.py`）：相似的词圈成组，模型判断哪些只是写法不同，合并
+ * 能力词是模型从简历里抽出来的开放词表，同一项能力有多种写法。每次灌库前
+ * 自动整理（`src/corpus/aliases.ts`）：相似的词圈成组，模型判断哪些只是写法不同，合并
  * 的结果写在这里，灌库时按它把能力词换成标准词。`canonical` 等于 `word` 表示这个
  * 词整理过、就是标准词；一个词一周内只整理一次（`reviewed_at`）。
  *
- * 这张表记的是关于词的决定，不是语料：整库重灌不清它，决定累积。只有 ETL 写它；
+ * 这张表记的是关于词的决定，不是语料：整库重灌不清它，决定累积。只有导入写它；
  * 查询侧读到的能力词说法已经是标准词，应用里只有管理页 `/skills` 读这张表，
  * 给人看机器并了什么。
  */
@@ -156,7 +231,7 @@ export const skillAlias = pgTable("skill_alias", {
  * 序列和岗位也不拼在一起——短文本的相似度最锐利，「算法」对「算法工程师」
  * 是一回事，对「技术 · 算法 · 推荐 / 高级算法工程师」这一长串就被稀释了。
  *
- * `skill` 与 `did` 是模型从 `description` 里读出来的（`etl/extract.py`）：
+ * `skill` 与 `did` 是模型从 `description` 里读出来的（`src/corpus/extract.ts`）：
  * 一整段几百字的自述池化成一个向量分不清主语和重点，「配合算法团队」会和
  * 「算法」相近；抽成短说法之后重排模型判得准。它们的**来源**仍是自述，所以
  * 和 `description` 同一档强度。`did` 的说法只是领域（「推荐系统」），参与
@@ -213,7 +288,7 @@ export const experiencePhrase = pgTable(
 		 * 前缀（「从零搭建 · 推荐系统」），不是说法的一部分：说法进向量、比
 		 * 相关度，参与方式不进。它只有几种取值，拼进说法的话同一种参与方式
 		 * 的任何领域在重排模型眼里都相近，「从零搭建 · 风险商家审核平台」会
-		 * 命中「从零搭建推荐系统」。取值收窄在 `etl/extract.py` 的 `conform`，
+		 * 命中「从零搭建推荐系统」。取值收窄在 `src/corpus/extract.ts` 的 `conform`，
 		 * 模型判断不出时为空、只显示领域；主键是（段、路、说法），一段对
 		 * 同一个领域只留一条。
 		 */

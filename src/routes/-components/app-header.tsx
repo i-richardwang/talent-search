@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { TagsIcon, UsersRoundIcon } from "lucide-react";
+import { DatabaseIcon, TagsIcon, UsersRoundIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import type { RecentSearch } from "#/server/turn";
@@ -50,7 +50,7 @@ export function AppHeader({ recent }: { recent: RecentSearch[] | null }) {
 				/>
 				<div className="flex shrink-0 items-center gap-2">
 					<RecentPopover recent={recent} />
-					{/* 管理页的入口和「最近」并排：都是偶尔去一下的地方，同一档图标按钮。 */}
+					{/* 两个管理页的入口和「最近」并排：都是偶尔去一下的地方，同一档图标按钮。 */}
 					<Tooltip>
 						<TooltipTrigger
 							render={
@@ -65,6 +65,21 @@ export function AppHeader({ recent }: { recent: RecentSearch[] | null }) {
 							<TagsIcon />
 						</TooltipTrigger>
 						<TooltipPopup positionMethod="fixed">能力词</TooltipPopup>
+					</Tooltip>
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button
+									aria-label="导入"
+									render={<Link to="/imports" />}
+									size="icon-sm"
+									variant="ghost"
+								/>
+							}
+						>
+							<DatabaseIcon />
+						</TooltipTrigger>
+						<TooltipPopup positionMethod="fixed">导入</TooltipPopup>
 					</Tooltip>
 				</div>
 			</div>
