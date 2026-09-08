@@ -118,6 +118,36 @@ describe("同步与派生", () => {
 		assert.equal(lane(await tasksState(), "derive").latest?.outcome, "done");
 	});
 
+	test("数据页看得到每一段的派生结果", async () => {
+		const { listEmployees, employeeData } = await import("#/server/data");
+		const list = await listEmployees("");
+		assert.equal(list.total, 20);
+		assert.equal(list.rows.length, 20);
+		assert.ok(list.rows.every((row) => row.pending === 0));
+		const one = list.rows.find((row) => row.segments > 0);
+		assert.ok(one);
+		assert.deepEqual(
+			(await listEmployees(one.name)).rows.map((row) => row.empId),
+			[one.empId],
+		);
+
+		const person = await employeeData(one.empId);
+		assert.ok(person);
+		assert.equal(person.segments.length, one.segments);
+		assert.ok(person.segments.every((segment) => segment.derived));
+		// 假端点给每一段入职前描述都抽出「数据分析」和「负责建设 · 推荐系统」
+		const described = person.segments.find(
+			(segment) => segment.kind === "external" && segment.description,
+		);
+		if (described) {
+			assert.deepEqual(described.skills, ["数据分析"]);
+			assert.deepEqual(described.did, [
+				{ involvement: "负责建设", domain: "推荐系统" },
+			]);
+		}
+		assert.equal(await employeeData("没有这个人"), null);
+	});
+
 	test("再同步一次是幂等的：段按内容认，派生结果原样留下", async () => {
 		const edges = await count("experience_phrase");
 		const run = await runTask("sync");

@@ -187,7 +187,7 @@
 
 - **服务端模块自己声明身份**：`#/db`、`#/search/search`、`#/search/phrases`、`#/server/llm`、
   `#/server/embed`、`#/server/rerank`、`#/server/chat`、`#/server/turn`、`#/server/tasks`、
-  `#/server/jobs`、`#/server/endpoint`，以及 `#/corpus/` 下碰连接或端点的那几个（`embed`、
+  `#/server/jobs`、`#/server/data`、`#/server/endpoint`，以及 `#/corpus/` 下碰连接或端点的那几个（`embed`、
   `aliases`、`sync`、`derive`、`session`），顶上都有一行 `import "@tanstack/react-start/server-only"`。页面从它们取**值**
   会让构建失败，并打印完整 import 链。新写一个碰数据库连接或密钥的模块，就给它加上那一行。
   `#/db/schema` 不标（`drizzle-kit` 以 CJS 加载它，标了 `db:push` 起不来）；`#/corpus` 里的

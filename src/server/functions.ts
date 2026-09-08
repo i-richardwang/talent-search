@@ -19,6 +19,7 @@ import { validateCommit } from "#/search/commit-input";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search } from "#/search/search";
+import { employeeData, listEmployees } from "./data";
 import { type JobKind, requestJob } from "./jobs";
 import { listSkills } from "./skills";
 import { tasksState } from "./tasks";
@@ -143,3 +144,13 @@ export const requestTask = createServerFn({ method: "POST" })
 			queued: await requestJob(data),
 		}),
 	);
+
+/** 数据页的人员列表：按名字或工号找。 */
+export const dataList = createServerFn({ method: "GET" })
+	.validator((d: { q: unknown }) => ({ q: String(d.q ?? "").slice(0, 64) }))
+	.handler(({ data }) => listEmployees(data.q));
+
+/** 数据页的一个人：档案、每一段、每一段的派生结果。 */
+export const dataEmployee = createServerFn({ method: "GET" })
+	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
+	.handler(({ data }) => employeeData(data.empId));

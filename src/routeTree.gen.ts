@@ -10,14 +10,21 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DataRouteImport } from './routes/data'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as TasksRouteImport } from './routes/tasks'
+import { Route as DataEmpIdRouteImport } from './routes/data.$empId'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
 import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DataRoute = DataRouteImport.update({
+  id: '/data',
+  path: '/data',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkillsRoute = SkillsRouteImport.update({
@@ -29,6 +36,11 @@ const TasksRoute = TasksRouteImport.update({
   id: '/tasks',
   path: '/tasks',
   getParentRoute: () => rootRouteImport,
+} as any)
+const DataEmpIdRoute = DataEmpIdRouteImport.update({
+  id: '/$empId',
+  path: '/$empId',
+  getParentRoute: () => DataRoute,
 } as any)
 const STurnIdRouteRoute = STurnIdRouteRouteImport.update({
   id: '/s/$turnId',
@@ -43,42 +55,65 @@ const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/data': typeof DataRouteWithChildren
   '/skills': typeof SkillsRoute
   '/tasks': typeof TasksRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
+  '/data/$empId': typeof DataEmpIdRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/data': typeof DataRouteWithChildren
   '/skills': typeof SkillsRoute
   '/tasks': typeof TasksRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
+  '/data/$empId': typeof DataEmpIdRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/data': typeof DataRouteWithChildren
   '/skills': typeof SkillsRoute
   '/tasks': typeof TasksRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
+  '/data/$empId': typeof DataEmpIdRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/skills' | '/tasks' | '/s/$turnId' | '/s/$turnId/p/$empId'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/skills' | '/tasks' | '/s/$turnId' | '/s/$turnId/p/$empId'
-  id:
-    | '__root__'
+  fullPaths:
     | '/'
+    | '/data'
     | '/skills'
     | '/tasks'
     | '/s/$turnId'
+    | '/data/$empId'
+    | '/s/$turnId/p/$empId'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/'
+    | '/data'
+    | '/skills'
+    | '/tasks'
+    | '/s/$turnId'
+    | '/data/$empId'
+    | '/s/$turnId/p/$empId'
+  id:
+    | '__root__'
+    | '/'
+    | '/data'
+    | '/skills'
+    | '/tasks'
+    | '/s/$turnId'
+    | '/data/$empId'
     | '/s/$turnId/p/$empId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DataRoute: typeof DataRouteWithChildren
   SkillsRoute: typeof SkillsRoute
   TasksRoute: typeof TasksRoute
   STurnIdRouteRoute: typeof STurnIdRouteRouteWithChildren
@@ -91,6 +126,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/data': {
+      id: '/data'
+      path: '/data'
+      fullPath: '/data'
+      preLoaderRoute: typeof DataRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/skills': {
@@ -106,6 +148,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/tasks'
       preLoaderRoute: typeof TasksRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/data/$empId': {
+      id: '/data/$empId'
+      path: '/$empId'
+      fullPath: '/data/$empId'
+      preLoaderRoute: typeof DataEmpIdRouteImport
+      parentRoute: typeof DataRoute
     }
     '/s/$turnId': {
       id: '/s/$turnId'
@@ -124,6 +173,16 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface DataRouteChildren {
+  DataEmpIdRoute: typeof DataEmpIdRoute
+}
+
+const DataRouteChildren: DataRouteChildren = {
+  DataEmpIdRoute: DataEmpIdRoute,
+}
+
+const DataRouteWithChildren = DataRoute._addFileChildren(DataRouteChildren)
+
 interface STurnIdRouteRouteChildren {
   STurnIdPEmpIdRoute: typeof STurnIdPEmpIdRoute
 }
@@ -138,6 +197,7 @@ const STurnIdRouteRouteWithChildren = STurnIdRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DataRoute: DataRouteWithChildren,
   SkillsRoute: SkillsRoute,
   TasksRoute: TasksRoute,
   STurnIdRouteRoute: STurnIdRouteRouteWithChildren,
