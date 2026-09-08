@@ -71,14 +71,13 @@ ETL 分成两层，接数据只碰下面那一层：
 | `RERANK_SPACE_ID` | 是 | 重排空间的稳定身份；缓存按它隔离 |
 | `RERANK_BASE_URL` / `RERANK_API_KEY` | 否 | 重排端点与密钥，默认沿用 `EMBED_*` |
 | `RERANK_TIMEOUT_MS` / `RERANK_CONCURRENCY` | 否 | 重排超时与最大并发，默认 30000 / 4 |
-| `EXTRACT_BASE_URL` | 否 | OpenAI 兼容的聊天端点（`/chat/completions`）；ETL 用它从入职前简历描述抽能力词和做过的事，并把入职前岗位对到公司序列。岗位名、公司名和描述原文会送到这里 |
+| `EXTRACT_BASE_URL` | 否 | OpenAI 兼容的聊天端点（`/chat/completions`）；ETL 用它从入职前简历描述抽能力词和做过的事，把入职前岗位对到公司序列，并整理能力词的不同写法。岗位名、公司名和描述原文会送到这里 |
 | `EXTRACT_MODEL` | 否 | 抽取模型名。与 `EXTRACT_BASE_URL` 缺一就不抽也不对齐，ETL 会打印跳过。本地缓存按模型名和提示词键入，改提示词后重跑 ETL 即可 |
 | `EXTRACT_API_KEY` | 否 | 端点需要鉴权时填写 |
 | `EXTRACT_ENABLE_THINKING` | 否 | 带思考的模型设为 `false`，否则思考会先烧光输出预算；不设就不发这个字段 |
 | `EXTRACT_STRUCTURED_OUTPUTS` | 否 | 端点不支持 JSON Schema 时设为 `false` |
 | `EXTRACT_TIMEOUT_S` / `EXTRACT_CONCURRENCY` / `EXTRACT_MAX_OUTPUT_TOKENS` | 否 | 端点属性，默认 120 / 4 / 4000 |
 | `EXTRACT_CACHE_PATH` | 否 | 抽取结果的本地缓存（SQLite），默认 `.cache/extractions.sqlite` |
-| `SKILL_ALIASES` | 否 | 能力词对照表（`alias,canonical` 两列的 CSV），默认 `etl/sources/skill_aliases.csv`，不进版本库；没有就不归并 |
 | `TALENT_SOURCE` | 否 | 数据源适配器名，默认 `csv_dir` |
 | `TALENT_CSV_DIR` | 否 | `csv_dir` 的源目录，默认读仓库自带的合成样例 |
 | `LLM_BASE_URL` | 是 | OpenAI 兼容的查询理解端点；只收到用户敲的那句话 |
@@ -96,7 +95,6 @@ bun run dev          # 开发服务器
 bun run query "算法,+后端"           # 跑一条查询（一行语法见 src/search/query-syntax.ts）；TOPN=20 可以多打印几个人
 bun run eval         # 拿 evals/ 里的已知答案量召回与名次
 bun run db:push      # 从 src/db/schema.ts 同步表结构；拉到改过 schema 的提交后要跑一次
-uv run python etl/aliases.py   # 整理能力词：向量圈组、模型判断同一项能力的写法，建议追加进对照表；看一遍后重跑 ETL
 bun run verify       # 格式、类型、ETL、SQL/组件测试和生产构建
 ```
 
@@ -123,7 +121,7 @@ etl/embed.py                 四路原文的拼法、嵌入调用与本地向量
 etl/chat.py                  聊天端点调用与按身份键入的本地缓存
 etl/extract.py               入职前简历描述 → 能力词与做过的事：提示词与收窄
 etl/align.py                 入职前岗位 → 公司序列：序列树、提示词与收窄
-etl/aliases.py               能力词对照表：ETL 读它归并，直接运行是整理工具
+etl/aliases.py               能力词对照表：每次灌库前自动圈组、问模型、合并写法
 etl/load.py                  批量写库、说法去重、写向量与原子发布
 etl/run.py                   完整导入的唯一入口
 src/db/                      Drizzle 表结构与数据库连接

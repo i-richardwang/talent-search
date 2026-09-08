@@ -149,7 +149,6 @@ class ReloadLifecycleTest(unittest.TestCase):
                 side_effect=lambda _: events.append("probe") or [0.1],
             ),
             mock.patch.object(loader.C, "extract_configured", return_value=True),
-            mock.patch.object(loader.aliases, "read", return_value={}),
             mock.patch.object(
                 loader,
                 "align",

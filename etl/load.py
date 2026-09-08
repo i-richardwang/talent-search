@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Mapping
 
 import pandas as pd
 import psycopg
@@ -82,28 +81,27 @@ def _phrase_plan(
     return texts, links
 
 
-def _stage_phrases(
-    cur: psycopg.Cursor, skill_aliases: Mapping[str, str]
-) -> tuple[int, int, int]:
+def _stage_phrases(cur: psycopg.Cursor) -> tuple[int, int, int]:
     """嵌入暂存经历的原文四路与抽取两路，返回（说法数，边数，抽出说法的段数）。
 
-    整份语料一次交给 `extract` 和 `embed`：批量、缓存与进度是它们的事，这里只管
-    把结果写进暂存表——在外面再切一层批就等于同一件事有两个尺寸。
+    整份语料一次交给 `extract`、`aliases.review` 和 `embed`：批量、缓存与进度是
+    它们的事，这里只管把结果写进暂存表——在外面再切一层批就等于同一件事有两个尺寸。
     """
     cur.execute(
-        f"select id, {', '.join(ROUTE_FIELDS)} from {STAGED_EXPERIENCE} order by id"
+        f"select id, emp_id, {', '.join(ROUTE_FIELDS)} from {STAGED_EXPERIENCE} order by id"
     )
-    rows = cur.fetchall()
-    extractions = (
-        [
-            aliases.apply(skill_aliases, extraction)
-            for extraction in extract(
-                [dict(zip(ROUTE_FIELDS, values, strict=True)) for _, *values in rows]
-            )
-        ]
-        if C.extract_configured()
-        else [EMPTY] * len(rows)
-    )
+    staged = cur.fetchall()
+    rows = [(exp_id, *values) for exp_id, _, *values in staged]
+    if C.extract_configured():
+        extractions = extract(
+            [dict(zip(ROUTE_FIELDS, values, strict=True)) for _, *values in rows]
+        )
+        print("\n整理能力词…")
+        extractions = aliases.review(
+            cur, extractions, [emp_id for _, emp_id, *_ in staged]
+        )
+    else:
+        extractions = [EMPTY] * len(rows)
     texts, links = _phrase_plan(rows, extractions)
 
     vectors = embed(texts)
@@ -148,15 +146,12 @@ def _create_staging_tables(cur: psycopg.Cursor) -> None:
 
 
 def _stage_corpus(
-    cur: psycopg.Cursor,
-    employee: pd.DataFrame,
-    experience: pd.DataFrame,
-    skill_aliases: Mapping[str, str],
+    cur: psycopg.Cursor, employee: pd.DataFrame, experience: pd.DataFrame
 ) -> tuple[int, int, int]:
     _copy_frame(cur, STAGED_EMPLOYEE, employee, EMPLOYEE_OUT)
     staged_experience = experience.assign(id=range(1, len(experience) + 1))
     _copy_frame(cur, STAGED_EXPERIENCE, staged_experience, ["id", *EXPERIENCE_OUT])
-    return _stage_phrases(cur, skill_aliases)
+    return _stage_phrases(cur)
 
 
 def _reset_identity(cur: psycopg.Cursor, table: str) -> None:
@@ -241,16 +236,9 @@ def load(source_name: str) -> None:
                 f"\n抽取端点 {C.EXTRACT_MODEL} @ {C.EXTRACT_BASE_URL}；"
                 f"缓存 {C.EXTRACT_CACHE_PATH}"
             )
-            skill_aliases = aliases.read(C.SKILL_ALIASES_PATH)
-            print(
-                f"  能力词对照表 {C.SKILL_ALIASES_PATH}：{len(skill_aliases)} 条别名"
-                if skill_aliases
-                else f"  没有能力词对照表（{C.SKILL_ALIASES_PATH}），能力词不归并"
-            )
             print("\n入职前经历对齐公司序列…")
             experience = align(experience)
         else:
-            skill_aliases = {}
             # 打印说明后跳过，不静默：检索仍然可用，但「为什么简历里写了却搜不到
             # 能力词」「为什么按序列筛不到入职前的经历」得有地方看见。
             print(
@@ -264,10 +252,10 @@ def load(source_name: str) -> None:
         # 带进后面的模型调用。
         conn.commit()
         phrase_count, link_count, extracted_count = _stage_corpus(
-            cur, employee, experience, skill_aliases
+            cur, employee, experience
         )
-        # 暂存行按 preserve rows 跨事务保留，发布事务只包含本地 INSERT，
-        # 不夹带任何模型调用。
+        # 暂存行按 preserve rows 跨事务保留，能力词对照表的决定也在这里落定；
+        # 发布事务只包含本地 INSERT，不夹带任何模型调用。
         conn.commit()
 
         print("\n发布语料…")

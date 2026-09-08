@@ -131,6 +131,23 @@ export const embeddingSpace = pgTable("embedding_space", {
 });
 
 /**
+ * 能力词的对照表：一个词对到哪个标准词，以及它上次被整理的时间。
+ *
+ * 能力词是模型从简历里抽出来的开放词表，同一项能力有多种写法。ETL 每次灌库前
+ * 自动整理（`etl/aliases.py`）：相似的词圈成组，模型判断哪些只是写法不同，合并
+ * 的结果写在这里，灌库时按它把能力词换成标准词。`canonical` 等于 `word` 表示这个
+ * 词整理过、就是标准词；一个词一周内只整理一次（`reviewed_at`）。
+ *
+ * 这张表记的是关于词的决定，不是语料：整库重灌不清它，决定累积。唯一的写者和
+ * 读者都是 ETL，查询侧读到的能力词说法已经是标准词。
+ */
+export const skillAlias = pgTable("skill_alias", {
+	word: text("word").primaryKey(),
+	canonical: text("canonical").notNull(),
+	reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+});
+
+/**
  * 一段经历的六路语义：序列、岗位、部门 / 公司、简历描述，以及从简历描述里
  * 抽出来的能力词与做过的事。字段来源决定证据可信度（weights.ts 的
  * ROUTE_WEIGHTS），所以各路**各自**嵌一个向量，不混成一个：混了之后
