@@ -6,23 +6,21 @@
  * 于是它能被 cron 之类的东西按退出码判断成功还是失败。
  */
 import { pool } from "#/db";
-import { startImport } from "#/server/import";
+import { runImport } from "#/server/import";
 
 const started = Date.now();
-const run = await startImport((line) => {
+const run = await runImport((line) => {
 	console.log(line);
 });
+await pool.end();
 
 if (!run) {
 	console.error("已经有一次导入在进行中");
-	await pool.end();
 	process.exit(1);
 }
 
-const failure = await run.finished;
 const seconds = Math.round((Date.now() - started) / 1000);
 console.log(
-	failure ? `\n导入失败，用时 ${seconds}s` : `\n完成，用时 ${seconds}s`,
+	run.failure ? `\n导入失败，用时 ${seconds}s` : `\n完成，用时 ${seconds}s`,
 );
-await pool.end();
-if (failure) process.exit(1);
+if (run.failure) process.exit(1);

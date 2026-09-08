@@ -37,7 +37,9 @@ const SAMPLE_DIR = "src/corpus/sources/sample";
 const TRUE_VALUES = new Set(["true", "1", "y", "yes", "是"]);
 
 /**
- * 读一个 CSV，只做 CSV 自己表达不了的事：去掉 BOM、补上可省的列。
+ * 读一个 CSV，只做 CSV 自己表达不了的事：去掉 BOM、修掉表头两侧的空白、补上可省的列。
+ * 表头里的空白和 BOM 一样是导出工具的毛刺，不是列名的一部分——`emp_id ` 找不到
+ * 契约列，报出来的却是「缺少 emp_id」，人对着文件怎么看都有。
  *
  * 列齐不齐由契约（`sourceData`）判，不在这里判一遍：两处判，改契约列的人就得
  * 记得改两处，而只有一处会红。
@@ -55,7 +57,7 @@ async function read(
 		throw new Error(`源文件缺失：${path}`, { cause });
 	}
 	const rows: Record<string, string>[] = parse(text, {
-		columns: true,
+		columns: (header: string[]) => header.map((column) => column.trim()),
 		bom: true,
 		skip_empty_lines: true,
 	});

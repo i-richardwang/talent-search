@@ -22,7 +22,7 @@ import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
 import { intentSchema, type Vocabulary } from "#/search/intent";
-import { positiveInt } from "./env";
+import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
 
 /**
  * OpenAI 兼容端点。用兼容层而不是绑某一家的 SDK：换模型（公网 provider、
@@ -70,6 +70,8 @@ function getModel() {
 			baseURL: BASE_URL,
 			supportsStructuredOutputs: STRUCTURED,
 			...(API_KEY && { apiKey: API_KEY }),
+			// 超时装在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
+			fetch: timeoutFetch(TIMEOUT_MS),
 		})(MODEL);
 	return model;
 }
@@ -149,24 +151,30 @@ export async function understand(
 	vocab: Vocabulary,
 ): Promise<unknown> {
 	const m = getModel();
+	/*
+	 * 一次检索愿意多等的只有一次：人在等结果。可重试的应答由 SDK 试，
+	 * 超时由 `retryingTimeouts` 试，两边给同一个数。
+	 */
+	const retries = 1;
 	try {
-		const { output } = await generateText({
-			model: m,
-			output: Output.object({ schema: intentSchema(vocab) }),
-			system: SYSTEM,
-			prompt: [
-				listed("companyTag", vocab.companyTag),
-				listed("level", vocab.level),
-				listed("recruitment", vocab.recruitment),
-				listed("education", vocab.education),
-				`\n这句话：${text}`,
-			].join("\n"),
-			// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件
-			temperature: 0,
-			maxRetries: 1,
-			maxOutputTokens: MAX_OUTPUT_TOKENS,
-			timeout: TIMEOUT_MS,
-		});
+		const { output } = await retryingTimeouts(retries, () =>
+			generateText({
+				model: m,
+				output: Output.object({ schema: intentSchema(vocab) }),
+				system: SYSTEM,
+				prompt: [
+					listed("companyTag", vocab.companyTag),
+					listed("level", vocab.level),
+					listed("recruitment", vocab.recruitment),
+					listed("education", vocab.education),
+					`\n这句话：${text}`,
+				].join("\n"),
+				// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件
+				temperature: 0,
+				maxRetries: retries,
+				maxOutputTokens: MAX_OUTPUT_TOKENS,
+			}),
+		);
 		return output;
 	} catch (e) {
 		if (!NoObjectGeneratedError.isInstance(e)) throw e;

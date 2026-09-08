@@ -121,6 +121,22 @@ describe("圈组", () => {
 		]);
 	});
 
+	test("一组最多十二个词，多出来的留给下一轮", () => {
+		// 二十个和组心几乎一样的词：圈子只收前十一个，剩下的不进这一组
+		const near = Array.from({ length: 20 }, (_, i) => `写法${i}`);
+		const all = ["组心", ...near];
+		const vectors = all.map((_, i) => [1, i * 1e-3, 0]);
+		const circles = groups(
+			all,
+			[10, ...near.map(() => 1)],
+			vectors,
+			new Set(all),
+		);
+		assert.equal(circles.length, 1);
+		assert.equal(circles[0]?.length, 12);
+		assert.equal(circles[0]?.[0], "组心");
+	});
+
 	test("人不够的词不做组心", () => {
 		// 只有一个人的「个性化推荐」到期了也不做组心
 		assert.deepEqual(
@@ -168,11 +184,21 @@ describe("记账", () => {
 			["Py", { canonical: "Python", reviewedAt: OLD }],
 			["Python", { canonical: "Python", reviewedAt: OLD }],
 		]);
-		assert.deepEqual(merge(table, "推荐系统", ["Python"], NOW).sort(), [
-			"Py",
-			"Python",
-			"推荐系统",
-		]);
+		// 返回的是决定本身，写回表的那一步因此不必再回表里查（`write`）
+		assert.deepEqual(
+			merge(table, "推荐系统", ["Python"], NOW)
+				.map(([word, decision]) => [
+					word,
+					decision.canonical,
+					decision.reviewedAt,
+				])
+				.sort(),
+			[
+				["Py", "推荐系统", NOW],
+				["Python", "推荐系统", NOW],
+				["推荐系统", "推荐系统", NOW],
+			],
+		);
 		assert.deepEqual(
 			[...table].map(([word, d]) => [word, d.canonical]),
 			[
@@ -185,7 +211,9 @@ describe("记账", () => {
 
 	test("一个都没合并，组心照样记上时间", () => {
 		const table = new Map();
-		assert.deepEqual(merge(table, "推荐系统", [], NOW), ["推荐系统"]);
+		assert.deepEqual(merge(table, "推荐系统", [], NOW), [
+			["推荐系统", { canonical: "推荐系统", reviewedAt: NOW }],
+		]);
 		assert.equal(table.get("推荐系统")?.canonical, "推荐系统");
 	});
 });

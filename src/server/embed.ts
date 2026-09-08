@@ -20,12 +20,18 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { cosineSimilarity, embedMany } from "ai";
 import { type DbExecutor, db } from "#/db";
 import { EMBED_DIM, embeddingSpace } from "#/db/schema";
-import { positiveInt } from "./env";
+import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
 
-const BASE_URL = process.env.EMBED_BASE_URL;
+/*
+ * 三个值在这里修剪一次，别处不再读它们（`embedSpace`）。各读各的话，
+ * `EMBED_MODEL=bge-m3 ` 这样一个尾随空格会让语料侧写进库的身份和查询侧拿去核对的
+ * 身份差一个字符，而报出来的是「查询端嵌入空间与语料不一致」——两个字符串打印出来
+ * 一模一样。
+ */
+const BASE_URL = process.env.EMBED_BASE_URL?.trim();
 const API_KEY = process.env.EMBED_API_KEY;
-const MODEL = process.env.EMBED_MODEL;
-const SPACE_ID = process.env.EMBED_SPACE_ID;
+const MODEL = process.env.EMBED_MODEL?.trim();
+const SPACE_ID = process.env.EMBED_SPACE_ID?.trim();
 
 const TIMEOUT_MS = positiveInt(process.env.EMBED_TIMEOUT_MS, 30_000);
 
@@ -44,20 +50,41 @@ const cache = new Map<string, number[]>();
  */
 const QUERY_RETRIES = 1;
 
-let model: ReturnType<
-	ReturnType<typeof createOpenAICompatible>["embeddingModel"]
-> | null = null;
-function getModel() {
+function configured() {
 	if (!BASE_URL || !MODEL || !SPACE_ID)
 		throw new Error(
 			"嵌入端点未配置：需要 EMBED_BASE_URL、EMBED_MODEL 与 EMBED_SPACE_ID（见 .env.example）",
 		);
+	return { baseURL: BASE_URL, model: MODEL, spaceId: SPACE_ID };
+}
+
+/**
+ * 这个进程说的嵌入空间：稳定身份与模型名。**两侧的唯一出处**——语料侧把它写进
+ * `embedding_space`，查询侧拿它核对那一行。没配就抛，理由同上面第 2 条。
+ */
+export function embedSpace(): { spaceId: string; model: string } {
+	const { spaceId, model } = configured();
+	return { spaceId, model };
+}
+
+/** 端点地址，只为让导入把「向哪台机器要向量」说出来。 */
+export function embedEndpoint(): string {
+	return configured().baseURL;
+}
+
+let model: ReturnType<
+	ReturnType<typeof createOpenAICompatible>["embeddingModel"]
+> | null = null;
+function getModel() {
+	const config = configured();
 	if (!model)
 		model = createOpenAICompatible({
 			name: "talent-embed",
-			baseURL: BASE_URL,
+			baseURL: config.baseURL,
 			...(API_KEY && { apiKey: API_KEY }),
-		}).embeddingModel(MODEL);
+			// 超时装在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
+			fetch: timeoutFetch(TIMEOUT_MS),
+		}).embeddingModel(config.model);
 	return model;
 }
 
@@ -70,12 +97,10 @@ async function request(
 	values: string[],
 	maxRetries: number,
 ): Promise<Map<string, number[]>> {
-	const { embeddings } = await embedMany({
-		model: getModel(),
-		values,
-		maxRetries,
-		abortSignal: AbortSignal.timeout(TIMEOUT_MS),
-	});
+	// 两种失败各自重试同样的次数：可重试的应答由 SDK 在里面试，超时由外面这一层试
+	const { embeddings } = await retryingTimeouts(maxRetries, () =>
+		embedMany({ model: getModel(), values, maxRetries }),
+	);
 	const out = new Map<string, number[]>();
 	for (const [index, vector] of embeddings.entries()) {
 		if (

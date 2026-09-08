@@ -103,6 +103,18 @@ function parseDate(value: string): Maybe {
 	return at;
 }
 
+/**
+ * 这台机器墙上的今天，表示成管线里日期通用的样子：UTC 午夜、只有年月日。
+ *
+ * 取**本地**日历日，不取 UTC 日历日：源里的日期是人事系统按当地日历登记的，
+ * 跑导入的人看的也是墙上那本日历。取 UTC 的话，东八区每天早上八点前「今天」
+ * 还是昨天，当天生效的任职段会被判成「生效日在未来」拒掉。
+ */
+function today(): Date {
+	const now = new Date();
+	return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+}
+
 /** ISO 日期串，写库用。 */
 function isoDate(at: Date): string {
 	return at.toISOString().slice(0, 10);
@@ -498,7 +510,7 @@ function few(ids: string[]): string {
 export function build(
 	data: SourceData,
 	report: Report,
-	asOf: Date = new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`),
+	asOf: Date = today(),
 ): { employee: EmployeeRow[]; experience: ExperienceRow[] } {
 	let profiles = normalizeProfiles(data.employees, report);
 	profiles = reject(

@@ -59,6 +59,21 @@ describe("CSV 数据源", () => {
 		);
 	});
 
+	test("表头两侧的空白不算列名的一部分", async () => {
+		const [header, ...body] = EMPLOYEES.split("\n");
+		const padded = (header ?? "")
+			.split(",")
+			.map((column) => ` ${column} `)
+			.join(",");
+		const data = await read({
+			"employees.csv": [padded, ...body].join("\n"),
+		});
+		assert.deepEqual(
+			data.employees.map((row) => row.emp_id),
+			["E1"],
+		);
+	});
+
 	test("不给 segment_key 就按「部门 + 岗位」判同一件事", async () => {
 		const data = await read();
 		assert.deepEqual(

@@ -11,18 +11,25 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import type { ExperienceRow } from "#/corpus/pipeline";
+import type { ImportOutcome } from "#/server/import";
 import { answerChat, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
 
-const { startImport, importState } = await import("#/server/import");
+const { startImport, runImport, importState } = await import("#/server/import");
 const { phrasePlan } = await import("#/corpus/load");
-const { runOutcome, summary } = await import("#/routes/imports");
-const { acquireCorpusSession } = await import("#/corpus/session");
+const { summary } = await import("#/routes/imports");
+const { acquireCorpusSession, importRunning } = await import(
+	"#/corpus/session"
+);
 const { EMPTY } = await import("#/corpus/extract");
 const { db } = await import("#/db");
+const { importRun } = await import("#/db/schema");
 const { sql } = await import("drizzle-orm");
+
+/** 一次导入说过的话，测试里没人看。 */
+const quiet = () => {};
 
 /**
  * 三处语料侧调用各自认出自己的提示词。
@@ -59,18 +66,20 @@ describe("导入", () => {
 	});
 	after(() => restore());
 
-	test("已经有一次在跑的时候开不了第二次", async () => {
+	test("已经有一次在跑的时候开不了第二次，而活性问的是锁", async () => {
 		const held = await acquireCorpusSession();
 		assert.ok(held);
+		assert.equal(await importRunning(), true);
 		assert.equal(await startImport(), null);
 		await held.release();
+		// 持锁的连接一断，这件事当场就不成立了——不需要谁来打扫
+		assert.equal(await importRunning(), false);
 	});
 
 	test("一整轮跑下来，语料换成了样例里那批人", async () => {
-		const run = await startImport();
+		const run = await runImport(quiet);
 		assert.ok(run);
-		const failure = await run.finished;
-		assert.equal(failure, null);
+		assert.equal(run.failure, null);
 
 		// 样例里是编出来的二十个人
 		assert.equal(await count("employee"), 20);
@@ -108,11 +117,95 @@ describe("导入", () => {
 		assert.match(log, /employee 20 行/);
 	});
 
+	/*
+	 * 网页那条路：按钮按下去立刻返回，过程长在那一行上，页面隔一会儿看一眼。
+	 * 从「正在跑」到「成功」之间不许有一刻读作「中断」——判据是先看锁、再看行，
+	 * 而行是写完了才放锁的；这两条哪一条反了，页面就会在收尾那一瞬停掉轮询。
+	 */
+	test("网页开的那一次：立刻返回，一路轮询到成功，中间没有一刻像中断", async () => {
+		const begun = await startImport();
+		assert.ok(begun);
+
+		const seen = new Set<ImportOutcome>();
+		let latest = await importState();
+		while (
+			latest.latest?.id === begun.runId &&
+			latest.latest.outcome === "running"
+		) {
+			seen.add("running");
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			latest = await importState();
+		}
+		assert.equal(latest.latest?.id, begun.runId);
+		seen.add(latest.latest?.outcome ?? "interrupted");
+
+		assert.ok(seen.has("running"), "至少看到一次正在跑");
+		assert.ok(!seen.has("interrupted"), "没有一刻读作中断");
+		assert.equal(latest.latest?.outcome, "done");
+		assert.equal(await importRunning(), false);
+	});
+
 	test("再跑一次是幂等的，人数不变", async () => {
-		const run = await startImport();
+		const run = await runImport(quiet);
 		assert.ok(run);
-		assert.equal(await run.finished, null);
+		assert.equal(run.failure, null);
 		assert.equal(await count("employee"), 20);
+	});
+
+	/*
+	 * 进程跑到一半没了，留下一行没有结束时间的记录。它读作「中断」而不是
+	 * 「正在跑」——判据是锁，而锁随着那个进程一起没了。读成「正在跑」的话页面上
+	 * 那个按钮会一直禁着，而唯一能解开它的正是按一下那个按钮。
+	 */
+	test("中断的那一行读作中断，不挡住下一次导入", async () => {
+		const [stale] = await db
+			.insert(importRun)
+			.values({ source: "csv-dir", log: ["跑到一半进程没了"] })
+			.returning({ id: importRun.id });
+		assert.ok(stale);
+
+		const before = await importState();
+		assert.equal(before.latest?.id, stale.id);
+		assert.equal(before.latest?.outcome, "interrupted");
+		assert.equal(before.latest?.seconds, null);
+
+		const run = await runImport(quiet);
+		assert.ok(run);
+		assert.equal(run.failure, null);
+
+		const after = await importState();
+		assert.equal(after.latest?.outcome, "done");
+		assert.equal(
+			after.history.find((one) => one.id === stale.id)?.outcome,
+			"interrupted",
+		);
+	});
+
+	/*
+	 * 失败是这张表存在的理由之一：从网页按下按钮的人看不到服务器的标准输出。
+	 * 数据源读不出来时，最外层那句话说的是「哪一步出的事」，真正发生了什么挂在
+	 * `cause` 上——两句都得在。
+	 */
+	test("跑失败时，那一行说得出为什么，连它的来由", async () => {
+		const configured = process.env.TALENT_SOURCE;
+		process.env.TALENT_SOURCE = "没有这个适配器";
+		let failure: string | null = null;
+		try {
+			const run = await runImport(quiet);
+			assert.ok(run);
+			failure = run.failure;
+		} finally {
+			process.env.TALENT_SOURCE = configured;
+		}
+		assert.match(failure ?? "", /读取数据源 没有这个适配器 失败/);
+
+		const state = await importState();
+		assert.equal(state.latest?.outcome, "failed");
+		assert.equal(state.latest?.error, failure);
+		const log = state.latest?.log.join("\n") ?? "";
+		assert.match(log, /✖ 读取数据源/);
+		// 来由那一层：模块加载自己报的话，不是我们替它编的
+		assert.match(log, /↳/);
 	});
 });
 
@@ -204,16 +297,9 @@ describe("页面上那几句话", () => {
 		startedAt: "09-08 14:32",
 		seconds: null as number | null,
 		error: null as string | null,
+		outcome: "running" as ImportOutcome,
+		log: [] as string[],
 	};
-
-	test("三种样子各说各的", () => {
-		assert.equal(runOutcome(run), "running");
-		assert.equal(runOutcome({ ...run, seconds: 12 }), "done");
-		assert.equal(
-			runOutcome({ ...run, seconds: 12, error: "端点没了" }),
-			"failed",
-		);
-	});
 
 	test("一次都没跑过时，抬头说的是导入本身是什么", () => {
 		assert.match(summary({ latest: null, history: [] }), /语料由导入建立/);
@@ -221,11 +307,19 @@ describe("页面上那几句话", () => {
 
 	test("跑过之后，抬头说最近一次是什么时候、读的哪个源、跑成什么样", () => {
 		const said = summary({
-			latest: { ...run, seconds: 42, log: [] },
+			latest: { ...run, seconds: 42, outcome: "done" },
 			history: [],
 		});
 		assert.match(said, /09-08 14:32/);
 		assert.match(said, /csv-dir/);
 		assert.match(said, /42s/);
+	});
+
+	test("四种样子各说各的", () => {
+		const said = (outcome: ImportOutcome) =>
+			summary({ latest: { ...run, outcome }, history: [] });
+		assert.match(said("running"), /正在跑/);
+		assert.match(said("interrupted"), /中断/);
+		assert.match(said("failed"), /失败/);
 	});
 });

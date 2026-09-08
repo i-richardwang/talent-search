@@ -26,7 +26,7 @@ export type DbExecutor = Pick<typeof db, "execute" | "select">;
  *
  * 代价是算出来的计划可能过期，`generation` 就是给调用方核对这件事用的：它是
  * `embedding_space` 那一行的行版本号，而整库重灌每次都会重写这一行
- * （`src/corpus/load.ts` 的 `_publish_corpus`），所以行版本变了就是换了一版。不另立一列
+ * （`src/corpus/load.ts` 的 `publish`），所以行版本变了就是换了一版。不另立一列
  * 代号——一列要靠人记得更新的代号，忘了更新不会报错。核对怎么用见
  * `search/phrases.ts` 的 `withAdmission`。
  */

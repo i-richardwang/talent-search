@@ -26,7 +26,7 @@ import type { ImportRunView, ImportState } from "#/server/import";
  *
  * 导入是这个应用自己的一次运行，不是外面某个脚本干的事——所以它有一个入口、
  * 一份过程、一份历史，和搜索共用同一个进程与同一个库。命令行那条路
- * （`bun run import`）跑的是同一个函数，只是多一份回显。
+ * （`bun run import`）走同一条锁、同一份记录、同一个过程，只是它等到跑完。
  */
 export const Route = createFileRoute("/imports")({
 	loader: () => importStatus(),
@@ -38,27 +38,24 @@ export const Route = createFileRoute("/imports")({
 const POLL_MS = 2000;
 
 /**
- * 一行记录在这一页上是三种样子中的哪一种。
+ * 一行记录在这一页上说成什么。
  *
- * 判据住在页面这一侧：它读的是**给页面看的那份视图**（用时算在库里、错误是一句
- * 话），服务端那边没有第二个读者。放过去还会把整个 `#/server/import` 拖进客户端
- * 包——那个模块碰连接，构建当场就红。
+ * 判成哪一种不在这一侧——那要问「此刻锁在谁手上」，只有服务端答得了
+ * （`src/server/import.ts`）。这里只把它译成字。
  */
-export function runOutcome(run: {
-	seconds: number | null;
-	error: string | null;
-}): "running" | "failed" | "done" {
-	if (run.seconds === null) return "running";
-	return run.error ? "failed" : "done";
-}
+const SAID: Record<ImportRunView["outcome"], string> = {
+	running: "正在跑",
+	interrupted: "中断，没有跑完",
+	failed: "失败了",
+	done: "成功",
+};
 
 function Imports() {
 	const state = Route.useLoaderData();
 	const router = useRouter();
 	const [starting, setStarting] = useState(false);
 	const [refused, setRefused] = useState(false);
-	const running =
-		state.latest !== null && runOutcome(state.latest) === "running";
+	const running = state.latest?.outcome === "running";
 
 	/*
 	 * 跑的时候自己去问进展。这是唯一一处需要「隔一会儿再看一眼」的界面：一次导入
@@ -95,15 +92,14 @@ function Imports() {
 			</div>
 			{refused && (
 				/*
-				 * 按下去没开成，只可能是别处已经有一次在跑。多数时候下面那条记录
-				 * 自己就说明了这件事，但两次点击之间那一次刚好跑完的话就说明不了
-				 * ——那正是最需要一句话的时候。
+				 * 按下去没开成，只可能是别处已经有一次在跑。这句话说的是**那一下**，
+				 * 所以用过去时，之后那次跑完了它也仍然成立；它活到下一下按下去为止，
+				 * 不跟着状态清——两次点击之间那一次刚好跑完的话，下面那条记录说不出
+				 * 「你刚才为什么没开成」，那正是最需要它的时候。
 				 */
 				<Alert>
 					<AlertTitle>这次没有开起来</AlertTitle>
-					<AlertDescription>
-						已经有一次导入在跑，等它结束再试。
-					</AlertDescription>
+					<AlertDescription>按下去的时候已经有一次导入在跑。</AlertDescription>
 				</Alert>
 			)}
 			{state.latest === null ? (
@@ -118,10 +114,10 @@ function Imports() {
 				</Empty>
 			) : (
 				<>
-					{state.latest.error && (
+					{state.latest.outcome === "failed" && (
 						/*
-						 * 红只在这里用，全站没有第二处：它说的是「这次跑失败了」，读不成
-						 * 命中（绿）、选中（蓝）或查询上的提示（amber）里的任何一件事。
+						 * 页面级的失败用 `Alert` 的红，和「没能提交」那两处同一档：它说的是
+						 * 「这次跑失败了」，读不成命中（绿）、选中（蓝）或查询上的提示（amber）。
 						 */
 						<Alert variant="error">
 							<AlertTitle>这次导入没有跑完</AlertTitle>
@@ -140,11 +136,10 @@ function Imports() {
 export function summary({ latest }: ImportState): string {
 	if (!latest)
 		return "语料由导入建立：读数据源、切段校验、抽取与嵌入，最后原子发布。";
-	const what = {
-		running: "正在跑",
-		failed: "失败了",
-		done: `用时 ${latest.seconds ?? 0}s`,
-	}[runOutcome(latest)];
+	const what =
+		latest.outcome === "done"
+			? `用时 ${latest.seconds ?? 0}s`
+			: SAID[latest.outcome];
 	return `最近一次 ${latest.startedAt} 从 ${latest.source} 读，${what}。`;
 }
 
@@ -154,10 +149,14 @@ export function summary({ latest }: ImportState): string {
  * 它就是命令行里滚过去的那些字——拒绝了几段、为什么拒绝、合并了哪些写法、
  * 各表最后几行。验收一次导入靠的全是它们，所以从网页按下按钮的人也得看得到。
  * 等宽字体：这些行靠缩进分层级。
+ *
+ * 它是这一页的主面：占掉标题和历史之外的全部高度、里面自己滚，和 `/s/:id` 上
+ * 那两块自滚的面同一个道理。几千行日志不能把页面撑长，所以高度来自版面而不是
+ * 内容；`min-h-60` 是屏幕矮的时候留给它的底。
  */
 export function RunLog({ lines }: { lines: string[] }) {
 	return (
-		<Card className="h-100 p-0">
+		<Card className="min-h-60 flex-1 p-0">
 			<ScrollArea className="p-4">
 				<pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed">
 					{lines.length ? lines.join("\n") : "刚开始，还没有说什么"}
@@ -192,7 +191,7 @@ export function History({ runs }: { runs: ImportRunView[] }) {
 								{run.seconds === null ? "—" : `${run.seconds}s`}
 							</TableCell>
 							<TableCell className="whitespace-normal text-muted-foreground">
-								{run.error ?? "成功"}
+								{run.error ?? SAID[run.outcome]}
 							</TableCell>
 						</TableRow>
 					))}

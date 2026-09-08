@@ -33,9 +33,15 @@ export async function loadSource(name: string): Promise<Source> {
 	try {
 		module = await import(`./sources/${name}.ts`);
 	} catch (cause) {
+		/*
+		 * 这里判不出是哪一种失败：「没有这个适配器」和「适配器自己坏了」（少一个
+		 * 依赖、顶层就抛）从 `import` 出来长得一模一样。所以不下诊断，只说清是哪一步
+		 * 出的事，真正发生了什么由 `cause` 说——`src/server/import.ts` 把整条来由
+		 * 逐层写进那次导入的日志。
+		 */
 		throw new Error(
-			`没有这个数据源：${name}\n` +
-				"私有适配器放在 src/corpus/sources/ 下（不进版本库），用 TALENT_SOURCE 选中",
+			`读取数据源 ${name} 失败。私有适配器放在 src/corpus/sources/ 下` +
+				"（不进版本库），用 TALENT_SOURCE 选中",
 			{ cause },
 		);
 	}

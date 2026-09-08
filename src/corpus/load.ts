@@ -14,9 +14,10 @@
 import "@tanstack/react-start/server-only";
 import { EMBED_DIM, type Route } from "#/db/schema";
 import { chatConfigured, chatEndpoint, extractModel } from "#/server/chat";
+import { embedEndpoint, embedSpace } from "#/server/embed";
 import { review } from "./aliases";
 import { align } from "./align";
-import { embed, probe, requireEmbedConfig } from "./embed";
+import { embed, probe } from "./embed";
 import { EMPTY, type Extraction, extract } from "./extract";
 import { build, type EmployeeRow, type ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
@@ -320,7 +321,7 @@ export async function load(
 	sourceName: string,
 	report: Report,
 ): Promise<void> {
-	const space = requireEmbedConfig();
+	const space = embedSpace();
 
 	report(`读取数据源 ${sourceName}…`);
 	const source = await loadSource(sourceName);
@@ -332,7 +333,7 @@ export async function load(
 	section(report, "探嵌入端点…");
 	const canary = await probe(CANARY_TEXT);
 	report(
-		`  ${space.spaceId} · ${space.model} @ ${process.env.EMBED_BASE_URL}，${EMBED_DIM} 维`,
+		`  ${space.spaceId} · ${space.model} @ ${embedEndpoint()}，${EMBED_DIM} 维`,
 	);
 
 	let staged = experience;

@@ -8,9 +8,10 @@
  * 换成 `pg_advisory_xact_lock`，第一次 commit 就把它松开了，两代语料会赛跑。
  *
  * 为什么是 `try` 而不是等：这个锁背后是网页上那个按钮。拿不到就当场说「已经有
- * 一次导入在跑」，比让人对着一个转圈的按钮排队几十分钟诚实。**拿得到锁**因此
- * 也就等于「此刻全世界没有第二次导入活着」——`import.ts` 靠这一点认定那些
- * 停在半路的记录是进程中断留下的。
+ * 一次导入在跑」，比让人对着一个转圈的按钮排队几十分钟诚实。
+ *
+ * 这把锁同时是**「此刻有没有人在跑」的唯一出处**（`importRunning`）：它随持锁的
+ * 连接一起生灭，问它得到的永远是此刻的实情，不像库里的一列要靠谁去对齐。
  */
 
 import "@tanstack/react-start/server-only";
@@ -28,6 +29,30 @@ export type CorpusSession = {
 	client: PoolClient;
 	release: () => Promise<void>;
 };
+
+/**
+ * 此刻有没有一次导入活着。
+ *
+ * **问的是锁，不是表。**「谁在跑」是连接的属性，Postgres 一直知道答案：持锁的
+ * 连接一断，`pg_locks` 里那一行当场消失，不需要任何人事后来打扫。表里那个空的
+ * `finished_at` 只说明「这一行没写完」——它分不出「正在跑」和「跑到一半进程没了」，
+ * 拿它当活性用，一次崩溃就会在页面上留下一次永远跑不完的导入。
+ *
+ * 咨询锁是**按库**的，所以观察也按库来：同一个集群上的另一个库拿着同一把键，
+ * 与这里无关。
+ */
+export async function importRunning(): Promise<boolean> {
+	const { rows } = await pool.query<{ held: boolean }>(
+		`select exists(
+			select 1 from pg_locks
+			where locktype = 'advisory'
+				and database = (select oid from pg_database where datname = current_database())
+				and classid = (${CORPUS_RELOAD_LOCK}::bigint >> 32)::int
+				and objid = (${CORPUS_RELOAD_LOCK}::bigint & x'ffffffff'::bigint)::int
+				and granted) as held`,
+	);
+	return rows[0]?.held ?? false;
+}
 
 /**
  * 取得导入连接与串行化锁。已经有一次导入在跑时返回 `null`，调用方负责说话。

@@ -13,10 +13,10 @@
 
 import "@tanstack/react-start/server-only";
 import { createHash } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "#/db";
-import { EMBED_DIM, embeddingCache } from "#/db/schema";
-import { embedFresh } from "#/server/embed";
+import { embeddingCache } from "#/db/schema";
+import { embedFresh, embedSpace } from "#/server/embed";
 import type { Report } from "./report";
 
 /**
@@ -41,23 +41,12 @@ const IMPORT_RETRIES = 4;
 /** 每多少批报一次进度。 */
 const PROGRESS_EVERY = 10;
 
-const SPACE_ID = process.env.EMBED_SPACE_ID?.trim() ?? "";
-const MODEL = process.env.EMBED_MODEL?.trim() ?? "";
-
-/** 语料侧要的三样配置齐不齐。缺一样就没有向量，也就没有检索。 */
-export function requireEmbedConfig(): { spaceId: string; model: string } {
-	if (!process.env.EMBED_BASE_URL?.trim() || !MODEL || !SPACE_ID)
-		throw new Error(
-			"缺少配置：EMBED_BASE_URL、EMBED_MODEL 与 EMBED_SPACE_ID（见 .env.example）",
-		);
-	return { spaceId: SPACE_ID, model: MODEL };
-}
-
 function sha(text: string): string {
 	return createHash("sha256").update(text).digest("hex");
 }
 
 async function cached(texts: string[]): Promise<Map<string, number[]>> {
+	const space = embedSpace();
 	const out = new Map<string, number[]>();
 	for (let start = 0; start < texts.length; start += LOOKUP) {
 		const part = texts.slice(start, start + LOOKUP);
@@ -70,44 +59,33 @@ async function cached(texts: string[]): Promise<Map<string, number[]>> {
 			.from(embeddingCache)
 			.where(
 				and(
-					eq(embeddingCache.spaceId, SPACE_ID),
-					eq(embeddingCache.model, MODEL),
+					eq(embeddingCache.spaceId, space.spaceId),
+					eq(embeddingCache.model, space.model),
 					inArray(embeddingCache.textSha, [...bySha.keys()]),
 				),
 			);
 		for (const row of rows) {
 			const text = bySha.get(row.textSha);
-			// 维数对不上的是换过模型却没换空间 id 留下的行：当它不存在，重新嵌一次
-			if (text !== undefined && row.embedding.length === EMBED_DIM)
-				out.set(text, row.embedding);
+			if (text !== undefined) out.set(text, row.embedding);
 		}
 	}
 	return out;
 }
 
+/**
+ * 写的只有刚从端点拿回来的、库里刚查过没有的文本，而同一时刻只有一次导入在跑
+ * （`session.ts` 的锁），所以主键不会撞：撞了就是这两条前提有一条破了，让它报错。
+ */
 async function store(fresh: [string, number[]][]) {
-	await db
-		.insert(embeddingCache)
-		.values(
-			fresh.map(([text, embedding]) => ({
-				spaceId: SPACE_ID,
-				model: MODEL,
-				textSha: sha(text),
-				embedding,
-			})),
-		)
-		/*
-		 * 冲突时用这一次算出来的向量覆盖旧的。能走到这一支，说明库里那一行刚才被
-		 * 当成不可用丢掉了（维数对不上），留着旧的等于把坏行留到下一轮。
-		 */
-		.onConflictDoUpdate({
-			target: [
-				embeddingCache.spaceId,
-				embeddingCache.model,
-				embeddingCache.textSha,
-			],
-			set: { embedding: sql`excluded.embedding` },
-		});
+	const space = embedSpace();
+	await db.insert(embeddingCache).values(
+		fresh.map(([text, embedding]) => ({
+			spaceId: space.spaceId,
+			model: space.model,
+			textSha: sha(text),
+			embedding,
+		})),
+	);
 }
 
 /** 按入参顺序返回向量。进度只报没命中缓存的那几种——要等端点的就是它们。 */

@@ -110,19 +110,23 @@ export async function read(client: CorpusClient): Promise<Table> {
 	return table;
 }
 
-/** 把这些词的决定写回表。 */
-async function write(client: CorpusClient, table: Table, words: string[]) {
-	if (words.length === 0) return;
-	const decisions = words.map((word) => table.get(word));
+/**
+ * 把这些决定写回表。
+ *
+ * 收的是**决定本身**，不是一串词名再回表里查：查得到查不到就得有个说法，而
+ * 「查不到时写个空标准词」是一行悄悄坏掉的对照表。`merge` 手里本来就有决定。
+ */
+async function write(client: CorpusClient, decisions: [string, Decision][]) {
+	if (decisions.length === 0) return;
 	await client.query(
 		`insert into skill_alias (word, canonical, reviewed_at)
 		 select * from unnest($1::text[], $2::text[], $3::timestamptz[])
 		 on conflict (word) do update
 		 set canonical = excluded.canonical, reviewed_at = excluded.reviewed_at`,
 		[
-			words,
-			decisions.map((decision) => decision?.canonical ?? ""),
-			decisions.map((decision) => decision?.reviewedAt ?? new Date()),
+			decisions.map(([word]) => word),
+			decisions.map(([, decision]) => decision.canonical),
+			decisions.map(([, decision]) => decision.reviewedAt),
 		],
 	);
 }
@@ -229,19 +233,20 @@ export function merge(
 	head: string,
 	aliases: string[],
 	now: Date,
-): string[] {
-	const changed = [head];
-	table.set(head, { canonical: head, reviewedAt: now });
+): [string, Decision][] {
+	const changed = new Map<string, Decision>();
+	const decide = (word: string) => {
+		const decision: Decision = { canonical: head, reviewedAt: now };
+		table.set(word, decision);
+		changed.set(word, decision);
+	};
+	decide(head);
 	for (const alias of aliases) {
 		for (const [word, decision] of table)
-			if (decision.canonical === alias) {
-				table.set(word, { canonical: head, reviewedAt: now });
-				changed.push(word);
-			}
-		table.set(alias, { canonical: head, reviewedAt: now });
-		changed.push(alias);
+			if (decision.canonical === alias) decide(word);
+		decide(alias);
 	}
-	return [...new Set(changed)];
+	return [...changed];
 }
 
 function promptInput(group: string[], count: Map<string, number>): string {
@@ -308,18 +313,21 @@ export async function review(
 		report,
 	);
 
-	const changed: string[] = [];
+	const changed = new Map<string, Decision>();
 	const merged: [string, string][] = [];
 	for (const [index, group] of circles.entries()) {
 		const text = inputs[index] as string;
 		if (!payloads.has(text)) continue;
 		const aliases = conform(payloads.get(text), group);
 		const head = group[0] as string;
-		changed.push(...merge(table, head, aliases, now));
+		for (const [word, decision] of merge(table, head, aliases, now))
+			changed.set(word, decision);
 		merged.push(...aliases.map((alias): [string, string] => [alias, head]));
 	}
-	await write(client, table, [...new Set(changed)]);
-	report(`  合并 ${merged.length} 个写法：`);
+	await write(client, [...changed]);
+	report(
+		merged.length ? `  合并 ${merged.length} 个写法：` : "  没有要合并的写法",
+	);
 	for (const [alias, canonical] of merged)
 		report(`    ${alias} → ${canonical}`);
 

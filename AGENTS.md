@@ -179,15 +179,16 @@
 
 - **服务端模块自己声明身份**：`#/db`、`#/search/search`、`#/search/phrases`、`#/server/llm`、
   `#/server/embed`、`#/server/rerank`、`#/server/chat`、`#/server/turn`、`#/server/import`、
-  `#/server/env`，以及 `#/corpus/` 下碰连接或端点的那几个（`embed`、`aliases`、`load`、
+  `#/server/endpoint`，以及 `#/corpus/` 下碰连接或端点的那几个（`embed`、`aliases`、`load`、
   `session`），顶上都有一行 `import "@tanstack/react-start/server-only"`。页面从它们取**值**
   会让构建失败，并打印完整 import 链。新写一个碰数据库连接或密钥的模块，就给它加上那一行。
   `#/db/schema` 不标（`drizzle-kit` 以 CJS 加载它，标了 `db:push` 起不来）；`#/corpus` 里的
   纯函数（`contract`、`pipeline`、`route-texts`、`extract`、`align`、`report`）也不标——
   夹具和页面用得上它们的类型与拼法。
-- **判据住在读它的那一侧。** `/imports` 上「这一行是跑着、失败了还是跑完了」写在页面里
-  （`routes/imports.tsx` 的 `runOutcome`），不写在 `#/server/import`：那个模块碰连接，
-  页面从它取一个函数就会把整条 import 链拖进客户端包，构建当场红。
+- **判据住在答得出它的那一侧。** `/imports` 上「这一行是跑着、中断了、失败了还是跑完了」
+  写在 `#/server/import`：判「正在跑」要问那把咨询锁此刻在谁手上，页面问不到；页面只把
+  结论译成字（`routes/imports.tsx` 的 `SAID`）。页面自己答得出的判据仍然留在页面——从服务端
+  模块取一个**值**会把整条 import 链拖进客户端包，构建当场红。
 - **服务端函数是可以被直接调用的端点。** 页面那侧的 `validateView` 管 URL，`search/params.ts` 的
   `sanitizeFilters` 管进程边界，两道都要有：少了后者，`minMonths: "abc"` 会进入数值比较并
   安静地筛掉所有人。

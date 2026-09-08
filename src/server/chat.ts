@@ -6,7 +6,9 @@
  * 写法归并）。它们各有各的模型、提示词、schema 与收窄，这里只有对三者都成立的
  * 事：把话发出去、要一份 JSON、控制并发、报进度，以及按身份键入的缓存。
  *
- * **缓存里存的是模型的原话**，收窄在调用方读出时做：改收窄规则不动缓存。缓存的
+ * **缓存里存的是模型给的那份 JSON**——按 schema 定过形（不合形的段不进缓存，
+ * 见 `ask`），但没有收窄：长度、枚举、去重这些判断在调用方读出时做，改收窄规则
+ * 不动缓存。缓存的
  * 键是模型名、系统提示词与 schema 的摘要加上那段文字：会改变回答的东西都在键里，
  * 改了提示词（含对齐提示词里列出的那棵序列树）旧回答自然失效，不用人记得换什么
  * 身份。同一段文字、同一份提示词、同一个模型，永远同一份回答。
@@ -22,12 +24,12 @@ import "@tanstack/react-start/server-only";
 import { createHash } from "node:crypto";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Report } from "#/corpus/report";
 import { db } from "#/db";
 import { completionCache } from "#/db/schema";
-import { positiveInt } from "./env";
+import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
 
 const BASE_URL = process.env.EXTRACT_BASE_URL;
 const API_KEY = process.env.EXTRACT_API_KEY;
@@ -49,6 +51,11 @@ const ENABLE_THINKING = process.env.EXTRACT_ENABLE_THINKING?.trim();
 
 const TIMEOUT_MS = positiveInt(process.env.EXTRACT_TIMEOUT_MS, 120_000);
 const CONCURRENCY = positiveInt(process.env.EXTRACT_CONCURRENCY, 4);
+/**
+ * 一段文字失败了再试几次。比查询侧多：一轮导入要跑几千段、几十分钟，为一次端点
+ * 抖动整轮重来的代价远高于多等几次。
+ */
+const RETRIES = 4;
 /**
  * 输出预算按「思考轨迹也算输出」给：推理模型在第一个字符之前先烧掉几百到上千
  * token。给小了它在思考阶段撞上限，返回空内容而不报错。
@@ -96,6 +103,8 @@ function getModel(model: string) {
 			baseURL: BASE_URL,
 			supportsStructuredOutputs: STRUCTURED,
 			...(API_KEY && { apiKey: API_KEY }),
+			// 超时装在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
+			fetch: timeoutFetch(TIMEOUT_MS),
 			// 兼容层的 provider 选项里没有 `enable_thinking`，它是网关自己的字段，
 			// 只能在请求体成形之后补上去——这个钩子正是为此存在的。
 			...(ENABLE_THINKING && {
@@ -157,22 +166,23 @@ async function cached(
 	return out;
 }
 
+/**
+ * 写的只有刚问回来的、库里刚查过没有的段，而同一时刻只有一次导入在跑
+ * （`corpus/session.ts` 的锁），所以主键不会撞：撞了就是这两条前提有一条破了，让它报错。
+ */
 async function store(identity: string, text: string, payload: unknown) {
 	await db
 		.insert(completionCache)
-		.values({ identity, textSha: sha(text), payload })
-		.onConflictDoUpdate({
-			target: [completionCache.identity, completionCache.textSha],
-			set: { payload: sql`excluded.payload` },
-		});
+		.values({ identity, textSha: sha(text), payload });
 }
 
 /**
  * 一段文字的回答；答不出合法 JSON 就说一句、放弃这一段。
  *
- * 瞬时故障（超时、5xx、限流）由 AI SDK 按指数退避重试，并遵守端点给的
- * `Retry-After`——这件事没有必要在这里再写一遍。持续失败仍然会把整轮导入带倒，
- * 那说明并发调太高或端点真的不可用，该改 `EXTRACT_CONCURRENCY`，不该由重试掩盖。
+ * 瞬时故障重试 `RETRIES` 次：5xx 与限流由 AI SDK 按指数退避、遵守 `Retry-After`
+ * 地试，超时由 `retryingTimeouts` 试（分工见 `endpoint.ts`）；每一次尝试各有一份
+ * `EXTRACT_TIMEOUT_MS` 的预算。持续失败仍然会把整轮导入带倒，那说明并发调太高
+ * 或端点真的不可用，该改 `EXTRACT_CONCURRENCY`，不该由重试掩盖。
  */
 async function ask(
 	model: string,
@@ -183,17 +193,18 @@ async function ask(
 	report: Report,
 ): Promise<unknown> {
 	try {
-		const { output } = await generateText({
-			model: getModel(model),
-			output: Output.object({ schema }),
-			system,
-			prompt: text,
-			// 这是一次翻译，不是创作：同一段文字每次给同一份回答
-			temperature: 0,
-			maxRetries: 4,
-			maxOutputTokens: MAX_OUTPUT_TOKENS,
-			timeout: TIMEOUT_MS,
-		});
+		const { output } = await retryingTimeouts(RETRIES, () =>
+			generateText({
+				model: getModel(model),
+				output: Output.object({ schema }),
+				system,
+				prompt: text,
+				// 这是一次翻译，不是创作：同一段文字每次给同一份回答
+				temperature: 0,
+				maxRetries: RETRIES,
+				maxOutputTokens: MAX_OUTPUT_TOKENS,
+			}),
+		);
 		return output;
 	} catch (error) {
 		if (!NoObjectGeneratedError.isInstance(error)) throw error;
@@ -207,7 +218,7 @@ async function ask(
 }
 
 /**
- * 对每段文字要一份 JSON；返回文字 → 模型原话，放弃的段不在里面。
+ * 对每段文字要一份 JSON；返回文字 → 模型给的 JSON，放弃的段不在里面。
  *
  * 先查缓存、再去重、最后才打端点；`what` 是进度和报错里的名字（「抽取」「对齐」）。
  */

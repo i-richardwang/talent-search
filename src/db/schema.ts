@@ -181,29 +181,23 @@ export const completionCache = pgTable(
  * `log` 就是命令行里会滚过去的那些行（拒绝了几段、合并了哪些写法、各表几行）。
  * 不另存一份计数：那些数就在最后几行里，两份表示迟早对不上。
  *
- * `finished_at is null` 表示还在跑。进程中途没了的话这一行会一直停在那里，
- * 所以下一次导入拿到串行锁之后先把这种行标成中断——**拿得到锁就说明没有任何
- * 一次导入还活着**，这是那一刻唯一能确定的事，也确实足够。
+ * `finished_at is null` 只说明**这一行没写完**，它分不出「正在跑」和「跑到一半
+ * 进程没了」。那件事不在这张表里：谁活着是连接的属性，问那把咨询锁
+ * （`src/corpus/session.ts` 的 `importRunning`）。两件事各有各的出处，于是没有
+ * 一个要靠人事后来对齐的中间状态。
  */
-export const importRun = pgTable(
-	"import_run",
-	{
-		id: serial("id").primaryKey(),
-		/** 这一次读的是哪个适配器（`TALENT_SOURCE`） */
-		source: text("source").notNull(),
-		startedAt: timestamp("started_at", { withTimezone: true })
-			.notNull()
-			.defaultNow(),
-		finishedAt: timestamp("finished_at", { withTimezone: true }),
-		log: text("log").array().notNull(),
-		/** 失败原因；成功的那一行是 null */
-		error: text("error"),
-	},
-	// 「最近几次导入」：按开始时间倒着取前几行
-	(t) => [index("import_run_recent").on(t.startedAt)],
-);
-
-export type ImportRun = typeof importRun.$inferSelect;
+export const importRun = pgTable("import_run", {
+	id: serial("id").primaryKey(),
+	/** 这一次读的是哪个适配器（`TALENT_SOURCE`） */
+	source: text("source").notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true })
+		.notNull()
+		.defaultNow(),
+	finishedAt: timestamp("finished_at", { withTimezone: true }),
+	log: text("log").array().notNull(),
+	/** 失败原因；成功的那一行是 null，中断的那一行也是——它根本没跑到写这一列 */
+	error: text("error"),
+});
 
 /**
  * 能力词的对照表：一个词对到哪个标准词，以及它上次被整理的时间。
