@@ -49,11 +49,11 @@ describe("最短时长只收正整数", () => {
 describe("文本字段", () => {
 	test("两头的空白不算内容", () => {
 		assert.equal(validateView({ org: "   " }).org, undefined);
-		assert.equal(validateView({ org: " 字节 " }).org, "字节");
+		assert.deepEqual(validateView({ org: " 字节 " }).org, ["字节"]);
 	});
 
 	test("任意长的 URL 文本不会原样进入检索", () => {
-		assert.equal(validateView({ org: "甲".repeat(300) }).org?.length, 200);
+		assert.equal(validateView({ org: "甲".repeat(300) }).org?.[0]?.length, 200);
 	});
 });
 

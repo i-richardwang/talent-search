@@ -192,7 +192,7 @@ describe("生效了几项", () => {
 	test("文本条件也算，没筛就是 0", () => {
 		assert.equal(activeCount(fields({}), textFilters({})), 0);
 		assert.equal(
-			activeCount(fields({ org: "字节" }), textFilters({ org: "字节" })),
+			activeCount(fields({ org: ["字节"] }), textFilters({ org: ["字节"] })),
 			1,
 		);
 	});
@@ -208,7 +208,7 @@ describe("控件侧", () => {
 				"经历来源",
 				"经历时长",
 				"入职前公司",
-				"入职前能力",
+				"入职前技能",
 				"招聘渠道",
 				"学历",
 			],

@@ -228,9 +228,7 @@ function Workbench() {
 							onChange={updateView}
 							onEditQuery={editQuery}
 							onMore={() => updateView(morePage(view))}
-							onReviseQuery={(requirements) =>
-								reviseSpec({ ...spec, requirements })
-							}
+							onReviseQuery={(terms) => reviseSpec({ terms })}
 							outcome={outcome}
 							spec={spec}
 							strong={Boolean(view.strong)}

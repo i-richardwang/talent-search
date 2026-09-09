@@ -22,15 +22,14 @@ describe("提交查询的服务端边界", () => {
 				input: {
 					kind: "spec",
 					spec: {
-						requirements: [
+						terms: [
 							{
-								members: [{ text: "经理", tier: "said" }],
+								field: "experience",
 								mode: "boost",
-								off: true,
+								values: ["经理"],
+								off: "wide",
 							},
 						],
-						scope: {},
-						notices: [{ kind: "wide", term: "经理" }],
 					},
 				},
 			}),
@@ -39,15 +38,14 @@ describe("提交查询的服务端边界", () => {
 				input: {
 					kind: "spec",
 					spec: {
-						requirements: [
+						terms: [
 							{
-								members: [{ text: "经理", tier: "said" }],
+								field: "experience",
 								mode: "boost",
-								off: true,
+								values: ["经理"],
+								off: "wide",
 							},
 						],
-						scope: {},
-						notices: [{ kind: "wide", term: "经理" }],
 					},
 				},
 			},

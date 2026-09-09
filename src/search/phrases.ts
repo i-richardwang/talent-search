@@ -241,20 +241,19 @@ export async function withAdmission<T>(
 }
 
 /**
- * 命中的说法摆成一张 VALUES 表 `(term_idx, member_idx, phrase_id, relevance, weight)`，
- * 供取数 SQL 沿 `experience_phrase` 走到经历段。`weight` 是这个说法的权重
- * （`MEMBER_TIER_WEIGHTS`），只给「同一段几个说法都命中时留哪一个」的排序用；
- * 不打分的调用方传 1。一行都没有时返回 null——空的 VALUES 不是合法 SQL，
- * 而且没有命中就没有取数可做。
+ * 命中的说法摆成一张 VALUES 表 `(term_idx, value_idx, phrase_id, relevance)`，
+ * 供取数 SQL 沿 `experience_phrase` 走到经历段。`value_idx` 是命中的是这条条件的
+ * 第几个取值，只为证据行能说出「命中的是哪个词」。一行都没有时返回 null——
+ * 空的 VALUES 不是合法 SQL，而且没有命中就没有取数可做。
  */
 export function admittedTable(
-	rows: { termIdx: number; memberIdx: number; hit: Admitted; weight: number }[],
+	rows: { termIdx: number; valueIdx: number; hit: Admitted }[],
 ) {
 	if (rows.length === 0) return null;
 	return sql`(values ${sql.join(
 		rows.map(
 			(r) =>
-				sql`(${r.termIdx}::int, ${r.memberIdx}::int, ${r.hit.phraseId}::int, ${r.hit.relevance}::float, ${r.weight}::float)`,
+				sql`(${r.termIdx}::int, ${r.valueIdx}::int, ${r.hit.phraseId}::int, ${r.hit.relevance}::float)`,
 		),
 		sql`, `,
 	)})`;

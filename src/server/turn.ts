@@ -6,14 +6,9 @@ import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
 import { allDropped, toSpec } from "#/search/intent";
-import { type Requirement, withOff } from "#/search/requirement";
 import { probeWide, vocabulary } from "#/search/search";
-import {
-	normalizeSpec,
-	type QueryInput,
-	type SearchNotice,
-	type SearchSpec,
-} from "#/search/spec";
+import type { QueryInput, SearchSpec } from "#/search/spec";
+import { type Term, withOff } from "#/search/term";
 import { understand } from "./llm";
 
 function newId() {
@@ -88,46 +83,35 @@ export async function createTurn(
 }
 
 /**
- * 给这句话新解析出的词量一遍宽度：命中的人多到几乎不筛人的，**可见地**停用，
- * 并留下一条说明成因的注解。
+ * 给这句话新写出的经历词量一遍宽度：命中的人多到几乎不筛人的取值丢掉；
+ * 一条条件的取值全宽，整条**可见地**停用，成因记在 `off` 上。
  *
- * 用户自己的说法太宽，停整条要求并注明；模型补的变体太宽，只丢那个变体，
- * 不注明——它是替用户补的、用户没见过，一个用户没说过的宽词不该把整条要求
- * 停掉，也没有「你说的词太宽」可解释。
+ * 一条条件里几个取值同权，宽的那个丢掉不影响其余取值找人；全宽才说明这条
+ * 条件本身几乎不筛人，那得让用户看见、换词，或者坚持启用——检索层不做无声拦截。
+ * 两支看起来不对称，其实是同一条规则：**这份查询还没有人看过。** 它是模型
+ * 刚写出来的，量宽是写这条搜索的最后一步，丢一个取值和模型少写一个取值是
+ * 同一件事，落库之后 chip 上写的就是搜的。整条停用则不同——一条条件消失和
+ * 一个取值消失不一样，前者是「你说的这件事没法用来找人」，得说出来。
  *
- * **只量正向要求的词。** 宽度这把尺答的是「它还筛不筛得掉人」，那是准入的问题；
+ * **只量正向条件的词。** 宽度这把尺答的是「它还筛不筛得掉人」，那是准入的问题；
  * 排除词答的是「哪一段不作数」，命中面广恰恰是它在起作用，量它等于用一把
  * 反向的尺去停掉一条正在生效的条件。门槛也对不上：`probeWide` 按
  * `RELEVANCE_MIN` 量，而排除按更高的 `RELEVANCE_MIN_EXCLUDE` 判——
  * 量出来的宽根本不是它搜出来的宽。
- *
- * 成因落在 notices 上，不落在要求上：宽是**语料**的事实，会随语料变化后失效，
- * 而要求是记录里不可变的那一半（论证在 `requirement.ts`）。
  */
-async function benchWide(
-	requirements: Requirement[],
-): Promise<{ requirements: Requirement[]; notices: SearchNotice[] }> {
-	const admitting = requirements.filter((r) => r.mode !== "exclude");
+async function benchWide(terms: Term[]): Promise<Term[]> {
+	const admitting = terms.filter(
+		(t) => t.field === "experience" && t.mode !== "exclude",
+	);
 	const wide = await probeWide([
-		...new Set(admitting.flatMap((r) => r.members.map((m) => m.text))),
+		...new Set(admitting.flatMap((t) => t.values)),
 	]);
-	const notices: SearchNotice[] = [];
-	const benched = requirements.map((r): Requirement => {
-		if (r.mode === "exclude") return r;
-		const [first, ...rest] = r.members;
-		const kept: Requirement = {
-			...r,
-			members: [
-				first,
-				...rest.filter((m) => m.tier === "said" || !wide.has(m.text)),
-			],
-		};
-		if (!r.members.some((m) => m.tier === "said" && wide.has(m.text)))
-			return kept;
-		notices.push({ kind: "wide", term: first.text });
-		return withOff(kept, true);
+	return terms.map((t): Term => {
+		if (t.field !== "experience" || t.mode === "exclude") return t;
+		const [first, ...rest] = t.values.filter((v) => !wide.has(v));
+		if (!first) return withOff(t, "wide");
+		return { ...t, values: [first, ...rest] };
 	});
-	return { requirements: benched, notices };
 }
 
 /**
@@ -148,21 +132,16 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	// 就占着池里的一条连接一分钟。
 	const vocab = await vocabulary();
 	const raw = await understand(rawText, vocab);
-	const understood = toSpec(raw, rawText, vocab);
-	// 模型给了片段、收窄后一个不剩：这是模型那一跳失败，不是一句没有条件的话。
+	const understood = toSpec(raw, vocab);
+	// 模型给了条件、收窄后一个不剩：这是模型那一跳失败，不是一句没有条件的话。
 	// 抛出来和超时、限流走同一条路——记录停在「待理解」，界面画错误与重试。
 	if (allDropped(raw, understood))
 		throw new Error(
-			`查询理解给出的片段全部不合规，收窄后一个不剩：${JSON.stringify(
-				(raw as { items?: unknown }).items,
+			`查询理解给出的条件全部不合规，收窄后一个不剩：${JSON.stringify(
+				(raw as { terms?: unknown }).terms,
 			).slice(0, 400)}`,
 		);
-	const benched = await benchWide(understood.requirements);
-	const spec = normalizeSpec({
-		...understood,
-		requirements: benched.requirements,
-		notices: [...understood.notices, ...benched.notices],
-	});
+	const spec: SearchSpec = { terms: await benchWide(understood.terms) };
 
 	await db
 		.update(searchTurn)

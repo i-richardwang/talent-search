@@ -16,7 +16,8 @@
  */
 import { narrowsPopulation } from "./params";
 import type { SearchFilters, TermPlan } from "./result";
-import { type SearchSpec, unsupportedOf } from "./spec";
+import type { SearchSpec } from "./spec";
+import { experienceTerms, scopeOf } from "./term";
 
 /**
  * 取数撞上保险丝。它是检索自己才知道的一件事——`emptyReason` 推不出来，所以
@@ -37,18 +38,18 @@ export type EmptyReason =
 	| { kind: "allDisabled" }
 	/** 只写了排除词：它自己不产出候选人。 */
 	| { kind: "excludeOnly" }
-	/** 只有不支持的条件，一条都没生效。 */
-	| { kind: "unsupportedOnly" }
 	/** 一个条件都没解析出来。 */
 	| { kind: "noConditions" }
-	/** 只有结构化范围，范围内没有人。 */
+	/** 只有必须的结构化范围，范围内没有人。 */
 	| { kind: "scopeEmpty" }
 	/** 证据要求把人滤空了；`without` 是关掉它能看到多少人。 */
 	| { kind: "strongEmpty"; without: number }
 	/** 当前筛选下没人。清掉筛选就能看到。 */
 	| { kind: "filtered" }
 	/** 没有人满足全部必须条件。 */
-	| { kind: "unmet" };
+	| { kind: "unmet" }
+	/** 没有一条条件是必须的，而没有人沾上任何一条。 */
+	| { kind: "noHits" };
 
 /**
  * 这次检索为什么没给出人。有人就是 `null`——判断「要不要画空态」和判断
@@ -57,7 +58,7 @@ export type EmptyReason =
 export function emptyReason(input: {
 	spec: SearchSpec;
 	filters: SearchFilters;
-	/** 可执行的正向要求（停用与排除都已经摘掉）。 */
+	/** 可执行的正向条件（停用与排除都已经摘掉）。 */
 	terms: TermPlan[];
 	/** 通过全部必须条件的人数。 */
 	total: number;
@@ -71,30 +72,31 @@ export function emptyReason(input: {
 	if (total > 0) return null;
 
 	// **跑过一次检索，就报这次检索的结果。** 下面那几支答的是「什么都没能产出
-	// 候选人」，而语义要求和结构化范围各自都是一份完整的候选定义——只要有一份
+	// 候选人」，而经历条件和结构化范围各自都是一份完整的候选定义——只要有一份
 	// 在场，检索就真的跑过了，成因得从它找出来的那批人里说。顺序反过来的话，
 	// 「只看入职前经历，不要实习」会被报成「你只写了排除词」，而那句话的出路
-	// （补一条要求）和真正的出路（放宽范围）正好不是一回事。
-	if (terms.length > 0) {
-		if (filters.strong && withoutStrong > 0)
+	// （补一条条件）和真正的出路（放宽范围）正好不是一回事。
+	const ran =
+		terms.length > 0 ||
+		narrowsPopulation(scopeOf(spec.terms, "must")) ||
+		narrowsPopulation(scopeOf(spec.terms, "boost"));
+	if (ran) {
+		if (terms.length > 0 && filters.strong && withoutStrong > 0)
 			return { kind: "strongEmpty", without: withoutStrong };
 		if (narrowsPopulation(filters)) return { kind: "filtered" };
-		return { kind: "unmet" };
+		// 出路跟着「有没有必须的东西」走：有必须词就是它们没被同时满足，
+		// 只有必须范围就是范围里没人；什么都不是必须的（只有加分词、只有偏好
+		// 的范围）就是没有人沾上任何一条，改法是换词，不是放宽——没有可放宽的。
+		if (terms.some((t) => t.mode === "must")) return { kind: "unmet" };
+		if (terms.length === 0 && narrowsPopulation(scopeOf(spec.terms, "must")))
+			return { kind: "scopeEmpty" };
+		return { kind: "noHits" };
 	}
-	if (
-		narrowsPopulation(spec.scope) ||
-		(spec.prefer !== undefined && narrowsPopulation(spec.prefer))
-	)
-		return narrowsPopulation(filters)
-			? { kind: "filtered" }
-			: { kind: "scopeEmpty" };
 
 	// 什么都没跑：条件要么被自己停用了，要么本来就产不出候选人。
-	const { requirements } = spec;
 	// 排除词的停用不算「我把条件停了」：它本来就不产出人
-	if (requirements.some((r) => r.off && r.mode !== "exclude"))
+	if (spec.terms.some((t) => t.off && t.mode !== "exclude"))
 		return { kind: "allDisabled" };
-	if (requirements.length > 0) return { kind: "excludeOnly" };
-	if (unsupportedOf(spec).length > 0) return { kind: "unsupportedOnly" };
+	if (experienceTerms(spec.terms).length > 0) return { kind: "excludeOnly" };
 	return { kind: "noConditions" };
 }

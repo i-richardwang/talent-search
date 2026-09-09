@@ -22,14 +22,15 @@ import { Toggle } from "#/components/ui/toggle";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { bestHitPerTerm } from "#/search/evidence";
-import { activeRequirements, type Requirement } from "#/search/requirement";
-import type {
-	RankedResult,
-	SearchOutcome,
-	SearchResult,
-	TermPlan,
+import {
+	type RankedResult,
+	type SearchOutcome,
+	type SearchResult,
+	type TermPlan,
+	termPlans,
 } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
+import type { Term } from "#/search/term";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 import { emptyState } from "../-lib/empty-state";
 import type { View } from "../-lib/view-params";
@@ -219,7 +220,7 @@ export function ResultList({
 	strong: boolean;
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：给一份新的证据要求，派生一条新记录。 */
-	onReviseQuery: (next: Requirement[]) => void;
+	onReviseQuery: (next: Term[]) => void;
 	onEditQuery: () => void;
 }) {
 	const { results, terms, order, total } = outcome;
@@ -230,9 +231,10 @@ export function ResultList({
 		if (!loading && results.length > 0) lastRows.current = results.length;
 	}, [loading, results.length]);
 
-	// 这次查询会画几条证据，从记录上算（见 `pendingTerms`）。骨架屏的块高和表头
-	// 右边那一簇都读它——两处都是「结果回来之前就得把位子占好」。
-	const pending = pendingTerms(spec.requirements);
+	// 这次查询会画几条证据，从记录上算，不等服务端返回 `terms`：改筛选那一帧
+	// 服务端还是旧值，骨架屏的块高会先跳一下再回来。骨架屏的块高和表头右边
+	// 那一簇都读它——两处都是「结果回来之前就得把位子占好」。
+	const pending = termPlans(spec.terms);
 
 	const head = (
 		<ResultHeader
@@ -299,7 +301,7 @@ export function ResultList({
 		// 成因由检索层给（`search/empty.ts`），这里只把它翻译成一句话和一个按钮；
 		// 检索还没跑（换查询的头一帧）时按「还没有条件」说。
 		const state = emptyState(outcome.empty ?? { kind: "noConditions" }, {
-			requirements: spec.requirements,
+			terms: spec.terms,
 			onChange,
 			onReviseQuery,
 			onEditQuery,
@@ -449,27 +451,5 @@ export function ResultList({
 				</div>
 			)}
 		</div>
-	);
-}
-
-/**
- * 这次查询要画哪几条证据。
- *
- * 取自查询记录上的要求，不等服务端返回 `terms`：改筛选那一帧服务端还是
- * 旧值，骨架屏的块高会先跳一下再回来。骨架只数条数，所以说法只放主词即可。
- *
- * 排除词和停用的词都不占一行：前者不产出证据，后者根本不参与这次检索。
- */
-function pendingTerms(requirements: readonly Requirement[]): TermPlan[] {
-	return activeRequirements(requirements).flatMap((r) =>
-		r.mode === "exclude"
-			? []
-			: [
-					{
-						term: r.members[0].text,
-						members: [r.members[0]],
-						mode: r.mode,
-					} satisfies TermPlan,
-				],
 	);
 }

@@ -1,150 +1,58 @@
 import type { Picked } from "./dimensions";
-import { narrowsPopulation, parsePopulation } from "./params";
-import { boundedText, type Requirement, requirementsOf } from "./requirement";
+import { type Term, termsOf } from "./term";
 
 /**
- * 一条查询的完整含义。它是查询记录的唯一事实源，也是查询台编辑、最近搜索回放、
- * 搜索执行共同使用的边界；不能执行的部分同样属于这份含义，不能散落在旁路字段里。
+ * 一条查询的完整含义：几条条件，就这些。它是查询记录的唯一事实源，也是
+ * 查询台编辑、最近搜索回放、搜索执行共同使用的边界。形状与不变量见 `term.ts`。
+ *
+ * 裹一层对象而不是直接存数组：记录里那一列、RPC 上那个入参读出来就该是一份
+ * 有名字的东西，而不是一个不知道装的是什么的数组。
  */
 export type SearchSpec = {
-	/** 证据要求，按句子里出现的顺序。形状与不变量见 `requirement.ts`。 */
-	requirements: Requirement[];
-	scope: SearchScope;
-	/**
-	 * 「最好是……」的那部分范围：同一批维度，语气是偏好而不是限制。
-	 *
-	 * `scope` 收窄人群，这里只改名次：满足的人乘一次 `BOOST_WEIGHT`，不满足的
-	 * 人留在名单里。招聘里「最好是字节来的」和「必须字节来的」不是一句话，而
-	 * 公司名进不了要求（专有名词不进向量），没有这一栏它就只能被读成硬条件
-	 * 或者被丢进「没处放的条件」。形状和 `scope` 相同，加一维两边一起长。
-	 *
-	 * 没有偏好的查询身上不长这个字段：默认状态不该有记号，`normalizeSpec` 会
-	 * 把空的摘掉——同一件事有两种写法，逐字比较就会比出「变了」。
-	 */
-	prefer?: SearchScope;
-	notices: SearchNotice[];
+	/** 条件，按模型写出的顺序。 */
+	terms: Term[];
 };
 
 /**
- * 查询自身的结构化范围。
+ * 收窄人群的那批条件，**执行用**的形状。
  *
- * 它和 URL 上的筛选是**同一批维度的两种生命周期**：这里的条件来自用户原话、
- * 随 turnId 保存，那边的来自地址栏、一次性，搜索时取交集。所以两者形状相同
- * （`Picked`，见 `dimensions.ts`）：同一维在两处各写一份形状的话，加一维就得
- * 手工重演两遍，而漏掉的那一遍不会报错，只会让那一维在其中一条生命周期里
- * 安静地失效。
+ * 它和 URL 上的筛选是同一批维度的两种生命周期：查询自带的范围由 `scopeOf`
+ * 从条件里摊出来、随记录保存，URL 上的来自地址栏、一次性，搜索时取交集。
+ * 两者形状相同（`Picked`，见 `dimensions.ts`）：同一维在两处各写一份形状的话，
+ * 加一维就得手工重演两遍，而漏掉的那一遍不会报错，只会让那一维在其中一条
+ * 生命周期里安静地失效。
  */
 export type SearchScope = Picked & {
 	/**
-	 * 待过的部门或公司名里含这几个字。
+	 * 待过的部门或公司名里含这几个字之一。
 	 *
 	 * `org` 与 `school` 是**精确文本条件**，不是维度：公司名、学校名是专有名词，
 	 * 永远不进向量（「字节」和「腾讯」在向量空间里是邻居）。它们答的是「这个人
 	 * 有没有在名字含 X 的地方待过 / 是不是 X 毕业的」，按人判，在取数的 SQL 里生效。
 	 */
-	org?: string;
-	/** 学校名里含这几个字。和 `org` 同一类。 */
-	school?: string;
+	org?: readonly string[];
+	/** 学校名里含这几个字之一。和 `org` 同一类。 */
+	school?: readonly string[];
 };
-
-/**
- * 关于**这一次理解**的注解。两种都不是查询条件本身，而是「这句话被读成这样」
- * 的旁注：屏幕上它们是 chips 的脚注，不是一条要求。
- *
- * `wide` 记的是「这个词在当前语料里命中的人太多」（`WIDE_SHARE`）。它住在
- * 这里而不是 chip 上：那是关于语料的事实，会随语料变化后失效，而 chips 是
- * 记录里不可变的那一半。词是否因此没参与检索，由 chip 自己的 `off` 说。
- */
-export type SearchNotice =
-	| { kind: "unsupported"; text: string }
-	| { kind: "wide"; term: string };
 
 export type QueryInput =
 	| { kind: "sentence"; text: string }
 	| { kind: "spec"; spec: SearchSpec };
 
 export function emptySpec(): SearchSpec {
-	return { requirements: [], scope: {}, notices: [] };
-}
-
-export function unsupportedOf(spec: SearchSpec) {
-	return spec.notices
-		.filter(
-			(n): n is Extract<SearchNotice, { kind: "unsupported" }> =>
-				n.kind === "unsupported",
-		)
-		.map((n) => n.text);
-}
-
-/** 这次理解里被判定为太宽的词。界面据此解释「它为什么是停用的」。 */
-export function wideTerms(spec: SearchSpec) {
-	return spec.notices.flatMap((n) => (n.kind === "wide" ? [n.term] : []));
+	return { terms: [] };
 }
 
 /** 这份查询说了点什么吗。说了才值得落一条记录、跑一次检索。 */
 export function hasMeaning(spec: SearchSpec) {
-	return (
-		spec.requirements.length > 0 ||
-		narrowsPopulation(spec.scope) ||
-		(spec.prefer !== undefined && narrowsPopulation(spec.prefer)) ||
-		spec.notices.length > 0
-	);
+	return spec.terms.length > 0;
 }
 
 /**
- * 一份理解 → 一份可执行的查询含义。要求走一遍收窄（同一个词只留一枚），
- * 注解按内容去重。模型可能把同一个意思说两遍，而屏幕上重复的两枚 chip
- * 既解释不清也删不干净。
- *
- * **注解只解释在场的东西**：指向已经不在查询里的词的 `wide` 注解在这里被丢掉。
- * 用户删掉那枚 chip 之后，脚注里还留着一句解释它为什么被停用的话，说的是一个
- * 屏幕上不存在的东西。
+ * 不可信的一份查询 → 收窄后的查询。RPC 入参走它，模型输出也走它：两边的
+ * 不可信程度一样，规则只有 `termsOf` 那一份。
  */
-export function normalizeSpec(spec: SearchSpec): SearchSpec {
-	const requirements = requirementsOf(spec.requirements);
-	const present = new Set(requirements.map((r) => r.members[0].text));
-	const notices = spec.notices.filter(
-		(n, i, all) =>
-			(n.kind !== "wide" || present.has(n.term)) &&
-			all.findIndex((x) => sameNotice(x, n)) === i,
-	);
-	return {
-		requirements,
-		scope: { ...spec.scope },
-		...(spec.prefer &&
-			narrowsPopulation(spec.prefer) && { prefer: { ...spec.prefer } }),
-		notices,
-	};
-}
-
-function sameNotice(a: SearchNotice, b: SearchNotice) {
-	if (a.kind !== b.kind) return false;
-	if (a.kind === "unsupported" && b.kind === "unsupported")
-		return a.text === b.text;
-	return a.kind === "wide" && b.kind === "wide" && a.term === b.term;
-}
-
-/** 不可信的 RPC 入参 → 完整查询；所有查询编辑都在这一边界整体收窄。 */
 export function sanitizeSpec(raw: unknown): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;
-	const requirements = requirementsOf(value.requirements);
-	const scope = parsePopulation((value.scope ?? {}) as Record<string, unknown>);
-	const prefer = parsePopulation(
-		(value.prefer ?? {}) as Record<string, unknown>,
-	);
-
-	const notices: SearchNotice[] = [];
-	for (const item of Array.isArray(value.notices) ? value.notices : []) {
-		const x = (item ?? {}) as Record<string, unknown>;
-		if (x.kind === "unsupported") {
-			const message = boundedText(x.text);
-			if (message) notices.push({ kind: "unsupported", text: message });
-		}
-		if (x.kind === "wide") {
-			const term = boundedText(x.term);
-			if (term) notices.push({ kind: "wide", term });
-		}
-	}
-
-	return normalizeSpec({ requirements, scope, prefer, notices });
+	return { terms: termsOf(value.terms) };
 }

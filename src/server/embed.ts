@@ -205,7 +205,7 @@ export async function embed(
 	if (texts.length === 0) return [];
 	await ensureSpace(store);
 	const out = new Array<number[]>(texts.length);
-	// 同一个词可能出现在好几个位置（几条要求并列同一个说法），一次嵌入填全部
+	// 同一个词可能出现在好几个位置（几条条件写了同一个取值），一次嵌入填全部
 	const pending = new Map<string, number[]>();
 	for (const [index, text] of texts.entries()) {
 		const cached = cache.get(text);

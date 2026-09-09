@@ -9,27 +9,64 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { StrengthLegend } from "#/components/evidence";
+import { ROUTE_LABEL, StrengthLegend } from "#/components/evidence";
 import { ZeroState } from "#/routes/-components/zero-state";
-import { scopeEntries } from "#/routes/-lib/scope-label";
+import { termLabel, valueLabel } from "#/routes/-lib/term-label";
 import { QueryDeck } from "#/routes/s/$turnId/-components/query-deck";
 import {
 	ResultHeader,
 	ResultList,
 } from "#/routes/s/$turnId/-components/result-list";
 import { emptyFacets } from "#/search/result";
+import type { Term } from "#/search/term";
 import { visibleText } from "./render";
 
 const seen = (node: React.ReactNode) => visibleText(renderToStaticMarkup(node));
 
 describe("产品文案使用常规 SaaS 语言", () => {
-	test("查询范围使用稳定的人话与顺序，不把存储值露给最近搜索", () => {
-		const labels = scopeEntries({ level: ["P7"], kind: "external" }).map(
-			(entry) => entry.label,
-		);
-		// 顺序就是维度表里的声明顺序，不是范围对象上碰巧的字段序
-		assert.deepEqual(labels, ["当前职级 · P7", "入职前经历"]);
+	test("范围条件使用稳定的人话，不把存储值露给最近搜索", () => {
+		const labels = [
+			termLabel({ field: "level", mode: "must", values: ["P7", "P8"] }),
+			termLabel({ field: "kind", mode: "must", values: ["external"] }),
+			termLabel({ field: "org", mode: "boost", values: ["字节"] }),
+		];
+		// 几个取值只念代表词：其余的收在菜单里，chip 上有「还有」的记号
+		assert.deepEqual(labels, ["当前职级 · P7", "入职前经历", "组织 · 字节"]);
 		assert.doesNotMatch(labels.join(" "), /external/);
+		assert.equal(
+			termLabel({ field: "minMonths", mode: "must", values: ["24"] }),
+			"一份经历至少 2 年",
+		);
+		assert.equal(
+			termLabel({ field: "companyTag", mode: "must", values: ["大厂"] }),
+			"入职前公司 · 大厂",
+		);
+		assert.deepEqual(
+			[
+				termLabel({ field: "education", mode: "must", values: ["硕士"] }),
+				termLabel({ field: "recruitment", mode: "must", values: ["社招"] }),
+				termLabel({ field: "school", mode: "must", values: ["清华"] }),
+				termLabel({ field: "experience", mode: "must", values: ["算法"] }),
+			],
+			["学历 · 硕士", "招聘渠道 · 社招", "学校 · 清华", "算法"],
+		);
+		// 菜单里的取值出现在已经写明了维度的地方，只念取值本身
+		const level: Term = { field: "level", mode: "must", values: ["P7", "P8"] };
+		assert.equal(valueLabel(level, "P8"), "P8");
+		assert.equal(
+			valueLabel(
+				{ field: "kind", mode: "must", values: ["external"] },
+				"external",
+			),
+			"入职前经历",
+		);
+		assert.doesNotMatch(
+			[
+				termLabel({ field: "minMonths", mode: "must", values: ["24"] }),
+				termLabel({ field: "companyTag", mode: "must", values: ["大厂"] }),
+			].join(" "),
+			/单段|公司档/,
+		);
 	});
 
 	test("首页不写口号、不写对话式提问，也不复述自己是干什么的", () => {
@@ -55,13 +92,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				planned
 				strong={false}
 				strongOn={0}
-				terms={[
-					{
-						term: "算法",
-						members: [{ text: "算法", tier: "said" }],
-						mode: "must",
-					},
-				]}
+				terms={[{ term: "算法", values: ["算法"], mode: "must" }]}
 				total={12}
 			/>,
 		);
@@ -89,7 +120,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onRetry={() => {}}
 				ref={{ current: null }}
 				rawText="最好懂算法、不要实习"
-				spec={{ requirements: [], scope: {}, notices: [] }}
+				spec={{ terms: [] }}
 			/>,
 		);
 		assert.match(text, /没能理解这句话/);
@@ -106,7 +137,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onQuery={() => true}
 				ref={{ current: null }}
 				rawText="做过线下渠道运营、带过团队的人"
-				spec={{ requirements: [], scope: {}, notices: [] }}
+				spec={{ terms: [] }}
 			/>,
 		);
 		assert.match(text, /做过线下渠道运营、带过团队的人/);
@@ -133,24 +164,14 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				strongOn={0}
 				outcome={{
 					order: "relevance",
-					terms: [
-						{
-							term: "量子炼金",
-							members: [{ text: "量子炼金", tier: "said" }],
-							mode: "must",
-						},
-					],
+					terms: [{ term: "量子炼金", values: ["量子炼金"], mode: "must" }],
 					results: [],
 					facets: emptyFacets(),
 					total: 0,
 					empty: { kind: "unmet" },
 				}}
 				spec={{
-					requirements: [
-						{ members: [{ text: "量子炼金", tier: "said" }], mode: "must" },
-					],
-					scope: {},
-					notices: [],
+					terms: [{ field: "experience", mode: "must", values: ["量子炼金"] }],
 				}}
 				turnId="t1"
 			/>,
@@ -167,5 +188,11 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.match(text, /部门或公司/);
 		assert.match(text, /简历原文/);
 		assert.doesNotMatch(text, /受控字段|无校验|可直接确认/);
+		assert.equal(ROUTE_LABEL.skill, "技能");
+		assert.equal(ROUTE_LABEL.did, "工作内容");
+		assert.doesNotMatch(
+			Object.values(ROUTE_LABEL).join(" "),
+			/能力词|做过的事/,
+		);
 	});
 });

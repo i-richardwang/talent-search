@@ -2,11 +2,18 @@
  * 不可信入参 → 可信的检索条件。维度那七项归 `dimensions.ts` 的 `parsePicked`，
  * 这里只收不属于那一族的几项。
  */
-import { DIM_KEYS, parsePicked } from "./dimensions";
-import { boundedText } from "./requirement";
+import { DIM_KEYS, parsePicked, textList } from "./dimensions";
 import type { SearchFilters } from "./result";
 import type { SearchScope } from "./spec";
 import { RESULT_MAX, RESULT_PAGE } from "./weights";
+
+/**
+ * 公司名 / 学校名的取值。URL 上的只有手打一种来源，一个名字不必写成列表；
+ * 清洗和上限与维度的取值列表同一份。
+ */
+function nameList(raw: unknown) {
+	return textList(Array.isArray(raw) ? raw : [raw]);
+}
 
 /**
  * 不可信入参 → 那批收窄人群的条件。
@@ -20,9 +27,9 @@ import { RESULT_MAX, RESULT_PAGE } from "./weights";
  */
 export function parsePopulation(raw: Record<string, unknown>): SearchScope {
 	const pick: SearchScope = { ...parsePicked(raw) };
-	const org = boundedText(raw.org);
+	const org = nameList(raw.org);
 	if (org) pick.org = org;
-	const school = boundedText(raw.school);
+	const school = nameList(raw.school);
 	if (school) pick.school = school;
 	return pick;
 }

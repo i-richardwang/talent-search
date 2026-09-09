@@ -1,5 +1,5 @@
 /**
- * 检索的取数层：把几条要求变成「哪些经历段以多高的相似度命中了哪条要求」
+ * 检索的取数层：把几条条件变成「哪些经历段以多高的相似度命中了哪条条件」
  * 这一份事实，交给 `rank.ts` 去打分、排序、算分面。
  *
  * 这个文件里没有任何权重、没有 AND 判定、没有分面口径——它只回答「命中了什么」。
@@ -9,7 +9,7 @@
  * 各自相关度多少，由 `phrases.ts` 回答（向量召回 + 重排判定）；这里拿到那批
  * 「命中的说法」，沿 `experience_phrase` 走到经历段和人。「算法」因此找得到
  * 岗位写着「推荐算法工程师」的段；找不到的那些（只写着「算法」的人对「深度学习」）
- * 由查询理解补的变体去够，见 `requirement.ts` 的 `MemberTier`。
+ * 由查询理解写进同一条条件的几个取值去够，见 `term.ts`。
  *
  * 取数**站在一个语料快照上**，但准入不在快照里：判定要打两个模型端点，而快照占着
  * 池里的一条连接，押着它等模型等于让一次端点抖动耗光连接池。所以这里
@@ -45,7 +45,6 @@ import {
 	rank,
 	rankPopulation,
 } from "./rank";
-import { activeRequirements } from "./requirement";
 import {
 	emptyFacets,
 	type Facets,
@@ -55,12 +54,13 @@ import {
 	type SearchFilters,
 	type SearchOutcome,
 	type TermPlan,
+	termPlans,
 } from "./result";
 import type { SearchScope, SearchSpec } from "./spec";
+import { activeTerms, experienceTerms, scopeOf } from "./term";
 import {
 	FACT_MAX,
 	HITS_PER_TERM,
-	MEMBER_TIER_WEIGHTS,
 	RELEVANCE_MIN,
 	RELEVANCE_MIN_EXCLUDE,
 	RESULT_PAGE,
@@ -82,6 +82,16 @@ function escapeLike(term: string) {
 
 function like(term: string) {
 	return sql`${`%${escapeLike(term)}%`}`;
+}
+
+/** 这几列里任一列含这几个名字里任一个。 */
+function anyLike(names: readonly string[], columns: SQL[]) {
+	return sql.join(
+		names.flatMap((name) =>
+			columns.map((column) => sql`${column} ilike ${like(name)}`),
+		),
+		sql` or `,
+	);
 }
 
 /**
@@ -107,16 +117,15 @@ export async function probeWide(texts: string[]): Promise<Set<string>> {
 			texts.flatMap((t, i) =>
 				(admitted.get(t) ?? []).map((hit) => ({
 					termIdx: i,
-					memberIdx: 0,
+					valueIdx: 0,
 					hit,
-					weight: 1,
 				})),
 			),
 		);
 		if (!table) return new Set<string>();
 		const wide = await store.execute<{ term_idx: number }>(sql`
 			with total as (select count(distinct emp_id)::float as n from experience),
-			q(term_idx, member_idx, phrase_id, relevance, weight) as ${table}
+			q(term_idx, value_idx, phrase_id, relevance) as ${table}
 			select q.term_idx from q
 			join experience_phrase ep on ep.phrase_id = q.phrase_id
 			join experience e on e.id = ep.experience_id, total
@@ -128,7 +137,7 @@ export async function probeWide(texts: string[]): Promise<Set<string>> {
 
 type FactRow = {
 	term_idx: number;
-	member_idx: number;
+	value_idx: number;
 	id: number;
 	route: Route;
 	relevance: number;
@@ -143,7 +152,7 @@ type PopulationRow = { id: number; emp_id: string } & DimSource;
 /**
  * 一份没有人的结果的公共部分：没有人、没有候选、总数为零，只差一句「为什么」。
  *
- * 它出现在三个地方（一条要求都没解析出来、取数撞上保险丝的两条路），各写一遍
+ * 它出现在三个地方（一条条件都没解析出来、取数撞上保险丝的两条路），各写一遍
  * 的话，`Facets` 或 `SearchOutcome` 上加一个字段就会有一处忘了跟上，而少一个
  * 字段的空结果在屏幕上和别的空结果长得一模一样。分面必须现造一个：它是可变的。
  */
@@ -181,7 +190,7 @@ type FactLoad =
 	| { kind: "overflow"; termIndexes: number[] };
 
 /**
- * 从各要求的事实行数里找出造成超载的主要贡献者。
+ * 从各条件的事实行数里找出造成超载的主要贡献者。
  *
  * 按贡献从大到小摘，直到剩余事实能进保险丝；同样行数按查询顺序稳定并列。
  * 返回时再恢复查询顺序，让界面上的点名顺序和 chips 一致。这把尺只解释
@@ -303,20 +312,21 @@ function scopeConds(
 		if (cond) conds.push(cond);
 	}
 	// 范围里的和 URL 上的各自成条件、AND 到一起：两者生命周期不同，但都要满足。
-	for (const value of [f.org, view.org])
-		if (value)
+	// 一条条件里的几个名字之间是 OR（「字节或腾讯来的」）。
+	for (const names of [f.org, view.org])
+		if (names?.length)
 			conds.push(sql`exists (
 			select 1 from experience x where x.emp_id = p.emp_id
-			and (x.org ilike ${like(value)} or x.org_path ilike ${like(value)}))`);
-	for (const value of [f.school, view.school])
-		if (value) conds.push(sql`p.school ilike ${like(value)}`);
+			and (${anyLike(names, [sql`x.org`, sql`x.org_path`])}))`);
+	for (const names of [f.school, view.school])
+		if (names?.length) conds.push(anyLike(names, [sql`p.school`]));
 	return conds;
 }
 
 /**
  * 候选里满足**偏好范围**的那些人。
  *
- * 偏好不裁人，只改名次（`rank.ts` 乘一次 `BOOST_WEIGHT`），所以它不能像 `scope`
+ * 偏好不裁人，只改名次（`rank.ts` 乘一次 `BOOST_WEIGHT`），所以它不能像 must
  * 那样下推到取数的谓词里；也不能在内存里对着命中的事实判——事实只带命中的
  * 那几段，「最好待过大厂」问的是这个人**任何一段**经历。所以单独问一次库：
  * 谁有一段经历同时满足偏好里的各维、并且人满足偏好里的公司名与学校名。
@@ -324,11 +334,11 @@ function scopeConds(
  */
 async function fetchPreferred(
 	store: DbExecutor,
-	prefer: SearchScope | undefined,
+	prefer: SearchScope,
 	empIds: Iterable<string>,
 ): Promise<Set<string>> {
 	const ids = [...new Set(empIds)];
-	if (!prefer || ids.length === 0) return new Set();
+	if (ids.length === 0) return new Set();
 	const conds = scopeConds(prefer, {});
 	if (conds.length === 0) return new Set();
 	const rows = await store.execute<{ emp_id: string }>(sql`
@@ -342,14 +352,14 @@ async function fetchPreferred(
 }
 
 /**
- * 同一要求、同一经历段只留证据最强的那一次命中。
+ * 同一条件、同一经历段只留证据最强的那一次命中。
  *
- * 每条要求按说法展开：说法之间是 OR，但各自单独判定，因为「命中的是哪个说法」
- * 要进证据行。一段几路都可能命中、几个说法都可能命中，这里按
- * `路权重 × 相关度 × 说法权重` 只留最强的一行——和 rank.ts 的 evidenceWeight
- * 同一个式子，否则这里留下的和那边选出来的不是同一条证据。打分层按事实累加月份（rank.ts 的
+ * 每条条件按取值展开：取值之间是 OR，但各自单独判定，因为「命中的是哪个词」
+ * 要进证据行。一段几路都可能命中、几个词都可能命中，这里按
+ * `路权重 × 相关度` 只留最强的一行——和 rank.ts 的 evidenceWeight 同一个式子，
+ * 否则这里留下的和那边选出来的不是同一条证据。打分层按事实累加月份（rank.ts 的
  * termValue），同段两行会把 12 个月数成 24；证据行也会把同一段列两遍。
- * 去重必须在 SQL 里做完再过保险丝：在内存里去重的话，三个说法的宽词会把
+ * 去重必须在 SQL 里做完再过保险丝：在内存里去重的话，三个取值的宽词会把
  * FACT_MAX 提前引爆三倍。
  */
 function canonicalFacts(
@@ -366,9 +376,9 @@ function canonicalFacts(
 		sql` `,
 	)} end`;
 	return sql`
-		with q(term_idx, member_idx, phrase_id, relevance, weight) as ${table}
+		with q(term_idx, value_idx, phrase_id, relevance) as ${table}
 		select distinct on (q.term_idx, e.id)
-			q.term_idx, q.member_idx, e.id, ep.route, q.relevance,
+			q.term_idx, q.value_idx, e.id, ep.route, q.relevance,
 			case when ep.route in (${sql.join(
 				EXTRACTED_ROUTES.map((r) => sql`${r}`),
 				sql`, `,
@@ -381,12 +391,12 @@ function canonicalFacts(
 		join experience e on e.id = ep.experience_id
 		join employee p on p.emp_id = e.emp_id
 		${searchScope(scope, view)}
-		order by q.term_idx, e.id, (${routeWeight}) * q.relevance * q.weight desc,
-			q.member_idx, ${routeOrder}`;
+		order by q.term_idx, e.id, (${routeWeight}) * q.relevance desc,
+			q.value_idx, ${routeOrder}`;
 }
 
 /**
- * 命中的经历事实。超过内存保险丝时返回真正贡献事实行的要求，不截断结果。
+ * 命中的经历事实。超过内存保险丝时返回真正贡献事实行的条件，不截断结果。
  *
  * 取数不带分面维度的筛选：分面要回答「摘掉这一维之后还剩几人」，它需要看到
  * 被筛掉的那些行。筛选、AND、人员打分、排序与分面都在 rank.ts 对这份事实求值。
@@ -401,13 +411,8 @@ async function fetchFacts(
 ): Promise<FactLoad> {
 	const table = admittedTable(
 		terms.flatMap((t, termIdx) =>
-			t.members.flatMap((m, memberIdx) =>
-				(admitted.get(m.text) ?? []).map((hit) => ({
-					termIdx,
-					memberIdx,
-					hit,
-					weight: MEMBER_TIER_WEIGHTS[m.tier],
-				})),
+			t.values.flatMap((value, valueIdx) =>
+				(admitted.get(value) ?? []).map((hit) => ({ termIdx, valueIdx, hit })),
 			),
 		),
 	);
@@ -432,16 +437,16 @@ async function fetchFacts(
 	return {
 		kind: "loaded",
 		facts: rows.rows.flatMap(
-			({ emp_id, term_idx, member_idx, end_date, ...dims }) => {
-				const member = terms[term_idx]?.members[member_idx];
-				if (!member)
-					throw new Error(`取数返回了不存在的说法 ${term_idx}/${member_idx}`);
+			({ emp_id, term_idx, value_idx, end_date, ...dims }) => {
+				const value = terms[term_idx]?.values[value_idx];
+				if (value === undefined)
+					throw new Error(`取数返回了不存在的取值 ${term_idx}/${value_idx}`);
 				return [
 					{
 						...dims,
 						empId: emp_id,
 						termIdx: term_idx,
-						member,
+						value,
 						endDate: end_date,
 					},
 				];
@@ -451,7 +456,7 @@ async function fetchFacts(
 }
 
 /**
- * 被排除词否决的**经历段**。这些段丧失为任何要求作证的资格；人不被判决——
+ * 被排除词否决的**经历段**。这些段丧失为任何条件作证的资格；人不被判决——
  * 没了这些段还有别的证据的人照常进结果，只有这些段的人过不了 AND，自然出局。
  * 排除因此和「从经历找人」是同一个语义，不是一套针对人的黑名单。
  *
@@ -459,7 +464,7 @@ async function fetchFacts(
  * 让筛选参与，「只看在职经历」就会让入职前那段实习重新有资格作证，
  * 于是收窄一个筛选反而放出更多本来站不住的证据。
  *
- * **门槛比正向要求高**（RELEVANCE_MIN_EXCLUDE）：正向要求可以放宽，排除词必须准。
+ * **门槛比正向条件高**（RELEVANCE_MIN_EXCLUDE）：正向条件可以放宽，排除词必须准。
  */
 async function fetchVetoed(
 	store: DbExecutor,
@@ -471,12 +476,12 @@ async function fetchVetoed(
 		texts.flatMap((t, i) =>
 			(admitted.get(t) ?? [])
 				.filter((hit) => hit.relevance >= RELEVANCE_MIN_EXCLUDE)
-				.map((hit) => ({ termIdx: i, memberIdx: 0, hit, weight: 1 })),
+				.map((hit) => ({ termIdx: i, valueIdx: 0, hit })),
 		),
 	);
 	if (!table) return new Set();
 	const rows = await store.execute<{ id: number }>(sql`
-		with q(term_idx, member_idx, phrase_id, relevance, weight) as ${table}
+		with q(term_idx, value_idx, phrase_id, relevance) as ${table}
 		select distinct ep.experience_id as id
 		from q join experience_phrase ep on ep.phrase_id = q.phrase_id`);
 	return new Set(rows.rows.map((r) => r.id));
@@ -535,7 +540,7 @@ export async function vocabulary(): Promise<Vocabulary> {
 }
 
 /**
- * 无语义要求时，每段符合查询范围的经历就是一条人口事实。它没有 route、相关度
+ * 没有经历条件时，每段符合查询范围的经历就是一条人口事实。它没有 route、相关度
  * 或证据段身份，不参与语义打分与证据展示；只用于人员筛选和分面计数。
  *
  * 排除词在这条路上同样否决证据段：一段命中了排除词就不再算这个人落在范围里
@@ -549,7 +554,7 @@ async function searchScopeOnly(
 	limit: number,
 	vetoed: Set<number>,
 ): Promise<SearchOutcome> {
-	const scope = spec.scope;
+	const scope = scopeOf(spec.terms, "must");
 	const rows = await store.execute<PopulationRow>(sql`
 		select e.id, e.emp_id, ${factSelect}
 		from experience e join employee p on p.emp_id = e.emp_id
@@ -577,7 +582,7 @@ async function searchScopeOnly(
 	const scopedView = { ...view, org: undefined, school: undefined };
 	const preferred = await fetchPreferred(
 		store,
-		spec.prefer,
+		scopeOf(spec.terms, "boost"),
 		facts.map((f) => f.empId),
 	);
 	const { empIds, facets, total } = rankPopulation(
@@ -634,21 +639,19 @@ export async function search(
 	 */
 	limit: number = RESULT_PAGE,
 ): Promise<SearchOutcome> {
-	// 停用的要求在这里就消失了，此后整条链路都看不见它——检索、打分、分面、
-	// 证据行一个都不必知道「停用」这回事。这是它能只花一个字段的原因。
-	const active = activeRequirements(spec.requirements);
-	const terms: TermPlan[] = active.flatMap((r) =>
-		r.mode === "exclude"
-			? []
-			: [{ term: r.members[0].text, members: [...r.members], mode: r.mode }],
+	const terms = termPlans(spec.terms);
+	const vetoTexts = experienceTerms(activeTerms(spec.terms)).flatMap((t) =>
+		t.mode === "exclude" ? [...t.values] : [],
 	);
-	const vetoTexts = active.flatMap((r) =>
-		r.mode === "exclude" ? r.members.map((m) => m.text) : [],
-	);
+	const scope = scopeOf(spec.terms, "must");
+	const prefer = scopeOf(spec.terms, "boost");
 	// 没有正向证据也没有结构化范围时，排除词自己不产出候选人。只有偏好的查询
 	// （「最好是字节来的」）是「所有人，满足偏好的在前」，范围为空也照跑。
-	const prefers = spec.prefer !== undefined && narrowsPopulation(spec.prefer);
-	if (terms.length === 0 && !narrowsPopulation(spec.scope) && !prefers)
+	if (
+		terms.length === 0 &&
+		!narrowsPopulation(scope) &&
+		!narrowsPopulation(prefer)
+	)
 		return {
 			order: "relevance",
 			terms,
@@ -664,10 +667,10 @@ export async function search(
 		};
 
 	// 准入（要打两个模型端点）在快照外算，取数在快照内做，见 phrases.ts。
-	// 正向要求和排除词一起进准入：它们查的是同一批说法，判定线的差别在
+	// 正向条件和排除词一起进准入：它们查的是同一批说法，判定线的差别在
 	// fetchVetoed 里，不在这里。
 	return withAdmission(
-		[...terms.flatMap((term) => term.members.map((m) => m.text)), ...vetoTexts],
+		[...terms.flatMap((term) => term.values), ...vetoTexts],
 		RELEVANCE_MIN,
 		async (store, admitted) => {
 			const vetoed = await fetchVetoed(store, vetoTexts, admitted);
@@ -675,13 +678,7 @@ export async function search(
 			if (terms.length === 0)
 				return searchScopeOnly(store, spec, filters, limit, vetoed);
 
-			const loaded = await fetchFacts(
-				store,
-				terms,
-				admitted,
-				spec.scope,
-				filters,
-			);
+			const loaded = await fetchFacts(store, terms, admitted, scope, filters);
 			if (loaded.kind === "overflow") {
 				const contributors = new Set(loaded.termIndexes);
 				return {
@@ -706,7 +703,7 @@ export async function search(
 			const facts = keepUnvetoed(loaded.facts, vetoed);
 			const preferred = await fetchPreferred(
 				store,
-				spec.prefer,
+				prefer,
 				facts.map((f) => f.empId),
 			);
 
@@ -770,7 +767,7 @@ export async function search(
 						{
 							experienceId: segment.id,
 							term: plan.term,
-							member: fact.member,
+							value: fact.value,
 							route: fact.route,
 							relevance: fact.relevance,
 							phrase: fact.phrase,

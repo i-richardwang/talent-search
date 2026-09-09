@@ -10,12 +10,12 @@
  *     "expect": ["E1001", "E2042"],        // 已确认应当出现的工号
  *     "reject": ["E3007"] }                // 可选：已确认不该出现的工号
  *
- * `reject` 量的是精度。补变体这类改动同时可能找回漏掉的人和放进不相干的人，
+ * `reject` 量的是精度。多写几个取值这类改动同时可能找回漏掉的人和放进不相干的人，
  * 只报召回的话，往查询里多塞几个词永远是「变好」。
  * 真实评估用例不进版本库（题目和答案指向真人）；仓库只带 `evals/sample.json`——
  * 全部指向合成样例语料（src/corpus/sources/sample/）的可执行基线，干净克隆也能跑通。
  *
- * 这把尺子存在的意义：提示词、权重、说法档位都会被大幅调整，而每次调整既可能
+ * 这把尺子存在的意义：提示词与权重都会被大幅调整，而每次调整既可能
  * 找回漏掉的人、也可能放进不相干的人——没有基线就分不清是变好还是变坏。
  * query 用一行查询语法而不是原话，是刻意的：这里量的是**检索与排序**，不含模型
  * 理解那一跳的方差；理解的对错由 tests/intent.test.ts 和人工评审管。
@@ -99,7 +99,7 @@ let intruded = 0;
 try {
 	for (const c of cases) {
 		const outcome = await search(
-			{ requirements: parseQuery(c.query), scope: {}, notices: [] },
+			{ terms: parseQuery(c.query) },
 			{},
 			RESULT_MAX,
 		);

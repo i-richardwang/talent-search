@@ -38,7 +38,6 @@ import {
 	taskRun,
 } from "#/db/schema";
 import { parseQuery } from "#/search/query-syntax";
-import { isVariant } from "#/search/requirement";
 
 /**
  * 每个测试文件一个 schema。名字带进程号**和**一段随机：`bun test --parallel`
@@ -177,26 +176,17 @@ export function holdNextRerank() {
 
 /**
  * 假理解：把那句话按一行查询语法读（`search/query-syntax.ts`），交出真模型
- * 会交出的那份片段清单。范围一律不填——这里测的是记录与检索机制，
- * 范围的收窄在 intent.test.ts 里对着 `toSpec` 直接测。
+ * 会交出的那份查询。模型说的和库里存的是同一个形状（`intentSchema` 就是
+ * `Term[]`），所以这里不必翻译；范围维度的词表检查在 intent.test.ts 里
+ * 对着 `toSpec` 直接测。
  */
 function fakeIntent(text: string) {
-	// 一行查询语法给的是收窄之后的形状；模型说的是片段清单（`intentSchema`），
-	// 假端点也得说模型的话，否则测的就不是真的那条边界了。
 	return {
-		items: parseQuery(text).map((r) => {
-			const said = r.members.filter((m) => !isVariant(m)).map((m) => m.text);
-			return {
-				said: said[0],
-				is: "requirement",
-				mode: r.mode,
-				value: null,
-				anyOf: said.slice(1),
-				variants: r.members
-					.filter(isVariant)
-					.map((m) => ({ text: m.text, tier: m.tier })),
-			};
-		}),
+		terms: parseQuery(text).map(({ field, mode, values }) => ({
+			field,
+			mode,
+			values: [...values],
+		})),
 	};
 }
 

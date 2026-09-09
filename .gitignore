@@ -24,3 +24,6 @@ src/corpus/sources/*
 # sample.json 例外——它只指向合成样例语料，是干净克隆也能跑通的基线。
 evals/*
 !evals/sample.json
+
+# 个人工具配置，不是产品依赖
+.mcp.json

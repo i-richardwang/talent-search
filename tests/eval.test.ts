@@ -23,7 +23,7 @@ before(async () => {
 		},
 		{
 			empId: "V002",
-			name: "只被变体找到",
+			name: "只被第二个取值找到",
 			segments: [{ seqL2: "运算", months: 12 }],
 		},
 	]);
@@ -39,7 +39,7 @@ function run(expect: string, reject: string[] = []) {
 	writeFileSync(
 		file,
 		JSON.stringify([
-			{ name: "评估退出码", query: "算法/~运算", expect: [expect], reject },
+			{ name: "评估退出码", query: "算法/运算", expect: [expect], reject },
 		]),
 	);
 	const child = spawn(process.execPath, ["scripts/eval.ts", file], {

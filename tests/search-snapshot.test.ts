@@ -24,11 +24,7 @@ const { search } = await import("#/search/search");
 const { db, pool, withCorpusSnapshot } = await import("#/db");
 
 const run = async (query: string) => {
-	const outcome = await search({
-		requirements: parseQuery(query),
-		scope: {},
-		notices: [],
-	});
+	const outcome = await search({ terms: parseQuery(query) });
 	if (outcome.order !== "relevance")
 		throw new Error("要求查询未进入相关度路径");
 	return outcome;

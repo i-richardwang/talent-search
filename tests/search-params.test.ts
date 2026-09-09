@@ -19,11 +19,14 @@ describe("检索端点参数", () => {
 		assert.equal(filters.minMonths, 24);
 		assert.equal(filters.kind, "external");
 		assert.equal(filters.strong, true);
-		assert.equal(filters.org, "字节");
+		assert.deepEqual(filters.org, ["字节"]);
 	});
 
 	test("筛选文本在 URL 与 RPC 边界都有硬上限", () => {
-		assert.equal(sanitizeFilters({ org: "甲".repeat(300) }).org?.length, 200);
+		assert.equal(
+			sanitizeFilters({ org: "甲".repeat(300) }).org?.[0]?.length,
+			200,
+		);
 	});
 
 	test("无效筛选不会变成静默滤空的条件", () => {

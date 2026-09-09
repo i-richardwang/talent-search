@@ -31,7 +31,7 @@
  * 形状盖住两件不同的事。它们是另一类，见 `SearchFilters`。
  */
 import { duration } from "#/lib/format";
-import { boundedText } from "./requirement";
+import { boundedText } from "./text";
 import { MIN_MONTHS_BUCKETS } from "./weights";
 
 /**
@@ -137,14 +137,16 @@ type Dimension<K extends DimKey> = Match<K> & {
  * 这个数——超过它的只可能是手拼的 URL，而每多一项，取数之后的每一条事实都要多比
  * 一次。
  */
-const FILTER_LIST_MAX = 64;
+export const FILTER_LIST_MAX = 64;
 
 /**
  * 一列不可信的文本。空列表收成 `undefined`——「一项都没选」和「这一维不筛」是同
- * 一件事，留一个空数组在 URL 上只会让筛选栏数出一项没有行可以点掉的筛选（`activeCount`）。哪些串不算这一维的
- * 取值由维度自己说（`plain` 的 `isValue`）。
+ * 一件事，留一个空数组在 URL 上只会让筛选栏数出一项没有行可以点掉的筛选
+ * （`activeCount`）。哪些串不算这一维的取值由维度自己说（`plain` 的 `isValue`）。
+ * 公司名与学校名（`params.ts`）走同一条：它们不在这张表里，但「一列名字」和
+ * 「一列取值」是同一种东西，上限也是同一个。
  */
-function textList(input: unknown): string[] | undefined {
+export function textList(input: unknown): string[] | undefined {
 	if (!Array.isArray(input)) return undefined;
 	const out = [
 		...new Set(
@@ -258,7 +260,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		measure: (f) => f.months,
 		id: (v) => String(v),
 		option: (v) => duration(v),
-		text: (v) => `单段至少 ${duration(v)}`,
+		text: (v) => `一份经历至少 ${duration(v)}`,
 		// 收得最紧的一维：它是唯一参与数值比较的筛选，负数会让它恒真
 		// （`months >= -999`），小数会渲染出「1 年 0.5 个月」这种档位——
 		// 两者都不报错，只会安静地给出说不通的结果。
@@ -272,11 +274,11 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 
 	companyTag: {
 		...plain("入职前公司", (f) => f.companyTag),
-		text: (v) => `公司档 · ${v}`,
+		text: (v) => `入职前公司 · ${v}`,
 	},
 
 	skill: {
-		label: "入职前能力",
+		label: "入职前技能",
 		match: "set",
 		// 唯一一段有多个取值的维。能力词只从入职前经历的简历描述里抽（src/corpus/extract.ts），
 		// 而只有三分之一的人有描述：勾任何一项都把没写简历的人整个筛掉。这一维能回答
@@ -285,7 +287,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		values: (f) => f.skills,
 		id: (v) => v,
 		option: (v) => v,
-		text: (v) => `能力 · ${v}`,
+		text: (v) => `技能 · ${v}`,
 		parse: textList,
 		compare: byCountThenValue,
 	},

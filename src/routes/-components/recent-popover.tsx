@@ -3,10 +3,10 @@ import { HistoryIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "#/components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
-import { dots } from "#/lib/format";
 import type { SearchSpec } from "#/search/spec";
+import { activeTerms } from "#/search/term";
 import type { RecentSearch } from "#/server/turn";
-import { scopeEntries } from "../-lib/scope-label";
+import { MODE_GLYPH, termLabel } from "../-lib/term-label";
 
 /**
  * 一行记录读的是**原话**——和查询台上那一行是同一样东西（见 `query-deck.tsx`）。
@@ -14,16 +14,15 @@ import { scopeEntries } from "../-lib/scope-label";
  * 条件词是原话的解释，点进去就在屏幕上，这里再摆一遍只会把「我问的」换成「它懂的」。
  *
  * 没有原话的记录只有一种：直接拿一份条件调 RPC 落下的（`kind: "spec"` 且没有父
- * 记录），界面产生不出来。它的门面本来就是条件本身，所以落到条件词和范围上。
+ * 记录），界面产生不出来。它的门面本来就是条件本身，所以落到条件词上。
  */
 function recentLabel(spec: SearchSpec, rawText: string | null) {
 	if (rawText) return rawText;
-	const terms = spec.requirements.map((r) => r.members[0].text);
-	const scope = scopeEntries(spec.scope).map((entry) => entry.label);
-	const prefer = scopeEntries(spec.prefer ?? {}).map(
-		(entry) => `+${entry.label}`,
+	// 停用的条件不出现：它没参与这次检索，写出来就是把没搜的当成搜过的
+	const labels = activeTerms(spec.terms).map(
+		(t) => MODE_GLYPH[t.mode] + termLabel(t),
 	);
-	return dots(...terms, ...scope, ...prefer) || "未生效的条件";
+	return labels.join(" / ") || "没有生效的条件";
 }
 
 /**

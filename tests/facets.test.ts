@@ -21,7 +21,9 @@ import {
 import { parsePopulation } from "#/search/params";
 import { parseQuery } from "#/search/query-syntax";
 import type { SearchFilters } from "#/search/result";
+import { isScopeField } from "#/search/term";
 import { seed, setup } from "./fixture";
+import { scopeTerms } from "./terms";
 
 const teardown = await setup();
 after(teardown);
@@ -29,10 +31,7 @@ after(teardown);
 const { search } = await import("#/search/search");
 
 const run = async (query: string, filters: SearchFilters = {}) => {
-	const outcome = await search(
-		{ requirements: parseQuery(query), scope: {}, notices: [] },
-		filters,
-	);
+	const outcome = await search({ terms: parseQuery(query) }, filters);
 	if (outcome.order !== "relevance")
 		throw new Error("要求查询未进入相关度路径");
 	return outcome;
@@ -119,7 +118,7 @@ describe("候选与计数", () => {
 		assert.equal(seqOf(facets).get("运营/渠道"), 1);
 	});
 
-	test("口径和主检索一致：一个人要在这一项里凑齐全部要求才算数", async () => {
+	test("口径和主检索一致：一个人要在这一项里凑齐全部条件才算数", async () => {
 		// F003 一段之内既有岗位「算法运维」又有序列「渠道」，两个词都落在「运营/渠道」里
 		const { facets } = await run("算法,渠道");
 		assert.equal(seqOf(facets).get("运营/渠道"), 1);
@@ -167,7 +166,7 @@ describe("候选与计数", () => {
 		assert.equal(facets.kind.find((k) => k.value === "external")?.n, 2);
 	});
 
-	test("没有要求就没有候选，不拿全库的数字充数", async () => {
+	test("没有条件就没有候选，不拿全库的数字充数", async () => {
 		const { facets } = await run("帮我找一下的人");
 		assert.deepEqual(facets.seq, []);
 		assert.deepEqual(facets.minMonths, []);
@@ -227,15 +226,16 @@ describe("分面预告的数就是点下去会得到的数", () => {
 	test("同一个条件下推给数据库还是在内存里筛，选出的是同一批人", async () => {
 		const base = await run(QUERY);
 		const covered = new Set<DimKey>();
-		for (const key of DIM_KEYS)
+		// 序列与能力词不是查询条件能写的维度（`term.ts` 的 `SCOPE_FIELDS`），
+		// 它们只从 URL 上来，没有下推那一条路可验
+		const scopable = DIM_KEYS.filter((key) => isScopeField(key));
+		for (const key of scopable)
 			for (const row of base.facets[key]) {
 				covered.add(key);
 				const filtered = await run(QUERY, pick(key, row.value));
 				const scoped = await search(
 					{
-						requirements: parseQuery(QUERY),
-						scope: pick(key, row.value),
-						notices: [],
+						terms: [...parseQuery(QUERY), ...scopeTerms(pick(key, row.value))],
 					},
 					{},
 				);
@@ -247,7 +247,7 @@ describe("分面预告的数就是点下去会得到的数", () => {
 			}
 		// 哪一维在这次查询里一个候选都没有，这条不变量就没验到它——而
 		// 「列表达式写歪了」正是要靠它才看得见的东西。
-		assert.deepEqual([...covered].sort(), [...DIM_KEYS].sort());
+		assert.deepEqual([...covered].sort(), [...scopable].sort());
 	});
 
 	/**

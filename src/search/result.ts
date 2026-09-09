@@ -8,14 +8,14 @@
 import type { Employee, Route } from "#/db/schema";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
-import type { Member, RequirementMode } from "./requirement";
 import type { SearchScope } from "./spec";
+import { activeTerms, experienceTerms, type Term, type TermMode } from "./term";
 
 export type Hit = {
 	experienceId: number;
 	term: string;
-	/** 命中的是这条要求的哪个说法。是变体时证据行要标出来：「≈ 推荐算法」。 */
-	member: Member;
+	/** 命中的是这条条件的哪个取值。不是代表词时证据行要标出来：「≈ 推荐算法」。 */
+	value: string;
 	route: Route;
 	/** 该说法与这一段这一路原文的相关度，[RELEVANCE_MIN, 1]。 */
 	relevance: number;
@@ -54,13 +54,13 @@ export type RankedResult = PopulationResult & {
 
 export type SearchResult = PopulationResult | RankedResult;
 
-/** 一条要求实际参与排名的聚合依据。 */
+/** 一条条件实际参与排名的聚合依据。 */
 export type TermBasis = {
 	term: string;
 	/** 参与累计的那一路：最强那条证据走的路 */
 	route: Route;
-	/** 最强那条证据靠的说法 */
-	member: Member;
+	/** 最强那条证据靠的取值 */
+	value: string;
 	/** 最强那条证据的相关度 */
 	relevance: number;
 	/** 并列最强的证据段的累计月数 */
@@ -78,8 +78,8 @@ export type TermBasis = {
 };
 
 /**
- * 一条参与匹配的要求：标签（用户的主词）、它的全部说法（OR，都会被嵌成向量，
- * 各自带着从哪来），以及它是必须还是加分。
+ * 一条参与匹配的经历条件：代表词、它的全部取值（OR，都会被嵌成向量），
+ * 以及它是必须还是加分。
  *
  * 排除词不在这里——它只用来否决证据段，不占证据行的一行，也没有「命中了多久」
  * 可言。所以这个类型的 mode 排除了 `"exclude"`：把一个画不出来的东西放进
@@ -87,9 +87,24 @@ export type TermBasis = {
  */
 export type TermPlan = {
 	term: string;
-	members: Member[];
-	mode: Exclude<RequirementMode, "exclude">;
+	values: string[];
+	mode: Exclude<TermMode, "exclude">;
 };
+
+/**
+ * 这份查询会画几条证据、拿什么去匹配。检索从这里起步；页面在结果回来之前
+ * 也从这里算骨架屏占几行——两边算的是同一份，结果回来时行数才不会跳。
+ *
+ * 停用的条件在这里就消失了，此后整条链路都看不见它——检索、打分、分面、
+ * 证据行一个都不必知道「停用」这回事。这是它能只花一个字段的原因。
+ */
+export function termPlans(terms: readonly Term[]): TermPlan[] {
+	return experienceTerms(activeTerms(terms)).flatMap((t) =>
+		t.mode === "exclude"
+			? []
+			: [{ term: t.values[0], values: [...t.values], mode: t.mode }],
+	);
+}
 
 /**
  * 一次检索的筛选条件：查询范围那一批条件（`SearchScope`），加上证据强度。
@@ -131,7 +146,7 @@ export type Facets = { [K in DimKey]: Facet<K>[] } & {
  *
  * `empty` 是「这份名单为什么是空的」，有人时为 `null`。它由检索层给出而不是
  * 由界面反推（论证见 `empty.ts`）——候选事实超过 `FACT_MAX` 也是它的一种取值：
- * 那仍然是一种**结果**，不是一次失败，页面据此说该具体化语义要求还是收窄范围，
+ * 那仍然是一种**结果**，不是一次失败，页面据此说该具体化经历条件还是收窄范围，
  * 而不是把截断的数据交给排名。
  */
 type Outcome = {
@@ -152,7 +167,7 @@ export type SearchOutcome =
 			results: PopulationResult[];
 	  });
 
-/** 空分面。检索还没跑或没解析出要求时用它，界面才不必区分「没有」和「还没算」。 */
+/** 空分面。检索还没跑或没解析出条件时用它，界面才不必区分「没有」和「还没算」。 */
 export function emptyFacets(): Facets {
 	// 每一维一个空列表。逐维手写的话，加一维忘了这里不会报错，只会在
 	// 「还没算」的那一帧上少一栏。

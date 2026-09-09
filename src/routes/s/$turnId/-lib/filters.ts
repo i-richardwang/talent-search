@@ -19,6 +19,7 @@ import {
 	isMulti,
 } from "#/search/dimensions";
 import type { Facets } from "#/search/result";
+import { NAME_LABEL } from "../../../-lib/term-label";
 import type { View } from "./view-params";
 
 type FilterOption = {
@@ -127,15 +128,15 @@ export function textFilters(view: View): TextFilter[] {
 	if (view.org)
 		out.push({
 			key: "org",
-			title: "待过",
-			value: view.org,
+			title: NAME_LABEL.org,
+			value: view.org.join(" / "),
 			clear: { org: undefined },
 		});
 	if (view.school)
 		out.push({
 			key: "school",
-			title: "学校",
-			value: view.school,
+			title: NAME_LABEL.school,
+			value: view.school.join(" / "),
 			clear: { school: undefined },
 		});
 	return out;

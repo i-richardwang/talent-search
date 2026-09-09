@@ -10,7 +10,7 @@
  *    机器。因此查询理解可以直接使用公网端点；重排必须发送候选经历，端点位置
  *    需要由部署方的数据政策决定。
  * 2. **没配就抛，不降级。** 一句话只有模型能读成条件：语气（「最好」「不要」）、
- *    范围（「入职前」「三年以上」）和没处放的条件全靠它分拣。没有第二种读法能
+ *    范围（「入职前」「三年以上」）和该搜什么词全靠它。没有第二种读法能
  *    给出同一份结果，所以也没有第二条路——装作能用给出的是一份语义相反的名单，
  *    而它在屏幕上和正确的名单长得一模一样。API key 只在端点需要鉴权时配置。
  * 3. **失败就抛，带着诊断。** 超时、限流、模型输出异常，一律作为错误交给调用方。
@@ -91,63 +91,62 @@ function getModel() {
 }
 
 /**
- * 判断进提示词，阈值与权重进代码。这里写的全是**逐查询的判断**：一个片段是要求、
- * 是范围还是不支持，哪种语气是哪档强度。相似多少算命中、一条要求最多几个说法、
- * 各路证据值多少分，一个数字都不在这里——它们住在 weights.ts 和 requirement.ts。
+ * 判断进提示词，阈值与权重进代码。这里写的全是**逐查询的判断**：一句话里哪些
+ * 是条件、落在哪一维、哪种语气是哪档强度。相似多少算命中、一条条件最多几个
+ * 取值，一个数字都不在这里——它们住在 weights.ts 和 term.ts。
  *
- * **提示词的读者是模型，不是维护者。** 它只说要做什么、每种片段是什么、拿不准
+ * **提示词的读者是模型，不是维护者。** 它只说要做什么、每一维是什么、拿不准
  * 时怎么办，再给几个完整的例子；不解释我们为什么这么设计。那些论证写在这里的
- * 注释和 `intent.ts` 里：向量空间里公司名和竞品是邻居，所以公司名走精确条件；
- * 补变体是替用户的不准确用词兜底，所以只补同一件事和更具体的事，不补更宽的；
- * 一个只有功能词的片段几乎不筛人，所以要并进旁边的领域词；对不上的取值留空，
- * 由 `toSpec` 降成「没处放的条件」并带着原话。上一版把这些论证写进提示词，
- * 结果是一份几十行、没有一个完整例子的说明，和一张邀请填满的表。
+ * 注释和 `term.ts` 里：向量空间里公司名和竞品是邻居，所以公司名走精确条件；
+ * 一条条件里放几个取值是替用户的不准确用词兜底，所以只放同一件事和更具体的
+ * 事，不放更宽的；一个只有功能词的条件几乎不筛人，所以要并进旁边的领域词；
+ * 「资深」这类词库里没有对应的档，软化成职级上的偏好（`term.ts` 说了为什么
+ * 只有软化和不写两种处理）。
  *
- * 词表只在这里列一遍，不进 schema（`intent.ts` 的 `intentSchema` 是静态的）：
- * 取值在不在词表里由代码查，查不过的片段变成没处放的条件，而不是整句作废。
+ * 每一维填什么、词表有哪些，只在这里说一遍，不进 schema（`intent.ts` 的
+ * `intentSchema` 是静态的）：取值在不在词表里由代码查，查不过的取值丢掉，
+ * 而不是整句作废。
  */
-const SYSTEM = `把 HR 找人的一句话拆成条件。逐个片段判断它是什么，said 照抄原话，不改字。
+const SYSTEM = `把 HR 找人的一句话写成搜索条件。每条条件是 field、mode、values 三样。
 
-每个片段是下面之一：
-- requirement：做过什么。方向、领域、技能、职责。variants 补库里岗位会用的叫法：
-  same 是同一件事的别名（BD / 商务拓展），near 是更具体或相近的事（算法 / 推荐算法）。
-  不补更宽的词，拿不准就不补。
-- org、school：点名的公司、部门、学校。只填 said。
-- level、education、recruitment、companyTag：从下面的取值里挑一个填 value，挑不出就留空。
-- kind：value 填 internal（公司内的任职）或 external（入职前的经历）。
-- minMonths：value 填月数。
-- unsupported：库里没有的条件。地点、年龄、性别、行业、像某某一样。
+field 是在哪一维找：
+- experience：做过什么。方向、领域、技能、职责。values 写库里岗位和简历会用的说法，
+  一条里可以放几个：同一件事的别名、更具体的叫法，任一命中即可。不放更宽的词。
+- org、school：点名的公司、部门、学校。values 写名字。
+- level、education、recruitment、companyTag：values 从下面的取值里挑，可以挑几个。挑不出就不写这条。
+- kind：values 填 internal（公司内的任职）或 external（入职前的经历）。
+- minMonths：values 填月数，三年以上就是 ["36"]。
 
-mode 看语气：默认 must。最好、优先、加分是 boost。不要、排除、没做过是 exclude。
+mode 看语气：默认 must。最好、优先、加分是 boost。不要、排除、没做过是 exclude，只用于 experience。
 
-「A 和 B 都」是两条。「A 或 B」「A、B 均可」是一条：said 填 A，B 放 anyOf。
-经理、负责人、总监这类词单独不成条，并进旁边的领域词：算法团队负责人。
-帮我找、有没有、的人、经验，这些不是条件，跳过。没提到的不写。
+「A 和 B 都」是两条。「A 或 B」「A、B 均可」是一条，values 里放两个。
+资深、高级、senior 说的是职级：level 里挑高的几档，mode 用 boost。
+经理、负责人、总监单独不成条，并进旁边的领域词：算法团队负责人。
+帮我找、有没有、的人、经验，这些不是条件。库里没有的条件不写：地点、年龄、性别、行业、像某某一样。
 
 例一：算法和后端都做过的，比较资深的，最好是字节来的
-- 算法 requirement must，variants 推荐算法 near、机器学习 near
-- 后端 requirement must，variants 后端开发 same、服务端 same
-- 资深 level must，value 空
-- 字节 org boost
+- experience must：算法、推荐算法、机器学习
+- experience must：后端、后端开发、服务端
+- level boost：取值里高的几档
+- org boost：字节
 
 例二：入职前在大厂做过三年以上增长，不要实习
-- 入职前 kind must，value external
-- 大厂 companyTag must，value 从取值里挑最接近的一档
-- 三年以上 minMonths must，value 36
-- 增长 requirement must，variants 用户增长 same
-- 实习 requirement exclude
+- kind must：external
+- companyTag must：取值里最接近大厂的一档
+- minMonths must：["36"]
+- experience must：增长、用户增长
+- experience exclude：实习
 
 例三：大模型或推荐系统方向，北京的，硕士
-- 大模型 requirement must，anyOf 推荐系统，variants LLM same
-- 北京 unsupported
-- 硕士 education must，value 从取值里挑`;
+- experience must：大模型、LLM、推荐系统
+- education must：取值里对应硕士的那一档`;
 
 function listed(what: string, values: readonly string[]) {
 	return `${what}：${values.join("、") || "（无）"}`;
 }
 
 /**
- * 一句话 → 模型给出的片段清单。调用方必须再过一遍 `toSpec` 收窄。
+ * 一句话 → 模型写出的查询。调用方必须再过一遍 `toSpec` 收窄。
  *
  * 结构化输出失败时真正说明问题的是 `usage` 和 `finishReason`——
  * `finishReason: "length"` 配上 `reasoningTokens` 吃掉几乎整个 `outputTokens`，

@@ -29,7 +29,7 @@ const hit = (over: Partial<Hit> = {}) =>
 const basis = (over: Partial<TermBasis> = {}): TermBasis => ({
 	term: "算法",
 	route: "seq",
-	member: { text: "算法", tier: "said" },
+	value: "算法",
 	relevance: 0.83,
 	months: 27,
 	endDate: null,
@@ -67,8 +67,8 @@ describe("一行证据看得见的部分", () => {
 		assert.match(seen(hit({ relevance: 1 }), basis({ relevance: 1 })), /100%/);
 	});
 
-	test("靠变体命中的写出「≈ 那个说法」，靠原话命中的不写", () => {
-		const near = hit({ member: { text: "推荐算法", tier: "near" } });
+	test("靠别的取值命中的写出「≈ 那个词」，靠代表词命中的不写", () => {
+		const near = hit({ value: "推荐算法" });
 		assert.match(seen(near, basis()), /≈ 推荐算法/);
 		assert.doesNotMatch(seen(hit(), basis()), /≈/);
 	});
@@ -120,6 +120,30 @@ describe("一行证据看得见的部分", () => {
 		// 这一段经历的身份还是要给：不然「在哪儿提过」无从查起。
 		assert.match(said, /算法工程师/);
 		assert.match(said, /某部门/);
+	});
+
+	test("抽取的两路写出技能或工作内容，不把内部路名露出来", () => {
+		const bySkill = seen(
+			hit({ route: "skill", phrase: "Spark", value: "Spark" }),
+			basis({ route: "skill", value: "Spark" }),
+		);
+		assert.match(bySkill, /技能/);
+		assert.match(bySkill, /Spark/);
+		assert.doesNotMatch(bySkill, /能力词/);
+
+		const byDid = seen(
+			hit({
+				route: "did",
+				phrase: "推荐系统",
+				involvement: "从零搭建",
+				value: "推荐系统",
+			}),
+			basis({ route: "did", value: "推荐系统" }),
+		);
+		assert.match(byDid, /工作内容/);
+		assert.match(byDid, /从零搭建/);
+		assert.match(byDid, /推荐系统/);
+		assert.doesNotMatch(byDid, /做过的事/);
 	});
 });
 

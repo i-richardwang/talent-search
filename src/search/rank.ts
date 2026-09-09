@@ -2,7 +2,7 @@
  * 打分、AND 判定、排序、分面——一次检索里除了「取数」之外的全部逻辑。
  *
  * 这个文件**没有 SQL，也没有数据库**。检索层只负责回答「哪些经历段命中了哪个
- * 要求」这个纯事实问题，剩下的全部在这里对内存里的事实求值。
+ * 条件」这个纯事实问题，剩下的全部在这里对内存里的事实求值。
  *
  * 打分是纯函数，调权重不必连接数据库；排名与分面对同一份事实做不同分组，
  * 两者的口径由结构保证一致。
@@ -23,7 +23,6 @@ import {
 	dimValues,
 	type Facet,
 } from "./dimensions";
-import type { Member } from "./requirement";
 import {
 	emptyFacets,
 	type Facets,
@@ -34,7 +33,6 @@ import {
 import {
 	BOOST_WEIGHT,
 	isControlledRoute,
-	MEMBER_TIER_WEIGHTS,
 	RECENCY_FLOOR,
 	RECENCY_HALF,
 	ROUTE_WEIGHTS,
@@ -44,20 +42,20 @@ import {
 } from "./weights";
 
 /**
- * 一段经历对一条要求的命中。这是检索层唯一的产物：**事实，不含任何评分**。
+ * 一段经历对一条条件的命中。这是检索层唯一的产物：**事实，不含任何评分**。
  *
- * 字段只有两类：打分要用的（route / member.tier / relevance / months / endDate）
- * 和分面要分组的（那几维要读哪些列由 `DimSource` 声明，跟着维度走）。`id` 只用来
- * 在定好名次之后回表取展示用的原文；`member.text` 只在证据行上说出「命中的是
- * 哪个说法」——都不参与计算。
+ * 字段只有两类：打分要用的（route / relevance / months / endDate）和分面要
+ * 分组的（那几维要读哪些列由 `DimSource` 声明，跟着维度走）。`id` 只用来
+ * 在定好名次之后回表取展示用的原文；`value` 只在证据行上说出「命中的是
+ * 哪个词」——都不参与计算。
  */
 export type PopulationFact = DimSource & { empId: string };
 
 export type Fact = PopulationFact & {
 	id: number;
 	termIdx: number;
-	/** 命中的是这条要求的哪个说法。tier 进分，text 进证据行。 */
-	member: Member;
+	/** 命中的是这条条件的哪个取值。只进证据行，不进分。 */
+	value: string;
 	route: Route;
 	/** 说法与这一路原文的相关度，已过 RELEVANCE_MIN */
 	relevance: number;
@@ -74,14 +72,12 @@ export type Fact = PopulationFact & {
 };
 
 /**
- * 一条证据的强度 = 路权重 × 相关度 × 说法权重。三个都是「这条证据有多能说明
- * 他真的做过用户要的那件事」的因子：路权重管字段是谁写的，相关度管原文离
- * 说法多远，说法权重管说法离用户的原话多远（变体打折，见 weights.ts）。
+ * 一条证据的强度 = 路权重 × 相关度。两个都是「这条证据有多能说明他真的做过
+ * 用户要的那件事」的因子：路权重管字段是谁写的，相关度管原文离查询词多远。
+ * 一条条件的几个取值同权：它们都是模型对「要找什么」的表达，没有哪个更像原话。
  */
 function evidenceWeight(f: Fact) {
-	return (
-		ROUTE_WEIGHTS[f.route] * f.relevance * MEMBER_TIER_WEIGHTS[f.member.tier]
-	);
+	return ROUTE_WEIGHTS[f.route] * f.relevance;
 }
 
 /**
@@ -109,7 +105,7 @@ export function gapMonths(endDate: string | null, now: Date) {
 }
 
 /**
- * 一条要求对一个人的分数 = **强度 × 时长 × 近因**，三个都是有界因子。
+ * 一条条件对一个人的分数 = **强度 × 时长 × 近因**，三个都是有界因子。
  *
  * **强度**取该人所有命中段里最强的一条证据（路权重 × 相关度，见
  * evidenceWeight）。做过三段算法不比做过一段更「做过」，所以强度不累加，
@@ -151,7 +147,7 @@ function termValue(facts: Fact[], term: string, now: Date) {
 		basis: {
 			term,
 			route: best.route,
-			member: best.member,
+			value: best.value,
 			relevance: best.relevance,
 			months,
 			endDate: endDate ?? null,
@@ -160,10 +156,10 @@ function termValue(facts: Fact[], term: string, now: Date) {
 	};
 }
 
-/** 一个人在一次检索里的全部事实：要求下标 → 命中的段 */
+/** 一个人在一次检索里的全部事实：条件下标 → 命中的段 */
 type Person = Map<number, Fact[]>;
 
-/** 把一个人的事实按要求归拢。AND 判定问的是「每条要求都有段吗」。 */
+/** 把一个人的事实按条件归拢。AND 判定问的是「每条条件都有段吗」。 */
 function byTerm(facts: readonly Fact[]): Person {
 	const p: Person = new Map();
 	for (const f of facts) {
@@ -447,7 +443,7 @@ export function rank(
  * 会换位置。这里刻意不用词分：词分是**人**的属性（累计、近因都跨段），
  * 而这里要选的是单独一段，两者不是同一个量。
  */
-/** 「这个人的这条要求」的复合 key：工号里不可能出现的字符。 */
+/** 「这个人的这条条件」的复合 key：工号里不可能出现的字符。 */
 const PER_TERM = "\u0001";
 
 export function pageHits(
@@ -479,7 +475,7 @@ export function pageHits(
 		acc.push(...list.slice(0, perTerm));
 		out.set(empId, acc);
 	}
-	// 词序即行序：结果里每个人的每条证据对应一条要求，按要求下标排好再交出去
+	// 词序即行序：结果里每个人的每条证据对应一条条件，按条件下标排好再交出去
 	for (const list of out.values())
 		list.sort(
 			(a, b) =>

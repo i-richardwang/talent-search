@@ -5,8 +5,9 @@
  * 数据库、不碰密钥，只做收窄。放在服务端模块里的话，验它就得先起一个 Postgres
  * 和一个假模型端点——一条收窄规则的测试不该有这种代价。
  */
-import { boundedText } from "./requirement";
+
 import { hasMeaning, type QueryInput, sanitizeSpec } from "./spec";
+import { boundedText } from "./text";
 
 /**
  * 收窄放在跨进程这一跳，不放在 `createTurn` 里：不可信的只有这一跳。

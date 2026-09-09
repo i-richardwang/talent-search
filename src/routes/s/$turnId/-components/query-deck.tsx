@@ -5,16 +5,8 @@ import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
 import { cn } from "#/lib/utils";
-import {
-	hasMeaning,
-	type QueryInput,
-	type SearchSpec,
-	unsupportedOf,
-	wideTerms,
-} from "#/search/spec";
-import { scopeEntries } from "../../../-lib/scope-label";
+import { hasMeaning, type QueryInput, type SearchSpec } from "#/search/spec";
 import { QueryChips } from "./query-chips";
-import { QueryScope } from "./query-scope";
 
 /** 从外面打开改写：键盘流的 `/`，以及空名单上那几条通向改写的出路。 */
 export type QueryDeckHandle = { edit: () => void };
@@ -32,11 +24,10 @@ export type QueryDeckHandle = { edit: () => void };
  * 1. **那句话**（`rawText`）。这一屏的 h1，也是这条查询唯一完整的表示。
  *    改它就是改问题：想加条件在句子后面接着写，模型读错了就把那个词说清楚，
  *    两件事在用户那里本来就是同一个动作。
- * 2. **系统读成的条件**（chips + 范围）。那句话的解释，可以逐枚调强度、停用、
+ * 2. **系统读成的条件**（chips）。那句话的解释，可以逐枚调强度、停用、
  *    删除——那是**微调**，快过重写整句。它不必独自扛起表达整个查询的责任：
- *    扛不动的部分，左边那句话扛着。
- * 3. 右端是没处放的那几个词。它是这几枚 chip 的脚注，也是这条带上唯一
- *    右对齐的东西——通栏一千多像素只放一句话和几枚 chip 的话，剩下的是死白。
+ *    扛不动的部分，左边那句话扛着。这排 chip 就是读出来的全部：句子里没
+ *    变成 chip 的字，就是没参与找人的字。
  *
  * 再往下的报数与图例（`result-list.tsx` 的 `ResultHeader`）回答的是「这份名单是
  * 什么」。它归名单，不归这里。
@@ -89,14 +80,10 @@ export function QueryDeck({
 	/** 理解失败时的重试动作。 */
 	onRetry?: () => void;
 }) {
-	const unsupported = unsupportedOf(spec);
 	const settled = hasMeaning(spec) && !interpreting;
 	// 系统到底读出了东西没有。读出来了才有左右两半，也才有中间那条竖线——
 	// 一条一侧空着的分隔线画的是一个不存在的分界。
-	const reading =
-		spec.requirements.length > 0 ||
-		scopeEntries(spec.scope).length > 0 ||
-		scopeEntries(spec.prefer ?? {}).length > 0;
+	const reading = spec.terms.length > 0;
 	const [editing, setEditing] = useState(false);
 
 	useImperativeHandle(ref, () => ({ edit: () => setEditing(true) }));
@@ -188,41 +175,12 @@ export function QueryDeck({
 					)}
 
 					{settled && (
-						/* chips 和范围挨在一起：它们都是「系统读成的条件」，
-					   分开摆只会让人以为那是两类东西。 */
 						<div className="flex shrink-0 items-center gap-1.5 max-lg:flex-wrap">
 							<QueryChips
-								onChange={(requirements) =>
-									onChangeSpec({ ...spec, requirements })
-								}
-								requirements={spec.requirements}
-								wide={new Set(wideTerms(spec))}
-							/>
-							<QueryScope
-								onChange={({ scope, prefer }) =>
-									onChangeSpec({ ...spec, scope, prefer })
-								}
-								prefer={spec.prefer}
-								scope={spec.scope}
+								onChange={(terms) => onChangeSpec({ terms })}
+								terms={spec.terms}
 							/>
 						</div>
-					)}
-
-					{/*
-					 * 没处放的条件是这几枚 chip 的脚注：用户写了「北京的」，
-					 * 屏幕上的条件里没有它，不说一句的话他会以为它生效了。
-					 * 靠右端，因为那一段本来是死白。
-					 */}
-					{settled && unsupported.length > 0 && (
-						<p
-							className="ms-auto flex min-w-0 items-baseline gap-1.5 text-muted-foreground text-xs"
-							title={`「${unsupported.join("」「")}」暂不支持作为条件，本次未生效。`}
-						>
-							<AlertCircleIcon className="size-3.5 shrink-0 translate-y-0.5 text-warning" />
-							<span className="truncate">
-								「{unsupported.join("」「")}」暂不支持作为条件，本次未生效。
-							</span>
-						</p>
 					)}
 				</div>
 			)}

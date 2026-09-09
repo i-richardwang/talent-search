@@ -12,32 +12,32 @@ import {
 } from "#/components/ui/menu";
 import { cn } from "#/lib/utils";
 import {
-	isVariant,
-	REQUIREMENT_MODES,
-	type Requirement,
-	type RequirementMode,
-	type Variant,
+	modesOf,
+	type Term,
+	type TermMode,
+	termKey,
+	withMode,
 	withOff,
-	withoutVariant,
-} from "#/search/requirement";
+	withoutValue,
+} from "#/search/term";
+import { MODE_GLYPH, termLabel, valueLabel } from "../../../-lib/term-label";
 
 /**
- * 查询条件：一条要求一枚 chip，可改强度、可删。
+ * 查询条件：一条条件一枚 chip，可改强度、可停用、可删。经历词和范围维度是
+ * 同一种 chip——「最好是字节来的」和「最好带过团队」在用户嘴里是同一种话，
+ * 在屏幕上也该是同一种东西，同一个菜单。
  *
  * 它是**系统读出来的东西**，不是查询本身——查询是上面那句原话（见
  * `query-deck.tsx`）。所以这里只做微调：改强度、停用、删掉一枚，都比重写整句
  * 快。说不清哪儿错了的时候，出路在那句话上，不在这排 chip 上。
  *
- * 停用（见 `requirement.ts`）保留词和强度，只让它退出本次检索，
- * 用于快速判断某个条件是否过窄。
+ * chip 上只写代表词（`values[0]`）。一条条件的其余取值收在菜单里、逐条可删，
+ * chip 上留一个记号说「这里还有」：全写出来一排 chip 就读不过来了；藏起来
+ * 不让看则是让一个不该出现的人在屏幕上找不到是哪个词招来的。
  *
- * chip 上只写用户自己的说法。模型补的变体（`Member.tier` 不是 said 的那些）
- * 收在菜单里：它们是系统替用户加的，摆在 chip 上会把「我说的」和「它补的」
- * 混成一排；藏起来不让看则是让一个不该出现的人在屏幕上找不到是哪个词招来的。
- * 所以菜单里逐条列出、逐条可删，chip 上只留一个记号说「这里还有」。
- *
- * 四个动作（改强度、停用、删除、删一个变体）都是对要求列表的一次 map 或
- * filter：改的那一条从原对象展开，其余字段原样带着，没有拼装的机会。
+ * 四个动作（改强度、停用、删除、删一个取值）都是 `term.ts` 里的一次变换
+ * （`withMode` / `withOff` / `withoutValue`）再对条件列表做一次 map 或 filter：
+ * 这里不知道一条条件长什么样，也就没有拼装的机会。
  */
 
 /**
@@ -46,7 +46,7 @@ import {
  * 描边和实心的差别足够读出「这一枚不一样」，而且不占任何一个色相
  * （全站的色相已经各有其主，见 `evidence.tsx`）。
  */
-const MODE_VARIANT: Record<RequirementMode, "secondary" | "outline"> = {
+const MODE_VARIANT: Record<TermMode, "secondary" | "outline"> = {
 	must: "secondary",
 	boost: "outline",
 	exclude: "outline",
@@ -55,35 +55,16 @@ const MODE_VARIANT: Record<RequirementMode, "secondary" | "outline"> = {
 /** chip 的尺码。和 `MODE_VARIANT` 一起，构成 chip 静息态的全部外观。 */
 const CHIP_SIZE = "xs" as const;
 
-const MODE_LABEL: Record<RequirementMode, string> = {
+const MODE_LABEL: Record<TermMode, string> = {
 	must: "必须",
 	boost: "加分",
 	exclude: "排除",
 };
 
-const MODE_HINT: Record<RequirementMode, string> = {
-	must: "仅显示具备这项经历的人",
-	boost: "具备这项经历的人优先显示",
+const MODE_HINT: Record<TermMode, string> = {
+	must: "仅显示满足这项的人",
+	boost: "满足这项的人优先显示",
 	exclude: "这类经历不再作为证据；仅有这类经历的人不再显示",
-};
-
-/**
- * 强度写在符号上，不写在颜色上。
- *
- * 全站的色相已经各有其主：绿是受控字段命中、蓝是选中、amber 是查询上的提示。
- * 再给 chip 发三个颜色，等于让同一片绿在证据行里和查询条里说两件事。`+` 和 `-` 是
- * 搜索框里几十年的老约定，不需要教，也不占用任何一个色相。
- *
- * 「必须」不带符号：它是默认，而默认不该有标记——大多数查询整条都是必须词，
- * 一排 `=` 号只会让人以为那是要读的内容。
- *
- * 减号画的是真正的减号 U+2212，不是 ASCII 的 `-`：它和加号同宽同高，
- * 一列 chip 的符号位才对得齐。
- */
-const MODE_GLYPH: Record<RequirementMode, string> = {
-	must: "",
-	boost: "+",
-	exclude: "−",
 };
 
 /**
@@ -105,50 +86,47 @@ const EXCLUDE_STYLE = "line-through";
  */
 const OFF_STYLE = "border-dashed text-muted-foreground";
 
-/**
- * 变体在菜单里的档位说明。用字不用分数：分数在 `weights.ts`，会调；
- * 这里答的是「它和你说的是什么关系」。
- */
-const TIER_LABEL: Record<Variant["tier"], string> = {
-	same: "同义",
-	near: "相近",
-};
-
-/** chip 上「这里还有变体」的记号。≈ 是「差不多」最省字的写法，证据行上也用它。 */
-const VARIANT_GLYPH = "≈";
+/** chip 上「这里还有别的取值」的记号。≈ 是「差不多」最省字的写法，证据行上也用它。 */
+const MORE_GLYPH = "≈";
 
 export function QueryChips({
-	requirements,
-	wide,
+	terms,
 	onChange,
 }: {
-	/** 这条查询的证据要求，一条一枚 chip。 */
-	requirements: readonly Requirement[];
-	/** 这次理解里被判成太宽的词。它解释「这一枚为什么是停用的」，不改变停用本身。 */
-	wide: ReadonlySet<string>;
-	onChange: (next: Requirement[]) => void;
+	/** 这条查询的条件，一条一枚 chip。 */
+	terms: readonly Term[];
+	onChange: (next: Term[]) => void;
 }) {
-	if (requirements.length === 0) return null;
+	if (terms.length === 0) return null;
 
-	const replaceAt = (i: number, next: Requirement) =>
-		onChange(requirements.map((r, j) => (j === i ? next : r)));
-	const remove = (i: number) =>
-		onChange(requirements.filter((_, j) => j !== i));
+	const replaceAt = (i: number, next: Term | null) =>
+		onChange(
+			next === null
+				? terms.filter((_, j) => j !== i)
+				: terms.map((t, j) => (j === i ? next : t)),
+		);
 	// 不套自己的盒子：这几枚 chip 是查询带那一行里的元素，横着排还是换行由
 	// 摆它们的地方说了算（`query-deck.tsx`——那条带在 lg 以上是定高的一行）。
 	// 自己再包一层 flex，那一层的换行就会在带子里长出第二行来。
 	return (
 		<>
-			{requirements.map((chip, i) => {
-				const term = chip.members[0].text;
-				const tooWide = wide.has(term);
-				const said = chip.members.filter((m) => !isVariant(m));
-				const variants = chip.members.filter(isVariant);
+			{terms.map((chip, i) => {
+				const label = termLabel(chip);
+				const more = chip.values.length > 1;
+				const wide = chip.off === "wide";
 				return (
-					<Menu key={`${chip.off ? "~" : ""}${chip.mode}:${term}`}>
+					<Menu key={termKey(chip)}>
 						<MenuTrigger
 							render={
 								<Button
+									aria-label={[
+										MODE_LABEL[chip.mode],
+										label,
+										more && "等",
+										wide ? "太宽，已停用" : chip.off && "已停用",
+									]
+										.filter(Boolean)
+										.join("，")}
 									className={cn(
 										chip.mode === "exclude" && EXCLUDE_STYLE,
 										chip.off && OFF_STYLE,
@@ -163,16 +141,15 @@ export function QueryChips({
 									{MODE_GLYPH[chip.mode]}
 								</span>
 							)}
-							{/* 用户自己的几个说法（或）同权重，平着写；变体不上 chip */}
-							<span>{said.map((m) => m.text).join(" / ")}</span>
-							{variants.length > 0 && (
+							<span>{label}</span>
+							{more && (
 								<span className="font-mono text-muted-foreground">
-									{VARIANT_GLYPH}
+									{MORE_GLYPH}
 								</span>
 							)}
 							{/* 「太宽」是成因，得用字说；只给一个停用图标的话，
 							    自动停的和自己停的在屏幕上就分不出来了 */}
-							{chip.off && tooWide && <span className="text-xs">太宽</span>}
+							{wide && <span>太宽</span>}
 							{chip.off && <EyeOffIcon />}
 							<ChevronDownIcon />
 						</MenuTrigger>
@@ -181,7 +158,7 @@ export function QueryChips({
 								<>
 									<MenuGroupLabel>
 										<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
-											{tooWide
+											{wide
 												? "这个词命中的人太多，几乎筛不掉谁，已自动停用。" +
 													"换个更具体的说法效果更好；重新启用后将照常参与检索。"
 												: `此条件当前未生效。重新启用后仍为「${MODE_LABEL[chip.mode]}」条件。`}
@@ -192,11 +169,11 @@ export function QueryChips({
 							)}
 							<MenuRadioGroup
 								onValueChange={(mode) =>
-									replaceAt(i, { ...chip, mode: mode as RequirementMode })
+									replaceAt(i, withMode(chip, mode as TermMode))
 								}
 								value={chip.mode}
 							>
-								{REQUIREMENT_MODES.map((mode) => (
+								{modesOf(chip).map((mode) => (
 									<MenuRadioItem key={mode} value={mode}>
 										{/* 两行一格：标题说这一档叫什么，副行说它会做什么。
 										    改强度是这个菜单唯一的主任务，值得占两行。 */}
@@ -209,22 +186,19 @@ export function QueryChips({
 									</MenuRadioItem>
 								))}
 							</MenuRadioGroup>
-							{variants.length > 0 && (
+							{chip.values.length > 1 && (
 								<>
 									<MenuSeparator />
-									<MenuGroupLabel>也按这些说法找</MenuGroupLabel>
-									{variants.map((m) => (
+									<MenuGroupLabel>任一满足即可</MenuGroupLabel>
+									{chip.values.map((value) => (
 										<MenuItem
-											key={m.text}
-											onClick={() => replaceAt(i, withoutVariant(chip, m.text))}
+											key={value}
+											onClick={() => replaceAt(i, withoutValue(chip, value))}
 										>
-											{/* 一行三段：变体、它和原话的关系、点了会怎样。
-											    删是这一行唯一的动作，所以整行可点，末尾说明白。 */}
+											{/* 一行两段：取值，和点了会怎样。删是这一行唯一的动作，
+											    所以整行可点，末尾说明白。 */}
 											<span className="flex flex-1 items-baseline gap-2">
-												<span>{m.text}</span>
-												<span className="text-muted-foreground text-xs">
-													{TIER_LABEL[m.tier]}
-												</span>
+												<span>{valueLabel(chip, value)}</span>
 												<span className="ml-auto text-muted-foreground text-xs">
 													不按它找
 												</span>
@@ -239,10 +213,17 @@ export function QueryChips({
 							 * （词没了，强度也一起没了）。
 							 */}
 							<MenuSeparator />
-							<MenuItem onClick={() => replaceAt(i, withOff(chip, !chip.off))}>
+							<MenuItem
+								onClick={() =>
+									replaceAt(i, withOff(chip, chip.off ? null : "user"))
+								}
+							>
 								{chip.off ? "重新启用" : "暂不使用"}
 							</MenuItem>
-							<MenuItem onClick={() => remove(i)} variant="destructive">
+							<MenuItem
+								onClick={() => replaceAt(i, null)}
+								variant="destructive"
+							>
 								删除条件
 							</MenuItem>
 						</MenuPopup>

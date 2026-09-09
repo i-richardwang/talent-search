@@ -19,8 +19,7 @@ const { createTurn, listRecent, loadTurn, resolveTurn } = await import(
 	"#/server/turn"
 );
 
-const termsOf = (spec: SearchSpec) =>
-	spec.requirements.map((r) => r.members[0].text);
+const termsOf = (spec: SearchSpec) => spec.terms.map((t) => t.values[0]);
 
 async function sentence(text: string, parent?: string) {
 	const { turnId } = await createTurn({ kind: "sentence", text }, parent);
@@ -41,23 +40,17 @@ describe("整句的改写", () => {
 		assert.equal(row?.rootTurnId, root.turnId, "改写不开新链");
 	});
 
-	test("上一条的范围与提示不跟着过来", async () => {
+	test("上一条的范围不跟着过来", async () => {
 		const root = await createTurn({
 			kind: "spec",
-			spec: {
-				requirements: parseQuery("算法"),
-				scope: { kind: "external", minMonths: 24 },
-				notices: [{ kind: "unsupported", text: "北京" }],
-			},
+			spec: { terms: parseQuery("算法,kind:external,minMonths:24") },
 		});
 		const child = await createTurn(
 			{ kind: "sentence", text: "渠道运营" },
 			root.turnId,
 		);
 		const spec = await resolveTurn(child.turnId);
-		assert.deepEqual(spec.scope, {});
-		assert.deepEqual(spec.notices, []);
-		assert.deepEqual(termsOf(spec), ["渠道运营"]);
+		assert.deepEqual(spec.terms, parseQuery("渠道运营"));
 	});
 });
 
@@ -67,11 +60,7 @@ describe("只改条件", () => {
 		const tuned = await createTurn(
 			{
 				kind: "spec",
-				spec: {
-					requirements: parseQuery("+算法"),
-					scope: {},
-					notices: [],
-				},
+				spec: { terms: parseQuery("+算法") },
 			},
 			root.turnId,
 		);
@@ -96,7 +85,7 @@ describe("门面", () => {
 		const { turnId } = await createTurn(
 			{
 				kind: "spec",
-				spec: { ...root.spec, requirements: parseQuery("+算法") },
+				spec: { terms: parseQuery("+算法") },
 			},
 			root.turnId,
 		);
@@ -150,23 +139,14 @@ describe("理解失败", () => {
 	});
 
 	/**
-	 * 模型答得合法却没按约定作答——给了片段，说的却不是句子里的字——收窄之后
+	 * 模型答得合法却没按约定作答——给了条件，取值却全在词表外——收窄之后
 	 * 一个不剩。这一份空条件走下去，界面画的是「一个条件都没解析出来」，
 	 * 也就是把一次故障画成了「你没说条件」。它和端点报错走同一条路。
 	 */
-	test("模型给了片段、收窄后一个不剩：也是失败，不落库", async () => {
+	test("模型给了条件、收窄后一个不剩：也是失败，不落库", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const restore = answerIntent(() => ({
-			items: [
-				{
-					said: "推荐算法",
-					is: "requirement",
-					mode: "must",
-					value: null,
-					anyOf: [],
-					variants: [],
-				},
-			],
+			terms: [{ field: "level", mode: "must", values: ["资深"] }],
 		}));
 		try {
 			await assert.rejects(resolveTurn(turnId));
@@ -176,6 +156,24 @@ describe("理解失败", () => {
 		assert.equal((await loadTurn(turnId))?.spec, null);
 
 		assert.deepEqual(termsOf(await resolveTurn(turnId)), ["算法"]);
+	});
+
+	test("只丢一部分是设计内的：剩下的条件照常落库", async () => {
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const restore = answerIntent(() => ({
+			terms: [
+				{ field: "level", mode: "boost", values: ["资深"] },
+				{ field: "minMonths", mode: "must", values: ["三年"] },
+				{ field: "experience", mode: "must", values: ["算法"] },
+			],
+		}));
+		try {
+			assert.deepEqual((await resolveTurn(turnId)).terms, [
+				{ field: "experience", mode: "must", values: ["算法"] },
+			]);
+		} finally {
+			restore();
+		}
 	});
 });
 

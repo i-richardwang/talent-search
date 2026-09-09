@@ -17,15 +17,15 @@ import {
 } from "#/routes/s/$turnId/-lib/view-params";
 import type { EmptyReason } from "#/search/empty";
 import { parseQuery } from "#/search/query-syntax";
-import type { Requirement } from "#/search/requirement";
+import type { Term } from "#/search/term";
 
 /** 跑一次空态，把按钮按下去，回收它想改的东西 */
 function run(reason: EmptyReason, query = "") {
 	let changed: Partial<View> | undefined;
-	let revised: Requirement[] | undefined;
+	let revised: Term[] | undefined;
 	let focused = false;
 	const copy = emptyState(reason, {
-		requirements: parseQuery(query),
+		terms: parseQuery(query),
 		onChange: (next) => {
 			changed = next;
 		},
@@ -41,7 +41,7 @@ function run(reason: EmptyReason, query = "") {
 }
 
 describe("取数超限：是一种结果，不是一次失败", () => {
-	test("只点名实际贡献事实行最多的要求，出口是改条件不是清筛选", () => {
+	test("只点名实际贡献事实行最多的条件，出口是改条件不是清筛选", () => {
 		const s = run({ kind: "overflowEvidence", terms: ["经理"] }, "算法,经理");
 		assert.equal(s.title, "匹配证据过多");
 		assert.match(s.hint, /「经理」/);
@@ -69,7 +69,7 @@ describe("条件全被停用", () => {
 		assert.equal(s.changed, undefined, "改条件不是改视图");
 	});
 
-	test("启用不是重写：说法一个都不能少", () => {
+	test("启用不是重写：取值一个都不能少", () => {
 		const s = run({ kind: "allDisabled" }, "~大模型/多模态,~+带团队/带项目");
 		assert.deepEqual(s.revised, parseQuery("大模型/多模态,+带团队/带项目"));
 	});
@@ -77,14 +77,13 @@ describe("条件全被停用", () => {
 
 describe("其余各支各说各的", () => {
 	test("缺少可搜的条件时让人补一个能力，不让人去动筛选", () => {
-		const kinds = ["excludeOnly", "unsupportedOnly", "noConditions"] as const;
+		const kinds = ["excludeOnly", "noConditions"] as const;
 		for (const kind of kinds) {
 			const s = run({ kind });
 			assert.equal(s.focused, true, kind);
 			assert.equal(s.changed, undefined, kind);
 		}
 		assert.equal(run({ kind: "excludeOnly" }).title, "缺少搜索条件");
-		assert.equal(run({ kind: "unsupportedOnly" }).title, "这些条件暂不支持");
 		assert.equal(run({ kind: "noConditions" }).title, "未识别到有效的搜索条件");
 	});
 
@@ -109,6 +108,13 @@ describe("其余各支各说各的", () => {
 	test("AND 没满足：指向把某个必须词改成加分", () => {
 		const s = run({ kind: "unmet" });
 		assert.match(s.hint, /加分/);
+		assert.equal(s.focused, true);
+	});
+
+	test("全是加分条件却没人：出路是换词，不能再让人「改成加分」", () => {
+		const s = run({ kind: "noHits" });
+		assert.doesNotMatch(s.hint, /改为「加分」/);
+		assert.match(s.hint, /换/);
 		assert.equal(s.focused, true);
 	});
 });

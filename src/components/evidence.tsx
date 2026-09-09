@@ -2,7 +2,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { type Strength, strengthOf } from "#/search/evidence";
-import { isVariant } from "#/search/requirement";
 import type { Hit, TermBasis } from "#/search/result";
 import type { Route } from "#/search/weights";
 
@@ -11,8 +10,8 @@ export const ROUTE_LABEL: Record<Route, string> = {
 	title: "岗位",
 	org: "部门或公司",
 	description: "简历原文",
-	skill: "能力词",
-	did: "做过的事",
+	skill: "技能",
+	did: "工作内容",
 };
 
 const STRENGTH_LABEL: Record<Strength, string> = {
@@ -39,9 +38,8 @@ const STRENGTH_HINT: Record<Strength, string> = {
  * 三档强度用**填充方式**而不是三种颜色区分：实心 / 实心灰 / 空心构成一个不依赖
  * 色觉的序列，打印成黑白或色弱下顺序依然成立。色相只是最强那一档的加成。
  *
- * 最强那一档用 `success`，不用 `warning`：amber 已经归「未识别语气」和
- * 「没处放的条件」两条提示所有，拿它画受控命中会让「最可信」和「有问题」共用一个
- * 颜色，而它们在同一屏上并排出现。
+ * 最强那一档用 `success`，不用 `warning`：amber 已经归「要留意」的状态所有，
+ * 拿它画受控命中会让「最可信」和「有问题」共用一个颜色。
  *
  * 8px 是这个编码可判读的下限——再小，空心和实心灰在正常观看距离上分不开，
  * 所以尺寸不开放成参数。
@@ -119,7 +117,7 @@ export function StrengthLegend() {
 
 /**
  * 相关度的显示形态：整数百分比。它是一个用户能理解的量（「这段经历和你的
- * 条件有多像」），所以直接给数；「同义 / 相近」这类档位会额外制造一套刻度。
+ * 条件有多像」），所以直接给数，不折成几档：档位是另一套要学的刻度。
  */
 export function relevance(value: number) {
 	return `${Math.round(value * 100)}%`;
@@ -176,12 +174,12 @@ function matchedField(hit: Hit): {
  * 一个人一个条件的一行证据。五段固定的槽，所有人的所有行共用同一套列位置——
  * 这是把表格旋转成块之后仍然能上下扫的原因，只不过那条竖线上现在写着凭据。
  *
- *   [点] [条件词]  [≈ 变体] [命中的字段值 · 这段经历在哪]    [相关度]  [时长]
+ *   [点] [条件词]  [≈ 取值] [命中的字段值 · 这段经历在哪]    [相关度]  [时长]
  *
- * 靠模型补的变体命中时，字段值前面先写「≈ 推荐算法」：这一行凭什么算命中，
- * 第一个要答的就是「拿去比的是哪个词」——用户说的是「算法」，比的是
+ * 靠这条条件的另一个取值命中时，字段值前面先写「≈ 推荐算法」：这一行凭什么
+ * 算命中，第一个要答的就是「拿去比的是哪个词」——chip 上写的是「算法」，比的是
  * 「推荐算法」，不说清的话相关度那个数对着的是一个屏幕上没有的词。
- * 靠原话命中的不写：默认不该有记号。
+ * 靠代表词命中的不写：默认不该有记号。
  *
  * 相关度取 `basis.relevance`（最强那条证据的相关度），时长取 `basis.months`（并列
  * 最强的那些段的累计月数）——正是参与打分的那两个值；取样例段的数会让两个
@@ -196,7 +194,7 @@ export function EvidenceLine({
 	hit,
 	basis,
 }: {
-	/** 这一行属于哪条要求（主词） */
+	/** 这一行属于哪条条件（代表词） */
 	term: string;
 	/** 加分词。必须词是默认，默认不该有标记。 */
 	boost: boolean;
@@ -205,7 +203,7 @@ export function EvidenceLine({
 	/**
 	 * 打分用的聚合值：相关度、并列最强那些段的累计月数、是否仍在进行。
 	 *
-	 * 它不可空。一条要求有没有 `basis` 和它有没有样例段是同一件事（两者出自
+	 * 它不可空。一条条件有没有 `basis` 和它有没有样例段是同一件事（两者出自
 	 * 同一次筛选），所以「有 hit 没有 basis」的那一行不存在——调用点只在两样
 	 * 都在时才画这一行。给它配一份退回样例段的算法，等于替一个到不了的分支
 	 * 造一套第二口径的数，而那套数一旦真被用上就和名次对不上了。
@@ -227,9 +225,10 @@ export function EvidenceLine({
 			<Dot className="translate-y-1" strength={strengthOf(hit.route)} />
 			<span className={cn(TERM_W, "shrink-0")}>{name}</span>
 			<span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-				{isVariant(hit.member) && (
+				{/* 命中的不是代表词时说出是哪个词：一个意外的人得能找到是哪个词招来的 */}
+				{hit.value !== hit.term && (
 					<span className="shrink-0 text-muted-foreground text-xs">
-						≈ {hit.member.text}
+						≈ {hit.value}
 					</span>
 				)}
 				{/*

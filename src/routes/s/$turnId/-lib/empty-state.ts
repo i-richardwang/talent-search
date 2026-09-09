@@ -1,5 +1,5 @@
 import type { EmptyReason } from "#/search/empty";
-import { type Requirement, withOff } from "#/search/requirement";
+import { type Term, withOff } from "#/search/term";
 import { CLEARED_FILTERS, type View } from "./view-params";
 
 /**
@@ -23,12 +23,12 @@ type EmptyCopy = {
 };
 
 type Handlers = {
-	/** 这条查询的证据要求。「把停用的全部启用」改的是它。 */
-	requirements: readonly Requirement[];
+	/** 这条查询的条件。「把停用的全部启用」改的是它。 */
+	terms: readonly Term[];
 	/** 改视图：筛选、翻页。不产生新的查询记录。 */
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：派生一条新记录。 */
-	onReviseQuery: (next: Requirement[]) => void;
+	onReviseQuery: (next: Term[]) => void;
 	onEditQuery: () => void;
 };
 
@@ -46,7 +46,7 @@ const COPY: {
 	}),
 	overflowPopulation: (_reason, h) => ({
 		title: "查询范围过大",
-		hint: "请添加更具体的范围条件或经历要求，再查看完整结果。",
+		hint: "请添加更具体的范围条件或经历条件，再查看完整结果。",
 		action: { label: "添加条件", onClick: h.onEditQuery },
 	}),
 	allDisabled: (_reason, h) => ({
@@ -56,18 +56,12 @@ const COPY: {
 			label: "启用全部条件",
 			// 启用是**改查询**，不是改视图：条件变了，找的就是另一批人。所以它
 			// 派生一条新记录。
-			onClick: () =>
-				h.onReviseQuery(h.requirements.map((r) => withOff(r, false))),
+			onClick: () => h.onReviseQuery(h.terms.map((t) => withOff(t, null))),
 		},
 	}),
 	excludeOnly: (_reason, h) => ({
 		title: "缺少搜索条件",
 		hint: "当前只有排除条件，请添加至少一项岗位、经验或能力。",
-		action: { label: "添加条件", onClick: h.onEditQuery },
-	}),
-	unsupportedOnly: (_reason, h) => ({
-		title: "这些条件暂不支持",
-		hint: "请补充岗位、经验或能力；未支持的条件不会参与搜索。",
 		action: { label: "添加条件", onClick: h.onEditQuery },
 	}),
 	noConditions: (_reason, h) => ({
@@ -77,7 +71,7 @@ const COPY: {
 	}),
 	scopeEmpty: (_reason, h) => ({
 		title: "没有符合查询范围的员工",
-		hint: "请移除一项范围条件，或添加经历要求重新搜索。",
+		hint: "请移除一项范围条件，或添加经历条件重新搜索。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	strongEmpty: (reason, h) => ({
@@ -99,6 +93,11 @@ const COPY: {
 	unmet: (_reason, h) => ({
 		title: "没有符合全部必选条件的结果",
 		hint: "把较次要的条件改为「加分」，可以保留没有这段经历的人。",
+		action: { label: "调整条件", onClick: h.onEditQuery },
+	}),
+	noHits: (_reason, h) => ({
+		title: "没有找到相关的人",
+		hint: "当前条件都是加分项，没有人满足其中任何一项。换个更常见的说法试试。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 };
