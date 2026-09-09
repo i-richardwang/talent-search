@@ -16,20 +16,22 @@ const TERMS: TermPlan[] = [
 	{ term: "算法", members: [{ text: "算法", tier: "said" }], mode: "must" },
 ];
 
-const render = (strong: boolean, strongOn: number, terms = TERMS) =>
-	visibleText(
-		renderToStaticMarkup(
-			<ResultHeader
-				loading={false}
-				onChange={() => {}}
-				order="relevance"
-				strong={strong}
-				strongOn={strongOn}
-				terms={terms}
-				total={38}
-			/>,
-		),
+const markup = (strong: boolean, strongOn: number, terms = TERMS) =>
+	renderToStaticMarkup(
+		<ResultHeader
+			loading={false}
+			onChange={() => {}}
+			order="relevance"
+			planned={terms.length > 0}
+			strong={strong}
+			strongOn={strongOn}
+			terms={terms}
+			total={38}
+		/>,
 	);
+
+const render = (strong: boolean, strongOn: number, terms = TERMS) =>
+	visibleText(markup(strong, strongOn, terms));
 
 describe("这份名单是什么", () => {
 	test("报数和排序依据都在", () => {
@@ -67,10 +69,16 @@ describe("只看任职记录可查的", () => {
 });
 
 describe("不给死路", () => {
-	test("一个人都数不出来时这个开关不出现", () => {
-		// 点下去必然清空名单。左栏那几维把数到 0 的那一行禁用掉就完事了，
-		// 只有这一档是布尔的，没有行可以禁用。
-		assert.ok(!render(false, 0).includes("只看任职记录可查的"));
+	test("一个人都数不出来时这个开关按不下去，但位子还在", () => {
+		// 点下去必然清空名单，所以它不能可点；而抽掉它，表头这一行会随着结果
+		// 落地长高一档、整份名单往下跳一次。左栏那几维处理死路的办法也正是
+		// 把数到 0 的那一行禁用掉、留在原地（`filter-rail.tsx` 开头）。
+		const html = markup(false, 0);
+		assert.ok(html.includes("只看任职记录可查的"), html);
+		assert.match(
+			html.slice(0, html.indexOf("只看任职记录可查的")),
+			/<button[^>]*\sdisabled=""/,
+		);
 	});
 
 	test("已经打开的永远留着，否则没有任何东西能关掉它", () => {

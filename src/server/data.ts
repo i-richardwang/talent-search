@@ -28,6 +28,14 @@ export type DataList = {
 	/** 库里一共多少人 */
 	total: number;
 	rows: EmployeeRow[];
+	/**
+	 * 这一份是不是被 `LIST_LIMIT` 截断了。
+	 *
+	 * 它得由这里说：截断在这条 SQL 上发生，而页面不认识那个上限。不说的话，
+	 * 一张列着 200 行的表底下写着「库里 5000 人」——读起来像库里只有这些，
+	 * 而两个数字都是对的，谁都不会报这个 bug。
+	 */
+	capped: boolean;
 };
 
 /** 按名字或工号找人；不给词就按工号列前几百个。 */
@@ -50,7 +58,11 @@ export async function listEmployees(needle: string): Promise<DataList> {
 			[version, pattern],
 		),
 	]);
-	return { total: Number(total.rows[0]?.n ?? 0), rows: rows.rows };
+	return {
+		total: Number(total.rows[0]?.n ?? 0),
+		rows: rows.rows,
+		capped: rows.rows.length === LIST_LIMIT,
+	};
 }
 
 /** 一段连它的派生结果。 */

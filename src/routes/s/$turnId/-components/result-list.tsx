@@ -67,11 +67,20 @@ export function ResultHeader({
 	strong,
 	onChange,
 	strongOn,
+	planned,
 }: {
 	loading: boolean;
 	order: "relevance" | "employee";
 	total: number;
 	terms: TermPlan[];
+	/**
+	 * 这次查询有没有条件——**从记录上算，不等服务端**。
+	 *
+	 * 右边那一簇（图例和那个开关）因此从第一帧就在场，而不是等 `terms` 回来。
+	 * 等的话这一行会在结果落地时长高一档（那个开关比一行字高 8px），整份名单
+	 * 跟着往下跳一次。
+	 */
+	planned: boolean;
 	/** 「只看任职记录可查的」开着没有。它是这份名单的性质，不是一份视图状态。 */
 	strong: boolean;
 	onChange: (next: Partial<View>) => void;
@@ -90,10 +99,15 @@ export function ResultHeader({
 					</>
 				)}
 			</p>
-			{terms.length > 0 && (
+			{(planned || terms.length > 0) && (
 				<div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
 					<StrengthLegend />
-					<ProvenOnly n={strongOn} on={strong} onChange={onChange} />
+					<ProvenOnly
+						loading={loading}
+						n={strongOn}
+						on={strong}
+						onChange={onChange}
+					/>
 				</div>
 			)}
 		</div>
@@ -123,18 +137,22 @@ function ProvenOnly({
 	on,
 	onChange,
 	n,
+	loading,
 }: {
 	on: boolean;
 	onChange: (next: Partial<View>) => void;
 	n: number;
+	/** 还在等结果：这个数此刻是「不知道」，不是 0。 */
+	loading: boolean;
 }) {
-	// 一个人都数不出来时不给这个开关——点下去必然清空名单，那是一条死路。
-	// 左栏那几维是把数到 0 的那一行禁用掉（`filter-rail.tsx`），而这一档是布尔的，
-	// 没有行可以禁用，只能整个不出现。
-	// 已经打开的永远留着：否则筛到 0 人之后就没有任何东西能关掉它了。
-	if (!on && n === 0) return null;
+	// 一个人都数不出来时**按不下去**，但位子还在——点下去必然清空名单，那是一条
+	// 死路，而左栏那几维处理死路的办法正是把数到 0 的那一行禁用掉、留在原地
+	// （`filter-rail.tsx` 开头）。整个抽掉的话，这一行会随着结果落地长高一档，
+	// 整份名单跟着往下跳，而那正是这一屏最该稳住的东西。
+	// 已经打开的永远可点：否则筛到 0 人之后就没有任何东西能关掉它了。
 	return (
 		<Toggle
+			disabled={!on && n === 0}
 			onPressedChange={(next) => onChange({ strong: next || undefined })}
 			pressed={on}
 			size="sm"
@@ -145,10 +163,14 @@ function ProvenOnly({
 			{/*
 			 * 数字位一直占着。按下去之后这个数就没意义了（开着的时候表头那个总数
 			 * 就是它），但位子不留着的话按钮当场变窄，它左边的图例跟着往右滑——
-			 * 而位移的正是人刚点下去的那个东西。
+			 * 而位移的正是人刚点下去的那个东西。等结果的时候同样占着位、不写数：
+			 * 那一刻它是「不知道」，写 0 就是在报一个假的事实。
 			 */}
 			<span
-				className={cn("text-muted-foreground tabular-nums", on && "invisible")}
+				className={cn(
+					"text-muted-foreground tabular-nums",
+					(on || loading) && "invisible",
+				)}
 			>
 				{n}
 			</span>
@@ -208,11 +230,16 @@ export function ResultList({
 		if (!loading && results.length > 0) lastRows.current = results.length;
 	}, [loading, results.length]);
 
+	// 这次查询会画几条证据，从记录上算（见 `pendingTerms`）。骨架屏的块高和表头
+	// 右边那一簇都读它——两处都是「结果回来之前就得把位子占好」。
+	const pending = pendingTerms(spec.requirements);
+
 	const head = (
 		<ResultHeader
 			loading={loading}
 			onChange={onChange}
 			order={order}
+			planned={pending.length > 0}
 			strong={strong}
 			strongOn={strongOn}
 			terms={terms}
@@ -222,7 +249,6 @@ export function ResultList({
 
 	// 检索中绝不闪现「没有结果」。
 	if (loading) {
-		const pending = pendingTerms(spec.requirements);
 		return (
 			<div>
 				{head}
@@ -232,16 +258,27 @@ export function ResultList({
 						(_, row) => (
 							// biome-ignore lint/suspicious/noArrayIndexKey: 骨架块没有身份
 							<Card className={PAD} key={row}>
-								<div className="flex items-center gap-3">
+								{/*
+								 * 骨架屏画的是**这次查询会有几条证据**，不是一个通用的方块堆：
+								 * 条件数取自记录上的 chips。
+								 *
+								 * 每一行的高度也从真卡片来：`h-lh` 是这一档字阶自己的行高
+								 * （姓名那行 `title-2`、证据行 `text-sm`，和 `EvidenceLine`
+								 * 同一档），所以块高等于加载完成之后的块高，名单不会在结果
+								 * 落地的那一帧长高。灰条自己多高无所谓——它住在行盒里，
+								 * 撑起高度的是行盒。
+								 */}
+								<div className="title-2 flex h-lh items-center gap-2.5">
 									<Skeleton className="h-4 w-24" />
 									<Skeleton className="h-3 w-44" />
 								</div>
-								{/* 骨架屏画的是**这次查询会有几条证据**，不是一个通用的方块堆：
-							    条件数取自记录上的 chips，所以加载完成时块高不变。 */}
 								{pending.length > 0 && (
-									<div className="mt-3 space-y-2">
+									<div className="mt-3 space-y-1.5">
 										{pending.map((t) => (
-											<div className="flex items-center gap-2.5" key={t.term}>
+											<div
+												className="flex h-lh items-center gap-2.5 text-sm"
+												key={t.term}
+											>
 												<Skeleton className="size-2 rounded-full" />
 												<Skeleton className="h-3 w-16" />
 												<Skeleton className="h-3 flex-1" />
@@ -312,9 +349,9 @@ export function ResultList({
 								PAD,
 								"transition-[border-color,background-color]",
 								// ↑↓ 换人时 scrollIntoView 把卡片推到视口边缘上，两头各留一档余量。
-								// 上边还要让开顶栏——它是这一屏唯一吸顶的东西，高度只有
-								// `--header-height` 一个出处（查询台跟着名单一起滚走）。
-								"scroll-mt-[calc(var(--header-height)+--spacing(4))] scroll-mb-4",
+								// 上边还要让开常驻的那一叠（顶栏加查询带），高度只有
+								// `--chrome-height` 一个出处（styles.css）。
+								"scroll-mt-[calc(var(--chrome-height)+--spacing(4))] scroll-mb-4",
 								selected
 									? // 蓝调环：绿在这套设计里只表达「受控字段命中」。
 										"border-info/40 ring-1 ring-info/30"

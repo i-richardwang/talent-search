@@ -77,8 +77,8 @@ const KEYS = [
  * 这一页分三层，层级和产品里那条最要紧的界线同构：
  *
  * 1. **顶栏**（外壳，`__root.tsx`）：应用身份和跨查询的历史。它不属于这次查询。
- * 2. **查询带**（`QueryDeck`）：这一页**是什么**。整个工作区那么宽，因为下面
- *    两栏都在它之内；改它派生一条新记录。
+ * 2. **查询带**（`QueryDeck`）：这一页**是什么**。吸在顶栏下沿、定高一行，整个
+ *    工作区那么宽——因为下面两栏都在它之内；改它派生一条新记录。
  * 3. **三栏**：筛选、名单、详情。全都只动 URL 上的视图参数，不产生新记录。
  *
  * 把第 2 层塞进中间那一栏，它就和左右两栏成了兄弟——而它们其实是它的子级。
@@ -137,7 +137,7 @@ function Workbench() {
 		retry: retryInterpret,
 	} = useInterpretation(turnId, settledSpec);
 
-	// 键盘流的 `/` 和空名单上那条出路，都落到抬头那句原话的改写框上
+	// 键盘流的 `/` 和空名单上那条出路，都落到查询带那句原话的改写框上
 	const deck = useRef<QueryDeckHandle>(null);
 	const editQuery = useCallback(() => deck.current?.edit(), []);
 	const wide = useIsWide();
@@ -200,17 +200,24 @@ function Workbench() {
 			 * 这一屏上的地位一致：都不改「问的是什么」，只改看到的是哪一部分、
 			 * 哪一个人。
 			 *
-			 * 两侧吸的是**顶栏**下沿，不是这一层的顶上：查询带跟着文档滚走之后，
-			 * 筛选和详情要接着停在屏幕上——它们服务的是同一份名单，而名单可以滚
-			 * 很长。那句话的常驻由顶栏那行缩略接手（`query-deck.tsx`）。
+			 * 两侧吸的是**常驻那一叠**（顶栏加查询带）的下沿，不是这一层的顶上：
+			 * 它们服务的是同一份名单，而名单可以滚很长。那一叠有多高只有
+			 * `--chrome-height` 一个出处（styles.css）——查询带定高就是为了它。
 			 */}
 			<div className="flex min-h-0 flex-1">
-				<FilterRail fields={fields} onChange={updateView} textFilters={texts} />
+				<FilterRail
+					fields={fields}
+					loading={loading}
+					onChange={updateView}
+					textFilters={texts}
+				/>
 
 				<div className="flex min-w-0 flex-1 flex-col">
 					<main
 						aria-label="搜索结果"
-						className="mx-auto w-full max-w-page px-4 pb-16"
+						/* 顶上那一档留白由这里给：查询带定高、贴着下沿画线，
+						   它没有可以顺手撑开的内边距。 */
+						className="mx-auto w-full max-w-page px-4 pt-4 pb-16"
 						id="results"
 						/* 跳过导航的落点必须可聚焦，否则点了链接只滚动、
 					   焦点仍在链接上，下一次 Tab 又回到顶栏 */
@@ -220,6 +227,7 @@ function Workbench() {
 						<div className="mb-3 lg:hidden">
 							<FilterSheet
 								fields={fields}
+								loading={loading}
 								onChange={updateView}
 								textFilters={texts}
 							/>
@@ -273,7 +281,7 @@ function Workbench() {
 					<aside
 						aria-label="员工详情"
 						className={cn(
-							"sticky top-(--header-height) h-[calc(100dvh-var(--header-height))] shrink-0 overflow-hidden",
+							"sticky top-(--chrome-height) h-[calc(100dvh-var(--chrome-height))] shrink-0 overflow-hidden",
 							"transition-[width] duration-200 ease-out",
 							/*
 							 * 服务端一律按宽屏渲染（`useIsWide`），而**首屏可以直接落在

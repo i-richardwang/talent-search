@@ -96,11 +96,33 @@ export type TaskLane = {
 	history: TaskRunView[];
 };
 
+/**
+ * 语料此刻有多少东西。任务台三张卡片上的数全是它——**问库，不问上一次跑的记录**。
+ *
+ * 一次运行说过的「人群 20 人」是那一刻的快照，跑完就开始过期：下一次同步之后，
+ * 卡片还照着上一次的记录报数，就成了屏幕上一个没人维护的旧值。这些数库里现成有，
+ * 每次载入查一遍即可（都是主键或小表上的 count，不值得为它们再开一份存储）。
+ */
+export type CorpusCounts = {
+	/** 库里多少人 */
+	employees: number;
+	/** 段：公司内、入职前，以及两者之和 */
+	internal: number;
+	external: number;
+	segments: number;
+	/** 还不是当前派生版本的段数 */
+	pending: number;
+	/** 说法条数 */
+	phrases: number;
+	/** 能力词个数，以及其中已经并到别的写法上的 */
+	words: number;
+	merged: number;
+};
+
 /** 任务台一次载入要的全部。 */
 export type TasksState = {
 	lanes: TaskLane[];
-	/** 派生的活：还不是当前版本的段数，以及段的总数 */
-	derive: { pending: number; total: number };
+	corpus: CorpusCounts;
 };
 
 type StoredRun = Omit<TaskRunView, "outcome"> & { log: string[] };
@@ -153,13 +175,43 @@ export async function tasksState(): Promise<TasksState> {
 		};
 	});
 
-	const [left, total] = await Promise.all([
+	return { lanes, corpus: await corpusCounts() };
+}
+
+/**
+ * 语料此刻的几个数，一趟问完。
+ *
+ * 能力词的全集不在哪张表上，它是边上 `route = 'skill'` 那一路指到的说法
+ * （`src/corpus/aliases.ts` 的 `vocabulary` 数的是同一件事）；「已经并到别的写法上」
+ * 数的是对照表里指向别人的那些词。
+ */
+async function corpusCounts(): Promise<CorpusCounts> {
+	const [pending, counted] = await Promise.all([
 		derivePending(),
-		pool.query<{ n: string }>("select count(*) as n from experience"),
+		pool.query<Record<string, string>>(
+			`select
+				(select count(*) from employee) as employees,
+				(select count(*) from experience where kind = 'internal') as internal,
+				(select count(*) from experience where kind = 'external') as external,
+				(select count(*) from phrase) as phrases,
+				(select count(distinct phrase_id) from experience_phrase
+					where route = 'skill') as words,
+				(select count(*) from skill_alias where canonical <> word) as merged`,
+		),
 	]);
+	const row = counted.rows[0];
+	const n = (name: string) => Number(row?.[name] ?? 0);
+	const internal = n("internal");
+	const external = n("external");
 	return {
-		lanes,
-		derive: { pending: left, total: Number(total.rows[0]?.n ?? 0) },
+		employees: n("employees"),
+		external,
+		internal,
+		merged: n("merged"),
+		pending,
+		phrases: n("phrases"),
+		segments: internal + external,
+		words: n("words"),
 	};
 }
 

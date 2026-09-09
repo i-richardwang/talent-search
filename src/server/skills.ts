@@ -12,8 +12,6 @@ export type SkillEntry = {
 };
 
 export type SkillTable = {
-	/** 语料里现在有多少个不同的能力词（已归并） */
-	vocabulary: number;
 	/** 对照表里的标准词，人多的在前 */
 	entries: SkillEntry[];
 };
@@ -28,11 +26,7 @@ export type SkillTable = {
  */
 export function listSkills(): Promise<SkillTable> {
 	return withCorpusSnapshot(async (store) => {
-		const [vocabulary, entries] = await Promise.all([
-			store.execute<{ n: number }>(sql`
-				select count(distinct phrase_id)::int as n
-				from experience_phrase where route = 'skill'`),
-			store.execute<SkillEntry>(sql`
+		const entries = await store.execute<SkillEntry>(sql`
 				select
 					a.canonical,
 					coalesce(array_agg(a.word order by a.word) filter (where a.word <> a.canonical), '{}') as aliases,
@@ -45,11 +39,7 @@ export function listSkills(): Promise<SkillTable> {
 					(current_date - max(a.reviewed_at)::date)::int as "reviewedDaysAgo"
 				from skill_alias a
 				group by a.canonical
-				order by people desc, a.canonical`),
-		]);
-		return {
-			vocabulary: vocabulary.rows[0]?.n ?? 0,
-			entries: entries.rows,
-		};
+				order by people desc, a.canonical`);
+		return { entries: entries.rows };
 	});
 }

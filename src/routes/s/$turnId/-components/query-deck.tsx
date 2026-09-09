@@ -1,9 +1,10 @@
 import { AlertCircleIcon, PencilIcon, RotateCwIcon } from "lucide-react";
-import { useEffect, useImperativeHandle, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useImperativeHandle, useState } from "react";
 import { QueryBar } from "#/components/query-bar";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
+import { Separator } from "#/components/ui/separator";
+import { cn } from "#/lib/utils";
 import {
 	hasMeaning,
 	type QueryInput,
@@ -11,7 +12,7 @@ import {
 	unsupportedOf,
 	wideTerms,
 } from "#/search/spec";
-import { HEADER_QUERY_SLOT } from "../../../-components/app-header";
+import { scopeEntries } from "../../../-lib/scope-label";
 import { QueryChips } from "./query-chips";
 import { QueryScope } from "./query-scope";
 
@@ -19,37 +20,43 @@ import { QueryScope } from "./query-scope";
 export type QueryDeckHandle = { edit: () => void };
 
 /**
- * 名单的抬头：**我问的那句话**，和系统把它读成的条件。
+ * 查询带：**我问的那句话**，和系统把它读成的条件，一行。
  *
- * 它不是一块面，也不吸顶。那句话是**只读的显示**：给它配上输入框那块面的材质，
- * 它就一边长成能打字的样子、一边点下去只弹出另一个框；把它吸在顶栏底下，则是
- * 把整屏最贵的那条横带包给一件永远不变的东西。
- * 同类产品在这里只有两种答案，没有第三种：要么它是**真的输入框**（Pin、
- * Remote：顶部那条永远能打字，不回显上一句），要么它是**标题**（Wellfound 的
- * 搜索名、Perplexity 的问题：纯文字加一颗小铅笔，输入框在别处）。这里选后者，
- * 因为这一屏的输入是**一次性**的——问完就该去读名单了。
+ * 那句话是**只读的显示**：给它配上输入框那块面的材质，它就一边长成能打字的
+ * 样子、一边点下去只弹出另一个框；所以它是**标题**加一颗小铅笔（Wellfound 的
+ * 搜索名、Perplexity 的问题都是这么排的），输入框在别处——这一屏的输入是
+ * **一次性**的，问完就该去读名单了。
  *
- * 于是三样东西顺着读下来，是一个从粗到细的抬头，而不是三条横带：
+ * 一行里从粗到细：
  *
  * 1. **那句话**（`rawText`）。这一屏的 h1，也是这条查询唯一完整的表示。
- *    改它就是改问题：想加条件在句子后面接着写，模型读错了就把那个词说清楚,
+ *    改它就是改问题：想加条件在句子后面接着写，模型读错了就把那个词说清楚，
  *    两件事在用户那里本来就是同一个动作。
- * 2. **系统读成的条件**（chips + 范围）。那句话的解释，小一号，可以逐枚调强度、
- *    停用、删除——那是**微调**，快过重写整句。它不必独自扛起表达整个查询的
- *    责任：扛不动的部分，上面那句话扛着。
- * 3. 再往下是报数与图例（`result-list.tsx` 的 `ResultHeader`），回答的是
- *    「这份名单是什么」。它归名单，不归这里。
+ * 2. **系统读成的条件**（chips + 范围）。那句话的解释，可以逐枚调强度、停用、
+ *    删除——那是**微调**，快过重写整句。它不必独自扛起表达整个查询的责任：
+ *    扛不动的部分，左边那句话扛着。
+ * 3. 右端是没处放的那几个词。它是这几枚 chip 的脚注，也是这条带上唯一
+ *    右对齐的东西——通栏一千多像素只放一句话和几枚 chip 的话，剩下的是死白。
+ *
+ * 再往下的报数与图例（`result-list.tsx` 的 `ResultHeader`）回答的是「这份名单是
+ * 什么」。它归名单，不归这里。
+ *
+ * **定高，而且吸在顶栏下沿。** 两件事是一起的：
+ *
+ * - 吸顶，因为 chips 要在整份名单上都点得到。名单可以滚很长，而「风控这个词
+ *   读窄了」是滚到第三十个人才看出来的事——那时得能当场把它调弱，不是先滚回
+ *   页顶。这也是它值一条常驻横带的理由：它不是一块永远不变的抬头，是这一屏
+ *   唯一能改「问的是什么」的地方。
+ * - 定高（`--deck-height`），因为左右两栏和名单卡片都照那个数吸顶、让位。
+ *   所以句子长了就截断（整句挂在 `title` 上），而改写框和错误提示不长在带子
+ *   里、从带子里**浮出来**（`DeckSheet`）——跟着内容长高的带子会把下面那三栏
+ *   推到各自算好的位置之外。
  *
  * 「换个看法」不在这里。筛选不改问题，只是在同一批候选里再看哪一部分，连查询
  * 记录都不产生（见 `routes/-lib/commit.ts` 开头）——「记录还是视图」是这个产品最要紧的
- * 一条界线，屏幕上由位置说出来：这块抬头里的动作会派生新记录，名单左边那条
+ * 一条界线，屏幕上由位置说出来：这条带里的动作会派生新记录，名单左边那条
  * 筛选栏（`filter-rail.tsx`）只动 URL。两者共用一块面的话，这条界线就只剩
  * 文案在扛。
- *
- * 常驻由顶栏接手。抬头会跟着名单一起滚走，而「我现在搜的是什么」必须一直在，
- * 所以它滚出视野之后，顶栏中间那一格里出现同一句话的一行缩略
- * （`HEADER_QUERY_SLOT`）。在顶上的时候它不出现——两处同时说同一句话，就是
- * 又一次把一件事说了两遍。
  */
 export function QueryDeck({
 	spec,
@@ -75,7 +82,7 @@ export function QueryDeck({
 	 * 界面产生的每条记录都有原话：零态敲的是句子，工作台上改 chip 派生出来的那条
 	 * 继承父记录的原话。为 `null` 的只有一种——直接拿一份条件调 RPC 落下的记录
 	 * （`kind: "spec"` 且没有父记录）。所以这里不给它配一套「没有原话时长什么样」
-	 * 的抬头：整格空着，条件由下面那排 chips 自己说。
+	 * 的抬头：那一格空着，条件由那排 chips 自己说。
 	 */
 	rawText: string | null;
 	error: string | null;
@@ -84,34 +91,15 @@ export function QueryDeck({
 }) {
 	const unsupported = unsupportedOf(spec);
 	const settled = hasMeaning(spec) && !interpreting;
+	// 系统到底读出了东西没有。读出来了才有左右两半，也才有中间那条竖线——
+	// 一条一侧空着的分隔线画的是一个不存在的分界。
+	const reading =
+		spec.requirements.length > 0 ||
+		scopeEntries(spec.scope).length > 0 ||
+		scopeEntries(spec.prefer ?? {}).length > 0;
 	const [editing, setEditing] = useState(false);
-	const headline = useRef<HTMLDivElement>(null);
-	const [slot, setSlot] = useState<HTMLElement | null>(null);
-	const [scrolledPast, setScrolledPast] = useState(false);
 
 	useImperativeHandle(ref, () => ({ edit: () => setEditing(true) }));
-
-	// 抬头滚到顶栏底下了没有。观察的是那句话所在的那一格（改写时是输入框，
-	// 位置一样），不是整块抬头：下面的 chips 和脚注滚走无所谓，走掉之后
-	// 需要一个替身的只有那句话。
-	useEffect(() => {
-		const head = headline.current;
-		const target = document.getElementById(HEADER_QUERY_SLOT);
-		if (!head || !target) return;
-		setSlot(target);
-		/*
-		 * 顶栏的高度从顶栏本身量出来，不在这里再抄一份 `--header-height`：
-		 * 抄下来的那一份不受任何检查保护，改一次顶栏高度，替身就会早出现或
-		 * 晚出现一小段，而没有任何东西会红。
-		 */
-		const top = target.closest("header")?.offsetHeight ?? 0;
-		const io = new IntersectionObserver(
-			([entry]) => setScrolledPast(entry ? !entry.isIntersecting : false),
-			{ rootMargin: `-${top}px 0px 0px 0px` },
-		);
-		io.observe(head);
-		return () => io.disconnect();
-	}, []);
 
 	return (
 		/*
@@ -121,60 +109,55 @@ export function QueryDeck({
 		 * 右边看的是这份结果里的某一个人，两者都只动 URL 上的视图参数，不产生新的
 		 * 查询记录。而改这句话会派生一条新记录——「记录还是视图」这条界线在屏幕上
 		 * 由位置说出来（见 `routes/-lib/commit.ts` 开头），那就不能把父级和它的两个子级
-		 * 并排摆成三栏的抬头。摆成三栏之后要做的第一件事必然是「让三栏起始高度
-		 * 对齐」，而那正是在替一个错的层级关系描边。
+		 * 并排摆成三栏的抬头。
 		 *
 		 * 于是这一页是三层：顶栏（应用身份，跨查询）、这条带（这一页是什么）、
 		 * 三栏（在这一页里看哪一部分、哪一个人）。
 		 *
-		 * 不画下边框。一条横线加两条竖线就是「三栏铺满、发丝线切开」的后台形状
-		 * （见 `s/$turnId/route.tsx` 开头），分层交给留白，以及三栏各自那条边线
-		 * 从这条带**下面**才开始这件事本身。
+		 * 半透明的画布色加一层模糊、底边一根 `h-px` 的发丝线——和顶栏同一份配方
+		 * （`routes/-components/app-header.tsx`）。这两样是它作为常驻横带的必需：
+		 * 名单要从它下面穿过去，穿过去的地方得透出一点，而那根线是这套系统里
+		 * 「一层的下沿」的画法。
 		 *
 		 * `app-column` 是顶栏用的那个盒子：于是这句话的左沿和顶栏那个应用名同线，
-		 * 也和左栏里每一行选项的左沿同线。和名单卡片共边是同一栏里的事，而这条带
-		 * 管着的正是包含那一栏在内的三栏。
+		 * 也和左栏里每一行选项的左沿同线。
 		 */
-		<header className="app-column flex flex-col gap-3 py-4">
+		<header className="sticky top-(--header-height) z-stick min-h-(--deck-height) bg-canvas/80 backdrop-blur-sm before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-border/64 lg:h-(--deck-height)">
 			{/*
-			 * 这一格的两态位置相同：读的时候是标题，改的时候原地长成输入框。
-			 * `scroll-mt` 让顶栏那行替身把人送回来时，标题停在顶栏**下沿**，
-			 * 而不是钻到它底下。
+			 * 高度长在 `<header>` 上，不长在这一行上：改写的时候这一行整个不渲染
+			 * （被浮出来的框盖住的东西不该还能 Tab 到，那句话也不该在屏幕上出现
+			 * 两遍），而带子的高度是下面三栏让位的依据，不能跟着一起消失。
+			 *
+			 * lg 以上是**一行**：句子先让位（`truncate`），chips 不让——读错的那一枚
+			 * 必须点得到。lg 以下允许换行长高，那时左右两栏一栏都不在场
+			 * （筛选栏 lg+、详情 xl+），没有人读那个高度。
 			 */}
-			<div className="scroll-mt-(--header-height)" ref={headline}>
-				{editing ? (
-					<QueryBar
-						initial={rawText ?? ""}
-						onCancel={() => setEditing(false)}
-						onQuery={onQuery}
-					/>
-				) : (
-					rawText && (
-						/* `w-fit`：这一行只占这句话那么宽，铅笔于是紧跟在句末。
-						   撑满整条带的话，铅笔会被推到一千像素之外的右端——那正是
-						   一块只读的面留下的那种死白。 */
-						<div className="flex w-fit max-w-full items-start gap-1">
+			{!editing && (
+				<div className="app-column flex h-full flex-wrap items-center gap-x-2 gap-y-1.5 py-1.5 lg:flex-nowrap lg:overflow-hidden lg:py-0">
+					{rawText && (
+						<>
 							{/*
-							 * 标题是**文字**，铅笔才是按钮。整行做成一颗按钮的话，
-							 * 悬停时那条通栏发亮的灰底会让它重新读成一个能打字的
-							 * 框——而它是只读的。
+							 * 标题是**文字**，铅笔才是按钮。整行做成一颗按钮的话，悬停时
+							 * 那条通栏发亮的灰底会让它重新读成一个能打字的框——而它是只读的。
 							 *
-							 * 字号只上到 17（`title-2`）——汉字系统字没有拉丁 display
-							 * 字那种放大之后还成立的字形，这句话的重量由它独占整条
-							 * 带、上下留白和左边缘与顶栏同线给出，不由字号硬撑。
+							 * 正文号加一档字重，不放大：这条带只有 40px 高，17px 的句子
+							 * 配 24px 的 chip 会把整条带压得头重脚轻；何况汉字系统字没有
+							 * 拉丁 display 字那种放大之后还成立的字形。它的重量由**位置**
+							 * 给——一条常驻的横带，左沿和顶栏同线。
 							 *
-							 * 全宽的带子里正文仍然要有度量：17px 的汉字排到一千多
-							 * 像素是没法读的一行，所以封在版心那个数上——名单和
-							 * 零态的输入面读的也是它。
+							 * 截断了整句挂在 `title` 上：这条带定高，长句子没有第二行可去。
 							 */}
-							<h1 className="title-2 min-w-0 max-w-page text-pretty font-medium">
+							<h1
+								className="min-w-0 truncate font-medium text-sm"
+								title={rawText}
+							>
 								{rawText}
 							</h1>
 							{interpreting ? (
-								/* 理解中显示的仍是这句话，不是占位方块——下面那一格
-								   接下来会变成 chips，而 chips 正是从它翻译出来的。 */
+								/* 理解中显示的仍是这句话，不是占位方块——右边那一格接下来
+							   会变成 chips，而 chips 正是从它翻译出来的。 */
 								<span
-									className="shrink-0 py-1 text-muted-foreground text-xs"
+									className="shrink-0 text-muted-foreground text-xs"
 									role="status"
 								>
 									正在理解…
@@ -184,105 +167,149 @@ export function QueryDeck({
 									aria-label="改写这句话"
 									className="shrink-0"
 									onClick={() => setEditing(true)}
-									size="icon-sm"
+									/* 和 chip 同一档尺码（`xs`）：带子里的控件只有一种高度，
+									   带子的高度才等于 `--deck-height` 而不是「最高那一档
+									   加空气」。触控目标不因此变小——coss 每个控件都带
+									   `pointer-coarse:after:min-h-11`。 */
+									size="icon-xs"
 									variant="ghost"
 								>
 									<PencilIcon />
 								</Button>
 							)}
-						</div>
-					)
-				)}
-			</div>
+						</>
+					)}
 
-			{settled && (
-				<>
-					{/* chips 和范围排在同一行里：它们都是「系统读成的条件」，
-					    分成两条横带只会让人以为那是两类东西。 */}
-					<div className="flex flex-wrap items-center gap-1.5">
-						<QueryChips
-							onChange={(requirements) =>
-								onChangeSpec({ ...spec, requirements })
-							}
-							requirements={spec.requirements}
-							wide={new Set(wideTerms(spec))}
-						/>
-						<QueryScope
-							onChange={({ scope, prefer }) =>
-								onChangeSpec({ ...spec, scope, prefer })
-							}
-							prefer={spec.prefer}
-							scope={spec.scope}
-						/>
-					</div>
+					{/* 一行里两类东西：我说的那句话，和系统读成的条件。竖线只在两边
+				    都在场时画，而且只在真的排成一行的那一档——换了行之后，
+				    分界由换行本身给。 */}
+					{rawText && settled && reading && (
+						<Separator className="h-4 max-lg:hidden" orientation="vertical" />
+					)}
+
+					{settled && (
+						/* chips 和范围挨在一起：它们都是「系统读成的条件」，
+					   分开摆只会让人以为那是两类东西。 */
+						<div className="flex shrink-0 items-center gap-1.5 max-lg:flex-wrap">
+							<QueryChips
+								onChange={(requirements) =>
+									onChangeSpec({ ...spec, requirements })
+								}
+								requirements={spec.requirements}
+								wide={new Set(wideTerms(spec))}
+							/>
+							<QueryScope
+								onChange={({ scope, prefer }) =>
+									onChangeSpec({ ...spec, scope, prefer })
+								}
+								prefer={spec.prefer}
+								scope={spec.scope}
+							/>
+						</div>
+					)}
 
 					{/*
 					 * 没处放的条件是这几枚 chip 的脚注：用户写了「北京的」，
 					 * 屏幕上的条件里没有它，不说一句的话他会以为它生效了。
+					 * 靠右端，因为那一段本来是死白。
 					 */}
-					{unsupported.length > 0 && (
-						<Footnote>
-							「{unsupported.join("」「")}」暂不支持作为条件，本次未生效。
-						</Footnote>
+					{settled && unsupported.length > 0 && (
+						<p
+							className="ms-auto flex min-w-0 items-baseline gap-1.5 text-muted-foreground text-xs"
+							title={`「${unsupported.join("」「")}」暂不支持作为条件，本次未生效。`}
+						>
+							<AlertCircleIcon className="size-3.5 shrink-0 translate-y-0.5 text-warning" />
+							<span className="truncate">
+								「{unsupported.join("」「")}」暂不支持作为条件，本次未生效。
+							</span>
+						</p>
 					)}
-				</>
+				</div>
 			)}
 
-			{/* 提交或理解整个失败了，那是页面级的事件，不是查询上的注解 */}
-			{error && (
-				<Alert variant="error">
-					<AlertCircleIcon />
-					<AlertDescription className="flex items-baseline gap-2">
-						<span className="min-w-0 flex-1">{error}</span>
-						{onRetry && (
-							<Button
-								className="shrink-0"
-								onClick={onRetry}
-								size="xs"
-								variant="link"
-							>
-								<RotateCwIcon />
-								重试
-							</Button>
-						)}
-					</AlertDescription>
-				</Alert>
+			{editing ? (
+				/*
+				 * 改写框浮在带子自己那一格上（`top-0`），于是框的左沿和刚才那句话
+				 * 同线——原地长成一个框。
+				 *
+				 * 提交失败的提示跟着框走，不另外挂一层：它常常正是这次改写的结果，
+				 * 而两层浮层各自定位会叠在一起。
+				 */
+				<DeckSheet className="top-0">
+					<QueryBar
+						initial={rawText ?? ""}
+						onCancel={() => setEditing(false)}
+						onQuery={onQuery}
+					/>
+					{error && <Failure error={error} onRetry={onRetry} />}
+				</DeckSheet>
+			) : (
+				error && (
+					/* 挂在带子下沿：那句话和条件要接着看得见——出错之后要判断的
+					   正是「我问的是这句，它读成了这些，然后失败了」。 */
+					<DeckSheet className="top-full">
+						<Failure error={error} onRetry={onRetry} />
+					</DeckSheet>
+				)
 			)}
-
-			{/*
-			 * 滚下去之后顶栏里的那行替身。它只回答「我现在搜的是什么」，点它把人
-			 * 送回抬头并展开改写——顶栏里不放第二个能改查询的地方，那句话只有
-			 * 一个改写入口，在它自己身上。
-			 */}
-			{slot &&
-				scrolledPast &&
-				rawText &&
-				createPortal(
-					<Button
-						className="min-w-0 max-w-full justify-start font-normal text-muted-foreground"
-						onClick={() => {
-							setEditing(true);
-							headline.current?.scrollIntoView({ block: "start" });
-						}}
-						size="sm"
-						title="改写这句话"
-						variant="ghost"
-					>
-						<span className="truncate">{rawText}</span>
-						<PencilIcon className="shrink-0" />
-					</Button>,
-					slot,
-				)}
 		</header>
 	);
 }
 
-/** 关于这几枚 chip 的一行小字。图标对齐第一行基线，长句照常换行。 */
-function Footnote({ children }: { children: React.ReactNode }) {
+/**
+ * 从带子里浮出来的那一层：改写框和错误提示住在这里。
+ *
+ * 它是 `absolute`，所以带子的高度不变（`--deck-height` 的读者列在 styles.css
+ * 那个令牌旁边）。不透明的画布色加一根发丝线，是因为名单要从它下面穿过去——
+ * 这是同一条带的延续，不是新画的一块面。
+ *
+ * 里面封在版心里：零态的输入面读的是同一个数，所以改写框在两屏是同一块面，
+ * 不是一个被拉到一千多像素宽的框。
+ */
+function DeckSheet({
+	className,
+	children,
+}: {
+	className: string;
+	children: React.ReactNode;
+}) {
 	return (
-		<div className="flex items-baseline gap-1.5 text-muted-foreground text-xs">
-			<AlertCircleIcon className="size-3.5 shrink-0 translate-y-0.5 text-warning" />
-			<span className="min-w-0 flex-1">{children}</span>
+		<div
+			className={cn(
+				"absolute inset-x-0 bg-canvas pt-2 pb-3",
+				"before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-border/64",
+				className,
+			)}
+		>
+			<div className="app-column">
+				<div className="flex max-w-page flex-col gap-2">{children}</div>
+			</div>
 		</div>
+	);
+}
+
+/**
+ * 提交或理解整个失败了。那是页面级的事件，不是查询上的注解，所以是一块 `Alert`
+ * 而不是一行小字——它下面那份名单此刻要么是空的、要么是上一次的。
+ */
+function Failure({ error, onRetry }: { error: string; onRetry?: () => void }) {
+	return (
+		<Alert variant="error">
+			<AlertCircleIcon />
+			<AlertDescription className="flex items-baseline gap-2">
+				<span className="min-w-0 flex-1">{error}</span>
+				{onRetry && (
+					<Button
+						className="shrink-0"
+						onClick={onRetry}
+						size="xs"
+						variant="link"
+					>
+						<RotateCwIcon />
+						重试
+					</Button>
+				)}
+			</AlertDescription>
+		</Alert>
 	);
 }

@@ -1,12 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { FilterIcon } from "lucide-react";
 import { useState } from "react";
+import { CardFrame } from "#/components/ui/card";
 import {
 	Empty,
 	EmptyDescription,
 	EmptyHeader,
 	EmptyTitle,
 } from "#/components/ui/empty";
-import { Input } from "#/components/ui/input";
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupInput,
+} from "#/components/ui/input-group";
 import {
 	Table,
 	TableBody,
@@ -15,9 +21,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import { dots } from "#/lib/format";
 import { skillTable } from "#/server/functions";
-import type { SkillEntry, SkillTable } from "#/server/skills";
+import type { SkillEntry } from "#/server/skills";
+import { AdminPage } from "./-components/admin-page";
 
 /**
  * 能力词对照表的管理页：机器把哪些写法并成了哪个词。
@@ -36,27 +42,9 @@ export const Route = createFileRoute("/skills")({
 function Skills() {
 	const table = Route.useLoaderData();
 	return (
-		<main className="app-column flex flex-1 flex-col gap-6 py-8">
-			<div className="flex flex-col gap-1">
-				<h1 className="title-1 font-semibold">能力词</h1>
-				<p className="text-muted-foreground text-sm">{summary(table)}</p>
-			</div>
+		<AdminPage title="能力词">
 			<SkillList entries={table.entries} />
-		</main>
-	);
-}
-
-/** 抬头那一句：语料里有多少个词，机器合并了多少，上次是什么时候。 */
-export function summary({ vocabulary, entries }: SkillTable) {
-	const merged = entries.filter((e) => e.aliases.length > 0);
-	const aliases = merged.reduce((n, e) => n + e.aliases.length, 0);
-	const latest = entries.length
-		? Math.min(...entries.map((e) => e.reviewedDaysAgo))
-		: null;
-	return dots(
-		`语料里 ${vocabulary} 个能力词`,
-		`${merged.length} 个标准词并进了 ${aliases} 种写法`,
-		latest === null ? "还没整理过" : `上次整理${daysAgo(latest)}`,
+		</AdminPage>
 	);
 }
 
@@ -66,62 +54,75 @@ function daysAgo(days: number) {
 
 /**
  * 表：人多的词在前，和筛选栏同一个顺序，于是筛选栏上排第一的词在这里也排第一。
- * 过滤在客户端做——表就几百行，一次取齐比按键往返快。
+ * 过滤在客户端做——表就几百行，一次取齐比按键往返快，所以框里敲一个字就少一批行，
+ * 不必回车。数据页那个框要回车（几万人得回服务端找），两者形状因此不同：
+ * 那边末尾挂着提交按钮，这边起头只有一枚漏斗。
+ *
+ * 表照 coss 的排法摆：`CardFrame` 裹一张 `variant="card"` 的表。裸表是一堆
+ * 靠发丝线切开的行直接坐在画布上——那正是后台的长相，而这套系统里「一块内容」
+ * 就该是一块有顶光边的面。
  */
-export function SkillList({ entries }: { entries: SkillEntry[] }) {
+function SkillList({ entries }: { entries: SkillEntry[] }) {
 	const [needle, setNeedle] = useState("");
 	const shown = entries.filter((e) => matches(e, needle.trim()));
 	return (
 		<div className="flex flex-col gap-3">
-			<Input
-				aria-label="按词过滤"
-				className="max-w-72"
-				onChange={(event) => setNeedle(event.target.value)}
-				placeholder="按词过滤"
-				type="search"
-				value={needle}
-			/>
+			<InputGroup className="max-w-72">
+				<InputGroupInput
+					aria-label="按词过滤"
+					onChange={(event) => setNeedle(event.target.value)}
+					placeholder="按词过滤"
+					type="search"
+					value={needle}
+				/>
+				<InputGroupAddon>
+					<FilterIcon />
+				</InputGroupAddon>
+			</InputGroup>
 			{shown.length === 0 ? (
 				<Empty>
 					<EmptyHeader>
 						<EmptyTitle>
 							{entries.length === 0 ? "对照表还是空的" : "没有匹配的词"}
 						</EmptyTitle>
-						<EmptyDescription>
-							{entries.length === 0
-								? "配置抽取端点，派生跑过之后整理会开始归并。"
-								: "换个写法试试，别名也在匹配范围里。"}
-						</EmptyDescription>
+						{/* 没匹配上的时候标题已经把话说完了；只有表本身是空的，才需要说该怎么办 */}
+						{entries.length === 0 && (
+							<EmptyDescription>
+								配置抽取端点，派生跑过之后整理会开始归并。
+							</EmptyDescription>
+						)}
 					</EmptyHeader>
 				</Empty>
 			) : (
-				<Table>
-					<TableHeader>
-						<TableRow>
-							<TableHead>标准词</TableHead>
-							<TableHead className="text-end">人数</TableHead>
-							<TableHead>并进来的写法</TableHead>
-							<TableHead className="text-end">上次整理</TableHead>
-						</TableRow>
-					</TableHeader>
-					<TableBody>
-						{shown.map((e) => (
-							<TableRow key={e.canonical}>
-								<TableCell className="font-medium">{e.canonical}</TableCell>
-								<TableCell className="text-end tabular-nums">
-									{e.people}
-								</TableCell>
-								{/* 这一格允许换行：一个词并进十来种写法是常事，截断就看不到了 */}
-								<TableCell className="whitespace-normal text-muted-foreground">
-									{e.aliases.length ? e.aliases.join("、") : "—"}
-								</TableCell>
-								<TableCell className="text-end text-muted-foreground tabular-nums">
-									{daysAgo(e.reviewedDaysAgo)}
-								</TableCell>
+				<CardFrame>
+					<Table variant="card">
+						<TableHeader>
+							<TableRow>
+								<TableHead>标准词</TableHead>
+								<TableHead className="text-end">人数</TableHead>
+								<TableHead>并进来的写法</TableHead>
+								<TableHead className="text-end">上次整理</TableHead>
 							</TableRow>
-						))}
-					</TableBody>
-				</Table>
+						</TableHeader>
+						<TableBody>
+							{shown.map((e) => (
+								<TableRow key={e.canonical}>
+									<TableCell className="font-medium">{e.canonical}</TableCell>
+									<TableCell className="text-end tabular-nums">
+										{e.people}
+									</TableCell>
+									{/* 这一格允许换行：一个词并进十来种写法是常事，截断就看不到了 */}
+									<TableCell className="whitespace-normal text-muted-foreground">
+										{e.aliases.length ? e.aliases.join("、") : "—"}
+									</TableCell>
+									<TableCell className="text-end text-muted-foreground tabular-nums">
+										{daysAgo(e.reviewedDaysAgo)}
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+				</CardFrame>
 			)}
 		</div>
 	);

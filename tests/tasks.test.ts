@@ -11,7 +11,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import type { TaskOutcome } from "#/server/tasks";
+import type { CorpusCounts, TaskOutcome } from "#/server/tasks";
 import { answerChat, setup } from "./fixture";
 
 const teardown = await setup();
@@ -19,7 +19,7 @@ after(teardown);
 
 const { runTask, tasksState, derivePending } = await import("#/server/tasks");
 const { phrasePlan } = await import("#/corpus/derive");
-const { summary } = await import("#/routes/tasks");
+const { facts } = await import("#/routes/tasks");
 const { acquireCorpusSession, corpusSessionActive } = await import(
 	"#/corpus/session"
 );
@@ -95,7 +95,7 @@ describe("同步与派生", () => {
 		assert.equal(sync.latest?.outcome, "done");
 		assert.equal(sync.latest?.source, "csv-dir");
 		assert.match(sync.latest?.log.join("\n") ?? "", /人群 20 人/);
-		assert.equal(state.derive.pending, state.derive.total);
+		assert.equal(state.corpus.pending, state.corpus.segments);
 	});
 
 	test("派生给每一段算说法、连边、对齐序列，做完一段不剩", async () => {
@@ -378,21 +378,27 @@ describe("说法规划", () => {
 });
 
 describe("页面上那几句话", () => {
-	const lanes = () => [];
-	test("语料是空的时候，抬头说两种任务各做什么", () => {
-		assert.match(
-			summary({ lanes: lanes(), derive: { pending: 0, total: 0 } }),
-			/语料是空的/,
-		);
+	const corpus = (over: Partial<CorpusCounts> = {}): CorpusCounts => ({
+		employees: 8,
+		external: 4,
+		internal: 6,
+		merged: 2,
+		pending: 0,
+		phrases: 30,
+		segments: 10,
+		words: 9,
+		...over,
 	});
-	test("有活的时候说还剩几段，没活的时候说全部派生到了当前版本", () => {
+
+	test("派生那张卡片：有活的时候说还剩几段，没活的时候说全部派生到了当前版本", () => {
 		assert.match(
-			summary({ lanes: lanes(), derive: { pending: 3, total: 10 } }),
-			/10 段里还有 3 段待派生/,
+			facts.derive(corpus({ pending: 3 })),
+			/还有 3 段没派生到当前版本/,
 		);
-		assert.match(
-			summary({ lanes: lanes(), derive: { pending: 0, total: 10 } }),
-			/全部派生到了当前版本/,
-		);
+		assert.match(facts.derive(corpus()), /全部派生到了当前版本/);
+	});
+	test("同步与整理那两张卡片说的是构成和结果", () => {
+		assert.match(facts.sync(corpus()), /8 人 · 10 段（公司内 6、入职前 4）/);
+		assert.match(facts.review(corpus()), /能力词 9 个，其中 2 个/);
 	});
 });

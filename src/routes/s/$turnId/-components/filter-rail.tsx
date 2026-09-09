@@ -35,18 +35,37 @@ import { CLEARED_FILTERS, type View } from "../-lib/view-params";
 /** 一维默认摊开几项。再多就把「哪一维值得看」压在下面，得先滚才看得见。 */
 const VISIBLE = 5;
 
-export function FilterRail(props: FilterProps) {
-	if (!hasAnything(props)) return null;
+export function FilterRail({
+	loading,
+	...props
+}: FilterProps & {
+	/** 这一份结果还没跑出来。见下面那条「等结果的时候先占位」。 */
+	loading: boolean;
+}) {
+	const anything = hasAnything(props);
+	/*
+	 * 空着就不存在——但**等结果的时候占位**。
+	 *
+	 * 有结果就一定有分面（`rank.ts` 的 `facetRows` 从结果算），所以这一栏接下来
+	 * 必然在场；等的时候不占的话，结果回来的那一帧整条名单会横着挪半栏宽——
+	 * 这一屏上最大的一次晃动，而没有任何检查会报它。占的只是**宽度**：里面此刻
+	 * 一个字都不画，拿骨架块把一栏填满是另一回事（那是填充物）。
+	 *
+	 * 手上已经有分面就照常画，哪怕正在跑下一次检索：换一个筛选时这一栏的行不变
+	 * （`facetRows` 的口径），清空再画回来才是无端闪一下。
+	 */
+	if (!anything && !loading) return null;
 	return (
 		/*
-		 * 和详情面板同一套：吸顶、限高、`ScrollArea` 自己滚、靠一条边分层，不靠投影。
+		 * 和详情面板同一套：吸在常驻那一叠（顶栏加查询带，`--chrome-height`）下沿、
+		 * 限高、`ScrollArea` 自己滚、靠一条边分层，不靠投影。
 		 * `w-rail` 是版心算式里的那一项（styles.css），改宽度只改那一个数——所以这一栏
 		 * 的宽度不能让滚动条来定（AGENTS.md「自己滚的面一律 `ScrollArea`」）。
 		 */
 		<aside
 			aria-label="筛选"
 			className={cn(
-				"sticky top-(--header-height) hidden h-[calc(100dvh-var(--header-height))] w-rail shrink-0",
+				"sticky top-(--chrome-height) hidden h-[calc(100dvh-var(--chrome-height))] w-rail shrink-0",
 				"overflow-hidden border-border border-r lg:block",
 			)}
 		>
@@ -59,9 +78,11 @@ export function FilterRail(props: FilterProps) {
 				 * 内边距在这里而不是 `aside` 上：滚动条钉在 `aside` 的边上，留白给到
 				 * 内容这一层，那条拇指才落在这 16px 里，压不到字。
 				 */}
-				<div className="p-4">
-					<FilterList {...props} />
-				</div>
+				{anything && (
+					<div className="p-4">
+						<FilterList {...props} />
+					</div>
+				)}
 			</ScrollArea>
 		</aside>
 	);
@@ -71,14 +92,20 @@ export function FilterRail(props: FilterProps) {
  * 窄屏上的同一份东西。左栏在这里没有余地：并排三栏的最后一栏是名单本身，
  * 而名单不能让。
  */
-export function FilterSheet(props: FilterProps) {
-	if (!hasAnything(props)) return null;
+export function FilterSheet({
+	loading,
+	...props
+}: FilterProps & { loading: boolean }) {
+	const anything = hasAnything(props);
+	// 和左栏同一条：等结果的时候先占位，否则名单会在结果回来的那一帧往下跳一格。
+	// 占位的那一刻它按不下去——里面还没有任何一维可选。
+	if (!anything && !loading) return null;
 	const count = activeCount(props.fields, props.textFilters);
 	return (
 		<Popover>
 			<PopoverTrigger
 				render={
-					<Button size="sm" variant="outline">
+					<Button disabled={!anything} size="sm" variant="outline">
 						<ListFilterIcon />
 						筛选
 						{/* 关着的时候，生效了几项是这个按钮唯一能说的话 */}

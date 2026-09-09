@@ -45,6 +45,7 @@ const markup = (view: View, facets: Facets = FACETS) =>
 	renderToStaticMarkup(
 		<FilterRail
 			fields={filterFields(facets, view)}
+			loading={false}
 			onChange={() => {}}
 			textFilters={textFilters(view)}
 		/>,
@@ -130,6 +131,7 @@ describe("形状站得住", () => {
 		const html = renderToStaticMarkup(
 			<FilterRail
 				fields={filterFields(ZEROED, {})}
+				loading={false}
 				onChange={() => {}}
 				textFilters={[]}
 			/>,
@@ -141,6 +143,7 @@ describe("形状站得住", () => {
 		const html = renderToStaticMarkup(
 			<FilterRail
 				fields={filterFields(ZEROED, { kind: "external" })}
+				loading={false}
 				onChange={() => {}}
 				textFilters={[]}
 			/>,

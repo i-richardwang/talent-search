@@ -1,9 +1,21 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { ChevronDownIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
-import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
-import { Card } from "#/components/ui/card";
+import {
+	Card,
+	CardFrame,
+	CardFrameAction,
+	CardFrameHeader,
+	CardFrameTitle,
+	CardPanel,
+} from "#/components/ui/card";
+import {
+	Collapsible,
+	CollapsiblePanel,
+	CollapsibleTrigger,
+} from "#/components/ui/collapsible";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import {
 	Table,
@@ -14,18 +26,37 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import type { TaskKind } from "#/db/schema";
-import { cn } from "#/lib/utils";
+import { dots } from "#/lib/format";
 import { requestTask, tasksStatus } from "#/server/functions";
 import type { JobKind } from "#/server/jobs";
-import type { TaskLane, TaskRunView, TasksState } from "#/server/tasks";
+import type { CorpusCounts, TaskLane, TaskRunView } from "#/server/tasks";
+import { AdminPage } from "./-components/admin-page";
+import { StatusBadge, type StatusTone } from "./-components/status-badge";
+
+const NAME: Record<TaskKind, string> = {
+	sync: "同步",
+	derive: "派生",
+	review: "整理",
+};
 
 /**
- * 任务台：语料侧三种任务各自在做什么、做到哪、上一次怎么样。
+ * 任务台：语料侧三种任务各自管着多少东西、上一次怎么样、还剩多少活。
  *
  * 同步是外面按节奏跑的脚本（`bun run sync`），派生和整理是应用自己持续在做的
- * 后台工作（`src/server/jobs.ts`）；三者都落成 `task_run` 的行，这一页只是把行
- * 译成字。派生和整理可以从这里「现在跑一次」，同步不行——它读的是别处的数据，
- * 什么时候读由外面定。
+ * 后台工作（`src/server/jobs.ts`）；三者都落成 `task_run` 的行。派生和整理可以
+ * 从这里「现在跑一次」，同步不行——它读的是别处的数据，什么时候读由外面定。
+ *
+ * **屏幕上是此刻的语料，不是一份终端回放。** 每张卡片上那一行数问的是库
+ * （`corpusCounts`），不是上一次跑的记录：一次运行说过的「人群 20 人」是那一刻的
+ * 快照，跑完就开始过期，照着它报数等于在屏幕上留一个没人维护的旧值。上千行的过程
+ * 收在每张卡片自己的折叠里，要排查的时候才展开。
+ *
+ * 三栏竖着排，一栏一张卡片，管着这一栏的全部事——节奏、此刻怎么样、库里有多少、
+ * 它自己的「现在跑一次」，以及展开来的过程。三张同时在场才叫一块板：要点开才知道
+ * 哪一栏出了事，就等于没有板；也因此没有切换，卡片不可点。
+ *
+ * 卡片的排法照 coss 文档站首页那种展示卡：`CardFrame` 托盘上是抬头（名字、节奏、
+ * 右侧一个动作），托盘里嵌着一块 `Card` 装内容，外面再落一圈离开 5px 的发丝线。
  */
 export const Route = createFileRoute("/tasks")({
 	loader: () => tasksStatus(),
@@ -36,28 +67,6 @@ export const Route = createFileRoute("/tasks")({
 /** 有任务在跑时多久重新取一次状态；没有的时候慢一些——后台随时可能自己开一轮。 */
 const POLL_BUSY_MS = 2000;
 const POLL_IDLE_MS = 10_000;
-
-const NAME: Record<TaskKind, string> = {
-	sync: "同步",
-	derive: "派生",
-	review: "整理",
-};
-
-/**
- * 各自的节奏，说给人听。派生和整理的 cron 在 `src/server/jobs.ts` 的 `SCHEDULE`
- * 里——那是服务端模块，从它取一个值会把 pg-boss 拖进客户端包，所以这里另写一份字。
- */
-const CADENCE: Record<TaskKind, string> = {
-	sync: "命令行 bun run sync",
-	derive: "每 5 分钟看一次有没有活",
-	review: "每天 03:00",
-};
-
-const WHAT: Record<TaskKind, string> = {
-	sync: "读数据源，切段校验，增删变了的人和段",
-	derive: "给还没派生的段抽能力词、对齐序列、嵌入、连边",
-	review: "把能力词的不同写法归并成标准词",
-};
 
 /**
  * 一行记录在这一页上说成什么。
@@ -72,28 +81,61 @@ const SAID: Record<TaskRunView["outcome"], string> = {
 	done: "成功",
 };
 
-const TONE: Record<
-	TaskRunView["outcome"],
-	"info" | "warning" | "error" | "success"
-> = {
-	running: "info",
-	interrupted: "warning",
+const TONE: Record<TaskRunView["outcome"], StatusTone> = {
+	running: "running",
+	interrupted: "waiting",
 	failed: "error",
 	done: "success",
 };
 
+/**
+ * 这一栏此刻要不要报一声，报哪一种：正在跑的，和没跑完的。
+ *
+ * 成功不报——常态不发徽章，三张卡片上三块一模一样的绿等于没有信息，而这块板
+ * 真正要人看见的是「有一栏出事了」。
+ */
+function alertTone(lane: TaskLane): StatusTone | null {
+	const outcome = lane.latest?.outcome;
+	return outcome === undefined || outcome === "done" ? null : TONE[outcome];
+}
+
+/**
+ * 每张卡片答的那件事：这一栏管的东西，此刻库里有多少。
+ *
+ * 三张各说各的一份数，不重样（`AGENTS.md`「同一份数据只画一遍」）：同步说搬进来
+ * 多少，派生说还剩多少活，整理说词表并成了什么样。
+ */
+export const facts: Record<TaskKind, (corpus: CorpusCounts) => string> = {
+	derive: (corpus) =>
+		dots(
+			corpus.pending > 0
+				? `还有 ${corpus.pending} 段没派生到当前版本`
+				: "全部派生到了当前版本",
+			`说法 ${corpus.phrases} 条`,
+		),
+	review: (corpus) =>
+		`能力词 ${corpus.words} 个，其中 ${corpus.merged} 个并到了别的写法上`,
+	sync: (corpus) =>
+		dots(
+			`${corpus.employees} 人`,
+			`${corpus.segments} 段（公司内 ${corpus.internal}、入职前 ${corpus.external}）`,
+		),
+};
+
+/** 卡片上那行小字：这一次从几点开始，或者上一次几点、用了多久。 */
+function when(latest: TaskLane["latest"]): string {
+	if (!latest) return "还没跑过";
+	if (latest.outcome === "running") return `${latest.startedAt} 开始`;
+	return dots(
+		`上一次 ${latest.startedAt}`,
+		latest.seconds === null ? null : `用时 ${latest.seconds}s`,
+	);
+}
+
 function Tasks() {
 	const state = Route.useLoaderData();
 	const router = useRouter();
-	const running = state.lanes.find(
-		(lane) => lane.latest?.outcome === "running",
-	);
-	// 看哪一栏的过程：默认看正在跑的，没有就看最近动过的那一栏
-	const [chosen, setChosen] = useState<TaskKind | null>(null);
-	const shown =
-		state.lanes.find((lane) => lane.kind === chosen) ??
-		running ??
-		newest(state.lanes);
+	const running = state.lanes.find((one) => one.latest?.outcome === "running");
 
 	useEffect(() => {
 		const timer = setInterval(
@@ -104,84 +146,46 @@ function Tasks() {
 	}, [running, router]);
 
 	return (
-		<main className="app-column flex flex-1 flex-col gap-6 py-8">
-			<div className="flex flex-col gap-1">
-				<h1 className="title-1 font-semibold">任务</h1>
-				<p className="text-muted-foreground text-sm">{summary(state)}</p>
-			</div>
-			<div className="grid gap-4 sm:grid-cols-3">
-				{state.lanes.map((lane) => (
-					<Lane
-						key={lane.kind}
-						lane={lane}
-						progress={lane.kind === "derive" ? state.derive : null}
-						chosen={lane.kind === shown?.kind}
+		<AdminPage title="任务">
+			{/* 卡片外面那圈发丝线离开 5px，所以卡片之间的沟槽也得宽一档，不然两圈线贴在一起 */}
+			<ul className="flex flex-col gap-6">
+				{state.lanes.map((one) => (
+					<LaneCard
 						busy={running !== undefined}
-						onChoose={() => setChosen(lane.kind)}
+						corpus={state.corpus}
+						key={one.kind}
+						lane={one}
 						onDone={() => router.invalidate()}
 					/>
 				))}
-			</div>
-			{shown?.latest ? (
-				<>
-					{shown.latest.outcome === "failed" && (
-						/*
-						 * 页面级的失败用 `Alert` 的红，和「没能提交」那两处同一档：它说的是
-						 * 「这次跑失败了」，读不成命中（绿）、选中（蓝）或查询上的提示（amber）。
-						 */
-						<Alert variant="error">
-							<AlertTitle>这次{NAME[shown.kind]}没有跑完</AlertTitle>
-							<AlertDescription>{shown.latest.error}</AlertDescription>
-						</Alert>
-					)}
-					<RunLog lines={shown.latest.log} />
-					{shown.history.length > 0 && <History runs={shown.history} />}
-				</>
-			) : (
-				<p className="text-muted-foreground text-sm">
-					还没有跑过。先在命令行跑 bun run sync
-					把数据同步进来，派生几分钟内会自己接上。
-				</p>
-			)}
-		</main>
+			</ul>
+		</AdminPage>
 	);
 }
 
-/** 最近动过的那一栏。 */
-function newest(lanes: TaskLane[]): TaskLane | undefined {
-	return [...lanes]
-		.filter((lane) => lane.latest)
-		.sort((a, b) => (b.latest?.id ?? 0) - (a.latest?.id ?? 0))[0];
-}
-
-/** 抬头那一句：派生的活还剩多少。 */
-export function summary({ derive }: TasksState): string {
-	if (derive.total === 0)
-		return "语料是空的：同步把人和段搬进来，派生给它们算说法与向量。";
-	if (derive.pending === 0) return `${derive.total} 段全部派生到了当前版本。`;
-	return `${derive.total} 段里还有 ${derive.pending} 段待派生。`;
-}
-
-/** 一种任务的一栏：叫什么、什么节奏、上一次怎么样、能不能现在来一次。 */
-function Lane({
+/**
+ * 一种任务的那张卡片：名字、节奏、此刻怎么样、这一次做成了什么，以及「现在跑一次」。
+ *
+ * 一张卡片管一栏的全部事，所以按钮和折叠都在卡片里——这块板不可点，卡片里套一个
+ * 按钮不会变成「能点的块里套能点的块」。同步没有「现在跑一次」：它读的是别处的
+ * 数据，什么时候读由外面定。
+ */
+function LaneCard({
 	lane,
-	progress,
-	chosen,
+	corpus,
 	busy,
-	onChoose,
 	onDone,
 }: {
 	lane: TaskLane;
-	progress: TasksState["derive"] | null;
-	chosen: boolean;
+	corpus: CorpusCounts;
 	busy: boolean;
-	onChoose: () => void;
 	onDone: () => void;
 }) {
 	const { kind, latest } = lane;
 	const [requesting, setRequesting] = useState(false);
 	const [declined, setDeclined] = useState(false);
 	const job = kind === "sync" ? null : (kind as JobKind);
+	const tone = alertTone(lane);
 
 	async function request() {
 		if (!job) return;
@@ -196,98 +200,139 @@ function Lane({
 	}
 
 	return (
-		<Card
-			className={cn(
-				"flex cursor-pointer flex-col gap-3 p-4 transition-colors",
-				chosen ? "ring-2 ring-ring" : "hover:bg-accent/40",
-			)}
-			onClick={onChoose}
+		/* 那圈离开 5px 的发丝线是 coss 文档站首页展示卡的一部分，照抄它的写法 */
+		<CardFrame
+			className="w-full after:pointer-events-none after:absolute after:-inset-[5px] after:-z-1 after:rounded-[calc(var(--radius-xl)+4px)] after:border after:border-border/64"
+			render={<li />}
 		>
-			<div className="flex items-start justify-between gap-2">
-				<div className="flex flex-col gap-0.5">
-					<h2 className="font-medium">{NAME[kind]}</h2>
-					<p className="text-muted-foreground text-xs">{WHAT[kind]}</p>
-				</div>
-				{latest && (
-					<Badge variant={TONE[latest.outcome]}>{SAID[latest.outcome]}</Badge>
+			<CardFrameHeader>
+				<CardFrameTitle render={<h2>{NAME[kind]}</h2>} />
+				{job && (
+					<CardFrameAction>
+						<Button
+							disabled={busy}
+							loading={requesting}
+							onClick={() => void request()}
+							size="sm"
+							variant="outline"
+						>
+							现在跑一次
+						</Button>
+					</CardFrameAction>
 				)}
-			</div>
-			{progress && progress.total > 0 && (
-				<div className="flex flex-col gap-1">
-					<div className="h-1.5 overflow-hidden rounded-full bg-muted">
-						<div
-							className="h-full bg-primary transition-[width]"
-							style={{
-								width: `${Math.round(((progress.total - progress.pending) / progress.total) * 100)}%`,
-							}}
-						/>
+			</CardFrameHeader>
+			<Card>
+				<CardPanel className="flex flex-col gap-4">
+					<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+						{tone && latest && (
+							<StatusBadge tone={tone}>{SAID[latest.outcome]}</StatusBadge>
+						)}
+						<p className="text-muted-foreground text-xs">{when(latest)}</p>
+						{declined && (
+							/* 这句话说的是那一下按键，用过去时；活到下一下按下去为止 */
+							<p className="text-muted-foreground text-xs">
+								按下去的时候已经排着一次了
+							</p>
+						)}
 					</div>
-					<p className="text-muted-foreground text-xs tabular-nums">
-						{progress.total - progress.pending} / {progress.total} 段
-					</p>
-				</div>
-			)}
-			<p className="text-muted-foreground text-xs">
-				{latest
-					? `上一次 ${latest.startedAt}${latest.seconds === null ? "" : `，用时 ${latest.seconds}s`}`
-					: "还没跑过"}
-				{" · "}
-				{CADENCE[kind]}
-			</p>
-			{job && (
-				<div className="flex items-center gap-2">
-					<Button
-						size="sm"
-						variant="outline"
-						disabled={busy}
-						loading={requesting}
-						onClick={(event) => {
-							event.stopPropagation();
-							void request();
-						}}
-					>
-						现在跑一次
-					</Button>
-					{declined && (
-						/* 这句话说的是那一下按键，用过去时；活到下一下按下去为止 */
-						<span className="text-muted-foreground text-xs">
-							按下去的时候已经排着一次了
-						</span>
+					{latest?.outcome === "failed" && (
+						/*
+						 * 失败用 `Alert` 的红，和「没能提交」那两处同一档：它说的是「这次跑
+						 * 失败了」，读不成命中（绿）、选中（蓝）或查询上的提示（amber）。
+						 */
+						<Alert variant="error">
+							<AlertTitle>这次{NAME[kind]}没有跑完</AlertTitle>
+							<AlertDescription>{latest.error}</AlertDescription>
+						</Alert>
 					)}
-				</div>
-			)}
-		</Card>
+					<p className="text-sm">{facts[kind](corpus)}</p>
+					{latest && <Detail lane={lane} />}
+				</CardPanel>
+			</Card>
+		</CardFrame>
 	);
 }
 
 /**
- * 这一次说过的每一行。
+ * 收起来的那一半：这一次的全部输出，和更早的几次。
  *
- * 它就是命令行里滚过去的那些字——拒绝了几段、为什么拒绝、合并了哪些写法、
- * 各表最后几行。验收一次任务靠的全是它们。等宽字体：这些行靠缩进分层级。
- *
- * 它是这一页的主面：占掉上面几栏和历史之外的全部高度、里面自己滚。几千行
- * 日志不能把页面撑长，所以高度来自版面而不是内容；`min-h-60` 是屏幕矮的时候
- * 留给它的底。
+ * 它们是排查用的，不是这一页平时要答的问题，所以默认收着——`Collapsible` 关着的
+ * 时候面根本不挂载，那上千行也就不进 DOM。
  */
-export function RunLog({ lines }: { lines: string[] }) {
+function Detail({ lane }: { lane: TaskLane }) {
+	const { latest, history } = lane;
 	return (
-		<Card className="min-h-60 flex-1 p-0">
-			<ScrollArea className="p-4">
-				<pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed">
-					{lines.length ? lines.join("\n") : "刚开始，还没有说什么"}
-				</pre>
-			</ScrollArea>
-		</Card>
+		<Collapsible className="flex flex-col gap-3">
+			<CollapsibleTrigger
+				className="-ms-2 self-start data-panel-open:[&_svg]:rotate-180"
+				render={<Button size="sm" variant="ghost" />}
+			>
+				<ChevronDownIcon className="size-4" />
+				输出与更早的几次
+			</CollapsibleTrigger>
+			<CollapsiblePanel>
+				<div className="flex flex-col gap-4">
+					{latest && (
+						/* 内边距归里面的 `pre`，于是滚动条贴着这块面的边走 */
+						<Card className="h-(--task-log-height) p-0">
+							<RunLog lines={latest.log} />
+						</Card>
+					)}
+					{history.length > 0 && <History runs={history} />}
+				</div>
+			</CollapsiblePanel>
+		</Collapsible>
+	);
+}
+
+/** 贴着末尾看的时候，多出来的行还算不算「贴着」。半行的余量。 */
+const TAIL_SLACK = 16;
+
+/**
+ * 这一次说过的每一行——命令行里滚过去的那些字。等宽字体：这些行靠缩进分层级；
+ * 行高比正文松一档，几百行连着扫才不糊成一片。
+ *
+ * **高度是版面给的，不是内容给的**（`--task-log-height`），里面自己滚：一轮整理
+ * 能说上千行，跟着长的话这一栏就有几十屏，而底下两栏会被推到看不见。
+ *
+ * 新的行进来时跟着末尾走，除非人自己往上翻过——正在跑的那一栏每两秒来一批，
+ * 不跟就等于看不到；跟得太死则是把正在读上文的人拽回底部。所以只在「这一批
+ * 进来之前人本来就贴着末尾」时才跟：那一刻的位置由现在的位置减去这一批长出来的
+ * 高度还原出来，不必去监听滚动。
+ */
+function RunLog({ lines }: { lines: string[] }) {
+	const tail = useRef<HTMLPreElement>(null);
+	const seen = useRef(0);
+
+	useEffect(() => {
+		if (lines.length === 0) return;
+		const view = tail.current?.closest("[data-slot=scroll-area-viewport]");
+		if (!(view instanceof HTMLElement)) return;
+		const grew = view.scrollHeight - seen.current;
+		seen.current = view.scrollHeight;
+		const wasAtEnd =
+			view.scrollHeight - view.scrollTop - view.clientHeight - grew <
+			TAIL_SLACK;
+		if (wasAtEnd) view.scrollTop = view.scrollHeight;
+	}, [lines.length]);
+
+	return (
+		<ScrollArea overscrollContain>
+			<pre
+				className="whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed"
+				ref={tail}
+			>
+				{lines.length ? lines.join("\n") : "刚开始，还没有说什么"}
+			</pre>
+		</ScrollArea>
 	);
 }
 
 /** 更早的几次，一行一次。 */
-export function History({ runs }: { runs: TaskRunView[] }) {
+function History({ runs }: { runs: TaskRunView[] }) {
 	return (
-		<div className="flex flex-col gap-3">
-			<h2 className="font-medium text-sm">更早的几次</h2>
-			<Table>
+		<CardFrame>
+			<Table variant="card">
 				<TableHeader>
 					<TableRow>
 						<TableHead>开始</TableHead>
@@ -309,6 +354,6 @@ export function History({ runs }: { runs: TaskRunView[] }) {
 					))}
 				</TableBody>
 			</Table>
-		</div>
+		</CardFrame>
 	);
 }

@@ -9,7 +9,6 @@ const teardown = await setup();
 after(teardown);
 
 const { listSkills } = await import("#/server/skills");
-const { summary } = await import("#/routes/skills");
 
 describe("能力词对照表", () => {
 	before(async () => {
@@ -47,7 +46,6 @@ describe("能力词对照表", () => {
 
 	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段", async () => {
 		const table = await listSkills();
-		assert.equal(table.vocabulary, 2);
 		assert.deepEqual(table.entries, [
 			{
 				canonical: "推荐系统",
@@ -58,9 +56,5 @@ describe("能力词对照表", () => {
 			{ canonical: "Python", aliases: [], people: 1, reviewedDaysAgo: 7 },
 			{ canonical: "Hadoop", aliases: [], people: 0, reviewedDaysAgo: 7 },
 		]);
-		assert.equal(
-			summary(table),
-			"语料里 2 个能力词 · 1 个标准词并进了 2 种写法 · 上次整理今天",
-		);
 	});
 });

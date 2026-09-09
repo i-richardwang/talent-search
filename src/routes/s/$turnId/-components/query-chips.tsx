@@ -134,8 +134,11 @@ export function QueryChips({
 		onChange(requirements.map((r, j) => (j === i ? next : r)));
 	const remove = (i: number) =>
 		onChange(requirements.filter((_, j) => j !== i));
+	// 不套自己的盒子：这几枚 chip 是查询带那一行里的元素，横着排还是换行由
+	// 摆它们的地方说了算（`query-deck.tsx`——那条带在 lg 以上是定高的一行）。
+	// 自己再包一层 flex，那一层的换行就会在带子里长出第二行来。
 	return (
-		<div className="flex flex-wrap items-center gap-1.5">
+		<>
 			{requirements.map((chip, i) => {
 				const term = chip.members[0].text;
 				const tooWide = wide.has(term);
@@ -246,6 +249,6 @@ export function QueryChips({
 					</Menu>
 				);
 			})}
-		</div>
+		</>
 	);
 }

@@ -52,6 +52,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				loading={false}
 				onChange={() => {}}
 				order="relevance"
+				planned
 				strong={false}
 				strongOn={0}
 				terms={[
