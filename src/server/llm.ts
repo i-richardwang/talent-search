@@ -42,6 +42,13 @@ const MODEL = process.env.LLM_MODEL;
 const STRUCTURED = process.env.LLM_STRUCTURED_OUTPUTS !== "false";
 
 /**
+ * 推理模型的思考开关，和抽取那一侧同一条规则（`chat.ts`）：设了才随请求发出
+ * `enable_thinking`，不设就不发。读一句话成条件不需要思考轨迹，而思考会先把
+ * 输出预算烧光、返回空内容，所以带思考的模型应当设成 false。
+ */
+const ENABLE_THINKING = process.env.LLM_ENABLE_THINKING?.trim();
+
+/**
  * 超时与输出预算。这两个值描述的是**端点后面那个模型有多慢、多啰嗦**，
  * 和 base URL、模型名一样属于端点配置，不是产品常量——这个文件不该知道
  * 对面是谁。
@@ -72,6 +79,13 @@ function getModel() {
 			...(API_KEY && { apiKey: API_KEY }),
 			// 超时装在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
 			fetch: timeoutFetch(TIMEOUT_MS),
+			// `enable_thinking` 是网关自己的字段，兼容层的选项里没有，请求体成形后补上
+			...(ENABLE_THINKING && {
+				transformRequestBody: (body: Record<string, unknown>) => ({
+					...body,
+					enable_thinking: ENABLE_THINKING === "true",
+				}),
+			}),
 		})(MODEL);
 	return model;
 }

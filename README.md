@@ -98,6 +98,7 @@ bun run dev      # 应用起来之后，派生任务几分钟内自己接上：�
 | `LLM_MODEL` | 是 | 查询理解模型名 |
 | `LLM_API_KEY` | 否 | 端点需要鉴权时填写 |
 | `LLM_STRUCTURED_OUTPUTS` | 否 | 端点不支持 JSON Schema 时设为 `false` |
+| `LLM_ENABLE_THINKING` | 否 | 同 `EXTRACT_ENABLE_THINKING` |
 | `LLM_TIMEOUT_MS` / `LLM_MAX_OUTPUT_TOKENS` | 否 | 端点属性，默认 60000 / 8000 |
 
 四个 `*_TIMEOUT_MS` 都是**一次尝试**的上限，不是一通调用连同重试的总时长：超时装在每一次请求上（`src/server/endpoint.ts`），于是重试的每一次尝试各拿一份完整的预算。
