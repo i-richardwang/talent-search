@@ -35,7 +35,7 @@ import { StatusBadge, type StatusTone } from "./-components/status-badge";
 
 const NAME: Record<TaskKind, string> = {
 	sync: "同步",
-	derive: "派生",
+	derive: "解析",
 	review: "整理",
 };
 
@@ -103,22 +103,19 @@ function alertTone(lane: TaskLane): StatusTone | null {
  * 每张卡片答的那件事：这一栏管的东西，此刻库里有多少。
  *
  * 三张各说各的一份数，不重样（`AGENTS.md`「同一份数据只画一遍」）：同步说搬进来
- * 多少，派生说还剩多少活，整理说词表并成了什么样。
+ * 多少，解析说还剩多少活，整理说词表并成了什么样。
  */
 export const facts: Record<TaskKind, (corpus: CorpusCounts) => string> = {
 	derive: (corpus) =>
-		dots(
-			corpus.pending > 0
-				? `还有 ${corpus.pending} 段没派生到当前版本`
-				: "全部派生到了当前版本",
-			`说法 ${corpus.phrases} 条`,
-		),
+		corpus.pending > 0
+			? `还有 ${corpus.pending} 条经历待解析`
+			: "经历已全部解析",
 	review: (corpus) =>
-		`能力词 ${corpus.words} 个，其中 ${corpus.merged} 个并到了别的写法上`,
+		`技能 ${corpus.words} 个，其中 ${corpus.merged} 个已合并写法`,
 	sync: (corpus) =>
 		dots(
 			`${corpus.employees} 人`,
-			`${corpus.segments} 段（公司内 ${corpus.internal}、入职前 ${corpus.external}）`,
+			`${corpus.segments} 条经历（公司内 ${corpus.internal}、入职前 ${corpus.external}）`,
 		),
 };
 
@@ -238,7 +235,7 @@ function LaneCard({
 					{latest?.outcome === "failed" && (
 						/*
 						 * 失败用 `Alert` 的红，和「没能提交」那两处同一档：它说的是「这次跑
-						 * 失败了」，读不成命中（绿）、选中（蓝）或查询上的提示（amber）。
+						 * 失败了」，读不成命中（绿）、选中（蓝）或要留意的状态（amber）。
 						 */
 						<Alert variant="error">
 							<AlertTitle>这次{NAME[kind]}没有跑完</AlertTitle>

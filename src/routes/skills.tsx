@@ -26,23 +26,23 @@ import type { SkillEntry } from "#/server/skills";
 import { AdminPage } from "./-components/admin-page";
 
 /**
- * 能力词对照表的管理页：机器把哪些写法并成了哪个词。
+ * 技能对照表的管理页：机器把哪些写法并成了哪个词。
  *
  * 只读。整理是后台每天自动做的（`src/corpus/aliases.ts`），这一页存在的理由是让管理员
- * 看得见它在做什么——筛选栏「入职前能力」上一个词后面的人数，是几种写法加起来
+ * 看得见它在做什么——筛选栏「入职前技能」上一个词后面的人数，是几种写法加起来
  * 的，这里能看到是哪几种。没有改的入口：改了下一轮灌库就被机器盖回去，一个
  * 会被静默撤销的编辑框比没有更糟。
  */
 export const Route = createFileRoute("/skills")({
 	loader: () => skillTable(),
-	head: () => ({ meta: [{ title: "能力词 · 人才搜索" }] }),
+	head: () => ({ meta: [{ title: "技能 · 人才搜索" }] }),
 	component: Skills,
 });
 
 function Skills() {
 	const table = Route.useLoaderData();
 	return (
-		<AdminPage title="能力词">
+		<AdminPage title="技能">
 			<SkillList entries={table.entries} />
 		</AdminPage>
 	);
@@ -69,9 +69,9 @@ function SkillList({ entries }: { entries: SkillEntry[] }) {
 		<div className="flex flex-col gap-3">
 			<InputGroup className="max-w-72">
 				<InputGroupInput
-					aria-label="按词过滤"
+					aria-label="搜索技能"
 					onChange={(event) => setNeedle(event.target.value)}
-					placeholder="按词过滤"
+					placeholder="搜索技能"
 					type="search"
 					value={needle}
 				/>
@@ -83,12 +83,12 @@ function SkillList({ entries }: { entries: SkillEntry[] }) {
 				<Empty>
 					<EmptyHeader>
 						<EmptyTitle>
-							{entries.length === 0 ? "对照表还是空的" : "没有匹配的词"}
+							{entries.length === 0 ? "还没有技能" : "没有匹配的技能"}
 						</EmptyTitle>
 						{/* 没匹配上的时候标题已经把话说完了；只有表本身是空的，才需要说该怎么办 */}
 						{entries.length === 0 && (
 							<EmptyDescription>
-								配置抽取端点，派生跑过之后整理会开始归并。
+								配置抽取端点并完成解析后，这里会列出合并结果。
 							</EmptyDescription>
 						)}
 					</EmptyHeader>
@@ -98,9 +98,9 @@ function SkillList({ entries }: { entries: SkillEntry[] }) {
 					<Table variant="card">
 						<TableHeader>
 							<TableRow>
-								<TableHead>标准词</TableHead>
+								<TableHead>技能</TableHead>
 								<TableHead className="text-end">人数</TableHead>
-								<TableHead>并进来的写法</TableHead>
+								<TableHead>其他写法</TableHead>
 								<TableHead className="text-end">上次整理</TableHead>
 							</TableRow>
 						</TableHeader>

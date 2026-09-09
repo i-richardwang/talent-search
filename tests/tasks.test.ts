@@ -390,15 +390,15 @@ describe("页面上那几句话", () => {
 		...over,
 	});
 
-	test("派生那张卡片：有活的时候说还剩几段，没活的时候说全部派生到了当前版本", () => {
-		assert.match(
-			facts.derive(corpus({ pending: 3 })),
-			/还有 3 段没派生到当前版本/,
-		);
-		assert.match(facts.derive(corpus()), /全部派生到了当前版本/);
+	test("解析那张卡片：有活的时候说还剩几条，没活的时候说已经全部解析", () => {
+		assert.match(facts.derive(corpus({ pending: 3 })), /还有 3 条经历待解析/);
+		assert.match(facts.derive(corpus()), /经历已全部解析/);
 	});
 	test("同步与整理那两张卡片说的是构成和结果", () => {
-		assert.match(facts.sync(corpus()), /8 人 · 10 段（公司内 6、入职前 4）/);
-		assert.match(facts.review(corpus()), /能力词 9 个，其中 2 个/);
+		assert.match(
+			facts.sync(corpus()),
+			/8 人 · 10 条经历（公司内 6、入职前 4）/,
+		);
+		assert.match(facts.review(corpus()), /技能 9 个，其中 2 个已合并写法/);
 	});
 });

@@ -94,9 +94,9 @@ function Person() {
 			{segments.length === 0 ? (
 				<Empty>
 					<EmptyHeader>
-						<EmptyTitle>这个人没有经历段</EmptyTitle>
+						<EmptyTitle>还没有经历记录</EmptyTitle>
 						<EmptyDescription>
-							同步没有给他切出段来，派生因此也没有东西可算。
+							导入时没有生成经历，所以还没有可解析的内容。
 						</EmptyDescription>
 					</EmptyHeader>
 				</Empty>
@@ -131,16 +131,16 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 							period(s.startDate, s.endDate),
 							duration(s.months),
 							s.level,
-							s.derived ? `派生于 ${s.derivedAt}` : null,
+							s.derived ? `解析于 ${s.derivedAt}` : null,
 						)}
 					</p>
 				</div>
 				{/*
-				 * 徽章只在**待派生**时出现。派生成功是这一页上绝大多数段的常态，
+				 * 徽章只在**待解析**时出现。解析成功是这一页上绝大多数段的常态，
 				 * 给常态发一枚徽章，一栏里就是十几块一模一样的绿——真正要人看见的
-				 * 那一段反而淹在里面。派生成功的时间是一句小字，跟着这一段的其余事实走。
+				 * 那一段反而淹在里面。解析成功的时间是一句小字，跟着这一段的其余事实走。
 				 */}
-				{!s.derived && <StatusBadge tone="waiting">待派生</StatusBadge>}
+				{!s.derived && <StatusBadge tone="waiting">待解析</StatusBadge>}
 			</div>
 			<dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1 text-xs">
 				<Fact label="序列">
@@ -154,14 +154,14 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 							<span className="text-muted-foreground">无</span>
 						))}
 				</Fact>
-				<Fact label="能力词">
+				<Fact label="技能">
 					{s.skills.length ? (
 						s.skills.join("、")
 					) : (
 						<span className="text-muted-foreground">无</span>
 					)}
 				</Fact>
-				<Fact label="做过的事">
+				<Fact label="工作内容">
 					{s.did.length ? (
 						s.did
 							.map((d) =>

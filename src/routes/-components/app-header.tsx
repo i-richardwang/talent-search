@@ -58,7 +58,7 @@ export function AppHeader({ recent }: { recent: RecentSearch[] | null }) {
 						search={{ q: "" }}
 						to="/data"
 					/>
-					<AdminLink icon={<TagsIcon />} label="能力词" to="/skills" />
+					<AdminLink icon={<TagsIcon />} label="技能" to="/skills" />
 					<AdminLink icon={<ActivityIcon />} label="任务" to="/tasks" />
 				</div>
 			</div>

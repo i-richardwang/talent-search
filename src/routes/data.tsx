@@ -69,7 +69,7 @@ function Data() {
 					>
 						{/*
 						 * 框和它的提交按钮是同一块面。这里非回车不可（几万人得回服务端
-						 * 找），所以末尾挂一个真按钮说出这件事——能力词那一页是即时过滤，
+						 * 找），所以末尾挂一个真按钮说出这件事——技能那一页是即时过滤，
 						 * 起头只有一枚漏斗，两者形状不同正是因为它们做的不是同一件事。
 						 */}
 						<InputGroup className="max-w-96">
@@ -77,15 +77,15 @@ function Data() {
 								<SearchIcon />
 							</InputGroupAddon>
 							<InputGroupInput
-								aria-label="按名字或工号找"
+								aria-label="搜索姓名或工号"
 								onChange={(event) => setNeedle(event.target.value)}
-								placeholder="按名字或工号找"
+								placeholder="搜索姓名或工号"
 								type="search"
 								value={needle}
 							/>
 							<InputGroupAddon align="inline-end">
 								<Button size="xs" type="submit" variant="ghost">
-									找
+									搜索
 								</Button>
 							</InputGroupAddon>
 						</InputGroup>
@@ -112,8 +112,8 @@ function Data() {
 										<TableHead>工号</TableHead>
 										<TableHead>姓名</TableHead>
 										<TableHead>当前</TableHead>
-										<TableHead className="text-end">段</TableHead>
-										<TableHead className="text-end">待派生</TableHead>
+										<TableHead className="text-end">经历</TableHead>
+										<TableHead className="text-end">待解析</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
