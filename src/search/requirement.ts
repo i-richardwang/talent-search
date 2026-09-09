@@ -57,8 +57,14 @@ export function termOf(value: unknown): string | undefined {
  * 变体是模型替用户补的，用户用词不一定准（说「算法」的人也想看到只写着
  * 「推荐算法」的人），只按原话找会漏人；但补来的词得看得见、删得掉、分数
  * 低于原话——否则一个不该出现的人在屏幕上找不到是哪个词招来的。
+ *
+ * 变体那两档单独列一份：发给模型的形状按它分成两栏（`intent.ts` 的
+ * `intentSchema`），因为**模型不该有机会认领哪几个是原话**。摊平成一个三档
+ * 枚举的话，「每条要求至少有一个 said」这条不变量就落在了不可信输入身上，
+ * 而它在收窄这一侧是丢整条要求的判据。
  */
-export const MEMBER_TIERS = ["said", "same", "near"] as const;
+export const VARIANT_TIERS = ["same", "near"] as const;
+export const MEMBER_TIERS = ["said", ...VARIANT_TIERS] as const;
 export type MemberTier = (typeof MEMBER_TIERS)[number];
 
 /** 一个说法：一段文本，以及它从哪来。 */

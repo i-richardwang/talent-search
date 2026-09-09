@@ -5,7 +5,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
-import { toSpec } from "#/search/intent";
+import { requirementsAllDropped, toSpec } from "#/search/intent";
 import { type Requirement, withOff } from "#/search/requirement";
 import { probeWide, vocabulary } from "#/search/search";
 import {
@@ -147,7 +147,16 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	// （`search/phrases.ts` 的 withAdmission）。占着快照等模型的话，一次理解
 	// 就占着池里的一条连接一分钟。
 	const vocab = await vocabulary();
-	const understood = toSpec(await understand(rawText, vocab), vocab);
+	const raw = await understand(rawText, vocab);
+	const understood = toSpec(raw, vocab);
+	// 模型给了要求、收窄后一条不剩：这是模型那一跳失败，不是一句没有条件的话。
+	// 抛出来和超时、限流走同一条路——记录停在「待理解」，界面画错误与重试。
+	if (requirementsAllDropped(raw, understood))
+		throw new Error(
+			`查询理解给出的语义要求全部不合规，收窄后一条不剩：${JSON.stringify(
+				(raw as { terms?: unknown }).terms,
+			).slice(0, 400)}`,
+		);
 	const benched = await benchWide(understood.requirements);
 	const spec = normalizeSpec({
 		...understood,

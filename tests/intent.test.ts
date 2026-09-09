@@ -7,7 +7,12 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { intentSchema, toSpec, type Vocabulary } from "#/search/intent";
+import {
+	intentSchema,
+	requirementsAllDropped,
+	toSpec,
+	type Vocabulary,
+} from "#/search/intent";
 import { unsupportedOf } from "#/search/spec";
 
 const VOCAB: Vocabulary = {
@@ -19,10 +24,12 @@ const VOCAB: Vocabulary = {
 const of = (raw: unknown) => toSpec(raw, VOCAB);
 const chipsOf = (raw: unknown) => of(raw).requirements;
 const terms = (...ts: unknown[]) => ({ terms: ts });
+/** 收窄之后的一个说法。模型不这么作答——它分两栏说，见 `one`。 */
 const said = (text: string) => ({ text, tier: "said" as const });
-/** 模型给一条要求的最简写法：一个用户说法，配一档强度 */
+/** 模型给一条要求的最简写法：一个用户原话，不补变体，配一档强度 */
 const one = (text: string, mode: unknown = "must") => ({
-	members: [said(text)],
+	said: [text],
+	variants: [],
 	mode,
 });
 /** 一份只有筛选的合法输出，逐项覆盖 */
@@ -79,19 +86,20 @@ describe("每个词都过一遍同一道边界", () => {
 
 	test("用户说了「或」的几个说法是同一条要求的几个 said，不拆成两条都要", () => {
 		const evidence = chipsOf(
-			terms({ members: [said("大模型"), said("推荐系统")], mode: "must" }),
+			terms({ said: ["大模型", "推荐系统"], variants: [], mode: "must" }),
 		);
 		assert.deepEqual(evidence, [
 			{ members: [said("大模型"), said("推荐系统")], mode: "must" },
 		]);
 	});
 
-	test("模型补的变体带着来源落到用户说法后面；垃圾丢掉，其余原样", () => {
+	test("变体带着来源落到用户说法后面；垃圾丢掉，其余原样", () => {
+		// 顺序不再靠模型摆对：原话和变体分两栏进来，摊平时原话在前。
 		const evidence = chipsOf(
 			terms({
-				members: [
+				said: ["算法"],
+				variants: [
 					{ text: "推荐算法", tier: "near" },
-					said("算法"),
 					{ text: "  ", tier: "same" },
 					7,
 					{ text: "算法工程", tier: "same" },
@@ -188,6 +196,61 @@ describe("没处放的条件", () => {
 	});
 });
 
+describe("每条要求必须带着用户原话", () => {
+	test("没有原话的要求整条消失：变体是替原话补的，原话没了它无所依附", () => {
+		for (const raw of [
+			{
+				said: [],
+				variants: [{ text: "推荐算法", tier: "near" }],
+				mode: "must",
+			},
+			{ variants: [{ text: "推荐算法", tier: "near" }], mode: "must" },
+			{ said: ["  "], variants: [{ text: "推荐算法", tier: "same" }] },
+		])
+			assert.deepEqual(chipsOf(terms(raw)), [], JSON.stringify(raw));
+	});
+
+	test("变体那一栏说不出「这是用户原话」：形状里没有这一档", () => {
+		// 摊平成一个三档枚举时，模型把原话标成 near 就等于交出一条空要求，
+		// 而屏幕上写的是「一个条件都没解析出来」。两栏分开，这件事说不出口。
+		assert.ok(
+			!intentSchema(VOCAB).safeParse({
+				...NONE,
+				terms: [
+					{
+						said: ["算法"],
+						variants: [{ text: "算法", tier: "said" }],
+						mode: "must",
+					},
+				],
+			}).success,
+		);
+	});
+
+	test("模型给了要求、收窄后一条不剩，是这一跳失败，不是一句没有条件的话", () => {
+		const raw = {
+			...NONE,
+			terms: [
+				{
+					said: [],
+					variants: [{ text: "推荐算法", tier: "near" }],
+					mode: "must",
+				},
+			],
+		};
+		assert.ok(requirementsAllDropped(raw, of(raw)));
+	});
+
+	test("只识别出筛选或不支持条件不算失败：它们各自是一份完整的理解", () => {
+		for (const raw of [
+			{ ...NONE, kind: "external" },
+			{ ...NONE, unsupported: ["北京"] },
+			NONE,
+		])
+			assert.ok(!requirementsAllDropped(raw, of(raw)), JSON.stringify(raw));
+	});
+});
+
 describe("模型是不可信输入", () => {
 	test("什么形状都不该抛", () => {
 		for (const raw of [null, undefined, 0, "", [], "一句话", { terms: 42 }]) {
@@ -200,9 +263,7 @@ describe("模型是不可信输入", () => {
 	});
 
 	test("数组里混进垃圾只丢那一项，其余照常", () => {
-		const evidence = chipsOf(
-			terms(null, { members: [{ text: 123 }] }, one("算法"), "算法"),
-		);
+		const evidence = chipsOf(terms(null, { said: [123] }, one("算法"), "算法"));
 		assert.deepEqual(evidence, [{ members: [said("算法")], mode: "must" }]);
 	});
 
@@ -236,7 +297,8 @@ describe("发给模型的形状", () => {
 			...NONE,
 			terms: [
 				{
-					members: [said("渠道运营"), { text: "渠道拓展", tier: "near" }],
+					said: ["渠道运营"],
+					variants: [{ text: "渠道拓展", tier: "near" }],
 					mode: "must",
 				},
 			],

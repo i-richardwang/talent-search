@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
 import { parseQuery } from "#/search/query-syntax";
 import type { SearchSpec } from "#/search/spec";
-import { breakUnderstanding, setup, violates } from "./fixture";
+import { answerIntent, breakUnderstanding, setup, violates } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -147,6 +147,35 @@ describe("理解失败", () => {
 
 		const spec = await resolveTurn(turnId);
 		assert.deepEqual(termsOf(spec), ["算法"]);
+	});
+
+	/**
+	 * 模型答得合法却没按约定作答——给了要求，每一条都没带用户原话——收窄之后
+	 * 一条不剩。这一份空条件走下去，界面画的是「一个条件都没解析出来」，
+	 * 也就是把一次故障画成了「你没说条件」。它和端点报错走同一条路。
+	 */
+	test("模型给了要求、收窄后一条不剩：也是失败，不落库", async () => {
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const restore = answerIntent((text) => ({
+			terms: [{ said: [], variants: [{ text, tier: "near" }], mode: "must" }],
+			kind: null,
+			minMonths: null,
+			companyTag: null,
+			level: null,
+			recruitment: null,
+			education: null,
+			org: null,
+			school: null,
+			unsupported: [],
+		}));
+		try {
+			await assert.rejects(resolveTurn(turnId));
+		} finally {
+			restore();
+		}
+		assert.equal((await loadTurn(turnId))?.spec, null);
+
+		assert.deepEqual(termsOf(await resolveTurn(turnId)), ["算法"]);
 	});
 });
 

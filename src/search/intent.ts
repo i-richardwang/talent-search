@@ -7,11 +7,11 @@ import { parsePicked, type VocabKey } from "./dimensions";
 import {
 	boundedText,
 	MEMBER_MAX,
-	MEMBER_TIERS,
 	REQUIREMENT_MAX,
 	REQUIREMENT_MODES,
 	requirementsOf,
 	SAID_MAX,
+	VARIANT_TIERS,
 } from "./requirement";
 import type { SearchScope, SearchSpec } from "./spec";
 
@@ -29,29 +29,44 @@ function pick(values: readonly string[], description: string) {
 /**
  * 发给模型的输出形状。字段全部出现、以 null 表示未提及，兼容结构化输出端点的
  * 必填字段要求。词长只在描述里建议，真正的阈值由 `termOf` 单独负责。
+ *
+ * **一条要求的说法分成 `said` 与 `variants` 两栏**，而查询里它是一串带来源的
+ * 说法。多出来的这一次摊平（`draftOf`）买的是一条不变量：收窄会丢掉没有 said
+ * 的整条要求，而摊平成一个三档枚举时，「哪几个是用户原话」就成了模型在枚举里
+ * 的一次选择——它选错，整条要求安静消失，屏幕上写的是「一个条件都没解析出来」。
+ * 分成两栏，这个自由度不存在。
  */
 export function intentSchema(vocab: Vocabulary) {
 	return z.object({
 		terms: z
 			.array(
 				z.object({
-					members: z
+					said: z
+						.array(
+							z
+								.string()
+								.describe(
+									"用户原话里的那个词，两到十二个字；只剥掉句式词（做过、的人、经验），不改写、不换成同义词。缩写展开（BD → 商务拓展）",
+								),
+						)
+						.describe(
+							`这条要求在用户原话里是哪几个字，一条要求至少一个。只有用户明确并列（「或」「均可」「都行」）时才有几个，最多 ${SAID_MAX} 个`,
+						),
+					variants: z
 						.array(
 							z.object({
 								text: z
 									.string()
-									.describe(
-										"一个方向、领域或能力，两到十二个字，写成库里岗位或序列会用的说法；缩写展开（BD → 商务拓展）",
-									),
+									.describe("库里岗位或序列会用的另一种叫法，两到十二个字"),
 								tier: z
-									.enum(MEMBER_TIERS)
+									.enum(VARIANT_TIERS)
 									.describe(
-										"said=用户自己说的；same=同一件事的另一种叫法；near=相近但不是同一件事",
+										"same=同一件事的另一种叫法；near=相近但不是同一件事",
 									),
 							}),
 						)
 						.describe(
-							`这条要求的说法，满足其一即可。用户自己的话标 said、排在前面，最多 ${SAID_MAX} 个（用户说了「或 / 均可」才有几个）；再补 same 或 near 的变体，全部合计不超过 ${MEMBER_MAX} 个`,
+							`替用户补的说法，用户自己没说过的写在这里。连同 said 合计不超过 ${MEMBER_MAX} 个；没有就填空数组`,
 						),
 					mode: z
 						.enum(REQUIREMENT_MODES)
@@ -112,12 +127,29 @@ export function intentSchema(vocab: Vocabulary) {
  */
 const UNSUPPORTED_MAX = 8;
 
+/**
+ * 模型的两栏说法 → `requirementsOf` 认的那一份草稿。**只摊平，不判断**：
+ * 词长、去重、条数、以及「没有 said 就丢整条」仍然只发生在收窄那一处，
+ * 模型输出和 RPC 入参因此走的还是同一个口子。
+ */
+function draftOf(item: unknown): { members: unknown[]; mode: unknown } {
+	const entry = (item ?? {}) as Record<string, unknown>;
+	const said = (Array.isArray(entry.said) ? entry.said : []).map((text) => ({
+		text,
+		tier: "said",
+	}));
+	const variants = Array.isArray(entry.variants) ? entry.variants : [];
+	return { members: [...said, ...variants], mode: entry.mode };
+}
+
 /** 模型输出 → 这句话的查询。任何不合规字段都被局部丢弃，不牵连整句。 */
 export function toSpec(raw: unknown, vocab: Vocabulary): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;
 
-	// 模型按查询自己的形状作答，收窄——词长、去重、条数——归 `requirementsOf`。
-	const requirements = requirementsOf(value.terms);
+	// 收窄——词长、去重、条数——归 `requirementsOf`；这里只把两栏摊成一串。
+	const requirements = requirementsOf(
+		(Array.isArray(value.terms) ? value.terms : []).map(draftOf),
+	);
 
 	/**
 	 * 模型一维只给一个值——提示词就是这么要求的，而维度的取值形状是集合，所以
@@ -165,4 +197,25 @@ export function toSpec(raw: unknown, vocab: Vocabulary): SearchSpec {
 			text: message,
 		})),
 	};
+}
+
+/**
+ * 模型说出了语义要求，收窄之后一条不剩。
+ *
+ * 收窄丢掉**单条**是设计内的：模型偶尔给一个十七个字的说法、给一条只有变体的
+ * 要求，丢掉它比放行强。但**全丢**不是这回事——它说明模型整体没按约定作答，
+ * 而这一层没有别的办法把话读成条件（`server/llm.ts` 的第二条硬约束）。这时候
+ * 让查询带着一份空条件走下去，界面会画成「一个条件都没解析出来」
+ * （`search/empty.ts` 的 `noConditions`），也就是把一次故障画成了「你没说条件」——
+ * 和「把故障画成没有这样的人」是同一种谎报。所以调用方据此显式失败、可重试。
+ *
+ * 只看语义要求：只识别出筛选或只识别出不支持条件都是完整的理解，各有自己的空态。
+ */
+export function requirementsAllDropped(
+	raw: unknown,
+	spec: SearchSpec,
+): boolean {
+	const terms = (raw ?? {}) as Record<string, unknown>;
+	const asked = Array.isArray(terms.terms) ? terms.terms.length : 0;
+	return asked > 0 && spec.requirements.length === 0;
 }

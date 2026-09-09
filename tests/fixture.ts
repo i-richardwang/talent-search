@@ -38,6 +38,7 @@ import {
 	taskRun,
 } from "#/db/schema";
 import { parseQuery } from "#/search/query-syntax";
+import { isVariant } from "#/search/requirement";
 
 /**
  * 每个测试文件一个 schema。名字带进程号**和**一段随机：`bun test --parallel`
@@ -180,8 +181,16 @@ export function holdNextRerank() {
  * 范围的收窄在 intent.test.ts 里对着 `toSpec` 直接测。
  */
 function fakeIntent(text: string) {
+	// 一行查询语法给的是收窄之后的形状；模型说的是分两栏的那一份（`intentSchema`），
+	// 假端点也得说模型的话，否则测的就不是真的那条边界了。
 	return {
-		terms: parseQuery(text),
+		terms: parseQuery(text).map((r) => ({
+			said: r.members.filter((m) => !isVariant(m)).map((m) => m.text),
+			variants: r.members
+				.filter(isVariant)
+				.map((m) => ({ text: m.text, tier: m.tier })),
+			mode: r.mode,
+		})),
 		kind: null,
 		minMonths: null,
 		companyTag: null,
@@ -217,6 +226,18 @@ export function answerChat(
 }
 
 let intentBroken = false;
+let intentAnswer: ((text: string) => unknown) | null = null;
+
+/**
+ * 换一份查询理解的回答，返回拆掉它的函数。默认那份按一行查询语法作答，永远合规；
+ * 要测「模型说的话不合规」那条路，就得让它说别的。
+ */
+export function answerIntent(fn: (text: string) => unknown): () => void {
+	intentAnswer = fn;
+	return () => {
+		intentAnswer = null;
+	};
+}
 
 /**
  * 让查询理解端点以 500 失败，直到调用返回的恢复函数为止。按「次」失败不够：
@@ -288,7 +309,9 @@ function startModelServer() {
 						? undefined
 						: at >= 0
 							? JSON.stringify(
-									fakeIntent(prompt.slice(at + SENTENCE_PREFIX.length)),
+									(intentAnswer ?? fakeIntent)(
+										prompt.slice(at + SENTENCE_PREFIX.length),
+									),
 								)
 							: chatAnswer
 								? JSON.stringify(chatAnswer(system, prompt))
