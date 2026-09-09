@@ -92,68 +92,62 @@ function getModel() {
 
 /**
  * 判断进提示词，阈值与权重进代码。这里写的全是**逐查询的判断**：一个片段是要求、
- * 是筛选还是不支持，哪种语气是哪档强度。相似多少算命中、太宽算多宽、
- * 各路证据值多少分，一个数字都不在这里——它们住在 weights.ts。
+ * 是范围还是不支持，哪种语气是哪档强度。相似多少算命中、一条要求最多几个说法、
+ * 各路证据值多少分，一个数字都不在这里——它们住在 weights.ts 和 requirement.ts。
+ *
+ * **提示词的读者是模型，不是维护者。** 它只说要做什么、每种片段是什么、拿不准
+ * 时怎么办，再给几个完整的例子；不解释我们为什么这么设计。那些论证写在这里的
+ * 注释和 `intent.ts` 里：向量空间里公司名和竞品是邻居，所以公司名走精确条件；
+ * 补变体是替用户的不准确用词兜底，所以只补同一件事和更具体的事，不补更宽的；
+ * 一个只有功能词的片段几乎不筛人，所以要并进旁边的领域词；对不上的取值留空，
+ * 由 `toSpec` 降成「没处放的条件」并带着原话。上一版把这些论证写进提示词，
+ * 结果是一份几十行、没有一个完整例子的说明，和一张邀请填满的表。
+ *
+ * 词表只在这里列一遍，不进 schema（`intent.ts` 的 `intentSchema` 是静态的）：
+ * 取值在不在词表里由代码查，查不过的片段变成没处放的条件，而不是整句作废。
  */
-const SYSTEM = `你在把 HR 的一句大白话翻译成人才库的检索条件。
+const SYSTEM = `把 HR 找人的一句话拆成条件。逐个片段判断它是什么，said 照抄原话，不改字。
 
-库里存的是每个人的经历段：公司内的任职（序列、岗位、部门、职级）和入职前的
-工作经历（公司、岗位、简历描述）。检索按**语义**匹配：每条说法和每段经历的原文
-由模型判定是不是一回事。它判的是「同一件事」，不是「相关领域」：「算法」找得到
-「推荐算法工程师」，但「深度学习」找不到只写着「算法」的人。所以每个说法都要
-写成库里岗位或序列会用的叫法。
+每个片段是下面之一：
+- requirement：做过什么。方向、领域、技能、职责。variants 补库里岗位会用的叫法：
+  same 是同一件事的别名（BD / 商务拓展），near 是更具体或相近的事（算法 / 推荐算法）。
+  不补更宽的词，拿不准就不补。
+- org、school：点名的公司、部门、学校。只填 said。
+- level、education、recruitment、companyTag：从下面的取值里挑一个填 value，挑不出就留空。
+- kind：value 填 internal（公司内的任职）或 external（入职前的经历）。
+- minMonths：value 填月数。
+- unsupported：库里没有的条件。地点、年龄、性别、行业、像某某一样。
 
-你的工作是**路由**：句子里的每个片段只能去三个地方之一。
+mode 看语气：默认 must。最好、优先、加分是 boost。不要、排除、没做过是 exclude。
 
-一、terms（语义要求）——「做过什么」：方向、领域、技能、职责。
-- 每个说法两到十二个字：「渠道运营」「支付风控」「团队管理」，不要写成
-  「做过渠道运营的人」。缩写展开成全称（BD → 商务拓展，PM 按上下文写成
-  产品经理或项目经理）。
-- 一句话里的不同条件拆成不同的条目，不要合并成一个长短语。
-- 一条要求分两栏。**said 是这条要求在用户原话里的那几个字**，照抄，不换成同义词；
-  一条要求至少一个 said。同一条里有几个 said 只在用户明确并列时出现
-  （「大模型或推荐系统」「均可」「都行」），它们满足其一即可，拆成两条就变成了都要。
-- **variants 是替用户补的说法。** 用户用词不一定准，只按原话找会漏人：说「算法」
-  的人也想看到岗位只写着「推荐算法」的人。每条要求补最多四个库里岗位或序列会用的
-  叫法，same 是同一件事的另一种叫法（BD 与商务拓展、大模型与 LLM），near 是相近
-  但不是同一件事（算法与推荐算法、机器学习）。**只有这两档**，「相关领域」不补——
-  「增长」补「运营」、「算法」补「后端」会把不相干的人带进来，宁可少补。
-  排除词不补变体：排除必须准。
-- 强度按语气判断：默认 must；「最好」「优先」「加分」是 boost；
-  「不要」「排除」「没做过」是 exclude——exclude 的意思是这类经历不作为证据，
-  不是把沾过的人拉黑。
-- 只有功能词的片段**不能单独成条**：「经理」「负责人」「总监」「运营」「技术」
-  「管理」单独出现时几乎不筛人。要么把它并进相邻的领域词（「算法团队负责人」
-  而不是「算法」+「负责人」），要么按下面的规则送去 level；实在无处可去就放进
-  unsupported 让用户补充。
-- 句式词（帮我找、有没有、的人、经验、背景）不是要求，丢掉。
+「A 和 B 都」是两条。「A 或 B」「A、B 均可」是一条：said 填 A，B 放 anyOf。
+经理、负责人、总监这类词单独不成条，并进旁边的领域词：算法团队负责人。
+帮我找、有没有、的人、经验，这些不是条件，跳过。没提到的不写。
 
-二、结构化范围——「是谁、在哪、多久、什么级别」。有字段就走对应字段，
-**专有名词永远不进 terms**：公司名、学校名在向量空间里和同类名字是邻居，
-语义匹配会把竞品全匹配进来。
-- kind：internal 是当前公司的内部任职；external 是加入当前公司之前的外部工作经历。
-  「入职前」「外部经历」只能填 external，「公司内」「内部任职」只能填 internal。
-- minMonths：「三年以上」「至少两年」→ 单段最短月数。
-- companyTag：「大厂」「外企」这类公司档，只能从给定取值里选。
-- level：只接受用户明确说出的一个精确当前职级，且只能从给定取值里选。
-  「P7 以上 / 以下」是范围，当前结构不能准确表示，整段放进 unsupported；
-  「高级」「资深」「总监」对不上唯一取值时也放进 unsupported，不要硬凑。
-- recruitment：「校招进来的」「社招」，只能从给定取值里选。
-- education：「硕士」「博士」，只能从给定取值里选。
-- org：用户点名的公司或部门，原样照抄（「待过字节」「在增长中心干过」）。
-- school：用户点名的学校，原样照抄。
-- 只在句子里明确说了的时候才填，否则一律 null。不要从要求去推断筛选。
+例一：算法和后端都做过的，比较资深的，最好是字节来的
+- 算法 requirement must，variants 推荐算法 near、机器学习 near
+- 后端 requirement must，variants 后端开发 same、服务端 same
+- 资深 level must，value 空
+- 字节 org boost
 
-三、unsupported——库里没有这一维的条件：地点、年龄、性别、行业、性质、
-「像某某一样」、对不上取值的职级。**原样照抄到这里**，绝不折进 terms：折进去
-会让描述里提到过那个词的段被静默匹配进来，而用户以为条件生效了。`;
+例二：入职前在大厂做过三年以上增长，不要实习
+- 入职前 kind must，value external
+- 大厂 companyTag must，value 从取值里挑最接近的一档
+- 三年以上 minMonths must，value 36
+- 增长 requirement must，variants 用户增长 same
+- 实习 requirement exclude
+
+例三：大模型或推荐系统方向，北京的，硕士
+- 大模型 requirement must，anyOf 推荐系统，variants LLM same
+- 北京 unsupported
+- 硕士 education must，value 从取值里挑`;
 
 function listed(what: string, values: readonly string[]) {
-	return `${what}的可选取值：${values.join("、") || "（无）"}`;
+	return `${what}：${values.join("、") || "（无）"}`;
 }
 
 /**
- * 一句话 → 模型给出的原始对象。调用方必须再过一遍 `toSpec` 收窄。
+ * 一句话 → 模型给出的片段清单。调用方必须再过一遍 `toSpec` 收窄。
  *
  * 结构化输出失败时真正说明问题的是 `usage` 和 `finishReason`——
  * `finishReason: "length"` 配上 `reasoningTokens` 吃掉几乎整个 `outputTokens`，
@@ -175,13 +169,14 @@ export async function understand(
 		const { output } = await retryingTimeouts(retries, () =>
 			generateText({
 				model: m,
-				output: Output.object({ schema: intentSchema(vocab) }),
+				output: Output.object({ schema: intentSchema }),
 				system: SYSTEM,
 				prompt: [
-					listed("companyTag", vocab.companyTag),
+					"取值",
 					listed("level", vocab.level),
-					listed("recruitment", vocab.recruitment),
 					listed("education", vocab.education),
+					listed("recruitment", vocab.recruitment),
+					listed("companyTag", vocab.companyTag),
 					`\n这句话：${text}`,
 				].join("\n"),
 				// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件

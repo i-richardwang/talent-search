@@ -10,6 +10,18 @@ export type SearchSpec = {
 	/** 证据要求，按句子里出现的顺序。形状与不变量见 `requirement.ts`。 */
 	requirements: Requirement[];
 	scope: SearchScope;
+	/**
+	 * 「最好是……」的那部分范围：同一批维度，语气是偏好而不是限制。
+	 *
+	 * `scope` 收窄人群，这里只改名次：满足的人乘一次 `BOOST_WEIGHT`，不满足的
+	 * 人留在名单里。招聘里「最好是字节来的」和「必须字节来的」不是一句话，而
+	 * 公司名进不了要求（专有名词不进向量），没有这一栏它就只能被读成硬条件
+	 * 或者被丢进「没处放的条件」。形状和 `scope` 相同，加一维两边一起长。
+	 *
+	 * 没有偏好的查询身上不长这个字段：默认状态不该有记号，`normalizeSpec` 会
+	 * 把空的摘掉——同一件事有两种写法，逐字比较就会比出「变了」。
+	 */
+	prefer?: SearchScope;
 	notices: SearchNotice[];
 };
 
@@ -74,6 +86,7 @@ export function hasMeaning(spec: SearchSpec) {
 	return (
 		spec.requirements.length > 0 ||
 		narrowsPopulation(spec.scope) ||
+		(spec.prefer !== undefined && narrowsPopulation(spec.prefer)) ||
 		spec.notices.length > 0
 	);
 }
@@ -95,7 +108,13 @@ export function normalizeSpec(spec: SearchSpec): SearchSpec {
 			(n.kind !== "wide" || present.has(n.term)) &&
 			all.findIndex((x) => sameNotice(x, n)) === i,
 	);
-	return { requirements, scope: { ...spec.scope }, notices };
+	return {
+		requirements,
+		scope: { ...spec.scope },
+		...(spec.prefer &&
+			narrowsPopulation(spec.prefer) && { prefer: { ...spec.prefer } }),
+		notices,
+	};
 }
 
 function sameNotice(a: SearchNotice, b: SearchNotice) {
@@ -110,6 +129,9 @@ export function sanitizeSpec(raw: unknown): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;
 	const requirements = requirementsOf(value.requirements);
 	const scope = parsePopulation((value.scope ?? {}) as Record<string, unknown>);
+	const prefer = parsePopulation(
+		(value.prefer ?? {}) as Record<string, unknown>,
+	);
 
 	const notices: SearchNotice[] = [];
 	for (const item of Array.isArray(value.notices) ? value.notices : []) {
@@ -124,5 +146,5 @@ export function sanitizeSpec(raw: unknown): SearchSpec {
 		}
 	}
 
-	return normalizeSpec({ requirements, scope, notices });
+	return normalizeSpec({ requirements, scope, prefer, notices });
 }

@@ -559,6 +559,43 @@ describe("跟人走的筛选", () => {
 		assert.deepEqual(facets.level, [{ value: "P7", n: 1 }]);
 	});
 
+	test("偏好的公司名不裁人，只把满足的人排到前面", async () => {
+		const spec = {
+			requirements: parseQuery("潜水"),
+			scope: {},
+			prefer: { org: "字节" },
+			notices: [],
+		};
+		const preferred = await search(spec);
+		const plain = await search({ ...spec, prefer: undefined });
+		assert.equal(preferred.total, 3);
+		assert.equal(preferred.results[0]?.employee.empId, "P002");
+		assert.equal(preferred.order, "relevance");
+		assert.equal(plain.order, "relevance");
+		if (preferred.order !== "relevance" || plain.order !== "relevance") return;
+		// 只有满足偏好的那个人的分变了，其余原样
+		const by = (o: typeof plain) =>
+			new Map(o.results.map((r) => [r.employee.empId, r.score]));
+		const a = by(preferred);
+		const b = by(plain);
+		assert.ok((a.get("P002") ?? 0) > (b.get("P002") ?? 0));
+		assert.equal(a.get("P001"), b.get("P001"));
+		assert.equal(a.get("P003"), b.get("P003"));
+	});
+
+	test("只有偏好的查询是「所有人，满足的在前」", async () => {
+		const outcome = await search({
+			requirements: [],
+			scope: {},
+			prefer: { org: "字节" },
+			notices: [],
+		});
+		assert.equal(outcome.order, "employee");
+		// 没有范围就是全库的人，不止这一组的三个
+		assert.ok(outcome.total > 3);
+		assert.equal(outcome.results[0]?.employee.empId, "P002");
+	});
+
 	test("学校名同理", async () => {
 		const { results } = await run("潜水", { school: "明德" });
 		assert.deepEqual(results.map((r) => r.employee.empId).sort(), [

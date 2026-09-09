@@ -208,7 +208,10 @@ export function QueryDeck({
 							wide={new Set(wideTerms(spec))}
 						/>
 						<QueryScope
-							onChange={(scope) => onChangeSpec({ ...spec, scope })}
+							onChange={({ scope, prefer }) =>
+								onChangeSpec({ ...spec, scope, prefer })
+							}
+							prefer={spec.prefer}
 							scope={spec.scope}
 						/>
 					</div>

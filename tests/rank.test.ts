@@ -15,6 +15,7 @@ import {
 } from "#/search/rank";
 import type { SearchFilters, TermPlan } from "#/search/result";
 import {
+	BOOST_WEIGHT,
 	RECENCY_FLOOR,
 	RELEVANCE_MIN,
 	ROUTE_WEIGHTS,
@@ -209,6 +210,18 @@ describe("近因", () => {
 			fact({ empId: "B", months: 12, endDate: yearsAgo(9) }),
 		]);
 		assert.ok(back > gone);
+	});
+});
+
+describe("偏好范围", () => {
+	test("满足的人乘一次加分词的份量，不满足的什么都不乘", () => {
+		const facts = [fact({ empId: "A" }), fact({ empId: "B" })];
+		const plain = run(facts).ranked;
+		const { ranked } = rank(facts, terms("must"), {}, NOW, new Set(["B"]));
+		assert.equal(ranked[0]?.empId, "B");
+		assert.equal(ranked[1]?.empId, "A");
+		assert.equal(ranked[1]?.score, plain[0]?.score);
+		assert.equal(ranked[0]?.score, (plain[0]?.score ?? 0) * (1 + BOOST_WEIGHT));
 	});
 });
 

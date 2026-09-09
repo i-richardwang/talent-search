@@ -287,6 +287,15 @@ function searchScope(
 	f: SearchScope,
 	view: Pick<SearchFilters, "org" | "school">,
 ): SQL {
+	const conds = scopeConds(f, view);
+	return conds.length > 0 ? sql`where ${sql.join(conds, sql` and `)}` : sql``;
+}
+
+/** 一份范围在 `experience e join employee p` 上的谓词，一维一条。 */
+function scopeConds(
+	f: SearchScope,
+	view: Pick<SearchFilters, "org" | "school">,
+): SQL[] {
 	const conds: SQL[] = [];
 	for (const key of DIM_KEYS) {
 		if (f[key] === undefined) continue;
@@ -301,7 +310,35 @@ function searchScope(
 			and (x.org ilike ${like(value)} or x.org_path ilike ${like(value)}))`);
 	for (const value of [f.school, view.school])
 		if (value) conds.push(sql`p.school ilike ${like(value)}`);
-	return conds.length > 0 ? sql`where ${sql.join(conds, sql` and `)}` : sql``;
+	return conds;
+}
+
+/**
+ * 候选里满足**偏好范围**的那些人。
+ *
+ * 偏好不裁人，只改名次（`rank.ts` 乘一次 `BOOST_WEIGHT`），所以它不能像 `scope`
+ * 那样下推到取数的谓词里；也不能在内存里对着命中的事实判——事实只带命中的
+ * 那几段，「最好待过大厂」问的是这个人**任何一段**经历。所以单独问一次库：
+ * 谁有一段经历同时满足偏好里的各维、并且人满足偏好里的公司名与学校名。
+ * 只问候选那批人，不扫全库。
+ */
+async function fetchPreferred(
+	store: DbExecutor,
+	prefer: SearchScope | undefined,
+	empIds: Iterable<string>,
+): Promise<Set<string>> {
+	const ids = [...new Set(empIds)];
+	if (!prefer || ids.length === 0) return new Set();
+	const conds = scopeConds(prefer, {});
+	if (conds.length === 0) return new Set();
+	const rows = await store.execute<{ emp_id: string }>(sql`
+		select distinct e.emp_id
+		from experience e join employee p on p.emp_id = e.emp_id
+		where e.emp_id in (${sql.join(
+			ids.map((id) => sql`${id}`),
+			sql`, `,
+		)}) and ${sql.join(conds, sql` and `)}`);
+	return new Set(rows.rows.map((r) => r.emp_id));
 }
 
 /**
@@ -538,7 +575,16 @@ async function searchScopeOnly(
 	// org / school 已经在 SQL 里按人裁过；证据要求由 rankPopulation 摘掉——
 	// 没有语义证据可言的路上，「证据够不够硬」问的不是这批事实。
 	const scopedView = { ...view, org: undefined, school: undefined };
-	const { empIds, facets, total } = rankPopulation(facts, scopedView);
+	const preferred = await fetchPreferred(
+		store,
+		spec.prefer,
+		facts.map((f) => f.empId),
+	);
+	const { empIds, facets, total } = rankPopulation(
+		facts,
+		scopedView,
+		preferred,
+	);
 	const pageIds = empIds.slice(0, limit);
 	const employees =
 		pageIds.length === 0
@@ -599,8 +645,10 @@ export async function search(
 	const vetoTexts = active.flatMap((r) =>
 		r.mode === "exclude" ? r.members.map((m) => m.text) : [],
 	);
-	// 没有正向证据也没有结构化范围时，排除词自己不产出候选人。
-	if (terms.length === 0 && !narrowsPopulation(spec.scope))
+	// 没有正向证据也没有结构化范围时，排除词自己不产出候选人。只有偏好的查询
+	// （「最好是字节来的」）是「所有人，满足偏好的在前」，范围为空也照跑。
+	const prefers = spec.prefer !== undefined && narrowsPopulation(spec.prefer);
+	if (terms.length === 0 && !narrowsPopulation(spec.scope) && !prefers)
 		return {
 			order: "relevance",
 			terms,
@@ -656,8 +704,19 @@ export async function search(
 				};
 			}
 			const facts = keepUnvetoed(loaded.facts, vetoed);
+			const preferred = await fetchPreferred(
+				store,
+				spec.prefer,
+				facts.map((f) => f.empId),
+			);
 
-			const { ranked, facets, total } = rank(facts, terms, filters, new Date());
+			const { ranked, facets, total } = rank(
+				facts,
+				terms,
+				filters,
+				new Date(),
+				preferred,
+			);
 			const empty = emptyReason({
 				spec,
 				filters,

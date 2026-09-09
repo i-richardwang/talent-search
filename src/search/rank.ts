@@ -381,11 +381,17 @@ function fill(out: Facets, key: DimKey, rows: Facet[]) {
 export function rankPopulation(
 	facts: PopulationFact[],
 	filters: SearchFilters,
+	/** 满足偏好范围的人（`search.ts` 的 `fetchPreferred`）。没有偏好就是空集。 */
+	preferred: ReadonlySet<string> = new Set(),
 ): { empIds: string[]; facets: Facets; total: number } {
 	const effective = { ...filters, strong: undefined };
+	// 没有分数可排的路上，偏好就是唯一的先后：满足的在前，其余按工号
 	const empIds = [
 		...new Set(facts.filter(keeps(effective)).map((fact) => fact.empId)),
-	].sort();
+	].sort(
+		(a, b) =>
+			Number(preferred.has(b)) - Number(preferred.has(a)) || a.localeCompare(b),
+	);
 	const facets = emptyFacets();
 	for (const key of DIM_KEYS)
 		fill(
@@ -413,11 +419,16 @@ export function rank(
 	terms: TermPlan[],
 	filters: SearchFilters,
 	now: Date,
+	/** 满足偏好范围的人（`search.ts` 的 `fetchPreferred`）。没有偏好就是空集。 */
+	preferred: ReadonlySet<string> = new Set(),
 ): { ranked: Ranked[]; facets: Facets; total: number } {
 	const ranked: Ranked[] = [];
 	for (const [empId, p] of bucket(facts, keeps(filters))) {
 		if (!complete(p, terms, Boolean(filters.strong))) continue;
-		ranked.push({ empId, ...score(p, terms, now) });
+		const { score: s, basis } = score(p, terms, now);
+		// 偏好范围和一个命中满分的加分词同一份量：满足乘一次，不满足什么都不乘
+		const score_ = preferred.has(empId) ? s * (1 + BOOST_WEIGHT) : s;
+		ranked.push({ empId, score: score_, basis });
 	}
 	// 同分按工号，排序才是确定的：翻页靠把 limit 调大重查，前一页必须逐位不变
 	ranked.sort((a, b) => b.score - a.score || a.empId.localeCompare(b.empId));

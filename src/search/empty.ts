@@ -81,7 +81,10 @@ export function emptyReason(input: {
 		if (narrowsPopulation(filters)) return { kind: "filtered" };
 		return { kind: "unmet" };
 	}
-	if (narrowsPopulation(spec.scope))
+	if (
+		narrowsPopulation(spec.scope) ||
+		(spec.prefer !== undefined && narrowsPopulation(spec.prefer))
+	)
 		return narrowsPopulation(filters)
 			? { kind: "filtered" }
 			: { kind: "scopeEmpty" };
