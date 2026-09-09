@@ -40,64 +40,64 @@ const COPY: {
 	) => EmptyCopy;
 } = {
 	overflowEvidence: (reason, h) => ({
-		title: "匹配证据过多",
-		hint: `「${reason.terms.join("」「")}」产生的匹配证据最多，请换成更具体的说法，或先停用。`,
+		title: "条件太宽",
+		hint: `「${reason.terms.join("」「")}」太宽，写具体一点，或先停用。`,
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	overflowPopulation: (_reason, h) => ({
-		title: "查询范围过大",
-		hint: "请添加更具体的范围条件或经历条件，再查看完整结果。",
+		title: "范围太大",
+		hint: "再加一项具体条件。",
 		action: { label: "添加条件", onClick: h.onEditQuery },
 	}),
 	allDisabled: (_reason, h) => ({
-		title: "当前没有启用的搜索条件",
-		hint: "请重新启用条件，或添加岗位、经验或能力。",
+		title: "没有启用的条件",
+		hint: "把停用的打开，或再加一项。",
 		action: {
-			label: "启用全部条件",
+			label: "启用全部",
 			// 启用是**改查询**，不是改视图：条件变了，找的就是另一批人。所以它
 			// 派生一条新记录。
 			onClick: () => h.onReviseQuery(h.terms.map((t) => withOff(t, null))),
 		},
 	}),
 	excludeOnly: (_reason, h) => ({
-		title: "缺少搜索条件",
-		hint: "当前只有排除条件，请添加至少一项岗位、经验或能力。",
+		title: "还缺一项条件",
+		hint: "现在只有排除，再加一项。",
 		action: { label: "添加条件", onClick: h.onEditQuery },
 	}),
 	noConditions: (_reason, h) => ({
-		title: "未识别到有效的搜索条件",
-		hint: "请用一句话说要找什么样的人，例如「做过渠道运营、带过团队」。",
+		title: "没有读出条件",
+		hint: "换一句，例如「做过渠道运营、带过团队」。",
 		action: { label: "重新输入", onClick: h.onEditQuery },
 	}),
 	scopeEmpty: (_reason, h) => ({
-		title: "没有符合查询范围的员工",
-		hint: "请移除一项范围条件，或添加经历条件重新搜索。",
+		title: "这个范围内没有人",
+		hint: "去掉一项范围再搜。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	strongEmpty: (reason, h) => ({
-		title: "没有任职记录能证明的结果",
-		hint: `关掉「只看任职记录可查的」后可查看 ${reason.without} 人。`,
+		title: "没有岗位或序列匹配的人",
+		hint: `关掉后还有 ${reason.without} 人。`,
 		action: {
-			label: "关掉这项要求",
+			label: "关掉",
 			onClick: () => h.onChange({ strong: undefined }),
 		},
 	}),
 	filtered: (_reason, h) => ({
-		title: "当前筛选下无结果",
-		hint: "清除筛选后可查看符合搜索条件的结果。",
+		title: "当前筛选下没有人",
+		hint: "清除筛选后再看。",
 		action: {
 			label: "清除筛选",
 			onClick: () => h.onChange(CLEARED_FILTERS),
 		},
 	}),
 	unmet: (_reason, h) => ({
-		title: "没有符合全部必选条件的结果",
-		hint: "把较次要的条件改为「加分」，可以保留没有这段经历的人。",
+		title: "没有同时满足必须条件的人",
+		hint: "次要的改成「加分」会多出人。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	noHits: (_reason, h) => ({
-		title: "没有找到相关的人",
-		hint: "当前条件都是加分项，没有人满足其中任何一项。换个更常见的说法试试。",
+		title: "没有相关的人",
+		hint: "都是加分，没有人沾上。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 };

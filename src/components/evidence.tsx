@@ -11,7 +11,8 @@ export const ROUTE_LABEL: Record<Route, string> = {
 	org: "部门或公司",
 	description: "简历原文",
 	skill: "技能",
-	did: "工作内容",
+	// 做过的事那一路，说法本身已经是「从零搭建 · 推荐系统」，不再另起类型名
+	did: "",
 };
 
 const STRENGTH_LABEL: Record<Strength, string> = {
@@ -236,9 +237,11 @@ export function EvidenceLine({
 				 * 「这是岗位还是部门」，否则「区域安全」四个字读完了还要回头找
 				 * 它是从哪儿来的。12px 次要色，它是标签不是内容。
 				 */}
-				<span className="shrink-0 text-muted-foreground text-xs">
-					{field.label}
-				</span>
+				{field.label ? (
+					<span className="shrink-0 text-muted-foreground text-xs">
+						{field.label}
+					</span>
+				) : null}
 				{field.value === null ? (
 					<span className="min-w-0 truncate text-muted-foreground">
 						{field.context}

@@ -2,6 +2,7 @@ import { ChevronDownIcon, EyeOffIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import {
 	Menu,
+	MenuGroup,
 	MenuGroupLabel,
 	MenuItem,
 	MenuPopup,
@@ -62,9 +63,9 @@ const MODE_LABEL: Record<TermMode, string> = {
 };
 
 const MODE_HINT: Record<TermMode, string> = {
-	must: "仅显示满足这项的人",
-	boost: "满足这项的人优先显示",
-	exclude: "这类经历不再作为证据；仅有这类经历的人不再显示",
+	must: "只留满足这项的人",
+	boost: "满足这项的人排前面",
+	exclude: "不作证据；仅此类经历的人会消失",
 };
 
 /**
@@ -156,14 +157,15 @@ export function QueryChips({
 						<MenuPopup align="start">
 							{chip.off && (
 								<>
-									<MenuGroupLabel>
-										<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
-											{wide
-												? "这个词命中的人太多，几乎筛不掉谁，已自动停用。" +
-													"换个更具体的说法效果更好；重新启用后将照常参与检索。"
-												: `此条件当前未生效。重新启用后仍为「${MODE_LABEL[chip.mode]}」条件。`}
-										</span>
-									</MenuGroupLabel>
+									<MenuGroup>
+										<MenuGroupLabel>
+											<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
+												{wide
+													? "几乎筛不掉人，已停用。换个更具体的词。"
+													: `已停用，打开后仍是「${MODE_LABEL[chip.mode]}」。`}
+											</span>
+										</MenuGroupLabel>
+									</MenuGroup>
 									<MenuSeparator />
 								</>
 							)}
@@ -189,22 +191,26 @@ export function QueryChips({
 							{chip.values.length > 1 && (
 								<>
 									<MenuSeparator />
-									<MenuGroupLabel>任一满足即可</MenuGroupLabel>
-									{chip.values.map((value) => (
-										<MenuItem
-											key={value}
-											onClick={() => replaceAt(i, withoutValue(chip, value))}
-										>
-											{/* 一行两段：取值，和点了会怎样。删是这一行唯一的动作，
-											    所以整行可点，末尾说明白。 */}
-											<span className="flex flex-1 items-baseline gap-2">
-												<span>{valueLabel(chip, value)}</span>
-												<span className="ml-auto text-muted-foreground text-xs">
-													不按它找
+									<MenuGroup>
+										<MenuGroupLabel>任一满足即可</MenuGroupLabel>
+										{chip.values.map((value) => (
+											<MenuItem
+												key={value}
+												onClick={() =>
+													replaceAt(i, withoutValue(chip, value))
+												}
+											>
+												{/* 一行两段：取值，和点了会怎样。删是这一行唯一的动作，
+												    所以整行可点，末尾说明白。 */}
+												<span className="flex flex-1 items-baseline gap-2">
+													<span>{valueLabel(chip, value)}</span>
+													<span className="ml-auto text-muted-foreground text-xs">
+														去掉
+													</span>
 												</span>
-											</span>
-										</MenuItem>
-									))}
+											</MenuItem>
+										))}
+									</MenuGroup>
 								</>
 							)}
 							{/*

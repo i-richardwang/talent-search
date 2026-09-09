@@ -1,5 +1,5 @@
 /**
- * 名单表头上那个「只看任职记录可查的」。
+ * 名单表头上那个「仅岗位或序列」。
  *
  * 它是这套检索里最容易被点错也最值钱的一个开关：打开之后，每一条必须条件都得
  * 有受控证据（任职记录）才算命中，只在简历里提过的人一律不算。所以这里测三件
@@ -42,26 +42,25 @@ describe("这份名单是什么", () => {
 		// 没有点可对照的时候，图例解释的是不存在的东西
 		const seen = render(false, 7, []);
 		assert.ok(!seen.includes("匹配来源"), seen);
-		assert.ok(!seen.includes("只看任职记录可查的"), seen);
+		assert.ok(!seen.includes("仅岗位或序列"), seen);
 	});
 });
 
-describe("只看任职记录可查的", () => {
-	test("名字说的是留下什么，不是命中了哪个字段", () => {
-		// 「序列」是 HR 的字段名，招聘的人不认得它
+describe("仅岗位或序列", () => {
+	test("和图例最强那一档说同一句话", () => {
 		const seen = render(false, 7);
-		assert.ok(seen.includes("只看任职记录可查的"), seen);
+		assert.ok(seen.includes("仅岗位或序列"), seen);
 	});
 
 	test("关着的时候带着人数：点下去还剩几个，不点就知道", () => {
 		// 有了这个数，名单那边就不必再写一句「已排除 N 人」：同一件事的另一种说法
-		assert.match(render(false, 7), /只看任职记录可查的\s*7/);
+		assert.match(render(false, 7), /仅岗位或序列\s*7/);
 	});
 
 	test("它紧挨着解释它的那三颗点", () => {
 		const seen = render(false, 7);
 		const legend = seen.indexOf("岗位或序列");
-		const toggle = seen.indexOf("只看任职记录可查的");
+		const toggle = seen.indexOf("仅岗位或序列");
 		assert.ok(legend >= 0 && toggle > legend, seen);
 	});
 });
@@ -72,14 +71,14 @@ describe("不给死路", () => {
 		// 落地长高一档、整份名单往下跳一次。左栏那几维处理死路的办法也正是
 		// 把数到 0 的那一行禁用掉、留在原地（`filter-rail.tsx` 开头）。
 		const html = markup(false, 0);
-		assert.ok(html.includes("只看任职记录可查的"), html);
+		assert.ok(html.includes("仅岗位或序列"), html);
 		assert.match(
-			html.slice(0, html.indexOf("只看任职记录可查的")),
+			html.slice(0, html.indexOf("仅岗位或序列")),
 			/<button[^>]*\sdisabled=""/,
 		);
 	});
 
 	test("已经打开的永远留着，否则没有任何东西能关掉它", () => {
-		assert.ok(render(true, 0).includes("只看任职记录可查的"));
+		assert.ok(render(true, 0).includes("仅岗位或序列"));
 	});
 });

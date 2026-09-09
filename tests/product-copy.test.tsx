@@ -70,7 +70,10 @@ describe("产品文案使用常规 SaaS 语言", () => {
 	});
 
 	test("首页不写口号、不写对话式提问，也不复述自己是干什么的", () => {
-		const text = seen(<ZeroState error={null} onQuery={() => true} />);
+		const html = renderToStaticMarkup(
+			<ZeroState error={null} onQuery={() => true} />,
+		);
+		const text = visibleText(html);
 		assert.doesNotMatch(text, /你想找什么样的人|找到合适的人|查看相关人选/);
 		assert.doesNotMatch(text, /语料|受控字段/);
 		/*
@@ -79,6 +82,8 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		 * 注意力，而这一屏没有第二件值得做的事。
 		 */
 		assert.doesNotMatch(text, /最近搜索|常用方向|搜索示例|数据范围/);
+		assert.match(html, /placeholder="输入人选要求：岗位、经历、技能"/);
+		assert.doesNotMatch(html, /条件可以放好几个|用一句话说/);
 		// 例子是整句，不是单个词：一句话里能放多个条件这件事只有它说得出来。
 		assert.match(text, /做过.+、.+的人/);
 	});
@@ -177,7 +182,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			/>,
 		);
 		// 先确认画出来的确实是空态那一支：两条 doesNotMatch 在一片空白上也成立
-		assert.match(text, /没有符合全部必选条件的结果/);
+		assert.match(text, /没有同时满足必须条件的人/);
 		assert.doesNotMatch(text, /0\s*人/);
 		assert.doesNotMatch(text, /按相关度排序/);
 	});
@@ -189,10 +194,10 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.match(text, /简历原文/);
 		assert.doesNotMatch(text, /受控字段|无校验|可直接确认/);
 		assert.equal(ROUTE_LABEL.skill, "技能");
-		assert.equal(ROUTE_LABEL.did, "工作内容");
+		assert.equal(ROUTE_LABEL.did, "");
 		assert.doesNotMatch(
 			Object.values(ROUTE_LABEL).join(" "),
-			/能力词|做过的事/,
+			/能力词|做过的事|工作内容/,
 		);
 	});
 });

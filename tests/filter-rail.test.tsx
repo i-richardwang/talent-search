@@ -213,7 +213,7 @@ describe("清除", () => {
 		);
 	});
 
-	test("「只看任职记录可查的」不进计数——它问的不是人群多大", () => {
+	test("「仅岗位或序列」不进计数——它问的不是人群多大", () => {
 		// 它也不在这条栏上（见 result-list.tsx 的 ProvenOnly）
 		assert.match(markup({ strong: true }), /class="[^"]*\binvisible\b/);
 	});

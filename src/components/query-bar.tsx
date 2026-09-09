@@ -127,9 +127,9 @@ export function QueryBar({
 						e.preventDefault();
 						formRef.current?.requestSubmit();
 					}}
-					/* 只说格式——一句话，而且一句里可以放好几个条件。「找什么样的
-					   人」由这一屏的标题去问，两处各说一半，不互相重复。 */
-					placeholder="用一句话说，条件可以放好几个"
+					/* 标题问要什么样的人；这里说框里装什么。岗位、经历、技能是
+					   人选要求的三块料，不是系统格式说明。 */
+					placeholder="输入人选要求：岗位、经历、技能"
 					ref={inputRef}
 					value={draft}
 				/>

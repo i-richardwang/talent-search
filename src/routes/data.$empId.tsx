@@ -161,7 +161,7 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 						<span className="text-muted-foreground">无</span>
 					)}
 				</Fact>
-				<Fact label="工作内容">
+				<Fact label="职责">
 					{s.did.length ? (
 						s.did
 							.map((d) =>

@@ -5,7 +5,7 @@
  * 空态是这个界面里唯一「没有数据可看」的时刻，它说什么就是产品在这一刻的
  * 全部价值。出口分两类，这一层测：改筛选走 `onChange`（同一条查询，换个
  * 看法），改条件走 `onReviseQuery`（换一个问题，会派生一条新的查询记录）。
- * 两者在界面上都是一个按钮，走错了不会报错，只会让「启用全部条件」变成一次
+ * 两者在界面上都是一个按钮，走错了不会报错，只会让「启用全部」变成一次
  * 不留痕迹的改动。
  */
 import assert from "node:assert/strict";
@@ -43,7 +43,7 @@ function run(reason: EmptyReason, query = "") {
 describe("取数超限：是一种结果，不是一次失败", () => {
 	test("只点名实际贡献事实行最多的条件，出口是改条件不是清筛选", () => {
 		const s = run({ kind: "overflowEvidence", terms: ["经理"] }, "算法,经理");
-		assert.equal(s.title, "匹配证据过多");
+		assert.equal(s.title, "条件太宽");
 		assert.match(s.hint, /「经理」/);
 		assert.doesNotMatch(s.hint, /算法/, "贡献较少的词不背锅");
 		assert.equal(s.focused, true);
@@ -52,7 +52,7 @@ describe("取数超限：是一种结果，不是一次失败", () => {
 
 	test("范围过大时要求继续收窄，不冒充范围内没人", () => {
 		const s = run({ kind: "overflowPopulation" });
-		assert.equal(s.title, "查询范围过大");
+		assert.equal(s.title, "范围太大");
 		assert.equal(s.focused, true);
 	});
 });
@@ -83,12 +83,12 @@ describe("其余各支各说各的", () => {
 			assert.equal(s.focused, true, kind);
 			assert.equal(s.changed, undefined, kind);
 		}
-		assert.equal(run({ kind: "excludeOnly" }).title, "缺少搜索条件");
-		assert.equal(run({ kind: "noConditions" }).title, "未识别到有效的搜索条件");
+		assert.equal(run({ kind: "excludeOnly" }).title, "还缺一项条件");
+		assert.equal(run({ kind: "noConditions" }).title, "没有读出条件");
 	});
 
 	test("范围里没人：说范围，不冒充解析失败", () => {
-		assert.equal(run({ kind: "scopeEmpty" }).title, "没有符合查询范围的员工");
+		assert.equal(run({ kind: "scopeEmpty" }).title, "这个范围内没有人");
 	});
 
 	test("证据要求滤空了：报出关掉之后能看到几个，出口就是关掉它", () => {
@@ -114,7 +114,7 @@ describe("其余各支各说各的", () => {
 	test("全是加分条件却没人：出路是换词，不能再让人「改成加分」", () => {
 		const s = run({ kind: "noHits" });
 		assert.doesNotMatch(s.hint, /改为「加分」/);
-		assert.match(s.hint, /换/);
+		assert.match(s.hint, /加分/);
 		assert.equal(s.focused, true);
 	});
 });

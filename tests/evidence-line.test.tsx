@@ -122,7 +122,7 @@ describe("一行证据看得见的部分", () => {
 		assert.match(said, /某部门/);
 	});
 
-	test("抽取的两路写出技能或工作内容，不把内部路名露出来", () => {
+	test("抽取的两路：技能写出类型，做过的事只写说法本身", () => {
 		const bySkill = seen(
 			hit({ route: "skill", phrase: "Spark", value: "Spark" }),
 			basis({ route: "skill", value: "Spark" }),
@@ -140,10 +140,9 @@ describe("一行证据看得见的部分", () => {
 			}),
 			basis({ route: "did", value: "推荐系统" }),
 		);
-		assert.match(byDid, /工作内容/);
 		assert.match(byDid, /从零搭建/);
 		assert.match(byDid, /推荐系统/);
-		assert.doesNotMatch(byDid, /做过的事/);
+		assert.doesNotMatch(byDid, /做过的事|工作内容/);
 	});
 });
 
