@@ -4,6 +4,7 @@ import {
 	Outlet,
 	Scripts,
 } from "@tanstack/react-router";
+import { buttonVariants } from "#/components/ui/button";
 import { TooltipProvider } from "#/components/ui/tooltip";
 import { recentSearches } from "#/server/functions";
 import appCss from "../styles.css?url";
@@ -64,6 +65,10 @@ export const Route = createRootRoute({
  * 正文」在两屏上不是同一块——零态是那块居中的输入面，工作台是中间那条名单列
  * （左筛选、右详情都是辅助面）。两屏的 `<main>` 都 `flex-1`，于是零态那块在
  * 顶栏以下真正居中，而不是靠某个视口高度减去顶栏高度的算式。
+ *
+ * 每一屏的那块 `<main>` 都带 `id="main"` 和 `tabIndex={-1}`：那是跳过导航
+ * （`SkipToMain`）的落点。外壳不替它们指这个位置——工作台的正文从名单开始，
+ * 查询带在它之前；零态的正文就是整块输入面。
  */
 function RootComponent() {
 	const recent = Route.useLoaderData();
@@ -78,9 +83,45 @@ function RootComponent() {
 		 * 会伸到视口之外，不剪掉就多一条横向滚动条。它不是滚动容器，吸顶照常。
 		 */
 		<div className="relative isolate flex flex-1 flex-col overflow-clip">
+			<SkipToMain />
 			<PageFrame />
 			<AppHeader recent={recent} />
 			<Outlet />
+		</div>
+	);
+}
+
+/**
+ * 跳过导航：Tab 的第一站，一下把人送到这一屏的正文。
+ *
+ * 它属于**外壳**，不属于某一屏：每一屏顶上都是同一排入口，每一屏都有一块正文。
+ * 落点是那一屏自己给的（`id="main"`，见上面那段），因为「正文从哪里开始」只有
+ * 它自己知道——工作台要越过的不止顶栏，还有查询带上那句话、铅笔、每一枚 chip。
+ *
+ * **位置和藏归外面这一层，长相归按钮。** 一个元素同时干这两件事不成立：coss 的
+ * 按钮配方自带 `relative`（描边那层 `before` 要它）和 `h-8 sm:h-7`，它们跟外面
+ * 写的 `fixed`、`sr-only` 是同一档权重——同权重时谁生效取决于生成的 CSS 里谁排
+ * 在后面，于是「不占位」成了一件靠类的排序决定的事，赌输的那一面是页顶凭空多出
+ * 一颗按钮那么高的空气，一滚动吸顶又收回去。分成两层，没有一个属性有两个出处：
+ * 外面那个 div 只管位置，按钮只有长相。
+ *
+ * 藏起来用 `not-focus-within:`，不是 `sr-only` 加 `focus-within:not-sr-only`：
+ * `:not()` 让它高一档权重，于是不跟任何配方抢；而 `not-sr-only` 那份会把
+ * `position` 还原成 `static`，聚焦的那一刻反过来压掉 `fixed`，链接连着整屏
+ * 一起进文档流。
+ *
+ * `fixed`：聚焦时它在**视口**的左上角。绝对定位那份是文档的左上角——滚到第三十
+ * 个人时按 Tab，链接会出现在屏幕外面。
+ */
+function SkipToMain() {
+	return (
+		<div className="fixed top-2 left-2 z-escape not-focus-within:sr-only">
+			<a
+				className={buttonVariants({ size: "sm", variant: "outline" })}
+				href="#main"
+			>
+				跳到正文
+			</a>
 		</div>
 	);
 }

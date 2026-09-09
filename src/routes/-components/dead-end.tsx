@@ -27,7 +27,7 @@ export function DeadEnd({
 	description: string;
 }) {
 	return (
-		<main className="flex flex-1 flex-col">
+		<main className="flex flex-1 flex-col" id="main" tabIndex={-1}>
 			<Empty>
 				<EmptyHeader>
 					<EmptyMedia variant="icon">

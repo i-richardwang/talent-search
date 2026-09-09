@@ -20,7 +20,11 @@ export function AdminPage({
 	children: ReactNode;
 }) {
 	return (
-		<main className="app-column flex flex-1 flex-col gap-6 py-8">
+		<main
+			className="app-column flex flex-1 flex-col gap-6 py-8"
+			id="main"
+			tabIndex={-1}
+		>
 			<h1 className="title-1 font-semibold">{title}</h1>
 			{children}
 		</main>

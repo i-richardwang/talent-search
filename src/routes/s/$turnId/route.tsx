@@ -6,7 +6,6 @@ import {
 	useParams,
 } from "@tanstack/react-router";
 import { useCallback, useRef } from "react";
-import { buttonVariants } from "#/components/ui/button";
 import {
 	Dialog,
 	DialogPanel,
@@ -168,19 +167,6 @@ function Workbench() {
 
 	return (
 		<div className="mx-auto flex w-full max-w-app flex-1 flex-col">
-			{/* 必须是文档里第一个可聚焦元素，否则「跳过」的东西已经先被 Tab 过一遍了 */}
-			<a
-				className={buttonVariants({
-					className:
-						"sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-escape",
-					size: "sm",
-					variant: "outline",
-				})}
-				href="#results"
-			>
-				跳到搜索结果
-			</a>
-
 			{/* 改写框里的草稿属于一条查询记录，换记录时不能带到下一句话。 */}
 			<QueryDeck
 				error={commitError ?? interpretError}
@@ -218,9 +204,10 @@ function Workbench() {
 						/* 顶上那一档留白由这里给：查询带定高、贴着下沿画线，
 						   它没有可以顺手撑开的内边距。 */
 						className="mx-auto w-full max-w-page px-4 pt-4 pb-16"
-						id="results"
-						/* 跳过导航的落点必须可聚焦，否则点了链接只滚动、
-					   焦点仍在链接上，下一次 Tab 又回到顶栏 */
+						/* 外壳那条跳过导航跳到这里（`__root.tsx`）：正文从名单开始，
+						   查询带在它之前。落点必须可聚焦，否则点了链接只滚动、焦点仍
+						   留在链接上，下一次 Tab 又回到顶栏。 */
+						id="main"
 						tabIndex={-1}
 					>
 						{/* lg 以下没有并排一条栏的余地，同一份筛选收成一个按钮 */}

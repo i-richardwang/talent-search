@@ -25,7 +25,7 @@ function Home() {
 	// 这一屏的正文就是那块输入面，它自己就是 `<main>`：没有名单、没有筛选，
 	// 也就没有第二块需要和它区分开的东西。
 	return (
-		<main className="flex flex-1 flex-col">
+		<main className="flex flex-1 flex-col" id="main" tabIndex={-1}>
 			<ZeroState error={error} onQuery={commit} />
 		</main>
 	);
