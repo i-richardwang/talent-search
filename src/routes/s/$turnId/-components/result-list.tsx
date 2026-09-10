@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { SearchXIcon } from "lucide-react";
+import { ListChecksIcon, SearchXIcon, XIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import {
 	Dot,
@@ -9,6 +9,8 @@ import {
 } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
 import { Card } from "#/components/ui/card";
+import { Checkbox } from "#/components/ui/checkbox";
+import { CheckboxGroup } from "#/components/ui/checkbox-group";
 import {
 	Empty,
 	EmptyContent,
@@ -17,33 +19,27 @@ import {
 	EmptyMedia,
 	EmptyTitle,
 } from "#/components/ui/empty";
+import { Label } from "#/components/ui/label";
+import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Toggle } from "#/components/ui/toggle";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import { bestHitPerTerm } from "#/search/evidence";
-import {
-	type RankedResult,
-	type SearchOutcome,
-	type SearchResult,
-	type TermPlan,
-	termPlans,
-} from "#/search/result";
+import { type SearchOutcome, type TermPlan, termPlans } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import type { Term } from "#/search/term";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 import { emptyState } from "../-lib/empty-state";
+import type { Picks } from "../-lib/picks";
 import type { View } from "../-lib/view-params";
+import { PickDock } from "./pick-dock";
 
 /** 一块卡片的内边距。骨架屏和候选人共用，加载完成的那一帧才不会抖。 */
 const PAD = "px-4 py-3.5";
 
 /** 首次检索的骨架块数。之后跟着上一次的结果数走，列表高度就不会每次跳。 */
 const SKELETON_ROWS = 5;
-
-function isRanked(result: SearchResult): result is RankedResult {
-	return "score" in result;
-}
 
 /**
  * 名单的表头：这份名单有多少人、按什么排、那三颗点各是什么意思，以及要不要
@@ -69,6 +65,9 @@ export function ResultHeader({
 	onChange,
 	strongOn,
 	planned,
+	picking,
+	onPicking,
+	pickable,
 }: {
 	loading: boolean;
 	order: "relevance" | "employee";
@@ -87,6 +86,12 @@ export function ResultHeader({
 	onChange: (next: Partial<View>) => void;
 	/** 只留受控证据之后还剩多少人 */
 	strongOn: number;
+	/** 在挑人吗。挑人时整份名单往右让出一列复选框，表头这一行的最左边是全选。 */
+	picking: boolean;
+	/** 进入或退出挑人。 */
+	onPicking: (on: boolean) => void;
+	/** 有名单可挑吗。没有的时候按钮留在原地、按不下去，理由和「仅岗位或序列」同一条。 */
+	pickable: boolean;
 }) {
 	return (
 		<div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-1">
@@ -100,17 +105,45 @@ export function ResultHeader({
 					</>
 				)}
 			</p>
-			{(planned || terms.length > 0) && (
-				<div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-					<StrengthLegend />
-					<ProvenOnly
-						loading={loading}
-						n={strongOn}
-						on={strong}
-						onChange={onChange}
-					/>
-				</div>
-			)}
+			<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+				{/* 图例和它旁边那个开关都在讲证据，没有条件的查询里两样都无从说起；
+				    挑人不看条件——按部门圈出来的一批人同样是要交出去的名单。 */}
+				{(planned || terms.length > 0) && (
+					<>
+						<StrengthLegend />
+						<ProvenOnly
+							loading={loading}
+							n={strongOn}
+							on={strong}
+							onChange={onChange}
+						/>
+						{/*
+						 * 一条竖线分开两类东西：左边讲**这份名单是什么**（三颗点、
+						 * 只留受控证据的那一档），右边是**对这份名单做点什么**。
+						 * 挨着排的一串控件默认读成一类，而这两半不是。
+						 */}
+						<Separator className="h-4 max-sm:hidden" orientation="vertical" />
+					</>
+				)}
+				{/*
+				 * 挑人是一次**动作**，不是这份名单的一种性质：按下去这份名单一个人
+				 * 不少，只是我要开始从里面挑了。所以它是按钮，不是它左边那种
+				 * `Toggle`——「仅岗位或序列」按下去是会让人消失的，两件事同款同尺寸
+				 * 并排，等于宣称它们是一类。
+				 *
+				 * 进和出都写成这一下要做的事（「挑人导出」／「退出挑人」），不靠
+				 * 一个按下去的样子表示现在在哪一档：名单左边那一列框已经把它说完了。
+				 */}
+				<Button
+					disabled={!pickable}
+					onClick={() => onPicking(!picking)}
+					size="sm"
+					variant="outline"
+				>
+					{picking ? <XIcon /> : <ListChecksIcon />}
+					{picking ? "退出挑人" : "挑人导出"}
+				</Button>
+			</div>
 		</div>
 	);
 }
@@ -195,6 +228,7 @@ export function ResultList({
 	onChange,
 	onReviseQuery,
 	onEditQuery,
+	picks,
 }: {
 	/** 这次检索的结果。还没跑出来的那一份是 `NO_OUTCOME`，不是 `null`。 */
 	outcome: SearchOutcome;
@@ -216,6 +250,8 @@ export function ResultList({
 	/** 改查询：给一份新的证据要求，派生一条新记录。 */
 	onReviseQuery: (next: Term[]) => void;
 	onEditQuery: () => void;
+	/** 挑人这件事的全部状态，以及名单每一块推好的那份东西（`-lib/picks.ts`）。 */
+	picks: Picks;
 }) {
 	const { results, terms, order, total } = outcome;
 	// 上一次真正画出来的块数，见 SKELETON_ROWS。写在 effect 里而不是渲染中，
@@ -234,7 +270,10 @@ export function ResultList({
 		<ResultHeader
 			loading={loading}
 			onChange={onChange}
+			onPicking={picks.start}
 			order={order}
+			pickable={!loading && results.length > 0}
+			picking={picks.picking}
 			planned={pending.length > 0}
 			strong={strong}
 			strongOn={strongOn}
@@ -323,92 +362,142 @@ export function ResultList({
 	}
 
 	return (
-		<div>
-			{head}
+		/*
+		 * 挑人时整份名单往右让出一列：那一列是复选框的位置，表头上那个全选和
+		 * 每一块的那个框在同一条竖线上——和表格的第一列是同一个道理，只不过
+		 * 这里的「行」是一块卡片。
+		 *
+		 * 让位是**推着走的**（`transition-[padding]`），不是凭空跳一档：这是一次
+		 * 人自己按下去的换挡，看得见谁让给了谁；而结果落地时的位移一次都不许有
+		 * （AGENTS.md），两件事不是一回事。
+		 *
+		 * `CheckboxGroup` 从表头那个框一直罩到最后一块：全选、勾不满时那个横杠、
+		 * 以及「这一组框是一件事」的语义，都由它给（Base UI），不用自己拿一个
+		 * `checked={a && b}` 去凑。
+		 */
+		<CheckboxGroup
+			allValues={picks.shownIds}
+			aria-label="名单"
+			className={cn(
+				"block transition-[padding] duration-200 ease-out",
+				picks.picking && "ps-9",
+			)}
+			onValueChange={(next) => picks.setShown(next.map(String))}
+			value={picks.shownPicked}
+		>
+			<div className="relative">
+				{picks.picking && (
+					// 这一个框没有写出来的标签——它的位置（表头这一行的第一列）就是它的
+					// 说明，而那是表格用了几十年的约定。说明挂在 Tooltip 上，和图例
+					// 那三颗点同一个办法：不确定它是什么的人，停一下就读得到。
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Label className="-start-9 absolute top-0 p-1">
+									<Checkbox
+										aria-label={`挑上名单上这 ${results.length} 人`}
+										parent
+									/>
+								</Label>
+							}
+						/>
+						<TooltipPopup>挑上名单上这 {results.length} 人</TooltipPopup>
+					</Tooltip>
+				)}
+				{head}
+			</div>
 			<ul className="flex flex-col gap-2">
-				{results.map((r) => {
+				{/* 命中的逐条画，没命中的收成一行——这份推导在 `-lib/picks.ts` 做完，
+				    因为挑上那一刻要写进 CSV 的正是同一份东西。「未命中」这三个字重复
+				    五遍没有任何可读的东西，只是把每一块撑高一倍。 */}
+				{picks.rows.map(({ result: r, hits, missed }) => {
 					const selected = r.employee.empId === empId;
-					const ranked = isRanked(r) ? r : null;
-					const best = bestHitPerTerm(ranked?.hits ?? [], terms);
-					// 命中的逐条画，没命中的收成一行。「未命中」这三个字重复五遍
-					// 没有任何可读的东西，只是把每一块撑高一倍。
-					// 样例段和聚合依据出自同一次筛选，所以这两样要么都在、要么都不在。
-					const hits = terms.flatMap((t, i) => {
-						const hit = best[i];
-						const basis = ranked?.basis[i];
-						return hit && basis ? [{ basis, hit, term: t }] : [];
-					});
-					const missed = terms.filter((_, i) => !best[i]);
 					return (
-						<Card
-							className={cn(
-								PAD,
-								"transition-[border-color,background-color]",
-								// ↑↓ 换人时 scrollIntoView 把卡片推到视口边缘上，两头各留一档余量。
-								// 上边还要让开常驻的那一叠（顶栏加查询带），高度只有
-								// `--chrome-height` 一个出处（styles.css）。
-								"scroll-mt-[calc(var(--chrome-height)+--spacing(4))] scroll-mb-4",
-								selected
-									? // 蓝调环：绿在这套设计里只表达「受控字段命中」。
-										"border-info/40 ring-1 ring-info/30"
-									: "hoverable:hover:bg-accent/40",
-							)}
-							/* ↑↓ 换人时靠它把这一块滚进视口（-lib/keyboard-flow.ts） */
-							data-emp={r.employee.empId}
-							key={r.employee.empId}
-							render={<li />}
-						>
-							<div className="flex items-baseline gap-2.5">
-								<Link
-									aria-current={selected ? "page" : undefined}
-									/*
-									 * 整块可点靠这条链接自己铺开的一层伪元素，不是挂在 `<li>` 上的
-									 * onClick——那样得到的是只认鼠标左键的假按钮，中键开新标签、
-									 * 右键复制地址、Tab 走到它、回车打开一样都不成立。
-									 *
-									 * replace：点一块是「看哪一个」，不是一次导航。扫过三十个人
-									 * 不该在历史栈里压三十条，否则后退键就废了。
-									 *
-									 * 悬停的反馈归卡片（它整块换底色，而鼠标落在哪里命中的都是
-									 * 这条链接）；焦点环归这里，那件事卡片没有替它说。
-									 */
-									className="title-2 shrink-0 truncate rounded-sm font-semibold after:absolute after:inset-0 after:content-['']"
-									params={{ turnId, empId: r.employee.empId }}
-									replace
-									search={(prev) => prev}
-									to="/s/$turnId/p/$empId"
-								>
-									{r.employee.name}
-								</Link>
-								<span className="min-w-0 truncate text-muted-foreground text-sm">
-									{positionLabel(r.employee)}
-								</span>
-							</div>
-
+						<li className="relative" key={r.employee.empId}>
 							{/*
-							 * 证据。命中的每条一行，四段固定的槽在所有卡片上位置相同——
-							 * 这是把表格旋转成块之后仍然能上下扫的依据，只不过那条竖线上
-							 * 现在写着凭据。
-							 *
-							 * 和上面那一行之间空 12px：证据行彼此是 6px，两倍就读成另一段。
-							 * 头和身子的分界靠字重字号的落差，够了（AGENTS.md「线只画在有
-							 * 结构含义的地方」）。
+							 * 复选框在卡片**外面**，不在里面：卡片整块是一条打开详情的
+							 * 链接，往一个整块可点的东西里再塞一个控件，就是 AGENTS.md
+							 * 说的那种挑错了形状。放进左边让出来的那一列，两件事各有各
+							 * 的命中区，谁也不必去猜点在哪儿会发生什么。
+							 * 绝对定位是为了让卡片自己一点不变——它的宽度只由那一列
+							 * 让出的位置决定，勾不勾都是同一块。
 							 */}
-							{terms.length > 0 && (
-								<div className="mt-3 space-y-1.5">
-									{hits.map(({ term, hit, basis }) => (
-										<EvidenceLine
-											basis={basis}
-											boost={term.mode === "boost"}
-											hit={hit}
-											key={term.term}
-											term={term.term}
-										/>
-									))}
-									<MissedTerms terms={missed.map((t) => t.term)} />
-								</div>
+							{picks.picking && (
+								<Label className="-start-9 absolute top-2.5 p-1">
+									<Checkbox
+										aria-label={`挑上 ${r.employee.name}`}
+										value={r.employee.empId}
+									/>
+								</Label>
 							)}
-						</Card>
+							<Card
+								className={cn(
+									PAD,
+									"transition-[border-color,background-color]",
+									// ↑↓ 换人时 scrollIntoView 把卡片推到视口边缘上，两头各留一档余量。
+									// 上边还要让开常驻的那一叠（顶栏加查询带），高度只有
+									// `--chrome-height` 一个出处（styles.css）。
+									"scroll-mt-[calc(var(--chrome-height)+--spacing(4))] scroll-mb-4",
+									selected
+										? // 蓝调环：绿在这套设计里只表达「受控字段命中」。
+											"border-info/40 ring-1 ring-info/30"
+										: "hoverable:hover:bg-accent/40",
+								)}
+								/* ↑↓ 换人时靠它把这一块滚进视口（-lib/keyboard-flow.ts） */
+								data-emp={r.employee.empId}
+							>
+								<div className="flex items-baseline gap-2.5">
+									<Link
+										aria-current={selected ? "page" : undefined}
+										/*
+										 * 整块可点靠这条链接自己铺开的一层伪元素，不是挂在 `<li>` 上的
+										 * onClick——那样得到的是只认鼠标左键的假按钮，中键开新标签、
+										 * 右键复制地址、Tab 走到它、回车打开一样都不成立。
+										 *
+										 * replace：点一块是「看哪一个」，不是一次导航。扫过三十个人
+										 * 不该在历史栈里压三十条，否则后退键就废了。
+										 *
+										 * 悬停的反馈归卡片（它整块换底色，而鼠标落在哪里命中的都是
+										 * 这条链接）；焦点环归这里，那件事卡片没有替它说。
+										 */
+										className="title-2 shrink-0 truncate rounded-sm font-semibold after:absolute after:inset-0 after:content-['']"
+										params={{ turnId, empId: r.employee.empId }}
+										replace
+										search={(prev) => prev}
+										to="/s/$turnId/p/$empId"
+									>
+										{r.employee.name}
+									</Link>
+									<span className="min-w-0 truncate text-muted-foreground text-sm">
+										{positionLabel(r.employee)}
+									</span>
+								</div>
+
+								{/*
+								 * 证据。命中的每条一行，四段固定的槽在所有卡片上位置相同——
+								 * 这是把表格旋转成块之后仍然能上下扫的依据，只不过那条竖线上
+								 * 现在写着凭据。
+								 *
+								 * 和上面那一行之间空 12px：证据行彼此是 6px，两倍就读成另一段。
+								 * 头和身子的分界靠字重字号的落差，够了（AGENTS.md「线只画在有
+								 * 结构含义的地方」）。
+								 */}
+								{terms.length > 0 && (
+									<div className="mt-3 space-y-1.5">
+										{hits.map(({ term, hit, basis }) => (
+											<EvidenceLine
+												basis={basis}
+												boost={term.mode === "boost"}
+												hit={hit}
+												key={term.term}
+												term={term.term}
+											/>
+										))}
+										<MissedTerms terms={missed} />
+									</div>
+								)}
+							</Card>
+						</li>
 					);
 				})}
 			</ul>
@@ -444,6 +533,15 @@ export function ResultList({
 					)}
 				</div>
 			)}
-		</div>
+
+			{/* 挑上人之后才浮起来，浮在名单下沿（`pick-dock.tsx` 开头写了为什么在下面） */}
+			{picks.picking && (
+				<PickDock
+					picks={picks}
+					terms={terms.map((t) => t.term)}
+					total={total}
+				/>
+			)}
+		</CheckboxGroup>
 	);
 }

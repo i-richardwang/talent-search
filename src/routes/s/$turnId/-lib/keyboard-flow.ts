@@ -4,7 +4,8 @@ import type { SearchResult } from "#/search/result";
 import type { View } from "./view-params";
 
 /**
- * `/` 改问题，↑↓ / jk 换人，Esc 关闭详情。批量筛人时手不用离开键盘。
+ * `/` 改问题，↑↓ / jk 换人，Esc 关闭详情，挑人时空格挑上或取消。
+ * 批量筛人时手不用离开键盘。
  *
  * 窄屏那个详情浮层的 Esc 不归这里：它是 coss 的 `Dialog`，自带 Esc 关闭、焦点
  * 陷阱与还焦。下面的 `busy` 判定已经把焦点落在 `[role=dialog]` 里的按键让了出去，
@@ -16,6 +17,7 @@ export function useKeyboardFlow({
 	empId,
 	turnId,
 	view,
+	onPick,
 }: {
 	/** 展开查询台上那句话的改写框（见 `-components/query-deck.tsx`）。 */
 	onEditQuery: () => void;
@@ -24,6 +26,11 @@ export function useKeyboardFlow({
 	/** 换人只换详情面板，仍然停在这一条查询记录上 */
 	turnId: string;
 	view: View;
+	/**
+	 * 挑上或取消当前这个人。不在挑人时是 undefined——那时空格归页面滚动，
+	 * 抢过来会让一个什么都没开的名单按空格不动，而人只会以为页面卡了。
+	 */
+	onPick?: (empId: string) => void;
 }) {
 	const navigate = useNavigate();
 
@@ -69,6 +76,13 @@ export function useKeyboardFlow({
 				}
 			}
 			if (busy || reading || results.length === 0) return;
+			// 空格挑上／取消当前这个人：↑↓ 走到谁，挑的就是谁，两个键说的是同一个
+			// 「当前」。没开着人的时候不接管——那时它没有对象可挑。
+			if (e.key === " " && onPick && empId) {
+				e.preventDefault();
+				onPick(empId);
+				return;
+			}
 			// 长按不连发：navigate 是异步的，系统按键重复（~30/s）远快于重渲染，
 			// 连续几次读到的都是同一个 empId，算出同一个落点然后被自己挡掉，
 			// 表现就是按住 ↓ 时光标一顿一顿地走。连按交给用户自己按。
@@ -110,5 +124,5 @@ export function useKeyboardFlow({
 
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [onEditQuery, results, empId, turnId, view, navigate]);
+	}, [onEditQuery, onPick, results, empId, turnId, view, navigate]);
 }

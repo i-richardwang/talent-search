@@ -14,12 +14,20 @@ import { visibleText } from "./render";
 
 const TERMS: TermPlan[] = [{ term: "算法", values: ["算法"], mode: "must" }];
 
-const markup = (strong: boolean, strongOn: number, terms = TERMS) =>
+const markup = (
+	strong: boolean,
+	strongOn: number,
+	terms = TERMS,
+	picking = false,
+) =>
 	renderToStaticMarkup(
 		<ResultHeader
 			loading={false}
 			onChange={() => {}}
+			onPicking={() => {}}
 			order="relevance"
+			pickable
+			picking={picking}
 			planned={terms.length > 0}
 			strong={strong}
 			strongOn={strongOn}
@@ -80,5 +88,23 @@ describe("不给死路", () => {
 
 	test("已经打开的永远留着，否则没有任何东西能关掉它", () => {
 		assert.ok(render(true, 0).includes("仅岗位或序列"));
+	});
+});
+
+describe("挑人", () => {
+	test("它是一次动作，不是这份名单的一种性质", () => {
+		/*
+		 * 它左边那个「仅岗位或序列」按下去会让人从名单上消失，是这份名单的性质，
+		 * 所以是个按下态的开关；挑人按下去一个人不少。两件事做成同款控件并排，
+		 * 等于宣称它们是一类——所以这一行里带按下态的只能有一个。
+		 */
+		const html = markup(false, 7);
+		assert.ok(html.includes("挑人导出"), html);
+		assert.equal((html.match(/aria-pressed/g) ?? []).length, 1, html);
+	});
+
+	test("进和出都写成这一下要做的事", () => {
+		// 现在在哪一档由名单左边那一列框说，不由一个按下去的样子说
+		assert.ok(visibleText(markup(false, 7, TERMS, true)).includes("退出挑人"));
 	});
 });

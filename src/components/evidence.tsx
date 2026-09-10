@@ -172,6 +172,26 @@ function matchedField(hit: Hit): {
 }
 
 /**
+ * 同一行证据念成一句话，给导出的 CSV 用（`-lib/csv.ts`）。
+ *
+ * 和 `EvidenceLine` 挨着放，是因为它们说的是同一件事，只是一个画在屏幕上、
+ * 一个写进单元格里：分开放的话，某天屏幕上改了「≈ 取值」的说法，导出的那一份
+ * 还念着旧的，而两份都不会有任何检查报出来。
+ *
+ * 槽的顺序和屏幕上一致：拿去比的词、命中的字段和这段经历在哪、相关度、时长。
+ */
+export function evidenceText(hit: Hit, basis: TermBasis) {
+	const field = matchedField(hit);
+	return dots(
+		hit.value === hit.term ? null : `≈ ${hit.value}`,
+		[field.label, field.value ?? field.context].filter(Boolean).join(" "),
+		field.value === null ? null : field.context,
+		relevance(basis.relevance),
+		`${basis.external ? "前 " : ""}${years(basis.months)}`,
+	);
+}
+
+/**
  * 一个人一个条件的一行证据。五段固定的槽，所有人的所有行共用同一套列位置——
  * 这是把表格旋转成块之后仍然能上下扫的原因，只不过那条竖线上现在写着凭据。
  *

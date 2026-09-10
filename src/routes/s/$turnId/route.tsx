@@ -28,6 +28,7 @@ import { useInterpretation } from "./-lib/interpret";
 import { useKeyboardFlow } from "./-lib/keyboard-flow";
 import { useIsWide } from "./-lib/media";
 import { useNavPhase } from "./-lib/nav-phase";
+import { usePicks } from "./-lib/picks";
 import {
 	canLoadMore,
 	morePage,
@@ -58,12 +59,15 @@ const EMPTY_SPEC = emptySpec();
 /** 详情面板的宽度。两处必须同值，值在 styles.css（页宽列也从它算出来）。 */
 const PANEL_W = "w-detail 2xl:w-detail-wide";
 
-/** 手不用离开键盘就能扫完一份名单，这三个键是全部。 */
+/** 一直在的那几个：手不用离开键盘就能扫完一份名单。 */
 const KEYS = [
 	["/", "改问题"],
 	["↑↓", "切换员工"],
 	["Esc", "关闭详情"],
 ] as const;
+
+/** 挑人时才有对象可挑，所以这一条只在那时候排进去。 */
+const PICK_KEY = ["空格", "挑上或取消"] as const;
 
 /**
  * 工作台：**左筛选、右详情，中间是那条唯一的名单列**。
@@ -163,7 +167,17 @@ function Workbench() {
 	const reviseSpec = (next: SearchSpec) =>
 		commit({ kind: "spec", spec: next }, { parentTurnId: turnId });
 
-	useKeyboardFlow({ onEditQuery: editQuery, results, empId, turnId, view });
+	// 挑人：选中的是谁、推给 CSV 的是什么，全在这一个钩子里（`-lib/picks.ts`）。
+	const picks = usePicks(turnId, outcome);
+
+	useKeyboardFlow({
+		onEditQuery: editQuery,
+		onPick: picks.picking ? picks.toggle : undefined,
+		results,
+		empId,
+		turnId,
+		view,
+	});
 
 	return (
 		<div className="mx-auto flex w-full max-w-app flex-1 flex-col">
@@ -230,6 +244,7 @@ function Workbench() {
 							onMore={() => updateView(morePage(view))}
 							onReviseQuery={(terms) => reviseSpec({ terms })}
 							outcome={outcome}
+							picks={picks}
 							spec={spec}
 							strong={Boolean(view.strong)}
 							strongOn={facets.strong.on}
@@ -243,9 +258,9 @@ function Workbench() {
 					 * 它是「用熟之后才会用上」的东西：第一次来的人不会找它，
 					 * 用熟的人记住了也不再看。挂在名单尽头，两种人都不被打扰。
 					 */}
-					{/* 触屏上这三个键一个都按不了，那时它只是三行占地方的灰字 */}
+					{/* 触屏上这几个键一个都按不了，那时它只是几行占地方的灰字 */}
 					<footer className="mx-auto hidden w-full max-w-page flex-wrap items-center gap-x-4 gap-y-1.5 px-4 pb-8 text-muted-foreground text-xs pointer-fine:flex">
-						{KEYS.map(([key, what]) => (
+						{(picks.picking ? [...KEYS, PICK_KEY] : KEYS).map(([key, what]) => (
 							<span className="flex items-center gap-1.5" key={key}>
 								<Kbd>{key}</Kbd>
 								{what}

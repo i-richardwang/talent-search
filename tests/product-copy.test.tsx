@@ -17,11 +17,25 @@ import {
 	ResultHeader,
 	ResultList,
 } from "#/routes/s/$turnId/-components/result-list";
+import type { Picks } from "#/routes/s/$turnId/-lib/picks";
 import { emptyFacets } from "#/search/result";
 import type { Term } from "#/search/term";
 import { visibleText } from "./render";
 
 const seen = (node: React.ReactNode) => visibleText(renderToStaticMarkup(node));
+
+/** 这几条测的是文案，不是挑人。一份谁也没挑的就够。 */
+const NO_PICKS: Picks = {
+	clear: () => {},
+	picked: new Map(),
+	picking: false,
+	rows: [],
+	setShown: () => {},
+	shownIds: [],
+	shownPicked: [],
+	start: () => {},
+	toggle: () => {},
+};
 
 describe("产品文案使用常规 SaaS 语言", () => {
 	test("范围条件使用稳定的人话，不把存储值露给最近搜索", () => {
@@ -93,7 +107,10 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			<ResultHeader
 				loading={false}
 				onChange={() => {}}
+				onPicking={() => {}}
 				order="relevance"
+				pickable
+				picking={false}
 				planned
 				strong={false}
 				strongOn={0}
@@ -165,6 +182,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onEditQuery={() => {}}
 				onMore={() => {}}
 				onReviseQuery={() => {}}
+				picks={NO_PICKS}
 				strong={false}
 				strongOn={0}
 				outcome={{
