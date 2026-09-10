@@ -2,6 +2,7 @@ import { ChevronDownIcon, EyeOffIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import {
 	Menu,
+	MenuCheckboxItem,
 	MenuGroup,
 	MenuGroupLabel,
 	MenuItem,
@@ -196,9 +197,7 @@ export function QueryChips({
 										{chip.values.map((value) => (
 											<MenuItem
 												key={value}
-												onClick={() =>
-													replaceAt(i, withoutValue(chip, value))
-												}
+												onClick={() => replaceAt(i, withoutValue(chip, value))}
 											>
 												{/* 一行两段：取值，和点了会怎样。删是这一行唯一的动作，
 												    所以整行可点，末尾说明白。 */}
@@ -214,18 +213,29 @@ export function QueryChips({
 								</>
 							)}
 							{/*
-							 * 停用和删除挨着放，但不是一档事，所以只有删除是危险色：
-							 * 停用改的是这一次检索，删除改的是查询本身，而后者不可撤销
+							 * 那枚开关和删除挨着放，但不是一档事，所以只有删除是危险色：
+							 * 关掉改的是这一次检索，删除改的是查询本身，而后者不可撤销
 							 * （词没了，强度也一起没了）。
 							 */}
 							<MenuSeparator />
-							<MenuItem
-								onClick={() =>
-									replaceAt(i, withOff(chip, chip.off ? null : "user"))
+							{/*
+							 * 启用是**状态**，不是命令，所以它是一枚开关而不是一行字：
+							 * 一行在「暂不使用」和「重新启用」之间换文案的字，得读完才
+							 * 知道这条条件此刻算不算数，而开关把那一态常驻在屏幕上，
+							 * 文案因此固定成一个词。
+							 *
+							 * 点它不关菜单（`MenuCheckboxItem` 自己的规矩）：拨过去看着
+							 * 拇指走完，就是这一下的回执——chip 本身此刻被菜单盖着。
+							 */}
+							<MenuCheckboxItem
+								checked={!chip.off}
+								onCheckedChange={(on) =>
+									replaceAt(i, withOff(chip, on ? null : "user"))
 								}
+								variant="switch"
 							>
-								{chip.off ? "重新启用" : "暂不使用"}
-							</MenuItem>
+								启用
+							</MenuCheckboxItem>
 							<MenuItem
 								onClick={() => replaceAt(i, null)}
 								variant="destructive"

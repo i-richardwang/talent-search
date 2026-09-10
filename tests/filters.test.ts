@@ -122,42 +122,53 @@ describe("选中的东西怎么说人话", () => {
 });
 
 describe("一维之内可以选几项", () => {
-	test("集合维度：再点一个是加上去，不是换掉", () => {
-		const next = field({ level: ["P6"] }, "level")?.toggle("P7");
-		assert.deepEqual(next, { level: ["P6", "P7"] });
+	test("能不能多选是这一维报出来的事，界面照它挑控件", () => {
+		// 屏幕上一维长什么样（一组勾还是一组圆点）只由这一个字段决定，
+		// 不由渲染那边再判一次——判两次早晚会判出两个答案。
+		assert.equal(field({}, "level")?.multi, true);
+		assert.equal(field({}, "minMonths")?.multi, false);
+		assert.equal(field({}, "kind")?.multi, false);
 	});
 
-	test("写回的顺序按选项走，不按点击先后——同一组选择只有一种 URL 写法", () => {
-		// 先点 P7 再点 P6，和反过来点，得到的必须是同一个地址
-		assert.deepEqual(field({ level: ["P7"] }, "level")?.toggle("P6"), {
+	test("集合维度收下的是一整份选中", () => {
+		assert.deepEqual(field({ level: ["P6"] }, "level")?.set(["P6", "P7"]), {
 			level: ["P6", "P7"],
 		});
 	});
 
-	test("再点一次是取消，取消掉最后一项就是这一维不筛了", () => {
-		assert.deepEqual(field({ level: ["P6", "P7"] }, "level")?.toggle("P6"), {
+	test("写回的顺序按选项走，不按勾选先后——同一组选择只有一种 URL 写法", () => {
+		// 先勾 P7 再勾 P6，和反过来勾，得到的必须是同一个地址
+		assert.deepEqual(field({ level: ["P7"] }, "level")?.set(["P7", "P6"]), {
+			level: ["P6", "P7"],
+		});
+	});
+
+	test("一项都不选就是这一维不筛了", () => {
+		assert.deepEqual(field({ level: ["P6", "P7"] }, "level")?.set(["P7"]), {
 			level: ["P7"],
 		});
-		assert.deepEqual(field({ level: ["P6"] }, "level")?.toggle("P6"), {
+		assert.deepEqual(field({ level: ["P6"] }, "level")?.set([]), {
 			level: undefined,
 		});
 	});
 
-	test("阈值维度只能选一个：点别的直接换掉", () => {
-		// 「至少 6 个月」或「至少 1 年」加起来还是「至少 6 个月」
-		assert.deepEqual(field({ minMonths: 6 }, "minMonths")?.toggle("12"), {
+	test("单值维度写回的是一个值，不是一个数组", () => {
+		// 「至少 6 个月」或「至少 1 年」加起来还是「至少 6 个月」，
+		// 所以这一维在 URL 上根本没有装第二个值的地方。
+		assert.deepEqual(field({ minMonths: 6 }, "minMonths")?.set(["12"]), {
 			minMonths: 12,
 		});
-		assert.deepEqual(field({ minMonths: 12 }, "minMonths")?.toggle("12"), {
+		// 屏幕上这一下是选中了那枚「不限」
+		assert.deepEqual(field({ minMonths: 12 }, "minMonths")?.set([]), {
 			minMonths: undefined,
 		});
 	});
 
-	test("二选一的维度也只能选一个：两个都要就是不筛", () => {
-		assert.deepEqual(field({ kind: "internal" }, "kind")?.toggle("external"), {
+	test("二选一的维度也一样：不限就是不筛", () => {
+		assert.deepEqual(field({ kind: "internal" }, "kind")?.set(["external"]), {
 			kind: "external",
 		});
-		assert.deepEqual(field({ kind: "internal" }, "kind")?.toggle("internal"), {
+		assert.deepEqual(field({ kind: "internal" }, "kind")?.set([]), {
 			kind: undefined,
 		});
 	});
@@ -166,20 +177,24 @@ describe("一维之内可以选几项", () => {
 		const view = { seq: [{ l1: "技术", l2: "数据科学" }], minMonths: 12 };
 		const row = rowOf(view, "seq", "技术 · 数据科学");
 		assert.deepEqual(
-			Object.keys(field(view, "seq")?.toggle(row?.value ?? "") ?? {}),
+			Object.keys(field(view, "seq")?.set([row?.value ?? ""]) ?? {}),
 			["seq"],
 		);
 	});
 
 	test("序列写回的是一对值，不是一个拼起来的名字", () => {
 		const view = { seq: [{ l1: "技术", l2: "数据科学" }] };
+		const mine = rowOf(view, "seq", "技术 · 数据科学");
 		const other = rowOf(view, "seq", "商业分析 · 数据科学");
-		assert.deepEqual(field(view, "seq")?.toggle(other?.value ?? ""), {
-			seq: [
-				{ l1: "技术", l2: "数据科学" },
-				{ l1: "商业分析", l2: "数据科学" },
-			],
-		});
+		assert.deepEqual(
+			field(view, "seq")?.set([mine?.value ?? "", other?.value ?? ""]),
+			{
+				seq: [
+					{ l1: "技术", l2: "数据科学" },
+					{ l1: "商业分析", l2: "数据科学" },
+				],
+			},
+		);
 	});
 });
 

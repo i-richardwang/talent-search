@@ -1,7 +1,17 @@
-import { ListFilterIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ListFilterIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "#/components/ui/button";
+import { Checkbox } from "#/components/ui/checkbox";
+import { CheckboxGroup } from "#/components/ui/checkbox-group";
+import {
+	Collapsible,
+	CollapsiblePanel,
+	CollapsibleTrigger,
+} from "#/components/ui/collapsible";
+import { Field, FieldItem, FieldLabel } from "#/components/ui/field";
+import { Fieldset, FieldsetLegend } from "#/components/ui/fieldset";
 import { Popover, PopoverPopup, PopoverTrigger } from "#/components/ui/popover";
+import { Radio, RadioGroup } from "#/components/ui/radio-group";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { cn } from "#/lib/utils";
 import {
@@ -22,6 +32,12 @@ import { CLEARED_FILTERS, type View } from "../-lib/view-params";
  * 摊开的东西必须**站得住**：这一栏的行只在换查询时变，点任何一个筛选都不会让
  * 别的行消失（口径在 `search/rank.ts` 的 `facetRows`）。被别的筛选挤到 0 的行
  * 留在原地、写着 0、点不动——那是用户自己刚做的事的后果，藏起来就没法回头。
+ *
+ * **一维能选几项，由控件形状说。** 能多选的维度是一组复选框，只能选一个的是一组
+ * 单选加一枚「不限」（`-lib/filters.ts` 的 `multi`）：点第二项之前就得知道它是
+ * 加上去还是换掉刚才那个，而那正是这一维的定义。选中态也因此归控件自己
+ * （`data-checked`）——拿一颗按钮加一层底色去表示选中，屏幕上看着一样，读屏
+ * 念出来却是「按钮 P7 128」，一个字都听不出它是开着的。
  *
  * 它在名单**外面**，因为它不改问题，只改看法，连查询记录都不产生
  * （见 `routes/-lib/commit.ts` 开头）。「记录还是视图」是这个产品最要紧的一条界线，
@@ -164,19 +180,24 @@ function FilterList({ fields, textFilters, onChange }: FilterProps) {
 				</Button>
 			</div>
 
+			{/* 文本条件不是分面：它没有候选，只有「摘掉」这一个动作，所以它是一颗
+			    按钮，不是一枚勾——勾要回答「勾上会怎样」，而这里勾不上第二个值。 */}
 			{textFilters.map((t) => (
-				<FilterGroup key={t.key} title={t.title}>
-					<Row
+				<section className="flex flex-col gap-0.5" key={t.key}>
+					<h2 className="label px-2 pb-1 text-muted-foreground">{t.title}</h2>
+					<Button
+						className="w-full justify-start px-2"
 						onClick={() => onChange(t.clear)}
-						selected
+						size="sm"
 						title={`取消「${t.title} ${t.value}」`}
+						variant="secondary"
 					>
 						<span className="min-w-0 flex-1 truncate text-start">
 							{t.value}
 						</span>
 						<XIcon className="shrink-0 text-muted-foreground" />
-					</Row>
-				</FilterGroup>
+					</Button>
+				</section>
 			))}
 
 			{fields.map((field) => (
@@ -186,6 +207,13 @@ function FilterList({ fields, textFilters, onChange }: FilterProps) {
 	);
 }
 
+/**
+ * 一维分面：一个 `Fieldset`，维名是它的 `legend`——读屏走到里面任何一项，都会
+ * 先报出这一项属于哪一维，而「P7」这种取值离开维名就没有意思。
+ *
+ * 控件由 `field.multi` 挑（为什么由它挑见文件开头）：能多选的是一组复选框，
+ * 只能选一个的是一组单选加一枚「不限」。
+ */
 function FilterFacet({
 	field,
 	onChange,
@@ -196,51 +224,124 @@ function FilterFacet({
 	const [all, setAll] = useState(false);
 	if (field.options.length === 0) return null;
 
-	const rest = field.options.length - VISIBLE;
-	/*
-	 * 收起时只摊开前几项，但**选中的项永远在场**：它排在第几位由分面的
-	 * 人数决定，一旦掉出前几项就再也取消不掉了。提到最前面而不是把列表撑开，
-	 * 是因为「现在筛的是什么」比「还能筛什么」先被读到。
-	 */
-	const visible = all ? field.options : collapse(field);
+	const head = collapse(field);
+	const rest = field.options.filter((o) => !head.includes(o));
+
+	const rows = (options: FilterField["options"]) =>
+		options.map((o) => (
+			<Option
+				/* 数到 0 的行留着但点不动：它说的是「这个值存在，只是和你现在的
+				   筛选冲突」。选中的那一行永远点得动，否则就取消不掉了。 */
+				disabled={o.n === 0 && !field.values.includes(o.value)}
+				key={o.value}
+				multi={field.multi}
+				n={o.n}
+				value={o.value}
+			>
+				{o.label}
+			</Option>
+		));
+
+	const list = (
+		<>
+			{rows(head)}
+			{rest.length > 0 && (
+				/* 剩下那几项住在 `Collapsible` 的面里：面自己有高度过渡，展开是同一
+				   块东西长开，不是凭空多出来几行把整条栏往下顶一屏；关着的时候面
+				   根本不挂载，那几十项也就不进 DOM。收起来的那一路必须也在——
+				   只能展开的话，按一次就再没有东西能把这一栏收回去。 */
+				<Collapsible onOpenChange={setAll} open={all}>
+					<CollapsiblePanel>{rows(rest)}</CollapsiblePanel>
+					<CollapsibleTrigger
+						className="w-full justify-start px-2 text-muted-foreground data-panel-open:[&_svg]:rotate-180"
+						render={<Button size="sm" variant="ghost" />}
+					>
+						<ChevronDownIcon />
+						{all ? "收起" : `更多 ${rest.length} 项`}
+					</CollapsibleTrigger>
+				</Collapsible>
+			)}
+		</>
+	);
 
 	return (
-		<FilterGroup title={field.title}>
-			{visible.map((o) => {
-				const selected = field.values.includes(o.value);
-				return (
-					<Row
-						/* 数到 0 的行留着但点不动：它说的是「这个值存在，只是和你现在
-						   的筛选冲突」。选中的那一行永远点得动，否则就取消不掉了。 */
-						disabled={o.n === 0 && !selected}
-						key={o.value}
-						/* 再点一次就是取消，所以「不限」不必单占一行——选中的那一行
-						   本来就是最容易被再点一次的地方。一维之内能同时选中几项，
-						   由这一维自己说了算（`-lib/filters.ts`）。 */
-						onClick={() => onChange(field.toggle(o.value))}
-						selected={selected}
+		/* `min-w-0`：`<fieldset>` 自带 `min-inline-size: min-content`，不解掉的话
+		   一个长技能名就能把整条栏撑出横向滚动。 */
+		<Fieldset className="flex min-w-0 flex-col gap-1">
+			<FieldsetLegend className="label px-2 pb-1 text-muted-foreground">
+				{field.title}
+			</FieldsetLegend>
+			{/* `FieldItem` 要有一个 `Field.Root` 才成立（禁用态从这条链下去），
+			    这一层就是它；维名归上面那个 `legend`，所以它自己不带标签。 */}
+			<Field className="gap-0">
+				{field.multi ? (
+					<CheckboxGroup
+						className="w-full gap-0"
+						onValueChange={(next) => onChange(field.set(next.map(String)))}
+						value={field.values}
 					>
-						<span className="min-w-0 flex-1 truncate text-start">
-							{o.label}
-						</span>
-						{/* 人数右对齐、等宽数字：一列数字竖着比，才看得出点哪个收得最狠 */}
-						<span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-							{o.n}
-						</span>
-					</Row>
-				);
-			})}
-			{!all && rest > 0 && (
-				<Button
-					className="justify-start px-2 text-muted-foreground"
-					onClick={() => setAll(true)}
-					size="sm"
-					variant="ghost"
-				>
-					更多 {rest} 项
-				</Button>
-			)}
-		</FilterGroup>
+						{list}
+					</CheckboxGroup>
+				) : (
+					<RadioGroup
+						className="w-full gap-0"
+						onValueChange={(next) =>
+							onChange(field.set(next ? [String(next)] : []))
+						}
+						value={field.values[0] ?? ""}
+					>
+						{/*
+						 * 单选维要有一条写出来的出路：圆点按下去不会弹起来，所以
+						 * 「这一维不筛」必须自己占一行，不能靠「把选中的那一项再点
+						 * 一次」这种只有点过才知道的暗号。它还顺带把这一维的默认态
+						 * 摆上了屏幕。它不报人数：它不是一个筛选，没有「点了还剩
+						 * 几个人」可言。
+						 */}
+						<Option multi={false} n={null} value="">
+							不限
+						</Option>
+						{list}
+					</RadioGroup>
+				)}
+			</Field>
+		</Fieldset>
+	);
+}
+
+/**
+ * 一个候选。一行里三段：勾（或圆点）、取值、点了还剩几个人。
+ *
+ * 整行是 `FieldLabel`，所以点哪儿都算——命中区不必自己撑，`<label>` 本来就
+ * 管着它包住的那个控件。禁用也归 `FieldItem`：勾和字一起变灰，不用自己去配
+ * 一套「看起来像禁用」的类。
+ */
+function Option({
+	children,
+	disabled,
+	multi,
+	n,
+	value,
+}: {
+	children: React.ReactNode;
+	disabled?: boolean;
+	multi: boolean;
+	/** 点了还剩多少人。`null` 是「这一项没有这个数」（「不限」那一行）。 */
+	n: number | null;
+	value: string;
+}) {
+	return (
+		<FieldItem className="px-2" disabled={disabled}>
+			<FieldLabel className="w-full cursor-pointer py-1.5">
+				{multi ? <Checkbox value={value} /> : <Radio value={value} />}
+				<span className="min-w-0 flex-1 truncate">{children}</span>
+				{/* 人数右对齐、等宽数字：一列数字竖着比，才看得出点哪个收得最狠 */}
+				{n !== null && (
+					<span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+						{n}
+					</span>
+				)}
+			</FieldLabel>
+		</FieldItem>
 	);
 }
 
@@ -255,56 +356,4 @@ function collapse({ options, values }: FilterField) {
 	);
 	if (buried.length === 0) return head;
 	return [...buried, ...head.slice(0, Math.max(VISIBLE - buried.length, 0))];
-}
-
-/**
- * 一维一组：分区标签 + 若干行。标签走全站的 `label` 档，一眼是「不是内容」。
- *
- * 它是 `h2`：这一屏的 `h1` 是查询台上那句原话，而这几组是它下面的第一层分区。
- * 跳到 `h3` 的话，读屏按标题跳时会报出一层根本不存在的中间标题。
- */
-function FilterGroup({
-	title,
-	children,
-}: {
-	title: string;
-	children: React.ReactNode;
-}) {
-	return (
-		<section className="flex flex-col gap-0.5">
-			<h2 className="label px-2 pb-1 text-muted-foreground">{title}</h2>
-			{children}
-		</section>
-	);
-}
-
-/**
- * 一行一个选项。选中是**实心的次要底**，未选是 ghost——和 chips 那边同一套
- * （`query-chips.tsx` 的 `MODE_VARIANT`），全站不为「选中」另发一个颜色。
- */
-function Row({
-	children,
-	disabled,
-	onClick,
-	selected,
-	title,
-}: {
-	children: React.ReactNode;
-	disabled?: boolean;
-	onClick: () => void;
-	selected: boolean;
-	title?: string;
-}) {
-	return (
-		<Button
-			className="w-full justify-start px-2"
-			disabled={disabled}
-			onClick={onClick}
-			size="sm"
-			title={title}
-			variant={selected ? "secondary" : "ghost"}
-		>
-			{children}
-		</Button>
-	);
 }
