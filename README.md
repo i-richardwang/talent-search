@@ -168,7 +168,9 @@ bun run dev          # 开发服务器
 bun run sync         # 同步数据源进库（不调模型）
 bun run derive       # 派生一轮并盯着标准输出看；应用起着的话后台自己会跑
 bun run query "算法,+后端"           # 跑一条查询（一行语法见 src/search/query-syntax.ts）；TOPN=20 可以多打印几个人
-bun run eval         # 拿 evals/ 里的已知答案量召回与名次
+bun run eval         # 拿 evals/search/ 里的已知答案量检索的召回与名次
+bun run eval:extract # 拿 evals/extract/ 里已知答案的简历段量抽取（当前提示词与模型）
+bun run eval:review  # 拿 evals/review/ 里已知答案的词组量整理（合并、归属、起名）
 bun run db:push      # 从 src/db/schema.ts 同步表结构；拉到改过 schema 的提交后要跑一次
 bun run verify       # 格式、类型、测试和生产构建
 ```
@@ -210,8 +212,8 @@ src/routes/-lib/             各屏共用的非组件模块（提交查询、值
 src/routes/s/$turnId/        工作台这一条路由，私有的组件与模块在它的 -components/ 与 -lib/ 下
 src/components/ui/           coss ui 的组件源码（抄来的，见其 NOTICE.md）
 src/lib/                     跨层纯函数
-scripts/                     命令行入口：sync（同步）、derive（派生一轮）、query（跑一条查询）、eval（检索质量验收）
-evals/                       验收用例（真实评估用例不进版本库，仓库只带 sample.json）
+scripts/                     命令行入口：sync（同步）、derive（派生一轮）、query（跑一条查询）、eval / eval-extract / eval-review（三把验收尺子）
+evals/                       验收用例，按尺子分 search/ extract/ review/（真实用例不进版本库，每个目录只带合成的 sample.json）
 tests/                       单元、渲染与真 SQL 集成测试
 ```
 

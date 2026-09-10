@@ -24,6 +24,8 @@
     "derive": "bun --env-file=.env.local scripts/derive.ts",
     "query": "bun scripts/query.ts",
     "eval": "bun scripts/eval.ts",
+    "eval:extract": "bun scripts/eval-extract.ts",
+    "eval:review": "bun scripts/eval-review.ts",
     "verify": "bun run check && bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {

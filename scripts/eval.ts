@@ -1,7 +1,7 @@
 /**
  * 检索质量验收：拿业务方给的「已知答案的找人问题」跑真检索，报召回与名次。
  *
- * 用法：bun run eval            # 读 evals/*.json
+ * 用法：bun run eval            # 读 evals/search/*.json
  *      bun run eval 文件.json
  *
  * 用例文件是一个 JSON 数组，每项：
@@ -12,7 +12,7 @@
  *
  * `reject` 量的是精度。多写几个取值这类改动同时可能找回漏掉的人和放进不相干的人，
  * 只报召回的话，往查询里多塞几个词永远是「变好」。
- * 真实评估用例不进版本库（题目和答案指向真人）；仓库只带 `evals/sample.json`——
+ * 真实评估用例不进版本库（题目和答案指向真人）；仓库只带 `evals/search/sample.json`——
  * 全部指向合成样例语料（src/corpus/sources/sample/）的可执行基线，干净克隆也能跑通。
  *
  * 这把尺子存在的意义：提示词与权重都会被大幅调整，而每次调整既可能
@@ -80,16 +80,16 @@ if (args.length > 0) {
 	files = args;
 } else {
 	try {
-		files = readdirSync("evals")
+		files = readdirSync(join("evals", "search"))
 			.filter((f) => f.endsWith(".json"))
-			.map((f) => join("evals", f));
+			.map((f) => join("evals", "search", f));
 	} catch {
 		throw new Error(
-			"evals/ 目录不存在。仓库自带 evals/sample.json；真实评估用例放进同目录即可（不进版本库）",
+			"evals/search/ 目录不存在。仓库自带 evals/search/sample.json；真实评估用例放进同目录即可（不进版本库）",
 		);
 	}
 }
-if (files.length === 0) throw new Error("evals/ 下没有用例文件");
+if (files.length === 0) throw new Error("evals/search/ 下没有用例文件");
 
 const cases: Case[] = files.flatMap(loadCases);
 

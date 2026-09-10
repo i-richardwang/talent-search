@@ -173,9 +173,10 @@ export function extractIdentity(): string {
 
 /**
  * 按入参顺序返回每段的抽取。只有入职前且有描述的段会去问端点。
+ * 只要段的这四个字段：验收（`scripts/eval-extract.ts`）拿手写的段走同一条路。
  */
 export async function extract(
-	rows: ExperienceRow[],
+	rows: Pick<ExperienceRow, "kind" | "title" | "org" | "description">[],
 	report: Report,
 ): Promise<Extraction[]> {
 	const asked = rows.map((row) =>

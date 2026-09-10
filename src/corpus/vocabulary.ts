@@ -169,7 +169,7 @@ export type Decision = {
 export type Table = Map<string, Decision>;
 
 /** 题里的一个词，和出题那一刻它下面的人数。 */
-type Member = { word: string; people: number };
+export type Member = { word: string; people: number };
 
 /** 队列里的一道题。 */
 type Question = {
@@ -509,10 +509,29 @@ function electParent(
 }
 
 /** 一道题发给裁判时长的样子。人数就在题上，不另查一遍语料。 */
-function promptInput(question: Question): string {
-	return question.words
-		.map((one) => `${one.word}（${one.people} 人）`)
-		.join("\n");
+function promptInput(words: Member[]): string {
+	return words.map((one) => `${one.word}（${one.people} 人）`).join("\n");
+}
+
+/**
+ * 让自带的模型判一批题，按题序返回它的原话；答不出合法 JSON 的那道是 undefined
+ * （`complete` 已经说过是哪道）。整理的答题一步和整理质量验收（`scripts/eval-review.ts`）
+ * 共用它：验收量的正是这一步，提示词、模型、温度都和整理时一样。
+ */
+export async function askModel(
+	questions: Member[][],
+	report: Report,
+): Promise<(unknown | undefined)[]> {
+	const inputs = questions.map(promptInput);
+	const payloads = await complete(
+		reviewModel(),
+		GUIDE,
+		SCHEMA,
+		inputs,
+		"整理",
+		report,
+	);
+	return inputs.map((input) => payloads.get(input));
 }
 
 /**
@@ -804,13 +823,13 @@ async function answerByModel(
 	const model = reviewModel();
 	report(`  自带模型 ${model} 判 ${questions.length} 道题`);
 
-	const inputs = questions.map(promptInput);
-	const payloads = await complete(model, GUIDE, SCHEMA, inputs, "整理", report);
-	// 答不出合法 JSON 的那几道留在队列里，下一轮再问（`complete` 已经说过是哪几道）
+	const payloads = await askModel(
+		questions.map((one) => one.words),
+		report,
+	);
+	// 答不出合法 JSON 的那几道留在队列里，下一轮再问
 	const answered = questions
-		.map(
-			(one, index) => [one.id, payloads.get(inputs[index] as string)] as const,
-		)
+		.map((one, index) => [one.id, payloads[index]] as const)
 		.filter(([, payload]) => payload !== undefined);
 	if (answered.length === 0) return;
 	await client.query(
