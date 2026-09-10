@@ -1,7 +1,7 @@
 /**
  * 外部裁判那道口子的形状：认人、收窄入参、交卷的几种下场。
  *
- * 判卷本身在 `aliases.test.ts` 里走完整一轮；这里只管接口自己那一层——凭据对不对、
+ * 判卷本身在 `vocabulary.test.ts` 里走完整一轮；这里只管接口自己那一层——凭据对不对、
  * `limit` 怎么收窄、什么样的答卷根本进不了库。
  */
 import assert from "node:assert/strict";
@@ -14,7 +14,7 @@ after(teardown);
 const { answer, authorized, configured, limitOf } = await import(
 	"#/server/review"
 );
-const { openQuestions } = await import("#/corpus/aliases");
+const { openQuestions } = await import("#/corpus/vocabulary");
 const { pool } = await import("#/db");
 
 const TOKEN = "test-token";
@@ -123,8 +123,8 @@ describe("交卷", () => {
 		const connection = await pool.connect();
 		try {
 			const { rows } = await connection.query<{ id: number }>(
-				`insert into skill_review (head, candidates)
-				 values ('数据分析', '[{"word":"数据分析工作","people":2}]'::jsonb)
+				`insert into skill_review (words)
+				 values ('[{"word":"数据分析","people":3},{"word":"数据分析工作","people":2}]'::jsonb)
 				 returning id`,
 			);
 			id = rows[0]?.id ?? 0;
@@ -134,10 +134,10 @@ describe("交卷", () => {
 	});
 
 	test("原话原样存进题里，这里不收窄", async () => {
-		// 「别的词」不在候选里、`alias` 是字符串——两样都留到结算时才被 `conform` 丢掉
+		// 「别的词」不在题里、`sameAs` 指向外人——两样都留到结算时才被 `conform` 丢掉
 		const raw = [
-			{ word: "数据分析工作", why: "同义", alias: true },
-			{ word: "别的词", why: "…", alias: "true" },
+			{ word: "数据分析工作", why: "同义", sameAs: "数据分析", parent: "" },
+			{ word: "别的词", why: "…", sameAs: "外人", parent: "" },
 		];
 		const got = await answer(request({ id, judge: "hr-bot", judgments: raw }));
 		assert.deepEqual(got, { ok: true, submission: "accepted" });
@@ -152,7 +152,9 @@ describe("交卷", () => {
 			assert.deepEqual(rows[0]?.answer.judgments, raw);
 			// 答过的题不再出现在拉题里
 			assert.equal(
-				(await openQuestions(connection)).some((one) => one.id === id),
+				(await openQuestions(connection)).some(
+					(one: { id: number }) => one.id === id,
+				),
 				false,
 			);
 		} finally {
@@ -161,7 +163,9 @@ describe("交卷", () => {
 	});
 
 	test("第二份答卷不算，不存在的题分开说", async () => {
-		const judgments = [{ word: "数据分析工作", why: "同义", alias: true }];
+		const judgments = [
+			{ word: "数据分析工作", why: "同义", sameAs: "数据分析", parent: "" },
+		];
 		assert.deepEqual(
 			await answer(request({ id, judge: "another", judgments })),
 			{ ok: true, submission: "taken" },

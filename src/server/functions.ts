@@ -120,7 +120,7 @@ export const recentSearches = createServerFn({ method: "GET" }).handler(() =>
 	listRecent(),
 );
 
-/** 管理页「能力词」的全部数据：对照表和语料里的词数，一次取齐。 */
+/** 管理页「能力词」的全部数据：词表和语料里的词数，一次取齐。 */
 export const skillTable = createServerFn({ method: "GET" }).handler(() =>
 	listSkills(),
 );

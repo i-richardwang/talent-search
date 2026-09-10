@@ -26,16 +26,16 @@ import type { SkillEntry, SkillTable } from "#/server/skills";
 import { AdminPage } from "./-components/admin-page";
 
 /**
- * 技能对照表的管理页：把哪些写法并成了哪个词，谁下的结论。
+ * 技能词表的管理页：哪些写法认成了同一个词、哪个词属于哪个更宽的词，谁下的结论。
  *
- * 只读。整理是后台每天自动做的（`src/corpus/aliases.ts`），这一页存在的理由是让管理员
- * 看得见它在做什么——筛选栏「入职前技能」上一个词后面的人数，是几种写法加起来
- * 的，这里能看到是哪几种。没有改的入口：改了下一轮灌库就被盖回去，一个
- * 会被静默撤销的编辑框比没有更糟。想改结论走判卷那条路（外部裁判交卷），不走这一页。
+ * 只读。整理是后台每天自动做的（`src/corpus/vocabulary.ts`），这一页存在的理由是让管理员
+ * 看得见它在做什么——筛选栏「入职前技能」上一个词后面的人数，是几种写法加上它下面
+ * 的词一起数的，这里能看到是哪几种、下面有谁。没有改的入口：改了下一轮灌库就被盖回去，
+ * 一个会被静默撤销的编辑框比没有更糟。想改结论走判卷那条路（外部裁判交卷），不走这一页。
  *
  * 判卷可以交给外部 agent（`REVIEW_JUDGE`），所以表上多一列「判定」，页顶多一句
  * 此刻谁在判。归外部时那句话带上「还有几道题等人答」：没有它，一页停止增长的
- * 对照表和一页正常工作的对照表长得一模一样。
+ * 词表和一页正常工作的词表长得一模一样。
  */
 export const Route = createFileRoute("/skills")({
 	loader: () => skillTable(),
@@ -56,15 +56,15 @@ function daysAgo(days: number) {
 	return days === 0 ? "今天" : `${days} 天前`;
 }
 
-/** 页顶那句话：此刻谁在判写法该不该合并。 */
+/** 页顶那句话：此刻谁在判词表（写法该不该合并、词属于哪个更宽的词）。 */
 function judging(table: SkillTable): string {
-	if (table.judge === "off") return "自动整理已关闭，写法不再合并";
+	if (table.judge === "off") return "自动整理已关闭，词表不再更新";
 	if (table.judge === "model") return "由模型自动整理，每天一轮";
 	if (!table.reachable)
 		return "判定交给外部工具，但接口没有配置凭据，外部工具接不上";
 	return table.waiting > 0
-		? `判定交给外部工具，还有 ${table.waiting} 组写法等着判`
-		: "判定交给外部工具，暂时没有等着判的写法";
+		? `判定交给外部工具，还有 ${table.waiting} 组词等着判`
+		: "判定交给外部工具，暂时没有等着判的词";
 }
 
 /**
@@ -136,6 +136,7 @@ function SkillList({ table }: { table: SkillTable }) {
 							<TableRow>
 								<TableHead>技能</TableHead>
 								<TableHead className="text-end">人数</TableHead>
+								<TableHead>属于</TableHead>
 								<TableHead>其他写法</TableHead>
 								<TableHead>判定</TableHead>
 								<TableHead className="text-end">上次整理</TableHead>
@@ -147,6 +148,9 @@ function SkillList({ table }: { table: SkillTable }) {
 									<TableCell className="font-medium">{e.canonical}</TableCell>
 									<TableCell className="text-end tabular-nums">
 										{e.people}
+									</TableCell>
+									<TableCell className="text-muted-foreground">
+										{e.parent ?? "—"}
 									</TableCell>
 									{/* 这一格允许换行：一个词并进十来种写法是常事，截断就看不到了 */}
 									<TableCell className="whitespace-normal text-muted-foreground">
@@ -171,7 +175,7 @@ function SkillList({ table }: { table: SkillTable }) {
 function matches(e: SkillEntry, needle: string) {
 	if (!needle) return true;
 	const lower = needle.toLowerCase();
-	return [e.canonical, ...e.aliases].some((w) =>
+	return [e.canonical, e.parent ?? "", ...e.aliases].some((w) =>
 		w.toLowerCase().includes(lower),
 	);
 }

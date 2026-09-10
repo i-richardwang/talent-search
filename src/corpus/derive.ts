@@ -26,7 +26,6 @@ import { createHash } from "node:crypto";
 import { EMBED_DIM, type Route } from "#/db/schema";
 import { chatConfigured, chatEndpoint, extractModel } from "#/server/chat";
 import { embedEndpoint, embedSpace } from "#/server/embed";
-import { apply, mapping, read as readAliases } from "./aliases";
 import { align, alignIdentity, type SeqPair, seqTree } from "./align";
 import { embed, probe } from "./embed";
 import { EMPTY, type Extraction, extract, extractIdentity } from "./extract";
@@ -34,6 +33,7 @@ import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
 import { routeTexts } from "./route-texts";
 import type { CorpusClient, CorpusSession } from "./session";
+import { apply, mapping, read as readVocabulary } from "./vocabulary";
 
 /** 查询侧核对嵌入空间时重新嵌的那一串字。改它等于让已有语料的 canary 失效。 */
 const CANARY_TEXT = "talent-search embedding canary";
@@ -280,7 +280,7 @@ export async function derive(
 	await ensureSpace(client, report);
 	const tree = await currentTree(client);
 	const version = identity(tree);
-	const aliases = mapping(await readAliases(client));
+	const aliases = mapping(await readVocabulary(client));
 	const total = await pending(client, version);
 	if (chatConfigured())
 		report(

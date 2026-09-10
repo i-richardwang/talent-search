@@ -228,10 +228,21 @@ const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	seqL2: sql`coalesce(nullif(e.seq_l2, ''), e.seq_inferred_l2)`,
 	kind: sql`e.kind`,
 	companyTag: sql`e.org_meta ->> 'company_tag'`,
-	// 一段的能力词是一列，不是一个值；说法表里已是对照表换过的标准词
+	/*
+	 * 一段的能力词是一列，不是一个值。列里除了段上写的词（说法表里已是词表换过的
+	 * 标准词），还有每个词往上的每一层更宽的词（`skill_term.parent`）：招聘的人点「数据
+	 * 分析」要看到写了「销售数据分析」的人，而细的词仍留在段上，点细的只看到细的。
+	 * 往上走用 union 而不是 union all：词表不成环由整理任务保证，这里不再为它多一道。
+	 */
 	skills: sql`array(
-		select ph.text from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
-		where ep.experience_id = e.id and ep.route = 'skill' order by ph.text)`,
+		with recursive up(word) as (
+			select ph.text from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
+			where ep.experience_id = e.id and ep.route = 'skill'
+			union
+			select t.parent from up join skill_term t on t.word = up.word
+			where t.parent is not null
+		)
+		select word from up order by word)`,
 	level: sql`p.cur_level`,
 	recruitment: sql`p.recruitment`,
 	education: sql`p.education_level`,

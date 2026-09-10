@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+	type AnyPgColumn,
 	check,
 	date,
 	foreignKey,
@@ -165,7 +166,7 @@ export const embeddingSpace = pgTable("embedding_space", {
  * 同一个模型对同一串字的向量是确定的，所以这张表可以永久留着：重置语料、重跑
  * 灌库都不必再打一次端点，一份语料几万种说法只在第一次出去过。它记的是**关于
  * 文本的事实**，不是语料的一部分：换嵌入空间时清的是 `phrase`，不是它，
- * 和 `skill_alias` 同一个性质。
+ * 和 `skill_term` 同一个性质。
  *
  * 键是文本的 sha256 而不是文本本身：简历描述整段进说法表，几千字一条的有的是，
  * 而 btree 索引项过长会直接写不进去。文本不另存一份——查它的人手里就有原文。
@@ -199,7 +200,7 @@ export const completionCache = pgTable(
 	(t) => [primaryKey({ columns: [t.identity, t.textSha] })],
 );
 
-/** 语料侧的三种任务。同步读数据源；派生问模型、嵌入、连边；整理归并能力词的写法。 */
+/** 语料侧的三种任务。同步读数据源；派生问模型、嵌入、连边；整理维护能力词词表。 */
 export const TASK_KINDS = ["sync", "derive", "review"] as const;
 export type TaskKind = (typeof TASK_KINDS)[number];
 
@@ -231,56 +232,71 @@ export const taskRun = pgTable("task_run", {
 });
 
 /**
- * 能力词的对照表：一个词对到哪个标准词，以及它上次被整理的时间。
+ * 能力词的词表：每个词的标准写法，和标准词属于哪个更宽的词。整理任务定期写它
+ * （`src/corpus/vocabulary.ts`）。
  *
- * 能力词是模型从简历里抽出来的开放词表，同一项能力有多种写法。整理任务定期
- * 跑（`src/corpus/aliases.ts`）：相似的词圈成组，模型判断哪些只是写法不同，合并
- * 的结果写在这里，能力词那一路的边随之改指标准词。`canonical` 等于 `word` 表示
- * 这个词整理过、就是标准词；一个词一周内只整理一次（`reviewed_at`）。
+ * 能力词是模型从简历里抽出来的开放词表。同一项能力有多种写法，招聘的人要的粗细
+ * 又是当场定的：搜「数据分析」要看到做过各种数据分析的人，搜「销售数据分析」只要
+ * 销售那一种。细的能聚成粗的，粗的还原不成细的，所以词表把两件事分开记：
+ *
+ * - `canonical`：这个词的标准写法。只有**同一件事的不同写法**才归到一起，归并是
+ *   无损的，能力词那一路的边随之改指标准词。等于 `word` 表示它自己就是标准词。
+ * - `parent`：标准词属于哪个更宽的词（「销售数据分析」属于「数据分析」）。具体的词
+ *   原样留在人身上，只多这一条归属；检索沿它往上聚（`src/search/search.ts` 的
+ *   `FACT_COLUMNS.skills`）。更宽的词可以是语料里没人写过的，裁判起的名字，所以它
+ *   自己也是一行——这一列指回本表，词表里因此没有指向不存在的词的归属。
+ *
+ * 归属只挂在标准词上（别名的归属就是它标准词的归属），且不指自己，由检查约束钉着；
+ * 不成环由 `read` 出声拒绝。一个词一周内只整理一次（`reviewed_at`）。
  *
  * 这张表记的是关于词的决定，不是语料：换数据源、换嵌入空间都不清它，决定累积。
- * 只有整理任务写它；查询侧读到的能力词说法已经是标准词，应用里只有管理页
- * `/skills` 读这张表，给人看机器并了什么。
+ * 只有整理任务写它；查询侧沿它聚合，管理页 `/skills` 给人看机器认了什么。
  */
-export const skillAlias = pgTable("skill_alias", {
-	word: text("word").primaryKey(),
-	canonical: text("canonical").notNull(),
-	reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
-	/**
-	 * 这条决定是谁判的：`model:<模型名>` 或 `agent:<外部裁判的名字>`
-	 * （`src/corpus/aliases.ts` 的 `modelJudge` / `agentJudge`）。读者是管理页 `/skills`——同一张表里
-	 * 有机器判的也有外部判的，看表的人得知道哪一条是谁下的结论。
-	 */
-	judge: text("judge").notNull(),
-});
+export const skillTerm = pgTable(
+	"skill_term",
+	{
+		word: text("word").primaryKey(),
+		canonical: text("canonical").notNull(),
+		parent: text("parent").references((): AnyPgColumn => skillTerm.word),
+		reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+		/**
+		 * 这条决定是谁判的：`model:<模型名>` 或 `agent:<外部裁判的名字>`
+		 * （`src/corpus/vocabulary.ts` 的 `modelJudge` / `agentJudge`）。读者是管理页 `/skills`——
+		 * 同一张表里有机器判的也有外部判的，看表的人得知道哪一条是谁下的结论。
+		 */
+		judge: text("judge").notNull(),
+	},
+	(t) => [
+		check(
+			"skill_term_parent_on_canonical_1",
+			sql`${t.parent} is null or (${t.canonical} = ${t.word} and ${t.parent} <> ${t.word})`,
+		),
+	],
+);
 
 /**
- * 整理任务出给裁判的题：一个组心，加上几个候选词，问哪些只是同一项能力的不同写法。
+ * 整理任务出给裁判的题：一组写法相近的能力词，问每个词和谁是同一件事、属于哪个更宽的词。
  *
  * 这张表是**队列，不是记录**。一行从出题时出现，结算或过期时删除；决定的历史在
- * `skill_alias`，过程的历史在 `task_run.log`，不再存第三份。
+ * `skill_term`，过程的历史在 `task_run.log`，不再存第三份。
  *
- * 它存在的理由是把「判卷」这一步从整理任务里切出来（`src/corpus/aliases.ts`）：
+ * 它存在的理由是把「判卷」这一步从整理任务里切出来（`src/corpus/vocabulary.ts`）：
  * 出题和结算要拿语料的写者锁，判卷不碰语料，所以外部裁判交卷时不必等派生放锁。
- * 服务端出题、任一裁判答题、服务端结算——外部拿到的是一道道题，不是改对照表的权限。
+ * 服务端出题、任一裁判答题、服务端结算——外部拿到的是一道道题，不是改词表的权限。
  *
- * `head` 唯一，于是「一个组心至多一道未结算的题」由库钉着：出题时判重不用先查一遍。
- * `judge` 与 `answer` 同生同灭：一行要么没人答过，要么两列都有。
+ * 题里的词一律平等，没有「组心」：标准写法由结算按人数定，归属由裁判起名，两样都
+ * 不需要题预先指定谁是谁。`judge` 与 `answer` 同生同灭：一行要么没人答过，要么两列都有。
  */
 export const skillReview = pgTable(
 	"skill_review",
 	{
 		id: serial("id").primaryKey(),
-		/** 组心，也是这一组的标准词。它不由裁判选，所以不在答卷里 */
-		head: text("head").notNull().unique(),
-		/** 候选词和各自的人数，出题那一刻的样子：`[{ word, people }]` */
-		candidates: jsonb("candidates")
-			.$type<{ word: string; people: number }[]>()
-			.notNull(),
+		/** 这组词和各自的人数，出题那一刻的样子：`[{ word, people }]`，圈组时的组心在前 */
+		words: jsonb("words").$type<{ word: string; people: number }[]>().notNull(),
 		askedAt: timestamp("asked_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
-		/** 谁答的，同 `skill_alias.judge`；没人答过是 null */
+		/** 谁答的，同 `skill_term.judge`；没人答过是 null */
 		judge: text("judge"),
 		/**
 		 * 裁判的**原话**，形状同模型那份（`{ judgments: [...] }`）。收窄在结算时做，

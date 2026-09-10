@@ -255,7 +255,7 @@ function LaneCard({
 					{kind === "review" && closed && (
 						/* 关掉的那一栏永远不会再有新记录，卡片上得说出来，不然它只是看着闲着 */
 						<p className="text-muted-foreground text-xs">
-							自动整理已关闭，写法不再合并
+							自动整理已关闭，词表不再更新
 						</p>
 					)}
 					{latest && <Detail lane={lane} />}

@@ -22,7 +22,6 @@
 
 import "@tanstack/react-start/server-only";
 import { eq, sql } from "drizzle-orm";
-import { type Judge, review, reviewJudge } from "#/corpus/aliases";
 import { currentTree, derive, identity, pending } from "#/corpus/derive";
 import type { Report } from "#/corpus/report";
 import {
@@ -32,6 +31,7 @@ import {
 } from "#/corpus/session";
 import { sourceName } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
+import { type Judge, review, reviewJudge } from "#/corpus/vocabulary";
 import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
 import { configured } from "./review";
@@ -63,7 +63,7 @@ const WORK: Record<TaskKind, TaskWork> = {
 	review: async (session, report) => {
 		await review(session.client, report);
 		// 判卷归外部却没配凭据，接口是关着的，题会挂到过期。这是配错了，得在记录里
-		// 说出来：整理一轮轮照跑、对照表一动不动，没有这句没人看得出为什么
+		// 说出来：整理一轮轮照跑、词表一动不动，没有这句没人看得出为什么
 		if (reviewJudge() === "external" && !configured())
 			report("  ✖ 判卷归外部，但 REVIEW_TOKEN 没配，接口关着，没人能交卷");
 	},
@@ -131,7 +131,7 @@ export type TasksState = {
 	lanes: TaskLane[];
 	corpus: CorpusCounts;
 	/**
-	 * 整理此刻谁在判卷（`src/corpus/aliases.ts`）。任务台要它是因为 `off` 的时候
+	 * 整理此刻谁在判卷（`src/corpus/vocabulary.ts`）。任务台要它是因为 `off` 的时候
 	 * 后台那一轮直接返回（`jobs.ts`），「现在跑一次」按下去什么都不会发生——
 	 * 按钮得先知道这件事，才不至于画成一个按了没反应的按钮。
 	 */
@@ -194,9 +194,8 @@ export async function tasksState(): Promise<TasksState> {
 /**
  * 语料此刻的几个数，一趟问完。
  *
- * 能力词的全集不在哪张表上，它是边上 `route = 'skill'` 那一路指到的说法
- * （`src/corpus/aliases.ts` 的 `vocabulary` 数的是同一件事）；「已经并到别的写法上」
- * 数的是对照表里指向别人的那些词。
+ * 「技能」数的是边上 `route = 'skill'` 那一路指到的说法，也就是人身上此刻有的词；
+ * 「已经并到别的写法上」数的是词表里指向别人的那些词。
  */
 async function corpusCounts(): Promise<CorpusCounts> {
 	const [pending, counted] = await Promise.all([
@@ -209,7 +208,7 @@ async function corpusCounts(): Promise<CorpusCounts> {
 				(select count(*) from phrase) as phrases,
 				(select count(distinct phrase_id) from experience_phrase
 					where route = 'skill') as words,
-				(select count(*) from skill_alias where canonical <> word) as merged`,
+				(select count(*) from skill_term where canonical <> word) as merged`,
 		),
 	]);
 	const row = counted.rows[0];

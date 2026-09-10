@@ -1,5 +1,5 @@
 /**
- * 管理页「能力词」的数据：对照表按标准词收拢，人数和筛选栏同一口径。
+ * 管理页「能力词」的数据：词表按标准词收拢，人数连同下面的词一起数，和筛选栏同一口径。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
@@ -10,16 +10,24 @@ after(teardown);
 
 const { listSkills } = await import("#/server/skills");
 
-describe("能力词对照表", () => {
+describe("能力词词表", () => {
 	before(async () => {
 		const { db } = await import("#/db");
-		const { skillAlias } = await import("#/db/schema");
+		const { skillTerm } = await import("#/db/schema");
 		await seed([
 			{
 				empId: "U001",
 				name: "甲",
 				segments: [
 					{ kind: "external", months: 12, skills: ["推荐系统", "Python"] },
+				],
+			},
+			{
+				empId: "U003",
+				name: "丙",
+				segments: [
+					// 只写了细的词：宽的「推荐系统」把他也数进去，细的那一行只有他
+					{ kind: "external", months: 12, skills: ["电商推荐系统"] },
 				],
 			},
 			{
@@ -35,8 +43,15 @@ describe("能力词对照表", () => {
 		const today = new Date();
 		const lastWeek = new Date(today.getTime() - 7 * 86_400_000);
 		const judge = "model:test";
-		await db.insert(skillAlias).values([
+		await db.insert(skillTerm).values([
 			{ word: "推荐系统", canonical: "推荐系统", judge, reviewedAt: today },
+			{
+				word: "电商推荐系统",
+				canonical: "电商推荐系统",
+				parent: "推荐系统",
+				judge,
+				reviewedAt: today,
+			},
 			{ word: "推荐算法", canonical: "推荐系统", judge, reviewedAt: today },
 			{
 				word: "个性化推荐",
@@ -51,25 +66,36 @@ describe("能力词对照表", () => {
 		]);
 	});
 
-	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段", async () => {
+	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段、连同下面的词", async () => {
 		const table = await listSkills();
 		assert.deepEqual(table.entries, [
 			{
 				canonical: "推荐系统",
+				parent: null,
 				aliases: ["个性化推荐", "推荐算法"],
-				people: 2,
+				people: 3,
 				reviewedDaysAgo: 0,
 				judge: "model:test",
 			},
 			{
 				canonical: "Python",
+				parent: null,
 				aliases: [],
 				people: 1,
 				reviewedDaysAgo: 7,
 				judge: "model:test",
 			},
 			{
+				canonical: "电商推荐系统",
+				parent: "推荐系统",
+				aliases: [],
+				people: 1,
+				reviewedDaysAgo: 0,
+				judge: "model:test",
+			},
+			{
 				canonical: "Hadoop",
+				parent: null,
 				aliases: [],
 				people: 0,
 				reviewedDaysAgo: 7,

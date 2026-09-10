@@ -2,10 +2,10 @@
  * 外部裁判的那道口子：拉题、交卷。整理任务里「判卷」这一步的 HTTP 形状。
  *
  * 只有两件事在这里——**认人**和**译形状**。谁能答、答卷长什么样、一道题活多久，
- * 全在 `src/corpus/aliases.ts`：那里是整理这件事的主人，接口只是它的另一个入口。
+ * 全在 `src/corpus/vocabulary.ts`：那里是整理这件事的主人，接口只是它的另一个入口。
  *
- * **这条路只写题那一行。** 对照表和边由整理任务在写者锁里改（`corpus/session.ts`），
- * 所以交卷不必等派生放锁几十分钟；外部也永远拿不到改对照表的权限，它交上来的
+ * **这条路只写题那一行。** 词表和边由整理任务在写者锁里改（`corpus/session.ts`），
+ * 所以交卷不必等派生放锁几十分钟；外部也永远拿不到改词表的权限，它交上来的
  * 原话要过 `conform` 才算数，和自带模型交上来的走同一处收窄。
  *
  * **出这台机器的只有能力词和人数。** 没有姓名、工号，也没有简历原文——这条接口的
@@ -23,7 +23,7 @@ import {
 	reviewJudge,
 	type Submission,
 	submitAnswer,
-} from "#/corpus/aliases";
+} from "#/corpus/vocabulary";
 import { pool } from "#/db";
 
 /** 一次最多拉几道题。要得更多就多拉一次——一份响应大到要翻页就没人读得完。 */
@@ -58,11 +58,13 @@ export function authorized(request: Request): boolean {
 	return configured() && header === expected;
 }
 
-/** 题在响应里的样子。`expiresAt` 说这道题还能答到什么时候，裁判据此排自己的活。 */
+/**
+ * 题在响应里的样子：一组词，各带人数，没有谁是「标准词」——标准写法由结算按人数定，
+ * 归属由裁判起名。`expiresAt` 说这道题还能答到什么时候，裁判据此排自己的活。
+ */
 type QuestionView = {
 	id: number;
-	head: string;
-	candidates: { word: string; people: number }[];
+	words: { word: string; people: number }[];
 	askedAt: string;
 	expiresAt: string;
 };
@@ -84,12 +86,11 @@ export async function questions(
 		guide: GUIDE,
 		questions: rows.map((one) => ({
 			askedAt: one.askedAt.toISOString(),
-			candidates: one.candidates,
 			expiresAt: new Date(
 				one.askedAt.getTime() + REVIEW_INTERVAL_DAYS * 86_400_000,
 			).toISOString(),
-			head: one.head,
 			id: one.id,
+			words: one.words,
 		})),
 	};
 }

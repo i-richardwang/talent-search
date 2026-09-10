@@ -82,6 +82,19 @@ before(async () => {
 				},
 			],
 		},
+		// 只写了细的词：词表里它属于「推荐系统」，点宽的词要看到他，细的那一行只有他
+		{
+			empId: "F005",
+			name: "分面戊",
+			segments: [
+				{
+					kind: "external",
+					title: "算法",
+					months: 12,
+					skills: ["电商推荐系统"],
+				},
+			],
+		},
 		// 公司档没被标过的那一段：「未知」在这一维里哪儿都不是取值
 		{
 			empId: "U001",
@@ -97,6 +110,20 @@ before(async () => {
 			],
 		},
 	]);
+	const { db } = await import("#/db");
+	const { skillTerm } = await import("#/db/schema");
+	const judge = "model:test";
+	const reviewedAt = new Date();
+	await db.insert(skillTerm).values([
+		{ word: "推荐系统", canonical: "推荐系统", judge, reviewedAt },
+		{
+			word: "电商推荐系统",
+			canonical: "电商推荐系统",
+			parent: "推荐系统",
+			judge,
+			reviewedAt,
+		},
+	]);
 });
 
 describe("候选与计数", () => {
@@ -106,8 +133,24 @@ describe("候选与计数", () => {
 	test("能力词一段多个值：每个词各成候选，按人数而不是按边数", async () => {
 		const { facets } = await run("算法");
 		const skills = new Map(facets.skill.map((s) => [s.value, s.n]));
-		assert.equal(skills.get("推荐系统"), 2);
+		assert.equal(skills.get("推荐系统"), 3);
 		assert.equal(skills.get("Python"), 1);
+	});
+
+	test("宽的词把写了细的词的人也数进去，细的词只有写了它的人", async () => {
+		const { facets, results } = await run("算法", { skill: ["推荐系统"] });
+		assert.deepEqual(results.map((r) => r.employee.empId).sort(), [
+			"F004",
+			"F005",
+			"U001",
+		]);
+		const skills = new Map(facets.skill.map((s) => [s.value, s.n]));
+		assert.equal(skills.get("电商推荐系统"), 1);
+		const narrow = await run("算法", { skill: ["电商推荐系统"] });
+		assert.deepEqual(
+			narrow.results.map((r) => r.employee.empId),
+			["F005"],
+		);
 	});
 
 	test("数的是人，而且只数这一次检索里的人", async () => {
@@ -162,8 +205,8 @@ describe("候选与计数", () => {
 		const { facets } = await run("算法");
 		// 「未知」不是公司档（见下面那条），所以这一维只有 F004 那一个取值
 		assert.deepEqual(facets.companyTag, [{ value: "头部互联网T1", n: 1 }]);
-		// 入职前的两个人：F004 和公司档没标过的 U001
-		assert.equal(facets.kind.find((k) => k.value === "external")?.n, 2);
+		// 入职前的三个人：F004、只写了细的词的 F005，和公司档没标过的 U001
+		assert.equal(facets.kind.find((k) => k.value === "external")?.n, 3);
 	});
 
 	test("没有条件就没有候选，不拿全库的数字充数", async () => {
