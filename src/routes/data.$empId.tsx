@@ -1,5 +1,5 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
+import { type ReactNode, useEffect, useState } from "react";
 import {
 	Empty,
 	EmptyDescription,
@@ -7,6 +7,14 @@ import {
 	EmptyTitle,
 } from "#/components/ui/empty";
 import { Frame, FramePanel } from "#/components/ui/frame";
+import {
+	Sheet,
+	SheetDescription,
+	SheetHeader,
+	SheetPanel,
+	SheetPopup,
+	SheetTitle,
+} from "#/components/ui/sheet";
 import { dots, duration, period } from "#/lib/format";
 import type { SegmentView } from "#/server/data";
 import { dataEmployee } from "#/server/functions";
@@ -15,9 +23,13 @@ import { StatusBadge } from "./-components/status-badge";
 /**
  * 一个人的每一段，原始的一半和派生的一半并排放着。
  *
- * 这一栏开在列表右边，换人不丢列表和找人的词。每一段说四件事：登记的是什么
- * （同步写的）、对到了哪个序列、抽出了哪些能力词和做过的事（派生写的）、以及
- * 这一段派生到当前版本了没有——没有的话下面那些是上一版的，或者还是空的。
+ * 这一份档案从右边滑出来盖在表上（`Sheet`），不是并排的第二栏：并排的话表得让出
+ * 28rem，而让出去之后页面抬头右边就空着一大片——一栏内容够不着的地方。档案是打开
+ * 来从上到下读完的东西，读完就关，所以它该是盖上来的一层，表在底下原样待着。
+ *
+ * 每一段说四件事：登记的是什么（同步写的）、对到了哪个序列、抽出了哪些能力词和
+ * 做过的事（派生写的）、以及这一段派生到当前版本了没有——没有的话下面那些是上一版
+ * 的，或者还是空的。
  */
 export const Route = createFileRoute("/data/$empId")({
 	loader: async ({ params }) => {
@@ -27,65 +39,96 @@ export const Route = createFileRoute("/data/$empId")({
 	},
 	component: Person,
 	notFoundComponent: () => (
-		<Rail>
+		<PersonSheet title="没有这个工号">
 			<Empty>
 				<EmptyHeader>
-					<EmptyTitle>没有这个工号</EmptyTitle>
-					<EmptyDescription>这个人不在库里，或者工号写错了。</EmptyDescription>
+					<EmptyTitle>这个人不在库里</EmptyTitle>
+					<EmptyDescription>
+						工号写错了，或者他还没被同步进来。
+					</EmptyDescription>
 				</EmptyHeader>
 			</Empty>
-		</Rail>
+		</PersonSheet>
 	),
 });
 
 /**
- * 这一栏的壳。**真身和「没有这个工号」共用**——两处各写一遍宽度和那条线的话，
- * 改一次宽度就会有一处忘掉，而忘掉的表现是打错工号时整页的分栏跳一下。
+ * 这一层的壳。**真身和「没有这个工号」共用**——两处各写一遍开合与回列表的路的话，
+ * 改一次就会有一处忘掉。
  *
- * 它不像工作台那条详情栏那样吸顶、自己滚：那一栏是浮在一列候选人之上的面板，
- * 扫名单和核对证据来回切；这一页是一份从上到下读的档案，整页一起滚就是对的
- * （AGENTS.md「页面这一层不套 `ScrollArea`」）。宽屏之外它排到表格下面，
- * 因为两栏并排的下限是这 28rem 加上一张读得下的表。
+ * 开合是路由说了算（地址栏里有工号这一份档案就在开着），但动画得由组件自己走完：
+ * 关的时候先把 `open` 落下去让它滑回右边，滑完了（`onOpenChangeComplete`）才回
+ * `/data`——直接导航的话这一层是被卸掉的，不是滑走的。开也同理：挂上来的时候是
+ * 开着的就没有起始态可言，所以先挂成关的，紧接着这一帧再打开。
  */
-function Rail({ children }: { children: ReactNode }) {
+function PersonSheet({
+	title,
+	description,
+	children,
+}: {
+	title: ReactNode;
+	description?: ReactNode;
+	children: ReactNode;
+}) {
+	const navigate = useNavigate();
+	const { q } = Route.useSearch();
+	const [open, setOpen] = useState(false);
+	useEffect(() => setOpen(true), []);
 	return (
-		<aside className="settle flex w-full shrink-0 flex-col gap-4 xl:w-detail xl:border-border xl:border-s xl:ps-6">
-			{children}
-		</aside>
+		<Sheet
+			onOpenChange={setOpen}
+			onOpenChangeComplete={(opened) => {
+				if (!opened) void navigate({ search: { q }, to: "/data" });
+			}}
+			open={open}
+		>
+			{/* 表里的段落带着组织路径，28rem 一行放不下几个字，给到详情栏宽的那一档 */}
+			<SheetPopup className="sm:max-w-detail-wide">
+				<SheetHeader>
+					<SheetTitle>{title}</SheetTitle>
+					{description}
+				</SheetHeader>
+				<SheetPanel className="flex flex-col gap-4">{children}</SheetPanel>
+			</SheetPopup>
+		</Sheet>
 	);
 }
 
 function Person() {
 	const { employee, segments } = Route.useLoaderData();
 	return (
-		/* key + settle：换人时这一栏整体淡入一次，和工作台的详情面板同一个交代。 */
-		<Rail key={employee.empId}>
-			<div className="flex flex-col gap-1">
-				<h2 className="title-2 font-semibold">
+		<PersonSheet
+			description={
+				<>
+					<SheetDescription>
+						{dots(
+							employee.curDept,
+							employee.curTitle,
+							employee.curLevel,
+							[employee.curSeqL1, employee.curSeqL2, employee.curSeqL3]
+								.filter(Boolean)
+								.join(" · "),
+						)}
+					</SheetDescription>
+					<p className="text-muted-foreground text-xs">
+						{dots(
+							employee.hireDate ? `${employee.hireDate} 入职` : null,
+							employee.recruitment,
+							employee.educationLevel,
+							employee.school,
+						)}
+					</p>
+				</>
+			}
+			title={
+				<>
 					{employee.name}
 					<span className="ms-2 font-mono font-normal text-muted-foreground text-sm">
 						{employee.empId}
 					</span>
-				</h2>
-				<p className="text-muted-foreground text-sm">
-					{dots(
-						employee.curDept,
-						employee.curTitle,
-						employee.curLevel,
-						[employee.curSeqL1, employee.curSeqL2, employee.curSeqL3]
-							.filter(Boolean)
-							.join(" · "),
-					)}
-				</p>
-				<p className="text-muted-foreground text-xs">
-					{dots(
-						employee.hireDate ? `${employee.hireDate} 入职` : null,
-						employee.recruitment,
-						employee.educationLevel,
-						employee.school,
-					)}
-				</p>
-			</div>
+				</>
+			}
+		>
 			{/*
 			 * 每一段是托盘里的一块面（`Frame`，排法照上游 `p-frame-3`）：这些段是同一个人
 			 * 的一份档案，一段接一段往下读，而面与面之间透出来的那几毫米托盘色说的正是
@@ -107,7 +150,7 @@ function Person() {
 					))}
 				</Frame>
 			)}
-		</Rail>
+		</PersonSheet>
 	);
 }
 
