@@ -2,7 +2,7 @@
  * 语料侧调用聊天端点的那一层：一段文字进、一份 JSON 出，回答留在库里。
  *
  * 三处用它——`corpus/extract.ts`（简历描述 → 能力词与做过的事）、
- * `corpus/align.ts`（入职前岗位 → 公司序列）和 `corpus/aliases.ts`（能力词的
+ * `corpus/align.ts`（入职前岗位 → 公司序列）和 `corpus/vocabulary.ts`（能力词的
  * 写法归并）。它们各有各的模型、提示词、schema 与收窄，这里只有对三者都成立的
  * 事：把话发出去、要一份 JSON、控制并发、报进度，以及按身份键入的缓存。
  *
@@ -23,7 +23,12 @@
 import "@tanstack/react-start/server-only";
 import { createHash } from "node:crypto";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, NoObjectGeneratedError, Output } from "ai";
+import {
+	generateText,
+	NoObjectGeneratedError,
+	NoOutputGeneratedError,
+	Output,
+} from "ai";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import type { Report } from "#/corpus/report";
@@ -58,11 +63,12 @@ const CONCURRENCY = positiveInt(process.env.EXTRACT_CONCURRENCY, 4);
 const RETRIES = 4;
 /**
  * 输出预算按「思考轨迹也算输出」给：推理模型在第一个字符之前先烧掉几百到上千
- * token。给小了它在思考阶段撞上限，返回空内容而不报错。
+ * token，`auto` 一类按请求路由的网关还会换到更啰嗦的模型。给小了它在思考阶段撞上限，
+ * 返回空内容而不报错。默认取宽，两个端点同一个数（`llm.ts`）。
  */
 const MAX_OUTPUT_TOKENS = positiveInt(
 	process.env.EXTRACT_MAX_OUTPUT_TOKENS,
-	4_000,
+	16_000,
 );
 
 /**
@@ -194,8 +200,17 @@ async function ask(
 	what: string,
 	report: Report,
 ): Promise<unknown> {
+	const abandon = (finishReason: unknown, usage: unknown) => {
+		report(
+			`  ${what}没有得到合法 JSON（finishReason=${finishReason}，` +
+				`usage=${JSON.stringify(usage)}），放弃这一段；` +
+				"若 finishReason 是 length，调大 EXTRACT_MAX_OUTPUT_TOKENS",
+		);
+		return undefined;
+	};
+	let result: Awaited<ReturnType<typeof generateText>>;
 	try {
-		const { output } = await retryingTimeouts(RETRIES, () =>
+		result = await retryingTimeouts(RETRIES, () =>
 			generateText({
 				model: getModel(model),
 				output: Output.object({ schema }),
@@ -207,15 +222,17 @@ async function ask(
 				maxOutputTokens: MAX_OUTPUT_TOKENS,
 			}),
 		);
-		return output;
 	} catch (error) {
 		if (!NoObjectGeneratedError.isInstance(error)) throw error;
-		report(
-			`  ${what}没有得到合法 JSON（finishReason=${error.finishReason}，` +
-				`usage=${JSON.stringify(error.usage)}），放弃这一段；` +
-				"若 finishReason 是 length，调大 EXTRACT_MAX_OUTPUT_TOKENS",
-		);
-		return undefined;
+		return abandon(error.finishReason, error.usage);
+	}
+	// 正文为空的应答（思考轨迹烧光预算、finishReason 不是 stop）不在上面那个异常里：
+	// SDK 把它推迟到取 `output` 的时候才抛。同样是这一段没答好，同样放弃这一段。
+	try {
+		return result.output;
+	} catch (error) {
+		if (!NoOutputGeneratedError.isInstance(error)) throw error;
+		return abandon(result.finishReason, result.usage);
 	}
 }
 

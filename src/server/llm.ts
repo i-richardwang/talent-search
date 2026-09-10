@@ -62,7 +62,10 @@ const ENABLE_THINKING = process.env.LLM_ENABLE_THINKING?.trim();
  * 两个默认值都取宽，让「配上端点就能用」先成立。
  */
 const TIMEOUT_MS = positiveInt(process.env.LLM_TIMEOUT_MS, 60_000);
-const MAX_OUTPUT_TOKENS = positiveInt(process.env.LLM_MAX_OUTPUT_TOKENS, 8_000);
+const MAX_OUTPUT_TOKENS = positiveInt(
+	process.env.LLM_MAX_OUTPUT_TOKENS,
+	16_000,
+);
 
 // provider 延迟到首次使用时创建，未配置模型的进程可以安全导入本模块。
 let model: ReturnType<ReturnType<typeof createOpenAICompatible>> | null = null;
