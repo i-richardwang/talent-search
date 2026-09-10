@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DataRouteImport } from './routes/data'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as TasksRouteImport } from './routes/tasks'
+import { Route as ApiReviewRouteImport } from './routes/api/review'
 import { Route as DataEmpIdRouteImport } from './routes/data.$empId'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
 import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
@@ -37,6 +38,11 @@ const TasksRoute = TasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiReviewRoute = ApiReviewRouteImport.update({
+  id: '/api/review',
+  path: '/api/review',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DataEmpIdRoute = DataEmpIdRouteImport.update({
   id: '/$empId',
   path: '/$empId',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/skills': typeof SkillsRoute
   '/tasks': typeof TasksRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
+  '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/skills': typeof SkillsRoute
   '/tasks': typeof TasksRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
+  '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/skills': typeof SkillsRoute
   '/tasks': typeof TasksRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
+  '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/skills'
     | '/tasks'
     | '/s/$turnId'
+    | '/api/review'
     | '/data/$empId'
     | '/s/$turnId/p/$empId'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/skills'
     | '/tasks'
     | '/s/$turnId'
+    | '/api/review'
     | '/data/$empId'
     | '/s/$turnId/p/$empId'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/skills'
     | '/tasks'
     | '/s/$turnId'
+    | '/api/review'
     | '/data/$empId'
     | '/s/$turnId/p/$empId'
   fileRoutesById: FileRoutesById
@@ -117,6 +129,7 @@ export interface RootRouteChildren {
   SkillsRoute: typeof SkillsRoute
   TasksRoute: typeof TasksRoute
   STurnIdRouteRoute: typeof STurnIdRouteRouteWithChildren
+  ApiReviewRoute: typeof ApiReviewRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -147,6 +160,13 @@ declare module '@tanstack/react-router' {
       path: '/tasks'
       fullPath: '/tasks'
       preLoaderRoute: typeof TasksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/review': {
+      id: '/api/review'
+      path: '/api/review'
+      fullPath: '/api/review'
+      preLoaderRoute: typeof ApiReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/data/$empId': {
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   SkillsRoute: SkillsRoute,
   TasksRoute: TasksRoute,
   STurnIdRouteRoute: STurnIdRouteRouteWithChildren,
+  ApiReviewRoute: ApiReviewRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

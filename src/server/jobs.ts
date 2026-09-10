@@ -15,6 +15,7 @@
 
 import "@tanstack/react-start/server-only";
 import { PgBoss } from "pg-boss";
+import { reviewJudge } from "#/corpus/aliases";
 import type { TaskKind } from "#/db/schema";
 import { derivePending, runTask } from "./tasks";
 
@@ -23,8 +24,8 @@ export type JobKind = Exclude<TaskKind, "sync">;
 
 /**
  * 排班。派生盯着「有没有还没派生的段」，同步之后几分钟内就会接上；整理一天一次，
- * 一个词一周判一次的节奏在它里面（`corpus/aliases.ts`）。改了这里要同时改任务台
- * 上说给人听的那份（`routes/tasks.tsx` 的 `CADENCE`）。
+ * 一个词一周判一次的节奏在它里面（`corpus/aliases.ts`）。判卷归外部时这一轮仍然
+ * 照跑——它要结算外部交上来的答卷，并且出新题。
  */
 const SCHEDULE: Record<JobKind, string> = {
 	derive: "*/5 * * * *",
@@ -56,6 +57,9 @@ async function setup(boss: PgBoss): Promise<void> {
 		await runTask("derive");
 	});
 	await boss.work("review", async () => {
+		// 关掉的时候不留一行记录，和派生「没有活就不留一行」同一个道理：每天一行
+		// 「已关闭」的历史没人要看，而这件事任务台上有别的说法（`tasksState`）
+		if (reviewJudge() === "off") return;
 		await runTask("review");
 	});
 }

@@ -22,7 +22,7 @@
 
 import "@tanstack/react-start/server-only";
 import { eq, sql } from "drizzle-orm";
-import { review } from "#/corpus/aliases";
+import { type Judge, review, reviewJudge } from "#/corpus/aliases";
 import { currentTree, derive, identity, pending } from "#/corpus/derive";
 import type { Report } from "#/corpus/report";
 import {
@@ -34,6 +34,7 @@ import { sourceName } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
 import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
+import { configured } from "./review";
 
 /** 每种任务的历史列几行。再多也没人往下看。 */
 const HISTORY = 5;
@@ -59,7 +60,13 @@ const WORK: Record<TaskKind, TaskWork> = {
 	derive: async (session, report) => {
 		await derive(session, report, DERIVE_BUDGET_MS);
 	},
-	review: (session, report) => review(session.client, report),
+	review: async (session, report) => {
+		await review(session.client, report);
+		// 判卷归外部却没配凭据，接口是关着的，题会挂到过期。这是配错了，得在记录里
+		// 说出来：整理一轮轮照跑、对照表一动不动，没有这句没人看得出为什么
+		if (reviewJudge() === "external" && !configured())
+			report("  ✖ 判卷归外部，但 REVIEW_TOKEN 没配，接口关着，没人能交卷");
+	},
 };
 
 /**
@@ -123,6 +130,12 @@ export type CorpusCounts = {
 export type TasksState = {
 	lanes: TaskLane[];
 	corpus: CorpusCounts;
+	/**
+	 * 整理此刻谁在判卷（`src/corpus/aliases.ts`）。任务台要它是因为 `off` 的时候
+	 * 后台那一轮直接返回（`jobs.ts`），「现在跑一次」按下去什么都不会发生——
+	 * 按钮得先知道这件事，才不至于画成一个按了没反应的按钮。
+	 */
+	judge: Judge;
 };
 
 type StoredRun = Omit<TaskRunView, "outcome"> & { log: string[] };
@@ -175,7 +188,7 @@ export async function tasksState(): Promise<TasksState> {
 		};
 	});
 
-	return { lanes, corpus: await corpusCounts() };
+	return { corpus: await corpusCounts(), judge: reviewJudge(), lanes };
 }
 
 /**
