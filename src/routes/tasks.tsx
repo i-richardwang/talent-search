@@ -149,6 +149,7 @@ function Tasks() {
 				{state.lanes.map((one) => (
 					<LaneCard
 						busy={running !== undefined}
+						closed={state.judge === "off"}
 						corpus={state.corpus}
 						key={one.kind}
 						lane={one}
@@ -171,17 +172,25 @@ function LaneCard({
 	lane,
 	corpus,
 	busy,
+	closed,
 	onDone,
 }: {
 	lane: TaskLane;
 	corpus: CorpusCounts;
 	busy: boolean;
+	/** 整理是不是关掉了（`REVIEW_JUDGE=off`），只对整理那一栏有意义 */
+	closed: boolean;
 	onDone: () => void;
 }) {
 	const { kind, latest } = lane;
 	const [requesting, setRequesting] = useState(false);
 	const [declined, setDeclined] = useState(false);
-	const job = kind === "sync" ? null : (kind as JobKind);
+	/*
+	 * 整理关掉的时候后台那一轮直接返回（`src/server/jobs.ts`），按下去什么都不会
+	 * 发生——那就不给按钮。画一个按了没反应的按钮比没有按钮糟。
+	 */
+	const job =
+		kind === "sync" || (kind === "review" && closed) ? null : (kind as JobKind);
 	const tone = alertTone(lane);
 
 	async function request() {
@@ -243,6 +252,12 @@ function LaneCard({
 						</Alert>
 					)}
 					<p className="text-sm">{facts[kind](corpus)}</p>
+					{kind === "review" && closed && (
+						/* 关掉的那一栏永远不会再有新记录，卡片上得说出来，不然它只是看着闲着 */
+						<p className="text-muted-foreground text-xs">
+							自动整理已关闭，写法不再合并
+						</p>
+					)}
 					{latest && <Detail lane={lane} />}
 				</CardPanel>
 			</Card>

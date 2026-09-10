@@ -1,9 +1,13 @@
 /**
- * **应用唯一的 RPC 边界。** 页面能从服务端取值的地方只有这一个文件；真正干活的
+ * **页面唯一的 RPC 边界。** 页面能从服务端取值的地方只有这一个文件；真正干活的
  * 逻辑住在 `search.ts` / `turn.ts` / `llm.ts` 那几个服务端专属模块里。
  *
  * `createServerFn` 切走的只是 handler 的**函数体**，所以这里的规矩是：
  * **服务端模块的值只许出现在 `.handler()` 里面。**
+ *
+ * 应用里还有一个服务端入口不在这里：`src/routes/api/review.ts`，外部 agent 判卷用的
+ * 那条 HTTP 接口。它不给页面用——页面要的是 TypeScript 的形状，外部 agent 要的是一份
+ * 说得清的 JSON 和几个状态码，两种读者摆不进同一个边界。
  */
 
 import { createServerFn } from "@tanstack/react-start";

@@ -22,16 +22,20 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import { skillTable } from "#/server/functions";
-import type { SkillEntry } from "#/server/skills";
+import type { SkillEntry, SkillTable } from "#/server/skills";
 import { AdminPage } from "./-components/admin-page";
 
 /**
- * 技能对照表的管理页：机器把哪些写法并成了哪个词。
+ * 技能对照表的管理页：把哪些写法并成了哪个词，谁下的结论。
  *
  * 只读。整理是后台每天自动做的（`src/corpus/aliases.ts`），这一页存在的理由是让管理员
  * 看得见它在做什么——筛选栏「入职前技能」上一个词后面的人数，是几种写法加起来
- * 的，这里能看到是哪几种。没有改的入口：改了下一轮灌库就被机器盖回去，一个
- * 会被静默撤销的编辑框比没有更糟。
+ * 的，这里能看到是哪几种。没有改的入口：改了下一轮灌库就被盖回去，一个
+ * 会被静默撤销的编辑框比没有更糟。想改结论走判卷那条路（外部裁判交卷），不走这一页。
+ *
+ * 判卷可以交给外部 agent（`REVIEW_JUDGE`），所以表上多一列「判定」，页顶多一句
+ * 此刻谁在判。归外部时那句话带上「还有几道题等人答」：没有它，一页停止增长的
+ * 对照表和一页正常工作的对照表长得一模一样。
  */
 export const Route = createFileRoute("/skills")({
 	loader: () => skillTable(),
@@ -43,13 +47,37 @@ function Skills() {
 	const table = Route.useLoaderData();
 	return (
 		<AdminPage title="技能">
-			<SkillList entries={table.entries} />
+			<SkillList table={table} />
 		</AdminPage>
 	);
 }
 
 function daysAgo(days: number) {
 	return days === 0 ? "今天" : `${days} 天前`;
+}
+
+/** 页顶那句话：此刻谁在判写法该不该合并。 */
+function judging(table: SkillTable): string {
+	if (table.judge === "off") return "自动整理已关闭，写法不再合并";
+	if (table.judge === "model") return "由模型自动整理，每天一轮";
+	if (!table.reachable)
+		return "判定交给外部工具，但接口没有配置凭据，外部工具接不上";
+	return table.waiting > 0
+		? `判定交给外部工具，还有 ${table.waiting} 组写法等着判`
+		: "判定交给外部工具，暂时没有等着判的写法";
+}
+
+/**
+ * 「判定」那一格：库里存的是 `model:qwen3` 这样的字，屏幕上不给这种字。
+ *
+ * 名字照出——外部接上好几个工具时，管理员要认得出是哪一个。
+ */
+function judgedBy(judge: string): string {
+	const [kind, ...rest] = judge.split(":");
+	const name = rest.join(":");
+	if (kind === "model") return `模型 ${name}`;
+	if (kind === "agent") return `外部 ${name}`;
+	return judge;
 }
 
 /**
@@ -62,23 +90,31 @@ function daysAgo(days: number) {
  * 靠发丝线切开的行直接坐在画布上——那正是后台的长相，而这套系统里「一块内容」
  * 就该是一块有顶光边的面。
  */
-function SkillList({ entries }: { entries: SkillEntry[] }) {
+function SkillList({ table }: { table: SkillTable }) {
+	const { entries } = table;
 	const [needle, setNeedle] = useState("");
 	const shown = entries.filter((e) => matches(e, needle.trim()));
 	return (
 		<div className="flex flex-col gap-3">
-			<InputGroup className="max-w-72">
-				<InputGroupInput
-					aria-label="搜索技能"
-					onChange={(event) => setNeedle(event.target.value)}
-					placeholder="搜索技能"
-					type="search"
-					value={needle}
-				/>
-				<InputGroupAddon>
-					<FilterIcon />
-				</InputGroupAddon>
-			</InputGroup>
+			{/*
+			 * 「谁在判」贴着筛选框，不挂在标题底下：抬头底下那一句是概述，而这句
+			 * 说的是这张表此刻的状态，归表自己（`-components/admin-page.tsx`）。
+			 */}
+			<div className="flex flex-wrap items-center justify-between gap-3">
+				<InputGroup className="max-w-72">
+					<InputGroupInput
+						aria-label="搜索技能"
+						onChange={(event) => setNeedle(event.target.value)}
+						placeholder="搜索技能"
+						type="search"
+						value={needle}
+					/>
+					<InputGroupAddon>
+						<FilterIcon />
+					</InputGroupAddon>
+				</InputGroup>
+				<p className="text-muted-foreground text-xs">{judging(table)}</p>
+			</div>
 			{shown.length === 0 ? (
 				<Empty>
 					<EmptyHeader>
@@ -101,6 +137,7 @@ function SkillList({ entries }: { entries: SkillEntry[] }) {
 								<TableHead>技能</TableHead>
 								<TableHead className="text-end">人数</TableHead>
 								<TableHead>其他写法</TableHead>
+								<TableHead>判定</TableHead>
 								<TableHead className="text-end">上次整理</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -114,6 +151,9 @@ function SkillList({ entries }: { entries: SkillEntry[] }) {
 									{/* 这一格允许换行：一个词并进十来种写法是常事，截断就看不到了 */}
 									<TableCell className="whitespace-normal text-muted-foreground">
 										{e.aliases.length ? e.aliases.join("、") : "—"}
+									</TableCell>
+									<TableCell className="text-muted-foreground">
+										{judgedBy(e.judge)}
 									</TableCell>
 									<TableCell className="text-end text-muted-foreground tabular-nums">
 										{daysAgo(e.reviewedDaysAgo)}
