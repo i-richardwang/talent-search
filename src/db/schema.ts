@@ -246,7 +246,55 @@ export const skillAlias = pgTable("skill_alias", {
 	word: text("word").primaryKey(),
 	canonical: text("canonical").notNull(),
 	reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+	/**
+	 * 这条决定是谁判的：`model:<模型名>` 或 `agent:<外部裁判的名字>`
+	 * （`src/corpus/aliases.ts` 的 `modelJudge` / `agentJudge`）。读者是管理页 `/skills`——同一张表里
+	 * 有机器判的也有外部判的，看表的人得知道哪一条是谁下的结论。
+	 */
+	judge: text("judge").notNull(),
 });
+
+/**
+ * 整理任务出给裁判的题：一个组心，加上几个候选词，问哪些只是同一项能力的不同写法。
+ *
+ * 这张表是**队列，不是记录**。一行从出题时出现，结算或过期时删除；决定的历史在
+ * `skill_alias`，过程的历史在 `task_run.log`，不再存第三份。
+ *
+ * 它存在的理由是把「判卷」这一步从整理任务里切出来（`src/corpus/aliases.ts`）：
+ * 出题和结算要拿语料的写者锁，判卷不碰语料，所以外部裁判交卷时不必等派生放锁。
+ * 服务端出题、任一裁判答题、服务端结算——外部拿到的是一道道题，不是改对照表的权限。
+ *
+ * `head` 唯一，于是「一个组心至多一道未结算的题」由库钉着：出题时判重不用先查一遍。
+ * `judge` 与 `answer` 同生同灭：一行要么没人答过，要么两列都有。
+ */
+export const skillReview = pgTable(
+	"skill_review",
+	{
+		id: serial("id").primaryKey(),
+		/** 组心，也是这一组的标准词。它不由裁判选，所以不在答卷里 */
+		head: text("head").notNull().unique(),
+		/** 候选词和各自的人数，出题那一刻的样子：`[{ word, people }]` */
+		candidates: jsonb("candidates")
+			.$type<{ word: string; people: number }[]>()
+			.notNull(),
+		askedAt: timestamp("asked_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		/** 谁答的，同 `skill_alias.judge`；没人答过是 null */
+		judge: text("judge"),
+		/**
+		 * 裁判的**原话**，形状同模型那份（`{ judgments: [...] }`）。收窄在结算时做，
+		 * 和 `completion_cache` 一个道理：改收窄规则不动已经交上来的答卷。
+		 */
+		answer: jsonb("answer"),
+	},
+	(t) => [
+		check(
+			"skill_review_answered_1",
+			sql`(${t.judge} is null) = (${t.answer} is null)`,
+		),
+	],
+);
 
 /**
  * 一段经历的六路语义：序列、岗位、部门 / 公司、简历描述，以及从简历描述里

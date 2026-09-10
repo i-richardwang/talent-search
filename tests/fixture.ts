@@ -35,6 +35,7 @@ import {
 	type Route,
 	searchTurn,
 	skillAlias,
+	skillReview,
 	taskRun,
 } from "#/db/schema";
 import { parseQuery } from "#/search/query-syntax";
@@ -386,6 +387,7 @@ export async function setup() {
 		phraseRelevance,
 		searchTurn,
 		skillAlias,
+		skillReview,
 		embeddingCache,
 		completionCache,
 		taskRun,
