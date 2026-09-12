@@ -468,7 +468,7 @@ export const searchTurn = pgTable(
 		 */
 		rawText: text("raw_text"),
 		/**
-		 * 查询的完整不可变快照。证据、原话产生的结构化范围和未生效提示都在这里；
+		 * 查询的完整不可变快照：模型写出的那一串条件（`SearchSpec`）；
 		 * URL 只保存查看结果的临时状态，不保存查询含义。
 		 *
 		 * **null 表示「还没理解」**：整句提交时先落一行只有 `raw_text` 的记录

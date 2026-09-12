@@ -24,7 +24,8 @@
  * 「一份谓词」——求值器各写一次，和维度有几个无关。
  *
  * **范围与筛选是同一维的两种生命周期**，形状因此完全相同（`Picked`）：前者
- * 来自那句原话、随记录保存，后者来自 URL、一次性，搜索时取交集。
+ * 由记录里的查询条件摊出来（`term.ts` 的 `scopeOf`），后者来自 URL、一次性，
+ * 搜索时取交集。
  *
  * 公司名（`org`）与学校名（`school`）不在这里：它们是自由文本的模糊匹配、没有
  * 候选列表，硬塞进同一张表就得给每一项加一个「匹配方式」的分叉，那是用一个
@@ -61,8 +62,8 @@ export type DimKey = keyof DimUnit;
 /**
  * 集合维：一维之内可以选多项，它们之间是「或」。
  *
- * 其余两维不是集合，多选对它们没有意义：「至少 6 个月」或「至少 1 年」加起来
- * 还是「至少 6 个月」，「在职」和「入职前」两个都要就是不筛。
+ * 其余两维不是集合，只装一个取值：「在职」和「入职前」两个都要就是不筛，
+ * 「至少 6 个月」或「至少 1 年」两个都要说不清是哪个。
  */
 const MULTI_KEYS = [
 	"seq",
@@ -385,21 +386,4 @@ export function parsePicked(raw: Record<string, unknown>): Picked {
 		if (value !== undefined) out[key] = value;
 	}
 	return out as Picked;
-}
-
-/**
- * 从一次选择里摘掉一个取值。集合维摘掉这一项，单值维就是摘掉这一维；摘空了的
- * 维度整个消失——留一个空列表会让「有没有筛选」说谎。
- */
-export function dropValue<P extends Picked, K extends DimKey>(
-	picked: P,
-	key: K,
-	value: DimUnit[K],
-): P {
-	const id = dimId(key, value);
-	const rest = dimPicked(picked[key]).filter((v) => dimId(key, v) !== id);
-	const next = { ...picked };
-	if (rest.length === 0 || !Array.isArray(picked[key])) delete next[key];
-	else Object.assign(next, { [key]: rest });
-	return next;
 }

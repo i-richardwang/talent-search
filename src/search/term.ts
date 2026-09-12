@@ -11,7 +11,9 @@
  *     { field: "org",        mode: "boost", values: ["字节"] }
  *     { field: "level",      mode: "must",  values: ["D7", "D8"] }
  *
- * `values` 之间是 OR，Term 之间是 AND。
+ * `values` 之间是 OR，Term 之间是 AND。同一维、同一强度只有一条 Term，单值维
+ * （经历来源、经历时长）只有一个取值——这是形状本身的规矩（`termsOf` 收窄时折叠），
+ * 所以「同一维两条 must 是 AND 还是 OR」这个问题不存在。
  *
  * **搜索词是模型对「要找什么人」的表达，不是用户的原话。** 用户说「搞推荐的」，
  * 模型写「推荐算法」「推荐系统」，找人更准，屏幕上也看得懂。取值不标来源
@@ -170,8 +172,10 @@ export const VALUES_MAX = 6;
  * 不合规的取值局部丢弃，不牵连整条；一个取值都不剩的条件整条消失。经历词
  * **跨条件去重**，先出现的赢：同一个词既必须又排除是自相矛盾的输入，与其猜
  * 用户想要哪个，不如让它保持第一次写下的样子，屏幕上看得见、改得动。
- * 范围条件整条重复（同一维、同一强度、同一批取值）只留一条：写两遍和写一遍
- * 是同一个意思，而屏幕上两枚一样的 chip 分不出哪枚是哪枚。
+ * 范围条件**一维一强度一条**：同一维、同一强度写了两条，集合维的取值并进第一条
+ * （「D7 以上」和「D8」都是 must level，用户的意思是两档都行），单值维只装得下一个
+ * 取值，后写的丢掉——和一条里多出上限的取值同一种下场。两条 Term 之间是 AND，
+ * 而同一维的两个取值之间只能是 OR，这两件事让同一维长成两条是说不清的。
  * 范围维度的 `exclude` 没有表示（见 `TERM_MODES`），整条丢掉。
  *
  * 范围维度的取值写成这一维自己的身份（`dimId`），读不回来的丢掉：一条
@@ -182,6 +186,8 @@ export const VALUES_MAX = 6;
 export function termsOf(raw: unknown): Term[] {
 	const list: Term[] = [];
 	const seen = new Set<string>();
+	// 范围维度：一维一强度那一条在列表里的位置
+	const slot = new Map<string, number>();
 	for (const item of Array.isArray(raw) ? raw : []) {
 		const entry = (item ?? {}) as Record<string, unknown>;
 		const field = String(entry.field);
@@ -190,6 +196,12 @@ export function termsOf(raw: unknown): Term[] {
 			? (entry.mode as TermMode)
 			: "must";
 		if (field !== "experience" && mode === "exclude") continue;
+		const capacity =
+			field === "experience"
+				? VALUES_MAX
+				: isScopeDim(field) && !isMulti(field)
+					? 1
+					: FILTER_LIST_MAX;
 
 		const values: string[] = [];
 		for (const candidate of Array.isArray(entry.values) ? entry.values : []) {
@@ -197,19 +209,23 @@ export function termsOf(raw: unknown): Term[] {
 			if (!text || values.includes(text)) continue;
 			if (field === "experience" && seen.has(text)) continue;
 			values.push(text);
-			if (
-				values.length ===
-				(field === "experience" ? VALUES_MAX : FILTER_LIST_MAX)
-			)
-				break;
+			if (values.length === capacity) break;
 		}
 		const [first, ...rest] = values;
 		if (!first) continue;
 		if (field === "experience") for (const v of values) seen.add(v);
 		else {
-			const same = termKey({ field, mode, values: [first, ...rest] } as Term);
-			if (seen.has(same)) continue;
-			seen.add(same);
+			const key = `${field}\u0001${mode}`;
+			const at = slot.get(key);
+			if (at !== undefined) {
+				const held = list[at] as Term;
+				const merged: [string, ...string[]] = [...held.values];
+				for (const v of values)
+					if (merged.length < capacity && !merged.includes(v)) merged.push(v);
+				list[at] = { ...held, values: merged } as Term;
+				continue;
+			}
+			slot.set(key, list.length);
 		}
 
 		const off = OFF_CAUSES.includes(entry.off as OffCause)
@@ -285,35 +301,24 @@ export function experienceTerms(list: readonly Term[]) {
 
 /**
  * 这份查询里某一种语气的范围，摊成执行用的形状（`SearchScope`：和 URL 上的
- * 筛选同形，取数的 SQL 只认它）。
- *
- * 同一维出现两条时取值合并：「D7 以上」和「D8」都写成 must level，用户的
- * 意思是两档都行，不是空集。单值维（经历来源、经历时长）只认先写的那一个：
- * 「至少 6 个月」和「至少 1 年」加起来还是「至少 6 个月」，第二条说不出新东西。
+ * 筛选同形，取数的 SQL 只认它）。一维一强度只有一条（`termsOf`），所以这里
+ * 是逐条投影，没有合并。
  */
 export function scopeOf(
 	list: readonly Term[],
 	mode: Exclude<TermMode, "exclude">,
 ): SearchScope {
 	const scope: SearchScope = {};
-	const names = { org: [] as string[], school: [] as string[] };
 	for (const term of activeTerms(list)) {
 		if (term.field === "experience" || term.mode !== mode) continue;
 		if (!isScopeDim(term.field)) {
-			for (const v of term.values)
-				if (!names[term.field].includes(v)) names[term.field].push(v);
+			scope[term.field] = [...term.values];
 			continue;
 		}
 		const key = term.field;
 		const units = term.values.flatMap((v) => scopeUnit(key, v) ?? []);
-		if (isMulti(key)) {
-			const merged = [...dimPicked(scope[key]), ...units];
-			Object.assign(scope, { [key]: [...new Set(merged)] });
-		} else if (scope[key] === undefined && units.length > 0) {
-			Object.assign(scope, { [key]: units[0] });
-		}
+		if (isMulti(key)) Object.assign(scope, { [key]: units });
+		else if (units.length > 0) Object.assign(scope, { [key]: units[0] });
 	}
-	if (names.org.length > 0) scope.org = names.org;
-	if (names.school.length > 0) scope.school = names.school;
 	return scope;
 }

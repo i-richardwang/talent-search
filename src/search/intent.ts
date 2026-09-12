@@ -41,7 +41,7 @@ export const intentSchema = z.object({
 					.describe("这一维上任一满足即可的几个取值，每维填什么见说明"),
 			}),
 		)
-		.describe("查询条件，条件之间是「且」"),
+		.describe("查询条件，条件之间是「且」；同一维、同一强度只写一条"),
 });
 
 /**

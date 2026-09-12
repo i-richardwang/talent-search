@@ -12,8 +12,9 @@
  *     "reject": ["华为"] }       // 可选：不该出现的字样（项目名、公司名）
  *
  * 有 gold 的段量召回与精确：gold 每项抽出任一种写法算命中，抽出的词对不上任何一项算多写。
- * 没有 gold 的段只量形状——动作尾（「……搭建」）、超 8 字、超 10 词——这些不用答案也看得出
- * 提示词是不是走偏了。合成用例进仓库（sample.json，干净克隆也能跑通）；真实段是真人的简历原文，
+ * 没有 gold 的段只量形状——动作尾（「……搭建」）、超 8 字、超 10 词——这些不用答案也看得出提示词
+ * 是不是走偏了。一段只要有一处不对就打叉，退出码看的是有没有打叉的段：屏幕上的叉和退出码
+ * 是同一个判断。合成用例进仓库（sample.json，干净克隆也能跑通）；真实段是真人的简历原文，
  * 不进版本库。
  *
  * 走的是派生同一条路（`corpus/extract.ts` 的 `extract`）：当前提示词、当前模型、温度 0，回答进
@@ -99,6 +100,7 @@ let rejected = 0;
 let tails = 0;
 let over8 = 0;
 let over10 = 0;
+let failed = 0;
 try {
 	const extractions = await extract(
 		cases.map((c) => ({
@@ -112,6 +114,7 @@ try {
 	for (const [index, c] of cases.entries()) {
 		const skills = extractions[index]?.skills ?? [];
 		const problems: string[] = [];
+		if (extractions[index] === undefined) problems.push("没有得到合法 JSON");
 		let recall = "";
 		if (c.gold) {
 			const gold = c.gold;
@@ -146,21 +149,28 @@ try {
 		const long = skills.filter((w) => [...w].length > 8);
 		tails += tailed.length;
 		over8 += long.length;
-		if (skills.length > 10) over10++;
+		if (skills.length > 10) {
+			over10++;
+			problems.push(`超 10 词`);
+		}
 		if (tailed.length) problems.push(`动作尾 ${tailed.join("、")}`);
 		if (long.length) problems.push(`超 8 字 ${long.join("、")}`);
 		console.log(
 			`${problems.length ? "✗" : "✓"} ${c.name}${recall}  ${skills.join(" | ")}`,
 		);
-		if (problems.length) console.log(`   ${problems.join("；")}`);
+		if (problems.length) {
+			failed++;
+			console.log(`   ${problems.join("；")}`);
+		}
 	}
 	const pct = (a: number, b: number) =>
 		b ? `${Math.round((a / b) * 100)}%` : "—";
 	console.log(
 		`\n召回 ${hit}/${goldItems}（${pct(hit, goldItems)}），精确 ${matched}/${written}（${pct(matched, written)}），` +
-			`限定语保住 ${kept}/${keeps}，不该出现 ${rejected}，动作尾 ${tails}，超 8 字 ${over8}，超 10 词的段 ${over10}，共 ${cases.length} 段`,
+			`限定语保住 ${kept}/${keeps}，不该出现 ${rejected}，动作尾 ${tails}，超 8 字 ${over8}，超 10 词的段 ${over10}，` +
+			`${failed} 段没过，共 ${cases.length} 段`,
 	);
-	if (hit !== goldItems || kept !== keeps || rejected > 0) process.exitCode = 1;
+	if (failed > 0) process.exitCode = 1;
 } finally {
 	await pool.end();
 }

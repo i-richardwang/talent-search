@@ -696,4 +696,42 @@ describe("判卷交给外部", () => {
 			later.release();
 		}
 	});
+
+	test("裁判起的名字被判成别的写法的标准词时，边改指它而不是消失", async () => {
+		const connection = await client();
+		try {
+			// 出一道人数上「销售数据分析」占优的题：裁判说「线上销售数据分析」和它是同一件事，
+			// 那个没人写过的名字就要做标准写法
+			await connection.query("delete from skill_review");
+			const { rows } = await connection.query<{ id: number }>(
+				`insert into skill_review (words)
+				 values ('[{"word":"销售数据分析","people":5},{"word":"线上销售数据分析","people":3}]'::jsonb)
+				 returning id`,
+			);
+			assert.equal(
+				await submitAnswer(connection, rows[0]?.id as number, AGENT, [
+					{ word: "销售数据分析", why: "宽", sameAs: "", parent: "" },
+					{
+						word: "线上销售数据分析",
+						why: "同一件事",
+						sameAs: "销售数据分析",
+						parent: "",
+					},
+				]),
+				"accepted",
+			);
+		} finally {
+			connection.release();
+		}
+		const said = await runReview();
+		assert.match(said.join("\n"), /线上销售数据分析 → 销售数据分析/);
+		// 三个人身上的词换成了没人写过的那个名字：它此刻已经是一条说法
+		assert.deepEqual(await peopleByWord(), [
+			["Java", 1],
+			["Python", 2],
+			["团队管理", 5],
+			["线下销售数据分析", 2],
+			["销售数据分析", 3],
+		]);
+	});
 });

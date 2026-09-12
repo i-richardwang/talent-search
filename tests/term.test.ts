@@ -175,7 +175,7 @@ describe("不可信输入 → 条件", () => {
 		);
 	});
 
-	test("范围条件整条重复只留一条；取值不同、强度不同的都是各自一条", () => {
+	test("范围条件一维一强度一条：集合维的取值并进第一条，强度不同的各自一条", () => {
 		assert.deepEqual(
 			termsOf([
 				{ field: "level", values: ["D7"] },
@@ -184,9 +184,23 @@ describe("不可信输入 → 条件", () => {
 				{ field: "level", values: ["D7", "D8"] },
 			]),
 			[
-				{ field: "level", mode: "must", values: ["D7"] },
-				{ field: "level", mode: "boost", values: ["D7"] },
 				{ field: "level", mode: "must", values: ["D7", "D8"] },
+				{ field: "level", mode: "boost", values: ["D7"] },
+			],
+		);
+	});
+
+	test("单值维只装一个取值：同一条里多写的、另起一条写的都丢掉", () => {
+		assert.deepEqual(
+			termsOf([
+				{ field: "minMonths", values: ["12", "36"] },
+				{ field: "minMonths", values: ["6"] },
+				{ field: "kind", values: ["external"] },
+				{ field: "kind", values: ["internal"] },
+			]),
+			[
+				{ field: "minMonths", mode: "must", values: ["12"] },
+				{ field: "kind", mode: "must", values: ["external"] },
 			],
 		);
 	});

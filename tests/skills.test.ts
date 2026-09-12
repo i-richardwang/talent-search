@@ -107,7 +107,7 @@ describe("能力词词表", () => {
 	test("队列空着时没有等着判的题", async () => {
 		const table = await listSkills();
 		assert.equal(table.waiting, 0);
-		// 夹具不设 REVIEW_JUDGE，所以是自带模型判，外部接口也就关着
+		// 夹具钉的是自带模型判，外部接口也就关着
 		assert.equal(table.judge, "model");
 		assert.equal(table.reachable, false);
 	});

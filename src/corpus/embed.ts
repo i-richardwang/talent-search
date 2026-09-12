@@ -73,19 +73,22 @@ async function cached(texts: string[]): Promise<Map<string, number[]>> {
 }
 
 /**
- * 写的只有刚从端点拿回来的、库里刚查过没有的文本，而同一时刻只有一个写者在跑
- * （`session.ts` 的锁），所以主键不会撞：撞了就是这两条前提有一条破了，让它报错。
+ * 缓存按内容寻址：同一个键只对应一个向量，谁先写下都一样，撞上已有的行就什么
+ * 都不做。和聊天那份缓存（`src/server/chat.ts`）同一条契约，不靠语料的写者锁。
  */
 async function store(fresh: [string, number[]][]) {
 	const space = embedSpace();
-	await db.insert(embeddingCache).values(
-		fresh.map(([text, embedding]) => ({
-			spaceId: space.spaceId,
-			model: space.model,
-			textSha: sha(text),
-			embedding,
-		})),
-	);
+	await db
+		.insert(embeddingCache)
+		.values(
+			fresh.map(([text, embedding]) => ({
+				spaceId: space.spaceId,
+				model: space.model,
+				textSha: sha(text),
+				embedding,
+			})),
+		)
+		.onConflictDoNothing();
 }
 
 /** 按入参顺序返回向量。进度只报没命中缓存的那几种——要等端点的就是它们。 */

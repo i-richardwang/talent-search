@@ -32,10 +32,12 @@
  * 只能由裁判说出来；收窄只拦住方向反了的归属（更宽的词不能含着这个词）。
  * 这条线小模型划不动，所以自带的裁判用 `REVIEW_MODEL`。
  *
- * **词表里只有一种词。** 人写的词和裁判起的名字都是标准词：人数都按它下面的人算
- * （筛选栏同一口径），都一样圈组、出题、到期再判。裁判起的「销售数据分析」下一次到期时
- * 会被拿去问它属于什么，两组各自起的「数据分析」「数据分析能力」会被圈到一组问是不是
- * 同一件事。这一轮的词表就是表里的标准词加上语料里还没进表的词（`vocabulary`）。
+ * **词表里只有一种词。** 人写的词和裁判起的名字都是标准词：都是一条说法（`phrase`，
+ * 裁判起的名字在结算落表时一起落成说法），人数都按它下面的人算（筛选栏同一口径），
+ * 都一样圈组、出题、到期再判。裁判起的「销售数据分析」下一次到期时会被拿去问它属于
+ * 什么，两组各自起的「数据分析」「数据分析能力」会被圈到一组问是不是同一件事，判成
+ * 同一件事时边照样能改指过去。这一轮的词表就是表里的标准词加上语料里还没进表的词
+ * （`vocabulary`）。
  *
  * **一个词一周只判一次，一个词同时只在一道题里。** 判过的词记下时间，
  * `REVIEW_INTERVAL_DAYS` 之内不再做组心；队列里挂着的题涉及的词这一轮整个不参与圈组——
@@ -577,8 +579,8 @@ async function vocabulary(client: CorpusClient) {
 /**
  * 把指向这些别名的边改指各自的标准词。
  *
- * 标准词一定已经是一条说法：它是同一件事那一片里人最多的词，片里的词来自出题那一轮的
- * 词表，词表来自边。同一段既写了别名又写了标准词的，改指之后两条边撞成一条，撞的那条
+ * 标准词一定是一条说法：人写的词本来就是，裁判起的名字在成为标准词那一刻落成了说法
+ * （`enroll`）。同一段既写了别名又写了标准词的，改指之后两条边撞成一条，撞的那条
  * 丢掉即可。
  */
 async function repoint(client: CorpusClient, moves: [string, string][]) {
@@ -601,6 +603,27 @@ async function repoint(client: CorpusClient, moves: [string, string][]) {
 		 using phrase w
 		 where ep.route = 'skill' and w.id = ep.phrase_id and w.text = any($1::text[])`,
 		[words],
+	);
+}
+
+/**
+ * 让这些词成为说法。
+ *
+ * 裁判起的名字第一次落表时语料里没人写过它，`phrase` 里没有它那一行；而边只能指向
+ * 说法——下一轮它若被判成别的词的标准写法，边要改指过去。人写的词本来就是说法，
+ * 撞上了什么都不做。向量和派生写说法时用的是同一个端点、同一份缓存。
+ */
+async function enroll(
+	client: CorpusClient,
+	words: string[],
+	vectors: number[][],
+) {
+	if (words.length === 0) return;
+	await client.query(
+		`insert into phrase (text, embedding)
+		 select * from unnest($1::text[], $2::halfvec[])
+		 on conflict (text) do nothing`,
+		[words, vectors.map((vector) => `[${vector.join(",")}]`)],
 	);
 }
 
@@ -684,7 +707,7 @@ async function expire(client: CorpusClient, report: Report): Promise<void> {
  *
  * 三样在同一笔事务里。写了决定没改边，筛选栏里别名和标准词就各数各的人，而派生按
  * 新表写的新段又只有标准词——同一个词两种答案；题没删掉，下一轮会把同一份答卷再
- * 结算一遍。
+ * 结算一遍。这一轮新成为标准词的词也在这笔事务里落成说法（`enroll`）。
  */
 async function settle(client: CorpusClient, report: Report): Promise<void> {
 	const { rows } = await client.query<Row>(
@@ -695,6 +718,7 @@ async function settle(client: CorpusClient, report: Report): Promise<void> {
 
 	const now = new Date();
 	const table = await read(client);
+	const known = new Set(table.keys());
 	const changed = new Map<string, Decision>();
 	const byJudge = new Map<string, number>();
 	for (const row of rows) {
@@ -720,9 +744,19 @@ async function settle(client: CorpusClient, report: Report): Promise<void> {
 	const placed = [...changed].filter(
 		([, decision]) => decision.parent !== null,
 	);
+	// 表里已有的词早就是说法了；这一轮才进表的标准词里混着裁判起的名字
+	const born = [...changed]
+		.filter(
+			([word, decision]) => decision.canonical === word && !known.has(word),
+		)
+		.map(([word]) => word);
+
+	// 向量在事务外算：那是一次端点往返，不该拿着事务等它
+	const vectors = await embed(born, report);
 
 	await client.query("begin");
 	try {
+		await enroll(client, born, vectors);
 		await write(client, [...changed]);
 		/*
 		 * 改指哪些边由**最终的决定**说了算，不由这一批答卷说了算：同一个词先后

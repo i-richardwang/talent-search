@@ -175,13 +175,15 @@ async function cached(
 }
 
 /**
- * 写的只有刚问回来的、库里刚查过没有的段，而同一时刻只有一个写者在跑
- * （`corpus/session.ts` 的锁），所以主键不会撞：撞了就是这两条前提有一条破了，让它报错。
+ * 缓存按内容寻址：同一个键只对应一份合法回答，谁先写下都一样。所以撞上已有的行
+ * 就什么都不做——派生和验收脚本会同时问同一段（同一份提示词、同一个模型），
+ * 缓存不该要求它们排队。
  */
 async function store(identity: string, text: string, payload: unknown) {
 	await db
 		.insert(completionCache)
-		.values({ identity, textSha: sha(text), payload });
+		.values({ identity, textSha: sha(text), payload })
+		.onConflictDoNothing();
 }
 
 /**

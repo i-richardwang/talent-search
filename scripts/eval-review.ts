@@ -14,7 +14,8 @@
  * 量四样：same 里的词对有没有并上（召回）；apart 里的词对有没有被并（**有损合并**，这是不可逆的
  * 那种错，一条都不该有）；parent 里每个词的归属在不在可接受的集合里；起出来的归属名是不是能力词
  * 的写法（超 8 字、带「能力」「相关」「工作」的都不是招聘的人会点的）。收窄和整理时同一份（`conform`）：
- * 方向反了的归属在那里已经拦下，这里看到的就是会写进表的东西。
+ * 方向反了的归属在那里已经拦下，这里看到的就是会写进表的东西。一题只要有一处不对就打叉，
+ * 没答的词、没拿到合法 JSON 的题也是不对；退出码看的是有没有打叉的题。
  *
  * 合成用例进仓库（sample.json）；真实组是库里圈出来的词，不进版本库。走的是整理答题同一条路
  * （`corpus/vocabulary.ts` 的 `askModel`）：当前提示词、`REVIEW_MODEL`、温度 0，回答进同一份缓存。
@@ -133,6 +134,7 @@ let parents = 0;
 let parentOk = 0;
 let unclickable = 0;
 const names = new Set<string>();
+let failed = 0;
 try {
 	const payloads = await askModel(
 		cases.map((c) => c.words),
@@ -167,10 +169,12 @@ try {
 			);
 		const wrong: string[] = [];
 		for (const [word, accepted] of Object.entries(c.parent)) {
-			const parent = verdicts.get(word)?.parent ?? "";
 			parents++;
-			if (accepted.includes(parent)) parentOk++;
-			else wrong.push(`${word}→${parent || "∅"}`);
+			const verdict = verdicts.get(word);
+			// 没答和答了「没有归属」是两回事：没答的词什么都不算对
+			if (verdict === undefined) wrong.push(`${word}→没答`);
+			else if (accepted.includes(verdict.parent ?? "")) parentOk++;
+			else wrong.push(`${word}→${verdict.parent ?? "∅"}`);
 		}
 		if (wrong.length) problems.push(`归属不对 ${wrong.join("、")}`);
 		const bad: string[] = [];
@@ -193,19 +197,16 @@ try {
 			})
 			.join(" | ");
 		console.log(`${problems.length ? "✗" : "✓"} ${c.name}  ${said}`);
-		if (problems.length) console.log(`   ${problems.join("；")}`);
+		if (problems.length) {
+			failed++;
+			console.log(`   ${problems.join("；")}`);
+		}
 	}
 	console.log(
 		`\n合并召回 ${sameHit}/${samePairs}，有损合并 ${lossy}，归属正确 ${parentOk}/${parents}，` +
-			`归属名不像能力词 ${unclickable}，起了 ${names.size} 个不同的归属名，共 ${cases.length} 题`,
+			`归属名不像能力词 ${unclickable}，起了 ${names.size} 个不同的归属名，${failed} 题没过，共 ${cases.length} 题`,
 	);
-	if (
-		sameHit !== samePairs ||
-		lossy > 0 ||
-		parentOk !== parents ||
-		unclickable > 0
-	)
-		process.exitCode = 1;
+	if (failed > 0) process.exitCode = 1;
 } finally {
 	await pool.end();
 }
