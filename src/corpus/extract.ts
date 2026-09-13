@@ -29,12 +29,8 @@ import { z } from "zod";
 import { complete, extractModel, identityOf } from "#/server/chat";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
+import { MAX_TAG_LEN, tag } from "./tag";
 
-/**
- * 一条说法最长几个字。能力词和领域都是短名词；超过这个数的通常是模型把
- * 半句话原样抄了下来，那不是标签，是另一段原文。
- */
-export const MAX_TAG_LEN = 16;
 /** 一段最多几条能力词、几件事。多于此数的段几乎总是模型在逐句复述描述。 */
 const MAX_SKILLS = 12;
 const MAX_DID = 8;
@@ -115,15 +111,6 @@ export function promptInput(row: {
 	return `岗位：${row.title}\n公司：${row.org}\n描述：${row.description}`;
 }
 
-/** 一条说法的规范写法：NFKC 折叠全半角，压掉多余空白。 */
-export function tag(value: unknown): string {
-	if (typeof value !== "string") return "";
-	return value
-		.normalize("NFKC")
-		.replace(/\s+/g, " ")
-		.replace(/^[ ·,，;；]+|[ ·,，;；]+$/g, "");
-}
-
 function keep(word: string, org: string): boolean {
 	// 公司名永远不进向量：专有名词在向量空间里和同类名字是邻居。模型偶尔会把
 	// 公司名当领域吐回来，这里按原文的公司名兜一道。
@@ -172,13 +159,14 @@ export function extractIdentity(): string {
 }
 
 /**
- * 按入参顺序返回每段的抽取。只有入职前且有描述的段会去问端点。
+ * 按入参顺序返回抽取结果；null 表示模型未能作答，空结果表示没有说法。
+ * 只有入职前且有描述的段会去问端点。
  * 只要段的这四个字段：验收（`scripts/eval-extract.ts`）拿手写的段走同一条路。
  */
 export async function extract(
 	rows: Pick<ExperienceRow, "kind" | "title" | "org" | "description">[],
 	report: Report,
-): Promise<Extraction[]> {
+): Promise<(Extraction | null)[]> {
 	const asked = rows.map((row) =>
 		row.kind === "external" && row.description ? promptInput(row) : null,
 	);
@@ -192,8 +180,8 @@ export async function extract(
 	);
 	return rows.map((row, index) => {
 		const text = asked[index];
-		if (text === null || text === undefined || !payloads.has(text))
-			return EMPTY;
+		if (text == null) return EMPTY;
+		if (!payloads.has(text)) return null;
 		return conform(payloads.get(text), row.org);
 	});
 }

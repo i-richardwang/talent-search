@@ -1,31 +1,8 @@
 /**
- * 一条**查询条件**，以及把不可信输入收窄成它的边界。
- *
- * 查询在模型嘴里、在 RPC 上、在库里、在屏幕上只有这一种形状：一个 Term 数组。
- * 模型的任务是**写这条搜索**，用户在 chip 上改的也是它，评估拿它做 diff。
- * 三个读者读的是同一个对象，中间没有翻译。
- *
- * 一条 Term 说的是「在哪一维找什么」：
- *
- *     { field: "experience", mode: "must",  values: ["算法", "推荐算法"] }
- *     { field: "org",        mode: "boost", values: ["字节"] }
- *     { field: "level",      mode: "must",  values: ["D7", "D8"] }
- *
- * `values` 之间是 OR，Term 之间是 AND。同一维、同一强度只有一条 Term，单值维
- * （经历来源、经历时长）只有一个取值——这是形状本身的规矩（`termsOf` 收窄时折叠），
- * 所以「同一维两条 must 是 AND 还是 OR」这个问题不存在。
- *
- * **搜索词是模型对「要找什么人」的表达，不是用户的原话。** 用户说「搞推荐的」，
- * 模型写「推荐算法」「推荐系统」，找人更准，屏幕上也看得懂。取值不标来源
- * （用户说的 / 模型补的）、不按来源打折、不让模型把原话交回来核对：那些东西
- * 服务的读者不存在——搜索产品给用户看的是查询本身，不满意就改查询，没有哪个
- * 产品把「你的原话」和「我读出的条件」并排对齐给人看；而「这个词是谁写的」
- * 对找人没有影响。让模型标注出处还多给它一种说错的方式：不同模型各读各的，
- * 有的会把句子里的动词当原话交回来。
- *
- * 库里表达不了的条件不解释，直接不写：搜索产品对说不清的词只有两种处理，
- * 软化成排序信号，或者不管。「资深」是「职级高的排前面」，本来就该是一条
- * boost；「北京的」库里没有，就不写。没有哪个搜索框会告诉你某个条件搜不了。
+ * 查询的唯一表示：Term[]。模型输出、RPC、记录和界面共用 termsOf 的收窄边界。
+ * 经历条件之间是 AND，一条条件的 values 是 OR。
+ * 范围条件按维度、强度和停用状态归组；不同停用状态独立保留。
+ * 搜索词表达要找的经历；无法用现有维度表达的条件不写入查询。
  */
 import {
 	DIMENSIONS,
@@ -66,7 +43,7 @@ export const SCOPE_FIELDS = [
 	"kind",
 	"minMonths",
 ] as const;
-export type ScopeField = (typeof SCOPE_FIELDS)[number];
+type ScopeField = (typeof SCOPE_FIELDS)[number];
 /** 范围维度里属于 `dimensions.ts` 那张表的几维；公司名与学校名是自由文本，不在表里。 */
 export type ScopeDim = Extract<ScopeField, DimKey>;
 
@@ -85,7 +62,7 @@ export const TERM_FIELDS = ["experience", ...SCOPE_FIELDS] as const;
  *
  * 没停用的条件身上不长这个字段：默认状态不该有记号。
  */
-export const OFF_CAUSES = ["user", "wide"] as const;
+const OFF_CAUSES = ["user", "wide"] as const;
 type OffCause = (typeof OFF_CAUSES)[number];
 
 /**
@@ -172,10 +149,8 @@ export const VALUES_MAX = 6;
  * 不合规的取值局部丢弃，不牵连整条；一个取值都不剩的条件整条消失。经历词
  * **跨条件去重**，先出现的赢：同一个词既必须又排除是自相矛盾的输入，与其猜
  * 用户想要哪个，不如让它保持第一次写下的样子，屏幕上看得见、改得动。
- * 范围条件**一维一强度一条**：同一维、同一强度写了两条，集合维的取值并进第一条
- * （「D7 以上」和「D8」都是 must level，用户的意思是两档都行），单值维只装得下一个
- * 取值，后写的丢掉——和一条里多出上限的取值同一种下场。两条 Term 之间是 AND，
- * 而同一维的两个取值之间只能是 OR，这两件事让同一维长成两条是说不清的。
+ * 范围条件在同维度、同强度、同停用状态内合并取值；单值维保留第一个取值。
+ * 停用条件独立保留，修改另一条条件的强度不会改变它的启用状态。
  * 范围维度的 `exclude` 没有表示（见 `TERM_MODES`），整条丢掉。
  *
  * 范围维度的取值写成这一维自己的身份（`dimId`），读不回来的丢掉：一条
@@ -186,7 +161,7 @@ export const VALUES_MAX = 6;
 export function termsOf(raw: unknown): Term[] {
 	const list: Term[] = [];
 	const seen = new Set<string>();
-	// 范围维度：一维一强度那一条在列表里的位置
+	// 范围条件各组在列表里的位置
 	const slot = new Map<string, number>();
 	for (const item of Array.isArray(raw) ? raw : []) {
 		const entry = (item ?? {}) as Record<string, unknown>;
@@ -196,6 +171,10 @@ export function termsOf(raw: unknown): Term[] {
 			? (entry.mode as TermMode)
 			: "must";
 		if (field !== "experience" && mode === "exclude") continue;
+		const off = OFF_CAUSES.includes(entry.off as OffCause)
+			? (entry.off as OffCause)
+			: undefined;
+
 		const capacity =
 			field === "experience"
 				? VALUES_MAX
@@ -215,7 +194,7 @@ export function termsOf(raw: unknown): Term[] {
 		if (!first) continue;
 		if (field === "experience") for (const v of values) seen.add(v);
 		else {
-			const key = `${field}\u0001${mode}`;
+			const key = `${field}\u0001${mode}\u0001${off ?? ""}`;
 			const at = slot.get(key);
 			if (at !== undefined) {
 				const held = list[at] as Term;
@@ -228,9 +207,6 @@ export function termsOf(raw: unknown): Term[] {
 			slot.set(key, list.length);
 		}
 
-		const off = OFF_CAUSES.includes(entry.off as OffCause)
-			? (entry.off as OffCause)
-			: undefined;
 		list.push({
 			field,
 			mode,
@@ -251,13 +227,9 @@ function writtenValue(field: "experience" | ScopeField, raw: unknown) {
 	return unit === undefined ? undefined : dimId(field, unit);
 }
 
-/**
- * 一条条件在这份查询里的身份：维度、强度、取值。停不停用不算——停用再启用
- * 是同一条条件的两个状态，屏幕上那枚 chip 不该因此换成另一枚。
- * `termsOf` 保证同一份查询里没有两条同身份的条件。
- */
+/** 条件的完整身份，供同一查询中的 chip 区分彼此。 */
 export function termKey(term: Term): string {
-	return [term.field, term.mode, ...term.values].join("\u0001");
+	return JSON.stringify([term.field, term.mode, term.values, term.off]);
 }
 
 /** 把停用的那些摘掉。检索、证据行、分面都只看这一份。 */
@@ -301,7 +273,7 @@ export function experienceTerms(list: readonly Term[]) {
 
 /**
  * 这份查询里某一种语气的范围，摊成执行用的形状（`SearchScope`：和 URL 上的
- * 筛选同形，取数的 SQL 只认它）。一维一强度只有一条（`termsOf`），所以这里
+ * 筛选同形，取数的 SQL 只认它）。启用的范围条件每维每档只有一条（`termsOf`），所以这里
  * 是逐条投影，没有合并。
  */
 export function scopeOf(

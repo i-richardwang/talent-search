@@ -200,7 +200,9 @@ src/corpus/derive.ts         派生：待派生的段分批抽取、对齐、嵌
 src/corpus/embed.ts          说法的嵌入与库里的向量缓存
 src/corpus/extract.ts        入职前简历描述 → 能力词与做过的事：提示词与收窄
 src/corpus/align.ts          入职前岗位 → 公司序列：序列树、提示词与收窄
-src/corpus/vocabulary.ts     能力词词表：整理任务圈组、判卷、认写法与归属、边改指标准词
+src/corpus/vocabulary.ts     整理任务：题目生命周期、模型调用、词表与边的事务提交
+src/corpus/vocabulary-rules.ts 能力词的纯规则：圈组、收窄、标准词与归属，生产和验收共用
+src/corpus/tag.ts            说法的文本规范与长度边界
 src/corpus/session.ts        写者独占的那条连接与串行化锁
 src/db/                      Drizzle 表结构与数据库连接
 src/search/                  查询解析、判定（召回 + 重排）、排名、分面与结果契约
@@ -229,7 +231,7 @@ tests/                       单元、渲染与真 SQL 集成测试
   地址是 `/s/:turnId`；只影响查看方式的分面、
   翻页留在 query string，当前员工由 `/p/:empId` 子路由表达。见 `src/search/spec.ts`、`src/server/turn.ts` 与
   `src/routes/s/$turnId/-lib/view-params.ts`。
-- 页面访问数据库只有 `src/server/functions.ts` 一个口子；带连接或密钥的模块标了
+- 页面通过 `src/server/functions.ts` 定义的 RPC 访问服务端；带连接或密钥的模块标了
   `server-only`，页面从它们取值会让构建失败。页面可读取的结果形状在 `src/search/result.ts`；
 - `src/search/search.ts` 只产出命中事实，`src/search/rank.ts` 负责判定、打分、排序与分面；
 - 界面组件来自 [coss ui](https://coss.com/ui)，源码进仓库放在 `src/components/ui/`。
@@ -247,7 +249,8 @@ tests/                       单元、渲染与真 SQL 集成测试
   短语上分不开「前端」与「后端」，交叉编码器分得开，两步各管一头。「算法」因此找得到
   岗位写着「推荐算法工程师」的段。专有名词不走向量，走精确条件。
   重排分数按（重排空间、查询词、说法）缓存在库里，同一个词只判定一次。
-- 条件之间 AND；一条条件可以有多个**取值**，取值之间 OR、同权：用户并列的「A 或 B」，
+- 经历条件之间 AND；范围条件按维度、强度和停用状态归组。不同停用状态独立保留。
+  一条条件可以有多个**取值**，取值之间 OR、同权：用户并列的「A 或 B」，
   加上查询理解替用户多写的叫法。chip 上只写代表词，其余取值收在菜单里可删；靠非代表词
   命中时证据行标「≈ 那个词」。
   必须条件采用 AND；加分条件只抬升排名；排除词**否决经历段**（阈值更高）——命中它的段

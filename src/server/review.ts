@@ -103,7 +103,7 @@ export function limitOf(url: string): number {
 }
 
 /** 交卷的下场：`Submission` 加上两种形状不对。 */
-export type Answered =
+type Answered =
 	| { ok: true; submission: Submission }
 	| { ok: false; why: string };
 

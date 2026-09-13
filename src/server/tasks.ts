@@ -127,7 +127,7 @@ export type CorpusCounts = {
 };
 
 /** 任务台一次载入要的全部。 */
-export type TasksState = {
+type TasksState = {
 	lanes: TaskLane[];
 	corpus: CorpusCounts;
 	/**
@@ -305,7 +305,7 @@ function causeChain(error: unknown): string[] {
 }
 
 /** 一次跑完的任务。`failure` 是那一行上的失败原因，成功是 null。 */
-export type TaskResult = { runId: number; failure: string | null };
+type TaskResult = { runId: number; failure: string | null };
 
 /**
  * 跑一次任务，跑完才返回。已经有写者在跑时：`wait` 为 false 返回 `null`，

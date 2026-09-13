@@ -1,23 +1,8 @@
 /**
- * 语料侧调用聊天端点的那一层：一段文字进、一份 JSON 出，回答留在库里。
- *
- * 三处用它——`corpus/extract.ts`（简历描述 → 能力词与做过的事）、
- * `corpus/align.ts`（入职前岗位 → 公司序列）和 `corpus/vocabulary.ts`（能力词的
- * 写法归并）。它们各有各的模型、提示词、schema 与收窄，这里只有对三者都成立的
- * 事：把话发出去、要一份 JSON、控制并发、报进度，以及按身份键入的缓存。
- *
- * **缓存里存的是模型给的那份 JSON**——按 schema 定过形（不合形的段不进缓存，
- * 见 `ask`），但没有收窄：长度、枚举、去重这些判断在调用方读出时做，改收窄规则
- * 不动缓存。缓存的
- * 键是模型名、系统提示词与 schema 的摘要加上那段文字：会改变回答的东西都在键里，
- * 改了提示词（含对齐提示词里列出的那棵序列树）旧回答自然失效，不用人记得换什么
- * 身份。同一段文字、同一份提示词、同一个模型，永远同一份回答。
- *
- * **模型输出是不可信输入。** 答不出合法 JSON 的那一段打印说明后放弃、不进缓存，
- * 下次重跑再问；一个异常的响应不该让一整批派生回滚。
- *
- * 和查询侧那三个适配层一样，这里**没有判断**：什么算能力词、序列树长什么样、
- * 哪些写法算同一件事，全在各自的调用方。
+ * 语料侧的聊天调用：模型请求、并发控制、进度和持久缓存。
+ * 缓存保存通过 schema 校验的原始 JSON；领域收窄由调用方执行。
+ * 键由模型、提示词、schema 和输入文本确定，同键采用首个落库回答。
+ * 无效回答报告后跳过且不缓存；持续的端点故障向调用方抛出。
  */
 
 import "@tanstack/react-start/server-only";
@@ -174,16 +159,18 @@ async function cached(
 	return out;
 }
 
-/**
- * 缓存按内容寻址：同一个键只对应一份合法回答，谁先写下都一样。所以撞上已有的行
- * 就什么都不做——派生和验收脚本会同时问同一段（同一份提示词、同一个模型），
- * 缓存不该要求它们排队。
- */
+/** 同键采用第一份成功落库的回答，所有调用者返回该值。 */
 async function store(identity: string, text: string, payload: unknown) {
-	await db
+	const inserted = await db
 		.insert(completionCache)
 		.values({ identity, textSha: sha(text), payload })
-		.onConflictDoNothing();
+		.onConflictDoNothing()
+		.returning({ payload: completionCache.payload });
+	if (inserted.length) return inserted[0]?.payload;
+	// 冲突语句结束后重新取快照，才能看到并发事务刚提交的回答。
+	const saved = await cached(identity, [text]);
+	if (!saved.has(text)) throw new Error("聊天缓存写入后缺失");
+	return saved.get(text);
 }
 
 /**
@@ -218,7 +205,7 @@ async function ask(
 				output: Output.object({ schema }),
 				system,
 				prompt: text,
-				// 这是一次翻译，不是创作：同一段文字每次给同一份回答
+				// 降低生成随机性；并发结果的一致性由缓存决定。
 				temperature: 0,
 				maxRetries: RETRIES,
 				maxOutputTokens: MAX_OUTPUT_TOKENS,
@@ -261,8 +248,7 @@ export async function complete(
 		const payload = await ask(model, system, schema, text, what, report);
 		done++;
 		if (payload !== undefined) {
-			await store(identity, text, payload);
-			payloads.set(text, payload);
+			payloads.set(text, await store(identity, text, payload));
 		}
 		if (done % 20 === 0 || done === missing.length)
 			report(`  已${what} ${done}/${missing.length}`);

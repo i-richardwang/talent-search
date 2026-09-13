@@ -72,10 +72,7 @@ async function cached(texts: string[]): Promise<Map<string, number[]>> {
 	return out;
 }
 
-/**
- * 缓存按内容寻址：同一个键只对应一个向量，谁先写下都一样，撞上已有的行就什么
- * 都不做。和聊天那份缓存（`src/server/chat.ts`）同一条契约，不靠语料的写者锁。
- */
+/** 同键采用第一份落库的向量，返回数据库保存的精度。 */
 async function store(fresh: [string, number[]][]) {
 	const space = embedSpace();
 	await db
@@ -89,6 +86,7 @@ async function store(fresh: [string, number[]][]) {
 			})),
 		)
 		.onConflictDoNothing();
+	return cached(fresh.map(([text]) => text));
 }
 
 /** 按入参顺序返回向量。进度只报没命中缓存的那几种——要等端点的就是它们。 */
@@ -108,9 +106,8 @@ export async function embed(
 			// `embedFresh` 保证一一对应，对不上说明它坏了，别把空向量写进缓存
 			if (!vector) throw new Error(`嵌入端点漏掉了 ${text.slice(0, 40)}`);
 			fresh.push([text, vector]);
-			vectors.set(text, vector);
 		}
-		await store(fresh);
+		for (const [text, vector] of await store(fresh)) vectors.set(text, vector);
 		const done = start + chunk.length;
 		// 几万种说法就是几百批：每批报一行的话，日志里除了进度什么都看不见了
 		if (done === missing.length || (start / BATCH) % PROGRESS_EVERY === 0)

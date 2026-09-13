@@ -14,6 +14,7 @@ import {
 	scopeOf,
 	TERM_MAX,
 	type Term,
+	termKey,
 	termOf,
 	termsOf,
 	VALUES_MAX,
@@ -175,7 +176,7 @@ describe("不可信输入 → 条件", () => {
 		);
 	});
 
-	test("范围条件一维一强度一条：集合维的取值并进第一条，强度不同的各自一条", () => {
+	test("启用的范围条件按维度和强度合并取值", () => {
 		assert.deepEqual(
 			termsOf([
 				{ field: "level", values: ["D7"] },
@@ -345,5 +346,38 @@ describe("查询有没有说话", () => {
 		]);
 		assert.equal(hasMeaning({ terms: one }), true);
 		assert.equal(hasMeaning({ terms: [] }), false);
+	});
+});
+
+describe("范围条件编辑", () => {
+	for (const off of ["user", "wide"] as const) {
+		for (const reversed of [false, true]) {
+			test(`改强度保留其他条件的 ${off} 状态，逆序=${reversed}`, () => {
+				const disabled: Term = {
+					field: "level",
+					mode: "must",
+					values: ["D7"],
+					off,
+				};
+				const active: Term = { field: "level", mode: "boost", values: ["D8"] };
+				const input = reversed ? [active, disabled] : [disabled, active];
+				const changed = termsOf(
+					input.map((t) => (t === active ? withMode(t, "must") : t)),
+				);
+				assert.deepEqual(scopeOf(changed, "must"), { level: ["D8"] });
+				assert.deepEqual(
+					changed.find((t) => t.off),
+					disabled,
+				);
+				assert.deepEqual(termsOf(changed), changed);
+			});
+		}
+	}
+	test("相同取值的启用与停用条件拥有独立身份", () => {
+		const t: Term = { field: "org", mode: "must", values: ["合成公司"] };
+		const list = termsOf([t, withOff(t, "user")]);
+		assert.equal(list.length, 2);
+		assert.equal(new Set(list.map(termKey)).size, 2);
+		assert.equal(termsOf(list.map((one) => withOff(one, null))).length, 1);
 	});
 });

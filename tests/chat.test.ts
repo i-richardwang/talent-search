@@ -100,3 +100,27 @@ describe("聊天端点", () => {
 		assert.deepEqual(second.get("丁"), { a: 1 });
 	});
 });
+
+test("并发合法回答统一采用首个落库值", async () => {
+	let release!: () => void;
+	const both = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let calls = 0;
+	const restore = answerChat(async () => {
+		const a = ++calls;
+		if (calls === 2) release();
+		await both;
+		return { a };
+	});
+	try {
+		const ask = () =>
+			complete("fake", "并发缓存", SCHEMA, ["相同问题"], "抽取", quiet);
+		const [a, b] = await Promise.all([ask(), ask()]);
+		assert.equal(calls, 2);
+		assert.deepEqual(a, b);
+		assert.deepEqual(await ask(), a);
+	} finally {
+		restore();
+	}
+});

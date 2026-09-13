@@ -43,7 +43,7 @@ import { MIN_MONTHS_BUCKETS } from "./weights";
  * 并不稀奇，任何拼接式的编码都会在某个名字上切错，而切错的表现是一份说不通的
  * 名单，不是一个报错。（`id` 那条内部身份用的是数据里不可能出现的字符。）
  */
-export type SeqPick = { l1: string; l2: string };
+type SeqPick = { l1: string; l2: string };
 
 /** 每一维**一个取值**的类型。选中的那些是它的集合还是它本身，由 `Picked` 说。 */
 export type DimUnit = {

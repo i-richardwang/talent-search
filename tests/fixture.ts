@@ -302,7 +302,7 @@ function startModelServer() {
 									),
 								)
 							: chatAnswer
-								? JSON.stringify(chatAnswer(system, prompt))
+								? JSON.stringify(await chatAnswer(system, prompt))
 								: undefined;
 				if (content === undefined) {
 					res.writeHead(400).end("没有人认领这份提示词");

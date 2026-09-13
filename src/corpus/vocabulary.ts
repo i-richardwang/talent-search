@@ -1,73 +1,29 @@
 /**
- * 能力词的词表：每个词的标准写法，和标准词属于哪个更宽的词。由整理任务定期整理。
- *
- * 抽出来的能力词是开放词表，同一项能力有好几种写法（「推荐算法」「个性化推荐」
- * 「Recommendation」）；招聘的人要的粗细又是当场定的：今天要「数据分析师」，明天要
- * 「销售分析师」。语料预知不了查询的粗细，所以**存最细的那一档，粗的在查的时候聚出来**：
- * 细的能聚成粗的，粗的还原不成细的。整理因此只做两件事，两件都不丢掉词里的限定：
- *
- * - **认写法**：同一件事的不同写法归到一个标准写法（`canonical`），能力词那一路的边随之
- *   改指标准词。这是无损的——它们本来就指同一件事。
- * - **认归属**：一个词是更宽的词的一种（「销售数据分析」属于「数据分析」），具体的词原样
- *   留在人身上，只在标准词上多一条 `parent`。筛选栏和查询沿它往上聚（`src/search/search.ts`
- *   的 `FACT_COLUMNS.skills`）：点「数据分析」看到做过各种数据分析的人，点「销售数据分析」
- *   只看到销售那一种。更宽的词可以是语料里没人写过的，裁判起的名字。
- *
- * 整理是一个后台任务（`review`，由 `src/server/jobs.ts` 定期跑），一轮四步：
- * **作废、结算、出题、（自带模型时）答题再结算**。中间那步「判卷」是唯一需要判断力
- * 的一步，也是唯一切得出去的一步——题落在 `skill_review` 上，自带的模型和外部
- * agent 交上来的是同一种答卷（`REVIEW_JUDGE`）。
- *
- * **接口给外部的是题，不是改表的权限。** 出题和结算跑在整理任务里、拿着语料的
- * 写者锁（`session.ts`）；判卷不碰语料，只写题目那一行，所以外部交卷不必等派生
- * 放锁几十分钟。词表和边只在结算时改，同一笔事务：写了决定没改边，筛选栏里
- * 别名和标准词就各数各的人。
- *
- * **向量圈组，裁判下结论。** 相似度阈值只决定圈子多大，圈进了不相干的词由裁判说明
- * （「推荐系统」和「搜索推荐」是邻居，不是同一项能力）；裁判每次只看一组几个词，不是
- * 整份词表。题里的词一律平等：裁判对每个词回答「和组里哪个词是同一件事」「属于哪个
- * 更宽的词」。标准写法不由裁判选——同一件事的几个词里人最多的那个做标准写法，留给
- * 裁判选的时候它会把通用词并进具体词（「搜索」→「搜索结果页」）。归属的名字由裁判起：
- * 「销售数据分析」「运营数据分析」共同的更宽的词是「数据分析」，语料里未必有人这么写过，
- * 只能由裁判说出来；收窄只拦住方向反了的归属（更宽的词不能含着这个词）。
- * 这条线小模型划不动，所以自带的裁判用 `REVIEW_MODEL`。
- *
- * **词表里只有一种词。** 人写的词和裁判起的名字都是标准词：都是一条说法（`phrase`，
- * 裁判起的名字在结算落表时一起落成说法），人数都按它下面的人算（筛选栏同一口径），
- * 都一样圈组、出题、到期再判。裁判起的「销售数据分析」下一次到期时会被拿去问它属于
- * 什么，两组各自起的「数据分析」「数据分析能力」会被圈到一组问是不是同一件事，判成
- * 同一件事时边照样能改指过去。这一轮的词表就是表里的标准词加上语料里还没进表的词
- * （`vocabulary`）。
- *
- * **一个词一周只判一次，一个词同时只在一道题里。** 判过的词记下时间，
- * `REVIEW_INTERVAL_DAYS` 之内不再做组心；队列里挂着的题涉及的词这一轮整个不参与圈组——
- * 两道题同时判同一个词，两份答卷就会各说各的。
- *
- * **只整理有读者的组。** 筛选栏按人数排，两个单人词合成一个双人词没人会点；组心
- * 至少 `HEAD_MIN` 人（连同它下面的词）的组才出题。
+ * 能力词整理：作废过期题、结算答卷、出题，再由配置的裁判作答。
+ * 词表与技能边由写者会话锁串行保护，结算在同一笔事务中提交。
+ * 归并和归属规则见 vocabulary-rules.ts；模型及外部裁判共用 GUIDE。
  */
 
 import "@tanstack/react-start/server-only";
 import { z } from "zod";
 import { complete, reviewModel } from "#/server/chat";
 import { embed } from "./embed";
-import { type Extraction, MAX_TAG_LEN, tag } from "./extract";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
+import {
+	conform,
+	type Decision,
+	groups,
+	HEAD_MIN,
+	type Member,
+	merge,
+	SIMILARITY,
+	type Table,
+	validate,
+} from "./vocabulary-rules";
 
 /** 一个词判过之后多久才再做组心；也是一道题没人答的话多久作废。 */
 export const REVIEW_INTERVAL_DAYS = 7;
-/**
- * 两个能力词的向量相似度到这个数才圈进同一组。bge-m3 上同一项能力的不同写法
- * 多在 0.8 以上；再低会把「数据分析」和「数据仓库」这种相邻领域圈到一起——
- * 裁判能拆，但每组的词一多它就开始漏。
- */
-const SIMILARITY = 0.8;
-/** 一组最多几个词。圈子再大就是阈值定低了，裁判面对二十个词会成片地判成同一项。 */
-const GROUP_MAX = 12;
-/** 组心至少几个人才值得整理。 */
-const HEAD_MIN = 3;
-
 /**
  * 谁来判卷。`REVIEW_JUDGE` 定，和模型名一个待遇：部署方的决定，重启生效。
  *
@@ -158,21 +114,6 @@ const SCHEMA = z.object({
 	),
 });
 
-/**
- * 一个词的决定：它的标准写法（等于自己就是标准词）、标准词属于哪个更宽的词
- * （别名上恒为 null）、上次判它的时间，和判它的裁判。
- */
-export type Decision = {
-	canonical: string;
-	parent: string | null;
-	reviewedAt: Date;
-	judge: string;
-};
-export type Table = Map<string, Decision>;
-
-/** 题里的一个词，和出题那一刻它下面的人数。 */
-export type Member = { word: string; people: number };
-
 /** 队列里的一道题。 */
 type Question = {
 	id: number;
@@ -205,51 +146,8 @@ export async function read(client: CorpusClient): Promise<Table> {
 			},
 		]),
 	);
-	const chained = [...table]
-		.filter(([word, decision]) => {
-			const target = table.get(decision.canonical);
-			return (
-				decision.canonical !== word &&
-				target !== undefined &&
-				target.canonical !== decision.canonical
-			);
-		})
-		.map(([word]) => word)
-		.sort();
-	if (chained.length)
-		throw new Error(
-			`skill_term 表里 ${chained.join("、")} 的标准词自己又是别名，表被改坏了`,
-		);
-	const bent = [...table]
-		.filter(([, decision]) => {
-			if (decision.parent === null) return false;
-			const target = table.get(decision.parent);
-			return target !== undefined && target.canonical !== decision.parent;
-		})
-		.map(([word]) => word)
-		.sort();
-	if (bent.length)
-		throw new Error(
-			`skill_term 表里 ${bent.join("、")} 归属于一个别名，表被改坏了`,
-		);
-	for (const [word] of table) {
-		const seen = new Set<string>();
-		for (let at: string | null = word; at !== null; at = ancestor(table, at)) {
-			if (seen.has(at))
-				throw new Error(`skill_term 表里 ${word} 的归属成环，表被改坏了`);
-			seen.add(at);
-		}
-	}
+	validate(table);
 	return table;
-}
-
-/** 一个词的上一级：别名走它标准词的归属。没有就是 null。 */
-function ancestor(table: Table, word: string): string | null {
-	const decision = table.get(word);
-	if (!decision) return null;
-	return decision.canonical === word
-		? decision.parent
-		: (table.get(decision.canonical)?.parent ?? null);
 }
 
 /**
@@ -278,236 +176,6 @@ async function write(client: CorpusClient, decisions: [string, Decision][]) {
 			decisions.map(([, decision]) => decision.judge),
 		],
 	);
-}
-
-/** 别名 → 标准词，只含真正要换的词。 */
-export function mapping(table: Table): Map<string, string> {
-	const out = new Map<string, string>();
-	for (const [word, decision] of table)
-		if (decision.canonical !== word) out.set(word, decision.canonical);
-	return out;
-}
-
-/** 把一段的能力词换成标准词，换完重复的只留一个。做过的事的领域不动。 */
-export function apply(
-	aliases: Map<string, string>,
-	extraction: Extraction,
-): Extraction {
-	const skills: string[] = [];
-	for (const skill of extraction.skills) {
-		const canonical = aliases.get(skill) ?? skill;
-		if (!skills.includes(canonical)) skills.push(canonical);
-	}
-	return { skills, did: extraction.did };
-}
-
-/**
- * 把相似的词圈成组，每组第一个词是组心，后面至少一个候选。
- *
- * 人最多的词先做组心，把还没分组、和它相似度够的词收进来。组和组不串：
- * 「数据分析 - 数据监控 - 监控告警」这种一环扣一环的链不会连成一大组。
- * 只有 `due` 里的词做组心；人不够 `HEAD_MIN` 的词也不做组心，只能被收进别人的组。
- */
-export function groups(
-	words: string[],
-	counts: number[],
-	vectors: number[][],
-	due: Set<string>,
-): string[][] {
-	const units = vectors.map((vector) => {
-		const norm = Math.hypot(...vector) || 1;
-		return Float32Array.from(vector, (value) => value / norm);
-	});
-	const order = [...words.keys()].sort(
-		(a, b) =>
-			(counts[b] ?? 0) - (counts[a] ?? 0) ||
-			(words[a] as string).localeCompare(words[b] as string),
-	);
-	const free = new Array(words.length).fill(true);
-	const out: string[][] = [];
-	for (const head of order) {
-		if ((counts[head] ?? 0) < HEAD_MIN) break;
-		if (!free[head] || !due.has(words[head] as string)) continue;
-		free[head] = false;
-		const anchor = units[head] as Float32Array;
-		const members: number[] = [];
-		for (const candidate of order) {
-			if (members.length === GROUP_MAX - 1) break;
-			if (!free[candidate]) continue;
-			if (similarity(anchor, units[candidate] as Float32Array) >= SIMILARITY)
-				members.push(candidate);
-		}
-		if (members.length) {
-			for (const member of members) free[member] = false;
-			out.push([
-				words[head] as string,
-				...members.map((index) => words[index] as string),
-			]);
-		}
-	}
-	return out;
-}
-
-/** 两个已经归一化的向量的余弦。 */
-function similarity(a: Float32Array, b: Float32Array): number {
-	let sum = 0;
-	for (let i = 0; i < a.length; i++) sum += (a[i] as number) * (b[i] as number);
-	return sum;
-}
-
-/** 裁判对一个词说了什么，收窄之后的样子。 */
-export type Verdict = { sameAs: string | null; parent: string | null };
-
-/**
- * 把裁判的原话收窄成逐词的判断：只认这道题里的词，一个词只认第一条。
- *
- * `sameAs` 必须是题里的另一个词；`parent` 是裁判起的名字，只要求它是一条能力词
- * （规范写法、不超过 `MAX_TAG_LEN`），不是这个词自己，也不含着这个词——含着它的词
- * 比它更具体，方向反了的归属（「数据分析」属于「销售数据分析」）在这里就拦下。
- *
- * **自带模型和外部 agent 走的是这同一处。** 外部交上来的东西比模型的更不可信，
- * 不给它第二个入口；接口那一侧只把原话原样存进题里，不在写入时收窄。
- */
-export function conform(raw: unknown, words: string[]): Map<string, Verdict> {
-	const out = new Map<string, Verdict>();
-	if (typeof raw !== "object" || raw === null) return out;
-	const judgments = (raw as { judgments?: unknown }).judgments;
-	const allowed = new Set(words);
-	for (const item of Array.isArray(judgments) ? judgments : []) {
-		if (typeof item !== "object" || item === null) continue;
-		const judgment = item as {
-			word?: unknown;
-			sameAs?: unknown;
-			parent?: unknown;
-		};
-		const word = tag(judgment.word);
-		if (!allowed.has(word) || out.has(word)) continue;
-		const sameAs = tag(judgment.sameAs);
-		const parent = tag(judgment.parent);
-		const broader =
-			parent !== "" &&
-			[...parent].length <= MAX_TAG_LEN &&
-			parent !== word &&
-			!parent.includes(word);
-		out.set(word, {
-			parent: broader ? parent : null,
-			sameAs: allowed.has(sameAs) && sameAs !== word ? sameAs : null,
-		});
-	}
-	return out;
-}
-
-/**
- * 记下一道题的结论，返回决定变了的词。
- *
- * `sameAs` 连成的每一片是同一件事，片里人最多的词做标准写法；片里的其他词对到它，
- * 此前对到它们的词、归属于它们的词也一起改指它，表里于是不会出现「别名的别名」和
- * 「归属于别名」。片的归属由片里的答卷按人数投出来；它若是题里另一片的词就取那一片的
- * 标准写法，若是表里的别名就取它的标准词；沿表往上走会走回自己的归属丢掉，表里于是
- * 不会成环。归属是表里没有的词时给它落一行——它从此是一个标准词。
- *
- * 判过的每个词都记时间：裁判看过它，一周内不必再看。
- */
-export function merge(
-	table: Table,
-	members: Member[],
-	verdicts: Map<string, Verdict>,
-	now: Date,
-	judge: string,
-): [string, Decision][] {
-	const people = new Map(members.map((one) => [one.word, one.people]));
-	const classes = sameClasses(
-		[...verdicts].map(([word, verdict]) => [word, verdict.sameAs]),
-	);
-	const headOf = new Map<string, string>();
-	for (const cluster of classes) {
-		const head = cluster
-			.slice()
-			.sort(
-				(a, b) =>
-					(people.get(b) ?? 0) - (people.get(a) ?? 0) || a.localeCompare(b),
-			)[0] as string;
-		for (const word of cluster) headOf.set(word, head);
-	}
-
-	const changed = new Map<string, Decision>();
-	const decide = (word: string, canonical: string, parent: string | null) => {
-		const decision: Decision = { canonical, judge, parent, reviewedAt: now };
-		table.set(word, decision);
-		changed.set(word, decision);
-	};
-
-	for (const cluster of classes) {
-		const head = headOf.get(cluster[0] as string) as string;
-		const parent = electParent(table, cluster, head, headOf, verdicts, people);
-		if (parent !== null && !table.has(parent)) decide(parent, parent, null);
-		for (const word of cluster) {
-			if (word === head) continue;
-			// 遍历的是快照：`decide` 往同一张表里写，边遍历边写会把刚写的行再走一遍
-			for (const [other, decision] of [...table]) {
-				if (decision.canonical === word) decide(other, head, null);
-				else if (decision.parent === word) decide(other, other, head);
-			}
-			decide(word, head, null);
-		}
-		decide(head, head, parent);
-	}
-	return [...changed];
-}
-
-/** `sameAs` 连成的片：无向、传递，孤立的词自成一片。 */
-function sameClasses(links: [string, string | null][]): string[][] {
-	const parentOf = new Map<string, string>();
-	const find = (word: string): string => {
-		let at = word;
-		while (parentOf.get(at) !== undefined && parentOf.get(at) !== at)
-			at = parentOf.get(at) as string;
-		return at;
-	};
-	for (const [word, sameAs] of links) {
-		parentOf.set(word, find(word));
-		if (sameAs === null) continue;
-		if (!parentOf.has(sameAs)) parentOf.set(sameAs, sameAs);
-		const a = find(word);
-		const b = find(sameAs);
-		if (a !== b) parentOf.set(a, b);
-	}
-	const byRoot = new Map<string, string[]>();
-	for (const word of parentOf.keys()) {
-		const root = find(word);
-		byRoot.set(root, [...(byRoot.get(root) ?? []), word]);
-	}
-	return [...byRoot.values()];
-}
-
-/** 一片的归属：片里的答卷按人数投票，再按表和这道题的其他片解析成一个标准词。 */
-function electParent(
-	table: Table,
-	cluster: string[],
-	head: string,
-	headOf: Map<string, string>,
-	verdicts: Map<string, Verdict>,
-	people: Map<string, number>,
-): string | null {
-	const votes = new Map<string, number>();
-	for (const word of cluster) {
-		const named = verdicts.get(word)?.parent;
-		if (!named) continue;
-		votes.set(named, (votes.get(named) ?? 0) + (people.get(word) ?? 0));
-	}
-	const elected = [...votes].sort(
-		(a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
-	)[0]?.[0];
-	if (elected === undefined) return null;
-	const resolved =
-		headOf.get(elected) ??
-		(table.get(elected)?.canonical !== undefined
-			? (table.get(elected) as Decision).canonical
-			: elected);
-	if (cluster.includes(resolved)) return null;
-	for (let at: string | null = resolved; at !== null; at = ancestor(table, at))
-		if (at === head || cluster.includes(at)) return null;
-	return resolved;
 }
 
 /** 一道题发给裁判时长的样子。人数就在题上，不另查一遍语料。 */
@@ -576,43 +244,25 @@ async function vocabulary(client: CorpusClient) {
 	};
 }
 
-/**
- * 把指向这些别名的边改指各自的标准词。
- *
- * 标准词一定是一条说法：人写的词本来就是，裁判起的名字在成为标准词那一刻落成了说法
- * （`enroll`）。同一段既写了别名又写了标准词的，改指之后两条边撞成一条，撞的那条
- * 丢掉即可。
- */
+/** 在一条语句里迁移技能边；目标缺失会触发非空约束，整条语句回滚。 */
 async function repoint(client: CorpusClient, moves: [string, string][]) {
 	if (moves.length === 0) return;
-	const words = moves.map(([word]) => word);
-	const canonicals = moves.map(([, canonical]) => canonical);
 	await client.query(
-		`insert into experience_phrase (experience_id, route, phrase_id, involvement)
-		 select ep.experience_id, 'skill', c.id, null
-		 from experience_phrase ep
-		 join phrase w on w.id = ep.phrase_id
-		 join unnest($1::text[], $2::text[]) as m(word, canonical) on m.word = w.text
-		 join phrase c on c.text = m.canonical
-		 where ep.route = 'skill'
+		`with moved as (
+		   delete from experience_phrase ep
+		   using phrase w, unnest($1::text[], $2::text[]) as m(word, canonical)
+		   where ep.route = 'skill' and ep.phrase_id = w.id and w.text = m.word
+		   returning ep.experience_id,
+		     (select id from phrase where text = m.canonical) as phrase_id
+		 )
+		 insert into experience_phrase (experience_id, route, phrase_id, involvement)
+		 select experience_id, 'skill', phrase_id, null from moved
 		 on conflict do nothing`,
-		[words, canonicals],
-	);
-	await client.query(
-		`delete from experience_phrase ep
-		 using phrase w
-		 where ep.route = 'skill' and w.id = ep.phrase_id and w.text = any($1::text[])`,
-		[words],
+		[moves.map(([word]) => word), moves.map(([, canonical]) => canonical)],
 	);
 }
 
-/**
- * 让这些词成为说法。
- *
- * 裁判起的名字第一次落表时语料里没人写过它，`phrase` 里没有它那一行；而边只能指向
- * 说法——下一轮它若被判成别的词的标准写法，边要改指过去。人写的词本来就是说法，
- * 撞上了什么都不做。向量和派生写说法时用的是同一个端点、同一份缓存。
- */
+/** 登记结算所需且尚未存在的说法，与词表和边在同一笔事务中写入。 */
 async function enroll(
 	client: CorpusClient,
 	words: string[],
@@ -707,7 +357,7 @@ async function expire(client: CorpusClient, report: Report): Promise<void> {
  *
  * 三样在同一笔事务里。写了决定没改边，筛选栏里别名和标准词就各数各的人，而派生按
  * 新表写的新段又只有标准词——同一个词两种答案；题没删掉，下一轮会把同一份答卷再
- * 结算一遍。这一轮新成为标准词的词也在这笔事务里落成说法（`enroll`）。
+ * 结算一遍。结算所需的目标说法在同一笔事务中登记。
  */
 async function settle(client: CorpusClient, report: Report): Promise<void> {
 	const { rows } = await client.query<Row>(
@@ -718,7 +368,6 @@ async function settle(client: CorpusClient, report: Report): Promise<void> {
 
 	const now = new Date();
 	const table = await read(client);
-	const known = new Set(table.keys());
 	const changed = new Map<string, Decision>();
 	const byJudge = new Map<string, number>();
 	for (const row of rows) {
@@ -744,19 +393,19 @@ async function settle(client: CorpusClient, report: Report): Promise<void> {
 	const placed = [...changed].filter(
 		([, decision]) => decision.parent !== null,
 	);
-	// 表里已有的词早就是说法了；这一轮才进表的标准词里混着裁判起的名字
-	const born = [...changed]
-		.filter(
-			([word, decision]) => decision.canonical === word && !known.has(word),
-		)
-		.map(([word]) => word);
-
-	// 向量在事务外算：那是一次端点往返，不该拿着事务等它
-	const vectors = await embed(born, report);
+	const targets = [...new Set([...changed.values()].map((d) => d.canonical))];
+	const { rows: absent } = await client.query<{ text: string }>(
+		`select text from unnest($1::text[]) as required(text)
+		 where not exists (select 1 from phrase p where p.text = required.text)`,
+		[targets],
+	);
+	const missing = absent.map((row) => row.text);
+	// 网络请求在事务外完成；写者会话锁保证准备期间语料不变。
+	const vectors = await embed(missing, report);
 
 	await client.query("begin");
 	try {
-		await enroll(client, born, vectors);
+		await enroll(client, missing, vectors);
 		await write(client, [...changed]);
 		/*
 		 * 改指哪些边由**最终的决定**说了算，不由这一批答卷说了算：同一个词先后

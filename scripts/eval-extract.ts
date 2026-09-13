@@ -114,7 +114,7 @@ try {
 	for (const [index, c] of cases.entries()) {
 		const skills = extractions[index]?.skills ?? [];
 		const problems: string[] = [];
-		if (extractions[index] === undefined) problems.push("没有得到合法 JSON");
+		if (extractions[index] == null) problems.push("没有得到合法 JSON");
 		let recall = "";
 		if (c.gold) {
 			const gold = c.gold;

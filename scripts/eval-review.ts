@@ -13,9 +13,8 @@
  *
  * 量四样：same 里的词对有没有并上（召回）；apart 里的词对有没有被并（**有损合并**，这是不可逆的
  * 那种错，一条都不该有）；parent 里每个词的归属在不在可接受的集合里；起出来的归属名是不是能力词
- * 的写法（超 8 字、带「能力」「相关」「工作」的都不是招聘的人会点的）。收窄和整理时同一份（`conform`）：
- * 方向反了的归属在那里已经拦下，这里看到的就是会写进表的东西。一题只要有一处不对就打叉，
- * 没答的词、没拿到合法 JSON 的题也是不对；退出码看的是有没有打叉的题。
+ * 的写法（超 8 字、带「能力」「相关」「工作」的都不是招聘的人会点的）。验收共用生产的 `conform` 与 `merge`，
+ * 从本题建立词表，按最终标准词和归属计分。每个题词都必须作答；任何一项失败均返回非零退出码。
  *
  * 合成用例进仓库（sample.json）；真实组是库里圈出来的词，不进版本库。走的是整理答题同一条路
  * （`corpus/vocabulary.ts` 的 `askModel`）：当前提示词、`REVIEW_MODEL`、温度 0，回答进同一份缓存。
@@ -23,7 +22,13 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { askModel, conform, type Member } from "#/corpus/vocabulary";
+import { askModel } from "#/corpus/vocabulary";
+import {
+	conform,
+	type Member,
+	merge,
+	type Table,
+} from "#/corpus/vocabulary-rules";
 import { pool } from "#/db";
 
 type Case = {
@@ -87,7 +92,11 @@ function loadCases(file: string): Case[] {
 				throw new Error(
 					`${where}「${c.name}」：答案里的「${word}」不在 words 里`,
 				);
-		if ((same as string[][]).length === 0 && Object.keys(parent).length === 0)
+		if (
+			(same as string[][]).length === 0 &&
+			(apart as string[][]).length === 0 &&
+			Object.keys(parent).length === 0
+		)
 			throw new Error(`${where}「${c.name}」：没有答案的题什么都量不出来`);
 		return {
 			name: c.name,
@@ -109,19 +118,6 @@ const files =
 				.map((f) => join(dir, f));
 if (files.length === 0) throw new Error(`${dir} 下没有用例文件`);
 const cases = files.flatMap(loadCases);
-
-/** sameAs 连成的片：无向、传递，和记账时同一种算法。 */
-function classes(words: string[], sameAs: Map<string, string | null>) {
-	const root = new Map(words.map((w) => [w, w]));
-	const find = (w: string): string => {
-		let at = w;
-		while (root.get(at) !== at) at = root.get(at) as string;
-		return at;
-	};
-	for (const [word, other] of sameAs)
-		if (other !== null && root.has(other)) root.set(find(word), find(other));
-	return new Map(words.map((w) => [w, find(w)]));
-}
 
 const pair = (a: string, b: string) => [a, b].sort().join("=");
 /** 招聘的人不会点的归属名：太长，或者是「……能力」「……相关」这种概括。 */
@@ -145,9 +141,12 @@ try {
 		const verdicts = conform(payloads[index], words);
 		const problems: string[] = [];
 		if (payloads[index] === undefined) problems.push("没有得到合法 JSON");
-		const cls = classes(
-			words,
-			new Map(words.map((w) => [w, verdicts.get(w)?.sameAs ?? null])),
+		const unanswered = words.filter((word) => !verdicts.has(word));
+		if (unanswered.length) problems.push(`漏答 ${unanswered.join("、")}`);
+		const table: Table = new Map();
+		merge(table, c.words, verdicts, new Date(), "eval");
+		const cls = new Map(
+			words.map((word) => [word, table.get(word)?.canonical ?? word]),
 		);
 		const merged = new Set<string>();
 		for (const a of words)
@@ -170,16 +169,15 @@ try {
 		const wrong: string[] = [];
 		for (const [word, accepted] of Object.entries(c.parent)) {
 			parents++;
-			const verdict = verdicts.get(word);
-			// 没答和答了「没有归属」是两回事：没答的词什么都不算对
-			if (verdict === undefined) wrong.push(`${word}→没答`);
-			else if (accepted.includes(verdict.parent ?? "")) parentOk++;
-			else wrong.push(`${word}→${verdict.parent ?? "∅"}`);
+			const canonical = table.get(word)?.canonical;
+			const parent = canonical ? (table.get(canonical)?.parent ?? "") : "";
+			if (verdicts.has(word) && accepted.includes(parent)) parentOk++;
+			else wrong.push(`${word}→${parent || "∅"}`);
 		}
 		if (wrong.length) problems.push(`归属不对 ${wrong.join("、")}`);
 		const bad: string[] = [];
-		for (const verdict of verdicts.values()) {
-			const parent = verdict.parent;
+		for (const decision of table.values()) {
+			const parent = decision.parent;
 			if (parent === null) continue;
 			names.add(parent);
 			if ([...parent].length > 8 || UNCLICKABLE.test(parent)) bad.push(parent);
@@ -187,13 +185,11 @@ try {
 		unclickable += bad.length;
 		if (bad.length) problems.push(`归属名不像能力词 ${bad.join("、")}`);
 		const said = words
-			.map((w) => {
-				const v = verdicts.get(w);
-				const tags = [
-					v?.sameAs ? `=${v.sameAs}` : "",
-					v?.parent ? `∈${v.parent}` : "",
-				].join("");
-				return tags ? `${w}${tags}` : w;
+			.map((word) => {
+				if (!verdicts.has(word)) return `${word}（漏答）`;
+				const canonical = table.get(word)?.canonical ?? word;
+				const parent = table.get(canonical)?.parent;
+				return `${word}${canonical === word ? "" : `=${canonical}`}${parent ? `∈${parent}` : ""}`;
 			})
 			.join(" | ");
 		console.log(`${problems.length ? "✗" : "✓"} ${c.name}  ${said}`);

@@ -14,17 +14,14 @@ import type { Employee, Experience } from "#/db/schema";
 /** 列表最多几个人。再多也没人往下翻，按名字或工号找。 */
 const LIST_LIMIT = 200;
 
-export type EmployeeRow = Pick<
-	Employee,
-	"empId" | "name" | "curDept" | "curTitle"
-> & {
+type EmployeeRow = Pick<Employee, "empId" | "name" | "curDept" | "curTitle"> & {
 	/** 这个人有几段 */
 	segments: number;
 	/** 其中几段还没派生到当前版本 */
 	pending: number;
 };
 
-export type DataList = {
+type DataList = {
 	/** 库里一共多少人 */
 	total: number;
 	rows: EmployeeRow[];
@@ -92,7 +89,7 @@ export type SegmentView = Pick<
 	did: { involvement: string | null; domain: string }[];
 };
 
-export type EmployeeData = {
+type EmployeeData = {
 	employee: Employee;
 	segments: SegmentView[];
 };

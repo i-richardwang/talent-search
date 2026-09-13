@@ -180,3 +180,19 @@ describe("抽取哪些段", () => {
 		assert.deepEqual(second[0]?.skills, ["风控"]);
 	});
 });
+
+test("模型失败与成功的空抽取保持可区分，失败不缓存", async () => {
+	const rows = [segment({ description: "抽取状态合成样例" })];
+	const bad = answerChat(() => ({ skills: "invalid", did: [] }));
+	try {
+		assert.deepEqual(await extract(rows, quiet), [null]);
+	} finally {
+		bad();
+	}
+	const empty = answerChat(() => ({ skills: [], did: [] }));
+	try {
+		assert.deepEqual(await extract(rows, quiet), [EMPTY]);
+	} finally {
+		empty();
+	}
+});

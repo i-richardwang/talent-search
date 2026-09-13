@@ -281,6 +281,44 @@ describe("同步与派生", () => {
 	});
 });
 
+test("词表跨嵌入空间保留，结算补齐已有标准词并保持技能边", async () => {
+	const previous = process.env.REVIEW_JUDGE;
+	process.env.REVIEW_JUDGE = "external";
+	const restore = answers();
+	try {
+		await db.execute(sql`delete from skill_review`);
+		await db.execute(sql`insert into skill_review (words, judge, answer) values (
+			'[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
+			'{"judgments":[{"word":"数据分析","sameAs":"","parent":"业务分析"}]}'::jsonb)`);
+		assert.equal((await runTask("review"))?.failure, null);
+		assert.equal(await count("phrase", "text = '业务分析'"), 1);
+		await db.execute(sql`update embedding_space set space_id = 'reset-space'`);
+		assert.equal((await runTask("derive"))?.failure, null);
+		assert.equal(await count("skill_term", "word = '业务分析'"), 1);
+		assert.equal(await count("phrase", "text = '业务分析'"), 0);
+		const before = await count("experience_phrase", "route = 'skill'");
+		assert.ok(before > 0);
+		await db.execute(sql`delete from skill_review`);
+		await db.execute(sql`insert into skill_review (words, judge, answer) values (
+			'[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
+			'{"judgments":[{"word":"业务分析","sameAs":"","parent":""},{"word":"数据分析","sameAs":"业务分析","parent":""}]}'::jsonb)`);
+		assert.equal((await runTask("review"))?.failure, null);
+		assert.equal(await count("phrase", "text = '业务分析'"), 1);
+		assert.equal(await count("experience_phrase", "route = 'skill'"), before);
+		assert.equal(
+			await count(
+				"experience_phrase",
+				"route = 'skill' and phrase_id = (select id from phrase where text = '业务分析')",
+			),
+			before,
+		);
+	} finally {
+		restore();
+		if (previous === undefined) delete process.env.REVIEW_JUDGE;
+		else process.env.REVIEW_JUDGE = previous;
+	}
+});
+
 describe("说法规划", () => {
 	const segment = (row: Partial<Parameters<typeof phrasePlan>[0][number]>) => ({
 		id: 1,

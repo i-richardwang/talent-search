@@ -18,12 +18,11 @@ function nameList(raw: unknown) {
 /**
  * 不可信入参 → 那批收窄人群的条件。
  *
- * URL、RPC、查询范围三处收的是同一份：各写一遍的话，加一维就会有一处先松下来，
- * 而松掉的那一处不会报错。维度那七项怎么收窄写在它们自己的声明里
+ * URL 与 RPC 的视图筛选共用这一入口。维度那七项怎么收窄写在它们自己的声明里
  * （`dimensions.ts` 的 `parse`），这里只多收不属于那一族的两项。
  *
  * 收不出取值的那一项不留键：`{ org: undefined }` 和 `{}` 说的是同一件事，而这份
- * 条件会被存进记录、被逐字比较，同一件事有两种写法就会比出「变了」。
+ * 条件用于视图筛选及人群收窄判断。
  */
 export function parsePopulation(raw: Record<string, unknown>): SearchScope {
 	const pick: SearchScope = { ...parsePicked(raw) };

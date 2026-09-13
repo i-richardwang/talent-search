@@ -33,7 +33,8 @@ import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
 import { routeTexts } from "./route-texts";
 import type { CorpusClient, CorpusSession } from "./session";
-import { apply, mapping, read as readVocabulary } from "./vocabulary";
+import { read as readVocabulary } from "./vocabulary";
+import { apply, mapping } from "./vocabulary-rules";
 
 /** 查询侧核对嵌入空间时重新嵌的那一串字。改它等于让已有语料的 canary 失效。 */
 const CANARY_TEXT = "talent-search embedding canary";
@@ -262,7 +263,7 @@ async function commitBatch(
 }
 
 /** 一轮派生做完之后：做了几段，还剩几段。 */
-export type DeriveOutcome = { done: number; left: number };
+type DeriveOutcome = { done: number; left: number };
 
 /**
  * 一轮派生：待派生的段一批一批地做，直到做完或时间预算用完。
@@ -304,7 +305,7 @@ export async function derive(
 		let aligned = rows;
 		if (chatConfigured()) {
 			extractions = (await extract(rows, report)).map((extraction) =>
-				apply(aliases, extraction),
+				apply(aliases, extraction ?? EMPTY),
 			);
 			aligned = await align(rows, tree, report);
 		}
