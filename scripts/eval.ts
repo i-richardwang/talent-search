@@ -6,7 +6,7 @@
  *
  * 用例文件是一个 JSON 数组，每项：
  *   { "name": "找有支付风控经验的人",
- *     "query": "支付/风控/~风险控制,+带团队",  // 一行查询语法，见 search/query-syntax.ts
+ *     "query": "支付/风控 kind:external,+带团队",  // 一行查询语法，见 search/query-syntax.ts
  *     "expect": ["E1001", "E2042"],        // 已确认应当出现的工号
  *     "reject": ["E3007"] }                // 可选：已确认不该出现的工号
  *
@@ -23,6 +23,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "#/db";
+import { claimName } from "#/search/condition-label";
 import { parseQuery } from "#/search/query-syntax";
 import { search } from "#/search/search";
 import { RESULT_MAX } from "#/search/weights";
@@ -99,7 +100,7 @@ let intruded = 0;
 try {
 	for (const c of cases) {
 		const outcome = await search(
-			{ terms: parseQuery(c.query) },
+			{ conditions: parseQuery(c.query) },
 			{},
 			RESULT_MAX,
 		);
@@ -127,7 +128,7 @@ try {
 					: "") +
 				`，命中 ${total} 人${
 					empty?.kind === "overflowEvidence"
-						? `（匹配事实过多：${empty.terms.join("、")}）`
+						? `（匹配事实过多：${empty.claims.map(claimName).join("、")}）`
 						: ""
 				}`,
 		);

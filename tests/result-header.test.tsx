@@ -9,35 +9,35 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ResultHeader } from "#/routes/s/$turnId/-components/result-list";
-import type { TermPlan } from "#/search/result";
+import type { Claim } from "#/search/result";
 import { visibleText } from "./render";
 
-const TERMS: TermPlan[] = [{ term: "算法", values: ["算法"], mode: "must" }];
+const CLAIMS: Claim[] = [{ about: "experience", mode: "must", what: ["算法"] }];
 
 const markup = (
 	strong: boolean,
 	strongOn: number,
-	terms = TERMS,
+	claims = CLAIMS,
 	picking = false,
 ) =>
 	renderToStaticMarkup(
 		<ResultHeader
+			claims={claims}
 			loading={false}
 			onChange={() => {}}
 			onPicking={() => {}}
 			order="relevance"
 			pickable
 			picking={picking}
-			planned={terms.length > 0}
+			planned={claims.length > 0}
 			strong={strong}
 			strongOn={strongOn}
-			terms={terms}
 			total={38}
 		/>,
 	);
 
-const render = (strong: boolean, strongOn: number, terms = TERMS) =>
-	visibleText(markup(strong, strongOn, terms));
+const render = (strong: boolean, strongOn: number, claims = CLAIMS) =>
+	visibleText(markup(strong, strongOn, claims));
 
 describe("这份名单是什么", () => {
 	test("报数和排序依据都在", () => {
@@ -105,6 +105,6 @@ describe("挑人", () => {
 
 	test("进和出都写成这一下要做的事", () => {
 		// 现在在哪一档由名单左边那一列框说，不由一个按下去的样子说
-		assert.ok(visibleText(markup(false, 7, TERMS, true)).includes("退出挑人"));
+		assert.ok(visibleText(markup(false, 7, CLAIMS, true)).includes("退出挑人"));
 	});
 });

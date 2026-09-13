@@ -22,11 +22,11 @@ describe("提交查询的服务端边界", () => {
 				input: {
 					kind: "spec",
 					spec: {
-						terms: [
+						conditions: [
 							{
-								field: "experience",
+								about: "experience",
 								mode: "boost",
-								values: ["经理"],
+								what: ["经理"],
 								off: "wide",
 							},
 						],
@@ -38,11 +38,11 @@ describe("提交查询的服务端边界", () => {
 				input: {
 					kind: "spec",
 					spec: {
-						terms: [
+						conditions: [
 							{
-								field: "experience",
+								about: "experience",
 								mode: "boost",
-								values: ["经理"],
+								what: ["经理"],
 								off: "wide",
 							},
 						],

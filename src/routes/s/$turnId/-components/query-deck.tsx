@@ -83,7 +83,7 @@ export function QueryDeck({
 	const settled = hasMeaning(spec) && !interpreting;
 	// 系统到底读出了东西没有。读出来了才有左右两半，也才有中间那条竖线——
 	// 一条一侧空着的分隔线画的是一个不存在的分界。
-	const reading = spec.terms.length > 0;
+	const reading = spec.conditions.length > 0;
 	const [editing, setEditing] = useState(false);
 
 	useImperativeHandle(ref, () => ({ edit: () => setEditing(true) }));
@@ -177,8 +177,8 @@ export function QueryDeck({
 					{settled && (
 						<div className="flex shrink-0 items-center gap-1.5 max-lg:flex-wrap">
 							<QueryChips
-								onChange={(terms) => onChangeSpec({ terms })}
-								terms={spec.terms}
+								conditions={spec.conditions}
+								onChange={(conditions) => onChangeSpec({ conditions })}
 							/>
 						</div>
 					)}

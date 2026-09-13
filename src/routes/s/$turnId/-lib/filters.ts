@@ -8,6 +8,8 @@
  * 两类维度：**分面**（有候选列表和人数）与**文本条件**（公司名 / 学校名，
  * 来自查询理解或链接，没有候选列表，只能看见和清掉）。
  */
+
+import { NAME_LABEL } from "#/search/condition-label";
 import {
 	DIM_KEYS,
 	DIMENSIONS,
@@ -19,7 +21,6 @@ import {
 	isMulti,
 } from "#/search/dimensions";
 import type { Facets } from "#/search/result";
-import { NAME_LABEL } from "../../../-lib/term-label";
 import type { View } from "./view-params";
 
 type FilterOption = {

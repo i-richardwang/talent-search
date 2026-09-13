@@ -6,18 +6,72 @@
  * 的空值工厂，一行 SQL 都不许有；查询实现留在 `search.ts`。
  */
 import type { Employee, Route } from "#/db/schema";
+import {
+	activeConditions,
+	type Condition,
+	type ExperienceCondition,
+	type PersonCondition,
+} from "./condition";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
-import type { SearchScope } from "./spec";
-import { activeTerms, experienceTerms, type Term, type TermMode } from "./term";
+import type { Population } from "./params";
+
+/**
+ * 一条参与匹配的经历主张：启用的、正向的（必须或加分）那些。
+ *
+ * 排除的主张不在这里——它只用来否决证据段，不占证据行的一行，也没有「命中了
+ * 多久」可言。把一个画不出来的东西放进画得出来的列表里，早晚会有人去渲染它。
+ */
+export type Claim = ExperienceCondition & { mode: "must" | "boost" };
+
+/**
+ * 一份查询按执行时的角色拆开：谁产证据、谁否决证据段、谁按人裁、谁抬名次。
+ * 检索、空态成因、页面都从这里起步——页面在结果回来之前也从它算骨架屏占几行，
+ * 两边算的是同一份，结果回来时行数才不会跳。
+ *
+ * 停用的条件在这里就消失了，此后整条链路都看不见它——检索、打分、分面、
+ * 证据行一个都不必知道「停用」这回事。这是它能只花一个字段的原因。
+ */
+export type Query = {
+	/** 正向的经历主张：产证据、进证据行。 */
+	claims: Claim[];
+	/** 排除的经历主张：否决证据段。 */
+	excludes: ExperienceCondition[];
+	/** 人的必须条件：按人裁。 */
+	must: PersonCondition[];
+	/** 人的偏好：抬名次。 */
+	prefer: PersonCondition[];
+};
+
+export function queryOf(conditions: readonly Condition[]): Query {
+	const q: Query = { claims: [], excludes: [], must: [], prefer: [] };
+	for (const c of activeConditions(conditions)) {
+		if (c.about === "experience") {
+			if (c.mode === "exclude") q.excludes.push(c);
+			else q.claims.push(c as Claim);
+		} else if (c.mode === "must") q.must.push(c);
+		else q.prefer.push(c);
+	}
+	return q;
+}
+
+/** 这份查询会画几条证据。 */
+export function claimsOf(conditions: readonly Condition[]): Claim[] {
+	return queryOf(conditions).claims;
+}
 
 export type Hit = {
 	experienceId: number;
-	term: string;
-	/** 命中的是这条条件的哪个取值。不是代表词时证据行要标出来：「≈ 推荐算法」。 */
-	value: string;
-	route: Route;
-	/** 该说法与这一段这一路原文的相关度，[RELEVANCE_MIN, 1]。 */
+	/** 属于第几条主张（`SearchOutcome.claims` 的下标）。 */
+	claim: number;
+	/**
+	 * 命中的是这条主张的哪个经历词。不是代表词时证据行要标出来：「≈ 推荐算法」。
+	 * 没有经历词的主张（「待过字节」）靠这一段本身作证，没有词，为 null。
+	 */
+	value: string | null;
+	/** 命中的那一路。没有经历词的主张不比文本，这一段落在范围里就是证据，为 null。 */
+	route: Route | null;
+	/** 该说法与这一段这一路原文的相关度，[RELEVANCE_MIN, 1]；不比文本的主张恒为 1。 */
 	relevance: number;
 	/** 命中的那条说法，只有抽取的两路带；其余路的字段值就在这条 Hit 的 seq / title / org 上。 */
 	phrase: string | null;
@@ -48,24 +102,24 @@ type PopulationResult = {
 
 export type RankedResult = PopulationResult & {
 	score: number;
-	basis: (TermBasis | null)[];
+	/** 每条主张一项，和 `SearchOutcome.claims` 同序；没命中的为 null */
+	basis: (ClaimBasis | null)[];
 	hits: Hit[];
 };
 
 export type SearchResult = PopulationResult | RankedResult;
 
-/** 一条条件实际参与排名的聚合依据。 */
-export type TermBasis = {
-	term: string;
-	/** 参与累计的那一路：最强那条证据走的路 */
-	route: Route;
-	/** 最强那条证据靠的取值 */
-	value: string;
+/** 一条主张实际参与排名的聚合依据。 */
+export type ClaimBasis = {
+	/** 最强那条证据走的路；不比文本的主张为 null */
+	route: Route | null;
+	/** 最强那条证据靠的经历词；不比文本的主张为 null */
+	value: string | null;
 	/** 最强那条证据的相关度 */
 	relevance: number;
-	/** 并列最强的证据段的累计月数 */
+	/** 满足这条主张的全部证据段的累计月数 */
 	months: number;
-	/** 并列最强的证据段里最近一次结束时间；null 表示目前仍有相关经历 */
+	/** 证据段里最近一次结束时间；null 表示目前仍有相关经历 */
 	endDate: string | null;
 	/**
 	 * 累计进 `months` 的段是否**全部**来自入职前。
@@ -78,46 +132,15 @@ export type TermBasis = {
 };
 
 /**
- * 一条参与匹配的经历条件：代表词、它的全部取值（OR，都会被嵌成向量），
- * 以及它是必须还是加分。
+ * 一次检索的视图筛选：收窄人群的那批（`Population`），加上证据强度。
  *
- * 排除词不在这里——它只用来否决证据段，不占证据行的一行，也没有「命中了多久」
- * 可言。所以这个类型的 mode 排除了 `"exclude"`：把一个画不出来的东西放进
- * 画得出来的列表里，早晚会有人去渲染它。
- */
-export type TermPlan = {
-	term: string;
-	values: string[];
-	mode: Exclude<TermMode, "exclude">;
-};
-
-/**
- * 这份查询会画几条证据、拿什么去匹配。检索从这里起步；页面在结果回来之前
- * 也从这里算骨架屏占几行——两边算的是同一份，结果回来时行数才不会跳。
- *
- * 停用的条件在这里就消失了，此后整条链路都看不见它——检索、打分、分面、
- * 证据行一个都不必知道「停用」这回事。这是它能只花一个字段的原因。
- */
-export function termPlans(terms: readonly Term[]): TermPlan[] {
-	return experienceTerms(activeTerms(terms)).flatMap((t) =>
-		t.mode === "exclude"
-			? []
-			: [{ term: t.values[0], values: [...t.values], mode: t.mode }],
-	);
-}
-
-/**
- * 一次检索的筛选条件：查询范围那一批条件（`SearchScope`），加上证据强度。
- *
- * 收窄人群的那几项在这里不重写一遍——范围和筛选是同一批维度的两种生命周期，
- * 各写一份形状的话，加一维就会有一处忘了跟上。`strong` 不属于那一批：它答的是
- * 「什么才算命中」，不是在这批人里再看哪一部分。
+ * `strong` 不属于那一批：它答的是「什么才算命中」，不是在这批人里再看哪一部分。
  *
  * **全部在服务端求值**：放到客户端就只能筛已经翻出来的那几页，而其余维数的是
  * 全部命中的人——同一排控件会出现两种口径。
  */
-export type SearchFilters = SearchScope & {
-	/** 每个必须词都要有受控字段（序列或岗位）的命中。 */
+export type SearchFilters = Population & {
+	/** 每条必须的主张都要有受控字段（序列或岗位）的命中。 */
 	strong?: boolean;
 };
 
@@ -158,12 +181,13 @@ type Outcome = {
 export type SearchOutcome =
 	| (Outcome & {
 			order: "relevance";
-			terms: TermPlan[];
+			claims: Claim[];
 			results: RankedResult[];
 	  })
 	| (Outcome & {
+			/** 没有经历主张，只有人的条件：没有分数可排，按满足的偏好和工号。 */
 			order: "employee";
-			terms: [];
+			claims: [];
 			results: PopulationResult[];
 	  });
 

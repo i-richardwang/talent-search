@@ -18,16 +18,15 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EvidenceLine, MissedTerms } from "#/components/evidence";
-import type { Hit, TermBasis } from "#/search/result";
+import { EvidenceLine, MissedClaims } from "#/components/evidence";
+import type { ClaimBasis, Hit } from "#/search/result";
 import { visibleText } from "./render";
 import { hit as row } from "./rows";
 
 const hit = (over: Partial<Hit> = {}) =>
 	row({ relevance: 0.83, org: "某部门", ...over });
 
-const basis = (over: Partial<TermBasis> = {}): TermBasis => ({
-	term: "算法",
+const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
 	route: "seq",
 	value: "算法",
 	relevance: 0.83,
@@ -37,12 +36,12 @@ const basis = (over: Partial<TermBasis> = {}): TermBasis => ({
 	...over,
 });
 
-const markup = (h: Hit, b: TermBasis) =>
+const markup = (h: Hit, b: ClaimBasis) =>
 	renderToStaticMarkup(
-		<EvidenceLine basis={b} boost={false} hit={h} term="算法" />,
+		<EvidenceLine basis={b} boost={false} hit={h} name="算法" />,
 	);
 
-const seen = (h: Hit, b: TermBasis) => visibleText(markup(h, b));
+const seen = (h: Hit, b: ClaimBasis) => visibleText(markup(h, b));
 
 describe("一行证据看得见的部分", () => {
 	test("有命中就必须看得见时长，不能只剩一颗点", () => {
@@ -87,7 +86,7 @@ describe("一行证据看得见的部分", () => {
 		);
 	});
 
-	test("条件词本身永远在——它是上下对比的那条竖线", () => {
+	test("主张的名字永远在——它是上下对比的那条竖线", () => {
 		assert.match(seen(hit(), basis()), /算法/);
 	});
 
@@ -147,8 +146,8 @@ describe("一行证据看得见的部分", () => {
 });
 
 describe("没命中的条件收成一行", () => {
-	const missed = (terms: string[]) =>
-		visibleText(renderToStaticMarkup(<MissedTerms terms={terms} />));
+	const missed = (names: string[]) =>
+		visibleText(renderToStaticMarkup(<MissedClaims names={names} />));
 
 	test("没命中要说出来，不是留一片空白让人以为还没加载完", () => {
 		assert.match(missed(["算法", "风控"]), /未命中/);

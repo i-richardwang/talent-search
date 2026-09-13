@@ -21,9 +21,8 @@ import {
 import { parsePopulation } from "#/search/params";
 import { parseQuery } from "#/search/query-syntax";
 import type { SearchFilters } from "#/search/result";
-import { isScopeField } from "#/search/term";
+import { asConditions } from "./conditions";
 import { seed, setup } from "./fixture";
-import { scopeTerms } from "./terms";
 
 const teardown = await setup();
 after(teardown);
@@ -31,7 +30,7 @@ after(teardown);
 const { search } = await import("#/search/search");
 
 const run = async (query: string, filters: SearchFilters = {}) => {
-	const outcome = await search({ terms: parseQuery(query) }, filters);
+	const outcome = await search({ conditions: parseQuery(query) }, filters);
 	if (outcome.order !== "relevance")
 		throw new Error("要求查询未进入相关度路径");
 	return outcome;
@@ -259,7 +258,7 @@ describe("分面预告的数就是点下去会得到的数", () => {
 	});
 
 	/**
-	 * 同一个条件，作为查询范围（下推给 SQL）和作为筛选（在内存里求值），
+	 * 同一个条件，写进查询（下推给 SQL）和作为筛选（在内存里求值），
 	 * 必须选出同一批人。
 	 *
 	 * 这是「一份声明、两个求值器」的全部赌注：两个求值器读的是同一段声明，
@@ -269,17 +268,20 @@ describe("分面预告的数就是点下去会得到的数", () => {
 	test("同一个条件下推给数据库还是在内存里筛，选出的是同一批人", async () => {
 		const base = await run(QUERY);
 		const covered = new Set<DimKey>();
-		// 序列与能力词不是查询条件能写的维度（`term.ts` 的 `SCOPE_FIELDS`），
-		// 它们只从 URL 上来，没有下推那一条路可验
-		const scopable = DIM_KEYS.filter((key) => isScopeField(key));
+		// 序列与能力词不是查询条件能写的维度；经历时长写进主张是累计口径，
+		// 和视图筛选的单段口径不是同一件事（`tests/conditions.ts`）
+		const scopable = DIM_KEYS.filter(
+			(key) => key !== "seq" && key !== "skill" && key !== "minMonths",
+		);
+		const [claim] = parseQuery(QUERY);
+		if (claim?.about !== "experience")
+			throw new Error("夹具的查询该是一条主张");
 		for (const key of scopable)
 			for (const row of base.facets[key]) {
 				covered.add(key);
 				const filtered = await run(QUERY, pick(key, row.value));
 				const scoped = await search(
-					{
-						terms: [...parseQuery(QUERY), ...scopeTerms(pick(key, row.value))],
-					},
+					{ conditions: asConditions(pick(key, row.value), claim) },
 					{},
 				);
 				assert.deepEqual(

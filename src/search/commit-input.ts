@@ -11,7 +11,7 @@ import { boundedText } from "./text";
 
 /**
  * 收窄放在跨进程这一跳，不放在 `createTurn` 里：不可信的只有这一跳。
- * 整份 `SearchSpec` 在这里一次收窄，证据、范围与提示不会各走一条旁路。
+ * 整份 `SearchSpec` 在这里一次收窄，没有第二个入口。
  */
 export function validateCommit(d: unknown): {
 	parentTurnId: string | undefined;

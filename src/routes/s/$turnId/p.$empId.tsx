@@ -19,6 +19,7 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { dots, positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
+import { claimName } from "#/search/condition-label";
 import { fetchEmployee } from "#/server/functions";
 
 /**
@@ -208,7 +209,11 @@ function Person() {
 							hitIndex={hitIndex}
 							rows={timeline}
 						/>
-						<Timeline hitIndex={hitIndex} rows={timeline} />
+						<Timeline
+							hitIndex={hitIndex}
+							names={search?.claims.map(claimName) ?? []}
+							rows={timeline}
+						/>
 					</div>
 				</section>
 			</div>

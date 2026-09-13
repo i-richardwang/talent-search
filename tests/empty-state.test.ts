@@ -15,17 +15,18 @@ import {
 	CLEARED_FILTERS,
 	type View,
 } from "#/routes/s/$turnId/-lib/view-params";
+import type { Condition } from "#/search/condition";
 import type { EmptyReason } from "#/search/empty";
 import { parseQuery } from "#/search/query-syntax";
-import type { Term } from "#/search/term";
+import { claimsOf } from "#/search/result";
 
 /** 跑一次空态，把按钮按下去，回收它想改的东西 */
 function run(reason: EmptyReason, query = "") {
 	let changed: Partial<View> | undefined;
-	let revised: Term[] | undefined;
+	let revised: Condition[] | undefined;
 	let focused = false;
 	const copy = emptyState(reason, {
-		terms: parseQuery(query),
+		conditions: parseQuery(query),
 		onChange: (next) => {
 			changed = next;
 		},
@@ -42,7 +43,10 @@ function run(reason: EmptyReason, query = "") {
 
 describe("取数超限：是一种结果，不是一次失败", () => {
 	test("只点名实际贡献事实行最多的条件，出口是改条件不是清筛选", () => {
-		const s = run({ kind: "overflowEvidence", terms: ["经理"] }, "算法,经理");
+		const s = run(
+			{ kind: "overflowEvidence", claims: claimsOf(parseQuery("经理")) },
+			"算法,经理",
+		);
 		assert.equal(s.title, "条件太宽");
 		assert.match(s.hint, /「经理」/);
 		assert.doesNotMatch(s.hint, /算法/, "贡献较少的词不背锅");
@@ -50,7 +54,7 @@ describe("取数超限：是一种结果，不是一次失败", () => {
 		assert.equal(s.changed, undefined, "筛选不是病因");
 	});
 
-	test("范围过大时要求继续收窄，不冒充范围内没人", () => {
+	test("人太多时要求继续收窄，不冒充没人", () => {
 		const s = run({ kind: "overflowPopulation" });
 		assert.equal(s.title, "范围太大");
 		assert.equal(s.focused, true);
@@ -87,8 +91,8 @@ describe("其余各支各说各的", () => {
 		assert.equal(run({ kind: "noConditions" }).title, "没有读出条件");
 	});
 
-	test("范围里没人：说范围，不冒充解析失败", () => {
-		assert.equal(run({ kind: "scopeEmpty" }).title, "这个范围内没有人");
+	test("只有人的条件而没有这样的人：说没有，不冒充解析失败", () => {
+		assert.equal(run({ kind: "personEmpty" }).title, "没有这样的人");
 	});
 
 	test("证据要求滤空了：报出关掉之后能看到几个，出口就是关掉它", () => {
@@ -105,7 +109,7 @@ describe("其余各支各说各的", () => {
 		assert.ok(!("strong" in (s.changed ?? {})), "证据要求不归「清除筛选」管");
 	});
 
-	test("AND 没满足：指向把某个必须词改成加分", () => {
+	test("AND 没满足：指向把某条必须的主张改成加分", () => {
 		const s = run({ kind: "unmet" });
 		assert.match(s.hint, /加分/);
 		assert.equal(s.focused, true);

@@ -1,8 +1,8 @@
 /**
  * 打分、AND 判定、排序、分面——一次检索里除了「取数」之外的全部逻辑。
  *
- * 这个文件**没有 SQL，也没有数据库**。检索层只负责回答「哪些经历段命中了哪个
- * 条件」这个纯事实问题，剩下的全部在这里对内存里的事实求值。
+ * 这个文件**没有 SQL，也没有数据库**。检索层只负责回答「哪些经历段命中了哪条
+ * 主张」这个纯事实问题，剩下的全部在这里对内存里的事实求值。
  *
  * 打分是纯函数，调权重不必连接数据库；排名与分面对同一份事实做不同分组，
  * 两者的口径由结构保证一致。
@@ -24,11 +24,11 @@ import {
 	type Facet,
 } from "./dimensions";
 import {
+	type Claim,
+	type ClaimBasis,
 	emptyFacets,
 	type Facets,
 	type SearchFilters,
-	type TermBasis,
-	type TermPlan,
 } from "./result";
 import {
 	BOOST_WEIGHT,
@@ -42,7 +42,7 @@ import {
 } from "./weights";
 
 /**
- * 一段经历对一条条件的命中。这是检索层唯一的产物：**事实，不含任何评分**。
+ * 一段经历对一条主张的命中。这是检索层唯一的产物：**事实，不含任何评分**。
  *
  * 字段只有两类：打分要用的（route / relevance / months / endDate）和分面要
  * 分组的（那几维要读哪些列由 `DimSource` 声明，跟着维度走）。`id` 只用来
@@ -53,11 +53,16 @@ export type PopulationFact = DimSource & { empId: string };
 
 export type Fact = PopulationFact & {
 	id: number;
-	termIdx: number;
-	/** 命中的是这条条件的哪个取值。只进证据行，不进分。 */
-	value: string;
-	route: Route;
-	/** 说法与这一路原文的相关度，已过 RELEVANCE_MIN */
+	/** 属于第几条主张 */
+	claim: number;
+	/** 命中的是这条主张的哪个经历词。只进证据行，不进分；不比文本的主张为 null。 */
+	value: string | null;
+	/**
+	 * 命中的那一路。没有经历词的主张（「待过字节」）不比文本：这一段落在范围里
+	 * 就是证据，为 null——它的可信度是登记字段那一档，强度 1。
+	 */
+	route: Route | null;
+	/** 说法与这一路原文的相关度，已过 RELEVANCE_MIN；不比文本的主张恒为 1 */
 	relevance: number;
 	/**
 	 * 命中的那条说法的文本，只有抽取的两路带（其余路的文本就是经历行上的
@@ -74,10 +79,16 @@ export type Fact = PopulationFact & {
 /**
  * 一条证据的强度 = 路权重 × 相关度。两个都是「这条证据有多能说明他真的做过
  * 用户要的那件事」的因子：路权重管字段是谁写的，相关度管原文离查询词多远。
- * 一条条件的几个取值同权：它们都是模型对「要找什么」的表达，没有哪个更像原话。
+ * 一条主张的几个经历词同权：它们都是模型对「要找什么」的表达，没有哪个更像原话。
+ * 不比文本的主张，证据就是登记的公司、来源与时长，强度 1。
  */
 function evidenceWeight(f: Fact) {
-	return ROUTE_WEIGHTS[f.route] * f.relevance;
+	return (f.route === null ? 1 : ROUTE_WEIGHTS[f.route]) * f.relevance;
+}
+
+/** 这条证据是不是受控字段给的。落在范围里本身就是登记事实，算受控。 */
+function controlled(f: Fact) {
+	return f.route === null || isControlledRoute(f.route);
 }
 
 /**
@@ -105,34 +116,30 @@ export function gapMonths(endDate: string | null, now: Date) {
 }
 
 /**
- * 一条条件对一个人的分数 = **强度 × 时长 × 近因**，三个都是有界因子。
+ * 一条主张对一个人的分数 = **强度 × 时长 × 近因**，三个都是有界因子。
  *
  * **强度**取该人所有命中段里最强的一条证据（路权重 × 相关度，见
  * evidenceWeight）。做过三段算法不比做过一段更「做过」，所以强度不累加，
  * 它回答的是「最强的那条证据有多能说明他真的做过」。
  *
- * **时长与近因只看并列最强的那些段。** 这两样是「那条证据」的属性：拿简历里
- * 提过一句的段去给序列命中续时长，是把两种强度的证据混成一份。规则简单的
- * 好处是分数永远解释得清——它回答的始终是「最强的那条证据有多强、有多久、
- * 有多近」。
- *
- * 两个因子的下限刻意抬得很高，好让它们**永远压不过证据强度**（论证见 weights.ts
- * 的 TENURE_FLOOR）：它们决定的是同一档证据内部的先后，不是证据的档次。
+ * **时长是全部命中段的累计**，近因取其中最近的一段。它们回答的是「他在这件事上
+ * 沉淀了多久、离开多久」，一段简历里提过的算法经历也是算法经历；证据档位
+ * 不会因此被翻盘——两个因子的下限刻意抬得很高（论证见 weights.ts 的 TENURE_FLOOR），
+ * 它们决定的是同一档证据内部的先后，不是证据的档次。主张上的 `minMonths`
+ * 判的就是这个累计值：筛和排看的是同一个数，证据行上写的也是它。
  */
-function termValue(facts: Fact[], term: string, now: Date) {
+function claimValue(facts: Fact[], now: Date) {
 	let best: Fact | undefined;
 	for (const f of facts)
 		if (!best || evidenceWeight(f) > evidenceWeight(best)) best = f;
 	if (!best) return { score: 0, basis: null };
 	const strength = evidenceWeight(best);
-	let months = 0;
+	const months = monthsOf(facts);
 	let gap = Number.POSITIVE_INFINITY;
 	let endDate: string | null | undefined;
 	// 只有全部段都来自入职前，这个累计值才配叫「前」（见 result.ts 的 external）
 	let external = true;
 	for (const f of facts) {
-		if (evidenceWeight(f) < strength) continue;
-		months += f.months;
 		if (f.kind !== "external") external = false;
 		gap = Math.min(gap, gapMonths(f.endDate, now));
 		if (f.endDate === null) endDate = null;
@@ -145,32 +152,56 @@ function termValue(facts: Fact[], term: string, now: Date) {
 			saturate(months, TENURE_HALF, TENURE_FLOOR) *
 			decay(gap, RECENCY_HALF, RECENCY_FLOOR),
 		basis: {
-			term,
 			route: best.route,
 			value: best.value,
 			relevance: best.relevance,
 			months,
 			endDate: endDate ?? null,
 			external,
-		} satisfies TermBasis,
+		} satisfies ClaimBasis,
 	};
 }
 
-/** 一个人在一次检索里的全部事实：条件下标 → 命中的段 */
+/**
+ * 这些证据段的累计月数。一段只计一次：同一段靠两个经历词各命中一回，取数 SQL
+ * 已经去重（`search.ts` 的 textualFacts），这里再按段 id 认一遍，让「一段十二
+ * 个月不会数成二十四」不依赖另一个文件的一条 distinct。
+ */
+function monthsOf(facts: readonly Fact[]) {
+	const seen = new Set<number>();
+	let months = 0;
+	for (const f of facts)
+		if (!seen.has(f.id)) {
+			seen.add(f.id);
+			months += f.months;
+		}
+	return months;
+}
+
+/** 满足这条主张：有证据段，而且累计时长够。 */
+function satisfies(claim: Claim, facts: Fact[] | undefined): facts is Fact[] {
+	if (!facts || facts.length === 0) return false;
+	return !claim.minMonths || monthsOf(facts) >= claim.minMonths;
+}
+
+/** 一个人在一次检索里的全部事实：主张下标 → 命中的段 */
 type Person = Map<number, Fact[]>;
 
-/** 把一个人的事实按条件归拢。AND 判定问的是「每条条件都有段吗」。 */
-function byTerm(facts: readonly Fact[]): Person {
+/** 一条事实放进这个人按主张归拢的那一格。 */
+function file(p: Person, f: Fact) {
+	const list = p.get(f.claim);
+	if (list) list.push(f);
+	else p.set(f.claim, [f]);
+}
+
+/** 把一个人的事实按主张归拢。AND 判定问的是「每条主张都有段吗」。 */
+function byClaim(facts: readonly Fact[]): Person {
 	const p: Person = new Map();
-	for (const f of facts) {
-		const list = p.get(f.termIdx);
-		if (list) list.push(f);
-		else p.set(f.termIdx, [f]);
-	}
+	for (const f of facts) file(p, f);
 	return p;
 }
 
-/** 按人、按词归拢通过 `keep` 的事实；后续计算只读取这份稳定集合。 */
+/** 按人、按主张归拢通过 `keep` 的事实；后续计算只读取这份稳定集合。 */
 function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 	const byEmp = new Map<string, Person>();
 	for (const f of facts) {
@@ -180,46 +211,59 @@ function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 			p = new Map();
 			byEmp.set(f.empId, p);
 		}
-		const list = p.get(f.termIdx);
-		if (list) list.push(f);
-		else p.set(f.termIdx, [f]);
+		file(p, f);
 	}
 	return byEmp;
 }
 
 /**
- * 这个人算不算数：**每个必须词**都得命中（AND 语义）；开了证据要求就还得
- * 每个必须词都有受控命中。
+ * 这个人算不算数：**每条必须的主张**都得满足（AND 语义）；开了证据要求就还得
+ * 每条必须的主张都有受控命中。
  *
- * 加分词不参与，这就是它「加分」的全部含义：只进分数，不进判定。证据要求同样
- * 只管必须词——要求一个可有可无的词必须有受控证据，是自相矛盾的。
+ * 加分的主张不参与，这就是它「加分」的全部含义：只进分数，不进判定。证据要求
+ * 同样只管必须的——要求一条可有可无的主张必须有受控证据，是自相矛盾的。
  */
-function complete(p: Person, terms: TermPlan[], strong: boolean) {
-	for (const [i, t] of terms.entries()) {
-		if (t.mode !== "must") continue;
+function complete(p: Person, claims: Claim[], strong: boolean) {
+	for (const [i, claim] of claims.entries()) {
+		if (claim.mode !== "must") continue;
 		const fs = p.get(i);
-		if (!fs) return false;
-		if (strong && !fs.some((f) => isControlledRoute(f.route))) return false;
+		if (!satisfies(claim, fs)) return false;
+		if (strong && !fs.some(controlled)) return false;
 	}
 	return true;
 }
 
 /**
- * 总分 = 必须词的乘积 × 加分词的抬升。
+ * 总分 = 必须主张的乘积 × 加分主张的抬升 × 人的偏好的抬升。
  *
- * 必须词之间是乘积：一个词弱，整个人就被压下去。淘汰由 `complete` 负责，不是
+ * 必须主张之间是乘积：一条弱，整个人就被压下去。淘汰由 `complete` 负责，不是
  * 由乘积负责——加分那一半恒大于 1，只抬不压，所以不会出现「命中得越少分越高」。
+ * 满足的每一条偏好各乘一次（`BOOST_WEIGHT`），经历上的和人上的一样：条件之间
+ * 彼此独立，「最好字节来的」和「最好是硕士」满足一条就该得一条的分。
  */
-function score(p: Person, terms: TermPlan[], now: Date) {
+function score(
+	p: Person,
+	claims: Claim[],
+	preferred: readonly ReadonlySet<string>[],
+	empId: string,
+	now: Date,
+) {
 	let s = 1;
-	const basis: (TermBasis | null)[] = [];
-	for (const [i, t] of terms.entries()) {
+	const basis: (ClaimBasis | null)[] = [];
+	for (const [i, claim] of claims.entries()) {
 		const fs = p.get(i);
-		const value = termValue(fs ?? [], t.term, now);
-		basis.push(value.basis);
-		if (t.mode === "must") s *= value.score;
-		else if (fs) s *= 1 + BOOST_WEIGHT * value.score;
+		const value = claimValue(fs ?? [], now);
+		if (claim.mode === "must") {
+			basis.push(value.basis);
+			s *= value.score;
+		} else if (satisfies(claim, fs)) {
+			// 够不上时长的加分主张不加分，依据也不留：留了它就会画成一行命中，
+			// 而名次里没有它——「看得见的东西能解释看到的名次」就此破掉
+			basis.push(value.basis);
+			s *= 1 + BOOST_WEIGHT * value.score;
+		} else basis.push(null);
 	}
+	for (const set of preferred) if (set.has(empId)) s *= 1 + BOOST_WEIGHT;
 	return { score: s, basis };
 }
 
@@ -259,8 +303,8 @@ function keeps(f: SearchFilters, except?: Except) {
  * 代价是同一份事实要走两遍。没有任何分面筛选时两遍结果相同，但那是运行时才
  * 知道的事，为它加一条快路要多养一个「两遍必须等价」的不变量。
  *
- * **语义检索和结构化范围走的是同一份实现**，差别只在 `admits`：前者要凑齐
- * 全部必须词（AND），后者没有语义证据可言、人人算数。各写一份的话，同一栏
+ * **语义检索和只有人的条件的查询走的是同一份实现**，差别只在 `admits`：前者要凑齐
+ * 全部必须的主张（AND），后者没有语义证据可言、人人算数。各写一份的话，同一栏
  * 筛选在两种查询下是两种东西——一种点得动，另一种选中一项之后其余项归零。
  */
 function facetRows<K extends DimKey, F extends PopulationFact>(
@@ -331,7 +375,7 @@ function tally<K extends DimKey, F extends PopulationFact>(
  */
 function computeFacets(
 	facts: Fact[],
-	terms: TermPlan[],
+	claims: Claim[],
 	filters: SearchFilters,
 ): Facets {
 	const out = emptyFacets();
@@ -340,16 +384,16 @@ function computeFacets(
 			out,
 			key,
 			facetRows(facts, key, filters, (person, strong) =>
-				complete(byTerm(person), terms, strong),
+				complete(byClaim(person), claims, strong),
 			),
 		);
 
 	// 「证据要求」这一维的两头：打开还剩几个（on）、关掉能看到几个（off）。
 	// 两个数都把证据要求自己摘掉之后再算。
 	for (const p of bucket(facts, keeps(filters, "strong")).values()) {
-		if (!complete(p, terms, false)) continue;
+		if (!complete(p, claims, false)) continue;
 		out.strong.off++;
-		if (complete(p, terms, true)) out.strong.on++;
+		if (complete(p, claims, true)) out.strong.on++;
 	}
 	return out;
 }
@@ -367,27 +411,25 @@ function fill(out: Facets, key: DimKey, rows: Facet[]) {
 }
 
 /**
- * 结构化范围没有语义证据：一段经历落在范围里，这个人就算数。
+ * 只有人的条件、没有经历主张的查询：人过了条件就算数，没有语义证据可言。
  *
  * 「证据够不够硬」问的不是这批事实，所以证据要求在这里被摘掉；其余各维走的是
  * 和语义检索**同一份** `facetRows`——值域只看这次查询、计数摘掉这一维自己的
- * 筛选。两条路各写一份分面的话，同一栏筛选在结构化查询下会变成「点一项，
+ * 筛选。两条路各写一份分面的话，同一栏筛选在这种查询下会变成「点一项，
  * 其余项当场消失」。
  */
 export function rankPopulation(
 	facts: PopulationFact[],
 	filters: SearchFilters,
-	/** 满足偏好范围的人（`search.ts` 的 `fetchPreferred`）。没有偏好就是空集。 */
-	preferred: ReadonlySet<string> = new Set(),
+	/** 每条人的偏好各一份满足它的人（`search.ts` 的 `fetchPreferred`）。 */
+	preferred: readonly ReadonlySet<string>[] = [],
 ): { empIds: string[]; facets: Facets; total: number } {
 	const effective = { ...filters, strong: undefined };
-	// 没有分数可排的路上，偏好就是唯一的先后：满足的在前，其余按工号
+	// 没有分数可排的路上，偏好就是唯一的先后：满足得多的在前，其余按工号
+	const met = (id: string) => preferred.filter((set) => set.has(id)).length;
 	const empIds = [
 		...new Set(facts.filter(keeps(effective)).map((fact) => fact.empId)),
-	].sort(
-		(a, b) =>
-			Number(preferred.has(b)) - Number(preferred.has(a)) || a.localeCompare(b),
-	);
+	].sort((a, b) => met(b) - met(a) || a.localeCompare(b));
 	const facets = emptyFacets();
 	for (const key of DIM_KEYS)
 		fill(
@@ -401,7 +443,7 @@ export function rankPopulation(
 type Ranked = {
 	empId: string;
 	score: number;
-	basis: (TermBasis | null)[];
+	basis: (ClaimBasis | null)[];
 };
 
 /**
@@ -412,25 +454,22 @@ type Ranked = {
  */
 export function rank(
 	facts: Fact[],
-	terms: TermPlan[],
+	claims: Claim[],
 	filters: SearchFilters,
 	now: Date,
-	/** 满足偏好范围的人（`search.ts` 的 `fetchPreferred`）。没有偏好就是空集。 */
-	preferred: ReadonlySet<string> = new Set(),
+	/** 每条人的偏好各一份满足它的人（`search.ts` 的 `fetchPreferred`）。 */
+	preferred: readonly ReadonlySet<string>[] = [],
 ): { ranked: Ranked[]; facets: Facets; total: number } {
 	const ranked: Ranked[] = [];
 	for (const [empId, p] of bucket(facts, keeps(filters))) {
-		if (!complete(p, terms, Boolean(filters.strong))) continue;
-		const { score: s, basis } = score(p, terms, now);
-		// 偏好范围和一个命中满分的加分词同一份量：满足乘一次，不满足什么都不乘
-		const score_ = preferred.has(empId) ? s * (1 + BOOST_WEIGHT) : s;
-		ranked.push({ empId, score: score_, basis });
+		if (!complete(p, claims, Boolean(filters.strong))) continue;
+		ranked.push({ empId, ...score(p, claims, preferred, empId, now) });
 	}
 	// 同分按工号，排序才是确定的：翻页靠把 limit 调大重查，前一页必须逐位不变
 	ranked.sort((a, b) => b.score - a.score || a.empId.localeCompare(b.empId));
 	return {
 		ranked,
-		facets: computeFacets(facts, terms, filters),
+		facets: computeFacets(facts, claims, filters),
 		total: ranked.length,
 	};
 }
@@ -440,17 +479,21 @@ export function rank(
  *
  * 只对已经定好名次的那一页算，所以它不进排序的开销。排序键：证据硬的在前，
  * 同档取长的，再同按 id——展示顺序必须是确定的，否则同一次查询刷新两次证据
- * 会换位置。这里刻意不用词分：词分是**人**的属性（累计、近因都跨段），
+ * 会换位置。这里刻意不用主张的分：那是**人**的属性（累计、近因都跨段），
  * 而这里要选的是单独一段，两者不是同一个量。
+ *
+ * 没满足的主张一段都不留（`satisfies`，和打分同一条判定）：够不上累计时长的
+ * 加分主张在名次里没有份，证据行和时间线上也不能有它。
  */
-/** 「这个人的这条条件」的复合 key：工号里不可能出现的字符。 */
-const PER_TERM = "\u0001";
+/** 「这个人的这条主张」的复合 key：工号里不可能出现的字符。 */
+const PER_CLAIM = "\u0001";
 
 export function pageHits(
 	facts: Fact[],
+	claims: readonly Claim[],
 	filters: SearchFilters,
 	empIds: Set<string>,
-	perTerm: number,
+	perClaim: number,
 ): Map<string, Fact[]> {
 	const keep = keeps(filters);
 	// 桶自己带着它是谁的：从第一条事实上反读工号的话，「空桶怎么办」就成了一个
@@ -458,13 +501,15 @@ export function pageHits(
 	const byKey = new Map<string, { empId: string; facts: Fact[] }>();
 	for (const f of facts) {
 		if (!empIds.has(f.empId) || !keep(f)) continue;
-		const k = f.empId + PER_TERM + f.termIdx;
+		const k = f.empId + PER_CLAIM + f.claim;
 		const bucket = byKey.get(k);
 		if (bucket) bucket.facts.push(f);
 		else byKey.set(k, { empId: f.empId, facts: [f] });
 	}
 	const out = new Map<string, Fact[]>();
 	for (const { empId, facts: list } of byKey.values()) {
+		const claim = claims[list[0]?.claim ?? -1];
+		if (!claim || !satisfies(claim, list)) continue;
 		list.sort(
 			(a, b) =>
 				evidenceWeight(b) - evidenceWeight(a) ||
@@ -472,14 +517,14 @@ export function pageHits(
 				a.id - b.id,
 		);
 		const acc = out.get(empId) ?? [];
-		acc.push(...list.slice(0, perTerm));
+		acc.push(...list.slice(0, perClaim));
 		out.set(empId, acc);
 	}
-	// 词序即行序：结果里每个人的每条证据对应一条条件，按条件下标排好再交出去
+	// 主张的顺序即行序：结果里每个人的每条证据对应一条主张，按下标排好再交出去
 	for (const list of out.values())
 		list.sort(
 			(a, b) =>
-				a.termIdx - b.termIdx ||
+				a.claim - b.claim ||
 				evidenceWeight(b) - evidenceWeight(a) ||
 				b.months - a.months,
 		);

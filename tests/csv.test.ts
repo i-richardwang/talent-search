@@ -12,7 +12,7 @@ import { describe, test } from "node:test";
 import { evidenceText } from "#/components/evidence";
 import { csvName, toCsv } from "#/routes/s/$turnId/-lib/csv";
 import type { Pick } from "#/routes/s/$turnId/-lib/picks";
-import type { TermBasis } from "#/search/result";
+import type { ClaimBasis } from "#/search/result";
 import { hit } from "./rows";
 
 const pick = (over: Partial<Pick> = {}): Pick => ({
@@ -22,12 +22,11 @@ const pick = (over: Partial<Pick> = {}): Pick => ({
 	title: "算法工程师",
 	level: "P6",
 	rank: 1,
-	evidence: { 算法: "序列 技术 · 算法 · 83% · 2.3 年" },
+	evidence: ["序列 技术 · 算法 · 83% · 2.3 年", null],
 	...over,
 });
 
-const basis = (over: Partial<TermBasis> = {}): TermBasis => ({
-	term: "算法",
+const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
 	route: "seq",
 	value: "算法",
 	relevance: 0.83,
@@ -69,7 +68,7 @@ describe("导出的 CSV", () => {
 
 	test("逗号、引号、换行不会把一行拆成两行", () => {
 		const text = toCsv(
-			[pick({ evidence: { 算法: '他说 "带过, 一个团队"\n然后走了' } })],
+			[pick({ evidence: ['他说 "带过, 一个团队"\n然后走了'] })],
 			["算法"],
 			true,
 		);
@@ -91,17 +90,18 @@ describe("导出的 CSV", () => {
 
 describe("单元格里那句凭据", () => {
 	test("和屏幕上那一行说的是同一件事", () => {
-		const text = evidenceText(hit({ route: "title" }), basis());
+		const text = evidenceText("算法", hit({ route: "title" }), basis());
 		assert.equal(text, "岗位 算法工程师 · 云梯物流 · 83% · 2.3 年");
 	});
 
 	test("命中的不是代表词时把词写出来", () => {
-		const text = evidenceText(hit({ value: "推荐算法" }), basis());
+		const text = evidenceText("算法", hit({ value: "推荐算法" }), basis());
 		assert.match(text, /^≈ 推荐算法 · /);
 	});
 
 	test("入职前的累计带「前」", () => {
 		const text = evidenceText(
+			"算法",
 			hit(),
 			basis({ external: true, endDate: "2021-06-30" }),
 		);

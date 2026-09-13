@@ -20,7 +20,9 @@ import type { Experience } from "#/db/schema";
 import { experience as seg } from "./rows";
 
 const html = (rows: Experience[]) =>
-	renderToStaticMarkup(<Timeline hitIndex={new Map()} rows={rows} />);
+	renderToStaticMarkup(
+		<Timeline hitIndex={new Map()} names={[]} rows={rows} />,
+	);
 
 describe("时间轴卡片的字号层次", () => {
 	test("简历原文比卡片标题小一档，且走 read-cjk 的行高与行长", () => {

@@ -1,13 +1,12 @@
 /**
  * 人口覆盖宽度：按人量，在查询理解落库前**可见地**停用，成因记在 `off` 上。
  *
- * 一条条件的几个取值同权：宽的那个取值丢掉，其余照常找人；全宽才说明这条
- * 条件几乎不筛人，整条停用、成因写成 `off: "wide"`，用户看得见、能换词、
+ * 一条主张的几个经历词同权：宽的那个丢掉，其余照常找人；全宽才说明这条
+ * 主张几乎不筛人，整条停用、成因写成 `off: "wide"`，用户看得见、能换词、
  * 也能坚持启用。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { parseQuery } from "#/search/query-syntax";
 import { seed, setup } from "./fixture";
 
 const teardown = await setup();
@@ -49,9 +48,9 @@ async function sentence(text: string) {
 describe("太宽的词在理解时停用", () => {
 	test("超过占比的词整条停用，成因是 wide；别的词照常参与", async () => {
 		const spec = await sentence("灵能驾驶, 机甲算法");
-		assert.deepEqual(spec.terms, [
-			{ field: "experience", mode: "must", values: ["灵能驾驶"], off: "wide" },
-			{ field: "experience", mode: "must", values: ["机甲算法"] },
+		assert.deepEqual(spec.conditions, [
+			{ about: "experience", mode: "must", what: ["灵能驾驶"], off: "wide" },
+			{ about: "experience", mode: "must", what: ["机甲算法"] },
 		]);
 	});
 
@@ -60,33 +59,48 @@ describe("太宽的词在理解时停用", () => {
 		// 「哪一段不作数」，命中面广恰恰是它在起作用；而且它按更高的
 		// RELEVANCE_MIN_EXCLUDE 判定，这把尺量出来的根本不是它搜出来的宽。
 		const spec = await sentence("机甲算法, -灵能驾驶");
-		assert.deepEqual(spec.terms, parseQuery("机甲算法,-灵能驾驶"));
+		assert.deepEqual(spec.conditions, [
+			{ about: "experience", mode: "must", what: ["机甲算法"] },
+			{ about: "experience", mode: "exclude", what: ["灵能驾驶"] },
+		]);
 	});
 
 	test("量的是人不是段：一个人囤再多命中段，词也不算宽", async () => {
 		const spec = await sentence("幽冥测绘");
-		assert.deepEqual(spec.terms, parseQuery("幽冥测绘"));
+		assert.deepEqual(spec.conditions, [
+			{ about: "experience", mode: "must", what: ["幽冥测绘"] },
+		]);
 	});
 });
 
-describe("一条条件里只有一部分取值太宽", () => {
-	test("只丢宽的那个取值，条件本身照常参与，不停用", async () => {
-		const spec = await sentence("机甲算法/灵能驾驶");
-		assert.deepEqual(spec.terms, parseQuery("机甲算法"));
-	});
-
-	test("代表词太宽时下一个取值顶上：chip 上写的就是搜的", async () => {
-		const spec = await sentence("灵能驾驶/机甲算法");
-		assert.deepEqual(spec.terms, parseQuery("机甲算法"));
-	});
-
-	test("全部取值都宽才停整条，停的时候取值一个不丢", async () => {
-		const spec = await sentence("灵能驾驶/星际外交");
-		assert.deepEqual(spec.terms, [
+describe("一条主张里只有一部分经历词太宽", () => {
+	test("只丢宽的那个词，主张本身照常参与，不停用；别的项原样留着", async () => {
+		const spec = await sentence("机甲算法/灵能驾驶 kind:internal");
+		assert.deepEqual(spec.conditions, [
 			{
-				field: "experience",
+				about: "experience",
 				mode: "must",
-				values: ["灵能驾驶", "星际外交"],
+				what: ["机甲算法"],
+				kind: "internal",
+			},
+		]);
+	});
+
+	test("代表词太宽时下一个词顶上：chip 上写的就是搜的", async () => {
+		const spec = await sentence("灵能驾驶/机甲算法");
+		assert.deepEqual(spec.conditions, [
+			{ about: "experience", mode: "must", what: ["机甲算法"] },
+		]);
+	});
+
+	test("全部词都宽才停整条，停的时候词一个不丢，也不降成没有词的主张", async () => {
+		const spec = await sentence("灵能驾驶/星际外交 kind:internal");
+		assert.deepEqual(spec.conditions, [
+			{
+				about: "experience",
+				mode: "must",
+				what: ["灵能驾驶", "星际外交"],
+				kind: "internal",
 				off: "wide",
 			},
 		]);

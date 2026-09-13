@@ -16,7 +16,7 @@ import type { Hit } from "#/search/result";
 
 export const hit = (over: Partial<Hit> = {}): Hit => ({
 	experienceId: 1,
-	term: "算法",
+	claim: 0,
 	value: "算法",
 	route: "seq",
 	relevance: 1,

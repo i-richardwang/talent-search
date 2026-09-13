@@ -241,19 +241,19 @@ export async function withAdmission<T>(
 }
 
 /**
- * 命中的说法摆成一张 VALUES 表 `(term_idx, value_idx, phrase_id, relevance)`，
- * 供取数 SQL 沿 `experience_phrase` 走到经历段。`value_idx` 是命中的是这条条件的
- * 第几个取值，只为证据行能说出「命中的是哪个词」。一行都没有时返回 null——
+ * 命中的说法摆成一张 VALUES 表 `(claim_idx, value_idx, phrase_id, relevance)`，
+ * 供取数 SQL 沿 `experience_phrase` 走到经历段。`value_idx` 是命中的是这条主张的
+ * 第几个经历词，只为证据行能说出「命中的是哪个词」。一行都没有时返回 null——
  * 空的 VALUES 不是合法 SQL，而且没有命中就没有取数可做。
  */
 export function admittedTable(
-	rows: { termIdx: number; valueIdx: number; hit: Admitted }[],
+	rows: { claimIdx: number; valueIdx: number; hit: Admitted }[],
 ) {
 	if (rows.length === 0) return null;
 	return sql`(values ${sql.join(
 		rows.map(
 			(r) =>
-				sql`(${r.termIdx}::int, ${r.valueIdx}::int, ${r.hit.phraseId}::int, ${r.hit.relevance}::float)`,
+				sql`(${r.claimIdx}::int, ${r.valueIdx}::int, ${r.hit.phraseId}::int, ${r.hit.relevance}::float)`,
 		),
 		sql`, `,
 	)})`;

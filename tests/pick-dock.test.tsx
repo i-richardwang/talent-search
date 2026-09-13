@@ -22,7 +22,7 @@ const pick = (name: string, rank: number): Pick => ({
 	title: null,
 	level: null,
 	rank,
-	evidence: {},
+	evidence: [],
 });
 
 const picks = (chosen: Pick[]): Picks => ({
@@ -39,7 +39,7 @@ const picks = (chosen: Pick[]): Picks => ({
 
 const markup = (chosen: Pick[]) =>
 	renderToStaticMarkup(
-		<PickDock picks={picks(chosen)} terms={["算法"]} total={80} />,
+		<PickDock picks={picks(chosen)} names={["算法"]} total={80} />,
 	);
 
 describe("挑人那块浮起来的东西", () => {

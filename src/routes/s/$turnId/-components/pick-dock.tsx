@@ -29,12 +29,12 @@ import type { Pick, Picks } from "../-lib/picks";
 /** 选择非空时在内容下沿显示批量操作工具栏。 */
 export function PickDock({
 	picks,
-	terms,
+	names,
 	total,
 }: {
 	picks: Picks;
-	/** 这次查询的条件词，按屏幕上的顺序。导出时一条一列。 */
-	terms: string[];
+	/** 这次查询各主张的名字，按屏幕上的顺序。导出时一条一列。 */
+	names: string[];
 	/** 库里符合条件的总人数。名单上这几个人只是其中一段。 */
 	total: number;
 }) {
@@ -70,7 +70,7 @@ export function PickDock({
 						partial={
 							shownIds.length < total && shownPicked.length === shownIds.length
 						}
-						terms={terms}
+						names={names}
 						total={total}
 					/>
 				</ToolbarGroup>
@@ -82,19 +82,19 @@ export function PickDock({
 /** 导出当前选择的人员，支持附带命中证据；预览展示实际导出列。 */
 function ExportDialog({
 	picked,
-	terms,
+	names,
 	total,
 	partial,
 }: {
 	picked: Pick[];
-	terms: string[];
+	names: string[];
 	total: number;
 	/** 名单上这一批全挑上了，但库里还有没加载出来的人。 */
 	partial: boolean;
 }) {
 	const [open, setOpen] = useState(false);
 	const [evidence, setEvidence] = useState(true);
-	const on = evidence && terms.length > 0;
+	const on = evidence && names.length > 0;
 
 	return (
 		<Dialog onOpenChange={setOpen} open={open}>
@@ -113,7 +113,7 @@ function ExportDialog({
 					className="contents"
 					onSubmit={(event) => {
 						event.preventDefault();
-						download(csvName(), toCsv(picked, terms, on));
+						download(csvName(), toCsv(picked, names, on));
 						setOpen(false);
 					}}
 				>
@@ -124,11 +124,12 @@ function ExportDialog({
 									{col}
 								</Badge>
 							))}
-							{/* 条件词那几列换个调子：它们是随这次查询变的，前面六列不是。 */}
+							{/* 主张那几列换个调子：它们是随这次查询变的，前面六列不是。
+							    两条主张可以同名（「增长」在职的和入职前的），key 只能是位置。 */}
 							{on &&
-								terms.map((term) => (
-									<Badge key={term} size="lg" variant="info">
-										{term}
+								names.map((name, i) => (
+									<Badge key={String(i)} size="lg" variant="info">
+										{name}
 									</Badge>
 								))}
 						</div>
@@ -136,7 +137,7 @@ function ExportDialog({
 							<FieldLabel>
 								<Checkbox
 									checked={evidence}
-									disabled={terms.length === 0}
+									disabled={names.length === 0}
 									onCheckedChange={setEvidence}
 								/>
 								每条条件一列，写上凭据

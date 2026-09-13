@@ -1,19 +1,8 @@
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import { type Strength, strengthOf } from "#/search/evidence";
-import type { Hit, TermBasis } from "#/search/result";
-import type { Route } from "#/search/weights";
-
-export const ROUTE_LABEL: Record<Route, string> = {
-	seq: "序列",
-	title: "岗位",
-	org: "部门或公司",
-	description: "简历原文",
-	skill: "技能",
-	// 做过的事那一路，说法本身已经是「从零搭建 · 推荐系统」，不再另起类型名
-	did: "",
-};
+import { routeLabel, type Strength, strengthOf } from "#/search/evidence";
+import type { ClaimBasis, Hit } from "#/search/result";
 
 const STRENGTH_LABEL: Record<Strength, string> = {
 	controlled: "岗位或序列",
@@ -22,10 +11,10 @@ const STRENGTH_LABEL: Record<Strength, string> = {
 };
 
 /**
- * 条件词那一列的宽度。命中行和「未命中」那一行共用——差一档，那条竖线上的
+ * 主张名字那一列的宽度。命中行和「未命中」那一行共用——差一档，那条竖线上的
  * 内容就会在同一块卡片里错开，而这一列存在的全部理由就是它上下对齐。
  */
-const TERM_W = "w-22";
+const NAME_W = "w-22";
 
 const STRENGTH_HINT: Record<Strength, string> = {
 	controlled: "来自任职记录",
@@ -137,7 +126,8 @@ export function phraseLabel(hit: Hit) {
  * 行内当场答完，不必点进详情。
  *
  * 取的是命中那一路自己的字段值，不是固定取岗位。给错字段比不给更坏：屏幕上会
- * 出现一个和条件毫不相干的岗位名，读起来像是系统匹配错了。
+ * 出现一个和条件毫不相干的岗位名，读起来像是系统匹配错了。没有比文本的命中
+ * （「待过字节」那种主张）没有字段可指，说的是这一段本身：岗位加在哪。
  *
  * `description` 这一路只有 `label` 没有 `value`：命中事实里不带原文（见
  * `search/result.ts` 的 `Hit`），所以这里不假装引用一句话。可核对的完整原文
@@ -151,7 +141,8 @@ function matchedField(hit: Hit): {
 	/** 这一段经历的身份，用来回答「这是哪儿的事」。 */
 	context: string;
 } {
-	const label = ROUTE_LABEL[hit.route];
+	const label = routeLabel(hit.route);
+	if (hit.route === null) return { label, value: hit.title, context: hit.org };
 	switch (hit.route) {
 		case "seq":
 			return { label, value: hit.seq, context: hit.org };
@@ -180,22 +171,27 @@ function matchedField(hit: Hit): {
  *
  * 槽的顺序和屏幕上一致：拿去比的词、命中的字段和这段经历在哪、相关度、时长。
  */
-export function evidenceText(hit: Hit, basis: TermBasis) {
+export function evidenceText(name: string, hit: Hit, basis: ClaimBasis) {
 	const field = matchedField(hit);
 	return dots(
-		hit.value === hit.term ? null : `≈ ${hit.value}`,
+		byOther(name, hit) ? `≈ ${hit.value}` : null,
 		[field.label, field.value ?? field.context].filter(Boolean).join(" "),
 		field.value === null ? null : field.context,
-		relevance(basis.relevance),
+		basis.route === null ? null : relevance(basis.relevance),
 		`${basis.external ? "前 " : ""}${years(basis.months)}`,
 	);
 }
 
+/** 靠代表词之外的另一个经历词命中的：证据行上得先说出「拿去比的是哪个词」。 */
+function byOther(name: string, hit: Hit) {
+	return hit.value !== null && hit.value !== name;
+}
+
 /**
- * 一个人一个条件的一行证据。五段固定的槽，所有人的所有行共用同一套列位置——
+ * 一个人一条主张的一行证据。五段固定的槽，所有人的所有行共用同一套列位置——
  * 这是把表格旋转成块之后仍然能上下扫的原因，只不过那条竖线上现在写着凭据。
  *
- *   [点] [条件词]  [≈ 取值] [命中的字段值 · 这段经历在哪]    [相关度]  [时长]
+ *   [点] [主张]  [≈ 取值] [命中的字段值 · 这段经历在哪]    [相关度]  [时长]
  *
  * 靠这条条件的另一个取值命中时，字段值前面先写「≈ 推荐算法」：这一行凭什么
  * 算命中，第一个要答的就是「拿去比的是哪个词」——chip 上写的是「算法」，比的是
@@ -207,34 +203,34 @@ export function evidenceText(hit: Hit, basis: TermBasis) {
  * 排名不同的人显示同一个数，而这个界面的说服力全在于「看得见的东西能解释
  * 看到的名次」。
  *
- * 只画命中。没命中的条件由 `MissedTerms` 收成一行。
+ * 只画命中。没命中的主张由 `MissedClaims` 收成一行。
  */
 export function EvidenceLine({
-	term,
+	name,
 	boost,
 	hit,
 	basis,
 }: {
-	/** 这一行属于哪条条件（代表词） */
-	term: string;
-	/** 加分词。必须词是默认，默认不该有标记。 */
+	/** 这一行属于哪条主张（代表词，或没有经历词时的整条） */
+	name: string;
+	/** 加分的主张。必须是默认，默认不该有标记。 */
 	boost: boolean;
 	/** 展示用的样例段：点的强度、命中字段、这段经历的身份都来自它 */
 	hit: Hit;
 	/**
-	 * 打分用的聚合值：相关度、并列最强那些段的累计月数、是否仍在进行。
+	 * 打分用的聚合值：相关度、全部证据段的累计月数、是否仍在进行。
 	 *
-	 * 它不可空。一条条件有没有 `basis` 和它有没有样例段是同一件事（两者出自
+	 * 它不可空。一条主张有没有 `basis` 和它有没有样例段是同一件事（两者出自
 	 * 同一次筛选），所以「有 hit 没有 basis」的那一行不存在——调用点只在两样
 	 * 都在时才画这一行。给它配一份退回样例段的算法，等于替一个到不了的分支
 	 * 造一套第二口径的数，而那套数一旦真被用上就和名次对不上了。
 	 */
-	basis: TermBasis;
+	basis: ClaimBasis;
 }) {
-	const name = (
+	const head = (
 		<span className="flex min-w-0 items-center gap-1.5">
 			{boost && <span className="font-mono text-muted-foreground">+</span>}
-			<span className="truncate">{term}</span>
+			<span className="truncate">{name}</span>
 		</span>
 	);
 
@@ -244,10 +240,10 @@ export function EvidenceLine({
 	return (
 		<div className="flex items-baseline gap-2.5 text-sm">
 			<Dot className="translate-y-1" strength={strengthOf(hit.route)} />
-			<span className={cn(TERM_W, "shrink-0")}>{name}</span>
+			<span className={cn(NAME_W, "shrink-0")}>{head}</span>
 			<span className="flex min-w-0 flex-1 items-baseline gap-1.5">
 				{/* 命中的不是代表词时说出是哪个词：一个意外的人得能找到是哪个词招来的 */}
-				{hit.value !== hit.term && (
+				{byOther(name, hit) && (
 					<span className="shrink-0 text-muted-foreground text-xs">
 						≈ {hit.value}
 					</span>
@@ -295,7 +291,8 @@ export function EvidenceLine({
 			 * 它是什么由恒定的列位和那个 % 号说。
 			 */}
 			<span className="w-9 shrink-0 text-right text-muted-foreground text-xs tabular-nums">
-				{relevance(basis.relevance)}
+				{/* 不比文本的主张没有相关度可言；列位留着，行才对得齐 */}
+				{basis.route === null ? "" : relevance(basis.relevance)}
 			</span>
 			<span
 				className={cn(
@@ -311,22 +308,22 @@ export function EvidenceLine({
 }
 
 /**
- * 没命中的那些条件，收成一行。
+ * 没命中的那些主张，收成一行。
  *
- * 「未命中」逐条各占一行的话，五个条件的查询里每一块有三四行读不出东西的灰字，
- * 高度翻倍而信息量为零。但它不能不说：一个条件在这个人身上没有证据，是关于
+ * 「未命中」逐条各占一行的话，五条主张的查询里每一块有三四行读不出东西的灰字，
+ * 高度翻倍而信息量为零。但它不能不说：一条主张在这个人身上没有证据，是关于
  * 这个人的一个事实，留白只会让人以为这一行还没加载完。
  *
  * 槽位和命中行对齐（点、标签列、内容列），所以它读起来仍然是这份证据的一行，
  * 不是一句附注。
  */
-export function MissedTerms({ terms }: { terms: string[] }) {
-	if (terms.length === 0) return null;
+export function MissedClaims({ names }: { names: string[] }) {
+	if (names.length === 0) return null;
 	return (
 		<div className="flex items-baseline gap-2.5 text-muted-foreground text-sm">
 			<Dot className="translate-y-1" strength={undefined} />
-			<span className={cn(TERM_W, "shrink-0")}>未命中</span>
-			<span className="min-w-0 flex-1 truncate">{terms.join("、")}</span>
+			<span className={cn(NAME_W, "shrink-0")}>未命中</span>
+			<span className="min-w-0 flex-1 truncate">{names.join("、")}</span>
 		</div>
 	);
 }

@@ -7,23 +7,42 @@
  * 放在检索层而不是组件层：这里定的是「一条证据算哪一档」，
  * 组件层只负责把这三档翻译成颜色和文案。
  */
-import type { Hit, TermPlan } from "#/search/result";
+import type { Claim, Hit } from "#/search/result";
 import { ROUTE_STRENGTH, type Route, type Strength } from "#/search/weights";
 
 export type { Strength } from "#/search/weights";
 
-export function strengthOf(route: Route): Strength {
-	return ROUTE_STRENGTH[route];
+/** 落在范围里本身就是登记事实（公司、来源、时长都是 HR 登记的），和序列、岗位同档。 */
+export function strengthOf(route: Route | null): Strength {
+	return route === null ? "controlled" : ROUTE_STRENGTH[route];
+}
+
+const ROUTE_LABEL: Record<Route, string> = {
+	seq: "序列",
+	title: "岗位",
+	org: "部门或公司",
+	description: "简历原文",
+	skill: "技能",
+	// 做过的事那一路，说法本身已经是「从零搭建 · 推荐系统」，不再另起类型名
+	did: "",
+};
+
+/**
+ * 一条命中的来源怎么念——证据行、时间线、命令行念的是同一个词。不比文本的
+ * 命中（「待过字节」那种主张）没有路：这一段本身就是证据，念的是它的任职。
+ */
+export function routeLabel(route: Route | null) {
+	return route === null ? "任职" : ROUTE_LABEL[route];
 }
 
 /**
- * 每条条件取展示列表中的第一条命中。hits 已按词序、证据强度、单段时长排好。
+ * 每条主张取展示列表中的第一条命中。hits 已按主张顺序、证据强度、单段时长排好。
  *
- * AND 语义下每个必须词必有命中（rank.ts 的 complete）；加分词可以没有命中，
+ * AND 语义下每条必须的主张必有命中（rank.ts 的 complete）；加分的可以没有，
  * 所以返回值保留 `undefined`，调用方按未命中渲染。
  */
-export function bestHitPerTerm(hits: Hit[], terms: TermPlan[]) {
-	return terms.map((t) => hits.find((h) => h.term === t.term));
+export function bestHitPerClaim(hits: Hit[], claims: readonly Claim[]) {
+	return claims.map((_, i) => hits.find((h) => h.claim === i));
 }
 
 /** 强度由强到弱。时间轴节点要用一段经历里最强的那一路来画。 */

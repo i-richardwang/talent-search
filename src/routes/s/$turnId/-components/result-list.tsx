@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import {
 	Dot,
 	EvidenceLine,
-	MissedTerms,
+	MissedClaims,
 	StrengthLegend,
 } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
@@ -26,9 +26,11 @@ import { Toggle } from "#/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import { type SearchOutcome, type TermPlan, termPlans } from "#/search/result";
+import type { Condition } from "#/search/condition";
+import { conditionKey } from "#/search/condition";
+import { claimName } from "#/search/condition-label";
+import { type Claim, claimsOf, type SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
-import type { Term } from "#/search/term";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 import { emptyState } from "../-lib/empty-state";
 import type { Picks } from "../-lib/picks";
@@ -60,7 +62,7 @@ export function ResultHeader({
 	loading,
 	order,
 	total,
-	terms,
+	claims,
 	strong,
 	onChange,
 	strongOn,
@@ -72,11 +74,11 @@ export function ResultHeader({
 	loading: boolean;
 	order: "relevance" | "employee";
 	total: number;
-	terms: TermPlan[];
+	claims: Claim[];
 	/**
-	 * 这次查询有没有条件——**从记录上算，不等服务端**。
+	 * 这次查询有没有经历主张——**从记录上算，不等服务端**。
 	 *
-	 * 右边那一簇（图例和那个开关）因此从第一帧就在场，而不是等 `terms` 回来。
+	 * 右边那一簇（图例和那个开关）因此从第一帧就在场，而不是等 `claims` 回来。
 	 * 等的话这一行会在结果落地时长高一档（那个开关比一行字高 8px），整份名单
 	 * 跟着往下跳一次。
 	 */
@@ -108,7 +110,7 @@ export function ResultHeader({
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
 				{/* 图例和它旁边那个开关都在讲证据，没有条件的查询里两样都无从说起；
 				    挑人不看条件——按部门圈出来的一批人同样是要交出去的名单。 */}
-				{(planned || terms.length > 0) && (
+				{(planned || claims.length > 0) && (
 					<>
 						<StrengthLegend />
 						<ProvenOnly
@@ -248,12 +250,12 @@ export function ResultList({
 	strong: boolean;
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：给一份新的证据要求，派生一条新记录。 */
-	onReviseQuery: (next: Term[]) => void;
+	onReviseQuery: (next: Condition[]) => void;
 	onEditQuery: () => void;
 	/** 挑人这件事的全部状态，以及名单每一块推好的那份东西（`-lib/picks.ts`）。 */
 	picks: Picks;
 }) {
-	const { results, terms, order, total } = outcome;
+	const { results, claims, order, total } = outcome;
 	// 上一次真正画出来的块数，见 SKELETON_ROWS。写在 effect 里而不是渲染中，
 	// 渲染要保持纯：同一份 props 渲染两遍必须得到同一棵树。
 	const lastRows = useRef(SKELETON_ROWS);
@@ -261,10 +263,10 @@ export function ResultList({
 		if (!loading && results.length > 0) lastRows.current = results.length;
 	}, [loading, results.length]);
 
-	// 这次查询会画几条证据，从记录上算，不等服务端返回 `terms`：改筛选那一帧
+	// 这次查询会画几条证据，从记录上算，不等服务端返回 `claims`：改筛选那一帧
 	// 服务端还是旧值，骨架屏的块高会先跳一下再回来。骨架屏的块高和表头右边
 	// 那一簇都读它——两处都是「结果回来之前就得把位子占好」。
-	const pending = termPlans(spec.terms);
+	const pending = claimsOf(spec.conditions);
 
 	const head = (
 		<ResultHeader
@@ -277,7 +279,7 @@ export function ResultList({
 			planned={pending.length > 0}
 			strong={strong}
 			strongOn={strongOn}
-			terms={terms}
+			claims={claims}
 			total={total}
 		/>
 	);
@@ -309,10 +311,10 @@ export function ResultList({
 								</div>
 								{pending.length > 0 && (
 									<div className="mt-3 space-y-1.5">
-										{pending.map((t) => (
+										{pending.map((c) => (
 											<div
 												className="flex h-lh items-center gap-2.5 text-sm"
-												key={t.term}
+												key={conditionKey(c)}
 											>
 												<Skeleton className="size-2 rounded-full" />
 												<Skeleton className="h-3 w-16" />
@@ -334,7 +336,7 @@ export function ResultList({
 		// 成因由检索层给（`search/empty.ts`），这里只把它翻译成一句话和一个按钮；
 		// 检索还没跑（换查询的头一帧）时按「还没有条件」说。
 		const state = emptyState(outcome.empty ?? { kind: "noConditions" }, {
-			terms: spec.terms,
+			conditions: spec.conditions,
 			onChange,
 			onReviseQuery,
 			onEditQuery,
@@ -482,18 +484,18 @@ export function ResultList({
 								 * 头和身子的分界靠字重字号的落差，够了（AGENTS.md「线只画在有
 								 * 结构含义的地方」）。
 								 */}
-								{terms.length > 0 && (
+								{claims.length > 0 && (
 									<div className="mt-3 space-y-1.5">
-										{hits.map(({ term, hit, basis }) => (
+										{hits.map(({ claim, name, hit, basis }) => (
 											<EvidenceLine
 												basis={basis}
-												boost={term.mode === "boost"}
+												boost={claim.mode === "boost"}
 												hit={hit}
-												key={term.term}
-												term={term.term}
+												key={conditionKey(claim)}
+												name={name}
 											/>
 										))}
-										<MissedTerms terms={missed} />
+										<MissedClaims names={missed} />
 									</div>
 								)}
 							</Card>
@@ -536,11 +538,7 @@ export function ResultList({
 
 			{/* 挑上人之后才浮起来，浮在名单下沿（`pick-dock.tsx` 开头写了为什么在下面） */}
 			{picks.picking && (
-				<PickDock
-					picks={picks}
-					terms={terms.map((t) => t.term)}
-					total={total}
-				/>
+				<PickDock picks={picks} names={claims.map(claimName)} total={total} />
 			)}
 		</CheckboxGroup>
 	);

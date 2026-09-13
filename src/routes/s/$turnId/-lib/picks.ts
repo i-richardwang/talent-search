@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { evidenceText } from "#/components/evidence";
-import { bestHitPerTerm } from "#/search/evidence";
+import { claimName } from "#/search/condition-label";
+import { bestHitPerClaim } from "#/search/evidence";
 import type {
+	Claim,
+	ClaimBasis,
 	Hit,
 	RankedResult,
 	SearchOutcome,
 	SearchResult,
-	TermBasis,
-	TermPlan,
 } from "#/search/result";
 
 /**
@@ -26,16 +27,16 @@ export type Pick = {
 	level: string | null;
 	/** 在这份名单里排第几。CSV 一排序就把顺序丢了，所以名次得写成一列。 */
 	rank: number;
-	/** 条件词 → 这个人在这条条件上的凭据。没命中的条件不在这里。 */
-	evidence: Record<string, string>;
+	/** 每条主张一格，和 `SearchOutcome.claims` 同序；没命中的是 null。 */
+	evidence: (string | null)[];
 };
 
 /** 名单上的一块：画出来要的东西和挑上要的东西，出自同一次推导。 */
 type Row = {
 	result: SearchResult;
-	/** 命中的条件，逐条画一行 */
-	hits: { term: TermPlan; hit: Hit; basis: TermBasis }[];
-	/** 没命中的条件，收成一行 */
+	/** 命中的主张，逐条画一行 */
+	hits: { claim: Claim; name: string; hit: Hit; basis: ClaimBasis }[];
+	/** 没命中的主张的名字，收成一行 */
 	missed: string[];
 	pick: Pick;
 };
@@ -52,26 +53,23 @@ function isRanked(result: SearchResult): result is RankedResult {
  * 样例段和聚合依据出自同一次筛选，所以这两样要么都在、要么都不在
  * （`EvidenceLine` 的 `basis` 不可空，理由在那里）。
  */
-function rowOf(result: SearchResult, rank: number, terms: TermPlan[]): Row {
+function rowOf(result: SearchResult, rank: number, claims: Claim[]): Row {
 	const ranked = isRanked(result) ? result : null;
-	const best = bestHitPerTerm(ranked?.hits ?? [], terms);
-	const hits = terms.flatMap((term, i) => {
+	const best = bestHitPerClaim(ranked?.hits ?? [], claims);
+	const lines = claims.map((claim, i) => {
 		const hit = best[i];
 		const basis = ranked?.basis[i];
-		return hit && basis ? [{ basis, hit, term }] : [];
+		return hit && basis ? { basis, hit, claim, name: claimName(claim) } : null;
 	});
 	const e = result.employee;
 	return {
-		hits,
-		missed: terms.filter((_, i) => !best[i]).map((t) => t.term),
+		hits: lines.filter((line) => line !== null),
+		missed: claims.filter((_, i) => !lines[i]).map(claimName),
 		pick: {
 			dept: e.curDept,
 			empId: e.empId,
-			evidence: Object.fromEntries(
-				hits.map(({ term, hit, basis }) => [
-					term.term,
-					evidenceText(hit, basis),
-				]),
+			evidence: lines.map((line) =>
+				line ? evidenceText(line.name, line.hit, line.basis) : null,
 			),
 			level: e.curLevel,
 			name: e.name,
@@ -95,8 +93,8 @@ function rowOf(result: SearchResult, rank: number, terms: TermPlan[]): Row {
  */
 export function usePicks(turnId: string, outcome: SearchOutcome) {
 	const rows = useMemo(
-		() => outcome.results.map((r, i) => rowOf(r, i + 1, outcome.terms)),
-		[outcome.results, outcome.terms],
+		() => outcome.results.map((r, i) => rowOf(r, i + 1, outcome.claims)),
+		[outcome.results, outcome.claims],
 	);
 	const [picking, setPicking] = useState(false);
 	const [picked, setPicked] = useState(NONE);

@@ -13,7 +13,7 @@ import {
 	rank,
 	rankPopulation,
 } from "#/search/rank";
-import type { SearchFilters, TermPlan } from "#/search/result";
+import type { Claim, SearchFilters } from "#/search/result";
 import {
 	BOOST_WEIGHT,
 	RECENCY_FLOOR,
@@ -21,6 +21,7 @@ import {
 	ROUTE_WEIGHTS,
 	TENURE_FLOOR,
 } from "#/search/weights";
+import { claim } from "./conditions";
 
 /** 固定的「今天」：近因因子让分数依赖当前时间，测试不能跟着日历漂 */
 const NOW = new Date(2026, 0, 1);
@@ -29,7 +30,7 @@ let nextId = 1;
 function fact(p: Partial<Fact> & { empId: string }): Fact {
 	return {
 		id: nextId++,
-		termIdx: 0,
+		claim: 0,
 		value: "词0",
 		route: "seq",
 		relevance: 1,
@@ -49,13 +50,13 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 	};
 }
 
-const terms = (...modes: TermPlan["mode"][]): TermPlan[] =>
-	modes.map((mode, i) => ({ term: `词${i}`, values: [`词${i}`], mode }));
+const claims = (...modes: Claim["mode"][]): Claim[] =>
+	modes.map((mode, i) => claim(`词${i}`, { mode }) as Claim);
 
-const run = (facts: Fact[], t = terms("must"), f: SearchFilters = {}) =>
+const run = (facts: Fact[], t = claims("must"), f: SearchFilters = {}) =>
 	rank(facts, t, f, NOW);
 
-const scoreOf = (facts: Fact[], t?: TermPlan[], f?: SearchFilters) => {
+const scoreOf = (facts: Fact[], t?: Claim[], f?: SearchFilters) => {
 	const { ranked } = run(facts, t, f);
 	return ranked[0]?.score ?? 0;
 };
@@ -100,7 +101,7 @@ describe("证据强度不可被时长或近因压过", () => {
 	});
 });
 
-/** 一条条件的几个取值同权：靠哪个取值命中只进证据行，不进分。 */
+/** 一条主张的几个经历词同权：靠哪个词命中只进证据行，不进分。 */
 describe("取值", () => {
 	test("同一段原文，靠哪个取值命中分数都一样", () => {
 		const first = scoreOf([fact({ empId: "A", value: "词0" })]);
@@ -110,11 +111,11 @@ describe("取值", () => {
 
 	test("同一段几个取值都命中时取最强的那条，不叠加", () => {
 		const both = scoreOf([
-			fact({ empId: "A", value: "词0" }),
-			fact({ empId: "A", value: "别的取值", relevance: 0.8 }),
+			fact({ empId: "A", id: 7, value: "词0" }),
+			fact({ empId: "A", id: 7, value: "别的取值", relevance: 0.8 }),
 		]);
-		const one = scoreOf([fact({ empId: "A", value: "词0" })]);
-		// 同段两行本该在取数 SQL 里就去重掉（search.ts 的 canonicalFacts），
+		const one = scoreOf([fact({ empId: "A", id: 7, value: "词0" })]);
+		// 同段两行本该在取数 SQL 里就去重掉（search.ts 的 textualFacts），
 		// 这里只保证万一漏到内存里，强度按最强的那条算，月份也不因此翻倍。
 		assert.equal(both, one);
 	});
@@ -191,20 +192,92 @@ describe("近因", () => {
 	});
 });
 
-describe("偏好范围", () => {
-	test("满足的人乘一次加分词的份量，不满足的什么都不乘", () => {
+describe("人的偏好", () => {
+	test("满足的人每条各乘一次加分的份量，不满足的什么都不乘", () => {
 		const facts = [fact({ empId: "A" }), fact({ empId: "B" })];
 		const plain = run(facts).ranked;
-		const { ranked } = rank(facts, terms("must"), {}, NOW, new Set(["B"]));
+		const { ranked } = rank(facts, claims("must"), {}, NOW, [
+			new Set(["B"]),
+			new Set(["A", "B"]),
+		]);
 		assert.equal(ranked[0]?.empId, "B");
 		assert.equal(ranked[1]?.empId, "A");
-		assert.equal(ranked[1]?.score, plain[0]?.score);
-		assert.equal(ranked[0]?.score, (plain[0]?.score ?? 0) * (1 + BOOST_WEIGHT));
+		// 「最好字节来的」和「最好是硕士」各是一条：满足一条得一条的分
+		assert.equal(ranked[1]?.score, (plain[0]?.score ?? 0) * (1 + BOOST_WEIGHT));
+		assert.equal(
+			ranked[0]?.score,
+			(plain[0]?.score ?? 0) * (1 + BOOST_WEIGHT) ** 2,
+		);
+	});
+});
+
+describe("没有经历词的主张", () => {
+	test("落在范围里的段就是证据：强度是登记那一档，证据要求也认它", () => {
+		const plain = [fact({ empId: "A", route: null, value: null })];
+		const seq = [fact({ empId: "B", route: "seq" })];
+		assert.equal(scoreOf(plain), scoreOf(seq));
+		assert.equal(run(plain, claims("must"), { strong: true }).total, 1);
+		assert.deepEqual(run(plain).ranked[0]?.basis[0], {
+			route: null,
+			value: null,
+			relevance: 1,
+			months: 24,
+			endDate: null,
+			external: false,
+		});
+	});
+});
+
+describe("累计时长的门槛", () => {
+	const three: Claim = {
+		about: "experience",
+		mode: "must",
+		what: ["词0"],
+		minMonths: 36,
+	};
+
+	test("判的是累计：两段各二十个月的人过得了三年，一段二十个月的过不了", () => {
+		const facts = [
+			fact({ empId: "A", months: 20 }),
+			fact({ empId: "A", months: 20 }),
+			fact({ empId: "B", months: 20 }),
+		];
+		assert.deepEqual(
+			run(facts, [three]).ranked.map((r) => r.empId),
+			["A"],
+		);
+	});
+
+	test("加分的主张不够时长就不加分，人还在；依据和证据段也不留", () => {
+		const facts = [
+			fact({ empId: "A", claim: 0 }),
+			fact({ empId: "A", claim: 1, months: 12 }),
+			fact({ empId: "B", claim: 0 }),
+		];
+		const list: Claim[] = [
+			claims("must")[0] as Claim,
+			{ ...three, mode: "boost" },
+		];
+		const { ranked } = run(facts, list);
+		assert.equal(ranked.length, 2);
+		assert.equal(
+			ranked[0]?.score,
+			ranked[1]?.score,
+			"十二个月够不上三年，A 不该被抬",
+		);
+		// 名次里没有它，证据行上就不能有它：留一条「+ 词0 · 1 年」画成命中，
+		// 读者会问为什么它没把 A 抬到前面
+		assert.equal(ranked.find((r) => r.empId === "A")?.basis[1], null);
+		const shown = pageHits(facts, list, {}, new Set(["A"]), 3).get("A") ?? [];
+		assert.deepEqual(
+			shown.map((f) => f.claim),
+			[0],
+		);
 	});
 });
 
 describe("排名依据", () => {
-	test("逐词依据保留实际参与打分的累计时长与最近时间", () => {
+	test("逐条主张的依据保留实际参与打分的累计时长与最近时间", () => {
 		const facts = [
 			fact({ empId: "A", months: 60, endDate: "2019-01-01" }),
 			fact({ empId: "A", months: 48, endDate: "2020-01-01" }),
@@ -214,7 +287,6 @@ describe("排名依据", () => {
 		const { ranked } = run(facts);
 		assert.deepEqual(ranked[0]?.basis, [
 			{
-				term: "词0",
 				route: "seq",
 				value: "词0",
 				relevance: 1,
@@ -224,7 +296,8 @@ describe("排名依据", () => {
 			},
 		]);
 
-		const shown = pageHits(facts, {}, new Set(["A"]), 3).get("A") ?? [];
+		const shown =
+			pageHits(facts, claims("must"), {}, new Set(["A"]), 3).get("A") ?? [];
 		assert.equal(shown.length, 3, "时间线只需保留有限条原始命中");
 		assert.ok(
 			shown.every((item) => item.endDate !== null),
@@ -232,14 +305,13 @@ describe("排名依据", () => {
 		);
 	});
 
-	test("没有命中的加分词保留空依据", () => {
+	test("没有命中的加分主张保留空依据", () => {
 		const { ranked } = run(
-			[fact({ empId: "A", termIdx: 0 })],
-			terms("must", "boost"),
+			[fact({ empId: "A", claim: 0 })],
+			claims("must", "boost"),
 		);
 		assert.deepEqual(ranked[0]?.basis, [
 			{
-				term: "词0",
 				route: "seq",
 				value: "词0",
 				relevance: 1,
@@ -251,13 +323,15 @@ describe("排名依据", () => {
 		]);
 	});
 
-	test("并列最强的序列与岗位共同累计", () => {
+	test("全部证据段共同累计，不分哪一路：一段简历里提过的算法经历也是算法经历", () => {
 		const { ranked } = run([
 			fact({ empId: "A", route: "seq", months: 12 }),
 			fact({ empId: "A", route: "title", months: 18 }),
-			fact({ empId: "A", route: "org", months: 60 }),
+			fact({ empId: "A", route: "description", months: 60 }),
 		]);
-		assert.equal(ranked[0]?.basis[0]?.months, 30);
+		assert.equal(ranked[0]?.basis[0]?.months, 90);
+		// 强度仍只看最强那条：累计不会把自述抬成登记
+		assert.equal(ranked[0]?.basis[0]?.route, "seq");
 	});
 
 	/**
@@ -279,8 +353,7 @@ describe("排名依据", () => {
 		assert.equal(pure.ranked[0]?.basis[0]?.external, true);
 	});
 
-	test("被强度挡掉的段不参与「入职前」判定，和时长口径一致", () => {
-		// 序列命中全在入职前，简历里那一段在职——后者根本不参与累计
+	test("「入职前」和累计看的是同一批段：弱证据段也算", () => {
 		const { ranked } = run([
 			fact({ empId: "A", route: "seq", kind: "external", months: 24 }),
 			fact({
@@ -290,8 +363,8 @@ describe("排名依据", () => {
 				months: 240,
 			}),
 		]);
-		assert.equal(ranked[0]?.basis[0]?.external, true);
-		assert.equal(ranked[0]?.basis[0]?.months, 24);
+		assert.equal(ranked[0]?.basis[0]?.external, false);
+		assert.equal(ranked[0]?.basis[0]?.months, 264);
 	});
 });
 
@@ -308,13 +381,14 @@ describe("相关度（路权重 × 相关度）", () => {
 		assert.ok(RELEVANCE_MIN * ROUTE_WEIGHTS.seq > ROUTE_WEIGHTS.org);
 	});
 
-	test("时长与近因只跟着最强那条证据：高相似在场时，低相似不续时长", () => {
-		const mixed = scoreOf([
+	test("低相似的段续时长，但强度仍取最强那条", () => {
+		const mixed = run([
 			fact({ empId: "A", months: 12 }),
 			fact({ empId: "A", relevance: 0.7, months: 240 }),
-		]);
+		]).ranked[0];
 		const clean = scoreOf([fact({ empId: "B", months: 12 })]);
-		assert.equal(mixed, clean);
+		assert.ok((mixed?.score ?? 0) > clean);
+		assert.equal(mixed?.basis[0]?.relevance, 1);
 	});
 
 	test("相关度不受下限保护：又长又新的相近命中可以反超又短又旧的原词命中", () => {
@@ -337,31 +411,29 @@ describe("相关度（路权重 × 相关度）", () => {
 
 	test("证据要求看的是路（受控字段），与相关度正交", () => {
 		const facts = [fact({ empId: "A", relevance: 0.65 })];
-		assert.equal(run(facts, terms("must"), { strong: true }).total, 1);
+		assert.equal(run(facts, claims("must"), { strong: true }).total, 1);
 	});
 });
 
-describe("时长与近因只算最强那一路的段", () => {
-	test("简历里提过一句，不给序列命中续时长", () => {
+describe("累计跨档位，但档位不被累计翻盘", () => {
+	test("简历里提过一句给序列命中续时长，却压不过一段短的序列命中的档位", () => {
 		const mixed = scoreOf([
 			fact({ empId: "A", route: "seq", months: 12 }),
 			fact({ empId: "A", route: "description", months: 240 }),
 		]);
 		const clean = scoreOf([fact({ empId: "B", route: "seq", months: 12 })]);
-		assert.equal(
-			mixed,
-			clean,
-			"弱证据段不该改变强证据的时长——那是把两档证据混成一份",
-		);
+		assert.ok(mixed > clean, "累计答的是「沉淀了多久」，自述的段也算");
+		const orgLong = scoreOf([fact({ empId: "C", route: "org", months: 252 })]);
+		assert.ok(clean > orgLong, "档位仍由最强证据定，时长翻不了盘");
 	});
 });
 
 describe("必须、加分与证据要求", () => {
-	const two = terms("must", "must");
+	const two = claims("must", "must");
 
-	test("缺一个必须词就整个不算数", () => {
+	test("缺一条必须的主张就整个不算数", () => {
 		const { ranked } = run(
-			[fact({ empId: "A", termIdx: 0 }), fact({ empId: "B", termIdx: 1 })],
+			[fact({ empId: "A", claim: 0 }), fact({ empId: "B", claim: 1 })],
 			two,
 		);
 		assert.deepEqual(
@@ -371,48 +443,48 @@ describe("必须、加分与证据要求", () => {
 		);
 	});
 
-	test("必须词之间是乘积：一个词弱，整个人被压下去", () => {
+	test("必须的主张之间是乘积：一条弱，整个人被压下去", () => {
 		const strong = scoreOf(
 			[
-				fact({ empId: "A", termIdx: 0 }),
-				fact({ empId: "A", termIdx: 1, route: "seq" }),
+				fact({ empId: "A", claim: 0 }),
+				fact({ empId: "A", claim: 1, route: "seq" }),
 			],
 			two,
 		);
 		const weak = scoreOf(
 			[
-				fact({ empId: "B", termIdx: 0 }),
-				fact({ empId: "B", termIdx: 1, route: "description" }),
+				fact({ empId: "B", claim: 0 }),
+				fact({ empId: "B", claim: 1, route: "description" }),
 			],
 			two,
 		);
 		assert.ok(strong > weak);
 	});
 
-	test("加分词不命中也留下，命中就往上抬", () => {
-		const t = terms("must", "boost");
+	test("加分的主张不命中也留下，命中就往上抬", () => {
+		const t = claims("must", "boost");
 		const { ranked } = run(
 			[
-				fact({ empId: "A", termIdx: 0 }),
-				fact({ empId: "A", termIdx: 1 }),
-				fact({ empId: "B", termIdx: 0 }),
+				fact({ empId: "A", claim: 0 }),
+				fact({ empId: "A", claim: 1 }),
+				fact({ empId: "B", claim: 0 }),
 			],
 			t,
 		);
 		assert.deepEqual(
 			ranked.map((r) => r.empId),
 			["A", "B"],
-			"命中加分词的人在前，没命中的仍然在结果里",
+			"命中加分主张的人在前，没命中的仍然在结果里",
 		);
 	});
 
-	test("证据要求只管必须词，且要求每个必须词都有受控命中", () => {
+	test("证据要求只管必须的主张，且要求每条都有受控命中", () => {
 		const facts = [
-			fact({ empId: "A", termIdx: 0, route: "seq" }),
-			fact({ empId: "B", termIdx: 0, route: "description" }),
+			fact({ empId: "A", claim: 0, route: "seq" }),
+			fact({ empId: "B", claim: 0, route: "description" }),
 		];
 		assert.deepEqual(
-			run(facts, terms("must"), { strong: true }).ranked.map((r) => r.empId),
+			run(facts, claims("must"), { strong: true }).ranked.map((r) => r.empId),
 			["A"],
 		);
 		assert.equal(run(facts).total, 2, "关掉之后两个人都在");
@@ -438,7 +510,7 @@ describe("分面与名次是同一个口径", () => {
 	});
 
 	test("算某一维时摘掉这一维自己的筛选，否则选中之后就切不动了", () => {
-		const { facets, total } = run(facts, terms("must"), {
+		const { facets, total } = run(facts, claims("must"), {
 			seq: [{ l1: "技术", l2: "算法" }],
 		});
 		assert.equal(total, 2, "结果本身是被筛过的");
@@ -450,14 +522,14 @@ describe("分面与名次是同一个口径", () => {
 	});
 
 	test("一维之内多选是「或」：两个职级都要，人就是两边的并集", () => {
-		const both = run(facts, terms("must"), { level: ["P6", "P7"] });
-		const p6 = run(facts, terms("must"), { level: ["P6"] });
-		const p7 = run(facts, terms("must"), { level: ["P7"] });
+		const both = run(facts, claims("must"), { level: ["P6", "P7"] });
+		const p6 = run(facts, claims("must"), { level: ["P6"] });
+		const p7 = run(facts, claims("must"), { level: ["P7"] });
 		assert.equal(both.total, p6.total + p7.total);
 	});
 
 	test("维度之间是「与」：两维各选一项，人得同时满足", () => {
-		const { total } = run(facts, terms("must"), {
+		const { total } = run(facts, claims("must"), {
 			level: ["P7"],
 			seq: [{ l1: "技术", l2: "渠道" }],
 		});
@@ -465,7 +537,7 @@ describe("分面与名次是同一个口径", () => {
 	});
 
 	test("跟人走的维度同样收窄别的维度", () => {
-		const { facets, total } = run(facts, terms("must"), { level: ["P7"] });
+		const { facets, total } = run(facts, claims("must"), { level: ["P7"] });
 		assert.equal(total, 2);
 		assert.equal(facets.seq.find((s) => s.value.l2 === "算法")?.n, 1);
 		assert.equal(facets.level.find((l) => l.value === "P6")?.n, 1);
@@ -486,7 +558,7 @@ describe("分面与名次是同一个口径", () => {
 	test("被别的维度挤到 0 的选项留在原地，不消失", () => {
 		// 列表在手底下换形状，比列表长一点难用得多：消失的那一行是用户自己
 		// 刚做的事的后果，藏起来就没法回头
-		const { facets } = run(facts, terms("must"), { level: ["P6"] });
+		const { facets } = run(facts, claims("must"), { level: ["P6"] });
 		assert.equal(facets.seq.find((s) => s.value.l2 === "渠道")?.n, 0);
 	});
 
@@ -519,7 +591,7 @@ describe("分面与名次是同一个口径", () => {
 	});
 });
 
-describe("结构化范围的人群排序", () => {
+describe("只有人的条件的人群排序", () => {
 	const facts = [
 		fact({ empId: "B", seqL2: "算法", kind: "external", level: "P7" }),
 		fact({ empId: "A", seqL2: "算法", kind: "internal", level: "P6" }),

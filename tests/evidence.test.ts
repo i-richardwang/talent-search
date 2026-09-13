@@ -4,15 +4,16 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { bestHitPerTerm, bestStrength, strengthOf } from "#/search/evidence";
-import type { TermPlan } from "#/search/result";
+import { bestHitPerClaim, bestStrength, strengthOf } from "#/search/evidence";
+import type { Claim } from "#/search/result";
 import { ROUTE_WEIGHTS, type Route } from "#/search/weights";
+import { claim } from "./conditions";
 import { hit as row } from "./rows";
 
-const hit = (term: string, route: Route) => row({ term, route });
+const hit = (claim: number, route: Route | null) => row({ claim, route });
 
-const terms = (...t: string[]): TermPlan[] =>
-	t.map((term) => ({ term, values: [term], mode: "must" }));
+const claims = (...what: string[]): Claim[] =>
+	what.map((w) => claim(w) as Claim);
 
 describe("强度分档", () => {
 	test("受控字段是序列与岗位，且它们权重最高", () => {
@@ -63,20 +64,21 @@ describe("强度分档", () => {
 		);
 	});
 
+	test("不比文本的命中（落在范围里的段）是登记事实，算受控", () => {
+		assert.equal(strengthOf(null), "controlled");
+	});
+
 	test("一段经历按它最强的那一路上色", () => {
-		assert.equal(
-			bestStrength([hit("算法", "description"), hit("运营", "org")]),
-			"org",
-		);
+		assert.equal(bestStrength([hit(0, "description"), hit(1, "org")]), "org");
 		assert.equal(bestStrength([]), undefined);
 	});
 });
 
-describe("每条条件取最好的那条命中", () => {
-	test("按条件的顺序对齐，不按命中的顺序", () => {
-		const best = bestHitPerTerm(
-			[hit("运营", "org"), hit("算法", "seq")],
-			terms("算法", "运营"),
+describe("每条主张取最好的那条命中", () => {
+	test("按主张的顺序对齐，不按命中的顺序", () => {
+		const best = bestHitPerClaim(
+			[hit(1, "org"), hit(0, "seq")],
+			claims("算法", "运营"),
 		);
 		assert.deepEqual(
 			best.map((h) => h?.route),
@@ -84,10 +86,10 @@ describe("每条条件取最好的那条命中", () => {
 		);
 	});
 
-	test("同一个词有多条时取展示列表中排在第一的那条", () => {
-		const best = bestHitPerTerm(
-			[hit("算法", "seq"), hit("算法", "description")],
-			terms("算法"),
+	test("同一条主张有多条时取展示列表中排在第一的那条", () => {
+		const best = bestHitPerClaim(
+			[hit(0, "seq"), hit(0, "description")],
+			claims("算法"),
 		);
 		assert.equal(best[0]?.route, "seq");
 	});

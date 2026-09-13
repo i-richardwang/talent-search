@@ -3,24 +3,24 @@ import { HistoryIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "#/components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
+import { activeConditions } from "#/search/condition";
+import { conditionLabel, MODE_GLYPH } from "#/search/condition-label";
 import type { SearchSpec } from "#/search/spec";
-import { activeTerms } from "#/search/term";
 import type { RecentSearch } from "#/server/turn";
-import { MODE_GLYPH, termLabel } from "../-lib/term-label";
 
 /**
  * 一行记录读的是**原话**——和查询台上那一行是同一样东西（见 `query-deck.tsx`）。
  * 回头找一次搜过的东西，认出来靠的是自己当时怎么说的，不是系统把它读成的那几个词：
- * 条件词是原话的解释，点进去就在屏幕上，这里再摆一遍只会把「我问的」换成「它懂的」。
+ * 条件是原话的解释，点进去就在屏幕上，这里再摆一遍只会把「我问的」换成「它懂的」。
  *
  * 没有原话的记录只有一种：直接拿一份条件调 RPC 落下的（`kind: "spec"` 且没有父
- * 记录），界面产生不出来。它的门面本来就是条件本身，所以落到条件词上。
+ * 记录），界面产生不出来。它的门面本来就是条件本身，所以落到条件上。
  */
 function recentLabel(spec: SearchSpec, rawText: string | null) {
 	if (rawText) return rawText;
 	// 停用的条件不出现：它没参与这次检索，写出来就是把没搜的当成搜过的
-	const labels = activeTerms(spec.terms).map(
-		(t) => MODE_GLYPH[t.mode] + termLabel(t),
+	const labels = activeConditions(spec.conditions).map(
+		(c) => MODE_GLYPH[c.mode] + conditionLabel(c),
 	);
 	return labels.join(" / ") || "没有生效的条件";
 }

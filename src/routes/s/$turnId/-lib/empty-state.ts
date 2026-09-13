@@ -1,5 +1,6 @@
+import { type Condition, withOff } from "#/search/condition";
+import { claimName } from "#/search/condition-label";
 import type { EmptyReason } from "#/search/empty";
-import { type Term, withOff } from "#/search/term";
 import { CLEARED_FILTERS, type View } from "./view-params";
 
 /**
@@ -24,11 +25,11 @@ type EmptyCopy = {
 
 type Handlers = {
 	/** 这条查询的条件。「把停用的全部启用」改的是它。 */
-	terms: readonly Term[];
+	conditions: readonly Condition[];
 	/** 改视图：筛选、翻页。不产生新的查询记录。 */
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：派生一条新记录。 */
-	onReviseQuery: (next: Term[]) => void;
+	onReviseQuery: (next: Condition[]) => void;
 	onEditQuery: () => void;
 };
 
@@ -41,7 +42,7 @@ const COPY: {
 } = {
 	overflowEvidence: (reason, h) => ({
 		title: "条件太宽",
-		hint: `「${reason.terms.join("」「")}」太宽，写具体一点，或先停用。`,
+		hint: `「${reason.claims.map(claimName).join("」「")}」太宽，写具体一点，或先停用。`,
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	overflowPopulation: (_reason, h) => ({
@@ -56,7 +57,7 @@ const COPY: {
 			label: "启用全部",
 			// 启用是**改查询**，不是改视图：条件变了，找的就是另一批人。所以它
 			// 派生一条新记录。
-			onClick: () => h.onReviseQuery(h.terms.map((t) => withOff(t, null))),
+			onClick: () => h.onReviseQuery(h.conditions.map((c) => withOff(c, null))),
 		},
 	}),
 	excludeOnly: (_reason, h) => ({
@@ -69,9 +70,9 @@ const COPY: {
 		hint: "换一句，例如「做过渠道运营、带过团队」。",
 		action: { label: "重新输入", onClick: h.onEditQuery },
 	}),
-	scopeEmpty: (_reason, h) => ({
-		title: "这个范围内没有人",
-		hint: "去掉一项范围再搜。",
+	personEmpty: (_reason, h) => ({
+		title: "没有这样的人",
+		hint: "去掉一项条件再搜。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	strongEmpty: (reason, h) => ({

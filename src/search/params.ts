@@ -1,11 +1,29 @@
 /**
- * 不可信入参 → 可信的检索条件。维度那七项归 `dimensions.ts` 的 `parsePicked`，
+ * 不可信入参 → 可信的结果视图筛选。维度那八项归 `dimensions.ts` 的 `parsePicked`，
  * 这里只收不属于那一族的几项。
  */
-import { DIM_KEYS, parsePicked, textList } from "./dimensions";
+import { DIM_KEYS, type Picked, parsePicked, textList } from "./dimensions";
 import type { SearchFilters } from "./result";
-import type { SearchScope } from "./spec";
 import { RESULT_MAX, RESULT_PAGE } from "./weights";
+
+/**
+ * 筛选栏里**收窄人群**的那批筛选：八个维度，加上公司名与学校名两个文本条件。
+ *
+ * 它是「怎么看这批人」，来自 URL、一次性；查询自己的条件（`condition.ts`）是
+ * 「问的是什么」，住在不可变的记录里。两者是不同的东西，各有各的形状——筛选栏
+ * 按分面维度长，条件按 HR 的一句话长。
+ */
+export type Population = Picked & {
+	/**
+	 * 待过的部门或公司名里含这几个字之一。
+	 *
+	 * `org` 与 `school` 是**精确文本条件**，不是维度：公司名、学校名是专有名词，
+	 * 永远不进向量（「字节」和「腾讯」在向量空间里是邻居）。按人判，在取数的 SQL 里生效。
+	 */
+	org?: readonly string[];
+	/** 学校名里含这几个字之一。和 `org` 同一类。 */
+	school?: readonly string[];
+};
 
 /**
  * 公司名 / 学校名的取值。URL 上的只有手打一种来源，一个名字不必写成列表；
@@ -16,16 +34,15 @@ function nameList(raw: unknown) {
 }
 
 /**
- * 不可信入参 → 那批收窄人群的条件。
+ * 不可信入参 → 那批收窄人群的筛选。
  *
- * URL 与 RPC 的视图筛选共用这一入口。维度那七项怎么收窄写在它们自己的声明里
+ * URL 与 RPC 的视图筛选共用这一入口。维度那八项怎么收窄写在它们自己的声明里
  * （`dimensions.ts` 的 `parse`），这里只多收不属于那一族的两项。
  *
- * 收不出取值的那一项不留键：`{ org: undefined }` 和 `{}` 说的是同一件事，而这份
- * 条件用于视图筛选及人群收窄判断。
+ * 收不出取值的那一项不留键：`{ org: undefined }` 和 `{}` 说的是同一件事。
  */
-export function parsePopulation(raw: Record<string, unknown>): SearchScope {
-	const pick: SearchScope = { ...parsePicked(raw) };
+export function parsePopulation(raw: Record<string, unknown>): Population {
+	const pick: Population = { ...parsePicked(raw) };
 	const org = nameList(raw.org);
 	if (org) pick.org = org;
 	const school = nameList(raw.school);
@@ -54,15 +71,15 @@ export const POPULATION_KEYS = [
 	...DIM_KEYS,
 	"org",
 	"school",
-] as const satisfies readonly (keyof SearchScope)[];
+] as const satisfies readonly (keyof Population)[];
 
 /**
- * 这份条件收窄人群了吗。查询范围和 URL 上的筛选共用它——它们是同一批条件。
+ * 这份筛选收窄人群了吗。
  *
  * 问的是**取值**不是键：`{ org: undefined }` 和 `{}` 说的是同一件事，让键的有无
- * 参与判断的话，每一处构造条件的代码都得记着不许留空键，而忘了不会报错。
+ * 参与判断的话，每一处构造筛选的代码都得记着不许留空键，而忘了不会报错。
  */
-export function narrowsPopulation(pick: SearchScope) {
+export function narrowsPopulation(pick: Population) {
 	return POPULATION_KEYS.some((key) => pick[key] !== undefined);
 }
 

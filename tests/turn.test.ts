@@ -19,38 +19,42 @@ const { createTurn, listRecent, loadTurn, resolveTurn } = await import(
 	"#/server/turn"
 );
 
-const termsOf = (spec: SearchSpec) => spec.terms.map((t) => t.values[0]);
+/** 每条条件的代表词：主张的第一个经历词，人的条件的第一个取值。 */
+const wordsOf = (spec: SearchSpec) =>
+	spec.conditions.map((c) =>
+		c.about === "experience" ? c.what?.[0] : c.values[0],
+	);
 
 async function sentence(text: string, parent?: string) {
 	const { turnId } = await createTurn({ kind: "sentence", text }, parent);
 	const spec = await resolveTurn(turnId);
-	return { turnId, spec, terms: termsOf(spec) };
+	return { turnId, spec, words: wordsOf(spec) };
 }
 
 describe("整句的改写", () => {
 	test("新的一句整份替换旧条件，链上仍是同一次找人任务", async () => {
 		const root = await sentence("算法");
-		assert.deepEqual(root.terms, ["算法"]);
+		assert.deepEqual(root.words, ["算法"]);
 
 		// 改写不是追加：屏幕上那句话是查询的完整表示，换一句就该整份重读，
 		// 否则删掉的词会从上一版的条件里活着回来。
 		const child = await sentence("渠道运营", root.turnId);
-		assert.deepEqual(child.terms, ["渠道运营"]);
+		assert.deepEqual(child.words, ["渠道运营"]);
 		const row = await loadTurn(child.turnId);
 		assert.equal(row?.rootTurnId, root.turnId, "改写不开新链");
 	});
 
-	test("上一条的范围不跟着过来", async () => {
+	test("上一条的主张各项不跟着过来", async () => {
 		const root = await createTurn({
 			kind: "spec",
-			spec: { terms: parseQuery("算法,kind:external,minMonths:24") },
+			spec: { conditions: parseQuery("算法 kind:external minMonths:24") },
 		});
 		const child = await createTurn(
 			{ kind: "sentence", text: "渠道运营" },
 			root.turnId,
 		);
 		const spec = await resolveTurn(child.turnId);
-		assert.deepEqual(spec.terms, parseQuery("渠道运营"));
+		assert.deepEqual(spec.conditions, parseQuery("渠道运营"));
 	});
 });
 
@@ -60,7 +64,7 @@ describe("只改条件", () => {
 		const tuned = await createTurn(
 			{
 				kind: "spec",
-				spec: { terms: parseQuery("+算法") },
+				spec: { conditions: parseQuery("+算法") },
 			},
 			root.turnId,
 		);
@@ -85,7 +89,7 @@ describe("门面", () => {
 		const { turnId } = await createTurn(
 			{
 				kind: "spec",
-				spec: { terms: parseQuery("+算法") },
+				spec: { conditions: parseQuery("+算法") },
 			},
 			root.turnId,
 		);
@@ -135,7 +139,7 @@ describe("理解失败", () => {
 		assert.equal((await loadTurn(turnId))?.spec, null);
 
 		const spec = await resolveTurn(turnId);
-		assert.deepEqual(termsOf(spec), ["算法"]);
+		assert.deepEqual(wordsOf(spec), ["算法"]);
 	});
 
 	/**
@@ -146,7 +150,9 @@ describe("理解失败", () => {
 	test("模型给了条件、收窄后一个不剩：也是失败，不落库", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const restore = answerIntent(() => ({
-			terms: [{ field: "level", mode: "must", values: ["资深"] }],
+			conditions: [
+				{ about: "person", field: "level", mode: "must", values: ["资深"] },
+			],
 		}));
 		try {
 			await assert.rejects(resolveTurn(turnId));
@@ -155,21 +161,21 @@ describe("理解失败", () => {
 		}
 		assert.equal((await loadTurn(turnId))?.spec, null);
 
-		assert.deepEqual(termsOf(await resolveTurn(turnId)), ["算法"]);
+		assert.deepEqual(wordsOf(await resolveTurn(turnId)), ["算法"]);
 	});
 
 	test("只丢一部分是设计内的：剩下的条件照常落库", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const restore = answerIntent(() => ({
-			terms: [
-				{ field: "level", mode: "boost", values: ["资深"] },
-				{ field: "minMonths", mode: "must", values: ["三年"] },
-				{ field: "experience", mode: "must", values: ["算法"] },
+			conditions: [
+				{ about: "person", field: "level", mode: "boost", values: ["资深"] },
+				{ about: "experience", mode: "must", minMonths: -36 },
+				{ about: "experience", mode: "must", what: ["算法"] },
 			],
 		}));
 		try {
-			assert.deepEqual((await resolveTurn(turnId)).terms, [
-				{ field: "experience", mode: "must", values: ["算法"] },
+			assert.deepEqual((await resolveTurn(turnId)).conditions, [
+				{ about: "experience", mode: "must", what: ["算法"] },
 			]);
 		} finally {
 			restore();

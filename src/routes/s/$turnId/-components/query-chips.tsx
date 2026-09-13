@@ -14,19 +14,26 @@ import {
 } from "#/components/ui/menu";
 import { cn } from "#/lib/utils";
 import {
+	type Condition,
+	conditionKey,
+	type Mode,
 	modesOf,
-	type Term,
-	type TermMode,
-	termKey,
+	partsOf,
 	withMode,
 	withOff,
-	withoutValue,
-} from "#/search/term";
-import { MODE_GLYPH, termLabel, valueLabel } from "../../../-lib/term-label";
+	withoutPart,
+} from "#/search/condition";
+import {
+	conditionLabel,
+	hasMore,
+	MODE_GLYPH,
+	partLabel,
+} from "#/search/condition-label";
 
 /**
- * 一条查询条件一枚 chip，支持改强度、启停和删除取值。
- * chip 展示代表词，菜单展示完整取值；编辑通过 term.ts 的变换生成新查询。
+ * 一条查询条件一枚 chip，支持改强度、启停和逐项去掉。
+ * chip 上念一遍这条条件（每项只念代表取值），菜单里列出它的每一项；
+ * 编辑通过 condition.ts 的变换生成新查询。
  */
 
 /**
@@ -35,7 +42,7 @@ import { MODE_GLYPH, termLabel, valueLabel } from "../../../-lib/term-label";
  * 描边和实心的差别足够读出「这一枚不一样」，而且不占任何一个色相
  * （全站的色相已经各有其主，见 `evidence.tsx`）。
  */
-const MODE_VARIANT: Record<TermMode, "secondary" | "outline"> = {
+const MODE_VARIANT: Record<Mode, "secondary" | "outline"> = {
 	must: "secondary",
 	boost: "outline",
 	exclude: "outline",
@@ -44,20 +51,20 @@ const MODE_VARIANT: Record<TermMode, "secondary" | "outline"> = {
 /** chip 的尺码。和 `MODE_VARIANT` 一起，构成 chip 静息态的全部外观。 */
 const CHIP_SIZE = "xs" as const;
 
-const MODE_LABEL: Record<TermMode, string> = {
+const MODE_LABEL: Record<Mode, string> = {
 	must: "必须",
 	boost: "加分",
 	exclude: "排除",
 };
 
-const MODE_HINT: Record<TermMode, string> = {
+const MODE_HINT: Record<Mode, string> = {
 	must: "只留满足这项的人",
 	boost: "满足这项的人排前面",
 	exclude: "不作证据；仅此类经历的人会消失",
 };
 
 /**
- * 排除词划掉：排除的意思正是「把它划掉」，这一层不必再解释一遍。
+ * 排除的条件划掉：排除的意思正是「把它划掉」，这一层不必再解释一遍。
  *
  * 只划掉，不降色。降色是**停用**那一档的语言（见下面的 `OFF_STYLE`），
  * 两件事借同一个记号，一枚划掉又发灰的 chip 就说不清自己是「不要这种人」
@@ -68,7 +75,7 @@ const EXCLUDE_STYLE = "line-through";
 /**
  * 停用的样子：虚线边 + 次要色。
  *
- * 不用划掉——那是排除词的意思（「干过的人不要」），两件事撞在同一个记号上
+ * 不用划掉——那是排除的意思（「干过的人不要」），两件事撞在同一个记号上
  * 会让人以为停用一个词等于排除它，而那正好是反的。也不用透明度：`opacity`
  * 会把里面那个强度符号一起调淡，而重新启用之后它是必须还是加分，恰恰是
  * 停用期间最该看得清的一件事。虚线是「这里有个位置，但现在是空的」的通用画法。
@@ -79,32 +86,33 @@ const OFF_STYLE = "border-dashed text-muted-foreground";
 const MORE_GLYPH = "≈";
 
 export function QueryChips({
-	terms,
+	conditions,
 	onChange,
 }: {
 	/** 这条查询的条件，一条一枚 chip。 */
-	terms: readonly Term[];
-	onChange: (next: Term[]) => void;
+	conditions: readonly Condition[];
+	onChange: (next: Condition[]) => void;
 }) {
-	if (terms.length === 0) return null;
+	if (conditions.length === 0) return null;
 
-	const replaceAt = (i: number, next: Term | null) =>
+	const replaceAt = (i: number, next: Condition | null) =>
 		onChange(
 			next === null
-				? terms.filter((_, j) => j !== i)
-				: terms.map((t, j) => (j === i ? next : t)),
+				? conditions.filter((_, j) => j !== i)
+				: conditions.map((c, j) => (j === i ? next : c)),
 		);
 	// 不套自己的盒子：这几枚 chip 是查询带那一行里的元素，横着排还是换行由
 	// 摆它们的地方说了算（`query-deck.tsx`——那条带在 lg 以上是定高的一行）。
 	// 自己再包一层 flex，那一层的换行就会在带子里长出第二行来。
 	return (
 		<>
-			{terms.map((chip, i) => {
-				const label = termLabel(chip);
-				const more = chip.values.length > 1;
+			{conditions.map((chip, i) => {
+				const label = conditionLabel(chip);
+				const more = hasMore(chip);
+				const parts = partsOf(chip);
 				const wide = chip.off === "wide";
 				return (
-					<Menu key={termKey(chip)}>
+					<Menu key={conditionKey(chip)}>
 						<MenuTrigger
 							render={
 								<Button
@@ -159,7 +167,7 @@ export function QueryChips({
 							)}
 							<MenuRadioGroup
 								onValueChange={(mode) =>
-									replaceAt(i, withMode(chip, mode as TermMode))
+									replaceAt(i, withMode(chip, mode as Mode))
 								}
 								value={chip.mode}
 							>
@@ -176,20 +184,26 @@ export function QueryChips({
 									</MenuRadioItem>
 								))}
 							</MenuRadioGroup>
-							{chip.values.length > 1 && (
+							{parts.length > 1 && (
 								<>
 									<MenuSeparator />
 									<MenuGroup>
-										<MenuGroupLabel>任一满足即可</MenuGroupLabel>
-										{chip.values.map((value) => (
+										{/* 经历主张的各项说的是同一段经历；同一项里的几个取值任一即可。
+										    标题只说前一件事，后一件事由 chip 上的 ≈ 说。 */}
+										<MenuGroupLabel>
+											{chip.about === "experience"
+												? "同一段经历"
+												: "任一满足即可"}
+										</MenuGroupLabel>
+										{parts.map((part) => (
 											<MenuItem
-												key={value}
-												onClick={() => replaceAt(i, withoutValue(chip, value))}
+												key={`${part.key}\u0001${part.value}`}
+												onClick={() => replaceAt(i, withoutPart(chip, part))}
 											>
-												{/* 一行两段：取值，和点了会怎样。删是这一行唯一的动作，
+												{/* 一行两段：这一项，和点了会怎样。去掉是这一行唯一的动作，
 												    所以整行可点，末尾说明白。 */}
 												<span className="flex flex-1 items-baseline gap-2">
-													<span>{valueLabel(chip, value)}</span>
+													<span>{partLabel(chip, part)}</span>
 													<span className="ml-auto text-muted-foreground text-xs">
 														去掉
 													</span>
@@ -202,7 +216,7 @@ export function QueryChips({
 							{/*
 							 * 那枚开关和删除挨着放，但不是一档事，所以只有删除是危险色：
 							 * 关掉改的是这一次检索，删除改的是查询本身，而后者不可撤销
-							 * （词没了，强度也一起没了）。
+							 * （条件没了，强度也一起没了）。
 							 */}
 							<MenuSeparator />
 							{/*

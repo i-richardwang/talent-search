@@ -1,31 +1,28 @@
 /**
  * 筛选维度的**唯一声明**：一维一段，写在一起。
  *
- * 在这个文件出现之前，「入职前公司档」这个维度在代码里并不存在——存在的是十几
- * 处碰巧都提到了 `companyTag` 的代码：查询范围里的一个字段、URL 里的一个字段、
- * 两处清洗、SQL 里的一个条件、内存里的一个条件、算候选值的一个 switch 分支、
- * 排序规则里的一行、筛选面板里的一行、中文名的一个 case。加一维要手工重演这
- * 十几步，漏一步不会报错，只会算错。
+ * 一个维度会出现在十几处：查询条件里的一个字段、URL 里的一个字段、清洗、SQL
+ * 里的一个条件、内存里的一个条件、候选值、排序规则、筛选面板里的一行、中文名。
+ * 这些各写一份的话，加一维要手工重演十几步，漏一步不会报错，只会算错。
  *
  * 所以这里声明的是**维度本身**，其余各处从它派生：
  *
  * - `values` 一处声明，供出三样东西——分面有哪些候选、每个候选几个人、以及
- *   「这个人过不过这一维的筛选」。它们过去是三段各自手写的代码，而三者一旦
- *   对不上，症状是分面预告的数点下去得不到（`tests/search.test.ts` 对此有断言）。
- * - `parse` 供出唯一那处清洗（`params.ts` 的 `parsePopulation`），URL、RPC、
- *   查询范围三处都走它。
- * - `label` / `option` / `text` 供出筛选栏标题、选项文案与范围标签。
+ *   「这个人过不过这一维的筛选」。三者一旦对不上，症状是分面预告的数点下去
+ *   得不到（`tests/search.test.ts` 对此有断言）。
+ * - `parse` 供出唯一那处清洗：URL / RPC 的筛选（`params.ts` 的 `parsePopulation`）
+ *   和查询条件里的取值（`condition.ts`）都走它。
+ * - `label` / `option` / `text` 供出筛选栏标题、选项文案与条件 chip 的标签。
  * - SQL 那一份在 `search.ts`：谓词由这里的 `match` 家族和那里的一条列表达式
  *   一起推出来，不是第二份手写实现。它没法住在这里——这个文件要进客户端。
  *
- * **为什么谓词必须求值两次。** 查询自带的范围可以直接下推给数据库裁人；筛选栏
+ * **为什么谓词必须求值两次。** 查询条件里的取值可以直接下推给数据库裁段；筛选栏
  * 里勾的不行，因为筛选栏还要回答「再勾一项会剩几人」，那个数只有把没筛之前的
  * 完整事实端在手里才算得出来。所以是「一份声明、两个通用求值器」，而不是
  * 「一份谓词」——求值器各写一次，和维度有几个无关。
  *
- * **范围与筛选是同一维的两种生命周期**，形状因此完全相同（`Picked`）：前者
- * 由记录里的查询条件摊出来（`term.ts` 的 `scopeOf`），后者来自 URL、一次性，
- * 搜索时取交集。
+ * 查询条件里也用到其中几维（`condition.ts`：公司档、经历来源、经历时长在主张上，
+ * 职级、学历、招聘渠道是人的条件），它们只借这里的 `parse` 与 `id`，形状按条件自己长。
  *
  * 公司名（`org`）与学校名（`school`）不在这里：它们是自由文本的模糊匹配、没有
  * 候选列表，硬塞进同一张表就得给每一项加一个「匹配方式」的分叉，那是用一个
@@ -80,10 +77,7 @@ export function isMulti(key: DimKey): boolean {
 	return (MULTI_KEYS as readonly string[]).includes(key);
 }
 
-/**
- * 一次选择。查询自带的范围和 URL 上的筛选共用它——同一维在两种生命周期下
- * 取值形状相同，是这张表能只写一遍的前提。
- */
+/** 一次选择：URL 上的筛选。每一维选了什么，集合维一列、单值维一个。 */
 export type Picked = {
 	[K in DimKey]?: K extends MultiKey ? DimUnit[K][] : DimUnit[K];
 };
@@ -123,13 +117,13 @@ type Match<K extends DimKey> =
 	| { match: "atLeast"; measure: (fact: DimSource) => number };
 
 type Dimension<K extends DimKey> = Match<K> & {
-	/** 维度名。筛选栏的分区标题、范围标签的前缀都读它。 */
+	/** 维度名。筛选栏的分区标题、条件 chip 上的前缀都读它。 */
 	label: string;
 	/** 分桶与比较用的内部身份。不出现在 URL 上。 */
 	id: (value: DimUnit[K]) => string;
 	/** 一个取值在筛选栏里怎么写。分区标题已经说了是什么的，这里不必重复。 */
 	option: (value: DimUnit[K]) => string;
-	/** 这个取值单独拎出来怎么念（查询范围的标签）。默认是「维度名 · 取值」。 */
+	/** 这个取值单独拎出来怎么念（人的条件在 chip 上的标签）。默认是「维度名 · 取值」。 */
 	text?: (value: DimUnit[K]) => string;
 	/** 不可信输入 → 这一维的取值。URL 与 RPC 共用。 */
 	parse: (raw: unknown) => Picked[K];
@@ -209,7 +203,7 @@ function plain(label: string, column: (fact: DimSource) => string | null) {
 /**
  * 八个维度。这张表是它们在全站的唯一定义。
  *
- * 顺序就是筛选栏里从上到下的顺序，也是查询范围标签的顺序。
+ * 顺序就是筛选栏里从上到下的顺序。
  */
 export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	seq: {
@@ -252,8 +246,6 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		values: (f) => [f.kind],
 		id: (v) => v,
 		option: (v) => (v === "internal" ? "公司内经历" : "入职前经历"),
-		// 已经说全了是什么，再加一个维度名前缀就是同一句话说两遍
-		text: (v) => (v === "internal" ? "公司内经历" : "入职前经历"),
 		parse: (raw) =>
 			raw === "internal" || raw === "external" ? raw : undefined,
 		compare: (a, b) => b.n - a.n || a.value.localeCompare(b.value),
@@ -265,7 +257,6 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		measure: (f) => f.months,
 		id: (v) => String(v),
 		option: (v) => duration(v),
-		text: (v) => `一份经历至少 ${duration(v)}`,
 		// 收得最紧的一维：它是唯一参与数值比较的筛选，负数会让它恒真
 		// （`months >= -999`），小数会渲染出「1 年 0.5 个月」这种档位——
 		// 两者都不报错，只会安静地给出说不通的结果。
@@ -277,10 +268,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		compare: (a, b) => a.value - b.value,
 	},
 
-	companyTag: {
-		...plain("入职前公司", (f) => f.companyTag),
-		text: (v) => `入职前公司 · ${v}`,
-	},
+	companyTag: plain("入职前公司", (f) => f.companyTag),
 
 	skill: {
 		label: "入职前技能",
@@ -292,7 +280,6 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		values: (f) => f.skills,
 		id: (v) => v,
 		option: (v) => v,
-		text: (v) => `技能 · ${v}`,
 		parse: textList,
 		compare: byCountThenValue,
 	},
@@ -372,7 +359,7 @@ export function dimOption<K extends DimKey>(key: K, value: DimUnit[K]): string {
 	return DIMENSIONS[key].option(value);
 }
 
-/** 一个取值单独拎出来怎么念（查询范围的标签）。 */
+/** 一个取值单独拎出来怎么念（人的条件在 chip 上的标签）。 */
 export function dimText<K extends DimKey>(key: K, value: DimUnit[K]): string {
 	const dim = DIMENSIONS[key];
 	return dim.text?.(value) ?? `${dim.label} · ${dim.option(value)}`;

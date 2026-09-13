@@ -178,16 +178,12 @@ export function holdNextRerank() {
 /**
  * 假理解：把那句话按一行查询语法读（`search/query-syntax.ts`），交出真模型
  * 会交出的那份查询。模型说的和库里存的是同一个形状（`intentSchema` 就是
- * `Term[]`），所以这里不必翻译；范围维度的词表检查在 intent.test.ts 里
- * 对着 `toSpec` 直接测。
+ * `Condition[]`），所以这里不必翻译；词表检查在 intent.test.ts 里对着 `toSpec` 直接测。
+ * 一行语法里的 `~` 会带出 `off`，而真模型从不写停用，摘掉。
  */
 function fakeIntent(text: string) {
 	return {
-		terms: parseQuery(text).map(({ field, mode, values }) => ({
-			field,
-			mode,
-			values: [...values],
-		})),
+		conditions: parseQuery(text).map(({ off: _off, ...rest }) => rest),
 	};
 }
 

@@ -4,17 +4,18 @@
  * 只有「发出去、拿回来」。
  *
  * 这里的每个用例都该读成一句「模型对着这句话这么写的时候，查询应该变成什么」。
- * 模型写的和库里存的是同一个形状（`Term[]`），所以这一层只剩词表检查和收窄。
+ * 模型写的和库里存的是同一个形状（`Condition[]`），所以这一层只剩词表检查和收窄。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import type { Condition, Mode } from "#/search/condition";
 import {
 	allDropped,
 	intentSchema,
 	toSpec,
 	type Vocabulary,
 } from "#/search/intent";
-import type { Term } from "#/search/term";
+import { claim as build } from "./conditions";
 
 const VOCAB: Vocabulary = {
 	companyTag: ["头部互联网T1", "知名公司", "外包公司"],
@@ -22,33 +23,68 @@ const VOCAB: Vocabulary = {
 	recruitment: ["校招", "社招"],
 	education: ["本科", "硕士", "博士"],
 };
-const of = (...terms: unknown[]) => toSpec({ terms }, VOCAB).terms;
-/** 模型写一条条件的最简写法。 */
-const t = (field: string, values: string[], mode: unknown = "must") => ({
+const of = (...conditions: unknown[]) =>
+	toSpec({ conditions }, VOCAB).conditions;
+/** 模型写一条经历主张的最简写法。 */
+const claim = (parts: Record<string, unknown>, mode: unknown = "must") => ({
+	about: "experience",
+	mode,
+	...parts,
+});
+/** 模型写一条人的条件的最简写法。 */
+const person = (field: string, values: string[], mode: unknown = "must") => ({
+	about: "person",
+	mode,
 	field,
-	mode,
 	values,
 });
-const exp = (mode: Term["mode"], ...values: [string, ...string[]]): Term => ({
-	field: "experience",
-	mode,
-	values,
-});
+const exp = (mode: Mode, ...what: [string, ...string[]]): Condition =>
+	build(what, { mode });
 
 describe("模型写出的查询就是查询", () => {
 	test("算法和后端都做过的，比较资深的，最好是字节来的", () => {
 		assert.deepEqual(
 			of(
-				t("experience", ["算法", "推荐算法", "机器学习"]),
-				t("experience", ["后端", "后端开发", "服务端"]),
-				t("level", ["P7", "P8"], "boost"),
-				t("org", ["字节"], "boost"),
+				claim({ what: ["算法", "推荐算法", "机器学习"] }),
+				claim({ what: ["后端", "后端开发", "服务端"] }),
+				person("level", ["P7", "P8"], "boost"),
+				claim({ org: ["字节"] }, "boost"),
 			),
 			[
 				exp("must", "算法", "推荐算法", "机器学习"),
 				exp("must", "后端", "后端开发", "服务端"),
-				{ field: "level", mode: "boost", values: ["P7", "P8"] },
-				{ field: "org", mode: "boost", values: ["字节"] },
+				{
+					about: "person",
+					mode: "boost",
+					field: "level",
+					values: ["P7", "P8"],
+				},
+				{ about: "experience", mode: "boost", org: ["字节"] },
+			],
+		);
+	});
+
+	test("入职前在大厂做过三年以上增长，不要实习：修饰语挂在同一条主张上", () => {
+		assert.deepEqual(
+			of(
+				claim({
+					what: ["增长", "用户增长"],
+					kind: "external",
+					companyTag: ["头部互联网T1"],
+					minMonths: 36,
+				}),
+				claim({ what: ["实习"] }, "exclude"),
+			),
+			[
+				{
+					about: "experience",
+					mode: "must",
+					what: ["增长", "用户增长"],
+					companyTag: ["头部互联网T1"],
+					kind: "external",
+					minMonths: 36,
+				},
+				exp("exclude", "实习"),
 			],
 		);
 	});
@@ -56,10 +92,10 @@ describe("模型写出的查询就是查询", () => {
 	test("三档语气都翻译得出来；认不出的强度按必须算，不是丢掉这个词", () => {
 		assert.deepEqual(
 			of(
-				t("experience", ["渠道运营"]),
-				t("experience", ["带团队"], "boost"),
-				t("experience", ["实习"], "exclude"),
-				t("experience", ["产品"], "很重要"),
+				claim({ what: ["渠道运营"] }),
+				claim({ what: ["带团队"] }, "boost"),
+				claim({ what: ["实习"] }, "exclude"),
+				claim({ what: ["产品"] }, "很重要"),
 			),
 			[
 				exp("must", "渠道运营"),
@@ -71,66 +107,50 @@ describe("模型写出的查询就是查询", () => {
 	});
 
 	test("搜索词是模型的表达，不要求是用户原话：只做边界，不改字", () => {
-		assert.deepEqual(of(t("experience", [" 推荐算法 ", "机器 学习"])), [
+		assert.deepEqual(of(claim({ what: [" 推荐算法 ", "机器 学习"] })), [
 			exp("must", "推荐算法", "机器 学习"),
 		]);
 	});
 });
 
 /**
- * 范围维度的取值必须在词表里。模型是唯一会写出词表外取值的来源：「资深」对不上
- * 任何一档职级。对不上的丢掉，一个不剩的条件整条消失——不解释。
+ * 词表维的取值必须在词表里。模型是唯一会写出词表外取值的来源：「资深」对不上
+ * 任何一档职级。对不上的丢掉，一项不剩的整项消失——不解释。
  */
-describe("范围只认库里真有的取值", () => {
+describe("词表维只认库里真有的取值", () => {
 	test("公司档、职级、招聘渠道、学历必须来自语料，凭常识造的词一律不认", () => {
 		assert.deepEqual(
 			of(
-				t("level", ["资深", "P7"]),
-				t("companyTag", ["一线大厂"]),
-				t("recruitment", ["社招"]),
-				t("education", ["研究生"]),
+				person("level", ["资深", "P7"]),
+				claim({ what: ["增长"], companyTag: ["一线大厂"] }),
+				claim({ companyTag: ["一线大厂"] }),
+				person("recruitment", ["社招"]),
+				person("education", ["研究生"]),
 			),
 			[
-				{ field: "level", mode: "must", values: ["P7"] },
-				{ field: "recruitment", mode: "must", values: ["社招"] },
+				{ about: "person", mode: "must", field: "level", values: ["P7"] },
+				// 公司档没对上，主张剩下经历词照常；只有公司档的主张整条消失
+				exp("must", "增长"),
+				{
+					about: "person",
+					mode: "must",
+					field: "recruitment",
+					values: ["社招"],
+				},
 			],
 		);
 	});
 
-	test("经历类型只有两种；最短时长是任意正整数月数，不是分面那四个档", () => {
-		// 这两维没有词表，但取值得是这一维读得回来的（收窄那一层查，见 term.test）：
-		// 模型写「三年」「校招」的话，那条不能带着 chip 落库却不筛任何人
-		assert.deepEqual(
-			of(
-				t("kind", ["external"]),
-				t("minMonths", ["18"]),
-				t("kind", ["校招"]),
-				t("minMonths", ["三年"]),
-			),
-			[
-				{ field: "kind", mode: "must", values: ["external"] },
-				{ field: "minMonths", mode: "must", values: ["18"] },
-			],
-		);
-	});
-
-	test("公司名与学校名就是名字，只剥空白", () => {
-		assert.deepEqual(of(t("org", [" 字节 "]), t("school", ["清华", "北大"])), [
-			{ field: "org", mode: "must", values: ["字节"] },
-			{ field: "school", mode: "must", values: ["清华", "北大"] },
-		]);
-	});
-
-	test("范围上的排除没有表示，整条丢掉", () => {
-		assert.deepEqual(of(t("recruitment", ["校招"], "exclude")), []);
+	test("人的条件上的排除没有表示，整条丢掉", () => {
+		assert.deepEqual(of(person("recruitment", ["校招"], "exclude")), []);
 	});
 
 	test("库里没有的维度整条丢掉：搜索产品对说不清的条件不解释", () => {
 		assert.deepEqual(
 			of(
-				t("city", ["北京"]),
-				t("unsupported", ["北京"]),
-				t("experience", ["算法"]),
+				person("city", ["北京"]),
+				{ about: "location", values: ["北京"] },
+				claim({ what: ["算法"] }),
 			),
 			[exp("must", "算法")],
 		);
@@ -140,20 +160,21 @@ describe("范围只认库里真有的取值", () => {
 describe("模型给了条件、收窄后一个不剩", () => {
 	test("是这一跳失败，不是一句没有条件的话", () => {
 		for (const raw of [
-			{ terms: [t("level", ["资深"]), t("city", ["北京"])] },
-			{ terms: [t("minMonths", ["三年"])] },
+			{ conditions: [person("level", ["资深"]), person("city", ["北京"])] },
+			{ conditions: [claim({ minMonths: "三年" })] },
 		])
 			assert.equal(allDropped(raw, toSpec(raw, VOCAB)), true);
 		assert.equal(
-			allDropped({ terms: [] }, toSpec({ terms: [] }, VOCAB)),
+			allDropped({ conditions: [] }, toSpec({ conditions: [] }, VOCAB)),
 			false,
 		);
 	});
 
-	test("只识别出范围或偏好不算失败：各自是一份完整的查询", () => {
+	test("只识别出没有经历词的主张或人的偏好不算失败：各自是一份完整的查询", () => {
 		for (const raw of [
-			{ terms: [t("kind", ["external"])] },
-			{ terms: [t("org", ["字节"], "boost")] },
+			{ conditions: [claim({ kind: "external" })] },
+			{ conditions: [claim({ org: ["字节"] }, "boost")] },
+			{ conditions: [person("education", ["硕士"], "boost")] },
 		])
 			assert.equal(allDropped(raw, toSpec(raw, VOCAB)), false);
 	});
@@ -169,16 +190,9 @@ describe("模型是不可信输入", () => {
 			{},
 			"一句话",
 			[42],
-			{ terms: 1 },
+			{ conditions: 1 },
 		])
-			assert.deepEqual(toSpec(raw, VOCAB).terms, [], JSON.stringify(raw));
-	});
-
-	test("数组里混进垃圾只丢那一项，其余照常", () => {
-		assert.deepEqual(
-			of(null, 42, "算法", { field: "experience" }, t("experience", ["算法"])),
-			[exp("must", "算法")],
-		);
+			assert.deepEqual(toSpec(raw, VOCAB).conditions, [], JSON.stringify(raw));
 	});
 });
 
@@ -186,10 +200,10 @@ describe("发给模型的形状", () => {
 	test("合法输出解析得过", () => {
 		assert.ok(
 			intentSchema.safeParse({
-				terms: [
-					t("experience", ["渠道运营", "渠道拓展"]),
-					t("minMonths", ["12"]),
-					t("org", ["字节"], "boost"),
+				conditions: [
+					claim({ what: ["渠道运营", "渠道拓展"], minMonths: 12 }),
+					claim({ org: ["字节"] }, "boost"),
+					person("level", ["P7"], "boost"),
 				],
 			}).success,
 		);
@@ -197,26 +211,27 @@ describe("发给模型的形状", () => {
 
 	test("词表不进 schema：取值合不合法由收窄查，不让整句作废", () => {
 		assert.ok(
-			intentSchema.safeParse({ terms: [t("companyTag", ["一线大厂"])] })
-				.success,
+			intentSchema.safeParse({
+				conditions: [claim({ companyTag: ["一线大厂"] })],
+			}).success,
 		);
 	});
 
 	test("词数与词长上限不写进 schema：多给一条不该让整句理解作废", () => {
-		// 上限的事实源是 termsOf / termOf，toSpec 会走它们收窄。写成 schema
+		// 上限的事实源是 conditionsOf / termOf，toSpec 会走它们收窄。写成 schema
 		// 约束就是第二份契约：模型多给一条，整条响应作废、整句理解失败。
 		assert.ok(
 			intentSchema.safeParse({
-				terms: Array.from({ length: 20 }, (_, i) =>
-					t("experience", [`条件${i}`]),
+				conditions: Array.from({ length: 20 }, (_, i) =>
+					claim({ what: [`条件${i}`] }),
 				),
 			}).success,
 		);
 		const long = "供应链金融风控建模";
 		assert.ok(
-			intentSchema.safeParse({ terms: [t("experience", [long])] }).success,
+			intentSchema.safeParse({ conditions: [claim({ what: [long] })] }).success,
 		);
-		assert.deepEqual(of(t("experience", ["算".repeat(25)])), []);
-		assert.deepEqual(of(t("experience", [long])), [exp("must", long)]);
+		assert.deepEqual(of(claim({ what: ["算".repeat(25)] })), []);
+		assert.deepEqual(of(claim({ what: [long] })), [exp("must", long)]);
 	});
 });

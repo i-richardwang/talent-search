@@ -48,7 +48,7 @@ import {
  */
 const NO_OUTCOME: SearchOutcome = {
 	order: "relevance",
-	terms: [],
+	claims: [],
 	results: [],
 	facets: emptyFacets(),
 	total: 0,
@@ -242,7 +242,7 @@ function Workbench() {
 							onChange={updateView}
 							onEditQuery={editQuery}
 							onMore={() => updateView(morePage(view))}
-							onReviseQuery={(terms) => reviseSpec({ terms })}
+							onReviseQuery={(conditions) => reviseSpec({ conditions })}
 							outcome={outcome}
 							picks={picks}
 							spec={spec}

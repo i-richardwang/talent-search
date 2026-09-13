@@ -5,10 +5,14 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
+import {
+	type Condition,
+	type ExperienceCondition,
+	withOff,
+} from "#/search/condition";
 import { allDropped, toSpec } from "#/search/intent";
 import { probeWide, vocabulary } from "#/search/search";
 import type { QueryInput, SearchSpec } from "#/search/spec";
-import { type Term, withOff } from "#/search/term";
 import { understand } from "./llm";
 
 function newId() {
@@ -83,34 +87,36 @@ export async function createTurn(
 }
 
 /**
- * 给这句话新写出的经历词量一遍宽度：命中的人多到几乎不筛人的取值丢掉；
- * 一条条件的取值全宽，整条**可见地**停用，成因记在 `off` 上。
+ * 给这句话新写出的经历词量一遍宽度：命中的人多到几乎不筛人的词丢掉；
+ * 一条主张的经历词全宽，整条**可见地**停用，成因记在 `off` 上。
  *
- * 一条条件里几个取值同权，宽的那个丢掉不影响其余取值找人；全宽才说明这条
- * 条件本身几乎不筛人，那得让用户看见、换词，或者坚持启用——检索层不做无声拦截。
+ * 一条主张里几个词同权，宽的那个丢掉不影响其余的词找人；全宽才说明这条
+ * 主张本身几乎不筛人，那得让用户看见、换词，或者坚持启用——检索层不做无声拦截。
  * 两支看起来不对称，其实是同一条规则：**这份查询还没有人看过。** 它是模型
- * 刚写出来的，量宽是写这条搜索的最后一步，丢一个取值和模型少写一个取值是
- * 同一件事，落库之后 chip 上写的就是搜的。整条停用则不同——一条条件消失和
- * 一个取值消失不一样，前者是「你说的这件事没法用来找人」，得说出来。
+ * 刚写出来的，量宽是写这条搜索的最后一步，丢一个词和模型少写一个词是
+ * 同一件事，落库之后 chip 上写的就是搜的。整条停用则不同——一条主张消失和
+ * 一个词消失不一样，前者是「你说的这件事没法用来找人」，得说出来。词全宽也
+ * 不把它降成一条没有词的主张：那会让「做过运营的」悄悄变成「有过任何经历的」。
  *
- * **只量正向条件的词。** 宽度这把尺答的是「它还筛不筛得掉人」，那是准入的问题；
- * 排除词答的是「哪一段不作数」，命中面广恰恰是它在起作用，量它等于用一把
+ * **只量正向主张的词。** 宽度这把尺答的是「它还筛不筛得掉人」，那是准入的问题；
+ * 排除答的是「哪一段不作数」，命中面广恰恰是它在起作用，量它等于用一把
  * 反向的尺去停掉一条正在生效的条件。门槛也对不上：`probeWide` 按
  * `RELEVANCE_MIN` 量，而排除按更高的 `RELEVANCE_MIN_EXCLUDE` 判——
  * 量出来的宽根本不是它搜出来的宽。
  */
-async function benchWide(terms: Term[]): Promise<Term[]> {
-	const admitting = terms.filter(
-		(t) => t.field === "experience" && t.mode !== "exclude",
-	);
+async function benchWide(conditions: Condition[]): Promise<Condition[]> {
+	const measured = (
+		c: Condition,
+	): c is ExperienceCondition & { what: readonly [string, ...string[]] } =>
+		c.about === "experience" && c.mode !== "exclude" && c.what !== undefined;
 	const wide = await probeWide([
-		...new Set(admitting.flatMap((t) => t.values)),
+		...new Set(conditions.filter(measured).flatMap((c) => c.what)),
 	]);
-	return terms.map((t): Term => {
-		if (t.field !== "experience" || t.mode === "exclude") return t;
-		const [first, ...rest] = t.values.filter((v) => !wide.has(v));
-		if (!first) return withOff(t, "wide");
-		return { ...t, values: [first, ...rest] };
+	return conditions.map((c): Condition => {
+		if (!measured(c)) return c;
+		const [first, ...rest] = c.what.filter((v) => !wide.has(v));
+		if (!first) return withOff(c, "wide");
+		return { ...c, what: [first, ...rest] };
 	});
 }
 
@@ -138,10 +144,12 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	if (allDropped(raw, understood))
 		throw new Error(
 			`查询理解给出的条件全部不合规，收窄后一个不剩：${JSON.stringify(
-				(raw as { terms?: unknown }).terms,
+				(raw as { conditions?: unknown }).conditions,
 			).slice(0, 400)}`,
 		);
-	const spec: SearchSpec = { terms: await benchWide(understood.terms) };
+	const spec: SearchSpec = {
+		conditions: await benchWide(understood.conditions),
+	};
 
 	await db
 		.update(searchTurn)

@@ -13,7 +13,7 @@ import type { Pick } from "./picks";
  */
 
 /**
- * 每个人固定的那几列。条件那几列跟在后面，一条条件一列。
+ * 每个人固定的那几列。主张那几列跟在后面，一条主张一列。
  *
  * 导出那一层把它逐列画出来给人看（`-components/pick-dock.tsx`），所以它得出去：
  * 屏幕上说有哪几列、文件里就有哪几列，两处只能有一个出处。
@@ -29,8 +29,9 @@ function cell(value: string | number | null) {
 	return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
-export function toCsv(picks: Pick[], terms: string[], evidence: boolean) {
-	const head = evidence ? [...FIXED, ...terms] : FIXED;
+/** `names` 是各主张的名字，和 `Pick.evidence` 同序。 */
+export function toCsv(picks: Pick[], names: string[], evidence: boolean) {
+	const head = evidence ? [...FIXED, ...names] : FIXED;
 	const rows = picks.map((p) => [
 		p.rank,
 		p.empId,
@@ -38,7 +39,7 @@ export function toCsv(picks: Pick[], terms: string[], evidence: boolean) {
 		p.dept,
 		p.title,
 		p.level,
-		...(evidence ? terms.map((t) => p.evidence[t] ?? "") : []),
+		...(evidence ? names.map((_, i) => p.evidence[i] ?? "") : []),
 	]);
 	// CRLF：Excel 之外的东西也认，反过来不成立。
 	// 开头那个 BOM 是给 Excel 的：没有它，中文在简体中文版 Windows 上打开是乱码。
