@@ -17,6 +17,7 @@
  */
 
 import "@tanstack/react-start/server-only";
+import { prunePhrases } from "./derive";
 import { build, type EmployeeRow, type ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
 import type { CorpusSession } from "./session";
@@ -108,7 +109,10 @@ const EMPLOYEE_COLUMNS =
 const EXPERIENCE_COLUMNS =
 	"emp_id, kind, start_date, end_date, org, org_path, org_meta, title, seq_l1, seq_l2, seq_l3, level, description, months";
 
-/** 把暂存的两张表和正式表做差：删这次没有的，插这次新来的，改了档案的人更新。 */
+/**
+ * 把暂存的两张表和正式表做差：删这次没有的，插这次新来的，改了档案的人更新。
+ * 段走了边跟着级联走，于是收尾清一次没人指的说法（`prunePhrases`）。
+ */
 async function reconcile({ client }: CorpusSession): Promise<{
 	employeesGone: number;
 	experienceGone: number;
@@ -134,6 +138,7 @@ async function reconcile({ client }: CorpusSession): Promise<{
 		 select ${EXPERIENCE_COLUMNS} from staged_experience s
 		 where not exists (select 1 from experience e where e.key = s.key)`,
 	);
+	await prunePhrases(client);
 	return {
 		employeesGone: employeesGone.rowCount ?? 0,
 		experienceGone: experienceGone.rowCount ?? 0,

@@ -1,31 +1,35 @@
 /**
- * 四路原文的拼法。
+ * 一段经历有哪些说法。
  *
  * 它决定了库里那些向量是从什么字符串来的：序列三级用「 · 」连、公司内用完整
- * 部门路径、空的那一路不嵌。灌库和测试夹具用的是同一个函数，所以这里测的不是
- * 「两处一不一致」，而是**拼法本身**——改了它，库里的向量和查询词就不再可比，
- * 而症状只是结果悄悄变差。
+ * 部门路径、空的那一路不嵌、自述只有一份读法。灌库和测试夹具用的是同一个函数，
+ * 所以这里测的不是「两处一不一致」，而是**拼法本身**——改了它，库里的向量和
+ * 查询词就不再可比，而症状只是结果悄悄变差。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { type RouteSource, routeTexts } from "#/corpus/route-texts";
+import type { Extraction } from "#/corpus/extract";
+import { phrasesOf, type RouteSource } from "#/corpus/route-texts";
 
-const of = (row: Partial<RouteSource>) =>
+const of = (row: Partial<RouteSource>, extraction: Extraction | null = null) =>
 	Object.fromEntries(
-		routeTexts({
-			kind: "internal",
-			org: "",
-			orgPath: "",
-			title: "",
-			seqL1: "",
-			seqL2: "",
-			seqL3: "",
-			description: "",
-			...row,
-		}),
+		phrasesOf(
+			{
+				kind: "internal",
+				org: "",
+				orgPath: "",
+				title: "",
+				seqL1: "",
+				seqL2: "",
+				seqL3: "",
+				description: "",
+				...row,
+			},
+			extraction,
+		).map((p) => [p.route, p.text]),
 	);
 
-describe("四路原文的拼法", () => {
+describe("登记的三路", () => {
 	test("公司内经历嵌完整部门路径，序列按级连起来", () => {
 		assert.deepEqual(
 			of({
@@ -54,24 +58,59 @@ describe("四路原文的拼法", () => {
 		assert.equal(of({ org: "平台技术部", orgPath: "" }).org, "平台技术部");
 	});
 
-	test("入职前经历嵌公司名与简历描述，有部门路径也不用", () => {
-		assert.deepEqual(
-			of({
-				kind: "external",
-				org: "云枢智能",
-				orgPath: "云枢智能/算法部",
-				title: "算法工程师",
-				description: "负责推荐系统召回",
-			}),
-			{
-				title: "算法工程师",
-				org: "云枢智能",
-				description: "负责推荐系统召回",
-			},
+	test("入职前经历嵌公司名，有部门路径也不用", () => {
+		assert.equal(
+			of({ kind: "external", org: "云枢智能", orgPath: "云枢智能/算法部" }).org,
+			"云枢智能",
 		);
 	});
 
 	test("空的那一路不出现，一行全空就一路都没有", () => {
 		assert.deepEqual(of({}), {});
+	});
+});
+
+describe("自述只有一份读法", () => {
+	const external: Partial<RouteSource> = {
+		kind: "external",
+		org: "云枢智能",
+		description: "负责推荐系统召回，配合算法团队完成上线",
+	};
+
+	test("没读过的段，整段原文就是说法", () => {
+		assert.deepEqual(of(external), {
+			org: "云枢智能",
+			description: "负责推荐系统召回，配合算法团队完成上线",
+		});
+	});
+
+	test("读过的段，说法是读出来的能力词与做过的事，原文不再是说法", () => {
+		const phrasings = phrasesOf(
+			{
+				kind: "external",
+				org: "云枢智能",
+				orgPath: "",
+				title: "",
+				seqL1: "",
+				seqL2: "",
+				seqL3: "",
+				description: external.description as string,
+			},
+			{
+				skills: ["召回"],
+				did: [{ involvement: "负责建设", domain: "推荐系统" }],
+			},
+		);
+		assert.deepEqual(phrasings, [
+			{ route: "org", text: "云枢智能", involvement: null },
+			{ route: "skill", text: "召回", involvement: null },
+			{ route: "did", text: "推荐系统", involvement: "负责建设" },
+		]);
+	});
+
+	test("读过但什么都没读出来，也不退回原文：那是模型说这段没有可找的能力", () => {
+		assert.deepEqual(of(external, { skills: [], did: [] }), {
+			org: "云枢智能",
+		});
 	});
 });

@@ -15,26 +15,26 @@
  * 的结果。一轮有时间预算，用完就退出，下一轮接着——它是后台任务，不是一次
  * 要跑到底的脚本。
  *
- * 说法表只增不改：向量是文本的属性，段没了、边没了，说法留着不碍事，而它的
- * id 稳定意味着重排分数的缓存（`phrase_relevance`）跟着稳定。唯一清它的时刻
- * 是换嵌入空间：旧向量在新空间里没有意义，整张表连同边和分数一起作废，所有段
+ * 说法的文本和向量不改，**但没人指的行会被删掉**：一条说法只有作为边的终点
+ * 才有意义，留着它会把召回的账算错（论证在 `commitBatch`）。还在语料里的说法
+ * id 稳定，重排分数的缓存（`phrase_relevance`）跟着稳定；被删的那些说法，它们
+ * 的分数也随之级联清掉——语料里没有的说法，分数不是缓存，是垃圾。整张表作废
+ * 只有一个时刻：换嵌入空间，旧向量在新空间里没有意义，边和分数一起没，所有段
  * 待派生。
  */
 
 import "@tanstack/react-start/server-only";
 import { createHash } from "node:crypto";
-import { EMBED_DIM, type Route } from "#/db/schema";
+import { EMBED_DIM } from "#/db/schema";
 import { chatConfigured, chatEndpoint, extractModel } from "#/server/chat";
 import { embedEndpoint, embedSpace } from "#/server/embed";
 import { align, alignIdentity, type SeqPair, seqTree } from "./align";
 import { embed, probe } from "./embed";
-import { EMPTY, type Extraction, extract, extractIdentity } from "./extract";
+import { type Extraction, extract, extractIdentity } from "./extract";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
-import { routeTexts } from "./route-texts";
+import { type Phrasing, phrasesOf } from "./route-texts";
 import type { CorpusClient, CorpusSession } from "./session";
-import { read as readVocabulary } from "./vocabulary";
-import { apply, mapping } from "./vocabulary-rules";
 
 /** 查询侧核对嵌入空间时重新嵌的那一串字。改它等于让已有语料的 canary 失效。 */
 const CANARY_TEXT = "talent-search embedding canary";
@@ -49,46 +49,36 @@ const PHRASE_ROWS_PER_STATEMENT = 500;
 type StoredRow = ExperienceRow & { id: number };
 
 /** 一段经历指向一条说法的边。 */
-type Link = {
-	experienceId: number;
-	route: Route;
-	text: string;
-	involvement: string | null;
-};
+type Link = Phrasing & { experienceId: number };
 
 /**
- * 这一批段的六路说法与边。抽取的两路和原文四路进同一张说法表：一个能力词
+ * 这一批段的说法与边（拼法见 `route-texts.ts`）。六路进同一张说法表：一个能力词
  * 恰好和某个岗位名是同一串字时只嵌一次，两条边各指向它。做过的事的说法是
  * 领域，参与方式落在边的第四列，其余路那一列是空。
+ *
+ * `extractions` 按段对齐：null 是这一段没读过（抽取没配、模型没作答），它的
+ * 自述证据退回整段原文。
  */
 export function phrasePlan(
 	rows: StoredRow[],
-	extractions: Extraction[],
+	extractions: (Extraction | null)[],
 ): { texts: string[]; links: Link[] } {
 	const links: Link[] = [];
 	for (const [index, row] of rows.entries()) {
-		const experienceId = row.id;
-		const extraction = extractions[index] ?? EMPTY;
-		for (const [route, text] of routeTexts({
-			kind: row.kind,
-			org: row.org,
-			orgPath: row.org_path,
-			title: row.title,
-			seqL1: row.seq_l1,
-			seqL2: row.seq_l2,
-			seqL3: row.seq_l3,
-			description: row.description,
-		}))
-			links.push({ experienceId, route, text, involvement: null });
-		for (const skill of extraction.skills)
-			links.push({
-				experienceId,
-				route: "skill",
-				text: skill,
-				involvement: null,
-			});
-		for (const { involvement, domain } of extraction.did)
-			links.push({ experienceId, route: "did", text: domain, involvement });
+		const phrasings = phrasesOf(
+			{
+				kind: row.kind,
+				org: row.org,
+				orgPath: row.org_path,
+				title: row.title,
+				seqL1: row.seq_l1,
+				seqL2: row.seq_l2,
+				seqL3: row.seq_l3,
+				description: row.description,
+			},
+			extractions[index] ?? null,
+		);
+		for (const p of phrasings) links.push({ experienceId: row.id, ...p });
 	}
 	return { texts: [...new Set(links.map((link) => link.text))], links };
 }
@@ -192,7 +182,28 @@ async function nextBatch(
 	}));
 }
 
-/** 一批的结果落库：说法只增，边先删后写，段上记版本。 */
+/**
+ * 没有边指向的说法行，删掉。
+ *
+ * 一条 `phrase` 只有作为边的终点才有意义。留着没人指的行不是省事，是把召回的
+ * 账算错了：召回按余弦从整张说法表取最近的 `RECALL_TOP` 条，一条命中都产生
+ * 不了的旧说法照样占名额，挤掉的是真能找到人的说法——换过一次抽取提示词，
+ * 整段简历描述那种什么都沾一点的长说法成千上万地留下来，名额一大半是它们的。
+ *
+ * 每次删的是**全表里**没人指的，不是这一次刚解开的那几条：说法失去最后一条边
+ * 有两条路——派生重写一段的边，和同步删掉一段（边跟着级联走）。按「谁解开的谁
+ * 负责」写就得在两处各记一份账，而这条反连接查询一句话就说完了「没人指的都不
+ * 留」，两处调同一个它。表是几万行量级，一批几百段之间跑一次，代价可以忽略。
+ */
+export async function prunePhrases(client: CorpusClient): Promise<void> {
+	await client.query(
+		`delete from phrase p
+		 where not exists (
+			select 1 from experience_phrase ep where ep.phrase_id = p.id)`,
+	);
+}
+
+/** 一批的结果落库：边先删后写，段上记版本，没人指的说法行跟着清掉。 */
 async function commitBatch(
 	client: CorpusClient,
 	version: string,
@@ -242,6 +253,7 @@ async function commitBatch(
 				links.map((link) => link.involvement),
 			],
 		);
+		await prunePhrases(client);
 		await client.query(
 			`update experience e
 			 set seq_inferred_l1 = r.l1, seq_inferred_l2 = r.l2,
@@ -281,7 +293,6 @@ export async function derive(
 	await ensureSpace(client, report);
 	const tree = await currentTree(client);
 	const version = identity(tree);
-	const aliases = mapping(await readVocabulary(client));
 	const total = await pending(client, version);
 	if (chatConfigured())
 		report(
@@ -290,7 +301,7 @@ export async function derive(
 	else
 		report(
 			"  未配置抽取端点（EXTRACT_BASE_URL / EXTRACT_MODEL），" +
-				"能力词与做过的事两路为空，入职前经历不对齐序列",
+				"自述证据退回整段简历原文，入职前经历不对齐序列",
 		);
 	report(`  待派生 ${total} 段`);
 
@@ -301,12 +312,11 @@ export async function derive(
 		report("");
 		report(`第 ${done + 1}–${done + rows.length} 段…`);
 
-		let extractions: Extraction[] = rows.map(() => EMPTY);
+		// 没配抽取端点，每一段都是「没读过」：自述证据退回整段原文（route-texts.ts）
+		let extractions: (Extraction | null)[] = rows.map(() => null);
 		let aligned = rows;
 		if (chatConfigured()) {
-			extractions = (await extract(rows, report)).map((extraction) =>
-				apply(aliases, extraction ?? EMPTY),
-			);
+			extractions = await extract(rows, report);
 			aligned = await align(rows, tree, report);
 		}
 		const { texts, links } = phrasePlan(aligned, extractions);

@@ -50,6 +50,7 @@ import {
 	emptyFacets,
 	type Facets,
 	type Hit,
+	type Order,
 	type Query,
 	queryOf,
 	type RankedResult,
@@ -65,8 +66,9 @@ import {
 	RELEVANCE_MIN_EXCLUDE,
 	RESULT_PAGE,
 	ROUTE_ORDER,
-	ROUTE_WEIGHTS,
+	ROUTE_STRENGTH,
 	type Route,
+	strengthRank,
 	WIDE_SHARE,
 } from "./weights";
 
@@ -109,10 +111,13 @@ function anyLike(names: readonly string[], columns: SQL[]) {
  * 所以只能量按同一条阈值线通过的词），否则量出来的宽和搜出来的宽不是一回事：
  * 排除词按 `RELEVANCE_MIN_EXCLUDE` 判，拿这把尺去量它，读数天然偏大。
  * 谁该被量由调用方决定（`server/turn.ts` 的 benchWide）。
+ *
+ * 宽只有这一把尺。「一个词在语料里有几千种说法」不是宽：短语上向量分不开
+ * 「客服」和「相关」，两者过线的说法一样多，说法的条数说不出词好不好。
  */
 export async function probeWide(texts: string[]): Promise<Set<string>> {
 	if (texts.length === 0) return new Set();
-	return withAdmission(texts, RELEVANCE_MIN, async (store, admitted) => {
+	return withAdmission(texts, RELEVANCE_MIN, async (store, { admitted }) => {
 		const table = admittedTable(
 			texts.flatMap((t, i) =>
 				(admitted.get(t) ?? []).map((hit) => ({
@@ -230,14 +235,17 @@ const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	kind: sql`e.kind`,
 	companyTag: sql`e.org_meta ->> 'company_tag'`,
 	/*
-	 * 一段的能力词是一列，不是一个值。列里除了段上写的词（说法表里已是词表换过的
-	 * 标准词），还有每个词往上的每一层更宽的词（`skill_term.parent`）：招聘的人点「数据
-	 * 分析」要看到写了「销售数据分析」的人，而细的词仍留在段上，点细的只看到细的。
-	 * 往上走用 union 而不是 union all：词表不成环由整理任务保证，这里不再为它多一道。
+	 * 一段的能力词是一列，不是一个值。段上的边是简历里的原话，筛选栏里的一项是标准词：
+	 * 列里放的是每个词的标准写法（`skill_term.canonical`，没进表的词就是它自己），和它
+	 * 往上的每一层更宽的词（`skill_term.parent`）。点「团队管理」要看到写了「人员管理」
+	 * 的人，点「数据分析」要看到写了「销售数据分析」的人，点细的只看到细的；别名自己
+	 * 不成为一项。往上走用 union 而不是 union all：词表不成环由整理任务保证，这里不再为它多一道。
 	 */
 	skills: sql`array(
 		with recursive up(word) as (
-			select ph.text from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
+			select coalesce(t.canonical, ph.text)
+			from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
+			left join skill_term t on t.word = ph.text
 			where ep.experience_id = e.id and ep.route = 'skill'
 			union
 			select t.parent from up join skill_term t on t.word = up.word
@@ -378,8 +386,8 @@ const FACT_ROW = sql`e.id, e.emp_id, e.end_date, ${factSelect}`;
  * 只留证据最强的那一次命中。
  *
  * 每条主张按经历词展开：词之间是 OR，但各自单独判定，因为「命中的是哪个词」
- * 要进证据行。一段几路都可能命中、几个词都可能命中，这里按
- * `路权重 × 相关度` 只留最强的一行——和 rank.ts 的 evidenceWeight 同一个式子，
+ * 要进证据行。一段几路都可能命中、几个词都可能命中，这里只留最强的一行：
+ * 先比可信度那一档、同档比相关度——和 rank.ts 的 `stronger` 同一个口径，
  * 否则这里留下的和那边选出来的不是同一条证据。打分层按事实累加月份，同段两行
  * 会把 12 个月数成 24；证据行也会把同一段列两遍。去重必须在 SQL 里做完再过
  * 保险丝：在内存里去重的话，三个词的宽主张会把 FACT_MAX 提前引爆三倍。
@@ -400,8 +408,10 @@ function textualFacts(
 		),
 	);
 	if (!table) return null;
-	const routeWeight = sql`case ep.route ${sql.join(
-		ROUTE_ORDER.map((r) => sql`when ${r} then ${ROUTE_WEIGHTS[r]}::float`),
+	const strength = sql`case ep.route ${sql.join(
+		ROUTE_ORDER.map(
+			(r) => sql`when ${r} then ${strengthRank(ROUTE_STRENGTH[r])}`,
+		),
 		sql` `,
 	)} end`;
 	const routeOrder = sql`case ep.route ${sql.join(
@@ -432,7 +442,7 @@ function textualFacts(
 		join experience e on e.id = ep.experience_id
 		join employee p on p.emp_id = e.emp_id
 		${whereAll([sql`(${own})`, ...person])}
-		order by q.claim_idx, e.id, (${routeWeight}) * q.relevance desc,
+		order by q.claim_idx, e.id, ${strength}, q.relevance desc,
 			q.value_idx, ${routeOrder}`;
 }
 
@@ -734,11 +744,12 @@ export async function search(
 ): Promise<SearchOutcome> {
 	const q = queryOf(spec.conditions);
 	const { claims, excludes, must, prefer } = q;
+	const order: Order = filters.order ?? "evidence";
 	// 没有正向的主张也没有人的条件时，排除自己不产出候选人。只有偏好的查询
 	// （「最好是硕士」）是「所有人，满足偏好的在前」，照跑。
 	if (claims.length === 0 && must.length === 0 && prefer.length === 0)
 		return {
-			order: "relevance",
+			order,
 			claims,
 			...noOne(),
 			empty: emptyReason({
@@ -758,7 +769,7 @@ export async function search(
 	return withAdmission(
 		[...claims, ...excludes].flatMap((c) => c.what ?? []),
 		RELEVANCE_MIN,
-		async (store, admitted) => {
+		async (store, { admitted }) => {
 			const vetoed = await fetchVetoed(store, excludes, admitted);
 			// 只有人的条件时没有语义证据可言，不必伪造一条主张来启动检索。
 			if (claims.length === 0)
@@ -768,7 +779,7 @@ export async function search(
 			if (loaded.kind === "overflow") {
 				const contributors = new Set(loaded.claims);
 				return {
-					order: "relevance",
+					order,
 					claims,
 					...noOne(),
 					empty: emptyReason({
@@ -806,7 +817,7 @@ export async function search(
 			const page = ranked.slice(0, limit);
 			if (page.length === 0)
 				return {
-					order: "relevance",
+					order,
 					claims,
 					results: [],
 					facets,
@@ -866,10 +877,18 @@ export async function search(
 						},
 					];
 				});
-				return [{ employee: person, score: row.score, basis: row.basis, hits }];
+				return [
+					{
+						employee: person,
+						strength: row.strength,
+						depth: row.depth,
+						basis: row.basis,
+						hits,
+					},
+				];
 			});
 			return {
-				order: "relevance",
+				order,
 				claims,
 				results,
 				facets,

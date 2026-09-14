@@ -1,5 +1,5 @@
 /** 能力词的收窄、圈组与词表归并。生产结算和验收共用这些纯函数。 */
-import type { Extraction } from "./extract";
+import type { Member } from "./questions";
 import { MAX_TAG_LEN, tag } from "./tag";
 
 /**
@@ -24,9 +24,6 @@ export type Decision = {
 	judge: string;
 };
 export type Table = Map<string, Decision>;
-
-/** 题里的一个词，和出题那一刻它下面的人数。 */
-export type Member = { word: string; people: number };
 
 /** 一个词的上一级：别名走它标准词的归属。没有就是 null。 */
 function ancestor(table: Table, word: string): string | null {
@@ -74,27 +71,6 @@ export function validate(table: Table): void {
 			seen.add(at);
 		}
 	}
-}
-
-/** 别名 → 标准词，只含真正要换的词。 */
-export function mapping(table: Table): Map<string, string> {
-	const out = new Map<string, string>();
-	for (const [word, decision] of table)
-		if (decision.canonical !== word) out.set(word, decision.canonical);
-	return out;
-}
-
-/** 把一段的能力词换成标准词，换完重复的只留一个。做过的事的领域不动。 */
-export function apply(
-	aliases: Map<string, string>,
-	extraction: Extraction,
-): Extraction {
-	const skills: string[] = [];
-	for (const skill of extraction.skills) {
-		const canonical = aliases.get(skill) ?? skill;
-		if (!skills.includes(canonical)) skills.push(canonical);
-	}
-	return { skills, did: extraction.did };
 }
 
 /**
@@ -196,9 +172,9 @@ export function conform(raw: unknown, words: string[]): Map<string, Verdict> {
 /**
  * 记下一道题的结论，返回决定变了的词。
  *
- * `sameAs` 连成的每一片是同一件事，片里人最多的词做标准写法；片里的其他词对到它，
- * 此前对到它们的词、归属于它们的词也一起改指它，表里于是不会出现「别名的别名」和
- * 「归属于别名」。片的归属由片里的答卷按人数投出来；它若是题里另一片的词就取那一片的
+ * `sameAs` 连成的每一片是同一件事，片里人最多的词做标准写法；片里的其他词对到它。
+ * 表里此前对到它们、归属于它们、又不在这道题里的词也一起跟过去，表里于是不会出现
+ * 「别名的别名」和「归属于别名」；这一次被判过的词各有自己的判断，不跟。片的归属由片里的答卷按人数投出来；它若是题里另一片的词就取那一片的
  * 标准写法，若是表里的别名就取它的标准词；沿表往上走会走回自己的归属丢掉，表里于是
  * 不会成环。归属是表里没有的词时给它落一行——它从此是一个标准词。
  *
@@ -241,6 +217,7 @@ export function merge(
 			if (word === head) continue;
 			// 遍历的是快照：`decide` 往同一张表里写，边遍历边写会把刚写的行再走一遍
 			for (const [other, decision] of [...table]) {
+				if (verdicts.has(other)) continue;
 				if (decision.canonical === word) decide(other, head, null);
 				else if (decision.parent === word) decide(other, other, head);
 			}

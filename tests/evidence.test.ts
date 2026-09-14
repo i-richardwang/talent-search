@@ -1,12 +1,18 @@
 /**
- * 证据强度模型。这层没有数据库，但它决定了界面上「绿点 / 灰点 / 空心圈」
- * 分别是什么意思——权重一改，这里必须跟着重新论证。
+ * 证据可信度的分档。这层没有数据库，但它决定了界面上「绿点 / 灰点 / 空心圈」
+ * 分别是什么意思，也是排序的第一把尺——档一改，这里必须跟着重新论证。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { bestHitPerClaim, bestStrength, strengthOf } from "#/search/evidence";
 import type { Claim } from "#/search/result";
-import { ROUTE_WEIGHTS, type Route } from "#/search/weights";
+import {
+	ROUTE_ORDER,
+	ROUTE_STRENGTH,
+	type Route,
+	STRENGTHS,
+	strengthRank,
+} from "#/search/weights";
 import { claim } from "./conditions";
 import { hit as row } from "./rows";
 
@@ -16,34 +22,26 @@ const claims = (...what: string[]): Claim[] =>
 	what.map((w) => claim(w) as Claim);
 
 describe("强度分档", () => {
-	test("受控字段是序列与岗位，且它们权重最高", () => {
-		assert.equal(strengthOf("seq"), "controlled");
-		assert.equal(strengthOf("title"), "controlled");
-		const top = Math.max(...Object.values(ROUTE_WEIGHTS));
-		assert.equal(ROUTE_WEIGHTS.seq, top);
-		assert.equal(ROUTE_WEIGHTS.title, top);
+	test("三档由强到弱：登记的序列或岗位、登记的部门或公司、自述", () => {
+		assert.deepEqual(STRENGTHS, ["controlled", "org", "claimed"]);
+		assert.ok(strengthRank("controlled") < strengthRank("org"));
+		assert.ok(strengthRank("org") < strengthRank("claimed"));
 	});
 
-	test("部门公司自成一档，权重居中", () => {
-		assert.equal(strengthOf("org"), "org");
-		assert.ok(ROUTE_WEIGHTS.org < ROUTE_WEIGHTS.seq);
-		assert.ok(ROUTE_WEIGHTS.org > ROUTE_WEIGHTS.description);
-	});
-
-	test("简历原文是自述，权重最低", () => {
-		assert.equal(strengthOf("description"), "claimed");
-		assert.equal(
-			ROUTE_WEIGHTS.description,
-			Math.min(...Object.values(ROUTE_WEIGHTS)),
-		);
-	});
-
-	test("抽取的两路来源仍是自述，和简历原文同档同权", () => {
+	test("抽取的两路来源仍是自述，和简历原文同档", () => {
 		// 强度只看字段来源：模型读得再好也不会让自述变成登记
 		assert.equal(strengthOf("skill"), "claimed");
 		assert.equal(strengthOf("did"), "claimed");
-		assert.equal(ROUTE_WEIGHTS.skill, ROUTE_WEIGHTS.description);
-		assert.equal(ROUTE_WEIGHTS.did, ROUTE_WEIGHTS.description);
+		assert.equal(strengthOf("description"), "claimed");
+	});
+
+	test("六路按档由强到弱排，取数去重和界面枚举读的是同一份", () => {
+		const ranks = ROUTE_ORDER.map((r) => strengthRank(ROUTE_STRENGTH[r]));
+		assert.deepEqual(
+			ranks,
+			[...ranks].sort((a, b) => a - b),
+		);
+		assert.equal(ROUTE_ORDER.length, Object.keys(ROUTE_STRENGTH).length);
 	});
 
 	test("每一路都归到确切的一档，不是「属于三档之一」", () => {
@@ -51,7 +49,7 @@ describe("强度分档", () => {
 		// 加一路而没决定它多硬时照样绿。这里少一路多一路都会红。
 		assert.deepEqual(
 			Object.fromEntries(
-				(Object.keys(ROUTE_WEIGHTS) as Route[]).map((r) => [r, strengthOf(r)]),
+				(Object.keys(ROUTE_STRENGTH) as Route[]).map((r) => [r, strengthOf(r)]),
 			),
 			{
 				seq: "controlled",

@@ -7,8 +7,10 @@
  *
  * 两步，两个模型（阈值与理由见 weights.ts）：
  *
- * 1. **召回**用向量：余弦相似度过 `RECALL_MIN` 的说法都是候选。它只保证不漏。
- * 2. **判定**用重排：交叉编码器给每个候选打相关度，过线才算命中。它负责不错。
+ * 1. **召回**用向量：余弦最近的 `RECALL_TOP` 条说法当候选，还得过 `RECALL_MIN`。
+ *    它负责尽量不漏，成本由名次定死，和语料大小无关。
+ * 2. **判定**用重排：交叉编码器读「说法：释义」给每个候选打相关度，过线才算命中。
+ *    它负责不错。
  *
  * 重排的分数按（重排空间，查询词，说法）永久缓存在 `phrase_relevance` 里：翻页、
  * 改筛选或再次搜索同一个词时直接命中缓存。只有召回出来却没打过分的对
@@ -27,7 +29,7 @@ import { sql } from "drizzle-orm";
 import { type DbExecutor, withCorpusSnapshot } from "#/db";
 import { embed, vectorLiteral } from "#/server/embed";
 import { rerank, rerankSpaceId } from "#/server/rerank";
-import { RECALL_MAX, RECALL_MIN } from "./weights";
+import { RECALL_MIN, RECALL_TOP } from "./weights";
 
 /** 一个查询词命中的一条说法。 */
 export type Admitted = { phraseId: number; relevance: number };
@@ -44,8 +46,16 @@ type Recalled = {
 };
 
 /**
- * 每个查询词在语料里的候选说法：向量召回，按相似度取前 `RECALL_MAX` 个。
+ * 每个查询词在语料里的候选说法：余弦最近的 `RECALL_TOP` 条里过 `RECALL_MIN` 的。
+ * 下限留着只为一件事：偏门词凑不齐名额时别拿不相干的说法凑数白白重排。
  * 所有词一条 SQL 取完，不串成 n 次往返。向量是快照外嵌好的。
+ *
+ * 候选带出去判定的文本是「说法：释义」（有释义的话，`phrase_gloss`）：重排模型判
+ * 一个词对一段话判得准，判四个字对四个字只会数字面重合。释义一变这条说法的分数
+ * 缓存跟着清（`corpus/gloss.ts` 的结算），所以缓存键里不必带释义。
+ *
+ * 说法表现在不建向量索引，精确扫描几万行是几十毫秒；「最近的 k 条」正是 HNSW
+ * 回答的问题，语料涨一个数量级时加索引只改 `db/schema.ts` 和这一句。
  */
 async function recall(
 	store: DbExecutor,
@@ -69,11 +79,13 @@ async function recall(
 		with q(ord, v) as ${q}
 		select q.ord, c.phrase_id, c.text
 		from q cross join lateral (
-			select p.id as phrase_id, p.text
+			select p.id as phrase_id,
+				case when g.gloss is null then p.text else p.text || '：' || g.gloss end as text
 			from phrase p
+			left join phrase_gloss g on g.text = p.text
 			where 1 - (p.embedding <=> q.v) >= ${RECALL_MIN}
 			order by p.embedding <=> q.v
-			limit ${RECALL_MAX}
+			limit ${RECALL_TOP}
 		) c`);
 	for (const row of rows.rows)
 		out[row.ord]?.candidates.push({
@@ -115,10 +127,15 @@ async function cachedScores(
 /** 这次新打出来的分。等进了快照、确认还是同一个嵌入空间，才写回缓存。 */
 type FreshScore = { query: string; phraseId: number; relevance: number };
 
-/** 一次准入的完整计划：它站在哪一版语料上，各词命中了什么，欠着哪些缓存写。 */
-type Plan = {
-	generation: string;
+/** 一次准入的结果：各词命中了什么。 */
+export type Admission = {
+	/** 每个词命中的说法，按相关度从高到低。 */
 	admitted: Map<string, Admitted[]>;
+};
+
+/** 一次准入的完整计划：它站在哪一版语料上，命中了什么，欠着哪些缓存写。 */
+type Plan = Admission & {
+	generation: string;
 	fresh: FreshScore[];
 };
 
@@ -218,11 +235,11 @@ const PLAN_ATTEMPTS = 3;
 export async function withAdmission<T>(
 	texts: string[],
 	min: number,
-	use: (store: DbExecutor, admitted: Map<string, Admitted[]>) => Promise<T>,
+	use: (store: DbExecutor, admission: Admission) => Promise<T>,
 ): Promise<T> {
 	// 一个词都没有就没有召回，计划里也就没有任何指向某一版语料的 id：直接进语料锁。
 	if (texts.length === 0)
-		return withCorpusSnapshot((store) => use(store, new Map()));
+		return withCorpusSnapshot((store) => use(store, { admitted: new Map() }));
 	// 重排端点没配就在这里抛，不进语料快照：没有判定这一步，召回出来的候选里
 	// 一半是「前端」对「后端」这种反义，装作能用等于给一份错名单。
 	const space = rerankSpaceId();
@@ -231,7 +248,7 @@ export async function withAdmission<T>(
 		const done = await withCorpusSnapshot(async (store, generation) => {
 			if (generation !== plan.generation) return null;
 			await cacheScores(store, space, plan.fresh);
-			return { value: await use(store, plan.admitted) };
+			return { value: await use(store, plan) };
 		});
 		if (done) return done.value;
 	}

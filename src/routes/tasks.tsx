@@ -111,7 +111,10 @@ export const facts: Record<TaskKind, (corpus: CorpusCounts) => string> = {
 			? `还有 ${corpus.pending} 条经历待解析`
 			: "经历已全部解析",
 	review: (corpus) =>
-		`技能 ${corpus.words} 个，其中 ${corpus.merged} 个已合并写法`,
+		dots(
+			`技能 ${corpus.words} 个，其中 ${corpus.merged} 个已合并写法`,
+			`释义 ${corpus.glossed}/${corpus.glossable}`,
+		),
 	sync: (corpus) =>
 		dots(
 			`${corpus.employees} 人`,

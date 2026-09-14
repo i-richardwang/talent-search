@@ -31,8 +31,8 @@ const { search } = await import("#/search/search");
 
 const run = async (query: string, filters: SearchFilters = {}) => {
 	const outcome = await search({ conditions: parseQuery(query) }, filters);
-	if (outcome.order !== "relevance")
-		throw new Error("要求查询未进入相关度路径");
+	if (outcome.order === "employee")
+		throw new Error("要求查询得有经历主张，只有人的条件排不出名次");
 	return outcome;
 };
 
@@ -77,7 +77,7 @@ before(async () => {
 					months: 36,
 					companyTag: "头部互联网T1",
 					// 能力词那一维是一段多个值：两个词都得成为候选，各数一个人
-					skills: ["推荐系统", "Python"],
+					extracted: { skills: ["推荐系统", "Python"] },
 				},
 			],
 		},
@@ -90,7 +90,7 @@ before(async () => {
 					kind: "external",
 					title: "算法",
 					months: 12,
-					skills: ["电商推荐系统"],
+					extracted: { skills: ["电商推荐系统"] },
 				},
 			],
 		},
@@ -104,7 +104,8 @@ before(async () => {
 					title: "算法",
 					months: 12,
 					companyTag: "未知",
-					skills: ["推荐系统"],
+					// 写的是别名：词表里它是「推荐系统」的另一种写法，筛选栏里数进那一项
+					extracted: { skills: ["推荐算法"] },
 				},
 			],
 		},
@@ -115,6 +116,7 @@ before(async () => {
 	const reviewedAt = new Date();
 	await db.insert(skillTerm).values([
 		{ word: "推荐系统", canonical: "推荐系统", judge, reviewedAt },
+		{ word: "推荐算法", canonical: "推荐系统", judge, reviewedAt },
 		{
 			word: "电商推荐系统",
 			canonical: "电商推荐系统",
@@ -134,6 +136,8 @@ describe("候选与计数", () => {
 		const skills = new Map(facets.skill.map((s) => [s.value, s.n]));
 		assert.equal(skills.get("推荐系统"), 3);
 		assert.equal(skills.get("Python"), 1);
+		// 别名自己不成为一项：写了它的人在标准词那一项里
+		assert.equal(skills.get("推荐算法"), undefined);
 	});
 
 	test("宽的词把写了细的词的人也数进去，细的词只有写了它的人", async () => {

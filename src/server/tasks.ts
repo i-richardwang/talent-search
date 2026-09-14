@@ -23,7 +23,10 @@
 import "@tanstack/react-start/server-only";
 import { eq, sql } from "drizzle-orm";
 import { currentTree, derive, identity, pending } from "#/corpus/derive";
+import { glossCounts } from "#/corpus/gloss";
+import { type Judge, reviewJudge } from "#/corpus/questions";
 import type { Report } from "#/corpus/report";
+import { review } from "#/corpus/review";
 import {
 	acquireCorpusSession,
 	type CorpusSession,
@@ -31,7 +34,6 @@ import {
 } from "#/corpus/session";
 import { sourceName } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
-import { type Judge, review, reviewJudge } from "#/corpus/vocabulary";
 import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
 import { configured } from "./review";
@@ -124,6 +126,9 @@ export type CorpusCounts = {
 	/** 能力词个数，以及其中已经并到别的写法上的 */
 	words: number;
 	merged: number;
+	/** 该有释义的短说法条数，以及其中已经写了的 */
+	glossable: number;
+	glossed: number;
 };
 
 /** 任务台一次载入要的全部。 */
@@ -198,8 +203,9 @@ export async function tasksState(): Promise<TasksState> {
  * 「已经并到别的写法上」数的是词表里指向别人的那些词。
  */
 async function corpusCounts(): Promise<CorpusCounts> {
-	const [pending, counted] = await Promise.all([
+	const [pending, gloss, counted] = await Promise.all([
 		derivePending(),
+		glossCounts(pool),
 		pool.query<Record<string, string>>(
 			`select
 				(select count(*) from employee) as employees,
@@ -218,6 +224,8 @@ async function corpusCounts(): Promise<CorpusCounts> {
 	return {
 		employees: n("employees"),
 		external,
+		glossable: gloss.glossable,
+		glossed: gloss.glossed,
 		internal,
 		merged: n("merged"),
 		pending,

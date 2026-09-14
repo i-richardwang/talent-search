@@ -109,7 +109,7 @@ function Person() {
 	// 命中证据来自父路由已经拿到的检索结果——不为了标记而再查一次库
 	const { result: search } = useLoaderData({ from: "/s/$turnId" });
 	const result =
-		search?.order === "relevance"
+		search && search.order !== "employee"
 			? search.results.find((r) => r.employee.empId === e.empId)
 			: undefined;
 	// 轨迹条和时间轴共用：一份索引，两个视图

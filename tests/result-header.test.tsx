@@ -22,11 +22,12 @@ const markup = (
 ) =>
 	renderToStaticMarkup(
 		<ResultHeader
+			byDepth={false}
 			claims={claims}
 			loading={false}
 			onChange={() => {}}
 			onPicking={() => {}}
-			order="relevance"
+			order="evidence"
 			pickable
 			picking={picking}
 			planned={claims.length > 0}
@@ -43,14 +44,64 @@ describe("这份名单是什么", () => {
 	test("报数和排序依据都在", () => {
 		const seen = render(false, 7);
 		assert.ok(seen.includes("38"), seen);
-		assert.ok(seen.includes("按相关度排序"), seen);
+		assert.ok(seen.includes("按证据排序"), seen);
 	});
 
-	test("一个条件都没有时不画图例，也不画那个开关", () => {
-		// 没有点可对照的时候，图例解释的是不存在的东西
+	test("一个条件都没有时不画图例，也不画那两个开关", () => {
+		// 没有点可对照的时候，图例解释的是不存在的东西；没有证据也就没有深度可看
 		const seen = render(false, 7, []);
 		assert.ok(!seen.includes("匹配来源"), seen);
 		assert.ok(!seen.includes("仅岗位或序列"), seen);
+		assert.ok(!seen.includes("只看深度"), seen);
+	});
+});
+
+describe("只看深度", () => {
+	test("和「仅岗位或序列」并排，按下态跟着视图走，不等结果", () => {
+		const html = renderToStaticMarkup(
+			<ResultHeader
+				byDepth
+				claims={CLAIMS}
+				loading
+				onChange={() => {}}
+				onPicking={() => {}}
+				order="evidence"
+				pickable={false}
+				picking={false}
+				planned
+				strong={false}
+				strongOn={0}
+				total={0}
+			/>,
+		);
+		const from = html.indexOf("只看深度");
+		assert.ok(from > html.indexOf("仅岗位或序列"), html);
+		assert.match(
+			html.slice(html.lastIndexOf("<button", from), from),
+			/aria-pressed="true"/,
+		);
+	});
+
+	test("报数那一行说的是名单实际的排法", () => {
+		const seen = visibleText(
+			renderToStaticMarkup(
+				<ResultHeader
+					byDepth
+					claims={CLAIMS}
+					loading={false}
+					onChange={() => {}}
+					onPicking={() => {}}
+					order="depth"
+					pickable
+					picking={false}
+					planned
+					strong={false}
+					strongOn={7}
+					total={38}
+				/>,
+			),
+		);
+		assert.ok(seen.includes("按经历深度排序"), seen);
 	});
 });
 
@@ -94,13 +145,17 @@ describe("不给死路", () => {
 describe("挑人", () => {
 	test("它是一次动作，不是这份名单的一种性质", () => {
 		/*
-		 * 它左边那个「仅岗位或序列」按下去会让人从名单上消失，是这份名单的性质，
-		 * 所以是个按下态的开关；挑人按下去一个人不少。两件事做成同款控件并排，
-		 * 等于宣称它们是一类——所以这一行里带按下态的只能有一个。
+		 * 它左边那两个开关按下去会改变名单本身（少一批人、换一种顺序），是这份
+		 * 名单的性质，所以是带按下态的开关；挑人按下去名单一个人不少、顺序不变。
+		 * 两类做成同款控件并排，等于宣称它们是一类——所以带按下态的只有左边那两个。
 		 */
 		const html = markup(false, 7);
 		assert.ok(html.includes("挑人导出"), html);
-		assert.equal((html.match(/aria-pressed/g) ?? []).length, 1, html);
+		assert.equal((html.match(/aria-pressed/g) ?? []).length, 2, html);
+		assert.doesNotMatch(
+			html.slice(html.lastIndexOf("<button", html.indexOf("挑人导出"))),
+			/aria-pressed/,
+		);
 	});
 
 	test("进和出都写成这一下要做的事", () => {

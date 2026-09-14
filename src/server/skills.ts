@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
-import { type Judge, reviewJudge } from "#/corpus/vocabulary";
+import { type Judge, reviewJudge } from "#/corpus/questions";
 import { withCorpusSnapshot } from "#/db";
 import { configured } from "./review";
 
@@ -10,7 +10,7 @@ export type SkillEntry = {
 	/** 更宽的词；没有就是 null */
 	parent: string | null;
 	aliases: string[];
-	/** 写了这个词或它下面任一个词的人数，和筛选栏同一口径 */
+	/** 写了这个词、它的其他写法或它下面任一个词的人数，和筛选栏同一口径 */
 	people: number;
 	/** 上次判这个词是几天前；0 是今天 */
 	reviewedDaysAgo: number;
@@ -36,8 +36,9 @@ export type SkillTable = {
  * 能力词词表的一份快照，给管理页看。
  *
  * 只读：表由整理任务写（`src/corpus/vocabulary.ts`），这里不提供改它的路，改了下一轮整理
- * 就会被裁判的决定盖回去。人数按标准词连同它下面的词一起数，和筛选栏「入职前技能」
- * 同一口径——「数据分析」的人数包含写了「销售数据分析」的人。裁判起的名字（语料里没人
+ * 就会被裁判的决定盖回去。人数按标准词连同它的其他写法、它下面的词一起数，和筛选栏
+ * 「入职前技能」同一口径——「团队管理」的人数包含写了「人员管理」的人，「数据分析」的
+ * 人数包含写了「销售数据分析」的人。裁判起的名字（语料里没人
  * 写过的更宽的词）也是一行，人数全部来自它下面的词。表里的标准词有可能已经不在语料里
  * （写它的人的简历改了），那就是 0，照样列出来。「几天前」在库里算：页面直出和水合两边
  * 都不用碰时区。
@@ -49,10 +50,11 @@ export function listSkills(): Promise<SkillTable> {
 	return withCorpusSnapshot(async (store) => {
 		const entries = await store.execute<SkillEntry>(sql`
 				with recursive under(term, word) as (
-					select word, word from skill_term where word = canonical
+					select canonical, word from skill_term
 					union
-					select u.term, t.word from under u
-					join skill_term t on t.parent = u.word
+					select u.term, a.word from under u
+					join skill_term c on c.parent = u.word
+					join skill_term a on a.canonical = c.word
 				)
 				select
 					a.canonical,
@@ -71,7 +73,7 @@ export function listSkills(): Promise<SkillTable> {
 				group by a.canonical
 				order by people desc, a.canonical`);
 		const waiting = await store.execute<{ waiting: number }>(
-			sql`select count(*)::int as waiting from skill_review where judge is null`,
+			sql`select count(*)::int as waiting from review_question where kind = 'group' and judge is null`,
 		);
 		return {
 			entries: entries.rows,

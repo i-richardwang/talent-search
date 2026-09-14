@@ -7,6 +7,14 @@ import { routeLabel } from "#/search/evidence";
 import { parseQuery } from "#/search/query-syntax";
 import type { Claim } from "#/search/result";
 import { search } from "#/search/search";
+import type { Strength } from "#/search/weights";
+
+/** 可信度那一档在命令行上的字：登记的岗位或序列、登记的部门或公司、自述。 */
+const STRENGTH_LABEL: Record<Strength, string> = {
+	controlled: "登记",
+	org: "部门",
+	claimed: "自述",
+};
 
 /** 一条主张在命令行上怎么写：和一行查询语法同一种写法，对着输入就能核。 */
 function claimText(c: Claim) {
@@ -26,8 +34,8 @@ if (!q) throw new Error('用法：bun run query "查询词"');
 
 const t0 = Date.now();
 const outcome = await search({ conditions: parseQuery(q) });
-if (outcome.order !== "relevance")
-	throw new Error("要求查询必须产生相关度结果");
+if (outcome.order === "employee")
+	throw new Error("查询得有经历主张，只有人的条件排不出名次");
 const { claims, results, total } = outcome;
 const ms = Date.now() - t0;
 
@@ -38,11 +46,12 @@ console.log(`查询「${q}」→ 条件 [${shown}]`);
 // 报 total 不报 results.length：后者被 RESULT_PAGE 截过，命中五百人也只会说 50，
 // 而这个脚本正是拿来调权重和跑验收用例的——对着一个恒等于页大小的数调参没有意义。
 // 「人」这个单位在全站只有一个口径，命令行也不例外。
-console.log(`命中 ${total} 人，${ms}ms；以下是分数最高的 ${top.length} 个\n`);
+console.log(`命中 ${total} 人，${ms}ms；以下是排在最前的 ${top.length} 个\n`);
 for (const r of top) {
 	const e = r.employee;
+	// 名次的两把尺都印出来：档在前、深度在后，和排序键同一个顺序
 	console.log(
-		`${r.score.toFixed(3)}  ${e.name} ${e.empId}  ${e.curDept} / ${e.curTitle}`,
+		`${STRENGTH_LABEL[r.strength]} ${r.depth.toFixed(3)}  ${e.name} ${e.empId}  ${e.curDept} / ${e.curTitle}`,
 	);
 	const seen = new Set<number>();
 	for (const h of r.hits) {

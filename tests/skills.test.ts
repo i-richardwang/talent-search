@@ -19,7 +19,11 @@ describe("能力词词表", () => {
 				empId: "U001",
 				name: "甲",
 				segments: [
-					{ kind: "external", months: 12, skills: ["推荐系统", "Python"] },
+					{
+						kind: "external",
+						months: 12,
+						extracted: { skills: ["推荐系统", "Python"] },
+					},
 				],
 			},
 			{
@@ -27,7 +31,11 @@ describe("能力词词表", () => {
 				name: "丙",
 				segments: [
 					// 只写了细的词：宽的「推荐系统」把他也数进去，细的那一行只有他
-					{ kind: "external", months: 12, skills: ["电商推荐系统"] },
+					{
+						kind: "external",
+						months: 12,
+						extracted: { skills: ["电商推荐系统"] },
+					},
 				],
 			},
 			{
@@ -35,8 +43,20 @@ describe("能力词词表", () => {
 				name: "乙",
 				segments: [
 					// 同一个人两段都写了推荐系统：按人数只算一次
-					{ kind: "external", months: 12, skills: ["推荐系统"] },
-					{ kind: "external", months: 6, skills: ["推荐系统"] },
+					{ kind: "external", months: 12, extracted: { skills: ["推荐系统"] } },
+					{ kind: "external", months: 6, extracted: { skills: ["推荐系统"] } },
+				],
+			},
+			{
+				empId: "U004",
+				name: "丁",
+				segments: [
+					// 只写了别名：标准词「推荐系统」那一行把他数进去
+					{
+						kind: "external",
+						months: 12,
+						extracted: { skills: ["个性化推荐"] },
+					},
 				],
 			},
 		]);
@@ -66,14 +86,14 @@ describe("能力词词表", () => {
 		]);
 	});
 
-	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段、连同下面的词", async () => {
+	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段、连同别名和下面的词", async () => {
 		const table = await listSkills();
 		assert.deepEqual(table.entries, [
 			{
 				canonical: "推荐系统",
 				parent: null,
 				aliases: ["个性化推荐", "推荐算法"],
-				people: 3,
+				people: 4,
 				reviewedDaysAgo: 0,
 				judge: "model:test",
 			},

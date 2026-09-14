@@ -116,10 +116,11 @@ describe("产品文案使用常规 SaaS 语言", () => {
 	test("结果数量使用中性状态，不暴露检索术语", () => {
 		const text = seen(
 			<ResultHeader
+				byDepth={false}
 				loading={false}
 				onChange={() => {}}
 				onPicking={() => {}}
-				order="relevance"
+				order="evidence"
 				pickable
 				picking={false}
 				planned
@@ -130,11 +131,11 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			/>,
 		);
 		// 数和单位挨着，中间不许插别的东西。不要求「共」字：它是名单的表头
-		// （12 / 人 / 按相关度排序），不是句子里的一截。
+		// （12 / 人 / 按证据排序），不是句子里的一截。
 		assert.match(text, /12\s*人/);
 		// 排序依据常驻：一张排过序的表必须说出自己按什么排，否则「从上往下看」
 		// 这个动作没有依据。它不该只在结果被截断时才出现一次。
-		assert.match(text, /按相关度排序/);
+		assert.match(text, /按证据排序/);
 		assert.doesNotMatch(text, /找到 12 人|命中 12 人/);
 	});
 
@@ -195,9 +196,10 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onReviseQuery={() => {}}
 				picks={NO_PICKS}
 				strong={false}
+				byDepth={false}
 				strongOn={0}
 				outcome={{
-					order: "relevance",
+					order: "evidence",
 					claims: [{ about: "experience", mode: "must", what: ["量子炼金"] }],
 					results: [],
 					facets: emptyFacets(),
@@ -215,7 +217,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		// 先确认画出来的确实是空态那一支：两条 doesNotMatch 在一片空白上也成立
 		assert.match(text, /没有同时满足必须条件的人/);
 		assert.doesNotMatch(text, /0\s*人/);
-		assert.doesNotMatch(text, /按相关度排序/);
+		assert.doesNotMatch(text, /按证据排序/);
 	});
 
 	test("点阵图例说明判断依据，不要求用户理解字段治理", () => {

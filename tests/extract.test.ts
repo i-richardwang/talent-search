@@ -12,7 +12,10 @@ import { answerChat, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { conform, EMPTY, extract, SYSTEM } = await import("#/corpus/extract");
+const { conform, extract, SYSTEM } = await import("#/corpus/extract");
+
+/** 读了但什么都没读出来。 */
+const EMPTY = { skills: [], did: [] };
 
 const quiet = () => {};
 
@@ -157,7 +160,8 @@ describe("抽取哪些段", () => {
 		assert.deepEqual(asked, [
 			"岗位：算法工程师\n公司：云枢智能\n描述：负责推荐系统召回",
 		]);
-		assert.deepEqual(got.slice(0, 2), [EMPTY, EMPTY]);
+		// 没问的段是「没读过」，和模型没作答一样是 null，不是一份空抽取
+		assert.deepEqual(got.slice(0, 2), [null, null]);
 		assert.deepEqual(got[2], {
 			skills: ["召回"],
 			did: [{ involvement: "负责建设", domain: "推荐系统" }],

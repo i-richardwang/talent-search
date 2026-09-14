@@ -13,9 +13,9 @@ import { answerChat, seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { openQuestions, read, review, submitAnswer } = await import(
-	"#/corpus/vocabulary"
-);
+const { GUIDE, read } = await import("#/corpus/vocabulary");
+const { openQuestions, submitAnswer } = await import("#/corpus/questions");
+const { review } = await import("#/corpus/review");
 const { pool } = await import("#/db");
 
 const NOW = new Date("2026-09-08T00:00:00Z");
@@ -36,7 +36,7 @@ type SeedRow = [
 async function seedTable(rows: SeedRow[]) {
 	const connection = await client();
 	try {
-		await connection.query("delete from skill_review");
+		await connection.query("delete from review_question");
 		await connection.query("delete from skill_term");
 		for (const [word, canonical, reviewedAt, parent] of rows)
 			await connection.query(
@@ -155,7 +155,7 @@ describe("整轮整理", () => {
 			// 一天前整理过：这一轮它不做组心，即使人数够
 			["Python", "Python", new Date(Date.now() - 86_400_000)],
 		]);
-		// 库里能力词那一路上此刻有的词。派生写边时已经按词表换过词，所以没有「Py」
+		// 库里能力词那一路上此刻有的词。「Py」在表里是别名，但没有人写它
 		await seed(
 			[
 				["团队管理"],
@@ -166,14 +166,22 @@ describe("整轮整理", () => {
 			].map((skills, index) => ({
 				empId: `u${index + 1}`,
 				name: `人${index + 1}`,
-				segments: [{ kind: "external", months: 12, skills }],
+				segments: [{ kind: "external", months: 12, extracted: { skills } }],
 			})),
 		);
 	});
 
-	test("只问到期的组心，决定写回表，边改指标准词", async () => {
+	test("只问到期的组心，决定写回表，人身上的词不动", async () => {
 		const asked: string[] = [];
-		const restore = answerChat((_system, prompt) => {
+		const restore = answerChat((system, prompt) => {
+			// 同一轮里释义题也会问到模型（gloss.test.ts 管它），这里只看圈组那一问
+			if (system !== GUIDE)
+				return {
+					judgments: prompt
+						.split("\n")
+						.map((line) => line.replace(/（\d+ 人）$/, ""))
+						.map((word) => ({ word, gloss: `${word}的释义` })),
+				};
 			asked.push(prompt);
 			return {
 				judgments: [
@@ -206,11 +214,12 @@ describe("整轮整理", () => {
 		} finally {
 			later.release();
 		}
-		// 能力词那一路上再也没有别名：五个人里写了「团队管理工作」的四个都指向了标准词
+		// 词表只决定筛选栏怎么摆：写了「团队管理工作」的四个人身上仍是这四个字
 		assert.deepEqual(await peopleByWord(), [
 			["Java", 1],
 			["Python", 2],
-			["团队管理", 5],
+			["团队管理", 4],
+			["团队管理工作", 4],
 		]);
 	});
 });
@@ -242,7 +251,7 @@ describe("判卷交给外部", () => {
 			].map((skills, index) => ({
 				empId: `d${index + 1}`,
 				name: `数${index + 1}`,
-				segments: [{ kind: "external", months: 12, skills }],
+				segments: [{ kind: "external", months: 12, extracted: { skills } }],
 			})),
 		);
 	});
@@ -280,7 +289,9 @@ describe("判卷交给外部", () => {
 	test("先到先得：第二份答卷不算，不存在的题分开说", async () => {
 		const connection = await client();
 		try {
-			const [question] = await openQuestions(connection);
+			const question = (await openQuestions(connection)).find((one) =>
+				one.words.some((member) => member.word === "线上销售数据分析"),
+			);
 			assert.ok(question);
 			const judgments = [
 				{
@@ -320,7 +331,7 @@ describe("判卷交给外部", () => {
 
 	test("下一轮结算外部的答卷：兄弟各自留在人身上，共同的更宽的词落成一行", async () => {
 		const said = await runReview();
-		assert.match(said.join("\n"), /结算 1 道题（agent:hr-bot 1 道）/);
+		assert.match(said.join("\n"), /结算 1 道圈组题（agent:hr-bot 1 道）/);
 		assert.match(said.join("\n"), /线下销售数据分析 属于 销售数据分析/);
 
 		const connection = await client();
@@ -341,7 +352,8 @@ describe("判卷交给外部", () => {
 		assert.deepEqual(await peopleByWord(), [
 			["Java", 1],
 			["Python", 2],
-			["团队管理", 5],
+			["团队管理", 4],
+			["团队管理工作", 4],
 			["线上销售数据分析", 3],
 			["线下销售数据分析", 2],
 		]);
@@ -350,10 +362,10 @@ describe("判卷交给外部", () => {
 	test("一周没人答的题作废，那个词下一轮重新出题", async () => {
 		const connection = await client();
 		try {
-			await connection.query("delete from skill_review");
+			await connection.query("delete from review_question");
 			await connection.query(
-				`insert into skill_review (words, asked_at)
-				 values ('[{"word":"陈年词","people":3},{"word":"陈年写法","people":2}]'::jsonb,
+				`insert into review_question (kind, words, asked_at)
+				 values ('group', '[{"word":"陈年词","people":3},{"word":"陈年写法","people":2}]'::jsonb,
 				         now() - interval '30 days')`,
 			);
 		} finally {
@@ -405,15 +417,15 @@ describe("判卷交给外部", () => {
 		}
 	});
 
-	test("裁判起的名字被判成别的写法的标准词时，边改指它而不是消失", async () => {
+	test("裁判起的名字可以做标准写法：写了别的写法的人身上的词不动", async () => {
 		const connection = await client();
 		try {
 			// 出一道人数上「销售数据分析」占优的题：裁判说「线上销售数据分析」和它是同一件事，
 			// 那个没人写过的名字就要做标准写法
-			await connection.query("delete from skill_review");
+			await connection.query("delete from review_question");
 			const { rows } = await connection.query<{ id: number }>(
-				`insert into skill_review (words)
-				 values ('[{"word":"销售数据分析","people":5},{"word":"线上销售数据分析","people":3}]'::jsonb)
+				`insert into review_question (kind, words)
+				 values ('group', '[{"word":"销售数据分析","people":5},{"word":"线上销售数据分析","people":3}]'::jsonb)
 				 returning id`,
 			);
 			assert.equal(
@@ -433,13 +445,74 @@ describe("判卷交给外部", () => {
 		}
 		const said = await runReview();
 		assert.match(said.join("\n"), /线上销售数据分析 → 销售数据分析/);
-		// 三个人身上的词换成了没人写过的那个名字：它此刻已经是一条说法
 		assert.deepEqual(await peopleByWord(), [
 			["Java", 1],
 			["Python", 2],
-			["团队管理", 5],
+			["团队管理", 4],
+			["团队管理工作", 4],
+			["线上销售数据分析", 3],
 			["线下销售数据分析", 2],
-			["销售数据分析", 3],
 		]);
+	});
+
+	test("到期重判时标准词带着它名下的写法出题，这一次判开就拆开", async () => {
+		const connection = await client();
+		try {
+			await connection.query("delete from review_question");
+			await connection.query(
+				"update skill_term set reviewed_at = $1 where word = '销售数据分析'",
+				[OLD],
+			);
+		} finally {
+			connection.release();
+		}
+		await runReview();
+
+		const later = await client();
+		try {
+			const question = (await openQuestions(later)).find(
+				(one) => one.words[0]?.word === "销售数据分析",
+			);
+			assert.ok(question, "「销售数据分析」该做组心出一道题");
+			// 别名不做组心、不单独圈组，紧跟在它的标准词后面；标准词的人数连同别名和下面的词
+			assert.deepEqual(question.words, [
+				{ word: "销售数据分析", people: 3 },
+				{ word: "线上销售数据分析", people: 3 },
+				{ word: "线下销售数据分析", people: 2 },
+			]);
+			assert.equal(
+				await submitAnswer(later, question.id, AGENT, [
+					{ word: "销售数据分析", why: "宽", sameAs: "", parent: "" },
+					{
+						word: "线上销售数据分析",
+						why: "只是线上那一种",
+						sameAs: "",
+						parent: "销售数据分析",
+					},
+					{
+						word: "线下销售数据分析",
+						why: "只是线下那一种",
+						sameAs: "",
+						parent: "销售数据分析",
+					},
+				]),
+				"accepted",
+			);
+		} finally {
+			later.release();
+		}
+		await runReview();
+
+		const settled = await client();
+		try {
+			const table = await read(settled);
+			assert.equal(
+				table.get("线上销售数据分析")?.canonical,
+				"线上销售数据分析",
+			);
+			assert.equal(table.get("线上销售数据分析")?.parent, "销售数据分析");
+		} finally {
+			settled.release();
+		}
 	});
 });

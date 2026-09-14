@@ -47,7 +47,7 @@ import {
  * 每次渲染新建 `[]` 会让那个 effect 反复解绑重绑。
  */
 const NO_OUTCOME: SearchOutcome = {
-	order: "relevance",
+	order: "evidence",
 	claims: [],
 	results: [],
 	facets: emptyFacets(),
@@ -248,6 +248,7 @@ function Workbench() {
 							spec={spec}
 							strong={Boolean(view.strong)}
 							strongOn={facets.strong.on}
+							byDepth={view.order === "depth"}
 							turnId={turnId}
 						/>
 					</main>

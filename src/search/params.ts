@@ -56,12 +56,13 @@ export function sanitizeFilters(value: unknown): SearchFilters {
 	return {
 		...parsePopulation(filters),
 		strong: filters.strong === true ? true : undefined,
+		order: filters.order === "depth" ? "depth" : undefined,
 	};
 }
 
 /**
- * 收窄**人群**的那几维。`strong` 不在其中：它答的是「证据够不够硬」，
- * 改的是什么才算命中，不是在这批人里再看哪一部分。
+ * 收窄**人群**的那几维。`strong` 和 `order` 不在其中：一个答「证据够不够硬」，
+ * 一个答「先看谁」，都不是在这批人里再看哪一部分。
  *
  * 这份名单只有这一处：URL 那侧的「清除筛选」「有没有筛选」（`view-params.ts`）
  * 和检索那侧判断「是不是筛空了」（`empty.ts`）都从它派生。各写一份的话，

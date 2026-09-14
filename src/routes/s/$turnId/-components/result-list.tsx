@@ -43,11 +43,18 @@ const PAD = "px-4 py-3.5";
 /** 首次检索的骨架块数。之后跟着上一次的结果数走，列表高度就不会每次跳。 */
 const SKELETON_ROWS = 5;
 
+/** 报数那一行怎么说这份名单按什么排。 */
+const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
+	evidence: "按证据排序",
+	depth: "按经历深度排序",
+	employee: "按工号排序",
+};
+
 /**
- * 名单的表头：这份名单有多少人、按什么排、那三颗点各是什么意思，以及要不要
- * 只留任职记录能证明的那些人。
+ * 名单的表头：这份名单有多少人、按什么排、那三颗点各是什么意思、要不要
+ * 只留任职记录能证明的那些人，以及要不要只看深度。
  *
- * 四样都是**关于这份名单**的，所以它们跟着名单走。放进查询台的角落，报数就会
+ * 这些都是**关于这份名单**的，所以它们跟着名单走。放进查询台的角落，报数就会
  * 随着 chips 换行上下漂，而它回答的本来也不是「我搜了什么」。
  *
  * 图例必须和它解释的那些点同屏，所以只能排在这里；而那个开关要求的正是图例里
@@ -64,6 +71,7 @@ export function ResultHeader({
 	total,
 	claims,
 	strong,
+	byDepth,
 	onChange,
 	strongOn,
 	planned,
@@ -72,7 +80,8 @@ export function ResultHeader({
 	pickable,
 }: {
 	loading: boolean;
-	order: "relevance" | "employee";
+	/** 屏幕上这份名单实际按什么排（结果说的）。 */
+	order: SearchOutcome["order"];
 	total: number;
 	claims: Claim[];
 	/**
@@ -85,6 +94,8 @@ export function ResultHeader({
 	planned: boolean;
 	/** 「仅岗位或序列」开着没有。它是这份名单的性质，不是一份视图状态。 */
 	strong: boolean;
+	/** 「只看深度」开着没有（视图要的）。结果还没回来时它已经按下去了。 */
+	byDepth: boolean;
 	onChange: (next: Partial<View>) => void;
 	/** 只留受控证据之后还剩多少人 */
 	strongOn: number;
@@ -103,7 +114,7 @@ export function ResultHeader({
 				) : (
 					<>
 						<b className="text-foreground tabular-nums">{total}</b> 人
-						{order === "relevance" ? " · 按相关度排序" : " · 按工号排序"}
+						{` · ${ORDER_LABEL[order]}`}
 					</>
 				)}
 			</p>
@@ -119,6 +130,7 @@ export function ResultHeader({
 							on={strong}
 							onChange={onChange}
 						/>
+						<ByDepth on={byDepth} onChange={onChange} />
 						{/*
 						 * 一条竖线分开两类东西：左边讲**这份名单是什么**（三颗点、
 						 * 只留受控证据的那一档），右边是**对这份名单做点什么**。
@@ -209,6 +221,37 @@ function ProvenOnly({
 }
 
 /**
+ * 只看深度。
+ *
+ * 默认的排法先按证据分档、档内按做得多深（`result.ts` 的 `Order`）；这个开关
+ * 抹掉分档，只看做得多像、多久、多近。组团队要找做得久的人时用它：自述八年的
+ * 经历排到登记三个月的岗位前面，点阵仍在旁边说那是自述。
+ *
+ * 和「仅岗位或序列」并排：两个都在讲**这份名单怎么看证据**，一个收紧、一个放开。
+ * 它没有数可报——换排法不改变人数，所以没有那个占位的数字。
+ */
+function ByDepth({
+	on,
+	onChange,
+}: {
+	on: boolean;
+	onChange: (next: Partial<View>) => void;
+}) {
+	return (
+		<Toggle
+			onPressedChange={(next) =>
+				onChange({ order: next ? "depth" : undefined })
+			}
+			pressed={on}
+			size="sm"
+			variant="outline"
+		>
+			<span>只看深度</span>
+		</Toggle>
+	);
+}
+
+/**
  * 候选人名单。
  *
  * 一个人一块，不是一行。表格的前提是**同一列的值可以竖着比**，而这里每一列
@@ -227,6 +270,7 @@ export function ResultList({
 	spec,
 	turnId,
 	strong,
+	byDepth,
 	onChange,
 	onReviseQuery,
 	onEditQuery,
@@ -248,6 +292,8 @@ export function ResultList({
 	turnId: string;
 	/** 「仅岗位或序列」开着没有，给表头那个开关。 */
 	strong: boolean;
+	/** 「只看深度」开着没有，给表头那个开关。 */
+	byDepth: boolean;
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：给一份新的证据要求，派生一条新记录。 */
 	onReviseQuery: (next: Condition[]) => void;
@@ -270,6 +316,7 @@ export function ResultList({
 
 	const head = (
 		<ResultHeader
+			byDepth={byDepth}
 			loading={loading}
 			onChange={onChange}
 			onPicking={picks.start}
@@ -412,10 +459,10 @@ export function ResultList({
 				{/* 命中的逐条画，没命中的收成一行——这份推导在 `-lib/picks.ts` 做完，
 				    因为挑上那一刻要写进 CSV 的正是同一份东西。「未命中」这三个字重复
 				    五遍没有任何可读的东西，只是把每一块撑高一倍。 */}
-				{picks.rows.map(({ result: r, hits, missed }) => {
-					const selected = r.employee.empId === empId;
+				{picks.rows.map(({ employee: e, hits, missed }) => {
+					const selected = e.empId === empId;
 					return (
-						<li className="relative" key={r.employee.empId}>
+						<li className="relative" key={e.empId}>
 							{/*
 							 * 复选框在卡片**外面**，不在里面：卡片整块是一条打开详情的
 							 * 链接，往一个整块可点的东西里再塞一个控件，就是 AGENTS.md
@@ -426,10 +473,7 @@ export function ResultList({
 							 */}
 							{picks.picking && (
 								<Label className="-start-9 absolute top-2.5 p-1">
-									<Checkbox
-										aria-label={`挑上 ${r.employee.name}`}
-										value={r.employee.empId}
-									/>
+									<Checkbox aria-label={`挑上 ${e.name}`} value={e.empId} />
 								</Label>
 							)}
 							<Card
@@ -446,7 +490,7 @@ export function ResultList({
 										: "hoverable:hover:bg-accent/40",
 								)}
 								/* ↑↓ 换人时靠它把这一块滚进视口（-lib/keyboard-flow.ts） */
-								data-emp={r.employee.empId}
+								data-emp={e.empId}
 							>
 								<div className="flex items-baseline gap-2.5">
 									<Link
@@ -463,15 +507,15 @@ export function ResultList({
 										 * 这条链接）；焦点环归这里，那件事卡片没有替它说。
 										 */
 										className="title-2 shrink-0 truncate rounded-sm font-semibold after:absolute after:inset-0 after:content-['']"
-										params={{ turnId, empId: r.employee.empId }}
+										params={{ turnId, empId: e.empId }}
 										replace
 										search={(prev) => prev}
 										to="/s/$turnId/p/$empId"
 									>
-										{r.employee.name}
+										{e.name}
 									</Link>
 									<span className="min-w-0 truncate text-muted-foreground text-sm">
-										{positionLabel(r.employee)}
+										{positionLabel(e)}
 									</span>
 								</div>
 

@@ -91,8 +91,8 @@ export type DimSource = {
 	companyTag: string | null;
 	/**
 	 * 这一段抽出来的能力词，连同每个词往上的每一层更宽的词（`search.ts` 的 `FACT_COLUMNS.skills`）：
-	 * 写了「销售数据分析」的段在这里也有「数据分析」，点宽的词能看到细的人。写法已由整理
-	 * 任务换成标准词（`src/corpus/vocabulary.ts`）。没有就是空数组
+	 * 写了「销售数据分析」的段在这里也有「数据分析」，点宽的词能看到细的人。每个词取的是
+	 * 词表里的标准写法，别名不成为一项。没有就是空数组
 	 */
 	skills: string[];
 	kind: "internal" | "external";

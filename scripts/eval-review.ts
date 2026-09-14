@@ -11,8 +11,8 @@
  *     "apart": [["销售数据分析", "数据分析"]],             // 绝不能并到一起的词对（宽细、兄弟、邻居）
  *     "parent": { "销售数据分析": ["数据分析"], "数据统计": [""] } }  // 可接受的归属，"" 是「没有归属」
  *
- * 量四样：same 里的词对有没有并上（召回）；apart 里的词对有没有被并（**有损合并**，这是不可逆的
- * 那种错，一条都不该有）；parent 里每个词的归属在不在可接受的集合里；起出来的归属名是不是能力词
+ * 量四样：same 里的词对有没有并上（召回）；apart 里的词对有没有被并（**有损合并**：筛选栏
+ * 少了一个更精确的选项、点剩下那一项混进别人，一条都不该有）；parent 里每个词的归属在不在可接受的集合里；起出来的归属名是不是能力词
  * 的写法（超 8 字、带「能力」「相关」「工作」的都不是招聘的人会点的）。验收共用生产的 `conform` 与 `merge`，
  * 从本题建立词表，按最终标准词和归属计分。每个题词都必须作答；任何一项失败均返回非零退出码。
  *
@@ -22,13 +22,9 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Member } from "#/corpus/questions";
 import { askModel } from "#/corpus/vocabulary";
-import {
-	conform,
-	type Member,
-	merge,
-	type Table,
-} from "#/corpus/vocabulary-rules";
+import { conform, merge, type Table } from "#/corpus/vocabulary-rules";
 import { pool } from "#/db";
 
 type Case = {

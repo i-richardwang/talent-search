@@ -14,9 +14,9 @@
  * 一键出路住在 `routes/s/$turnId/-lib/empty-state.ts`，那是产品文案，跟着界面改。
  * 它是纯函数、不带 `db`，所以页面可以从这里取值（分界见 `result.ts`）。
  */
-import { experienceConditions } from "./condition";
+import { type ExperienceCondition, experienceConditions } from "./condition";
 import { narrowsPopulation } from "./params";
-import { type Claim, queryOf, type SearchFilters } from "./result";
+import { queryOf, type SearchFilters } from "./result";
 import type { SearchSpec } from "./spec";
 
 /**
@@ -24,7 +24,7 @@ import type { SearchSpec } from "./spec";
  * 由调用方交进来；单独取个名字是为了让参数说得出「这里只能是这两支」。
  */
 type EmptyOverflow =
-	| { kind: "overflowEvidence"; claims: Claim[] }
+	| { kind: "overflowEvidence"; claims: ExperienceCondition[] }
 	| { kind: "overflowPopulation" };
 
 /**
@@ -32,7 +32,10 @@ type EmptyOverflow =
  * 数据（点名哪几个要求、关掉证据要求还剩几人），而那正是出路要用的东西。
  */
 export type EmptyReason =
-	/** 候选事实多到不能完整排名。这是一种**结果**，不是失败，所以排在最前。 */
+	/**
+	 * 候选多到不能完整判定：事实行撞上 `FACT_MAX`。
+	 * 这是一种**结果**，不是失败，所以排在最前。
+	 */
 	| EmptyOverflow
 	/** 条件都在，但全被停用了——和「没有这样的人」正好相反。 */
 	| { kind: "allDisabled" }

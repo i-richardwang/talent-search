@@ -1,12 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import {
-	apply,
-	conform,
-	groups,
-	mapping,
-	merge,
-} from "#/corpus/vocabulary-rules";
+import { conform, groups, merge } from "#/corpus/vocabulary-rules";
 
 const NOW = new Date("2026-09-08T00:00:00Z");
 const OLD = new Date(NOW.getTime() - 30 * 86_400_000);
@@ -18,31 +12,6 @@ function decision(
 ) {
 	return { canonical, judge: JUDGE, parent, reviewedAt };
 }
-
-describe("归并", () => {
-	test("能力词换成标准词并去重，做过的事不动", () => {
-		const table = new Map([
-			["推荐算法", decision("推荐系统", OLD)],
-			["个性化推荐", decision("推荐系统", OLD)],
-			["推荐系统", decision("推荐系统", OLD)],
-		]);
-		assert.deepEqual(
-			[...mapping(table)],
-			[
-				["推荐算法", "推荐系统"],
-				["个性化推荐", "推荐系统"],
-			],
-		);
-		const got = apply(mapping(table), {
-			skills: ["推荐算法", "Python", "个性化推荐"],
-			did: [{ involvement: "负责建设", domain: "推荐算法" }],
-		});
-		assert.deepEqual(got, {
-			skills: ["推荐系统", "Python"],
-			did: [{ involvement: "负责建设", domain: "推荐算法" }],
-		});
-	});
-});
 
 describe("圈组", () => {
 	const words = ["推荐系统", "推荐算法", "个性化推荐", "Python", "数据分析"];
@@ -165,7 +134,7 @@ describe("记账", () => {
 			triples.map(([word, sameAs, parent]) => [word, { parent, sameAs }]),
 		);
 
-	test("同一件事那一片里人最多的做标准写法；对到别名的词一起改指它", () => {
+	test("同一件事那一片里人最多的做标准写法；表里对到别名的词一起跟过去", () => {
 		const table = new Map([
 			["Py", decision("Python", OLD)],
 			["Python", decision("Python", OLD)],
@@ -193,6 +162,35 @@ describe("记账", () => {
 			],
 		);
 		assert.equal(table.get("Py")?.canonical, "Python 语言");
+	});
+
+	test("这一次被判过的词按自己的判断走，不跟着旧标准词；没被判到的才跟", () => {
+		const table = new Map([
+			["跨部门协作", decision("跨部门协作", OLD)],
+			["跨部门沟通", decision("跨部门协作", OLD)],
+			["跨部门合作", decision("跨部门协作", OLD)],
+		]);
+		// 「跨部门协作」并进人更多的「跨部门协同」。它名下的「跨部门沟通」这次被判成
+		// 另一件事，要拆开；「跨部门合作」在题里但没被判到，跟着标准词走
+		merge(
+			table,
+			members(
+				["跨部门沟通", 3],
+				["跨部门协同", 20],
+				["跨部门协作", 9],
+				["跨部门合作", 2],
+			),
+			verdicts(
+				["跨部门沟通", null, null],
+				["跨部门协同", null, null],
+				["跨部门协作", "跨部门协同", null],
+			),
+			NOW,
+			JUDGE,
+		);
+		assert.equal(table.get("跨部门协作")?.canonical, "跨部门协同");
+		assert.equal(table.get("跨部门沟通")?.canonical, "跨部门沟通");
+		assert.equal(table.get("跨部门合作")?.canonical, "跨部门协同");
 	});
 
 	test("兄弟各自保留，共同的更宽的词落成一行", () => {

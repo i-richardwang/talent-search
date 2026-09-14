@@ -40,6 +40,7 @@ export function validateView(s: Record<string, unknown>): View {
 	return {
 		...parsePopulation(s),
 		strong: s.strong === true || s.strong === "true" ? true : undefined,
+		order: s.order === "depth" ? "depth" : undefined,
 		n: pageSize(s.n),
 	};
 }
@@ -76,7 +77,7 @@ export function morePage(v: View): Partial<View> {
 }
 
 /** 除翻页之外的全部视图状态。 */
-const FILTER_KEYS = [...POPULATION_KEYS, "strong"] as const;
+const FILTER_KEYS = [...POPULATION_KEYS, "strong", "order"] as const;
 
 /**
  * 这一次导航是不是「只是再看一页」。
@@ -123,7 +124,7 @@ export function toFilters(v: View): SearchFilters {
 /**
  * 筛选的「全部清空」。工具栏的「清除筛选」和空结果态的逃生按钮都用它，
  * 免得两处各写一份、加字段时漏掉一处。
- * `strong` 不在其中：它答的是「证据够不够硬」，和收窄人群的那几维不是一档。
+ * `strong` 和 `order` 不在其中：它们答的是「怎么看证据」，不是收窄人群的那几维。
  */
 export const CLEARED_FILTERS = Object.fromEntries(
 	POPULATION_KEYS.map((k) => [k, undefined]),

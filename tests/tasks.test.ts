@@ -23,7 +23,6 @@ const { facts } = await import("#/routes/tasks");
 const { acquireCorpusSession, corpusSessionActive } = await import(
 	"#/corpus/session"
 );
-const { EMPTY } = await import("#/corpus/extract");
 const { db } = await import("#/db");
 const { taskRun } = await import("#/db/schema");
 const { sql } = await import("drizzle-orm");
@@ -158,6 +157,30 @@ describe("同步与派生", () => {
 		assert.equal(await derivePending(), 0);
 	});
 
+	/*
+	 * 说法只有作为边的终点才有意义。没人指的行留着会把召回的账算错：它一条命中
+	 * 都产生不了，却照样占 `RECALL_TOP` 的名额，挤掉真能找到人的说法。
+	 */
+	test("没有边指向的说法不留在表里", async () => {
+		const orphans = async () =>
+			count(
+				"phrase",
+				"not exists (select 1 from experience_phrase ep where ep.phrase_id = phrase.id)",
+			);
+		assert.equal(await orphans(), 0);
+
+		// 造一条没人指的：换过一次抽取提示词之后，掉线的旧说法就是这个样子
+		await db.execute(sql`
+			insert into phrase (text, embedding)
+			values ('没人会指的说法', (select embedding from phrase limit 1))`);
+		assert.equal(await orphans(), 1);
+
+		const run = await runTask("sync");
+		assert.ok(run);
+		assert.equal(run.failure, null);
+		assert.equal(await orphans(), 0);
+	});
+
 	test("一段的内容变了就是新段：旧段连边一起走，新段待派生", async () => {
 		// 直接改库里一段的描述：键由库算，跟着变；下一次同步认不出它，当它走了
 		const { rows } = await db.execute<{ id: number }>(sql`
@@ -281,35 +304,35 @@ describe("同步与派生", () => {
 	});
 });
 
-test("词表跨嵌入空间保留，结算补齐已有标准词并保持技能边", async () => {
+test("词表跨嵌入空间保留，结算一条技能边都不动", async () => {
 	const previous = process.env.REVIEW_JUDGE;
 	process.env.REVIEW_JUDGE = "external";
 	const restore = answers();
 	try {
-		await db.execute(sql`delete from skill_review`);
-		await db.execute(sql`insert into skill_review (words, judge, answer) values (
-			'[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
+		await db.execute(sql`delete from review_question`);
+		await db.execute(sql`insert into review_question (kind, words, judge, answer) values (
+			'group', '[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
 			'{"judgments":[{"word":"数据分析","sameAs":"","parent":"业务分析"}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
-		assert.equal(await count("phrase", "text = '业务分析'"), 1);
 		await db.execute(sql`update embedding_space set space_id = 'reset-space'`);
 		assert.equal((await runTask("derive"))?.failure, null);
 		assert.equal(await count("skill_term", "word = '业务分析'"), 1);
-		assert.equal(await count("phrase", "text = '业务分析'"), 0);
-		const before = await count("experience_phrase", "route = 'skill'");
-		assert.ok(before > 0);
-		await db.execute(sql`delete from skill_review`);
-		await db.execute(sql`insert into skill_review (words, judge, answer) values (
-			'[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
+		const edges = sql`select array_agg(ep.experience_id || ':' || p.text order by ep.experience_id, p.text)::text as all
+			from experience_phrase ep join phrase p on p.id = ep.phrase_id where ep.route = 'skill'`;
+		const before = (await db.execute<{ all: string }>(edges)).rows[0]?.all;
+		assert.ok(before);
+		await db.execute(sql`delete from review_question`);
+		await db.execute(sql`insert into review_question (kind, words, judge, answer) values (
+			'group', '[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
 			'{"judgments":[{"word":"业务分析","sameAs":"","parent":""},{"word":"数据分析","sameAs":"业务分析","parent":""}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
-		assert.equal(await count("phrase", "text = '业务分析'"), 1);
-		assert.equal(await count("experience_phrase", "route = 'skill'"), before);
 		assert.equal(
-			await count(
-				"experience_phrase",
-				"route = 'skill' and phrase_id = (select id from phrase where text = '业务分析')",
-			),
+			await count("skill_term", "word = '数据分析' and canonical = '业务分析'"),
+			1,
+		);
+		// 词表只决定筛选栏怎么摆：人身上仍是简历里的原话
+		assert.equal(
+			(await db.execute<{ all: string }>(edges)).rows[0]?.all,
 			before,
 		);
 	} finally {
@@ -350,8 +373,8 @@ describe("说法规划", () => {
 		description: "负责推荐系统召回",
 	});
 
-	test("同一串字只嵌一次，几条边各指向它", () => {
-		const { texts, links } = phrasePlan([segment({}), outside], [EMPTY, EMPTY]);
+	test("同一串字只嵌一次，几条边各指向它；没读过的段把整段原文当说法", () => {
+		const { texts, links } = phrasePlan([segment({}), outside], [null, null]);
 		assert.deepEqual(texts, [
 			"技术 · 算法",
 			"算法工程师",
@@ -376,12 +399,12 @@ describe("说法规划", () => {
 		assert.deepEqual(phrasePlan([], []), { texts: [], links: [] });
 	});
 
-	test("抽出来的两路和原文四路共用同一张说法表", () => {
+	test("抽出来的两路和登记的三路共用同一张说法表；读过的段原文不再是说法", () => {
 		// 能力词「算法工程师」和第 1 段的岗位名是同一串字：只嵌一次，两条边各成一条边
 		const { texts, links } = phrasePlan(
 			[segment({}), outside],
 			[
-				EMPTY,
+				null,
 				{
 					skills: ["算法工程师", "召回"],
 					did: [{ involvement: "负责建设", domain: "推荐系统" }],
@@ -412,6 +435,9 @@ describe("说法规划", () => {
 				},
 			],
 		);
+		// 自述只有一份读法：读过的段，整段原文不再是说法
+		assert.ok(!texts.includes("负责推荐系统召回"));
+		assert.ok(!links.some((l) => l.route === "description"));
 	});
 });
 
@@ -419,6 +445,8 @@ describe("页面上那几句话", () => {
 	const corpus = (over: Partial<CorpusCounts> = {}): CorpusCounts => ({
 		employees: 8,
 		external: 4,
+		glossable: 30,
+		glossed: 12,
 		internal: 6,
 		merged: 2,
 		pending: 0,

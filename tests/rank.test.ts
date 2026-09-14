@@ -14,13 +14,7 @@ import {
 	rankPopulation,
 } from "#/search/rank";
 import type { Claim, SearchFilters } from "#/search/result";
-import {
-	BOOST_WEIGHT,
-	RECENCY_FLOOR,
-	RELEVANCE_MIN,
-	ROUTE_WEIGHTS,
-	TENURE_FLOOR,
-} from "#/search/weights";
+import { BOOST_WEIGHT, RELEVANCE_MIN } from "#/search/weights";
 import { claim } from "./conditions";
 
 /** 固定的「今天」：近因因子让分数依赖当前时间，测试不能跟着日历漂 */
@@ -56,65 +50,105 @@ const claims = (...modes: Claim["mode"][]): Claim[] =>
 const run = (facts: Fact[], t = claims("must"), f: SearchFilters = {}) =>
 	rank(facts, t, f, NOW);
 
-const scoreOf = (facts: Fact[], t?: Claim[], f?: SearchFilters) => {
+/** 排在最前的那个人的深度。 */
+const depthOf = (facts: Fact[], t?: Claim[], f?: SearchFilters) => {
 	const { ranked } = run(facts, t, f);
-	return ranked[0]?.score ?? 0;
+	return ranked[0]?.depth ?? 0;
 };
+
+/** 名次：工号按先后。 */
+const orderOf = (facts: Fact[], t?: Claim[], f?: SearchFilters) =>
+	run(facts, t, f).ranked.map((r) => r.empId);
 
 /** 若干年前结束的一段：近因因子据此衰减 */
 const yearsAgo = (n: number) => `${NOW.getFullYear() - n}-01-01`;
 
-describe("证据强度不可被时长或近因压过", () => {
+describe("可信度是第一把尺，深度是第二把", () => {
 	/*
-	 * 这是整套权重的地基：ROUTE_WEIGHTS 论证了「序列是 HR 登记的归属，部门只说明
-	 * 他在那个组织里，简历原文提到不等于做过」。时长和近因是**同一档证据内部**的
-	 * 分辨率，一旦它们的量程盖过档与档之间的差，那套论证就被算法推翻了。
+	 * 「序列是 HR 登记的归属，部门只说明他在那个组织里，简历原文提到不等于做过」
+	 * ——这三档由排序键的先后隔开，不靠把深度压扁：档内深度量程放满，档间
+	 * 再深也翻不了盘。
 	 */
-	test("干了二十年且还在做的部门命中，压不过一段刚开始的序列命中", () => {
-		const org = scoreOf([fact({ empId: "A", route: "org", months: 240 })]);
-		const seq = scoreOf([
-			fact({ empId: "B", route: "seq", months: 1, endDate: yearsAgo(30) }),
-		]);
-		assert.ok(seq > org, `序列 ${seq} 必须高于部门 ${org}`);
+	const longOrg = fact({ empId: "A", route: "org", months: 240 });
+	const shortSeq = fact({
+		empId: "B",
+		route: "seq",
+		months: 1,
+		endDate: yearsAgo(30),
 	});
 
-	test("简历原文同理，压不过任何受控命中", () => {
-		const desc = scoreOf([
-			fact({ empId: "A", route: "description", months: 240 }),
-		]);
-		const org = scoreOf([
-			fact({ empId: "B", route: "org", months: 1, endDate: yearsAgo(30) }),
-		]);
-		assert.ok(org > desc);
+	test("干了二十年且还在做的部门命中，排在一段刚开始的序列命中后面", () => {
+		assert.deepEqual(orderOf([longOrg, shortSeq]), ["B", "A"]);
+		const { ranked } = run([longOrg, shortSeq]);
+		assert.equal(ranked[0]?.strength, "controlled");
+		assert.equal(ranked[1]?.strength, "org");
 	});
 
-	test("两个下限的乘积必须大于相邻路权重的比值，否则上面两条迟早会红", () => {
-		// 对常数本身也断言：改下限的人不一定会去跑上面那两条的边界值
-		const weights = Object.values(ROUTE_WEIGHTS).sort((a, b) => b - a);
-		const worst = Math.min(
-			...weights.slice(1).map((w, i) => w / (weights[i] as number)),
+	test("简历原文同理，排在任何受控命中后面", () => {
+		assert.deepEqual(
+			orderOf([
+				fact({ empId: "A", route: "description", months: 240 }),
+				fact({ empId: "B", route: "org", months: 1, endDate: yearsAgo(30) }),
+			]),
+			["B", "A"],
 		);
-		assert.ok(
-			TENURE_FLOOR * RECENCY_FLOOR > worst,
-			`下限乘积 ${TENURE_FLOOR * RECENCY_FLOOR} 必须大于 ${worst}`,
+	});
+
+	test("只看深度时不分档：二十年的部门命中排到一个月的序列命中前面", () => {
+		assert.deepEqual(
+			orderOf([longOrg, shortSeq], claims("must"), { order: "depth" }),
+			["A", "B"],
 		);
+		// 深度本身不随排法变：换的是先后，不是数
+		const byEvidence = run([longOrg, shortSeq]).ranked;
+		const byDepth = run([longOrg, shortSeq], claims("must"), {
+			order: "depth",
+		}).ranked;
+		assert.deepEqual(
+			new Map(byEvidence.map((r) => [r.empId, r.depth])),
+			new Map(byDepth.map((r) => [r.empId, r.depth])),
+		);
+	});
+
+	test("人的可信度是必须的主张里最弱的那一档；加分的主张不参与", () => {
+		const facts = [
+			fact({ empId: "A", claim: 0, route: "seq" }),
+			fact({ empId: "A", claim: 1, route: "description" }),
+			fact({ empId: "B", claim: 0, route: "org" }),
+			fact({ empId: "B", claim: 1, route: "org" }),
+			fact({ empId: "C", claim: 0, route: "description" }),
+			fact({ empId: "C", claim: 1, route: "seq" }),
+		];
+		const both = run(facts, claims("must", "must")).ranked;
+		assert.deepEqual(
+			both.map((r) => [r.empId, r.strength]),
+			[
+				["B", "org"],
+				["A", "claimed"],
+				["C", "claimed"],
+			],
+		);
+		// 第二条改成加分：A 的档由第一条（序列）说了算，C 的档是自述
+		const boosted = run(facts, claims("must", "boost")).ranked;
+		assert.equal(boosted.find((r) => r.empId === "A")?.strength, "controlled");
+		assert.equal(boosted.find((r) => r.empId === "C")?.strength, "claimed");
 	});
 });
 
 /** 一条主张的几个经历词同权：靠哪个词命中只进证据行，不进分。 */
 describe("取值", () => {
-	test("同一段原文，靠哪个取值命中分数都一样", () => {
-		const first = scoreOf([fact({ empId: "A", value: "词0" })]);
-		const other = scoreOf([fact({ empId: "A", value: "别的取值" })]);
+	test("同一段原文，靠哪个取值命中深度都一样", () => {
+		const first = depthOf([fact({ empId: "A", value: "词0" })]);
+		const other = depthOf([fact({ empId: "A", value: "别的取值" })]);
 		assert.equal(first, other);
 	});
 
 	test("同一段几个取值都命中时取最强的那条，不叠加", () => {
-		const both = scoreOf([
+		const both = depthOf([
 			fact({ empId: "A", id: 7, value: "词0" }),
 			fact({ empId: "A", id: 7, value: "别的取值", relevance: 0.8 }),
 		]);
-		const one = scoreOf([fact({ empId: "A", id: 7, value: "词0" })]);
+		const one = depthOf([fact({ empId: "A", id: 7, value: "词0" })]);
 		// 同段两行本该在取数 SQL 里就去重掉（search.ts 的 textualFacts），
 		// 这里只保证万一漏到内存里，强度按最强的那条算，月份也不因此翻倍。
 		assert.equal(both, one);
@@ -123,29 +157,31 @@ describe("取值", () => {
 
 describe("时长", () => {
 	test("累计，不是取最长的一段", () => {
-		const split = scoreOf([
+		const split = depthOf([
 			fact({ empId: "A", months: 24 }),
 			fact({ empId: "A", months: 24 }),
 		]);
-		const single = scoreOf([fact({ empId: "B", months: 24 })]);
+		const single = depthOf([fact({ empId: "B", months: 24 })]);
 		assert.ok(split > single, "两段 24 个月必须高于一段 24 个月");
 	});
 
 	test("没有封顶线，三年以上仍然分得开", () => {
-		const a = scoreOf([fact({ empId: "A", months: 36 })]);
-		const b = scoreOf([fact({ empId: "B", months: 120 })]);
-		const c = scoreOf([fact({ empId: "C", months: 240 })]);
+		const a = depthOf([fact({ empId: "A", months: 36 })]);
+		const b = depthOf([fact({ empId: "B", months: 120 })]);
+		const c = depthOf([fact({ empId: "C", months: 240 })]);
 		assert.ok(a < b && b < c, `${a} < ${b} < ${c}`);
 	});
 
 	test("有界：再长也到不了满分，长经历不会碾压一切", () => {
-		const huge = scoreOf([fact({ empId: "A", months: 100_000 })]);
-		assert.ok(huge < ROUTE_WEIGHTS.seq, `${huge} 必须小于路权重本身`);
+		const huge = depthOf([fact({ empId: "A", months: 100_000 })]);
+		assert.ok(huge < 1, `${huge} 必须小于 1`);
 	});
 
-	test("有下限：一段很短的经历不归零", () => {
-		const tiny = scoreOf([fact({ empId: "A", months: 1 })]);
-		assert.ok(tiny >= ROUTE_WEIGHTS.seq * TENURE_FLOOR * 0.999);
+	test("量程放满：三个月和八年在同一档里拉得开", () => {
+		const short = depthOf([fact({ empId: "A", months: 3 })]);
+		const long = depthOf([fact({ empId: "B", months: 96 })]);
+		assert.ok(long > short * 5, `${long} 对 ${short}：时长不该只是装饰`);
+		assert.ok(short > 0, "很短的经历也不归零");
 	});
 });
 
@@ -166,25 +202,25 @@ describe("近因", () => {
 	});
 
 	test("还在做的高于早就不做的", () => {
-		const now = scoreOf([fact({ empId: "A" })]);
-		const old = scoreOf([fact({ empId: "B", endDate: yearsAgo(3) })]);
+		const now = depthOf([fact({ empId: "A" })]);
+		const old = depthOf([fact({ empId: "B", endDate: yearsAgo(3) })]);
 		assert.ok(now > old);
 	});
 
-	test("越久越低，但有下限——五年前干过也还是干过", () => {
-		const three = scoreOf([fact({ empId: "A", endDate: yearsAgo(3) })]);
-		const ten = scoreOf([fact({ empId: "B", endDate: yearsAgo(10) })]);
-		const ancient = scoreOf([fact({ empId: "C", endDate: yearsAgo(40) })]);
+	test("越久越低，但不归零——四十年前干过也还是干过", () => {
+		const three = depthOf([fact({ empId: "A", endDate: yearsAgo(3) })]);
+		const ten = depthOf([fact({ empId: "B", endDate: yearsAgo(10) })]);
+		const ancient = depthOf([fact({ empId: "C", endDate: yearsAgo(40) })]);
 		assert.ok(three > ten && ten > ancient);
-		assert.ok(ancient > ROUTE_WEIGHTS.seq * TENURE_FLOOR * RECENCY_FLOOR * 0.9);
+		assert.ok(ancient > 0);
 	});
 
 	test("多段里取最近的那一段：回到这个方向就算还在做", () => {
-		const back = scoreOf([
+		const back = depthOf([
 			fact({ empId: "A", months: 12, endDate: yearsAgo(10) }),
 			fact({ empId: "A", months: 12 }),
 		]);
-		const gone = scoreOf([
+		const gone = depthOf([
 			fact({ empId: "B", months: 12, endDate: yearsAgo(10) }),
 			fact({ empId: "B", months: 12, endDate: yearsAgo(9) }),
 		]);
@@ -203,10 +239,10 @@ describe("人的偏好", () => {
 		assert.equal(ranked[0]?.empId, "B");
 		assert.equal(ranked[1]?.empId, "A");
 		// 「最好字节来的」和「最好是硕士」各是一条：满足一条得一条的分
-		assert.equal(ranked[1]?.score, (plain[0]?.score ?? 0) * (1 + BOOST_WEIGHT));
+		assert.equal(ranked[1]?.depth, (plain[0]?.depth ?? 0) * (1 + BOOST_WEIGHT));
 		assert.equal(
-			ranked[0]?.score,
-			(plain[0]?.score ?? 0) * (1 + BOOST_WEIGHT) ** 2,
+			ranked[0]?.depth,
+			(plain[0]?.depth ?? 0) * (1 + BOOST_WEIGHT) ** 2,
 		);
 	});
 });
@@ -215,7 +251,8 @@ describe("没有经历词的主张", () => {
 	test("落在范围里的段就是证据：强度是登记那一档，证据要求也认它", () => {
 		const plain = [fact({ empId: "A", route: null, value: null })];
 		const seq = [fact({ empId: "B", route: "seq" })];
-		assert.equal(scoreOf(plain), scoreOf(seq));
+		assert.equal(depthOf(plain), depthOf(seq));
+		assert.equal(run(plain).ranked[0]?.strength, "controlled");
 		assert.equal(run(plain, claims("must"), { strong: true }).total, 1);
 		assert.deepEqual(run(plain).ranked[0]?.basis[0], {
 			route: null,
@@ -261,8 +298,8 @@ describe("累计时长的门槛", () => {
 		const { ranked } = run(facts, list);
 		assert.equal(ranked.length, 2);
 		assert.equal(
-			ranked[0]?.score,
-			ranked[1]?.score,
+			ranked[0]?.depth,
+			ranked[1]?.depth,
 			"十二个月够不上三年，A 不该被抬",
 		);
 		// 名次里没有它，证据行上就不能有它：留一条「+ 词0 · 1 年」画成命中，
@@ -368,34 +405,40 @@ describe("排名依据", () => {
 	});
 });
 
-describe("相关度（路权重 × 相关度）", () => {
+describe("相关度", () => {
 	test("同一路上，相关度低的命中低于高的", () => {
-		const exact = scoreOf([fact({ empId: "A", relevance: 1 })]);
-		const near = scoreOf([fact({ empId: "B", relevance: 0.7 })]);
+		const exact = depthOf([fact({ empId: "A", relevance: 1 })]);
+		const near = depthOf([fact({ empId: "B", relevance: 0.7 })]);
 		assert.ok(near < exact);
 		assert.ok(near > 0, "过了阈值就不是不算");
 	});
 
-	test("刚过阈值的受控命中，基础强度仍高于相似 1.0 的部门命中", () => {
-		// 登记字段说他真在干这个，相关度只是翻译损耗——方向见 weights.ts
-		assert.ok(RELEVANCE_MIN * ROUTE_WEIGHTS.seq > ROUTE_WEIGHTS.org);
+	test("刚过阈值的受控命中仍排在相似 1.0 的部门命中前面", () => {
+		// 登记字段说他真在干这个，相关度只是翻译损耗——档在前，相关度在档内比
+		assert.deepEqual(
+			orderOf([
+				fact({ empId: "A", route: "org", relevance: 1 }),
+				fact({ empId: "B", route: "seq", relevance: RELEVANCE_MIN }),
+			]),
+			["B", "A"],
+		);
 	});
 
-	test("低相似的段续时长，但强度仍取最强那条", () => {
+	test("低相似的段续时长，但档和相关度仍取最强那条", () => {
 		const mixed = run([
 			fact({ empId: "A", months: 12 }),
 			fact({ empId: "A", relevance: 0.7, months: 240 }),
 		]).ranked[0];
-		const clean = scoreOf([fact({ empId: "B", months: 12 })]);
-		assert.ok((mixed?.score ?? 0) > clean);
+		const clean = depthOf([fact({ empId: "B", months: 12 })]);
+		assert.ok((mixed?.depth ?? 0) > clean);
 		assert.equal(mixed?.basis[0]?.relevance, 1);
 	});
 
-	test("相关度不受下限保护：又长又新的相近命中可以反超又短又旧的原词命中", () => {
-		const longNear = scoreOf([
+	test("相关度是深度的一部分：又长又新的相近命中可以反超又短又旧的原词命中", () => {
+		const longNear = depthOf([
 			fact({ empId: "A", relevance: 0.7, months: 240 }),
 		]);
-		const shortExact = scoreOf([
+		const shortExact = depthOf([
 			fact({ empId: "B", relevance: 1, months: 1, endDate: yearsAgo(30) }),
 		]);
 		assert.ok(longNear > shortExact);
@@ -417,14 +460,21 @@ describe("相关度（路权重 × 相关度）", () => {
 
 describe("累计跨档位，但档位不被累计翻盘", () => {
 	test("简历里提过一句给序列命中续时长，却压不过一段短的序列命中的档位", () => {
-		const mixed = scoreOf([
+		const mixed = [
 			fact({ empId: "A", route: "seq", months: 12 }),
 			fact({ empId: "A", route: "description", months: 240 }),
-		]);
-		const clean = scoreOf([fact({ empId: "B", route: "seq", months: 12 })]);
-		assert.ok(mixed > clean, "累计答的是「沉淀了多久」，自述的段也算");
-		const orgLong = scoreOf([fact({ empId: "C", route: "org", months: 252 })]);
-		assert.ok(clean > orgLong, "档位仍由最强证据定，时长翻不了盘");
+		];
+		const clean = fact({ empId: "B", route: "seq", months: 12 });
+		assert.ok(
+			depthOf(mixed) > depthOf([clean]),
+			"累计答的是「沉淀了多久」，自述的段也算",
+		);
+		const orgLong = fact({ empId: "C", route: "org", months: 252 });
+		assert.deepEqual(
+			orderOf([...mixed, clean, orgLong]),
+			["A", "B", "C"],
+			"档位仍由最强证据定，时长翻不了盘",
+		);
 	});
 });
 
@@ -443,22 +493,23 @@ describe("必须、加分与证据要求", () => {
 		);
 	});
 
-	test("必须的主张之间是乘积：一条弱，整个人被压下去", () => {
-		const strong = scoreOf(
-			[
-				fact({ empId: "A", claim: 0 }),
-				fact({ empId: "A", claim: 1, route: "seq" }),
-			],
-			two,
+	test("必须的主张之间：档取最弱的一条，深度相乘", () => {
+		const facts = [
+			fact({ empId: "A", claim: 0 }),
+			fact({ empId: "A", claim: 1, route: "seq" }),
+			fact({ empId: "B", claim: 0 }),
+			fact({ empId: "B", claim: 1, route: "description" }),
+			fact({ empId: "C", claim: 0 }),
+			fact({ empId: "C", claim: 1, relevance: 0.6 }),
+		];
+		assert.deepEqual(orderOf(facts, two), ["A", "C", "B"]);
+		const { ranked } = run(facts, two);
+		const a = ranked.find((r) => r.empId === "A");
+		const c = ranked.find((r) => r.empId === "C");
+		assert.ok(
+			Math.abs((c?.depth ?? 0) - (a?.depth ?? 0) * 0.6) < 1e-12,
+			"一条浅，整个人被压下去",
 		);
-		const weak = scoreOf(
-			[
-				fact({ empId: "B", claim: 0 }),
-				fact({ empId: "B", claim: 1, route: "description" }),
-			],
-			two,
-		);
-		assert.ok(strong > weak);
 	});
 
 	test("加分的主张不命中也留下，命中就往上抬", () => {
@@ -627,7 +678,7 @@ describe("同分的顺序是确定的", () => {
 	 * 翻页靠把 limit 调大重查，所以前一页必须逐位不变。分数相同时若不定序，
 	 * 第二页会漏人或让人重复出现，而界面上看不出来。
 	 */
-	test("同分按工号，两次求值结果一致", () => {
+	test("同档同深按工号，两次求值结果一致", () => {
 		const facts = ["C", "A", "B"].map((empId) => fact({ empId }));
 		const once = run(facts).ranked.map((r) => r.empId);
 		const twice = run([...facts].reverse()).ranked.map((r) => r.empId);

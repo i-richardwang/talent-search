@@ -1,14 +1,16 @@
 /**
- * 证据强度模型——weights.ts 里那套权重论证的判定形态。
+ * 一条命中的证据算哪一档、怎么念。分档的理由只在 weights.ts 写一遍，这里不复述。
  *
- * 权重回答"这条证据值多少分"，强度回答"这条证据能不能给人看"。两者同源，
- * 所以分档的理由只在 weights.ts 写一遍，这里不复述分数——复述的数字迟早对不上。
- *
- * 放在检索层而不是组件层：这里定的是「一条证据算哪一档」，
+ * 放在检索层而不是组件层：排名比的档和点阵画的档必须是同一份，
  * 组件层只负责把这三档翻译成颜色和文案。
  */
 import type { Claim, Hit } from "#/search/result";
-import { ROUTE_STRENGTH, type Route, type Strength } from "#/search/weights";
+import {
+	ROUTE_STRENGTH,
+	type Route,
+	type Strength,
+	strengthRank,
+} from "#/search/weights";
 
 export type { Strength } from "#/search/weights";
 
@@ -45,9 +47,6 @@ export function bestHitPerClaim(hits: Hit[], claims: readonly Claim[]) {
 	return claims.map((_, i) => hits.find((h) => h.claim === i));
 }
 
-/** 强度由强到弱。时间轴节点要用一段经历里最强的那一路来画。 */
-const RANK: Record<Strength, number> = { controlled: 0, org: 1, claimed: 2 };
-
 /**
  * 一段经历为若干条条件提供了证据时，这段经历本身有多强。
  *
@@ -59,7 +58,7 @@ export function bestStrength(hits: Hit[] | undefined): Strength | undefined {
 	let best: Strength | undefined;
 	for (const h of hits) {
 		const s = strengthOf(h.route);
-		if (!best || RANK[s] < RANK[best]) best = s;
+		if (!best || strengthRank(s) < strengthRank(best)) best = s;
 	}
 	return best;
 }

@@ -14,7 +14,7 @@ after(teardown);
 const { answer, authorized, configured, limitOf } = await import(
 	"#/server/review"
 );
-const { openQuestions } = await import("#/corpus/vocabulary");
+const { openQuestions } = await import("#/corpus/questions");
 const { pool } = await import("#/db");
 
 const TOKEN = "test-token";
@@ -117,14 +117,16 @@ describe("交卷", () => {
 			{
 				empId: "R001",
 				name: "甲",
-				segments: [{ kind: "external", months: 12, skills: ["数据分析"] }],
+				segments: [
+					{ kind: "external", months: 12, extracted: { skills: ["数据分析"] } },
+				],
 			},
 		]);
 		const connection = await pool.connect();
 		try {
 			const { rows } = await connection.query<{ id: number }>(
-				`insert into skill_review (words)
-				 values ('[{"word":"数据分析","people":3},{"word":"数据分析工作","people":2}]'::jsonb)
+				`insert into review_question (kind, words)
+				 values ('group', '[{"word":"数据分析","people":3},{"word":"数据分析工作","people":2}]'::jsonb)
 				 returning id`,
 			);
 			id = rows[0]?.id ?? 0;
@@ -147,7 +149,7 @@ describe("交卷", () => {
 			const { rows } = await connection.query<{
 				judge: string;
 				answer: { judgments: unknown[] };
-			}>("select judge, answer from skill_review where id = $1", [id]);
+			}>("select judge, answer from review_question where id = $1", [id]);
 			assert.equal(rows[0]?.judge, "agent:hr-bot");
 			assert.deepEqual(rows[0]?.answer.judgments, raw);
 			// 答过的题不再出现在拉题里

@@ -239,8 +239,9 @@ export const taskRun = pgTable("task_run", {
  * 又是当场定的：搜「数据分析」要看到做过各种数据分析的人，搜「销售数据分析」只要
  * 销售那一种。细的能聚成粗的，粗的还原不成细的，所以词表把两件事分开记：
  *
- * - `canonical`：这个词的标准写法。只有**同一件事的不同写法**才归到一起，归并是
- *   无损的，能力词那一路的边随之改指标准词。等于 `word` 表示它自己就是标准词。
+ * - `canonical`：这个词的标准写法。**同一件事的不同写法**在筛选栏里合成标准词那
+ *   一项；人身上的边不动，仍是简历里的原话，检索和证据用的也是原话。等于 `word`
+ *   表示它自己就是标准词。
  * - `parent`：标准词属于哪个更宽的词（「销售数据分析」属于「数据分析」）。具体的词
  *   原样留在人身上，只多这一条归属；检索沿它往上聚（`src/search/search.ts` 的
  *   `FACT_COLUMNS.skills`）。更宽的词可以是语料里没人写过的，裁判起的名字，所以它
@@ -274,24 +275,30 @@ export const skillTerm = pgTable(
 	],
 );
 
+/** 整理出的题分两种：圈组（问同一件事与归属，写进 `skill_term`）和释义（写进 `phrase_gloss`）。 */
+export const QUESTION_KINDS = ["group", "gloss"] as const;
+export type QuestionKind = (typeof QUESTION_KINDS)[number];
+
 /**
- * 整理任务出给裁判的题：一组写法相近的能力词，问每个词和谁是同一件事、属于哪个更宽的词。
+ * 整理任务出给裁判的题。两种：**圈组**是一组写法相近的能力词，问每个词和谁是同一件事、
+ * 属于哪个更宽的词；**释义**是一组相近的短说法，请裁判给每个写一句它指什么。
  *
  * 这张表是**队列，不是记录**。一行从出题时出现，结算或过期时删除；决定的历史在
- * `skill_term`，过程的历史在 `task_run.log`，不再存第三份。
+ * `skill_term` 和 `phrase_gloss`，过程的历史在 `task_run.log`，不再存第三份。
  *
- * 它存在的理由是把「判卷」这一步从整理任务里切出来（`src/corpus/vocabulary.ts`）：
+ * 它存在的理由是把「判卷」这一步从整理任务里切出来（`src/corpus/questions.ts`）：
  * 出题和结算要拿语料的写者锁，判卷不碰语料，所以外部裁判交卷时不必等派生放锁。
- * 服务端出题、任一裁判答题、服务端结算——外部拿到的是一道道题，不是改词表的权限。
+ * 服务端出题、任一裁判答题、服务端结算——外部拿到的是一道道题，不是改表的权限。
  *
  * 题里的词一律平等，没有「组心」：标准写法由结算按人数定，归属由裁判起名，两样都
  * 不需要题预先指定谁是谁。`judge` 与 `answer` 同生同灭：一行要么没人答过，要么两列都有。
  */
-export const skillReview = pgTable(
-	"skill_review",
+export const reviewQuestion = pgTable(
+	"review_question",
 	{
 		id: serial("id").primaryKey(),
-		/** 这组词和各自的人数，出题那一刻的样子：`[{ word, people }]`，圈组时的组心在前 */
+		kind: text("kind", { enum: QUESTION_KINDS }).notNull(),
+		/** 这组词和各自的人数，出题那一刻的样子：`[{ word, people }]` */
 		words: jsonb("words").$type<{ word: string; people: number }[]>().notNull(),
 		askedAt: timestamp("asked_at", { withTimezone: true })
 			.notNull()
@@ -306,16 +313,41 @@ export const skillReview = pgTable(
 	},
 	(t) => [
 		check(
-			"skill_review_answered_1",
+			"review_question_answered_1",
 			sql`(${t.judge} is null) = (${t.answer} is null)`,
 		),
 	],
 );
 
 /**
+ * 短说法的释义：一句话说这个词指哪个行当里的什么活。
+ *
+ * 判定用的重排模型是按「一个词对一段话」训练的，判「四个字对四个字」时退化成数
+ * 字面重合：「客户开发」对「服务端开发」给 91%，「前端开发」82%，而真正的「后端
+ * 开发工程师」只有 66%。跟上一句释义之后它读的又是一段话了：同一批对上真实语料
+ * 量过，对的全在 78% 以上、错的全在 47% 以下（`src/search/phrases.ts`）。
+ *
+ * 释义是**词的属性，不是段的属性**：「客户开发」指什么和谁的简历里写了它无关，所以
+ * 不在抽取时写（抽取只看到一段），而由整理出题、裁判在一组相近的词旁边写——界线
+ * 是对着邻居才写得出来的。按文本存、不指 `phrase` 行：它是语言知识，换数据源、换
+ * 嵌入空间都不清，和 `skill_term` 一个待遇。只有整理任务的结算写它，写的同时清掉
+ * 这条说法的分数缓存（`phrase_relevance`）——分数是按判定时读到的字打的。
+ *
+ * 写哪些说法由整理定（`src/corpus/gloss.ts`）：技能、做过的事、岗位名、序列名这四路
+ * 短说法。整段简历原文本来就是一段话，部门路径答的是「待过哪儿」不是词义，都不写。
+ */
+export const phraseGloss = pgTable("phrase_gloss", {
+	text: text("text").primaryKey(),
+	gloss: text("gloss").notNull(),
+	writtenAt: timestamp("written_at", { withTimezone: true }).notNull(),
+	/** 谁写的，同 `skill_term.judge` */
+	judge: text("judge").notNull(),
+});
+
+/**
  * 一段经历的六路语义：序列、岗位、部门 / 公司、简历描述，以及从简历描述里
  * 抽出来的能力词与做过的事。字段来源决定证据可信度（weights.ts 的
- * ROUTE_WEIGHTS），所以各路**各自**嵌一个向量，不混成一个：混了之后
+ * ROUTE_STRENGTH），所以各路**各自**嵌一个向量，不混成一个：混了之后
  * 「登记字段说他做过」和「简历里提过一句」在向量空间里就分不开；
  * 序列和岗位也不拼在一起——短文本的相似度最锐利，「算法」对「算法工程师」
  * 是一回事，对「技术 · 算法 · 推荐 / 高级算法工程师」这一长串就被稀释了。
@@ -323,13 +355,14 @@ export const skillReview = pgTable(
  * `skill` 与 `did` 是模型从 `description` 里读出来的（`src/corpus/extract.ts`）：
  * 一整段几百字的自述池化成一个向量分不清主语和重点，「配合算法团队」会和
  * 「算法」相近；抽成短说法之后重排模型判得准。它们的**来源**仍是自述，所以
- * 和 `description` 同一档强度。`did` 的说法只是领域（「推荐系统」），参与
- * 方式存在边上（下面 `involvement` 列）。
+ * 和 `description` 同一档强度；一段只有其中一种（`corpus/route-texts.ts`）：
+ * 读过的段有 `skill` / `did`，没读过的段才有 `description`。`did` 的说法只是
+ * 领域（「推荐系统」），参与方式存在边上（下面 `involvement` 列）。
  */
 const ROUTES = ["seq", "title", "org", "description", "skill", "did"] as const;
 export type Route = (typeof ROUTES)[number];
 /**
- * 文本不在经历行上的那两路。原文四路命中后回表就能取到被比较的那串字；这两路
+ * 文本不在经历行上的那两路。其余四路命中后回表就能取到被比较的那串字；这两路
  * 的说法只存在 `phrase` 里，事实行得把文本一起带回来（search.ts 的 `phrase` 列）。
  */
 export const EXTRACTED_ROUTES = [
@@ -343,10 +376,10 @@ export const EXTRACTED_ROUTES = [
  * 说法，同一串字嵌两遍既浪费端点，也让召回扫描多跑四倍。
  *
  * 用 halfvec：bge-m3 的向量存半精度对余弦相似度的影响在小数点后三位，
- * 换来的是一半的扫描量。这张表**不建向量索引**：召回要的是「相似度过
- * 下限的全部说法」，而 HNSW 回答的是「最近的 k 个」，两者不是一个问题；
- * 两万行的精确扫描本机是几十毫秒。语料涨一个数量级再上 HNSW 加迭代扫描
- * （pgvector 0.8+），到时候改的是这里和 phrases.ts 的召回 SQL，排名与分面不动。
+ * 换来的是一半的扫描量。这张表**暂不建向量索引**：几万行的精确扫描本机是几十
+ * 毫秒，索引省不出可感的时间。召回问的是「余弦最近的 k 条」（`RECALL_TOP`），
+ * 正是 HNSW 回答的问题，语料涨一个数量级时在这里加索引即可，phrases.ts 的
+ * 召回 SQL 不用改形状，排名与分面不动。
  */
 export const phrase = pgTable("phrase", {
 	id: serial("id").primaryKey(),
@@ -355,9 +388,9 @@ export const phrase = pgTable("phrase", {
 });
 
 /**
- * 一段经历在各路上说了哪些字。原文四路一段各最多一行：`seq`（序列三级）、
- * `title`（岗位）、`org`（部门路径或公司名）、`description`（简历描述）；
- * 抽取的两路一段可以有多行：`skill` 一个能力词一行，`did` 一件事一行。
+ * 一段经历在各路上说了哪些字。登记的三路一段各最多一行：`seq`（序列三级）、
+ * `title`（岗位）、`org`（部门路径或公司名）；自述一段只有一种：读过的段
+ * `skill` 一个能力词一行、`did` 一件事一行，没读过的段 `description` 一行。
  * 哪一路是空的就没有那一行——不嵌空串，也不存零向量。
  *
  * 主键因此是三列：同一段、同一路可以指向多条说法，但同一条说法不指两遍。
@@ -404,7 +437,9 @@ export const experiencePhrase = pgTable(
  *
  * 同一个重排空间对同一对文本的分数是确定的，所以它是永久缓存：翻页、改筛选、
  * 换个人再搜同一个词，都不必再打端点。按空间身份键入，换模型行为时自然失效；
- * 说法的 id 是稳定的（`phrase` 只增不改），只有换嵌入空间清 `phrase` 表时它才跟着级联清空。
+ * 还在语料里的说法 id 是稳定的；一条说法没人指了会被删（`corpus/derive.ts` 的
+ * `commitBatch`），它的分数跟着级联清掉——语料里没有的说法，分数不是缓存是垃圾。
+ * 换嵌入空间清 `phrase` 表时，这张表整个跟着空。
  * 只存打过分的对：召回没取到的说法不在这里，也不该在，那是召回的事。
  */
 export const phraseRelevance = pgTable(

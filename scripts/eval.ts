@@ -104,8 +104,8 @@ try {
 			{},
 			RESULT_MAX,
 		);
-		if (outcome.order !== "relevance")
-			throw new Error(`${c.name}：要求用例没有产生相关度结果`);
+		if (outcome.order === "employee")
+			throw new Error(`${c.name}：用例得有经历主张，只有人的条件排不出名次`);
 		const { results, total, empty } = outcome;
 		const rankOf = new Map(results.map((r, i) => [r.employee.empId, i + 1]));
 		const found = c.expect.filter((id) => rankOf.has(id));

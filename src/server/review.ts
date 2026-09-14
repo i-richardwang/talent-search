@@ -1,36 +1,39 @@
 /**
  * 外部裁判的那道口子：拉题、交卷。整理任务里「判卷」这一步的 HTTP 形状。
  *
- * 只有两件事在这里——**认人**和**译形状**。谁能答、答卷长什么样、一道题活多久，
- * 全在 `src/corpus/vocabulary.ts`：那里是整理这件事的主人，接口只是它的另一个入口。
+ * 只有两件事在这里——**认人**和**译形状**。谁能答、一道题活多久在 `src/corpus/questions.ts`，
+ * 答卷长什么样在各自那一种题的模块里：接口只是队列的另一个入口。
  *
- * **这条路只写题那一行。** 词表和边由整理任务在写者锁里改（`corpus/session.ts`），
+ * **这条路只写题那一行。** 词表、释义和边由整理任务在写者锁里改（`corpus/session.ts`），
  * 所以交卷不必等派生放锁几十分钟；外部也永远拿不到改词表的权限，它交上来的
  * 原话要过 `conform` 才算数，和自带模型交上来的走同一处收窄。
  *
- * **出这台机器的只有能力词和人数。** 没有姓名、工号，也没有简历原文——这条接口的
+ * **出这台机器的只有短说法和人数。** 没有姓名、工号，也没有简历原文——这条接口的
  * 数据边界比抽取端点窄得多，README 的部署那一章按这一档写。
  *
  * 限流按老规矩做在网关层：进程内计数器盖不住多实例。
  */
 
 import "@tanstack/react-start/server-only";
+import { GLOSS_GUIDE } from "#/corpus/gloss";
 import {
 	agentJudge,
-	GUIDE,
+	type Member,
 	openQuestions,
 	REVIEW_INTERVAL_DAYS,
 	reviewJudge,
 	type Submission,
 	submitAnswer,
-} from "#/corpus/vocabulary";
+} from "#/corpus/questions";
+import { GUIDE } from "#/corpus/vocabulary";
 import { pool } from "#/db";
+import type { QuestionKind } from "#/db/schema";
 
 /** 一次最多拉几道题。要得更多就多拉一次——一份响应大到要翻页就没人读得完。 */
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
 
-/** 一份答卷最大多少字节。裁判只回答一组十来个词，超出这个数的不是答卷。 */
+/** 一份答卷最大多少字节。裁判只回答一组几十个词，超出这个数的不是答卷。 */
 const MAX_BODY = 64 * 1024;
 
 function token(): string {
@@ -59,12 +62,14 @@ export function authorized(request: Request): boolean {
 }
 
 /**
- * 题在响应里的样子：一组词，各带人数，没有谁是「标准词」——标准写法由结算按人数定，
- * 归属由裁判起名。`expiresAt` 说这道题还能答到什么时候，裁判据此排自己的活。
+ * 题在响应里的样子：哪一种题，一组词各带人数。圈组题里没有谁是「标准词」——标准
+ * 写法由结算按人数定，归属由裁判起名。`expiresAt` 说这道题还能答到什么时候，裁判
+ * 据此排自己的活。
  */
 type QuestionView = {
 	id: number;
-	words: { word: string; people: number }[];
+	kind: QuestionKind;
+	words: Member[];
 	askedAt: string;
 	expiresAt: string;
 };
@@ -75,21 +80,23 @@ type QuestionView = {
  * **没有租约。** 两个裁判拉到同一道题是允许的，先交的算（`submitAnswer`）；租约会
  * 换来一个新的中间状态——「租了没答」，而它的代价只是偶尔一次白判。
  *
- * `guide` 就是发给自带模型的那段判卷标准，一字不差：标准只有一份，两种裁判照着
- * 同一段字判。
+ * `guides` 按题的种类给出发给自带模型的那段标准，一字不差：标准每种只有一份，
+ * 两种裁判照着同一段字判。
  */
-export async function questions(
-	limit: number,
-): Promise<{ questions: QuestionView[]; guide: string }> {
+export async function questions(limit: number): Promise<{
+	questions: QuestionView[];
+	guides: Record<QuestionKind, string>;
+}> {
 	const rows = await openQuestions(pool, limit);
 	return {
-		guide: GUIDE,
+		guides: { gloss: GLOSS_GUIDE, group: GUIDE },
 		questions: rows.map((one) => ({
 			askedAt: one.askedAt.toISOString(),
 			expiresAt: new Date(
 				one.askedAt.getTime() + REVIEW_INTERVAL_DAYS * 86_400_000,
 			).toISOString(),
 			id: one.id,
+			kind: one.kind,
 			words: one.words,
 		})),
 	};

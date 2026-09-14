@@ -25,8 +25,8 @@ const { db, pool, withCorpusSnapshot } = await import("#/db");
 
 const run = async (query: string) => {
 	const outcome = await search({ conditions: parseQuery(query) });
-	if (outcome.order !== "relevance")
-		throw new Error("要求查询未进入相关度路径");
+	if (outcome.order === "employee")
+		throw new Error("要求查询得有经历主张，只有人的条件排不出名次");
 	return outcome;
 };
 

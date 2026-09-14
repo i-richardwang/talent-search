@@ -15,6 +15,7 @@ import {
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
 import type { Population } from "./params";
+import type { Strength } from "./weights";
 
 /**
  * 一条参与匹配的经历主张：启用的、正向的（必须或加分）那些。
@@ -101,7 +102,10 @@ type PopulationResult = {
 };
 
 export type RankedResult = PopulationResult & {
-	score: number;
+	/** 必须的主张里最弱的那一条靠的是哪一档证据（`rank.ts`）。 */
+	strength: Strength;
+	/** 做得多像、多久、多近，(0, ∞)：必须的主张相乘，加分的往上抬。 */
+	depth: number;
 	/** 每条主张一项，和 `SearchOutcome.claims` 同序；没命中的为 null */
 	basis: (ClaimBasis | null)[];
 	hits: Hit[];
@@ -132,9 +136,22 @@ export type ClaimBasis = {
 };
 
 /**
- * 一次检索的视图筛选：收窄人群的那批（`Population`），加上证据强度。
+ * 有名次的名单的两种排法。
  *
- * `strong` 不属于那一批：它答的是「什么才算命中」，不是在这批人里再看哪一部分。
+ * **证据**：先按可信度分档（登记的序列或岗位、登记的部门或公司、自述），档内按
+ * 深度。可信度是离散的、可解释的，就是证据点阵画的那三种点；深度是连续的。
+ * 两把尺不相乘：乘成一个数就得靠下限把深度压扁来守住档位，深度于是变成装饰。
+ *
+ * **深度**：忽略档位，只看做得多像、多久、多近。组团队要找做得久的人时用它，
+ * 自述八年的经历排到登记三个月的岗位前面——点阵仍在旁边说这是自述。
+ */
+export type Order = "evidence" | "depth";
+
+/**
+ * 一次检索的视图筛选：收窄人群的那批（`Population`），加上证据要求和排法。
+ *
+ * 后两样不属于那一批：`strong` 答的是「什么才算命中」，`order` 答的是「先看谁」，
+ * 都不是在这批人里再看哪一部分。
  *
  * **全部在服务端求值**：放到客户端就只能筛已经翻出来的那几页，而其余维数的是
  * 全部命中的人——同一排控件会出现两种口径。
@@ -142,6 +159,8 @@ export type ClaimBasis = {
 export type SearchFilters = Population & {
 	/** 每条必须的主张都要有受控字段（序列或岗位）的命中。 */
 	strong?: boolean;
+	/** 名单按什么排。缺省是按证据（见 `Order`），写 `depth` 才是只看深度。 */
+	order?: Exclude<Order, "evidence">;
 };
 
 /**
@@ -180,7 +199,7 @@ type Outcome = {
 
 export type SearchOutcome =
 	| (Outcome & {
-			order: "relevance";
+			order: Order;
 			claims: Claim[];
 			results: RankedResult[];
 	  })

@@ -20,7 +20,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { NOT_A_VALUE, VOCAB_KEYS } from "#/search/dimensions";
 import { parseQuery } from "#/search/query-syntax";
-import { fakeSimilarity, seed, setup } from "./fixture";
+import { fakeEmbedding, fakeSimilarity, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -35,13 +35,20 @@ const run = async (query: string, filters = {}, limit?: number) => {
 		filters,
 		limit,
 	);
-	assert.equal(outcome.order, "relevance");
-	if (outcome.order !== "relevance")
-		throw new Error("要求查询未进入相关度路径");
+	if (outcome.order === "employee")
+		throw new Error("要求查询得有经历主张，只有人的条件排不出名次");
 	return outcome;
 };
-const { RESULT_PAGE, RECALL_MIN, RELEVANCE_MIN, RELEVANCE_MIN_EXCLUDE } =
-	await import("#/search/weights");
+const {
+	RESULT_PAGE,
+	RECALL_TOP,
+	RECALL_MIN,
+	RELEVANCE_MIN,
+	RELEVANCE_MIN_EXCLUDE,
+} = await import("#/search/weights");
+const { db } = await import("#/db");
+const { sql } = await import("drizzle-orm");
+const { vectorLiteral } = await import("#/server/embed");
 
 before(async () => {
 	await seed([
@@ -108,8 +115,10 @@ before(async () => {
 					months: 36,
 					org: "某公司",
 					description: "负责服务端",
-					skills: ["Python", "Spark"],
-					did: [{ involvement: "从零搭建", domain: "推荐系统" }],
+					extracted: {
+						skills: ["Python", "Spark"],
+						did: [{ involvement: "从零搭建", domain: "推荐系统" }],
+					},
 				},
 			],
 		},
@@ -213,6 +222,31 @@ describe("语义命中", () => {
 		assert.ok(fakeSimilarity("线下渠道运营", "渠道运营") >= RELEVANCE_MIN);
 		const { results } = await run("线下渠道运营");
 		assert.ok(results.some((r) => r.employee.empId === "T006"));
+	});
+
+	/*
+	 * 判定读的是「说法：释义」。四个字对四个字只能数字面重合，跟上一句释义之后
+	 * 判的才是意思：一条说法被释义成另一个行当的活，字面再像也不是命中。
+	 */
+	test("说法有释义时按「说法：释义」判", async () => {
+		const doc = "渠道运营：销售团队的人员招聘与上岗培训";
+		assert.ok(fakeSimilarity("线下渠道运营", doc) < RELEVANCE_MIN);
+		await db.execute(sql`
+			insert into phrase_gloss (text, gloss, written_at, judge)
+			values ('渠道运营', '销售团队的人员招聘与上岗培训', now(), 'agent:test')`);
+		// 释义一变分数缓存跟着清，结算时是同一笔事务（corpus/gloss.ts）；这里手动模拟
+		await db.execute(sql`
+			delete from phrase_relevance r using phrase p
+			where p.id = r.phrase_id and p.text = '渠道运营'`);
+		try {
+			const { results } = await run("线下渠道运营");
+			assert.ok(!results.some((r) => r.employee.empId === "T006"));
+		} finally {
+			await db.execute(sql`delete from phrase_gloss where text = '渠道运营'`);
+			await db.execute(sql`
+				delete from phrase_relevance r using phrase p
+				where p.id = r.phrase_id and p.text = '渠道运营'`);
+		}
 	});
 
 	test("相关度不过阈值的段不算命中", async () => {
@@ -445,8 +479,8 @@ describe("月数与结束日期到得了打分层", () => {
 
 	test("同一批人不会再挤成一个分数", async () => {
 		const { results } = await run("考古");
-		const scores = new Set(results.map((r) => r.score));
-		assert.equal(scores.size, 3, "三个人三个分数，排序才有分辨率");
+		const depths = new Set(results.map((r) => r.depth));
+		assert.equal(depths.size, 3, "三个人三个深度，排序才有分辨率");
 	});
 });
 
@@ -569,12 +603,11 @@ describe("跟人走的筛选", () => {
 		const plain = await search({ conditions: parseQuery("潜水") });
 		assert.equal(preferred.total, 3);
 		assert.equal(preferred.results[0]?.employee.empId, "P002");
-		assert.equal(preferred.order, "relevance");
-		assert.equal(plain.order, "relevance");
-		if (preferred.order !== "relevance" || plain.order !== "relevance") return;
-		// 只有满足偏好的那个人的分变了，其余原样
+		assert.equal(preferred.order, "evidence");
+		assert.equal(plain.order, "evidence");
+		// 只有满足偏好的那个人的深度变了，其余原样
 		const by = (o: typeof plain) =>
-			new Map(o.results.map((r) => [r.employee.empId, r.score]));
+			new Map(o.results.map((r) => [r.employee.empId, r.depth]));
 		const a = by(preferred);
 		const b = by(plain);
 		assert.ok((a.get("P002") ?? 0) > (b.get("P002") ?? 0));
@@ -604,13 +637,13 @@ describe("跟人走的筛选", () => {
 		// P001 硕士且校招，P003 硕士且校招，P002 都不是
 		const ids = outcome.results.map((r) => r.employee.empId);
 		assert.equal(ids[2], "P002");
-		const score = (id: string) =>
-			outcome.results.find((r) => r.employee.empId === id)?.score ?? 0;
+		const depth = (id: string) =>
+			outcome.results.find((r) => r.employee.empId === id)?.depth ?? 0;
 		const one = await run("潜水,+education:硕士");
-		const oneScore = (id: string) =>
-			one.results.find((r) => r.employee.empId === id)?.score ?? 0;
-		assert.ok(score("P001") > oneScore("P001"), "多满足一条就多一份分");
-		assert.equal(score("P002"), oneScore("P002"), "一条都不满足的分不变");
+		const oneDepth = (id: string) =>
+			one.results.find((r) => r.employee.empId === id)?.depth ?? 0;
+		assert.ok(depth("P001") > oneDepth("P001"), "多满足一条就多一份分");
+		assert.equal(depth("P002"), oneDepth("P002"), "一条都不满足的分不变");
 	});
 
 	test("「在字节做过潜水」和「做过潜水，也待过字节」是两份查询", async () => {
@@ -769,6 +802,42 @@ describe("命中总数", () => {
 	});
 });
 
+/**
+ * 召回按名次截断：一个词只有余弦最近的 `RECALL_TOP` 条说法进重排。过线的说法
+ * 再多，重排的条数也不变，词照样能用——搜一个词的成本和语料大小无关，这是
+ * 这条截断存在的全部理由。说法多不等于宽，宽只按命中的人数占比量。
+ */
+describe("召回按名次截断", () => {
+	const word = "星门导航";
+	const extra = 50;
+	before(async () => {
+		// 直接往说法表里灌超过名额的、和查询词同一个向量的说法：它们不指向
+		// 任何经历段，只为让这个词过线的说法多过 RECALL_TOP
+		await db.execute(sql`
+			insert into phrase (text, embedding)
+			select ${word} || g, ${vectorLiteral(fakeEmbedding(word))}::halfvec
+			from generate_series(1, ${RECALL_TOP + extra}) g`);
+	});
+	after(async () => {
+		await db.execute(sql`delete from phrase where text like ${`${word}%`}`);
+	});
+
+	test("只重排名额之内的候选，词不因说法多而作废", async () => {
+		const outcome = await run(word);
+		assert.equal(outcome.total, 0);
+		assert.notEqual(outcome.empty?.kind, "overflowEvidence");
+		// 重排分逐对缓存，缓存里这个词的行数就是进过重排的条数
+		const judged = await db.execute<{ n: number }>(sql`
+			select count(*)::int as n from phrase_relevance where query = ${word}`);
+		assert.equal(judged.rows[0]?.n, RECALL_TOP);
+	});
+
+	test("说法多不算宽：没命中两成的人就不宽", async () => {
+		const wide = await probeWide([word, "考古"]);
+		assert.deepEqual([...wide], []);
+	});
+});
+
 describe("证据要求", () => {
 	test("打开之后只剩每条必须的主张都有受控命中的人", async () => {
 		const loose = await run("算法,运营");
@@ -870,8 +939,8 @@ describe("加分的主张", () => {
 		const only = await run("算法");
 		const t001Only = only.results.find((r) => r.employee.empId === "T001");
 		assert.ok(
-			t001Only && t001.score > t001Only.score,
-			"满足加分的主张分数必须上升",
+			t001Only && t001.depth > t001Only.depth,
+			"满足加分的主张深度必须上升",
 		);
 	});
 
@@ -1177,7 +1246,7 @@ describe("一条条件的几个取值", () => {
 		assert.ok(ids.includes("V002"), "第二个取值把用户没说准的人找了回来");
 		const v1 = results.find((r) => r.employee.empId === "V001");
 		const v2 = results.find((r) => r.employee.empId === "V002");
-		assert.equal(v1?.score, v2?.score, "同样 36 个月，靠哪个取值命中分数一样");
+		assert.equal(v1?.depth, v2?.depth, "同样 36 个月，靠哪个取值命中深度一样");
 		assert.ok(
 			ids.indexOf("V003") < ids.indexOf("V004"),
 			"十年且仍在做的压过十年前做了三个月的，和取值无关",

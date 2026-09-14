@@ -7,8 +7,8 @@ import type {
 	ClaimBasis,
 	Hit,
 	RankedResult,
+	ResultEmployee,
 	SearchOutcome,
-	SearchResult,
 } from "#/search/result";
 
 /**
@@ -33,7 +33,7 @@ export type Pick = {
 
 /** 名单上的一块：画出来要的东西和挑上要的东西，出自同一次推导。 */
 type Row = {
-	result: SearchResult;
+	employee: ResultEmployee;
 	/** 命中的主张，逐条画一行 */
 	hits: { claim: Claim; name: string; hit: Hit; basis: ClaimBasis }[];
 	/** 没命中的主张的名字，收成一行 */
@@ -43,26 +43,30 @@ type Row = {
 
 const NONE: ReadonlyMap<string, Pick> = new Map();
 
-function isRanked(result: SearchResult): result is RankedResult {
-	return "score" in result;
-}
-
 /**
  * 一个结果推成一块。
+ *
+ * 这块有没有证据可画，由调用方按 `SearchOutcome.order` 说（只有人的条件那种名单
+ * 是 `"employee"`，没有主张也就没有证据），不在结果对象上猜字段：猜的那个字段
+ * 一改名，每个人都会静默地画成「未命中」，而没有任何断言会红。
  *
  * 样例段和聚合依据出自同一次筛选，所以这两样要么都在、要么都不在
  * （`EvidenceLine` 的 `basis` 不可空，理由在那里）。
  */
-function rowOf(result: SearchResult, rank: number, claims: Claim[]): Row {
-	const ranked = isRanked(result) ? result : null;
+function rowOf(
+	e: ResultEmployee,
+	ranked: RankedResult | null,
+	rank: number,
+	claims: Claim[],
+): Row {
 	const best = bestHitPerClaim(ranked?.hits ?? [], claims);
 	const lines = claims.map((claim, i) => {
 		const hit = best[i];
 		const basis = ranked?.basis[i];
 		return hit && basis ? { basis, hit, claim, name: claimName(claim) } : null;
 	});
-	const e = result.employee;
 	return {
+		employee: e,
 		hits: lines.filter((line) => line !== null),
 		missed: claims.filter((_, i) => !lines[i]).map(claimName),
 		pick: {
@@ -76,7 +80,6 @@ function rowOf(result: SearchResult, rank: number, claims: Claim[]): Row {
 			rank,
 			title: e.curTitle,
 		},
-		result,
 	};
 }
 
@@ -93,8 +96,15 @@ function rowOf(result: SearchResult, rank: number, claims: Claim[]): Row {
  */
 export function usePicks(turnId: string, outcome: SearchOutcome) {
 	const rows = useMemo(
-		() => outcome.results.map((r, i) => rowOf(r, i + 1, outcome.claims)),
-		[outcome.results, outcome.claims],
+		() =>
+			outcome.order === "employee"
+				? outcome.results.map((r, i) =>
+						rowOf(r.employee, null, i + 1, outcome.claims),
+					)
+				: outcome.results.map((r, i) =>
+						rowOf(r.employee, r, i + 1, outcome.claims),
+					),
+		[outcome.order, outcome.results, outcome.claims],
 	);
 	const [picking, setPicking] = useState(false);
 	const [picked, setPicked] = useState(NONE);

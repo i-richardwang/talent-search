@@ -15,7 +15,7 @@
 
 import "@tanstack/react-start/server-only";
 import { PgBoss } from "pg-boss";
-import { reviewJudge } from "#/corpus/vocabulary";
+import { reviewJudge } from "#/corpus/questions";
 import type { TaskKind } from "#/db/schema";
 import { derivePending, runTask } from "./tasks";
 

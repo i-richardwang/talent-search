@@ -23,21 +23,22 @@ import {
 	dimValues,
 	type Facet,
 } from "./dimensions";
+import { strengthOf } from "./evidence";
 import {
 	type Claim,
 	type ClaimBasis,
 	emptyFacets,
 	type Facets,
+	type Order,
 	type SearchFilters,
 } from "./result";
 import {
 	BOOST_WEIGHT,
 	isControlledRoute,
-	RECENCY_FLOOR,
 	RECENCY_HALF,
-	ROUTE_WEIGHTS,
 	type Route,
-	TENURE_FLOOR,
+	type Strength,
+	strengthRank,
 	TENURE_HALF,
 } from "./weights";
 
@@ -77,13 +78,15 @@ export type Fact = PopulationFact & {
 };
 
 /**
- * 一条证据的强度 = 路权重 × 相关度。两个都是「这条证据有多能说明他真的做过
- * 用户要的那件事」的因子：路权重管字段是谁写的，相关度管原文离查询词多远。
- * 一条主张的几个经历词同权：它们都是模型对「要找什么」的表达，没有哪个更像原话。
- * 不比文本的主张，证据就是登记的公司、来源与时长，强度 1。
+ * 两条证据谁更强：先比可信度那一档，同档比相关度。一条主张的几个经历词同权：
+ * 它们都是模型对「要找什么」的表达，没有哪个更像原话。
+ * 不比文本的主张，证据就是登记的公司、来源与时长，是登记那一档、相关度 1。
  */
-function evidenceWeight(f: Fact) {
-	return (f.route === null ? 1 : ROUTE_WEIGHTS[f.route]) * f.relevance;
+function stronger(a: Fact, b: Fact) {
+	return (
+		strengthRank(strengthOf(b.route)) - strengthRank(strengthOf(a.route)) ||
+		a.relevance - b.relevance
+	);
 }
 
 /** 这条证据是不是受控字段给的。落在范围里本身就是登记事实，算受控。 */
@@ -92,16 +95,16 @@ function controlled(f: Fact) {
 }
 
 /**
- * 饱和函数：`x / (x + half)` 抬到下限之上。恒在 [floor, 1) 内、处处单调、
- * 没有断崖，所以拿它当因子永远不会把一段人口压平（见 weights.ts 的 TENURE_HALF）。
+ * 饱和函数 `x / (x + half)`：恒在 [0, 1) 内、处处单调、没有断崖，所以拿它当因子
+ * 永远不会把一段人口压平（见 weights.ts 的 TENURE_HALF）。
  */
-function saturate(x: number, half: number, floor: number) {
-	return floor + (1 - floor) * (x / (x + half));
+function saturate(x: number, half: number) {
+	return x / (x + half);
 }
 
-/** 衰减函数：`half / (half + x)` 抬到下限之上。saturate 的镜像，x 越大越低。 */
-function decay(x: number, half: number, floor: number) {
-	return floor + (1 - floor) * (half / (half + x));
+/** 衰减函数 `half / (half + x)`：saturate 的镜像，x 越大越低，恒大于零。 */
+function decay(x: number, half: number) {
+	return half / (half + x);
 }
 
 /** 距今多少个月。仍在做（endDate 为 null）算 0。 */
@@ -116,24 +119,21 @@ export function gapMonths(endDate: string | null, now: Date) {
 }
 
 /**
- * 一条主张对一个人的分数 = **强度 × 时长 × 近因**，三个都是有界因子。
+ * 一条主张对一个人说两件事：**可信度**是一档，**深度**是一个数。
  *
- * **强度**取该人所有命中段里最强的一条证据（路权重 × 相关度，见
- * evidenceWeight）。做过三段算法不比做过一段更「做过」，所以强度不累加，
- * 它回答的是「最强的那条证据有多能说明他真的做过」。
+ * **可信度**取该人所有命中段里最强的一条证据所在的档。做过三段算法不比做过
+ * 一段更「做过」，所以它不累加，回答的是「最硬的那条证据有多能说明他真的做过」。
  *
- * **时长是全部命中段的累计**，近因取其中最近的一段。它们回答的是「他在这件事上
- * 沉淀了多久、离开多久」，一段简历里提过的算法经历也是算法经历；证据档位
- * 不会因此被翻盘——两个因子的下限刻意抬得很高（论证见 weights.ts 的 TENURE_FLOOR），
- * 它们决定的是同一档证据内部的先后，不是证据的档次。主张上的 `minMonths`
- * 判的就是这个累计值：筛和排看的是同一个数，证据行上写的也是它。
+ * **深度 = 相关度 × 时长 × 近因**，三个都是 (0, 1] 内的因子。相关度取最强那条
+ * 证据的；**时长是全部命中段的累计**，近因取其中最近的一段。它们回答的是
+ * 「他在这件事上沉淀了多久、离开多久」，一段简历里提过的算法经历也是算法经历。
+ * 深度不会翻盘可信度：按证据排时它只在同一档之内比先后（`rank`）。
+ * 主张上的 `minMonths` 判的就是这个累计值：筛和排看的是同一个数，证据行上写的也是它。
  */
 function claimValue(facts: Fact[], now: Date) {
 	let best: Fact | undefined;
-	for (const f of facts)
-		if (!best || evidenceWeight(f) > evidenceWeight(best)) best = f;
-	if (!best) return { score: 0, basis: null };
-	const strength = evidenceWeight(best);
+	for (const f of facts) if (!best || stronger(f, best) > 0) best = f;
+	if (!best) return null;
 	const months = monthsOf(facts);
 	let gap = Number.POSITIVE_INFINITY;
 	let endDate: string | null | undefined;
@@ -147,10 +147,9 @@ function claimValue(facts: Fact[], now: Date) {
 			endDate = f.endDate;
 	}
 	return {
-		score:
-			strength *
-			saturate(months, TENURE_HALF, TENURE_FLOOR) *
-			decay(gap, RECENCY_HALF, RECENCY_FLOOR),
+		strength: strengthOf(best.route),
+		depth:
+			best.relevance * saturate(months, TENURE_HALF) * decay(gap, RECENCY_HALF),
 		basis: {
 			route: best.route,
 			value: best.value,
@@ -234,37 +233,47 @@ function complete(p: Person, claims: Claim[], strong: boolean) {
 }
 
 /**
- * 总分 = 必须主张的乘积 × 加分主张的抬升 × 人的偏好的抬升。
+ * 一个人的两把尺。
  *
- * 必须主张之间是乘积：一条弱，整个人就被压下去。淘汰由 `complete` 负责，不是
- * 由乘积负责——加分那一半恒大于 1，只抬不压，所以不会出现「命中得越少分越高」。
- * 满足的每一条偏好各乘一次（`BOOST_WEIGHT`），经历上的和人上的一样：条件之间
- * 彼此独立，「最好字节来的」和「最好是硕士」满足一条就该得一条的分。
+ * **可信度**取必须的主张里最弱的那一档：名单说「这个人满足全部必须条件」，
+ * 这句话只有它最弱的那条证据那么可信。加分的主张不参与——一条可有可无的主张
+ * 再硬也不该替必须的作证。
+ *
+ * **深度 = 必须主张的乘积 × 加分主张的抬升 × 人的偏好的抬升。** 必须主张之间是
+ * 乘积：一条浅，整个人就被压下去。淘汰由 `complete` 负责，不是由乘积负责——
+ * 加分那一半恒大于 1，只抬不压，所以不会出现「命中得越少分越高」。满足的每
+ * 一条偏好各乘一次（`BOOST_WEIGHT`），经历上的和人上的一样：条件之间彼此独立，
+ * 「最好字节来的」和「最好是硕士」满足一条就该得一条的分。
  */
-function score(
+function measure(
 	p: Person,
 	claims: Claim[],
 	preferred: readonly ReadonlySet<string>[],
 	empId: string,
 	now: Date,
 ) {
-	let s = 1;
+	let strength: Strength = "controlled";
+	let depth = 1;
 	const basis: (ClaimBasis | null)[] = [];
 	for (const [i, claim] of claims.entries()) {
 		const fs = p.get(i);
 		const value = claimValue(fs ?? [], now);
 		if (claim.mode === "must") {
+			// `complete` 已经保证必须的主张都有证据；没有就是调用方漏了判定
+			if (!value) throw new Error(`必须的主张 ${i} 没有证据却进了打分`);
 			basis.push(value.basis);
-			s *= value.score;
-		} else if (satisfies(claim, fs)) {
+			depth *= value.depth;
+			if (strengthRank(value.strength) > strengthRank(strength))
+				strength = value.strength;
+		} else if (value && satisfies(claim, fs)) {
 			// 够不上时长的加分主张不加分，依据也不留：留了它就会画成一行命中，
 			// 而名次里没有它——「看得见的东西能解释看到的名次」就此破掉
 			basis.push(value.basis);
-			s *= 1 + BOOST_WEIGHT * value.score;
+			depth *= 1 + BOOST_WEIGHT * value.depth;
 		} else basis.push(null);
 	}
-	for (const set of preferred) if (set.has(empId)) s *= 1 + BOOST_WEIGHT;
-	return { score: s, basis };
+	for (const set of preferred) if (set.has(empId)) depth *= 1 + BOOST_WEIGHT;
+	return { strength, depth, basis };
 }
 
 /** 算某一维的候选时要摘掉的那一维（口径见 `facetRows`）。 */
@@ -442,14 +451,27 @@ export function rankPopulation(
 
 type Ranked = {
 	empId: string;
-	score: number;
+	strength: Strength;
+	depth: number;
 	basis: (ClaimBasis | null)[];
+};
+
+/**
+ * 两种排法（`result.ts` 的 `Order`）。按证据先比档，同档比深度；按深度只比深度。
+ * 同分按工号，排序才是确定的：翻页靠把 limit 调大重查，前一页必须逐位不变。
+ */
+const BY: Record<Order, (a: Ranked, b: Ranked) => number> = {
+	evidence: (a, b) =>
+		strengthRank(a.strength) - strengthRank(b.strength) ||
+		b.depth - a.depth ||
+		a.empId.localeCompare(b.empId),
+	depth: (a, b) => b.depth - a.depth || a.empId.localeCompare(b.empId),
 };
 
 /**
  * 一次检索的名次与分面。两者出自同一份事实，所以口径不可能分家。
  *
- * `now` 是入参而不是函数体里的 `new Date()`：近因让分数依赖「今天」，而依赖
+ * `now` 是入参而不是函数体里的 `new Date()`：近因让深度依赖「今天」，而依赖
  * 当前时间的函数是测不动的。调用方传一次，测试传一个固定的日期。
  */
 export function rank(
@@ -463,10 +485,9 @@ export function rank(
 	const ranked: Ranked[] = [];
 	for (const [empId, p] of bucket(facts, keeps(filters))) {
 		if (!complete(p, claims, Boolean(filters.strong))) continue;
-		ranked.push({ empId, ...score(p, claims, preferred, empId, now) });
+		ranked.push({ empId, ...measure(p, claims, preferred, empId, now) });
 	}
-	// 同分按工号，排序才是确定的：翻页靠把 limit 调大重查，前一页必须逐位不变
-	ranked.sort((a, b) => b.score - a.score || a.empId.localeCompare(b.empId));
+	ranked.sort(BY[filters.order ?? "evidence"]);
 	return {
 		ranked,
 		facets: computeFacets(facts, claims, filters),
@@ -477,10 +498,10 @@ export function rank(
 /**
  * 这一页的人各自留哪几段经历当证据。
  *
- * 只对已经定好名次的那一页算，所以它不进排序的开销。排序键：证据硬的在前，
- * 同档取长的，再同按 id——展示顺序必须是确定的，否则同一次查询刷新两次证据
- * 会换位置。这里刻意不用主张的分：那是**人**的属性（累计、近因都跨段），
- * 而这里要选的是单独一段，两者不是同一个量。
+ * 只对已经定好名次的那一页算，所以它不进排序的开销。排序键：证据硬的在前
+ * （`stronger`：先档后相关度），再取长的，再按 id——展示顺序必须是确定的，否则
+ * 同一次查询刷新两次证据会换位置。这里刻意不用主张的深度：那是**人**的属性
+ * （累计、近因都跨段），而这里要选的是单独一段，两者不是同一个量。
  *
  * 没满足的主张一段都不留（`satisfies`，和打分同一条判定）：够不上累计时长的
  * 加分主张在名次里没有份，证据行和时间线上也不能有它。
@@ -510,12 +531,7 @@ export function pageHits(
 	for (const { empId, facts: list } of byKey.values()) {
 		const claim = claims[list[0]?.claim ?? -1];
 		if (!claim || !satisfies(claim, list)) continue;
-		list.sort(
-			(a, b) =>
-				evidenceWeight(b) - evidenceWeight(a) ||
-				b.months - a.months ||
-				a.id - b.id,
-		);
+		list.sort((a, b) => stronger(b, a) || b.months - a.months || a.id - b.id);
 		const acc = out.get(empId) ?? [];
 		acc.push(...list.slice(0, perClaim));
 		out.set(empId, acc);
@@ -523,10 +539,7 @@ export function pageHits(
 	// 主张的顺序即行序：结果里每个人的每条证据对应一条主张，按下标排好再交出去
 	for (const list of out.values())
 		list.sort(
-			(a, b) =>
-				a.claim - b.claim ||
-				evidenceWeight(b) - evidenceWeight(a) ||
-				b.months - a.months,
+			(a, b) => a.claim - b.claim || stronger(b, a) || b.months - a.months,
 		);
 	return out;
 }

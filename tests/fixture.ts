@@ -21,7 +21,7 @@ import { createServer } from "node:http";
 import type { SQL } from "drizzle-orm";
 import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
-import { routeTexts } from "#/corpus/route-texts";
+import { phrasesOf } from "#/corpus/route-texts";
 import {
 	completionCache,
 	EMBED_DIM,
@@ -31,10 +31,10 @@ import {
 	experience,
 	experiencePhrase,
 	phrase,
+	phraseGloss,
 	phraseRelevance,
-	type Route,
+	reviewQuestion,
 	searchTurn,
-	skillReview,
 	skillTerm,
 	taskRun,
 } from "#/db/schema";
@@ -381,9 +381,10 @@ export async function setup() {
 		phrase,
 		experiencePhrase,
 		phraseRelevance,
+		phraseGloss,
 		searchTurn,
 		skillTerm,
-		skillReview,
+		reviewQuestion,
 		embeddingCache,
 		completionCache,
 		taskRun,
@@ -475,10 +476,16 @@ export type Seed = {
 		seqInferredL2?: string;
 		description?: string;
 		companyTag?: string;
-		/** 抽取的能力词。真语料里由 src/corpus/extract.ts 从 description 读出来；夹具直接给。 */
-		skills?: string[];
-		/** 抽取的做过的事。领域是说法，参与方式落在边上（真语料里由 conform 收窄取值）。 */
-		did?: { involvement: string; domain: string }[];
+		/**
+		 * 这一段的抽取结果，真语料里由 src/corpus/extract.ts 从 description 读出来；
+		 * 夹具直接给。给了（哪怕是空的）就是「读过」，自述证据只有它；不给就是
+		 * 「没读过」，整段 description 当说法（`corpus/route-texts.ts`）。
+		 */
+		extracted?: {
+			skills?: string[];
+			/** 领域是说法，参与方式落在边上（真语料里由 conform 收窄取值）。 */
+			did?: { involvement: string; domain: string }[];
+		};
 	}>;
 };
 
@@ -534,32 +541,17 @@ export async function seed(rows: Seed[]) {
 			),
 		)
 		.returning();
-	// 说法去重后各嵌一次，经历段按路指向它们——和 src/corpus/derive.ts 同一个形状。
-	// 抽取的两路夹具直接给：seed 的入参和 inserted 顺序一致，按下标对回去。
+	// 说法去重后各嵌一次，经历段按路指向它们——拼法和 src/corpus/derive.ts 是
+	// 同一个函数。抽取结果夹具直接给：seed 的入参和 inserted 顺序一致，按下标对回去。
 	const specs = rows.flatMap((r) => r.segments);
 	const links = inserted.flatMap((s, i) => {
-		const spec = specs[i];
-		const extracted: [Route, string, string | null][] = [
-			...(spec?.skills ?? []).map((t): [Route, string, null] => [
-				"skill",
-				t,
-				null,
-			]),
-			...(spec?.did ?? []).map((d): [Route, string, string] => [
-				"did",
-				d.domain,
-				d.involvement,
-			]),
-		];
-		const original = routeTexts(s).map(
-			([route, text]): [Route, string, null] => [route, text, null],
-		);
-		return [...original, ...extracted].map(([route, text, involvement]) => ({
-			experienceId: s.id,
-			route,
-			text,
-			involvement,
-		}));
+		const extracted = specs[i]?.extracted;
+		return phrasesOf(
+			s,
+			extracted
+				? { skills: extracted.skills ?? [], did: extracted.did ?? [] }
+				: null,
+		).map((p) => ({ experienceId: s.id, ...p }));
 	});
 	const texts = [...new Set(links.map((l) => l.text))];
 	if (texts.length === 0) return;
