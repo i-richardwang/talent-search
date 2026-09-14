@@ -15,9 +15,8 @@ import { answerIntent, breakUnderstanding, setup, violates } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { createTurn, listRecent, loadTurn, resolveTurn } = await import(
-	"#/server/turn"
-);
+const { createTurn, deleteSearch, listRecent, loadTurn, resolveTurn } =
+	await import("#/server/turn");
 
 /** 每条条件的代表词：主张的第一个经历词，人的条件的第一个取值。 */
 const wordsOf = (spec: SearchSpec) =>
@@ -216,5 +215,25 @@ describe("查询记录状态", () => {
 			}),
 			violates("search_turn_state"),
 		);
+	});
+});
+
+describe("删除", () => {
+	test("删一行就是删整条链，改写过的早先几条不会顶上来", async () => {
+		const root = await sentence("产品经理");
+		const rewritten = await sentence("渠道运营", root.turnId);
+
+		const gone = await deleteSearch(rewritten.turnId);
+		assert.deepEqual(gone.sort(), [root.turnId, rewritten.turnId].sort());
+		assert.equal(await loadTurn(root.turnId), null);
+		assert.equal(await loadTurn(rewritten.turnId), null);
+		assert.ok(
+			!(await listRecent()).some((r) => r.turnId === root.turnId),
+			"链头没有因为末条被删而顶回最近搜索",
+		);
+	});
+
+	test("不存在的记录：什么都没删", async () => {
+		assert.deepEqual(await deleteSearch("no-such-turn"), []);
 	});
 });

@@ -29,6 +29,7 @@ import { listSkills } from "./skills";
 import { tasksState } from "./tasks";
 import {
 	createTurn,
+	deleteSearch,
 	listRecent,
 	loadTurn,
 	resolveTurn,
@@ -119,6 +120,11 @@ export const interpretTurn = createServerFn({ method: "POST" })
 export const recentSearches = createServerFn({ method: "GET" }).handler(() =>
 	listRecent(),
 );
+
+/** 删掉「最近搜索」里的一行，也就是那一次找人任务的整条链。返回删掉的记录 id。 */
+export const deleteRecent = createServerFn({ method: "POST" })
+	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
+	.handler(({ data }) => deleteSearch(data.turnId));
 
 /** 管理页「能力词」的全部数据：词表和语料里的词数，一次取齐。 */
 export const skillTable = createServerFn({ method: "GET" }).handler(() =>

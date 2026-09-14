@@ -1,4 +1,7 @@
-/** 查询记录的持久化与派生规则。记录不可变；唯一更新是补全待理解记录。 */
+/**
+ * 查询记录的持久化与派生规则。记录不可变：能改的只有补全待理解记录那一列，
+ * 能删的只有整条链（`deleteSearch`）。
+ */
 import "@tanstack/react-start/server-only";
 import { randomBytes } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -200,4 +203,29 @@ export async function listRecent(): Promise<RecentSearch[]> {
 		spec: row.spec,
 		rawText: row.raw_text,
 	}));
+}
+
+/**
+ * 删掉一次找人任务：这条记录所在的整条链，返回删掉的每一条的 id。
+ *
+ * 「最近搜索」一行就是一条链，删一行就是删这条链——只删最后那一条的话，
+ * 上一条会顶上来，那一行还在，只是退回了早一点的样子，和用户要的正相反。
+ * 一条语句删完整条链：链上每一条（含链头自己）的 `root_turn_id` 都是链头。
+ *
+ * 返回 id 是给界面的：人正看着的那一屏可能就在这条链上，删完得离开它。
+ */
+export async function deleteSearch(turnId: string): Promise<string[]> {
+	const rows = await db
+		.delete(searchTurn)
+		.where(
+			eq(
+				searchTurn.rootTurnId,
+				db
+					.select({ root: searchTurn.rootTurnId })
+					.from(searchTurn)
+					.where(eq(searchTurn.id, turnId)),
+			),
+		)
+		.returning({ id: searchTurn.id });
+	return rows.map((one) => one.id);
 }
