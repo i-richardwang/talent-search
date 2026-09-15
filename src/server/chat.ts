@@ -58,7 +58,7 @@ const MAX_OUTPUT_TOKENS = positiveInt(
 
 /**
  * 端点整体配好了没有。地址和模型名缺一个就当没配：派生会打印说明后跳过这三件
- * 事，检索照常可用，只是能力词与做过的事两路为空、入职前经历不对齐序列。
+ * 事，检索照常可用，只是能力词与做过的事两类为空、入职前经历不对齐序列。
  */
 export function chatConfigured(): boolean {
 	return Boolean(BASE_URL && process.env.EXTRACT_MODEL?.trim());

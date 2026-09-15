@@ -1,4 +1,4 @@
-import { DownloadIcon, InfoIcon } from "lucide-react";
+import { DownloadIcon, InfoIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Badge } from "#/components/ui/badge";
@@ -18,6 +18,12 @@ import {
 import { Field, FieldDescription, FieldLabel } from "#/components/ui/field";
 import { Form } from "#/components/ui/form";
 import {
+	Popover,
+	PopoverPopup,
+	PopoverTitle,
+	PopoverTrigger,
+} from "#/components/ui/popover";
+import {
 	Toolbar,
 	ToolbarButton,
 	ToolbarGroup,
@@ -26,7 +32,20 @@ import {
 import { csvName, download, FIXED, toCsv } from "../-lib/csv";
 import type { Pick, Picks } from "../-lib/picks";
 
-/** 选择非空时在内容下沿显示批量操作工具栏。 */
+/**
+ * 选中人之后浮现的工具条：选了几个，以及对这一批做什么。
+ *
+ * 固定在名单下沿，不在表头。用户是一边向下浏览一边选的，视线在名单下半部分，
+ * 汇总条应当出现在同一区域；放回表头的话，每选一个都要回到页顶确认。
+ *
+ * 一个人都没选时不渲染：挑人有开始也有结束，只有中间这段需要汇总条。空着时摆
+ * 一条「已选 0 人 · 清空 · 导出」，等于在屏幕上留一组既不可用也不会变化的按钮。
+ *
+ * 计数一段、操作一段，中间用 `ToolbarSeparator` 分开——这是 `Toolbar` 自带的分段
+ * 方式（上游 `p-toolbar-1` 的排法），不是用间距拼出来的两组。浮层样式沿用 coss
+ * 的浮层配方（`bg-popover` 配 `shadow-lg/5`），不另配更深的阴影：这一屏的层次由
+ * 边框和这一档阴影区分。
+ */
 export function PickDock({
 	picks,
 	names,
@@ -38,25 +57,21 @@ export function PickDock({
 	/** 库里符合条件的总人数。名单上这几个人只是其中一段。 */
 	total: number;
 }) {
-	const { clear, picked, shownIds, shownPicked } = picks;
-	// 按名次导出，不按点下去的先后：拿到这份表的人读的是名单，不是我的操作顺序。
+	const { clear, picked, remove, shownIds, shownPicked } = picks;
+	// 按名次排，不按点下去的先后：这一批读起来是一份名单，不是我的操作顺序。
+	// 清单和导出的表因此同序，核对的时候两边一行对一行。
 	const chosen = [...picked.values()].sort((a, b) => a.rank - b.rank);
 	if (chosen.length === 0) return null;
 
 	return (
+		/* 吸在名单下沿。整条不接鼠标（`pointer-events-none`），只有那块工具栏自己
+		   接：它浮在名单上方，一条通栏的透明层会把它盖住的那几块卡片挡掉。 */
 		<div className="pointer-events-none sticky bottom-4 z-stick flex justify-center pt-4">
-			{/* 报数一段、动作一段，中间一条 `ToolbarSeparator`——这是 `Toolbar` 自己的
-			    分段方式（上游 `p-toolbar-1` 的排法），不是我拿间距凑出来的两堆。
-			    浮起来的那层皮沿用 coss 给浮层的那一套（`bg-popover` 配 `shadow-lg/5`），
-			    不另配一个更黑的影子：这一屏的层次是靠线和这一档影子分的。 */}
 			<Toolbar
-				aria-label="已挑上的人"
+				aria-label="已选择的人"
 				className="pointer-events-auto items-center bg-popover shadow-lg/5 transition-[opacity,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0"
 			>
-				<span className="px-2.5 text-muted-foreground text-sm" role="status">
-					已选 <b className="text-foreground tabular-nums">{chosen.length}</b>{" "}
-					人
-				</span>
+				<Chosen chosen={chosen} onList={new Set(shownIds)} onRemove={remove} />
 				<ToolbarSeparator orientation="vertical" />
 				<ToolbarGroup>
 					<ToolbarButton
@@ -79,7 +94,90 @@ export function PickDock({
 	);
 }
 
-/** 导出当前选择的人员，支持附带命中证据；预览展示实际导出列。 */
+/**
+ * 「已选 N 人」：这个数字本身就是入口。
+ *
+ * 选中记录是按快照保存的，改过筛选之后会有几个人不在当前名单上（`-lib/picks.ts`
+ * 的 `Pick` 开头写了原因），那时屏幕上没有对应的勾选框。一个核对不了的数字等于
+ * 无法验证，所以点开后按名次逐行列出这 N 个人，每行都可以移除——不在名单上的人
+ * 也只能在这里移除，名单上没有他们的复选框。
+ *
+ * 默认不展开人名：姓名会随着选中人数增加不断挤压名单的宽度，而名单才是用户正在
+ * 读的内容。需要时再打开浮层。它仍然是一个 ghost 按钮，这条工具栏上唯一的主按钮
+ * 是右端的导出。
+ *
+ * 每行只写姓名。这份清单回答的是「选中的是哪几个人」；岗位、部门和凭据属于名单
+ * 和详情，放进来只会让一行变成两行。
+ */
+function Chosen({
+	chosen,
+	onList,
+	onRemove,
+}: {
+	chosen: Pick[];
+	/** 此刻名单上有哪些人。不在里面的那几个得说一声，否则这份清单凭空比名单多出几个。 */
+	onList: ReadonlySet<string>;
+	onRemove: (empId: string) => void;
+}) {
+	return (
+		<Popover>
+			{/* 数字变化要播报，作为这次勾选的反馈。用 `aria-live` 而不是
+			    `role="status"`：它是一个按钮，按钮不能同时是状态区域。 */}
+			<ToolbarButton
+				render={
+					<PopoverTrigger
+						render={
+							<Button
+								aria-live="polite"
+								className="text-muted-foreground"
+								size="sm"
+								variant="ghost"
+							/>
+						}
+					/>
+				}
+			>
+				已选 <b className="text-foreground tabular-nums">{chosen.length}</b> 人
+			</ToolbarButton>
+			<PopoverPopup align="start" className="w-64">
+				{/* 标题不重复人数：那个数字就在上方 4px 处的按钮上 */}
+				<PopoverTitle className="mb-3 text-sm">挑上的人</PopoverTitle>
+				{/* 选中上百人也不必自己限高：浮层知道离屏幕边还有多少空间
+				    （`--available-height`），超出后在内部滚动。 */}
+				<ul className="flex flex-col gap-0.5">
+					{chosen.map((one) => (
+						<li className="flex items-center gap-2 ps-2" key={one.empId}>
+							<span className="min-w-0 flex-1 truncate text-sm">
+								{one.name}
+							</span>
+							{!onList.has(one.empId) && (
+								<span className="shrink-0 text-muted-foreground text-xs">
+									不在名单上
+								</span>
+							)}
+							<Button
+								aria-label={`移除 ${one.name}`}
+								onClick={() => onRemove(one.empId)}
+								size="icon-xs"
+								variant="ghost"
+							>
+								<XIcon />
+							</Button>
+						</li>
+					))}
+				</ul>
+			</PopoverPopup>
+		</Popover>
+	);
+}
+
+/**
+ * 导出成一份 CSV。
+ *
+ * 中间隔一层对话框，不是点一下直接下载：这一步要决定的不止一件事——凭据要不要
+ * 一起导出，以及这份表会不会比屏幕上的总数少人（下面那条 `Alert`）。列名先展示
+ * 出来，是因为拿到表的往往是另一个人，而列一旦确定就无法在 Excel 里补回来。
+ */
 function ExportDialog({
 	picked,
 	names,
@@ -89,7 +187,7 @@ function ExportDialog({
 	picked: Pick[];
 	names: string[];
 	total: number;
-	/** 名单上这一批全挑上了，但库里还有没加载出来的人。 */
+	/** 当前名单已全部选中，但库里还有没加载出来的人。 */
 	partial: boolean;
 }) {
 	const [open, setOpen] = useState(false);

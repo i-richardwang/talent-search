@@ -25,22 +25,22 @@ describe("圈组", () => {
 		[0, 1, 0],
 	];
 
-	test("人最多的词先做组心，组和组不串", () => {
+	test("人最多的词先做中心词，组之间不重叠", () => {
 		assert.deepEqual(groups(words, counts, vectors, new Set(words)), [
 			["推荐算法", "推荐系统"],
 		]);
 	});
 
-	test("刚整理过的词不做组心，但还能被别人收进去", () => {
+	test("刚整理过的词不做中心词，但仍可被收进别人的组", () => {
 		assert.deepEqual(groups(words, counts, vectors, new Set(["推荐系统"])), [
 			["推荐系统", "推荐算法", "个性化推荐"],
 		]);
 	});
 
 	test("一组最多十二个词，多出来的留给下一轮", () => {
-		// 二十个和组心几乎一样的词：圈子只收前十一个，剩下的不进这一组
+		// 二十个和中心词几乎一样的词：圈子只收前十一个，剩下的不进这一组
 		const near = Array.from({ length: 20 }, (_, i) => `写法${i}`);
-		const all = ["组心", ...near];
+		const all = ["中心词", ...near];
 		const vectors = all.map((_, i) => [1, i * 1e-3, 0]);
 		const circles = groups(
 			all,
@@ -50,11 +50,11 @@ describe("圈组", () => {
 		);
 		assert.equal(circles.length, 1);
 		assert.equal(circles[0]?.length, 12);
-		assert.equal(circles[0]?.[0], "组心");
+		assert.equal(circles[0]?.[0], "中心词");
 	});
 
-	test("人不够的词不做组心", () => {
-		// 只有一个人的「个性化推荐」到期了也不做组心
+	test("人数不够的词不做中心词", () => {
+		// 只有一个人的「个性化推荐」到期了也不做中心词
 		assert.deepEqual(
 			groups(words, counts, vectors, new Set(["个性化推荐"])),
 			[],
@@ -112,7 +112,7 @@ describe("收窄", () => {
 		);
 	});
 
-	test("不成形状的原话什么都不认", () => {
+	test("格式不对的原话不产出任何结果", () => {
 		assert.equal(conform({ judgments: "运营数据分析" }, words).size, 0);
 		assert.equal(conform("运营数据分析", words).size, 0);
 		// 缺字段的那一条按空处理，词本身还是判过了

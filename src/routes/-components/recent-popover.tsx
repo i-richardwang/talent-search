@@ -27,7 +27,7 @@ import type { RecentSearch } from "#/server/turn";
  * 条件是原话的解释，点进去就在屏幕上，这里再摆一遍只会把「我问的」换成「它懂的」。
  *
  * 没有原话的记录只有一种：直接拿一份条件调 RPC 落下的（`kind: "spec"` 且没有父
- * 记录），界面产生不出来。它的门面本来就是条件本身，所以落到条件上。
+ * 记录），界面产生不出来。它的标题本来就是条件本身，所以落到条件上。
  */
 function recentLabel(spec: SearchSpec, rawText: string | null) {
 	if (rawText) return rawText;
@@ -52,7 +52,7 @@ function recentLabel(spec: SearchSpec, rawText: string | null) {
  * 两层浮层都走 `positionMethod="fixed"`。锚点在吸顶的顶栏里：它在视口里不动，
  * 在文档里一直动。浮层默认按文档坐标定位（`absolute`），于是每滚一帧都要重算
  * 一次位置去追锚点，而 coss 的定位器带 `transition-[top,left,…]`，每次重算都被
- * 补间——滚动时浮层就在上下游。换成视口坐标之后，锚点不动，算出来的数就不变，
+ * 补间——滚动时浮层就在上下游。换成视口坐标之后，锚不可点击，算出来的数就不变，
  * 没有要重算的，也就没有要补间的。
  *
  * 浮层 portal 在 `<body>` 上（组件自带的去处），于是它是独立的一层，永远盖在
@@ -123,7 +123,7 @@ function RecentList({ recent }: { recent: RecentSearch[] }) {
 				const label = recentLabel(record.spec, record.rawText);
 				return (
 					/*
-					 * 一行是一枚 ghost 按钮 render 成 Link，只把居中改成靠左：悬停、
+					 * 一行是一个 ghost 按钮 render 成 Link，只把居中改成靠左：悬停、
 					 * 按压、焦点环全走组件自己那一套，和界面上其余可点的东西同一副长相。
 					 * `data-status` 是 Link 自己标的，当前这条因此看得出来。
 					 * 一句话在 w-80 里放不下就截断，`title` 让悬停能看全。

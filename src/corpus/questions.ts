@@ -12,7 +12,7 @@ import type { QuestionKind } from "#/db/schema";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
 
-/** 一个词判过之后多久才再做组心；也是一道题没人答的话多久作废。 */
+/** 一个词判过之后多久才再做中心词；也是一道题没人答的话多久作废。 */
 export const REVIEW_INTERVAL_DAYS = 7;
 
 /**

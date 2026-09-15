@@ -1,5 +1,5 @@
 /**
- * chip 上写什么。每一项只念代表取值，其余不上 chip、只留一个记号——一排 chip
+ * chip 上写什么。每一项只显示代表取值，其余不上 chip、只留一个记号——一排 chip
  * 得读得过来；经历主张和人的条件是同一种 chip。菜单是弹层，静态渲染画不出来：
  * 菜单里的几个动作各是 `condition.ts` 里的一个纯函数，归 `tests/condition.test.ts`。
  */
@@ -31,7 +31,7 @@ describe("查询 chip", () => {
 		assert.doesNotMatch(text, /LLM|推荐系统/, "其余取值不上 chip");
 	});
 
-	test("人的条件也只写代表词：十档职级是一枚 chip，不是一行念不完的字", () => {
+	test("人的条件也只写代表词：十档职级是一个 chip，不是一行放不下的文字", () => {
 		const text = seen([
 			{
 				about: "person",

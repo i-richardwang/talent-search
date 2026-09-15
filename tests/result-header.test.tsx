@@ -3,7 +3,7 @@
  *
  * 它是这套检索里最容易被点错也最值钱的一个开关：打开之后，每一条必须条件都得
  * 有受控证据（任职记录）才算命中，只在简历里提过的人一律不算。所以这里测三件
- * 事——它说人话、它先告诉你点下去还剩几个人、它不给死路。
+ * 事——它用日常说法、它先告诉你点下去还剩几个人、它不给无效操作。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -41,13 +41,13 @@ const render = (strong: boolean, strongOn: number, claims = CLAIMS) =>
 	visibleText(markup(strong, strongOn, claims));
 
 describe("这份名单是什么", () => {
-	test("报数和排序依据都在", () => {
+	test("人数和排序依据都在", () => {
 		const seen = render(false, 7);
 		assert.ok(seen.includes("38"), seen);
 		assert.ok(seen.includes("按证据排序"), seen);
 	});
 
-	test("一个条件都没有时不画图例，也不画那两个开关", () => {
+	test("一个条件都没有时不显示图例和那两个开关", () => {
 		// 没有点可对照的时候，图例解释的是不存在的东西；没有证据也就没有深度可看
 		const seen = render(false, 7, []);
 		assert.ok(!seen.includes("匹配来源"), seen);
@@ -82,7 +82,7 @@ describe("只看深度", () => {
 		);
 	});
 
-	test("报数那一行说的是名单实际的排法", () => {
+	test("计数那一行说的是名单实际的排序", () => {
 		const seen = visibleText(
 			renderToStaticMarkup(
 				<ResultHeader
@@ -106,17 +106,17 @@ describe("只看深度", () => {
 });
 
 describe("仅岗位或序列", () => {
-	test("和图例最强那一档说同一句话", () => {
+	test("和图例最强的一档用同一句文案", () => {
 		const seen = render(false, 7);
 		assert.ok(seen.includes("仅岗位或序列"), seen);
 	});
 
-	test("关着的时候带着人数：点下去还剩几个，不点就知道", () => {
+	test("关闭时也带人数：不点也知道点下去还剩几个", () => {
 		// 有了这个数，名单那边就不必再写一句「已排除 N 人」：同一件事的另一种说法
 		assert.match(render(false, 7), /仅岗位或序列\s*7/);
 	});
 
-	test("它紧挨着解释它的那三颗点", () => {
+	test("开关紧跟在对应的图例后面", () => {
 		const seen = render(false, 7);
 		const legend = seen.indexOf("岗位或序列");
 		const toggle = seen.indexOf("仅岗位或序列");
@@ -124,10 +124,10 @@ describe("仅岗位或序列", () => {
 	});
 });
 
-describe("不给死路", () => {
-	test("一个人都数不出来时这个开关按不下去，但位子还在", () => {
+describe("不产生无效操作", () => {
+	test("一个人都数不出来时这个开关禁用，但位置保留", () => {
 		// 点下去必然清空名单，所以它不能可点；而抽掉它，表头这一行会随着结果
-		// 落地长高一档、整份名单往下跳一次。左栏那几维处理死路的办法也正是
+		// 落地长高一档、整份名单往下跳一次。左栏那几维处理无效操作的办法也正是
 		// 把数到 0 的那一行禁用掉、留在原地（`filter-rail.tsx` 开头）。
 		const html = markup(false, 0);
 		assert.ok(html.includes("仅岗位或序列"), html);

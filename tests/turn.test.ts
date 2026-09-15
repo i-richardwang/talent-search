@@ -71,19 +71,19 @@ describe("只改条件", () => {
 	});
 });
 
-describe("门面", () => {
-	test("那一行的门面和它的条件出自同一次提问", async () => {
+describe("查询显示的原话", () => {
+	test("记录显示的原话和它的条件来自同一次提问", async () => {
 		const root = await sentence("算法");
 		const rewritten = await sentence("渠道运营", root.turnId);
 		const [row] = (await listRecent()).filter(
 			(r) => r.turnId === rewritten.turnId,
 		);
-		// 门面若回溯根记录取原话，改写之后就是拿旧话给新条件当门面：屏幕上写着
+		// 标题若回溯根记录取原话，改写之后就是拿旧话给新条件当标题：屏幕上写着
 		// 「算法」，点进去搜的是渠道运营，而两边都不会报错。
 		assert.equal(row?.rawText, "渠道运营");
 	});
 
-	test("改一枚 chip 不换门面：问的还是那句话", async () => {
+	test("改一个条件不改显示的原话", async () => {
 		const root = await sentence("算法");
 		const { turnId } = await createTurn(
 			{
@@ -186,10 +186,10 @@ describe("理解只落一次", () => {
 	/**
 	 * 工作台挂载后就地补理解，而同一条 `/s/:id` 可能被同时打开两次（两个标签页、
 	 * 一次刷新）。记录是不可变的，所以这两跳不能各写一份：`where spec is null`
-	 * 让先到的赢，后到的读回同一份最终结果。写成「后到的覆盖」的话，同一条
+	 * 让先写入的生效，后到的读回同一份最终结果。写成「后到的覆盖」的话，同一条
 	 * 查询的条件会在两次刷新之间悄悄变一次，而 URL 承诺的正是它不变。
 	 */
-	test("并发理解同一条记录：先写的赢，后到的读回同一份", async () => {
+	test("并发理解同一条记录：先写入的生效，后到的读回同一份", async () => {
 		const { turnId } = await createTurn({
 			kind: "sentence",
 			text: "算法、渠道运营",

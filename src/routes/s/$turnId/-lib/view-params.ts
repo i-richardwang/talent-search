@@ -83,7 +83,7 @@ const FILTER_KEYS = [...POPULATION_KEYS, "strong", "order"] as const;
  * 这一次导航是不是「只是再看一页」。
  *
  * 用来把两种 pending 分开：改筛选要清空列表换骨架屏（旧结果已经不成立了），
- * 而翻页必须把已经看到的人留在原地——列表在按下按钮的一瞬间塌成骨架，
+ * 而翻页必须把已经看到的人留在原地——列表在按下按钮的一瞬间换成骨架，
  * 等于每翻一页就把人扔回页首，滚动位置和刚才看到哪儿全丢。
  */
 export function onlyMore(next: View, prev: View | undefined) {
@@ -102,7 +102,7 @@ export function viewChanged(next: View, prev: View | undefined) {
 /**
  * 同一维的两个值算不算没变。集合维度是数组，`===` 比的是引用，而 URL 每解析
  * 一次就是一批新对象——照引用比，光是换一个人看详情都会判成「筛选变了」，名单
- * 于是塌成骨架屏一次。
+ * 于是换成骨架屏一次。
  *
  * 比的就是它写进地址栏之后的样子：顺序和字段序都由 `filters.ts` 的 `toggle`
  * 与 `write` 定死（写回一律取候选自己的顺序），同一组选择只有一种写法。

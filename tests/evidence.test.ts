@@ -1,6 +1,6 @@
 /**
  * 证据可信度的分档。这层没有数据库，但它决定了界面上「绿点 / 灰点 / 空心圈」
- * 分别是什么意思，也是排序的第一把尺——档一改，这里必须跟着重新论证。
+ * 分别是什么意思，也是排序的第一依据——档一改，这里必须跟着重新论证。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -28,7 +28,7 @@ describe("强度分档", () => {
 		assert.ok(strengthRank("org") < strengthRank("claimed"));
 	});
 
-	test("抽取的两路来源仍是自述，和简历原文同档", () => {
+	test("抽取的两类来源仍是自述，和简历原文同档", () => {
 		// 强度只看字段来源：模型读得再好也不会让自述变成登记
 		assert.equal(strengthOf("skill"), "claimed");
 		assert.equal(strengthOf("did"), "claimed");
@@ -46,7 +46,7 @@ describe("强度分档", () => {
 
 	test("每一路都归到确切的一档，不是「属于三档之一」", () => {
 		// 断言整张映射表而不是逐个判断「在集合里」：后者被任何兜底分支保证为真，
-		// 加一路而没决定它多硬时照样绿。这里少一路多一路都会红。
+		// 加一路而没决定它多硬时照样通过。这里少一路多一路都会失败。
 		assert.deepEqual(
 			Object.fromEntries(
 				(Object.keys(ROUTE_STRENGTH) as Route[]).map((r) => [r, strengthOf(r)]),
@@ -66,7 +66,7 @@ describe("强度分档", () => {
 		assert.equal(strengthOf(null), "controlled");
 	});
 
-	test("一段经历按它最强的那一路上色", () => {
+	test("一段经历按最强的那一类命中着色", () => {
 		assert.equal(bestStrength([hit(0, "description"), hit(1, "org")]), "org");
 		assert.equal(bestStrength([]), undefined);
 	});

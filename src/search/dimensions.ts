@@ -123,7 +123,7 @@ type Dimension<K extends DimKey> = Match<K> & {
 	id: (value: DimUnit[K]) => string;
 	/** 一个取值在筛选栏里怎么写。分区标题已经说了是什么的，这里不必重复。 */
 	option: (value: DimUnit[K]) => string;
-	/** 这个取值单独拎出来怎么念（人的条件在 chip 上的标签）。默认是「维度名 · 取值」。 */
+	/** 这个取值单独拎出来怎么显示（人的条件在 chip 上的标签）。默认是「维度名 · 取值」。 */
 	text?: (value: DimUnit[K]) => string;
 	/** 不可信输入 → 这一维的取值。URL 与 RPC 共用。 */
 	parse: (raw: unknown) => Picked[K];
@@ -359,7 +359,7 @@ export function dimOption<K extends DimKey>(key: K, value: DimUnit[K]): string {
 	return DIMENSIONS[key].option(value);
 }
 
-/** 一个取值单独拎出来怎么念（人的条件在 chip 上的标签）。 */
+/** 一个取值单独拎出来怎么显示（人的条件在 chip 上的标签）。 */
 export function dimText<K extends DimKey>(key: K, value: DimUnit[K]): string {
 	const dim = DIMENSIONS[key];
 	return dim.text?.(value) ?? `${dim.label} · ${dim.option(value)}`;

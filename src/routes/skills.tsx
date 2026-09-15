@@ -24,6 +24,7 @@ import {
 import { skillTable } from "#/server/functions";
 import type { SkillEntry, SkillTable } from "#/server/skills";
 import { AdminPage } from "./-components/admin-page";
+import { reviewingOf, reviewStatus } from "./-lib/review-status";
 
 /**
  * 技能词表的管理页：哪些写法认成了同一个词、哪个词属于哪个更宽的词，谁下的结论。
@@ -56,17 +57,6 @@ function daysAgo(days: number) {
 	return days === 0 ? "今天" : `${days} 天前`;
 }
 
-/** 页顶那句话：此刻谁在判词表（写法该不该合并、词属于哪个更宽的词）。 */
-function judging(table: SkillTable): string {
-	if (table.judge === "off") return "自动整理已关闭，词表不再更新";
-	if (table.judge === "model") return "由模型自动整理，每天一轮";
-	if (!table.reachable)
-		return "判定交给外部工具，但接口没有配置凭据，外部工具接不上";
-	return table.waiting > 0
-		? `判定交给外部工具，还有 ${table.waiting} 组词等着判`
-		: "判定交给外部工具，暂时没有等着判的词";
-}
-
 /**
  * 「判定」那一格：库里存的是 `model:qwen3` 这样的字，屏幕上不给这种字。
  *
@@ -84,7 +74,7 @@ function judgedBy(judge: string): string {
  * 表：人多的词在前，和筛选栏同一个顺序，于是筛选栏上排第一的词在这里也排第一。
  * 过滤在客户端做——表就几百行，一次取齐比按键往返快，所以框里敲一个字就少一批行，
  * 不必回车。数据页那个框要回车（几万人得回服务端找），两者形状因此不同：
- * 那边末尾挂着提交按钮，这边起头只有一枚漏斗。
+ * 那边末尾挂着提交按钮，这边起头只有一个漏斗。
  *
  * 表照 coss 的排法摆：`CardFrame` 裹一张 `variant="card"` 的表。裸表是一堆
  * 靠发丝线切开的行直接坐在画布上——那正是后台的长相，而这套系统里「一块内容」
@@ -97,8 +87,8 @@ function SkillList({ table }: { table: SkillTable }) {
 	return (
 		<div className="flex flex-col gap-3">
 			{/*
-			 * 「谁在判」贴着筛选框，不挂在标题底下：抬头底下那一句是概述，而这句
-			 * 说的是这张表此刻的状态，归表自己（`-components/admin-page.tsx`）。
+			 * 「谁在判」放在筛选框旁边，不放在页面标题下：标题下那句是概述，而这句
+			 * 说的是这张表当前的状态，属于表本身（`-components/admin-page.tsx`）。
 			 */}
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<InputGroup className="max-w-72">
@@ -113,7 +103,11 @@ function SkillList({ table }: { table: SkillTable }) {
 						<FilterIcon />
 					</InputGroupAddon>
 				</InputGroup>
-				<p className="text-muted-foreground text-xs">{judging(table)}</p>
+				{/* 当前由谁判词表（写法该不该合并、词属于哪个更宽的词）。任务台整理那张
+				    卡片显示同一句话，文案只有一个出处（`-lib/review-status.ts`）。 */}
+				<p className="text-muted-foreground text-xs">
+					{reviewStatus(reviewingOf(table))}
+				</p>
 			</div>
 			{shown.length === 0 ? (
 				<Empty>

@@ -24,20 +24,20 @@ import { CLEARED_FILTERS, type View } from "../-lib/view-params";
 /**
  * 范围条件：在同一批候选里再看哪一部分。
  *
- * 它摊开成一条左栏，而不是一排可点开的小按钮。摊开买到的是**人数**：每个选项
+ * 它展开成一条左栏，而不是一排可点开的小按钮。展开换来的是**人数**：每个选项
  * 后面「点了还剩几个人」一直在，于是「点哪一个能把范围收得最狠」这个问题扫一眼
  * 就答完了；收进弹层之后这份对照只在弹层开着的那一刻存在，而那一刻已经太晚——
  * 人得先决定点开哪一维，才看得到自己该不该点开它。
  *
- * 摊开的东西必须**站得住**：这一栏的行只在换查询时变，点任何一个筛选都不会让
+ * 展开的东西必须**稳定**：这一栏的行只在换查询时变，点任何一个筛选都不会让
  * 别的行消失（口径在 `search/rank.ts` 的 `facetRows`）。被别的筛选挤到 0 的行
- * 留在原地、写着 0、点不动——那是用户自己刚做的事的后果，藏起来就没法回头。
+ * 留在原地、写着 0、不可点击——那是用户自己刚做的事的后果，藏起来就没法回头。
  *
  * **一维能选几项，由控件形状说。** 能多选的维度是一组复选框，只能选一个的是一组
- * 单选加一枚「不限」（`-lib/filters.ts` 的 `multi`）：点第二项之前就得知道它是
+ * 单选加一个「不限」（`-lib/filters.ts` 的 `multi`）：点第二项之前就得知道它是
  * 加上去还是换掉刚才那个，而那正是这一维的定义。选中态也因此归控件自己
  * （`data-checked`）——拿一颗按钮加一层底色去表示选中，屏幕上看着一样，读屏
- * 念出来却是「按钮 P7 128」，一个字都听不出它是开着的。
+ * 读屏读出来却是「按钮 P7 128」，一个字都听不出它是开着的。
  *
  * 它在名单**外面**，因为它不改问题，只改看法，连查询记录都不产生
  * （见 `routes/-lib/commit.ts` 开头）。「记录还是视图」是这个产品最要紧的一条界线，
@@ -48,7 +48,7 @@ import { CLEARED_FILTERS, type View } from "../-lib/view-params";
  * （`FilterSheet`），装的是同一份东西。
  */
 
-/** 一维默认摊开几项。再多就把「哪一维值得看」压在下面，得先滚才看得见。 */
+/** 一维默认展开几项。再多就把「哪一维值得看」压在下面，得先滚才看得见。 */
 const VISIBLE = 5;
 
 export function FilterRail({
@@ -144,7 +144,7 @@ type FilterProps = {
 	fields: FilterField[];
 	/**
 	 * 公司名 / 学校名这类精确条件。它们没有候选列表可展开，只在生效时出现，
-	 * 长成一条能一键摘掉的行——和分面同在这一栏上，因为它们同样是
+	 * 长成一条能一键去掉的行——和分面同在这一栏上，因为它们同样是
 	 * 「在这批人里再看哪一部分」。
 	 */
 	textFilters: TextFilter[];
@@ -180,8 +180,8 @@ function FilterList({ fields, textFilters, onChange }: FilterProps) {
 				</Button>
 			</div>
 
-			{/* 文本条件不是分面：它没有候选，只有「摘掉」这一个动作，所以它是一颗
-			    按钮，不是一枚勾——勾要回答「勾上会怎样」，而这里勾不上第二个值。 */}
+			{/* 文本条件不是分面：它没有候选，只有「去掉」这一个动作，所以它是一颗
+			    按钮，不是一个勾——勾要回答「勾上会怎样」，而这里勾不上第二个值。 */}
 			{textFilters.map((t) => (
 				<section className="flex flex-col gap-0.5" key={t.key}>
 					<h2 className="label px-2 pb-1 text-muted-foreground">{t.title}</h2>
@@ -212,7 +212,7 @@ function FilterList({ fields, textFilters, onChange }: FilterProps) {
  * 先报出这一项属于哪一维，而「P7」这种取值离开维名就没有意思。
  *
  * 控件由 `field.multi` 挑（为什么由它挑见文件开头）：能多选的是一组复选框，
- * 只能选一个的是一组单选加一枚「不限」。
+ * 只能选一个的是一组单选加一个「不限」。
  */
 function FilterFacet({
 	field,
@@ -230,7 +230,7 @@ function FilterFacet({
 	const rows = (options: FilterField["options"]) =>
 		options.map((o) => (
 			<Option
-				/* 数到 0 的行留着但点不动：它说的是「这个值存在，只是和你现在的
+				/* 数到 0 的行留着但不可点击：它说的是「这个值存在，只是和你现在的
 				   筛选冲突」。选中的那一行永远点得动，否则就取消不掉了。 */
 				disabled={o.n === 0 && !field.values.includes(o.value)}
 				key={o.value}
@@ -248,7 +248,7 @@ function FilterFacet({
 			{rest.length > 0 && (
 				/* 剩下那几项住在 `Collapsible` 的面里：面自己有高度过渡，展开是同一
 				   块东西长开，不是凭空多出来几行把整条栏往下顶一屏；关着的时候面
-				   根本不挂载，那几十项也就不进 DOM。收起来的那一路必须也在——
+				   根本不挂载，那几十项也就不进 DOM。收起来的那一类必须也在——
 				   只能展开的话，按一次就再没有东西能把这一栏收回去。 */
 				<Collapsible onOpenChange={setAll} open={all}>
 					<CollapsiblePanel>{rows(rest)}</CollapsiblePanel>
@@ -311,7 +311,7 @@ function FilterFacet({
 /**
  * 一个候选。一行里三段：勾（或圆点）、取值、点了还剩几个人。
  *
- * 整行是 `FieldLabel`，所以点哪儿都算——命中区不必自己撑，`<label>` 本来就
+ * 整行是 `FieldLabel`，所以点哪儿都算——点击区域不必自己撑，`<label>` 本来就
  * 管着它包住的那个控件。禁用也归 `FieldItem`：勾和字一起变灰，不用自己去配
  * 一套「看起来像禁用」的类。
  */
@@ -346,7 +346,7 @@ function Option({
 }
 
 /**
- * 收起时摊开哪几项：前 VISIBLE 项，加上被挤在后面的那些选中项——它们提到最前面。
+ * 收起时展开哪几项：前 VISIBLE 项，加上被挤在后面的那些选中项——它们提到最前面。
  * 选中的一个都不能藏，藏起来就取消不掉了。
  */
 function collapse({ options, values }: FilterField) {

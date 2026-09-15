@@ -31,15 +31,9 @@ import {
 } from "#/search/condition-label";
 
 /**
- * 一条查询条件一枚 chip，支持改强度、启停和逐项去掉。
- * chip 上念一遍这条条件（每项只念代表取值），菜单里列出它的每一项；
- * 编辑通过 condition.ts 的变换生成新查询。
- */
-
-/**
- * 一枚 chip 的静息外观：强度落在 Button 的 variant 上，不另配一套底色。
+ * 一个 chip 的静息外观：强度落在 Button 的 variant 上，不另配一套底色。
  * 「必须」是实心的次要底（它是默认，也是最常见的一档），另两档是描边——
- * 描边和实心的差别足够读出「这一枚不一样」，而且不占任何一个色相
+ * 描边和实心的差别足够读出「这一个不一样」，而且不占任何一个色相
  * （全站的色相已经各有其主，见 `evidence.tsx`）。
  */
 const MODE_VARIANT: Record<Mode, "secondary" | "outline"> = {
@@ -67,7 +61,7 @@ const MODE_HINT: Record<Mode, string> = {
  * 排除的条件划掉：排除的意思正是「把它划掉」，这一层不必再解释一遍。
  *
  * 只划掉，不降色。降色是**停用**那一档的语言（见下面的 `OFF_STYLE`），
- * 两件事借同一个记号，一枚划掉又发灰的 chip 就说不清自己是「不要这种人」
+ * 两件事借同一个记号，一个划掉又发灰的 chip 就说不清自己是「不要这种人」
  * 还是「这条先不算」——而这两句话的意思正好相反。
  */
 const EXCLUDE_STYLE = "line-through";
@@ -85,11 +79,22 @@ const OFF_STYLE = "border-dashed text-muted-foreground";
 /** chip 上「这里还有别的取值」的记号。≈ 是「差不多」最省字的写法，证据行上也用它。 */
 const MORE_GLYPH = "≈";
 
+/**
+ * 系统把那句话解析成的条件，一条一个 chip。
+ *
+ * chip 上只显示代表取值（「增长 ≈」），其余取值和每一项的去留都收在菜单里：这排
+ * chip 位于一条定高的横条上（`query-deck.tsx`），把一条条件的取值全部展开会把横条
+ * 撑宽，而用户扫这一排只需要判断一件事——解析得对不对。
+ *
+ * 一个 chip 上可以改三件事：强度、启停、逐项去掉。三者都不在这里执行——每次改动
+ * 只是用 `condition.ts` 的变换算出一份新条件交给外层，由工作台派生成一条新的查询
+ * 记录。所以这个组件没有自身状态，改错了按后退即可回退。
+ */
 export function QueryChips({
 	conditions,
 	onChange,
 }: {
-	/** 这条查询的条件，一条一枚 chip。 */
+	/** 这条查询的条件，一条一个 chip。 */
 	conditions: readonly Condition[];
 	onChange: (next: Condition[]) => void;
 }) {
@@ -220,7 +225,7 @@ export function QueryChips({
 							 */}
 							<MenuSeparator />
 							{/*
-							 * 启用是**状态**，不是命令，所以它是一枚开关而不是一行字：
+							 * 启用是**状态**，不是命令，所以它是一个开关而不是一行字：
 							 * 一行在「暂不使用」和「重新启用」之间换文案的字，得读完才
 							 * 知道这条条件此刻算不算数，而开关把那一态常驻在屏幕上，
 							 * 文案因此固定成一个词。

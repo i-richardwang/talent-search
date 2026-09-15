@@ -4,7 +4,7 @@ import { onlyMore, type View, validateView, viewChanged } from "./view-params";
 /**
  * 这次导航在干什么。
  *
- * 两种 pending 必须分开：改筛选时旧结果已经不成立，列表该塌成骨架屏；只是再翻
+ * 两种 pending 必须分开：改筛选时旧结果已经不成立，列表该换成骨架屏；只是再翻
  * 一页时已经看到的人必须留在原地，否则每翻一页就把人扔回页首。而换人（只换
  * 详情路由）两件事都不是——结果表一行都不用重画。
  */
@@ -39,7 +39,7 @@ export function navPhase(
 	return {
 		growing,
 		// 两者互斥，而翻页要先判。翻页也会改 `n`，所以它同时满足 `viewChanged`；
-		// 两个一起为真时「塌成骨架屏」赢，翻一页就把人扔回页首。
+		// 两个一起为真时「换成骨架屏」优先，翻一页就把人扔回页首。
 		navigating: !growing && (!sameTurn || viewChanged(next.view, prev?.view)),
 	};
 }

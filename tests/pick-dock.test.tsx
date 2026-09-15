@@ -1,12 +1,12 @@
 /**
- * 挑上人之后浮起来的那一小块。
+ * 选中人之后浮现的工具条。
  *
- * 三件事要守住：报的数就是挑上的人数；**不把挑了谁再列一遍**（名单上那几个打上
- * 勾的块已经在说了，这里再摆一排姓名会随着挑的人变多把名单越挤越窄，而那正是人
- * 正在读的东西）；以及一个人都没挑的时候它根本不在——空着的时候它那三个词一个
- * 也按不动。
+ * 三条约束：显示的数字等于选中人数；默认不展开人名（姓名会随选中人数增加不断
+ * 挤压名单宽度，而名单才是用户正在读的内容），但这个数字要能点开——选中记录按
+ * 快照保存，改过筛选后有几个人不在名单上，没有这个入口就既无法核对也无法移除；
+ * 一个人都没选时不渲染。
  *
- * 姓名是编的。
+ * 姓名为虚构数据。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -29,6 +29,7 @@ const picks = (chosen: Pick[]): Picks => ({
 	clear: () => {},
 	picked: new Map(chosen.map((p) => [p.empId, p])),
 	picking: true,
+	remove: () => {},
 	rows: [],
 	setShown: () => {},
 	shownIds: chosen.map((p) => p.empId),
@@ -42,23 +43,26 @@ const markup = (chosen: Pick[]) =>
 		<PickDock picks={picks(chosen)} names={["算法"]} total={80} />,
 	);
 
-describe("挑人那块浮起来的东西", () => {
-	test("报数，并且给得出两个动作", () => {
+describe("挑人时浮起来的工具条", () => {
+	test("显示人数，并给出两个动作", () => {
 		const text = visibleText(markup([pick("林岚", 1), pick("周予", 2)]));
 		assert.match(text, /已选\s*2\s*人/);
 		assert.ok(text.includes("清空"), text);
-		// 导出那一颗自己报数：手指落上去之前就知道这一下会导出几个人
+		// 导出那一颗自己带上人数：手指落上去之前就知道这一下会导出几个人
 		assert.match(text, /导出\s*2\s*人/);
 	});
 
-	test("不列挑了谁", () => {
-		assert.doesNotMatch(visibleText(markup([pick("林岚", 1)])), /林岚/);
+	test("默认只显示人数，点开才列出选了谁", () => {
+		const html = markup([pick("林岚", 1)]);
+		assert.doesNotMatch(visibleText(html), /林岚/);
+		// 选中的是哪几个人、以及怎么移除其中一个，都在这个按钮后面
+		assert.match(html, /<button[^>]*>已选/);
 	});
 
-	test("一个都没挑的时候它不在", () => {
-		// 挑人是有开始有结束的一件活，中间那段才需要一个收口。空着的时候摆一条
-		// 「已选 0 人 · 清空 · 导出」，是在屏幕上留一样按不动也不会变的东西。
-		// 它冒出来不会顶动任何一块卡片：它吸在名单下沿，而框是绝对定位的。
+	test("一个都没选时不渲染", () => {
+		// 挑人有开始也有结束，只有中间这段需要汇总条。空着时摆一条
+		// 「已选 0 人 · 清空 · 导出」，等于留一组既不可用也不会变化的按钮。
+		// 它出现时不会挤动任何卡片：它固定在名单下沿，是绝对定位的。
 		assert.equal(markup([]), "");
 	});
 });

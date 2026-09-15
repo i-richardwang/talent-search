@@ -50,7 +50,7 @@ describe("认人", () => {
 		assert.equal(authorized(bearer(`Bearer ${TOKEN}`)), false);
 	});
 
-	test("判卷不归外部时，凭据配对了也不开门", () => {
+	test("判卷不归外部时，凭据正确也不放行", () => {
 		process.env.REVIEW_TOKEN = TOKEN;
 		for (const judge of ["model", "off"]) {
 			process.env.REVIEW_JUDGE = judge;
@@ -60,7 +60,7 @@ describe("认人", () => {
 		process.env.REVIEW_JUDGE = "external";
 	});
 
-	test("开了就只认那一串，没带和带错一样", () => {
+	test("开启后只认配置的那个 token，未带和带错都拒绝", () => {
 		process.env.REVIEW_TOKEN = TOKEN;
 		assert.equal(configured(), true);
 		assert.equal(authorized(bearer(`Bearer ${TOKEN}`)), true);
@@ -84,7 +84,7 @@ describe("拉题的 limit", () => {
 describe("交卷的形状", () => {
 	const judgments = [{ word: "数据分析工作", why: "同义", alias: true }];
 
-	test("形状不对的答卷进不了库", async () => {
+	test("格式不对的答卷不写库", async () => {
 		for (const [body, why] of [
 			["不是 JSON", /不是 JSON/],
 			[[1, 2, 3], /缺 id/],

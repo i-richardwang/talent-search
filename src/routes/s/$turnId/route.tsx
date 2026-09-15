@@ -67,7 +67,7 @@ const KEYS = [
 ] as const;
 
 /** 挑人时才有对象可挑，所以这一条只在那时候排进去。 */
-const PICK_KEY = ["空格", "挑上或取消"] as const;
+const PICK_KEY = ["空格", "选择或取消"] as const;
 
 /**
  * 工作台：**左筛选、右详情，中间是那条唯一的名单列**。

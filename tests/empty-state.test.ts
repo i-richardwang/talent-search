@@ -54,7 +54,7 @@ describe("取数超限：是一种结果，不是一次失败", () => {
 		assert.equal(s.changed, undefined, "筛选不是病因");
 	});
 
-	test("人太多时要求继续收窄，不冒充没人", () => {
+	test("人太多时提示继续收窄，不报成没有结果", () => {
 		const s = run({ kind: "overflowPopulation" });
 		assert.equal(s.title, "范围太大");
 		assert.equal(s.focused, true);
@@ -79,7 +79,7 @@ describe("条件全被停用", () => {
 	});
 });
 
-describe("其余各支各说各的", () => {
+describe("其余分支各有各的文案", () => {
 	test("缺少可搜的条件时让人补一个能力，不让人去动筛选", () => {
 		const kinds = ["excludeOnly", "noConditions"] as const;
 		for (const kind of kinds) {
@@ -91,7 +91,7 @@ describe("其余各支各说各的", () => {
 		assert.equal(run({ kind: "noConditions" }).title, "没有读出条件");
 	});
 
-	test("只有人的条件而没有这样的人：说没有，不冒充解析失败", () => {
+	test("只有人的条件且无人匹配时报无结果，不报解析失败", () => {
 		assert.equal(run({ kind: "personEmpty" }).title, "没有这样的人");
 	});
 
@@ -106,7 +106,10 @@ describe("其余各支各说各的", () => {
 		// 按下去必须真的改视图，而且清的是**全部**收窄维度：漏掉一维，人点完
 		// 名单照旧是空的，而屏幕上那条出路刚承诺过它能走通。
 		assert.deepEqual(s.changed, CLEARED_FILTERS);
-		assert.ok(!("strong" in (s.changed ?? {})), "证据要求不归「清除筛选」管");
+		assert.ok(
+			!("strong" in (s.changed ?? {})),
+			"证据要求不属于「清除筛选」的范围",
+		);
 	});
 
 	test("AND 没满足：指向把某条必须的主张改成加分", () => {

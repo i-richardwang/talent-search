@@ -2,7 +2,7 @@
  * 检索语义的集成测试。跑在临时 schema 上的真 SQL、真 pgvector。
  *
  * 打分本身不在这里——它是纯函数，在 `tests/rank.test.ts` 里测，不必起数据库。
- * 这里管的是打分**够得着的事实**：哪一路过了阈值、相关度、月数和结束日期
+ * 这里管的是打分**够得着的事实**：哪一类过了阈值、相关度、月数和结束日期
  * 有没有原样传到打分那一层。列名或日期序列化错误只有走真 SQL 才看得见，
  * 而纯函数测试对它完全无感。
  *
@@ -14,7 +14,7 @@
  * 嵌入是假的（见 fixture.ts 的 `fakeEmbedding`）：相关度 = 共有字数 / √(字数×字数)，
  * 所以每条断言旁边都算得出那个数。「算法」对「算法工程师」是 2/√(2×5) ≈ 0.63，
  * 过 `RELEVANCE_MIN`；对「算法平台运维工程师」是 2/√(2×9) ≈ 0.47，不过。
- * 种子里的文本都按这把尺挑过，它们测的是机制，不是语义。
+ * 种子里的文本都按这个指标挑过，它们测的是机制，不是语义。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
@@ -130,7 +130,7 @@ before(async () => {
 	]);
 });
 
-describe("抽取的两路", () => {
+describe("抽取的两类 route", () => {
 	test("能力词命中时证据行带回命中的那条说法", async () => {
 		const { results } = await run("Python");
 		const hit = results
@@ -181,7 +181,7 @@ describe("抽取的两路", () => {
 	});
 });
 
-describe("事实行保险丝", () => {
+describe("事实行数量上限", () => {
 	test("按事实贡献选择最少数量的主要条件，不借用人数覆盖率", () => {
 		assert.deepEqual(
 			overflowContributors(
@@ -196,7 +196,7 @@ describe("事实行保险丝", () => {
 		);
 	});
 
-	test("没有超过上限时不虚构贡献者", () => {
+	test("没有超过上限时不返回贡献者", () => {
 		assert.deepEqual(
 			overflowContributors(
 				[
@@ -400,7 +400,7 @@ describe("没有经历词的主张的分面口径", () => {
 });
 
 describe("命中路径判定", () => {
-	test("一段同时几路过阈值时取加权相关度最高的那一路", async () => {
+	test("一段同时有多类过阈值时取加权相关度最高的一类", async () => {
 		// 「安全」对部门「安全部」0.82 × 0.5，对描述「安全巡检」0.71 × 0.25：
 		// 必须判成 org。
 		const { results } = await run("安全");
@@ -433,9 +433,9 @@ describe("命中路径判定", () => {
  *
  * 打分公式本身在 rank.test.ts 里测，这里只验一件事：**月数和结束日期确实
  * 原样穿过了 SQL 到达打分层**。这两个字段任何一个在取数那一层丢掉或者写错列名，
- * 纯函数测试都照样全绿，而界面上的表现是「排序看起来有点怪」——没有任何断言会红。
+ * 纯函数测试都照样全绿，而界面上的表现是「排序看起来有点怪」——不会有任何断言失败。
  */
-describe("月数与结束日期到得了打分层", () => {
+describe("月数与结束日期能传到打分层", () => {
 	before(async () => {
 		await seed([
 			{
@@ -739,7 +739,7 @@ describe("入职前经历对齐的序列", () => {
 		assert.deepEqual(seq, { value: { l1: "技术", l2: "深海算法" }, n: 1 });
 	});
 
-	test("对齐的序列不做证据：命中的只有岗位名那一路", async () => {
+	test("对齐的序列不做证据，只有岗位名算命中", async () => {
 		const { results } = await run("深海算法");
 		const hit = results.find((r) => r.employee.empId === "A001");
 		assert.ok(hit);
@@ -775,7 +775,7 @@ describe("命中总数", () => {
 	 *
 	 * 这里要测的不是「第二页能不能拉到」，而是**第二页是第一页的延长，不是
 	 * 另一次排序**：分页靠把 limit 调大重查，所以前 50 名必须逐位不变。
-	 * 一旦哪天改成 offset 续拉，这条会红——那正是它存在的理由。
+	 * 一旦哪天改成 offset 续拉，这条会失败——那正是它存在的理由。
 	 */
 	test("翻页只是把同一次排序拉得更长，不是重排", async () => {
 		const first = await run("深海潜航", {}, RESULT_PAGE);
@@ -795,7 +795,7 @@ describe("命中总数", () => {
 		assert.equal((await run("深海潜航", {}, 999)).results.length, 55);
 	});
 
-	test("太宽的词按人数占比量出来", async () => {
+	test("太宽的词按人数占比判定", async () => {
 		// 55 个「深海潜航」远超库里两成的人；「考古」只有三个
 		const wide = await probeWide(["深海潜航", "考古"]);
 		assert.deepEqual([...wide], ["深海潜航"]);
@@ -872,7 +872,7 @@ describe("证据要求", () => {
  * `tests/empty.test.ts`，那一层不连库。
  */
 describe("为什么没有人", () => {
-	test("有人时不给成因", async () => {
+	test("有结果时不给空态成因", async () => {
 		const { empty } = await run("算法");
 		assert.equal(empty, null);
 	});
@@ -1029,7 +1029,7 @@ describe("排除的主张：否决证据段，不否决人", () => {
 		assert.equal(tight.total, tight.results.length);
 	});
 
-	test("排除不占列：它不产出证据，表格里没有它的位置", async () => {
+	test("排除条件不产出证据列", async () => {
 		const { claims } = await run("算法,-运营");
 		assert.deepEqual(
 			claims.map((c) => c.what?.[0]),
@@ -1095,7 +1095,7 @@ describe("排除的主张：否决证据段，不否决人", () => {
 /**
  * 停用的词。
  *
- * 语义上它必须**彻底不存在**：不收窄、不排人、不占列、不进分面。任何一处
+ * 语义上它必须**彻底不存在**：不收窄、不排人、不产出列、不进分面。任何一处
  * 漏掉都不会报错，只会让「我把这个条件关掉了」和实际结果对不上——而这正是
  * 停用这个功能存在的意义（关掉它看看还剩谁），对不上就等于没有这个功能。
  */
@@ -1110,7 +1110,7 @@ describe("停用的词", () => {
 		);
 	});
 
-	test("停用的词不占列：表格里没有它的位置", async () => {
+	test("停用的词不产出证据列", async () => {
 		const { claims } = await run("算法,~运营");
 		assert.deepEqual(
 			claims.map((c) => c.what?.[0]),

@@ -179,7 +179,7 @@ export function holdNextRerank() {
  * 假理解：把那句话按一行查询语法读（`search/query-syntax.ts`），交出真模型
  * 会交出的那份查询。模型说的和库里存的是同一个形状（`intentSchema` 就是
  * `Condition[]`），所以这里不必翻译；词表检查在 intent.test.ts 里对着 `toSpec` 直接测。
- * 一行语法里的 `~` 会带出 `off`，而真模型从不写停用，摘掉。
+ * 一行语法里的 `~` 会带出 `off`，而真模型从不写停用，去掉。
  */
 function fakeIntent(text: string) {
 	return {
@@ -447,7 +447,7 @@ export async function setup() {
  *
  * 认的是 Postgres 报回来的**约束名**，不是错误文案里恰好出现了那几个字：
  * 文案里能出现约束名的错有好几种（比如提到同一张表的另一条约束），认串就会
- * 出现「拦是拦住了，但不是被这一条拦住的」而测试照样绿。
+ * 出现「拦是拦住了，但不是被这一条拦住的」而测试照样通过。
  */
 export const violates = (constraint: string) => (error: unknown) =>
 	(error as { cause?: { constraint?: string } }).cause?.constraint ===

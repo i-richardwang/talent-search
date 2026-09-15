@@ -3,9 +3,9 @@ import { Badge } from "#/components/ui/badge";
 import { cn } from "#/lib/utils";
 
 /**
- * 管理页上的状态徽章：一枚点加一个词。
+ * 管理页上的状态徽章：一个点加一个词。
  *
- * 形状照 coss 自己给状态列排的那一种（`Badge variant="outline"` 加一枚
+ * 形状照 coss 自己给状态列排的那一种（`Badge variant="outline"` 加一个
  * `size-1.5` 的圆点），不是四种填色徽章。两个理由：
  *
  * 1. **填色的绿 / 蓝 / amber 在这个产品里各有主人**（AGENTS.md 的色相一节：

@@ -78,7 +78,7 @@ export async function createTurn(
 
 	if (input.kind === "sentence")
 		return { turnId: await insertTurn({ parent, rawText: input.text }) };
-	// 改一枚条件不改「问的是什么」，原话原样带下来——它是这条查询的门面，
+	// 改一个条件不改「问的是什么」，原话原样带下来——它是这条查询的标题，
 	// 屏幕上那一行、最近搜索里那一条读的都是它。
 	return {
 		turnId: await insertTurn({
@@ -101,7 +101,7 @@ export async function createTurn(
  * 一个词消失不一样，前者是「你说的这件事没法用来找人」，得说出来。词全宽也
  * 不把它降成一条没有词的主张：那会让「做过运营的」悄悄变成「有过任何经历的」。
  *
- * **只量正向主张的词。** 宽度这把尺答的是「它还筛不筛得掉人」，那是准入的问题；
+ * **只量正向主张的词。** 宽度这个指标答的是「它还筛不筛得掉人」，那是准入的问题；
  * 排除答的是「哪一段不作数」，命中面广恰恰是它在起作用，量它等于用一把
  * 反向的尺去停掉一条正在生效的条件。门槛也对不上：`probeWide` 按
  * `RELEVANCE_MIN` 量，而排除按更高的 `RELEVANCE_MIN_EXCLUDE` 判——
@@ -180,10 +180,10 @@ export type RecentSearch = {
 /**
  * 每条派生链只展示最后一份完整查询；打开 turnId 即可精确回放全部条件。
  *
- * 原话取的是**这一条自己的** `raw_text`，不回溯根记录：改一枚 chip 派生出来的
+ * 原话取的是**这一条自己的** `raw_text`，不回溯根记录：改一个 chip 派生出来的
  * 记录会把原话原样带下来（见 `createTurn`），而重新说一句话派生出来的记录带的
  * 是新的那句——两种情况下它都和这里显示的 spec 出自同一次提问。回溯根记录则会
- * 在后一种情况下拿旧话去给新条件当门面。
+ * 在后一种情况下拿旧话去给新条件当标题。
  */
 export async function listRecent(): Promise<RecentSearch[]> {
 	const rows = await db.execute<{

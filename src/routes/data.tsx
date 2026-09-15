@@ -5,7 +5,7 @@ import {
 	useParams,
 } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { CardFrame, CardFrameFooter } from "#/components/ui/card";
 import {
@@ -55,6 +55,21 @@ function Data() {
 	// 开着的是哪一个人。它是子路由的参数，所以宽松地取——没开详情时就是 undefined。
 	const { empId } = useParams({ strict: false });
 
+	/*
+	 * 输入框里的草稿跟随地址栏上的 q：后退、前进或从别的链接进来时，它要回到那一
+	 * 次搜索的词，否则输入框和它下面的表显示的不是同一件事，而用户会以为表是按
+	 * 输入框里的词列出来的。
+	 *
+	 * 在渲染中直接同步，不放进 effect：effect 要等这一帧画完才跑，那一帧屏幕上是
+	 * 新表配旧词（和 `s/$turnId/-lib/picks.ts` 换记录时重置同理）。用户自己提交的
+	 * 那次 q 恰好等于草稿，这里是一次同值 setState，焦点和光标都不动。
+	 */
+	const seen = useRef(q);
+	if (seen.current !== q) {
+		seen.current = q;
+		setNeedle(q);
+	}
+
 	return (
 		<AdminPage title="数据">
 			<div className="flex flex-col gap-3">
@@ -65,9 +80,9 @@ function Data() {
 					}}
 				>
 					{/*
-					 * 框和它的提交按钮是同一块面。这里非回车不可（几万人得回服务端
-					 * 找），所以末尾挂一个真按钮说出这件事——技能那一页是即时过滤，
-					 * 起头只有一枚漏斗，两者形状不同正是因为它们做的不是同一件事。
+					 * 输入框和提交按钮在同一块面上。这里必须提交才会搜（几万人需要回
+					 * 服务端查），所以末尾放一个真按钮表明这一点；技能页是即时过滤，
+					 * 开头只有一个漏斗图标，两者形状不同是因为行为不同。
 					 */}
 					<InputGroup className="max-w-96">
 						<InputGroupAddon>
@@ -114,10 +129,10 @@ function Data() {
 							<TableBody>
 								{list.rows.map((row) => (
 									/*
-									 * 整行可点，链接只有一个：姓名上那个 `after:inset-0` 铺满
-									 * 整行——名单卡片上用的是同一招（`result-list.tsx`）。
-									 * 行是这个人在这张表上的全部，只让工号那一格可点的话，
-									 * 命中区是屏幕最左边那几个字，而人眼盯着的是姓名。
+									 * 整行可点，但链接只有一个：姓名上的 `after:inset-0` 铺满整行，
+									 * 名单卡片用的是同一个做法（`result-list.tsx`）。这一行就是这
+									 * 个人在表上的全部内容，只让工号可点的话，点击区域只有最左边
+									 * 那几个字，而用户看的是姓名。
 									 */
 									<TableRow
 										className="relative"
@@ -151,10 +166,10 @@ function Data() {
 							</TableBody>
 						</Table>
 						{/*
-						 * 「库里多少人」长在表自己身上（`CardFrameFooter`，排法照上游
-						 * `p-table-8`），不在这一页的抬头上：它说的是这张表和库的关系——
-						 * 列着 200 行，而库里有 5000 个人。两个数分开写在两处的话，读起来
-						 * 像库里只有这些，而且两个数都是对的，谁都不会报这个 bug。
+						 * 「库里多少人」放在表自身上（`CardFrameFooter`，排法照上游
+						 * `p-table-8`），不放在页面标题旁：它说的是这张表和库的关系——列出
+						 * 200 行，而库里有 5000 人。两个数分写两处的话，读起来像库里只有这
+						 * 些，而且两个数都是对的，不会有人报这个问题。
 						 */}
 						<CardFrameFooter className="text-muted-foreground text-xs">
 							{list.capped
@@ -164,7 +179,7 @@ function Data() {
 					</CardFrame>
 				)}
 			</div>
-			{/* 点开的那个人从右边盖上来（`data.$empId.tsx`），表在底下原样待着 */}
+			{/* 点开的那个人从右侧覆盖（`data.$empId.tsx`），表在底下保持原样 */}
 			<Outlet />
 		</AdminPage>
 	);

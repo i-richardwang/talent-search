@@ -32,6 +32,7 @@ const NO_PICKS: Picks = {
 	clear: () => {},
 	picked: new Map(),
 	picking: false,
+	remove: () => {},
 	rows: [],
 	setShown: () => {},
 	shownIds: [],
@@ -42,7 +43,7 @@ const NO_PICKS: Picks = {
 
 describe("产品文案使用常规 SaaS 语言", () => {
 	test("条件使用稳定的人话，不把存储值露给最近搜索", () => {
-		// 几个取值只念代表词：其余的收在菜单里，chip 上有「还有」的记号
+		// 几个取值只显示代表词：其余的收在菜单里，chip 上有「还有」的记号
 		assert.deepEqual(
 			[
 				conditionLabel(person("level", ["P7", "P8"])),
@@ -52,7 +53,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			],
 			["当前职级 · P7", "学历 · 硕士", "招聘渠道 · 社招", "学校 · 清华"],
 		);
-		// 经历主张按说的顺序念：什么时候、在哪一档、在哪、做过什么、多久
+		// 经历主张按表述顺序排列：什么时候、在哪一档、在哪、做过什么、多久
 		const claim: Condition = {
 			about: "experience",
 			mode: "must",
@@ -75,7 +76,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			conditionLabel({ about: "experience", mode: "must", what: ["算法"] }),
 			"算法",
 		);
-		// 菜单里的各项出现在已经写明了是哪条条件的地方，只念这一项本身
+		// 菜单里的各项出现在已经写明了是哪条条件的地方，只显示这一项本身
 		assert.equal(
 			partLabel(person("level", ["P7", "P8"]), { key: "values", value: "P8" }),
 			"P8",
@@ -130,7 +131,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				total={12}
 			/>,
 		);
-		// 数和单位挨着，中间不许插别的东西。不要求「共」字：它是名单的表头
+		// 数和单位挨着，中间不能插别的东西。不要求「共」字：它是名单的表头
 		// （12 / 人 / 按证据排序），不是句子里的一截。
 		assert.match(text, /12\s*人/);
 		// 排序依据常驻：一张排过序的表必须说出自己按什么排，否则「从上往下看」
@@ -178,7 +179,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.match(text, /正在理解/);
 	});
 
-	test("一个人都没有时不报数，空态自己会说", () => {
+	test("一个人都没有时不显示人数", () => {
 		/*
 		 * 「0 人」摆在空态上面是同一件事的第一遍，而这个判断留在调用点
 		 * （result-list.tsx 的空态分支干脆不写表头），不是一条藏在 ResultHeader

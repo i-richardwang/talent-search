@@ -66,7 +66,7 @@ export function sanitizeFilters(value: unknown): SearchFilters {
  *
  * 这份名单只有这一处：URL 那侧的「清除筛选」「有没有筛选」（`view-params.ts`）
  * 和检索那侧判断「是不是筛空了」（`empty.ts`）都从它派生。各写一份的话，
- * 加一维就会有一处忘了跟上，而症状是空态说错话——没有任何断言会红。
+ * 加一维就会有一处忘了跟上，而症状是空态说错话——不会有任何断言失败。
  */
 export const POPULATION_KEYS = [
 	...DIM_KEYS,
@@ -78,7 +78,7 @@ export const POPULATION_KEYS = [
  * 这份筛选收窄人群了吗。
  *
  * 问的是**取值**不是键：`{ org: undefined }` 和 `{}` 说的是同一件事，让键的有无
- * 参与判断的话，每一处构造筛选的代码都得记着不许留空键，而忘了不会报错。
+ * 参与判断的话，每一处构造筛选的代码都得记着不能留空键，而忘了不会报错。
  */
 export function narrowsPopulation(pick: Population) {
 	return POPULATION_KEYS.some((key) => pick[key] !== undefined);

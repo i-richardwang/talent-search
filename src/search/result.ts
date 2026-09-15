@@ -3,7 +3,7 @@
  *
  * 单独成文件是为了给页面一处能安全取值的地方：`search.ts` 带 `db`，标了
  * `server-only`，页面从它取一个值会让构建失败。所以这里只放**形状**和无副作用
- * 的空值工厂，一行 SQL 都不许有；查询实现留在 `search.ts`。
+ * 的空值工厂，一行 SQL 都不能有；查询实现留在 `search.ts`。
  */
 import type { Employee, Route } from "#/db/schema";
 import {
@@ -70,13 +70,13 @@ export type Hit = {
 	 * 没有经历词的主张（「待过字节」）靠这一段本身作证，没有词，为 null。
 	 */
 	value: string | null;
-	/** 命中的那一路。没有经历词的主张不比文本，这一段落在范围里就是证据，为 null。 */
+	/** 命中的那一类。没有经历词的主张不比文本，这一段落在范围里就是证据，为 null。 */
 	route: Route | null;
-	/** 该说法与这一段这一路原文的相关度，[RELEVANCE_MIN, 1]；不比文本的主张恒为 1。 */
+	/** 该说法与这一段这一类原文的相关度，[RELEVANCE_MIN, 1]；不比文本的主张恒为 1。 */
 	relevance: number;
-	/** 命中的那条说法，只有抽取的两路带；其余路的字段值就在这条 Hit 的 seq / title / org 上。 */
+	/** 命中的那条说法，只有抽取的两类带；其余类的字段值就在这条 Hit 的 seq / title / org 上。 */
 	phrase: string | null;
-	/** 做过的事那一路带的参与方式，证据行上作说法的前缀；其余路为 null。 */
+	/** 做过的事那一类带的参与方式，证据行上作说法的前缀；其余类为 null。 */
 	involvement: string | null;
 	startDate: string;
 	endDate: string | null;
@@ -140,7 +140,7 @@ export type ClaimBasis = {
  *
  * **证据**：先按可信度分档（登记的序列或岗位、登记的部门或公司、自述），档内按
  * 深度。可信度是离散的、可解释的，就是证据点阵画的那三种点；深度是连续的。
- * 两把尺不相乘：乘成一个数就得靠下限把深度压扁来守住档位，深度于是变成装饰。
+ * 两项依据不相乘：乘成一个数就得靠下限把深度压扁来守住档位，深度于是变成装饰。
  *
  * **深度**：忽略档位，只看做得多像、多久、多近。组团队要找做得久的人时用它，
  * 自述八年的经历排到登记三个月的岗位前面——点阵仍在旁边说这是自述。
@@ -178,7 +178,7 @@ export type SearchFilters = Population & {
 export type Facets = { [K in DimKey]: Facet<K>[] } & {
 	/**
 	 * 「证据要求」这一维的两头：打开还剩多少人（on），关掉能看到多少人（off）。
-	 * 两个数都按分面的 except 口径算，也就是都把证据要求自己摘掉之后再数。
+	 * 两个数都按分面的 except 口径算，也就是都把证据要求自己去掉之后再数。
 	 */
 	strong: { on: number; off: number };
 };

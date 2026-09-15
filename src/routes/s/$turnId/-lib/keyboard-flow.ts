@@ -4,12 +4,12 @@ import type { SearchResult } from "#/search/result";
 import type { View } from "./view-params";
 
 /**
- * `/` 改问题，↑↓ / jk 换人，Esc 关闭详情，挑人时空格挑上或取消。
- * 批量筛人时手不用离开键盘。
+ * `/` 改问题，↑↓ / jk 换人，Esc 关闭详情，挑人时用空格选中或取消。
+ * 批量筛人时手不必离开键盘。
  *
- * 窄屏那个详情浮层的 Esc 不归这里：它是 coss 的 `Dialog`，自带 Esc 关闭、焦点
- * 陷阱与还焦。下面的 `busy` 判定已经把焦点落在 `[role=dialog]` 里的按键让了出去，
- * 所以这里再写一遍只会和它抢。
+ * 窄屏详情浮层的 Esc 不在这里处理：它是 coss 的 `Dialog`，自带 Esc 关闭、焦点
+ * 陷阱与焦点还原。下面的 `busy` 判定已经放行了焦点在 `[role=dialog]` 内的按键，
+ * 这里再写一遍会和它冲突。
  */
 export function useKeyboardFlow({
 	onEditQuery,
@@ -19,7 +19,7 @@ export function useKeyboardFlow({
 	view,
 	onPick,
 }: {
-	/** 展开查询台上那句话的改写框（见 `-components/query-deck.tsx`）。 */
+	/** 展开查询区那句话的改写框（见 `-components/query-deck.tsx`）。 */
 	onEditQuery: () => void;
 	results: SearchResult[];
 	empId: string | undefined;
@@ -27,8 +27,8 @@ export function useKeyboardFlow({
 	turnId: string;
 	view: View;
 	/**
-	 * 挑上或取消当前这个人。不在挑人时是 undefined——那时空格归页面滚动，
-	 * 抢过来会让一个什么都没开的名单按空格不动，而人只会以为页面卡了。
+	 * 选中或取消当前这个人。不在挑人模式时为 undefined：那时空格属于页面滚动，
+	 * 拦下来会让普通浏览状态下按空格没有任何反应。
 	 */
 	onPick?: (empId: string) => void;
 }) {
@@ -76,17 +76,27 @@ export function useKeyboardFlow({
 				}
 			}
 			if (busy || reading || results.length === 0) return;
+
+			// 长按不连发：navigate 是异步的，系统按键重复（~30/s）远快于重渲染，
+			// 连续几次读到的都是同一个 empId，算出同一个落点然后被自己挡掉，表现
+			// 就是按住 ↓ 时光标一顿一顿地走；按住空格则是同一个人被反复挑上又取消。
+			// 连按交给用户自己按。
+			if (e.repeat) return;
+
+			// 当前这个人：↑↓ 走到的那一个。还没走到任何人时是 -1，下面两处各自
+			// 按自己的方向取缺省。
+			const at = results.findIndex((r) => r.employee.empId === empId);
+
 			// 空格挑上／取消当前这个人：↑↓ 走到谁，挑的就是谁，两个键说的是同一个
-			// 「当前」。没开着人的时候不接管——那时它没有对象可挑。
-			if (e.key === " " && onPick && empId) {
+			// 「当前」。挑人时它**恒归挑人**，一次都不留给页面滚动——同一个模式里
+			// 同一个键不能有时挑人、有时把整页翻下去一屏。还没走到任何人时挑名单
+			// 第一个，和 ↓ 落到第一个是同一条规则。
+			if (e.key === " " && onPick) {
 				e.preventDefault();
-				onPick(empId);
+				const one = results[at < 0 ? 0 : at]?.employee.empId;
+				if (one) onPick(one);
 				return;
 			}
-			// 长按不连发：navigate 是异步的，系统按键重复（~30/s）远快于重渲染，
-			// 连续几次读到的都是同一个 empId，算出同一个落点然后被自己挡掉，
-			// 表现就是按住 ↓ 时光标一顿一顿地走。连按交给用户自己按。
-			if (e.repeat) return;
 
 			const step =
 				e.key === "ArrowDown" || e.key === "j"
@@ -97,7 +107,6 @@ export function useKeyboardFlow({
 			if (step === 0) return;
 			e.preventDefault();
 
-			const at = results.findIndex((r) => r.employee.empId === empId);
 			// 还没选人时，↓ 落到第一个、↑ 落到最后一个
 			const next =
 				at < 0

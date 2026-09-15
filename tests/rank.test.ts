@@ -63,7 +63,7 @@ const orderOf = (facts: Fact[], t?: Claim[], f?: SearchFilters) =>
 /** 若干年前结束的一段：近因因子据此衰减 */
 const yearsAgo = (n: number) => `${NOW.getFullYear() - n}-01-01`;
 
-describe("可信度是第一把尺，深度是第二把", () => {
+describe("先按可信度排，再按深度排", () => {
 	/*
 	 * 「序列是 HR 登记的归属，部门只说明他在那个组织里，简历原文提到不等于做过」
 	 * ——这三档由排序键的先后隔开，不靠把深度压扁：档内深度量程放满，档间
@@ -197,7 +197,7 @@ describe("近因", () => {
 		}
 	});
 
-	test("无效日期不冒充仍在做", () => {
+	test("无效日期不当成仍在职", () => {
 		assert.throws(() => gapMonths("not-a-date", NOW), /无效结束日期/);
 	});
 
@@ -360,7 +360,7 @@ describe("排名依据", () => {
 		]);
 	});
 
-	test("全部证据段共同累计，不分哪一路：一段简历里提过的算法经历也是算法经历", () => {
+	test("全部证据段共同累计，不分哪一类：一段简历里提过的算法经历也是算法经历", () => {
 		const { ranked } = run([
 			fact({ empId: "A", route: "seq", months: 12 }),
 			fact({ empId: "A", route: "title", months: 18 }),
@@ -406,7 +406,7 @@ describe("排名依据", () => {
 });
 
 describe("相关度", () => {
-	test("同一路上，相关度低的命中低于高的", () => {
+	test("同一类命中里，相关度低的排在后面", () => {
 		const exact = depthOf([fact({ empId: "A", relevance: 1 })]);
 		const near = depthOf([fact({ empId: "B", relevance: 0.7 })]);
 		assert.ok(near < exact);
@@ -458,7 +458,7 @@ describe("相关度", () => {
 	});
 });
 
-describe("累计跨档位，但档位不被累计翻盘", () => {
+describe("累计能跨档位，但不能压过档位本身", () => {
 	test("简历里提过一句给序列命中续时长，却压不过一段短的序列命中的档位", () => {
 		const mixed = [
 			fact({ empId: "A", route: "seq", months: 12 }),
@@ -560,7 +560,7 @@ describe("分面与名次是同一个口径", () => {
 		assert.equal(facets.strong.off, total, "关掉证据要求就是当前全部");
 	});
 
-	test("算某一维时摘掉这一维自己的筛选，否则选中之后就切不动了", () => {
+	test("算某一维时去掉这一维自己的筛选，否则选中之后就切不动了", () => {
 		const { facets, total } = run(facts, claims("must"), {
 			seq: [{ l1: "技术", l2: "算法" }],
 		});
@@ -656,7 +656,7 @@ describe("只有人的条件的人群排序", () => {
 		assert.deepEqual(result.facets.strong, { on: 0, off: 0 });
 	});
 
-	test("筛选要求同一经历段满足，分面仍摘掉自己的维度", () => {
+	test("筛选要求同一经历段满足，分面仍去掉自己的维度", () => {
 		const result = rankPopulation(facts, {
 			seq: [{ l1: "技术", l2: "算法" }],
 			kind: "external",

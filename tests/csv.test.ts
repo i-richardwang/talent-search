@@ -88,7 +88,7 @@ describe("导出的 CSV", () => {
 	});
 });
 
-describe("单元格里那句凭据", () => {
+describe("单元格里的凭据", () => {
 	test("和屏幕上那一行说的是同一件事", () => {
 		const text = evidenceText("算法", hit({ route: "title" }), basis());
 		assert.equal(text, "岗位 算法工程师 · 云梯物流 · 83% · 2.3 年");

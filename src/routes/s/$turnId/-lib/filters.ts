@@ -155,7 +155,7 @@ export function textFilters(view: View): TextFilter[] {
 /**
  * 已生效的筛选有几项——集合维度里选中的每一个值各算一项。
  *
- * 界面上要的就是这个数：摘掉一个筛选是回到它自己那一行再点一次，而那一行永远
+ * 界面上要的就是这个数：去掉一个筛选是回到它自己那一行再点一次，而那一行永远
  * 在场（`rows`），所以「现在筛了什么」由那几行的选中态说，这里只说「几项」。
  */
 export function activeCount(fields: FilterField[], texts: TextFilter[]) {

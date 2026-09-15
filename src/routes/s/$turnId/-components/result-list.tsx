@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ListChecksIcon, SearchXIcon, XIcon } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import {
 	Dot,
 	EvidenceLine,
@@ -43,7 +43,7 @@ const PAD = "px-4 py-3.5";
 /** 首次检索的骨架块数。之后跟着上一次的结果数走，列表高度就不会每次跳。 */
 const SKELETON_ROWS = 5;
 
-/** 报数那一行怎么说这份名单按什么排。 */
+/** 计数那一行怎么描述这份名单的排序。 */
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	evidence: "按证据排序",
 	depth: "按经历深度排序",
@@ -51,19 +51,19 @@ const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 };
 
 /**
- * 名单的表头：这份名单有多少人、按什么排、那三颗点各是什么意思、要不要
- * 只留任职记录能证明的那些人，以及要不要只看深度。
+ * 名单的表头：这份名单有多少人、按什么排、图例三个点各是什么意思、要不要只留
+ * 任职记录能证明的那些人，以及要不要只看深度。
  *
- * 这些都是**关于这份名单**的，所以它们跟着名单走。放进查询台的角落，报数就会
- * 随着 chips 换行上下漂，而它回答的本来也不是「我搜了什么」。
+ * 这些都是名单自身的属性，所以跟着名单走。放进查询区的话，计数会随 chips 换行
+ * 上下移动，而它回答的也不是「我搜了什么」。
  *
- * 图例必须和它解释的那些点同屏，所以只能排在这里；而那个开关要求的正是图例里
- * 第一颗点，两者挨着放，开关就不必再解释一遍自己是什么意思。
+ * 图例必须和它解释的那些点在同一屏，所以排在这里；旁边的开关要求的正是图例里
+ * 第一个点，两者相邻，开关就不必再解释一遍自己的含义。
  *
- * 「按什么排」是**整份名单**的性质，一句话说完就够：名次由每个人在这一列里的位置
- * 给出（AGENTS.md「分数不上屏」），这里只需要说清那个顺序是按什么排的。
+ * 排序方式是整份名单的属性，一句话说完即可：名次由每个人在列表里的位置表示
+ * （AGENTS.md「分数不上屏」），这里只需说明顺序按什么排。
  *
- * 它只在有名单可介绍的时候出现，而那个判断归调用点——见下面空态那一支。
+ * 只在有名单可介绍时渲染，该判断由调用方做——见下面空态那一支。
  */
 export function ResultHeader({
 	loading,
@@ -85,29 +85,30 @@ export function ResultHeader({
 	total: number;
 	claims: Claim[];
 	/**
-	 * 这次查询有没有经历主张——**从记录上算，不等服务端**。
+	 * 这次查询有没有经历主张，从记录上算，不等服务端返回。
 	 *
-	 * 右边那一簇（图例和那个开关）因此从第一帧就在场，而不是等 `claims` 回来。
-	 * 等的话这一行会在结果落地时长高一档（那个开关比一行字高 8px），整份名单
-	 * 跟着往下跳一次。
+	 * 右边那一组（图例和开关）因此从第一帧就在，而不是等 `claims` 回来。等的话
+	 * 这一行会在结果到达时增高（开关比一行文字高 8px），整份名单跟着下移一次。
 	 */
 	planned: boolean;
-	/** 「仅岗位或序列」开着没有。它是这份名单的性质，不是一份视图状态。 */
+	/** 「仅岗位或序列」是否打开。它是这份名单的属性，不是视图状态。 */
 	strong: boolean;
-	/** 「只看深度」开着没有（视图要的）。结果还没回来时它已经按下去了。 */
+	/** 「只看深度」是否打开（取自视图状态）。结果还没回来时它就已经是按下态。 */
 	byDepth: boolean;
 	onChange: (next: Partial<View>) => void;
 	/** 只留受控证据之后还剩多少人 */
 	strongOn: number;
-	/** 在挑人吗。挑人时整份名单往右让出一列复选框，表头这一行的最左边是全选。 */
+	/** 是否处于挑人模式。挑人时整份名单左侧让出一列复选框，表头这一行最左边是全选。 */
 	picking: boolean;
 	/** 进入或退出挑人。 */
 	onPicking: (on: boolean) => void;
-	/** 有名单可挑吗。没有的时候按钮留在原地、按不下去，理由和「仅岗位或序列」同一条。 */
+	/** 是否有可挑的名单。没有时按钮保留位置但禁用，理由和「仅岗位或序列」相同。 */
 	pickable: boolean;
 }) {
 	return (
-		<div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-1">
+		/* 这是表头行的内容格，左边那一格由调用方（`ResultList` 的 `head`）给出，
+		   所以这里只负责自己这一格内部的排布。 */
+		<div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-1">
 			<p className="text-muted-foreground text-sm" role="status">
 				{loading ? (
 					"搜索中…"
@@ -119,8 +120,8 @@ export function ResultHeader({
 				)}
 			</p>
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-				{/* 图例和它旁边那个开关都在讲证据，没有条件的查询里两样都无从说起；
-				    挑人不看条件——按部门圈出来的一批人同样是要交出去的名单。 */}
+				{/* 图例和旁边的开关说的都是证据，没有条件的查询里两者都没有意义；
+				    挑人与条件无关，按部门筛出的一批人同样需要导出。 */}
 				{(planned || claims.length > 0) && (
 					<>
 						<StrengthLegend />
@@ -132,21 +133,20 @@ export function ResultHeader({
 						/>
 						<ByDepth on={byDepth} onChange={onChange} />
 						{/*
-						 * 一条竖线分开两类东西：左边讲**这份名单是什么**（三颗点、
-						 * 只留受控证据的那一档），右边是**对这份名单做点什么**。
-						 * 挨着排的一串控件默认读成一类，而这两半不是。
+						 * 竖线分开两类控件：左边描述这份名单是什么（图例、只留受控
+						 * 证据），右边是对这份名单执行的操作。连续排列的控件会被读成
+						 * 同一类，而这两半不是。
 						 */}
 						<Separator className="h-4 max-sm:hidden" orientation="vertical" />
 					</>
 				)}
 				{/*
-				 * 挑人是一次**动作**，不是这份名单的一种性质：按下去这份名单一个人
-				 * 不少，只是我要开始从里面挑了。所以它是按钮，不是它左边那种
-				 * `Toggle`——「仅岗位或序列」按下去是会让人消失的，两件事同款同尺寸
-				 * 并排，等于宣称它们是一类。
+				 * 挑人是一个操作，不是名单的一种性质：按下之后名单内容不变，只是
+				 * 开始从中选择。所以用按钮，而不是左边那种 `Toggle`——「仅岗位或
+				 * 序列」按下会让人从名单里消失，两者同款同尺寸并排会被当成同一类。
 				 *
-				 * 进和出都写成这一下要做的事（「挑人导出」／「退出挑人」），不靠
-				 * 一个按下去的样子表示现在在哪一档：名单左边那一列框已经把它说完了。
+				 * 进入和退出都用动作文案（「挑人导出」／「退出挑人」），不靠按下态
+				 * 表示当前模式：名单左侧那一列复选框已经表示了。
 				 */}
 				<Button
 					disabled={!pickable}
@@ -165,15 +165,15 @@ export function ResultHeader({
 /**
  * 仅岗位或序列。
  *
- * 打开之后，每一条必须条件都得落在岗位或序列上才算数（`rank.ts` 的 `complete`）。
- * 部门、公司、简历、技能都不算。和图例最强那一档同一句话，不另造一套说法。
+ * 打开之后，每一条必须条件都要落在岗位或序列上才算命中（`rank.ts` 的 `complete`）。
+ * 部门、公司、简历、技能都不算。文案和图例最强的一档一致，不另造说法。
  *
- * 它不是一个筛选维度，所以不在左栏里：左栏那几维是「在这批人里再看哪一部分」，
- * 而它改的是**什么才算命中**，和左边那句报数、右边那三颗点是同一件事。
+ * 它不是筛选维度，所以不在左栏：左栏那几维是在这批人里再看其中一部分，而它改的
+ * 是什么才算命中，和左边的计数、右边的图例说的是同一件事。
  *
- * 只有开关两态，没有值可选，所以不做成选择器——为一个布尔量弹一层，是多点
- * 一下换零信息。`Toggle` 是这件事的原生形状：按下态由组件自己用 `data-pressed`
- * 表示，不必手写 `aria-pressed` 再自配一套底色。
+ * 只有开关两态、没有值可选，所以不做成选择器——为一个布尔量弹一层浮层，多点一次
+ * 却不增加信息。`Toggle` 就是这件事对应的控件：按下态由组件用 `data-pressed`
+ * 表示，不必手写 `aria-pressed` 再另配底色。
  */
 function ProvenOnly({
 	on,
@@ -187,11 +187,10 @@ function ProvenOnly({
 	/** 还在等结果：这个数此刻是「不知道」，不是 0。 */
 	loading: boolean;
 }) {
-	// 一个人都数不出来时**按不下去**，但位子还在——点下去必然清空名单，那是一条
-	// 死路，而左栏那几维处理死路的办法正是把数到 0 的那一行禁用掉、留在原地
-	// （`filter-rail.tsx` 开头）。整个抽掉的话，这一行会随着结果落地长高一档，
-	// 整份名单跟着往下跳，而那正是这一屏最该稳住的东西。
-	// 已经打开的永远可点：否则筛到 0 人之后就没有任何东西能关掉它了。
+	// 一个人都数不出来时禁用，但保留位置：点下去必然清空名单，属于无效操作，左栏
+	// 各维处理无效操作的办法同样是把计数为 0 的行禁用并留在原地（`filter-rail.tsx`
+	// 开头）。整个移除的话，这一行会在结果到达时增高，整份名单跟着下移。
+	// 已经打开的始终可点，否则筛到 0 人之后就没有办法关掉它。
 	return (
 		<Toggle
 			disabled={!on && n === 0}
@@ -248,6 +247,73 @@ function ByDepth({
 		>
 			<span>只看深度</span>
 		</Toggle>
+	);
+}
+
+/**
+ * 挑人时名单左侧让出的那一列，在每一行上对应的那一格。
+ *
+ * 表头、骨架块、候选卡片都以它开头，宽度只有 `--pick-column` 一个出处
+ * （styles.css），所以加载中和结果到达后的几何完全一致：名单只在进入挑人模式时
+ * 位移一次。
+ *
+ * 不挑人时宽度为 0 且 `invisible`（`visibility: hidden`），里面的复选框同时退出
+ * Tab 序和读屏，留下的是一格宽度而不是一个隐藏但仍可聚焦的控件——筛选栏的
+ * 「清除」用的是同一个办法。宽度做成过渡而不是瞬变，因为它由用户显式切换触发。
+ */
+function PickCell({ children }: { children?: ReactNode }) {
+	return (
+		<div className="invisible w-0 shrink-0 overflow-hidden transition-[width] duration-200 ease-out group-data-picking/list:visible group-data-picking/list:w-(--pick-column)">
+			{children}
+		</div>
+	);
+}
+
+/**
+ * 没有匹配到人时的空态。
+ *
+ * 空态总是给一条可以一键执行的出路，而不是让用户自己猜该改哪里。成因由检索层
+ * 给出（`search/empty.ts`），这里只把它翻译成一句话和一个按钮；检索还没开始跑
+ * （换查询的第一帧）时按「还没有条件」处理。
+ *
+ * 这一支不渲染表头：空态文案已经说明了没有结果，顶上再加一行「0 人」是重复。
+ * 也不给 `Empty` 加边框——coss 的 `Empty` 是一块居中内容而不是卡片，加一圈虚线
+ * 等于在名单的位置上放一个假的名单外形。
+ */
+function NoResults({
+	outcome,
+	spec,
+	onChange,
+	onReviseQuery,
+	onEditQuery,
+}: {
+	outcome: SearchOutcome;
+	spec: SearchSpec;
+	onChange: (next: Partial<View>) => void;
+	onReviseQuery: (next: Condition[]) => void;
+	onEditQuery: () => void;
+}) {
+	const state = emptyState(outcome.empty ?? { kind: "noConditions" }, {
+		conditions: spec.conditions,
+		onChange,
+		onEditQuery,
+		onReviseQuery,
+	});
+	return (
+		<Empty>
+			<EmptyHeader>
+				<EmptyMedia variant="icon">
+					<SearchXIcon />
+				</EmptyMedia>
+				<EmptyTitle>{state.title}</EmptyTitle>
+				<EmptyDescription>{state.hint}</EmptyDescription>
+			</EmptyHeader>
+			<EmptyContent>
+				<Button onClick={state.action.onClick} variant="outline">
+					{state.action.label}
+				</Button>
+			</EmptyContent>
+		</Empty>
 	);
 }
 
@@ -311,37 +377,63 @@ export function ResultList({
 
 	// 这次查询会画几条证据，从记录上算，不等服务端返回 `claims`：改筛选那一帧
 	// 服务端还是旧值，骨架屏的块高会先跳一下再回来。骨架屏的块高和表头右边
-	// 那一簇都读它——两处都是「结果回来之前就得把位子占好」。
+	// 那一组都读它——两处都是「结果回来之前就得把位子占好」。
 	const pending = claimsOf(spec.conditions);
 
+	// 有名单可挑吗。表头那颗按钮和表头这一行的第一格（全选）说的是同一件事。
+	const pickable = !loading && results.length > 0;
+
 	const head = (
-		<ResultHeader
-			byDepth={byDepth}
-			loading={loading}
-			onChange={onChange}
-			onPicking={picks.start}
-			order={order}
-			pickable={!loading && results.length > 0}
-			picking={picks.picking}
-			planned={pending.length > 0}
-			strong={strong}
-			strongOn={strongOn}
-			claims={claims}
-			total={total}
-		/>
+		/* 名单的第一行，和下面每一块同一副骨架：挑格加内容。于是表头那个全选和
+		   每一块的那个框落在同一条竖线上——那是表格用了几十年的第一列，只不过
+		   这里的「行」是一块卡片。 */
+		<div className="mb-2.5 flex items-start">
+			<PickCell>
+				{pickable && (
+					/* 这一个框没有写出来的标签——它的位置（表头这一行的第一格）就是它的
+					   说明。说明挂在 Tooltip 上，和图例那三颗点同一个办法：不确定它是
+					   什么的人，停一下就读得到。 */
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Label className="p-1">
+									<Checkbox aria-label={`全选这 ${results.length} 人`} parent />
+								</Label>
+							}
+						/>
+						<TooltipPopup>全选这 {results.length} 人</TooltipPopup>
+					</Tooltip>
+				)}
+			</PickCell>
+			<ResultHeader
+				byDepth={byDepth}
+				loading={loading}
+				onChange={onChange}
+				onPicking={picks.start}
+				order={order}
+				pickable={pickable}
+				picking={picks.picking}
+				planned={pending.length > 0}
+				strong={strong}
+				strongOn={strongOn}
+				claims={claims}
+				total={total}
+			/>
+		</div>
 	);
 
 	// 检索中绝不闪现「没有结果」。
-	if (loading) {
-		return (
-			<div>
-				{head}
-				<div className="flex flex-col gap-2">
-					{Array.from(
-						{ length: Math.min(lastRows.current, RESULT_PAGE) },
-						(_, row) => (
-							// biome-ignore lint/suspicious/noArrayIndexKey: 骨架块没有身份
-							<Card className={PAD} key={row}>
+	const content = loading ? (
+		<div>
+			{head}
+			<div className="flex flex-col gap-2">
+				{Array.from(
+					{ length: Math.min(lastRows.current, RESULT_PAGE) },
+					(_, row) => (
+						// biome-ignore lint/suspicious/noArrayIndexKey: 骨架块没有身份
+						<div className="flex" key={row}>
+							<PickCell />
+							<Card className={cn(PAD, "min-w-0 flex-1")}>
 								{/*
 								 * 骨架屏画的是**这次查询会有几条证据**，不是一个通用的方块堆：
 								 * 条件数取自记录上的 chips。
@@ -371,115 +463,47 @@ export function ResultList({
 									</div>
 								)}
 							</Card>
-						),
-					)}
-				</div>
-			</div>
-		);
-	}
-
-	if (results.length === 0) {
-		// 空态永远给一条出路，而且是能一键走的那条——不是让人自己回去猜该改哪。
-		// 成因由检索层给（`search/empty.ts`），这里只把它翻译成一句话和一个按钮；
-		// 检索还没跑（换查询的头一帧）时按「还没有条件」说。
-		const state = emptyState(outcome.empty ?? { kind: "noConditions" }, {
-			conditions: spec.conditions,
-			onChange,
-			onReviseQuery,
-			onEditQuery,
-		});
-		return (
-			/* 空态上不报数：一个人都没有这件事下面那句话自己会说，顶上再来一行
-			   「0 人」是同一件事的第一遍。所以这一支没有表头。
-			   也不给 Empty 补边框——coss 的 Empty 本来就是一块居中的内容，不是一张
-			   卡片，手画一圈虚线只是在名单该在的位置上摆一个假的名单形状。 */
-			<Empty>
-				<EmptyHeader>
-					<EmptyMedia variant="icon">
-						<SearchXIcon />
-					</EmptyMedia>
-					<EmptyTitle>{state.title}</EmptyTitle>
-					<EmptyDescription>{state.hint}</EmptyDescription>
-				</EmptyHeader>
-				<EmptyContent>
-					<Button onClick={state.action.onClick} variant="outline">
-						{state.action.label}
-					</Button>
-				</EmptyContent>
-			</Empty>
-		);
-	}
-
-	return (
-		/*
-		 * 挑人时整份名单往右让出一列：那一列是复选框的位置，表头上那个全选和
-		 * 每一块的那个框在同一条竖线上——和表格的第一列是同一个道理，只不过
-		 * 这里的「行」是一块卡片。
-		 *
-		 * 让位是**推着走的**（`transition-[padding]`），不是凭空跳一档：这是一次
-		 * 人自己按下去的换挡，看得见谁让给了谁；而结果落地时的位移一次都不许有
-		 * （AGENTS.md），两件事不是一回事。
-		 *
-		 * `CheckboxGroup` 从表头那个框一直罩到最后一块：全选、勾不满时那个横杠、
-		 * 以及「这一组框是一件事」的语义，都由它给（Base UI），不用自己拿一个
-		 * `checked={a && b}` 去凑。
-		 */
-		<CheckboxGroup
-			allValues={picks.shownIds}
-			aria-label="名单"
-			className={cn(
-				"block transition-[padding] duration-200 ease-out",
-				picks.picking && "ps-9",
-			)}
-			onValueChange={(next) => picks.setShown(next.map(String))}
-			value={picks.shownPicked}
-		>
-			<div className="relative">
-				{picks.picking && (
-					// 这一个框没有写出来的标签——它的位置（表头这一行的第一列）就是它的
-					// 说明，而那是表格用了几十年的约定。说明挂在 Tooltip 上，和图例
-					// 那三颗点同一个办法：不确定它是什么的人，停一下就读得到。
-					<Tooltip>
-						<TooltipTrigger
-							render={
-								<Label className="-start-9 absolute top-0 p-1">
-									<Checkbox
-										aria-label={`挑上名单上这 ${results.length} 人`}
-										parent
-									/>
-								</Label>
-							}
-						/>
-						<TooltipPopup>挑上名单上这 {results.length} 人</TooltipPopup>
-					</Tooltip>
+						</div>
+					),
 				)}
-				{head}
 			</div>
+		</div>
+	) : results.length === 0 ? (
+		<NoResults
+			onChange={onChange}
+			onEditQuery={onEditQuery}
+			onReviseQuery={onReviseQuery}
+			outcome={outcome}
+			spec={spec}
+		/>
+	) : (
+		<>
+			{head}
 			<ul className="flex flex-col gap-2">
-				{/* 命中的逐条画，没命中的收成一行——这份推导在 `-lib/picks.ts` 做完，
-				    因为挑上那一刻要写进 CSV 的正是同一份东西。「未命中」这三个字重复
-				    五遍没有任何可读的东西，只是把每一块撑高一倍。 */}
+				{/* 命中的逐条渲染，没命中的合成一行。这份推导在 `-lib/picks.ts` 完成，
+				    因为选中时要写进 CSV 的是同一份数据。「未命中」重复五遍不增加信息，
+				    只会让每张卡片高一倍。 */}
 				{picks.rows.map(({ employee: e, hits, missed }) => {
 					const selected = e.empId === empId;
 					return (
-						<li className="relative" key={e.empId}>
+						<li className="flex" key={e.empId}>
 							{/*
-							 * 复选框在卡片**外面**，不在里面：卡片整块是一条打开详情的
-							 * 链接，往一个整块可点的东西里再塞一个控件，就是 AGENTS.md
-							 * 说的那种挑错了形状。放进左边让出来的那一列，两件事各有各
-							 * 的命中区，谁也不必去猜点在哪儿会发生什么。
-							 * 绝对定位是为了让卡片自己一点不变——它的宽度只由那一列
-							 * 让出的位置决定，勾不勾都是同一块。
+							 * 复选框放在卡片外面：整张卡片是一条打开详情的链接，往整块
+							 * 可点的区域里再嵌一个控件，就是 AGENTS.md 说的形状选错。
+							 * 它放在这一行让出的那一格里，两者各有各的点击区域。
+							 *
+							 * `mt-2.5` 让复选框对齐卡片里的第一行文字：卡片上内边距是
+							 * 14px，复选框比那行文字矮一档。
 							 */}
-							{picks.picking && (
-								<Label className="-start-9 absolute top-2.5 p-1">
-									<Checkbox aria-label={`挑上 ${e.name}`} value={e.empId} />
+							<PickCell>
+								<Label className="mt-2.5 p-1">
+									<Checkbox aria-label={`选择 ${e.name}`} value={e.empId} />
 								</Label>
-							)}
+							</PickCell>
 							<Card
 								className={cn(
 									PAD,
-									"transition-[border-color,background-color]",
+									"min-w-0 flex-1 transition-[border-color,background-color]",
 									// ↑↓ 换人时 scrollIntoView 把卡片推到视口边缘上，两头各留一档余量。
 									// 上边还要让开常驻的那一叠（顶栏加查询带），高度只有
 									// `--chrome-height` 一个出处（styles.css）。
@@ -579,8 +603,36 @@ export function ResultList({
 					)}
 				</div>
 			)}
+		</>
+	);
 
-			{/* 挑上人之后才浮起来，浮在名单下沿（`pick-dock.tsx` 开头写了为什么在下面） */}
+	return (
+		/*
+		 * 只有这一层容器，挑人时让出一列由它负责：骨架、空态、名单三种内容都在它
+		 * 里面，每一行以 `PickCell` 开头。三支各自搭一棵树的话，让出的列宽就有三个出处，
+		 * 漏掉其中一处会在结果到达的那一帧让整份名单横向位移，而到达时不允许有
+		 * 位移（AGENTS.md）。
+		 *
+		 * 这一层同时是 `CheckboxGroup`：全选、半选状态，以及「这一组复选框属于同
+		 * 一件事」的语义都由它提供（Base UI），不必自己用 `checked={a && b}` 拼。
+		 * 不挑人时里面的复选框都是 0 宽且 `invisible`，保留的是布局，不是一组隐藏
+		 * 但仍可聚焦的控件。
+		 */
+		<CheckboxGroup
+			allValues={picks.shownIds}
+			aria-label="名单"
+			className="group/list block"
+			data-picking={picks.picking || undefined}
+			onValueChange={(next) => picks.setShown(next.map(String))}
+			value={picks.shownPicked}
+		>
+			{content}
+
+			{/*
+			 * 选中人之后才出现，浮在名单下沿（`pick-dock.tsx` 开头写了原因）。它在
+			 * 上面三支之外：筛到一个人都不剩时，已选中的那几个仍然可以导出——选中
+			 * 记录是按选中那一刻的快照保存的，不随筛选消失。
+			 */}
 			{picks.picking && (
 				<PickDock picks={picks} names={claims.map(claimName)} total={total} />
 			)}

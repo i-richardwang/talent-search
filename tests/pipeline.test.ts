@@ -1,7 +1,7 @@
 /**
  * 通用管线的不变量。
  *
- * 这里测的是「无论数据从哪来都必须成立」的那几条：非法区间必须被拒绝并报数、
+ * 这里测的是「无论数据从哪来都必须成立」的那几条：非法区间必须被拒绝并报告数量、
  * 开放区间怎么封口、相邻段怎么合并、当前信息从哪派生。适配器自己的解析逻辑
  * 归各自的测试，不在这里。
  *
@@ -80,7 +80,7 @@ const external = (rows: ReturnType<typeof run>) =>
 	rows.experience.filter((row) => row.kind === "external");
 
 describe("公司内经历", () => {
-	test("非法区间一律拒绝并报数", () => {
+	test("非法区间一律拒绝并报告数量", () => {
 		const out = run({
 			people: [
 				{ emp_id: "E1" },
@@ -379,7 +379,7 @@ describe("员工档案", () => {
 });
 
 describe("人群", () => {
-	test("没有工号的档案行被拒绝并报数", () => {
+	test("没有工号的档案行被拒绝并报告数量", () => {
 		const out = run({
 			people: [{ emp_id: "E1" }, { emp_id: "" }, { emp_id: "   " }],
 			assignments: [{ emp_id: "E1", start_date: "2020-01-01" }],

@@ -113,7 +113,7 @@ describe("出题与结算", () => {
 			if (previous === undefined) delete process.env.REVIEW_JUDGE;
 			else process.env.REVIEW_JUDGE = previous;
 		};
-		// 四路短说法各来一条，外加一段没读过的整段原文和一条部门路径：后两样不写释义
+		// 四类短说法各来一条，外加一段没读过的整段原文和一条部门路径：后两样不写释义
 		await seed([
 			{
 				empId: "g1",

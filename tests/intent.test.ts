@@ -158,7 +158,7 @@ describe("词表维只认库里真有的取值", () => {
 });
 
 describe("模型给了条件、收窄后一个不剩", () => {
-	test("是这一跳失败，不是一句没有条件的话", () => {
+	test("收窄后一条不剩算这次理解失败", () => {
 		for (const raw of [
 			{ conditions: [person("level", ["资深"]), person("city", ["北京"])] },
 			{ conditions: [claim({ minMonths: "三年" })] },
@@ -181,7 +181,7 @@ describe("模型给了条件、收窄后一个不剩", () => {
 });
 
 describe("模型是不可信输入", () => {
-	test("什么形状都不该抛", () => {
+	test("任何形状的输入都不抛错", () => {
 		for (const raw of [
 			null,
 			undefined,

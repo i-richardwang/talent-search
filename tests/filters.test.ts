@@ -2,7 +2,7 @@
  * 筛选维度的值 → 标签映射，以及点一下要写回什么。
  *
  * 这组测试盯的是一类静默失败：URL 里存的是 `kind=internal`、`minMonths=12`，
- * 界面上要显示的是「公司内经历」「1 年」。念法由维度自己声明
+ * 界面上要显示的是「公司内经历」「1 年」。标签由维度自己声明
  * （`search/dimensions.ts`），但「查没查表」没有类型约束——忘了查、把裸值渲染
  * 出去，类型检查和构建都不会响。
  *
@@ -61,7 +61,7 @@ const labels = (view: View) =>
 		f.values.map((v) => f.options.find((o) => o.value === v)?.label ?? v),
 	);
 
-describe("选中的东西怎么说人话", () => {
+describe("选中项的文案", () => {
 	test("URL 里的裸值一律翻成界面文案", () => {
 		assert.deepEqual(labels({ kind: "internal" }), ["公司内经历"]);
 		assert.deepEqual(labels({ kind: "external" }), ["入职前经历"]);
@@ -97,7 +97,7 @@ describe("选中的东西怎么说人话", () => {
 				);
 	});
 
-	test("维度按固定顺序排，摘掉一个不会让其余的重新排队", () => {
+	test("维度按固定顺序排，去掉一个不会让其余的重新排队", () => {
 		assert.deepEqual(
 			labels({
 				minMonths: 24,

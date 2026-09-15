@@ -101,7 +101,7 @@ const SCHEMA = z.object({
 /**
  * 读整张表。
  *
- * 表被手改坏的三种样子在这里出声拒绝：别名的标准词自己又是别名、归属指向一个别名、
+ * 表被手改坏的三种样子在这里抛错：别名的标准词自己又是别名、归属指向一个别名、
  * 归属成环。`merge` 不会写出这三种行；静默取其一只会让筛选栏少一批人而没人知道。
  */
 export async function read(client: CorpusClient): Promise<Table> {
@@ -185,7 +185,7 @@ export async function askModel(
  * 还没判过的标准词。只从语料取词的话，裁判起的名字永远不会被再问一次：「销售数据分析」
  * 挂不到「数据分析」下面，两组各自起的「数据分析」「数据分析能力」也永远并不到一起。
  *
- * 其他写法不做组心、不单独圈组，只跟着它的标准词进题（`ask`）：它和标准词是不是同一件事
+ * 其他写法不做中心词、不单独圈组，只跟着它的标准词进题（`ask`）：它和标准词是不是同一件事
  * 正是每次重判要问的，而它不在题里时拆不开，在别的题里单独出现又会被判进另一片，
  * 把它从标准词那里悄悄拽走。
  *
@@ -344,7 +344,7 @@ export async function askGroups(
 		? groups(words, counts, await embed(words, report), due)
 		: [];
 	report(
-		`  组心至少 ${HEAD_MIN} 人、相似度 ${SIMILARITY} 以上、` +
+		`  中心词至少 ${HEAD_MIN} 人、相似度 ${SIMILARITY} 以上、` +
 			`${REVIEW_INTERVAL_DAYS} 天内没整理过，圈成 ${circles.length} 组`,
 	);
 	if (circles.length === 0) return;

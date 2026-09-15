@@ -60,7 +60,7 @@ async function runReview(): Promise<string[]> {
 	return said;
 }
 
-/** 库里能力词那一路上每个词的人数。 */
+/** 库里能力词那一类上每个词的人数。 */
 async function peopleByWord(): Promise<[string, number][]> {
 	const connection = await client();
 	try {
@@ -96,7 +96,7 @@ describe("读表", () => {
 		}
 	});
 
-	test("别名的标准词自己又是别名，出声拒绝", async () => {
+	test("别名的标准词又是别名时抛错", async () => {
 		await seedTable([
 			["个性化推荐", "推荐算法", OLD],
 			["推荐算法", "推荐系统", OLD],
@@ -113,7 +113,7 @@ describe("读表", () => {
 		}
 	});
 
-	test("归属于一个别名，出声拒绝", async () => {
+	test("归属指向别名时抛错", async () => {
 		await seedTable([
 			["数据分析", "数据分析", OLD],
 			["数据分析能力", "数据分析", OLD],
@@ -130,7 +130,7 @@ describe("读表", () => {
 		}
 	});
 
-	test("归属成环，出声拒绝", async () => {
+	test("归属成环时抛错", async () => {
 		// 外键要求先有行再指它，所以先落两行再把环合上
 		await seedTable([
 			["甲", "甲", OLD],
@@ -152,10 +152,10 @@ describe("整轮整理", () => {
 	before(async () => {
 		await seedTable([
 			["Py", "Python", OLD],
-			// 一天前整理过：这一轮它不做组心，即使人数够
+			// 一天前整理过：这一轮它不做中心词，即使人数够
 			["Python", "Python", new Date(Date.now() - 86_400_000)],
 		]);
-		// 库里能力词那一路上此刻有的词。「Py」在表里是别名，但没有人写它
+		// 库里能力词那一类上此刻有的词。「Py」在表里是别名，但没有人写它
 		await seed(
 			[
 				["团队管理"],
@@ -171,7 +171,7 @@ describe("整轮整理", () => {
 		);
 	});
 
-	test("只问到期的组心，决定写回表，人身上的词不动", async () => {
+	test("只问到期的中心词，结论写回表，人身上的词不动", async () => {
 		const asked: string[] = [];
 		const restore = answerChat((system, prompt) => {
 			// 同一轮里释义题也会问到模型（gloss.test.ts 管它），这里只看圈组那一问
@@ -193,7 +193,7 @@ describe("整轮整理", () => {
 		const said = await runReview();
 		restore();
 
-		// 到期的组心只有「团队管理」：Python 一天前刚整理过，Java 只有一个人
+		// 到期的中心词只有「团队管理」：Python 一天前刚整理过，Java 只有一个人
 		assert.deepEqual(asked, ["团队管理（4 人）\n团队管理工作（4 人）"]);
 		assert.match(said.join("\n"), /团队管理工作 → 团队管理/);
 		assert.match(said.join("\n"), /团队管理 属于 管理/);
@@ -227,7 +227,7 @@ describe("整轮整理", () => {
 /**
  * 判卷交给外部：整理只出题和结算，答卷由外面交回来。
  *
- * 自带模型这一路在上面那一段已经走完，所以这里装的假聊天端点一次也不该被叫到——
+ * 自带模型这一类在上面那一段已经走完，所以这里装的假聊天端点一次也不该被叫到——
  * 「没问模型」本身就是这一档要证明的事。
  */
 describe("判卷交给外部", () => {
@@ -241,7 +241,7 @@ describe("判卷交给外部", () => {
 			if (before === undefined) delete process.env.REVIEW_JUDGE;
 			else process.env.REVIEW_JUDGE = before;
 		};
-		// 词表清空，语料里再添一批新词：这一轮有到期的组心可出题
+		// 词表清空，语料里再添一批新词：这一轮有到期的中心词可出题
 		await seedTable([]);
 		await seed(
 			[
@@ -405,7 +405,7 @@ describe("判卷交给外部", () => {
 			const question = (await openQuestions(later)).find(
 				(one) => one.words[0]?.word === "销售数据分析",
 			);
-			assert.ok(question, "「销售数据分析」该做组心出一道题");
+			assert.ok(question, "「销售数据分析」该做中心词出一道题");
 			// 三个人写了它下面的词，它就是 3 人；细的词刚判过，仍能被收进它的组
 			assert.deepEqual(question.words, [
 				{ word: "销售数据分析", people: 3 },
@@ -473,8 +473,8 @@ describe("判卷交给外部", () => {
 			const question = (await openQuestions(later)).find(
 				(one) => one.words[0]?.word === "销售数据分析",
 			);
-			assert.ok(question, "「销售数据分析」该做组心出一道题");
-			// 别名不做组心、不单独圈组，紧跟在它的标准词后面；标准词的人数连同别名和下面的词
+			assert.ok(question, "「销售数据分析」该做中心词出一道题");
+			// 别名不做中心词、不单独圈组，紧跟在它的标准词后面；标准词的人数连同别名和下面的词
 			assert.deepEqual(question.words, [
 				{ word: "销售数据分析", people: 3 },
 				{ word: "线上销售数据分析", people: 3 },

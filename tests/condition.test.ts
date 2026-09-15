@@ -222,7 +222,7 @@ describe("不可信输入 → 条件", () => {
 		);
 	});
 
-	test("什么形状都不该抛", () => {
+	test("任何形状的输入都不抛错", () => {
 		for (const raw of [null, undefined, 0, "", {}, "一句话", [42], [[]]])
 			assert.deepEqual(conditionsOf(raw), [], JSON.stringify(raw));
 	});
@@ -261,7 +261,7 @@ describe("停用", () => {
 		assert.deepEqual(withOff(withOff(boost, "wide"), null), boost);
 	});
 
-	test("activeConditions 摘掉停用的，顺序不变", () => {
+	test("activeConditions 去掉停用的，顺序不变", () => {
 		const list = conditionsOf([
 			{ about: "experience", what: ["算法"] },
 			{ about: "experience", what: ["运营"], off: "wide" },
@@ -270,7 +270,7 @@ describe("停用", () => {
 		assert.deepEqual(activeConditions(list), [exp("算法"), exp("产品")]);
 	});
 
-	test("身份不看停用：同一条条件停与不停是同一枚 chip", () => {
+	test("身份不看停用：同一条条件停与不停是同一个 chip", () => {
 		assert.equal(conditionKey(boost), conditionKey(withOff(boost, "user")));
 		assert.notEqual(conditionKey(boost), conditionKey(withMode(boost, "must")));
 	});
@@ -286,7 +286,7 @@ describe("逐项去掉", () => {
 		minMonths: 36,
 	};
 
-	test("各项按念的顺序摊开：什么时候、在哪、做过什么、多久", () => {
+	test("各项按朗读顺序排列：什么时候、在哪、做过什么、多久", () => {
 		assert.deepEqual(partsOf(claim), [
 			{ key: "kind", value: "external" },
 			{ key: "org", value: "字节" },
@@ -353,7 +353,7 @@ describe("改强度", () => {
 	});
 });
 
-describe("查询有没有说话", () => {
+describe("查询是否为空", () => {
 	test("有一条条件就算说了，哪怕它是停用的；一条都没有就是空查询", () => {
 		const one = conditionsOf([
 			{ about: "experience", what: ["算法"], off: "user" },

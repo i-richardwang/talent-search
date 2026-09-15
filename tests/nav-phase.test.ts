@@ -1,5 +1,5 @@
 /**
- * 一次导航在干什么：塌成骨架屏、只在按钮上转圈，还是什么都不做。
+ * 一次导航在干什么：换成骨架屏、只在按钮上转圈，还是什么都不做。
  *
  * 这三种情况由 loading、两头的 turn 和两头的 view 组合决定，而组合错了不会有
  * 任何东西报错——只会在扫名单时每按一下 ↑↓ 就把列表清空一次，或者翻页时把人
@@ -13,7 +13,7 @@ const spot = (turn: string, view: Spot["view"] = {}): Spot => ({ turn, view });
 const QUERY = { seq: [{ l1: "技术", l2: "后端" }] };
 
 describe("导航相位", () => {
-	test("没在飞就什么都不是", () => {
+	test("没有导航在进行时两项都为 false", () => {
 		assert.deepEqual(
 			navPhase(false, spot("a", { ...QUERY, n: 100 }), spot("a")),
 			{
@@ -33,7 +33,7 @@ describe("导航相位", () => {
 
 	test("多选维度按值比，不按引用——每次导航都是一份新解析出来的 View", () => {
 		// URL 每解析一次就是一个新数组。按引用比的话，一模一样的视图也会判成
-		// 「筛选变了」，于是名单每换一个人就塌成骨架屏一次。
+		// 「筛选变了」，于是名单每换一个人就换成骨架屏一次。
 		assert.deepEqual(
 			navPhase(
 				true,
@@ -67,7 +67,7 @@ describe("导航相位", () => {
 		);
 	});
 
-	test("改筛选：旧结果已经不成立，塌成骨架屏", () => {
+	test("改筛选时旧结果不再成立，显示骨架屏", () => {
 		assert.deepEqual(
 			navPhase(true, spot("a", { ...QUERY, strong: true }), spot("a", QUERY)),
 			{ growing: false, navigating: true },

@@ -1,12 +1,12 @@
 /**
  * 库对写入的完整性要求：**这些错必须在写入那一刻就写不进去。**
  *
- * 日期倒置、零月经历、挂在不存在的人身上的经历段、四路之外的路——每一种落进
- * 库里之后都只会表现为「名单有点怪」，没有任何断言会红。所以它们归约束，不归
+ * 日期倒置、零月经历、挂在不存在的人身上的经历段、四类之外的路——每一种落进
+ * 库里之后都只会表现为「名单有点怪」，不会有任何断言失败。所以它们归约束，不归
  * 应用代码：导入换一个适配器、检索换一种取数，这道关卡都还在。
  *
  * 认的是约束**名**（`fixture.ts` 的 `violates`）：认文案的话，被另一条约束拒绝
- * 也可能凑巧含着这几个字，测试照样绿。
+ * 也可能凑巧含着这几个字，测试照样通过。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
@@ -69,7 +69,7 @@ describe("检索数据约束", () => {
 		);
 	});
 
-	test("说法只能挂在四路之一上", async () => {
+	test("说法只能挂在已知的 route 上", async () => {
 		await assert.rejects(
 			db.execute(sql`
 				insert into experience_phrase (experience_id, route, phrase_id)

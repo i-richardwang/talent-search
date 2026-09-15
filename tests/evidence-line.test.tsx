@@ -12,7 +12,7 @@
  * 所以每一路都单独测一遍。
  *
  * 点是 aria-hidden 的，强度全在类名里——正好是 `visibleText` 要防的形态：
- * 属性完整、人眼却什么都看不到。所以断言的一律是可见文本，只有「近因」那一档
+ * 属性完整、肉眼却什么都看不到。所以断言的一律是可见文本，只有「近因」那一档
  * 因为编码在字色上，才去看类名。
  */
 import assert from "node:assert/strict";
@@ -108,7 +108,7 @@ describe("一行证据看得见的部分", () => {
 		assert.match(byOrg, /算法平台部/);
 	});
 
-	test("简历原文这一路不假装引用了一句原文", () => {
+	test("简历原文命中时不显示引用的原文", () => {
 		// 命中事实里根本不带原文片段（见 search/result.ts 的 Hit）。
 		// 摆一段岗位名出来当引文，等于把最弱的一路伪装成可核对的证据。
 		const said = seen(
@@ -121,7 +121,7 @@ describe("一行证据看得见的部分", () => {
 		assert.match(said, /某部门/);
 	});
 
-	test("抽取的两路：技能写出类型，做过的事只写说法本身", () => {
+	test("抽取的两类：技能写出类型，做过的事只写说法本身", () => {
 		const bySkill = seen(
 			hit({ route: "skill", phrase: "Spark", value: "Spark" }),
 			basis({ route: "skill", value: "Spark" }),
@@ -145,7 +145,7 @@ describe("一行证据看得见的部分", () => {
 	});
 });
 
-describe("没命中的条件收成一行", () => {
+describe("没命中的条件合成一行", () => {
 	const missed = (names: string[]) =>
 		visibleText(renderToStaticMarkup(<MissedClaims names={names} />));
 

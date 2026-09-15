@@ -164,7 +164,7 @@ function whatOf(raw: unknown): string[] {
 /**
  * 一列不可信的取值 → 词表维上的取值，写成这一维自己的身份（`dimId`）。
  * 读不回来的丢掉：一个「资深」在屏幕上画得出来、在检索里却不筛任何人，那是
- * 一枚说谎的 chip。取值在不在**词表**里这里不查——RPC 这一侧没有词表，而模型
+ * 一个说谎的 chip。取值在不在**词表**里这里不查——RPC 这一侧没有词表，而模型
  * 那一侧是唯一会写出词表外取值的来源，它多一道检查（`intent.ts`）。
  */
 function dimList<K extends (typeof VOCAB_KEYS)[number]>(
@@ -258,7 +258,7 @@ export function conditionKey(condition: Condition): string {
 	return JSON.stringify(rest);
 }
 
-/** 把停用的那些摘掉。检索、证据行、分面都只看这一份。 */
+/** 把停用的那些去掉。检索、证据行、分面都只看这一份。 */
 export function activeConditions(list: readonly Condition[]): Condition[] {
 	return list.filter((c) => !c.off);
 }
@@ -291,7 +291,7 @@ export type Part =
 	| { key: "kind"; value: Kind }
 	| { key: "minMonths"; value: number };
 
-/** 一条条件拆成可以单独拿掉的几项，按屏幕上念的顺序。 */
+/** 一条条件拆成可以单独拿掉的几项，按屏幕上显示的顺序。 */
 export function partsOf(condition: Condition): Part[] {
 	if (condition.about === "person")
 		return condition.values.map((value) => ({ key: "values", value }));

@@ -58,7 +58,7 @@ export function ym(date: string) {
  * 贪心装箱：按开始时间排，每一段放进第一条已经空出来的轨。不重叠的人只会得到
  * 一条轨，带子还是一条线。
  *
- * 导出是为了单测：这段几何算错了页面上只是「看起来怪」，没有任何断言会红。
+ * 导出是为了单测：这段几何算错了页面上只是「看起来怪」，不会有任何断言失败。
  */
 export function packLanes(spans: { start: number; end: number }[]): number[] {
 	const laneEnds: number[] = [];

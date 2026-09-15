@@ -48,7 +48,7 @@ const EXAMPLES = [
  *
  * 标题走 `EmptyTitle` 的原生档（20px）。汉字系统字没有拉丁 display 字那种放大
  * 之后还成立的字形，撑成一行大字会读成横幅标语；这一屏的重量由中间那块多行的
- * 输入面去扛，不由字号扛。
+ * 输入面承担，不由字号承担。
  */
 export function ZeroState({
 	onQuery,
@@ -82,7 +82,7 @@ export function ZeroState({
 			    宽度写成 `max-w-(--container-page)` 而不是 `max-w-page`：这一处要盖掉
 			    组件自带的 `max-w-sm`，而盖不盖得掉由 `cn` 里的 tailwind-merge 决定，
 			    它只认得变量形式；类名形式它当成两个无关的类，两条规则一起进 CSS，
-			    最后按样式表里的先后决胜负——`.max-w-sm` 排在后面，赢的是 24rem，
+			    最后按样式表里的先后决胜负——`.max-w-sm` 排在后面，生效的是 24rem，
 			    而且构建、类型、测试全绿。别处的 `max-w-page` 都写在没人跟它抢的
 			    普通 div 上，那里怎么写都对。
 

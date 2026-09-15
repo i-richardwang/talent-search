@@ -2,7 +2,7 @@
  * 职业轨迹条的几何。
  *
  * 这一份非测不可：带子上的每一个数都是算出来的百分比，算错了页面上只是
- * 「看起来有点怪」——没有任何断言会红，tsc / biome / build 全绿，而少画一段
+ * 「看起来有点怪」——不会有任何断言失败，tsc / biome / build 全绿，而少画一段
  * 经历和画错一段经历在视觉上几乎一样。真正咬人的是重叠：入职前经历与在职
  * 经历来自两张表，同一段时间各登记一条是常态，单轨绝对定位下后画的会把前
  * 一条整个盖住。所以分轨那一条单独测。
@@ -84,7 +84,7 @@ describe("带子的几何", () => {
 		exp(2, "2020-01-01", "2024-01-01"),
 	];
 
-	test("起点贴左边，跨度按真实月数摊开", () => {
+	test("起点对齐左边，跨度按真实月数计算", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar hireDate={null} hitIndex={new Map()} rows={rows} />,
 		);
@@ -110,7 +110,7 @@ describe("带子的几何", () => {
 		assert.equal(missed?.top, "3px");
 	});
 
-	test("受控字段命中才是绿的，未命中段永远不上色", () => {
+	test("受控字段命中才是绿的，未命中段不着色", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
@@ -125,7 +125,7 @@ describe("带子的几何", () => {
 		assert.ok(!classes[1]?.includes("bg-success"));
 	});
 
-	test("简历原文那一路不是绿的——强度编码在这里和点阵同义", () => {
+	test("简历原文命中不是绿的，强度编码与点阵一致", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
@@ -138,7 +138,7 @@ describe("带子的几何", () => {
 		assert.ok(first.includes("ring"));
 	});
 
-	test("入职线落在它该在的比例上", () => {
+	test("入职线按比例定位", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar hireDate="2020-01-01" hitIndex={new Map()} rows={rows} />,
 		);
@@ -146,7 +146,7 @@ describe("带子的几何", () => {
 		assert.match(html, /入职 2020/);
 	});
 
-	test("入职日落在经历跨度之外时不画线，也不画标签", () => {
+	test("入职日落在经历跨度之外时不显示线和标签", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar hireDate="1999-01-01" hitIndex={new Map()} rows={rows} />,
 		);
@@ -165,7 +165,7 @@ describe("带子的几何", () => {
 		assert.ok(!html.includes("NaN"));
 	});
 
-	test("一段经历都没有就整块不画", () => {
+	test("一段经历都没有时不渲染", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar hireDate="2020-01-01" hitIndex={new Map()} rows={[]} />,
 		);

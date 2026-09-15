@@ -3,7 +3,7 @@
  *
  * 这组测试测的是**口径**：每一项后面的数是「选了它之后还剩多少人」，和表头
  * 那句「N 人」同一个单位，所以它必须和主检索用同一套 AND 语义。误计成经历段
- * 的话，分面会远大于结果人数，两个数字在同一屏上互相拆台。
+ * 的话，分面会远大于结果人数，两个数字在同一屏上互相矛盾。
  *
  * 种子是这个文件自己的：那条穷举不变量（每一维每一个候选都真的搜一遍）只有
  * 在语料确定的时候才说得清自己验到了什么——搭在别处攒出来的语料上，某一维
@@ -172,7 +172,7 @@ describe("候选与计数", () => {
 		assert.equal(seqOf(facets).get("技术/算法"), undefined);
 	});
 
-	test("算某一维时要摘掉这一维自己的筛选，否则选中之后就切不动了", async () => {
+	test("算某一维时要去掉这一维自己的筛选，否则选中之后就切不动了", async () => {
 		const { facets, results } = await run("算法", {
 			seq: [{ l1: "技术", l2: "算法" }],
 		});
@@ -328,7 +328,7 @@ describe("分面预告的数就是点下去会得到的数", () => {
 			const { total } = await run(QUERY, { ...picked, level: [row.value] });
 			assert.equal(total, row.n, `level ${row.value}`);
 		}
-		// 自己这一维摘掉自己：选中一项之后，同维其余项报的不是 0
+		// 自己这一维去掉自己：选中一项之后，同维其余项报的不是 0
 		for (const row of base.facets.kind) {
 			const { total } = await run(QUERY, { ...picked, kind: row.value });
 			assert.equal(total, row.n, `kind ${row.value}`);

@@ -42,7 +42,7 @@ const TRUE_VALUES = new Set(["true", "1", "y", "yes", "是"]);
  * 契约列，报出来的却是「缺少 emp_id」，人对着文件怎么看都有。
  *
  * 列齐不齐由契约（`sourceData`）判，不在这里判一遍：两处判，改契约列的人就得
- * 记得改两处，而只有一处会红。
+ * 记得改两处，而只有一处会失败。
  */
 async function read(
 	directory: string,

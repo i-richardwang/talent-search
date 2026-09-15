@@ -88,7 +88,7 @@ describe("收窄", () => {
 		]);
 	});
 
-	test("别的一律当没对上", () => {
+	test("其余组合一律视为没对上", () => {
 		for (const raw of [
 			{ l1: "技术", l2: "推荐" },
 			{ l1: "技术", l2: "" },
@@ -137,7 +137,7 @@ describe("对齐", () => {
 		);
 	});
 
-	test("树是空的时候，一次端点都不打", async () => {
+	test("树是空的时候不请求端点", async () => {
 		const rows = corpus(["算法工程师", ""]).filter(
 			(row) => row.kind === "external",
 		);

@@ -131,7 +131,7 @@ describe("收窄", () => {
 		assert.equal(conform({ skills: many, did: [] }, "").skills.length, 12);
 	});
 
-	test("不成形状的原话收成空", () => {
+	test("格式不对的原话解析为空", () => {
 		assert.deepEqual(conform("nope", ""), EMPTY);
 		assert.deepEqual(conform({ skills: "Python" }, ""), EMPTY);
 	});
