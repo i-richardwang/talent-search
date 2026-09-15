@@ -5,7 +5,7 @@
  * 这是唯一一处把整条语料链路连起来跑的测试。链路上的每一段单独看都对得上、
  * 连起来却可能对不上：暂存表的列、`unnest` 每一列的类型、段的内容键有没有让
  * 派生结果跨同步活下来、说法和边有没有指对。这些错一旦发生，屏幕上的表现是
- * 「搜什么都搜不到」，而没有任何一个单元测试会红。
+ * 「搜什么都搜不到」，而不会有任何单元测试失败。
  *
  * 端点是进程内那三台假的，所以这里量的是**机制**，不是抽得准不准。
  */
@@ -17,7 +17,9 @@ import { answerChat, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { runTask, tasksState, derivePending } = await import("#/server/tasks");
+const { runTask, tasksState, taskLog, derivePending } = await import(
+	"#/server/tasks"
+);
 const { phrasePlan } = await import("#/corpus/derive");
 const { facts } = await import("#/routes/tasks");
 const { acquireCorpusSession, corpusSessionActive } = await import(
@@ -61,6 +63,16 @@ function lane(state: Awaited<ReturnType<typeof tasksState>>, kind: string) {
 	return found;
 }
 
+/** 这一栏最近的一次运行。记录按时间倒着排，最新的那一行在最前面。 */
+function latest(state: Awaited<ReturnType<typeof tasksState>>, kind: string) {
+	return lane(state, kind).runs[0];
+}
+
+/** 那一次说过的每一行。状态里不带日志，要单取。 */
+async function logText(runId: number | undefined): Promise<string> {
+	return runId === undefined ? "" : (await taskLog(runId)).join("\n");
+}
+
 describe("同步与派生", () => {
 	let restore = () => {};
 	before(() => {
@@ -90,10 +102,10 @@ describe("同步与派生", () => {
 		assert.equal(await derivePending(), await count("experience"));
 
 		const state = await tasksState();
-		const sync = lane(state, "sync");
-		assert.equal(sync.latest?.outcome, "done");
-		assert.equal(sync.latest?.source, "csv-dir");
-		assert.match(sync.latest?.log.join("\n") ?? "", /人群 20 人/);
+		const sync = latest(state, "sync");
+		assert.equal(sync?.outcome, "done");
+		assert.equal(sync?.source, "csv-dir");
+		assert.match(await logText(sync?.id), /人群 20 人/);
 		assert.equal(state.corpus.pending, state.corpus.segments);
 	});
 
@@ -104,7 +116,7 @@ describe("同步与派生", () => {
 
 		assert.ok((await count("phrase")) > 0);
 		assert.ok((await count("experience_phrase")) > 0);
-		// 抽取的两路确实指回了经历段
+		// 抽取的两类确实指回了经历段
 		assert.ok((await count("experience_phrase", "route = 'skill'")) > 0);
 		// 对齐只写推断的两列，登记的三列不动
 		assert.ok(
@@ -114,7 +126,7 @@ describe("同步与派生", () => {
 			)) > 0,
 		);
 		assert.equal(await derivePending(), 0);
-		assert.equal(lane(await tasksState(), "derive").latest?.outcome, "done");
+		assert.equal(latest(await tasksState(), "derive")?.outcome, "done");
 	});
 
 	test("数据页看得到每一段的派生结果", async () => {
@@ -196,33 +208,33 @@ describe("同步与派生", () => {
 		assert.equal(await count("experience", `id = ${changed}`), 0);
 		assert.equal(await derivePending(), 1);
 		assert.match(
-			lane(await tasksState(), "sync").latest?.log.join("\n") ?? "",
+			await logText(latest(await tasksState(), "sync")?.id),
 			/新来 1 段、离开 1 段/,
 		);
 	});
 
 	/*
-	 * 任务台那条路：后台开一轮，过程长在那一行上，页面隔一会儿看一眼。
-	 * 从「正在跑」到「成功」之间不许有一刻读作「中断」——判据是先看锁、再看行，
+	 * 任务台那条路：后台开一轮，过程记录在那一行上，页面隔一会儿看一眼。
+	 * 从「正在跑」到「成功」之间不能有一刻读作「中断」——判据是先看锁、再看行，
 	 * 而行是写完了才放锁的；这两条哪一条反了，页面就会在收尾那一瞬停掉轮询。
 	 */
 	test("后台跑的那一轮：一路轮询到成功，中间没有一刻像中断", async () => {
 		const running = runTask("derive");
 		const seen = new Set<TaskOutcome>();
 		let state = await tasksState();
-		while (lane(state, "derive").latest?.outcome === "running") {
+		while (latest(state, "derive")?.outcome === "running") {
 			seen.add("running");
 			await new Promise((resolve) => setTimeout(resolve, 20));
 			state = await tasksState();
 		}
 		const run = await running;
 		assert.ok(run);
-		const latest = lane(await tasksState(), "derive").latest;
-		assert.equal(latest?.id, run.runId);
-		seen.add(latest?.outcome ?? "interrupted");
+		const final = latest(await tasksState(), "derive");
+		assert.equal(final?.id, run.runId);
+		seen.add(final?.outcome ?? "interrupted");
 
 		assert.ok(!seen.has("interrupted"), "没有一刻读作中断");
-		assert.equal(latest?.outcome, "done");
+		assert.equal(final?.outcome, "done");
 		assert.equal(await derivePending(), 0);
 	});
 
@@ -230,26 +242,26 @@ describe("同步与派生", () => {
 	 * 进程跑到一半没了，留下一行没有结束时间的记录。它读作「中断」而不是
 	 * 「正在跑」——判据是锁，而锁随着那个进程一起没了。
 	 */
-	test("中断的那一行读作中断，不挡住下一次", async () => {
+	test("中断的记录标记为中断，不影响下一次触发", async () => {
 		const [stale] = await db
 			.insert(taskRun)
 			.values({ kind: "review", log: ["跑到一半进程没了"] })
 			.returning({ id: taskRun.id });
 		assert.ok(stale);
 
-		const before = lane(await tasksState(), "review");
-		assert.equal(before.latest?.id, stale.id);
-		assert.equal(before.latest?.outcome, "interrupted");
-		assert.equal(before.latest?.seconds, null);
+		const stopped = latest(await tasksState(), "review");
+		assert.equal(stopped?.id, stale.id);
+		assert.equal(stopped?.outcome, "interrupted");
+		assert.equal(stopped?.seconds, null);
 
 		const run = await runTask("review");
 		assert.ok(run);
 		assert.equal(run.failure, null);
 
-		const after = lane(await tasksState(), "review");
-		assert.equal(after.latest?.outcome, "done");
+		const runs = lane(await tasksState(), "review").runs;
+		assert.equal(runs[0]?.outcome, "done");
 		assert.equal(
-			after.history.find((one) => one.id === stale.id)?.outcome,
+			runs.find((one) => one.id === stale.id)?.outcome,
 			"interrupted",
 		);
 	});
@@ -272,10 +284,10 @@ describe("同步与派生", () => {
 		}
 		assert.match(failure ?? "", /读取数据源 没有这个适配器 失败/);
 
-		const latest = lane(await tasksState(), "sync").latest;
-		assert.equal(latest?.outcome, "failed");
-		assert.equal(latest?.error, failure);
-		const log = latest?.log.join("\n") ?? "";
+		const broken = latest(await tasksState(), "sync");
+		assert.equal(broken?.outcome, "failed");
+		assert.equal(broken?.error, failure);
+		const log = await logText(broken?.id);
 		assert.match(log, /✖ 读取数据源/);
 		// 来由那一层：模块加载自己报的话，不是我们替它编的
 		assert.match(log, /↳/);
@@ -289,7 +301,7 @@ describe("同步与派生", () => {
 		assert.ok(run);
 		assert.equal(run.failure, null);
 		assert.match(
-			lane(await tasksState(), "derive").latest?.log.join("\n") ?? "",
+			await logText(latest(await tasksState(), "derive")?.id),
 			/嵌入空间从 old-space/,
 		);
 		const { rows } = await db.execute<{ space_id: string }>(
@@ -395,11 +407,11 @@ describe("说法规划", () => {
 		);
 	});
 
-	test("空语料没有说法也没有边", () => {
+	test("空语料不产出说法和边", () => {
 		assert.deepEqual(phrasePlan([], []), { texts: [], links: [] });
 	});
 
-	test("抽出来的两路和登记的三路共用同一张说法表；读过的段原文不再是说法", () => {
+	test("抽出来的两类和登记的三类共用同一张说法表；读过的段原文不再是说法", () => {
 		// 能力词「算法工程师」和第 1 段的岗位名是同一串字：只嵌一次，两条边各成一条边
 		const { texts, links } = phrasePlan(
 			[segment({}), outside],
@@ -441,7 +453,7 @@ describe("说法规划", () => {
 	});
 });
 
-describe("页面上那几句话", () => {
+describe("页面文案", () => {
 	const corpus = (over: Partial<CorpusCounts> = {}): CorpusCounts => ({
 		employees: 8,
 		external: 4,

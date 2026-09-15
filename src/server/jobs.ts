@@ -6,7 +6,7 @@
  * 任务台上「排着还是在跑」的答案也就有了出处，不用本进程记。
  *
  * 两个队列都是 `exclusive`：排着或在跑的至多一个。定时器每几分钟发一个派生任务，
- * 上一轮还没跑完时这一发被吞掉，不堆积；任务台「现在跑一次」发的也是同一种任务，
+ * 上一轮还没跑完时这一发被吞掉，不堆积；任务台「立即运行」发的也是同一种任务，
  * 同样规则。
  *
  * 任务本身不在这里：处理函数只做「该不该跑」的判断，然后交给 `tasks.ts` 的
@@ -75,7 +75,7 @@ export function startJobs(): Promise<void> {
 
 /**
  * 现在就来一次。排着或在跑的已经有一个时什么都不发，返回 false——任务台据此
- * 说「已经在排了」。
+ * 说「已经有一次在排队了」。
  */
 export async function requestJob(kind: JobKind): Promise<boolean> {
 	const handle = registry[HANDLE];

@@ -1,6 +1,6 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { ChevronDownIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import {
@@ -16,7 +16,16 @@ import {
 	CollapsiblePanel,
 	CollapsibleTrigger,
 } from "#/components/ui/collapsible";
-import { ScrollArea } from "#/components/ui/scroll-area";
+import {
+	Dialog,
+	DialogDescription,
+	DialogHeader,
+	DialogPanel,
+	DialogPopup,
+	DialogTitle,
+	DialogTrigger,
+} from "#/components/ui/dialog";
+import { Spinner } from "#/components/ui/spinner";
 import {
 	Table,
 	TableBody,
@@ -25,13 +34,15 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
+import type { Judge } from "#/corpus/questions";
 import type { TaskKind } from "#/db/schema";
 import { dots } from "#/lib/format";
-import { requestTask, tasksStatus } from "#/server/functions";
+import { requestTask, taskLog, tasksStatus } from "#/server/functions";
 import type { JobKind } from "#/server/jobs";
 import type { CorpusCounts, TaskLane, TaskRunView } from "#/server/tasks";
 import { AdminPage } from "./-components/admin-page";
 import { StatusBadge, type StatusTone } from "./-components/status-badge";
+import { reviewStatus } from "./-lib/review-status";
 
 const NAME: Record<TaskKind, string> = {
 	sync: "同步",
@@ -40,23 +51,26 @@ const NAME: Record<TaskKind, string> = {
 };
 
 /**
- * 任务台：语料侧三种任务各自管着多少东西、上一次怎么样、还剩多少活。
+ * 任务台：语料侧三种任务各自管着多少东西、上一次的结果、还剩多少活。
  *
- * 同步是外面按节奏跑的脚本（`bun run sync`），派生和整理是应用自己持续在做的
- * 后台工作（`src/server/jobs.ts`）；三者都落成 `task_run` 的行。派生和整理可以
- * 从这里「现在跑一次」，同步不行——它读的是别处的数据，什么时候读由外面定。
+ * 同步是外面按节奏跑的脚本（`bun run sync`），解析和整理是应用自己持续在做的
+ * 后台任务（`src/server/jobs.ts`）；三者都落成 `task_run` 的行。解析和整理可以
+ * 从这里立即运行一次，同步不行——它读的是别处的数据，什么时候读由外面定。
  *
- * **屏幕上是此刻的语料，不是一份终端回放。** 每张卡片上那一行数问的是库
+ * **卡片上是此刻的语料，不是一次运行的回放。** 每张卡片上那一行数问的是库
  * （`corpusCounts`），不是上一次跑的记录：一次运行说过的「人群 20 人」是那一刻的
- * 快照，跑完就开始过期，照着它报数等于在屏幕上留一个没人维护的旧值。上千行的过程
- * 收在每张卡片自己的折叠里，要排查的时候才展开。
+ * 快照，跑完就开始过期，照着它显示数字等于在屏幕上留一个没人维护的旧值。
  *
- * 三栏竖着排，一栏一张卡片，管着这一栏的全部事——节奏、此刻怎么样、库里有多少、
- * 它自己的「现在跑一次」，以及展开来的过程。三张同时在场才叫一块板：要点开才知道
- * 哪一栏出了事，就等于没有板；也因此没有切换，卡片不可点。
+ * 运行记录只列结果：什么时候开始、用了多久、成功还是失败。一次运行说过的那上千行
+ * 是排查用的，收在它自己那一行的「日志」里，打开才去取——它既不是这一页要回答的
+ * 问题，也不该跟着每两秒一次的轮询一起搬。
  *
- * 卡片的排法照 coss 文档站首页那种展示卡：`CardFrame` 托盘上是抬头（名字、节奏、
- * 右侧一个动作），托盘里嵌着一块 `Card` 装内容，外面再落一圈离开 5px 的发丝线。
+ * 三栏竖着排，一栏一张卡片，管着这一栏的全部事——此刻怎么样、库里有多少、它自己的
+ * 「立即运行」，以及运行记录。三张同时在场才叫一块板：要点开才知道哪一栏出了事，
+ * 就等于没有板；也因此没有切换，卡片不可点。
+ *
+ * 卡片的排法照 coss 文档站首页那种展示卡：`CardFrame` 托盘上是抬头（名字和右侧
+ * 一个动作），托盘里嵌着一块 `Card` 装内容，外面再落一圈离开 5px 的发丝线。
  */
 export const Route = createFileRoute("/tasks")({
 	loader: () => tasksStatus(),
@@ -69,15 +83,15 @@ const POLL_BUSY_MS = 2000;
 const POLL_IDLE_MS = 10_000;
 
 /**
- * 一行记录在这一页上说成什么。
+ * 一次运行的结果在这一页上说成什么。
  *
  * 判成哪一种不在这一侧——那要问「此刻锁在谁手上」，只有服务端答得了
  * （`src/server/tasks.ts`）。这里只把它译成字。
  */
-const SAID: Record<TaskRunView["outcome"], string> = {
-	running: "正在跑",
-	interrupted: "中断，没有跑完",
-	failed: "失败了",
+const RESULT: Record<TaskRunView["outcome"], string> = {
+	running: "正在运行",
+	interrupted: "中断",
+	failed: "失败",
 	done: "成功",
 };
 
@@ -89,13 +103,14 @@ const TONE: Record<TaskRunView["outcome"], StatusTone> = {
 };
 
 /**
- * 这一栏此刻要不要报一声，报哪一种：正在跑的，和没跑完的。
+ * 这一栏此刻要不要提示，提示哪一种：正在运行的，和没跑完的。
  *
  * 成功不报——常态不发徽章，三张卡片上三块一模一样的绿等于没有信息，而这块板
- * 真正要人看见的是「有一栏出事了」。
+ * 真正要人看见的是「有一栏出事了」。运行记录里每一行都带结果，那是另一件事：
+ * 在一列里挨着扫的时候，成功也得占一个位置。
  */
-function alertTone(lane: TaskLane): StatusTone | null {
-	const outcome = lane.latest?.outcome;
+function alertTone(latest: TaskRunView | undefined): StatusTone | null {
+	const outcome = latest?.outcome;
 	return outcome === undefined || outcome === "done" ? null : TONE[outcome];
 }
 
@@ -122,20 +137,22 @@ export const facts: Record<TaskKind, (corpus: CorpusCounts) => string> = {
 		),
 };
 
-/** 卡片上那行小字：这一次从几点开始，或者上一次几点、用了多久。 */
-function when(latest: TaskLane["latest"]): string {
-	if (!latest) return "还没跑过";
+/**
+ * 卡片上那行小字：这一次什么时候开始的，或者上一次什么时候。
+ *
+ * 不带用时。用时是拿来比几次运行的，它在运行记录那张表里有一列；摆在这里就成了
+ * 同一个数写两遍，而卡片正面要答的只是「这份语料是什么时候的」。
+ */
+function when(latest: TaskRunView | undefined): string {
+	if (!latest) return "还没有运行过";
 	if (latest.outcome === "running") return `${latest.startedAt} 开始`;
-	return dots(
-		`上一次 ${latest.startedAt}`,
-		latest.seconds === null ? null : `用时 ${latest.seconds}s`,
-	);
+	return `上次运行 ${latest.startedAt}`;
 }
 
 function Tasks() {
 	const state = Route.useLoaderData();
 	const router = useRouter();
-	const running = state.lanes.find((one) => one.latest?.outcome === "running");
+	const running = state.lanes.find((one) => one.runs[0]?.outcome === "running");
 
 	useEffect(() => {
 		const timer = setInterval(
@@ -147,13 +164,13 @@ function Tasks() {
 
 	return (
 		<AdminPage title="任务">
-			{/* 卡片外面那圈发丝线离开 5px，所以卡片之间的沟槽也得宽一档，不然两圈线贴在一起 */}
+			{/* 卡片外面那圈发丝线离开 5px，所以卡片之间的间距也得宽一档，不然两圈线贴在一起 */}
 			<ul className="flex flex-col gap-6">
 				{state.lanes.map((one) => (
 					<LaneCard
 						busy={running !== undefined}
-						closed={state.judge === "off"}
 						corpus={state.corpus}
+						judge={state.judge}
 						key={one.kind}
 						lane={one}
 						onDone={() => router.invalidate()}
@@ -165,27 +182,28 @@ function Tasks() {
 }
 
 /**
- * 一种任务的那张卡片：名字、节奏、此刻怎么样、这一次做成了什么，以及「现在跑一次」。
+ * 一种任务的那张卡片：名字、此刻怎么样、这一栏管的东西有多少，以及「立即运行」。
  *
- * 一张卡片管一栏的全部事，所以按钮和折叠都在卡片里——这块板不可点，卡片里套一个
- * 按钮不会变成「能点的块里套能点的块」。同步没有「现在跑一次」：它读的是别处的
+ * 一张卡片管一栏的全部事，所以按钮和运行记录都在卡片里——这块板不可点，卡片里套一个
+ * 按钮不会变成「能点的块里套能点的块」。同步没有「立即运行」：它读的是别处的
  * 数据，什么时候读由外面定。
  */
 function LaneCard({
 	lane,
 	corpus,
 	busy,
-	closed,
+	judge,
 	onDone,
 }: {
 	lane: TaskLane;
 	corpus: CorpusCounts;
 	busy: boolean;
-	/** 整理是不是关掉了（`REVIEW_JUDGE=off`），只对整理那一栏有意义 */
-	closed: boolean;
+	/** 整理此刻由谁判，`off` 就是整理关掉了。只对整理那一栏有意义 */
+	judge: Judge;
 	onDone: () => void;
 }) {
-	const { kind, latest } = lane;
+	const { kind, runs } = lane;
+	const latest = runs[0];
 	const [requesting, setRequesting] = useState(false);
 	const [declined, setDeclined] = useState(false);
 	/*
@@ -193,8 +211,10 @@ function LaneCard({
 	 * 发生——那就不给按钮。画一个按了没反应的按钮比没有按钮糟。
 	 */
 	const job =
-		kind === "sync" || (kind === "review" && closed) ? null : (kind as JobKind);
-	const tone = alertTone(lane);
+		kind === "sync" || (kind === "review" && judge === "off")
+			? null
+			: (kind as JobKind);
+	const tone = alertTone(latest);
 
 	async function request() {
 		if (!job) return;
@@ -225,7 +245,7 @@ function LaneCard({
 							size="sm"
 							variant="outline"
 						>
-							现在跑一次
+							立即运行
 						</Button>
 					</CardFrameAction>
 				)}
@@ -234,13 +254,13 @@ function LaneCard({
 				<CardPanel className="flex flex-col gap-4">
 					<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
 						{tone && latest && (
-							<StatusBadge tone={tone}>{SAID[latest.outcome]}</StatusBadge>
+							<StatusBadge tone={tone}>{RESULT[latest.outcome]}</StatusBadge>
 						)}
 						<p className="text-muted-foreground text-xs">{when(latest)}</p>
 						{declined && (
-							/* 这句话说的是那一下按键，用过去时；活到下一下按下去为止 */
+							/* 说的是刚才按的那一下，留到下一次按下为止 */
 							<p className="text-muted-foreground text-xs">
-								按下去的时候已经排着一次了
+								已经有一次在排队了
 							</p>
 						)}
 					</div>
@@ -250,18 +270,19 @@ function LaneCard({
 						 * 失败了」，读不成命中（绿）、选中（蓝）或要留意的状态（amber）。
 						 */
 						<Alert variant="error">
-							<AlertTitle>这次{NAME[kind]}没有跑完</AlertTitle>
+							<AlertTitle>这次{NAME[kind]}失败</AlertTitle>
 							<AlertDescription>{latest.error}</AlertDescription>
 						</Alert>
 					)}
 					<p className="text-sm">{facts[kind](corpus)}</p>
-					{kind === "review" && closed && (
-						/* 关掉的那一栏永远不会再有新记录，卡片上得说出来，不然它只是看着闲着 */
+					{kind === "review" && judge === "off" && (
+						/* 关掉的那一栏永远不会再有新记录，卡片上得说出来，不然它只是看着
+						   闲着。说法和词表页顶上那一句同一个出处（`-lib/review-status.ts`）。 */
 						<p className="text-muted-foreground text-xs">
-							自动整理已关闭，词表不再更新
+							{reviewStatus({ judge })}
 						</p>
 					)}
-					{latest && <Detail lane={lane} />}
+					{runs.length > 0 && <RunHistory kind={kind} runs={runs} />}
 				</CardPanel>
 			</Card>
 		</CardFrame>
@@ -269,13 +290,13 @@ function LaneCard({
 }
 
 /**
- * 收起来的那一半：这一次的全部输出，和更早的几次。
+ * 收起来的那一半：这一栏最近几次运行，最新的一次在最上面。
  *
- * 它们是排查用的，不是这一页平时要答的问题，所以默认收着——`Collapsible` 关着的
- * 时候面根本不挂载，那上千行也就不进 DOM。
+ * 三列答的是同一个问题的三面——什么时候开始、用了多久、结果是什么；失败那一行
+ * 在结果下面带上原因，因为一次失败的运行，除了「失败」之外唯一要说的就是为什么。
+ * 默认收着：卡片正面已经答了「此刻怎么样」，比较几次运行是排查时才做的事。
  */
-function Detail({ lane }: { lane: TaskLane }) {
-	const { latest, history } = lane;
+function RunHistory({ kind, runs }: { kind: TaskKind; runs: TaskRunView[] }) {
 	return (
 		<Collapsible className="flex flex-col gap-3">
 			<CollapsibleTrigger
@@ -283,92 +304,105 @@ function Detail({ lane }: { lane: TaskLane }) {
 				render={<Button size="sm" variant="ghost" />}
 			>
 				<ChevronDownIcon className="size-4" />
-				输出与更早的几次
+				运行记录
 			</CollapsibleTrigger>
 			<CollapsiblePanel>
-				<div className="flex flex-col gap-4">
-					{latest && (
-						/* 内边距归里面的 `pre`，于是滚动条贴着这块面的边走 */
-						<Card className="h-(--task-log-height) p-0">
-							<RunLog lines={latest.log} />
-						</Card>
-					)}
-					{history.length > 0 && <History runs={history} />}
-				</div>
+				<CardFrame>
+					<Table variant="card">
+						<TableHeader>
+							<TableRow>
+								<TableHead>开始</TableHead>
+								<TableHead className="text-end">用时</TableHead>
+								<TableHead>结果</TableHead>
+								{/* 每一行末尾那个按钮不需要列名，但表头得有这一格才对得齐 */}
+								<TableHead>
+									<span className="sr-only">日志</span>
+								</TableHead>
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{runs.map((run) => (
+								<TableRow key={run.id}>
+									<TableCell className="tabular-nums">
+										{run.startedAt}
+									</TableCell>
+									<TableCell className="text-end tabular-nums">
+										{run.seconds === null ? "—" : `${run.seconds}s`}
+									</TableCell>
+									<TableCell className="whitespace-normal">
+										<StatusBadge tone={TONE[run.outcome]}>
+											{RESULT[run.outcome]}
+										</StatusBadge>
+										{run.error && (
+											<p className="mt-1.5 text-muted-foreground text-xs">
+												{run.error}
+											</p>
+										)}
+									</TableCell>
+									<TableCell className="text-end">
+										<RunLog kind={kind} run={run} />
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+				</CardFrame>
 			</CollapsiblePanel>
 		</Collapsible>
 	);
 }
 
-/** 贴着末尾看的时候，多出来的行还算不算「贴着」。半行的余量。 */
-const TAIL_SLACK = 16;
-
 /**
- * 这一次说过的每一行——命令行里滚过去的那些字。等宽字体：这些行靠缩进分层级；
- * 行高比正文松一档，几百行连着扫才不糊成一片。
+ * 一次运行说过的每一行，打开才取。
  *
- * **高度是版面给的，不是内容给的**（`--task-log-height`），里面自己滚：一轮整理
- * 能说上千行，跟着长的话这一栏就有几十屏，而底下两栏会被推到看不见。
+ * 这些行是**排查用的**：拒绝了几段、为什么拒绝、合并了哪些写法。一轮整理能说上千行，
+ * 它们回答不了这一页的任何一个问题，所以既不摆在卡片上，也不跟着状态一起载入
+ * （`src/server/tasks.ts` 的 `taskLog`）——每两秒一次的轮询不必搬着它们走。
  *
- * 新的行进来时跟着末尾走，除非人自己往上翻过——正在跑的那一栏每两秒来一批，
- * 不跟就等于看不到；跟得太死则是把正在读上文的人拽回底部。所以只在「这一批
- * 进来之前人本来就贴着末尾」时才跟：那一刻的位置由现在的位置减去这一批长出来的
- * 高度还原出来，不必去监听滚动。
+ * 取回来就是那一次的全文，不跟着正在跑的那一轮往下续：要盯着一行行看的人用的是
+ * 命令行，这里给的是一次运行完整的记录。
  */
-function RunLog({ lines }: { lines: string[] }) {
-	const tail = useRef<HTMLPreElement>(null);
-	const seen = useRef(0);
-
-	useEffect(() => {
-		if (lines.length === 0) return;
-		const view = tail.current?.closest("[data-slot=scroll-area-viewport]");
-		if (!(view instanceof HTMLElement)) return;
-		const grew = view.scrollHeight - seen.current;
-		seen.current = view.scrollHeight;
-		const wasAtEnd =
-			view.scrollHeight - view.scrollTop - view.clientHeight - grew <
-			TAIL_SLACK;
-		if (wasAtEnd) view.scrollTop = view.scrollHeight;
-	}, [lines.length]);
+function RunLog({ kind, run }: { kind: TaskKind; run: TaskRunView }) {
+	const [lines, setLines] = useState<string[] | null>(null);
 
 	return (
-		<ScrollArea overscrollContain>
-			<pre
-				className="whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed"
-				ref={tail}
+		<Dialog
+			onOpenChange={(open) => {
+				if (!open) return;
+				setLines(null);
+				void taskLog({ data: { runId: run.id } }).then(setLines);
+			}}
+		>
+			<DialogTrigger
+				aria-label={`${run.startedAt} 那次${NAME[kind]}的日志`}
+				render={<Button size="sm" variant="ghost" />}
 			>
-				{lines.length ? lines.join("\n") : "刚开始，还没有说什么"}
-			</pre>
-		</ScrollArea>
-	);
-}
-
-/** 更早的几次，一行一次。 */
-function History({ runs }: { runs: TaskRunView[] }) {
-	return (
-		<CardFrame>
-			<Table variant="card">
-				<TableHeader>
-					<TableRow>
-						<TableHead>开始</TableHead>
-						<TableHead className="text-end">用时</TableHead>
-						<TableHead>结果</TableHead>
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{runs.map((run) => (
-						<TableRow key={run.id}>
-							<TableCell className="tabular-nums">{run.startedAt}</TableCell>
-							<TableCell className="text-end tabular-nums">
-								{run.seconds === null ? "—" : `${run.seconds}s`}
-							</TableCell>
-							<TableCell className="whitespace-normal text-muted-foreground">
-								{run.error ?? SAID[run.outcome]}
-							</TableCell>
-						</TableRow>
-					))}
-				</TableBody>
-			</Table>
-		</CardFrame>
+				日志
+			</DialogTrigger>
+			<DialogPopup className="sm:max-w-3xl">
+				<DialogHeader>
+					<DialogTitle>运行日志</DialogTitle>
+					<DialogDescription>
+						{NAME[kind]} · {run.startedAt} 开始
+					</DialogDescription>
+				</DialogHeader>
+				{lines === null ? (
+					<DialogPanel className="flex items-center justify-center py-10">
+						<Spinner />
+					</DialogPanel>
+				) : (
+					/*
+					 * 等宽字体：这些行靠缩进分层级。行高比正文松一档，几百行连着扫才不
+					 * 糊成一片。高度由弹层给（`max-h-full`），里面自己滚。
+					 */
+					<DialogPanel
+						className="whitespace-pre-wrap font-mono text-xs leading-relaxed"
+						render={<pre />}
+					>
+						{lines.length > 0 ? lines.join("\n") : "这次运行没有输出"}
+					</DialogPanel>
+				)}
+			</DialogPopup>
+		</Dialog>
 	);
 }

@@ -3,7 +3,7 @@
  * 逻辑住在 `search.ts` / `turn.ts` / `llm.ts` 那几个服务端专属模块里。
  *
  * `createServerFn` 切走的只是 handler 的**函数体**，所以这里的规矩是：
- * **服务端模块的值只许出现在 `.handler()` 里面。**
+ * **服务端模块的值只能出现在 `.handler()` 里面。**
  *
  * 应用里还有一个服务端入口不在这里：`src/routes/api/review.ts`，外部 agent 判卷用的
  * 那条 HTTP 接口。它不给页面用——页面要的是 TypeScript 的形状，外部 agent 要的是一份
@@ -26,7 +26,7 @@ import { search } from "#/search/search";
 import { employeeData, listEmployees } from "./data";
 import { type JobKind, requestJob } from "./jobs";
 import { listSkills } from "./skills";
-import { tasksState } from "./tasks";
+import { taskLog as runLog, tasksState } from "./tasks";
 import {
 	createTurn,
 	deleteSearch,
@@ -131,10 +131,19 @@ export const skillTable = createServerFn({ method: "GET" }).handler(() =>
 	listSkills(),
 );
 
-/** 任务台的全部数据：三种任务各自最近一次的全过程、更早几次的结果、派生的活量。 */
+/** 任务台的全部数据：三种任务各自最近几次运行的结果，和语料此刻有多少东西。 */
 export const tasksStatus = createServerFn({ method: "GET" }).handler(() =>
 	tasksState(),
 );
+
+/**
+ * 某一次运行说过的每一行。任务台上打开那一次的日志时才取。
+ *
+ * 和状态分开取：日志能有上千行，而任务台在跑的时候每两秒重新载入一次状态。
+ */
+export const taskLog = createServerFn({ method: "GET" })
+	.validator((d: { runId: unknown }) => ({ runId: Number(d.runId) }))
+	.handler(({ data }) => runLog(data.runId));
 
 /**
  * 现在就跑一次派生或整理，立刻返回。

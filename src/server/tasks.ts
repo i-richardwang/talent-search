@@ -38,8 +38,8 @@ import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
 import { configured } from "./review";
 
-/** 每种任务的历史列几行。再多也没人往下看。 */
-const HISTORY = 5;
+/** 运行记录列几行。再多也没人往下看。 */
+const HISTORY = 6;
 
 /** 攒多久写一次日志。够短，页面上看着是在动的；够长，上千行不变成上千次往返。 */
 const FLUSH_MS = 400;
@@ -98,18 +98,22 @@ export type TaskRunView = {
 	outcome: TaskOutcome;
 };
 
-/** 一种任务在任务台上的一栏：最近一次连它说过的每一行，更早的几次，以及活量。 */
+/**
+ * 一种任务在任务台上的一栏：最近几次运行，最新的一次在最前面。
+ *
+ * 不带日志。一轮整理能说上千行，而任务台正在跑的时候每两秒重新载入一次——
+ * 日志按需单取（`taskLog`），页面上也只在打开某一次的日志时才用得到。
+ */
 export type TaskLane = {
 	kind: TaskKind;
-	latest: (TaskRunView & { log: string[] }) | null;
-	history: TaskRunView[];
+	runs: TaskRunView[];
 };
 
 /**
  * 语料此刻有多少东西。任务台三张卡片上的数全是它——**问库，不问上一次跑的记录**。
  *
  * 一次运行说过的「人群 20 人」是那一刻的快照，跑完就开始过期：下一次同步之后，
- * 卡片还照着上一次的记录报数，就成了屏幕上一个没人维护的旧值。这些数库里现成有，
+ * 卡片还显示上一次记录里的数字，就成了屏幕上一个没人维护的旧值。这些数库里现成有，
  * 每次载入查一遍即可（都是主键或小表上的 count，不值得为它们再开一份存储）。
  */
 export type CorpusCounts = {
@@ -143,7 +147,7 @@ type TasksState = {
 	judge: Judge;
 };
 
-type StoredRun = Omit<TaskRunView, "outcome"> & { log: string[] };
+type StoredRun = Omit<TaskRunView, "outcome">;
 
 /**
  * 一行记录现在算哪一种。
@@ -167,31 +171,24 @@ export async function tasksState(): Promise<TasksState> {
 		select id, kind, source,
 			to_char(started_at, 'MM-DD HH24:MI') as "startedAt",
 			extract(epoch from (finished_at - started_at))::int as seconds,
-			error, log
+			error
 		from (
 			select *, row_number() over (partition by kind order by started_at desc, id desc) as n
 			from task_run
 		) recent
-		where n <= ${HISTORY + 1}
+		where n <= ${HISTORY}
 		order by started_at desc, id desc`);
 	// 锁只有一个持有者，它是全表最新的那一行
 	const newest = rows[0]?.id;
-	const lanes: TaskLane[] = TASK_KINDS.map((kind) => {
-		const [latest, ...history] = rows.filter((row) => row.kind === kind);
-		return {
-			kind,
-			latest: latest
-				? {
-						...latest,
-						outcome: outcome(latest, active && latest.id === newest),
-					}
-				: null,
-			history: history.map(({ log: _log, ...view }) => ({
-				...view,
-				outcome: outcome({ ...view, log: [] }, false),
+	const lanes: TaskLane[] = TASK_KINDS.map((kind) => ({
+		kind,
+		runs: rows
+			.filter((row) => row.kind === kind)
+			.map((row, index) => ({
+				...row,
+				outcome: outcome(row, active && index === 0 && row.id === newest),
 			})),
-		};
-	});
+	}));
 
 	return { corpus: await corpusCounts(), judge: reviewJudge(), lanes };
 }
@@ -199,7 +196,7 @@ export async function tasksState(): Promise<TasksState> {
 /**
  * 语料此刻的几个数，一趟问完。
  *
- * 「技能」数的是边上 `route = 'skill'` 那一路指到的说法，也就是人身上此刻有的词；
+ * 「技能」数的是边上 `route = 'skill'` 那一类指到的说法，也就是人身上此刻有的词；
  * 「已经并到别的写法上」数的是词表里指向别人的那些词。
  */
 async function corpusCounts(): Promise<CorpusCounts> {
@@ -233,6 +230,19 @@ async function corpusCounts(): Promise<CorpusCounts> {
 		segments: internal + external,
 		words: n("words"),
 	};
+}
+
+/**
+ * 一次运行说过的每一行。
+ *
+ * 单取，不跟着任务台的状态一起来：这些行是排查时才看的东西，而一轮整理能说
+ * 上千行，挂在每两秒一次的轮询上就是每两秒搬一遍。
+ */
+export async function taskLog(runId: number): Promise<string[]> {
+	const { rows } = await db.execute<{ log: string[] }>(
+		sql`select log from task_run where id = ${runId}`,
+	);
+	return rows[0]?.log ?? [];
 }
 
 /** 还不是当前派生版本的段数。后台任务用它决定这一轮有没有活，任务台用它画进度。 */
