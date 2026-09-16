@@ -35,7 +35,7 @@ function recentLabel(spec: SearchSpec, rawText: string | null) {
 	const labels = activeConditions(spec.conditions).map(
 		(c) => MODE_GLYPH[c.mode] + conditionLabel(c),
 	);
-	return labels.join(" / ") || "没有生效的条件";
+	return labels.join(" / ") || "没有可用条件";
 }
 
 /**

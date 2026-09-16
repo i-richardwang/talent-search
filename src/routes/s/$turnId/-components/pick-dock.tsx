@@ -54,7 +54,7 @@ export function PickDock({
 	picks: Picks;
 	/** 这次查询各主张的名字，按屏幕上的顺序。导出时一条一列。 */
 	names: string[];
-	/** 库里符合条件的总人数。名单上这几个人只是其中一段。 */
+	/** 符合条件的总人数。名单上这几个人只是其中一段。 */
 	total: number;
 }) {
 	const { clear, picked, remove, shownIds, shownPicked } = picks;
@@ -106,7 +106,7 @@ export function PickDock({
  * 读的内容。需要时再打开浮层。它仍然是一个 ghost 按钮，这条工具栏上唯一的主按钮
  * 是右端的导出。
  *
- * 每行只写姓名。这份清单回答的是「选中的是哪几个人」；岗位、部门和凭据属于名单
+ * 每行只写姓名。这份清单回答的是「选中的是哪几个人」；岗位、部门和证据属于名单
  * 和详情，放进来只会让一行变成两行。
  */
 function Chosen({
@@ -174,7 +174,7 @@ function Chosen({
 /**
  * 导出成一份 CSV。
  *
- * 中间隔一层对话框，不是点一下直接下载：这一步要决定的不止一件事——凭据要不要
+ * 中间隔一层对话框，不是点一下直接下载：这一步要决定的不止一件事——证据要不要
  * 一起导出，以及这份表会不会比屏幕上的总数少人（下面那条 `Alert`）。列名先展示
  * 出来，是因为拿到表的往往是另一个人，而列一旦确定就无法在 Excel 里补回来。
  */
@@ -187,7 +187,7 @@ function ExportDialog({
 	picked: Pick[];
 	names: string[];
 	total: number;
-	/** 当前名单已全部选中，但库里还有没加载出来的人。 */
+	/** 当前名单已全部选中，但还有没加载出来的人。 */
 	partial: boolean;
 }) {
 	const [open, setOpen] = useState(false);
@@ -238,10 +238,10 @@ function ExportDialog({
 									disabled={names.length === 0}
 									onCheckedChange={setEvidence}
 								/>
-								每条条件一列，写上凭据
+								每条条件一列，写上匹配证据
 							</FieldLabel>
 							<FieldDescription>
-								勾上之后，上面那排列名里就多出这次查询的每一条条件。
+								勾上之后，导出的表里会多出这次查询的每一条条件。
 							</FieldDescription>
 						</Field>
 						{/* 名单只是命中的前几页。不说的话导出的份数会比屏幕上那个总数少，
@@ -250,7 +250,7 @@ function ExportDialog({
 							<Alert variant="info">
 								<InfoIcon />
 								<AlertDescription>
-									这是符合条件的前 {picked.length} 位。库里还有{" "}
+									这是符合条件的前 {picked.length} 位，还有{" "}
 									{total - picked.length} 人没加载出来，不在这份表里。
 								</AlertDescription>
 							</Alert>

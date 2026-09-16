@@ -127,7 +127,7 @@ function Segment({
 					<span className="font-mono tabular-nums">
 						{dots(period(x.startDate, x.endDate), duration(x.months))}
 					</span>
-					{seq && <span>{external ? `${seq}（按岗位名对齐）` : seq}</span>}
+					{seq && <span>{external ? `${seq}（推断）` : seq}</span>}
 					{x.orgMeta && <CompanyLine meta={x.orgMeta} />}
 				</div>
 

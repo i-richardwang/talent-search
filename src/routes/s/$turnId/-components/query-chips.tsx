@@ -54,7 +54,7 @@ const MODE_LABEL: Record<Mode, string> = {
 const MODE_HINT: Record<Mode, string> = {
 	must: "只留满足这项的人",
 	boost: "满足这项的人排前面",
-	exclude: "不作证据；仅此类经历的人会消失",
+	exclude: "排除有这类经历的人",
 };
 
 /**

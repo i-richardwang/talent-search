@@ -27,7 +27,7 @@ import { StatusBadge } from "./-components/status-badge";
  * 回到表、再看下一个；跳页的话每次返回，表格都已经滚回顶部。抽屉底下的表保持
  * 原样，关掉就能接着刚才那一行继续。
  *
- * 每一段展示四件事：登记的内容（同步写入）、对齐到哪个序列、抽取出的能力词和做过
+ * 每一段展示四件事：登记的内容（同步写入）、推断的序列归属、抽取出的能力词和做过
  * 的事（派生写入），以及这一段有没有派生到当前版本——没有的话下面那些是上一版的
  * 结果，或者还是空的。
  */
@@ -42,9 +42,9 @@ export const Route = createFileRoute("/data/$empId")({
 		<PersonSheet title="没有这个工号">
 			<Empty>
 				<EmptyHeader>
-					<EmptyTitle>这个人不在库里</EmptyTitle>
+					<EmptyTitle>找不到这位员工</EmptyTitle>
 					<EmptyDescription>
-						工号写错了，或者他还没被同步进来。
+						工号可能写错了，或者还没有同步到数据。
 					</EmptyDescription>
 				</EmptyHeader>
 			</Empty>
@@ -139,7 +139,7 @@ function Person() {
 					<EmptyHeader>
 						<EmptyTitle>还没有经历记录</EmptyTitle>
 						<EmptyDescription>
-							导入时没有生成经历，所以还没有可解析的内容。
+							名下还没有经历记录，请联系管理员。
 						</EmptyDescription>
 					</EmptyHeader>
 				</Empty>
@@ -174,16 +174,16 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 							period(s.startDate, s.endDate),
 							duration(s.months),
 							s.level,
-							s.derived ? `解析于 ${s.derivedAt}` : null,
+							s.derived ? `更新于 ${s.derivedAt}` : null,
 						)}
 					</p>
 				</div>
 				{/*
-				 * 徽章只在待解析时出现。解析成功是这一页上绝大多数段的常态，给常态
+				 * 徽章只在待处理时出现。已处理是这一页上绝大多数段的常态，给常态
 				 * 也发徽章的话，一栏里会是十几块相同的绿色，真正需要注意的那一段反而
-				 * 不显眼。解析成功的时间用小字显示，跟这一段的其余事实排在一起。
+				 * 不显眼。更新时间用小字显示，跟这一段的其余事实排在一起。
 				 */}
-				{!s.derived && <StatusBadge tone="waiting">待解析</StatusBadge>}
+				{!s.derived && <StatusBadge tone="waiting">待处理</StatusBadge>}
 			</div>
 			<dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1 text-xs">
 				<Fact label="序列">
@@ -191,7 +191,7 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 						(inferred ? (
 							<>
 								{inferred}
-								<span className="text-muted-foreground">（对齐）</span>
+								<span className="text-muted-foreground">（推断）</span>
 							</>
 						) : (
 							<span className="text-muted-foreground">无</span>

@@ -106,11 +106,13 @@ function Data() {
 					<Empty>
 						<EmptyHeader>
 							<EmptyTitle>
-								{list.total === 0 ? "库里还没有人" : "没有匹配的人"}
+								{list.total === 0 ? "还没有人员数据" : "没有匹配的人"}
 							</EmptyTitle>
 							{/* 找不到人的时候标题已经说完了；库是空的才需要说出路 */}
 							{list.total === 0 && (
-								<EmptyDescription>先在命令行跑 bun run sync。</EmptyDescription>
+								<EmptyDescription>
+									还没有同步任何数据，请联系管理员。
+								</EmptyDescription>
 							)}
 						</EmptyHeader>
 					</Empty>
@@ -123,7 +125,7 @@ function Data() {
 									<TableHead>姓名</TableHead>
 									<TableHead>当前</TableHead>
 									<TableHead className="text-end">经历</TableHead>
-									<TableHead className="text-end">待解析</TableHead>
+									<TableHead className="text-end">待处理</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
@@ -166,15 +168,15 @@ function Data() {
 							</TableBody>
 						</Table>
 						{/*
-						 * 「库里多少人」放在表自身上（`CardFrameFooter`，排法照上游
-						 * `p-table-8`），不放在页面标题旁：它说的是这张表和库的关系——列出
-						 * 200 行，而库里有 5000 人。两个数分写两处的话，读起来像库里只有这
+						 * 「共多少人」放在表自身上（`CardFrameFooter`，排法照上游
+						 * `p-table-8`），不放在页面标题旁：它说的是这张表和全部数据的关系——列出
+						 * 200 行，而共有 5000 人。两个数分写两处的话，读起来像只有这
 						 * 些，而且两个数都是对的，不会有人报这个问题。
 						 */}
 						<CardFrameFooter className="text-muted-foreground text-xs">
 							{list.capped
-								? `库里 ${list.total} 人，只列了前 ${list.rows.length} 个——用名字或工号缩小范围。`
-								: `库里 ${list.total} 人。`}
+								? `共 ${list.total} 人，只列了前 ${list.rows.length} 个——用名字或工号缩小范围。`
+								: `共 ${list.total} 人。`}
 						</CardFrameFooter>
 					</CardFrame>
 				)}

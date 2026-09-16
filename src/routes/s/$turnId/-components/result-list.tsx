@@ -47,7 +47,7 @@ const SKELETON_ROWS = 5;
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	evidence: "按证据排序",
 	depth: "按经历深度排序",
-	employee: "按工号排序",
+	employee: "默认顺序",
 };
 
 /**
@@ -546,7 +546,7 @@ export function ResultList({
 								{/*
 								 * 证据。命中的每条一行，四段固定的槽在所有卡片上位置相同——
 								 * 这是把表格旋转成块之后仍然能上下扫的依据，只不过那条竖线上
-								 * 现在写着凭据。
+								 * 现在写着证据。
 								 *
 								 * 和上面那一行之间空 12px：证据行彼此是 6px，两倍就读成另一段。
 								 * 头和身子的分界靠字重字号的落差，够了（AGENTS.md「线只画在有

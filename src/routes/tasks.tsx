@@ -42,7 +42,6 @@ import type { JobKind } from "#/server/jobs";
 import type { CorpusCounts, TaskLane, TaskRunView } from "#/server/tasks";
 import { AdminPage } from "./-components/admin-page";
 import { StatusBadge, type StatusTone } from "./-components/status-badge";
-import { reviewStatus } from "./-lib/review-status";
 
 const NAME: Record<TaskKind, string> = {
 	sync: "同步",
@@ -118,17 +117,17 @@ function alertTone(latest: TaskRunView | undefined): StatusTone | null {
  * 每张卡片答的那件事：这一栏管的东西，此刻库里有多少。
  *
  * 三张各说各的一份数，不重样（`AGENTS.md`「同一份数据只画一遍」）：同步说搬进来
- * 多少，解析说还剩多少活，整理说词表并成了什么样。
+ * 多少，解析说还剩多少活，整理说词表是什么样。
  */
 export const facts: Record<TaskKind, (corpus: CorpusCounts) => string> = {
 	derive: (corpus) =>
 		corpus.pending > 0
-			? `还有 ${corpus.pending} 条经历待解析`
-			: "经历已全部解析",
+			? `还有 ${corpus.pending} 条经历待处理`
+			: "经历已全部处理",
 	review: (corpus) =>
 		dots(
-			`技能 ${corpus.words} 个，其中 ${corpus.merged} 个已合并写法`,
-			`释义 ${corpus.glossed}/${corpus.glossable}`,
+			`技能 ${corpus.words} 个，已归并 ${corpus.merged} 种写法`,
+			`释义 ${corpus.glossed}/${corpus.glossable} 条`,
 		),
 	sync: (corpus) =>
 		dots(
@@ -259,9 +258,7 @@ function LaneCard({
 						<p className="text-muted-foreground text-xs">{when(latest)}</p>
 						{declined && (
 							/* 说的是刚才按的那一下，留到下一次按下为止 */
-							<p className="text-muted-foreground text-xs">
-								已经有一次在排队了
-							</p>
+							<p className="text-muted-foreground text-xs">已有任务在排队</p>
 						)}
 					</div>
 					{latest?.outcome === "failed" && (
@@ -276,10 +273,10 @@ function LaneCard({
 					)}
 					<p className="text-sm">{facts[kind](corpus)}</p>
 					{kind === "review" && judge === "off" && (
-						/* 关掉的那一栏永远不会再有新记录，卡片上得说出来，不然它只是看着
-						   闲着。说法和词表页顶上那一句同一个出处（`-lib/review-status.ts`）。 */
+						/* 关掉的那一栏永远不会再有新记录，也没有「立即运行」，得说出来，
+						   不然它只是看着闲着。 */
 						<p className="text-muted-foreground text-xs">
-							{reviewStatus({ judge })}
+							自动整理已关闭，技能与释义不再更新
 						</p>
 					)}
 					{runs.length > 0 && <RunHistory kind={kind} runs={runs} />}

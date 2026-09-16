@@ -77,9 +77,9 @@ const COPY: {
 	}),
 	strongEmpty: (reason, h) => ({
 		title: "没有岗位或序列匹配的人",
-		hint: `关掉后还有 ${reason.without} 人。`,
+		hint: `关闭「仅岗位或序列」后能看到 ${reason.without} 人。`,
 		action: {
-			label: "关掉",
+			label: "关闭该要求",
 			onClick: () => h.onChange({ strong: undefined }),
 		},
 	}),
@@ -98,7 +98,7 @@ const COPY: {
 	}),
 	noHits: (_reason, h) => ({
 		title: "没有相关的人",
-		hint: "都是加分，没有人沾上。",
+		hint: "都是加分条件，没有人符合。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 };

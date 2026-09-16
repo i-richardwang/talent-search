@@ -263,8 +263,8 @@ export const skillTerm = pgTable(
 		reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
 		/**
 		 * 这条决定是谁判的：`model:<模型名>` 或 `agent:<外部裁判的名字>`
-		 * （`src/corpus/vocabulary.ts` 的 `modelJudge` / `agentJudge`）。读者是管理页 `/skills`——
-		 * 同一张表里有机器判的也有外部判的，看表的人得知道哪一条是谁下的结论。
+		 * （`src/corpus/vocabulary.ts` 的 `modelJudge` / `agentJudge`）。库里留痕、
+		 * 排查时查；任务日志按裁判计数。管理页 `/skills` 不逐条显示它。
 		 */
 		judge: text("judge").notNull(),
 	},

@@ -90,7 +90,7 @@ function DetailNotFound() {
 		<Empty>
 			<EmptyHeader>
 				<EmptyTitle>未找到这位员工</EmptyTitle>
-				<EmptyDescription>该员工记录不存在或已失效。</EmptyDescription>
+				<EmptyDescription>链接可能已失效，或记录已被清理。</EmptyDescription>
 			</EmptyHeader>
 		</Empty>
 	);

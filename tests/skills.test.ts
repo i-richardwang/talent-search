@@ -76,7 +76,7 @@ describe("能力词词表", () => {
 			{
 				word: "个性化推荐",
 				canonical: "推荐系统",
-				// 同一个标准词底下几条决定可以出自不同的裁判：这一格报最近那一条
+				// 同一个标准词底下几条决定可以出自不同的裁判：谁判的只记在库里，词表不报
 				judge: "agent:hr-bot",
 				reviewedAt: lastWeek,
 			},
@@ -95,7 +95,6 @@ describe("能力词词表", () => {
 				aliases: ["个性化推荐", "推荐算法"],
 				people: 4,
 				reviewedDaysAgo: 0,
-				judge: "model:test",
 			},
 			{
 				canonical: "Python",
@@ -103,7 +102,6 @@ describe("能力词词表", () => {
 				aliases: [],
 				people: 1,
 				reviewedDaysAgo: 7,
-				judge: "model:test",
 			},
 			{
 				canonical: "电商推荐系统",
@@ -111,7 +109,6 @@ describe("能力词词表", () => {
 				aliases: [],
 				people: 1,
 				reviewedDaysAgo: 0,
-				judge: "model:test",
 			},
 			{
 				canonical: "Hadoop",
@@ -119,16 +116,7 @@ describe("能力词词表", () => {
 				aliases: [],
 				people: 0,
 				reviewedDaysAgo: 7,
-				judge: "model:test",
 			},
 		]);
-	});
-
-	test("队列空着时没有等着判的题", async () => {
-		const table = await listSkills();
-		assert.equal(table.waiting, 0);
-		// 夹具钉的是自带模型判，外部接口也就关着
-		assert.equal(table.judge, "model");
-		assert.equal(table.reachable, false);
 	});
 });

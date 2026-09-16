@@ -46,8 +46,8 @@ export function modelJudge(model: string): string {
 /**
  * 外部裁判自报的名字，收窄成库里的写法；不合规矩的返回 null。
  *
- * 名字只作显示（管理页上「这条是谁判的」），所以只要求它是个短标识：接口那一侧
- * 不必再想一遍什么算合法，这件事只有这一处知道。
+ * 名字只作留痕（库里记下哪条是谁判的，任务日志按它计数），所以只要求它是个短标识：
+ * 接口那一侧不必再想一遍什么算合法，这件事只有这一处知道。
  */
 export function agentJudge(name: unknown): string | null {
 	if (typeof name !== "string") return null;
