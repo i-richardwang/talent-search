@@ -63,9 +63,9 @@ function lane(state: Awaited<ReturnType<typeof tasksState>>, kind: string) {
 	return found;
 }
 
-/** 这一栏最近的一次运行。记录按时间倒着排，最新的那一行在最前面。 */
+/** 这一栏最近的一次运行。翻到第几页都是它，卡片正面说的就是这一次。 */
 function latest(state: Awaited<ReturnType<typeof tasksState>>, kind: string) {
-	return lane(state, kind).runs[0];
+	return lane(state, kind).latest;
 }
 
 /** 那一次说过的每一行。状态里不带日志，要单取。 */
@@ -355,6 +355,52 @@ test("词表跨嵌入空间保留，生效一条技能边都不动", async () =>
 		if (previous === undefined) delete process.env.REVIEW_JUDGE;
 		else process.env.REVIEW_JUDGE = previous;
 	}
+});
+
+/*
+ * 运行记录一直往前翻得到底：一栏跑过几百次，「上一次之前那次是不是也失败了」
+ * 正是出事时要问的，而那个问题问的是历史，不是最近六次。
+ */
+test("运行记录一页一页地给，最近那一次不随翻页走", async () => {
+	const kind = "sync" as const;
+	await db.execute(sql`delete from task_run where kind = 'sync'`);
+	await db.insert(taskRun).values(
+		Array.from({ length: 8 }, (_, i) => ({
+			kind,
+			source: "test",
+			log: [`第 ${i + 1} 次`],
+			finishedAt: new Date(),
+		})),
+	);
+
+	const first = lane(await tasksState(), kind);
+	assert.equal(first.total, 8);
+	assert.equal(first.pages, 2);
+	assert.equal(first.page, 1);
+	assert.equal(first.runs.length, 6);
+	assert.equal(first.latest?.id, first.runs[0]?.id);
+
+	const second = lane(await tasksState({ sync: 2 }), kind);
+	assert.equal(second.page, 2);
+	assert.equal(second.runs.length, 2);
+	// 第二页接着第一页往前走，两页不重样，加起来就是全部
+	assert.deepEqual(
+		[...first.runs, ...second.runs].map((one) => one.id),
+		[...first.runs, ...second.runs].map((one) => one.id).sort((a, b) => b - a),
+	);
+	assert.equal(
+		new Set([...first.runs, ...second.runs].map((o) => o.id)).size,
+		8,
+	);
+	// 卡片正面说的还是最近这一次
+	assert.equal(second.latest?.id, first.latest?.id);
+
+	// 越界收回最后一页，翻过头不该是一张空表
+	const beyond = lane(await tasksState({ sync: 999 }), kind);
+	assert.equal(beyond.page, 2);
+	assert.equal(beyond.runs.length, 2);
+	// 翻一栏，别的两栏停在第一页
+	assert.equal(lane(await tasksState({ sync: 2 }), "review").page, 1);
 });
 
 describe("说法规划", () => {

@@ -5,7 +5,7 @@ import {
 	useParams,
 } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { CardFrame, CardFrameFooter } from "#/components/ui/card";
 import {
@@ -20,12 +20,6 @@ import {
 	InputGroupInput,
 } from "#/components/ui/input-group";
 import {
-	Pagination,
-	PaginationContent,
-	PaginationItem,
-	PaginationLink,
-} from "#/components/ui/pagination";
-import {
 	Table,
 	TableBody,
 	TableCell,
@@ -36,6 +30,8 @@ import {
 import { dots } from "#/lib/format";
 import { dataList } from "#/server/functions";
 import { AdminPage } from "./-components/admin-page";
+import { PageNav } from "./-components/page-nav";
+import { pageOf } from "./-lib/paging";
 
 /**
  * 数据页：库里此刻有谁。点一个人看他的每一段和派生结果（`/data/$empId`）。
@@ -54,15 +50,6 @@ export const Route = createFileRoute("/data")({
 	head: () => ({ meta: [{ title: "数据 · 人才搜索" }] }),
 	component: Data,
 });
-
-/**
- * 地址栏上的页码。第一页是 undefined——默认值不写进地址，否则刚进来的链接和
- * 翻回第一页的链接是两个不同的字符串（检索那边同一条规矩，见 `view-params.ts`）。
- */
-function pageOf(v: unknown) {
-	const n = Math.trunc(Number(v));
-	return Number.isFinite(n) && n > 1 ? n : undefined;
-}
 
 /** 一个链接指向的这一页。页码和词总是一起走：换了词，页码就不是同一批人了。 */
 function at(page: number, q: string) {
@@ -197,7 +184,8 @@ function Data() {
 						 * 共 20 人」是同一件事说两遍。
 						 */}
 						<CardFrameFooter className="flex items-center justify-between gap-2 p-2">
-							<p className="text-muted-foreground text-sm">
+							{/* 翻页件占着剩下的宽（它自带 `w-full`），这一句不让它挤成两行 */}
+							<p className="whitespace-nowrap text-muted-foreground text-sm">
 								{list.pages > 1 && (
 									<>
 										第 {list.from}–{list.from + list.rows.length - 1} 个，共{" "}
@@ -208,27 +196,11 @@ function Data() {
 								</strong>{" "}
 								人
 							</p>
-							{/*
-							 * 不列页码：按工号排的第 37 页对找人的人不说明任何事，几千人
-							 * 就是几十个这样的页码。找某一个人用上面的搜索框，翻页是用来把
-							 * 库看完的。
-							 */}
-							{list.pages > 1 && (
-								<Pagination className="w-auto justify-end">
-									<PaginationContent>
-										<PaginationItem>
-											<PageLink page={list.page - 1} pages={list.pages} q={q}>
-												上一页
-											</PageLink>
-										</PaginationItem>
-										<PaginationItem>
-											<PageLink page={list.page + 1} pages={list.pages} q={q}>
-												下一页
-											</PageLink>
-										</PaginationItem>
-									</PaginationContent>
-								</Pagination>
-							)}
+							<PageNav
+								linkTo={(page) => <Link search={at(page, q)} to="/data" />}
+								page={list.page}
+								pages={list.pages}
+							/>
 						</CardFrameFooter>
 					</CardFrame>
 				)}
@@ -236,37 +208,5 @@ function Data() {
 			{/* 点开的那个人从右侧覆盖（`data.$empId.tsx`），表在底下保持原样 */}
 			<Outlet />
 		</AdminPage>
-	);
-}
-
-/**
- * 翻到第 `page` 页。到头的那一头不带链接、禁用，但位置留着——两个按钮一直都在，
- * 翻到最后一页时「下一页」不会消失、让「上一页」跳过来。
- */
-function PageLink({
-	page,
-	pages,
-	q,
-	children,
-}: {
-	page: number;
-	pages: number;
-	q: string;
-	children: ReactNode;
-}) {
-	const beyond = page < 1 || page > pages;
-	return (
-		<PaginationLink
-			render={
-				<Button
-					disabled={beyond}
-					render={beyond ? undefined : <Link search={at(page, q)} to="/data" />}
-					size="sm"
-					variant="outline"
-				/>
-			}
-		>
-			{children}
-		</PaginationLink>
 	);
 }

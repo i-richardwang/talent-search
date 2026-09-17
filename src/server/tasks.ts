@@ -38,8 +38,8 @@ import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
 import { configured } from "./review";
 
-/** 运行记录列几行。再多也没人往下看。 */
-const HISTORY = 6;
+/** 运行记录一页几行。往前的那些翻页看（`/tasks?derive=3`）。 */
+const RUNS_PAGE = 6;
 
 /** 攒多久写一次日志。够短，页面上看着是在动的；够长，上千行不变成上千次往返。 */
 const FLUSH_MS = 400;
@@ -99,15 +99,40 @@ export type TaskRunView = {
 };
 
 /**
- * 一种任务在任务台上的一栏：最近几次运行，最新的一次在最前面。
+ * 一种任务在任务台上的一栏：它跑过的记录里的一页，最新的一次在最前面。
+ *
+ * 给的是一页，连同这一栏一共几页、一共跑过几次：跑过几百次的一栏也要能一直往前
+ * 翻到头（`/data` 同一条规矩）。
  *
  * 不带日志。一轮整理能说上千行，而任务台正在跑的时候每两秒重新载入一次——
  * 日志按需单取（`taskLog`），页面上也只在打开某一次的日志时才用得到。
  */
 export type TaskLane = {
 	kind: TaskKind;
+	/** 要的那一页，最新的一次在最前面 */
 	runs: TaskRunView[];
+	/**
+	 * 这一栏最近的那一次，不随翻到第几页变。
+	 *
+	 * 卡片正面说的是「这一栏此刻怎么样」，那永远是最近这一次；翻到第三页的时候
+	 * 拿那一页的第一行来说，卡片就会报一个几天前的结果当现状。
+	 */
+	latest: TaskRunView | null;
+	/** 这一栏一共跑过几次 */
+	total: number;
+	/**
+	 * 给出的是第几页，从 1 起。
+	 *
+	 * 页码由这里定夺，不是照抄地址栏里的那个数：越界收回最后一页，否则翻过头
+	 * 就是一张空表（`listEmployees` 同一条规矩）。
+	 */
+	page: number;
+	/** 一共几页，至少一页 */
+	pages: number;
 };
+
+/** 每一栏要看第几页。没说的那一栏是第一页。 */
+export type TaskPages = Partial<Record<TaskKind, number>>;
 
 /**
  * 语料此刻有多少东西。任务台三张卡片上的数全是它——**问库，不问上一次跑的记录**。
@@ -140,6 +165,11 @@ type TasksState = {
 	lanes: TaskLane[];
 	corpus: CorpusCounts;
 	/**
+	 * 此刻有没有人在跑（问锁，见文件头第 2 条）。页面照它决定轮询快慢，以及
+	 * 「立即运行」能不能按——跑着的时候按下去只会被回绝。
+	 */
+	running: boolean;
+	/**
 	 * 整理此刻谁在判（`src/corpus/vocabulary.ts`）。任务台要它是因为 `off` 的时候
 	 * 后台那一轮直接返回（`jobs.ts`），「现在跑一次」按下去什么都不会发生——
 	 * 按钮得先知道这件事，才不至于画成一个按了没反应的按钮。
@@ -160,37 +190,76 @@ function outcome(run: StoredRun, live: boolean): TaskOutcome {
 	return live ? "running" : "interrupted";
 }
 
-export async function tasksState(): Promise<TasksState> {
+export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 	/*
 	 * **先看锁，再看行**，不并发。`runTask` 是行写完才放锁的，于是：锁不在，行必然
 	 * 已经写完；锁在，行没写完就是正在跑。反过来先读行再看锁，两次读之间那一次
 	 * 恰好收尾的话，读到的是「行没写完、锁没人拿」——和进程中断一模一样。
 	 */
 	const active = await corpusSessionActive();
-	const { rows } = await db.execute<StoredRun>(sql`
-		select id, kind, source,
+	/*
+	 * 每一栏跑过几次、最近那次是什么样。两样一起问：卡片正面说的是最近这一次，
+	 * 而翻到第几页是另一件事，不该让它影响卡片说什么。
+	 */
+	const { rows: heads } = await db.execute<StoredRun & { total: number }>(sql`
+		select distinct on (kind)
+			kind, id, source,
 			to_char(started_at, 'MM-DD HH24:MI') as "startedAt",
 			extract(epoch from (finished_at - started_at))::int as seconds,
-			error
+			error,
+			count(*) over (partition by kind)::int as total
+		from task_run
+		order by kind, started_at desc, id desc`);
+	// 锁一次只有一个持有者，它开跑时落下的是全表最新的那一行
+	const newest = Math.max(0, ...heads.map((row) => row.id));
+	/** 库里那一行在页面上的样子。逐个字段写出来，行上别的列不跟着发到页面。 */
+	const seen = (row: StoredRun): TaskRunView => ({
+		error: row.error,
+		id: row.id,
+		kind: row.kind,
+		outcome: outcome(row, active && row.id === newest),
+		seconds: row.seconds,
+		source: row.source,
+		startedAt: row.startedAt,
+	});
+	const lanes = TASK_KINDS.map((kind) => {
+		const head = heads.find((row) => row.kind === kind);
+		const total = head?.total ?? 0;
+		const pages = Math.max(1, Math.ceil(total / RUNS_PAGE));
+		return {
+			kind,
+			latest: head ? seen(head) : null,
+			// 越界收回最后一页，否则翻过头就是一张空表（`listEmployees` 同一条规矩）
+			page: Math.min(Math.max(1, Math.trunc(want[kind] ?? 1)), pages),
+			pages,
+			total,
+		};
+	});
+	/* 每一栏要的那一页。哪几行算这一页只在这条查询里说一次。 */
+	const { rows } = await db.execute<StoredRun>(sql`
+		select recent.id, recent.kind, recent.source,
+			to_char(recent.started_at, 'MM-DD HH24:MI') as "startedAt",
+			extract(epoch from (recent.finished_at - recent.started_at))::int as seconds,
+			recent.error
 		from (
 			select *, row_number() over (partition by kind order by started_at desc, id desc) as n
 			from task_run
 		) recent
-		where n <= ${HISTORY}
-		order by started_at desc, id desc`);
-	// 锁只有一个持有者，它是全表最新的那一行
-	const newest = rows[0]?.id;
-	const lanes: TaskLane[] = TASK_KINDS.map((kind) => ({
-		kind,
-		runs: rows
-			.filter((row) => row.kind === kind)
-			.map((row, index) => ({
-				...row,
-				outcome: outcome(row, active && index === 0 && row.id === newest),
-			})),
-	}));
+		join unnest(${sql.param(lanes.map((lane) => lane.kind))}::text[], ${sql.param(
+			lanes.map((lane) => (lane.page - 1) * RUNS_PAGE),
+		)}::int[]) as want(kind, skip) on want.kind = recent.kind
+		where recent.n > want.skip and recent.n <= want.skip + ${RUNS_PAGE}
+		order by recent.started_at desc, recent.id desc`);
 
-	return { corpus: await corpusCounts(), judge: reviewJudge(), lanes };
+	return {
+		corpus: await corpusCounts(),
+		judge: reviewJudge(),
+		lanes: lanes.map((lane) => ({
+			...lane,
+			runs: rows.filter((row) => row.kind === lane.kind).map(seen),
+		})),
+		running: active,
+	};
 }
 
 /**

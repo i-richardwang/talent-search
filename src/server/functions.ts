@@ -18,6 +18,7 @@ import {
 	type Experience,
 	employee,
 	experience,
+	TASK_KINDS,
 } from "#/db/schema";
 import { validateCommit } from "#/search/commit-input";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
@@ -26,7 +27,7 @@ import { search } from "#/search/search";
 import { employeeData, listEmployees } from "./data";
 import { type JobKind, requestJob } from "./jobs";
 import { listSkills } from "./skills";
-import { taskLog as runLog, tasksState } from "./tasks";
+import { taskLog as runLog, type TaskPages, tasksState } from "./tasks";
 import {
 	createTurn,
 	deleteSearch,
@@ -131,10 +132,20 @@ export const skillTable = createServerFn({ method: "GET" }).handler(() =>
 	listSkills(),
 );
 
-/** 任务台的全部数据：三种任务各自最近几次运行的结果，和语料此刻有多少东西。 */
-export const tasksStatus = createServerFn({ method: "GET" }).handler(() =>
-	tasksState(),
-);
+/**
+ * 任务台的全部数据：三种任务各自跑过的记录里的一页，和语料此刻有多少东西。
+ *
+ * 每一栏要看第几页由页面给，来自地址栏，什么都可能：这里只负责它是个数，
+ * 是不是越过了最后一页由 `tasksState` 收（`dataList` 同一条分工）。
+ */
+export const tasksStatus = createServerFn({ method: "GET" })
+	.validator(
+		(pages: TaskPages): TaskPages =>
+			Object.fromEntries(
+				TASK_KINDS.map((kind) => [kind, Number(pages?.[kind]) || 1]),
+			),
+	)
+	.handler(({ data }) => tasksState(data));
 
 /**
  * 某一次运行说过的每一行。任务台上打开那一次的日志时才取。
