@@ -65,15 +65,34 @@ export function pageLimit(v: View) {
 	return v.n ?? RESULT_PAGE;
 }
 
-/** 还能不能再翻：撞到上限就不能了，界面得改说法而不是继续给按钮 */
+/**
+ * 这次查询够得着的人有几个：符合条件的人里，名单按相关度给到的前 `RESULT_MAX` 位。
+ *
+ * 只此一处算这个数。界面上说「共多少人」的地方、「选上全部」和「还能不能再翻」
+ * 问的都是它——够不着的人一旦漏进其中一句话，那句话就是句够不着的承诺。
+ */
+export function reachOf(total: number) {
+	return Math.min(total, RESULT_MAX);
+}
+
+/** 还能不能再翻：够得着的都在屏幕上了就不能了，界面得改说法而不是继续给按钮 */
 export function canLoadMore(v: View, total: number) {
-	const shown = pageLimit(v);
-	return shown < total && shown < RESULT_MAX;
+	return pageLimit(v) < reachOf(total);
 }
 
 /** 「再看一页」之后的 URL 状态 */
 export function morePage(v: View): Partial<View> {
 	return { n: Math.min(pageLimit(v) + RESULT_PAGE, RESULT_MAX) };
+}
+
+/**
+ * 「够得着的人全都加载出来」之后的 URL 状态：一跳到底，不一页一页加。
+ *
+ * 导出时「选上全部」走它。一页页加的话，名单要重查好几趟才凑齐，而这一步的
+ * 语义本来就是「这批人我全要」，中间那几趟没有人在看。
+ */
+export function allPages(total: number): Partial<View> {
+	return { n: Math.ceil(reachOf(total) / RESULT_PAGE) * RESULT_PAGE };
 }
 
 /** 除翻页之外的全部视图状态。 */

@@ -121,8 +121,6 @@ export async function align<Row extends ExperienceRow>(
 		aligned++;
 		return { ...row, seq_inferred_l1: l1, seq_inferred_l2: l2 };
 	});
-	report(
-		`  入职前 ${texts.length} 段里 ${aligned} 段对到了公司序列，其余无法对齐`,
-	);
+	report(`  入职前 ${texts.length} 段里 ${aligned} 段有推断序列`);
 	return out;
 }

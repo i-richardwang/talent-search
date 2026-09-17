@@ -2,7 +2,7 @@
  * 能力词词表：读表的拒绝规则、归并、向量圈组、收窄、记账，以及整轮整理。
  *
  * 圈组用的是真向量（夹具那套字符袋假嵌入），所以「谁和谁算相似」在这里是可以
- * 手算的；判成同一件事、判归属仍然是裁判的事，由测试装回答。
+ * 手算的；判成同一件事、判归属仍然是判定方的事，由测试装回答。
  */
 
 import assert from "node:assert/strict";
@@ -14,7 +14,7 @@ const teardown = await setup();
 after(teardown);
 
 const { GUIDE, read } = await import("#/corpus/vocabulary");
-const { openQuestions, submitAnswer } = await import("#/corpus/questions");
+const { openGroups, submitJudgment } = await import("#/corpus/judgment");
 const { review } = await import("#/corpus/review");
 const { pool } = await import("#/db");
 
@@ -36,7 +36,7 @@ type SeedRow = [
 async function seedTable(rows: SeedRow[]) {
 	const connection = await client();
 	try {
-		await connection.query("delete from review_question");
+		await connection.query("delete from review_group");
 		await connection.query("delete from skill_term");
 		for (const [word, canonical, reviewedAt, parent] of rows)
 			await connection.query(
@@ -174,7 +174,7 @@ describe("整轮整理", () => {
 	test("只问到期的中心词，结论写回表，人身上的词不动", async () => {
 		const asked: string[] = [];
 		const restore = answerChat((system, prompt) => {
-			// 同一轮里释义题也会问到模型（gloss.test.ts 管它），这里只看圈组那一问
+			// 同一轮里释义组也会问到模型（gloss.test.ts 管它），这里只看归并那一问
 			if (system !== GUIDE)
 				return {
 					judgments: prompt
@@ -203,14 +203,14 @@ describe("整轮整理", () => {
 			const table = await read(later);
 			assert.equal(table.get("团队管理工作")?.canonical, "团队管理");
 			assert.equal(table.get("团队管理")?.canonical, "团队管理");
-			// 人一样多时按字序取标准写法；归属由片里的答卷投出来，裁判起的名字自己也是一行
+			// 人一样多时按字序取标准写法；归属由片里的判断投出来，判定方起的名字自己也是一行
 			assert.equal(table.get("团队管理")?.parent, "管理");
 			assert.equal(table.get("管理")?.canonical, "管理");
 			assert.equal(table.get("Py")?.canonical, "Python");
 			// 自带模型判的，决定上记着是谁判的
 			assert.match(table.get("团队管理")?.judge ?? "", /^model:/);
-			// 队列跑空了才算完：出题、答题、结算在同一轮里连着做
-			assert.deepEqual(await openQuestions(later), []);
+			// 队列跑空了才算完：收集、判定、生效在同一轮里连着做
+			assert.deepEqual(await openGroups(later), []);
 		} finally {
 			later.release();
 		}
@@ -225,12 +225,12 @@ describe("整轮整理", () => {
 });
 
 /**
- * 判卷交给外部：整理只出题和结算，答卷由外面交回来。
+ * 判定交给外部：整理只收集和让它生效，判定由外面交回来。
  *
  * 自带模型这一类在上面那一段已经走完，所以这里装的假聊天端点一次也不该被叫到——
  * 「没问模型」本身就是这一档要证明的事。
  */
-describe("判卷交给外部", () => {
+describe("判定交给外部", () => {
 	const AGENT = "agent:hr-bot";
 	let restoreEnv: () => void;
 
@@ -241,7 +241,7 @@ describe("判卷交给外部", () => {
 			if (before === undefined) delete process.env.REVIEW_JUDGE;
 			else process.env.REVIEW_JUDGE = before;
 		};
-		// 词表清空，语料里再添一批新词：这一轮有到期的中心词可出题
+		// 词表清空，语料里再添一批新词：这一轮有到期的中心词可收
 		await seedTable([]);
 		await seed(
 			[
@@ -258,7 +258,7 @@ describe("判卷交给外部", () => {
 
 	after(() => restoreEnv());
 
-	test("只出题，不问模型", async () => {
+	test("只收集，不问模型", async () => {
 		const asked: string[] = [];
 		const restore = answerChat((_system, prompt) => {
 			asked.push(prompt);
@@ -268,16 +268,16 @@ describe("判卷交给外部", () => {
 		restore();
 
 		assert.deepEqual(asked, []);
-		assert.match(said.join("\n"), /判卷归外部/);
+		assert.match(said.join("\n"), /判定由外部完成/);
 
 		const connection = await client();
 		try {
-			const open = await openQuestions(connection);
-			const question = open.find((one) =>
+			const open = await openGroups(connection);
+			const group = open.find((one) =>
 				one.words.some((member) => member.word === "线上销售数据分析"),
 			);
-			assert.ok(question, "「线上销售数据分析」该有一道题挂在队列里");
-			assert.deepEqual(question.words, [
+			assert.ok(group, "「线上销售数据分析」该有一组挂在队列里");
+			assert.deepEqual(group.words, [
 				{ word: "线上销售数据分析", people: 3 },
 				{ word: "线下销售数据分析", people: 2 },
 			]);
@@ -286,13 +286,13 @@ describe("判卷交给外部", () => {
 		}
 	});
 
-	test("先到先得：第二份答卷不算，不存在的题分开说", async () => {
+	test("先到先得：第二份判定不算，不存在的组分开说", async () => {
 		const connection = await client();
 		try {
-			const question = (await openQuestions(connection)).find((one) =>
+			const group = (await openGroups(connection)).find((one) =>
 				one.words.some((member) => member.word === "线上销售数据分析"),
 			);
-			assert.ok(question);
+			assert.ok(group);
 			const judgments = [
 				{
 					word: "线上销售数据分析",
@@ -308,20 +308,20 @@ describe("判卷交给外部", () => {
 				},
 			];
 			assert.equal(
-				await submitAnswer(connection, question.id, AGENT, judgments),
+				await submitJudgment(connection, group.id, AGENT, judgments),
 				"accepted",
 			);
 			assert.equal(
-				await submitAnswer(connection, question.id, "agent:another", judgments),
+				await submitJudgment(connection, group.id, "agent:another", judgments),
 				"taken",
 			);
 			assert.equal(
-				await submitAnswer(connection, 10_000_000, AGENT, judgments),
+				await submitJudgment(connection, 10_000_000, AGENT, judgments),
 				"missing",
 			);
-			// 答过的题不再出现在拉题里
+			// 判过的组不再出现在待判的那一份里
 			assert.equal(
-				(await openQuestions(connection)).some((one) => one.id === question.id),
+				(await openGroups(connection)).some((one) => one.id === group.id),
 				false,
 			);
 		} finally {
@@ -329,9 +329,9 @@ describe("判卷交给外部", () => {
 		}
 	});
 
-	test("下一轮结算外部的答卷：兄弟各自留在人身上，共同的更宽的词落成一行", async () => {
+	test("下一轮让外部的判定生效：兄弟各自留在人身上，共同的更宽的词落成一行", async () => {
 		const said = await runReview();
-		assert.match(said.join("\n"), /结算 1 道圈组题（agent:hr-bot 1 道）/);
+		assert.match(said.join("\n"), /生效 1 组归并（agent:hr-bot 1 组）/);
 		assert.match(said.join("\n"), /线下销售数据分析 属于 销售数据分析/);
 
 		const connection = await client();
@@ -359,12 +359,12 @@ describe("判卷交给外部", () => {
 		]);
 	});
 
-	test("一周没人答的题作废，那个词下一轮重新出题", async () => {
+	test("一周没人判的组过期，那个词下一轮重新收", async () => {
 		const connection = await client();
 		try {
-			await connection.query("delete from review_question");
+			await connection.query("delete from review_group");
 			await connection.query(
-				`insert into review_question (kind, words, asked_at)
+				`insert into review_group (kind, words, collected_at)
 				 values ('group', '[{"word":"陈年词","people":3},{"word":"陈年写法","people":2}]'::jsonb,
 				         now() - interval '30 days')`,
 			);
@@ -372,12 +372,12 @@ describe("判卷交给外部", () => {
 			connection.release();
 		}
 		const said = await runReview();
-		assert.match(said.join("\n"), /1 道题过了 7 天没人答，作废/);
+		assert.match(said.join("\n"), /1 组过了 7 天没人判，已过期/);
 
 		const later = await client();
 		try {
 			assert.equal(
-				(await openQuestions(later)).some((one) =>
+				(await openGroups(later)).some((one) =>
 					one.words.some((member) => member.word === "陈年词"),
 				),
 				false,
@@ -387,10 +387,10 @@ describe("判卷交给外部", () => {
 		}
 	});
 
-	test("裁判起的名字到期后也出题，人数按它下面的人算", async () => {
+	test("判定方起的名字到期后也进组，人数按它下面的人算", async () => {
 		const connection = await client();
 		try {
-			// 「销售数据分析」是上一轮裁判起的，没人在简历里写过；让它到期
+			// 「销售数据分析」是上一轮判定方起的，没人在简历里写过；让它到期
 			await connection.query(
 				"update skill_term set reviewed_at = $1 where word = '销售数据分析'",
 				[OLD],
@@ -402,12 +402,12 @@ describe("判卷交给外部", () => {
 
 		const later = await client();
 		try {
-			const question = (await openQuestions(later)).find(
+			const group = (await openGroups(later)).find(
 				(one) => one.words[0]?.word === "销售数据分析",
 			);
-			assert.ok(question, "「销售数据分析」该做中心词出一道题");
+			assert.ok(group, "「销售数据分析」该做中心词进一组");
 			// 三个人写了它下面的词，它就是 3 人；细的词刚判过，仍能被收进它的组
-			assert.deepEqual(question.words, [
+			assert.deepEqual(group.words, [
 				{ word: "销售数据分析", people: 3 },
 				{ word: "线上销售数据分析", people: 3 },
 				{ word: "线下销售数据分析", people: 2 },
@@ -417,19 +417,19 @@ describe("判卷交给外部", () => {
 		}
 	});
 
-	test("裁判起的名字可以做标准写法：写了别的写法的人身上的词不动", async () => {
+	test("判定方起的名字可以做标准写法：写了别的写法的人身上的词不动", async () => {
 		const connection = await client();
 		try {
-			// 出一道人数上「销售数据分析」占优的题：裁判说「线上销售数据分析」和它是同一件事，
+			// 收一组人数上「销售数据分析」占优的：判定方说「线上销售数据分析」和它是同一件事，
 			// 那个没人写过的名字就要做标准写法
-			await connection.query("delete from review_question");
+			await connection.query("delete from review_group");
 			const { rows } = await connection.query<{ id: number }>(
-				`insert into review_question (kind, words)
+				`insert into review_group (kind, words)
 				 values ('group', '[{"word":"销售数据分析","people":5},{"word":"线上销售数据分析","people":3}]'::jsonb)
 				 returning id`,
 			);
 			assert.equal(
-				await submitAnswer(connection, rows[0]?.id as number, AGENT, [
+				await submitJudgment(connection, rows[0]?.id as number, AGENT, [
 					{ word: "销售数据分析", why: "宽", sameAs: "", parent: "" },
 					{
 						word: "线上销售数据分析",
@@ -455,10 +455,10 @@ describe("判卷交给外部", () => {
 		]);
 	});
 
-	test("到期重判时标准词带着它名下的写法出题，这一次判开就拆开", async () => {
+	test("到期重判时标准词带着它名下的写法进组，这一次判开就拆开", async () => {
 		const connection = await client();
 		try {
-			await connection.query("delete from review_question");
+			await connection.query("delete from review_group");
 			await connection.query(
 				"update skill_term set reviewed_at = $1 where word = '销售数据分析'",
 				[OLD],
@@ -470,18 +470,18 @@ describe("判卷交给外部", () => {
 
 		const later = await client();
 		try {
-			const question = (await openQuestions(later)).find(
+			const group = (await openGroups(later)).find(
 				(one) => one.words[0]?.word === "销售数据分析",
 			);
-			assert.ok(question, "「销售数据分析」该做中心词出一道题");
+			assert.ok(group, "「销售数据分析」该做中心词进一组");
 			// 别名不做中心词、不单独圈组，紧跟在它的标准词后面；标准词的人数连同别名和下面的词
-			assert.deepEqual(question.words, [
+			assert.deepEqual(group.words, [
 				{ word: "销售数据分析", people: 3 },
 				{ word: "线上销售数据分析", people: 3 },
 				{ word: "线下销售数据分析", people: 2 },
 			]);
 			assert.equal(
-				await submitAnswer(later, question.id, AGENT, [
+				await submitJudgment(later, group.id, AGENT, [
 					{ word: "销售数据分析", why: "宽", sameAs: "", parent: "" },
 					{
 						word: "线上销售数据分析",

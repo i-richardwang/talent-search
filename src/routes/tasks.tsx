@@ -34,7 +34,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import type { Judge } from "#/corpus/questions";
+import type { Judge } from "#/corpus/judgment";
 import type { TaskKind } from "#/db/schema";
 import { dots } from "#/lib/format";
 import { requestTask, taskLog, tasksStatus } from "#/server/functions";

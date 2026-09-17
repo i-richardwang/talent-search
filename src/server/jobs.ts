@@ -15,7 +15,7 @@
 
 import "@tanstack/react-start/server-only";
 import { PgBoss } from "pg-boss";
-import { reviewJudge } from "#/corpus/questions";
+import { reviewJudge } from "#/corpus/judgment";
 import type { TaskKind } from "#/db/schema";
 import { derivePending, runTask } from "./tasks";
 
@@ -24,8 +24,8 @@ export type JobKind = Exclude<TaskKind, "sync">;
 
 /**
  * 排班。派生盯着「有没有还没派生的段」，同步之后几分钟内就会接上；整理一天一次，
- * 一个词一周判一次的节奏在它里面（`corpus/vocabulary.ts`）。判卷归外部时这一轮仍然
- * 照跑——它要结算外部交上来的答卷，并且出新题。
+ * 一个词一周判一次的节奏在它里面（`corpus/vocabulary.ts`）。判定归外部时这一轮仍然
+ * 照跑——它要让外部交上来的判定生效，并且收集新的组。
  */
 const SCHEDULE: Record<JobKind, string> = {
 	derive: "*/5 * * * *",

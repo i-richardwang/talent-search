@@ -180,8 +180,8 @@ export async function sync(
 		throw error;
 	}
 	report(
-		`  employee ${employee.length} 人，其中离开 ${counts.employeesGone} 人；` +
-			`experience ${experience.length} 段，新来 ${counts.experienceNew} 段、` +
+		`  人员 ${employee.length} 人，其中离开 ${counts.employeesGone} 人；` +
+			`经历 ${experience.length} 段，新增 ${counts.experienceNew} 段、` +
 			`离开 ${counts.experienceGone} 段`,
 	);
 }

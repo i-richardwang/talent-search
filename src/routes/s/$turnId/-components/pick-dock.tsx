@@ -31,6 +31,7 @@ import {
 } from "#/components/ui/toolbar";
 import { csvName, download, FIXED, toCsv } from "../-lib/csv";
 import type { Pick, Picks } from "../-lib/picks";
+import { reachOf } from "../-lib/view-params";
 
 /**
  * 选中人之后浮现的工具条：选了几个，以及对这一批做什么。
@@ -50,14 +51,20 @@ export function PickDock({
 	picks,
 	names,
 	total,
+	onAll,
+	loading,
 }: {
 	picks: Picks;
 	/** 这次查询各主张的名字，按屏幕上的顺序。导出时一条一列。 */
 	names: string[];
 	/** 符合条件的总人数。名单上这几个人只是其中一段。 */
 	total: number;
+	/** 把够得着的人全都选上：名单没加载完的部分一并加载出来。 */
+	onAll: () => void;
+	/** 那一步正在跑。按钮据此转圈，人才知道名单在长。 */
+	loading: boolean;
 }) {
-	const { clear, picked, remove, shownIds, shownPicked } = picks;
+	const { clear, picked, remove, shownIds } = picks;
 	// 按名次排，不按点下去的先后：这一批读起来是一份名单，不是我的操作顺序。
 	// 清单和导出的表因此同序，核对的时候两边一行对一行。
 	const chosen = [...picked.values()].sort((a, b) => a.rank - b.rank);
@@ -81,11 +88,11 @@ export function PickDock({
 						清空
 					</ToolbarButton>
 					<ExportDialog
-						picked={chosen}
-						partial={
-							shownIds.length < total && shownPicked.length === shownIds.length
-						}
+						loading={loading}
 						names={names}
+						onAll={onAll}
+						picked={chosen}
+						reach={reachOf(total)}
 						total={total}
 					/>
 				</ToolbarGroup>
@@ -175,20 +182,24 @@ function Chosen({
  * 导出成一份 CSV。
  *
  * 中间隔一层对话框，不是点一下直接下载：这一步要决定的不止一件事——证据要不要
- * 一起导出，以及这份表会不会比屏幕上的总数少人（下面那条 `Alert`）。列名先展示
+ * 一起导出，以及这份表里是不是符合条件的那些人（下面那条 `Alert`）。列名先展示
  * 出来，是因为拿到表的往往是另一个人，而列一旦确定就无法在 Excel 里补回来。
  */
 function ExportDialog({
 	picked,
 	names,
 	total,
-	partial,
+	reach,
+	onAll,
+	loading,
 }: {
 	picked: Pick[];
 	names: string[];
 	total: number;
-	/** 当前名单已全部选中，但还有没加载出来的人。 */
-	partial: boolean;
+	/** 这次查询够得着的人有几个（`reachOf`）。 */
+	reach: number;
+	onAll: () => void;
+	loading: boolean;
 }) {
 	const [open, setOpen] = useState(false);
 	const [evidence, setEvidence] = useState(true);
@@ -244,14 +255,29 @@ function ExportDialog({
 								勾上之后，导出的表里会多出这次查询的每一条条件。
 							</FieldDescription>
 						</Field>
-						{/* 名单只是命中的前几页。不说的话导出的份数会比屏幕上那个总数少，
-						    而少了谁没有任何地方交代。 */}
-						{partial && (
+						{/*
+						 * 选中的比够得着的少时，说清这份表里是谁，并给出把人补齐的那一下。
+						 *
+						 * 名单一页页长出来是名单自己的事，导出的份数不该由用户滚到哪儿
+						 * 决定，所以这里不报「还有多少人没加载」，而是把补齐做掉。
+						 */}
+						{picked.length < reach && (
 							<Alert variant="info">
 								<InfoIcon />
-								<AlertDescription>
-									这是符合条件的前 {picked.length} 位，还有{" "}
-									{total - picked.length} 人没加载出来，不在这份表里。
+								<AlertDescription className="flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
+									<span className="min-w-0 flex-1">
+										这份表是你选的 {picked.length} 人。符合条件的共 {total} 人
+										{total > reach && `，名单按相关度给到前 ${reach} 位`}。
+									</span>
+									<Button
+										className="shrink-0"
+										loading={loading}
+										onClick={onAll}
+										size="xs"
+										variant="outline"
+									>
+										选上这 {reach} 人
+									</Button>
 								</AlertDescription>
 							</Alert>
 						)}

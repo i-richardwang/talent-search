@@ -32,6 +32,7 @@ const NO_PICKS: Picks = {
 	clear: () => {},
 	picked: new Map(),
 	picking: false,
+	pickAll: () => {},
 	remove: () => {},
 	rows: [],
 	setShown: () => {},
@@ -191,6 +192,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				empId={undefined}
 				growing={false}
 				loading={false}
+				onAll={() => {}}
 				onChange={() => {}}
 				onEditQuery={() => {}}
 				onMore={() => {}}

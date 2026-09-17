@@ -1,16 +1,17 @@
 /**
- * 整理一轮：作废过期题、结算答卷、出题，自带模型还要答题再结算一次。过程报出来。
+ * 整理一轮：清掉过期的组、让判过的生效、收集新的，自带模型还要当场判一轮再生效
+ * 一次。过程报出来。
  *
- * 两种题各管各的落表（圈组写 `skill_term`，释义写 `phrase_gloss`），共用一条队列
- * 和一个裁判（`questions.ts`）。整理只写这两张表，不碰人身上的词与边。
+ * 两种组各管各的落表（归并写 `skill_term`，释义写 `phrase_gloss`），共用一条队列
+ * 和一个判定方（`judgment.ts`）。整理只写这两张表，不碰人身上的词与边。
  */
 
 import "@tanstack/react-start/server-only";
-import { answerGlossesByModel, askGlosses, settleGlosses } from "./gloss";
-import { expire, openQuestions, reviewJudge } from "./questions";
+import { applyGlosses, collectGlosses, judgeGlossesByModel } from "./gloss";
+import { expire, openGroups, reviewJudge } from "./judgment";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
-import { answerGroupsByModel, askGroups, settleGroups } from "./vocabulary";
+import { applyGroups, collectGroups, judgeGroupsByModel } from "./vocabulary";
 
 export async function review(
 	client: CorpusClient,
@@ -18,19 +19,17 @@ export async function review(
 ): Promise<void> {
 	const judge = reviewJudge();
 	await expire(client, report);
-	await settleGroups(client, report);
-	await settleGlosses(client, report);
-	await askGroups(client, report);
-	await askGlosses(client, report);
+	await applyGroups(client, report);
+	await applyGlosses(client, report);
+	await collectGroups(client, report);
+	await collectGlosses(client, report);
 	if (judge === "model") {
-		await answerGroupsByModel(client, report);
-		await answerGlossesByModel(client, report);
-		await settleGroups(client, report);
-		await settleGlosses(client, report);
+		await judgeGroupsByModel(client, report);
+		await judgeGlossesByModel(client, report);
+		await applyGroups(client, report);
+		await applyGlosses(client, report);
 		return;
 	}
-	const waiting = await openQuestions(client);
-	report(
-		`  判卷归外部（REVIEW_JUDGE=external），队列里 ${waiting.length} 道题等人答`,
-	);
+	const waiting = await openGroups(client);
+	report(`  判定由外部完成，队列里还有 ${waiting.length} 组等着判`);
 }

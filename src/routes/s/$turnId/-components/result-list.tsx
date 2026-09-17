@@ -31,10 +31,10 @@ import { conditionKey } from "#/search/condition";
 import { claimName } from "#/search/condition-label";
 import { type Claim, claimsOf, type SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
-import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
+import { RESULT_PAGE } from "#/search/weights";
 import { emptyState } from "../-lib/empty-state";
 import type { Picks } from "../-lib/picks";
-import type { View } from "../-lib/view-params";
+import { reachOf, type View } from "../-lib/view-params";
 import { PickDock } from "./pick-dock";
 
 /** 一块卡片的内边距。骨架屏和候选人共用，加载完成的那一帧才不会抖。 */
@@ -331,6 +331,7 @@ export function ResultList({
 	loading,
 	canMore,
 	growing,
+	onAll,
 	onMore,
 	strongOn,
 	spec,
@@ -350,6 +351,8 @@ export function ResultList({
 	canMore: boolean;
 	/** 正在翻下一页：已经看到的人留在原地，只有按钮转圈 */
 	growing: boolean;
+	/** 导出时的「选上这 N 人」：够得着的全选上，名单没加载出来的一并加载。 */
+	onAll: () => void;
 	onMore: () => void;
 	/** 打开它之后还剩多少人。表头那个开关关着时报的就是这个数。 */
 	strongOn: number;
@@ -368,6 +371,8 @@ export function ResultList({
 	picks: Picks;
 }) {
 	const { results, claims, order, total } = outcome;
+	// 名单给得到的人有几个。结尾那句话和导出那条提示说的是同一个数。
+	const reach = reachOf(total);
 	// 上一次真正画出来的块数，见 SKELETON_ROWS。写在 effect 里而不是渲染中，
 	// 渲染要保持纯：同一份 props 渲染两遍必须得到同一棵树。
 	const lastRows = useRef(SKELETON_ROWS);
@@ -577,8 +582,9 @@ export function ResultList({
 				 * 列表的结尾必须回答「我看完了吗」，所以永远同时说出两个数。总数在表头
 				 * 也说过一次，但这一段只在超过一页（RESULT_PAGE 人）时才出现，那时表头早滚出屏幕
 				 * 了——两个数从来不同屏，不是同一句话说了两遍。
-				 * 翻不动的时候不留一个按不动的按钮，改说原因——「看完了」和
-				 * 「到上限了」是两件事，后者要给出路，前者不必。
+				 * 翻不动的时候不留一个按不动的按钮，改说原因——「看完了」和「名单到此
+				 * 为止」是两件事，后者要给出路，前者不必。后者说的是这份答案的口径
+				 * （按相关度给到第几位，`weights.ts` 那一段），出路因此是收窄条件。
 				 */
 				<div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 py-6">
 					<span className="text-muted-foreground text-xs">
@@ -596,8 +602,8 @@ export function ResultList({
 						</Button>
 					) : (
 						<span className="text-muted-foreground text-xs">
-							{total > RESULT_MAX
-								? `已达到 ${RESULT_MAX} 人的显示上限，请添加条件或筛选以缩小范围。`
+							{total > reach
+								? `名单按相关度给到前 ${reach} 位。要够到更靠后的人，把条件收窄。`
 								: "已显示全部结果。"}
 						</span>
 					)}
@@ -634,7 +640,13 @@ export function ResultList({
 			 * 记录是按选中那一刻的快照保存的，不随筛选消失。
 			 */}
 			{picks.picking && (
-				<PickDock picks={picks} names={claims.map(claimName)} total={total} />
+				<PickDock
+					loading={growing}
+					names={claims.map(claimName)}
+					onAll={onAll}
+					picks={picks}
+					total={total}
+				/>
 			)}
 		</CheckboxGroup>
 	);

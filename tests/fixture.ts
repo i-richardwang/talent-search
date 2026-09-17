@@ -33,7 +33,7 @@ import {
 	phrase,
 	phraseGloss,
 	phraseRelevance,
-	reviewQuestion,
+	reviewGroup,
 	searchTurn,
 	skillTerm,
 	taskRun,
@@ -384,7 +384,7 @@ export async function setup() {
 		phraseGloss,
 		searchTurn,
 		skillTerm,
-		reviewQuestion,
+		reviewGroup,
 		embeddingCache,
 		completionCache,
 		taskRun,
@@ -420,7 +420,7 @@ export async function setup() {
 	process.env.EXTRACT_BASE_URL = modelServer.url;
 	process.env.EXTRACT_MODEL = "fake";
 	process.env.REVIEW_MODEL = "review-fake";
-	// 判卷归自带模型：外部裁判那条路由测它的用例自己开
+	// 判定归自带模型：外部那条路由测它的用例自己开
 	process.env.REVIEW_JUDGE = "model";
 	delete process.env.REVIEW_TOKEN;
 	process.env.EXTRACT_CONCURRENCY = "2";

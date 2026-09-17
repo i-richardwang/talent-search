@@ -46,6 +46,7 @@ const {
 	RELEVANCE_MIN,
 	RELEVANCE_MIN_EXCLUDE,
 } = await import("#/search/weights");
+const { glossIdentity } = await import("#/corpus/gloss");
 const { db } = await import("#/db");
 const { sql } = await import("drizzle-orm");
 const { vectorLiteral } = await import("#/server/embed");
@@ -232,9 +233,10 @@ describe("语义命中", () => {
 		const doc = "渠道运营：销售团队的人员招聘与上岗培训";
 		assert.ok(fakeSimilarity("线下渠道运营", doc) < RELEVANCE_MIN);
 		await db.execute(sql`
-			insert into phrase_gloss (text, gloss, written_at, judge)
-			values ('渠道运营', '销售团队的人员招聘与上岗培训', now(), 'agent:test')`);
-		// 释义一变分数缓存跟着清，结算时是同一笔事务（corpus/gloss.ts）；这里手动模拟
+			insert into phrase_gloss (text, gloss, written_at, judge, guide_identity)
+			values ('渠道运营', '销售团队的人员招聘与上岗培训', now(), 'agent:test',
+			        ${glossIdentity()})`);
+		// 释义一变分数缓存跟着清，生效时是同一笔事务（corpus/gloss.ts）；这里手动模拟
 		await db.execute(sql`
 			delete from phrase_relevance r using phrase p
 			where p.id = r.phrase_id and p.text = '渠道运营'`);

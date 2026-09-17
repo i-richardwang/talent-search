@@ -71,14 +71,15 @@ function PersonSheet({
 	children: ReactNode;
 }) {
 	const navigate = useNavigate();
-	const { q } = Route.useSearch();
+	// 关掉抽屉是回到刚才那张表，所以词和页码原样带回去
+	const search = Route.useSearch();
 	const [open, setOpen] = useState(false);
 	useEffect(() => setOpen(true), []);
 	return (
 		<Sheet
 			onOpenChange={setOpen}
 			onOpenChangeComplete={(opened) => {
-				if (!opened) void navigate({ search: { q }, to: "/data" });
+				if (!opened) void navigate({ search, to: "/data" });
 			}}
 			open={open}
 		>

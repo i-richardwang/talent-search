@@ -1,6 +1,6 @@
 /**
- * 释义题。收窄规则是纯函数；出题、结算走真库——出给谁、绕开谁、
- * 落表时清不清分数缓存，都是 SQL 里的事。裁判由测试装回答。
+ * 释义组。收窄规则是纯函数；收集、生效走真库——收谁、绕开谁、
+ * 落表时清不清分数缓存，都是 SQL 里的事。判定方由测试装回答。
  */
 
 import assert from "node:assert/strict";
@@ -11,10 +11,9 @@ import { answerChat, seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { BATCH, conformGlosses, GLOSS_GUIDE, GLOSS_MAX } = await import(
-	"#/corpus/gloss"
-);
-const { openQuestions, submitAnswer } = await import("#/corpus/questions");
+const { BATCH, conformGlosses, GLOSS_GUIDE, GLOSS_MAX, glossIdentity } =
+	await import("#/corpus/gloss");
+const { openGroups, submitJudgment } = await import("#/corpus/judgment");
 const { review } = await import("#/corpus/review");
 const { pool } = await import("#/db");
 
@@ -46,17 +45,17 @@ async function glosses(): Promise<[string, string][]> {
 	}
 }
 
-describe("收窄答卷", () => {
+describe("收窄判定结果", () => {
 	const words = ["客户开发", "服务端开发"];
 
-	test("只收题里的词，一句话，去掉抄在前面的词本身和句号", () => {
+	test("只收组里的词，一句话，去掉抄在前面的词本身和句号", () => {
 		const got = conformGlosses(
 			{
 				judgments: [
 					{ word: "客户开发", gloss: "客户开发：销售拓展新客户、促成签约。" },
 					{ word: "服务端开发", gloss: " 编写运行在服务器上的程序与接口 " },
 					{ word: "服务端开发", gloss: "第二次答的不算" },
-					{ word: "外人", gloss: "不在题里" },
+					{ word: "外人", gloss: "不在组里" },
 				],
 			},
 			words,
@@ -102,7 +101,7 @@ describe("收窄答卷", () => {
 	});
 });
 
-describe("出题与结算", () => {
+describe("收集与生效", () => {
 	const AGENT = "agent:hr-bot";
 	let restoreEnv: () => void;
 
@@ -159,14 +158,14 @@ describe("出题与结算", () => {
 
 	after(() => restoreEnv());
 
-	test("技能、做过的事、岗位名、序列名出题，带人数；原文和部门路径不出", async () => {
+	test("技能、做过的事、岗位名、序列名进组，带人数；原文和部门路径不进", async () => {
 		const said = await runReview();
-		assert.match(said.join("\n"), /条短说法还没有释义/);
-		assert.match(said.join("\n"), /出了 1 道释义题/);
+		assert.match(said.join("\n"), /条短说法还没有这一版的释义/);
+		assert.match(said.join("\n"), /收了 1 组释义/);
 
 		const connection = await client();
 		try {
-			const open = (await openQuestions(connection)).filter(
+			const open = (await openGroups(connection)).filter(
 				(one) => one.kind === "gloss",
 			);
 			assert.equal(open.length, 1);
@@ -187,28 +186,28 @@ describe("出题与结算", () => {
 		}
 	});
 
-	test("队列里挂着的说法不再出题", async () => {
+	test("队列里挂着的说法不再收", async () => {
 		const said = await runReview();
-		assert.doesNotMatch(said.join("\n"), /出了 \d+ 道释义题/);
+		assert.doesNotMatch(said.join("\n"), /收了 \d+ 组释义/);
 	});
 
-	test("结算：释义落表、这些说法的分数缓存清掉、没答的下一轮重出", async () => {
+	test("生效：释义落表、这些说法的分数缓存清掉、没判的下一轮重收", async () => {
 		const connection = await client();
 		let id = 0;
 		try {
-			const question = (await openQuestions(connection)).find(
+			const group = (await openGroups(connection)).find(
 				(one) => one.kind === "gloss",
 			);
-			assert.ok(question);
-			id = question.id;
-			// 先给两条说法各留一个假分数：结算之后它们必须不在了
+			assert.ok(group);
+			id = group.id;
+			// 先给两条说法各留一个假分数：生效之后它们必须不在了
 			await connection.query(
 				`insert into phrase_relevance (space, query, phrase_id, relevance)
 				 select 'fake-rerank', '服务端开发', p.id, 0.9 from phrase p
 				 where p.text in ('服务端开发', '客户开发', '订单系统')`,
 			);
 			assert.equal(
-				await submitAnswer(connection, id, AGENT, [
+				await submitJudgment(connection, id, AGENT, [
 					{ word: "服务端开发", gloss: "编写运行在服务器上的程序与接口" },
 					{ word: "客户开发", gloss: "客户开发：销售拓展新客户、促成签约" },
 					{ word: "高级后端开发工程师", gloss: "" },
@@ -222,7 +221,7 @@ describe("出题与结算", () => {
 		const said = await runReview();
 		assert.match(
 			said.join("\n"),
-			/结算 1 道释义题（agent:hr-bot 1 道），写下 2 条释义，3 个说法没答或答得不合规矩，下一轮重出/,
+			/生效 1 组释义（agent:hr-bot 1 组），写下 2 条释义，3 个说法没判或判得不合规矩，下一轮重收/,
 		);
 		assert.deepEqual(await glosses(), [
 			["客户开发", "销售拓展新客户、促成签约"],
@@ -240,8 +239,8 @@ describe("出题与结算", () => {
 				rows.map((row) => row.text),
 				["订单系统"],
 			);
-			// 同一轮里没答的三个又出成了一道题
-			const open = (await openQuestions(later)).filter(
+			// 同一轮里没判的三个又收成了一组
+			const open = (await openGroups(later)).filter(
 				(one) => one.kind === "gloss",
 			);
 			assert.deepEqual(
@@ -254,7 +253,44 @@ describe("出题与结算", () => {
 		}
 	});
 
-	test("自带模型判卷时，释义题也问模型，用的是释义那份标准", async () => {
+	test("标准改了，旧版本的释义重收一遍", async () => {
+		const connection = await client();
+		try {
+			// 改 GLOSS_GUIDE 在库里就是这一下：这些释义算的是别的版本了
+			await connection.query(
+				"update phrase_gloss set guide_identity = 'older-standard'",
+			);
+			const said = await runReview();
+			assert.match(said.join("\n"), /收了 1 组释义/);
+			// 上一场留在队列里的那三个没被动，重收的只有写过释义的这两个
+			const back = (await openGroups(connection)).find((one) =>
+				one.words.some((member) => member.word === "客户开发"),
+			);
+			assert.ok(back);
+			assert.deepEqual(
+				back.words.map((member) => member.word).sort(),
+				["客户开发", "服务端开发"].sort(),
+			);
+			// 重写之后又是这一版的，不再重收
+			assert.equal(
+				await submitJudgment(connection, back.id, AGENT, [
+					{ word: "客户开发", gloss: "销售拓展新客户、促成签约" },
+					{ word: "服务端开发", gloss: "编写运行在服务器上的程序与接口" },
+				]),
+				"accepted",
+			);
+			await runReview();
+			const { rows } = await connection.query<{ n: string }>(
+				"select count(*) as n from phrase_gloss where guide_identity = $1",
+				[glossIdentity()],
+			);
+			assert.equal(Number(rows[0]?.n), 2);
+		} finally {
+			connection.release();
+		}
+	});
+
+	test("自带模型判定时，释义组也问模型，用的是释义那份标准", async () => {
 		process.env.REVIEW_JUDGE = "model";
 		const systems: string[] = [];
 		const restore = answerChat((system, prompt) => {
@@ -268,7 +304,7 @@ describe("出题与结算", () => {
 		});
 		try {
 			const said = await runReview();
-			assert.match(said.join("\n"), /写 1 道释义题/);
+			assert.match(said.join("\n"), /写 1 组释义/);
 			assert.match(said.join("\n"), /写下 3 条释义/);
 		} finally {
 			restore();

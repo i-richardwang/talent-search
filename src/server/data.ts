@@ -11,8 +11,8 @@ import { currentTree, identity } from "#/corpus/derive";
 import { pool } from "#/db";
 import type { Employee, Experience } from "#/db/schema";
 
-/** 列表最多几个人。再多也没人往下翻，按名字或工号找。 */
-const LIST_LIMIT = 200;
+/** 列表一页几个人。 */
+const PAGE_SIZE = 50;
 
 type EmployeeRow = Pick<Employee, "empId" | "name" | "curDept" | "curTitle"> & {
 	/** 这个人有几段 */
@@ -22,43 +22,57 @@ type EmployeeRow = Pick<Employee, "empId" | "name" | "curDept" | "curTitle"> & {
 };
 
 type DataList = {
-	/** 库里一共多少人 */
+	/** 这个词一共找到多少人；不给词就是库里的所有人 */
 	total: number;
-	rows: EmployeeRow[];
+	/** 一共分几页，至少一页 */
+	pages: number;
+	/** 这一页的第一个人在全部结果里排第几，从 1 起；一个人都没有时是 0 */
+	from: number;
 	/**
-	 * 这一份是不是被 `LIST_LIMIT` 截断了。
+	 * 给出的是第几页，从 1 起。
 	 *
-	 * 它得由这里说：截断在这条 SQL 上发生，而页面不认识那个上限。不说的话，
-	 * 一张列着 200 行的表底下写着「库里 5000 人」——读起来像库里只有这些，
-	 * 而两个数字都是对的，谁都不会报这个 bug。
+	 * 页码由这里定夺，不是照抄地址栏里的那个数：搜过一次再改词，剩下的人可能填
+	 * 不满原来那么多页，而一个越界的页码在表上就是一张空表。越界收回最后一页。
 	 */
-	capped: boolean;
+	page: number;
+	rows: EmployeeRow[];
 };
 
-/** 按名字或工号找人；不给词就按工号列前几百个。 */
-export async function listEmployees(needle: string): Promise<DataList> {
-	const version = identity(await currentTree(pool));
+/** 按名字或工号找人，一页 `PAGE_SIZE` 个；不给词就按工号从头列。 */
+export async function listEmployees(
+	needle: string,
+	page: number,
+): Promise<DataList> {
 	const pattern = `%${needle.trim()}%`;
-	const [total, rows] = await Promise.all([
-		pool.query<{ n: string }>("select count(*) as n from employee"),
-		pool.query<EmployeeRow>(
-			`select e.emp_id as "empId", e.name, e.cur_dept as "curDept",
-				e.cur_title as "curTitle",
-				count(x.id)::int as segments,
-				count(x.id) filter (where x.derived_identity is distinct from $1)::int as pending
-			 from employee e
-			 left join experience x on x.emp_id = e.emp_id
-			 where e.name ilike $2 or e.emp_id ilike $2
-			 group by e.emp_id
-			 order by e.emp_id
-			 limit ${LIST_LIMIT}`,
-			[version, pattern],
+	const [version, found] = await Promise.all([
+		currentTree(pool).then(identity),
+		pool.query<{ n: string }>(
+			"select count(*) as n from employee where name ilike $1 or emp_id ilike $1",
+			[pattern],
 		),
 	]);
+	const total = Number(found.rows[0]?.n ?? 0);
+	const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+	const at = Math.min(Math.max(1, Math.trunc(page)), pages);
+	const { rows } = await pool.query<EmployeeRow>(
+		`select e.emp_id as "empId", e.name, e.cur_dept as "curDept",
+			e.cur_title as "curTitle",
+			count(x.id)::int as segments,
+			count(x.id) filter (where x.derived_identity is distinct from $1)::int as pending
+		 from employee e
+		 left join experience x on x.emp_id = e.emp_id
+		 where e.name ilike $2 or e.emp_id ilike $2
+		 group by e.emp_id
+		 order by e.emp_id
+		 limit ${PAGE_SIZE} offset ${(at - 1) * PAGE_SIZE}`,
+		[version, pattern],
+	);
 	return {
-		total: Number(total.rows[0]?.n ?? 0),
-		rows: rows.rows,
-		capped: rows.rows.length === LIST_LIMIT,
+		total,
+		pages,
+		from: rows.length === 0 ? 0 : (at - 1) * PAGE_SIZE + 1,
+		page: at,
+		rows,
 	};
 }
 

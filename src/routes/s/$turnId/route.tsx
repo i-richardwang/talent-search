@@ -30,6 +30,7 @@ import { useIsWide } from "./-lib/media";
 import { useNavPhase } from "./-lib/nav-phase";
 import { usePicks } from "./-lib/picks";
 import {
+	allPages,
 	canLoadMore,
 	morePage,
 	pageLimit,
@@ -170,6 +171,20 @@ function Workbench() {
 	// 挑人：选中的是谁、推给 CSV 的是什么，全在这一个钩子里（`-lib/picks.ts`）。
 	const picks = usePicks(turnId, outcome);
 
+	const canMore = canLoadMore(view, total);
+
+	/**
+	 * 导出时的「选上这 N 人」：够得着的人全要。
+	 *
+	 * 两半合在这一处说完——名单上这批当场选中，后面还没加载出来的那批一跳到底
+	 * 拉回来，等它们到达时 `picks` 自己补上（`-lib/picks.ts` 的 `pickAll`）。
+	 * 分开摆的话，没有一个地方说得出按一下到底会发生什么。
+	 */
+	const pickAll = () => {
+		picks.pickAll(canMore);
+		if (canMore) updateView(allPages(total));
+	};
+
 	useKeyboardFlow({
 		onEditQuery: editQuery,
 		onPick: picks.picking ? picks.toggle : undefined,
@@ -235,12 +250,13 @@ function Workbench() {
 						</div>
 
 						<ResultList
-							canMore={canLoadMore(view, total)}
+							canMore={canMore}
 							empId={empId}
 							growing={growing}
 							loading={loading}
 							onChange={updateView}
 							onEditQuery={editQuery}
+							onAll={pickAll}
 							onMore={() => updateView(morePage(view))}
 							onReviseQuery={(conditions) => reviseSpec({ conditions })}
 							outcome={outcome}

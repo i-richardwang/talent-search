@@ -26,8 +26,8 @@
 import "@tanstack/react-start/server-only";
 import { createHash } from "node:crypto";
 import { EMBED_DIM } from "#/db/schema";
-import { chatConfigured, chatEndpoint, extractModel } from "#/server/chat";
-import { embedEndpoint, embedSpace } from "#/server/embed";
+import { chatConfigured } from "#/server/chat";
+import { embedSpace } from "#/server/embed";
 import { align, alignIdentity, type SeqPair, seqTree } from "./align";
 import { embed, probe } from "./embed";
 import { type Extraction, extract, extractIdentity } from "./extract";
@@ -90,9 +90,6 @@ export function phrasePlan(
 async function ensureSpace(client: CorpusClient, report: Report) {
 	const space = embedSpace();
 	const canary = await probe(CANARY_TEXT);
-	report(
-		`  嵌入空间 ${space.spaceId} · ${space.model} @ ${embedEndpoint()}，${EMBED_DIM} 维`,
-	);
 	const { rows } = await client.query<{ space_id: string; model: string }>(
 		"select space_id, model from embedding_space",
 	);
@@ -107,10 +104,7 @@ async function ensureSpace(client: CorpusClient, report: Report) {
 	await client.query("begin");
 	try {
 		if (current) {
-			report(
-				`  嵌入空间从 ${current.space_id} · ${current.model} 换过来了：` +
-					"说法、边与重排分数全部作废，所有段重新派生",
-			);
+			report("  向量模型已更换，既有结果全部作废，所有段重新派生");
 			await client.query("truncate phrase restart identity cascade");
 			await client.query("update experience set derived_identity = null");
 		}
@@ -294,15 +288,8 @@ export async function derive(
 	const tree = await currentTree(client);
 	const version = identity(tree);
 	const total = await pending(client, version);
-	if (chatConfigured())
-		report(
-			`  抽取端点 ${extractModel()} @ ${chatEndpoint()}，序列树 ${tree.length} 对`,
-		);
-	else
-		report(
-			"  未配置抽取端点（EXTRACT_BASE_URL / EXTRACT_MODEL），" +
-				"自述证据退回整段简历原文，入职前经历不对齐序列",
-		);
+	if (!chatConfigured())
+		report("  未配置语义模型，自述按整段原文处理，入职前经历不推断序列");
 	report(`  待派生 ${total} 段`);
 
 	let done = 0;

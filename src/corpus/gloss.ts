@@ -1,28 +1,29 @@
 /**
- * 短说法的释义：整理出的释义题。给技能、做过的事、岗位名、序列名这四类短说法各写
- * 一句「它指什么」，落进 `phrase_gloss`；判定时重排模型读「说法：释义」而不是光秃秃
+ * 短说法的释义：整理收集的释义组。给技能、做过的事、岗位名、序列名这四类短说法各写
+ * 一句「它指什么」，落进 `phrase_gloss`；检索时重排模型读「说法：释义」而不是光秃秃
  * 的四个字（为什么见 `db/schema.ts` 的 `phraseGloss`）。
  *
- * 释义是词的属性，写一次永远有效，不到期重写；只有语料里新来的、还没释义的说法
- * 才出题。出题按向量把相近的说法凑成一批：界线是对着邻居才写得出来的——「客户开发」
- * 和「服务端开发」在同一批里，写的人自然会把「销售」和「服务器程序」写出来。
+ * 释义是词的属性，不到期重写：一个说法指什么不随时间变。要收集的因此只有两种说法
+ * ——语料里新来的、还没释义的，以及释义出自旧标准的（`glossIdentity`）。收集按向量
+ * 把相近的说法凑成一批：界线是对着邻居才写得出来的——「客户开发」和「服务端开发」
+ * 在同一批里，写的人自然会把「销售」和「服务器程序」写出来。
  */
 
 import "@tanstack/react-start/server-only";
 import { z } from "zod";
-import { complete, reviewModel } from "#/server/chat";
+import { complete, reviewModel, standardOf } from "#/server/chat";
 import {
-	answered,
 	busyWords,
 	byJudge,
+	collect,
+	judged,
 	type Member,
 	modelJudge,
-	openQuestions,
-	pose,
+	openGroups,
 	promptOf,
-	recordAnswers,
+	recordJudgments,
 	remove,
-} from "./questions";
+} from "./judgment";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
 import { tag } from "./tag";
@@ -30,7 +31,7 @@ import { tag } from "./tag";
 /** 写释义的那四类。整段原文本来就是一段话，部门路径答的是「待过哪儿」，都不写。 */
 export const GLOSSED_ROUTES = ["skill", "did", "title", "seq"] as const;
 
-/** 一批几个说法。裁判一次面对几十个相近的词还写得出界线；再多就开始互相抄。 */
+/** 一批几个说法。判定方一次面对几十个相近的词还写得出界线；再多就开始互相抄。 */
 export const BATCH = 40;
 
 /**
@@ -39,7 +40,7 @@ export const BATCH = 40;
  */
 export const GLOSS_MAX = 60;
 
-/** 发给裁判的标准。自带模型和外部 agent 读的是同一段字，改了这段两种裁判一起变。 */
+/** 发给判定方的标准。自带模型和外部 agent 读的是同一段字，改了这段两边一起变。 */
 export const GLOSS_GUIDE = `## 背景
 
 这是一个公司内部的人才库。招聘的人输入一个词（「服务端开发」「推荐算法」），系统在每个人简历里读出来的短标签里找意思相同的：能力词、做过的事、岗位名、序列名，都是几个字。判定用的模型读的是「标签：释义」——它判一个词对一段话判得准，判四个字对四个字就只会数有几个字一样，「客户开发」会被它当成「服务端开发」。你写的这一句释义，就是让它读到那段话。
@@ -57,18 +58,33 @@ export const GLOSS_GUIDE = `## 背景
 
 /**
  * 逐词一条。schema 里不写长度：限制只写在收窄的地方（`conformGlosses`），
- * 改了限制不该让已经交上来的答卷失效。
+ * 改了限制不该让已经提交的判定失效。
  */
 const SCHEMA = z.object({
 	judgments: z.array(z.object({ word: z.string(), gloss: z.string() })),
 });
 
 /**
- * 收窄一份答卷：题里的词 → 它的释义。
+ * 写释义这件事此刻的标准是哪一版：`GLOSS_GUIDE` 加它要求的回答形状（`standardOf`）。
  *
- * 丢掉的：不在题里的词；空的；超过 `GLOSS_MAX` 的；和词本身一样的；带换行的
- * （一句话没有换行）。裁判把词又抄了一遍在前面（「客户开发：销售……」）的，把那
- * 一截去掉——判定时是系统把词和释义拼起来读的。同一个词答了两次取先答的。
+ * 每条释义身上记着自己算到哪一版（`phrase_gloss.guide_identity`），标准一改，旧的那些
+ * 下一轮整理自动重收——和一段经历身上的 `derived_identity` 同一个道理：**一批数据得
+ * 出自同一份标准**，重排拿两条说法比的时候，两段释义不是一个口径就比不出名次。
+ *
+ * 判定挂在队列里时改标准，那份按旧标准写的答案会按新版记账（队列不认识释义的标准，
+ * 见 `judgment.ts` 开头）。自带模型判时队列在同一轮里就空了，这个缝只在判定归外部时
+ * 存在，且最多一个整理周期：那一版记错的说法要等下一次标准改动才会重收。
+ */
+export function glossIdentity(): string {
+	return standardOf(GLOSS_GUIDE, SCHEMA);
+}
+
+/**
+ * 收窄一份判定结果：组里的词 → 它的释义。
+ *
+ * 丢掉的：不在组里的词；空的；超过 `GLOSS_MAX` 的；和词本身一样的；带换行的
+ * （一句话没有换行）。判定方把词又抄了一遍在前面（「客户开发：销售……」）的，把那
+ * 一截去掉——检索时是系统把词和释义拼起来读的。同一个词答了两次取先答的。
  */
 export function conformGlosses(
 	payload: unknown,
@@ -95,12 +111,12 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * 出题：语料里那四类上还没释义、也不在队列里的说法，按向量凑成一批批。
+ * 收集：语料里那四类上还没释义、也不在队列里的说法，按向量凑成一批批。
  *
  * 凑批在库里做：每次拿字序最前的一条当锚，取离它最近的 `BATCH` 条成一批，从池里
  * 拿走，直到池空。几万条说法第一次是几百次扫描，之后每天只有新来的几十条。
  */
-export async function askGlosses(
+export async function collectGlosses(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
@@ -113,16 +129,18 @@ export async function askGlosses(
 		 from phrase p
 		 join experience_phrase ep on ep.phrase_id = p.id and ep.route = any($1::text[])
 		 join experience e on e.id = ep.experience_id
-		 where not exists (select 1 from phrase_gloss g where g.text = p.text)
+		 where not exists (
+		     select 1 from phrase_gloss g
+		     where g.text = p.text and g.guide_identity = $3)
 		   and p.text <> all($2::text[])
 		 group by p.id`,
-		[[...GLOSSED_ROUTES], [...busy]],
+		[[...GLOSSED_ROUTES], [...busy], glossIdentity()],
 	);
 	const { rows: total } = await client.query<{ n: number }>(
 		"select count(*)::int as n from gloss_pool",
 	);
 	const pending = total[0]?.n ?? 0;
-	report(`  ${pending} 条短说法还没有释义，队列里挂着 ${busy.size} 个`);
+	report(`  ${pending} 条短说法还没有这一版的释义，队列里还有 ${busy.size} 个`);
 	const batches: Member[][] = [];
 	for (;;) {
 		const { rows } = await client.query<Member>(
@@ -139,29 +157,29 @@ export async function askGlosses(
 	}
 	await client.query("drop table if exists gloss_pool");
 	if (batches.length === 0) return;
-	await pose(client, "gloss", batches);
-	report(`  出了 ${batches.length} 道释义题，每道最多 ${BATCH} 个说法`);
+	await collect(client, "gloss", batches);
+	report(`  收了 ${batches.length} 组释义，每组最多 ${BATCH} 个说法`);
 }
 
 /**
- * 结算：释义落表，这些说法的分数缓存清掉，题从队列里删。三样一笔事务。
+ * 生效：释义落表，这些说法的分数缓存清掉，组从队列里删。三样一笔事务。
  *
- * 分数是按判定时读到的字打的：没释义时读的是四个字，有了释义读的是一段话，旧分
+ * 分数是按重排时读到的字打的：没释义时读的是四个字，有了释义读的是一段话，旧分
  * 对新字不成立。按文本找 `phrase` 行再删 `phrase_relevance`——释义按文本存，说法
  * 表换过嵌入空间之后 id 变了也照样对得上。
  */
-export async function settleGlosses(
+export async function applyGlosses(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const rows = await answered(client, "gloss");
+	const rows = await judged(client, "gloss");
 	if (rows.length === 0) return;
 	const now = new Date();
 	const written = new Map<string, { gloss: string; judge: string }>();
 	let missed = 0;
 	for (const row of rows) {
 		const words = row.words.map((one) => one.word);
-		const glosses = conformGlosses(row.answer, words);
+		const glosses = conformGlosses(row.judgment, words);
 		missed += words.length - glosses.size;
 		for (const [word, gloss] of glosses)
 			written.set(word, { gloss, judge: row.judge });
@@ -172,17 +190,20 @@ export async function settleGlosses(
 	try {
 		if (entries.length > 0) {
 			await client.query(
-				`insert into phrase_gloss (text, gloss, written_at, judge)
-				 select * from unnest($1::text[], $2::text[], $3::timestamptz[], $4::text[])
+				`insert into phrase_gloss (text, gloss, written_at, judge, guide_identity)
+				 select *, $5::text
+				 from unnest($1::text[], $2::text[], $3::timestamptz[], $4::text[])
 				 on conflict (text) do update
 				 set gloss = excluded.gloss,
 				     written_at = excluded.written_at,
-				     judge = excluded.judge`,
+				     judge = excluded.judge,
+				     guide_identity = excluded.guide_identity`,
 				[
 					texts,
 					entries.map(([, one]) => one.gloss),
 					entries.map(() => now),
 					entries.map(([, one]) => one.judge),
+					glossIdentity(),
 				],
 			);
 			await client.query(
@@ -201,23 +222,23 @@ export async function settleGlosses(
 		throw error;
 	}
 	report(
-		`  结算 ${rows.length} 道释义题（${byJudge(rows)}），写下 ${written.size} 条释义` +
-			(missed ? `，${missed} 个说法没答或答得不合规矩，下一轮重出` : ""),
+		`  生效 ${rows.length} 组释义（${byJudge(rows)}），写下 ${written.size} 条释义` +
+			(missed ? `，${missed} 个说法没判或判得不合规矩，下一轮重收` : ""),
 	);
 }
 
-/** 自带的模型裁判：把队列里没答的释义题一次问完，回答记在题上。 */
-export async function answerGlossesByModel(
+/** 自带的模型判定方：把队列里没判的释义组一次问完，回答记在组上。 */
+export async function judgeGlossesByModel(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const questions = (await openQuestions(client)).filter(
+	const pending = (await openGroups(client)).filter(
 		(one) => one.kind === "gloss",
 	);
-	if (questions.length === 0) return;
+	if (pending.length === 0) return;
 	const model = reviewModel();
-	report(`  自带模型 ${model} 写 ${questions.length} 道释义题`);
-	const inputs = questions.map((one) => promptOf(one.words));
+	report(`  写 ${pending.length} 组释义`);
+	const inputs = pending.map((one) => promptOf(one.words));
 	const payloads = await complete(
 		model,
 		GLOSS_GUIDE,
@@ -226,28 +247,34 @@ export async function answerGlossesByModel(
 		"释义",
 		report,
 	);
-	await recordAnswers(
+	await recordJudgments(
 		client,
 		modelJudge(model),
-		questions.map((one, index) => [
+		pending.map((one, index) => [
 			one.id,
 			payloads.get(inputs[index] as string),
 		]),
 	);
 }
 
-/** 有多少条短说法已有释义、多少条还没有。任务台那张卡片报的数。 */
+/**
+ * 有多少条短说法已有这一版标准的释义、多少条还没有。任务台那张卡片报的数。
+ *
+ * 口径和 `collectGlosses` 挑人的那一条一模一样：旧标准的释义在这里不算数。两处口径
+ * 不同的话，卡片会说「15494/15494 条」，而整理每天照样在重收——没人看得出为什么。
+ */
 export async function glossCounts(
 	client: CorpusClient,
 ): Promise<{ glossable: number; glossed: number }> {
 	const { rows } = await client.query<{ glossable: number; glossed: number }>(
 		`select count(*)::int as glossable,
 		        count(*) filter (where exists
-		          (select 1 from phrase_gloss g where g.text = p.text))::int as glossed
+		          (select 1 from phrase_gloss g
+		           where g.text = p.text and g.guide_identity = $2))::int as glossed
 		 from phrase p
 		 where exists (select 1 from experience_phrase ep
 		               where ep.phrase_id = p.id and ep.route = any($1::text[]))`,
-		[[...GLOSSED_ROUTES]],
+		[[...GLOSSED_ROUTES], glossIdentity()],
 	);
 	return rows[0] ?? { glossable: 0, glossed: 0 };
 }

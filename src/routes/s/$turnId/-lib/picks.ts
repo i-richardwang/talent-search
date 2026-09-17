@@ -42,6 +42,15 @@ type Row = {
 
 const NONE: ReadonlyMap<string, Pick> = new Map();
 
+/** 名单上这批人全部选中，名单外已经选中的原样留着（快照的道理见 `Pick`）。 */
+function withAll(rows: Row[]) {
+	return (old: ReadonlyMap<string, Pick>) => {
+		const next = new Map(old);
+		for (const row of rows) next.set(row.pick.empId, row.pick);
+		return next;
+	};
+}
+
 /**
  * 把一条结果推导成名单上的一项。
  *
@@ -108,11 +117,21 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	const [picking, setPicking] = useState(false);
 	const [picked, setPicked] = useState(NONE);
 
+	// 「选上全部」还欠着的那一批：名单长出来的这一帧就补上，同样不放进 effect。
+	const sweeping = useRef(false);
+	const swept = useRef(rows);
+	if (sweeping.current && swept.current !== rows) {
+		sweeping.current = false;
+		swept.current = rows;
+		setPicked(withAll(rows));
+	}
+
 	// 换记录时就地归零。写在渲染里而不是 effect 里：effect 要等这一帧画完才跑，
 	// 那一帧屏幕上会是新名单配着旧的「已选 12 人」。
 	const seen = useRef(turnId);
 	if (seen.current !== turnId) {
 		seen.current = turnId;
+		sweeping.current = false;
 		setPicking(false);
 		setPicked(NONE);
 	}
@@ -188,17 +207,42 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 		});
 	}, []);
 
+	/**
+	 * 把够得着的人全都选上。
+	 *
+	 * 名单是一页页长出来的，所以这件事分两步：这一刻先把名单上的选中，`more` 说
+	 * 后面还有没有——有的话，等它们到达（`rows` 换了一份）再补上剩下的。
+	 *
+	 * 这一笔「还欠着」只活到下一份 `rows` 为止，换记录、清空、退出挑人都取消它：
+	 * 一个没人记得的「全都要」在几分钟后把新到的人塞进导出里，比不做更坏。
+	 */
+	const pickAll = useCallback(
+		(more: boolean) => {
+			sweeping.current = more;
+			swept.current = rows;
+			setPicked(withAll(rows));
+		},
+		[rows],
+	);
+
 	const start = useCallback((on: boolean) => {
 		setPicking(on);
-		if (!on) setPicked(NONE);
+		if (!on) {
+			sweeping.current = false;
+			setPicked(NONE);
+		}
 	}, []);
 
-	const clear = useCallback(() => setPicked(NONE), []);
+	const clear = useCallback(() => {
+		sweeping.current = false;
+		setPicked(NONE);
+	}, []);
 
 	return {
 		clear,
 		picked,
 		picking,
+		pickAll,
 		remove,
 		rows,
 		setShown,

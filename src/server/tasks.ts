@@ -24,7 +24,7 @@ import "@tanstack/react-start/server-only";
 import { eq, sql } from "drizzle-orm";
 import { currentTree, derive, identity, pending } from "#/corpus/derive";
 import { glossCounts } from "#/corpus/gloss";
-import { type Judge, reviewJudge } from "#/corpus/questions";
+import { type Judge, reviewJudge } from "#/corpus/judgment";
 import type { Report } from "#/corpus/report";
 import { review } from "#/corpus/review";
 import {
@@ -64,10 +64,10 @@ const WORK: Record<TaskKind, TaskWork> = {
 	},
 	review: async (session, report) => {
 		await review(session.client, report);
-		// 判卷归外部却没配凭据，接口是关着的，题会挂到过期。这是配错了，得在记录里
+		// 判定归外部却没配凭据，接口是关着的，组会挂到过期。这是配错了，得在记录里
 		// 说出来：整理一轮轮照跑、词表一动不动，没有这句没人看得出为什么
 		if (reviewJudge() === "external" && !configured())
-			report("  ✖ 判卷归外部，但 REVIEW_TOKEN 没配，接口关着，没人能交卷");
+			report("  ✖ 判定归外部，但 REVIEW_TOKEN 没配，接口关着，没人能提交判定");
 	},
 };
 
@@ -140,7 +140,7 @@ type TasksState = {
 	lanes: TaskLane[];
 	corpus: CorpusCounts;
 	/**
-	 * 整理此刻谁在判卷（`src/corpus/vocabulary.ts`）。任务台要它是因为 `off` 的时候
+	 * 整理此刻谁在判（`src/corpus/vocabulary.ts`）。任务台要它是因为 `off` 的时候
 	 * 后台那一轮直接返回（`jobs.ts`），「现在跑一次」按下去什么都不会发生——
 	 * 按钮得先知道这件事，才不至于画成一个按了没反应的按钮。
 	 */

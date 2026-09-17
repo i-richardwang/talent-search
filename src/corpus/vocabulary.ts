@@ -1,9 +1,9 @@
 /**
- * 能力词词表：整理出的圈组题。相近的能力词圈成组出题，裁判判每个词和谁是
- * 同一件事、属于哪个更宽的词，结算写进 `skill_term`。
+ * 能力词词表：整理收集的归并组。相近的能力词圈成组送进队列，判定方判每个词和谁是
+ * 同一件事、属于哪个更宽的词，生效时写进 `skill_term`。
  * 整理只写词表，不碰人身上的词：边上永远是简历里的原话，词表只决定筛选栏怎么把
  * 写法摆成一项项、每一项数到谁（`src/search/search.ts` 的 `FACT_COLUMNS.skills`）。
- * 归并和归属规则见 vocabulary-rules.ts；题目队列在 questions.ts；模型及外部裁判共用 GUIDE。
+ * 归并和归属规则见 vocabulary-rules.ts；判定队列在 judgment.ts；模型和外部判定方共用 GUIDE。
  */
 
 import "@tanstack/react-start/server-only";
@@ -11,34 +11,32 @@ import { z } from "zod";
 import { complete, reviewModel } from "#/server/chat";
 import { embed } from "./embed";
 import {
-	answered,
 	busyWords,
 	byJudge,
+	collect,
+	judged,
 	type Member,
 	modelJudge,
-	openQuestions,
-	pose,
+	openGroups,
 	promptOf,
 	REVIEW_INTERVAL_DAYS,
-	recordAnswers,
+	recordJudgments,
 	remove,
-} from "./questions";
+} from "./judgment";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
 import {
 	conform,
 	type Decision,
 	groups,
-	HEAD_MIN,
 	merge,
-	SIMILARITY,
 	type Table,
 	validate,
 } from "./vocabulary-rules";
 
 /**
- * 判卷的标准。发给自带模型的是它，通过接口交给外部 agent 的也是它
- * （`src/server/review.ts` 的 `guides.group`）——**标准只有一份**，改了这段字两种裁判
+ * 判定的标准。发给自带模型的是它，通过接口交给外部 agent 的也是它
+ * （`src/server/review.ts` 的 `guides.group`）——**标准只有一份**，改了这段字两边
  * 一起变。
  */
 export const GUIDE = `## 背景
@@ -83,7 +81,7 @@ export const GUIDE = `## 背景
 写最近的一层：「电商销售数据分析」属于「销售数据分析」，不直接写「数据分析」。更宽的词永远是更宽的那个：「数据分析」不属于「销售数据分析」。`;
 
 /**
- * 逐词给理由再下结论，不是直接列名单：让裁判一次列名单，它面对十来个相近的候选
+ * 逐词给理由再下结论，不是直接列名单：让判定方一次列名单，它面对十来个相近的候选
  * 会整片说是或整片说否；逐词说完理由再判，每个词各判各的。理由只为约束判断，
  * 收窄时不读。schema 里不写长度和枚举：限制只写在收窄的地方（`conform`）。
  */
@@ -132,7 +130,7 @@ export async function read(client: CorpusClient): Promise<Table> {
  *
  * 收的是**决定本身**，不是一串词名再回表里查：查得到查不到就得有个说法，而
  * 「查不到时写个空标准词」是一行悄悄坏掉的词表。`merge` 手里本来就有决定。
- * 归属指回本表，所以裁判起的名字也在这一批里作为一行写进去；外键在语句末尾才查，
+ * 归属指回本表，所以判定方起的名字也在这一批里作为一行写进去；外键在语句末尾才查，
  * 一条语句里父子同时落下没有先后。
  */
 async function write(client: CorpusClient, decisions: [string, Decision][]) {
@@ -156,15 +154,15 @@ async function write(client: CorpusClient, decisions: [string, Decision][]) {
 }
 
 /**
- * 让自带的模型判一批题，按题序返回它的原话；答不出合法 JSON 的那道是 undefined
- * （`complete` 已经说过是哪道）。整理的答题一步和整理质量验收（`scripts/eval-review.ts`）
+ * 让自带的模型判一批组，按组的顺序返回它的原话；答不出合法 JSON 的那组是 undefined
+ * （`complete` 已经说过是哪一组）。整理的判定一步和整理质量验收（`scripts/eval-review.ts`）
  * 共用它：验收量的正是这一步，提示词、模型、温度都和整理时一样。
  */
 export async function askModel(
-	questions: Member[][],
+	groups: Member[][],
 	report: Report,
 ): Promise<(unknown | undefined)[]> {
-	const inputs = questions.map(promptOf);
+	const inputs = groups.map(promptOf);
 	const payloads = await complete(
 		reviewModel(),
 		GUIDE,
@@ -179,14 +177,14 @@ export async function askModel(
 /**
  * 这一轮要整理的词表：标准词和各自的人数，按词排序；以及每个标准词名下其他写法各自的人数。
  *
- * **词表里只有一种词。** 人写的词和裁判起的名字在这里没有分别：都是标准词，人数都按
+ * **词表里只有一种词。** 人写的词和判定方起的名字在这里没有分别：都是标准词，人数都按
  * 「写了它、它的其他写法或它下面任一个词的人」数（筛选栏同一口径，`src/server/skills.ts`），
- * 都一样圈组、出题、到期再判。所以词表是**表里的标准词，加上语料里还没进表的词**——后者是
- * 还没判过的标准词。只从语料取词的话，裁判起的名字永远不会被再问一次：「销售数据分析」
+ * 都一样圈组、收集、到期再判。所以词表是**表里的标准词，加上语料里还没进表的词**——后者是
+ * 还没判过的标准词。只从语料取词的话，判定方起的名字永远不会被再问一次：「销售数据分析」
  * 挂不到「数据分析」下面，两组各自起的「数据分析」「数据分析能力」也永远并不到一起。
  *
- * 其他写法不做中心词、不单独圈组，只跟着它的标准词进题（`ask`）：它和标准词是不是同一件事
- * 正是每次重判要问的，而它不在题里时拆不开，在别的题里单独出现又会被判进另一片，
+ * 其他写法不做中心词、不单独圈组，只跟着它的标准词进组（`collectGroups`）：它和标准词是不是
+ * 同一件事正是每次重判要问的，而它不在组里时拆不开，在别的组里单独出现又会被判进另一片，
  * 把它从标准词那里悄悄拽走。
  *
  * 下面一个人都没有的词不在这一轮里：没人会点它，也就没什么可整理的。
@@ -246,16 +244,16 @@ async function vocabulary(client: CorpusClient) {
 }
 
 /**
- * 把答过的圈组题结算掉：收窄答卷、更新词表、题从队列里删掉。
+ * 让判过的归并组生效：收窄判定结果、更新词表、组从队列里删掉。
  *
- * 两样在同一笔事务里：题没删掉，下一轮会把同一份答卷再结算一遍。人身上的词不动，
- * 所以结算判错了，下一次重判改回来就是改回来了，没有要恢复的东西。
+ * 两样在同一笔事务里：组没删掉，下一轮会把同一份判定再算一遍。人身上的词不动，
+ * 所以这一步判错了，下一次重判改回来就是改回来了，没有要恢复的东西。
  */
-export async function settleGroups(
+export async function applyGroups(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const rows = await answered(client, "group");
+	const rows = await judged(client, "group");
 	if (rows.length === 0) return;
 
 	const now = new Date();
@@ -263,7 +261,7 @@ export async function settleGroups(
 	const changed = new Map<string, Decision>();
 	for (const row of rows) {
 		const verdicts = conform(
-			row.answer,
+			row.judgment,
 			row.words.map((one) => one.word),
 		);
 		for (const [word, decision] of merge(
@@ -295,7 +293,7 @@ export async function settleGroups(
 	}
 
 	report(
-		`  结算 ${rows.length} 道圈组题（${byJudge(rows)}），` +
+		`  生效 ${rows.length} 组归并（${byJudge(rows)}），` +
 			`认成同一写法 ${merged.length} 个，认出归属 ${placed.length} 个`,
 	);
 	for (const [alias, decision] of merged)
@@ -305,16 +303,16 @@ export async function settleGroups(
 }
 
 /**
- * 出题：到期的词圈组，每个标准词带上它名下的其他写法，每组落一行。
+ * 收集：到期的词圈成组，每个标准词带上它名下的其他写法，每组落一行。
  *
- * 队列里挂着的题涉及的词整个不参与这一轮圈组——一个词同时出现在两道题里，两份
- * 答卷就会各说各的，而结算时挑哪一份都得有个说法。其他写法跟着标准词进出，
- * 标准词不在别的题里，它的写法也就不在。
+ * 队列里挂着的组涉及的词整个不参与这一轮圈组——一个词同时出现在两组里，两份
+ * 判定就会各说各的，而生效时挑哪一份都得有个说法。其他写法跟着标准词进出，
+ * 标准词不在别的组里，它的写法也就不在。
  *
  * 带上写法之后一组可以超过圈组的上限（`vocabulary-rules.ts`）：上限管的是有多少件要分辨的事，
- * 已经判成同一件事的写法摆在标准词旁边，是让裁判重新确认这一片，不是多出来的候选。
+ * 已经判成同一件事的写法摆在标准词旁边，是让判定方重新确认这一片，不是多出来的候选。
  */
-export async function askGroups(
+export async function collectGroups(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
@@ -324,7 +322,7 @@ export async function askGroups(
 	const decided = all.words.filter((word) => table.has(word)).length;
 	report(
 		`  词表 ${all.words.length} 个词，其中 ${decided} 个已有决定；` +
-			`队列里挂着 ${busy.size} 个词`,
+			`队列里还有 ${busy.size} 个词`,
 	);
 	if (all.words.length === 0) return;
 
@@ -343,20 +341,17 @@ export async function askGroups(
 	const circles = words.length
 		? groups(words, counts, await embed(words, report), due)
 		: [];
-	report(
-		`  中心词至少 ${HEAD_MIN} 人、相似度 ${SIMILARITY} 以上、` +
-			`${REVIEW_INTERVAL_DAYS} 天内没整理过，圈成 ${circles.length} 组`,
-	);
+	report(`  圈成 ${circles.length} 组`);
 	if (circles.length === 0) return;
 
 	const people = new Map(
 		words.map((word, index) => [word, counts[index] ?? 0]),
 	);
-	await pose(
+	await collect(
 		client,
 		"group",
-		circles.map((group) =>
-			group.flatMap((word) => [
+		circles.map((circle) =>
+			circle.flatMap((word) => [
 				{ people: people.get(word) ?? 0, word },
 				...(all.aliases.get(word) ?? []),
 			]),
@@ -364,25 +359,25 @@ export async function askGroups(
 	);
 }
 
-/** 自带的模型裁判：把队列里没答的圈组题一次问完，回答记在题上。 */
-export async function answerGroupsByModel(
+/** 自带的模型判定方：把队列里没判的归并组一次问完，回答记在组上。 */
+export async function judgeGroupsByModel(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const questions = (await openQuestions(client)).filter(
+	const pending = (await openGroups(client)).filter(
 		(one) => one.kind === "group",
 	);
-	if (questions.length === 0) return;
+	if (pending.length === 0) return;
 	const model = reviewModel();
-	report(`  自带模型 ${model} 判 ${questions.length} 道圈组题`);
+	report(`  判 ${pending.length} 组归并`);
 
 	const payloads = await askModel(
-		questions.map((one) => one.words),
+		pending.map((one) => one.words),
 		report,
 	);
-	await recordAnswers(
+	await recordJudgments(
 		client,
 		modelJudge(model),
-		questions.map((one, index) => [one.id, payloads[index]]),
+		pending.map((one, index) => [one.id, payloads[index]]),
 	);
 }

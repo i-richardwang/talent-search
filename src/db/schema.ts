@@ -245,7 +245,7 @@ export const taskRun = pgTable("task_run", {
  *   表示它自己就是标准词。
  * - `parent`：标准词属于哪个更宽的词（「销售数据分析」属于「数据分析」）。具体的词
  *   原样留在人身上，只多这一条归属；检索沿它往上聚（`src/search/search.ts` 的
- *   `FACT_COLUMNS.skills`）。更宽的词可以是语料里没人写过的，裁判起的名字，所以它
+ *   `FACT_COLUMNS.skills`）。更宽的词可以是语料里没人写过的，判定方起的名字，所以它
  *   自己也是一行——这一列指回本表，词表里因此没有指向不存在的词的归属。
  *
  * 归属只挂在标准词上（别名的归属就是它标准词的归属），且不指自己，由检查约束钉着；
@@ -262,9 +262,9 @@ export const skillTerm = pgTable(
 		parent: text("parent").references((): AnyPgColumn => skillTerm.word),
 		reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
 		/**
-		 * 这条决定是谁判的：`model:<模型名>` 或 `agent:<外部裁判的名字>`
+		 * 这条决定是谁判的：`model:<模型名>` 或 `agent:<外部判定方的名字>`
 		 * （`src/corpus/vocabulary.ts` 的 `modelJudge` / `agentJudge`）。库里留痕、
-		 * 排查时查；任务日志按裁判计数。管理页 `/skills` 不逐条显示它。
+		 * 排查时查；任务日志按判定方计数。管理页 `/skills` 不逐条显示它。
 		 */
 		judge: text("judge").notNull(),
 	},
@@ -276,46 +276,48 @@ export const skillTerm = pgTable(
 	],
 );
 
-/** 整理出的题分两种：圈组（问同一件事与归属，写进 `skill_term`）和释义（写进 `phrase_gloss`）。 */
-export const QUESTION_KINDS = ["group", "gloss"] as const;
-export type QuestionKind = (typeof QUESTION_KINDS)[number];
+/** 待判的组分两种：归并（问同一件事与归属，写进 `skill_term`）和释义（写进 `phrase_gloss`）。 */
+export const GROUP_KINDS = ["group", "gloss"] as const;
+export type GroupKind = (typeof GROUP_KINDS)[number];
 
 /**
- * 整理任务出给裁判的题。两种：**圈组**是一组写法相近的能力词，问每个词和谁是同一件事、
- * 属于哪个更宽的词；**释义**是一组相近的短说法，请裁判给每个写一句它指什么。
+ * 整理任务收集起来、等人判定的一组组词。两种：**归并**是一组写法相近的能力词，问
+ * 每个词和谁是同一件事、属于哪个更宽的词；**释义**是一组相近的短说法，请判定方给
+ * 每个写一句它指什么。
  *
- * 这张表是**队列，不是记录**。一行从出题时出现，结算或过期时删除；决定的历史在
+ * 这张表是**队列，不是记录**。一行从收集时出现，生效或过期时删除；决定的历史在
  * `skill_term` 和 `phrase_gloss`，过程的历史在 `task_run.log`，不再存第三份。
  *
- * 它存在的理由是把「判卷」这一步从整理任务里切出来（`src/corpus/questions.ts`）：
- * 出题和结算要拿语料的写者锁，判卷不碰语料，所以外部裁判交卷时不必等派生放锁。
- * 服务端出题、任一裁判答题、服务端结算——外部拿到的是一道道题，不是改表的权限。
+ * 它存在的理由是把「判定」这一步从整理任务里切出来（`src/corpus/judgment.ts`）：
+ * 收集和生效要拿语料的写者锁，判定不碰语料，所以外部提交判定时不必等派生放锁。
+ * 服务端收集、任一方判定、服务端让它生效——外部拿到的是一组组词，不是改表的权限。
  *
- * 题里的词一律平等，没有「中心词」：标准写法由结算按人数定，归属由裁判起名，两样都
- * 不需要题预先指定谁是谁。`judge` 与 `answer` 同生同灭：一行要么没人答过，要么两列都有。
+ * 组里的词一律平等，没有「中心词」：标准写法由生效时按人数定，归属由判定方起名，
+ * 两样都不需要预先指定谁是谁。`judge` 与 `judgment` 同生同灭：一行要么没人判过，
+ * 要么两列都有。
  */
-export const reviewQuestion = pgTable(
-	"review_question",
+export const reviewGroup = pgTable(
+	"review_group",
 	{
 		id: serial("id").primaryKey(),
-		kind: text("kind", { enum: QUESTION_KINDS }).notNull(),
-		/** 这组词和各自的人数，出题那一刻的样子：`[{ word, people }]` */
+		kind: text("kind", { enum: GROUP_KINDS }).notNull(),
+		/** 这组词和各自的人数，收集那一刻的样子：`[{ word, people }]` */
 		words: jsonb("words").$type<{ word: string; people: number }[]>().notNull(),
-		askedAt: timestamp("asked_at", { withTimezone: true })
+		collectedAt: timestamp("collected_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
-		/** 谁答的，同 `skill_term.judge`；没人答过是 null */
+		/** 谁判的，同 `skill_term.judge`；没人判过是 null */
 		judge: text("judge"),
 		/**
-		 * 裁判的**原话**，形状同模型那份（`{ judgments: [...] }`）。收窄在结算时做，
-		 * 和 `completion_cache` 一个道理：改收窄规则不动已经交上来的答卷。
+		 * 判定方的**原话**，形状同模型那份（`{ judgments: [...] }`）。收窄在生效时做，
+		 * 和 `completion_cache` 一个道理：改收窄规则不动已经提交的判定。
 		 */
-		answer: jsonb("answer"),
+		judgment: jsonb("judgment"),
 	},
 	(t) => [
 		check(
-			"review_question_answered_1",
-			sql`(${t.judge} is null) = (${t.answer} is null)`,
+			"review_group_judged_1",
+			sql`(${t.judge} is null) = (${t.judgment} is null)`,
 		),
 	],
 );
@@ -329,9 +331,9 @@ export const reviewQuestion = pgTable(
  * 量过，对的全在 78% 以上、错的全在 47% 以下（`src/search/phrases.ts`）。
  *
  * 释义是**词的属性，不是段的属性**：「客户开发」指什么和谁的简历里写了它无关，所以
- * 不在抽取时写（抽取只看到一段），而由整理出题、裁判在一组相近的词旁边写——界线
+ * 不在抽取时写（抽取只看到一段），而由整理收集、判定方在一组相近的词旁边写——界线
  * 是对着邻居才写得出来的。按文本存、不指 `phrase` 行：它是语言知识，换数据源、换
- * 嵌入空间都不清，和 `skill_term` 一个待遇。只有整理任务的结算写它，写的同时清掉
+ * 嵌入空间都不清，和 `skill_term` 一个待遇。只有整理任务让判定生效时写它，同时清掉
  * 这条说法的分数缓存（`phrase_relevance`）——分数是按判定时读到的字打的。
  *
  * 写哪些说法由整理定（`src/corpus/gloss.ts`）：技能、做过的事、岗位名、序列名这四类
@@ -343,6 +345,17 @@ export const phraseGloss = pgTable("phrase_gloss", {
 	writtenAt: timestamp("written_at", { withTimezone: true }).notNull(),
 	/** 谁写的，同 `skill_term.judge` */
 	judge: text("judge").notNull(),
+	/**
+	 * 这条释义算到哪一版标准（`src/corpus/gloss.ts` 的 `glossIdentity`）。
+	 *
+	 * 和一段经历身上的 `derived_identity` 同一个道理：改了写释义的标准，旧的那些
+	 * 下一轮整理自动重收，不必谁记得去清表。**一批数据得出自同一份标准**——重排拿
+	 * 两条说法比名次时，两段释义不是一个口径就比不出高下。
+	 *
+	 * 词表（`skill_term`）不要这一列：那边每个词七天到期重判一次，标准改了一周内
+	 * 自然换完。释义不到期，所以它的版本得写在行上。
+	 */
+	guideIdentity: text("guide_identity").notNull(),
 });
 
 /**

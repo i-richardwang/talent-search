@@ -1,10 +1,10 @@
 /**
- * 整理质量验收：拿已知答案的一组组能力词让裁判模型判，报合并与归属的对错。
+ * 整理质量验收：拿已知答案的一组组能力词让判定模型判，报合并与归属的对错。
  *
  * 用法：bun run eval:review            # 读 evals/review/*.json
  *      bun run eval:review 文件.json
  *
- * 用例文件是一个 JSON 数组，每项是一道题：
+ * 用例文件是一个 JSON 数组，每项是一组词和它的标准答案：
  *   { "name": "数据分析",
  *     "words": [{ "word": "数据分析", "people": 40 }, { "word": "销售数据分析", "people": 6 }, …],
  *     "same": [["数据分析", "数据分析能力"]],              // 必须判成同一件事的词
@@ -16,13 +16,13 @@
  * 的写法（超 8 字、带「能力」「相关」「工作」的都不是招聘的人会点的）。验收共用生产的 `conform` 与 `merge`，
  * 从本题建立词表，按最终标准词和归属计分。每个题词都必须作答；任何一项失败均返回非零退出码。
  *
- * 合成用例进仓库（sample.json）；真实组是库里圈出来的词，不进版本库。走的是整理答题同一条路
+ * 合成用例进仓库（sample.json）；真实组是库里圈出来的词，不进版本库。走的是整理判定同一条路
  * （`corpus/vocabulary.ts` 的 `askModel`）：当前提示词、`REVIEW_MODEL`、温度 0，回答进同一份缓存。
  */
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Member } from "#/corpus/questions";
+import type { Member } from "#/corpus/judgment";
 import { askModel } from "#/corpus/vocabulary";
 import { conform, merge, type Table } from "#/corpus/vocabulary-rules";
 import { pool } from "#/db";

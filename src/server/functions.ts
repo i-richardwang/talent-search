@@ -5,7 +5,7 @@
  * `createServerFn` 切走的只是 handler 的**函数体**，所以这里的规矩是：
  * **服务端模块的值只能出现在 `.handler()` 里面。**
  *
- * 应用里还有一个服务端入口不在这里：`src/routes/api/review.ts`，外部 agent 判卷用的
+ * 应用里还有一个服务端入口不在这里：`src/routes/api/review.ts`，外部 agent 判定用的
  * 那条 HTTP 接口。它不给页面用——页面要的是 TypeScript 的形状，外部 agent 要的是一份
  * 说得清的 JSON 和几个状态码，两种读者摆不进同一个边界。
  */
@@ -164,10 +164,13 @@ export const requestTask = createServerFn({ method: "POST" })
 		}),
 	);
 
-/** 数据页的人员列表：按名字或工号找。 */
+/** 数据页的人员列表：按名字或工号找，一页一页地给。 */
 export const dataList = createServerFn({ method: "GET" })
-	.validator((d: { q: unknown }) => ({ q: String(d.q ?? "").slice(0, 64) }))
-	.handler(({ data }) => listEmployees(data.q));
+	.validator((d: { q: unknown; page: unknown }) => ({
+		q: String(d.q ?? "").slice(0, 64),
+		page: Number(d.page) || 1,
+	}))
+	.handler(({ data }) => listEmployees(data.q, data.page));
 
 /** 数据页的一个人：档案、每一段、每一段的派生结果。 */
 export const dataEmployee = createServerFn({ method: "GET" })

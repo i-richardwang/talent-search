@@ -1,8 +1,8 @@
 /**
- * 外部裁判那道口子的形状：认人、收窄入参、交卷的几种下场。
+ * 外部判定方那道口子的形状：认人、收窄入参、提交的几种下场。
  *
- * 判卷本身在 `vocabulary.test.ts` 里走完整一轮；这里只管接口自己那一层——凭据对不对、
- * `limit` 怎么收窄、什么样的答卷根本进不了库。
+ * 判定本身在 `vocabulary.test.ts` 里走完整一轮；这里只管接口自己那一层——凭据对不对、
+ * `limit` 怎么收窄、什么样的判定根本进不了库。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
@@ -11,10 +11,10 @@ import { seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { answer, authorized, configured, limitOf } = await import(
+const { authorized, configured, limitOf, submit } = await import(
 	"#/server/review"
 );
-const { openQuestions } = await import("#/corpus/questions");
+const { openGroups } = await import("#/corpus/judgment");
 const { pool } = await import("#/db");
 
 const TOKEN = "test-token";
@@ -50,7 +50,7 @@ describe("认人", () => {
 		assert.equal(authorized(bearer(`Bearer ${TOKEN}`)), false);
 	});
 
-	test("判卷不归外部时，凭据正确也不放行", () => {
+	test("判定不归外部时，凭据正确也不放行", () => {
 		process.env.REVIEW_TOKEN = TOKEN;
 		for (const judge of ["model", "off"]) {
 			process.env.REVIEW_JUDGE = judge;
@@ -70,8 +70,8 @@ describe("认人", () => {
 	});
 });
 
-describe("拉题的 limit", () => {
-	test("缺失、非法、超上限一律收窄，不作废整次请求", () => {
+describe("取组的 limit", () => {
+	test("缺失、非法、超上限一律收窄，不否掉整次请求", () => {
 		assert.equal(limitOf("http://x/api/review"), 20);
 		assert.equal(limitOf("http://x/api/review?limit=abc"), 20);
 		assert.equal(limitOf("http://x/api/review?limit=0"), 20);
@@ -81,10 +81,10 @@ describe("拉题的 limit", () => {
 	});
 });
 
-describe("交卷的形状", () => {
+describe("提交判定的形状", () => {
 	const judgments = [{ word: "数据分析工作", why: "同义", alias: true }];
 
-	test("格式不对的答卷不写库", async () => {
+	test("格式不对的判定不写库", async () => {
 		for (const [body, why] of [
 			["不是 JSON", /不是 JSON/],
 			[[1, 2, 3], /缺 id/],
@@ -96,20 +96,20 @@ describe("交卷的形状", () => {
 			[{ id: 1, judge: "hr-bot" }, /judgments/],
 			[{ id: 1, judge: "hr-bot", judgments: "都并" }, /judgments/],
 		] as [unknown, RegExp][]) {
-			const got = await answer(request(body));
+			const got = await submit(request(body));
 			assert.equal(got.ok, false, `${JSON.stringify(body)} 该被拦下`);
 			assert.match(got.ok ? "" : got.why, why);
 		}
 	});
 
-	test("超过上限的答卷不解析", async () => {
-		const got = await answer(request({ id: 1, big: "x".repeat(70_000) }));
+	test("超过上限的判定不解析", async () => {
+		const got = await submit(request({ id: 1, big: "x".repeat(70_000) }));
 		assert.equal(got.ok, false);
 		assert.match(got.ok ? "" : got.why, /太大/);
 	});
 });
 
-describe("交卷", () => {
+describe("提交判定", () => {
 	let id = 0;
 
 	before(async () => {
@@ -125,7 +125,7 @@ describe("交卷", () => {
 		const connection = await pool.connect();
 		try {
 			const { rows } = await connection.query<{ id: number }>(
-				`insert into review_question (kind, words)
+				`insert into review_group (kind, words)
 				 values ('group', '[{"word":"数据分析","people":3},{"word":"数据分析工作","people":2}]'::jsonb)
 				 returning id`,
 			);
@@ -135,26 +135,26 @@ describe("交卷", () => {
 		}
 	});
 
-	test("原话原样存进题里，这里不收窄", async () => {
-		// 「别的词」不在题里、`sameAs` 指向外人——两样都留到结算时才被 `conform` 丢掉
+	test("原话原样存进组里，这里不收窄", async () => {
+		// 「别的词」不在组里、`sameAs` 指向外人——两样都留到生效时才被 `conform` 丢掉
 		const raw = [
 			{ word: "数据分析工作", why: "同义", sameAs: "数据分析", parent: "" },
 			{ word: "别的词", why: "…", sameAs: "外人", parent: "" },
 		];
-		const got = await answer(request({ id, judge: "hr-bot", judgments: raw }));
+		const got = await submit(request({ id, judge: "hr-bot", judgments: raw }));
 		assert.deepEqual(got, { ok: true, submission: "accepted" });
 
 		const connection = await pool.connect();
 		try {
 			const { rows } = await connection.query<{
 				judge: string;
-				answer: { judgments: unknown[] };
-			}>("select judge, answer from review_question where id = $1", [id]);
+				judgment: { judgments: unknown[] };
+			}>("select judge, judgment from review_group where id = $1", [id]);
 			assert.equal(rows[0]?.judge, "agent:hr-bot");
-			assert.deepEqual(rows[0]?.answer.judgments, raw);
-			// 答过的题不再出现在拉题里
+			assert.deepEqual(rows[0]?.judgment.judgments, raw);
+			// 判过的组不再出现在待判的那一份里
 			assert.equal(
-				(await openQuestions(connection)).some(
+				(await openGroups(connection)).some(
 					(one: { id: number }) => one.id === id,
 				),
 				false,
@@ -164,16 +164,16 @@ describe("交卷", () => {
 		}
 	});
 
-	test("第二份答卷不算，不存在的题分开说", async () => {
+	test("第二份判定不算，不存在的组分开说", async () => {
 		const judgments = [
 			{ word: "数据分析工作", why: "同义", sameAs: "数据分析", parent: "" },
 		];
 		assert.deepEqual(
-			await answer(request({ id, judge: "another", judgments })),
+			await submit(request({ id, judge: "another", judgments })),
 			{ ok: true, submission: "taken" },
 		);
 		assert.deepEqual(
-			await answer(request({ id: 10_000_000, judge: "hr-bot", judgments })),
+			await submit(request({ id: 10_000_000, judge: "hr-bot", judgments })),
 			{ ok: true, submission: "missing" },
 		);
 	});

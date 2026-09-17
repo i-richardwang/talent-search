@@ -71,7 +71,7 @@ describe("收窄", () => {
 		parent,
 	});
 
-	test("只认题里的词，一个词只认第一条；sameAs 只认题里的另一个词", () => {
+	test("只认组里的词，一个词只认第一条；sameAs 只认组里的另一个词", () => {
 		assert.deepEqual(
 			[
 				...conform(
@@ -139,7 +139,7 @@ describe("记账", () => {
 			["Py", decision("Python", OLD)],
 			["Python", decision("Python", OLD)],
 		]);
-		// 「Python」两个人、「Python 语言」三个人：标准写法归人多的那个，裁判没得选
+		// 「Python」两个人、「Python 语言」三个人：标准写法归人多的那个，判定方没得选
 		const changed = merge(
 			table,
 			members(["Python", 2], ["Python 语言", 3]),
@@ -171,7 +171,7 @@ describe("记账", () => {
 			["跨部门合作", decision("跨部门协作", OLD)],
 		]);
 		// 「跨部门协作」并进人更多的「跨部门协同」。它名下的「跨部门沟通」这次被判成
-		// 另一件事，要拆开；「跨部门合作」在题里但没被判到，跟着标准词走
+		// 另一件事，要拆开；「跨部门合作」在组里但没被判到，跟着标准词走
 		merge(
 			table,
 			members(
@@ -221,7 +221,7 @@ describe("记账", () => {
 		);
 	});
 
-	test("归属指向题里另一片的词时取那一片的标准写法，指向表里别名时取它的标准词", () => {
+	test("归属指向组里另一片的词时取那一片的标准写法，指向表里别名时取它的标准词", () => {
 		const table = new Map([
 			["数据分析能力", decision("数据分析", OLD)],
 			["数据分析", decision("数据分析", OLD)],
@@ -278,7 +278,7 @@ describe("记账", () => {
 		assert.equal(table.get("销售数据分析")?.parent, "Data Analysis");
 	});
 
-	test("没判到的词不记，判过的裁判跟着决定走", () => {
+	test("没判到的词不记，判过的那一方跟着决定走", () => {
 		const table = new Map();
 		const changed = merge(
 			table,

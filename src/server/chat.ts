@@ -127,6 +127,18 @@ export function identityOf(
 	);
 }
 
+/**
+ * 一份标准的身份：那段提示词，加它要求的回答形状。**不含模型。**
+ *
+ * 派生物拿它记「这一行算到哪一版标准」（`corpus/gloss.ts` 的 `glossIdentity`），
+ * 判据和 `identityOf` 那一条一样——会改变回答的东西变了，这一行就该重来。模型不进
+ * 这个数：自带模型和外部 agent 照着同一段字判，判出来的东西就是可比的
+ * （`src/server/review.ts`），换个判定方不该让整张表作废。
+ */
+export function standardOf(system: string, schema: z.ZodType<unknown>): string {
+	return sha([system, JSON.stringify(z.toJSONSchema(schema))].join("\u001f"));
+}
+
 /** 一次查缓存问多少段。绑定参数有上限，几千段的语料一次问完会撞上它。 */
 const LOOKUP = 500;
 

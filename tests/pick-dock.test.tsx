@@ -29,6 +29,7 @@ const picks = (chosen: Pick[]): Picks => ({
 	clear: () => {},
 	picked: new Map(chosen.map((p) => [p.empId, p])),
 	picking: true,
+	pickAll: () => {},
 	remove: () => {},
 	rows: [],
 	setShown: () => {},
@@ -40,7 +41,13 @@ const picks = (chosen: Pick[]): Picks => ({
 
 const markup = (chosen: Pick[]) =>
 	renderToStaticMarkup(
-		<PickDock picks={picks(chosen)} names={["算法"]} total={80} />,
+		<PickDock
+			loading={false}
+			names={["算法"]}
+			onAll={() => {}}
+			picks={picks(chosen)}
+			total={80}
+		/>,
 	);
 
 describe("挑人时浮起来的工具条", () => {

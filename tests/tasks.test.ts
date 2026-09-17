@@ -131,14 +131,17 @@ describe("同步与派生", () => {
 
 	test("数据页看得到每一段的派生结果", async () => {
 		const { listEmployees, employeeData } = await import("#/server/data");
-		const list = await listEmployees("");
+		const list = await listEmployees("", 1);
 		assert.equal(list.total, 20);
 		assert.equal(list.rows.length, 20);
+		// 20 个人装得下一页，所以只有一页，第一个人排第一
+		assert.equal(list.pages, 1);
+		assert.equal(list.from, 1);
 		assert.ok(list.rows.every((row) => row.pending === 0));
 		const one = list.rows.find((row) => row.segments > 0);
 		assert.ok(one);
 		assert.deepEqual(
-			(await listEmployees(one.name)).rows.map((row) => row.empId),
+			(await listEmployees(one.name, 1)).rows.map((row) => row.empId),
 			[one.empId],
 		);
 
@@ -209,7 +212,7 @@ describe("同步与派生", () => {
 		assert.equal(await derivePending(), 1);
 		assert.match(
 			await logText(latest(await tasksState(), "sync")?.id),
-			/新来 1 段、离开 1 段/,
+			/新增 1 段、离开 1 段/,
 		);
 	});
 
@@ -295,14 +298,14 @@ describe("同步与派生", () => {
 		assert.equal(await count("employee"), 20);
 	});
 
-	test("换了嵌入空间：说法整张作废，所有段重新派生，身份证重写", async () => {
+	test("向量模型更换：说法整张作废，所有段重新派生，身份证重写", async () => {
 		await db.execute(sql`update embedding_space set space_id = 'old-space'`);
 		const run = await runTask("derive");
 		assert.ok(run);
 		assert.equal(run.failure, null);
 		assert.match(
 			await logText(latest(await tasksState(), "derive")?.id),
-			/嵌入空间从 old-space/,
+			/向量模型已更换/,
 		);
 		const { rows } = await db.execute<{ space_id: string }>(
 			sql`select space_id from embedding_space`,
@@ -316,13 +319,13 @@ describe("同步与派生", () => {
 	});
 });
 
-test("词表跨嵌入空间保留，结算一条技能边都不动", async () => {
+test("词表跨嵌入空间保留，生效一条技能边都不动", async () => {
 	const previous = process.env.REVIEW_JUDGE;
 	process.env.REVIEW_JUDGE = "external";
 	const restore = answers();
 	try {
-		await db.execute(sql`delete from review_question`);
-		await db.execute(sql`insert into review_question (kind, words, judge, answer) values (
+		await db.execute(sql`delete from review_group`);
+		await db.execute(sql`insert into review_group (kind, words, judge, judgment) values (
 			'group', '[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
 			'{"judgments":[{"word":"数据分析","sameAs":"","parent":"业务分析"}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
@@ -333,8 +336,8 @@ test("词表跨嵌入空间保留，结算一条技能边都不动", async () =>
 			from experience_phrase ep join phrase p on p.id = ep.phrase_id where ep.route = 'skill'`;
 		const before = (await db.execute<{ all: string }>(edges)).rows[0]?.all;
 		assert.ok(before);
-		await db.execute(sql`delete from review_question`);
-		await db.execute(sql`insert into review_question (kind, words, judge, answer) values (
+		await db.execute(sql`delete from review_group`);
+		await db.execute(sql`insert into review_group (kind, words, judge, judgment) values (
 			'group', '[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
 			'{"judgments":[{"word":"业务分析","sameAs":"","parent":""},{"word":"数据分析","sameAs":"业务分析","parent":""}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
