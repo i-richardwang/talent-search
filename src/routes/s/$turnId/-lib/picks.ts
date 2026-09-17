@@ -92,14 +92,14 @@ function rowOf(
 }
 
 /**
- * 挑人的全部状态：是否处于挑人模式、选中了谁。
+ * 选择的全部状态：是否处于选择模式、选中了谁。
  *
  * 不进 URL。地址栏保存的是「怎么看这批人」（分界见 `view-params.ts` 开头），可以
  * 随意修改、分享给同事；而选中集合是当前正在进行的一次操作，把三十个工号写进
  * query string 会让每勾一次就往历史栈压一条记录，后退键随之失效。
  *
  * 换一条查询记录就重置：换了问题之后，上一批人是按另一套条件选的，带过来会导出
- * 一份口径不一致的名单。退出挑人模式同样清空——保留一份不可见的选中状态，之后
+ * 一份口径不一致的名单。退出选择模式同样清空——保留一份不可见的选中状态，之后
  * 会以用户意料之外的方式出现在导出里。
  */
 export function usePicks(turnId: string, outcome: SearchOutcome) {
@@ -117,7 +117,7 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	const [picking, setPicking] = useState(false);
 	const [picked, setPicked] = useState(NONE);
 
-	// 「选上全部」还欠着的那一批：名单长出来的这一帧就补上，同样不放进 effect。
+	// 「选择全部」还欠着的那一批：名单长出来的这一帧就补上，同样不放进 effect。
 	const sweeping = useRef(false);
 	const swept = useRef(rows);
 	if (sweeping.current && swept.current !== rows) {
@@ -208,12 +208,12 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	}, []);
 
 	/**
-	 * 把够得着的人全都选上。
+	 * 把显示上限内的人全部选中。
 	 *
 	 * 名单是一页页长出来的，所以这件事分两步：这一刻先把名单上的选中，`more` 说
 	 * 后面还有没有——有的话，等它们到达（`rows` 换了一份）再补上剩下的。
 	 *
-	 * 这一笔「还欠着」只活到下一份 `rows` 为止，换记录、清空、退出挑人都取消它：
+	 * 这一笔「还欠着」只活到下一份 `rows` 为止，换记录、清空、退出选择都取消它：
 	 * 一个没人记得的「全都要」在几分钟后把新到的人塞进导出里，比不做更坏。
 	 */
 	const pickAll = useCallback(

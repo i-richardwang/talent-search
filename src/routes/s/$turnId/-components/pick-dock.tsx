@@ -39,7 +39,7 @@ import { reachOf } from "../-lib/view-params";
  * 固定在名单下沿，不在表头。用户是一边向下浏览一边选的，视线在名单下半部分，
  * 汇总条应当出现在同一区域；放回表头的话，每选一个都要回到页顶确认。
  *
- * 一个人都没选时不渲染：挑人有开始也有结束，只有中间这段需要汇总条。空着时摆
+ * 一个人都没选时不渲染：选择有开始也有结束，只有中间这段需要汇总条。空着时摆
  * 一条「已选 0 人 · 清空 · 导出」，等于在屏幕上留一组既不可用也不会变化的按钮。
  *
  * 计数一段、操作一段，中间用 `ToolbarSeparator` 分开——这是 `Toolbar` 自带的分段
@@ -59,7 +59,7 @@ export function PickDock({
 	names: string[];
 	/** 符合条件的总人数。名单上这几个人只是其中一段。 */
 	total: number;
-	/** 把够得着的人全都选上：名单没加载完的部分一并加载出来。 */
+	/** 把显示上限内的人全部选中：名单没加载完的部分一并加载出来。 */
 	onAll: () => void;
 	/** 那一步正在跑。按钮据此转圈，人才知道名单在长。 */
 	loading: boolean;
@@ -148,7 +148,7 @@ function Chosen({
 			</ToolbarButton>
 			<PopoverPopup align="start" className="w-64">
 				{/* 标题不重复人数：那个数字就在上方 4px 处的按钮上 */}
-				<PopoverTitle className="mb-3 text-sm">挑上的人</PopoverTitle>
+				<PopoverTitle className="mb-3 text-sm">已选的人</PopoverTitle>
 				{/* 选中上百人也不必自己限高：浮层知道离屏幕边还有多少空间
 				    （`--available-height`），超出后在内部滚动。 */}
 				<ul className="flex flex-col gap-0.5">
@@ -196,7 +196,7 @@ function ExportDialog({
 	picked: Pick[];
 	names: string[];
 	total: number;
-	/** 这次查询够得着的人有几个（`reachOf`）。 */
+	/** 这次查询能显示的人有几个（`reachOf`）。 */
 	reach: number;
 	onAll: () => void;
 	loading: boolean;
@@ -256,7 +256,7 @@ function ExportDialog({
 							</FieldDescription>
 						</Field>
 						{/*
-						 * 选中的比够得着的少时，说清这份表里是谁，并给出把人补齐的那一下。
+						 * 选中的比能显示的少时，说清这份表里是谁，并给出把人补齐的那一下。
 						 *
 						 * 名单一页页长出来是名单自己的事，导出的份数不该由用户滚到哪儿
 						 * 决定，所以这里不报「还有多少人没加载」，而是把补齐做掉。
@@ -266,8 +266,8 @@ function ExportDialog({
 								<InfoIcon />
 								<AlertDescription className="flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
 									<span className="min-w-0 flex-1">
-										这份表是你选的 {picked.length} 人。符合条件的共 {total} 人
-										{total > reach && `，名单按相关度给到前 ${reach} 位`}。
+										这份表是你选择的 {picked.length} 人。符合条件的共 {total} 人
+										{total > reach && `，名单按相关度只显示前 ${reach} 位`}。
 									</span>
 									<Button
 										className="shrink-0"
@@ -276,7 +276,7 @@ function ExportDialog({
 										size="xs"
 										variant="outline"
 									>
-										选上这 {reach} 人
+										选择全部 {reach} 人
 									</Button>
 								</AlertDescription>
 							</Alert>

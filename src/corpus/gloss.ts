@@ -260,7 +260,7 @@ export async function judgeGlossesByModel(
 /**
  * 有多少条短说法已有这一版标准的释义、多少条还没有。任务台那张卡片报的数。
  *
- * 口径和 `collectGlosses` 挑人的那一条一模一样：旧标准的释义在这里不算数。两处口径
+ * 口径和 `collectGlosses` 收集的那一条一模一样：旧标准的释义在这里不算数。两处口径
  * 不同的话，卡片会说「15494/15494 条」，而整理每天照样在重收——没人看得出为什么。
  */
 export async function glossCounts(

@@ -192,7 +192,7 @@ describe("还能不能再翻", () => {
 		assert.equal(morePage({ n: RESULT_MAX }).n, RESULT_MAX);
 	});
 
-	test("一次加载齐：够得着的人一跳到位，多出来的那一页不算", () => {
+	test("一次加载齐：能显示的人一跳到位，多出来的那一页不算", () => {
 		// 只取整页的倍数，否则 `pageSize` 会把它当非法值丢掉，名单反而缩回第一页
 		assert.equal(allPages(RESULT_PAGE + 1).n, RESULT_PAGE * 2);
 		assert.equal(allPages(RESULT_PAGE).n, RESULT_PAGE);

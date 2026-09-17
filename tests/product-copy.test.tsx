@@ -27,7 +27,7 @@ import { visibleText } from "./render";
 
 const seen = (node: React.ReactNode) => visibleText(renderToStaticMarkup(node));
 
-/** 这几条测的是文案，不是挑人。一份谁也没挑的就够。 */
+/** 这几条测的是文案，不是选择。一份谁也没选的就够。 */
 const NO_PICKS: Picks = {
 	clear: () => {},
 	picked: new Map(),

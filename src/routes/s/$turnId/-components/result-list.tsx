@@ -46,13 +46,13 @@ const SKELETON_ROWS = 5;
 /** 计数那一行怎么描述这份名单的排序。 */
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	evidence: "按证据排序",
-	depth: "按经历深度排序",
+	depth: "不分来源排序",
 	employee: "默认顺序",
 };
 
 /**
  * 名单的表头：这份名单有多少人、按什么排、图例三个点各是什么意思、要不要只留
- * 任职记录能证明的那些人，以及要不要只看深度。
+ * 任职记录能证明的那些人，以及要不要不分来源排序。
  *
  * 这些都是名单自身的属性，所以跟着名单走。放进查询区的话，计数会随 chips 换行
  * 上下移动，而它回答的也不是「我搜了什么」。
@@ -93,16 +93,16 @@ export function ResultHeader({
 	planned: boolean;
 	/** 「仅岗位或序列」是否打开。它是这份名单的属性，不是视图状态。 */
 	strong: boolean;
-	/** 「只看深度」是否打开（取自视图状态）。结果还没回来时它就已经是按下态。 */
+	/** 「不分来源」是否打开（取自视图状态）。结果还没回来时它就已经是按下态。 */
 	byDepth: boolean;
 	onChange: (next: Partial<View>) => void;
 	/** 只留受控证据之后还剩多少人 */
 	strongOn: number;
-	/** 是否处于挑人模式。挑人时整份名单左侧让出一列复选框，表头这一行最左边是全选。 */
+	/** 是否处于选择模式。选择时整份名单左侧让出一列复选框，表头这一行最左边是全选。 */
 	picking: boolean;
-	/** 进入或退出挑人。 */
+	/** 进入或退出选择。 */
 	onPicking: (on: boolean) => void;
-	/** 是否有可挑的名单。没有时按钮保留位置但禁用，理由和「仅岗位或序列」相同。 */
+	/** 是否有可供选择的名单。没有时按钮保留位置但禁用，理由和「仅岗位或序列」相同。 */
 	pickable: boolean;
 }) {
 	return (
@@ -121,7 +121,7 @@ export function ResultHeader({
 			</p>
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
 				{/* 图例和旁边的开关说的都是证据，没有条件的查询里两者都没有意义；
-				    挑人与条件无关，按部门筛出的一批人同样需要导出。 */}
+				    选择与条件无关，按部门筛出的一批人同样需要导出。 */}
 				{(planned || claims.length > 0) && (
 					<>
 						<StrengthLegend />
@@ -141,11 +141,11 @@ export function ResultHeader({
 					</>
 				)}
 				{/*
-				 * 挑人是一个操作，不是名单的一种性质：按下之后名单内容不变，只是
+				 * 选择是一个操作，不是名单的一种性质：按下之后名单内容不变，只是
 				 * 开始从中选择。所以用按钮，而不是左边那种 `Toggle`——「仅岗位或
 				 * 序列」按下会让人从名单里消失，两者同款同尺寸并排会被当成同一类。
 				 *
-				 * 进入和退出都用动作文案（「挑人导出」／「退出挑人」），不靠按下态
+				 * 进入和退出都用动作文案（「选择」／「取消选择」），不靠按下态
 				 * 表示当前模式：名单左侧那一列复选框已经表示了。
 				 */}
 				<Button
@@ -155,7 +155,7 @@ export function ResultHeader({
 					variant="outline"
 				>
 					{picking ? <XIcon /> : <ListChecksIcon />}
-					{picking ? "退出挑人" : "挑人导出"}
+					{picking ? "取消选择" : "选择"}
 				</Button>
 			</div>
 		</div>
@@ -220,7 +220,7 @@ function ProvenOnly({
 }
 
 /**
- * 只看深度。
+ * 不分来源。
  *
  * 默认的排法先按证据分档、档内按做得多深（`result.ts` 的 `Order`）；这个开关
  * 抹掉分档，只看做得多像、多久、多近。组团队要找做得久的人时用它：自述八年的
@@ -245,19 +245,19 @@ function ByDepth({
 			size="sm"
 			variant="outline"
 		>
-			<span>只看深度</span>
+			<span>不分来源</span>
 		</Toggle>
 	);
 }
 
 /**
- * 挑人时名单左侧让出的那一列，在每一行上对应的那一格。
+ * 选择时名单左侧让出的那一列，在每一行上对应的那一格。
  *
  * 表头、骨架块、候选卡片都以它开头，宽度只有 `--pick-column` 一个出处
- * （styles.css），所以加载中和结果到达后的几何完全一致：名单只在进入挑人模式时
+ * （styles.css），所以加载中和结果到达后的几何完全一致：名单只在进入选择模式时
  * 位移一次。
  *
- * 不挑人时宽度为 0 且 `invisible`（`visibility: hidden`），里面的复选框同时退出
+ * 不选择时宽度为 0 且 `invisible`（`visibility: hidden`），里面的复选框同时退出
  * Tab 序和读屏，留下的是一格宽度而不是一个隐藏但仍可聚焦的控件——筛选栏的
  * 「清除」用的是同一个办法。宽度做成过渡而不是瞬变，因为它由用户显式切换触发。
  */
@@ -351,7 +351,7 @@ export function ResultList({
 	canMore: boolean;
 	/** 正在翻下一页：已经看到的人留在原地，只有按钮转圈 */
 	growing: boolean;
-	/** 导出时的「选上这 N 人」：够得着的全选上，名单没加载出来的一并加载。 */
+	/** 导出时的「选择全部 N 人」：能显示的全部选中，名单没加载出来的一并加载。 */
 	onAll: () => void;
 	onMore: () => void;
 	/** 打开它之后还剩多少人。表头那个开关关着时报的就是这个数。 */
@@ -361,13 +361,13 @@ export function ResultList({
 	turnId: string;
 	/** 「仅岗位或序列」开着没有，给表头那个开关。 */
 	strong: boolean;
-	/** 「只看深度」开着没有，给表头那个开关。 */
+	/** 「不分来源」开着没有，给表头那个开关。 */
 	byDepth: boolean;
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：给一份新的证据要求，派生一条新记录。 */
 	onReviseQuery: (next: Condition[]) => void;
 	onEditQuery: () => void;
-	/** 挑人这件事的全部状态，以及名单每一块推好的那份东西（`-lib/picks.ts`）。 */
+	/** 选择这件事的全部状态，以及名单每一块推好的那份东西（`-lib/picks.ts`）。 */
 	picks: Picks;
 }) {
 	const { results, claims, order, total } = outcome;
@@ -385,11 +385,11 @@ export function ResultList({
 	// 那一组都读它——两处都是「结果回来之前就得把位子占好」。
 	const pending = claimsOf(spec.conditions);
 
-	// 有名单可挑吗。表头那颗按钮和表头这一行的第一格（全选）说的是同一件事。
+	// 有可供选择的名单吗。表头那颗按钮和表头这一行的第一格（全选）说的是同一件事。
 	const pickable = !loading && results.length > 0;
 
 	const head = (
-		/* 名单的第一行，和下面每一块同一副骨架：挑格加内容。于是表头那个全选和
+		/* 名单的第一行，和下面每一块同一副骨架：选择格加内容。于是表头那个全选和
 		   每一块的那个框落在同一条竖线上——那是表格用了几十年的第一列，只不过
 		   这里的「行」是一块卡片。 */
 		<div className="mb-2.5 flex items-start">
@@ -584,7 +584,7 @@ export function ResultList({
 				 * 了——两个数从来不同屏，不是同一句话说了两遍。
 				 * 翻不动的时候不留一个按不动的按钮，改说原因——「看完了」和「名单到此
 				 * 为止」是两件事，后者要给出路，前者不必。后者说的是这份答案的口径
-				 * （按相关度给到第几位，`weights.ts` 那一段），出路因此是收窄条件。
+				 * （按相关度只显示到第几位，`weights.ts` 那一段），出路因此是收窄条件。
 				 */
 				<div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 py-6">
 					<span className="text-muted-foreground text-xs">
@@ -603,7 +603,7 @@ export function ResultList({
 					) : (
 						<span className="text-muted-foreground text-xs">
 							{total > reach
-								? `名单按相关度给到前 ${reach} 位。要够到更靠后的人，把条件收窄。`
+								? `名单按相关度只显示前 ${reach} 位。想看更靠后的人，把条件收窄。`
 								: "已显示全部结果。"}
 						</span>
 					)}
@@ -614,14 +614,14 @@ export function ResultList({
 
 	return (
 		/*
-		 * 只有这一层容器，挑人时让出一列由它负责：骨架、空态、名单三种内容都在它
+		 * 只有这一层容器，选择时让出一列由它负责：骨架、空态、名单三种内容都在它
 		 * 里面，每一行以 `PickCell` 开头。三支各自搭一棵树的话，让出的列宽就有三个出处，
 		 * 漏掉其中一处会在结果到达的那一帧让整份名单横向位移，而到达时不允许有
 		 * 位移（AGENTS.md）。
 		 *
 		 * 这一层同时是 `CheckboxGroup`：全选、半选状态，以及「这一组复选框属于同
 		 * 一件事」的语义都由它提供（Base UI），不必自己用 `checked={a && b}` 拼。
-		 * 不挑人时里面的复选框都是 0 宽且 `invisible`，保留的是布局，不是一组隐藏
+		 * 不选择时里面的复选框都是 0 宽且 `invisible`，保留的是布局，不是一组隐藏
 		 * 但仍可聚焦的控件。
 		 */
 		<CheckboxGroup

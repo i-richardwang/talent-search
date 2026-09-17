@@ -4,7 +4,7 @@ import type { SearchResult } from "#/search/result";
 import type { View } from "./view-params";
 
 /**
- * `/` 改问题，↑↓ / jk 换人，Esc 关闭详情，挑人时用空格选中或取消。
+ * `/` 改问题，↑↓ / jk 换人，Esc 关闭详情，选择模式下用空格选中或取消。
  * 批量筛人时手不必离开键盘。
  *
  * 窄屏详情浮层的 Esc 不在这里处理：它是 coss 的 `Dialog`，自带 Esc 关闭、焦点
@@ -27,7 +27,7 @@ export function useKeyboardFlow({
 	turnId: string;
 	view: View;
 	/**
-	 * 选中或取消当前这个人。不在挑人模式时为 undefined：那时空格属于页面滚动，
+	 * 选中或取消当前这个人。不在选择模式时为 undefined：那时空格属于页面滚动，
 	 * 拦下来会让普通浏览状态下按空格没有任何反应。
 	 */
 	onPick?: (empId: string) => void;
@@ -79,7 +79,7 @@ export function useKeyboardFlow({
 
 			// 长按不连发：navigate 是异步的，系统按键重复（~30/s）远快于重渲染，
 			// 连续几次读到的都是同一个 empId，算出同一个落点然后被自己挡掉，表现
-			// 就是按住 ↓ 时光标一顿一顿地走；按住空格则是同一个人被反复挑上又取消。
+			// 就是按住 ↓ 时光标一顿一顿地走；按住空格则是同一个人被反复选中又取消。
 			// 连按交给用户自己按。
 			if (e.repeat) return;
 
@@ -87,9 +87,9 @@ export function useKeyboardFlow({
 			// 按自己的方向取缺省。
 			const at = results.findIndex((r) => r.employee.empId === empId);
 
-			// 空格挑上／取消当前这个人：↑↓ 走到谁，挑的就是谁，两个键说的是同一个
-			// 「当前」。挑人时它**恒归挑人**，一次都不留给页面滚动——同一个模式里
-			// 同一个键不能有时挑人、有时把整页翻下去一屏。还没走到任何人时挑名单
+			// 空格选中／取消当前这个人：↑↓ 走到谁，选的就是谁，两个键说的是同一个
+			// 「当前」。选择模式下它**恒归选择**，一次都不留给页面滚动——同一个模式里
+			// 同一个键不能有时选择、有时把整页翻下去一屏。还没走到任何人时选名单
 			// 第一个，和 ↓ 落到第一个是同一条规则。
 			if (e.key === " " && onPick) {
 				e.preventDefault();

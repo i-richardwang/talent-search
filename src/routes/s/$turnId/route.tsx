@@ -67,7 +67,7 @@ const KEYS = [
 	["Esc", "关闭详情"],
 ] as const;
 
-/** 挑人时才有对象可挑，所以这一条只在那时候排进去。 */
+/** 选择模式下才有对象可选，所以这一条只在那时候排进去。 */
 const PICK_KEY = ["空格", "选择或取消"] as const;
 
 /**
@@ -168,13 +168,13 @@ function Workbench() {
 	const reviseSpec = (next: SearchSpec) =>
 		commit({ kind: "spec", spec: next }, { parentTurnId: turnId });
 
-	// 挑人：选中的是谁、推给 CSV 的是什么，全在这一个钩子里（`-lib/picks.ts`）。
+	// 选择：选中的是谁、推给 CSV 的是什么，全在这一个钩子里（`-lib/picks.ts`）。
 	const picks = usePicks(turnId, outcome);
 
 	const canMore = canLoadMore(view, total);
 
 	/**
-	 * 导出时的「选上这 N 人」：够得着的人全要。
+	 * 导出时的「选择全部 N 人」：显示上限内的人全要。
 	 *
 	 * 两半合在这一处说完——名单上这批当场选中，后面还没加载出来的那批一跳到底
 	 * 拉回来，等它们到达时 `picks` 自己补上（`-lib/picks.ts` 的 `pickAll`）。

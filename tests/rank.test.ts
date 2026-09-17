@@ -94,7 +94,7 @@ describe("先按可信度排，再按深度排", () => {
 		);
 	});
 
-	test("只看深度时不分档：二十年的部门命中排到一个月的序列命中前面", () => {
+	test("不分来源时不分档：二十年的部门命中排到一个月的序列命中前面", () => {
 		assert.deepEqual(
 			orderOf([longOrg, shortSeq], claims("must"), { order: "depth" }),
 			["A", "B"],

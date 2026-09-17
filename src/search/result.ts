@@ -159,7 +159,7 @@ export type Order = "evidence" | "depth";
 export type SearchFilters = Population & {
 	/** 每条必须的主张都要有受控字段（序列或岗位）的命中。 */
 	strong?: boolean;
-	/** 名单按什么排。缺省是按证据（见 `Order`），写 `depth` 才是只看深度。 */
+	/** 名单按什么排。缺省是按证据（见 `Order`），写 `depth` 才是不分来源。 */
 	order?: Exclude<Order, "evidence">;
 };
 

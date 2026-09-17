@@ -48,15 +48,15 @@ describe("这份名单是什么", () => {
 	});
 
 	test("一个条件都没有时不显示图例和那两个开关", () => {
-		// 没有点可对照的时候，图例解释的是不存在的东西；没有证据也就没有深度可看
+		// 没有点可对照的时候，图例解释的是不存在的东西；没有证据也就没有来源可分
 		const seen = render(false, 7, []);
 		assert.ok(!seen.includes("匹配来源"), seen);
 		assert.ok(!seen.includes("仅岗位或序列"), seen);
-		assert.ok(!seen.includes("只看深度"), seen);
+		assert.ok(!seen.includes("不分来源"), seen);
 	});
 });
 
-describe("只看深度", () => {
+describe("不分来源", () => {
 	test("和「仅岗位或序列」并排，按下态跟着视图走，不等结果", () => {
 		const html = renderToStaticMarkup(
 			<ResultHeader
@@ -74,7 +74,7 @@ describe("只看深度", () => {
 				total={0}
 			/>,
 		);
-		const from = html.indexOf("只看深度");
+		const from = html.indexOf("不分来源");
 		assert.ok(from > html.indexOf("仅岗位或序列"), html);
 		assert.match(
 			html.slice(html.lastIndexOf("<button", from), from),
@@ -101,7 +101,7 @@ describe("只看深度", () => {
 				/>,
 			),
 		);
-		assert.ok(seen.includes("按经历深度排序"), seen);
+		assert.ok(seen.includes("不分来源排序"), seen);
 	});
 });
 
@@ -142,24 +142,24 @@ describe("不产生无效操作", () => {
 	});
 });
 
-describe("挑人", () => {
+describe("选择", () => {
 	test("它是一次动作，不是这份名单的一种性质", () => {
 		/*
 		 * 它左边那两个开关按下去会改变名单本身（少一批人、换一种顺序），是这份
-		 * 名单的性质，所以是带按下态的开关；挑人按下去名单一个人不少、顺序不变。
+		 * 名单的性质，所以是带按下态的开关；选择按下去名单一个人不少、顺序不变。
 		 * 两类做成同款控件并排，等于宣称它们是一类——所以带按下态的只有左边那两个。
 		 */
 		const html = markup(false, 7);
-		assert.ok(html.includes("挑人导出"), html);
+		assert.ok(html.includes("选择"), html);
 		assert.equal((html.match(/aria-pressed/g) ?? []).length, 2, html);
 		assert.doesNotMatch(
-			html.slice(html.lastIndexOf("<button", html.indexOf("挑人导出"))),
+			html.slice(html.lastIndexOf("<button", html.indexOf("选择"))),
 			/aria-pressed/,
 		);
 	});
 
 	test("进和出都写成这一下要做的事", () => {
 		// 现在在哪一档由名单左边那一列框说，不由一个按下去的样子说
-		assert.ok(visibleText(markup(false, 7, CLAIMS, true)).includes("退出挑人"));
+		assert.ok(visibleText(markup(false, 7, CLAIMS, true)).includes("取消选择"));
 	});
 });
