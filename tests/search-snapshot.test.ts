@@ -21,7 +21,8 @@ after(teardown);
 
 // import 必须在 setup() 之后：#/db 与 #/server/embed 在模块求值时就绑死了环境变量
 const { search } = await import("#/search/search");
-const { db, pool, withCorpusSnapshot } = await import("#/db");
+const { db, pool } = await import("#/db");
+const { withCorpusSnapshot } = await import("#/db/snapshot");
 
 const run = async (query: string) => {
 	const outcome = await search({ conditions: parseQuery(query) });

@@ -12,7 +12,6 @@
 
 import { createServerFn } from "@tanstack/react-start";
 import { asc, eq } from "drizzle-orm";
-import { withCorpusSnapshot } from "#/db";
 import {
 	type Employee,
 	type Experience,
@@ -20,6 +19,7 @@ import {
 	experience,
 	TASK_KINDS,
 } from "#/db/schema";
+import { withCorpusSnapshot } from "#/db/snapshot";
 import { validateCommit } from "#/search/commit-input";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";

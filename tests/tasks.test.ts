@@ -21,6 +21,7 @@ const { runTask, tasksState, taskLog, derivePending } = await import(
 	"#/server/tasks"
 );
 const { phrasePlan } = await import("#/corpus/derive");
+const { groupIdentity } = await import("#/corpus/vocabulary");
 const { facts } = await import("#/routes/tasks");
 const { acquireCorpusSession, corpusSessionActive } = await import(
 	"#/corpus/session"
@@ -142,6 +143,13 @@ describe("同步与派生", () => {
 		assert.ok(one);
 		assert.deepEqual(
 			(await listEmployees(one.name, 1)).rows.map((row) => row.empId),
+			[one.empId],
+		);
+		await db.execute(
+			sql`update employee set name = ${`含%号`} where emp_id = ${one.empId}`,
+		);
+		assert.deepEqual(
+			(await listEmployees("%", 1)).rows.map((row) => row.empId),
 			[one.empId],
 		);
 
@@ -325,8 +333,8 @@ test("词表跨嵌入空间保留，生效一条技能边都不动", async () =>
 	const restore = answers();
 	try {
 		await db.execute(sql`delete from review_group`);
-		await db.execute(sql`insert into review_group (kind, words, judge, judgment) values (
-			'group', '[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
+		await db.execute(sql`insert into review_group (kind, guide_identity, words, judge, judgment) values (
+			'group', ${groupIdentity()}, '[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
 			'{"judgments":[{"word":"数据分析","sameAs":"","parent":"业务分析"}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
 		await db.execute(sql`update embedding_space set space_id = 'reset-space'`);
@@ -337,8 +345,8 @@ test("词表跨嵌入空间保留，生效一条技能边都不动", async () =>
 		const before = (await db.execute<{ all: string }>(edges)).rows[0]?.all;
 		assert.ok(before);
 		await db.execute(sql`delete from review_group`);
-		await db.execute(sql`insert into review_group (kind, words, judge, judgment) values (
-			'group', '[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
+		await db.execute(sql`insert into review_group (kind, guide_identity, words, judge, judgment) values (
+			'group', ${groupIdentity()}, '[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
 			'{"judgments":[{"word":"业务分析","sameAs":"","parent":""},{"word":"数据分析","sameAs":"业务分析","parent":""}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
 		assert.equal(

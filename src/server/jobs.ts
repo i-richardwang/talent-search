@@ -15,8 +15,8 @@
 
 import "@tanstack/react-start/server-only";
 import { PgBoss } from "pg-boss";
-import { reviewJudge } from "#/corpus/judgment";
 import type { TaskKind } from "#/db/schema";
+import { reviewJudge } from "./review";
 import { derivePending, runTask } from "./tasks";
 
 /** 后台跑的两种任务。同步不在其中：它读的是别处的数据，由命令行按外面的节奏跑。 */
@@ -44,6 +44,7 @@ type Handle = { boss: PgBoss; ready: Promise<void> };
 const registry = globalThis as { [HANDLE]?: Handle };
 
 async function setup(boss: PgBoss): Promise<void> {
+	reviewJudge();
 	boss.on("error", (error) => console.error("pg-boss：", error));
 	await boss.start();
 	const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;

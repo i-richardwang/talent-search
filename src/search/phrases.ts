@@ -16,7 +16,7 @@
  * 改筛选或再次搜索同一个词时直接命中缓存。只有召回出来却没打过分的对
  * 才会出去。
  *
- * **两次快照，模型调用夹在中间。** 快照（`#/db` 的 `withCorpusSnapshot`）占着
+ * **两次快照，模型调用夹在中间。** 快照（`#/db/snapshot` 的 `withCorpusSnapshot`）占着
  * 池里的一条连接，所以一次慢端点调用不能发生在快照内。于是这里把一次准入
  * 拆成三段：嵌入在快照外 → 第一次快照做召回和读缓存 → 重排在快照外 →
  * 调用方的那次快照（第二次）核对嵌入空间还是不是同一个，是就接着取数。
@@ -26,7 +26,7 @@
 
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
-import { type DbExecutor, withCorpusSnapshot } from "#/db";
+import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
 import { embed, vectorLiteral } from "#/server/embed";
 import { rerank, rerankSpaceId } from "#/server/rerank";
 import { RECALL_MIN, RECALL_TOP } from "./weights";

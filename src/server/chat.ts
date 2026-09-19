@@ -21,7 +21,7 @@ import { db } from "#/db";
 import { completionCache } from "#/db/schema";
 import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
 
-const BASE_URL = process.env.EXTRACT_BASE_URL;
+const BASE_URL = process.env.EXTRACT_BASE_URL?.trim();
 const API_KEY = process.env.EXTRACT_API_KEY;
 
 /**
@@ -64,6 +64,11 @@ export function chatConfigured(): boolean {
 	return Boolean(BASE_URL && process.env.EXTRACT_MODEL?.trim());
 }
 
+/** 整理模型是否完整配置；它可以单独使用 REVIEW_MODEL，不要求同时开启抽取。 */
+export function reviewConfigured(): boolean {
+	return Boolean(BASE_URL && reviewModel());
+}
+
 export function extractModel(): string {
 	return process.env.EXTRACT_MODEL?.trim() ?? "";
 }
@@ -76,17 +81,13 @@ export function reviewModel(): string {
 	return process.env.REVIEW_MODEL?.trim() || extractModel();
 }
 
-export function chatEndpoint(): string {
-	return BASE_URL ?? "";
-}
-
 // provider 延迟到首次使用时创建，未配置端点的进程可以安全导入本模块。
 // 三处调用共用同一个端点，只有模型名不同，所以 provider 只有一个。
 let provider: ReturnType<typeof createOpenAICompatible> | null = null;
 function getModel(model: string) {
 	if (!BASE_URL || !model)
 		throw new Error(
-			"抽取端点未配置：需要 EXTRACT_BASE_URL 与 EXTRACT_MODEL（见 .env.example）",
+			"聊天端点未配置：需要 EXTRACT_BASE_URL 与调用所需的模型（见 .env.example）",
 		);
 	if (!provider)
 		provider = createOpenAICompatible({

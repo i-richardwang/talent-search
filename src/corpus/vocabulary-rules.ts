@@ -7,11 +7,11 @@ import { MAX_TAG_LEN, tag } from "./tag";
  * 多在 0.8 以上；再低会把「数据分析」和「数据仓库」这种相邻领域圈到一起——
  * 判定方能拆，但每组的词一多它就开始漏。
  */
-export const SIMILARITY = 0.8;
+const SIMILARITY = 0.8;
 /** 一组最多几个词。圈子再大就是阈值定低了，判定方面对二十个词会成片地判成同一项。 */
 const GROUP_MAX = 12;
 /** 中心词至少几个人才值得整理。 */
-export const HEAD_MIN = 3;
+const HEAD_MIN = 3;
 
 /**
  * 一个词的决定：它的标准写法（等于自己就是标准词）、标准词属于哪个更宽的词

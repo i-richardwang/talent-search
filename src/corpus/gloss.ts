@@ -29,7 +29,7 @@ import type { CorpusClient } from "./session";
 import { tag } from "./tag";
 
 /** 写释义的那四类。整段原文本来就是一段话，部门路径答的是「待过哪儿」，都不写。 */
-export const GLOSSED_ROUTES = ["skill", "did", "title", "seq"] as const;
+const GLOSSED_ROUTES = ["skill", "did", "title", "seq"] as const;
 
 /** 一批几个说法。判定方一次面对几十个相近的词还写得出界线；再多就开始互相抄。 */
 export const BATCH = 40;
@@ -71,9 +71,6 @@ const SCHEMA = z.object({
  * 下一轮整理自动重收——和一段经历身上的 `derived_identity` 同一个道理：**一批数据得
  * 出自同一份标准**，重排拿两条说法比的时候，两段释义不是一个口径就比不出名次。
  *
- * 判定挂在队列里时改标准，那份按旧标准写的答案会按新版记账（队列不认识释义的标准，
- * 见 `judgment.ts` 开头）。自带模型判时队列在同一轮里就空了，这个缝只在判定归外部时
- * 存在，且最多一个整理周期：那一版记错的说法要等下一次标准改动才会重收。
  */
 export function glossIdentity(): string {
 	return standardOf(GLOSS_GUIDE, SCHEMA);
@@ -120,7 +117,8 @@ export async function collectGlosses(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const busy = await busyWords(client, "gloss");
+	const identity = glossIdentity();
+	const busy = await busyWords(client, "gloss", identity);
 	// 临时表跟着这条会话走；上一轮半路断掉留下的先清掉
 	await client.query("drop table if exists gloss_pool");
 	await client.query(
@@ -134,7 +132,7 @@ export async function collectGlosses(
 		     where g.text = p.text and g.guide_identity = $3)
 		   and p.text <> all($2::text[])
 		 group by p.id`,
-		[[...GLOSSED_ROUTES], [...busy], glossIdentity()],
+		[[...GLOSSED_ROUTES], [...busy], identity],
 	);
 	const { rows: total } = await client.query<{ n: number }>(
 		"select count(*)::int as n from gloss_pool",
@@ -157,7 +155,7 @@ export async function collectGlosses(
 	}
 	await client.query("drop table if exists gloss_pool");
 	if (batches.length === 0) return;
-	await collect(client, "gloss", batches);
+	await collect(client, "gloss", identity, batches);
 	report(`  收了 ${batches.length} 组释义，每组最多 ${BATCH} 个说法`);
 }
 
@@ -172,7 +170,8 @@ export async function applyGlosses(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const rows = await judged(client, "gloss");
+	const identity = glossIdentity();
+	const rows = await judged(client, "gloss", identity);
 	if (rows.length === 0) return;
 	const now = new Date();
 	const written = new Map<string, { gloss: string; judge: string }>();
@@ -203,7 +202,7 @@ export async function applyGlosses(
 					entries.map(([, one]) => one.gloss),
 					entries.map(() => now),
 					entries.map(([, one]) => one.judge),
-					glossIdentity(),
+					identity,
 				],
 			);
 			await client.query(
@@ -232,9 +231,8 @@ export async function judgeGlossesByModel(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const pending = (await openGroups(client)).filter(
-		(one) => one.kind === "gloss",
-	);
+	const identity = glossIdentity();
+	const pending = await openGroups(client, "gloss", identity);
 	if (pending.length === 0) return;
 	const model = reviewModel();
 	report(`  写 ${pending.length} 组释义`);
@@ -250,6 +248,7 @@ export async function judgeGlossesByModel(
 	await recordJudgments(
 		client,
 		modelJudge(model),
+		identity,
 		pending.map((one, index) => [
 			one.id,
 			payloads.get(inputs[index] as string),

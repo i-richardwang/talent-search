@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
-import { withCorpusSnapshot } from "#/db";
+import { withCorpusSnapshot } from "#/db/snapshot";
 
 /** 一个标准词：它属于哪个更宽的词、并进来的写法、它和它下面的词一共多少人、上次整理的时间。 */
 export type SkillEntry = {

@@ -13,10 +13,11 @@ import { answerChat, seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { GUIDE, read } = await import("#/corpus/vocabulary");
+const { groupIdentity, GUIDE, read } = await import("#/corpus/vocabulary");
 const { openGroups, submitJudgment } = await import("#/corpus/judgment");
-const { review } = await import("#/corpus/review");
+const { guideIdentities, review } = await import("#/corpus/review");
 const { pool } = await import("#/db");
+const { reviewJudge } = await import("#/server/review");
 
 const NOW = new Date("2026-09-08T00:00:00Z");
 const OLD = new Date(NOW.getTime() - 30 * 86_400_000);
@@ -53,11 +54,38 @@ async function runReview(): Promise<string[]> {
 	const said: string[] = [];
 	const connection = await client();
 	try {
-		await review(connection, (line: string) => said.push(line));
+		const judge = reviewJudge();
+		assert.notEqual(judge, "off");
+		await review(
+			connection,
+			(line: string) => said.push(line),
+			judge as "model" | "external",
+		);
 	} finally {
 		connection.release();
 	}
 	return said;
+}
+
+function openGroup(connection: Awaited<ReturnType<typeof client>>) {
+	return openGroups(connection, "group", groupIdentity());
+}
+
+function submitGroup(
+	connection: Awaited<ReturnType<typeof client>>,
+	id: number,
+	judge: string,
+	judgments: unknown[],
+) {
+	const guides = guideIdentities();
+	return submitJudgment(
+		connection,
+		id,
+		"group",
+		guides.group,
+		judge,
+		judgments,
+	);
 }
 
 /** 库里能力词那一类上每个词的人数。 */
@@ -210,7 +238,7 @@ describe("整轮整理", () => {
 			// 自带模型判的，决定上记着是谁判的
 			assert.match(table.get("团队管理")?.judge ?? "", /^model:/);
 			// 队列跑空了才算完：收集、判定、生效在同一轮里连着做
-			assert.deepEqual(await openGroups(later), []);
+			assert.deepEqual(await openGroup(later), []);
 		} finally {
 			later.release();
 		}
@@ -272,7 +300,7 @@ describe("判定交给外部", () => {
 
 		const connection = await client();
 		try {
-			const open = await openGroups(connection);
+			const open = await openGroup(connection);
 			const group = open.find((one) =>
 				one.words.some((member) => member.word === "线上销售数据分析"),
 			);
@@ -289,7 +317,7 @@ describe("判定交给外部", () => {
 	test("先到先得：第二份判定不算，不存在的组分开说", async () => {
 		const connection = await client();
 		try {
-			const group = (await openGroups(connection)).find((one) =>
+			const group = (await openGroup(connection)).find((one) =>
 				one.words.some((member) => member.word === "线上销售数据分析"),
 			);
 			assert.ok(group);
@@ -308,20 +336,20 @@ describe("判定交给外部", () => {
 				},
 			];
 			assert.equal(
-				await submitJudgment(connection, group.id, AGENT, judgments),
+				await submitGroup(connection, group.id, AGENT, judgments),
 				"accepted",
 			);
 			assert.equal(
-				await submitJudgment(connection, group.id, "agent:another", judgments),
+				await submitGroup(connection, group.id, "agent:another", judgments),
 				"taken",
 			);
 			assert.equal(
-				await submitJudgment(connection, 10_000_000, AGENT, judgments),
+				await submitGroup(connection, 10_000_000, AGENT, judgments),
 				"missing",
 			);
 			// 判过的组不再出现在待判的那一份里
 			assert.equal(
-				(await openGroups(connection)).some((one) => one.id === group.id),
+				(await openGroup(connection)).some((one) => one.id === group.id),
 				false,
 			);
 		} finally {
@@ -364,9 +392,10 @@ describe("判定交给外部", () => {
 		try {
 			await connection.query("delete from review_group");
 			await connection.query(
-				`insert into review_group (kind, words, collected_at)
-				 values ('group', '[{"word":"陈年词","people":3},{"word":"陈年写法","people":2}]'::jsonb,
+				`insert into review_group (kind, guide_identity, words, collected_at)
+				 values ('group', $1, '[{"word":"陈年词","people":3},{"word":"陈年写法","people":2}]'::jsonb,
 				         now() - interval '30 days')`,
+				[groupIdentity()],
 			);
 		} finally {
 			connection.release();
@@ -377,7 +406,7 @@ describe("判定交给外部", () => {
 		const later = await client();
 		try {
 			assert.equal(
-				(await openGroups(later)).some((one) =>
+				(await openGroup(later)).some((one) =>
 					one.words.some((member) => member.word === "陈年词"),
 				),
 				false,
@@ -402,7 +431,7 @@ describe("判定交给外部", () => {
 
 		const later = await client();
 		try {
-			const group = (await openGroups(later)).find(
+			const group = (await openGroup(later)).find(
 				(one) => one.words[0]?.word === "销售数据分析",
 			);
 			assert.ok(group, "「销售数据分析」该做中心词进一组");
@@ -424,12 +453,13 @@ describe("判定交给外部", () => {
 			// 那个没人写过的名字就要做标准写法
 			await connection.query("delete from review_group");
 			const { rows } = await connection.query<{ id: number }>(
-				`insert into review_group (kind, words)
-				 values ('group', '[{"word":"销售数据分析","people":5},{"word":"线上销售数据分析","people":3}]'::jsonb)
+				`insert into review_group (kind, guide_identity, words)
+				 values ('group', $1, '[{"word":"销售数据分析","people":5},{"word":"线上销售数据分析","people":3}]'::jsonb)
 				 returning id`,
+				[groupIdentity()],
 			);
 			assert.equal(
-				await submitJudgment(connection, rows[0]?.id as number, AGENT, [
+				await submitGroup(connection, rows[0]?.id as number, AGENT, [
 					{ word: "销售数据分析", why: "宽", sameAs: "", parent: "" },
 					{
 						word: "线上销售数据分析",
@@ -470,7 +500,7 @@ describe("判定交给外部", () => {
 
 		const later = await client();
 		try {
-			const group = (await openGroups(later)).find(
+			const group = (await openGroup(later)).find(
 				(one) => one.words[0]?.word === "销售数据分析",
 			);
 			assert.ok(group, "「销售数据分析」该做中心词进一组");
@@ -481,7 +511,7 @@ describe("判定交给外部", () => {
 				{ word: "线下销售数据分析", people: 2 },
 			]);
 			assert.equal(
-				await submitJudgment(later, group.id, AGENT, [
+				await submitGroup(later, group.id, AGENT, [
 					{ word: "销售数据分析", why: "宽", sameAs: "", parent: "" },
 					{
 						word: "线上销售数据分析",

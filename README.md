@@ -8,8 +8,9 @@
 ## 本地运行
 
 需要 [Bun](https://bun.sh) 1.4+ 和装了 [pgvector](https://github.com/pgvector/pgvector) 的 Postgres 17，
-以及两个模型端点：OpenAI 兼容的嵌入（`/embeddings`，`BAAI/bge-m3`）和 Cohere 式的
-重排（`/rerank`，`BAAI/bge-reranker-v2-m3`）。内网自建或公网服务均可，同一家服务商通常两个都有。
+以及三种模型能力：OpenAI 兼容的嵌入（`/embeddings`）、Cohere 式重排（`/rerank`）和
+OpenAI 兼容的查询理解（`/chat/completions`）。它们可以来自同一家服务，也可以分别部署；
+嵌入和重排会接触经历内容，查询理解只收到搜索句子。
 
 ```bash
 docker run -d --name talent-pg \
@@ -19,7 +20,7 @@ docker exec talent-pg psql -U talent -d talent \
   -c "create extension if not exists vector"
 
 cp .env.example .env.local
-# 用上面这条 docker 命令的话数据库不用改；EMBED_* / RERANK_* 指向你的模型端点
+# 用上面这条 docker 命令的话数据库不用改；配置 EMBED_*、RERANK_* 与 LLM_*
 
 bun install
 bun run db:push
@@ -58,11 +59,15 @@ bun run dev      # 应用起来之后，派生任务几分钟内自己接上：�
 整理一轮分四步：**清过期、让判定生效、收集、判定**。前三步是机械的——按向量把相似的词圈成组、把判定结果落进表；只有判定需要判断力。组有两种：**归并**问「人员管理」和「团队管理」是不是同一件事、「销售团队管理」属不属于「团队管理」；**释义**请判定方给一组相近的短说法各写一句它指什么（「客户开发」是销售拓展客户，「服务端开发」是写服务器程序），检索重排读的就是这一句。这一步可以换人做：
 
 ```
-REVIEW_JUDGE=model      # 默认：用 REVIEW_MODEL 判，一轮里收集、判定、生效连着做
+REVIEW_JUDGE=model      # 用 REVIEW_MODEL 判，一轮里收集、判定、生效连着做
 REVIEW_JUDGE=external   # 只收集和生效，组挂在队列上等外部 agent 判
 REVIEW_JUDGE=off        # 整理不跑
 REVIEW_TOKEN=...        # 外部接口的凭据
 ```
+
+`REVIEW_JUDGE` 不设时，有完整的整理模型配置就采用 `model`，否则采用 `off`。显式选择
+`model` 却没有模型、或写了未知取值，会在启动与任务读取配置时直接报错，不产生一条看似
+成功却永远没有判定的整理链路。
 
 接口只在 `REVIEW_JUDGE=external` 且配了 `REVIEW_TOKEN` 时开着，其余情况回 404，等于不存在——自带模型判定时队列永远是空的，一条只会说「不」的接口不如没有；归外部却没配凭据，整理任务会在记录里说出来。外部这一侧是两个动作，同一条路径，凭据走 `Authorization: Bearer <REVIEW_TOKEN>`：
 
@@ -77,6 +82,7 @@ curl -H "Authorization: Bearer $REVIEW_TOKEN" "$HOST/api/review?limit=20"
     {
       "id": 418,
       "kind": "group",                          // 归并组
+      "guideIdentity": "8f2c…",                // 这组题所用标准的身份
       "words": [                                // 一组写法相近的词，一律平等，没有谁是「标准词」
         { "word": "团队管理", "people": 40 },
         { "word": "人员管理", "people": 12 },
@@ -89,6 +95,7 @@ curl -H "Authorization: Bearer $REVIEW_TOKEN" "$HOST/api/review?limit=20"
     {
       "id": 419,
       "kind": "gloss",                          // 释义组：一批相近的短说法，最多 40 个
+      "guideIdentity": "c91a…",
       "words": [
         { "word": "服务端开发", "people": 31 },
         { "word": "客户开发", "people": 9 },
@@ -98,17 +105,19 @@ curl -H "Authorization: Bearer $REVIEW_TOKEN" "$HOST/api/review?limit=20"
       "expiresAt": "2026-09-17T03:00:12Z"
     }
   ],
-  "guides": {                                 // 每种组发给自带模型的那段标准，一字不差
-    "group": "……归并的判定标准……",
-    "gloss": "……释义的写法……"
+  "guides": {                                 // 身份和标准文本来自同一份事实源
+    "group": { "identity": "8f2c…", "text": "……归并的判定标准……" },
+    "gloss": { "identity": "c91a…", "text": "……释义的写法……" }
   }
 }
 ```
 
+下面为便于阅读缩写了身份值；实际提交时必须从 GET 响应完整复制 64 位 `guideIdentity`。
+
 ```bash
 # 提交判定：一组一次，先到先得。每个词两问：和组里哪个词是同一件事（sameAs），属于哪个更宽的词（parent）
 curl -X POST -H "Authorization: Bearer $REVIEW_TOKEN" -H 'content-type: application/json' \
-  -d '{"id":418,"judge":"hr-bot","judgments":[
+  -d '{"id":418,"kind":"group","guideIdentity":"8f2c…","judge":"hr-bot","judgments":[
         {"word":"团队管理","why":"这组的通名","sameAs":"","parent":""},
         {"word":"人员管理","why":"同一件事的不同写法","sameAs":"团队管理","parent":""},
         {"word":"销售团队管理","why":"团队管理的一种，限定了对象","sameAs":"","parent":"团队管理"},
@@ -119,14 +128,16 @@ curl -X POST -H "Authorization: Bearer $REVIEW_TOKEN" -H 'content-type: applicat
 ```bash
 # 释义组的判定：每个说法一句话，不超过 30 字，不重复说法本身
 curl -X POST -H "Authorization: Bearer $REVIEW_TOKEN" -H 'content-type: application/json' \
-  -d '{"id":419,"judge":"hr-bot","judgments":[
+  -d '{"id":419,"kind":"gloss","guideIdentity":"c91a…","judge":"hr-bot","judgments":[
         {"word":"服务端开发","gloss":"编写运行在服务器上的程序与接口"},
         {"word":"客户开发","gloss":"销售拓展新客户、促成签约"},
         {"word":"高级后端开发工程师","gloss":"负责服务器端程序与接口开发的高级工程师"}]}' \
   "$HOST/api/review"
 ```
 
-`judge` 是判定方自报的名字（1 到 40 个字母、数字、`-`、`_` 或 `.`），只作留痕——记在库里哪条是谁判的，任务日志按它计数，管理页 `/skills` 不逐条显示。归并组里 `why` 收下但不读，它在那里是为了约束判断：让判定方先说理由再下结论，比让它直接列名单准。`sameAs` 连成的每一片是同一件事，片里人最多的写法做标准词，判定方不选写法；`parent` 是判定方起的名字，可以是这组里没有、语料里也没人写过的词，写最近的一层。释义组里 `gloss` 空的、和说法一样的、超过 60 字的当没判，那个说法下一轮重收。回应是 `200`（收下，`{"accepted":true}`）、`400`（形状不对）、`401`（凭据不对）、`404`（接口没开，或这一组不在队列里）、`409`（已经有人判过）。
+`kind` 与 `guideIdentity` 必须原样回传。服务端更新判定标准时会丢弃旧标准下尚未生效的组并重新收集，
+因此拿着旧响应提交会得到 `404`，不会把旧答案记到新标准名下。`judge` 是判定方自报的名字
+（1 到 40 个字母、数字、`-`、`_` 或 `.`），只作留痕——记在库里哪条是谁判的，任务日志按它计数，管理页 `/skills` 不逐条显示。归并组里 `why` 收下但不读，它在那里是为了约束判断：让判定方先说理由再下结论，比让它直接列名单准。`sameAs` 连成的每一片是同一件事，片里人最多的写法做标准词，判定方不选写法；`parent` 是判定方起的名字，可以是这组里没有、语料里也没人写过的词，写最近的一层。释义组里 `gloss` 空的、和说法一样的、超过 60 字的当没判，那个说法下一轮重收。回应是 `200`（收下，`{"accepted":true}`）、`400`（形状不对）、`401`（凭据不对）、`404`（接口没开、组已过期或标准已更新）、`409`（已经有人判过）。
 
 提交只写组那一行。词表、释义和边由整理任务在写者锁里改，所以提交不必等派生放锁；交完会催一次整理，几分钟内生效，催不动也不丢，下一轮照样生效。什么时候生效是服务端自己的事，回应里不说。判定要过和自带模型同一处收窄：不在组里的词、指向组外的 `sameAs`、含着这个词的 `parent`（方向反了），一律当没说。
 
@@ -162,11 +173,11 @@ curl -X POST -H "Authorization: Bearer $REVIEW_TOKEN" -H 'content-type: applicat
 | `RERANK_SPACE_ID` | 是 | 重排空间的稳定身份；缓存按它隔离 |
 | `RERANK_BASE_URL` / `RERANK_API_KEY` | 否 | 重排端点与密钥，默认沿用 `EMBED_*` |
 | `RERANK_TIMEOUT_MS` / `RERANK_CONCURRENCY` | 否 | 重排超时与最大并发，默认 30000 / 4 |
-| `EXTRACT_BASE_URL` | 否 | OpenAI 兼容的聊天端点（`/chat/completions`）；派生用它从入职前简历描述抽能力词和做过的事，把入职前岗位对到公司序列，整理用它判能力词的写法与归属。岗位名、公司名和描述原文会送到这里 |
+| `EXTRACT_BASE_URL` | 否 | OpenAI 兼容的聊天端点（`/chat/completions`）；抽取与模型整理共用这个地址。岗位名、公司名和描述原文会送到这里 |
 | `EXTRACT_MODEL` | 否 | 抽取模型名。与 `EXTRACT_BASE_URL` 缺一就不抽也不对齐，派生会说明后跳过。回答按模型名和提示词键入存在库里，改提示词后所有段自动待派生 |
 | `EXTRACT_API_KEY` | 否 | 端点需要鉴权时填写 |
-| `REVIEW_MODEL` | 否 | 整理能力词词表用的模型，同一个端点；不设就用 `EXTRACT_MODEL`。这一步只有两百来组，却要在「团队培训」和「团队管理」之间划线、给「销售数据分析」起「数据分析」这个更宽的名字，小模型做不动，值得单独给一个大的 |
-| `REVIEW_JUDGE` | 否 | 整理的判定交给谁：`model`（默认，用 `REVIEW_MODEL`）、`external`（等外部 agent 判）、`off`（整理不跑） |
+| `REVIEW_MODEL` | 否 | 整理归并与释义用的模型，同一个端点；不设就用 `EXTRACT_MODEL`。这一步只有几百组，却要划清相近词并写准确释义，值得单独给一个更强的模型 |
+| `REVIEW_JUDGE` | 否 | 整理的判定交给谁：`model`、`external` 或 `off`。不设时，有可用整理模型则为 `model`，否则为 `off`；显式配置无效会报错 |
 | `REVIEW_TOKEN` | 否 | 外部判定接口的 bearer 凭据。接口只在 `REVIEW_JUDGE=external` 且配了它时开着，否则 `/api/review` 回 404 |
 | `EXTRACT_ENABLE_THINKING` | 否 | 带思考的模型设为 `false`，否则思考会先烧光输出预算；不设就不发这个字段 |
 | `EXTRACT_STRUCTURED_OUTPUTS` | 否 | 端点不支持 JSON Schema 时设为 `false` |
@@ -204,7 +215,7 @@ bun run verify       # 格式、类型、测试和生产构建
 
 ## 数据边界
 
-真实员工数据不进入版本库。同步从配置的数据源读取，完成校验与切段后写入 Postgres；派生把每段经历的说法（序列、岗位、部门或公司，以及自述：配了抽取端点时是入职前简历描述读出来的能力词和做过的事，没配时是整段简历描述）去重后送到嵌入端点换成向量；每段入职前经历的岗位名、公司名和描述也会送去对到公司序列树，结果只供序列筛选读；整理时，库里的能力词和人数会送去让模型判断哪些是同一件事的不同写法、哪个词属于哪个更宽的词，技能、做过的事、岗位名、序列名会送去写一句释义。查询时召回的说法连同释义会送到重排端点判定相关度。除了这三个端点，个人经历不出这台机器；端点选内网还是公网由部署方决定。仓库里的样例和测试夹具全部是合成数据。
+真实员工数据不进入版本库。同步从配置的数据源读取，完成校验与切段后写入 Postgres；派生把每段经历的说法（序列、岗位、部门或公司，以及自述：配了抽取端点时是入职前简历描述读出来的能力词和做过的事，没配时是整段简历描述）去重后送到嵌入端点换成向量；每段入职前经历的岗位名、公司名和描述也会送去对到公司序列树，结果只供序列筛选读；整理时，库里的能力词和人数会送去让模型判断哪些是同一件事的不同写法、哪个词属于哪个更宽的词，技能、做过的事、岗位名、序列名会送去写一句释义。查询时召回的说法连同释义会送到重排端点判定相关度。个人经历只会发往这里明确列出的模型端点；端点选内网还是公网由部署方决定。仓库里的样例和测试夹具全部是合成数据。
 
 判定交给外部 agent 时（`REVIEW_JUDGE=external`），出这台机器的只有短说法（能力词、做过的事、岗位名、序列名）和它下面的人数——没有姓名、工号，也没有简历原文。这条接口的数据边界比抽取端点窄得多，和查询理解同一档。
 
@@ -226,7 +237,7 @@ src/corpus/embed.ts          说法的嵌入与库里的向量缓存
 src/corpus/extract.ts        入职前简历描述 → 能力词与做过的事：提示词与收窄
 src/corpus/align.ts          入职前岗位 → 公司序列：序列树、提示词与收窄
 src/corpus/review.ts         整理任务：一轮的顺序（清过期、生效、收集、判定）
-src/corpus/judgment.ts       整理的判定队列：收集、取走、提交、过期；判定方是谁
+src/corpus/judgment.ts       整理的判定队列：标准身份、收集、取走、提交与过期
 src/corpus/vocabulary.ts     归并组：词表的读写、收集与生效、模型调用
 src/corpus/vocabulary-rules.ts 能力词的纯规则：圈组、收窄、标准词与归属，生产和验收共用
 src/corpus/gloss.ts          释义组：哪些说法要释义、凑批收集、收窄与生效

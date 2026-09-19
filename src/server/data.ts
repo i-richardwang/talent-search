@@ -8,8 +8,9 @@
 
 import "@tanstack/react-start/server-only";
 import { currentTree, identity } from "#/corpus/derive";
-import { pool } from "#/db";
 import type { Employee, Experience } from "#/db/schema";
+import { withReadSnapshot } from "#/db/snapshot";
+import { escapeLike } from "#/lib/sql";
 
 /** 列表一页几个人。 */
 const PAGE_SIZE = 50;
@@ -43,19 +44,18 @@ export async function listEmployees(
 	needle: string,
 	page: number,
 ): Promise<DataList> {
-	const pattern = `%${needle.trim()}%`;
-	const [version, found] = await Promise.all([
-		currentTree(pool).then(identity),
-		pool.query<{ n: string }>(
+	const pattern = `%${escapeLike(needle.trim())}%`;
+	return withReadSnapshot(async (client) => {
+		const version = identity(await currentTree(client));
+		const found = await client.query<{ n: string }>(
 			"select count(*) as n from employee where name ilike $1 or emp_id ilike $1",
 			[pattern],
-		),
-	]);
-	const total = Number(found.rows[0]?.n ?? 0);
-	const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-	const at = Math.min(Math.max(1, Math.trunc(page)), pages);
-	const { rows } = await pool.query<EmployeeRow>(
-		`select e.emp_id as "empId", e.name, e.cur_dept as "curDept",
+		);
+		const total = Number(found.rows[0]?.n ?? 0);
+		const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+		const at = Math.min(Math.max(1, Math.trunc(page)), pages);
+		const { rows } = await client.query<EmployeeRow>(
+			`select e.emp_id as "empId", e.name, e.cur_dept as "curDept",
 			e.cur_title as "curTitle",
 			count(x.id)::int as segments,
 			count(x.id) filter (where x.derived_identity is distinct from $1)::int as pending
@@ -65,15 +65,16 @@ export async function listEmployees(
 		 group by e.emp_id
 		 order by e.emp_id
 		 limit ${PAGE_SIZE} offset ${(at - 1) * PAGE_SIZE}`,
-		[version, pattern],
-	);
-	return {
-		total,
-		pages,
-		from: rows.length === 0 ? 0 : (at - 1) * PAGE_SIZE + 1,
-		page: at,
-		rows,
-	};
+			[version, pattern],
+		);
+		return {
+			total,
+			pages,
+			from: rows.length === 0 ? 0 : (at - 1) * PAGE_SIZE + 1,
+			page: at,
+			rows,
+		};
+	});
 }
 
 /** 一段连它的派生结果。 */
@@ -111,25 +112,26 @@ type EmployeeData = {
 export async function employeeData(
 	empId: string,
 ): Promise<EmployeeData | null> {
-	const version = identity(await currentTree(pool));
-	const found = await pool.query<Employee>(
-		`select emp_id as "empId", name, cur_dept as "curDept", cur_title as "curTitle",
+	return withReadSnapshot(async (client) => {
+		const version = identity(await currentTree(client));
+		const found = await client.query<Employee>(
+			`select emp_id as "empId", name, cur_dept as "curDept", cur_title as "curTitle",
 			cur_seq_l1 as "curSeqL1", cur_seq_l2 as "curSeqL2", cur_seq_l3 as "curSeqL3",
 			cur_level as "curLevel", hire_date::text as "hireDate",
 			education_level as "educationLevel", school, recruitment
 		 from employee where emp_id = $1`,
-		[empId],
-	);
-	const employee = found.rows[0];
-	if (!employee) return null;
+			[empId],
+		);
+		const employee = found.rows[0];
+		if (!employee) return null;
 
-	const { rows } = await pool.query<
-		Omit<SegmentView, "skills" | "did"> & {
-			skills: string[] | null;
-			did: { involvement: string | null; domain: string }[] | null;
-		}
-	>(
-		`select x.id, x.kind, x.start_date::text as "startDate", x.end_date::text as "endDate",
+		const { rows } = await client.query<
+			Omit<SegmentView, "skills" | "did"> & {
+				skills: string[] | null;
+				did: { involvement: string | null; domain: string }[] | null;
+			}
+		>(
+			`select x.id, x.kind, x.start_date::text as "startDate", x.end_date::text as "endDate",
 			x.months, x.org, x.org_path as "orgPath", x.title, x.level, x.description,
 			x.seq_l1 as "seqL1", x.seq_l2 as "seqL2", x.seq_l3 as "seqL3",
 			x.seq_inferred_l1 as "seqInferredL1", x.seq_inferred_l2 as "seqInferredL2",
@@ -144,14 +146,15 @@ export async function employeeData(
 		 from experience x
 		 where x.emp_id = $1
 		 order by x.start_date, x.id`,
-		[empId, version],
-	);
-	return {
-		employee,
-		segments: rows.map((row) => ({
-			...row,
-			skills: row.skills ?? [],
-			did: row.did ?? [],
-		})),
-	};
+			[empId, version],
+		);
+		return {
+			employee,
+			segments: rows.map((row) => ({
+				...row,
+				skills: row.skills ?? [],
+				did: row.did ?? [],
+			})),
+		};
+	});
 }

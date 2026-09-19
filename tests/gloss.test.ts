@@ -14,8 +14,9 @@ after(teardown);
 const { BATCH, conformGlosses, GLOSS_GUIDE, GLOSS_MAX, glossIdentity } =
 	await import("#/corpus/gloss");
 const { openGroups, submitJudgment } = await import("#/corpus/judgment");
-const { review } = await import("#/corpus/review");
+const { guideIdentities, review } = await import("#/corpus/review");
 const { pool } = await import("#/db");
+const { reviewJudge } = await import("#/server/review");
 
 async function client() {
 	return pool.connect();
@@ -26,11 +27,38 @@ async function runReview(): Promise<string[]> {
 	const said: string[] = [];
 	const connection = await client();
 	try {
-		await review(connection, (line: string) => said.push(line));
+		const judge = reviewJudge();
+		assert.notEqual(judge, "off");
+		await review(
+			connection,
+			(line: string) => said.push(line),
+			judge as "model" | "external",
+		);
 	} finally {
 		connection.release();
 	}
 	return said;
+}
+
+function openGlosses(connection: Awaited<ReturnType<typeof client>>) {
+	return openGroups(connection, "gloss", glossIdentity());
+}
+
+function submitGlosses(
+	connection: Awaited<ReturnType<typeof client>>,
+	id: number,
+	judge: string,
+	judgments: unknown[],
+) {
+	const guides = guideIdentities();
+	return submitJudgment(
+		connection,
+		id,
+		"gloss",
+		guides.gloss,
+		judge,
+		judgments,
+	);
 }
 
 async function glosses(): Promise<[string, string][]> {
@@ -165,9 +193,7 @@ describe("收集与生效", () => {
 
 		const connection = await client();
 		try {
-			const open = (await openGroups(connection)).filter(
-				(one) => one.kind === "gloss",
-			);
+			const open = await openGlosses(connection);
 			assert.equal(open.length, 1);
 			const words = open[0]?.words ?? [];
 			assert.ok(words.length <= BATCH);
@@ -191,13 +217,31 @@ describe("收集与生效", () => {
 		assert.doesNotMatch(said.join("\n"), /收了 \d+ 组释义/);
 	});
 
+	test("判定标准更新时旧组作废，并按新标准重新收集", async () => {
+		const connection = await client();
+		try {
+			const old = (await openGlosses(connection))[0];
+			assert.ok(old);
+			await connection.query(
+				"update review_group set guide_identity = 'older-standard' where id = $1",
+				[old.id],
+			);
+			const said = await runReview();
+			assert.match(said.join("\n"), /1 组判定标准已更新，已作废并按新标准重收/);
+			const fresh = (await openGlosses(connection))[0];
+			assert.ok(fresh);
+			assert.notEqual(fresh.id, old.id);
+			assert.equal(fresh.guideIdentity, glossIdentity());
+		} finally {
+			connection.release();
+		}
+	});
+
 	test("生效：释义落表、这些说法的分数缓存清掉、没判的下一轮重收", async () => {
 		const connection = await client();
 		let id = 0;
 		try {
-			const group = (await openGroups(connection)).find(
-				(one) => one.kind === "gloss",
-			);
+			const group = (await openGlosses(connection))[0];
 			assert.ok(group);
 			id = group.id;
 			// 先给两条说法各留一个假分数：生效之后它们必须不在了
@@ -207,7 +251,7 @@ describe("收集与生效", () => {
 				 where p.text in ('服务端开发', '客户开发', '订单系统')`,
 			);
 			assert.equal(
-				await submitJudgment(connection, id, AGENT, [
+				await submitGlosses(connection, id, AGENT, [
 					{ word: "服务端开发", gloss: "编写运行在服务器上的程序与接口" },
 					{ word: "客户开发", gloss: "客户开发：销售拓展新客户、促成签约" },
 					{ word: "高级后端开发工程师", gloss: "" },
@@ -240,9 +284,7 @@ describe("收集与生效", () => {
 				["订单系统"],
 			);
 			// 同一轮里没判的三个又收成了一组
-			const open = (await openGroups(later)).filter(
-				(one) => one.kind === "gloss",
-			);
+			const open = await openGlosses(later);
 			assert.deepEqual(
 				open.flatMap((one) => one.words.map((member) => member.word)).sort(),
 				["技术 · 后端研发", "订单系统", "高级后端开发工程师"],
@@ -263,7 +305,7 @@ describe("收集与生效", () => {
 			const said = await runReview();
 			assert.match(said.join("\n"), /收了 1 组释义/);
 			// 上一场留在队列里的那三个没被动，重收的只有写过释义的这两个
-			const back = (await openGroups(connection)).find((one) =>
+			const back = (await openGlosses(connection)).find((one) =>
 				one.words.some((member) => member.word === "客户开发"),
 			);
 			assert.ok(back);
@@ -273,7 +315,7 @@ describe("收集与生效", () => {
 			);
 			// 重写之后又是这一版的，不再重收
 			assert.equal(
-				await submitJudgment(connection, back.id, AGENT, [
+				await submitGlosses(connection, back.id, AGENT, [
 					{ word: "客户开发", gloss: "销售拓展新客户、促成签约" },
 					{ word: "服务端开发", gloss: "编写运行在服务器上的程序与接口" },
 				]),

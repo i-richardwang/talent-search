@@ -7,18 +7,38 @@
  */
 
 import "@tanstack/react-start/server-only";
-import { applyGlosses, collectGlosses, judgeGlossesByModel } from "./gloss";
-import { expire, openGroups, reviewJudge } from "./judgment";
+import {
+	applyGlosses,
+	collectGlosses,
+	glossIdentity,
+	judgeGlossesByModel,
+} from "./gloss";
+import {
+	expire,
+	type GuideIdentities,
+	type Judge,
+	openGroups,
+} from "./judgment";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
-import { applyGroups, collectGroups, judgeGroupsByModel } from "./vocabulary";
+import {
+	applyGroups,
+	collectGroups,
+	groupIdentity,
+	judgeGroupsByModel,
+} from "./vocabulary";
+
+export function guideIdentities(): GuideIdentities {
+	return { gloss: glossIdentity(), group: groupIdentity() };
+}
 
 export async function review(
 	client: CorpusClient,
 	report: Report,
+	judge: Exclude<Judge, "off">,
 ): Promise<void> {
-	const judge = reviewJudge();
-	await expire(client, report);
+	const guides = guideIdentities();
+	await expire(client, report, guides);
 	await applyGroups(client, report);
 	await applyGlosses(client, report);
 	await collectGroups(client, report);
@@ -30,6 +50,9 @@ export async function review(
 		await applyGlosses(client, report);
 		return;
 	}
-	const waiting = await openGroups(client);
+	const waiting = [
+		...(await openGroups(client, "group", guides.group)),
+		...(await openGroups(client, "gloss", guides.gloss)),
+	];
 	report(`  判定由外部完成，队列里还有 ${waiting.length} 组等着判`);
 }

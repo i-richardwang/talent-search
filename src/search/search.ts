@@ -20,9 +20,10 @@
 
 import "@tanstack/react-start/server-only";
 import { inArray, type SQL, sql } from "drizzle-orm";
-import { type DbExecutor, withCorpusSnapshot } from "#/db";
 import { EXTRACTED_ROUTES, employee, experience } from "#/db/schema";
+import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
 import { dots } from "#/lib/format";
+import { escapeLike } from "#/lib/sql";
 import type { ExperienceCondition, PersonCondition } from "./condition";
 import {
 	DIMENSIONS,
@@ -71,16 +72,6 @@ import {
 	strengthRank,
 	WIDE_SHARE,
 } from "./weights";
-
-/**
- * 公司名 / 学校名条件里的 `%` `_` `\` 是 ILIKE 的元字符，必须先转义成字面量。
- *
- * 不转义的话「%%」两个字符就让每一行恒真；「客户_经理」里的下划线会悄悄变成
- * 「任意一个字」。反斜杠是 Postgres 的默认转义符，不必额外写 escape。
- */
-function escapeLike(term: string) {
-	return term.replace(/[\\%_]/g, "\\$&");
-}
 
 function like(term: string) {
 	return sql`${`%${escapeLike(term)}%`}`;

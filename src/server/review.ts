@@ -18,16 +18,18 @@ import "@tanstack/react-start/server-only";
 import { GLOSS_GUIDE } from "#/corpus/gloss";
 import {
 	agentJudge,
+	type Judge,
 	type Member,
 	openGroups,
 	REVIEW_INTERVAL_DAYS,
-	reviewJudge,
 	type Submission,
 	submitJudgment,
 } from "#/corpus/judgment";
+import { guideIdentities } from "#/corpus/review";
 import { GUIDE } from "#/corpus/vocabulary";
 import { pool } from "#/db";
 import type { GroupKind } from "#/db/schema";
+import { reviewConfigured as chatReviewConfigured } from "./chat";
 
 /** 一次最多取几组。要得更多就多取一次——一份响应大到要翻页就没人读得完。 */
 const MAX_LIMIT = 100;
@@ -38,6 +40,24 @@ const MAX_BODY = 64 * 1024;
 
 function token(): string {
 	return process.env.REVIEW_TOKEN?.trim() ?? "";
+}
+
+/**
+ * 整理的唯一模式开关。未显式选择时，有完整模型配置就用模型，否则关闭；拼错配置和
+ * 显式选择一个不可用的模型都直接报错，避免任务看似运行却永远没有判定结果。
+ */
+export function reviewJudge(): Judge {
+	const value = process.env.REVIEW_JUDGE?.trim();
+	if (!value) return chatReviewConfigured() ? "model" : "off";
+	if (value !== "model" && value !== "external" && value !== "off")
+		throw new Error(
+			`REVIEW_JUDGE=${value} 无效，只能是 model、external 或 off`,
+		);
+	if (value === "model" && !chatReviewConfigured())
+		throw new Error(
+			"REVIEW_JUDGE=model 需要 EXTRACT_BASE_URL 与 REVIEW_MODEL 或 EXTRACT_MODEL",
+		);
+	return value;
 }
 
 /**
@@ -69,6 +89,7 @@ export function authorized(request: Request): boolean {
 type GroupView = {
 	id: number;
 	kind: GroupKind;
+	guideIdentity: string;
 	words: Member[];
 	collectedAt: string;
 	expiresAt: string;
@@ -85,9 +106,18 @@ type GroupView = {
  */
 export async function pending(limit: number): Promise<{
 	groups: GroupView[];
-	guides: Record<GroupKind, string>;
+	guides: Record<GroupKind, { identity: string; text: string }>;
 }> {
-	const rows = await openGroups(pool, limit);
+	const identities = guideIdentities();
+	const rows = [
+		...(await openGroups(pool, "group", identities.group, limit)),
+		...(await openGroups(pool, "gloss", identities.gloss, limit)),
+	]
+		.sort(
+			(a, b) =>
+				a.collectedAt.getTime() - b.collectedAt.getTime() || a.id - b.id,
+		)
+		.slice(0, limit);
 	return {
 		groups: rows.map((one) => ({
 			collectedAt: one.collectedAt.toISOString(),
@@ -96,9 +126,13 @@ export async function pending(limit: number): Promise<{
 			).toISOString(),
 			id: one.id,
 			kind: one.kind,
+			guideIdentity: one.guideIdentity,
 			words: one.words,
 		})),
-		guides: { gloss: GLOSS_GUIDE, group: GUIDE },
+		guides: {
+			gloss: { identity: identities.gloss, text: GLOSS_GUIDE },
+			group: { identity: identities.group, text: GUIDE },
+		},
 	};
 }
 
@@ -132,8 +166,18 @@ export async function submit(request: Request): Promise<Submitted> {
 	}
 	if (typeof body !== "object" || body === null)
 		return { ok: false, why: "这份判定不是 JSON" };
-	const { id, judge, judgments } = body as Record<string, unknown>;
+	const { guideIdentity, id, judge, judgments, kind } = body as Record<
+		string,
+		unknown
+	>;
 	if (!Number.isInteger(id)) return { ok: false, why: "缺 id" };
+	if (kind !== "group" && kind !== "gloss")
+		return { ok: false, why: "kind 不是 group 或 gloss" };
+	if (
+		typeof guideIdentity !== "string" ||
+		!/^[a-f0-9]{64}$/.test(guideIdentity)
+	)
+		return { ok: false, why: "缺 guideIdentity" };
 	const name = agentJudge(judge);
 	if (!name)
 		return {
@@ -142,8 +186,17 @@ export async function submit(request: Request): Promise<Submitted> {
 		};
 	if (!Array.isArray(judgments))
 		return { ok: false, why: "judgments 不是数组" };
+	if (guideIdentity !== guideIdentities()[kind])
+		return { ok: true, submission: "missing" };
 	return {
 		ok: true,
-		submission: await submitJudgment(pool, id as number, name, judgments),
+		submission: await submitJudgment(
+			pool,
+			id as number,
+			kind,
+			guideIdentity,
+			name,
+			judgments,
+		),
 	};
 }

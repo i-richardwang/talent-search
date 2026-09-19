@@ -24,7 +24,7 @@ import "@tanstack/react-start/server-only";
 import { eq, sql } from "drizzle-orm";
 import { currentTree, derive, identity, pending } from "#/corpus/derive";
 import { glossCounts } from "#/corpus/gloss";
-import { type Judge, reviewJudge } from "#/corpus/judgment";
+import type { Judge } from "#/corpus/judgment";
 import type { Report } from "#/corpus/report";
 import { review } from "#/corpus/review";
 import {
@@ -36,7 +36,7 @@ import { sourceName } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
 import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
-import { configured } from "./review";
+import { configured, reviewJudge } from "./review";
 
 /** 运行记录一页几行。往前的那些翻页看（`/tasks?derive=3`）。 */
 const RUNS_PAGE = 6;
@@ -63,10 +63,12 @@ const WORK: Record<TaskKind, TaskWork> = {
 		await derive(session, report, DERIVE_BUDGET_MS);
 	},
 	review: async (session, report) => {
-		await review(session.client, report);
+		const judge = reviewJudge();
+		if (judge === "off") return;
+		await review(session.client, report, judge);
 		// 判定归外部却没配凭据，接口是关着的，组会挂到过期。这是配错了，得在记录里
 		// 说出来：整理一轮轮照跑、词表一动不动，没有这句没人看得出为什么
-		if (reviewJudge() === "external" && !configured())
+		if (judge === "external" && !configured())
 			report("  ✖ 判定归外部，但 REVIEW_TOKEN 没配，接口关着，没人能提交判定");
 	},
 };
@@ -190,18 +192,15 @@ function outcome(run: StoredRun, live: boolean): TaskOutcome {
 	return live ? "running" : "interrupted";
 }
 
-export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
-	/*
-	 * **先看锁，再看行**，不并发。`runTask` 是行写完才放锁的，于是：锁不在，行必然
-	 * 已经写完；锁在，行没写完就是正在跑。反过来先读行再看锁，两次读之间那一次
-	 * 恰好收尾的话，读到的是「行没写完、锁没人拿」——和进程中断一模一样。
-	 */
-	const active = await corpusSessionActive();
-	/*
-	 * 每一栏跑过几次、最近那次是什么样。两样一起问：卡片正面说的是最近这一次，
-	 * 而翻到第几页是另一件事，不该让它影响卡片说什么。
-	 */
-	const { rows: heads } = await db.execute<StoredRun & { total: number }>(sql`
+type TaskHead = StoredRun & { total: number };
+
+async function readTaskHeads(): Promise<{
+	active: boolean;
+	heads: TaskHead[];
+	signature: string;
+} | null> {
+	const before = await corpusSessionActive();
+	const { rows: heads } = await db.execute<TaskHead>(sql`
 		select distinct on (kind)
 			kind, id, source,
 			to_char(started_at, 'MM-DD HH24:MI') as "startedAt",
@@ -210,6 +209,43 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 			count(*) over (partition by kind)::int as total
 		from task_run
 		order by kind, started_at desc, id desc`);
+	const active = await corpusSessionActive();
+	if (before !== active) return null;
+	return {
+		active,
+		heads,
+		signature: JSON.stringify([
+			active,
+			heads.map((row) => [row.kind, row.id, row.seconds, row.error, row.total]),
+		]),
+	};
+}
+
+/** 锁与运行行连续两次给出同一幅图，才把它当作当前状态。 */
+async function stableTaskHeads(): Promise<{
+	active: boolean;
+	heads: TaskHead[];
+}> {
+	let previous: string | null = null;
+	for (let attempt = 0; attempt < 5; attempt += 1) {
+		const sample = await readTaskHeads();
+		if (!sample) {
+			previous = null;
+			continue;
+		}
+		if (sample.signature === previous)
+			return { active: sample.active, heads: sample.heads };
+		previous = sample.signature;
+	}
+	throw new Error("任务状态正在连续切换，请重新载入");
+}
+
+export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
+	/*
+	 * 锁与行不是同一份 MVCC 快照：任务会先拿锁再插运行行，结束时先写完行再放锁。
+	 * 因此只读一次无论先读谁都有缝。连续两次稳定观测把两个过渡区都排除在结果外。
+	 */
+	const { active, heads } = await stableTaskHeads();
 	// 锁一次只有一个持有者，它开跑时落下的是全表最新的那一行
 	const newest = Math.max(0, ...heads.map((row) => row.id));
 	/** 库里那一行在页面上的样子。逐个字段写出来，行上别的列不跟着发到页面。 */

@@ -18,8 +18,9 @@
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { cosineSimilarity, embedMany } from "ai";
-import { type DbExecutor, db } from "#/db";
+import { db } from "#/db";
 import { EMBED_DIM, embeddingSpace } from "#/db/schema";
+import type { DbExecutor } from "#/db/snapshot";
 import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
 
 /*
@@ -65,11 +66,6 @@ function configured() {
 export function embedSpace(): { spaceId: string; model: string } {
 	const { spaceId, model } = configured();
 	return { spaceId, model };
-}
-
-/** 端点地址，只为让派生把「向哪台机器要向量」说出来。 */
-export function embedEndpoint(): string {
-	return configured().baseURL;
 }
 
 let model: ReturnType<

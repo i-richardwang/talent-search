@@ -3,8 +3,8 @@
  * （归并、释义）共用这一条队列和这一个判定方，各自的标准、收窄与落表在
  * `vocabulary.ts` 和 `gloss.ts`；整轮的顺序在 `review.ts`。
  *
- * 队列只认一件事：一组词、谁判的、判成什么。它不读判定结果的内容——什么算一条
- * 有效的判断是生效时各自那一种组的事，改收窄规则不该让已经提交的判定失效。
+ * 队列只认一件事：一份标准下的一组词、谁判的、判成什么。它不读判定结果的内容——
+ * 什么算一条有效的判断是生效时各自那一种组的事；标准变化时旧组整体作废并重新收集。
  */
 
 import "@tanstack/react-start/server-only";
@@ -15,28 +15,7 @@ import type { CorpusClient } from "./session";
 /** 一个词判过之后多久才再做中心词；也是一组挂在队列里没人判的话多久过期。 */
 export const REVIEW_INTERVAL_DAYS = 7;
 
-/**
- * 谁来判。`REVIEW_JUDGE` 定，和模型名一个待遇：部署方的决定，重启生效。
- *
- * - `model`：自带的模型判定。收集、判定、生效在同一轮里连着做，队列跑完是空的。
- * - `external`：只收集和生效，组挂在队列里等外部 agent 提交（`src/server/review.ts`）。
- * - `off`：整理不跑（拦在 `src/server/jobs.ts`）。队列里已有的组留着，切回来接着算。
- *
- * 认不出的取值当 `model`：整理停摆是没人会发现的那种坏——筛选栏照常有词，只是
- * 新写法再也不合并了。
- */
 export type Judge = "model" | "external" | "off";
-
-export function reviewJudge(): Judge {
-	const value = process.env.REVIEW_JUDGE?.trim();
-	if (value === "external" || value === "off" || value === "model")
-		return value;
-	if (value)
-		console.error(
-			`REVIEW_JUDGE=${value} 认不出，按 model 处理（自带模型判定）`,
-		);
-	return "model";
-}
 
 /** 判定方在库里的写法：自带模型是 `model:<模型名>`，外部 agent 是 `agent:<名字>`。 */
 export function modelJudge(model: string): string {
@@ -67,6 +46,7 @@ export function promptOf(words: Member[]): string {
 export type Group = {
 	id: number;
 	kind: GroupKind;
+	guideIdentity: string;
 	words: Member[];
 	collectedAt: Date;
 };
@@ -80,6 +60,7 @@ const FRESH = `collected_at > now() - interval '${REVIEW_INTERVAL_DAYS} days'`;
 type Row = {
 	id: number;
 	kind: GroupKind;
+	guide_identity: string;
 	words: Member[];
 	collected_at: Date;
 	judge: string | null;
@@ -89,11 +70,14 @@ type Row = {
 function group(row: Row): Group {
 	return {
 		collectedAt: row.collected_at,
+		guideIdentity: row.guide_identity,
 		id: row.id,
 		kind: row.kind,
 		words: row.words,
 	};
 }
+
+export type GuideIdentities = Record<GroupKind, string>;
 
 /**
  * 队列里还等着人判的组，最早收集的在前。
@@ -104,15 +88,17 @@ function group(row: Row): Group {
  */
 export async function openGroups(
 	client: CorpusClient,
+	kind: GroupKind,
+	guideIdentity: string,
 	limit?: number,
 ): Promise<Group[]> {
 	const { rows } = await client.query<Row>(
-		`select id, kind, words, collected_at, judge, judgment
+		`select id, kind, guide_identity, words, collected_at, judge, judgment
 		 from review_group
-		 where judge is null and ${FRESH}
+		 where kind = $1 and guide_identity = $2 and judge is null and ${FRESH}
 		 order by collected_at, id
-		 ${limit === undefined ? "" : "limit $1"}`,
-		limit === undefined ? [] : [limit],
+		 ${limit === undefined ? "" : "limit $3"}`,
+		limit === undefined ? [kind, guideIdentity] : [kind, guideIdentity, limit],
 	);
 	return rows.map(group);
 }
@@ -121,10 +107,12 @@ export async function openGroups(
 export async function busyWords(
 	client: CorpusClient,
 	kind: GroupKind,
+	guideIdentity: string,
 ): Promise<Set<string>> {
 	const { rows } = await client.query<{ words: Member[] }>(
-		`select words from review_group where kind = $1 and ${FRESH}`,
-		[kind],
+		`select words from review_group
+		 where kind = $1 and guide_identity = $2 and ${FRESH}`,
+		[kind, guideIdentity],
 	);
 	return new Set(rows.flatMap((row) => row.words.map((one) => one.word)));
 }
@@ -138,13 +126,14 @@ export async function busyWords(
 export async function collect(
 	client: CorpusClient,
 	kind: GroupKind,
+	guideIdentity: string,
 	groups: Member[][],
 ): Promise<void> {
 	if (groups.length === 0) return;
 	await client.query(
-		`insert into review_group (kind, words)
-		 select $1, * from unnest($2::jsonb[])`,
-		[kind, groups.map((one) => JSON.stringify(one))],
+		`insert into review_group (kind, guide_identity, words)
+		 select $1, $2, * from unnest($3::jsonb[])`,
+		[kind, guideIdentity, groups.map((one) => JSON.stringify(one))],
 	);
 }
 
@@ -163,18 +152,22 @@ export type Submission = "accepted" | "missing" | "taken";
 export async function submitJudgment(
 	client: CorpusClient,
 	id: number,
+	kind: GroupKind,
+	guideIdentity: string,
 	judge: string,
 	judgments: unknown,
 ): Promise<Submission> {
 	const { rowCount } = await client.query(
-		`update review_group set judge = $2, judgment = $3
-		 where id = $1 and judge is null and ${FRESH}`,
-		[id, judge, JSON.stringify({ judgments })],
+		`update review_group set judge = $4, judgment = $5
+		 where id = $1 and kind = $2 and guide_identity = $3
+		   and judge is null and ${FRESH}`,
+		[id, kind, guideIdentity, judge, JSON.stringify({ judgments })],
 	);
 	if (rowCount) return "accepted";
 	const { rows } = await client.query<{ judge: string | null }>(
-		`select judge from review_group where id = $1 and ${FRESH}`,
-		[id],
+		`select judge from review_group
+		 where id = $1 and kind = $2 and guide_identity = $3 and ${FRESH}`,
+		[id, kind, guideIdentity],
 	);
 	return rows[0]?.judge ? "taken" : "missing";
 }
@@ -186,6 +179,7 @@ export async function submitJudgment(
 export async function recordJudgments(
 	client: CorpusClient,
 	judge: string,
+	guideIdentity: string,
 	replies: [id: number, payload: unknown][],
 ): Promise<void> {
 	const done = replies.filter(([, payload]) => payload !== undefined);
@@ -193,11 +187,12 @@ export async function recordJudgments(
 	await client.query(
 		`update review_group r set judge = a.judge, judgment = a.judgment
 		 from unnest($1::int[], $2::text[], $3::jsonb[]) as a(id, judge, judgment)
-		 where r.id = a.id and r.judge is null`,
+		 where r.id = a.id and r.guide_identity = $4 and r.judge is null`,
 		[
 			done.map(([id]) => id),
 			done.map(() => judge),
 			done.map(([, payload]) => JSON.stringify(payload)),
+			guideIdentity,
 		],
 	);
 }
@@ -206,7 +201,16 @@ export async function recordJudgments(
 export async function expire(
 	client: CorpusClient,
 	report: Report,
+	guides: GuideIdentities,
 ): Promise<void> {
+	const { rowCount: stale } = await client.query(
+		`delete from review_group
+		 where (kind = 'group' and guide_identity <> $1)
+		    or (kind = 'gloss' and guide_identity <> $2)`,
+		[guides.group, guides.gloss],
+	);
+	if (stale) report(`  ${stale} 组判定标准已更新，已作废并按新标准重收`);
+
 	const { rowCount } = await client.query(
 		`delete from review_group where judge is null and not (${FRESH})`,
 	);
@@ -218,11 +222,14 @@ export async function expire(
 export async function judged(
 	client: CorpusClient,
 	kind: GroupKind,
+	guideIdentity: string,
 ): Promise<Judged[]> {
 	const { rows } = await client.query<Row>(
-		`select id, kind, words, collected_at, judge, judgment
-		 from review_group where kind = $1 and judge is not null order by id`,
-		[kind],
+		`select id, kind, guide_identity, words, collected_at, judge, judgment
+		 from review_group
+		 where kind = $1 and guide_identity = $2 and judge is not null
+		 order by id`,
+		[kind, guideIdentity],
 	);
 	// `judge is not null` 是这条查询的谓词，所以这一列在这里一定有值
 	return rows.map((row) => ({

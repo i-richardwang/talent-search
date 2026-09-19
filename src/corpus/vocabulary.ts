@@ -8,7 +8,7 @@
 
 import "@tanstack/react-start/server-only";
 import { z } from "zod";
-import { complete, reviewModel } from "#/server/chat";
+import { complete, reviewModel, standardOf } from "#/server/chat";
 import { embed } from "./embed";
 import {
 	busyWords,
@@ -95,6 +95,11 @@ const SCHEMA = z.object({
 		}),
 	),
 });
+
+/** 归并与归属这件事此刻的判定标准。队列与外部判定接口都按它隔离版本。 */
+export function groupIdentity(): string {
+	return standardOf(GUIDE, SCHEMA);
+}
 
 /**
  * 读整张表。
@@ -253,7 +258,7 @@ export async function applyGroups(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const rows = await judged(client, "group");
+	const rows = await judged(client, "group", groupIdentity());
 	if (rows.length === 0) return;
 
 	const now = new Date();
@@ -318,7 +323,8 @@ export async function collectGroups(
 ): Promise<void> {
 	const table = await read(client);
 	const all = await vocabulary(client);
-	const busy = await busyWords(client, "group");
+	const identity = groupIdentity();
+	const busy = await busyWords(client, "group", identity);
 	const decided = all.words.filter((word) => table.has(word)).length;
 	report(
 		`  词表 ${all.words.length} 个词，其中 ${decided} 个已有决定；` +
@@ -350,6 +356,7 @@ export async function collectGroups(
 	await collect(
 		client,
 		"group",
+		identity,
 		circles.map((circle) =>
 			circle.flatMap((word) => [
 				{ people: people.get(word) ?? 0, word },
@@ -364,9 +371,8 @@ export async function judgeGroupsByModel(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const pending = (await openGroups(client)).filter(
-		(one) => one.kind === "group",
-	);
+	const identity = groupIdentity();
+	const pending = await openGroups(client, "group", identity);
 	if (pending.length === 0) return;
 	const model = reviewModel();
 	report(`  判 ${pending.length} 组归并`);
@@ -378,6 +384,7 @@ export async function judgeGroupsByModel(
 	await recordJudgments(
 		client,
 		modelJudge(model),
+		identity,
 		pending.map((one, index) => [one.id, payloads[index]]),
 	);
 }

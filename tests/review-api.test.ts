@@ -11,10 +11,11 @@ import { seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { authorized, configured, limitOf, submit } = await import(
+const { authorized, configured, limitOf, pending, submit } = await import(
 	"#/server/review"
 );
 const { openGroups } = await import("#/corpus/judgment");
+const { groupIdentity } = await import("#/corpus/vocabulary");
 const { pool } = await import("#/db");
 
 const TOKEN = "test-token";
@@ -68,6 +69,12 @@ describe("认人", () => {
 		assert.equal(authorized(bearer(TOKEN)), false);
 		assert.equal(authorized(new Request("http://x/api/review")), false);
 	});
+
+	test("未知的整理模式直接报错", () => {
+		process.env.REVIEW_JUDGE = "typo";
+		assert.throws(() => configured(), /REVIEW_JUDGE=typo 无效/);
+		process.env.REVIEW_JUDGE = "external";
+	});
 });
 
 describe("取组的 limit", () => {
@@ -83,6 +90,7 @@ describe("取组的 limit", () => {
 
 describe("提交判定的形状", () => {
 	const judgments = [{ word: "数据分析工作", why: "同义", alias: true }];
+	const guideIdentity = groupIdentity();
 
 	test("格式不对的判定不写库", async () => {
 		for (const [body, why] of [
@@ -90,11 +98,45 @@ describe("提交判定的形状", () => {
 			[[1, 2, 3], /缺 id/],
 			[{ judge: "hr-bot", judgments }, /缺 id/],
 			[{ id: 1.5, judge: "hr-bot", judgments }, /缺 id/],
-			[{ id: 1, judgments }, /judge/],
-			[{ id: 1, judge: "名字里有汉字", judgments }, /judge/],
-			[{ id: 1, judge: "a".repeat(41), judgments }, /judge/],
-			[{ id: 1, judge: "hr-bot" }, /judgments/],
-			[{ id: 1, judge: "hr-bot", judgments: "都并" }, /judgments/],
+			[{ id: 1, judgments }, /kind/],
+			[{ id: 1, kind: "other", judgments }, /kind/],
+			[{ id: 1, kind: "group", judgments }, /guideIdentity/],
+			[
+				{ id: 1, kind: "group", guideIdentity: "old", judgments },
+				/guideIdentity/,
+			],
+			[{ id: 1, kind: "group", guideIdentity, judgments }, /judge/],
+			[
+				{
+					id: 1,
+					kind: "group",
+					guideIdentity,
+					judge: "名字里有汉字",
+					judgments,
+				},
+				/judge/,
+			],
+			[
+				{
+					id: 1,
+					kind: "group",
+					guideIdentity,
+					judge: "a".repeat(41),
+					judgments,
+				},
+				/judge/,
+			],
+			[{ id: 1, kind: "group", guideIdentity, judge: "hr-bot" }, /judgments/],
+			[
+				{
+					id: 1,
+					kind: "group",
+					guideIdentity,
+					judge: "hr-bot",
+					judgments: "都并",
+				},
+				/judgments/,
+			],
 		] as [unknown, RegExp][]) {
 			const got = await submit(request(body));
 			assert.equal(got.ok, false, `${JSON.stringify(body)} 该被拦下`);
@@ -125,14 +167,24 @@ describe("提交判定", () => {
 		const connection = await pool.connect();
 		try {
 			const { rows } = await connection.query<{ id: number }>(
-				`insert into review_group (kind, words)
-				 values ('group', '[{"word":"数据分析","people":3},{"word":"数据分析工作","people":2}]'::jsonb)
+				`insert into review_group (kind, guide_identity, words)
+				 values ('group', $1, '[{"word":"数据分析","people":3},{"word":"数据分析工作","people":2}]'::jsonb)
 				 returning id`,
+				[groupIdentity()],
 			);
 			id = rows[0]?.id ?? 0;
 		} finally {
 			connection.release();
 		}
+	});
+
+	test("取组同时给出组与标准的同一份身份", async () => {
+		const view = await pending(20);
+		const group = view.groups.find((one) => one.id === id);
+		assert.ok(group);
+		assert.equal(group.guideIdentity, groupIdentity());
+		assert.equal(view.guides.group.identity, group.guideIdentity);
+		assert.match(view.guides.group.text, /同一件事/);
 	});
 
 	test("原话原样存进组里，这里不收窄", async () => {
@@ -141,7 +193,15 @@ describe("提交判定", () => {
 			{ word: "数据分析工作", why: "同义", sameAs: "数据分析", parent: "" },
 			{ word: "别的词", why: "…", sameAs: "外人", parent: "" },
 		];
-		const got = await submit(request({ id, judge: "hr-bot", judgments: raw }));
+		const got = await submit(
+			request({
+				guideIdentity: groupIdentity(),
+				id,
+				judge: "hr-bot",
+				judgments: raw,
+				kind: "group",
+			}),
+		);
 		assert.deepEqual(got, { ok: true, submission: "accepted" });
 
 		const connection = await pool.connect();
@@ -154,7 +214,7 @@ describe("提交判定", () => {
 			assert.deepEqual(rows[0]?.judgment.judgments, raw);
 			// 判过的组不再出现在待判的那一份里
 			assert.equal(
-				(await openGroups(connection)).some(
+				(await openGroups(connection, "group", groupIdentity())).some(
 					(one: { id: number }) => one.id === id,
 				),
 				false,
@@ -169,11 +229,39 @@ describe("提交判定", () => {
 			{ word: "数据分析工作", why: "同义", sameAs: "数据分析", parent: "" },
 		];
 		assert.deepEqual(
-			await submit(request({ id, judge: "another", judgments })),
+			await submit(
+				request({
+					guideIdentity: groupIdentity(),
+					id,
+					judge: "another",
+					judgments,
+					kind: "group",
+				}),
+			),
 			{ ok: true, submission: "taken" },
 		);
 		assert.deepEqual(
-			await submit(request({ id: 10_000_000, judge: "hr-bot", judgments })),
+			await submit(
+				request({
+					guideIdentity: groupIdentity(),
+					id: 10_000_000,
+					judge: "hr-bot",
+					judgments,
+					kind: "group",
+				}),
+			),
+			{ ok: true, submission: "missing" },
+		);
+		assert.deepEqual(
+			await submit(
+				request({
+					guideIdentity: "0".repeat(64),
+					id,
+					judge: "hr-bot",
+					judgments,
+					kind: "group",
+				}),
+			),
 			{ ok: true, submission: "missing" },
 		);
 	});
