@@ -11,9 +11,7 @@ import { currentTree, identity } from "#/corpus/derive";
 import type { Employee, Experience } from "#/db/schema";
 import { withReadSnapshot } from "#/db/snapshot";
 import { escapeLike } from "#/lib/sql";
-
-/** 列表一页几个人。 */
-const PAGE_SIZE = 50;
+import { PAGE_SIZE, pageAt, type TablePage, tablePage } from "./paging";
 
 type EmployeeRow = Pick<Employee, "empId" | "name" | "curDept" | "curTitle"> & {
 	/** 这个人有几段 */
@@ -22,28 +20,11 @@ type EmployeeRow = Pick<Employee, "empId" | "name" | "curDept" | "curTitle"> & {
 	pending: number;
 };
 
-type DataList = {
-	/** 这个词一共找到多少人；不给词就是库里的所有人 */
-	total: number;
-	/** 一共分几页，至少一页 */
-	pages: number;
-	/** 这一页的第一个人在全部结果里排第几，从 1 起；一个人都没有时是 0 */
-	from: number;
-	/**
-	 * 给出的是第几页，从 1 起。
-	 *
-	 * 页码由这里定夺，不是照抄地址栏里的那个数：搜过一次再改词，剩下的人可能填
-	 * 不满原来那么多页，而一个越界的页码在表上就是一张空表。越界收回最后一页。
-	 */
-	page: number;
-	rows: EmployeeRow[];
-};
-
 /** 按名字或工号找人，一页 `PAGE_SIZE` 个；不给词就按工号从头列。 */
 export async function listEmployees(
 	needle: string,
-	page: number,
-): Promise<DataList> {
+	page: unknown,
+): Promise<TablePage<EmployeeRow>> {
 	const pattern = `%${escapeLike(needle.trim())}%`;
 	return withReadSnapshot(async (client) => {
 		const version = identity(await currentTree(client));
@@ -52,8 +33,7 @@ export async function listEmployees(
 			[pattern],
 		);
 		const total = Number(found.rows[0]?.n ?? 0);
-		const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-		const at = Math.min(Math.max(1, Math.trunc(page)), pages);
+		const at = pageAt(total, page);
 		const { rows } = await client.query<EmployeeRow>(
 			`select e.emp_id as "empId", e.name, e.cur_dept as "curDept",
 			e.cur_title as "curTitle",
@@ -64,16 +44,10 @@ export async function listEmployees(
 		 where e.name ilike $2 or e.emp_id ilike $2
 		 group by e.emp_id
 		 order by e.emp_id
-		 limit ${PAGE_SIZE} offset ${(at - 1) * PAGE_SIZE}`,
+		 limit ${PAGE_SIZE} offset ${at.offset}`,
 			[version, pattern],
 		);
-		return {
-			total,
-			pages,
-			from: rows.length === 0 ? 0 : (at - 1) * PAGE_SIZE + 1,
-			page: at,
-			rows,
-		};
+		return tablePage(rows, total, at);
 	});
 }
 
@@ -98,8 +72,6 @@ export type SegmentView = Pick<
 > & {
 	/** 派生到当前版本了没有 */
 	derived: boolean;
-	/** 派生的时刻，`MM-DD HH:MM`；没派生过是 null */
-	derivedAt: string | null;
 	skills: string[];
 	did: { involvement: string | null; domain: string }[];
 };
@@ -136,7 +108,6 @@ export async function employeeData(
 			x.seq_l1 as "seqL1", x.seq_l2 as "seqL2", x.seq_l3 as "seqL3",
 			x.seq_inferred_l1 as "seqInferredL1", x.seq_inferred_l2 as "seqInferredL2",
 			x.derived_identity is not distinct from $2 as derived,
-			to_char(x.derived_at, 'MM-DD HH24:MI') as "derivedAt",
 			(select array_agg(p.text order by p.text)
 			 from experience_phrase ep join phrase p on p.id = ep.phrase_id
 			 where ep.experience_id = x.id and ep.route = 'skill') as skills,

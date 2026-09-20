@@ -55,10 +55,15 @@ export function AppHeader({ recent }: { recent: RecentSearch[] | null }) {
 					<AdminLink
 						icon={<TableIcon />}
 						label="数据"
-						search={{ q: "" }}
+						search={{ page: undefined, q: "" }}
 						to="/data"
 					/>
-					<AdminLink icon={<TagsIcon />} label="技能" to="/skills" />
+					<AdminLink
+						icon={<TagsIcon />}
+						label="技能"
+						search={{ page: undefined, q: "" }}
+						to="/skills"
+					/>
 					<AdminLink icon={<ActivityIcon />} label="任务" to="/tasks" />
 				</div>
 			</div>
@@ -81,8 +86,11 @@ function AdminLink({
 	to: "/data" | "/skills" | "/tasks";
 	label: string;
 	icon: React.ReactNode;
-	/** 那一页要求的地址参数（数据页的找人词）。没有要求的页不给。 */
-	search?: { q: string };
+	/**
+	 * 那一页要求的地址参数。从顶栏进去是从头看：没有搜索词、停在第一页
+	 * （第一页不写进地址，所以 `page` 是 undefined）。没有这类参数的页不给。
+	 */
+	search?: { q: string; page: undefined };
 }) {
 	const matchRoute = useMatchRoute();
 	const current = Boolean(matchRoute({ to, fuzzy: true }));

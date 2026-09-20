@@ -16,6 +16,7 @@ import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as ApiReviewRouteImport } from './routes/api/review'
 import { Route as DataEmpIdRouteImport } from './routes/data.$empId'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
+import { Route as SkillsWordRouteImport } from './routes/skills.$word'
 import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -53,6 +54,11 @@ const STurnIdRouteRoute = STurnIdRouteRouteImport.update({
   path: '/s/$turnId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SkillsWordRoute = SkillsWordRouteImport.update({
+  id: '/$word',
+  path: '/$word',
+  getParentRoute: () => SkillsRoute,
+} as any)
 const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
   id: '/p/$empId',
   path: '/p/$empId',
@@ -62,32 +68,35 @@ const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/data': typeof DataRouteWithChildren
-  '/skills': typeof SkillsRoute
+  '/skills': typeof SkillsRouteWithChildren
   '/tasks': typeof TasksRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
+  '/skills/$word': typeof SkillsWordRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/data': typeof DataRouteWithChildren
-  '/skills': typeof SkillsRoute
+  '/skills': typeof SkillsRouteWithChildren
   '/tasks': typeof TasksRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
+  '/skills/$word': typeof SkillsWordRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/data': typeof DataRouteWithChildren
-  '/skills': typeof SkillsRoute
+  '/skills': typeof SkillsRouteWithChildren
   '/tasks': typeof TasksRoute
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
+  '/skills/$word': typeof SkillsWordRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/s/$turnId'
     | '/api/review'
     | '/data/$empId'
+    | '/skills/$word'
     | '/s/$turnId/p/$empId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -110,6 +120,7 @@ export interface FileRouteTypes {
     | '/s/$turnId'
     | '/api/review'
     | '/data/$empId'
+    | '/skills/$word'
     | '/s/$turnId/p/$empId'
   id:
     | '__root__'
@@ -120,13 +131,14 @@ export interface FileRouteTypes {
     | '/s/$turnId'
     | '/api/review'
     | '/data/$empId'
+    | '/skills/$word'
     | '/s/$turnId/p/$empId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DataRoute: typeof DataRouteWithChildren
-  SkillsRoute: typeof SkillsRoute
+  SkillsRoute: typeof SkillsRouteWithChildren
   TasksRoute: typeof TasksRoute
   STurnIdRouteRoute: typeof STurnIdRouteRouteWithChildren
   ApiReviewRoute: typeof ApiReviewRoute
@@ -183,6 +195,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof STurnIdRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/skills/$word': {
+      id: '/skills/$word'
+      path: '/$word'
+      fullPath: '/skills/$word'
+      preLoaderRoute: typeof SkillsWordRouteImport
+      parentRoute: typeof SkillsRoute
+    }
     '/s/$turnId/p/$empId': {
       id: '/s/$turnId/p/$empId'
       path: '/p/$empId'
@@ -203,6 +222,17 @@ const DataRouteChildren: DataRouteChildren = {
 
 const DataRouteWithChildren = DataRoute._addFileChildren(DataRouteChildren)
 
+interface SkillsRouteChildren {
+  SkillsWordRoute: typeof SkillsWordRoute
+}
+
+const SkillsRouteChildren: SkillsRouteChildren = {
+  SkillsWordRoute: SkillsWordRoute,
+}
+
+const SkillsRouteWithChildren =
+  SkillsRoute._addFileChildren(SkillsRouteChildren)
+
 interface STurnIdRouteRouteChildren {
   STurnIdPEmpIdRoute: typeof STurnIdPEmpIdRoute
 }
@@ -218,7 +248,7 @@ const STurnIdRouteRouteWithChildren = STurnIdRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DataRoute: DataRouteWithChildren,
-  SkillsRoute: SkillsRoute,
+  SkillsRoute: SkillsRouteWithChildren,
   TasksRoute: TasksRoute,
   STurnIdRouteRoute: STurnIdRouteRouteWithChildren,
   ApiReviewRoute: ApiReviewRoute,

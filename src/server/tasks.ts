@@ -36,6 +36,7 @@ import { sourceName } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
 import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
+import { pageAt } from "./paging";
 import { configured, reviewJudge } from "./review";
 
 /** 运行记录一页几行。往前的那些翻页看（`/tasks?derive=3`）。 */
@@ -261,13 +262,13 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 	const lanes = TASK_KINDS.map((kind) => {
 		const head = heads.find((row) => row.kind === kind);
 		const total = head?.total ?? 0;
-		const pages = Math.max(1, Math.ceil(total / RUNS_PAGE));
+		// 第几页、跳过多少行由 `pageAt` 定夺，三张管理页的表同一套算术
+		const at = pageAt(total, want[kind], RUNS_PAGE);
 		return {
 			kind,
 			latest: head ? seen(head) : null,
-			// 越界收回最后一页，否则翻过头就是一张空表（`listEmployees` 同一条规矩）
-			page: Math.min(Math.max(1, Math.trunc(want[kind] ?? 1)), pages),
-			pages,
+			page: at.page,
+			pages: at.pages,
 			total,
 		};
 	});

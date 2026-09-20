@@ -87,12 +87,13 @@ describe("能力词词表", () => {
 	});
 
 	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段、连同别名和下面的词", async () => {
-		const table = await listSkills();
-		assert.deepEqual(table.entries, [
+		const table = await listSkills("", 1);
+		assert.deepEqual(table.rows, [
 			{
 				canonical: "推荐系统",
 				parent: null,
 				aliases: ["个性化推荐", "推荐算法"],
+				children: 1,
 				people: 4,
 				reviewedDaysAgo: 0,
 			},
@@ -100,6 +101,7 @@ describe("能力词词表", () => {
 				canonical: "Python",
 				parent: null,
 				aliases: [],
+				children: 0,
 				people: 1,
 				reviewedDaysAgo: 7,
 			},
@@ -107,6 +109,7 @@ describe("能力词词表", () => {
 				canonical: "电商推荐系统",
 				parent: "推荐系统",
 				aliases: [],
+				children: 0,
 				people: 1,
 				reviewedDaysAgo: 0,
 			},
@@ -114,9 +117,36 @@ describe("能力词词表", () => {
 				canonical: "Hadoop",
 				parent: null,
 				aliases: [],
+				children: 0,
 				people: 0,
 				reviewedDaysAgo: 7,
 			},
 		]);
+		assert.equal(table.total, 4);
+		assert.equal(table.pages, 1);
+	});
+
+	test("找词认标准词、并进去的写法和它属于的那个更宽的词", async () => {
+		const byCanonical = await listSkills("Python", 1);
+		assert.deepEqual(
+			byCanonical.rows.map((row) => row.canonical),
+			["Python"],
+		);
+		// 「个性化推荐」是并进「推荐系统」的写法，搜它出的是标准词那一行
+		const byAlias = await listSkills("个性化推荐", 1);
+		assert.deepEqual(
+			byAlias.rows.map((row) => row.canonical),
+			["推荐系统"],
+		);
+		// 「电商推荐系统」属于「推荐系统」，搜父词时两行都在
+		const byParent = await listSkills("推荐系统", 1);
+		assert.deepEqual(
+			byParent.rows.map((row) => row.canonical),
+			["推荐系统", "电商推荐系统"],
+		);
+		const none = await listSkills("没有这个词", 1);
+		assert.deepEqual(none.rows, []);
+		assert.equal(none.total, 0);
+		assert.equal(none.pages, 1);
 	});
 });

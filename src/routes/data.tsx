@@ -138,23 +138,24 @@ function Data() {
 							</TableHeader>
 							<TableBody>
 								{list.rows.map((row) => (
-									/*
-									 * 整行可点，但链接只有一个：姓名上的 `after:inset-0` 铺满整行，
-									 * 名单卡片用的是同一个做法（`result-list.tsx`）。这一行就是这
-									 * 个人在表上的全部内容，只让工号可点的话，点击区域只有最左边
-									 * 那几个字，而用户看的是姓名。
-									 */
 									<TableRow
-										className="relative"
 										data-state={row.empId === empId ? "selected" : undefined}
 										key={row.empId}
 									>
 										<TableCell className="font-mono text-muted-foreground">
 											{row.empId}
 										</TableCell>
+										{/*
+										 * 通往详情的是姓名，一个普通的文字链接——工号那一格是给人
+										 * 核对的，看的人认的是名字。表里不做铺满整行的覆盖层：
+										 * `<a>` 包不住 `<tr>`，而用绝对定位去补这个缺口得让 `tr`
+										 * 当包含块，那件事表格行做不到（覆盖层会落到 `tbody`，每一
+										 * 行都铺满整张表）。名单那边整块可点，因为那是卡片
+										 * （`result-list.tsx`）——形状不同，读法就不同。
+										 */}
 										<TableCell className="font-medium">
 											<Link
-												className="after:absolute after:inset-0 after:content-['']"
+												className="underline-offset-4 hover:underline"
 												params={{ empId: row.empId }}
 												search={at(list.page, q)}
 												to="/data/$empId"
