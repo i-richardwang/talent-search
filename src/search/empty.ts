@@ -5,8 +5,8 @@
  * 「你自己把条件全停用了」和「真的没有这样的人」要做的事完全不同。说错了
  * 不会有任何断言失败，用户只会拿到一句不对症的建议然后无从下手。
  *
- * 所以它由**跑完这次检索的那一侧**回答：候选事实、AND 判定、筛选、证据要求
- * 都在那里，成因是它顺手就知道的一件事。放在界面上反推的话，那里拿到的是
+ * 所以它由**跑完这次检索的那一侧**回答：候选事实、AND 判定、筛选都在那里，
+ * 成因是它顺手就知道的一件事。放在界面上反推的话，那里拿到的是
  * 二手输入（chips、筛选、几个计数），得把服务端刚做过的判断再做一遍——
  * 两份推理迟早分叉，而分叉的表现是一句说错的话，不是一次报错。
  *
@@ -15,8 +15,8 @@
  * 它是纯函数、不带 `db`，所以页面可以从这里取值（分界见 `result.ts`）。
  */
 import { type ExperienceCondition, experienceConditions } from "./condition";
-import { narrowsPopulation } from "./params";
-import { queryOf, type SearchFilters } from "./result";
+import { narrows, type SearchFilters } from "./params";
+import { queryOf } from "./result";
 import type { SearchSpec } from "./spec";
 
 /**
@@ -29,7 +29,7 @@ type EmptyOverflow =
 
 /**
  * 一份空名单的成因。判别联合而不是一个字符串枚举：有几种成因带着走出去的
- * 数据（点名哪几个要求、关掉证据要求还剩几人），而那正是出路要用的东西。
+ * 数据（点名是哪几条主张太宽），而那正是出路要用的东西。
  */
 export type EmptyReason =
 	/**
@@ -45,8 +45,6 @@ export type EmptyReason =
 	| { kind: "noConditions" }
 	/** 只有人的必须条件，没有经历主张，而没有这样的人。 */
 	| { kind: "personEmpty" }
-	/** 证据要求把人滤空了；`without` 是关掉它能看到多少人。 */
-	| { kind: "strongEmpty"; without: number }
 	/** 当前筛选下没人。清掉筛选就能看到。 */
 	| { kind: "filtered" }
 	/** 没有人满足全部必须条件。 */
@@ -63,11 +61,9 @@ export function emptyReason(input: {
 	filters: SearchFilters;
 	/** 通过全部必须条件的人数。 */
 	total: number;
-	/** 关掉证据要求之后还剩多少人。 */
-	withoutStrong: number;
 	overflow: EmptyOverflow | null;
 }): EmptyReason | null {
-	const { spec, filters, total, withoutStrong } = input;
+	const { spec, filters, total } = input;
 	const { claims, must, prefer } = queryOf(spec.conditions);
 	const people = must.length + prefer.length;
 	// 取数超限排在最前：它不是「没有人」，是「多到不能排名」，出路正好相反。
@@ -80,9 +76,7 @@ export function emptyReason(input: {
 	// 「校招的，不要实习」会被报成「你只写了排除」，而那句话的出路
 	// （补一条条件）和真正的出路（放宽条件）正好不是一回事。
 	if (claims.length > 0 || people > 0) {
-		if (claims.length > 0 && filters.strong && withoutStrong > 0)
-			return { kind: "strongEmpty", without: withoutStrong };
-		if (narrowsPopulation(filters)) return { kind: "filtered" };
+		if (narrows(filters)) return { kind: "filtered" };
 		// 出路跟着「有没有必须的东西」走：有必须的主张就是它们没被同时满足，
 		// 只有人的必须条件就是没有这样的人；什么都不是必须的（只有加分的主张、
 		// 只有人的偏好）就是没有人沾上任何一条，改法是换词，不是放宽——没有可放宽的。

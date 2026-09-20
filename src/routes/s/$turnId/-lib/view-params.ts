@@ -15,8 +15,11 @@
  * 一个是换一个问题。
  */
 
-import { POPULATION_KEYS, parsePopulation } from "#/search/params";
-import type { SearchFilters } from "#/search/result";
+import {
+	FILTER_KEYS,
+	type SearchFilters,
+	sanitizeFilters,
+} from "#/search/params";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
 
 /** 地址栏上的视图：一份筛选，加上翻到第几页。筛选那几项不在这里重写一遍。 */
@@ -32,17 +35,11 @@ export type View = SearchFilters & {
 };
 
 /**
- * URL 是不可信输入：非法值一律当没填。维度那七项怎么收窄写在它们自己的声明里
- * （`dimensions.ts`），这里只收不属于那一族的几项——URL 与 RPC 两处因此收的是
- * 同一份，不会有一处先松下来。
+ * URL 是不可信输入：非法值一律当没填。筛选那部分和 RPC 收的是**同一份**
+ * （`sanitizeFilters`），所以不会有一处先松下来；这里只多收一个翻页数。
  */
 export function validateView(s: Record<string, unknown>): View {
-	return {
-		...parsePopulation(s),
-		strong: s.strong === true || s.strong === "true" ? true : undefined,
-		order: s.order === "depth" ? "depth" : undefined,
-		n: pageSize(s.n),
-	};
+	return { ...sanitizeFilters(s), n: pageSize(s.n) };
 }
 
 /**
@@ -95,9 +92,6 @@ export function allPages(total: number): Partial<View> {
 	return { n: Math.ceil(reachOf(total) / RESULT_PAGE) * RESULT_PAGE };
 }
 
-/** 除翻页之外的全部视图状态。 */
-const FILTER_KEYS = [...POPULATION_KEYS, "strong", "order"] as const;
-
 /**
  * 这一次导航是不是「只是再看一页」。
  *
@@ -143,8 +137,7 @@ export function toFilters(v: View): SearchFilters {
 /**
  * 筛选的「全部清空」。工具栏的「清除筛选」和空结果态的逃生按钮都用它，
  * 免得两处各写一份、加字段时漏掉一处。
- * `strong` 和 `order` 不在其中：它们答的是「怎么看证据」，不是收窄人群的那几维。
  */
 export const CLEARED_FILTERS = Object.fromEntries(
-	POPULATION_KEYS.map((k) => [k, undefined]),
-) as { [K in (typeof POPULATION_KEYS)[number]]: undefined };
+	FILTER_KEYS.map((key) => [key, undefined]),
+) as { [K in (typeof FILTER_KEYS)[number]]: undefined };

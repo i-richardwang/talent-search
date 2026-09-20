@@ -118,16 +118,12 @@ describe("产品文案使用常规 SaaS 语言", () => {
 	test("结果数量使用中性状态，不暴露检索术语", () => {
 		const text = seen(
 			<ResultHeader
-				byDepth={false}
 				loading={false}
-				onChange={() => {}}
 				onPicking={() => {}}
 				order="evidence"
 				pickable
 				picking={false}
 				planned
-				strong={false}
-				strongOn={0}
 				claims={[{ about: "experience", mode: "must", what: ["算法"] }]}
 				total={12}
 			/>,
@@ -198,9 +194,6 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				onMore={() => {}}
 				onReviseQuery={() => {}}
 				picks={NO_PICKS}
-				strong={false}
-				byDepth={false}
-				strongOn={0}
 				outcome={{
 					order: "evidence",
 					claims: [{ about: "experience", mode: "must", what: ["量子炼金"] }],
@@ -227,8 +220,9 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		const text = seen(<StrengthLegend />);
 		assert.match(text, /岗位或序列/);
 		assert.match(text, /部门或公司/);
-		assert.match(text, /简历原文/);
-		assert.doesNotMatch(text, /受控字段|无校验|可直接确认/);
+		// 档名说的是「谁写的」；「简历原文」是路的名字，只指还没读过的段
+		assert.match(text, /简历自述/);
+		assert.doesNotMatch(text, /受控字段|可直接确认/);
 		assert.equal(routeLabel("skill"), "技能");
 		assert.equal(routeLabel("did"), "");
 		assert.equal(routeLabel(null), "任职");

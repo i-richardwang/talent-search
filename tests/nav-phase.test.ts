@@ -69,7 +69,11 @@ describe("导航相位", () => {
 
 	test("改筛选时旧结果不再成立，显示骨架屏", () => {
 		assert.deepEqual(
-			navPhase(true, spot("a", { ...QUERY, strong: true }), spot("a", QUERY)),
+			navPhase(
+				true,
+				spot("a", { ...QUERY, kind: "internal" }),
+				spot("a", QUERY),
+			),
 			{ growing: false, navigating: true },
 		);
 	});

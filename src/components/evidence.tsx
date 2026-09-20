@@ -4,10 +4,16 @@ import { cn } from "#/lib/utils";
 import { routeLabel, type Strength, strengthOf } from "#/search/evidence";
 import type { ClaimBasis, Hit } from "#/search/result";
 
+/**
+ * 图例上这三档各叫什么。说的是**这一档证据是谁写的**，所以最弱那一档叫「简历
+ * 自述」而不是「简历原文」：那是路的名字（`search/evidence.ts` 的 `ROUTE_LABEL`），
+ * 只指还没被模型读过的段。同一个词既当档名又当路名的话，图例写着「简历原文」、
+ * 证据行写着「技能」，而它们是同一颗点。
+ */
 const STRENGTH_LABEL: Record<Strength, string> = {
 	controlled: "岗位或序列",
 	org: "部门或公司",
-	claimed: "简历原文",
+	claimed: "简历自述",
 };
 
 /**
@@ -16,10 +22,16 @@ const STRENGTH_LABEL: Record<Strength, string> = {
  */
 const NAME_W = "w-22";
 
+/**
+ * 「这一行比的是条件里的哪个取值」的前缀。屏幕上和导出的 CSV 用的是同一个词
+ * （`evidenceText`）。
+ */
+const MATCHED_BY = "比的是";
+
 const STRENGTH_HINT: Record<Strength, string> = {
 	controlled: "来自任职记录",
 	org: "部门或公司名称与条件相近",
-	claimed: "来自入职前简历原文",
+	claimed: "来自入职前简历，本人自述、无校验",
 };
 
 /**
@@ -166,7 +178,7 @@ function matchedField(hit: Hit): {
  * 同一行证据写成一句话，给导出的 CSV 用（`-lib/csv.ts`）。
  *
  * 和 `EvidenceLine` 挨着放，是因为它们说的是同一件事，只是一个画在屏幕上、
- * 一个写进单元格里：分开放的话，某天屏幕上改了「≈ 取值」的说法，导出的那一份
+ * 一个写进单元格里：分开放的话，某天屏幕上改了那几个槽的说法，导出的那一份
  * 用的还是旧的，而两份都不会有任何检查报出来。
  *
  * 槽的顺序和屏幕上一致：拿去比的词、命中的字段和这段经历在哪、相关度、时长。
@@ -174,7 +186,7 @@ function matchedField(hit: Hit): {
 export function evidenceText(name: string, hit: Hit, basis: ClaimBasis) {
 	const field = matchedField(hit);
 	return dots(
-		byOther(name, hit) ? `≈ ${hit.value}` : null,
+		byOther(name, hit) ? `${MATCHED_BY} ${hit.value}` : null,
 		[field.label, field.value ?? field.context].filter(Boolean).join(" "),
 		field.value === null ? null : field.context,
 		basis.route === null ? null : relevance(basis.relevance),
@@ -191,12 +203,15 @@ function byOther(name: string, hit: Hit) {
  * 一个人一条主张的一行证据。五段固定的槽，所有人的所有行共用同一套列位置——
  * 这是把表格旋转成块之后仍然能上下扫的原因，只不过那条竖线上现在写着凭据。
  *
- *   [点] [主张]  [≈ 取值] [命中的字段值 · 这段经历在哪]    [相关度]  [时长]
+ *   [点] [主张]  [比的是 取值] [命中的字段值 · 这段经历在哪]  [相关度]  [时长]
  *
- * 靠这条条件的另一个取值命中时，字段值前面先写「≈ 推荐算法」：这一行凭什么
- * 算命中，第一个要答的就是「拿去比的是哪个词」——chip 上写的是「算法」，比的是
- * 「推荐算法」，不说清的话相关度那个数对着的是一个屏幕上没有的词。
+ * 靠这条条件的另一个取值命中时，字段值前面先写「比的是 推荐算法」：这一行凭
+ * 什么算命中，第一个要答的就是「拿去比的是哪个词」——chip 上写的是「算法」，
+ * 比的是「推荐算法」，不说清的话相关度那个数对着的是一个屏幕上没有的词。
  * 靠代表词命中的不写：默认不该有记号。
+ *
+ * 写成词而不是一个记号：chip 上的 `≈` 说的是「这条条件还有别的取值」，
+ * 同一个符号在这里说「用的是别的取值」，两件事共用一个记号就没法读了。
  *
  * 相关度取 `basis.relevance`（最强那条证据的相关度），时长取 `basis.months`（并列
  * 最强的那些段的累计月数）——正是参与打分的那两个值；取样例段的数会让两个
@@ -245,7 +260,7 @@ export function EvidenceLine({
 				{/* 命中的不是代表词时说出是哪个词：一个意外的人得能找到是哪个词招来的 */}
 				{byOther(name, hit) && (
 					<span className="shrink-0 text-muted-foreground text-xs">
-						≈ {hit.value}
+						{MATCHED_BY} {hit.value}
 					</span>
 				)}
 				{/*

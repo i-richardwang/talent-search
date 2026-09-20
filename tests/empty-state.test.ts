@@ -95,21 +95,10 @@ describe("其余分支各有各的文案", () => {
 		assert.equal(run({ kind: "personEmpty" }).title, "没有这样的人");
 	});
 
-	test("证据要求滤空了：报出关掉之后能看到几个，出口就是关掉它", () => {
-		const s = run({ kind: "strongEmpty", without: 12 });
-		assert.match(s.hint, /12/);
-		assert.deepEqual(s.changed, { strong: undefined });
-	});
-
-	test("筛选太窄：一键清筛选，但不动证据要求", () => {
-		const s = run({ kind: "filtered" });
-		// 按下去必须真的改视图，而且清的是**全部**收窄维度：漏掉一维，人点完
+	test("筛选太窄：一键清掉全部筛选", () => {
+		// 按下去必须真的改视图，而且清的是**全部**维度：漏掉一维，人点完
 		// 名单照旧是空的，而屏幕上那条出路刚承诺过它能走通。
-		assert.deepEqual(s.changed, CLEARED_FILTERS);
-		assert.ok(
-			!("strong" in (s.changed ?? {})),
-			"证据要求不属于「清除筛选」的范围",
-		);
+		assert.deepEqual(run({ kind: "filtered" }).changed, CLEARED_FILTERS);
 	});
 
 	test("AND 没满足：指向把某条必须的主张改成加分", () => {

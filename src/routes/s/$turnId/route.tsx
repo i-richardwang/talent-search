@@ -262,9 +262,6 @@ function Workbench() {
 							outcome={outcome}
 							picks={picks}
 							spec={spec}
-							strong={Boolean(view.strong)}
-							strongOn={facets.strong.on}
-							byDepth={view.order === "depth"}
 							turnId={turnId}
 						/>
 					</main>

@@ -41,7 +41,6 @@ const FACETS: Facets = {
 	recruitment: [{ value: "校招", n: 5 }],
 	skill: [{ value: "推荐系统", n: 3 }],
 	education: [{ value: "硕士", n: 8 }],
-	strong: { on: 18, off: 43 },
 };
 
 const fields = (view: View) => filterFields(FACETS, view);
@@ -108,9 +107,8 @@ describe("选中项的文案", () => {
 		);
 	});
 
-	test("没筛就一个都没有；strong 是服务端筛选，但不计入范围筛选", () => {
+	test("没筛就一个都没有", () => {
 		assert.deepEqual(labels({}), []);
-		assert.deepEqual(labels({ strong: true }), []);
 	});
 
 	test("筛选项列表变了而 URL 停在旧值上时，显示裸值而不是静默消失", () => {

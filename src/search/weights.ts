@@ -30,7 +30,9 @@ export function strengthRank(s: Strength): number {
  * 部门 / 公司同样受控且全员都有，但它描述的是团队的事，不是本人的事，故次之。
  *
  * 自述最低，三条叠加：提到不等于做过；本人自述、无校验；上游文本可能缺失或
- * 被截断。它不该单独把人送进结果，「仅岗位或序列」那个开关挡的就是它。
+ * 被截断。只有自述证据的人仍然算命中——把他们挡在名单外面等于替用户断定
+ * 「简历上写的不算数」；他们排在登记证据的人后面（`rank.ts` 的 `byEvidence`），
+ * 每一行旁边那颗点如实写着成色。
  *
  * 能力词与做过的事是模型从简历原文里读出来的短说法，**来源**没变，所以和
  * 简历原文同一档：强度只看字段来源，读法再好也不会让自述变成登记。一段经历的
@@ -45,10 +47,6 @@ export const ROUTE_STRENGTH: Record<Route, Strength> = {
 	did: "claimed",
 	description: "claimed",
 };
-
-export function isControlledRoute(route: Route) {
-	return ROUTE_STRENGTH[route] === "controlled";
-}
 
 /** 六路按可信度由强到弱；同档按声明顺序。取数去重和界面枚举共用这一份。 */
 export const ROUTE_ORDER = (Object.keys(ROUTE_STRENGTH) as Route[]).sort(

@@ -38,7 +38,6 @@ const FACETS: Facets = {
 	recruitment: [],
 	skill: [],
 	education: [],
-	strong: { on: 7, off: 31 },
 };
 
 const markup = (view: View, facets: Facets = FACETS) =>
@@ -82,7 +81,6 @@ describe("不点开就知道能筛什么", () => {
 			recruitment: [],
 			skill: [],
 			education: [],
-			strong: { on: 0, off: 0 },
 		};
 		assert.equal(render({}, empty), "");
 	});
@@ -211,10 +209,5 @@ describe("清除", () => {
 			markup({ kind: "internal" }),
 			/class="[^"]*\binvisible\b/,
 		);
-	});
-
-	test("「仅岗位或序列」不进计数——它问的不是人群多大", () => {
-		// 它也不在这条栏上（见 result-list.tsx 的 ProvenOnly）
-		assert.match(markup({ strong: true }), /class="[^"]*\binvisible\b/);
 	});
 });

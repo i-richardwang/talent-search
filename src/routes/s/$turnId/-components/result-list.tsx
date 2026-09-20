@@ -2,7 +2,6 @@ import { Link } from "@tanstack/react-router";
 import { ListChecksIcon, SearchXIcon, XIcon } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
 import {
-	Dot,
 	EvidenceLine,
 	MissedClaims,
 	StrengthLegend,
@@ -22,7 +21,6 @@ import {
 import { Label } from "#/components/ui/label";
 import { Separator } from "#/components/ui/separator";
 import { Skeleton } from "#/components/ui/skeleton";
-import { Toggle } from "#/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
@@ -46,19 +44,16 @@ const SKELETON_ROWS = 5;
 /** 计数那一行怎么描述这份名单的排序。 */
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	evidence: "按证据排序",
-	depth: "不分来源排序",
 	employee: "默认顺序",
 };
 
 /**
- * 名单的表头：这份名单有多少人、按什么排、图例三个点各是什么意思、要不要只留
- * 任职记录能证明的那些人，以及要不要不分来源排序。
+ * 名单的表头：这份名单有多少人、按什么排、图例三个点各是什么意思。
  *
  * 这些都是名单自身的属性，所以跟着名单走。放进查询区的话，计数会随 chips 换行
  * 上下移动，而它回答的也不是「我搜了什么」。
  *
- * 图例必须和它解释的那些点在同一屏，所以排在这里；旁边的开关要求的正是图例里
- * 第一个点，两者相邻，开关就不必再解释一遍自己的含义。
+ * 图例必须和它解释的那些点在同一屏，所以排在这里。
  *
  * 排序方式是整份名单的属性，一句话说完即可：名次由每个人在列表里的位置表示
  * （AGENTS.md「分数不上屏」），这里只需说明顺序按什么排。
@@ -70,10 +65,6 @@ export function ResultHeader({
 	order,
 	total,
 	claims,
-	strong,
-	byDepth,
-	onChange,
-	strongOn,
 	planned,
 	picking,
 	onPicking,
@@ -87,22 +78,15 @@ export function ResultHeader({
 	/**
 	 * 这次查询有没有经历主张，从记录上算，不等服务端返回。
 	 *
-	 * 右边那一组（图例和开关）因此从第一帧就在，而不是等 `claims` 回来。等的话
-	 * 这一行会在结果到达时增高（开关比一行文字高 8px），整份名单跟着下移一次。
+	 * 图例因此从第一帧就在，而不是等 `claims` 回来。等的话它会在结果到达时
+	 * 凭空多出来，把这一行挤到换行，整份名单跟着往下跳一次。
 	 */
 	planned: boolean;
-	/** 「仅岗位或序列」是否打开。它是这份名单的属性，不是视图状态。 */
-	strong: boolean;
-	/** 「不分来源」是否打开（取自视图状态）。结果还没回来时它就已经是按下态。 */
-	byDepth: boolean;
-	onChange: (next: Partial<View>) => void;
-	/** 只留受控证据之后还剩多少人 */
-	strongOn: number;
 	/** 是否处于选择模式。选择时整份名单左侧让出一列复选框，表头这一行最左边是全选。 */
 	picking: boolean;
 	/** 进入或退出选择。 */
 	onPicking: (on: boolean) => void;
-	/** 是否有可供选择的名单。没有时按钮保留位置但禁用，理由和「仅岗位或序列」相同。 */
+	/** 是否有可供选择的名单。没有时按钮保留位置但禁用，位置留着列表才不会位移。 */
 	pickable: boolean;
 }) {
 	return (
@@ -120,31 +104,19 @@ export function ResultHeader({
 				)}
 			</p>
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-				{/* 图例和旁边的开关说的都是证据，没有条件的查询里两者都没有意义；
-				    选择与条件无关，按部门筛出的一批人同样需要导出。 */}
+				{/* 图例说的是证据，没有条件的查询里它没有意义；选择与条件无关，
+				    按部门筛出的一批人同样需要导出。 */}
 				{(planned || claims.length > 0) && (
 					<>
 						<StrengthLegend />
-						<ProvenOnly
-							loading={loading}
-							n={strongOn}
-							on={strong}
-							onChange={onChange}
-						/>
-						<ByDepth on={byDepth} onChange={onChange} />
 						{/*
-						 * 竖线分开两类控件：左边描述这份名单是什么（图例、只留受控
-						 * 证据），右边是对这份名单执行的操作。连续排列的控件会被读成
-						 * 同一类，而这两半不是。
+						 * 竖线分开两类东西：左边说明这份名单怎么读，右边是对这份
+						 * 名单执行的操作。连着排会被读成同一类，而这两半不是。
 						 */}
 						<Separator className="h-4 max-sm:hidden" orientation="vertical" />
 					</>
 				)}
 				{/*
-				 * 选择是一个操作，不是名单的一种性质：按下之后名单内容不变，只是
-				 * 开始从中选择。所以用按钮，而不是左边那种 `Toggle`——「仅岗位或
-				 * 序列」按下会让人从名单里消失，两者同款同尺寸并排会被当成同一类。
-				 *
 				 * 进入和退出都用动作文案（「选择」／「取消选择」），不靠按下态
 				 * 表示当前模式：名单左侧那一列复选框已经表示了。
 				 */}
@@ -159,94 +131,6 @@ export function ResultHeader({
 				</Button>
 			</div>
 		</div>
-	);
-}
-
-/**
- * 仅岗位或序列。
- *
- * 打开之后，每一条必须条件都要落在岗位或序列上才算命中（`rank.ts` 的 `complete`）。
- * 部门、公司、简历、技能都不算。文案和图例最强的一档一致，不另造说法。
- *
- * 它不是筛选维度，所以不在左栏：左栏那几维是在这批人里再看其中一部分，而它改的
- * 是什么才算命中，和左边的计数、右边的图例说的是同一件事。
- *
- * 只有开关两态、没有值可选，所以不做成选择器——为一个布尔量弹一层浮层，多点一次
- * 却不增加信息。`Toggle` 就是这件事对应的控件：按下态由组件用 `data-pressed`
- * 表示，不必手写 `aria-pressed` 再另配底色。
- */
-function ProvenOnly({
-	on,
-	onChange,
-	n,
-	loading,
-}: {
-	on: boolean;
-	onChange: (next: Partial<View>) => void;
-	n: number;
-	/** 还在等结果：这个数此刻是「不知道」，不是 0。 */
-	loading: boolean;
-}) {
-	// 一个人都数不出来时禁用，但保留位置：点下去必然清空名单，属于无效操作，左栏
-	// 各维处理无效操作的办法同样是把计数为 0 的行禁用并留在原地（`filter-rail.tsx`
-	// 开头）。整个移除的话，这一行会在结果到达时增高，整份名单跟着下移。
-	// 已经打开的始终可点，否则筛到 0 人之后就没有办法关掉它。
-	return (
-		<Toggle
-			disabled={!on && n === 0}
-			onPressedChange={(next) => onChange({ strong: next || undefined })}
-			pressed={on}
-			size="sm"
-			variant="outline"
-		>
-			<Dot strength="controlled" />
-			<span>仅岗位或序列</span>
-			{/*
-			 * 数字位一直占着。按下去之后这个数就没意义了（开着的时候表头那个总数
-			 * 就是它），但位子不留着的话按钮当场变窄，它左边的图例跟着往右滑——
-			 * 而位移的正是人刚点下去的那个东西。等结果的时候同样占着位、不写数：
-			 * 那一刻它是「不知道」，写 0 就是在报一个假的事实。
-			 */}
-			<span
-				className={cn(
-					"text-muted-foreground tabular-nums",
-					(on || loading) && "invisible",
-				)}
-			>
-				{n}
-			</span>
-		</Toggle>
-	);
-}
-
-/**
- * 不分来源。
- *
- * 默认的排法先按证据分档、档内按做得多深（`result.ts` 的 `Order`）；这个开关
- * 抹掉分档，只看做得多像、多久、多近。组团队要找做得久的人时用它：自述八年的
- * 经历排到登记三个月的岗位前面，点阵仍在旁边说那是自述。
- *
- * 和「仅岗位或序列」并排：两个都在讲**这份名单怎么看证据**，一个收紧、一个放开。
- * 它没有数可报——换排法不改变人数，所以没有那个占位的数字。
- */
-function ByDepth({
-	on,
-	onChange,
-}: {
-	on: boolean;
-	onChange: (next: Partial<View>) => void;
-}) {
-	return (
-		<Toggle
-			onPressedChange={(next) =>
-				onChange({ order: next ? "depth" : undefined })
-			}
-			pressed={on}
-			size="sm"
-			variant="outline"
-		>
-			<span>不分来源</span>
-		</Toggle>
 	);
 }
 
@@ -333,11 +217,8 @@ export function ResultList({
 	growing,
 	onAll,
 	onMore,
-	strongOn,
 	spec,
 	turnId,
-	strong,
-	byDepth,
 	onChange,
 	onReviseQuery,
 	onEditQuery,
@@ -354,17 +235,11 @@ export function ResultList({
 	/** 导出时的「选择全部 N 人」：能显示的全部选中，名单没加载出来的一并加载。 */
 	onAll: () => void;
 	onMore: () => void;
-	/** 打开它之后还剩多少人。表头那个开关关着时报的就是这个数。 */
-	strongOn: number;
 	/** 这条查询记录上的条件。骨架屏的行数由它算，不等服务端。 */
 	spec: SearchSpec;
 	turnId: string;
-	/** 「仅岗位或序列」开着没有，给表头那个开关。 */
-	strong: boolean;
-	/** 「不分来源」开着没有，给表头那个开关。 */
-	byDepth: boolean;
 	onChange: (next: Partial<View>) => void;
-	/** 改查询：给一份新的证据要求，派生一条新记录。 */
+	/** 改查询：给一份新的条件，派生一条新记录。 */
 	onReviseQuery: (next: Condition[]) => void;
 	onEditQuery: () => void;
 	/** 选择这件事的全部状态，以及名单每一块推好的那份东西（`-lib/picks.ts`）。 */
@@ -411,16 +286,12 @@ export function ResultList({
 				)}
 			</PickCell>
 			<ResultHeader
-				byDepth={byDepth}
 				loading={loading}
-				onChange={onChange}
 				onPicking={picks.start}
 				order={order}
 				pickable={pickable}
 				picking={picks.picking}
 				planned={pending.length > 0}
-				strong={strong}
-				strongOn={strongOn}
 				claims={claims}
 				total={total}
 			/>

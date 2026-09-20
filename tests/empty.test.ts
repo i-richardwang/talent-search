@@ -8,8 +8,9 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { emptyReason } from "#/search/empty";
+import type { SearchFilters } from "#/search/params";
 import { parseQuery } from "#/search/query-syntax";
-import type { Claim, SearchFilters } from "#/search/result";
+import type { Claim } from "#/search/result";
 import { claim } from "./conditions";
 
 function why(args: {
@@ -17,14 +18,12 @@ function why(args: {
 	query?: string;
 	filters?: SearchFilters;
 	total?: number;
-	withoutStrong?: number;
 	overflow?: Parameters<typeof emptyReason>[0]["overflow"];
 }) {
 	return emptyReason({
 		spec: { conditions: parseQuery(args.query ?? "") },
 		filters: args.filters ?? {},
 		total: args.total ?? 0,
-		withoutStrong: args.withoutStrong ?? 0,
 		overflow: args.overflow ?? null,
 	});
 }
@@ -83,19 +82,6 @@ describe("没有可执行的经历主张", () => {
 });
 
 describe("有条件但没人", () => {
-	test("证据要求滤空了：带上关掉之后能看到几个", () => {
-		assert.deepEqual(
-			why({ query: "算法", filters: { strong: true }, withoutStrong: 12 }),
-			{ kind: "strongEmpty", without: 12 },
-		);
-	});
-
-	test("开着证据要求但关掉也没人时，成因不是它", () => {
-		assert.deepEqual(why({ query: "算法", filters: { strong: true } }), {
-			kind: "unmet",
-		});
-	});
-
 	test("筛选太窄", () => {
 		assert.deepEqual(why({ query: "算法", filters: { level: ["P7"] } }), {
 			kind: "filtered",

@@ -18,9 +18,8 @@ import {
 	dimId,
 	isMulti,
 } from "#/search/dimensions";
-import { parsePopulation } from "#/search/params";
+import { type SearchFilters, sanitizeFilters } from "#/search/params";
 import { parseQuery } from "#/search/query-syntax";
-import type { SearchFilters } from "#/search/result";
 import { asConditions } from "./conditions";
 import { seed, setup } from "./fixture";
 
@@ -239,21 +238,13 @@ describe("分面预告的数就是点下去会得到的数", () => {
 		const base = await run(QUERY);
 		// 逐维手写的话，加一维就会有一维没人验——而这条不变量正是加一维时
 		// 最容易碰坏的东西。遍历维度表，新维度自动进这个循环。
-		const checks: { label: string; n: number; filters: SearchFilters }[] = [
-			...DIM_KEYS.flatMap((key) =>
-				base.facets[key].map((row) => ({
-					label: `${key} ${dimId(key, row.value)}`,
-					n: row.n,
-					filters: pick(key, row.value),
-				})),
-			),
-			{
-				label: "strong on",
-				n: base.facets.strong.on,
-				filters: { strong: true },
-			},
-			{ label: "strong off", n: base.facets.strong.off, filters: {} },
-		];
+		const checks = DIM_KEYS.flatMap((key) =>
+			base.facets[key].map((row) => ({
+				label: `${key} ${dimId(key, row.value)}`,
+				n: row.n,
+				filters: pick(key, row.value),
+			})),
+		);
 		assert.ok(checks.length > 8, "夹具至少要给出几维可点的候选");
 		for (const check of checks) {
 			const { total } = await run(QUERY, check.filters);
@@ -311,9 +302,9 @@ describe("分面预告的数就是点下去会得到的数", () => {
 			facets.companyTag.every((row) => row.value !== "未知"),
 			"没标过的段不该变出一个可点的公司档",
 		);
-		assert.deepEqual(parsePopulation({ companyTag: ["未知"] }), {});
+		assert.deepEqual(sanitizeFilters({ companyTag: ["未知"] }), {});
 		assert.deepEqual(
-			parsePopulation({ companyTag: ["未知", "头部互联网T1"] }),
+			sanitizeFilters({ companyTag: ["未知", "头部互联网T1"] }),
 			{
 				companyTag: ["头部互联网T1"],
 			},

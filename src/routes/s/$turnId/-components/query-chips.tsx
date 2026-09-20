@@ -76,7 +76,12 @@ const EXCLUDE_STYLE = "line-through";
  */
 const OFF_STYLE = "border-dashed text-muted-foreground";
 
-/** chip 上「这里还有别的取值」的记号。≈ 是「差不多」最省字的写法，证据行上也用它。 */
+/**
+ * chip 上「这里还有别的取值」的记号。≈ 是「差不多」最省字的写法。
+ *
+ * 只有这里用它：证据行上「这一行比的是哪个取值」写成词（`evidence.tsx` 的
+ * `MATCHED_BY`）——那是另一件事，共用一个记号就分不开了。
+ */
 const MORE_GLYPH = "≈";
 
 /**

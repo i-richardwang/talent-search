@@ -38,6 +38,7 @@ import {
 } from "./dimensions";
 import { emptyReason } from "./empty";
 import type { Vocabulary } from "./intent";
+import type { SearchFilters } from "./params";
 import { type Admitted, admittedTable, withAdmission } from "./phrases";
 import {
 	type Fact,
@@ -51,12 +52,10 @@ import {
 	emptyFacets,
 	type Facets,
 	type Hit,
-	type Order,
 	type Query,
 	queryOf,
 	type RankedResult,
 	type ResultEmployee,
-	type SearchFilters,
 	type SearchOutcome,
 } from "./result";
 import type { SearchSpec } from "./spec";
@@ -670,15 +669,13 @@ async function searchPopulation(
 				spec,
 				filters: view,
 				total: 0,
-				withoutStrong: 0,
 				overflow: { kind: "overflowPopulation" },
 			}),
 		};
 	const facts: PopulationFact[] = keepUnvetoed(rows.rows, vetoed).map(
 		({ id: _id, emp_id, ...dims }) => ({ ...dims, empId: emp_id }),
 	);
-	// org / school 已经在 SQL 里按人裁过；证据要求由 rankPopulation 去掉——
-	// 没有语义证据可言的路上，「证据够不够硬」问的不是这批事实。
+	// org / school 已经在 SQL 里按人裁过，内存里那一遍不必再裁一次
 	const inMemory = { ...view, org: undefined, school: undefined };
 	const empIdsAll = facts.map((f) => f.empId);
 	const preferred = await Promise.all(
@@ -707,7 +704,6 @@ async function searchPopulation(
 			spec,
 			filters: view,
 			total,
-			withoutStrong: 0,
 			overflow: null,
 		}),
 	};
@@ -735,19 +731,17 @@ export async function search(
 ): Promise<SearchOutcome> {
 	const q = queryOf(spec.conditions);
 	const { claims, excludes, must, prefer } = q;
-	const order: Order = filters.order ?? "evidence";
 	// 没有正向的主张也没有人的条件时，排除自己不产出候选人。只有偏好的查询
 	// （「最好是硕士」）是「所有人，满足偏好的在前」，照跑。
 	if (claims.length === 0 && must.length === 0 && prefer.length === 0)
 		return {
-			order,
+			order: "evidence",
 			claims,
 			...noOne(),
 			empty: emptyReason({
 				spec,
 				filters,
 				total: 0,
-				withoutStrong: 0,
 				overflow: null,
 			}),
 		};
@@ -770,14 +764,13 @@ export async function search(
 			if (loaded.kind === "overflow") {
 				const contributors = new Set(loaded.claims);
 				return {
-					order,
+					order: "evidence",
 					claims,
 					...noOne(),
 					empty: emptyReason({
 						spec,
 						filters,
 						total: 0,
-						withoutStrong: 0,
 						overflow: {
 							kind: "overflowEvidence",
 							claims: claims.filter((_, index) => contributors.has(index)),
@@ -802,13 +795,12 @@ export async function search(
 				spec,
 				filters,
 				total,
-				withoutStrong: facets.strong.off,
 				overflow: null,
 			});
 			const page = ranked.slice(0, limit);
 			if (page.length === 0)
 				return {
-					order,
+					order: "evidence",
 					claims,
 					results: [],
 					facets,
@@ -879,7 +871,7 @@ export async function search(
 				];
 			});
 			return {
-				order,
+				order: "evidence",
 				claims,
 				results,
 				facets,

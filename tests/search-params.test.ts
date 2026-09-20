@@ -10,7 +10,6 @@ describe("检索端点参数", () => {
 			level: [" P6 ", "P7", "P6", "  "],
 			minMonths: "24",
 			kind: "external",
-			strong: true,
 			org: "  字节  ",
 		});
 		assert.deepEqual(filters.seq, [{ l1: "技术", l2: "后端" }]);
@@ -18,7 +17,6 @@ describe("检索端点参数", () => {
 		assert.deepEqual(filters.level, ["P6", "P7"]);
 		assert.equal(filters.minMonths, 24);
 		assert.equal(filters.kind, "external");
-		assert.equal(filters.strong, true);
 		assert.deepEqual(filters.org, ["字节"]);
 	});
 
@@ -35,7 +33,6 @@ describe("检索端点参数", () => {
 			level: ["  ", ""],
 			minMonths: "半个月",
 			kind: "contractor",
-			strong: false,
 			school: "  ",
 		});
 		// 序列必须两级都在：只给一级等于「这个一级下的全部二级」，那不是任何一个
@@ -45,7 +42,6 @@ describe("检索端点参数", () => {
 		assert.equal(filters.level, undefined);
 		assert.equal(filters.minMonths, undefined);
 		assert.equal(filters.kind, undefined);
-		assert.equal(filters.strong, undefined);
 		assert.equal(filters.school, undefined);
 	});
 

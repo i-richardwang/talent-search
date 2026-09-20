@@ -96,7 +96,7 @@ describe("单元格里的凭据", () => {
 
 	test("命中的不是代表词时把词写出来", () => {
 		const text = evidenceText("算法", hit({ value: "推荐算法" }), basis());
-		assert.match(text, /^≈ 推荐算法 · /);
+		assert.match(text, /^比的是 推荐算法 · /);
 	});
 
 	test("入职前的累计带「前」", () => {

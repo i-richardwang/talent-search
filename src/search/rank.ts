@@ -24,17 +24,15 @@ import {
 	type Facet,
 } from "./dimensions";
 import { strengthOf } from "./evidence";
+import type { SearchFilters } from "./params";
 import {
 	type Claim,
 	type ClaimBasis,
 	emptyFacets,
 	type Facets,
-	type Order,
-	type SearchFilters,
 } from "./result";
 import {
 	BOOST_WEIGHT,
-	isControlledRoute,
 	RECENCY_HALF,
 	type Route,
 	type Strength,
@@ -87,11 +85,6 @@ function stronger(a: Fact, b: Fact) {
 		strengthRank(strengthOf(b.route)) - strengthRank(strengthOf(a.route)) ||
 		a.relevance - b.relevance
 	);
-}
-
-/** 这条证据是不是受控字段给的。落在范围里本身就是登记事实，算受控。 */
-function controlled(f: Fact) {
-	return f.route === null || isControlledRoute(f.route);
 }
 
 /**
@@ -216,18 +209,18 @@ function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 }
 
 /**
- * 这个人算不算数：**每条必须的主张**都得满足（AND 语义）；开了证据要求就还得
- * 每条必须的主张都有受控命中。
+ * 这个人算不算数：**每条必须的主张**都得满足（AND 语义）。
  *
- * 加分的主张不参与，这就是它「加分」的全部含义：只进分数，不进判定。证据要求
- * 同样只管必须的——要求一条可有可无的主张必须有受控证据，是自相矛盾的。
+ * 加分的主张不参与，这就是它「加分」的全部含义：只进分数，不进判定。
+ *
+ * 证据有多硬不在这里问。它是排序的第一把尺（`byEvidence`）：登记证据的人整体
+ * 排在自述证据的人前面，每一行旁边那颗点还写着成色。拿它当准入的话，一个人是
+ * 从名单里消失，而屏幕上没有任何东西能说明他本来在哪。
  */
-function complete(p: Person, claims: Claim[], strong: boolean) {
+function complete(p: Person, claims: Claim[]) {
 	for (const [i, claim] of claims.entries()) {
 		if (claim.mode !== "must") continue;
-		const fs = p.get(i);
-		if (!satisfies(claim, fs)) return false;
-		if (strong && !fs.some(controlled)) return false;
+		if (!satisfies(claim, p.get(i))) return false;
 	}
 	return true;
 }
@@ -276,9 +269,6 @@ function measure(
 	return { strength, depth, basis };
 }
 
-/** 算某一维的候选时要去掉的那一维（口径见 `facetRows`）。 */
-type Except = DimKey | "strong";
-
 /**
  * 筛选谓词。逐维求值，谓词本身由 `dimensions.ts` 的声明给出——这里不认识任何
  * 一个具体维度，所以加一维不必来改它。
@@ -286,7 +276,7 @@ type Except = DimKey | "strong";
  * `except` 是它带参数的全部理由：算「序列」这一维的候选时必须把序列自己的筛选
  * 去掉，不摘的话选中一项之后其余项的计数全是 0，用户不可点击第二次。
  */
-function keeps(f: SearchFilters, except?: Except) {
+function keeps(f: SearchFilters, except?: DimKey) {
 	return (x: PopulationFact) =>
 		DIM_KEYS.every((key) => key === except || dimMatches(key, f[key], x));
 }
@@ -320,17 +310,10 @@ function facetRows<K extends DimKey, F extends PopulationFact>(
 	facts: readonly F[],
 	key: K,
 	filters: SearchFilters,
-	admits: (person: readonly F[], strong: boolean) => boolean,
+	admits: (person: readonly F[]) => boolean,
 ): Facet<K>[] {
-	const domain = tally(
-		facts,
-		key,
-		() => true,
-		(p) => admits(p, false),
-	);
-	const live = tally(facts, key, keeps(filters, key), (p) =>
-		admits(p, Boolean(filters.strong)),
-	);
+	const domain = tally(facts, key, () => true, admits);
+	const live = tally(facts, key, keeps(filters, key), admits);
 	return [...domain].map(([id, { value }]) => ({
 		value,
 		n: live.get(id)?.n ?? 0,
@@ -392,18 +375,10 @@ function computeFacets(
 		fill(
 			out,
 			key,
-			facetRows(facts, key, filters, (person, strong) =>
-				complete(byClaim(person), claims, strong),
+			facetRows(facts, key, filters, (person) =>
+				complete(byClaim(person), claims),
 			),
 		);
-
-	// 「证据要求」这一维的两头：打开还剩几个（on）、关掉能看到几个（off）。
-	// 两个数都把证据要求自己去掉之后再算。
-	for (const p of bucket(facts, keeps(filters, "strong")).values()) {
-		if (!complete(p, claims, false)) continue;
-		out.strong.off++;
-		if (complete(p, claims, true)) out.strong.on++;
-	}
 	return out;
 }
 
@@ -422,9 +397,8 @@ function fill(out: Facets, key: DimKey, rows: Facet[]) {
 /**
  * 只有人的条件、没有经历主张的查询：人过了条件就算数，没有语义证据可言。
  *
- * 「证据够不够硬」问的不是这批事实，所以证据要求在这里被去掉；其余各维走的是
- * 和语义检索**同一份** `facetRows`——值域只看这次查询、计数去掉这一维自己的
- * 筛选。两条路各写一份分面的话，同一栏筛选在这种查询下会变成「点一项，
+ * 各维走的是和语义检索**同一份** `facetRows`——值域只看这次查询、计数去掉这一维
+ * 自己的筛选。两条路各写一份分面的话，同一栏筛选在这种查询下会变成「点一项，
  * 其余项当场消失」。
  */
 export function rankPopulation(
@@ -433,18 +407,17 @@ export function rankPopulation(
 	/** 每条人的偏好各一份满足它的人（`search.ts` 的 `fetchPreferred`）。 */
 	preferred: readonly ReadonlySet<string>[] = [],
 ): { empIds: string[]; facets: Facets; total: number } {
-	const effective = { ...filters, strong: undefined };
 	// 没有分数可排的路上，偏好就是唯一的先后：满足得多的在前，其余按工号
 	const met = (id: string) => preferred.filter((set) => set.has(id)).length;
 	const empIds = [
-		...new Set(facts.filter(keeps(effective)).map((fact) => fact.empId)),
+		...new Set(facts.filter(keeps(filters)).map((fact) => fact.empId)),
 	].sort((a, b) => met(b) - met(a) || a.localeCompare(b));
 	const facets = emptyFacets();
 	for (const key of DIM_KEYS)
 		fill(
 			facets,
 			key,
-			facetRows(facts, key, effective, () => true),
+			facetRows(facts, key, filters, () => true),
 		);
 	return { empIds, facets, total: empIds.length };
 }
@@ -457,16 +430,19 @@ type Ranked = {
 };
 
 /**
- * 两种排法（`result.ts` 的 `Order`）。按证据先比档，同档比深度；按深度只比深度。
- * 同分按工号，排序才是确定的：翻页靠把 limit 调大重查，前一页必须逐位不变。
+ * 名次：先比可信度那一档，同档比深度，同分按工号。
+ *
+ * 档在前、深度在后，两者不相乘：一条登记证据不该被一段足够长的自述盖过去
+ * （论证见 `weights.ts` 文件头）。同分按工号是为了确定性——翻页靠把 limit
+ * 调大重查，前一页必须逐位不变。
  */
-const BY: Record<Order, (a: Ranked, b: Ranked) => number> = {
-	evidence: (a, b) =>
+function byEvidence(a: Ranked, b: Ranked) {
+	return (
 		strengthRank(a.strength) - strengthRank(b.strength) ||
 		b.depth - a.depth ||
-		a.empId.localeCompare(b.empId),
-	depth: (a, b) => b.depth - a.depth || a.empId.localeCompare(b.empId),
-};
+		a.empId.localeCompare(b.empId)
+	);
+}
 
 /**
  * 一次检索的名次与分面。两者出自同一份事实，所以口径不可能分家。
@@ -484,10 +460,10 @@ export function rank(
 ): { ranked: Ranked[]; facets: Facets; total: number } {
 	const ranked: Ranked[] = [];
 	for (const [empId, p] of bucket(facts, keeps(filters))) {
-		if (!complete(p, claims, Boolean(filters.strong))) continue;
+		if (!complete(p, claims)) continue;
 		ranked.push({ empId, ...measure(p, claims, preferred, empId, now) });
 	}
-	ranked.sort(BY[filters.order ?? "evidence"]);
+	ranked.sort(byEvidence);
 	return {
 		ranked,
 		facets: computeFacets(facts, claims, filters),

@@ -66,10 +66,12 @@ describe("一行证据看得见的部分", () => {
 		assert.match(seen(hit({ relevance: 1 }), basis({ relevance: 1 })), /100%/);
 	});
 
-	test("靠别的取值命中的写出「≈ 那个词」，靠代表词命中的不写", () => {
+	test("靠别的取值命中的写出比的是哪个词，靠代表词命中的不写", () => {
 		const near = hit({ value: "推荐算法" });
-		assert.match(seen(near, basis()), /≈ 推荐算法/);
-		assert.doesNotMatch(seen(hit(), basis()), /≈/);
+		assert.match(seen(near, basis()), /比的是 推荐算法/);
+		assert.doesNotMatch(seen(hit(), basis()), /比的是/);
+		// chip 上那个 ≈ 说的是另一件事（还有别的取值），不共用记号
+		assert.doesNotMatch(seen(near, basis()), /≈/);
 	});
 
 	test("「前」由累计的那些段一起决定", () => {

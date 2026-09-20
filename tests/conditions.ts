@@ -15,7 +15,7 @@ import type {
 	PersonDim,
 	PersonMode,
 } from "#/search/condition";
-import type { SearchFilters } from "#/search/result";
+import type { SearchFilters } from "#/search/params";
 
 type Some = [string, ...string[]];
 

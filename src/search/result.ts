@@ -14,7 +14,6 @@ import {
 } from "./condition";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
-import type { Population } from "./params";
 import type { Strength } from "./weights";
 
 /**
@@ -66,7 +65,7 @@ export type Hit = {
 	/** 属于第几条主张（`SearchOutcome.claims` 的下标）。 */
 	claim: number;
 	/**
-	 * 命中的是这条主张的哪个经历词。不是代表词时证据行要标出来：「≈ 推荐算法」。
+	 * 命中的是这条主张的哪个经历词。不是代表词时证据行要标出来：「比的是 推荐算法」。
 	 * 没有经历词的主张（「待过字节」）靠这一段本身作证，没有词，为 null。
 	 */
 	value: string | null;
@@ -136,34 +135,6 @@ export type ClaimBasis = {
 };
 
 /**
- * 有名次的名单的两种排法。
- *
- * **证据**：先按可信度分档（登记的序列或岗位、登记的部门或公司、自述），档内按
- * 深度。可信度是离散的、可解释的，就是证据点阵画的那三种点；深度是连续的。
- * 两项依据不相乘：乘成一个数就得靠下限把深度压扁来守住档位，深度于是变成装饰。
- *
- * **深度**：忽略档位，只看做得多像、多久、多近。组团队要找做得久的人时用它，
- * 自述八年的经历排到登记三个月的岗位前面——点阵仍在旁边说这是自述。
- */
-export type Order = "evidence" | "depth";
-
-/**
- * 一次检索的视图筛选：收窄人群的那批（`Population`），加上证据要求和排法。
- *
- * 后两样不属于那一批：`strong` 答的是「什么才算命中」，`order` 答的是「先看谁」，
- * 都不是在这批人里再看哪一部分。
- *
- * **全部在服务端求值**：放到客户端就只能筛已经翻出来的那几页，而其余维数的是
- * 全部命中的人——同一排控件会出现两种口径。
- */
-export type SearchFilters = Population & {
-	/** 每条必须的主张都要有受控字段（序列或岗位）的命中。 */
-	strong?: boolean;
-	/** 名单按什么排。缺省是按证据（见 `Order`），写 `depth` 才是不分来源。 */
-	order?: Exclude<Order, "evidence">;
-};
-
-/**
  * 筛选面板的候选与计数。
  *
  * 计数的口径是**在当前这次检索里，选了这一项之后还剩多少人**，不是全库有多少段。
@@ -175,13 +146,7 @@ export type SearchFilters = Population & {
  * 被别的维度挤到 0 的那些留在列表里，`n` 就是 0。两个口径为什么必须分开，
  * 以及每一维要怎么算才配得上它们，见 rank.ts 的 facetRows。
  */
-export type Facets = { [K in DimKey]: Facet<K>[] } & {
-	/**
-	 * 「证据要求」这一维的两头：打开还剩多少人（on），关掉能看到多少人（off）。
-	 * 两个数都按分面的 except 口径算，也就是都把证据要求自己去掉之后再数。
-	 */
-	strong: { on: number; off: number };
-};
+export type Facets = { [K in DimKey]: Facet<K>[] };
 
 /**
  * 一次检索的完整产出。
@@ -197,14 +162,23 @@ type Outcome = {
 	empty: EmptyReason | null;
 };
 
+/**
+ * `order` 说这份名单按什么排，同时是这个联合的判别式——有没有证据可画和按什么
+ * 排是同一件事。
+ *
+ * **evidence**：先按可信度分档（登记的序列或岗位、登记的部门或公司、自述），
+ * 档内按深度。可信度是离散的、可解释的，就是证据点阵画的那三种点；深度是连续的。
+ * 两项依据不相乘：乘成一个数就得靠下限把深度压扁来守住档位，深度于是变成装饰。
+ *
+ * **employee**：没有经历主张的查询没有分数可排，按满足的偏好和工号。
+ */
 export type SearchOutcome =
 	| (Outcome & {
-			order: Order;
+			order: "evidence";
 			claims: Claim[];
 			results: RankedResult[];
 	  })
 	| (Outcome & {
-			/** 没有经历主张，只有人的条件：没有分数可排，按满足的偏好和工号。 */
 			order: "employee";
 			claims: [];
 			results: PopulationResult[];
@@ -216,6 +190,5 @@ export function emptyFacets(): Facets {
 	// 「还没算」的那一帧上少一栏。
 	const facets = {} as Facets;
 	for (const key of DIM_KEYS) facets[key] = [];
-	facets.strong = { on: 0, off: 0 };
 	return facets;
 }

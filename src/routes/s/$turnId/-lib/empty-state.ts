@@ -75,14 +75,6 @@ const COPY: {
 		hint: "去掉一项条件再搜。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
-	strongEmpty: (reason, h) => ({
-		title: "没有岗位或序列匹配的人",
-		hint: `关闭「仅岗位或序列」后能看到 ${reason.without} 人。`,
-		action: {
-			label: "关闭该要求",
-			onClick: () => h.onChange({ strong: undefined }),
-		},
-	}),
 	filtered: (_reason, h) => ({
 		title: "当前筛选下没有人",
 		hint: "清除筛选后再看。",

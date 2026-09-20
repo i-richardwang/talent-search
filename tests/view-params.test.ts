@@ -113,18 +113,11 @@ describe("可多选的维度", () => {
 	});
 });
 
-describe("枚举与开关", () => {
+describe("枚举", () => {
 	test("经历类型只认两个值", () => {
 		assert.equal(validateView({ kind: "internal" }).kind, "internal");
 		assert.equal(validateView({ kind: "external" }).kind, "external");
 		assert.equal(validateView({ kind: "both" }).kind, undefined);
-	});
-
-	test("证据要求只有打开和没填两态，不存在显式的 false", () => {
-		assert.equal(validateView({ strong: true }).strong, true);
-		assert.equal(validateView({ strong: "true" }).strong, true);
-		assert.equal(validateView({ strong: "false" }).strong, undefined);
-		assert.equal(validateView({ strong: "1" }).strong, undefined);
 	});
 });
 
@@ -235,7 +228,7 @@ describe("翻页与换查询要分得开", () => {
 			"同一维多选一项也是改筛选",
 		);
 		assert.equal(onlyMore({ ...base, seq: undefined, n: 100 }, base), false);
-		assert.equal(onlyMore({ ...base, strong: true, n: 100 }, base), false);
+		assert.equal(onlyMore({ ...base, kind: "internal", n: 100 }, base), false);
 	});
 
 	test("没有上一个位置时（首次进入）不算翻页", () => {

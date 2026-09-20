@@ -840,31 +840,15 @@ describe("召回按名次截断", () => {
 	});
 });
 
-describe("证据要求", () => {
-	test("打开之后只剩每条必须的主张都有受控命中的人", async () => {
-		const loose = await run("算法,运营");
-		const strict = await run("算法,运营", { strong: true });
-		const ids = strict.results.map((r) => r.employee.empId);
-		assert.ok(ids.includes("T001"), "序列 + 岗位命中，应当留下");
-		assert.ok(!ids.includes("T003"), "两个词都只在简历原文里，应当被排除");
-		assert.ok(strict.total < loose.total, "收窄之后总数必须变小");
-	});
-
-	test("那一项的两头：打开还剩几个、关掉能看到几个", async () => {
-		const { facets, total } = await run("算法,运营");
-		assert.equal(facets.strong.off, total, "关掉就是当前全部");
-		assert.equal(
-			facets.strong.on,
-			(await run("算法,运营", { strong: true })).total,
-			"打开的预告数必须等于真打开之后的结果",
+describe("证据的成色决定先后，不决定去留", () => {
+	test("只在简历里提过的人也在名单里，排在受控命中之后", async () => {
+		const ids = (await run("算法,运营")).results.map((r) => r.employee.empId);
+		assert.ok(ids.includes("T001"), "序列 + 岗位命中");
+		assert.ok(ids.includes("T003"), "两个词都只在简历原文里，照样算命中");
+		assert.ok(
+			ids.indexOf("T001") < ids.indexOf("T003"),
+			"登记证据在前，自述在后",
 		);
-	});
-
-	test("它自己开着的时候，那一项的预告数不受自己影响", async () => {
-		const on = await run("算法,运营", { strong: true });
-		const off = await run("算法,运营");
-		assert.equal(on.facets.strong.off, off.total);
-		assert.equal(on.facets.strong.on, off.facets.strong.on);
 	});
 });
 
@@ -886,9 +870,7 @@ describe("为什么没有人", () => {
 		});
 	});
 
-	test("证据要求滤空时，带上关掉之后能看到几个", async () => {
-		// W001 的唯一证据在简历原文里，打开证据要求就一个人不剩——而「关掉能
-		// 看到 1 个」正是这条成因要带出去的数。
+	test("唯一证据在简历原文里的人照样进名单", async () => {
 		await seed([
 			{
 				empId: "W001",
@@ -903,16 +885,10 @@ describe("为什么没有人", () => {
 				],
 			},
 		]);
-		const loose = await run("幽蓝抄写");
-		assert.equal(loose.total, 1);
-		const strict = await run("幽蓝抄写", { strong: true });
-		assert.equal(strict.total, 0);
-		assert.deepEqual(strict.empty, { kind: "strongEmpty", without: 1 });
-		assert.equal(
-			strict.facets.strong.off,
-			1,
-			"报的就是关掉之后真能看到的那个数",
-		);
+		const { total, empty, results } = await run("幽蓝抄写");
+		assert.equal(total, 1);
+		assert.equal(empty, null);
+		assert.equal(results[0]?.strength, "claimed");
 	});
 });
 
@@ -955,8 +931,10 @@ describe("加分的主张", () => {
 	});
 
 	test("分面口径跟着走：加分的主张不参与「还剩几人」的计算", async () => {
-		const { facets, total } = await run("算法,+运营");
-		assert.equal(facets.strong.off, total, "关掉证据要求就是当前全部");
+		const boosted = await run("算法,+运营");
+		const plain = await run("算法");
+		assert.equal(boosted.total, plain.total);
+		assert.deepEqual(boosted.facets.seq, plain.facets.seq);
 	});
 });
 
@@ -1027,8 +1005,9 @@ describe("排除的主张：否决证据段，不否决人", () => {
 
 	test("总数与分面跟着一起减", async () => {
 		const tight = await run("算法,-运营");
-		assert.equal(tight.facets.strong.off, tight.total);
+		const loose = await run("算法");
 		assert.equal(tight.total, tight.results.length);
+		assert.ok(tight.total < loose.total);
 	});
 
 	test("排除条件不产出证据列", async () => {
@@ -1131,7 +1110,7 @@ describe("停用的词", () => {
 		const off = await run("算法,~运营");
 		const only = await run("算法");
 		assert.deepEqual(off.facets.seq, only.facets.seq);
-		assert.equal(off.facets.strong.off, only.facets.strong.off);
+		assert.equal(off.total, only.total);
 	});
 
 	test("全停用了就没有可排的人——和空查询同一个结果", async () => {

@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import type { SearchFilters } from "#/search/params";
 import {
 	type Fact,
 	gapMonths,
@@ -13,7 +14,7 @@ import {
 	rank,
 	rankPopulation,
 } from "#/search/rank";
-import type { Claim, SearchFilters } from "#/search/result";
+import type { Claim } from "#/search/result";
 import { BOOST_WEIGHT, RELEVANCE_MIN } from "#/search/weights";
 import { claim } from "./conditions";
 
@@ -91,22 +92,6 @@ describe("先按可信度排，再按深度排", () => {
 				fact({ empId: "B", route: "org", months: 1, endDate: yearsAgo(30) }),
 			]),
 			["B", "A"],
-		);
-	});
-
-	test("不分来源时不分档：二十年的部门命中排到一个月的序列命中前面", () => {
-		assert.deepEqual(
-			orderOf([longOrg, shortSeq], claims("must"), { order: "depth" }),
-			["A", "B"],
-		);
-		// 深度本身不随排法变：换的是先后，不是数
-		const byEvidence = run([longOrg, shortSeq]).ranked;
-		const byDepth = run([longOrg, shortSeq], claims("must"), {
-			order: "depth",
-		}).ranked;
-		assert.deepEqual(
-			new Map(byEvidence.map((r) => [r.empId, r.depth])),
-			new Map(byDepth.map((r) => [r.empId, r.depth])),
 		);
 	});
 
@@ -248,12 +233,11 @@ describe("人的偏好", () => {
 });
 
 describe("没有经历词的主张", () => {
-	test("落在范围里的段就是证据：强度是登记那一档，证据要求也认它", () => {
+	test("落在范围里的段就是证据：强度是登记那一档", () => {
 		const plain = [fact({ empId: "A", route: null, value: null })];
 		const seq = [fact({ empId: "B", route: "seq" })];
 		assert.equal(depthOf(plain), depthOf(seq));
 		assert.equal(run(plain).ranked[0]?.strength, "controlled");
-		assert.equal(run(plain, claims("must"), { strong: true }).total, 1);
 		assert.deepEqual(run(plain).ranked[0]?.basis[0], {
 			route: null,
 			value: null,
@@ -452,9 +436,11 @@ describe("相关度", () => {
 		assert.equal(ranked[0]?.basis[0]?.relevance, 0.9);
 	});
 
-	test("证据要求看的是路（受控字段），与相关度正交", () => {
-		const facts = [fact({ empId: "A", relevance: 0.65 })];
-		assert.equal(run(facts, claims("must"), { strong: true }).total, 1);
+	test("档位看的是路，与相关度正交：比得再像，自述还是自述", () => {
+		const registered = [fact({ empId: "A", route: "seq", relevance: 0.6 })];
+		const claimed = [fact({ empId: "B", route: "description", relevance: 1 })];
+		assert.equal(run(registered).ranked[0]?.strength, "controlled");
+		assert.equal(run(claimed).ranked[0]?.strength, "claimed");
 	});
 });
 
@@ -478,7 +464,7 @@ describe("累计能跨档位，但不能压过档位本身", () => {
 	});
 });
 
-describe("必须、加分与证据要求", () => {
+describe("必须与加分", () => {
 	const two = claims("must", "must");
 
 	test("缺一条必须的主张就整个不算数", () => {
@@ -529,16 +515,9 @@ describe("必须、加分与证据要求", () => {
 		);
 	});
 
-	test("证据要求只管必须的主张，且要求每条都有受控命中", () => {
-		const facts = [
-			fact({ empId: "A", claim: 0, route: "seq" }),
-			fact({ empId: "B", claim: 0, route: "description" }),
-		];
-		assert.deepEqual(
-			run(facts, claims("must"), { strong: true }).ranked.map((r) => r.empId),
-			["A"],
-		);
-		assert.equal(run(facts).total, 2, "关掉之后两个人都在");
+	test("只有自述证据的人照样算命中：准入不看档，档只决定先后", () => {
+		const claimed = [fact({ empId: "B", claim: 0, route: "description" })];
+		assert.equal(run(claimed, claims("must")).total, 1);
 	});
 });
 
@@ -557,7 +536,6 @@ describe("分面与名次是同一个口径", () => {
 			{ value: "P6", n: 1 },
 			{ value: "P7", n: 2 },
 		]);
-		assert.equal(facets.strong.off, total, "关掉证据要求就是当前全部");
 	});
 
 	test("算某一维时去掉这一维自己的筛选，否则选中之后就切不动了", () => {
@@ -650,10 +628,9 @@ describe("只有人的条件的人群排序", () => {
 	];
 
 	test("没有语义证据时按工号稳定排序，不制造分数或证据强度", () => {
-		const result = rankPopulation(facts, { strong: true });
+		const result = rankPopulation(facts, {});
 		assert.deepEqual(result.empIds, ["A", "B"]);
 		assert.equal(result.total, 2);
-		assert.deepEqual(result.facets.strong, { on: 0, off: 0 });
 	});
 
 	test("筛选要求同一经历段满足，分面仍去掉自己的维度", () => {
