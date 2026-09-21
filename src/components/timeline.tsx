@@ -1,4 +1,4 @@
-import { Dot, phraseLabel, relevance } from "#/components/evidence";
+import { Dot, phraseLabel } from "#/components/evidence";
 import { Badge } from "#/components/ui/badge";
 import type { CompanyMeta, Experience } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
@@ -187,7 +187,6 @@ function MatchedClaims({
 						// 抽取的两类把命中的那条说法也写上：时间线上这一段的原文在
 						// 旁边，标签得说出模型从里面读出了什么，用户才核对得了。
 						phraseLabel(h),
-						h.route === null ? null : relevance(h.relevance),
 					)}
 				</Badge>
 			))}

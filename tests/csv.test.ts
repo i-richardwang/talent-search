@@ -22,7 +22,7 @@ const pick = (over: Partial<Pick> = {}): Pick => ({
 	title: "算法工程师",
 	level: "P6",
 	rank: 1,
-	evidence: ["序列 技术 · 算法 · 83% · 2.3 年", null],
+	evidence: ["序列 技术 · 算法 · 公司内 2.3 年", null],
 	...over,
 });
 
@@ -46,7 +46,7 @@ describe("导出的 CSV", () => {
 		// 而写上字的话按这一列排序会把它排到有证据的人中间。
 		assert.equal(
 			row,
-			"1,T0001,林岚,算法平台,算法工程师,P6,序列 技术 · 算法 · 83% · 2.3 年,",
+			"1,T0001,林岚,算法平台,算法工程师,P6,序列 技术 · 算法 · 公司内 2.3 年,",
 		);
 	});
 
@@ -91,7 +91,7 @@ describe("导出的 CSV", () => {
 describe("单元格里的凭据", () => {
 	test("和屏幕上那一行说的是同一件事", () => {
 		const text = evidenceText("算法", hit({ route: "title" }), basis());
-		assert.equal(text, "岗位 算法工程师 · 云梯物流 · 83% · 2.3 年");
+		assert.equal(text, "岗位 算法工程师 · 云梯物流 · 公司内 2.3 年");
 	});
 
 	test("命中的不是代表词时把词写出来", () => {
@@ -105,6 +105,6 @@ describe("单元格里的凭据", () => {
 			hit(),
 			basis({ external: true, endDate: "2021-06-30" }),
 		);
-		assert.match(text, /前 2\.3 年$/);
+		assert.match(text, /入职前 2\.3 年$/);
 	});
 });

@@ -53,17 +53,13 @@ describe("一行证据看得见的部分", () => {
 		assert.match(seen(hit(), basis({ months: 60 })), /5\.0 年/);
 	});
 
-	test("相关度显示成百分比，取的是参与打分的那条证据", () => {
-		assert.match(
-			seen(hit({ relevance: 0.61 }), basis({ relevance: 0.83 })),
-			/83%/,
-		);
-		assert.doesNotMatch(
-			seen(hit({ relevance: 0.61 }), basis({ relevance: 0.83 })),
-			/61%/,
-		);
-		// 一字不差就是 100%
-		assert.match(seen(hit({ relevance: 1 }), basis({ relevance: 1 })), /100%/);
+	test("相关度不上屏", () => {
+		// 打分用得着它，读的人用不着（AGENTS.md「分数和名次不重复上屏」）。
+		// 一个没有单位的百分数只会被读成「这个人 83% 符合要求」，而低到不该
+		// 出现的那些早在收人时就挡掉了——屏幕上每一行都已经够格。
+		const line = seen(hit({ relevance: 0.61 }), basis({ relevance: 0.83 }));
+		assert.doesNotMatch(line, /%/);
+		assert.doesNotMatch(line, /0\.83|0\.61/);
 	});
 
 	test("靠别的取值命中的写出比的是哪个词，靠代表词命中的不写", () => {
@@ -76,8 +72,8 @@ describe("一行证据看得见的部分", () => {
 
 	test("「前」由累计的那些段一起决定", () => {
 		// 累计里只要有在职的段，这个数就不配叫「前」
-		assert.doesNotMatch(seen(hit(), basis({ external: false })), /前 2\.3 年/);
-		assert.match(seen(hit(), basis({ external: true })), /前 2\.3 年/);
+		assert.match(seen(hit(), basis({ external: false })), /公司内 2\.3 年/);
+		assert.match(seen(hit(), basis({ external: true })), /入职前 2\.3 年/);
 	});
 
 	test("还在做的把数字提到正文色，做完了的留在次要色", () => {

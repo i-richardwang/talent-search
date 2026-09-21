@@ -118,14 +118,6 @@ export function StrengthLegend() {
 }
 
 /**
- * 相关度的显示形态：整数百分比。它是一个用户能理解的量（「这段经历和你的
- * 条件有多像」），所以直接给数，不折成几档：档位是另一套要学的刻度。
- */
-export function relevance(value: number) {
-	return `${Math.round(value * 100)}%`;
-}
-
-/**
  * 抽取的两类命中的那条说法怎么显示：能力词就是它自己；做过的事在领域前面
  * 加上参与方式，「从零搭建 · 推荐系统」。这是参与方式唯一被拼进文本的地方。
  */
@@ -181,7 +173,7 @@ function matchedField(hit: Hit): {
  * 一个写进单元格里：分开放的话，某天屏幕上改了那几个槽的说法，导出的那一份
  * 用的还是旧的，而两份都不会有任何检查报出来。
  *
- * 槽的顺序和屏幕上一致：拿去比的词、命中的字段和这段经历在哪、相关度、时长。
+ * 槽的顺序和屏幕上一致：拿去比的词、命中的字段和这段经历在哪、时长。
  */
 export function evidenceText(name: string, hit: Hit, basis: ClaimBasis) {
 	const field = matchedField(hit);
@@ -189,8 +181,7 @@ export function evidenceText(name: string, hit: Hit, basis: ClaimBasis) {
 		byOther(name, hit) ? `${MATCHED_BY} ${hit.value}` : null,
 		[field.label, field.value ?? field.context].filter(Boolean).join(" "),
 		field.value === null ? null : field.context,
-		basis.route === null ? null : relevance(basis.relevance),
-		`${basis.external ? "前 " : ""}${years(basis.months)}`,
+		`${basis.external ? "入职前" : "公司内"} ${years(basis.months)}`,
 	);
 }
 
@@ -200,23 +191,29 @@ function byOther(name: string, hit: Hit) {
 }
 
 /**
- * 一个人一条主张的一行证据。五段固定的槽，所有人的所有行共用同一套列位置——
+ * 一个人一条主张的一行证据。四段固定的槽，所有人的所有行共用同一套列位置——
  * 这是把表格旋转成块之后仍然能上下扫的原因，只不过那条竖线上现在写着凭据。
  *
- *   [点] [主张]  [比的是 取值] [命中的字段值 · 这段经历在哪]  [相关度]  [时长]
+ *   [点] [主张]  [比的是 取值] [命中的字段值 · 这段经历在哪]  [时长]
  *
  * 靠这条条件的另一个取值命中时，字段值前面先写「比的是 推荐算法」：这一行凭
  * 什么算命中，第一个要答的就是「拿去比的是哪个词」——chip 上写的是「算法」，
- * 比的是「推荐算法」，不说清的话相关度那个数对着的是一个屏幕上没有的词。
+ * 比的是「推荐算法」，不说清的话这一行是在拿一个屏幕上没有的词算命中。
  * 靠代表词命中的不写：默认不该有记号。
  *
  * 写成词而不是一个记号：chip 上的 `≈` 说的是「这条条件还有别的取值」，
  * 同一个符号在这里说「用的是别的取值」，两件事共用一个记号就没法读了。
  *
- * 相关度取 `basis.relevance`（最强那条证据的相关度），时长取 `basis.months`（并列
- * 最强的那些段的累计月数）——正是参与打分的那两个值；取样例段的数会让两个
- * 排名不同的人显示同一个数，而这个界面的说服力全在于「看得见的东西能解释
- * 看到的名次」。
+ * 时长取 `basis.months`（并列最强的那些段的累计月数），正是参与打分的那个值：
+ * 取样例段的月数会让两个排名不同的人显示同一个数，而这个界面的说服力全在于
+ * 「看得见的东西能解释看到的名次」。
+ *
+ * **相关度那个百分比不上屏**，尽管它也参与打分（AGENTS.md「分数和名次不重复
+ * 上屏，名单位置表达顺序」）。它是行里唯一一个没有单位的数，读者只会把它读成
+ * 「这个人 73% 符合要求」；而真按它的本义读，73% 和 61% 之间也没有任何一个
+ * 看得懂的人做得出的决定——低到不该出现的那些早在收人时就被挡掉了
+ * （`search/phrases.ts` 的 `RELEVANCE_MIN`），屏幕上的每一行都已经够格。
+ * 这一行要答的是「凭什么算命中」，那由点的档位和拿去比的那个词答完。
  *
  * 只画命中。没命中的主张由 `MissedClaims` 收成一行。
  */
@@ -298,24 +295,15 @@ export function EvidenceLine({
 					</span>
 				)}
 			</span>
-			{/*
-			 * 相关度：这一行凭什么算命中的第二半。它是参与打分的那个数。
-			 *
-			 * 不给它挂说明。这一列在一屏几十块卡片上重复几十遍，配一个能聚焦的
-			 * 触发器就是往名单里塞几十个 Tab 停靠点，而扫名单靠的是 ↑↓；
-			 * 它是什么由恒定的列位和那个 % 号说。
-			 */}
-			<span className="w-9 shrink-0 text-right text-muted-foreground text-xs tabular-nums">
-				{/* 不比文本的主张没有相关度可言；列位留着，行才对得齐 */}
-				{basis.route === null ? "" : relevance(basis.relevance)}
-			</span>
 			<span
 				className={cn(
 					"shrink-0 whitespace-nowrap tabular-nums",
 					ongoing ? "text-foreground" : "text-muted-foreground",
 				)}
 			>
-				{basis.external && <span className="text-muted-foreground">前 </span>}
+				<span className="text-muted-foreground">
+					{basis.external ? "入职前 " : "公司内 "}
+				</span>
 				{years(basis.months)}
 			</span>
 		</div>
