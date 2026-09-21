@@ -141,13 +141,14 @@ export function QueryDeck({
 								{rawText}
 							</h1>
 							{interpreting ? (
-								/* 理解中显示的仍是这句话，不是占位方块——右边那一格接下来
-							   会变成 chips，而 chips 正是从它翻译出来的。 */
+								/* 等的时候显示的仍是这句话，不是占位方块——右边那一格接下来
+							   会变成 chips，而 chips 正是从它来的。说法和名单那一屏同一个
+							   （`result-list.tsx` 的 `PHASE_TEXT`）：同一件事不该有两个叫法。 */
 								<span
 									className="shrink-0 text-muted-foreground text-xs"
 									role="status"
 								>
-									正在理解…
+									正在整理条件…
 								</span>
 							) : (
 								<Button

@@ -4,7 +4,7 @@ import type { SearchSpec } from "#/search/spec";
 import { interpretTurn } from "#/server/functions";
 
 /** 理解失败时说什么。和提交失败分开：一个是这句话没读懂，一个是没送出去。 */
-const INTERPRET_FAILED = "没能理解这句话，请重试或换一种说法。";
+const INTERPRET_FAILED = "没能整理出搜索条件，请重试或换一种说法。";
 
 /**
  * 补上这条记录还欠的那一跳：把原话翻译成条件。

@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ListChecksIcon, SearchXIcon, XIcon } from "lucide-react";
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
 	EvidenceLine,
 	MissedClaims,
@@ -20,7 +20,7 @@ import {
 } from "#/components/ui/empty";
 import { Label } from "#/components/ui/label";
 import { Separator } from "#/components/ui/separator";
-import { Skeleton } from "#/components/ui/skeleton";
+import { Spinner } from "#/components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
@@ -35,11 +35,8 @@ import type { Picks } from "../-lib/picks";
 import { reachOf, type View } from "../-lib/view-params";
 import { PickDock } from "./pick-dock";
 
-/** 一块卡片的内边距。骨架屏和候选人共用，加载完成的那一帧才不会抖。 */
+/** 一块卡片的内边距。 */
 const PAD = "px-4 py-3.5";
-
-/** 首次检索的骨架块数。之后跟着上一次的结果数走，列表高度就不会每次跳。 */
-const SKELETON_ROWS = 5;
 
 /** 计数那一行怎么描述这份名单的排序。 */
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
@@ -202,6 +199,81 @@ function NoResults({
 }
 
 /**
+ * 检索中这一屏说什么。
+ *
+ * 一句话，而且句子里那个名词**一秒后用户要在屏幕上看见**：条件会变成查询带上
+ * 那排 chips，人会变成下面那份名单。屏幕上不出现管道自己的名字（理解、翻译、
+ * 召回、重排）——那是我们这边在干什么，等的人要的是一份名单。
+ *
+ * 键是**真实发生的两跳**，不是按秒表播放的脚本：`interpreting` 是模型把原话翻成
+ * 条件那一跳（最长 60 秒，盯着看的那段几乎全是它），`searching` 是服务端召回加
+ * 重排。计时脚本写不得——模型跑 40 秒时，几句词会在前几秒播完，然后停在一句
+ * 宣称自己快好了的话上；模型 800 毫秒就回来时，几句词一闪而过。界面不该说系统
+ * 不知道的事。
+ *
+ * 两句之间真的会跳一次，而且跳的那一刻查询带上的 chips 同时亮起（`QueryDeck`）：
+ * 两处同时变，才是「有进展」拿得出的证据。
+ */
+const PHASE_TEXT = {
+	interpreting: "正在整理搜索条件",
+	searching: "正在查找符合条件的人",
+} as const;
+
+/** 检索这件事此刻走到哪一跳。 */
+export type SearchPhase = keyof typeof PHASE_TEXT;
+
+/** 等过这么久还没好，才把秒数说出来。快的那些查询永远看不到这个数。 */
+const PATIENCE_MS = 5000;
+
+/**
+ * 从挂载起算已经等了几秒；没到 `PATIENCE_MS` 之前答 `null`。
+ *
+ * 跨阶段不重置：用户问的是「这次搜索花了多久」，不是「这一跳花了多久」。
+ */
+function useElapsed(): number | null {
+	const [ms, setMs] = useState(0);
+	useEffect(() => {
+		const start = Date.now();
+		const timer = setInterval(() => setMs(Date.now() - start), 1000);
+		return () => clearInterval(timer);
+	}, []);
+	return ms >= PATIENCE_MS ? Math.round(ms / 1000) : null;
+}
+
+/**
+ * 检索中占的那一屏。
+ *
+ * 不画骨架块：这一页的骨架屏要按条件数拼出证据行，画出来是一堆灰条，而它换来的
+ * 只有「高度占住了」这一件事——高度用一个空盒子同样占得住。空着不难看，灰条难看。
+ *
+ * 高度必须占住：这一列下面还挂着快捷键页脚，塌下去页脚就会跳上来一次。一屏的定义
+ * 只有一个出处——`--chrome-height`（顶栏加查询带，styles.css）；再减掉 5rem 是
+ * 外面那层 `main` 自己的 `pt-4 pb-16`，不减就会多出一条只在检索时出现的滚动条。
+ */
+function Searching({ phase }: { phase: SearchPhase }) {
+	const seconds = useElapsed();
+	return (
+		<div className="flex min-h-[calc(100dvh-var(--chrome-height)-5rem)] flex-col items-center justify-center gap-4">
+			{/* 图标不进无障碍树：这一屏要读出来的是下面那句话，读一遍就够。 */}
+			<Spinner
+				aria-hidden="true"
+				aria-label={undefined}
+				className="size-5 text-muted-foreground"
+				role="presentation"
+			/>
+			<p className="font-medium text-sm" role="status">
+				{PHASE_TEXT[phase]}
+				{seconds !== null && (
+					<span className="text-muted-foreground tabular-nums">
+						{` · ${seconds} 秒`}
+					</span>
+				)}
+			</p>
+		</div>
+	);
+}
+
+/**
  * 候选人名单。
  *
  * 一个人一块，不是一行。表格的前提是**同一列的值可以竖着比**，而这里每一列
@@ -213,6 +285,7 @@ export function ResultList({
 	outcome,
 	empId,
 	loading,
+	phase,
 	canMore,
 	growing,
 	onAll,
@@ -228,6 +301,8 @@ export function ResultList({
 	outcome: SearchOutcome;
 	empId: string | undefined;
 	loading: boolean;
+	/** 检索中走到哪一跳了。只在 `loading` 为真时看得见。 */
+	phase: SearchPhase;
 	/** 还翻得动吗。翻不动的原因有两种（看完了 / 到上限了），文案在页脚分。 */
 	canMore: boolean;
 	/** 正在翻下一页：已经看到的人留在原地，只有按钮转圈 */
@@ -235,7 +310,7 @@ export function ResultList({
 	/** 导出时的「选择全部 N 人」：能显示的全部选中，名单没加载出来的一并加载。 */
 	onAll: () => void;
 	onMore: () => void;
-	/** 这条查询记录上的条件。骨架屏的行数由它算，不等服务端。 */
+	/** 这条查询记录上的条件。表头那一组图例由它算，不等服务端。 */
 	spec: SearchSpec;
 	turnId: string;
 	onChange: (next: Partial<View>) => void;
@@ -248,16 +323,8 @@ export function ResultList({
 	const { results, claims, order, total } = outcome;
 	// 名单给得到的人有几个。结尾那句话和导出那条提示说的是同一个数。
 	const reach = reachOf(total);
-	// 上一次真正画出来的块数，见 SKELETON_ROWS。写在 effect 里而不是渲染中，
-	// 渲染要保持纯：同一份 props 渲染两遍必须得到同一棵树。
-	const lastRows = useRef(SKELETON_ROWS);
-	useEffect(() => {
-		if (!loading && results.length > 0) lastRows.current = results.length;
-	}, [loading, results.length]);
-
-	// 这次查询会画几条证据，从记录上算，不等服务端返回 `claims`：改筛选那一帧
-	// 服务端还是旧值，骨架屏的块高会先跳一下再回来。骨架屏的块高和表头右边
-	// 那一组都读它——两处都是「结果回来之前就得把位子占好」。
+	// 这次查询有没有经历主张，从记录上算，不等服务端返回 `claims`：改筛选那一帧
+	// 服务端还是旧值，表头右边那一组会先消失再回来。
 	const pending = claimsOf(spec.conditions);
 
 	// 有可供选择的名单吗。表头那颗按钮和表头这一行的第一格（全选）说的是同一件事。
@@ -300,50 +367,7 @@ export function ResultList({
 
 	// 检索中绝不闪现「没有结果」。
 	const content = loading ? (
-		<div>
-			{head}
-			<div className="flex flex-col gap-2">
-				{Array.from(
-					{ length: Math.min(lastRows.current, RESULT_PAGE) },
-					(_, row) => (
-						// biome-ignore lint/suspicious/noArrayIndexKey: 骨架块没有身份
-						<div className="flex" key={row}>
-							<PickCell />
-							<Card className={cn(PAD, "min-w-0 flex-1")}>
-								{/*
-								 * 骨架屏画的是**这次查询会有几条证据**，不是一个通用的方块堆：
-								 * 条件数取自记录上的 chips。
-								 *
-								 * 每一行的高度也从真卡片来：`h-lh` 是这一档字阶自己的行高
-								 * （姓名那行 `title-2`、证据行 `text-sm`，和 `EvidenceLine`
-								 * 同一档），所以块高等于加载完成之后的块高，名单不会在结果
-								 * 落地的那一帧长高。灰条自己多高无所谓——它住在行盒里，
-								 * 撑起高度的是行盒。
-								 */}
-								<div className="title-2 flex h-lh items-center gap-2.5">
-									<Skeleton className="h-4 w-24" />
-									<Skeleton className="h-3 w-44" />
-								</div>
-								{pending.length > 0 && (
-									<div className="mt-3 space-y-1.5">
-										{pending.map((c) => (
-											<div
-												className="flex h-lh items-center gap-2.5 text-sm"
-												key={conditionKey(c)}
-											>
-												<Skeleton className="size-2 rounded-full" />
-												<Skeleton className="h-3 w-16" />
-												<Skeleton className="h-3 flex-1" />
-											</div>
-										))}
-									</div>
-								)}
-							</Card>
-						</div>
-					),
-				)}
-			</div>
-		</div>
+		<Searching phase={phase} />
 	) : results.length === 0 ? (
 		<NoResults
 			onChange={onChange}

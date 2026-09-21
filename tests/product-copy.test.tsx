@@ -145,7 +145,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		 */
 		const text = seen(
 			<QueryDeck
-				error="没能理解这句话，请重试或换一种说法。"
+				error="没能整理出搜索条件，请重试或换一种说法。"
 				interpreting={false}
 				onChangeSpec={() => {}}
 				onQuery={() => true}
@@ -155,12 +155,12 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				spec={{ conditions: [] }}
 			/>,
 		);
-		assert.match(text, /没能理解这句话/);
+		assert.match(text, /没能整理出搜索条件/);
 		assert.match(text, /重试/);
 		assert.doesNotMatch(text, /降级|规则解析|模型/, "别把内部实现讲给用户听");
 	});
 
-	test("理解中显示的是用户自己那句话，不是一排占位方块", () => {
+	test("等条件出来时显示的是用户自己那句话，不是一排占位方块", () => {
 		const text = seen(
 			<QueryDeck
 				error={null}
@@ -173,7 +173,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			/>,
 		);
 		assert.match(text, /做过线下渠道运营、带过团队的人/);
-		assert.match(text, /正在理解/);
+		assert.match(text, /正在整理条件/);
 	});
 
 	test("一个人都没有时不显示人数", () => {
@@ -188,6 +188,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				empId={undefined}
 				growing={false}
 				loading={false}
+				phase="searching"
 				onAll={() => {}}
 				onChange={() => {}}
 				onEditQuery={() => {}}

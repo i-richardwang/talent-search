@@ -178,6 +178,23 @@
 	--radius-lg: var(--radius);
 	--radius-xl: calc(var(--radius) + 4px);
 
+	/*
+	 * 等待标记转一圈的方式：**一格一格跳**，不是匀速滑。
+	 *
+	 * 那个圈有 12 根辐条（lucide 的 `Loader`），`steps(12)` 让它每次正好跳过一根，
+	 * 于是任何一帧上图形都和静止时一模一样——这是系统级转圈（macOS、iOS）一直
+	 * 以来的画法。匀速转的那种圆弧（`Loader2` 配 `animate-spin`）在每一帧都是
+	 * 一个介于两格之间的角度，糊成一团，也正是各家 CSS 框架自带的那一个。
+	 *
+	 * 1 秒一圈：12 格刚好每格 83ms，快到看得出在动，慢到不焦躁。
+	 */
+	--animate-tick: tick 1s steps(12, end) infinite;
+	@keyframes tick {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
 	/* coss 的 Skeleton 靠它扫光。没有这条，骨架屏就是一块死灰。 */
 	--animate-skeleton: skeleton 2s -1s infinite linear;
 	@keyframes skeleton {

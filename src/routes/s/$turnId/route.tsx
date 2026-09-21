@@ -152,8 +152,11 @@ function Workbench() {
 	// 同一份筛选，宽屏摊成一条栏、窄屏收成一个按钮，两处画的是同一组值
 	const fields = filterFields(facets, view);
 	const texts = textFilters(view);
-	// 理解中和检索中在列表里是同一件事：下面这份名单还不成立，画骨架屏。
+	// 理解中和检索中在列表里是同一件事：下面这份名单还不成立。但**是哪一跳**
+	// 要分出来——理解那一跳最长 60 秒，检索通常一两秒，名单上那一屏说的就是它
+	// （`ResultList` 的 `Searching`）。两个同时为真时理解在前，因为它确实在前。
 	const loading = navigating || interpreting;
+	const phase = interpreting ? "interpreting" : "searching";
 	const open = Boolean(empId);
 
 	/**
@@ -256,6 +259,7 @@ function Workbench() {
 							loading={loading}
 							onChange={updateView}
 							onEditQuery={editQuery}
+							phase={phase}
 							onAll={pickAll}
 							onMore={() => updateView(morePage(view))}
 							onReviseQuery={(conditions) => reviseSpec({ conditions })}
