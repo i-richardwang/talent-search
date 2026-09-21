@@ -32,7 +32,7 @@ import {
 	type CorpusSession,
 	corpusSessionActive,
 } from "#/corpus/session";
-import { sourceName } from "#/corpus/sources";
+import { type SourceConfig, sourceConfig } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
 import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
@@ -55,11 +55,18 @@ const CAUSE_DEPTH = 5;
 const DERIVE_BUDGET_MS = 10 * 60_000;
 
 /** 任务本身：拿着写者连接干活，过程交给 `report`。 */
-type TaskWork = (session: CorpusSession, report: Report) => Promise<void>;
+type TaskWork = (
+	session: CorpusSession,
+	report: Report,
+	source: SourceConfig | null,
+) => Promise<void>;
 
 /** 三种任务各自做什么。各自的道理在 `src/corpus/` 下的同名模块里。 */
 const WORK: Record<TaskKind, TaskWork> = {
-	sync: (session, report) => sync(session, sourceName(), report),
+	sync: (session, report, source) => {
+		if (!source) throw new Error("同步任务缺少数据源配置");
+		return sync(session, source, report);
+	},
 	derive: async (session, report) => {
 		await derive(session, report, DERIVE_BUDGET_MS);
 	},
@@ -412,7 +419,7 @@ function logger(runId: number) {
  * 一条错误连同它的来由，外层在前。
  *
  * 只取最外层那一句会把真正发生的事丢掉：加载数据源失败时，外层说的是「读取数据源
- * hr-warehouse 失败」，而 `cause` 上挂着的才是「缺少依赖 hyparquet」。
+ * company-adapter 失败」，而 `cause` 上挂着的才是具体的模块加载错误。
  */
 function causeChain(error: unknown): string[] {
 	const lines: string[] = [];
@@ -445,12 +452,13 @@ export async function runTask(
 ): Promise<TaskResult | null> {
 	const session = await acquireCorpusSession(options.wait ?? false);
 	if (!session) return null;
+	const source = kind === "sync" ? sourceConfig() : null;
 
 	let runId: number;
 	try {
 		const [row] = await db
 			.insert(taskRun)
-			.values({ kind, source: kind === "sync" ? sourceName() : "", log: [] })
+			.values({ kind, source: source?.name ?? "", log: [] })
 			.returning({ id: taskRun.id });
 		if (!row) throw new Error("没能落下这次任务的记录");
 		runId = row.id;
@@ -468,7 +476,7 @@ export async function runTask(
 	let failure: string | null = null;
 	try {
 		try {
-			await WORK[kind](session, say);
+			await WORK[kind](session, say, source);
 		} catch (error) {
 			const chain = causeChain(error);
 			failure = chain[0] ?? String(error);

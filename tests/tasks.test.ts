@@ -284,14 +284,15 @@ describe("同步与派生", () => {
 	 */
 	test("跑失败时，那一行说得出为什么，连它的来由", async () => {
 		const configured = process.env.TALENT_SOURCE;
-		process.env.TALENT_SOURCE = "没有这个适配器";
+		process.env.TALENT_SOURCE = "/__talent_search_missing__/没有这个适配器.ts";
 		let failure: string | null = null;
 		try {
 			const run = await runTask("sync");
 			assert.ok(run);
 			failure = run.failure;
 		} finally {
-			process.env.TALENT_SOURCE = configured;
+			if (configured === undefined) delete process.env.TALENT_SOURCE;
+			else process.env.TALENT_SOURCE = configured;
 		}
 		assert.match(failure ?? "", /读取数据源 没有这个适配器 失败/);
 

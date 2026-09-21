@@ -21,7 +21,7 @@ import { prunePhrases } from "./derive";
 import { build, type EmployeeRow, type ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
 import type { CorpusSession } from "./session";
-import { loadSource } from "./sources";
+import { loadSource, type SourceConfig } from "./sources";
 
 /** 一条语句写多少行。 */
 const ROWS_PER_STATEMENT = 5_000;
@@ -154,11 +154,11 @@ async function reconcile({ client }: CorpusSession): Promise<{
  */
 export async function sync(
 	session: CorpusSession,
-	sourceName: string,
+	sourceConfig: SourceConfig,
 	report: Report,
 ): Promise<void> {
-	report(`读取数据源 ${sourceName}…`);
-	const source = await loadSource(sourceName);
+	report(`读取数据源 ${sourceConfig.name}…`);
+	const source = await loadSource(sourceConfig);
 	const data = await source.extract(report);
 
 	report("");

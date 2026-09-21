@@ -160,7 +160,7 @@ describe("收集与生效", () => {
 						org: "某公司",
 						extracted: {
 							skills: ["服务端开发", "客户开发"],
-							did: [{ involvement: "负责", domain: "订单系统" }],
+							did: [{ involvement: "负责建设", domain: "订单系统" }],
 						},
 					},
 					{

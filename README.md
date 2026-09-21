@@ -1,16 +1,13 @@
 # talent-search · 人才搜索
 
-面向 HR 与业务负责人的人才搜索工具。它从组织内任职和入职前工作经历中寻找员工，并把每项匹配还原到可核对的经历证据。
+面向 HR 与业务负责人的人才搜索工具。它从组织内任职和入职前经历中寻找员工，并把每项匹配还原到可核对的经历证据。
 
 - 产品目标与范围：[docs/PROJECT.md](docs/PROJECT.md)
-- 工程约束：[AGENTS.md](AGENTS.md)
+- 开发约定：[AGENTS.md](AGENTS.md)
 
 ## 本地运行
 
-需要 [Bun](https://bun.sh) 1.4+ 和装了 [pgvector](https://github.com/pgvector/pgvector) 的 Postgres 17，
-以及三种模型能力：OpenAI 兼容的嵌入（`/embeddings`）、Cohere 式重排（`/rerank`）和
-OpenAI 兼容的查询理解（`/chat/completions`）。它们可以来自同一家服务，也可以分别部署；
-嵌入和重排会接触经历内容，查询理解只收到搜索句子。
+需要 Bun 1.4+、带 pgvector 的 Postgres 17，以及嵌入、重排和查询理解三个模型端点。
 
 ```bash
 docker run -d --name talent-pg \
@@ -20,294 +17,115 @@ docker exec talent-pg psql -U talent -d talent \
   -c "create extension if not exists vector"
 
 cp .env.example .env.local
-# 用上面这条 docker 命令的话数据库不用改；配置 EMBED_*、RERANK_* 与 LLM_*
-
 bun install
 bun run db:push
-bun run sync     # 不配数据源时同步仓库自带的合成样例进库
-bun run dev      # 应用起来之后，派生任务几分钟内自己接上：抽取、嵌入、连边
+bun run sync
+bun run dev
 ```
 
-嵌入端点会收到每个人的经历原文，建议放在本地或内网；用公网服务意味着把经历交给第三方，
-这是部署方按数据政策做的决定。派生和查询用同一个模块调它，所以两侧天然属于同一个嵌入空间。
-派生会把空间身份、模型、维数和一条 canary 向量写进数据库；查询进程首次
-嵌入前会同时核对配置与端点实际输出，不一致就拒绝检索。模型、权重或归一化方式变化时，
-更换 `EMBED_SPACE_ID`，下一轮派生会把说法整张作废、所有段重新算。算过的向量按（空间、模型、文本）留在库里，重算不必再打端点。
+应用默认监听 `http://localhost:3100`。默认数据源是 `src/corpus/sources/sample/` 中的合成样例；启动后，后台任务会继续完成抽取、嵌入和词表整理。
 
-应用默认监听 `http://localhost:3100`。
+## 数据管线
 
-首次同步进来的是 `src/corpus/sources/sample/` 里的二十个人——全部是编的，与任何真实组织无关。它存在只为让检索、排序和界面立刻有东西可看。
+三种任务共用 `src/corpus/session.ts` 的写者锁，运行记录统一写入 `task_run`，可在 `/tasks` 查看或手动触发。
 
-## 语料怎么长出来
+- `sync`：读取数据源，校验并切分经历，以短事务同步变更；不调用模型。
+- `derive`：抽取能力词和做过的事、对齐序列、嵌入并连接经历段；按批提交。
+- `review`：维护能力词的同义写法、宽细归属和短说法释义。
 
-语料侧分三种任务，节奏不同、执行者不同，落的是同一张记录（`task_run`），在任务台 `/tasks`（顶栏右上角）上一起看：
+一次检索在 repeatable-read 快照中读取语料，不会看见任务提交到一半的状态。派生版本由提示词、模型和嵌入空间共同决定；这些输入变化后，旧结果会自动进入待处理状态。
 
-- **同步**（`bun run sync`）：读数据源、切段校验，一笔短事务增删变了的人和段。不调模型，几秒跑完，挂给 cron 按天跑或随手跑。段按**内容**认（`experience.key`，由库自己算）：没变的段连同它的派生结果原样留下，改了一个字的段是新段。
-- **派生**（后台，每 5 分钟看一次有没有活）：给还没派生到当前版本的段抽能力词和做过的事、对齐公司序列、嵌入、连边。几百段一批，每批一笔短事务，一轮最多十分钟，跑不完下一轮接着。「当前版本」是抽取与对齐的提示词、模型和嵌入空间的摘要：改一次提示词等于所有段待派生，缓存让没变的部分几乎不花钱。
-- **整理**（后台，每天一次）：把词收成两种组交给判定方。**归并**：给能力词建词表，一个词一周判一次，决定写进 `skill_term`。词表只决定筛选栏怎么摆，不改人身上的词（边上永远是简历原话）。它分两层：**同一件事的不同写法**在筛选栏里合成一个标准词；**一个词属于哪个更宽的词**（「销售数据分析」属于「数据分析」）记一条归属，筛选栏沿归属往上聚——点「数据分析」看到做过各种数据分析的人，点「销售数据分析」只看到销售那一种。**释义**：给技能、做过的事、岗位名、序列名这些短说法各写一句它指什么，写进 `phrase_gloss`，检索重排时读的是「说法：释义」（为什么见下一节）。释义不到期重写（一个说法指什么不随时间变），要收的只有两种：语料里新来的，以及释义出自旧标准的——每条释义身上记着它算到哪一版标准（`phrase_gloss.guide_identity`），改了写释义的那段提示词，旧的那些下一轮自动重收。判定这一步可以交给外部 agent，见下。
+## 接入数据源
 
-数据页 `/data` 列出库里的人，点进去看每一段登记的、对齐的、抽出来的，以及这一段派生到当前版本了没有。
+所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments` 和 `external`。通用校验、切段与派生在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
 
-派生和整理由 pg-boss 排班，队列表在同一个 Postgres 里（它自己的 `pgboss` schema，首次启动自建），不需要第二个服务；任务台上能「现在跑一次」。三种任务共用一把咨询锁，写者一次只有一个：后台任务拿不到锁就下一轮再来，命令行的同步排队等。
+两种接入方式：
 
-每一次运行落成 `task_run` 的一行，它说过的每一行话都在那一行里——拒绝了几段、为什么拒绝、合并了哪些写法、各表几行；失败时还有那一步报的错连同它的来由。「此刻有没有人在跑」问的是那把咨询锁，不是表里那一列：持锁的连接一断，这件事当场就不成立，所以进程中途没了留下的那一行读作「中断」而不是一次永远跑不完的任务。
+1. 按 `src/corpus/sources/sample/` 的列名导出三个 CSV，并设置 `TALENT_CSV_DIR`。
+2. 实现一个导出 `extract(report): Promise<SourceData>` 的模块，并将 `TALENT_SOURCE` 设为该文件的绝对路径。
 
-读者不受写者影响：每一笔写都是短事务，一次检索跑在 repeatable read 里，看到的永远是某一笔提交之后的整体。
+`src/corpus/sources/` 默认忽略私有适配器，只保留 `csv-dir` 与合成样例。私有模块在运行时加载，不进入 Vite 构建产物。适配器使用的 npm 包应安装在根 `package.json`，以便从项目根 `node_modules` 解析。
 
-### 判定交给外部 agent
+## 模型与数据边界
 
-整理一轮分四步：**清过期、让判定生效、收集、判定**。前三步是机械的——按向量把相似的词圈成组、把判定结果落进表；只有判定需要判断力。组有两种：**归并**问「人员管理」和「团队管理」是不是同一件事、「销售团队管理」属不属于「团队管理」；**释义**请判定方给一组相近的短说法各写一句它指什么（「客户开发」是销售拓展客户，「服务端开发」是写服务器程序），检索重排读的就是这一句。这一步可以换人做：
+| 能力 | 接收的数据 | 失败行为 |
+|---|---|---|
+| 查询理解 | 用户输入和少量筛选值 | 查询报错，可重试 |
+| 嵌入 | 查询词与经历说法 | 检索或派生报错 |
+| 重排 | 查询词、候选说法及释义 | 检索报错 |
+| 抽取与对齐 | 入职前岗位、公司和描述 | 派生记录错误并跳过该段 |
+| 词表整理 | 短说法与人数 | 整理记录错误 |
 
-```
-REVIEW_JUDGE=model      # 用 REVIEW_MODEL 判，一轮里收集、判定、生效连着做
-REVIEW_JUDGE=external   # 只收集和生效，组挂在队列上等外部 agent 判
-REVIEW_JUDGE=off        # 整理不跑
-REVIEW_TOKEN=...        # 外部接口的凭据
-```
+姓名和工号不会发送到模型端点。嵌入、重排、抽取和对齐会接触经历内容，部署方应按数据政策选择内网或公网服务。真实员工数据、导出结果和真实验收用例不得进入版本库。
 
-`REVIEW_JUDGE` 不设时，有完整的整理模型配置就采用 `model`，否则采用 `off`。显式选择
-`model` 却没有模型、或写了未知取值，会在启动与任务读取配置时直接报错，不产生一条看似
-成功却永远没有判定的整理链路。
+查询与语料必须属于同一嵌入空间。应用会核对空间身份、模型、维数和 canary 输出；模型、归一化或端点行为变化时，需要更换 `EMBED_SPACE_ID`。重排行为变化时需要更换 `RERANK_SPACE_ID`。
 
-接口只在 `REVIEW_JUDGE=external` 且配了 `REVIEW_TOKEN` 时开着，其余情况回 404，等于不存在——自带模型判定时队列永远是空的，一条只会说「不」的接口不如没有；归外部却没配凭据，整理任务会在记录里说出来。外部这一侧是两个动作，同一条路径，凭据走 `Authorization: Bearer <REVIEW_TOKEN>`：
+## 外部判定
 
-```bash
-# 取走：还没人判、还没过期的组，最早收集的在前。limit 默认 20，上限 100
-curl -H "Authorization: Bearer $REVIEW_TOKEN" "$HOST/api/review?limit=20"
-```
+`REVIEW_JUDGE` 决定词表整理由谁判定：
 
-```jsonc
-{
-  "groups": [
-    {
-      "id": 418,
-      "kind": "group",                          // 归并组
-      "guideIdentity": "8f2c…",                // 这组题所用标准的身份
-      "words": [                                // 一组写法相近的词，一律平等，没有谁是「标准词」
-        { "word": "团队管理", "people": 40 },
-        { "word": "人员管理", "people": 12 },
-        { "word": "销售团队管理", "people": 6 },
-        { "word": "团队培训", "people": 5 }
-      ],
-      "collectedAt": "2026-09-10T03:00:12Z",
-      "expiresAt": "2026-09-17T03:00:12Z"       // 到点没人判就过期，那些词下一轮重收
-    },
-    {
-      "id": 419,
-      "kind": "gloss",                          // 释义组：一批相近的短说法，最多 40 个
-      "guideIdentity": "c91a…",
-      "words": [
-        { "word": "服务端开发", "people": 31 },
-        { "word": "客户开发", "people": 9 },
-        { "word": "高级后端开发工程师", "people": 4 }
-      ],
-      "collectedAt": "2026-09-10T03:00:12Z",
-      "expiresAt": "2026-09-17T03:00:12Z"
-    }
-  ],
-  "guides": {                                 // 身份和标准文本来自同一份事实源
-    "group": { "identity": "8f2c…", "text": "……归并的判定标准……" },
-    "gloss": { "identity": "c91a…", "text": "……释义的写法……" }
-  }
-}
+```dotenv
+REVIEW_JUDGE=model      # 使用 REVIEW_MODEL，未设置时回退到 EXTRACT_MODEL
+REVIEW_JUDGE=external   # 使用外部判定接口
+REVIEW_JUDGE=off        # 不运行整理
+REVIEW_TOKEN=...        # external 模式必需
 ```
 
-下面为便于阅读缩写了身份值；实际提交时必须从 GET 响应完整复制 64 位 `guideIdentity`。
+外部接口使用 `Authorization: Bearer <REVIEW_TOKEN>`：
 
-```bash
-# 提交判定：一组一次，先到先得。每个词两问：和组里哪个词是同一件事（sameAs），属于哪个更宽的词（parent）
-curl -X POST -H "Authorization: Bearer $REVIEW_TOKEN" -H 'content-type: application/json' \
-  -d '{"id":418,"kind":"group","guideIdentity":"8f2c…","judge":"hr-bot","judgments":[
-        {"word":"团队管理","why":"这组的通名","sameAs":"","parent":""},
-        {"word":"人员管理","why":"同一件事的不同写法","sameAs":"团队管理","parent":""},
-        {"word":"销售团队管理","why":"团队管理的一种，限定了对象","sameAs":"","parent":"团队管理"},
-        {"word":"团队培训","why":"只是其中一个环节","sameAs":"","parent":""}]}' \
-  "$HOST/api/review"
-```
+- `GET /api/review?limit=20`：返回尚未判定且未过期的 `group` 或 `gloss` 组，以及各类判定标准的身份。
+- `POST /api/review`：提交一组的首份判定；请求必须原样带回 `id`、`kind` 和 `guideIdentity`。
 
-```bash
-# 释义组的判定：每个说法一句话，不超过 30 字，不重复说法本身
-curl -X POST -H "Authorization: Bearer $REVIEW_TOKEN" -H 'content-type: application/json' \
-  -d '{"id":419,"kind":"gloss","guideIdentity":"c91a…","judge":"hr-bot","judgments":[
-        {"word":"服务端开发","gloss":"编写运行在服务器上的程序与接口"},
-        {"word":"客户开发","gloss":"销售拓展新客户、促成签约"},
-        {"word":"高级后端开发工程师","gloss":"负责服务器端程序与接口开发的高级工程师"}]}' \
-  "$HOST/api/review"
-```
-
-`kind` 与 `guideIdentity` 必须原样回传。服务端更新判定标准时会丢弃旧标准下尚未生效的组并重新收集，
-因此拿着旧响应提交会得到 `404`，不会把旧答案记到新标准名下。`judge` 是判定方自报的名字
-（1 到 40 个字母、数字、`-`、`_` 或 `.`），只作留痕——记在库里哪条是谁判的，任务日志按它计数，管理页 `/skills` 不逐条显示。归并组里 `why` 收下但不读，它在那里是为了约束判断：让判定方先说理由再下结论，比让它直接列名单准。`sameAs` 连成的每一片是同一件事，片里人最多的写法做标准词，判定方不选写法；`parent` 是判定方起的名字，可以是这组里没有、语料里也没人写过的词，写最近的一层。释义组里 `gloss` 空的、和说法一样的、超过 60 字的当没判，那个说法下一轮重收。回应是 `200`（收下，`{"accepted":true}`）、`400`（形状不对）、`401`（凭据不对）、`404`（接口没开、组已过期或标准已更新）、`409`（已经有人判过）。
-
-提交只写组那一行。词表、释义和边由整理任务在写者锁里改，所以提交不必等派生放锁；交完会催一次整理，几分钟内生效，催不动也不丢，下一轮照样生效。什么时候生效是服务端自己的事，回应里不说。判定要过和自带模型同一处收窄：不在组里的词、指向组外的 `sameAs`、含着这个词的 `parent`（方向反了），一律当没说。
-
-## 接入自己的数据
-
-语料侧分成两层，接数据只碰下面那一层：
-
-- **管线**（`src/corpus/pipeline.ts`）不认任何一家公司的字段名。它只做「无论数据从哪来都必须做」的事：区间校验、开放区间封口、相邻段合并、时长与当前信息派生；
-- **适配器**（`src/corpus/sources/<name>.ts`）把某一套人事数据翻译成 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的三张表：`employees`（人群与档案）、`assignments`（组织内任职段）、`external`（入职前经历）。
-
-两条路：
-
-1. **导出三个 CSV**。列名照 `src/corpus/contract.ts` 写，把 `TALENT_CSV_DIR` 指向那个目录即可，不必写代码。格式见 [`src/corpus/sources/csv-dir.ts`](src/corpus/sources/csv-dir.ts)；
-2. **写一个适配器**。复制 `csv-dir.ts` 改成 `sources/<你的名字>.ts`，实现 `extract(report) => Promise<SourceData>`，在 `.env.local` 里设 `TALENT_SOURCE=<你的名字>`。
-
-`src/corpus/sources/` 默认不进版本库（`csv-dir` 和样例除外）：表名、字段名、字典码、人群口径本身就是一家组织的内部信息。规则是白名单式的，新写一个适配器天然是私有的。
-
-适配器要用的库（比如读 parquet 的 `hyparquet`）加进根 `package.json`：服务端构建把 npm 依赖留成裸名、在运行时从根 `node_modules` 解析，适配器目录里自己带一份清单是找不到的。所以根清单里会有仓库内没人引用的依赖，那是私有适配器的。
+归并判定逐词提交 `sameAs` 与 `parent`；释义判定逐词提交 `gloss`。接口只保存判定原话，整理任务在写者锁内收窄并生效；它不允许直接修改词表、释义或经历边。形状错误返回 400，凭据错误返回 401，不可用或过期返回 404，重复提交返回 409。
 
 ## 配置
 
-配置只放在 `.env.local` 或环境变量中，不进入版本库。
+配置放在 `.env.local` 或运行环境中。完整示例见 [.env.example](.env.example)。
 
 | 变量 | 必需 | 说明 |
 |---|---|---|
-| `DATABASE_URL` | 是 | Postgres 连接串，库里须有 `vector` 扩展 |
-| `EMBED_BASE_URL` | 是 | OpenAI 兼容的嵌入端点；经历原文会送到这里 |
-| `EMBED_MODEL` | 是 | 嵌入模型名 |
-| `EMBED_SPACE_ID` | 是 | 嵌入空间的稳定身份；模型行为变化时换值，下一轮派生重算全部说法 |
-| `EMBED_API_KEY` | 否 | 端点需要鉴权时填写 |
-| `EMBED_TIMEOUT_MS` | 否 | 嵌入请求超时，默认 30000 |
-| `RERANK_MODEL` | 是 | 重排模型名；命中由它判定 |
-| `RERANK_SPACE_ID` | 是 | 重排空间的稳定身份；缓存按它隔离 |
-| `RERANK_BASE_URL` / `RERANK_API_KEY` | 否 | 重排端点与密钥，默认沿用 `EMBED_*` |
-| `RERANK_TIMEOUT_MS` / `RERANK_CONCURRENCY` | 否 | 重排超时与最大并发，默认 30000 / 4 |
-| `EXTRACT_BASE_URL` | 否 | OpenAI 兼容的聊天端点（`/chat/completions`）；抽取与模型整理共用这个地址。岗位名、公司名和描述原文会送到这里 |
-| `EXTRACT_MODEL` | 否 | 抽取模型名。与 `EXTRACT_BASE_URL` 缺一就不抽也不对齐，派生会说明后跳过。回答按模型名和提示词键入存在库里，改提示词后所有段自动待派生 |
-| `EXTRACT_API_KEY` | 否 | 端点需要鉴权时填写 |
-| `REVIEW_MODEL` | 否 | 整理归并与释义用的模型，同一个端点；不设就用 `EXTRACT_MODEL`。这一步只有几百组，却要划清相近词并写准确释义，值得单独给一个更强的模型 |
-| `REVIEW_JUDGE` | 否 | 整理的判定交给谁：`model`、`external` 或 `off`。不设时，有可用整理模型则为 `model`，否则为 `off`；显式配置无效会报错 |
-| `REVIEW_TOKEN` | 否 | 外部判定接口的 bearer 凭据。接口只在 `REVIEW_JUDGE=external` 且配了它时开着，否则 `/api/review` 回 404 |
-| `EXTRACT_ENABLE_THINKING` | 否 | 带思考的模型设为 `false`，否则思考会先烧光输出预算；不设就不发这个字段 |
-| `EXTRACT_STRUCTURED_OUTPUTS` | 否 | 端点不支持 JSON Schema 时设为 `false` |
-| `EXTRACT_TIMEOUT_MS` / `EXTRACT_CONCURRENCY` / `EXTRACT_MAX_OUTPUT_TOKENS` | 否 | 端点属性，默认 120000 / 4 / 16000 |
-| `TALENT_SOURCE` | 否 | 数据源适配器名，默认 `csv-dir` |
-| `TALENT_CSV_DIR` | 否 | `csv-dir` 的源目录，默认读仓库自带的合成样例 |
-| `LLM_BASE_URL` | 是 | OpenAI 兼容的查询理解端点；只收到用户敲的那句话 |
-| `LLM_MODEL` | 是 | 查询理解模型名 |
-| `LLM_API_KEY` | 否 | 端点需要鉴权时填写 |
-| `LLM_STRUCTURED_OUTPUTS` | 否 | 端点不支持 JSON Schema 时设为 `false` |
-| `LLM_ENABLE_THINKING` | 否 | 同 `EXTRACT_ENABLE_THINKING` |
-| `LLM_TIMEOUT_MS` / `LLM_MAX_OUTPUT_TOKENS` | 否 | 端点属性，默认 60000 / 16000 |
+| `DATABASE_URL` | 是 | 带 pgvector 的 Postgres 连接串 |
+| `EMBED_BASE_URL` / `EMBED_MODEL` / `EMBED_SPACE_ID` | 是 | 嵌入端点、模型与空间身份 |
+| `RERANK_MODEL` / `RERANK_SPACE_ID` | 是 | 重排模型与缓存空间身份 |
+| `RERANK_BASE_URL` / `RERANK_API_KEY` | 否 | 默认沿用 `EMBED_*` |
+| `LLM_BASE_URL` / `LLM_MODEL` | 是 | 查询理解端点与模型 |
+| `EXTRACT_BASE_URL` / `EXTRACT_MODEL` | 否 | 抽取、对齐和模型整理共用的聊天端点 |
+| `REVIEW_MODEL` | 否 | 整理模型，默认使用 `EXTRACT_MODEL` |
+| `REVIEW_JUDGE` / `REVIEW_TOKEN` | 否 | 判定方与外部接口凭据 |
+| `TALENT_SOURCE` | 否 | `csv-dir` 或私有适配器的绝对路径 |
+| `TALENT_CSV_DIR` | 否 | `csv-dir` 的输入目录；默认使用合成样例 |
 
-四个 `*_TIMEOUT_MS` 都是**一次尝试**的上限，不是一通调用连同重试的总时长：超时装在每一次请求上（`src/server/endpoint.ts`），于是重试的每一次尝试各拿一份完整的预算。
-
-向量的维数不是配置：它是 `src/db/schema.ts` 里的 `EMBED_DIM`，全库只有那一处，换维数就是改它、换 `EMBED_SPACE_ID`、让派生重算。
-
-查询理解只发送用户输入和库内几维筛选的取值（公司档、职级、招聘渠道、学历），不发送姓名、工号或个人经历，因此可以走公网端点；它不可用时整句搜索报错并可重试，不退回任何别的读法。嵌入、抽取与重排端点则不同：嵌入和抽取从派生收到经历原文，重排在查询时收到语料里的岗位名、部门路径、简历描述和抽出来的说法，放在哪由部署方按数据政策决定；没配嵌入或重排检索直接报错，不降级；没配抽取则派生说明后跳过，自述证据退回整段简历原文，入职前经历不对齐序列。
+各端点的 API key、超时、并发、结构化输出与思考开关见 `.env.example`。`*_TIMEOUT_MS` 表示每次尝试的上限。嵌入维数只在 `src/db/schema.ts` 的 `EMBED_DIM` 定义。
 
 ## 常用命令
 
 ```bash
 bun run dev          # 开发服务器
-bun run sync         # 同步数据源进库（不调模型）
-bun run derive       # 派生一轮并盯着标准输出看；应用起着的话后台自己会跑
-bun run query "算法,+后端"           # 跑一条查询（一行语法见 src/search/query-syntax.ts）；TOPN=20 可以多打印几个人
-bun run eval         # 拿 evals/search/ 里的已知答案量检索的召回与名次
-bun run eval:extract # 拿 evals/extract/ 里已知答案的简历段量抽取（当前提示词与模型）
-bun run eval:review  # 拿 evals/review/ 里已知答案的词组量整理（合并、归属、起名）
-bun run db:push      # 从 src/db/schema.ts 同步表结构；拉到改过 schema 的提交后要跑一次
-bun run verify       # 格式、类型、测试和生产构建
+bun run sync         # 同步数据源
+bun run derive       # 运行一轮派生
+bun run query "算法,+后端"
+bun run eval
+bun run eval:extract
+bun run eval:review
+bun run db:push
+bun run verify       # 格式、类型、测试、生产构建
 ```
 
-`bun run test` 使用临时 schema 运行真实 SQL 集成测试，需要 `.env.local` 中有可连接的 `DATABASE_URL`（带 pgvector）。三个模型端点由测试进程内的假端点提供（字符袋向量，相关度可以手算），不需要真模型；数据源钉在仓库自带的合成样例上。
-
-## 数据边界
-
-真实员工数据不进入版本库。同步从配置的数据源读取，完成校验与切段后写入 Postgres；派生把每段经历的说法（序列、岗位、部门或公司，以及自述：配了抽取端点时是入职前简历描述读出来的能力词和做过的事，没配时是整段简历描述）去重后送到嵌入端点换成向量；每段入职前经历的岗位名、公司名和描述也会送去对到公司序列树，结果只供序列筛选读；整理时，库里的能力词和人数会送去让模型判断哪些是同一件事的不同写法、哪个词属于哪个更宽的词，技能、做过的事、岗位名、序列名会送去写一句释义。查询时召回的说法连同释义会送到重排端点判定相关度。个人经历只会发往这里明确列出的模型端点；端点选内网还是公网由部署方决定。仓库里的样例和测试夹具全部是合成数据。
-
-判定交给外部 agent 时（`REVIEW_JUDGE=external`），出这台机器的只有短说法（能力词、做过的事、岗位名、序列名）和它下面的人数——没有姓名、工号，也没有简历原文。这条接口的数据边界比抽取端点窄得多，和查询理解同一档。
-
-公开表结构的唯一事实源是 `src/db/schema.ts`，改完跑 `bun run db:push`。
-
-字段去向与约束见 [`src/db/schema.ts`](src/db/schema.ts)：每一列的含义、公司内与入职前各自往哪个字段落、以及每个索引为什么在那里，都写在那一列旁边。
+`bun run test` 只从 `.env.local` 读取 `DATABASE_URL`，随后在不加载环境文件的子进程中运行。每个集成测试文件使用独立临时 schema 和进程内假模型，不会访问真实数据源或模型端点。
 
 ## 代码结构
 
 ```text
-src/corpus/contract.ts       源契约：适配器要交出的三张表
-src/corpus/pipeline.ts       通用切段、校验与派生
-src/corpus/sources.ts        按名字取适配器
-src/corpus/sources/          数据源适配器（默认不进版本库）
-src/corpus/route-texts.ts    一段经历有哪些说法，语料侧与测试夹具共用
-src/corpus/sync.ts           同步：暂存、按内容键做差、一笔事务增删
-src/corpus/derive.ts         派生：待派生的段分批抽取、对齐、嵌入、连边，记版本
-src/corpus/embed.ts          说法的嵌入与库里的向量缓存
-src/corpus/extract.ts        入职前简历描述 → 能力词与做过的事：提示词与收窄
-src/corpus/align.ts          入职前岗位 → 公司序列：序列树、提示词与收窄
-src/corpus/review.ts         整理任务：一轮的顺序（清过期、生效、收集、判定）
-src/corpus/judgment.ts       整理的判定队列：标准身份、收集、取走、提交与过期
-src/corpus/vocabulary.ts     归并组：词表的读写、收集与生效、模型调用
-src/corpus/vocabulary-rules.ts 能力词的纯规则：圈组、收窄、标准词与归属，生产和验收共用
-src/corpus/gloss.ts          释义组：哪些说法要释义、凑批收集、收窄与生效
-src/corpus/tag.ts            说法的文本规范与长度边界
-src/corpus/session.ts        写者独占的那条连接与串行化锁
-src/db/                      Drizzle 表结构与数据库连接
-src/search/                  查询解析、判定（召回 + 重排）、排名、分面与结果契约
-src/server/                  服务端函数、查询记录、任务的记录与排班（tasks、jobs）、四个模型适配层
-src/server.ts                服务端入口：起后台任务的排班
-src/routes/                  零态、搜索工作台，以及三个管理页（/skills、/tasks、/data）
-src/routes/-components/      各屏共用的外壳件（顶栏、历史弹层、页框、零态、死链）
-src/routes/-lib/             各屏共用的非组件模块（提交查询、值→标签）
-src/routes/s/$turnId/        工作台这一条路由，私有的组件与模块在它的 -components/ 与 -lib/ 下
-src/components/ui/           coss ui 的组件源码（抄来的，见其 NOTICE.md）
-src/lib/                     跨层纯函数
-scripts/                     命令行入口：sync（同步）、derive（派生一轮）、query（跑一条查询）、eval / eval-extract / eval-review（三把验收尺子）
-evals/                       验收用例，按尺子分 search/ extract/ review/（真实用例不进版本库，每个目录只带合成的 sample.json）
-tests/                       单元、渲染与真 SQL 集成测试
+src/corpus/       数据同步、派生、词表整理与数据源契约
+src/db/           Drizzle 表结构与数据库连接
+src/search/       查询契约、召回、排名、分面与结果类型
+src/server/       RPC、查询记录、后台任务和模型端点
+src/routes/       页面、路由私有组件与交互逻辑
+src/components/   跨页面产品组件与 coss UI 源码
+src/lib/          与界面无关的跨层纯函数
+scripts/          命令行入口与验收工具
+evals/            合成验收样例；真实用例仅保存在本机
+tests/            单元、渲染与 Postgres 集成测试
 ```
 
-核心边界：
-
-- **数据源与管线之间只有一份契约。** 适配器交出三张摊平的表，管线负责所有人都逃不掉的
-  那几条不变量。接第二个数据源时不会长出第二套「什么算一段经历」。见 `src/corpus/contract.ts`。
-- **语料侧与查询侧共用模型适配层。** 嵌入端点只有 `src/server/embed.ts` 一处调用者，
-  聊天端点只有 `src/server/chat.ts` 一处，于是「语料和查询是不是同一个嵌入空间」
-  不是一条要记住的约定，而是同一个进程里的同一份配置。
-- **查询是一条记录，视图是几个 URL 参数。** 一次「我要找什么人」落成 `search_turn`
-  的一行：`SearchSpec` 完整保存这次查询的条件（`Condition[]`）。
-  地址是 `/s/:turnId`；只影响查看方式的分面、
-  翻页留在 query string，当前员工由 `/p/:empId` 子路由表达。见 `src/search/spec.ts`、`src/server/turn.ts` 与
-  `src/routes/s/$turnId/-lib/view-params.ts`。
-- 页面通过 `src/server/functions.ts` 定义的 RPC 访问服务端；带连接或密钥的模块标了
-  `server-only`，页面从它们取值会让构建失败。页面可读取的结果形状在 `src/search/result.ts`；
-- `src/search/search.ts` 只产出命中事实，`src/search/rank.ts` 负责判定、打分、排序与分面；
-- 界面组件来自 [coss ui](https://coss.com/ui)，源码进仓库放在 `src/components/ui/`。
-
-更细的工程约定在 [AGENTS.md](AGENTS.md)，它只收「代码里放不下」的那些；
-「某处为什么这么写」一律写在那处的注释里。
-
-## 查询行为
-
-- 一句话被查询理解写成一份条件清单，条件只有两种：**经历主张**——这个人有一段经历
-  同时满足做过什么（走向量）、在哪家公司或部门、在哪一档公司、公司内还是入职前、
-  累计多久；**人的条件**——职级、学历、招聘渠道、学校。库里没有的条件（如地点）不写。
-- 经历条件分两步命中：向量**召回**语料里相似的说法（序列名、岗位名、部门路径、简历
-  描述，去重后约两万种），重排模型逐对**判定**相关度，过全站阈值即命中。稠密向量在
-  短语上分不开「前端」与「后端」，交叉编码器分得开，两步各管一头。「算法」因此找得到
-  岗位写着「推荐算法工程师」的段。专有名词不走向量，走精确条件。
-  重排分数按（重排空间、查询词、说法）缓存在库里，同一个词只判定一次。
-- 条件之间 AND、同一个人；一条主张里的各项是同一段经历。一项可以有多个**取值**，
-  取值之间 OR、同权：用户并列的「A 或 B」，加上查询理解替用户多写的叫法。chip 上每项
-  只写代表取值，其余收在菜单里可逐项去掉；靠非代表词命中时证据行写「比的是 那个词」。
-  必须条件采用 AND；加分的主张和人的偏好各自独立抬升排名；排除**否决经历段**（阈值更高）
-  ——命中它的段不再作为任何主张的证据，人只有在失去全部证据时才出局；停用的条件
-  保留配置但不参与当前检索。
-- 名次有两把尺，不相乘。**可信度**看证据来自哪一档：登记的序列或岗位、登记的部门或公司、
-  自述，取必须的主张里最弱的一条；**深度** = 相关度 × 累计时长 × 近因，必须的主张相乘、
-  加分的往上抬。先按可信度分档、档内按深度，两者不相乘——档在前保证一条登记证据不会
-  被一段足够长的自述盖过去。可信度只决定先后，不决定去留：只有自述证据的人照样在名单里，
-  排在后面，每行旁边那颗点写着成色。
-  时长是满足这条主张的全部段的累计，主张上的「至少多久」判的也是它。没有经历词的主张
-  （「待过字节」）不比文本，落在范围里的段就是证据。
-- 自述证据只有一种读法：模型读过的段只比读出来的能力词和做过的事，整段简历原文不再参与
-  匹配（原文仍在旁边供核对）；没读过的段才比整段原文。
-- 召回按余弦取最近的固定条数进重排，搜一个词的成本和库里有多少人无关；代价是放弃粗筛
-  排在名次之外的极少数人。「太宽」只有一把尺：命中的人超过库里两成，落库时可见地停用。
-- 分面、总人数和排名消费同一份命中事实，计数单位统一为人。
-- 分页通过扩大 `limit` 重新取得前 N 名，不使用 offset；界面会明确说明已显示数量、总数与上限。
-
-## 许可证
-
-[MIT](LICENSE)
+公开表结构的唯一来源是 `src/db/schema.ts`；修改后运行 `bun run db:push`。页面通过 `src/server/functions.ts` 的 RPC 访问服务端，带连接或密钥的模块必须保持 `server-only`。

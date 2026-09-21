@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ResultHeader } from "#/routes/s/$turnId/-components/result-list";
+import { ResultHeader } from "#/routes/s/$turnId/-components/result-state";
 import type { Claim } from "#/search/result";
 import { visibleText } from "./render";
 

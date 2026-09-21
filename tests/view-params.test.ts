@@ -193,11 +193,6 @@ describe("还能不能再翻", () => {
 	});
 });
 
-/**
- * 「这次导航只是再看一页」的判定。判错的代价是**看得见的**：判成换查询，
- * 表格会在翻页时换成骨架屏，人被扔回页首；判成翻页，换了查询之后旧结果
- * 会挂在屏幕上假装还成立。
- */
 describe("翻页与换查询要分得开", () => {
 	const base = { seq: [{ l1: "技术", l2: "后端" }] };
 
@@ -235,7 +230,7 @@ describe("翻页与换查询要分得开", () => {
 		assert.equal(onlyMore({ ...base, n: 100 }, undefined), false);
 	});
 
-	test("只切换详情路由不触发结果骨架屏", () => {
+	test("只切换详情路由不触发结果等待态", () => {
 		assert.equal(viewChanged(base, base), false);
 		assert.equal(
 			viewChanged({ seq: [{ l1: "技术", l2: "后端" }] }, base),

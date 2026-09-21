@@ -89,11 +89,6 @@ function Data() {
 						void navigate({ search: at(1, needle.trim()) });
 					}}
 				>
-					{/*
-					 * 输入框和提交按钮在同一块面上。这里必须提交才会搜（几万人需要回
-					 * 服务端查），所以末尾放一个真按钮表明这一点；技能页是即时过滤，
-					 * 开头只有一个漏斗图标，两者形状不同是因为行为不同。
-					 */}
 					<InputGroup className="max-w-96">
 						<InputGroupAddon>
 							<SearchIcon />

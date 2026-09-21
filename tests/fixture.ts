@@ -38,6 +38,7 @@ import {
 	skillTerm,
 	taskRun,
 } from "#/db/schema";
+import type { Involvement } from "#/lib/involvement";
 import { parseQuery } from "#/search/query-syntax";
 
 /**
@@ -416,19 +417,16 @@ export async function setup() {
 	process.env.RERANK_SPACE_ID = "fake-v1";
 	process.env.LLM_BASE_URL = modelServer.url;
 	process.env.LLM_MODEL = "fake";
+	process.env.LLM_STRUCTURED_OUTPUTS = "true";
 	// 语料侧那三处聊天调用也指向同一台假端点，回答由 `answerChat` 装
 	process.env.EXTRACT_BASE_URL = modelServer.url;
 	process.env.EXTRACT_MODEL = "fake";
+	process.env.EXTRACT_STRUCTURED_OUTPUTS = "true";
 	process.env.REVIEW_MODEL = "review-fake";
 	// 判定归自带模型：外部那条路由测它的用例自己开
 	process.env.REVIEW_JUDGE = "model";
 	delete process.env.REVIEW_TOKEN;
 	process.env.EXTRACT_CONCURRENCY = "2";
-	/*
-	 * 数据源钉死在仓库自带的合成样例上。`.env.local` 里指的是真人事数据，而
-	 * `bun run test` 就是带着它跑的——不钉死的话，一次跑测试会去读真数据、
-	 * 把真语料嵌一遍。
-	 */
 	process.env.TALENT_SOURCE = "csv-dir";
 	process.env.TALENT_CSV_DIR = "";
 
@@ -484,7 +482,7 @@ export type Seed = {
 		extracted?: {
 			skills?: string[];
 			/** 领域是说法，参与方式落在边上（真语料里由 conform 收窄取值）。 */
-			did?: { involvement: string; domain: string }[];
+			did?: { involvement: Involvement; domain: string }[];
 		};
 	}>;
 };

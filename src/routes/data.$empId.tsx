@@ -8,8 +8,8 @@ import {
 } from "#/components/ui/empty";
 import { Frame, FramePanel } from "#/components/ui/frame";
 import { SheetDescription } from "#/components/ui/sheet";
-import { INVOLVEMENTS } from "#/corpus/involvement";
 import { dots, duration, period } from "#/lib/format";
+import { involvementRank } from "#/lib/involvement";
 import type { SegmentView } from "#/server/data";
 import { dataEmployee } from "#/server/functions";
 import { DetailSheet, Fact } from "./-components/detail-sheet";
@@ -183,18 +183,14 @@ const KINDS = [
  * 列（拼进说法的话，同一种参与方式的任何领域在重排模型眼里都相近）。它留在
  * 屏幕上是因为读的人用得着：负责建设和参与执行是两回事。
  *
- * 组的先后照抽取那份清单的原序（`corpus/involvement.ts`）；清单里没有的取值
+ * 组的先后照参与方式契约的原序（`lib/involvement.ts`）；清单里没有的取值
  * 和模型没判断出参与方式的排在最后，左边那一格空着——我们确实不知道。
  * 不按清单过滤而是按出现的值分组，是因为按清单过滤会让一个意外的取值**整条
  * 消失**，而这一页存在的理由正是「库里到底是什么」。
  */
 function didGroups(did: SegmentView["did"]) {
-	const order = (one: string | null) => {
-		const at = one === null ? -1 : INVOLVEMENTS.indexOf(one);
-		return at === -1 ? INVOLVEMENTS.length : at;
-	};
 	const kinds = [...new Set(did.map((one) => one.involvement))].sort(
-		(a, b) => order(a) - order(b),
+		(a, b) => involvementRank(a) - involvementRank(b),
 	);
 	return (
 		<div className="grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1">

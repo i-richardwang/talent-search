@@ -133,18 +133,7 @@ function Segment({
 
 				{hits && hits.length > 0 && <MatchedClaims hits={hits} names={names} />}
 
-				{/*
-				 * 简历原文是这一栏唯一成段的密集文本，也是最弱的一路证据
-				 * （weights.ts 里 0.25）。它和卡片标题同为 14px 但落在次要色上：
-				 * 要连读的段落再降字号就伤可读性，而层次由颜色区分已经够——
-				 * 一张卡片里最长、最不可信的那块不该和标题一样重。
-				 * read-cjk 的 1.8 行高是它能被成段读下去的前提。
-				 *
-				 * 命中是语义的，原文里不一定出现条件那几个字，所以这里不做高亮：
-				 * 标出一个并不在原文里的词，比不标更误导。原文整段摆出来让人自己
-				 * 判断「配合算法团队」这种主语是别人的句子算不算数——这正是这一类
-				 * 权重最低的原因。
-				 */}
+				{/* 语义命中的查询词未必原样出现在自述中，因此原文不做字面高亮。 */}
 				{x.description && (
 					<p className="read-cjk mt-2 text-muted-foreground text-sm" lang="zh">
 						{x.description}

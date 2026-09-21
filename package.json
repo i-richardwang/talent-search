@@ -19,7 +19,7 @@
     "format": "biome check --write",
     "check": "biome check",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --parallel --env-file=.env.local tests/",
+    "test": "bun --env-file=.env.local scripts/test.ts",
     "sync": "bun --env-file=.env.local scripts/sync.ts",
     "derive": "bun --env-file=.env.local scripts/derive.ts",
     "query": "bun scripts/query.ts",

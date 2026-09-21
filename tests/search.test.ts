@@ -402,9 +402,7 @@ describe("没有经历词的主张的分面口径", () => {
 });
 
 describe("命中路径判定", () => {
-	test("一段同时有多类过阈值时取加权相关度最高的一类", async () => {
-		// 「安全」对部门「安全部」0.82 × 0.5，对描述「安全巡检」0.71 × 0.25：
-		// 必须判成 org。
+	test("一段同时有多类过阈值时优先保留更可信的路径", async () => {
 		const { results } = await run("安全");
 		const hit = results
 			.find((r) => r.employee.empId === "T004")

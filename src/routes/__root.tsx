@@ -12,17 +12,7 @@ import { AppHeader } from "./-components/app-header";
 import { DeadEnd } from "./-components/dead-end";
 import { PageFrame } from "./-components/page-frame";
 
-/**
- * 把系统深浅色偏好写成 <html> 上的 `dark` 类，并跟着系统切换实时更新。
- *
- * 这段脚本是**唯一**的深色开关，不是锦上添花：coss 的深色令牌全部定义在
- * `.dark` 这个类选择器下（见 styles.css），没有 `light-dark()` 那种由
- * `color-scheme` 自动决议的机制。不写这个类，系统深色下拿到的是整套浅色。
- *
- * 放在 <head> 里同步执行：在首次绘制之前就落上类名，所以没有闪烁。
- * `color-scheme` 一并写上，好让滚动条、原生控件和表单也跟着换边——
- * 那一半是浏览器画的，CSS 变量管不着。
- */
+// Runs before first paint so dark-mode tokens do not flash in their light state.
 const SYNC_COLOR_MODE = `(()=>{try{const m=matchMedia("(prefers-color-scheme: dark)"),a=e=>{const d=document.documentElement;d.classList.toggle("dark",e.matches);d.style.colorScheme=e.matches?"dark":"light"};a(m);m.addEventListener("change",a)}catch(e){}})()`;
 
 export const Route = createRootRoute({
@@ -34,17 +24,6 @@ export const Route = createRootRoute({
 		],
 		links: [{ rel: "stylesheet", href: appCss }],
 	}),
-	/**
-	 * 历史记录取在这里：它是**外壳的数据**，两屏都用，不属于其中任何一屏。
-	 *
-	 * 根路由的 loader 每次导航都会重跑（`staleTime` 默认 0），而在新的一份回来
-	 * 之前，这个 match 上挂的**还是上一份数据**——于是列表在换屏时不清空、不闪，
-	 * 直出的那一版也已经带着记录。这正是搜完一次要的行为：落到 `/s/:turnId` 的
-	 * 同时，那一列里已经有刚搜的那条。
-	 *
-	 * 取不到就是 `null`，不往上抛：一份取不到的历史记录不该把整页换成错误页，
-	 * 这一屏的正事（敲一句话去搜）跟它没有关系。
-	 */
 	loader: () =>
 		recentSearches().then(
 			(items) => items,
@@ -55,33 +34,9 @@ export const Route = createRootRoute({
 	notFoundComponent: NotFound,
 });
 
-/**
- * 外壳：页框、顶栏，和这一屏。
- *
- * 它挂在**根路由**上，所以根 match 在导航之间不重挂——顶栏里开着的弹层不会被
- * 换屏关掉，外壳的数据也不会跟着重取。
- *
- * 外壳自己是一根竖列，`<main>` 由每一屏自己给：地标只能有一个，而「哪一块是
- * 正文」在两屏上不是同一块——零态是那块居中的输入面，工作台是中间那条名单列
- * （左筛选、右详情都是辅助面）。两屏的 `<main>` 都 `flex-1`，于是零态那块在
- * 顶栏以下真正居中，而不是靠某个视口高度减去顶栏高度的算式。
- *
- * 每一屏的那块 `<main>` 都带 `id="main"` 和 `tabIndex={-1}`：那是跳过导航
- * （`SkipToMain`）的落点。外壳不替它们指这个位置——工作台的正文从名单开始，
- * 查询带在它之前；零态的正文就是整块输入面。
- */
 function RootComponent() {
 	const recent = Route.useLoaderData();
 	return (
-		/*
-		 * `isolate` 在这里开一个层叠上下文，把 z 尺度那几档全部关进去。
-		 * coss 的 Dialog 遮罩与 Tooltip 定位器 portal 到 document.body 且写死 z-50；
-		 * 关进去之后它们永远画在外壳之上，无论内部用到多大的 z——这类遮挡从结构上
-		 * 不可能发生，不必再去记那个上限。
-		 *
-		 * `overflow-clip` 是给页框的：那两根线画在页宽列**外面** 12px 处，窄窗口下
-		 * 会伸到视口之外，不剪掉就多一条横向滚动条。它不是滚动容器，吸顶照常。
-		 */
 		<div className="relative isolate flex flex-1 flex-col overflow-clip">
 			<SkipToMain />
 			<PageFrame />
@@ -91,28 +46,6 @@ function RootComponent() {
 	);
 }
 
-/**
- * 跳过导航：Tab 的第一站，一下把人送到这一屏的正文。
- *
- * 它属于**外壳**，不属于某一屏：每一屏顶上都是同一排入口，每一屏都有一块正文。
- * 落点是那一屏自己给的（`id="main"`，见上面那段），因为「正文从哪里开始」只有
- * 它自己知道——工作台要越过的不止顶栏，还有查询带上那句话、铅笔、每一个 chip。
- *
- * **位置和藏归外面这一层，长相归按钮。** 一个元素同时干这两件事不成立：coss 的
- * 按钮配方自带 `relative`（描边那层 `before` 要它）和 `h-8 sm:h-7`，它们跟外面
- * 写的 `fixed`、`sr-only` 是同一档权重——同权重时谁生效取决于生成的 CSS 里谁排
- * 在后面，于是「不占位」成了一件靠类的排序决定的事，赌输的那一面是页顶凭空多出
- * 一颗按钮那么高的空气，一滚动吸顶又收回去。分成两层，没有一个属性有两个出处：
- * 外面那个 div 只管位置，按钮只有长相。
- *
- * 藏起来用 `not-focus-within:`，不是 `sr-only` 加 `focus-within:not-sr-only`：
- * `:not()` 让它高一档权重，于是不跟任何配方抢；而 `not-sr-only` 那份会把
- * `position` 还原成 `static`，聚焦的那一刻反过来压掉 `fixed`，链接连着整屏
- * 一起进文档流。
- *
- * `fixed`：聚焦时它在**视口**的左上角。绝对定位那份是文档的左上角——滚到第三十
- * 个人时按 Tab，链接会出现在屏幕外面。
- */
 function SkipToMain() {
 	return (
 		<div className="fixed top-2 left-2 z-escape not-focus-within:sr-only">
@@ -128,32 +61,13 @@ function SkipToMain() {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
 	return (
-		/*
-		 * `suppressHydrationWarning` 是上面那段脚本的必要配套，不是消音。
-		 *
-		 * 脚本在水合之前就往 <html> 上写了 `class` 和 `style`，而 SSR 直出的那份
-		 * 没有它们（服务端不知道这台设备是深色还是浅色）。React 水合时逐属性比对，
-		 * 发现多出来就报 "some attributes ... didn't match" 并且**不修补**。
-		 * 属性本身是对的、要的就是它——差异是设计的一部分，只需要告诉 React
-		 * 这一个节点不必比对。范围只到这一个元素，子树照常校验。
-		 *
-		 * 不能改成「水合后再用 useEffect 写」：那样首帧没有类名，深色模式下会先
-		 * 闪一整屏白，而这段脚本存在的全部理由就是不闪。
-		 */
+		// The head script intentionally changes <html> before hydration.
 		<html lang="zh-CN" suppressHydrationWarning>
 			<head>
 				<HeadContent />
 				{/* biome-ignore lint/security/noDangerouslySetInnerHtml: 常量脚本，无外部输入 */}
 				<script dangerouslySetInnerHTML={{ __html: SYNC_COLOR_MODE }} />
 			</head>
-			{/*
-			 * 整页滚动，不是「窗口锁死、内部某一栏自己滚」。
-			 *
-			 * 后者要给每一栏配一个滚动容器，于是滚轮的行为取决于指针停在哪一栏上，
-			 * 浏览器自己的滚动条也不出现。这里只有一列名单，它就该像一份文档一样
-			 * 整页滚：滚动条是全局那一根，Home/End、空格翻页、移动端的下拉回弹
-			 * 全都白拿。
-			 */}
 			<body className="flex min-h-dvh flex-col bg-canvas text-foreground">
 				<TooltipProvider>{children}</TooltipProvider>
 				<Scripts />

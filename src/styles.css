@@ -376,9 +376,7 @@
 
 		/*
 		 * 挑人时名单左侧让出的那一列有多宽（`s/$turnId/-components/result-list.tsx`
-		 * 的 `PickCell`）。表头的全选、每张卡片的复选框、加载中的骨架块都读这一个
-		 * 值，所以名单只在进入挑人模式时位移一次，结果到达后不会再位移。
-		 *
+		 * 的 `PickCell`）。表头与名单复用这一宽度。
 		 * 2.25rem = Checkbox 18px + 四周 4px 点击区域 + 8px 间距。
 		 */
 		--pick-column: 2.25rem;

@@ -1,10 +1,3 @@
-/**
- * 一次检索的结果长什么样——服务端与页面之间的契约。
- *
- * 单独成文件是为了给页面一处能安全取值的地方：`search.ts` 带 `db`，标了
- * `server-only`，页面从它取一个值会让构建失败。所以这里只放**形状**和无副作用
- * 的空值工厂，一行 SQL 都不能有；查询实现留在 `search.ts`。
- */
 import type { Employee, Route } from "#/db/schema";
 import {
 	activeConditions,
@@ -16,30 +9,13 @@ import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
 import type { Strength } from "./weights";
 
-/**
- * 一条参与匹配的经历主张：启用的、正向的（必须或加分）那些。
- *
- * 排除的主张不在这里——它只用来否决证据段，不占证据行的一行，也没有「命中了
- * 多久」可言。把一个画不出来的东西放进画得出来的列表里，早晚会有人去渲染它。
- */
 export type Claim = ExperienceCondition & { mode: "must" | "boost" };
 
-/**
- * 一份查询按执行时的角色拆开：谁产证据、谁否决证据段、谁按人裁、谁抬名次。
- * 检索、空态成因、页面都从这里起步——页面在结果回来之前也从它算骨架屏占几行，
- * 两边算的是同一份，结果回来时行数才不会跳。
- *
- * 停用的条件在这里就消失了，此后整条链路都看不见它——检索、打分、分面、
- * 证据行一个都不必知道「停用」这回事。这是它能只花一个字段的原因。
- */
+/** 启用条件按执行角色拆分；排除条件只否决经历段，不产生证据行。 */
 export type Query = {
-	/** 正向的经历主张：产证据、进证据行。 */
 	claims: Claim[];
-	/** 排除的经历主张：否决证据段。 */
 	excludes: ExperienceCondition[];
-	/** 人的必须条件：按人裁。 */
 	must: PersonCondition[];
-	/** 人的偏好：抬名次。 */
 	prefer: PersonCondition[];
 };
 
@@ -55,27 +31,18 @@ export function queryOf(conditions: readonly Condition[]): Query {
 	return q;
 }
 
-/** 这份查询会画几条证据。 */
 export function claimsOf(conditions: readonly Condition[]): Claim[] {
 	return queryOf(conditions).claims;
 }
 
 export type Hit = {
 	experienceId: number;
-	/** 属于第几条主张（`SearchOutcome.claims` 的下标）。 */
 	claim: number;
-	/**
-	 * 命中的是这条主张的哪个经历词。不是代表词时证据行要标出来：「比的是 推荐算法」。
-	 * 没有经历词的主张（「待过字节」）靠这一段本身作证，没有词，为 null。
-	 */
+	/** 命中的经历词；不比文本的主张为 null。 */
 	value: string | null;
-	/** 命中的那一类。没有经历词的主张不比文本，这一段落在范围里就是证据，为 null。 */
 	route: Route | null;
-	/** 该说法与这一段这一类原文的相关度，[RELEVANCE_MIN, 1]；不比文本的主张恒为 1。 */
 	relevance: number;
-	/** 命中的那条说法，只有抽取的两类带；其余类的字段值就在这条 Hit 的 seq / title / org 上。 */
 	phrase: string | null;
-	/** 做过的事那一类带的参与方式，证据行上作说法的前缀；其余类为 null。 */
 	involvement: string | null;
 	startDate: string;
 	endDate: string | null;
@@ -84,13 +51,6 @@ export type Hit = {
 	seq: string;
 };
 
-/**
- * 结果里带的人：只有结果列表那一块画得出来的字段。
- *
- * 整行 select 会把 employee 的每一列都序列化进 SSR 载荷，而翻页会把这一份载荷
- * 成倍放大（见 weights.ts 的 RESULT_MAX）。这里显式列出列表所需字段；详情面板的
- * 完整档案由 fetchEmployee 单独取，两条路径各自只传自己的读者需要的数据。
- */
 export type ResultEmployee = Pick<
 	Employee,
 	"empId" | "name" | "curDept" | "curTitle" | "curLevel"
@@ -101,77 +61,34 @@ type PopulationResult = {
 };
 
 export type RankedResult = PopulationResult & {
-	/** 必须的主张里最弱的那一条靠的是哪一档证据（`rank.ts`）。 */
 	strength: Strength;
-	/** 做得多像、多久、多近，(0, ∞)：必须的主张相乘，加分的往上抬。 */
 	depth: number;
-	/** 每条主张一项，和 `SearchOutcome.claims` 同序；没命中的为 null */
 	basis: (ClaimBasis | null)[];
 	hits: Hit[];
 };
 
 export type SearchResult = PopulationResult | RankedResult;
 
-/** 一条主张实际参与排名的聚合依据。 */
 export type ClaimBasis = {
-	/** 最强那条证据走的路；不比文本的主张为 null */
 	route: Route | null;
-	/** 最强那条证据靠的经历词；不比文本的主张为 null */
 	value: string | null;
-	/** 最强那条证据的相关度 */
 	relevance: number;
-	/** 满足这条主张的全部证据段的累计月数 */
 	months: number;
-	/** 证据段里最近一次结束时间；null 表示目前仍有相关经历 */
 	endDate: string | null;
-	/**
-	 * 累计进 `months` 的段是否**全部**来自入职前。
-	 *
-	 * 证据行那一端显示的是累计值，而累计可能横跨在职与入职前。所以「前」这个
-	 * 前缀不能由某一段的 kind 决定——那会给一个跨了两边的数加上只描述其中一半的
-	 * 标签。判定属于累计发生的地方（rank.ts），不属于显示层。
-	 */
+	/** 累计时长是否全部来自入职前经历。 */
 	external: boolean;
 };
 
-/**
- * 筛选面板的候选与计数。
- *
- * 计数的口径是**在当前这次检索里，选了这一项之后还剩多少人**，不是全库有多少段。
- * 全库口径会在回答一个没人问的问题：搜「项目管理」命中 50 人，筛选里写着
- * 「技术 · 工程 3009」，还暗示点它能得到 3009 人。
- *
- * 和这次检索无关的值不会出现在这里——这是筛选比全库短的原因：序列全库有几十个，
- * 落到一次具体检索上通常只剩几个。但**有哪些选项只由这次查询决定，不随筛选变**：
- * 被别的维度挤到 0 的那些留在列表里，`n` 就是 0。两个口径为什么必须分开，
- * 以及每一维要怎么算才配得上它们，见 rank.ts 的 facetRows。
- */
+/** 当前查询下的筛选候选，以及选中该项后的剩余人数。 */
 export type Facets = { [K in DimKey]: Facet<K>[] };
 
-/**
- * 一次检索的完整产出。
- *
- * `empty` 是「这份名单为什么是空的」，有人时为 `null`。它由检索层给出而不是
- * 由界面反推（论证见 `empty.ts`）——候选事实超过 `FACT_MAX` 也是它的一种取值：
- * 那仍然是一种**结果**，不是一次失败，页面据此说该具体化经历条件还是收窄范围，
- * 而不是把截断的数据交给排名。
- */
 type Outcome = {
 	facets: Facets;
 	total: number;
 	empty: EmptyReason | null;
 };
 
-/**
- * `order` 说这份名单按什么排，同时是这个联合的判别式——有没有证据可画和按什么
- * 排是同一件事。
- *
- * **evidence**：先按可信度分档（登记的序列或岗位、登记的部门或公司、自述），
- * 档内按深度。可信度是离散的、可解释的，就是证据点阵画的那三种点；深度是连续的。
- * 两项依据不相乘：乘成一个数就得靠下限把深度压扁来守住档位，深度于是变成装饰。
- *
- * **employee**：没有经历主张的查询没有分数可排，按满足的偏好和工号。
- */
+/** evidence 按证据可信度与深度排序；employee 用于没有经历证据的人员查询。 */
 export type SearchOutcome =
 	| (Outcome & {
 			order: "evidence";
@@ -184,10 +101,7 @@ export type SearchOutcome =
 			results: PopulationResult[];
 	  });
 
-/** 空分面。检索还没跑或没解析出条件时用它，界面才不必区分「没有」和「还没算」。 */
 export function emptyFacets(): Facets {
-	// 每一维一个空列表。逐维手写的话，加一维忘了这里不会报错，只会在
-	// 「还没算」的那一帧上少一栏。
 	const facets = {} as Facets;
 	for (const key of DIM_KEYS) facets[key] = [];
 	return facets;

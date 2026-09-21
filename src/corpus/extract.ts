@@ -27,7 +27,11 @@
  */
 
 import { z } from "zod";
-import { INVOLVEMENT_GUIDE, INVOLVEMENTS } from "#/corpus/involvement";
+import {
+	INVOLVEMENT_GUIDE,
+	type Involvement,
+	isInvolvement,
+} from "#/lib/involvement";
 import { complete, extractModel, identityOf } from "#/server/chat";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
@@ -43,7 +47,7 @@ const MAX_DID = 8;
  */
 export type Extraction = {
 	skills: string[];
-	did: { involvement: string | null; domain: string }[];
+	did: { involvement: Involvement | null; domain: string }[];
 };
 
 const EMPTY: Extraction = { skills: [], did: [] };
@@ -135,7 +139,7 @@ export function conform(raw: unknown, org: string): Extraction {
 		const domain = tag(field(item, "domain"));
 		if (keep(domain, org) && !did.some((d) => d.domain === domain))
 			did.push({
-				involvement: INVOLVEMENTS.includes(involvement) ? involvement : null,
+				involvement: isInvolvement(involvement) ? involvement : null,
 				domain,
 			});
 	}
