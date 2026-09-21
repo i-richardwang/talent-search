@@ -27,6 +27,7 @@
  */
 
 import { z } from "zod";
+import { INVOLVEMENT_GUIDE, INVOLVEMENTS } from "#/corpus/involvement";
 import { complete, extractModel, identityOf } from "#/server/chat";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
@@ -46,19 +47,6 @@ export type Extraction = {
 };
 
 const EMPTY: Extraction = { skills: [], did: [] };
-
-/**
- * 参与方式的几种取值与每种对应的语气。这是「做过的事」唯一的枚举，只写在
- * 这里：提示词从这里生成给模型，`conform` 用它收窄，库里那一列不设约束。
- */
-const INVOLVEMENT_GUIDE: Record<string, string> = {
-	从零搭建: "从无到有做出来的",
-	负责建设: "主责、主导、负责的",
-	优化改进: "提升、改造、迭代已有东西的",
-	参与执行: "参与、协助、配合、支持的",
-	带队管理: "带团队、管理人的",
-};
-const INVOLVEMENTS = Object.keys(INVOLVEMENT_GUIDE);
 
 export const SYSTEM = `## 背景
 

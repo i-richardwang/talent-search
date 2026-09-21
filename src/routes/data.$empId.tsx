@@ -1,5 +1,5 @@
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import {
 	Empty,
 	EmptyDescription,
@@ -8,6 +8,7 @@ import {
 } from "#/components/ui/empty";
 import { Frame, FramePanel } from "#/components/ui/frame";
 import { SheetDescription } from "#/components/ui/sheet";
+import { INVOLVEMENTS } from "#/corpus/involvement";
 import { dots, duration, period } from "#/lib/format";
 import type { SegmentView } from "#/server/data";
 import { dataEmployee } from "#/server/functions";
@@ -110,11 +111,6 @@ function Person() {
 				</>
 			}
 		>
-			{/*
-			 * 每一段是托盘里的一块面（`Frame`，排法照上游 `p-frame-3`）：这些段是同一个人
-			 * 的一份档案，一段接一段往下读，而面与面之间透出来的那几毫米托盘色说的正是
-			 * 「还在同一份里」。
-			 */}
 			{segments.length === 0 ? (
 				<Empty>
 					<EmptyHeader>
@@ -125,13 +121,95 @@ function Person() {
 					</EmptyHeader>
 				</Empty>
 			) : (
-				<Frame>
-					{segments.map((segment) => (
-						<Segment key={segment.id} segment={segment} />
-					))}
-				</Frame>
+				<div className="flex flex-col gap-5">
+					{KINDS.map(([kind, label]) => {
+						const part = segments.filter((one) => one.kind === kind);
+						return part.length === 0 ? null : (
+							<section className="flex flex-col gap-2" key={kind}>
+								<h3 className="label text-muted-foreground">
+									{label} · {part.length} 段
+								</h3>
+								{/*
+								 * 一组是托盘里的一摞面（`Frame`，排法照上游 `p-frame-3`）：这些段
+								 * 是同一个人的一份档案，一段接一段往下读，而面与面之间透出来的
+								 * 那几毫米托盘色说的正是「还在同一份里」。
+								 */}
+								<Frame>
+									{part.map((segment) => (
+										<Segment key={segment.id} segment={segment} />
+									))}
+								</Frame>
+							</section>
+						);
+					})}
+				</div>
 			)}
 		</PersonSheet>
+	);
+}
+
+/**
+ * 两组各叫什么，以及先画哪一组。
+ *
+ * 分界来自 `kind` 这个字段，不从入职日推：库里有一千多段内部经历的开始日期
+ * 早于入职日（并购、外包转正、实习转正都会这样），拿入职日画一条线会把它们
+ * 放到「入职前」那一边——一条会把段放错边的线，比没有线更坏。
+ *
+ * 标题一组画一次，不是每段贴一个标签：库里两万多段是内部的，给每一段发一块
+ * 徽章就是在两万个常态上重复同一个词，真正要分辨的那几段反而不显眼。
+ *
+ * 用词和搜索结果那边的证据行一致（`components/evidence.tsx`）：那里写「公司内
+ * 2.3 年」「入职前 2.9 年」，同一件事在两个页面不该有两个说法。
+ */
+const KINDS = [
+	["external", "入职前"],
+	["internal", "公司内"],
+] as const;
+
+/**
+ * 做过的事，按参与方式归组。
+ *
+ * 平铺成一句是「优化改进 · 产品、负责建设 · 产品体系、优化改进 · 合规率、优化
+ * 改进 · 城市运力」——四个字的前缀读了三遍，而真正不同的那几个名词排在后面，
+ * 每一个都要先跨过一个已经读过的词才能读到。归组之后每种参与方式说一次，
+ * 和经历分内外那里（`KINDS`）同一个办法：一组画一次标题，不是每条贴一个标签。
+ *
+ * 参与方式和领域之间那个 ` · ` 一并去掉了。这一套界面里的分隔点说的是「两边
+ * 是同一类、可以并列」（序列三级、岗位和公司），而这两半不并列：一个是做的
+ * 那件事，一个是他和这件事的关系。分层靠位置和降一档的字色给，和证据行上
+ * 接部门名同一条规矩（`components/evidence.tsx`）。
+ *
+ * 参与方式**不参与检索**——它不进向量，理由见 `db/schema.ts` 的 `involvement`
+ * 列（拼进说法的话，同一种参与方式的任何领域在重排模型眼里都相近）。它留在
+ * 屏幕上是因为读的人用得着：负责建设和参与执行是两回事。
+ *
+ * 组的先后照抽取那份清单的原序（`corpus/involvement.ts`）；清单里没有的取值
+ * 和模型没判断出参与方式的排在最后，左边那一格空着——我们确实不知道。
+ * 不按清单过滤而是按出现的值分组，是因为按清单过滤会让一个意外的取值**整条
+ * 消失**，而这一页存在的理由正是「库里到底是什么」。
+ */
+function didGroups(did: SegmentView["did"]) {
+	const order = (one: string | null) => {
+		const at = one === null ? -1 : INVOLVEMENTS.indexOf(one);
+		return at === -1 ? INVOLVEMENTS.length : at;
+	};
+	const kinds = [...new Set(did.map((one) => one.involvement))].sort(
+		(a, b) => order(a) - order(b),
+	);
+	return (
+		<div className="grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1">
+			{kinds.map((kind) => (
+				<Fragment key={kind ?? ""}>
+					<span className="text-muted-foreground">{kind}</span>
+					<span>
+						{did
+							.filter((one) => one.involvement === kind)
+							.map((one) => one.domain)
+							.join("、")}
+					</span>
+				</Fragment>
+			))}
+		</div>
 	);
 }
 
@@ -191,15 +269,7 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 					{s.skills.length > 0 && (
 						<Fact label="技能">{s.skills.join("、")}</Fact>
 					)}
-					{s.did.length > 0 && (
-						<Fact label="职责">
-							{s.did
-								.map((d) =>
-									d.involvement ? `${d.involvement} · ${d.domain}` : d.domain,
-								)
-								.join("、")}
-						</Fact>
-					)}
+					{s.did.length > 0 && <Fact label="职责">{didGroups(s.did)}</Fact>}
 					{s.description && (
 						/* 简历原文是这一栏里唯一成段读的东西，行高走 `read-cjk` 那一档 */
 						<Fact label="描述">
