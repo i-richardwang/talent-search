@@ -7,7 +7,7 @@
 
 ## 本地运行
 
-需要 Bun 1.4+、带 pgvector 的 Postgres 17，以及嵌入、重排和查询理解三个模型端点。
+需要 Bun 1.4+、带 pgvector 的 Postgres 17，以及嵌入和重排两个模型端点；查询理解端点可选，不配时只有关键词搜索。
 
 ```bash
 docker run -d --name talent-pg \
@@ -50,7 +50,7 @@ bun run dev
 
 | 能力 | 接收的数据 | 失败行为 |
 |---|---|---|
-| 查询理解 | 用户输入和少量筛选值 | 查询报错，可重试 |
+| 查询理解 | 用户输入、当前条件、少量筛选值，以及工具交回的人数与分布 | 查询报错，可重试；未配置时只有关键词搜索 |
 | 嵌入 | 查询词与经历说法 | 检索或派生报错 |
 | 重排 | 查询词、候选说法及释义 | 检索报错 |
 | 抽取与对齐 | 入职前岗位、公司和描述 | 派生记录错误并跳过该段 |
@@ -88,7 +88,7 @@ REVIEW_TOKEN=...        # external 模式必需
 | `EMBED_BASE_URL` / `EMBED_MODEL` / `EMBED_SPACE_ID` | 是 | 嵌入端点、模型与空间身份 |
 | `RERANK_MODEL` / `RERANK_SPACE_ID` | 是 | 重排模型与缓存空间身份 |
 | `RERANK_BASE_URL` / `RERANK_API_KEY` | 否 | 默认沿用 `EMBED_*` |
-| `LLM_BASE_URL` / `LLM_MODEL` | 是 | 查询理解端点与模型 |
+| `LLM_BASE_URL` / `LLM_MODEL` | 否 | 查询理解端点与模型；不配时不能用一句话找人 |
 | `EXTRACT_BASE_URL` / `EXTRACT_MODEL` | 否 | 抽取、对齐和模型整理共用的聊天端点 |
 | `REVIEW_MODEL` | 否 | 整理模型，默认使用 `EXTRACT_MODEL` |
 | `REVIEW_JUDGE` / `REVIEW_TOKEN` | 否 | 判定方与外部接口凭据 |
