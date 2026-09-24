@@ -1,8 +1,8 @@
 # 这一目录是抄来的
 
-`src/components/ui/*.tsx` 与 `src/lib/utils.ts` 取自 coss ui 的组件注册表，
-来源是 <https://github.com/cosscom/coss>，路径 `apps/ui/registry/default/ui/` 与
-`apps/ui/registry/default/lib/utils.ts`。
+`src/components/ui/*.tsx`、`src/lib/utils.ts` 与 `src/lib/segmented-control.ts` 取自
+coss ui 的组件注册表，来源是 <https://github.com/cosscom/coss>，路径
+`apps/ui/registry/default/ui/` 与 `apps/ui/registry/default/lib/`。
 
 **和上游的差异只有三类，没有第四类：**
 

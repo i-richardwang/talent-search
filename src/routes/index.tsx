@@ -1,4 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLoaderData } from "@tanstack/react-router";
+import type { SearchMode } from "#/server/turn";
+import { ModeNav } from "./-components/mode-nav";
 import { ZeroState } from "./-components/zero-state";
 import { useCommit } from "./-lib/commit";
 
@@ -6,14 +8,19 @@ import { useCommit } from "./-lib/commit";
  * 零态：还没有查询的时候。
  *
  * 它是一个**独立的页面**，不是工作台的一个分支。两屏共用的只有顶栏，
- * 页面本身完全不同——这一屏没有名单、没有筛选、没有抬头，输入框是居中的主角
- * 而不是一条工具栏。用一个 `有查询 ? A : B` 的三元把它们装进同一个组件，
- * 只是把两个页面挤在了一起。
+ * 页面本身完全不同——这一屏没有名单、没有筛选、没有抬头，输入面是主角
+ * 而不是一条工具栏。
+ *
+ * 两种搜索各开一屏，由地址上的 `mode` 说是哪一种：输入面上方的切换就是换这个
+ * 参数，可以收藏、可以后退。对话是默认，地址上不写；查询理解没配置时只有关键词，
+ * 地址写的是什么都一样。
  *
  * 没有 loader：这一屏不需要任何服务端数据就能画完，进来即可开始敲字。
- * 顶栏那份历史记录属于外壳，由根路由取（`__root.tsx`）。
+ * 顶栏那份历史记录和查询理解配没配，属于外壳，由根路由取（`__root.tsx`）。
  */
 export const Route = createFileRoute("/")({
+	validateSearch: (search: Record<string, unknown>): { mode?: "keyword" } =>
+		search.mode === "keyword" ? { mode: "keyword" } : {},
 	component: Home,
 });
 
@@ -21,12 +28,22 @@ function Home() {
 	// 提交在这一层，不在 ZeroState 里：那个组件只画界面，于是它能脱开路由测
 	// （tests/product-copy.test.tsx 直出它，不搭 router）。
 	const { commit, error } = useCommit();
+	const { understanding } = useLoaderData({ from: "__root__" });
+	const { mode: asked } = Route.useSearch();
+	const mode: SearchMode =
+		understanding && asked !== "keyword" ? "conversation" : "keyword";
 
 	// 这一屏的正文就是那块输入面，它自己就是 `<main>`：没有名单、没有筛选，
-	// 也就没有第二块需要和它区分开的东西。
+	// 也就没有第二块需要和它区分开的东西。换模式时整屏重来，敲到一半的字不带过去。
 	return (
 		<main className="flex flex-1 flex-col" id="main" tabIndex={-1}>
-			<ZeroState error={error} onQuery={commit} />
+			<ZeroState
+				error={error}
+				key={mode}
+				mode={mode}
+				nav={understanding && <ModeNav />}
+				onQuery={commit}
+			/>
 		</main>
 	);
 }
