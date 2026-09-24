@@ -84,13 +84,24 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		);
 	});
 
-	test("首页聚焦搜索输入，并提供完整句子的示例", () => {
+	test("对话首页聚焦搜索输入，并提供完整句子的示例", () => {
 		const html = renderToStaticMarkup(
-			<ZeroState error={null} onQuery={() => true} />,
+			<ZeroState error={null} mode="conversation" onQuery={() => true} />,
 		);
 		const text = visibleText(html);
 		assert.match(html, /placeholder="输入人选要求：岗位、经历、技能"/);
 		assert.match(text, /做过.+、.+的人/);
+		assert.doesNotMatch(text, /做过什么/, "对话这一屏没有关键词的框");
+	});
+
+	test("关键词首页一个框一维，不给说话的框", () => {
+		const html = renderToStaticMarkup(
+			<ZeroState error={null} mode="keyword" onQuery={() => true} />,
+		);
+		const text = visibleText(html);
+		assert.doesNotMatch(html, /<textarea/);
+		for (const label of ["做过什么", "公司或部门", "学校", "累计至少几年"])
+			assert.match(text, new RegExp(label));
 	});
 
 	test("结果数量使用中性状态，不暴露检索术语", () => {
@@ -125,11 +136,9 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				error="没能整理出搜索条件，请重试或换一种说法。"
 				interpreting={false}
 				onChangeSpec={() => {}}
-				onQuery={() => true}
 				onRetry={() => {}}
-				ref={{ current: null }}
-				rawText="最好懂算法、不要实习"
-				spec={{ conditions: [] }}
+				spec={null}
+				title="最好懂算法、不要实习"
 			/>,
 		);
 		assert.match(text, /没能整理出搜索条件/);
@@ -142,10 +151,8 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				error={null}
 				interpreting
 				onChangeSpec={() => {}}
-				onQuery={() => true}
-				ref={{ current: null }}
-				rawText="做过线下渠道运营、带过团队的人"
-				spec={{ conditions: [] }}
+				spec={null}
+				title="做过线下渠道运营、带过团队的人"
 			/>,
 		);
 		assert.match(text, /做过线下渠道运营、带过团队的人/);
@@ -164,6 +171,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				empId={undefined}
 				growing={false}
 				loading={false}
+				mode="conversation"
 				phase="searching"
 				onAll={() => {}}
 				onChange={() => {}}

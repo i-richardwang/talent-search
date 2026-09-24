@@ -1,126 +1,81 @@
-import { AlertCircleIcon, PencilIcon, RotateCwIcon } from "lucide-react";
-import { useImperativeHandle, useState } from "react";
-import { QueryBar } from "#/components/query-bar";
+import { AlertCircleIcon, RotateCwIcon } from "lucide-react";
 import { Alert, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Separator } from "#/components/ui/separator";
-import { cn } from "#/lib/utils";
-import { hasMeaning, type QueryInput, type SearchSpec } from "#/search/spec";
+import type { SearchSpec } from "#/search/spec";
 import { QueryChips } from "./query-chips";
 
-export type QueryDeckHandle = { edit: () => void };
-
+/**
+ * 吸顶的那条：这次找人任务叫什么，以及对话时现在的整张条件表。
+ *
+ * 对话的标题是链头那句话，不跟着每一轮变：后面每一句都是在它上面改，这一轮说了
+ * 什么、改了什么写在右栏线程里那一轮底下（`thread.tsx`）。条件表是查询的全部，
+ * 模型改的和用户在 chip 上改的是它，所以它常驻在视线最上沿。
+ *
+ * 关键词搜索的标题是框里的词（`keywordTitle`），没有 chip：词就在名单上方的框里，
+ * 改也在那里改，这里再摆一排能点的 chip 就是同一样东西画两遍、改两处。
+ */
 export function QueryDeck({
+	title,
 	spec,
 	onChangeSpec,
-	onQuery,
-	ref,
 	interpreting,
-	rawText,
 	error,
 	onRetry,
 }: {
-	spec: SearchSpec;
-	onChangeSpec: (next: SearchSpec) => void;
-	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
-	ref: React.Ref<QueryDeckHandle>;
+	title: string | null;
+	/** null 表示这一轮还没整理完。 */
+	spec: SearchSpec | null;
+	/** 在 chip 上改条件。关键词搜索不给：它的条件在框里改。 */
+	onChangeSpec?: (next: SearchSpec) => void;
 	interpreting: boolean;
-	rawText: string | null;
 	error: string | null;
 	onRetry?: () => void;
 }) {
-	const settled = hasMeaning(spec) && !interpreting;
-	const reading = spec.conditions.length > 0;
-	const [editing, setEditing] = useState(false);
-
-	useImperativeHandle(ref, () => ({ edit: () => setEditing(true) }));
+	const conditions = spec?.conditions ?? [];
+	const chips = onChangeSpec !== undefined;
 
 	return (
 		<header className="sticky top-(--header-height) z-stick min-h-(--deck-height) bg-canvas/80 backdrop-blur-sm before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-border/64 lg:h-(--deck-height)">
-			{!editing && (
-				<div className="app-column flex h-full flex-wrap items-center gap-x-2 gap-y-1.5 py-1.5 lg:flex-nowrap lg:overflow-hidden lg:py-0">
-					{rawText && (
-						<>
-							<h1
-								className="min-w-0 truncate font-medium text-sm"
-								title={rawText}
-							>
-								{rawText}
-							</h1>
-							{interpreting ? (
-								<span
-									className="shrink-0 text-muted-foreground text-xs"
-									role="status"
-								>
-									正在整理条件…
-								</span>
-							) : (
-								<Button
-									aria-label="改写这句话"
-									className="shrink-0"
-									onClick={() => setEditing(true)}
-									size="icon-xs"
-									variant="ghost"
-								>
-									<PencilIcon />
-								</Button>
-							)}
-						</>
-					)}
-					{rawText && settled && reading && (
-						<Separator className="h-4 max-lg:hidden" orientation="vertical" />
-					)}
-
-					{settled && (
+			<div className="app-column flex h-full flex-wrap items-center gap-x-2 gap-y-1.5 py-1.5 lg:flex-nowrap lg:overflow-hidden lg:py-0">
+				<h1
+					className="min-w-0 shrink truncate font-medium text-sm"
+					title={title ?? undefined}
+				>
+					{title ?? "搜索条件"}
+				</h1>
+				{chips && (interpreting || conditions.length > 0) && (
+					<Separator className="h-4 max-lg:hidden" orientation="vertical" />
+				)}
+				{interpreting ? (
+					<span
+						className="shrink-0 text-muted-foreground text-xs"
+						role="status"
+					>
+						正在整理条件…
+					</span>
+				) : (
+					chips && (
 						<div className="flex shrink-0 items-center gap-1.5 max-lg:flex-wrap">
 							<QueryChips
-								conditions={spec.conditions}
-								onChange={(conditions) => onChangeSpec({ conditions })}
+								conditions={conditions}
+								onChange={(next) => onChangeSpec({ conditions: next })}
 							/>
 						</div>
-					)}
+					)
+				)}
+			</div>
+
+			{error && (
+				<div className="absolute inset-x-0 top-full bg-canvas pt-2 pb-3 before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-border/64">
+					<div className="app-column">
+						<div className="max-w-page">
+							<Failure error={error} onRetry={onRetry} />
+						</div>
+					</div>
 				</div>
 			)}
-
-			{editing ? (
-				<DeckSheet className="top-0">
-					<QueryBar
-						initial={rawText ?? ""}
-						onCancel={() => setEditing(false)}
-						onQuery={onQuery}
-					/>
-					{error && <Failure error={error} onRetry={onRetry} />}
-				</DeckSheet>
-			) : (
-				error && (
-					<DeckSheet className="top-full">
-						<Failure error={error} onRetry={onRetry} />
-					</DeckSheet>
-				)
-			)}
 		</header>
-	);
-}
-
-function DeckSheet({
-	className,
-	children,
-}: {
-	className: string;
-	children: React.ReactNode;
-}) {
-	return (
-		<div
-			className={cn(
-				"absolute inset-x-0 bg-canvas pt-2 pb-3",
-				"before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-border/64",
-				className,
-			)}
-		>
-			<div className="app-column">
-				<div className="flex max-w-page flex-col gap-2">{children}</div>
-			</div>
-		</div>
 	);
 }
 

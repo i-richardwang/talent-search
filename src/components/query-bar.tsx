@@ -12,10 +12,12 @@ import type { QueryInput } from "#/search/spec";
 export type QueryBarHandle = {
 	/** 填一句话进去并聚焦，光标落在末尾。不提交。 */
 	fill: (text: string) => void;
+	/** 把光标放进框里。工作台的「/」和空态的出路都落到这里。 */
+	focus: () => void;
 };
 
 /**
- * 写查询的那个框。**全站只有这一个形状**：零态写下第一句，工作台改写同一句，
+ * 写查询的那个框。**全站只有这一个形状**：零态写下第一句，右栏线程底下接着说下一句，
  * 两处做的是同一件事——把「我要找什么人」说成一句话——所以它们不该长成两样。
  *
  * 是一块**面**，不是一条横带：多行的 `textarea` 加一条底栏
@@ -30,7 +32,7 @@ export type QueryBarHandle = {
  * 去撑。撑一次，内边距、`before:` 顶光边的圆角、图标与文字的间距就全都不再是
  * 那套算好的关系，凑近看是「仿的 coss」。
  *
- * 提交是**异步**的，但只异步一次 INSERT 那么久：整句的查询理解不在这条路上，
+ * 提交是**异步**的，但只异步一次 INSERT 那么久：查询理解不在这条路上，
  * 它在工作台里补（见 `s/$turnId/route.tsx`），所以按下去到界面变化之间没有
  * 一段以模型延迟为长度的空白。这个文件只多管一件事——
  * **原话在提交成功之前不清空**：中途清空等于把人刚敲的东西吞了，
@@ -45,32 +47,28 @@ export type QueryBarHandle = {
 export function QueryBar({
 	onQuery,
 	ref,
-	initial = "",
-	onCancel,
+	placeholder,
+	autoFocus = false,
+	waiting = false,
 }: {
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
-	/** 零态的例子要往里填。工作台不用——它靠挂载时的 `initial` 就位。 */
 	ref?: React.Ref<QueryBarHandle>;
-	/** 打开时框里已有的话。工作台带着当前这句原话进来，于是「改」就是改它。 */
-	initial?: string;
-	/** 有出路才给取消：工作台的改写可以收起来，零态没有可退回的地方。 */
-	onCancel?: () => void;
+	/** 框里装什么。零态问第一句，工作台问下一句。 */
+	placeholder: string;
+	/** 挂载即聚焦：零态整屏就这一件事。工作台上名单才是主角，不抢焦点。 */
+	autoFocus?: boolean;
+	/** 上一句还没整理完：可以接着敲，先不能提交——下一句要作用在它的结果上。 */
+	waiting?: boolean;
 }) {
-	const [draft, setDraft] = useState(initial);
-	const draftRef = useRef(initial);
+	const [draft, setDraft] = useState("");
+	const draftRef = useRef("");
 	const [busy, setBusy] = useState(false);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const formRef = useRef<HTMLFormElement>(null);
 
-	// 挂载即就位：这个框只在「现在就要写这句话」的时候存在——零态整屏就这一件
-	// 事，工作台上它是点了那支铅笔（「改写这句话」）才展开的。光标落在末尾，
-	// 于是带着原话打开之后可以直接接着写。
 	useEffect(() => {
-		const el = inputRef.current;
-		if (!el) return;
-		el.focus();
-		el.setSelectionRange(el.value.length, el.value.length);
-	}, []);
+		if (autoFocus) inputRef.current?.focus();
+	}, [autoFocus]);
 
 	// 光标不用手动摆：受控的 value 变长之后浏览器把插入点留在末尾，
 	// 而 `focus()` 先发生，所以填完就能接着敲。
@@ -80,17 +78,18 @@ export function QueryBar({
 			setDraft(text);
 			inputRef.current?.focus();
 		},
+		focus: () => inputRef.current?.focus(),
 	}));
 
 	return (
-		// 吃满容器：宽度由摆它的那一屏说了算——零态摆在版心里，工作台摆在抬头
-		// 那条带里——所以这里不自己再限一次宽。
+		// 吃满容器：宽度由摆它的那一屏说了算——零态摆在版心里，工作台摆在右栏
+		// 线程的底下——所以这里不自己再限一次宽。
 		<form
 			className="w-full"
 			onSubmit={async (e) => {
 				e.preventDefault();
 				const q = draft.trim();
-				if (!q || busy) return;
+				if (!q || busy || waiting) return;
 				setBusy(true);
 				try {
 					// 提交期间人还能接着敲。清空只针对**刚才提交的那句**，
@@ -114,11 +113,6 @@ export function QueryBar({
 						setDraft(e.target.value);
 					}}
 					onKeyDown={(e) => {
-						if (e.key === "Escape" && onCancel && !busy) {
-							e.preventDefault();
-							onCancel();
-							return;
-						}
 						// 回车即搜，Shift+回车换行。`isComposing` 那一条是给中文
 						// 输入法的：选字时的回车是「确认这个词」，不是「搜」，
 						// 不挡住的话每打一个词就会提交一次。
@@ -127,9 +121,7 @@ export function QueryBar({
 						e.preventDefault();
 						formRef.current?.requestSubmit();
 					}}
-					/* 标题问要什么样的人；这里说框里装什么。岗位、经历、技能是
-					   人选要求的三块料，不是系统格式说明。 */
-					placeholder="输入人选要求：岗位、经历、技能"
+					placeholder={placeholder}
 					ref={inputRef}
 					value={draft}
 				/>
@@ -137,20 +129,10 @@ export function QueryBar({
 				    按钮会浮在一大片空白里。coss 的 `block-end` 就是给这种
 				    「上面写字、下面一条动作栏」备的排法。 */}
 				<InputGroupAddon align="block-end">
-					{onCancel && (
-						<Button
-							disabled={busy}
-							onClick={onCancel}
-							size="sm"
-							variant="ghost"
-						>
-							取消
-						</Button>
-					)}
 					<Button
 						aria-label="搜索"
 						className="ms-auto"
-						disabled={draft.trim() === ""}
+						disabled={draft.trim() === "" || waiting}
 						loading={busy}
 						render={<button type="submit" />}
 						size="icon-sm"

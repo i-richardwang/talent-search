@@ -17,21 +17,21 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
 import { activeConditions } from "#/search/condition";
 import { conditionLabel, MODE_GLYPH } from "#/search/condition-label";
+import { keywordsOf, keywordTitle } from "#/search/keywords";
 import type { SearchSpec } from "#/search/spec";
 import { deleteRecent } from "#/server/functions";
 import type { RecentSearch } from "#/server/turn";
 
 /**
- * 一行记录读的是**原话**——和查询台上那一行是同一样东西（见 `query-deck.tsx`）。
- * 回头找一次搜过的东西，认出来靠的是自己当时怎么说的，不是系统把它读成的那几个词：
- * 条件是原话的解释，点进去就在屏幕上，这里再摆一遍只会把「我问的」换成「它懂的」。
- *
- * 没有原话的记录只有一种：直接拿一份条件调 RPC 落下的（`kind: "spec"` 且没有父
- * 记录），界面产生不出来。它的标题本来就是条件本身，所以落到条件上。
+ * 一行记录读的是**任务标题**，和吸顶那条上的是同一样东西（见 `query-deck.tsx`）。
+ * 对话的任务是链头那句话：回头找一次搜过的东西，认出来靠的是自己当时怎么开口的，
+ * 不是系统把它读成的那几个词。关键词搜索没有那句话，框里的词就是它问的。
  */
-function recentLabel(spec: SearchSpec, rawText: string | null) {
-	if (rawText) return rawText;
-	// 停用的条件不出现：它没参与这次检索，写出来就是把没搜的当成搜过的
+function recentLabel(spec: SearchSpec, title: string | null) {
+	if (title) return title;
+	const keywords = keywordsOf(spec.conditions);
+	if (keywords) return keywordTitle(keywords);
+	// 读不回框里的条件表照条件写。停用的不出现：它没参与这次检索
 	const labels = activeConditions(spec.conditions).map(
 		(c) => MODE_GLYPH[c.mode] + conditionLabel(c),
 	);
@@ -120,7 +120,7 @@ function RecentList({ recent }: { recent: RecentSearch[] }) {
 	return (
 		<nav aria-label="最近搜索" className="flex flex-col gap-0.5">
 			{recent.map((record) => {
-				const label = recentLabel(record.spec, record.rawText);
+				const label = recentLabel(record.spec, record.title);
 				return (
 					/*
 					 * 一行是一个 ghost 按钮 render 成 Link，只把居中改成靠左：悬停、

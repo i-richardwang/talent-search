@@ -15,6 +15,7 @@ import { claimName } from "#/search/condition-label";
 import { claimsOf, type SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import { RESULT_PAGE } from "#/search/weights";
+import type { SearchMode } from "#/server/turn";
 import type { Picks } from "../-lib/picks";
 import { reachOf, type View } from "../-lib/view-params";
 import { PickDock } from "./pick-dock";
@@ -45,6 +46,7 @@ export function ResultList({
 	onAll,
 	onMore,
 	spec,
+	mode,
 	turnId,
 	onChange,
 	onReviseQuery,
@@ -60,6 +62,8 @@ export function ResultList({
 	onAll: () => void;
 	onMore: () => void;
 	spec: SearchSpec;
+	/** 这次搜索是对话还是关键词：空态的出路说法不一样。 */
+	mode: SearchMode;
 	turnId: string;
 	onChange: (next: Partial<View>) => void;
 	onReviseQuery: (next: Condition[]) => void;
@@ -104,6 +108,7 @@ export function ResultList({
 		<Searching phase={phase} />
 	) : results.length === 0 ? (
 		<NoResults
+			mode={mode}
 			onChange={onChange}
 			onEditQuery={onEditQuery}
 			onReviseQuery={onReviseQuery}

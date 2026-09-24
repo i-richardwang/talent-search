@@ -21,11 +21,16 @@ import { parseQuery } from "#/search/query-syntax";
 import { claimsOf } from "#/search/result";
 
 /** 跑一次空态，把按钮按下去，回收它想改的东西 */
-function run(reason: EmptyReason, query = "") {
+function run(
+	reason: EmptyReason,
+	query = "",
+	mode: "conversation" | "keyword" = "conversation",
+) {
 	let changed: Partial<View> | undefined;
 	let revised: Condition[] | undefined;
 	let focused = false;
 	const copy = emptyState(reason, {
+		mode,
 		conditions: parseQuery(query),
 		onChange: (next) => {
 			changed = next;
@@ -88,7 +93,7 @@ describe("其余分支各有各的文案", () => {
 			assert.equal(s.changed, undefined, kind);
 		}
 		assert.equal(run({ kind: "excludeOnly" }).title, "还缺一项条件");
-		assert.equal(run({ kind: "noConditions" }).title, "没有读出条件");
+		assert.equal(run({ kind: "noConditions" }).title, "没有能用来找人的条件");
 	});
 
 	test("只有人的条件且无人匹配时报无结果，不报解析失败", () => {
@@ -112,5 +117,21 @@ describe("其余分支各有各的文案", () => {
 		assert.doesNotMatch(s.hint, /改为「加分」/);
 		assert.match(s.hint, /加分/);
 		assert.equal(s.focused, true);
+	});
+});
+
+describe("关键词搜索的出路只说框里能做的事", () => {
+	test("没有加分，也没有停用：只说换词、去掉词", () => {
+		const unmet = run({ kind: "unmet" }, "算法,渠道运营", "keyword");
+		assert.doesNotMatch(unmet.hint, /加分/);
+		assert.match(unmet.hint, /去掉一个词/);
+		assert.equal(unmet.focused, true);
+
+		const wide = run(
+			{ kind: "overflowEvidence", claims: claimsOf(parseQuery("经理")) },
+			"经理",
+			"keyword",
+		);
+		assert.doesNotMatch(wide.hint, /停用/);
 	});
 });

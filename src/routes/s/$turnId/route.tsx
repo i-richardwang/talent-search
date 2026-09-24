@@ -2,10 +2,16 @@ import {
 	createFileRoute,
 	notFound,
 	Outlet,
+	useLoaderData,
 	useNavigate,
 	useParams,
 } from "@tanstack/react-router";
-import { useCallback, useRef } from "react";
+import { AlertCircleIcon, MessagesSquareIcon } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { KeywordBar, type KeywordBarHandle } from "#/components/keyword-bar";
+import type { QueryBarHandle } from "#/components/query-bar";
+import { Alert, AlertDescription } from "#/components/ui/alert";
+import { Button } from "#/components/ui/button";
 import {
 	Dialog,
 	DialogPanel,
@@ -14,15 +20,24 @@ import {
 } from "#/components/ui/dialog";
 import { Kbd } from "#/components/ui/kbd";
 import { ScrollArea } from "#/components/ui/scroll-area";
+import {
+	Sheet,
+	SheetPopup,
+	SheetTitle,
+	SheetTrigger,
+} from "#/components/ui/sheet";
 import { cn } from "#/lib/utils";
+import type { Condition } from "#/search/condition";
+import { keywordsOf, keywordTitle } from "#/search/keywords";
 import { emptyFacets, type SearchOutcome } from "#/search/result";
 import { emptySpec, type SearchSpec } from "#/search/spec";
 import { loadWorkbench } from "#/server/functions";
 import { DeadEnd } from "../../-components/dead-end";
 import { useCommit } from "../../-lib/commit";
 import { FilterRail, FilterSheet } from "./-components/filter-rail";
-import { QueryDeck, type QueryDeckHandle } from "./-components/query-deck";
+import { QueryDeck } from "./-components/query-deck";
 import { ResultList } from "./-components/result-list";
+import { Thread } from "./-components/thread";
 import { filterFields, textFilters } from "./-lib/filters";
 import { useInterpretation } from "./-lib/interpret";
 import { useKeyboardFlow } from "./-lib/keyboard-flow";
@@ -50,13 +65,19 @@ const NO_OUTCOME: SearchOutcome = {
 };
 const EMPTY_SPEC = emptySpec();
 
+/** 右栏的宽度：对话线程和人的详情共用这一个槽（`styles.css` 的 `--container-detail`）。 */
 const PANEL_W = "w-detail 2xl:w-detail-wide";
 
 const KEYS = [
-	["/", "改问题"],
 	["↑↓", "切换员工"],
 	["Esc", "关闭详情"],
 ] as const;
+
+/** 「/」把光标放进改查询的地方：对话是接着说的框，关键词是「做过什么」。 */
+const EDIT_KEY = {
+	conversation: ["/", "接着说"],
+	keyword: ["/", "改关键词"],
+} as const;
 
 const PICK_KEY = ["空格", "选择或取消"] as const;
 
@@ -88,8 +109,11 @@ function TurnNotFound() {
 }
 
 function Workbench() {
-	const { turn, result } = Route.useLoaderData();
-	const { id: turnId, rawText, spec: settledSpec } = turn;
+	const { thread, result } = Route.useLoaderData();
+	const { understanding } = useLoaderData({ from: "__root__" });
+	// 线程最后一项就是这一轮；loader 保证它非空
+	const turn = thread[thread.length - 1] as (typeof thread)[number];
+	const { id: turnId, spec: settledSpec } = turn;
 	const view = Route.useSearch();
 	const navigate = useNavigate();
 	const { empId } = useParams({ strict: false });
@@ -100,11 +124,37 @@ function Workbench() {
 		interpreting,
 		error: interpretError,
 		retry: retryInterpret,
+		trace: liveTrace,
 	} = useInterpretation(turnId, settledSpec);
 
-	const deck = useRef<QueryDeckHandle>(null);
-	const editQuery = useCallback(() => deck.current?.edit(), []);
+	const { mode } = turn;
+	// 对话的链在没配查询理解时没有接着说的框，条件只能在 chip 上改
+	const editable = mode === "keyword" || understanding;
+	const composer = useRef<QueryBarHandle>(null);
+	const keywordBar = useRef<KeywordBarHandle>(null);
 	const wide = useIsWide();
+	const open = Boolean(empId);
+	// 窄屏上对话栏收成一张 Sheet；「/」要先把它打开
+	const [threadOpen, setThreadOpen] = useState(false);
+	const editQuery = useCallback(async () => {
+		if (mode === "keyword") {
+			keywordBar.current?.focus();
+			return;
+		}
+		if (!wide) {
+			setThreadOpen(true);
+			return;
+		}
+		// 对话栏和详情共用右栏：读着一个人时按「/」，先把详情收起来
+		if (open)
+			await navigate({
+				to: "/s/$turnId",
+				params: { turnId },
+				search: view,
+				replace: true,
+			});
+		composer.current?.focus();
+	}, [mode, wide, open, navigate, turnId, view]);
 
 	const spec = settledSpec ?? EMPTY_SPEC;
 	const outcome = result ?? NO_OUTCOME;
@@ -113,13 +163,17 @@ function Workbench() {
 	const texts = textFilters(view);
 	const loading = navigating || interpreting;
 	const phase = interpreting ? "interpreting" : "searching";
-	const open = Boolean(empId);
 
 	const updateView = (next: Partial<View>) =>
 		navigate({ to: ".", search: (old) => ({ ...old, n: undefined, ...next }) });
 
+	const keywords = mode === "keyword" ? keywordsOf(spec.conditions) : null;
+
 	const reviseSpec = (next: SearchSpec) =>
 		commit({ kind: "spec", spec: next }, { parentTurnId: turnId });
+
+	const addConditions = (more: Condition[]) =>
+		reviseSpec({ conditions: [...spec.conditions, ...more] });
 
 	const picks = usePicks(turnId, outcome);
 
@@ -129,6 +183,20 @@ function Workbench() {
 		picks.pickAll(canMore);
 		if (canMore) updateView(allPages(total));
 	};
+
+	// 对话的链才有线程；没配查询理解时线程只能看，不能接着说
+	const conversation = mode === "conversation" && (
+		<Thread
+			autoFocus={threadOpen}
+			composer={composer}
+			liveTrace={liveTrace}
+			onAdd={addConditions}
+			onQuery={(input) => commit(input, { parentTurnId: turnId })}
+			rounds={thread}
+			understanding={understanding}
+			waiting={interpreting}
+		/>
+	);
 
 	useKeyboardFlow({
 		onEditQuery: editQuery,
@@ -142,15 +210,16 @@ function Workbench() {
 	return (
 		<div className="mx-auto flex w-full max-w-app flex-1 flex-col">
 			<QueryDeck
-				error={commitError ?? interpretError}
+				error={interpretError}
 				interpreting={interpreting}
-				key={turnId}
-				onChangeSpec={reviseSpec}
-				onQuery={(input) => commit(input, { parentTurnId: turnId })}
+				onChangeSpec={mode === "conversation" ? reviseSpec : undefined}
 				onRetry={interpretError ? retryInterpret : undefined}
-				rawText={rawText}
-				ref={deck}
-				spec={spec}
+				spec={settledSpec}
+				title={
+					mode === "conversation"
+						? turn.title
+						: keywords && keywordTitle(keywords)
+				}
 			/>
 			<div className="flex min-h-0 flex-1">
 				<FilterRail
@@ -167,13 +236,56 @@ function Workbench() {
 						id="main"
 						tabIndex={-1}
 					>
-						<div className="mb-3 lg:hidden">
-							<FilterSheet
-								fields={fields}
-								loading={loading}
-								onChange={updateView}
-								textFilters={texts}
-							/>
+						{/* 关键词搜索的框在名单正上方：改完第一眼看到的是它改了什么，
+						    再往下才是人。对话不在这里，在右栏的线程里。 */}
+						{(mode === "keyword" || commitError) && (
+							<div className="mb-4 flex flex-col gap-3">
+								{mode === "keyword" && (
+									<KeywordBar
+										initial={keywords ?? undefined}
+										key={turnId}
+										onSearch={(conditions) => reviseSpec({ conditions })}
+										ref={keywordBar}
+									/>
+								)}
+								{commitError && (
+									<Alert variant="error">
+										<AlertCircleIcon />
+										<AlertDescription>{commitError}</AlertDescription>
+									</Alert>
+								)}
+							</div>
+						)}
+
+						<div className="mb-3 flex flex-wrap gap-2">
+							<div className="lg:hidden">
+								<FilterSheet
+									fields={fields}
+									loading={loading}
+									onChange={updateView}
+									textFilters={texts}
+								/>
+							</div>
+							{/* 窄屏上对话栏收成一张 Sheet。只在 JS 判定窄时挂：Sheet 是模态，
+							    藏起来也抓焦点；`xl:hidden` 兜住 JS 还没说话的首帧。 */}
+							{!wide && conversation && (
+								<div className="xl:hidden">
+									<Sheet onOpenChange={setThreadOpen} open={threadOpen}>
+										<SheetTrigger
+											render={
+												<Button size="sm" variant="outline">
+													<MessagesSquareIcon />
+													对话
+												</Button>
+											}
+										/>
+										<SheetPopup className="max-w-md">
+											<SheetTitle className="sr-only">对话</SheetTitle>
+											{conversation}
+										</SheetPopup>
+									</Sheet>
+								</div>
+							)}
 						</div>
 
 						<ResultList
@@ -181,6 +293,7 @@ function Workbench() {
 							empId={empId}
 							growing={growing}
 							loading={loading}
+							mode={mode}
 							onChange={updateView}
 							onEditQuery={editQuery}
 							phase={phase}
@@ -194,7 +307,11 @@ function Workbench() {
 						/>
 					</main>
 					<footer className="mx-auto hidden w-full max-w-page flex-wrap items-center gap-x-4 gap-y-1.5 px-4 pb-8 text-muted-foreground text-xs pointer-fine:flex">
-						{(picks.picking ? [...KEYS, PICK_KEY] : KEYS).map(([key, what]) => (
+						{[
+							...(editable ? [EDIT_KEY[mode]] : []),
+							...KEYS,
+							...(picks.picking ? [PICK_KEY] : []),
+						].map(([key, what]) => (
 							<span className="flex items-center gap-1.5" key={key}>
 								<Kbd>{key}</Kbd>
 								{what}
@@ -204,19 +321,31 @@ function Workbench() {
 				</div>
 
 				{wide ? (
+					/*
+					 * 右栏：对话的链上常驻线程，点开一个人时换成那个人的详情，关掉
+					 * 详情线程回来。两样都要常驻但不必同时在场：名单和详情才是要反复
+					 * 对照的一对，线程看完一轮就回到名单。关键词的链没有线程，
+					 * 右栏只在点开人时才有宽度。
+					 */
 					<aside
-						aria-label="员工详情"
+						aria-label={open ? "员工详情" : "对话"}
 						className={cn(
 							"sticky top-(--chrome-height) h-[calc(100dvh-var(--chrome-height))] shrink-0 overflow-hidden",
 							"transition-[width] duration-200 ease-out",
 							"max-xl:hidden",
-							open ? `${PANEL_W} border-border border-l bg-card` : "w-0",
+							open || conversation
+								? `${PANEL_W} border-border border-l bg-card`
+								: "w-0",
 						)}
 					>
 						<div className={cn(PANEL_W, "h-full")}>
-							<ScrollArea overscrollContain>
-								<Outlet />
-							</ScrollArea>
+							{open ? (
+								<ScrollArea overscrollContain>
+									<Outlet />
+								</ScrollArea>
+							) : (
+								conversation
+							)}
 						</div>
 					</aside>
 				) : (

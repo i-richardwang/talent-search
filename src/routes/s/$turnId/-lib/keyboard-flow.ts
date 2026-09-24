@@ -4,7 +4,7 @@ import type { SearchResult } from "#/search/result";
 import type { View } from "./view-params";
 
 /**
- * `/` 改问题，↑↓ / jk 换人，Esc 关闭详情，选择模式下用空格选中或取消。
+ * `/` 改查询，↑↓ / jk 换人，Esc 关闭详情，选择模式下用空格选中或取消。
  * 批量筛人时手不必离开键盘。
  *
  * 窄屏详情浮层的 Esc 不在这里处理：它是 coss 的 `Dialog`，自带 Esc 关闭、焦点
@@ -19,7 +19,7 @@ export function useKeyboardFlow({
 	view,
 	onPick,
 }: {
-	/** 展开查询区那句话的改写框（见 `-components/query-deck.tsx`）。 */
+	/** 把光标放进改查询的地方：对话是右栏线程底下接着说的框，关键词是名单上方的「做过什么」。 */
 	onEditQuery: () => void;
 	results: SearchResult[];
 	empId: string | undefined;
@@ -37,9 +37,8 @@ export function useKeyboardFlow({
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.metaKey || e.ctrlKey || e.altKey) return;
-			// 输入法组合输入期间的按键归输入法。今天中文只会打在改写框那个
-			// <textarea> 里，busy 已经兜住，但这道保险不依赖「输入一定发生在
-			// 表单元素里」。
+			// 输入法组合输入期间的按键归输入法。中文打在输入框里时 busy 已经兜住，
+			// 这道保险不依赖「输入一定发生在表单元素里」。
 			if (e.isComposing || e.keyCode === 229) return;
 			const el = document.activeElement;
 			// 正在输入，或焦点落在下拉／弹层里时，键盘归它们
@@ -61,8 +60,8 @@ export function useKeyboardFlow({
 				return;
 			}
 			if (e.key === "Escape") {
-				// 输入框、下拉、对话框里的 Esc 归它们自己：改写框用它收起来，
-				// 弹层用它关掉。抢过来只会让 Esc 在同一次按键里做两件事。
+				// 输入框、下拉、对话框里的 Esc 归它们自己：弹层用它关掉。
+				// 抢过来只会让 Esc 在同一次按键里做两件事。
 				if (busy) return;
 				if (empId) {
 					e.preventDefault();

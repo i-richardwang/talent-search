@@ -15,6 +15,7 @@ import { Spinner } from "#/components/ui/spinner";
 import type { Condition } from "#/search/condition";
 import type { Claim, SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
+import type { SearchMode } from "#/server/turn";
 import { emptyState } from "../-lib/empty-state";
 import type { View } from "../-lib/view-params";
 
@@ -78,17 +79,20 @@ export function ResultHeader({
 export function NoResults({
 	outcome,
 	spec,
+	mode,
 	onChange,
 	onReviseQuery,
 	onEditQuery,
 }: {
 	outcome: SearchOutcome;
 	spec: SearchSpec;
+	mode: SearchMode;
 	onChange: (next: Partial<View>) => void;
 	onReviseQuery: (next: Condition[]) => void;
 	onEditQuery: () => void;
 }) {
 	const state = emptyState(outcome.empty ?? { kind: "noConditions" }, {
+		mode,
 		conditions: spec.conditions,
 		onChange,
 		onEditQuery,
