@@ -5,10 +5,10 @@
  *
  * 三条硬约束：
  *
- * 1. **发出去的只有两样东西**：用户自己敲的那句话，以及语料里几维筛选的取值
- *    （公司档、职级、招聘渠道、学历）。姓名、工号、任何一个人的经历都不出这台
- *    机器。因此查询理解可以直接使用公网端点；重排必须发送候选经历，端点位置
- *    需要由部署方的数据政策决定。
+ * 1. **发出去的只有三样东西**：用户自己敲的那句话、这条搜索当前的条件，以及
+ *    语料里几维筛选的取值（公司档、职级、招聘渠道、学历）。姓名、工号、任何一个
+ *    人的经历都不出这台机器。因此查询理解可以直接使用公网端点；重排必须发送
+ *    候选经历，端点位置需要由部署方的数据政策决定。
  * 2. **没配就抛，不降级。** 一句话只有模型能读成条件：语气（「最好」「不要」）、
  *    修饰语挂在哪件事上（「入职前」「三年以上」）和该搜什么词全靠它。没有第二种读法能
  *    给出同一份结果，所以也没有第二条路——装作能用给出的是一份语义相反的名单，
@@ -20,8 +20,17 @@
 
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, NoObjectGeneratedError, Output } from "ai";
-import { intentSchema, type Vocabulary } from "#/search/intent";
+import {
+	extractJsonMiddleware,
+	generateText,
+	NoObjectGeneratedError,
+	Output,
+	stepCountIs,
+	type ToolSet,
+	wrapLanguageModel,
+} from "ai";
+import { type Condition, withOff } from "#/search/condition";
+import { intentSchema, jsonText, type Vocabulary } from "#/search/intent";
 import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
 
 /**
@@ -67,49 +76,83 @@ const MAX_OUTPUT_TOKENS = positiveInt(
 	16_000,
 );
 
+/**
+ * 交表之前最多走几步：每一步是一次模型调用，中间可以调几个工具。上限是给
+ * 「模型反复试搜不肯交表」兜底的，正常一轮查一次词、试一次搜、交表，三步。
+ */
+const AGENT_STEPS = 6;
+
+/**
+ * 查询理解配好了没有。没配时只有关键词搜索，界面不给那个说一句话的框：
+ * 让人把话敲完再报「端点未配置」，等于先收下一件做不了的事。
+ */
+export function understandingConfigured(): boolean {
+	return Boolean(BASE_URL && MODEL);
+}
+
 // provider 延迟到首次使用时创建，未配置模型的进程可以安全导入本模块。
-let model: ReturnType<ReturnType<typeof createOpenAICompatible>> | null = null;
+let model: ReturnType<typeof wrapLanguageModel> | null = null;
 function getModel() {
 	if (!BASE_URL || !MODEL)
 		throw new Error(
 			"查询理解端点未配置：需要 LLM_BASE_URL 与 LLM_MODEL（见 .env.example）",
 		);
 	if (!model)
-		model = createOpenAICompatible({
-			name: "talent-llm",
-			baseURL: BASE_URL,
-			supportsStructuredOutputs: STRUCTURED,
-			...(API_KEY && { apiKey: API_KEY }),
-			// 超时装在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
-			fetch: timeoutFetch(TIMEOUT_MS),
-			// `enable_thinking` 是网关自己的字段，兼容层的选项里没有，请求体成形后补上
-			...(ENABLE_THINKING && {
-				transformRequestBody: (body: Record<string, unknown>) => ({
-					...body,
-					enable_thinking: ENABLE_THINKING === "true",
+		model = wrapLanguageModel({
+			// 用过工具之后模型爱在 JSON 前后说话；只取正文里那一个对象（`jsonText`）
+			middleware: extractJsonMiddleware({ transform: jsonText }),
+			model: createOpenAICompatible({
+				name: "talent-llm",
+				baseURL: BASE_URL,
+				supportsStructuredOutputs: STRUCTURED,
+				...(API_KEY && { apiKey: API_KEY }),
+				// 超时装在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
+				fetch: timeoutFetch(TIMEOUT_MS),
+				// `enable_thinking` 是网关自己的字段，兼容层的选项里没有，请求体成形后补上
+				...(ENABLE_THINKING && {
+					transformRequestBody: (body: Record<string, unknown>) => ({
+						...body,
+						enable_thinking: ENABLE_THINKING === "true",
+					}),
 				}),
-			}),
-		})(MODEL);
+			})(MODEL),
+		});
 	return model;
 }
 
 /**
  * 判断进提示词，阈值与权重进代码。这里写的全是**逐查询的判断**：一句话里哪些
- * 是条件、修饰语挂在哪个动词上、哪种语气是哪档强度。相似多少算命中、一条主张
- * 最多几个词，一个数字都不在这里——它们住在 weights.ts 和 condition.ts。
+ * 是条件、修饰语挂在哪个动词上、哪种语气是哪档强度、这句话改的是哪一条。
+ * 相似多少算命中、一条主张最多几个词、说明最多几条，一个数字都不在这里——
+ * 它们住在 weights.ts、condition.ts 和 intent.ts。
  *
  * **提示词的读者是模型，不是维护者。** 它只说要做什么、两种条件各是什么、拿不准
  * 时怎么办，再给几个完整的例子；不解释我们为什么这么设计。那些论证写在这里的
  * 注释和 `condition.ts` 里：向量空间里公司名和竞品是邻居，所以公司名走精确条件；
  * 一条主张里放几个词是替用户的不准确用词兜底，所以只放同一件事和更具体的
- * 事，不放更宽的；一个只有功能词的主张几乎不筛人，所以要并进旁边的领域词；
- * 「资深」这类词库里没有对应的档，软化成职级上的偏好（`condition.ts` 说了为什么
- * 只有软化和不写两种处理）。
+ * 事，不放更宽的；一个只有功能词的主张几乎不筛人，所以要并进旁边的领域词。
+ *
+ * 模型交回整张表而不是一串编辑：没提到的条件原样抄回来，用户就能从前后两张表
+ * 的差别里看见它动了什么（`changesOf`）。搜不了的要求写进 `declined`：用户说了的
+ * 话要么变成条件，要么得到一句为什么。
  *
  * 词表有哪些取值只在这里说一遍，不进 schema（`intent.ts` 的 `intentSchema` 是
  * 静态的）：取值在不在词表里由代码查，查不过的取值丢掉，而不是整句作废。
+ *
+ * 输出形状和例子写成 JSON 放在提示词里，不只靠 schema：不认 json_schema 的网关
+ * （`LLM_STRUCTURED_OUTPUTS=false`）根本不把 schema 发出去，模型能看到的形状只有
+ * 这里写的。例子写成别的样子，它就照着那个样子交回来。
  */
-const SYSTEM = `把 HR 找人的一句话写成搜索条件。条件只有两种：
+const SYSTEM = `你在帮 HR 维护一张找人的搜索条件表。给你的是当前的条件表（第一句话时是空的）
+和 HR 这一次说的话。交回整张新表，再加两样说明。
+
+改表的规则：
+- 这句话没提到的条件原样抄回来，一个字都不改。
+- 要改的改那一条，要去掉的不写，要加的加上。「再资深一点」改职级那一条；
+  「不要外包」是加一条；「运营那条不要了」是去掉。
+- 这句话和当前的表说的是另一件事（换了一个岗位、一类人），就按这句话重写整张表。
+
+条件只有两种：
 
 经历（about: experience）：这个人有一段经历，同时满足写下的每一项。
 - what：做过什么。方向、领域、技能、职责。写库里岗位和简历会用的说法，可以放几个：
@@ -122,35 +165,82 @@ const SYSTEM = `把 HR 找人的一句话写成搜索条件。条件只有两种
 四项都写；「做过推荐，也待过字节」是两条，一条只有 what，一条只有 org。
 
 人（about: person）：这个人本身。field 是 level、education、recruitment 之一，
-values 从给出的取值里挑，可以几个；或者 school，values 写学校名。挑不出就不写这条。
+values 从给出的取值里挑，可以几个；或者 school，values 写学校名。
 
 mode 看语气：默认 must。最好、优先、加分是 boost。不要、排除、没做过是 exclude，只用于经历。
 
 「A 和 B 都做过」是两条经历。「A 或 B」「A、B 均可」是一条，what 里放两个。
-资深、高级、senior 说的是职级：level 里挑高的几档，mode 用 boost。
 经理、负责人、总监单独不成条，并进旁边的领域词：算法团队负责人。
-帮我找、有没有、的人、经验，这些不是条件。库里没有的条件不写：地点、年龄、性别、行业、像某某一样。
+帮我找、有没有、的人、经验，这些不是条件。
 
-例一：算法和后端都做过的，比较资深的，最好是字节来的
-- experience must，what：算法、推荐算法、机器学习
-- experience must，what：后端、后端开发、服务端
-- person boost，level：取值里高的几档
-- experience boost，org：字节
+两样说明：
 
-例二：入职前在大厂做过三年以上增长，不要实习
-- experience must，what：增长、用户增长；kind：external；companyTag：取值里最接近大厂的一档；minMonths：36
-- experience exclude，what：实习
+assumed：一个词有几种读法、读法不同会找出不同的人，你替 HR 选了一种时，用一句话写下
+你怎么读的。比如「资深」按职级取了高的几档、用加分；「大厂」取了哪一档公司。
+把条件复述一遍不算，读法没有分歧就不写。
 
-例三：大模型或推荐系统方向，北京的，硕士
-- experience must，what：大模型、LLM、推荐系统
-- person must，education：取值里对应硕士的那一档`;
+declined：库里只有经历（做过什么、在哪、哪一档公司、公司内还是入职前、多久）和
+人的职级、学历、招聘渠道、学校。说到这之外的——地点、年龄、性别、薪资、绩效、
+性格、潜力、像某某一样——不写进表，写进 declined：said 是原话，why 用一句话说
+库里没有什么。经历里有相近的线索就把它写成 instead，HR 可以一键换成这样找；
+没有就空着。
+
+只输出一个 JSON 对象，不要别的文字：
+{"conditions": [条件……], "assumed": [一句一条……], "declined": [{"said": "", "why": "", "instead": [条件……]}]}
+没有的就写空数组。下面的例子假设取值是 level：P5、P6、P7、P8；companyTag：头部大厂、知名公司；
+education：本科、硕士、博士。
+
+例一。当前的条件表：[]。这句话：算法和后端都做过的，比较资深的，最好是字节来的
+{"conditions": [
+  {"about": "experience", "mode": "must", "what": ["算法", "推荐算法", "机器学习"]},
+  {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
+  {"about": "person", "mode": "boost", "field": "level", "values": ["P7", "P8"]},
+  {"about": "experience", "mode": "boost", "org": ["字节"]}],
+ "assumed": ["「比较资深」按职级取了 P7、P8，用加分"],
+ "declined": []}
+
+例二。当前的条件表：[]。这句话：入职前在大厂做过三年以上增长，不要实习
+{"conditions": [
+  {"about": "experience", "mode": "must", "what": ["增长", "用户增长"], "kind": "external", "companyTag": ["头部大厂"], "minMonths": 36},
+  {"about": "experience", "mode": "exclude", "what": ["实习"]}],
+ "assumed": ["「大厂」按公司档「头部大厂」算"],
+ "declined": []}
+
+例三。当前的条件表：[]。这句话：北京的大模型或推荐系统方向，有管理潜力，硕士
+{"conditions": [
+  {"about": "experience", "mode": "must", "what": ["大模型", "LLM", "推荐系统"]},
+  {"about": "person", "mode": "must", "field": "education", "values": ["硕士"]}],
+ "assumed": [],
+ "declined": [
+  {"said": "北京的", "why": "库里没有工作地点", "instead": []},
+  {"said": "有管理潜力", "why": "经历里看不出潜力，只看得出带没带过团队", "instead": [
+    {"about": "experience", "mode": "boost", "what": ["团队管理", "带团队"]}]}]}
+
+你有两个工具，交表之前先用：
+- look_up_words：查几个词库里叫什么、多少人写过、按意思搜会不会太宽。写 what 之前把打算写的词
+  查一遍，用库里的写法；太宽的词换更具体的。
+- try_conditions：拿打算交的表试搜一次，看多少人。一个人都没有就放宽（去掉最不重要的一条，或把
+  必须改成加分）再试；上千人就收紧。试过之后再交表。
+工具只给数，不给人；名单由检索决定，你写的是条件。
+
+例四。当前的条件表是例一交回的四条。这句话：再加上带过团队的，不用非得是字节
+{"conditions": [
+  {"about": "experience", "mode": "must", "what": ["算法", "推荐算法", "机器学习"]},
+  {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
+  {"about": "person", "mode": "boost", "field": "level", "values": ["P7", "P8"]},
+  {"about": "experience", "mode": "must", "what": ["团队管理", "带团队"]}],
+ "assumed": [],
+ "declined": []}`;
 
 function listed(what: string, values: readonly string[]) {
 	return `${what}：${values.join("、") || "（无）"}`;
 }
 
 /**
- * 一句话 → 模型写出的查询。调用方必须再过一遍 `toSpec` 收窄。
+ * 当前条件 + 一句话 → 模型写出的新条件表与说明。调用方必须再过一遍 `understood` 收窄。
+ *
+ * 交表之前模型可以用 `tools` 查词、试搜（`agent-tools.ts`），最多 `AGENT_STEPS` 步；
+ * 最后一步的正文就是那张表。工具用不用由模型定：不用也是合法的一轮。
  *
  * 结构化输出失败时真正说明问题的是 `usage` 和 `finishReason`——
  * `finishReason: "length"` 配上 `reasoningTokens` 吃掉几乎整个 `outputTokens`，
@@ -161,6 +251,8 @@ function listed(what: string, values: readonly string[]) {
 export async function understand(
 	text: string,
 	vocab: Vocabulary,
+	base: readonly Condition[],
+	tools: ToolSet,
 ): Promise<unknown> {
 	const m = getModel();
 	/*
@@ -173,6 +265,8 @@ export async function understand(
 			generateText({
 				model: m,
 				output: Output.object({ schema: intentSchema }),
+				tools,
+				stopWhen: stepCountIs(AGENT_STEPS),
 				system: SYSTEM,
 				prompt: [
 					"取值",
@@ -180,6 +274,9 @@ export async function understand(
 					listed("education", vocab.education),
 					listed("recruitment", vocab.recruitment),
 					listed("companyTag", vocab.companyTag),
+					// 停用是用户在 chip 上的操作，模型写不出也不必看见：它交回同一条，
+					// 停用由 `understood` 带回去
+					`\n当前的条件表：${JSON.stringify(base.map((c) => withOff(c, null)))}`,
 					`\n这句话：${text}`,
 				].join("\n"),
 				// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件

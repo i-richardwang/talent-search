@@ -21,20 +21,25 @@ import {
 } from "#/db/schema";
 import { withCorpusSnapshot } from "#/db/snapshot";
 import { validateCommit } from "#/search/commit-input";
+import { MAX_TERM_LEN } from "#/search/condition";
+import { KEYWORD_FIELDS } from "#/search/keywords";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search } from "#/search/search";
 import { employeeData, listEmployees } from "./data";
 import { type JobKind, requestJob } from "./jobs";
+import { understandingConfigured } from "./llm";
 import { listSkills, skillDetail } from "./skills";
+import { suggest } from "./suggest";
 import { taskLog as runLog, type TaskPages, tasksState } from "./tasks";
 import {
 	createTurn,
 	deleteSearch,
 	listRecent,
-	loadTurn,
+	loadThread,
 	resolveTurn,
 	type Turn,
+	traceOf,
 } from "./turn";
 
 /**
@@ -57,9 +62,11 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 	.handler(
 		async ({
 			data,
-		}): Promise<{ turn: Turn; result: SearchOutcome | null } | null> => {
-			const turn = await loadTurn(data.turnId);
-			if (!turn) return null;
+		}): Promise<{ thread: Turn[]; result: SearchOutcome | null } | null> => {
+			// 整条线程一次取回：当前这一轮是最后一项，对话栏画的是全部
+			const thread = await loadThread(data.turnId);
+			const turn = thread?.at(-1);
+			if (!thread || !turn) return null;
 			/*
 			 * 还没理解完：不跑检索，先把工作台交出去。
 			 *
@@ -67,9 +74,9 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 			 * 页面拿着一条只有原话的记录就能把工作台画出来，模型那一跳由界面
 			 * 自己去补（`interpretTurn`），而不是让导航停在原地等它。
 			 */
-			if (!turn.spec) return { turn, result: null };
+			if (!turn.spec) return { thread, result: null };
 			return {
-				turn,
+				thread,
 				result: await search(turn.spec, data.filters, data.limit),
 			};
 		},
@@ -108,6 +115,11 @@ export const commitTurn = createServerFn({ method: "POST" })
 	.validator(validateCommit)
 	.handler(({ data }) => createTurn(data.input, data.parentTurnId));
 
+/** 理解走到哪一步了。等理解时界面每秒问一次，线程里的步骤边跑边长出来。 */
+export const turnTrace = createServerFn({ method: "GET" })
+	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
+	.handler(({ data }) => traceOf(data.turnId));
+
 /** 把一条只有原话的记录补上理解结果。工作台挂载后就地调它，不挡导航。 */
 export const interpretTurn = createServerFn({ method: "POST" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
@@ -121,6 +133,26 @@ export const interpretTurn = createServerFn({ method: "POST" })
 export const recentSearches = createServerFn({ method: "GET" }).handler(() =>
 	listRecent(),
 );
+
+/**
+ * 能不能说一句话来找人。和最近搜索一起由根路由取：零态和工作台都据此决定
+ * 摆不摆那个说话的框。它只读环境配置，不会失败。
+ */
+export const understandingOn = createServerFn({ method: "GET" }).handler(() =>
+	understandingConfigured(),
+);
+
+/**
+ * 关键词模式下拉里的候选。哪一个框在问由 `field` 说，三个框的候选不混
+ * （`server/suggest.ts`）。敲一个字就来一次，所以入参收得很短。
+ */
+export const suggestTerms = createServerFn({ method: "GET" })
+	.validator((d: { field: unknown; q: unknown }) => {
+		const field = KEYWORD_FIELDS.find((f) => f === d.field);
+		if (!field) throw new Error("没有这个框");
+		return { field, q: String(d.q ?? "").slice(0, MAX_TERM_LEN) };
+	})
+	.handler(({ data }) => suggest(data.field, data.q));
 
 /** 删掉「最近搜索」里的一行，也就是那一次找人任务的整条链。返回删掉的记录 id。 */
 export const deleteRecent = createServerFn({ method: "POST" })

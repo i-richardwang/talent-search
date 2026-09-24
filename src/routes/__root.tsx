@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { buttonVariants } from "#/components/ui/button";
 import { TooltipProvider } from "#/components/ui/tooltip";
-import { recentSearches } from "#/server/functions";
+import { recentSearches, understandingOn } from "#/server/functions";
 import appCss from "../styles.css?url";
 import { AppHeader } from "./-components/app-header";
 import { DeadEnd } from "./-components/dead-end";
@@ -24,18 +24,23 @@ export const Route = createRootRoute({
 		],
 		links: [{ rel: "stylesheet", href: appCss }],
 	}),
-	loader: () =>
-		recentSearches().then(
-			(items) => items,
-			() => null,
-		),
+	loader: async () => {
+		const [recent, understanding] = await Promise.all([
+			recentSearches().then(
+				(items) => items,
+				() => null,
+			),
+			understandingOn(),
+		]);
+		return { recent, understanding };
+	},
 	shellComponent: RootDocument,
 	component: RootComponent,
 	notFoundComponent: NotFound,
 });
 
 function RootComponent() {
-	const recent = Route.useLoaderData();
+	const { recent } = Route.useLoaderData();
 	return (
 		<div className="relative isolate flex flex-1 flex-col overflow-clip">
 			<SkipToMain />

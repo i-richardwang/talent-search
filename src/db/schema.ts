@@ -15,7 +15,9 @@ import {
 	text,
 	timestamp,
 } from "drizzle-orm/pg-core";
+import type { TurnNotes } from "#/search/intent";
 import type { SearchSpec } from "#/search/spec";
+import type { TraceStep } from "#/search/trace";
 
 export type CompanyMeta = {
 	company_tag?: string;
@@ -277,12 +279,18 @@ export const searchTurn = pgTable(
 	"search_turn",
 	{
 		id: text("id").primaryKey(),
-		/** 同一次找人任务的链头，用于最近搜索去重。 */
+		/** 同一次找人任务的链头：最近搜索按它去重，它的原话是这次任务的标题。 */
 		rootTurnId: text("root_turn_id").notNull(),
-		/** 用户原话；直接提交完整条件时可以为空。 */
+		/** 从哪一条派生：它的条件是这一轮说话时的基线，也是界面比出变化的那一边。 */
+		parentTurnId: text("parent_turn_id"),
+		/** 用户这一轮说的话；直接提交完整条件时为空。 */
 		rawText: text("raw_text"),
 		/** 查询条件快照；null 表示仍待理解。 */
 		spec: jsonb("spec").$type<SearchSpec>(),
+		/** 理解这一轮时模型的说明：替用户定的读法、搜不了的要求。没有就是 null。 */
+		notes: jsonb("notes").$type<TurnNotes>(),
+		/** 理解这一轮时模型用工具走过的步骤，边跑边追加；关键词的记录没有。 */
+		trace: jsonb("trace").$type<TraceStep[]>(),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
@@ -297,6 +305,15 @@ export const searchTurn = pgTable(
 			columns: [t.rootTurnId],
 			foreignColumns: [t.id],
 		}).onDelete("cascade"),
+		foreignKey({
+			name: "search_turn_parent",
+			columns: [t.parentTurnId],
+			foreignColumns: [t.id],
+		}).onDelete("cascade"),
+		check(
+			"search_turn_notes",
+			sql`${t.notes} is null or ${t.spec} is not null`,
+		),
 		index("search_turn_recent").on(t.rootTurnId, t.createdAt),
 	],
 );

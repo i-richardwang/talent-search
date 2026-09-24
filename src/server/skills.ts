@@ -34,7 +34,7 @@ export type SkillDetail = Omit<SkillEntry, "parent" | "children"> & {
  * 人数是按这一堆词一起数的：`term` 是某一个标准词，`word` 是算进它那个数里的每一种
  * 写法——它自己、并进它的写法，以及它的细分连各自的写法，一层层往下。
  */
-const UNDER = sql`
+export const UNDER = sql`
 	with recursive under(term, word) as (
 		select canonical, word from skill_term
 		union
@@ -48,7 +48,7 @@ const UNDER = sql`
  * 或它任一项细分的人，各算一次。词表里的词有可能已经不在语料里（写它的人的简历
  * 改了），那就是 0。
  */
-function peopleUnder(term: SQL | string) {
+export function peopleUnder(term: SQL | string) {
 	return sql`coalesce((
 		select count(distinct e.emp_id)::int
 		from under u

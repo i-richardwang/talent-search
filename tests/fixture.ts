@@ -177,19 +177,34 @@ export function holdNextRerank() {
 }
 
 /**
- * 假理解：把那句话按一行查询语法读（`search/query-syntax.ts`），交出真模型
- * 会交出的那份查询。模型说的和库里存的是同一个形状（`intentSchema` 就是
- * `Condition[]`），所以这里不必翻译；词表检查在 intent.test.ts 里对着 `toSpec` 直接测。
+ * 假理解：把那句话按一行查询语法读（`search/query-syntax.ts`），接在当前条件
+ * 后面交回整张表——真模型遇到「再加上……」就是这么做的。模型说的和库里存的是
+ * 同一个形状，所以这里不必翻译；词表检查在 intent.test.ts 里对着 `understood` 直接测。
  * 一行语法里的 `~` 会带出 `off`，而真模型从不写停用，去掉。
  */
-function fakeIntent(text: string) {
+function fakeIntent(text: string, base: unknown[]) {
 	return {
-		conditions: parseQuery(text).map(({ off: _off, ...rest }) => rest),
+		conditions: [
+			...base,
+			...parseQuery(text).map(({ off: _off, ...rest }) => rest),
+		],
+		assumed: [],
+		declined: [],
 	};
 }
 
-/** 那句话在提示词里的位置，和 `src/server/llm.ts` 的 `understand` 写的一致。 */
+/** 那句话和当前条件在提示词里的位置，和 `src/server/llm.ts` 的 `understand` 写的一致。 */
 const SENTENCE_PREFIX = "这句话：";
+const BASE_PREFIX = "当前的条件表：";
+
+/** 提示词里的当前条件表：`BASE_PREFIX` 那一行的 JSON。 */
+function baseIn(prompt: string): unknown[] {
+	const line = prompt
+		.split("\n")
+		.find((l) => l.startsWith(BASE_PREFIX))
+		?.slice(BASE_PREFIX.length);
+	return line ? (JSON.parse(line) as unknown[]) : [];
+}
 
 /**
  * 语料侧那三处聊天调用（抽取、对齐、整理）的假回答。
@@ -211,17 +226,24 @@ export function answerChat(
 }
 
 let intentBroken = false;
-let intentAnswer: ((text: string) => unknown) | null = null;
+type IntentAnswer = (text: string, base: unknown[]) => unknown;
+let intentAnswer: IntentAnswer | null = null;
 
 /**
- * 换一份查询理解的回答，返回拆掉它的函数。默认那份按一行查询语法作答，永远合规；
- * 要测「模型说的话不合规」那条路，就得让它说别的。
+ * 换一份查询理解的回答跑完 `fn`，跑完就换回来。默认那份按一行查询语法作答，
+ * 永远合规；要测「模型说的话不合规」那条路，就得让它说别的。`base` 是提示词里的
+ * 当前条件。
  */
-export function answerIntent(fn: (text: string) => unknown): () => void {
-	intentAnswer = fn;
-	return () => {
+export async function answering<T>(
+	answer: IntentAnswer,
+	fn: () => Promise<T>,
+): Promise<T> {
+	intentAnswer = answer;
+	try {
+		return await fn();
+	} finally {
 		intentAnswer = null;
-	};
+	}
 }
 
 /**
@@ -296,6 +318,7 @@ function startModelServer() {
 							? JSON.stringify(
 									(intentAnswer ?? fakeIntent)(
 										prompt.slice(at + SENTENCE_PREFIX.length),
+										baseIn(prompt),
 									),
 								)
 							: chatAnswer

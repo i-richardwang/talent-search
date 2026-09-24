@@ -1,4 +1,4 @@
-import { type Condition, conditionsOf } from "./condition";
+import { type Condition, conditionKey, conditionsOf } from "./condition";
 
 /**
  * 一条查询的完整含义：几条条件，就这些。它是查询记录的唯一事实源，也是
@@ -29,4 +29,21 @@ export function hasMeaning(spec: SearchSpec) {
 export function sanitizeSpec(raw: unknown): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;
 	return { conditions: conditionsOf(value.conditions) };
+}
+
+/**
+ * 一轮前后两张条件表的差别，按条件的身份（`conditionKey`）比：停用与否不算变化，
+ * 改了取值或强度的一条算作去掉旧的、加上新的。界面据此说出这一轮加了什么、
+ * 去掉了什么——模型不会不声不响地丢掉一条用户要的条件。
+ */
+export function changesOf(
+	base: readonly Condition[],
+	next: readonly Condition[],
+): { added: Condition[]; removed: Condition[] } {
+	const had = new Set(base.map(conditionKey));
+	const has = new Set(next.map(conditionKey));
+	return {
+		added: next.filter((c) => !had.has(conditionKey(c))),
+		removed: base.filter((c) => !has.has(conditionKey(c))),
+	};
 }

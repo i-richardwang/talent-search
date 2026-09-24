@@ -27,8 +27,10 @@
  * 模型写「推荐算法」「推荐系统」，找人更准，屏幕上也看得懂。取值不标来源、
  * 不按来源打折、不让模型把原话交回来核对：那些东西服务的读者不存在。
  *
- * 库里表达不了的条件不解释，直接不写：软化成排序信号，或者不管。「资深」是
- * 职级上的一条 boost；「北京的」库里没有，就不写。
+ * 库里表达不了的要求不进条件表：模型把它写进这一轮的说明（`intent.ts` 的
+ * `declined`），说出库里没有什么，能换成库里有的说法就附上替代条件。「资深」是
+ * 职级上的一条 boost，替用户定下的这个读法同样写进说明；「北京的」库里没有，
+ * 条件表里不写，说明里说。
  */
 import {
 	DIMENSIONS,
@@ -252,10 +254,16 @@ function personOf(
 	return values ? { about: "person", mode, field, values } : null;
 }
 
-/** 条件的身份：它说的是什么、多强。停用与否不算——那是同一条条件的两种状态。 */
+/**
+ * 条件的身份：它说的是什么、多强。停用与否不算——那是同一条条件的两种状态。
+ * 按键名排序后再序列化：从库里 jsonb 读回来的条件键序和刚收窄出来的不一样，
+ * 身份不能跟着键序变。取值的先后算数（`what[0]` 是代表词）。
+ */
 export function conditionKey(condition: Condition): string {
 	const { off: _off, ...rest } = condition;
-	return JSON.stringify(rest);
+	return JSON.stringify(
+		Object.entries(rest).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+	);
 }
 
 /** 把停用的那些去掉。检索、证据行、分面都只看这一份。 */

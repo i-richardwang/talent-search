@@ -7,7 +7,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { seed, setup } from "./fixture";
+import { answering, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -103,6 +103,60 @@ describe("一条主张里只有一部分经历词太宽", () => {
 				kind: "internal",
 				off: "wide",
 			},
+		]);
+	});
+});
+
+describe("接着说时只量这一轮新加的词", () => {
+	test("上一轮用户坚持启用的宽词不会被停掉", async () => {
+		const { parseQuery } = await import("#/search/query-syntax");
+		const said = await createTurn({ kind: "sentence", text: "灵能驾驶" });
+		assert.deepEqual((await resolveTurn(said.turnId)).conditions, [
+			{ about: "experience", mode: "must", what: ["灵能驾驶"], off: "wide" },
+		]);
+		// 直接提交的条件不量宽：用户在 chip 上把太宽的那条重新启用，就是这样一份
+		const kept = await createTurn(
+			{ kind: "spec", spec: { conditions: parseQuery("灵能驾驶") } },
+			said.turnId,
+		);
+		const { turnId } = await createTurn(
+			{ kind: "sentence", text: "机甲算法" },
+			kept.turnId,
+		);
+		assert.deepEqual((await resolveTurn(turnId)).conditions, [
+			{ about: "experience", mode: "must", what: ["灵能驾驶"] },
+			{ about: "experience", mode: "must", what: ["机甲算法"] },
+		]);
+	});
+});
+
+describe("替代条件落库前就量过", () => {
+	test("模型给的替代条件太宽时停用，点「加上」提交的就是停用的那一条", async () => {
+		const { loadTurn } = await import("#/server/turn");
+		const { turnId } = await createTurn({
+			kind: "sentence",
+			text: "机甲算法，有潜力",
+		});
+		await answering(
+			() => ({
+				conditions: [{ about: "experience", mode: "must", what: ["机甲算法"] }],
+				assumed: [],
+				declined: [
+					{
+						said: "有潜力",
+						why: "经历里看不出潜力",
+						instead: [
+							{ about: "experience", mode: "boost", what: ["灵能驾驶"] },
+							{ about: "experience", mode: "boost", what: ["幽冥测绘"] },
+						],
+					},
+				],
+			}),
+			() => resolveTurn(turnId),
+		);
+		assert.deepEqual((await loadTurn(turnId))?.notes?.declined[0]?.instead, [
+			{ about: "experience", mode: "boost", what: ["灵能驾驶"], off: "wide" },
+			{ about: "experience", mode: "boost", what: ["幽冥测绘"] },
 		]);
 	});
 });

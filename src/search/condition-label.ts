@@ -1,12 +1,29 @@
 import { dots, duration } from "#/lib/format";
-import type { Condition, Mode, Part } from "#/search/condition";
-import { dimOption, dimText } from "#/search/dimensions";
+import {
+	type Condition,
+	type Mode,
+	type Part,
+	PERSON_FIELDS,
+} from "#/search/condition";
+import { DIMENSIONS, dimOption, dimText } from "#/search/dimensions";
 
 /**
  * 公司名与学校名怎么称呼。这两维不在 `dimensions.ts` 那张表里（自由文本，没有
  * 候选列表），称呼也只有这一处：chip 上、筛选栏上用的是同一个词。
  */
 export const NAME_LABEL = { org: "组织", school: "学校" } as const;
+
+/**
+ * 这里能按什么找人：一段经历，加上人的几项条件。整句都搜不了的空态说这一句；
+ * 人的条件多一维，这句话跟着长。
+ */
+export const SEARCHABLE = (() => {
+	const person = PERSON_FIELDS.map((field) =>
+		field === "school" ? NAME_LABEL.school : DIMENSIONS[field].label,
+	);
+	const last = person.pop();
+	return `按经历、${person.join("、")}和${last}找人`;
+})();
 
 /**
  * 强度写在符号上，不写在颜色上。

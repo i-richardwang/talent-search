@@ -18,5 +18,5 @@ const { understand } = await import("#/server/llm");
 const VOCAB = { companyTag: [], level: [], recruitment: [], education: [] };
 
 test("端点连不上时抛给调用方，不返回一份假理解", async () => {
-	await assert.rejects(understand("做过算法的人", VOCAB));
+	await assert.rejects(understand("做过算法的人", VOCAB, [], {}));
 });
