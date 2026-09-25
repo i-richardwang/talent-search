@@ -81,7 +81,6 @@ function matchedField(hit: Hit): {
 	context: string;
 } {
 	const label = routeLabel(hit.route);
-	if (hit.route === null) return { label, value: hit.title, context: hit.org };
 	switch (hit.route) {
 		case "seq":
 			return { label, value: hit.seq, context: hit.org };
@@ -112,7 +111,7 @@ export function evidenceText(name: string, hit: Hit, basis: ClaimBasis) {
 }
 
 function byOther(name: string, hit: Hit) {
-	return hit.value !== null && hit.value !== name;
+	return hit.value !== name;
 }
 
 export function EvidenceLine({

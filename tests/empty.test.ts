@@ -68,16 +68,16 @@ describe("没有可执行的经历主张", () => {
 		assert.deepEqual(why({ query: "" }), { kind: "noConditions" });
 	});
 
-	test("只有人的必须条件时说没有这样的人；筛着的时候先怪筛选", () => {
-		assert.deepEqual(why({ query: "education:硕士" }), { kind: "personEmpty" });
+	test("只有门槛时说没有这样的人；筛着的时候先怪筛选", () => {
+		assert.deepEqual(why({ query: "education:硕士" }), { kind: "gatesUnmet" });
 		assert.deepEqual(
 			why({ query: "education:硕士", filters: { level: ["P7"] } }),
 			{ kind: "filtered" },
 		);
 	});
 
-	test("没有经历词的主张也是主张：范围里没人是「没满足必须条件」", () => {
-		assert.deepEqual(why({ query: "kind:external" }), { kind: "unmet" });
+	test("背景和人的条件一样是门槛：范围里没人时同样说没有这样的人", () => {
+		assert.deepEqual(why({ query: "kind:external" }), { kind: "gatesUnmet" });
 	});
 });
 

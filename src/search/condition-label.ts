@@ -6,6 +6,7 @@ import {
 	PERSON_FIELDS,
 } from "#/search/condition";
 import { DIMENSIONS, dimOption, dimText } from "#/search/dimensions";
+import type { Claim } from "#/search/result";
 
 /**
  * 公司名与学校名怎么称呼。这两维不在 `dimensions.ts` 那张表里（自由文本，没有
@@ -90,14 +91,9 @@ export function conditionLabel(condition: Condition): string {
 	);
 }
 
-/**
- * 一条主张在证据行上的名字：代表词。没有经历词的主张（「待过字节」）没有词，
- * 就显示它本身——证据行那一列窄，放不下整句。
- */
-export function claimName(condition: Condition): string {
-	return condition.about === "experience" && condition.what
-		? condition.what[0]
-		: conditionLabel(condition);
+/** 一条主张在证据行上的名字：代表词。证据行那一列窄，放不下整句。 */
+export function claimName(claim: Claim): string {
+	return claim.what[0];
 }
 
 /** chip 上要不要那个「还有别的取值」的记号：哪一项有第二个取值都算。 */

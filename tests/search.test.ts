@@ -297,30 +297,34 @@ describe("AND 语义", () => {
 });
 
 /**
- * 没有经历词的主张（「只看入职前的经历」「待过字节」）：不比文本，落在范围里的
- * 段本身就是证据。它和有词的主张走同一条路——同一份打分、同一份分面、同一种
- * 证据行，只是相关度恒为 1、没有路。
+ * 背景（「只看入职前的经历」「待过字节」）：没说做过什么，只定去留。它和人的
+ * 条件一样按人裁——不产出事实、不进名次、不上证据行。
  */
-describe("没有经历词的主张", () => {
-	test("按范围找到人，落在范围里的段就是证据", async () => {
-		const outcome = await run("kind:external");
-		assert.deepEqual(
-			outcome.results.map((result) => result.employee.empId).sort(),
-			["T001", "T003", "T009"],
-		);
-		const hit = outcome.results[0]?.hits[0];
-		assert.equal(hit?.route, null);
-		assert.equal(hit?.value, null);
-		assert.equal(hit?.relevance, 1);
-		assert.deepEqual(outcome.facets.kind, [{ value: "external", n: 3 }]);
+describe("背景只定去留", () => {
+	const ids = (outcome: { results: { employee: { empId: string } }[] }) =>
+		outcome.results.map((r) => r.employee.empId).sort();
+
+	test("只有背景：过了门槛的人按人排，没有分数也没有证据", async () => {
+		const outcome = await search({ conditions: parseQuery("kind:external") });
+		assert.equal(outcome.order, "employee");
+		assert.deepEqual(ids(outcome), ["T001", "T003", "T009"]);
 	});
 
-	test("主张是硬约束，视图只能继续收窄，不能换掉它", async () => {
+	test("视图筛选改的是看哪些经历，不改谁过了门槛", async () => {
+		// 三人都有入职前经历；只看公司内的经历时，留下有公司内经历的那个
 		const outcome = await search(
 			{ conditions: parseQuery("kind:external") },
 			{ kind: "internal" },
 		);
-		assert.equal(outcome.total, 0);
+		assert.deepEqual(ids(outcome), ["T001"]);
+	});
+
+	test("被排除否决的段不替背景作证", async () => {
+		// T003、T009 的入职前经历都在某公司：否决之后他们没有入职前经历可算
+		const outcome = await search({
+			conditions: parseQuery("kind:external,-org:某公司"),
+		});
+		assert.deepEqual(ids(outcome), ["T001"]);
 	});
 
 	test("主张里的各项说的是同一段：经历词和来源写在一条上，约束的是作证的那段", async () => {
@@ -331,21 +335,31 @@ describe("没有经历词的主张", () => {
 		);
 	});
 
-	test("分开写成两条就是两段：做过算法、另外有过入职前经历的人也算", async () => {
-		const outcome = await run("算法,kind:external");
+	test("分开写成两条：做过算法、另外有过入职前经历的人，名次只由算法定", async () => {
+		const gated = await run("算法,kind:external");
+		assert.deepEqual(ids(gated), ["T001", "T003"]);
 		assert.deepEqual(
-			outcome.results.map((result) => result.employee.empId).sort(),
-			["T001", "T003"],
+			gated.claims.map((c) => c.what),
+			[["算法"]],
+			"背景不是一条主张，证据行上没有它",
 		);
+		const plain = await run("算法");
+		const depth = new Map(
+			plain.results.map((r) => [r.employee.empId, r.depth]),
+		);
+		for (const r of gated.results) {
+			assert.equal(r.depth, depth.get(r.employee.empId), "背景不改深度");
+			assert.ok(r.hits.every((h) => h.claim === 0));
+		}
 	});
 });
 
 /**
- * 只有人的条件、没有词的主张与语义检索的分面是**同一份实现**：值域只随查询变，
- * 计数随筛选变。两条路各写一份求值器的话，同一栏筛选在没有词的查询下会变成
- * 「点一项，别的维度里凑不出人的行当场消失」——而那正是筛选栏不能被信任的样子。
+ * 只有门槛（人的条件、背景）的查询与语义检索的分面是**同一份实现**：值域只随
+ * 查询变，计数随筛选变。两条路各写一份求值器的话，同一栏筛选在只有门槛的查询下
+ * 会变成「点一项，别的维度里凑不出人的行当场消失」——而那正是筛选栏不能被信任的样子。
  */
-describe("没有经历词的主张的分面口径", () => {
+describe("只有门槛时的分面口径", () => {
 	before(async () => {
 		await seed([
 			{
@@ -1023,7 +1037,7 @@ describe("排除的主张：否决证据段，不否决人", () => {
 	 * 「只看入职前经历，不要实习」会安静地当那条排除不存在——屏幕上那枚
 	 * chip 好端端画着，名单里却全是实习生。
 	 */
-	test("只有没有词的主张加一条排除时，被否决的段照样不算数", async () => {
+	test("只有背景加一条排除时，被否决的段照样不替背景作证", async () => {
 		const scoped = await search({
 			conditions: parseQuery("-机甲实习,kind:external"),
 		});
@@ -1037,12 +1051,12 @@ describe("排除的主张：否决证据段，不否决人", () => {
 		);
 	});
 
-	test("主张跑过了就报主张没满足，不报「你只写了排除」", async () => {
+	test("门槛跑过了就报门槛没满足，不报「你只写了排除」", async () => {
 		const outcome = await search({
 			conditions: parseQuery("-机甲实习,kind:external minMonths:999"),
 		});
 		assert.equal(outcome.total, 0);
-		assert.deepEqual(outcome.empty, { kind: "unmet" });
+		assert.deepEqual(outcome.empty, { kind: "gatesUnmet" });
 	});
 
 	test("排除的主张也是「同一段满足每一项」：只否决同时满足的段", async () => {

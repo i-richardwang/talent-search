@@ -16,7 +16,7 @@ import {
 import { claim } from "./conditions";
 import { hit as row } from "./rows";
 
-const hit = (claim: number, route: Route | null) => row({ claim, route });
+const hit = (claim: number, route: Route) => row({ claim, route });
 
 const claims = (...what: string[]): Claim[] =>
 	what.map((w) => claim(w) as Claim);
@@ -60,10 +60,6 @@ describe("强度分档", () => {
 				description: "claimed",
 			},
 		);
-	});
-
-	test("不比文本的命中（落在范围里的段）是登记事实，算受控", () => {
-		assert.equal(strengthOf(null), "controlled");
 	});
 
 	test("一段经历按最强的那一类命中着色", () => {

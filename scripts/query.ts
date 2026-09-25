@@ -19,7 +19,7 @@ const STRENGTH_LABEL: Record<Strength, string> = {
 /** 一条主张在命令行上怎么写：和一行查询语法同一种写法，对着输入就能核。 */
 function claimText(c: Claim) {
 	return [
-		c.what?.join("/"),
+		c.what.join("/"),
 		c.org && `org:${c.org.join("/")}`,
 		c.companyTag && `companyTag:${c.companyTag.join("/")}`,
 		c.kind && `kind:${c.kind}`,
@@ -35,7 +35,7 @@ if (!q) throw new Error('用法：bun run query "查询词"');
 const t0 = Date.now();
 const outcome = await search({ conditions: parseQuery(q) });
 if (outcome.order === "employee")
-	throw new Error("查询得有经历主张，只有人的条件排不出名次");
+	throw new Error("查询得有说了做过什么的经历主张，只有门槛排不出名次");
 const { claims, results, total } = outcome;
 const ms = Date.now() - t0;
 
@@ -61,7 +61,7 @@ for (const r of top) {
 		// 起止用界面上那一份写法（`lib/format.ts`）：命令行是拿来核对结果的，
 		// 两处把同一段经历写成两个样子，对起来就得先在脑子里换一次算。
 		console.log(
-			`     ${name}${h.value === null || h.value === name ? "" : ` ≈${h.value}`} ←[${routeLabel(h.route)}${h.phrase ? `「${dots(h.involvement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
+			`     ${name}${h.value === name ? "" : ` ≈${h.value}`} ←[${routeLabel(h.route)}${h.phrase ? `「${dots(h.involvement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
 		);
 	}
 }

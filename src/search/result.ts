@@ -9,23 +9,37 @@ import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
 import type { Strength } from "./weights";
 
-export type Claim = ExperienceCondition & { mode: "must" | "boost" };
+/** 说了做过什么的经历主张：它量名次，也是卡片上的一行证据。 */
+export type Claim = ExperienceCondition & {
+	mode: "must" | "boost";
+	what: NonNullable<ExperienceCondition["what"]>;
+};
 
-/** 启用条件按执行角色拆分；排除条件只否决经历段，不产生证据行。 */
+/**
+ * 只定去留的条件：人的条件，和没说做过什么的经历主张——背景（「来自大厂」
+ * 「待过字节」「入职前 3 年以上」）。背景说的是这个人待过哪、待了多久，
+ * 不是他做得多深，所以和职级、学历一样是门槛。
+ */
+export type Gate = PersonCondition | ExperienceCondition;
+
+/**
+ * 启用条件按执行角色拆分。名次只量做过什么：`claims` 产出事实、定档和深度、
+ * 画成证据行；`gates` 在取数里按人裁；`prefer` 满足一条乘一份固定的加分；
+ * `excludes` 只否决经历段。
+ */
 export type Query = {
 	claims: Claim[];
+	gates: Gate[];
+	prefer: Gate[];
 	excludes: ExperienceCondition[];
-	must: PersonCondition[];
-	prefer: PersonCondition[];
 };
 
 export function queryOf(conditions: readonly Condition[]): Query {
-	const q: Query = { claims: [], excludes: [], must: [], prefer: [] };
+	const q: Query = { claims: [], gates: [], prefer: [], excludes: [] };
 	for (const c of activeConditions(conditions)) {
-		if (c.about === "experience") {
-			if (c.mode === "exclude") q.excludes.push(c);
-			else q.claims.push(c as Claim);
-		} else if (c.mode === "must") q.must.push(c);
+		if (c.about === "experience" && c.mode === "exclude") q.excludes.push(c);
+		else if (c.about === "experience" && c.what) q.claims.push(c as Claim);
+		else if (c.mode === "must") q.gates.push(c);
 		else q.prefer.push(c);
 	}
 	return q;
@@ -38,9 +52,9 @@ export function claimsOf(conditions: readonly Condition[]): Claim[] {
 export type Hit = {
 	experienceId: number;
 	claim: number;
-	/** 命中的经历词；不比文本的主张为 null。 */
-	value: string | null;
-	route: Route | null;
+	/** 命中的经历词。 */
+	value: string;
+	route: Route;
 	relevance: number;
 	phrase: string | null;
 	involvement: string | null;
@@ -70,8 +84,8 @@ export type RankedResult = PopulationResult & {
 export type SearchResult = PopulationResult | RankedResult;
 
 export type ClaimBasis = {
-	route: Route | null;
-	value: string | null;
+	route: Route;
+	value: string;
 	relevance: number;
 	months: number;
 	endDate: string | null;

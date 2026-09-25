@@ -12,6 +12,7 @@
  * 它的入参是 `Fact[]`，不关心那些命中是怎么找出来的：换检索手段时改的是
  * 「事实从哪来」，这个文件不动。
  */
+
 import {
 	DIM_KEYS,
 	type DimKey,
@@ -54,14 +55,11 @@ export type Fact = PopulationFact & {
 	id: number;
 	/** 属于第几条主张 */
 	claim: number;
-	/** 命中的是这条主张的哪个经历词。只进证据行，不进分；不比文本的主张为 null。 */
-	value: string | null;
-	/**
-	 * 命中的那一类。没有经历词的主张（「待过字节」）不比文本：这一段落在范围里
-	 * 就是证据，为 null——它的可信度是登记字段那一档，强度 1。
-	 */
-	route: Route | null;
-	/** 说法与这一类原文的相关度，已过 RELEVANCE_MIN；不比文本的主张恒为 1 */
+	/** 命中的是这条主张的哪个经历词。只进证据行，不进分。 */
+	value: string;
+	/** 命中的那一类，决定可信度那一档。 */
+	route: Route;
+	/** 说法与这一类原文的相关度，已过 RELEVANCE_MIN */
 	relevance: number;
 	/**
 	 * 命中的那条说法的文本，只有抽取的两类带（其余类的文本就是经历行上的
@@ -78,7 +76,6 @@ export type Fact = PopulationFact & {
 /**
  * 两条证据谁更强：先比可信度那一档，同档比相关度。一条主张的几个经历词同权：
  * 它们都是模型对「要找什么」的表达，没有哪个更像原话。
- * 不比文本的主张，证据就是登记的公司、来源与时长，是登记那一档、相关度 1。
  */
 function stronger(a: Fact, b: Fact) {
 	return (
@@ -156,7 +153,7 @@ function claimValue(facts: Fact[], now: Date) {
 
 /**
  * 这些证据段的累计月数。一段只计一次：同一段靠两个经历词各命中一回，取数 SQL
- * 已经去重（`search.ts` 的 textualFacts），这里再按段 id 认一遍，让「一段十二
+ * 已经去重（`search.ts` 的 factsSql），这里再按段 id 认一遍，让「一段十二
  * 个月不会数成二十四」不依赖另一个文件的一条 distinct。
  */
 function monthsOf(facts: readonly Fact[]) {
@@ -235,8 +232,8 @@ function complete(p: Person, claims: Claim[]) {
  * **深度 = 必须主张的乘积 × 加分主张的抬升 × 人的偏好的抬升。** 必须主张之间是
  * 乘积：一条浅，整个人就被压下去。淘汰由 `complete` 负责，不是由乘积负责——
  * 加分那一半恒大于 1，只抬不压，所以不会出现「命中得越少分越高」。满足的每
- * 一条偏好各乘一次（`BOOST_WEIGHT`），经历上的和人上的一样：条件之间彼此独立，
- * 「最好字节来的」和「最好是硕士」满足一条就该得一条的分。
+ * 一条偏好（人的条件和背景，见 `result.ts` 的 `Gate`）各乘一次 `BOOST_WEIGHT`：
+ * 「最好字节来的」和「最好是硕士」满足一条就该得一条的分，不看在字节待了多久。
  */
 function measure(
 	p: Person,

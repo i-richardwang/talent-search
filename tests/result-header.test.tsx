@@ -9,26 +9,22 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ResultHeader } from "#/routes/s/$turnId/-components/result-state";
-import type { Claim } from "#/search/result";
 import { visibleText } from "./render";
 
-const CLAIMS: Claim[] = [{ about: "experience", mode: "must", what: ["算法"] }];
-
-const markup = (claims = CLAIMS, picking = false) =>
+const markup = (evidence = true, picking = false) =>
 	renderToStaticMarkup(
 		<ResultHeader
-			claims={claims}
+			evidence={evidence}
 			loading={false}
 			onPicking={() => {}}
 			order="evidence"
 			pickable
 			picking={picking}
-			planned={claims.length > 0}
 			total={38}
 		/>,
 	);
 
-const render = (claims = CLAIMS) => visibleText(markup(claims));
+const render = (evidence = true) => visibleText(markup(evidence));
 
 describe("这份名单是什么", () => {
 	test("人数和排序依据都在", () => {
@@ -45,9 +41,9 @@ describe("这份名单是什么", () => {
 		assert.ok(!seen.includes("简历原文"), seen);
 	});
 
-	test("一个条件都没有时不显示图例", () => {
+	test("没有证据行时不显示图例", () => {
 		// 没有点可对照的时候，图例解释的是不存在的东西
-		assert.ok(!render([]).includes("匹配来源"));
+		assert.ok(!render(false).includes("匹配来源"));
 	});
 });
 
@@ -61,6 +57,6 @@ describe("选择", () => {
 
 	test("进和出都写成这一下要做的事", () => {
 		// 现在在哪一档由名单左边那一列框说，不由一个按下去的样子说
-		assert.ok(visibleText(markup(CLAIMS, true)).includes("取消选择"));
+		assert.ok(visibleText(markup(true, true)).includes("取消选择"));
 	});
 });

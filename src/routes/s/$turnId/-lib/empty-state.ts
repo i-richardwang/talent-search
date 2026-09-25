@@ -77,7 +77,7 @@ const COPY: {
 		hint: `目前支持${SEARCHABLE}，请换一种描述。`,
 		action: { label: "修改需求", onClick: h.onEditQuery },
 	}),
-	personEmpty: (_reason, h) => ({
+	gatesUnmet: (_reason, h) => ({
 		title: "没有符合条件的人",
 		hint: "请移除一项条件后再搜索。",
 		action: { label: "调整条件", onClick: h.onEditQuery },

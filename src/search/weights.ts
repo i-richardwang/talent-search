@@ -39,7 +39,7 @@ export const TENURE_HALF = 48;
 // 离开相关方向后的月数按半衰曲线降低深度，但不使旧经历失效。
 export const RECENCY_HALF = 36;
 
-// 满足一条加分主张时，深度乘以 1 + BOOST_WEIGHT × 该主张深度。
+// 满足一条加分主张时，深度乘以 1 + BOOST_WEIGHT × 该主张深度；满足一条偏好乘以 1 + BOOST_WEIGHT。
 export const BOOST_WEIGHT = 0.5;
 
 export const RESULT_PAGE = 50;

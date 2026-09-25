@@ -183,7 +183,7 @@ describe("没作答", () => {
 		assert.equal(unanswered(raw, read(raw)), null);
 	});
 
-	test("只识别出没有经历词的主张或人的偏好不算失败：各自是一份完整的查询", () => {
+	test("只识别出背景或人的偏好不算失败：各自是一份完整的查询", () => {
 		for (const raw of [
 			{ conditions: [claim({ kind: "external" })] },
 			{ conditions: [claim({ org: ["字节"] }, "boost")] },

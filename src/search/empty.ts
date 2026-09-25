@@ -1,10 +1,10 @@
-import { type ExperienceCondition, experienceConditions } from "./condition";
+import { experienceConditions } from "./condition";
 import { narrows, type SearchFilters } from "./params";
-import { queryOf } from "./result";
+import { type Claim, queryOf } from "./result";
 import type { SearchSpec } from "./spec";
 
 type EmptyOverflow =
-	| { kind: "overflowEvidence"; claims: ExperienceCondition[] }
+	| { kind: "overflowEvidence"; claims: Claim[] }
 	| { kind: "overflowPopulation" };
 
 export type EmptyReason =
@@ -12,7 +12,7 @@ export type EmptyReason =
 	| { kind: "allDisabled" }
 	| { kind: "excludeOnly" }
 	| { kind: "noConditions" }
-	| { kind: "personEmpty" }
+	| { kind: "gatesUnmet" }
 	| { kind: "filtered" }
 	| { kind: "unmet" }
 	| { kind: "noHits" };
@@ -25,15 +25,15 @@ export function emptyReason(input: {
 	overflow: EmptyOverflow | null;
 }): EmptyReason | null {
 	const { spec, filters, total } = input;
-	const { claims, must, prefer } = queryOf(spec.conditions);
-	const people = must.length + prefer.length;
+	const { claims, gates, prefer } = queryOf(spec.conditions);
+	const people = gates.length + prefer.length;
 	if (input.overflow) return input.overflow;
 	if (total > 0) return null;
 
 	if (claims.length > 0 || people > 0) {
 		if (narrows(filters)) return { kind: "filtered" };
 		if (claims.some((c) => c.mode === "must")) return { kind: "unmet" };
-		if (claims.length === 0 && must.length > 0) return { kind: "personEmpty" };
+		if (claims.length === 0 && gates.length > 0) return { kind: "gatesUnmet" };
 		return { kind: "noHits" };
 	}
 

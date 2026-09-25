@@ -76,7 +76,8 @@ export function ResultList({
 }) {
 	const { results, claims, order, total } = outcome;
 	const reach = reachOf(total);
-	const pending = claimsOf(spec.conditions);
+	// 名单上有证据行，或这一轮的条件搜出来会有：图例才有点可对照
+	const evidence = claims.length > 0 || claimsOf(spec.conditions).length > 0;
 	const pickable = !loading && results.length > 0;
 
 	const head = (
@@ -101,8 +102,7 @@ export function ResultList({
 				order={order}
 				pickable={pickable}
 				picking={picks.picking}
-				planned={pending.length > 0}
-				claims={claims}
+				evidence={evidence}
 				total={total}
 			/>
 		</div>

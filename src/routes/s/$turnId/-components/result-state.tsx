@@ -20,7 +20,7 @@ import {
 import { Separator } from "#/components/ui/separator";
 import { Spinner } from "#/components/ui/spinner";
 import type { Condition } from "#/search/condition";
-import type { Claim, SearchOutcome } from "#/search/result";
+import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import type { InterpretFault, SearchMode } from "#/server/turn";
 import { emptyState } from "../-lib/empty-state";
@@ -36,8 +36,7 @@ export function ResultHeader({
 	loading,
 	order,
 	total,
-	claims,
-	planned,
+	evidence,
 	picking,
 	onPicking,
 	pickable,
@@ -45,8 +44,8 @@ export function ResultHeader({
 	loading: boolean;
 	order: SearchOutcome["order"];
 	total: number;
-	claims: Claim[];
-	planned: boolean;
+	/** 名单上有证据行（或这一轮的条件会有）：图例才有点可对照。 */
+	evidence: boolean;
 	picking: boolean;
 	onPicking: (on: boolean) => void;
 	pickable: boolean;
@@ -64,7 +63,7 @@ export function ResultHeader({
 				)}
 			</p>
 			<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-				{(planned || claims.length > 0) && (
+				{evidence && (
 					<>
 						<StrengthLegend />
 						<Separator className="h-4 max-sm:hidden" orientation="vertical" />

@@ -114,8 +114,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				order="evidence"
 				pickable
 				picking={false}
-				planned
-				claims={[{ about: "experience", mode: "must", what: ["算法"] }]}
+				evidence
 				total={12}
 			/>,
 		);
@@ -253,6 +252,5 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.match(text, /简历自述/);
 		assert.equal(routeLabel("skill"), "技能");
 		assert.equal(routeLabel("did"), "");
-		assert.equal(routeLabel(null), "任职");
 	});
 });

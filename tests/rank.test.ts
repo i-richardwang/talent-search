@@ -134,7 +134,7 @@ describe("取值", () => {
 			fact({ empId: "A", id: 7, value: "别的取值", relevance: 0.8 }),
 		]);
 		const one = depthOf([fact({ empId: "A", id: 7, value: "词0" })]);
-		// 同段两行本该在取数 SQL 里就去重掉（search.ts 的 textualFacts），
+		// 同段两行本该在取数 SQL 里就去重掉（search.ts 的 factsSql），
 		// 这里只保证万一漏到内存里，强度按最强的那条算，月份也不因此翻倍。
 		assert.equal(both, one);
 	});
@@ -229,23 +229,6 @@ describe("人的偏好", () => {
 			ranked[0]?.depth,
 			(plain[0]?.depth ?? 0) * (1 + BOOST_WEIGHT) ** 2,
 		);
-	});
-});
-
-describe("没有经历词的主张", () => {
-	test("落在范围里的段就是证据：强度是登记那一档", () => {
-		const plain = [fact({ empId: "A", route: null, value: null })];
-		const seq = [fact({ empId: "B", route: "seq" })];
-		assert.equal(depthOf(plain), depthOf(seq));
-		assert.equal(run(plain).ranked[0]?.strength, "controlled");
-		assert.deepEqual(run(plain).ranked[0]?.basis[0], {
-			route: null,
-			value: null,
-			relevance: 1,
-			months: 24,
-			endDate: null,
-			external: false,
-		});
 	});
 });
 

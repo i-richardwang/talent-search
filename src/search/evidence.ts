@@ -14,9 +14,8 @@ import {
 
 export type { Strength } from "#/search/weights";
 
-/** 落在范围里本身就是登记事实（公司、来源、时长都是 HR 登记的），和序列、岗位同档。 */
-export function strengthOf(route: Route | null): Strength {
-	return route === null ? "controlled" : ROUTE_STRENGTH[route];
+export function strengthOf(route: Route): Strength {
+	return ROUTE_STRENGTH[route];
 }
 
 const ROUTE_LABEL: Record<Route, string> = {
@@ -29,12 +28,9 @@ const ROUTE_LABEL: Record<Route, string> = {
 	did: "",
 };
 
-/**
- * 一条命中的来源怎么显示——证据行、时间线、命令行用的是同一个词。不比文本的
- * 命中（「待过字节」那种主张）没有路：这一段本身就是证据，显示的是它的任职。
- */
-export function routeLabel(route: Route | null) {
-	return route === null ? "任职" : ROUTE_LABEL[route];
+/** 一条命中的来源怎么显示——证据行、时间线、命令行用的是同一个词。 */
+export function routeLabel(route: Route) {
+	return ROUTE_LABEL[route];
 }
 
 /**

@@ -97,7 +97,7 @@ describe("其余分支各有各的文案", () => {
 	});
 
 	test("只有人的条件且无人匹配时报无结果，不报解析失败", () => {
-		assert.equal(run({ kind: "personEmpty" }).title, "没有符合条件的人");
+		assert.equal(run({ kind: "gatesUnmet" }).title, "没有符合条件的人");
 	});
 
 	test("筛选太窄：一键清掉全部筛选", () => {
