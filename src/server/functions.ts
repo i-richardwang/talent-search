@@ -63,9 +63,9 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 		async ({
 			data,
 		}): Promise<{ thread: Turn[]; result: SearchOutcome | null } | null> => {
-			// 整条线程一次取回：当前这一轮是最后一项，对话栏画的是全部
+			// 整条链一次取回：对话栏画的是全部，名单是正看着的这一轮
 			const thread = await loadThread(data.turnId);
-			const turn = thread?.at(-1);
+			const turn = thread?.find((t) => t.id === data.turnId);
 			if (!thread || !turn) return null;
 			/*
 			 * 还没理解完：不跑检索，先把工作台交出去。
@@ -113,7 +113,7 @@ export const fetchEmployee = createServerFn({ method: "GET" })
 /** 提交一次查询：落一条记录，返回它的 id。入参收窄在 `search/commit-input.ts`。 */
 export const commitTurn = createServerFn({ method: "POST" })
 	.validator(validateCommit)
-	.handler(({ data }) => createTurn(data.input, data.parentTurnId));
+	.handler(({ data }) => createTurn(data.input, data.from));
 
 /** 理解走到哪一步了。等理解时界面每秒问一次，线程里的步骤边跑边长出来。 */
 export const turnTrace = createServerFn({ method: "GET" })

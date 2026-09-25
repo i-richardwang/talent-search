@@ -14,22 +14,20 @@ import { boundedText } from "./text";
  * 整份 `SearchSpec` 在这里一次收窄，没有第二个入口。
  */
 export function validateCommit(d: unknown): {
-	parentTurnId: string | undefined;
+	from: string | undefined;
 	input: QueryInput;
 } {
 	const data = (d ?? {}) as Record<string, unknown>;
 	const input = (data.input ?? {}) as Record<string, unknown>;
-	const parentTurnId =
-		typeof data.parentTurnId === "string" && data.parentTurnId
-			? data.parentTurnId
-			: undefined;
+	const from =
+		typeof data.from === "string" && data.from ? data.from : undefined;
 	if (input.kind === "sentence") {
 		const text = boundedText(input.text);
 		if (!text) throw new Error("查询为空");
-		return { parentTurnId, input: { kind: "sentence", text } };
+		return { from, input: { kind: "sentence", text } };
 	}
 	if (input.kind !== "spec") throw new Error("查询格式无效");
 	const spec = sanitizeSpec(input.spec);
 	if (!hasMeaning(spec)) throw new Error("查询为空");
-	return { parentTurnId, input: { kind: "spec", spec } };
+	return { from, input: { kind: "spec", spec } };
 }

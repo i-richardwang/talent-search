@@ -1,16 +1,17 @@
 import {
 	createFileRoute,
+	Link,
 	notFound,
 	Outlet,
 	useLoaderData,
 	useNavigate,
 	useParams,
 } from "@tanstack/react-router";
-import { AlertCircleIcon, MessagesSquareIcon } from "lucide-react";
+import { AlertCircleIcon, HistoryIcon, MessagesSquareIcon } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { KeywordBar, type KeywordBarHandle } from "#/components/keyword-bar";
 import type { QueryBarHandle } from "#/components/query-bar";
-import { Alert, AlertDescription } from "#/components/ui/alert";
+import { Alert, AlertAction, AlertDescription } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import {
 	Dialog,
@@ -108,24 +109,57 @@ function TurnNotFound() {
 	);
 }
 
+/**
+ * 正看着的不是最后一次的结果。名单那一列说出来：窄屏上线程收着，只有这里看得见。
+ * 在这里改条件、补充需求照常可以，作用在眼前这份条件上，记在最后。
+ */
+function Earlier({ latestId }: { latestId: string }) {
+	return (
+		<Alert>
+			<HistoryIcon />
+			<AlertDescription>
+				正在查看较早的一次结果。在此基础上修改，会记为最新的一次。
+			</AlertDescription>
+			<AlertAction>
+				<Button
+					render={
+						<Link params={{ turnId: latestId }} search={{}} to="/s/$turnId" />
+					}
+					size="xs"
+					variant="outline"
+				>
+					回到最新
+				</Button>
+			</AlertAction>
+		</Alert>
+	);
+}
+
 function Workbench() {
 	const { thread, result } = Route.useLoaderData();
+	const { turnId } = Route.useParams();
 	const { understanding } = useLoaderData({ from: "__root__" });
-	// 线程最后一项就是这一轮；loader 保证它非空
-	const turn = thread[thread.length - 1] as (typeof thread)[number];
-	const { id: turnId, spec: settledSpec } = turn;
+	// loader 保证线程非空、正看着的这一轮在链上
+	const turn = thread.find((t) => t.id === turnId) as (typeof thread)[number];
+	const latest = thread[thread.length - 1] as (typeof thread)[number];
+	const earlier = latest.id !== turnId;
+	const { spec: settledSpec } = turn;
 	const view = Route.useSearch();
 	const navigate = useNavigate();
 	const { empId } = useParams({ strict: false });
 	const { commit, error: commitError } = useCommit();
 
 	const { growing, navigating } = useNavPhase();
+	// 理解属于链上最后一轮，不属于正看着的这一轮：回头看早先的结果时，
+	// 最后一轮照样在理解，线程照样在长
 	const {
 		interpreting,
 		fault: interpretFault,
 		retry: retryInterpret,
 		trace: liveTrace,
-	} = useInterpretation(turnId, settledSpec);
+	} = useInterpretation(latest.id, latest.spec);
+	// 没理解出来的只可能是最后一轮；名单停在等待或失败，只当看着的就是它
+	const pending = settledSpec === null;
 
 	const { mode } = turn;
 	// 对话的链在没配查询理解时没有输入框，条件只能在 chip 上改
@@ -161,8 +195,8 @@ function Workbench() {
 	const { results, facets, total } = outcome;
 	const fields = filterFields(facets, view);
 	const texts = textFilters(view);
-	const loading = navigating || interpreting;
-	const phase = interpreting ? "interpreting" : "searching";
+	const loading = navigating || (pending && interpreting);
+	const phase = pending && interpreting ? "interpreting" : "searching";
 
 	const updateView = (next: Partial<View>) =>
 		navigate({ to: ".", search: (old) => ({ ...old, n: undefined, ...next }) });
@@ -170,7 +204,7 @@ function Workbench() {
 	const keywords = mode === "keyword" ? keywordsOf(spec.conditions) : null;
 
 	const reviseSpec = (next: SearchSpec) =>
-		commit({ kind: "spec", spec: next }, { parentTurnId: turnId });
+		commit({ kind: "spec", spec: next }, { from: turnId });
 
 	const addConditions = (more: Condition[]) =>
 		reviseSpec({ conditions: [...spec.conditions, ...more] });
@@ -192,9 +226,10 @@ function Workbench() {
 			fault={interpretFault}
 			liveTrace={liveTrace}
 			onAdd={addConditions}
-			onQuery={(input) => commit(input, { parentTurnId: turnId })}
+			onQuery={(input) => commit(input, { from: turnId })}
 			rounds={thread}
 			understanding={understanding}
+			viewing={turnId}
 			waiting={interpreting}
 		/>
 	);
@@ -236,8 +271,9 @@ function Workbench() {
 					>
 						{/* 关键词搜索的框在名单正上方：改完第一眼看到的是它改了什么，
 						    再往下才是人。对话不在这里，在右栏的线程里。 */}
-						{(mode === "keyword" || commitError) && (
+						{(earlier || mode === "keyword" || commitError) && (
 							<div className="mb-4 flex flex-col gap-3">
+								{earlier && <Earlier latestId={latest.id} />}
 								{mode === "keyword" && (
 									<KeywordBar
 										initial={keywords ?? undefined}
@@ -290,7 +326,7 @@ function Workbench() {
 							canMore={canMore}
 							empId={empId}
 							failure={
-								interpretFault
+								pending && interpretFault
 									? { fault: interpretFault, onRetry: retryInterpret }
 									: null
 							}

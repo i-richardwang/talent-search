@@ -1,7 +1,9 @@
 /**
  * 查询记录的持久化与派生规则。一条链是一次找人任务，链上每一条是一轮：
  * 上一轮的条件加上这一轮的动作（说一句话，或直接改条件）得出新的条件。
- * 记录不可变：能改的只有补全待理解记录那两列，能删的只有整条链（`deleteSearch`）。
+ * 链是一条线，新的一轮只接在最后（`createTurn`）。
+ * 记录不可变：能改的只有补全待理解记录那两列；能删的是整条链（`deleteSearch`），
+ * 以及被下一次动作取代的、没理解出来的末轮。
  */
 import "@tanstack/react-start/server-only";
 import { randomBytes } from "node:crypto";
@@ -49,32 +51,51 @@ export type Turn = {
 	trace: TraceStep[] | null;
 };
 
-/**
- * 落一条新记录，交出它的 id。
- *
- * 父记录决定这一条挂在**哪条链**上（`root_turn_id`），它的条件也是这一轮的
- * 基线：一句话说的是「在这张表上再怎么改」，理解时要拿到这张表，界面也拿它
- * 比出这一轮改了什么。
- */
-async function insertTurn(row: {
-	parent: SearchTurn | null;
-	rawText: string | null;
-	spec?: SearchSpec | null;
-}): Promise<string> {
+type Db = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** 在 `parent` 后面落一条新记录。没有 `parent` 就是一条新链的链头。 */
+async function insertTurn(
+	tx: Db,
+	row: {
+		parent: SearchTurn | null;
+		rawText: string | null;
+		spec: SearchSpec | null;
+	},
+): Promise<SearchTurn> {
 	const id = newId();
-	await db.insert(searchTurn).values({
-		id,
-		rootTurnId: row.parent ? row.parent.rootTurnId : id,
-		parentTurnId: row.parent?.id ?? null,
-		rawText: row.rawText,
-		spec: row.spec ?? null,
-	});
-	return id;
+	const [inserted] = await tx
+		.insert(searchTurn)
+		.values({
+			id,
+			rootTurnId: row.parent ? row.parent.rootTurnId : id,
+			parentTurnId: row.parent?.id ?? null,
+			rawText: row.rawText,
+			spec: row.spec,
+		})
+		.returning();
+	if (!inserted) throw new Error("查询记录未能落库");
+	return inserted;
 }
 
-async function getRow(id: string): Promise<SearchTurn | null> {
-	const [row] = await db.select().from(searchTurn).where(eq(searchTurn.id, id));
+async function getRow(id: string, tx: Db = db): Promise<SearchTurn | null> {
+	const [row] = await tx.select().from(searchTurn).where(eq(searchTurn.id, id));
 	return row ?? null;
+}
+
+/** 一条链的最后一轮：链上唯一没有下一轮的那条。 */
+async function tailOf(tx: Db, rootTurnId: string): Promise<SearchTurn> {
+	const [tail] = await tx
+		.select()
+		.from(searchTurn)
+		.where(
+			and(
+				eq(searchTurn.rootTurnId, rootTurnId),
+				sql`not exists (select 1 from ${searchTurn} next
+					where next.parent_turn_id = ${searchTurn.id})`,
+			),
+		);
+	if (!tail) throw new Error("查询记录链没有末轮");
+	return tail;
 }
 
 function modeOf(rootRawText: string | null | undefined): SearchMode {
@@ -82,40 +103,80 @@ function modeOf(rootRawText: string | null | undefined): SearchMode {
 }
 
 /**
- * 落一条新查询或从既有记录派生一条，不在导航前等待模型。
- *
  * 关键词搜索的链只收那几个框写得出的条件表：一句话进不来，别的形状也进不来。
  * 结果页要把当前的查询填回框里接着改，框表达不了的一条既填不回去，也就改不了、
- * 看不见。对话的链上什么形状都行——chip 上的改动、搜不了时一键加上的替代条件，
+ * 看不见。对话的链上什么形状都行——chip 上的改动、搜不了时一键添加的替代条件，
  * 都是条件表。
+ */
+function admit(mode: SearchMode, input: QueryInput) {
+	if (mode !== "keyword") return;
+	if (input.kind === "sentence") throw new Error("关键词搜索不收一句话的需求");
+	if (!keywordsOf(input.spec.conditions))
+		throw new Error("关键词搜索只收关键词框里写得出的条件");
+}
+
+/**
+ * 落一轮新查询，不在导航前等待模型。没有 `from` 就开一条新链。
+ *
+ * 链是一条线：新的一轮总接在链尾，所以回头看过去某一轮的结果，后面那几轮
+ * 照样在线程里。`from` 是人正看着的那一轮，动作作用在**它的**条件上：
+ *
+ * - 交一整张表（chip 上的改动、替代条件、关键词框）不依赖基线，接在链尾。
+ * - 说一句话要有基线。`from` 就是链尾时直接接上；是更早的一轮时，先追加一轮
+ *   原样抄回那一轮的条件，话再接在后面。线程里那一步记成一次修改，基线
+ *   仍然是这句话的上一轮——每一轮都是真实发生过的一步。
+ *
+ * 链尾还没理解出来的那一轮不算数：新的动作取代它（没作答时换个说法重说，
+ * 就是这一步）。同一条链上的追加按链头的行锁排队，`search_turn_line`
+ * 保证链不分叉。
  */
 export async function createTurn(
 	input: QueryInput,
-	parentTurnId?: string,
+	from?: string,
 ): Promise<{ turnId: string }> {
-	const parent = parentTurnId ? await getRow(parentTurnId) : null;
-	if (parentTurnId && !parent) throw new Error("要修改的查询记录不存在");
-	if (parent && parent.spec === null)
-		throw new Error("查询仍在理解中，暂时不能派生新记录");
-	const mode = parent
-		? modeOf((await getRow(parent.rootTurnId))?.rawText)
-		: input.kind === "sentence"
-			? "conversation"
-			: "keyword";
-	if (mode === "keyword") {
-		if (input.kind === "sentence")
-			throw new Error("关键词搜索不收一句话的需求");
-		if (!keywordsOf(input.spec.conditions))
-			throw new Error("关键词搜索只收关键词框里写得出的条件");
-	}
+	return db.transaction(async (tx) => {
+		const text = input.kind === "sentence" ? input.text : null;
+		const spec = input.kind === "spec" ? input.spec : null;
+		if (!from) {
+			admit(text === null ? "keyword" : "conversation", input);
+			const head = await insertTurn(tx, { parent: null, rawText: text, spec });
+			return { turnId: head.id };
+		}
 
-	if (input.kind === "sentence")
-		return { turnId: await insertTurn({ parent, rawText: input.text }) };
-	// 原话只记这一轮说了什么。直接改条件的一轮没有说话；任务的标题是链头那句，
-	// 不必往下抄。
-	return {
-		turnId: await insertTurn({ parent, rawText: null, spec: input.spec }),
-	};
+		const rootTurnId = (await getRow(from, tx))?.rootTurnId;
+		const [root] = rootTurnId
+			? await tx
+					.select()
+					.from(searchTurn)
+					.where(eq(searchTurn.id, rootTurnId))
+					.for("update")
+			: [];
+		// 排在别的追加后面时，看着的那一轮可能刚被取代：拿到锁再读一遍
+		const seen = root ? await getRow(from, tx) : null;
+		if (!root || !seen) throw new Error("要修改的查询记录不存在");
+		admit(modeOf(root.rawText), input);
+
+		let tail: SearchTurn | null = await tailOf(tx, seen.rootTurnId);
+		if (tail.spec === null) {
+			await tx.delete(searchTurn).where(eq(searchTurn.id, tail.id));
+			tail = tail.parentTurnId ? await getRow(tail.parentTurnId, tx) : null;
+		}
+		// 没理解出来的只可能是链尾；人看着它时，动作作用在它之前那一轮上
+		const base = seen.spec ? seen : tail;
+		if (!base && spec) throw new Error("还没有可以修改的搜索条件");
+
+		let parent = tail;
+		if (text !== null && base && tail && base.id !== tail.id)
+			parent = await insertTurn(tx, {
+				parent: tail,
+				rawText: null,
+				spec: base.spec,
+			});
+		// 原话只记这一轮说了什么。直接改条件的一轮没有说话；任务的标题是链头那句，
+		// 不必往下抄。
+		const turn = await insertTurn(tx, { parent, rawText: text, spec });
+		return { turnId: turn.id };
+	});
 }
 
 /**
@@ -267,11 +328,9 @@ function interpretFault(error: unknown): InterpretFault {
 }
 
 /**
- * 从链头到这一条的整条路，链头在前。对话的线程画的就是它：每一轮说了什么、
- * 条件从哪张表改到哪张表（上一项的 `spec` 就是这一轮的基线）。
- *
- * 一条链是一棵树——从中间某一轮补充需求会分出新的一支——线程只走这一条路上的
- * 祖先，兄弟分支不进来：它们是另一次没走下去的尝试，浏览器后退能回去。
+ * 这一条所在的整条链，链头在前。对话的线程画的就是它：每一轮说了什么、
+ * 条件从哪张表改到哪张表（上一项的 `spec` 就是这一轮的基线）。看的是哪一轮都
+ * 取整条链——回头看早先的结果，不会把后面的几轮藏起来。
  */
 export async function loadThread(id: string): Promise<Turn[] | null> {
 	const { rows } = await db.execute<{
@@ -282,15 +341,16 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 		notes: TurnNotes | null;
 		trace: TraceStep[] | null;
 	}>(sql`
-		with recursive path as (
-			select id, root_turn_id, parent_turn_id, raw_text, spec, notes, trace, 0 as depth
-			from search_turn where id = ${id}
+		with recursive line as (
+			select id, root_turn_id, raw_text, spec, notes, trace, 0 as depth
+			from search_turn
+			where id = (select root_turn_id from search_turn where id = ${id})
 			union all
-			select t.id, t.root_turn_id, t.parent_turn_id, t.raw_text, t.spec, t.notes,
-				t.trace, path.depth + 1
-			from search_turn t join path on t.id = path.parent_turn_id
+			select t.id, t.root_turn_id, t.raw_text, t.spec, t.notes, t.trace,
+				line.depth + 1
+			from search_turn t join line on t.parent_turn_id = line.id
 		)
-		select id, root_turn_id, raw_text, spec, notes, trace from path order by depth desc`);
+		select id, root_turn_id, raw_text, spec, notes, trace from line order by depth`);
 	if (rows.length === 0) return null;
 	const root = rows[0];
 	const mode = modeOf(root?.raw_text);
@@ -317,7 +377,7 @@ export async function traceOf(
 
 export async function loadTurn(id: string): Promise<Turn | null> {
 	const thread = await loadThread(id);
-	return thread?.at(-1) ?? null;
+	return thread?.find((turn) => turn.id === id) ?? null;
 }
 
 const RECENT_MAX = 8;
@@ -330,7 +390,7 @@ export type RecentSearch = {
 };
 
 /**
- * 每条派生链只展示最后一份完整查询；打开 turnId 即可精确回放全部条件。
+ * 每条链只展示最后一份完整查询；打开 turnId 即可精确回放全部条件。
  * 标题是链头那句话：一次找人任务从那句话开始，后面每一轮都是在它上面改。
  */
 export async function listRecent(): Promise<RecentSearch[]> {

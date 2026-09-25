@@ -13,7 +13,7 @@ describe("提交查询的服务端边界", () => {
 		assert.deepEqual(
 			validateCommit({ input: { kind: "sentence", text: " 算法 " } }),
 			{
-				parentTurnId: undefined,
+				from: undefined,
 				input: { kind: "sentence", text: "算法" },
 			},
 		);
@@ -34,7 +34,7 @@ describe("提交查询的服务端边界", () => {
 				},
 			}),
 			{
-				parentTurnId: undefined,
+				from: undefined,
 				input: {
 					kind: "spec",
 					spec: {

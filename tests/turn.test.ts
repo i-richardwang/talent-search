@@ -2,9 +2,9 @@
  * 查询记录的派生语义。跑在临时 schema 上的真 SQL，理解走夹具里的假模型端点
  * （按一行查询语法读那句话、接在当前条件后面，见 `fixture.ts` 的 `fakeIntent`）。
  *
- * 一条链是一次找人任务，派生有两种：**补充需求**（一句话作用在上一轮的条件上）
- * 和**改条件**（直接调几枚 chip）。两者都挂在同一条链上——「最近搜索」一次
- * 找人任务只占一行、后退键能回到上一步，靠的都是链不断。
+ * 一条链是一次找人任务，派生有两种：**补充需求**（一句话作用在正看着的条件上）
+ * 和**改条件**（直接交一整张表）。两者都记在同一条链的最后——「最近搜索」一次
+ * 找人任务只占一行、线程从头读到尾、后退键能回到上一步，靠的都是链是一条线。
  */
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
@@ -31,8 +31,8 @@ const wordsOf = (spec: SearchSpec) =>
 		c.about === "experience" ? c.what?.[0] : c.values[0],
 	);
 
-async function sentence(text: string, parent?: string) {
-	const { turnId } = await createTurn({ kind: "sentence", text }, parent);
+async function sentence(text: string, from?: string) {
+	const { turnId } = await createTurn({ kind: "sentence", text }, from);
 	const spec = await resolveTurn(turnId);
 	return { turnId, spec, words: wordsOf(spec) };
 }
@@ -61,7 +61,7 @@ describe("补充需求", () => {
 		assert.deepEqual(
 			thread?.map((t) => t.id),
 			[root.turnId, child.turnId],
-			"线程是链头到这一轮的那条路，链头在前",
+			"线程是整条链，链头在前",
 		);
 		assert.deepEqual(
 			thread?.[0]?.spec,
@@ -80,17 +80,63 @@ describe("补充需求", () => {
 		assert.equal(await traceOf("nope"), null);
 	});
 
-	test("线程只走祖先，兄弟分支不进来；不存在的记录没有线程", async () => {
+	test("从哪一轮取线程都是整条链；不存在的记录没有线程", async () => {
 		const root = await sentence("算法");
-		const left = await sentence("渠道运营", root.turnId);
-		const right = await sentence("带团队", root.turnId);
-		const deeper = await sentence("后端", right.turnId);
-		assert.deepEqual(
-			(await loadThread(deeper.turnId))?.map((t) => t.id),
-			[root.turnId, right.turnId, deeper.turnId],
-		);
-		assert.equal((await loadThread(left.turnId))?.length, 2);
+		const next = await sentence("渠道运营", root.turnId);
+		for (const id of [root.turnId, next.turnId])
+			assert.deepEqual(
+				(await loadThread(id))?.map((t) => t.id),
+				[root.turnId, next.turnId],
+			);
 		assert.equal(await loadThread("nope"), null);
+	});
+
+	test("在早先一轮上补充一句：先记一轮恢复那时的条件，话接在最后", async () => {
+		const root = await sentence("算法");
+		const later = await sentence("渠道运营", root.turnId);
+		const { turnId } = await createTurn(
+			{ kind: "sentence", text: "带团队" },
+			root.turnId,
+		);
+		const thread = (await loadThread(turnId)) ?? [];
+		assert.deepEqual(
+			thread.slice(0, 2).map((t) => t.id),
+			[root.turnId, later.turnId],
+			"后面那一轮还在，没有分出去",
+		);
+		const [restored, said] = thread.slice(2);
+		assert.equal(restored?.said, null, "恢复是一次直接改条件");
+		assert.deepEqual(restored?.spec, root.spec);
+		assert.equal(said?.id, turnId);
+		assert.deepEqual(wordsOf(await resolveTurn(turnId)), ["算法", "带团队"]);
+	});
+
+	test("同时追加两轮：排着队接上，链仍是一条线", async () => {
+		const root = await sentence("算法");
+		const spec = (q: string) => ({
+			kind: "spec" as const,
+			spec: { conditions: parseQuery(q) },
+		});
+		const [a, b] = await Promise.all([
+			createTurn(spec("+算法"), root.turnId),
+			createTurn(spec("算法, 后端"), root.turnId),
+		]);
+		const ids = (await loadThread(root.turnId))?.map((t) => t.id);
+		assert.equal(ids?.length, 3);
+		assert.deepEqual(new Set(ids?.slice(1)), new Set([a.turnId, b.turnId]));
+	});
+
+	test("在早先一轮上直接改条件：整张表接在最后，不另记恢复", async () => {
+		const root = await sentence("算法");
+		const later = await sentence("渠道运营", root.turnId);
+		const { turnId } = await createTurn(
+			{ kind: "spec", spec: { conditions: parseQuery("+算法") } },
+			root.turnId,
+		);
+		assert.deepEqual(
+			(await loadThread(turnId))?.map((t) => t.id),
+			[root.turnId, later.turnId, turnId],
+		);
 	});
 
 	test("模型拿到的是上一轮的整张表，停用的也在里面", async () => {
@@ -132,15 +178,44 @@ describe("补充需求", () => {
 		assert.deepEqual(spec.conditions, parseQuery("产品经理"));
 	});
 
-	test("还在理解中的记录不能派生", async () => {
+	test("没理解出来的最后一轮被下一句取代，不留在链上", async () => {
 		const root = await sentence("算法");
-		const pending = await createTurn(
+		const stuck = await createTurn(
 			{ kind: "sentence", text: "渠道运营" },
 			root.turnId,
 		);
+		const { turnId } = await createTurn(
+			{ kind: "sentence", text: "带团队" },
+			stuck.turnId,
+		);
+		assert.equal(await loadTurn(stuck.turnId), null);
+		assert.deepEqual(
+			(await loadThread(turnId))?.map((t) => t.id),
+			[root.turnId, turnId],
+		);
+		assert.deepEqual(wordsOf(await resolveTurn(turnId)), ["算法", "带团队"]);
+	});
+
+	test("链头就没理解出来：下一句成了新的链头", async () => {
+		const stuck = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(
+			{ kind: "sentence", text: "渠道运营" },
+			stuck.turnId,
+		);
+		assert.equal(await loadTurn(stuck.turnId), null);
+		const turn = await loadTurn(turnId);
+		assert.equal(turn?.rootTurnId, turnId);
+		assert.equal(turn?.title, "渠道运营");
+	});
+
+	test("还没有条件时不能直接改条件", async () => {
+		const stuck = await createTurn({ kind: "sentence", text: "算法" });
 		await assert.rejects(
-			createTurn({ kind: "sentence", text: "带团队" }, pending.turnId),
-			/查询仍在理解中/,
+			createTurn(
+				{ kind: "spec", spec: { conditions: parseQuery("算法") } },
+				stuck.turnId,
+			),
+			/还没有可以修改的搜索条件/,
 		);
 	});
 });
@@ -394,6 +469,22 @@ describe("理解只落一次", () => {
 });
 
 describe("查询记录状态", () => {
+	test("链不分叉：一轮后面至多接一轮", async () => {
+		const { db } = await import("#/db");
+		const { searchTurn } = await import("#/db/schema");
+		const root = await sentence("算法");
+		await sentence("渠道运营", root.turnId);
+		await assert.rejects(
+			db.insert(searchTurn).values({
+				id: "forked_turn",
+				rootTurnId: root.turnId,
+				parentTurnId: root.turnId,
+				rawText: "带团队",
+			}),
+			violates("search_turn_line"),
+		);
+	});
+
 	test("数据库不接受既没原话也没条件的记录", async () => {
 		const { db } = await import("#/db");
 		const { searchTurn } = await import("#/db/schema");

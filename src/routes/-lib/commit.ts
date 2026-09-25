@@ -27,24 +27,19 @@ export function useCommit() {
 	const [error, setError] = useState<string | null>(null);
 
 	/**
-	 * @param parentTurnId 从哪一条派生。工作台里的改动都有父记录，零态没有。
+	 * @param from 人正看着的那一轮：动作作用在它的条件上，新的一轮接在链尾
+	 *   （`server/turn.ts` 的 `createTurn`）。零态没有，开一条新链。
 	 * 新问题从默认视图开始；上一条记录的 URL 状态不属于查询语义，不能跟着复制。
 	 * @returns 成功与否。零态的输入框据此决定要不要清空——这一步会失败，
 	 *   失败了还把人刚敲的话吞掉，就连重试都没得重试。
 	 */
-	const commit = async (
-		input: QueryInput,
-		opts: { parentTurnId?: string } = {},
-	) => {
+	const commit = async (input: QueryInput, opts: { from?: string } = {}) => {
 		if (inFlight.current) return false;
 		inFlight.current = true;
 		setError(null);
 		try {
 			const { turnId } = await commitTurn({
-				data: {
-					parentTurnId: opts.parentTurnId,
-					input,
-				},
+				data: { from: opts.from, input },
 			});
 			await navigate({
 				to: "/s/$turnId",

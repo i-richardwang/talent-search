@@ -281,8 +281,11 @@ export const searchTurn = pgTable(
 		id: text("id").primaryKey(),
 		/** 同一次找人任务的链头：最近搜索按它去重，它的原话是这次任务的标题。 */
 		rootTurnId: text("root_turn_id").notNull(),
-		/** 从哪一条派生：它的条件是这一轮说话时的基线，也是界面比出变化的那一边。 */
-		parentTurnId: text("parent_turn_id"),
+		/**
+		 * 链上的前一轮：它的条件是这一轮说话时的基线，也是界面比出变化的那一边。
+		 * 一条链是一条线，一轮后面至多接一轮（`search_turn_line`）。
+		 */
+		parentTurnId: text("parent_turn_id").unique("search_turn_line"),
 		/** 用户这一轮说的话；直接提交完整条件时为空。 */
 		rawText: text("raw_text"),
 		/** 查询条件快照；null 表示仍待理解。 */

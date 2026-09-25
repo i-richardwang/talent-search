@@ -32,7 +32,7 @@ function turns(rounds: Round[]): Turn[] {
 	}));
 }
 
-/** 过去的一轮底下有回到那一轮的 `Link`，得站在一个 router 里才画得出来。 */
+/** 别的轮次底下有查看那一轮结果的 `Link`，得站在一个 router 里才画得出来。 */
 async function seen(
 	rounds: Round[],
 	{
@@ -40,11 +40,14 @@ async function seen(
 		waiting = false,
 		liveTrace = null,
 		fault = null,
+		viewing = rounds.length - 1,
 	}: {
 		understanding?: boolean;
 		waiting?: boolean;
 		liveTrace?: TraceStep[] | null;
 		fault?: InterpretFault | null;
+		/** 名单正显示第几轮，默认最后一轮。 */
+		viewing?: number;
 	} = {},
 ) {
 	const html = await routed(
@@ -56,6 +59,7 @@ async function seen(
 				onQuery={() => true}
 				rounds={turns(rounds)}
 				understanding={understanding}
+				viewing={`t${viewing}`}
 				waiting={waiting}
 			/>
 		),
@@ -150,22 +154,38 @@ describe("第一轮", () => {
 });
 
 describe("线程就是记录链", () => {
-	test("过去的一轮能回到当时的结果，当前这一轮不能；「添加」只跟当前一轮", async () => {
-		const declined: TurnNotes = {
-			assumed: [],
-			declined: [
-				{ said: "有潜力", why: "看不出", instead: parseQuery("+带团队") },
-			],
-		};
-		const { html, text } = await seen([
-			{ said: "算法，有潜力", spec: "算法", notes: declined },
-			{ said: "再加后端", spec: "算法, 后端" },
-		]);
-		assert.match(html, /href="\/s\/t0"/, "第一轮能点回去");
-		assert.doesNotMatch(html, /href="\/s\/t1"/, "当前这一轮不是链接");
-		assert.match(html, /aria-current="step"/);
+	const declined: TurnNotes = {
+		assumed: [],
+		declined: [
+			{ said: "有潜力", why: "看不出", instead: parseQuery("+带团队") },
+		],
+	};
+	const chain: Round[] = [
+		{ said: "算法，有潜力", spec: "算法", notes: declined },
+		{ said: "再加后端", spec: "算法, 后端" },
+	];
+
+	test("别的轮次能查看当时的结果，正看着的最后一轮不是链接", async () => {
+		const { html, text } = await seen(chain);
+		assert.match(html, /href="\/s\/t0"/, "第一轮能点过去");
+		assert.doesNotMatch(html, /href="\/s\/t1"/, "正看着的这一轮不是链接");
+		assert.match(html, /aria-current="page"/);
+		assert.doesNotMatch(text, /正在查看/, "看着最后一轮是默认的样子，不标");
 		assert.match(text, /未采用「有潜力」：看不出/);
-		assert.doesNotMatch(text, /可改为/, "过去那一轮的替代不给一键添加");
+		assert.doesNotMatch(text, /可改为/, "替代条件跟着正看着的那一轮");
+	});
+
+	test("回头看早先一轮：后面的轮次都还在，那一轮标出正在查看", async () => {
+		const { html, text } = await seen(chain, { viewing: 0 });
+		assert.match(text, /再加后端/, "后面那一轮没有被藏起来");
+		assert.match(html, /href="\/s\/t1"/, "最后一轮能点回去");
+		assert.doesNotMatch(html, /href="\/s\/t0"/);
+		assert.match(text, /正在查看/);
+		assert.match(
+			text,
+			/「有潜力」可改为：带团队（加分） 添加/,
+			"替代条件作用在正看着的那一轮上",
+		);
 	});
 
 	test("AI 搜索没开启就没有输入框", async () => {
@@ -240,7 +260,7 @@ describe("检索人才库的过程", () => {
 		assert.match(missing.text, /人才库中没有「量子炼金」/);
 	});
 
-	test("过去一轮的链接只包那几个字，不包任何动作", async () => {
+	test("查看结果的链接只包那几个字，不包任何动作", async () => {
 		const { html } = await seen([
 			{ said: "推荐和后端", spec: "推荐算法, 后端", trace },
 			{ said: "再加带团队", spec: "推荐算法, 后端, 带团队" },

@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ChevronRightIcon, PlusIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { QueryBar, type QueryBarHandle } from "#/components/query-bar";
+import { Badge } from "#/components/ui/badge";
 import { Button } from "#/components/ui/button";
 import {
 	Collapsible,
@@ -59,15 +60,16 @@ function editText(previous: Turn | null, spec: Condition[]) {
 const STUCK_PX = 8;
 
 /**
- * 线程跟着长：换了一轮就滚到底，人刚说的话不该藏在滚动条底下；当前这一轮
+ * 线程跟着长：链上多了一轮就滚到底，人刚说的话不该藏在滚动条底下；最后一轮
  * 边跑边长出东西时，只有人本来就看着底下才跟着滚，翻上去看过去的轮次时不拽回来。
+ * 回头看早先那一轮的结果不算多了一轮，线程不动。
  *
  * 滚的是这一栏自己的视口，不用 `scrollIntoView`：那个会连外层一起滚，
  * 首帧能把整页顶走。
  *
- * @param growth 当前这一轮长到哪了；它一变就重看一次要不要滚。
+ * @param growth 最后一轮长到哪了；它一变就重看一次要不要滚。
  */
-function useFollow(turnId: string, growth: string) {
+function useFollow(latestId: string, growth: string) {
 	const list = useRef<HTMLOListElement>(null);
 	const stuck = useRef(true);
 
@@ -85,28 +87,28 @@ function useFollow(turnId: string, growth: string) {
 		return () => viewport.removeEventListener("scroll", onScroll);
 	}, []);
 
-	// 换轮次强制到底；同一轮长出东西只在跟着底下时到底
+	// 多了一轮强制到底；同一轮长出东西只在跟着底下时到底
 	const seen = useRef<string | null>(null);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: 长出一点就要重看一次
 	useLayoutEffect(() => {
-		if (seen.current !== turnId) {
-			seen.current = turnId;
+		if (seen.current !== latestId) {
+			seen.current = latestId;
 			stuck.current = true;
 		}
 		const viewport = list.current?.closest<HTMLElement>(
 			'[data-slot="scroll-area-viewport"]',
 		);
 		if (viewport && stuck.current) viewport.scrollTop = viewport.scrollHeight;
-	}, [turnId, growth]);
+	}, [latestId, growth]);
 
 	return list;
 }
 
-/** 当前这一轮的状态：还在读、读完了、没理解出来。过去的轮次都已读完。 */
+/** 最后一轮的状态：还在读、读完了、没理解出来。之前的轮次都已读完。 */
 type Phase = "running" | "settled" | "failed";
 
 /**
- * 对话栏：这次找人任务从第一句到现在的整条线程，底下是补充需求的输入框。
+ * 对话栏：这次找人任务从第一句到最后一句的整条线程，底下是补充需求的输入框。
  *
  * 名单是产物，对话是操作面：产物占画布，操作面靠边常驻。一轮分两种声音——
  * 人说的话是靠右的一块气泡；模型的回应不加框、靠左铺开：先是检索人才库的
@@ -114,14 +116,16 @@ type Phase = "running" | "settled" | "failed";
  * 读法、哪些要求没有采用。模型每一轮交回整张表，人不该去逐条比对前后两排 chip。
  * 直接在 chip 上改的一轮没有人说话，只在线程中间记一行改了什么。
  *
- * 线程就是记录链：过去的一轮底下有回到那一轮名单的链接，地址跟着变，浏览器后退
- * 照样是撤销；在那一轮上补充需求，就从那里分出新的一支。
+ * 线程就是记录链，只往后长。每一轮底下有查看那一轮结果的链接，名单跟着换，
+ * 线程不变；正看着的那一轮标出来。动作作用在正看着的条件上，新的一轮记在最后
+ * （`server/turn.ts` 的 `createTurn`）。
  *
  * 等待和失败的**动作**不在这里：名单那一列在理解时给等待态、失败时给重试
- * （`result-state.tsx`），窄屏上这一栏收着时那边也看得见。这里只记这一轮走到哪了。
+ * （`result-state.tsx`），窄屏上这一栏收着时那边也看得见。这里只记最后一轮走到哪了。
  */
 export function Thread({
 	rounds,
+	viewing,
 	onAdd,
 	onQuery,
 	waiting,
@@ -131,16 +135,18 @@ export function Thread({
 	fault = null,
 	autoFocus = false,
 }: {
-	/** 从链头到当前这一轮，链头在前。 */
+	/** 整条链，链头在前。 */
 	rounds: readonly Turn[];
-	/** 当前这一轮还在理解时走到的步骤；理解落下后为 null，读记录上的。 */
+	/** 名单正显示的那一轮。 */
+	viewing: string;
+	/** 最后一轮还在理解时走到的步骤；理解落下后为 null，读记录上的。 */
 	liveTrace?: TraceStep[] | null;
-	/** 当前这一轮没理解出来时是哪一环坏了。 */
+	/** 最后一轮没理解出来时是哪一环坏了。 */
 	fault?: InterpretFault | null;
-	/** 把替代条件加进当前的条件表：派生一条新记录。 */
+	/** 把替代条件加进正看着的条件表：记成新的一轮。 */
 	onAdd: (conditions: Condition[]) => void;
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
-	/** 当前这一轮还没整理完：可以接着敲，先不能提交。 */
+	/** 最后一轮还没理解完：可以接着敲，先不能提交。 */
 	waiting: boolean;
 	/** 配了查询理解才有输入框；没配时线程只能看，条件在 chip 上改。 */
 	understanding: boolean;
@@ -148,14 +154,15 @@ export function Thread({
 	autoFocus?: boolean;
 }) {
 	const last = rounds.length - 1;
-	const current = rounds[last];
-	const currentTrace = liveTrace ?? current?.trace ?? [];
-	const phase: Phase = current?.spec ? "settled" : fault ? "failed" : "running";
-	const list = useFollow(current?.id ?? "", `${phase}:${currentTrace.length}`);
-	const offers =
-		phase === "settled"
-			? (current?.notes?.declined ?? []).filter((d) => d.instead.length > 0)
-			: [];
+	const latest = rounds[last];
+	const latestTrace = liveTrace ?? latest?.trace ?? [];
+	const phase: Phase = latest?.spec ? "settled" : fault ? "failed" : "running";
+	const list = useFollow(latest?.id ?? "", `${phase}:${latestTrace.length}`);
+	const previewing = latest?.id !== viewing;
+	const offers = (
+		rounds.find((round) => round.id === viewing && round.spec)?.notes
+			?.declined ?? []
+	).filter((d) => d.instead.length > 0);
 
 	return (
 		<section aria-label="对话" className="flex h-full flex-col">
@@ -163,13 +170,15 @@ export function Thread({
 				<ol className="flex flex-col gap-6 px-4 py-4" ref={list}>
 					{rounds.map((round, i) => (
 						<Round
-							current={i === last}
-							key={round.id}
 							failure={i === last && fault ? FAULT_COPY[fault].title : null}
+							key={round.id}
+							mark={
+								round.id !== viewing ? "link" : previewing ? "viewing" : null
+							}
 							phase={i === last ? phase : "settled"}
 							previous={i > 0 ? (rounds[i - 1] ?? null) : null}
 							round={round}
-							trace={i === last ? currentTrace : (round.trace ?? [])}
+							trace={i === last ? latestTrace : (round.trace ?? [])}
 						/>
 					))}
 				</ol>
@@ -177,7 +186,7 @@ export function Thread({
 			{(understanding || offers.length > 0) && (
 				<div className="p-3 pt-1">
 					{/* 贴着框的一块托盘：框上方放点一下就能办的事——搜不了的要求附带的替代
-					    条件。它作用在当前的条件表上，所以只跟着当前这一轮，不留在历史里。 */}
+					    条件。它作用在正看着的那一轮的条件上，所以跟着那一轮。 */}
 					<Frame>
 						{offers.length > 0 && (
 							<ul aria-label="可以改为" className="flex flex-col px-2 py-1">
@@ -221,38 +230,49 @@ export function Thread({
 function Round({
 	round,
 	previous,
-	current,
+	mark,
 	phase,
 	failure,
 	trace,
 }: {
 	round: Turn;
 	previous: Turn | null;
-	current: boolean;
+	/**
+	 * 这一轮底下的记号：别的轮次给查看结果的链接；正看着的一轮不是最后一轮时
+	 * 标出来，是最后一轮就什么都不标——那是默认的样子。
+	 */
+	mark: "link" | "viewing" | null;
 	phase: Phase;
 	/** 没理解出来时那一轮底下记一行：哪一环坏了，不是「这句话没读懂」。 */
 	failure: string | null;
 	trace: readonly TraceStep[];
 }) {
 	const { said, spec, notes } = round;
-	// 当前这一轮不给链接：已经在它上面了
-	const back = current ? null : <BackTo turnId={round.id} />;
+	const viewing = mark !== "link";
+	const footer =
+		mark === "link" ? (
+			<ViewResult turnId={round.id} />
+		) : mark === "viewing" ? (
+			<Badge className="w-fit" variant="outline">
+				正在查看
+			</Badge>
+		) : null;
 
 	// 直接改条件的一轮没有人说话，也没有模型的回应：改动本身就是那一步
 	if (said === null)
 		return (
 			<li
-				aria-current={current ? "step" : undefined}
+				aria-current={viewing ? "page" : undefined}
 				className="flex flex-wrap items-center justify-center gap-x-2 text-center text-muted-foreground text-xs"
 			>
 				<span>{spec && editText(previous, spec.conditions)}</span>
-				{back}
+				{footer}
 			</li>
 		);
 
 	return (
 		<li
-			aria-current={current ? "step" : undefined}
+			aria-current={viewing ? "page" : undefined}
 			className="flex flex-col gap-2 text-sm"
 		>
 			<p className="ms-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-muted px-3.5 py-2">
@@ -280,14 +300,14 @@ function Round({
 					</p>
 				))}
 				{failure && <p className="text-destructive-foreground">{failure}</p>}
-				{back}
+				{footer}
 			</div>
 		</li>
 	);
 }
 
-/** 回到过去那一轮的结果：真链接，中键、右键、键盘都照常。 */
-function BackTo({ turnId }: { turnId: string }) {
+/** 查看那一轮的结果：真链接，中键、右键、键盘都照常。 */
+function ViewResult({ turnId }: { turnId: string }) {
 	return (
 		<Button
 			className="-ms-2 w-fit text-muted-foreground"
