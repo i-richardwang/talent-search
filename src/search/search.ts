@@ -33,7 +33,9 @@ import {
 	type DimSource,
 	dimId,
 	dimPicked,
+	isOrdinal,
 	NOT_A_VALUE,
+	type OrdinalKey,
 	type Picked,
 	VOCAB_KEYS,
 	type VocabKey,
@@ -244,10 +246,22 @@ const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 			where t.parent is not null
 		)
 		select word from up order by word)`,
-	level: sql`p.cur_level`,
+	level: sql`p.cur_level_band`,
+	levelRank: sql`p.cur_level_rank`,
 	recruitment: sql`p.recruitment`,
 	education: sql`p.education_level`,
+	educationRank: sql`p.education_rank`,
 };
+
+/**
+ * 「某档及以上」：比的是档高，条件里写的是档名，档高当场从库里查。同一档的人档高
+ * 相同（同步时校验过），取哪一个人的都一样。子查询里的 `employee p` 遮住外层的 `p`，
+ * 同一份 `FACT_COLUMNS` 在里面读的就是那一档的人。
+ */
+function atLeastCond(key: OrdinalKey, band: string): SQL {
+	const rank = FACT_COLUMNS[`${key}Rank`];
+	return sql`${rank} >= (select min(${rank}) from employee p where ${FACT_COLUMNS[key]} = ${band})`;
+}
 
 /** 事实列的 select 片段。两处取数共用，形状因此不可能分家。 */
 const factSelect = sql.join(
@@ -332,6 +346,7 @@ function gateConds(gates: readonly Gate[], veto: SQL | null): SQL[] {
 				? sql`(select coalesce(sum(e.months), 0) from experience e ${where}) >= ${g.minMonths}`
 				: sql`exists (select 1 from experience e ${where})`;
 		}
+		if ("atLeast" in g) return atLeastCond(g.field, g.atLeast);
 		if (g.field === "school")
 			return sql`(${anyLike(g.values, [sql`p.school`])})`;
 		return dimCond(g.field, [...g.values]) ?? [];
@@ -605,7 +620,8 @@ const VOCAB_SOURCE: Record<VocabKey, SQL> = {
  * 谓词当场否掉的值，而屏幕上是一个选中了却空着的筛选。
  *
  * 一维一条 SQL：四条小查询在同一次快照里跑完，换来的是每一维的取值原样成行，
- * 不必把四个数组拼进一行再逐维拆开。
+ * 不必把四个数组拼进一行再逐维拆开。有高低的维按档从低到高列，模型据此说
+ * 「某档及以上」；其余按人数从多到少。
  */
 export async function vocabulary(): Promise<Vocabulary> {
 	return withCorpusSnapshot(async (store) => {
@@ -619,7 +635,9 @@ export async function vocabulary(): Promise<Vocabulary> {
 					["", ...NOT_A_VALUE].map((v) => sql`${v}`),
 					sql`, `,
 				)})
-				group by 1 order by n desc, value limit ${VOCAB_MAX}`);
+				group by 1 order by ${
+					isOrdinal(key) ? sql`min(${FACT_COLUMNS[`${key}Rank`]}), ` : sql``
+				}n desc, value limit ${VOCAB_MAX}`);
 			vocab[key] = rows.rows.map((row) => row.value);
 		}
 		return vocab;

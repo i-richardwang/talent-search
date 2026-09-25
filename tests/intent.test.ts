@@ -145,6 +145,27 @@ describe("词表维只认库里真有的取值", () => {
 		);
 	});
 
+	test("「及以上」的那一档也得在词表里；对不上就整条丢掉，不退回成列举", () => {
+		const atLeast = (field: string, value: string) => ({
+			about: "person",
+			mode: "must",
+			field,
+			atLeast: value,
+		});
+		assert.deepEqual(
+			of(
+				atLeast("level", "P7"),
+				atLeast("education", "研究生"),
+				// 同时写了列举：「及以上」说的范围更宽，按它读
+				{ ...atLeast("education", "本科"), values: ["硕士"] },
+			),
+			[
+				{ about: "person", mode: "must", field: "level", atLeast: "P7" },
+				{ about: "person", mode: "must", field: "education", atLeast: "本科" },
+			],
+		);
+	});
+
 	test("人的条件上的排除没有表示，整条丢掉", () => {
 		assert.deepEqual(of(person("recruitment", ["校招"], "exclude")), []);
 	});

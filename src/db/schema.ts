@@ -25,20 +25,43 @@ export type CompanyMeta = {
 	nature?: string;
 };
 
-export const employee = pgTable("employee", {
-	empId: text("emp_id").primaryKey(),
-	name: text("name").notNull(),
-	curDept: text("cur_dept").notNull().default(""),
-	curTitle: text("cur_title").notNull().default(""),
-	curSeqL1: text("cur_seq_l1").notNull().default(""),
-	curSeqL2: text("cur_seq_l2").notNull().default(""),
-	curSeqL3: text("cur_seq_l3").notNull().default(""),
-	curLevel: text("cur_level").notNull().default(""),
-	hireDate: date("hire_date"),
-	educationLevel: text("education_level").notNull().default(""),
-	school: text("school").notNull().default(""),
-	recruitment: text("recruitment").notNull().default(""),
-});
+/**
+ * 职级存原文、档名和档高，学历存档名和档高：筛选按档名，「某档及以上」按档高比
+ * （`search.ts` 的 `atLeastCond`）。档高和档名同有同无。
+ */
+export const employee = pgTable(
+	"employee",
+	{
+		empId: text("emp_id").primaryKey(),
+		name: text("name").notNull(),
+		curDept: text("cur_dept").notNull().default(""),
+		curTitle: text("cur_title").notNull().default(""),
+		curSeqL1: text("cur_seq_l1").notNull().default(""),
+		curSeqL2: text("cur_seq_l2").notNull().default(""),
+		curSeqL3: text("cur_seq_l3").notNull().default(""),
+		/** 登记的职级原文，详情里显示 */
+		curLevel: text("cur_level").notNull().default(""),
+		/** 职级归入的档（源契约的 `levels`），筛选与条件读它 */
+		curLevelBand: text("cur_level_band").notNull().default(""),
+		curLevelRank: integer("cur_level_rank"),
+		hireDate: date("hire_date"),
+		/** 学历五档之一（`EDUCATION_LADDER`） */
+		educationLevel: text("education_level").notNull().default(""),
+		educationRank: integer("education_rank"),
+		school: text("school").notNull().default(""),
+		recruitment: text("recruitment").notNull().default(""),
+	},
+	(t) => [
+		check(
+			"employee_level_band_ranked",
+			sql`(${t.curLevelBand} = '') = (${t.curLevelRank} is null)`,
+		),
+		check(
+			"employee_education_ranked",
+			sql`(${t.educationLevel} = '') = (${t.educationRank} is null)`,
+		),
+	],
+);
 
 /** 原始字段由同步写，推断序列与派生版本由派生任务写。`key` 是原始内容的数据库生成摘要。 */
 export const experience = pgTable(

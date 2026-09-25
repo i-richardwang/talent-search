@@ -39,8 +39,10 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 		skills: [],
 		kind: "internal",
 		level: "",
+		levelRank: null,
 		recruitment: "",
 		education: "",
+		educationRank: null,
 		...p,
 	};
 }

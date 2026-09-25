@@ -20,7 +20,9 @@ import {
 	withOff,
 	withoutPart,
 } from "#/search/condition";
-import { FILTER_LIST_MAX } from "#/search/dimensions";
+import { conditionLabel, partLabel } from "#/search/condition-label";
+import { dimCompare, FILTER_LIST_MAX } from "#/search/dimensions";
+import { parseQuery } from "#/search/query-syntax";
 import { hasMeaning } from "#/search/spec";
 import { boundedText, TEXT_MAX } from "#/search/text";
 import { claim } from "./conditions";
@@ -360,5 +362,58 @@ describe("查询是否为空", () => {
 		]);
 		assert.equal(hasMeaning({ conditions: one }), true);
 		assert.equal(hasMeaning({ conditions: [] }), false);
+	});
+});
+
+describe("有高低的维：某档及以上", () => {
+	const atLeast = {
+		about: "person",
+		mode: "must",
+		field: "education",
+		atLeast: "本科",
+	};
+
+	test("只有职级和学历能说及以上；别的维度写了也不认", () => {
+		assert.deepEqual(conditionsOf([atLeast]), [atLeast]);
+		assert.deepEqual(
+			conditionsOf([{ ...atLeast, field: "recruitment", values: ["社招"] }]),
+			[
+				{
+					about: "person",
+					mode: "must",
+					field: "recruitment",
+					values: ["社招"],
+				},
+			],
+		);
+		assert.deepEqual(conditionsOf([{ ...atLeast, atLeast: "" }]), []);
+	});
+
+	test("写成一句话是「学历 · 本科及以上」，整条是一项，拿掉就没了", () => {
+		const [condition] = conditionsOf([atLeast]);
+		assert.ok(condition);
+		assert.equal(conditionLabel(condition), "学历 · 本科及以上");
+		const part = { key: "atLeast", value: "本科" } as const;
+		assert.deepEqual(partsOf(condition), [part]);
+		assert.equal(partLabel(condition, part), "本科及以上");
+		assert.equal(withoutPart(condition, part), null);
+	});
+
+	test("命令行写 >= 就是及以上", () => {
+		assert.deepEqual(parseQuery("education:>=本科"), [atLeast]);
+		assert.deepEqual(parseQuery("+level:>=P7/M1"), [
+			{ about: "person", mode: "boost", field: "level", atLeast: "P7/M1" },
+		]);
+	});
+
+	test("候选按档高排，不按名字：P10 在 P9 后面", () => {
+		const rows = [
+			{ value: "P10", n: 1, rank: 10 },
+			{ value: "P9", n: 5, rank: 9 },
+		];
+		assert.deepEqual(
+			rows.sort((a, b) => dimCompare("level", a, b)).map((r) => r.value),
+			["P9", "P10"],
+		);
 	});
 });

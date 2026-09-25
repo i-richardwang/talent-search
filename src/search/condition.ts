@@ -13,12 +13,14 @@
  *   少写的项就是不限：只有 `what` 是今天最常见的经历词，只有 `org` 是「待过字节」。
  *   没写 `what` 的主张说的是背景，和人的条件一样只定去留、不量名次（`result.ts`）。
  * - **人的条件**（`about: "person"`）：这个人本身是什么样——职级、学历、
- *   招聘渠道、学校。一人一个值，和哪段经历都没关系。
+ *   招聘渠道、学校。一人一个值，和哪段经历都没关系。有高低的两维（职级档、学历）
+ *   还可以说「某档及以上」（`atLeast`），比高低的是库里的档高，不是一串枚举的档名。
  *
  *     { about: "experience", mode: "must", what: ["增长", "用户增长"],
  *       companyTag: ["大厂"], kind: "external", minMonths: 36 }
  *     { about: "experience", mode: "boost", org: ["字节"] }
- *     { about: "person", mode: "boost", field: "level", values: ["D7", "D8"] }
+ *     { about: "person", mode: "boost", field: "level", atLeast: "P7" }
+ *     { about: "person", mode: "must", field: "education", values: ["硕士"] }
  *
  * 执行语义只有两句：**一条主张之内是同一段经历，条件之间是同一个人。** 修饰语挂在
  * 哪个动词上由模型在读句子时决定，「在字节做推荐」和「做过推荐，也待过字节」是
@@ -37,6 +39,8 @@ import {
 	DIMENSIONS,
 	type DimUnit,
 	dimId,
+	isOrdinal,
+	type OrdinalKey,
 	textList,
 	type VOCAB_KEYS,
 } from "./dimensions";
@@ -107,11 +111,19 @@ export type ExperienceCondition = {
 export type PersonCondition = {
 	about: "person";
 	mode: PersonMode;
-	field: PersonField;
-	/** 取值 OR。词表维写的是词表里的档，学校写名字。 */
-	values: Some<string>;
 	off?: OffCause;
-};
+} & (
+	| {
+			field: PersonField;
+			/** 取值 OR。词表维写的是词表里的档，学校写名字。 */
+			values: Some<string>;
+	  }
+	| {
+			field: OrdinalKey;
+			/** 这一档及以上的每一档。档的高低由库里的档高定（`search.ts` 的 `atLeastCond`）。 */
+			atLeast: string;
+	  }
+);
 
 export type Condition = ExperienceCondition | PersonCondition;
 
@@ -249,6 +261,11 @@ function personOf(
 ): PersonCondition | null {
 	const field = String(entry.field) as PersonField;
 	if (!(PERSON_FIELDS as readonly string[]).includes(field)) return null;
+	// 有高低的维写了 atLeast 就是「某档及以上」，同时写的 values 不读
+	if (isOrdinal(field) && entry.atLeast !== undefined) {
+		const [atLeast] = dimList(field, [entry.atLeast]);
+		return atLeast ? { about: "person", mode, field, atLeast } : null;
+	}
 	const values = some(
 		isPersonDim(field) ? dimList(field, entry.values) : textList(entry.values),
 	);
@@ -296,14 +313,19 @@ export function withMode(condition: Condition, mode: Mode): Condition {
  * chip 的菜单按它逐项画「去掉」。
  */
 export type Part =
-	| { key: "what" | "org" | "companyTag" | "values"; value: string }
+	| {
+			key: "what" | "org" | "companyTag" | "values" | "atLeast";
+			value: string;
+	  }
 	| { key: "kind"; value: Kind }
 	| { key: "minMonths"; value: number };
 
 /** 一条条件拆成可以单独拿掉的几项，按屏幕上显示的顺序。 */
 export function partsOf(condition: Condition): Part[] {
 	if (condition.about === "person")
-		return condition.values.map((value) => ({ key: "values", value }));
+		return "atLeast" in condition
+			? [{ key: "atLeast", value: condition.atLeast }]
+			: condition.values.map((value) => ({ key: "values", value }));
 	const parts: Part[] = [];
 	if (condition.kind) parts.push({ key: "kind", value: condition.kind });
 	for (const value of condition.companyTag ?? [])
@@ -324,13 +346,14 @@ export function withoutPart(
 	part: Part,
 ): Condition | null {
 	if (condition.about === "person") {
+		if ("atLeast" in condition) return null;
 		const values = some(condition.values.filter((v) => v !== part.value));
 		return values ? { ...condition, values } : null;
 	}
 	const next: ExperienceCondition = { ...condition };
 	if (part.key === "kind") delete next.kind;
 	else if (part.key === "minMonths") delete next.minMonths;
-	else if (part.key !== "values") {
+	else if (part.key !== "values" && part.key !== "atLeast") {
 		const kept = some(next[part.key]?.filter((v) => v !== part.value));
 		if (kept) next[part.key] = kept;
 		else delete next[part.key];

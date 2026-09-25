@@ -28,7 +28,11 @@ const {
 /** 每条条件的代表词：主张的第一个经历词，人的条件的第一个取值。 */
 const wordsOf = (spec: SearchSpec) =>
 	spec.conditions.map((c) =>
-		c.about === "experience" ? c.what?.[0] : c.values[0],
+		c.about === "experience"
+			? c.what?.[0]
+			: "atLeast" in c
+				? c.atLeast
+				: c.values[0],
 	);
 
 async function sentence(text: string, from?: string) {

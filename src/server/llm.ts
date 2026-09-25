@@ -174,6 +174,9 @@ const SYSTEM = `你在帮 HR 维护一张找人的搜索条件表。给你的是
 
 人（about: person）：这个人本身。field 是 level、education、recruitment 之一，
 values 从给出的取值里挑，可以几个；或者 school，values 写学校名。
+level 和 education 的取值按从低到高给出。说「某档以上」「至少某档」时写 atLeast，
+只写那一档，不写 values，也不把以上的每一档列出来。学历说一档（「要硕士」「本科学历」）
+是最低要求，也写 atLeast；只有说「只要」某几档时才写 values。职级说具体的一两档就写 values。
 
 mode 看语气：默认 must。最好、优先、加分是 boost。不要、排除、没做过是 exclude，只用于经历。
 
@@ -197,15 +200,15 @@ HR 可以一键改成这样找；没有就空着。
 只输出一个 JSON 对象，不要别的文字：
 {"conditions": [条件……], "assumed": [一句一条……], "declined": [{"said": "", "why": "", "instead": [条件……]}]}
 没有的就写空数组。下面的例子假设取值是 level：P5、P6、P7、P8；companyTag：头部大厂、知名公司；
-education：本科、硕士、博士。
+education：大专、本科、硕士、博士。
 
 例一。当前的条件表：[]。这句话：算法和后端都做过的，比较资深的，最好是字节来的
 {"conditions": [
   {"about": "experience", "mode": "must", "what": ["算法", "推荐算法", "机器学习"]},
   {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
-  {"about": "person", "mode": "boost", "field": "level", "values": ["P7", "P8"]},
+  {"about": "person", "mode": "boost", "field": "level", "atLeast": "P7"},
   {"about": "experience", "mode": "boost", "org": ["字节"]}],
- "assumed": ["「比较资深」按职级 P7、P8 理解，作为加分项"],
+ "assumed": ["「比较资深」按职级 P7 及以上理解，作为加分项"],
  "declined": []}
 
 例二。当前的条件表：[]。这句话：入职前在大厂做过三年以上增长，不要实习
@@ -218,7 +221,7 @@ education：本科、硕士、博士。
 例三。当前的条件表：[]。这句话：北京的大模型或推荐系统方向，有管理潜力，硕士
 {"conditions": [
   {"about": "experience", "mode": "must", "what": ["大模型", "LLM", "推荐系统"]},
-  {"about": "person", "mode": "must", "field": "education", "values": ["硕士"]}],
+  {"about": "person", "mode": "must", "field": "education", "atLeast": "硕士"}],
  "assumed": [],
  "declined": [
   {"said": "北京的", "why": "暂不支持按工作地点筛选", "instead": []},
@@ -237,7 +240,7 @@ education：本科、硕士、博士。
 {"conditions": [
   {"about": "experience", "mode": "must", "what": ["算法", "推荐算法", "机器学习"]},
   {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
-  {"about": "person", "mode": "boost", "field": "level", "values": ["P7", "P8"]},
+  {"about": "person", "mode": "boost", "field": "level", "atLeast": "P7"},
   {"about": "experience", "mode": "must", "what": ["团队管理", "带团队"]}],
  "assumed": [],
  "declined": []}`;
@@ -295,8 +298,8 @@ export async function understand(
 				system: SYSTEM,
 				prompt: [
 					"取值",
-					listed("level", vocab.level),
-					listed("education", vocab.education),
+					listed("level（从低到高）", vocab.level),
+					listed("education（从低到高）", vocab.education),
 					listed("recruitment", vocab.recruitment),
 					listed("companyTag", vocab.companyTag),
 					// 停用是用户在 chip 上的操作，模型写不出也不必看见：它交回同一条，

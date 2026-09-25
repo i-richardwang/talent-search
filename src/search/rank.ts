@@ -21,6 +21,7 @@ import {
 	dimCompare,
 	dimId,
 	dimMatches,
+	dimRank,
 	dimValues,
 	type Facet,
 } from "./dimensions";
@@ -311,9 +312,10 @@ function facetRows<K extends DimKey, F extends PopulationFact>(
 ): Facet<K>[] {
 	const domain = tally(facts, key, () => true, admits);
 	const live = tally(facts, key, keeps(filters, key), admits);
-	return [...domain].map(([id, { value }]) => ({
+	return [...domain].map(([id, { value, rank }]) => ({
 		value,
 		n: live.get(id)?.n ?? 0,
+		...(rank !== undefined && { rank }),
 	}));
 }
 
@@ -330,7 +332,7 @@ function tally<K extends DimKey, F extends PopulationFact>(
 ) {
 	const byValue = new Map<
 		string,
-		{ value: DimUnit[K]; people: Map<string, F[]> }
+		{ value: DimUnit[K]; rank?: number; people: Map<string, F[]> }
 	>();
 	for (const f of facts) {
 		if (!keep(f)) continue;
@@ -338,7 +340,7 @@ function tally<K extends DimKey, F extends PopulationFact>(
 			const id = dimId(key, value);
 			let bucket = byValue.get(id);
 			if (!bucket) {
-				bucket = { value, people: new Map() };
+				bucket = { value, rank: dimRank(key, f), people: new Map() };
 				byValue.set(id, bucket);
 			}
 			const list = bucket.people.get(f.empId);
@@ -346,11 +348,14 @@ function tally<K extends DimKey, F extends PopulationFact>(
 			else bucket.people.set(f.empId, [f]);
 		}
 	}
-	const out = new Map<string, { value: DimUnit[K]; n: number }>();
+	const out = new Map<
+		string,
+		{ value: DimUnit[K]; rank?: number; n: number }
+	>();
 	for (const [id, bucket] of byValue) {
 		let n = 0;
 		for (const person of bucket.people.values()) if (admits(person)) n++;
-		if (n > 0) out.set(id, { value: bucket.value, n });
+		if (n > 0) out.set(id, { value: bucket.value, rank: bucket.rank, n });
 	}
 	return out;
 }

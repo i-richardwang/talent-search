@@ -21,6 +21,7 @@ const EXTERNAL =
 	"emp_id,start_date,end_date,org,title,description," +
 	"company_tag,industry,nature,unemployed\n" +
 	"E1,2018-01-01,2019-12-31,云枢智能,算法工程师,做召回,,,,\n";
+const LEVELS = "level,band,rank\nP6,中级,6\n";
 
 const directories: string[] = [];
 after(() => {
@@ -35,6 +36,7 @@ function read(files: Partial<Record<string, string>> = {}) {
 		"employees.csv": EMPLOYEES,
 		"assignments.csv": ASSIGNMENTS,
 		"external.csv": EXTERNAL,
+		"levels.csv": LEVELS,
 		...files,
 	};
 	for (const [name, text] of Object.entries(contents))
@@ -44,6 +46,11 @@ function read(files: Partial<Record<string, string>> = {}) {
 }
 
 describe("CSV 数据源", () => {
+	test("职级表原样交给契约", async () => {
+		const data = await read();
+		assert.deepEqual(data.levels, [{ level: "P6", band: "中级", rank: "6" }]);
+	});
+
 	test("必需的列不会被悄悄补上", async () => {
 		await assert.rejects(
 			() => read({ "employees.csv": "emp_id,name\nE1,某人\n" }),

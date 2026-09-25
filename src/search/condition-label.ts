@@ -5,7 +5,7 @@ import {
 	type Part,
 	PERSON_FIELDS,
 } from "#/search/condition";
-import { DIMENSIONS, dimOption, dimText } from "#/search/dimensions";
+import { DIMENSIONS, dimOption, dimText, orAbove } from "#/search/dimensions";
 import type { Claim } from "#/search/result";
 
 /**
@@ -70,13 +70,18 @@ export const MODE_GLYPH: Record<Mode, string> = {
  * 经历主张按它的表述顺序排列：什么时候、在哪一档、在哪、做过什么、累计多久——
  * 「入职前 · 大厂 · 增长 · 3 年以上」，读起来就是那句话本身。每一项只显示第一个
  * 取值，其余收在菜单里（`query-chips.tsx`），chip 上留一个记号说「这里还有」：
- * 十档职级全写出来是一行放不下的文字，会把同一排别的条件挤出屏幕。
+ * 几档职级全写出来是一行放不下的文字，会把同一排别的条件挤出屏幕。
  *
- * 人的条件带一次维度名（「当前职级 · D8」），维度名怎么写归维度自己声明
- * （`dimensions.ts` 的 `text`）；学校归 `NAME_LABEL`。
+ * 人的条件带一次维度名（「当前职级 · P7」「学历 · 本科及以上」），维度名怎么写
+ * 归维度自己声明（`dimensions.ts` 的 `text`）；学校归 `NAME_LABEL`。
  */
 export function conditionLabel(condition: Condition): string {
 	if (condition.about === "person") {
+		if ("atLeast" in condition)
+			return dimText(
+				condition.field,
+				orAbove(condition.field, condition.atLeast),
+			);
 		const [first] = condition.values;
 		return condition.field === "school"
 			? dots(NAME_LABEL.school, first)
@@ -98,7 +103,8 @@ export function claimName(claim: Claim): string {
 
 /** chip 上要不要那个「还有别的取值」的记号：哪一项有第二个取值都算。 */
 export function hasMore(condition: Condition): boolean {
-	if (condition.about === "person") return condition.values.length > 1;
+	if (condition.about === "person")
+		return "values" in condition && condition.values.length > 1;
 	return [condition.what, condition.org, condition.companyTag].some(
 		(list) => (list?.length ?? 0) > 1,
 	);
@@ -106,7 +112,7 @@ export function hasMore(condition: Condition): boolean {
 
 /**
  * 一条条件里的一项怎么显示。它出现在已经写明了是哪条条件的地方（chip 的菜单），
- * 所以只显示这一项本身：「D8」，不是「当前职级 · D8」；月数写成「累计 3 年以上」，
+ * 所以只显示这一项本身：「P7」，不是「当前职级 · P7」；月数写成「累计 3 年以上」，
  * 好让它和旁边的经历词分得开。
  */
 export function partLabel(condition: Condition, part: Part): string {
@@ -114,6 +120,10 @@ export function partLabel(condition: Condition, part: Part): string {
 		case "values":
 			return condition.about === "person" && condition.field !== "school"
 				? dimOption(condition.field, part.value)
+				: part.value;
+		case "atLeast":
+			return condition.about === "person" && "atLeast" in condition
+				? orAbove(condition.field, part.value)
 				: part.value;
 		case "companyTag":
 			return dimOption("companyTag", part.value);

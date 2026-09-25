@@ -9,6 +9,7 @@
  *     "base": "推荐算法, +org:字节",   // 可选：当前条件，一行查询语法（search/query-syntax.ts）
  *     "say": "不用非得是字节",          // 这一句话
  *     "drop": "+org:字节",             // 可选：新表里必须没有的条件，一行查询语法
+ *     "has": "education:>=本科",       // 可选：新表里必须原样有的条件，一行查询语法
  *     "add": ["+团队"],                // 可选：新加的条件里必须提到的词，前缀 + / - 是加分 / 排除
  *     "declined": ["北京"],            // 可选：必须说成搜不了的原话片段
  *     "together": [["字节", "算法"]],  // 可选：每组词写在同一条新条件里（同一段经历）
@@ -44,6 +45,7 @@ type Case = {
 	base: Condition[];
 	say: string;
 	drop: Condition[];
+	has: Condition[];
 	add: { mode: Mode; word: string }[];
 	declined: string[];
 	together: string[][];
@@ -104,13 +106,23 @@ function loadCases(file: string): Case[] {
 		const empty = c.empty === true;
 		const rewrite = c.rewrite === true;
 		const drop = syntax("drop");
-		if (!add.length && !declined.length && !drop.length && !empty)
-			throw new Error(`${where}：至少要有 add、drop、declined、empty 之一`);
+		const has = syntax("has");
+		if (
+			!add.length &&
+			!declined.length &&
+			!drop.length &&
+			!has.length &&
+			!empty
+		)
+			throw new Error(
+				`${where}：至少要有 add、drop、has、declined、empty 之一`,
+			);
 		return {
 			name: c.name.trim(),
 			base: syntax("base"),
 			say: c.say.trim(),
 			drop,
+			has,
 			add,
 			declined,
 			together,
@@ -138,7 +150,9 @@ const norm = (word: string) =>
 /** 一条条件里写下的全部词：经历词、公司名、公司档、人的取值。 */
 function wordsOf(condition: Condition): string[] {
 	return condition.about === "person"
-		? [...condition.values]
+		? "atLeast" in condition
+			? [condition.atLeast]
+			: [...condition.values]
 		: [
 				...(condition.what ?? []),
 				...(condition.org ?? []),
@@ -173,6 +187,9 @@ try {
 			for (const gone of c.drop)
 				if (has.has(conditionKey(gone)))
 					problems.push(`没去掉「${conditionLabel(gone)}」`);
+			for (const want of c.has)
+				if (!has.has(conditionKey(want)))
+					problems.push(`没写成「${conditionLabel(want)}」`);
 
 			const had = new Set(c.base.map(conditionKey));
 			const added = next.filter((one) => !had.has(conditionKey(one)));

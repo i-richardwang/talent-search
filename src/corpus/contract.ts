@@ -2,22 +2,36 @@
  * 源契约：适配器要交出什么，管线才接得住。
  *
  * 这是公开仓库与具体人事数据之间**唯一**的接口。任何一套 HR 数据，只要能填出
- * 下面三张表，就能接进来；反过来，管线只认这三张表，不认任何一家公司的表名、
+ * 下面四张表，就能接进来；反过来，管线只认这四张表，不认任何一家公司的表名、
  * 字段名或字典码——那些一律留在 `sources/` 下的适配器里。
  *
- * 三张表刻意都是「已经摊平的事实」，不是某个系统的原始形态：
+ * 四张表刻意都是「已经摊平的事实」，不是某个系统的原始形态：
  *
  * - `employees`   人群与档案。**谁在这张表里，谁就进库**，人群口径是适配器的事；
  * - `assignments` 公司内任职段，一段一行，切段规则是适配器的事；
- * - `external`    入职前经历，一段一行。
+ * - `external`    入职前经历，一段一行；
+ * - `levels`      职级表：每个职级归哪一档、档有多高。分档是公司自己的口径。
  *
- * 管线负责的是三张表都逃不掉的那部分：区间合法性、开放区间封口、相邻段合并、
+ * 管线负责的是每个数据源都逃不掉的那部分：区间合法性、开放区间封口、相邻段合并、
  * 时长计算、当前信息派生。这些不该在每接一个数据源时重写一遍——重写一遍就会
  * 出现两套「什么算一段经历」。
  *
  * **字段名就是列名。** 它们和 CSV 的表头、库里的列同一种写法，中间没有一层
  * 需要维护的对照——接数据的人在 README、`csv-dir.ts` 和这里读到的是同一批名字。
  */
+
+/**
+ * 学历的五档，从低到高。`employees.education_level` 只能写其中之一或留空：
+ * 源里的写法（「硕士研究生」「技校」）由适配器归到这里，检索按档的先后比高低。
+ * 这五档是通用的，不属于任何一家公司，所以写在契约里而不是适配器里。
+ */
+export const EDUCATION_LADDER = [
+	"高中及以下",
+	"大专",
+	"本科",
+	"硕士",
+	"博士",
+] as const;
 
 /** 一人一行。`emp_id` 是全库主键，其余是详情页会读的档案字段。 */
 const EMPLOYEE_COLUMNS = [
@@ -71,6 +85,16 @@ const EXTERNAL_COLUMNS = [
 	"unemployed",
 ] as const;
 
+/**
+ * 职级表，一个职级一行。`level` 是任职段上登记的职级原文，`band` 是它归入的档，
+ * `rank` 是档的高低：越大越高，同一档的每一行写同一个数。
+ *
+ * 筛选和「某档及以上」都按档走，职级原文只在详情里显示。几条职级线（专业、管理）
+ * 能不能比高低、怎么并档，是公司的口径，所以这张表由适配器给。任职段上出现、
+ * 表里没有的职级不进任何一档，管线会报出人数。
+ */
+const LEVEL_COLUMNS = ["level", "band", "rank"] as const;
+
 export type SourceEmployee = Record<(typeof EMPLOYEE_COLUMNS)[number], string>;
 export type SourceAssignment = Record<
 	(typeof ASSIGNMENT_COLUMNS)[number],
@@ -81,11 +105,14 @@ export type SourceExternal = Record<
 	string
 > & { unemployed: boolean };
 
+export type SourceLevel = Record<(typeof LEVEL_COLUMNS)[number], string>;
+
 /** 一次抽取的全部产出。适配器的 `extract()` 返回它。 */
 export type SourceData = {
 	employees: SourceEmployee[];
 	assignments: SourceAssignment[];
 	external: SourceExternal[];
+	levels: SourceLevel[];
 };
 
 /** 适配器交上来的原样行：键是列名，值还没有约定形态。 */
@@ -135,11 +162,12 @@ function flag(value: unknown, index: number): boolean {
 	);
 }
 
-/** 把适配器交上来的三批行收成契约的形状。适配器的 `extract()` 用它收尾。 */
+/** 把适配器交上来的四批行收成契约的形状。适配器的 `extract()` 用它收尾。 */
 export function sourceData(raw: {
 	employees: RawRow[];
 	assignments: RawRow[];
 	external: RawRow[];
+	levels: RawRow[];
 }): SourceData {
 	return {
 		employees: conform<SourceEmployee>(
@@ -160,5 +188,6 @@ export function sourceData(raw: {
 			...row,
 			unemployed: flag(raw.external[index]?.unemployed, index),
 		})),
+		levels: conform<SourceLevel>(raw.levels, LEVEL_COLUMNS, "levels"),
 	};
 }

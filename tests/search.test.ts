@@ -571,21 +571,37 @@ describe("跟人走的筛选", () => {
 		]);
 	});
 
-	test("三个分面数的都是人，职级按名字排", async () => {
+	test("三个分面数的都是人，职级和学历按档从低到高排", async () => {
 		const { facets, total } = await run("潜水");
 		assert.equal(total, 3);
 		assert.deepEqual(facets.level, [
-			{ value: "P6", n: 1 },
-			{ value: "P7", n: 2 },
+			{ value: "P6", n: 1, rank: 6 },
+			{ value: "P7", n: 2, rank: 7 },
 		]);
 		assert.deepEqual(facets.recruitment, [
 			{ value: "校招", n: 2 },
 			{ value: "社招", n: 1 },
 		]);
 		assert.deepEqual(facets.education, [
-			{ value: "硕士", n: 2 },
-			{ value: "本科", n: 1 },
+			{ value: "本科", n: 1, rank: 3 },
+			{ value: "硕士", n: 2, rank: 4 },
 		]);
+	});
+
+	test("「某档及以上」比的是档高，不是列举的档名", async () => {
+		const ids = async (query: string) =>
+			(await run(query)).results.map((r) => r.employee.empId).sort();
+		assert.deepEqual(await ids("潜水,level:>=P7"), ["P002", "P003"]);
+		assert.deepEqual(await ids("潜水,education:>=本科"), [
+			"P001",
+			"P002",
+			"P003",
+		]);
+		assert.deepEqual(await ids("潜水,education:>=硕士"), ["P001", "P003"]);
+		// 加分的「及以上」不裁人，满足的排前面
+		const boosted = await run("潜水,+education:>=硕士");
+		assert.equal(boosted.total, 3);
+		assert.equal(boosted.results[2]?.employee.empId, "P002");
 	});
 
 	test("职级筛选收窄人群，且这一维自己的候选不受自己影响", async () => {
@@ -596,8 +612,8 @@ describe("跟人走的筛选", () => {
 		assert.equal(facets.level.find((l) => l.value === "P6")?.n, 1);
 		// 别的维度按筛过的人群数
 		assert.deepEqual(facets.education, [
-			{ value: "本科", n: 1 },
-			{ value: "硕士", n: 1 },
+			{ value: "本科", n: 1, rank: 3 },
+			{ value: "硕士", n: 1, rank: 4 },
 		]);
 	});
 
@@ -607,7 +623,7 @@ describe("跟人走的筛选", () => {
 			results.map((r) => r.employee.empId),
 			["P002"],
 		);
-		assert.deepEqual(facets.level, [{ value: "P7", n: 1 }]);
+		assert.deepEqual(facets.level, [{ value: "P7", n: 1, rank: 7 }]);
 	});
 
 	test("偏好的公司名不裁人，只把满足的人排到前面", async () => {

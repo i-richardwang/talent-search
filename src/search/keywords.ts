@@ -85,7 +85,7 @@ const isOrg = (
 	!c.kind &&
 	!c.minMonths;
 
-const isSchool = (c: Condition): c is PersonCondition =>
+const isSchool = (c: Condition): c is PersonCondition & { field: "school" } =>
 	c.about === "person" && c.mode === "must" && c.field === "school";
 
 /**

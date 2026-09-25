@@ -478,6 +478,7 @@ export const violates = (constraint: string) => (error: unknown) =>
 export type Seed = {
 	empId: string;
 	name: string;
+	/** 夹具里职级自成一档，档高取名字里的数字（P6 → 6） */
 	curLevel?: string;
 	recruitment?: string;
 	education?: string;
@@ -518,13 +519,20 @@ export async function seed(rows: Seed[]) {
 		phrase: ph,
 		experiencePhrase: ep,
 	} = await import("#/db/schema");
+	const { EDUCATION_LADDER } = await import("#/corpus/contract");
+	const rankOf = (level: string) => Number(level.replace(/\D/g, ""));
+	const educationRank = (education: string) =>
+		(EDUCATION_LADDER as readonly string[]).indexOf(education) + 1;
 	await db.insert(emp).values(
 		rows.map((r) => ({
 			empId: r.empId,
 			name: r.name,
 			curLevel: r.curLevel ?? "",
+			curLevelBand: r.curLevel ?? "",
+			curLevelRank: r.curLevel ? rankOf(r.curLevel) : null,
 			recruitment: r.recruitment ?? "",
 			educationLevel: r.education ?? "",
+			educationRank: r.education ? educationRank(r.education) : null,
 			school: r.school ?? "",
 		})),
 	);

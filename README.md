@@ -37,11 +37,13 @@ bun run dev
 
 ## 接入数据源
 
-所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments` 和 `external`。通用校验、切段与派生在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
+所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments`、`external` 和 `levels`。通用校验、切段与派生在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
+
+职级和学历按档检索。`levels` 是职级表，写明每个职级归哪一档、档有多高，分档口径由数据源自己定；学历写契约里的五档之一（高中及以下、大专、本科、硕士、博士），源里的写法由适配器归档。筛选和「某档及以上」都按档走，职级原文只在详情里显示。
 
 两种接入方式：
 
-1. 按 `src/corpus/sources/sample/` 的列名导出三个 CSV，并设置 `TALENT_CSV_DIR`。
+1. 按 `src/corpus/sources/sample/` 的列名导出四个 CSV，并设置 `TALENT_CSV_DIR`。
 2. 实现一个导出 `extract(report): Promise<SourceData>` 的模块，并将 `TALENT_SOURCE` 设为该文件的绝对路径。
 
 `src/corpus/sources/` 默认忽略私有适配器，只保留 `csv-dir` 与合成样例。私有模块在运行时加载，不进入 Vite 构建产物。适配器使用的 npm 包应安装在根 `package.json`，以便从项目根 `node_modules` 解析。

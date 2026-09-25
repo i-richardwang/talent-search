@@ -96,13 +96,23 @@ export type DimSource = {
 	 */
 	skills: string[];
 	kind: "internal" | "external";
+	/** 当前职级归入的档（`employee.cur_level_band`），不是职级原文 */
 	level: string;
+	levelRank: number | null;
 	recruitment: string;
 	education: string;
+	educationRank: number | null;
 };
 
-/** 分面里的一行：一个候选取值和它下面的人数。 */
-export type Facet<K extends DimKey = DimKey> = { value: DimUnit[K]; n: number };
+/**
+ * 分面里的一行：一个候选取值和它下面的人数。有高低的维（`ORDINAL_KEYS`）带上
+ * 档高，筛选栏按它从低到高排。
+ */
+export type Facet<K extends DimKey = DimKey> = {
+	value: DimUnit[K];
+	n: number;
+	rank?: number;
+};
 
 /**
  * 怎么算命中。只有两个家族，各写一次求值器：
@@ -113,7 +123,12 @@ export type Facet<K extends DimKey = DimKey> = { value: DimUnit[K]; n: number };
  *   仍然按 7 个月生效，而不是因为它不在档位上就静默筛空。
  */
 type Match<K extends DimKey> =
-	| { match: "set"; values: (fact: DimSource) => DimUnit[K][] }
+	| {
+			match: "set";
+			values: (fact: DimSource) => DimUnit[K][];
+			/** 有高低的维：这段事实上那个取值的档高 */
+			rank?: (fact: DimSource) => number | null;
+	  }
 	| { match: "atLeast"; measure: (fact: DimSource) => number };
 
 type Dimension<K extends DimKey> = Match<K> & {
@@ -168,6 +183,14 @@ const SEP = "\u0001";
  * 而内存里的谓词当场把它们否掉——屏幕上是一个选中了却空着的筛选。
  */
 export const NOT_A_VALUE = ["未知"] as const;
+
+/** 有高低的维按档从低到高排；档高相同（不该发生）时按名字。 */
+const byRank = (
+	a: { value: string; rank?: number },
+	b: { value: string; rank?: number },
+) =>
+	(a.rank ?? Number.POSITIVE_INFINITY) - (b.rank ?? Number.POSITIVE_INFINITY) ||
+	a.value.localeCompare(b.value, "zh-Hans-CN");
 
 const byCountThenValue = (
 	a: { value: string; n: number },
@@ -236,8 +259,8 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	level: {
 		...plain("职级", (f) => f.level),
 		text: (v) => `当前职级 · ${v}`,
-		// 职级按名字排：它是有序的量（P5 < P6），人多的档不一定是低的档
-		compare: (a, b) => a.value.localeCompare(b.value, "zh-Hans-CN"),
+		rank: (f) => f.levelRank,
+		compare: byRank,
 	},
 
 	kind: {
@@ -286,8 +309,32 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 
 	recruitment: plain("招聘渠道", (f) => f.recruitment),
 
-	education: plain("学历", (f) => f.education),
+	education: {
+		...plain("学历", (f) => f.education),
+		rank: (f) => f.educationRank,
+		compare: byRank,
+	},
 };
+
+/**
+ * 有高低的维：职级档和学历。取值是档名，档高来自语料（`employee` 上的档高列），
+ * 条件可以说「某档及以上」（`condition.ts` 的 `atLeast`）。
+ */
+export const ORDINAL_KEYS = [
+	"level",
+	"education",
+] as const satisfies readonly DimKey[];
+
+export type OrdinalKey = (typeof ORDINAL_KEYS)[number];
+
+export function isOrdinal(key: string): key is OrdinalKey {
+	return (ORDINAL_KEYS as readonly string[]).includes(key);
+}
+
+/** 「某档及以上」怎么写。 */
+export function orAbove(key: OrdinalKey, value: string): string {
+	return `${dimOption(key, value)}及以上`;
+}
 
 /** 全部维度，按声明顺序。加一维只要在上面加一段，其余各处跟着长。 */
 export const DIM_KEYS = Object.keys(DIMENSIONS) as DimKey[];
@@ -319,6 +366,13 @@ export function dimValues<K extends DimKey>(
 		: (MIN_MONTHS_BUCKETS.filter(
 				(bucket) => dim.measure(fact) >= bucket,
 			) as DimUnit[K][]);
+}
+
+/** 这段事实上这一维取值的档高。没有高低的维、或这一项没有档，都是 `undefined`。 */
+export function dimRank(key: DimKey, fact: DimSource): number | undefined {
+	const dim = DIMENSIONS[key];
+	if (dim.match !== "set" || !dim.rank) return undefined;
+	return dim.rank(fact) ?? undefined;
 }
 
 /** 这一段经历过不过这一维的筛选。没选就是不筛。 */

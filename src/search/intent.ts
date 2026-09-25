@@ -18,7 +18,7 @@ import {
 	PERSON_MODES,
 	withOff,
 } from "./condition";
-import { VOCAB_KEYS, type VocabKey } from "./dimensions";
+import { isOrdinal, VOCAB_KEYS, type VocabKey } from "./dimensions";
 import { type SearchSpec, sanitizeSpec } from "./spec";
 import { boundedText } from "./text";
 
@@ -57,7 +57,14 @@ const personItem = z.object({
 	about: z.literal("person"),
 	mode: z.enum(PERSON_MODES).describe("must=必须；boost=最好是"),
 	field: z.enum(PERSON_FIELDS),
-	values: z.array(z.string()).describe("任一即可；词表维从给出的取值里挑"),
+	values: z
+		.array(z.string())
+		.optional()
+		.describe("任一即可；词表维从给出的取值里挑"),
+	atLeast: z
+		.string()
+		.optional()
+		.describe("这一档及以上，只用于 level 和 education，从给出的取值里挑一档"),
 });
 
 export const conditionItems = z.array(
@@ -173,19 +180,23 @@ function conditionsIn(raw: unknown, vocab: Vocabulary): Condition[] {
 		(Array.isArray(list) ? list : [])
 			.map(boundedText)
 			.filter((t): t is string => t !== undefined && vocab[key].includes(t));
-	const conditions = items.map((item) => {
+	const conditions = items.flatMap((item) => {
 		const entry = (item ?? {}) as Record<string, unknown>;
 		// 停用只由上一轮带过来，模型那一侧写的一律不认
 		const { off: _off, ...rest } = entry;
 		if (rest.about === "experience")
-			return { ...rest, companyTag: inVocab("companyTag", rest.companyTag) };
-		const field = rest.field;
+			return [{ ...rest, companyTag: inVocab("companyTag", rest.companyTag) }];
 		if (
-			rest.about === "person" &&
-			(VOCAB_KEYS as readonly unknown[]).includes(field)
+			rest.about !== "person" ||
+			!(VOCAB_KEYS as readonly unknown[]).includes(rest.field)
 		)
-			return { ...rest, values: inVocab(field as VocabKey, rest.values) };
-		return rest;
+			return [rest];
+		const key = rest.field as VocabKey;
+		if (!isOrdinal(key) || rest.atLeast === undefined)
+			return [{ ...rest, values: inVocab(key, rest.values) }];
+		// 「及以上」的那一档不在词表里，整条不认：只丢这一档，它就读成了列举，换了意思
+		const [atLeast] = inVocab(key, [rest.atLeast]);
+		return atLeast ? [{ ...rest, atLeast }] : [];
 	});
 	return sanitizeSpec({ conditions }).conditions;
 }

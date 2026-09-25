@@ -5,7 +5,7 @@
  * 开放区间怎么封口、相邻段怎么合并、当前信息从哪派生。适配器自己的解析逻辑
  * 归各自的测试，不在这里。
  *
- * 全部对着 `build` 一个入口测：它是纯函数，进去三张表、出来两张表加一串话，
+ * 全部对着 `build` 一个入口测：它是纯函数，进去四张表、出来两张表加一串话，
  * 所以每个用例读起来就是一句「源里长这样时，库里应该是什么」。
  */
 import assert from "node:assert/strict";
@@ -49,10 +49,17 @@ const EXTERNAL = {
 	unemployed: false,
 };
 
+/** 夹具的职级表：P6 在「中级」档，P7 在「高级」档。 */
+const LEVELS = [
+	{ level: "P6", band: "中级", rank: "6" },
+	{ level: "P7", band: "高级", rank: "7" },
+];
+
 function source(rows: {
 	people?: Partial<typeof PERSON>[];
 	assignments?: Partial<typeof ASSIGNMENT>[];
 	external?: Partial<typeof EXTERNAL>[];
+	levels?: { level: string; band: string; rank: string }[];
 }): SourceData {
 	return sourceData({
 		employees: (rows.people ?? [{}]).map(
@@ -64,6 +71,7 @@ function source(rows: {
 		external: (rows.external ?? []).map(
 			(row): RawRow => ({ ...EXTERNAL, ...row }),
 		),
+		levels: rows.levels ?? LEVELS,
 	});
 }
 
@@ -322,6 +330,7 @@ describe("入职前经历", () => {
 					employees: [{ ...PERSON }],
 					assignments: [],
 					external: [{ ...EXTERNAL, unemployed: "false" }],
+					levels: [],
 				}),
 			/unemployed 不是布尔值/,
 		);
@@ -375,6 +384,61 @@ describe("员工档案", () => {
 
 		assert.equal(out.employee[0]?.hire_date, null);
 		assert.match(out.said, /入职日期格式无效 1 行，入职日已留空/);
+	});
+});
+
+describe("职级档与学历档", () => {
+	test("当前职级按职级表归档，档高跟着档走", () => {
+		const out = run({ assignments: [{ level: "P7" }] });
+
+		assert.equal(out.employee[0]?.cur_level, "P7");
+		assert.equal(out.employee[0]?.cur_level_band, "高级");
+		assert.equal(out.employee[0]?.cur_level_rank, 7);
+	});
+
+	test("职级表里没有的职级不进任何一档，报出人数", () => {
+		const out = run({ assignments: [{ level: "L3" }] });
+
+		assert.equal(out.employee[0]?.cur_level, "L3");
+		assert.equal(out.employee[0]?.cur_level_band, "");
+		assert.equal(out.employee[0]?.cur_level_rank, null);
+		assert.match(out.said, /当前职级不在职级表里 1 人（L3 1）/);
+	});
+
+	test("职级表自相矛盾是适配器坏了，整轮退出", () => {
+		const bad = (levels: { level: string; band: string; rank: string }[]) =>
+			assert.throws(() => run({ levels }));
+		bad([
+			{ level: "P6", band: "中级", rank: "6" },
+			{ level: "P6", band: "高级", rank: "7" },
+		]);
+		bad([
+			{ level: "P6", band: "中级", rank: "6" },
+			{ level: "P5", band: "中级", rank: "5" },
+		]);
+		bad([{ level: "P6", band: "中级", rank: "六" }]);
+		bad([{ level: "P6", band: "中级", rank: "" }]);
+		bad([{ level: "P6", band: "", rank: "6" }]);
+	});
+
+	test("学历按五档记档高；五档之外的写法留空并报出来", () => {
+		const out = run({
+			people: [
+				{ emp_id: "E1", education_level: "硕士" },
+				{ emp_id: "E2", education_level: "硕士研究生" },
+				{ emp_id: "E3", education_level: "" },
+			],
+		});
+
+		assert.deepEqual(
+			out.employee.map((e) => [e.education_level, e.education_rank]),
+			[
+				["硕士", 4],
+				["", null],
+				["", null],
+			],
+		);
+		assert.match(out.said, /学历不在五档之内 1 行（硕士研究生 1）/);
 	});
 });
 
@@ -459,6 +523,7 @@ describe("契约", () => {
 					employees: [{ emp_id: "E1" }],
 					assignments: [],
 					external: [],
+					levels: [],
 				}),
 			/hire_date/,
 		);

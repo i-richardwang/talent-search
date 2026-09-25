@@ -1,5 +1,5 @@
 /**
- * 通用管线：源契约的三张表 → 库里的 employee / experience 两张表。
+ * 通用管线：源契约的四张表 → 库里的 employee / experience 两张表。
  *
  * 这里不出现任何一家公司的字段名、字典码或组织名。它只做「无论数据从哪来都
  * 必须做」的那几件事：
@@ -9,20 +9,22 @@
  *    伪装成一月经历；
  * 2. 开放区间封口——公司内开放段计算时封到 `asOf`，入职前开放段封到入职日；
  * 3. 相邻段合并——`segment_key` 相同且时间连续或重叠的记录合成一段经历；
- * 4. 时长与当前信息派生。
+ * 4. 时长与当前信息派生，包括当前职级归哪一档、学历在第几档。
  *
  * 这几件事只写一遍，接第二个数据源时才不会长出第二套「什么算一段经历」。
  *
- * 整个模块是纯函数：进去三张表，出来两张表，说过的话交给 `report`。没有它自己
+ * 整个模块是纯函数：进去四张表，出来两张表，说过的话交给 `report`。没有它自己
  * 的入口，测试对着 `build` 一个函数就能把上面四条逐条摆出来。
  */
 
 import type { CompanyMeta } from "#/db/schema";
-import type {
-	SourceAssignment,
-	SourceData,
-	SourceEmployee,
-	SourceExternal,
+import {
+	EDUCATION_LADDER,
+	type SourceAssignment,
+	type SourceData,
+	type SourceEmployee,
+	type SourceExternal,
+	type SourceLevel,
 } from "./contract";
 import type { Report } from "./report";
 
@@ -35,9 +37,16 @@ export type EmployeeRow = {
 	cur_seq_l2: string;
 	cur_seq_l3: string;
 	cur_level: string;
+	/** 当前职级归入的档；职级表里没有这个职级时为空 */
+	cur_level_band: string;
+	/** 档的高低，越大越高；没有档时为空 */
+	cur_level_rank: number | null;
 	/** ISO 日期；读不懂的留空 */
 	hire_date: string | null;
+	/** `EDUCATION_LADDER` 之一或空 */
 	education_level: string;
+	/** 学历在五档里的位置，从 1 起；没有学历时为空 */
+	education_rank: number | null;
 	school: string;
 	recruitment: string;
 };
@@ -430,20 +439,63 @@ type Profile = {
  */
 function normalizeProfiles(rows: SourceEmployee[], report: Report): Profile[] {
 	let invalid = 0;
+	const offLadder = new Map<string, number>();
 	const out = rows.map((row) => {
 		const hire = parseDate(row.hire_date);
 		if (hire === "invalid") invalid++;
+		const education = row.education_level.trim();
+		const known = !education || educationRank(education) !== null;
+		if (!known) offLadder.set(education, (offLadder.get(education) ?? 0) + 1);
 		return {
 			emp_id: row.emp_id.trim(),
 			name: row.name.trim(),
 			hire_date: hire === "invalid" ? null : hire,
-			education_level: row.education_level.trim(),
+			education_level: known ? education : "",
 			school: row.school.trim(),
 			recruitment: row.recruitment.trim(),
 		};
 	});
 	if (invalid) report(`  员工档案入职日期格式无效 ${invalid} 行，入职日已留空`);
+	if (offLadder.size)
+		report(`  学历不在五档之内 ${tallied(offLadder, "行")}，学历已留空`);
 	return out;
+}
+
+/** 学历在五档里的位置，从 1 起。 */
+function educationRank(education: string): number | null {
+	const index = (EDUCATION_LADDER as readonly string[]).indexOf(education);
+	return index < 0 ? null : index + 1;
+}
+
+type Band = { band: string; rank: number };
+
+/**
+ * 职级表 → 职级到档的对照。
+ *
+ * 这张表是适配器算出来的口径，不是逐行的源数据：写错了（空的档、不是整数的档高、
+ * 同一职级归两档、同一档两个高度）说明适配器坏了，整轮出声退出，而不是挑一行
+ * 算数——挑错一行，整档的人就在「某档及以上」里错位。
+ */
+function levelBands(rows: SourceLevel[]): Map<string, Band> {
+	const bands = new Map<string, Band>();
+	const heights = new Map<string, number>();
+	for (const [index, row] of rows.entries()) {
+		const level = row.level.trim();
+		const band = row.band.trim();
+		const rank = Number.parseInt(row.rank.trim(), 10);
+		const where = `数据源的 levels 第 ${index + 1} 行`;
+		if (!level || !band || String(rank) !== row.rank.trim())
+			throw new Error(`${where}不完整：${JSON.stringify(row)}`);
+		const before = bands.get(level);
+		if (before && (before.band !== band || before.rank !== rank))
+			throw new Error(`${where}：职级 ${level} 归了两个档`);
+		const height = heights.get(band);
+		if (height !== undefined && height !== rank)
+			throw new Error(`${where}：档 ${band} 有两个高度 ${height} 与 ${rank}`);
+		bands.set(level, { band, rank });
+		heights.set(band, rank);
+	}
+	return bands;
 }
 
 /**
@@ -456,6 +508,7 @@ function normalizeProfiles(rows: SourceEmployee[], report: Report): Profile[] {
 function buildEmployee(
 	profiles: Profile[],
 	internal: Segment[],
+	bands: Map<string, Band>,
 	report: Report,
 ): EmployeeRow[] {
 	const open = new Map<string, Segment>();
@@ -473,10 +526,14 @@ function buildEmployee(
 		for (const empId of ambiguous) open.delete(empId);
 	}
 
-	return [...profiles]
+	const unbanded = new Map<string, number>();
+	const rows = [...profiles]
 		.sort((a, b) => a.emp_id.localeCompare(b.emp_id))
 		.map((profile) => {
 			const current = open.get(profile.emp_id);
+			const level = current?.level ?? "";
+			const band = bands.get(level);
+			if (level && !band) unbanded.set(level, (unbanded.get(level) ?? 0) + 1);
 			return {
 				emp_id: profile.emp_id,
 				name: profile.name,
@@ -485,18 +542,31 @@ function buildEmployee(
 				cur_seq_l1: current?.seq_l1 ?? "",
 				cur_seq_l2: current?.seq_l2 ?? "",
 				cur_seq_l3: current?.seq_l3 ?? "",
-				cur_level: current?.level ?? "",
+				cur_level: level,
+				cur_level_band: band?.band ?? "",
+				cur_level_rank: band?.rank ?? null,
 				hire_date: profile.hire_date ? isoDate(profile.hire_date) : null,
 				education_level: profile.education_level,
+				education_rank: educationRank(profile.education_level),
 				school: profile.school,
 				recruitment: profile.recruitment,
 			};
 		});
+	if (unbanded.size)
+		report(`  当前职级不在职级表里 ${tallied(unbanded, "人")}，不进任何一档`);
+	return rows;
 }
 
 /** 报告里点几个名字就够了：读的人要的是「是哪一类人」，不是一份名单。 */
 function few(ids: string[]): string {
 	return ids.slice(0, 5).join("、") + (ids.length > 5 ? "…" : "");
+}
+
+/** 按写法数过的行：「3 行（硕士研究生 2、技校 1）」，多的写法在前。 */
+function tallied(counts: Map<string, number>, unit: string): string {
+	const sorted = [...counts].sort((a, b) => b[1] - a[1]);
+	const total = sorted.reduce((n, [, c]) => n + c, 0);
+	return `${total} ${unit}（${few(sorted.map(([value, n]) => `${value} ${n}`))}）`;
 }
 
 // ---------------------------------------------------------------------- 入口
@@ -572,7 +642,12 @@ export function build(
 	const internal = buildInternal(assignments, asOf, report);
 	report(`  公司内 ${internal.length} 段`);
 
-	const employee = buildEmployee(profiles, internal, report);
+	const employee = buildEmployee(
+		profiles,
+		internal,
+		levelBands(data.levels),
+		report,
+	);
 	const hireDates = new Map<string, Date>();
 	for (const profile of profiles)
 		if (profile.hire_date) hireDates.set(profile.emp_id, profile.hire_date);
