@@ -25,7 +25,11 @@ const INTERNAL_WORDS = [
 	"敲",
 ] as const;
 
+/** 产品用词里含着内部用词的那些：「人才库里」说的是人才库，不是代码那一侧的库。 */
+const PRODUCT_WORDS = ["人才库"] as const;
+
 /** 一段文字里出现了哪些不该上屏的词。 */
 export function internalWordsIn(text: string): string[] {
-	return INTERNAL_WORDS.filter((word) => text.includes(word));
+	const plain = PRODUCT_WORDS.reduce((t, word) => t.replaceAll(word, ""), text);
+	return INTERNAL_WORDS.filter((word) => plain.includes(word));
 }

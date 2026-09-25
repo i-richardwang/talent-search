@@ -11,6 +11,8 @@
  *     "drop": "+org:字节",             // 可选：新表里必须没有的条件，一行查询语法
  *     "add": ["+团队"],                // 可选：新加的条件里必须提到的词，前缀 + / - 是加分 / 排除
  *     "declined": ["北京"],            // 可选：必须说成搜不了的原话片段
+ *     "together": [["字节", "算法"]],  // 可选：每组词写在同一条新条件里（同一段经历）
+ *     "apart": [["字节", "算法"]],     // 可选：每组词分写在不同的新条件里（只要求同一个人）
  *     "empty": true,                   // 可选：新表必须是空的
  *     "rewrite": true }                // 可选：这句话换了一件事，不要求保留 base
  *
@@ -44,6 +46,8 @@ type Case = {
 	drop: Condition[];
 	add: { mode: Mode; word: string }[];
 	declined: string[];
+	together: string[][];
+	apart: string[][];
 	empty: boolean;
 	rewrite: boolean;
 };
@@ -84,6 +88,19 @@ function loadCases(file: string): Case[] {
 					: { mode: "must" as const, word },
 		);
 		const declined = list("declined");
+		const groups = (key: string) => {
+			const value = c[key] ?? [];
+			if (
+				!Array.isArray(value) ||
+				!value.every((g) => strings(g) && g.length > 1)
+			)
+				throw new Error(
+					`${where}：${key} 只能是字符串数组的数组，每组至少两个词`,
+				);
+			return value as string[][];
+		};
+		const together = groups("together");
+		const apart = groups("apart");
 		const empty = c.empty === true;
 		const rewrite = c.rewrite === true;
 		const drop = syntax("drop");
@@ -96,6 +113,8 @@ function loadCases(file: string): Case[] {
 			drop,
 			add,
 			declined,
+			together,
+			apart,
 			empty,
 			rewrite,
 		};
@@ -157,15 +176,21 @@ try {
 
 			const had = new Set(c.base.map(conditionKey));
 			const added = next.filter((one) => !had.has(conditionKey(one)));
+			const mentions = (one: Condition, word: string) =>
+				wordsOf(one).some((w) => norm(w).includes(norm(word)));
 			for (const { mode, word } of c.add)
+				if (!added.some((one) => one.mode === mode && mentions(one, word)))
+					problems.push(`没加上「${word}」（${mode}）`);
+			for (const group of c.together)
+				if (!added.some((one) => group.every((word) => mentions(one, word))))
+					problems.push(`「${group.join("」「")}」没写在同一条里`);
+			for (const group of c.apart)
 				if (
-					!added.some(
-						(one) =>
-							one.mode === mode &&
-							wordsOf(one).some((w) => norm(w).includes(norm(word))),
+					added.some(
+						(one) => group.filter((word) => mentions(one, word)).length > 1,
 					)
 				)
-					problems.push(`没加上「${word}」（${mode}）`);
+					problems.push(`「${group.join("」「")}」不该写在同一条里`);
 
 			const said = result.notes?.declined.map((d) => d.said) ?? [];
 			for (const word of c.declined)
