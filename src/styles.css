@@ -153,9 +153,8 @@
 	--header-height: 3.5rem;
 
 	/*
-	 * 查询带的高度。这条带**定高**：里面的标题长了就截断，错误提示从带子里
-	 * 浮出来、不推开布局（`query-deck.tsx`）——所以这个数不会因为
-	 * 内容变了而变，吸在它下面的东西可以照着算。
+	 * 查询带的高度。这条带**定高**：里面的标题长了就截断（`query-deck.tsx`）
+	 * ——所以这个数不会因为内容变了而变，吸在它下面的东西可以照着算。
 	 *
 	 * 2.5rem 是带子里的内容算出来的，而且**每一档宽度都正好是这个数**：带子里的
 	 * 控件全是 `xs` 一档（chip 一律同高，桌面 24px、粗指针设备 28px），
@@ -462,7 +461,7 @@
 }
 
 /*
- * 换人时详情区的淡入。全站唯一的动效。
+ * 新东西到了的淡入：换人时的详情区，以及模型边跑边走出的新一步。
  *
  * ↑↓ 连着扫名单时，右边这一栏整体换掉一次，淡入给出「换了一个人」的确认。
  * 短而浅是硬要求：连按时每一帧都要在下一次按键之前结束，否则动画会排队，
@@ -481,6 +480,40 @@
 
 @utility settle {
 	animation: settle 160ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/*
+ * 模型正在跑的那几个字：一道亮光从左扫到右，跑完就是一行普通的灰字。
+ *
+ * 右栏里只有这一处在说「它还在动」——名单那一列的等待态在说「在理解」，
+ * 这里说的是理解到哪了。字本身就是信号，不另挂一个转圈：转圈只说「在等」，
+ * 说不出在等什么。减弱动效时退回灰字，意思不丢，只是不动。
+ */
+@utility shimmer {
+	background-image: linear-gradient(
+		90deg,
+		var(--color-muted-foreground) 0%,
+		var(--color-foreground) 45%,
+		var(--color-foreground) 55%,
+		var(--color-muted-foreground) 100%
+	);
+	background-size: 200% 100%;
+	background-clip: text;
+	color: transparent;
+	animation: shimmer 1.6s linear infinite;
+	@media (prefers-reduced-motion: reduce) {
+		background-image: none;
+		color: var(--color-muted-foreground);
+	}
+}
+
+@keyframes shimmer {
+	from {
+		background-position: 100% 0;
+	}
+	to {
+		background-position: -100% 0;
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {

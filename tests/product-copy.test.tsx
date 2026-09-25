@@ -11,8 +11,10 @@ import type { Condition } from "#/search/condition";
 import { conditionLabel, partLabel } from "#/search/condition-label";
 import { routeLabel } from "#/search/evidence";
 import { emptyFacets } from "#/search/result";
+import type { InterpretFault } from "#/server/turn";
 import { person } from "./conditions";
 import { visibleText } from "./render";
+import { routed } from "./routed";
 
 const seen = (node: React.ReactNode) => visibleText(renderToStaticMarkup(node));
 
@@ -55,7 +57,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		};
 		assert.equal(
 			conditionLabel(claim),
-			"入职前经历 · 大厂 · 字节 · 增长 · ≥ 2 年",
+			"入职前经历 · 大厂 · 字节 · 增长 · 2 年以上",
 		);
 		assert.equal(
 			conditionLabel({ about: "experience", mode: "boost", org: ["字节"] }),
@@ -76,7 +78,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		);
 		assert.equal(
 			partLabel(claim, { key: "minMonths", value: 24 }),
-			"累计 ≥ 2 年",
+			"累计 2 年以上",
 		);
 		assert.equal(
 			partLabel(claim, { key: "what", value: "用户增长" }),
@@ -84,14 +86,14 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		);
 	});
 
-	test("对话首页聚焦搜索输入，并提供完整句子的示例", () => {
+	test("AI 搜索首页聚焦输入框，并提供完整句子的示例", () => {
 		const html = renderToStaticMarkup(
 			<ZeroState error={null} mode="conversation" onQuery={() => true} />,
 		);
 		const text = visibleText(html);
-		assert.match(html, /placeholder="输入人选要求：岗位、经历、技能"/);
+		assert.match(html, /placeholder="描述你要找的人，例如：[^"]+"/);
 		assert.match(text, /做过.+、.+的人/);
-		assert.doesNotMatch(text, /做过什么/, "对话这一屏没有关键词的框");
+		assert.doesNotMatch(text, /经历或技能/, "AI 搜索这一屏没有关键词的框");
 	});
 
 	test("关键词首页一个框一维，不给说话的框", () => {
@@ -100,7 +102,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		);
 		const text = visibleText(html);
 		assert.doesNotMatch(html, /<textarea/);
-		for (const label of ["做过什么", "公司或部门", "学校", "累计至少几年"])
+		for (const label of ["经历或技能", "公司或部门", "学校", "累计年限"])
 			assert.match(text, new RegExp(label));
 	});
 
@@ -118,45 +120,87 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			/>,
 		);
 		// 数和单位挨着，中间不能插别的东西。不要求「共」字：它是名单的表头
-		// （12 / 人 / 按证据排序），不是句子里的一截。
+		// （12 / 人 / 按匹配度排序），不是句子里的一截。
 		assert.match(text, /12\s*人/);
 		// 排序依据常驻：一张排过序的表必须说出自己按什么排，否则「从上往下看」
 		// 这个动作没有依据。它不该只在结果被截断时才出现一次。
-		assert.match(text, /按证据排序/);
+		assert.match(text, /按匹配度排序/);
 	});
 
-	test("理解失败必须说出来，并且给出一步可执行的动作", () => {
+	/** 没理解出来时名单那一列说的话。 */
+	const failed = async (fault: InterpretFault) =>
+		visibleText(
+			await routed(() => (
+				<ResultList
+					canMore={false}
+					empId={undefined}
+					failure={{ fault, onRetry: () => {} }}
+					growing={false}
+					loading={false}
+					mode="conversation"
+					onAll={() => {}}
+					onChange={() => {}}
+					onEditQuery={() => {}}
+					onMore={() => {}}
+					onReviseQuery={() => {}}
+					outcome={{
+						order: "evidence",
+						claims: [],
+						results: [],
+						facets: emptyFacets(),
+						total: 0,
+						empty: null,
+					}}
+					phase="interpreting"
+					picks={NO_PICKS}
+					spec={{ conditions: [] }}
+					turnId="t"
+				/>
+			)),
+		);
+
+	test("理解失败必须说出来，并且给出一步可执行的动作，不画成空名单", async () => {
 		/*
-		 * 一句话只有模型能读成条件。它失败时记录停在「待理解」，屏幕上必须是
-		 * 一条看得见的错误加一个重试——不是一份空名单，空名单在这个界面里的
+		 * 一句话只有模型能读成条件。它失败时记录停在「待理解」，名单那一列必须是
+		 * 一条看得见的错误加一个出路——不是一份空名单，空名单在这个界面里的
 		 * 意思是「没有这样的人」。
 		 */
-		const text = seen(
-			<QueryDeck
-				error="没能整理出搜索条件，请重试或换一种说法。"
-				interpreting={false}
-				onChangeSpec={() => {}}
-				onRetry={() => {}}
-				spec={null}
-				title="最好懂算法、不要实习"
-			/>,
-		);
-		assert.match(text, /没能整理出搜索条件/);
+		const text = await failed("unanswered");
+		assert.match(text, /没能理解这段需求/);
 		assert.match(text, /重试/);
+		assert.match(text, /换一种说法/);
+		assert.doesNotMatch(text, /没有符合|0\s*人/);
 	});
 
-	test("等条件出来时显示的是用户自己那句话，不是一排占位方块", () => {
+	test("AI 服务连不上、报错时不怪这段描述，也不叫人换说法", async () => {
+		for (const fault of ["unreachable", "rejected"] as const) {
+			const text = await failed(fault);
+			assert.match(text, /你的描述没有问题/);
+			assert.doesNotMatch(text, /换一种说法|没能理解/);
+			assert.match(text, /重试/);
+			assert.match(text, /改用关键词搜索/, "不经过 AI 的那条路照样能用");
+		}
+		assert.match(await failed("unreachable"), /AI 服务暂时不可用/);
+		assert.match(await failed("rejected"), /AI 服务出错/);
+	});
+
+	test("AI 搜索没开启时不给重试：重试也一样", async () => {
+		const text = await failed("unconfigured");
+		assert.match(text, /AI 搜索未开启/);
+		assert.doesNotMatch(text, /重试/);
+		assert.match(text, /用关键词搜索/);
+	});
+
+	test("等条件出来时吸顶那条只有用户自己那句话，不重复说在整理", () => {
 		const text = seen(
 			<QueryDeck
-				error={null}
-				interpreting
 				onChangeSpec={() => {}}
 				spec={null}
 				title="做过线下渠道运营、带过团队的人"
 			/>,
 		);
 		assert.match(text, /做过线下渠道运营、带过团队的人/);
-		assert.match(text, /正在整理条件/);
+		assert.doesNotMatch(text, /整理/);
 	});
 
 	test("一个人都没有时不显示人数", () => {

@@ -35,9 +35,9 @@ import { taskLog as runLog, type TaskPages, tasksState } from "./tasks";
 import {
 	createTurn,
 	deleteSearch,
+	interpret,
 	listRecent,
 	loadThread,
-	resolveTurn,
 	type Turn,
 	traceOf,
 } from "./turn";
@@ -120,10 +120,14 @@ export const turnTrace = createServerFn({ method: "GET" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
 	.handler(({ data }) => traceOf(data.turnId));
 
-/** 把一条只有原话的记录补上理解结果。工作台挂载后就地调它，不挡导航。 */
+/**
+ * 把一条只有原话的记录补上理解结果。工作台挂载后就地调它，不挡导航。
+ * 失败不抛，交回是哪一环坏了（`interpret`）：页面要按它说话，而抛出去的错误
+ * 到了浏览器只剩一句不能给人看的原文。
+ */
 export const interpretTurn = createServerFn({ method: "POST" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
-	.handler(({ data }) => resolveTurn(data.turnId));
+	.handler(({ data }) => interpret(data.turnId));
 
 /**
  * 顶栏「最近」入口的列表。由**根路由的 loader** 取（`routes/__root.tsx`）：

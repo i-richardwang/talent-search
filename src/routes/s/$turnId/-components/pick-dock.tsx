@@ -267,7 +267,7 @@ function ExportDialog({
 								<AlertDescription className="flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
 									<span className="min-w-0 flex-1">
 										这份表是你选择的 {picked.length} 人。符合条件的共 {total} 人
-										{total > reach && `，名单按相关度只显示前 ${reach} 位`}。
+										{total > reach && `，仅显示匹配度最高的 ${reach} 人`}。
 									</span>
 									<Button
 										className="shrink-0"

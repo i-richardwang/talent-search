@@ -13,10 +13,38 @@ import { test } from "node:test";
 // 端口 1 上没有人接：这一跳必然失败，而失败正是这里要看的东西。
 process.env.LLM_BASE_URL = "http://127.0.0.1:1";
 process.env.LLM_MODEL = "fake";
-const { understand } = await import("#/server/llm");
+const { understand, UnansweredError } = await import("#/server/llm");
+const { endpointFault } = await import("#/server/endpoint");
+const { APICallError, RetryError } = await import("ai");
 
 const VOCAB = { companyTag: [], level: [], recruitment: [], education: [] };
 
 test("端点连不上时抛给调用方，不返回一份假理解", async () => {
 	await assert.rejects(understand("做过算法的人", VOCAB, [], {}));
+});
+
+test("连不上认作 unreachable：那句话根本没被读过", async () => {
+	const error = await understand("做过算法的人", VOCAB, [], {}).catch((e) => e);
+	assert.equal(endpointFault(error), "unreachable");
+});
+
+test("端点答了一个 HTTP 错误认作 rejected，重试用尽包一层也认得", () => {
+	const denied = new APICallError({
+		message: "Unauthorized",
+		url: "http://gateway/v1/chat/completions",
+		requestBodyValues: {},
+		statusCode: 401,
+	});
+	assert.equal(endpointFault(denied), "rejected");
+	const exhausted = new RetryError({
+		message: "Failed after 2 attempts",
+		reason: "maxRetriesExceeded",
+		errors: [denied, denied],
+	});
+	assert.equal(endpointFault(exhausted), "rejected");
+});
+
+test("端点答了但没按约定作答，不是端点的错", () => {
+	assert.equal(endpointFault(new UnansweredError("没有合法对象")), null);
+	assert.equal(endpointFault(new Error("别的意外")), null);
 });

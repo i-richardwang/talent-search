@@ -52,7 +52,7 @@ describe("取数超限：是一种结果，不是一次失败", () => {
 			{ kind: "overflowEvidence", claims: claimsOf(parseQuery("经理")) },
 			"算法,经理",
 		);
-		assert.equal(s.title, "条件太宽");
+		assert.equal(s.title, "条件范围过大");
 		assert.match(s.hint, /「经理」/);
 		assert.doesNotMatch(s.hint, /算法/, "贡献较少的词不背锅");
 		assert.equal(s.focused, true);
@@ -61,7 +61,7 @@ describe("取数超限：是一种结果，不是一次失败", () => {
 
 	test("人太多时提示继续收窄，不报成没有结果", () => {
 		const s = run({ kind: "overflowPopulation" });
-		assert.equal(s.title, "范围太大");
+		assert.equal(s.title, "范围过大");
 		assert.equal(s.focused, true);
 	});
 });
@@ -93,11 +93,11 @@ describe("其余分支各有各的文案", () => {
 			assert.equal(s.changed, undefined, kind);
 		}
 		assert.equal(run({ kind: "excludeOnly" }).title, "还缺一项条件");
-		assert.equal(run({ kind: "noConditions" }).title, "没有能用来找人的条件");
+		assert.equal(run({ kind: "noConditions" }).title, "没有可用的搜索条件");
 	});
 
 	test("只有人的条件且无人匹配时报无结果，不报解析失败", () => {
-		assert.equal(run({ kind: "personEmpty" }).title, "没有这样的人");
+		assert.equal(run({ kind: "personEmpty" }).title, "没有符合条件的人");
 	});
 
 	test("筛选太窄：一键清掉全部筛选", () => {
@@ -124,7 +124,7 @@ describe("关键词搜索的出路只说框里能做的事", () => {
 	test("没有加分，也没有停用：只说换词、去掉词", () => {
 		const unmet = run({ kind: "unmet" }, "算法,渠道运营", "keyword");
 		assert.doesNotMatch(unmet.hint, /加分/);
-		assert.match(unmet.hint, /去掉一个词/);
+		assert.match(unmet.hint, /移除一个关键词/);
 		assert.equal(unmet.focused, true);
 
 		const wide = run(

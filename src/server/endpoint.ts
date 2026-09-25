@@ -4,6 +4,7 @@
  */
 
 import "@tanstack/react-start/server-only";
+import { APICallError, RetryError } from "ai";
 
 /**
  * 一个正整数环境变量。缺失、空、非法、非正一律用默认值。
@@ -71,4 +72,33 @@ function isTimeout(error: unknown): boolean {
 	for (let current = error; current instanceof Error; current = current.cause)
 		if (current.name === "TimeoutError") return true;
 	return false;
+}
+
+/**
+ * 一通调用失败时，端点那一侧出了什么事：
+ *
+ * - `unreachable`：没答上来——连不上（DNS、拒绝连接、断网）或每一次尝试都超时。
+ *   请求根本没被读过。
+ * - `rejected`：答了，答的是一个 HTTP 错误——鉴权、模型名、额度、网关自己坏了。
+ *
+ * 都不是就是 null：端点好好地答了，问题出在答的内容或我们自己这一侧。
+ *
+ * SDK 把连不上包成一个没有状态码的 `APICallError`，重试用尽再包一层 `RetryError`；
+ * 超时是 `timeoutFetch` 的表响了。这里沿 `lastError` 和 `cause` 往下找第一个认得的。
+ */
+export type EndpointFault = "unreachable" | "rejected";
+
+export function endpointFault(error: unknown): EndpointFault | null {
+	const seen = new Set<unknown>();
+	let current = error;
+	while (current instanceof Error && !seen.has(current)) {
+		seen.add(current);
+		if (current.name === "TimeoutError") return "unreachable";
+		if (APICallError.isInstance(current))
+			return current.statusCode === undefined ? "unreachable" : "rejected";
+		current = RetryError.isInstance(current)
+			? current.lastError
+			: current.cause;
+	}
+	return null;
 }

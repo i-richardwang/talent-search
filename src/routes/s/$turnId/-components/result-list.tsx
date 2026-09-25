@@ -15,12 +15,13 @@ import { claimName } from "#/search/condition-label";
 import { claimsOf, type SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import { RESULT_PAGE } from "#/search/weights";
-import type { SearchMode } from "#/server/turn";
+import type { InterpretFault, SearchMode } from "#/server/turn";
 import type { Picks } from "../-lib/picks";
 import { reachOf, type View } from "../-lib/view-params";
 import { PickDock } from "./pick-dock";
 import {
 	NoResults,
+	NotUnderstood,
 	ResultHeader,
 	Searching,
 	type SearchPhase,
@@ -52,6 +53,7 @@ export function ResultList({
 	onReviseQuery,
 	onEditQuery,
 	picks,
+	failure = null,
 }: {
 	outcome: SearchOutcome;
 	empId: string | undefined;
@@ -69,6 +71,8 @@ export function ResultList({
 	onReviseQuery: (next: Condition[]) => void;
 	onEditQuery: () => void;
 	picks: Picks;
+	/** 这一轮没理解出来：名单停在这里，说出哪一环坏了。 */
+	failure?: { fault: InterpretFault; onRetry: () => void } | null;
 }) {
 	const { results, claims, order, total } = outcome;
 	const reach = reachOf(total);
@@ -104,7 +108,9 @@ export function ResultList({
 		</div>
 	);
 
-	const content = loading ? (
+	const content = failure ? (
+		<NotUnderstood fault={failure.fault} onRetry={failure.onRetry} />
+	) : loading ? (
 		<Searching phase={phase} />
 	) : results.length === 0 ? (
 		<NoResults
@@ -192,7 +198,7 @@ export function ResultList({
 					) : (
 						<span className="text-muted-foreground text-xs">
 							{total > reach
-								? `名单按相关度只显示前 ${reach} 位。想看更靠后的人，把条件收窄。`
+								? `仅显示匹配度最高的 ${reach} 人。添加条件可以缩小范围。`
 								: "已显示全部结果。"}
 						</span>
 					)}

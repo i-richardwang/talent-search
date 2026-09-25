@@ -3,9 +3,57 @@ import { useEffect, useState } from "react";
 import type { SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { interpretTurn, turnTrace } from "#/server/functions";
+import type { InterpretFault } from "#/server/turn";
 
-/** 理解失败时说什么。和提交失败分开：一个是这句话没读懂，一个是没送出去。 */
-const INTERPRET_FAILED = "没能整理出搜索条件，请重试或换一种说法。";
+/**
+ * 理解失败时各说什么。哪一环坏了由服务端判定（`server/turn.ts` 的 `interpret`），
+ * 这里只管文案：连不上、报错、没配时那句话根本没被读过，不能说成它没读懂，
+ * 也不能叫人去换说法——换了也一样。内部的环节名（端点、模型、日志）不上屏，
+ * 用户认得的只有「AI 服务」。
+ *
+ * `title` 也记在线程那一轮底下，`hint` 只在名单那一列的空态里；
+ * `retry` 给不给重试，`keyword` 给不给去关键词搜索（不经过模型，照样能用）。
+ */
+export const FAULT_COPY: Record<
+	InterpretFault,
+	{
+		title: string;
+		hint: string;
+		retry: boolean;
+		keyword: boolean;
+	}
+> = {
+	unconfigured: {
+		title: "AI 搜索未开启",
+		hint: "请使用关键词搜索。",
+		retry: false,
+		keyword: true,
+	},
+	unreachable: {
+		title: "AI 服务暂时不可用",
+		hint: "你的描述没有问题。请稍后重试，或先使用关键词搜索。",
+		retry: true,
+		keyword: true,
+	},
+	rejected: {
+		title: "AI 服务出错",
+		hint: "你的描述没有问题。请稍后重试；如果持续出现，请联系管理员。",
+		retry: true,
+		keyword: true,
+	},
+	unanswered: {
+		title: "没能理解这段需求",
+		hint: "请重试，或换一种说法。",
+		retry: true,
+		keyword: false,
+	},
+	broken: {
+		title: "出错了",
+		hint: "请重试。",
+		retry: true,
+		keyword: false,
+	},
+};
 
 /** 等理解时多久问一次走到哪一步了。一步是一次工具调用，秒级；再密只是白问。 */
 const TRACE_POLL_MS = 1000;
@@ -31,14 +79,18 @@ export function useInterpretation(
 	settledSpec: SearchSpec | null,
 ): {
 	interpreting: boolean;
-	error: string | null;
+	/** 没理解出来时是哪一环坏了。 */
+	fault: InterpretFault | null;
 	retry: () => void;
 	/** 到目前为止走过的步骤；理解落下后为 null，读记录上的那份。 */
 	trace: TraceStep[] | null;
 } {
 	const router = useRouter();
 	const [attempt, setAttempt] = useState(0);
-	const [failedKey, setFailedKey] = useState<string | null>(null);
+	const [failed, setFailed] = useState<{
+		key: string;
+		fault: InterpretFault;
+	} | null>(null);
 	const [trace, setTrace] = useState<TraceStep[] | null>(null);
 	const key = `${turnId}#${attempt}`;
 
@@ -46,20 +98,23 @@ export function useInterpretation(
 		if (settledSpec !== null) return;
 		let alive = true;
 		interpretTurn({ data: { turnId } })
-			.then(async () => {
+			.then(async ({ fault }) => {
 				if (!alive) return;
-				await router.invalidate();
+				if (fault) setFailed({ key, fault });
+				else await router.invalidate();
 			})
 			.catch(() => {
-				if (alive) setFailedKey(key);
+				// 连 RPC 本身都没走通：自家服务器这一侧的事
+				if (alive) setFailed({ key, fault: "broken" });
 			});
 		return () => {
 			alive = false;
 		};
 	}, [settledSpec, turnId, key, router]);
 
-	const failed = settledSpec === null && failedKey === key;
-	const interpreting = settledSpec === null && !failed;
+	const fault =
+		settledSpec === null && failed?.key === key ? failed.fault : null;
+	const interpreting = settledSpec === null && fault === null;
 
 	useEffect(() => {
 		if (!interpreting) return;
@@ -82,8 +137,8 @@ export function useInterpretation(
 
 	return {
 		interpreting,
-		error: failed ? INTERPRET_FAILED : null,
+		fault,
 		retry: () => setAttempt((a) => a + 1),
-		trace: interpreting || failed ? trace : null,
+		trace: interpreting || fault ? trace : null,
 	};
 }

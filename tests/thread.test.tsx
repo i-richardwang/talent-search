@@ -1,23 +1,16 @@
 /**
- * 右栏的线程：每一轮说了什么、条件怎么变了、替人定了什么读法、哪些要求搜不了。
+ * 右栏的线程：每一轮的需求、搜索条件怎么变了、替人定了什么理解方式、哪些要求没有采用。
  * 模型每一轮交回整张表，它丢掉的条件只在这里看得见。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import {
-	createMemoryHistory,
-	createRootRoute,
-	createRoute,
-	createRouter,
-	RouterProvider,
-} from "@tanstack/react-router";
-import { renderToStaticMarkup } from "react-dom/server";
 import { Thread } from "#/routes/s/$turnId/-components/thread";
 import type { TurnNotes } from "#/search/intent";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
-import type { Turn } from "#/server/turn";
+import type { InterpretFault, Turn } from "#/server/turn";
 import { visibleText } from "./render";
+import { routed } from "./routed";
 
 type Round = {
 	said: string | null;
@@ -39,41 +32,46 @@ function turns(rounds: Round[]): Turn[] {
 	}));
 }
 
-/** 过去的一轮那句话是 `Link`，得站在一个 router 里才画得出来。 */
-async function seen(rounds: Round[], understanding = true) {
-	const root = createRootRoute();
-	const page = createRoute({
-		getParentRoute: () => root,
-		path: "/s/$turnId",
-		component: () => (
+/** 过去的一轮底下有回到那一轮的 `Link`，得站在一个 router 里才画得出来。 */
+async function seen(
+	rounds: Round[],
+	{
+		understanding = true,
+		waiting = false,
+		liveTrace = null,
+		fault = null,
+	}: {
+		understanding?: boolean;
+		waiting?: boolean;
+		liveTrace?: TraceStep[] | null;
+		fault?: InterpretFault | null;
+	} = {},
+) {
+	const html = await routed(
+		() => (
 			<Thread
+				fault={fault}
+				liveTrace={liveTrace}
 				onAdd={() => {}}
 				onQuery={() => true}
 				rounds={turns(rounds)}
 				understanding={understanding}
-				waiting={false}
+				waiting={waiting}
 			/>
 		),
-	});
-	const router = createRouter({
-		routeTree: root.addChildren([page]),
-		history: createMemoryHistory({ initialEntries: ["/s/t9"] }),
-	});
-	await router.load();
-	return {
-		text: visibleText(renderToStaticMarkup(<RouterProvider router={router} />)),
-		html: renderToStaticMarkup(<RouterProvider router={router} />),
-	};
+		{ path: "/s/$turnId", url: "/s/t9" },
+	);
+	return { text: visibleText(html), html };
 }
 
-describe("接着说的一轮", () => {
-	test("复述那句话，说出加了什么、去掉了什么", async () => {
+describe("后面每一轮", () => {
+	test("复述那段需求，说出添加了什么、移除了什么", async () => {
 		const { text } = await seen([
 			{ said: "算法，最好字节的", spec: "算法, +org:字节" },
 			{ said: "再加上带过团队的，不用非得是字节", spec: "算法, 带团队" },
 		]);
 		assert.match(text, /再加上带过团队的，不用非得是字节/);
-		assert.match(text, /加上 带团队，去掉 \+字节/);
+		assert.match(text, /已添加 带团队；已移除 字节（加分）/);
 	});
 
 	test("条件没动也说出来：不是没反应", async () => {
@@ -81,60 +79,78 @@ describe("接着说的一轮", () => {
 			{ said: "算法", spec: "算法" },
 			{ said: "就这样", spec: "算法" },
 		]);
-		assert.match(text, /条件没有变化/);
+		assert.match(text, /搜索条件未变/);
 	});
 
-	test("还在整理时只有那句话，不猜变化", async () => {
-		const { text } = await seen([
-			{ said: "算法", spec: "算法" },
-			{ said: "再资深一点", spec: null },
-		]);
+	test("还在理解时只有那段需求和进行中，不猜变化", async () => {
+		const { text } = await seen(
+			[
+				{ said: "算法", spec: "算法" },
+				{ said: "再资深一点", spec: null },
+			],
+			{ waiting: true },
+		);
 		assert.match(text, /再资深一点/);
-		assert.doesNotMatch(text, /加上|去掉|没有变化/);
+		assert.match(text, /正在理解你的需求/);
+		assert.doesNotMatch(text, /已添加|已移除|未变/);
 	});
 
-	test("直接在 chip 上改的一轮没有话，只记那一步改了什么", async () => {
+	test("没理解出来就记下是哪一环坏了，不装作还在进行，也不怪这段描述", async () => {
+		const { text } = await seen(
+			[
+				{ said: "算法", spec: "算法" },
+				{ said: "再资深一点", spec: null },
+			],
+			{ fault: "unreachable" },
+		);
+		assert.match(text, /AI 服务暂时不可用/);
+		assert.doesNotMatch(text, /正在理解|没能理解/);
+	});
+
+	test("直接改条件的一轮没有人说话，只记改了什么", async () => {
 		const { text } = await seen([
 			{ said: "算法，带团队", spec: "算法, 带团队" },
 			{ said: null, spec: "算法" },
 		]);
-		assert.match(text, /去掉 带团队/);
+		assert.match(text, /你修改了搜索条件：移除 带团队/);
 	});
 });
 
-describe("链头那一轮", () => {
-	test("说出读成了哪几条条件", async () => {
+describe("第一轮", () => {
+	test("说出按哪几条条件搜索", async () => {
 		const { text } = await seen([{ said: "算法和后端", spec: "算法, 后端" }]);
 		assert.match(text, /算法和后端/);
-		assert.match(text, /算法、后端/);
+		assert.match(text, /已按以下条件搜索：算法、后端/);
 	});
 
-	test("读法和搜不了的要求都写出来，有替代就给一键加上", async () => {
+	test("理解方式和未采用的要求都写出来，有替代就在输入框上方给一键添加", async () => {
 		const { text } = await seen([
 			{
 				said: "北京的算法，有潜力",
 				spec: "算法",
 				notes: {
-					assumed: ["「算法」按算法工程方向读"],
+					assumed: ["「算法」按算法工程方向理解"],
 					declined: [
-						{ said: "北京的", why: "库里没有工作地点", instead: [] },
+						{ said: "北京的", why: "暂不支持按工作地点筛选", instead: [] },
 						{
 							said: "有潜力",
-							why: "经历里看不出潜力",
+							why: "简历中看不出潜力",
 							instead: parseQuery("+带团队"),
 						},
 					],
 				},
 			},
 		]);
-		assert.match(text, /「算法」按算法工程方向读/);
-		assert.match(text, /「北京的」搜不了：库里没有工作地点/);
-		assert.match(text, /「有潜力」搜不了：经历里看不出潜力 加上 \+带团队/);
+		assert.match(text, /「算法」按算法工程方向理解/);
+		assert.match(text, /未采用「北京的」：暂不支持按工作地点筛选/);
+		assert.match(text, /未采用「有潜力」：简历中看不出潜力/);
+		assert.match(text, /「有潜力」可改为：带团队（加分） 添加/);
+		assert.doesNotMatch(text, /「北京的」可改为/, "没有替代就不给");
 	});
 });
 
 describe("线程就是记录链", () => {
-	test("过去的一轮是回到那一轮的链接，当前这一轮不是；「加上」只在当前一轮", async () => {
+	test("过去的一轮能回到当时的结果，当前这一轮不能；「添加」只跟当前一轮", async () => {
 		const declined: TurnNotes = {
 			assumed: [],
 			declined: [
@@ -145,22 +161,24 @@ describe("线程就是记录链", () => {
 			{ said: "算法，有潜力", spec: "算法", notes: declined },
 			{ said: "再加后端", spec: "算法, 后端" },
 		]);
-		assert.match(html, /href="\/s\/t0"/, "链头那一轮能点回去");
+		assert.match(html, /href="\/s\/t0"/, "第一轮能点回去");
 		assert.doesNotMatch(html, /href="\/s\/t1"/, "当前这一轮不是链接");
 		assert.match(html, /aria-current="step"/);
-		assert.match(text, /「有潜力」搜不了：看不出/);
-		assert.doesNotMatch(text, /加上 \+带团队/, "过去那一轮不给一键加上");
+		assert.match(text, /未采用「有潜力」：看不出/);
+		assert.doesNotMatch(text, /可改为/, "过去那一轮的替代不给一键添加");
 	});
 
-	test("没配查询理解就没有接着说的框", async () => {
+	test("AI 搜索没开启就没有输入框", async () => {
 		const with_ = await seen([{ said: "算法", spec: "算法" }]);
-		const without = await seen([{ said: "算法", spec: "算法" }], false);
-		assert.match(with_.html, /接着说/);
-		assert.doesNotMatch(without.html, /接着说/);
+		const without = await seen([{ said: "算法", spec: "算法" }], {
+			understanding: false,
+		});
+		assert.match(with_.html, /补充或修改需求/);
+		assert.doesNotMatch(without.html, /补充或修改需求/);
 	});
 });
 
-describe("模型走过的步骤", () => {
+describe("检索人才库的过程", () => {
 	const trace: TraceStep[] = [
 		{
 			at: 1,
@@ -187,26 +205,47 @@ describe("模型走过的步骤", () => {
 		},
 	];
 
-	test("每一步说成一句：查了什么词、库里叫什么、多少人、宽不宽；试搜出多少人", async () => {
+	test("完成后收成一行，不报调了几次工具", async () => {
 		const { text } = await seen([
 			{ said: "推荐和后端", spec: "推荐算法, 后端", trace },
 		]);
-		assert.match(
-			text,
-			/查词：推荐→推荐算法（128 人）、互联网（900 人，太宽）、量子炼金（词表里没有）/,
-		);
-		assert.match(text, /试搜：推荐算法、后端 → 42 人/);
-		assert.match(text, /试搜：推荐算法、后端、量子炼金 → 没有人/);
+		assert.match(text, /检索过程/);
+		assert.doesNotMatch(text, /正在检索|\d+ 次|\d+ 步/);
 	});
 
-	test("过去的一轮把过程收起来，只说几步", async () => {
+	test("进行中说正在检索，底下一行是刚得出的那条结论", async () => {
+		const { text } = await seen([{ said: "推荐和后端", spec: null }], {
+			waiting: true,
+			liveTrace: trace,
+		});
+		assert.match(text, /正在检索人才库/);
+		assert.match(text, /预搜「推荐算法 \+ 后端 \+ 量子炼金」：0 人/);
+		assert.doesNotMatch(text, /正在理解你的需求/, "有了结论就不再说在理解");
+	});
+
+	test("一个词说出在人才库里对应什么、多少人、范围大不大", async () => {
+		const one = (w: TraceStep & { tool: "look_up_words" }) =>
+			seen([{ said: "推荐", spec: null }], { waiting: true, liveTrace: [w] });
+		const matched = await one({
+			at: 1,
+			tool: "look_up_words",
+			words: [{ word: "推荐", canonical: "推荐算法", people: 128, wide: true }],
+		});
+		assert.match(matched.text, /「推荐」匹配到「推荐算法」，128 人，范围较大/);
+		const missing = await one({
+			at: 1,
+			tool: "look_up_words",
+			words: [{ word: "量子炼金", canonical: null, people: 0, wide: false }],
+		});
+		assert.match(missing.text, /人才库中没有「量子炼金」/);
+	});
+
+	test("过去一轮的链接只包那几个字，不包任何动作", async () => {
 		const { html } = await seen([
 			{ said: "推荐和后端", spec: "推荐算法, 后端", trace },
 			{ said: "再加带团队", spec: "推荐算法, 后端, 带团队" },
 		]);
-		assert.match(html, /过程 · 3 步/);
-		// 过去的一轮只有那句话是链接：折叠过程的按钮是动作，不能住在链接里
 		assert.doesNotMatch(html, /<a[^>]*>(?:(?!<\/a>)[\s\S])*<button/);
-		assert.match(html, /<a[^>]*href="\/s\/t0"[^>]*>推荐和后端<\/a>/);
+		assert.match(html, /<a[^>]*href="\/s\/t0"[^>]*>查看这次的结果<\/a>/);
 	});
 });

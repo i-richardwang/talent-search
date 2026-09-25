@@ -2,7 +2,7 @@
  * 查询记录的派生语义。跑在临时 schema 上的真 SQL，理解走夹具里的假模型端点
  * （按一行查询语法读那句话、接在当前条件后面，见 `fixture.ts` 的 `fakeIntent`）。
  *
- * 一条链是一次找人任务，派生有两种：**接着说**（一句话作用在上一轮的条件上）
+ * 一条链是一次找人任务，派生有两种：**补充需求**（一句话作用在上一轮的条件上）
  * 和**改条件**（直接调几枚 chip）。两者都挂在同一条链上——「最近搜索」一次
  * 找人任务只占一行、后退键能回到上一步，靠的都是链不断。
  */
@@ -50,13 +50,13 @@ async function talkedTo(query: string) {
 	return turnId;
 }
 
-describe("接着说", () => {
+describe("补充需求", () => {
 	test("一句话作用在上一轮的条件上，链上仍是同一次找人任务", async () => {
 		const root = await sentence("算法");
 		const child = await sentence("渠道运营", root.turnId);
 		assert.deepEqual(child.words, ["算法", "渠道运营"]);
 		const row = await loadTurn(child.turnId);
-		assert.equal(row?.rootTurnId, root.turnId, "接着说不开新链");
+		assert.equal(row?.rootTurnId, root.turnId, "补充需求不开新链");
 		const thread = await loadThread(child.turnId);
 		assert.deepEqual(
 			thread?.map((t) => t.id),
@@ -264,14 +264,14 @@ describe("两种搜索各走各的链", () => {
 		assert.equal((await loadTurn(next.turnId))?.mode, "keyword");
 	});
 
-	test("关键词搜索上不能接着说一句话", async () => {
+	test("关键词搜索不收一句话的需求", async () => {
 		const typed = await createTurn({
 			kind: "spec",
 			spec: { conditions: parseQuery("算法") },
 		});
 		await assert.rejects(
 			createTurn({ kind: "sentence", text: "渠道运营" }, typed.turnId),
-			/关键词搜索不能接着说/,
+			/关键词搜索不收一句话/,
 		);
 	});
 

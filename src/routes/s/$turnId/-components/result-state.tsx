@@ -1,4 +1,11 @@
-import { ListChecksIcon, SearchXIcon, XIcon } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import {
+	ListChecksIcon,
+	MessageSquareWarningIcon,
+	RotateCwIcon,
+	SearchXIcon,
+	XIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { StrengthLegend } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
@@ -15,12 +22,13 @@ import { Spinner } from "#/components/ui/spinner";
 import type { Condition } from "#/search/condition";
 import type { Claim, SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
-import type { SearchMode } from "#/server/turn";
+import type { InterpretFault, SearchMode } from "#/server/turn";
 import { emptyState } from "../-lib/empty-state";
+import { FAULT_COPY } from "../-lib/interpret";
 import type { View } from "../-lib/view-params";
 
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
-	evidence: "按证据排序",
+	evidence: "按匹配度排序",
 	employee: "默认顺序",
 };
 
@@ -116,9 +124,54 @@ export function NoResults({
 	);
 }
 
+/**
+ * 这一轮没理解出来。记录停在「待理解」，名单那一列就停在这里——不是一份空名单：
+ * 空名单在这个界面里的意思是「没有这样的人」。说的是哪一环坏了（`FAULT_COPY`），
+ * 连不上时不能说成这句话没读懂。重试放在这里而不是右栏：窄屏上右栏是收着的，
+ * 名单这一列总在眼前。
+ */
+export function NotUnderstood({
+	fault,
+	onRetry,
+}: {
+	fault: InterpretFault;
+	onRetry: () => void;
+}) {
+	const copy = FAULT_COPY[fault];
+	return (
+		<Empty>
+			<EmptyHeader>
+				<EmptyMedia variant="icon">
+					<MessageSquareWarningIcon />
+				</EmptyMedia>
+				<EmptyTitle>{copy.title}</EmptyTitle>
+				<EmptyDescription>{copy.hint}</EmptyDescription>
+			</EmptyHeader>
+			{(copy.retry || copy.keyword) && (
+				<EmptyContent className="flex-row justify-center">
+					{copy.retry && (
+						<Button onClick={onRetry} variant="outline">
+							<RotateCwIcon />
+							重试
+						</Button>
+					)}
+					{copy.keyword && (
+						<Button
+							render={<Link search={{ mode: "keyword" }} to="/" />}
+							variant="ghost"
+						>
+							改用关键词搜索
+						</Button>
+					)}
+				</EmptyContent>
+			)}
+		</Empty>
+	);
+}
+
 const PHASE_TEXT = {
-	interpreting: "正在整理搜索条件",
-	searching: "正在查找符合条件的人",
+	interpreting: "正在理解你的需求",
+	searching: "正在搜索",
 } as const;
 
 export type SearchPhase = keyof typeof PHASE_TEXT;

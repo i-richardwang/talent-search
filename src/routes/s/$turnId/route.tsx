@@ -73,9 +73,9 @@ const KEYS = [
 	["Esc", "关闭详情"],
 ] as const;
 
-/** 「/」把光标放进改查询的地方：对话是接着说的框，关键词是「做过什么」。 */
+/** 「/」把光标放进改查询的地方：AI 搜索是右栏的输入框，关键词是「经历或技能」。 */
 const EDIT_KEY = {
-	conversation: ["/", "接着说"],
+	conversation: ["/", "修改需求"],
 	keyword: ["/", "改关键词"],
 } as const;
 
@@ -122,13 +122,13 @@ function Workbench() {
 	const { growing, navigating } = useNavPhase();
 	const {
 		interpreting,
-		error: interpretError,
+		fault: interpretFault,
 		retry: retryInterpret,
 		trace: liveTrace,
 	} = useInterpretation(turnId, settledSpec);
 
 	const { mode } = turn;
-	// 对话的链在没配查询理解时没有接着说的框，条件只能在 chip 上改
+	// 对话的链在没配查询理解时没有输入框，条件只能在 chip 上改
 	const editable = mode === "keyword" || understanding;
 	const composer = useRef<QueryBarHandle>(null);
 	const keywordBar = useRef<KeywordBarHandle>(null);
@@ -184,11 +184,12 @@ function Workbench() {
 		if (canMore) updateView(allPages(total));
 	};
 
-	// 对话的链才有线程；没配查询理解时线程只能看，不能接着说
+	// 对话的链才有线程；没配查询理解时线程只能看，不能补充需求
 	const conversation = mode === "conversation" && (
 		<Thread
 			autoFocus={threadOpen}
 			composer={composer}
+			fault={interpretFault}
 			liveTrace={liveTrace}
 			onAdd={addConditions}
 			onQuery={(input) => commit(input, { parentTurnId: turnId })}
@@ -210,10 +211,7 @@ function Workbench() {
 	return (
 		<div className="mx-auto flex w-full max-w-app flex-1 flex-col">
 			<QueryDeck
-				error={interpretError}
-				interpreting={interpreting}
 				onChangeSpec={mode === "conversation" ? reviseSpec : undefined}
-				onRetry={interpretError ? retryInterpret : undefined}
 				spec={settledSpec}
 				title={
 					mode === "conversation"
@@ -291,6 +289,11 @@ function Workbench() {
 						<ResultList
 							canMore={canMore}
 							empId={empId}
+							failure={
+								interpretFault
+									? { fault: interpretFault, onRetry: retryInterpret }
+									: null
+							}
 							growing={growing}
 							loading={loading}
 							mode={mode}

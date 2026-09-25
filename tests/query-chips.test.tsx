@@ -56,7 +56,7 @@ describe("查询 chip", () => {
 				minMonths: 36,
 			},
 		]);
-		assert.match(text, /入职前经历 · 大厂 · 增长 · ≥ 3 年/);
+		assert.match(text, /入职前经历 · 大厂 · 增长 · 3 年以上/);
 		assert.doesNotMatch(text, /≈/, "每项只有一个取值，没有「还有」");
 	});
 

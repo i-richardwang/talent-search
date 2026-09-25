@@ -40,7 +40,7 @@ import { suggestTerms } from "#/server/functions";
 import type { Suggestion } from "#/server/suggest";
 
 export type KeywordBarHandle = {
-	/** 把光标放进「做过什么」。工作台的「/」和空态的出路落到这里。 */
+	/** 把光标放进「经历或技能」。工作台的「/」和空态的出路落到这里。 */
 	focus: () => void;
 };
 
@@ -48,17 +48,17 @@ export type KeywordBarHandle = {
 type Typed = Record<KeywordField, string>;
 const NOTHING_TYPED: Typed = { what: "", org: "", school: "" };
 
-/** 下拉里那条「就按敲的这几个字」怎么说：做过什么按意思找，名字按包含找。 */
+/** 下拉里那条「就按输入的这几个字」怎么说：经历按语义直接搜，名称按包含找。 */
 const AS_TYPED: Record<KeywordField, string> = {
-	what: "按意思找",
-	org: "名字含这几个字",
-	school: "名字含这几个字",
+	what: "直接搜索",
+	org: "名称包含",
+	school: "名称包含",
 };
 
 const FIELD_HINT: Record<KeywordField, string> = {
-	what: "几个词都要满足",
-	org: "满足其一",
-	school: "满足其一",
+	what: "需同时满足",
+	org: "满足任一即可",
+	school: "满足任一即可",
 };
 
 /** 敲着的字算不算一个词：和收窄同一道（`termOf`），不收的就不给加。 */
@@ -161,7 +161,7 @@ export function KeywordBar({
 						step={0.5}
 						value={years}
 					>
-						<NumberFieldScrubArea label="累计至少几年" />
+						<NumberFieldScrubArea label="累计年限（至少）" />
 						<NumberFieldGroup>
 							<NumberFieldDecrement />
 							<NumberFieldInput placeholder="不限" />
@@ -169,7 +169,7 @@ export function KeywordBar({
 						</NumberFieldGroup>
 					</NumberField>
 					<FieldDescription>
-						{noWhat ? "先填做过什么" : "每个词各自累计"}
+						{noWhat ? "请先填写经历或技能" : "每项经历分别计算"}
 					</FieldDescription>
 				</Field>
 			</div>
@@ -262,14 +262,14 @@ function TermBox({
 	const status = pending ? (
 		<span className="inline-flex items-center gap-2">
 			<Spinner />
-			在库里找
+			正在查找
 		</span>
 	) : failed ? (
-		"没取到库里的写法，敲的词照样能加。"
+		"暂无建议，可直接添加。"
 	) : full ? (
-		`最多 ${VALUES_MAX} 个，先去掉一个再加。`
+		`最多 ${VALUES_MAX} 个，请先移除一个。`
 	) : !q && values.length === 0 ? (
-		"敲几个字，下面列出库里的写法。"
+		"输入关键词，从建议中选择。"
 	) : null;
 
 	return (
@@ -296,14 +296,14 @@ function TermBox({
 									<ComboboxChip
 										aria-label={v}
 										key={v}
-										removeProps={{ "aria-label": `去掉 ${v}` }}
+										removeProps={{ "aria-label": `移除 ${v}` }}
 									>
 										{v}
 									</ComboboxChip>
 								))}
 								<ComboboxChipsInput
 									autoFocus={autoFocus}
-									placeholder={chosen.length > 0 ? undefined : "敲几个字"}
+									placeholder={chosen.length > 0 ? undefined : "输入关键词"}
 									ref={inputRef}
 								/>
 							</>

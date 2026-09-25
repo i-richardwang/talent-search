@@ -107,7 +107,7 @@ describe("一条主张里只有一部分经历词太宽", () => {
 	});
 });
 
-describe("接着说时只量这一轮新加的词", () => {
+describe("补充需求时只量这一轮新加的词", () => {
 	test("上一轮用户坚持启用的宽词不会被停掉", async () => {
 		const { parseQuery } = await import("#/search/query-syntax");
 		const said = await createTurn({ kind: "sentence", text: "灵能驾驶" });

@@ -34,7 +34,7 @@ describe("这份名单是什么", () => {
 	test("人数和排序依据都在", () => {
 		const seen = render();
 		assert.ok(seen.includes("38"), seen);
-		assert.ok(seen.includes("按证据排序"), seen);
+		assert.ok(seen.includes("按匹配度排序"), seen);
 	});
 
 	test("图例说的是三档证据，最弱那一档叫自述不叫原文", () => {

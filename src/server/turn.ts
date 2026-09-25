@@ -21,7 +21,8 @@ import { probeWide, vocabulary } from "#/search/search";
 import type { QueryInput, SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { agentTools } from "./agent-tools";
-import { understand } from "./llm";
+import { type EndpointFault, endpointFault } from "./endpoint";
+import { UnansweredError, understand, understandingConfigured } from "./llm";
 
 function newId() {
 	return randomBytes(8).toString("base64url");
@@ -103,7 +104,7 @@ export async function createTurn(
 			: "keyword";
 	if (mode === "keyword") {
 		if (input.kind === "sentence")
-			throw new Error("关键词搜索不能接着说一句话");
+			throw new Error("关键词搜索不收一句话的需求");
 		if (!keywordsOf(input.spec.conditions))
 			throw new Error("关键词搜索只收关键词框里写得出的条件");
 	}
@@ -205,9 +206,9 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const tools = agentTools({ vocab, base, record });
 	const raw = await understand(rawText, vocab, base, tools);
 	const result = understood(raw, vocab, base);
-	// 没作答和超时、限流走同一条路——记录停在「待理解」，界面画错误与重试。
+	// 没作答也抛：记录停在「待理解」，由 `interpret` 分出是哪一环坏了。
 	const failure = unanswered(raw, result);
-	if (failure) throw new Error(failure);
+	if (failure) throw new UnansweredError(failure);
 	const declined = result.notes?.declined ?? [];
 	const [conditions = [], ...insteads] = await benchWide(
 		[result.spec.conditions, ...declined.map((d) => d.instead)],
@@ -230,10 +231,46 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 }
 
 /**
+ * 这一轮为什么没理解出来。只有服务端知道是哪一环坏了，页面按它说话：
+ * 连不上和报错时那句话根本没被读过，不能说成「这句话没读懂」。
+ *
+ * - `unconfigured`：没配查询理解端点。
+ * - `unreachable` / `rejected`：见 `endpointFault`。
+ * - `unanswered`：端点答了，没按约定作答——只有这一种换个说法可能有用。
+ * - `broken`：别的，我们自己这一侧的意外。原错误写进服务端日志。
+ */
+export type InterpretFault =
+	| "unconfigured"
+	| EndpointFault
+	| "unanswered"
+	| "broken";
+
+/** 补全一次理解，失败时交回是哪一环坏了。原错误只进服务端日志，不出门。 */
+export async function interpret(
+	turnId: string,
+): Promise<{ fault: InterpretFault | null }> {
+	if (!understandingConfigured()) return { fault: "unconfigured" };
+	try {
+		await resolveTurn(turnId);
+		return { fault: null };
+	} catch (error) {
+		console.error(`查询理解失败（记录 ${turnId}）：`, error);
+		return { fault: interpretFault(error) };
+	}
+}
+
+function interpretFault(error: unknown): InterpretFault {
+	const fault = endpointFault(error);
+	if (fault) return fault;
+	if (error instanceof UnansweredError) return "unanswered";
+	return "broken";
+}
+
+/**
  * 从链头到这一条的整条路，链头在前。对话的线程画的就是它：每一轮说了什么、
  * 条件从哪张表改到哪张表（上一项的 `spec` 就是这一轮的基线）。
  *
- * 一条链是一棵树——从中间某一轮接着说会分出新的一支——线程只走这一条路上的
+ * 一条链是一棵树——从中间某一轮补充需求会分出新的一支——线程只走这一条路上的
  * 祖先，兄弟分支不进来：它们是另一次没走下去的尝试，浏览器后退能回去。
  */
 export async function loadThread(id: string): Promise<Turn[] | null> {

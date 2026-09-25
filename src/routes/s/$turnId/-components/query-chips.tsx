@@ -27,6 +27,7 @@ import {
 	conditionLabel,
 	hasMore,
 	MODE_GLYPH,
+	MODE_NAME,
 	partLabel,
 } from "#/search/condition-label";
 
@@ -38,15 +39,9 @@ const MODE_VARIANT: Record<Mode, "secondary" | "outline"> = {
 
 const CHIP_SIZE = "xs" as const;
 
-const MODE_LABEL: Record<Mode, string> = {
-	must: "必须",
-	boost: "加分",
-	exclude: "排除",
-};
-
 const MODE_HINT: Record<Mode, string> = {
-	must: "只留满足这项的人",
-	boost: "满足这项的人排前面",
+	must: "只保留满足此条件的人",
+	boost: "满足此条件的人排在前面",
 	exclude: "排除有这类经历的人",
 };
 
@@ -84,7 +79,7 @@ export function QueryChips({
 							render={
 								<Button
 									aria-label={[
-										MODE_LABEL[chip.mode],
+										MODE_NAME[chip.mode],
 										label,
 										more && "等",
 										wide ? "太宽，已停用" : chip.off && "已停用",
@@ -122,8 +117,8 @@ export function QueryChips({
 										<MenuGroupLabel>
 											<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
 												{wide
-													? "几乎筛不掉人，已停用。换个更具体的词。"
-													: `已停用，打开后仍是「${MODE_LABEL[chip.mode]}」。`}
+													? "范围过大，几乎所有人都满足，已停用。请换一个更具体的词。"
+													: `已停用，重新启用后仍为「${MODE_NAME[chip.mode]}」。`}
 											</span>
 										</MenuGroupLabel>
 									</MenuGroup>
@@ -139,7 +134,7 @@ export function QueryChips({
 								{modesOf(chip).map((mode) => (
 									<MenuRadioItem key={mode} value={mode}>
 										<span className="flex flex-col py-0.5">
-											<span className="text-sm">{MODE_LABEL[mode]}</span>
+											<span className="text-sm">{MODE_NAME[mode]}</span>
 											<span className="text-muted-foreground text-xs">
 												{MODE_HINT[mode]}
 											</span>

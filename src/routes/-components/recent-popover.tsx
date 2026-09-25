@@ -35,7 +35,7 @@ function recentLabel(spec: SearchSpec, title: string | null) {
 	const labels = activeConditions(spec.conditions).map(
 		(c) => MODE_GLYPH[c.mode] + conditionLabel(c),
 	);
-	return labels.join(" / ") || "没有可用条件";
+	return labels.join(" / ") || "无搜索条件";
 }
 
 /**
@@ -91,7 +91,7 @@ export function RecentPopover({ recent }: { recent: RecentSearch[] | null }) {
  */
 function RecentBody({ recent }: { recent: RecentSearch[] | null }) {
 	if (recent === null)
-		return <PopoverDescription>记录暂时取不到。</PopoverDescription>;
+		return <PopoverDescription>暂时无法加载搜索记录。</PopoverDescription>;
 	if (recent.length === 0)
 		return <PopoverDescription>还没有搜索记录。</PopoverDescription>;
 	return <RecentList recent={recent} />;

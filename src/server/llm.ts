@@ -173,17 +173,18 @@ mode 看语气：默认 must。最好、优先、加分是 boost。不要、排�
 经理、负责人、总监单独不成条，并进旁边的领域词：算法团队负责人。
 帮我找、有没有、的人、经验，这些不是条件。
 
-两样说明：
+两样说明，原样显示给 HR 看。用 HR 的话写：说「人才库」「简历」「职级」，不说表、词表、
+库、字段、工具、模型；不说你做了什么操作（改表、重写、查词、试搜）。
 
 assumed：一个词有几种读法、读法不同会找出不同的人，你替 HR 选了一种时，用一句话写下
-你怎么读的。比如「资深」按职级取了高的几档、用加分；「大厂」取了哪一档公司。
-把条件复述一遍不算，读法没有分歧就不写。
+你是怎么理解的。比如「资深」按职级的高几档理解、作为加分项；「大厂」按哪一档公司理解。
+把条件复述一遍不算，读法没有分歧就不写；换了一件事、整张表重写时也不用说明。
 
 declined：库里只有经历（做过什么、在哪、哪一档公司、公司内还是入职前、多久）和
 人的职级、学历、招聘渠道、学校。说到这之外的——地点、年龄、性别、薪资、绩效、
 性格、潜力、像某某一样——不写进表，写进 declined：said 是原话，why 用一句话说
-库里没有什么。经历里有相近的线索就把它写成 instead，HR 可以一键换成这样找；
-没有就空着。
+暂不支持按什么筛选，或者简历里看不出什么。经历里有相近的线索就把它写成 instead，
+HR 可以一键改成这样找；没有就空着。
 
 只输出一个 JSON 对象，不要别的文字：
 {"conditions": [条件……], "assumed": [一句一条……], "declined": [{"said": "", "why": "", "instead": [条件……]}]}
@@ -196,14 +197,14 @@ education：本科、硕士、博士。
   {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
   {"about": "person", "mode": "boost", "field": "level", "values": ["P7", "P8"]},
   {"about": "experience", "mode": "boost", "org": ["字节"]}],
- "assumed": ["「比较资深」按职级取了 P7、P8，用加分"],
+ "assumed": ["「比较资深」按职级 P7、P8 理解，作为加分项"],
  "declined": []}
 
 例二。当前的条件表：[]。这句话：入职前在大厂做过三年以上增长，不要实习
 {"conditions": [
   {"about": "experience", "mode": "must", "what": ["增长", "用户增长"], "kind": "external", "companyTag": ["头部大厂"], "minMonths": 36},
   {"about": "experience", "mode": "exclude", "what": ["实习"]}],
- "assumed": ["「大厂」按公司档「头部大厂」算"],
+ "assumed": ["「大厂」按「头部大厂」理解"],
  "declined": []}
 
 例三。当前的条件表：[]。这句话：北京的大模型或推荐系统方向，有管理潜力，硕士
@@ -212,8 +213,8 @@ education：本科、硕士、博士。
   {"about": "person", "mode": "must", "field": "education", "values": ["硕士"]}],
  "assumed": [],
  "declined": [
-  {"said": "北京的", "why": "库里没有工作地点", "instead": []},
-  {"said": "有管理潜力", "why": "经历里看不出潜力，只看得出带没带过团队", "instead": [
+  {"said": "北京的", "why": "暂不支持按工作地点筛选", "instead": []},
+  {"said": "有管理潜力", "why": "简历中看不出管理潜力，可以看是否带过团队", "instead": [
     {"about": "experience", "mode": "boost", "what": ["团队管理", "带团队"]}]}]}
 
 你有两个工具，交表之前先用：
@@ -234,6 +235,14 @@ education：本科、硕士、博士。
 
 function listed(what: string, values: readonly string[]) {
 	return `${what}：${values.join("、") || "（无）"}`;
+}
+
+/**
+ * 端点答了，但没按约定作答：没给出合法对象，或给的东西收窄之后什么都不剩。
+ * 和连不上、报错分开，是因为只有这一种换个说法可能有用。
+ */
+export class UnansweredError extends Error {
+	override name = "UnansweredError";
 }
 
 /**
@@ -288,7 +297,7 @@ export async function understand(
 		return output;
 	} catch (e) {
 		if (!NoObjectGeneratedError.isInstance(e)) throw e;
-		throw new Error(
+		throw new UnansweredError(
 			`查询理解模型没有给出合法对象：finishReason=${e.finishReason}，` +
 				`usage=${JSON.stringify(e.usage)}，text=${JSON.stringify(e.text?.slice(0, 200))}`,
 			{ cause: e },

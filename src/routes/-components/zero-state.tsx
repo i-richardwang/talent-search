@@ -125,12 +125,11 @@ function ConversationStart({
 		<>
 			{/* 报错紧贴着输入面，因为它说的就是这块面刚才发生了什么。 */}
 			<div className="flex w-full flex-col gap-2">
-				{/* 标题问要什么样的人；这里说框里装什么。岗位、经历、技能是
-				    人选要求的三块料，不是系统格式说明。 */}
+				{/* 标题问要什么样的人；这里说框里装什么，并给一句能照着写的样子。 */}
 				<QueryBar
 					autoFocus
 					onQuery={onQuery}
-					placeholder="输入人选要求：岗位、经历、技能"
+					placeholder="描述你要找的人，例如：做过推荐算法、带过团队"
 					ref={bar}
 				/>
 				{/* 提交失败时界面其余部分一切正常，不说的话人只会以为自己没点上。
@@ -145,7 +144,7 @@ function ConversationStart({
 			 * 扫的是句式本身——这一屏要教的就是「可以这样说话」。
 			 */}
 			<div className="flex w-full flex-col gap-0.5 text-left">
-				<p className="px-3 pb-1 text-muted-foreground text-xs">试试这样问</p>
+				<p className="px-3 pb-1 text-muted-foreground text-xs">示例</p>
 				{EXAMPLES.map((example) => (
 					/*
 					 * 点一条例子是**填进输入框**，不是直接搜。这几条是句式的样板，

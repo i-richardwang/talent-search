@@ -25,7 +25,7 @@ export function ModeNav() {
 					search={{}}
 					to="/"
 				>
-					对话
+					AI 搜索
 				</Link>
 				<Link
 					activeOptions={{ exact: true }}
@@ -33,7 +33,7 @@ export function ModeNav() {
 					search={{ mode: "keyword" }}
 					to="/"
 				>
-					关键词
+					关键词搜索
 				</Link>
 			</div>
 		</nav>

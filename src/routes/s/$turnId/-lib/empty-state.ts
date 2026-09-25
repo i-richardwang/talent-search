@@ -27,7 +27,7 @@ type EmptyCopy = {
 type Handlers = {
 	/**
 	 * 对话还是关键词。出路按各自手里有的东西说：关键词没有「加分」也没有停用，
-	 * 只有框里的词可改；「接着说」只属于对话。
+	 * 只有框里的词可改；「修改需求」只属于 AI 搜索。
 	 */
 	mode: SearchMode;
 	/** 这条查询的条件。「把停用的全部启用」改的是它。 */
@@ -47,18 +47,18 @@ const COPY: {
 	) => EmptyCopy;
 } = {
 	overflowEvidence: (reason, h) => ({
-		title: "条件太宽",
-		hint: `「${reason.claims.map(claimName).join("」「")}」太宽，${h.mode === "keyword" ? "换个具体一点的词" : "写具体一点，或先停用"}。`,
+		title: "条件范围过大",
+		hint: `「${reason.claims.map(claimName).join("」「")}」几乎所有人都满足，${h.mode === "keyword" ? "请换一个更具体的词" : "请描述得更具体，或先停用这一项"}。`,
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	overflowPopulation: (_reason, h) => ({
-		title: "范围太大",
-		hint: "再加一项具体条件。",
+		title: "范围过大",
+		hint: "请再添加一项更具体的条件。",
 		action: { label: "添加条件", onClick: h.onEditQuery },
 	}),
 	allDisabled: (_reason, h) => ({
 		title: "没有启用的条件",
-		hint: "把停用的打开，或再加一项。",
+		hint: "请启用已停用的条件，或添加新条件。",
 		action: {
 			label: "启用全部",
 			// 启用是**改查询**，不是改视图：条件变了，找的就是另一批人。所以它
@@ -68,23 +68,23 @@ const COPY: {
 	}),
 	excludeOnly: (_reason, h) => ({
 		title: "还缺一项条件",
-		hint: "现在只有排除，再加一项。",
+		hint: "目前只有排除条件，请再添加一项要找的条件。",
 		action: { label: "添加条件", onClick: h.onEditQuery },
 	}),
 	// 只在一整句都搜不了时出现：为什么搜不了，线程里那一轮底下已经逐条说了
 	noConditions: (_reason, h) => ({
-		title: "没有能用来找人的条件",
-		hint: `这里${SEARCHABLE}，换个说法接着说。`,
-		action: { label: "接着说", onClick: h.onEditQuery },
+		title: "没有可用的搜索条件",
+		hint: `目前支持${SEARCHABLE}，请换一种描述。`,
+		action: { label: "修改需求", onClick: h.onEditQuery },
 	}),
 	personEmpty: (_reason, h) => ({
-		title: "没有这样的人",
-		hint: "去掉一项条件再搜。",
+		title: "没有符合条件的人",
+		hint: "请移除一项条件后再搜索。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	filtered: (_reason, h) => ({
-		title: "当前筛选下没有人",
-		hint: "清除筛选后再看。",
+		title: "当前筛选下没有结果",
+		hint: "请清除筛选后再查看。",
 		action: {
 			label: "清除筛选",
 			onClick: () => h.onChange(CLEARED_FILTERS),
@@ -94,13 +94,13 @@ const COPY: {
 		title: "没有同时满足必须条件的人",
 		hint:
 			h.mode === "keyword"
-				? "去掉一个词会多出人。"
-				: "次要的改成「加分」会多出人。",
+				? "移除一个关键词可以扩大范围。"
+				: "把次要条件改为「加分」可以扩大范围。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	noHits: (_reason, h) => ({
 		title: "没有相关的人",
-		hint: "都是加分条件，没有人符合。",
+		hint: "所有条件都是加分项，但没有人满足其中任何一项。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 };

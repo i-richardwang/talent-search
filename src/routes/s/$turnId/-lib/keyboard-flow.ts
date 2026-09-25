@@ -19,7 +19,7 @@ export function useKeyboardFlow({
 	view,
 	onPick,
 }: {
-	/** 把光标放进改查询的地方：对话是右栏线程底下接着说的框，关键词是名单上方的「做过什么」。 */
+	/** 把光标放进改查询的地方：对话是右栏线程底下的输入框，关键词是名单上方的「经历或技能」。 */
 	onEditQuery: () => void;
 	results: SearchResult[];
 	empId: string | undefined;

@@ -12,7 +12,7 @@ const STRENGTH_LABEL: Record<Strength, string> = {
 
 const NAME_W = "w-22";
 
-const MATCHED_BY = "比的是";
+const MATCHED_BY = "匹配依据";
 
 const STRENGTH_HINT: Record<Strength, string> = {
 	controlled: "来自任职记录",

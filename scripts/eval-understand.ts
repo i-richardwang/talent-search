@@ -5,7 +5,7 @@
  *      bun run eval:understand 文件.json
  *
  * 用例文件是一个 JSON 数组，每项：
- *   { "name": "接着说，去掉一条",
+ *   { "name": "补充需求，去掉一条",
  *     "base": "推荐算法, +org:字节",   // 可选：当前条件，一行查询语法（search/query-syntax.ts）
  *     "say": "不用非得是字节",          // 这一句话
  *     "drop": "+org:字节",             // 可选：新表里必须没有的条件，一行查询语法
@@ -17,7 +17,8 @@
  * 没有 rewrite 的题，base 里除了 drop 的每一条都必须原样留在新表里——这是这一跳最要紧
  * 的性质：模型不能顺手丢掉或改掉用户没提到的条件。词比对折叠全半角、大小写和空白，
  * 按包含算：模型写「团队管理」也算提到了「团队」。一题只要有一处不对就打叉，退出码
- * 看的是有没有打叉的题。
+ * 看的是有没有打叉的题。模型写的说明原样上屏，里面出现内部用词（`lib/internal-words.ts`）
+ * 也算一处不对。
  *
  * 走的是工作台同一条路（`server/llm.ts` 的 `understand`，再过 `understood` 收窄），用
  * 当前配置的端点和模型；词表从 `.env.local` 那个库里取，和线上发给模型的是同一份。
@@ -27,6 +28,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "#/db";
+import { internalWordsIn } from "#/lib/internal-words";
 import { type Condition, conditionKey, type Mode } from "#/search/condition";
 import { conditionLabel } from "#/search/condition-label";
 import { unanswered, understood } from "#/search/intent";
@@ -170,6 +172,15 @@ try {
 				if (!said.some((s) => norm(s).includes(norm(word))))
 					problems.push(`没说「${word}」搜不了`);
 			if (c.empty && next.length > 0) problems.push("条件表应当是空的");
+			// 说明原样显示给 HR：不能带代码和模型那一侧的词
+			for (const line of [
+				...(result.notes?.assumed ?? []),
+				...(result.notes?.declined ?? []).map((d) => d.why),
+			]) {
+				const leaked = internalWordsIn(line);
+				if (leaked.length > 0)
+					problems.push(`说明里有内部用词「${leaked.join("、")}」：${line}`);
+			}
 
 			summary = [
 				next

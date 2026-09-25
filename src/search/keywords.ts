@@ -4,15 +4,15 @@
  * 关键词模式不经过模型，人看见的框就是查询的全部。一个框只管一维，框里的
  * 每个词是一枚 chip：
  *
- * - **做过什么**：每个词一条必须主张，词之间是 AND——「推荐」「机器学习」
+ * - **经历或技能**：每个词一条必须主张，词之间是 AND——「推荐」「机器学习」
  *   两样都要。词按意思匹配，和对话模式写出的经历词走同一套召回。
  * - **公司或部门**：一条主张，名字含其中任一个就算，词之间是 OR。
  * - **学校**：一条人的条件，词之间是 OR。
- * - **累计至少几年**：挂在「做过什么」的每一条主张上，各自累计。没有词时不起作用，
+ * - **累计年限**：挂在「经历或技能」的每一条主张上，各自累计。没有词时不起作用，
  *   框也不让填。
  *
  * 「在字节做过三年推荐」这种把几项绑在同一段经历上的说法，关键词模式说不出来：
- * 公司和做过什么是两条条件，只要求同一个人。这是对话模式存在的理由。
+ * 公司和经历是两条条件，只要求同一个人。这是对话模式存在的理由。
  *
  * 条件表是两种模式共用的查询语言（`condition.ts`），这里只是它的一种写法；
  * 写出来的表照样过 `conditionsOf`，和别的入口是同一道收窄。
@@ -45,7 +45,7 @@ export const KEYWORD_FIELDS = ["what", "org", "school"] as const;
 export type KeywordField = (typeof KEYWORD_FIELDS)[number];
 
 export const KEYWORD_LABEL: Record<KeywordField, string> = {
-	what: "做过什么",
+	what: "经历或技能",
 	org: "公司或部门",
 	school: "学校",
 };
@@ -123,6 +123,8 @@ export function keywordTitle(k: Keywords): string {
 		k.what.join("、") || null,
 		k.org.join("、") || null,
 		k.school.join("、") || null,
-		k.minMonths && k.what.length > 0 ? `累计 ≥ ${duration(k.minMonths)}` : null,
+		k.minMonths && k.what.length > 0
+			? `累计 ${duration(k.minMonths)}以上`
+			: null,
 	);
 }
