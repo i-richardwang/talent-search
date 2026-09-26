@@ -1,0 +1,133 @@
+/*
+ * 各块挂在各自的元素上，按 DOM 的先后排：背板、外层、面板；头部、标题、关闭钮，
+ * 正文（及其无内边距的形态）、等待区与等待圈，最后表脚。进出场由 motion 放，这里不写过渡。背板与面板同在
+ * `--z-index-popup` 档，面板在背板之后，文档顺序让它压住背板。
+ */
+
+.ui-modal-backdrop {
+	position: fixed;
+	z-index: var(--z-index-popup);
+	inset: 0;
+
+	background: color-mix(in srgb, var(--color-container) 60%, transparent);
+}
+
+.ui-modal-popup {
+	pointer-events: none;
+
+	position: fixed;
+	z-index: var(--z-index-popup);
+	inset: 0;
+
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.ui-modal-popup-inner {
+	pointer-events: auto;
+
+	position: relative;
+
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+
+	box-sizing: border-box;
+	width: calc(100% - 32px);
+	max-width: 520px;
+	max-height: calc(100dvh - 64px);
+	border-radius: var(--radius-lg);
+
+	background: var(--color-elevated);
+	box-shadow:
+		var(--elevation-lg),
+		0 0 0 1px var(--color-ring);
+}
+
+.ui-modal-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+
+	min-height: 48px;
+	padding-block: 8px;
+	padding-inline: 16px;
+}
+
+.ui-modal-title {
+	margin: 0;
+
+	font-size: var(--text-base);
+	font-weight: 600;
+	line-height: 1.4;
+	color: var(--color-fg);
+}
+
+.ui-modal-close {
+	cursor: pointer;
+
+	display: flex;
+	align-items: center;
+	justify-content: center;
+
+	width: 32px;
+	height: 32px;
+	margin-inline-end: -4px;
+	padding: 0;
+	border: none;
+	border-radius: var(--radius-lg);
+
+	color: var(--color-fg-tertiary);
+
+	background: transparent;
+
+	transition: all 160ms var(--ease-soft);
+
+	&:hover {
+		transform: scale(1.04);
+		color: var(--color-fg);
+		background: var(--color-fill-secondary);
+	}
+
+	@apply focus-ring;
+
+	/* 不在标题栏里、直接放在面板上时，浮在面板右上角。 */
+	.ui-modal-popup-inner > & {
+		position: absolute;
+		inset-block-start: 8px;
+		inset-inline-end: 12px;
+		margin-inline-end: 0;
+	}
+}
+
+.ui-modal-content {
+	overflow: hidden auto;
+	padding-block: 0 16px;
+	padding-inline: 16px;
+}
+
+.ui-modal-content-flush {
+	padding: 0;
+}
+
+.ui-modal-loading {
+	display: flex;
+	justify-content: center;
+	padding-block: 32px;
+}
+
+.ui-modal-spinner {
+	--spinner-size: 24px;
+	--spinner-stroke: 2px;
+}
+
+.ui-modal-footer {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	justify-content: flex-end;
+
+	padding-block: 12px;
+	padding-inline: 16px;
+}

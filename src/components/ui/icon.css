@@ -1,0 +1,44 @@
+.ui-icon {
+	display: inline-flex;
+	align-items: center;
+	color: inherit;
+	font-style: normal;
+	line-height: 0;
+	text-align: center;
+	text-transform: none;
+	vertical-align: -0.125em;
+	text-rendering: optimizelegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+
+	> * {
+		line-height: 1;
+	}
+
+	svg {
+		display: inline-block;
+		vertical-align: inherit;
+	}
+}
+
+/* 转圈读 `styles.css` 的 `--animate-spin`，与等待圈同一份关键帧。 */
+.ui-icon-spin {
+	animation: var(--animate-spin);
+}
+
+/*
+ * 等待圈：一圈缺了上沿的环，颜色跟字色。按钮与对话框共用；边长和线宽默认是按钮里的
+ * 12px、1.5px，别处用 `--spinner-size`、`--spinner-stroke` 改。
+ */
+.ui-spinner {
+	--spinner-size: 12px;
+	--spinner-stroke: 1.5px;
+
+	display: inline-block;
+	width: var(--spinner-size);
+	height: var(--spinner-size);
+	border: var(--spinner-stroke) solid currentcolor;
+	border-block-start-color: transparent;
+	border-radius: 50%;
+	animation: var(--animate-spin);
+}

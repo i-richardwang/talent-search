@@ -1,21 +1,19 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
 import {
 	ActivityIcon,
+	type LucideIcon,
 	TableIcon,
 	TagsIcon,
 	UsersRoundIcon,
 } from "lucide-react";
-import { Button } from "#/components/ui/button";
-import { Separator } from "#/components/ui/separator";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
+import { ActionIcon } from "#/components/ui/action-icon";
+import { Divider } from "#/components/ui/divider";
 import type { RecentSearch } from "#/server/turn";
 import { RecentPopover } from "./recent-popover";
 
 /**
- * 顶栏。照 coss 文档站那条的配方来：整条吸顶、半透明的画布色加一层模糊，
- * 底边那条线是 `before:` 伪元素画的一根 `h-px`（`bg-border/64`），不是 `border-b`。
- * 这几样合起来才是这套系统的顶栏长相——内容从下面滑过去时能透出来一点，
- * 而那根线比一条实边框淡，不会在整屏顶上压出一道黑杠。
+ * 顶栏。整条吸顶、80% 的画布色加一层模糊，内容从下面滑过去时能透出来一点；
+ * 底边一根 border-secondary 的发丝线。
  *
  * 两头：身份和几个入口。**这条带不管当前这次查询**——
  * 工作台那句原话住在它自己那条带上（`s/$turnId/-components/query-deck.tsx`），
@@ -28,15 +26,14 @@ import { RecentPopover } from "./recent-popover";
  */
 export function AppHeader({ recent }: { recent: RecentSearch[] | null }) {
 	return (
-		<header className="sticky top-0 z-stick bg-canvas/80 backdrop-blur-sm before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-border/64">
+		<header className="sticky top-0 z-stick border-b bg-layout/80 backdrop-blur-sm">
 			<div className="app-column flex h-(--header-height) items-center gap-2">
-				{/* 悬停给下划线，走 coss `link` 那一档的做法：这是套中性色系统，
-				    没有一个比正文更重的前景色可以换过去。 */}
+				{/* 悬停给下划线：主色是单色，没有一个比正文更重的前景色可以换过去。 */}
 				<Link
-					className="flex shrink-0 items-center gap-2 font-heading font-semibold text-sm underline-offset-4 hover:underline"
+					className="flex shrink-0 items-center gap-2 font-semibold text-base underline-offset-4 hover:underline"
 					to="/"
 				>
-					<UsersRoundIcon className="size-4 text-muted-foreground" />
+					<UsersRoundIcon className="size-4 text-fg-secondary" />
 					人才搜索
 				</Link>
 				<div className="ms-auto flex shrink-0 items-center gap-2">
@@ -46,25 +43,25 @@ export function AppHeader({ recent }: { recent: RecentSearch[] | null }) {
 					 * 另外三块屏幕——同一档图标按钮并排摆四枚，读起来就是一条后台工具条，
 					 * 而它们本来不是一件事（AGENTS.md「不同类的东西必须长得不一样」）。
 					 */}
-					<Separator className="h-4" orientation="vertical" />
+					<Divider orientation="vertical" />
 					{/*
-					 * 三个管理页的入口。当前所在的那一页换成 `secondary` 并带上
+					 * 三个管理页的入口。当前所在的那一页是 `active` 并带上
 					 * `aria-current`：四枚只有图标的按钮里，不说清人在哪一页的话，
 					 * 进来之后没有任何东西回答「我现在看的是什么」。
 					 */}
 					<AdminLink
-						icon={<TableIcon />}
+						icon={TableIcon}
 						label="数据"
 						search={{ page: undefined, q: "" }}
 						to="/data"
 					/>
 					<AdminLink
-						icon={<TagsIcon />}
+						icon={TagsIcon}
 						label="技能"
 						search={{ page: undefined, q: "" }}
 						to="/skills"
 					/>
-					<AdminLink icon={<ActivityIcon />} label="任务" to="/tasks" />
+					<AdminLink icon={ActivityIcon} label="任务" to="/tasks" />
 				</div>
 			</div>
 		</header>
@@ -85,7 +82,7 @@ function AdminLink({
 }: {
 	to: "/data" | "/skills" | "/tasks";
 	label: string;
-	icon: React.ReactNode;
+	icon: LucideIcon;
 	/**
 	 * 那一页要求的地址参数。从顶栏进去是从头看：没有搜索词、停在第一页
 	 * （第一页不写进地址，所以 `page` 是 undefined）。没有这类参数的页不给。
@@ -95,21 +92,14 @@ function AdminLink({
 	const matchRoute = useMatchRoute();
 	const current = Boolean(matchRoute({ to, fuzzy: true }));
 	return (
-		<Tooltip>
-			<TooltipTrigger
-				render={
-					<Button
-						aria-current={current ? "page" : undefined}
-						aria-label={label}
-						render={<Link search={search} to={to} />}
-						size="icon-sm"
-						variant={current ? "secondary" : "ghost"}
-					/>
-				}
-			>
-				{icon}
-			</TooltipTrigger>
-			<TooltipPopup positionMethod="fixed">{label}</TooltipPopup>
-		</Tooltip>
+		<ActionIcon
+			active={current}
+			aria-current={current ? "page" : undefined}
+			aria-label={label}
+			icon={icon}
+			render={<Link search={search} to={to} />}
+			title={label}
+			tooltipProps={{ positionerProps: { positionMethod: "fixed" } }}
+		/>
 	);
 }

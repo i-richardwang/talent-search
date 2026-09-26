@@ -1,5 +1,5 @@
 import { Dot, phraseLabel } from "#/components/evidence";
-import { Badge } from "#/components/ui/badge";
+import { Tag } from "#/components/ui/tag";
 import type { CompanyMeta, Experience } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
 import { bestStrength, routeLabel } from "#/search/evidence";
@@ -95,7 +95,7 @@ function Segment({
 			 */}
 			<span className="relative flex flex-col items-center pt-2">
 				<Dot
-					className="z-raise size-2.5 ring-2 ring-card"
+					className="z-raise size-2.5 ring-2 ring-container"
 					strength={strength}
 				/>
 				{!isLast && <span className="w-px flex-1 bg-border" />}
@@ -103,18 +103,21 @@ function Segment({
 
 			<div className="min-w-0 px-3 py-2">
 				<div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-					<span className="font-semibold text-sm">{x.org}</span>
-					<span className="text-sm">{x.title}</span>
+					<span className="font-semibold text-base">{x.org}</span>
+					<span className="text-base">{x.title}</span>
 					{x.level && (
-						<span className="text-muted-foreground text-xs">{x.level}</span>
+						<span className="text-fg-secondary text-xs">{x.level}</span>
 					)}
 					{/*
-					 * outline 而不是 default：default 是实心深底浅字，会成为整张
-					 * 卡片里对比最高的一块，而它标的是最不需要强调的东西——顺序
-					 * 本身已经说明这段在入职之前。同一张卡片里下面那排命中词也是
-					 * outline，两种 badge 只差填充会让人以为它们是两类东西。
+					 * 描边而不是填充：同一张卡片里下面那排命中词也是描边，两种标签
+					 * 只差填充会让人以为它们是两类东西。它标的又是最不需要强调的
+					 * 东西——顺序本身已经说明这段在入职之前。
 					 */}
-					{external && <Badge variant="outline">入职前</Badge>}
+					{external && (
+						<Tag size="small" variant="outlined">
+							入职前
+						</Tag>
+					)}
 				</div>
 
 				{/*
@@ -123,7 +126,7 @@ function Segment({
 				 * 但字号必须跟它一致：同一行里角色相同的标注差一档，
 				 * 是「这一行没人量过」的样子。
 				 */}
-				<div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-muted-foreground text-xs">
+				<div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-fg-secondary text-xs">
 					<span className="font-mono tabular-nums">
 						{dots(period(x.startDate, x.endDate), duration(x.months))}
 					</span>
@@ -135,14 +138,14 @@ function Segment({
 
 				{/* 语义命中的查询词未必原样出现在自述中，因此原文不做字面高亮。 */}
 				{x.description && (
-					<p className="read-cjk mt-2 text-muted-foreground text-sm" lang="zh">
+					<p className="read-cjk mt-2 text-fg-secondary text-base" lang="zh">
 						{x.description}
 					</p>
 				)}
 
 				{/* 不留这一格，部门路径会直接粘在上面那段简历原文的末行上。 */}
 				{!external && x.orgPath && (
-					<p className="mt-1.5 text-muted-foreground text-xs">{x.orgPath}</p>
+					<p className="mt-1.5 text-fg-secondary text-xs">{x.orgPath}</p>
 				)}
 			</div>
 		</li>
@@ -152,7 +155,7 @@ function Segment({
 /**
  * 这一段为哪些主张提供了证据、走的哪一类、有多像。
  *
- * 全部 outline，不按强度上色：强度是从 route 推导的，而 route 就写在标签正文里，
+ * 全部描边，不按强度上色：强度是从 route 推导的，而 route 就写在标签正文里，
  * 上色等于同一份数据画两遍。强度由节点表示（一段一个），路径由标签表示
  * （一段可能有几条主张各成一条边），两者不重叠。
  */
@@ -169,7 +172,7 @@ function MatchedClaims({
 	return (
 		<div className="mt-2 flex flex-wrap items-center gap-1.5">
 			{unique.map((h) => (
-				<Badge key={h.claim} variant="outline">
+				<Tag key={h.claim} size="small" variant="outlined">
 					{dots(
 						names[h.claim],
 						routeLabel(h.route),
@@ -177,7 +180,7 @@ function MatchedClaims({
 						// 旁边，标签得说出模型从里面读出了什么，用户才核对得了。
 						phraseLabel(h),
 					)}
-				</Badge>
+				</Tag>
 			))}
 		</div>
 	);

@@ -1,0 +1,101 @@
+/*
+ * 各块挂在各自的元素上，按 DOM 的先后排：定位器、浮层、viewport。
+ * 定位器的 z 值用弹层档 `--z-index-popup`。
+ */
+
+.ui-popover-positioner {
+	--ui-popover-animation-duration: 150ms;
+	--ui-popover-animation-translate: 6px;
+	--ui-popover-animation-scale: 0.96;
+	--ui-popover-animation-ease-in: var(--ease-accelerate);
+	--ui-popover-animation-duration-exit: 75ms;
+	--ui-popover-animation-ease-out: var(--ease-out);
+	--ui-popover-translate-x: 0;
+	--ui-popover-translate-y: calc(var(--ui-popover-animation-translate) * -1);
+
+	z-index: var(--z-index-popup);
+
+	width: min(var(--positioner-width), var(--available-width));
+	height: var(--positioner-height);
+
+	transition-timing-function: var(--ui-popover-animation-ease-out);
+	transition-duration: var(--ui-popover-animation-duration);
+	transition-property: none;
+
+	&[data-instant] {
+		transition: none;
+	}
+
+	/* 触发器被藏起来时不显示弹出层。 */
+	&[data-anchor-hidden] {
+		pointer-events: none;
+		visibility: hidden;
+	}
+
+	&[data-placement="top"] {
+		--ui-popover-translate-x: 0;
+		--ui-popover-translate-y: var(--ui-popover-animation-translate);
+	}
+
+	&[data-placement="bottomLeft"],
+	&[data-placement="bottomRight"] {
+		--ui-popover-translate-x: 0;
+		--ui-popover-translate-y: calc(var(--ui-popover-animation-translate) * -1);
+	}
+
+	&[data-placement="left"] {
+		--ui-popover-translate-x: var(--ui-popover-animation-translate);
+		--ui-popover-translate-y: 0;
+	}
+}
+
+.ui-popover-popup {
+	position: relative;
+	transform-origin: var(--transform-origin);
+
+	box-sizing: border-box;
+	min-width: 120px;
+	max-width: var(--available-width);
+	border-radius: var(--radius-md);
+
+	color: var(--color-fg);
+
+	background: var(--color-elevated);
+	outline: none;
+	box-shadow:
+		var(--elevation-md),
+		0 0 0 1px var(--color-ring);
+
+	transition-timing-function: var(--ui-popover-animation-ease-out);
+	transition-duration: var(--ui-popover-animation-duration);
+	transition-property: opacity, transform;
+
+	&[data-starting-style],
+	&[data-ending-style] {
+		transform: translate3d(
+				var(--ui-popover-translate-x),
+				var(--ui-popover-translate-y),
+				0
+			)
+			scale(var(--ui-popover-animation-scale));
+		opacity: 0;
+	}
+
+	&[data-ending-style] {
+		transition-timing-function: var(--ui-popover-animation-ease-in);
+		transition-duration: var(--ui-popover-animation-duration-exit);
+	}
+
+	&[data-instant] {
+		transition: none;
+	}
+}
+
+.ui-popover-viewport {
+	--ui-popover-viewport-inline-padding: 12px;
+
+	position: relative;
+	overflow: clip;
+	padding-block: 12px;
+	padding-inline: var(--ui-popover-viewport-inline-padding);
+}

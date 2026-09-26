@@ -154,7 +154,7 @@ export function CareerBar({
 				{hireAt !== null && (
 					<span
 						aria-hidden="true"
-						className="absolute top-0 bottom-0 w-px bg-foreground"
+						className="absolute top-0 bottom-0 w-px bg-fg"
 						style={{ left: `${hireFrac * 100}%` }}
 					/>
 				)}
@@ -165,7 +165,7 @@ export function CareerBar({
 			 * 数字，而这条带子要回答的是「大致在哪几年」——精确的那一份就在下面每张
 			 * 卡片的第二行，一个都没丢。
 			 */}
-			<figcaption className="relative mt-1.5 h-4 text-muted-foreground text-xs tabular-nums">
+			<figcaption className="relative mt-1.5 h-4 text-fg-secondary text-xs tabular-nums">
 				<span className="absolute left-0">{Math.floor(from / 12)}</span>
 				{showHireLabel && hireAt !== null && (
 					<span

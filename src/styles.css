@@ -1,19 +1,53 @@
 /*
- * 全站样式。三段：coss 的令牌与深浅色、这个产品自己的尺度（版心、字阶）、
- * 以及两条必须写成规则而不是类名的行为（焦点、减弱动效）。
+ * 全站样式：设计令牌（颜色、字阶、圆角、阴影、动效）与深浅色；页面的全局样式与重置；
+ * 界面的尺度（版心、栏宽、层级）；以及几条必须写成规则而不是类名的行为。
+ * 组件自己的样式在 `src/components/ui/*.css`。
  *
- * 面和控件的长相不在这里，也不在路由组件里——它们全部由 `src/components/ui/`
- * 提供。这个文件只喂给那些组件它们要读的令牌。
- *
- * coss ui 的组件是**源码进仓库**的（`src/components/ui/`），不是编译好的包，
- * 所以不需要 `@source` 去扫 node_modules——Tailwind 扫 src 就够了。
+ * 颜色按用途命名：fg 是文字，layout / container / elevated 是三层底，fill 是叠在底上
+ * 的填充，border 是描边，primary 与四种状态色按用到的档位各有几档。深色一侧在 `.dark` 里覆盖
+ * 同名变量。设计系统（`bun run ui`）画出全部令牌，可以调整并导出改动。
  */
 @import "tailwindcss";
 
 /*
- * coss 的深色走 class，不走 `light-dark()`。所以 `<html>` 上那个 `dark` 类
- * 是**唯一**的开关，由 `__root.tsx` 的首屏内联脚本按系统偏好写入。令牌本身
- * 不跟随系统；脚本必须在首帧前把类名写好。
+ * 组件的样式，一个组件一个文件。放在 components 层：
+ * 调用处传进来的工具类在 utilities 层，照常覆盖它们。
+ */
+@import "./components/ui/icon.css" layer(components);
+@import "./components/ui/flex.css" layer(components);
+@import "./components/ui/block.css" layer(components);
+@import "./components/ui/empty.css" layer(components);
+@import "./components/ui/hotkey.css" layer(components);
+@import "./components/ui/button.css" layer(components);
+@import "./components/ui/action-icon.css" layer(components);
+@import "./components/ui/input.css" layer(components);
+@import "./components/ui/segmented.css" layer(components);
+@import "./components/ui/tag.css" layer(components);
+@import "./components/ui/alert.css" layer(components);
+@import "./components/ui/collapsible.css" layer(components);
+@import "./components/ui/skeleton.css" layer(components);
+@import "./components/ui/checkbox.css" layer(components);
+@import "./components/ui/radio.css" layer(components);
+@import "./components/ui/form.css" layer(components);
+@import "./components/ui/tooltip.css" layer(components);
+@import "./components/ui/popover.css" layer(components);
+@import "./components/ui/dropdown-menu.css" layer(components);
+@import "./components/ui/auto-complete.css" layer(components);
+@import "./components/ui/drawer.css" layer(components);
+@import "./components/ui/modal.css" layer(components);
+@import "./components/ui/scroll-area.css" layer(components);
+@import "./components/ui/divider.css" layer(components);
+@import "./components/ui/toolbar.css" layer(components);
+@import "./components/ui/table.css" layer(components);
+@import "./components/ui/tabs.css" layer(components);
+
+/* 工具类按 Vite 的 root 自动扫描；设计系统的 root 在 `scripts/design-system`，
+   组件文件里的类要显式扫进来。 */
+@source "./";
+
+/*
+ * 深色走 class。`<html>` 上那个 `dark` 类是唯一的开关，由 `__root.tsx` 的
+ * 首屏内联脚本按系统偏好写入；脚本必须在首帧前把类名写好。
  */
 @custom-variant dark (&:is(.dark *));
 
@@ -23,119 +57,261 @@
  */
 @custom-variant hoverable (@media (hover: hover));
 
-@theme inline {
+@theme static {
 	/*
-	 * 拉丁字族在前、中文字族在后：拉丁串用拉丁字形，汉字回落到中文字族。
-	 * 不下载 webfont——这是 95% 中文的内网工具，为拉丁字体付网络代价没有道理，
-	 * 而中文 webfont 动辄几 MB，更不可能。
-	 *
-	 * heading 和 sans 是同一份：coss 的组件里有 `font-heading`（它自己配的是
-	 * Inter 的另一档），这里不引第二个字族，所以让它落回同一个栈。定义它是
-	 * 必要的——不定义，`font-heading` 就是一个静默失效的类名。
+	 * 清空 Tailwind 自带的色板、字阶、圆角、阴影和缓动：界面上只存在下面定义的
+	 * 这几套。自带色板留着的话，`text-neutral-500` 这种绕开语义的写法会静默生效。
+	 */
+	--color-*: initial;
+	--text-*: initial;
+	--radius-*: initial;
+	--shadow-*: initial;
+	--ease-*: initial;
+
+	/*
+	 * 字体栈：拉丁字母用 Geist（装了才有）或系统字体，汉字落到 HarmonyOS Sans SC。后者由
+	 * `__root.tsx` 引入的 webfont 提供，按 unicode-range 分块，只下载用到的块。
 	 */
 	--font-sans:
-		-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI",
-		"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC",
-		sans-serif;
-	--font-heading: var(--font-sans);
-
-	/* coss 的语义色。只映射这套界面真正用到的那些：图表色和代码高亮色没有读者，
-	   不搬过来。 */
-	--color-background: var(--background);
-	--color-foreground: var(--foreground);
-	--color-card: var(--card);
-	--color-card-foreground: var(--card-foreground);
-	--color-popover: var(--popover);
-	--color-popover-foreground: var(--popover-foreground);
-	--color-primary: var(--primary);
-	--color-primary-foreground: var(--primary-foreground);
-	--color-secondary: var(--secondary);
-	--color-secondary-foreground: var(--secondary-foreground);
-	--color-muted: var(--muted);
-	--color-muted-foreground: var(--muted-foreground);
-	--color-accent: var(--accent);
-	--color-accent-foreground: var(--accent-foreground);
-	--color-destructive: var(--destructive);
-	--color-destructive-foreground: var(--destructive-foreground);
-	--color-info: var(--info);
-	--color-info-foreground: var(--info-foreground);
-	--color-success: var(--success);
-	--color-success-foreground: var(--success-foreground);
-	--color-warning: var(--warning);
-	--color-warning-foreground: var(--warning-foreground);
-	--color-border: var(--border);
-	--color-input: var(--input);
-	--color-ring: var(--ring);
+		Geist, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display",
+		"Segoe UI", Roboto, "Helvetica Neue", Arial, "HarmonyOS Sans SC",
+		"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+		"Source Han Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui,
+		sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+		"Noto Color Emoji";
+	--font-mono:
+		"Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+		"Cascadia Code", Consolas, "Liberation Mono", "HarmonyOS Sans SC",
+		"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+		"Source Han Sans SC", "Noto Sans CJK SC", monospace, "Apple Color Emoji",
+		"Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 
 	/*
-	 * 画布：整个应用坐在上面的那一层底。
-	 *
-	 * 它必须比 `--card` 暗一档，否则卡片既没有浮起也没有边界，一列候选人退化成
-	 * 「铺满窗口、靠发丝线切开的平面」，也就是后台的长相。coss 的 `--background`
-	 * 和 `--card` 在浅色下都是纯白，差 0——所以这个台阶得自己指过来。
-	 *
-	 * 指向 `--sidebar` 而不是新配一个灰：那正是 coss 自己给「内容之外那一层底」
-	 * 配好的一档（浅色 neutral-50，深色比 background 更暗），深浅两边的关系已经
-	 * 调过。这里只是给它起一个说得出口的名字——这一层装的是页面的地，
-	 * 候选人卡片、详情面板和各种弹层都浮在它上面。
+	 * 字阶。12 / 14 / 16 是正文三档，20 / 24 是标题两档。13 是控件与密表的那一档：
+	 * 中号按钮、菜单说明、表格正文都是 13。行高：12 配 20，14 配 22，其余按整像素走。
 	 */
-	--color-canvas: var(--sidebar);
+	--text-xs: 0.75rem;
+	--text-xs--line-height: 1.25rem;
+	--text-sm: 0.8125rem;
+	--text-sm--line-height: 1.25rem;
+	--text-base: 0.875rem;
+	--text-base--line-height: 1.375rem;
+	--text-lg: 1rem;
+	--text-lg--line-height: 1.5rem;
+	--text-xl: 1.25rem;
+	--text-xl--line-height: 1.75rem;
+	--text-2xl: 1.5rem;
+	--text-2xl--line-height: 2rem;
 
+	/*
+	 * 圆角四档：xs 4（小号图标按钮、复选框）、sm 6（按钮、小控件、菜单项）、
+	 * md 8（输入框、卡片、弹层、抽屉的关闭钮）、lg 12（大面、对话框、抽屉）。
+	 * 全圆用 `rounded-full`。
+	 */
+	--radius-xs: 0.25rem;
+	--radius-sm: 0.375rem;
+	--radius-md: 0.5rem;
+	--radius-lg: 0.75rem;
+
+	/*
+	 * 动效。组件 CSS 里的过渡只读这几条曲线，不写字面的曲线；例外两处：提示进场的弹簧
+	 * （tooltip.css 里烘成 linear()），骨架屏往返的呼吸（skeleton.css 的 ease-in-out）。
+	 * - `--ease-out`：状态过渡（CSS 与 Tailwind 的 `ease-out`），也是提示的淡入淡出。
+	 * - `--ease-soft`：对话框和抽屉的面板进场、遮罩的淡入淡出，以及按钮和
+	 *   关闭钮的颜色、底色、缩放过渡。
+	 * - `--ease-accelerate`：面板退场，以及提示、弹出层、菜单的退场。
+	 * - `--ease-snap`：起步快、很快停稳，给小件出现用：键盘焦点框收拢、按钮里让出等待圈的位置。
+	 * 对话框和抽屉的面板进出场由 motion 执行，读这里的曲线和毫秒时长；遮罩的淡入淡出
+	 * 两者共用一个时长。
+	 */
+	--ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+	--ease-soft: cubic-bezier(0.32, 0.72, 0, 1);
+	--ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+	--ease-snap: cubic-bezier(0.22, 1, 0.36, 1);
+	--duration-modal-enter: 220ms;
+	--duration-modal-exit: 120ms;
+	--duration-drawer-enter: 300ms;
+	--duration-drawer-exit: 220ms;
+	--duration-backdrop: 180ms;
+
+	/* 颜色，浅色一侧。深色一侧在下面的 `.dark` 里覆盖同名变量。 */
+	--color-layout: #f8f8f8;
+	--color-container: #ffffff;
+	--color-elevated: #ffffff;
+	--color-mask: rgba(0, 0, 0, 0.44);
+	--color-shadow: #000;
+	--color-border: #e3e3e3;
+	--color-border-secondary: #eeeeee;
+	--color-fill: rgba(0, 0, 0, 0.12);
+	--color-fill-secondary: rgba(0, 0, 0, 0.06);
+	--color-fill-tertiary: rgba(0, 0, 0, 0.03);
+	--color-fill-quaternary: rgba(0, 0, 0, 0.015);
+	/*
+	 * 表格的表头、表脚与悬停行：fill-quaternary 叠在 container 上得到的实色。
+	 * 写成实色是因为吸顶的表头要盖住滚过去的行。
+	 */
+	--color-fill-alter-solid: #fbfbfb;
+	--color-fg: #080808;
+	--color-fg-secondary: #666666;
+	--color-fg-tertiary: #999999;
+	--color-fg-quaternary: #bbbbbb;
+	--color-split: rgba(12, 12, 12, 0.07);
+
+	/* 主色是单色：浅色里近黑、深色里近白。色相只留给状态。 */
+	--color-primary: #222222;
+	--color-primary-hover: #333333;
+	--color-primary-active: #111111;
+	--color-primary-bg: #f5f5f5;
+	--color-primary-bg-hover: #eeeeee;
+	--color-primary-border: #aaaaaa;
+
+	/* 状态色。错误的浅底是出错输入框的外圈与菜单里危险项的悬停底，信息的两档是链接。 */
+	--color-success: #379d4a;
+	--color-warning: #ee9e0b;
+	--color-error: #ec5e41;
+	--color-error-bg: #fff7f6;
+	--color-info: #0072f5;
+	--color-info-hover: #4c90ff;
+	--color-info-active: #005ae0;
+
+	/*
+	 * 两条不属于色阶的线。`ring` 是浮层外沿那一圈 1px 的描边，和阴影叠在一起画
+	 * 浮起的面；`focus` 是键盘焦点的外框，信息色的 90%。
+	 */
+	--color-ring: rgb(0 0 0 / 0.05);
+	--color-focus: color-mix(in srgb, var(--color-info) 90%, transparent);
+
+	/* 选中文字的底，深浅两侧同一个值。 */
+	--color-selection: #ffef5c;
+}
+
+.dark {
+	--color-layout: #000000;
+	--color-container: #0d0d0d;
+	--color-elevated: #1a1a1a;
+	--color-border: #202020;
+	--color-border-secondary: #1a1a1a;
+	--color-shadow: rgba(255, 255, 255, 0.2);
+	--color-fill: rgba(255, 255, 255, 0.16);
+	--color-fill-secondary: rgba(255, 255, 255, 0.1);
+	--color-fill-tertiary: rgba(255, 255, 255, 0.06);
+	--color-fill-quaternary: rgba(255, 255, 255, 0.02);
+	--color-fill-alter-solid: #121212;
+	--color-fg: #ffffff;
+	--color-fg-secondary: #aaaaaa;
+	--color-fg-tertiary: #6f6f6f;
+	--color-fg-quaternary: #555555;
+	--color-split: rgba(230, 230, 230, 0.06);
+
+	--color-primary: #eeeeee;
+	--color-primary-hover: #ffffff;
+	--color-primary-active: #cccccc;
+	--color-primary-bg: #111111;
+	--color-primary-bg-hover: #333333;
+	--color-primary-border: #666666;
+
+	/* 深色一侧的成功、错误、信息换了色相（黄绿、玫红、天蓝），在黑底上更醒目。 */
+	--color-success: #c4f042;
+	--color-warning: #ffb224;
+	--color-error: #f4416c;
+	--color-error-bg: #380015;
+	--color-info: #60b1ff;
+	--color-info-hover: #a7d3ff;
+	--color-info-active: #2d8ae0;
+
+	--color-ring: rgb(255 255 255 / 0.18);
+}
+
+/*
+ * 投影。sm、md、lg 三档是纯黑的投影，深色一侧在 `.dark` 里加深：
+ * - sm：提示气泡、选项卡的指示块。
+ * - md：下拉菜单、弹出层。
+ * - lg：对话框。
+ *
+ * 下面三个引用颜色令牌，跟着深浅两侧的颜色走，所以在 `.dark` 上再算一次：
+ * - edge：贴着描边的一层细投影，用描边色画。工具栏与带 `shadow` 的 Block。
+ * - drawer-left、drawer-right：抽屉面板朝内容一侧投的三层影，用 `--color-shadow` 画，
+ *   两个名字是面板贴哪条边。
+ */
+:root {
+	--elevation-sm: 0 1px 2px rgb(0 0 0 / 0.04), 0 2px 4px rgb(0 0 0 / 0.02);
+	--elevation-md:
+		0 17.5px 23.4px rgb(0 0 0 / 0.04), 0 9.4px 12.5px rgb(0 0 0 / 0.03),
+		0 5.25px 7px rgb(0 0 0 / 0.02), 0 2.8px 3.7px -2px rgb(0 0 0 / 0.01),
+		0 1.2px 1.5px rgb(0 0 0 / 0.01);
+	--elevation-lg:
+		0 40px 80px rgb(0 0 0 / 0.06), 0 20px 40px rgb(0 0 0 / 0.05),
+		0 10px 20px rgb(0 0 0 / 0.04), 0 5px 10px rgb(0 0 0 / 0.03),
+		0 2px 4px rgb(0 0 0 / 0.02);
+}
+
+.dark {
+	--elevation-sm: 0 1px 2px rgb(0 0 0 / 0.06), 0 2px 4px rgb(0 0 0 / 0.03);
+	--elevation-md:
+		0 17.5px 23.4px rgb(0 0 0 / 0.06), 0 9.4px 12.5px rgb(0 0 0 / 0.05),
+		0 5.25px 7px rgb(0 0 0 / 0.03), 0 2.8px 3.7px -2px rgb(0 0 0 / 0.02),
+		0 1.2px 1.5px rgb(0 0 0 / 0.02);
+	--elevation-lg:
+		0 40px 80px rgb(0 0 0 / 0.09), 0 20px 40px rgb(0 0 0 / 0.08),
+		0 10px 20px rgb(0 0 0 / 0.06), 0 5px 10px rgb(0 0 0 / 0.05),
+		0 2px 4px rgb(0 0 0 / 0.03);
+}
+
+:root,
+.dark {
+	--elevation-edge:
+		0 1px 0 -1px var(--color-border), 0 1px 2px -0.5px var(--color-border),
+		0 2px 2px -1px var(--color-border-secondary),
+		0 3px 6px -4px var(--color-border-secondary);
+	--elevation-drawer-left:
+		6px 0 16px 0 color-mix(in srgb, var(--color-shadow) 8%, transparent),
+		3px 0 6px -4px color-mix(in srgb, var(--color-shadow) 12%, transparent),
+		9px 0 28px 8px color-mix(in srgb, var(--color-shadow) 5%, transparent);
+	--elevation-drawer-right:
+		-6px 0 16px 0 color-mix(in srgb, var(--color-shadow) 8%, transparent),
+		-3px 0 6px -4px color-mix(in srgb, var(--color-shadow) 12%, transparent),
+		-9px 0 28px 8px color-mix(in srgb, var(--color-shadow) 5%, transparent);
+}
+
+@theme {
 	/*
 	 * 版心：单列内容有多宽。零态的输入面、名单那一列（关键词搜索时连同它上面的关键词框）、
 	 * 页脚都读它。写成 `--container-*` 而不是 `--spacing-*`：`max-w-<名字>`
 	 * 只认前一个命名空间，写成后者的话 `max-w-page` 会静默变成一个不存在的类。
 	 *
 	 * 一个数管到底，是因为这几块上下叠在一条列里：输入框、名单每一张
-	 * 卡片、页脚那行快捷键，左右边缘差 1px 就是一条看得见的错位。给其中任何一块
-	 * 单配一个更窄的宽度，得到的只是一档没有信息的参差。
-	 *
-	 * 零态的输入面也读它，所以回车前后这条列一样宽；但它会横向挪一下——结果页
-	 * 左边多了一条筛选栏，中列因此被推离屏幕正中。那一挪是有内容的：挪出来的
-	 * 地方站着的正是新出现的那条栏。
+	 * 卡片、页脚那行快捷键，左右边缘差 1px 就是一条看得见的错位。
 	 *
 	 * 46rem：一条证据行的预算（条件词 + 来源 + 字段值 + 右端时长）在 14px 下
 	 * 约 25 个汉字不截断，再加上卡片左右各 20px 的内边距。再宽，右端的时长
-	 * 就离字段值太远，眼睛得横着走一段空白才读得到它。输入面这一头也吃得下：
-	 * 它高 70px 起、还会随内容长高，46rem 在它身上是一块面的宽，不是一条线的长。
+	 * 就离字段值太远，眼睛得横着走一段空白才读得到它。
 	 */
 	--container-page: 46rem;
 
 	/*
-	 * 右栏的宽度：对话线程和人的详情共用这一个槽（`s/$turnId/route.tsx`）。
-	 * 外层收展（0 ↔ 这个值）和内层顶住内容用的是同一个数，页宽列也从这个数算出来——
-	 * 所以它在这里，不在组件里。
+	 * 右栏的宽度：对话线程和人的详情共用这一个槽（`s/$turnId/-components/side-panel.tsx`）。
+	 * 外层收展（0 ↔ 这个值）和内层顶住内容用的是同一个数，页宽列也从这个数算出来。
 	 *
 	 * 28rem 起步：xl（1280）上给名单留下 800，版心 736 还剩两边各 32 的余量。
 	 * 2xl 放宽到 32rem——简历原文是这块面板里唯一成段读的东西；再宽没有意义，
-	 * `read-cjk` 已经把行长封在 34rem 了。线程里一句话在 28rem 上也是一块面。
+	 * `read-cjk` 已经把行长封在 34rem 了。
 	 */
 	--container-detail: 28rem;
 	--container-detail-wide: 32rem;
 
 	/*
-	 * 筛选栏的宽度。lg 以上常驻在名单左边，lg 以下整栏收成一个按钮
-	 * （`s/$turnId/-components/filter-rail.tsx`）。
+	 * 筛选栏的宽度（`s/$turnId/-components/filter-rail.tsx`）。lg 以上常驻在名单左边，
+	 * lg 以下整栏收成一个按钮（断点在 `workspace-layout.tsx`）。
 	 *
 	 * 13rem：一行装得下最长的一个选项标签（「公司内经历」这一档五个字）加上
-	 * 右端的人数，再加行内各 8px、栏内各 16px 的内边距。它是这一栏能有的最窄的
-	 * 宽度——一条会把自己的选项截断的筛选栏，还不如收成一个按钮。
+	 * 右端的人数，再加行内各 8px、栏内各 16px 的内边距。
 	 */
 	--container-rail: 13rem;
 
 	/*
-	 * 页宽列：整个应用活在这一列里，两侧那两根发丝线标的就是它的边界——线就落在
-	 * 左筛选栏的左沿和详情面板的右沿上，两侧的辅助面贴着线，不浮在线里面。
-	 *
-	 * 它是算出来的，不是挑出来的：工作台横着最宽的一刻就是「筛选栏 + 名单版心 +
-	 * 最宽的详情面板」，中间那条名单再向两侧各让 3rem——名单和两侧的辅助面之间
-	 * 得有一道看得见的间距，滚动条出现时也不至于把面板顶得动一下。所以改其中
-	 * 任何一栏，这条列自己跟着走，不用回来改这一行。
-	 *
-	 * 三栏同时在场是 xl 以上才有的事，而那时详情是 28rem 的窄档：三栏自身
-	 * 13 + 46 + 28 = 87rem（1392），加上名单两侧那 6rem 的间距是 93rem（1488）。
-	 * 1440 的屏三栏都摆得下，只是间距收窄；再窄下去先收窄的是名单——它有
-	 * `min-w-0`，会自己收窄，而另外两栏各有各的下限。
+	 * 页宽列：整个应用活在这一列里，两侧那两根发丝线标的就是它的边界。
+	 * 它是「筛选栏 + 名单版心 + 最宽的详情面板」，中间那条名单再向两侧各让 3rem，
+	 * 所以改其中任何一栏，这条列自己跟着走。
 	 */
 	--container-app: calc(
 		var(--container-rail) +
@@ -147,212 +323,233 @@
 	/*
 	 * 顶栏的高度。读者有三个：顶栏自己撑这个高，页框那两个小方块按它定位
 	 * （`page-frame.tsx`），查询带吸在它下沿（`s/$turnId/-components/query-deck.tsx`）。
-	 * 各自写一个 3.5rem 的话，改一次高度就会有一处忘掉，而忘掉的表现是内容从
-	 * 顶栏底下钻过去。
 	 */
 	--header-height: 3.5rem;
 
 	/*
-	 * 查询带的高度。这条带**定高**：里面的标题长了就截断（`query-deck.tsx`）
-	 * ——所以这个数不会因为内容变了而变，吸在它下面的东西可以照着算。
-	 *
-	 * 2.5rem 是带子里的内容算出来的，而且**每一档宽度都正好是这个数**：带子里的
-	 * 控件全是 `xs` 一档（chip 一律同高，桌面 24px、粗指针设备 28px），
-	 * 上下各 6px。粗指针那一档正好把 40 撑满，桌面那一档差 4px 由 `min-h` 补上——
-	 * 所以令牌说的高度不会比屏幕上占的高，也不会比它低（低了就是内容被自己
-	 * 的吸顶带盖掉一截，而不会有任何检查失败）。
+	 * 查询带的高度。这条带定高：里面的标题长了就截断（`query-deck.tsx`），
+	 * 所以吸在它下面的东西可以照着算。带子里的控件全是小号（24px），上下各 8px。
 	 */
 	--deck-height: 2.5rem;
 
 	/*
-	 * 常驻的那一叠有多高：顶栏加查询带。吸在它下面的东西读它，不各自写一遍加法——
-	 * 读者是左筛选栏（`filter-rail.tsx`）、详情面板（`s/$turnId/route.tsx`）和名单
-	 * 卡片的 `scroll-mt`（`result-list.tsx`）。
+	 * 常驻的那一叠有多高：顶栏加查询带。读者是搜索结果页两侧栏吸顶的槽
+	 * （`s/$turnId/-components/workspace-layout.tsx`）、名单卡片的 `scroll-mt`（`result-list.tsx`）
+	 * 和整屏空态的最小高度（`result-state.tsx`）。
 	 */
 	--chrome-height: calc(var(--header-height) + var(--deck-height));
 
-	/* coss 的圆角尺度，原样采用。组件自己就按这四档画，项目再定一套只会
-	   让我画的面和它的按钮、输入框、弹层永远差一点。 */
-	--radius-sm: calc(var(--radius) - 4px);
-	--radius-md: calc(var(--radius) - 2px);
-	--radius-lg: var(--radius);
-	--radius-xl: calc(var(--radius) + 4px);
-
-	/*
-	 * 等待标记转一圈的方式：**一格一格跳**，不是匀速滑。
-	 *
-	 * 那个圈有 12 根辐条（lucide 的 `Loader`），`steps(12)` 让它每次正好跳过一根，
-	 * 于是任何一帧上图形都和静止时一模一样——这是系统级转圈（macOS、iOS）一直
-	 * 以来的画法。匀速转的那种圆弧（`Loader2` 配 `animate-spin`）在每一帧都是
-	 * 一个介于两格之间的角度，糊成一团，也正是各家 CSS 框架自带的那一个。
-	 *
-	 * 1 秒一圈：12 格刚好每格 83ms，快到看得出在动，慢到不焦躁。
-	 */
-	--animate-tick: tick 1s steps(12, end) infinite;
-	@keyframes tick {
+	/* 转圈，0.6 秒一圈：Icon 的 `spin` 与等待圈（icon.css 的 `.ui-spinner`）共用。 */
+	--animate-spin: spin 0.6s linear infinite;
+	@keyframes spin {
 		to {
 			transform: rotate(360deg);
 		}
 	}
 
-	/* coss 的 Skeleton 靠它扫光。没有这条，骨架屏就是一块死灰。 */
-	--animate-skeleton: skeleton 2s -1s infinite linear;
-	@keyframes skeleton {
-		to {
-			background-position: -200% 0;
-		}
-	}
-
 	/*
-	 * 层级尺度。全站只有这四档，代码里不能出现别的 z 值。
+	 * 层级尺度。全站只有这五档，代码里不能出现别的 z 值。
 	 *
-	 * 档位这么少，是因为弹层的层级不由这套尺度管理。coss 的 Dialog 遮罩、
-	 * 视口和 Tooltip 定位器都硬写着 `z-50`，而它们 portal 到 `document.body`——
-	 * 也就是说「弹层在最上面」这件事由那个 50 保证，不由这里的数字保证。
-	 *
-	 * 所以这几档只回答一个问题：**外壳内部**谁压着谁。它们不需要多，也不该多。
-	 * app 外壳根节点带 `isolate`，把这三个值关进一个层叠上下文里，于是它们
-	 * 无论取多大都出不去、盖不到 body 下的弹层——这条护栏让「不小心写了个
-	 * 更大的数就遮住对话框」从结构上不可能发生，而不是靠记得别超过 50。
+	 * 外壳根节点带 `isolate`，前四档被关在它的层叠上下文里，只回答「外壳内部
+	 * 谁压着谁」，取多大都盖不到 portal 到 body 下的弹层。`popup` 是那些弹层
+	 * 自己的一档：它们和外壳是 body 下的兄弟，只要比外壳高就在最上面。
 	 */
-	--z-index-raise: 1; /* 同一平面内的前后：时间轴节点压住脊线 */
+	--z-index-raise: 1; /* 同一平面内的前后：时间轴节点压住脊线，选项压住滑动的指示块 */
 	--z-index-stick: 20; /* 吸顶：顶栏、查询带，以及详情面板里那个吸顶的头 */
 	--z-index-frame: 30; /* 页框的栏线。压过顶栏，两根竖线才是通到底的一根 */
 	--z-index-escape: 40; /* 跳过导航链接。它必须压过外壳里的一切 */
-}
-
-/* coss 的色值。原样搬，不改一个数——改了就不再是这套设计系统了。 */
-:root {
-	--radius: 0.625rem;
-	--background: var(--color-white);
-	--foreground: var(--color-neutral-800);
-	--card: var(--color-white);
-	--card-foreground: var(--color-neutral-800);
-	--popover: var(--color-white);
-	--popover-foreground: var(--color-neutral-800);
-	--primary: var(--color-neutral-800);
-	--primary-foreground: var(--color-neutral-50);
-	--secondary: --alpha(var(--color-black) / 4%);
-	--secondary-foreground: var(--color-neutral-800);
-	--muted: --alpha(var(--color-black) / 4%);
-	--muted-foreground: color-mix(
-		in srgb,
-		var(--color-neutral-500) 90%,
-		var(--color-black)
-	);
-	--accent: --alpha(var(--color-black) / 4%);
-	--accent-foreground: var(--color-neutral-800);
-	--destructive: var(--color-red-500);
-	--destructive-foreground: var(--color-red-700);
-	--info: var(--color-blue-500);
-	--info-foreground: var(--color-blue-700);
-	--success: var(--color-emerald-500);
-	--success-foreground: var(--color-emerald-700);
-	--warning: var(--color-amber-500);
-	--warning-foreground: var(--color-amber-700);
-	--border: --alpha(var(--color-black) / 8%);
-	--input: --alpha(var(--color-black) / 10%);
-	--ring: var(--color-neutral-400);
-	--sidebar: var(--color-neutral-50);
-}
-
-.dark {
-	--background: color-mix(
-		in srgb,
-		var(--color-neutral-950) 96%,
-		var(--color-white)
-	);
-	--foreground: var(--color-neutral-100);
-	--card: color-mix(in srgb, var(--background) 98%, var(--color-white));
-	--card-foreground: var(--color-neutral-100);
-	--popover: color-mix(in srgb, var(--background) 96%, var(--color-white));
-	--popover-foreground: var(--color-neutral-100);
-	--primary: var(--color-neutral-100);
-	--primary-foreground: var(--color-neutral-800);
-	--secondary: --alpha(var(--color-white) / 4%);
-	--secondary-foreground: var(--color-neutral-100);
-	--muted: --alpha(var(--color-white) / 4%);
-	--muted-foreground: color-mix(
-		in srgb,
-		var(--color-neutral-500) 90%,
-		var(--color-white)
-	);
-	--accent: --alpha(var(--color-white) / 4%);
-	--accent-foreground: var(--color-neutral-100);
-	--destructive: color-mix(
-		in srgb,
-		var(--color-red-500) 90%,
-		var(--color-white)
-	);
-	--destructive-foreground: var(--color-red-400);
-	--info: var(--color-blue-500);
-	--info-foreground: var(--color-blue-400);
-	--success: var(--color-emerald-500);
-	--success-foreground: var(--color-emerald-400);
-	--warning: var(--color-amber-500);
-	--warning-foreground: var(--color-amber-400);
-	--border: --alpha(var(--color-white) / 6%);
-	--input: --alpha(var(--color-white) / 8%);
-	--ring: var(--color-neutral-500);
-	--sidebar: color-mix(
-		in srgb,
-		var(--color-neutral-950) 97%,
-		var(--color-white)
-	);
+	--z-index-popup: 50; /* portal 出去的弹层：提示、弹出层、菜单、对话框、抽屉 */
 }
 
 @layer base {
 	/*
-	 * coss 的组件默认边框色靠这一条。它们的类名里大量是裸的 `border`
-	 * （只给宽度，不给颜色），没有这一条就会落到 Tailwind 的 currentColor 上，
-	 * 于是每个按钮的边框都变成它自己的文字色。
+	 * 裸的 `border` 只给宽度，颜色落在这里：日常分隔线是 border-secondary。
+	 * 要更重的边再显式写 `border-border`。
 	 */
 	* {
-		@apply border-border outline-ring/50;
+		@apply border-border-secondary;
 	}
 
 	/*
-	 * 滚动条占的那一格宽度永远留着。没有这一条的话，不滚的页面（零态、空结果）
-	 * 切到要滚的页面（名单）时整页会横着跳一格——跳走的包括页框那两根线和顶栏，
-	 * 而它们是全屏最不该动的东西。
-	 *
-	 * 覆盖式滚动条的系统上（macOS 默认）这一格宽度本来就是 0，这条不占任何东西；
-	 * 它治的是常显滚动条的那些环境。Base UI 开模态锁滚动时用的也是这一条
-	 * （`useScrollLock`），而且会先读原值再还原，所以常驻它不会和弹层打架。
+	 * 文档级的排版：14px 正文，行高不带单位（字号变了按比例跟着走），字色是 fg。
 	 */
-	html {
-		scrollbar-gutter: stable;
+	:root {
+		font-synthesis: style;
+		text-autospace: normal;
 	}
 
-	/* macOS 上关掉次像素渲染，中文小字号更干净 */
+	html {
+		overscroll-behavior: none;
+		color-scheme: light;
+	}
+
+	html.dark {
+		color-scheme: dark;
+	}
+
 	body {
+		font-size: var(--text-base);
+		font-feature-settings: "cv01", "tnum", "kern";
+		font-variation-settings: "opsz" auto;
+		font-optical-sizing: auto;
+		font-kerning: normal;
+		font-variant-ligatures: common-ligatures contextual;
+		font-variant-numeric: tabular-nums;
+		font-size-adjust: from-font;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
+		line-height: 1.5714285714285714;
+		color: var(--color-fg);
+		text-wrap: pretty;
+		text-rendering: optimizelegibility;
+		overflow-wrap: anywhere;
+		background-color: var(--color-layout);
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	code,
+	kbd,
+	samp,
+	pre {
+		/* biome-ignore lint/complexity/noImportantStyles: 代码块里的等宽字体要压过组件自己的字体 */
+		font-family: var(--font-mono) !important;
+		font-feature-settings:
+			"liga" 0,
+			"calt" 0;
+		font-variant-ligatures: none;
+
+		span {
+			/* biome-ignore lint/complexity/noImportantStyles: 同上 */
+			font-family: var(--font-mono) !important;
+		}
+	}
+
+	::selection {
+		color: #000;
+		background: var(--color-selection);
+		-webkit-text-fill-color: unset;
+	}
+
+	* {
+		scrollbar-color: var(--color-fill) transparent;
+		scrollbar-width: thin;
+		box-sizing: border-box;
+		vertical-align: baseline;
 	}
 
 	/*
-	 * 自绘控件的焦点态。coss 组件自带 `focus-visible:ring-2 ring-ring`，这一条补的
-	 * 是不经过它们的那两类：`<a>`（名单上的姓名、历史弹层里的每一条）和手写的
-	 * `<button>`（履历条上那些色块——几像素高的窄条，套不进任何一个尺码 API）。
-	 * 用的是同一个 `--ring`，所以两者长得一样。
-	 *
-	 * 用 `:where()` 把特异性压到 0，好让 coss 组件自己的焦点样式照常覆盖它；
-	 * 只有 `:focus-visible`，鼠标点击不出环。
+	 * 组件的长相依赖这几处与 Tailwind preflight 不同的重置：表单控件只继承字族、字号、
+	 * 行高，其余字体属性（字重、字距、cv01、等宽数字等）用浏览器默认，preflight 则让
+	 * 整个 font 继承；按钮保留浏览器默认的内边距（preflight 清成 0）；svg 保留行内、
+	 * 基线对齐（preflight 改成块、居中）；链接色是信息色。
 	 */
-	:where(a, button):focus-visible {
-		outline: 2px solid var(--color-ring);
-		outline-offset: 2px;
+	button,
+	input,
+	select,
+	optgroup,
+	textarea {
+		font: revert;
+		font-family: inherit;
+		font-size: inherit;
+		line-height: inherit;
+		letter-spacing: revert;
+	}
+
+	button {
+		padding: revert;
+	}
+
+	svg {
+		display: revert;
+		vertical-align: revert;
+	}
+
+	a {
+		color: var(--color-info);
+		text-decoration: none;
+		background-color: transparent;
+		outline: none;
+		cursor: pointer;
+		transition: color 0.3s;
+		-webkit-text-decoration-skip: objects;
+
+		&:hover {
+			color: var(--color-info-hover);
+		}
+
+		&:active {
+			color: var(--color-info-active);
+		}
+
+		&[disabled] {
+			color: var(--color-fg-quaternary);
+			cursor: not-allowed;
+		}
+	}
+
+	/*
+	 * 页面里没有组件接手的 `<a>`、`<button>` 等也有同一个焦点框。组件的元素
+	 * （`ui-` 开头的类名）不在此列，焦点长什么样由组件自己的 CSS 决定。
+	 */
+	:where(a, button, [tabindex], [role="checkbox"], [role="radio"]):not(
+		[class^="ui-"],
+		[class*=" ui-"]
+	) {
+		@apply focus-ring;
+	}
+
+	/*
+	 * 下拉菜单的触发器打开时铺一层底。它在 base 层，低于一切组件样式，自己画了底色的
+	 * 触发器（Button）不受影响。
+	 */
+	[aria-haspopup="menu"][data-popup-open] {
+		background: var(--color-fill-tertiary);
 	}
 }
 
 /*
- * 页宽列的几何：居中、封顶、留间距。顶栏和工作台那一行用的是同一个盒子，两处
- * 各写一遍 `mx-auto w-full max-w-app px-4 sm:px-6` 的话，改一次间距宽度就会有
- * 一处忘掉，而忘掉的表现是内容和栏线错开一两个像素——没人会报这个 bug。
- *
+ * 键盘焦点：信息色 90% 的 2px 外框，离开元素 2px，出现时从 5px 外收拢进来；减少动效时
+ * 不收拢，强制色模式下用系统文字色、不收拢。组件的 CSS 里写 `@apply focus-ring`；外框
+ * 画在别的元素上的（Block 覆盖链接的 `::after`）读同一组变量。颜色引用颜色令牌，
+ * 跟着深浅两侧走，所以在 `.dark` 上再算一次。
+ */
+:root,
+.dark {
+	--focus-ring-width: 2px;
+	--focus-ring-offset: 2px;
+	--focus-ring-color: var(--color-focus);
+	--focus-ring-animation: focus-ring-in 200ms var(--ease-snap);
+
+	@media (prefers-reduced-motion: reduce) {
+		--focus-ring-animation: none;
+	}
+
+	@media (forced-colors: active) {
+		--focus-ring-color: CanvasText;
+		--focus-ring-animation: none;
+	}
+}
+
+@utility focus-ring {
+	&:focus-visible {
+		outline: var(--focus-ring-width) solid var(--focus-ring-color);
+		outline-offset: var(--focus-ring-offset);
+		animation: var(--focus-ring-animation);
+	}
+}
+
+@keyframes focus-ring-in {
+	from {
+		outline-color: transparent;
+		outline-offset: 5px;
+	}
+}
+
+/*
+ * 页宽列的几何：居中、封顶、留间距。顶栏和工作台那一行用的是同一个盒子。
  * 盒子的左右边缘就是页框那两根线所在的位置，也就是左筛选栏的左沿和详情面板的
  * 右沿。线内那 24px 的间距由各自的内边距凑齐：顶栏靠这里的 `padding-inline`，
- * 筛选栏靠栏内 16 加行内 8（`filter-rail.tsx`）——于是顶栏的字和栏里的字同线。
+ * 筛选栏靠栏内 16 加行内 8（`filter-rail.tsx`）。
  */
 @utility app-column {
 	margin-inline: auto;
@@ -369,15 +566,14 @@
 	:root {
 		/*
 		 * 两根发丝线离 `frame-column` 多远。线和骑在线上那两枚小方块读的是同一个数：
-		 * 方块的位置从线的中心算出来（`page-frame.tsx`），不是手调出来的整数——
-		 * 各写各的话，改一次这个距离就会得到一个偏在线旁边的方块，而不会有任何检查失败。
+		 * 方块的位置从线的中心算出来（`page-frame.tsx`）。
 		 */
 		--frame-inset: --spacing(3);
 
 		/*
 		 * 挑人时名单左侧让出的那一列有多宽（`s/$turnId/-components/result-list.tsx`
 		 * 的 `PickCell`）。表头与名单复用这一宽度。
-		 * 2.25rem = Checkbox 18px + 四周 4px 点击区域 + 8px 间距。
+		 * 2.25rem = Checkbox 16px + 四周 4px 点击区域 + 12px 间距。
 		 */
 		--pick-column: 2.25rem;
 	}
@@ -385,10 +581,8 @@
 
 /*
  * 画那两根线的盒子。线画在它外面 `--frame-inset` 处（`page-frame.tsx`），
- * 所以它比页宽列窄两倍那么多——线因此正好落在页宽列的边缘上，而不是浮在它外面。
- *
- * 窄于页宽列的视口上它就是整屏，两根线落到屏幕之外：没有余量的时候框不出东西
- * 来。这条行为由「比页宽列窄」保证；把线改成画在盒子边上就丢了它。
+ * 所以它比页宽列窄两倍那么多——线因此正好落在页宽列的边缘上。
+ * 窄于页宽列的视口上它就是整屏，两根线落到屏幕之外。
  */
 @utility frame-column {
 	margin-inline: auto;
@@ -397,62 +591,10 @@
 }
 
 /*
- * 字阶。全站只有这四档：`title-1`、`title-2`、正文（`text-sm`，14px）和 `label`。
- * `text-*` 里因此只用得到两个：正文那档的 `text-sm`，和把附属信息降一级的
- * `text-xs`（上下文、时长、来源标签、脚注、页脚那行快捷键）。12 和 14 之间差得
- * 太小，撑不起一层结构——所以 `text-xs` 只用来**降权**，分区一律走 `label`。
- * `text-base` 及以上一个都不出现：那就是在偷偷加第五档。
+ * 中文阅读文本。正文行高 22/14 是扫读界面的值；汉字笔画密度高，
+ * 成段阅读需要 1.7–1.8 才不糊成一团。只给「要读」的文本用（简历原文）。
  *
- * 层级不是靠「有几档」建立的，是靠**相邻两档拉得够开**。三档挤在
- * 12 / 14 / 16 里只差 2px，而汉字在小字号上没有拉丁字母那种 x-height 差异，
- * 扫过去就是一片没有重量差的灰。所以顶端拉到 22 / 17，底端压到 11，
- * 中间只留一个 14 的正文。
- *
- * 汉字全程不收字距。收紧字距是拉丁排印的规矩（字号越大同样的字距越松），
- * 汉字字面本来就撑满字身，再收就是挤笔画。唯一的例外是下面的 `label`，
- * 那里是**放开**字距，不是收紧。
- */
-/**
- * 一屏之内唯一的主角：详情面板上那个人的姓名，以及三个管理页的页名
- * （`AdminPage` 的抬头——那几屏没有别的主角）。
- */
-@utility title-1 {
-	font-size: 1.375rem;
-	line-height: 1.4;
-}
-
-/** 一块之内的主角：候选人卡片上的姓名。比正文重两档，扫名单靠它。 */
-@utility title-2 {
-	font-size: 1.0625rem;
-	line-height: 1.5;
-}
-
-/*
- * 分区标签：「匹配来源」「任职经历」「筛选」这一类。
- *
- * 它必须一眼被认成**不是内容**，而「12px + 次要色」做不到：正文里的上下文、
- * 时长、来源标签也是 12px + 次要色，标签和内容长得一模一样时，分区的边界
- * 就只剩那条发丝线来区分。
- *
- * 这里给它三样正文永远不会有的东西：11px、600 字重、0.08em 字距。放开字距
- * 在汉字上正是「这是标牌」的传统信号（展板、书脊、章节页都这么排），而且
- * 短标签才用得起——它只出现在 2–5 个字上，不会影响任何一段要读的文本。
- */
-@utility label {
-	font-size: 0.6875rem;
-	line-height: 1.45;
-	font-weight: 600;
-	letter-spacing: 0.08em;
-}
-
-/*
- * 中文阅读文本。Tailwind 的 `text-sm` 行高是 1.43，那是拉丁密集界面的值；
- * 汉字笔画密度高得多，成段阅读需要 1.7–1.8 才不糊成一团。
- * 只给「要读」的文本用（简历原文），扫读行仍然保持紧凑。
- *
- * 行长封顶写在这里，不写在每个用到的地方。34rem 在 14px 下约 38 个汉字，
- * 落在中文舒适行长 30–40 字里。容器窄于它时这条不起作用，
- * 所以它只在需要的时候存在。
+ * 行长封顶写在这里：34rem 在 14px 下约 38 个汉字，落在中文舒适行长 30–40 字里。
  */
 @utility read-cjk {
 	line-height: 1.8;
@@ -462,10 +604,7 @@
 
 /*
  * 新东西到了的淡入：换人时的详情区，以及模型边跑边走出的新一步。
- *
- * ↑↓ 连着扫名单时，右边这一栏整体换掉一次，淡入给出「换了一个人」的确认。
- * 短而浅是硬要求：连按时每一帧都要在下一次按键之前结束，否则动画会排队，
- * 手感立刻变粘。6px 的位移只是给眼睛一个方向暗示，不是表演。
+ * 短而浅是硬要求：↑↓ 连按时每一帧都要在下一次按键之前结束，否则动画会排队。
  */
 @keyframes settle {
 	from {
@@ -479,23 +618,20 @@
 }
 
 @utility settle {
-	animation: settle 160ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+	animation: settle 160ms var(--ease-out) backwards;
 }
 
 /*
- * 模型正在跑的那几个字：一道亮光从左扫到右，跑完就是一行普通的灰字。
- *
- * 右栏里只有这一处在说「它还在动」——名单那一列的等待态在说「在理解」，
- * 这里说的是理解到哪了。字本身就是信号，不另挂一个转圈：转圈只说「在等」，
- * 说不出在等什么。减弱动效时退回灰字，意思不丢，只是不动。
+ * 模型正在跑的那几个字：一道亮光从左扫到右，底色是 fg-secondary、峰值是 fg。
+ * 减弱动效时退回灰字，意思不丢。
  */
 @utility shimmer {
 	background-image: linear-gradient(
 		90deg,
-		var(--color-muted-foreground) 0%,
-		var(--color-foreground) 45%,
-		var(--color-foreground) 55%,
-		var(--color-muted-foreground) 100%
+		var(--color-fg-secondary) 0%,
+		var(--color-fg) 45%,
+		var(--color-fg) 55%,
+		var(--color-fg-secondary) 100%
 	);
 	background-size: 200% 100%;
 	background-clip: text;
@@ -503,7 +639,7 @@
 	animation: shimmer 1.6s linear infinite;
 	@media (prefers-reduced-motion: reduce) {
 		background-image: none;
-		color: var(--color-muted-foreground);
+		color: var(--color-fg-secondary);
 	}
 }
 

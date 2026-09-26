@@ -13,22 +13,42 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CareerBar, packLanes, ym } from "#/components/career-bar";
+import { classLists } from "./render";
 import { experience, hit } from "./rows";
 
 const exp = (id: number, startDate: string, endDate: string | null) =>
 	experience({ id, startDate, endDate });
 
+function styleOf(declarations: string): Record<string, string> {
+	return Object.fromEntries(
+		declarations
+			.split(";")
+			.filter(Boolean)
+			.map((d) => d.split(":").map((s) => s.trim()) as [string, string]),
+	);
+}
+
 /** 渲染出来的每个色块，按 DOM 顺序 */
 function blocks(html: string) {
-	return [...html.matchAll(/<button[^>]*style="([^"]*)"[^>]*>/g)].map((m) => {
-		const style = Object.fromEntries(
-			(m[1] ?? "")
-				.split(";")
-				.filter(Boolean)
-				.map((d) => d.split(":").map((s) => s.trim()) as [string, string]),
-		);
-		return style;
-	});
+	return [...html.matchAll(/<button[^>]*style="([^"]*)"[^>]*>/g)].map((m) =>
+		styleOf(m[1] ?? ""),
+	);
+}
+
+/** 每个色块的类名表，按 DOM 顺序 */
+function bandClasses(html: string) {
+	return classLists(
+		[...html.matchAll(/<button[^>]*>/g)].map((m) => m[0]).join(""),
+	);
+}
+
+/** 入职竖线的样式：它是唯一一个 aria-hidden 且带 `bg-fg` 的元素 */
+function hireLine(html: string) {
+	const tag = [...html.matchAll(/<span aria-hidden="true"[^>]*>/g)]
+		.map((m) => m[0])
+		.find((t) => classLists(t)[0]?.includes("bg-fg"));
+	const style = tag?.match(/style="([^"]*)"/)?.[1];
+	return style === undefined ? undefined : styleOf(style);
 }
 
 describe("年月折算", () => {
@@ -118,11 +138,9 @@ describe("带子的几何", () => {
 				rows={rows}
 			/>,
 		);
-		const classes = [...html.matchAll(/<button[^>]*class="([^"]*)"/g)].map(
-			(m) => m[1] ?? "",
-		);
-		assert.ok(classes[0]?.includes("bg-success"));
-		assert.ok(!classes[1]?.includes("bg-success"));
+		const [matched, missed] = bandClasses(html);
+		assert.ok(matched?.includes("bg-success"));
+		assert.ok(!missed?.includes("bg-success"));
 	});
 
 	test("简历原文命中不是绿的，强度编码与点阵一致", () => {
@@ -133,16 +151,17 @@ describe("带子的几何", () => {
 				rows={rows}
 			/>,
 		);
-		const first = html.match(/<button[^>]*class="([^"]*)"/)?.[1] ?? "";
-		assert.ok(!first.includes("bg-success"));
-		assert.ok(first.includes("ring"));
+		const [first] = bandClasses(html);
+		assert.ok(!first?.includes("bg-success"));
+		assert.ok(first?.some((c) => c.startsWith("ring-")));
 	});
 
 	test("入职线按比例定位", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar hireDate="2020-01-01" hitIndex={new Map()} rows={rows} />,
 		);
-		assert.ok(html.includes("bg-foreground"));
+		// 2016-01 到 2024-01 共 96 个月，2020-01 在正中
+		assert.equal(hireLine(html)?.left, "50%");
 		assert.match(html, /入职 2020/);
 	});
 
@@ -150,7 +169,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar hireDate="1999-01-01" hitIndex={new Map()} rows={rows} />,
 		);
-		assert.ok(!html.includes("bg-foreground"));
+		assert.equal(hireLine(html), undefined);
 		assert.ok(!html.includes("入职"));
 	});
 

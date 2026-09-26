@@ -1,0 +1,167 @@
+/*
+ * 块序：外层、表、横向滚动的内容盒、单元格、表头、表体、表脚的基础样式，然后是圆角、
+ * 行的悬停与选中、尺寸；尺寸块放在最后，覆盖前面单元格与表脚的内边距。
+ *
+ * 表头、表脚和悬停行的底是 `--color-fill-alter-solid`（填充色叠在容器底色上的实色），
+ * 分隔线是 `--color-border-secondary`，表头圆角是 `--radius-lg`。
+ * 字号都是 `--text-base`；表头字重 600，过渡 0.2s。
+ *
+ * 单元格与表脚的内边距按三档写成 `:root` 上的组件令牌，设计系统在预览里改它们。
+ */
+
+:root {
+	--table-padding-block-small: 8px;
+	--table-padding-inline-small: 8px;
+	--table-padding-block-middle: 12px;
+	--table-padding-inline-middle: 8px;
+	--table-padding-block-large: 16px;
+	--table-padding-inline-large: 16px;
+}
+
+.ui-table-wrapper {
+	clear: both;
+	max-width: 100%;
+
+	&::before {
+		display: table;
+		content: "";
+	}
+
+	&::after {
+		display: table;
+		clear: both;
+		content: "";
+	}
+
+	.ui-table {
+		box-sizing: border-box;
+		margin: 0;
+		padding: 0;
+		color: var(--color-fg);
+		font-size: var(--text-base);
+		line-height: 1.5714285714285714;
+		list-style: none;
+		font-family: var(--font-sans);
+		background: var(--color-container);
+		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+		scrollbar-color: var(--color-fg-quaternary) var(--color-split);
+	}
+
+	.ui-table-content {
+		overflow-x: auto;
+	}
+
+	table {
+		width: 100%;
+		text-align: start;
+		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+		border-collapse: separate;
+		border-spacing: 0;
+	}
+
+	.ui-table-cell {
+		position: relative;
+		padding: var(--table-padding-block-large) var(--table-padding-inline-large);
+		overflow-wrap: break-word;
+	}
+
+	.ui-table-thead > tr > th {
+		position: relative;
+		color: var(--color-fg);
+		font-weight: 600;
+		text-align: start;
+		background: var(--color-fill-alter-solid);
+		border-bottom: 1px solid var(--color-border-secondary);
+		transition: background-color 0.2s var(--ease-out);
+
+		&:not(:last-child)::before {
+			position: absolute;
+			top: 50%;
+			inset-inline-end: 0;
+			width: 1px;
+			height: 1.6em;
+			background-color: var(--color-border-secondary);
+			transform: translateY(-50%);
+			transition: background-color 0.2s var(--ease-out);
+			content: "";
+		}
+	}
+
+	.ui-table-tbody > tr > td {
+		border-bottom: 1px solid var(--color-border-secondary);
+		transition:
+			background-color 0.2s var(--ease-out),
+			border-color 0.2s var(--ease-out);
+	}
+
+	.ui-table-footer {
+		padding: var(--table-padding-block-large) var(--table-padding-inline-large);
+		color: var(--color-fg);
+		background: var(--color-fill-alter-solid);
+	}
+}
+
+/* 圆角 */
+.ui-table-wrapper .ui-table {
+	.ui-table-container {
+		border-start-start-radius: var(--radius-lg);
+		border-start-end-radius: var(--radius-lg);
+
+		> .ui-table-content {
+			border-start-start-radius: var(--radius-lg);
+			border-start-end-radius: var(--radius-lg);
+		}
+
+		table > thead > tr:first-child {
+			> *:first-child {
+				border-start-start-radius: var(--radius-lg);
+			}
+
+			> *:last-child {
+				border-start-end-radius: var(--radius-lg);
+			}
+		}
+	}
+
+	.ui-table-footer {
+		border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+	}
+}
+
+/*
+ * 行的悬停与选中。悬停用 `:hover`，包在 `:where()` 里不增加特异性，选中行的底色
+ * 因此压得住悬停；选中的行是 `data-state="selected"`。
+ */
+.ui-table-wrapper .ui-table-tbody .ui-table-row {
+	&[data-state="selected"] > .ui-table-cell {
+		background: var(--color-primary-bg);
+
+		&:where(.ui-table-row:hover > *) {
+			background: var(--color-primary-bg-hover);
+		}
+	}
+
+	&:where(:hover) > .ui-table-cell {
+		background: var(--color-fill-alter-solid);
+	}
+}
+
+/* middle 与 small 两档，large 就是上面的默认。 */
+.ui-table-wrapper .ui-table.ui-table-size-middle {
+	font-size: var(--text-base);
+
+	.ui-table-footer,
+	.ui-table-cell {
+		padding: var(--table-padding-block-middle)
+			var(--table-padding-inline-middle);
+	}
+}
+
+.ui-table-wrapper .ui-table.ui-table-size-small {
+	font-size: var(--text-base);
+
+	.ui-table-footer,
+	.ui-table-cell {
+		padding: var(--table-padding-block-small) var(--table-padding-inline-small);
+	}
+}

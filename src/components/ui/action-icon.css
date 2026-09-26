@@ -1,0 +1,36 @@
+/*
+ * ActionIcon 的外观。块的先后是 root、active。
+ * 根块用 `&&` 把特异性抬到两个类名，压过按钮变体类里的字色。
+ *
+ * 两档方块边长写成 `:root` 上的组件令牌，`action-icon.tsx` 按档读它们；
+ * 设计系统在预览里改它们。
+ */
+
+:root {
+	--action-icon-size-small: 24px;
+	--action-icon-size-middle: 36px;
+}
+
+.ui-action-icon {
+	&& {
+		color: var(--color-fg-tertiary);
+	}
+
+	&&:hover {
+		color: var(--color-fg-secondary);
+	}
+
+	&&:active {
+		color: var(--color-fg);
+	}
+}
+
+.ui-action-icon-active {
+	color: var(--color-fg);
+	background: var(--color-fill-secondary);
+
+	&:hover {
+		color: var(--color-fg);
+		background: var(--color-fill);
+	}
+}

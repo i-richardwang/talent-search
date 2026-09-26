@@ -1,0 +1,33 @@
+/*
+ * 默认值定义在元素自己身上，嵌套的 Flexbox 不会继承外层的变量。整条规则包在 `:where()` 里，
+ * 特异性为零，用它的组件和调用处的类都压得过它。
+ */
+
+:where(.ui-flex) {
+	--ui-flex: 0 1 auto;
+	--ui-flex-direction: column;
+	--ui-flex-justify: flex-start;
+	--ui-flex-align: stretch;
+	--ui-flex-width: auto;
+	--ui-flex-height: auto;
+	--ui-flex-padding: 0;
+	--ui-flex-padding-inline: var(--ui-flex-padding);
+	--ui-flex-padding-block: var(--ui-flex-padding);
+	--ui-flex-gap: 0;
+
+	display: flex;
+
+	flex: var(--ui-flex);
+	flex-direction: var(--ui-flex-direction);
+	justify-content: var(--ui-flex-justify);
+	align-items: var(--ui-flex-align);
+
+	width: var(--ui-flex-width);
+	height: var(--ui-flex-height);
+
+	padding: var(--ui-flex-padding);
+	padding-inline: var(--ui-flex-padding-inline);
+	padding-block: var(--ui-flex-padding-block);
+
+	gap: var(--ui-flex-gap);
+}

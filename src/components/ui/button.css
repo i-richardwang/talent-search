@@ -1,0 +1,206 @@
+/*
+ * Button 的外观，类名以 `.ui-button` 开头。块的先后是层叠顺序：base、size、variant、
+ * block、icon-end、icon-only、outdent。外观块盖 base 的边框，icon-only
+ * 盖 size 的内边距。其后是图标与等待圈的部件：icon-box、spinner-slot、
+ * spinner-slot-show、spinner-slot-end；等待圈本身是 icon.css 的 `.ui-spinner`。
+ *
+ * 尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
+ */
+
+:root {
+	--button-gap: 6px;
+	--button-height-small: 24px;
+	--button-padding-small: 8px;
+	--button-font-size-small: 12px;
+	--button-height-middle: 32px;
+	--button-padding-middle: 14px;
+	--button-font-size-middle: 13px;
+}
+
+.ui-button {
+	cursor: pointer;
+	position: relative;
+	display: inline-flex;
+	gap: var(--button-gap);
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	border: 1px solid var(--color-border);
+	font-weight: 500;
+	line-height: 1;
+	text-decoration: none;
+	white-space: nowrap;
+	transition:
+		color 160ms var(--ease-soft),
+		background 160ms var(--ease-soft),
+		border-color 160ms var(--ease-soft),
+		box-shadow 160ms var(--ease-soft);
+
+	@apply focus-ring;
+
+	&:disabled,
+	&[aria-disabled="true"] {
+		pointer-events: none;
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+}
+
+.ui-button-size-small {
+	--button-padding-inline: var(--button-padding-small);
+
+	height: var(--button-height-small);
+	padding-inline: var(--button-padding-inline);
+	border-radius: var(--radius-sm);
+	font-size: var(--button-font-size-small);
+}
+
+.ui-button-size-middle {
+	--button-padding-inline: var(--button-padding-middle);
+
+	height: var(--button-height-middle);
+	padding-inline: var(--button-padding-inline);
+	border-radius: var(--radius-sm);
+	font-size: var(--button-font-size-middle);
+}
+
+.ui-button-variant-default {
+	background: var(--color-container);
+
+	&,
+	&:hover,
+	&:active {
+		color: var(--color-fg);
+	}
+
+	&:hover:not(:disabled, [aria-disabled="true"]) {
+		border-color: var(--color-primary-border);
+		color: var(--color-primary);
+	}
+}
+
+.ui-button-variant-primary {
+	border-color: var(--color-primary);
+	background: var(--color-primary);
+
+	&,
+	&:hover,
+	&:active {
+		color: var(--color-layout);
+	}
+
+	&:hover:not(:disabled, [aria-disabled="true"]) {
+		border-color: var(--color-primary-hover);
+		background: var(--color-primary-hover);
+	}
+
+	&:active:not(:disabled, [aria-disabled="true"]),
+	&&&[data-popup-open] {
+		border-color: var(--color-primary-active);
+		background: var(--color-primary-active);
+	}
+}
+
+.ui-button-variant-fill {
+	border-color: transparent;
+	background: var(--color-fill-tertiary);
+
+	&,
+	&:hover,
+	&:active {
+		color: var(--color-fg);
+	}
+
+	&:hover:not(:disabled, [aria-disabled="true"]) {
+		background: var(--color-fill-secondary);
+	}
+
+	&:active:not(:disabled, [aria-disabled="true"]) {
+		background: var(--color-fill);
+	}
+}
+
+.ui-button-variant-text {
+	border-color: transparent;
+	background: transparent;
+
+	&,
+	&:hover,
+	&:active {
+		color: var(--color-fg);
+	}
+
+	&:hover:not(:disabled, [aria-disabled="true"]) {
+		background: var(--color-fill-secondary);
+	}
+}
+
+.ui-button-variant-link {
+	padding-inline: 0;
+	border-color: transparent;
+	background: transparent;
+
+	&,
+	&:hover,
+	&:active {
+		color: var(--color-primary);
+	}
+
+	&:hover:not(:disabled, [aria-disabled="true"]) {
+		color: var(--color-primary-hover);
+		background: transparent;
+	}
+}
+
+.ui-button-block {
+	width: 100%;
+}
+
+.ui-button-icon-end {
+	flex-direction: row-reverse;
+}
+
+.ui-button-icon-only-small {
+	--button-padding-inline: 0px;
+
+	width: var(--button-height-small);
+	padding-inline: 0;
+}
+
+.ui-button-icon-only-middle {
+	--button-padding-inline: 0px;
+
+	width: var(--button-height-middle);
+	padding-inline: 0;
+}
+
+.ui-button-outdent {
+	margin-inline-start: calc(var(--button-padding-inline) * -1);
+}
+
+.ui-button-icon-box {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.ui-button-spinner-slot {
+	overflow: hidden;
+	width: 0;
+	margin-inline-end: -6px;
+	opacity: 0;
+	transition:
+		width 380ms var(--ease-snap),
+		margin 380ms var(--ease-snap),
+		opacity 260ms var(--ease-snap);
+}
+
+.ui-button-spinner-slot-show {
+	width: 12px;
+	margin-inline: 0;
+	opacity: 1;
+}
+
+.ui-button-spinner-slot-end {
+	margin-inline: -6px 0;
+}

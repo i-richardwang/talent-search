@@ -1,32 +1,16 @@
-import { DownloadIcon, InfoIcon, XIcon } from "lucide-react";
+import { DownloadIcon, XIcon } from "lucide-react";
 import { useState } from "react";
-import { Alert, AlertDescription } from "#/components/ui/alert";
-import { Badge } from "#/components/ui/badge";
+import { ActionIcon } from "#/components/ui/action-icon";
+import { Alert } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
-import {
-	Dialog,
-	DialogClose,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogPanel,
-	DialogPopup,
-	DialogTitle,
-	DialogTrigger,
-} from "#/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "#/components/ui/field";
 import { Form } from "#/components/ui/form";
-import {
-	Popover,
-	PopoverPopup,
-	PopoverTitle,
-	PopoverTrigger,
-} from "#/components/ui/popover";
+import { Modal } from "#/components/ui/modal";
+import { Popover } from "#/components/ui/popover";
+import { Tag } from "#/components/ui/tag";
 import {
 	Toolbar,
 	ToolbarButton,
-	ToolbarGroup,
 	ToolbarSeparator,
 } from "#/components/ui/toolbar";
 import { csvName, download, FIXED, toCsv } from "../-lib/csv";
@@ -43,9 +27,8 @@ import { reachOf } from "../-lib/view-params";
  * 一条「已选 0 人 · 清空 · 导出」，等于在屏幕上留一组既不可用也不会变化的按钮。
  *
  * 计数一段、操作一段，中间用 `ToolbarSeparator` 分开——这是 `Toolbar` 自带的分段
- * 方式（上游 `p-toolbar-1` 的排法），不是用间距拼出来的两组。浮层样式沿用 coss
- * 的浮层配方（`bg-popover` 配 `shadow-lg/5`），不另配更深的阴影：这一屏的层次由
- * 边框和这一档阴影区分。
+ * 方式，不是用间距拼出来的两组。它浮在名单上，用 `Toolbar` 自带的描边与投影，
+ * 不另配更深的阴影。
  */
 export function PickDock({
 	picks,
@@ -76,26 +59,24 @@ export function PickDock({
 		<div className="pointer-events-none sticky bottom-4 z-stick flex justify-center pt-4">
 			<Toolbar
 				aria-label="已选择的人"
-				className="pointer-events-auto items-center bg-popover shadow-lg/5 transition-[opacity,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0"
+				className="pointer-events-auto transition-[opacity,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0"
 			>
 				<Chosen chosen={chosen} onList={new Set(shownIds)} onRemove={remove} />
-				<ToolbarSeparator orientation="vertical" />
-				<ToolbarGroup>
-					<ToolbarButton
-						onClick={clear}
-						render={<Button size="sm" variant="ghost" />}
-					>
-						清空
-					</ToolbarButton>
-					<ExportDialog
-						loading={loading}
-						names={names}
-						onAll={onAll}
-						picked={chosen}
-						reach={reachOf(total)}
-						total={total}
-					/>
-				</ToolbarGroup>
+				<ToolbarSeparator />
+				<ToolbarButton
+					onClick={clear}
+					render={<Button size="small" type="text" />}
+				>
+					清空
+				</ToolbarButton>
+				<ExportDialog
+					loading={loading}
+					names={names}
+					onAll={onAll}
+					picked={chosen}
+					reach={reachOf(total)}
+					total={total}
+				/>
 			</Toolbar>
 		</div>
 	);
@@ -110,7 +91,7 @@ export function PickDock({
  * 也只能在这里移除，名单上没有他们的复选框。
  *
  * 默认不展开人名：姓名会随着选中人数增加不断挤压名单的宽度，而名单才是用户正在
- * 读的内容。需要时再打开浮层。它仍然是一个 ghost 按钮，这条工具栏上唯一的主按钮
+ * 读的内容。需要时再打开浮层。它仍然是一个无底按钮，这条工具栏上唯一的主按钮
  * 是右端的导出。
  *
  * 每行只写姓名。这份清单回答的是「选中的是哪几个人」；岗位、部门和证据属于名单
@@ -127,53 +108,55 @@ function Chosen({
 	onRemove: (empId: string) => void;
 }) {
 	return (
-		<Popover>
+		<Popover
+			className="max-h-(--available-height) w-64 overflow-y-auto"
+			content={
+				<>
+					{/* 标题不重复人数：那个数字就在上方 4px 处的按钮上 */}
+					<div className="mb-2 font-medium text-base text-fg">已选的人</div>
+					{/* 选中上百人也不必自己限高：浮层知道离屏幕边还有多少空间
+					    （`--available-height`），超出后在内部滚动。 */}
+					<ul className="flex flex-col gap-0.5">
+						{chosen.map((one) => (
+							<li className="flex items-center gap-2 ps-2" key={one.empId}>
+								<span className="min-w-0 flex-1 truncate text-base">
+									{one.name}
+								</span>
+								{!onList.has(one.empId) && (
+									<span className="shrink-0 text-fg-secondary text-xs">
+										不在名单上
+									</span>
+								)}
+								<ActionIcon
+									aria-label={`移除 ${one.name}`}
+									icon={XIcon}
+									onClick={() => onRemove(one.empId)}
+									size="small"
+								/>
+							</li>
+						))}
+					</ul>
+				</>
+			}
+			nativeButton
+			placement="bottomLeft"
+			popupProps={{ "aria-label": "已选的人" }}
+			trigger="click"
+		>
 			{/* 数字变化要播报，作为这次勾选的反馈。用 `aria-live` 而不是
 			    `role="status"`：它是一个按钮，按钮不能同时是状态区域。 */}
 			<ToolbarButton
 				render={
-					<PopoverTrigger
-						render={
-							<Button
-								aria-live="polite"
-								className="text-muted-foreground"
-								size="sm"
-								variant="ghost"
-							/>
-						}
+					<Button
+						aria-live="polite"
+						className="text-fg-secondary"
+						size="small"
+						type="text"
 					/>
 				}
 			>
-				已选 <b className="text-foreground tabular-nums">{chosen.length}</b> 人
+				已选 <b className="text-fg tabular-nums">{chosen.length}</b> 人
 			</ToolbarButton>
-			<PopoverPopup align="start" className="w-64">
-				{/* 标题不重复人数：那个数字就在上方 4px 处的按钮上 */}
-				<PopoverTitle className="mb-3 text-sm">已选的人</PopoverTitle>
-				{/* 选中上百人也不必自己限高：浮层知道离屏幕边还有多少空间
-				    （`--available-height`），超出后在内部滚动。 */}
-				<ul className="flex flex-col gap-0.5">
-					{chosen.map((one) => (
-						<li className="flex items-center gap-2 ps-2" key={one.empId}>
-							<span className="min-w-0 flex-1 truncate text-sm">
-								{one.name}
-							</span>
-							{!onList.has(one.empId) && (
-								<span className="shrink-0 text-muted-foreground text-xs">
-									不在名单上
-								</span>
-							)}
-							<Button
-								aria-label={`移除 ${one.name}`}
-								onClick={() => onRemove(one.empId)}
-								size="icon-xs"
-								variant="ghost"
-							>
-								<XIcon />
-							</Button>
-						</li>
-					))}
-				</ul>
-			</PopoverPopup>
 		</Popover>
 	);
 }
@@ -206,91 +189,75 @@ function ExportDialog({
 	const on = evidence && names.length > 0;
 
 	return (
-		<Dialog onOpenChange={setOpen} open={open}>
-			<ToolbarButton render={<DialogTrigger render={<Button size="sm" />} />}>
-				<DownloadIcon />
+		<>
+			<ToolbarButton
+				onClick={() => setOpen(true)}
+				render={<Button icon={DownloadIcon} size="small" type="primary" />}
+			>
 				导出 {picked.length} 人
 			</ToolbarButton>
-			<DialogPopup className="sm:max-w-md">
-				<DialogHeader>
-					<DialogTitle>导出这 {picked.length} 人</DialogTitle>
-					<DialogDescription>
+			<Modal
+				className="max-w-md"
+				okIcon={DownloadIcon}
+				okText="下载"
+				onCancel={() => setOpen(false)}
+				onOk={() => {
+					download(csvName(), toCsv(picked, names, on));
+					setOpen(false);
+				}}
+				open={open}
+				title={`导出这 ${picked.length} 人`}
+			>
+				<div className="flex flex-col gap-4">
+					<p className="text-fg-secondary">
 						一份 CSV，Excel 和飞书表格都打得开。
-					</DialogDescription>
-				</DialogHeader>
-				<Form
-					className="contents"
-					onSubmit={(event) => {
-						event.preventDefault();
-						download(csvName(), toCsv(picked, names, on));
-						setOpen(false);
-					}}
-				>
-					<DialogPanel className="flex flex-col gap-4">
-						<div className="flex flex-wrap gap-1.5">
-							{FIXED.map((col) => (
-								<Badge key={col} size="lg" variant="outline">
-									{col}
-								</Badge>
-							))}
-							{/* 主张那几列换个调子：它们是随这次查询变的，前面六列不是。
-							    两条主张可以同名（「增长」在职的和入职前的），key 只能是位置。 */}
-							{on &&
-								names.map((name, i) => (
-									<Badge key={String(i)} size="lg" variant="info">
-										{name}
-									</Badge>
-								))}
-						</div>
-						<Field>
-							<FieldLabel>
-								<Checkbox
-									checked={evidence}
-									disabled={names.length === 0}
-									onCheckedChange={setEvidence}
-								/>
-								每条条件一列，写上匹配证据
-							</FieldLabel>
-							<FieldDescription>
-								勾上之后，导出的表里会多出这次查询的每一条条件。
-							</FieldDescription>
-						</Field>
-						{/*
-						 * 选中的比能显示的少时，说清这份表里是谁，并给出把人补齐的那一下。
-						 *
-						 * 名单一页页长出来是名单自己的事，导出的份数不该由用户滚到哪儿
-						 * 决定，所以这里不报「还有多少人没加载」，而是把补齐做掉。
-						 */}
-						{picked.length < reach && (
-							<Alert variant="info">
-								<InfoIcon />
-								<AlertDescription className="flex flex-wrap items-baseline gap-x-2 gap-y-1.5">
-									<span className="min-w-0 flex-1">
-										这份表是你选择的 {picked.length} 人。符合条件的共 {total} 人
-										{total > reach && `，仅显示匹配度最高的 ${reach} 人`}。
-									</span>
-									<Button
-										className="shrink-0"
-										loading={loading}
-										onClick={onAll}
-										size="xs"
-										variant="outline"
-									>
-										选择全部 {reach} 人
-									</Button>
-								</AlertDescription>
-							</Alert>
-						)}
-					</DialogPanel>
-					<DialogFooter>
-						<DialogClose render={<Button variant="ghost" />}>取消</DialogClose>
-						<Button type="submit">
-							<DownloadIcon />
-							下载
-						</Button>
-					</DialogFooter>
-				</Form>
-			</DialogPopup>
-		</Dialog>
+					</p>
+					<div className="flex flex-wrap gap-1.5">
+						{FIXED.map((col) => (
+							<Tag key={col} variant="outlined">
+								{col}
+							</Tag>
+						))}
+						{/* 主张那几列换个调子：它们是随这次查询变的，前面六列不是。
+						    两条主张可以同名（「增长」在职的和入职前的），key 只能是位置。 */}
+						{on && names.map((name, i) => <Tag key={String(i)}>{name}</Tag>)}
+					</div>
+					<Form>
+						<Form.Field
+							desc="勾上之后，导出的表里会多出这次查询的每一条条件。"
+							label="每条条件一列，写上匹配证据"
+						>
+							<Checkbox
+								checked={evidence}
+								disabled={names.length === 0}
+								onChange={setEvidence}
+							/>
+						</Form.Field>
+					</Form>
+					{/*
+					 * 选中的比能显示的少时，说清这份表里是谁，并给出把人补齐的那一下。
+					 *
+					 * 名单一页页长出来是名单自己的事，导出的份数不该由用户滚到哪儿
+					 * 决定，所以这里不报「还有多少人没加载」，而是把补齐做掉。
+					 */}
+					{picked.length < reach && (
+						<Alert
+							action={
+								<Button loading={loading} onClick={onAll} size="small">
+									选择全部 {reach} 人
+								</Button>
+							}
+							title={
+								<>
+									这份表是你选择的 {picked.length} 人。符合条件的共 {total} 人
+									{total > reach && `，仅显示匹配度最高的 ${reach} 人`}。
+								</>
+							}
+							type="info"
+						/>
+					)}
+				</div>
+			</Modal>
+		</>
 	);
 }

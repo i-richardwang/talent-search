@@ -55,6 +55,20 @@ export const FAULT_COPY: Record<
 	},
 };
 
+/** 理解失败时名单那一列给的出路，各自按钮上的字。 */
+export const FAULT_EXIT_LABEL = {
+	retry: "重试",
+	keyword: "改用关键词搜索",
+} as const;
+
+export type FaultExit = keyof typeof FAULT_EXIT_LABEL;
+
+/** 这一环坏了给哪几条出路，按按钮的先后；一条都没有是空表。 */
+export function faultExits(fault: InterpretFault): FaultExit[] {
+	const copy = FAULT_COPY[fault];
+	return (["retry", "keyword"] as const).filter((exit) => copy[exit]);
+}
+
 /** 等理解时多久问一次走到哪一步了。一步是一次工具调用，秒级；再密只是白问。 */
 const TRACE_POLL_MS = 1000;
 

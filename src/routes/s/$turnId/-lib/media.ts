@@ -19,7 +19,7 @@ function subscribe(onChange: () => void) {
 /**
  * 够不够宽，让右栏常驻在名单旁边。
  *
- * 这个分界只有 JS 答得了：xl 以下详情是**模态**浮层、线程是一张 Sheet，而 CSS 能把
+ * 这个分界只有 JS 答得了：xl 以下详情是**模态**浮层、线程是一个抽屉，而 CSS 能把
  * 一个浮层藏起来，藏不掉它的焦点陷阱和滚动锁定——给 `Dialog` 加个 `xl:hidden` 会在
  * 桌面上留下一个看不见却抓着焦点、还锁着滚动的对话框，比没有模态更糟。所以宽窄两套
  * 容器只能二选一地渲染，选择权在这里。
@@ -29,7 +29,7 @@ function subscribe(onChange: () => void) {
  *
  * 代价是首帧可能拿宽屏那一套去画一台手机。没选人时它宽度为 0、什么都不画，
  * **但首屏可以直接落在某个人身上**（`/s/:id/p/:empId` 就是粘给同事的链接），
- * 那一帧会横着溢出。所以宽屏那块面板自己带一条 `max-xl:hidden`（route.tsx），
+ * 那一帧会横着溢出。所以右栏的槽带一条 `max-xl:hidden`（workspace-layout.tsx），
  * 断点与这里同值——JS 决定挂哪一套，CSS 兜住 JS 还没说话的那一帧。
  */
 export function useIsWide() {

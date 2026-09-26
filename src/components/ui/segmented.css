@@ -1,0 +1,133 @@
+/*
+ * 块的先后是层叠顺序，后面的块覆盖前面的：列表、列表的 block；选项、选项的 block、
+ * 选项的尺寸；其后是选项里的图标与文字，最后是垫在选中项下的指示块。
+ *
+ * 两档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
+ */
+
+:root {
+	--segmented-height-small: 26px;
+	--segmented-padding-small: 10px;
+	--segmented-font-size-small: 12px;
+	--segmented-height-middle: 32px;
+	--segmented-padding-middle: 12px;
+	--segmented-font-size-middle: 13px;
+}
+
+.ui-segmented-list {
+	position: relative;
+	display: inline-flex;
+	flex-wrap: nowrap;
+	gap: 4px;
+	align-items: center;
+	align-self: flex-start;
+	box-sizing: border-box;
+	padding: 3px;
+	border: 1px solid var(--color-fill-quaternary);
+	border-radius: var(--radius-lg);
+	background: var(--color-layout);
+}
+
+.ui-segmented-list-block {
+	display: flex;
+	align-self: stretch;
+	width: 100%;
+}
+
+.ui-segmented-item {
+	cursor: pointer;
+	user-select: none;
+	position: relative;
+	z-index: var(--z-index-raise);
+	display: inline-flex;
+	flex-shrink: 0;
+	gap: 6px;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	border: 0;
+	border-radius: var(--radius-md);
+	font-weight: 500;
+	color: var(--color-fg-secondary);
+	white-space: nowrap;
+	background: transparent;
+	outline: none;
+	transition:
+		color 120ms var(--ease-out),
+		transform 120ms var(--ease-out);
+
+	@apply focus-ring;
+
+	&:hover:not([data-disabled], [data-pressed]) {
+		color: var(--color-fg);
+	}
+
+	&:active:not([data-disabled]) {
+		transform: scale(0.98);
+	}
+
+	&[data-pressed] {
+		color: var(--color-fg);
+	}
+
+	&[data-disabled] {
+		cursor: not-allowed;
+		color: var(--color-fg-quaternary);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}
+
+.ui-segmented-item-block {
+	flex: 1 1 0;
+}
+
+.ui-segmented-item-middle {
+	height: var(--segmented-height-middle);
+	padding-inline: var(--segmented-padding-middle);
+	border-radius: var(--radius-md);
+	font-size: var(--segmented-font-size-middle);
+}
+
+.ui-segmented-item-small {
+	height: var(--segmented-height-small);
+	padding-inline: var(--segmented-padding-small);
+	border-radius: var(--radius-md);
+	font-size: var(--segmented-font-size-small);
+}
+
+.ui-segmented-item-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.ui-segmented-item-label {
+	display: inline-flex;
+	align-items: center;
+}
+
+.ui-segmented-indicator {
+	pointer-events: none;
+	position: absolute;
+	inset-block-start: var(--active-item-top);
+	inset-inline-start: var(--active-item-left);
+	width: var(--active-item-width);
+	height: var(--active-item-height);
+	border-radius: var(--radius-md);
+	background: var(--color-elevated);
+	box-shadow: none;
+	transition-timing-function: var(--ease-out);
+	transition-duration: 240ms;
+	transition-property: inset-inline-start, inset-block-start, width, height;
+
+	&:dir(rtl) {
+		inset-inline-start: var(--active-item-right);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}

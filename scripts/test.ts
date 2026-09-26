@@ -5,7 +5,14 @@ if (!databaseUrl) throw new Error("测试需要在 .env.local 中配置 DATABASE
 
 const child = spawnSync(
 	process.execPath,
-	["--no-env-file", "test", "--parallel", "tests/"],
+	[
+		"--no-env-file",
+		"test",
+		"--preload",
+		"./tests/design-system-sources.ts",
+		"--parallel",
+		"tests/",
+	],
 	{
 		env: {
 			DATABASE_URL: databaseUrl,

@@ -1,70 +1,82 @@
 "use client";
 
-import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
-import type React from "react";
+import {
+	Tooltip as BaseTooltip,
+	type TooltipPositionerProps as BaseTooltipPositionerProps,
+} from "@base-ui/react/tooltip";
+import type { ReactElement, ReactNode } from "react";
+import {
+	defaultPortalContainer,
+	triggerRender,
+	useFloatingLayer,
+} from "#/components/ui/floating";
 import { cn } from "#/lib/utils";
 
-export const TooltipCreateHandle: typeof TooltipPrimitive.createHandle =
-	TooltipPrimitive.createHandle;
+/*
+ * 文字提示，样式在 tooltip.css。在触发器上方居中，悬停或聚焦 400ms 后出现，
+ * 离开 100ms 后收起；没有 `title` 时直接返回 children。
+ * 触发器是单个元素，触发器的属性与 ref 合进它本身，不另包一层（见 floating.ts）。
+ *
+ * - 每个提示只有一个触发器，不在多个触发器之间共用浮层。
+ * - `className` 落在浮层（popup）上。
+ * - 不在弹出层里时 portal 到 `<body>`（见 floating.ts）。
+ * - 定位器的 z 值是弹层档 `--z-index-popup`（写在 tooltip.css）。
+ */
 
-export const TooltipProvider: typeof TooltipPrimitive.Provider =
-	TooltipPrimitive.Provider;
+const OPEN_DELAY = 400;
+const CLOSE_DELAY = 100;
 
-export const Tooltip: typeof TooltipPrimitive.Root = TooltipPrimitive.Root;
-
-export function TooltipTrigger(
-	props: TooltipPrimitive.Trigger.Props,
-): React.ReactElement {
-	return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
+export interface TooltipProps {
+	/** 触发器。 */
+	children: ReactElement;
+	className?: string;
+	positionerProps?: Omit<
+		BaseTooltipPositionerProps,
+		"className" | "style" | "children"
+	>;
+	title: ReactNode;
 }
 
-export function TooltipPopup({
-	className,
-	align = "center",
-	sideOffset = 4,
-	side = "top",
-	anchor,
+export function Tooltip({
 	children,
-	portalProps,
-	positionMethod,
-	...props
-}: TooltipPrimitive.Popup.Props & {
-	align?: TooltipPrimitive.Positioner.Props["align"];
-	side?: TooltipPrimitive.Positioner.Props["side"];
-	sideOffset?: TooltipPrimitive.Positioner.Props["sideOffset"];
-	anchor?: TooltipPrimitive.Positioner.Props["anchor"];
-	portalProps?: TooltipPrimitive.Portal.Props;
-	positionMethod?: TooltipPrimitive.Positioner.Props["positionMethod"];
-}): React.ReactElement {
+	title,
+	className,
+	positionerProps,
+}: TooltipProps) {
+	const floatingLayer = useFloatingLayer();
+
+	if (title == null) return children;
+
+	const child = children as ReactElement<Record<string, unknown>>;
+	// 子元素本身是某个弹层的触发器（带 aria-haspopup 与 id）时，提示的触发器沿用它的 id。
+	const popupTriggerId =
+		child.props["aria-haspopup"] !== undefined &&
+		typeof child.props.id === "string"
+			? child.props.id
+			: undefined;
+
 	return (
-		<TooltipPrimitive.Portal {...portalProps}>
-			<TooltipPrimitive.Positioner
-				align={align}
-				anchor={anchor}
-				className="z-50 h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
-				data-slot="tooltip-positioner"
-				positionMethod={positionMethod}
-				side={side}
-				sideOffset={sideOffset}
-			>
-				<TooltipPrimitive.Popup
-					className={cn(
-						"relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) text-balance rounded-md border bg-popover not-dark:bg-clip-padding text-popover-foreground text-xs shadow-md/5 transition-[width,height,scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 data-instant:duration-0 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
-						className,
-					)}
-					data-slot="tooltip-popup"
-					{...props}
+		<BaseTooltip.Root>
+			<BaseTooltip.Trigger
+				closeDelay={CLOSE_DELAY}
+				delay={OPEN_DELAY}
+				id={popupTriggerId}
+				render={triggerRender(children)}
+			/>
+			<BaseTooltip.Portal container={floatingLayer ?? defaultPortalContainer()}>
+				<BaseTooltip.Positioner
+					className="ui-tooltip-positioner"
+					side="top"
+					sideOffset={6}
+					{...positionerProps}
 				>
-					<TooltipPrimitive.Viewport
-						className="relative size-full overflow-clip px-(--viewport-inline-padding) py-1 [--viewport-inline-padding:--spacing(2)] data-instant:transition-none **:data-current:data-ending-style:opacity-0 **:data-current:data-starting-style:opacity-0 **:data-previous:data-ending-style:opacity-0 **:data-previous:data-starting-style:opacity-0 **:data-current:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:truncate **:data-current:opacity-100 **:data-previous:opacity-100 **:data-current:transition-opacity **:data-previous:transition-opacity"
-						data-slot="tooltip-viewport"
-					>
-						{children}
-					</TooltipPrimitive.Viewport>
-				</TooltipPrimitive.Popup>
-			</TooltipPrimitive.Positioner>
-		</TooltipPrimitive.Portal>
+					<BaseTooltip.Popup className={cn("ui-tooltip-popup", className)}>
+						<BaseTooltip.Viewport className="ui-tooltip-viewport">
+							{title}
+						</BaseTooltip.Viewport>
+					</BaseTooltip.Popup>
+				</BaseTooltip.Positioner>
+			</BaseTooltip.Portal>
+		</BaseTooltip.Root>
 	);
 }
-
-export { TooltipPopup as TooltipContent, TooltipPrimitive };

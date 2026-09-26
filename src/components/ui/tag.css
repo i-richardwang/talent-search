@@ -1,0 +1,70 @@
+/*
+ * 块的先后是层叠顺序：root、size（small、middle）、variant（filled、outlined），
+ * 其后是关闭钮 close。
+ *
+ * 两档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
+ */
+
+:root {
+	--tag-height-small: 20px;
+	--tag-padding-small: 4px;
+	--tag-height-middle: 22px;
+	--tag-padding-middle: 8px;
+}
+
+.ui-tag {
+	user-select: none;
+	display: inline-flex;
+	gap: 0.4em;
+	align-items: center;
+	justify-content: center;
+	width: fit-content;
+	margin: 0;
+	font-size: var(--text-xs);
+	line-height: 1.2;
+	color: var(--color-fg-secondary);
+	white-space: nowrap;
+
+	span {
+		margin: 0;
+		line-height: inherit;
+	}
+}
+
+.ui-tag-size-small {
+	height: var(--tag-height-small);
+	padding-inline: var(--tag-padding-small);
+	border-radius: 3px;
+}
+
+.ui-tag-size-middle {
+	height: var(--tag-height-middle);
+	padding-inline: var(--tag-padding-middle);
+	border-radius: 3px;
+}
+
+.ui-tag-variant-filled {
+	background: var(--color-fill-tertiary);
+}
+
+.ui-tag-variant-outlined {
+	border: 1px solid var(--color-border-secondary);
+	background: var(--color-container);
+}
+
+.ui-tag-close {
+	cursor: pointer;
+	display: inline-flex;
+	gap: 0;
+	align-items: center;
+	justify-content: center;
+	margin: 0;
+	padding: 0;
+	border: none;
+	color: var(--color-fg-tertiary);
+	background: none;
+
+	&:hover {
+		color: var(--color-fg);
+	}
+}

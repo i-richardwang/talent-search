@@ -36,7 +36,7 @@ import { type SourceConfig, sourceConfig } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
 import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
-import { pageAt } from "./paging";
+import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { configured, reviewJudge } from "./review";
 
 /** 运行记录一页几行。往前的那些翻页看（`/tasks?derive=3`）。 */
@@ -119,8 +119,6 @@ export type TaskRunView = {
  */
 export type TaskLane = {
 	kind: TaskKind;
-	/** 要的那一页，最新的一次在最前面 */
-	runs: TaskRunView[];
 	/**
 	 * 这一栏最近的那一次，不随翻到第几页变。
 	 *
@@ -128,17 +126,8 @@ export type TaskLane = {
 	 * 拿那一页的第一行来说，卡片就会报一个几天前的结果当现状。
 	 */
 	latest: TaskRunView | null;
-	/** 这一栏一共跑过几次 */
-	total: number;
-	/**
-	 * 给出的是第几页，从 1 起。
-	 *
-	 * 页码由这里定夺，不是照抄地址栏里的那个数：越界收回最后一页，否则翻过头
-	 * 就是一张空表（`listEmployees` 同一条规矩）。
-	 */
-	page: number;
-	/** 一共几页，至少一页 */
-	pages: number;
+	/** 要的那一页运行记录，最新的一次在最前面；页码由 `pageAt` 定夺，越界收回最后一页 */
+	runs: TablePage<TaskRunView>;
 };
 
 /** 每一栏要看第几页。没说的那一栏是第一页。 */
@@ -269,13 +258,10 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 	const lanes = TASK_KINDS.map((kind) => {
 		const head = heads.find((row) => row.kind === kind);
 		const total = head?.total ?? 0;
-		// 第几页、跳过多少行由 `pageAt` 定夺，三张管理页的表同一套算术
-		const at = pageAt(total, want[kind], RUNS_PAGE);
 		return {
+			at: pageAt(total, want[kind], RUNS_PAGE),
 			kind,
 			latest: head ? seen(head) : null,
-			page: at.page,
-			pages: at.pages,
 			total,
 		};
 	});
@@ -289,18 +275,25 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 			select *, row_number() over (partition by kind order by started_at desc, id desc) as n
 			from task_run
 		) recent
-		join unnest(${sql.param(lanes.map((lane) => lane.kind))}::text[], ${sql.param(
-			lanes.map((lane) => (lane.page - 1) * RUNS_PAGE),
-		)}::int[]) as want(kind, skip) on want.kind = recent.kind
-		where recent.n > want.skip and recent.n <= want.skip + ${RUNS_PAGE}
+		join unnest(
+			${sql.param(lanes.map((lane) => lane.kind))}::text[],
+			${sql.param(lanes.map((lane) => lane.at.offset))}::int[],
+			${sql.param(lanes.map((lane) => lane.at.limit))}::int[]
+		) as want(kind, skip, take) on want.kind = recent.kind
+		where recent.n > want.skip and recent.n <= want.skip + want.take
 		order by recent.started_at desc, recent.id desc`);
 
 	return {
 		corpus: await corpusCounts(),
 		judge: reviewJudge(),
-		lanes: lanes.map((lane) => ({
-			...lane,
-			runs: rows.filter((row) => row.kind === lane.kind).map(seen),
+		lanes: lanes.map(({ at, kind, latest, total }) => ({
+			kind,
+			latest,
+			runs: tablePage(
+				rows.filter((row) => row.kind === kind).map(seen),
+				total,
+				at,
+			),
 		})),
 		running: active,
 	};

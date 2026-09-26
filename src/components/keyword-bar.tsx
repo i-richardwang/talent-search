@@ -1,31 +1,22 @@
-import { SearchIcon } from "lucide-react";
-import { useImperativeHandle, useRef, useState, useTransition } from "react";
+import { Loader2, SearchIcon } from "lucide-react";
+import {
+	useEffect,
+	useImperativeHandle,
+	useRef,
+	useState,
+	useTransition,
+} from "react";
+import { AutoComplete } from "#/components/ui/auto-complete";
 import { Button } from "#/components/ui/button";
-import {
-	Combobox,
-	ComboboxChip,
-	ComboboxChips,
-	ComboboxChipsInput,
-	ComboboxItem,
-	ComboboxList,
-	ComboboxPopup,
-	ComboboxStatus,
-	ComboboxValue,
-} from "#/components/ui/combobox";
-import { Field, FieldDescription, FieldLabel } from "#/components/ui/field";
 import { Form } from "#/components/ui/form";
-import {
-	NumberField,
-	NumberFieldDecrement,
-	NumberFieldGroup,
-	NumberFieldIncrement,
-	NumberFieldInput,
-	NumberFieldScrubArea,
-} from "#/components/ui/number-field";
-import { Spinner } from "#/components/ui/spinner";
+import { Icon } from "#/components/ui/icon";
+import { InputNumber } from "#/components/ui/input";
+import { Tag } from "#/components/ui/tag";
 import {
 	type Condition,
 	conditionKey,
+	MAX_TERM_LEN,
+	MIN_TERM_LEN,
 	termOf,
 	VALUES_MAX,
 } from "#/search/condition";
@@ -110,11 +101,15 @@ export function KeywordBar({
 		initial.minMonths ? initial.minMonths / 12 : null,
 	);
 	const [busy, setBusy] = useState(false);
-	const whatInput = useRef<HTMLInputElement>(null);
+	const whatBox = useRef<HTMLDivElement>(null);
 
 	useImperativeHandle(ref, () => ({
-		focus: () => whatInput.current?.focus(),
+		focus: () => whatBox.current?.querySelector("input")?.focus(),
 	}));
+
+	useEffect(() => {
+		if (autoFocus) whatBox.current?.querySelector("input")?.focus();
+	}, [autoFocus]);
 
 	const keywords = withTyped({ ...picked, minMonths: monthsOf(years) }, typed);
 	const conditions = conditionsOfKeywords(keywords);
@@ -132,9 +127,9 @@ export function KeywordBar({
 
 	return (
 		<Form
-			className="flex w-full flex-col gap-4"
-			onSubmit={async (event) => {
-				event.preventDefault();
+			gap={0}
+			layout="vertical"
+			onFormSubmit={async () => {
 				if (same || busy) return;
 				setBusy(true);
 				try {
@@ -147,35 +142,32 @@ export function KeywordBar({
 				}
 			}}
 		>
-			<TermBox {...box("what")} autoFocus={autoFocus} inputRef={whatInput} />
-			<div className="grid gap-4 sm:grid-cols-[2fr_2fr_1fr]">
+			<TermBox {...box("what")} boxRef={whatBox} />
+			<div className="grid gap-x-4 sm:grid-cols-[2fr_2fr_1fr]">
 				<TermBox {...box("org")} />
 				<TermBox {...box("school")} />
-				{/* coss 的 Field + NumberField 组合（p-field-17）：标签是 NumberField 自己的
-				    ScrubArea，左右拖也能改数。 */}
-				<Field>
-					<NumberField
+				<Form.Field
+					desc={noWhat ? "请先填写经历或技能" : "每项经历分别计算"}
+					label="累计年限（至少）"
+				>
+					<InputNumber
 						disabled={noWhat}
 						min={0.5}
-						onValueChange={setYears}
+						onChange={setYears}
+						placeholder="不限"
 						step={0.5}
 						value={years}
-					>
-						<NumberFieldScrubArea label="累计年限（至少）" />
-						<NumberFieldGroup>
-							<NumberFieldDecrement />
-							<NumberFieldInput placeholder="不限" />
-							<NumberFieldIncrement />
-						</NumberFieldGroup>
-					</NumberField>
-					<FieldDescription>
-						{noWhat ? "请先填写经历或技能" : "每项经历分别计算"}
-					</FieldDescription>
-				</Field>
+					/>
+				</Form.Field>
 			</div>
 			<div>
-				<Button disabled={same} loading={busy} type="submit">
-					<SearchIcon />
+				<Button
+					disabled={same}
+					htmlType="submit"
+					icon={SearchIcon}
+					loading={busy}
+					type="primary"
+				>
 					搜索
 				</Button>
 			</div>
@@ -184,13 +176,16 @@ export function KeywordBar({
 }
 
 /**
- * 一个框：已选的词是 chip，敲字时下拉。照 Base UI 的 Async search (multiple)
- * 示例的做法：候选随敲字向服务端要（`suggestTerms`，所以 `filter={null}`，这里不
- * 过滤），换了字就作废上一问；已选的词留在列表里带勾，点一下去掉；查询中和
- * 出错说在 `ComboboxStatus` 里。
+ * 一个框：上面是敲字的输入框（`AutoComplete`），下面是已选的词，每个词是一个可关闭的
+ * 标签。候选随敲字向服务端要（`suggestTerms`，所以 `filter={null}`，本地不按字
+ * 过滤），换了字就作废上一问。列表第一项是敲的这几个字本身，旁边说明按它怎么搜；
+ * 库里没有的写法也能加。
  *
- * Combobox 本身只收列表里有的项，框里却要能加库里没有的写法：列表第一项永远是
- * 敲的这几个字本身（Base UI Creatable 示例的做法），回车就加上它。
+ * 选中一项（点、轻点，或方向键高亮后回车）就把它加成一个词：Autocomplete 选中时
+ * 默认把那一项填进输入框；这里接住 `item-press` 那次改字，加词并清空输入。
+ * 没有高亮项时回车加敲的字。敲的字不算一个词（太短或太长）时留在框里，说明里说
+ * 为什么。输入框空着时退格删最后一个词。查询中框尾转圈；查询出错、加满了说在
+ * 框下的说明里。
  */
 function TermBox({
 	field,
@@ -198,30 +193,31 @@ function TermBox({
 	onValuesChange,
 	typed,
 	onTypedChange,
-	autoFocus,
-	inputRef,
+	boxRef,
 }: {
 	field: KeywordField;
 	values: string[];
 	onValuesChange: (values: string[]) => void;
 	typed: string;
 	onTypedChange: (text: string) => void;
-	autoFocus?: boolean;
-	inputRef?: React.Ref<HTMLInputElement>;
+	boxRef?: React.Ref<HTMLDivElement>;
 }) {
 	const [found, setFound] = useState<Suggestion[]>([]);
 	const [failed, setFailed] = useState(false);
+	const [open, setOpen] = useState(false);
+	const [highlighted, setHighlighted] = useState(false);
+	const [rejected, setRejected] = useState<string | null>(null);
 	const [pending, startTransition] = useTransition();
 	const asking = useRef<AbortController | null>(null);
 	const q = typed.trim();
 	const full = values.length >= VALUES_MAX;
 
-	function ask(text: string, reason: string) {
+	function ask(text: string) {
 		onTypedChange(text);
+		setRejected(null);
 		asking.current?.abort();
 		const needle = text.trim();
-		// 选中一项时 Base UI 也会清空输入，那不是一次新的问
-		if (!needle || full || reason === "item-press") {
+		if (!needle || full) {
 			setFound([]);
 			setFailed(false);
 			return;
@@ -247,97 +243,108 @@ function TermBox({
 		});
 	}
 
+	/** 把一段字加成一个词；加不上时说为什么，字留在框里。 */
+	function add(text: string) {
+		const t = text.trim();
+		const term = termOf(t);
+		if (!term) {
+			setRejected(
+				t.length < MIN_TERM_LEN
+					? `「${t}」太短，至少 ${MIN_TERM_LEN} 个字。`
+					: `「${t.slice(0, 8)}…」太长，最多 ${MAX_TERM_LEN} 个字。`,
+			);
+			return;
+		}
+		if (full) return;
+		if (!values.includes(term)) onValuesChange([...values, term]);
+		setHighlighted(false);
+		ask("");
+	}
+
 	const asTyped = accepts(q) && !values.includes(q) && !full ? q : null;
-	const people = new Map(found.map((s) => [s.value, s.people]));
-	const items = [
-		...(asTyped ? [asTyped] : []),
-		...(full
-			? []
-			: found
-					.map((s) => s.value)
-					.filter((v) => v !== asTyped && !values.includes(v))),
-		...values,
+	const option = (value: string, note: string | null) => ({
+		label: (
+			<span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
+				<span className="min-w-0 truncate">{value}</span>
+				{note && (
+					<span className="shrink-0 text-fg-secondary text-xs">{note}</span>
+				)}
+			</span>
+		),
+		value,
+	});
+	const options = [
+		...(asTyped ? [option(asTyped, AS_TYPED[field])] : []),
+		...(full ? [] : found)
+			.filter((s) => s.value !== asTyped && !values.includes(s.value))
+			.map((s) => option(s.value, s.people != null ? `${s.people} 人` : null)),
 	];
 
-	const status = pending ? (
-		<span className="inline-flex items-center gap-2">
-			<Spinner />
-			正在查找
-		</span>
-	) : failed ? (
-		"暂无建议，可直接添加。"
-	) : full ? (
-		`最多 ${VALUES_MAX} 个，请先移除一个。`
-	) : !q && values.length === 0 ? (
-		"输入关键词，从建议中选择。"
-	) : null;
+	const shown = open && options.length > 0;
+
+	const desc =
+		rejected ??
+		(failed
+			? "暂无建议，可直接回车添加。"
+			: full
+				? `最多 ${VALUES_MAX} 个，请先移除一个。`
+				: FIELD_HINT[field]);
 
 	return (
-		<Field className="min-w-0">
-			<FieldLabel>{KEYWORD_LABEL[field]}</FieldLabel>
-			<Combobox
-				autoHighlight
-				filter={null}
-				inputValue={typed}
-				items={items}
-				multiple
-				onInputValueChange={(text, { reason }) => ask(text, reason)}
-				onValueChange={(next: string[]) => {
-					onValuesChange(next);
-					onTypedChange("");
-				}}
-				value={values}
-			>
-				<ComboboxChips>
-					<ComboboxValue>
-						{(chosen: string[]) => (
-							<>
-								{chosen.map((v) => (
-									<ComboboxChip
-										aria-label={v}
-										key={v}
-										removeProps={{ "aria-label": `移除 ${v}` }}
-									>
-										{v}
-									</ComboboxChip>
-								))}
-								<ComboboxChipsInput
-									autoFocus={autoFocus}
-									placeholder={chosen.length > 0 ? undefined : "输入关键词"}
-									ref={inputRef}
-								/>
-							</>
-						)}
-					</ComboboxValue>
-				</ComboboxChips>
-				<ComboboxPopup aria-busy={pending || undefined}>
-					<ComboboxStatus>{status}</ComboboxStatus>
-					<ComboboxList>
-						{(item: string) => {
-							const n = people.get(item);
-							const note =
-								item === asTyped
-									? AS_TYPED[field]
-									: n != null
-										? `${n} 人`
-										: null;
-							return (
-								<ComboboxItem key={item} value={item}>
-									<span className="flex items-baseline justify-between gap-3">
-										<span className="min-w-0 truncate">{item}</span>
-										{note && (
-											<span className="shrink-0 text-muted-foreground text-xs">
-												{note}
-											</span>
-										)}
-									</span>
-								</ComboboxItem>
-							);
-						}}
-					</ComboboxList>
-				</ComboboxPopup>
-			</Combobox>
-			<FieldDescription>{FIELD_HINT[field]}</FieldDescription>
-		</Field>
+		<Form.Field
+			className="min-w-0"
+			desc={desc}
+			label={KEYWORD_LABEL[field]}
+			ref={boxRef}
+		>
+			<div className="flex flex-col gap-2">
+				{/* 没有高亮项时的回车由这里加词；有高亮项时交给 Autocomplete 选中它 */}
+				<div
+					onKeyDownCapture={(event) => {
+						if (event.nativeEvent.isComposing) return;
+						if (event.key === "Enter" && !(shown && highlighted) && q) {
+							event.preventDefault();
+							event.stopPropagation();
+							add(typed);
+						} else if (
+							event.key === "Backspace" &&
+							!typed &&
+							values.length > 0
+						) {
+							onValuesChange(values.slice(0, -1));
+						}
+					}}
+				>
+					<AutoComplete
+						filter={null}
+						onChange={(text, details) =>
+							details.reason === "item-press" ? add(text) : ask(text)
+						}
+						onItemHighlighted={(item) => setHighlighted(item !== undefined)}
+						onOpenChange={setOpen}
+						open={shown}
+						options={options}
+						placeholder="输入关键词"
+						suffix={
+							pending ? <Icon icon={Loader2} size="small" spin /> : undefined
+						}
+						value={typed}
+					/>
+				</div>
+				{values.length > 0 && (
+					<div className="flex flex-wrap gap-1">
+						{values.map((v) => (
+							<Tag
+								closable
+								key={v}
+								onClose={() => onValuesChange(values.filter((x) => x !== v))}
+							>
+								{v}
+							</Tag>
+						))}
+					</div>
+				)}
+			</div>
+		</Form.Field>
 	);
 }

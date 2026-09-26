@@ -1,7 +1,5 @@
 import { createFileRoute, useLoaderData } from "@tanstack/react-router";
-import type { SearchMode } from "#/server/turn";
-import { ModeNav } from "./-components/mode-nav";
-import { ZeroState } from "./-components/zero-state";
+import { HomeScreen } from "./-components/home-screen";
 import { useCommit } from "./-lib/commit";
 
 /**
@@ -29,21 +27,13 @@ function Home() {
 	// （tests/product-copy.test.tsx 直出它，不搭 router）。
 	const { commit, error } = useCommit();
 	const { understanding } = useLoaderData({ from: "__root__" });
-	const { mode: asked } = Route.useSearch();
-	const mode: SearchMode =
-		understanding && asked !== "keyword" ? "conversation" : "keyword";
-
-	// 这一屏的正文就是那块输入面，它自己就是 `<main>`：没有名单、没有筛选，
-	// 也就没有第二块需要和它区分开的东西。换模式时整屏重来，敲到一半的字不带过去。
+	const { mode } = Route.useSearch();
 	return (
-		<main className="flex flex-1 flex-col" id="main" tabIndex={-1}>
-			<ZeroState
-				error={error}
-				key={mode}
-				mode={mode}
-				nav={understanding && <ModeNav />}
-				onQuery={commit}
-			/>
-		</main>
+		<HomeScreen
+			asked={mode}
+			error={error}
+			onQuery={commit}
+			understanding={understanding}
+		/>
 	);
 }

@@ -1,0 +1,60 @@
+/*
+ * Block 的外观，类名以 `.ui-block` 开头。块的先后是层叠顺序：root，variant（filled、
+ * outlined）、clickable、shadow、selected，最后是块里的覆盖链接 link。
+ */
+
+.ui-block {
+	position: relative;
+	border-radius: var(--radius-md);
+}
+
+.ui-block-filled {
+	background: var(--color-fill-tertiary);
+}
+
+.ui-block-outlined {
+	border: 1px solid var(--color-border-secondary);
+	background: var(--color-container);
+}
+
+.ui-block-clickable {
+	cursor: pointer;
+
+	&:hover {
+		border-color: var(--color-border);
+	}
+}
+
+.ui-block-shadow {
+	box-shadow: var(--elevation-edge);
+}
+
+/* 被选中的那一块：主色一侧最浅的底和边，悬停时不变。 */
+.ui-block-selected {
+	&,
+	&:hover {
+		border-color: var(--color-primary-border);
+		background: var(--color-primary-bg);
+	}
+}
+
+/*
+ * 覆盖链接：`::after` 铺满整块、圆角与块同档，焦点外框画在它上面，所以框住的是整块
+ * 而不是链接那几个字。外框读全站 `focus-ring` 的那组变量。
+ */
+.ui-block-link {
+	outline: none;
+
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		border-radius: var(--radius-md);
+	}
+
+	&:focus-visible::after {
+		outline: var(--focus-ring-width) solid var(--focus-ring-color);
+		outline-offset: var(--focus-ring-offset);
+		animation: var(--focus-ring-animation);
+	}
+}

@@ -111,6 +111,7 @@ bun run eval:extract
 bun run eval:review
 bun run db:push
 bun run verify       # 格式、类型、测试、生产构建
+bun run ui           # 设计系统：浏览、调整设计令牌与组件，导出改动
 ```
 
 `bun run test` 只从 `.env.local` 读取 `DATABASE_URL`，随后在不加载环境文件的子进程中运行。每个集成测试文件使用独立临时 schema 和进程内假模型，不会访问真实数据源或模型端点。
@@ -123,9 +124,10 @@ src/db/           Drizzle 表结构与数据库连接
 src/search/       查询契约、召回、排名、分面与结果类型
 src/server/       RPC、查询记录、后台任务和模型端点
 src/routes/       页面、路由私有组件与交互逻辑
-src/components/   跨页面产品组件与 coss UI 源码
+src/components/   跨页面产品组件与通用组件（ui/）
 src/lib/          与界面无关的跨层纯函数
 scripts/          命令行入口与验收工具
+scripts/design-system/  设计系统：令牌、组件与产品界面的展示页（`bun run ui`）
 evals/            合成验收样例；真实用例仅保存在本机
 tests/            单元、渲染与 Postgres 集成测试
 ```

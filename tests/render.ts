@@ -23,3 +23,18 @@ export function visibleText(html: string): string {
 		.replace(/\s+/g, " ")
 		.trim();
 }
+
+/**
+ * 每个元素的类名表，按 DOM 顺序。类名按空白切开逐个比：`text-fg` 是
+ * `text-fg-secondary` 的前缀，拿子串或正则去比整段 class 永远会命中。
+ */
+export function classLists(html: string): string[][] {
+	return [...html.matchAll(/<[a-z][^>]*?\bclass="([^"]*)"/g)].map((m) =>
+		(m[1] ?? "").split(/\s+/).filter(Boolean),
+	);
+}
+
+/** 第一个带某个类名的元素的完整类名表；没有就是 undefined。 */
+export function classesWith(html: string, name: string) {
+	return classLists(html).find((list) => list.includes(name));
+}

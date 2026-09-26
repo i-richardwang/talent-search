@@ -1,17 +1,24 @@
-import { ChevronDownIcon, EyeOffIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, EyeOffIcon } from "lucide-react";
 import { Button } from "#/components/ui/button";
 import {
-	Menu,
-	MenuCheckboxItem,
-	MenuGroup,
-	MenuGroupLabel,
-	MenuItem,
-	MenuPopup,
-	MenuRadioGroup,
-	MenuRadioItem,
-	MenuSeparator,
-	MenuTrigger,
-} from "#/components/ui/menu";
+	type DropdownItem,
+	DropdownMenuHeader,
+	DropdownMenuItemContent,
+	DropdownMenuItemDesc,
+	DropdownMenuItemIcon,
+	DropdownMenuItemLabel,
+	DropdownMenuItemLabelGroup,
+	DropdownMenuPopup,
+	DropdownMenuPortal,
+	DropdownMenuPositioner,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItemIndicator,
+	DropdownMenuRadioItemPrimitive,
+	DropdownMenuRoot,
+	DropdownMenuTrigger,
+	renderDropdownMenuItems,
+} from "#/components/ui/dropdown-menu";
+import { Icon } from "#/components/ui/icon";
 import { cn } from "#/lib/utils";
 import {
 	type Condition,
@@ -31,13 +38,11 @@ import {
 	partLabel,
 } from "#/search/condition-label";
 
-const MODE_VARIANT: Record<Mode, "secondary" | "outline"> = {
-	must: "secondary",
-	boost: "outline",
-	exclude: "outline",
+const MODE_TYPE: Record<Mode, "fill" | "default"> = {
+	must: "fill",
+	boost: "default",
+	exclude: "default",
 };
-
-const CHIP_SIZE = "xs" as const;
 
 const MODE_HINT: Record<Mode, string> = {
 	must: "只保留满足此条件的人",
@@ -47,7 +52,7 @@ const MODE_HINT: Record<Mode, string> = {
 
 const EXCLUDE_STYLE = "line-through";
 
-const OFF_STYLE = "border-dashed text-muted-foreground";
+const OFF_STYLE = "border-dashed text-fg-secondary";
 
 const MORE_GLYPH = "≈";
 
@@ -73,118 +78,118 @@ export function QueryChips({
 				const more = hasMore(chip);
 				const parts = partsOf(chip);
 				const wide = chip.off === "wide";
+				const actions: DropdownItem[] = [
+					...(parts.length > 1
+						? [
+								{ type: "divider" as const },
+								{
+									children: parts.map((part) => ({
+										key: `${part.key}\u0001${part.value}`,
+										label: `去掉「${partLabel(chip, part)}」`,
+										onClick: () => replaceAt(i, withoutPart(chip, part)),
+									})),
+									label:
+										chip.about === "experience" ? "同一段经历" : "任一满足即可",
+									type: "group" as const,
+								},
+							]
+						: []),
+					{ type: "divider" },
+					{
+						checked: !chip.off,
+						key: "on",
+						label: "启用",
+						onCheckedChange: (on) =>
+							replaceAt(i, withOff(chip, on ? null : "user")),
+						type: "switch",
+					},
+					{
+						danger: true,
+						key: "delete",
+						label: "删除条件",
+						onClick: () => replaceAt(i, null),
+					},
+				];
 				return (
-					<Menu key={conditionKey(chip)}>
-						<MenuTrigger
-							render={
-								<Button
-									aria-label={[
-										MODE_NAME[chip.mode],
-										label,
-										more && "等",
-										wide ? "太宽，已停用" : chip.off && "已停用",
-									]
-										.filter(Boolean)
-										.join("，")}
-									className={cn(
-										chip.mode === "exclude" && EXCLUDE_STYLE,
-										chip.off && OFF_STYLE,
+					<DropdownMenuRoot key={conditionKey(chip)}>
+						<DropdownMenuTrigger>
+							<Button
+								aria-label={[
+									MODE_NAME[chip.mode],
+									label,
+									more && "等",
+									wide ? "太宽，已停用" : chip.off && "已停用",
+								]
+									.filter(Boolean)
+									.join("，")}
+								className={cn(
+									chip.mode === "exclude" && EXCLUDE_STYLE,
+									chip.off && OFF_STYLE,
+								)}
+								size="small"
+								type={chip.off ? "default" : MODE_TYPE[chip.mode]}
+							>
+								{MODE_GLYPH[chip.mode] && (
+									<span className="font-mono text-fg-secondary">
+										{MODE_GLYPH[chip.mode]}
+									</span>
+								)}
+								<span>{label}</span>
+								{more && (
+									<span className="font-mono text-fg-secondary">
+										{MORE_GLYPH}
+									</span>
+								)}
+								{wide && <span>太宽</span>}
+								{chip.off && <Icon icon={EyeOffIcon} size="small" />}
+								<Icon icon={ChevronDownIcon} size="small" />
+							</Button>
+						</DropdownMenuTrigger>
+						<DropdownMenuPortal>
+							<DropdownMenuPositioner>
+								<DropdownMenuPopup>
+									{chip.off && (
+										<DropdownMenuHeader className="max-w-64 text-fg-secondary text-xs">
+											{wide
+												? "范围过大，几乎所有人都满足，已停用。请换一个更具体的词。"
+												: `已停用，重新启用后仍为「${MODE_NAME[chip.mode]}」。`}
+										</DropdownMenuHeader>
 									)}
-									size={CHIP_SIZE}
-									variant={chip.off ? "outline" : MODE_VARIANT[chip.mode]}
-								/>
-							}
-						>
-							{MODE_GLYPH[chip.mode] && (
-								<span className="font-mono text-muted-foreground">
-									{MODE_GLYPH[chip.mode]}
-								</span>
-							)}
-							<span>{label}</span>
-							{more && (
-								<span className="font-mono text-muted-foreground">
-									{MORE_GLYPH}
-								</span>
-							)}
-							{wide && <span>太宽</span>}
-							{chip.off && <EyeOffIcon />}
-							<ChevronDownIcon />
-						</MenuTrigger>
-						<MenuPopup align="start">
-							{chip.off && (
-								<>
-									<MenuGroup>
-										<MenuGroupLabel>
-											<span className="block max-w-64 whitespace-normal text-muted-foreground text-xs">
-												{wide
-													? "范围过大，几乎所有人都满足，已停用。请换一个更具体的词。"
-													: `已停用，重新启用后仍为「${MODE_NAME[chip.mode]}」。`}
-											</span>
-										</MenuGroupLabel>
-									</MenuGroup>
-									<MenuSeparator />
-								</>
-							)}
-							<MenuRadioGroup
-								onValueChange={(mode) =>
-									replaceAt(i, withMode(chip, mode as Mode))
-								}
-								value={chip.mode}
-							>
-								{modesOf(chip).map((mode) => (
-									<MenuRadioItem key={mode} value={mode}>
-										<span className="flex flex-col py-0.5">
-											<span className="text-sm">{MODE_NAME[mode]}</span>
-											<span className="text-muted-foreground text-xs">
-												{MODE_HINT[mode]}
-											</span>
-										</span>
-									</MenuRadioItem>
-								))}
-							</MenuRadioGroup>
-							{parts.length > 1 && (
-								<>
-									<MenuSeparator />
-									<MenuGroup>
-										<MenuGroupLabel>
-											{chip.about === "experience"
-												? "同一段经历"
-												: "任一满足即可"}
-										</MenuGroupLabel>
-										{parts.map((part) => (
-											<MenuItem
-												key={`${part.key}\u0001${part.value}`}
-												onClick={() => replaceAt(i, withoutPart(chip, part))}
+									<DropdownMenuRadioGroup
+										onValueChange={(mode) =>
+											replaceAt(i, withMode(chip, mode as Mode))
+										}
+										value={chip.mode}
+									>
+										{modesOf(chip).map((mode) => (
+											<DropdownMenuRadioItemPrimitive
+												key={mode}
+												label={MODE_NAME[mode]}
+												value={mode}
 											>
-												<span className="flex flex-1 items-baseline gap-2">
-													<span>{partLabel(chip, part)}</span>
-													<span className="ml-auto text-muted-foreground text-xs">
-														去掉
-													</span>
-												</span>
-											</MenuItem>
+												<DropdownMenuItemContent>
+													<DropdownMenuItemIcon>
+														<DropdownMenuRadioItemIndicator>
+															<Icon icon={CheckIcon} />
+														</DropdownMenuRadioItemIndicator>
+													</DropdownMenuItemIcon>
+													<DropdownMenuItemLabelGroup>
+														<DropdownMenuItemLabel>
+															{MODE_NAME[mode]}
+														</DropdownMenuItemLabel>
+														<DropdownMenuItemDesc>
+															{MODE_HINT[mode]}
+														</DropdownMenuItemDesc>
+													</DropdownMenuItemLabelGroup>
+												</DropdownMenuItemContent>
+											</DropdownMenuRadioItemPrimitive>
 										))}
-									</MenuGroup>
-								</>
-							)}
-							<MenuSeparator />
-							<MenuCheckboxItem
-								checked={!chip.off}
-								onCheckedChange={(on) =>
-									replaceAt(i, withOff(chip, on ? null : "user"))
-								}
-								variant="switch"
-							>
-								启用
-							</MenuCheckboxItem>
-							<MenuItem
-								onClick={() => replaceAt(i, null)}
-								variant="destructive"
-							>
-								删除条件
-							</MenuItem>
-						</MenuPopup>
-					</Menu>
+									</DropdownMenuRadioGroup>
+									{renderDropdownMenuItems(actions, { reserveIconSpace: true })}
+								</DropdownMenuPopup>
+							</DropdownMenuPositioner>
+						</DropdownMenuPortal>
+					</DropdownMenuRoot>
 				);
 			})}
 		</>

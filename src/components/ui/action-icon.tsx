@@ -1,0 +1,132 @@
+"use client";
+
+import type { CSSProperties } from "react";
+import { Button, type ButtonProps } from "#/components/ui/button";
+import { ICON_PRESET, Icon, type IconProps } from "#/components/ui/icon";
+import { Tooltip, type TooltipProps } from "#/components/ui/tooltip";
+import { cn } from "#/lib/utils";
+
+/*
+ * 一个正方形的 Button，字色是三级灰
+ * （平时 tertiary、悬停 secondary、按下 fg），样式在 action-icon.css。
+ * 尺寸两档 small / middle，方块边长是 action-icon.css 的组件令牌，圆角与图标读各自的档。
+ * 给了 `title` 就套一层提示，`tooltipProps`
+ * 转给它；提示本身不接指针。
+ * 传进来的 `tabIndex` 优先，没传时禁用取 -1、否则 0：放在 Toolbar 里时
+ * 漫游焦点靠 Toolbar 写的 `tabIndex`。
+ */
+
+type ActionIconSize = "small" | "middle";
+
+export interface ActionIconProps
+	extends Omit<
+		ButtonProps,
+		| "block"
+		| "children"
+		| "htmlType"
+		| "icon"
+		| "iconPosition"
+		| "outdent"
+		| "size"
+		| "title"
+		| "type"
+	> {
+	active?: boolean;
+	icon?: IconProps["icon"];
+	/** 只对 borderless：用负外边距抵掉方块比图标多出来的那半圈，让图标和行尾的字对齐。 */
+	outdent?: "end";
+	size?: ActionIconSize;
+	title?: TooltipProps["title"];
+	tooltipProps?: Omit<TooltipProps, "children" | "title">;
+	variant?: "borderless" | "filled";
+}
+
+/** 两档预设：方块边长是 action-icon.css 里的组件令牌，圆角用全局的圆角档。 */
+const PRESET = {
+	middle: {
+		blockSize: "var(--action-icon-size-middle)",
+		borderRadius: "var(--radius-sm)",
+	},
+	small: {
+		blockSize: "var(--action-icon-size-small)",
+		borderRadius: "var(--radius-xs)",
+	},
+} as const;
+
+/** 方块边长、圆角，以及 outdent 要抵掉的那半圈（方块减图标的一半）。 */
+function measure(size: ActionIconSize) {
+	const preset = PRESET[size];
+	return {
+		...preset,
+		outdent: `calc((${preset.blockSize} - ${ICON_PRESET[size]}px) / 2)`,
+	};
+}
+
+const BUTTON_TYPE = {
+	borderless: "text",
+	filled: "fill",
+} as const;
+
+export function ActionIcon({
+	active,
+	className,
+	disabled,
+	icon,
+	outdent,
+	size = "middle",
+	style,
+	title,
+	tooltipProps,
+	variant = "borderless",
+	...props
+}: ActionIconProps) {
+	const { blockSize, borderRadius, outdent: inset } = measure(size);
+	// 提示不给触发器起名字：没给 aria-label 时拿字符串的 title 当按钮的名字。
+	const ariaLabel =
+		props["aria-label"] ?? (typeof title === "string" ? title : undefined);
+	const outdentMargin: CSSProperties | undefined =
+		variant === "borderless" && outdent === "end"
+			? { marginInlineEnd: `calc(-1 * ${inset})` }
+			: undefined;
+	const button = (
+		<Button
+			{...props}
+			aria-label={ariaLabel}
+			className={cn(
+				"ui-action-icon",
+				active && "ui-action-icon-active",
+				className,
+			)}
+			disabled={disabled}
+			htmlType="button"
+			icon={
+				icon ? (
+					<Icon icon={icon} size={size} style={{ pointerEvents: "none" }} />
+				) : undefined
+			}
+			size={size}
+			style={{
+				...outdentMargin,
+				borderRadius,
+				height: blockSize,
+				width: blockSize,
+				...style,
+			}}
+			tabIndex={props.tabIndex ?? (disabled ? -1 : 0)}
+			type={BUTTON_TYPE[variant]}
+		/>
+	);
+	if (!title) return button;
+	return (
+		<Tooltip
+			title={title}
+			{...tooltipProps}
+			className={cn("pointer-events-none", tooltipProps?.className)}
+		>
+			{button}
+		</Tooltip>
+	);
+}
+
+/** 浮层触发器按它认出这是原生 `<button>`（见 `native-button.ts`）。 */
+ActionIcon.displayName = "ActionIcon";

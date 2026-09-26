@@ -1,0 +1,184 @@
+/*
+ * 块的先后：backdrop；popup、popup 的两个方位；panel、panel 的两个方位；其后是面板里的
+ * 部件，按 DOM 的先后：header、container-inner、title、extra、extra-floating、close、
+ * content、body-content。同一元素上的修饰类与基础类
+ * 特异性相同，写在后面才压得过基础类。进出场由 motion 放，这里不写过渡。
+ * 背板与浮层的 z 值用弹层档 `--z-index-popup`，后开的 portal 接在文档后面，压住先开的。
+ */
+
+.ui-drawer-backdrop {
+	position: fixed;
+	z-index: var(--z-index-popup);
+	inset: 0;
+
+	background: var(--color-mask);
+}
+
+.ui-drawer-popup {
+	pointer-events: none;
+
+	position: fixed;
+	z-index: var(--z-index-popup);
+
+	display: flex;
+
+	/* 尺寸在这里夹住而不在面板上：尺寸给大了是盒子变窄，面板不会离开贴着的那条边 */
+	max-width: 100dvw;
+	max-height: 100dvh;
+}
+
+.ui-drawer-popup-left {
+	inset-block: 0;
+	inset-inline-start: 0;
+}
+
+.ui-drawer-popup-right {
+	inset-block: 0;
+	inset-inline-end: 0;
+}
+
+.ui-drawer-panel {
+	pointer-events: auto;
+
+	position: relative;
+
+	overflow: hidden;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+
+	box-sizing: border-box;
+	min-width: 0;
+	min-height: 0;
+
+	background: var(--color-container);
+}
+
+/* 只圆朝着内容的两角，贴着视口的那条边保持直角 */
+.ui-drawer-panel-left {
+	border-inline-end: 1px solid var(--color-border);
+	border-start-end-radius: var(--radius-lg);
+	border-end-end-radius: var(--radius-lg);
+
+	box-shadow: var(--elevation-drawer-left);
+}
+
+.ui-drawer-panel-right {
+	border-inline-start: 1px solid var(--color-border);
+	border-start-start-radius: var(--radius-lg);
+	border-end-start-radius: var(--radius-lg);
+
+	box-shadow: var(--elevation-drawer-right);
+}
+
+.ui-drawer-header {
+	display: flex;
+	flex: none;
+	gap: 8px;
+	align-items: center;
+	justify-content: space-between;
+
+	min-height: 56px;
+	padding-block: 12px;
+	padding-inline: 16px;
+	border-block-end: 1px solid var(--color-split);
+}
+
+.ui-drawer-container-inner {
+	display: flex;
+	flex: 1;
+	gap: 8px;
+	align-items: center;
+	justify-content: space-between;
+
+	width: 100%;
+}
+
+.ui-drawer-title {
+	margin: 0;
+
+	font-size: 17px; /* 不在字阶上：抽屉标题比 16 的大号字再大一点 */
+	font-weight: 600;
+	line-height: 1.4;
+	color: var(--color-fg);
+	letter-spacing: -0.005em;
+}
+
+.ui-drawer-extra {
+	display: flex;
+	flex: none;
+	gap: 4px;
+	align-items: center;
+
+	margin-inline-end: -4px;
+}
+
+.ui-drawer-extra-floating {
+	position: absolute;
+	z-index: var(--z-index-raise);
+	inset-block-start: 12px;
+	inset-inline-end: 12px;
+
+	margin-inline-end: 0;
+}
+
+.ui-drawer-close {
+	cursor: pointer;
+
+	position: relative;
+
+	display: flex;
+	align-items: center;
+	justify-content: center;
+
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: none;
+	border-radius: var(--radius-md);
+
+	color: var(--color-fg-tertiary);
+
+	background: transparent;
+
+	transition:
+		color 160ms var(--ease-soft),
+		background 160ms var(--ease-soft),
+		transform 160ms var(--ease-soft);
+
+	/* 32px 的面补回 40px 的触控范围，不挤动头部的排布 */
+	&::after {
+		content: "";
+		position: absolute;
+		inset: -4px;
+	}
+
+	&:hover {
+		transform: scale(1.04);
+		color: var(--color-fg);
+		background: var(--color-fill-secondary);
+	}
+
+	&:active {
+		transform: scale(0.96);
+	}
+
+	@apply focus-ring;
+}
+
+.ui-drawer-content {
+	overflow: hidden auto;
+	display: flex;
+	flex: 1;
+	min-height: 0;
+}
+
+.ui-drawer-body-content {
+	display: flex;
+	flex-direction: column;
+
+	width: 100%;
+	min-height: 100%;
+	padding-block: 12px;
+	padding-inline: 16px;
+}

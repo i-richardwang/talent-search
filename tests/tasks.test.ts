@@ -22,7 +22,7 @@ const { runTask, tasksState, taskLog, derivePending } = await import(
 );
 const { phrasePlan } = await import("#/corpus/derive");
 const { groupIdentity } = await import("#/corpus/vocabulary");
-const { facts } = await import("#/routes/tasks");
+const { LANE_FACTS } = await import("#/routes/tasks/-lib/labels");
 const { acquireCorpusSession, corpusSessionActive } = await import(
 	"#/corpus/session"
 );
@@ -269,7 +269,7 @@ describe("同步与派生", () => {
 		assert.ok(run);
 		assert.equal(run.failure, null);
 
-		const runs = lane(await tasksState(), "review").runs;
+		const runs = lane(await tasksState(), "review").runs.rows;
 		assert.equal(runs[0]?.outcome, "done");
 		assert.equal(
 			runs.find((one) => one.id === stale.id)?.outcome,
@@ -383,33 +383,32 @@ test("运行记录一页一页地给，最近那一次不随翻页走", async ()
 	);
 
 	const first = lane(await tasksState(), kind);
-	assert.equal(first.total, 8);
-	assert.equal(first.pages, 2);
-	assert.equal(first.page, 1);
-	assert.equal(first.runs.length, 6);
-	assert.equal(first.latest?.id, first.runs[0]?.id);
+	assert.equal(first.runs.total, 8);
+	assert.equal(first.runs.pages, 2);
+	assert.equal(first.runs.page, 1);
+	assert.equal(first.runs.rows.length, 6);
+	assert.equal(first.latest?.id, first.runs.rows[0]?.id);
 
 	const second = lane(await tasksState({ sync: 2 }), kind);
-	assert.equal(second.page, 2);
-	assert.equal(second.runs.length, 2);
+	assert.equal(second.runs.page, 2);
+	assert.equal(second.runs.from, 7);
+	assert.equal(second.runs.rows.length, 2);
 	// 第二页接着第一页往前走，两页不重样，加起来就是全部
+	const both = [...first.runs.rows, ...second.runs.rows].map((one) => one.id);
 	assert.deepEqual(
-		[...first.runs, ...second.runs].map((one) => one.id),
-		[...first.runs, ...second.runs].map((one) => one.id).sort((a, b) => b - a),
+		both,
+		[...both].sort((a, b) => b - a),
 	);
-	assert.equal(
-		new Set([...first.runs, ...second.runs].map((o) => o.id)).size,
-		8,
-	);
+	assert.equal(new Set(both).size, 8);
 	// 卡片正面说的还是最近这一次
 	assert.equal(second.latest?.id, first.latest?.id);
 
 	// 越界收回最后一页，翻过头不该是一张空表
 	const beyond = lane(await tasksState({ sync: 999 }), kind);
-	assert.equal(beyond.page, 2);
-	assert.equal(beyond.runs.length, 2);
+	assert.equal(beyond.runs.page, 2);
+	assert.equal(beyond.runs.rows.length, 2);
 	// 翻一栏，别的两栏停在第一页
-	assert.equal(lane(await tasksState({ sync: 2 }), "review").page, 1);
+	assert.equal(lane(await tasksState({ sync: 2 }), "review").runs.page, 1);
 });
 
 describe("说法规划", () => {
@@ -527,14 +526,17 @@ describe("页面文案", () => {
 	});
 
 	test("解析那张卡片：有活的时候说还剩几条，没活的时候说已经全部解析", () => {
-		assert.match(facts.derive(corpus({ pending: 3 })), /还有 3 条经历待处理/);
-		assert.match(facts.derive(corpus()), /经历已全部处理/);
+		assert.match(
+			LANE_FACTS.derive(corpus({ pending: 3 })),
+			/还有 3 条经历待处理/,
+		);
+		assert.match(LANE_FACTS.derive(corpus()), /经历已全部处理/);
 	});
 	test("同步与整理那两张卡片说的是构成和结果", () => {
 		assert.match(
-			facts.sync(corpus()),
+			LANE_FACTS.sync(corpus()),
 			/8 人 · 10 条经历（公司内 6、入职前 4）/,
 		);
-		assert.match(facts.review(corpus()), /技能 9 个，已归并 2 种写法/);
+		assert.match(LANE_FACTS.review(corpus()), /技能 9 个，已归并 2 种写法/);
 	});
 });

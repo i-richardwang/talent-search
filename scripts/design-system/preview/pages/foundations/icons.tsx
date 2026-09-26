@@ -1,0 +1,162 @@
+import {
+	Activity,
+	ArrowUp,
+	Check,
+	ChevronDown,
+	Download,
+	EyeOff,
+	History,
+	ListChecks,
+	ListFilter,
+	Loader2,
+	type LucideIcon,
+	MessageSquareWarning,
+	MessagesSquare,
+	Plus,
+	RotateCw,
+	Search,
+	SearchX,
+	Table,
+	Tags,
+	UsersRound,
+	X,
+} from "lucide-react";
+import { Block } from "#/components/ui/block";
+import { Button } from "#/components/ui/button";
+import { ICON_PRESET, Icon } from "#/components/ui/icon";
+import { DocPage } from "../../kit/page";
+
+/**
+ * 产品页面（组件库以外）用到的每个图标和它在产品里的意思。一个意思只用一个图标，
+ * 一个图标只表一个意思；测试核对这张表和页面代码里的 lucide 导入一一对应。
+ */
+export const PRODUCT_ICONS: [
+	name: string,
+	icon: LucideIcon,
+	meaning: string,
+][] = [
+	["Search", Search, "搜索；表上方的找词框"],
+	["ArrowUp", ArrowUp, "发出这一句需求"],
+	["Loader2", Loader2, "正在处理，转圈"],
+	["SearchX", SearchX, "没有找到人"],
+	["MessageSquareWarning", MessageSquareWarning, "AI 没有整理出搜索条件"],
+	["RotateCw", RotateCw, "重试"],
+	["ListFilter", ListFilter, "筛选"],
+	["EyeOff", EyeOff, "停用的搜索条件"],
+	["ListChecks", ListChecks, "挑选候选人"],
+	["Download", Download, "导出名单"],
+	["Check", Check, "已选中的一项"],
+	["X", X, "关闭、移除、退出"],
+	["ChevronDown", ChevronDown, "展开选项"],
+	["Plus", Plus, "添加替代条件"],
+	["History", History, "最近的搜索"],
+	["MessagesSquare", MessagesSquare, "对话"],
+	["UsersRound", UsersRound, "人才搜索"],
+	["Table", Table, "数据"],
+	["Tags", Tags, "技能"],
+	["Activity", Activity, "任务"],
+];
+
+const TIERS = Object.entries(ICON_PRESET) as [
+	keyof typeof ICON_PRESET,
+	number,
+][];
+
+function Sizes() {
+	return (
+		<div className="grid grid-cols-3 gap-3.5 max-md:grid-cols-1">
+			{TIERS.map(([tier, px]) => (
+				<Block gap={14} key={tier} padding={20} variant="outlined">
+					<div className="flex h-12 items-center">
+						<Icon icon={Search} size={tier} />
+					</div>
+					<div className="flex flex-col gap-0.5 text-xs">
+						<code className="font-medium">{tier}</code>
+						<span className="text-fg-tertiary tabular-nums">
+							{px}px · 线宽 2
+						</span>
+					</div>
+				</Block>
+			))}
+			<Block gap={14} padding={20} variant="outlined">
+				<div className="flex h-12 items-center gap-1.5 text-sm">
+					<Icon icon={History} />
+					最近的搜索
+				</div>
+				<div className="flex flex-col gap-0.5 text-xs">
+					<code className="font-medium">不传</code>
+					<span className="text-fg-tertiary">1em，跟着所在的字号</span>
+				</div>
+			</Block>
+		</div>
+	);
+}
+
+function Vocabulary() {
+	return (
+		<div className="grid grid-cols-3 gap-2 max-lg:grid-cols-2 max-md:grid-cols-1">
+			{PRODUCT_ICONS.map(([name, icon, meaning]) => (
+				<Block
+					align="center"
+					gap={12}
+					horizontal
+					key={name}
+					padding={12}
+					variant="outlined"
+				>
+					<Icon icon={icon} size="middle" />
+					<div className="flex min-w-0 flex-col gap-0.5 text-xs">
+						<span className="font-medium">{meaning}</span>
+						<code className="text-fg-tertiary">{name}</code>
+					</div>
+				</Block>
+			))}
+		</div>
+	);
+}
+
+function InButtons() {
+	return (
+		<Block gap={16} padding={20} variant="outlined">
+			<div className="flex flex-wrap items-center gap-2">
+				<Button icon={Download} type="primary">
+					导出名单
+				</Button>
+				<Button icon={RotateCw}>重试</Button>
+				<Button icon={ListFilter} size="small">
+					筛选
+				</Button>
+			</div>
+			<p className="text-fg-secondary text-xs">
+				按钮里的图标由按钮按 small 画，和文字之间的距离是按钮令牌里的图文间距。
+			</p>
+		</Block>
+	);
+}
+
+/** 图标：两档预设尺寸与跟随字号，以及产品页面里每个图标的意思。 */
+export function IconsPage() {
+	return (
+		<DocPage
+			facts={[
+				`${TIERS.length} 档预设尺寸`,
+				"跟随字号",
+				`${PRODUCT_ICONS.length} 个产品图标`,
+			]}
+			rules={{
+				notes: [
+					"图标只来自 lucide-react，经 Icon、Button 的 icon 或 ActionIcon 画，不直接写 svg。",
+					"一个意思只用一个图标：要表达上面列过的意思，就用上面那个图标。",
+					"新的意思先加到这张表里，测试会核对页面代码里的导入。",
+					"只有图标的按钮用 ActionIcon，并给 title。",
+				],
+				usage: `<Icon icon={Search} size="small" />`,
+			}}
+			sections={[
+				{ children: <Sizes />, id: "sizes", title: "尺寸" },
+				{ children: <Vocabulary />, id: "vocabulary", title: "产品图标" },
+				{ children: <InButtons />, id: "buttons", title: "在按钮里" },
+			]}
+		/>
+	);
+}

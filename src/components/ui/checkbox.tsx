@@ -1,68 +1,89 @@
 "use client";
 
-import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
-import type React from "react";
+import { Checkbox as BaseCheckbox } from "@base-ui/react/checkbox";
+import { CheckboxGroup as BaseCheckboxGroup } from "@base-ui/react/checkbox-group";
+import { CheckIcon, MinusIcon } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
 import { cn } from "#/lib/utils";
 
+/*
+ * 复选框与复选框组，样式在 checkbox.css。方框边长 16px。没有 children 时只渲染方框，
+ * `className` 落在方框上；有 children 时外面包一层 `<label>`，`className` 落在这层上。
+ * 标签文字是一个 `<span>`，平时与禁用的两种颜色写在 checkbox.css。
+ * `CheckboxGroup` 只持有取值，不带布局：选项由调用处自己排（一行里还有计数、
+ * 折起的选项、全选框）。
+ */
+
+type BaseCheckboxProps = Omit<
+	ComponentProps<typeof BaseCheckbox.Root>,
+	"className" | "style" | "render" | "children" | "onCheckedChange"
+>;
+
+interface CheckboxProps extends BaseCheckboxProps {
+	children?: ReactNode;
+	className?: string;
+	onChange?: (checked: boolean) => void;
+}
+
 export function Checkbox({
+	children,
 	className,
-	...props
-}: CheckboxPrimitive.Root.Props): React.ReactElement {
-	return (
-		<CheckboxPrimitive.Root
-			className={cn(
-				"relative inline-flex size-4.5 shrink-0 items-center justify-center rounded-[.25rem] border border-input bg-background not-dark:bg-clip-padding shadow-xs/5 outline-none ring-ring transition-shadow before:pointer-events-none before:absolute before:inset-0 before:rounded-[3px] not-data-disabled:not-data-checked:not-aria-invalid:before:shadow-[0_1px_--theme(--color-black/4%)] focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-background aria-invalid:border-destructive/36 focus-visible:aria-invalid:border-destructive/64 focus-visible:aria-invalid:ring-destructive/48 data-disabled:cursor-not-allowed data-disabled:opacity-64 sm:size-4 dark:not-data-checked:bg-input/32 dark:aria-invalid:ring-destructive/24 dark:not-data-disabled:not-data-checked:not-aria-invalid:before:shadow-[0_-1px_--theme(--color-white/6%)] [[data-disabled],[data-checked],[aria-invalid]]:shadow-none",
-				className,
-			)}
-			data-slot="checkbox"
-			{...props}
+	onChange,
+	disabled,
+	...rest
+}: CheckboxProps) {
+	const box = (
+		<BaseCheckbox.Root
+			className={cn("ui-checkbox", !children && className)}
+			disabled={disabled}
+			onCheckedChange={onChange}
+			{...rest}
 		>
-			<CheckboxPrimitive.Indicator
-				className="absolute -inset-px flex items-center justify-center rounded-[.25rem] text-primary-foreground data-unchecked:hidden data-checked:bg-primary data-indeterminate:text-foreground"
-				data-slot="checkbox-indicator"
-				render={(
-					props: React.ComponentProps<"span">,
-					state: CheckboxPrimitive.Indicator.State,
-				) => (
+			{/* 半选按 Base UI 的状态画：全选框（`parent`）的半选由复选框组算出。 */}
+			<BaseCheckbox.Indicator
+				className="ui-checkbox-indicator"
+				render={(props, state) => (
 					<span {...props}>
 						{state.indeterminate ? (
-							<svg
-								aria-hidden="true"
-								className="size-3.5 sm:size-3"
-								fill="none"
-								height="24"
-								stroke="currentColor"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								strokeWidth="3"
-								viewBox="0 0 24 24"
-								width="24"
-								xmlns="http://www.w3.org/2000/svg"
-							>
-								<path d="M5.252 12h13.496" />
-							</svg>
+							<MinusIcon size={12} strokeWidth={3} />
 						) : (
-							<svg
-								aria-hidden="true"
-								className="size-3.5 sm:size-3"
-								fill="none"
-								height="24"
-								stroke="currentColor"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								strokeWidth="3"
-								viewBox="0 0 24 24"
-								width="24"
-								xmlns="http://www.w3.org/2000/svg"
-							>
-								<path d="M5.252 12.7 10.2 18.63 18.748 5.37" />
-							</svg>
+							<CheckIcon size={12} strokeWidth={3} />
 						)}
 					</span>
 				)}
 			/>
-		</CheckboxPrimitive.Root>
+		</BaseCheckbox.Root>
+	);
+
+	if (!children) return box;
+
+	return (
+		// biome-ignore lint/a11y/noLabelWithoutControl: 方框就是这层标签里的控件
+		<label className={cn("ui-checkbox-label", className)}>
+			{box}
+			<span
+				className={cn(
+					"ui-checkbox-text",
+					disabled && "ui-checkbox-text-secondary",
+				)}
+			>
+				{children}
+			</span>
+		</label>
 	);
 }
 
-export { CheckboxPrimitive };
+type BaseCheckboxGroupProps = Omit<
+	ComponentProps<typeof BaseCheckboxGroup>,
+	"className" | "style" | "render" | "children" | "onValueChange" | "onChange"
+>;
+
+interface CheckboxGroupProps extends BaseCheckboxGroupProps {
+	children?: ReactNode;
+	className?: string;
+	onChange?: (value: string[]) => void;
+}
+
+export function CheckboxGroup({ onChange, ...rest }: CheckboxGroupProps) {
+	return <BaseCheckboxGroup onValueChange={onChange} {...rest} />;
+}

@@ -1,4 +1,4 @@
-import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
+import { Tooltip } from "#/components/ui/tooltip";
 import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { routeLabel, type Strength, strengthOf } from "#/search/evidence";
@@ -22,15 +22,15 @@ const STRENGTH_HINT: Record<Strength, string> = {
 
 const DOT_FILL: Record<Strength, string> = {
 	controlled: "bg-success",
-	org: "bg-muted-foreground/60",
-	claimed: "bg-transparent ring-1 ring-muted-foreground/50 ring-inset",
+	org: "bg-fg-tertiary",
+	claimed: "bg-transparent ring-1 ring-fg-tertiary ring-inset",
 };
 
 /** 时间带中的 claimed 需要可见底色，不能复用点阵的空心样式。 */
 export const BAND_FILL: Record<Strength, string> = {
 	controlled: "bg-success",
-	org: "bg-muted-foreground/60",
-	claimed: "bg-muted ring-1 ring-muted-foreground/40 ring-inset",
+	org: "bg-fg-tertiary",
+	claimed: "bg-fill-tertiary ring-1 ring-fg-quaternary ring-inset",
 };
 
 export function Dot({
@@ -55,15 +55,17 @@ export function Dot({
 export function StrengthLegend() {
 	return (
 		<dl className="flex flex-wrap items-center gap-x-4 gap-y-1">
-			<dt className="label text-muted-foreground">匹配来源</dt>
+			<dt className="text-xs font-medium text-fg-secondary">匹配来源</dt>
 			{(["controlled", "org", "claimed"] as const).map((s) => (
-				<dd className="text-muted-foreground text-xs" key={s}>
-					<Tooltip>
-						<TooltipTrigger className="flex cursor-help items-center gap-1.5">
+				<dd className="text-fg-secondary text-xs" key={s}>
+					<Tooltip title={STRENGTH_HINT[s]}>
+						<button
+							className="flex cursor-help items-center gap-1.5"
+							type="button"
+						>
 							<Dot strength={s} />
 							{STRENGTH_LABEL[s]}
-						</TooltipTrigger>
-						<TooltipPopup>{STRENGTH_HINT[s]}</TooltipPopup>
+						</button>
 					</Tooltip>
 				</dd>
 			))}
@@ -127,7 +129,7 @@ export function EvidenceLine({
 }) {
 	const head = (
 		<span className="flex min-w-0 items-center gap-1.5">
-			{boost && <span className="font-mono text-muted-foreground">+</span>}
+			{boost && <span className="font-mono text-fg-secondary">+</span>}
 			<span className="truncate">{name}</span>
 		</span>
 	);
@@ -136,31 +138,29 @@ export function EvidenceLine({
 	const ongoing = basis.endDate === null;
 
 	return (
-		<div className="flex items-baseline gap-2.5 text-sm">
+		<div className="flex items-baseline gap-2.5 text-base">
 			<Dot className="translate-y-1" strength={strengthOf(hit.route)} />
 			<span className={cn(NAME_W, "shrink-0")}>{head}</span>
 			<span className="flex min-w-0 flex-1 items-baseline gap-1.5">
 				{byOther(name, hit) && (
-					<span className="shrink-0 text-muted-foreground text-xs">
+					<span className="shrink-0 text-fg-secondary text-xs">
 						{MATCHED_BY} {hit.value}
 					</span>
 				)}
 				{field.label ? (
-					<span className="shrink-0 text-muted-foreground text-xs">
+					<span className="shrink-0 text-fg-secondary text-xs">
 						{field.label}
 					</span>
 				) : null}
 				{field.value === null ? (
-					<span className="min-w-0 truncate text-muted-foreground">
+					<span className="min-w-0 truncate text-fg-secondary">
 						{field.context}
 					</span>
 				) : (
 					<span className="min-w-0 truncate">
 						{field.value}
 						{field.context && (
-							<span className="ml-2 text-muted-foreground">
-								{field.context}
-							</span>
+							<span className="ml-2 text-fg-secondary">{field.context}</span>
 						)}
 					</span>
 				)}
@@ -168,10 +168,10 @@ export function EvidenceLine({
 			<span
 				className={cn(
 					"shrink-0 whitespace-nowrap tabular-nums",
-					ongoing ? "text-foreground" : "text-muted-foreground",
+					ongoing ? "text-fg" : "text-fg-secondary",
 				)}
 			>
-				<span className="text-muted-foreground">
+				<span className="text-fg-secondary">
 					{basis.external ? "入职前 " : "公司内 "}
 				</span>
 				{years(basis.months)}
@@ -183,7 +183,7 @@ export function EvidenceLine({
 export function MissedClaims({ names }: { names: string[] }) {
 	if (names.length === 0) return null;
 	return (
-		<div className="flex items-baseline gap-2.5 text-muted-foreground text-sm">
+		<div className="flex items-baseline gap-2.5 text-fg-secondary text-base">
 			<Dot className="translate-y-1" strength={undefined} />
 			<span className={cn(NAME_W, "shrink-0")}>未命中</span>
 			<span className="min-w-0 flex-1 truncate">{names.join("、")}</span>

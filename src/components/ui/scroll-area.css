@@ -1,0 +1,141 @@
+/*
+ * 各块挂在各自的元素上，按 DOM 的先后排：root、viewport、淡出、scrollbar、thumb。
+ *
+ * 顶层注册淡出用的两个自定义属性，让它们在滚动驱动的动画里连续插值。原生 CSS 的嵌套里
+ * 不能写 `@keyframes`，关键帧都放在顶层。
+ */
+
+@property --ui-scroll-area-fade-top {
+	inherits: true;
+	initial-value: 0;
+	syntax: "<length>";
+}
+
+@property --ui-scroll-area-fade-bottom {
+	inherits: true;
+	initial-value: 0;
+	syntax: "<length>";
+}
+
+@keyframes ui-scroll-area-fade-top-in {
+	from {
+		--ui-scroll-area-fade-top: 0;
+	}
+
+	to {
+		--ui-scroll-area-fade-top: var(--ui-scroll-area-fade-size);
+	}
+}
+
+@keyframes ui-scroll-area-fade-bottom-out {
+	from {
+		--ui-scroll-area-fade-bottom: var(--ui-scroll-area-fade-size);
+	}
+
+	to {
+		--ui-scroll-area-fade-bottom: 0;
+	}
+}
+
+.ui-scroll-area {
+	position: relative;
+	box-sizing: border-box;
+}
+
+.ui-scroll-area-viewport {
+	position: relative;
+	overscroll-behavior: auto;
+	height: 100%;
+	outline: none;
+
+	@apply focus-ring;
+
+	/* 焦点环画在内侧，理由见 scroll-area.tsx。 */
+	&:focus-visible {
+		outline-offset: -2px;
+	}
+}
+
+.ui-scroll-area-viewport-fade {
+	--scroll-area-overflow-y-start: inherit;
+	--scroll-area-overflow-y-end: inherit;
+	--ui-scroll-area-fade-size: 40px;
+	--ui-scroll-area-fade-top: min(
+		var(--ui-scroll-area-fade-size),
+		var(--scroll-area-overflow-y-start, 0px)
+	);
+	--ui-scroll-area-fade-bottom: min(
+		var(--ui-scroll-area-fade-size),
+		var(--scroll-area-overflow-y-end, 0px)
+	);
+
+	/* 用遮罩淡出内容本身，底下是背景图时也成立。 */
+	mask-image: linear-gradient(
+		to bottom,
+		transparent 0,
+		#000 var(--ui-scroll-area-fade-top),
+		#000 calc(100% - var(--ui-scroll-area-fade-bottom)),
+		transparent 100%
+	);
+	mask-repeat: no-repeat;
+	mask-size: 100% 100%;
+
+	/* 支持滚动驱动的动画时，淡出的深浅按离两端的距离（头尾各 40px）走，滚到头不会跳变。 */
+	@supports (animation-timeline: scroll()) {
+		animation-name: ui-scroll-area-fade-top-in, ui-scroll-area-fade-bottom-out;
+		animation-duration: 1ms, 1ms;
+		animation-timing-function: linear, linear;
+		animation-fill-mode: both, both;
+		animation-timeline: scroll(self y), scroll(self y);
+
+		animation-range:
+			0 var(--ui-scroll-area-fade-size),
+			calc(100% - var(--ui-scroll-area-fade-size)) 100%;
+	}
+}
+
+.ui-scroll-area-scrollbar {
+	pointer-events: none;
+
+	width: 3px;
+	margin: 3px;
+	border-radius: var(--radius-sm);
+
+	opacity: 0;
+	background: transparent;
+
+	transition:
+		opacity 150ms var(--ease-out),
+		width 150ms var(--ease-out);
+
+	/* 条两侧各放宽到 16px 的指针感应区。 */
+	&::before {
+		content: "";
+		position: absolute;
+		inset-inline-start: 50%;
+		transform: translateX(-50%);
+		width: 16px;
+		height: 100%;
+	}
+
+	&[data-scrolling] {
+		transition-duration: 0ms, 150ms;
+	}
+
+	&[data-hovering],
+	&[data-scrolling] {
+		pointer-events: auto;
+		opacity: 1;
+	}
+
+	&:hover {
+		width: 6px;
+	}
+}
+
+.ui-scroll-area-thumb {
+	width: 100%;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--color-fg-quaternary);
+}

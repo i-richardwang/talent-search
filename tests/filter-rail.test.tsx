@@ -16,7 +16,7 @@ import { FilterRail } from "#/routes/s/$turnId/-components/filter-rail";
 import { filterFields, textFilters } from "#/routes/s/$turnId/-lib/filters";
 import type { View } from "#/routes/s/$turnId/-lib/view-params";
 import type { Facets } from "#/search/result";
-import { visibleText } from "./render";
+import { classLists, visibleText } from "./render";
 
 const SEQ = Array.from({ length: 9 }, (_, i) => ({
 	value: { l1: "技术", l2: `序列${i}` },
@@ -204,10 +204,9 @@ describe("清除", () => {
 	 * 所以只能验那个类名。
 	 */
 	test("一项都没筛的时候，清除占着位子但不出面", () => {
-		assert.match(markup({}), /class="[^"]*\binvisible\b/);
-		assert.doesNotMatch(
-			markup({ kind: "internal" }),
-			/class="[^"]*\binvisible\b/,
-		);
+		const hidden = (html: string) =>
+			classLists(html).some((list) => list.includes("invisible"));
+		assert.ok(hidden(markup({})));
+		assert.ok(!hidden(markup({ kind: "internal" })));
 	});
 });

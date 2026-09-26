@@ -1,134 +1,112 @@
-import { cva, type VariantProps } from "class-variance-authority";
-import type React from "react";
-import { cn } from "#/lib/utils";
+import type { ReactNode } from "react";
+import { Block } from "./block";
+import { Flexbox, type FlexboxProps } from "./flex";
+import { Icon, type IconProps } from "./icon";
 
-const emptyMediaVariants = cva(
-	"flex shrink-0 items-center justify-center [&_svg]:pointer-events-none [&_svg]:shrink-0",
-	{
-		defaultVariants: {
-			variant: "default",
-		},
-		variants: {
-			variant: {
-				default: "bg-transparent",
-				icon: "relative flex size-9 shrink-0 items-center justify-center rounded-md border bg-card not-dark:bg-clip-padding text-foreground shadow-sm/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)] [&_svg:not([class*='size-'])]:size-4.5",
-			},
-		},
-	},
-);
+/*
+ * 空态：居中的一列，间距 8、四周 16。上面是图：给了 `icon` 就放进一块 48px 见方的
+ * 描边面（图标边长 32），没给放默认图。下面标题 16px 粗体、说明 14px 三级灰，
+ * 动作在最下面。样式在 empty.css。
+ *
+ * 标题与说明各是一个 div，基础字色 `--color-fg`；`titleProps.as` 为 `h1` 时标题换成
+ * `<h1>`，字号与字重不变。默认图的 `<title>` 是「暂无数据」。
+ */
+
+interface EmptyProps extends Omit<FlexboxProps, "title"> {
+	action?: ReactNode;
+	description?: ReactNode;
+	icon?: IconProps["icon"];
+	title?: ReactNode;
+	titleProps?: { as: "h1" };
+}
+
+/** 默认图：地上一块空卡片，卡片里三道占位条。颜色在 empty.css。 */
+function EmptyImage() {
+	return (
+		<svg
+			className="ui-empty-image"
+			height="41"
+			viewBox="0 0 64 41"
+			width="64"
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<title>暂无数据</title>
+			<ellipse
+				className="ui-empty-image-shadow"
+				cx="32"
+				cy="35"
+				rx="26"
+				ry="5"
+			/>
+			<rect
+				className="ui-empty-image-card"
+				height="30"
+				rx="4"
+				width="36"
+				x="14"
+				y="2.5"
+			/>
+			<rect
+				className="ui-empty-image-line"
+				height="3"
+				rx="1.5"
+				width="22"
+				x="21"
+				y="10"
+			/>
+			<rect
+				className="ui-empty-image-line"
+				height="3"
+				rx="1.5"
+				width="22"
+				x="21"
+				y="16"
+			/>
+			<rect
+				className="ui-empty-image-line"
+				height="3"
+				rx="1.5"
+				width="13"
+				x="21"
+				y="22"
+			/>
+		</svg>
+	);
+}
 
 export function Empty({
-	className,
-	...props
-}: React.ComponentProps<"div">): React.ReactElement {
+	title,
+	description,
+	icon,
+	action,
+	titleProps,
+	...rest
+}: EmptyProps) {
+	const Title = titleProps?.as ?? "div";
 	return (
-		<div
-			className={cn(
-				"flex min-w-0 flex-1 flex-col items-center justify-center gap-6 text-balance px-6 py-12 text-center md:py-20",
-				className,
+		<Flexbox align="center" gap={8} padding={16} {...rest}>
+			{icon ? (
+				<Block
+					align="center"
+					flex="none"
+					height={48}
+					justify="center"
+					style={{ marginBottom: 4 }}
+					variant="outlined"
+					width={48}
+				>
+					<Icon className="ui-empty-icon" icon={icon} size={32} />
+				</Block>
+			) : (
+				<EmptyImage />
 			)}
-			data-slot="empty"
-			{...props}
-		/>
-	);
-}
-
-export function EmptyHeader({
-	className,
-	...props
-}: React.ComponentProps<"div">): React.ReactElement {
-	return (
-		<div
-			className={cn(
-				"flex max-w-sm flex-col items-center text-center",
-				className,
-			)}
-			data-slot="empty-header"
-			{...props}
-		/>
-	);
-}
-
-export function EmptyMedia({
-	className,
-	variant = "default",
-	...props
-}: React.ComponentProps<"div"> &
-	VariantProps<typeof emptyMediaVariants>): React.ReactElement {
-	return (
-		<div
-			className={cn("relative mb-6", className)}
-			data-slot="empty-media"
-			data-variant={variant}
-			{...props}
-		>
-			{variant === "icon" && (
-				<>
-					<div
-						aria-hidden="true"
-						className={cn(
-							emptyMediaVariants({ className, variant }),
-							"pointer-events-none absolute bottom-px origin-bottom-left -translate-x-0.5 -rotate-10 scale-84 shadow-none",
-						)}
-					/>
-					<div
-						aria-hidden="true"
-						className={cn(
-							emptyMediaVariants({ className, variant }),
-							"pointer-events-none absolute bottom-px origin-bottom-right translate-x-0.5 rotate-10 scale-84 shadow-none",
-						)}
-					/>
-				</>
-			)}
-			<div
-				className={cn(emptyMediaVariants({ className, variant }))}
-				{...props}
-			/>
-		</div>
-	);
-}
-
-export function EmptyTitle({
-	className,
-	...props
-}: React.ComponentProps<"div">): React.ReactElement {
-	return (
-		<div
-			className={cn("font-heading font-semibold text-xl", className)}
-			data-slot="empty-title"
-			{...props}
-		/>
-	);
-}
-
-export function EmptyDescription({
-	className,
-	...props
-}: React.ComponentProps<"p">): React.ReactElement {
-	return (
-		<div
-			className={cn(
-				"text-muted-foreground text-sm [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1",
-				className,
-			)}
-			data-slot="empty-description"
-			{...props}
-		/>
-	);
-}
-
-export function EmptyContent({
-	className,
-	...props
-}: React.ComponentProps<"div">): React.ReactElement {
-	return (
-		<div
-			className={cn(
-				"flex w-full min-w-0 max-w-sm flex-col items-center gap-4 text-balance text-sm",
-				className,
-			)}
-			data-slot="empty-content"
-			{...props}
-		/>
+			<Flexbox align="center" gap={1}>
+				{title && <Title className="ui-empty-title">{title}</Title>}
+				{description && (
+					<div className="ui-empty-description">{description}</div>
+				)}
+			</Flexbox>
+			{action && <Flexbox gap={4}>{action}</Flexbox>}
+		</Flexbox>
 	);
 }

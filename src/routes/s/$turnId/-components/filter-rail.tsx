@@ -1,17 +1,11 @@
-import { ChevronDownIcon, ListFilterIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { ListFilterIcon, XIcon } from "lucide-react";
+import { useId, useState } from "react";
 import { Button } from "#/components/ui/button";
-import { Checkbox } from "#/components/ui/checkbox";
-import { CheckboxGroup } from "#/components/ui/checkbox-group";
-import {
-	Collapsible,
-	CollapsiblePanel,
-	CollapsibleTrigger,
-} from "#/components/ui/collapsible";
-import { Field, FieldItem, FieldLabel } from "#/components/ui/field";
-import { Fieldset, FieldsetLegend } from "#/components/ui/fieldset";
-import { Popover, PopoverPopup, PopoverTrigger } from "#/components/ui/popover";
-import { Radio, RadioGroup } from "#/components/ui/radio-group";
+import { Checkbox, CheckboxGroup } from "#/components/ui/checkbox";
+import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
+import { Icon } from "#/components/ui/icon";
+import { Popover } from "#/components/ui/popover";
+import { Radio, RadioGroup } from "#/components/ui/radio";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { cn } from "#/lib/utils";
 import {
@@ -30,17 +24,18 @@ export function FilterRail({
 	loading: boolean;
 }) {
 	const anything = hasAnything(props);
-	// Keep the rail width while facets load so the result column stays put.
+	// 分面还在取时栏宽照留，名单那一列不跟着挪。
 	if (!anything && !loading) return null;
 	return (
-		<aside
-			aria-label="筛选"
-			className={cn(
-				"sticky top-(--chrome-height) hidden h-[calc(100dvh-var(--chrome-height))] w-rail shrink-0",
-				"overflow-hidden border-border border-r lg:block",
-			)}
-		>
-			<ScrollArea overscrollContain scrollFade>
+		<aside aria-label="筛选" className="h-full w-rail overflow-hidden border-r">
+			<ScrollArea
+				className="size-full min-h-0"
+				disableContentFit
+				scrollFade
+				viewportProps={{
+					className: "data-has-overflow-y:overscroll-y-contain",
+				}}
+			>
 				{anything && (
 					<div className="p-4">
 						<FilterList {...props} />
@@ -51,7 +46,8 @@ export function FilterRail({
 	);
 }
 
-export function FilterSheet({
+/** 窄屏上筛选栏收进按钮：点开是一个弹出层，里面是同一份筛选列表。 */
+export function FilterPopover({
 	loading,
 	...props
 }: FilterProps & { loading: boolean }) {
@@ -59,19 +55,16 @@ export function FilterSheet({
 	if (!anything && !loading) return null;
 	const count = activeCount(props.fields, props.textFilters);
 	return (
-		<Popover>
-			<PopoverTrigger
-				render={
-					<Button disabled={!anything} size="sm" variant="outline">
-						<ListFilterIcon />
-						筛选
-						{count > 0 && <span className="tabular-nums">{count}</span>}
-					</Button>
-				}
-			/>
-			<PopoverPopup align="start" className="w-72">
-				<FilterList {...props} />
-			</PopoverPopup>
+		<Popover
+			className="max-h-(--available-height) w-72 overflow-y-auto"
+			content={<FilterList {...props} />}
+			placement="bottomLeft"
+			trigger="click"
+		>
+			<Button disabled={!anything} icon={ListFilterIcon} size="small">
+				筛选
+				{count > 0 && <span className="tabular-nums">{count}</span>}
+			</Button>
 		</Popover>
 	);
 }
@@ -92,30 +85,37 @@ function FilterList({ fields, textFilters, onChange }: FilterProps) {
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="flex items-center justify-between gap-2 px-2">
-				<span className="label text-muted-foreground">筛选</span>
+				<span className="text-xs font-medium text-fg-secondary">筛选</span>
 				<Button
 					className={cn(count === 0 && "invisible")}
 					onClick={() => onChange(CLEARED_FILTERS)}
-					size="xs"
-					variant="link"
+					size="small"
+					type="link"
 				>
 					清除 {count} 项
 				</Button>
 			</div>
 			{textFilters.map((t) => (
 				<section className="flex flex-col gap-0.5" key={t.key}>
-					<h2 className="label px-2 pb-1 text-muted-foreground">{t.title}</h2>
+					<h2 className="text-xs font-medium px-2 pb-1 text-fg-secondary">
+						{t.title}
+					</h2>
 					<Button
-						className="w-full justify-start px-2"
+						block
+						className="justify-start"
 						onClick={() => onChange(t.clear)}
-						size="sm"
+						size="small"
 						title={`取消「${t.title} ${t.value}」`}
-						variant="secondary"
+						type="fill"
 					>
 						<span className="min-w-0 flex-1 truncate text-start">
 							{t.value}
 						</span>
-						<XIcon className="shrink-0 text-muted-foreground" />
+						<Icon
+							className="shrink-0 text-fg-secondary"
+							icon={XIcon}
+							size="small"
+						/>
 					</Button>
 				</section>
 			))}
@@ -135,6 +135,8 @@ function FilterFacet({
 	onChange: (next: Partial<View>) => void;
 }) {
 	const [all, setAll] = useState(false);
+	const titleId = useId();
+	const restId = useId();
 	if (field.options.length === 0) return null;
 
 	const head = collapse(field);
@@ -157,50 +159,54 @@ function FilterFacet({
 		<>
 			{rows(head)}
 			{rest.length > 0 && (
-				<Collapsible onOpenChange={setAll} open={all}>
-					<CollapsiblePanel>{rows(rest)}</CollapsiblePanel>
+				<>
+					<Collapsible id={restId} open={all}>
+						{rows(rest)}
+					</Collapsible>
 					<CollapsibleTrigger
-						className="w-full justify-start px-2 text-muted-foreground data-panel-open:[&_svg]:rotate-180"
-						render={<Button size="sm" variant="ghost" />}
+						className="w-full px-2 py-1 text-fg-secondary text-sm"
+						onOpenChange={setAll}
+						open={all}
+						panelId={restId}
 					>
-						<ChevronDownIcon />
 						{all ? "收起" : `更多 ${rest.length} 项`}
 					</CollapsibleTrigger>
-				</Collapsible>
+				</>
 			)}
 		</>
 	);
 
 	return (
-		<Fieldset className="flex min-w-0 flex-col gap-1">
-			<FieldsetLegend className="label px-2 pb-1 text-muted-foreground">
+		<div className="flex min-w-0 flex-col gap-1">
+			<div
+				className="px-2 pb-1 font-medium text-fg-secondary text-xs"
+				id={titleId}
+			>
 				{field.title}
-			</FieldsetLegend>
-			<Field className="gap-0">
-				{field.multi ? (
-					<CheckboxGroup
-						className="w-full gap-0"
-						onValueChange={(next) => onChange(field.set(next.map(String)))}
-						value={field.values}
-					>
-						{list}
-					</CheckboxGroup>
-				) : (
-					<RadioGroup
-						className="w-full gap-0"
-						onValueChange={(next) =>
-							onChange(field.set(next ? [String(next)] : []))
-						}
-						value={field.values[0] ?? ""}
-					>
-						<Option multi={false} n={null} value="">
-							不限
-						</Option>
-						{list}
-					</RadioGroup>
-				)}
-			</Field>
-		</Fieldset>
+			</div>
+			{field.multi ? (
+				<CheckboxGroup
+					aria-labelledby={titleId}
+					className="w-full"
+					onChange={(next) => onChange(field.set(next))}
+					value={field.values}
+				>
+					{list}
+				</CheckboxGroup>
+			) : (
+				<RadioGroup
+					aria-labelledby={titleId}
+					className="w-full"
+					onChange={(next) => onChange(field.set(next ? [next] : []))}
+					value={field.values[0] ?? ""}
+				>
+					<Option multi={false} n={null} value="">
+						不限
+					</Option>
+					{list}
+				</RadioGroup>
+			)}
+		</div>
 	);
 }
 
@@ -218,17 +224,30 @@ function Option({
 	value: string;
 }) {
 	return (
-		<FieldItem className="px-2" disabled={disabled}>
-			<FieldLabel className="w-full cursor-pointer py-1.5">
-				{multi ? <Checkbox value={value} /> : <Radio value={value} />}
-				<span className="min-w-0 flex-1 truncate">{children}</span>
-				{n !== null && (
-					<span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-						{n}
-					</span>
-				)}
-			</FieldLabel>
-		</FieldItem>
+		// biome-ignore lint/a11y/noLabelWithoutControl: 方框或圆点就是这层标签里的控件
+		<label
+			className={cn(
+				"flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-base text-fg",
+				disabled && "cursor-not-allowed text-fg-tertiary",
+			)}
+		>
+			{multi ? (
+				<Checkbox disabled={disabled} value={value} />
+			) : (
+				<Radio disabled={disabled} value={value} />
+			)}
+			<span className="min-w-0 flex-1 truncate">{children}</span>
+			{n !== null && (
+				<span
+					className={cn(
+						"shrink-0 text-xs tabular-nums",
+						!disabled && "text-fg-secondary",
+					)}
+				>
+					{n}
+				</span>
+			)}
+		</label>
 	);
 }
 

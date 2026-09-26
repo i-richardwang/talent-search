@@ -138,7 +138,7 @@ function isPersonDim(field: PersonField): field is PersonDim {
 export const MAX_TERM_LEN = 24;
 
 /** 一个经历词最短几个字。单字对语义匹配说不出任何东西。 */
-const MIN_TERM_LEN = 2;
+export const MIN_TERM_LEN = 2;
 
 /**
  * 不可信的一段字 → 一个经历词，或者什么都不是。

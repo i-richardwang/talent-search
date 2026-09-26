@@ -10,17 +10,21 @@ import "@tanstack/react-start/server-only";
 import { currentTree, identity } from "#/corpus/derive";
 import type { Employee, Experience } from "#/db/schema";
 import { withReadSnapshot } from "#/db/snapshot";
+import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
-import { PAGE_SIZE, pageAt, type TablePage, tablePage } from "./paging";
 
-type EmployeeRow = Pick<Employee, "empId" | "name" | "curDept" | "curTitle"> & {
+/** 数据页那张表的一行。 */
+export type EmployeeRow = Pick<
+	Employee,
+	"empId" | "name" | "curDept" | "curTitle"
+> & {
 	/** 这个人有几段 */
 	segments: number;
 	/** 其中几段还没派生到当前版本 */
 	pending: number;
 };
 
-/** 按名字或工号找人，一页 `PAGE_SIZE` 个；不给词就按工号从头列。 */
+/** 按名字或工号找人，一页 `PAGE_SIZE` 个（`lib/paging.ts`）；不给词就按工号从头列。 */
 export async function listEmployees(
 	needle: string,
 	page: unknown,
@@ -44,7 +48,7 @@ export async function listEmployees(
 		 where e.name ilike $2 or e.emp_id ilike $2
 		 group by e.emp_id
 		 order by e.emp_id
-		 limit ${PAGE_SIZE} offset ${at.offset}`,
+		 limit ${at.limit} offset ${at.offset}`,
 			[version, pattern],
 		);
 		return tablePage(rows, total, at);

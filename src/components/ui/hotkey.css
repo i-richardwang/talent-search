@@ -1,0 +1,19 @@
+.ui-hotkey {
+	overflow: hidden;
+
+	min-width: 1.8em;
+	height: 1.8em;
+	padding-block: 0;
+	padding-inline: 8px;
+	border: none;
+	border-radius: var(--radius-sm);
+
+	font-family: var(--font-sans);
+	font-size: var(--text-xs);
+	line-height: 1.1;
+	color: var(--color-fg-secondary);
+	text-align: center;
+	white-space: nowrap;
+
+	background: var(--color-fill-tertiary);
+}

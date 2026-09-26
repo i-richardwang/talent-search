@@ -1,11 +1,7 @@
 import { ArrowUpIcon } from "lucide-react";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Button } from "#/components/ui/button";
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupTextarea,
-} from "#/components/ui/input-group";
+import { ActionIcon } from "#/components/ui/action-icon";
+import { TextArea } from "#/components/ui/input";
 import type { QueryInput } from "#/search/spec";
 
 /** 外面能对这个框做的事。填入不提交：例子是起点，不是答案。 */
@@ -20,17 +16,8 @@ export type QueryBarHandle = {
  * 写查询的那个框。**全站只有这一个形状**：零态写下第一句，右栏线程底下补充下一句，
  * 两处做的是同一件事——把「我要找什么人」说成一句话——所以它们不该长成两样。
  *
- * 是一块**面**，不是一条横带：多行的 `textarea` 加一条底栏
- * （`InputGroupAddon align="block-end"`，coss 自己给这种组合备好的排法）。
- * 一句话里要放好几个条件，单行框写到一半就看不见开头了。
- *
- * 框和按钮是一块面（`InputGroup`），不是并排的两块。它们是一个动作的两半，
- * 中间隔一道 8px 的缝就成了两件事，而且会得到两条顶光边、两个圆角、两套焦点环。
- * 收进同一块面之后焦点环也只有一个——它挂在整块面上，落在框里还是按钮上都对。
- *
- * 尺码一律走组件自己的 `size` / `variant`，不拿 `h-14`、`rounded-xl` 这种任意值
- * 去撑。撑一次，内边距、`before:` 顶光边的圆角、图标与文字的间距就全都不再是
- * 那套算好的关系，凑近看是「仿的 coss」。
+ * 多行的 `TextArea` 随内容长高，发送按钮在它下面一行的右端。一句话里要放
+ * 好几个条件，单行框写到一半就看不见开头了。
  *
  * 提交是**异步**的，但只异步一次 INSERT 那么久：查询理解不在这条路上，
  * 它在工作台里补（见 `s/$turnId/route.tsx`），所以按下去到界面变化之间没有
@@ -85,7 +72,7 @@ export function QueryBar({
 		// 吃满容器：宽度由摆它的那一屏说了算——零态摆在版心里，工作台摆在右栏
 		// 线程的底下——所以这里不自己再限一次宽。
 		<form
-			className="w-full"
+			className="flex w-full flex-col gap-2"
 			onSubmit={async (e) => {
 				e.preventDefault();
 				const q = draft.trim();
@@ -105,43 +92,36 @@ export function QueryBar({
 			}}
 			ref={formRef}
 		>
-			<InputGroup>
-				<InputGroupTextarea
-					aria-label="搜索人才"
-					onChange={(e) => {
-						draftRef.current = e.target.value;
-						setDraft(e.target.value);
-					}}
-					onKeyDown={(e) => {
-						// 回车即搜，Shift+回车换行。`isComposing` 那一条是给中文
-						// 输入法的：选字时的回车是「确认这个词」，不是「搜」，
-						// 不挡住的话每打一个词就会提交一次。
-						if (e.key !== "Enter" || e.shiftKey) return;
-						if (e.nativeEvent.isComposing) return;
-						e.preventDefault();
-						formRef.current?.requestSubmit();
-					}}
-					placeholder={placeholder}
-					ref={inputRef}
-					value={draft}
-				/>
-				{/* 底栏而不是右端的一格：这块面高得多，一个贴在右边缘中间的
-				    按钮会浮在一大片空白里。coss 的 `block-end` 就是给这种
-				    「上面写字、下面一条动作栏」备的排法。 */}
-				<InputGroupAddon align="block-end">
-					<Button
-						aria-label="搜索"
-						className="ms-auto"
-						disabled={draft.trim() === "" || waiting}
-						loading={busy}
-						render={<button type="submit" />}
-						size="icon-sm"
-						variant="secondary"
-					>
-						<ArrowUpIcon />
-					</Button>
-				</InputGroupAddon>
-			</InputGroup>
+			<TextArea
+				aria-label="搜索人才"
+				autoSize={{ minRows: 2 }}
+				onChange={(e) => {
+					draftRef.current = e.target.value;
+					setDraft(e.target.value);
+				}}
+				onKeyDown={(e) => {
+					// 回车即搜，Shift+回车换行。`isComposing` 那一条是给中文
+					// 输入法的：选字时的回车是「确认这个词」，不是「搜」，
+					// 不挡住的话每打一个词就会提交一次。
+					if (e.key !== "Enter" || e.shiftKey) return;
+					if (e.nativeEvent.isComposing) return;
+					e.preventDefault();
+					formRef.current?.requestSubmit();
+				}}
+				placeholder={placeholder}
+				ref={inputRef}
+				value={draft}
+			/>
+			<ActionIcon
+				aria-label="搜索"
+				className="self-end"
+				disabled={draft.trim() === "" || waiting}
+				icon={ArrowUpIcon}
+				loading={busy}
+				render={<button type="submit" />}
+				size="small"
+				variant="filled"
+			/>
 		</form>
 	);
 }

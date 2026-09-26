@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
 	ListChecksIcon,
+	Loader2Icon,
 	MessageSquareWarningIcon,
 	RotateCwIcon,
 	SearchXIcon,
@@ -9,22 +10,15 @@ import {
 import { useEffect, useState } from "react";
 import { StrengthLegend } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
-import {
-	Empty,
-	EmptyContent,
-	EmptyDescription,
-	EmptyHeader,
-	EmptyMedia,
-	EmptyTitle,
-} from "#/components/ui/empty";
-import { Separator } from "#/components/ui/separator";
-import { Spinner } from "#/components/ui/spinner";
+import { Divider } from "#/components/ui/divider";
+import { Empty } from "#/components/ui/empty";
+import { Icon } from "#/components/ui/icon";
 import type { Condition } from "#/search/condition";
 import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import type { InterpretFault, SearchMode } from "#/server/turn";
 import { emptyState } from "../-lib/empty-state";
-import { FAULT_COPY } from "../-lib/interpret";
+import { FAULT_COPY, FAULT_EXIT_LABEL, faultExits } from "../-lib/interpret";
 import type { View } from "../-lib/view-params";
 
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
@@ -52,12 +46,12 @@ export function ResultHeader({
 }) {
 	return (
 		<div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-1">
-			<p className="text-muted-foreground text-sm" role="status">
+			<p className="text-fg-secondary text-base" role="status">
 				{loading ? (
 					"搜索中…"
 				) : (
 					<>
-						<b className="text-foreground tabular-nums">{total}</b> 人
+						<b className="text-fg tabular-nums">{total}</b> 人
 						{` · ${ORDER_LABEL[order]}`}
 					</>
 				)}
@@ -66,16 +60,15 @@ export function ResultHeader({
 				{evidence && (
 					<>
 						<StrengthLegend />
-						<Separator className="h-4 max-sm:hidden" orientation="vertical" />
+						<Divider className="max-sm:hidden" orientation="vertical" />
 					</>
 				)}
 				<Button
 					disabled={!pickable}
+					icon={picking ? XIcon : ListChecksIcon}
 					onClick={() => onPicking(!picking)}
-					size="sm"
-					variant="outline"
+					size="small"
 				>
-					{picking ? <XIcon /> : <ListChecksIcon />}
 					{picking ? "取消选择" : "选择"}
 				</Button>
 			</div>
@@ -106,20 +99,15 @@ export function NoResults({
 		onReviseQuery,
 	});
 	return (
-		<Empty>
-			<EmptyHeader>
-				<EmptyMedia variant="icon">
-					<SearchXIcon />
-				</EmptyMedia>
-				<EmptyTitle>{state.title}</EmptyTitle>
-				<EmptyDescription>{state.hint}</EmptyDescription>
-			</EmptyHeader>
-			<EmptyContent>
-				<Button onClick={state.action.onClick} variant="outline">
-					{state.action.label}
-				</Button>
-			</EmptyContent>
-		</Empty>
+		<Empty
+			action={
+				<Button onClick={state.action.onClick}>{state.action.label}</Button>
+			}
+			className="py-16"
+			description={state.hint}
+			icon={SearchXIcon}
+			title={state.title}
+		/>
 	);
 }
 
@@ -137,34 +125,32 @@ export function NotUnderstood({
 	onRetry: () => void;
 }) {
 	const copy = FAULT_COPY[fault];
+	const exits = faultExits(fault);
 	return (
-		<Empty>
-			<EmptyHeader>
-				<EmptyMedia variant="icon">
-					<MessageSquareWarningIcon />
-				</EmptyMedia>
-				<EmptyTitle>{copy.title}</EmptyTitle>
-				<EmptyDescription>{copy.hint}</EmptyDescription>
-			</EmptyHeader>
-			{(copy.retry || copy.keyword) && (
-				<EmptyContent className="flex-row justify-center">
-					{copy.retry && (
-						<Button onClick={onRetry} variant="outline">
-							<RotateCwIcon />
-							重试
+		<Empty
+			action={
+				exits.length > 0 &&
+				exits.map((exit) =>
+					exit === "retry" ? (
+						<Button icon={RotateCwIcon} key={exit} onClick={onRetry}>
+							{FAULT_EXIT_LABEL[exit]}
 						</Button>
-					)}
-					{copy.keyword && (
+					) : (
 						<Button
+							key={exit}
 							render={<Link search={{ mode: "keyword" }} to="/" />}
-							variant="ghost"
+							type="text"
 						>
-							改用关键词搜索
+							{FAULT_EXIT_LABEL[exit]}
 						</Button>
-					)}
-				</EmptyContent>
-			)}
-		</Empty>
+					),
+				)
+			}
+			className="py-16"
+			description={copy.hint}
+			icon={MessageSquareWarningIcon}
+			title={copy.title}
+		/>
 	);
 }
 
@@ -189,16 +175,17 @@ export function Searching({ phase }: { phase: SearchPhase }) {
 	const seconds = useElapsed();
 	return (
 		<div className="flex min-h-[calc(100dvh-var(--chrome-height)-5rem)] flex-col items-center justify-center gap-4">
-			<Spinner
+			<Icon
 				aria-hidden="true"
-				aria-label={undefined}
-				className="size-5 text-muted-foreground"
-				role="presentation"
+				className="text-fg-secondary"
+				icon={Loader2Icon}
+				size={20}
+				spin
 			/>
-			<p className="font-medium text-sm" role="status">
+			<p className="font-medium text-base" role="status">
 				{PHASE_TEXT[phase]}
 				{seconds !== null && (
-					<span className="text-muted-foreground tabular-nums">
+					<span className="text-fg-secondary tabular-nums">
 						{` · ${seconds} 秒`}
 					</span>
 				)}

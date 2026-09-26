@@ -1,16 +1,12 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronRightIcon, PlusIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { PlusIcon } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { QueryBar, type QueryBarHandle } from "#/components/query-bar";
-import { Badge } from "#/components/ui/badge";
+import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
-import {
-	Collapsible,
-	CollapsiblePanel,
-	CollapsibleTrigger,
-} from "#/components/ui/collapsible";
-import { Frame } from "#/components/ui/frame";
+import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
 import { ScrollArea } from "#/components/ui/scroll-area";
+import { Tag } from "#/components/ui/tag";
 import type { Condition } from "#/search/condition";
 import { conditionLabel, inSentence } from "#/search/condition-label";
 import type { QueryInput } from "#/search/spec";
@@ -70,13 +66,11 @@ const STUCK_PX = 8;
  * @param growth 最后一轮长到哪了；它一变就重看一次要不要滚。
  */
 function useFollow(latestId: string, growth: string) {
-	const list = useRef<HTMLOListElement>(null);
+	const viewportRef = useRef<HTMLDivElement>(null);
 	const stuck = useRef(true);
 
 	useEffect(() => {
-		const viewport = list.current?.closest<HTMLElement>(
-			'[data-slot="scroll-area-viewport"]',
-		);
+		const viewport = viewportRef.current;
 		if (!viewport) return;
 		const onScroll = () => {
 			stuck.current =
@@ -95,13 +89,11 @@ function useFollow(latestId: string, growth: string) {
 			seen.current = latestId;
 			stuck.current = true;
 		}
-		const viewport = list.current?.closest<HTMLElement>(
-			'[data-slot="scroll-area-viewport"]',
-		);
+		const viewport = viewportRef.current;
 		if (viewport && stuck.current) viewport.scrollTop = viewport.scrollHeight;
 	}, [latestId, growth]);
 
-	return list;
+	return viewportRef;
 }
 
 /** 最后一轮的状态：还在读、读完了、没理解出来。之前的轮次都已读完。 */
@@ -157,7 +149,10 @@ export function Thread({
 	const latest = rounds[last];
 	const latestTrace = liveTrace ?? latest?.trace ?? [];
 	const phase: Phase = latest?.spec ? "settled" : fault ? "failed" : "running";
-	const list = useFollow(latest?.id ?? "", `${phase}:${latestTrace.length}`);
+	const viewportRef = useFollow(
+		latest?.id ?? "",
+		`${phase}:${latestTrace.length}`,
+	);
 	const previewing = latest?.id !== viewing;
 	const offers = (
 		rounds.find((round) => round.id === viewing && round.spec)?.notes
@@ -166,8 +161,15 @@ export function Thread({
 
 	return (
 		<section aria-label="对话" className="flex h-full flex-col">
-			<ScrollArea overscrollContain>
-				<ol className="flex flex-col gap-6 px-4 py-4" ref={list}>
+			<ScrollArea
+				className="size-full min-h-0"
+				disableContentFit
+				viewportProps={{
+					className: "data-has-overflow-y:overscroll-y-contain",
+					ref: viewportRef,
+				}}
+			>
+				<ol className="flex flex-col gap-6 px-4 py-4">
 					{rounds.map((round, i) => (
 						<Round
 							failure={i === last && fault ? FAULT_COPY[fault].title : null}
@@ -187,7 +189,7 @@ export function Thread({
 				<div className="p-3 pt-1">
 					{/* 贴着框的一块托盘：框上方放点一下就能办的事——搜不了的要求附带的替代
 					    条件。它作用在正看着的那一轮的条件上，所以跟着那一轮。 */}
-					<Frame>
+					<Block gap={4} padding={4}>
 						{offers.length > 0 && (
 							<ul aria-label="可以改为" className="flex flex-col px-2 py-1">
 								{offers.map((item) => (
@@ -195,16 +197,16 @@ export function Thread({
 										className="flex items-center gap-2 text-xs"
 										key={item.said}
 									>
-										<span className="min-w-0 flex-1 text-muted-foreground">
+										<span className="min-w-0 flex-1 text-fg-secondary">
 											「{item.said}」可改为：{inSentence(item.instead)}
 										</span>
 										<Button
 											className="shrink-0"
+											icon={PlusIcon}
 											onClick={() => onAdd(item.instead)}
-											size="xs"
-											variant="ghost"
+											size="small"
+											type="text"
 										>
-											<PlusIcon />
 											添加
 										</Button>
 									</li>
@@ -220,7 +222,7 @@ export function Thread({
 								waiting={waiting}
 							/>
 						)}
-					</Frame>
+					</Block>
 				</div>
 			)}
 		</section>
@@ -253,9 +255,9 @@ function Round({
 		mark === "link" ? (
 			<ViewResult turnId={round.id} />
 		) : mark === "viewing" ? (
-			<Badge className="w-fit" variant="outline">
+			<Tag size="small" variant="outlined">
 				正在查看
-			</Badge>
+			</Tag>
 		) : null;
 
 	// 直接改条件的一轮没有人说话，也没有模型的回应：改动本身就是那一步
@@ -263,7 +265,7 @@ function Round({
 		return (
 			<li
 				aria-current={viewing ? "page" : undefined}
-				className="flex flex-wrap items-center justify-center gap-x-2 text-center text-muted-foreground text-xs"
+				className="flex flex-wrap items-center justify-center gap-x-2 text-center text-fg-secondary text-xs"
 			>
 				<span>{spec && editText(previous, spec.conditions)}</span>
 				{footer}
@@ -273,9 +275,9 @@ function Round({
 	return (
 		<li
 			aria-current={viewing ? "page" : undefined}
-			className="flex flex-col gap-2 text-sm"
+			className="flex flex-col gap-2 text-base"
 		>
-			<p className="ms-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-muted px-3.5 py-2">
+			<p className="ms-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-fill-tertiary px-3 py-2">
 				{said}
 			</p>
 			<div className="flex flex-col gap-1.5">
@@ -290,16 +292,16 @@ function Round({
 				)}
 				{spec && <p>{replyText(previous, spec.conditions)}</p>}
 				{notes?.assumed.map((line) => (
-					<p className="text-muted-foreground" key={line}>
+					<p className="text-fg-secondary" key={line}>
 						{line}
 					</p>
 				))}
 				{notes?.declined.map((item) => (
-					<p className="text-warning-foreground" key={item.said}>
+					<p className="text-warning" key={item.said}>
 						未采用「{item.said}」：{item.why}
 					</p>
 				))}
-				{failure && <p className="text-destructive-foreground">{failure}</p>}
+				{failure && <p className="text-error">{failure}</p>}
 				{footer}
 			</div>
 		</li>
@@ -310,10 +312,11 @@ function Round({
 function ViewResult({ turnId }: { turnId: string }) {
 	return (
 		<Button
-			className="-ms-2 w-fit text-muted-foreground"
+			className="w-fit text-fg-secondary"
+			outdent
 			render={<Link params={{ turnId }} search={{}} to="/s/$turnId" />}
-			size="xs"
-			variant="ghost"
+			size="small"
+			type="text"
 		>
 			查看这次的结果
 		</Button>
@@ -365,41 +368,44 @@ function Process({
 	live: boolean;
 }) {
 	const [open, setOpen] = useState(false);
+	const panelId = useId();
 	const rows = steps.flatMap(rowsOf);
 	const latest = rows[rows.length - 1];
 
 	return (
-		<Collapsible onOpenChange={setOpen} open={open}>
+		<div>
 			<CollapsibleTrigger
-				render={
-					<Button
-						className="-ms-2 text-muted-foreground"
-						size="xs"
-						variant="ghost"
-					>
-						<span className={live ? "shimmer" : undefined}>
-							{live ? "正在检索人才库…" : "检索过程"}
-						</span>
-						<ChevronRightIcon className="transition-transform [[data-panel-open]>&]:rotate-90" />
-					</Button>
-				}
-			/>
+				className="w-fit text-fg-secondary text-sm"
+				onOpenChange={setOpen}
+				open={open}
+				panelId={panelId}
+			>
+				<span className={live ? "shimmer" : undefined}>
+					{live ? "正在检索人才库…" : "检索过程"}
+				</span>
+			</CollapsibleTrigger>
 			{live && !open && latest && (
 				<p
-					className="settle truncate text-muted-foreground text-xs"
+					className="settle truncate text-fg-secondary text-xs"
 					key={latest.key}
 					role="status"
 				>
 					{latest.text}
 				</p>
 			)}
-			<CollapsiblePanel>
-				<ol className="mt-1 flex flex-col gap-1 rounded-lg bg-muted px-3 py-2 text-muted-foreground text-xs tabular-nums">
+			<Collapsible id={panelId} open={open}>
+				<Block
+					as="ol"
+					className="mt-1 text-fg-secondary text-xs tabular-nums"
+					gap={4}
+					paddingBlock={8}
+					paddingInline={12}
+				>
 					{rows.map((row) => (
 						<li key={row.key}>{row.text}</li>
 					))}
-				</ol>
-			</CollapsiblePanel>
-		</Collapsible>
+				</Block>
+			</Collapsible>
+		</div>
 	);
 }

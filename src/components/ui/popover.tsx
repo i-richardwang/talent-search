@@ -1,121 +1,138 @@
 "use client";
 
-import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
-import type React from "react";
+import {
+	Popover as BasePopover,
+	type PopoverPopupProps as BasePopoverPopupProps,
+	type PopoverPositionerProps as BasePopoverPositionerProps,
+} from "@base-ui/react/popover";
+import {
+	type ReactElement,
+	type ReactNode,
+	useCallback,
+	useState,
+} from "react";
+import {
+	defaultPortalContainer,
+	FloatingLayerProvider,
+	triggerRender,
+} from "#/components/ui/floating";
+import { resolveNativeButton } from "#/components/ui/native-button";
 import { cn } from "#/lib/utils";
 
-export const PopoverCreateHandle: typeof PopoverPrimitive.createHandle =
-	PopoverPrimitive.createHandle;
+/*
+ * 气泡卡片，样式在 popover.css。默认悬停打开（进出各等 0.1 秒），`trigger="click"`
+ * 改成点击。子元素是单个元素，触发器的属性与 ref 合进它本身（见 floating.ts）。弹出层的定位器同时是
+ * 里面提示的 portal 容器。
+ *
+ * `className` 落在浮层（popup）上。portal 到 `<body>`；定位器的 z 值是
+ * `--z-index-popup` 这一档，不按打开先后另分配（见 floating.ts）。
+ */
 
-export const Popover: typeof PopoverPrimitive.Root = PopoverPrimitive.Root;
+type PopoverTrigger = "hover" | "click";
+type PopoverPlacement = "top" | "bottomLeft" | "bottomRight" | "left";
 
-export function PopoverTrigger({
-	className,
+/** 方位名到 Base UI 的 side / align。 */
+const placementMap: Record<
+	PopoverPlacement,
+	{ align: "start" | "center" | "end"; side: "top" | "bottom" | "left" }
+> = {
+	bottomLeft: { align: "start", side: "bottom" },
+	bottomRight: { align: "end", side: "bottom" },
+	left: { align: "center", side: "left" },
+	top: { align: "center", side: "top" },
+};
+
+interface PopoverProps {
+	/** 触发器，单个元素。 */
+	children: ReactElement;
+	className?: string;
+	content: ReactNode;
+	/** 触发器是不是原生 `<button>`；不给时按子元素判断。 */
+	nativeButton?: boolean;
+	onOpenChange?: (open: boolean) => void;
+	open?: boolean;
+	placement?: PopoverPlacement;
+	popupProps?: Pick<BasePopoverPopupProps, "aria-label">;
+	positionerProps?: Pick<BasePopoverPositionerProps, "positionMethod">;
+	trigger?: PopoverTrigger;
+}
+
+/** 悬停打开、离开收起前各等的毫秒数。 */
+const HOVER_DELAY = 100;
+
+export function Popover({
 	children,
-	...props
-}: PopoverPrimitive.Trigger.Props): React.ReactElement {
+	content,
+	trigger = "hover",
+	placement = "top",
+	className,
+	open,
+	onOpenChange,
+	nativeButton,
+	positionerProps,
+	popupProps,
+}: PopoverProps) {
+	const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+	const [positionerNode, setPositionerNode] = useState<HTMLDivElement | null>(
+		null,
+	);
+	const openOnHover = trigger === "hover";
+
+	/*
+	 * Base UI 的 Popover.Trigger 总挂着点击：悬停打开后再按一下会以 `trigger-press`
+	 * 重新打开并钉住，移开也不关。只认悬停的触发器要取消这种打开。
+	 */
+	const handleOpenChange = useCallback(
+		(
+			nextOpen: boolean,
+			eventDetails: { cancel: () => void; reason: string },
+		) => {
+			if (openOnHover && nextOpen && eventDetails.reason === "trigger-press") {
+				eventDetails.cancel();
+				return;
+			}
+			onOpenChange?.(nextOpen);
+			if (open === undefined) setUncontrolledOpen(nextOpen);
+		},
+		[onOpenChange, open, openOnHover],
+	);
+
+	const { align, side } = placementMap[placement];
+
 	return (
-		<PopoverPrimitive.Trigger
-			className={className}
-			data-slot="popover-trigger"
-			{...props}
+		<BasePopover.Root
+			onOpenChange={handleOpenChange}
+			open={open ?? uncontrolledOpen}
 		>
-			{children}
-		</PopoverPrimitive.Trigger>
-	);
-}
-
-export function PopoverPopup({
-	children,
-	className,
-	side = "bottom",
-	align = "center",
-	sideOffset = 4,
-	alignOffset = 0,
-	tooltipStyle = false,
-	anchor,
-	portalProps,
-	positionMethod,
-	...props
-}: PopoverPrimitive.Popup.Props & {
-	portalProps?: PopoverPrimitive.Portal.Props;
-	positionMethod?: PopoverPrimitive.Positioner.Props["positionMethod"];
-	side?: PopoverPrimitive.Positioner.Props["side"];
-	align?: PopoverPrimitive.Positioner.Props["align"];
-	sideOffset?: PopoverPrimitive.Positioner.Props["sideOffset"];
-	alignOffset?: PopoverPrimitive.Positioner.Props["alignOffset"];
-	tooltipStyle?: boolean;
-	anchor?: PopoverPrimitive.Positioner.Props["anchor"];
-}): React.ReactElement {
-	return (
-		<PopoverPrimitive.Portal {...portalProps}>
-			<PopoverPrimitive.Positioner
-				align={align}
-				alignOffset={alignOffset}
-				anchor={anchor}
-				className="z-50 h-(--positioner-height) w-(--positioner-width) max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
-				data-slot="popover-positioner"
-				positionMethod={positionMethod}
-				side={side}
-				sideOffset={sideOffset}
-			>
-				<PopoverPrimitive.Popup
-					className={cn(
-						"relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding text-popover-foreground shadow-lg/5 outline-none transition-[width,height,scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] has-data-[slot=calendar]:rounded-xl has-data-[slot=calendar]:before:rounded-[calc(var(--radius-xl)-1px)] data-starting-style:scale-98 data-starting-style:opacity-0 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
-						tooltipStyle &&
-							"w-fit text-balance rounded-md text-xs shadow-md/5 before:rounded-[calc(var(--radius-md)-1px)]",
-						className,
-					)}
-					data-slot="popover-popup"
-					{...props}
+			<BasePopover.Trigger
+				closeDelay={HOVER_DELAY}
+				delay={HOVER_DELAY}
+				nativeButton={resolveNativeButton(children, nativeButton)}
+				openOnHover={openOnHover}
+				render={triggerRender(children)}
+			/>
+			<BasePopover.Portal container={defaultPortalContainer()}>
+				<BasePopover.Positioner
+					{...positionerProps}
+					align={align}
+					className="ui-popover-positioner"
+					data-placement={placement}
+					ref={setPositionerNode}
+					side={side}
+					sideOffset={6}
 				>
-					<PopoverPrimitive.Viewport
-						className={cn(
-							"relative size-full max-h-(--available-height) overflow-clip px-(--viewport-inline-padding) py-4 [--viewport-inline-padding:--spacing(4)] has-data-[slot=calendar]:p-2 data-instant:transition-none **:data-current:data-ending-style:opacity-0 **:data-current:data-starting-style:opacity-0 **:data-previous:data-ending-style:opacity-0 **:data-previous:data-starting-style:opacity-0 **:data-current:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-current:opacity-100 **:data-previous:opacity-100 **:data-current:transition-opacity **:data-previous:transition-opacity",
-							tooltipStyle
-								? "py-1 [--viewport-inline-padding:--spacing(2)]"
-								: "not-data-transitioning:overflow-y-auto",
-						)}
-						data-slot="popover-viewport"
-					>
-						{children}
-					</PopoverPrimitive.Viewport>
-				</PopoverPrimitive.Popup>
-			</PopoverPrimitive.Positioner>
-		</PopoverPrimitive.Portal>
+					<FloatingLayerProvider value={positionerNode}>
+						<BasePopover.Popup
+							{...popupProps}
+							className={cn("ui-popover-popup", className)}
+						>
+							<BasePopover.Viewport className="ui-popover-viewport">
+								{content}
+							</BasePopover.Viewport>
+						</BasePopover.Popup>
+					</FloatingLayerProvider>
+				</BasePopover.Positioner>
+			</BasePopover.Portal>
+		</BasePopover.Root>
 	);
 }
-
-export function PopoverClose({
-	...props
-}: PopoverPrimitive.Close.Props): React.ReactElement {
-	return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
-}
-
-export function PopoverTitle({
-	className,
-	...props
-}: PopoverPrimitive.Title.Props): React.ReactElement {
-	return (
-		<PopoverPrimitive.Title
-			className={cn("font-semibold text-lg leading-none", className)}
-			data-slot="popover-title"
-			{...props}
-		/>
-	);
-}
-
-export function PopoverDescription({
-	className,
-	...props
-}: PopoverPrimitive.Description.Props): React.ReactElement {
-	return (
-		<PopoverPrimitive.Description
-			className={cn("text-muted-foreground text-sm", className)}
-			data-slot="popover-description"
-			{...props}
-		/>
-	);
-}
-
-export { PopoverPopup as PopoverContent, PopoverPrimitive };

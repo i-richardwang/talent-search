@@ -1,7 +1,7 @@
 /**
  * 页框：两根通高的发丝线，标出页宽列的左右边界；顶栏那根横线横穿过去，
  * 交点上各钉一个小方块。底色仍是干净的画布色，把屏幕划成一张有边界的纸的是
- * 这几根**线**——coss 文档站那套底面就是这么画的。
+ * 这几根**线**。
  *
  * 两层分开，因为它们跟着的东西不一样：竖线是 `absolute`，随内容一起滚，
  * 所以它通到文档底部而不是只有一屏高；小方块是 `fixed`，永远钉在顶栏那根
@@ -24,7 +24,7 @@ export function PageFrame() {
 		<>
 			<div
 				aria-hidden="true"
-				className="frame-column pointer-events-none absolute inset-0 z-frame before:absolute before:inset-y-0 before:-left-(--frame-inset) before:w-px before:bg-border/64 after:absolute after:inset-y-0 after:-right-(--frame-inset) after:w-px after:bg-border/64"
+				className="frame-column pointer-events-none absolute inset-0 z-frame before:absolute before:inset-y-0 before:-left-(--frame-inset) before:w-px before:bg-border-secondary after:absolute after:inset-y-0 after:-right-(--frame-inset) after:w-px after:bg-border-secondary"
 			/>
 			{/*
 			 * 小方块的位置全是算出来的，别改成手调的整数：`--header-height` 减 4.5px
@@ -34,7 +34,7 @@ export function PageFrame() {
 			 */}
 			<div
 				aria-hidden="true"
-				className="frame-column pointer-events-none fixed inset-0 z-frame before:absolute before:top-[calc(var(--header-height)-4.5px)] before:left-[calc(var(--frame-inset)*-1+0.5px)] before:-ml-1 before:size-2 before:rounded-xs before:border before:border-border before:bg-popover before:bg-clip-padding before:shadow-xs/5 after:absolute after:top-[calc(var(--header-height)-4.5px)] after:right-[calc(var(--frame-inset)*-1+0.5px)] after:-mr-1 after:size-2 after:rounded-xs after:border after:border-border after:bg-popover after:bg-clip-padding after:shadow-xs/5 dark:before:bg-clip-border dark:after:bg-clip-border"
+				className="frame-column pointer-events-none fixed inset-0 z-frame before:absolute before:top-[calc(var(--header-height)-4.5px)] before:left-[calc(var(--frame-inset)*-1+0.5px)] before:-ml-1 before:size-2 before:rounded-xs before:border before:border-border before:bg-elevated after:absolute after:top-[calc(var(--header-height)-4.5px)] after:right-[calc(var(--frame-inset)*-1+0.5px)] after:-mr-1 after:size-2 after:rounded-xs after:border after:border-border after:bg-elevated"
 			/>
 		</>
 	);

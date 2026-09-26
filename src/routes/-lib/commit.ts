@@ -18,7 +18,7 @@ import type { QueryInput } from "#/search/spec";
 import { commitTurn } from "#/server/functions";
 
 /** 落记录失败时说什么。区分不了原因，也不必区分：能做的只有重试。 */
-const FAILED = "没能提交这次搜索，请重试。";
+export const COMMIT_FAILED = "没能提交这次搜索，请重试。";
 
 export function useCommit() {
 	const navigate = useNavigate();
@@ -53,7 +53,7 @@ export function useCommit() {
 			 * 只覆盖模型那一段，覆盖不了这条链路本身。不接住的话，失败的表现是
 			 * 转圈停了、什么都没发生，人只会再点一次。
 			 */
-			setError(FAILED);
+			setError(COMMIT_FAILED);
 			return false;
 		} finally {
 			inFlight.current = false;

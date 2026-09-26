@@ -1,0 +1,35 @@
+/*
+ * 分隔线：根、竖向、横向。线宽 1px；竖向左右外边距 8px，横向上下外边距 16px。
+ */
+
+.ui-divider {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+	color: var(--color-fg);
+	font-size: var(--text-base);
+	line-height: 1.5714285714285714;
+	list-style: none;
+	font-family: var(--font-sans);
+	border-block-start: 1px solid var(--color-split);
+}
+
+.ui-divider-vertical {
+	position: relative;
+	top: -0.06em;
+	display: inline-block;
+	height: 0.9em;
+	margin-inline: 8px;
+	margin-block: 0;
+	vertical-align: middle;
+	border-top: 0;
+	border-inline-start: 1px solid var(--color-split);
+}
+
+.ui-divider-horizontal {
+	display: flex;
+	clear: both;
+	width: 100%;
+	min-width: 100%;
+	margin: 16px 0;
+}

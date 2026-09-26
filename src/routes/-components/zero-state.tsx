@@ -1,15 +1,8 @@
-import { AlertCircleIcon } from "lucide-react";
 import { useRef } from "react";
 import { KeywordBar } from "#/components/keyword-bar";
 import { QueryBar, type QueryBarHandle } from "#/components/query-bar";
-import { Alert, AlertDescription } from "#/components/ui/alert";
+import { Alert } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
-import {
-	Empty,
-	EmptyContent,
-	EmptyHeader,
-	EmptyTitle,
-} from "#/components/ui/empty";
 import type { QueryInput } from "#/search/spec";
 import type { SearchMode } from "#/server/turn";
 
@@ -39,8 +32,7 @@ const EXAMPLES = [
 ];
 
 /**
- * 零态。整块是 coss 的 `Empty`：标题、切换、输入面依次排下来，间距和字阶都已经和这套
- * 系统对齐，所以这一屏不用自己摆居中容器，也不用自己配字号。
+ * 零态：标题、切换、输入面居中排成一列。
  *
  * 一进来先看见的是标题和能敲字的地方：这一屏是整个应用的起点，起点上没有什么
  * 需要先解释一遍。
@@ -48,9 +40,8 @@ const EXAMPLES = [
  * 标题是一个**问句**，不是应用名。应用名在顶栏上已经有一处，同一串字再摆一遍
  * 答不了「这一屏在做什么」。问句能：它把这块面要收什么说清楚，人照着答就行。
  *
- * 标题走 `EmptyTitle` 的原生档（20px）。汉字系统字没有拉丁 display 字那种放大
- * 之后还成立的字形，撑成一行大字会读成横幅标语；这一屏的重量由下面的输入面
- * 承担，不由字号承担。
+ * 标题是字阶里的 20px 粗体。汉字系统字没有拉丁 display 字那种放大之后还成立的
+ * 字形，撑成一行大字会读成横幅标语；这一屏的重量由下面的输入面承担，不由字号承担。
  */
 export function ZeroState({
 	mode,
@@ -65,12 +56,7 @@ export function ZeroState({
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
 	error: string | null;
 }) {
-	const errorAlert = error && (
-		<Alert variant="error">
-			<AlertCircleIcon />
-			<AlertDescription>{error}</AlertDescription>
-		</Alert>
-	);
+	const errorAlert = error && <Alert title={error} type="error" />;
 
 	return (
 		/*
@@ -78,37 +64,24 @@ export function ZeroState({
 		 * 标题和切换都跟着上下跳。顶上一段固定的空，标题、切换、输入面的起点
 		 * 在两屏里一分不动，变的只有切换下面那块。
 		 */
-		<Empty className="justify-start pt-16 md:pt-24">
-			<EmptyHeader>
-				{/* `EmptyTitle` 是个 `div`（coss 的文件一个字都不改），这一页的 h1
-				    因此靠 ARIA 给，而不是在里面再套一个自己配一遍字号的 `<h1>`。 */}
-				<EmptyTitle aria-level={1} role="heading">
-					想找什么样的人？
-				</EmptyTitle>
-			</EmptyHeader>
+		<div className="flex flex-col items-center gap-4 px-4 pt-16 md:pt-24">
+			<h1 className="font-semibold text-fg text-xl">想找什么样的人？</h1>
 			{/* 切换紧贴在它换的那块面上面。 */}
 			{nav}
 
-			{/* `EmptyContent` 原生是 `max-w-sm`（给按钮组用的宽度）。这里装的是
-			    输入面，所以放宽到版心——搜索之后名单就落在同样这条列上，
-			    左右边缘一分不动。改的是布局宽度，不是组件内部的比例。
-
-			    宽度写成 `max-w-(--container-page)` 而不是 `max-w-page`：这一处要盖掉
-			    组件自带的 `max-w-sm`，而盖不盖得掉由 `cn` 里的 tailwind-merge 决定，
-			    它只认得变量形式；类名形式它当成两个无关的类，两条规则一起进 CSS，
-			    最后按样式表里的先后决胜负——`.max-w-sm` 排在后面，生效的是 24rem，
-			    而且构建、类型、测试全绿。
+			{/* 输入面和名单同宽（版心）：搜索之后名单就落在同样这条列上，
+			    左右边缘一分不动。
 
 			    `gap-8`：输入面和例子是两件事，例子是**看完输入面之后**才需要的东西。
 			    贴到 12px 以内它们会读成同一块面的上下两半。 */}
-			<EmptyContent className="max-w-(--container-page) gap-8">
+			<div className="flex w-full max-w-page flex-col gap-8">
 				{mode === "conversation" ? (
 					<ConversationStart errorAlert={errorAlert} onQuery={onQuery} />
 				) : (
 					<KeywordStart errorAlert={errorAlert} onQuery={onQuery} />
 				)}
-			</EmptyContent>
-		</Empty>
+			</div>
+		</div>
 	);
 }
 
@@ -144,24 +117,20 @@ function ConversationStart({
 			 * 扫的是句式本身——这一屏要教的就是「可以这样说话」。
 			 */}
 			<div className="flex w-full flex-col gap-0.5 text-left">
-				<p className="px-3 pb-1 text-muted-foreground text-xs">示例</p>
+				<p className="px-3.5 pb-1 text-fg-tertiary text-xs">示例</p>
 				{EXAMPLES.map((example) => (
 					/*
 					 * 点一条例子是**填进输入框**，不是直接搜。这几条是句式的样板，
 					 * 要找的人几乎不会正好是其中哪一句——填进去，人才能把
 					 * 「线下渠道运营」换成自己那个词再回车。上面那行小字先把这件事
 					 * 说明白了。
-					 *
-					 * 尺码是 `default` 而不是 `sm`：`default` 的水平内边距
-					 * （`--spacing(3)` 减去 1px 边框，加回 1px 边框）和输入面里
-					 * 那个 textarea 一模一样，于是例句的左边缘和 placeholder 的
-					 * 左边缘落在同一条线上。`sm` 差 2px，看得出来。
 					 */
 					<Button
-						className="w-full justify-start"
+						block
+						className="justify-start font-normal"
 						key={example}
 						onClick={() => bar.current?.fill(example)}
-						variant="ghost"
+						type="text"
 					>
 						<span className="truncate">{example}</span>
 					</Button>

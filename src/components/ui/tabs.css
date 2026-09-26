@@ -1,0 +1,159 @@
+/*
+ * 块的先后是层叠顺序，后面的块覆盖前面的：根；列表、列表的变体；指示块、指示块的变体；
+ * 标签、标签的尺寸、标签的变体；面板。指示块的位置和尺寸读 Base UI 写在它身上的 `--active-tab-*`。
+ *
+ * 两档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
+ */
+
+:root {
+	--tabs-height-small: 26px;
+	--tabs-padding-small: 10px;
+	--tabs-font-size-small: 12px;
+	--tabs-height-middle: 32px;
+	--tabs-padding-middle: 12px;
+	--tabs-font-size-middle: 13px;
+}
+
+.ui-tabs {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+}
+
+.ui-tabs-list {
+	position: relative;
+	display: inline-flex;
+	flex-wrap: nowrap;
+	gap: 2px;
+	align-items: center;
+}
+
+.ui-tabs-list-rounded {
+	gap: 4px;
+	align-self: flex-start;
+	padding: 3px;
+	border-radius: var(--radius-lg);
+	background: var(--color-layout);
+}
+
+.ui-tabs-indicator {
+	pointer-events: none;
+	position: absolute;
+	transition-timing-function: var(--ease-out);
+	transition-duration: 240ms;
+	transition-property:
+		inset-inline-start, inset-block-start, width, height, transform;
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}
+
+.ui-tabs-indicator-point {
+	inset-block-end: 6px;
+	inset-inline-start: calc(
+		var(--active-tab-left) +
+		var(--active-tab-width) /
+		2 -
+		2.5px
+	);
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: var(--color-primary);
+
+	&:dir(rtl) {
+		inset-inline-start: calc(
+			var(--active-tab-right) +
+			var(--active-tab-width) /
+			2 -
+			2.5px
+		);
+	}
+}
+
+.ui-tabs-indicator-rounded {
+	inset-block-start: var(--active-tab-top);
+	inset-inline-start: var(--active-tab-left);
+	width: var(--active-tab-width);
+	height: var(--active-tab-height);
+	border-radius: var(--radius-md);
+	background: var(--color-elevated);
+	box-shadow: var(--elevation-sm);
+
+	&:dir(rtl) {
+		inset-inline-start: var(--active-tab-right);
+	}
+}
+
+.ui-tabs-tab {
+	cursor: pointer;
+	user-select: none;
+	position: relative;
+	z-index: var(--z-index-raise);
+	display: inline-flex;
+	flex-shrink: 0;
+	gap: 6px;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	border: 0;
+	font-weight: 500;
+	color: var(--color-fg-secondary);
+	white-space: nowrap;
+	background: transparent;
+	outline: none;
+	transition:
+		color 120ms var(--ease-out),
+		transform 120ms var(--ease-out);
+
+	&:hover:not([data-disabled]) {
+		color: var(--color-fg);
+	}
+
+	&:active:not([data-disabled]) {
+		transform: scale(0.98);
+	}
+
+	@apply focus-ring;
+
+	&[data-active] {
+		color: var(--color-primary);
+	}
+
+	&[data-disabled] {
+		cursor: not-allowed;
+		color: var(--color-fg-quaternary);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}
+
+.ui-tabs-tab-middle {
+	height: var(--tabs-height-middle);
+	padding-inline: var(--tabs-padding-middle);
+	border-radius: var(--radius-md);
+	font-size: var(--tabs-font-size-middle);
+}
+
+.ui-tabs-tab-small {
+	height: var(--tabs-height-small);
+	padding-inline: var(--tabs-padding-small);
+	border-radius: var(--radius-md);
+	font-size: var(--tabs-font-size-small);
+}
+
+.ui-tabs-tab-point {
+	height: auto;
+	padding-block: 8px 14px;
+}
+
+.ui-tabs-panel {
+	padding-block-start: 12px;
+	outline: none;
+	border-radius: var(--radius-md);
+
+	@apply focus-ring;
+}

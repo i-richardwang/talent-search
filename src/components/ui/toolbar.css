@@ -1,0 +1,11 @@
+/*
+ * 工具栏的面：描边面加一层投影。
+ */
+
+.ui-toolbar {
+	position: relative;
+	border: 1px solid var(--color-border-secondary);
+	border-radius: var(--radius-md);
+	background: var(--color-container);
+	box-shadow: var(--elevation-edge);
+}

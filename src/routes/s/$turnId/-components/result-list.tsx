@@ -1,14 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { EvidenceLine, MissedClaims } from "#/components/evidence";
+import { Block, BlockLink } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
-import { Card } from "#/components/ui/card";
-import { Checkbox } from "#/components/ui/checkbox";
-import { CheckboxGroup } from "#/components/ui/checkbox-group";
-import { Label } from "#/components/ui/label";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "#/components/ui/tooltip";
+import { Checkbox, CheckboxGroup } from "#/components/ui/checkbox";
+import { Tooltip } from "#/components/ui/tooltip";
 import { positionLabel } from "#/lib/format";
-import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
 import { conditionKey } from "#/search/condition";
 import { claimName } from "#/search/condition-label";
@@ -26,8 +23,6 @@ import {
 	Searching,
 	type SearchPhase,
 } from "./result-state";
-
-const PAD = "px-4 py-3.5";
 
 function PickCell({ children }: { children?: ReactNode }) {
 	return (
@@ -84,15 +79,11 @@ export function ResultList({
 		<div className="mb-2.5 flex items-start">
 			<PickCell>
 				{pickable && (
-					<Tooltip>
-						<TooltipTrigger
-							render={
-								<Label className="p-1">
-									<Checkbox aria-label={`全选这 ${results.length} 人`} parent />
-								</Label>
-							}
-						/>
-						<TooltipPopup>全选这 {results.length} 人</TooltipPopup>
+					<Tooltip title={`全选这 ${results.length} 人`}>
+						{/* biome-ignore lint/a11y/noLabelWithoutControl: 方框就是这层标签里的控件 */}
+						<label className="inline-flex items-center p-1">
+							<Checkbox aria-label={`全选这 ${results.length} 人`} parent />
+						</label>
 					</Tooltip>
 				)}
 			</PickCell>
@@ -130,33 +121,38 @@ export function ResultList({
 					return (
 						<li className="flex" key={e.empId}>
 							<PickCell>
-								<Label className="mt-2.5 p-1">
+								{/* biome-ignore lint/a11y/noLabelWithoutControl: 方框就是这层标签里的控件 */}
+								<label className="mt-2.5 inline-flex items-center p-1">
 									<Checkbox aria-label={`选择 ${e.name}`} value={e.empId} />
-								</Label>
+								</label>
 							</PickCell>
-							<Card
-								className={cn(
-									PAD,
-									"min-w-0 flex-1 transition-[border-color,background-color]",
-									"scroll-mt-[calc(var(--chrome-height)+--spacing(4))] scroll-mb-4",
-									selected
-										? "border-info/40 ring-1 ring-info/30"
-										: "hoverable:hover:bg-accent/40",
-								)}
+							<Block
+								allowShrink
+								className="scroll-mt-[calc(var(--chrome-height)+--spacing(4))] scroll-mb-4"
+								clickable
 								data-emp={e.empId}
+								flex={1}
+								paddingBlock={14}
+								paddingInline={16}
+								selected={selected}
+								variant="outlined"
 							>
 								<div className="flex items-baseline gap-2.5">
-									<Link
+									<BlockLink
 										aria-current={selected ? "page" : undefined}
-										className="title-2 shrink-0 truncate rounded-sm font-semibold after:absolute after:inset-0 after:content-['']"
-										params={{ turnId, empId: e.empId }}
-										replace
-										search={(prev) => prev}
-										to="/s/$turnId/p/$empId"
+										className="shrink-0 truncate font-semibold text-lg"
+										render={
+											<Link
+												params={{ turnId, empId: e.empId }}
+												replace
+												search={(prev) => prev}
+												to="/s/$turnId/p/$empId"
+											/>
+										}
 									>
 										{e.name}
-									</Link>
-									<span className="min-w-0 truncate text-muted-foreground text-sm">
+									</BlockLink>
+									<span className="min-w-0 truncate text-fg-secondary text-base">
 										{positionLabel(e)}
 									</span>
 								</div>
@@ -174,7 +170,7 @@ export function ResultList({
 										<MissedClaims names={missed} />
 									</div>
 								)}
-							</Card>
+							</Block>
 						</li>
 					);
 				})}
@@ -182,21 +178,16 @@ export function ResultList({
 
 			{total > RESULT_PAGE && (
 				<div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 py-6">
-					<span className="text-muted-foreground text-xs">
+					<span className="text-fg-secondary text-xs">
 						已显示 <b className="tabular-nums">{results.length}</b> 人{"，共 "}
 						<b className="tabular-nums">{total}</b> 人
 					</span>
 					{canMore ? (
-						<Button
-							loading={growing}
-							onClick={onMore}
-							size="sm"
-							variant="outline"
-						>
+						<Button loading={growing} onClick={onMore} size="small">
 							再加载 {RESULT_PAGE} 人
 						</Button>
 					) : (
-						<span className="text-muted-foreground text-xs">
+						<span className="text-fg-secondary text-xs">
 							{total > reach
 								? `仅显示匹配度最高的 ${reach} 人。添加条件可以缩小范围。`
 								: "已显示全部结果。"}
@@ -211,9 +202,9 @@ export function ResultList({
 		<CheckboxGroup
 			allValues={picks.shownIds}
 			aria-label="名单"
-			className="group/list block"
+			className="group/list"
 			data-picking={picks.picking || undefined}
-			onValueChange={(next) => picks.setShown(next.map(String))}
+			onChange={picks.setShown}
 			value={picks.shownPicked}
 		>
 			{content}

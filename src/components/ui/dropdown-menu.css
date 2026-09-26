@@ -1,0 +1,322 @@
+/*
+ * 菜单各部件的类名是 `.ui-dropdown-menu-*`，挂在各自的元素上。同一元素上的修饰类写在
+ * 基础类后面，特异性相同时靠先后压过它：positioner；popup；header；item、danger；
+ * separator；group-label；item-content；icon；label-group、label、desc。
+ * AutoComplete 的定位器、弹层和选项也用这里的块，它自己的块在 auto-complete.css。
+ * 定位器的 z 值用弹层档 `--z-index-popup`，portal 按打开先后接在 `<body>` 末尾，
+ * 后开的压住先开的。触发器打开时的底色在 `styles.css` 的 base 层，不在这里。
+ *
+ * 文件末尾是开关项里的小号开关：底 `.ui-switch` 与滑块 `.ui-switch-thumb`。开关的几何
+ * （宽、高、内边距、滑块边长、按住时的滑块宽）只在 `.ui-switch` 的变量里写一份，滑块的
+ * 宽度与位移从它们和 dropdown-menu.tsx 写的 `--switch-on`、`--switch-press` 算出来。
+ */
+
+.ui-dropdown-menu-positioner {
+	--ui-dropdown-animation-duration: 140ms;
+	--ui-dropdown-animation-scale-y: 0.92;
+	--ui-dropdown-animation-ease-in: var(--ease-accelerate);
+	--ui-dropdown-animation-ease-out: var(--ease-out);
+
+	z-index: var(--z-index-popup);
+
+	& > * {
+		will-change: opacity, transform;
+		transform-origin: var(--transform-origin);
+		animation: none;
+	}
+
+	&[data-open] > * {
+		transform: scaleY(1);
+		opacity: 1;
+		transition:
+			opacity var(--ui-dropdown-animation-duration)
+			var(--ui-dropdown-animation-ease-out),
+			transform var(--ui-dropdown-animation-duration)
+			var(--ui-dropdown-animation-ease-out);
+	}
+
+	&[data-open] > *[data-starting-style] {
+		transform: scaleY(var(--ui-dropdown-animation-scale-y));
+		opacity: 0;
+	}
+
+	&[data-closed] > * {
+		transform: scaleY(var(--ui-dropdown-animation-scale-y));
+		opacity: 0;
+		transition:
+			opacity var(--ui-dropdown-animation-duration)
+			var(--ui-dropdown-animation-ease-in),
+			transform var(--ui-dropdown-animation-duration)
+			var(--ui-dropdown-animation-ease-in);
+	}
+}
+
+.ui-dropdown-menu-popup {
+	--ui-menu-popup-padding: 4px;
+
+	overflow-y: auto;
+
+	min-width: 220px;
+	max-height: var(--available-height);
+	padding: var(--ui-menu-popup-padding);
+	border-radius: var(--radius-md);
+
+	background: var(--color-elevated);
+	outline: none;
+	box-shadow:
+		var(--elevation-md),
+		0 0 0 1px var(--color-ring);
+
+	&:has(> [data-slot="header"]) {
+		padding-block-start: 0;
+	}
+
+	/* 方向键移动的是 data-highlighted，指针停着的那一项仍有 :hover 底色；有高亮项时
+	   去掉其余项的悬停底色，不让两项同时亮。 */
+	&:has([data-highlighted]) {
+		[role^="menuitem"]:hover:not([data-highlighted]),
+		[role="option"]:hover:not([data-highlighted]) {
+			/* biome-ignore lint/complexity/noImportantStyles: 有高亮项时压过其余项的悬停底色 */
+			background: transparent !important;
+		}
+	}
+}
+
+.ui-dropdown-menu-header {
+	padding-block: 8px;
+	padding-inline: 12px;
+	border-block-end: 1px solid var(--color-border);
+}
+
+.ui-dropdown-menu-item {
+	user-select: none;
+
+	position: relative;
+
+	overflow: hidden;
+	display: flex;
+	align-items: center;
+
+	width: 100%;
+	min-height: 32px;
+	padding-block: 6px;
+	padding-inline: 12px;
+	border-radius: var(--radius-sm);
+
+	font-size: var(--text-base);
+	line-height: 20px;
+	color: var(--color-fg);
+
+	outline: none;
+
+	transition: all 150ms var(--ease-out);
+
+	&:hover {
+		background: var(--color-fill-tertiary);
+	}
+
+	&:active {
+		background: var(--color-fill-secondary);
+	}
+
+	&[data-highlighted] {
+		background: var(--color-fill-tertiary);
+	}
+}
+
+.ui-dropdown-menu-danger {
+	/* biome-ignore lint/complexity/noImportantStyles: 危险项压过项的文字色 */
+	color: var(--color-error) !important;
+
+	&:hover {
+		/* biome-ignore lint/complexity/noImportantStyles: 危险项压过项的悬停底色 */
+		background: var(--color-error-bg) !important;
+	}
+}
+
+.ui-dropdown-menu-separator {
+	height: 1px;
+	margin-block: 4px;
+	margin-inline: 0;
+	background: var(--color-border);
+}
+
+.ui-dropdown-menu-group-label {
+	user-select: none;
+
+	padding-block: 8px 4px;
+	padding-inline: 12px;
+
+	[role="group"]:first-child > & {
+		padding-block-start: 4px;
+	}
+
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 14px;
+	color: var(--color-fg-tertiary);
+	text-transform: uppercase;
+	letter-spacing: 0.6px;
+}
+
+.ui-dropdown-menu-item-content {
+	display: flex;
+	flex: 1;
+	gap: 0;
+	align-items: center;
+}
+
+.ui-dropdown-menu-icon {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+
+	width: 14px;
+	height: 14px;
+	margin-inline-end: 12px;
+
+	color: var(--color-fg-secondary);
+
+	& svg {
+		width: 100%;
+		height: 100%;
+	}
+}
+
+.ui-dropdown-menu-label-group {
+	overflow: hidden;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+
+	min-width: 0;
+}
+
+.ui-dropdown-menu-label {
+	overflow: hidden;
+	flex: 1;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ui-dropdown-menu-desc {
+	overflow: hidden;
+
+	font-size: var(--text-xs);
+	line-height: 16px;
+	color: var(--color-fg-tertiary);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ui-switch {
+	--switch-width: 28px;
+	--switch-height: 16px;
+	--switch-padding: 2px;
+	--switch-thumb-size: 12px;
+	--switch-thumb-pressed-width: 16px;
+	--switch-dir: 1;
+
+	cursor: pointer;
+	user-select: none;
+
+	position: relative;
+
+	overflow: hidden;
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-start;
+
+	box-sizing: border-box;
+	width: var(--switch-width);
+	min-width: var(--switch-width);
+	height: var(--switch-height);
+	padding: var(--switch-padding);
+	border: 0;
+	border-radius: calc(infinity * 1px);
+
+	background: var(--color-fill-secondary);
+	outline: none;
+	box-shadow: inset 0 1.5px 2px rgb(0 0 0 / 8%);
+
+	transition:
+		background 200ms var(--ease-out),
+		box-shadow 200ms var(--ease-out);
+
+	&:dir(rtl) {
+		--switch-dir: -1;
+	}
+
+	[dir="rtl"] & {
+		--switch-dir: -1;
+	}
+
+	@apply focus-ring;
+
+	&:hover {
+		background: var(--color-fill);
+	}
+
+	&[data-checked] {
+		background: var(--color-primary);
+		box-shadow: inset 0 1.5px 3px rgb(0 0 0 / 18%);
+
+		&:hover {
+			background: var(--color-primary-hover);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}
+
+.ui-switch-thumb {
+	--switch-thumb-width: calc(
+		var(--switch-thumb-size) +
+		var(--switch-press, 0) *
+		(var(--switch-thumb-pressed-width) - var(--switch-thumb-size))
+	);
+
+	transform: translateX(
+		calc(
+			var(--switch-on, 0) *
+			(
+				var(--switch-width) -
+				2 *
+				var(--switch-padding) -
+				var(--switch-thumb-width)
+			) *
+			var(--switch-dir)
+		)
+	);
+
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+
+	width: var(--switch-thumb-width);
+	height: var(--switch-thumb-size);
+	border-radius: 50%;
+
+	background: var(--color-container);
+	box-shadow:
+		0 0 0 0.5px rgb(0 0 0 / 4%),
+		0 1px 1px rgb(0 0 0 / 6%),
+		0 3px 8px rgb(0 30 80 / 16%);
+
+	transition: box-shadow 200ms var(--ease-out);
+
+	[role="switch"]:hover > & {
+		box-shadow:
+			0 0 0 0.5px rgb(0 0 0 / 4%),
+			0 1px 1px rgb(0 0 0 / 8%),
+			0 6px 14px rgb(0 30 80 / 24%);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}

@@ -1,0 +1,87 @@
+/*
+ * Collapsible 的外观：`.ui-collapsible-panel` 在面板上，管高度过渡；
+ * `.ui-collapsible-content` 在内容上，管淡入与位移；其后是开关 `.ui-collapsible-trigger`
+ * 与它的箭头。各块各在一个元素上。
+ */
+
+.ui-collapsible-panel {
+	overflow: hidden;
+	height: auto;
+	transition: height 200ms var(--ease-out);
+
+	interpolate-size: allow-keywords;
+
+	&[data-starting-style],
+	&[data-ending-style] {
+		height: 0;
+	}
+
+	&[data-starting-style][style*="animation-name: none"],
+	&[data-starting-style][style*="animation-name:none"] {
+		height: auto;
+		transition: none;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}
+
+.ui-collapsible-content {
+	font-size: var(--text-base);
+	line-height: 1.6;
+	transition:
+		opacity 200ms var(--ease-out),
+		translate 200ms var(--ease-out);
+
+	[data-starting-style] & {
+		translate: 0 6px;
+		opacity: 0;
+	}
+
+	[data-ending-style] & {
+		translate: 0 -6px;
+		opacity: 0;
+	}
+
+	/* Base UI 给初始即展开的面板写上 animation-name: none */
+	[style*="animation-name: none"] &,
+	[style*="animation-name:none"] & {
+		translate: none;
+		opacity: 1;
+		transition: none;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}
+
+.ui-collapsible-trigger {
+	cursor: pointer;
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	padding: 0;
+	border: none;
+	color: inherit;
+	background: none;
+
+	@apply focus-ring;
+}
+
+.ui-collapsible-chevron {
+	flex: none;
+	width: 12px;
+	height: 12px;
+	margin-inline-start: auto;
+	transition: rotate 200ms var(--ease-out);
+
+	[aria-expanded="false"] > & {
+		rotate: -90deg;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}

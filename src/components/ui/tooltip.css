@@ -1,0 +1,143 @@
+/*
+ * 三块各挂在一个元素上，不互相组合，按 DOM 的先后排：positioner、popup、viewport。
+ * 提示总在触发器上方，进出场从下方 3px 处缩放淡入。定位器的 z 值用弹层档
+ * `--z-index-popup`。
+ */
+
+.ui-tooltip-positioner {
+	/* 进场的弹簧烘成 linear()：刚度 700、阻尼 38，阻尼比约 0.72、过冲约 4%。
+	   时长是弹簧的稳定时间，和曲线一起改。全站只有提示用这条弹簧，所以它不进 styles.css
+	   的动效令牌；淡入淡出与退场读令牌。 */
+	--ui-tooltip-animation-duration: 280ms;
+	--ui-tooltip-fade-duration: 160ms;
+	--ui-tooltip-fade-ease: var(--ease-out);
+	--ui-tooltip-animation-duration-exit: 100ms;
+	--ui-tooltip-animation-translate: 3px;
+	--ui-tooltip-animation-scale: 0.97;
+	--ui-tooltip-animation-ease-in: var(--ease-accelerate);
+	--ui-tooltip-animation-ease-out: linear(
+		0,
+		0.041,
+		0.14,
+		0.268,
+		0.407,
+		0.541,
+		0.662,
+		0.765,
+		0.849,
+		0.915,
+		0.964,
+		0.998,
+		1.02,
+		1.032,
+		1.038,
+		1.039,
+		1.036,
+		1.032,
+		1.027,
+		1.022,
+		1.016,
+		1.012,
+		1.008,
+		1.005,
+		1.003
+	);
+	will-change: transform, opacity;
+
+	z-index: var(--z-index-popup);
+
+	width: min(var(--positioner-width), 320px, var(--available-width));
+	height: var(--positioner-height);
+
+	transition-timing-function: var(--ui-tooltip-animation-ease-out);
+	transition-duration: var(--ui-tooltip-animation-duration);
+	transition-property: none;
+
+	&[data-instant] {
+		transition: none;
+	}
+
+	/* 触发器被藏起来、或定位器退回 (0,0) 时不显示提示。 */
+	&[data-anchor-hidden],
+	&[data-zero-origin="true"] {
+		pointer-events: none;
+		visibility: hidden;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		--ui-tooltip-animation-duration: 0s;
+		--ui-tooltip-fade-duration: 0s;
+		--ui-tooltip-animation-duration-exit: 0s;
+	}
+}
+
+.ui-tooltip-popup {
+	/* 浮层始终留在自己的合成层上：否则透明度过渡结束时浏览器撤掉这一层、按整像素重新
+	   栅格化，宽度量出小数（单行提示）时会看到一帧的位移。 */
+	will-change: transform, opacity;
+	user-select: none;
+
+	position: relative;
+	transform-origin: var(--transform-origin);
+
+	box-sizing: border-box;
+
+	/* 320px 的上限写在 viewport 上：Base UI 量内容时把 --available-width 设成 max-content，
+	   min(320px, max-content) 无效，量到的是没夹住的尺寸。 */
+	max-width: var(--available-width);
+	border-radius: var(--radius-sm);
+
+	font-size: var(--text-xs);
+	line-height: 1.2;
+	color: var(--color-fg-secondary);
+
+	background: var(--color-elevated);
+	box-shadow:
+		var(--elevation-sm),
+		0 0 0 1px var(--color-ring);
+
+	/* 透明度用单调的曲线：放在会过冲的弹簧上，淡入到 0.96 左右像是停了，到夹住的那一点
+	   再跳到 1，看着像掉帧。弹簧只用在 transform 上。 */
+	transition-timing-function:
+		var(--ui-tooltip-fade-ease), var(--ui-tooltip-animation-ease-out);
+	transition-duration:
+		var(--ui-tooltip-fade-duration), var(--ui-tooltip-animation-duration);
+	transition-property: opacity, transform;
+
+	&[data-starting-style],
+	&[data-ending-style] {
+		transform: translate3d(0, var(--ui-tooltip-animation-translate), 0)
+			scale(var(--ui-tooltip-animation-scale));
+		opacity: 0;
+	}
+
+	&[data-ending-style] {
+		transition-timing-function: var(--ui-tooltip-animation-ease-in);
+		transition-duration: var(--ui-tooltip-animation-duration-exit);
+	}
+
+	&[data-instant] {
+		transition: none;
+	}
+}
+
+.ui-tooltip-viewport {
+	--ui-tooltip-viewport-inline-padding: 8px;
+
+	position: relative;
+
+	overflow: clip;
+
+	max-width: calc(320px - 2px);
+	padding-block: 4px;
+	padding-inline: var(--ui-tooltip-viewport-inline-padding);
+
+	overflow-wrap: break-word;
+	white-space: normal;
+
+	[data-current] {
+		display: flex;
+		gap: 6px;
+		align-items: center;
+	}
+}

@@ -266,6 +266,7 @@ describe("检索人才库的过程", () => {
 			{ said: "再加带团队", spec: "推荐算法, 后端, 带团队" },
 		]);
 		assert.doesNotMatch(html, /<a[^>]*>(?:(?!<\/a>)[\s\S])*<button/);
-		assert.match(html, /<a[^>]*href="\/s\/t0"[^>]*>查看这次的结果<\/a>/);
+		const link = /<a[^>]*href="\/s\/t0"[^>]*>([\s\S]*?)<\/a>/.exec(html);
+		assert.equal(visibleText(link?.[1] ?? ""), "查看这次的结果");
 	});
 });

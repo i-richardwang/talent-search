@@ -1,84 +1,93 @@
-import { cva, type VariantProps } from "class-variance-authority";
-import type * as React from "react";
+"use client";
+
+import {
+	AlertTriangle,
+	CheckCircle,
+	Info,
+	type LucideIcon,
+	X,
+	XCircle,
+} from "lucide-react";
+import type { HTMLAttributes, ReactNode } from "react";
+import { Icon, type IconProps } from "#/components/ui/icon";
 import { cn } from "#/lib/utils";
 
-const alertVariants = cva(
-	"relative grid w-full items-start gap-x-2 gap-y-0.5 rounded-xl border px-3.5 py-3 text-card-foreground text-sm has-[>svg]:has-data-[slot=alert-action]:grid-cols-[calc(var(--spacing)*4)_1fr_auto] has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] has-data-[slot=alert-action]:grid-cols-[1fr_auto] has-[>svg]:gap-x-2 [&>svg]:h-lh [&>svg]:w-4",
-	{
-		defaultVariants: {
-			variant: "default",
-		},
-		variants: {
-			variant: {
-				default:
-					"bg-transparent dark:bg-input/32 [&>svg]:text-muted-foreground",
-				error:
-					"border-destructive/32 bg-destructive/4 [&>svg]:text-destructive",
-				info: "border-info/32 bg-info/4 [&>svg]:text-info",
-				success: "border-success/32 bg-success/4 [&>svg]:text-success",
-				warning: "border-warning/32 bg-warning/4 [&>svg]:text-warning",
-			},
-		},
-	},
-);
+/*
+ * 提示条，样式在 alert.css：语气色的浅底加一圈同色细边，图标用语气色，文字是正文色。
+ * 给了 `onClose` 才有关闭按钮，aria-label 是「关闭提示」，提示条由调用处移除。
+ */
+
+type AlertType = "success" | "info" | "warning" | "error" | "secondary";
+
+interface AlertOwnProps {
+	/** 放在文字之后的动作。 */
+	action?: ReactNode;
+	/** 标题下面的说明。 */
+	description?: ReactNode;
+	/** 换掉语气对应的图标。 */
+	icon?: IconProps["icon"];
+	/** 按下关闭按钮时调用。 */
+	onClose?: () => void;
+	/** 主要的那句话。 */
+	title: ReactNode;
+	type?: AlertType;
+}
+
+type AlertProps = AlertOwnProps &
+	Omit<HTMLAttributes<HTMLDivElement>, keyof AlertOwnProps | "children">;
+
+const TYPE_ICONS = {
+	error: XCircle,
+	info: Info,
+	secondary: AlertTriangle,
+	success: CheckCircle,
+	warning: AlertTriangle,
+} satisfies Record<AlertType, LucideIcon>;
 
 export function Alert({
+	action,
 	className,
-	variant,
-	...props
-}: React.ComponentProps<"div"> &
-	VariantProps<typeof alertVariants>): React.ReactElement {
-	return (
-		<div
-			className={cn(alertVariants({ variant }), className)}
-			data-slot="alert"
-			role="alert"
-			{...props}
-		/>
-	);
-}
+	description,
+	icon,
+	onClose,
+	role = "alert",
+	title,
+	type = "info",
+	...rest
+}: AlertProps) {
+	const hasDescription = description !== undefined && description !== null;
 
-export function AlertTitle({
-	className,
-	...props
-}: React.ComponentProps<"div">): React.ReactElement {
 	return (
 		<div
-			className={cn("font-medium [svg~&]:col-start-2", className)}
-			data-slot="alert-title"
-			{...props}
-		/>
-	);
-}
-
-export function AlertDescription({
-	className,
-	...props
-}: React.ComponentProps<"div">): React.ReactElement {
-	return (
-		<div
+			{...rest}
 			className={cn(
-				"flex flex-col gap-2.5 text-muted-foreground [svg~&]:col-start-2",
+				`ui-alert-tone-${type}`,
+				"ui-alert",
+				hasDescription ? "ui-alert-detailed" : "ui-alert-centered",
 				className,
 			)}
-			data-slot="alert-description"
-			{...props}
-		/>
-	);
-}
-
-export function AlertAction({
-	className,
-	...props
-}: React.ComponentProps<"div">): React.ReactElement {
-	return (
-		<div
-			className={cn(
-				"flex gap-1 max-sm:col-start-2 max-sm:mt-2 sm:row-start-1 sm:row-end-3 sm:self-center sm:[[data-slot=alert-description]~&]:col-start-2 sm:[[data-slot=alert-title]~&]:col-start-2 sm:[svg~&]:col-start-2 sm:[svg~[data-slot=alert-description]~&]:col-start-3 sm:[svg~[data-slot=alert-title]~&]:col-start-3",
-				className,
+			role={role}
+		>
+			<span aria-hidden="true" className="ui-alert-icon">
+				<Icon icon={icon ?? TYPE_ICONS[type]} size={hasDescription ? 18 : 16} />
+			</span>
+			<div className="ui-alert-content">
+				<div className="ui-alert-title">{title}</div>
+				{hasDescription && (
+					<div className="ui-alert-description">{description}</div>
+				)}
+			</div>
+			{action && <div className="ui-alert-action">{action}</div>}
+			{onClose && (
+				<button
+					aria-label="关闭提示"
+					className="ui-alert-close"
+					onClick={onClose}
+					type="button"
+				>
+					<X size={14} />
+				</button>
 			)}
-			data-slot="alert-action"
-			{...props}
-		/>
+		</div>
 	);
 }

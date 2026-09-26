@@ -63,7 +63,10 @@ describe("选择后浮起来的工具条", () => {
 		const html = markup([pick("林岚", 1)]);
 		assert.doesNotMatch(visibleText(html), /林岚/);
 		// 选中的是哪几个人、以及怎么移除其中一个，都在这个按钮后面
-		assert.match(html, /<button[^>]*>已选/);
+		const buttons = [...html.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)];
+		assert.ok(
+			buttons.some(([, inner]) => visibleText(inner ?? "").startsWith("已选")),
+		);
 	});
 
 	test("一个都没选时不渲染", () => {

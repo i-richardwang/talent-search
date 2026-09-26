@@ -1,8 +1,8 @@
 import "@tanstack/react-start/server-only";
 import { type SQL, sql } from "drizzle-orm";
 import { withCorpusSnapshot } from "#/db/snapshot";
+import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
-import { PAGE_SIZE, pageAt, type TablePage, tablePage } from "./paging";
 
 /** 一个标准词：它属于哪个更宽的词、并进来的写法、它和它的细分词一共多少人、上次整理的时间。 */
 export type SkillEntry = {
@@ -108,7 +108,7 @@ export function listSkills(
 				(current_date - max(a.reviewed_at)::date)::int as "reviewedDaysAgo"
 			${MATCHED}
 			order by people desc, a.canonical
-			limit ${PAGE_SIZE} offset ${at.offset}`);
+			limit ${at.limit} offset ${at.offset}`);
 		return tablePage(rows, total, at);
 	});
 }

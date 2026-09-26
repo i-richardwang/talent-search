@@ -20,7 +20,7 @@ import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EvidenceLine, MissedClaims } from "#/components/evidence";
 import type { ClaimBasis, Hit } from "#/search/result";
-import { visibleText } from "./render";
+import { classesWith, visibleText } from "./render";
 import { hit as row } from "./rows";
 
 const hit = (over: Partial<Hit> = {}) =>
@@ -77,11 +77,15 @@ describe("一行证据看得见的部分", () => {
 	});
 
 	test("还在做的把数字提到正文色，做完了的留在次要色", () => {
-		assert.match(markup(hit(), basis({ endDate: null })), /text-foreground/);
-		assert.match(
-			markup(hit(), basis({ endDate: "2021-06-01" })),
-			/text-muted-foreground/,
-		);
+		// 定字色的是右端那个数所在的元素，只它一个
+		const number = (b: ClaimBasis) =>
+			classesWith(markup(hit(), b), "tabular-nums") ?? [];
+		const ongoing = number(basis({ endDate: null }));
+		assert.ok(ongoing.includes("text-fg"), ongoing.join(" "));
+		assert.ok(!ongoing.includes("text-fg-secondary"), ongoing.join(" "));
+		const ended = number(basis({ endDate: "2021-06-01" }));
+		assert.ok(ended.includes("text-fg-secondary"), ended.join(" "));
+		assert.ok(!ended.includes("text-fg"), ended.join(" "));
 	});
 
 	test("主张的名字永远在——它是上下对比的那条竖线", () => {

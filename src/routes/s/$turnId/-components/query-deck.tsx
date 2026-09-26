@@ -1,4 +1,4 @@
-import { Separator } from "#/components/ui/separator";
+import { Divider } from "#/components/ui/divider";
 import type { SearchSpec } from "#/search/spec";
 import { QueryChips } from "./query-chips";
 
@@ -27,17 +27,17 @@ export function QueryDeck({
 }) {
 	const conditions = spec?.conditions ?? [];
 	return (
-		<header className="sticky top-(--header-height) z-stick min-h-(--deck-height) bg-canvas/80 backdrop-blur-sm before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-border/64 lg:h-(--deck-height)">
+		<header className="sticky top-(--header-height) z-stick min-h-(--deck-height) border-b bg-layout/80 backdrop-blur-sm lg:h-(--deck-height)">
 			<div className="app-column flex h-full flex-wrap items-center gap-x-2 gap-y-1.5 py-1.5 lg:flex-nowrap lg:overflow-hidden lg:py-0">
 				<h1
-					className="min-w-0 shrink truncate font-medium text-sm"
+					className="min-w-0 shrink truncate font-medium text-base"
 					title={title ?? undefined}
 				>
 					{title ?? "搜索条件"}
 				</h1>
 				{onChangeSpec && conditions.length > 0 && (
 					<>
-						<Separator className="h-4 max-lg:hidden" orientation="vertical" />
+						<Divider className="max-lg:hidden" orientation="vertical" />
 						<div className="flex shrink-0 items-center gap-1.5 max-lg:flex-wrap">
 							<QueryChips
 								conditions={conditions}

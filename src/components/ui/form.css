@@ -1,0 +1,80 @@
+/*
+ * 类名前缀：Form 是 `.ui-form`，字段 `.ui-form-field-*`。块的先后照组件里挂类的先后：
+ * Form 的根；字段的根、label、control、错误；label 里的标题与说明。
+ * 窄屏断点是 `max-width: 575.98px`。
+ */
+
+.ui-form {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 48px;
+	width: 100%;
+
+	@media (max-width: 575.98px) {
+		/* biome-ignore lint/complexity/noImportantStyles: 窄屏压过行内的 gap */
+		gap: 0 !important;
+	}
+}
+
+.ui-form-field {
+	display: flex;
+	gap: 12px;
+	box-sizing: border-box;
+	width: 100%;
+	padding-block: 16px;
+}
+
+.ui-form-field-horizontal {
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.ui-form-field-vertical {
+	flex-direction: column;
+	gap: 8px;
+	align-items: stretch;
+}
+
+.ui-form-field-label {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 8px;
+	max-width: 100%;
+	text-align: start;
+}
+
+.ui-form-field-control {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	align-items: flex-end;
+}
+
+.ui-form-field-control-vertical {
+	align-items: stretch;
+	width: 100%;
+}
+
+.ui-form-field-error {
+	font-size: var(--text-xs);
+	color: var(--color-error);
+}
+
+.ui-form-field-title {
+	font-weight: 500;
+	line-height: 1;
+	color: var(--color-fg);
+}
+
+.ui-form-field-desc {
+	display: block;
+	font-size: var(--text-xs);
+	font-weight: 400;
+	line-height: 1.44;
+	color: var(--color-fg-tertiary);
+	overflow-wrap: break-word;
+	white-space: pre-wrap;
+}
