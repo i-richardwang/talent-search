@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { AppNavHeader } from "#/components/ui/app-layout";
-import { ContextMenu } from "#/components/ui/context-menu";
 import {
 	DropdownMenuItemContent,
 	DropdownMenuItemExtra,
@@ -130,47 +129,46 @@ function RecentGroup({ recent }: { recent: TablePage<RecentSearch> | null }) {
 	);
 
 	return (
-		<ContextMenu menu={menu}>
-			<NavGroup
-				action={
-					<DropdownMenuRoot>
-						<DropdownMenuTrigger>
-							<ActionIcon
-								aria-label="最近搜索的更多操作"
-								icon={MoreHorizontalIcon}
-								size="small"
-							/>
-						</DropdownMenuTrigger>
-						<DropdownMenuPortal>
-							<DropdownMenuPositioner>
-								<DropdownMenuPopup>{menu}</DropdownMenuPopup>
-							</DropdownMenuPositioner>
-						</DropdownMenuPortal>
-					</DropdownMenuRoot>
-				}
-				title="最近搜索"
-				value="recent"
-			>
-				{recent === null ? (
-					<LoadFailed onRetry={retry} retrying={retrying} />
-				) : (
-					<>
-						{recent.rows.slice(0, count).map((record) => (
-							<RecentItem key={record.turnId} record={record} />
-						))}
-						{recent.total > count && (
-							<NavItem
-								icon={MoreHorizontalIcon}
-								onClick={control?.openAllRecents}
-								render={<button type="button" />}
-							>
-								更多
-							</NavItem>
-						)}
-					</>
-				)}
-			</NavGroup>
-		</ContextMenu>
+		<NavGroup
+			action={
+				<DropdownMenuRoot>
+					<DropdownMenuTrigger>
+						<ActionIcon
+							aria-label="最近搜索的更多操作"
+							icon={MoreHorizontalIcon}
+							size="small"
+						/>
+					</DropdownMenuTrigger>
+					<DropdownMenuPortal>
+						<DropdownMenuPositioner>
+							<DropdownMenuPopup>{menu}</DropdownMenuPopup>
+						</DropdownMenuPositioner>
+					</DropdownMenuPortal>
+				</DropdownMenuRoot>
+			}
+			headerMenu={menu}
+			title="最近搜索"
+			value="recent"
+		>
+			{recent === null ? (
+				<LoadFailed onRetry={retry} retrying={retrying} />
+			) : (
+				<>
+					{recent.rows.slice(0, count).map((record) => (
+						<RecentItem key={record.turnId} record={record} />
+					))}
+					{recent.total > count && (
+						<NavItem
+							icon={MoreHorizontalIcon}
+							onClick={control?.openAllRecents}
+							render={<button type="button" />}
+						>
+							更多
+						</NavItem>
+					)}
+				</>
+			)}
+		</NavGroup>
 	);
 }
 

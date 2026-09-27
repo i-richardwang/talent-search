@@ -11,6 +11,7 @@ import {
 	AccordionRoot,
 	AccordionTrigger,
 } from "./accordion";
+import { ContextMenu } from "./context-menu";
 import { Icon } from "./icon";
 import { Text } from "./text";
 
@@ -96,27 +97,38 @@ export function NavGroups({
 
 /**
  * 一组导航项，放在 `NavGroups` 里。组名一行整行可点，点一下收起或展开；`action`
- * 在行尾，指针进入这一行或焦点落进来时出现。
+ * 在行尾，指针进入这一行或焦点落进来时出现。给了 `headerMenu` 时，在组名那一行上
+ * 按右键打开它（组里的行各有各的右键菜单）。
  */
 export function NavGroup({
 	value,
 	title,
 	action,
+	headerMenu,
 	children,
 }: {
 	value: string;
 	title: string;
 	action?: ReactNode;
+	/** 组名那一行的右键菜单：`renderDropdownMenuItems(...)` 或下拉菜单的原子件。 */
+	headerMenu?: ReactNode;
 	children: ReactNode;
 }) {
+	const header = (
+		<AccordionHeader>
+			<AccordionTrigger className="ui-nav-group-title">
+				{title}
+			</AccordionTrigger>
+			{action && <AccordionAction>{action}</AccordionAction>}
+		</AccordionHeader>
+	);
 	return (
 		<AccordionItem value={value}>
-			<AccordionHeader>
-				<AccordionTrigger className="ui-nav-group-title">
-					{title}
-				</AccordionTrigger>
-				{action && <AccordionAction>{action}</AccordionAction>}
-			</AccordionHeader>
+			{headerMenu ? (
+				<ContextMenu menu={headerMenu}>{header}</ContextMenu>
+			) : (
+				header
+			)}
 			<AccordionPanel contentClassName="ui-nav-group-items">
 				{children}
 			</AccordionPanel>
