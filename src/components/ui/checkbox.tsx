@@ -7,7 +7,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "#/lib/utils";
 
 /*
- * 复选框与复选框组，样式在 checkbox.css。方框边长 16px。没有 children 时只渲染方框，
+ * 复选框与复选框组，样式在 checkbox.css。方框边长 16px，点击面四周各多 6px。没有 children 时只渲染方框，
  * `className` 落在方框上；有 children 时外面包一层 `<label>`，`className` 落在这层上。
  * 标签文字是一个 `<span>`，平时与禁用的两种颜色写在 checkbox.css。
  * `CheckboxGroup` 只持有取值，不带布局：选项由调用处自己排（一行里还有计数、

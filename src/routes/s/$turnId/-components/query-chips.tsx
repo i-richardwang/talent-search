@@ -19,7 +19,7 @@ import {
 	renderDropdownMenuItems,
 } from "#/components/ui/dropdown-menu";
 import { Icon } from "#/components/ui/icon";
-import { cn } from "#/lib/utils";
+import { Text } from "#/components/ui/text";
 import {
 	type Condition,
 	conditionKey,
@@ -33,16 +33,9 @@ import {
 import {
 	conditionLabel,
 	hasMore,
-	MODE_GLYPH,
 	MODE_NAME,
 	partLabel,
 } from "#/search/condition-label";
-
-const MODE_TYPE: Record<Mode, "fill" | "default"> = {
-	must: "fill",
-	boost: "default",
-	exclude: "default",
-};
 
 const MODE_HINT: Record<Mode, string> = {
 	must: "只保留满足此条件的人",
@@ -50,12 +43,14 @@ const MODE_HINT: Record<Mode, string> = {
 	exclude: "排除有这类经历的人",
 };
 
-const EXCLUDE_STYLE = "line-through";
-
-const OFF_STYLE = "border-dashed text-fg-secondary";
-
 const MORE_GLYPH = "≈";
 
+/**
+ * 一排条件，一条一个 chip。强度写成字：必须是默认，不标；加分、排除在条件后面跟一个
+ * 三级灰的词，和「（加分）」写进句子里（`inSentence`）是同一个说法。
+ * 必须铺底（fill），加分、排除描边（default）；停用的换成虚线边（dashed），
+ * 字退到次要色。
+ */
 export function QueryChips({
 	conditions,
 	onChange,
@@ -122,23 +117,24 @@ export function QueryChips({
 								]
 									.filter(Boolean)
 									.join("，")}
-								className={cn(
-									chip.mode === "exclude" && EXCLUDE_STYLE,
-									chip.off && OFF_STYLE,
-								)}
+								className={chip.off ? "text-fg-secondary" : undefined}
 								size="small"
-								type={chip.off ? "default" : MODE_TYPE[chip.mode]}
+								type={
+									chip.off
+										? "dashed"
+										: chip.mode === "must"
+											? "fill"
+											: "default"
+								}
 							>
-								{MODE_GLYPH[chip.mode] && (
-									<span className="font-mono text-fg-secondary">
-										{MODE_GLYPH[chip.mode]}
-									</span>
-								)}
 								<span>{label}</span>
 								{more && (
-									<span className="font-mono text-fg-secondary">
+									<Text code type="secondary">
 										{MORE_GLYPH}
-									</span>
+									</Text>
+								)}
+								{chip.mode !== "must" && (
+									<Text type="tertiary">{MODE_NAME[chip.mode]}</Text>
 								)}
 								{wide && <span>太宽</span>}
 								{chip.off && <Icon icon={EyeOffIcon} size="small" />}

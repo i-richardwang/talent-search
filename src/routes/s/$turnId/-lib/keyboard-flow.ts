@@ -4,10 +4,10 @@ import type { SearchResult } from "#/search/result";
 import type { View } from "./view-params";
 
 /**
- * `/` 改查询，↑↓ / jk 换人，Esc 关闭详情，空格选中或取消正在看的这个人。
- * 批量筛人时手不必离开键盘。
+ * `/` 改查询，↑↓ / jk 换人，空格选中或取消正在看的这个人，Esc 先关详情、没开详情时
+ * 清空已选的人，`?` 打开快捷键列表。批量筛人时手不必离开键盘。
  *
- * 窄屏详情浮层的 Esc 归 `Modal` 自己：焦点在 `[role=dialog]` 里时这里不接。
+ * 窄屏详情浮层、导出对话框、快捷键列表的 Esc 归它们自己：焦点在 `[role=dialog]` 里时这里不接。
  */
 export function useKeyboardFlow({
 	onEditQuery,
@@ -16,6 +16,9 @@ export function useKeyboardFlow({
 	turnId,
 	view,
 	onPick,
+	picked,
+	onClearPicks,
+	onHelp,
 }: {
 	/** 把光标放进改查询的地方：对话是右栏线程底下的输入框，关键词是名单上方的「经历或技能」。 */
 	onEditQuery: () => void;
@@ -26,6 +29,11 @@ export function useKeyboardFlow({
 	view: View;
 	/** 选中或取消正在看的这个人。 */
 	onPick: (empId: string) => void;
+	/** 已经选了几个人。 */
+	picked: number;
+	onClearPicks: () => void;
+	/** 打开快捷键列表。 */
+	onHelp: () => void;
 }) {
 	const navigate = useNavigate();
 
@@ -52,6 +60,11 @@ export function useKeyboardFlow({
 				onEditQuery();
 				return;
 			}
+			if (e.key === "?" && !busy) {
+				e.preventDefault();
+				onHelp();
+				return;
+			}
 			if (e.key === "Escape") {
 				// 输入框、下拉、对话框里的 Esc 归它们自己。
 				if (busy) return;
@@ -63,6 +76,11 @@ export function useKeyboardFlow({
 						search: view,
 						replace: true,
 					});
+					return;
+				}
+				if (picked > 0) {
+					e.preventDefault();
+					onClearPicks();
 					return;
 				}
 			}
@@ -118,5 +136,16 @@ export function useKeyboardFlow({
 
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
-	}, [onEditQuery, onPick, results, empId, turnId, view, navigate]);
+	}, [
+		onEditQuery,
+		onPick,
+		picked,
+		onClearPicks,
+		onHelp,
+		results,
+		empId,
+		turnId,
+		view,
+		navigate,
+	]);
 }

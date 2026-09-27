@@ -6,8 +6,9 @@ import {
 	useNavigate,
 	useParams,
 } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { KeywordBar } from "#/components/keyword-bar";
-import { Alert } from "#/components/ui/alert";
+import { toast } from "#/components/ui/toast";
 import type { Condition } from "#/search/condition";
 import { keywordsOf, keywordTitle } from "#/search/keywords";
 import { emptyFacets, type SearchOutcome } from "#/search/result";
@@ -18,9 +19,9 @@ import { useCommit } from "../../-lib/commit";
 import { ConversationDrawer } from "./-components/conversation-drawer";
 import { DetailModal } from "./-components/detail-modal";
 import { Earlier } from "./-components/earlier";
-import { KeyHints } from "./-components/key-hints";
+import { KeyHelp } from "./-components/key-help";
 import { QueryHeader } from "./-components/query-header";
-import { ResultList } from "./-components/result-list";
+import { type ListWait, ResultList } from "./-components/result-list";
 import { SidePanel } from "./-components/side-panel";
 import { Thread } from "./-components/thread";
 import { WorkbenchNav } from "./-components/workbench-nav";
@@ -84,8 +85,12 @@ function Workbench() {
 	const navigate = useNavigate();
 	const { empId } = useParams({ strict: false });
 	const { commit, error: commitError } = useCommit();
+	// 动作没提交上去：名单还是原来那份，说一句、让人再点一次
+	useEffect(() => {
+		if (commitError) toast.error(commitError);
+	}, [commitError]);
 
-	const { growing, navigating } = useNavPhase();
+	const { growing, refreshing, replacing } = useNavPhase();
 	// 理解属于链上最后一轮，不属于正看着的这一轮：回头看早先的结果时，
 	// 最后一轮照样在理解，线程照样在长
 	const {
@@ -109,8 +114,14 @@ function Workbench() {
 	const spec = settledSpec ?? EMPTY_SPEC;
 	const outcome = result ?? NO_OUTCOME;
 	const { results, total } = outcome;
-	const loading = navigating || (pending && interpreting);
-	const phase = pending && interpreting ? "interpreting" : "searching";
+	const wait: ListWait | null =
+		pending && interpreting
+			? { list: "skeleton", phase: "interpreting" }
+			: replacing
+				? { list: "skeleton", phase: "searching" }
+				: refreshing
+					? { list: "dim", phase: "searching" }
+					: null;
 
 	const updateView = (next: Partial<View>) =>
 		navigate({ to: ".", search: (old) => ({ ...old, n: undefined, ...next }) });
@@ -148,9 +159,14 @@ function Workbench() {
 		/>
 	);
 
+	const [help, setHelp] = useState(false);
+
 	useKeyboardFlow({
+		onClearPicks: picks.clear,
 		onEditQuery: editQuery,
+		onHelp: () => setHelp(true),
 		onPick: picks.toggle,
+		picked: picks.picked.size,
 		results,
 		empId,
 		turnId,
@@ -158,83 +174,89 @@ function Workbench() {
 	});
 
 	return (
-		<WorkspaceLayout
-			header={
-				<QueryHeader
-					onChangeSpec={mode === "conversation" ? reviseSpec : undefined}
-					right={
-						!wide &&
-						conversation && (
-							<ConversationDrawer
-								onOpenChange={setThreadOpen}
-								open={threadOpen}
-							>
-								{conversation}
-							</ConversationDrawer>
-						)
-					}
-					spec={settledSpec}
-					title={
-						mode === "conversation"
-							? turn.title
-							: keywords && keywordTitle(keywords)
-					}
-				/>
-			}
-			keys={<KeyHints editable={editable} mode={mode} />}
-			list={
-				<ResultList
-					canMore={canMore}
-					empId={empId}
-					failure={
-						pending && interpretFault
-							? { fault: interpretFault, onRetry: retryInterpret }
-							: null
-					}
-					growing={growing}
-					loading={loading}
-					mode={mode}
-					onAll={pickAll}
-					onChange={updateView}
-					onEditQuery={editQuery}
-					onMore={() => updateView(morePage(view))}
-					onReviseQuery={(conditions) => reviseSpec({ conditions })}
-					outcome={outcome}
-					phase={phase}
-					picks={picks}
-					spec={spec}
-					turnId={turnId}
-				/>
-			}
-			notices={
-				/* 关键词搜索的框在名单正上方：改完第一眼看到的是它改了什么，
+		<>
+			<WorkspaceLayout
+				header={
+					<QueryHeader
+						onChangeSpec={mode === "conversation" ? reviseSpec : undefined}
+						onHelp={() => setHelp(true)}
+						right={
+							!wide &&
+							conversation && (
+								<ConversationDrawer
+									onOpenChange={setThreadOpen}
+									open={threadOpen}
+								>
+									{conversation}
+								</ConversationDrawer>
+							)
+						}
+						spec={settledSpec}
+						title={
+							mode === "conversation"
+								? turn.title
+								: keywords && keywordTitle(keywords)
+						}
+					/>
+				}
+				list={
+					<ResultList
+						canMore={canMore}
+						empId={empId}
+						failure={
+							pending && interpretFault
+								? { fault: interpretFault, onRetry: retryInterpret }
+								: null
+						}
+						growing={growing}
+						mode={mode}
+						onAll={pickAll}
+						onChange={updateView}
+						onEditQuery={editQuery}
+						onMore={() => updateView(morePage(view))}
+						onReviseQuery={(conditions) => reviseSpec({ conditions })}
+						outcome={outcome}
+						picks={picks}
+						spec={spec}
+						turnId={turnId}
+						wait={wait}
+					/>
+				}
+				notices={
+					/* 关键词搜索的框在名单正上方：改完第一眼看到的是它改了什么，
 				   再往下才是人。对话不在这里，在右栏的线程里。 */
-				(earlier || mode === "keyword" || commitError) && (
-					<>
-						{earlier && <Earlier latestId={latest.id} />}
-						{mode === "keyword" && (
-							<KeywordBar
-								initial={keywords ?? undefined}
-								key={turnId}
-								onSearch={(conditions) => reviseSpec({ conditions })}
-								ref={keywordBar}
-							/>
-						)}
-						{commitError && <Alert title={commitError} type="error" />}
-					</>
-				)
-			}
-			panel={
-				<SidePanel
-					conversation={conversation}
-					detail={open ? <Outlet /> : null}
-				/>
-			}
-			detailModal={
-				<DetailModal onClose={() => void closeDetail()} open={open}>
-					<Outlet />
-				</DetailModal>
-			}
-		/>
+					(earlier || mode === "keyword") && (
+						<>
+							{earlier && <Earlier latestId={latest.id} />}
+							{mode === "keyword" && (
+								<KeywordBar
+									initial={keywords ?? undefined}
+									key={turnId}
+									onSearch={(conditions) => reviseSpec({ conditions })}
+									ref={keywordBar}
+								/>
+							)}
+						</>
+					)
+				}
+				panel={
+					<SidePanel
+						conversation={conversation}
+						detail={open ? <Outlet /> : null}
+					/>
+				}
+				detailModal={
+					<DetailModal onClose={() => void closeDetail()} open={open}>
+						<Outlet />
+					</DetailModal>
+				}
+			/>
+			<KeyHelp
+				editable={editable}
+				mode={mode}
+				onClose={() => setHelp(false)}
+				open={help}
+			/>
+		</>
 	);
 }

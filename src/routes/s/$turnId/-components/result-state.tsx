@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import {
-	Loader2Icon,
 	MessageSquareWarningIcon,
 	RotateCwIcon,
 	SearchXIcon,
@@ -9,7 +8,7 @@ import { useEffect, useState } from "react";
 import { StrengthLegend } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
-import { Icon } from "#/components/ui/icon";
+import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
 import type { SearchOutcome } from "#/search/result";
@@ -24,16 +23,17 @@ const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	employee: "默认顺序",
 };
 
-/** 名单的表头：这份名单有多少人、按什么排，有证据行时带上那三颗点的图例。 */
+/** 名单的表头：这份名单有多少人、按什么排，有证据行时带上那三颗点的图例。等待时这一格换成在做什么。 */
 export function ResultHeader({
-	loading,
+	phase,
 	order,
 	total,
 	evidence,
 	className,
 }: {
 	className?: string;
-	loading: boolean;
+	/** 在等什么；null 时写人数和排序。 */
+	phase: SearchPhase | null;
 	order: SearchOutcome["order"];
 	total: number;
 	/** 名单上有证据行（或这一轮的条件会有）：图例才有点可对照。 */
@@ -46,9 +46,12 @@ export function ResultHeader({
 				className,
 			)}
 		>
-			<p className="text-fg-secondary text-sm" role="status">
-				{loading ? (
-					"搜索中…"
+			<p
+				className="flex items-center gap-1 text-fg-secondary text-sm"
+				role="status"
+			>
+				{phase ? (
+					<Waiting key={phase} phase={phase} />
 				) : (
 					<>
 						<b className="font-medium text-fg tabular-nums">{total}</b> 人
@@ -147,41 +150,40 @@ export function NotUnderstood({
 }
 
 const PHASE_TEXT = {
-	interpreting: "正在理解你的需求",
-	searching: "正在搜索",
+	interpreting: "正在理解你的需求…",
+	searching: "正在搜索…",
 } as const;
 
 export type SearchPhase = keyof typeof PHASE_TEXT;
 
-function useElapsed(): number | null {
-	const [ms, setMs] = useState(0);
+/** 等过这么久才写已等的秒数：短于它的等待数字刚出现就消失，只是一闪。 */
+const ELAPSED_AFTER = 2100;
+
+/** 这一步开始后过了几秒，整秒向下取；每一步重新计（调用处按 `phase` 换 key）。 */
+function useElapsedSeconds(): number {
+	const [seconds, setSeconds] = useState(0);
 	useEffect(() => {
 		const start = Date.now();
-		const timer = setInterval(() => setMs(Date.now() - start), 1000);
+		const timer = setInterval(
+			() => setSeconds(Math.floor((Date.now() - start) / 1000)),
+			1000,
+		);
 		return () => clearInterval(timer);
 	}, []);
-	return ms >= 5000 ? Math.round(ms / 1000) : null;
+	return seconds;
 }
 
-export function Searching({ phase }: { phase: SearchPhase }) {
-	const seconds = useElapsed();
+/** 在做什么，字上走流光；等过 2.1 秒后面跟一个「(12s)」。 */
+function Waiting({ phase }: { phase: SearchPhase }) {
+	const seconds = useElapsedSeconds();
 	return (
-		<div className="flex flex-col items-center justify-center gap-4 py-24">
-			<Icon
-				aria-hidden="true"
-				className="text-fg-secondary"
-				icon={Loader2Icon}
-				size={20}
-				spin
-			/>
-			<p className="font-medium text-base" role="status">
-				{PHASE_TEXT[phase]}
-				{seconds !== null && (
-					<span className="text-fg-secondary tabular-nums">
-						{` · ${seconds} 秒`}
-					</span>
-				)}
-			</p>
-		</div>
+		<>
+			<Text shiny>{PHASE_TEXT[phase]}</Text>
+			{seconds * 1000 >= ELAPSED_AFTER && (
+				<Text className="tabular-nums" type="tertiary">
+					({seconds}s)
+				</Text>
+			)}
+		</>
 	);
 }

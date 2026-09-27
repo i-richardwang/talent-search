@@ -112,11 +112,15 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 		setPicked(withAll(rows));
 	}
 
+	// 连选的起点：上一次点选或空格选过的那个人。
+	const anchor = useRef<string | null>(null);
+
 	// 换记录时在渲染里清空，新名单的第一帧就不带旧的已选人数。
 	const seen = useRef(turnId);
 	if (seen.current !== turnId) {
 		seen.current = turnId;
 		sweeping.current = false;
+		anchor.current = null;
 		setPicked(NONE);
 	}
 
@@ -157,6 +161,7 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	// 空格选中／取消一个人：先试着删，删不掉再从名单上取这一行的快照。
 	const toggle = useCallback(
 		(empId: string) => {
+			anchor.current = empId;
 			setPicked((old) => {
 				const next = new Map(old);
 				if (next.delete(empId)) return next;
@@ -194,8 +199,28 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 		[rows],
 	);
 
+	/**
+	 * 点了名单上一个人的选择框。按着 Shift、且上一次选过的人还在名单上时，把两人之间
+	 * （含两端）全部选中，已选的不取消，返回 true，调用处拦下这个框自己的切换；
+	 * 否则只把这个人记作下一次连选的起点，返回 false，框照常切换。
+	 */
+	const pointAt = useCallback(
+		(empId: string, shift: boolean) => {
+			const from = rows.findIndex((r) => r.pick.empId === anchor.current);
+			const to = rows.findIndex((r) => r.pick.empId === empId);
+			anchor.current = empId;
+			if (!shift || from < 0 || to < 0) return false;
+			setPicked(
+				withAll(rows.slice(Math.min(from, to), Math.max(from, to) + 1)),
+			);
+			return true;
+		},
+		[rows],
+	);
+
 	const clear = useCallback(() => {
 		sweeping.current = false;
+		anchor.current = null;
 		setPicked(NONE);
 	}, []);
 
@@ -203,6 +228,7 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 		clear,
 		picked,
 		pickAll,
+		pointAt,
 		remove,
 		rows,
 		setShown,

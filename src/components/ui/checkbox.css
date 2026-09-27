@@ -6,6 +6,7 @@
 
 .ui-checkbox {
 	cursor: pointer;
+	position: relative;
 	display: inline-flex;
 	flex: none;
 	align-items: center;
@@ -42,6 +43,14 @@
 		opacity: 0.25;
 		background: var(--color-fill);
 	}
+}
+
+/* 点击面向四周各伸出 6px，合起来 28px 见方：方框单独摆在一行前面时（名单、表格）
+   不用再包一层标签来放大。 */
+.ui-checkbox::after {
+	content: "";
+	position: absolute;
+	inset: -6px;
 }
 
 .ui-checkbox-indicator {

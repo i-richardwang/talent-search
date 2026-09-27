@@ -15,6 +15,7 @@ import {
 	EyeOff,
 	GraduationCap,
 	History,
+	Keyboard,
 	Loader2,
 	type LucideIcon,
 	MessageSquareText,
@@ -64,6 +65,7 @@ export const PRODUCT_ICONS: [
 	["Clock", Clock, "关键词里的累计年限"],
 	["CornerDownRight", CornerDownRight, "一条示例，点了填进输入框"],
 	["History", History, "正在看较早的一次结果"],
+	["Keyboard", Keyboard, "快捷键列表"],
 	["MessageSquareText", MessageSquareText, "最近搜索里的一次 AI 搜索"],
 	["TextSearch", TextSearch, "最近搜索里的一次关键词搜索"],
 	[

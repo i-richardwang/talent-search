@@ -47,16 +47,28 @@ const LOOKS: [name: string, condition: Condition, note: string][] = [
 	[
 		"must",
 		{ about: "experience", mode: "must", what: ["推荐系统"] },
-		"必须：默认强度，没有符号，填充底",
+		"必须：默认强度，不写强度，填充底",
 	],
 	[
 		"must · 多个取值",
 		CONDITIONS[0] as Condition,
 		"一项里有几个取值时标签后接「≈」，展开能逐个去掉",
 	],
-	["boost", CONDITIONS[2] as Condition, "加分：前面一个符号，满足的人排在前面"],
-	["exclude", EXCLUDE_INTERN, "排除：划掉，有这类经历的人不上名单"],
-	["off · user", TEAM_OFF, "自己停用：虚线边、眼睛图标，重新启用后强度不变"],
+	[
+		"boost",
+		CONDITIONS[2] as Condition,
+		"加分：描边，标签后跟一个灰色的「加分」，满足的人排在前面",
+	],
+	[
+		"exclude",
+		EXCLUDE_INTERN,
+		"排除：描边，标签后跟一个灰色的「排除」，有这类经历的人不上名单",
+	],
+	[
+		"off · user",
+		TEAM_OFF,
+		"自己停用：虚线边、字退成次要色、眼睛图标，重新启用后强度不变",
+	],
 	[
 		"off · wide",
 		WIDE_CONDITION,
@@ -294,7 +306,7 @@ export function ConditionsPage() {
 			facts={[`${MODES.length} 种强度`, "可停用", "导航栏里的筛选"]}
 			rules={{
 				notes: [
-					"必须 / 加分 / 排除靠符号区分，必须是默认状态；停用按条件本身记着，下次整理原样带回。",
+					"强度写成字：必须是默认，不写；加分、排除跟在标签后面，和写进句子里的「（加分）」同一个说法。停用按条件本身记着，下次整理原样带回。",
 					"条件之间是「且」、同一个人；一项里的几个取值是「或」且同权。",
 					"改条件是换一个问题，记成新的一次搜索；筛选是同一次搜索换个看法，写进地址，浏览器后退可撤销。",
 					"关键词搜索的查询面只放填词的维，有限取值的维只在筛选栏：同一维不在两处出现。",

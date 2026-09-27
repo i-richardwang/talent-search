@@ -102,7 +102,7 @@ function Names({ selected }: { selected: string | undefined }) {
 			canMore={false}
 			empId={selected}
 			growing={false}
-			loading={false}
+			wait={null}
 			mode="conversation"
 			onAll={noop}
 			onChange={noop}
@@ -110,7 +110,6 @@ function Names({ selected }: { selected: string | undefined }) {
 			onMore={noop}
 			onReviseQuery={noop}
 			outcome={OUTCOME}
-			phase="searching"
 			picks={picks}
 			spec={SPEC}
 			turnId={LATEST_TURN_ID}

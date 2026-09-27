@@ -65,13 +65,23 @@ describe("查询 chip", () => {
 		assert.doesNotMatch(text, /≈/);
 	});
 
-	test("「待过字节」是一条只有公司名的主张，偏好带加号，和加分的经历词同一个记号", () => {
+	test("「待过字节」是一条只有公司名的主张，偏好和加分的经历词一样写「加分」", () => {
 		const text = seen([
 			{ about: "experience", mode: "boost", org: ["字节"] },
 			{ about: "experience", mode: "boost", what: ["带团队"] },
 		]);
-		assert.match(text, /\+\s*字节/);
-		assert.match(text, /\+\s*带团队/);
+		assert.match(text, /字节\s*加分/);
+		assert.match(text, /带团队\s*加分/);
+		assert.doesNotMatch(text, /[+−]/, "强度写成字，不写符号");
+	});
+
+	test("排除写「排除」，必须是默认，不写强度", () => {
+		const text = seen([
+			{ about: "experience", mode: "exclude", what: ["实习"] },
+			{ about: "experience", mode: "must", what: ["算法"] },
+		]);
+		assert.match(text, /实习\s*排除/);
+		assert.doesNotMatch(text, /必须/);
 	});
 
 	test("自动停用的写「太宽」，自己停的不写", () => {

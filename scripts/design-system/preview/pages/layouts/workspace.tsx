@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 import type { QueryBarHandle } from "#/components/query-bar";
 import { ConversationDrawer } from "#/routes/s/$turnId/-components/conversation-drawer";
 import { DetailModal } from "#/routes/s/$turnId/-components/detail-modal";
-import { KeyHints } from "#/routes/s/$turnId/-components/key-hints";
+import { KeyHelp } from "#/routes/s/$turnId/-components/key-help";
 import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
@@ -34,6 +34,7 @@ function Workspace() {
 	const wide = useIsWide();
 	const composer = useRef<QueryBarHandle>(null);
 	const [threadOpen, setThreadOpen] = useState(false);
+	const [help, setHelp] = useState(false);
 	const [spec, setSpec] = useState<SearchSpec>(SPEC);
 	const outcome = OUTCOME;
 	const picks = usePicks(LATEST_TURN_ID, outcome);
@@ -68,52 +69,59 @@ function Workspace() {
 	const detail = empId ? <PersonPane empId={empId} /> : null;
 
 	return (
-		<WorkspaceLayout
-			header={
-				<QueryHeader
-					onChangeSpec={setSpec}
-					right={
-						!wide && (
-							<ConversationDrawer
-								onOpenChange={setThreadOpen}
-								open={threadOpen}
-							>
-								{conversation}
-							</ConversationDrawer>
-						)
-					}
-					spec={spec}
-					title={TASK_TITLE}
-				/>
-			}
-			keys={<KeyHints editable mode="conversation" />}
-			list={
-				<ResultList
-					canMore={false}
-					empId={empId}
-					failure={null}
-					growing={false}
-					loading={false}
-					mode="conversation"
-					onAll={() => picks.pickAll(false)}
-					onChange={updateView}
-					onEditQuery={noop}
-					onMore={noop}
-					onReviseQuery={(conditions) => setSpec({ conditions })}
-					outcome={outcome}
-					phase="searching"
-					picks={picks}
-					spec={spec}
-					turnId={LATEST_TURN_ID}
-				/>
-			}
-			panel={<SidePanel conversation={conversation} detail={detail} />}
-			detailModal={
-				<DetailModal onClose={close} open={Boolean(empId)}>
-					{detail}
-				</DetailModal>
-			}
-		/>
+		<>
+			<WorkspaceLayout
+				header={
+					<QueryHeader
+						onChangeSpec={setSpec}
+						onHelp={() => setHelp(true)}
+						right={
+							!wide && (
+								<ConversationDrawer
+									onOpenChange={setThreadOpen}
+									open={threadOpen}
+								>
+									{conversation}
+								</ConversationDrawer>
+							)
+						}
+						spec={spec}
+						title={TASK_TITLE}
+					/>
+				}
+				list={
+					<ResultList
+						canMore={false}
+						empId={empId}
+						failure={null}
+						growing={false}
+						wait={null}
+						mode="conversation"
+						onAll={() => picks.pickAll(false)}
+						onChange={updateView}
+						onEditQuery={noop}
+						onMore={noop}
+						onReviseQuery={(conditions) => setSpec({ conditions })}
+						outcome={outcome}
+						picks={picks}
+						spec={spec}
+						turnId={LATEST_TURN_ID}
+					/>
+				}
+				panel={<SidePanel conversation={conversation} detail={detail} />}
+				detailModal={
+					<DetailModal onClose={close} open={Boolean(empId)}>
+						{detail}
+					</DetailModal>
+				}
+			/>
+			<KeyHelp
+				editable
+				mode="conversation"
+				onClose={() => setHelp(false)}
+				open={help}
+			/>
+		</>
 	);
 }
 

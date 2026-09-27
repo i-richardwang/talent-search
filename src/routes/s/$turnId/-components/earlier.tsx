@@ -22,7 +22,7 @@ export function Earlier({ latestId }: { latestId: string }) {
 			}
 			icon={HistoryIcon}
 			title="正在查看较早的一次结果。在此基础上修改，会记为最新的一次。"
-			type="secondary"
+			type="info"
 		/>
 	);
 }

@@ -29,6 +29,7 @@ const picks = (chosen: Pick[]): Picks => ({
 	clear: () => {},
 	picked: new Map(chosen.map((p) => [p.empId, p])),
 	pickAll: () => {},
+	pointAt: () => false,
 	remove: () => {},
 	rows: [],
 	setShown: () => {},

@@ -1,4 +1,6 @@
+import { Button } from "#/components/ui/button";
 import { Popover } from "#/components/ui/popover";
+import { Text } from "#/components/ui/text";
 import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { routeLabel, type Strength, strengthOf } from "#/search/evidence";
@@ -17,7 +19,7 @@ const STRENGTH_LABEL: Record<Strength, string> = {
  * 第一行只留条件词和时长。右栏开着、名单那一列窄于版心时走后一种。
  */
 const LINE_GRID =
-	"grid grid-cols-[auto_--spacing(20)_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 text-sm";
+	"grid grid-cols-[auto_--spacing(24)_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 text-sm";
 
 const MATCHED_BY = "匹配依据";
 
@@ -82,17 +84,14 @@ export function StrengthGuide() {
 export function StrengthLegend() {
 	return (
 		<Popover content={<StrengthGuide />} placement="bottomRight">
-			<button
-				className="flex cursor-help items-center gap-1.5 text-fg-secondary text-xs"
-				type="button"
-			>
+			<Button className="text-fg-secondary" size="small" type="text">
 				<span className="flex items-center gap-1">
 					{STRENGTHS.map((s) => (
 						<Dot key={s} strength={s} />
 					))}
 				</span>
 				匹配来源
-			</button>
+			</Button>
 		</Popover>
 	);
 }
@@ -152,9 +151,15 @@ export function EvidenceLine({
 	basis: ClaimBasis;
 }) {
 	const head = (
-		<span className="flex min-w-0 items-center gap-1.5">
-			{boost && <span className="font-mono text-fg-secondary">+</span>}
-			<span className="truncate">{name}</span>
+		<span className="flex min-w-0 items-baseline gap-1.5">
+			<Text className="min-w-0" ellipsis>
+				{name}
+			</Text>
+			{boost && (
+				<Text className="shrink-0" size="xs" type="tertiary">
+					加分
+				</Text>
+			)}
 		</span>
 	);
 
@@ -177,12 +182,12 @@ export function EvidenceLine({
 							{field.label}
 						</span>
 					) : null}
-					<span className="min-w-0 truncate text-fg-secondary">
+					<Text className="min-w-0" ellipsis type="secondary">
 						{field.value ?? field.context}
 						{field.value !== null && field.context && (
 							<span className="ml-2 text-fg-tertiary">{field.context}</span>
 						)}
-					</span>
+					</Text>
 				</span>
 				<span
 					className={cn(
@@ -206,7 +211,9 @@ export function MissedClaims({ names }: { names: string[] }) {
 		<div className={`${LINE_GRID} text-fg-secondary`}>
 			<Dot className="translate-y-1" strength={undefined} />
 			<span>未命中</span>
-			<span className="col-span-2 min-w-0 truncate">{names.join("、")}</span>
+			<Text className="col-span-2 min-w-0" ellipsis>
+				{names.join("、")}
+			</Text>
 		</div>
 	);
 }

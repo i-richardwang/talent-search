@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert } from "#/components/ui/alert";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Segmented } from "#/components/ui/segmented";
@@ -11,14 +10,17 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
+import { toast } from "#/components/ui/toast";
 import { PageNotFound, TurnNotFound } from "#/routes/-components/not-found";
 import { COMMIT_FAILED } from "#/routes/-lib/commit";
 import { Earlier } from "#/routes/s/$turnId/-components/earlier";
-import { ResultList } from "#/routes/s/$turnId/-components/result-list";
+import {
+	type ListWait,
+	ResultList,
+} from "#/routes/s/$turnId/-components/result-list";
 import {
 	NoResults,
 	NotUnderstood,
-	type SearchPhase,
 } from "#/routes/s/$turnId/-components/result-state";
 import {
 	FAULT_COPY,
@@ -88,10 +90,8 @@ function Run({ ending, step }: { ending: Ending; step: Step }) {
 	const outcome = ending === "empty" ? EMPTY_OUTCOME : OUTCOME;
 	const picks = usePicks(LATEST_TURN_ID, outcome);
 	const failed = ending === "failed" && step === "done";
-	const phase: SearchPhase =
-		step === "interpreting" || (ending === "failed" && step === "done")
-			? "interpreting"
-			: "searching";
+	const wait: ListWait | null =
+		step === "done" ? null : { list: "skeleton", phase: step };
 	const noop = () => {};
 	return (
 		<Routed url={`/s/${LATEST_TURN_ID}`}>
@@ -100,7 +100,6 @@ function Run({ ending, step }: { ending: Ending; step: Step }) {
 				empId={undefined}
 				failure={failed ? { fault: "unreachable", onRetry: noop } : null}
 				growing={false}
-				loading={step !== "done"}
 				mode="conversation"
 				onAll={noop}
 				onChange={noop}
@@ -108,10 +107,10 @@ function Run({ ending, step }: { ending: Ending; step: Step }) {
 				onMore={noop}
 				onReviseQuery={noop}
 				outcome={outcome}
-				phase={phase}
 				picks={picks}
 				spec={SPEC}
 				turnId={LATEST_TURN_ID}
+				wait={wait}
 			/>
 		</Routed>
 	);
@@ -127,10 +126,10 @@ function Playground() {
 		setStep("interpreting");
 		timers.current =
 			ending === "failed"
-				? [window.setTimeout(() => setStep("done"), 3000)]
+				? [window.setTimeout(() => setStep("done"), 5000)]
 				: [
-						window.setTimeout(() => setStep("searching"), 3000),
-						window.setTimeout(() => setStep("done"), 4500),
+						window.setTimeout(() => setStep("searching"), 5000),
+						window.setTimeout(() => setStep("done"), 6500),
 					];
 	};
 	return (
@@ -159,7 +158,7 @@ function Playground() {
 				footer={
 					<span>
 						{step === "interpreting"
-							? "正在理解需求：名单那一列是等待态，超过 5 秒显示已等了多久"
+							? "正在理解需求：0.2 秒后换成占位行，表头等过 2 秒写出已等的秒数"
 							: step === "searching"
 								? "理解完了，正在搜索"
 								: "点「提交一次」看名单那一列怎么从等待走到结果"}
@@ -337,7 +336,9 @@ function Events() {
 					<TableRow>
 						<TableCell className="whitespace-nowrap">提交没成功</TableCell>
 						<TableCell className="w-full">
-							<Alert title={COMMIT_FAILED} type="error" />
+							<Button onClick={() => toast.error(COMMIT_FAILED)} size="small">
+								弹出通知
+							</Button>
 						</TableCell>
 					</TableRow>
 					<TableRow>
@@ -381,9 +382,9 @@ export function StatesPage() {
 					"理解失败说哪一环坏了：连不上和报错时需求没被读过，不能说成没读懂，也不叫人换说法。",
 					"空态原因由检索层判定，界面穷尽翻译并给出路，不用二手计数重新推断。",
 					"空态文案说明当前问题和可执行的出路，标题已说明的内容不重复。",
-					"页面事件用 Alert；查询条件的注解用行内文字。",
+					"一次动作的结果（提交失败、导出完成）用通知；一直成立的状态（正在看较早的一次）用 Alert；查询条件的注解用行内文字。",
 				],
-				usage: `failure ? (\n  <NotUnderstood fault={fault} onRetry={retry} />\n) : loading ? (\n  <Searching phase={phase} />\n) : results.length === 0 ? (\n  <NoResults outcome={outcome} spec={spec} mode={mode} … />\n) : …`,
+				usage: `<ResultList\n  wait={{ list: "skeleton", phase: "interpreting" }}\n  failure={fault ? { fault, onRetry: retry } : null}\n  …\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用：一次提交" },

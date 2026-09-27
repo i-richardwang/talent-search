@@ -66,7 +66,7 @@ function Playground() {
 							canMore={false}
 							empId={undefined}
 							growing={growing}
-							loading={false}
+							wait={null}
 							mode="conversation"
 							onAll={() => {
 								picks.pickAll(false);
@@ -78,7 +78,6 @@ function Playground() {
 							onMore={noop}
 							onReviseQuery={noop}
 							outcome={outcome}
-							phase="searching"
 							picks={picks}
 							spec={SPEC}
 							turnId={LATEST_TURN_ID}
@@ -98,13 +97,18 @@ const STEPS: [step: string, does: string, answers: string][] = [
 		"选了第一个人，名单下沿浮出操作栏；一个都没选时它不出现",
 	],
 	[
+		"连选",
+		"按住 Shift 点另一个人的选择框",
+		"上次点过的人到这个人之间的所有人都选上，已经选上的不取消",
+	],
+	[
 		"看已选的人",
 		"点操作栏上的「已选 N 人」",
 		"弹层按名次列出已选的人，每行可以移除；改过筛选后不在名单上的人标出来",
 	],
 	[
 		"清空",
-		"点「清空」",
+		"点「清空」，或没打开详情时按 Esc",
 		"已选的人全部清掉；换一次搜索时也清空，不带到别的名单上",
 	],
 	[
@@ -117,7 +121,11 @@ const STEPS: [step: string, does: string, answers: string][] = [
 		"已选的比符合条件的少",
 		"对话框里一块提示说清这份表是谁，给一个「选择全部」把人补齐",
 	],
-	["下载", "点「下载」", "浏览器存下一份 CSV，行按名次排，第一列是序号"],
+	[
+		"下载",
+		"点「下载」",
+		"浏览器存下一份 CSV，行按名次排，第一列是序号；右下角通知「已导出 N 人的名单」",
+	],
 ];
 
 function Flow() {

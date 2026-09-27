@@ -1,4 +1,6 @@
+import { KeyboardIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { ActionIcon } from "#/components/ui/action-icon";
 import type { SearchSpec } from "#/search/spec";
 import { PageHeader } from "../../../-components/page-header";
 import { QueryChips } from "./query-chips";
@@ -13,11 +15,15 @@ import { QueryChips } from "./query-chips";
  *
  * 关键词搜索的标题是框里的词（`keywordTitle`），没有 chip：词就在名单上方的框里，
  * 改也在那里改。
+ *
+ * 页头右端有一个打开快捷键列表的按钮，只在有精确指针（鼠标、触控板）的设备上出现：
+ * 快捷键要有键盘才用得上。
  */
 export function QueryHeader({
 	title,
 	spec,
 	onChangeSpec,
+	onHelp,
 	right,
 }: {
 	title: string | null;
@@ -25,13 +31,33 @@ export function QueryHeader({
 	spec: SearchSpec | null;
 	/** 在 chip 上改条件。关键词搜索不给：它的条件在框里改。 */
 	onChangeSpec?: (next: SearchSpec) => void;
+	/** 打开快捷键列表。 */
+	onHelp?: () => void;
 	/** 页头右端的动作：窄屏上打开对话的按钮。 */
 	right?: ReactNode;
 }) {
 	const conditions = spec?.conditions ?? [];
 	return (
 		<>
-			<PageHeader right={right} title={title ?? "搜索条件"} />
+			<PageHeader
+				right={
+					<>
+						{onHelp && (
+							<ActionIcon
+								aria-label="快捷键"
+								className="hidden pointer-fine:inline-flex"
+								icon={KeyboardIcon}
+								onClick={onHelp}
+								size="header"
+								title="快捷键"
+								tooltipProps={{ hotkey: "?" }}
+							/>
+						)}
+						{right}
+					</>
+				}
+				title={title ?? "搜索条件"}
+			/>
 			{onChangeSpec && conditions.length > 0 && (
 				<div className="flex flex-none flex-wrap items-center gap-1.5 px-3 pb-2">
 					<QueryChips

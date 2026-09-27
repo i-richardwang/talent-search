@@ -23,6 +23,7 @@ const NO_PICKS: Picks = {
 	clear: () => {},
 	picked: new Map(),
 	pickAll: () => {},
+	pointAt: () => false,
 	remove: () => {},
 	rows: [],
 	setShown: () => {},
@@ -106,7 +107,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 
 	test("结果数量使用中性状态，不暴露检索术语", () => {
 		const text = seen(
-			<ResultHeader loading={false} order="evidence" evidence total={12} />,
+			<ResultHeader evidence order="evidence" phase={null} total={12} />,
 		);
 		// 数和单位挨着，中间不能插别的东西。不要求「共」字：它是名单的表头
 		// （12 / 人 / 按匹配度排序），不是句子里的一截。
@@ -125,7 +126,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 					empId={undefined}
 					failure={{ fault, onRetry: () => {} }}
 					growing={false}
-					loading={false}
+					wait={null}
 					mode="conversation"
 					onAll={() => {}}
 					onChange={() => {}}
@@ -140,7 +141,6 @@ describe("产品文案使用常规 SaaS 语言", () => {
 						total: 0,
 						empty: null,
 					}}
-					phase="interpreting"
 					picks={NO_PICKS}
 					spec={{ conditions: [] }}
 					turnId="t"
@@ -203,9 +203,8 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				canMore={false}
 				empId={undefined}
 				growing={false}
-				loading={false}
+				wait={null}
 				mode="conversation"
-				phase="searching"
 				onAll={() => {}}
 				onChange={() => {}}
 				onEditQuery={() => {}}

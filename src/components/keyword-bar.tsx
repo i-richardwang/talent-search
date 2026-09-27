@@ -41,6 +41,7 @@ import { Hotkey } from "#/components/ui/hotkey";
 import { Icon } from "#/components/ui/icon";
 import { Popover } from "#/components/ui/popover";
 import { Tag } from "#/components/ui/tag";
+import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
 import {
 	type Condition,
@@ -481,9 +482,13 @@ function TermEntry({
 	const option = (value: string, note: string | null) => ({
 		label: (
 			<span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
-				<span className="min-w-0 truncate">{value}</span>
+				<Text className="min-w-0" ellipsis>
+					{value}
+				</Text>
 				{note && (
-					<span className="shrink-0 text-fg-secondary text-xs">{note}</span>
+					<Text className="shrink-0" size="xs" type="secondary">
+						{note}
+					</Text>
 				)}
 			</span>
 		),

@@ -5,14 +5,18 @@ import { Alert } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Form } from "#/components/ui/form";
+import { List, ListItem } from "#/components/ui/list";
 import { Modal } from "#/components/ui/modal";
 import { Popover } from "#/components/ui/popover";
 import { Tag } from "#/components/ui/tag";
+import { Text } from "#/components/ui/text";
+import { toast } from "#/components/ui/toast";
 import {
 	Toolbar,
 	ToolbarButton,
 	ToolbarSeparator,
 } from "#/components/ui/toolbar";
+import { Tooltip } from "#/components/ui/tooltip";
 import { csvName, download, FIXED, toCsv } from "../-lib/csv";
 import type { Pick, Picks } from "../-lib/picks";
 import { reachOf } from "../-lib/view-params";
@@ -52,12 +56,14 @@ export function PickDock({
 			>
 				<Chosen chosen={chosen} onList={new Set(shownIds)} onRemove={remove} />
 				<ToolbarSeparator />
-				<ToolbarButton
-					onClick={clear}
-					render={<Button size="small" type="text" />}
-				>
-					清空
-				</ToolbarButton>
+				<Tooltip hotkey="esc" title="清空已选">
+					<ToolbarButton
+						onClick={clear}
+						render={<Button size="small" type="text" />}
+					>
+						清空
+					</ToolbarButton>
+				</Tooltip>
 				<ExportDialog
 					loading={loading}
 					names={names}
@@ -91,28 +97,28 @@ function Chosen({
 			content={
 				<>
 					{/* 人数就在触发它的按钮上，标题不重复 */}
-					<div className="mb-2 font-medium text-base text-fg">已选的人</div>
+					<Text as="div" className="px-1" weight="medium">
+						已选的人
+					</Text>
 					{/* 浮层高度到屏幕边为止（`--available-height`），超出在里面滚动 */}
-					<ul className="flex flex-col gap-0.5">
+					<List className="-mx-1">
 						{chosen.map((one) => (
-							<li className="flex items-center gap-2 ps-2" key={one.empId}>
-								<span className="min-w-0 flex-1 truncate text-base">
-									{one.name}
-								</span>
-								{!onList.has(one.empId) && (
-									<span className="shrink-0 text-fg-secondary text-xs">
-										不在名单上
-									</span>
-								)}
-								<ActionIcon
-									aria-label={`移除 ${one.name}`}
-									icon={XIcon}
-									onClick={() => onRemove(one.empId)}
-									size="small"
-								/>
-							</li>
+							<ListItem
+								actions={
+									<ActionIcon
+										aria-label={`移除 ${one.name}`}
+										icon={XIcon}
+										onClick={() => onRemove(one.empId)}
+										size="small"
+									/>
+								}
+								description={onList.has(one.empId) ? undefined : "不在名单上"}
+								key={one.empId}
+								showAction
+								title={one.name}
+							/>
 						))}
-					</ul>
+					</List>
 				</>
 			}
 			nativeButton
@@ -175,8 +181,14 @@ function ExportDialog({
 				okText="下载"
 				onCancel={() => setOpen(false)}
 				onOk={() => {
-					download(csvName(), toCsv(picked, names, on));
+					try {
+						download(csvName(), toCsv(picked, names, on));
+					} catch {
+						toast.error("没能导出名单，请重试。");
+						return;
+					}
 					setOpen(false);
+					toast.success(`已导出 ${picked.length} 人的名单`);
 				}}
 				open={open}
 				title={`导出这 ${picked.length} 人`}

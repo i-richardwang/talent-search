@@ -10,7 +10,10 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import { ResultList } from "#/routes/s/$turnId/-components/result-list";
+import {
+	type ListWait,
+	ResultList,
+} from "#/routes/s/$turnId/-components/result-list";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import type { EmptyReason } from "#/search/empty";
 import type { SearchOutcome } from "#/search/result";
@@ -43,7 +46,7 @@ type ListProps = {
 	spec?: SearchSpec;
 	mode?: SearchMode;
 	empId?: string;
-	loading?: boolean;
+	wait?: ListWait | null;
 	canMore?: boolean;
 	fault?: InterpretFault | null;
 };
@@ -54,7 +57,7 @@ function List({
 	spec = SPEC,
 	mode = "conversation",
 	empId,
-	loading = false,
+	wait = null,
 	canMore = false,
 	fault = null,
 }: ListProps) {
@@ -72,7 +75,6 @@ function List({
 				empId={empId}
 				failure={fault ? { fault, onRetry: noop } : null}
 				growing={growing}
-				loading={loading}
 				mode={mode}
 				onAll={() => picks.pickAll(false)}
 				onChange={noop}
@@ -80,16 +82,22 @@ function List({
 				onMore={grow}
 				onReviseQuery={noop}
 				outcome={outcome}
-				phase="searching"
 				picks={picks}
 				spec={spec}
 				turnId={LATEST_TURN_ID}
+				wait={wait}
 			/>
 		</Routed>
 	);
 }
 
-type State = "list" | "people" | "searching" | "empty" | "failed";
+type State =
+	| "list"
+	| "people"
+	| "refreshing"
+	| "searching"
+	| "empty"
+	| "failed";
 
 const STATE_PROPS: Record<State, ListProps> = {
 	empty: { outcome: EMPTY_OUTCOME },
@@ -103,7 +111,8 @@ const STATE_PROPS: Record<State, ListProps> = {
 			],
 		},
 	},
-	searching: { loading: true },
+	refreshing: { wait: { list: "dim", phase: "searching" } },
+	searching: { wait: { list: "skeleton", phase: "searching" } },
 };
 
 function Playground() {
@@ -129,7 +138,8 @@ function Playground() {
 						options={[
 							{ label: "按匹配度", value: "list" },
 							{ label: "按人排", value: "people" },
-							{ label: "搜索中", value: "searching" },
+							{ label: "改筛选", value: "refreshing" },
+							{ label: "换问题", value: "searching" },
 							{ label: "没有结果", value: "empty" },
 							{ label: "理解失败", value: "failed" },
 						]}
@@ -259,7 +269,8 @@ export function ResultListPage() {
 				notes: [
 					"名单只从检索来，谁在上面、排第几由检索决定；名单位置表达顺序，分数和名次不上屏。",
 					"整张卡片可点，覆盖层是姓名那个真链接，支持中键、右键、键盘；选择框放在卡片外。",
-					"选中态用 Block 的 selected，不另加装饰；批量操作用选择非空时才出现的 Toolbar。",
+					"选择框一直在；按住 Shift 点选择框连选，Esc 清空已选。批量操作用选择非空时才出现的 Toolbar。",
+					"改筛选时旧名单留在原地调到六成；换问题时旧名单撤下，0.2 秒后换成同形的占位行，表头说在做什么，等过 2 秒写出秒数。",
 					"列表不静默截断：说明已显示数、总数、排序和加载上限。",
 					"空态成因由检索层判定，这里穷尽翻译成结论和出路；理解失败不是空名单。",
 				],

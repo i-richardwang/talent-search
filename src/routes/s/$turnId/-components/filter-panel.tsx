@@ -1,11 +1,19 @@
 import { XIcon } from "lucide-react";
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
+import {
+	AccordionHeader,
+	AccordionItem,
+	AccordionPanel,
+	AccordionRoot,
+	AccordionTrigger,
+} from "#/components/ui/accordion";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Checkbox, CheckboxGroup } from "#/components/ui/checkbox";
-import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
+import { Center } from "#/components/ui/flex";
 import { Icon } from "#/components/ui/icon";
 import { Radio, RadioGroup } from "#/components/ui/radio";
+import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
 import {
 	activeCount,
@@ -17,8 +25,9 @@ import { CLEARED_FILTERS, type View } from "../-lib/view-params";
 const VISIBLE = 5;
 
 /**
- * 筛选：搜索结果页左侧导航栏里的正文（`workbench-nav.tsx`）。每一维一组，选项后面一直
- * 写着选了之后还剩几个人，不用点开就知道能筛什么。
+ * 筛选：搜索结果页左侧导航栏里的正文（`workbench-nav.tsx`）。每一维一组，组名一行
+ * 可以收起，组名后面是这一维选了几项；选项后面一直写着选了之后还剩几个人，不用点开
+ * 就知道能筛什么。
  *
  * 一维都数不出人、也没有生效的文本条件时整块不渲染：空着的一组就是它不该占位的证据。
  */
@@ -39,11 +48,17 @@ function hasAnything({ fields, textFilters }: FilterProps) {
 
 function FilterList({ fields, textFilters, onChange }: FilterProps) {
 	const count = activeCount(fields, textFilters);
+	// 记收起的组而不是展开的组：换一次查询多出来的维默认展开
+	const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
+	const shown = fields.filter((f) => f.options.length > 0);
+	const keys = [...textFilters.map((t) => t.key), ...shown.map((f) => f.key)];
 
 	return (
-		<div className="flex flex-col gap-4">
-			<div className="flex items-center justify-between gap-2 px-2">
-				<span className="text-xs font-medium text-fg-secondary">筛选</span>
+		<div className="flex flex-col gap-2">
+			<div className="flex items-center justify-between gap-2 ps-2">
+				<Text size="xs" type="secondary" weight="medium">
+					筛选
+				</Text>
 				<Button
 					className={cn(count === 0 && "invisible")}
 					onClick={() => onChange(CLEARED_FILTERS)}
@@ -53,35 +68,83 @@ function FilterList({ fields, textFilters, onChange }: FilterProps) {
 					清除 {count} 项
 				</Button>
 			</div>
-			{textFilters.map((t) => (
-				<section className="flex flex-col gap-0.5" key={t.key}>
-					<h2 className="text-xs font-medium px-2 pb-1 text-fg-secondary">
-						{t.title}
-					</h2>
-					<Button
-						block
-						className="justify-start"
-						onClick={() => onChange(t.clear)}
-						size="small"
-						title={`取消「${t.title} ${t.value}」`}
-						type="fill"
-					>
-						<span className="min-w-0 flex-1 truncate text-start">
-							{t.value}
-						</span>
-						<Icon
-							className="shrink-0 text-fg-secondary"
-							icon={XIcon}
+			<AccordionRoot
+				className="gap-2"
+				indicatorPlacement="inline"
+				onValueChange={(open) =>
+					setClosed(new Set(keys.filter((k) => !open.includes(k))))
+				}
+				value={keys.filter((k) => !closed.has(k))}
+			>
+				{textFilters.map((t) => (
+					<Group count={1} key={t.key} title={t.title} value={t.key}>
+						<Button
+							block
+							className="justify-start"
+							onClick={() => onChange(t.clear)}
 							size="small"
-						/>
-					</Button>
-				</section>
-			))}
-
-			{fields.map((field) => (
-				<FilterFacet field={field} key={field.key} onChange={onChange} />
-			))}
+							title={`取消「${t.title} ${t.value}」`}
+							type="fill"
+						>
+							<Text className="min-w-0 flex-1 text-start" ellipsis>
+								{t.value}
+							</Text>
+							<Icon
+								className="shrink-0 text-fg-secondary"
+								icon={XIcon}
+								size="small"
+							/>
+						</Button>
+					</Group>
+				))}
+				{shown.map((field) => (
+					<Group
+						count={field.values.length}
+						key={field.key}
+						title={field.title}
+						value={field.key}
+					>
+						<FilterFacet field={field} onChange={onChange} />
+					</Group>
+				))}
+			</AccordionRoot>
 		</div>
+	);
+}
+
+/** 一组：组名 12px 次要色，后面跟选了几项，三角紧跟在后面；点组名收起或展开。 */
+function Group({
+	value,
+	title,
+	count,
+	children,
+}: {
+	value: string;
+	title: string;
+	/** 这一组选中了几项；0 时不写。 */
+	count: number;
+	children: ReactNode;
+}) {
+	return (
+		<AccordionItem value={value}>
+			<AccordionHeader>
+				<AccordionTrigger className="ps-2 pe-1 py-1">
+					<span className="flex min-w-0 items-center gap-1">
+						<Text ellipsis size="xs" type="secondary" weight="medium">
+							{title}
+						</Text>
+						{count > 0 && (
+							<Text className="tabular-nums" size="xs" type="secondary">
+								{count}
+							</Text>
+						)}
+					</span>
+				</AccordionTrigger>
+			</AccordionHeader>
+			<AccordionPanel contentClassName="flex flex-col gap-px pt-px">
+				{children}
+			</AccordionPanel>
+		</AccordionItem>
 	);
 }
 
@@ -94,8 +157,6 @@ function FilterFacet({
 }) {
 	const [all, setAll] = useState(false);
 	const titleId = useId();
-	const restId = useId();
-	if (field.options.length === 0) return null;
 
 	const head = collapse(field);
 	const rest = field.options.filter((o) => !head.includes(o));
@@ -116,36 +177,29 @@ function FilterFacet({
 	const list = (
 		<>
 			{rows(head)}
+			{all && rows(rest)}
 			{rest.length > 0 && (
-				<>
-					<Collapsible id={restId} open={all}>
-						{rows(rest)}
-					</Collapsible>
-					<CollapsibleTrigger
-						className="w-full text-fg-secondary text-sm"
-						onOpenChange={setAll}
-						open={all}
-						panelId={restId}
-					>
-						{all ? "收起" : `更多 ${rest.length} 项`}
-					</CollapsibleTrigger>
-				</>
+				<Button
+					className="self-start text-fg-secondary"
+					onClick={() => setAll(!all)}
+					size="small"
+					type="text"
+				>
+					{all ? "收起" : `更多 ${rest.length} 项`}
+				</Button>
 			)}
 		</>
 	);
 
 	return (
-		<div className="flex min-w-0 flex-col gap-px">
-			<div
-				className="px-2 pt-1.5 pb-1 font-medium text-fg-secondary text-xs"
-				id={titleId}
-			>
+		<>
+			<span className="sr-only" id={titleId}>
 				{field.title}
-			</div>
+			</span>
 			{field.multi ? (
 				<CheckboxGroup
 					aria-labelledby={titleId}
-					className="w-full"
+					className="flex w-full flex-col gap-px"
 					onChange={(next) => onChange(field.set(next))}
 					value={field.values}
 				>
@@ -154,7 +208,7 @@ function FilterFacet({
 			) : (
 				<RadioGroup
 					aria-labelledby={titleId}
-					className="w-full"
+					className="flex w-full flex-col gap-px"
 					onChange={(next) => onChange(field.set(next ? [next] : []))}
 					value={field.values[0] ?? ""}
 				>
@@ -164,10 +218,14 @@ function FilterFacet({
 					{list}
 				</RadioGroup>
 			)}
-		</div>
+		</>
 	);
 }
 
+/**
+ * 一个选项一行：36px 高，行内左右 4px；选择框在 28px 见方的格里，和导航项的图标格
+ * 同宽；名字截断时悬停看全；人数在行尾。选中的一行字换成正文色。
+ */
 function Option({
 	children,
 	disabled,
@@ -175,7 +233,7 @@ function Option({
 	n,
 	value,
 }: {
-	children: React.ReactNode;
+	children: ReactNode;
 	disabled?: boolean;
 	multi: boolean;
 	n: number | null;
@@ -186,37 +244,36 @@ function Option({
 			align="center"
 			as="label"
 			className={cn(
-				"text-base",
-				disabled && "cursor-not-allowed text-fg-tertiary",
+				"text-fg-secondary has-data-checked:text-fg",
+				disabled && "cursor-not-allowed opacity-50",
 			)}
 			clickable={!disabled}
 			gap={8}
+			height={36}
 			horizontal
-			paddingBlock={6}
-			paddingInline={8}
+			paddingInline={4}
 			variant="borderless"
 		>
-			{multi ? (
-				<Checkbox disabled={disabled} value={value} />
-			) : (
-				<Radio disabled={disabled} value={value} />
-			)}
-			<span className="min-w-0 flex-1 truncate">{children}</span>
+			<Center flex="none" height={28} width={28}>
+				{multi ? (
+					<Checkbox disabled={disabled} value={value} />
+				) : (
+					<Radio disabled={disabled} value={value} />
+				)}
+			</Center>
+			<Text className="min-w-0 flex-1" ellipsis={{ tooltip: true }}>
+				{children}
+			</Text>
 			{n !== null && (
-				<span
-					className={cn(
-						"shrink-0 text-xs tabular-nums",
-						!disabled && "text-fg-secondary",
-					)}
-				>
+				<Text className="shrink-0 pe-1 tabular-nums" size="xs" type="tertiary">
 					{n}
-				</span>
+				</Text>
 			)}
 		</Block>
 	);
 }
 
-// Selected values stay visible so they can always be cleared.
+// 选中的项总在展开的那几项里，才能随时取消。
 function collapse({ options, values }: FilterField) {
 	const head = options.slice(0, VISIBLE);
 	const buried = options.filter(

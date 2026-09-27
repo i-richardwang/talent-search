@@ -8,9 +8,8 @@ import { useIsWide } from "../-lib/media";
  * 每一块由路由接好数据再放进来；在哪个断点出现、滚动归谁，只在这里定。
  *
  * - `header`：名单那一栏的抬头（`QueryHeader`）
- * - `notices`：名单上方的几行——正在看较早的一次、关键词的框、提交失败；没有就不留空
+ * - `notices`：名单上方的几行——正在看较早的一次、关键词的框；没有就不留空
  * - `list`：名单（`ResultList`）
- * - `keys`：名单下面的快捷键表脚（`KeyHints`）
  * - `panel`：宽屏的右栏（`SidePanel`）
  * - `detailModal`：窄屏的人的详情浮层（`DetailModal`）
  *
@@ -21,14 +20,12 @@ export function WorkspaceLayout({
 	header,
 	notices,
 	list,
-	keys,
 	panel,
 	detailModal,
 }: {
 	header: ReactNode;
 	notices?: ReactNode;
 	list: ReactNode;
-	keys: ReactNode;
 	panel: ReactNode;
 	detailModal: ReactNode;
 }) {
@@ -55,7 +52,6 @@ export function WorkspaceLayout({
 						)}
 						{list}
 					</main>
-					{keys}
 				</ScrollArea>
 			</div>
 			{wide ? <div className="h-full max-xl:hidden">{panel}</div> : detailModal}

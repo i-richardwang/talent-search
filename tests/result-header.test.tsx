@@ -15,8 +15,8 @@ const markup = (evidence = true) =>
 	renderToStaticMarkup(
 		<ResultHeader
 			evidence={evidence}
-			loading={false}
 			order="evidence"
+			phase={null}
 			total={38}
 		/>,
 	);
