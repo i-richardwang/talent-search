@@ -1,5 +1,5 @@
 /*
- * 分隔线：根、竖向、横向、带内容的横向。线宽 1px；竖向左右外边距 8px，横向上下外边距 16px。
+ * 分隔线：根、竖向、横向、带内容的横向、虚线。线宽 1px；竖向左右外边距 8px，横向上下外边距 16px。
  */
 
 .ui-divider {
@@ -56,4 +56,18 @@
 	flex: 0 1 auto;
 	min-width: 0;
 	padding-inline: 1em;
+}
+
+/* 虚线：线的样式换成 dashed，带内容时两侧两段一起换。 */
+.ui-divider-dashed {
+	border-style: dashed none none;
+
+	&.ui-divider-vertical {
+		border-style: none none none dashed;
+	}
+
+	&.ui-divider-with-text::before,
+	&.ui-divider-with-text::after {
+		border-block-start-style: dashed;
+	}
 }

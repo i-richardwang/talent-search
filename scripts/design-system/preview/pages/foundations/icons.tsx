@@ -1,6 +1,7 @@
 import {
 	Activity,
 	ArrowDown,
+	BriefcaseBusiness,
 	Building2,
 	CalendarClock,
 	Check,
@@ -85,6 +86,7 @@ export const PRODUCT_ICONS: [
 	["ThumbsUp", ThumbsUp, "示例：「最好」是加分项"],
 	["Split", Split, "示例：「或者」做过其中一样就行"],
 	["History", History, "正在看较早的一次结果"],
+	["BriefcaseBusiness", BriefcaseBusiness, "人的详情里的任职经历"],
 	["Keyboard", Keyboard, "快捷键列表"],
 	["MessageSquareText", MessageSquareText, "最近搜索里的一次 AI 搜索"],
 	["TextSearch", TextSearch, "最近搜索里的一次关键词搜索"],

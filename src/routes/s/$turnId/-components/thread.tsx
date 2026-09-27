@@ -30,6 +30,7 @@ import { NeuralLoading } from "#/components/ui/neural-loading";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
+import { Tooltip } from "#/components/ui/tooltip";
 import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
 import { conditionLabel, inSentence } from "#/search/condition-label";
@@ -126,12 +127,20 @@ function useElapsed(since: number, active: boolean) {
 /** 等了这么久才补一个「（几秒）」：更短的等待不值得一个在跳的数。 */
 const ELAPSED_SHOW_AFTER_MS = 2100;
 
-/** 等待时跟在那句话后面的秒数，四级灰。 */
-function Elapsed({ since }: { since: number }) {
+/**
+ * 等待时跟在那句话后面的秒数：理解中的那句话后面是三级灰，检索过程的标题后面降到四级灰。
+ */
+function Elapsed({
+	since,
+	type,
+}: {
+	since: number;
+	type: "tertiary" | "quaternary";
+}) {
 	const elapsed = useElapsed(since, true);
 	if (elapsed < ELAPSED_SHOW_AFTER_MS) return null;
 	return (
-		<Text className="shrink-0" type="quaternary">
+		<Text className="shrink-0" type={type}>
 			（{lasting(elapsed)}）
 		</Text>
 	);
@@ -302,7 +311,7 @@ export function Thread({
 						ref: viewportRef,
 					}}
 				>
-					<ol className="flex flex-col px-4 pt-2 pb-4">
+					<ol className="flex flex-col px-4 pb-6">
 						{rounds.map((round, i) => (
 							<Round
 								failure={i === last ? fault : null}
@@ -376,12 +385,12 @@ function Clock({ at }: { at: number }) {
 	);
 }
 
-/** 一条消息底下的一组图标动作：浅灰底里一排小号图标按钮。 */
+/** 一条消息底下的一组图标动作：8px 圆角的浅灰底里一排小号图标按钮。 */
 function Actions({ children }: { children: ReactNode }) {
 	return (
 		<Block
 			align="center"
-			className={cn("w-fit rounded-sm", REVEAL)}
+			className={cn("w-fit rounded-md", REVEAL)}
 			horizontal
 			padding={2}
 			role="menubar"
@@ -494,7 +503,7 @@ function Round({
 								<Text shiny type="secondary">
 									正在理解你的需求…
 								</Text>
-								<Elapsed since={round.at} />
+								<Elapsed since={round.at} type="tertiary" />
 							</p>
 						)
 					)}
@@ -588,8 +597,13 @@ function Fault({
 
 /**
  * 搜不了的要求附带的替代条件：正看着的那一轮回应底下一列，点一下就加进这一轮的
- * 条件表，记成新的一轮。一枚一枚从下往上浮出来，前后错开 60ms。
+ * 条件表，记成新的一轮。一枚一枚从下往上浮出来（320ms），前后错开 60ms；悬停换底 150ms。
+ * 一枚只占一行，放不下的收成省略号，悬停的提示是整句。
  */
+function offerText(item: { said: string; instead: Condition[] }) {
+	return `把「${item.said}」换成 ${inSentence(item.instead)}`;
+}
+
 function FollowUps({
 	offers,
 	onAdd,
@@ -600,23 +614,26 @@ function FollowUps({
 	return (
 		<ul aria-label="可以改为" className="mt-2 flex max-w-115 flex-col gap-1.5">
 			{offers.map((item, i) => (
-				<li key={item.said}>
-					<button
-						className="group/offer inline-flex cursor-pointer items-center gap-2 rounded-md bg-fill-tertiary py-[7px] ps-2.5 pe-3.5 text-left text-sm transition-[opacity,translate,background-color] duration-320 ease-snap hover:bg-fill-secondary starting:translate-y-2 starting:opacity-0"
-						onClick={() => onAdd(item.instead)}
-						style={{ transitionDelay: `${i * 60}ms, ${i * 60}ms, 0ms` }}
-						type="button"
-					>
-						<Icon
-							aria-hidden="true"
-							className="shrink-0 opacity-55 transition-[opacity,color] duration-150 group-hover/offer:text-primary group-hover/offer:opacity-100"
-							icon={PlusIcon}
-							size={14}
-						/>
-						<span>
-							把「{item.said}」换成 {inSentence(item.instead)}
-						</span>
-					</button>
+				<li className="flex min-w-0" key={item.said}>
+					<Tooltip title={offerText(item)}>
+						<button
+							className="group/offer inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 rounded-md bg-fill-tertiary py-[7px] ps-2.5 pe-3.5 text-left text-sm transition-[opacity,translate,background-color] ease-snap hover:bg-fill-secondary starting:translate-y-2 starting:opacity-0"
+							onClick={() => onAdd(item.instead)}
+							style={{
+								transitionDelay: `${i * 60}ms, ${i * 60}ms, 0ms`,
+								transitionDuration: "320ms, 320ms, 150ms",
+							}}
+							type="button"
+						>
+							<Icon
+								aria-hidden="true"
+								className="shrink-0 opacity-55 transition-[opacity,color] duration-150 group-hover/offer:text-primary group-hover/offer:opacity-100"
+								icon={PlusIcon}
+								size={14}
+							/>
+							<span className="min-w-0 truncate">{offerText(item)}</span>
+						</button>
+					</Tooltip>
 				</li>
 			))}
 		</ul>
@@ -704,7 +721,7 @@ function useDebounced(value: string, live: boolean) {
  * - 进行中默认摊开，标题是「检索人才库 N 步」带流光；人把它收起来时，标题换成正在做的
  *   那一步，换字时旧的向上淡出、新的从下面升上来（200ms），两秒之后跟上已等了多久。
  * - 完成后自动收起（人在进行中亲手点开过的除外），标题是步数与用时。
- * - 摊开是每一步一行：状态格、动作、对象，预搜的行尾是人数；查找的每个说法各一行结论。
+ * - 摊开是每一步一行：状态格、动作、对象；每一步再点开才是它的结论（`StepRow`）。
  */
 function Process({
 	steps,
@@ -754,7 +771,7 @@ function Process({
 							</motion.span>
 						</AnimatePresence>
 					</span>
-					<Elapsed since={since} />
+					<Elapsed since={since} type="quaternary" />
 				</span>
 			) : (
 				<span className="flex min-w-0 items-center gap-1.5">
@@ -780,7 +797,9 @@ function Process({
 					children: (
 						<ol className="flex flex-col gap-2 pt-1 pb-2">
 							{steps.map((step) => (
-								<StepRow key={step.at} step={step} />
+								<li key={step.at}>
+									<StepRow step={step} />
+								</li>
 							))}
 						</ol>
 					),
@@ -799,42 +818,55 @@ function Process({
 	);
 }
 
-/** 摊开后的一步：状态格、动作、对象；预搜的行尾是人数，查找的每个说法各一行结论。 */
+/** 一步的结论：查找的每个说法各一行，预搜是找到多少人。 */
+export function stepFindings(step: TraceStep) {
+	if (step.tool === "look_up_words") return step.words.map(wordLine);
+	return [`找到 ${step.total} 人`];
+}
+
+/**
+ * 摊开后的一步，本身也是一项手风琴：标题行是状态格、动作与对象（对象用等宽的 12px），
+ * 箭头紧跟在字后；点开是这一步的结论，底下一条虚线收尾。平时收着。
+ */
 function StepRow({ step }: { step: TraceStep }) {
 	const { action, keyword } = stepTitle(step);
 	return (
-		<li className="flex flex-col gap-1 px-1">
-			<span className="flex min-w-0 items-center gap-2">
-				<StatusCell live={false} />
-				<Text className="shrink-0" type="tertiary">
-					{action}
-				</Text>
-				<Text code ellipsis size="xs" type="tertiary">
-					{keyword}
-				</Text>
-				{step.tool === "try_conditions" && (
-					<Text
-						className="shrink-0 tabular-nums"
-						code
-						size="xs"
-						type="tertiary"
-					>
-						→ {step.total} 人
-					</Text>
-				)}
-			</span>
-			{step.tool === "look_up_words" &&
-				step.words.map((w) => (
-					<Text
-						as="p"
-						className="ps-8 tabular-nums"
-						key={w.word}
-						size="xs"
-						type="tertiary"
-					>
-						{wordLine(w)}
-					</Text>
-				))}
-		</li>
+		<Accordion
+			classNames={{ trigger: "p-1" }}
+			indicatorPlacement="inline"
+			items={[
+				{
+					children: (
+						<div className="flex flex-col gap-2 py-2">
+							{stepFindings(step).map((line) => (
+								<Text
+									as="p"
+									className="tabular-nums"
+									key={line}
+									size="xs"
+									type="tertiary"
+								>
+									{line}
+								</Text>
+							))}
+							<Divider className="mt-2 mb-0" dashed />
+						</div>
+					),
+					key: "step",
+					title: (
+						<span className="flex min-w-0 items-center gap-1.5">
+							<StatusCell live={false} />
+							<span className="flex min-w-0 items-center gap-1.5 whitespace-nowrap py-px text-fg-tertiary">
+								<span className="shrink-0">{action}</span>
+								<Text code ellipsis size="xs" type="tertiary">
+									{keyword}
+								</Text>
+							</span>
+						</span>
+					),
+				},
+			]}
+			variant="borderless"
+		/>
 	);
 }

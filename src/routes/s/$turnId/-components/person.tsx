@@ -1,14 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import { XIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { BriefcaseBusinessIcon, type LucideIcon, XIcon } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { CareerBar } from "#/components/career-bar";
 import { buildHitIndex, Timeline } from "#/components/timeline";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { NavHeader, NavHeaderTitle } from "#/components/ui/app-layout";
 import { Avatar } from "#/components/ui/avatar";
+import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { Empty } from "#/components/ui/empty";
+import { Icon } from "#/components/ui/icon";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
@@ -23,7 +25,8 @@ import type { Hit } from "#/search/result";
 
 /**
  * 详情的外壳：顶上一条和旁边各栏等高的页头，吸在顶上，滚到哪都看得见在看谁；
- * 下面是正文。骨架和真身共用它，换人时页头不跳。
+ * 下面是正文，上 16px、左右 16px、底下留 64px，块与块隔 16px。骨架和真身共用它，
+ * 换人时页头不跳。
  */
 function Pane({
 	title,
@@ -35,25 +38,51 @@ function Pane({
 	children: ReactNode;
 }) {
 	return (
-		<div className="pb-12" data-pane="detail">
+		<div className="pb-16" data-pane="detail">
 			<NavHeader
 				className="sticky top-0 z-stick bg-container"
 				left={title}
 				right={close}
 			/>
-			<div className="flex flex-col gap-6 px-4 pt-2">{children}</div>
+			<div className="flex flex-col gap-4 px-4 pt-4">{children}</div>
 		</div>
 	);
 }
 
-/** 一节的标题：12px、中等字重、次要色。 */
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/**
+ * 一节：标题是一行可点的开关（16px 三级灰的图标、13px 中等字重的次要色字、箭头），
+ * 只有字那么宽；下面的内容左右缩进 12px，上下 4px，点标题收起。默认展开。
+ */
+function Section({
+	id,
+	icon,
+	title,
+	children,
+}: {
+	id: string;
+	icon: LucideIcon;
+	title: string;
+	children: ReactNode;
+}) {
+	const [open, setOpen] = useState(true);
 	return (
 		<section className="flex flex-col gap-2">
-			<Text as="h3" size="xs" type="secondary" weight="medium">
-				{title}
-			</Text>
-			{children}
+			<h3>
+				<CollapsibleTrigger
+					className="w-fit"
+					onOpenChange={setOpen}
+					open={open}
+					panelId={id}
+				>
+					<Icon className="text-fg-tertiary" icon={icon} size={16} />
+					<Text size="sm" type="secondary" weight="medium">
+						{title}
+					</Text>
+				</CollapsibleTrigger>
+			</h3>
+			<Collapsible id={id} open={open}>
+				<div className="px-3 py-1">{children}</div>
+			</Collapsible>
 		</section>
 	);
 }
@@ -108,7 +137,11 @@ export function PersonPending() {
 					</DescriptionsItem>
 				))}
 			</Descriptions>
-			<Section title="任职经历">
+			<Section
+				icon={BriefcaseBusinessIcon}
+				id="career-pending"
+				title="任职经历"
+			>
 				<div className="mb-4">
 					<Skeleton height={10} width="100%" />
 					<div className="mt-1.5 flex h-4 items-center justify-between">
@@ -223,7 +256,7 @@ export function Person({
 					))}
 				</Descriptions>
 
-				<Section title="任职经历">
+				<Section icon={BriefcaseBusinessIcon} id="career" title="任职经历">
 					<CareerBar
 						hireDate={e.hireDate}
 						hitIndex={hitIndex}

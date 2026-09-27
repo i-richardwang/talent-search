@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { Thread } from "#/routes/s/$turnId/-components/thread";
+import { stepFindings, Thread } from "#/routes/s/$turnId/-components/thread";
 import type { TurnNotes } from "#/search/intent";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
@@ -247,32 +247,34 @@ describe("检索人才库的过程", () => {
 		assert.doesNotMatch(text, /预搜/, "每一步收在里面");
 	});
 
-	test("进行中摊开，每一步一行：动作、对象，预搜带人数", async () => {
+	test("进行中摊开，每一步一行：动作、对象；结论收在这一步里面", async () => {
 		const { text } = await seen([{ said: "推荐和后端", spec: null }], {
 			waiting: true,
 			liveTrace: trace,
 		});
 		assert.match(text, /检索人才库 3 步/);
 		assert.match(text, /查找\s*推荐、互联网、量子炼金/);
-		assert.match(text, /预搜\s*推荐算法 \+ 后端 \+ 量子炼金\s*→ 0 人/);
+		assert.match(text, /预搜\s*推荐算法 \+ 后端 \+ 量子炼金/);
+		assert.doesNotMatch(text, /找到 \d+ 人/, "结论点开这一步才看得见");
 		assert.doesNotMatch(text, /正在理解你的需求/, "有了步骤就不再说在理解");
 	});
 
-	test("一个词说出在人才库里对应什么、多少人、范围大不大", async () => {
-		const one = (w: TraceStep & { tool: "look_up_words" }) =>
-			seen([{ said: "推荐", spec: null }], { waiting: true, liveTrace: [w] });
-		const matched = await one({
-			at: 1,
-			tool: "look_up_words",
-			words: [{ word: "推荐", canonical: "推荐算法", people: 128, wide: true }],
-		});
-		assert.match(matched.text, /「推荐」匹配到「推荐算法」，128 人，范围较大/);
-		const missing = await one({
-			at: 1,
-			tool: "look_up_words",
-			words: [{ word: "量子炼金", canonical: null, people: 0, wide: false }],
-		});
-		assert.match(missing.text, /人才库中没有「量子炼金」/);
+	test("一步的结论：一个词在人才库里对应什么、多少人、范围大不大；预搜找到多少人", () => {
+		assert.deepEqual(
+			stepFindings({
+				at: 1,
+				tool: "look_up_words",
+				words: [
+					{ word: "推荐", canonical: "推荐算法", people: 128, wide: true },
+					{ word: "量子炼金", canonical: null, people: 0, wide: false },
+				],
+			}),
+			[
+				"「推荐」匹配到「推荐算法」，128 人，范围较大",
+				"人才库中没有「量子炼金」",
+			],
+		);
+		assert.deepEqual(stepFindings(trace[2] as TraceStep), ["找到 0 人"]);
 	});
 
 	test("查看结果是一枚带名字的图标链接，不包任何动作", async () => {
