@@ -152,6 +152,7 @@ function Workbench() {
 			liveTrace={liveTrace}
 			onAdd={addConditions}
 			onQuery={(input) => commit(input, { from: turnId })}
+			onRetry={retryInterpret}
 			rounds={thread}
 			understanding={understanding}
 			viewing={turnId}
