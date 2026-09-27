@@ -4,6 +4,7 @@ import { DrawerDescription } from "#/components/ui/drawer";
 import { List, ListItem } from "#/components/ui/list";
 import { Text } from "#/components/ui/text";
 import { TextLink } from "#/components/ui/text-link";
+import { integer } from "#/lib/format";
 import type { SkillDetail } from "#/server/skills";
 import { DetailDrawer } from "../../-components/detail-drawer";
 
@@ -54,7 +55,7 @@ export function TermRecord({
 		>
 			<Descriptions labelWidth={96}>
 				<DescriptionsItem label="人数">
-					<span className="tabular-nums">{term.people}</span>
+					<span className="tabular-nums">{integer(term.people)}</span>
 					<span className="text-fg-secondary"> 人（含细分）</span>
 				</DescriptionsItem>
 				{term.parent && (
@@ -88,7 +89,11 @@ export function TermRecord({
 					<List>
 						{term.children.map((child) => (
 							<ListItem
-								extra={<span className="tabular-nums">{child.people} 人</span>}
+								extra={
+									<span className="tabular-nums">
+										{integer(child.people)} 人
+									</span>
+								}
 								key={child.canonical}
 								render={termRoute(child.canonical)}
 								title={child.canonical}
@@ -118,7 +123,9 @@ function TermLink({ word, people }: { word: string; people: number }) {
 	return (
 		<TextLink render={termRoute(word)}>
 			{word}
-			<span className="ms-2 text-fg-secondary tabular-nums">{people}</span>
+			<span className="ms-2 text-fg-secondary tabular-nums">
+				{integer(people)}
+			</span>
 		</TextLink>
 	);
 }

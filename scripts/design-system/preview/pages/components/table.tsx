@@ -446,6 +446,7 @@ export function TablePage() {
 			rules={{
 				notes: [
 					"表用 Table，放在一块描边的 Block 里，表脚在表下；圆角和外框归那块面。",
+					"表里不画线：表头是一条浅底，表体行间没有线，悬停出底；管理页的表用 small 档。",
 					"空表用 Empty，说明当前问题和可执行的出路。",
 					'通往详情的是整行：TableRow 的 onActivate。名字那格标 cellSlot="title"，里面仍是一个真链接（tabIndex -1），中键、右键、新标签页照常。',
 					"格里的按钮、链接、勾选框点下去归它们自己，不会触发整行。",
@@ -455,7 +456,7 @@ export function TablePage() {
 					"选中行用 TableRow 的 data-state，不加勾选列或额外的选中装饰。",
 					"列表不静默截断：表脚写已显示数、总数、排序和加载上限。",
 				],
-				usage: `<Block className="overflow-hidden" variant="outlined">\n  <Table footer="共 3 人，按匹配程度排序" narrow="cards" size="middle">\n    <TableHeader>\n      <TableRow>\n        <TableHead>候选人</TableHead>\n        <TableHead>部门</TableHead>\n      </TableRow>\n    </TableHeader>\n    <TableBody>\n      <TableRow data-state="selected" onActivate={open}>\n        <TableCell cellSlot="title">\n          <TextLink render={<Link {...detail} />} tabIndex={-1}>Talent 0123</TextLink>\n        </TableCell>\n        <TableCell cellLabel="部门">数据平台部</TableCell>\n      </TableRow>\n    </TableBody>\n  </Table>\n</Block>`,
+				usage: `<Block className="overflow-hidden" variant="outlined">\n  <Table footer="共 3 人，按匹配程度排序" narrow="cards" size="small">\n    <TableHeader>\n      <TableRow>\n        <TableHead>候选人</TableHead>\n        <TableHead>部门</TableHead>\n      </TableRow>\n    </TableHeader>\n    <TableBody>\n      <TableRow data-state="selected" onActivate={open}>\n        <TableCell cellSlot="title">\n          <TextLink render={<Link {...detail} />} tabIndex={-1}>Talent 0123</TextLink>\n        </TableCell>\n        <TableCell cellLabel="部门">数据平台部</TableCell>\n      </TableRow>\n    </TableBody>\n  </Table>\n</Block>`,
 			}}
 			sections={[
 				{

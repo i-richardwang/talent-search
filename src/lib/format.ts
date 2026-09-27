@@ -58,3 +58,8 @@ export function years(months: number) {
 	// 9.95 而不是 10：toFixed 会把 9.96 印成「10.0」，那是第四个槽
 	return `${y >= 9.95 ? Math.round(y) : y.toFixed(1)} 年`;
 }
+
+/** 整数带千分位：`31,279`。管理页的库存数、表里的数和表脚的范围、总数都用它。 */
+export function integer(n: number) {
+	return n.toLocaleString("en-US");
+}

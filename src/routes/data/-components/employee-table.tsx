@@ -15,7 +15,7 @@ import {
 	TableSkeletonRows,
 } from "#/components/ui/table";
 import { TextLink } from "#/components/ui/text-link";
-import { dots } from "#/lib/format";
+import { dots, integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
 import type { EmployeeRow } from "#/server/data";
 import { TablePager } from "../../-components/table-pager";
@@ -99,7 +99,7 @@ export function EmployeeTable({
 							/>
 						}
 						narrow="cards"
-						size="middle"
+						size="small"
 					>
 						<TableHeader>
 							<TableRow>
@@ -153,13 +153,13 @@ export function EmployeeTable({
 												cellLabel="经历"
 												className="whitespace-nowrap text-end tabular-nums"
 											>
-												{row.segments}
+												{integer(row.segments)}
 											</TableCell>
 											<TableCell
 												cellLabel="待处理"
 												className="whitespace-nowrap text-end tabular-nums"
 											>
-												{row.pending === 0 ? "—" : row.pending}
+												{row.pending === 0 ? "—" : integer(row.pending)}
 											</TableCell>
 										</TableRow>
 									);

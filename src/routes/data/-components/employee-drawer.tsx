@@ -5,7 +5,7 @@ import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { Empty } from "#/components/ui/empty";
 import { Text } from "#/components/ui/text";
 import type { Employee } from "#/db/schema";
-import { dots, duration, period } from "#/lib/format";
+import { dots, duration, integer, period } from "#/lib/format";
 import { involvementRank } from "#/lib/involvement";
 import type { SegmentView } from "#/server/data";
 import { DetailDrawer } from "../../-components/detail-drawer";
@@ -115,23 +115,15 @@ export function EmployeeRecord({
 									{label}
 								</Text>
 								<Text size="xs" type="quaternary">
-									{part.length} 段
+									{integer(part.length)} 段
 								</Text>
 							</h3>
-							{/*
-							 * 一组是极浅底上收进 3px 的几块描边面：同一个人的一份档案，
-							 * 和分组卡片（`Collapse` 的 filled）里白面收边的做法一致。
-							 */}
-							<Block
-								className="rounded-lg bg-fill-quaternary"
-								gap={3}
-								padding={3}
-								variant="borderless"
-							>
+							{/* 一段一块描边的面，直接排在抽屉里，段与段隔 8px */}
+							<div className="flex flex-col gap-2">
 								{part.map((segment) => (
 									<Segment key={segment.id} segment={segment} />
 								))}
-							</Block>
+							</div>
 						</section>
 					);
 				})

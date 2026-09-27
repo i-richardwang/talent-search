@@ -1,20 +1,29 @@
 import { Link } from "@tanstack/react-router";
-import { PlayIcon, ScrollTextIcon } from "lucide-react";
-import { useState } from "react";
+import {
+	CalendarClockIcon,
+	ChevronDownIcon,
+	PlayIcon,
+	ScrollTextIcon,
+} from "lucide-react";
+import { useId, useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Alert } from "#/components/ui/alert";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { CodeBlock } from "#/components/ui/code-block";
 import { Collapse } from "#/components/ui/collapse";
+import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
 import { Divider } from "#/components/ui/divider";
 import { Drawer } from "#/components/ui/drawer";
 import { Empty } from "#/components/ui/empty";
+import { Icon } from "#/components/ui/icon";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
 import { toast } from "#/components/ui/toast";
 import type { Judge } from "#/corpus/judgment";
 import type { TaskKind } from "#/db/schema";
+import { integer } from "#/lib/format";
+import { cn } from "#/lib/utils";
 import { requestTask, taskLog } from "#/server/functions";
 import type { JobKind } from "#/server/jobs";
 import type {
@@ -39,7 +48,7 @@ const agoOf = (run: TaskRunView) =>
 
 /*
  * 任务页（`routes/tasks/route.tsx`）上一类任务的一组：头上是任务名、最近一次的结果
- * 和「立即运行」；下面白底的面里是库存数、按次列出的运行记录，每次的日志打开才取。
+ * 和「立即运行」；下面白底的面里是库存数和按次列出的运行记录，每次的日志打开才取。
  */
 
 /** 翻到第 `page` 页的地址：只改这一类任务的页码，其余几类留在原来那页。 */
@@ -50,9 +59,9 @@ function at(kind: TaskKind, page: number) {
 	});
 }
 
-/** 一次运行的用时；还在跑和中断的那一次没有用时。 */
+/** 一次运行的用时；还在跑、中断的那一次和不到一秒就结束的那一次不写用时。 */
 function durationOf(run: TaskRunView) {
-	return run.seconds === null ? null : formatDuration(run.seconds);
+	return run.seconds ? formatDuration(run.seconds) : null;
 }
 
 /** 组头标题下面那一行：最近一次的结果、开始时刻和用时。 */
@@ -69,29 +78,6 @@ function Latest({ latest }: { latest: TaskRunView | null }) {
 				{took && ` · 用时 ${took}`}
 			</span>
 		</span>
-	);
-}
-
-/** 最近一次运行失败时面里的那块提示：结论在标题，那次记下的原始错误收在详情里。 */
-export function RunFailed({
-	kind,
-	error,
-}: {
-	kind: TaskKind;
-	error: string | null;
-}) {
-	return (
-		<Alert
-			extra={
-				error ? (
-					<CodeBlock variant="borderless" wrap>
-						{error}
-					</CodeBlock>
-				) : undefined
-			}
-			title={`上一次${TASK_NAME[kind]}失败`}
-			type="error"
-		/>
 	);
 }
 
@@ -153,10 +139,7 @@ export function TaskCard({
 				title={TASK_NAME[kind]}
 				variant="filled"
 			>
-				<div className="flex flex-col gap-4 py-1">
-					{latest?.outcome === "failed" && (
-						<RunFailed error={latest.error} kind={kind} />
-					)}
+				<div className="flex flex-col gap-6">
 					{kind === "review" && judge === "off" && (
 						<Alert
 							title="自动整理已关闭，技能与释义不再更新"
@@ -166,7 +149,7 @@ export function TaskCard({
 					<Facts corpus={corpus} kind={kind} />
 					{lane.runs.total > 0 && (
 						<>
-							<Divider />
+							<Divider className="my-0" />
 							<RunHistory lane={lane} />
 						</>
 					)}
@@ -176,29 +159,43 @@ export function TaskCard({
 	);
 }
 
-/** 库存数的格子：至少 150px 宽，一行最多四格，窄了自动换行。 */
+/** 库存数的格子：至少 150px 宽，一行最多四格，格间 8px，窄了自动换行。 */
 const FACT_COLUMNS =
 	"repeat(auto-fill, minmax(max(9.375rem, calc((100% - 3 * var(--spacing) * 2) / 4)), 1fr))";
 
-/** 库存数，一格一个数：名字在上、数在中、构成在下。 */
+/**
+ * 库存数，一格一个数：名字 16px 中粗、行高 32px；数 24px 粗体、千分位；构成在数下面
+ * 隔 16px，一项一对「数 名字」，12px 三级灰，数加粗。
+ */
 function Facts({ kind, corpus }: { kind: TaskKind; corpus: CorpusCounts }) {
 	return (
 		<dl className="grid gap-2" style={{ gridTemplateColumns: FACT_COLUMNS }}>
 			{LANE_FACTS[kind](corpus).map((fact) => (
 				<div className="flex min-w-0 flex-col" key={fact.label}>
-					<dt>
-						<Text ellipsis size="lg" weight="medium">
+					<dt className="leading-8">
+						<Text ellipsis={{ tooltip: true }} size="lg" weight="medium">
 							{fact.label}
 						</Text>
 					</dt>
-					<dd className="flex flex-col gap-1">
-						<Text className="tabular-nums" size="2xl" weight="bold">
-							{fact.value}
+					<dd className="flex flex-col gap-4">
+						<Text
+							className="leading-tight tabular-nums"
+							size="2xl"
+							weight="bold"
+						>
+							{integer(fact.value)}
 						</Text>
-						{fact.note && (
-							<Text size="xs" type="secondary">
-								{fact.note}
-							</Text>
+						{fact.parts && (
+							<span className="flex flex-wrap gap-x-3 gap-y-1 text-fg-tertiary text-xs">
+								{fact.parts.map((part) => (
+									<span className="flex gap-1" key={part.label}>
+										<span className="font-bold tabular-nums">
+											{integer(part.value)}
+										</span>
+										<span>{part.label}</span>
+									</span>
+								))}
+							</span>
 						)}
 					</dd>
 				</div>
@@ -208,12 +205,15 @@ function Facts({ kind, corpus }: { kind: TaskKind; corpus: CorpusCounts }) {
 }
 
 /**
- * 按次列出的运行记录，最新的在最前。每次一行描边的面：状态图标、结果、这一类的第几次、
- * 用时，右边是开始时刻和看日志的按钮；出错的那次下面接一行错误。日志只开一个抽屉，
+ * 按次列出的运行记录，最新的在最前，可以整段收起。每次一行、没有边框，悬停出底：
+ * 状态图标、结果、用时，右边是开始时刻和看日志的按钮（悬停才出现）；点这一行也打开日志。
+ * 出错的那次多一个展开钮，错误收在行下，只有最新那次一开始就展开。日志只开一个抽屉，
  * 点哪一次换成哪一次。
  */
 function RunHistory({ lane }: { lane: TaskLane }) {
 	const { kind, runs } = lane;
+	const panelId = useId();
+	const [expanded, setExpanded] = useState(true);
 	const [open, setOpen] = useState(false);
 	const [shown, setShown] = useState<LogView | null>(null);
 
@@ -221,8 +221,8 @@ function RunHistory({ lane }: { lane: TaskLane }) {
 	 * 抽屉只有一个，点哪一次的日志就换成哪一次、重新取。取回来时要是已经换成了
 	 * 别的一次，这份作废。
 	 */
-	function openLog(run: TaskRunView, seq: number) {
-		setShown({ lines: null, failed: false, run, seq });
+	function openLog(run: TaskRunView) {
+		setShown({ lines: null, failed: false, run });
 		setOpen(true);
 		const keep = (next: Partial<LogView>) =>
 			setShown((now) => (now?.run.id === run.id ? { ...now, ...next } : now));
@@ -233,38 +233,41 @@ function RunHistory({ lane }: { lane: TaskLane }) {
 	}
 	return (
 		<section className="flex flex-col gap-2">
-			<h3 className="flex items-baseline gap-1.5">
+			<CollapsibleTrigger
+				className="w-fit"
+				onOpenChange={setExpanded}
+				open={expanded}
+				panelId={panelId}
+			>
+				<Icon className="text-fg-tertiary" icon={CalendarClockIcon} size={16} />
 				<Text size="sm" type="secondary" weight="medium">
 					运行记录
 				</Text>
-				<Text size="xs" type="quaternary">
-					{runs.total} 次
-				</Text>
-			</h3>
-			<ol className="flex flex-col gap-2">
-				{runs.rows.map((run, index) => {
-					// 这一类的第几次：列表按时间倒排，第一页第一行是第 total 次
-					const seq = runs.total - (runs.from - 1) - index;
-					return (
-						<RunRow
-							key={run.id}
-							kind={kind}
-							onOpenLog={() => openLog(run, seq)}
-							run={run}
-							seq={seq}
+			</CollapsibleTrigger>
+			<Collapsible id={panelId} open={expanded}>
+				<div className="flex flex-col gap-2 pt-1">
+					<ol className="flex flex-col gap-0.5">
+						{runs.rows.map((run, index) => (
+							<RunRow
+								defaultExpanded={runs.page === 1 && index === 0}
+								key={run.id}
+								kind={kind}
+								onOpenLog={() => openLog(run)}
+								run={run}
+							/>
+						))}
+					</ol>
+					{runs.pages > 1 && (
+						<TablePager
+							linkTo={(to) => (
+								<Link resetScroll={false} search={at(kind, to)} to="/tasks" />
+							)}
+							table={runs}
+							units={{ row: "次", total: "次运行" }}
 						/>
-					);
-				})}
-			</ol>
-			{runs.pages > 1 && (
-				<TablePager
-					linkTo={(to) => (
-						<Link resetScroll={false} search={at(kind, to)} to="/tasks" />
 					)}
-					table={runs}
-					units={{ row: "次", total: "次运行" }}
-				/>
-			)}
+				</div>
+			</Collapsible>
 			{shown && (
 				<RunLog
 					afterClose={() => setShown(null)}
@@ -278,36 +281,42 @@ function RunHistory({ lane }: { lane: TaskLane }) {
 	);
 }
 
+/** 悬停才出现的动作：指针移进这一行或焦点落进来时显出，没有悬停的设备常显。 */
+const REVEAL =
+	"opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100";
+
 function RunRow({
 	kind,
 	run,
-	seq,
+	defaultExpanded,
 	onOpenLog,
 }: {
 	kind: TaskKind;
 	run: TaskRunView;
-	seq: number;
+	/** 出错的那次一开始是否展开错误 */
+	defaultExpanded: boolean;
 	onOpenLog: () => void;
 }) {
 	const status = RUN_STATUS[run.outcome];
 	const took = durationOf(run);
+	const [showError, setShowError] = useState(defaultExpanded);
+	const title = `${agoOf(run)}开始的${TASK_NAME[kind]}`;
 	return (
 		<Block
 			as="li"
-			className="rounded-lg"
-			gap={8}
-			paddingBlock={8}
+			className="group"
+			clickable
+			gap={4}
+			onClick={onOpenLog}
+			paddingBlock={4}
 			paddingInline={8}
-			variant="outlined"
+			variant="borderless"
 		>
-			<div className="flex items-center justify-between gap-2">
+			<div className="flex min-h-7 items-center justify-between gap-2">
 				<div className="flex min-w-0 items-center gap-2">
 					<StatusIcon tone={status.tone} />
 					<Text className="shrink-0" weight="medium">
 						{status.label}
-					</Text>
-					<Text className="shrink-0 tabular-nums" size="xs" type="secondary">
-						#{seq}
 					</Text>
 					{took && (
 						<Text className="shrink-0 tabular-nums" size="xs" type="secondary">
@@ -324,21 +333,42 @@ function RunRow({
 					>
 						{agoOf(run)}
 					</Text>
+					{run.error && (
+						<ActionIcon
+							aria-expanded={showError}
+							aria-label={`${showError ? "收起" : "展开"}${title}的错误`}
+							className={cn(
+								"transition-transform duration-200",
+								!showError && "-rotate-90",
+							)}
+							icon={ChevronDownIcon}
+							onClick={(event) => {
+								event.stopPropagation();
+								setShowError((now) => !now);
+							}}
+							size="small"
+							title={showError ? "收起错误" : "展开错误"}
+						/>
+					)}
 					<ActionIcon
-						aria-label={`第 ${seq} 次${TASK_NAME[kind]}的日志`}
+						aria-label={`${title}的日志`}
+						className={REVEAL}
 						icon={ScrollTextIcon}
-						onClick={onOpenLog}
+						onClick={(event) => {
+							event.stopPropagation();
+							onOpenLog();
+						}}
 						size="small"
 						title="日志"
 					/>
 				</div>
 			</div>
-			{run.error && (
+			{run.error && showError && (
 				<Text
-					className="px-1"
-					ellipsis={{ tooltip: true }}
+					className="cursor-text whitespace-pre-wrap break-words px-1"
+					onClick={(event) => event.stopPropagation()}
 					size="sm"
-					type="secondary"
+					type="tertiary"
 				>
 					{run.error}
 				</Text>
@@ -350,7 +380,6 @@ function RunRow({
 /** 抽屉里正看着的那一次：还在取时 `lines` 是 null，取不到时 `failed`。 */
 type LogView = {
 	run: TaskRunView;
-	seq: number;
 	lines: string[] | null;
 	failed: boolean;
 };
@@ -372,13 +401,13 @@ function RunLog({
 	onClose: () => void;
 	afterClose: () => void;
 }) {
-	const { failed, lines, run, seq } = log;
+	const { failed, lines, run } = log;
 	return (
 		<Drawer
 			afterClose={afterClose}
 			onClose={onClose}
 			open={open}
-			title={`${TASK_NAME[kind]} #${seq} · ${run.startedAt} 开始`}
+			title={`${TASK_NAME[kind]} · ${run.startedAt} 开始`}
 			width="var(--container-log)"
 		>
 			{failed ? (

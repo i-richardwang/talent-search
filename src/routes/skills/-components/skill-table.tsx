@@ -15,6 +15,7 @@ import {
 	TableSkeletonRows,
 } from "#/components/ui/table";
 import { TextLink } from "#/components/ui/text-link";
+import { integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
 import type { SkillEntry } from "#/server/skills";
 import { TablePager } from "../../-components/table-pager";
@@ -100,7 +101,7 @@ export function SkillTable({
 							/>
 						}
 						narrow="cards"
-						size="middle"
+						size="small"
 					>
 						<TableHeader>
 							<TableRow>
@@ -146,7 +147,7 @@ export function SkillTable({
 												cellLabel="人数"
 												className="whitespace-nowrap text-end tabular-nums"
 											>
-												{e.people}
+												{integer(e.people)}
 											</TableCell>
 											<TableCell
 												cellLabel="属于"
@@ -165,7 +166,7 @@ export function SkillTable({
 												cellLabel="细分"
 												className="whitespace-nowrap text-end text-fg-secondary tabular-nums"
 											>
-												{e.children || "—"}
+												{e.children ? integer(e.children) : "—"}
 											</TableCell>
 											<TableCell
 												cellLabel="其他写法"

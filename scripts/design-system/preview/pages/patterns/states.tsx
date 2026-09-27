@@ -28,7 +28,6 @@ import {
 	faultExits,
 } from "#/routes/s/$turnId/-lib/interpret";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
-import { RunFailed } from "#/routes/tasks/-components/task-card";
 import type { EmptyReason } from "#/search/empty";
 import { KEYWORD_LABEL } from "#/search/keywords";
 import type { SearchSpec } from "#/search/spec";
@@ -37,7 +36,6 @@ import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
-import { TASK_LANES } from "../../samples/admin";
 import {
 	CLAIMS,
 	EXCLUDE_INTERN,
@@ -319,9 +317,6 @@ function NotFound() {
 
 /* ---------- 页面事件 ---------- */
 
-/** 任务台上最近一次失败的那次运行。 */
-const FAILED_RUN = TASK_LANES.find((lane) => lane.latest?.outcome === "failed");
-
 function Events() {
 	return (
 		<Block className="overflow-hidden" variant="outlined">
@@ -349,17 +344,6 @@ function Events() {
 							</Routed>
 						</TableCell>
 					</TableRow>
-					{FAILED_RUN?.latest && (
-						<TableRow>
-							<TableCell className="whitespace-nowrap">任务失败</TableCell>
-							<TableCell className="w-full">
-								<RunFailed
-									error={FAILED_RUN.latest.error}
-									kind={FAILED_RUN.kind}
-								/>
-							</TableCell>
-						</TableRow>
-					)}
 				</TableBody>
 			</Table>
 		</Block>

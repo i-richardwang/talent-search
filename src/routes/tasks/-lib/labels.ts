@@ -20,8 +20,15 @@ export const RUN_STATUS: Record<
 	done: { label: "成功", tone: "success" },
 };
 
-/** 一格库存数：名字、数，数下面可选一行小字说它由什么构成。 */
-type LaneFact = { label: string; value: number | string; note?: string };
+/**
+ * 一格库存数：名字、数，数下面可选一行构成。构成的每一项数在前、说它是什么在后
+ * （`21,267 公司内`）。
+ */
+type LaneFact = {
+	label: string;
+	value: number;
+	parts?: { value: number; label: string }[];
+};
 
 /** 每类任务说库里此刻有什么：同步说构成，解析说还剩多少，整理说归并与释义。 */
 export const LANE_FACTS: Record<
@@ -31,7 +38,7 @@ export const LANE_FACTS: Record<
 	derive: (corpus) => [
 		{
 			label: "待处理经历",
-			note: `共 ${corpus.segments} 条经历`,
+			parts: [{ label: "条经历", value: corpus.segments }],
 			value: corpus.pending,
 		},
 		{ label: "说法", value: corpus.phrases },
@@ -41,7 +48,7 @@ export const LANE_FACTS: Record<
 		{ label: "已归并写法", value: corpus.merged },
 		{
 			label: "释义",
-			note: `该写 ${corpus.glossable} 条`,
+			parts: [{ label: "条该写", value: corpus.glossable }],
 			value: corpus.glossed,
 		},
 	],
@@ -49,7 +56,10 @@ export const LANE_FACTS: Record<
 		{ label: "人", value: corpus.employees },
 		{
 			label: "经历",
-			note: `公司内 ${corpus.internal} · 入职前 ${corpus.external}`,
+			parts: [
+				{ label: "公司内", value: corpus.internal },
+				{ label: "入职前", value: corpus.external },
+			],
 			value: corpus.segments,
 		},
 	],

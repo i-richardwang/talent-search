@@ -1,10 +1,11 @@
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import type { ReactElement } from "react";
 import { Button } from "#/components/ui/button";
+import { integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
 
 /**
- * 管理页一张表的表脚：左边这一页在全部里的范围和总数（13px 次要色、等宽数字），
+ * 管理页一张表的表脚：左边这一页在全部里的范围和总数（13px 次要色、等宽数字、千分位），
  * 右边翻页：上一页、页码、下一页，都是小号的文字按钮，当前页是填充的底。
  *
  * 只有一页的时候只说总数、不放翻页：那一页就是全部，「第 1–20 个，共 20 人」
@@ -27,10 +28,10 @@ export function TablePager({
 			<p className="whitespace-nowrap text-fg-secondary text-sm tabular-nums">
 				{pages > 1 && (
 					<>
-						第 {from}–{from + rows.length - 1} {units.row}，
+						第 {integer(from)}–{integer(from + rows.length - 1)} {units.row}，
 					</>
 				)}
-				共 {total} {units.total}
+				共 {integer(total)} {units.total}
 			</p>
 			{pages > 1 && <PageNav linkTo={linkTo} page={page} pages={pages} />}
 		</div>

@@ -530,23 +530,28 @@ describe("页面文案", () => {
 	/** 一组库存数读成一句，方便比对：「名字 数（构成）」用顿号连起来。 */
 	const read = (facts: ReturnType<typeof LANE_FACTS.sync>) =>
 		facts
-			.map((f) => `${f.label} ${f.value}${f.note ? `（${f.note}）` : ""}`)
+			.map((f) => {
+				const parts = f.parts
+					?.map((part) => `${part.value} ${part.label}`)
+					.join(" · ");
+				return `${f.label} ${f.value}${parts ? `（${parts}）` : ""}`;
+			})
 			.join("、");
 
 	test("解析那一组说还剩几条经历没处理，和一共几条", () => {
 		assert.match(
 			read(LANE_FACTS.derive(corpus({ pending: 3 }))),
-			/待处理经历 3（共 10 条经历）/,
+			/待处理经历 3（10 条经历）/,
 		);
 	});
 	test("同步与整理那两组说的是构成和结果", () => {
 		assert.equal(
 			read(LANE_FACTS.sync(corpus())),
-			"人 8、经历 10（公司内 6 · 入职前 4）",
+			"人 8、经历 10（6 公司内 · 4 入职前）",
 		);
 		assert.match(
 			read(LANE_FACTS.review(corpus())),
-			/技能 9、已归并写法 2、释义 12（该写 30 条）/,
+			/技能 9、已归并写法 2、释义 12（30 条该写）/,
 		);
 	});
 	test("用时一小时以内到秒，以上到分，满一天进位成天", () => {

@@ -131,7 +131,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="组头说最近一次的结果；失败时白面里先是一条提示，原始错误收在详情里；每次运行一行，开头是状态图标。"
+				description="组头说最近一次的结果；每次运行一行无边框、开头是状态图标；失败那次的错误收在行下，最新那次一开始就展开。"
 				title="上一次失败的任务"
 			>
 				<Lane kind="review" />
