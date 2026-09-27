@@ -18,6 +18,8 @@
 @import "./components/ui/flex.css" layer(components);
 @import "./components/ui/block.css" layer(components);
 @import "./components/ui/empty.css" layer(components);
+@import "./components/ui/avatar.css" layer(components);
+@import "./components/ui/list.css" layer(components);
 @import "./components/ui/hotkey.css" layer(components);
 @import "./components/ui/button.css" layer(components);
 @import "./components/ui/action-icon.css" layer(components);

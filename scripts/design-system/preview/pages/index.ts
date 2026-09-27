@@ -5,6 +5,7 @@ import { ActionIconPage } from "./components/action-icon";
 import { AlertPage } from "./components/alert";
 import { AppLayoutPage } from "./components/app-layout";
 import { AutoCompletePage } from "./components/auto-complete";
+import { AvatarPage } from "./components/avatar";
 import { BlockPage } from "./components/block";
 import { ButtonPage } from "./components/button";
 import { ChatInputPage } from "./components/chat-input";
@@ -25,6 +26,7 @@ import { GalleryPage } from "./components/gallery";
 import { HotkeyPage } from "./components/hotkey";
 import { IconPage } from "./components/icon";
 import { InputPage } from "./components/input";
+import { ListPage } from "./components/list";
 import { ModalPage } from "./components/modal";
 import { NavItemPage } from "./components/nav-item";
 import { PopoverPage } from "./components/popover";
@@ -98,6 +100,8 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/divider": DividerPage,
 	"components/text-link": TextLinkPage,
 	"components/descriptions": DescriptionsPage,
+	"components/list": ListPage,
+	"components/avatar": AvatarPage,
 	"components/scroll-area": ScrollAreaPage,
 	"components/toolbar": ToolbarPage,
 	"components/collapsible": CollapsiblePage,

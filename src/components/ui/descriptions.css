@@ -1,19 +1,29 @@
 /*
- * Descriptions 的外观，类名以 `.ui-descriptions` 开头：两栏网格，标签栏按最长的标签定宽，
- * 每行上下各留一档内边距，长内容在内容栏里换行。
+ * Descriptions 的外观，类名以 `.ui-descriptions` 开头：两栏网格，标签栏缺省按最长的标签
+ * 定宽（`--ui-descriptions-label-width` 给了就用它），长内容在内容栏里换行，两栏按首行
+ * 基线对齐。
  */
 
 .ui-descriptions {
 	display: grid;
-	grid-template-columns: auto minmax(0, 1fr);
-	column-gap: 16px;
+	grid-template-columns: var(--ui-descriptions-label-width, auto) minmax(0, 1fr);
 	align-items: baseline;
 	margin: 0;
 }
 
+/* 一行的字高 20px，上下各 4px，单行时正好 28px。 */
 .ui-descriptions-middle {
-	font-size: var(--text-base);
-	line-height: var(--text-base--line-height);
+	column-gap: 16px;
+	row-gap: 4px;
+	line-height: 20px;
+
+	& > dt {
+		font-size: var(--text-xs);
+	}
+
+	& > dd {
+		font-size: var(--text-sm);
+	}
 
 	& > dt,
 	& > dd {
@@ -33,7 +43,9 @@
 }
 
 .ui-descriptions-label {
+	overflow: hidden;
 	color: var(--color-fg-secondary);
+	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 

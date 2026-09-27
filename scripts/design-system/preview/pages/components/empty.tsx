@@ -19,6 +19,12 @@ import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
 type Cover = "simple" | "icon";
+type Size = "middle" | "large";
+
+const SIZES: { label: string; value: Size }[] = [
+	{ label: "面里 middle", value: "middle" },
+	{ label: "整栏 large", value: "large" },
+];
 
 const COVERS: { label: string; value: Cover }[] = [
 	{ label: "简笔图", value: "simple" },
@@ -32,6 +38,7 @@ function Playground() {
 		"「累计 8 年以上」把范围收得太窄，可以放宽年限再看。",
 	);
 	const [action, setAction] = useState(true);
+	const [size, setSize] = useState<Size>("middle");
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
@@ -58,6 +65,9 @@ function Playground() {
 						value={cover}
 					/>
 				</Control>
+				<Control label="尺寸">
+					<Segmented<Size> onChange={setSize} options={SIZES} value={size} />
+				</Control>
 				<Control>
 					<Checkbox checked={action} onChange={setAction}>
 						动作
@@ -69,6 +79,7 @@ function Playground() {
 					action={action ? <Button type="primary">放宽年限</Button> : undefined}
 					description={description || undefined}
 					icon={cover === "icon" ? SearchX : undefined}
+					size={size}
 					title={title || undefined}
 				/>
 			</Stage>
@@ -113,6 +124,20 @@ function Appearances() {
 							<Empty icon={UserX} title="没有找到这个人" />
 						</TableCell>
 					</TableRow>
+					<TableRow>
+						<TableCell className="font-mono text-xs">large</TableCell>
+						<TableCell>
+							<Empty
+								description="链接可能已失效，或记录已被清理。"
+								icon={UserX}
+								size="large"
+								title="没有找到这个人"
+							/>
+						</TableCell>
+						<TableCell>
+							<Empty icon={UserX} size="large" title="没有找到这个人" />
+						</TableCell>
+					</TableRow>
 				</TableBody>
 			</Table>
 		</Block>
@@ -123,7 +148,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="名单为空时说出是哪条条件挡住了人，并给一个能直接点的出路。"
+				description="名单那一栏为空时占满整栏（large）：说出是哪条条件挡住了人，并给一个能直接点的出路。"
 				title="名单为空"
 			>
 				<Empty
@@ -131,6 +156,7 @@ function Usage() {
 					className="w-full"
 					description="加上「学校」后一个人都不剩，其余条件下有 23 人。"
 					icon={SearchX}
+					size="large"
 					title="没有符合全部条件的人"
 				/>
 			</Example>
@@ -160,13 +186,14 @@ function Usage() {
 export function EmptyPage() {
 	return (
 		<DocPage
-			facts={[`${COVERS.length} 种图`, "居中一列"]}
+			facts={[`${COVERS.length} 种图`, `${SIZES.length} 种尺寸`, "居中一列"]}
 			rules={{
 				notes: [
 					"空态用 Empty，不手写一块灰字。",
 					"文案说明当前问题和可执行的出路；标题已说明的内容，说明里不重复。",
 					"空态原因由检索层判定，界面按原因给文案，不拿计数重新推断。",
 					"出路是一次动作时放进 action，用 Button。",
+					"放在一块面里（表格、抽屉、弹层）用缺省的 middle；一整栏或一整页为空用 large，不在调用处加上下内边距。",
 				],
 				usage: `<Empty\n  action={<Button>放宽年限</Button>}\n  description="「累计 8 年以上」把范围收得太窄，可以放宽年限再看。"\n  title="没有符合全部条件的人"\n/>`,
 			}}

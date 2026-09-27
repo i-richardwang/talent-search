@@ -11,11 +11,11 @@ import { cn } from "#/lib/utils";
 /*
  * 样式在 input.css。外层样式用 `className`。不传 `variant` 时的深浅两种默认由 CSS
  * 按 `.dark` 选（`ui-input-auto`：浅色描边、深色填充），不在渲染时读主题；
- * `variant="filled"` 深浅都是填充；`variant="borderless"` 是嵌在别的面里的一行字，
- * 不画边和底。聚焦时边框只加深到 border 那一档，外面一圈 primary-bg 的淡环。
+ * `variant="filled"` 深浅都是填充，`variant="outlined"` 深浅都是描边；
+ * `variant="borderless"` 是嵌在别的面里的一行字，不画边和底。聚焦时边框只加深到 border 那一档，外面一圈 primary-bg 的淡环。
  */
 
-export type InputVariant = "filled" | "borderless";
+export type InputVariant = "filled" | "outlined" | "borderless";
 export type InputSize = "small" | "middle";
 
 const SIZE = {

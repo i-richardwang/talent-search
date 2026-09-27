@@ -169,6 +169,8 @@ const CATALOG = [
 			component("divider", "分割线", "Divider"),
 			component("text-link", "文字链接", "TextLink"),
 			component("descriptions", "属性列表", "Descriptions"),
+			component("list", "列表", "List"),
+			component("avatar", "头像", "Avatar"),
 			component("scroll-area", "滚动区", "ScrollArea"),
 			component("toolbar", "工具条", "Toolbar"),
 			component("collapsible", "折叠面板", "Collapsible"),

@@ -38,7 +38,7 @@ const KINDS: { label: string; value: Kind }[] = [
 /** `auto` 表示不传 variant：浅色描边、深色填充。 */
 type VariantChoice = InputVariant | "auto";
 
-const VARIANTS: VariantChoice[] = ["auto", "filled", "borderless"];
+const VARIANTS: VariantChoice[] = ["auto", "filled", "outlined", "borderless"];
 const variantOf = (choice: VariantChoice) =>
 	choice === "auto" ? undefined : choice;
 
@@ -338,7 +338,7 @@ export function InputPage() {
 			rules={{
 				notes: [
 					"输入用 Input / TextArea，数字用 InputNumber；图标与提交放进前后插槽或底栏，不在框外另画一圈。",
-					'不传 variant 时浅色描边、深色填充，由样式按主题选；深浅两侧都要填充时才写 variant="filled"；嵌在别的面里（输入托盘的一行）用 variant="borderless"。',
+					'不传 variant 时浅色描边、深色填充，由样式按主题选；深浅两侧都要填充时才写 variant="filled"，都要描边时写 variant="outlined"；嵌在别的面里（输入托盘的一行）用 variant="borderless"。',
 					"聚焦时边框只加深到 border 那一档，外面一圈淡环；不变成主色的边。",
 					"表上方找词用 SearchBar，不拿 Input 加一个「搜索」按钮拼。",
 					"尺寸用 size，不覆盖高度、圆角和内边距；宽度属于外层布局。",

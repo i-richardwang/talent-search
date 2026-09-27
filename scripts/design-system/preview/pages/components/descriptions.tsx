@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Block } from "#/components/ui/block";
+import { Checkbox } from "#/components/ui/checkbox";
 import {
 	Descriptions,
 	DescriptionsItem,
@@ -27,6 +28,7 @@ function Person() {
 
 function Playground() {
 	const [size, setSize] = useState<DescriptionsSize>("middle");
+	const [fixed, setFixed] = useState(false);
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
@@ -37,10 +39,22 @@ function Playground() {
 						value={size}
 					/>
 				</Control>
+				<Control>
+					<Checkbox checked={fixed} onChange={setFixed}>
+						标签栏定宽 96
+					</Checkbox>
+				</Control>
 			</Controls>
-			<Stage footer={<span className="font-mono">{size}</span>}>
+			<Stage
+				footer={
+					<span className="font-mono">
+						{size}
+						{fixed && " · labelWidth={96}"}
+					</span>
+				}
+			>
 				<div className="w-full max-w-sm">
-					<Descriptions size={size}>
+					<Descriptions labelWidth={fixed ? 96 : undefined} size={size}>
 						<Person />
 					</Descriptions>
 				</div>
@@ -82,11 +96,13 @@ function Usage() {
 export function DescriptionsPage() {
 	return (
 		<DocPage
-			facts={[`${SIZES.length} 种尺寸`, "标签栏按最长的定宽"]}
+			facts={[`${SIZES.length} 种尺寸`, "标签栏按最长的定宽或给定宽度"]}
 			rules={{
 				notes: [
 					"一个对象的几条属性用 Descriptions，一条一个 DescriptionsItem；不在调用处另写两栏网格。",
-					"标签次要色、内容正文色、字号相同；两栏靠颜色分开，不加冒号，不加粗。",
+					"标签次要色、内容正文色；两栏靠颜色分开，不加冒号，不加粗。",
+					"middle 的标签 12px、内容 13px，一行至少 28px；small 两栏都是 12px。",
+					"几块属性上下排、内容栏要对齐时给同一个 labelWidth（常用 96）；只有一块时让标签栏按最长的定宽。",
 					"没有值的属性写「—」或者整条不出现，看这一条对读的人有没有意义。",
 					"middle 是详情里的主属性；small 是一块里的附属属性，跟着那一块的小字。",
 				],

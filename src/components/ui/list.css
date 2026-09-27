@@ -1,0 +1,140 @@
+/*
+ * List 的外观，类名以 `.ui-list` 开头。块的先后是层叠顺序：列表、一项、可点、当前项，
+ * 然后是项里的几格（容器、内容、标题、说明、行尾小字、行尾动作）和标题链接。
+ *
+ * 一项：四周 12px、圆角 md、头像与内容间隔 8px；标题 14px 中粗、说明 12px，行高都是 1.2，
+ * 两行间隔 4px。行尾动作离右边 16px、上下居中。
+ */
+
+.ui-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 0;
+	padding: 4px;
+	list-style: none;
+}
+
+.ui-list-item {
+	position: relative;
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	justify-content: space-between;
+	padding: 12px;
+	border-radius: var(--radius-md);
+	color: var(--color-fg-tertiary);
+}
+
+.ui-list-item-clickable {
+	cursor: pointer;
+
+	&:hover {
+		background: var(--color-fill-tertiary);
+	}
+}
+
+.ui-list-item-active {
+	&,
+	&:hover {
+		color: var(--color-fg);
+		background: var(--color-fill-secondary);
+	}
+
+	&.ui-list-item-clickable:hover {
+		background: var(--color-fill);
+	}
+}
+
+.ui-list-item-container {
+	overflow: hidden;
+	display: flex;
+	flex: 1;
+	gap: 8px;
+	align-items: flex-start;
+}
+
+.ui-list-item-content {
+	overflow: hidden;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 4px;
+	align-self: center;
+}
+
+.ui-list-item-title {
+	overflow: hidden;
+	width: 100%;
+	font-size: var(--text-base);
+	font-weight: 500;
+	line-height: 1.2;
+	color: var(--color-fg);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ui-list-item-desc {
+	overflow: hidden;
+	width: 100%;
+	font-size: var(--text-xs);
+	line-height: 1.2;
+	color: var(--color-fg-tertiary);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.ui-list-item-extra {
+	flex: none;
+	font-size: var(--text-xs);
+	color: var(--color-fg-quaternary);
+	transition: opacity 0.15s;
+
+	.ui-list-item:has(.ui-list-item-actions):is(:hover, :focus-within) &,
+	.ui-list-item:has(.ui-list-item-actions[data-show]) & {
+		opacity: 0;
+	}
+}
+
+.ui-list-item-actions {
+	position: absolute;
+	inset-block-start: 50%;
+	inset-inline-end: 16px;
+	transform: translateY(-50%);
+	display: flex;
+	gap: 4px;
+	opacity: 0;
+	transition: opacity 0.15s;
+
+	.ui-list-item:is(:hover, :focus-within) &,
+	&[data-show] {
+		opacity: 1;
+	}
+
+	@media (hover: none) {
+		opacity: 1;
+	}
+}
+
+/*
+ * 标题链接：`::after` 铺满整行、圆角与行同档，焦点外框画在它上面，框住的是整行。
+ * 外框读全站 `focus-ring` 的那组变量。
+ */
+.ui-list-item-link {
+	color: inherit;
+	text-decoration: none;
+	outline: none;
+
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		border-radius: var(--radius-md);
+	}
+
+	&:focus-visible::after {
+		outline: var(--focus-ring-width) solid var(--focus-ring-color);
+		outline-offset: var(--focus-ring-offset);
+		animation: var(--focus-ring-animation);
+	}
+}

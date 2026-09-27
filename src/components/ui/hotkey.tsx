@@ -105,6 +105,24 @@ const mappingKey = (isAppleDevice: boolean): Record<string, ReactNode> => ({
 const startCase = (str: string): string =>
 	str.replace(/^./, (s) => s.toUpperCase());
 
+/**
+ * 键盘事件是不是按下了 `keys` 这组键：mod 在苹果设备上是 ⌘、其余设备是 Ctrl，
+ * 其余修饰键（shift、alt）写了才要求按下，末一个键名不分大小写。
+ */
+export function matchesHotkey(event: KeyboardEvent, keys: string): boolean {
+	const parts = keys.toLowerCase().split("+");
+	const key = parts.at(-1);
+	const apple = APPLE.test(navigator.userAgent);
+	const mod = parts.includes("mod");
+	return (
+		event.key.toLowerCase() === key &&
+		(apple ? event.metaKey : event.ctrlKey) === mod &&
+		(apple ? !event.ctrlKey : !event.metaKey) &&
+		event.shiftKey === parts.includes("shift") &&
+		event.altKey === parts.includes("alt")
+	);
+}
+
 export function Hotkey({
 	className,
 	compact,

@@ -3,7 +3,8 @@
  * 然后是 TextArea、输入本身、数字框与前后插槽。
  *
  * 不传 `variant` 时用 `.ui-input-auto`：浅色描边、深色填充，由 `.dark` 决定，
- * 服务端渲染不必知道主题；主题写在 `:where()` 里，特异性和单个类名一样。
+ * 服务端渲染不必知道主题；两侧分别与 `.ui-input-outlined`、`.ui-input-filled` 共用规则。
+ * 主题写在 `:where()` 里，特异性和单个类名一样。
  *
  * 两档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
  */
@@ -73,6 +74,7 @@
 	}
 }
 
+.ui-input-outlined,
 :where(:root:not(.dark)) .ui-input-auto {
 	border: 1px solid var(--color-border-secondary);
 	background: var(--color-container);

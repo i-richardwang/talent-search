@@ -2,6 +2,8 @@
  *   .ui-empty-icon         图标描边：浅色 --color-fg-secondary，深色 --color-fg-quaternary
  *   .ui-empty-title        标题：16px 粗体、正文色，居中
  *   .ui-empty-description  说明：14px、三级灰，居中
+ *   .ui-empty-large        占满一栏的那一档：标题 16px 半粗，说明 13px 次要色
+ *   .ui-empty-icon-bare    占满一栏时不加框的图标：四级灰
  *   .ui-empty-image-*      默认图：地上的影子、卡片、卡片里的占位条，都读语义色
  */
 
@@ -24,6 +26,21 @@
 	font-size: var(--text-base);
 	color: var(--color-fg-tertiary);
 	text-align: center;
+}
+
+.ui-empty-large {
+	.ui-empty-title {
+		font-weight: 600;
+	}
+
+	.ui-empty-description {
+		font-size: var(--text-sm);
+		color: var(--color-fg-secondary);
+	}
+}
+
+.ui-empty-icon-bare {
+	color: var(--color-fg-quaternary);
 }
 
 .ui-empty-image-shadow {

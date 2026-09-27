@@ -208,6 +208,15 @@ function Usage() {
 					换行
 				</span>
 			</Example>
+			<Example
+				description="搜索框右端的提示：几个键挤在一个键帽里（compact），占的宽度小。"
+				title="搜索框的快捷键"
+			>
+				<span className="flex items-center gap-4 text-fg-secondary text-xs">
+					<Hotkey compact keys="mod+k" />
+					<Hotkey compact keys="mod+shift+f" />
+				</span>
+			</Example>
 		</ExampleGrid>
 	);
 }
@@ -227,6 +236,7 @@ export function HotkeyPage() {
 					`画成符号的键名是 ${SYMBOL_KEYS.join("、")}；修饰键、回车、退格、Tab 只在苹果设备上画成符号，其他设备写名字。其余键名首字母大写原样显示。`,
 					"单独摆着的说明用 filled；提示里跟在文字后面的用 compact（Tooltip 的 hotkey 自己会这样画）；夹在一句话里的用 borderless。",
 					"快捷键说明只在有指针的设备上显示，触屏上没有键盘。",
+					"放在输入框这类窄处时给 compact，几个键放进同一个键帽。",
 				],
 				usage: `<Hotkey keys="mod+k" />`,
 			}}

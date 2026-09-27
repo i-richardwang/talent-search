@@ -1,11 +1,14 @@
 /*
- * 搜索框的外观，类名以 `.ui-search-bar` 开头。外壳就是单行输入框，这里只管两件事：
- * 前面的搜索图标用占位文字的颜色（fg-quaternary），浏览器给 `type="search"` 自带的
- * 清空叉不画，清空由组件自己的图标按钮做。
+ * 搜索框的外观，类名以 `.ui-search-bar` 开头。外壳就是单行输入框，这里只管三件事：
+ * 前面的搜索图标用占位文字的颜色（fg-quaternary）；浏览器给 `type="search"` 自带的
+ * 清空叉不画，清空由组件自己的图标按钮做；快捷键提示盖在框的右端，离边 6px、
+ * 上下居中，字用三级灰，底下加一层模糊，框里有焦点时隐去。
  */
 
 .ui-search-bar {
+	position: relative;
 	display: block;
+	max-width: 100%;
 
 	input::-webkit-search-cancel-button {
 		appearance: none;
@@ -14,4 +17,18 @@
 
 .ui-search-bar-icon {
 	color: var(--color-fg-quaternary);
+}
+
+.ui-search-bar-short-key {
+	pointer-events: none;
+	position: absolute;
+	inset-block-start: 50%;
+	inset-inline-end: 6px;
+	transform: translateY(-50%);
+	color: var(--color-fg-tertiary);
+	backdrop-filter: saturate(150%) blur(10px);
+
+	.ui-search-bar:focus-within & {
+		display: none;
+	}
 }
