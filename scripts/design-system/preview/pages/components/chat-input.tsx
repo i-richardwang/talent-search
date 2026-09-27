@@ -1,4 +1,4 @@
-import { MessageSquareTextIcon, PlusIcon } from "lucide-react";
+import { Building2Icon, MessageSquareTextIcon, PlusIcon } from "lucide-react";
 import { type ComponentProps, type ReactNode, useState } from "react";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
@@ -80,9 +80,18 @@ function Composer({
 			<ChatInputBar
 				left={
 					action && (
-						<ChatInputAction chevron icon={MessageSquareTextIcon}>
-							AI 搜索
-						</ChatInputAction>
+						<>
+							<ChatInputAction
+								chevron
+								icon={MessageSquareTextIcon}
+								variant="mode"
+							>
+								AI 搜索
+							</ChatInputAction>
+							<ChatInputAction chevron icon={Building2Icon}>
+								公司或部门
+							</ChatInputAction>
+						</>
 					)
 				}
 				right={
@@ -210,7 +219,7 @@ export function ChatInputPage() {
 					"两种搜索的输入面都是 ChatInput：一句话经由 QueryBar，关键词经由 KeywordBar，不另拼一个框。",
 					"一段文字用 ChatInputArea，别的内容（关键词的标签和输入）用 ChatInputBody，空着时的那句话用 ChatInputPlaceholder；空着时多高、发送钮什么形状由 ChatInput 的 size 定，middle 两行起。",
 					"文本区随内容长高，超过 20rem 在里面滚动；占位是 fg-tertiary 的一句话，middle 后面跟换行的快捷键（hint）。",
-					"动作栏左端放附加的动作，一律用 ChatInputAction：12px 次要色的文字按钮，悬停时字变深、铺 fill-secondary；点开菜单或弹层的带 chevron。首页是搜索方式，关键词还有公司或部门、学校、累计年限。",
+					"动作栏左端放附加的动作，一律用 ChatInputAction：12px 次要色的文字按钮，悬停时字变深、铺 fill-secondary；点开菜单或弹层的带 chevron。切换搜索方式的那一个是 mode（32px 高、中粗），写着当前取值的（公司或部门、学校、累计年限）是缺省的 value（28px 高、常规字重）。",
 					"聚焦时面不变色，光标就是焦点；面上不另加聚焦边或环。",
 					"发送钮放在 ChatInputBar 的 right；提交中给 loading，换成转圈并按不下去。",
 					"tray 只放作用在这句话之前、点一下就能办的事。",

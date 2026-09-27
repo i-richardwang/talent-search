@@ -107,23 +107,34 @@ export function ChatInputBar({
 
 /**
  * 动作栏上的文字按钮：图标、一句话，`chevron` 时尾巴上一个向下的箭头，表示点开是
- * 菜单或弹层。字太长时截断，完整的话放进 `aria-label` 或 `title`。
+ * 菜单或弹层。两种：`value`（缺省）写着这一项现在取的值，28px 高、常规字重、12px 图标，
+ * 字太长时截断，完整的话放进 `aria-label` 或 `title`；`mode` 是动作栏左端切换做法的那一个，
+ * 32px 高、中粗、14px 图标，按下时微缩。
  */
 export function ChatInputAction({
 	icon,
 	chevron,
+	variant = "value",
 	children,
 	className,
 	type = "button",
 	...props
-}: ComponentProps<"button"> & { icon?: LucideIcon; chevron?: boolean }) {
+}: ComponentProps<"button"> & {
+	icon?: LucideIcon;
+	chevron?: boolean;
+	variant?: "value" | "mode";
+}) {
 	return (
 		<button
-			className={cn("ui-chat-input-action", className)}
+			className={cn(
+				"ui-chat-input-action",
+				variant === "mode" && "ui-chat-input-action-mode",
+				className,
+			)}
 			type={type}
 			{...props}
 		>
-			{icon && <Icon icon={icon} size={14} />}
+			{icon && <Icon icon={icon} size={variant === "mode" ? 14 : 12} />}
 			<span className="ui-chat-input-action-label">{children}</span>
 			{chevron && <Icon icon={ChevronDownIcon} size={12} />}
 		</button>

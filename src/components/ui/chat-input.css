@@ -2,7 +2,8 @@
  * 输入托盘的外观，类名以 `.ui-chat-input` 开头。
  *
  * 一块浮起的面装下整件事：上面是会长高的文本区，下面一条动作栏（左边附加的动作，右边
- * 发送钮）。附加的动作是 12px、次要色的文字按钮，悬停时字变深、铺一层 fill-secondary。面是 elevated 底、一圈 fill 色的细边（深色一侧退到 fill-secondary）、12px
+ * 发送钮）。附加的动作是 12px、次要色的文字按钮，悬停时字变深、铺一层 fill-secondary。
+ * 面是 elevated 底、一圈 fill 色的细边（深色一侧退到 fill-secondary）、12px
  * 圆角、底下一层短投影；聚焦时面不变，光标就是焦点。
  *
  * middle 的内容区至少两行，发送钮是 8px 圆角的方钮。large 是首页那一块：20px 圆角、
@@ -136,28 +137,31 @@
 	margin-inline-start: auto;
 }
 
+/*
+ * 动作栏按钮。缺省是取值的那种：28px 高、6px 圆角、12px 常规字重的次要色字，悬停时字变深、
+ * 铺 fill-secondary。`-mode` 是切换做法的那一个：32px 高、8px 圆角、中粗、行高 1，按下时
+ * 缩到 0.98。
+ */
 .ui-chat-input-action {
 	display: inline-flex;
-	flex: none;
+	flex: 0 1 auto;
 	gap: 6px;
 	align-items: center;
-	height: 32px;
+	min-width: 0;
+	height: 28px;
 	padding-inline: 8px;
 	border: 0;
-	border-radius: var(--radius-md);
+	border-radius: var(--radius-sm);
+	font: inherit;
 	font-size: var(--text-xs);
-	font-weight: 500;
 	color: var(--color-fg-secondary);
 	white-space: nowrap;
 	cursor: pointer;
 	background: transparent;
-	transition:
-		color 0.2s var(--ease-out),
-		background-color 0.2s var(--ease-out);
+	transition: all 0.2s;
 	@apply focus-ring;
 
-	&:hover,
-	&[data-popup-open] {
+	&:hover {
 		color: var(--color-fg);
 		background: var(--color-fill-secondary);
 	}
@@ -170,9 +174,22 @@
 	}
 }
 
+.ui-chat-input-action-mode {
+	flex: none;
+	height: 32px;
+	border-radius: var(--radius-md);
+	font-weight: 500;
+	line-height: 1;
+
+	&:active:not(:disabled) {
+		transform: scale(0.98);
+	}
+}
+
 .ui-chat-input-action-label {
 	overflow: hidden;
-	max-width: 12rem;
+	min-width: 0;
+	max-width: 200px;
 	text-overflow: ellipsis;
 }
 

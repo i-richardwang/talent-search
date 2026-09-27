@@ -107,9 +107,21 @@
 	}
 }
 
-/* 一句话的条目：至少 58px 高，条目之间 1px。 */
+/*
+ * 一句话的条目是一枚按钮：至少 58px 高，条目之间 1px；字重中粗、行高 1 铺在整块上，
+ * 标题自己写回常规字重和 22px 行高，说明沿用；按下时缩到 0.98。
+ */
 .ui-group-block-item-prose {
 	min-height: 58px;
+	font-weight: 500;
+	line-height: 1;
+	transition:
+		background-color 0.1s var(--ease-out),
+		transform 0.2s;
+
+	&:active {
+		transform: scale(0.98);
+	}
 
 	.ui-group-block-items:has(> &) {
 		gap: 1px;
@@ -165,6 +177,7 @@
 	white-space: nowrap;
 
 	.ui-group-block-item-prose & {
+		line-height: inherit;
 		white-space: normal;
 	}
 }
@@ -189,7 +202,6 @@
 	color: var(--color-fg-secondary);
 	background: none;
 	cursor: pointer;
-	transition: color 0.1s var(--ease-out);
 	@apply focus-ring;
 
 	&:hover {

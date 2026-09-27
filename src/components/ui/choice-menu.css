@@ -1,12 +1,15 @@
 /*
- * 几选一菜单的外观，类名以 `.ui-choice-menu` 开头，叠在下拉菜单的弹层上。弹层宽
- * 280–320px，圆角比项大一档（项 8px，弹层内边距 4px，弹层 12px），同心地包住项。
- * 项之间留 4px；悬停、键盘高亮和选中都是 fill-secondary 的底。
+ * 几选一菜单的外观，类名以 `.ui-choice-menu` 开头，叠在下拉菜单的弹层上。弹层里面一圈
+ * border-secondary 的细边，边内 4px 内边距，项所在的那一列宽 280–320px；圆角比项大一档
+ * （项 8px，弹层 12px），同心地包住项。项之间留 4px；悬停、键盘高亮和选中都是
+ * fill-secondary 的底。项里的字是中粗（名字与说明同一个字重），按下时缩到 0.98。
  */
 
 .ui-choice-menu {
-	min-width: 280px;
-	max-width: 320px;
+	/* 项那一列 280–320px，再加两侧 4px 内边距和 1px 边 */
+	min-width: calc(280px + 2 * (var(--ui-menu-popup-padding) + 1px));
+	max-width: calc(320px + 2 * (var(--ui-menu-popup-padding) + 1px));
+	border: 1px solid var(--color-border-secondary);
 	border-radius: var(--radius-lg);
 }
 
@@ -22,9 +25,18 @@
 	align-items: center;
 	padding: 10px 8px;
 	border-radius: var(--radius-md);
+	font-size: var(--text-sm);
+	font-weight: 500;
+	color: var(--color-fg);
 	cursor: pointer;
 	outline: none;
-	transition: background-color 0.2s var(--ease-out);
+	transition:
+		background-color 0.2s,
+		transform 0.2s;
+
+	&:active {
+		transform: scale(0.98);
+	}
 
 	&:hover,
 	&[data-highlighted],
@@ -42,7 +54,6 @@
 	height: 32px;
 	border: 1px solid var(--color-border-secondary);
 	border-radius: var(--radius-md);
-	color: var(--color-fg);
 	background: var(--color-elevated);
 }
 

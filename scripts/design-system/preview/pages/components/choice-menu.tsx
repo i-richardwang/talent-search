@@ -28,7 +28,7 @@ function Playground() {
 	return (
 		<Stage footer={<span>选中：{current?.label}</span>}>
 			<ChoiceMenu onValueChange={setMode} options={MODES} value={mode}>
-				<ChatInputAction chevron icon={current?.icon}>
+				<ChatInputAction chevron icon={current?.icon} variant="mode">
 					{current?.label}
 				</ChatInputAction>
 			</ChoiceMenu>
@@ -47,7 +47,7 @@ export function ChoiceMenuPage() {
 					"项是一张小卡：32px 描边方块里的图标，名字 14px，说明 12px 一行截断；选中的铺底，不画勾。",
 					"触发器通常是输入托盘动作栏上的 ChatInputAction，写着当前选的是哪一项。",
 				],
-				usage: `<ChoiceMenu onValueChange={setMode} options={MODES} value={mode}>\n  <ChatInputAction chevron icon={current.icon}>\n    {current.label}\n  </ChatInputAction>\n</ChoiceMenu>`,
+				usage: `<ChoiceMenu onValueChange={setMode} options={MODES} value={mode}>\n  <ChatInputAction chevron icon={current.icon} variant="mode">\n    {current.label}\n  </ChatInputAction>\n</ChoiceMenu>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用几选一菜单" },
