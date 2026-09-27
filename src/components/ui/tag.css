@@ -1,15 +1,25 @@
 /*
- * 块的先后是层叠顺序：root、size（small、middle）、variant（filled、outlined），
- * 其后是关闭钮 close。
+ * 块的先后是层叠顺序：root、size（small、middle、large）、shape-round、
+ * variant（filled、outlined、borderless、solid）、color（状态色与各外观的组合）、
+ * clickable，其后是关闭钮 close。
  *
- * 两档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
+ * 三档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。圆形的标签两头
+ * 圆过去，每档另有一份更宽的内边距。
+ *
+ * 状态色的实心外观，字色按底色的明度取黑或白：底色的 oklch 明度过 0.62 取黑，
+ * 否则取白。深浅两侧的状态色明度不同，同一种状态的字色会跟着换。
  */
 
 :root {
 	--tag-height-small: 20px;
 	--tag-padding-small: 4px;
+	--tag-padding-round-small: 8px;
 	--tag-height-middle: 22px;
 	--tag-padding-middle: 8px;
+	--tag-padding-round-middle: 10px;
+	--tag-height-large: 28px;
+	--tag-padding-large: 12px;
+	--tag-padding-round-large: 14px;
 }
 
 .ui-tag {
@@ -35,21 +45,103 @@
 	height: var(--tag-height-small);
 	padding-inline: var(--tag-padding-small);
 	border-radius: 3px;
+
+	&.ui-tag-shape-round {
+		padding-inline: var(--tag-padding-round-small);
+	}
 }
 
 .ui-tag-size-middle {
 	height: var(--tag-height-middle);
 	padding-inline: var(--tag-padding-middle);
 	border-radius: 3px;
+
+	&.ui-tag-shape-round {
+		padding-inline: var(--tag-padding-round-middle);
+	}
 }
 
-.ui-tag-variant-filled {
+.ui-tag-size-large {
+	height: var(--tag-height-large);
+	padding-inline: var(--tag-padding-large);
+	border-radius: var(--radius-sm);
+
+	&.ui-tag-shape-round {
+		padding-inline: var(--tag-padding-round-large);
+	}
+}
+
+.ui-tag.ui-tag-shape-round {
+	border-radius: 999px;
+}
+
+.ui-tag-variant-filled,
+.ui-tag-variant-solid {
 	background: var(--color-fill-tertiary);
 }
 
 .ui-tag-variant-outlined {
 	border: 1px solid var(--color-border-secondary);
 	background: var(--color-container);
+}
+
+.ui-tag-variant-borderless {
+	border: none;
+	background: none;
+}
+
+.ui-tag-color-success {
+	--tag-status: var(--color-success);
+	--tag-status-fill: var(--color-success-fill-tertiary);
+}
+
+.ui-tag-color-warning {
+	--tag-status: var(--color-warning);
+	--tag-status-fill: var(--color-warning-fill-tertiary);
+}
+
+.ui-tag-color-error {
+	--tag-status: var(--color-error);
+	--tag-status-fill: var(--color-error-fill-tertiary);
+}
+
+.ui-tag-color-info {
+	--tag-status: var(--color-info);
+	--tag-status-fill: var(--color-info-fill-tertiary);
+}
+
+:is(
+	.ui-tag-color-success,
+	.ui-tag-color-warning,
+	.ui-tag-color-error,
+	.ui-tag-color-info
+) {
+	color: var(--tag-status);
+
+	&.ui-tag-variant-filled {
+		background: var(--tag-status-fill);
+	}
+
+	&.ui-tag-variant-outlined {
+		border-color: var(--tag-status-fill);
+		background: var(--tag-status-fill);
+	}
+
+	&.ui-tag-variant-borderless {
+		background: transparent;
+	}
+
+	&.ui-tag-variant-solid {
+		color: oklch(
+			from var(--tag-status) clamp(0, (l - 0.62) * -1000, 1) 0 h /
+			1
+		);
+		background: var(--tag-status);
+	}
+}
+
+.ui-tag-clickable {
+	cursor: pointer;
 }
 
 .ui-tag-close {

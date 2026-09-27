@@ -91,12 +91,19 @@ export const COLOR_GROUPS: ColorGroup[] = [
 		title: "状态色",
 		tokens: [
 			["--color-success", "成功"],
+			["--color-success-fill-tertiary", "成功三级填充"],
 			["--color-warning", "警告"],
+			["--color-warning-fill-tertiary", "警告三级填充"],
 			["--color-error", "错误"],
+			["--color-error-hover", "错误悬停"],
+			["--color-error-active", "错误按下"],
 			["--color-error-bg", "错误浅底"],
+			["--color-error-bg-hover", "错误浅底悬停"],
+			["--color-error-fill-tertiary", "错误三级填充"],
 			["--color-info", "信息"],
 			["--color-info-hover", "信息悬停"],
 			["--color-info-active", "信息按下"],
+			["--color-info-fill-tertiary", "信息三级填充"],
 		],
 	},
 ];
@@ -192,7 +199,7 @@ export const COMPONENT_TIERS = {
 		"small",
 		"middle",
 	]),
-	button: tiersOf<ButtonProps["size"]>()(["small", "middle"]),
+	button: tiersOf<ButtonProps["size"]>()(["small", "middle", "large"]),
 	input: tiersOf<InputSize>()(["small", "middle"]),
 	segmented: tiersOf<ComponentProps<typeof Segmented>["size"]>()([
 		"small",
@@ -204,7 +211,11 @@ export const COMPONENT_TIERS = {
 		"large",
 	]),
 	tabs: tiersOf<ComponentProps<typeof Tabs>["size"]>()(["small", "middle"]),
-	tag: tiersOf<ComponentProps<typeof Tag>["size"]>()(["small", "middle"]),
+	tag: tiersOf<ComponentProps<typeof Tag>["size"]>()([
+		"small",
+		"middle",
+		"large",
+	]),
 };
 
 export type ComponentSizing = keyof typeof COMPONENT_TIERS;
@@ -391,6 +402,7 @@ export const NUMERIC_TOKENS: NumericToken[] = [
 	...tiered("tag", [
 		["height", "高度", "H", 14, 40],
 		["padding", "水平内边距", "↔", 0, 24],
+		["padding-round", "圆形水平内边距", "↔", 0, 24],
 	]),
 	...tiered("table", [
 		["padding-block", "单元格纵向内边距", "↕", 0, 32],

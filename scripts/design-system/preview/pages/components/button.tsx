@@ -1,7 +1,15 @@
-import { ArrowRight, ChevronDown, Download, Plus, Send } from "lucide-react";
+import {
+	ArrowRight,
+	ChevronDown,
+	Download,
+	Plus,
+	Send,
+	Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { Block } from "#/components/ui/block";
 import { Button, type ButtonProps } from "#/components/ui/button";
+import { Checkbox } from "#/components/ui/checkbox";
 import {
 	DropdownMenuPopup,
 	DropdownMenuPortal,
@@ -29,11 +37,13 @@ import { useTier } from "../../state";
 
 type ButtonType = NonNullable<ButtonProps["type"]>;
 type ButtonSize = NonNullable<ButtonProps["size"]>;
+type ButtonShape = NonNullable<ButtonProps["shape"]>;
 
 /** 外观与状态表的行：类型、示例文字。 */
 const APPEARANCES: [type: ButtonType, label: string][] = [
 	["primary", "主要操作"],
 	["default", "次要操作"],
+	["dashed", "添加一项"],
 	["fill", "柔和填充"],
 	["text", "轻量操作"],
 	["link", "链接样式"],
@@ -48,6 +58,8 @@ function Playground() {
 	const [type, setType] = useState<ButtonType>("primary");
 	const [content, setContent] = useState<Content>("start");
 	const [state, setState] = useState<State>("default");
+	const [shape, setShape] = useState<ButtonShape>("default");
+	const [danger, setDanger] = useState(false);
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
@@ -65,6 +77,7 @@ function Playground() {
 						options={[
 							{ label: "主要", value: "primary" },
 							{ label: "次要", value: "default" },
+							{ label: "虚线", value: "dashed" },
 							{ label: "填充", value: "fill" },
 							{ label: "文字", value: "text" },
 							{ label: "链接", value: "link" },
@@ -94,12 +107,30 @@ function Playground() {
 						value={state}
 					/>
 				</Control>
+				<Control label="形状">
+					<Segmented<ButtonShape>
+						onChange={setShape}
+						options={[
+							{ label: "默认", value: "default" },
+							{ label: "圆形", value: "circle" },
+							{ label: "两头圆", value: "round" },
+						]}
+						value={shape}
+					/>
+				</Control>
+				<Control>
+					<Checkbox checked={danger} onChange={setDanger}>
+						危险
+					</Checkbox>
+				</Control>
 			</Controls>
 			<Stage footer={<SizeReading group="button" tier={sizeTier} />}>
 				<Button
+					danger={danger}
 					disabled={state === "disabled"}
+					aria-label={shape === "circle" ? label : undefined}
 					icon={
-						content === "text"
+						content === "text" && shape !== "circle"
 							? undefined
 							: content === "end"
 								? ArrowRight
@@ -107,10 +138,11 @@ function Playground() {
 					}
 					iconPosition={content === "end" ? "end" : "start"}
 					loading={state === "loading"}
+					shape={shape}
 					size={sizeTier}
 					type={type}
 				>
-					{label}
+					{shape === "circle" ? undefined : label}
 				</Button>
 			</Stage>
 		</div>
@@ -128,6 +160,7 @@ function Appearances() {
 						<TableHead>默认 · 可交互</TableHead>
 						<TableHead>禁用</TableHead>
 						<TableHead>加载中</TableHead>
+						<TableHead>危险</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -147,6 +180,11 @@ function Appearances() {
 							<TableCell>
 								<Button loading size={sizeTier} type={type}>
 									处理中
+								</Button>
+							</TableCell>
+							<TableCell>
+								<Button danger size={sizeTier} type={type}>
+									删除
 								</Button>
 							</TableCell>
 						</TableRow>
@@ -179,6 +217,15 @@ function SizeRow({ size }: { size: ButtonSize }) {
 					下一位
 				</Button>
 			</TableCell>
+			<TableCell>
+				<Button
+					aria-label="新建搜索"
+					icon={Plus}
+					shape="circle"
+					size={size}
+					type="primary"
+				/>
+			</TableCell>
 		</TableRow>
 	);
 }
@@ -193,6 +240,7 @@ function Sizes() {
 						<TableHead>文字</TableHead>
 						<TableHead>前置图标</TableHead>
 						<TableHead>后置图标</TableHead>
+						<TableHead>圆形</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -254,6 +302,25 @@ function Usage() {
 				<Button type="primary">保存并开始下一轮搜索</Button>
 			</Example>
 			<Example
+				description="删掉就找不回来的动作用 danger；确认框里的那一下用实心的 primary。"
+				title="不可撤回的动作"
+			>
+				<Button danger icon={Trash2}>
+					删除这条搜索
+				</Button>
+				<Button danger type="primary">
+					确认删除
+				</Button>
+			</Example>
+			<Example
+				description="一组可以继续往里加的东西，末尾那颗「添加」用虚线。"
+				title="添加一项"
+			>
+				<Button icon={Plus} size="small" type="dashed">
+					添加条件
+				</Button>
+			</Example>
+			<Example
 				description="挨着正文的文字按钮用 outdent 抵掉内边距，和上下的字对齐。"
 				title="紧凑空间"
 			>
@@ -279,7 +346,8 @@ export function ButtonPage() {
 			rules={{
 				notes: [
 					"一次动作用 Button；只有图标的按钮用 ActionIcon。",
-					"一组按钮里最多一个 primary；不自己改按钮的颜色。",
+					"一组按钮里最多一个 primary；不自己改按钮的颜色，删除一类用 danger。",
+					'shape="circle" 只配只有图标的按钮，并写 aria-label。',
 					"站内跳转用 render 传路由的 <Link>，不写 href。",
 					"尺寸用 size，不覆盖高度、圆角和内边距；宽度属于外层布局。",
 					"加载中用 loading，按钮文字可以跟着换成进行时。",

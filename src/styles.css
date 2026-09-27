@@ -174,14 +174,25 @@
 	--color-primary-bg-hover: #eeeeee;
 	--color-primary-border: #aaaaaa;
 
-	/* 状态色。错误的浅底是出错输入框的外圈与菜单里危险项的悬停底，信息的两档是链接。 */
+	/*
+	 * 状态色。错误的浅底是出错输入框的外圈、菜单里危险项的悬停底和危险填充按钮的底，
+	 * 错误的悬停、按下与浅底悬停是危险按钮的三种状态；信息的两档是链接。
+	 * 四种状态各有一份三级填充，是带状态色的标签的底。
+	 */
 	--color-success: #379d4a;
+	--color-success-fill-tertiary: rgba(84, 205, 12, 0.1);
 	--color-warning: #ee9e0b;
+	--color-warning-fill-tertiary: rgba(255, 155, 55, 0.08);
 	--color-error: #ec5e41;
+	--color-error-hover: #fb745a;
+	--color-error-active: #a53716;
 	--color-error-bg: #fff7f6;
+	--color-error-bg-hover: #ffece9;
+	--color-error-fill-tertiary: rgba(255, 44, 11, 0.06);
 	--color-info: #0072f5;
 	--color-info-hover: #4c90ff;
 	--color-info-active: #005ae0;
+	--color-info-fill-tertiary: rgba(22, 88, 255, 0.06);
 
 	/*
 	 * 两条不属于色阶的线。`ring` 是浮层外沿那一圈 1px 的描边，和阴影叠在一起画
@@ -220,12 +231,19 @@
 
 	/* 深色一侧的成功、错误、信息换了色相（黄绿、玫红、天蓝），在黑底上更醒目。 */
 	--color-success: #c4f042;
+	--color-success-fill-tertiary: rgba(154, 254, 0, 0.13);
 	--color-warning: #ffb224;
+	--color-warning-fill-tertiary: rgba(247, 159, 0, 0.17);
 	--color-error: #f4416c;
+	--color-error-hover: #ffb0b7;
+	--color-error-active: #e43165;
 	--color-error-bg: #380015;
+	--color-error-bg-hover: #560023;
+	--color-error-fill-tertiary: rgba(255, 0, 95, 0.22);
 	--color-info: #60b1ff;
 	--color-info-hover: #a7d3ff;
 	--color-info-active: #2d8ae0;
+	--color-info-fill-tertiary: rgba(0, 88, 246, 0.26);
 
 	--color-ring: rgb(255 255 255 / 0.18);
 }
