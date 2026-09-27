@@ -12,8 +12,8 @@ import { tokenLabel } from "../../../shared/tokens/registry";
 import { DocPage } from "../../kit/page";
 import { useTokenNumber } from "../../state";
 
-/** 名单那一列向两侧各让出的宽度，与 `styles.css` 里 `--container-app` 的算式一致。 */
-const GUTTER = 48;
+/** 名单两侧的内边距：`workspace-layout.tsx` 里名单那一栏 `px-6`。 */
+const GUTTER = 24;
 
 /** 常用的间距档：Tailwind 的间距单位是 4px，类名里的数乘 4 就是像素。 */
 const STEPS = [
@@ -28,20 +28,19 @@ const STEPS = [
 const LAYERS = [
 	["--z-index-raise", "同一平面内的前后"],
 	["--z-index-stick", "吸顶的栏"],
-	["--z-index-frame", "页框的栏线"],
 	["--z-index-escape", "跳过导航链接"],
 	["--z-index-popup", "弹层"],
 ] as const;
 
-/** 宽屏下并排的三栏：筛选栏、名单版心、右栏。 */
+/** 搜索结果页宽屏下并排的三栏：导航栏、名单版心、右栏。 */
 const COLUMNS = [
-	"--container-rail",
+	"--container-nav",
 	"--container-page",
 	"--container-detail-wide",
 ] as const;
 
-/** 定高的两条栏：顶栏与查询带。 */
-const HEIGHTS = ["--header-height", "--deck-height"] as const;
+/** 定高的栏：每一栏顶上的页头。 */
+const HEIGHTS = ["--nav-header-height"] as const;
 
 function Columns() {
 	const px = useTokenNumber();
@@ -69,9 +68,10 @@ function Columns() {
 				))}
 			</div>
 			<p className="text-fg-secondary text-xs tabular-nums">
-				页宽列 {total}
-				px：筛选栏、名单版心加两侧留白、宽屏右栏三段相加，改其中一栏整列跟着变。
-				窄屏右栏是 {px("--container-detail")}px。
+				三段相加 {total}
+				px。导航栏和右栏定宽，名单那一栏占剩下的宽，名单封在版心里居中； 窄于
+				2xl 右栏是 {px("--container-detail")}px，窄于 xl 右栏不常驻，窄于 lg
+				导航栏收进抽屉。管理页的内容列是 {px("--container-admin")}px。
 			</p>
 		</Block>
 	);
@@ -155,7 +155,7 @@ function Layers() {
 	);
 }
 
-/** 间距与版心：页宽列怎么分栏、顶部两条栏多高、常用间距档，以及层级尺度。 */
+/** 间距与版心：搜索结果页怎么分栏、页头多高、常用间距档，以及层级尺度。 */
 export function SpacingPage() {
 	return (
 		<DocPage

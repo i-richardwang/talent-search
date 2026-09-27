@@ -41,9 +41,8 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
-	const { recent } = Route.useLoaderData();
 	return (
-		<AppShell recent={recent}>
+		<AppShell>
 			<Outlet />
 		</AppShell>
 	);
@@ -58,7 +57,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				{/* biome-ignore lint/security/noDangerouslySetInnerHtml: 常量脚本，无外部输入 */}
 				<script dangerouslySetInnerHTML={{ __html: SYNC_COLOR_MODE }} />
 			</head>
-			<body className="flex min-h-dvh flex-col bg-layout text-fg">
+			<body className="bg-layout text-fg">
 				{children}
 				<Scripts />
 			</body>

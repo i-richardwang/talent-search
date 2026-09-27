@@ -16,7 +16,7 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
 type Variant = NonNullable<ComponentProps<typeof Block>["variant"]>;
 
-const VARIANTS: Variant[] = ["filled", "outlined"];
+const VARIANTS: Variant[] = ["filled", "outlined", "borderless"];
 
 /** 一块面里放的内容：一位合成候选人的摘要。 */
 function Summary({ name = "Talent 0123" }: { name?: string }) {
@@ -44,17 +44,14 @@ function Playground() {
 						options={[
 							{ label: "填充", value: "filled" },
 							{ label: "描边", value: "outlined" },
+							{ label: "无边", value: "borderless" },
 						]}
 						value={variant}
 					/>
 				</Control>
 				<Control>
-					<Checkbox
-						checked={clickable && variant === "outlined"}
-						disabled={variant !== "outlined"}
-						onChange={setClickable}
-					>
-						可点击（描边面）
+					<Checkbox checked={clickable} onChange={setClickable}>
+						可点击
 					</Checkbox>
 				</Control>
 				<Control>
@@ -73,7 +70,7 @@ function Playground() {
 					<span className="font-mono">
 						{[
 							variant,
-							clickable && variant === "outlined" && "clickable",
+							clickable && "clickable",
 							selected && "selected",
 							shadow && "shadow",
 						]
@@ -84,7 +81,7 @@ function Playground() {
 			>
 				<Block
 					className="w-72"
-					clickable={clickable && variant === "outlined"}
+					clickable={clickable}
 					gap={4}
 					padding={16}
 					selected={selected}
@@ -106,7 +103,7 @@ function Appearances() {
 					<TableRow>
 						<TableHead>外观</TableHead>
 						<TableHead>常态</TableHead>
-						<TableHead>可点击（悬停看，只用在描边面）</TableHead>
+						<TableHead>可点击（悬停看）</TableHead>
 						<TableHead>选中</TableHead>
 						<TableHead>投影</TableHead>
 					</TableRow>
@@ -121,13 +118,9 @@ function Appearances() {
 								</Block>
 							</TableCell>
 							<TableCell>
-								{variant === "outlined" ? (
-									<Block clickable gap={4} padding={12} variant={variant}>
-										<Summary />
-									</Block>
-								) : (
-									<span className="text-fg-tertiary">—</span>
-								)}
+								<Block clickable gap={4} padding={12} variant={variant}>
+									<Summary />
+								</Block>
 							</TableCell>
 							<TableCell>
 								<Block gap={4} padding={12} selected variant={variant}>
@@ -181,6 +174,41 @@ function Cards() {
 	);
 }
 
+/** 名单的行：无边的块，悬停出底；正开着详情的那一行换成填充的面。 */
+function Rows() {
+	const [current, setCurrent] = useState("0123");
+	return (
+		<ul className="flex w-full flex-col">
+			{["0123", "0456", "0789"].map((id) => (
+				<li className="flex" key={id}>
+					<Block
+						clickable
+						flex={1}
+						gap={4}
+						padding={12}
+						variant={id === current ? "filled" : "borderless"}
+					>
+						<BlockLink
+							aria-current={id === current ? "page" : undefined}
+							className="font-medium text-sm"
+							href={`#person-${id}`}
+							onClick={(event) => {
+								event.preventDefault();
+								setCurrent(id);
+							}}
+						>
+							Talent {id}
+						</BlockLink>
+						<div className="text-fg-secondary text-xs">
+							数据平台部 · 推荐系统 6 年
+						</div>
+					</Block>
+				</li>
+			))}
+		</ul>
+	);
+}
+
 function Usage() {
 	return (
 		<ExampleGrid>
@@ -189,6 +217,12 @@ function Usage() {
 				title="候选人卡片"
 			>
 				<Cards />
+			</Example>
+			<Example
+				description="名单一行一个无边的块：悬停出底，不画边；正开着详情的那一行换成填充的面。"
+				title="名单的行"
+			>
+				<Rows />
 			</Example>
 			<Example
 				description="同一个对象的几块面：外面一块填充的，里面放描边的。"
@@ -217,6 +251,7 @@ export function BlockPage() {
 			rules={{
 				notes: [
 					"一块面用 Block，不手写 border、shadow、rounded 组合。",
+					"三种外观都能 clickable：无边的悬停出底，填充的底加深一档，描边的边加深。",
 					"同一对象的多块面是填充的 Block 里放描边的 Block；表放在描边的 Block 里。",
 					"整块可点击必须是真链接：块里的那条链接用 BlockLink，它铺满整块、焦点框画在整块上；覆盖层内不嵌套别的动作，选择框放块外。",
 					"选中用 selected，不另加选中装饰。",

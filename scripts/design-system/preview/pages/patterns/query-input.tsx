@@ -1,8 +1,10 @@
 import { useRouterState } from "@tanstack/react-router";
+import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { KeywordBar } from "#/components/keyword-bar";
 import { QueryBar } from "#/components/query-bar";
 import { Block } from "#/components/ui/block";
+import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import {
 	Table,
@@ -14,6 +16,7 @@ import {
 } from "#/components/ui/table";
 import { HomeScreen } from "#/routes/-components/home-screen";
 import { COMMIT_FAILED } from "#/routes/-lib/commit";
+import type { Condition } from "#/search/condition";
 import { inSentence } from "#/search/condition-label";
 import { keywordsOf, NO_KEYWORDS } from "#/search/keywords";
 import type { QueryInput } from "#/search/spec";
@@ -161,7 +164,28 @@ function Flow() {
 	);
 }
 
-/** 输入框的几种状态，每格一个真的 `QueryBar` 或 `KeywordBar`。 */
+/** 「技术口碑好」搜不了时附带的替代条件：做过技术分享（加分）。 */
+const TECH_TALKS: Condition = {
+	about: "experience",
+	mode: "boost",
+	what: ["技术分享"],
+};
+
+/** 挂在托盘上沿的一片：名单页右栏里放的是搜不了的要求附带的替代条件。 */
+function Tray() {
+	return (
+		<div className="flex items-center gap-2">
+			<span className="min-w-0 flex-1">
+				「技术口碑好」可改为：{inSentence([TECH_TALKS])}
+			</span>
+			<Button className="shrink-0" icon={PlusIcon} size="small" type="text">
+				添加
+			</Button>
+		</div>
+	);
+}
+
+/** 输入框的几种尺寸与状态，每格一个真的 `QueryBar` 或 `KeywordBar`。 */
 function States() {
 	const accept = () => true;
 	return (
@@ -175,11 +199,42 @@ function States() {
 				</TableHeader>
 				<TableBody>
 					<TableRow>
-						<TableCell className="font-mono text-xs">empty</TableCell>
+						<TableCell className="font-mono text-xs">middle</TableCell>
+						<TableCell className="w-full">
+							<QueryBar
+								onQuery={accept}
+								placeholder="补充或修改需求，例如：最好带过团队"
+							/>
+						</TableCell>
+					</TableRow>
+					<TableRow>
+						<TableCell className="font-mono text-xs">large</TableCell>
 						<TableCell className="w-full">
 							<QueryBar
 								onQuery={accept}
 								placeholder="描述你要找的人，例如：做过推荐算法、带过团队"
+								size="large"
+							/>
+						</TableCell>
+					</TableRow>
+					<TableRow>
+						<TableCell className="font-mono text-xs">middle · tray</TableCell>
+						<TableCell className="w-full">
+							<QueryBar
+								onQuery={accept}
+								placeholder="补充或修改需求，例如：最好带过团队"
+								tray={<Tray />}
+							/>
+						</TableCell>
+					</TableRow>
+					<TableRow>
+						<TableCell className="font-mono text-xs">large · tray</TableCell>
+						<TableCell className="w-full">
+							<QueryBar
+								onQuery={accept}
+								placeholder="描述你要找的人，例如：做过推荐算法、带过团队"
+								size="large"
+								tray={<Tray />}
 							/>
 						</TableCell>
 					</TableRow>
@@ -306,7 +361,8 @@ export function QueryInputPage() {
 			rules={{
 				notes: [
 					"两种模式叫「AI 搜索」和「关键词搜索」；各是一条搜索记录，换方式是从头开一次新的搜索，不带条件过去。",
-					"写一句话的输入框全站只有一个形状：首页写第一句，名单页右栏补充下一句。",
+					"写一句话的输入框全站只有一个形状：首页写第一句用 large，名单页右栏补充下一句用 middle。",
+					"托盘上沿的一片（tray）放作用在这句话之前、点一下就能办的事，例如添加替代条件。",
 					"示例最多四条，点一下只填进输入框，不直接搜。",
 					"提交先落记录并导航，理解在名单页进行；提交失败用 Alert 说，原话不清空。",
 					"关键词搜索只放填词的维（经历或技能、公司或部门、学校、累计年限），有限取值的维只在筛选栏。",
@@ -317,7 +373,7 @@ export function QueryInputPage() {
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用首页" },
 				{ children: <Flow />, id: "flow", title: "流程" },
-				{ children: <States />, id: "appearance", title: "输入面的状态" },
+				{ children: <States />, id: "appearance", title: "输入面的尺寸与状态" },
 				{ children: <Usage />, id: "usage", title: "使用场景" },
 			]}
 		/>

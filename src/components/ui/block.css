@@ -1,6 +1,7 @@
 /*
  * Block 的外观，类名以 `.ui-block` 开头。块的先后是层叠顺序：root，variant（filled、
- * outlined）、clickable、shadow、selected，最后是块里的覆盖链接 link。
+ * outlined、borderless）、clickable、shadow，可点击与各 variant 的组合，selected，
+ * 最后是块里的覆盖链接 link。
  */
 
 .ui-block {
@@ -17,16 +18,30 @@
 	background: var(--color-container);
 }
 
+.ui-block-borderless {
+	border: none;
+	background: none;
+	box-shadow: none;
+}
+
 .ui-block-clickable {
 	cursor: pointer;
-
-	&:hover {
-		border-color: var(--color-border);
-	}
 }
 
 .ui-block-shadow {
 	box-shadow: var(--elevation-edge);
+}
+
+.ui-block-clickable-borderless:hover {
+	background: var(--color-fill-tertiary);
+}
+
+.ui-block-clickable-filled:hover {
+	background: var(--color-fill-secondary);
+}
+
+.ui-block-clickable-outlined:hover {
+	border-color: var(--color-border);
 }
 
 /* 被选中的那一块：主色一侧最浅的底和边，悬停时不变。 */

@@ -3,7 +3,7 @@ import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { StrengthLegend } from "#/components/evidence";
 import { ZeroState } from "#/routes/-components/zero-state";
-import { QueryDeck } from "#/routes/s/$turnId/-components/query-deck";
+import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { ResultHeader } from "#/routes/s/$turnId/-components/result-state";
 import type { Picks } from "#/routes/s/$turnId/-lib/picks";
@@ -190,9 +190,9 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.match(text, /用关键词搜索/);
 	});
 
-	test("等条件出来时吸顶那条只有用户自己那句话，不重复说在整理", () => {
+	test("等条件出来时名单抬头只有用户自己那句话，不重复说在整理", () => {
 		const text = seen(
-			<QueryDeck
+			<QueryHeader
 				onChangeSpec={() => {}}
 				spec={null}
 				title="做过线下渠道运营、带过团队的人"

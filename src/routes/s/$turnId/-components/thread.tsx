@@ -1,10 +1,11 @@
 import { Link } from "@tanstack/react-router";
-import { PlusIcon } from "lucide-react";
+import { CheckIcon, Loader2Icon, PlusIcon } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { QueryBar, type QueryBarHandle } from "#/components/query-bar";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
+import { Icon } from "#/components/ui/icon";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { Tag } from "#/components/ui/tag";
 import type { Condition } from "#/search/condition";
@@ -100,7 +101,8 @@ function useFollow(latestId: string, growth: string) {
 type Phase = "running" | "settled" | "failed";
 
 /**
- * 对话栏：这次找人任务从第一句到最后一句的整条线程，底下是补充需求的输入框。
+ * 对话栏：这次找人任务从第一句到最后一句的整条线程，底下是补充需求的输入托盘，
+ * 搜不了的要求附带的替代条件挂在托盘上沿。
  *
  * 名单是产物，对话是操作面：产物占画布，操作面靠边常驻。一轮分两种声音——
  * 人说的话是靠右的一块气泡；模型的回应不加框、靠左铺开：先是检索人才库的
@@ -162,14 +164,14 @@ export function Thread({
 	return (
 		<section aria-label="对话" className="flex h-full flex-col">
 			<ScrollArea
-				className="size-full min-h-0"
+				className="min-h-0 flex-1"
 				disableContentFit
 				viewportProps={{
 					className: "data-has-overflow-y:overscroll-y-contain",
 					ref: viewportRef,
 				}}
 			>
-				<ol className="flex flex-col gap-6 px-4 py-4">
+				<ol className="flex flex-col gap-6 px-4 pt-2 pb-4">
 					{rounds.map((round, i) => (
 						<Round
 							failure={i === last && fault ? FAULT_COPY[fault].title : null}
@@ -185,47 +187,60 @@ export function Thread({
 					))}
 				</ol>
 			</ScrollArea>
-			{(understanding || offers.length > 0) && (
-				<div className="p-3 pt-1">
-					{/* 贴着框的一块托盘：框上方放点一下就能办的事——搜不了的要求附带的替代
-					    条件。它作用在正看着的那一轮的条件上，所以跟着那一轮。 */}
-					<Block gap={4} padding={4}>
-						{offers.length > 0 && (
-							<ul aria-label="可以改为" className="flex flex-col px-2 py-1">
-								{offers.map((item) => (
-									<li
-										className="flex items-center gap-2 text-xs"
-										key={item.said}
-									>
-										<span className="min-w-0 flex-1 text-fg-secondary">
-											「{item.said}」可改为：{inSentence(item.instead)}
-										</span>
-										<Button
-											className="shrink-0"
-											icon={PlusIcon}
-											onClick={() => onAdd(item.instead)}
-											size="small"
-											type="text"
-										>
-											添加
-										</Button>
-									</li>
-								))}
-							</ul>
-						)}
-						{understanding && (
-							<QueryBar
-								autoFocus={autoFocus}
-								onQuery={onQuery}
-								placeholder="补充或修改需求，例如：最好带过团队"
-								ref={composer}
-								waiting={waiting}
-							/>
-						)}
-					</Block>
+			{understanding ? (
+				<div className="flex-none px-3 pb-3">
+					<QueryBar
+						autoFocus={autoFocus}
+						onQuery={onQuery}
+						placeholder="补充或修改需求，例如：最好带过团队"
+						ref={composer}
+						tray={offers.length > 0 && <Offers offers={offers} onAdd={onAdd} />}
+						waiting={waiting}
+					/>
 				</div>
+			) : (
+				offers.length > 0 && (
+					<div className="flex-none px-3 pb-3">
+						<Block paddingBlock={8} paddingInline={14}>
+							<Offers offers={offers} onAdd={onAdd} />
+						</Block>
+					</div>
+				)
 			)}
 		</section>
+	);
+}
+
+/**
+ * 搜不了的要求附带的替代条件，点一下就加进正看着的那一轮的条件表。它作用在输入框
+ * 将要说的那句话之前，所以挂在输入托盘的上沿。
+ */
+function Offers({
+	offers,
+	onAdd,
+}: {
+	offers: { said: string; instead: Condition[] }[];
+	onAdd: (conditions: Condition[]) => void;
+}) {
+	return (
+		<ul aria-label="可以改为" className="flex flex-col gap-1">
+			{offers.map((item) => (
+				<li className="flex items-center gap-2 text-xs" key={item.said}>
+					<span className="min-w-0 flex-1 text-fg-secondary">
+						「{item.said}」可改为：{inSentence(item.instead)}
+					</span>
+					<Button
+						className="shrink-0"
+						icon={PlusIcon}
+						onClick={() => onAdd(item.instead)}
+						size="small"
+						type="text"
+					>
+						添加
+					</Button>
+				</li>
+			))}
+		</ul>
 	);
 }
 
@@ -354,9 +369,9 @@ function rowsOf(step: TraceStep): StepRow[] {
 }
 
 /**
- * 检索人才库的过程，收成一行：进行中那几个字带一道流光，底下一行是刚得出的
- * 那条结论；完成后收成「检索过程」。点开是每一条结论一行，字降一档，和回应本身
- * 分开层。
+ * 检索人才库的过程，收成一行：行首一枚 24px 的状态格（进行中转圈，完成打勾），
+ * 进行中那几个字带一道流光，底下一行是刚得出的那条结论；完成后收成「检索过程」。
+ * 点开是每一条结论一行，字降一档，和回应本身分开层。
  *
  * 开合只归人管：进行中不自动摊开，完成后不自动收起。
  */
@@ -374,19 +389,38 @@ function Process({
 
 	return (
 		<div>
-			<CollapsibleTrigger
-				className="w-fit text-fg-secondary text-sm"
-				onOpenChange={setOpen}
-				open={open}
-				panelId={panelId}
-			>
-				<span className={live ? "shimmer" : undefined}>
-					{live ? "正在检索人才库…" : "检索过程"}
-				</span>
-			</CollapsibleTrigger>
+			<div className="flex items-center gap-1.5">
+				<Block
+					align="center"
+					className="shrink-0"
+					height={24}
+					horizontal
+					justify="center"
+					variant="outlined"
+					width={24}
+				>
+					<Icon
+						aria-hidden="true"
+						className={live ? "text-fg-tertiary" : "text-success"}
+						icon={live ? Loader2Icon : CheckIcon}
+						size={12}
+						spin={live}
+					/>
+				</Block>
+				<CollapsibleTrigger
+					className="w-fit text-fg-tertiary text-sm hover:text-fg"
+					onOpenChange={setOpen}
+					open={open}
+					panelId={panelId}
+				>
+					<span className={live ? "shimmer" : undefined}>
+						{live ? "正在检索人才库…" : "检索过程"}
+					</span>
+				</CollapsibleTrigger>
+			</div>
 			{live && !open && latest && (
 				<p
-					className="settle truncate text-fg-secondary text-xs"
+					className="settle truncate ps-7.5 text-fg-secondary text-xs"
 					key={latest.key}
 					role="status"
 				>
@@ -396,7 +430,7 @@ function Process({
 			<Collapsible id={panelId} open={open}>
 				<Block
 					as="ol"
-					className="mt-1 text-fg-secondary text-xs tabular-nums"
+					className="mt-1.5 ms-7.5 text-fg-secondary text-xs tabular-nums"
 					gap={4}
 					paddingBlock={8}
 					paddingInline={12}

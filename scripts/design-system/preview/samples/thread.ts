@@ -109,7 +109,7 @@ export const FRESH_TURN: Turn = {
 	trace: null,
 };
 
-/** 最近搜索：顶栏「最近」弹层里的几条。 */
+/** 最近搜索：导航栏「最近搜索」里的几条。 */
 export const RECENT: RecentSearch[] = [
 	{ turnId: LATEST_TURN_ID, spec: SPEC, title: TASK_TITLE },
 	{

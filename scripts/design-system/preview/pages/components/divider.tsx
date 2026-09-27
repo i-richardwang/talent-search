@@ -1,8 +1,9 @@
+import { ListChecksIcon } from "lucide-react";
 import { useState } from "react";
+import { StrengthLegend } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
 import { Divider } from "#/components/ui/divider";
 import { Segmented } from "#/components/ui/segmented";
-import { Tag } from "#/components/ui/tag";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { px, useMeasured } from "../../kit/readings";
@@ -98,34 +99,15 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
-				description="顶栏里一排入口按性质分组，组与组之间用竖线，不加额外间距。"
-				title="同一行分组"
+				description="名单上方右端，匹配来源的图例和「选择」之间用一条竖线：一边是怎么读名单，一边是对名单做什么。"
+				title="图例与动作"
 			>
-				<div className="flex items-center">
-					<Button size="small" type="text">
-						AI 搜索
-					</Button>
+				<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+					<StrengthLegend />
 					<Divider orientation="vertical" />
-					<Button size="small" type="text">
-						任务
+					<Button icon={ListChecksIcon} size="small">
+						选择
 					</Button>
-					<Button size="small" type="text">
-						技能
-					</Button>
-					<Button size="small" type="text">
-						数据
-					</Button>
-				</div>
-			</Example>
-			<Example
-				description="名单上方的结果说明和搜索条件在宽屏同一行，竖线隔开两类信息。"
-				title="说明与条件"
-			>
-				<div className="flex flex-wrap items-center gap-1.5 text-sm">
-					<span className="text-fg-secondary">找到 42 人</span>
-					<Divider orientation="vertical" />
-					<Tag size="small">推荐系统</Tag>
-					<Tag size="small">5 年以上</Tag>
 				</div>
 			</Example>
 		</ExampleGrid>

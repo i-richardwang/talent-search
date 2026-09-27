@@ -1,6 +1,12 @@
 import { Search } from "lucide-react";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
+import {
+	ChatInput,
+	ChatInputArea,
+	ChatInputBar,
+	ChatInputSend,
+} from "#/components/ui/chat-input";
 import { Input } from "#/components/ui/input";
 import { Tag } from "#/components/ui/tag";
 import { numericTokens } from "../../../shared/tokens/registry";
@@ -13,6 +19,7 @@ const RADIUS_CLASS: Record<string, string> = {
 	"--radius-md": "rounded-md",
 	"--radius-sm": "rounded-sm",
 	"--radius-xs": "rounded-xs",
+	"--radius-xl": "rounded-xl",
 };
 
 export function RadiusPage() {
@@ -24,7 +31,7 @@ export function RadiusPage() {
 			sections={[
 				{
 					children: (
-						<div className="grid grid-cols-4 gap-3.5 max-md:grid-cols-2">
+						<div className="grid grid-cols-5 gap-3.5 max-md:grid-cols-2">
 							{radii.map((token) => (
 								<Block gap={14} key={token.key} padding={20} variant="outlined">
 									<div
@@ -73,11 +80,20 @@ export function RadiusPage() {
 							</Block>
 							<Block gap={12} padding={20} variant="outlined">
 								<span className="text-fg-secondary text-xs">
-									大：对话框、大块面
+									大：对话框、内容卡片、输入托盘
 								</span>
 								<Block padding={16} shadow variant="outlined">
 									<span className="text-sm">对话框的面板</span>
 								</Block>
+							</Block>
+							<Block gap={12} padding={20} variant="outlined">
+								<span className="text-fg-secondary text-xs">
+									特大：首页的输入托盘
+								</span>
+								<ChatInput size="large">
+									<ChatInputArea aria-label="需求" placeholder="描述要找的人" />
+									<ChatInputBar right={<ChatInputSend aria-label="搜索" />} />
+								</ChatInput>
 							</Block>
 						</div>
 					),

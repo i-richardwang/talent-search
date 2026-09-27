@@ -194,8 +194,8 @@ function SelectAll() {
 	);
 }
 
-/** 筛选栏的写法：组不给 options，每一行由调用处排，行尾带人数。 */
-function FilterRail() {
+/** 导航栏里一组筛选的写法：组不给 options，每一行由调用处排，行尾带人数。 */
+function FilterGroup() {
 	const counts: Record<string, number> = {
 		campus: 42,
 		headhunter: 3,
@@ -232,10 +232,10 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="筛选栏里一个维度能多选，每项后面是这次检索里的人数。"
-				title="筛选栏多选"
+				description="搜索结果页导航栏的筛选里，一个维度能多选，每项后面是这次检索里的人数。"
+				title="筛选多选"
 			>
-				<FilterRail />
+				<FilterGroup />
 			</Example>
 			<Example
 				description="名单只选了一部分时，全选框显示半选；点它全选或全清。"

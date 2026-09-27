@@ -1,23 +1,26 @@
 import {
 	Activity,
-	ArrowUp,
 	Check,
 	ChevronDown,
+	CornerDownRight,
 	Download,
 	EyeOff,
 	History,
 	ListChecks,
-	ListFilter,
 	Loader2,
 	type LucideIcon,
+	MessageSquareText,
 	MessageSquareWarning,
 	MessagesSquare,
+	PanelLeftOpen,
 	Plus,
 	RotateCw,
 	Search,
 	SearchX,
+	SquarePen,
 	Table,
 	Tags,
+	TextSearch,
 	UsersRound,
 	X,
 } from "lucide-react";
@@ -36,20 +39,23 @@ export const PRODUCT_ICONS: [
 	meaning: string,
 ][] = [
 	["Search", Search, "搜索；表上方的找词框"],
-	["ArrowUp", ArrowUp, "发出这一句需求"],
 	["Loader2", Loader2, "正在处理，转圈"],
 	["SearchX", SearchX, "没有找到人"],
 	["MessageSquareWarning", MessageSquareWarning, "AI 没有整理出搜索条件"],
 	["RotateCw", RotateCw, "重试"],
-	["ListFilter", ListFilter, "筛选"],
 	["EyeOff", EyeOff, "停用的搜索条件"],
 	["ListChecks", ListChecks, "挑选候选人"],
 	["Download", Download, "导出名单"],
 	["Check", Check, "已选中的一项"],
 	["X", X, "关闭、移除、退出"],
 	["ChevronDown", ChevronDown, "展开选项"],
+	["SquarePen", SquarePen, "新搜索"],
 	["Plus", Plus, "添加替代条件"],
-	["History", History, "最近的搜索"],
+	["CornerDownRight", CornerDownRight, "一条示例，点了填进输入框"],
+	["History", History, "正在看较早的一次结果"],
+	["MessageSquareText", MessageSquareText, "最近搜索里的一次 AI 搜索"],
+	["TextSearch", TextSearch, "最近搜索里的一次关键词搜索"],
+	["PanelLeftOpen", PanelLeftOpen, "窄屏上打开导航"],
 	["MessagesSquare", MessagesSquare, "对话"],
 	["UsersRound", UsersRound, "人才搜索"],
 	["Table", Table, "数据"],
@@ -81,7 +87,7 @@ function Sizes() {
 			<Block gap={14} padding={20} variant="outlined">
 				<div className="flex h-12 items-center gap-1.5 text-sm">
 					<Icon icon={History} />
-					最近的搜索
+					较早的一次结果
 				</div>
 				<div className="flex flex-col gap-0.5 text-xs">
 					<code className="font-medium">不传</code>
@@ -123,8 +129,8 @@ function InButtons() {
 					导出名单
 				</Button>
 				<Button icon={RotateCw}>重试</Button>
-				<Button icon={ListFilter} size="small">
-					筛选
+				<Button icon={ListChecks} size="small">
+					选择
 				</Button>
 			</div>
 			<p className="text-fg-secondary text-xs">

@@ -156,8 +156,8 @@ function Appearances() {
 	);
 }
 
-/** 筛选栏的写法：每一行由调用处排，行尾带人数。 */
-function FilterRail() {
+/** 导航栏里一组筛选的写法：每一行由调用处排，行尾带人数。 */
+function FilterGroup() {
 	const counts: Record<string, number> = {
 		"": 190,
 		bachelor: 164,
@@ -195,10 +195,10 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="筛选栏里只能取一个值的维度，第一项是「不限」，行尾是人数。"
-				title="筛选栏单选"
+				description="搜索结果页导航栏的筛选里，只能取一个值的维度：第一项是「不限」，行尾是人数。"
+				title="筛选单选"
 			>
-				<FilterRail />
+				<FilterGroup />
 			</Example>
 			<Example
 				description="几个互斥的选项全部摆出来，读者一眼看完再选。"

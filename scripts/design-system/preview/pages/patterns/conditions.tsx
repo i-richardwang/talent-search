@@ -9,10 +9,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import {
-	FilterPopover,
-	FilterRail,
-} from "#/routes/s/$turnId/-components/filter-rail";
+import { FilterPanel } from "#/routes/s/$turnId/-components/filter-panel";
 import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
 import {
 	activeCount,
@@ -117,26 +114,17 @@ function Playground() {
 				}
 			>
 				<div className="flex min-h-0">
-					<FilterRail
-						fields={fields}
-						loading={false}
-						onChange={change}
-						textFilters={texts}
-					/>
-					<div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
-						<div>
-							<FilterPopover
-								fields={fields}
-								loading={false}
-								onChange={change}
-								textFilters={texts}
-							/>
-						</div>
-						<p className="text-fg-secondary text-xs leading-5">
-							宽屏上筛选是名单左边的一栏；窄屏上收进「筛选」按钮，点开是同一份列表。
-							两处读写同一份筛选，勾一项，另一处跟着变。
-						</p>
+					<div className="w-nav flex-none bg-layout px-1 py-4">
+						<FilterPanel
+							fields={fields}
+							onChange={change}
+							textFilters={texts}
+						/>
 					</div>
+					<p className="min-w-0 flex-1 p-4 text-fg-secondary text-xs leading-5">
+						筛选在搜索结果页的导航栏里，身份和「新搜索」下面；窄屏上导航栏收进
+						抽屉，筛选跟着一起进去。
+					</p>
 				</div>
 			</Stage>
 		</div>
@@ -270,9 +258,8 @@ function Usage() {
 				description="已选的筛选排在最前、带「清除」；公司、学校这类名称条件没有候选，只能看见和清掉。计数都是人。"
 				title="已经筛过的名单"
 			>
-				<FilterPopover
+				<FilterPanel
 					fields={fields}
-					loading={false}
 					onChange={(next) => setView((old) => ({ ...old, ...next }))}
 					textFilters={textFilters(view)}
 				/>
@@ -304,7 +291,7 @@ function Usage() {
 export function ConditionsPage() {
 	return (
 		<DocPage
-			facts={[`${MODES.length} 种强度`, "可停用", "筛选栏与筛选弹层"]}
+			facts={[`${MODES.length} 种强度`, "可停用", "导航栏里的筛选"]}
 			rules={{
 				notes: [
 					"必须 / 加分 / 排除靠符号区分，必须是默认状态；停用按条件本身记着，下次整理原样带回。",
@@ -314,7 +301,7 @@ export function ConditionsPage() {
 					"累计年限（搜索条件）和经历时长（筛选）不是一件事，各有各的标签。",
 					"筛选控件的计数单位是人；单选用 Radio，多选用 Checkbox，菜单里的开关用开关项。",
 				],
-				usage: `<QueryChips conditions={spec.conditions} onChange={revise} />\n<FilterRail\n  fields={filterFields(facets, view)}\n  loading={loading}\n  onChange={updateView}\n  textFilters={textFilters(view)}\n/>`,
+				usage: `<QueryChips conditions={spec.conditions} onChange={revise} />\n<FilterPanel\n  fields={filterFields(facets, view)}\n  onChange={updateView}\n  textFilters={textFilters(view)}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用" },

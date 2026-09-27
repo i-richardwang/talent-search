@@ -29,7 +29,7 @@ export function KeyHints({
 	picking: boolean;
 }) {
 	return (
-		<footer className="mx-auto hidden w-full max-w-page flex-wrap items-center gap-x-4 gap-y-1.5 px-4 pb-8 text-fg-secondary text-xs pointer-fine:flex">
+		<footer className="mx-auto hidden w-full max-w-page flex-wrap items-center gap-x-4 gap-y-1.5 px-6 pb-8 text-fg-secondary text-xs pointer-fine:flex">
 			{[
 				...(editable ? [EDIT_KEY[mode]] : []),
 				...KEYS,

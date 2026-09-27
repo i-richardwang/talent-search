@@ -5,18 +5,17 @@ import { Segmented } from "#/components/ui/segmented";
 import { AppShell } from "#/routes/-components/app-shell";
 import { HomeScreen } from "#/routes/-components/home-screen";
 import { Routed } from "../../routed";
-import { RECENT } from "../../samples/thread";
 
 /*
- * 页面布局模块共用的外壳：产品的 `AppShell` 喂样例里的搜索记录。
- * 顶栏里的链接走预览页自己的内存 router。
+ * 页面布局模块共用的外壳：产品的 `AppShell`。导航栏放什么、最近搜索有哪几条，
+ * 都由预览页自己的内存 router 按地址给出（`routed.tsx`），链接也走它。
  */
 
-/** `<body>` 那一层的底色，然后是产品外壳和这一屏的内容。 */
+/** `<body>` 那一层的字色，然后是产品外壳和这一屏的内容。 */
 export function Shell({ children }: { children: ReactNode }) {
 	return (
-		<div className="flex min-h-dvh flex-col bg-layout text-fg">
-			<AppShell recent={RECENT}>{children}</AppShell>
+		<div className="text-fg">
+			<AppShell>{children}</AppShell>
 		</div>
 	);
 }
@@ -89,7 +88,7 @@ function UnderstandingSwitch({
 	);
 }
 
-/** 首页：顶栏下面只有标题、两种搜索的切换和输入面。 */
+/** 首页：导航栏右边的卡片里只有标题、两种搜索的切换和输入面。 */
 export function HomePage() {
 	const [understanding, setUnderstanding] = useState<Understanding>("on");
 	return (

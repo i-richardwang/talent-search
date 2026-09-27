@@ -130,9 +130,8 @@ export const interpretTurn = createServerFn({ method: "POST" })
 	.handler(({ data }) => interpret(data.turnId));
 
 /**
- * 顶栏「最近」入口的列表。由**根路由的 loader** 取（`routes/__root.tsx`）：
- * 它是外壳的数据，两屏都用。放进弹层里按需取的话，每打开一次都要先转一圈，
- * 而它是「偶尔回头找一下」的东西，那一圈正好挡在人要找的那份列表前面。
+ * 导航栏「最近搜索」的列表。由**根路由的 loader** 取（`routes/__root.tsx`）：
+ * 它是外壳的数据，换屏时不重取，也没有「正在取」这一档。
  */
 export const recentSearches = createServerFn({ method: "GET" }).handler(() =>
 	listRecent(),

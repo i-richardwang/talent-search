@@ -1,0 +1,155 @@
+/*
+ * 应用外壳的外观，类名以 `.ui-app-` 与 `.ui-nav-header` 开头。
+ *
+ * 画布是 layout 色；左侧导航直接落在画布上，不描边；内容是一张内缩 8px 的卡片，
+ * 描边、12px 圆角、container 底，栏与卡片之间的分界全由卡片自己的边给出。
+ * lg 以下导航不常驻（收进抽屉），卡片四边都内缩。
+ */
+
+.ui-app-layout {
+	display: flex;
+	height: 100dvh;
+	overflow: hidden;
+	isolation: isolate;
+	background: var(--color-layout);
+}
+
+.ui-app-nav {
+	display: none;
+	flex: none;
+	flex-direction: column;
+	width: var(--container-nav);
+	min-width: 0;
+	color: var(--color-fg-secondary);
+	user-select: none;
+
+	@media (width >= 64rem) {
+		display: flex;
+	}
+}
+
+.ui-app-content {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	padding: 8px;
+
+	@media (width >= 64rem) {
+		padding-inline-start: 0;
+	}
+}
+
+.ui-app-content-card {
+	position: relative;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+	overflow: hidden;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	background: var(--color-container);
+}
+
+:where(.dark) .ui-app-content-card {
+	border-color: var(--color-border-secondary);
+}
+
+/*
+ * 一栏顶上的页头：44px 高、8px 内边距，左右两组各自 2px 间隔，中间一组占满剩下的宽。
+ * 不画底边：页头与下面的内容同在一张面上。
+ */
+.ui-nav-header {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: space-between;
+	gap: 4px;
+	height: var(--nav-header-height);
+	padding: 8px;
+}
+
+.ui-nav-header-left,
+.ui-nav-header-right {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.ui-nav-header-left {
+	flex: 0 1 auto;
+	min-width: 0;
+}
+
+.ui-nav-header-center {
+	display: flex;
+	flex: 1;
+	align-items: center;
+	min-width: 0;
+}
+
+.ui-nav-header-right {
+	flex: none;
+}
+
+.ui-nav-header-title {
+	min-width: 0;
+	overflow: hidden;
+	padding-inline: 4px;
+	font-size: var(--text-lg);
+	font-weight: 500;
+	line-height: var(--text-lg--line-height);
+	color: var(--color-fg);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/*
+ * 导航栏顶上那一行：左边是身份（28px 的主色方块图标加名字，整行可点、悬停出底），
+ * 右边放这一栏的动作。上下 8px、左右 6px。
+ */
+.ui-app-nav-header {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: space-between;
+	gap: 4px;
+	padding: 8px 6px;
+}
+
+.ui-app-nav-brand {
+	display: flex;
+	flex: 0 1 auto;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	padding: 2px 8px 2px 2px;
+	border-radius: var(--radius-md);
+	font-weight: 500;
+	color: var(--color-fg);
+	transition: background-color 0.2s;
+	@apply focus-ring;
+
+	&:hover {
+		color: var(--color-fg);
+		background: var(--color-fill-tertiary);
+	}
+}
+
+.ui-app-nav-brand-logo {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: var(--radius-md);
+	color: var(--color-layout);
+	background: var(--color-primary);
+}
+
+.ui-app-nav-brand-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

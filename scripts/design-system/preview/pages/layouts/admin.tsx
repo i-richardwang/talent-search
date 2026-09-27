@@ -16,7 +16,7 @@ import { LayoutSwitch, Shell } from "./home";
 /*
  * 管理页：`src/routes/-components/admin-page.tsx` 的外壳里放任务、数据、技能三页的
  * 产品内容（`task-board.tsx`、`employee-table.tsx`、`skill-table.tsx`）。哪一页由内存
- * router 的地址决定，顶栏的「数据」「技能」「任务」按钮和页底的切换都能换。服务端函数
+ * router 的地址决定，导航栏「管理」一组的三项和页底的切换都能换。服务端函数
  * 在设计系统里是调用即失败的桩：找词和翻页按地址上的 `q`、`page` 在样例上算，
  * 一页的行数是产品的 `pageAt` 给的；「立即运行」和「日志」落在各自取不到的那一支。
  */

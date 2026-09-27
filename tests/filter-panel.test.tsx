@@ -1,10 +1,10 @@
 /**
- * 筛选栏展开之后必须看得见的东西。
+ * 导航栏里的筛选必须看得见的东西。
  *
  * 断言的是 visibleText，属性一律不算数：`aria-label` 会让文案存在于 DOM 里，
  * 按字符串搜 HTML 就能命中一个肉眼什么都看不到的空壳。
  *
- * 展开这条栏换来的是**人数**：每个选项后面「点了还剩几个人」一直在。这个文件
+ * 筛选常驻换来的是**人数**：每个选项后面「点了还剩几个人」一直在。这个文件
  * 测的就是这件事——它是把筛选收进弹层时最先丢掉的东西，而丢了之后界面看起来
  * 完全正常。裸值翻译、选中项不消失这些不变量产在 `filterFields`，
  * 在 `tests/filters.test.ts` 里测，这里只验证它们真的被画了出来。
@@ -12,7 +12,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { FilterRail } from "#/routes/s/$turnId/-components/filter-rail";
+import { FilterPanel } from "#/routes/s/$turnId/-components/filter-panel";
 import { filterFields, textFilters } from "#/routes/s/$turnId/-lib/filters";
 import type { View } from "#/routes/s/$turnId/-lib/view-params";
 import type { Facets } from "#/search/result";
@@ -42,9 +42,8 @@ const FACETS: Facets = {
 
 const markup = (view: View, facets: Facets = FACETS) =>
 	renderToStaticMarkup(
-		<FilterRail
+		<FilterPanel
 			fields={filterFields(facets, view)}
-			loading={false}
 			onChange={() => {}}
 			textFilters={textFilters(view)}
 		/>,
@@ -70,8 +69,8 @@ describe("不点开就知道能筛什么", () => {
 		assert.ok(!seen.includes("入职前公司"), `空维度还占着位置：${seen}`);
 	});
 
-	test("一个维度都数不出来时不渲染筛选栏", () => {
-		// 空着的栏就是它不该占位的证据
+	test("一个维度都数不出来时不渲染筛选", () => {
+		// 空着的一块就是它不该占位的证据
 		const empty: Facets = {
 			seq: [],
 			companyTag: [],
@@ -88,8 +87,8 @@ describe("不点开就知道能筛什么", () => {
 
 describe("人数", () => {
 	/*
-	 * 展开这条栏，唯一比弹层多换来的就是这份对照：一列数字竖着比，
-	 * 「点哪一个能把范围收得最狠」扫一眼就答完了。丢了它，这条栏就只是
+	 * 筛选常驻，唯一比弹层多换来的就是这份对照：一列数字竖着比，
+	 * 「点哪一个能把范围收得最狠」扫一眼就答完了。丢了它，这一块就只是
 	 * 一份摆出来占地方的目录。
 	 */
 	test("每个选项后面都跟着它还剩几个人", () => {
@@ -101,7 +100,7 @@ describe("人数", () => {
 
 describe("布局稳定", () => {
 	/*
-	 * 这一栏的行只在换查询时变。点一个筛选就让别的行消失，等于列表在手底下
+	 * 筛选的行只在换查询时变。点一个筛选就让别的行消失，等于列表在手底下
 	 * 换形状——而消失的那一行正是用户自己刚做的事的后果，藏起来就没法回头。
 	 * 值域和计数分开算这件事在 `tests/rank.test.ts` 里测，这里测它画出来的样子。
 	 */
@@ -127,9 +126,8 @@ describe("布局稳定", () => {
 
 	test("人数为 0 的选项不可点击", () => {
 		const html = renderToStaticMarkup(
-			<FilterRail
+			<FilterPanel
 				fields={filterFields(ZEROED, {})}
-				loading={false}
 				onChange={() => {}}
 				textFilters={[]}
 			/>,
@@ -139,9 +137,8 @@ describe("布局稳定", () => {
 
 	test("选中的那一项哪怕归零也点得动，否则取消不掉", () => {
 		const html = renderToStaticMarkup(
-			<FilterRail
+			<FilterPanel
 				fields={filterFields(ZEROED, { kind: "external" })}
-				loading={false}
 				onChange={() => {}}
 				textFilters={[]}
 			/>,
@@ -199,7 +196,7 @@ describe("清除", () => {
 
 	/*
 	 * 一项都没有时它只占位、不出面：这一行的高度得由按钮自己给，否则「清除」
-	 * 一出现，下面每一维都跟着往下跳一次（`filter-rail.tsx`）。`invisible` 是
+	 * 一出现，下面每一维都跟着往下跳一次（`filter-panel.tsx`）。`invisible` 是
 	 * `visibility: hidden`，屏幕和 Tab 序里都没有它——而这里跑不了 CSS，
 	 * 所以只能验那个类名。
 	 */

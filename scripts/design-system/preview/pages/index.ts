@@ -2,9 +2,11 @@ import type { ComponentType } from "react";
 import type { PreviewPageId } from "../../shared/catalog";
 import { ActionIconPage } from "./components/action-icon";
 import { AlertPage } from "./components/alert";
+import { AppLayoutPage } from "./components/app-layout";
 import { AutoCompletePage } from "./components/auto-complete";
 import { BlockPage } from "./components/block";
 import { ButtonPage } from "./components/button";
+import { ChatInputPage } from "./components/chat-input";
 import { CheckboxPage } from "./components/checkbox";
 import { CollapsiblePage } from "./components/collapsible";
 import { DividerPage } from "./components/divider";
@@ -18,6 +20,7 @@ import { HotkeyPage } from "./components/hotkey";
 import { IconPage } from "./components/icon";
 import { InputPage } from "./components/input";
 import { ModalPage } from "./components/modal";
+import { NavItemPage } from "./components/nav-item";
 import { PopoverPage } from "./components/popover";
 import { RadioPage } from "./components/radio";
 import { ScrollAreaPage } from "./components/scroll-area";
@@ -68,6 +71,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/hotkey": HotkeyPage,
 	"components/input": InputPage,
 	"components/auto-complete": AutoCompletePage,
+	"components/chat-input": ChatInputPage,
 	"components/checkbox": CheckboxPage,
 	"components/radio": RadioPage,
 	"components/segmented": SegmentedPage,
@@ -76,6 +80,8 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/table": TablePage,
 	"components/block": BlockPage,
 	"components/flex": FlexPage,
+	"components/app-layout": AppLayoutPage,
+	"components/nav-item": NavItemPage,
 	"components/divider": DividerPage,
 	"components/scroll-area": ScrollAreaPage,
 	"components/toolbar": ToolbarPage,

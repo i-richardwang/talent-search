@@ -40,6 +40,9 @@
 @import "./components/ui/toolbar.css" layer(components);
 @import "./components/ui/table.css" layer(components);
 @import "./components/ui/tabs.css" layer(components);
+@import "./components/ui/app-layout.css" layer(components);
+@import "./components/ui/nav-item.css" layer(components);
+@import "./components/ui/chat-input.css" layer(components);
 
 /* 工具类按 Vite 的 root 自动扫描；设计系统的 root 在 `scripts/design-system`，
    组件文件里的类要显式扫进来。 */
@@ -104,14 +107,15 @@
 	--text-2xl--line-height: 2rem;
 
 	/*
-	 * 圆角四档：xs 4（小号图标按钮、复选框）、sm 6（按钮、小控件、菜单项）、
-	 * md 8（输入框、卡片、弹层、抽屉的关闭钮）、lg 12（大面、对话框、抽屉）。
-	 * 全圆用 `rounded-full`。
+	 * 圆角五档：xs 4（小号图标按钮、复选框）、sm 6（按钮、小控件、菜单项）、
+	 * md 8（输入框、卡片、弹层、抽屉的关闭钮）、lg 12（内容卡片、对话框、抽屉、输入托盘）、
+	 * xl 20（首页那块大号输入托盘）。全圆用 `rounded-full`。
 	 */
 	--radius-xs: 0.25rem;
 	--radius-sm: 0.375rem;
 	--radius-md: 0.5rem;
 	--radius-lg: 0.75rem;
+	--radius-xl: 1.25rem;
 
 	/*
 	 * 动效。组件 CSS 里的过渡只读这几条曲线，不写字面的曲线；例外两处：提示进场的弹簧
@@ -233,6 +237,7 @@
  * - sm：提示气泡、选项卡的指示块。
  * - md：下拉菜单、弹出层。
  * - lg：对话框。
+ * - composer：首页那块大号输入托盘，一层贴身的细影加一层铺开的远影。
  *
  * 菜单里开关的四个投影同样是纯黑的，深浅两侧共用：
  * - switch-track、switch-track-checked：开关轨道的内凹，关着与开着各一份。
@@ -253,6 +258,8 @@
 		0 40px 80px rgb(0 0 0 / 0.06), 0 20px 40px rgb(0 0 0 / 0.05),
 		0 10px 20px rgb(0 0 0 / 0.04), 0 5px 10px rgb(0 0 0 / 0.03),
 		0 2px 4px rgb(0 0 0 / 0.02);
+	--elevation-composer:
+		0 1px 2px rgb(0 0 0 / 0.03), 0 12px 32px rgb(0 0 0 / 0.04);
 	--elevation-switch-track: inset 0 1.5px 2px rgb(0 0 0 / 0.08);
 	--elevation-switch-track-checked: inset 0 1.5px 3px rgb(0 0 0 / 0.18);
 	--elevation-switch-thumb:
@@ -273,6 +280,8 @@
 		0 40px 80px rgb(0 0 0 / 0.09), 0 20px 40px rgb(0 0 0 / 0.08),
 		0 10px 20px rgb(0 0 0 / 0.06), 0 5px 10px rgb(0 0 0 / 0.05),
 		0 2px 4px rgb(0 0 0 / 0.03);
+	--elevation-composer:
+		0 1px 2px rgb(0 0 0 / 0.2), 0 12px 32px rgb(0 0 0 / 0.3);
 }
 
 :root,
@@ -293,70 +302,30 @@
 
 @theme {
 	/*
-	 * 版心：单列内容有多宽。零态的输入面、名单那一列（关键词搜索时连同它上面的关键词框）、
-	 * 页脚都读它。写成 `--container-*` 而不是 `--spacing-*`：`max-w-<名字>`
-	 * 只认前一个命名空间，写成后者的话 `max-w-page` 会静默变成一个不存在的类。
+	 * 版心：单列内容有多宽。首页的输入面、名单那一列（关键词搜索时连同它上面的关键词框）
+	 * 读它。写成 `--container-*` 而不是 `--spacing-*`：`max-w-<名字>` 只认前一个命名空间。
 	 *
-	 * 一个数管到底，是因为这几块上下叠在一条列里：输入框、名单每一张
-	 * 卡片、页脚那行快捷键，左右边缘差 1px 就是一条看得见的错位。
-	 *
-	 * 46rem：一条证据行的预算（条件词 + 来源 + 字段值 + 右端时长）在 14px 下
-	 * 约 25 个汉字不截断，再加上卡片左右各 20px 的内边距。再宽，右端的时长
-	 * 就离字段值太远，眼睛得横着走一段空白才读得到它。
+	 * 46rem：一条证据行的预算（条件词 + 来源 + 字段值 + 右端时长）在 14px 下约 25 个汉字
+	 * 不截断，再加上行左右的内边距。再宽，右端的时长就离字段值太远。
 	 */
 	--container-page: 46rem;
 
 	/*
 	 * 右栏的宽度：对话线程和人的详情共用这一个槽（`s/$turnId/-components/side-panel.tsx`）。
-	 * 外层收展（0 ↔ 这个值）和内层顶住内容用的是同一个数，页宽列也从这个数算出来。
-	 *
-	 * 28rem 起步：xl（1280）上筛选栏与右栏都在时，名单那一列剩 624，窄于版心，
-	 * 证据行这时分两行排（`components/evidence.tsx`）。
-	 * 2xl 放宽到 32rem——简历原文是这块面板里唯一成段读的东西；再宽没有意义，
-	 * `read-cjk` 已经把行长封在 34rem 了。
+	 * xl（1280）上左侧导航与右栏都在时名单那一列剩约 36rem，证据行分两行排
+	 * （`components/evidence.tsx`）；2xl 放宽一档，简历原文是右栏里唯一成段读的东西。
 	 */
-	--container-detail: 28rem;
-	--container-detail-wide: 32rem;
+	--container-detail: 25rem;
+	--container-detail-wide: 30rem;
 
-	/*
-	 * 筛选栏的宽度（`s/$turnId/-components/filter-rail.tsx`）。lg 以上常驻在名单左边，
-	 * lg 以下整栏收成一个按钮（断点在 `workspace-layout.tsx`）。
-	 *
-	 * 13rem：一行装得下最长的一个选项标签（「公司内经历」这一档五个字）加上
-	 * 右端的人数，再加行内各 8px、栏内各 16px 的内边距。
-	 */
-	--container-rail: 13rem;
+	/* 左侧导航栏的宽度（`components/ui/app-layout.tsx`），lg 以上常驻。 */
+	--container-nav: 17.5rem;
 
-	/*
-	 * 页宽列：整个应用活在这一列里，两侧那两根发丝线标的就是它的边界。
-	 * 它是「筛选栏 + 名单版心 + 最宽的详情面板」，中间那条名单再向两侧各让 3rem，
-	 * 所以改其中任何一栏，这条列自己跟着走。
-	 */
-	--container-app: calc(
-		var(--container-rail) +
-		var(--container-page) +
-		var(--container-detail-wide) +
-		6rem
-	);
+	/* 管理页的内容列（`routes/-components/admin-page.tsx`）。 */
+	--container-admin: 64rem;
 
-	/*
-	 * 顶栏的高度。读者有三个：顶栏自己撑这个高，页框那两个小方块按它定位
-	 * （`page-frame.tsx`），查询带吸在它下沿（`s/$turnId/-components/query-deck.tsx`）。
-	 */
-	--header-height: 3.5rem;
-
-	/*
-	 * 查询带的高度。这条带定高：里面的标题长了就截断（`query-deck.tsx`），
-	 * 所以吸在它下面的东西可以照着算。带子里的控件全是小号（24px），上下各 8px。
-	 */
-	--deck-height: 2.5rem;
-
-	/*
-	 * 常驻的那一叠有多高：顶栏加查询带。读者是搜索结果页两侧栏吸顶的槽
-	 * （`s/$turnId/-components/workspace-layout.tsx`）、名单卡片的 `scroll-mt`（`result-list.tsx`）
-	 * 和整屏空态的最小高度（`result-state.tsx`）。
-	 */
-	--chrome-height: calc(var(--header-height) + var(--deck-height));
+	/* 每一栏顶上那条页头的高度（`components/ui/app-layout.tsx` 的 `NavHeader`）。 */
+	--nav-header-height: 2.75rem;
 
 	/* 转圈，0.6 秒一圈：Icon 的 `spin` 与等待圈（icon.css 的 `.ui-spinner`）共用。 */
 	--animate-spin: spin 0.6s linear infinite;
@@ -367,15 +336,14 @@
 	}
 
 	/*
-	 * 层级尺度。全站只有这五档，代码里不能出现别的 z 值。
+	 * 层级尺度。全站只有这四档，代码里不能出现别的 z 值。
 	 *
-	 * 外壳根节点带 `isolate`，前四档被关在它的层叠上下文里，只回答「外壳内部
+	 * 外壳根节点带 `isolate`，前三档被关在它的层叠上下文里，只回答「外壳内部
 	 * 谁压着谁」，取多大都盖不到 portal 到 body 下的弹层。`popup` 是那些弹层
 	 * 自己的一档：它们和外壳是 body 下的兄弟，只要比外壳高就在最上面。
 	 */
 	--z-index-raise: 1; /* 同一平面内的前后：时间轴节点压住脊线，选项压住滑动的指示块 */
-	--z-index-stick: 20; /* 吸顶：顶栏、查询带，以及详情面板里那个吸顶的头 */
-	--z-index-frame: 30; /* 页框的栏线。压过顶栏，两根竖线才是通到底的一根 */
+	--z-index-stick: 20; /* 吸顶：详情面板里那个吸顶的头、名单底下的操作栏 */
 	--z-index-escape: 40; /* 跳过导航链接。它必须压过外壳里的一切 */
 	--z-index-popup: 50; /* portal 出去的弹层：提示、弹出层、菜单、对话框、抽屉 */
 }
@@ -564,31 +532,8 @@
 	}
 }
 
-/*
- * 页宽列的几何：居中、封顶、留间距。顶栏和工作台那一行用的是同一个盒子。
- * 盒子的左右边缘就是页框那两根线所在的位置，也就是左筛选栏的左沿和详情面板的
- * 右沿。线内那 24px 的间距由各自的内边距凑齐：顶栏靠这里的 `padding-inline`，
- * 筛选栏靠栏内 16 加行内 8（`filter-rail.tsx`）。
- */
-@utility app-column {
-	margin-inline: auto;
-	width: 100%;
-	max-width: var(--container-app);
-	padding-inline: --spacing(4);
-
-	@media (width >= 40rem) {
-		padding-inline: --spacing(6);
-	}
-}
-
 @layer base {
 	:root {
-		/*
-		 * 两根发丝线离 `frame-column` 多远。线和骑在线上那两枚小方块读的是同一个数：
-		 * 方块的位置从线的中心算出来（`page-frame.tsx`）。
-		 */
-		--frame-inset: --spacing(3);
-
 		/*
 		 * 挑人时名单左侧让出的那一列有多宽（`s/$turnId/-components/result-list.tsx`
 		 * 的 `PickCell`）。表头与名单复用这一宽度。
@@ -596,17 +541,6 @@
 		 */
 		--pick-column: 2.25rem;
 	}
-}
-
-/*
- * 画那两根线的盒子。线画在它外面 `--frame-inset` 处（`page-frame.tsx`），
- * 所以它比页宽列窄两倍那么多——线因此正好落在页宽列的边缘上。
- * 窄于页宽列的视口上它就是整屏，两根线落到屏幕之外。
- */
-@utility frame-column {
-	margin-inline: auto;
-	width: 100%;
-	max-width: calc(var(--container-app) - 2 * var(--frame-inset));
 }
 
 /*

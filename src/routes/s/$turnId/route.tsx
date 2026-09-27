@@ -18,15 +18,14 @@ import { useCommit } from "../../-lib/commit";
 import { ConversationDrawer } from "./-components/conversation-drawer";
 import { DetailModal } from "./-components/detail-modal";
 import { Earlier } from "./-components/earlier";
-import { FilterPopover, FilterRail } from "./-components/filter-rail";
 import { KeyHints } from "./-components/key-hints";
-import { QueryDeck } from "./-components/query-deck";
+import { QueryHeader } from "./-components/query-header";
 import { ResultList } from "./-components/result-list";
 import { SidePanel } from "./-components/side-panel";
 import { Thread } from "./-components/thread";
+import { WorkbenchNav } from "./-components/workbench-nav";
 import { WorkspaceLayout } from "./-components/workspace-layout";
 import { useCloseDetail, useEditQuery } from "./-lib/edit-query";
-import { filterFields, textFilters } from "./-lib/filters";
 import { useInterpretation } from "./-lib/interpret";
 import { useKeyboardFlow } from "./-lib/keyboard-flow";
 import { useIsWide } from "./-lib/media";
@@ -67,6 +66,7 @@ export const Route = createFileRoute("/s/$turnId")({
 		if (!data) throw notFound();
 		return data;
 	},
+	staticData: { nav: WorkbenchNav },
 	component: Workbench,
 	notFoundComponent: TurnNotFound,
 });
@@ -108,9 +108,7 @@ function Workbench() {
 
 	const spec = settledSpec ?? EMPTY_SPEC;
 	const outcome = result ?? NO_OUTCOME;
-	const { results, facets, total } = outcome;
-	const fields = filterFields(facets, view);
-	const texts = textFilters(view);
+	const { results, total } = outcome;
 	const loading = navigating || (pending && interpreting);
 	const phase = pending && interpreting ? "interpreting" : "searching";
 
@@ -161,9 +159,20 @@ function Workbench() {
 
 	return (
 		<WorkspaceLayout
-			deck={
-				<QueryDeck
+			header={
+				<QueryHeader
 					onChangeSpec={mode === "conversation" ? reviseSpec : undefined}
+					right={
+						!wide &&
+						conversation && (
+							<ConversationDrawer
+								onOpenChange={setThreadOpen}
+								open={threadOpen}
+							>
+								{conversation}
+							</ConversationDrawer>
+						)
+					}
 					spec={settledSpec}
 					title={
 						mode === "conversation"
@@ -227,29 +236,6 @@ function Workbench() {
 				<DetailModal onClose={() => void closeDetail()} open={open}>
 					<Outlet />
 				</DetailModal>
-			}
-			rail={
-				<FilterRail
-					fields={fields}
-					loading={loading}
-					onChange={updateView}
-					textFilters={texts}
-				/>
-			}
-			filterButton={
-				<FilterPopover
-					fields={fields}
-					loading={loading}
-					onChange={updateView}
-					textFilters={texts}
-				/>
-			}
-			conversationDrawer={
-				conversation && (
-					<ConversationDrawer onOpenChange={setThreadOpen} open={threadOpen}>
-						{conversation}
-					</ConversationDrawer>
-				)
 			}
 		/>
 	);

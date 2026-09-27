@@ -115,7 +115,7 @@ export function ResultList({
 	) : (
 		<>
 			{head}
-			<ul className="flex flex-col gap-2">
+			<ul className="-mx-3 flex flex-col gap-0.5">
 				{picks.rows.map(({ employee: e, hits, missed }) => {
 					const selected = e.empId === empId;
 					return (
@@ -128,19 +128,17 @@ export function ResultList({
 							</PickCell>
 							<Block
 								allowShrink
-								className="scroll-mt-[calc(var(--chrome-height)+--spacing(4))] scroll-mb-4"
+								className="scroll-my-2"
 								clickable
 								data-emp={e.empId}
 								flex={1}
-								paddingBlock={14}
-								paddingInline={16}
-								selected={selected}
-								variant="outlined"
+								padding={12}
+								variant={selected ? "filled" : "borderless"}
 							>
 								<div className="flex items-baseline gap-2.5">
 									<BlockLink
 										aria-current={selected ? "page" : undefined}
-										className="shrink-0 truncate font-semibold text-lg"
+										className="shrink-0 truncate font-semibold text-base text-fg"
 										render={
 											<Link
 												params={{ turnId, empId: e.empId }}
@@ -152,12 +150,12 @@ export function ResultList({
 									>
 										{e.name}
 									</BlockLink>
-									<span className="min-w-0 truncate text-fg-secondary text-base">
+									<span className="min-w-0 truncate text-fg-tertiary text-sm">
 										{positionLabel(e)}
 									</span>
 								</div>
 								{claims.length > 0 && (
-									<div className="mt-3 space-y-1.5">
+									<div className="mt-2 space-y-1.5">
 										{hits.map(({ claim, name, hit, basis }) => (
 											<EvidenceLine
 												basis={basis}

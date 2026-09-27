@@ -3,17 +3,13 @@ import { useRef, useState } from "react";
 import type { QueryBarHandle } from "#/components/query-bar";
 import { ConversationDrawer } from "#/routes/s/$turnId/-components/conversation-drawer";
 import { DetailModal } from "#/routes/s/$turnId/-components/detail-modal";
-import {
-	FilterPopover,
-	FilterRail,
-} from "#/routes/s/$turnId/-components/filter-rail";
 import { KeyHints } from "#/routes/s/$turnId/-components/key-hints";
-import { QueryDeck } from "#/routes/s/$turnId/-components/query-deck";
+import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
 import { Thread } from "#/routes/s/$turnId/-components/thread";
 import { WorkspaceLayout } from "#/routes/s/$turnId/-components/workspace-layout";
-import { filterFields, textFilters } from "#/routes/s/$turnId/-lib/filters";
+import { useIsWide } from "#/routes/s/$turnId/-lib/media";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { type View, validateView } from "#/routes/s/$turnId/-lib/view-params";
 import type { SearchSpec } from "#/search/spec";
@@ -26,7 +22,8 @@ import { LayoutSwitch, Shell } from "./home";
 
 /*
  * 搜索结果页：产品的 `WorkspaceLayout` 喂样例数据。数据是样例里这次找人任务的
- * 最后一轮；筛选只改这一页的视图状态，名单不重新检索。
+ * 最后一轮。导航栏是产品的筛选（`workbench-nav.tsx`，由内存 router 的
+ * `/s/$turnId` 给出）；筛选和名单一样读写地址上的视图，但名单不重新检索。
  */
 
 type Panel = "thread" | "detail";
@@ -34,18 +31,19 @@ type Panel = "thread" | "detail";
 function Workspace() {
 	const navigate = useNavigate();
 	const empId = useOpenEmpId();
+	const wide = useIsWide();
 	const composer = useRef<QueryBarHandle>(null);
 	const [threadOpen, setThreadOpen] = useState(false);
 	const [spec, setSpec] = useState<SearchSpec>(SPEC);
-	const [view, setView] = useState<View>(() => validateView({}));
 	const outcome = OUTCOME;
-	const fields = filterFields(outcome.facets, view);
-	const texts = textFilters(view);
 	const picks = usePicks(LATEST_TURN_ID, outcome);
 	const noop = () => {};
 
 	const updateView = (next: Partial<View>) =>
-		setView((old) => ({ ...old, n: undefined, ...next }));
+		void navigate({
+			search: (old) => ({ ...validateView(old), n: undefined, ...next }),
+			to: ".",
+		});
 
 	const close = () =>
 		void navigate({
@@ -71,7 +69,23 @@ function Workspace() {
 
 	return (
 		<WorkspaceLayout
-			deck={<QueryDeck onChangeSpec={setSpec} spec={spec} title={TASK_TITLE} />}
+			header={
+				<QueryHeader
+					onChangeSpec={setSpec}
+					right={
+						!wide && (
+							<ConversationDrawer
+								onOpenChange={setThreadOpen}
+								open={threadOpen}
+							>
+								{conversation}
+							</ConversationDrawer>
+						)
+					}
+					spec={spec}
+					title={TASK_TITLE}
+				/>
+			}
 			keys={<KeyHints editable mode="conversation" picking={picks.picking} />}
 			list={
 				<ResultList
@@ -98,27 +112,6 @@ function Workspace() {
 				<DetailModal onClose={close} open={Boolean(empId)}>
 					{detail}
 				</DetailModal>
-			}
-			rail={
-				<FilterRail
-					fields={fields}
-					loading={false}
-					onChange={updateView}
-					textFilters={texts}
-				/>
-			}
-			filterButton={
-				<FilterPopover
-					fields={fields}
-					loading={false}
-					onChange={updateView}
-					textFilters={texts}
-				/>
-			}
-			conversationDrawer={
-				<ConversationDrawer onOpenChange={setThreadOpen} open={threadOpen}>
-					{conversation}
-				</ConversationDrawer>
 			}
 		/>
 	);
@@ -157,7 +150,7 @@ function PanelSwitch() {
 	);
 }
 
-/** 搜索结果页：查询带、左筛选栏、名单、右栏，右栏在对话线程和人的详情之间切换。 */
+/** 搜索结果页：导航栏里的筛选、名单那一栏的抬头和名单、右栏，右栏在对话线程和人的详情之间切换。 */
 export function WorkspacePage() {
 	return (
 		<Routed url={`/s/${LATEST_TURN_ID}`}>

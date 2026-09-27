@@ -1,9 +1,8 @@
-import { History, ListFilterIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
-import { Checkbox } from "#/components/ui/checkbox";
 import { Popover } from "#/components/ui/popover";
 import { Segmented } from "#/components/ui/segmented";
 import {
@@ -37,7 +36,7 @@ const TRIGGERS: [trigger: Trigger, opens: string, when: string][] = [
 /** 一条证据的摘要，气泡里的只读内容。 */
 function EvidenceSummary() {
 	return (
-		<div className="flex max-w-(--container-rail) flex-col gap-1.5 text-xs">
+		<div className="flex max-w-64 flex-col gap-1.5 text-xs">
 			<span className="font-medium text-sm">Go 并发调度</span>
 			<span className="text-fg-secondary">3 段经历提到，累计 4 年 2 个月</span>
 			<span className="text-fg-tertiary">最近一段：2022-03 至今</span>
@@ -152,41 +151,40 @@ function Triggers() {
 	);
 }
 
-/** 筛选：点开一列勾选框，浮层按屏幕剩下的高度限高，超出在里面滚。 */
-function FilterPopover() {
-	const [chosen, setChosen] = useState<string[]>(["本科"]);
-	const options = ["大专", "本科", "硕士", "博士"];
+/** 已选的人：点开是选中的几个人，每行能移除；浮层按屏幕剩下的高度限高，超出在里面滚。 */
+function ChosenPopover() {
+	const [chosen, setChosen] = useState(["候选人 A", "候选人 B", "候选人 C"]);
 	return (
 		<Popover
-			className="max-h-(--available-height) w-72 overflow-y-auto"
+			className="max-h-(--available-height) w-64 overflow-y-auto"
 			content={
-				<div className="flex flex-col gap-2">
-					<span className="font-medium text-sm">学历</span>
-					{options.map((option) => (
-						<Checkbox
-							checked={chosen.includes(option)}
-							key={option}
-							onChange={(checked) =>
-								setChosen(
-									checked
-										? [...chosen, option]
-										: chosen.filter((one) => one !== option),
-								)
-							}
-						>
-							{option}
-						</Checkbox>
-					))}
-				</div>
+				<>
+					<div className="mb-2 font-medium text-base">已选的人</div>
+					<ul className="flex flex-col gap-0.5">
+						{chosen.map((name) => (
+							<li className="flex items-center gap-2 ps-2" key={name}>
+								<span className="min-w-0 flex-1 truncate text-base">
+									{name}
+								</span>
+								<ActionIcon
+									aria-label={`移除 ${name}`}
+									icon={XIcon}
+									onClick={() =>
+										setChosen((old) => old.filter((one) => one !== name))
+									}
+									size="small"
+								/>
+							</li>
+						))}
+					</ul>
+				</>
 			}
 			placement="bottomLeft"
+			popupProps={{ "aria-label": "已选的人" }}
 			trigger="click"
 		>
-			<Button icon={ListFilterIcon} size="small">
-				筛选
-				{chosen.length > 0 && (
-					<span className="tabular-nums">{chosen.length}</span>
-				)}
+			<Button size="small" type="text">
+				已选 <b className="tabular-nums">{chosen.length}</b> 人
 			</Button>
 		</Popover>
 	);
@@ -196,32 +194,10 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="里面有勾选的浮层点击打开，贴着按钮左下角展开。"
-				title="筛选"
+				description="名单底下的工具条上，「已选 N 人」点开是选中的那几个人，每行能移除；贴着按钮左下角展开。"
+				title="已选的人"
 			>
-				<FilterPopover />
-			</Example>
-			<Example
-				description="贴在页面右上角的按钮向右下对齐展开；只有图标的触发器给浮层一个名字。"
-				title="最近搜索"
-			>
-				<Popover
-					className="w-80"
-					content={
-						<div className="flex flex-col gap-2 text-sm">
-							<span className="font-medium text-base">最近搜索</span>
-							<span className="text-fg-secondary">
-								做过搜索召回的后端，3 年以上
-							</span>
-							<span className="text-fg-secondary">支付风控 · 本科及以上</span>
-						</div>
-					}
-					placement="bottomRight"
-					popupProps={{ "aria-label": "最近搜索" }}
-					trigger="click"
-				>
-					<ActionIcon aria-label="最近搜索" icon={History} />
-				</Popover>
+				<ChosenPopover />
 			</Example>
 			<Example
 				description="一段只读说明挂在按钮上方，悬停看完移开就收。"
@@ -247,7 +223,7 @@ export function PopoverPage() {
 					"内容可能很长时给 className 限高到 --available-height，在浮层里滚动。",
 					"气泡里的控件同样用 components/ui 的组件，不手写边框、阴影和圆角。",
 				],
-				usage: `<Popover content={<FilterList />} placement="bottomLeft" trigger="click">\n  <Button>筛选</Button>\n</Popover>`,
+				usage: `<Popover content={<ChosenList />} placement="bottomLeft" trigger="click">\n  <Button>已选 3 人</Button>\n</Popover>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用气泡卡片" },

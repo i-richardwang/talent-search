@@ -4,9 +4,10 @@ import { cn } from "#/lib/utils";
 import { Flexbox, type FlexboxProps } from "./flex";
 
 /*
- * 一块面，就是一个带面样式的 Flexbox（默认纵向），样式在 block.css。两种面：filled 是
- * fill-tertiary 的底，outlined 是 container 底加一圈 border-secondary。`clickable` 加手形，
- * 悬停时描边加深，只用在描边面上；`shadow` 加一层投影；`selected` 用主色一侧最浅的底和边。
+ * 一块面，就是一个带面样式的 Flexbox（默认纵向），样式在 block.css。三种面：filled 是
+ * fill-tertiary 的底，outlined 是 container 底加一圈 border-secondary，borderless 没有底。
+ * `clickable` 加手形和悬停：borderless 悬停出 fill-tertiary 的底，filled 的底加深一档，
+ * outlined 的描边加深；`shadow` 加一层投影；`selected` 用主色一侧最浅的底和边。
  * 整块可点时，块里那条链接用 `BlockLink`。
  */
 
@@ -14,7 +15,7 @@ interface BlockProps extends FlexboxProps {
 	clickable?: boolean;
 	selected?: boolean;
 	shadow?: boolean;
-	variant?: "filled" | "outlined";
+	variant?: "filled" | "outlined" | "borderless";
 }
 
 export function Block({
@@ -30,7 +31,7 @@ export function Block({
 			className={cn(
 				"ui-block",
 				`ui-block-${variant}`,
-				clickable && "ui-block-clickable",
+				clickable && ["ui-block-clickable", `ui-block-clickable-${variant}`],
 				shadow && "ui-block-shadow",
 				selected && "ui-block-selected",
 				className,

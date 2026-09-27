@@ -174,7 +174,7 @@ function useElapsed(): number | null {
 export function Searching({ phase }: { phase: SearchPhase }) {
 	const seconds = useElapsed();
 	return (
-		<div className="flex min-h-[calc(100dvh-var(--chrome-height)-5rem)] flex-col items-center justify-center gap-4">
+		<div className="flex flex-col items-center justify-center gap-4 py-24">
 			<Icon
 				aria-hidden="true"
 				className="text-fg-secondary"

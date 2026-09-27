@@ -1,4 +1,10 @@
-import { Menu } from "lucide-react";
+import {
+	ActivityIcon,
+	type LucideIcon,
+	PanelLeftOpenIcon,
+	TableIcon,
+	TagsIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
@@ -15,6 +21,7 @@ import {
 	DrawerRoot,
 	DrawerTitle,
 } from "#/components/ui/drawer";
+import { NavItem } from "#/components/ui/nav-item";
 import { Segmented } from "#/components/ui/segmented";
 import {
 	Table,
@@ -238,14 +245,20 @@ function DetailDrawer() {
 	);
 }
 
-/** 窄屏的导航：从左边滑出，没有头部。 */
+/** 窄屏的导航：从左边滑出，没有头部，宽度和常驻的导航栏一样。 */
+const NAV: [label: string, icon: LucideIcon][] = [
+	["数据", TableIcon],
+	["技能", TagsIcon],
+	["任务", ActivityIcon],
+];
+
 function NavigationDrawer() {
 	const [open, setOpen] = useState(false);
 	return (
 		<>
 			<ActionIcon
 				aria-label="打开导航"
-				icon={Menu}
+				icon={PanelLeftOpenIcon}
 				onClick={() => setOpen(true)}
 			/>
 			<Drawer
@@ -253,13 +266,21 @@ function NavigationDrawer() {
 				onClose={() => setOpen(false)}
 				open={open}
 				placement="left"
-				width="var(--container-rail)"
+				width="var(--container-nav)"
 			>
-				<nav className="flex flex-col gap-1 pt-8 text-sm">
-					{["人才库", "技能", "任务"].map((item) => (
-						<Button key={item} onClick={() => setOpen(false)} type="text">
-							{item}
-						</Button>
+				<nav aria-label="导航" className="flex flex-col px-1 pt-8">
+					{NAV.map(([label, icon]) => (
+						<NavItem
+							href={`#${label}`}
+							icon={icon}
+							key={label}
+							onClick={(event) => {
+								event.preventDefault();
+								setOpen(false);
+							}}
+						>
+							{label}
+						</NavItem>
 					))}
 				</nav>
 			</Drawer>

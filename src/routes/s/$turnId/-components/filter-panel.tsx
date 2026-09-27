@@ -1,12 +1,10 @@
-import { ListFilterIcon, XIcon } from "lucide-react";
+import { XIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Checkbox, CheckboxGroup } from "#/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
 import { Icon } from "#/components/ui/icon";
-import { Popover } from "#/components/ui/popover";
 import { Radio, RadioGroup } from "#/components/ui/radio";
-import { ScrollArea } from "#/components/ui/scroll-area";
 import { cn } from "#/lib/utils";
 import {
 	activeCount,
@@ -17,56 +15,15 @@ import { CLEARED_FILTERS, type View } from "../-lib/view-params";
 
 const VISIBLE = 5;
 
-export function FilterRail({
-	loading,
-	...props
-}: FilterProps & {
-	loading: boolean;
-}) {
-	const anything = hasAnything(props);
-	// 分面还在取时栏宽照留，名单那一列不跟着挪。
-	if (!anything && !loading) return null;
-	return (
-		<aside aria-label="筛选" className="h-full w-rail overflow-hidden border-r">
-			<ScrollArea
-				className="size-full min-h-0"
-				disableContentFit
-				scrollFade
-				viewportProps={{
-					className: "data-has-overflow-y:overscroll-y-contain",
-				}}
-			>
-				{anything && (
-					<div className="p-4">
-						<FilterList {...props} />
-					</div>
-				)}
-			</ScrollArea>
-		</aside>
-	);
-}
-
-/** 窄屏上筛选栏收进按钮：点开是一个弹出层，里面是同一份筛选列表。 */
-export function FilterPopover({
-	loading,
-	...props
-}: FilterProps & { loading: boolean }) {
-	const anything = hasAnything(props);
-	if (!anything && !loading) return null;
-	const count = activeCount(props.fields, props.textFilters);
-	return (
-		<Popover
-			className="max-h-(--available-height) w-72 overflow-y-auto"
-			content={<FilterList {...props} />}
-			placement="bottomLeft"
-			trigger="click"
-		>
-			<Button disabled={!anything} icon={ListFilterIcon} size="small">
-				筛选
-				{count > 0 && <span className="tabular-nums">{count}</span>}
-			</Button>
-		</Popover>
-	);
+/**
+ * 筛选：搜索结果页左侧导航栏里的正文（`workbench-nav.tsx`）。每一维一组，选项后面一直
+ * 写着选了之后还剩几个人，不用点开就知道能筛什么。
+ *
+ * 一维都数不出人、也没有生效的文本条件时整块不渲染：空着的一组就是它不该占位的证据。
+ */
+export function FilterPanel(props: FilterProps) {
+	if (!hasAnything(props)) return null;
+	return <FilterList {...props} />;
 }
 
 type FilterProps = {

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Segmented } from "#/components/ui/segmented";
+import { PageHeader } from "#/routes/-components/page-header";
 import {
 	Person,
 	PersonNotFound,
@@ -11,6 +12,7 @@ import { Routed } from "../../routed";
 import { CLAIMS } from "../../samples/conditions";
 import { EMPLOYEES, experiencesOf, hitsOf } from "../../samples/people";
 import { LATEST_TURN_ID } from "../../samples/thread";
+import { Shell } from "./home";
 
 /*
  * 人的详情：`src/routes/s/$turnId/-components/person.tsx` 的三种内容（详情、换人途中、
@@ -36,39 +38,44 @@ export function PersonPane({ empId }: { empId: string }) {
 
 type State = "loaded" | "pending" | "missing";
 
-/** 人的详情单独成页：产品的右栏放在页中间，上面是切换候选人和状态的控件。 */
+/**
+ * 人的详情单独成页：产品外壳的内容卡片里，产品的右栏放在正中，页头右端是切换状态和
+ * 候选人的控件。导航栏和搜索结果页一样是这次名单的筛选。
+ */
 export function DetailPage() {
 	const [empId, setEmpId] = useState("T0101");
 	const [state, setState] = useState<State>("loaded");
 	return (
 		<Routed url={`/s/${LATEST_TURN_ID}/p/${empId}`}>
-			<div className="flex h-dvh flex-col">
-				<header className="app-column flex flex-wrap items-end justify-between gap-x-5 gap-y-3 border-b py-5">
-					<h1 className="font-semibold text-xl">人的详情</h1>
-					<div className="flex flex-wrap items-center gap-2">
-						<Segmented<State>
-							aria-label="状态"
-							onChange={setState}
-							options={[
-								{ label: "详情", value: "loaded" },
-								{ label: "换人途中", value: "pending" },
-								{ label: "找不到", value: "missing" },
-							]}
-							size="small"
-							value={state}
-						/>
-						<Segmented<string>
-							aria-label="候选人"
-							onChange={setEmpId}
-							options={EMPLOYEES.map((e) => ({
-								label: e.name,
-								value: e.empId,
-							}))}
-							size="small"
-							value={empId}
-						/>
-					</div>
-				</header>
+			<Shell>
+				<PageHeader
+					right={
+						<div className="flex flex-wrap items-center gap-2">
+							<Segmented<State>
+								aria-label="状态"
+								onChange={setState}
+								options={[
+									{ label: "详情", value: "loaded" },
+									{ label: "换人途中", value: "pending" },
+									{ label: "找不到", value: "missing" },
+								]}
+								size="small"
+								value={state}
+							/>
+							<Segmented<string>
+								aria-label="候选人"
+								onChange={setEmpId}
+								options={EMPLOYEES.map((e) => ({
+									label: e.name,
+									value: e.empId,
+								}))}
+								size="small"
+								value={empId}
+							/>
+						</div>
+					}
+					title="人的详情"
+				/>
 				<div className="flex min-h-0 flex-1 justify-center">
 					<SidePanel
 						conversation={null}
@@ -83,7 +90,7 @@ export function DetailPage() {
 						}
 					/>
 				</div>
-			</div>
+			</Shell>
 		</Routed>
 	);
 }

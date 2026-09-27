@@ -151,6 +151,7 @@ const CATALOG = [
 			component("auto-complete", "自动补全", "AutoComplete", {
 				sizing: "input",
 			}),
+			component("chat-input", "输入托盘", "ChatInput"),
 			component("checkbox", "复选框", "Checkbox"),
 			component("radio", "单选框", "Radio"),
 			component("segmented", "分段控制器", "Segmented", {
@@ -161,6 +162,8 @@ const CATALOG = [
 			component("table", "表格", "Table", { sizing: "table" }),
 			component("block", "块", "Block"),
 			component("flex", "弹性布局", "Flexbox"),
+			component("app-layout", "应用外壳", "AppLayout"),
+			component("nav-item", "导航项", "NavItem"),
 			component("divider", "分割线", "Divider"),
 			component("scroll-area", "滚动区", "ScrollArea"),
 			component("toolbar", "工具条", "Toolbar"),
@@ -197,7 +200,7 @@ const CATALOG = [
 				slug: "conditions",
 				source: [
 					"src/routes/s/$turnId/-components/query-chips.tsx",
-					"src/routes/s/$turnId/-components/filter-rail.tsx",
+					"src/routes/s/$turnId/-components/filter-panel.tsx",
 				],
 				title: "搜索条件与筛选",
 			},
@@ -283,6 +286,8 @@ const CATALOG = [
 				slug: "home",
 				source: [
 					"src/routes/-components/app-shell.tsx",
+					"src/routes/-components/home-nav.tsx",
+					"src/routes/-components/page-header.tsx",
 					"src/routes/-components/home-screen.tsx",
 				],
 				title: "首页",
@@ -290,7 +295,11 @@ const CATALOG = [
 			},
 			{
 				slug: "workspace",
-				source: ["src/routes/s/$turnId/-components/workspace-layout.tsx"],
+				source: [
+					"src/routes/s/$turnId/-components/workspace-layout.tsx",
+					"src/routes/s/$turnId/-components/workbench-nav.tsx",
+					"src/routes/s/$turnId/-components/query-header.tsx",
+				],
 				title: "搜索工作台",
 				tokenGroups: ["layout"],
 			},

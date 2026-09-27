@@ -1,0 +1,129 @@
+/*
+ * 输入托盘的外观，类名以 `.ui-chat-input` 开头。
+ *
+ * 一块面装下整件事：上面是会长高的文本区，下面一条动作栏（左边附加的动作，右边圆形的
+ * 发送钮），都在同一圈描边里。middle 是 12px 圆角的描边面；large 是首页那一块：20px 圆角、
+ * 文本区至少 108px、托着一层远影，动作栏向里让 8px，圆钮不贴着圆角。
+ *
+ * 托盘上方可以挂一片「舌头」（tray）：elevated 底、fill-secondary 的边、上圆下直、
+ * 不画底边，贴在面的上沿，放点一下就能办的事。
+ */
+
+.ui-chat-input-root {
+	display: flex;
+	flex-direction: column;
+}
+
+.ui-chat-input-tray {
+	margin-inline: 12px;
+	padding: 8px 14px;
+	border: 1px solid var(--color-fill-secondary);
+	border-bottom: none;
+	border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+	font-size: var(--text-xs);
+	color: var(--color-fg-secondary);
+	background: var(--color-elevated);
+}
+
+.ui-chat-input {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-lg);
+	background: var(--color-container);
+	transition: border-color 0.2s var(--ease-out);
+
+	&:focus-within {
+		border-color: var(--color-primary-border);
+	}
+}
+
+.ui-chat-input-large {
+	border-radius: var(--radius-xl);
+	box-shadow: var(--elevation-composer);
+}
+
+.ui-chat-input-textarea {
+	display: block;
+	width: 100%;
+	min-height: calc(var(--chat-input-rows, 1) * 1lh + 20px);
+	max-height: 20rem;
+	padding: 12px 12px 8px;
+	border: none;
+	font: inherit;
+	line-height: var(--text-base--line-height);
+	color: var(--color-fg);
+	resize: none;
+	field-sizing: content;
+	background: transparent;
+	outline: none;
+
+	&::placeholder {
+		color: var(--color-fg-quaternary);
+	}
+
+	.ui-chat-input-large & {
+		min-height: 108px;
+		padding: 16px 16px 8px;
+	}
+}
+
+.ui-chat-input-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 0 8px 8px;
+
+	.ui-chat-input-large & {
+		padding: 0 8px 8px 12px;
+	}
+}
+
+.ui-chat-input-bar-left,
+.ui-chat-input-bar-right {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-width: 0;
+}
+
+.ui-chat-input-bar-right {
+	flex: none;
+	gap: 12px;
+	margin-inline-start: auto;
+}
+
+/* 发送钮：32px 的圆，主色底；不能发时退成 fill-secondary 的底、fg-quaternary 的箭头。 */
+.ui-chat-input-send {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: none;
+	border-radius: 9999px;
+	color: var(--color-layout);
+	cursor: pointer;
+	background: var(--color-primary);
+	transition:
+		background-color 0.2s var(--ease-out),
+		color 0.2s var(--ease-out);
+	@apply focus-ring;
+
+	&:hover {
+		background: var(--color-primary-hover);
+	}
+
+	&:active {
+		background: var(--color-primary-active);
+	}
+
+	&:disabled {
+		color: var(--color-fg-quaternary);
+		cursor: not-allowed;
+		background: var(--color-fill-secondary);
+	}
+}
