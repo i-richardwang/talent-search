@@ -1,4 +1,5 @@
 import {
+	ArrowDown,
 	ArrowUp,
 	Copy,
 	Ellipsis,
@@ -46,7 +47,7 @@ type State = "default" | "active" | "disabled" | "loading";
 type ActionIconVariant = NonNullable<ActionIconProps["variant"]>;
 type Tier = TierOf<"action-icon">;
 
-const VARIANTS: ActionIconVariant[] = ["borderless", "filled"];
+const VARIANTS: ActionIconVariant[] = ["borderless", "filled", "outlined"];
 
 const ICONS: Record<string, [icon: LucideIcon, title: string]> = {
 	copy: [Copy, "复制搜索条件"],
@@ -96,6 +97,7 @@ function Playground() {
 						options={[
 							{ label: "无边框", value: "borderless" },
 							{ label: "填充", value: "filled" },
+							{ label: "描边", value: "outlined" },
 						]}
 						value={variant}
 					/>
@@ -340,6 +342,24 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
+				description="压在滚动内容上的圆钮用 outlined 加 glass：半透明的浮层底糊掉底下的字，对话线程右下角回到最新就是它。"
+				title="压在内容上"
+			>
+				<div className="relative h-28 w-full overflow-hidden rounded-md">
+					<p className="p-3 text-fg-secondary text-sm">
+						已按以下条件搜索：推荐系统、团队管理（加分）。「三年以上」按在大厂的累计时长算，满足的人排在前面。
+					</p>
+					<ActionIcon
+						className="absolute end-4 bottom-4"
+						glass
+						icon={ArrowDown}
+						style={{ borderRadius: "50%" }}
+						title="跳转到最新"
+						variant="outlined"
+					/>
+				</div>
+			</Example>
+			<Example
 				description="收起的次要动作放进菜单，触发器用省略号图标。"
 				title="更多操作"
 			>
@@ -365,7 +385,7 @@ function Usage() {
 	);
 }
 
-/** 图标按钮：两种外观、激活态、两档尺寸。 */
+/** 图标按钮：三种外观、激活态、几档尺寸。 */
 export function ActionIconPage() {
 	const sizeTier = useTier("action-icon");
 	return (

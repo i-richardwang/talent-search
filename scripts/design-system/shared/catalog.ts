@@ -179,6 +179,7 @@ const CATALOG = [
 			component("collapse", "分组卡片", "Collapse"),
 			component("empty", "空状态", "Empty"),
 			component("skeleton", "骨架屏", "Skeleton"),
+			component("neural-loading", "AI 进行中", "NeuralLoading"),
 			component("alert", "警告提示", "Alert"),
 			component("code-block", "代码块", "CodeBlock"),
 			component("copy-button", "复制按钮", "CopyButton"),

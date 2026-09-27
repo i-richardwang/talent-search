@@ -32,6 +32,7 @@ const ROUND1: Turn = {
 		declined: [],
 	},
 	trace: ROUND1_TRACE,
+	at: T0 - 1500,
 };
 
 /** 第二轮：补充一句，加了两条；两处要求人才库里搜不了，其中一处给了替代条件。 */
@@ -54,6 +55,7 @@ const ROUND2: Turn = {
 		],
 	},
 	trace: ROUND2_TRACE,
+	at: T0 + 58_000,
 };
 
 /** 第三轮：HR 在条件上直接移除了学历，没有说话。 */
@@ -66,6 +68,7 @@ const ROUND3: Turn = {
 	spec: SPEC,
 	notes: null,
 	trace: null,
+	at: T0 + 90_000,
 };
 
 /** 整条对话链，链头在前；名单看的是最后一轮。 */
@@ -73,6 +76,12 @@ export const THREAD: Turn[] = [ROUND1, ROUND2, ROUND3];
 
 /** 最后一轮的 id。 */
 export const LATEST_TURN_ID = ROUND3.id;
+
+/**
+ * 等理解的两轮落在打开页面前几秒：计时从记录落下的时刻数起，放在过去的固定时刻上
+ * 会数出一整天。
+ */
+const JUST_NOW = Date.now() - 3000;
 
 /** 刚说完、AI 还在理解的一轮：还没有条件，步骤走到一半。 */
 export const PENDING_TURN: Turn = {
@@ -84,12 +93,13 @@ export const PENDING_TURN: Turn = {
 	spec: null,
 	notes: null,
 	trace: null,
+	at: JUST_NOW,
 };
 
 /** 理解到一半时已经走过的步骤，线程边跑边画它。 */
 export const PENDING_TRACE: TraceStep[] = [
 	{
-		at: T0 + 120_000,
+		at: JUST_NOW + 1200,
 		tool: "look_up_words",
 		words: [
 			{ word: "搜索排序", canonical: "搜索排序", people: 31, wide: false },
@@ -107,6 +117,7 @@ export const FRESH_TURN: Turn = {
 	spec: null,
 	notes: null,
 	trace: null,
+	at: JUST_NOW,
 };
 
 /** 最近搜索：导航栏「最近搜索」里的几条。 */

@@ -1,9 +1,10 @@
-import { Redo2Icon, SaveIcon, Undo2Icon } from "lucide-react";
+import { PencilLineIcon, Redo2Icon, SaveIcon, Undo2Icon } from "lucide-react";
 import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Button } from "#/components/ui/button";
 import { Divider } from "#/components/ui/divider";
 import { Segmented } from "#/components/ui/segmented";
+import { Tag } from "#/components/ui/tag";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { px, useMeasured } from "../../kit/readings";
@@ -88,6 +89,20 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
+				description="线的正中放一枚标签，记一件不是谁说的话的事：对话线程里直接改了搜索条件的那一次，上下各留 20px。"
+				title="线中间的事件"
+			>
+				<div className="w-full text-sm">
+					<p className="text-fg-secondary">已添加 团队管理（加分）</p>
+					<Divider className="my-0 py-5">
+						<Tag icon={PencilLineIcon}>
+							你修改了搜索条件：移除 学历 · 硕士及以上
+						</Tag>
+					</Divider>
+					<p className="text-fg-secondary">再看看做过搜索排序的</p>
+				</div>
+			</Example>
+			<Example
 				description="一行里两组不同的事用一条竖线分开：设计系统的顶栏里，撤销重做是一组，保存导出是另一组。"
 				title="一行里的两组动作"
 			>
@@ -106,15 +121,16 @@ function Usage() {
 export function DividerPage() {
 	return (
 		<DocPage
-			facts={[`${ORIENTATIONS.length} 个方向`]}
+			facts={[`${ORIENTATIONS.length} 个方向`, "线中间可放内容"]}
 			rules={{
 				notes: [
 					"只分隔同一块面里的两段内容；两块不同的面用 Block 分开，不用线。",
 					"横线的上下外边距由组件给，调用处不给线加 margin 或 padding。",
 					"竖线放在一行 flex 里，窄屏换行时用外层的响应式类把它藏起来。",
 					"线的颜色来自 --color-split，不覆盖。",
+					"横线正中可以放内容（children），这时它不是分隔符，内容照常读出。",
 				],
-				usage: `<Divider />\n<Divider orientation="vertical" />`,
+				usage: `<Divider />\n<Divider orientation="vertical" />\n<Divider><Tag>…</Tag></Divider>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用分割线" },

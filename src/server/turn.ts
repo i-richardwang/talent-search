@@ -49,6 +49,8 @@ export type Turn = {
 	notes: TurnNotes | null;
 	/** 理解这一轮时模型走过的步骤；还在理解时是到目前为止的。关键词的记录没有。 */
 	trace: TraceStep[] | null;
+	/** 这一轮落记录的时刻（epoch 毫秒）：线程上的时间和等理解时的计时都从它算。 */
+	at: number;
 };
 
 type Db = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -340,17 +342,20 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 		spec: SearchSpec | null;
 		notes: TurnNotes | null;
 		trace: TraceStep[] | null;
+		at: number;
 	}>(sql`
 		with recursive line as (
-			select id, root_turn_id, raw_text, spec, notes, trace, 0 as depth
+			select id, root_turn_id, raw_text, spec, notes, trace, created_at, 0 as depth
 			from search_turn
 			where id = (select root_turn_id from search_turn where id = ${id})
 			union all
 			select t.id, t.root_turn_id, t.raw_text, t.spec, t.notes, t.trace,
-				line.depth + 1
+				t.created_at, line.depth + 1
 			from search_turn t join line on t.parent_turn_id = line.id
 		)
-		select id, root_turn_id, raw_text, spec, notes, trace from line order by depth`);
+		select id, root_turn_id, raw_text, spec, notes, trace,
+			(extract(epoch from created_at) * 1000)::float8 as at
+		from line order by depth`);
 	if (rows.length === 0) return null;
 	const root = rows[0];
 	const mode = modeOf(root?.raw_text);
@@ -363,6 +368,7 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 		spec: row.spec,
 		notes: row.notes,
 		trace: row.trace,
+		at: row.at,
 	}));
 }
 

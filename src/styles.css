@@ -33,6 +33,7 @@
 @import "./components/ui/accordion.css" layer(components);
 @import "./components/ui/collapse.css" layer(components);
 @import "./components/ui/skeleton.css" layer(components);
+@import "./components/ui/neural-loading.css" layer(components);
 @import "./components/ui/checkbox.css" layer(components);
 @import "./components/ui/radio.css" layer(components);
 @import "./components/ui/form.css" layer(components);
@@ -595,7 +596,7 @@
 }
 
 /*
- * 新东西到了的淡入：换人时的详情区，以及模型边跑边走出的新一步。
+ * 新东西到了的淡入：换人时的详情区。
  * 短而浅是硬要求：↑↓ 连按时每一帧都要在下一次按键之前结束，否则动画会排队。
  */
 @keyframes settle {
@@ -611,37 +612,6 @@
 
 @utility settle {
 	animation: settle 160ms var(--ease-out) backwards;
-}
-
-/*
- * 模型正在跑的那几个字：一道亮光从左扫到右，底色是 fg-secondary、峰值是 fg。
- * 减弱动效时退回灰字，意思不丢。
- */
-@utility shimmer {
-	background-image: linear-gradient(
-		90deg,
-		var(--color-fg-secondary) 0%,
-		var(--color-fg) 45%,
-		var(--color-fg) 55%,
-		var(--color-fg-secondary) 100%
-	);
-	background-size: 200% 100%;
-	background-clip: text;
-	color: transparent;
-	animation: shimmer 1.6s linear infinite;
-	@media (prefers-reduced-motion: reduce) {
-		background-image: none;
-		color: var(--color-fg-secondary);
-	}
-}
-
-@keyframes shimmer {
-	from {
-		background-position: 100% 0;
-	}
-	to {
-		background-position: -100% 0;
-	}
 }
 
 @media (prefers-reduced-motion: reduce) {

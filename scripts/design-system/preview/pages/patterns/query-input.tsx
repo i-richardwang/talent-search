@@ -208,6 +208,23 @@ function States() {
 						</TableCell>
 					</TableRow>
 					<TableRow>
+						<TableCell className="font-mono text-xs">
+							middle · focusKey
+						</TableCell>
+						<TableCell className="w-full">
+							<div className="flex flex-col gap-1.5">
+								<QueryBar
+									focusKey="/"
+									onQuery={accept}
+									placeholder="补充或修改需求，例如：最好带过团队"
+								/>
+								<span className="text-fg-secondary text-xs">
+									工作台右栏的输入框：光标不在框里时占位说按「/」开始输入，进了框换成换行的键
+								</span>
+							</div>
+						</TableCell>
+					</TableRow>
+					<TableRow>
 						<TableCell className="font-mono text-xs">large</TableCell>
 						<TableCell className="w-full">
 							<QueryBar

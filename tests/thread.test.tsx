@@ -29,6 +29,7 @@ function turns(rounds: Round[]): Turn[] {
 		spec: r.spec === null ? null : { conditions: parseQuery(r.spec) },
 		notes: r.notes ?? null,
 		trace: r.trace ?? null,
+		at: 0,
 	}));
 }
 
@@ -40,12 +41,14 @@ async function seen(
 		waiting = false,
 		liveTrace = null,
 		fault = null,
+		onRetry,
 		viewing = rounds.length - 1,
 	}: {
 		understanding?: boolean;
 		waiting?: boolean;
 		liveTrace?: TraceStep[] | null;
 		fault?: InterpretFault | null;
+		onRetry?: () => void;
 		/** 名单正显示第几轮，默认最后一轮。 */
 		viewing?: number;
 	} = {},
@@ -57,6 +60,7 @@ async function seen(
 				liveTrace={liveTrace}
 				onAdd={() => {}}
 				onQuery={() => true}
+				onRetry={onRetry}
 				rounds={turns(rounds)}
 				understanding={understanding}
 				viewing={`t${viewing}`}
@@ -111,6 +115,16 @@ describe("后面每一轮", () => {
 		assert.doesNotMatch(text, /正在理解|没能理解/);
 	});
 
+	test("能重试的那一环在提示上给重试，没开启 AI 搜索时不给", async () => {
+		const rounds = [{ said: "再资深一点", spec: null }];
+		const retry = { onRetry: () => {} };
+		const down = await seen(rounds, { fault: "unreachable", ...retry });
+		assert.match(down.text, /AI 服务暂时不可用\s*重试/);
+		const off = await seen(rounds, { fault: "unconfigured", ...retry });
+		assert.match(off.text, /AI 搜索未开启/);
+		assert.doesNotMatch(off.text, /重试/);
+	});
+
 	test("直接改条件的一轮没有人说话，只记改了什么", async () => {
 		const { text } = await seen([
 			{ said: "算法，带团队", spec: "算法, 带团队" },
@@ -127,7 +141,7 @@ describe("第一轮", () => {
 		assert.match(text, /已按以下条件搜索：算法、后端/);
 	});
 
-	test("理解方式和未采用的要求都写出来，有替代就在输入框上方给一键添加", async () => {
+	test("理解方式和未采用的要求都写出来，有替代就在那次回应底下给一键添加", async () => {
 		const { text } = await seen([
 			{
 				said: "北京的算法，有潜力",
@@ -146,10 +160,10 @@ describe("第一轮", () => {
 			},
 		]);
 		assert.match(text, /「算法」按算法工程方向理解/);
-		assert.match(text, /未采用「北京的」：暂不支持按工作地点筛选/);
-		assert.match(text, /未采用「有潜力」：简历中看不出潜力/);
-		assert.match(text, /「有潜力」可改为：带团队（加分） 添加/);
-		assert.doesNotMatch(text, /「北京的」可改为/, "没有替代就不给");
+		assert.match(text, /未采用「北京的」：\s*暂不支持按工作地点筛选/);
+		assert.match(text, /未采用「有潜力」：\s*简历中看不出潜力/);
+		assert.match(text, /把「有潜力」换成 带团队（加分）/);
+		assert.doesNotMatch(text, /把「北京的」换成/, "没有替代就不给");
 	});
 });
 
@@ -171,8 +185,8 @@ describe("线程就是记录链", () => {
 		assert.doesNotMatch(html, /href="\/s\/t1"/, "正看着的这一轮不是链接");
 		assert.match(html, /aria-current="page"/);
 		assert.doesNotMatch(text, /正在查看/, "看着最后一轮是默认的样子，不标");
-		assert.match(text, /未采用「有潜力」：看不出/);
-		assert.doesNotMatch(text, /可改为/, "替代条件跟着正看着的那一轮");
+		assert.match(text, /未采用「有潜力」：\s*看不出/);
+		assert.doesNotMatch(text, /换成/, "替代条件跟着正看着的那一轮");
 	});
 
 	test("回头看早先一轮：后面的轮次都还在，那一轮标出正在查看", async () => {
@@ -183,7 +197,7 @@ describe("线程就是记录链", () => {
 		assert.match(text, /正在查看/);
 		assert.match(
 			text,
-			/「有潜力」可改为：带团队（加分） 添加/,
+			/把「有潜力」换成 带团队（加分）/,
 			"替代条件作用在正看着的那一轮上",
 		);
 	});
@@ -225,22 +239,23 @@ describe("检索人才库的过程", () => {
 		},
 	];
 
-	test("完成后收成一行，不报调了几次工具", async () => {
+	test("完成后收起，标题只说走了几步", async () => {
 		const { text } = await seen([
 			{ said: "推荐和后端", spec: "推荐算法, 后端", trace },
 		]);
-		assert.match(text, /检索过程/);
-		assert.doesNotMatch(text, /正在检索|\d+ 次|\d+ 步/);
+		assert.match(text, /检索人才库 3 步/);
+		assert.doesNotMatch(text, /预搜/, "每一步收在里面");
 	});
 
-	test("进行中说正在检索，底下一行是刚得出的那条结论", async () => {
+	test("进行中摊开，每一步一行：动作、对象，预搜带人数", async () => {
 		const { text } = await seen([{ said: "推荐和后端", spec: null }], {
 			waiting: true,
 			liveTrace: trace,
 		});
-		assert.match(text, /正在检索人才库/);
-		assert.match(text, /预搜「推荐算法 \+ 后端 \+ 量子炼金」：0 人/);
-		assert.doesNotMatch(text, /正在理解你的需求/, "有了结论就不再说在理解");
+		assert.match(text, /检索人才库 3 步/);
+		assert.match(text, /查找\s*推荐、互联网、量子炼金/);
+		assert.match(text, /预搜\s*推荐算法 \+ 后端 \+ 量子炼金\s*→ 0 人/);
+		assert.doesNotMatch(text, /正在理解你的需求/, "有了步骤就不再说在理解");
 	});
 
 	test("一个词说出在人才库里对应什么、多少人、范围大不大", async () => {
@@ -260,13 +275,13 @@ describe("检索人才库的过程", () => {
 		assert.match(missing.text, /人才库中没有「量子炼金」/);
 	});
 
-	test("查看结果的链接只包那几个字，不包任何动作", async () => {
+	test("查看结果是一枚带名字的图标链接，不包任何动作", async () => {
 		const { html } = await seen([
 			{ said: "推荐和后端", spec: "推荐算法, 后端", trace },
 			{ said: "再加带团队", spec: "推荐算法, 后端, 带团队" },
 		]);
 		assert.doesNotMatch(html, /<a[^>]*>(?:(?!<\/a>)[\s\S])*<button/);
-		const link = /<a[^>]*href="\/s\/t0"[^>]*>([\s\S]*?)<\/a>/.exec(html);
-		assert.equal(visibleText(link?.[1] ?? ""), "查看这次的结果");
+		const link = /<a[^>]*href="\/s\/t0"[^>]*>/.exec(html);
+		assert.match(link?.[0] ?? "", /aria-label="查看这次的结果"/);
 	});
 });

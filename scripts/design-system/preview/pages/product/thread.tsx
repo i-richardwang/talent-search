@@ -136,6 +136,7 @@ function Playground() {
 								);
 								return true;
 							}}
+							onRetry={() => setLast("重试了最后一次需求")}
 							understanding={understanding}
 							waiting={state === "running"}
 						/>
@@ -153,7 +154,7 @@ function Faults() {
 				<TableHeader>
 					<TableRow>
 						<TableHead>哪一环</TableHead>
-						<TableHead>线程里记的一行</TableHead>
+						<TableHead>线程里的提示</TableHead>
 						<TableHead>名单那一列的出路</TableHead>
 					</TableRow>
 				</TableHeader>
@@ -168,6 +169,7 @@ function Faults() {
 										liveTrace={[]}
 										onAdd={() => {}}
 										onQuery={() => true}
+										onRetry={() => {}}
 										rounds={[FRESH_TURN]}
 										understanding={false}
 										viewing={FRESH_TURN.id}
@@ -196,7 +198,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="搜不了的要求用 amber 记在回应里；附带的替代条件停在输入框上方，点「添加」记成新的一次修改。"
+				description="搜不了的要求用 amber 的警示三角记在回应里；附带的替代条件挂在正在看的那次回应底下，点一下记成新的一次修改。"
 				title="搜不了的要求"
 			>
 				<Column>
@@ -211,7 +213,7 @@ function Usage() {
 				</Column>
 			</Example>
 			<Example
-				description="刚提交的第一句需求：还没有步骤时只有一行流光的「正在理解你的需求…」。"
+				description="刚提交的第一句需求：还没有步骤时只有一行流光的「正在理解你的需求…」，等过两秒跟上已等的秒数。"
 				title="刚提交"
 			>
 				<Column>
@@ -227,7 +229,7 @@ function Usage() {
 				</Column>
 			</Example>
 			<Example
-				description="在条件上直接改的一次没有人说话，线程中间只记一行改了什么；早先几次底下是查看结果的链接。"
+				description="在条件上直接改的一次没有人说话，线程中间是一条带字的分隔线；指针移到早先几次上，出现查看结果的图标链接。"
 				title="直接改条件"
 			>
 				<Column>
@@ -267,17 +269,18 @@ export function ThreadPage() {
 			facts={[
 				`${Object.keys(STATES).length} 种末尾状态`,
 				`${FAULTS.length} 种出错`,
-				"替代条件托盘",
+				"替代条件",
 			]}
 			rules={{
 				notes: [
 					"线程总是整条链；查看早先一次的结果只换名单，不截断线程，正在看的那一次标「正在查看」。",
 					"每次的回应按前后两组条件的差别说加了什么、去掉了什么，条件写进句子用 inSentence。",
-					"理解失败时说哪一环坏了：连不上和报错时需求没被读过，不能说成没读懂；等待和重试的动作在名单那一列。",
-					"替代条件的「添加」跟着正在看的那一次，放在输入框上方。",
-					"AI 查过的结论收成一行「检索过程」，只交出数，不交出任何一个人。",
+					"理解失败时说哪一环坏了：连不上和报错时需求没被读过，不能说成没读懂；线程里的提示带重试，名单那一列另有同样的出路。",
+					"替代条件跟着正在看的那一次，挂在那次回应底下，一枚一枚浮出来。",
+					"检索人才库的过程进行中摊开、完成后收起；只交出数，不交出任何一个人。",
+					"消息的时刻与动作（复制、查看这次的结果）悬停才出现；换到哪一次的结果，那一次闪一下。",
 				],
-				usage: `<Thread\n  onAdd={addConditions}\n  onQuery={submit}\n  rounds={thread}\n  understanding\n  viewing={turnId}\n  waiting={interpreting}\n/>`,
+				usage: `<Thread\n  onAdd={addConditions}\n  onQuery={submit}\n  onRetry={retry}\n  rounds={thread}\n  understanding\n  viewing={turnId}\n  waiting={interpreting}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用线程" },

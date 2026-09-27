@@ -30,6 +30,7 @@ import { InputPage } from "./components/input";
 import { ListPage } from "./components/list";
 import { ModalPage } from "./components/modal";
 import { NavItemPage } from "./components/nav-item";
+import { NeuralLoadingPage } from "./components/neural-loading";
 import { PopoverPage } from "./components/popover";
 import { RadioPage } from "./components/radio";
 import { ScrollAreaPage } from "./components/scroll-area";
@@ -111,6 +112,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/collapse": CollapsePage,
 	"components/empty": EmptyPage,
 	"components/skeleton": SkeletonPage,
+	"components/neural-loading": NeuralLoadingPage,
 	"components/alert": AlertPage,
 	"components/code-block": CodeBlockPage,
 	"components/copy-button": CopyButtonPage,

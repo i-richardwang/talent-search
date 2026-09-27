@@ -1,5 +1,7 @@
 import {
 	Activity,
+	AlertTriangle,
+	ArrowDown,
 	Building2,
 	Check,
 	ChevronDown,
@@ -12,6 +14,7 @@ import {
 	Clock,
 	CornerDownRight,
 	Download,
+	Eye,
 	EyeOff,
 	GraduationCap,
 	History,
@@ -23,6 +26,7 @@ import {
 	MessagesSquare,
 	PanelLeftClose,
 	PanelLeftOpen,
+	PencilLine,
 	Play,
 	Plus,
 	RotateCw,
@@ -87,6 +91,10 @@ export const PRODUCT_ICONS: [
 	["CircleDashed", CircleDashed, "还没处理到当前版本"],
 	["ChevronLeft", ChevronLeft, "上一页"],
 	["ChevronRight", ChevronRight, "下一页"],
+	["AlertTriangle", AlertTriangle, "没有采用的一条要求"],
+	["Eye", Eye, "查看那一次的结果"],
+	["PencilLine", PencilLine, "直接在搜索条件上改的一次"],
+	["ArrowDown", ArrowDown, "跳转到对话里最新的一句"],
 ];
 
 const TIERS = Object.entries(ICON_PRESET) as [

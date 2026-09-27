@@ -23,8 +23,9 @@ export type QueryBarHandle = {
  *
  * 一块输入托盘：文本区随内容长高，Enter 提交、Shift+Enter 换行，发送钮在面里的右下角。
  * `tray` 挂在托盘上沿，放作用于这句话之前的、点一下就能办的事；`left` 放在动作栏左端
- * （首页是搜索方式的切换）。middle 的占位后面跟着换行的快捷键：接着说的时候才会写
- * 长到要换行；首页那一句的占位本身就是例子，不再挂提示。
+ * （首页是搜索方式的切换）。middle 的占位后面跟着快捷键：光标在框里时是换行的键，
+ * 接着说的时候才会写长到要换行；给了 `focusKey` 时，光标不在框里时换成把光标放进来的
+ * 那个键（工作台的「/」）。首页那一句的占位本身就是例子，不再挂提示。
  *
  * 提交是**异步**的，但只异步一次 INSERT 那么久：查询理解在工作台里补
  * （见 `s/$turnId/route.tsx`）。**原话在提交成功之前不清空**：这一步会失败，
@@ -42,6 +43,7 @@ export function QueryBar({
 	left,
 	autoFocus = false,
 	waiting = false,
+	focusKey,
 }: {
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
 	ref?: React.Ref<QueryBarHandle>;
@@ -50,13 +52,16 @@ export function QueryBar({
 	tray?: ReactNode;
 	left?: ReactNode;
 	autoFocus?: boolean;
-	/** 上一句还在理解：可以接着敲，先不能提交。 */
+	/** 上一句还在理解：可以接着写，先不能提交。 */
 	waiting?: boolean;
+	/** 页面上把光标放进这个框的快捷键，光标不在框里时写在占位后面。 */
+	focusKey?: string;
 }) {
 	const [draft, setDraft] = useState("");
 	// 提交成功时比对的是那一刻框里的字，读 state 会读到发起提交时的旧值
 	const draftRef = useRef("");
 	const [busy, setBusy] = useState(false);
+	const [focused, setFocused] = useState(false);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 	const formRef = useRef<HTMLFormElement>(null);
 
@@ -98,6 +103,7 @@ export function QueryBar({
 			<ChatInput size={size} tray={tray}>
 				<ChatInputArea
 					aria-label="描述需求"
+					onBlur={() => setFocused(false)}
 					onChange={(e) => write(e.target.value)}
 					onKeyDown={(e) => {
 						if (e.key !== "Enter" || e.shiftKey) return;
@@ -106,13 +112,20 @@ export function QueryBar({
 						e.preventDefault();
 						formRef.current?.requestSubmit();
 					}}
+					onFocus={() => setFocused(true)}
 					hint={
-						size === "middle" && (
+						size === "middle" &&
+						(focusKey && !focused ? (
+							<span className="inline-flex items-center">
+								按<Hotkey keys={focusKey} variant="borderless" />
+								开始输入
+							</span>
+						) : (
 							<span className="inline-flex items-center">
 								按<Hotkey keys="shift+enter" variant="borderless" />
 								换行
 							</span>
-						)
+						))
 					}
 					placeholder={placeholder}
 					ref={inputRef}

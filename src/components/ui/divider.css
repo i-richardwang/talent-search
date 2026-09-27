@@ -1,5 +1,5 @@
 /*
- * 分隔线：根、竖向、横向。线宽 1px；竖向左右外边距 8px，横向上下外边距 16px。
+ * 分隔线：根、竖向、横向、带内容的横向。线宽 1px；竖向左右外边距 8px，横向上下外边距 16px。
  */
 
 .ui-divider {
@@ -32,4 +32,28 @@
 	width: 100%;
 	min-width: 100%;
 	margin: 16px 0;
+}
+
+/*
+ * 带内容的横线：根自己不画线，内容两侧的伪元素各画一段，两段等长、至少 1em。
+ * 内容放不下一行时先换行，不把线挤没。
+ */
+.ui-divider-with-text {
+	align-items: center;
+	border-block-start: 0;
+
+	&::before,
+	&::after {
+		content: "";
+		flex: 1 1 0;
+		min-width: 1em;
+		border-block-start: 1px solid var(--color-split);
+	}
+}
+
+.ui-divider-text {
+	display: inline-flex;
+	flex: 0 1 auto;
+	min-width: 0;
+	padding-inline: 1em;
 }

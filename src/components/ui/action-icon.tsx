@@ -9,6 +9,8 @@ import { cn } from "#/lib/utils";
 /*
  * 一个正方形的 Button，字色是三级灰
  * （平时 tertiary、悬停 secondary、按下 fg），样式在 action-icon.css。
+ * 三种面：borderless 没有底，filled 是浅灰底，outlined 是容器底加一圈描边；`glass` 把底换成
+ * 半透明的浮层色并糊掉底下的内容，用在压在内容上的按钮。
  * 尺寸三档：small（24px，图标 14）放在行里，middle（36px，图标 20）单独摆着，两档的
  * 方块边长是 action-icon.css 的组件令牌；header（28px，图标 16）放在栏顶的页头上，
  * 边长是页头的布局令牌 `--nav-header-action-size`。
@@ -34,13 +36,15 @@ export interface ActionIconProps
 		| "type"
 	> {
 	active?: boolean;
+	/** 压在内容上时：半透明的浮层底，底下的内容糊掉。 */
+	glass?: boolean;
 	icon?: IconProps["icon"];
 	/** 只对 borderless：用负外边距抵掉方块比图标多出来的那半圈，让图标和行尾的字对齐。 */
 	outdent?: "end";
 	size?: ActionIconSize;
 	title?: TooltipProps["title"];
 	tooltipProps?: Omit<TooltipProps, "children" | "title">;
-	variant?: "borderless" | "filled";
+	variant?: "borderless" | "filled" | "outlined";
 }
 
 /** 三档预设。圆角用全局的圆角档。 */
@@ -77,12 +81,14 @@ function measure(size: ActionIconSize) {
 const BUTTON_TYPE = {
 	borderless: "text",
 	filled: "fill",
+	outlined: "default",
 } as const;
 
 export function ActionIcon({
 	active,
 	className,
 	disabled,
+	glass,
 	icon,
 	outdent,
 	size = "middle",
@@ -113,6 +119,7 @@ export function ActionIcon({
 			className={cn(
 				"ui-action-icon",
 				active && "ui-action-icon-active",
+				glass && "ui-action-icon-glass",
 				className,
 			)}
 			disabled={disabled}
