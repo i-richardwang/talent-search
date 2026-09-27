@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ModalHost } from "#/components/ui/modal";
 import { Toaster } from "#/components/ui/toast";
 import {
 	listenToShell,
@@ -44,6 +45,7 @@ export function Preview() {
 				<Page />
 			</div>
 			<Toaster />
+			<ModalHost />
 		</PreviewStateContext>
 	);
 }

@@ -15,7 +15,9 @@ import {
 import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Button } from "#/components/ui/button";
+import { ContextMenu } from "#/components/ui/context-menu";
 import {
+	type DropdownItem,
 	DropdownMenuPopup,
 	DropdownMenuPortal,
 	DropdownMenuPositioner,
@@ -24,6 +26,7 @@ import {
 	renderDropdownMenuItems,
 } from "#/components/ui/dropdown-menu";
 import { Icon } from "#/components/ui/icon";
+import { confirmModal } from "#/components/ui/modal";
 import { NavItem } from "#/components/ui/nav-item";
 import { toast } from "#/components/ui/toast";
 import { deleteRecent } from "#/server/functions";
@@ -40,18 +43,16 @@ export const recentIcon = (record: Pick<RecentSearch, "title">) =>
 	record.title === null ? RECENT_ICON.keyword : RECENT_ICON.conversation;
 
 /**
- * 删掉一条记录，也就是那一次找人任务的整条链。人正看着的那一屏就在这条链上时
- * 回首页，留在原地的话下一次载入就是死链；否则叫根路由重取最近搜索。
- * 删不掉时右下角说一声，带一个重试。
+ * 删掉一条记录，也就是那一次找人任务的整条链：先问一句，确定了才删。人正看着的那一屏
+ * 就在这条链上时回首页，留在原地的话下一次载入就是死链；否则叫根路由重取最近搜索。
+ * 删的时候确定钮转圈；删不掉时右下角说一声，带一个重试。
  */
 function useRemoveRecent(onRemoved?: (turnId: string) => void) {
 	const router = useRouter();
 	const navigate = useNavigate();
 	const { turnId: current } = useParams({ strict: false });
-	const [removing, setRemoving] = useState<string | null>(null);
 
 	async function remove(record: RecentSearch) {
-		setRemoving(record.turnId);
 		try {
 			const gone = await deleteRecent({ data: { turnId: record.turnId } });
 			onRemoved?.(record.turnId);
@@ -63,11 +64,17 @@ function useRemoveRecent(onRemoved?: (turnId: string) => void) {
 				description: recentLabel(record),
 				title: "没能删除这条搜索记录",
 			});
-		} finally {
-			setRemoving(null);
 		}
 	}
-	return { remove, removing };
+
+	return (record: RecentSearch) =>
+		confirmModal({
+			content: `「${recentLabel(record)}」这次搜索的全部记录都会删除，删除后无法恢复。`,
+			danger: true,
+			okText: "删除",
+			onOk: () => remove(record),
+			title: "删除搜索记录",
+		});
 }
 
 /** 这条记录的链接，给「复制链接」用。 */
@@ -86,7 +93,8 @@ async function copyLink(turnId: string) {
 
 /**
  * 导航栏和全部记录的抽屉里的一行搜索记录：整行是去那次搜索的链接，行尾一枚「…」
- * 打开这一行的菜单（复制链接、删除），两项各带图标，删除是危险项。
+ * 打开这一行的菜单（复制链接、删除），两项各带图标，删除是危险项。在这一行上按右键
+ * 打开的是同一份菜单。
  */
 export function RecentItem({
 	record,
@@ -97,50 +105,52 @@ export function RecentItem({
 	onRemoved?: (turnId: string) => void;
 }) {
 	const { turnId: current } = useParams({ strict: false });
-	const { remove, removing } = useRemoveRecent(onRemoved);
+	const remove = useRemoveRecent(onRemoved);
 	const label = recentLabel(record);
+	const items: DropdownItem[] = [
+		{
+			icon: LinkIcon,
+			key: "copy",
+			label: "复制链接",
+			onClick: () => void copyLink(record.turnId),
+		},
+		{
+			danger: true,
+			icon: TrashIcon,
+			key: "delete",
+			label: "删除",
+			onClick: () => remove(record),
+		},
+	];
 	return (
-		<NavItem
-			actions={
-				<DropdownMenuRoot>
-					<DropdownMenuTrigger>
-						<ActionIcon
-							aria-label={`「${label}」的更多操作`}
-							icon={MoreHorizontalIcon}
-							loading={removing === record.turnId}
-							size="small"
-						/>
-					</DropdownMenuTrigger>
-					<DropdownMenuPortal>
-						<DropdownMenuPositioner>
-							<DropdownMenuPopup>
-								{renderDropdownMenuItems([
-									{
-										icon: LinkIcon,
-										key: "copy",
-										label: "复制链接",
-										onClick: () => void copyLink(record.turnId),
-									},
-									{
-										danger: true,
-										icon: TrashIcon,
-										key: "delete",
-										label: "删除",
-										onClick: () => void remove(record),
-									},
-								])}
-							</DropdownMenuPopup>
-						</DropdownMenuPositioner>
-					</DropdownMenuPortal>
-				</DropdownMenuRoot>
-			}
-			active={record.turnId === current}
-			icon={recentIcon(record)}
-			iconSize="small"
-			render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}
-		>
-			{label}
-		</NavItem>
+		<ContextMenu menu={renderDropdownMenuItems(items)}>
+			<NavItem
+				actions={
+					<DropdownMenuRoot>
+						<DropdownMenuTrigger>
+							<ActionIcon
+								aria-label={`「${label}」的更多操作`}
+								icon={MoreHorizontalIcon}
+								size="small"
+							/>
+						</DropdownMenuTrigger>
+						<DropdownMenuPortal>
+							<DropdownMenuPositioner>
+								<DropdownMenuPopup>
+									{renderDropdownMenuItems(items)}
+								</DropdownMenuPopup>
+							</DropdownMenuPositioner>
+						</DropdownMenuPortal>
+					</DropdownMenuRoot>
+				}
+				active={record.turnId === current}
+				icon={recentIcon(record)}
+				iconSize="small"
+				render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}
+			>
+				{label}
+			</NavItem>
+		</ContextMenu>
 	);
 }
 

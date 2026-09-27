@@ -14,6 +14,7 @@ import { ChoiceMenuPage } from "./components/choice-menu";
 import { CodeBlockPage } from "./components/code-block";
 import { CollapsePage } from "./components/collapse";
 import { CollapsiblePage } from "./components/collapsible";
+import { ContextMenuPage } from "./components/context-menu";
 import { CopyButtonPage } from "./components/copy-button";
 import { DescriptionsPage } from "./components/descriptions";
 import { DividerPage } from "./components/divider";
@@ -126,6 +127,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/popover": PopoverPage,
 	"components/toast": ToastPage,
 	"components/dropdown-menu": DropdownMenuPage,
+	"components/context-menu": ContextMenuPage,
 	"components/modal": ModalPage,
 	"components/drawer": DrawerPage,
 	"patterns/query-input": QueryInputPage,

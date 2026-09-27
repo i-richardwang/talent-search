@@ -14,8 +14,14 @@ import {
 } from "#/components/ui/app-layout";
 import { Button } from "#/components/ui/button";
 import { type NavPrefs, writeNavPrefs } from "../-lib/nav-prefs";
+import { AllRecentsDrawer } from "./all-recents";
 import { HomeNav } from "./home-nav";
-import { InDrawer, NavControlContext, useNavHotkey } from "./nav-control";
+import {
+	InDrawer,
+	NavControlContext,
+	useNavDocked,
+	useNavHotkey,
+} from "./nav-control";
 
 declare module "@tanstack/react-router" {
 	interface StaticDataRouteOption {
@@ -34,6 +40,10 @@ declare module "@tanstack/react-router" {
  * 哪几组收着记在 cookie 里，根路由的 loader 读出来交给这里，服务端直出的首帧就是记住的
  * 样子（`nav-prefs.ts`）。lg 以下导航栏不常驻，同一份内容收进左边的抽屉，由页头左端的
  * 开关打开；换屏就收起。
+ *
+ * 全部搜索记录的抽屉只在这里画一个，导航栏的「更多」和首页的「查看全部」都打开它。
+ * 导航栏常驻时它从导航栏的右缘滑出；lg 以下它贴着窗口左边滑出，打开时先收起导航抽屉。
+ * 换屏就关上。
  */
 export function AppShell({ children }: { children: ReactNode }) {
 	const Nav =
@@ -45,9 +55,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 				),
 		}) ?? HomeNav;
 	const [open, setOpen] = useState(false);
+	const [allRecents, setAllRecents] = useState(false);
+	const docked = useNavDocked();
 	const { pathname } = useLocation();
 	// biome-ignore lint/correctness/useExhaustiveDependencies: 换屏就收起抽屉
-	useEffect(() => setOpen(false), [pathname]);
+	useEffect(() => {
+		setOpen(false);
+		setAllRecents(false);
+	}, [pathname]);
 
 	const { nav } = useLoaderData({ from: "__root__" });
 	const [prefs, setPrefsState] = useState(nav);
@@ -63,6 +78,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 		[prefs.collapsed, setPrefs],
 	);
 	const closeDrawer = useCallback(() => setOpen(false), []);
+	const openAllRecents = useCallback(() => {
+		setOpen(false);
+		setAllRecents(true);
+	}, []);
 
 	useNavHotkey(toggle);
 
@@ -70,6 +89,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 		<NavControlContext
 			value={{
 				expanded: !prefs.collapsed,
+				openAllRecents,
 				openDrawer: () => setOpen(true),
 				prefs,
 				setPrefs,
@@ -90,6 +110,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 					width={prefs.width}
 				>
 					<Nav />
+					<AllRecentsDrawer
+						anchored={docked}
+						onClose={() => setAllRecents(false)}
+						open={allRecents}
+					/>
 				</AppNav>
 				<AppContent>{children}</AppContent>
 			</AppLayout>

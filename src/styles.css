@@ -44,6 +44,7 @@
 @import "./components/ui/popover.css" layer(components);
 @import "./components/ui/toast.css" layer(components);
 @import "./components/ui/dropdown-menu.css" layer(components);
+@import "./components/ui/context-menu.css" layer(components);
 @import "./components/ui/choice-menu.css" layer(components);
 @import "./components/ui/auto-complete.css" layer(components);
 @import "./components/ui/drawer.css" layer(components);

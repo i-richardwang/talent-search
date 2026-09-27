@@ -1,6 +1,6 @@
 /*
  * 各块挂在各自的元素上，按 DOM 的先后排：背板、外层、面板；头部、标题、关闭钮，
- * 正文（及其无内边距的形态）、等待区与等待圈，最后表脚。进出场由 motion 放，这里不写过渡。背板与面板同在
+ * 正文（及其无内边距的形态）、等待区与等待圈，表脚，最后是确认框的面板与正文。进出场由 motion 放，这里不写过渡。背板与面板同在
  * `--z-index-popup` 档，面板在背板之后，文档顺序让它压住背板。
  */
 
@@ -130,4 +130,18 @@
 
 	padding-block: 12px;
 	padding-inline: 16px;
+}
+
+/* `confirmModal` 的面板：420px 宽；正文上下 12px、左右 16px，下面接表脚。 */
+.ui-modal-confirm {
+	max-width: 420px;
+}
+
+.ui-modal-confirm-body {
+	padding-block: 12px;
+	padding-inline: 16px;
+
+	font-size: var(--text-base);
+	line-height: var(--text-base--line-height);
+	color: var(--color-fg);
 }

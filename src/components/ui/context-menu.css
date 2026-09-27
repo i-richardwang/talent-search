@@ -1,0 +1,13 @@
+/*
+ * 右键菜单只有两处自己的样式：触发区不占版面，定位器不放展开动画。弹层与项用
+ * dropdown-menu.css 的块；定位器上两个类并挂，这里的规则写成两个类，压过下拉菜单的动画变量。
+ */
+
+.ui-context-menu-trigger {
+	display: contents;
+}
+
+.ui-dropdown-menu-positioner.ui-context-menu-positioner {
+	--ui-dropdown-animation-duration: 0ms;
+	--ui-dropdown-animation-scale-y: 1;
+}

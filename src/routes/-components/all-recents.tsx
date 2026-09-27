@@ -10,17 +10,19 @@ import { LoadFailed, RecentItem } from "./recent-item";
 type Loaded = { rows: RecentSearch[]; total: number; page: number };
 
 /**
- * 全部搜索记录：从导航栏「更多」打开。宽屏上从导航栏的右缘滑出、盖在内容卡片上，
- * 点别处不收起，一边开着一边照常用导航栏和卡片；窄屏上导航本身在抽屉里，它贴着
- * 窗口左边滑出。打开时取第一页，翻到底按「加载更多」接着取下一页，底下写着已列出
- * 几条、一共几条。
+ * 全部搜索记录：外壳里只有一个（`app-shell.tsx`），导航栏的「更多」和首页的「查看全部」
+ * 都打开它。`anchored`（导航栏常驻时）从导航栏的右缘滑出、盖在内容卡片上，点别处不收起，
+ * 一边开着一边照常用导航栏和卡片；不然贴着窗口左边滑出。打开时取第一页，翻到底按
+ * 「加载更多」接着取下一页，底下写着已列出几条、一共几条。
  */
 export function AllRecentsDrawer({
 	open,
 	onClose,
+	anchored,
 }: {
 	open: boolean;
 	onClose: () => void;
+	anchored: boolean;
 }) {
 	const [loaded, setLoaded] = useState<Loaded | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -63,7 +65,12 @@ export function AllRecentsDrawer({
 		);
 
 	return (
-		<AppNavDrawer anchored onClose={onClose} open={open} title="全部搜索记录">
+		<AppNavDrawer
+			anchored={anchored}
+			onClose={onClose}
+			open={open}
+			title="全部搜索记录"
+		>
 			<div className="flex flex-col gap-px px-1 py-px">
 				{loaded === null ? (
 					failed ? (

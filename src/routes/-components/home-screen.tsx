@@ -1,5 +1,4 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
 import { AppHome } from "#/components/ui/app-layout";
 import {
 	GroupBlock,
@@ -15,8 +14,8 @@ import {
 	recentLabel,
 	recentSummary,
 } from "../-lib/recent";
-import { AllRecentsDrawer } from "./all-recents";
 import { ModeSelect } from "./mode-select";
+import { useNavControl } from "./nav-control";
 import { PageHeader } from "./page-header";
 import { LoadFailed, recentIcon, useRetryRoot } from "./recent-item";
 import { ZeroState } from "./zero-state";
@@ -71,10 +70,10 @@ export function HomeScreen({
 
 /**
  * 最近搜索：最近的八条，一条两行（标题、停在了哪些搜索条件上），右边一列是多久以前。
- * 列不完时组名行尾有「查看全部」，打开全部记录的抽屉。
+ * 列不完时组名行尾有「查看全部」，打开导航栏里那个全部记录的抽屉。
  */
 function RecentBlock({ recent }: { recent: TablePage<RecentSearch> | null }) {
-	const [all, setAll] = useState(false);
+	const control = useNavControl();
 	const { retry, retrying } = useRetryRoot();
 	const shown = recent?.rows.slice(0, HOME_RECENT_COUNT) ?? [];
 	return (
@@ -82,7 +81,7 @@ function RecentBlock({ recent }: { recent: TablePage<RecentSearch> | null }) {
 			action={
 				recent &&
 				recent.total > shown.length && (
-					<GroupBlockAction onClick={() => setAll(true)}>
+					<GroupBlockAction onClick={control?.openAllRecents}>
 						查看全部
 					</GroupBlockAction>
 				)
@@ -104,7 +103,6 @@ function RecentBlock({ recent }: { recent: TablePage<RecentSearch> | null }) {
 					/>
 				))
 			)}
-			<AllRecentsDrawer onClose={() => setAll(false)} open={all} />
 		</GroupBlock>
 	);
 }

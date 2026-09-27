@@ -1,5 +1,10 @@
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
-import { createContext, useContext, useEffect } from "react";
+import {
+	createContext,
+	useContext,
+	useEffect,
+	useSyncExternalStore,
+} from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { AppNavDrawerClose } from "#/components/ui/app-layout";
 import type { NavPrefs } from "../-lib/nav-prefs";
@@ -7,11 +12,30 @@ import type { NavPrefs } from "../-lib/nav-prefs";
 /*
  * 外壳交给各屏的导航栏控制（`AppShell` 提供）：页头用它打开窄屏的导航抽屉、展开收起
  * 宽屏的导航栏，导航栏里的内容用它读写记住的样子（哪几组收着、最近搜索列几条）。
+ * 全部搜索记录的抽屉也归它开：导航栏的「更多」和首页的「查看全部」打开的是同一个。
  * 导航栏里的内容和页头都读它，所以单放一处，不和外壳互相引用。
  */
 
 /** 收起、展开导航栏的快捷键：提示里画的键帽和 `useNavHotkey` 认的键是同一组。 */
 const TOGGLE_NAV_KEYS = "mod+[";
+
+/** 导航栏常驻的宽度：lg 以上。以下导航栏收进抽屉。 */
+const DOCKED_NAV = "(width >= 64rem)";
+
+const subscribeDocked = (onChange: () => void) => {
+	const list = matchMedia(DOCKED_NAV);
+	list.addEventListener("change", onChange);
+	return () => list.removeEventListener("change", onChange);
+};
+
+/** 现在导航栏是不是常驻的（lg 以上）；服务端直出时算不是。 */
+export function useNavDocked() {
+	return useSyncExternalStore(
+		subscribeDocked,
+		() => matchMedia(DOCKED_NAV).matches,
+		() => false,
+	);
+}
 
 export interface NavControl {
 	/** 窄屏上打开导航抽屉 */
@@ -22,6 +46,8 @@ export interface NavControl {
 	/** 导航栏记住的样子，首帧就是记住的值（`nav-prefs.ts`）。 */
 	prefs: NavPrefs;
 	setPrefs: (patch: Partial<NavPrefs>) => void;
+	/** 打开全部搜索记录的抽屉。 */
+	openAllRecents: () => void;
 }
 
 export const NavControlContext = createContext<NavControl | null>(null);
@@ -36,7 +62,7 @@ export function useNavHotkey(toggle: () => void) {
 			const mod = apple ? event.metaKey : event.ctrlKey;
 			if (!mod || event.shiftKey || event.altKey) return;
 			if (event.code !== "BracketLeft") return;
-			if (!matchMedia("(width >= 64rem)").matches) return;
+			if (!matchMedia(DOCKED_NAV).matches) return;
 			event.preventDefault();
 			toggle();
 		};

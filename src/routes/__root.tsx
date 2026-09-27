@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { createIsomorphicFn } from "@tanstack/react-start";
 import { getCookie } from "@tanstack/react-start/server";
+import { ModalHost } from "#/components/ui/modal";
 import { Toaster } from "#/components/ui/toast";
 import { recentSearches, understandingOn } from "#/server/functions";
 import appCss from "../styles.css?url";
@@ -81,6 +82,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			<body className="bg-layout text-fg">
 				{children}
 				<Toaster />
+				<ModalHost />
 				<Scripts />
 			</body>
 		</html>

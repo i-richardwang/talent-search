@@ -9,9 +9,9 @@ import {
 	TagsIcon,
 	UsersRoundIcon,
 } from "lucide-react";
-import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { AppNavHeader } from "#/components/ui/app-layout";
+import { ContextMenu } from "#/components/ui/context-menu";
 import {
 	DropdownMenuItemContent,
 	DropdownMenuItemExtra,
@@ -35,7 +35,6 @@ import { ScrollArea } from "#/components/ui/scroll-area";
 import type { TablePage } from "#/lib/paging";
 import type { RecentSearch } from "#/server/turn";
 import { RECENT_COUNTS, type RecentCount } from "../-lib/nav-prefs";
-import { AllRecentsDrawer } from "./all-recents";
 import { ToggleNavButton, useNavControl } from "./nav-control";
 import { LoadFailed, RecentItem, useRetryRoot } from "./recent-item";
 
@@ -117,49 +116,66 @@ export function HomeNav() {
 /**
  * 最近搜索这一组：列最近的几条（条数在组名旁的菜单里选），列不完时最后一行是「更多」，
  * 打开全部记录的抽屉。列表由根路由的 loader 送进来（`__root.tsx`），取不到时说一句并给重试。
+ * 组上按右键打开和组名行尾「…」同一份菜单；按在一条记录上是那一条自己的菜单。
  */
 function RecentGroup({ recent }: { recent: TablePage<RecentSearch> | null }) {
 	const control = useNavControl();
-	const [all, setAll] = useState(false);
 	const { retry, retrying } = useRetryRoot();
 	const count = control?.prefs.recentCount ?? RECENT_COUNTS[0];
+	const menu = (
+		<RecentMenuItems
+			count={count}
+			onCount={(recentCount) => control?.setPrefs({ recentCount })}
+		/>
+	);
 
 	return (
-		<NavGroup
-			action={
-				<RecentMenu
-					count={count}
-					onCount={(recentCount) => control?.setPrefs({ recentCount })}
-				/>
-			}
-			title="最近搜索"
-			value="recent"
-		>
-			{recent === null ? (
-				<LoadFailed onRetry={retry} retrying={retrying} />
-			) : (
-				<>
-					{recent.rows.slice(0, count).map((record) => (
-						<RecentItem key={record.turnId} record={record} />
-					))}
-					{recent.total > count && (
-						<NavItem
-							icon={MoreHorizontalIcon}
-							onClick={() => setAll(true)}
-							render={<button type="button" />}
-						>
-							更多
-						</NavItem>
-					)}
-					<AllRecentsDrawer onClose={() => setAll(false)} open={all} />
-				</>
-			)}
-		</NavGroup>
+		<ContextMenu menu={menu}>
+			<NavGroup
+				action={
+					<DropdownMenuRoot>
+						<DropdownMenuTrigger>
+							<ActionIcon
+								aria-label="最近搜索的更多操作"
+								icon={MoreHorizontalIcon}
+								size="small"
+							/>
+						</DropdownMenuTrigger>
+						<DropdownMenuPortal>
+							<DropdownMenuPositioner>
+								<DropdownMenuPopup>{menu}</DropdownMenuPopup>
+							</DropdownMenuPositioner>
+						</DropdownMenuPortal>
+					</DropdownMenuRoot>
+				}
+				title="最近搜索"
+				value="recent"
+			>
+				{recent === null ? (
+					<LoadFailed onRetry={retry} retrying={retrying} />
+				) : (
+					<>
+						{recent.rows.slice(0, count).map((record) => (
+							<RecentItem key={record.turnId} record={record} />
+						))}
+						{recent.total > count && (
+							<NavItem
+								icon={MoreHorizontalIcon}
+								onClick={control?.openAllRecents}
+								render={<button type="button" />}
+							>
+								更多
+							</NavItem>
+						)}
+					</>
+				)}
+			</NavGroup>
+		</ContextMenu>
 	);
 }
 
-/** 组名行尾的「…」：「显示」一项的子菜单里选这一组列几条，行尾写着现在列几条。 */
-function RecentMenu({
+/** 这一组的菜单项：「显示」一项的子菜单里选这一组列几条，行尾写着现在列几条。 */
+function RecentMenuItems({
 	count,
 	onCount,
 }: {
@@ -167,61 +183,44 @@ function RecentMenu({
 	onCount: (count: RecentCount) => void;
 }) {
 	return (
-		<DropdownMenuRoot>
-			<DropdownMenuTrigger>
-				<ActionIcon
-					aria-label="最近搜索的更多操作"
-					icon={MoreHorizontalIcon}
-					size="small"
-				/>
-			</DropdownMenuTrigger>
+		<DropdownMenuSubmenuRoot>
+			<DropdownMenuSubmenuTrigger label="显示">
+				<DropdownMenuItemContent>
+					<DropdownMenuItemIcon>
+						<Icon icon={HashIcon} />
+					</DropdownMenuItemIcon>
+					<DropdownMenuItemLabel>显示</DropdownMenuItemLabel>
+					<DropdownMenuItemExtra>{count}</DropdownMenuItemExtra>
+					<DropdownMenuSubmenuArrow />
+				</DropdownMenuItemContent>
+			</DropdownMenuSubmenuTrigger>
 			<DropdownMenuPortal>
-				<DropdownMenuPositioner>
+				<DropdownMenuPositioner submenu>
 					<DropdownMenuPopup>
-						<DropdownMenuSubmenuRoot>
-							<DropdownMenuSubmenuTrigger label="显示">
-								<DropdownMenuItemContent>
-									<DropdownMenuItemIcon>
-										<Icon icon={HashIcon} />
-									</DropdownMenuItemIcon>
-									<DropdownMenuItemLabel>显示</DropdownMenuItemLabel>
-									<DropdownMenuItemExtra>{count}</DropdownMenuItemExtra>
-									<DropdownMenuSubmenuArrow />
-								</DropdownMenuItemContent>
-							</DropdownMenuSubmenuTrigger>
-							<DropdownMenuPortal>
-								<DropdownMenuPositioner submenu>
-									<DropdownMenuPopup>
-										<DropdownMenuRadioGroup
-											onValueChange={(next) => onCount(next as RecentCount)}
-											value={count}
-										>
-											{RECENT_COUNTS.map((n) => (
-												<DropdownMenuRadioItemPrimitive
-													key={n}
-													label={`${n} 条`}
-													value={n}
-												>
-													<DropdownMenuItemContent>
-														<DropdownMenuItemIcon>
-															<DropdownMenuRadioItemIndicator>
-																<Icon icon={CheckIcon} />
-															</DropdownMenuRadioItemIndicator>
-														</DropdownMenuItemIcon>
-														<DropdownMenuItemLabel>
-															{n} 条
-														</DropdownMenuItemLabel>
-													</DropdownMenuItemContent>
-												</DropdownMenuRadioItemPrimitive>
-											))}
-										</DropdownMenuRadioGroup>
-									</DropdownMenuPopup>
-								</DropdownMenuPositioner>
-							</DropdownMenuPortal>
-						</DropdownMenuSubmenuRoot>
+						<DropdownMenuRadioGroup
+							onValueChange={(next) => onCount(next as RecentCount)}
+							value={count}
+						>
+							{RECENT_COUNTS.map((n) => (
+								<DropdownMenuRadioItemPrimitive
+									key={n}
+									label={`${n} 条`}
+									value={n}
+								>
+									<DropdownMenuItemContent>
+										<DropdownMenuItemIcon>
+											<DropdownMenuRadioItemIndicator>
+												<Icon icon={CheckIcon} />
+											</DropdownMenuRadioItemIndicator>
+										</DropdownMenuItemIcon>
+										<DropdownMenuItemLabel>{n} 条</DropdownMenuItemLabel>
+									</DropdownMenuItemContent>
+								</DropdownMenuRadioItemPrimitive>
+							))}
+						</DropdownMenuRadioGroup>
 					</DropdownMenuPopup>
 				</DropdownMenuPositioner>
 			</DropdownMenuPortal>
-		</DropdownMenuRoot>
+		</DropdownMenuSubmenuRoot>
 	);
 }

@@ -1,10 +1,11 @@
-import { DownloadIcon } from "lucide-react";
+import { DownloadIcon, TrashIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Input } from "#/components/ui/input";
 import {
+	confirmModal,
 	Modal,
 	ModalBackdrop,
 	ModalClose,
@@ -298,9 +299,52 @@ function TaskLog() {
 	);
 }
 
+/** 删除一条搜索记录：先问一句，确定钮是危险色；确定后删一秒，钮上转圈。 */
+function DeleteRecord() {
+	const [deleted, setDeleted] = useState(false);
+	return (
+		<>
+			<Button
+				danger
+				disabled={deleted}
+				icon={TrashIcon}
+				onClick={() =>
+					confirmModal({
+						content:
+							"「做过推荐系统的后端」这次搜索的全部记录都会删除，删除后无法恢复。",
+						danger: true,
+						okText: "删除",
+						onOk: () =>
+							new Promise<void>((resolve) =>
+								window.setTimeout(() => {
+									setDeleted(true);
+									resolve();
+								}, 1000),
+							),
+						title: "删除搜索记录",
+					})
+				}
+			>
+				删除
+			</Button>
+			{deleted && (
+				<Button onClick={() => setDeleted(false)} size="small" type="text">
+					还原示例
+				</Button>
+			)}
+		</>
+	);
+}
+
 function Usage() {
 	return (
 		<ExampleGrid>
+			<Example
+				description="删除这类收不回的动作先问一句：confirmModal 在事件里直接调，正文说清删的是哪一条、能不能恢复，确定钮是危险色。"
+				title="删除前确认"
+			>
+				<DeleteRecord />
+			</Example>
 			<Example
 				description="导出前说清表里有什么；确定钮的文字写动作本身。"
 				title="导出名单"
@@ -321,12 +365,18 @@ function Usage() {
 export function ModalPage() {
 	return (
 		<DocPage
-			facts={[`${FOOTERS.length} 种表脚`, "正文等待", "可用原子件拼"]}
+			facts={[
+				`${FOOTERS.length} 种表脚`,
+				"正文等待",
+				"可用原子件拼",
+				"命令式确认框",
+			]}
 			rules={{
 				notes: [
 					"对话框挂在打开它的组件里，用受控的 open；关掉走 onCancel，确定后由调用处关。",
 					"只用来打断需要确认或补一项输入的动作；一次阅读用 Drawer。",
 					"确定钮的文字写动作本身（okText），需要时用 okIcon 加图标。",
+					"删除这类收不回的动作用 confirmModal({ title, content, danger, okText, onOk }) 问一句：宽 420px，onOk 返回 Promise 时确定钮转圈，兑现后关上；<ModalHost /> 在应用根上挂一次。",
 					"正文里的控件用 components/ui 的组件，宽度用 className 给容器宽度的档（max-w-md 之类）；正文要贴边用 ModalContent 的 flush，不覆盖面板的圆角和内边距。",
 				],
 				usage: `<Modal\n  okText="导出"\n  onCancel={() => setOpen(false)}\n  onOk={exportList}\n  open={open}\n  title="导出名单"\n>\n  …\n</Modal>`,

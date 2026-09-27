@@ -4,7 +4,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import type { LucideIcon } from "lucide-react";
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState, useSyncExternalStore } from "react";
 import { Button } from "#/components/ui/button";
 import {
 	DialogPresenceBackdrop,
@@ -22,6 +22,9 @@ import { cn } from "#/lib/utils";
  * 对话框挂在打开它的组件里；关着的对话框卸载。按 Esc、点背板或关闭钮关闭。
  *
  * 默认文案：确定、取消；`ModalClose` 带 `aria-label="关闭"`。
+ *
+ * 动手之前问一句用 `confirmModal(...)`：不需要 React 上下文，事件处理里直接调，
+ * 由根上挂一次的 `<ModalHost />` 画出来（见文件末尾）。
  * portal 到 `<body>`；z 值是 `--z-index-popup` 这一档，不按打开先后另分配
  * （见 floating.ts）。
  */
@@ -198,4 +201,133 @@ export function Modal({
 			</ModalPortal>
 		</ModalRoot>
 	);
+}
+
+/** `confirmModal` 的一问。 */
+export interface ConfirmConfig {
+	title: ReactNode;
+	content?: ReactNode;
+	okText?: ReactNode;
+	cancelText?: ReactNode;
+	/** 确定钮换成错误色的实底：删除这类收不回的动作。 */
+	danger?: boolean;
+	/**
+	 * 点确定时调用。返回 Promise 时确定钮转圈，兑现后关上；抛错时留着对话框、
+	 * 确定钮恢复可点，出错的说明由调用处自己给。
+	 */
+	onOk?: () => void | Promise<void>;
+	onCancel?: () => void;
+}
+
+interface ConfirmEntry {
+	config: ConfirmConfig;
+	id: number;
+	open: boolean;
+}
+
+/*
+ * 命令式的确认框：一张列表加一组订阅者，`<ModalHost />` 用 useSyncExternalStore 读它。
+ * 关上先把那一项的 open 置假，出场动画放完再从列表里拿掉。
+ */
+let confirmStack: ConfirmEntry[] = [];
+let confirmSeed = 0;
+const confirmListeners = new Set<() => void>();
+
+function setConfirmStack(next: ConfirmEntry[]) {
+	confirmStack = next;
+	for (const listener of confirmListeners) listener();
+}
+
+const subscribeConfirms = (listener: () => void) => {
+	confirmListeners.add(listener);
+	return () => {
+		confirmListeners.delete(listener);
+	};
+};
+
+const NO_CONFIRMS: ConfirmEntry[] = [];
+
+const closeConfirm = (id: number) =>
+	setConfirmStack(
+		confirmStack.map((entry) =>
+			entry.id === id ? { ...entry, open: false } : entry,
+		),
+	);
+
+/**
+ * 打开一个确认框：宽 420px，标题栏、一段正文、「取消 / 确定」表脚。点背板、按 Esc、
+ * 关闭钮和取消都算取消。返回 `close`，调用处可以提前关上它。
+ */
+export function confirmModal(config: ConfirmConfig): { close: () => void } {
+	const id = confirmSeed++;
+	setConfirmStack([...confirmStack, { config, id, open: true }]);
+	return { close: () => closeConfirm(id) };
+}
+
+function ConfirmDialog({ entry }: { entry: ConfirmEntry }) {
+	const { config, id, open } = entry;
+	const [loading, setLoading] = useState(false);
+	const cancel = () => {
+		closeConfirm(id);
+		config.onCancel?.();
+	};
+	const ok = async () => {
+		if (config.onOk) {
+			setLoading(true);
+			try {
+				await config.onOk();
+			} catch {
+				setLoading(false);
+				return;
+			}
+		}
+		closeConfirm(id);
+	};
+	return (
+		<ModalRoot
+			onExitComplete={() =>
+				setConfirmStack(confirmStack.filter((item) => item.id !== id))
+			}
+			onOpenChange={(nextOpen) => {
+				if (open && !nextOpen) cancel();
+			}}
+			open={open}
+		>
+			<ModalPortal>
+				<ModalBackdrop />
+				<ModalPopup panelClassName="ui-modal-confirm">
+					<div className="ui-modal-header">
+						<ModalTitle>{config.title}</ModalTitle>
+						<ModalClose />
+					</div>
+					<ModalContent flush>
+						{config.content && (
+							<div className="ui-modal-confirm-body">{config.content}</div>
+						)}
+						<div className="ui-modal-footer">
+							<Button onClick={cancel}>{config.cancelText ?? "取消"}</Button>
+							<Button
+								danger={config.danger}
+								loading={loading}
+								onClick={() => void ok()}
+								type="primary"
+							>
+								{config.okText ?? "确定"}
+							</Button>
+						</div>
+					</ModalContent>
+				</ModalPopup>
+			</ModalPortal>
+		</ModalRoot>
+	);
+}
+
+/** 画出 `confirmModal` 打开的确认框；在应用根上挂一次。 */
+export function ModalHost() {
+	const stack = useSyncExternalStore(
+		subscribeConfirms,
+		() => confirmStack,
+		() => NO_CONFIRMS,
+	);
+	return stack.map((entry) => <ConfirmDialog entry={entry} key={entry.id} />);
 }
