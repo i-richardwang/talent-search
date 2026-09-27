@@ -37,9 +37,15 @@
 		color 160ms var(--ease-soft),
 		background 160ms var(--ease-soft),
 		border-color 160ms var(--ease-soft),
-		box-shadow 160ms var(--ease-soft);
+		box-shadow 160ms var(--ease-soft),
+		transform 150ms var(--ease-snap);
 
 	@apply focus-ring;
+
+	/* 按下缩到 0.98，松开很快回弹停稳。 */
+	&:active:not(:disabled, [aria-disabled="true"]) {
+		transform: scale(0.98);
+	}
 
 	&:disabled,
 	&[aria-disabled="true"] {
