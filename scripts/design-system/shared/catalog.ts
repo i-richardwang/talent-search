@@ -180,6 +180,7 @@ const CATALOG = [
 			component("collapse", "分组卡片", "Collapse"),
 			component("empty", "空状态", "Empty"),
 			component("filter-chip", "条件药丸", "FilterChip"),
+			component("suggestion-chips", "建议列", "SuggestionChips"),
 			component("skeleton", "骨架屏", "Skeleton"),
 			component("neural-loading", "AI 进行中", "NeuralLoading"),
 			component("alert", "警告提示", "Alert"),

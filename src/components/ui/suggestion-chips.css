@@ -1,0 +1,83 @@
+/*
+ * SuggestionChips 的外观，类名以 `.ui-suggestion-chips` 开头。块的先后是层叠顺序：
+ * 列、行、按钮、图标、文字。
+ */
+
+@keyframes suggestion-chip-in {
+	from {
+		translate: 0 8px;
+		opacity: 0;
+	}
+
+	to {
+		translate: 0 0;
+		opacity: 1;
+	}
+}
+
+.ui-suggestion-chips {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	align-items: flex-start;
+	max-inline-size: 460px;
+	margin-block-start: 8px;
+}
+
+.ui-suggestion-chips-item {
+	display: flex;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.ui-suggestion-chip {
+	cursor: pointer;
+	display: inline-flex;
+	gap: 8px;
+	align-items: center;
+	min-width: 0;
+	max-width: 100%;
+	padding-block: 7px;
+	padding-inline: 10px 14px;
+	border: none;
+	border-radius: var(--radius-md);
+	font: inherit;
+	font-size: var(--text-sm);
+	color: var(--color-fg);
+	text-align: start;
+	background: var(--color-fill-tertiary);
+	transition:
+		background 150ms,
+		color 150ms;
+	animation: suggestion-chip-in 320ms var(--ease-snap) backwards;
+
+	@apply focus-ring;
+
+	&:hover {
+		background: var(--color-fill-secondary);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		animation: none;
+	}
+}
+
+.ui-suggestion-chip-icon {
+	flex: none;
+	opacity: 0.55;
+	transition:
+		opacity 150ms,
+		color 150ms;
+
+	.ui-suggestion-chip:hover > & {
+		color: var(--color-primary);
+		opacity: 1;
+	}
+}
+
+.ui-suggestion-chip-label {
+	overflow: hidden;
+	min-width: 0;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

@@ -28,9 +28,9 @@ import { Divider } from "#/components/ui/divider";
 import { Icon } from "#/components/ui/icon";
 import { NeuralLoading } from "#/components/ui/neural-loading";
 import { ScrollArea } from "#/components/ui/scroll-area";
+import { SuggestionChips } from "#/components/ui/suggestion-chips";
 import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
-import { Tooltip } from "#/components/ui/tooltip";
 import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
 import { conditionLabel, inSentence } from "#/search/condition-label";
@@ -612,31 +612,15 @@ function FollowUps({
 	onAdd: (conditions: Condition[]) => void;
 }) {
 	return (
-		<ul aria-label="可以改为" className="mt-2 flex max-w-115 flex-col gap-1.5">
-			{offers.map((item, i) => (
-				<li className="flex min-w-0" key={item.said}>
-					<Tooltip title={offerText(item)}>
-						<button
-							className="group/offer inline-flex min-w-0 max-w-full cursor-pointer items-center gap-2 rounded-md bg-fill-tertiary py-[7px] ps-2.5 pe-3.5 text-left text-sm transition-[opacity,translate,background-color] ease-snap hover:bg-fill-secondary starting:translate-y-2 starting:opacity-0"
-							onClick={() => onAdd(item.instead)}
-							style={{
-								transitionDelay: `${i * 60}ms, ${i * 60}ms, 0ms`,
-								transitionDuration: "320ms, 320ms, 150ms",
-							}}
-							type="button"
-						>
-							<Icon
-								aria-hidden="true"
-								className="shrink-0 opacity-55 transition-[opacity,color] duration-150 group-hover/offer:text-primary group-hover/offer:opacity-100"
-								icon={PlusIcon}
-								size={14}
-							/>
-							<span className="min-w-0 truncate">{offerText(item)}</span>
-						</button>
-					</Tooltip>
-				</li>
-			))}
-		</ul>
+		<SuggestionChips
+			icon={PlusIcon}
+			items={offers.map((item) => ({
+				key: item.said,
+				label: offerText(item),
+				onClick: () => onAdd(item.instead),
+			}))}
+			label="可以改为"
+		/>
 	);
 }
 

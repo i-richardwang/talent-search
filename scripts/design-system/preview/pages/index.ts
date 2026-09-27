@@ -39,6 +39,7 @@ import { ScrollAreaPage } from "./components/scroll-area";
 import { SearchBarPage } from "./components/search-bar";
 import { SegmentedPage } from "./components/segmented";
 import { SkeletonPage } from "./components/skeleton";
+import { SuggestionChipsPage } from "./components/suggestion-chips";
 import { TablePage } from "./components/table";
 import { TabsPage } from "./components/tabs";
 import { TagPage } from "./components/tag";
@@ -120,6 +121,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/code-block": CodeBlockPage,
 	"components/copy-button": CopyButtonPage,
 	"components/filter-chip": FilterChipPage,
+	"components/suggestion-chips": SuggestionChipsPage,
 	"components/tooltip": TooltipPage,
 	"components/popover": PopoverPage,
 	"components/toast": ToastPage,
