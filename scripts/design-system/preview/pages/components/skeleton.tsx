@@ -19,10 +19,42 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 const SHAPES: [code: string, shape: ReactNode][] = [
 	["Skeleton", <Skeleton height={32} key="block" width={96} />],
 	["Skeleton.Text", <Skeleton.Text key="text" rows={2} />],
+	[
+		"Skeleton.Text width={[…]}",
+		<Skeleton.Text key="widths" rows={3} width={["100%", "90%", "40%"]} />,
+	],
+	["Skeleton.Title", <Skeleton.Title key="title" size="lg" />],
+	[
+		"Skeleton.Avatar",
+		<div className="flex items-center gap-3" key="avatar">
+			<Skeleton.Avatar />
+			<Skeleton.Avatar shape="circle" size={32} />
+		</div>,
+	],
+	[
+		"Skeleton.Button",
+		<div className="flex items-center gap-3" key="button">
+			<Skeleton.Button />
+			<Skeleton.Button size="small" />
+			<Skeleton.Button shape="circle" />
+		</div>,
+	],
+	["Skeleton.Tags", <Skeleton.Tags count={3} key="tags" />],
 ];
+
+const TEXT_SIZES = ["xs", "sm", "base", "lg"] as const;
+
+/** 对照用的真文字，与占位同一档字阶。 */
+const TEXT_CLASS = {
+	base: "text-base",
+	lg: "text-lg",
+	sm: "text-sm",
+	xs: "text-xs",
+} as const;
 
 function Playground() {
 	const [rows, setRows] = useState("3");
+	const [size, setSize] = useState<(typeof TEXT_SIZES)[number]>("base");
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
@@ -33,10 +65,25 @@ function Playground() {
 						value={rows}
 					/>
 				</Control>
+				<Control label="字号">
+					<Segmented
+						onChange={setSize}
+						options={[...TEXT_SIZES]}
+						value={size}
+					/>
+				</Control>
 			</Controls>
-			<Stage footer={<span>多行时末行短一截</span>}>
-				<div className="w-full max-w-md">
-					<Skeleton.Text rows={Number(rows)} />
+			<Stage
+				footer={<span>多行时末行短一截；右边是同一档的真文字，行高一致</span>}
+			>
+				<div className="grid w-full max-w-2xl grid-cols-2 gap-6">
+					<Skeleton.Text rows={Number(rows)} size={size} />
+					<p className={TEXT_CLASS[size]}>
+						{Array.from(
+							{ length: Number(rows) },
+							() => "支付风控平台的规则引擎与实时特征计算。",
+						).join("")}
+					</p>
 				</div>
 			</Stage>
 		</div>
@@ -104,6 +151,18 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
+				description="成员行加载时：头像、两行字和行尾的标签各占住自己的位置。"
+				title="成员行"
+			>
+				<div className="flex w-full items-center gap-3">
+					<Skeleton.Avatar shape="circle" size={32} />
+					<div className="min-w-0 grow">
+						<Skeleton.Text rows={2} width={["40%", "70%"]} />
+					</div>
+					<Skeleton.Tags count={2} size="small" />
+				</div>
+			</Example>
+			<Example
 				description="数值还在算时，只占住那个数的位置，周围的字照常显示。"
 				title="行内数值"
 			>
@@ -123,12 +182,13 @@ export function SkeletonPage() {
 			facts={[`${SHAPES.length} 种形状`, "明暗呼吸"]}
 			rules={{
 				notes: [
-					'占位的大小与真内容一致：文字用 Skeleton.Text 或 height="1lh"，内容到了不晃。',
+					'占位的大小与真内容一致：文字用 Skeleton.Text 并给同一档 size，或 height="1lh"，内容到了不晃。',
+					"按钮、标签的占位用 Skeleton.Button、Skeleton.Tags，高度读组件自己的令牌。",
 					"占位只画将要出现的那几块，不填满多余的空间。",
 					"Skeleton 的宽、高用 props 给，不覆盖底色和圆角。",
 					"系统开了减少动效时动画自动停，不另写判断。",
 				],
-				usage: `<Skeleton height="1lh" width="8rem" />\n<Skeleton.Text rows={3} />`,
+				usage: `<Skeleton height="1lh" width="8rem" />\n<Skeleton.Title size="lg" />\n<Skeleton.Text rows={3} />\n<Skeleton.Avatar shape="circle" size={32} />\n<Skeleton.Button size="small" />\n<Skeleton.Tags count={2} />`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用骨架屏" },

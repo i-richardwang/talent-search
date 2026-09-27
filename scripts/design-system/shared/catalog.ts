@@ -145,6 +145,7 @@ const CATALOG = [
 				sizing: "action-icon",
 			}),
 			component("icon", "图标", "Icon"),
+			component("text", "文字", "Text"),
 			component("tag", "标签", "Tag", { sizing: "tag" }),
 			component("hotkey", "快捷键", "Hotkey"),
 			component("input", "输入框", "Input", { sizing: "input" }),

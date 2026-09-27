@@ -32,6 +32,7 @@ import { SkeletonPage } from "./components/skeleton";
 import { TablePage } from "./components/table";
 import { TabsPage } from "./components/tabs";
 import { TagPage } from "./components/tag";
+import { TextPage } from "./components/text";
 import { TextLinkPage } from "./components/text-link";
 import { ToolbarPage } from "./components/toolbar";
 import { TooltipPage } from "./components/tooltip";
@@ -71,6 +72,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/button": ButtonPage,
 	"components/action-icon": ActionIconPage,
 	"components/icon": IconPage,
+	"components/text": TextPage,
 	"components/tag": TagPage,
 	"components/hotkey": HotkeyPage,
 	"components/input": InputPage,

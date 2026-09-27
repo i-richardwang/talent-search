@@ -13,6 +13,7 @@
  * 组件的样式，一个组件一个文件。放在 components 层：
  * 调用处传进来的工具类在 utilities 层，照常覆盖它们。
  */
+@import "./components/ui/text.css" layer(components);
 @import "./components/ui/icon.css" layer(components);
 @import "./components/ui/flex.css" layer(components);
 @import "./components/ui/block.css" layer(components);

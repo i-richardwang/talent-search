@@ -1,0 +1,211 @@
+/*
+ * 块的先后是层叠顺序：root、标题元素（h1–h5）、shiny、type、size、strong、weight、code、
+ * ellipsis。type 排在 shiny 后面，给了 type 的扫光文字静止色就是那一档；size 与 weight
+ * 排在标题后面，盖标题自带的字号与字重。
+ */
+
+@keyframes ui-text-shine {
+	0% {
+		background-position: 100%;
+	}
+
+	100% {
+		background-position: -100%;
+	}
+}
+
+@keyframes ui-text-sweep {
+	0% {
+		translate: -100% 0;
+	}
+
+	100% {
+		translate: 100% 0;
+	}
+}
+
+.ui-text {
+	margin: 0;
+}
+
+/* 标题元素各自一档字号，取离得最近的字阶。 */
+.ui-text-h1,
+.ui-text-h2,
+.ui-text-h3,
+.ui-text-h4,
+.ui-text-h5 {
+	font-weight: 700;
+	line-height: 1.25;
+}
+
+.ui-text-h1,
+.ui-text-h2 {
+	font-size: var(--text-2xl);
+}
+
+.ui-text-h3 {
+	font-size: var(--text-xl);
+}
+
+.ui-text-h4 {
+	font-size: var(--text-lg);
+}
+
+.ui-text-h5 {
+	font-size: var(--text-base);
+}
+
+.ui-text-shiny {
+	--shiny-duration: 1.5s;
+
+	/* 亮光的峰值色。不能用 currentColor：下面把字色调暗了，调暗的颜色会回灌进亮光。 */
+	--shiny-color: var(--color-fg);
+
+	user-select: none;
+	color: color-mix(in srgb, var(--shiny-color) 28%, transparent);
+	background: linear-gradient(
+		120deg,
+		transparent 25%,
+		var(--shiny-color) 50%,
+		transparent 75%
+	);
+	background-clip: text;
+	background-size: 200% 100%;
+	animation: ui-text-shine var(--shiny-duration) linear infinite;
+
+	/*
+	 * 动 background-position 每一帧都重绘每个字。支持 mask-clip: text 时，改成把一层
+	 * 位移动画的亮光裁到字形上，动画留在合成层。遮罩也裁掉子元素，所以里面还有图标、
+	 * 小块的文字仍走 background-clip。
+	 */
+	@supports (-webkit-mask-clip: text) {
+		&:not(:has(*)) {
+			position: relative;
+			background: none;
+			animation: none;
+			mask-clip: text;
+			mask-image: linear-gradient(#fff, #fff);
+
+			&::after {
+				pointer-events: none;
+				will-change: transform;
+				content: "";
+				position: absolute;
+				inset: 0;
+				background: linear-gradient(
+					90deg,
+					transparent 25%,
+					var(--shiny-color) 50%,
+					transparent 75%
+				);
+				animation: ui-text-sweep var(--shiny-duration) linear infinite;
+			}
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		animation: none;
+
+		&::after {
+			display: none;
+		}
+	}
+}
+
+.ui-text-type-secondary {
+	color: var(--color-fg-secondary);
+}
+
+.ui-text-type-tertiary {
+	color: var(--color-fg-tertiary);
+}
+
+.ui-text-type-quaternary {
+	color: var(--color-fg-quaternary);
+}
+
+.ui-text-type-success {
+	color: var(--color-success);
+}
+
+.ui-text-type-warning {
+	color: var(--color-warning);
+}
+
+.ui-text-type-danger {
+	color: var(--color-error);
+}
+
+.ui-text-type-info {
+	color: var(--color-info);
+}
+
+.ui-text-size-xs {
+	font-size: var(--text-xs);
+	line-height: var(--text-xs--line-height);
+}
+
+.ui-text-size-sm {
+	font-size: var(--text-sm);
+	line-height: var(--text-sm--line-height);
+}
+
+.ui-text-size-base {
+	font-size: var(--text-base);
+	line-height: var(--text-base--line-height);
+}
+
+.ui-text-size-lg {
+	font-size: var(--text-lg);
+	line-height: var(--text-lg--line-height);
+}
+
+.ui-text-size-xl {
+	font-size: var(--text-xl);
+	line-height: var(--text-xl--line-height);
+}
+
+.ui-text-size-2xl {
+	font-size: var(--text-2xl);
+	line-height: var(--text-2xl--line-height);
+}
+
+.ui-text-strong {
+	font-weight: 700;
+}
+
+.ui-text-weight-normal {
+	font-weight: 400;
+}
+
+.ui-text-weight-medium {
+	font-weight: 500;
+}
+
+.ui-text-weight-semibold {
+	font-weight: 600;
+}
+
+.ui-text-weight-bold {
+	font-weight: 700;
+}
+
+.ui-text-code {
+	font-family: var(--font-mono);
+}
+
+/* 截断要有块级的宽度可比，行内的 span 也按块排。 */
+.ui-text-ellipsis {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* 行数由组件写在行内的 -webkit-line-clamp 上。 */
+.ui-text-ellipsis-multi {
+	display: -webkit-box;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	text-overflow: ellipsis;
+}
