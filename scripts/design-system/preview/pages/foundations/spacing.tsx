@@ -30,6 +30,7 @@ const LAYERS = [
 	["--z-index-stick", "吸顶的栏"],
 	["--z-index-escape", "跳过导航链接"],
 	["--z-index-popup", "弹层"],
+	["--z-index-toast", "通知"],
 ] as const;
 
 /** 搜索结果页宽屏下并排的三栏：导航栏、名单版心、右栏。 */

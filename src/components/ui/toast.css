@@ -1,0 +1,304 @@
+/*
+ * 通知的长相。块按 DOM 的先后排：viewport、一条通知（root）、content、body、图标、
+ * 正文列、标题行、标题、正文、关闭钮、按钮行、按钮。
+ *
+ * 叠放用 Base UI 写在每条通知上的变量：`--toast-index` 是第几条（最新的是 0），
+ * `--toast-height` 是自己的高，`--toast-frontmost-height` 是最前面那条的高，
+ * `--toast-offset-y` 是展开时前面几条的总高，`--toast-swipe-movement-x/y` 是滑动的位移。
+ */
+
+.ui-toast-viewport {
+	--ui-toast-width: 360px;
+	--ui-toast-edge: 16px;
+
+	position: fixed;
+	z-index: var(--z-index-toast);
+	inset-block-end: var(--ui-toast-edge);
+	inset-inline-end: var(--ui-toast-edge);
+
+	width: var(--ui-toast-width);
+	max-width: calc(100vw - var(--ui-toast-edge) * 2);
+
+	outline: 0;
+
+	@media (width <= 480px) {
+		width: calc(100vw - var(--ui-toast-edge) * 2);
+	}
+}
+
+/*
+ * 收起时每条往上露出 12px、每往后一条缩小 5%，高度都按最前面那条算；指针移上去
+ * （data-expanded）按各自的高排开，条与条之间 12px。进出场从下方滑入滑出。
+ */
+.ui-toast {
+	--ui-toast-gap: 12px;
+	--ui-toast-peek: 12px;
+	--ui-toast-scale: calc(1 - var(--toast-index) * 0.05);
+	--ui-toast-shrink: calc(1 - var(--ui-toast-scale));
+	--ui-toast-collapsed-height: var(
+		--toast-frontmost-height,
+		var(--toast-height)
+	);
+
+	cursor: default;
+	user-select: none;
+
+	position: absolute;
+	z-index: calc(1000 - var(--toast-index));
+	inset-block: auto 0;
+	inset-inline: 0;
+	transform-origin: bottom center;
+	transform: translateX(var(--toast-swipe-movement-x))
+		translateY(
+			calc(
+				var(--toast-swipe-movement-y) -
+				(var(--toast-index) * var(--ui-toast-peek)) -
+				(var(--ui-toast-shrink) * var(--ui-toast-collapsed-height))
+			)
+		)
+		scale(var(--ui-toast-scale));
+
+	box-sizing: border-box;
+	width: 100%;
+	height: var(--ui-toast-collapsed-height);
+	padding-block: 12px;
+	padding-inline: 16px;
+	border-radius: var(--radius-lg);
+
+	color: var(--color-fg);
+
+	background: var(--color-elevated);
+	background-clip: padding-box;
+	box-shadow:
+		var(--elevation-md),
+		0 0 0 1px var(--color-ring);
+
+	transition:
+		transform 0.4s var(--ease-snap),
+		opacity 0.4s var(--ease-out),
+		height 0.15s var(--ease-out);
+
+	/* 填上条与条之间的空隙，指针从一条移到下一条时不会先收起再展开。 */
+	&::after {
+		content: "";
+		position: absolute;
+		inset-block-start: 100%;
+		inset-inline: 0;
+		height: calc(var(--ui-toast-gap) + var(--ui-toast-peek) + 8px);
+	}
+
+	&[data-expanded] {
+		transform: translateX(var(--toast-swipe-movement-x))
+			translateY(
+				calc(
+					var(--toast-swipe-movement-y) +
+					var(--toast-offset-y) *
+					-1 +
+					var(--toast-index) *
+					var(--ui-toast-gap) *
+					-1
+				)
+			)
+			scale(1);
+		height: var(--toast-height);
+	}
+
+	&[data-starting-style],
+	&[data-ending-style] {
+		transform: translateY(150%);
+		opacity: 0;
+	}
+
+	/* 超出同时显示的条数时藏起来，等前面的关掉再露出。 */
+	&[data-limited] {
+		opacity: 0;
+	}
+
+	&[data-swiping] {
+		transition: none;
+	}
+}
+
+/* 叠在后面的那几条只露出边，内容藏起来；展开时再显示。 */
+.ui-toast-content {
+	overflow: hidden;
+	transition: opacity 0.2s var(--ease-out);
+
+	&[data-behind] {
+		pointer-events: none;
+		opacity: 0;
+	}
+
+	&[data-expanded] {
+		pointer-events: auto;
+		opacity: 1;
+	}
+}
+
+.ui-toast-body {
+	display: flex;
+	gap: 12px;
+	align-items: flex-start;
+}
+
+/* 图标的颜色是这条通知的状态色；普通通知用正文色，等待用主色。 */
+.ui-toast-icon {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+
+	color: var(--color-fg);
+
+	[data-type="success"] & {
+		color: var(--color-success);
+	}
+
+	[data-type="info"] & {
+		color: var(--color-info);
+	}
+
+	[data-type="warning"] & {
+		color: var(--color-warning);
+	}
+
+	[data-type="error"] & {
+		color: var(--color-error);
+	}
+
+	[data-type="loading"] & {
+		color: var(--color-primary);
+	}
+}
+
+.ui-toast-main {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.ui-toast-title-row {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+}
+
+.ui-toast-title {
+	margin: 0;
+
+	font-size: var(--text-base);
+	font-weight: 500;
+	line-height: 1.5;
+	color: var(--color-fg);
+}
+
+.ui-toast-description {
+	margin: 0;
+
+	font-size: var(--text-sm);
+	line-height: 1.5;
+	color: var(--color-fg-secondary);
+
+	.ui-toast-title-row + & {
+		margin-block-start: 4px;
+	}
+}
+
+/* 没有标题时正文就是那一句话，用正文色。 */
+.ui-toast-description-standalone {
+	color: var(--color-fg);
+}
+
+.ui-toast-close {
+	cursor: pointer;
+
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+
+	width: 20px;
+	height: 20px;
+	margin-inline-start: auto;
+	padding: 0;
+	border: none;
+	border-radius: var(--radius-sm);
+
+	color: var(--color-fg-secondary);
+
+	background: transparent;
+
+	transition:
+		color 0.2s var(--ease-out),
+		background 0.2s var(--ease-out);
+
+	@apply focus-ring;
+
+	&:hover {
+		color: var(--color-fg);
+		background: var(--color-fill-secondary);
+	}
+}
+
+.ui-toast-actions {
+	display: flex;
+	flex-grow: 1;
+	flex-shrink: 0;
+	gap: 8px;
+	align-items: center;
+	align-self: flex-end;
+	justify-content: flex-end;
+
+	margin-block-start: 8px;
+}
+
+.ui-toast-action {
+	cursor: pointer;
+
+	display: inline-flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+
+	height: 28px;
+	padding-inline: 12px;
+	border: none;
+	border-radius: var(--radius-sm);
+
+	font-size: var(--text-xs);
+	font-weight: 500;
+	line-height: 1;
+
+	transition:
+		color 0.2s var(--ease-out),
+		background 0.2s var(--ease-out);
+
+	@apply focus-ring;
+}
+
+.ui-toast-action-primary {
+	color: var(--color-layout);
+	background: var(--color-primary);
+
+	&:hover {
+		background: var(--color-primary-hover);
+	}
+
+	&:active {
+		background: var(--color-primary-active);
+	}
+}
+
+.ui-toast-action-text {
+	color: var(--color-primary);
+	background: transparent;
+
+	&:hover {
+		background: var(--color-fill-tertiary);
+	}
+
+	&:active {
+		background: var(--color-fill-secondary);
+	}
+}

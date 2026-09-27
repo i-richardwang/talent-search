@@ -14,6 +14,8 @@ import {
 import {
 	defaultPortalContainer,
 	FloatingLayerProvider,
+	type Placement,
+	placementMap,
 	triggerRender,
 } from "#/components/ui/floating";
 import { resolveNativeButton } from "#/components/ui/native-button";
@@ -29,20 +31,10 @@ import { cn } from "#/lib/utils";
  */
 
 type PopoverTrigger = "hover" | "click";
-type PopoverPlacement = "top" | "bottomLeft" | "bottomRight" | "left";
-
-/** 方位名到 Base UI 的 side / align。 */
-const placementMap: Record<
-	PopoverPlacement,
-	{ align: "start" | "center" | "end"; side: "top" | "bottom" | "left" }
-> = {
-	bottomLeft: { align: "start", side: "bottom" },
-	bottomRight: { align: "end", side: "bottom" },
-	left: { align: "center", side: "left" },
-	top: { align: "center", side: "top" },
-};
 
 interface PopoverProps {
+	/** 朝触发器伸出一个 12×6 的小三角，浮层与触发器的间距从 6px 放到 10px。 */
+	arrow?: boolean;
 	/** 触发器，单个元素。 */
 	children: ReactElement;
 	className?: string;
@@ -51,7 +43,7 @@ interface PopoverProps {
 	nativeButton?: boolean;
 	onOpenChange?: (open: boolean) => void;
 	open?: boolean;
-	placement?: PopoverPlacement;
+	placement?: Placement;
 	popupProps?: Pick<BasePopoverPopupProps, "aria-label">;
 	positionerProps?: Pick<BasePopoverPositionerProps, "positionMethod">;
 	trigger?: PopoverTrigger;
@@ -61,6 +53,7 @@ interface PopoverProps {
 const HOVER_DELAY = 100;
 
 export function Popover({
+	arrow = false,
 	children,
 	content,
 	trigger = "hover",
@@ -119,13 +112,26 @@ export function Popover({
 					data-placement={placement}
 					ref={setPositionerNode}
 					side={side}
-					sideOffset={6}
+					sideOffset={arrow ? 10 : 6}
 				>
 					<FloatingLayerProvider value={positionerNode}>
 						<BasePopover.Popup
 							{...popupProps}
 							className={cn("ui-popover-popup", className)}
 						>
+							{arrow && (
+								<BasePopover.Arrow className="ui-popover-arrow">
+									<svg
+										aria-hidden="true"
+										height="6"
+										viewBox="0 0 12 6"
+										width="12"
+									>
+										<path d="M0 6L6 0L12 6Z" data-role="fill" />
+										<path d="M0 6L6 0L12 6" data-role="stroke" />
+									</svg>
+								</BasePopover.Arrow>
+							)}
 							<BasePopover.Viewport className="ui-popover-viewport">
 								{content}
 							</BasePopover.Viewport>

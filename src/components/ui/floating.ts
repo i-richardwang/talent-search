@@ -18,6 +18,7 @@ import { isNativeButtonElement } from "#/components/ui/native-button";
  *   外层浮层的 portal。
  * - 定位器用 Base UI 的默认碰撞边距。
  * - 触发器不另包一层：Base UI 触发器的属性与 ref 合进子元素本身（`triggerRender`）。
+ * - 方位用同一套名字（`Placement`），换算成 Base UI 的 side / align。
  * - 弹层都在 `--z-index-popup` 这一档，不按打开先后另分配 z 值：portal 按打开先后接在
  *   `<body>` 末尾，后开的在文档里靠后，自然压住先开的；嵌在弹出层里的提示渲染进弹出层的子树。
  */
@@ -73,3 +74,43 @@ export function triggerRender(children: ReactElement) {
 		});
 	};
 }
+
+/**
+ * 浮层相对触发器的方位：前半是在哪一侧，后半是沿那条边对齐到哪一头
+ * （`bottomLeft` 在下方、左缘对齐）。只写一侧时居中。Tooltip、Popover 共用。
+ */
+export type Placement =
+	| "top"
+	| "topLeft"
+	| "topRight"
+	| "bottom"
+	| "bottomLeft"
+	| "bottomRight"
+	| "left"
+	| "leftTop"
+	| "leftBottom"
+	| "right"
+	| "rightTop"
+	| "rightBottom";
+
+/** 方位名到 Base UI 定位器的 side / align。 */
+export const placementMap: Record<
+	Placement,
+	{
+		align: "start" | "center" | "end";
+		side: "top" | "bottom" | "left" | "right";
+	}
+> = {
+	bottom: { align: "center", side: "bottom" },
+	bottomLeft: { align: "start", side: "bottom" },
+	bottomRight: { align: "end", side: "bottom" },
+	left: { align: "center", side: "left" },
+	leftBottom: { align: "end", side: "left" },
+	leftTop: { align: "start", side: "left" },
+	right: { align: "center", side: "right" },
+	rightBottom: { align: "end", side: "right" },
+	rightTop: { align: "start", side: "right" },
+	top: { align: "center", side: "top" },
+	topLeft: { align: "start", side: "top" },
+	topRight: { align: "end", side: "top" },
+};

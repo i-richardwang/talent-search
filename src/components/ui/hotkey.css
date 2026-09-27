@@ -1,3 +1,8 @@
+/*
+ * 键帽的长相。根块定尺寸、圆角与字，三种外观各一块：filled、outlined、borderless。
+ * 几个键收进一个键帽时（compact、borderless），键之间的 6px 由 hotkey.tsx 的 Center 给。
+ */
+
 .ui-hotkey {
 	overflow: hidden;
 
@@ -14,13 +19,23 @@
 	color: var(--color-fg-secondary);
 	text-align: center;
 	white-space: nowrap;
+}
 
+.ui-hotkey-filled {
 	background: var(--color-fill-tertiary);
+}
+
+/* 描边画在盒子里面，键帽的高仍是 1.8em。 */
+.ui-hotkey-outlined {
+	border: 1px solid var(--color-border-secondary);
+	background: var(--color-container);
 }
 
 /* 夹在一句话里的键：不画底，左右只留 4px，颜色跟着那句话。 */
 .ui-hotkey-borderless {
 	padding-inline: 4px;
+	border: none;
 	color: inherit;
 	background: none;
+	box-shadow: none;
 }

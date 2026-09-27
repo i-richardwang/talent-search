@@ -181,6 +181,7 @@ const CATALOG = [
 			component("copy-button", "复制按钮", "CopyButton"),
 			component("tooltip", "文字提示", "Tooltip"),
 			component("popover", "气泡卡片", "Popover"),
+			component("toast", "通知", "Toaster · toast"),
 			component("dropdown-menu", "下拉菜单", "DropdownMenuRoot"),
 			component("choice-menu", "几选一菜单", "ChoiceMenu"),
 			component("modal", "对话框", "Modal", { motion: "modal" }),

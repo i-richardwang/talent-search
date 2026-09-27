@@ -12,8 +12,8 @@ import { cn } from "#/lib/utils";
  * 尺寸三档：small（24px，图标 14）放在行里，middle（36px，图标 20）单独摆着，两档的
  * 方块边长是 action-icon.css 的组件令牌；header（28px，图标 16）放在栏顶的页头上，
  * 边长是页头的布局令牌 `--nav-header-action-size`。
- * 给了 `title` 就套一层提示，`tooltipProps`
- * 转给它；提示本身不接指针。
+ * 给了 `title` 或 `tooltipProps.hotkey` 就套一层提示，`tooltipProps` 转给它
+ * （方位、快捷键）；提示本身不接指针。
  * 传进来的 `tabIndex` 优先，没传时禁用取 -1、否则 0：放在 Toolbar 里时
  * 漫游焦点靠 Toolbar 写的 `tabIndex`。
  */
@@ -134,7 +134,7 @@ export function ActionIcon({
 			type={BUTTON_TYPE[variant]}
 		/>
 	);
-	if (!title) return button;
+	if (!title && !tooltipProps?.hotkey) return button;
 	return (
 		<Tooltip
 			title={title}

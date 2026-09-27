@@ -3,6 +3,8 @@ import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
+import { Checkbox } from "#/components/ui/checkbox";
+import type { Placement } from "#/components/ui/floating";
 import { Popover } from "#/components/ui/popover";
 import { Segmented } from "#/components/ui/segmented";
 import {
@@ -18,13 +20,15 @@ import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
 type Trigger = "hover" | "click";
-type Placement = "top" | "bottomLeft" | "bottomRight" | "left";
 
+/** 试用区列出的方位：四侧居中，加上两种贴着一头对齐的下方。 */
 const PLACEMENTS: { label: string; value: Placement }[] = [
 	{ label: "上", value: "top" },
+	{ label: "下", value: "bottom" },
 	{ label: "左下", value: "bottomLeft" },
 	{ label: "右下", value: "bottomRight" },
 	{ label: "左", value: "left" },
+	{ label: "右", value: "right" },
 ];
 
 /** 触发方式表的行：写法、怎么打开、什么时候用。 */
@@ -47,6 +51,7 @@ function EvidenceSummary() {
 function Playground() {
 	const [trigger, setTrigger] = useState<Trigger>("click");
 	const [placement, setPlacement] = useState<Placement>("top");
+	const [arrow, setArrow] = useState(false);
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
@@ -67,16 +72,23 @@ function Playground() {
 						value={placement}
 					/>
 				</Control>
+				<Control>
+					<Checkbox checked={arrow} onChange={setArrow}>
+						小三角
+					</Checkbox>
+				</Control>
 			</Controls>
 			<Stage
 				footer={
 					<>
 						<span>trigger {trigger}</span>
 						<span>placement {placement}</span>
+						<span>离触发器 {arrow ? 10 : 6}px</span>
 					</>
 				}
 			>
 				<Popover
+					arrow={arrow}
 					content={<EvidenceSummary />}
 					placement={placement}
 					trigger={trigger}
@@ -222,6 +234,8 @@ export function PopoverPage() {
 					'里面有输入的气泡用 trigger="click"，悬停打开的气泡只放只读内容。',
 					"内容可能很长时给 className 限高到 --available-height，在浮层里滚动。",
 					"气泡里的控件同样用 components/ui 的组件，不手写边框、阴影和圆角。",
+					"默认不带小三角；只有气泡离触发器远、看不出指向谁时才给 arrow。",
+					"要标题就在 content 里第一行写，气泡本身没有标题位。",
 				],
 				usage: `<Popover content={<ChosenList />} placement="bottomLeft" trigger="click">\n  <Button>已选 3 人</Button>\n</Popover>`,
 			}}

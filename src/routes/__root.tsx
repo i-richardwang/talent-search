@@ -5,6 +5,7 @@ import {
 	Outlet,
 	Scripts,
 } from "@tanstack/react-router";
+import { Toaster } from "#/components/ui/toast";
 import { recentSearches, understandingOn } from "#/server/functions";
 import appCss from "../styles.css?url";
 import { AppShell } from "./-components/app-shell";
@@ -59,6 +60,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 			</head>
 			<body className="bg-layout text-fg">
 				{children}
+				<Toaster />
 				<Scripts />
 			</body>
 		</html>

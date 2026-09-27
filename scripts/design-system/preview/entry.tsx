@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Toaster } from "#/components/ui/toast";
 import {
 	listenToShell,
 	type PreviewState,
@@ -42,6 +43,7 @@ export function Preview() {
 			<div className="min-h-dvh bg-layout text-fg">
 				<Page />
 			</div>
+			<Toaster />
 		</PreviewStateContext>
 	);
 }

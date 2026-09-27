@@ -1,7 +1,7 @@
 /*
  * 三块各挂在一个元素上，不互相组合，按 DOM 的先后排：positioner、popup、viewport。
- * 提示总在触发器上方，进出场从下方 3px 处缩放淡入。定位器的 z 值用弹层档
- * `--z-index-popup`。
+ * 进出场从远离触发器的一侧 3px 处缩放淡入：在上方时从下方来，在下方时从上方来，左右同理。
+ * 定位器的 z 值用弹层档 `--z-index-popup`。
  */
 
 .ui-tooltip-positioner {
@@ -13,6 +13,8 @@
 	--ui-tooltip-fade-ease: var(--ease-out);
 	--ui-tooltip-animation-duration-exit: 100ms;
 	--ui-tooltip-animation-translate: 3px;
+	--ui-tooltip-translate-x: 0;
+	--ui-tooltip-translate-y: calc(var(--ui-tooltip-animation-translate) * -1);
 	--ui-tooltip-animation-scale: 0.97;
 	--ui-tooltip-animation-ease-in: var(--ease-accelerate);
 	--ui-tooltip-animation-ease-out: linear(
@@ -64,6 +66,26 @@
 		visibility: hidden;
 	}
 
+	&[data-placement^="top"] {
+		--ui-tooltip-translate-x: 0;
+		--ui-tooltip-translate-y: var(--ui-tooltip-animation-translate);
+	}
+
+	&[data-placement^="bottom"] {
+		--ui-tooltip-translate-x: 0;
+		--ui-tooltip-translate-y: calc(var(--ui-tooltip-animation-translate) * -1);
+	}
+
+	&[data-placement^="left"] {
+		--ui-tooltip-translate-x: var(--ui-tooltip-animation-translate);
+		--ui-tooltip-translate-y: 0;
+	}
+
+	&[data-placement^="right"] {
+		--ui-tooltip-translate-x: calc(var(--ui-tooltip-animation-translate) * -1);
+		--ui-tooltip-translate-y: 0;
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		--ui-tooltip-animation-duration: 0s;
 		--ui-tooltip-fade-duration: 0s;
@@ -106,7 +128,11 @@
 
 	&[data-starting-style],
 	&[data-ending-style] {
-		transform: translate3d(0, var(--ui-tooltip-animation-translate), 0)
+		transform: translate3d(
+				var(--ui-tooltip-translate-x),
+				var(--ui-tooltip-translate-y),
+				0
+			)
 			scale(var(--ui-tooltip-animation-scale));
 		opacity: 0;
 	}

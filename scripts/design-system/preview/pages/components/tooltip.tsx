@@ -1,9 +1,11 @@
-import { Download, Share2, Trash2 } from "lucide-react";
+import { Download, PanelLeftClose, Share2, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
+import type { Placement } from "#/components/ui/floating";
 import { Input } from "#/components/ui/input";
+import { Segmented } from "#/components/ui/segmented";
 import {
 	Table,
 	TableBody,
@@ -19,17 +21,34 @@ import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
 /** 形态表的行：写法、说明、提示的属性。 */
-const FORMS: [name: string, label: string, props: { title: string }][] = [
+const FORMS: [
+	name: string,
+	label: string,
+	props: { title?: string; hotkey?: string; placement?: Placement },
+][] = [
 	["title", "只有文字", { title: "导出名单" }],
 	[
 		"title · 长文字",
 		"多行",
 		{ title: "只统计登记过的经历，简历自述里写的年限不算在内" },
 	],
+	["title · hotkey", "文字加快捷键", { hotkey: "mod+k", title: "新搜索" }],
+	["hotkey", "只有快捷键", { hotkey: "mod+enter" }],
+	['placement="bottom"', "在下方", { placement: "bottom", title: "收起导航" }],
+];
+
+/** 试用区的四个方位；其余方位是在同一侧沿边对齐到一头。 */
+const PLACEMENTS: { label: string; value: Placement }[] = [
+	{ label: "上", value: "top" },
+	{ label: "下", value: "bottom" },
+	{ label: "左", value: "left" },
+	{ label: "右", value: "right" },
 ];
 
 function Playground() {
 	const [title, setTitle] = useState("导出名单");
+	const [hotkey, setHotkey] = useState("mod+e");
+	const [placement, setPlacement] = useState<Placement>("top");
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
@@ -45,16 +64,40 @@ function Playground() {
 						variant="filled"
 					/>
 				</Control>
+				<Control
+					className="w-40"
+					htmlFor="playground-tooltip-hotkey"
+					label="快捷键"
+				>
+					<Input
+						className="font-mono"
+						id="playground-tooltip-hotkey"
+						onChange={(event) => setHotkey(event.target.value)}
+						value={hotkey}
+						variant="filled"
+					/>
+				</Control>
+				<Control label="方位">
+					<Segmented<Placement>
+						onChange={setPlacement}
+						options={PLACEMENTS}
+						value={placement}
+					/>
+				</Control>
 			</Controls>
 			<Stage
 				footer={
 					<>
-						<span>在触发器上方居中</span>
+						<span>placement {placement}</span>
 						<span>悬停或聚焦稍等片刻后出现</span>
 					</>
 				}
 			>
-				<Tooltip title={title}>
+				<Tooltip
+					hotkey={hotkey.trim() || undefined}
+					placement={placement}
+					title={title}
+				>
 					<Button icon={Download}>导出</Button>
 				</Tooltip>
 			</Stage>
@@ -103,6 +146,17 @@ function Usage() {
 				<ActionIcon icon={Trash2} title="删除这次搜索" />
 			</Example>
 			<Example
+				description="页头上开合导航的按钮：提示在下方，文字后面跟着快捷键。"
+				title="带快捷键的图标按钮"
+			>
+				<ActionIcon
+					icon={PanelLeftClose}
+					size="header"
+					title="收起导航"
+					tooltipProps={{ hotkey: "mod+b", placement: "bottom" }}
+				/>
+			</Example>
+			<Example
 				description="被截断的部门路径在提示里给出全文，不另开弹层。"
 				title="截断的文字"
 			>
@@ -122,14 +176,16 @@ function Usage() {
 export function TooltipPage() {
 	return (
 		<DocPage
-			facts={["固定在上方", "悬停或聚焦稍等后出现"]}
+			facts={["默认在上方", "可带快捷键", "悬停或聚焦稍等后出现"]}
 			rules={{
 				notes: [
 					"只有图标的按钮用 ActionIcon，它的 title 就是这里的提示，不外包一层 Tooltip。",
 					"提示只补一句名字或全文，不放按钮和链接；要交互的内容用 Popover。",
 					"文字用产品用词，站在 HR 这边说动作本身。",
+					"有快捷键的动作把键写进 hotkey，不写进文字（不写「关闭（Esc）」）；图标按钮经 tooltipProps 传。",
+					'默认在上方；贴着页头顶边的按钮用 placement="bottom"，免得提示被窗口边切掉。',
 				],
-				usage: `<Tooltip title="导出名单">\n  <Button icon={Download}>导出</Button>\n</Tooltip>`,
+				usage: `<Tooltip hotkey="mod+e" title="导出名单">\n  <Button icon={Download}>导出</Button>\n</Tooltip>\n\n<ActionIcon\n  icon={PanelLeftClose}\n  title="收起导航"\n  tooltipProps={{ hotkey: "mod+b", placement: "bottom" }}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用文字提示" },

@@ -36,6 +36,7 @@
 @import "./components/ui/form.css" layer(components);
 @import "./components/ui/tooltip.css" layer(components);
 @import "./components/ui/popover.css" layer(components);
+@import "./components/ui/toast.css" layer(components);
 @import "./components/ui/dropdown-menu.css" layer(components);
 @import "./components/ui/choice-menu.css" layer(components);
 @import "./components/ui/auto-complete.css" layer(components);
@@ -361,16 +362,18 @@
 	}
 
 	/*
-	 * 层级尺度。全站只有这四档，代码里不能出现别的 z 值。
+	 * 层级尺度。全站只有这五档，代码里不能出现别的 z 值。
 	 *
 	 * 外壳根节点带 `isolate`，前三档被关在它的层叠上下文里，只回答「外壳内部
 	 * 谁压着谁」，取多大都盖不到 portal 到 body 下的弹层。`popup` 是那些弹层
-	 * 自己的一档：它们和外壳是 body 下的兄弟，只要比外壳高就在最上面。
+	 * 自己的一档：它们和外壳是 body 下的兄弟，只要比外壳高就在最上面。`toast` 是
+	 * 通知：它在根上挂一次、比之后打开的弹层都早进文档，要压住开着的对话框就得再高一档。
 	 */
 	--z-index-raise: 1; /* 同一平面内的前后：时间轴节点压住脊线，选项压住滑动的指示块 */
 	--z-index-stick: 20; /* 吸顶：详情面板里那个吸顶的头、名单底下的操作栏 */
 	--z-index-escape: 40; /* 跳过导航链接。它必须压过外壳里的一切 */
 	--z-index-popup: 50; /* portal 出去的弹层：提示、弹出层、菜单、对话框、抽屉 */
+	--z-index-toast: 60; /* 通知：压在所有弹层上，开着对话框时也看得见 */
 }
 
 @layer base {

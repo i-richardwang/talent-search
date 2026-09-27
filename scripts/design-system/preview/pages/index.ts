@@ -38,6 +38,7 @@ import { TabsPage } from "./components/tabs";
 import { TagPage } from "./components/tag";
 import { TextPage } from "./components/text";
 import { TextLinkPage } from "./components/text-link";
+import { ToastPage } from "./components/toast";
 import { ToolbarPage } from "./components/toolbar";
 import { TooltipPage } from "./components/tooltip";
 import { ColorsPage } from "./foundations/colors";
@@ -109,6 +110,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/copy-button": CopyButtonPage,
 	"components/tooltip": TooltipPage,
 	"components/popover": PopoverPage,
+	"components/toast": ToastPage,
 	"components/dropdown-menu": DropdownMenuPage,
 	"components/modal": ModalPage,
 	"components/drawer": DrawerPage,
