@@ -1,7 +1,6 @@
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
 import { createContext, useContext, useEffect } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
-import { Hotkey } from "#/components/ui/hotkey";
 
 /*
  * 外壳交给各屏的导航栏控制（`AppShell` 提供）：页头用它打开窄屏的导航抽屉、展开收起
@@ -61,13 +60,8 @@ export function ToggleNavButton({ className }: { className?: string }) {
 			icon={control.expanded ? PanelLeftCloseIcon : PanelLeftOpenIcon}
 			onClick={control.toggle}
 			size="header"
-			title={
-				<>
-					{label}
-					<Hotkey keys={TOGGLE_NAV_KEYS} />
-				</>
-			}
-			tooltipProps={{ positionerProps: { side: "bottom" } }}
+			title={label}
+			tooltipProps={{ hotkey: TOGGLE_NAV_KEYS, placement: "bottom" }}
 		/>
 	);
 }
