@@ -89,12 +89,12 @@ const srcFiles = Object.fromEntries(
 );
 
 describe("令牌表与源文件", () => {
-	test("深色一侧：颜色令牌都在 .dark 里声明，只有遮罩与选中文字底色两侧共用", () => {
+	test("深色一侧：颜色令牌都在 .dark 里声明，只有抽屉遮罩与选中文字底色两侧共用", () => {
 		const declared = declaredTokens([sources[THEME_SOURCE] ?? ""]).dark;
 		const shared = COLOR_TOKENS.map(([key]) => key).filter(
 			(key) => !(key in declared),
 		);
-		assert.deepEqual(shared, ["--color-mask", "--color-selection"]);
+		assert.deepEqual(shared, ["--color-mask-drawer", "--color-selection"]);
 		for (const [key] of COLOR_TOKENS)
 			for (const theme of ["light", "dark"] as const)
 				assert.ok(

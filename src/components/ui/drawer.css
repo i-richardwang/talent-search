@@ -11,7 +11,7 @@
 	z-index: var(--z-index-popup);
 	inset: 0;
 
-	background: var(--color-mask);
+	background: var(--color-mask-drawer);
 }
 
 .ui-drawer-popup {

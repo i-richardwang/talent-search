@@ -7,7 +7,7 @@ import { TokenName } from "../../kit/token-name";
 export function ShadowsPage() {
 	return (
 		<DocPage
-			facts={[`${SHADOW_TOKENS.length} 档投影`, "深浅各一份"]}
+			facts={[`${SHADOW_TOKENS.length} 个投影令牌`]}
 			sections={[
 				{
 					children: (

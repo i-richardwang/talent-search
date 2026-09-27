@@ -28,6 +28,7 @@ import {
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { RunFailed } from "#/routes/tasks/-components/task-card";
 import type { EmptyReason } from "#/search/empty";
+import { KEYWORD_LABEL } from "#/search/keywords";
 import type { SearchSpec } from "#/search/spec";
 import type { InterpretFault, SearchMode } from "#/server/turn";
 import { Control, Controls } from "../../kit/controls";
@@ -260,7 +261,7 @@ function Empties() {
 										onEditQuery={() =>
 											setLast(
 												mode === "keyword"
-													? "光标落进「经历或技能」框"
+													? `光标落进「${KEYWORD_LABEL.what}」框`
 													: "光标落进右栏的输入框",
 											)
 										}

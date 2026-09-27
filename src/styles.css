@@ -138,7 +138,13 @@
 	--color-layout: #f8f8f8;
 	--color-container: #ffffff;
 	--color-elevated: #ffffff;
-	--color-mask: rgba(0, 0, 0, 0.44);
+	/* 两种遮罩：对话框用半透明的容器底色盖住页面，随深浅两侧换色；抽屉用半透明黑压暗页面。 */
+	--color-mask-modal: color-mix(
+		in srgb,
+		var(--color-container) 60%,
+		transparent
+	);
+	--color-mask-drawer: rgba(0, 0, 0, 0.44);
 	--color-shadow: #000;
 	--color-border: #e3e3e3;
 	--color-border-secondary: #eeeeee;
@@ -228,6 +234,10 @@
  * - md：下拉菜单、弹出层。
  * - lg：对话框。
  *
+ * 菜单里开关的四个投影同样是纯黑的，深浅两侧共用：
+ * - switch-track、switch-track-checked：开关轨道的内凹，关着与开着各一份。
+ * - switch-thumb、switch-thumb-hover：开关滑块的浮起，常态与悬停各一份。
+ *
  * 下面三个引用颜色令牌，跟着深浅两侧的颜色走，所以在 `.dark` 上再算一次：
  * - edge：贴着描边的一层细投影，用描边色画。工具栏与带 `shadow` 的 Block。
  * - drawer-left、drawer-right：抽屉面板朝内容一侧投的三层影，用 `--color-shadow` 画，
@@ -243,6 +253,14 @@
 		0 40px 80px rgb(0 0 0 / 0.06), 0 20px 40px rgb(0 0 0 / 0.05),
 		0 10px 20px rgb(0 0 0 / 0.04), 0 5px 10px rgb(0 0 0 / 0.03),
 		0 2px 4px rgb(0 0 0 / 0.02);
+	--elevation-switch-track: inset 0 1.5px 2px rgb(0 0 0 / 0.08);
+	--elevation-switch-track-checked: inset 0 1.5px 3px rgb(0 0 0 / 0.18);
+	--elevation-switch-thumb:
+		0 0 0 0.5px rgb(0 0 0 / 0.04), 0 1px 1px rgb(0 0 0 / 0.06),
+		0 3px 8px rgb(0 30 80 / 0.16);
+	--elevation-switch-thumb-hover:
+		0 0 0 0.5px rgb(0 0 0 / 0.04), 0 1px 1px rgb(0 0 0 / 0.08),
+		0 6px 14px rgb(0 30 80 / 0.24);
 }
 
 .dark {
@@ -292,7 +310,8 @@
 	 * 右栏的宽度：对话线程和人的详情共用这一个槽（`s/$turnId/-components/side-panel.tsx`）。
 	 * 外层收展（0 ↔ 这个值）和内层顶住内容用的是同一个数，页宽列也从这个数算出来。
 	 *
-	 * 28rem 起步：xl（1280）上给名单留下 800，版心 736 还剩两边各 32 的余量。
+	 * 28rem 起步：xl（1280）上筛选栏与右栏都在时，名单那一列剩 624，窄于版心，
+	 * 证据行这时分两行排（`components/evidence.tsx`）。
 	 * 2xl 放宽到 32rem——简历原文是这块面板里唯一成段读的东西；再宽没有意义，
 	 * `read-cjk` 已经把行长封在 34rem 了。
 	 */

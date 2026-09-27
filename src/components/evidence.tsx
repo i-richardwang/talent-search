@@ -10,7 +10,13 @@ const STRENGTH_LABEL: Record<Strength, string> = {
 	claimed: "简历自述",
 };
 
-const NAME_W = "w-22";
+/**
+ * 证据行与未命中行共用的四列：点、条件词、匹配到的字段、右端时长。
+ * 行宽够（容器 ≥ 36rem）时一行排完；不够时字段挪到第二行、对齐条件词，
+ * 第一行只留条件词和时长。右栏开着、名单那一列窄于版心时走后一种。
+ */
+const LINE_GRID =
+	"grid grid-cols-[auto_--spacing(22)_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 text-base";
 
 const MATCHED_BY = "匹配依据";
 
@@ -138,44 +144,46 @@ export function EvidenceLine({
 	const ongoing = basis.endDate === null;
 
 	return (
-		<div className="flex items-baseline gap-2.5 text-base">
-			<Dot className="translate-y-1" strength={strengthOf(hit.route)} />
-			<span className={cn(NAME_W, "shrink-0")}>{head}</span>
-			<span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-				{byOther(name, hit) && (
-					<span className="shrink-0 text-fg-secondary text-xs">
-						{MATCHED_BY} {hit.value}
-					</span>
-				)}
-				{field.label ? (
-					<span className="shrink-0 text-fg-secondary text-xs">
-						{field.label}
-					</span>
-				) : null}
-				{field.value === null ? (
-					<span className="min-w-0 truncate text-fg-secondary">
-						{field.context}
-					</span>
-				) : (
-					<span className="min-w-0 truncate">
-						{field.value}
-						{field.context && (
-							<span className="ml-2 text-fg-secondary">{field.context}</span>
-						)}
-					</span>
-				)}
-			</span>
-			<span
-				className={cn(
-					"shrink-0 whitespace-nowrap tabular-nums",
-					ongoing ? "text-fg" : "text-fg-secondary",
-				)}
-			>
-				<span className="text-fg-secondary">
-					{basis.external ? "入职前 " : "公司内 "}
+		<div className="@container">
+			<div className={LINE_GRID}>
+				<Dot className="translate-y-1" strength={strengthOf(hit.route)} />
+				<span className="col-span-2 min-w-0 @xl:col-span-1">{head}</span>
+				<span className="col-span-3 col-start-2 row-start-2 flex min-w-0 items-baseline gap-1.5 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1">
+					{byOther(name, hit) && (
+						<span className="shrink-0 text-fg-secondary text-xs">
+							{MATCHED_BY} {hit.value}
+						</span>
+					)}
+					{field.label ? (
+						<span className="shrink-0 text-fg-secondary text-xs">
+							{field.label}
+						</span>
+					) : null}
+					{field.value === null ? (
+						<span className="min-w-0 truncate text-fg-secondary">
+							{field.context}
+						</span>
+					) : (
+						<span className="min-w-0 truncate">
+							{field.value}
+							{field.context && (
+								<span className="ml-2 text-fg-secondary">{field.context}</span>
+							)}
+						</span>
+					)}
 				</span>
-				{years(basis.months)}
-			</span>
+				<span
+					className={cn(
+						"col-start-4 row-start-1 whitespace-nowrap tabular-nums",
+						ongoing ? "text-fg" : "text-fg-secondary",
+					)}
+				>
+					<span className="text-fg-secondary">
+						{basis.external ? "入职前 " : "公司内 "}
+					</span>
+					{years(basis.months)}
+				</span>
+			</div>
 		</div>
 	);
 }
@@ -183,10 +191,10 @@ export function EvidenceLine({
 export function MissedClaims({ names }: { names: string[] }) {
 	if (names.length === 0) return null;
 	return (
-		<div className="flex items-baseline gap-2.5 text-fg-secondary text-base">
+		<div className={`${LINE_GRID} text-fg-secondary`}>
 			<Dot className="translate-y-1" strength={undefined} />
-			<span className={cn(NAME_W, "shrink-0")}>未命中</span>
-			<span className="min-w-0 flex-1 truncate">{names.join("、")}</span>
+			<span>未命中</span>
+			<span className="col-span-2 min-w-0 truncate">{names.join("、")}</span>
 		</div>
 	);
 }

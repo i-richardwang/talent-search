@@ -108,7 +108,12 @@ const CATALOG = [
 				title: "图标",
 			},
 			{
-				colors: ["--color-elevated", "--color-fg", "--color-mask"],
+				colors: [
+					"--color-elevated",
+					"--color-fg",
+					"--color-container",
+					"--color-mask-drawer",
+				],
 				motion: "all",
 				name: "Modal · Drawer",
 				slug: "motion",

@@ -238,17 +238,13 @@
 
 	background: var(--color-fill-secondary);
 	outline: none;
-	box-shadow: inset 0 1.5px 2px rgb(0 0 0 / 8%);
+	box-shadow: var(--elevation-switch-track);
 
 	transition:
 		background 200ms var(--ease-out),
 		box-shadow 200ms var(--ease-out);
 
 	&:dir(rtl) {
-		--switch-dir: -1;
-	}
-
-	[dir="rtl"] & {
 		--switch-dir: -1;
 	}
 
@@ -260,7 +256,7 @@
 
 	&[data-checked] {
 		background: var(--color-primary);
-		box-shadow: inset 0 1.5px 3px rgb(0 0 0 / 18%);
+		box-shadow: var(--elevation-switch-track-checked);
 
 		&:hover {
 			background: var(--color-primary-hover);
@@ -302,18 +298,12 @@
 	border-radius: 50%;
 
 	background: var(--color-container);
-	box-shadow:
-		0 0 0 0.5px rgb(0 0 0 / 4%),
-		0 1px 1px rgb(0 0 0 / 6%),
-		0 3px 8px rgb(0 30 80 / 16%);
+	box-shadow: var(--elevation-switch-thumb);
 
 	transition: box-shadow 200ms var(--ease-out);
 
 	[role="switch"]:hover > & {
-		box-shadow:
-			0 0 0 0.5px rgb(0 0 0 / 4%),
-			0 1px 1px rgb(0 0 0 / 8%),
-			0 6px 14px rgb(0 30 80 / 24%);
+		box-shadow: var(--elevation-switch-thumb-hover);
 	}
 
 	@media (prefers-reduced-motion: reduce) {

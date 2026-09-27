@@ -39,7 +39,7 @@ export const COLOR_GROUPS: ColorGroup[] = [
 			["--color-layout", "页面底色"],
 			["--color-container", "容器底色"],
 			["--color-elevated", "浮层底色"],
-			["--color-mask", "遮罩"],
+			["--color-mask-drawer", "抽屉遮罩"],
 			["--color-shadow", "阴影色"],
 		],
 	},
@@ -129,6 +129,26 @@ export const SHADOW_TOKENS: { key: string; label: string; use: string }[] = [
 		key: "--elevation-drawer-right",
 		label: "右侧抽屉投影",
 		use: "贴右边的抽屉面板朝内容一侧投的影",
+	},
+	{
+		key: "--elevation-switch-track",
+		label: "开关轨道",
+		use: "菜单里开关关着时轨道的内凹",
+	},
+	{
+		key: "--elevation-switch-track-checked",
+		label: "开关轨道（开）",
+		use: "菜单里开关开着时轨道的内凹",
+	},
+	{
+		key: "--elevation-switch-thumb",
+		label: "开关滑块",
+		use: "菜单里开关滑块的浮起",
+	},
+	{
+		key: "--elevation-switch-thumb-hover",
+		label: "开关滑块（悬停）",
+		use: "指针停在开关上时滑块的浮起",
 	},
 ];
 

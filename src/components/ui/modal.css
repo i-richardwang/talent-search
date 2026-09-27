@@ -9,7 +9,7 @@
 	z-index: var(--z-index-popup);
 	inset: 0;
 
-	background: color-mix(in srgb, var(--color-container) 60%, transparent);
+	background: var(--color-mask-modal);
 }
 
 .ui-modal-popup {
