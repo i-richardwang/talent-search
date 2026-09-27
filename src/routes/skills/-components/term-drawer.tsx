@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { DrawerDescription } from "#/components/ui/drawer";
+import { TextLink } from "#/components/ui/text-link";
 import type { SkillDetail } from "#/server/skills";
 import { DetailDrawer, Fact } from "../../-components/detail-drawer";
 
@@ -88,15 +89,18 @@ export function TermRecord({
 function TermLink({ word, people }: { word: string; people: number }) {
 	return (
 		// 换一个词看，底下那张表停在原处：从哪一页点开的就还是哪一页
-		<Link
-			className="underline-offset-4 hover:underline"
-			from="/skills/$word"
-			params={{ word }}
-			search={(prev) => prev}
-			to="/skills/$word"
+		<TextLink
+			render={
+				<Link
+					from="/skills/$word"
+					params={{ word }}
+					search={(prev) => prev}
+					to="/skills/$word"
+				/>
+			}
 		>
 			{word}
 			<span className="ms-2 text-fg-secondary tabular-nums">{people}</span>
-		</Link>
+		</TextLink>
 	);
 }

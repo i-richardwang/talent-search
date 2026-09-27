@@ -13,6 +13,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
+import { TextLink } from "#/components/ui/text-link";
 import type { TablePage } from "#/lib/paging";
 import type { SkillEntry } from "#/server/skills";
 import { TablePager } from "../../-components/table-pager";
@@ -103,7 +104,7 @@ export function SkillTable({
 								<TableHead className="text-end">人数</TableHead>
 								<TableHead>属于</TableHead>
 								<TableHead className="text-end">细分</TableHead>
-								<TableHead>其他写法</TableHead>
+								<TableHead className="w-full">其他写法</TableHead>
 								<TableHead className="text-end">上次更新</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -118,22 +119,25 @@ export function SkillTable({
 									 * 的覆盖层：`<a>` 包不住 `<tr>`，而用绝对定位去补这个缺口
 									 * 得让 `tr` 当包含块，那件事表格行做不到（覆盖层会落到
 									 * `tbody`，每一行都铺满整张表）。名单那边整块可点，因为
-									 * 那是卡片（`result-list.tsx`）——形状不同，读法就不同。
+									 * 那一行是 `Block`（`result-list.tsx`）——形状不同，读法就不同。
 									 */}
-									<TableCell className="font-medium">
-										<Link
-											className="underline-offset-4 hover:underline"
-											params={{ word: e.canonical }}
-											search={at(table.page, q)}
-											to="/skills/$word"
+									<TableCell className="whitespace-nowrap font-medium">
+										<TextLink
+											render={
+												<Link
+													params={{ word: e.canonical }}
+													search={at(table.page, q)}
+													to="/skills/$word"
+												/>
+											}
 										>
 											{e.canonical}
-										</Link>
+										</TextLink>
 									</TableCell>
-									<TableCell className="text-end tabular-nums">
+									<TableCell className="whitespace-nowrap text-end tabular-nums">
 										{e.people}
 									</TableCell>
-									<TableCell className="text-fg-secondary">
+									<TableCell className="whitespace-nowrap text-fg-secondary">
 										{e.parent ?? "—"}
 									</TableCell>
 									{/*
@@ -143,13 +147,13 @@ export function SkillTable({
 									 * 而扫表时要知道的只是「这个词有没有下一层」。具体是哪几项
 									 * 在点开的那一层里。
 									 */}
-									<TableCell className="text-end text-fg-secondary tabular-nums">
+									<TableCell className="whitespace-nowrap text-end text-fg-secondary tabular-nums">
 										{e.children || "—"}
 									</TableCell>
 									<TableCell className="text-fg-secondary">
 										{e.aliases.length ? e.aliases.join("、") : "—"}
 									</TableCell>
-									<TableCell className="text-end text-fg-secondary tabular-nums">
+									<TableCell className="whitespace-nowrap text-end text-fg-secondary tabular-nums">
 										{daysAgo(e.reviewedDaysAgo)}
 									</TableCell>
 								</TableRow>

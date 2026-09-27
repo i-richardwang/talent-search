@@ -1,9 +1,12 @@
 /*
  * 输入托盘的外观，类名以 `.ui-chat-input` 开头。
  *
- * 一块面装下整件事：上面是会长高的文本区，下面一条动作栏（左边附加的动作，右边圆形的
- * 发送钮），都在同一圈描边里。middle 是 12px 圆角的描边面；large 是首页那一块：20px 圆角、
- * 文本区至少 108px、托着一层远影，动作栏向里让 8px，圆钮不贴着圆角。
+ * 一块浮起的面装下整件事：上面是会长高的文本区，下面一条动作栏（左边附加的动作，右边
+ * 发送钮）。面是 elevated 底、一圈 fill 色的细边（深色一侧退到 fill-secondary）、12px
+ * 圆角、底下一层短投影；聚焦时面不变，光标就是焦点。
+ *
+ * middle 的文本区至少 36px，发送钮是 8px 圆角的方钮。large 是首页那一块：20px 圆角、
+ * 文本区至少 108px、投影换成铺开的远影，发送钮是圆的，动作栏向里让 8px，圆钮不贴着圆角。
  *
  * 托盘上方可以挂一片「舌头」（tray）：elevated 底、fill-secondary 的边、上圆下直、
  * 不画底边，贴在面的上沿，放点一下就能办的事。
@@ -28,33 +31,34 @@
 .ui-chat-input {
 	display: flex;
 	flex-direction: column;
-	border: 1px solid var(--color-border);
+	border: 1px solid var(--color-fill);
 	border-radius: var(--radius-lg);
-	background: var(--color-container);
-	transition: border-color 0.2s var(--ease-out);
+	background: var(--color-elevated);
+	box-shadow: var(--elevation-chat-input);
 
-	&:focus-within {
-		border-color: var(--color-primary-border);
+	:where(.dark) & {
+		border-color: var(--color-fill-secondary);
 	}
 }
 
 .ui-chat-input-large {
 	border-radius: var(--radius-xl);
-	box-shadow: var(--elevation-composer);
+	box-shadow: var(--elevation-chat-input-large);
 }
 
 .ui-chat-input-textarea {
 	display: block;
 	width: 100%;
-	min-height: calc(var(--chat-input-rows, 1) * 1lh + 20px);
+	min-height: 36px;
 	max-height: 20rem;
-	padding: 12px 12px 8px;
+	padding: 8px 12px 0;
 	border: none;
 	font: inherit;
 	line-height: var(--text-base--line-height);
 	color: var(--color-fg);
 	resize: none;
 	field-sizing: content;
+	cursor: text;
 	background: transparent;
 	outline: none;
 
@@ -64,7 +68,6 @@
 
 	.ui-chat-input-large & {
 		min-height: 108px;
-		padding: 16px 16px 8px;
 	}
 }
 
@@ -72,11 +75,11 @@
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 8px;
-	padding: 0 8px 8px;
+	gap: 4px;
+	padding: 4px 8px 4px 4px;
 
 	.ui-chat-input-large & {
-		padding: 0 8px 8px 12px;
+		padding: 4px 8px 8px;
 	}
 }
 
@@ -90,11 +93,15 @@
 
 .ui-chat-input-bar-right {
 	flex: none;
-	gap: 12px;
+	gap: 6px;
 	margin-inline-start: auto;
 }
 
-/* 发送钮：32px 的圆，主色底；不能发时退成 fill-secondary 的底、fg-quaternary 的箭头。 */
+/*
+ * 发送钮：32px，主色底上一只实心的纸飞机，按下去的是整句话。不能发时底色抽掉，
+ * 只剩一圈 border-secondary 的细边和 fg-quaternary 的图标；提交中同样的样子，
+ * 图标换成转圈。
+ */
 .ui-chat-input-send {
 	display: inline-flex;
 	flex: none;
@@ -103,27 +110,36 @@
 	width: 32px;
 	height: 32px;
 	padding: 0;
-	border: none;
-	border-radius: 9999px;
+	border: 1px solid var(--color-primary);
+	border-radius: var(--radius-md);
+	font-size: var(--text-base);
 	color: var(--color-layout);
 	cursor: pointer;
 	background: var(--color-primary);
 	transition:
 		background-color 0.2s var(--ease-out),
+		border-color 0.2s var(--ease-out),
 		color 0.2s var(--ease-out);
 	@apply focus-ring;
 
 	&:hover {
+		border-color: var(--color-primary-hover);
 		background: var(--color-primary-hover);
 	}
 
 	&:active {
+		border-color: var(--color-primary-active);
 		background: var(--color-primary-active);
 	}
 
 	&:disabled {
+		border-color: var(--color-border-secondary);
 		color: var(--color-fg-quaternary);
-		cursor: not-allowed;
-		background: var(--color-fill-secondary);
+		cursor: default;
+		background: transparent;
+	}
+
+	.ui-chat-input-large & {
+		border-radius: 9999px;
 	}
 }

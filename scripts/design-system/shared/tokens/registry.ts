@@ -61,7 +61,6 @@ export const COLOR_GROUPS: ColorGroup[] = [
 			["--color-fill-secondary", "二级填充"],
 			["--color-fill-tertiary", "三级填充"],
 			["--color-fill-quaternary", "四级填充"],
-			["--color-fill-alter-solid", "表头底色"],
 		],
 	},
 	{
@@ -116,8 +115,13 @@ export const SHADOW_TOKENS: { key: string; label: string; use: string }[] = [
 	{ key: "--elevation-md", label: "中投影", use: "下拉菜单、弹出层" },
 	{ key: "--elevation-lg", label: "大投影", use: "对话框" },
 	{
-		key: "--elevation-composer",
+		key: "--elevation-chat-input",
 		label: "输入托盘投影",
+		use: "输入托盘底下一层短投影",
+	},
+	{
+		key: "--elevation-chat-input-large",
+		label: "大号输入托盘投影",
 		use: "首页 large 输入托盘托着的一层远影",
 	},
 	{

@@ -165,6 +165,7 @@ const CATALOG = [
 			component("app-layout", "应用外壳", "AppLayout"),
 			component("nav-item", "导航项", "NavItem"),
 			component("divider", "分割线", "Divider"),
+			component("text-link", "文字链接", "TextLink"),
 			component("scroll-area", "滚动区", "ScrollArea"),
 			component("toolbar", "工具条", "Toolbar"),
 			component("collapsible", "折叠面板", "Collapsible"),

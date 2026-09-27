@@ -37,6 +37,7 @@
 @import "./components/ui/modal.css" layer(components);
 @import "./components/ui/scroll-area.css" layer(components);
 @import "./components/ui/divider.css" layer(components);
+@import "./components/ui/text-link.css" layer(components);
 @import "./components/ui/toolbar.css" layer(components);
 @import "./components/ui/table.css" layer(components);
 @import "./components/ui/tabs.css" layer(components);
@@ -156,11 +157,6 @@
 	--color-fill-secondary: rgba(0, 0, 0, 0.06);
 	--color-fill-tertiary: rgba(0, 0, 0, 0.03);
 	--color-fill-quaternary: rgba(0, 0, 0, 0.015);
-	/*
-	 * 表格的表头、表脚与悬停行：fill-quaternary 叠在 container 上得到的实色。
-	 * 写成实色是因为吸顶的表头要盖住滚过去的行。
-	 */
-	--color-fill-alter-solid: #fbfbfb;
 	--color-fg: #080808;
 	--color-fg-secondary: #666666;
 	--color-fg-tertiary: #999999;
@@ -206,7 +202,6 @@
 	--color-fill-secondary: rgba(255, 255, 255, 0.1);
 	--color-fill-tertiary: rgba(255, 255, 255, 0.06);
 	--color-fill-quaternary: rgba(255, 255, 255, 0.02);
-	--color-fill-alter-solid: #121212;
 	--color-fg: #ffffff;
 	--color-fg-secondary: #aaaaaa;
 	--color-fg-tertiary: #6f6f6f;
@@ -233,13 +228,14 @@
 }
 
 /*
- * 投影。sm、md、lg 三档是纯黑的投影，深色一侧在 `.dark` 里加深：
+ * 投影。下面四个是纯黑的投影，深色一侧在 `.dark` 里加深：
  * - sm：提示气泡、选项卡的指示块。
  * - md：下拉菜单、弹出层。
  * - lg：对话框。
- * - composer：首页那块大号输入托盘，一层贴身的细影加一层铺开的远影。
+ * - chat-input：输入托盘底下一层短投影。
  *
- * 菜单里开关的四个投影同样是纯黑的，深浅两侧共用：
+ * 下面几个同样是纯黑的，深浅两侧共用：
+ * - chat-input-large：首页那块大号输入托盘，一层贴身的细影加一层铺开的远影。
  * - switch-track、switch-track-checked：开关轨道的内凹，关着与开着各一份。
  * - switch-thumb、switch-thumb-hover：开关滑块的浮起，常态与悬停各一份。
  *
@@ -258,7 +254,8 @@
 		0 40px 80px rgb(0 0 0 / 0.06), 0 20px 40px rgb(0 0 0 / 0.05),
 		0 10px 20px rgb(0 0 0 / 0.04), 0 5px 10px rgb(0 0 0 / 0.03),
 		0 2px 4px rgb(0 0 0 / 0.02);
-	--elevation-composer:
+	--elevation-chat-input: 0 4px 4px rgb(0 0 0 / 0.04);
+	--elevation-chat-input-large:
 		0 1px 2px rgb(0 0 0 / 0.03), 0 12px 32px rgb(0 0 0 / 0.04);
 	--elevation-switch-track: inset 0 1.5px 2px rgb(0 0 0 / 0.08);
 	--elevation-switch-track-checked: inset 0 1.5px 3px rgb(0 0 0 / 0.18);
@@ -280,8 +277,7 @@
 		0 40px 80px rgb(0 0 0 / 0.09), 0 20px 40px rgb(0 0 0 / 0.08),
 		0 10px 20px rgb(0 0 0 / 0.06), 0 5px 10px rgb(0 0 0 / 0.05),
 		0 2px 4px rgb(0 0 0 / 0.03);
-	--elevation-composer:
-		0 1px 2px rgb(0 0 0 / 0.2), 0 12px 32px rgb(0 0 0 / 0.3);
+	--elevation-chat-input: 0 4px 4px rgb(0 0 0 / 0.4);
 }
 
 :root,

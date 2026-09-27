@@ -2,9 +2,9 @@
  * 块序：外层、表、横向滚动的内容盒、单元格、表头、表体、表脚的基础样式，然后是圆角、
  * 行的悬停与选中、尺寸；尺寸块放在最后，覆盖前面单元格与表脚的内边距。
  *
- * 表头、表脚和悬停行的底是 `--color-fill-alter-solid`（填充色叠在容器底色上的实色），
- * 分隔线是 `--color-border-secondary`，表头圆角是 `--radius-lg`。
- * 字号都是 `--text-base`；表头字重 600，过渡 0.2s。
+ * 表头是一条安静的标签：12px、字重 500、fg-tertiary 的字，fill-quaternary 的底，
+ * 列头之间不画竖线，列名不折行。悬停行同样是 fill-quaternary 的底；分隔线是
+ * `--color-border-secondary`，表头圆角是 `--radius-lg`。正文字号 `--text-base`，过渡 0.2s。
  *
  * 单元格与表脚的内边距按三档写成 `:root` 上的组件令牌，设计系统在预览里改它们。
  */
@@ -67,24 +67,13 @@
 
 	.ui-table-thead > tr > th {
 		position: relative;
-		color: var(--color-fg);
-		font-weight: 600;
+		color: var(--color-fg-tertiary);
+		font-size: var(--text-xs);
+		font-weight: 500;
 		text-align: start;
-		background: var(--color-fill-alter-solid);
+		white-space: nowrap;
+		background: var(--color-fill-quaternary);
 		border-bottom: 1px solid var(--color-border-secondary);
-		transition: background-color 0.2s var(--ease-out);
-
-		&:not(:last-child)::before {
-			position: absolute;
-			top: 50%;
-			inset-inline-end: 0;
-			width: 1px;
-			height: 1.6em;
-			background-color: var(--color-border-secondary);
-			transform: translateY(-50%);
-			transition: background-color 0.2s var(--ease-out);
-			content: "";
-		}
 	}
 
 	.ui-table-tbody > tr > td {
@@ -97,7 +86,6 @@
 	.ui-table-footer {
 		padding: var(--table-padding-block-large) var(--table-padding-inline-large);
 		color: var(--color-fg);
-		background: var(--color-fill-alter-solid);
 	}
 }
 
@@ -142,7 +130,7 @@
 	}
 
 	&:where(:hover) > .ui-table-cell {
-		background: var(--color-fill-alter-solid);
+		background: var(--color-fill-quaternary);
 	}
 }
 

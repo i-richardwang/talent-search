@@ -62,7 +62,6 @@ function Composer({
 				aria-label="描述需求"
 				onChange={(event) => setDraft(event.target.value)}
 				placeholder={PLACEHOLDER[size]}
-				rows={size === "large" ? 3 : 1}
 				value={draft}
 			/>
 			<ChatInputBar
@@ -159,7 +158,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="首页写第一句用 large：圆角大一档，文本区至少三行，托着一层远影。"
+				description="首页写第一句用 large：圆角大一档，文本区更高，发送钮是圆的，托着一层铺开的远影。"
 				title="首页的输入面"
 			>
 				<Composer size="large" />
@@ -182,12 +181,13 @@ export function ChatInputPage() {
 			rules={{
 				notes: [
 					"写一句话的输入面用 ChatInput，产品里经由 QueryBar 使用，不另拼一个框。",
-					"文本区随内容长高，超过 20rem 在里面滚动；rows 是空着时至少几行。",
+					"文本区随内容长高，超过 20rem 在里面滚动；空着时多高、发送钮什么形状由 ChatInput 的 size 定。",
+					"聚焦时面不变色，光标就是焦点；面上不另加聚焦边或环。",
 					"发送钮放在 ChatInputBar 的 right；提交中给 loading，换成转圈并按不下去。",
 					"tray 只放作用在这句话之前、点一下就能办的事。",
 					"large 只用在首页那一块，其余都是 middle。",
 				],
-				usage: `<ChatInput size="large" tray={offers}>\n  <ChatInputArea aria-label="描述需求" rows={3} />\n  <ChatInputBar right={<ChatInputSend aria-label="搜索" />} />\n</ChatInput>`,
+				usage: `<ChatInput size="large" tray={offers}>\n  <ChatInputArea aria-label="描述需求" />\n  <ChatInputBar right={<ChatInputSend aria-label="搜索" />} />\n</ChatInput>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用输入托盘" },

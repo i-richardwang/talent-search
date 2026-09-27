@@ -103,7 +103,6 @@ export function QueryBar({
 					}}
 					placeholder={placeholder}
 					ref={inputRef}
-					rows={size === "large" ? 3 : 1}
 					value={draft}
 				/>
 				<ChatInputBar

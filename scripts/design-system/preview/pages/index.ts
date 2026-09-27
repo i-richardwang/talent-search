@@ -29,6 +29,7 @@ import { SkeletonPage } from "./components/skeleton";
 import { TablePage } from "./components/table";
 import { TabsPage } from "./components/tabs";
 import { TagPage } from "./components/tag";
+import { TextLinkPage } from "./components/text-link";
 import { ToolbarPage } from "./components/toolbar";
 import { TooltipPage } from "./components/tooltip";
 import { ColorsPage } from "./foundations/colors";
@@ -83,6 +84,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/app-layout": AppLayoutPage,
 	"components/nav-item": NavItemPage,
 	"components/divider": DividerPage,
+	"components/text-link": TextLinkPage,
 	"components/scroll-area": ScrollAreaPage,
 	"components/toolbar": ToolbarPage,
 	"components/collapsible": CollapsiblePage,
