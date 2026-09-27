@@ -9,6 +9,7 @@ import { AppNavHeader } from "#/components/ui/app-layout";
 import { NavItem } from "#/components/ui/nav-item";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { emptyFacets } from "#/search/result";
+import { ToggleNavButton } from "../../../-components/nav-control";
 import { filterFields, textFilters } from "../-lib/filters";
 import type { View } from "../-lib/view-params";
 import { FilterPanel } from "./filter-panel";
@@ -32,6 +33,7 @@ export function WorkbenchNav() {
 				logo={UsersRoundIcon}
 				name="人才搜索"
 				render={<Link to="/" />}
+				toggle={<ToggleNavButton />}
 			/>
 			<div className="flex flex-col px-1">
 				<NavItem icon={SquarePenIcon} render={<Link to="/" />}>

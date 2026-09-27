@@ -17,6 +17,7 @@ import {
 } from "#/components/ui/app-layout";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
+import { DraggablePanel } from "#/components/ui/draggable-panel";
 import { NavGroup, NavItem } from "#/components/ui/nav-item";
 import { Segmented } from "#/components/ui/segmented";
 import {
@@ -82,8 +83,8 @@ function Playground() {
 				className="items-stretch p-0"
 				footer={
 					<span>
-						导航栏宽 --container-nav，窄于 lg 不常驻；卡片里每一栏顶上一条
-						NavHeader
+						导航栏默认 280px、拖动 240–400px，窄于 lg
+						不常驻；卡片里每一栏顶上一条 NavHeader
 					</span>
 				}
 			>
@@ -102,16 +103,21 @@ function Playground() {
 									这一栏的内容自己决定滚动。
 								</p>
 							</div>
-							{columns === "two" && (
-								<div className="flex w-detail flex-col border-l">
-									<NavHeader
-										left={<NavHeaderTitle as="h2">对话</NavHeaderTitle>}
-									/>
-									<p className="px-4 text-fg-secondary text-sm">
-										并排的一栏用一根竖线和左边分开。
-									</p>
-								</div>
-							)}
+							<DraggablePanel
+								className="h-full"
+								defaultSize={320}
+								expand={columns === "two"}
+								maxWidth={480}
+								minWidth={280}
+								showHandleWideArea={false}
+							>
+								<NavHeader
+									left={<NavHeaderTitle as="h2">对话</NavHeaderTitle>}
+								/>
+								<p className="px-4 text-fg-secondary text-sm">
+									并排的一栏可以拖动调宽，边就是和左边之间的竖线。
+								</p>
+							</DraggablePanel>
 						</div>
 					</AppContent>
 				</AppLayout>
@@ -226,10 +232,11 @@ export function AppLayoutPage() {
 			rules={{
 				notes: [
 					"每一屏都画在 AppContent 的卡片里；导航栏落在画布上，不描边。",
-					"导航栏 lg 以上常驻，lg 以下不渲染，同一份内容由使用方放进左边的抽屉。",
+					"导航栏 lg 以上常驻，右边缘拖动调宽（240–400px，默认 280px），可以收起到 0 宽；lg 以下不渲染，同一份内容由使用方放进左边的抽屉。",
+					"收起导航栏的开关放在 AppNavHeader 的 toggle 里，平时 0 宽，指针进入导航栏才展开到 32px；导航栏收起后开关挪到主栏页头的左端，卡片左边也内缩 8px。",
 					"卡片自己不滚动：卡片里的每一栏各自决定滚动归谁。",
 					"每一栏顶上一条 NavHeader，高度读 --nav-header-height；标题用 NavHeaderTitle，主栏是 h1，侧栏是 h2。",
-					"并排的栏之间用一根竖线分开，不另画面。",
+					"并排的侧栏用 DraggablePanel，它的边就是两栏之间的竖线，不另画面。",
 				],
 				usage: `<AppLayout>\n  <AppNav aria-label="导航">\n    <AppNavHeader logo={UsersRoundIcon} name="人才搜索" render={<Link to="/" />} />\n  </AppNav>\n  <AppContent>\n    <NavHeader left={<NavHeaderTitle>任务</NavHeaderTitle>} />\n  </AppContent>\n</AppLayout>`,
 			}}

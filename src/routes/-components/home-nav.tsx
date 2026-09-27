@@ -26,6 +26,7 @@ import { conditionLabel, MODE_GLYPH } from "#/search/condition-label";
 import { keywordsOf, keywordTitle } from "#/search/keywords";
 import { deleteRecent } from "#/server/functions";
 import type { RecentSearch } from "#/server/turn";
+import { ToggleNavButton } from "./nav-control";
 
 /**
  * 首页那一套导航：身份、新搜索、最近搜索，底下是三个管理页。除了搜索结果页，
@@ -42,6 +43,7 @@ export function HomeNav() {
 				logo={UsersRoundIcon}
 				name="人才搜索"
 				render={<Link to="/" />}
+				toggle={<ToggleNavButton />}
 			/>
 			<div className="flex flex-col px-1">
 				<NavItem active={on("/")} icon={SquarePenIcon} render={<Link to="/" />}>

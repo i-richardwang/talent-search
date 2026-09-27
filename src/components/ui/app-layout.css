@@ -3,7 +3,8 @@
  *
  * 画布是 layout 色；左侧导航直接落在画布上，不描边；内容是一张内缩 8px 的卡片，
  * 描边、12px 圆角、container 底，栏与卡片之间的分界全由卡片自己的边给出。
- * lg 以下导航不常驻（收进抽屉），卡片四边都内缩。
+ * 导航栏在时卡片左边不内缩，贴着导航栏；导航栏收起、或 lg 以下导航不常驻（收进抽屉）
+ * 时卡片四边都内缩。
  */
 
 .ui-app-layout {
@@ -14,18 +15,29 @@
 	background: var(--color-layout);
 }
 
+/* 导航栏的宽由 `DraggablePanel` 写；这里只管 lg 以下不显示和栏里的字色。 */
 .ui-app-nav {
 	display: none;
-	flex: none;
-	flex-direction: column;
-	width: var(--container-nav);
-	min-width: 0;
+	height: 100%;
 	color: var(--color-fg-secondary);
 	user-select: none;
 
 	@media (width >= 64rem) {
 		display: flex;
 	}
+}
+
+.ui-app-nav-content {
+	position: relative;
+	overflow: hidden;
+}
+
+.ui-app-nav-inner {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
 }
 
 .ui-app-content {
@@ -36,6 +48,12 @@
 
 	@media (width >= 64rem) {
 		padding-inline-start: 0;
+	}
+}
+
+@media (width >= 64rem) {
+	.ui-app-layout[data-nav-collapsed] .ui-app-content {
+		padding-inline-start: 8px;
 	}
 }
 
@@ -115,6 +133,39 @@
 	justify-content: space-between;
 	gap: 4px;
 	padding: 8px 6px;
+}
+
+.ui-app-nav-header-actions {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 2px;
+}
+
+/*
+ * 收起导航栏的开关：平时 0 宽、透明，指针进入导航栏时宽度 0.2s 展开到 32px 并立刻显形；
+ * 键盘焦点落在它身上时同样展开。按钮居中在这一格里，展开途中两边被裁掉。
+ */
+.ui-app-nav-toggle {
+	display: flex;
+	justify-content: center;
+	width: 0;
+	overflow: hidden;
+	opacity: 0;
+	transition:
+		opacity,
+		width 0.2s var(--ease-out);
+
+	& > * {
+		flex: none;
+	}
+
+	.ui-app-nav:hover &,
+	&:focus-within {
+		width: 32px;
+		opacity: 1;
+	}
 }
 
 .ui-app-nav-brand {

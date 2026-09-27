@@ -1,0 +1,105 @@
+/*
+ * 可拖动面板的外观，类名以 `.ui-draggable-panel` 开头。
+ *
+ * 根是一个不收缩的横排；外框（frame）的宽由 motion 逐帧写，里面的内容（content）保持
+ * 原宽，靠面板贴着的那一边对齐，收起时从另一边被裁掉。分隔条压在面板朝内容那一侧的
+ * 边上，一半在面板里、一半在外面。
+ */
+
+.ui-draggable-panel {
+	position: relative;
+	display: flex;
+	flex-shrink: 0;
+	min-width: 0;
+	min-height: 0;
+	isolation: isolate;
+}
+
+.ui-draggable-panel-frame {
+	display: flex;
+	flex-shrink: 0;
+	height: 100%;
+	justify-content: flex-start;
+}
+
+.ui-draggable-panel[data-placement="right"] .ui-draggable-panel-frame {
+	justify-content: flex-end;
+}
+
+.ui-draggable-panel-content {
+	display: flex;
+	flex-direction: column;
+	flex-shrink: 0;
+	min-width: 0;
+	min-height: 0;
+	height: 100%;
+	transform-origin: left center;
+}
+
+.ui-draggable-panel[data-placement="right"] .ui-draggable-panel-content {
+	transform-origin: right center;
+}
+
+/*
+ * 分隔条：可点的宽度读 `--draggable-panel-handle-size`，中间两段 1px 的竖线就是面板的边。
+ * 线的颜色平时 border-secondary、悬停 fill、拖动中主色，`data-border="false"` 时不画线。
+ */
+.ui-draggable-panel-handle {
+	position: absolute;
+	z-index: var(--z-index-raise);
+	inset-block: 0;
+	width: var(--draggable-panel-handle-size);
+	cursor: col-resize;
+	touch-action: none;
+
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+		inset-inline-start: 50%;
+		width: 1px;
+		height: 50%;
+		margin-inline-start: -0.5px;
+		background: var(--color-border-secondary);
+		transition:
+			width 0.25s var(--ease-out),
+			height 0.25s var(--ease-out),
+			background 0.16s var(--ease-out);
+	}
+
+	&::before {
+		inset-block-start: 0;
+	}
+
+	&::after {
+		inset-block-end: 0;
+	}
+
+	&:hover::before,
+	&:hover::after {
+		background: var(--color-fill);
+	}
+
+	&[data-resizing]::before,
+	&[data-resizing]::after {
+		background: var(--color-primary);
+	}
+
+	&[data-border="false"]::before,
+	&[data-border="false"]::after {
+		background: transparent;
+	}
+
+	&:focus-visible {
+		outline: 2px solid var(--color-primary);
+		outline-offset: -2px;
+	}
+}
+
+.ui-draggable-panel[data-placement="left"] .ui-draggable-panel-handle {
+	inset-inline-end: calc(var(--draggable-panel-handle-size) / -2);
+}
+
+.ui-draggable-panel[data-placement="right"] .ui-draggable-panel-handle {
+	inset-inline-start: calc(var(--draggable-panel-handle-size) / -2);
+}

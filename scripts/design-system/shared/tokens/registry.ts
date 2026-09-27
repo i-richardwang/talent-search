@@ -374,8 +374,8 @@ export const NUMERIC_TOKENS: NumericToken[] = [
 	rem("--text-2xl--line-height", "标题行高", "type", 24, 40),
 	rem("--container-page", "版心", "layout", 576, 960),
 	rem("--container-nav", "导航栏", "layout", 200, 360),
-	rem("--container-detail", "右栏", "layout", 320, 640),
-	rem("--container-detail-wide", "宽屏右栏", "layout", 320, 704),
+	rem("--container-detail", "抽屉", "layout", 320, 640),
+	rem("--container-detail-wide", "宽抽屉", "layout", 320, 704),
 	rem("--container-admin", "管理页内容列", "layout", 768, 1280),
 	rem("--nav-header-height", "页头高度", "layout", 36, 56),
 	rem("--nav-header-action-size", "页头按钮", "layout", 24, 36),
@@ -384,6 +384,7 @@ export const NUMERIC_TOKENS: NumericToken[] = [
 	duration("--duration-drawer-enter", "抽屉进场", "↦", ["drawer"]),
 	duration("--duration-drawer-exit", "抽屉退场", "↤", ["drawer"]),
 	duration("--duration-backdrop", "遮罩淡入淡出", "◐", ["modal", "drawer"]),
+	duration("--duration-panel-fold", "面板展开收起", "⇔", []),
 	...tiered("button", [HEIGHT, PADDING, FONT_SIZE]),
 	{
 		group: "button",

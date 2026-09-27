@@ -3,6 +3,7 @@ import { useRender } from "@base-ui/react/use-render";
 import type { LucideIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "#/lib/utils";
+import { DraggablePanel } from "./draggable-panel";
 import { Icon } from "./icon";
 
 /*
@@ -11,28 +12,81 @@ import { Icon } from "./icon";
  * 一条 `NavHeader`。
  */
 
-export function AppLayout({ className, ...props }: ComponentProps<"div">) {
-	return <div className={cn("ui-app-layout", className)} {...props} />;
+/** 导航栏的宽（px）：默认 280，拖动夹在 240–400。默认值和 `--container-nav` 同宽。 */
+export const NAV_WIDTH = { default: 280, max: 400, min: 240 } as const;
+
+/** `navCollapsed`：导航栏收起时卡片左边也内缩 8px，不贴着窗口边。 */
+export function AppLayout({
+	navCollapsed = false,
+	className,
+	...props
+}: ComponentProps<"div"> & { navCollapsed?: boolean }) {
+	return (
+		<div
+			className={cn("ui-app-layout", className)}
+			data-nav-collapsed={navCollapsed || undefined}
+			{...props}
+		/>
+	);
 }
 
-/** 左侧导航栏：lg 以上常驻，lg 以下不渲染出来，内容由使用方另放进抽屉。 */
-export function AppNav({ className, ...props }: ComponentProps<"nav">) {
-	return <nav className={cn("ui-app-nav", className)} {...props} />;
+/**
+ * 左侧导航栏：lg 以上常驻，lg 以下不渲染出来，内容由使用方另放进抽屉。
+ * 右边缘可以拖动调宽（`NAV_WIDTH`），不画线；`expand` 为假时宽度动画到 0。
+ * 宽和收起由使用方记住：`onWidthChange` 在拖完一次后给出新宽。
+ */
+export function AppNav({
+	width,
+	onWidthChange,
+	expand = true,
+	onExpandChange,
+	className,
+	children,
+	...props
+}: ComponentProps<"nav"> & {
+	width?: number;
+	onWidthChange?: (width: number) => void;
+	expand?: boolean;
+	onExpandChange?: (expand: boolean) => void;
+}) {
+	return (
+		<DraggablePanel
+			as="div"
+			className="ui-app-nav"
+			classNames={{ content: "ui-app-nav-content" }}
+			defaultSize={NAV_WIDTH.default}
+			expand={expand}
+			maxWidth={NAV_WIDTH.max}
+			minWidth={NAV_WIDTH.min}
+			onExpandChange={onExpandChange}
+			onSizeChange={onWidthChange}
+			placement="left"
+			showBorder={false}
+			size={width}
+		>
+			<nav className={cn("ui-app-nav-inner", className)} {...props}>
+				{children}
+			</nav>
+		</DraggablePanel>
+	);
 }
 
 /**
  * 导航栏顶上那一行：左边是身份，一条链接（`render` 传路由的 `<Link>`），
- * 右边 `right` 放这一栏的动作。
+ * 右边先是 `toggle`（收起导航栏的开关），再是 `right` 放这一栏的动作。
+ * 开关平时收成 0 宽、不可见，指针进入导航栏或键盘焦点落到它身上时展开到 32px。
  */
 export function AppNavHeader({
 	logo,
 	name,
+	toggle,
 	right,
 	render,
 	...props
 }: Omit<useRender.ComponentProps<"a">, "children"> & {
 	logo: LucideIcon;
 	name: string;
+	toggle?: ReactNode;
 	right?: ReactNode;
 }) {
 	const brand = useRender({
@@ -53,7 +107,12 @@ export function AppNavHeader({
 	return (
 		<div className="ui-app-nav-header">
 			{brand}
-			{right}
+			{(toggle || right) && (
+				<div className="ui-app-nav-header-actions">
+					{toggle && <div className="ui-app-nav-toggle">{toggle}</div>}
+					{right}
+				</div>
+			)}
 		</div>
 	);
 }

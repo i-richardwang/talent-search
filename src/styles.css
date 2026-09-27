@@ -52,6 +52,7 @@
 @import "./components/ui/toolbar.css" layer(components);
 @import "./components/ui/table.css" layer(components);
 @import "./components/ui/tabs.css" layer(components);
+@import "./components/ui/draggable-panel.css" layer(components);
 @import "./components/ui/app-layout.css" layer(components);
 @import "./components/ui/nav-item.css" layer(components);
 @import "./components/ui/chat-input.css" layer(components);
@@ -138,7 +139,8 @@
 	 * - `--ease-accelerate`：面板退场，以及提示、弹出层、菜单的退场。
 	 * - `--ease-snap`：起步快、很快停稳，给小件出现用：键盘焦点框收拢、按钮里让出等待圈的位置。
 	 * 对话框和抽屉的面板进出场由 motion 执行，读这里的曲线和毫秒时长；遮罩的淡入淡出
-	 * 两者共用一个时长。
+	 * 两者共用一个时长。可拖动面板（`DraggablePanel`）展开收起时的宽度动画也由 motion
+	 * 执行，走柔和曲线、`--duration-panel-fold`。
 	 */
 	--ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
 	--ease-soft: cubic-bezier(0.32, 0.72, 0, 1);
@@ -149,6 +151,7 @@
 	--duration-drawer-enter: 300ms;
 	--duration-drawer-exit: 220ms;
 	--duration-backdrop: 180ms;
+	--duration-panel-fold: 250ms;
 
 	/* 颜色，浅色一侧。深色一侧在下面的 `.dark` 里覆盖同名变量。 */
 	--color-layout: #f8f8f8;
@@ -336,14 +339,17 @@
 	--container-page: 46rem;
 
 	/*
-	 * 右栏的宽度：对话线程和人的详情共用这一个槽（`s/$turnId/-components/side-panel.tsx`）。
-	 * xl（1280）上左侧导航与右栏都在时名单那一列剩约 36rem，证据行分两行排
-	 * （`components/evidence.tsx`）；2xl 放宽一档，简历原文是右栏里唯一成段读的东西。
+	 * 从右边拉出的抽屉的宽度：窄屏上的对话线程、`Drawer` 的默认宽（25rem），数据页的员工
+	 * 详情（30rem，简历原文是里面唯一成段读的东西）。宽屏工作台的右栏可以拖宽，宽度记在
+	 * 浏览器里，不读这里（`s/$turnId/-components/side-panel.tsx`）。
 	 */
 	--container-detail: 25rem;
 	--container-detail-wide: 30rem;
 
-	/* 左侧导航栏的宽度（`components/ui/app-layout.tsx`），lg 以上常驻。 */
+	/*
+	 * lg 以下导航抽屉的宽度。lg 以上的导航栏默认也是这么宽，可以拖宽拖窄，数值写在
+	 * `components/ui/app-layout.tsx` 的 `NAV_WIDTH`。
+	 */
 	--container-nav: 17.5rem;
 
 	/* 管理页的内容列（`routes/-components/admin-page.tsx`）。 */

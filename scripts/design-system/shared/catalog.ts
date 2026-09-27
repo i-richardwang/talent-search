@@ -165,6 +165,7 @@ const CATALOG = [
 			component("block", "块", "Block"),
 			component("flex", "弹性布局", "Flexbox"),
 			component("app-layout", "应用外壳", "AppLayout"),
+			component("draggable-panel", "可拖动面板", "DraggablePanel"),
 			component("nav-item", "导航项", "NavItem"),
 			component("divider", "分割线", "Divider"),
 			component("text-link", "文字链接", "TextLink"),

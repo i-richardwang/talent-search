@@ -33,12 +33,8 @@ const LAYERS = [
 	["--z-index-toast", "通知"],
 ] as const;
 
-/** 搜索结果页宽屏下并排的三栏：导航栏、名单版心、右栏。 */
-const COLUMNS = [
-	"--container-nav",
-	"--container-page",
-	"--container-detail-wide",
-] as const;
+/** 搜索结果页宽屏下并排的两段有令牌的宽：导航栏（默认宽）、名单版心。右栏的宽可拖，不读令牌。 */
+const COLUMNS = ["--container-nav", "--container-page"] as const;
 
 /** 定高的栏：每一栏顶上的页头。 */
 const HEIGHTS = ["--nav-header-height"] as const;
@@ -69,10 +65,13 @@ function Columns() {
 				))}
 			</div>
 			<p className="text-fg-secondary text-xs tabular-nums">
-				三段相加 {total}
-				px。导航栏和右栏定宽，名单那一栏占剩下的宽，名单封在版心里居中； 窄于
-				2xl 右栏是 {px("--container-detail")}px，窄于 xl 右栏不常驻，窄于 lg
-				导航栏收进抽屉。管理页的内容列是 {px("--container-admin")}px。
+				两段相加 {total}
+				px。导航栏默认这么宽，可拖到 240–400px 或收起；右栏默认 400px，
+				也可以拖宽；名单那一栏占剩下的宽，名单封在版心里居中。窄于 xl
+				右栏不常驻，窄于 lg 导航栏收进宽 {px("--container-nav")}px 的抽屉。
+				从右边拉出的抽屉 {px("--container-detail")}px，数据页的员工详情{" "}
+				{px("--container-detail-wide")}px。管理页的内容列是{" "}
+				{px("--container-admin")}px。
 			</p>
 		</Block>
 	);

@@ -43,6 +43,12 @@ export const panelTransition = (
 	ease: easeOf(PHASE_EASE[phase]),
 });
 
+/** 可拖动面板展开收起时的宽度动画（`DraggablePanel`）。 */
+export const foldTransition = (): Transition => ({
+	duration: durationOf("--duration-panel-fold"),
+	ease: easeOf("--ease-soft"),
+});
+
 /** 遮罩的淡入淡出，对话框和抽屉共用。 */
 export const backdropTransition = (): Transition => ({
 	duration: durationOf("--duration-backdrop"),

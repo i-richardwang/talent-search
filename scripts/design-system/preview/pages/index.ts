@@ -17,6 +17,7 @@ import { CollapsiblePage } from "./components/collapsible";
 import { CopyButtonPage } from "./components/copy-button";
 import { DescriptionsPage } from "./components/descriptions";
 import { DividerPage } from "./components/divider";
+import { DraggablePanelPage } from "./components/draggable-panel";
 import { DrawerPage } from "./components/drawer";
 import { DropdownMenuPage } from "./components/dropdown-menu";
 import { EmptyPage } from "./components/empty";
@@ -96,6 +97,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/block": BlockPage,
 	"components/flex": FlexPage,
 	"components/app-layout": AppLayoutPage,
+	"components/draggable-panel": DraggablePanelPage,
 	"components/nav-item": NavItemPage,
 	"components/divider": DividerPage,
 	"components/text-link": TextLinkPage,
