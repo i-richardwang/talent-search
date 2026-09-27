@@ -1,8 +1,9 @@
-import { Download } from "lucide-react";
+import { Download, List, X } from "lucide-react";
 import { useState } from "react";
+import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
-import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
+import { Text } from "#/components/ui/text";
 import {
 	Toolbar,
 	ToolbarButton,
@@ -19,29 +20,36 @@ const CANDIDATES = [
 	{ id: "Talent 0480", summary: "实时计算 · 累计 3 年" },
 ];
 
-/** 工具条的长相：浮起的胶囊，计数一段、操作一段，中间一条分隔线。 */
+/** 工具条的长相：浮起的胶囊，人数一行字，一排小号图标钮，分隔线后面是清空。 */
 function Appearance() {
 	return (
 		<Stage footer={<span>左右方向键在按钮间移动</span>}>
-			<Toolbar aria-label="已选择的人">
-				<ToolbarButton
-					render={
-						<Button className="text-fg-secondary" size="small" type="text" />
-					}
-				>
-					已选 <b className="text-fg tabular-nums">3</b> 人
-				</ToolbarButton>
-				<ToolbarSeparator />
-				<ToolbarButton render={<Button size="small" type="text" />}>
-					清空
-				</ToolbarButton>
-				<ToolbarButton
-					render={<Button icon={Download} size="small" type="primary" />}
-				>
-					导出 3 人
-				</ToolbarButton>
-			</Toolbar>
+			<Bar count={3} onClear={() => {}} />
 		</Stage>
+	);
+}
+
+/** 批量操作栏：人数、看已选的人、导出，分隔线后面清空。 */
+function Bar({ count, onClear }: { count: number; onClear: () => void }) {
+	return (
+		<Toolbar aria-label="已选择的人">
+			<Text className="me-2" weight="medium">
+				已选 <span className="tabular-nums">{count}</span> 人
+			</Text>
+			<ToolbarButton
+				render={<ActionIcon icon={List} size="small" title="已选的人" />}
+			/>
+			<ToolbarButton
+				render={
+					<ActionIcon icon={Download} size="small" title={`导出 ${count} 人`} />
+				}
+			/>
+			<ToolbarSeparator />
+			<ToolbarButton
+				onClick={onClear}
+				render={<ActionIcon icon={X} size="small" title="清空已选" />}
+			/>
+		</Toolbar>
 	);
 }
 
@@ -71,35 +79,9 @@ function PickDockExample() {
 			</Block>
 			<div className="flex h-10 justify-center">
 				{picked.length > 0 && (
-					<Toolbar
-						aria-label="已选择的人"
-						className="transition-[opacity,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0"
-					>
-						<ToolbarButton
-							render={
-								<Button
-									aria-live="polite"
-									className="text-fg-secondary"
-									size="small"
-									type="text"
-								/>
-							}
-						>
-							已选 <b className="text-fg tabular-nums">{picked.length}</b> 人
-						</ToolbarButton>
-						<ToolbarSeparator />
-						<ToolbarButton
-							onClick={() => setPicked([])}
-							render={<Button size="small" type="text" />}
-						>
-							清空
-						</ToolbarButton>
-						<ToolbarButton
-							render={<Button icon={Download} size="small" type="primary" />}
-						>
-							导出 {picked.length} 人
-						</ToolbarButton>
-					</Toolbar>
+					<div className="transition-[opacity,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0">
+						<Bar count={picked.length} onClear={() => setPicked([])} />
+					</div>
 				)}
 			</div>
 		</div>
@@ -132,7 +114,7 @@ export function ToolbarPage() {
 					"分组用 ToolbarSeparator，不另放 Divider。",
 					"胶囊的描边、底色与投影是工具条自带的，位置由外层布局给。",
 				],
-				usage: `<Toolbar aria-label="已选择的人">\n  <ToolbarButton render={<Button size="small" type="text" />}>清空</ToolbarButton>\n  <ToolbarSeparator />\n  <ToolbarButton render={<Button icon={Download} size="small" type="primary" />}>\n    导出 3 人\n  </ToolbarButton>\n</Toolbar>`,
+				usage: `<Toolbar aria-label="已选择的人">\n  <Text className="me-2" weight="medium">已选 3 人</Text>\n  <ToolbarButton render={<ActionIcon icon={Download} size="small" title="导出 3 人" />} />\n  <ToolbarSeparator />\n  <ToolbarButton render={<ActionIcon icon={X} size="small" title="清空已选" />} />\n</Toolbar>`,
 			}}
 			sections={[
 				{ children: <Appearance />, id: "appearance", title: "外观" },

@@ -138,3 +138,113 @@
 		animation: var(--focus-ring-animation);
 	}
 }
+
+/*
+ * 可多选的列表视图，类名以 `.ui-list-view` 开头：一块描边的面（border-secondary、12px
+ * 圆角、container 底），顶上一条吸顶的表头，下面一行一行用分隔线隔开。表头和每一行都是
+ * 两格：24px 的选择格和内容，间隔 12px，上下 10px、左右 16px。
+ *
+ * 面用 `overflow: clip` 裁圆角：不成为滚动容器，表头才吸得住外面那层滚动。
+ */
+.ui-list-view {
+	position: relative;
+	overflow: clip;
+	border: 1px solid var(--color-border-secondary);
+	border-radius: var(--radius-lg);
+	background: var(--color-container);
+}
+
+/* 表头：12px 中粗次要色，elevated 底不透明，名单滚过它底下时不透出来。 */
+.ui-list-view-header {
+	position: sticky;
+	z-index: var(--z-index-stick);
+	inset-block-start: 0;
+	display: grid;
+	grid-template-columns: 24px minmax(0, 1fr);
+	gap: 12px;
+	align-items: center;
+	padding: 10px 16px;
+	border-block-end: 1px solid var(--color-split);
+	font-size: var(--text-xs);
+	font-weight: 500;
+	line-height: var(--text-xs--line-height);
+	color: var(--color-fg-secondary);
+	background: var(--color-elevated);
+}
+
+/*
+ * 一行：悬停 fill-tertiary；当前项（`current`）是 fill-secondary 的底，悬停加深到 fill；
+ * 勾上的一行是主色一侧最浅的底，悬停加深一档。最后一行不画分隔线。整行调暗（等待时）
+ * 走 0.15s 的透明度过渡。
+ */
+.ui-list-view-row {
+	position: relative;
+	display: grid;
+	grid-template-columns: 24px minmax(0, 1fr);
+	gap: 12px;
+	align-items: start;
+	padding: 10px 16px;
+	border-block-end: 1px solid var(--color-split);
+	transition:
+		background 0.12s,
+		opacity 0.15s;
+
+	&:last-child {
+		border-block-end: none;
+	}
+
+	&:hover {
+		background: var(--color-fill-tertiary);
+	}
+
+	&:has(.ui-list-view-link) {
+		cursor: pointer;
+	}
+
+	&[data-current] {
+		background: var(--color-fill-secondary);
+
+		&:hover {
+			background: var(--color-fill);
+		}
+	}
+
+	&:has(> .ui-list-view-pick .ui-checkbox[data-checked]) {
+		background: var(--color-primary-bg);
+
+		&:hover {
+			background: var(--color-primary-bg-hover);
+		}
+	}
+}
+
+/* 选择格：高一行 13px 字，方框在里面居中；压在整行链接的覆盖层之上，点方框不会打开这一行。 */
+.ui-list-view-pick {
+	position: relative;
+	z-index: var(--z-index-raise);
+	display: flex;
+	align-items: center;
+	height: var(--text-sm--line-height);
+}
+
+/*
+ * 行里的那条链接：`::after` 铺满整行当点击面，焦点外框向里收，画在行的轮廓以内
+ * （面裁掉了伸出去的部分）。外框读全站 `focus-ring` 的那组变量。
+ */
+.ui-list-view-link {
+	color: inherit;
+	text-decoration: none;
+	outline: none;
+
+	&::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+	}
+
+	&:focus-visible::after {
+		outline: var(--focus-ring-width) solid var(--focus-ring-color);
+		outline-offset: calc(var(--focus-ring-width) * -1);
+		animation: var(--focus-ring-animation);
+	}
+}

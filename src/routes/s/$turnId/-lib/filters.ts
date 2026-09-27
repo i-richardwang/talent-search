@@ -122,8 +122,3 @@ export function textFilters(view: View): TextFilter[] {
 		});
 	return out;
 }
-
-/** 已生效的筛选有几项，集合维里选中的每个值各算一项。 */
-export function activeCount(fields: FilterField[], texts: TextFilter[]) {
-	return fields.reduce((n, f) => n + f.values.length, 0) + texts.length;
-}

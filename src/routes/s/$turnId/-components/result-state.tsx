@@ -9,7 +9,6 @@ import { StrengthLegend } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
 import { Text } from "#/components/ui/text";
-import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
 import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
@@ -23,15 +22,16 @@ const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	employee: "默认顺序",
 };
 
-/** 名单的表头：这份名单有多少人、按什么排，有证据行时带上那三颗点的图例。等待时这一格换成在做什么。 */
+/**
+ * 名单的表头：这份名单有多少人、按什么排，有证据行时带上那三颗点的图例。等待时这一格
+ * 换成在做什么。字跟着所在的表头（12px 中粗次要色），人数用等宽数字。
+ */
 export function ResultHeader({
 	phase,
 	order,
 	total,
 	evidence,
-	className,
 }: {
-	className?: string;
 	/** 在等什么；null 时写人数和排序。 */
 	phase: SearchPhase | null;
 	order: SearchOutcome["order"];
@@ -40,22 +40,14 @@ export function ResultHeader({
 	evidence: boolean;
 }) {
 	return (
-		<div
-			className={cn(
-				"flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-1.5",
-				className,
-			)}
-		>
-			<p
-				className="flex items-center gap-1 text-fg-secondary text-sm"
-				role="status"
-			>
+		<div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+			<p className="flex items-center gap-1" role="status">
 				{phase ? (
 					<Waiting key={phase} phase={phase} />
 				) : (
 					<>
-						<b className="font-medium text-fg tabular-nums">{total}</b> 人
-						{` · ${ORDER_LABEL[order]}`}
+						<span className="tabular-nums">{total.toLocaleString()}</span>
+						{` 人 · ${ORDER_LABEL[order]}`}
 					</>
 				)}
 			</p>
@@ -79,7 +71,8 @@ export function NoResults({
 	onReviseQuery: (next: Condition[]) => void;
 	onEditQuery: () => void;
 }) {
-	const state = emptyState(outcome.empty ?? { kind: "noConditions" }, {
+	const reason = outcome.empty ?? { kind: "noConditions" };
+	const state = emptyState(reason, {
 		mode,
 		conditions: spec.conditions,
 		onChange,
@@ -89,7 +82,11 @@ export function NoResults({
 	return (
 		<Empty
 			action={
-				<Button onClick={state.action.onClick} type="primary">
+				/* 筛掉了所有人时出路是清掉筛选，一次撤回，不是主操作 */
+				<Button
+					onClick={state.action.onClick}
+					type={reason.kind === "filtered" ? "default" : "primary"}
+				>
 					{state.action.label}
 				</Button>
 			}

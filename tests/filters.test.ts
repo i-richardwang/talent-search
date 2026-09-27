@@ -11,11 +11,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import {
-	activeCount,
-	filterFields,
-	textFilters,
-} from "#/routes/s/$turnId/-lib/filters";
+import { filterFields } from "#/routes/s/$turnId/-lib/filters";
 import type { View } from "#/routes/s/$turnId/-lib/view-params";
 import type { Facets } from "#/search/result";
 
@@ -192,21 +188,6 @@ describe("一维之内可以选几项", () => {
 					{ l1: "商业分析", l2: "数据科学" },
 				],
 			},
-		);
-	});
-});
-
-describe("生效了几项", () => {
-	test("集合维度里选中的每一个值各算一项", () => {
-		const view = { level: ["P6", "P7"], kind: "internal" as const };
-		assert.equal(activeCount(fields(view), textFilters(view)), 3);
-	});
-
-	test("文本条件也算，没筛就是 0", () => {
-		assert.equal(activeCount(fields({}), textFilters({})), 0);
-		assert.equal(
-			activeCount(fields({ org: ["字节"] }), textFilters({ org: ["字节"] })),
-			1,
 		);
 	});
 });

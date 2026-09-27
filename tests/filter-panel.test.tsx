@@ -16,7 +16,7 @@ import { FilterPanel } from "#/routes/s/$turnId/-components/filter-panel";
 import { filterFields, textFilters } from "#/routes/s/$turnId/-lib/filters";
 import type { View } from "#/routes/s/$turnId/-lib/view-params";
 import type { Facets } from "#/search/result";
-import { classLists, visibleText } from "./render";
+import { visibleText } from "./render";
 
 const SEQ = Array.from({ length: 9 }, (_, i) => ({
 	value: { l1: "技术", l2: `序列${i}` },
@@ -178,32 +178,22 @@ describe("不点开就知道现在筛的是什么", () => {
 });
 
 describe("清除", () => {
-	test("筛了就说清有几项", () => {
-		assert.ok(render({ kind: "internal" }).includes("清除 1 项"));
-		assert.ok(
-			render({ kind: "internal", minMonths: 12 }).includes("清除 2 项"),
+	const clears = (view: View) =>
+		[...markup(view).matchAll(/aria-label="清除「([^」]+)」"/g)].map(
+			(m) => m[1],
 		);
-		// 同一维里选中的每一个值各算一项
-		assert.ok(
-			render({
-				seq: [
-					{ l1: "技术", l2: "序列0" },
-					{ l1: "技术", l2: "序列1" },
-				],
-			}).includes("清除 2 项"),
-		);
+	const title = (key: string) =>
+		filterFields(FACETS, {}).find((f) => f.key === key)?.title;
+
+	test("筛了的那一维，组名行尾有清掉它的钮", () => {
+		assert.deepEqual(clears({ kind: "internal" }), [title("kind")]);
+		assert.deepEqual(clears({ kind: "internal", minMonths: 12 }), [
+			title("kind"),
+			title("minMonths"),
+		]);
 	});
 
-	/*
-	 * 一项都没有时它只占位、不出面：这一行的高度得由按钮自己给，否则「清除」
-	 * 一出现，下面每一维都跟着往下跳一次（`filter-panel.tsx`）。`invisible` 是
-	 * `visibility: hidden`，屏幕和 Tab 序里都没有它——而这里跑不了 CSS，
-	 * 所以只能验那个类名。
-	 */
-	test("一项都没筛的时候，清除占着位子但不出面", () => {
-		const hidden = (html: string) =>
-			classLists(html).some((list) => list.includes("invisible"));
-		assert.ok(hidden(markup({})));
-		assert.ok(!hidden(markup({ kind: "internal" })));
+	test("一项都没筛的时候没有清除钮", () => {
+		assert.deepEqual(clears({}), []);
 	});
 });

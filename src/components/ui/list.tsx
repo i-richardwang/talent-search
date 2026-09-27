@@ -104,3 +104,70 @@ export function ListItem({
 		</Root>
 	);
 }
+
+/*
+ * 可多选的列表视图：一块描边的面，`ListViewHeader` 吸在顶上，下面是一串 `ListViewRow`。
+ * 表头和每一行的第一格是选择格（`pick`，放 18px 的 Checkbox），第二格是内容。
+ * 一行整行可点时，内容里放一条 `ListViewLink`：它的覆盖层铺满整行，选择格压在它上面。
+ * 勾上的一行换成主色一侧最浅的底，由行里的 Checkbox 的勾选状态决定，调用处不另传。
+ */
+
+export function ListView({ className, ...props }: ComponentProps<"ul">) {
+	return <ul className={cn("ui-list-view", className)} {...props} />;
+}
+
+export function ListViewHeader({
+	pick,
+	children,
+	className,
+}: {
+	pick?: ReactNode;
+	children: ReactNode;
+	className?: string;
+}) {
+	return (
+		<li className={cn("ui-list-view-header", className)}>
+			<div className="ui-list-view-pick">{pick}</div>
+			<div className="min-w-0">{children}</div>
+		</li>
+	);
+}
+
+export function ListViewRow({
+	pick,
+	current,
+	children,
+	className,
+	...props
+}: Omit<ComponentProps<"li">, "children"> & {
+	pick?: ReactNode;
+	/** 当前项：详情正开着的这一行。 */
+	current?: boolean;
+	children: ReactNode;
+}) {
+	return (
+		<li
+			className={cn("ui-list-view-row", className)}
+			data-current={current ? "" : undefined}
+			{...props}
+		>
+			<div className="ui-list-view-pick">{pick}</div>
+			<div className="min-w-0">{children}</div>
+		</li>
+	);
+}
+
+/** 整行可点的那条链接；`render` 传路由的 `<Link>`，中键、右键照常。 */
+export function ListViewLink({
+	className,
+	render,
+	...props
+}: useRender.ComponentProps<"a">) {
+	return useRender({
+		defaultTagName: "a",
+		props: mergeProps<"a">(props, {
+			className: cn("ui-list-view-link", className),
+		}),
+		render,
+	});
+}

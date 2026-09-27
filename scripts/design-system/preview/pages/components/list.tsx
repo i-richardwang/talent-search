@@ -5,7 +5,14 @@ import { Avatar } from "#/components/ui/avatar";
 import { Block } from "#/components/ui/block";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Icon } from "#/components/ui/icon";
-import { List, ListItem } from "#/components/ui/list";
+import {
+	List,
+	ListItem,
+	ListView,
+	ListViewHeader,
+	ListViewLink,
+	ListViewRow,
+} from "#/components/ui/list";
 import {
 	Table,
 	TableBody,
@@ -142,6 +149,58 @@ function Looks() {
 	);
 }
 
+/** 可多选的列表视图：描边的面、吸顶的表头、分隔线隔开的行；勾上、当前项、悬停三种底。 */
+function ListViewExample() {
+	const people = [
+		{ name: "林小雨", role: "高级算法工程师 · 推荐算法部" },
+		{ name: "欧阳明远", role: "数据工程师 · 数据平台部" },
+		{ name: "陈一", role: "后端工程师 · 交易平台部" },
+	];
+	const [picked, setPicked] = useState<string[]>(["欧阳明远"]);
+	return (
+		<Stage
+			className="items-stretch"
+			footer={<span>第一行是当前项，勾上的一行换成主色一侧最浅的底</span>}
+		>
+			<ListView className="w-full">
+				<ListViewHeader pick={<Checkbox aria-label="全选" size={18} />}>
+					3 人 · 按匹配度排序
+				</ListViewHeader>
+				{people.map((one, index) => (
+					<ListViewRow
+						current={index === 0}
+						key={one.name}
+						pick={
+							<Checkbox
+								aria-label={`选择 ${one.name}`}
+								checked={picked.includes(one.name)}
+								className="border-border"
+								onChange={(on) =>
+									setPicked((old) =>
+										on ? [...old, one.name] : old.filter((n) => n !== one.name),
+									)
+								}
+								size={18}
+							/>
+						}
+					>
+						<div className="flex items-baseline gap-2">
+							<ListViewLink
+								className="font-medium text-sm"
+								href={`#person-${index}`}
+								onClick={stay}
+							>
+								{one.name}
+							</ListViewLink>
+							<span className="text-fg-secondary text-xs">{one.role}</span>
+						</div>
+					</ListViewRow>
+				))}
+			</ListView>
+		</Stage>
+	);
+}
+
 function Usage() {
 	const picked = [
 		{ name: "林小雨", onList: true },
@@ -208,12 +267,18 @@ export function ListPage() {
 					"当前项给 active，不另加选中装饰。",
 					'选择框放在一项外面：外层出 <li>，ListItem 写 as="div"。',
 					"内边距要收紧（浮层里）时用 className 改 padding，不改圆角和字号。",
+					"可以多选的一串结果用 ListView：表头和每一行的第一格是 18px 的选择框，整行的链接用 ListViewLink，选择格压在它上面。",
 				],
 				usage: `<List>\n  <ListItem\n    avatar={<Avatar size={32} title={name} />}\n    description={position}\n    render={<Link to="/s/$turnId/p/$empId" params={params} />}\n    title={name}\n  />\n</List>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用列表" },
 				{ children: <Looks />, id: "appearance", title: "状态" },
+				{
+					children: <ListViewExample />,
+					id: "list-view",
+					title: "可多选的列表视图",
+				},
 				{ children: <Usage />, id: "usage", title: "使用场景" },
 			]}
 		/>

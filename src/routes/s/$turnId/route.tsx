@@ -20,6 +20,7 @@ import { ConversationDrawer } from "./-components/conversation-drawer";
 import { DetailModal } from "./-components/detail-modal";
 import { Earlier } from "./-components/earlier";
 import { KeyHelp } from "./-components/key-help";
+import { QueryChips } from "./-components/query-chips";
 import { QueryHeader } from "./-components/query-header";
 import { type ListWait, ResultList } from "./-components/result-list";
 import { SidePanel } from "./-components/side-panel";
@@ -127,6 +128,8 @@ function Workbench() {
 		navigate({ to: ".", search: (old) => ({ ...old, n: undefined, ...next }) });
 
 	const keywords = mode === "keyword" ? keywordsOf(spec.conditions) : null;
+	// 对话的条件表在 chip 上改；关键词的条件就在框里，不另排一行
+	const chips = mode === "conversation" && spec.conditions.length > 0;
 
 	const reviseSpec = (next: SearchSpec) =>
 		commit({ kind: "spec", spec: next }, { from: turnId });
@@ -179,7 +182,6 @@ function Workbench() {
 			<WorkspaceLayout
 				header={
 					<QueryHeader
-						onChangeSpec={mode === "conversation" ? reviseSpec : undefined}
 						onHelp={() => setHelp(true)}
 						right={
 							!wide &&
@@ -192,7 +194,6 @@ function Workbench() {
 								</ConversationDrawer>
 							)
 						}
-						spec={settledSpec}
 						title={
 							mode === "conversation"
 								? turn.title
@@ -225,10 +226,18 @@ function Workbench() {
 				}
 				notices={
 					/* 关键词搜索的框在名单正上方：改完第一眼看到的是它改了什么，
-				   再往下才是人。对话不在这里，在右栏的线程里。 */
-					(earlier || mode === "keyword") && (
+				   再往下才是人。对话的输入不在这里，在右栏的线程里；这里是它的条件那一排。 */
+					(earlier || mode === "keyword" || chips) && (
 						<>
 							{earlier && <Earlier latestId={latest.id} />}
+							{chips && (
+								<div className="flex flex-wrap items-center gap-1.5">
+									<QueryChips
+										conditions={spec.conditions}
+										onChange={(next) => reviseSpec({ conditions: next })}
+									/>
+								</div>
+							)}
 							{mode === "keyword" && (
 								<KeywordBar
 									initial={keywords ?? undefined}

@@ -11,11 +11,7 @@ import {
 } from "#/components/ui/table";
 import { FilterPanel } from "#/routes/s/$turnId/-components/filter-panel";
 import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
-import {
-	activeCount,
-	filterFields,
-	textFilters,
-} from "#/routes/s/$turnId/-lib/filters";
+import { filterFields, textFilters } from "#/routes/s/$turnId/-lib/filters";
 import type { View } from "#/routes/s/$turnId/-lib/view-params";
 import {
 	type Condition,
@@ -94,7 +90,6 @@ function Playground() {
 	const texts = textFilters(view);
 	const change = (next: Partial<View>) =>
 		setView((old) => ({ ...old, ...next }));
-	const count = activeCount(fields, texts);
 	return (
 		<div className="flex flex-col gap-4">
 			<Stage
@@ -118,12 +113,7 @@ function Playground() {
 			</Stage>
 			<Stage
 				className="items-stretch p-0"
-				footer={
-					<span>
-						{count > 0 ? `已筛选 ${count} 项` : "未筛选"}
-						{" · "}筛选只换这次名单的看法，不改搜索条件
-					</span>
-				}
+				footer={<span>筛选只换这次名单的看法，不改搜索条件</span>}
 			>
 				<div className="flex min-h-0">
 					<div className="w-nav flex-none bg-layout px-1 py-4">

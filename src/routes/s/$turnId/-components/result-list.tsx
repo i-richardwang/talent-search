@@ -1,9 +1,14 @@
 import { Link } from "@tanstack/react-router";
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { EvidenceLine, MissedClaims } from "#/components/evidence";
-import { Block, BlockLink } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Checkbox, CheckboxGroup } from "#/components/ui/checkbox";
+import {
+	ListView,
+	ListViewHeader,
+	ListViewLink,
+	ListViewRow,
+} from "#/components/ui/list";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
 import { Tooltip } from "#/components/ui/tooltip";
@@ -50,27 +55,19 @@ function useDelayed(on: boolean) {
 	return on && elapsed;
 }
 
-/** 名单左边那一列复选框，在块外：勾上第一个就开始选。 */
-function PickCell({ children }: { children?: ReactNode }) {
-	return <div className="w-(--pick-column) shrink-0">{children}</div>;
-}
-
 /** 名单一行的占位：姓名和岗位一行，两行证据，留白与真的一行相同。 */
 function RowSkeleton() {
 	return (
-		<li aria-hidden="true" className="flex">
-			<PickCell />
-			<div className="min-w-0 flex-1 p-3">
-				<div className="flex items-center gap-2.5">
-					<Skeleton.Text className="w-auto shrink-0" size="base" width="4em" />
-					<Skeleton.Text className="min-w-0 flex-1" size="sm" width="50%" />
-				</div>
-				<div className="mt-1.5 space-y-1">
-					<Skeleton.Text size="sm" width="72%" />
-					<Skeleton.Text size="sm" width="56%" />
-				</div>
+		<ListViewRow aria-hidden="true">
+			<div className="flex items-center gap-2">
+				<Skeleton.Text className="w-auto shrink-0" size="sm" width="4em" />
+				<Skeleton.Text className="min-w-0 flex-1" size="xs" width="40%" />
 			</div>
-		</li>
+			<div className="mt-1 space-y-1">
+				<Skeleton.Text size="sm" width="72%" />
+				<Skeleton.Text size="sm" width="56%" />
+			</div>
+		</ListViewRow>
 	);
 }
 
@@ -119,118 +116,102 @@ export function ResultList({
 	const blank = skeleton || (wait?.list === "skeleton" && results.length === 0);
 
 	const head = (
-		<div className="mb-2 flex items-center">
-			<PickCell>
+		<ListViewHeader
+			pick={
 				<Tooltip title={`全选这 ${results.length} 人`}>
 					<Checkbox
 						aria-label={`全选这 ${results.length} 人`}
-						className="ms-1"
 						disabled={blank}
 						parent
+						size={18}
 					/>
 				</Tooltip>
-			</PickCell>
+			}
+		>
 			<ResultHeader
-				className="px-3"
 				evidence={evidence}
 				order={order}
 				phase={wait?.phase ?? null}
 				total={total}
 			/>
-		</div>
+		</ListViewHeader>
 	);
 
-	const rows = (
-		<ul
-			className={cn(
-				"flex flex-col gap-0.5 transition-opacity",
-				wait?.list === "dim" && "opacity-60",
-			)}
-		>
-			{picks.rows.map(({ employee: e, hits, missed }) => {
-				const selected = e.empId === empId;
-				return (
-					<li className="flex" key={e.empId}>
-						<PickCell>
-							<Checkbox
-								aria-label={`选择 ${e.name}`}
-								className="ms-1 mt-3.5"
-								onClick={(event) => {
-									if (picks.pointAt(e.empId, event.shiftKey))
-										event.preventBaseUIHandler();
-								}}
-								onPointerDown={(event) => {
-									// 按着 Shift 按下时浏览器会把两次点击之间的字选中
-									if (event.shiftKey) event.preventDefault();
-								}}
-								value={e.empId}
+	const rows = picks.rows.map(({ employee: e, hits, missed }) => {
+		const current = e.empId === empId;
+		return (
+			<ListViewRow
+				className={cn("scroll-my-12", wait?.list === "dim" && "opacity-60")}
+				current={current}
+				data-emp={e.empId}
+				key={e.empId}
+				pick={
+					<Checkbox
+						aria-label={`选择 ${e.name}`}
+						className="border-border"
+						onClick={(event) => {
+							if (picks.pointAt(e.empId, event.shiftKey))
+								event.preventBaseUIHandler();
+						}}
+						onPointerDown={(event) => {
+							// 按着 Shift 按下时浏览器会把两次点击之间的字选中
+							if (event.shiftKey) event.preventDefault();
+						}}
+						size={18}
+						value={e.empId}
+					/>
+				}
+			>
+				<div className="flex items-baseline gap-2">
+					<ListViewLink
+						aria-current={current ? "page" : undefined}
+						className="min-w-0 shrink-0"
+						render={
+							<Link
+								params={{ turnId, empId: e.empId }}
+								replace
+								search={(prev) => prev}
+								to="/s/$turnId/p/$empId"
 							/>
-						</PickCell>
-						<Block
-							allowShrink
-							className="scroll-my-2"
-							clickable
-							data-emp={e.empId}
-							flex={1}
-							padding={12}
-							variant={selected ? "filled" : "borderless"}
-						>
-							<div className="flex items-baseline gap-2.5">
-								<BlockLink
-									aria-current={selected ? "page" : undefined}
-									className="min-w-0 shrink-0 text-fg"
-									render={
-										<Link
-											params={{ turnId, empId: e.empId }}
-											replace
-											search={(prev) => prev}
-											to="/s/$turnId/p/$empId"
-										/>
-									}
-								>
-									<Text ellipsis size="base" weight="semibold">
-										{e.name}
-									</Text>
-								</BlockLink>
-								<Text className="min-w-0" ellipsis size="sm" type="tertiary">
-									{positionLabel(e)}
-								</Text>
-							</div>
-							{claims.length > 0 && (
-								<div className="mt-1.5 space-y-1">
-									{hits.map(({ claim, name, hit, basis }) => (
-										<EvidenceLine
-											basis={basis}
-											boost={claim.mode === "boost"}
-											hit={hit}
-											key={conditionKey(claim)}
-											name={name}
-										/>
-									))}
-									<MissedClaims names={missed} />
-								</div>
-							)}
-						</Block>
-					</li>
-				);
-			})}
-		</ul>
-	);
+						}
+					>
+						<Text ellipsis size="sm" weight="medium">
+							{e.name}
+						</Text>
+					</ListViewLink>
+					<Text className="min-w-0" ellipsis size="xs" type="secondary">
+						{positionLabel(e)}
+					</Text>
+				</div>
+				{claims.length > 0 && (
+					<div className="mt-1 space-y-1">
+						{hits.map(({ claim, name, hit, basis }) => (
+							<EvidenceLine
+								basis={basis}
+								boost={claim.mode === "boost"}
+								hit={hit}
+								key={conditionKey(claim)}
+								name={name}
+							/>
+						))}
+						<MissedClaims names={missed} />
+					</div>
+				)}
+			</ListViewRow>
+		);
+	});
 
 	const content = failure ? (
 		<NotUnderstood fault={failure.fault} onRetry={failure.onRetry} />
 	) : blank ? (
-		<div aria-busy="true">
+		<ListView aria-busy="true">
 			{head}
-			{skeleton && (
-				<ul className="flex flex-col gap-0.5">
-					{Array.from({ length: SKELETON_ROWS }, (_, i) => (
-						// biome-ignore lint/suspicious/noArrayIndexKey: 占位行只按位置区分
-						<RowSkeleton key={i} />
-					))}
-				</ul>
-			)}
-		</div>
+			{skeleton &&
+				Array.from({ length: SKELETON_ROWS }, (_, i) => (
+					// biome-ignore lint/suspicious/noArrayIndexKey: 占位行只按位置区分
+					<RowSkeleton key={i} />
+				))}
+		</ListView>
 	) : results.length === 0 ? (
 		<div
 			aria-busy={wait ? "true" : undefined}
@@ -247,10 +228,12 @@ export function ResultList({
 		</div>
 	) : (
 		<div aria-busy={wait ? "true" : undefined}>
-			{head}
-			{rows}
+			<ListView>
+				{head}
+				{rows}
+			</ListView>
 			{total > RESULT_PAGE && (
-				<div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 py-6">
+				<div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 py-3">
 					<span className="text-fg-secondary text-xs">
 						已显示 <b className="tabular-nums">{results.length}</b> 人{"，共 "}
 						<b className="tabular-nums">{total}</b> 人

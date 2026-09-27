@@ -4,6 +4,7 @@ import type { QueryBarHandle } from "#/components/query-bar";
 import { ConversationDrawer } from "#/routes/s/$turnId/-components/conversation-drawer";
 import { DetailModal } from "#/routes/s/$turnId/-components/detail-modal";
 import { KeyHelp } from "#/routes/s/$turnId/-components/key-help";
+import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
 import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
@@ -73,7 +74,6 @@ function Workspace() {
 			<WorkspaceLayout
 				header={
 					<QueryHeader
-						onChangeSpec={setSpec}
 						onHelp={() => setHelp(true)}
 						right={
 							!wide && (
@@ -85,9 +85,16 @@ function Workspace() {
 								</ConversationDrawer>
 							)
 						}
-						spec={spec}
 						title={TASK_TITLE}
 					/>
+				}
+				notices={
+					<div className="flex flex-wrap items-center gap-1.5">
+						<QueryChips
+							conditions={spec.conditions}
+							onChange={(next) => setSpec({ conditions: next })}
+						/>
+					</div>
 				}
 				list={
 					<ResultList

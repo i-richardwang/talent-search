@@ -1,4 +1,4 @@
-import { DownloadIcon, XIcon } from "lucide-react";
+import { DownloadIcon, ListIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Alert } from "#/components/ui/alert";
@@ -16,14 +16,14 @@ import {
 	ToolbarButton,
 	ToolbarSeparator,
 } from "#/components/ui/toolbar";
-import { Tooltip } from "#/components/ui/tooltip";
 import { csvName, download, FIXED, toCsv } from "../-lib/csv";
 import type { Pick, Picks } from "../-lib/picks";
 import { reachOf } from "../-lib/view-params";
 
 /**
- * 选中人之后浮现的工具条：选了几个，以及对这一批做什么。吸在名单下沿，边往下看边选
- * 时就在视线里；一个人都没选时不渲染。计数一段、操作一段，用 `ToolbarSeparator` 分开。
+ * 选中人之后浮现的工具条：选了几个，以及对这一批做什么。吸在名单那一栏下沿往上 24px，
+ * 边往下看边选时就在视线里；一个人都没选时不渲染。人数是一行 500 字重的字，动作是一排
+ * 小号图标钮（看已选的人、导出），分隔线后面是清空。
  */
 export function PickDock({
 	picks,
@@ -49,21 +49,16 @@ export function PickDock({
 
 	return (
 		/* 通栏这一层不接鼠标，只有工具栏自己接，不挡住它下面的名单行。 */
-		<div className="pointer-events-none sticky bottom-4 z-stick flex justify-center pt-4">
+		<div className="pointer-events-none sticky bottom-6 z-stick flex justify-center pt-6">
 			<Toolbar
 				aria-label="已选择的人"
 				className="pointer-events-auto transition-[opacity,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0"
 			>
+				{/* 数字变化要播报 */}
+				<Text aria-live="polite" className="me-2" weight="medium">
+					已选 <span className="tabular-nums">{chosen.length}</span> 人
+				</Text>
 				<Chosen chosen={chosen} onList={new Set(shownIds)} onRemove={remove} />
-				<ToolbarSeparator />
-				<Tooltip hotkey="esc" title="清空已选">
-					<ToolbarButton
-						onClick={clear}
-						render={<Button size="small" type="text" />}
-					>
-						清空
-					</ToolbarButton>
-				</Tooltip>
 				<ExportDialog
 					loading={loading}
 					names={names}
@@ -72,13 +67,25 @@ export function PickDock({
 					reach={reachOf(total)}
 					total={total}
 				/>
+				<ToolbarSeparator />
+				<ToolbarButton
+					onClick={clear}
+					render={
+						<ActionIcon
+							icon={XIcon}
+							size="small"
+							title="清空已选"
+							tooltipProps={{ hotkey: "esc" }}
+						/>
+					}
+				/>
 			</Toolbar>
 		</div>
 	);
 }
 
 /**
- * 「已选 N 人」：点开按名次列出选中的人，每行只写姓名、可以移除。改过筛选后不在
+ * 看已选的人：点开按名次列出选中的人，每行只写姓名、可以移除。改过筛选后不在
  * 名单上的已选人会标出来，也只能在这里移除（快照见 `-lib/picks.ts` 的 `Pick`）。
  */
 function Chosen({
@@ -96,7 +103,6 @@ function Chosen({
 			className="max-h-(--available-height) w-64 overflow-y-auto"
 			content={
 				<>
-					{/* 人数就在触发它的按钮上，标题不重复 */}
 					<Text as="div" className="px-1" weight="medium">
 						已选的人
 					</Text>
@@ -122,23 +128,13 @@ function Chosen({
 				</>
 			}
 			nativeButton
-			placement="bottomLeft"
+			placement="top"
 			popupProps={{ "aria-label": "已选的人" }}
 			trigger="click"
 		>
-			{/* 数字变化要播报；它是按钮，不能用 role="status"，所以用 aria-live */}
 			<ToolbarButton
-				render={
-					<Button
-						aria-live="polite"
-						className="text-fg-secondary"
-						size="small"
-						type="text"
-					/>
-				}
-			>
-				已选 <b className="text-fg tabular-nums">{chosen.length}</b> 人
-			</ToolbarButton>
+				render={<ActionIcon icon={ListIcon} size="small" title="已选的人" />}
+			/>
 		</Popover>
 	);
 }
@@ -171,10 +167,14 @@ function ExportDialog({
 		<>
 			<ToolbarButton
 				onClick={() => setOpen(true)}
-				render={<Button icon={DownloadIcon} size="small" type="primary" />}
-			>
-				导出 {picked.length} 人
-			</ToolbarButton>
+				render={
+					<ActionIcon
+						icon={DownloadIcon}
+						size="small"
+						title={`导出 ${picked.length} 人`}
+					/>
+				}
+			/>
 			<Modal
 				className="max-w-md"
 				okIcon={DownloadIcon}

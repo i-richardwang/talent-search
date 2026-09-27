@@ -1,33 +1,30 @@
-import { XIcon } from "lucide-react";
+import { ChevronUpIcon, MoreHorizontalIcon, XIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import {
+	AccordionAction,
 	AccordionHeader,
 	AccordionItem,
 	AccordionPanel,
 	AccordionRoot,
 	AccordionTrigger,
 } from "#/components/ui/accordion";
+import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
-import { Button } from "#/components/ui/button";
 import { Checkbox, CheckboxGroup } from "#/components/ui/checkbox";
 import { Center } from "#/components/ui/flex";
-import { Icon } from "#/components/ui/icon";
+import { NavItem } from "#/components/ui/nav-item";
 import { Radio, RadioGroup } from "#/components/ui/radio";
 import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
-import {
-	activeCount,
-	type FilterField,
-	type TextFilter,
-} from "../-lib/filters";
-import { CLEARED_FILTERS, type View } from "../-lib/view-params";
+import type { FilterField, TextFilter } from "../-lib/filters";
+import type { View } from "../-lib/view-params";
 
 const VISIBLE = 5;
 
 /**
  * 筛选：搜索结果页左侧导航栏里的正文（`workbench-nav.tsx`）。每一维一组，组名一行
- * 可以收起，组名后面是这一维选了几项；选项后面一直写着选了之后还剩几个人，不用点开
- * 就知道能筛什么。
+ * 可以收起，组名后面是这一维选了几项，行尾清掉这一维的钮在指针进入这一行时出现；
+ * 选项后面一直写着选了之后还剩几个人，不用点开就知道能筛什么。
  *
  * 一维都数不出人、也没有生效的文本条件时整块不渲染：空着的一组就是它不该占位的证据。
  */
@@ -47,82 +44,64 @@ function hasAnything({ fields, textFilters }: FilterProps) {
 }
 
 function FilterList({ fields, textFilters, onChange }: FilterProps) {
-	const count = activeCount(fields, textFilters);
 	// 记收起的组而不是展开的组：换一次查询多出来的维默认展开
 	const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
 	const shown = fields.filter((f) => f.options.length > 0);
 	const keys = [...textFilters.map((t) => t.key), ...shown.map((f) => f.key)];
 
 	return (
-		<div className="flex flex-col gap-2">
-			<div className="flex items-center justify-between gap-2 ps-2">
-				<Text size="xs" type="secondary" weight="medium">
-					筛选
-				</Text>
-				<Button
-					className={cn(count === 0 && "invisible")}
-					onClick={() => onChange(CLEARED_FILTERS)}
-					size="small"
-					type="link"
+		<AccordionRoot
+			className="gap-2"
+			indicatorPlacement="inline"
+			onValueChange={(open) =>
+				setClosed(new Set(keys.filter((k) => !open.includes(k))))
+			}
+			value={keys.filter((k) => !closed.has(k))}
+		>
+			{textFilters.map((t) => (
+				<Group
+					count={1}
+					key={t.key}
+					onClear={() => onChange(t.clear)}
+					title={t.title}
+					value={t.key}
 				>
-					清除 {count} 项
-				</Button>
-			</div>
-			<AccordionRoot
-				className="gap-2"
-				indicatorPlacement="inline"
-				onValueChange={(open) =>
-					setClosed(new Set(keys.filter((k) => !open.includes(k))))
-				}
-				value={keys.filter((k) => !closed.has(k))}
-			>
-				{textFilters.map((t) => (
-					<Group count={1} key={t.key} title={t.title} value={t.key}>
-						<Button
-							block
-							className="justify-start"
-							onClick={() => onChange(t.clear)}
-							size="small"
-							title={`取消「${t.title} ${t.value}」`}
-							type="fill"
-						>
-							<Text className="min-w-0 flex-1 text-start" ellipsis>
-								{t.value}
-							</Text>
-							<Icon
-								className="shrink-0 text-fg-secondary"
-								icon={XIcon}
-								size="small"
-							/>
-						</Button>
-					</Group>
-				))}
-				{shown.map((field) => (
-					<Group
-						count={field.values.length}
-						key={field.key}
-						title={field.title}
-						value={field.key}
-					>
-						<FilterFacet field={field} onChange={onChange} />
-					</Group>
-				))}
-			</AccordionRoot>
-		</div>
+					<Option multi={null} n={null}>
+						{t.value}
+					</Option>
+				</Group>
+			))}
+			{shown.map((field) => (
+				<Group
+					count={field.values.length}
+					key={field.key}
+					onClear={() => onChange(field.set([]))}
+					title={field.title}
+					value={field.key}
+				>
+					<FilterFacet field={field} onChange={onChange} />
+				</Group>
+			))}
+		</AccordionRoot>
 	);
 }
 
-/** 一组：组名 12px 次要色，后面跟选了几项，三角紧跟在后面；点组名收起或展开。 */
+/**
+ * 一组：组名 12px 中粗次要色，后面跟选了几项（三级灰、等宽数字），三角紧跟在后面；
+ * 点组名收起或展开。选了东西时行尾有一个清掉这一维的钮。
+ */
 function Group({
 	value,
 	title,
 	count,
+	onClear,
 	children,
 }: {
 	value: string;
 	title: string;
 	/** 这一组选中了几项；0 时不写。 */
 	count: number;
+	onClear: () => void;
 	children: ReactNode;
 }) {
 	return (
@@ -134,14 +113,24 @@ function Group({
 							{title}
 						</Text>
 						{count > 0 && (
-							<Text className="tabular-nums" size="xs" type="secondary">
+							<Text className="tabular-nums" size="xs" type="tertiary">
 								{count}
 							</Text>
 						)}
 					</span>
 				</AccordionTrigger>
+				{count > 0 && (
+					<AccordionAction>
+						<ActionIcon
+							icon={XIcon}
+							onClick={onClear}
+							size="small"
+							title={`清除「${title}」`}
+						/>
+					</AccordionAction>
+				)}
 			</AccordionHeader>
-			<AccordionPanel contentClassName="flex flex-col gap-px pt-px">
+			<AccordionPanel contentClassName="flex flex-col gap-px">
 				{children}
 			</AccordionPanel>
 		</AccordionItem>
@@ -179,14 +168,14 @@ function FilterFacet({
 			{rows(head)}
 			{all && rows(rest)}
 			{rest.length > 0 && (
-				<Button
-					className="self-start text-fg-secondary"
+				<NavItem
+					icon={all ? ChevronUpIcon : MoreHorizontalIcon}
+					iconSize="small"
 					onClick={() => setAll(!all)}
-					size="small"
-					type="text"
+					render={<button type="button" />}
 				>
 					{all ? "收起" : `更多 ${rest.length} 项`}
-				</Button>
+				</NavItem>
 			)}
 		</>
 	);
@@ -223,31 +212,34 @@ function FilterFacet({
 }
 
 /**
- * 一个选项一行：36px 高，行内左右 4px；选择框在 28px 见方的格里，和导航项的图标格
- * 同宽；名字截断时悬停看全；人数在行尾。选中的一行字换成正文色。
+ * 一个选项一行，和导航项同一个排法：36px 高，行内左右 4px；选择框在 28px 见方的格里，
+ * 和导航项的图标格同宽；名字截断时悬停看全；人数在行尾。选中的一行字换成正文色。
+ * 文本条件（`multi` 为 null）没有候选，只有一行正文色的字，清掉它用组名行尾的钮。
  */
 function Option({
 	children,
 	disabled,
 	multi,
 	n,
-	value,
+	value = "",
 }: {
 	children: ReactNode;
 	disabled?: boolean;
-	multi: boolean;
+	multi: boolean | null;
 	n: number | null;
-	value: string;
+	value?: string;
 }) {
 	return (
 		<Block
 			align="center"
-			as="label"
+			as={multi === null ? "div" : "label"}
 			className={cn(
-				"text-fg-secondary has-data-checked:text-fg",
+				multi === null
+					? "text-fg"
+					: "text-fg-secondary has-data-checked:text-fg",
 				disabled && "cursor-not-allowed opacity-50",
 			)}
-			clickable={!disabled}
+			clickable={multi !== null && !disabled}
 			gap={8}
 			height={36}
 			horizontal
@@ -255,11 +247,8 @@ function Option({
 			variant="borderless"
 		>
 			<Center flex="none" height={28} width={28}>
-				{multi ? (
-					<Checkbox disabled={disabled} value={value} />
-				) : (
-					<Radio disabled={disabled} value={value} />
-				)}
+				{multi === true && <Checkbox disabled={disabled} value={value} />}
+				{multi === false && <Radio disabled={disabled} value={value} />}
 			</Center>
 			<Text className="min-w-0 flex-1" ellipsis={{ tooltip: true }}>
 				{children}

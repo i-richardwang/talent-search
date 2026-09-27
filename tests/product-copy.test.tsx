@@ -181,13 +181,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 	});
 
 	test("等条件出来时名单抬头只有用户自己那句话，不重复说在整理", () => {
-		const text = seen(
-			<QueryHeader
-				onChangeSpec={() => {}}
-				spec={null}
-				title="做过线下渠道运营、带过团队的人"
-			/>,
-		);
+		const text = seen(<QueryHeader title="做过线下渠道运营、带过团队的人" />);
 		assert.match(text, /做过线下渠道运营、带过团队的人/);
 		assert.doesNotMatch(text, /整理/);
 	});

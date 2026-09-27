@@ -32,7 +32,8 @@ const KEYS: Key[] = [
 ];
 
 /**
- * 快捷键列表，按「?」打开。每一行左边是做什么和一句说明，右边是键帽。
+ * 快捷键列表，按「?」打开。一列排下来，行与行相隔 32px，上下各留 24px；每一行左边是
+ * 做什么和一句说明（12px 三级灰），右边是填充的键帽。
  * `editable` 为假时这条链改不了查询（对话的链没配 AI 服务），不列「/」。
  * 按键本身由 `-lib/keyboard-flow.ts` 处理。
  */
@@ -49,7 +50,7 @@ export function KeyHelp({
 }) {
 	return (
 		<Modal noFooter onCancel={onClose} open={open} title="快捷键">
-			<div className="grid grid-cols-1 gap-8 py-2 sm:grid-cols-2">
+			<div className="flex flex-col gap-8 pt-6 pb-2">
 				{[...(editable ? [EDIT_KEY[mode]] : []), ...KEYS].map((key) => (
 					<div className="flex items-start gap-4" key={key.title}>
 						<div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -58,7 +59,7 @@ export function KeyHelp({
 								{key.desc}
 							</Text>
 						</div>
-						<Hotkey keys={key.keys} variant="outlined" />
+						<Hotkey keys={key.keys} />
 					</div>
 				))}
 			</div>

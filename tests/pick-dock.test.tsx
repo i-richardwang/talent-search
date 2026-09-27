@@ -2,9 +2,9 @@
  * 选中人之后浮现的工具条。
  *
  * 三条约束：显示的数字等于选中人数；默认不展开人名（姓名会随选中人数增加不断
- * 挤压名单宽度，而名单才是用户正在读的内容），但这个数字要能点开——选中记录按
- * 快照保存，改过筛选后有几个人不在名单上，没有这个入口就既无法核对也无法移除；
- * 一个人都没选时不渲染。
+ * 挤压名单宽度，而名单才是用户正在读的内容），但要有一个钮点开看已选的人——选中
+ * 记录按快照保存，改过筛选后有几个人不在名单上，没有这个入口就既无法核对也无法移除；
+ * 一个人都没选时不渲染。动作是只有图标的钮，名字在 aria-label 上。
  *
  * 姓名为虚构数据。
  */
@@ -51,21 +51,18 @@ const markup = (chosen: Pick[]) =>
 
 describe("选择后浮起来的工具条", () => {
 	test("显示人数，并给出两个动作", () => {
-		const text = visibleText(markup([pick("林岚", 1), pick("周予", 2)]));
-		assert.match(text, /已选\s*2\s*人/);
-		assert.ok(text.includes("清空"), text);
-		// 导出那一颗自己带上人数：手指落上去之前就知道这一下会导出几个人
-		assert.match(text, /导出\s*2\s*人/);
+		const html = markup([pick("林岚", 1), pick("周予", 2)]);
+		assert.match(visibleText(html), /已选\s*2\s*人/);
+		assert.ok(html.includes('aria-label="清空已选"'), html);
+		// 导出那一颗自己带上人数：指针落上去之前就知道这一下会导出几个人
+		assert.ok(html.includes('aria-label="导出 2 人"'), html);
 	});
 
 	test("默认只显示人数，点开才列出选了谁", () => {
 		const html = markup([pick("林岚", 1)]);
 		assert.doesNotMatch(visibleText(html), /林岚/);
 		// 选中的是哪几个人、以及怎么移除其中一个，都在这个按钮后面
-		const buttons = [...html.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)];
-		assert.ok(
-			buttons.some(([, inner]) => visibleText(inner ?? "").startsWith("已选")),
-		);
+		assert.match(html, /<button[^>]*aria-label="已选的人"/);
 	});
 
 	test("一个都没选时不渲染", () => {

@@ -161,6 +161,29 @@ function Appearances() {
 							<Checkbox aria-label="禁用且已勾选" defaultChecked disabled />
 						</TableCell>
 					</TableRow>
+					<TableRow>
+						<TableCell className="font-mono text-xs">size=18</TableCell>
+						<TableCell>
+							<Checkbox aria-label="未勾选" size={18} />
+						</TableCell>
+						<TableCell>
+							<Checkbox aria-label="已勾选" defaultChecked size={18} />
+						</TableCell>
+						<TableCell>
+							<Checkbox aria-label="半选" indeterminate size={18} />
+						</TableCell>
+						<TableCell>
+							<Checkbox aria-label="禁用" disabled size={18} />
+						</TableCell>
+						<TableCell>
+							<Checkbox
+								aria-label="禁用且已勾选"
+								defaultChecked
+								disabled
+								size={18}
+							/>
+						</TableCell>
+					</TableRow>
 				</TableBody>
 			</Table>
 		</Block>
@@ -272,8 +295,8 @@ export function CheckboxPage() {
 					"多选用 Checkbox，单选用 Radio，一次动作用 Button。",
 					"一组选项用 CheckboxGroup 持有取值，行由调用处排，行尾可以放人数。",
 					"全选框写 parent、组给 allValues，半选由组算出，不另画一种图标。",
-					"选择框放在可点击的卡片外面，不嵌进链接覆盖层。",
-					"方框的尺寸固定，不覆盖方框的尺寸、圆角和边框。",
+					"可点击的一行里，选择框放在压住链接覆盖层的选择格里（ListView 的 pick），不嵌进链接。",
+					"方框边长用 size 给（默认 16，可多选的列表里 18），圆角随边长走，不在调用处覆盖。",
 				],
 				usage: `<CheckboxGroup aria-label="招聘渠道" onChange={setValue} value={value}>\n  <Checkbox value="campus">校园招聘</Checkbox>\n  <Checkbox value="social">社会招聘</Checkbox>\n</CheckboxGroup>`,
 			}}
