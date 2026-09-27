@@ -177,6 +177,8 @@ const CATALOG = [
 			component("empty", "空状态", "Empty"),
 			component("skeleton", "骨架屏", "Skeleton"),
 			component("alert", "警告提示", "Alert"),
+			component("code-block", "代码块", "CodeBlock"),
+			component("copy-button", "复制按钮", "CopyButton"),
 			component("tooltip", "文字提示", "Tooltip"),
 			component("popover", "气泡卡片", "Popover"),
 			component("dropdown-menu", "下拉菜单", "DropdownMenuRoot"),

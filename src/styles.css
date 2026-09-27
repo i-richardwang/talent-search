@@ -21,10 +21,12 @@
 @import "./components/ui/hotkey.css" layer(components);
 @import "./components/ui/button.css" layer(components);
 @import "./components/ui/action-icon.css" layer(components);
+@import "./components/ui/copy-button.css" layer(components);
 @import "./components/ui/input.css" layer(components);
 @import "./components/ui/segmented.css" layer(components);
 @import "./components/ui/tag.css" layer(components);
 @import "./components/ui/alert.css" layer(components);
+@import "./components/ui/code-block.css" layer(components);
 @import "./components/ui/collapsible.css" layer(components);
 @import "./components/ui/accordion.css" layer(components);
 @import "./components/ui/collapse.css" layer(components);

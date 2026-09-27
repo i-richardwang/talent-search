@@ -1,0 +1,168 @@
+/*
+ * CodeBlock 的外观，类名以 `.ui-code-block` 开头。块的先后是层叠顺序：root，
+ * variant（filled、outlined、borderless）；其后是部件：actions、language、header、
+ * title、header-actions、body、pre、code、line；最后是跟着根上状态走的几条：
+ * wrap / nowrap、borderless 的正文、头部与正文之间的线、悬停才出现的部件。
+ */
+
+.ui-code-block {
+	position: relative;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	border-radius: var(--radius-md);
+	transition: background-color 100ms var(--ease-out);
+}
+
+.ui-code-block-filled {
+	background: var(--color-fill-quaternary);
+}
+
+.ui-code-block-outlined {
+	border: 1px solid var(--color-border-secondary);
+	background: var(--color-container);
+}
+
+.ui-code-block-borderless {
+	border: none;
+	background: none;
+	box-shadow: none;
+}
+
+.ui-code-block-actions {
+	position: absolute;
+	z-index: var(--z-index-raise);
+	inset-block-start: 8px;
+	inset-inline-end: 8px;
+	display: flex;
+	flex: none;
+	gap: 4px;
+	align-items: center;
+	opacity: 0;
+}
+
+/* 两个类名压过 Tag 自己的底色与字族 */
+.ui-code-block-language.ui-code-block-language {
+	position: absolute;
+	z-index: var(--z-index-raise);
+	inset-block-end: 8px;
+	inset-inline-end: 8px;
+	font-family: var(--font-mono);
+	color: var(--color-fg-secondary);
+	opacity: 0;
+	background: var(--color-fill-quaternary);
+	box-shadow: none;
+	backdrop-filter: saturate(150%) blur(10px);
+	transition: opacity 100ms;
+}
+
+.ui-code-block-header {
+	position: relative;
+	display: flex;
+	flex: none;
+	gap: 4px;
+	align-items: center;
+	justify-content: space-between;
+	padding: 4px;
+	background: transparent;
+}
+
+.ui-code-block-title {
+	overflow: hidden;
+	flex: 1;
+	min-width: 0;
+	padding-inline: 8px;
+	font-size: var(--text-sm);
+	line-height: var(--text-sm--line-height);
+	color: var(--color-fg);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	opacity: 0.5;
+	filter: grayscale(100%);
+	transition:
+		opacity 200ms var(--ease-out),
+		filter 200ms var(--ease-out);
+}
+
+.ui-code-block-header-actions {
+	display: flex;
+	flex: none;
+	gap: 4px;
+	align-items: center;
+	opacity: 0;
+	transition: opacity 200ms var(--ease-out);
+}
+
+.ui-code-block-body {
+	overflow: auto;
+	flex: 1;
+	min-height: 0;
+}
+
+.ui-code-block-pre {
+	width: max-content;
+	min-width: 100%;
+	margin: 0;
+	padding: 16px;
+	font-size: var(--text-xs);
+	color: var(--color-fg);
+	text-align: start;
+	white-space: pre;
+	overflow-wrap: normal;
+	direction: ltr;
+}
+
+.ui-code-block-code {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	background: transparent;
+}
+
+.ui-code-block-line {
+	display: block;
+	min-height: 1lh;
+}
+
+/* 折行时正文跟着块宽走，不再按最长的一行撑开 */
+.ui-code-block-wrap .ui-code-block-pre {
+	width: auto;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.ui-code-block-borderless .ui-code-block-pre {
+	padding: 0;
+}
+
+/* 头部和正文之间一根四级填充色的线；borderless 没有面，也就没有这根线 */
+.ui-code-block-filled .ui-code-block-header + .ui-code-block-body,
+.ui-code-block-outlined .ui-code-block-header + .ui-code-block-body {
+	border-block-start: 1px solid var(--color-fill-quaternary);
+}
+
+.ui-code-block:is(:hover, :focus-within) .ui-code-block-actions,
+.ui-code-block:is(:hover, :focus-within) .ui-code-block-header-actions,
+.ui-code-block:is(:hover, :focus-within) .ui-code-block-title {
+	opacity: 1;
+}
+
+.ui-code-block:hover .ui-code-block-title {
+	filter: grayscale(0%);
+}
+
+.ui-code-block:is(:hover, :focus-within)
+	.ui-code-block-language.ui-code-block-language {
+	opacity: 1;
+}
+
+/* 没有悬停的设备上等不到指针进来，常显 */
+@media (hover: none) {
+	.ui-code-block .ui-code-block-actions,
+	.ui-code-block .ui-code-block-header-actions,
+	.ui-code-block .ui-code-block-title,
+	.ui-code-block .ui-code-block-language.ui-code-block-language {
+		opacity: 1;
+	}
+}

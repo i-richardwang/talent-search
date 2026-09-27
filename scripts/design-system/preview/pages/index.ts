@@ -10,8 +10,10 @@ import { ButtonPage } from "./components/button";
 import { ChatInputPage } from "./components/chat-input";
 import { CheckboxPage } from "./components/checkbox";
 import { ChoiceMenuPage } from "./components/choice-menu";
+import { CodeBlockPage } from "./components/code-block";
 import { CollapsePage } from "./components/collapse";
 import { CollapsiblePage } from "./components/collapsible";
+import { CopyButtonPage } from "./components/copy-button";
 import { DescriptionsPage } from "./components/descriptions";
 import { DividerPage } from "./components/divider";
 import { DrawerPage } from "./components/drawer";
@@ -103,6 +105,8 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/empty": EmptyPage,
 	"components/skeleton": SkeletonPage,
 	"components/alert": AlertPage,
+	"components/code-block": CodeBlockPage,
+	"components/copy-button": CopyButtonPage,
 	"components/tooltip": TooltipPage,
 	"components/popover": PopoverPage,
 	"components/dropdown-menu": DropdownMenuPage,

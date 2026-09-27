@@ -6,7 +6,11 @@ import { isValidElement, type ReactNode } from "react";
  * 浮层组件与按钮组件之间因此没有循环依赖。名单外的组件当作不是按钮。
  */
 
-const NATIVE_BUTTON_COMPONENTS = new Set(["ActionIcon", "Button"]);
+const NATIVE_BUTTON_COMPONENTS = new Set([
+	"ActionIcon",
+	"Button",
+	"CopyButton",
+]);
 
 /** 子元素是不是字面写的 `<button>`。 */
 export function isNativeButtonElement(children: ReactNode): boolean {

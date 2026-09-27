@@ -1,7 +1,7 @@
 /*
  * 块的先后：backdrop；popup、popup 的两个方位；panel、panel 的两个方位；其后是面板里的
- * 部件，按 DOM 的先后：header、container-inner、title、extra、extra-floating、close、
- * content、body-content。同一元素上的修饰类与基础类
+ * 部件，按 DOM 的先后：header、container-inner、container-inner-footer、title、extra、
+ * extra-floating、close、content、body-content、footer。同一元素上的修饰类与基础类
  * 特异性相同，写在后面才压得过基础类。进出场由 motion 放，这里不写过渡。
  * 背板与浮层的 z 值用弹层档 `--z-index-popup`，后开的 portal 接在文档后面，压住先开的。
  */
@@ -94,6 +94,10 @@
 	width: 100%;
 }
 
+.ui-drawer-container-inner-footer {
+	justify-content: flex-end;
+}
+
 .ui-drawer-title {
 	margin: 0;
 
@@ -181,4 +185,16 @@
 	min-height: 100%;
 	padding-block: 12px;
 	padding-inline: 16px;
+}
+
+.ui-drawer-footer {
+	display: flex;
+	flex: none;
+	gap: 8px;
+	align-items: center;
+	justify-content: flex-end;
+
+	padding-block: 12px;
+	padding-inline: 16px;
+	border-block-start: 1px solid var(--color-split);
 }

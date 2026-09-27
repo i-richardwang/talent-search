@@ -1,5 +1,6 @@
 import {
 	ActivityIcon,
+	ExternalLinkIcon,
 	type LucideIcon,
 	PanelLeftOpenIcon,
 	TableIcon,
@@ -10,6 +11,7 @@ import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
+import { CopyButton } from "#/components/ui/copy-button";
 import {
 	Drawer,
 	DrawerBackdrop,
@@ -79,6 +81,28 @@ function CandidateBody() {
 	);
 }
 
+/** 头部右侧的两个动作：复制合成的工号、在新页打开。 */
+function HeaderActions() {
+	return (
+		<>
+			<CopyButton content="E0012345" size="header" title="复制工号" />
+			<ActionIcon icon={ExternalLinkIcon} size="header" title="在新页打开" />
+		</>
+	);
+}
+
+/** 底部一条：两个按钮靠右。 */
+function FooterActions({ close }: { close: () => void }) {
+	return (
+		<>
+			<Button onClick={close}>取消</Button>
+			<Button onClick={close} type="primary">
+				加入名单
+			</Button>
+		</>
+	);
+}
+
 type Placement = "left" | "right";
 
 const PLACEMENTS: { label: string; value: Placement }[] = [
@@ -93,6 +117,8 @@ function Playground() {
 	const read = useTokenNumber();
 	const [placement, setPlacement] = useState<Placement>("right");
 	const [header, setHeader] = useState(true);
+	const [extra, setExtra] = useState(false);
+	const [footer, setFooter] = useState(false);
 	const close = () => setOpen(false);
 	return (
 		<div className="flex flex-col gap-4">
@@ -107,6 +133,16 @@ function Playground() {
 				<Control>
 					<Checkbox checked={header} onChange={setHeader}>
 						头部
+					</Checkbox>
+				</Control>
+				<Control>
+					<Checkbox checked={extra} onChange={setExtra}>
+						头部动作
+					</Checkbox>
+				</Control>
+				<Control>
+					<Checkbox checked={footer} onChange={setFooter}>
+						底部
 					</Checkbox>
 				</Control>
 			</Controls>
@@ -124,6 +160,8 @@ function Playground() {
 				</Button>
 				<Drawer
 					afterClose={afterClose}
+					extra={extra ? <HeaderActions /> : undefined}
+					footer={footer ? <FooterActions close={close} /> : undefined}
 					noHeader={!header}
 					onClose={close}
 					open={open}
@@ -168,6 +206,34 @@ function Forms() {
 						)}
 					/>
 					<OverlayRow
+						code="extra"
+						label="头部动作排在关闭按钮左边"
+						render={(open, close) => (
+							<Drawer
+								extra={<HeaderActions />}
+								onClose={close}
+								open={open}
+								title="候选人 A"
+							>
+								<CandidateBody />
+							</Drawer>
+						)}
+					/>
+					<OverlayRow
+						code="footer"
+						label="底部一条，按钮靠右，不随正文滚动"
+						render={(open, close) => (
+							<Drawer
+								footer={<FooterActions close={close} />}
+								onClose={close}
+								open={open}
+								title="候选人 A"
+							>
+								<CandidateBody />
+							</Drawer>
+						)}
+					/>
+					<OverlayRow
 						code="width"
 						label="加宽到宽屏右栏的宽度"
 						render={(open, close) => (
@@ -176,6 +242,20 @@ function Forms() {
 								open={open}
 								title="候选人 A"
 								width="var(--container-detail-wide)"
+							>
+								<CandidateBody />
+							</Drawer>
+						)}
+					/>
+					<OverlayRow
+						code="width min()"
+						label="按视口收窄：min(92vw, 520px)"
+						render={(open, close) => (
+							<Drawer
+								onClose={close}
+								open={open}
+								title="候选人 A"
+								width="min(92vw, 520px)"
 							>
 								<CandidateBody />
 							</Drawer>
@@ -311,12 +391,13 @@ function Usage() {
 export function DrawerPage() {
 	return (
 		<DocPage
-			facts={[`${PLACEMENTS.length} 个方位`, "可不带头部"]}
+			facts={[`${PLACEMENTS.length} 个方位`, "可不带头部", "头部动作", "底部"]}
 			rules={{
 				notes: [
 					"一次阅读用 Drawer，两侧反复对照才用并列栏。",
 					"抽屉挂在打开它的组件里，用受控的 open，关闭走 onClose；滑出之后要做的事放 afterClose。",
-					"尺寸用 width，不覆盖面板的圆角、内边距和投影。",
+					"尺寸用 width，不覆盖面板的圆角、内边距和投影；要跟着视口收窄就写 min(…)。",
+					"标题旁的动作放 extra，排在关闭按钮左边；确认一类的按钮放 footer，靠右。",
 					"正文要贴边时用原子件自己拼，关闭按钮放进 DrawerExtra。",
 				],
 				usage: `<Drawer\n  onClose={() => setOpen(false)}\n  open={open}\n  title="候选人 A"\n>\n  …\n</Drawer>`,

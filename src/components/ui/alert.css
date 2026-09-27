@@ -1,7 +1,9 @@
 /*
  * Alert 的外观，类名都以 `.ui-alert` 开头。各块先后就是层叠顺序，后面的块盖前面的：
- * 根元素上是 tone、root、centered / detailed；其后是各部件：icon、content、title、
- * description、action、close。
+ * 根元素上是 tone、root、centered / detailed、variant（filled、outlined、borderless）、
+ * unified；其后是各部件：icon、content、title、description、action、close；
+ * 最后是带详情时的外层 container 与它的 variant、详情 extra、extra-header、
+ * extra-indicator、extra-content。
  */
 
 .ui-alert-tone-error {
@@ -87,6 +89,30 @@
 .ui-alert-detailed {
 	padding-block: 12px;
 	padding-inline: 14px;
+}
+
+.ui-alert-filled {
+	background: var(--ui-alert-background);
+	box-shadow: inset 0 0 0 1px var(--ui-alert-border);
+}
+
+.ui-alert-outlined {
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--color-border-secondary);
+}
+
+.ui-alert-borderless {
+	padding-block: 2px;
+	padding-inline: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+/* 带详情时底和边画在外层 container 上，提示条本身不再画 */
+.ui-alert-unified {
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
 }
 
 .ui-alert-icon {
@@ -182,4 +208,101 @@
 	@media (prefers-reduced-motion: reduce) {
 		transition-duration: 0s;
 	}
+}
+
+.ui-alert-container {
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	max-width: 100%;
+	border-radius: var(--radius-md);
+}
+
+.ui-alert-container-filled {
+	background: var(--ui-alert-background);
+	box-shadow: inset 0 0 0 1px var(--ui-alert-border);
+}
+
+.ui-alert-container-outlined {
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--color-border-secondary);
+}
+
+.ui-alert-container-borderless {
+	background: transparent;
+}
+
+.ui-alert-extra {
+	position: relative;
+	max-width: 100%;
+	color: var(--color-fg);
+}
+
+.ui-alert-extra-borderless {
+	background: transparent;
+}
+
+.ui-alert-extra-header {
+	cursor: pointer;
+	user-select: none;
+	display: flex;
+	gap: 6px;
+	align-items: center;
+	min-height: 40px;
+	padding-block: 8px;
+	padding-inline: 14px;
+	border-block-start: 1px solid var(--color-border-secondary);
+	border-radius: 0;
+	font-size: var(--text-xs);
+	font-weight: 500;
+	line-height: 20px;
+	color: var(--color-fg-secondary);
+	background: transparent;
+	transition:
+		color 160ms var(--ease-out),
+		background-color 160ms var(--ease-out);
+
+	&::marker,
+	&::-webkit-details-marker {
+		content: "";
+		display: none;
+	}
+
+	&:hover {
+		color: var(--color-fg);
+		background: var(--color-fill-quaternary);
+	}
+
+	@apply focus-ring;
+
+	.ui-alert-extra-borderless > & {
+		margin-block-start: 6px;
+		padding-inline: 0;
+	}
+}
+
+.ui-alert-extra-indicator {
+	flex-shrink: 0;
+	color: var(--color-fg-tertiary);
+	transition: transform 160ms var(--ease-out);
+
+	.ui-alert-extra[open] > summary > & {
+		transform: rotate(90deg);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}
+
+.ui-alert-extra-content {
+	overflow: hidden;
+	margin-block: 0 12px;
+	margin-inline: 12px;
+	padding: 8px;
+	border-radius: var(--radius-sm);
+	font-size: var(--text-xs);
+	color: var(--color-fg);
+	background: var(--color-fill-quaternary);
 }

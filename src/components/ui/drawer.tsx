@@ -22,9 +22,13 @@ import { cn } from "#/lib/utils";
  * - 背板和浮层都在 `--z-index-popup` 这一档，portal 到 `<body>`，按打开先后接在
  *   末尾，后开的压住先开的（与 floating.ts 同一口径）。
  * - 拼装用的原子件：`DrawerRoot`、`DrawerPortal`、`DrawerBackdrop`、`DrawerPopup`、
- *   `DrawerHeader`、`DrawerTitle`、`DrawerDescription`、`DrawerClose`、`DrawerExtra`。
+ *   `DrawerHeader`、`DrawerTitle`、`DrawerDescription`、`DrawerClose`、`DrawerExtra`、
+ *   `DrawerFooter`。
  *   `DrawerExtra` 是头部右侧放关闭按钮的那一格；自己拼头部时关闭按钮放进它，
- *   位置才和 `Drawer` 的一致。
+ *   位置才和 `Drawer` 的一致。`DrawerFooter` 是面板底部的一条，内容靠右。
+ * - `extra` 排在头部右侧、关闭按钮左边；`footer` 在正文下面，上面一根分隔线，
+ *   不随正文滚动。
+ * - `width` 收任何 CSS 长度，如 `min(92vw, 520px)`；比视口宽时由浮层夹到视口宽。
  */
 
 type DrawerPlacement = "left" | "right";
@@ -125,6 +129,17 @@ export function DrawerExtra({
 	return <div className={cn("ui-drawer-extra", className)}>{children}</div>;
 }
 
+/** 面板底部的一条：上面一根分隔线，内容靠右排。 */
+export function DrawerFooter({ children }: { children: ReactNode }) {
+	return (
+		<div className="ui-drawer-footer">
+			<div className="ui-drawer-container-inner ui-drawer-container-inner-footer">
+				{children}
+			</div>
+		</div>
+	);
+}
+
 export function DrawerClose() {
 	return (
 		<Dialog.Close aria-label="关闭" className="ui-drawer-close">
@@ -137,7 +152,11 @@ interface DrawerProps {
 	/** 退场动画放完之后调用。 */
 	afterClose?: () => void;
 	children: ReactNode;
-	/** 没有头部，关闭按钮浮在右上角。 */
+	/** 头部右侧、关闭按钮左边的动作。 */
+	extra?: ReactNode;
+	/** 正文下面的一条，内容靠右，不随正文滚动。 */
+	footer?: ReactNode;
+	/** 没有头部，关闭按钮（连同 `extra`）浮在右上角。 */
 	noHeader?: boolean;
 	onClose: () => void;
 	open: boolean;
@@ -152,6 +171,8 @@ export function Drawer({
 	placement = "right",
 	width = "var(--container-detail)",
 	title,
+	extra,
+	footer,
 	noHeader,
 	afterClose,
 	onClose,
@@ -170,6 +191,7 @@ export function Drawer({
 				<DrawerPopup placement={placement} width={width}>
 					{noHeader ? (
 						<DrawerExtra className="ui-drawer-extra-floating">
+							{extra}
 							<DrawerClose />
 						</DrawerExtra>
 					) : (
@@ -181,6 +203,7 @@ export function Drawer({
 									<DrawerTitle>{title}</DrawerTitle>
 								)}
 								<DrawerExtra>
+									{extra}
 									<DrawerClose />
 								</DrawerExtra>
 							</div>
@@ -189,6 +212,7 @@ export function Drawer({
 					<div className="ui-drawer-content">
 						<div className="ui-drawer-body-content">{children}</div>
 					</div>
+					{footer && <DrawerFooter>{footer}</DrawerFooter>}
 				</DrawerPopup>
 			</DrawerPortal>
 		</DrawerRoot>
