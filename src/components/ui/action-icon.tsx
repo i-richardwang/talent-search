@@ -13,14 +13,19 @@ import { cn } from "#/lib/utils";
  * 半透明的浮层色并糊掉底下的内容，用在压在内容上的按钮。
  * 尺寸三档：small（24px，图标 14）放在行里，middle（36px，图标 20）单独摆着，两档的
  * 方块边长是 action-icon.css 的组件令牌；header（28px，图标 16）放在栏顶的页头上，
- * 边长是页头的布局令牌 `--nav-header-action-size`。
+ * 边长是页头的布局令牌 `--nav-header-action-size`。三档之外可以直接给
+ * `{ blockSize, borderRadius, size }`（像素）：方块边长、圆角、图标边长，按钮本身取 middle 一档。
  * 给了 `title` 或 `tooltipProps.hotkey` 就套一层提示，`tooltipProps` 转给它
  * （方位、快捷键）；提示本身不接指针。
  * 传进来的 `tabIndex` 优先，没传时禁用取 -1、否则 0：放在 Toolbar 里时
  * 漫游焦点靠 Toolbar 写的 `tabIndex`。
  */
 
-type ActionIconSize = "small" | "header" | "middle";
+type ActionIconSize =
+	| "small"
+	| "header"
+	| "middle"
+	| { blockSize: number; borderRadius: number; size: number };
 
 export interface ActionIconProps
 	extends Omit<
@@ -71,7 +76,15 @@ const PRESET = {
 
 /** 方块边长、圆角，以及 outdent 要抵掉的那半圈（方块减图标的一半）。 */
 function measure(size: ActionIconSize) {
-	const preset = PRESET[size];
+	const preset =
+		typeof size === "string"
+			? PRESET[size]
+			: {
+					blockSize: `${size.blockSize}px`,
+					borderRadius: `${size.borderRadius}px`,
+					button: "middle" as const,
+					icon: size.size,
+				};
 	return {
 		...preset,
 		outdent: `calc((${preset.blockSize} - ${preset.icon}px) / 2)`,

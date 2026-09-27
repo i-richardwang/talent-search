@@ -1,7 +1,6 @@
 "use client";
 
 import { Collapsible as BaseCollapsible } from "@base-ui/react/collapsible";
-import { ChevronDown } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "#/lib/utils";
 
@@ -9,7 +8,7 @@ import { cn } from "#/lib/utils";
  * 受控的展开与收起，样式在 collapsible.css。`Collapsible` 是面板：`open` 决定它在不在，
  * 高度过渡，内容淡入并位移；收起时内容卸载。`id` 写在面板上。
  *
- * `CollapsibleTrigger` 是它的开关：一行内容加一个箭头（收起朝右、展开朝下），
+ * `CollapsibleTrigger` 是它的开关：一行内容后面紧跟一枚实心三角（收起朝右、展开朝下），
  * 按下调 `onOpenChange`，`aria-expanded` 与指向面板的 `aria-controls` 由它写。
  * 开关与面板不必相邻，靠同一个 `panelId` 配对。
  */
@@ -59,7 +58,14 @@ export function CollapsibleTrigger({
 			type="button"
 		>
 			{children}
-			<ChevronDown aria-hidden className="ui-collapsible-chevron" />
+			<svg
+				aria-hidden="true"
+				className="ui-collapsible-arrow"
+				fill="currentColor"
+				viewBox="0 0 16 16"
+			>
+				<path d="M7.002 10.624a.5.5 0 01-.752-.432V5.808a.5.5 0 01.752-.432l3.758 2.192a.5.5 0 010 .864l-3.758 2.192z" />
+			</svg>
 		</button>
 	);
 }

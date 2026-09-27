@@ -337,7 +337,7 @@ export function Thread({
 					glass
 					icon={ArrowDownIcon}
 					onClick={toBottom}
-					style={{ borderRadius: "50%" }}
+					size={{ blockSize: 36, borderRadius: 36, size: 18 }}
 					tabIndex={atBottom ? -1 : undefined}
 					title="跳转到最新"
 					variant="outlined"

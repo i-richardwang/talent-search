@@ -68,12 +68,7 @@ function Section({
 	return (
 		<section className="flex flex-col gap-2">
 			<h3>
-				<CollapsibleTrigger
-					className="w-fit"
-					onOpenChange={setOpen}
-					open={open}
-					panelId={id}
-				>
+				<CollapsibleTrigger onOpenChange={setOpen} open={open} panelId={id}>
 					<Icon className="text-fg-tertiary" icon={icon} size={16} />
 					<Text size="sm" type="secondary" weight="medium">
 						{title}

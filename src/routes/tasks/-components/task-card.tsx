@@ -149,7 +149,7 @@ export function TaskCard({
 					<Facts corpus={corpus} kind={kind} />
 					{lane.runs.total > 0 && (
 						<>
-							<Divider className="my-0" />
+							<Divider className="my-0" dashed />
 							<RunHistory lane={lane} />
 						</>
 					)}
@@ -234,7 +234,6 @@ function RunHistory({ lane }: { lane: TaskLane }) {
 	return (
 		<section className="flex flex-col gap-2">
 			<CollapsibleTrigger
-				className="w-fit"
 				onOpenChange={setExpanded}
 				open={expanded}
 				panelId={panelId}

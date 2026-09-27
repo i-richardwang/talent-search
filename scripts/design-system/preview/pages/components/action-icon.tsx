@@ -342,7 +342,7 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
-				description="压在滚动内容上的圆钮用 outlined 加 glass：半透明的浮层底糊掉底下的字，对话线程右下角回到最新就是它。"
+				description="压在滚动内容上的圆钮用 outlined 加 glass：半透明的浮层底糊掉底下的字，对话线程右下角回到最新就是它：尺寸直接给 36px 方块、全圆角、18px 图标。"
 				title="压在内容上"
 			>
 				<div className="relative h-28 w-full overflow-hidden rounded-md">
@@ -353,7 +353,7 @@ function Usage() {
 						className="absolute end-4 bottom-4"
 						glass
 						icon={ArrowDown}
-						style={{ borderRadius: "50%" }}
+						size={{ blockSize: 36, borderRadius: 36, size: 18 }}
 						title="跳转到最新"
 						variant="outlined"
 					/>
