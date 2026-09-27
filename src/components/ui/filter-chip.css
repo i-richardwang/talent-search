@@ -1,0 +1,77 @@
+/*
+ * FilterChip 的外观，类名以 `.ui-filter-chip` 开头。块的先后是层叠顺序：root、dashed、
+ * trigger、value、note、clear。32px 高，两端圆角是高的一半。
+ */
+
+.ui-filter-chip {
+	display: inline-flex;
+	align-items: stretch;
+	height: 32px;
+	border: 1px solid var(--color-border-secondary);
+	border-radius: 16px;
+	background: var(--color-fill-tertiary);
+	transition: border-color 150ms;
+
+	&:hover {
+		border-color: var(--color-border);
+	}
+}
+
+.ui-filter-chip-dashed {
+	border-style: dashed;
+	border-color: var(--color-border);
+	color: var(--color-fg-secondary);
+}
+
+/* 开关：左 12 右 6，字与图标间隔 6。 */
+.ui-filter-chip-trigger {
+	cursor: pointer;
+	display: inline-flex;
+	gap: 6px;
+	align-items: center;
+	padding-block: 0;
+	padding-inline: 12px 6px;
+	border: 0;
+	border-start-start-radius: 16px;
+	border-end-start-radius: 16px;
+	font: inherit;
+	font-size: var(--text-sm);
+	color: var(--color-fg);
+	background: none;
+
+	@apply focus-ring;
+
+	.ui-filter-chip-dashed > & {
+		color: var(--color-fg-secondary);
+	}
+}
+
+.ui-filter-chip-value {
+	font-weight: 500;
+}
+
+.ui-filter-chip-note {
+	font-size: var(--text-xs);
+	color: var(--color-fg-secondary);
+}
+
+/* 关闭格：左 8 右 12，三级灰，悬停时字变正文色、铺二级填充。 */
+.ui-filter-chip-clear {
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	padding-block: 0;
+	padding-inline: 8px 12px;
+	border: 0;
+	border-start-end-radius: 16px;
+	border-end-end-radius: 16px;
+	color: var(--color-fg-tertiary);
+	background: none;
+
+	@apply focus-ring;
+
+	&:hover {
+		color: var(--color-fg);
+		background: var(--color-fill-secondary);
+	}
+}

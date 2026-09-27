@@ -21,6 +21,7 @@ import { DraggablePanelPage } from "./components/draggable-panel";
 import { DrawerPage } from "./components/drawer";
 import { DropdownMenuPage } from "./components/dropdown-menu";
 import { EmptyPage } from "./components/empty";
+import { FilterChipPage } from "./components/filter-chip";
 import { FlexPage } from "./components/flex";
 import { FormPage } from "./components/form";
 import { GalleryPage } from "./components/gallery";
@@ -118,6 +119,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/alert": AlertPage,
 	"components/code-block": CodeBlockPage,
 	"components/copy-button": CopyButtonPage,
+	"components/filter-chip": FilterChipPage,
 	"components/tooltip": TooltipPage,
 	"components/popover": PopoverPage,
 	"components/toast": ToastPage,

@@ -179,6 +179,7 @@ const CATALOG = [
 			component("accordion", "手风琴", "Accordion"),
 			component("collapse", "分组卡片", "Collapse"),
 			component("empty", "空状态", "Empty"),
+			component("filter-chip", "条件药丸", "FilterChip"),
 			component("skeleton", "骨架屏", "Skeleton"),
 			component("neural-loading", "AI 进行中", "NeuralLoading"),
 			component("alert", "警告提示", "Alert"),

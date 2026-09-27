@@ -18,6 +18,7 @@
 @import "./components/ui/flex.css" layer(components);
 @import "./components/ui/block.css" layer(components);
 @import "./components/ui/empty.css" layer(components);
+@import "./components/ui/filter-chip.css" layer(components);
 @import "./components/ui/avatar.css" layer(components);
 @import "./components/ui/list.css" layer(components);
 @import "./components/ui/group-block.css" layer(components);

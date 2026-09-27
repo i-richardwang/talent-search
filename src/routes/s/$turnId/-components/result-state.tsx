@@ -90,7 +90,7 @@ export function NoResults({
 					{state.action.label}
 				</Button>
 			}
-			className="py-16"
+			size="large"
 			description={state.hint}
 			icon={SearchXIcon}
 			title={state.title}
@@ -138,7 +138,7 @@ export function NotUnderstood({
 					),
 				)
 			}
-			className="py-16"
+			size="large"
 			description={copy.hint}
 			icon={MessageSquareWarningIcon}
 			title={copy.title}

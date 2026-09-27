@@ -189,8 +189,8 @@
   状态读 `status-badge.tsx` 一张表（成功绿、正在运行与中断 amber、失败红、待处理灰），表格里是点加字，
   运行记录里是圈形图标。列表里的当前项是填充的底（名单行是 `ListViewRow` 的 `current`、导航的
   `NavItem` 的 `active`）；选中用主色一侧的底（勾上的名单行、`Block` 的 `selected`、表格行的 `data-state`）。
-  强度写成字：必须是默认，不写；加分、排除跟在 chip 标签后面，停用的 chip 是虚线边
-  （`Button` 的 `dashed`）。证据点阵共用 `evidence.tsx` 的 Dot 和 BAND_FILL。
+  强度写成字：必须是默认，不写；加分、排除跟在 chip 标签后面，条件一条一枚 `FilterChip`，
+  停用的是虚线边，删除在右边的关闭格。证据点阵共用 `evidence.tsx` 的 Dot 和 BAND_FILL。
 - 画布比卡片暗一档。字阶以外的字号只在组件 CSS 里写一次并注明（首页问句 22px、首页条目
   标题 15px），不在调用处写任意值。
   相同数据和交互反馈不重复绘制；共享尺寸通过代码或令牌表达，不靠注释同步。

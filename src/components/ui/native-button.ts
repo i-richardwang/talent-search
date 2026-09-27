@@ -10,6 +10,7 @@ const NATIVE_BUTTON_COMPONENTS = new Set([
 	"ActionIcon",
 	"Button",
 	"CopyButton",
+	"FilterChipTrigger",
 ]);
 
 /** 子元素是不是字面写的 `<button>`。 */
