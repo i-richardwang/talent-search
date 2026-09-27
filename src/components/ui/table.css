@@ -1,10 +1,15 @@
 /*
- * 块序：外层、表、横向滚动的内容盒、单元格、表头、表体、表脚的基础样式，然后是圆角、
- * 行的悬停与选中、尺寸；尺寸块放在最后，覆盖前面单元格与表脚的内边距。
+ * 块序：外层、表、横向滚动的内容盒、单元格、表头、表体、表脚的基础样式，然后是行的
+ * 悬停、选中与可点、钉住的表头、尺寸，最后是窄宽下的卡片形态；尺寸块换掉单元格与表脚
+ * 读的那对内边距变量，卡片块再覆盖单元格的内边距。
  *
- * 表头是一条安静的标签：12px、字重 500、fg-tertiary 的字，fill-quaternary 的底，
- * 列头之间不画竖线，列名不折行。悬停行同样是 fill-quaternary 的底；分隔线是
- * `--color-border-secondary`，表头圆角是 `--radius-lg`。正文字号 `--text-base`，过渡 0.2s。
+ * 表头是一条安静的标签：12px、字重 500、fg-secondary 的字，elevated 的实底（钉住时
+ * 滚过去的行不透出来），下面一根 split 线，列名不折行。正文 13px（`--text-sm`）；
+ * 行与行之间是 split 线，最后一行下面不画，外框交给装着表的那块 `Block`。
+ * 悬停行是 fill-tertiary 的底，过渡 0.12s。首尾两列离外框 `--table-padding-edge`。
+ *
+ * 表自己不画圆角：`Block` 的圆角加 `overflow: hidden` 裁出四角，表头底色跟着裁，
+ * 不会在角上多出一道不同半径的缝。
  *
  * 单元格与表脚的内边距按三档写成 `:root` 上的组件令牌，设计系统在预览里改它们。
  */
@@ -12,38 +17,27 @@
 :root {
 	--table-padding-block-small: 8px;
 	--table-padding-inline-small: 8px;
-	--table-padding-block-middle: 12px;
-	--table-padding-inline-middle: 8px;
+	--table-padding-block-middle: 10px;
+	--table-padding-inline-middle: 16px;
 	--table-padding-block-large: 16px;
 	--table-padding-inline-large: 16px;
+	--table-padding-edge: 16px;
 }
 
 .ui-table-wrapper {
-	clear: both;
 	max-width: 100%;
 
-	&::before {
-		display: table;
-		content: "";
-	}
-
-	&::after {
-		display: table;
-		clear: both;
-		content: "";
-	}
-
 	.ui-table {
+		--table-cell-padding-block: var(--table-padding-block-large);
+		--table-cell-padding-inline: var(--table-padding-inline-large);
 		box-sizing: border-box;
 		margin: 0;
 		padding: 0;
 		color: var(--color-fg);
-		font-size: var(--text-base);
-		line-height: 1.5714285714285714;
-		list-style: none;
+		font-size: var(--text-sm);
+		line-height: var(--text-sm--line-height);
 		font-family: var(--font-sans);
 		background: var(--color-container);
-		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 		scrollbar-color: var(--color-fg-quaternary) var(--color-split);
 	}
 
@@ -54,70 +48,59 @@
 	table {
 		width: 100%;
 		text-align: start;
-		border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 		border-collapse: separate;
 		border-spacing: 0;
 	}
 
 	.ui-table-cell {
 		position: relative;
-		padding: var(--table-padding-block-large) var(--table-padding-inline-large);
+		padding: var(--table-cell-padding-block) var(--table-cell-padding-inline);
 		overflow-wrap: break-word;
+		vertical-align: middle;
+	}
+
+	tr > .ui-table-cell:first-child {
+		padding-inline-start: var(--table-padding-edge);
+	}
+
+	tr > .ui-table-cell:last-child {
+		padding-inline-end: var(--table-padding-edge);
 	}
 
 	.ui-table-thead > tr > th {
-		position: relative;
-		color: var(--color-fg-tertiary);
+		color: var(--color-fg-secondary);
 		font-size: var(--text-xs);
 		font-weight: 500;
+		line-height: var(--text-xs--line-height);
 		text-align: start;
 		white-space: nowrap;
-		background: var(--color-fill-quaternary);
-		border-bottom: 1px solid var(--color-border-secondary);
+		background: var(--color-elevated);
+		border-bottom: 1px solid var(--color-split);
 	}
 
 	.ui-table-tbody > tr > td {
-		border-bottom: 1px solid var(--color-border-secondary);
-		transition:
-			background-color 0.2s var(--ease-out),
-			border-color 0.2s var(--ease-out);
+		border-bottom: 1px solid var(--color-split);
+		transition: background-color 0.12s var(--ease-out);
+	}
+
+	/* 名字那一格：字重 500，卡片形态里升到 600，所以字重归表管，调用处不写。 */
+	.ui-table-tbody > tr > td[data-slot="title"] {
+		font-weight: 500;
+	}
+
+	.ui-table-tbody > tr:last-child > td {
+		border-bottom: none;
 	}
 
 	.ui-table-footer {
-		padding: var(--table-padding-block-large) var(--table-padding-inline-large);
+		padding: var(--table-cell-padding-block) var(--table-padding-edge);
 		color: var(--color-fg);
-	}
-}
-
-/* 圆角 */
-.ui-table-wrapper .ui-table {
-	.ui-table-container {
-		border-start-start-radius: var(--radius-lg);
-		border-start-end-radius: var(--radius-lg);
-
-		> .ui-table-content {
-			border-start-start-radius: var(--radius-lg);
-			border-start-end-radius: var(--radius-lg);
-		}
-
-		table > thead > tr:first-child {
-			> *:first-child {
-				border-start-start-radius: var(--radius-lg);
-			}
-
-			> *:last-child {
-				border-start-end-radius: var(--radius-lg);
-			}
-		}
-	}
-
-	.ui-table-footer {
-		border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+		border-top: 1px solid var(--color-split);
 	}
 }
 
 /*
- * 行的悬停与选中。悬停用 `:hover`，包在 `:where()` 里不增加特异性，选中行的底色
+ * 行的悬停、选中与可点。悬停用 `:hover`，包在 `:where()` 里不增加特异性，选中行的底色
  * 因此压得住悬停；选中的行是 `data-state="selected"`。
  */
 .ui-table-wrapper .ui-table-tbody .ui-table-row {
@@ -130,26 +113,159 @@
 	}
 
 	&:where(:hover) > .ui-table-cell {
-		background: var(--color-fill-quaternary);
+		background: var(--color-fill-tertiary);
+	}
+
+	/* 可点的行：焦点框画在行的内侧，不被装着表的那块面裁掉；悬停时名字那格换成链接色。 */
+	&[data-clickable] {
+		cursor: pointer;
+
+		&:focus-visible {
+			outline: 2px solid var(--color-primary);
+			outline-offset: -2px;
+		}
+
+		&:hover > [data-slot="title"] {
+			color: var(--color-info);
+		}
 	}
 }
 
-/* middle 与 small 两档，large 就是上面的默认。 */
-.ui-table-wrapper .ui-table.ui-table-size-middle {
-	font-size: var(--text-base);
+/*
+ * 钉住的表头：表体在 `-content` 里纵向滚动，表头 `position: sticky` 贴着它的顶。外层到
+ * `-content` 一路是纵向的弹性盒，调用处给外层的高度（或上限）传到滚动的那一层；表脚
+ * 不参与滚动，一直在表下。
+ */
+.ui-table-wrapper.ui-table-sticky {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
 
-	.ui-table-footer,
-	.ui-table-cell {
-		padding: var(--table-padding-block-middle)
-			var(--table-padding-inline-middle);
+	.ui-table,
+	.ui-table-container {
+		display: flex;
+		flex: 1 1 auto;
+		flex-direction: column;
+		min-height: 0;
 	}
+
+	.ui-table-content {
+		flex: 1 1 auto;
+		min-height: 0;
+		overflow: auto;
+	}
+
+	.ui-table-thead > tr > th {
+		position: sticky;
+		inset-block-start: 0;
+		z-index: 1;
+	}
+}
+
+/* middle 与 small 两档，large 就是上面的默认；首尾两列的 edge 不随档变。 */
+.ui-table-wrapper .ui-table.ui-table-size-middle {
+	--table-cell-padding-block: var(--table-padding-block-middle);
+	--table-cell-padding-inline: var(--table-padding-inline-middle);
 }
 
 .ui-table-wrapper .ui-table.ui-table-size-small {
-	font-size: var(--text-base);
+	--table-cell-padding-block: var(--table-padding-block-small);
+	--table-cell-padding-inline: var(--table-padding-inline-small);
+}
 
-	.ui-table-footer,
-	.ui-table-cell {
-		padding: var(--table-padding-block-small) var(--table-padding-inline-small);
+/*
+ * 卡片形态：外层是尺寸容器，表宽不到 600px 时每行排成一张卡片。卡片是两列的网格，
+ * 标题格在第一行左、附加格在第一行右，两格下面一根线；其余每格独占一行，左边是
+ * `data-label` 写出的标签、右边是值，没有标签的格靠右。卡片悬停不换底，选中仍用主色一侧的底。
+ */
+.ui-table-wrapper.ui-table-narrow-cards {
+	container-type: inline-size;
+}
+
+@container (max-width: 600px) {
+	.ui-table-wrapper.ui-table-narrow-cards .ui-table {
+		table {
+			display: block;
+		}
+
+		.ui-table-thead {
+			display: none;
+		}
+
+		.ui-table-tbody {
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+			padding: var(--table-padding-edge);
+		}
+
+		.ui-table-tbody > tr {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			align-items: center;
+			padding-block: 4px 8px;
+			padding-inline: var(--table-padding-edge);
+			border: 1px solid var(--color-border-secondary);
+			border-radius: var(--radius-lg);
+			transition: background-color 0.12s var(--ease-out);
+
+			&[data-state="selected"] {
+				background: var(--color-primary-bg);
+			}
+
+			&:focus-visible {
+				outline-offset: -1px;
+			}
+		}
+
+		.ui-table-tbody > tr > td {
+			display: flex;
+			grid-column: 1 / -1;
+			gap: 16px;
+			align-items: center;
+			justify-content: space-between;
+			padding-block: 6px;
+			padding-inline: 0;
+			text-align: start;
+			white-space: normal;
+			border-bottom: none;
+
+			&,
+			&:where(.ui-table-row:hover > *) {
+				background: transparent;
+			}
+		}
+
+		.ui-table-tbody > tr > td[data-label]::before {
+			content: attr(data-label);
+			flex-shrink: 0;
+			color: var(--color-fg-secondary);
+		}
+
+		.ui-table-tbody > tr > td:not([data-label], [data-slot]) {
+			justify-content: flex-end;
+		}
+
+		.ui-table-tbody > tr > td[data-slot="title"] {
+			grid-column: 1;
+			grid-row: 1;
+			justify-content: flex-start;
+			padding-block: 8px;
+			border-bottom: 1px solid var(--color-border-secondary);
+			font-size: var(--text-base);
+			font-weight: 600;
+		}
+
+		.ui-table-tbody > tr > td[data-slot="extra"] {
+			grid-column: 2;
+			grid-row: 1;
+			justify-content: flex-end;
+			padding-block: 8px;
+			border-bottom: 1px solid var(--color-border-secondary);
+		}
+
+		.ui-table-tbody > tr > td[data-slot="actions"] {
+			justify-content: flex-end;
+		}
 	}
 }

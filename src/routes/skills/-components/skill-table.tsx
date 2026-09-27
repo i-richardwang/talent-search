@@ -81,7 +81,8 @@ export function SkillTable({
 								units={{ row: "项", total: "项" }}
 							/>
 						}
-						size="small"
+						narrow="cards"
+						size="middle"
 					>
 						<TableHeader>
 							<TableRow>
@@ -94,55 +95,69 @@ export function SkillTable({
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{table.rows.map((e) => (
-								<TableRow
-									data-state={e.canonical === selected ? "selected" : undefined}
-									key={e.canonical}
-								>
-									{/*
-									 * 通往详情的是词本身，一个普通的文字链接。表里不做铺满整行
-									 * 的覆盖层：`<a>` 包不住 `<tr>`，而用绝对定位去补这个缺口
-									 * 得让 `tr` 当包含块，那件事表格行做不到（覆盖层会落到
-									 * `tbody`，每一行都铺满整张表）。名单那边整块可点，因为
-									 * 那一行是 `Block`（`result-list.tsx`）——形状不同，读法就不同。
-									 */}
-									<TableCell className="whitespace-nowrap font-medium">
-										<TextLink
-											render={
-												<Link
-													params={{ word: e.canonical }}
-													search={at(table.page, q)}
-													to="/skills/$word"
-												/>
-											}
+							{table.rows.map((e) => {
+								const detail = {
+									params: { word: e.canonical },
+									search: at(table.page, q),
+									to: "/skills/$word",
+								} as const;
+								return (
+									<TableRow
+										data-state={
+											e.canonical === selected ? "selected" : undefined
+										}
+										key={e.canonical}
+										onActivate={() => void navigate(detail)}
+									>
+										{/*
+										 * 整行点开详情，行本身在 Tab 序里；词仍是一个真链接，
+										 * 中键、右键、新标签页照常，所以它不单独占一个 Tab 位。
+										 */}
+										<TableCell cellSlot="title" className="whitespace-nowrap">
+											<TextLink render={<Link {...detail} />} tabIndex={-1}>
+												{e.canonical}
+											</TextLink>
+										</TableCell>
+										<TableCell
+											cellLabel="人数"
+											className="whitespace-nowrap text-end tabular-nums"
 										>
-											{e.canonical}
-										</TextLink>
-									</TableCell>
-									<TableCell className="whitespace-nowrap text-end tabular-nums">
-										{e.people}
-									</TableCell>
-									<TableCell className="whitespace-nowrap text-fg-secondary">
-										{e.parent ?? "—"}
-									</TableCell>
-									{/*
-									 * 往上一列、往下一列：「属于」说它归在哪个更宽的词底下，
-									 * 「细分」说有几项更细的词归在它底下。细分给的是项数不是
-									 * 词——多的一个词底下有二十几项，列出来这一格比整行都高，
-									 * 而扫表时要知道的只是「这个词有没有下一层」。具体是哪几项
-									 * 在点开的那一层里。
-									 */}
-									<TableCell className="whitespace-nowrap text-end text-fg-secondary tabular-nums">
-										{e.children || "—"}
-									</TableCell>
-									<TableCell className="text-fg-secondary">
-										{e.aliases.length ? e.aliases.join("、") : "—"}
-									</TableCell>
-									<TableCell className="whitespace-nowrap text-end text-fg-secondary tabular-nums">
-										{daysAgo(e.reviewedDaysAgo)}
-									</TableCell>
-								</TableRow>
-							))}
+											{e.people}
+										</TableCell>
+										<TableCell
+											cellLabel="属于"
+											className="whitespace-nowrap text-fg-secondary"
+										>
+											{e.parent ?? "—"}
+										</TableCell>
+										{/*
+										 * 往上一列、往下一列：「属于」说它归在哪个更宽的词底下，
+										 * 「细分」说有几项更细的词归在它底下。细分给的是项数不是
+										 * 词——多的一个词底下有二十几项，列出来这一格比整行都高，
+										 * 而扫表时要知道的只是「这个词有没有下一层」。具体是哪几项
+										 * 在点开的那一层里。
+										 */}
+										<TableCell
+											cellLabel="细分"
+											className="whitespace-nowrap text-end text-fg-secondary tabular-nums"
+										>
+											{e.children || "—"}
+										</TableCell>
+										<TableCell
+											cellLabel="其他写法"
+											className="text-fg-secondary"
+										>
+											{e.aliases.length ? e.aliases.join("、") : "—"}
+										</TableCell>
+										<TableCell
+											cellLabel="上次更新"
+											className="whitespace-nowrap text-end text-fg-secondary tabular-nums"
+										>
+											{daysAgo(e.reviewedDaysAgo)}
+										</TableCell>
+									</TableRow>
+								);
+							})}
 						</TableBody>
 					</Table>
 				</Block>

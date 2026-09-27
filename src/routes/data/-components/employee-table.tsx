@@ -80,7 +80,8 @@ export function EmployeeTable({
 								units={{ row: "个", total: "人" }}
 							/>
 						}
-						size="small"
+						narrow="cards"
+						size="middle"
 					>
 						<TableHeader>
 							<TableRow>
@@ -92,46 +93,51 @@ export function EmployeeTable({
 							</TableRow>
 						</TableHeader>
 						<TableBody>
-							{list.rows.map((row) => (
-								<TableRow
-									data-state={row.empId === selected ? "selected" : undefined}
-									key={row.empId}
-								>
-									<TableCell className="whitespace-nowrap font-mono text-fg-secondary">
-										{row.empId}
-									</TableCell>
-									{/*
-									 * 通往详情的是姓名，一个普通的文字链接——工号那一格是给人
-									 * 核对的，看的人认的是名字。表里不做铺满整行的覆盖层：
-									 * `<a>` 包不住 `<tr>`，而用绝对定位去补这个缺口得让 `tr`
-									 * 当包含块，那件事表格行做不到（覆盖层会落到 `tbody`，每一
-									 * 行都铺满整张表）。名单那边整块可点，因为那一行是 `Block`
-									 * （`result-list.tsx`）——形状不同，读法就不同。
-									 */}
-									<TableCell className="whitespace-nowrap font-medium">
-										<TextLink
-											render={
-												<Link
-													params={{ empId: row.empId }}
-													search={at(list.page, q)}
-													to="/data/$empId"
-												/>
-											}
+							{list.rows.map((row) => {
+								const detail = {
+									params: { empId: row.empId },
+									search: at(list.page, q),
+									to: "/data/$empId",
+								} as const;
+								return (
+									<TableRow
+										data-state={row.empId === selected ? "selected" : undefined}
+										key={row.empId}
+										onActivate={() => void navigate(detail)}
+									>
+										<TableCell
+											cellLabel="工号"
+											className="whitespace-nowrap font-mono text-fg-secondary"
 										>
-											{row.name}
-										</TextLink>
-									</TableCell>
-									<TableCell className="text-fg-secondary">
-										{dots(row.curDept, row.curTitle)}
-									</TableCell>
-									<TableCell className="whitespace-nowrap text-end tabular-nums">
-										{row.segments}
-									</TableCell>
-									<TableCell className="whitespace-nowrap text-end tabular-nums">
-										{row.pending === 0 ? "—" : row.pending}
-									</TableCell>
-								</TableRow>
-							))}
+											{row.empId}
+										</TableCell>
+										{/*
+										 * 整行点开详情，行本身在 Tab 序里；姓名仍是一个真链接，
+										 * 中键、右键、新标签页照常，所以它不单独占一个 Tab 位。
+										 */}
+										<TableCell cellSlot="title" className="whitespace-nowrap">
+											<TextLink render={<Link {...detail} />} tabIndex={-1}>
+												{row.name}
+											</TextLink>
+										</TableCell>
+										<TableCell cellLabel="当前" className="text-fg-secondary">
+											{dots(row.curDept, row.curTitle)}
+										</TableCell>
+										<TableCell
+											cellLabel="经历"
+											className="whitespace-nowrap text-end tabular-nums"
+										>
+											{row.segments}
+										</TableCell>
+										<TableCell
+											cellLabel="待处理"
+											className="whitespace-nowrap text-end tabular-nums"
+										>
+											{row.pending === 0 ? "—" : row.pending}
+										</TableCell>
+									</TableRow>
+								);
+							})}
 						</TableBody>
 					</Table>
 				</Block>

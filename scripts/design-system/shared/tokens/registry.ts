@@ -408,6 +408,16 @@ export const NUMERIC_TOKENS: NumericToken[] = [
 		["padding-block", "单元格纵向内边距", "↕", 0, 32],
 		["padding-inline", "单元格横向内边距", "↔", 0, 32],
 	]),
+	{
+		group: "table",
+		key: "--table-padding-edge",
+		label: "首尾两列离外框",
+		max: 32,
+		min: 0,
+		step: 1,
+		symbol: "⇤",
+		unit: "px",
+	},
 ];
 
 export const numericToken = (key: string): NumericToken | undefined =>
