@@ -172,6 +172,8 @@ const CATALOG = [
 			component("scroll-area", "滚动区", "ScrollArea"),
 			component("toolbar", "工具条", "Toolbar"),
 			component("collapsible", "折叠面板", "Collapsible"),
+			component("accordion", "手风琴", "Accordion"),
+			component("collapse", "分组卡片", "Collapse"),
 			component("empty", "空状态", "Empty"),
 			component("skeleton", "骨架屏", "Skeleton"),
 			component("alert", "警告提示", "Alert"),

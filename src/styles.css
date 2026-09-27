@@ -26,6 +26,8 @@
 @import "./components/ui/tag.css" layer(components);
 @import "./components/ui/alert.css" layer(components);
 @import "./components/ui/collapsible.css" layer(components);
+@import "./components/ui/accordion.css" layer(components);
+@import "./components/ui/collapse.css" layer(components);
 @import "./components/ui/skeleton.css" layer(components);
 @import "./components/ui/checkbox.css" layer(components);
 @import "./components/ui/radio.css" layer(components);

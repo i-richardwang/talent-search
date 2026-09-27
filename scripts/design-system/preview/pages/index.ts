@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import type { PreviewPageId } from "../../shared/catalog";
+import { AccordionPage } from "./components/accordion";
 import { ActionIconPage } from "./components/action-icon";
 import { AlertPage } from "./components/alert";
 import { AppLayoutPage } from "./components/app-layout";
@@ -9,6 +10,7 @@ import { ButtonPage } from "./components/button";
 import { ChatInputPage } from "./components/chat-input";
 import { CheckboxPage } from "./components/checkbox";
 import { ChoiceMenuPage } from "./components/choice-menu";
+import { CollapsePage } from "./components/collapse";
 import { CollapsiblePage } from "./components/collapsible";
 import { DescriptionsPage } from "./components/descriptions";
 import { DividerPage } from "./components/divider";
@@ -96,6 +98,8 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/scroll-area": ScrollAreaPage,
 	"components/toolbar": ToolbarPage,
 	"components/collapsible": CollapsiblePage,
+	"components/accordion": AccordionPage,
+	"components/collapse": CollapsePage,
 	"components/empty": EmptyPage,
 	"components/skeleton": SkeletonPage,
 	"components/alert": AlertPage,
