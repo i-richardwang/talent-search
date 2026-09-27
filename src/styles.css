@@ -32,12 +32,15 @@
 @import "./components/ui/tooltip.css" layer(components);
 @import "./components/ui/popover.css" layer(components);
 @import "./components/ui/dropdown-menu.css" layer(components);
+@import "./components/ui/choice-menu.css" layer(components);
 @import "./components/ui/auto-complete.css" layer(components);
 @import "./components/ui/drawer.css" layer(components);
 @import "./components/ui/modal.css" layer(components);
 @import "./components/ui/scroll-area.css" layer(components);
 @import "./components/ui/divider.css" layer(components);
+@import "./components/ui/descriptions.css" layer(components);
 @import "./components/ui/text-link.css" layer(components);
+@import "./components/ui/search-bar.css" layer(components);
 @import "./components/ui/toolbar.css" layer(components);
 @import "./components/ui/table.css" layer(components);
 @import "./components/ui/tabs.css" layer(components);
@@ -240,7 +243,7 @@
  * - switch-thumb、switch-thumb-hover：开关滑块的浮起，常态与悬停各一份。
  *
  * 下面三个引用颜色令牌，跟着深浅两侧的颜色走，所以在 `.dark` 上再算一次：
- * - edge：贴着描边的一层细投影，用描边色画。工具栏与带 `shadow` 的 Block。
+ * - edge：贴着描边的一层细投影，用描边色画。带 `shadow` 的 Block。
  * - drawer-left、drawer-right：抽屉面板朝内容一侧投的三层影，用 `--color-shadow` 画，
  *   两个名字是面板贴哪条边。
  */
@@ -322,6 +325,9 @@
 
 	/* 每一栏顶上那条页头的高度（`components/ui/app-layout.tsx` 的 `NavHeader`）。 */
 	--nav-header-height: 2.75rem;
+
+	/* 页头上图标按钮的边长（`ActionIcon` 的 `size="header"`）。 */
+	--nav-header-action-size: 1.75rem;
 
 	/* 转圈，0.6 秒一圈：Icon 的 `spin` 与等待圈（icon.css 的 `.ui-spinner`）共用。 */
 	--animate-spin: spin 0.6s linear infinite;

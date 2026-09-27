@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { StrengthLegend } from "#/components/evidence";
+import { StrengthGuide, StrengthLegend } from "#/components/evidence";
 import { ZeroState } from "#/routes/-components/zero-state";
 import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
@@ -22,14 +22,12 @@ const seen = (node: React.ReactNode) => visibleText(renderToStaticMarkup(node));
 const NO_PICKS: Picks = {
 	clear: () => {},
 	picked: new Map(),
-	picking: false,
 	pickAll: () => {},
 	remove: () => {},
 	rows: [],
 	setShown: () => {},
 	shownIds: [],
 	shownPicked: [],
-	start: () => {},
 	toggle: () => {},
 };
 
@@ -91,12 +89,12 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			<ZeroState error={null} mode="conversation" onQuery={() => true} />,
 		);
 		const text = visibleText(html);
-		assert.match(html, /placeholder="描述你要找的人，例如：[^"]+"/);
+		assert.match(html, /aria-placeholder="描述你要找的人，例如：[^"]+"/);
 		assert.match(text, /做过.+、.+的人/);
 		assert.doesNotMatch(text, /经历或技能/, "AI 搜索这一屏没有关键词的框");
 	});
 
-	test("关键词首页一个框一维，不给说话的框", () => {
+	test("关键词首页一维一行，不给说话的框", () => {
 		const html = renderToStaticMarkup(
 			<ZeroState error={null} mode="keyword" onQuery={() => true} />,
 		);
@@ -108,15 +106,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 
 	test("结果数量使用中性状态，不暴露检索术语", () => {
 		const text = seen(
-			<ResultHeader
-				loading={false}
-				onPicking={() => {}}
-				order="evidence"
-				pickable
-				picking={false}
-				evidence
-				total={12}
-			/>,
+			<ResultHeader loading={false} order="evidence" evidence total={12} />,
 		);
 		// 数和单位挨着，中间不能插别的东西。不要求「共」字：它是名单的表头
 		// （12 / 人 / 按匹配度排序），不是句子里的一截。
@@ -245,11 +235,13 @@ describe("产品文案使用常规 SaaS 语言", () => {
 	});
 
 	test("点阵图例说明判断依据，不要求用户理解字段治理", () => {
-		const text = seen(<StrengthLegend />);
+		assert.match(seen(<StrengthLegend />), /匹配来源/);
+		const text = seen(<StrengthGuide />);
 		assert.match(text, /岗位或序列/);
 		assert.match(text, /部门或公司/);
 		// 档名说的是「谁写的」；「简历原文」是路的名字，只指还没读过的段
 		assert.match(text, /简历自述/);
+		assert.doesNotMatch(text, /简历原文/);
 		assert.equal(routeLabel("skill"), "技能");
 		assert.equal(routeLabel("did"), "");
 	});

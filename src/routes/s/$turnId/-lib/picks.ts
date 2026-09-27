@@ -12,11 +12,8 @@ import type {
 } from "#/search/result";
 
 /**
- * 选中待导出的一个人。
- *
- * 它是选中那一刻的快照，不是指向名单的下标：选完再改筛选时，被筛掉的人不会从
- * 选中集合里消失——「已选 12 人」就是 12 个人，导出的也是这 12 个。凭据不随筛选
- * 变化（证据只由条件决定），所以这份快照和屏幕上那张卡片始终一致。
+ * 选中待导出的一个人：选中那一刻的快照。改筛选后被筛掉的人仍算选中，导出的就是
+ * 选中的这些人；证据只由条件决定，快照和名单上那一行一致。
  */
 export type Pick = {
 	empId: string;
@@ -24,7 +21,7 @@ export type Pick = {
 	dept: string | null;
 	title: string | null;
 	level: string | null;
-	/** 在这份名单里排第几。CSV 一排序就把顺序丢了，所以名次得写成一列。 */
+	/** 在这份名单里排第几，导出时写成一列。 */
 	rank: number;
 	/** 每条主张一格，和 `SearchOutcome.claims` 同序；没命中的是 null。 */
 	evidence: (string | null)[];
@@ -52,14 +49,8 @@ function withAll(rows: Row[]) {
 }
 
 /**
- * 把一条结果推导成名单上的一项。
- *
- * 有没有证据可渲染由调用方按 `SearchOutcome.order` 决定（只有人的条件时是
- * `"employee"`，没有主张也就没有证据），不靠在结果对象上探测字段：探测的字段一旦
- * 改名，每个人都会静默渲染成「未命中」，而不会有任何断言失败。
- *
- * 样例段和聚合依据出自同一次筛选，所以两者要么都有、要么都没有；
- * 证据行右端的时长读聚合依据，缺了哪一个这条主张都算未命中。
+ * 把一条结果推导成名单上的一项。有没有证据由调用方按 `SearchOutcome.order` 决定，
+ * 按人排时传 `null`。一条主张的样例段和聚合依据缺一个就算未命中。
  */
 function rowOf(
 	e: ResultEmployee,
@@ -92,15 +83,11 @@ function rowOf(
 }
 
 /**
- * 选择的全部状态：是否处于选择模式、选中了谁。
+ * 选择的全部状态：选中了谁。名单每一行前面都有复选框，勾上第一个就开始选，
+ * 清空就结束。
  *
- * 不进 URL。地址栏保存的是「怎么看这批人」（分界见 `view-params.ts` 开头），可以
- * 随意修改、分享给同事；而选中集合是当前正在进行的一次操作，把三十个工号写进
- * query string 会让每勾一次就往历史栈压一条记录，后退键随之失效。
- *
- * 换一条查询记录就重置：换了问题之后，上一批人是按另一套条件选的，带过来会导出
- * 一份口径不一致的名单。退出选择模式同样清空——保留一份不可见的选中状态，之后
- * 会以用户意料之外的方式出现在导出里。
+ * 只在内存里，不进地址：每勾一次都压一条历史记录会让后退键失效。换一条查询记录
+ * 就清空，选中的人不带到按别的条件搜出的名单上。
  */
 export function usePicks(turnId: string, outcome: SearchOutcome) {
 	const rows = useMemo(
@@ -114,10 +101,9 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 					),
 		[outcome.order, outcome.results, outcome.claims],
 	);
-	const [picking, setPicking] = useState(false);
 	const [picked, setPicked] = useState(NONE);
 
-	// 「选择全部」还欠着的那一批：名单长出来的这一帧就补上，同样不放进 effect。
+	// 「选择全部」还没到的那一批：名单长出来的这一帧补上。
 	const sweeping = useRef(false);
 	const swept = useRef(rows);
 	if (sweeping.current && swept.current !== rows) {
@@ -126,13 +112,11 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 		setPicked(withAll(rows));
 	}
 
-	// 换记录时就地归零。写在渲染里而不是 effect 里：effect 要等这一帧画完才跑，
-	// 那一帧屏幕上会是新名单配着旧的「已选 12 人」。
+	// 换记录时在渲染里清空，新名单的第一帧就不带旧的已选人数。
 	const seen = useRef(turnId);
 	if (seen.current !== turnId) {
 		seen.current = turnId;
 		sweeping.current = false;
-		setPicking(false);
 		setPicked(NONE);
 	}
 
@@ -140,10 +124,8 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	const shownIds = useMemo(() => rows.map((r) => r.pick.empId), [rows]);
 
 	/**
-	 * 当前名单上勾选了哪几个，即交给 `CheckboxGroup` 的值。
-	 *
-	 * 只包含名单上的人：改过筛选后被筛掉的那几个仍然算选中（见 `Pick` 的快照说明），
-	 * 但屏幕上没有对应的复选框，一并报上去会让全选框永远处于半选状态。
+	 * 当前名单上勾选了哪几个，即交给 `CheckboxGroup` 的值。被筛掉的已选人不在其中，
+	 * 否则全选框会一直是半选。
 	 */
 	const shownPicked = useMemo(
 		() => shownIds.filter((id) => picked.has(id)),
@@ -151,10 +133,8 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	);
 
 	/**
-	 * 写入名单上这些复选框的新状态。单个复选框和表头全选走同一条路径——
-	 * `CheckboxGroup` 把两者记在同一份值里，所以这里不必拆成两个函数。
-	 *
-	 * 不在名单上的快照原样保留：它们不是被用户取消的，只是此刻没有渲染出来。
+	 * 写入名单上这些复选框的新状态，单个复选框和表头全选都走这里。不在名单上的
+	 * 已选人原样保留。
 	 */
 	const setShown = useCallback(
 		(next: string[]) => {
@@ -174,9 +154,7 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 		[rows],
 	);
 
-	// 键盘路径（空格选中／取消当前这个人）只涉及一个人，用不了上面那份整表的值。
-	// 选中需要名单上对应的那一行（快照来自那里），取消不需要，所以先尝试删除，
-	// 删不掉再去查找。
+	// 空格选中／取消一个人：先试着删，删不掉再从名单上取这一行的快照。
 	const toggle = useCallback(
 		(empId: string) => {
 			setPicked((old) => {
@@ -191,12 +169,8 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	);
 
 	/**
-	 * 移除一个已经选中的人。
-	 *
-	 * 不检查他在不在当前名单上——被筛掉的那几个人只能通过这条路径移除。快照这个
-	 * 设计的前提就是选中的人可以不在名单上（见 `Pick` 开头），取消也就不能要求他
-	 * 在名单上，否则「已选 12 人」里的部分人只能靠清空整批来丢弃。工具栏上的清单
-	 * 用它（`-components/pick-dock.tsx`）。
+	 * 移除一个已选的人，不要求他在当前名单上：被筛掉的已选人只能从这里移除。
+	 * 工具栏上的清单用它（`-components/pick-dock.tsx`）。
 	 */
 	const remove = useCallback((empId: string) => {
 		setPicked((old) => {
@@ -208,13 +182,8 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	}, []);
 
 	/**
-	 * 把显示上限内的人全部选中。
-	 *
-	 * 名单是一页页长出来的，所以这件事分两步：这一刻先把名单上的选中，`more` 说
-	 * 后面还有没有——有的话，等它们到达（`rows` 换了一份）再补上剩下的。
-	 *
-	 * 这一笔「还欠着」只活到下一份 `rows` 为止，换记录、清空、退出选择都取消它：
-	 * 一个没人记得的「全都要」在几分钟后把新到的人塞进导出里，比不做更坏。
+	 * 把显示上限内的人全部选中：先选名单上已有的；`more` 为真时，下一份 `rows`
+	 * 到达后补上其余的。这笔补选只等下一份 `rows`，换记录、清空都取消它。
 	 */
 	const pickAll = useCallback(
 		(more: boolean) => {
@@ -225,14 +194,6 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 		[rows],
 	);
 
-	const start = useCallback((on: boolean) => {
-		setPicking(on);
-		if (!on) {
-			sweeping.current = false;
-			setPicked(NONE);
-		}
-	}, []);
-
 	const clear = useCallback(() => {
 		sweeping.current = false;
 		setPicked(NONE);
@@ -241,14 +202,12 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	return {
 		clear,
 		picked,
-		picking,
 		pickAll,
 		remove,
 		rows,
 		setShown,
 		shownIds,
 		shownPicked,
-		start,
 		toggle,
 	};
 }

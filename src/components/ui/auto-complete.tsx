@@ -3,7 +3,8 @@
 import { Autocomplete } from "@base-ui/react/autocomplete";
 import { type ComponentProps, type ReactNode, useRef } from "react";
 import { defaultPortalContainer } from "#/components/ui/floating";
-import { inputVariants } from "#/components/ui/input";
+import { type InputVariant, inputVariants } from "#/components/ui/input";
+import { cn } from "#/lib/utils";
 
 /*
  * 样式在 auto-complete.css，与菜单共用的块在 dropdown-menu.css，输入框外壳用 input.css
@@ -40,6 +41,10 @@ interface AutoCompleteProps
 	options: AutoCompleteOption[];
 	placeholder: string;
 	suffix?: ReactNode;
+	/** 框外面没有标签时，读屏读的名字。 */
+	"aria-label"?: string;
+	className?: string;
+	variant?: InputVariant;
 }
 
 export function AutoComplete({
@@ -47,6 +52,9 @@ export function AutoComplete({
 	onChange,
 	placeholder,
 	suffix,
+	"aria-label": ariaLabel,
+	className,
+	variant,
 	...rest
 }: AutoCompleteProps) {
 	const anchorRef = useRef<HTMLDivElement>(null);
@@ -59,8 +67,12 @@ export function AutoComplete({
 			openOnInputClick
 			{...rest}
 		>
-			<div className={inputVariants({})} ref={anchorRef}>
+			<div
+				className={cn(inputVariants({ variant }), className)}
+				ref={anchorRef}
+			>
 				<Autocomplete.Input
+					aria-label={ariaLabel}
 					className="ui-input-input"
 					placeholder={placeholder}
 				/>

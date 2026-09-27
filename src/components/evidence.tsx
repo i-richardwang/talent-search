@@ -1,4 +1,4 @@
-import { Tooltip } from "#/components/ui/tooltip";
+import { Popover } from "#/components/ui/popover";
 import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { routeLabel, type Strength, strengthOf } from "#/search/evidence";
@@ -11,12 +11,13 @@ const STRENGTH_LABEL: Record<Strength, string> = {
 };
 
 /**
- * 证据行与未命中行共用的四列：点、条件词、匹配到的字段、右端时长。
+ * 证据行与未命中行共用的四列：点、条件词、匹配到的字段、右端时长。字比人名小一档，
+ * 条件词和时长用正文色，字段一侧退到次要色：一眼先看到「哪条、多久」，再看凭什么。
  * 行宽够（容器 ≥ 36rem）时一行排完；不够时字段挪到第二行、对齐条件词，
  * 第一行只留条件词和时长。右栏开着、名单那一列窄于版心时走后一种。
  */
 const LINE_GRID =
-	"grid grid-cols-[auto_--spacing(22)_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 text-base";
+	"grid grid-cols-[auto_--spacing(20)_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 text-sm";
 
 const MATCHED_BY = "匹配依据";
 
@@ -58,24 +59,41 @@ export function Dot({
 	);
 }
 
-export function StrengthLegend() {
+const STRENGTHS = ["controlled", "org", "claimed"] as const;
+
+/** 三档各是什么：一颗点、档名、这一档的证据从哪来。 */
+export function StrengthGuide() {
 	return (
-		<dl className="flex flex-wrap items-center gap-x-4 gap-y-1">
-			<dt className="text-xs font-medium text-fg-secondary">匹配来源</dt>
-			{(["controlled", "org", "claimed"] as const).map((s) => (
-				<dd className="text-fg-secondary text-xs" key={s}>
-					<Tooltip title={STRENGTH_HINT[s]}>
-						<button
-							className="flex cursor-help items-center gap-1.5"
-							type="button"
-						>
-							<Dot strength={s} />
-							{STRENGTH_LABEL[s]}
-						</button>
-					</Tooltip>
-				</dd>
+		<dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-sm">
+			{STRENGTHS.map((s) => (
+				<div className="contents" key={s}>
+					<dt className="flex items-center gap-2 whitespace-nowrap">
+						<Dot strength={s} />
+						{STRENGTH_LABEL[s]}
+					</dt>
+					<dd className="text-fg-secondary text-xs">{STRENGTH_HINT[s]}</dd>
+				</div>
 			))}
 		</dl>
+	);
+}
+
+/** 名单表头的图例：三颗点加「匹配来源」，悬停展开每一档的说明。 */
+export function StrengthLegend() {
+	return (
+		<Popover content={<StrengthGuide />} placement="bottomRight">
+			<button
+				className="flex cursor-help items-center gap-1.5 text-fg-secondary text-xs"
+				type="button"
+			>
+				<span className="flex items-center gap-1">
+					{STRENGTHS.map((s) => (
+						<Dot key={s} strength={s} />
+					))}
+				</span>
+				匹配来源
+			</button>
+		</Popover>
 	);
 }
 
@@ -150,27 +168,21 @@ export function EvidenceLine({
 				<span className="col-span-2 min-w-0 @xl:col-span-1">{head}</span>
 				<span className="col-span-3 col-start-2 row-start-2 flex min-w-0 items-baseline gap-1.5 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1">
 					{byOther(name, hit) && (
-						<span className="shrink-0 text-fg-secondary text-xs">
+						<span className="shrink-0 text-fg-tertiary text-xs">
 							{MATCHED_BY} {hit.value}
 						</span>
 					)}
 					{field.label ? (
-						<span className="shrink-0 text-fg-secondary text-xs">
+						<span className="shrink-0 text-fg-tertiary text-xs">
 							{field.label}
 						</span>
 					) : null}
-					{field.value === null ? (
-						<span className="min-w-0 truncate text-fg-secondary">
-							{field.context}
-						</span>
-					) : (
-						<span className="min-w-0 truncate">
-							{field.value}
-							{field.context && (
-								<span className="ml-2 text-fg-secondary">{field.context}</span>
-							)}
-						</span>
-					)}
+					<span className="min-w-0 truncate text-fg-secondary">
+						{field.value ?? field.context}
+						{field.value !== null && field.context && (
+							<span className="ml-2 text-fg-tertiary">{field.context}</span>
+						)}
+					</span>
 				</span>
 				<span
 					className={cn(

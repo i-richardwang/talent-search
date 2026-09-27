@@ -321,7 +321,7 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
-				description="关键词搜索的结果页把这次的词填回名单上方的框；没改动时「搜索」按不下去，改完再搜是一次新的搜索，浏览器后退就是撤销。"
+				description="关键词搜索的结果页把这次的词填回名单上方的托盘；没改动时发送钮按不下去，改完再搜是一次新的搜索，浏览器后退就是撤销。"
 				title="关键词结果页改词"
 			>
 				<div className="flex w-full flex-col gap-2">
@@ -333,16 +333,16 @@ function Usage() {
 						}}
 					/>
 					<span className="text-fg-secondary text-xs">
-						{keyword ?? "加一个词或改累计年限后点「搜索」"}
+						{keyword ?? "加一个词或改累计年限后回车"}
 					</span>
 				</div>
 			</Example>
 			<Example
-				description="没开启 AI 搜索时首页没有切换，也没有写一句话的输入框，只有关键词搜索。"
+				description="没开启 AI 搜索时首页的托盘里没有切换，也没有写一句话的输入框，只有关键词搜索。"
 				title="只有关键词搜索"
 			>
 				<div className="w-full">
-					<KeywordBar onSearch={() => true} />
+					<KeywordBar onSearch={() => true} size="large" />
 				</div>
 			</Example>
 		</ExampleGrid>
@@ -361,11 +361,12 @@ export function QueryInputPage() {
 			rules={{
 				notes: [
 					"两种模式叫「AI 搜索」和「关键词搜索」；各是一条搜索记录，换方式是从头开一次新的搜索，不带条件过去。",
-					"写一句话的输入框全站只有一个形状：首页写第一句用 large，名单页右栏补充下一句用 middle。",
+					"两种搜索是同一块输入托盘：首页用 large，搜索方式的切换在托盘动作栏左端，切换时托盘不动；名单页右栏补充下一句、关键词结果页改词用 middle。",
+					"关键词的经历或技能写在托盘里，一个词一个标签；公司或部门、学校是动作栏上的按钮，点开是各自的框，按钮上写着填了什么；累计年限是动作栏上的菜单。",
 					"托盘上沿的一片（tray）放作用在这句话之前、点一下就能办的事，例如添加替代条件。",
 					"示例最多四条，点一下只填进输入框，不直接搜。",
 					"提交先落记录并导航，理解在名单页进行；提交失败用 Alert 说，原话不清空。",
-					"关键词搜索只放填词的维（经历或技能、公司或部门、学校、累计年限），有限取值的维只在筛选栏。",
+					"关键词搜索只放填词的维（经历或技能、公司或部门、学校、累计年限），一维一个框；有限取值的维只在导航栏的筛选里。",
 					"没开启 AI 搜索时只有关键词搜索，不给写一句话的输入框。",
 				],
 				usage: `<HomeScreen\n  asked={mode}\n  error={error}\n  onQuery={commit}\n  understanding={understanding}\n/>`,

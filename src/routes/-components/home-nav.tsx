@@ -48,7 +48,7 @@ export function HomeNav() {
 					新搜索
 				</NavItem>
 			</div>
-			<ScrollArea className="mt-2 min-h-0 flex-1" disableContentFit scrollFade>
+			<ScrollArea className="mt-px min-h-0 flex-1" disableContentFit scrollFade>
 				<div className="px-1 pb-2">
 					<NavGroup title="最近搜索">
 						<Recent recent={recent} />
@@ -151,6 +151,7 @@ function Recent({ recent }: { recent: RecentSearch[] | null }) {
 				}
 				active={record.turnId === current}
 				icon={record.title === null ? TextSearchIcon : MessageSquareTextIcon}
+				iconSize="small"
 				key={record.turnId}
 				render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}
 				title={label}

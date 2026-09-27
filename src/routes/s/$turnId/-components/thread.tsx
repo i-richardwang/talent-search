@@ -171,7 +171,7 @@ export function Thread({
 					ref: viewportRef,
 				}}
 			>
-				<ol className="flex flex-col gap-6 px-4 pt-2 pb-4">
+				<ol className="flex flex-col gap-4 px-4 pt-2 pb-4">
 					{rounds.map((round, i) => (
 						<Round
 							failure={i === last && fault ? FAULT_COPY[fault].title : null}
@@ -270,9 +270,7 @@ function Round({
 		mark === "link" ? (
 			<ViewResult turnId={round.id} />
 		) : mark === "viewing" ? (
-			<Tag size="small" variant="outlined">
-				正在查看
-			</Tag>
+			<Tag size="small">正在查看</Tag>
 		) : null;
 
 	// 直接改条件的一轮没有人说话，也没有模型的回应：改动本身就是那一步
@@ -290,7 +288,7 @@ function Round({
 	return (
 		<li
 			aria-current={viewing ? "page" : undefined}
-			className="flex flex-col gap-2 text-base"
+			className="flex flex-col gap-4 text-base"
 		>
 			<p className="ms-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-lg bg-fill-tertiary px-3 py-2">
 				{said}
@@ -389,7 +387,13 @@ function Process({
 
 	return (
 		<div>
-			<div className="flex items-center gap-1.5">
+			{/* 整行是开关：状态方块、那句话和箭头。状态方块贴着左沿，所以四周一样留 4px */}
+			<CollapsibleTrigger
+				className="w-fit gap-1.5 p-1 text-fg-secondary"
+				onOpenChange={setOpen}
+				open={open}
+				panelId={panelId}
+			>
 				<Block
 					align="center"
 					className="shrink-0"
@@ -407,20 +411,13 @@ function Process({
 						spin={live}
 					/>
 				</Block>
-				<CollapsibleTrigger
-					className="w-fit text-fg-tertiary text-sm hover:text-fg"
-					onOpenChange={setOpen}
-					open={open}
-					panelId={panelId}
-				>
-					<span className={live ? "shimmer" : undefined}>
-						{live ? "正在检索人才库…" : "检索过程"}
-					</span>
-				</CollapsibleTrigger>
-			</div>
+				<span className={live ? "shimmer" : undefined}>
+					{live ? "正在检索人才库…" : "检索过程"}
+				</span>
+			</CollapsibleTrigger>
 			{live && !open && latest && (
 				<p
-					className="settle truncate ps-7.5 text-fg-secondary text-xs"
+					className="settle truncate ps-8.5 text-fg-secondary text-xs"
 					key={latest.key}
 					role="status"
 				>
@@ -428,17 +425,11 @@ function Process({
 				</p>
 			)}
 			<Collapsible id={panelId} open={open}>
-				<Block
-					as="ol"
-					className="mt-1.5 ms-7.5 text-fg-secondary text-xs tabular-nums"
-					gap={4}
-					paddingBlock={8}
-					paddingInline={12}
-				>
+				<ol className="flex flex-col gap-1 ps-8.5 pt-1 pb-3 text-fg-secondary text-xs tabular-nums">
 					{rows.map((row) => (
 						<li key={row.key}>{row.text}</li>
 					))}
-				</Block>
+				</ol>
 			</Collapsible>
 		</div>
 	);

@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import {
 	ModalBackdrop,
-	ModalClose,
 	ModalContent,
 	ModalPopup,
 	ModalPortal,
@@ -11,7 +10,7 @@ import {
 
 /**
  * 窄屏上人的详情：没有右栏，点开一个人从名单上浮出一层，关掉回到名单。
- * Esc、焦点陷阱与焦点还原由 `Modal` 自带。
+ * Esc、焦点陷阱与焦点还原由 `Modal` 自带；关闭钮在详情自己的页头上。
  */
 export function DetailModal({
 	open,
@@ -34,7 +33,6 @@ export function DetailModal({
 				<ModalPopup panelClassName="max-w-2xl">
 					<ModalTitle className="sr-only">员工详情</ModalTitle>
 					<ModalContent flush>{children}</ModalContent>
-					<ModalClose />
 				</ModalPopup>
 			</ModalPortal>
 		</ModalRoot>

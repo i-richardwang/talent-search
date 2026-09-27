@@ -25,7 +25,11 @@ function NotFound({
 			<main className="flex flex-1 flex-col" id="main" tabIndex={-1}>
 				{/* 出路只有一条，所以它是个按钮不是一行小字：这一屏上没有别的可点。 */}
 				<Empty
-					action={<Button render={<Link to="/" />}>开始一次新搜索</Button>}
+					action={
+						<Button render={<Link to="/" />} type="primary">
+							开始一次新搜索
+						</Button>
+					}
 					className="flex-1 justify-center"
 					description={description}
 					icon={SearchXIcon}

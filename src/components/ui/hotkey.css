@@ -17,3 +17,10 @@
 
 	background: var(--color-fill-tertiary);
 }
+
+/* 夹在一句话里的键：不画底，左右只留 4px，颜色跟着那句话。 */
+.ui-hotkey-borderless {
+	padding-inline: 4px;
+	color: inherit;
+	background: none;
+}

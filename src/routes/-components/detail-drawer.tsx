@@ -49,28 +49,3 @@ export function DetailDrawer({
 		</Drawer>
 	);
 }
-
-/**
- * 抽屉里事实网格的一行，标签一栏、内容一栏。整个网格的列由外面那个
- * `grid-cols-[auto_1fr]` 给，所以这里出的是一对 `dt`/`dd`，不是一个盒子——
- * 两栏各自对齐靠的是同一个网格，一行一个盒子的话，标签栏就对不齐了。
- *
- * 标签是 12px 中粗的 fg-secondary，内容是正文色：两栏靠字重和颜色一眼分开，
- * 不只靠缩进。检索那边的详情面板另有一份两栏卡片式的事实网格
- * （`s/$turnId/-components/person.tsx`），那是一屏常驻的档案头，和这里一行一条的读法不是
- * 一回事，没有并成一个。
- */
-export function Fact({
-	label,
-	children,
-}: {
-	label: string;
-	children: ReactNode;
-}) {
-	return (
-		<>
-			<dt className="text-xs font-medium text-fg-secondary">{label}</dt>
-			<dd className="whitespace-pre-wrap">{children}</dd>
-		</>
-	);
-}

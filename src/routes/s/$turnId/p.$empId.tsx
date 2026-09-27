@@ -14,21 +14,11 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 		return data;
 	},
 	component: Detail,
-	/*
-	 * 找不到工号时**只换这一栏**：外壳、检索结果、筛选、查询框全都留着。
-	 *
-	 * 这条要挂在本路由上，不能挂到 `/s/$turnId`。`notFound()` 由抛它的那个
-	 * loader 所属的路由自己接住；挂到外壳那一层会让整个页面被这一句话替换掉，
-	 * 连同旁边那份还成立的名单。
-	 */
+	/* 找不到工号时只换这一栏：`notFound()` 由抛它的 loader 所属的路由接住，名单留着。 */
 	notFoundComponent: PersonNotFound,
 	/*
-	 * 这块面板开着的时候一直在，而它的 loader 要打一次库。没有 pending 表示的话，
-	 * ↑↓ 连着扫人时屏幕上挂的是**上一个人**，直到新数据回来才整块换掉——
-	 * 库一慢就是「按了没反应，然后突然换人」。
-	 *
-	 * 200ms 才开始画骨架：快过这个数的话闪一下骨架比直接换人更晃眼。
-	 * 画出来就至少留 300ms，免得它在肉眼刚注意到的一瞬间消失。
+	 * 换人时 loader 要查一次库：超过 200ms 才画骨架，免得快的时候闪一下；画出来至少
+	 * 留 300ms。
 	 */
 	pendingMs: 200,
 	pendingMinMs: 300,
@@ -38,7 +28,7 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 /** 这个人的档案接上父路由那次检索里他的命中。 */
 function Detail() {
 	const { employee, timeline } = Route.useLoaderData();
-	// 命中证据来自父路由已经拿到的检索结果——不为了标记而再查一次库
+	// 命中证据取自父路由已有的检索结果，不再查库
 	const { result: search } = useLoaderData({ from: "/s/$turnId" });
 	const result =
 		search && search.order !== "employee"

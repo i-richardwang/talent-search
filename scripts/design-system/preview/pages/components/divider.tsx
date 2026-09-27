@@ -1,6 +1,6 @@
-import { ListChecksIcon } from "lucide-react";
+import { Redo2Icon, SaveIcon, Undo2Icon } from "lucide-react";
 import { useState } from "react";
-import { StrengthLegend } from "#/components/evidence";
+import { ActionIcon } from "#/components/ui/action-icon";
 import { Button } from "#/components/ui/button";
 import { Divider } from "#/components/ui/divider";
 import { Segmented } from "#/components/ui/segmented";
@@ -88,26 +88,14 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="人的详情里身份信息和任职经历之间用一条横线分开，下面的小标题接着说这一节是什么。"
-				title="详情分节"
+				description="一行里两组不同的事用一条竖线分开：设计系统的顶栏里，撤销重做是一组，保存导出是另一组。"
+				title="一行里的两组动作"
 			>
-				<div className="flex w-full flex-col text-sm">
-					<p className="font-medium">Talent 0123</p>
-					<p className="text-fg-secondary text-xs">数据平台 · 8 年</p>
-					<Divider />
-					<h3 className="font-medium text-fg-secondary text-xs">任职经历</h3>
-				</div>
-			</Example>
-			<Example
-				description="名单上方右端，匹配来源的图例和「选择」之间用一条竖线：一边是怎么读名单，一边是对名单做什么。"
-				title="图例与动作"
-			>
-				<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-					<StrengthLegend />
+				<div className="flex items-center gap-2">
+					<ActionIcon icon={Undo2Icon} title="撤销" />
+					<ActionIcon icon={Redo2Icon} title="重做" />
 					<Divider orientation="vertical" />
-					<Button icon={ListChecksIcon} size="small">
-						选择
-					</Button>
+					<Button icon={SaveIcon}>保存方案</Button>
 				</div>
 			</Example>
 		</ExampleGrid>

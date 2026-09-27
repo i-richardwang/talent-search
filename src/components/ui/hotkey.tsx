@@ -6,6 +6,7 @@ import {
 	SpaceIcon,
 } from "lucide-react";
 import { type ReactNode, useMemo, useSyncExternalStore } from "react";
+import { cn } from "#/lib/utils";
 import { Center, Flexbox } from "./flex";
 import { Icon } from "./icon";
 
@@ -21,6 +22,8 @@ import { Icon } from "./icon";
 
 interface HotkeyProps {
 	keys: string;
+	/** `borderless` 用在一句话里（例如输入托盘的占位）：键帽不画底，颜色跟着那句话。 */
+	variant?: "filled" | "borderless";
 }
 
 const APPLE = /mac|iphone|ipod|ipad|ios/i;
@@ -55,7 +58,7 @@ const mappingKey = (isAppleDevice: boolean): Record<string, ReactNode> => ({
 const startCase = (str: string): string =>
 	str.replace(/^./, (s) => s.toUpperCase());
 
-export function Hotkey({ keys }: HotkeyProps) {
+export function Hotkey({ keys, variant = "filled" }: HotkeyProps) {
 	const keysGroup = useMemo(() => keys.split("+"), [keys]);
 	const isAppleDevice = useIsAppleDevice();
 	const mapping = useMemo(() => mappingKey(isAppleDevice), [isAppleDevice]);
@@ -63,8 +66,15 @@ export function Hotkey({ keys }: HotkeyProps) {
 	return (
 		<Flexbox align="center" gap={2} horizontal>
 			{keysGroup.map((key, index) => (
-				// biome-ignore lint/suspicious/noArrayIndexKey: 同一个键名可以出现两次，位置就是身份
-				<Center as="kbd" className="ui-hotkey" key={index}>
+				<Center
+					as="kbd"
+					className={cn(
+						"ui-hotkey",
+						variant === "borderless" && "ui-hotkey-borderless",
+					)}
+					// biome-ignore lint/suspicious/noArrayIndexKey: 同一个键名可以出现两次，位置就是身份
+					key={index}
+				>
 					{mapping[key] ?? startCase(key)}
 				</Center>
 			))}

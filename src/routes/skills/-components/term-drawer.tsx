@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
+import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { DrawerDescription } from "#/components/ui/drawer";
 import { TextLink } from "#/components/ui/text-link";
 import type { SkillDetail } from "#/server/skills";
-import { DetailDrawer, Fact } from "../../-components/detail-drawer";
+import { DetailDrawer } from "../../-components/detail-drawer";
 
 /*
  * 技能页点开一个词（`routes/skills/$word.tsx`）：抽屉的壳，和壳里这个词的释义与上下从属。
@@ -49,26 +50,28 @@ export function TermRecord({
 			}
 			title={term.canonical}
 		>
-			<dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1 text-base">
-				<Fact label="人数">
+			<Descriptions>
+				<DescriptionsItem label="人数">
 					<span className="tabular-nums">{term.people}</span>
 					<span className="text-fg-secondary"> 人（含细分）</span>
-				</Fact>
+				</DescriptionsItem>
 				{term.parent && (
-					<Fact label="属于">
+					<DescriptionsItem label="属于">
 						<TermLink
 							people={term.parent.people}
 							word={term.parent.canonical}
 						/>
-					</Fact>
+					</DescriptionsItem>
 				)}
 				{term.aliases.length > 0 && (
-					<Fact label="其他写法">{term.aliases.join("、")}</Fact>
+					<DescriptionsItem label="其他写法">
+						{term.aliases.join("、")}
+					</DescriptionsItem>
 				)}
-				<Fact label="上次整理">
+				<DescriptionsItem label="上次整理">
 					{term.reviewedDaysAgo === 0 ? "今天" : `${term.reviewedDaysAgo} 天前`}
-				</Fact>
-			</dl>
+				</DescriptionsItem>
+			</Descriptions>
 			{term.children.length > 0 && (
 				<div className="flex flex-col gap-1">
 					<p className="text-xs font-medium text-fg-secondary">细分</p>

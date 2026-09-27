@@ -28,14 +28,12 @@ const pick = (name: string, rank: number): Pick => ({
 const picks = (chosen: Pick[]): Picks => ({
 	clear: () => {},
 	picked: new Map(chosen.map((p) => [p.empId, p])),
-	picking: true,
 	pickAll: () => {},
 	remove: () => {},
 	rows: [],
 	setShown: () => {},
 	shownIds: chosen.map((p) => p.empId),
 	shownPicked: chosen.map((p) => p.empId),
-	start: () => {},
 	toggle: () => {},
 });
 

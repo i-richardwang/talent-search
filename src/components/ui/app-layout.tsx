@@ -94,7 +94,7 @@ export function NavHeader({
 	);
 }
 
-/** 页头里的标题：16px 中粗，一行放不下就截断。主栏的是这一屏的 h1，侧栏的用 h2。 */
+/** 页头里的标题：正文字号中粗，一行放不下就截断。主栏的是这一屏的 h1，侧栏的用 h2。 */
 export function NavHeaderTitle({
 	as: Heading = "h1",
 	className,

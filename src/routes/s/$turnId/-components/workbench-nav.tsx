@@ -38,7 +38,7 @@ export function WorkbenchNav() {
 					新搜索
 				</NavItem>
 			</div>
-			<ScrollArea className="mt-4 min-h-0 flex-1" disableContentFit scrollFade>
+			<ScrollArea className="mt-px min-h-0 flex-1" disableContentFit scrollFade>
 				<div className="px-1 pb-4">
 					<FilterPanel
 						fields={filterFields(result?.facets ?? emptyFacets(), view)}

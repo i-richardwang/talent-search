@@ -174,7 +174,8 @@ export function AutoCompletePage() {
 					"建议取自语料的词表，框里的字仍是用户自己写的，选中只是把那一项填进去。",
 					"要把选中当成动作（比如加成标签）时，看 onChange 第二个参数的 reason 是不是 item-press。",
 					"服务端给建议时传 filter={null} 关掉本地过滤，等待中在 suffix 放旋转的加载图标。",
-					"输入框的名字来自外面带标签的 Form.Field；宽度属于外层布局。",
+					"输入框的名字来自外面带标签的 Form.Field；外面没有标签时写 aria-label。宽度属于外层布局。",
+					'嵌在输入托盘的一行里用 variant="borderless"，框和底交给托盘。',
 				],
 				usage: `<AutoComplete\n  onChange={(text, details) => …}\n  options={[{ label: "支付风控", value: "支付风控" }]}\n  placeholder="输入关键词"\n  value={typed}\n/>`,
 			}}

@@ -1,0 +1,69 @@
+/*
+ * 几选一菜单的外观，类名以 `.ui-choice-menu` 开头，叠在下拉菜单的弹层上。弹层宽
+ * 280–320px，圆角比项大一档（项 8px，弹层内边距 4px，弹层 12px），同心地包住项。
+ * 项之间留 4px；悬停、键盘高亮和选中都是 fill-secondary 的底。
+ */
+
+.ui-choice-menu {
+	min-width: 280px;
+	max-width: 320px;
+	border-radius: var(--radius-lg);
+}
+
+.ui-choice-menu-group {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.ui-choice-menu-option {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+	padding: 10px 8px;
+	border-radius: var(--radius-md);
+	cursor: pointer;
+	outline: none;
+	transition: background-color 0.2s var(--ease-out);
+
+	&:hover,
+	&[data-highlighted],
+	&[data-checked] {
+		background: var(--color-fill-secondary);
+	}
+}
+
+.ui-choice-menu-icon {
+	display: flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	border: 1px solid var(--color-border-secondary);
+	border-radius: var(--radius-md);
+	color: var(--color-fg);
+	background: var(--color-elevated);
+}
+
+.ui-choice-menu-text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.4;
+}
+
+.ui-choice-menu-label {
+	font-size: var(--text-base);
+	font-weight: 500;
+	color: var(--color-fg);
+}
+
+.ui-choice-menu-desc {
+	overflow: hidden;
+	font-size: var(--text-xs);
+	color: var(--color-fg-tertiary);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

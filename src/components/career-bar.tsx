@@ -6,40 +6,31 @@ import { bestStrength } from "#/search/evidence";
 import type { Hit } from "#/search/result";
 
 /**
- * 职业轨迹条：把一个人的经历段按**真实年份**画成一条带子。
+ * 职业轨迹条：把一个人的经历段按真实年份画成一条带子，看得出在哪几年、跨了几家、
+ * 有没有空窗、命中的那段落在哪里。下面的时间线给每段的细节。
  *
- * 下面那串卡片能回答「他做过什么」，回答不了「他的路径长什么样」——起止年份
- * 只活在每张卡片的文字里，要看出「在哪几年、跨了几家、有没有空窗、命中的那段
- * 落在职业生涯的哪个位置」，得逐条读日期再在脑子里排一遍。经历段是这个产品
- * 唯一独有的数据，值得把它本身的形状画出来。
- *
- * 编码分两层，各管一件事，互不挪用：
- *
- * - **高度管「这一段命中了没有」**：命中段占满整条轨，未命中段是轨中间的一道
- *   细线。不靠颜色分是因为这套系统的几档中性灰（border 是 8% 的黑、muted 是 4%）
- *   彼此只差几个百分点——做 8px 的点够用，做一条 8px 高的色带分不开。
- * - **颜色管「这一段的证据有多强」**：三档取自点阵那一套（evidence.tsx 的
- *   BAND_FILL），所以绿色在这里仍然只表示受控字段命中，和证据行、时间轴、
- *   图例完全同义。未命中段永远不上色，不存在「绿 = 命中」这层含义。
- *
- * 带子不按 kind 切段（在职与入职前连续排，理由见 timeline.tsx），转折点由
- * 那根「入职」竖线说明——一条线，不是两条带子。
+ * 高度说这一段命中了没有：命中的占满一条轨，没命中的是轨中间一道细条。颜色说证据
+ * 有多强，三档取自点阵那一套（`BAND_FILL`）；没命中的不上色。在职与入职前连着排，
+ * 转折处是一根「入职」竖线。
  */
 
 /** 一条轨的高度与轨间距（px）。 */
-const LANE_H = 8;
-const LANE_GAP = 3;
+const LANE_H = 10;
+const LANE_GAP = 4;
 
-/** 未命中段那道细线的粗细（px）。 */
-const MISS_H = 2;
+/** 没命中的那一段的高度（px）。 */
+const MISS_H = 4;
 
-/** 命中段的最小宽度（px）：再窄，「仅简历自述」那一档的描边就糊成一团了。 */
-const MIN_HIT_W = 6;
+/** 相邻两段之间留的缝（px）。 */
+const SEAM = 2;
 
-/** 未命中段的最小宽度（px）：只要存在过就得看得见，哪怕只有一个月。 */
-const MIN_W = 2;
+/** 命中段的最小宽度（px）：再窄，「简历自述」那一档的描边就看不清了。 */
+const MIN_HIT_W = 8;
 
-/** 「入职」这个标签离两端太近就不画，只留竖线——否则它会压住两头的年份。 */
+/** 没命中的段的最小宽度（px）：只有一个月也看得见。 */
+const MIN_W = 4;
+
+/** 「入职」标签离两端太近就只画竖线，不压住两头的年份。 */
 const LABEL_SAFE = 0.16;
 
 /** 年月 → 可做差的整数。日不参与：这条带子的分辨率是月。 */
@@ -49,16 +40,10 @@ export function ym(date: string) {
 }
 
 /**
- * 把重叠的经历段分到不同的轨上。
+ * 把重叠的经历段分到不同的轨上。入职前与在职的记录来自两张表，同一段时间各登记一次
+ * 是常态；放在一条轨上，后画的会把前一段整个盖住。
  *
- * **重叠在真实数据里是常态，不是脏数据**：入职前经历来自工作经历表、在职经历
- * 来自异动流程，同一段时间在两张表里各登记一次很正常。单轨绝对定位下后画的那条
- * 会把前一条整个盖住——带子少画了一段经历，而看的人完全无从察觉。
- *
- * 贪心装箱：按开始时间排，每一段放进第一条已经空出来的轨。不重叠的人只会得到
- * 一条轨，带子还是一条线。
- *
- * 导出是为了单测：这段几何算错了页面上只是「看起来怪」，不会有任何断言失败。
+ * 贪心装箱：按开始时间排，每一段放进第一条已经空出来的轨；不重叠的人只有一条轨。
  */
 export function packLanes(spans: { start: number; end: number }[]): number[] {
 	const laneEnds: number[] = [];
@@ -84,7 +69,6 @@ export function CareerBar({
 	hitIndex: Map<number, Hit[]>;
 	hireDate: string | null;
 }) {
-	// 一段经历都没有就没有形状可画，不留一条空带子在那里。
 	if (rows.length === 0) return null;
 
 	const now = new Date().toISOString().slice(0, 10);
@@ -120,14 +104,12 @@ export function CareerBar({
 					return (
 						<button
 							aria-label={`${x.org} ${x.title}，${period(x.startDate, x.endDate)}，${duration(x.months)}${strength ? "，与本次条件相关" : ""}`}
-							// 方角：色块最窄只有 2px，任何圆角都只会把它啃掉一半
 							className={cn(
-								"absolute after:absolute after:-inset-x-1 after:-inset-y-4 after:content-['']",
-								strength ? BAND_FILL[strength] : "bg-border",
+								"absolute rounded-xs after:absolute after:-inset-x-1 after:-inset-y-4 after:content-['']",
+								strength ? BAND_FILL[strength] : "bg-fill",
 							)}
 							key={x.id}
-							/* 点色块滚到对应的那张卡片：带子给形状，卡片给细节，
-							   两者之间要有一条路，否则带子只是装饰。 */
+							/* 点一段滚到时间线上的那一段 */
 							onClick={() =>
 								document
 									.getElementById(`exp-${x.id}`)
@@ -135,9 +117,8 @@ export function CareerBar({
 							}
 							style={{
 								left: `${pct(s.start - from)}%`,
-								width: `${pct(Math.max(s.end - s.start, 1))}%`,
+								width: `calc(${pct(Math.max(s.end - s.start, 1))}% - ${SEAM}px)`,
 								minWidth: strength ? MIN_HIT_W : MIN_W,
-								// 命中占满这条轨，未命中是轨中间的一道细线
 								top: strength ? laneTop : laneTop + (LANE_H - MISS_H) / 2,
 								height: strength ? LANE_H : MISS_H,
 							}}
@@ -146,11 +127,7 @@ export function CareerBar({
 					);
 				})}
 
-				{/*
-				 * 入职这一刻。它是这条带子上唯一的转折点，也是「入职前经历」在图上的
-				 * 唯一说明——不把带子切成两截，只画一条线。contrast 是全站最深的那一档，
-				 * 在一片浅灰上不会和任何语义色撞车。
-				 */}
+				{/* 入职这一刻：带子上唯一的转折点 */}
 				{hireAt !== null && (
 					<span
 						aria-hidden="true"
@@ -160,11 +137,7 @@ export function CareerBar({
 				)}
 			</div>
 
-			{/*
-			 * 刻度只有三个：起点年、入职年、至今。年份密排会把 28rem 宽的详情面板塞满
-			 * 数字，而这条带子要回答的是「大致在哪几年」——精确的那一份就在下面每张
-			 * 卡片的第二行，一个都没丢。
-			 */}
+			{/* 刻度只有起点年、入职年、至今：精确的起止在时间线每一段的第二行 */}
 			<figcaption className="relative mt-1.5 h-4 text-fg-secondary text-xs tabular-nums">
 				<span className="absolute left-0">{Math.floor(from / 12)}</span>
 				{showHireLabel && hireAt !== null && (

@@ -208,7 +208,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="点「选择」后每张卡片左边出现选择框；选了人，名单下沿浮出一条操作栏，能看已选的人、清空、导出。"
+				description="每一行左边是选择框，表头那一个全选；选了人，名单下沿浮出一条操作栏，能看已选的人、清空、导出。"
 				title="挑人导出"
 			>
 				<div className="w-full">

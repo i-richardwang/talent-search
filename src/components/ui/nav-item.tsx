@@ -12,6 +12,7 @@ import { Icon } from "./icon";
 
 export function NavItem({
 	icon,
+	iconSize,
 	active,
 	actions,
 	children,
@@ -20,6 +21,8 @@ export function NavItem({
 	...props
 }: Omit<useRender.ComponentProps<"a">, "children"> & {
 	icon: LucideIcon;
+	/** `small` 是 14px 的图标，给一长串同类的记录（最近搜索）；缺省 18px，给几个固定的入口。 */
+	iconSize?: "small";
 	/** 当前所在的那一项。 */
 	active?: boolean;
 	/** 行尾的动作，悬停或焦点落在行内时出现。 */
@@ -34,7 +37,7 @@ export function NavItem({
 			children: (
 				<>
 					<span className="ui-nav-item-icon">
-						<Icon icon={icon} size={18} />
+						<Icon icon={icon} size={iconSize === "small" ? 14 : 18} />
 					</span>
 					<span className="ui-nav-item-title">{children}</span>
 				</>

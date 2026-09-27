@@ -367,6 +367,7 @@ export const NUMERIC_TOKENS: NumericToken[] = [
 	rem("--container-detail-wide", "宽屏右栏", "layout", 320, 704),
 	rem("--container-admin", "管理页内容列", "layout", 768, 1280),
 	rem("--nav-header-height", "页头高度", "layout", 36, 56),
+	rem("--nav-header-action-size", "页头按钮", "layout", 24, 36),
 	duration("--duration-modal-enter", "对话框进场", "↦", ["modal"]),
 	duration("--duration-modal-exit", "对话框退场", "↤", ["modal"]),
 	duration("--duration-drawer-enter", "抽屉进场", "↦", ["drawer"]),

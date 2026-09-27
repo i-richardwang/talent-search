@@ -150,7 +150,7 @@ function Workbench() {
 
 	useKeyboardFlow({
 		onEditQuery: editQuery,
-		onPick: picks.picking ? picks.toggle : undefined,
+		onPick: picks.toggle,
 		results,
 		empId,
 		turnId,
@@ -181,9 +181,7 @@ function Workbench() {
 					}
 				/>
 			}
-			keys={
-				<KeyHints editable={editable} mode={mode} picking={picks.picking} />
-			}
+			keys={<KeyHints editable={editable} mode={mode} />}
 			list={
 				<ResultList
 					canMore={canMore}

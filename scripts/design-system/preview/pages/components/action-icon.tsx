@@ -382,6 +382,7 @@ export function ActionIconPage() {
 					"放在 Toolbar 里时经 ToolbarButton 的 render 交进去，方向键在按钮之间移动焦点。",
 					"开关状态用 active，不另画选中装饰。",
 					'尺寸用 size，不覆盖宽高与圆角；贴着行尾对齐用 outdent="end"，不写负外边距。',
+					'栏顶页头（NavHeader）上的用 size="header"：28px 方块、16px 图标，正好填满页头去掉内边距的高度。',
 				],
 				usage: `<ActionIcon\n  icon={Trash2}\n  size="small"\n  title="删除这次搜索"\n/>`,
 			}}

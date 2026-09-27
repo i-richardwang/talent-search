@@ -1,18 +1,16 @@
 import { Link } from "@tanstack/react-router";
 import {
-	ListChecksIcon,
 	Loader2Icon,
 	MessageSquareWarningIcon,
 	RotateCwIcon,
 	SearchXIcon,
-	XIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { StrengthLegend } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
-import { Divider } from "#/components/ui/divider";
 import { Empty } from "#/components/ui/empty";
 import { Icon } from "#/components/ui/icon";
+import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
 import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
@@ -26,52 +24,39 @@ const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	employee: "默认顺序",
 };
 
+/** 名单的表头：这份名单有多少人、按什么排，有证据行时带上那三颗点的图例。 */
 export function ResultHeader({
 	loading,
 	order,
 	total,
 	evidence,
-	picking,
-	onPicking,
-	pickable,
+	className,
 }: {
+	className?: string;
 	loading: boolean;
 	order: SearchOutcome["order"];
 	total: number;
 	/** 名单上有证据行（或这一轮的条件会有）：图例才有点可对照。 */
 	evidence: boolean;
-	picking: boolean;
-	onPicking: (on: boolean) => void;
-	pickable: boolean;
 }) {
 	return (
-		<div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-1.5 px-1">
-			<p className="text-fg-secondary text-base" role="status">
+		<div
+			className={cn(
+				"flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-4 gap-y-1.5",
+				className,
+			)}
+		>
+			<p className="text-fg-secondary text-sm" role="status">
 				{loading ? (
 					"搜索中…"
 				) : (
 					<>
-						<b className="text-fg tabular-nums">{total}</b> 人
+						<b className="font-medium text-fg tabular-nums">{total}</b> 人
 						{` · ${ORDER_LABEL[order]}`}
 					</>
 				)}
 			</p>
-			<div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-				{evidence && (
-					<>
-						<StrengthLegend />
-						<Divider className="max-sm:hidden" orientation="vertical" />
-					</>
-				)}
-				<Button
-					disabled={!pickable}
-					icon={picking ? XIcon : ListChecksIcon}
-					onClick={() => onPicking(!picking)}
-					size="small"
-				>
-					{picking ? "取消选择" : "选择"}
-				</Button>
-			</div>
+			{evidence && <StrengthLegend />}
 		</div>
 	);
 }
@@ -101,7 +86,9 @@ export function NoResults({
 	return (
 		<Empty
 			action={
-				<Button onClick={state.action.onClick}>{state.action.label}</Button>
+				<Button onClick={state.action.onClick} type="primary">
+					{state.action.label}
+				</Button>
 			}
 			className="py-16"
 			description={state.hint}
@@ -132,7 +119,12 @@ export function NotUnderstood({
 				exits.length > 0 &&
 				exits.map((exit) =>
 					exit === "retry" ? (
-						<Button icon={RotateCwIcon} key={exit} onClick={onRetry}>
+						<Button
+							icon={RotateCwIcon}
+							key={exit}
+							onClick={onRetry}
+							type="primary"
+						>
 							{FAULT_EXIT_LABEL[exit]}
 						</Button>
 					) : (

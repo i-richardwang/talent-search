@@ -1,0 +1,46 @@
+/*
+ * Descriptions 的外观，类名以 `.ui-descriptions` 开头：两栏网格，标签栏按最长的标签定宽，
+ * 每行上下各留一档内边距，长内容在内容栏里换行。
+ */
+
+.ui-descriptions {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	column-gap: 16px;
+	align-items: baseline;
+	margin: 0;
+}
+
+.ui-descriptions-middle {
+	font-size: var(--text-base);
+	line-height: var(--text-base--line-height);
+
+	& > dt,
+	& > dd {
+		padding-block: 4px;
+	}
+}
+
+.ui-descriptions-small {
+	column-gap: 12px;
+	font-size: var(--text-xs);
+	line-height: var(--text-xs--line-height);
+
+	& > dt,
+	& > dd {
+		padding-block: 2px;
+	}
+}
+
+.ui-descriptions-label {
+	color: var(--color-fg-secondary);
+	white-space: nowrap;
+}
+
+.ui-descriptions-value {
+	min-width: 0;
+	margin: 0;
+	color: var(--color-fg);
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}

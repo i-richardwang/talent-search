@@ -35,7 +35,7 @@ export function PageHeader({
 							className="lg:hidden"
 							icon={PanelLeftOpenIcon}
 							onClick={openNav}
-							size="small"
+							size="header"
 							title="打开导航"
 						/>
 					)}

@@ -18,17 +18,8 @@ import type { Pick, Picks } from "../-lib/picks";
 import { reachOf } from "../-lib/view-params";
 
 /**
- * 选中人之后浮现的工具条：选了几个，以及对这一批做什么。
- *
- * 固定在名单下沿，不在表头。用户是一边向下浏览一边选的，视线在名单下半部分，
- * 汇总条应当出现在同一区域；放回表头的话，每选一个都要回到页顶确认。
- *
- * 一个人都没选时不渲染：选择有开始也有结束，只有中间这段需要汇总条。空着时摆
- * 一条「已选 0 人 · 清空 · 导出」，等于在屏幕上留一组既不可用也不会变化的按钮。
- *
- * 计数一段、操作一段，中间用 `ToolbarSeparator` 分开——这是 `Toolbar` 自带的分段
- * 方式，不是用间距拼出来的两组。它浮在名单上，用 `Toolbar` 自带的描边与投影，
- * 不另配更深的阴影。
+ * 选中人之后浮现的工具条：选了几个，以及对这一批做什么。吸在名单下沿，边往下看边选
+ * 时就在视线里；一个人都没选时不渲染。计数一段、操作一段，用 `ToolbarSeparator` 分开。
  */
 export function PickDock({
 	picks,
@@ -44,18 +35,16 @@ export function PickDock({
 	total: number;
 	/** 把显示上限内的人全部选中：名单没加载完的部分一并加载出来。 */
 	onAll: () => void;
-	/** 那一步正在跑。按钮据此转圈，人才知道名单在长。 */
+	/** 那一步正在跑，按钮据此转圈。 */
 	loading: boolean;
 }) {
 	const { clear, picked, remove, shownIds } = picks;
-	// 按名次排，不按点下去的先后：这一批读起来是一份名单，不是我的操作顺序。
-	// 清单和导出的表因此同序，核对的时候两边一行对一行。
+	// 按名次排，不按点选先后：清单和导出的表同序，核对时一行对一行。
 	const chosen = [...picked.values()].sort((a, b) => a.rank - b.rank);
 	if (chosen.length === 0) return null;
 
 	return (
-		/* 吸在名单下沿。整条不接鼠标（`pointer-events-none`），只有那块工具栏自己
-		   接：它浮在名单上方，一条通栏的透明层会把它盖住的那几块卡片挡掉。 */
+		/* 通栏这一层不接鼠标，只有工具栏自己接，不挡住它下面的名单行。 */
 		<div className="pointer-events-none sticky bottom-4 z-stick flex justify-center pt-4">
 			<Toolbar
 				aria-label="已选择的人"
@@ -83,19 +72,8 @@ export function PickDock({
 }
 
 /**
- * 「已选 N 人」：这个数字本身就是入口。
- *
- * 选中记录是按快照保存的，改过筛选之后会有几个人不在当前名单上（`-lib/picks.ts`
- * 的 `Pick` 开头写了原因），那时屏幕上没有对应的勾选框。一个核对不了的数字等于
- * 无法验证，所以点开后按名次逐行列出这 N 个人，每行都可以移除——不在名单上的人
- * 也只能在这里移除，名单上没有他们的复选框。
- *
- * 默认不展开人名：姓名会随着选中人数增加不断挤压名单的宽度，而名单才是用户正在
- * 读的内容。需要时再打开浮层。它仍然是一个无底按钮，这条工具栏上唯一的主按钮
- * 是右端的导出。
- *
- * 每行只写姓名。这份清单回答的是「选中的是哪几个人」；岗位、部门和证据属于名单
- * 和详情，放进来只会让一行变成两行。
+ * 「已选 N 人」：点开按名次列出选中的人，每行只写姓名、可以移除。改过筛选后不在
+ * 名单上的已选人会标出来，也只能在这里移除（快照见 `-lib/picks.ts` 的 `Pick`）。
  */
 function Chosen({
 	chosen,
@@ -103,7 +81,7 @@ function Chosen({
 	onRemove,
 }: {
 	chosen: Pick[];
-	/** 此刻名单上有哪些人。不在里面的那几个得说一声，否则这份清单凭空比名单多出几个。 */
+	/** 此刻名单上有哪些人；不在里面的已选人标「不在名单上」。 */
 	onList: ReadonlySet<string>;
 	onRemove: (empId: string) => void;
 }) {
@@ -112,10 +90,9 @@ function Chosen({
 			className="max-h-(--available-height) w-64 overflow-y-auto"
 			content={
 				<>
-					{/* 标题不重复人数：那个数字就在上方 4px 处的按钮上 */}
+					{/* 人数就在触发它的按钮上，标题不重复 */}
 					<div className="mb-2 font-medium text-base text-fg">已选的人</div>
-					{/* 选中上百人也不必自己限高：浮层知道离屏幕边还有多少空间
-					    （`--available-height`），超出后在内部滚动。 */}
+					{/* 浮层高度到屏幕边为止（`--available-height`），超出在里面滚动 */}
 					<ul className="flex flex-col gap-0.5">
 						{chosen.map((one) => (
 							<li className="flex items-center gap-2 ps-2" key={one.empId}>
@@ -143,8 +120,7 @@ function Chosen({
 			popupProps={{ "aria-label": "已选的人" }}
 			trigger="click"
 		>
-			{/* 数字变化要播报，作为这次勾选的反馈。用 `aria-live` 而不是
-			    `role="status"`：它是一个按钮，按钮不能同时是状态区域。 */}
+			{/* 数字变化要播报；它是按钮，不能用 role="status"，所以用 aria-live */}
 			<ToolbarButton
 				render={
 					<Button
@@ -162,11 +138,8 @@ function Chosen({
 }
 
 /**
- * 导出成一份 CSV。
- *
- * 中间隔一层对话框，不是点一下直接下载：这一步要决定的不止一件事——证据要不要
- * 一起导出，以及这份表里是不是符合条件的那些人（下面那条 `Alert`）。列名先展示
- * 出来，是因为拿到表的往往是另一个人，而列一旦确定就无法在 Excel 里补回来。
+ * 导出成一份 CSV。先弹一个对话框：列出表格的列，决定要不要带上匹配证据，并说清
+ * 这份表里是不是符合条件的全部人。
  */
 function ExportDialog({
 	picked,
@@ -218,8 +191,7 @@ function ExportDialog({
 								{col}
 							</Tag>
 						))}
-						{/* 主张那几列换个调子：它们是随这次查询变的，前面六列不是。
-						    两条主张可以同名（「增长」在职的和入职前的），key 只能是位置。 */}
+						{/* 两条主张可以同名，key 用位置 */}
 						{on && names.map((name, i) => <Tag key={String(i)}>{name}</Tag>)}
 					</div>
 					<Form>
@@ -234,12 +206,7 @@ function ExportDialog({
 							/>
 						</Form.Field>
 					</Form>
-					{/*
-					 * 选中的比能显示的少时，说清这份表里是谁，并给出把人补齐的那一下。
-					 *
-					 * 名单一页页长出来是名单自己的事，导出的份数不该由用户滚到哪儿
-					 * 决定，所以这里不报「还有多少人没加载」，而是把补齐做掉。
-					 */}
+					{/* 选中的比能显示的少时，说清这份表里是谁，并给出补齐的一下 */}
 					{picked.length < reach && (
 						<Alert
 							action={

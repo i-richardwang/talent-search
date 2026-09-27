@@ -152,7 +152,7 @@ function Headers() {
 											<ActionIcon
 												aria-label="打开导航"
 												icon={PanelLeftOpenIcon}
-												size="small"
+												size="header"
 												title="打开导航"
 											/>
 											<NavHeaderTitle as="h2">
@@ -174,7 +174,7 @@ function Headers() {
 								<NavHeader
 									left={<NavHeaderTitle as="h2">技能</NavHeaderTitle>}
 									right={
-										<ActionIcon aria-label="关闭" icon={XIcon} size="small" />
+										<ActionIcon aria-label="关闭" icon={XIcon} size="header" />
 									}
 								>
 									<span className="text-fg-secondary text-sm">

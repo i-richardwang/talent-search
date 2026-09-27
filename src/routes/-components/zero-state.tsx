@@ -27,25 +27,24 @@ const EXAMPLES = [
 ];
 
 /**
- * 首页的正文：居中的一列，从上到下是搜索方式的切换、问句、输入面，对话时下面再跟
- * 几条例子。
+ * 首页的正文：居中的一列，从上到下是问句、输入托盘，对话时下面再跟几条例子。
  *
  * 标题是一个**问句**，不是应用名：应用名在导航栏顶上已经有一处，问句说得清这块面
  * 要收什么。它用字阶里的 20px 粗体，这一屏的重量由那块大号输入托盘承担。
  *
- * 从顶上排下来，不上下居中：两种搜索的输入面高矮不同，居中的话一切换，标题和切换
- * 都跟着上下跳。
+ * 两种搜索是同一块大号托盘，搜索方式的切换（`modeSelect`）在托盘动作栏的左端：
+ * 换过去只换托盘里面的内容，问句、托盘的位置和高度都不动。从顶上排下来，不上下居中。
  */
 export function ZeroState({
 	mode,
-	nav,
+	modeSelect,
 	onQuery,
 	error,
 }: {
 	/** 这一屏开的是哪种搜索。没配查询理解时路由只给关键词（`routes/index.tsx`）。 */
 	mode: SearchMode;
-	/** 两种搜索的切换，摆在问句上方。只有一种搜索时路由不给。 */
-	nav?: React.ReactNode;
+	/** 两种搜索的切换，放进托盘的动作栏。只有一种搜索时路由不给。 */
+	modeSelect?: React.ReactNode;
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
 	error: string | null;
 }) {
@@ -54,19 +53,22 @@ export function ZeroState({
 
 	return (
 		<div className="mx-auto flex w-full max-w-page flex-col gap-6 px-6 pt-12 pb-16 md:pt-24">
-			<div className="flex flex-col items-start gap-4">
-				{nav}
-				<h1 className="font-semibold text-fg text-xl">想找什么样的人？</h1>
-			</div>
+			<h1 className="font-semibold text-fg text-xl">想找什么样的人？</h1>
 			{mode === "conversation" ? (
-				<ConversationStart errorAlert={errorAlert} onQuery={onQuery} />
+				<ConversationStart
+					errorAlert={errorAlert}
+					modeSelect={modeSelect}
+					onQuery={onQuery}
+				/>
 			) : (
 				<div className="flex flex-col gap-2">
 					<KeywordBar
 						autoFocus
+						left={modeSelect}
 						onSearch={(conditions) =>
 							onQuery({ kind: "spec", spec: { conditions } })
 						}
+						size="large"
 					/>
 					{errorAlert}
 				</div>
@@ -79,9 +81,11 @@ export function ZeroState({
 function ConversationStart({
 	onQuery,
 	errorAlert,
+	modeSelect,
 }: {
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
 	errorAlert: React.ReactNode;
+	modeSelect: React.ReactNode;
 }) {
 	const bar = useRef<QueryBarHandle>(null);
 	return (
@@ -89,6 +93,7 @@ function ConversationStart({
 			<div className="flex flex-col gap-2">
 				<QueryBar
 					autoFocus
+					left={modeSelect}
 					onQuery={onQuery}
 					placeholder="描述你要找的人，例如：做过推荐算法、带过团队"
 					ref={bar}

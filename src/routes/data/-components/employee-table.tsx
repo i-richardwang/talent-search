@@ -1,10 +1,8 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { SearchIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { Block } from "#/components/ui/block";
-import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
-import { Input } from "#/components/ui/input";
+import { SearchBar } from "#/components/ui/search-bar";
 import {
 	Table,
 	TableBody,
@@ -56,28 +54,15 @@ export function EmployeeTable({
 
 	return (
 		<div className="flex flex-col gap-3">
-			<form
-				onSubmit={(event) => {
-					event.preventDefault();
-					// 换词就回到第一页：上一次翻到的第 7 页在新的结果里不是同一批人
-					void navigate({ search: at(1, needle.trim()) });
-				}}
-			>
-				<Input
-					aria-label="搜索姓名或工号"
-					className="max-w-96"
-					onChange={(event) => setNeedle(event.target.value)}
-					placeholder="搜索姓名或工号"
-					prefix={<SearchIcon size={16} />}
-					suffix={
-						<Button size="small" htmlType="submit" type="text">
-							搜索
-						</Button>
-					}
-					type="search"
-					value={needle}
-				/>
-			</form>
+			{/* 换词就回到第一页：上一次翻到的第 7 页在新的结果里不是同一批人 */}
+			<SearchBar
+				aria-label="搜索姓名或工号"
+				className="max-w-96"
+				onChange={setNeedle}
+				onSearch={(needle) => void navigate({ search: at(1, needle) })}
+				placeholder="搜索姓名或工号"
+				value={needle}
+			/>
 			{list.rows.length === 0 ? (
 				// 找不到人的时候标题已经说完了；库是空的才需要说出路
 				<Empty

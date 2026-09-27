@@ -83,9 +83,16 @@
 
 	/* biome-ignore lint/style/noDescendingSpecificity: variant 排在 .ui-input-invalid 之后，出错时的聚焦边在 .ui-input-invalid 里靠更高的特异性胜出 */
 	&:focus-within {
-		border-color: var(--color-primary);
+		border-color: var(--color-border);
 		box-shadow: 0 0 0 2px var(--color-primary-bg);
 	}
+}
+
+/* 嵌在别的面里的输入：没有边、没有底、没有内边距，悬停与聚焦都不画东西。 */
+.ui-input-borderless {
+	padding-inline: 0;
+	border: none;
+	background: none;
 }
 
 .ui-input-textarea {

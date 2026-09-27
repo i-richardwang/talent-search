@@ -1,12 +1,14 @@
 import {
 	Activity,
+	Building2,
 	Check,
 	ChevronDown,
+	Clock,
 	CornerDownRight,
 	Download,
 	EyeOff,
+	GraduationCap,
 	History,
-	ListChecks,
 	Loader2,
 	type LucideIcon,
 	MessageSquareText,
@@ -15,7 +17,6 @@ import {
 	PanelLeftOpen,
 	Plus,
 	RotateCw,
-	Search,
 	SearchX,
 	SquarePen,
 	Table,
@@ -38,19 +39,20 @@ export const PRODUCT_ICONS: [
 	icon: LucideIcon,
 	meaning: string,
 ][] = [
-	["Search", Search, "搜索；表上方的找词框"],
 	["Loader2", Loader2, "正在处理，转圈"],
 	["SearchX", SearchX, "没有找到人"],
 	["MessageSquareWarning", MessageSquareWarning, "AI 没有整理出搜索条件"],
 	["RotateCw", RotateCw, "重试"],
 	["EyeOff", EyeOff, "停用的搜索条件"],
-	["ListChecks", ListChecks, "挑选候选人"],
 	["Download", Download, "导出名单"],
 	["Check", Check, "已选中的一项"],
 	["X", X, "关闭、移除、退出"],
 	["ChevronDown", ChevronDown, "展开选项"],
 	["SquarePen", SquarePen, "新搜索"],
-	["Plus", Plus, "添加替代条件"],
+	["Plus", Plus, "添加一条替代条件"],
+	["Building2", Building2, "关键词里的公司或部门"],
+	["GraduationCap", GraduationCap, "关键词里的学校"],
+	["Clock", Clock, "关键词里的累计年限"],
 	["CornerDownRight", CornerDownRight, "一条示例，点了填进输入框"],
 	["History", History, "正在看较早的一次结果"],
 	["MessageSquareText", MessageSquareText, "最近搜索里的一次 AI 搜索"],
@@ -74,7 +76,7 @@ function Sizes() {
 			{TIERS.map(([tier, px]) => (
 				<Block gap={14} key={tier} padding={20} variant="outlined">
 					<div className="flex h-12 items-center">
-						<Icon icon={Search} size={tier} />
+						<Icon icon={SquarePen} size={tier} />
 					</div>
 					<div className="flex flex-col gap-0.5 text-xs">
 						<code className="font-medium">{tier}</code>
@@ -129,9 +131,6 @@ function InButtons() {
 					导出名单
 				</Button>
 				<Button icon={RotateCw}>重试</Button>
-				<Button icon={ListChecks} size="small">
-					选择
-				</Button>
 			</div>
 			<p className="text-fg-secondary text-xs">
 				按钮里的图标由按钮按 small 画，和文字之间的距离是按钮令牌里的图文间距。
@@ -156,7 +155,7 @@ export function IconsPage() {
 					"新的意思先加到这张表里，测试会核对页面代码里的导入。",
 					"只有图标的按钮用 ActionIcon，并给 title。",
 				],
-				usage: `<Icon icon={Search} size="small" />`,
+				usage: `<Icon icon={SquarePen} size="small" />`,
 			}}
 			sections={[
 				{ children: <Sizes />, id: "sizes", title: "尺寸" },

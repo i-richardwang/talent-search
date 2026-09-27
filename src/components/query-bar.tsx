@@ -6,6 +6,7 @@ import {
 	ChatInputBar,
 	ChatInputSend,
 } from "#/components/ui/chat-input";
+import { Hotkey } from "#/components/ui/hotkey";
 import type { QueryInput } from "#/search/spec";
 
 /** 外面能对这个框做的事。填入不提交：例子是起点，不是答案。 */
@@ -21,7 +22,9 @@ export type QueryBarHandle = {
  * 下一句，两处做的是同一件事——把「我要找什么人」说成一句话。
  *
  * 一块输入托盘：文本区随内容长高，Enter 提交、Shift+Enter 换行，发送钮在面里的右下角。
- * `tray` 挂在托盘上沿，放作用于这句话之前的、点一下就能办的事。
+ * `tray` 挂在托盘上沿，放作用于这句话之前的、点一下就能办的事；`left` 放在动作栏左端
+ * （首页是搜索方式的切换）。middle 的占位后面跟着换行的快捷键：接着说的时候才会写
+ * 长到要换行；首页那一句的占位本身就是例子，不再挂提示。
  *
  * 提交是**异步**的，但只异步一次 INSERT 那么久：查询理解在工作台里补
  * （见 `s/$turnId/route.tsx`）。**原话在提交成功之前不清空**：这一步会失败，
@@ -36,6 +39,7 @@ export function QueryBar({
 	placeholder,
 	size = "middle",
 	tray,
+	left,
 	autoFocus = false,
 	waiting = false,
 }: {
@@ -44,6 +48,7 @@ export function QueryBar({
 	placeholder: string;
 	size?: "middle" | "large";
 	tray?: ReactNode;
+	left?: ReactNode;
 	autoFocus?: boolean;
 	/** 上一句还在理解：可以接着敲，先不能提交。 */
 	waiting?: boolean;
@@ -101,11 +106,20 @@ export function QueryBar({
 						e.preventDefault();
 						formRef.current?.requestSubmit();
 					}}
+					hint={
+						size === "middle" && (
+							<span className="inline-flex items-center">
+								按<Hotkey keys="shift+enter" variant="borderless" />
+								换行
+							</span>
+						)
+					}
 					placeholder={placeholder}
 					ref={inputRef}
 					value={draft}
 				/>
 				<ChatInputBar
+					left={left}
 					right={
 						<ChatInputSend
 							aria-label="搜索"

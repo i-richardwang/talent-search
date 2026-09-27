@@ -110,8 +110,8 @@ describe("带子的几何", () => {
 		);
 		const [a, b] = blocks(html);
 		assert.equal(a?.left, "0%");
-		// 两段各占一半：2016-01 到 2024-01 共 96 个月，每段 48 个月
-		assert.equal(a?.width, "50%");
+		// 两段各占一半：2016-01 到 2024-01 共 96 个月，每段 48 个月，减去段间的缝
+		assert.equal(a?.width, "calc(50% - 2px)");
 		assert.equal(b?.left, "50%");
 	});
 
@@ -124,9 +124,9 @@ describe("带子的几何", () => {
 			/>,
 		);
 		const [matched, missed] = blocks(html);
-		assert.equal(matched?.height, "8px");
-		assert.equal(missed?.height, "2px");
-		// 细线在轨内居中，不是贴着轨顶
+		assert.equal(matched?.height, "10px");
+		assert.equal(missed?.height, "4px");
+		// 细条在轨内居中，不是贴着轨顶
 		assert.equal(missed?.top, "3px");
 	});
 

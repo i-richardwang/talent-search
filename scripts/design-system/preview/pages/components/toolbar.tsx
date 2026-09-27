@@ -19,7 +19,7 @@ const CANDIDATES = [
 	{ id: "Talent 0480", summary: "实时计算 · 累计 3 年" },
 ];
 
-/** 工具条的长相：描边面加投影，计数一段、操作一段，中间一条分隔线。 */
+/** 工具条的长相：浮起的胶囊，计数一段、操作一段，中间一条分隔线。 */
 function Appearance() {
 	return (
 		<Stage footer={<span>左右方向键在按钮间移动</span>}>
@@ -130,7 +130,7 @@ export function ToolbarPage() {
 					"按钮经 ToolbarButton 的 render 交进来，左右方向键在它们之间移动焦点。",
 					"整栏写 aria-label 说明它操作的是什么。",
 					"分组用 ToolbarSeparator，不另放 Divider。",
-					"描边与投影是工具条自带的，位置由外层布局给。",
+					"胶囊的描边、底色与投影是工具条自带的，位置由外层布局给。",
 				],
 				usage: `<Toolbar aria-label="已选择的人">\n  <ToolbarButton render={<Button size="small" type="text" />}>清空</ToolbarButton>\n  <ToolbarSeparator />\n  <ToolbarButton render={<Button icon={Download} size="small" type="primary" />}>\n    导出 3 人\n  </ToolbarButton>\n</Toolbar>`,
 			}}

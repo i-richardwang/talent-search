@@ -4,6 +4,7 @@ import {
 	EvidenceLine,
 	evidenceText,
 	MissedClaims,
+	StrengthGuide,
 	StrengthLegend,
 } from "#/components/evidence";
 import { Block } from "#/components/ui/block";
@@ -249,10 +250,13 @@ function Parts() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="名单抬头那一行的图例：三档各一颗点，悬停说出这一档的证据从哪来。"
+				description="名单抬头右端只留三颗点和「匹配来源」，悬停展开下面这张说明：每一档叫什么、证据从哪来。"
 				title="匹配来源图例"
 			>
-				<StrengthLegend />
+				<div className="flex w-full flex-col gap-4">
+					<StrengthLegend />
+					<StrengthGuide />
+				</div>
 			</Example>
 			<Example
 				description="没命中的主张合成一行，点是空的灰色；全部命中时这一行不画。"
@@ -333,6 +337,8 @@ export function EvidencePage() {
 					"档名与来源名不同名：档叫「简历自述」，来源叫「简历原文」，后者只指还没读过的段。",
 					"证据可信度只决定名次先后，不决定去留：只有自述证据的人照样进名单。",
 					"右端显示的时长和排序用的时长是同一份，不另算。",
+					"一行比人名小一档：条件词和时长是正文色，命中的字段退到次要色，字段名和上下文再退一档。",
+					"图例不常驻：名单表头只留三颗点和「匹配来源」，悬停才展开每一档的说明。",
 					"必须 / 加分靠符号区分，必须不带标记；不上屏分数和名次。",
 				],
 				usage: `<EvidenceLine\n  basis={basis}\n  boost={claim.mode === "boost"}\n  hit={hit}\n  name={claimName(claim)}\n/>`,

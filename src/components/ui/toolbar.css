@@ -1,11 +1,27 @@
 /*
- * 工具栏的面：描边面加一层投影。
+ * 工具栏的面：浮在内容上的一枚胶囊。elevated 底、border-secondary 的细边（深色一侧
+ * border-secondary 和 elevated 同色，退到 border）、弹层那一档的投影，上下 8px、
+ * 左右 16px。
  */
 
 .ui-toolbar {
 	position: relative;
+	padding: 8px 16px;
 	border: 1px solid var(--color-border-secondary);
-	border-radius: var(--radius-md);
-	background: var(--color-container);
-	box-shadow: var(--elevation-edge);
+	border-radius: 9999px;
+	background: var(--color-elevated);
+	box-shadow: var(--elevation-md);
+
+	:where(.dark) & {
+		border-color: var(--color-border);
+	}
+}
+
+/* 栏里的分隔线：16px 高、左右 2px，分隔线色（深浅两侧在 elevated 上都看得见）。 */
+.ui-toolbar-separator {
+	flex: none;
+	width: 1px;
+	height: 16px;
+	margin-inline: 2px;
+	background: var(--color-split);
 }

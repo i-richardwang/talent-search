@@ -145,7 +145,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="最近搜索一行一条记录：图标说是 AI 搜索还是关键词搜索，行尾的删除画在链接外，链接里不嵌别的动作。"
+				description="最近搜索一行一条记录：14px 的小图标说是 AI 搜索还是关键词搜索，行尾的删除画在链接外，链接里不嵌别的动作。"
 				title="最近搜索"
 			>
 				<div className="w-nav bg-layout p-1">
@@ -154,6 +154,7 @@ function Usage() {
 							actions={<Remove label="找做过支付风控、学校 B 毕业的" />}
 							href="#recent-1"
 							icon={MessageSquareTextIcon}
+							iconSize="small"
 							onClick={stay}
 						>
 							找做过支付风控、学校 B 毕业的
@@ -162,6 +163,7 @@ function Usage() {
 							actions={<Remove label="推荐系统 / 某甲科技" />}
 							href="#recent-2"
 							icon={TextSearchIcon}
+							iconSize="small"
 							onClick={stay}
 						>
 							推荐系统 / 某甲科技
@@ -211,6 +213,7 @@ export function NavItemPage() {
 					"行尾的动作放 actions，画在链接外；链接里不嵌别的动作。",
 					"标题一行放不下就截断，完整的写进 title。",
 					"几项同属一类时用 NavGroup 包起来，组名在上。",
+					'一长串同类的记录（最近搜索）给 iconSize="small"，图标 14px；几个固定入口用缺省的 18px。',
 				],
 				usage: `<NavGroup title="管理">\n  <NavItem active={on("/tasks")} icon={ActivityIcon} render={<Link to="/tasks" />}>\n    任务\n  </NavItem>\n</NavGroup>`,
 			}}

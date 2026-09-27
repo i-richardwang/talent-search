@@ -86,7 +86,7 @@ function Workspace() {
 					title={TASK_TITLE}
 				/>
 			}
-			keys={<KeyHints editable mode="conversation" picking={picks.picking} />}
+			keys={<KeyHints editable mode="conversation" />}
 			list={
 				<ResultList
 					canMore={false}

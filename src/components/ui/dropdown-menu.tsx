@@ -108,8 +108,18 @@ export function DropdownMenuPositioner({ children }: { children: ReactNode }) {
 	);
 }
 
-export function DropdownMenuPopup({ children }: { children: ReactNode }) {
-	return <Menu.Popup className="ui-dropdown-menu-popup">{children}</Menu.Popup>;
+export function DropdownMenuPopup({
+	children,
+	className,
+}: {
+	children: ReactNode;
+	className?: string;
+}) {
+	return (
+		<Menu.Popup className={cn("ui-dropdown-menu-popup", className)}>
+			{children}
+		</Menu.Popup>
+	);
 }
 
 /** 固定在菜单项上方的一栏，带分隔线；不是菜单项，键盘走不到，点它也不收起菜单。 */

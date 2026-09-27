@@ -1,10 +1,8 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { SearchIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { Block } from "#/components/ui/block";
-import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
-import { Input } from "#/components/ui/input";
+import { SearchBar } from "#/components/ui/search-bar";
 import {
 	Table,
 	TableBody,
@@ -55,28 +53,15 @@ export function SkillTable({
 
 	return (
 		<div className="flex flex-col gap-3">
-			<form
-				onSubmit={(event) => {
-					event.preventDefault();
-					// 换词就回到第一页：上一次翻到的第 7 页在新的结果里不是同一批词
-					void navigate({ search: at(1, needle.trim()) });
-				}}
-			>
-				<Input
-					aria-label="搜索技能"
-					className="max-w-96"
-					onChange={(event) => setNeedle(event.target.value)}
-					placeholder="搜索技能、写法或所属的词"
-					prefix={<SearchIcon size={16} />}
-					suffix={
-						<Button size="small" htmlType="submit" type="text">
-							搜索
-						</Button>
-					}
-					type="search"
-					value={needle}
-				/>
-			</form>
+			{/* 换词就回到第一页：上一次翻到的第 7 页在新的结果里不是同一批词 */}
+			<SearchBar
+				aria-label="搜索技能"
+				className="max-w-96"
+				onChange={setNeedle}
+				onSearch={(needle) => void navigate({ search: at(1, needle) })}
+				placeholder="搜索技能、写法或所属的词"
+				value={needle}
+			/>
 			{table.rows.length === 0 ? (
 				// 没匹配上的时候标题已经把话说完了；只有词表本身是空的，才需要说该怎么办
 				<Empty

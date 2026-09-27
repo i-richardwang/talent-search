@@ -11,8 +11,8 @@ const PANEL_W = "w-detail 2xl:w-detail-wide";
  * 两样都要常驻但不必同时在场：名单和详情才是要反复对照的一对，线程看完一轮就回到
  * 名单。关键词的链没有线程，右栏只在点开人时才有宽度。
  *
- * 和名单那一栏之间是一根 border-secondary 的竖线；线程顶上一条和名单抬头等高的页头，
- * 详情的抬头由详情自己画（`person.tsx`）。
+ * 和名单那一栏之间是一根 border-secondary 的竖线。两样顶上都是一条 `NavHeader`：线程的
+ * 在这里画，详情的由详情自己画（`person.tsx`），吸在它的滚动区顶上。
  */
 export function SidePanel({
 	detail,

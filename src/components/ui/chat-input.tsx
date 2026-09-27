@@ -1,12 +1,14 @@
-import { Loader2Icon } from "lucide-react";
+import { ChevronDownIcon, Loader2Icon, type LucideIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "#/lib/utils";
 import { Icon } from "./icon";
 
 /*
  * 输入托盘，样式在 chat-input.css。`ChatInput` 是那一块面（可以在上沿挂一片 `tray`），
- * 里面依次放 `ChatInputArea` 和 `ChatInputBar`，发送钮 `ChatInputSend` 放在动作栏右边。
- * 文本区多高、发送钮什么形状跟着面的 `size` 走，零件自己不带尺寸。
+ * 里面依次放内容区（一段文字用 `ChatInputArea`，别的内容用 `ChatInputBody`，空着时的
+ * 那句话用 `ChatInputPlaceholder`）和 `ChatInputBar`。动作栏左边放 `ChatInputAction`
+ * （小号的文字按钮，常作菜单或弹层的触发器），右边放发送钮 `ChatInputSend`。内容区
+ * 多高、发送钮什么形状跟着面的 `size` 走，零件自己不带尺寸。
  */
 
 export function ChatInput({
@@ -35,14 +37,56 @@ export function ChatInput({
 	);
 }
 
-/** 会随内容长高的文本区，超过 20rem 在里面滚动。 */
+/**
+ * 会随内容长高的文本区，超过 20rem 在里面滚动。`placeholder` 是空着时的那句话，
+ * `hint` 跟在它后面（例如换行的快捷键）；两者画在文本区上面的一层，读屏读的是
+ * `aria-placeholder`。
+ */
 export function ChatInputArea({
+	placeholder,
+	hint,
 	className,
 	...props
-}: ComponentProps<"textarea">) {
+}: Omit<ComponentProps<"textarea">, "placeholder"> & {
+	placeholder: string;
+	hint?: ReactNode;
+}) {
 	return (
-		<textarea className={cn("ui-chat-input-textarea", className)} {...props} />
+		<div className="ui-chat-input-area">
+			<textarea
+				aria-placeholder={placeholder}
+				className={cn("ui-chat-input-textarea", className)}
+				placeholder=" "
+				{...props}
+			/>
+			<ChatInputPlaceholder hint={hint}>{placeholder}</ChatInputPlaceholder>
+		</div>
 	);
+}
+
+/**
+ * 内容区空着时的那句话，画在第一行的位置上，后面可以跟 `hint`。只是给眼睛看的一层：
+ * 读屏读的是输入框自己的 `aria-placeholder` 或 `aria-label`。`ChatInputArea` 自带一个；
+ * `ChatInputBody` 里由调用处在空着时放上。
+ */
+export function ChatInputPlaceholder({
+	hint,
+	children,
+}: {
+	hint?: ReactNode;
+	children: ReactNode;
+}) {
+	return (
+		<div aria-hidden="true" className="ui-chat-input-placeholder">
+			<span>{children}</span>
+			{hint}
+		</div>
+	);
+}
+
+/** 不是一段文字的内容区：和文本区同样的最小高度与内边距，里面放什么由调用处定。 */
+export function ChatInputBody({ className, ...props }: ComponentProps<"div">) {
+	return <div className={cn("ui-chat-input-body", className)} {...props} />;
 }
 
 /** 面底下的动作栏：`left` 放附加的动作，`right` 放发送钮。 */
@@ -58,6 +102,31 @@ export function ChatInputBar({
 			{left && <div className="ui-chat-input-bar-left">{left}</div>}
 			<div className="ui-chat-input-bar-right">{right}</div>
 		</div>
+	);
+}
+
+/**
+ * 动作栏上的文字按钮：图标、一句话，`chevron` 时尾巴上一个向下的箭头，表示点开是
+ * 菜单或弹层。字太长时截断，完整的话放进 `aria-label` 或 `title`。
+ */
+export function ChatInputAction({
+	icon,
+	chevron,
+	children,
+	className,
+	type = "button",
+	...props
+}: ComponentProps<"button"> & { icon?: LucideIcon; chevron?: boolean }) {
+	return (
+		<button
+			className={cn("ui-chat-input-action", className)}
+			type={type}
+			{...props}
+		>
+			{icon && <Icon icon={icon} size={14} />}
+			<span className="ui-chat-input-action-label">{children}</span>
+			{chevron && <Icon icon={ChevronDownIcon} size={12} />}
+		</button>
 	);
 }
 

@@ -1,5 +1,6 @@
 import { XIcon } from "lucide-react";
 import { useId, useState } from "react";
+import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Checkbox, CheckboxGroup } from "#/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
@@ -121,7 +122,7 @@ function FilterFacet({
 						{rows(rest)}
 					</Collapsible>
 					<CollapsibleTrigger
-						className="w-full px-2 py-1 text-fg-secondary text-sm"
+						className="w-full text-fg-secondary text-sm"
 						onOpenChange={setAll}
 						open={all}
 						panelId={restId}
@@ -134,9 +135,9 @@ function FilterFacet({
 	);
 
 	return (
-		<div className="flex min-w-0 flex-col gap-1">
+		<div className="flex min-w-0 flex-col gap-px">
 			<div
-				className="px-2 pb-1 font-medium text-fg-secondary text-xs"
+				className="px-2 pt-1.5 pb-1 font-medium text-fg-secondary text-xs"
 				id={titleId}
 			>
 				{field.title}
@@ -181,12 +182,19 @@ function Option({
 	value: string;
 }) {
 	return (
-		// biome-ignore lint/a11y/noLabelWithoutControl: 方框或圆点就是这层标签里的控件
-		<label
+		<Block
+			align="center"
+			as="label"
 			className={cn(
-				"flex w-full cursor-pointer items-center gap-2 px-2 py-1.5 text-base text-fg",
+				"text-base",
 				disabled && "cursor-not-allowed text-fg-tertiary",
 			)}
+			clickable={!disabled}
+			gap={8}
+			horizontal
+			paddingBlock={6}
+			paddingInline={8}
+			variant="borderless"
 		>
 			{multi ? (
 				<Checkbox disabled={disabled} value={value} />
@@ -204,7 +212,7 @@ function Option({
 					{n}
 				</span>
 			)}
-		</label>
+		</Block>
 	);
 }
 

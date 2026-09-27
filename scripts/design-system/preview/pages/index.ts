@@ -8,7 +8,9 @@ import { BlockPage } from "./components/block";
 import { ButtonPage } from "./components/button";
 import { ChatInputPage } from "./components/chat-input";
 import { CheckboxPage } from "./components/checkbox";
+import { ChoiceMenuPage } from "./components/choice-menu";
 import { CollapsiblePage } from "./components/collapsible";
+import { DescriptionsPage } from "./components/descriptions";
 import { DividerPage } from "./components/divider";
 import { DrawerPage } from "./components/drawer";
 import { DropdownMenuPage } from "./components/dropdown-menu";
@@ -24,6 +26,7 @@ import { NavItemPage } from "./components/nav-item";
 import { PopoverPage } from "./components/popover";
 import { RadioPage } from "./components/radio";
 import { ScrollAreaPage } from "./components/scroll-area";
+import { SearchBarPage } from "./components/search-bar";
 import { SegmentedPage } from "./components/segmented";
 import { SkeletonPage } from "./components/skeleton";
 import { TablePage } from "./components/table";
@@ -71,6 +74,8 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/tag": TagPage,
 	"components/hotkey": HotkeyPage,
 	"components/input": InputPage,
+	"components/search-bar": SearchBarPage,
+	"components/choice-menu": ChoiceMenuPage,
 	"components/auto-complete": AutoCompletePage,
 	"components/chat-input": ChatInputPage,
 	"components/checkbox": CheckboxPage,
@@ -85,6 +90,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/nav-item": NavItemPage,
 	"components/divider": DividerPage,
 	"components/text-link": TextLinkPage,
+	"components/descriptions": DescriptionsPage,
 	"components/scroll-area": ScrollAreaPage,
 	"components/toolbar": ToolbarPage,
 	"components/collapsible": CollapsiblePage,

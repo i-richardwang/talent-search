@@ -1,7 +1,7 @@
 import { ScrollArea } from "#/components/ui/scroll-area";
 import type { QueryInput } from "#/search/spec";
 import type { SearchMode } from "#/server/turn";
-import { ModeNav } from "./mode-nav";
+import { ModeSelect } from "./mode-select";
 import { PageHeader } from "./page-header";
 import { ZeroState } from "./zero-state";
 
@@ -34,7 +34,7 @@ export function HomeScreen({
 						error={error}
 						key={mode}
 						mode={mode}
-						nav={understanding && <ModeNav mode={mode} />}
+						modeSelect={understanding && <ModeSelect mode={mode} />}
 						onQuery={onQuery}
 					/>
 				</main>

@@ -151,6 +151,7 @@ const CATALOG = [
 			component("auto-complete", "自动补全", "AutoComplete", {
 				sizing: "input",
 			}),
+			component("search-bar", "搜索框", "SearchBar"),
 			component("chat-input", "输入托盘", "ChatInput"),
 			component("checkbox", "复选框", "Checkbox"),
 			component("radio", "单选框", "Radio"),
@@ -166,6 +167,7 @@ const CATALOG = [
 			component("nav-item", "导航项", "NavItem"),
 			component("divider", "分割线", "Divider"),
 			component("text-link", "文字链接", "TextLink"),
+			component("descriptions", "属性列表", "Descriptions"),
 			component("scroll-area", "滚动区", "ScrollArea"),
 			component("toolbar", "工具条", "Toolbar"),
 			component("collapsible", "折叠面板", "Collapsible"),
@@ -175,6 +177,7 @@ const CATALOG = [
 			component("tooltip", "文字提示", "Tooltip"),
 			component("popover", "气泡卡片", "Popover"),
 			component("dropdown-menu", "下拉菜单", "DropdownMenuRoot"),
+			component("choice-menu", "几选一菜单", "ChoiceMenu"),
 			component("modal", "对话框", "Modal", { motion: "modal" }),
 			component("drawer", "抽屉", "Drawer", { motion: "drawer" }),
 		],

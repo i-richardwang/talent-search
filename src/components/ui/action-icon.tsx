@@ -9,14 +9,16 @@ import { cn } from "#/lib/utils";
 /*
  * 一个正方形的 Button，字色是三级灰
  * （平时 tertiary、悬停 secondary、按下 fg），样式在 action-icon.css。
- * 尺寸两档 small / middle，方块边长是 action-icon.css 的组件令牌，圆角与图标读各自的档。
+ * 尺寸三档：small（24px，图标 14）放在行里，middle（36px，图标 20）单独摆着，两档的
+ * 方块边长是 action-icon.css 的组件令牌；header（28px，图标 16）放在栏顶的页头上，
+ * 边长是页头的布局令牌 `--nav-header-action-size`。
  * 给了 `title` 就套一层提示，`tooltipProps`
  * 转给它；提示本身不接指针。
  * 传进来的 `tabIndex` 优先，没传时禁用取 -1、否则 0：放在 Toolbar 里时
  * 漫游焦点靠 Toolbar 写的 `tabIndex`。
  */
 
-type ActionIconSize = "small" | "middle";
+type ActionIconSize = "small" | "header" | "middle";
 
 export interface ActionIconProps
 	extends Omit<
@@ -41,15 +43,25 @@ export interface ActionIconProps
 	variant?: "borderless" | "filled";
 }
 
-/** 两档预设：方块边长是 action-icon.css 里的组件令牌，圆角用全局的圆角档。 */
+/** 三档预设。圆角用全局的圆角档。 */
 const PRESET = {
+	header: {
+		blockSize: "var(--nav-header-action-size)",
+		borderRadius: "var(--radius-sm)",
+		button: "small",
+		icon: 16,
+	},
 	middle: {
 		blockSize: "var(--action-icon-size-middle)",
 		borderRadius: "var(--radius-sm)",
+		button: "middle",
+		icon: ICON_PRESET.middle,
 	},
 	small: {
 		blockSize: "var(--action-icon-size-small)",
 		borderRadius: "var(--radius-xs)",
+		button: "small",
+		icon: ICON_PRESET.small,
 	},
 } as const;
 
@@ -58,7 +70,7 @@ function measure(size: ActionIconSize) {
 	const preset = PRESET[size];
 	return {
 		...preset,
-		outdent: `calc((${preset.blockSize} - ${ICON_PRESET[size]}px) / 2)`,
+		outdent: `calc((${preset.blockSize} - ${preset.icon}px) / 2)`,
 	};
 }
 
@@ -80,7 +92,13 @@ export function ActionIcon({
 	variant = "borderless",
 	...props
 }: ActionIconProps) {
-	const { blockSize, borderRadius, outdent: inset } = measure(size);
+	const {
+		blockSize,
+		borderRadius,
+		button: buttonSize,
+		icon: iconSize,
+		outdent: inset,
+	} = measure(size);
 	// 提示不给触发器起名字：没给 aria-label 时拿字符串的 title 当按钮的名字。
 	const ariaLabel =
 		props["aria-label"] ?? (typeof title === "string" ? title : undefined);
@@ -101,10 +119,10 @@ export function ActionIcon({
 			htmlType="button"
 			icon={
 				icon ? (
-					<Icon icon={icon} size={size} style={{ pointerEvents: "none" }} />
+					<Icon icon={icon} size={iconSize} style={{ pointerEvents: "none" }} />
 				) : undefined
 			}
-			size={size}
+			size={buttonSize}
 			style={{
 				...outdentMargin,
 				borderRadius,

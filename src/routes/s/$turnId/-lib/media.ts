@@ -1,10 +1,9 @@
 import { useSyncExternalStore } from "react";
 
-/** 右栏（线程或详情）能不能常驻在名单旁边而不是盖住名单的分界，和 Tailwind 的 `xl` 同值。 */
+/** 右栏（线程或详情）常驻在名单旁边的分界，和 Tailwind 的 `xl` 同值。 */
 const WIDE = "(min-width: 80rem)";
 
-// 只建一次：getSnapshot 会被 React 反复调用，每次 new 一个 MediaQueryList 是白费。
-// 服务端没有 window，所以取的时候才建。
+// 取的时候才建、只建一次：服务端没有 window，getSnapshot 会被反复调用。
 let query: MediaQueryList | undefined;
 function mql() {
 	query ??= window.matchMedia(WIDE);
@@ -19,18 +18,11 @@ function subscribe(onChange: () => void) {
 /**
  * 够不够宽，让右栏常驻在名单旁边。
  *
- * 这个分界只有 JS 答得了：xl 以下详情是**模态**浮层、线程是一个抽屉，而 CSS 能把
- * 一个浮层藏起来，藏不掉它的焦点陷阱和滚动锁定——给 `Dialog` 加个 `xl:hidden` 会在
- * 桌面上留下一个看不见却抓着焦点、还锁着滚动的对话框，比没有模态更糟。所以宽窄两套
- * 容器只能二选一地渲染，选择权在这里。
+ * 宽窄两套容器二选一地挂：窄屏的详情是模态浮层，CSS 藏得住它的样子，藏不住它的
+ * 焦点陷阱和滚动锁定。
  *
- * 服务端与首帧一律答「宽」：这是内网桌面工具，直出主场景。服务端与客户端首次渲染
- * 因此给出同一份 HTML，挂载后再切过来，不会有水合不一致。
- *
- * 代价是首帧可能拿宽屏那一套去画一台手机。没选人时它宽度为 0、什么都不画，
- * **但首屏可以直接落在某个人身上**（`/s/:id/p/:empId` 就是粘给同事的链接），
- * 那一帧会横着溢出。所以右栏的槽带一条 `max-xl:hidden`（workspace-layout.tsx），
- * 断点与这里同值——JS 决定挂哪一套，CSS 兜住 JS 还没说话的那一帧。
+ * 服务端与首帧一律答「宽」，水合前后是同一份 HTML。首帧在窄屏上落在某个人身上时，
+ * 右栏的槽靠 `max-xl:hidden`（workspace-layout.tsx）先藏住。
  */
 export function useIsWide() {
 	return useSyncExternalStore(

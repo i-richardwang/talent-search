@@ -24,12 +24,9 @@ import {
 	type SearchPhase,
 } from "./result-state";
 
+/** 名单左边那一列复选框，在块外：勾上第一个就开始选。 */
 function PickCell({ children }: { children?: ReactNode }) {
-	return (
-		<div className="invisible w-0 shrink-0 overflow-hidden transition-[width] duration-200 ease-out group-data-picking/list:visible group-data-picking/list:w-(--pick-column)">
-			{children}
-		</div>
-	);
+	return <div className="w-(--pick-column) shrink-0">{children}</div>;
 }
 
 export function ResultList({
@@ -73,27 +70,22 @@ export function ResultList({
 	const reach = reachOf(total);
 	// 名单上有证据行，或这一轮的条件搜出来会有：图例才有点可对照
 	const evidence = claims.length > 0 || claimsOf(spec.conditions).length > 0;
-	const pickable = !loading && results.length > 0;
 
 	const head = (
-		<div className="mb-2.5 flex items-start">
+		<div className="mb-2 flex items-center">
 			<PickCell>
-				{pickable && (
-					<Tooltip title={`全选这 ${results.length} 人`}>
-						{/* biome-ignore lint/a11y/noLabelWithoutControl: 方框就是这层标签里的控件 */}
-						<label className="inline-flex items-center p-1">
-							<Checkbox aria-label={`全选这 ${results.length} 人`} parent />
-						</label>
-					</Tooltip>
-				)}
+				<Tooltip title={`全选这 ${results.length} 人`}>
+					{/* biome-ignore lint/a11y/noLabelWithoutControl: 方框就是这层标签里的控件 */}
+					<label className="inline-flex items-center p-1">
+						<Checkbox aria-label={`全选这 ${results.length} 人`} parent />
+					</label>
+				</Tooltip>
 			</PickCell>
 			<ResultHeader
-				loading={loading}
-				onPicking={picks.start}
-				order={order}
-				pickable={pickable}
-				picking={picks.picking}
+				className="px-3"
 				evidence={evidence}
+				loading={loading}
+				order={order}
 				total={total}
 			/>
 		</div>
@@ -115,7 +107,7 @@ export function ResultList({
 	) : (
 		<>
 			{head}
-			<ul className="-mx-3 flex flex-col gap-0.5">
+			<ul className="flex flex-col gap-0.5">
 				{picks.rows.map(({ employee: e, hits, missed }) => {
 					const selected = e.empId === empId;
 					return (
@@ -155,7 +147,7 @@ export function ResultList({
 									</span>
 								</div>
 								{claims.length > 0 && (
-									<div className="mt-2 space-y-1.5">
+									<div className="mt-1.5 space-y-1">
 										{hits.map(({ claim, name, hit, basis }) => (
 											<EvidenceLine
 												basis={basis}
@@ -200,21 +192,17 @@ export function ResultList({
 		<CheckboxGroup
 			allValues={picks.shownIds}
 			aria-label="名单"
-			className="group/list"
-			data-picking={picks.picking || undefined}
 			onChange={picks.setShown}
 			value={picks.shownPicked}
 		>
 			{content}
-			{picks.picking && (
-				<PickDock
-					loading={growing}
-					names={claims.map(claimName)}
-					onAll={onAll}
-					picks={picks}
-					total={total}
-				/>
-			)}
+			<PickDock
+				loading={growing}
+				names={claims.map(claimName)}
+				onAll={onAll}
+				picks={picks}
+				total={total}
+			/>
 		</CheckboxGroup>
 	);
 }
