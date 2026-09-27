@@ -12,8 +12,8 @@ import { useCommit } from "./-lib/commit";
  * 参数，可以收藏、可以后退。对话是默认，地址上不写；查询理解没配置时只有关键词，
  * 地址写的是什么都一样。
  *
- * 没有 loader：这一屏不需要任何服务端数据就能画完，进来即可开始敲字。
- * 导航栏那份搜索记录和查询理解配没配，属于外壳，由根路由取（`__root.tsx`）。
+ * 没有 loader：这一屏要的最近搜索和查询理解配没配，和导航栏用的是同一份，
+ * 由根路由取（`__root.tsx`）。
  */
 export const Route = createFileRoute("/")({
 	validateSearch: (search: Record<string, unknown>): { mode?: "keyword" } =>
@@ -25,13 +25,14 @@ function Home() {
 	// 提交在这一层，不在 ZeroState 里：那个组件只画界面，于是它能脱开路由测
 	// （tests/product-copy.test.tsx 直出它，不搭 router）。
 	const { commit, error } = useCommit();
-	const { understanding } = useLoaderData({ from: "__root__" });
+	const { recent, understanding } = useLoaderData({ from: "__root__" });
 	const { mode } = Route.useSearch();
 	return (
 		<HomeScreen
 			asked={mode}
 			error={error}
 			onQuery={commit}
+			recent={recent}
 			understanding={understanding}
 		/>
 	);

@@ -1,0 +1,60 @@
+import { activeConditions } from "#/search/condition";
+import {
+	conditionLabel,
+	inSentence,
+	MODE_GLYPH,
+} from "#/search/condition-label";
+import { keywordsOf, keywordTitle } from "#/search/keywords";
+import type { RecentSearch } from "#/server/turn";
+
+/*
+ * 最近搜索的一条记录在导航栏、首页和全部记录的抽屉里怎么读。三处读同一份。
+ */
+
+/** 根路由一次取多少条：导航栏最多列二十条，首页列八条，都从这一页里切。 */
+export const RECENT_FIRST_PAGE = 20;
+
+/** 首页「最近搜索」列几条。 */
+export const HOME_RECENT_COUNT = 8;
+
+/**
+ * 一行记录读的是**任务标题**：对话的任务是链头那句话，回头找一次搜过的东西，
+ * 认出来靠的是自己当时怎么开口的。关键词搜索没有那句话，框里的词就是它问的。
+ */
+export function recentLabel(record: Pick<RecentSearch, "spec" | "title">) {
+	if (record.title) return record.title;
+	const keywords = keywordsOf(record.spec.conditions);
+	if (keywords) return keywordTitle(keywords);
+	// 读不回框里的条件表照条件写。停用的不出现：它没参与这次检索
+	const labels = activeConditions(record.spec.conditions).map(
+		(c) => MODE_GLYPH[c.mode] + conditionLabel(c),
+	);
+	return labels.join(" / ") || "无搜索条件";
+}
+
+/**
+ * 标题下面那一行：对话的任务停在了哪些搜索条件上。链头那句话之后可能又说过几句，
+ * 这一行说的是最后的样子。关键词搜索的标题就是条件本身，不再重复一遍。
+ */
+export function recentSummary(
+	record: Pick<RecentSearch, "spec" | "title">,
+): string | undefined {
+	if (!record.title) return undefined;
+	return inSentence(activeConditions(record.spec.conditions)) || undefined;
+}
+
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/** 多久以前：一小时内按分钟，一天内按小时，一周内按天，再早写日期，一年以前带上年份。 */
+export function ago(record: Pick<RecentSearch, "ageSeconds" | "at">): string {
+	const s = record.ageSeconds;
+	if (s < MINUTE) return "刚刚";
+	if (s < HOUR) return `${Math.floor(s / MINUTE)} 分钟前`;
+	if (s < DAY) return `${Math.floor(s / HOUR)} 小时前`;
+	if (s < 2 * DAY) return "昨天";
+	if (s < 7 * DAY) return `${Math.floor(s / DAY)} 天前`;
+	const [year, month, day] = record.at.slice(0, 10).split("-").map(Number);
+	return s < 365 * DAY ? `${month}月${day}日` : `${year}年${month}月`;
+}

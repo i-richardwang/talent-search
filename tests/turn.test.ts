@@ -25,6 +25,9 @@ const {
 	traceOf,
 } = await import("#/server/turn");
 
+/** 最近搜索的第一页，取得够多，这个文件建的链都在里面。 */
+const recent = async () => (await listRecent(1, 50)).rows;
+
 /** 每条条件的代表词：主张的第一个经历词，人的条件的第一个取值。 */
 const wordsOf = (spec: SearchSpec) =>
 	spec.conditions.map((c) =>
@@ -301,11 +304,11 @@ describe("直接改条件", () => {
 
 describe("任务标题", () => {
 	test("最近搜索里一次任务只占一行，停在最后的样子，标题是链头那句", async () => {
-		const before = await listRecent();
+		const before = await recent();
 		const root = await sentence("产品经理");
 		const next = await sentence("渠道运营", root.turnId);
 
-		const rows = (await listRecent()).filter(
+		const rows = (await recent()).filter(
 			(r) => !before.some((b) => b.turnId === r.turnId),
 		);
 		assert.equal(rows.length, 1, "一次找人任务只占一行");
@@ -313,12 +316,28 @@ describe("任务标题", () => {
 		assert.equal(rows[0]?.title, "产品经理");
 	});
 
+	test("最近搜索按页取，新的在前，越界的页码收回最后一页", async () => {
+		const first = await sentence("数据分析");
+		const second = await sentence("用户研究");
+		const page = await listRecent(1, 1);
+		assert.equal(page.rows.length, 1);
+		assert.equal(page.rows[0]?.turnId, second.turnId, "新的在前");
+		assert.ok(page.total >= 2);
+		assert.equal(page.pages, page.total);
+		const next = await listRecent(2, 1);
+		assert.equal(next.rows[0]?.turnId, first.turnId);
+		const beyond = await listRecent(page.pages + 5, 1);
+		assert.equal(beyond.page, page.pages);
+		assert.ok((next.rows[0]?.ageSeconds ?? -1) >= 0);
+		assert.match(next.rows[0]?.at ?? "", /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+	});
+
 	test("关键词搜索没有标题", async () => {
 		const { turnId } = await createTurn({
 			kind: "spec",
 			spec: { conditions: parseQuery("算法") },
 		});
-		const [row] = (await listRecent()).filter((r) => r.turnId === turnId);
+		const [row] = (await recent()).filter((r) => r.turnId === turnId);
 		assert.equal(row?.title, null);
 	});
 });
@@ -513,7 +532,7 @@ describe("删除", () => {
 		assert.equal(await loadTurn(root.turnId), null);
 		assert.equal(await loadTurn(rewritten.turnId), null);
 		assert.ok(
-			!(await listRecent()).some((r) => r.turnId === root.turnId),
+			!(await recent()).some((r) => r.turnId === root.turnId),
 			"链头没有因为末条被删而顶回最近搜索",
 		);
 	});

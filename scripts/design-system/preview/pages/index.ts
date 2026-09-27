@@ -24,6 +24,7 @@ import { EmptyPage } from "./components/empty";
 import { FlexPage } from "./components/flex";
 import { FormPage } from "./components/form";
 import { GalleryPage } from "./components/gallery";
+import { GroupBlockPage } from "./components/group-block";
 import { HotkeyPage } from "./components/hotkey";
 import { IconPage } from "./components/icon";
 import { InputPage } from "./components/input";
@@ -104,6 +105,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/text-link": TextLinkPage,
 	"components/descriptions": DescriptionsPage,
 	"components/list": ListPage,
+	"components/group-block": GroupBlockPage,
 	"components/avatar": AvatarPage,
 	"components/scroll-area": ScrollAreaPage,
 	"components/toolbar": ToolbarPage,

@@ -11,6 +11,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
+import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import {
 	type Condition,
 	conditionKey,
@@ -386,38 +387,51 @@ export async function loadTurn(id: string): Promise<Turn | null> {
 	return thread?.find((turn) => turn.id === id) ?? null;
 }
 
-const RECENT_MAX = 8;
-
 export type RecentSearch = {
 	turnId: string;
 	spec: SearchSpec;
 	/** 这次找人任务的标题：链头那句话。关键词搜索没有。 */
 	title: string | null;
+	/** 最后一轮是多少秒以前落的记录。在库里算，服务端直出与水合读到的是同一个数。 */
+	ageSeconds: number;
+	/** 最后一轮落记录的时刻，`YYYY-MM-DD HH:MM` */
+	at: string;
 };
 
+/** 最近搜索一页最多取多少条：页面要多少由它自己说，超过的收到这个数。 */
+const RECENT_PAGE_MAX = 50;
+
 /**
- * 每条链只展示最后一份完整查询；打开 turnId 即可精确回放全部条件。
- * 标题是链头那句话：一次找人任务从那句话开始，后面每一轮都是在它上面改。
+ * 最近搜索的一页，新的在前。每条链只展示最后一份完整查询；打开 turnId 即可精确回放
+ * 全部条件。标题是链头那句话：一次找人任务从那句话开始，后面每一轮都是在它上面改。
+ * 页码由 `pageAt` 定夺，越界收回最后一页。
  */
-export async function listRecent(): Promise<RecentSearch[]> {
-	const rows = await db.execute<{
-		id: string;
-		spec: SearchSpec;
-		title: string | null;
-	}>(sql`
-			select latest.id, latest.spec, root.raw_text as title from (
+export async function listRecent(
+	page: unknown,
+	size: number,
+): Promise<TablePage<RecentSearch>> {
+	const found = await db.execute<{ n: number }>(sql`
+		select count(distinct root_turn_id)::int as n
+		from search_turn where spec is not null`);
+	const total = found.rows[0]?.n ?? 0;
+	const at = pageAt(
+		total,
+		page,
+		Math.min(Math.max(Math.trunc(size) || 1, 1), RECENT_PAGE_MAX),
+	);
+	const rows = await db.execute<RecentSearch>(sql`
+			select latest.id as "turnId", latest.spec, root.raw_text as title,
+				extract(epoch from now() - latest.created_at)::int as "ageSeconds",
+				to_char(latest.created_at, 'YYYY-MM-DD HH24:MI') as at
+			from (
 				select distinct on (root_turn_id) id, root_turn_id, spec, created_at
 				from search_turn where spec is not null
 				order by root_turn_id, created_at desc, id desc
 			) latest
 			join search_turn root on root.id = latest.root_turn_id
 			order by latest.created_at desc, latest.id desc
-			limit ${RECENT_MAX}`);
-	return rows.rows.map((row) => ({
-		turnId: row.id,
-		spec: row.spec,
-		title: row.title,
-	}));
+			limit ${at.limit} offset ${at.offset}`);
+	return tablePage(rows.rows, total, at);
 }
 
 /**

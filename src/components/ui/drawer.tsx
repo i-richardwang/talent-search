@@ -63,13 +63,18 @@ export function DrawerBackdrop() {
 	return <DialogPresenceBackdrop className="ui-drawer-backdrop" />;
 }
 
-/** 贴边的面板；`width` 是面板宽度，`placement` 是贴哪条边，默认右边。 */
+/**
+ * 贴边的面板；`width` 是面板宽度，`placement` 是贴哪条边，默认右边。
+ * `panelClassName` 加在面板上，给换了底色、描边和投影的一种面板（导航栏的抽屉）用。
+ */
 export function DrawerPopup({
 	children,
+	panelClassName,
 	placement: placementProp = "right",
 	width: widthProp,
 }: {
 	children: ReactNode;
+	panelClassName?: string;
 	placement?: DrawerPlacement;
 	width: number | string;
 }) {
@@ -97,7 +102,11 @@ export function DrawerPopup({
 				{open ? (
 					<motion.div
 						{...drawerMotionConfig(placement)}
-						className={cn("ui-drawer-panel", `ui-drawer-panel-${placement}`)}
+						className={cn(
+							"ui-drawer-panel",
+							`ui-drawer-panel-${placement}`,
+							panelClassName,
+						)}
 						key="drawer-popup-panel"
 					>
 						{children}

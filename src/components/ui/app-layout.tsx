@@ -1,15 +1,24 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
-import type { LucideIcon } from "lucide-react";
+import { type LucideIcon, XIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "#/lib/utils";
+import { ActionIcon } from "./action-icon";
 import { DraggablePanel } from "./draggable-panel";
+import {
+	DrawerBackdrop,
+	DrawerPopup,
+	DrawerPortal,
+	DrawerRoot,
+	DrawerTitle,
+} from "./drawer";
 import { Icon } from "./icon";
 
 /*
  * 应用外壳，样式在 app-layout.css。`AppLayout` 是整屏那一行：左边 `AppNav` 落在画布上，
  * 右边 `AppContent` 是内缩的内容卡片，每一屏的内容都画在卡片里。卡片里每一栏顶上是
- * 一条 `NavHeader`。
+ * 一条 `NavHeader`。`AppNavDrawer` 是从左边滑出、和导航栏同一块画布的一栏：窄屏上的
+ * 导航，和导航里「更多」打开的全部记录。
  */
 
 /** 导航栏的宽（px）：默认 280，拖动夹在 240–400。默认值和 `--container-nav` 同宽。 */
@@ -117,6 +126,79 @@ export function AppNavHeader({
 	);
 }
 
+/**
+ * 贴着左边滑出的一栏，和导航栏同一块画布：layout 底、两侧一根 border-secondary 的线、
+ * 向右一层很浅的影，不圆角。顶上一行左边是 `title`（14px 半粗），右边是 `action` 和
+ * 关闭钮（28px 的图标按钮）；`title` 不给时这一行不画，由内容自己出头部和关闭钮
+ * （窄屏的导航抽屉：导航栏顶上那一行里有它）。按 Esc 或点背板关闭。
+ */
+export function AppNavDrawer({
+	open,
+	onClose,
+	title,
+	label,
+	action,
+	width = "var(--container-nav)",
+	children,
+}: {
+	open: boolean;
+	onClose: () => void;
+	/** 顶上一行的标题。 */
+	title?: string;
+	/** 没有 `title` 时给读屏念的名字。 */
+	label?: string;
+	action?: ReactNode;
+	width?: number | string;
+	children: ReactNode;
+}) {
+	return (
+		<DrawerRoot
+			onOpenChange={(next) => {
+				if (!next) onClose();
+			}}
+			open={open}
+		>
+			<DrawerPortal>
+				<DrawerBackdrop />
+				<DrawerPopup
+					panelClassName="ui-app-nav-drawer"
+					placement="left"
+					width={width}
+				>
+					{title ? (
+						<div className="ui-app-nav-drawer-header">
+							<DrawerTitle>
+								<span className="ui-app-nav-drawer-title">{title}</span>
+							</DrawerTitle>
+							<div className="ui-app-nav-header-actions">
+								{action}
+								<AppNavDrawerClose onClose={onClose} />
+							</div>
+						</div>
+					) : (
+						<span className="sr-only">
+							<DrawerTitle>{label}</DrawerTitle>
+						</span>
+					)}
+					<div className="ui-app-nav-drawer-body">{children}</div>
+				</DrawerPopup>
+			</DrawerPortal>
+		</DrawerRoot>
+	);
+}
+
+/** 抽屉的关闭钮：页头那一档的图标按钮（28px，图标 16px）。 */
+export function AppNavDrawerClose({ onClose }: { onClose: () => void }) {
+	return (
+		<ActionIcon
+			aria-label="关闭"
+			icon={XIcon}
+			onClick={onClose}
+			size="header"
+		/>
+	);
+}
+
 /** 内容卡片。它自己不滚动：卡片里的每一栏各自决定滚动归谁。 */
 export function AppContent({
 	className,
@@ -128,6 +210,42 @@ export function AppContent({
 			<div className={cn("ui-app-content-card", className)} {...props}>
 				{children}
 			</div>
+		</div>
+	);
+}
+
+/**
+ * 首页那一屏：卡片里铺一层比卡片暗半档的底（深色一侧自上而下由卡片色过渡过去），
+ * 页头浮在顶上、不占高。正文是居中的一列：标题（一句问句，22px 半粗，最多两行）、
+ * 输入面、下面接着的内容（`children`），整页在这一层上原生滚动。
+ *
+ * 三段排成一张三行的网格，上下两行平分剩下的高：下面的内容不太高时，输入面正好落在
+ * 这一屏的中线上；内容高过一半时上面那行让出来，输入面往上走，再高就整页滚动。
+ * 下面的内容在首帧就定下了高度，数据到了不挪位。
+ */
+export function AppHome({
+	header,
+	title,
+	input,
+	children,
+}: {
+	header: ReactNode;
+	title: ReactNode;
+	input: ReactNode;
+	children?: ReactNode;
+}) {
+	return (
+		<div className="ui-app-home">
+			<div className="ui-app-home-header">{header}</div>
+			<main className="ui-app-home-scroll" id="main" tabIndex={-1}>
+				<div className="ui-app-home-column">
+					<div className="ui-app-home-heading">
+						<h1 className="ui-app-home-title">{title}</h1>
+					</div>
+					<div className="ui-app-home-input">{input}</div>
+					<div className="ui-app-home-below">{children}</div>
+				</div>
+			</main>
 		</div>
 	);
 }

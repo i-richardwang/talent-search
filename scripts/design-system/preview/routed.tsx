@@ -7,7 +7,10 @@ import {
 	useRouterState,
 } from "@tanstack/react-router";
 import { createContext, type ReactNode, use, useState } from "react";
+import type { TablePage } from "#/lib/paging";
+import { type NavPrefs, navPrefsOf } from "#/routes/-lib/nav-prefs";
 import { WorkbenchNav } from "#/routes/s/$turnId/-components/workbench-nav";
+import type { RecentSearch } from "#/server/turn";
 import { OUTCOME } from "./samples/people";
 import { RECENT, THREAD } from "./samples/thread";
 
@@ -16,8 +19,8 @@ import { RECENT, THREAD } from "./samples/thread";
  * 最小 router。历史记录在内存里，点链接只改这个 router 自己的地址，iframe 仍停在
  * `/preview`。页的内容是根路由画的东西，于是组件站在一个真的匹配里。
  *
- * 路由的形状和产品一致到组件读得到的程度：根路由的 loader 交出最近搜索和 AI 服务
- * 配没配，`/s/$turnId` 交出线程和名单、导航栏换成它的筛选（`staticData.nav`），
+ * 路由的形状和产品一致到组件读得到的程度：根路由的 loader 交出导航栏记住的样子、
+ * 最近搜索和 AI 服务配没配，`/s/$turnId` 交出线程和名单、导航栏换成它的筛选（`staticData.nav`），
  * 人的详情挂在它下面。loader 都是同步读样例，建 router 时就把这一地址的匹配和
  * loader 数据放好，服务端渲染（页的测试）一次就画得出来。
  */
@@ -35,13 +38,24 @@ const PATHS = [
 	"/tasks",
 ];
 
-const ROOT_DATA = { recent: RECENT, understanding: true };
+/** 根路由交出的东西：导航栏记住的样子取默认值，最近搜索是样例的第一页。 */
+export type RootData = {
+	nav: NavPrefs;
+	recent: TablePage<RecentSearch> | null;
+	understanding: boolean;
+};
+
+const ROOT_DATA: RootData = {
+	nav: navPrefsOf(undefined),
+	recent: { from: 1, page: 1, pages: 1, rows: RECENT, total: RECENT.length },
+	understanding: true,
+};
 const TURN_DATA = { result: OUTCOME, thread: THREAD };
 
-function memoryRouter(url: string) {
+function memoryRouter(url: string, rootData: RootData) {
 	const root = createRootRoute({
 		component: () => use(Content),
-		loader: () => ROOT_DATA,
+		loader: () => rootData,
 	});
 	const turn = createRoute({
 		getParentRoute: () => root,
@@ -59,7 +73,7 @@ function memoryRouter(url: string) {
 		]),
 	});
 	const loaded = new Map<string, unknown>([
-		[root.id, ROOT_DATA],
+		[root.id, rootData],
 		[turn.id, TURN_DATA],
 	]);
 	router.stores.setMatches(
@@ -72,15 +86,20 @@ function memoryRouter(url: string) {
 	return router;
 }
 
-/** 把页的内容放进一个站在 `url` 上的内存 router；点链接后地址在 router 里变，组件跟着重画。 */
+/**
+ * 把页的内容放进一个站在 `url` 上的内存 router；点链接后地址在 router 里变，组件跟着重画。
+ * `root` 换掉根路由交出的几项（没有搜索记录、取不到搜索记录），只在建 router 时读一次。
+ */
 export function Routed({
 	children,
 	url = "/",
+	root,
 }: {
 	children: ReactNode;
 	url?: string;
+	root?: Partial<RootData>;
 }) {
-	const [router] = useState(() => memoryRouter(url));
+	const [router] = useState(() => memoryRouter(url, { ...ROOT_DATA, ...root }));
 	return (
 		<Content value={children}>
 			<RouterProvider router={router} />

@@ -3,7 +3,7 @@
  *
  * 一行 36px：28px 的图标格（图标 18px，一长串记录用 14px）、14px 的标题，行内左右 4px、间隔 8px、8px 圆角。常态没有底，
  * 悬停 fill-tertiary；当前项是 fill-tertiary 的底、悬停加深一档，图标和字换成 fg。
- * 行尾的动作平时透明，悬停或焦点落在行内时出现，标题在它底下渐隐。
+ * 行尾的动作平时透明，指针进入这一行或焦点落到动作上时出现，标题在它底下渐隐。
  */
 
 .ui-nav-item-root {
@@ -16,9 +16,14 @@
 	gap: 8px;
 	min-width: 32px;
 	height: 36px;
+	width: 100%;
 	padding-inline: 4px;
+	border: 0;
 	border-radius: var(--radius-md);
+	font: inherit;
 	color: var(--color-fg-secondary);
+	text-align: start;
+	background: none;
 	cursor: pointer;
 	transition: background-color 0.2s;
 	@apply focus-ring;
@@ -62,7 +67,14 @@
 	white-space: nowrap;
 }
 
+/*
+ * 行尾的动作盖在行上，平时透明也不接指针，免得点在看不见的按钮上；指针进入这一行、
+ * 键盘焦点落到动作上、或动作的弹层开着时出现，标题在它底下渐隐。焦点只认
+ * `:focus-visible`：菜单关上时焦点回到开关上，按 `:focus-within` 算的话指针离开后
+ * 动作还一直亮着。
+ */
 .ui-nav-item-actions {
+	pointer-events: none;
 	position: absolute;
 	inset-block: 0;
 	inset-inline-end: 0;
@@ -72,37 +84,51 @@
 	opacity: 0;
 	transition: opacity 0.15s;
 
-	.ui-nav-item-root:is(:hover, :focus-within) & {
-		opacity: 1;
-	}
-
 	@media (hover: none) {
+		pointer-events: auto;
 		opacity: 1;
 	}
 }
 
-.ui-nav-item-root:has(.ui-nav-item-actions):is(:hover, :focus-within)
+.ui-nav-item-root:is(
+	:hover,
+	:has(.ui-nav-item-actions :focus-visible),
+	:has([data-popup-open])
+) {
+	.ui-nav-item-actions {
+		pointer-events: auto;
+		opacity: 1;
+	}
+
 	.ui-nav-item-title {
-	mask-image: linear-gradient(
-		to right,
-		#000 calc(100% - 56px),
-		transparent calc(100% - 28px)
-	);
+		mask-image: linear-gradient(
+			to right,
+			#000 calc(100% - 56px),
+			transparent calc(100% - 28px)
+		);
+	}
 }
 
-/* 一组导航项：12px 中粗的组名，项与项之间 1px。 */
-.ui-nav-group {
-	display: flex;
-	flex-direction: column;
-	gap: 1px;
+/*
+ * 导航栏里的几组（`NavGroups`）：组与组之间 8px。组名一行上下 4px、左 8px 右 4px，
+ * 12px 中粗次要色，整行悬停出 fill-tertiary 的底（手风琴的行自己给）；组里的项之间 1px。
+ */
+.ui-nav-groups {
+	gap: 8px;
 }
 
 .ui-nav-group-title {
-	overflow: hidden;
-	padding: 4px 8px;
+	padding: 4px 4px 4px 8px;
 	font-size: var(--text-xs);
 	font-weight: 500;
+	line-height: var(--text-xs--line-height);
 	color: var(--color-fg-secondary);
-	text-overflow: ellipsis;
-	white-space: nowrap;
+}
+
+.ui-nav-group-items {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	font-size: inherit;
+	line-height: inherit;
 }

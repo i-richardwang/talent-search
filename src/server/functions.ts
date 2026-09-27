@@ -130,12 +130,15 @@ export const interpretTurn = createServerFn({ method: "POST" })
 	.handler(({ data }) => interpret(data.turnId));
 
 /**
- * 导航栏「最近搜索」的列表。由**根路由的 loader** 取（`routes/__root.tsx`）：
- * 它是外壳的数据，换屏时不重取，也没有「正在取」这一档。
+ * 最近搜索的一页。第一页由**根路由的 loader** 取（`routes/__root.tsx`），导航栏和首页
+ * 共用：它是外壳的数据，换屏时不重取。全部记录的抽屉按页往后取。
  */
-export const recentSearches = createServerFn({ method: "GET" }).handler(() =>
-	listRecent(),
-);
+export const recentSearches = createServerFn({ method: "GET" })
+	.validator((d: { page?: unknown; size?: unknown }) => ({
+		page: d.page,
+		size: Number(d.size),
+	}))
+	.handler(({ data }) => listRecent(data.page, data.size));
 
 /**
  * 能不能说一句话来找人。和最近搜索一起由根路由取：零态和工作台都据此决定

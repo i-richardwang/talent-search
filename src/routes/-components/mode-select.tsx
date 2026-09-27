@@ -21,7 +21,8 @@ const MODES: Record<SearchMode, ChoiceMenuOption<SearchMode>> = {
 };
 
 /**
- * 首页输入托盘动作栏左端的搜索方式：按钮上写着当前是哪一种，点开是两种的菜单。
+ * 首页输入托盘动作栏左端的搜索方式：按钮上写着当前是哪一种，常规字重，
+ * 点开是两种的菜单。
  *
  * 两种各是一个起点，切过去是从头开一次新的搜索：选中的是哪一种由地址上的 `mode`
  * 决定，切换就是带着新的 `mode` 回首页。两种的托盘同高、按钮在同一个位置，换过去
@@ -44,6 +45,7 @@ export function ModeSelect({ mode }: { mode: SearchMode }) {
 			<ChatInputAction
 				aria-label={`搜索方式：${current.label}`}
 				chevron
+				className="font-normal"
 				icon={current.icon}
 			>
 				{current.label}

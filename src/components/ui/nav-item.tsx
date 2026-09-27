@@ -3,11 +3,20 @@ import { useRender } from "@base-ui/react/use-render";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "#/lib/utils";
+import {
+	AccordionAction,
+	AccordionHeader,
+	AccordionItem,
+	AccordionPanel,
+	AccordionRoot,
+	AccordionTrigger,
+} from "./accordion";
 import { Icon } from "./icon";
 
 /*
  * 导航项，样式在 nav-item.css。一行就是一条链接：`render` 传路由的 `<Link>`，中键、右键
- * 照常。`actions` 画在链接外、盖在行尾，于是链接里不嵌别的动作。
+ * 照常；不去别处、只打开什么的一行（「更多」）传 `render={<button type="button" />}`。
+ * `actions` 画在链接外、盖在行尾，于是链接里不嵌别的动作。
  */
 
 export function NavItem({
@@ -25,7 +34,7 @@ export function NavItem({
 	iconSize?: "small";
 	/** 当前所在的那一项。 */
 	active?: boolean;
-	/** 行尾的动作，悬停或焦点落在行内时出现。 */
+	/** 行尾的动作：指针进入这一行、键盘焦点落到动作上、或动作的弹层开着时出现。 */
 	actions?: ReactNode;
 	children: ReactNode;
 }) {
@@ -54,18 +63,59 @@ export function NavItem({
 	);
 }
 
-/** 一组导航项，组名在上。 */
-export function NavGroup({
-	title,
+/**
+ * 导航栏里的几组，每组可以收起。行为是 `Accordion`：`value` 是展开着的那几组，
+ * 由使用方记住；组名后面一枚小三角，开着朝下。组与组之间 8px。
+ */
+export function NavGroups({
+	value,
+	onValueChange,
+	className,
 	children,
 }: {
-	title: string;
+	value: string[];
+	onValueChange: (value: string[]) => void;
+	className?: string;
 	children: ReactNode;
 }) {
 	return (
-		<section aria-label={title} className="ui-nav-group">
-			<h2 className="ui-nav-group-title">{title}</h2>
+		<AccordionRoot
+			className={cn("ui-nav-groups", className)}
+			indicatorPlacement="inline"
+			onValueChange={onValueChange}
+			value={value}
+		>
 			{children}
-		</section>
+		</AccordionRoot>
+	);
+}
+
+/**
+ * 一组导航项，放在 `NavGroups` 里。组名一行整行可点，点一下收起或展开；`action`
+ * 在行尾，指针进入这一行或焦点落进来时出现。
+ */
+export function NavGroup({
+	value,
+	title,
+	action,
+	children,
+}: {
+	value: string;
+	title: string;
+	action?: ReactNode;
+	children: ReactNode;
+}) {
+	return (
+		<AccordionItem value={value}>
+			<AccordionHeader>
+				<AccordionTrigger className="ui-nav-group-title">
+					{title}
+				</AccordionTrigger>
+				{action && <AccordionAction>{action}</AccordionAction>}
+			</AccordionHeader>
+			<AccordionPanel contentClassName="ui-nav-group-items">
+				{children}
+			</AccordionPanel>
+		</AccordionItem>
 	);
 }

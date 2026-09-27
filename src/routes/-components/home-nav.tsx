@@ -1,42 +1,57 @@
-import {
-	Link,
-	useLoaderData,
-	useMatchRoute,
-	useNavigate,
-	useParams,
-	useRouter,
-} from "@tanstack/react-router";
+import { Link, useLoaderData, useMatchRoute } from "@tanstack/react-router";
 import {
 	ActivityIcon,
-	MessageSquareTextIcon,
+	CheckIcon,
+	MoreHorizontalIcon,
 	SquarePenIcon,
 	TableIcon,
 	TagsIcon,
-	TextSearchIcon,
 	UsersRoundIcon,
-	XIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { AppNavHeader } from "#/components/ui/app-layout";
-import { NavGroup, NavItem } from "#/components/ui/nav-item";
+import {
+	DropdownMenuItemContent,
+	DropdownMenuItemIcon,
+	DropdownMenuItemLabel,
+	DropdownMenuPopup,
+	DropdownMenuPortal,
+	DropdownMenuPositioner,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItemIndicator,
+	DropdownMenuRadioItemPrimitive,
+	DropdownMenuRoot,
+	DropdownMenuTrigger,
+	renderDropdownMenuItems,
+} from "#/components/ui/dropdown-menu";
+import { Icon } from "#/components/ui/icon";
+import { NavGroup, NavGroups, NavItem } from "#/components/ui/nav-item";
 import { ScrollArea } from "#/components/ui/scroll-area";
-import { activeConditions } from "#/search/condition";
-import { conditionLabel, MODE_GLYPH } from "#/search/condition-label";
-import { keywordsOf, keywordTitle } from "#/search/keywords";
-import { deleteRecent } from "#/server/functions";
+import type { TablePage } from "#/lib/paging";
 import type { RecentSearch } from "#/server/turn";
-import { ToggleNavButton } from "./nav-control";
+import { RECENT_COUNTS, type RecentCount } from "../-lib/nav-prefs";
+import { AllRecentsDrawer } from "./all-recents";
+import { ToggleNavButton, useNavControl } from "./nav-control";
+import { LoadFailed, RecentItem, useRetryRoot } from "./recent-item";
+
+/** 导航栏里的两组。 */
+const GROUPS = ["recent", "admin"] as const;
 
 /**
- * 首页那一套导航：身份、新搜索、最近搜索，底下是三个管理页。除了搜索结果页，
- * 每一屏的导航栏都是它（`app-shell.tsx`）。
+ * 首页那一套导航：身份、新搜索，下面可以滚动的一栏里是最近搜索，管理页那一组
+ * 沉在这一栏的底上。除了搜索结果页，每一屏的导航栏都是它（`app-shell.tsx`）。
+ *
+ * 两组都能收起，收着哪几组记在导航栏记住的样子里（`nav-prefs.ts`）。
+ * 还没有搜索记录时最近搜索这一组整个不画：首页那一栏有起步的例子。
  */
 export function HomeNav() {
 	const { recent } = useLoaderData({ from: "__root__" });
+	const control = useNavControl();
 	const matchRoute = useMatchRoute();
 	const on = (to: "/" | "/data" | "/skills" | "/tasks") =>
 		Boolean(matchRoute({ to, fuzzy: to !== "/" }));
+	const folded = control?.prefs.folded ?? [];
 	return (
 		<>
 			<AppNavHeader
@@ -50,116 +65,155 @@ export function HomeNav() {
 					新搜索
 				</NavItem>
 			</div>
-			<ScrollArea className="mt-px min-h-0 flex-1" disableContentFit scrollFade>
-				<div className="px-1 pb-2">
-					<NavGroup title="最近搜索">
-						<Recent recent={recent} />
+			<ScrollArea
+				className="mt-2 min-h-0 flex-1"
+				contentClassName="flex min-h-full flex-col"
+				disableContentFit
+				scrollFade
+			>
+				<NavGroups
+					className="flex-1 px-1 pb-2"
+					onValueChange={(open) =>
+						control?.setPrefs({
+							folded: GROUPS.filter((key) => !open.includes(key)),
+						})
+					}
+					value={GROUPS.filter((key) => !folded.includes(key))}
+				>
+					{(recent === null || recent.total > 0) && (
+						<RecentGroup recent={recent} />
+					)}
+					<div aria-hidden className="min-h-0 flex-1" />
+					<NavGroup title="管理" value="admin">
+						<NavItem
+							active={on("/data")}
+							icon={TableIcon}
+							render={<Link search={{ page: undefined, q: "" }} to="/data" />}
+						>
+							数据
+						</NavItem>
+						<NavItem
+							active={on("/skills")}
+							icon={TagsIcon}
+							render={<Link search={{ page: undefined, q: "" }} to="/skills" />}
+						>
+							技能
+						</NavItem>
+						<NavItem
+							active={on("/tasks")}
+							icon={ActivityIcon}
+							render={<Link to="/tasks" />}
+						>
+							任务
+						</NavItem>
 					</NavGroup>
-				</div>
+				</NavGroups>
 			</ScrollArea>
-			<div className="px-1 pb-2">
-				<NavGroup title="管理">
-					<NavItem
-						active={on("/data")}
-						icon={TableIcon}
-						render={<Link search={{ page: undefined, q: "" }} to="/data" />}
-					>
-						数据
-					</NavItem>
-					<NavItem
-						active={on("/skills")}
-						icon={TagsIcon}
-						render={<Link search={{ page: undefined, q: "" }} to="/skills" />}
-					>
-						技能
-					</NavItem>
-					<NavItem
-						active={on("/tasks")}
-						icon={ActivityIcon}
-						render={<Link to="/tasks" />}
-					>
-						任务
-					</NavItem>
-				</NavGroup>
-			</div>
 		</>
 	);
 }
 
 /**
- * 一行记录读的是**任务标题**：对话的任务是链头那句话，回头找一次搜过的东西，
- * 认出来靠的是自己当时怎么开口的。关键词搜索没有那句话，框里的词就是它问的。
+ * 最近搜索这一组：列最近的几条（条数在组名旁的菜单里选），列不完时最后一行是「更多」，
+ * 打开全部记录的抽屉。列表由根路由的 loader 送进来（`__root.tsx`），取不到时说一句并给重试。
  */
-function recentLabel(spec: RecentSearch["spec"], title: string | null) {
-	if (title) return title;
-	const keywords = keywordsOf(spec.conditions);
-	if (keywords) return keywordTitle(keywords);
-	// 读不回框里的条件表照条件写。停用的不出现：它没参与这次检索
-	const labels = activeConditions(spec.conditions).map(
-		(c) => MODE_GLYPH[c.mode] + conditionLabel(c),
-	);
-	return labels.join(" / ") || "无搜索条件";
-}
+function RecentGroup({ recent }: { recent: TablePage<RecentSearch> | null }) {
+	const control = useNavControl();
+	const [all, setAll] = useState(false);
+	const { retry, retrying } = useRetryRoot();
+	const count = control?.prefs.recentCount ?? RECENT_COUNTS[0];
 
-/**
- * 最近搜索的几行。取不到不能借用「还没有记录」那一句：那是把一次失败谎报成一个
- * 空结果，而两者该做的事正好相反（重试 vs 去搜一次）。
- *
- * 列表由根路由的 loader 送进来（`__root.tsx`），删掉一条之后叫根路由重跑一次。
- */
-function Recent({ recent }: { recent: RecentSearch[] | null }) {
-	const router = useRouter();
-	const navigate = useNavigate();
-	const { turnId: current } = useParams({ strict: false });
-	// 正在删的那一行：按下去之后到列表换新之前，这一行不能再按第二次
-	const [deleting, setDeleting] = useState<string | null>(null);
-
-	if (recent === null)
-		return (
-			<p className="px-2 py-1 text-fg-tertiary text-xs">
-				暂时无法加载搜索记录。
-			</p>
-		);
-	if (recent.length === 0)
-		return (
-			<p className="px-2 py-1 text-fg-tertiary text-xs">还没有搜索记录。</p>
-		);
-
-	async function remove(turnId: string) {
-		setDeleting(turnId);
-		try {
-			const gone = await deleteRecent({ data: { turnId } });
-			// 人正看着的那一屏就在删掉的这条链上：留在原地的话，下一次载入就是死链
-			if (current && gone.includes(current)) await navigate({ to: "/" });
-			else await router.invalidate();
-		} finally {
-			setDeleting(null);
-		}
-	}
-
-	return recent.map((record) => {
-		const label = recentLabel(record.spec, record.title);
-		return (
-			<NavItem
-				actions={
-					<ActionIcon
-						aria-label={`删除「${label}」`}
-						icon={XIcon}
-						loading={deleting === record.turnId}
-						onClick={() => void remove(record.turnId)}
-						size="small"
-						title="删除"
+	return (
+		<>
+			<NavGroup
+				action={
+					<RecentMenu
+						count={count}
+						onCount={(recentCount) => control?.setPrefs({ recentCount })}
+						onShowAll={() => setAll(true)}
 					/>
 				}
-				active={record.turnId === current}
-				icon={record.title === null ? TextSearchIcon : MessageSquareTextIcon}
-				iconSize="small"
-				key={record.turnId}
-				render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}
-				title={label}
+				title="最近搜索"
+				value="recent"
 			>
-				{label}
-			</NavItem>
-		);
-	});
+				{recent === null ? (
+					<LoadFailed onRetry={retry} retrying={retrying} />
+				) : (
+					<>
+						{recent.rows.slice(0, count).map((record) => (
+							<RecentItem key={record.turnId} record={record} />
+						))}
+						{recent.total > count && (
+							<NavItem
+								icon={MoreHorizontalIcon}
+								iconSize="small"
+								onClick={() => setAll(true)}
+								render={<button type="button" />}
+							>
+								更多
+							</NavItem>
+						)}
+					</>
+				)}
+			</NavGroup>
+			<AllRecentsDrawer onClose={() => setAll(false)} open={all} />
+		</>
+	);
+}
+
+/** 组名行尾的「…」：看全部记录，以及这一组列几条。 */
+function RecentMenu({
+	count,
+	onCount,
+	onShowAll,
+}: {
+	count: RecentCount;
+	onCount: (count: RecentCount) => void;
+	onShowAll: () => void;
+}) {
+	return (
+		<DropdownMenuRoot>
+			<DropdownMenuTrigger>
+				<ActionIcon
+					aria-label="最近搜索的更多操作"
+					icon={MoreHorizontalIcon}
+					size="small"
+				/>
+			</DropdownMenuTrigger>
+			<DropdownMenuPortal>
+				<DropdownMenuPositioner>
+					<DropdownMenuPopup>
+						{renderDropdownMenuItems(
+							[
+								{ key: "all", label: "全部搜索记录", onClick: onShowAll },
+								{ type: "divider" },
+							],
+							{ reserveIconSpace: true },
+						)}
+						<DropdownMenuRadioGroup
+							onValueChange={(next) => onCount(next as RecentCount)}
+							value={count}
+						>
+							{RECENT_COUNTS.map((n) => (
+								<DropdownMenuRadioItemPrimitive
+									key={n}
+									label={`列 ${n} 条`}
+									value={n}
+								>
+									<DropdownMenuItemContent>
+										<DropdownMenuItemIcon>
+											<DropdownMenuRadioItemIndicator>
+												<Icon icon={CheckIcon} />
+											</DropdownMenuRadioItemIndicator>
+										</DropdownMenuItemIcon>
+										<DropdownMenuItemLabel>列 {n} 条</DropdownMenuItemLabel>
+									</DropdownMenuItemContent>
+								</DropdownMenuRadioItemPrimitive>
+							))}
+						</DropdownMenuRadioGroup>
+					</DropdownMenuPopup>
+				</DropdownMenuPositioner>
+			</DropdownMenuPortal>
+		</DropdownMenuRoot>
+	);
 }

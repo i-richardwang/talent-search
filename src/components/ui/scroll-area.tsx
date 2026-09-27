@@ -23,6 +23,11 @@ interface ScrollAreaProps {
 	disableContentFit?: boolean;
 	/** 在视口上下还能滚的一端用渐变遮罩淡出内容。 */
 	scrollFade?: boolean;
+	/**
+	 * 加在内容节点上。内容要至少占满视口高（`min-h-full`），好把一部分推到底或上下居中时，
+	 * 写在这一层上：视口的高是定的，内容节点的百分比高按它算。
+	 */
+	contentClassName?: string;
 	viewportProps?: Pick<
 		ComponentProps<typeof BaseScrollArea.Viewport>,
 		"className" | "ref"
@@ -32,6 +37,7 @@ interface ScrollAreaProps {
 export function ScrollArea({
 	children,
 	className,
+	contentClassName,
 	disableContentFit = false,
 	scrollFade = false,
 	viewportProps,
@@ -47,6 +53,7 @@ export function ScrollArea({
 				)}
 			>
 				<BaseScrollArea.Content
+					className={contentClassName}
 					style={disableContentFit ? { minWidth: 0 } : undefined}
 				>
 					{children}

@@ -20,6 +20,7 @@
 @import "./components/ui/empty.css" layer(components);
 @import "./components/ui/avatar.css" layer(components);
 @import "./components/ui/list.css" layer(components);
+@import "./components/ui/group-block.css" layer(components);
 @import "./components/ui/hotkey.css" layer(components);
 @import "./components/ui/button.css" layer(components);
 @import "./components/ui/action-icon.css" layer(components);
@@ -158,6 +159,12 @@
 	--color-layout: #f8f8f8;
 	--color-container: #ffffff;
 	--color-elevated: #ffffff;
+	/* 画布与卡片各半的底：首页那一屏的底，比卡片暗半档。随深浅两侧的两个底色走。 */
+	--color-container-secondary: color-mix(
+		in srgb,
+		var(--color-layout) 50%,
+		var(--color-container)
+	);
 	/* 两种遮罩：对话框用半透明的容器底色盖住页面，随深浅两侧换色；抽屉用半透明黑压暗页面。 */
 	--color-mask-modal: color-mix(
 		in srgb,

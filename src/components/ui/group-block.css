@@ -1,0 +1,198 @@
+/*
+ * GroupBlock 的外观，类名以 `.ui-group-block` 开头。块的先后：一组、组头（组名、数、
+ * 说明、动作）、条目列表、一条（record、prose）与条目里的几格、组名行尾的动作。
+ *
+ * 这一组画在首页的正文里，字号比导航与表格大一档：条目标题 15px、说明 13px，
+ * 15px 不在字阶上，只用在这里。
+ */
+
+.ui-group-block {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.ui-group-block-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.ui-group-block-heading {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.ui-group-block-title-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.ui-group-block-title {
+	overflow: hidden;
+	margin: 0;
+	font-size: var(--text-xs);
+	font-weight: 600;
+	line-height: 18px;
+	color: var(--color-fg-secondary);
+	letter-spacing: 0.04em;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* 组名后面的数：18px 高、至少 20px 宽、5px 圆角的一块 fill-tertiary。 */
+.ui-group-block-count {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	min-width: 20px;
+	height: 18px;
+	padding-inline: 5px;
+	border-radius: 5px;
+	font-size: var(--text-xs);
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+	color: var(--color-fg-tertiary);
+	background: var(--color-fill-tertiary);
+}
+
+.ui-group-block-description {
+	margin: 0;
+	font-size: var(--text-sm);
+	line-height: var(--text-sm--line-height);
+	color: var(--color-fg-tertiary);
+}
+
+.ui-group-block-action {
+	display: flex;
+	flex: none;
+	align-items: center;
+	gap: 2px;
+}
+
+.ui-group-block-items {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.ui-group-block-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	min-width: 0;
+	margin-inline: -10px;
+	padding: 9px 10px;
+	border: 0;
+	border-radius: var(--radius-lg);
+	font: inherit;
+	color: inherit;
+	text-align: start;
+	text-decoration: none;
+	background: none;
+	cursor: pointer;
+	transition: background-color 0.1s var(--ease-out);
+	@apply focus-ring;
+
+	&:hover {
+		color: inherit;
+		background: var(--color-fill-quaternary);
+	}
+}
+
+/* 一句话的条目：至少 58px 高，条目之间 1px。 */
+.ui-group-block-item-prose {
+	min-height: 58px;
+
+	.ui-group-block-items:has(> &) {
+		gap: 1px;
+	}
+}
+
+/* 图标和标题第一行居中：record 的图标上下各让 3px，prose 的往下让 2px。 */
+.ui-group-block-item-icon {
+	display: flex;
+	flex: none;
+	padding-block: 3px;
+	color: var(--color-fg-tertiary);
+
+	.ui-group-block-item-prose & {
+		padding-block: 2px 0;
+		color: var(--color-fg-secondary);
+	}
+}
+
+.ui-group-block-item-text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+
+	.ui-group-block-item-prose & {
+		gap: 2px;
+	}
+}
+
+.ui-group-block-item-title {
+	overflow: hidden;
+	font-size: 15px;
+	font-weight: 500;
+	line-height: 22px;
+	color: var(--color-fg);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+
+	.ui-group-block-item-prose & {
+		font-weight: 400;
+		white-space: normal;
+	}
+}
+
+.ui-group-block-item-description {
+	overflow: hidden;
+	font-size: var(--text-sm);
+	line-height: var(--text-sm--line-height);
+	color: var(--color-fg-tertiary);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+
+	.ui-group-block-item-prose & {
+		white-space: normal;
+	}
+}
+
+.ui-group-block-item-extra {
+	flex: none;
+	min-width: 56px;
+	font-size: var(--text-xs);
+	line-height: 18px;
+	color: var(--color-fg-tertiary);
+	text-align: end;
+	white-space: nowrap;
+}
+
+.ui-group-block-link {
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-xs);
+	font: inherit;
+	font-size: var(--text-xs);
+	line-height: 18px;
+	color: var(--color-fg-secondary);
+	background: none;
+	cursor: pointer;
+	transition: color 0.1s var(--ease-out);
+	@apply focus-ring;
+
+	&:hover {
+		color: var(--color-fg);
+	}
+}

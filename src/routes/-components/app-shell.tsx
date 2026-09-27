@@ -1,4 +1,4 @@
-import { useLocation, useMatches } from "@tanstack/react-router";
+import { useLoaderData, useLocation, useMatches } from "@tanstack/react-router";
 import {
 	type ComponentType,
 	type ReactNode,
@@ -10,17 +10,10 @@ import {
 	AppContent,
 	AppLayout,
 	AppNav,
-	NAV_WIDTH,
+	AppNavDrawer,
 } from "#/components/ui/app-layout";
 import { Button } from "#/components/ui/button";
-import {
-	DrawerBackdrop,
-	DrawerPopup,
-	DrawerPortal,
-	DrawerRoot,
-	DrawerTitle,
-} from "#/components/ui/drawer";
-import { useStoredFlag, useStoredWidth } from "../-lib/stored";
+import { type NavPrefs, writeNavPrefs } from "../-lib/nav-prefs";
 import { HomeNav } from "./home-nav";
 import { InDrawer, NavControlContext, useNavHotkey } from "./nav-control";
 
@@ -37,9 +30,10 @@ declare module "@tanstack/react-router" {
  * 导航栏里放什么由最深那一层路由的 `staticData.nav` 决定：搜索结果页放筛选，其余各屏
  * 是首页那一套（新搜索、最近搜索、管理页）。外壳只挂一次，换屏时导航栏不重挂。
  *
- * lg 以上导航栏可以拖动调宽、可以收起（顶上的开关或 ⌘/Ctrl + [），宽和收起记在这台
- * 浏览器里。lg 以下导航栏不常驻，同一份内容收进左边的抽屉，由页头左端的开关打开；
- * 换屏就收起。
+ * lg 以上导航栏可以拖动调宽、可以收起（顶上的开关或 ⌘/Ctrl + [）。宽、收起和导航里
+ * 哪几组收着记在 cookie 里，根路由的 loader 读出来交给这里，服务端直出的首帧就是记住的
+ * 样子（`nav-prefs.ts`）。lg 以下导航栏不常驻，同一份内容收进左边的抽屉，由页头左端的
+ * 开关打开；换屏就收起。
  */
 export function AppShell({ children }: { children: ReactNode }) {
 	const Nav =
@@ -55,24 +49,34 @@ export function AppShell({ children }: { children: ReactNode }) {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: 换屏就收起抽屉
 	useEffect(() => setOpen(false), [pathname]);
 
-	const [collapsed, setCollapsed] = useStoredFlag("nav-collapsed", false);
-	const [width, setWidth] = useStoredWidth("nav-width", {
-		fallback: NAV_WIDTH.default,
-		max: NAV_WIDTH.max,
-		min: NAV_WIDTH.min,
-	});
-	const toggle = useCallback(
-		() => setCollapsed(!collapsed),
-		[collapsed, setCollapsed],
+	const { nav } = useLoaderData({ from: "__root__" });
+	const [prefs, setPrefsState] = useState(nav);
+	const setPrefs = useCallback(
+		(patch: Partial<NavPrefs>) =>
+			setPrefsState((current) => ({ ...current, ...patch })),
+		[],
 	);
+	// 改过就写回 cookie；首帧写回的是刚读出来的同一份
+	useEffect(() => writeNavPrefs(prefs), [prefs]);
+	const toggle = useCallback(
+		() => setPrefs({ collapsed: !prefs.collapsed }),
+		[prefs.collapsed, setPrefs],
+	);
+	const closeDrawer = useCallback(() => setOpen(false), []);
 
 	useNavHotkey(toggle);
 
 	return (
 		<NavControlContext
-			value={{ expanded: !collapsed, openDrawer: () => setOpen(true), toggle }}
+			value={{
+				expanded: !prefs.collapsed,
+				openDrawer: () => setOpen(true),
+				prefs,
+				setPrefs,
+				toggle,
+			}}
 		>
-			<AppLayout navCollapsed={collapsed}>
+			<AppLayout navCollapsed={prefs.collapsed}>
 				<div className="fixed top-2 left-2 z-escape not-focus-within:sr-only">
 					<Button render={<a href="#main" />} size="small">
 						跳到正文
@@ -80,30 +84,22 @@ export function AppShell({ children }: { children: ReactNode }) {
 				</div>
 				<AppNav
 					aria-label="导航"
-					expand={!collapsed}
-					onExpandChange={(next) => setCollapsed(!next)}
-					onWidthChange={setWidth}
-					width={width}
+					expand={!prefs.collapsed}
+					onExpandChange={(next) => setPrefs({ collapsed: !next })}
+					onWidthChange={(width) => setPrefs({ width: Math.round(width) })}
+					width={prefs.width}
 				>
 					<Nav />
 				</AppNav>
 				<AppContent>{children}</AppContent>
 			</AppLayout>
-			<DrawerRoot onOpenChange={setOpen} open={open}>
-				<DrawerPortal>
-					<DrawerBackdrop />
-					<DrawerPopup placement="left" width="var(--container-nav)">
-						<span className="sr-only">
-							<DrawerTitle>导航</DrawerTitle>
-						</span>
-						<nav aria-label="导航" className="flex h-full flex-col">
-							<InDrawer value>
-								<Nav />
-							</InDrawer>
-						</nav>
-					</DrawerPopup>
-				</DrawerPortal>
-			</DrawerRoot>
+			<AppNavDrawer label="导航" onClose={closeDrawer} open={open}>
+				<nav aria-label="导航" className="flex h-full flex-col">
+					<InDrawer value={closeDrawer}>
+						<Nav />
+					</InDrawer>
+				</nav>
+			</AppNavDrawer>
 		</NavControlContext>
 	);
 }

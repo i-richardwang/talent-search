@@ -171,6 +171,7 @@ const CATALOG = [
 			component("text-link", "文字链接", "TextLink"),
 			component("descriptions", "属性列表", "Descriptions"),
 			component("list", "列表", "List"),
+			component("group-block", "条目分组", "GroupBlock"),
 			component("avatar", "头像", "Avatar"),
 			component("scroll-area", "滚动区", "ScrollArea"),
 			component("toolbar", "工具条", "Toolbar"),

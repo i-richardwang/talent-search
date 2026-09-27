@@ -120,11 +120,33 @@ export const FRESH_TURN: Turn = {
 	at: JUST_NOW,
 };
 
-/** 最近搜索：导航栏「最近搜索」里的几条。 */
+/** 一条对话记录的样例：只有一条必须的经历主张。 */
+const said = (
+	turnId: string,
+	title: string,
+	what: string,
+	ageSeconds: number,
+	at: string,
+): RecentSearch => ({
+	ageSeconds,
+	at,
+	spec: { conditions: [{ about: "experience", mode: "must", what: [what] }] },
+	title,
+	turnId,
+});
+
+/** 最近搜索：导航栏和首页「最近搜索」里的几条，新的在前，比首页列的八条多一条。 */
 export const RECENT: RecentSearch[] = [
-	{ turnId: LATEST_TURN_ID, spec: SPEC, title: TASK_TITLE },
 	{
-		turnId: "turn-c1",
+		ageSeconds: 40,
+		at: "2026-09-27 10:42",
+		spec: SPEC,
+		title: TASK_TITLE,
+		turnId: LATEST_TURN_ID,
+	},
+	{
+		ageSeconds: 18 * 60,
+		at: "2026-09-27 10:24",
 		spec: {
 			conditions: [
 				{ about: "experience", mode: "must", what: ["支付风控"] },
@@ -132,6 +154,55 @@ export const RECENT: RecentSearch[] = [
 			],
 		},
 		title: "找做过支付风控、学校 B 毕业的",
+		turnId: "turn-c1",
 	},
-	{ turnId: "turn-d1", spec: KEYWORD_SPEC, title: null },
+	{
+		ageSeconds: 3 * 3600,
+		at: "2026-09-27 07:40",
+		spec: KEYWORD_SPEC,
+		title: null,
+		turnId: "turn-d1",
+	},
+	said(
+		"turn-e1",
+		"做过增长的产品经理",
+		"用户增长",
+		26 * 3600,
+		"2026-09-26 08:30",
+	),
+	said(
+		"turn-f1",
+		"带过十人以上团队的",
+		"团队管理",
+		3 * 86400,
+		"2026-09-24 16:05",
+	),
+	said(
+		"turn-g1",
+		"做过数据仓库建设",
+		"数据仓库",
+		5 * 86400,
+		"2026-09-22 11:20",
+	),
+	said(
+		"turn-h1",
+		"做过海外市场投放",
+		"海外投放",
+		12 * 86400,
+		"2026-09-15 09:12",
+	),
+	said(
+		"turn-i1",
+		"做过供应链计划的",
+		"供应链计划",
+		40 * 86400,
+		"2026-08-18 14:48",
+	),
+	said(
+		"turn-j1",
+		"懂推荐系统的算法",
+		"推荐系统",
+		400 * 86400,
+		"2025-08-23 10:00",
+	),
 ];

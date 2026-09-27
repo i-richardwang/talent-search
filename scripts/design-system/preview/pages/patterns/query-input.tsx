@@ -29,6 +29,9 @@ import { KEYWORD_SPEC } from "../../samples/conditions";
 /** 关键词搜索结果页框里填回的词：经历「推荐系统」、公司「某甲科技」、两年以上。 */
 const KEYWORDS = keywordsOf(KEYWORD_SPEC.conditions) ?? NO_KEYWORDS;
 
+/** 还没有搜索记录：首页输入框下面是起步的例子。 */
+const NO_RECENT = { from: 0, page: 1, pages: 1, rows: [], total: 0 };
+
 /** 一次提交说成一句话，写在展示台的读数条上。 */
 function describe(input: QueryInput) {
 	return input.kind === "sentence"
@@ -54,6 +57,7 @@ function Home({
 			asked={search.mode === "keyword" ? "keyword" : undefined}
 			error={failing ? COMMIT_FAILED : null}
 			onQuery={onQuery}
+			recent={NO_RECENT}
 			understanding={understanding}
 		/>
 	);
