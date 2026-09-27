@@ -2,6 +2,7 @@
 
 import { Menu } from "@base-ui/react/menu";
 import { Switch as BaseSwitch } from "@base-ui/react/switch";
+import type { LucideIcon } from "lucide-react";
 import { animate, motionValue } from "motion";
 import {
 	type ComponentProps,
@@ -17,6 +18,7 @@ import {
 	defaultPortalContainer,
 	triggerRender,
 } from "#/components/ui/floating";
+import { Icon } from "#/components/ui/icon";
 import { resolveNativeButton } from "#/components/ui/native-button";
 import { cn } from "#/lib/utils";
 
@@ -24,7 +26,9 @@ import { cn } from "#/lib/utils";
  * 下拉菜单，样式在 dropdown-menu.css。用原子件拼：`DropdownMenuRoot` 里放
  * `DropdownMenuTrigger` 与 `DropdownMenuPortal` › `DropdownMenuPositioner` ›
  * `DropdownMenuPopup`，弹层里放单选项或 `renderDropdownMenuItems` 画出的项。
- * `items` 有四种：普通项、`divider`、`group`、`switch`（开关项）。
+ * `items` 有四种：普通项、`divider`、`group`、`switch`（开关项）。普通项可以带 `icon`
+ * （左端 14px 的图标位，次要色；危险项跟着换成错误色）；菜单里有一项带图标，其余项都
+ * 留出同样的图标位，文字对齐。
  *
  * 开关项里的开关是受控的小号开关：按钮底、滑块、按下时滑块变宽、motion 弹簧
  * （damping 24、stiffness 360）。开关只在菜单里用到，没有单独的 Switch 组件。
@@ -33,6 +37,10 @@ import { cn } from "#/lib/utils";
  *   `DropdownMenuRadioItemIndicator`，Base UI 的 `Menu.RadioGroup` / `Menu.RadioItem`
  *   给出单选的语义。界面约定单选用 Radio（AGENTS.md「界面验收」），菜单里
  *   几选一的项用它。
+ * - 子菜单：`DropdownMenuSubmenuRoot` 里放 `DropdownMenuSubmenuTrigger`（一项，行尾是
+ *   `DropdownMenuItemExtra` 写的当前值和 `DropdownMenuSubmenuArrow`），再放
+ *   `DropdownMenuPortal` › `DropdownMenuPositioner submenu` › `DropdownMenuPopup`。
+ *   子菜单贴着那一项的右边打开，没有展开动画；开着时那一项留着悬停的底。
  * - 弹层在触发器左下方展开。portal 到 `<body>`；定位器的 z 值是 `--z-index-popup`
  *   这一档，不按打开先后另分配，碰撞边距用 Base UI 的默认（见 floating.ts）。
  * - 触发器不挂类：打开时的底色在 styles.css 的 base 层按
@@ -42,6 +50,7 @@ import { cn } from "#/lib/utils";
 
 interface MenuItemType {
 	danger?: boolean;
+	icon?: LucideIcon;
 	key: Key;
 	label: string;
 	onClick?: () => void;
@@ -77,6 +86,7 @@ export const DropdownMenuRoot: typeof Menu.Root = (props) => (
 );
 
 export const DropdownMenuRadioGroup = Menu.RadioGroup;
+export const DropdownMenuSubmenuRoot = Menu.SubmenuRoot;
 export const DropdownMenuRadioItemIndicator = Menu.RadioItemIndicator;
 
 /** 触发器：子元素是一个按钮，触发器的属性与 ref 合进它本身（见 floating.ts）。 */
@@ -95,13 +105,24 @@ export function DropdownMenuPortal({ children }: { children: ReactNode }) {
 	);
 }
 
-export function DropdownMenuPositioner({ children }: { children: ReactNode }) {
+/**
+ * 定位器。菜单在触发器左下方、隔 6px；`submenu` 时是子菜单的定位器：贴着那一项的右边，
+ * 上沿抵掉弹层的 4px 内边距，和那一项对齐。
+ */
+export function DropdownMenuPositioner({
+	children,
+	submenu = false,
+}: {
+	children: ReactNode;
+	submenu?: boolean;
+}) {
 	return (
 		<Menu.Positioner
-			align="start"
 			className="ui-dropdown-menu-positioner"
-			side="bottom"
-			sideOffset={6}
+			data-submenu={submenu || undefined}
+			{...(submenu
+				? { alignOffset: -4, sideOffset: -1 }
+				: { align: "start", side: "bottom", sideOffset: 6 })}
 		>
 			{children}
 		</Menu.Positioner>
@@ -155,6 +176,13 @@ function DropdownMenuItem({
 	);
 }
 
+/** 打开子菜单的那一项，放在 `DropdownMenuSubmenuRoot` 里。 */
+export function DropdownMenuSubmenuTrigger(
+	props: Omit<ComponentProps<typeof Menu.SubmenuTrigger>, "className">,
+) {
+	return <Menu.SubmenuTrigger {...props} className="ui-dropdown-menu-item" />;
+}
+
 /** 单选项，放在 `DropdownMenuRadioGroup` 里。 */
 export function DropdownMenuRadioItemPrimitive(
 	props: ComponentProps<typeof Menu.RadioItem>,
@@ -185,6 +213,29 @@ export function DropdownMenuItemLabel({ children }: { children: ReactNode }) {
 
 export function DropdownMenuItemDesc({ children }: { children: ReactNode }) {
 	return <span className="ui-dropdown-menu-desc">{children}</span>;
+}
+
+/** 项行尾的一个值（子菜单里选中的是哪个），等宽 12px 三级色。 */
+export function DropdownMenuItemExtra({ children }: { children: ReactNode }) {
+	return <span className="ui-dropdown-menu-extra">{children}</span>;
+}
+
+/** 子菜单那一项行尾的实心小三角。 */
+export function DropdownMenuSubmenuArrow() {
+	return (
+		<span className="ui-dropdown-menu-submenu-arrow">
+			<svg
+				aria-hidden="true"
+				fill="currentColor"
+				stroke="currentColor"
+				strokeLinejoin="round"
+				strokeWidth={1.5}
+				viewBox="0 0 16 16"
+			>
+				<path d="M6 5l4 3-4 3z" />
+			</svg>
+		</span>
+	);
 }
 
 const THUMB_SPRING = { damping: 24, stiffness: 360, type: "spring" as const };
@@ -322,10 +373,18 @@ function DropdownMenuSwitchItem({
 	);
 }
 
-/** 一项的内容：`reserveIconSpace` 时左边留一格空的图标位，文字与带图标的单选项对齐。 */
-const itemContent = (label: string, reserveIconSpace: boolean) => (
+/** 一项的内容：有图标画图标；`reserveIconSpace` 时没有图标也留一格空的图标位。 */
+const itemContent = (
+	label: string,
+	reserveIconSpace: boolean,
+	icon?: LucideIcon,
+) => (
 	<DropdownMenuItemContent>
-		{reserveIconSpace && <DropdownMenuItemIcon />}
+		{(icon || reserveIconSpace) && (
+			<DropdownMenuItemIcon>
+				{icon && <Icon icon={icon} />}
+			</DropdownMenuItemIcon>
+		)}
 		<DropdownMenuItemLabel>{label}</DropdownMenuItemLabel>
 	</DropdownMenuItemContent>
 );
@@ -337,17 +396,25 @@ const renderItem = (item: MenuItemType, reserveIconSpace: boolean) => (
 		label={item.label}
 		onClick={item.onClick}
 	>
-		{itemContent(item.label, reserveIconSpace)}
+		{itemContent(item.label, reserveIconSpace, item.icon)}
 	</DropdownMenuItem>
 );
 
+/** 这一组项里有没有带图标的（分组里的也算）。 */
+const hasAnyIcon = (items: DropdownItem[]): boolean =>
+	items.some((item) =>
+		item.type === "group"
+			? hasAnyIcon(item.children)
+			: item.type === undefined && Boolean(item.icon),
+	);
+
 /**
- * 把 `items` 画成菜单项，放进 `DropdownMenuPopup`。`reserveIconSpace` 给每一项留出
- * 图标位，和同一菜单里带勾的单选项对齐。
+ * 把 `items` 画成菜单项，放进 `DropdownMenuPopup`。有一项带图标时每一项都留出图标位；
+ * `reserveIconSpace` 在没有图标时也留，和同一菜单里带勾的单选项对齐。
  */
 export const renderDropdownMenuItems = (
 	items: DropdownItem[],
-	{ reserveIconSpace = false }: { reserveIconSpace?: boolean } = {},
+	{ reserveIconSpace = hasAnyIcon(items) }: { reserveIconSpace?: boolean } = {},
 ): ReactNode[] =>
 	items.map((item, index) => {
 		if (item.type === "divider")

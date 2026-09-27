@@ -51,9 +51,16 @@ const drawerMotionConfig = (placement: DrawerPlacement): MotionProps => ({
 
 export const DrawerRoot = DialogPresenceRoot;
 
-export function DrawerPortal({ children }: { children: ReactNode }) {
+/** `container` 不给时 portal 到 `<body>`；给了就挂进它（`DrawerPopup` 同时传 `contained`）。 */
+export function DrawerPortal({
+	children,
+	container,
+}: {
+	children: ReactNode;
+	container?: HTMLElement | null;
+}) {
 	return (
-		<Dialog.Portal container={defaultPortalContainer()}>
+		<Dialog.Portal container={container ?? defaultPortalContainer()}>
 			{children}
 		</Dialog.Portal>
 	);
@@ -66,14 +73,17 @@ export function DrawerBackdrop() {
 /**
  * 贴边的面板；`width` 是面板宽度，`placement` 是贴哪条边，默认右边。
  * `panelClassName` 加在面板上，给换了底色、描边和投影的一种面板（导航栏的抽屉）用。
+ * `contained`：浮层不贴视口，绝对定位在 portal 进去的那个容器里，贴着容器的边滑出。
  */
 export function DrawerPopup({
 	children,
+	contained = false,
 	panelClassName,
 	placement: placementProp = "right",
 	width: widthProp,
 }: {
 	children: ReactNode;
+	contained?: boolean;
 	panelClassName?: string;
 	placement?: DrawerPlacement;
 	width: number | string;
@@ -95,7 +105,11 @@ export function DrawerPopup({
 
 	return (
 		<Dialog.Popup
-			className={cn("ui-drawer-popup", `ui-drawer-popup-${placement}`)}
+			className={cn(
+				"ui-drawer-popup",
+				`ui-drawer-popup-${placement}`,
+				contained && "ui-drawer-popup-contained",
+			)}
 			style={{ width }}
 		>
 			<AnimatePresence onExitComplete={onExitComplete}>

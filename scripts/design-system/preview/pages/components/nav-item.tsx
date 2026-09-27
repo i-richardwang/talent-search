@@ -71,8 +71,8 @@ function Playground() {
 						active={active}
 						href="#recent"
 						icon={MessageSquareTextIcon}
+						iconSize="small"
 						onClick={stay}
-						title={label}
 					>
 						{label}
 					</NavItem>
@@ -145,7 +145,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="最近搜索一行一条记录：14px 的小图标说是 AI 搜索还是关键词搜索，行尾的「…」画在链接外。列不完时最后一行是「更多」。组名整行可点，收起或展开；组名行尾也有一枚「…」。"
+				description="最近搜索一行一条记录：14px 的小图标说是 AI 搜索还是关键词搜索，行尾的「…」画在链接外。列不完时最后一行是「更多」。组名整行可点，收起或展开；组名行尾也有一枚「…」，悬停时出现。"
 				title="最近搜索"
 			>
 				<div className="w-nav bg-layout p-1">
@@ -175,7 +175,6 @@ function Usage() {
 							</NavItem>
 							<NavItem
 								icon={MoreHorizontalIcon}
-								iconSize="small"
 								render={<button type="button" />}
 							>
 								更多
@@ -185,31 +184,28 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
-				description="管理页一组三项，所在的那一页是当前项；新搜索单独一项放在最上面。收起的组只剩组名一行，三角朝右。"
+				description="新搜索单独一项放在最上面；管理页三项不成组，沉在导航栏滚动区的底上，所在的那一页是当前项。"
 				title="管理页"
 			>
-				<div className="flex w-nav flex-col gap-2 bg-layout p-1">
+				<div className="flex h-72 w-nav flex-col gap-px bg-layout p-1">
 					<NavItem href="#home" icon={PlusIcon} onClick={stay}>
 						新搜索
 					</NavItem>
-					<NavGroups onValueChange={setOpen} value={open}>
-						<NavGroup title="管理" value="admin">
-							{admin.map((item) => (
-								<NavItem
-									active={item.key === current}
-									href={`#${item.key}`}
-									icon={item.icon}
-									key={item.key}
-									onClick={(event) => {
-										event.preventDefault();
-										setCurrent(item.key);
-									}}
-								>
-									{item.label}
-								</NavItem>
-							))}
-						</NavGroup>
-					</NavGroups>
+					<div aria-hidden className="flex-1" />
+					{admin.map((item) => (
+						<NavItem
+							active={item.key === current}
+							href={`#${item.key}`}
+							icon={item.icon}
+							key={item.key}
+							onClick={(event) => {
+								event.preventDefault();
+								setCurrent(item.key);
+							}}
+						>
+							{item.label}
+						</NavItem>
+					))}
 				</div>
 			</Example>
 		</ExampleGrid>
@@ -227,11 +223,11 @@ export function NavItemPage() {
 					"当前所在的一项给 active，不另加选中装饰。",
 					"行尾的动作放 actions，画在链接外；链接里不嵌别的动作。平时透明也不接指针，指针进入这一行、键盘焦点落到动作上或它的菜单开着时出现。",
 					'不去别处、只打开什么的一行（「更多」）传 render={<button type="button" />}。',
-					"标题一行放不下就截断，完整的写进 title。",
+					"标题一行放不下就截断，指针停在被截断的标题上时提示完整的一行。",
 					"几项同属一类时用 NavGroup 包起来，几组放进一个 NavGroups：组名整行可点、收起或展开，展开着哪几组（value）由使用方记住；组名行尾的 action 悬停时出现。",
 					'一长串同类的记录（最近搜索）给 iconSize="small"，图标 14px；几个固定入口用缺省的 18px。',
 				],
-				usage: `<NavGroups value={open} onValueChange={setOpen}>\n  <NavGroup value="admin" title="管理">\n    <NavItem active={on("/tasks")} icon={ActivityIcon} render={<Link to="/tasks" />}>\n      任务\n    </NavItem>\n  </NavGroup>\n</NavGroups>`,
+				usage: `<NavGroups value={open} onValueChange={setOpen}>\n  <NavGroup value="recent" title="最近搜索" action={menu}>\n    <NavItem icon={TextSearchIcon} iconSize="small" render={<Link to="/s/$turnId" params={params} />}>\n      推荐系统 · 某甲科技\n    </NavItem>\n  </NavGroup>\n</NavGroups>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用导航项" },

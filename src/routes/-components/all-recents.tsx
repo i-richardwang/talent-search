@@ -10,8 +10,10 @@ import { LoadFailed, RecentItem } from "./recent-item";
 type Loaded = { rows: RecentSearch[]; total: number; page: number };
 
 /**
- * 全部搜索记录：从导航栏「更多」打开，贴着左边滑出的一栏。打开时取第一页，
- * 翻到底按「加载更多」接着取下一页，底下写着已列出几条、一共几条。
+ * 全部搜索记录：从导航栏「更多」打开。宽屏上从导航栏的右缘滑出、盖在内容卡片上，
+ * 点别处不收起，一边开着一边照常用导航栏和卡片；窄屏上导航本身在抽屉里，它贴着
+ * 窗口左边滑出。打开时取第一页，翻到底按「加载更多」接着取下一页，底下写着已列出
+ * 几条、一共几条。
  */
 export function AllRecentsDrawer({
 	open,
@@ -61,8 +63,8 @@ export function AllRecentsDrawer({
 		);
 
 	return (
-		<AppNavDrawer onClose={onClose} open={open} title="全部搜索记录">
-			<div className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-1 pb-2">
+		<AppNavDrawer anchored onClose={onClose} open={open} title="全部搜索记录">
+			<div className="flex flex-col gap-px px-1 py-px">
 				{loaded === null ? (
 					failed ? (
 						<LoadFailed onRetry={() => void load(1)} retrying={loading} />
@@ -96,7 +98,7 @@ export function AllRecentsDrawer({
 								</Button>
 							)
 						)}
-						<p className="px-2 pt-2 text-fg-tertiary text-xs">
+						<p className="p-2 text-fg-tertiary text-xs">
 							已列出 {loaded.rows.length} 条，共 {loaded.total} 条，最近的在前
 						</p>
 					</>
@@ -106,20 +108,20 @@ export function AllRecentsDrawer({
 	);
 }
 
-/** 导航项形状的占位：和一行记录同高，图标格和标题各一块。 */
-export function RecentSkeleton({ rows }: { rows: number }) {
-	const widths = ["72%", "56%", "84%", "64%", "48%"];
-	return Array.from({ length: rows }, (_, index) => (
-		<div
-			aria-hidden
-			className="flex h-9 items-center gap-2 px-1"
-			// biome-ignore lint/suspicious/noArrayIndexKey: 占位行只按位置区分
-			key={index}
-		>
-			<span className="flex size-7 items-center justify-center">
-				<Skeleton height={14} width={14} />
-			</span>
-			<Skeleton height={12} width={widths[index % widths.length]} />
+/** 导航项形状的占位：和一行记录同高（36px），一块 28px 的方块和一条 16px 高的横条。 */
+function RecentSkeleton({ rows }: { rows: number }) {
+	return (
+		<div aria-hidden className="flex flex-col gap-0.5">
+			{Array.from({ length: rows }, (_, index) => (
+				<div
+					className="flex h-9 items-center gap-2 p-1.5"
+					// biome-ignore lint/suspicious/noArrayIndexKey: 占位行只按位置区分
+					key={index}
+				>
+					<Skeleton className="shrink-0" height={28} width={28} />
+					<Skeleton height={16} />
+				</div>
+			))}
 		</div>
-	));
+	);
 }

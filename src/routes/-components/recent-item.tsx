@@ -5,9 +5,11 @@ import {
 	useRouter,
 } from "@tanstack/react-router";
 import {
+	LinkIcon,
 	MessageSquareTextIcon,
 	MoreHorizontalIcon,
 	TextSearchIcon,
+	TrashIcon,
 	TriangleAlertIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -84,7 +86,7 @@ async function copyLink(turnId: string) {
 
 /**
  * 导航栏和全部记录的抽屉里的一行搜索记录：整行是去那次搜索的链接，行尾一枚「…」
- * 打开这一行的菜单（复制链接、删除）。
+ * 打开这一行的菜单（复制链接、删除），两项各带图标，删除是危险项。
  */
 export function RecentItem({
 	record,
@@ -114,13 +116,14 @@ export function RecentItem({
 							<DropdownMenuPopup>
 								{renderDropdownMenuItems([
 									{
+										icon: LinkIcon,
 										key: "copy",
 										label: "复制链接",
 										onClick: () => void copyLink(record.turnId),
 									},
-									{ type: "divider" },
 									{
 										danger: true,
+										icon: TrashIcon,
 										key: "delete",
 										label: "删除",
 										onClick: () => void remove(record),
@@ -135,7 +138,6 @@ export function RecentItem({
 			icon={recentIcon(record)}
 			iconSize="small"
 			render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}
-			title={label}
 		>
 			{label}
 		</NavItem>

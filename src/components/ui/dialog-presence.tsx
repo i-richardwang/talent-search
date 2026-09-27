@@ -33,7 +33,7 @@ export const useDialogPresence = () => use(DialogPresenceContext);
 
 type DialogPresenceRootProps = Pick<
 	Dialog.Root.Props,
-	"children" | "onOpenChange"
+	"children" | "modal" | "onOpenChange"
 > & {
 	/** 面板出场、根卸掉之后调用。 */
 	onExitComplete?: () => void;
@@ -43,6 +43,7 @@ type DialogPresenceRootProps = Pick<
 export function DialogPresenceRoot({
 	open,
 	children,
+	modal = true,
 	onExitComplete: onExitCompleteProp,
 	onOpenChange,
 }: DialogPresenceRootProps) {
@@ -66,7 +67,7 @@ export function DialogPresenceRoot({
 
 	return (
 		<DialogPresenceContext value={presence}>
-			<Dialog.Root modal onOpenChange={onOpenChange} open>
+			<Dialog.Root modal={modal} onOpenChange={onOpenChange} open>
 				{children}
 			</Dialog.Root>
 		</DialogPresenceContext>

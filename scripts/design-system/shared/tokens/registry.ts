@@ -373,6 +373,7 @@ export const NUMERIC_TOKENS: NumericToken[] = [
 	rem("--text-2xl", "标题", "type", 18, 32),
 	rem("--text-2xl--line-height", "标题行高", "type", 24, 40),
 	rem("--container-page", "版心", "layout", 576, 960),
+	rem("--container-home", "首页那一列", "layout", 576, 960),
 	rem("--container-nav", "导航栏", "layout", 200, 360),
 	rem("--container-detail", "抽屉", "layout", 320, 640),
 	rem("--container-detail-wide", "宽抽屉", "layout", 320, 704),

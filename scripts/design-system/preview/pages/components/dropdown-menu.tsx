@@ -1,4 +1,11 @@
-import { CheckIcon, ChevronDown, Ellipsis } from "lucide-react";
+import {
+	CheckIcon,
+	ChevronDown,
+	Ellipsis,
+	HashIcon,
+	LinkIcon,
+	TrashIcon,
+} from "lucide-react";
 import { type ReactElement, type ReactNode, useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
@@ -9,6 +16,7 @@ import {
 	DropdownMenuHeader,
 	DropdownMenuItemContent,
 	DropdownMenuItemDesc,
+	DropdownMenuItemExtra,
 	DropdownMenuItemIcon,
 	DropdownMenuItemLabel,
 	DropdownMenuItemLabelGroup,
@@ -19,6 +27,9 @@ import {
 	DropdownMenuRadioItemIndicator,
 	DropdownMenuRadioItemPrimitive,
 	DropdownMenuRoot,
+	DropdownMenuSubmenuArrow,
+	DropdownMenuSubmenuRoot,
+	DropdownMenuSubmenuTrigger,
 	DropdownMenuTrigger,
 	renderDropdownMenuItems,
 } from "#/components/ui/dropdown-menu";
@@ -253,6 +264,54 @@ function SwitchRow() {
 	);
 }
 
+/** 子菜单一行：「显示」一项的子菜单里选列几条，行尾写着现在列几条。 */
+function SubmenuRow() {
+	const [count, setCount] = useState("5");
+	return (
+		<ItemRow code="DropdownMenuSubmenuRoot" name="submenu">
+			<DropdownMenuSubmenuRoot>
+				<DropdownMenuSubmenuTrigger label="显示">
+					<DropdownMenuItemContent>
+						<DropdownMenuItemIcon>
+							<Icon icon={HashIcon} />
+						</DropdownMenuItemIcon>
+						<DropdownMenuItemLabel>显示</DropdownMenuItemLabel>
+						<DropdownMenuItemExtra>{count}</DropdownMenuItemExtra>
+						<DropdownMenuSubmenuArrow />
+					</DropdownMenuItemContent>
+				</DropdownMenuSubmenuTrigger>
+				<DropdownMenuPortal>
+					<DropdownMenuPositioner submenu>
+						<DropdownMenuPopup>
+							<DropdownMenuRadioGroup
+								onValueChange={(next) => setCount(String(next))}
+								value={count}
+							>
+								{["5", "10", "15", "20"].map((n) => (
+									<DropdownMenuRadioItemPrimitive
+										key={n}
+										label={`${n} 条`}
+										value={n}
+									>
+										<DropdownMenuItemContent>
+											<DropdownMenuItemIcon>
+												<DropdownMenuRadioItemIndicator>
+													<Icon icon={CheckIcon} />
+												</DropdownMenuRadioItemIndicator>
+											</DropdownMenuItemIcon>
+											<DropdownMenuItemLabel>{n} 条</DropdownMenuItemLabel>
+										</DropdownMenuItemContent>
+									</DropdownMenuRadioItemPrimitive>
+								))}
+							</DropdownMenuRadioGroup>
+						</DropdownMenuPopup>
+					</DropdownMenuPositioner>
+				</DropdownMenuPortal>
+			</DropdownMenuSubmenuRoot>
+		</ItemRow>
+	);
+}
+
 /** 单选项一行：选中的强度存在这一行里。 */
 function RadioRow() {
 	const [mode, setMode] = useState<Mode>("boost");
@@ -287,6 +346,12 @@ function ItemTypes() {
 							{ danger: true, key: "delete", label: "删除条件" },
 						])}
 					</ItemRow>
+					<ItemRow code="{ icon }" name="item · icon">
+						{renderDropdownMenuItems([
+							{ icon: LinkIcon, key: "copy", label: "复制链接" },
+							{ danger: true, icon: TrashIcon, key: "delete", label: "删除" },
+						])}
+					</ItemRow>
 					<ItemRow code={`{ type: "divider" }`} name="divider">
 						{renderDropdownMenuItems([
 							{ key: "copy", label: "复制搜索条件" },
@@ -308,6 +373,7 @@ function ItemTypes() {
 					</ItemRow>
 					<SwitchRow />
 					<RadioRow />
+					<SubmenuRow />
 				</TableBody>
 			</Table>
 		</Block>
@@ -352,12 +418,14 @@ function Usage() {
 export function DropdownMenuPage() {
 	return (
 		<DocPage
-			facts={["单选项", "开关项", "可带说明栏"]}
+			facts={["单选项", "开关项", "子菜单", "可带说明栏"]}
 			rules={{
 				notes: [
 					'菜单开关用开关项（type: "switch"），不能用两句交替的文案代替状态。',
 					"几选一的项用 DropdownMenuRadioGroup，和其余项同在一个菜单时给 renderDropdownMenuItems 传 reserveIconSpace，让文字对齐。",
 					"危险项用 danger，放在最后并用 divider 隔开。",
+					"项可以带 icon（14px、次要色，危险项是错误色）；有一项带图标，其余项自动留出图标位。",
+					"一项下面还有一层选择时用子菜单：那一项行尾写当前值（DropdownMenuItemExtra）和小三角，子菜单贴着它的右边打开。",
 					"用原子件拼：Root › Trigger + Portal › Positioner › Popup；显示标签、键盘和触控行为要人工检查。",
 					"触发器是单个按钮组件，属性合进它本身，不另包一层。",
 				],

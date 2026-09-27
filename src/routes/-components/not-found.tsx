@@ -38,17 +38,17 @@ function NotFound({
 				{watermark && (
 					<p
 						aria-hidden
-						className="pointer-events-none absolute m-0 font-extrabold text-fg leading-none opacity-12 blur-sm"
+						className="pointer-events-none absolute m-0 font-bold text-fg leading-none opacity-12 blur-sm"
 						style={{ fontSize: "min(341px, 50vw)" }}
 					>
 						{watermark}
 					</p>
 				)}
 				<Icon className="text-fg-tertiary" icon={icon} size={64} />
-				<h1 className="mt-4 mb-2 text-center font-bold text-fg text-xl">
+				<h1 className="mt-5 mb-4 text-center font-bold text-fg text-xl">
 					{title}
 				</h1>
-				<div className="mb-8 text-center text-fg-secondary leading-[1.8]">
+				<div className="mb-7 text-center text-fg leading-[1.8]">
 					<p className="m-0">{description}</p>
 					<p className="m-0 mt-2">{hint}</p>
 				</div>

@@ -1,7 +1,8 @@
 /*
  * 菜单各部件的类名是 `.ui-dropdown-menu-*`，挂在各自的元素上。同一元素上的修饰类写在
  * 基础类后面，特异性相同时靠先后压过它：positioner；popup；header；item、danger；
- * separator；group-label；item-content；icon；label-group、label、desc。
+ * separator；group-label；item-content；icon；label-group、label、desc；extra；
+ * submenu-arrow。
  * AutoComplete 的定位器、弹层和选项也用这里的块，它自己的块在 auto-complete.css。
  * 定位器的 z 值用弹层档 `--z-index-popup`，portal 按打开先后接在 `<body>` 末尾，
  * 后开的压住先开的。触发器打开时的底色在 `styles.css` 的 base 层，不在这里。
@@ -48,6 +49,14 @@
 			var(--ui-dropdown-animation-ease-in),
 			transform var(--ui-dropdown-animation-duration)
 			var(--ui-dropdown-animation-ease-in);
+	}
+
+	/* 子菜单和朝左右开的菜单直接出现，不放展开动画 */
+	&[data-submenu],
+	&[data-side="left"],
+	&[data-side="right"] {
+		--ui-dropdown-animation-duration: 0ms;
+		--ui-dropdown-animation-scale-y: 1;
 	}
 }
 
@@ -122,9 +131,16 @@
 	&[data-highlighted] {
 		background: var(--color-fill-tertiary);
 	}
+
+	/* 子菜单开着时，打开它的那一项留着悬停的底 */
+	&[data-popup-open] {
+		background: var(--color-fill-tertiary);
+	}
 }
 
 .ui-dropdown-menu-danger {
+	--ui-menu-icon-color: var(--color-error);
+
 	/* biome-ignore lint/complexity/noImportantStyles: 危险项压过项的文字色 */
 	color: var(--color-error) !important;
 
@@ -176,7 +192,7 @@
 	height: 14px;
 	margin-inline-end: 12px;
 
-	color: var(--color-fg-secondary);
+	color: var(--ui-menu-icon-color, var(--color-fg-secondary));
 
 	& svg {
 		width: 100%;
@@ -208,6 +224,33 @@
 	color: var(--color-fg-tertiary);
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.ui-dropdown-menu-extra {
+	margin-inline-start: auto;
+	padding-inline-start: 16px;
+
+	font-family: var(--font-mono);
+	font-size: var(--text-xs);
+	color: var(--color-fg-tertiary);
+}
+
+.ui-dropdown-menu-submenu-arrow {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+
+	width: 16px;
+	height: 16px;
+	margin-inline-start: 8px;
+
+	color: var(--ui-menu-icon-color, var(--color-fg-secondary));
+
+	& svg {
+		width: 12px;
+		height: 12px;
+	}
 }
 
 .ui-switch {

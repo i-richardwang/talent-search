@@ -1,5 +1,6 @@
 import {
 	MessageSquareTextIcon,
+	MoreHorizontalIcon,
 	PanelLeftOpenIcon,
 	PlusIcon,
 	UsersRoundIcon,
@@ -39,9 +40,10 @@ type Columns = "one" | "two";
 /** 示例里的链接只在页内跳，不离开预览页。 */
 const stay = (event: { preventDefault: () => void }) => event.preventDefault();
 
-/** 导航栏里的内容：身份、新搜索和一组最近搜索。 */
+/** 导航栏里的内容：身份、新搜索和一组最近搜索，「更多」从导航栏右缘拉出全部记录。 */
 function Nav() {
 	const [open, setOpen] = useState(["recent"]);
+	const [all, setAll] = useState(false);
 	return (
 		<>
 			<AppNavHeader
@@ -50,12 +52,12 @@ function Nav() {
 				name="人才搜索"
 				onClick={stay}
 			/>
-			<div className="flex flex-col px-1">
+			<div className="mt-px flex flex-col px-1">
 				<NavItem active href="#home" icon={PlusIcon} onClick={stay}>
 					新搜索
 				</NavItem>
 			</div>
-			<NavGroups className="mt-2 px-1" onValueChange={setOpen} value={open}>
+			<NavGroups className="mt-px px-1" onValueChange={setOpen} value={open}>
 				<NavGroup title="最近搜索" value="recent">
 					<NavItem
 						href="#recent"
@@ -65,9 +67,46 @@ function Nav() {
 					>
 						做过推荐系统的算法工程师
 					</NavItem>
+					<NavItem
+						icon={MoreHorizontalIcon}
+						onClick={() => setAll(true)}
+						render={<button type="button" />}
+					>
+						更多
+					</NavItem>
+					<AppNavDrawer
+						anchored
+						onClose={() => setAll(false)}
+						open={all}
+						title="全部搜索记录"
+					>
+						<RecentRows />
+					</AppNavDrawer>
 				</NavGroup>
 			</NavGroups>
 		</>
+	);
+}
+
+function RecentRows() {
+	return (
+		<div className="flex flex-col gap-px px-1 py-px">
+			{[
+				"做过推荐系统的算法工程师",
+				"支付风控 / 学校 B",
+				"推荐系统 · 某甲科技",
+			].map((label) => (
+				<NavItem
+					href="#recent"
+					icon={MessageSquareTextIcon}
+					iconSize="small"
+					key={label}
+					onClick={stay}
+				>
+					{label}
+				</NavItem>
+			))}
+		</div>
 	);
 }
 
@@ -229,7 +268,7 @@ function Usage() {
 				</Block>
 			</Example>
 			<Example
-				description="从左边滑出、和导航栏同一块画布的一栏：layout 底、两侧细线、向右一层很浅的影，顶上一行是标题和关闭钮。窄屏的导航、导航里「更多」打开的全部记录都用它。"
+				description="从左边滑出、和导航栏同一块画布的一栏：layout 底、两侧细线、向右一层很浅的影，顶上一行是标题和关闭钮。窄屏的导航、导航里「更多」打开的全部记录都用它。不在导航栏里打开时贴着窗口左边、盖背板；试用区里导航栏的「更多」演示从导航栏右缘滑出的那一种。"
 				title="贴左边的抽屉"
 			>
 				<DrawerDemo />
@@ -270,16 +309,7 @@ function DrawerDemo() {
 				open={open}
 				title="全部搜索记录"
 			>
-				<div className="flex flex-col gap-px px-1">
-					<NavItem
-						href="#recent"
-						icon={MessageSquareTextIcon}
-						iconSize="small"
-						onClick={stay}
-					>
-						做过推荐系统的算法工程师
-					</NavItem>
-				</div>
+				<RecentRows />
 			</AppNavDrawer>
 		</>
 	);
@@ -299,7 +329,8 @@ export function AppLayoutPage() {
 					"每一栏顶上一条 NavHeader，高度读 --nav-header-height；标题用 NavHeaderTitle，主栏是 h1，侧栏是 h2。",
 					"并排的侧栏用 DraggablePanel，它的边就是两栏之间的竖线，不另画面。",
 					"从左边滑出的一栏用 AppNavDrawer：和导航栏同一块画布，给 title 时顶上一行是标题和关闭钮；不给时由内容自己出头部（窄屏的导航：导航栏顶上那一行里收起开关那一格换成关闭钮）。",
-					"首页那一屏用 AppHome：页头浮在顶上不占高，问句（22px 半粗、最多两行）和输入面落在中线上，下面的内容高过一半时输入面往上让。",
+					"导航栏里打开的 AppNavDrawer 传 anchored：它从导航栏右缘滑出、盖在卡片上，没有背板，点别处不收起，Esc 或关闭钮收起。",
+					"首页那一屏用 AppHome：页头浮在顶上不占高，问句（22px 半粗、最多两行）、输入面和下面的内容排成最宽 760px 的一列，彼此隔 24px；放得下时整列上下居中、底下垫一行问句的高把输入面抬向中线，放不下就从顶上排起。",
 				],
 				usage: `<AppLayout>\n  <AppNav aria-label="导航">\n    <AppNavHeader logo={UsersRoundIcon} name="人才搜索" render={<Link to="/" />} />\n  </AppNav>\n  <AppContent>\n    <NavHeader left={<NavHeaderTitle>任务</NavHeaderTitle>} />\n  </AppContent>\n</AppLayout>`,
 			}}

@@ -1,8 +1,9 @@
 /*
  * 导航项的外观，类名以 `.ui-nav-item` 与 `.ui-nav-group` 开头。
  *
- * 一行 36px：28px 的图标格（图标 18px，一长串记录用 14px）、14px 的标题，行内左右 4px、间隔 8px、8px 圆角。常态没有底，
- * 悬停 fill-tertiary；当前项是 fill-tertiary 的底、悬停加深一档，图标和字换成 fg。
+ * 一行 36px：28px 的图标格（图标 18px，一长串记录用 14px）、14px 的标题，行内左右 4px、
+ * 间隔 8px、8px 圆角。常态没有底，悬停 fill-tertiary；当前项是 fill-tertiary 的底、悬停
+ * 加深一档，图标和字换成 fg。底色随指针即时变，不放过渡。
  * 行尾的动作平时透明，指针进入这一行或焦点落到动作上时出现，标题在它底下渐隐。
  */
 
@@ -25,7 +26,6 @@
 	text-align: start;
 	background: none;
 	cursor: pointer;
-	transition: background-color 0.2s;
 	@apply focus-ring;
 
 	&:hover {
@@ -61,10 +61,7 @@
 .ui-nav-item-title {
 	flex: 1;
 	min-width: 0;
-	overflow: hidden;
 	font-size: var(--text-base);
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 /*

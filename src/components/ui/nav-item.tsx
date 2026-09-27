@@ -12,11 +12,13 @@ import {
 	AccordionTrigger,
 } from "./accordion";
 import { Icon } from "./icon";
+import { Text } from "./text";
 
 /*
  * 导航项，样式在 nav-item.css。一行就是一条链接：`render` 传路由的 `<Link>`，中键、右键
  * 照常；不去别处、只打开什么的一行（「更多」）传 `render={<button type="button" />}`。
- * `actions` 画在链接外、盖在行尾，于是链接里不嵌别的动作。
+ * `actions` 画在链接外、盖在行尾，于是链接里不嵌别的动作。标题放不下时截断，
+ * 指针停在被截断的标题上时提示完整的一行。
  */
 
 export function NavItem({
@@ -48,7 +50,9 @@ export function NavItem({
 					<span className="ui-nav-item-icon">
 						<Icon icon={icon} size={iconSize === "small" ? 14 : 18} />
 					</span>
-					<span className="ui-nav-item-title">{children}</span>
+					<Text className="ui-nav-item-title" ellipsis={{ tooltip: true }}>
+						{children}
+					</Text>
 				</>
 			),
 		}),
