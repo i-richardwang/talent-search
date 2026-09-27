@@ -1,12 +1,12 @@
 import { Link, useHydrated } from "@tanstack/react-router";
 import {
-	AlertTriangleIcon,
 	ArrowDownIcon,
 	CheckIcon,
 	EyeIcon,
 	PencilLineIcon,
 	PlusIcon,
 	RotateCwIcon,
+	TriangleAlertIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -533,7 +533,7 @@ function Declined({ said, why }: { said: string; why: string }) {
 			<Icon
 				aria-hidden="true"
 				className="mt-[3px] shrink-0 text-warning"
-				icon={AlertTriangleIcon}
+				icon={TriangleAlertIcon}
 				size={16}
 			/>
 			<span className="min-w-0">

@@ -9,7 +9,10 @@ import { EMPLOYEES, EXPERIENCES, experiencesOf } from "./people";
  * 人名、工号、公司、部门、学校全是编的，和人才库无关；类型都从产品代码导入。
  */
 
-/** 一次运行：开始时刻写成页面上的样子，用时是秒。 */
+/** 样例里的「现在」：9 月 26 日上午九点，最新那次同步是一小时前。 */
+const NOW = Date.parse("2026-09-26T09:00:00");
+
+/** 一次运行：开始时刻写成 `MM-DD HH:MM`，用时是秒。 */
 function run(
 	id: number,
 	kind: TaskRunView["kind"],
@@ -22,7 +25,10 @@ function run(
 		id,
 		kind,
 		source: kind === "sync" ? "csv-dir" : "",
-		startedAt,
+		startedAt: `2026-${startedAt}`,
+		ageSeconds: Math.round(
+			(NOW - Date.parse(`2026-${startedAt.replace(" ", "T")}:00`)) / 1000,
+		),
 		seconds,
 		error,
 		outcome,

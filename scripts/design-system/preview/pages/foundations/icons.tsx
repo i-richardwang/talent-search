@@ -1,6 +1,5 @@
 import {
 	Activity,
-	AlertTriangle,
 	ArrowDown,
 	Building2,
 	Check,
@@ -100,7 +99,6 @@ export const PRODUCT_ICONS: [
 	["CircleDashed", CircleDashed, "还没处理到当前版本"],
 	["ChevronLeft", ChevronLeft, "上一页"],
 	["ChevronRight", ChevronRight, "下一页"],
-	["AlertTriangle", AlertTriangle, "没有采用的一条要求"],
 	["Eye", Eye, "查看那一次的结果"],
 	["PencilLine", PencilLine, "直接在搜索条件上改的一次"],
 	["ArrowDown", ArrowDown, "跳转到对话里最新的一句"],
@@ -109,7 +107,11 @@ export const PRODUCT_ICONS: [
 		MoreHorizontal,
 		"更多：一行或一组的操作菜单、列不完的其余几条",
 	],
-	["TriangleAlert", TriangleAlert, "搜索记录加载失败"],
+	[
+		"TriangleAlert",
+		TriangleAlert,
+		"需要留意：没有采用的一条要求、没加载出来的搜索记录",
+	],
 	["FileQuestion", FileQuestion, "页面不存在"],
 ];
 

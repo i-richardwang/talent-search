@@ -100,8 +100,10 @@ export type TaskRunView = {
 	kind: TaskKind;
 	/** 同步读的是哪个适配器；其余两种是空串 */
 	source: string;
-	/** 开始时刻，`MM-DD HH:MM` */
+	/** 开始时刻，`YYYY-MM-DD HH:MM` */
 	startedAt: string;
+	/** 开始到现在过了多少秒，按库的时钟算 */
+	ageSeconds: number;
 	/** 用时秒数；还在跑和中断的那一行没有用时 */
 	seconds: number | null;
 	error: string | null;
@@ -200,7 +202,8 @@ async function readTaskHeads(): Promise<{
 	const { rows: heads } = await db.execute<TaskHead>(sql`
 		select distinct on (kind)
 			kind, id, source,
-			to_char(started_at, 'MM-DD HH24:MI') as "startedAt",
+			to_char(started_at, 'YYYY-MM-DD HH24:MI') as "startedAt",
+			extract(epoch from now() - started_at)::int as "ageSeconds",
 			extract(epoch from (finished_at - started_at))::int as seconds,
 			error,
 			count(*) over (partition by kind)::int as total
@@ -254,6 +257,7 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 		seconds: row.seconds,
 		source: row.source,
 		startedAt: row.startedAt,
+		ageSeconds: row.ageSeconds,
 	});
 	const lanes = TASK_KINDS.map((kind) => {
 		const head = heads.find((row) => row.kind === kind);
@@ -268,7 +272,8 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 	/* 每一栏要的那一页。哪几行算这一页只在这条查询里说一次。 */
 	const { rows } = await db.execute<StoredRun>(sql`
 		select recent.id, recent.kind, recent.source,
-			to_char(recent.started_at, 'MM-DD HH24:MI') as "startedAt",
+			to_char(recent.started_at, 'YYYY-MM-DD HH24:MI') as "startedAt",
+			extract(epoch from now() - recent.started_at)::int as "ageSeconds",
 			extract(epoch from (recent.finished_at - recent.started_at))::int as seconds,
 			recent.error
 		from (

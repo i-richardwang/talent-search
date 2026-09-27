@@ -1,11 +1,11 @@
 "use client";
 
 import {
-	AlertTriangle,
 	CheckCircle,
 	ChevronRight,
 	Info,
 	type LucideIcon,
+	TriangleAlert,
 	X,
 	XCircle,
 } from "lucide-react";
@@ -59,9 +59,9 @@ type AlertProps = AlertOwnProps &
 const TYPE_ICONS = {
 	error: XCircle,
 	info: Info,
-	secondary: AlertTriangle,
+	secondary: TriangleAlert,
 	success: CheckCircle,
-	warning: AlertTriangle,
+	warning: TriangleAlert,
 } satisfies Record<AlertType, LucideIcon>;
 
 export function Alert({

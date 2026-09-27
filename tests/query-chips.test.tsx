@@ -18,7 +18,7 @@ const seen = (conditions: Condition[]) =>
 	);
 
 describe("查询 chip", () => {
-	test("经历词只写代表词，其余取值不写、只留记号", () => {
+	test("经历词只写代表词，其余取值不写、只写收起了几个", () => {
 		const text = seen([
 			{
 				about: "experience",
@@ -27,7 +27,7 @@ describe("查询 chip", () => {
 			},
 		]);
 		assert.match(text, /大模型/);
-		assert.match(text, /≈/);
+		assert.match(text, /\+2/);
 		assert.doesNotMatch(text, /LLM|推荐系统/, "其余取值不上 chip");
 	});
 
@@ -41,7 +41,7 @@ describe("查询 chip", () => {
 			},
 		]);
 		assert.match(text, /当前职级 · D8/);
-		assert.match(text, /≈/);
+		assert.match(text, /\+5/);
 		assert.doesNotMatch(text, /D9|M5|S6/);
 	});
 

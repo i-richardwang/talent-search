@@ -66,8 +66,6 @@ describe("一行证据看得见的部分", () => {
 		const near = hit({ value: "推荐算法" });
 		assert.match(seen(near, basis()), /匹配依据 推荐算法/);
 		assert.doesNotMatch(seen(hit(), basis()), /匹配依据/);
-		// chip 上那个 ≈ 说的是另一件事（还有别的取值），不共用记号
-		assert.doesNotMatch(seen(near, basis()), /≈/);
 	});
 
 	test("「前」由累计的那些段一起决定", () => {

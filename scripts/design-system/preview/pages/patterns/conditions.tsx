@@ -52,7 +52,7 @@ const LOOKS: [name: string, condition: Condition, note: string][] = [
 	[
 		"must · 多个取值",
 		CONDITIONS[0] as Condition,
-		"一项里有几个取值时标签后接「≈」，展开能逐个去掉",
+		"一项里有几个取值时标签后写收起了几个（「+2」），展开能逐个去掉",
 	],
 	[
 		"boost",

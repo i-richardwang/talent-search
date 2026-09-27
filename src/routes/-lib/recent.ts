@@ -1,9 +1,5 @@
 import { activeConditions } from "#/search/condition";
-import {
-	conditionLabel,
-	inSentence,
-	MODE_GLYPH,
-} from "#/search/condition-label";
+import { inSentence } from "#/search/condition-label";
 import { keywordsOf, keywordTitle } from "#/search/keywords";
 import type { RecentSearch } from "#/server/turn";
 
@@ -26,10 +22,7 @@ export function recentLabel(record: Pick<RecentSearch, "spec" | "title">) {
 	const keywords = keywordsOf(record.spec.conditions);
 	if (keywords) return keywordTitle(keywords);
 	// 读不回框里的条件表照条件写。停用的不出现：它没参与这次检索
-	const labels = activeConditions(record.spec.conditions).map(
-		(c) => MODE_GLYPH[c.mode] + conditionLabel(c),
-	);
-	return labels.join(" / ") || "无搜索条件";
+	return inSentence(activeConditions(record.spec.conditions)) || "无搜索条件";
 }
 
 /**
@@ -47,8 +40,12 @@ const MINUTE = 60;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** 多久以前：一小时内按分钟，一天内按小时，一周内按天，再早写日期，一年以前带上年份。 */
-export function ago(record: Pick<RecentSearch, "ageSeconds" | "at">): string {
+/**
+ * 多久以前：一小时内按分钟，一天内按小时，一周内按天，再早写日期，一年以前带上年份。
+ * 秒数由服务端按它的时钟算好（`at` 是 `YYYY-MM-DD HH:MM`），页面和服务端首帧读同一个数。
+ * 最近搜索和任务的运行记录都这样写时间。
+ */
+export function ago(record: { ageSeconds: number; at: string }): string {
 	const s = record.ageSeconds;
 	if (s < MINUTE) return "刚刚";
 	if (s < HOUR) return `${Math.floor(s / MINUTE)} 分钟前`;

@@ -25,12 +25,17 @@ import type {
 } from "#/server/tasks";
 import { StatusIcon } from "../../-components/status-badge";
 import { TablePager } from "../../-components/table-pager";
+import { ago } from "../../-lib/recent";
 import {
 	formatDuration,
 	LANE_FACTS,
 	RUN_STATUS,
 	TASK_NAME,
 } from "../-lib/labels";
+
+/** 一次运行开始了多久：最近的写「3 分钟前」，精确时刻放在悬停提示里。 */
+const agoOf = (run: TaskRunView) =>
+	ago({ ageSeconds: run.ageSeconds, at: run.startedAt });
 
 /*
  * 任务页（`routes/tasks/route.tsx`）上一类任务的一组：头上是任务名、最近一次的结果
@@ -59,7 +64,8 @@ function Latest({ latest }: { latest: TaskRunView | null }) {
 		<span className="inline-flex items-center gap-1.5 tabular-nums">
 			<StatusIcon size={14} tone={status.tone} />
 			<span>
-				{status.label} · {latest.startedAt} 开始
+				{status.label} · <span title={latest.startedAt}>{agoOf(latest)}</span>
+				开始
 				{took && ` · 用时 ${took}`}
 			</span>
 		</span>
@@ -310,8 +316,13 @@ function RunRow({
 					)}
 				</div>
 				<div className="flex flex-none items-center gap-2">
-					<Text className="tabular-nums" size="xs" type="secondary">
-						{run.startedAt}
+					<Text
+						className="tabular-nums"
+						size="xs"
+						title={run.startedAt}
+						type="secondary"
+					>
+						{agoOf(run)}
 					</Text>
 					<ActionIcon
 						aria-label={`第 ${seq} 次${TASK_NAME[kind]}的日志`}

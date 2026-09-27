@@ -32,8 +32,8 @@ import {
 } from "#/search/condition";
 import {
 	conditionLabel,
-	hasMore,
 	MODE_NAME,
+	moreCount,
 	partLabel,
 } from "#/search/condition-label";
 
@@ -42,8 +42,6 @@ const MODE_HINT: Record<Mode, string> = {
 	boost: "满足此条件的人排在前面",
 	exclude: "排除有这类经历的人",
 };
-
-const MORE_GLYPH = "≈";
 
 /**
  * 一排条件，一条一个 chip。强度写成字：必须是默认，不标；加分、排除在条件后面跟一个
@@ -70,7 +68,7 @@ export function QueryChips({
 		<>
 			{conditions.map((chip, i) => {
 				const label = conditionLabel(chip);
-				const more = hasMore(chip);
+				const more = moreCount(chip);
 				const parts = partsOf(chip);
 				const wide = chip.off === "wide";
 				const actions: DropdownItem[] = [
@@ -128,11 +126,7 @@ export function QueryChips({
 								}
 							>
 								<span>{label}</span>
-								{more && (
-									<Text code type="secondary">
-										{MORE_GLYPH}
-									</Text>
-								)}
+								{more > 0 && <Text type="secondary">+{more}</Text>}
 								{chip.mode !== "must" && (
 									<Text type="tertiary">{MODE_NAME[chip.mode]}</Text>
 								)}

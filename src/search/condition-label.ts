@@ -47,16 +47,6 @@ export function inSentence(list: readonly Condition[]): string {
 }
 
 /**
- * 强度的符号，给一行放不下字的地方（最近搜索的一行标题）。「必须」不带符号：它是默认。
- * 减号是 U+2212，和加号同宽同高。
- */
-export const MODE_GLYPH: Record<Mode, string> = {
-	must: "",
-	boost: "+",
-	exclude: "−",
-};
-
-/**
  * 一条条件在屏幕上怎么显示。
  *
  * 经历主张按它的表述顺序排列：什么时候、在哪一档、在哪、做过什么、累计多久——
@@ -93,12 +83,16 @@ export function claimName(claim: Claim): string {
 	return claim.what[0];
 }
 
-/** chip 上要不要那个「还有别的取值」的记号：哪一项有第二个取值都算。 */
-export function hasMore(condition: Condition): boolean {
+/**
+ * chip 上只写每一项的第一个取值，其余几个收在菜单里；这里数的是收起来的有几个，
+ * chip 上写成「+N」。
+ */
+export function moreCount(condition: Condition): number {
 	if (condition.about === "person")
-		return "values" in condition && condition.values.length > 1;
-	return [condition.what, condition.org, condition.companyTag].some(
-		(list) => (list?.length ?? 0) > 1,
+		return "values" in condition ? Math.max(condition.values.length - 1, 0) : 0;
+	return [condition.what, condition.org, condition.companyTag].reduce(
+		(sum, list) => sum + Math.max((list?.length ?? 0) - 1, 0),
+		0,
 	);
 }
 
