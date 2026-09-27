@@ -28,6 +28,9 @@ import { Icon } from "./icon";
  * 默认每个键一个键帽，键帽之间 2px。`compact` 或 `borderless` 时几个键收进同一个键帽，
  * 键与键之间 6px：提示里跟在文字后面的快捷键用 `compact`，夹在一句话里的用 `borderless`。
  *
+ * `size="large"` 是快捷键列表里那一档：键帽至少 26px 见方、一圈 `--color-border` 的描边，
+ * 键帽之间 4px，整组放大到 1.1 倍（字和键帽一起放大）。
+ *
  * 是不是苹果设备用 `useSyncExternalStore` 读 `navigator`，服务端快照取非苹果，
  * 服务端与浏览器首帧一致。
  */
@@ -37,6 +40,8 @@ export interface HotkeyProps {
 	/** 几个键收进同一个键帽。`borderless` 总是这样排。 */
 	compact?: boolean;
 	keys: string;
+	/** `middle` 跟着字号走；`large` 是快捷键列表里 26px 见方、带描边的键帽。 */
+	size?: "middle" | "large";
 	/**
 	 * `filled` 是浅灰底；`outlined` 是容器底加一圈描边，放在同样浅灰的面上；
 	 * `borderless` 不画底，颜色跟着所在那句话（例如输入托盘的占位）。
@@ -127,20 +132,26 @@ export function Hotkey({
 	className,
 	compact,
 	keys,
+	size = "middle",
 	variant = "filled",
 }: HotkeyProps) {
 	const keysGroup = useMemo(() => splitKeys(keys), [keys]);
 	const isAppleDevice = useIsAppleDevice();
 	const mapping = useMemo(() => mappingKey(isAppleDevice), [isAppleDevice]);
 	const isBorderless = variant === "borderless";
-	const kbdClassName = cn("ui-hotkey", `ui-hotkey-${variant}`);
+	const large = size === "large";
+	const kbdClassName = cn(
+		"ui-hotkey",
+		`ui-hotkey-${variant}`,
+		large && "ui-hotkey-large",
+	);
 
 	return (
 		<Flexbox
 			align="center"
 			as="span"
-			className={className}
-			gap={isBorderless ? 6 : 2}
+			className={cn(large && "ui-hotkey-group-large", className)}
+			gap={isBorderless ? 6 : large ? 4 : 2}
 			horizontal
 		>
 			{compact || isBorderless ? (

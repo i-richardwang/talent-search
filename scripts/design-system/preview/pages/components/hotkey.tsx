@@ -68,6 +68,7 @@ function Playground() {
 	const [keys, setKeys] = useState("mod+k");
 	const [variant, setVariant] = useState<Variant>("filled");
 	const [compact, setCompact] = useState(false);
+	const [large, setLarge] = useState(false);
 	const count = keys.split("+").filter(Boolean).length;
 	const { reading: keycaps, ref } = useMeasured(
 		(root) => root.querySelectorAll("kbd").length,
@@ -104,6 +105,11 @@ function Playground() {
 						compact
 					</Checkbox>
 				</Control>
+				<Control>
+					<Checkbox checked={large} onChange={setLarge}>
+						large
+					</Checkbox>
+				</Control>
 			</Controls>
 			<Stage
 				footer={
@@ -115,7 +121,12 @@ function Playground() {
 			>
 				<div className="contents" ref={ref}>
 					{keys.trim() && (
-						<Hotkey compact={compact} keys={keys} variant={variant} />
+						<Hotkey
+							compact={compact}
+							keys={keys}
+							size={large ? "large" : "middle"}
+							variant={variant}
+						/>
 					)}
 				</div>
 			</Stage>
@@ -187,6 +198,22 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
+				description="按 ? 打开的快捷键列表：每一行一句动作，行尾是 large 一档的键帽——26px 见方、描一圈边、整组放大 1.1 倍，一眼扫得到。"
+				title="快捷键列表"
+			>
+				<div className="flex w-full max-w-xs flex-col gap-3 text-sm">
+					{LIST_KEYS.map(([keys, what]) => (
+						<span
+							className="flex items-center justify-between gap-4"
+							key={keys}
+						>
+							{what}
+							<Hotkey keys={keys} size="large" />
+						</span>
+					))}
+				</div>
+			</Example>
+			<Example
 				description="名单页底部列出当前可用的键，每个键后面一句动作。"
 				title="快捷键说明"
 			>
@@ -227,6 +254,7 @@ export function HotkeyPage() {
 		<DocPage
 			facts={[
 				`${VARIANTS.length} 种外观`,
+				"2 档尺寸",
 				"按设备换写法",
 				`${SYMBOL_KEYS.length} 个键画成符号`,
 			]}
@@ -237,6 +265,7 @@ export function HotkeyPage() {
 					"单独摆着的说明用 filled；提示里跟在文字后面的用 compact（Tooltip 的 hotkey 自己会这样画）；夹在一句话里的用 borderless。",
 					"快捷键说明只在有指针的设备上显示，触屏上没有键盘。",
 					"放在输入框这类窄处时给 compact，几个键放进同一个键帽。",
+					'快捷键列表里的键用 size="large"：26px 见方、描边、键帽间 4px；别处都用默认尺寸。',
 				],
 				usage: `<Hotkey keys="mod+k" />`,
 			}}

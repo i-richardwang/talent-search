@@ -59,7 +59,7 @@ export function KeyHelp({
 								{key.desc}
 							</Text>
 						</div>
-						<Hotkey keys={key.keys} />
+						<Hotkey keys={key.keys} size="large" />
 					</div>
 				))}
 			</div>

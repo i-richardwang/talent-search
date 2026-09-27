@@ -13,13 +13,14 @@ const STRENGTH_LABEL: Record<Strength, string> = {
 };
 
 /**
- * 证据行与未命中行共用的四列：点、条件词、匹配到的字段、右端时长。字比人名小一档，
- * 条件词和时长用正文色，字段一侧退到次要色：一眼先看到「哪条、多久」，再看凭什么。
+ * 证据行与未命中行共用的四列：点、条件词、匹配到的字段、右端时长。证据行是名单一行的
+ * 次行：12px，整行退到次要色以下，排在 13px 的姓名和 12px 的岗位后面。条件词和时长用
+ * 次要色，字段一侧再退一档到三级灰：一眼先看到「哪条、多久」，再看凭什么。
  * 行宽够（容器 ≥ 36rem）时一行排完；不够时字段挪到第二行、对齐条件词，
  * 第一行只留条件词和时长。右栏开着、名单那一列窄于版心时走后一种。
  */
 const LINE_GRID =
-	"grid grid-cols-[auto_--spacing(24)_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 text-sm";
+	"grid grid-cols-[auto_--spacing(24)_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 text-xs";
 
 const MATCHED_BY = "匹配依据";
 
@@ -152,7 +153,7 @@ export function EvidenceLine({
 }) {
 	const head = (
 		<span className="flex min-w-0 items-baseline gap-1.5">
-			<Text className="min-w-0" ellipsis>
+			<Text className="min-w-0" ellipsis type="secondary">
 				{name}
 			</Text>
 			{boost && (
@@ -169,33 +170,31 @@ export function EvidenceLine({
 	return (
 		<div className="@container">
 			<div className={LINE_GRID}>
-				<Dot className="translate-y-1" strength={strengthOf(hit.route)} />
+				<Dot className="translate-y-0.5" strength={strengthOf(hit.route)} />
 				<span className="col-span-2 min-w-0 @xl:col-span-1">{head}</span>
 				<span className="col-span-3 col-start-2 row-start-2 flex min-w-0 items-baseline gap-1.5 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1">
 					{byOther(name, hit) && (
-						<span className="shrink-0 text-fg-tertiary text-xs">
+						<span className="shrink-0 text-fg-tertiary">
 							{MATCHED_BY} {hit.value}
 						</span>
 					)}
 					{field.label ? (
-						<span className="shrink-0 text-fg-tertiary text-xs">
-							{field.label}
-						</span>
+						<span className="shrink-0 text-fg-tertiary">{field.label}</span>
 					) : null}
-					<Text className="min-w-0" ellipsis type="secondary">
+					<Text className="min-w-0" ellipsis type="tertiary">
 						{field.value ?? field.context}
 						{field.value !== null && field.context && (
-							<span className="ml-2 text-fg-tertiary">{field.context}</span>
+							<span className="ml-2 text-fg-quaternary">{field.context}</span>
 						)}
 					</Text>
 				</span>
 				<span
 					className={cn(
 						"col-start-4 row-start-1 whitespace-nowrap tabular-nums",
-						ongoing ? "text-fg" : "text-fg-secondary",
+						ongoing ? "text-fg-secondary" : "text-fg-tertiary",
 					)}
 				>
-					<span className="text-fg-secondary">
+					<span className="text-fg-tertiary">
 						{basis.external ? "入职前 " : "公司内 "}
 					</span>
 					{years(basis.months)}
@@ -208,8 +207,8 @@ export function EvidenceLine({
 export function MissedClaims({ names }: { names: string[] }) {
 	if (names.length === 0) return null;
 	return (
-		<div className={`${LINE_GRID} text-fg-secondary`}>
-			<Dot className="translate-y-1" strength={undefined} />
+		<div className={`${LINE_GRID} text-fg-tertiary`}>
+			<Dot className="translate-y-0.5" strength={undefined} />
 			<span>未命中</span>
 			<Text className="col-span-2 min-w-0" ellipsis>
 				{names.join("、")}
