@@ -7,7 +7,7 @@ dist/
 .env
 .env.local
 # 员工数据一律不进版本库
-data/
+/data/
 *.parquet
 *.xlsx
 *.csv
