@@ -281,10 +281,10 @@ const CATALOG = [
 				title: "对话线程",
 			},
 			{
-				name: "StatusBadge",
+				name: "StatusBadge · StatusIcon",
 				slug: "status-badge",
 				source: ["src/routes/-components/status-badge.tsx"],
-				title: "状态徽章",
+				title: "运行状态",
 			},
 		],
 		title: "业务组件",

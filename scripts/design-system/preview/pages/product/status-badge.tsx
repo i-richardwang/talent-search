@@ -12,6 +12,7 @@ import {
 } from "#/components/ui/table";
 import {
 	StatusBadge,
+	StatusIcon,
 	type StatusTone,
 } from "#/routes/-components/status-badge";
 import { TaskCard } from "#/routes/tasks/-components/task-card";
@@ -23,17 +24,18 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
 import { CORPUS_COUNTS, TASK_LANES } from "../../samples/admin";
 
-/** 四种状态各是什么意思；徽章上的字取任务台的说法（`RUN_STATUS`）。 */
+/** 五种状态各是什么意思；字取任务台的说法（`RUN_STATUS`），待处理是数据页的。 */
 const TONES: [tone: StatusTone, meaning: string][] = [
-	["success", "上一次运行完成"],
+	["success", "运行完成"],
 	["running", "此刻有任务拿着锁在跑"],
-	["waiting", "没跑完、也没人在跑；数据页上是「待处理」"],
-	["error", "运行出错，错误写在旁边"],
+	["interrupted", "没跑完、也没人在跑"],
+	["error", "运行出错，错误写在下面"],
+	["pending", "数据页：这一段还没有解析到当前版本"],
 ];
 
 const labelOf = (tone: StatusTone) =>
 	Object.values(RUN_STATUS).find((status) => status.tone === tone)?.label ??
-	tone;
+	"待处理";
 
 function Playground() {
 	const [tone, setTone] = useState<StatusTone>("running");
@@ -58,7 +60,13 @@ function Playground() {
 				</Control>
 			</Controls>
 			<Stage>
-				<StatusBadge tone={tone}>{label}</StatusBadge>
+				<div className="flex flex-col items-center gap-4">
+					<StatusBadge tone={tone}>{label}</StatusBadge>
+					<span className="inline-flex items-center gap-2 font-medium">
+						<StatusIcon tone={tone} />
+						{label}
+					</span>
+				</div>
 			</Stage>
 		</div>
 	);
@@ -71,7 +79,8 @@ function Tones() {
 				<TableHeader>
 					<TableRow>
 						<TableHead>状态</TableHead>
-						<TableHead>徽章</TableHead>
+						<TableHead>表格里</TableHead>
+						<TableHead>运行记录里</TableHead>
 						<TableHead>什么时候出现</TableHead>
 					</TableRow>
 				</TableHeader>
@@ -81,6 +90,12 @@ function Tones() {
 							<TableCell className="font-mono text-xs">{tone}</TableCell>
 							<TableCell>
 								<StatusBadge tone={tone}>{labelOf(tone)}</StatusBadge>
+							</TableCell>
+							<TableCell>
+								<span className="inline-flex items-center gap-2">
+									<StatusIcon tone={tone} />
+									{labelOf(tone)}
+								</span>
 							</TableCell>
 							<TableCell className="text-fg-secondary text-xs">
 								{meaning}
@@ -99,7 +114,7 @@ function Lane({ kind }: { kind: TaskLane["kind"] }) {
 	if (!lane) return null;
 	return (
 		<Routed url="/tasks">
-			<ul className="w-full">
+			<ul className="w-full list-none">
 				<TaskCard
 					busy={false}
 					corpus={CORPUS_COUNTS}
@@ -116,13 +131,13 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="卡片正面只在不正常时挂徽章，失败时下面接一条错误；运行记录每一行都有结果。"
+				description="组头说最近一次的结果；失败时白面里先是一条提示，原始错误收在详情里；每次运行一行，开头是状态图标。"
 				title="上一次失败的任务"
 			>
 				<Lane kind="review" />
 			</Example>
 			<Example
-				description="成功是常态：卡片正面不挂徽章，只说上次什么时候跑的；运行记录里照常写结果。"
+				description="成功也在组头说一句，带绿色的对勾；中断那次是 amber 的感叹号。"
 				title="正常的任务"
 			>
 				<Lane kind="sync" />
@@ -131,22 +146,22 @@ function Usage() {
 	);
 }
 
-/** 状态徽章：管理页上一枚描边标签加一个状态点。 */
+/** 运行状态：表格里的点加字，运行记录里的圈形图标。 */
 export function StatusBadgePage() {
 	return (
 		<DocPage
 			facts={[`${TONES.length} 种状态`]}
 			rules={{
 				notes: [
-					"管理页使用共用的状态徽章；常态（成功、已处理）不重复提示。",
-					"形状是描边标签加一个小点，不用四种填色标签：填色的绿和 amber 在检索那一侧各有含义。",
-					"点不单独出现，总跟着一个说结论的字。",
-					"读者是管理员：任务台的每一栏、数据页的每一段共用这一枚。",
+					"一种状态一个颜色：成功绿、正在运行 amber 转圈、中断 amber 感叹号、失败红、待处理四级灰。",
+					"表格和一段经历的角上用点加 12px 的次要色字，不套标签的底；正在运行时点换成 10px 的转圈。",
+					"任务台每次运行那一行用 16px 的圈形图标，旁边是那一行的标题。",
+					"点不单独出现，总跟着一个说结论的字；数据页上已处理是常态，不标。",
 				],
 				usage: `<StatusBadge tone="error">失败</StatusBadge>`,
 			}}
 			sections={[
-				{ children: <Playground />, id: "playground", title: "试用状态徽章" },
+				{ children: <Playground />, id: "playground", title: "试用运行状态" },
 				{ children: <Tones />, id: "appearance", title: "状态" },
 				{ children: <Usage />, id: "usage", title: "使用场景" },
 			]}

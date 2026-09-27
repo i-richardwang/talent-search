@@ -29,28 +29,50 @@ function run(
 	};
 }
 
-/** 一栏：运行记录都在第一页，最新的一次在最前面，也就是卡片正面说的那一次。 */
+/** 任务台上一页放几次运行，和服务端的 `RUNS_PAGE` 一样。 */
+const RUNS_PAGE = 6;
+
+/** 一栏：看的是第一页，最新的一次在最前面，也就是组头说的那一次。 */
 function lane(kind: TaskLane["kind"], rows: TaskRunView[]): TaskLane {
+	const at = pageAt(rows.length, 1, RUNS_PAGE);
 	return {
 		kind,
 		latest: rows[0] ?? null,
-		runs: tablePage(rows, rows.length, pageAt(rows.length, 1)),
+		runs: tablePage(rows.slice(0, at.limit), rows.length, at),
 	};
 }
 
-/** 任务台的三栏：同步刚跑完、派生正在跑、整理上一次失败。 */
+/** 同步每天早上八点跑一次：从 9 月 26 日往前数 `days` 天那一次。 */
+const dailySync = (days: number) =>
+	run(
+		31 - days * 3,
+		"sync",
+		`09-${String(26 - days).padStart(2, "0")} 08:00`,
+		38 + ((days * 7) % 9),
+		"done",
+	);
+
+/** 任务台的三栏：同步刚跑完（记录比一页多，有翻页）、派生正在跑、整理上一次失败。 */
 export const TASK_LANES: TaskLane[] = [
 	lane("sync", [
 		run(31, "sync", "09-26 08:00", 42, "done"),
 		run(28, "sync", "09-25 08:00", 39, "done"),
 		run(24, "sync", "09-24 08:00", null, "interrupted"),
+		...[3, 4, 5, 6, 7, 8].map(dailySync),
 	]),
 	lane("derive", [
 		run(32, "derive", "09-26 08:01", null, "running"),
 		run(29, "derive", "09-25 08:01", 611, "done"),
 	]),
 	lane("review", [
-		run(30, "review", "09-25 20:00", 87, "failed", "AI 服务连续 3 次没有作答"),
+		run(
+			30,
+			"review",
+			"09-25 20:00",
+			87,
+			"failed",
+			"AI 服务连续 3 次没有作答：POST /v1/chat/completions 超时（60s），重试 3 次后放弃；这一轮已写入的 12 条释义保留。",
+		),
 		run(26, "review", "09-24 20:00", 132, "done"),
 	]),
 ];

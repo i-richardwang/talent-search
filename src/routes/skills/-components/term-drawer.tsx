@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { DrawerDescription } from "#/components/ui/drawer";
+import { List, ListItem } from "#/components/ui/list";
+import { Text } from "#/components/ui/text";
 import { TextLink } from "#/components/ui/text-link";
 import type { SkillDetail } from "#/server/skills";
 import { DetailDrawer } from "../../-components/detail-drawer";
@@ -50,7 +52,7 @@ export function TermRecord({
 			}
 			title={term.canonical}
 		>
-			<Descriptions>
+			<Descriptions labelWidth={96}>
 				<DescriptionsItem label="人数">
 					<span className="tabular-nums">{term.people}</span>
 					<span className="text-fg-secondary"> 人（含细分）</span>
@@ -73,35 +75,48 @@ export function TermRecord({
 				</DescriptionsItem>
 			</Descriptions>
 			{term.children.length > 0 && (
-				<div className="flex flex-col gap-1">
-					<p className="text-xs font-medium text-fg-secondary">细分</p>
-					<ul className="flex flex-col gap-1 text-base">
+				<section className="flex flex-col gap-2">
+					<h3 className="flex items-baseline gap-1.5">
+						<Text size="sm" type="secondary" weight="medium">
+							细分
+						</Text>
+						<Text size="xs" type="quaternary">
+							{term.children.length} 项
+						</Text>
+					</h3>
+					{/* 换一个词看，底下那张表停在原处：从哪一页点开的就还是哪一页 */}
+					<List>
 						{term.children.map((child) => (
-							<li key={child.canonical}>
-								<TermLink people={child.people} word={child.canonical} />
-							</li>
+							<ListItem
+								extra={<span className="tabular-nums">{child.people} 人</span>}
+								key={child.canonical}
+								render={termRoute(child.canonical)}
+								title={child.canonical}
+							/>
 						))}
-					</ul>
-				</div>
+					</List>
+				</section>
 			)}
 		</TermDrawer>
 	);
 }
 
-/** 相邻的一个词（更宽的那个，或者它的一项细分），连它那一支的人数。 */
+/** 换成另一个词的那条路由链接；底下那张表停在原处，从哪一页点开的就还是哪一页。 */
+function termRoute(word: string) {
+	return (
+		<Link
+			from="/skills/$word"
+			params={{ word }}
+			search={(prev) => prev}
+			to="/skills/$word"
+		/>
+	);
+}
+
+/** 往上属于的那个词，连它那一支的人数。 */
 function TermLink({ word, people }: { word: string; people: number }) {
 	return (
-		// 换一个词看，底下那张表停在原处：从哪一页点开的就还是哪一页
-		<TextLink
-			render={
-				<Link
-					from="/skills/$word"
-					params={{ word }}
-					search={(prev) => prev}
-					to="/skills/$word"
-				/>
-			}
-		>
+		<TextLink render={termRoute(word)}>
 			{word}
 			<span className="ms-2 text-fg-secondary tabular-nums">{people}</span>
 		</TextLink>

@@ -22,7 +22,9 @@ const { runTask, tasksState, taskLog, derivePending } = await import(
 );
 const { phrasePlan } = await import("#/corpus/derive");
 const { groupIdentity } = await import("#/corpus/vocabulary");
-const { LANE_FACTS } = await import("#/routes/tasks/-lib/labels");
+const { formatDuration, LANE_FACTS } = await import(
+	"#/routes/tasks/-lib/labels"
+);
 const { acquireCorpusSession, corpusSessionActive } = await import(
 	"#/corpus/session"
 );
@@ -525,18 +527,33 @@ describe("页面文案", () => {
 		...over,
 	});
 
-	test("解析那张卡片：有活的时候说还剩几条，没活的时候说已经全部解析", () => {
+	/** 一组库存数读成一句，方便比对：「名字 数（构成）」用顿号连起来。 */
+	const read = (facts: ReturnType<typeof LANE_FACTS.sync>) =>
+		facts
+			.map((f) => `${f.label} ${f.value}${f.note ? `（${f.note}）` : ""}`)
+			.join("、");
+
+	test("解析那一组说还剩几条经历没处理，和一共几条", () => {
 		assert.match(
-			LANE_FACTS.derive(corpus({ pending: 3 })),
-			/还有 3 条经历待处理/,
+			read(LANE_FACTS.derive(corpus({ pending: 3 }))),
+			/待处理经历 3（共 10 条经历）/,
 		);
-		assert.match(LANE_FACTS.derive(corpus()), /经历已全部处理/);
 	});
-	test("同步与整理那两张卡片说的是构成和结果", () => {
-		assert.match(
-			LANE_FACTS.sync(corpus()),
-			/8 人 · 10 条经历（公司内 6、入职前 4）/,
+	test("同步与整理那两组说的是构成和结果", () => {
+		assert.equal(
+			read(LANE_FACTS.sync(corpus())),
+			"人 8、经历 10（公司内 6 · 入职前 4）",
 		);
-		assert.match(LANE_FACTS.review(corpus()), /技能 9 个，已归并 2 种写法/);
+		assert.match(
+			read(LANE_FACTS.review(corpus())),
+			/技能 9、已归并写法 2、释义 12（该写 30 条）/,
+		);
+	});
+	test("用时一小时以内到秒，以上到分，满一天进位成天", () => {
+		assert.equal(formatDuration(0), "0s");
+		assert.equal(formatDuration(42), "42s");
+		assert.equal(formatDuration(72), "1m 12s");
+		assert.equal(formatDuration(3_600 + 23 * 60 + 5), "1h 23m");
+		assert.equal(formatDuration(86_400 + 2 * 3_600 + 5 * 60), "1d 2h 5m");
 	});
 });

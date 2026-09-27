@@ -71,19 +71,21 @@ const SYNC_LANE = TASK_LANES.find((lane) => lane.kind === "sync");
 function Logs() {
 	return (
 		<div className="flex flex-col gap-3">
-			<ul>
-				{SYNC_LANE && (
-					<TaskCard
-						busy={false}
-						corpus={CORPUS_COUNTS}
-						judge="model"
-						lane={SYNC_LANE}
-						onDone={() => {}}
-					/>
-				)}
-			</ul>
+			<Routed url="/tasks">
+				<ul>
+					{SYNC_LANE && (
+						<TaskCard
+							busy={false}
+							corpus={CORPUS_COUNTS}
+							judge="model"
+							lane={SYNC_LANE}
+							onDone={() => {}}
+						/>
+					)}
+				</ul>
+			</Routed>
 			<p className="text-fg-secondary text-xs">
-				设计系统不连服务端：打开「日志」时取日志失败，对话框里说取不到。
+				设计系统不连服务端：打开「日志」时取日志失败，抽屉里说取不到。
 			</p>
 		</div>
 	);
@@ -192,16 +194,16 @@ function Side() {
 	);
 }
 
-/** 查看详情：管理页的抽屉、任务日志的对话框，以及名单旁的人的详情。 */
+/** 查看详情：管理页的抽屉、任务日志的抽屉，以及名单旁的人的详情。 */
 export function ReadingPage() {
 	return (
 		<DocPage
-			facts={["抽屉", "日志对话框", "右栏与弹窗"]}
+			facts={["抽屉", "日志抽屉", "右栏与弹窗"]}
 			rules={{
 				notes: [
 					"一次阅读用 Drawer，两侧反复对照才用并列栏。",
 					"管理页的抽屉由地址决定开合：滑回右边之后才导航回列表，词和页码原样带回去。",
-					"任务的原始输出不做页面内容，按次收在「日志」里，打开才取。",
+					"任务的原始输出不做页面内容，按次收在「日志」抽屉里，打开才取。",
 					"名单页的右栏由对话线程和人的详情共用：点开人时换成详情，关掉回到线程；窄屏上是弹窗。两样顶上都是一条页头，详情的页头写着姓名和工号，滚到哪都在。",
 					"一个对象的几条属性用 Descriptions：抽屉里的词、数据页的一段经历、右栏的人，写法同一种。",
 					"整块可点的卡片是真链接，支持中键、右键和键盘；详情里不画名单上已有的分数和名次。",

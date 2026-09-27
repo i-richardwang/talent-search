@@ -1,8 +1,9 @@
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Block } from "#/components/ui/block";
+import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
-import { DrawerDescription } from "#/components/ui/drawer";
 import { Empty } from "#/components/ui/empty";
+import { Text } from "#/components/ui/text";
 import type { Employee } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
 import { involvementRank } from "#/lib/involvement";
@@ -22,12 +23,14 @@ import { StatusBadge } from "../../-components/status-badge";
 export function EmployeeDrawer({
 	close,
 	title,
+	extra,
 	description,
 	children,
 }: {
 	/** 滑回右边之后往哪走：回到刚才那张表 */
 	close: () => void;
 	title: ReactNode;
+	extra?: ReactNode;
 	description?: ReactNode;
 	children: ReactNode;
 }) {
@@ -37,6 +40,7 @@ export function EmployeeDrawer({
 			width="var(--container-detail-wide)"
 			close={close}
 			description={description}
+			extra={extra}
 			title={title}
 		>
 			{children}
@@ -56,30 +60,36 @@ export function EmployeeRecord({
 	segments: SegmentView[];
 	close: () => void;
 }) {
+	const sequence = [employee.curSeqL1, employee.curSeqL2, employee.curSeqL3]
+		.filter(Boolean)
+		.join(" · ");
+	/* 档案只列有值的几条；标签栏定宽 96px，和下面每一段的属性不必对齐，但几人之间看着一样 */
+	const profile: [label: string, value: string | null][] = [
+		["部门", employee.curDept],
+		["岗位", employee.curTitle],
+		["职级", employee.curLevel],
+		["序列", sequence || null],
+		["入职", employee.hireDate],
+		["招聘渠道", employee.recruitment],
+		["学历", employee.educationLevel],
+		["学校", employee.school],
+	];
 	return (
 		<EmployeeDrawer
 			close={close}
 			description={
-				<>
-					<DrawerDescription className="text-fg-secondary text-sm">
-						{dots(
-							employee.curDept,
-							employee.curTitle,
-							employee.curLevel,
-							[employee.curSeqL1, employee.curSeqL2, employee.curSeqL3]
-								.filter(Boolean)
-								.join(" · "),
-						)}
-					</DrawerDescription>
-					<p className="text-fg-secondary text-xs">
-						{dots(
-							employee.hireDate ? `${employee.hireDate} 入职` : null,
-							employee.recruitment,
-							employee.educationLevel,
-							employee.school,
-						)}
-					</p>
-				</>
+				<Descriptions labelWidth={96}>
+					{profile.map(([label, value]) =>
+						value ? (
+							<DescriptionsItem key={label} label={label}>
+								{value}
+							</DescriptionsItem>
+						) : null,
+					)}
+				</Descriptions>
+			}
+			extra={
+				<CopyButton content={employee.empId} glass={false} title="复制工号" />
 			}
 			title={
 				<>
@@ -96,24 +106,35 @@ export function EmployeeRecord({
 					title="还没有经历记录"
 				/>
 			) : (
-				<div className="flex flex-col gap-5">
-					{KINDS.map(([kind, label]) => {
-						const part = segments.filter((one) => one.kind === kind);
-						return part.length === 0 ? null : (
-							<section className="flex flex-col gap-2" key={kind}>
-								<h3 className="text-xs font-medium text-fg-secondary">
-									{label} · {part.length} 段
-								</h3>
-								{/* 一组是填充的 `Block` 里放描边的 `Block`：同一个人的一份档案 */}
-								<Block gap={4} padding={4}>
-									{part.map((segment) => (
-										<Segment key={segment.id} segment={segment} />
-									))}
-								</Block>
-							</section>
-						);
-					})}
-				</div>
+				KINDS.map(([kind, label]) => {
+					const part = segments.filter((one) => one.kind === kind);
+					return part.length === 0 ? null : (
+						<section className="flex flex-col gap-2" key={kind}>
+							<h3 className="flex items-baseline gap-1.5">
+								<Text size="sm" type="secondary" weight="medium">
+									{label}
+								</Text>
+								<Text size="xs" type="quaternary">
+									{part.length} 段
+								</Text>
+							</h3>
+							{/*
+							 * 一组是极浅底上收进 3px 的几块描边面：同一个人的一份档案，
+							 * 和分组卡片（`Collapse` 的 filled）里白面收边的做法一致。
+							 */}
+							<Block
+								className="rounded-lg bg-fill-quaternary"
+								gap={3}
+								padding={3}
+								variant="borderless"
+							>
+								{part.map((segment) => (
+									<Segment key={segment.id} segment={segment} />
+								))}
+							</Block>
+						</section>
+					);
+				})
 			)}
 		</EmployeeDrawer>
 	);
@@ -140,19 +161,16 @@ function didGroups(did: SegmentView["did"]) {
 		(a, b) => involvementRank(a) - involvementRank(b),
 	);
 	return (
-		<div className="grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-1">
+		<Descriptions size="small">
 			{kinds.map((kind) => (
-				<Fragment key={kind ?? ""}>
-					<span className="text-fg-secondary">{kind}</span>
-					<span>
-						{did
-							.filter((one) => one.involvement === kind)
-							.map((one) => one.domain)
-							.join("、")}
-					</span>
-				</Fragment>
+				<DescriptionsItem key={kind ?? ""} label={kind}>
+					{did
+						.filter((one) => one.involvement === kind)
+						.map((one) => one.domain)
+						.join("、")}
+				</DescriptionsItem>
 			))}
-		</div>
+		</Descriptions>
 	);
 }
 
@@ -176,7 +194,7 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 					</p>
 				</div>
 				{/* 徽章只标待处理的段；已处理是常态，不标 */}
-				{!s.derived && <StatusBadge tone="waiting">待处理</StatusBadge>}
+				{!s.derived && <StatusBadge tone="pending">待处理</StatusBadge>}
 			</div>
 			{/* 属性只列这一段有的；一条都没有就整块不画 */}
 			{(registered ||

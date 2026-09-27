@@ -376,6 +376,7 @@ export const NUMERIC_TOKENS: NumericToken[] = [
 	rem("--container-nav", "导航栏", "layout", 200, 360),
 	rem("--container-detail", "抽屉", "layout", 320, 640),
 	rem("--container-detail-wide", "宽抽屉", "layout", 320, 704),
+	rem("--container-log", "日志抽屉", "layout", 480, 960),
 	rem("--container-admin", "管理页内容列", "layout", 768, 1280),
 	rem("--nav-header-height", "页头高度", "layout", 36, 56),
 	rem("--nav-header-action-size", "页头按钮", "layout", 24, 36),

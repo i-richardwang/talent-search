@@ -1,16 +1,21 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { AdminPage } from "#/routes/-components/admin-page";
+import { EmployeeRecord } from "#/routes/data/-components/employee-drawer";
 import { EmployeeTable } from "#/routes/data/-components/employee-table";
 import { SkillTable } from "#/routes/skills/-components/skill-table";
+import { TermRecord } from "#/routes/skills/-components/term-drawer";
 import { TaskBoard } from "#/routes/tasks/-components/task-board";
 import { Routed } from "../../routed";
 import {
 	CORPUS_COUNTS,
 	EMPLOYEE_ROWS,
+	SEGMENTS,
+	SKILL_DETAIL,
 	SKILL_ROWS,
 	TASK_LANES,
 } from "../../samples/admin";
+import { EMPLOYEES } from "../../samples/people";
 import { LayoutSwitch, Shell } from "./home";
 
 /*
@@ -19,6 +24,7 @@ import { LayoutSwitch, Shell } from "./home";
  * router 的地址决定，导航栏「管理」一组的三项和页底的切换都能换。服务端函数
  * 在设计系统里是调用即失败的桩：找词和翻页按地址上的 `q`、`page` 在样例上算，
  * 一页的行数是产品的 `pageAt` 给的；「立即运行」和「日志」落在各自取不到的那一支。
+ * 点开 Talent 0101 或「推荐系统」那一行，右侧出产品的详情抽屉（样例只备了这两份）。
  */
 
 type Page = "tasks" | "data" | "skills";
@@ -76,9 +82,19 @@ function Data() {
 	const found = EMPLOYEE_ROWS.filter(
 		(row) => row.name.includes(q) || row.empId.includes(q),
 	);
+	const navigate = useNavigate();
+	const employee = EMPLOYEES.find((e) => e.empId === opened);
 	return (
 		<AdminPage title="数据">
 			<EmployeeTable list={pageOfRows(found, page)} q={q} selected={opened} />
+			{employee && (
+				<EmployeeRecord
+					close={() => void navigate({ search: { page, q }, to: "/data" })}
+					employee={employee}
+					segments={SEGMENTS}
+					key={employee.empId}
+				/>
+			)}
 		</AdminPage>
 	);
 }
@@ -91,13 +107,17 @@ function Skills() {
 			word.includes(q),
 		),
 	);
+	const navigate = useNavigate();
+	const word = opened && decodeURIComponent(opened);
 	return (
 		<AdminPage title="技能">
-			<SkillTable
-				q={q}
-				selected={opened && decodeURIComponent(opened)}
-				table={pageOfRows(found, page)}
-			/>
+			<SkillTable q={q} selected={word} table={pageOfRows(found, page)} />
+			{word === SKILL_DETAIL.canonical && (
+				<TermRecord
+					close={() => void navigate({ search: { page, q }, to: "/skills" })}
+					term={SKILL_DETAIL}
+				/>
+			)}
 		</AdminPage>
 	);
 }

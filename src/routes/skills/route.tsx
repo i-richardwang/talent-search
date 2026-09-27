@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, useParams } from "@tanstack/react-router";
 import { pageParam } from "#/lib/paging";
 import { skillTable } from "#/server/functions";
-import { AdminPage } from "../-components/admin-page";
+import { AdminPage, useListPending } from "../-components/admin-page";
 import { SkillTable } from "./-components/skill-table";
 
 /**
@@ -37,10 +37,11 @@ function Skills() {
 	const { q } = Route.useSearch();
 	// 开着的是哪一个词。它是子路由的参数，所以宽松地取——没开详情时就是 undefined。
 	const { word } = useParams({ strict: false });
+	const pending = useListPending("/skills");
 
 	return (
 		<AdminPage title="技能">
-			<SkillTable q={q} selected={word} table={table} />
+			<SkillTable q={q} selected={word} table={table} pending={pending} />
 			{/* 点开的那个词从右侧覆盖（`skills/$word.tsx`），表在底下保持原样 */}
 			<Outlet />
 		</AdminPage>

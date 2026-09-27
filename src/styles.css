@@ -340,11 +340,14 @@
 
 	/*
 	 * 从右边拉出的抽屉的宽度：窄屏上的对话线程、`Drawer` 的默认宽（25rem），数据页的员工
-	 * 详情（30rem，简历原文是里面唯一成段读的东西）。宽屏工作台的右栏可以拖宽，宽度记在
+	 * 详情（32.5rem，简历原文是里面唯一成段读的东西）。宽屏工作台的右栏可以拖宽，宽度记在
 	 * 浏览器里，不读这里（`s/$turnId/-components/side-panel.tsx`）。
 	 */
 	--container-detail: 25rem;
-	--container-detail-wide: 30rem;
+	--container-detail-wide: 32.5rem;
+
+	/* 任务运行日志的抽屉（`routes/tasks/-components/task-card.tsx`）：长行在这个宽度里折行读。 */
+	--container-log: 46rem;
 
 	/*
 	 * lg 以下导航抽屉的宽度。lg 以上的导航栏默认也是这么宽，可以拖宽拖窄，数值写在
