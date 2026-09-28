@@ -19,6 +19,7 @@ import { Drawer } from "#/components/ui/drawer";
  */
 export function DetailDrawer({
 	width,
+	extra,
 	close,
 	title,
 	description,
@@ -26,6 +27,8 @@ export function DetailDrawer({
 }: {
 	/** 抽屉的宽度，不给是 `Drawer` 的详情档；内容一行放不下几个字的页面给到宽的那一档 */
 	width?: string;
+	/** 头部右侧、关闭按钮左边的动作，例如复制工号 */
+	extra?: ReactNode;
 	/** 滑回右边之后往哪走 */
 	close: () => void;
 	title: ReactNode;
@@ -37,6 +40,7 @@ export function DetailDrawer({
 	return (
 		<Drawer
 			afterClose={close}
+			extra={extra}
 			onClose={() => setOpen(false)}
 			open={open}
 			title={title}

@@ -1,8 +1,9 @@
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
-import { NavHeader, NavHeaderTitle } from "#/components/ui/app-layout";
+import { NavHeaderTitle } from "#/components/ui/app-layout";
 import { DraggablePanel } from "#/components/ui/draggable-panel";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { useStoredWidth } from "../../../-lib/stored";
+import { PaneHeader } from "./pane-header";
 
 /**
  * 右栏两样内容各记各的宽（px）：拖宽了人的详情，下次回到线程还是线程自己的宽。
@@ -48,7 +49,7 @@ function useRoomyMax(bounds: { min: number; max: number }) {
  * 两样都要常驻但不必同时在场：名单和详情才是要反复对照的一对，线程看完一轮就回到
  * 名单。关键词的链没有线程，右栏只在点开人时才展开。
  *
- * 右栏左边缘可以拖动调宽，那条边就是和名单之间的竖线。两样顶上都是一条 `NavHeader`：
+ * 右栏左边缘可以拖动调宽，那条边就是和名单之间的竖线。两样顶上都是一条 `PaneHeader`：
  * 线程的在这里画，详情的由详情自己画（`person.tsx`），吸在它的滚动区顶上。
  */
 export function SidePanel({
@@ -93,7 +94,9 @@ export function SidePanel({
 				) : (
 					conversation && (
 						<>
-							<NavHeader left={<NavHeaderTitle as="h2">对话</NavHeaderTitle>} />
+							<PaneHeader
+								title={<NavHeaderTitle as="h2">对话</NavHeaderTitle>}
+							/>
 							<div className="min-h-0 flex-1">{conversation}</div>
 						</>
 					)

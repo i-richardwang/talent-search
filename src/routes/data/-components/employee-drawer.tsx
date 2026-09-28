@@ -1,10 +1,8 @@
 import type { ReactNode } from "react";
-import { Avatar } from "#/components/ui/avatar";
 import { Block } from "#/components/ui/block";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { Empty } from "#/components/ui/empty";
-import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import type { Employee } from "#/db/schema";
 import { dots, duration, integer, period } from "#/lib/format";
@@ -25,12 +23,14 @@ import { StatusBadge } from "../../-components/status-badge";
 export function EmployeeDrawer({
 	close,
 	title,
+	extra,
 	description,
 	children,
 }: {
 	/** 滑回右边之后往哪走：回到刚才那张表 */
 	close: () => void;
 	title: ReactNode;
+	extra?: ReactNode;
 	description?: ReactNode;
 	children: ReactNode;
 }) {
@@ -40,6 +40,7 @@ export function EmployeeDrawer({
 			width="var(--container-detail-wide)"
 			close={close}
 			description={description}
+			extra={extra}
 			title={title}
 		>
 			{children}
@@ -68,7 +69,7 @@ export function EmployeeRecord({
 		["岗位", employee.curTitle],
 		["职级", employee.curLevel],
 		["序列", sequence || null],
-		["入职", employee.hireDate],
+		["入职时间", employee.hireDate],
 		["招聘渠道", employee.recruitment],
 		["学历", employee.educationLevel],
 		["学校", employee.school],
@@ -87,23 +88,16 @@ export function EmployeeRecord({
 					)}
 				</Descriptions>
 			}
+			extra={
+				<CopyButton content={employee.empId} glass={false} title="复制工号" />
+			}
 			title={
-				/* 和工作台右栏里一个人的页头同样几件：头像、姓名、工号标签和紧跟着的复制钮 */
-				<span className="flex min-w-0 items-center gap-2">
-					<Avatar size={24} title={employee.name} />
-					<span className="truncate">{employee.name}</span>
-					<span className="flex shrink-0 items-center gap-0.5">
-						<Tag className="font-mono" size="small">
-							{employee.empId}
-						</Tag>
-						<CopyButton
-							content={employee.empId}
-							glass={false}
-							size="small"
-							title="复制工号"
-						/>
+				<>
+					{employee.name}
+					<span className="ms-2 font-normal text-fg-secondary text-base tabular-nums">
+						{employee.empId}
 					</span>
-				</span>
+				</>
 			}
 		>
 			{segments.length === 0 ? (

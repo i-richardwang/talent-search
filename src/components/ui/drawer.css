@@ -185,9 +185,14 @@
 	min-height: 0;
 }
 
+/*
+ * 正文随内容长高、至少一屏：不按弹性项拉伸成恰好一屏高，否则内容一长就溢出这个框，
+ * 底下的 12px 内边距留在框里、滚到底时内容贴着面板底边。
+ */
 .ui-drawer-body-content {
 	display: flex;
 	flex-direction: column;
+	align-self: flex-start;
 
 	width: 100%;
 	min-height: 100%;

@@ -21,7 +21,7 @@ function Person() {
 			<DescriptionsItem label="入职时间">
 				<span className="tabular-nums">2019-07-01</span>
 			</DescriptionsItem>
-			<DescriptionsItem label="教育背景">硕士 · 学校 A</DescriptionsItem>
+			<DescriptionsItem label="学历">硕士 · 学校 A</DescriptionsItem>
 		</>
 	);
 }

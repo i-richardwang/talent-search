@@ -9,25 +9,24 @@ import { type ReactNode, useState } from "react";
 import { CareerBar } from "#/components/career-bar";
 import { buildHitIndex, Timeline } from "#/components/timeline";
 import { ActionIcon } from "#/components/ui/action-icon";
-import { NavHeader, NavHeaderTitle } from "#/components/ui/app-layout";
-import { Avatar } from "#/components/ui/avatar";
+import { NavHeaderTitle } from "#/components/ui/app-layout";
 import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { Empty } from "#/components/ui/empty";
 import { Icon } from "#/components/ui/icon";
 import { Skeleton } from "#/components/ui/skeleton";
-import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import type { Employee, Experience } from "#/db/schema";
 import { dots } from "#/lib/format";
 import type { Hit } from "#/search/result";
 import type { ClaimLine } from "../-lib/claim-lines";
 import { ClaimEvidence } from "./claim-evidence";
+import { PaneHeader } from "./pane-header";
 
 /*
  * 右栏里一个人的详情（`p.$empId.tsx` 的三种内容）：详情本身、换人途中的骨架、
- * 找不到这个工号。页头是头像、姓名和可复制的工号，和别处打开一个对象的详情同一个样子。
+ * 找不到这个工号。页头左边是姓名和次要色的工号，右边是复制工号和关闭。
  */
 
 /**
@@ -46,10 +45,10 @@ function Pane({
 }) {
 	return (
 		<div className="pb-16" data-pane="detail">
-			<NavHeader
+			<PaneHeader
 				className="sticky top-0 z-stick bg-container"
-				left={title}
 				right={close}
+				title={title}
 			/>
 			<div className="flex flex-col gap-4 px-4 pt-4">{children}</div>
 		</div>
@@ -101,8 +100,8 @@ const ATTRIBUTES: { label: string; value: (e: Employee) => ReactNode }[] = [
 		label: "入职时间",
 		value: (e) => <span className="tabular-nums">{e.hireDate ?? "—"}</span>,
 	},
-	{ label: "招聘来源", value: (e) => e.recruitment || "—" },
-	{ label: "教育背景", value: (e) => dots(e.educationLevel, e.school) || "—" },
+	{ label: "招聘渠道", value: (e) => e.recruitment || "—" },
+	{ label: "学历", value: (e) => dots(e.educationLevel, e.school) || "—" },
 ];
 
 /** 骨架里各条属性值的宽：长短错开，看得出是几行不同的字。 */
@@ -112,20 +111,13 @@ const PENDING_WIDTHS = ["60%", "45%", "70%", "30%", "40%", "55%"];
 const PENDING_STAGES = [0, 1, 2] as const;
 
 /**
- * 换人途中的骨架，和详情同一个形状：页头的头像与名字、同样几行属性（标签是真的字）、
+ * 换人途中的骨架，和详情同一个形状：页头的名字、同样几行属性（标签是真的字）、
  * 任职经历的轨迹条和几段时间轴节点。超过 200ms 才画（`p.$empId.tsx` 的 `pendingMs`），
  * 快的时候上一个人留着，直到下一个人画出来。
  */
 export function PersonPending() {
 	return (
-		<Pane
-			title={
-				<>
-					<Skeleton.Avatar size={24} />
-					<Skeleton.Title className="w-32" size="base" width="100%" />
-				</>
-			}
-		>
+		<Pane title={<Skeleton.Title className="w-32" size="base" width="100%" />}>
 			<Descriptions>
 				{ATTRIBUTES.map(({ label }, i) => (
 					<DescriptionsItem key={label} label={label}>
@@ -219,38 +211,37 @@ export function Person({
 		<div className="settle" key={e.empId}>
 			<Pane
 				close={
-					/* 关闭是 Link 渲染成的图标按钮：<a> 里嵌 <button> 是非法嵌套。 */
-					<ActionIcon
-						icon={XIcon}
-						render={
-							<Link
-								from="/s/$turnId/p/$empId"
-								params={(prev) => prev}
-								replace
-								search={(prev) => prev}
-								to="/s/$turnId"
-							/>
-						}
-						size="header"
-						title="关闭详情"
-						tooltipProps={{ hotkey: "esc" }}
-					/>
+					<>
+						<CopyButton
+							content={e.empId}
+							glass={false}
+							size="header"
+							title="复制工号"
+						/>
+						{/* 关闭是 Link 渲染成的图标按钮：<a> 里嵌 <button> 是非法嵌套。 */}
+						<ActionIcon
+							icon={XIcon}
+							render={
+								<Link
+									from="/s/$turnId/p/$empId"
+									params={(prev) => prev}
+									replace
+									search={(prev) => prev}
+									to="/s/$turnId"
+								/>
+							}
+							size="header"
+							title="关闭详情"
+							tooltipProps={{ hotkey: "esc" }}
+						/>
+					</>
 				}
 				title={
 					<>
-						<Avatar size={24} title={e.name} />
 						<NavHeaderTitle as="h2">{e.name}</NavHeaderTitle>
-						<span className="flex shrink-0 items-center gap-0.5">
-							<Tag className="font-mono" size="small">
-								{e.empId}
-							</Tag>
-							<CopyButton
-								content={e.empId}
-								glass={false}
-								size="small"
-								title="复制工号"
-							/>
-						</span>
+						<Text className="shrink-0 tabular-nums" type="secondary">
+							{e.empId}
+						</Text>
 					</>
 				}
 			>
