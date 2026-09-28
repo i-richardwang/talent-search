@@ -109,6 +109,7 @@ bun run query "算法,+后端"
 bun run eval
 bun run eval:extract
 bun run eval:review
+bun run eval:understand
 bun run db:push
 bun run verify       # 格式、类型、测试、生产构建
 bun run ui           # 设计系统：浏览、调整设计令牌与组件，导出改动
