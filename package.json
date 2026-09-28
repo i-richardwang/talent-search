@@ -33,7 +33,6 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.41",
     "@base-ui/react": "1.8.0",
-    "@lobehub/webfont-harmony-sans-sc-mini": "1.0.0",
     "@tailwindcss/vite": "4.3.3",
     "@tanstack/react-router": "1.170.18",
     "@tanstack/react-start": "1.168.32",

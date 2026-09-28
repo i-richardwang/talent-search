@@ -1,4 +1,3 @@
-import harmonySansScCss from "@lobehub/webfont-harmony-sans-sc-mini/css/index.css?url";
 import {
 	createRootRoute,
 	HeadContent,
@@ -41,10 +40,7 @@ export const Route = createRootRoute({
 			{ name: "viewport", content: "width=device-width, initial-scale=1" },
 			{ title: "人才搜索" },
 		],
-		links: [
-			{ rel: "stylesheet", href: harmonySansScCss },
-			{ rel: "stylesheet", href: appCss },
-		],
+		links: [{ rel: "stylesheet", href: appCss }],
 	}),
 	// 最近搜索取不到时是 null：导航栏和首页各自说取不到并给重试，不当成还没有记录。
 	loader: async () => {

@@ -1,4 +1,3 @@
-import "@lobehub/webfont-harmony-sans-sc-mini/css/index.css";
 import "#/styles.css";
 import { createRoot } from "react-dom/client";
 import { PREVIEW_PATH } from "./shared/protocol";
