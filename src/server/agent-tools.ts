@@ -1,105 +1,105 @@
 /**
- * 查询理解在交表之前能用的工具。模型拿它们看一眼库，再决定条件表怎么写：
- * 一个词库里叫什么、多少人写过、会不会太宽；一张表搜出来多少人、分布如何。
+ * 查询理解的三个工具：查词、查名称、交表。
  *
- * 工具只交出**数**，不交出人：姓名、工号、任何一段经历都不出这台机器
- * （`server/llm.ts` 的第一条约束），名单也照旧只从检索来——模型看到的是
- * 「42 人」，不是这 42 个人是谁。它据此改的是条件，不是名单。
+ * 查词和查名称回答同一个问题——「这样写，搜索会怎么读」：一个经历词按检索口径
+ * 能找到多少人、宽不宽、命中了库里哪些能力词；一个公司名或学校名匹配到多少人、
+ * 匹配到库里哪些名字。口径就是搜索的口径（`search/search.ts`），查到的和写进条件
+ * 后搜到的是一回事。
  *
- * 每用一次记一步（`search/trace.ts`），由调用方落库，右栏的线程边跑边画。
+ * 交表就是这一轮的答案，交上来先检查：词表外的取值、这一轮新写的太宽或一个人都
+ * 找不到的经历词、一个人都匹配不到的名字、什么都没写，退回去让模型改。有的问题是
+ * 用户要的本来就是库里没有的，模型原样再交一次就收下：没有这样的人也是一个结果。
+ * 收下之后由调用方收窄落库（`server/turn.ts`）。
+ *
+ * 工具只交出数和库里的写法，不交出人：姓名、工号、任何一段经历都不出这台机器，
+ * 名单也照旧只从检索来。交出去的词和名字至少有几个人写过（`search.ts`），
+ * 部门名只计人数。
+ *
+ * 查词、查名称每用一次记一步（`search/trace.ts`），由调用方落库，右栏的线程边跑边画。
  */
 import "@tanstack/react-start/server-only";
 import { tool } from "ai";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "#/db";
 import type { Condition } from "#/search/condition";
-import { conditionItems, understood, type Vocabulary } from "#/search/intent";
-import { probeWide, search, vocabulary } from "#/search/search";
-import type { TraceStep, WordLookup } from "#/search/trace";
-import { peopleUnder, UNDER } from "./skills";
+import {
+	type Intent,
+	intentSchema,
+	measuredIn,
+	offVocabulary,
+	unanswered,
+	understood,
+	type Vocabulary,
+} from "#/search/intent";
+import { nameReach, termReach, vocabulary } from "#/search/search";
+import type { NameField, TraceStep } from "#/search/trace";
 
-export type Recorder = (step: TraceStep) => Promise<void>;
+type Recorder = (step: TraceStep) => Promise<void>;
 
-/** 一次最多查几个词、分布里最多给几档：给模型看的是概况，不是一张表。 */
-const WORDS_MAX = 12;
-const FACET_TOP = 6;
+/** 交表的工具名：这一轮的答案是它最后一次收到的那张表。 */
+export const SUBMIT = "submit";
 
-/** 一个词在能力词表里的标准写法，任一写法都认；词表里没有就是 null。 */
-async function canonicalOf(words: string[]): Promise<Map<string, string>> {
-	if (words.length === 0) return new Map();
-	const { rows } = await db.execute<{ word: string; canonical: string }>(sql`
-		select word, canonical from skill_term
-		where lower(word) in (${sql.join(
-			words.map((w) => sql`${w.toLowerCase()}`),
-			sql`, `,
-		)})`);
-	return new Map(rows.map((r) => [r.word.toLowerCase(), r.canonical]));
-}
+/** 一次最多查几个词或名字。 */
+const ASK_MAX = 12;
 
-async function peopleOf(canonicals: string[]): Promise<Map<string, number>> {
-	if (canonicals.length === 0) return new Map();
-	const { rows } = await db.execute<{ term: string; people: number }>(sql`
-		${UNDER}
-		select t.term, ${peopleUnder(sql`t.term`)} as people
-		from unnest(array[${sql.join(
-			canonicals.map((c) => sql`${c}`),
-			sql`, `,
-		)}]::text[]) as t(term)`);
-	return new Map(rows.map((r) => [r.term, r.people]));
-}
-
-export async function lookUpWords(words: string[]): Promise<WordLookup[]> {
-	const asked = [...new Set(words.map((w) => w.trim()).filter(Boolean))].slice(
+function asked(list: readonly string[]): string[] {
+	return [...new Set(list.map((w) => w.trim()).filter(Boolean))].slice(
 		0,
-		WORDS_MAX,
+		ASK_MAX,
 	);
-	const canonical = await canonicalOf(asked);
-	const [people, wide] = await Promise.all([
-		peopleOf([...new Set(canonical.values())]),
-		probeWide(asked),
-	]);
-	return asked.map((word) => {
-		const term = canonical.get(word.toLowerCase()) ?? null;
-		return {
-			word,
-			canonical: term,
-			people: term ? (people.get(term) ?? 0) : 0,
-			wide: wide.has(word),
-		};
-	});
 }
 
 /**
- * 试搜一张条件表：多少人、一个都没有时为什么、职级和序列的分布。
- * 条件先过和交表同一道收窄，模型试的就是它交出来会搜的。
+ * 一份交上来的表有什么要退回去的，一处一句；没有就是空的。
+ * 条件表和每一条搜不了的要求附带的替代条件一起查：替代条件点一下就进查询，
+ * 同样没有人看过。
  */
-export async function tryConditions(
-	raw: unknown,
+async function problemsOf(
+	table: Intent,
 	vocab: Vocabulary,
 	base: readonly Condition[],
-) {
-	const conditions = understood(
-		{ conditions: raw, assumed: [], declined: [] },
-		vocab,
-		base,
-	).spec.conditions;
-	const outcome = await search({ conditions }, {}, 1);
-	const top = <T>(list: { value: T; n: number }[]) =>
-		list.slice(0, FACET_TOP).map((f) => ({ value: f.value, people: f.n }));
-	return {
-		conditions,
-		total: outcome.total,
-		empty: outcome.empty?.kind ?? null,
-		level: top(outcome.facets.level),
-		seq: top(outcome.facets.seq),
-		companyTag: top(outcome.facets.companyTag),
-	};
+): Promise<string[]> {
+	const result = understood(table, vocab, base);
+	const failure = unanswered(table, result);
+	if (failure) return [failure];
+	const conditions = [
+		...result.spec.conditions,
+		...(result.notes?.declined ?? []).flatMap((d) => d.instead),
+	];
+	const measured = measuredIn(base);
+	const words = conditions.filter(measured).flatMap((c) => c.what);
+	const namesOf = (field: NameField) =>
+		conditions.flatMap((c) =>
+			field === "org"
+				? c.about === "experience"
+					? (c.org ?? [])
+					: []
+				: c.about === "person" && c.field === "school" && "values" in c
+					? c.values
+					: [],
+		);
+	const [terms, orgs, schools] = await Promise.all([
+		termReach(words),
+		nameReach("org", namesOf("org")),
+		nameReach("school", namesOf("school")),
+	]);
+	return [
+		...offVocabulary(table, vocab),
+		...terms.flatMap((t) =>
+			t.wide
+				? [`「${t.text}」能找到 ${t.people} 人，几乎不筛人，换更具体的说法`]
+				: t.people === 0
+					? [`「${t.text}」在人才库里一个人都找不到，换库里的说法`]
+					: [],
+		),
+		...[...orgs, ...schools].flatMap((n) =>
+			n.people === 0 ? [`「${n.name}」在人才库里一个人都匹配不到`] : [],
+		),
+	];
 }
 
 /**
- * 交给模型的工具。`record` 每用一次工具记一步；词表和当前条件是这一轮的，
- * 试搜的收窄要它们。
+ * 交给模型的工具。`record` 每查一次记一步；词表和当前条件是这一轮的，交表的检查
+ * 要它们。
  */
 export function agentTools({
 	vocab,
@@ -110,33 +110,53 @@ export function agentTools({
 	base: readonly Condition[];
 	record: Recorder;
 }) {
+	/** 上一次退回的那份表：原样再交一次就收下。 */
+	let returned: string | null = null;
 	return {
-		look_up_words: tool({
+		find_terms: tool({
 			description:
-				"查几个词在库里的情况：标准写法是什么、多少人写过、按意思搜会不会太宽。写条件之前先查，用库里的写法。",
+				"查几个经历词：按搜索的方式各能找到多少人、会不会太宽、命中了库里哪些能力词。",
 			inputSchema: z.object({
-				words: z.array(z.string()).describe("要查的词，一次可以几个"),
+				texts: z.array(z.string()).describe("要查的词，一次可以几个"),
 			}),
-			execute: async ({ words }) => {
-				const found = await lookUpWords(words);
-				await record({ at: Date.now(), tool: "look_up_words", words: found });
+			execute: async ({ texts }) => {
+				const terms = await termReach(asked(texts));
+				await record({ at: Date.now(), tool: "find_terms", terms });
+				return terms;
+			},
+		}),
+		find_names: tool({
+			description:
+				"查几个公司名或学校名：各能匹配到多少人、匹配到库里哪些名字。名字按包含匹配。",
+			inputSchema: z.object({
+				field: z
+					.enum(["org", "school"])
+					.describe("org=公司或部门；school=学校"),
+				names: z.array(z.string()).describe("要查的名字，一次可以几个"),
+			}),
+			execute: async ({ field, names }) => {
+				const found = await nameReach(field, asked(names));
+				await record({
+					at: Date.now(),
+					tool: "find_names",
+					field,
+					names: found,
+				});
 				return found;
 			},
 		}),
-		try_conditions: tool({
+		[SUBMIT]: tool({
 			description:
-				"拿一张条件表试搜：多少人、一个都没有时为什么、职级和序列的分布。太多或太少就改条件再试。",
-			inputSchema: z.object({ conditions: conditionItems }),
-			execute: async ({ conditions }) => {
-				const tried = await tryConditions(conditions, vocab, base);
-				await record({
-					at: Date.now(),
-					tool: "try_conditions",
-					conditions: tried.conditions,
-					total: tried.total,
-					empty: tried.empty,
-				});
-				return tried;
+				"交出整张新的条件表和说明，这一轮就结束。有问题会退回并写明，改完再交；问题出在用户明说的要求上时，原样再交一次。",
+			inputSchema: intentSchema,
+			execute: async (table) => {
+				const key = JSON.stringify(table);
+				const problems =
+					key === returned ? [] : await problemsOf(table, vocab, base);
+				returned = problems.length > 0 ? key : null;
+				return problems.length > 0
+					? { accepted: false as const, problems }
+					: { accepted: true as const };
 			},
 		}),
 	};

@@ -11,7 +11,8 @@ import { describe, test } from "node:test";
 import type { Condition, Mode } from "#/search/condition";
 import {
 	intentSchema,
-	jsonText,
+	measuredIn,
+	offVocabulary,
 	unanswered,
 	understood,
 	type Vocabulary,
@@ -357,7 +358,7 @@ describe("发给模型的形状", () => {
 		);
 	});
 
-	test("词表不进 schema：取值合不合法由收窄查，不让整句作废", () => {
+	test("词表不进 schema：取值合不合法交表时说、收下时丢，不让整句作废", () => {
 		assert.ok(
 			intentSchema.safeParse({
 				conditions: [claim({ companyTag: ["一线大厂"] })],
@@ -392,18 +393,62 @@ describe("发给模型的形状", () => {
 	});
 });
 
-describe("正文里那一个 JSON", () => {
-	test("代码栏里的取栏里的；前后的话不算", () => {
-		assert.equal(
-			jsonText('搜出 288 人，交回新表：\n\n```json\n{"a": 1}\n```\n以上。'),
-			'{"a": 1}',
+describe("交表时退回的词表外取值", () => {
+	test("条件表和替代条件里的词表外取值各说一句，说出可选的档", () => {
+		assert.deepEqual(
+			offVocabulary(
+				intentSchema.parse({
+					conditions: [
+						claim({ what: ["增长"], companyTag: ["一线大厂", "知名公司"] }),
+						{ about: "person", mode: "must", field: "level", atLeast: "P9" },
+						person("education", ["硕士"]),
+					],
+					assumed: [],
+					declined: [
+						{
+							said: "有潜力",
+							why: "看不出",
+							instead: [claim({ companyTag: ["一线大厂"] }, "boost")],
+						},
+					],
+				}),
+				VOCAB,
+			),
+			[
+				"companyTag 没有「一线大厂」这个取值，可选：头部互联网T1、知名公司、外包公司",
+				"level 没有「P9」这个取值，可选：P5、P6、P7、P8",
+			],
 		);
 	});
-	test("没有代码栏就取第一个大括号到最后一个", () => {
-		assert.equal(jsonText('好的。{"a": {"b": 2}} 完'), '{"a": {"b": 2}}');
-		assert.equal(jsonText('{"a": 1}'), '{"a": 1}');
+
+	test("学校写名字，不查词表", () => {
+		assert.deepEqual(
+			offVocabulary(
+				intentSchema.parse({
+					conditions: [person("school", ["银河学院"])],
+					assumed: [],
+					declined: [],
+				}),
+				VOCAB,
+			),
+			[],
+		);
 	});
-	test("什么都没有就原样交回去，让解析照常报错", () => {
-		assert.equal(jsonText("没有对象"), "没有对象");
+});
+
+describe("哪些经历词要量宽", () => {
+	test("这一轮新写的正向主张；排除、没写经历词的、上一轮已有的不量", () => {
+		const kept = build("灵能驾驶");
+		const measured = measuredIn([kept]);
+		assert.deepEqual(
+			[
+				kept,
+				build("机甲算法"),
+				build("幽冥测绘", { mode: "boost" }),
+				build("实习", { mode: "exclude" }),
+				{ about: "experience", mode: "must", org: ["星河"] } as Condition,
+			].map((c) => measured(c)),
+			[false, true, true, false, false],
+		);
 	});
 });

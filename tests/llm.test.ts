@@ -20,11 +20,13 @@ const { APICallError, RetryError } = await import("ai");
 const VOCAB = { companyTag: [], level: [], recruitment: [], education: [] };
 
 test("端点连不上时抛给调用方，不返回一份假理解", async () => {
-	await assert.rejects(understand("做过算法的人", VOCAB, [], {}));
+	await assert.rejects(understand("做过算法的人", VOCAB, [], {} as never));
 });
 
 test("连不上认作 unreachable：那句话根本没被读过", async () => {
-	const error = await understand("做过算法的人", VOCAB, [], {}).catch((e) => e);
+	const error = await understand("做过算法的人", VOCAB, [], {} as never).catch(
+		(e) => e,
+	);
 	assert.equal(endpointFault(error), "unreachable");
 });
 

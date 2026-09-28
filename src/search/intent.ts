@@ -13,12 +13,13 @@ import { z } from "zod";
 import {
 	type Condition,
 	conditionKey,
+	type ExperienceCondition,
 	MODES,
 	PERSON_FIELDS,
 	PERSON_MODES,
 	withOff,
 } from "./condition";
-import { isOrdinal, VOCAB_KEYS, type VocabKey } from "./dimensions";
+import { isOrdinal, isVocabKey, type VocabKey } from "./dimensions";
 import { type SearchSpec, sanitizeSpec } from "./spec";
 import { boundedText } from "./text";
 
@@ -72,9 +73,9 @@ export const conditionItems = z.array(
 );
 
 /**
- * 发给模型的输出形状：整张新的条件表，加上这一轮的说明。**静态**：词表不进
+ * 交表工具的入参：整张新的条件表，加上这一轮的说明。**静态**：词表不进
  * schema，只在提示词里列一遍——同一份取值写两处就是两份契约；取值在不在词表里
- * 由 `understood` 查，查不过的取值丢掉，而不是整条响应作废。
+ * 由交表时的检查（`offVocabulary`）告诉模型，收下时由 `understood` 丢掉。
  *
  * 交回整张表而不是一串增删改：表和 chip、库里存的是同一个形状，这一轮改了什么
  * 由两张表一比就知道，模型不必再学一套编辑指令。
@@ -104,6 +105,9 @@ export const intentSchema = z.object({
 		)
 		.describe("这句话里搜不了的要求；没有就空着"),
 });
+
+/** 交表工具收到的一张表：过了 schema，还没收窄。 */
+export type Intent = z.infer<typeof intentSchema>;
 
 /**
  * 模型给出的一条「搜不了」：原话、原因、可以换成的条件。
@@ -186,12 +190,8 @@ function conditionsIn(raw: unknown, vocab: Vocabulary): Condition[] {
 		const { off: _off, ...rest } = entry;
 		if (rest.about === "experience")
 			return [{ ...rest, companyTag: inVocab("companyTag", rest.companyTag) }];
-		if (
-			rest.about !== "person" ||
-			!(VOCAB_KEYS as readonly unknown[]).includes(rest.field)
-		)
-			return [rest];
-		const key = rest.field as VocabKey;
+		if (rest.about !== "person" || !isVocabKey(rest.field)) return [rest];
+		const key = rest.field;
 		if (!isOrdinal(key) || rest.atLeast === undefined)
 			return [{ ...rest, values: inVocab(key, rest.values) }];
 		// 「及以上」的那一档不在词表里，整条不认：只丢这一档，它就读成了列举，换了意思
@@ -226,14 +226,47 @@ export function unanswered(raw: unknown, result: Understood): string | null {
 }
 
 /**
- * 模型正文里那一个 JSON 对象。用过工具之后模型爱先说一句「搜出 288 人，交回新表：」
- * 再给一段代码栏，而结构化输出只认整段正文是 JSON。有代码栏就取栏里的，没有就取
- * 第一个 `{` 到最后一个 `}`；什么都没有就原样交回去，让解析照常报错。
+ * 一份交上来的表里，词表维写了词表外的取值的地方，一处一句，交表时退回给模型改。
+ * 收下时这些取值由 `understood` 丢掉；这里先说出来，模型有机会换成词表里的那一档。
  */
-export function jsonText(text: string): string {
-	const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
-	const body = fenced?.[1] ?? text;
-	const start = body.indexOf("{");
-	const end = body.lastIndexOf("}");
-	return start >= 0 && end > start ? body.slice(start, end + 1) : text;
+export function offVocabulary(table: Intent, vocab: Vocabulary): string[] {
+	const out = new Set<string>();
+	const check = (key: VocabKey, values: readonly string[]) => {
+		for (const v of values)
+			if (!vocab[key].includes(v))
+				out.add(
+					`${key} 没有「${v}」这个取值，可选：${vocab[key].join("、") || "（无）"}`,
+				);
+	};
+	for (const c of [
+		...table.conditions,
+		...table.declined.flatMap((d) => d.instead),
+	]) {
+		if (c.about === "experience") check("companyTag", c.companyTag ?? []);
+		else if (isVocabKey(c.field))
+			check(c.field, [...(c.values ?? []), ...(c.atLeast ? [c.atLeast] : [])]);
+	}
+	return [...out];
+}
+
+/** 一条要量经历词的条件：正向的、写了经历词的。 */
+type Measured = ExperienceCondition &
+	Required<Pick<ExperienceCondition, "what">>;
+
+/**
+ * 哪些条件的经历词要量：这一轮新写出来的正向主张。
+ *
+ * 上一轮已经有的不量：它量过了，或者用户看过、坚持启用了。只量正向的：宽度答的是
+ * 「它还筛不筛得掉人」，排除答的是「哪一段不作数」，命中面广恰恰是它在起作用；
+ * 而且排除按更高的相关度线判，量出来的宽不是它搜出来的宽。
+ */
+export function measuredIn(
+	base: readonly Condition[],
+): (c: Condition) => c is Measured {
+	const had = new Set(base.map(conditionKey));
+	return (c): c is Measured =>
+		c.about === "experience" &&
+		c.mode !== "exclude" &&
+		c.what !== undefined &&
+		!had.has(conditionKey(c));
 }

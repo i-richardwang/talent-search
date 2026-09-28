@@ -26,7 +26,7 @@ const teardown = await setup();
 after(teardown);
 
 // import 必须在 setup() 之后：#/db 与 #/server/embed 在模块求值时就绑死了环境变量
-const { overflowContributors, probeWide, search, vocabulary } = await import(
+const { overflowContributors, search, termReach, vocabulary } = await import(
 	"#/search/search"
 );
 const run = async (query: string, filters = {}, limit?: number) => {
@@ -827,8 +827,11 @@ describe("命中总数", () => {
 
 	test("太宽的词按人数占比判定", async () => {
 		// 55 个「深海潜航」远超库里两成的人；「考古」只有三个
-		const wide = await probeWide(["深海潜航", "考古"]);
-		assert.deepEqual([...wide], ["深海潜航"]);
+		const reach = await termReach(["深海潜航", "考古"]);
+		assert.deepEqual(
+			reach.filter((r) => r.wide).map((r) => r.text),
+			["深海潜航"],
+		);
 	});
 });
 
@@ -863,8 +866,11 @@ describe("召回按名次截断", () => {
 	});
 
 	test("说法多不算宽：没命中两成的人就不宽", async () => {
-		const wide = await probeWide([word, "考古"]);
-		assert.deepEqual([...wide], []);
+		const reach = await termReach([word, "考古"]);
+		assert.deepEqual(
+			reach.filter((r) => r.wide).map((r) => r.text),
+			[],
+		);
 	});
 });
 

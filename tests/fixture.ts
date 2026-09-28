@@ -304,44 +304,58 @@ function startModelServer() {
 					return;
 				}
 				const { messages } = JSON.parse(body) as {
-					messages: { role: string; content: string }[];
+					messages: { role: string; content: string | null }[];
 				};
-				const prompt = messages
+				const users = messages
 					.filter((m) => m.role === "user")
-					.at(-1)?.content;
-				const at = prompt?.lastIndexOf(SENTENCE_PREFIX) ?? -1;
+					.map((m) => m.content ?? "");
 				const system = messages.find((m) => m.role === "system")?.content ?? "";
+				const reply = (message: Record<string, unknown>, finish: string) =>
+					json({
+						id: "fake",
+						object: "chat.completion",
+						created: 0,
+						model: "fake",
+						choices: [{ index: 0, message, finish_reason: finish }],
+						usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+					});
+				// 查询理解认得出自己的提示词；它不查词，直接用交表工具交那张表
+				const understanding = users.find((u) => u.includes(SENTENCE_PREFIX));
+				if (understanding !== undefined) {
+					const at = understanding.lastIndexOf(SENTENCE_PREFIX);
+					const table = (intentAnswer ?? fakeIntent)(
+						understanding.slice(at + SENTENCE_PREFIX.length),
+						baseIn(understanding),
+					);
+					reply(
+						{
+							role: "assistant",
+							content: null,
+							tool_calls: [
+								{
+									id: `call-${messages.length}`,
+									type: "function",
+									function: {
+										name: "submit",
+										arguments: JSON.stringify(table),
+									},
+								},
+							],
+						},
+						"tool_calls",
+					);
+					return;
+				}
+				const prompt = users.at(-1);
 				const content =
-					prompt === undefined
-						? undefined
-						: at >= 0
-							? JSON.stringify(
-									(intentAnswer ?? fakeIntent)(
-										prompt.slice(at + SENTENCE_PREFIX.length),
-										baseIn(prompt),
-									),
-								)
-							: chatAnswer
-								? JSON.stringify(await chatAnswer(system, prompt))
-								: undefined;
+					prompt !== undefined && chatAnswer
+						? JSON.stringify(await chatAnswer(system, prompt))
+						: undefined;
 				if (content === undefined) {
 					res.writeHead(400).end("没有人认领这份提示词");
 					return;
 				}
-				json({
-					id: "fake",
-					object: "chat.completion",
-					created: 0,
-					model: "fake",
-					choices: [
-						{
-							index: 0,
-							message: { role: "assistant", content },
-							finish_reason: "stop",
-						},
-					],
-					usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-				});
+				reply({ role: "assistant", content }, "stop");
 				return;
 			}
 			const { input } = JSON.parse(body) as { input: string | string[] };
@@ -440,7 +454,6 @@ export async function setup() {
 	process.env.RERANK_SPACE_ID = "fake-v1";
 	process.env.LLM_BASE_URL = modelServer.url;
 	process.env.LLM_MODEL = "fake";
-	process.env.LLM_STRUCTURED_OUTPUTS = "true";
 	// 语料侧那三处聊天调用也指向同一台假端点，回答由 `answerChat` 装
 	process.env.EXTRACT_BASE_URL = modelServer.url;
 	process.env.EXTRACT_MODEL = "fake";

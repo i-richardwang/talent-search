@@ -12,15 +12,15 @@ import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
+import { type Condition, withOff } from "#/search/condition";
 import {
-	type Condition,
-	conditionKey,
-	type ExperienceCondition,
-	withOff,
-} from "#/search/condition";
-import { type TurnNotes, unanswered, understood } from "#/search/intent";
+	measuredIn,
+	type TurnNotes,
+	unanswered,
+	understood,
+} from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
-import { probeWide, vocabulary } from "#/search/search";
+import { termReach, vocabulary } from "#/search/search";
 import type { QueryInput, SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { agentTools } from "./agent-tools";
@@ -188,6 +188,9 @@ export async function createTurn(
  * 模型写的，同样没有人看过；在这里量过，用户点「加上」时才能原样提交。
  * 一条主张的经历词全宽，整条**可见地**停用，成因记在 `off` 上。
  *
+ * 交表时模型已经被告知过哪些词太宽（`agent-tools.ts`），这里是收下时的那一道：
+ * 步数用完、或模型原样再交，太宽的词照样不静默地进查询。
+ *
  * 一条主张里几个词同权，宽的那个丢掉不影响其余的词找人；全宽才说明这条
  * 主张本身几乎不筛人，那得让用户看见、换词，或者坚持启用——检索层不做无声拦截。
  * 两支看起来不对称，其实是同一条规则：**这些条件还没有人看过。** 它是模型
@@ -195,34 +198,20 @@ export async function createTurn(
  * 同一件事，落库之后 chip 上写的就是搜的。整条停用则不同——一条主张消失和
  * 一个词消失不一样，前者是「你说的这件事没法用来找人」，得说出来。词全宽也
  * 不把它降成一条没有词的主张：那会让「做过运营的」悄悄变成「有过任何经历的」。
- *
- * **只量正向主张的词。** 宽度这个指标答的是「它还筛不筛得掉人」，那是准入的问题；
- * 排除答的是「哪一段不作数」，命中面广恰恰是它在起作用，量它等于用一把
- * 反向的尺去停掉一条正在生效的条件。门槛也对不上：`probeWide` 按
- * `RELEVANCE_MIN` 量，而排除按更高的 `RELEVANCE_MIN_EXCLUDE` 判——
- * 量出来的宽根本不是它搜出来的宽。
+ * 量哪些条件由 `measuredIn` 定，和交表时的检查同一条规则。
  */
 async function benchWide(
 	groups: readonly Condition[][],
 	base: readonly Condition[],
 ): Promise<Condition[][]> {
-	// 上一轮已经有的条件不量：它量过了，或者用户看过、坚持启用了。
-	const had = new Set(base.map(conditionKey));
-	const measured = (
-		c: Condition,
-	): c is ExperienceCondition & { what: readonly [string, ...string[]] } =>
-		c.about === "experience" &&
-		c.mode !== "exclude" &&
-		c.what !== undefined &&
-		!had.has(conditionKey(c));
-	const wide = await probeWide([
-		...new Set(
-			groups
-				.flat()
-				.filter(measured)
-				.flatMap((c) => c.what),
-		),
-	]);
+	const measured = measuredIn(base);
+	const reach = await termReach(
+		groups
+			.flat()
+			.filter(measured)
+			.flatMap((c) => c.what),
+	);
+	const wide = new Set(reach.filter((r) => r.wide).map((r) => r.text));
 	return groups.map((conditions) =>
 		conditions.map((c): Condition => {
 			if (!measured(c)) return c;
@@ -240,7 +229,7 @@ async function benchWide(
  *
  * 这一轮的基线是父记录的条件：一句「再加上带过团队的」只有放在那张表上才有意思。
  *
- * 模型每用一次工具就往 `trace` 上追加一步，界面轮询它（`turnTrace`）边跑边画。
+ * 模型每查一次词或名称就往 `trace` 上追加一步，界面轮询它（`turnTrace`）边跑边画。
  * 重来一次先清空：上一次失败的半截过程不该接在这一次前面。
  */
 export async function resolveTurn(turnId: string): Promise<SearchSpec> {

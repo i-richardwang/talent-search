@@ -63,6 +63,7 @@ import {
 	type SearchOutcome,
 } from "./result";
 import type { SearchSpec } from "./spec";
+import type { NameField, NameFinding, TermFinding } from "./trace";
 import {
 	FACT_MAX,
 	HITS_PER_CLAIM,
@@ -91,29 +92,39 @@ function anyLike(names: readonly string[], columns: SQL[]) {
 }
 
 /**
- * 这些词里，哪些在语料里命中的**人**占比超过了 `WIDE_SHARE`——也就是**太宽**。
- *
- * 单位是人，不是经历段。指标的读数必须和它标签上的单位一致：这个指标支撑的
- * 承诺是「几乎筛不掉人」，而按段量的话，一个囤了九段命中经历的人会被数成
- * 九个——段占比很高、名单上却只多他一个人的词，根本不宽。
- *
- * 宽是语料的事实，不是能预先列举的判断：同一个词在两份语料里的覆盖面可以差
- * 一个数量级。理解落库前拿它给新解析出的词量宽（`server/turn.ts` 的
- * benchWide，超标的可见地停用）。只探语料、不带筛选——宽不宽只由词和语料决定。
- *
- * 命中口径必须和这些词**自己**的检索口径相同（这里按 `RELEVANCE_MIN` 量，
- * 所以只能量按同一条阈值线通过的词），否则量出来的宽和搜出来的宽不是一回事：
- * 排除词按 `RELEVANCE_MIN_EXCLUDE` 判，拿这个指标去量它，读数天然偏大。
- * 谁该被量由调用方决定（`server/turn.ts` 的 benchWide）。
- *
- * 宽只有这一个口径。「一个词在语料里有几千种说法」不是宽：短语上向量分不开
- * 「客服」和「相关」，两者过线的说法一样多，说法的条数说不出词好不好。
+ * 给查询理解看的库里的词和名字，至少这么多人写过才给出去。冷僻的写法和小公司的名字
+ * 连着人数一起出门，就能被认回到具体的人；查询理解的端点可以在公网上。
  */
-export async function probeWide(texts: string[]): Promise<Set<string>> {
-	if (texts.length === 0) return new Set();
-	return withAdmission(texts, RELEVANCE_MIN, async (store, { admitted }) => {
+const SHOWN_MIN_PEOPLE = 5;
+
+/** 一个词命中的标准能力词、一个名字匹配到的公司或学校，各最多给几个。 */
+const SHOWN_MAX = 8;
+
+/**
+ * 这些经历词按检索口径各命中多少人、宽不宽、命中了哪些标准能力词。
+ *
+ * 口径就是取数的口径：同一次准入（`RELEVANCE_MIN`），同一批说法沿
+ * `experience_phrase` 走到人。查询理解查一个词看到的人数，就是只拿这个词搜
+ * 出来的人数；宽度也只有这一个量法，交表时和理解落库前都用它（`server/turn.ts`）。
+ *
+ * 单位是人，不是经历段：一个囤了九段命中经历的人会被按段数成九个，段占比很高、
+ * 名单上却只多他一个人的词，根本不宽。「一个词在语料里有几千种说法」也不是宽：
+ * 短语上向量分不开「客服」和「相关」，两者过线的说法一样多。
+ *
+ * 命中的说法可以是整段简历原文，所以交出去的只有其中的能力词，映到标准写法
+ * （`skill_term.canonical`），写的人少于 `SHOWN_MIN_PEOPLE` 的不给。
+ * 只探语料、不带筛选：宽不宽只由词和语料决定。
+ * 排除词按更高的 `RELEVANCE_MIN_EXCLUDE` 判，这里量出来的不是它搜出来的宽。
+ */
+export async function termReach(texts: string[]): Promise<TermFinding[]> {
+	const asked = [...new Set(texts)];
+	if (asked.length === 0) return [];
+	return withAdmission(asked, RELEVANCE_MIN, async (store, { admitted }) => {
+		const out = asked.map(
+			(text): TermFinding => ({ text, people: 0, wide: false, terms: [] }),
+		);
 		const table = admittedTable(
-			texts.flatMap((t, i) =>
+			asked.flatMap((t, i) =>
 				(admitted.get(t) ?? []).map((hit) => ({
 					claimIdx: i,
 					valueIdx: 0,
@@ -121,16 +132,94 @@ export async function probeWide(texts: string[]): Promise<Set<string>> {
 				})),
 			),
 		);
-		if (!table) return new Set<string>();
-		const wide = await store.execute<{ claim_idx: number }>(sql`
-			with total as (select count(distinct emp_id)::float as n from experience),
-			q(claim_idx, value_idx, phrase_id, relevance) as ${table}
-			select q.claim_idx from q
+		if (!table) return out;
+		const reach = await store.execute<{
+			claim_idx: number;
+			people: number;
+		}>(sql`
+			with q(claim_idx, value_idx, phrase_id, relevance) as ${table}
+			select q.claim_idx, count(distinct e.emp_id)::int as people from q
 			join experience_phrase ep on ep.phrase_id = q.phrase_id
-			join experience e on e.id = ep.experience_id, total
-			group by q.claim_idx, total.n
-			having count(distinct e.emp_id) > total.n * ${WIDE_SHARE}`);
-		return new Set(wide.rows.map((row) => texts[row.claim_idx] as string));
+			join experience e on e.id = ep.experience_id
+			group by q.claim_idx`);
+		const [total] = (
+			await store.execute<{ n: number }>(
+				sql`select count(distinct emp_id)::int as n from experience`,
+			)
+		).rows;
+		for (const row of reach.rows) {
+			const r = out[row.claim_idx];
+			if (!r) continue;
+			r.people = row.people;
+			r.wide = row.people > (total?.n ?? 0) * WIDE_SHARE;
+		}
+		const terms = await store.execute<{
+			claim_idx: number;
+			name: string;
+			people: number;
+		}>(sql`
+			with q(claim_idx, value_idx, phrase_id, relevance) as ${table},
+			hit as (
+				select q.claim_idx, coalesce(t.canonical, ph.text) as name,
+					count(distinct e.emp_id)::int as people, max(q.relevance) as relevance
+				from q
+				join experience_phrase ep on ep.phrase_id = q.phrase_id and ep.route = 'skill'
+				join phrase ph on ph.id = ep.phrase_id
+				left join skill_term t on t.word = ph.text
+				join experience e on e.id = ep.experience_id
+				group by q.claim_idx, 2
+				having count(distinct e.emp_id) >= ${SHOWN_MIN_PEOPLE}
+			)
+			select claim_idx, name, people from (
+				select *, row_number() over (
+					partition by claim_idx order by relevance desc, people desc, name
+				) as n from hit
+			) ranked where n <= ${SHOWN_MAX}
+			order by claim_idx, n`);
+		for (const row of terms.rows)
+			out[row.claim_idx]?.terms.push({ name: row.name, people: row.people });
+		return out;
+	});
+}
+
+/**
+ * 这些名字按检索口径各匹配到多少人、匹配到库里的哪些名字。
+ *
+ * 匹配和条件同一个口径（`anyLike`）：名字是专有名词，按包含匹配，不进向量。
+ * 公司名在公司内的任职上匹配的是部门名和部门路径，那是内部信息，只计人数，
+ * 交出去的名字只取入职前经历的公司名，写的人少于 `SHOWN_MIN_PEOPLE` 的不给。
+ */
+export async function nameReach(
+	field: NameField,
+	names: string[],
+): Promise<NameFinding[]> {
+	const asked = [...new Set(names)];
+	return withCorpusSnapshot(async (store) => {
+		const out: NameFinding[] = [];
+		for (const name of asked) {
+			const reach =
+				field === "org"
+					? sql`select count(distinct e.emp_id)::int as n from experience e
+						where ${anyLike([name], [sql`e.org`, sql`e.org_path`])}`
+					: sql`select count(*)::int as n from employee p
+						where ${anyLike([name], [sql`p.school`])}`;
+			const matched =
+				field === "org"
+					? sql`select e.org as name, count(distinct e.emp_id)::int as people
+						from experience e
+						where e.kind = 'external' and ${anyLike([name], [sql`e.org`])}
+						group by e.org`
+					: sql`select p.school as name, count(*)::int as people
+						from employee p where ${anyLike([name], [sql`p.school`])}
+						group by p.school`;
+			const [people] = (await store.execute<{ n: number }>(reach)).rows;
+			const shown = await store.execute<{ name: string; people: number }>(sql`
+				select name, people from (${matched}) m
+				where people >= ${SHOWN_MIN_PEOPLE}
+				order by people desc, name limit ${SHOWN_MAX}`);
+			out.push({ name, people: people?.n ?? 0, names: shown.rows });
+		}
+		return out;
 	});
 }
 
@@ -194,7 +283,7 @@ type FactLoad =
  *
  * 按贡献从大到小摘，直到剩余事实能进上限；同样行数按查询顺序稳定并列。
  * 返回时再恢复查询顺序，让界面上的点名顺序和 chips 一致。这个指标只解释
- * `FACT_MAX`，不借用按人数占比计算的 `probeWide`。
+ * `FACT_MAX`，不借用按人数占比计算的宽度（`termReach`）。
  */
 export function overflowContributors(
 	counts: readonly { claim: number; facts: number }[],

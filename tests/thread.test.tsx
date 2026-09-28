@@ -216,26 +216,31 @@ describe("检索人才库的过程", () => {
 	const trace: TraceStep[] = [
 		{
 			at: 1,
-			tool: "look_up_words",
-			words: [
-				{ word: "推荐", canonical: "推荐算法", people: 128, wide: false },
-				{ word: "互联网", canonical: "互联网", people: 900, wide: true },
-				{ word: "量子炼金", canonical: null, people: 0, wide: false },
+			tool: "find_terms",
+			terms: [
+				{
+					text: "推荐",
+					people: 128,
+					wide: false,
+					terms: [{ name: "推荐算法", people: 96 }],
+				},
+				{ text: "互联网", people: 900, wide: true, terms: [] },
+				{ text: "量子炼金", people: 0, wide: false, terms: [] },
+			],
+		},
+		{
+			at: 1,
+			tool: "find_names",
+			field: "org",
+			names: [
+				{ name: "星河", people: 44, names: [{ name: "星河科技", people: 38 }] },
 			],
 		},
 		{
 			at: 2,
-			tool: "try_conditions",
-			conditions: parseQuery("推荐算法, 后端"),
-			total: 42,
-			empty: null,
-		},
-		{
-			at: 3,
-			tool: "try_conditions",
-			conditions: parseQuery("推荐算法, 后端, 量子炼金"),
-			total: 0,
-			empty: "unmet",
+			tool: "find_names",
+			field: "school",
+			names: [{ name: "银河学院", people: 0, names: [] }],
 		},
 	];
 
@@ -244,7 +249,7 @@ describe("检索人才库的过程", () => {
 			{ said: "推荐和后端", spec: "推荐算法, 后端", trace },
 		]);
 		assert.match(text, /检索人才库 3 步/);
-		assert.doesNotMatch(text, /预搜/, "每一步收在里面");
+		assert.doesNotMatch(text, /查找公司/, "每一步收在里面");
 	});
 
 	test("进行中摊开，每一步一行：动作、对象；结论收在这一步里面", async () => {
@@ -254,27 +259,24 @@ describe("检索人才库的过程", () => {
 		});
 		assert.match(text, /检索人才库 3 步/);
 		assert.match(text, /查找\s*推荐、互联网、量子炼金/);
-		assert.match(text, /预搜\s*推荐算法 \+ 后端 \+ 量子炼金/);
-		assert.doesNotMatch(text, /找到 \d+ 人/, "结论点开这一步才看得见");
+		assert.match(text, /查找公司\s*星河/);
+		assert.match(text, /查找学校\s*银河学院/);
+		assert.doesNotMatch(text, /\d+ 人/, "结论点开这一步才看得见");
 		assert.doesNotMatch(text, /正在理解你的需求/, "有了步骤就不再说在理解");
 	});
 
-	test("一步的结论：一个词在人才库里对应什么、多少人、范围大不大；预搜找到多少人", () => {
-		assert.deepEqual(
-			stepFindings({
-				at: 1,
-				tool: "look_up_words",
-				words: [
-					{ word: "推荐", canonical: "推荐算法", people: 128, wide: true },
-					{ word: "量子炼金", canonical: null, people: 0, wide: false },
-				],
-			}),
-			[
-				"「推荐」匹配到「推荐算法」，128 人，范围较大",
-				"人才库中没有「量子炼金」",
-			],
-		);
-		assert.deepEqual(stepFindings(trace[2] as TraceStep), ["找到 0 人"]);
+	test("一步的结论：一个说法多少人、范围大不大、包括哪些技能；一个名字匹配到哪些", () => {
+		assert.deepEqual(stepFindings(trace[0] as TraceStep), [
+			"「推荐」128 人，包括推荐算法 96 人",
+			"「互联网」900 人，范围较大",
+			"人才库中没有「量子炼金」",
+		]);
+		assert.deepEqual(stepFindings(trace[1] as TraceStep), [
+			"「星河」44 人，包括星河科技 38 人",
+		]);
+		assert.deepEqual(stepFindings(trace[2] as TraceStep), [
+			"人才库中没有「银河学院」",
+		]);
 	});
 
 	test("查看结果是一枚带名字的图标链接，不包任何动作", async () => {

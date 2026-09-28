@@ -354,6 +354,10 @@ export const VOCAB_KEYS = [
 
 export type VocabKey = (typeof VOCAB_KEYS)[number];
 
+export function isVocabKey(key: unknown): key is VocabKey {
+	return (VOCAB_KEYS as readonly unknown[]).includes(key);
+}
+
 /** 一段经历在这一维上的候选取值。空值不出现：它说的是「没记录」，不是取值。 */
 export function dimValues<K extends DimKey>(
 	key: K,

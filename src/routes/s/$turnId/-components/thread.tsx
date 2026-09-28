@@ -33,10 +33,15 @@ import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
-import { conditionLabel, inSentence } from "#/search/condition-label";
+import { inSentence } from "#/search/condition-label";
 import type { QueryInput } from "#/search/spec";
 import { changesOf } from "#/search/spec";
-import type { TraceStep } from "#/search/trace";
+import type {
+	NameFinding,
+	TermFinding,
+	TraceStep,
+	Written,
+} from "#/search/trace";
 import type { InterpretFault, Turn } from "#/server/turn";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/interpret";
@@ -577,36 +582,42 @@ function FollowUps({
 }
 
 /**
- * 一步做了什么，说成动作和对象：查找几个说法、按一组条件预搜。
+ * 一步做了什么，说成动作和对象：查找几个说法、几个公司或学校。
  * 说的是找了什么，不是调了什么——调的是哪样东西对人没有意义。
  */
 function stepTitle(step: TraceStep) {
-	if (step.tool === "look_up_words")
+	if (step.tool === "find_terms")
 		return {
 			action: "查找",
-			keyword: step.words.map((w) => w.word).join("、"),
+			keyword: step.terms.map((t) => t.text).join("、"),
 		};
 	return {
-		action: "预搜",
-		keyword: step.conditions.map(conditionLabel).join(" + ") || "不限",
+		action: step.field === "org" ? "查找公司" : "查找学校",
+		keyword: step.names.map((n) => n.name).join("、"),
 	};
 }
 
-/** 查找的每个说法在人才库里对应什么、多少人。 */
-function wordLine(w: {
-	word: string;
-	canonical: string | null;
-	people: number;
-	wide: boolean;
-}) {
-	if (w.canonical === null) return `人才库中没有「${w.word}」`;
+/** 人才库里对应的几项：名字和人数。 */
+function including(list: readonly Written[]) {
+	return list.length > 0
+		? `，包括${list.map((x) => `${x.name} ${x.people} 人`).join("、")}`
+		: "";
+}
+
+/** 查找的一个说法在人才库里找到多少人、对应哪些技能。 */
+function termLine(t: TermFinding) {
+	if (t.people === 0) return `人才库中没有「${t.text}」`;
 	return [
-		w.canonical === w.word
-			? `「${w.word}」`
-			: `「${w.word}」匹配到「${w.canonical}」`,
-		`，${w.people} 人`,
-		w.wide ? "，范围较大" : "",
+		`「${t.text}」${t.people} 人`,
+		t.wide ? "，范围较大" : "",
+		including(t.terms),
 	].join("");
+}
+
+/** 查找的一个名字在人才库里匹配到多少人、对应哪些公司或学校。 */
+function nameLine(n: NameFinding) {
+	if (n.people === 0) return `人才库中没有「${n.name}」`;
+	return `「${n.name}」${n.people} 人${including(n.names)}`;
 }
 
 /** 行首的状态格：进行中还是已完成。 */
@@ -733,8 +744,9 @@ function Process({
 				{
 					children: (
 						<ol className="flex flex-col gap-2 pt-1 pb-2">
-							{steps.map((step) => (
-								<li key={step.at}>
+							{steps.map((step, i) => (
+								// biome-ignore lint/suspicious/noArrayIndexKey: 步骤只追加不改序，位置就是一步的身份；并行的两步可以记在同一毫秒
+								<li key={i}>
 									<StepRow step={step} />
 								</li>
 							))}
@@ -754,10 +766,10 @@ function Process({
 	);
 }
 
-/** 一步的结论：查找的每个说法各一行，预搜是找到多少人。 */
+/** 一步的结论：查找的每个说法、每个名字各一行。 */
 export function stepFindings(step: TraceStep) {
-	if (step.tool === "look_up_words") return step.words.map(wordLine);
-	return [`找到 ${step.total} 人`];
+	if (step.tool === "find_terms") return step.terms.map(termLine);
+	return step.names.map(nameLine);
 }
 
 /** 摊开后的一步：平时收着，点开是这一步的结论。 */
