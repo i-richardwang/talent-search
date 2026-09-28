@@ -3,7 +3,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import { AnimatePresence, type MotionProps, motion } from "motion/react";
-import { type ReactNode, useRef } from "react";
+import { type ReactElement, type ReactNode, useRef } from "react";
 import {
 	DialogPresenceBackdrop,
 	DialogPresenceRoot,
@@ -135,8 +135,25 @@ export function DrawerHeader({ children }: { children: ReactNode }) {
 	return <div className="ui-drawer-header">{children}</div>;
 }
 
-export function DrawerTitle({ children }: { children: ReactNode }) {
-	return <Dialog.Title className="ui-drawer-title">{children}</Dialog.Title>;
+/**
+ * 抽屉的标题，读屏拿它当抽屉的名字。`render` 换成别的标题元素：抽屉里放的是一栏自带
+ * 页头的内容（`NavHeader`）时，标题就是页头里那个 `NavHeaderTitle`，不再另画一行。
+ */
+export function DrawerTitle({
+	children,
+	render,
+}: {
+	children: ReactNode;
+	render?: ReactElement;
+}) {
+	return (
+		<Dialog.Title
+			className={render ? undefined : "ui-drawer-title"}
+			render={render}
+		>
+			{children}
+		</Dialog.Title>
+	);
 }
 
 export const DrawerDescription = Dialog.Description;
