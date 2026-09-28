@@ -1,9 +1,3 @@
-/*
- * 类名前缀：Form 是 `.ui-form`，字段 `.ui-form-field-*`。块的先后照组件里挂类的先后：
- * Form 的根；字段的根、label、control、错误；label 里的标题与说明。
- * 窄屏断点是 `max-width: 575.98px`。
- */
-
 .ui-form {
 	position: relative;
 	display: flex;
@@ -11,9 +5,9 @@
 	gap: 48px;
 	width: 100%;
 
-	@media (max-width: 575.98px) {
-		/* biome-ignore lint/complexity/noImportantStyles: 窄屏压过行内的 gap */
-		gap: 0 !important;
+	/* 窄屏断点和 form.tsx 的 `MOBILE` 同一个 */
+	@media (width < 36rem) {
+		gap: 0;
 	}
 }
 

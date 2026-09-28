@@ -16,20 +16,11 @@ import { panelTransition } from "#/components/ui/motion-token";
 import { cn } from "#/lib/utils";
 
 /*
- * 样式在 modal.css。`Modal` 是组合好的一件：`open` 受控，关掉走 `onCancel`，
- * 有标题栏、关闭钮和「取消 / 确定」表脚。下面的 `Modal*` 原子件可以自己拼：
- * `ModalRoot` 的 `open` 受控，用 motion 放进出场，出场放完才卸载（见 dialog-presence.tsx）。
- * 对话框挂在打开它的组件里；关着的对话框卸载。按 Esc、点背板或关闭钮关闭。
- *
- * 默认文案：确定、取消；`ModalClose` 带 `aria-label="关闭"`。
- *
- * 动手之前问一句用 `confirmModal(...)`：不需要 React 上下文，事件处理里直接调，
- * 由根上挂一次的 `<ModalHost />` 画出来（见文件末尾）。
- * portal 到 `<body>`；z 值是 `--z-index-popup` 这一档，不按打开先后另分配
- * （见 floating.ts）。
+ * `Modal` 是组合好的一件，`Modal*` 原子件可以自己拼；出场放完才卸载（见 dialog-presence.tsx）。
+ * 动手之前问一句用 `confirmModal(...)`：不需要 React 上下文，由根上挂一次的 `<ModalHost />` 画出来。
+ * z 值是 `--z-index-popup` 这一档，不按打开先后另分配（见 floating.ts）。
  */
 
-/** 面板的进出场；时长与曲线读动效令牌（见 motion-token.ts）。 */
 const modalMotionConfig = () => ({
 	animate: { opacity: 1, scale: 1 },
 	exit: {
@@ -55,10 +46,7 @@ export function ModalBackdrop() {
 	return <DialogPresenceBackdrop className="ui-modal-backdrop" />;
 }
 
-/**
- * 铺满视口的外层里居中一块面板；`panelClassName` 落在面板（圆角、底色那一层）上，
- * 宽度由它给（`max-w-*`），不给是 modal.css 的默认宽度。
- */
+/** `panelClassName` 落在面板上，宽度由它给（`max-w-*`）。 */
 export function ModalPopup({
 	children,
 	panelClassName,
@@ -98,34 +86,22 @@ export function ModalTitle({
 	);
 }
 
-/** 正文区，带内边距；`flush` 去掉内边距，给自己排满整块面板的内容。 */
+/** `flush` 去掉内边距，给自己排满整块面板的内容。 */
 export function ModalContent({
 	children,
-	className,
 	flush,
 }: {
 	children: ReactNode;
-	className?: string;
 	flush?: boolean;
 }) {
 	return (
-		<div
-			className={cn(
-				"ui-modal-content",
-				flush && "ui-modal-content-flush",
-				className,
-			)}
-		>
+		<div className={cn("ui-modal-content", flush && "ui-modal-content-flush")}>
 			{children}
 		</div>
 	);
 }
 
-/**
- * 关闭钮，里面是一颗 ×。放在标题栏里随行排；直接放在面板里时浮在面板右上角
- * （modal.css 按它的位置定）。
- */
-export function ModalClose() {
+function ModalClose() {
 	return (
 		<Dialog.Close aria-label="关闭" className="ui-modal-close">
 			<X size={16} />
@@ -137,13 +113,10 @@ interface ModalProps {
 	/** 退场动画放完之后调用。 */
 	afterClose?: () => void;
 	children: ReactNode;
-	/** 面板上的类名；宽度也由它给（`max-w-*`）。 */
+	/** 落在面板上，宽度由它给（`max-w-*`）。 */
 	className?: string;
-	/** 正文换成等待圈。 */
-	loading?: boolean;
 	/** 不要「取消 / 确定」表脚。 */
 	noFooter?: boolean;
-	/** 确定钮前面的图标。 */
 	okIcon?: LucideIcon;
 	okText?: ReactNode;
 	onCancel: () => void;
@@ -162,7 +135,6 @@ export function Modal({
 	okIcon,
 	noFooter,
 	className,
-	loading,
 	afterClose,
 }: ModalProps) {
 	return (
@@ -180,15 +152,7 @@ export function Modal({
 						<ModalTitle>{title}</ModalTitle>
 						<ModalClose />
 					</div>
-					<ModalContent>
-						{loading ? (
-							<div className="ui-modal-loading">
-								<span className="ui-spinner ui-modal-spinner" />
-							</div>
-						) : (
-							children
-						)}
-					</ModalContent>
+					<ModalContent>{children}</ModalContent>
 					{!noFooter && (
 						<div className="ui-modal-footer">
 							<Button onClick={onCancel}>取消</Button>
@@ -203,20 +167,15 @@ export function Modal({
 	);
 }
 
-/** `confirmModal` 的一问。 */
-export interface ConfirmConfig {
+interface ConfirmConfig {
 	title: ReactNode;
 	content?: ReactNode;
 	okText?: ReactNode;
-	cancelText?: ReactNode;
-	/** 确定钮换成错误色的实底：删除这类收不回的动作。 */
-	danger?: boolean;
 	/**
-	 * 点确定时调用。返回 Promise 时确定钮转圈，兑现后关上；抛错时留着对话框、
-	 * 确定钮恢复可点，出错的说明由调用处自己给。
+	 * 返回 Promise 时确定钮转圈，兑现后关上；抛错时留着对话框、确定钮恢复可点，
+	 * 出错的说明由调用处自己给。
 	 */
 	onOk?: () => void | Promise<void>;
-	onCancel?: () => void;
 }
 
 interface ConfirmEntry {
@@ -225,10 +184,7 @@ interface ConfirmEntry {
 	open: boolean;
 }
 
-/*
- * 命令式的确认框：一张列表加一组订阅者，`<ModalHost />` 用 useSyncExternalStore 读它。
- * 关上先把那一项的 open 置假，出场动画放完再从列表里拿掉。
- */
+/* 关上先把那一项的 open 置假，出场动画放完再从列表里拿掉。 */
 let confirmStack: ConfirmEntry[] = [];
 let confirmSeed = 0;
 const confirmListeners = new Set<() => void>();
@@ -254,23 +210,16 @@ const closeConfirm = (id: number) =>
 		),
 	);
 
-/**
- * 打开一个确认框：宽 420px，标题栏、一段正文、「取消 / 确定」表脚。点背板、按 Esc、
- * 关闭钮和取消都算取消。返回 `close`，调用处可以提前关上它。
- */
-export function confirmModal(config: ConfirmConfig): { close: () => void } {
+/** 删除这类收不回的动作前问一句，确定钮是危险色。点背板、按 Esc、关闭钮和取消都算取消。 */
+export function confirmModal(config: ConfirmConfig) {
 	const id = confirmSeed++;
 	setConfirmStack([...confirmStack, { config, id, open: true }]);
-	return { close: () => closeConfirm(id) };
 }
 
 function ConfirmDialog({ entry }: { entry: ConfirmEntry }) {
 	const { config, id, open } = entry;
 	const [loading, setLoading] = useState(false);
-	const cancel = () => {
-		closeConfirm(id);
-		config.onCancel?.();
-	};
+	const cancel = () => closeConfirm(id);
 	const ok = async () => {
 		if (config.onOk) {
 			setLoading(true);
@@ -305,9 +254,9 @@ function ConfirmDialog({ entry }: { entry: ConfirmEntry }) {
 							<div className="ui-modal-confirm-body">{config.content}</div>
 						)}
 						<div className="ui-modal-footer">
-							<Button onClick={cancel}>{config.cancelText ?? "取消"}</Button>
+							<Button onClick={cancel}>取消</Button>
 							<Button
-								danger={config.danger}
+								danger
 								loading={loading}
 								onClick={() => void ok()}
 								type="primary"
@@ -322,7 +271,7 @@ function ConfirmDialog({ entry }: { entry: ConfirmEntry }) {
 	);
 }
 
-/** 画出 `confirmModal` 打开的确认框；在应用根上挂一次。 */
+/** 在应用根上挂一次。 */
 export function ModalHost() {
 	const stack = useSyncExternalStore(
 		subscribeConfirms,

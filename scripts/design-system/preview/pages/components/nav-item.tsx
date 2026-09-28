@@ -23,11 +23,8 @@ import {
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
+import { stay } from "../../kit/stay";
 
-/** 示例里的链接只在页内跳，不离开预览页。 */
-const stay = (event: { preventDefault: () => void }) => event.preventDefault();
-
-/** 行尾的「…」：示例里按下去什么也不打开。 */
 function More({ label }: { label: string }) {
 	return (
 		<ActionIcon
@@ -82,7 +79,6 @@ function Playground() {
 	);
 }
 
-/** 一项的几种样子。 */
 const LOOKS: [name: string, note: string, active: boolean, actions: boolean][] =
 	[
 		["默认", "没有底，悬停出底", false, false],
@@ -145,7 +141,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="最近搜索一行一条记录：14px 的小图标说是 AI 搜索还是关键词搜索，行尾的「…」画在链接外。列不完时最后一行是「更多」。组名整行可点，收起或展开；组名行尾也有一枚「…」，悬停时出现。"
+				description="最近搜索一行一条记录：小图标说是 AI 搜索还是关键词搜索，行尾的「…」画在链接外。列不完时最后一行是「更多」。组名整行可点，收起或展开；组名行尾也有一枚「…」，悬停时出现。"
 				title="最近搜索"
 			>
 				<div className="w-nav bg-layout p-1">
@@ -212,7 +208,6 @@ function Usage() {
 	);
 }
 
-/** 导航项页：试用、状态、使用场景。 */
 export function NavItemPage() {
 	return (
 		<DocPage
@@ -225,7 +220,7 @@ export function NavItemPage() {
 					'不去别处、只打开什么的一行（「更多」）传 render={<button type="button" />}。',
 					"标题一行放不下就截断，指针停在被截断的标题上时提示完整的一行。",
 					"几项同属一类时用 NavGroup 包起来，几组放进一个 NavGroups：组名整行可点、收起或展开，展开着哪几组（value）由使用方记住；组名行尾的 action 悬停时出现。",
-					'一长串同类的记录（最近搜索）给 iconSize="small"，图标 14px；几个固定入口用缺省的 18px。',
+					'一长串同类的记录（最近搜索）给 iconSize="small"；几个固定入口用缺省尺寸。',
 				],
 				usage: `<NavGroups value={open} onValueChange={setOpen}>\n  <NavGroup value="recent" title="最近搜索" action={menu}>\n    <NavItem icon={TextSearchIcon} iconSize="small" render={<Link to="/s/$turnId" params={params} />}>\n      推荐系统 · 某甲科技\n    </NavItem>\n  </NavGroup>\n</NavGroups>`,
 			}}

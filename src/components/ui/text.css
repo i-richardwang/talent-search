@@ -1,8 +1,4 @@
-/*
- * 块的先后是层叠顺序：root、标题元素（h1–h5）、shiny、type、size、strong、weight、code、
- * ellipsis。type 排在 shiny 后面，给了 type 的扫光文字静止色就是那一档；size 与 weight
- * 排在标题后面，盖标题自带的字号与字重。
- */
+/* 块的先后是层叠顺序：type 排在 shiny 后面，给了 type 的扫光文字静止色就是那一档。 */
 
 @keyframes ui-text-shine {
 	0% {
@@ -28,33 +24,6 @@
 	margin: 0;
 }
 
-/* 标题元素各自一档字号，取离得最近的字阶。 */
-.ui-text-h1,
-.ui-text-h2,
-.ui-text-h3,
-.ui-text-h4,
-.ui-text-h5 {
-	font-weight: 700;
-	line-height: 1.25;
-}
-
-.ui-text-h1,
-.ui-text-h2 {
-	font-size: var(--text-2xl);
-}
-
-.ui-text-h3 {
-	font-size: var(--text-xl);
-}
-
-.ui-text-h4 {
-	font-size: var(--text-lg);
-}
-
-.ui-text-h5 {
-	font-size: var(--text-base);
-}
-
 .ui-text-shiny {
 	--shiny-duration: 1.5s;
 
@@ -74,8 +43,8 @@
 	animation: ui-text-shine var(--shiny-duration) linear infinite;
 
 	/*
-	 * 动 background-position 每一帧都重绘每个字。支持 mask-clip: text 时，改成把一层
-	 * 位移动画的亮光裁到字形上，动画留在合成层。遮罩也裁掉子元素，所以里面还有图标、
+	 * 动 background-position 每一帧都重绘每个字。支持 mask-clip: text 时，把一层位移
+	 * 动画的亮光裁到字形上，动画留在合成层。遮罩也裁掉子元素，所以里面还有图标、
 	 * 小块的文字仍走 background-clip。
 	 */
 	@supports (-webkit-mask-clip: text) {
@@ -124,22 +93,6 @@
 	color: var(--color-fg-quaternary);
 }
 
-.ui-text-type-success {
-	color: var(--color-success);
-}
-
-.ui-text-type-warning {
-	color: var(--color-warning);
-}
-
-.ui-text-type-danger {
-	color: var(--color-error);
-}
-
-.ui-text-type-info {
-	color: var(--color-info);
-}
-
 .ui-text-size-xs {
 	font-size: var(--text-xs);
 	line-height: var(--text-xs--line-height);
@@ -150,19 +103,9 @@
 	line-height: var(--text-sm--line-height);
 }
 
-.ui-text-size-base {
-	font-size: var(--text-base);
-	line-height: var(--text-base--line-height);
-}
-
 .ui-text-size-lg {
 	font-size: var(--text-lg);
 	line-height: var(--text-lg--line-height);
-}
-
-.ui-text-size-xl {
-	font-size: var(--text-xl);
-	line-height: var(--text-xl--line-height);
 }
 
 .ui-text-size-2xl {
@@ -170,20 +113,8 @@
 	line-height: var(--text-2xl--line-height);
 }
 
-.ui-text-strong {
-	font-weight: 700;
-}
-
-.ui-text-weight-normal {
-	font-weight: 400;
-}
-
 .ui-text-weight-medium {
 	font-weight: 500;
-}
-
-.ui-text-weight-semibold {
-	font-weight: 600;
 }
 
 .ui-text-weight-bold {
@@ -200,12 +131,4 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-
-/* 行数由组件写在行内的 -webkit-line-clamp 上。 */
-.ui-text-ellipsis-multi {
-	display: -webkit-box;
-	overflow: hidden;
-	-webkit-box-orient: vertical;
-	text-overflow: ellipsis;
 }

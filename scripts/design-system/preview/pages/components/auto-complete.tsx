@@ -2,7 +2,6 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AutoComplete } from "#/components/ui/auto-complete";
 import { Checkbox } from "#/components/ui/checkbox";
-import { Form } from "#/components/ui/form";
 import { Icon } from "#/components/ui/icon";
 import { Tag } from "#/components/ui/tag";
 import { Control, Controls } from "../../kit/controls";
@@ -23,7 +22,6 @@ const SKILLS: [term: string, people: number][] = [
 	["团队管理", 301],
 ];
 
-/** 一条建议：左边是词，右边是库里有多少人。 */
 const option = (term: string, people: number) => ({
 	label: (
 		<span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
@@ -57,64 +55,58 @@ function Playground() {
 					</>
 				}
 			>
-				<Form className="w-full max-w-xs" layout="vertical">
-					<Form.Field label="经历或技能">
-						<AutoComplete
-							onChange={(text, details) => {
-								setValue(text);
-								setReason(details.reason);
-							}}
-							options={OPTIONS}
-							placeholder="输入关键词，比如风控"
-							suffix={
-								pending ? <Icon icon={Loader2} size="small" spin /> : undefined
-							}
-							value={value}
-						/>
-					</Form.Field>
-				</Form>
+				<div className="w-full max-w-xs">
+					<AutoComplete
+						aria-label="经历或技能"
+						onChange={(text, details) => {
+							setValue(text);
+							setReason(details.reason);
+						}}
+						options={OPTIONS}
+						placeholder="输入关键词，比如风控"
+						suffix={
+							pending ? <Icon icon={Loader2} size="small" spin /> : undefined
+						}
+						value={value}
+					/>
+				</div>
 			</Stage>
 		</div>
 	);
 }
 
-/** 选中一项就加成一枚标签并清空框；敲字只改框里的字。 */
 function TermPicker() {
 	const [typed, setTyped] = useState("");
 	const [terms, setTerms] = useState<string[]>(["支付风控"]);
 	return (
-		<Form className="w-full" layout="vertical">
-			<Form.Field label="经历或技能">
-				<div className="flex flex-col gap-2">
-					<AutoComplete
-						onChange={(text, details) => {
-							if (details.reason === "item-press") {
-								if (!terms.includes(text)) setTerms([...terms, text]);
-								setTyped("");
-							} else setTyped(text);
-						}}
-						options={OPTIONS.filter((one) => !terms.includes(one.value))}
-						placeholder="输入关键词"
-						value={typed}
-					/>
-					<div className="flex flex-wrap gap-1">
-						{terms.map((term) => (
-							<Tag
-								closable
-								key={term}
-								onClose={() => setTerms(terms.filter((one) => one !== term))}
-							>
-								{term}
-							</Tag>
-						))}
-					</div>
-				</div>
-			</Form.Field>
-		</Form>
+		<div className="flex w-full flex-col gap-2">
+			<AutoComplete
+				aria-label="经历或技能"
+				onChange={(text, details) => {
+					if (details.reason === "item-press") {
+						if (!terms.includes(text)) setTerms([...terms, text]);
+						setTyped("");
+					} else setTyped(text);
+				}}
+				options={OPTIONS.filter((one) => !terms.includes(one.value))}
+				placeholder="输入关键词"
+				value={typed}
+			/>
+			<div className="flex flex-wrap gap-1">
+				{terms.map((term) => (
+					<Tag
+						closable
+						key={term}
+						onClose={() => setTerms(terms.filter((one) => one !== term))}
+					>
+						{term}
+					</Tag>
+				))}
+			</div>
+		</div>
 	);
 }
 
-/** 服务端给建议：关掉本地过滤，敲字后等一会儿换一批，等待中框尾转圈。 */
 function ServerSuggestions() {
 	const [typed, setTyped] = useState("");
 	const [found, setFound] = useState(OPTIONS);
@@ -128,20 +120,16 @@ function ServerSuggestions() {
 		return () => window.clearTimeout(timer);
 	}, [typed]);
 	return (
-		<Form className="w-full" layout="vertical">
-			<Form.Field label="经历或技能">
-				<AutoComplete
-					filter={null}
-					onChange={setTyped}
-					options={found}
-					placeholder="输入关键词"
-					suffix={
-						pending ? <Icon icon={Loader2} size="small" spin /> : undefined
-					}
-					value={typed}
-				/>
-			</Form.Field>
-		</Form>
+		<AutoComplete
+			aria-label="经历或技能"
+			className="w-full"
+			filter={null}
+			onChange={setTyped}
+			options={found}
+			placeholder="输入关键词"
+			suffix={pending ? <Icon icon={Loader2} size="small" spin /> : undefined}
+			value={typed}
+		/>
 	);
 }
 
@@ -164,7 +152,6 @@ function Usage() {
 	);
 }
 
-/** 自动补全：输入框外壳与中号 Input 相同，敲字时弹出词表里的建议。 */
 export function AutoCompletePage() {
 	return (
 		<DocPage
@@ -174,8 +161,8 @@ export function AutoCompletePage() {
 					"建议取自语料的词表，框里的字仍是用户自己写的，选中只是把那一项填进去。",
 					"要把选中当成动作（比如加成标签）时，看 onChange 第二个参数的 reason 是不是 item-press。",
 					"服务端给建议时传 filter={null} 关掉本地过滤，等待中在 suffix 放旋转的加载图标。",
-					"输入框的名字来自外面带标签的 Form.Field；外面没有标签时写 aria-label。宽度属于外层布局。",
-					'嵌在输入托盘的一行里用 variant="borderless"，框和底交给托盘。',
+					"输入框的名字写在 aria-label 上。宽度属于外层布局。",
+					'嵌在输入托盘的一行里用 variant="borderless"，框和底交给托盘；弹层里用 variant="filled"。',
 				],
 				usage: `<AutoComplete\n  onChange={(text, details) => …}\n  options={[{ label: "支付风控", value: "支付风控" }]}\n  placeholder="输入关键词"\n  value={typed}\n/>`,
 			}}

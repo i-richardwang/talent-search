@@ -1,8 +1,0 @@
-/*
- * CopyButton 的外观，只有 glass 一块：压在内容上时把底下的字糊掉。
- * 底色、字色、active 态都是 ActionIcon 的。
- */
-
-.ui-copy-button-glass {
-	backdrop-filter: saturate(150%) blur(10px);
-}

@@ -14,17 +14,15 @@ import type { QueryInput } from "#/search/spec";
 import type { SearchMode } from "#/server/turn";
 
 /**
- * 整句的例子。四条，每条只教一件 placeholder 给不了的事，谁也不是谁的变体，
- * 第二行说的就是它教的那件事：
+ * 整句的例子，最多四条。每条只教一件 placeholder 给不了的事，第二行说的就是它教的那件事：
  *
  * 1. 一句话里放多个条件，口语句式会被剥干净（「做过…的人」不必自己删）
  * 2. 并列的两样都要——条件之间是 AND
- * 3. 「最好」是**加分**不是必须——chip 那三档强度的入口只在句子里
+ * 3. 「最好」是**加分**不是必须
  * 4. 「或者」是**一条**条件的两个取值——取值之间是 OR
  *
- * 手写的句子必须在人才库里搜得到人，否则第一次点它得到的是一份空名单。每加一条都要
- * 走完整条路跑一遍（句子 → 理解 → 检索）。人才库里表达不了的条件（地点、年龄）不能进这里。
- * 四条是上限：再多就从「样板」变成「目录」。
+ * 句子必须在人才库里搜得到人，否则第一次点它得到的是一份空名单。每加一条都要走完
+ * 句子 → 理解 → 检索整条路。人才库里表达不了的条件（地点、年龄）不能进这里。
  */
 const EXAMPLES: { text: string; teaches: string; icon: LucideIcon }[] = [
 	{
@@ -50,15 +48,11 @@ const EXAMPLES: { text: string; teaches: string; icon: LucideIcon }[] = [
 ];
 
 /** 首页正文的两块：输入面，和一条记录都还没有时放在它下面的起步例子。 */
-export type ZeroStateParts = { input: ReactNode; starters: ReactNode };
+type ZeroStateParts = { input: ReactNode; starters: ReactNode };
 
 /**
- * 首页的输入面：大号的输入托盘，搜索方式的切换（`modeSelect`）在托盘动作栏的左端，
- * 换过去只换托盘里面的内容，托盘的位置和高度都不动。提交失败时托盘下面说一句。
- *
- * 对话时另有几条起步的例子，点一条是**填进输入框**，不是直接搜：要找的人几乎不会正好是
- * 其中哪一句，填进去才能把词换成自己的再发送。两块怎么排由 `layout` 定（`HomeScreen`
- * 把它们放进首页那一屏），不给时上下排开。
+ * 首页的输入面，和对话时几条起步的例子。点例子是**填进输入框**，不是直接搜：要找的人
+ * 几乎不会正好是其中哪一句。两块怎么排由 `layout` 定，不给时上下排开。
  */
 export function ZeroState({
 	mode,
@@ -72,9 +66,8 @@ export function ZeroState({
 		</>
 	),
 }: {
-	/** 这一屏开的是哪种搜索。没配查询理解时路由只给关键词（`routes/index.tsx`）。 */
 	mode: SearchMode;
-	/** 两种搜索的切换，放进托盘的动作栏。只有一种搜索时路由不给。 */
+	/** 两种搜索的切换，放进托盘的动作栏；只有一种搜索时不给。 */
 	modeSelect?: ReactNode;
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
 	error: string | null;

@@ -14,21 +14,9 @@ import { panelTransition } from "#/components/ui/motion-token";
 import { cn } from "#/lib/utils";
 
 /*
- * 抽屉，样式在 drawer.css。`Drawer` 是组合好的一件：贴着左边或右边的面板，`open` 受控，
- * 走 motion 的进出动画，出场放完才卸载（见 dialog-presence.tsx）。下面的 `Drawer*`
- * 原子件可以自己拼。
- *
- * - 关闭按钮的 aria-label 是「关闭」。按 Esc 或点背板关闭。
- * - 背板和浮层都在 `--z-index-popup` 这一档，portal 到 `<body>`，按打开先后接在
- *   末尾，后开的压住先开的（与 floating.ts 同一口径）。
- * - 拼装用的原子件：`DrawerRoot`、`DrawerPortal`、`DrawerBackdrop`、`DrawerPopup`、
- *   `DrawerHeader`、`DrawerTitle`、`DrawerDescription`、`DrawerClose`、`DrawerExtra`、
- *   `DrawerFooter`。
- *   `DrawerExtra` 是头部右侧放关闭按钮的那一格；自己拼头部时关闭按钮放进它，
- *   位置才和 `Drawer` 的一致。`DrawerFooter` 是面板底部的一条，内容靠右。
- * - `extra` 排在头部右侧、关闭按钮左边；`footer` 在正文下面，上面一根分隔线，
- *   不随正文滚动。
- * - `width` 收任何 CSS 长度，如 `min(92vw, 520px)`；比视口宽时由浮层夹到视口宽。
+ * 抽屉：`Drawer` 是组合好的一件，下面的 `Drawer*` 原子件可以自己拼。出场动画放完才卸载
+ * （见 dialog-presence.tsx）。背板和浮层都在 `--z-index-popup` 这一档，portal 到 `<body>`，
+ * 按打开先后接在末尾，后开的压住先开的（与 floating.ts 同一口径）。
  */
 
 type DrawerPlacement = "left" | "right";
@@ -38,7 +26,6 @@ const offscreen: Record<DrawerPlacement, { x: string }> = {
 	right: { x: "100%" },
 };
 
-/** 面板的滑入滑出；时长与曲线读动效令牌（见 motion-token.ts）。 */
 const drawerMotionConfig = (placement: DrawerPlacement): MotionProps => ({
 	animate: { x: 0 },
 	exit: {
@@ -71,8 +58,7 @@ export function DrawerBackdrop() {
 }
 
 /**
- * 贴边的面板；`width` 是面板宽度，`placement` 是贴哪条边，默认右边。
- * `panelClassName` 加在面板上，给换了底色、描边和投影的一种面板（导航栏的抽屉）用。
+ * 贴边的面板。`width` 收任何 CSS 长度，比视口宽时由浮层夹到视口宽。
  * `contained`：浮层不贴视口，绝对定位在 portal 进去的那个容器里，贴着容器的边滑出。
  */
 export function DrawerPopup({
@@ -86,12 +72,12 @@ export function DrawerPopup({
 	contained?: boolean;
 	panelClassName?: string;
 	placement?: DrawerPlacement;
-	width: number | string;
+	width: string;
 }) {
 	const { onExitComplete, open } = useDialogPresence();
 
 	/*
-	 * 退场中的面板在 AnimatePresence 里留着打开时的属性，浮层却按调用处现在给的重画。
+	 * 退场中的面板在 AnimatePresence 里留着打开时的属性，浮层却按调用处这一次给的重画。
 	 * 退场期间冻住几何，关的同时换了方位也不会让浮层先跳到另一条边。
 	 */
 	const openGeometryRef = useRef({
@@ -131,13 +117,9 @@ export function DrawerPopup({
 	);
 }
 
-export function DrawerHeader({ children }: { children: ReactNode }) {
-	return <div className="ui-drawer-header">{children}</div>;
-}
-
 /**
- * 抽屉的标题，读屏拿它当抽屉的名字。`render` 换成别的标题元素：抽屉里放的是一栏自带
- * 页头的内容（`NavHeader`）时，标题就是页头里那个 `NavHeaderTitle`，不再另画一行。
+ * 抽屉的标题，读屏拿它当抽屉的名字。抽屉里放的是一栏自带页头的内容（`NavHeader`）时，
+ * `render` 传页头里那个 `NavHeaderTitle`，不另画一行。
  */
 export function DrawerTitle({
 	children,
@@ -158,29 +140,7 @@ export function DrawerTitle({
 
 export const DrawerDescription = Dialog.Description;
 
-/** 头部右侧的一格：放关闭按钮，右缘伸进头部内边距 4px。 */
-export function DrawerExtra({
-	children,
-	className,
-}: {
-	children: ReactNode;
-	className?: string;
-}) {
-	return <div className={cn("ui-drawer-extra", className)}>{children}</div>;
-}
-
-/** 面板底部的一条：上面一根分隔线，内容靠右排。 */
-export function DrawerFooter({ children }: { children: ReactNode }) {
-	return (
-		<div className="ui-drawer-footer">
-			<div className="ui-drawer-container-inner ui-drawer-container-inner-footer">
-				{children}
-			</div>
-		</div>
-	);
-}
-
-export function DrawerClose() {
+function DrawerClose() {
 	return (
 		<Dialog.Close aria-label="关闭" className="ui-drawer-close">
 			<X size={16} />
@@ -194,16 +154,13 @@ interface DrawerProps {
 	children: ReactNode;
 	/** 头部右侧、关闭按钮左边的动作。 */
 	extra?: ReactNode;
-	/** 正文下面的一条，内容靠右，不随正文滚动。 */
-	footer?: ReactNode;
-	/** 没有头部，关闭按钮（连同 `extra`）浮在右上角。 */
+	/** 没有头部，关闭按钮浮在右上角。 */
 	noHeader?: boolean;
 	onClose: () => void;
 	open: boolean;
 	placement?: DrawerPlacement;
 	title?: ReactNode;
-	/** 面板宽度，默认是详情那一档 `--container-detail`。 */
-	width?: number | string;
+	width?: string;
 }
 
 export function Drawer({
@@ -212,7 +169,6 @@ export function Drawer({
 	width = "var(--container-detail)",
 	title,
 	extra,
-	footer,
 	noHeader,
 	afterClose,
 	onClose,
@@ -230,29 +186,25 @@ export function Drawer({
 				<DrawerBackdrop />
 				<DrawerPopup placement={placement} width={width}>
 					{noHeader ? (
-						<DrawerExtra className="ui-drawer-extra-floating">
-							{extra}
+						<div className="ui-drawer-extra ui-drawer-extra-floating">
 							<DrawerClose />
-						</DrawerExtra>
+						</div>
 					) : (
-						<DrawerHeader>
-							<div className="ui-drawer-container-inner">
-								{title === undefined ? (
-									<span />
-								) : (
-									<DrawerTitle>{title}</DrawerTitle>
-								)}
-								<DrawerExtra>
-									{extra}
-									<DrawerClose />
-								</DrawerExtra>
+						<div className="ui-drawer-header">
+							{title === undefined ? (
+								<span />
+							) : (
+								<DrawerTitle>{title}</DrawerTitle>
+							)}
+							<div className="ui-drawer-extra">
+								{extra}
+								<DrawerClose />
 							</div>
-						</DrawerHeader>
+						</div>
 					)}
 					<div className="ui-drawer-content">
 						<div className="ui-drawer-body-content">{children}</div>
 					</div>
-					{footer && <DrawerFooter>{footer}</DrawerFooter>}
 				</DrawerPopup>
 			</DrawerPortal>
 		</DrawerRoot>

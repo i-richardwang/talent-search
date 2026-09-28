@@ -131,13 +131,12 @@ export interface Oklch {
 	h: number;
 }
 
-const toLinear = (channel: number) => linear(channel);
 const fromLinear = (value: number) =>
 	255 *
 	(value <= 0.0031308 ? 12.92 * value : 1.055 * value ** (1 / 2.4) - 0.055);
 
 export function toOklch({ r, g, b }: Rgba): Oklch {
-	const [lr, lg, lb] = [toLinear(r), toLinear(g), toLinear(b)];
+	const [lr, lg, lb] = [linear(r), linear(g), linear(b)];
 	const l = Math.cbrt(
 		0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb,
 	);

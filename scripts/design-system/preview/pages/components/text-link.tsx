@@ -10,9 +10,7 @@ import {
 import { TextLink } from "#/components/ui/text-link";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-
-/** 预览里的链接不去任何地方：点下去只是示范，不离开这一页。 */
-const stay = (event: React.MouseEvent) => event.preventDefault();
+import { stay } from "../../kit/stay";
 
 function Playground() {
 	return (
@@ -42,7 +40,7 @@ function Usage() {
 				title="表里的名字"
 			>
 				<Block className="w-full overflow-hidden" variant="outlined">
-					<Table size="small">
+					<Table>
 						<TableHeader>
 							<TableRow>
 								<TableHead>技能</TableHead>
@@ -82,7 +80,6 @@ function Usage() {
 	);
 }
 
-/** 文字链接页：在不同字色里的样子、产品里的两处用法。 */
 export function TextLinkPage() {
 	return (
 		<DocPage

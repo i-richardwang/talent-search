@@ -1,8 +1,4 @@
-/*
- * Checkbox 的外观，类名以 `.ui-checkbox` 开头：方框 root、indicator、外层 label，
- * 其后是标签文字。没勾的方框描 border-secondary，悬停加深到 border。方框的边长与圆角
- * 随 `size` 写在行内样式上。
- */
+/* 方框的边长与圆角随 `size` 写在行内样式上。 */
 
 .ui-checkbox {
 	cursor: pointer;
@@ -14,7 +10,7 @@
 	margin: 0;
 	padding: 0;
 	border: 1px solid var(--color-border-secondary);
-	color: var(--color-layout);
+	color: var(--color-canvas);
 	background: var(--color-container);
 	outline: none;
 	transition:
@@ -66,11 +62,10 @@
 	}
 }
 
-/* 标签文字：平时是 `text`，禁用时再叠 `text-secondary`，后者写在后面才盖得住。 */
 .ui-checkbox-text {
 	color: var(--color-fg);
 }
 
-.ui-checkbox-text-secondary {
+.ui-checkbox-text-disabled {
 	color: var(--color-fg-tertiary);
 }

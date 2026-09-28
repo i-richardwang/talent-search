@@ -23,9 +23,8 @@ const MOTION_LABEL: Record<MotionAction, string> = {
 };
 
 /**
- * 一块预览：上面一条写这是原版还是修改版、哪种外观；有进出场可放的页多一条放动画的
- * 工具条，预览速度每块各记一份，并排对比时两块各放各的。下面是铺满的 iframe，
- * 加载预览页，准备好后收到状态，状态一变就再发一次。
+ * 一块预览：iframe 里加载预览页，上面一条写是修改前还是修改后、哪种外观。有进出场可放的页
+ * 多一条放动画的工具条；预览速度每块各记一份，并排对比时两块各放各的。
  */
 export function PreviewFrame({
 	compare,
@@ -38,7 +37,7 @@ export function PreviewFrame({
 	/** 这一页有进出场可放。 */
 	motion: boolean;
 	onSelectColor: (token: string) => void;
-	/** 画原版（空的修改版）。 */
+	/** 画修改前的样子（不带修改）。 */
 	original: boolean;
 	state: Omit<PreviewState, "speed">;
 }) {
@@ -67,7 +66,7 @@ export function PreviewFrame({
 	useEffect(() => {
 		send();
 	}, [shared, speed]);
-	const label = original ? "原版" : "修改版";
+	const label = original ? "修改前" : "修改后";
 	return (
 		<Block
 			as="section"

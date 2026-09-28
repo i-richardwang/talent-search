@@ -1,14 +1,12 @@
 import { DownloadIcon, TrashIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
-import { Checkbox } from "#/components/ui/checkbox";
 import { Input } from "#/components/ui/input";
 import {
 	confirmModal,
 	Modal,
 	ModalBackdrop,
-	ModalClose,
 	ModalContent,
 	ModalPopup,
 	ModalPortal,
@@ -46,17 +44,8 @@ const WIDTHS: { label: string; value: Width }[] = [
 	{ label: "2xl", value: "max-w-2xl" },
 ];
 
-/** 对话框正文的一段合成说明。 */
 const EXPORT_NOTE =
 	"导出的名单包含当前搜索条件下的全部候选人，每位一行，附上命中的证据。";
-
-/** 同步任务的合成日志行。 */
-const LOG_LINES = [
-	"读取数据源：1,204 份简历",
-	"拒绝 3 条记录：日期倒置 2 条，缺开始日期 1 条",
-	"写入人才库：新增 18 段经历，删除 4 段",
-	"同步完成，用时 42 秒",
-];
 
 /** 试用：外壳工具条的打开、关闭、重播作用在这里的对话框上。 */
 function Playground() {
@@ -68,7 +57,6 @@ function Playground() {
 	const [title, setTitle] = useState("导出名单");
 	const [footer, setFooter] = useState<Footer>("default");
 	const [width, setWidth] = useState<Width>("default");
-	const [loading, setLoading] = useState(false);
 	const close = () => setOpen(false);
 	return (
 		<div className="flex flex-col gap-4">
@@ -94,11 +82,6 @@ function Playground() {
 						value={width}
 					/>
 				</Control>
-				<Control>
-					<Checkbox checked={loading} onChange={setLoading}>
-						正文等待
-					</Checkbox>
-				</Control>
 			</Controls>
 			<Stage
 				footer={
@@ -114,7 +97,6 @@ function Playground() {
 				<Modal
 					afterClose={afterClose}
 					noFooter={footer === "none"}
-					loading={loading}
 					okText="导出"
 					onCancel={close}
 					onOk={close}
@@ -171,21 +153,6 @@ function States() {
 						)}
 					/>
 					<OverlayRow
-						code="loading"
-						label="正文等待"
-						render={(open, close) => (
-							<Modal
-								noFooter
-								loading
-								onCancel={close}
-								open={open}
-								title="运行日志"
-							>
-								{null}
-							</Modal>
-						)}
-					/>
-					<OverlayRow
 						code="noFooter"
 						label="没有表脚"
 						render={(open, close) => (
@@ -218,7 +185,6 @@ function States() {
 												</span>
 											</div>
 										</ModalContent>
-										<ModalClose />
 									</ModalPopup>
 								</ModalPortal>
 							</ModalRoot>
@@ -230,7 +196,6 @@ function States() {
 	);
 }
 
-/** 导出名单：列出表里会有的列，确定钮写「下载」。 */
 function ExportList() {
 	const [open, setOpen] = useState(false);
 	const [done, setDone] = useState(false);
@@ -267,39 +232,6 @@ function ExportList() {
 	);
 }
 
-/** 运行日志：打开时才取，取到之前正文等待。 */
-function TaskLog() {
-	const [open, setOpen] = useState(false);
-	const [lines, setLines] = useState<string[] | null>(null);
-	useEffect(() => {
-		if (!open) return;
-		setLines(null);
-		const timer = window.setTimeout(() => setLines(LOG_LINES), 800);
-		return () => window.clearTimeout(timer);
-	}, [open]);
-	return (
-		<>
-			<Button onClick={() => setOpen(true)} size="small" type="text">
-				日志
-			</Button>
-			<span className="text-fg-tertiary text-xs">同步 · 今天 09:30</span>
-			<Modal
-				className="max-w-3xl"
-				loading={lines === null}
-				noFooter
-				onCancel={() => setOpen(false)}
-				open={open}
-				title="运行日志 · 同步 · 今天 09:30 开始"
-			>
-				<pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed">
-					{lines?.join("\n")}
-				</pre>
-			</Modal>
-		</>
-	);
-}
-
-/** 删除一条搜索记录：先问一句，确定钮是危险色；确定后删一秒，钮上转圈。 */
 function DeleteRecord() {
 	const [deleted, setDeleted] = useState(false);
 	return (
@@ -312,7 +244,6 @@ function DeleteRecord() {
 					confirmModal({
 						content:
 							"「做过推荐系统的后端」这次搜索的全部记录都会删除，删除后无法恢复。",
-						danger: true,
 						okText: "删除",
 						onOk: () =>
 							new Promise<void>((resolve) =>
@@ -351,32 +282,20 @@ function Usage() {
 			>
 				<ExportList />
 			</Example>
-			<Example
-				description="任务的原始输出不做页面内容，按次收在「日志」里，打开才取；取到之前正文等待。"
-				title="运行日志"
-			>
-				<TaskLog />
-			</Example>
 		</ExampleGrid>
 	);
 }
 
-/** 对话框页：试用、表脚与状态、使用场景。外壳工具条可以放试用里对话框的进出场。 */
 export function ModalPage() {
 	return (
 		<DocPage
-			facts={[
-				`${FOOTERS.length} 种表脚`,
-				"正文等待",
-				"可用原子件拼",
-				"命令式确认框",
-			]}
+			facts={[`${FOOTERS.length} 种表脚`, "可用原子件拼", "命令式确认框"]}
 			rules={{
 				notes: [
 					"对话框挂在打开它的组件里，用受控的 open；关掉走 onCancel，确定后由调用处关。",
 					"只用来打断需要确认或补一项输入的动作；一次阅读用 Drawer。",
 					"确定钮的文字写动作本身（okText），需要时用 okIcon 加图标。",
-					"删除这类收不回的动作用 confirmModal({ title, content, danger, okText, onOk }) 问一句：宽 420px，onOk 返回 Promise 时确定钮转圈，兑现后关上；<ModalHost /> 在应用根上挂一次。",
+					"删除这类收不回的动作用 confirmModal({ title, content, okText, onOk }) 问一句：onOk 返回 Promise 时确定钮转圈，兑现后关上；<ModalHost /> 在应用根上挂一次。",
 					"正文里的控件用 components/ui 的组件，宽度用 className 给容器宽度的档（max-w-md 之类）；正文要贴边用 ModalContent 的 flush，不覆盖面板的圆角和内边距。",
 				],
 				usage: `<Modal\n  okText="导出"\n  onCancel={() => setOpen(false)}\n  onOk={exportList}\n  open={open}\n  title="导出名单"\n>\n  …\n</Modal>`,

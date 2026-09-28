@@ -7,18 +7,9 @@ import { type InputVariant, inputVariants } from "#/components/ui/input";
 import { cn } from "#/lib/utils";
 
 /*
- * 样式在 auto-complete.css，与菜单共用的块在 dropdown-menu.css，输入框外壳用 input.css
- * 的中号、默认外观。一个输入框，敲字时弹出建议；`value` 是框里的字，选中一项就把它的
- * `value` 填进框里。`filter`、`open` 等 Root 的属性原样传下去。
- *
- * - `onChange` 的第二个参数是 Base UI 的 eventDetails。选中一项（点、触屏轻点、
- *   回车选高亮项）时 `reason` 是 `item-press`，敲字时是 `input-change`；要把选中的一项
- *   当成动作而不是填进框里的字时，靠它分辨。
- * - 外壳的深浅两种默认由 CSS 按 `.dark` 选（input.css 的 `ui-input-auto`），
- *   不在渲染时读主题。
- * - portal 到 `<body>`（`defaultPortalContainer`，在别的浮层里打开时也不嵌进它的
- *   portal）；定位器的 z 值是 `--z-index-popup` 这一档，不按打开先后另分配，
- *   碰撞边距用 Base UI 的默认值（见 floating.ts）。
+ * 输入框，敲字时弹出建议，选中一项就把它的 `value` 填进框里。`onChange` 的第二个参数是
+ * Base UI 的 eventDetails：选中一项时 `reason` 是 `item-press`，敲字时是 `input-change`，
+ * 要把选中当成动作而不是填字时靠它分辨。
  */
 
 interface AutoCompleteOption {
@@ -33,7 +24,6 @@ interface AutoCompleteProps
 		RootProps,
 		"filter" | "onItemHighlighted" | "onOpenChange" | "open" | "value"
 	> {
-	/** 框里的字变了：敲字，或选中了一项（`details.reason` 分辨）。 */
 	onChange: (
 		value: string,
 		details: Autocomplete.Root.ChangeEventDetails,
@@ -41,7 +31,6 @@ interface AutoCompleteProps
 	options: AutoCompleteOption[];
 	placeholder: string;
 	suffix?: ReactNode;
-	/** 框外面没有标签时，读屏读的名字。 */
 	"aria-label"?: string;
 	className?: string;
 	variant?: InputVariant;

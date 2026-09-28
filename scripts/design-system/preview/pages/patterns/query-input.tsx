@@ -1,10 +1,8 @@
 import { useRouterState } from "@tanstack/react-router";
-import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { KeywordBar } from "#/components/keyword-bar";
 import { QueryBar } from "#/components/query-bar";
 import { Block } from "#/components/ui/block";
-import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import {
 	Table,
@@ -16,11 +14,11 @@ import {
 } from "#/components/ui/table";
 import { HomeScreen } from "#/routes/-components/home-screen";
 import { COMMIT_FAILED } from "#/routes/-lib/commit";
-import type { Condition } from "#/search/condition";
 import { inSentence } from "#/search/condition-label";
 import { keywordsOf, NO_KEYWORDS } from "#/search/keywords";
 import type { QueryInput } from "#/search/spec";
 import { Control, Controls } from "../../kit/controls";
+import { type FlowStep, FlowTable } from "../../kit/flow";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
@@ -39,7 +37,7 @@ function describe(input: QueryInput) {
 		: `提交了搜索条件：${inSentence(input.spec.conditions)}`;
 }
 
-/** 产品的首页正文；切换读内存 router 地址上的 `mode`，和产品里一样由地址决定。 */
+/** 产品的首页正文；搜索方式读内存 router 地址上的 `mode`。 */
 function Home({
 	failing,
 	onQuery,
@@ -108,7 +106,7 @@ function Playground() {
 }
 
 /** 流程的每一步：用户做什么、界面怎么回应。 */
-const STEPS: [step: string, does: string, answers: string][] = [
+const STEPS: FlowStep[] = [
 	[
 		"选方式",
 		"在「AI 搜索」和「关键词搜索」之间切换",
@@ -126,7 +124,7 @@ const STEPS: [step: string, does: string, answers: string][] = [
 	],
 	[
 		"提交",
-		"回车或点发送；关键词搜索点「搜索」",
+		"回车或点发送",
 		"先落一条搜索记录并进入名单页；AI 在名单页里理解需求",
 	],
 	[
@@ -140,54 +138,6 @@ const STEPS: [step: string, does: string, answers: string][] = [
 		"作用在正在看的那次搜索条件上；上一句还没理解完时能写不能发",
 	],
 ];
-
-function Flow() {
-	return (
-		<Block className="overflow-hidden" variant="outlined">
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead>步骤</TableHead>
-						<TableHead>用户做什么</TableHead>
-						<TableHead>界面怎么回应</TableHead>
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{STEPS.map(([step, does, answers]) => (
-						<TableRow key={step}>
-							<TableCell className="whitespace-nowrap font-medium">
-								{step}
-							</TableCell>
-							<TableCell className="text-fg-secondary">{does}</TableCell>
-							<TableCell>{answers}</TableCell>
-						</TableRow>
-					))}
-				</TableBody>
-			</Table>
-		</Block>
-	);
-}
-
-/** 「技术口碑好」搜不了时附带的替代条件：做过技术分享（加分）。 */
-const TECH_TALKS: Condition = {
-	about: "experience",
-	mode: "boost",
-	what: ["技术分享"],
-};
-
-/** 挂在托盘上沿的一片：名单页右栏里放的是搜不了的要求附带的替代条件。 */
-function Tray() {
-	return (
-		<div className="flex items-center gap-2">
-			<span className="min-w-0 flex-1">
-				「技术口碑好」可改为：{inSentence([TECH_TALKS])}
-			</span>
-			<Button className="shrink-0" icon={PlusIcon} size="small" type="text">
-				添加
-			</Button>
-		</div>
-	);
-}
 
 /** 输入框的几种尺寸与状态，每格一个真的 `QueryBar` 或 `KeywordBar`。 */
 function States() {
@@ -235,27 +185,6 @@ function States() {
 								onQuery={accept}
 								placeholder="描述你要找的人，例如：做过推荐算法、带过团队"
 								size="large"
-							/>
-						</TableCell>
-					</TableRow>
-					<TableRow>
-						<TableCell className="font-mono text-xs">middle · tray</TableCell>
-						<TableCell className="w-full">
-							<QueryBar
-								onQuery={accept}
-								placeholder="补充或修改需求，例如：最好带过团队"
-								tray={<Tray />}
-							/>
-						</TableCell>
-					</TableRow>
-					<TableRow>
-						<TableCell className="font-mono text-xs">large · tray</TableCell>
-						<TableCell className="w-full">
-							<QueryBar
-								onQuery={accept}
-								placeholder="描述你要找的人，例如：做过推荐算法、带过团队"
-								size="large"
-								tray={<Tray />}
 							/>
 						</TableCell>
 					</TableRow>
@@ -384,17 +313,16 @@ export function QueryInputPage() {
 					"两种模式叫「AI 搜索」和「关键词搜索」；各是一条搜索记录，换方式是从头开一次新的搜索，不带条件过去。",
 					"两种搜索是同一块输入托盘：首页用 large，搜索方式的切换在托盘动作栏左端，切换时托盘不动；名单页右栏补充下一句、关键词结果页改词用 middle。",
 					"关键词的经历或技能写在托盘里，一个词一个标签；公司或部门、学校是动作栏上的按钮，点开是各自的框，按钮上写着填了什么；累计年限是动作栏上的菜单。",
-					"托盘上沿的一片（tray）放作用在这句话之前、点一下就能办的事，例如添加替代条件。",
 					"示例最多四条，点一下只填进输入框，不直接搜。",
 					"提交先落记录并导航，理解在名单页进行；提交失败用 Alert 说，原话不清空。",
-					"关键词搜索只放填词的维（经历或技能、公司或部门、学校、累计年限），一维一个框；有限取值的维只在导航栏的筛选里。",
+					"关键词搜索只放填词的维（经历或技能、公司或部门、学校、累计年限），一维一个框；有限取值的维只在名单上方的筛选里。",
 					"没开启 AI 搜索时只有关键词搜索，不给写一句话的输入框。",
 				],
 				usage: `<HomeScreen\n  asked={mode}\n  error={error}\n  onQuery={commit}\n  understanding={understanding}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用首页" },
-				{ children: <Flow />, id: "flow", title: "流程" },
+				{ children: <FlowTable steps={STEPS} />, id: "flow", title: "流程" },
 				{ children: <States />, id: "appearance", title: "输入面的尺寸与状态" },
 				{ children: <Usage />, id: "usage", title: "使用场景" },
 			]}

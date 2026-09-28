@@ -12,7 +12,7 @@ import { setPlaybackRate } from "./playback";
 import { PreviewStateContext } from "./state";
 
 /*
- * 预览页（`PREVIEW_PATH`）：外壳里的 iframe。收到状态后按它切深浅、把修改版写成一段
+ * 预览页（`PREVIEW_PATH`）：外壳里的 iframe。收到状态后按它切深浅、把修改写成一段
  * CSS 压在源样式上面、设好动效速度，再画目录里对应的那一页。页就是用生产组件搭的，
  * 不另写组件的样式。
  */

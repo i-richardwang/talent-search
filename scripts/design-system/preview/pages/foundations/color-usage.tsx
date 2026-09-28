@@ -14,7 +14,7 @@ import { selectColor } from "./colors";
 
 /** 每种用途用到哪几个颜色；点令牌名在右栏编辑它。 */
 const MAPPINGS: [role: string, tokens: string[]][] = [
-	["主要操作", ["--color-primary", "--color-primary-hover", "--color-layout"]],
+	["主要操作", ["--color-primary", "--color-primary-hover", "--color-canvas"]],
 	["次要操作", ["--color-container", "--color-fg", "--color-border"]],
 	["菜单里的危险项", ["--color-error", "--color-error-bg"]],
 	["激活的筛选", ["--color-fill-tertiary", "--color-fg"]],
@@ -140,7 +140,7 @@ function MeasuredSample({
 }) {
 	const root = useRef<HTMLDivElement>(null);
 	const [readings, setReadings] = useState<Reading[]>([]);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 修改版和深浅改的是页面级样式，这块元素上没有属性变化，靠 revision 触发重新量
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 修改和深浅改的是页面级样式，这块元素上没有属性变化，靠 revision 触发重新量
 	useEffect(() => {
 		const node = root.current;
 		if (!node) return;
@@ -255,6 +255,7 @@ export function ColorUsage() {
 	const [disabled, setDisabled] = useState(false);
 	const [invalid, setInvalid] = useState(false);
 	const [filtered, setFiltered] = useState(true);
+	const [tab, setTab] = useState("resume");
 	const [notes, setNotes] = useState(false);
 	const notesId = useId();
 	const revision = JSON.stringify([draft, theme, disabled, invalid, filtered]);
@@ -323,18 +324,18 @@ export function ColorUsage() {
 					</MeasuredSample>
 					<MeasuredSample revision={revision} title="标签页">
 						<Tabs
+							activeKey={tab}
 							items={[
 								{
-									disabled,
 									key: "resume",
 									label: <span data-color-probe="简历">简历</span>,
 								},
 								{
-									disabled,
 									key: "evidence",
 									label: <span data-color-probe="证据">证据</span>,
 								},
 							]}
+							onChange={setTab}
 						/>
 					</MeasuredSample>
 					<MeasuredSample revision={revision} title="输入框">

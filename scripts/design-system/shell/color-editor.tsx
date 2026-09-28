@@ -30,9 +30,9 @@ const PRESETS = [
 ];
 
 /**
- * 调一个颜色：色板、HEX、不透明度、原版与当前颜色的对比、快捷色，以及按
- * OKLCH 的明度、彩度、色相精确调整。拖色板和拖数值时只预览，松手才提交。
- * 颜色存成 sRGB；OKLCH 调到 sRGB 以外时，超出的通道截到边界，并提示这一点。
+ * 调一个颜色：色板、HEX、不透明度、修改前后的对比、快捷色，以及按 OKLCH 精确调整。
+ * 拖色板和拖数值时只预览，松手才提交。颜色存成 sRGB；OKLCH 调到 sRGB 以外时，
+ * 超出的通道截到边界，并提示这一点。
  */
 export function ColorEditor({
 	onCommit,
@@ -44,7 +44,7 @@ export function ColorEditor({
 	onCommit: (value: string) => void;
 	/** 拖动中的颜色；放弃时是 null。 */
 	onPreview: (value: string | null) => void;
-	/** 原版的值。 */
+	/** 源文件里的值（修改前）。 */
 	original: string;
 	token: string;
 	value: string;
@@ -199,19 +199,19 @@ export function ColorEditor({
 			<div className="flex items-center gap-3">
 				<span className="flex flex-1 items-center gap-2 text-fg-secondary text-xs">
 					<Swatch color={original} />
-					原版
+					修改前
 				</span>
 				<span className="flex flex-1 items-center gap-2 text-fg-secondary text-xs">
 					<Swatch color={value} />
-					修改版
+					修改后
 				</span>
 				<ActionIcon
 					disabled={!modified}
 					icon={RotateCcw}
 					onClick={() => commit(formatColor(base))}
-					aria-label="恢复原版值"
+					aria-label="还原"
 					size="small"
-					title="恢复原版值"
+					title="还原"
 				/>
 			</div>
 			<div className="flex flex-col gap-2">

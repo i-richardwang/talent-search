@@ -3,7 +3,6 @@ import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
-import { Checkbox } from "#/components/ui/checkbox";
 import type { Placement } from "#/components/ui/floating";
 import { Popover } from "#/components/ui/popover";
 import { Segmented } from "#/components/ui/segmented";
@@ -21,23 +20,20 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
 type Trigger = "hover" | "click";
 
-/** 试用区列出的方位：四侧居中，加上两种贴着一头对齐的下方。 */
+/** 试用区列出的方位。 */
 const PLACEMENTS: { label: string; value: Placement }[] = [
 	{ label: "上", value: "top" },
 	{ label: "下", value: "bottom" },
 	{ label: "左下", value: "bottomLeft" },
 	{ label: "右下", value: "bottomRight" },
 	{ label: "左", value: "left" },
-	{ label: "右", value: "right" },
 ];
 
-/** 触发方式表的行：写法、怎么打开、什么时候用。 */
 const TRIGGERS: [trigger: Trigger, opens: string, when: string][] = [
 	["hover", "悬停打开，移开收起", "只读的补充信息"],
 	["click", "点击打开，点外面或 Esc 收起", "里面有输入或按钮"],
 ];
 
-/** 一条证据的摘要，气泡里的只读内容。 */
 function EvidenceSummary() {
 	return (
 		<div className="flex max-w-64 flex-col gap-1.5 text-xs">
@@ -51,7 +47,6 @@ function EvidenceSummary() {
 function Playground() {
 	const [trigger, setTrigger] = useState<Trigger>("click");
 	const [placement, setPlacement] = useState<Placement>("top");
-	const [arrow, setArrow] = useState(false);
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
@@ -72,23 +67,16 @@ function Playground() {
 						value={placement}
 					/>
 				</Control>
-				<Control>
-					<Checkbox checked={arrow} onChange={setArrow}>
-						小三角
-					</Checkbox>
-				</Control>
 			</Controls>
 			<Stage
 				footer={
 					<>
 						<span>trigger {trigger}</span>
 						<span>placement {placement}</span>
-						<span>离触发器 {arrow ? 10 : 6}px</span>
 					</>
 				}
 			>
 				<Popover
-					arrow={arrow}
 					content={<EvidenceSummary />}
 					placement={placement}
 					trigger={trigger}
@@ -100,7 +88,6 @@ function Playground() {
 	);
 }
 
-/** 受控的一行：开合存在这一行里，旁边的文字跟着变。 */
 function ControlledRow() {
 	const [open, setOpen] = useState(false);
 	return (
@@ -163,7 +150,6 @@ function Triggers() {
 	);
 }
 
-/** 已选的人：点开是选中的几个人，每行能移除；浮层按屏幕剩下的高度限高，超出在里面滚。 */
 function ChosenPopover() {
 	const [chosen, setChosen] = useState(["候选人 A", "候选人 B", "候选人 C"]);
 	return (
@@ -223,7 +209,6 @@ function Usage() {
 	);
 }
 
-/** 气泡卡片页：试用、触发方式、使用场景。 */
 export function PopoverPage() {
 	return (
 		<DocPage
@@ -234,7 +219,6 @@ export function PopoverPage() {
 					'里面有输入的气泡用 trigger="click"，悬停打开的气泡只放只读内容。',
 					"内容可能很长时给 className 限高到 --available-height，在浮层里滚动。",
 					"气泡里的控件同样用 components/ui 的组件，不手写边框、阴影和圆角。",
-					"默认不带小三角；只有气泡离触发器远、看不出指向谁时才给 arrow。",
 					"要标题就在 content 里第一行写，气泡本身没有标题位。",
 				],
 				usage: `<Popover content={<ChosenList />} placement="bottomLeft" trigger="click">\n  <Button>已选 3 人</Button>\n</Popover>`,

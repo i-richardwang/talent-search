@@ -4,7 +4,7 @@ import { changeCount, type Draft, emptyDraft } from "../../shared/tokens/draft";
 import { ChangesPanel } from "./panel";
 import { TokenChanges } from "./token-changes";
 
-/** 「修改记录」：当前的全部修改，可以全部恢复原版值或导出。 */
+/** 「修改记录」：当前的全部修改，可以全部还原或导出。 */
 export function ReviewChanges({
 	draft,
 	onEdit,
@@ -24,7 +24,7 @@ export function ReviewChanges({
 						onClick={() => onEdit(emptyDraft())}
 						type="text"
 					>
-						全部恢复原版值
+						全部还原
 					</Button>
 					<Button onClick={onExport}>导出修改</Button>
 				</>

@@ -38,7 +38,7 @@ export type FilterField = {
 	 * 画复选框或单选，点之前就看得出再点一个是加上还是换掉。
 	 */
 	multi: boolean;
-	/** 这一维现在选中的就是这几个。空数组等于这一维不筛。 */
+	/** 把这一维的选中项设为这几个。空数组等于这一维不筛。 */
 	set: (values: string[]) => Partial<View>;
 };
 
@@ -67,7 +67,7 @@ function rows(key: DimKey, candidates: Facet[], picked: unknown[]): Facet[] {
 /**
  * 一维的筛选组。集合维可以选多项（之间是「或」），单值维只能有一个值。
  *
- * `set` 接「现在选中的是这几个」，写成地址上的样子；单值维传空数组就是选了「不限」。
+ * `set` 接选中的那几个身份，写成地址上的样子；单值维传空数组就是选了「不限」。
  * 写回按候选自己的顺序，同一组选择只有一种写法。
  */
 function field(key: DimKey, facets: Facets, view: View): FilterField {

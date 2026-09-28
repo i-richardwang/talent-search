@@ -9,13 +9,11 @@ import { exportCss } from "../../shared/tokens/css";
 import type { Draft } from "../../shared/tokens/draft";
 import { ChangesPanel } from "./panel";
 
-/** 下载的补丁的文件名。 */
 const DOWNLOAD_NAME = "design-system-tokens.css";
 
-/** 「应用到源码」那一页。 */
 const APPLY_PAGE = requirePage("changes/apply");
 
-/** 「CSS 导出」页：导出的内容放在一块卡片里。 */
+/** 「CSS 导出」页。 */
 export function ExportChanges(props: {
 	draft: Draft;
 	onNotice: (message: string) => void;
@@ -53,7 +51,6 @@ export function ExportCode({
 				className="max-h-96 overflow-auto whitespace-pre-wrap break-all text-xs leading-6"
 				padding={16}
 				tabIndex={0}
-				variant="filled"
 			>
 				<code>{css}</code>
 			</Block>

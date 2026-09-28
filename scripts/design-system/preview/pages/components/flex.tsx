@@ -1,7 +1,6 @@
-import { Download, SearchX } from "lucide-react";
+import { SearchX } from "lucide-react";
 import { useState } from "react";
 import { Block } from "#/components/ui/block";
-import { Button } from "#/components/ui/button";
 import { Center, Flexbox, type FlexboxProps } from "#/components/ui/flex";
 import { Icon } from "#/components/ui/icon";
 import { Segmented } from "#/components/ui/segmented";
@@ -25,7 +24,8 @@ type Align = NonNullable<FlexboxProps["align"]> | "stretch";
 
 const SKILLS = ["推荐系统", "Go", "Kubernetes", "数据治理", "用户增长"];
 
-const JUSTIFY: Justify[] = ["flex-start", "center", "flex-end"];
+const JUSTIFY: Justify[] = ["flex-start", "center"];
+const ALIGN: Align[] = ["stretch", "center"];
 
 const GAPS = ["0", "4", "8", "16"] as const;
 
@@ -54,14 +54,14 @@ function Playground() {
 				<Control label="主轴分布">
 					<Segmented<Justify>
 						onChange={setJustify}
-						options={JUSTIFY}
+						options={JUSTIFY.map((value) => ({ label: value, value }))}
 						value={justify}
 					/>
 				</Control>
 				<Control label="交叉轴对齐">
 					<Segmented<Align>
 						onChange={setAlign}
-						options={["stretch", "center"]}
+						options={ALIGN.map((value) => ({ label: value, value }))}
 						value={align}
 					/>
 				</Control>
@@ -98,7 +98,6 @@ function Playground() {
 	);
 }
 
-/** 横向时每种主轴分布的样子。 */
 function Distributions() {
 	return (
 		<Block className="overflow-hidden" variant="outlined">
@@ -134,7 +133,6 @@ function Distributions() {
 	);
 }
 
-/** Center：两个轴都居中。 */
 function CenterDemo() {
 	return (
 		<Stage className="items-stretch">
@@ -154,36 +152,6 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="横向靠尾排：动作按钮排在一行的末端，按钮之间用 gap 隔开。"
-				title="表单底栏"
-			>
-				<Flexbox
-					align="center"
-					gap={8}
-					horizontal
-					justify="flex-end"
-					width="100%"
-				>
-					<Button size="small">取消</Button>
-					<Button icon={Download} size="small" type="primary">
-						导出名单
-					</Button>
-				</Flexbox>
-			</Example>
-			<Example
-				description="横排里放长文字时给 allowShrink，文字才能截断，不把旁边挤出去。"
-				title="允许收缩"
-			>
-				<Flexbox align="center" gap={8} horizontal width="100%">
-					<Flexbox allowShrink flex={1}>
-						<span className="truncate text-sm">
-							数据平台部 · 推荐系统负责人 · 搭建过召回与排序两层的推荐链路
-						</span>
-					</Flexbox>
-					<Tag>6 年</Tag>
-				</Flexbox>
-			</Example>
-			<Example
 				description="纵向排列是默认值，一列字段或证据按 gap 隔开。"
 				title="纵向一列"
 			>
@@ -197,7 +165,6 @@ function Usage() {
 	);
 }
 
-/** 弹性布局页：试用 Flexbox、主轴分布、Center、使用场景。 */
 export function FlexPage() {
 	return (
 		<DocPage
@@ -205,12 +172,11 @@ export function FlexPage() {
 			rules={{
 				notes: [
 					"Flexbox 默认纵向，horizontal 换成横向；数字按像素。",
-					"主轴只有起点、居中（center）、末端（flex-end）三种分布；交叉轴默认拉伸，可给 center。",
-					"横排里需要截断的子项给 allowShrink。",
+					"主轴只有起点和居中（center）两种分布；交叉轴默认拉伸，可给 center。",
 					"两个轴都居中用 Center，不自己组合 align 和 justify。",
 					"要画面时用 Block，它就是带面样式的 Flexbox。",
 				],
-				usage: `<Flexbox align="center" gap={8} horizontal justify="flex-end">\n  <Button>取消</Button>\n  <Button type="primary">导出名单</Button>\n</Flexbox>`,
+				usage: `<Flexbox gap={4}>\n  <span>{name}</span>\n  <span>{department}</span>\n</Flexbox>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用弹性布局" },

@@ -9,7 +9,7 @@ import { PaneHeader } from "./pane-header";
  * 右栏两样内容各记各的宽（px）：拖宽了人的详情，下次回到线程还是线程自己的宽。
  * 线程是一列对话，最宽 560，再宽就不像对话了；详情最宽 1280。
  */
-const PANEL_WIDTH = {
+export const PANEL_WIDTH = {
 	detail: { fallback: 400, max: 1280, min: 400 },
 	thread: { fallback: 400, max: 560, min: 400 },
 } as const;
@@ -46,11 +46,8 @@ function useRoomyMax(bounds: { min: number; max: number }) {
 
 /**
  * 宽屏的右栏：对话的链上常驻线程，点开一个人时换成那个人的详情，关掉详情线程回来。
- * 两样都要常驻但不必同时在场：名单和详情才是要反复对照的一对，线程看完一轮就回到
- * 名单。关键词的链没有线程，右栏只在点开人时才展开。
- *
- * 右栏左边缘可以拖动调宽，那条边就是和名单之间的竖线。两样顶上都是一条 `PaneHeader`：
- * 线程的在这里画，详情的由详情自己画（`person.tsx`），吸在它的滚动区顶上。
+ * 名单和详情才是要反复对照的一对，所以两样共用一栏。关键词的链没有线程，右栏只在
+ * 点开人时才展开。线程的页头在这里画，详情的由详情自己画（`person.tsx`）。
  */
 export function SidePanel({
 	detail,
@@ -77,14 +74,12 @@ export function SidePanel({
 				maxWidth={bounds.max}
 				minWidth={bounds.min}
 				onSizeChange={setWidth}
-				placement="right"
 				showHandleWideArea={false}
 				size={width}
 			>
 				{open ? (
 					<ScrollArea
 						className="size-full min-h-0"
-						disableContentFit
 						viewportProps={{
 							className: "data-has-overflow-y:overscroll-y-contain",
 						}}

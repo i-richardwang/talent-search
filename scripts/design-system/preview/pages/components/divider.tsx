@@ -18,7 +18,6 @@ const ORIENTATIONS: { label: string; value: Orientation }[] = [
 	{ label: "竖向", value: "vertical" },
 ];
 
-/** 量第一条分隔线：线外的边距、线宽，以及竖线的高。 */
 function measureLine(root: HTMLElement) {
 	const line = root.querySelector('[role="separator"]');
 	if (!line) return undefined;
@@ -48,11 +47,13 @@ function Playground() {
 						value={orientation}
 					/>
 				</Control>
-				<Control>
-					<Checkbox checked={dashed} onChange={setDashed}>
-						虚线
-					</Checkbox>
-				</Control>
+				{orientation === "horizontal" && (
+					<Control>
+						<Checkbox checked={dashed} onChange={setDashed}>
+							虚线
+						</Checkbox>
+					</Control>
+				)}
 			</Controls>
 			<Stage
 				footer={
@@ -80,9 +81,9 @@ function Playground() {
 					) : (
 						<div className="flex items-center text-sm">
 							<span>AI 搜索</span>
-							<Divider dashed={dashed} orientation="vertical" />
+							<Divider orientation="vertical" />
 							<span>关键词搜索</span>
-							<Divider dashed={dashed} orientation="vertical" />
+							<Divider orientation="vertical" />
 							<span>技能</span>
 						</div>
 					)}
@@ -96,7 +97,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="线的正中放一枚标签，记一件不是谁说的话的事：对话线程里直接改了搜索条件的那一次，上下各留 20px。"
+				description="线的正中放一枚标签，记一件不是谁说的话的事：对话线程里直接改了搜索条件的那一次。"
 				title="线中间的事件"
 			>
 				<div className="w-full text-sm">
@@ -110,7 +111,7 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
-				description="一段内容的收尾用虚线，和下一段隔开但不像换了一块：对话线程里检索过程的一步点开后，结论底下一条虚线，上边距收成 8px、下边距收成 0。"
+				description="一段内容的收尾用虚线，和下一段隔开但不像换了一块：对话线程里检索过程的一步点开后，结论底下一条虚线。"
 				title="一段结论的收尾"
 			>
 				<div className="w-full text-fg-tertiary text-xs">
@@ -134,7 +135,6 @@ function Usage() {
 	);
 }
 
-/** 分割线页：方向的试用、产品里的几处用法。 */
 export function DividerPage() {
 	return (
 		<DocPage
@@ -143,9 +143,9 @@ export function DividerPage() {
 				notes: [
 					"只分隔同一块面里的两段内容；两块不同的面用 Block 分开，不用线。",
 					"横线的上下外边距由组件给；只有贴着一段内容收尾或给线中间的事件留白时，调用处才改上下边距。",
-					"dashed 画成虚线，用在一段内容的收尾；分隔两段并列的内容用实线。",
+					"横线的 dashed 画成虚线，用在一段内容的收尾；分隔两段并列的内容用实线。",
 					"竖线放在一行 flex 里，窄屏换行时用外层的响应式类把它藏起来。",
-					"线的颜色来自 --color-split，不覆盖。",
+					"线的颜色来自 --color-divider，不覆盖。",
 					"横线正中可以放内容（children），这时它不是分隔符，内容照常读出。",
 				],
 				usage: `<Divider />\n<Divider dashed />\n<Divider orientation="vertical" />\n<Divider><Tag>…</Tag></Divider>`,

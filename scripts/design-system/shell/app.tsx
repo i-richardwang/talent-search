@@ -34,11 +34,11 @@ import { TopBar } from "./top-bar";
 import { useDraftSession } from "./use-draft-session";
 
 /*
- * 设计系统的外壳：顶栏；左栏是目录；中间是页头与当前页；打开画在预览里的页时右边有设计参数。
+ * 设计系统的外壳：顶栏、左栏目录、中间的当前页，画在预览里的页右边有设计参数。
  * 左右两栏都能收起，收起后展开的按钮挪到页头上；窄于 lg 时左栏收进抽屉，从顶栏打开。
  *
- * 修改版只在预览里生效：预览页收到修改版后把它压在源样式上面。「查看原版」看源文件
- * 里的样子，「并排对比」把原版和修改版并排。
+ * 修改只在预览里生效：预览页收到修改后把它压在源样式上面。「查看修改前」看源文件
+ * 里的样子，「并排对比」把修改前和修改后并排。
  */
 
 const PANEL = ["open", "closed"] as const;
@@ -74,7 +74,7 @@ export function App() {
 	const [saveOpen, setSaveOpen] = useState(false);
 	const [exportOpen, setExportOpen] = useState(false);
 
-	// 换页时，只属于上一页的状态回到初始：看修改版、尺寸档回到初值、没有拖动中的值；
+	// 换页时，只属于上一页的状态回到初始：看修改后、尺寸档回到初值、没有拖动中的值；
 	// 从导出对话框里的链接换页时对话框关上。
 	const [shownHash, setShownHash] = useState(hash);
 	if (hash !== shownHash) {

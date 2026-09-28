@@ -1,9 +1,6 @@
 /*
- * Button 的外观，类名以 `.ui-button` 开头。块的先后是层叠顺序：base、size、variant、
- * danger、shape、block、icon-end、icon-only、outdent。外观块盖 base 的边框，
- * danger 盖同一型的外观块，icon-only 盖 size 与 shape 的内边距。其后是图标与等待圈的部件：icon-box、spinner-slot、
- * spinner-slot-show、spinner-slot-end；等待圈本身是 icon.css 的 `.ui-spinner`。
- *
+ * 块的先后是层叠顺序：base、size、variant、danger、block、icon-only，其后是图标与等待圈的
+ * 部件。等待圈本身是 icon.css 的 `.ui-spinner`。
  * 尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
  */
 
@@ -15,9 +12,6 @@
 	--button-height-middle: 32px;
 	--button-padding-middle: 14px;
 	--button-font-size-middle: 13px;
-	--button-height-large: 40px;
-	--button-padding-large: 16px;
-	--button-font-size-large: 14px;
 }
 
 .ui-button {
@@ -42,9 +36,8 @@
 
 	@apply focus-ring;
 
-	/* 按下缩到 0.98，松开很快回弹停稳。 */
 	&:active:not(:disabled, [aria-disabled="true"]) {
-		transform: scale(0.98);
+		transform: scale(var(--press-scale));
 	}
 
 	&:disabled,
@@ -56,30 +49,17 @@
 }
 
 .ui-button-size-small {
-	--button-padding-inline: var(--button-padding-small);
-
 	height: var(--button-height-small);
-	padding-inline: var(--button-padding-inline);
+	padding-inline: var(--button-padding-small);
 	border-radius: var(--radius-sm);
 	font-size: var(--button-font-size-small);
 }
 
 .ui-button-size-middle {
-	--button-padding-inline: var(--button-padding-middle);
-
 	height: var(--button-height-middle);
-	padding-inline: var(--button-padding-inline);
+	padding-inline: var(--button-padding-middle);
 	border-radius: var(--radius-sm);
 	font-size: var(--button-font-size-middle);
-}
-
-.ui-button-size-large {
-	--button-padding-inline: var(--button-padding-large);
-
-	height: var(--button-height-large);
-	padding-inline: var(--button-padding-inline);
-	border-radius: var(--radius-md);
-	font-size: var(--button-font-size-large);
 }
 
 .ui-button-variant-default {
@@ -104,7 +84,7 @@
 	&,
 	&:hover,
 	&:active {
-		color: var(--color-layout);
+		color: var(--color-canvas);
 	}
 
 	&:hover:not(:disabled, [aria-disabled="true"]) {
@@ -116,22 +96,6 @@
 	&&&[data-popup-open] {
 		border-color: var(--color-primary-active);
 		background: var(--color-primary-active);
-	}
-}
-
-.ui-button-variant-dashed {
-	border-style: dashed;
-	background: var(--color-container);
-
-	&,
-	&:hover,
-	&:active {
-		color: var(--color-fg);
-	}
-
-	&:hover:not(:disabled, [aria-disabled="true"]) {
-		border-color: var(--color-primary-border);
-		color: var(--color-primary);
 	}
 }
 
@@ -169,48 +133,14 @@
 	}
 }
 
-.ui-button-variant-link {
-	padding-inline: 0;
-	border-color: transparent;
-	background: transparent;
-
-	&,
-	&:hover,
-	&:active {
-		color: var(--color-primary);
-	}
-
-	&:hover:not(:disabled, [aria-disabled="true"]) {
-		color: var(--color-primary-hover);
-		background: transparent;
-	}
-}
-
-.ui-button-danger-outlined {
-	border-color: var(--color-error);
-	background: var(--color-container);
-
-	&,
-	&:hover,
-	&:active {
-		color: var(--color-error);
-	}
-
-	&:hover:not(:disabled, [aria-disabled="true"]) {
-		border-color: var(--color-error-hover);
-		color: var(--color-error-hover);
-		background: var(--color-container);
-	}
-}
-
-.ui-button-danger-solid {
+.ui-button-danger {
 	border-color: var(--color-error);
 	background: var(--color-error);
 
 	&,
 	&:hover,
 	&:active {
-		color: var(--color-layout);
+		color: var(--color-canvas);
 	}
 
 	&:hover:not(:disabled, [aria-disabled="true"]) {
@@ -225,74 +155,18 @@
 	}
 }
 
-.ui-button-danger-fill {
-	border-color: transparent;
-	color: var(--color-error);
-	background: var(--color-error-bg);
-
-	&:hover:not(:disabled, [aria-disabled="true"]) {
-		color: var(--color-error-hover);
-		background: var(--color-error-bg-hover);
-	}
-
-	&:active:not(:disabled, [aria-disabled="true"]) {
-		color: var(--color-error-active);
-		background: var(--color-error-bg-hover);
-	}
-}
-
-.ui-button-danger-inline {
-	&,
-	&:hover,
-	&:active {
-		color: var(--color-error);
-	}
-
-	&:hover:not(:disabled, [aria-disabled="true"]) {
-		color: var(--color-error-hover);
-	}
-}
-
-.ui-button-shape-circle {
-	padding-inline: 0;
-	border-radius: 50%;
-}
-
-.ui-button-shape-round {
-	border-radius: 999px;
-}
-
 .ui-button-block {
 	width: 100%;
 }
 
-.ui-button-icon-end {
-	flex-direction: row-reverse;
-}
-
 .ui-button-icon-only-small {
-	--button-padding-inline: 0px;
-
 	width: var(--button-height-small);
 	padding-inline: 0;
 }
 
 .ui-button-icon-only-middle {
-	--button-padding-inline: 0px;
-
 	width: var(--button-height-middle);
 	padding-inline: 0;
-}
-
-.ui-button-icon-only-large {
-	--button-padding-inline: 0px;
-
-	width: var(--button-height-large);
-	padding-inline: 0;
-}
-
-.ui-button-outdent {
-	margin-inline-start: calc(var(--button-padding-inline) * -1);
 }
 
 .ui-button-icon-box {
@@ -316,8 +190,4 @@
 	width: 12px;
 	margin-inline: 0;
 	opacity: 1;
-}
-
-.ui-button-spinner-slot-end {
-	margin-inline: -6px 0;
 }

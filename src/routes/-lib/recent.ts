@@ -2,16 +2,15 @@ import { activeConditions } from "#/search/condition";
 import { inSentence } from "#/search/condition-label";
 import { keywordsOf, keywordTitle } from "#/search/keywords";
 import type { RecentSearch } from "#/server/turn";
+import { RECENT_COUNTS } from "./nav-prefs";
 
-/*
- * 最近搜索的一条记录在导航栏、首页和全部记录的抽屉里怎么读。三处读同一份。
- */
-
-/** 根路由一次取多少条：导航栏最多列二十条，首页列八条，都从这一页里切。 */
-export const RECENT_FIRST_PAGE = 20;
+/* 最近搜索的一条记录在导航栏、首页和全部记录的抽屉里怎么读。 */
 
 /** 首页「最近搜索」列几条。 */
 export const HOME_RECENT_COUNT = 8;
+
+/** 根路由一次取多少条：导航栏和首页都从这一页里切。 */
+export const RECENT_FIRST_PAGE = Math.max(...RECENT_COUNTS, HOME_RECENT_COUNT);
 
 /**
  * 一行记录读的是**任务标题**：对话的任务是链头那句话，回头找一次搜过的东西，
@@ -21,13 +20,13 @@ export function recentLabel(record: Pick<RecentSearch, "spec" | "title">) {
 	if (record.title) return record.title;
 	const keywords = keywordsOf(record.spec.conditions);
 	if (keywords) return keywordTitle(keywords);
-	// 读不回框里的条件表照条件写。停用的不出现：它没参与这次检索
+	// 读不回框里的条件表照条件写，停用的没参与检索、不写
 	return inSentence(activeConditions(record.spec.conditions)) || "无搜索条件";
 }
 
 /**
- * 标题下面那一行：对话的任务停在了哪些搜索条件上。链头那句话之后可能又说过几句，
- * 这一行说的是最后的样子。关键词搜索的标题就是条件本身，不再重复一遍。
+ * 标题下面那一行：对话的任务最后停在了哪些搜索条件上。关键词搜索的标题就是条件本身，
+ * 没有这一行。
  */
 export function recentSummary(
 	record: Pick<RecentSearch, "spec" | "title">,

@@ -20,7 +20,6 @@ const CANDIDATES = [
 	{ id: "Talent 0480", summary: "实时计算 · 累计 3 年" },
 ];
 
-/** 工具条的长相：浮起的胶囊，人数一行字，一排小号图标钮，分隔线后面是清空。 */
 function Appearance() {
 	return (
 		<Stage footer={<span>左右方向键在按钮间移动</span>}>
@@ -29,7 +28,6 @@ function Appearance() {
 	);
 }
 
-/** 批量操作栏：人数、看已选的人、导出，分隔线后面清空。 */
 function Bar({ count, onClear }: { count: number; onClear: () => void }) {
 	return (
 		<Toolbar aria-label="已选择的人">
@@ -53,7 +51,6 @@ function Bar({ count, onClear }: { count: number; onClear: () => void }) {
 	);
 }
 
-/** 勾选候选人后在名单下方出现的批量操作栏；一个都没选时不渲染。 */
 function PickDockExample() {
 	const [picked, setPicked] = useState<string[]>(["Talent 0101"]);
 	const toggle = (id: string, checked: boolean) =>
@@ -101,7 +98,6 @@ function Usage() {
 	);
 }
 
-/** 工具条页：外观、勾选候选人后的批量操作。 */
 export function ToolbarPage() {
 	return (
 		<DocPage

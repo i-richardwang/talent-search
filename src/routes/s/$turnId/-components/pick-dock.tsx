@@ -21,9 +21,8 @@ import type { Pick, Picks } from "../-lib/picks";
 import { reachOf } from "../-lib/view-params";
 
 /**
- * 选中人之后浮现的工具条：选了几个，以及对这一批做什么。吸在名单那一栏下沿往上 24px，
- * 边往下看边选时就在视线里；一个人都没选时不渲染。人数是一行 500 字重的字，动作是一排
- * 小号图标钮（看已选的人、导出），分隔线后面是清空。
+ * 选中人之后浮现的工具条：选了几个，以及对这一批做什么。吸在名单那一栏下沿，
+ * 边往下看边选时就在视线里；一个人都没选时不渲染。
  */
 export function PickDock({
 	picks,
@@ -54,7 +53,6 @@ export function PickDock({
 				aria-label="已选择的人"
 				className="pointer-events-auto transition-[opacity,translate] duration-200 ease-out starting:translate-y-2 starting:opacity-0"
 			>
-				{/* 数字变化要播报 */}
 				<Text aria-live="polite" className="me-2" weight="medium">
 					已选 <span className="tabular-nums">{chosen.length}</span> 人
 				</Text>
@@ -85,8 +83,8 @@ export function PickDock({
 }
 
 /**
- * 看已选的人：点开按名次列出选中的人，每行只写姓名、可以移除。改过筛选后不在
- * 名单上的已选人会标出来，也只能在这里移除（快照见 `-lib/picks.ts` 的 `Pick`）。
+ * 看已选的人，按名次列出、可以移除。改过筛选后不在名单上的已选人会标出来，
+ * 也只能在这里移除（快照见 `-lib/picks.ts` 的 `Pick`）。
  */
 function Chosen({
 	chosen,
@@ -106,7 +104,6 @@ function Chosen({
 					<Text as="div" className="px-1" weight="medium">
 						已选的人
 					</Text>
-					{/* 浮层高度到屏幕边为止（`--available-height`），超出在里面滚动 */}
 					<List className="-mx-1">
 						{chosen.map((one) => (
 							<ListItem
@@ -120,7 +117,6 @@ function Chosen({
 								}
 								description={onList.has(one.empId) ? undefined : "不在名单上"}
 								key={one.empId}
-								showAction
 								title={one.name}
 							/>
 						))}

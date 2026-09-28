@@ -11,7 +11,12 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import { Thread } from "#/routes/s/$turnId/-components/thread";
-import { FAULT_COPY } from "#/routes/s/$turnId/-lib/interpret";
+import { ELAPSED_SHOW_AFTER_MS } from "#/routes/s/$turnId/-lib/elapsed";
+import {
+	FAULT_COPY,
+	FAULT_EXIT_LABEL,
+	faultExits,
+} from "#/routes/s/$turnId/-lib/interpret";
 import { inSentence } from "#/search/condition-label";
 import type { TraceStep } from "#/search/trace";
 import type { InterpretFault, Turn } from "#/server/turn";
@@ -66,13 +71,7 @@ const STATES: Record<
 	},
 };
 
-const FAULTS: InterpretFault[] = [
-	"unconfigured",
-	"unreachable",
-	"rejected",
-	"unanswered",
-	"broken",
-];
+const FAULTS = Object.keys(FAULT_COPY) as InterpretFault[];
 
 /** 一条线程放在一块描边的面里，站在记录链的地址上，链接画得出来。 */
 function Column({ children }: { children: ReactNode }) {
@@ -178,11 +177,8 @@ function Faults() {
 								</Column>
 							</TableCell>
 							<TableCell className="text-fg-secondary text-xs">
-								{[
-									FAULT_COPY[fault].retry && "重试",
-									FAULT_COPY[fault].keyword && "改用关键词搜索",
-								]
-									.filter(Boolean)
+								{faultExits(fault)
+									.map((exit) => FAULT_EXIT_LABEL[exit])
 									.join("、") || "无"}
 							</TableCell>
 						</TableRow>
@@ -213,7 +209,7 @@ function Usage() {
 				</Column>
 			</Example>
 			<Example
-				description="刚提交的第一句需求：还没有步骤时只有一行流光的「正在理解你的需求…」，等过两秒跟上已等的秒数。"
+				description={`刚提交的第一句需求：还没有步骤时只有一行流光的「正在理解你的需求…」，等过 ${ELAPSED_SHOW_AFTER_MS / 1000} 秒跟上已等的秒数。`}
 				title="刚提交"
 			>
 				<Column>

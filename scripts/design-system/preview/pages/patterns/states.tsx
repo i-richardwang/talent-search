@@ -15,67 +15,35 @@ import { PageNotFound, TurnNotFound } from "#/routes/-components/not-found";
 import { COMMIT_FAILED } from "#/routes/-lib/commit";
 import { Earlier } from "#/routes/s/$turnId/-components/earlier";
 import {
-	type ListWait,
 	ResultList,
+	SKELETON_DELAY,
 } from "#/routes/s/$turnId/-components/result-list";
 import {
 	NoResults,
 	NotUnderstood,
 } from "#/routes/s/$turnId/-components/result-state";
+import { ELAPSED_SHOW_AFTER_MS } from "#/routes/s/$turnId/-lib/elapsed";
 import {
 	FAULT_COPY,
 	FAULT_EXIT_LABEL,
 	faultExits,
 } from "#/routes/s/$turnId/-lib/interpret";
+import type { ListWait } from "#/routes/s/$turnId/-lib/nav-phase";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
-import type { EmptyReason } from "#/search/empty";
 import { KEYWORD_LABEL } from "#/search/keywords";
-import type { SearchSpec } from "#/search/spec";
 import type { InterpretFault, SearchMode } from "#/server/turn";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
-import {
-	CLAIMS,
-	EXCLUDE_INTERN,
-	KEYWORD_SPEC,
-	SPEC,
-	WIDE_CONDITION,
-} from "../../samples/conditions";
+import { EMPTY_CASES, KEYWORD_SPEC, SPEC } from "../../samples/conditions";
 import { EMPTY_OUTCOME, OUTCOME } from "../../samples/people";
 import { LATEST_TURN_ID, ROOT_TURN_ID } from "../../samples/thread";
 
-/** 理解失败的每一环，照产品的文案表列。 */
+/** 理解失败的每一环，按产品的文案表列。 */
 const FAULTS = Object.keys(FAULT_COPY) as InterpretFault[];
 
-/**
- * 每种空态的成因，和一份让它出现的搜索条件。按成因穷尽：检索层多一种成因，
- * 这里少写一行就过不了类型检查。
- */
-const EMPTIES: {
-	[K in EmptyReason["kind"]]: [
-		reason: Extract<EmptyReason, { kind: K }>,
-		spec: SearchSpec,
-	];
-} = {
-	unmet: [{ kind: "unmet" }, SPEC],
-	noHits: [{ kind: "noHits" }, SPEC],
-	filtered: [{ kind: "filtered" }, SPEC],
-	gatesUnmet: [
-		{ kind: "gatesUnmet" },
-		{
-			conditions: [
-				{ about: "person", mode: "must", field: "school", values: ["学校 E"] },
-			],
-		},
-	],
-	overflowEvidence: [{ kind: "overflowEvidence", claims: CLAIMS }, SPEC],
-	overflowPopulation: [{ kind: "overflowPopulation" }, SPEC],
-	allDisabled: [{ kind: "allDisabled" }, { conditions: [WIDE_CONDITION] }],
-	excludeOnly: [{ kind: "excludeOnly" }, { conditions: [EXCLUDE_INTERN] }],
-	noConditions: [{ kind: "noConditions" }, { conditions: [] }],
-};
+const EMPTIES = Object.values(EMPTY_CASES);
 
 /* ---------- 试用：一次提交从等待走到结果 ---------- */
 
@@ -156,7 +124,7 @@ function Playground() {
 				footer={
 					<span>
 						{step === "interpreting"
-							? "正在理解需求：0.2 秒后换成占位行，表头等过 2 秒写出已等的秒数"
+							? `正在理解需求：${SKELETON_DELAY / 1000} 秒后换成占位行，表头等过 ${ELAPSED_SHOW_AFTER_MS / 1000} 秒写出已等的秒数`
 							: step === "searching"
 								? "理解完了，正在搜索"
 								: "点「提交一次」看名单那一列怎么从等待走到结果"}
@@ -246,7 +214,7 @@ function Empties() {
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{Object.values(EMPTIES).map(([reason, spec]) => (
+						{EMPTIES.map(([reason, spec]) => (
 							<TableRow key={reason.kind}>
 								<TableCell className="font-mono text-xs">
 									{reason.kind}
@@ -357,7 +325,7 @@ export function StatesPage() {
 			facts={[
 				"先理解再搜索",
 				`${FAULTS.length} 种理解失败`,
-				`${Object.keys(EMPTIES).length} 种空态`,
+				`${EMPTIES.length} 种空态`,
 				`${Object.keys(NOT_FOUND).length} 种找不到`,
 			]}
 			rules={{

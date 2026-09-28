@@ -5,12 +5,8 @@ import { integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
 
 /**
- * 管理页一张表的表脚：左边这一页在全部里的范围和总数（13px 次要色、等宽数字、千分位），
- * 右边翻页：上一页、页码、下一页，都是小号的文字按钮，当前页是填充的底。
- *
- * 只有一页的时候只说总数、不放翻页：那一页就是全部，「第 1–20 个，共 20 人」
- * 是同一件事说两遍。`units.row` 数行，`units.total` 数总数——人的表一行是一个人，
- * 数作「第 1–50 个，共 320 人」；词表一行是一个词，两处都是「项」。
+ * 管理页一张表的表脚：左边这一页的范围和总数，右边翻页。只有一页时只说总数、不放翻页。
+ * `units.row` 数行、`units.total` 数总数：人的表写「第 1–50 个，共 320 人」。
  */
 export function TablePager({
 	table,
@@ -19,7 +15,7 @@ export function TablePager({
 }: {
 	table: TablePage<unknown>;
 	units: { row: string; total: string };
-	/** 指向第 n 页的那个链接。地址长什么样是调用方的事 */
+	/** 指向第 n 页的链接 */
 	linkTo: (page: number) => ReactElement;
 }) {
 	const { from, page, pages, rows, total } = table;
@@ -61,8 +57,8 @@ function pageItems(page: number, pages: number): PageItem[] {
 }
 
 /**
- * 翻页件。到头的那一头禁用但位置留着，翻到最后一页时「下一页」不会消失、让别的
- * 按钮跳过来。能去的那一页把 `Link` 交给按钮渲染，中键、右键照常。
+ * 到头的那一头禁用但位置留着，别的按钮不会跳过去。能去的那一页把 `Link` 交给按钮
+ * 渲染，中键、右键照常。
  */
 function PageNav({
 	page,

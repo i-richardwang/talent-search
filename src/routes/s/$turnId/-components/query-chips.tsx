@@ -49,9 +49,8 @@ const MODE_HINT: Record<Mode, string> = {
 };
 
 /**
- * 一排条件，一条一个药丸（`FilterChip`）。强度写成字：必须是默认，不标；加分、排除在
- * 条件后面跟一个次要色的词，和「（加分）」写进句子里（`inSentence`）是同一个说法。
- * 停用的换成虚线边，字退到次要色。点药丸打开这一条的菜单，右边的关闭格删掉这一条。
+ * 一排条件，一条一枚 `FilterChip`，点开是这一条的菜单。强度写成字：必须是默认，不标；
+ * 加分、排除和写进句子里（`inSentence`）的是同一个说法。
  */
 export function QueryChips({
 	conditions,
@@ -69,7 +68,7 @@ export function QueryChips({
 				: conditions.map((c, j) => (j === i ? next : c)),
 		);
 	return (
-		<>
+		<div className="flex flex-wrap items-center gap-1.5">
 			{conditions.map((chip, i) => {
 				const label = conditionLabel(chip);
 				const more = moreCount(chip);
@@ -179,6 +178,6 @@ export function QueryChips({
 					</FilterChip>
 				);
 			})}
-		</>
+		</div>
 	);
 }

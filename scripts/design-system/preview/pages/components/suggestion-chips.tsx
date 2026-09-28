@@ -26,11 +26,10 @@ function Playground() {
 	);
 }
 
-/** 建议列页：线程里一轮回复下面的替代条件。 */
 export function SuggestionChipsPage() {
 	return (
 		<DocPage
-			facts={["13px", "8px 圆角", "悬停图标换主色"]}
+			facts={["一枚一行", "放不下省略", "悬停图标换主色"]}
 			rules={{
 				notes: [
 					"挂在一轮回复下面、点一下就能办的建议用 SuggestionChips，一枚一行。",

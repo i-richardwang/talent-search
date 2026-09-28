@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { Dot } from "#/components/evidence";
-import { buildHitIndex, Timeline } from "#/components/timeline";
 import { Block } from "#/components/ui/block";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Segmented } from "#/components/ui/segmented";
@@ -12,6 +10,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
+import { Dot } from "#/routes/s/$turnId/-components/evidence";
+import {
+	buildHitIndex,
+	Timeline,
+} from "#/routes/s/$turnId/-components/timeline";
 import { claimName } from "#/search/condition-label";
 import type { Strength } from "#/search/evidence";
 import { Control, Controls } from "../../kit/controls";

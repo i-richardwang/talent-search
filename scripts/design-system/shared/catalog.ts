@@ -78,7 +78,7 @@ const CATALOG = [
 			},
 			{
 				colors: [
-					"--color-layout",
+					"--color-canvas",
 					"--color-container",
 					"--color-border-secondary",
 				],
@@ -130,7 +130,7 @@ const CATALOG = [
 		pages: [
 			{
 				colors: [
-					"--color-layout",
+					"--color-canvas",
 					"--color-container",
 					"--color-elevated",
 					"--color-fill-tertiary",
@@ -177,14 +177,13 @@ const CATALOG = [
 			component("toolbar", "工具条", "Toolbar"),
 			component("collapsible", "折叠面板", "Collapsible"),
 			component("accordion", "手风琴", "Accordion"),
-			component("collapse", "分组卡片", "Collapse"),
+			component("group-card", "分组卡片", "GroupCard"),
 			component("empty", "空状态", "Empty"),
 			component("filter-chip", "条件药丸", "FilterChip"),
 			component("filter-button", "筛选钮", "FilterButton"),
 			component("progress-tag", "进度标签", "ProgressTag"),
 			component("suggestion-chips", "建议列", "SuggestionChips"),
 			component("skeleton", "骨架屏", "Skeleton"),
-			component("neural-loading", "AI 进行中", "NeuralLoading"),
 			component("alert", "警告提示", "Alert"),
 			component("code-block", "代码块", "CodeBlock"),
 			component("copy-button", "复制按钮", "CopyButton"),
@@ -260,19 +259,19 @@ const CATALOG = [
 			{
 				name: "EvidenceLine",
 				slug: "evidence",
-				source: ["src/components/evidence.tsx"],
+				source: ["src/routes/s/$turnId/-components/evidence.tsx"],
 				title: "证据行",
 			},
 			{
 				name: "CareerBar",
 				slug: "career-bar",
-				source: ["src/components/career-bar.tsx"],
+				source: ["src/routes/s/$turnId/-components/career-bar.tsx"],
 				title: "职业轨迹条",
 			},
 			{
 				name: "Timeline",
 				slug: "timeline",
-				source: ["src/components/timeline.tsx"],
+				source: ["src/routes/s/$turnId/-components/timeline.tsx"],
 				title: "经历时间线",
 			},
 			{
@@ -317,6 +316,7 @@ const CATALOG = [
 				slug: "workspace",
 				source: [
 					"src/routes/s/$turnId/-components/workspace-layout.tsx",
+					"src/routes/s/$turnId/-components/workspace-notices.tsx",
 					"src/routes/s/$turnId/-components/query-header.tsx",
 				],
 				title: "搜索工作台",
@@ -369,7 +369,7 @@ type PageIdsOf<M extends Module> = M extends {
 		: never
 	: never;
 
-export type PageId = PageIdsOf<Module>;
+type PageId = PageIdsOf<Module>;
 /** 画在预览页里的页。 */
 export type PreviewPageId = PageIdsOf<Exclude<Module, { content: "changes" }>>;
 /** 外壳自己画的修改管理页。 */

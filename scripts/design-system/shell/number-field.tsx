@@ -8,11 +8,8 @@ import { ModifiedMark } from "../shared/marks";
 const shown = (value: number) => String(Number(value.toFixed(3)));
 
 /**
- * 右栏里调一个数的框：左端的符号按住左右拖改值（Shift 十倍、Alt 十分之一），
- * 拖的过程中只预览（`onPreview` 给数，放弃时给 null），松手才记一步；符号也能用 Tab
- * 聚焦，在它上面按方向键按步长改，拖动与按键都停在范围两端。中间可以直接输入，
- * 回车或离开时提交，输入超出范围时不提交并在框下提示范围；Esc 放弃；上下键按步长改，
- * Home / End 到最小 / 最大值。改过的项右端有一个恢复原版值的按钮。
+ * 右栏里调一个数的框：左端的符号按住左右拖改值（Shift 十倍、Alt 十分之一），拖的过程中
+ * 只预览（`onPreview` 给数，放弃时给 null），松手才记一步。中间可以直接输入，回车或离开时提交。
  */
 export function NumberField({
 	label,
@@ -34,7 +31,7 @@ export function NumberField({
 	modified: boolean;
 	onCommit: (value: number) => void;
 	onPreview: (value: number | null) => void;
-	/** 给了才在改过的项右端放恢复原版值的按钮。 */
+	/** 给了才在改过的项右端放还原按钮。 */
 	onReset?: () => void;
 	step: number;
 	symbol: string;
@@ -220,7 +217,7 @@ export function NumberField({
 								icon={RotateCcw}
 								onClick={onReset}
 								size="small"
-								title={`${label}恢复原版值`}
+								title={`还原${label}`}
 							/>
 						)}
 					</span>

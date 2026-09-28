@@ -6,7 +6,6 @@ import { Tag } from "#/components/ui/tag";
 import { href } from "../shared/routes";
 import { NAV_DRAWER_ID } from "./navigation";
 
-/** 顶栏：产品名与「设计系统」，右边是撤销、重做、保存方案与导出；窄屏多一个打开目录的按钮。 */
 export function TopBar({
 	canRedo,
 	canUndo,

@@ -19,25 +19,15 @@ import { claimsOf, type SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import { RESULT_PAGE } from "#/search/weights";
 import type { InterpretFault, SearchMode } from "#/server/turn";
+import type { ListWait } from "../-lib/nav-phase";
 import type { Picks } from "../-lib/picks";
 import { reachOf, type View } from "../-lib/view-params";
 import { ClaimProgress, ClaimRow } from "./claim-evidence";
 import { PickDock } from "./pick-dock";
-import {
-	NoResults,
-	NotUnderstood,
-	ResultHeader,
-	type SearchPhase,
-} from "./result-state";
-
-/**
- * 名单在等什么、等的时候长什么样。`dim`：改了筛选，旧名单还是这批候选，留在原地
- * 调到六成；`skeleton`：换了问题或第一次进来，旧名单不再成立，换成同形的占位行。
- */
-export type ListWait = { phase: SearchPhase; list: "dim" | "skeleton" };
+import { NoResults, NotUnderstood, ResultHeader } from "./result-state";
 
 /** 占位等过这么久才出现：更快回来的等待里旧画面原样留着，不闪一下占位。 */
-const SKELETON_DELAY = 200;
+export const SKELETON_DELAY = 200;
 
 /** 占位几行：一屏名单的高度，回来的名单从同一处接着排。 */
 const SKELETON_ROWS = 6;
@@ -133,11 +123,7 @@ export function ResultList({
 		</ListViewHeader>
 	);
 
-	/*
-	 * 一行固定两行字高，条件再多也不长：第一行姓名和岗位，行尾是几条里命中几条的进度
-	 * 标签；第二行每条条件一个词和一颗点。逐条的依据在进度标签的气泡和人的详情里。
-	 * 按人排的名单（没有主张）只有第一行。
-	 */
+	// 按人排的名单没有主张，一行只有姓名和岗位
 	const evidenced = claims.length > 0;
 	const rows = picks.rows.map(({ employee: e, lines }) => {
 		const current = e.empId === empId;
@@ -151,7 +137,6 @@ export function ResultList({
 				pick={
 					<Checkbox
 						aria-label={`选择 ${e.name}`}
-						className="border-border"
 						onClick={(event) => {
 							if (picks.pointAt(e.empId, event.shiftKey))
 								event.preventBaseUIHandler();

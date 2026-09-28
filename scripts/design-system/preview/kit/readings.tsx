@@ -14,7 +14,7 @@ import { usePreviewState, useTokenNumber } from "../state";
 
 /**
  * 一个组件这一档的尺寸读数：令牌表里这个组件这一档的令牌和不分档的令牌，
- * 标签是令牌表里的名字，值读修改版。每项一个 `<span>`，放进读数条或一格里。
+ * 标签是令牌表里的名字，值是修改后的。每项一个 `<span>`，放进读数条或一格里。
  */
 export function SizeReading({
 	group,
@@ -39,8 +39,8 @@ export function SizeReading({
 }
 
 /**
- * 从 `ref` 挂着的元素上量读数。每次渲染后重量，修改版、外观一变也重量；
- * 量出来和上次一样时不再触发渲染。第一次渲染（和服务端渲染）时还没有读数。
+ * 从 `ref` 挂着的元素上量读数。每次渲染后重量，修改、外观一变也重量；
+ * 量出来和上次一样时不触发渲染。第一次渲染（和服务端渲染）时还没有读数。
  */
 export function useMeasured<Reading>(
 	measure: (root: HTMLElement) => Reading | undefined,

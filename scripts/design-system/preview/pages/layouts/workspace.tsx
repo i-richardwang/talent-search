@@ -3,15 +3,13 @@ import { useRef, useState } from "react";
 import type { QueryBarHandle } from "#/components/query-bar";
 import { ConversationDrawer } from "#/routes/s/$turnId/-components/conversation-drawer";
 import { DetailModal } from "#/routes/s/$turnId/-components/detail-modal";
-import { FilterBar } from "#/routes/s/$turnId/-components/filter-bar";
 import { KeyHelp } from "#/routes/s/$turnId/-components/key-help";
-import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
 import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
 import { Thread } from "#/routes/s/$turnId/-components/thread";
 import { WorkspaceLayout } from "#/routes/s/$turnId/-components/workspace-layout";
-import { filterFields, textFilters } from "#/routes/s/$turnId/-lib/filters";
+import { WorkspaceNotices } from "#/routes/s/$turnId/-components/workspace-notices";
 import { useIsWide } from "#/routes/s/$turnId/-lib/media";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { type View, validateView } from "#/routes/s/$turnId/-lib/view-params";
@@ -92,19 +90,20 @@ function Workspace() {
 					/>
 				}
 				notices={
-					<>
-						<div className="flex flex-wrap items-center gap-1.5">
-							<QueryChips
-								conditions={spec.conditions}
-								onChange={(next) => setSpec({ conditions: next })}
-							/>
-						</div>
-						<FilterBar
-							fields={filterFields(outcome.facets, view)}
-							onChange={updateView}
-							textFilters={textFilters(view)}
-						/>
-					</>
+					<WorkspaceNotices
+						conditions={spec.conditions}
+						earlier={false}
+						facets={outcome.facets}
+						latestId={LATEST_TURN_ID}
+						mode="conversation"
+						onRevise={(conditions) => {
+							setSpec({ conditions });
+							return true;
+						}}
+						onViewChange={updateView}
+						turnId={LATEST_TURN_ID}
+						view={view}
+					/>
 				}
 				list={
 					<ResultList

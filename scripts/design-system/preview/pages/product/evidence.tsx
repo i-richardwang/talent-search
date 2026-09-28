@@ -1,12 +1,4 @@
 import { useState } from "react";
-import {
-	Dot,
-	EvidenceLine,
-	evidenceText,
-	MissedClaims,
-	StrengthGuide,
-	StrengthLegend,
-} from "#/components/evidence";
 import { Block } from "#/components/ui/block";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Segmented } from "#/components/ui/segmented";
@@ -19,9 +11,18 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import type { Route } from "#/db/schema";
-import { claimName } from "#/search/condition-label";
-import { bestHitPerClaim, routeLabel, strengthOf } from "#/search/evidence";
-import type { ClaimBasis, Hit, RankedResult } from "#/search/result";
+import { ClaimEvidence } from "#/routes/s/$turnId/-components/claim-evidence";
+import {
+	Dot,
+	EvidenceLine,
+	evidenceText,
+	MissedClaims,
+	StrengthGuide,
+	StrengthLegend,
+} from "#/routes/s/$turnId/-components/evidence";
+import { claimLines } from "#/routes/s/$turnId/-lib/claim-lines";
+import { routeLabel, strengthOf } from "#/search/evidence";
+import type { ClaimBasis, Hit } from "#/search/result";
 import { ROUTE_ORDER, STRENGTHS } from "#/search/weights";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
@@ -112,38 +113,6 @@ function sample(
 		}),
 		basis: { route, value, relevance: 0.9, months, endDate, external },
 	};
-}
-
-/** 名单卡片上一个人的证据行：每条主张取最好的一条命中，没命中的合成一行。 */
-function linesOf(result: RankedResult) {
-	const best = bestHitPerClaim(result.hits, CLAIMS);
-	return CLAIMS.map((claim, i) => {
-		const hit = best[i];
-		const basis = result.basis[i];
-		return { basis, claim, hit, name: claimName(claim) };
-	});
-}
-
-function PersonEvidence({ result }: { result: RankedResult }) {
-	const lines = linesOf(result);
-	return (
-		<div className="flex w-full flex-col gap-1.5">
-			{lines.map(({ basis, claim, hit, name }) =>
-				hit && basis ? (
-					<EvidenceLine
-						basis={basis}
-						boost={claim.mode === "boost"}
-						hit={hit}
-						key={name}
-						name={name}
-					/>
-				) : null,
-			)}
-			<MissedClaims
-				names={lines.filter((l) => !(l.hit && l.basis)).map((l) => l.name)}
-			/>
-		</div>
-	);
 }
 
 function Playground() {
@@ -280,10 +249,10 @@ function Usage() {
 		<ExampleGrid>
 			{first && (
 				<Example
-					description="一个人一组证据行：必须的在前，加分的名字前带 +。"
-					title="名单卡片上的一个人"
+					description="一个人一组证据行，名单行尾的气泡和人的详情里都是这一组：必须的在前，加分的名字前带 +。"
+					title="一个人的匹配依据"
 				>
-					<PersonEvidence result={first} />
+					<ClaimEvidence lines={claimLines(first, CLAIMS)} />
 				</Example>
 			)}
 			{last && (
@@ -291,7 +260,7 @@ function Usage() {
 					description="只有简历自述的人照样进名单，排在有登记证据的人后面；没命中的加分条件合成一行。"
 					title="只有简历自述"
 				>
-					<PersonEvidence result={last} />
+					<ClaimEvidence lines={claimLines(last, CLAIMS)} />
 				</Example>
 			)}
 			{third && (
@@ -299,7 +268,7 @@ function Usage() {
 					description="命中的是同组的另一个写法时，前面写出「匹配依据」，HR 看得到凭什么算命中。"
 					title="换了写法的命中"
 				>
-					<PersonEvidence result={third} />
+					<ClaimEvidence lines={claimLines(third, CLAIMS)} />
 				</Example>
 			)}
 			<Example
@@ -322,7 +291,7 @@ function Usage() {
 	);
 }
 
-/** 证据行：名单卡片上一条主张的一行证据，以及它的点阵、图例和未命中行。 */
+/** 证据行：一条主张的一行证据，以及它的点阵、图例和未命中行。 */
 export function EvidencePage() {
 	return (
 		<DocPage
@@ -337,7 +306,7 @@ export function EvidencePage() {
 					"档名与来源名不同名：档叫「简历自述」，来源叫「简历原文」，后者只指还没读过的段。",
 					"证据可信度只决定名次先后，不决定去留：只有自述证据的人照样进名单。",
 					"右端显示的时长和排序用的时长是同一份，不另算。",
-					"证据行是名单一行的次行，12px：条件词和时长是次要色（做完的时长退到三级灰），命中的字段与字段名三级灰，上下文四级灰。",
+					"证据行出现在名单行尾的依据气泡和人的详情「匹配依据」里，12px：条件词和时长是次要色（做完的时长退到三级灰），命中的字段与字段名三级灰，上下文四级灰。",
 					"图例不常驻：名单表头只留三颗点和「匹配来源」，悬停才展开每一档的说明。",
 					"必须 / 加分靠符号区分，必须不带标记；不上屏分数和名次。",
 				],

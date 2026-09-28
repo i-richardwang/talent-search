@@ -6,10 +6,7 @@ import { EmployeeTable } from "./-components/employee-table";
 
 /**
  * 数据页：库里此刻有谁。点一个人看他的每一段和派生结果（`/data/$empId`）。
- *
- * 检索给招聘的人看命中，这一页给管数据的人看库里到底是什么。找人按名字或工号，
- * 翻页和过滤都在服务端做——几万人一次取齐不值得，而这一页是要能一直往后翻到底的：
- * 没有词的时候它就是库的全部内容。页码在地址里，所以某一页可以直接发给别人。
+ * 按名字或工号找人，找词和翻页在服务端做，词和页码写进地址。
  */
 export const Route = createFileRoute("/data")({
 	validateSearch: (search: Record<string, unknown>) => ({

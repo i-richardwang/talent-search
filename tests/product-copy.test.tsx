@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { StrengthGuide, StrengthLegend } from "#/components/evidence";
 import { ZeroState } from "#/routes/-components/zero-state";
+import {
+	StrengthGuide,
+	StrengthLegend,
+} from "#/routes/s/$turnId/-components/evidence";
 import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { ResultHeader } from "#/routes/s/$turnId/-components/result-state";

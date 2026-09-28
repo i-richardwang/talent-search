@@ -12,7 +12,7 @@ import { type PageRules, RULES_HEADINGS, rulesMarkdown } from "./rules";
  * 读目录里这一页的那一项；它们只管排版，里面放的都是生产组件，不覆盖组件自己的样式。
  */
 
-export interface PageSection {
+interface PageSection {
 	id: string;
 	title: string;
 	/** 分节标题右边的小标签，写这一节正在看的档位之类。 */

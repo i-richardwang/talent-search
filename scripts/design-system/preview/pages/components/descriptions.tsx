@@ -35,7 +35,7 @@ function Playground() {
 				<Control label="尺寸">
 					<Segmented<DescriptionsSize>
 						onChange={setSize}
-						options={SIZES}
+						options={SIZES.map((value) => ({ label: value, value }))}
 						value={size}
 					/>
 				</Control>
@@ -92,7 +92,6 @@ function Usage() {
 	);
 }
 
-/** 属性列表页：两种尺寸、产品里的两处用法。 */
 export function DescriptionsPage() {
 	return (
 		<DocPage
@@ -101,7 +100,6 @@ export function DescriptionsPage() {
 				notes: [
 					"一个对象的几条属性用 Descriptions，一条一个 DescriptionsItem；不在调用处另写两栏网格。",
 					"标签次要色、内容正文色；两栏靠颜色分开，不加冒号，不加粗。",
-					"middle 的标签 12px、内容 13px，一行至少 28px；small 两栏都是 12px。",
 					"几块属性上下排、内容栏要对齐时给同一个 labelWidth（常用 96）；只有一块时让标签栏按最长的定宽。",
 					"没有值的属性写「—」或者整条不出现，看这一条对读的人有没有意义。",
 					"middle 是详情里的主属性；small 是一块里的附属属性，跟着那一块的小字。",

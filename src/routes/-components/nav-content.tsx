@@ -41,11 +41,8 @@ import { LoadFailed, RecentItem, useRetryRoot } from "./recent-item";
 const GROUPS = ["recent"] as const;
 
 /**
- * 导航栏的内容，每一屏都是这一套（`app-shell.tsx`）：身份、新搜索，下面可以滚动的
- * 一栏里是最近搜索这一组，管理页的几项沉在这一栏的底上。
- *
- * 最近搜索能收起，收没收着记在导航栏记住的样子里（`nav-prefs.ts`）。
- * 还没有搜索记录时这一组整个不画：首页那一栏有起步的例子。
+ * 导航栏的内容，每一屏都是这一套：新搜索、最近搜索，管理页的几项沉在滚动区的底上。
+ * 还没有搜索记录时最近搜索这一组整个不画：首页那一栏有起步的例子。
  */
 export function NavContent() {
 	const { recent } = useLoaderData({ from: "__root__" });
@@ -70,7 +67,6 @@ export function NavContent() {
 			<ScrollArea
 				className="mt-px min-h-0 flex-1"
 				contentClassName="flex min-h-full flex-col gap-px px-1 pb-2"
-				disableContentFit
 				scrollFade
 			>
 				{(recent === null || recent.total > 0) && (
@@ -113,9 +109,8 @@ export function NavContent() {
 }
 
 /**
- * 最近搜索这一组：列最近的几条（条数在组名旁的菜单里选），列不完时最后一行是「更多」，
- * 打开全部记录的抽屉。列表由根路由的 loader 送进来（`__root.tsx`），取不到时说一句并给重试。
- * 组上按右键打开和组名行尾「…」同一份菜单；按在一条记录上是那一条自己的菜单。
+ * 最近搜索这一组：条数在组名旁的菜单里选，列不完时最后一行「更多」打开全部记录的抽屉。
+ * 组名上按右键打开和行尾「…」同一份菜单。
  */
 function RecentGroup({ recent }: { recent: TablePage<RecentSearch> | null }) {
 	const control = useNavControl();
@@ -172,7 +167,7 @@ function RecentGroup({ recent }: { recent: TablePage<RecentSearch> | null }) {
 	);
 }
 
-/** 这一组的菜单项：「显示」一项的子菜单里选这一组列几条，行尾写着现在列几条。 */
+/** 这一组的菜单：「显示」的子菜单里选列几条。 */
 function RecentMenuItems({
 	count,
 	onCount,

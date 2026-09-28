@@ -1,27 +1,19 @@
-import { BAND_FILL } from "#/components/evidence";
 import type { Experience } from "#/db/schema";
 import { duration, period } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { bestStrength } from "#/search/evidence";
 import type { Hit } from "#/search/result";
+import { BAND_FILL } from "./evidence";
 
 /**
- * 职业轨迹条：把一个人的经历段按真实年份画成一条带子，看得出在哪几年、跨了几家、
- * 有没有空窗、命中的那段落在哪里。下面的时间线给每段的细节。
- *
- * 高度说这一段命中了没有：命中的占满一条轨，没命中的是轨中间一道细条。颜色说证据
- * 有多强，三档取自点阵那一套（`BAND_FILL`）；没命中的不上色。在职与入职前连着排，
- * 转折处是一根「入职」竖线。
+ * 职业轨迹条：一个人的经历段按真实年份排成一条带子。命中的段占满一条轨、按证据强度
+ * 上色（`BAND_FILL`），没命中的是轨中间一道细条；入职日画一根竖线。
  */
 
-/** 一条轨的高度与轨间距（px）。 */
 const LANE_H = 10;
 const LANE_GAP = 4;
-
-/** 没命中的那一段的高度（px）。 */
 const MISS_H = 4;
-
-/** 相邻两段之间留的缝（px）。 */
+/** 相邻两段之间留的缝。 */
 const SEAM = 2;
 
 /** 命中段的最小宽度（px）：再窄，「简历自述」那一档的描边就看不清了。 */
@@ -87,7 +79,7 @@ export function CareerBar({
 	const height = laneCount * LANE_H + (laneCount - 1) * LANE_GAP;
 
 	const hire = hireDate ? ym(hireDate) : null;
-	// 入职日不在当前经历跨度内时不画，避免把标记钉在边界外
+	// 入职日落在跨度之外时不画
 	const hireAt = hire !== null && hire > from && hire < to ? hire : null;
 	const hireFrac = hireAt === null ? 0 : (hireAt - from) / span;
 	const showHireLabel =
@@ -109,7 +101,6 @@ export function CareerBar({
 								strength ? BAND_FILL[strength] : "bg-fill",
 							)}
 							key={x.id}
-							/* 点一段滚到时间线上的那一段 */
 							onClick={() =>
 								document
 									.getElementById(`exp-${x.id}`)
@@ -127,7 +118,6 @@ export function CareerBar({
 					);
 				})}
 
-				{/* 入职这一刻：带子上唯一的转折点 */}
 				{hireAt !== null && (
 					<span
 						aria-hidden="true"
@@ -137,7 +127,7 @@ export function CareerBar({
 				)}
 			</div>
 
-			{/* 刻度只有起点年、入职年、至今：精确的起止在时间线每一段的第二行 */}
+			{/* 只标起点年、入职年和至今；精确起止在时间线里 */}
 			<figcaption className="relative mt-1.5 h-4 text-fg-secondary text-xs tabular-nums">
 				<span className="absolute left-0">{Math.floor(from / 12)}</span>
 				{showHireLabel && hireAt !== null && (

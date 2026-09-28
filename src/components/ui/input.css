@@ -1,11 +1,6 @@
 /*
- * 块的先后是层叠顺序，同特异性时靠后的胜出：外壳、出错、尺寸、variant，
- * 然后是 TextArea、输入本身、数字框与前后插槽。
- *
- * 不传 `variant` 时用 `.ui-input-auto`：浅色描边、深色填充，由 `.dark` 决定，
- * 服务端渲染不必知道主题；两侧分别与 `.ui-input-outlined`、`.ui-input-filled` 共用规则。
- * 主题写在 `:where()` 里，特异性和单个类名一样。
- *
+ * 块的先后是层叠顺序，同特异性时靠后的胜出：外壳、出错、尺寸、variant。
+ * `.ui-input-auto` 的主题写在 `:where()` 里，特异性和单个类名一样。
  * 两档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
  */
 
@@ -74,7 +69,6 @@
 	}
 }
 
-.ui-input-outlined,
 :where(:root:not(.dark)) .ui-input-auto {
 	border: 1px solid var(--color-border-secondary);
 	background: var(--color-container);
@@ -90,28 +84,10 @@
 	}
 }
 
-/* 嵌在别的面里的输入：没有边、没有底、没有内边距，悬停与聚焦都不画东西。 */
 .ui-input-borderless {
 	padding-inline: 0;
 	border: none;
 	background: none;
-}
-
-.ui-input-textarea {
-	height: auto;
-	padding-block: 8px;
-
-	textarea {
-		resize: none;
-		min-height: calc(1.5em * var(--textarea-min-rows, 2));
-		line-height: 1.5;
-	}
-}
-
-.ui-input-textarea-auto-size {
-	textarea {
-		field-sizing: content;
-	}
 }
 
 .ui-input-input {
@@ -130,47 +106,9 @@
 	}
 }
 
-.ui-input-number-input {
-	font-variant-numeric: tabular-nums;
-}
-
 .ui-input-slot {
 	display: inline-flex;
 	flex: none;
 	align-items: center;
 	color: var(--color-fg-tertiary);
-}
-
-.ui-input-number-controls {
-	display: flex;
-	flex: none;
-	flex-direction: column;
-	align-self: stretch;
-	width: 22px;
-	margin-inline-end: -8px;
-	border-inline-start: 1px solid var(--color-border-secondary);
-}
-
-.ui-input-number-control {
-	cursor: pointer;
-	display: flex;
-	flex: 1;
-	align-items: center;
-	justify-content: center;
-	margin: 0;
-	padding: 0;
-	border: none;
-	color: var(--color-fg-tertiary);
-	background: none;
-	outline: none;
-	transition: color 150ms var(--ease-out);
-
-	&:hover:not(:disabled) {
-		color: var(--color-fg);
-	}
-
-	&:disabled {
-		cursor: not-allowed;
-		opacity: 0.4;
-	}
 }

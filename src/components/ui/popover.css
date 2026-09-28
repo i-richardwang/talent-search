@@ -1,8 +1,3 @@
-/*
- * 各块挂在各自的元素上，按 DOM 的先后排：定位器、浮层、小三角、viewport。
- * 定位器的 z 值用弹层档 `--z-index-popup`。
- */
-
 .ui-popover-positioner {
 	--ui-popover-animation-duration: 150ms;
 	--ui-popover-animation-translate: 6px;
@@ -32,7 +27,7 @@
 		visibility: hidden;
 	}
 
-	/* 进场从远离触发器的一侧 6px 处来：在上方时从下方来，左右同理。 */
+	/* 进场从远离触发器的一侧来：在上方时从下方来，在左侧时从右侧来。 */
 	&[data-placement^="top"] {
 		--ui-popover-translate-x: 0;
 		--ui-popover-translate-y: var(--ui-popover-animation-translate);
@@ -45,11 +40,6 @@
 
 	&[data-placement^="left"] {
 		--ui-popover-translate-x: var(--ui-popover-animation-translate);
-		--ui-popover-translate-y: 0;
-	}
-
-	&[data-placement^="right"] {
-		--ui-popover-translate-x: calc(var(--ui-popover-animation-translate) * -1);
 		--ui-popover-translate-y: 0;
 	}
 }
@@ -96,65 +86,8 @@
 	}
 }
 
-/*
- * 小三角：画的是尖朝上的一枚，Base UI 按浮层在哪一侧写 data-side，这里转到朝向触发器，
- * 并推到浮层外沿。底色与浮层同色，两条斜边描一道描边色。
- */
-.ui-popover-arrow {
-	--ui-popover-arrow-offset-block: 5px;
-	--ui-popover-arrow-offset-inline: 8px;
-
-	pointer-events: none;
-
-	position: absolute;
-	transform-origin: center;
-
-	display: flex;
-
-	width: 12px;
-	height: 6px;
-
-	& > svg {
-		display: block;
-		width: 100%;
-		height: 100%;
-	}
-
-	& [data-role="fill"] {
-		fill: var(--color-elevated);
-	}
-
-	& [data-role="stroke"] {
-		fill: none;
-		stroke: var(--color-border);
-		stroke-width: 1px;
-	}
-
-	&[data-side="top"] {
-		inset-block-end: calc(var(--ui-popover-arrow-offset-block) * -1);
-		transform: rotate(180deg);
-	}
-
-	&[data-side="left"] {
-		inset-inline-end: calc(var(--ui-popover-arrow-offset-inline) * -1);
-		transform: rotate(90deg);
-	}
-
-	&[data-side="right"] {
-		inset-inline-start: calc(var(--ui-popover-arrow-offset-inline) * -1);
-		transform: rotate(-90deg);
-	}
-
-	&[data-side="bottom"] {
-		inset-block-start: calc(var(--ui-popover-arrow-offset-block) * -1);
-	}
-}
-
 .ui-popover-viewport {
-	--ui-popover-viewport-inline-padding: 12px;
-
 	position: relative;
 	overflow: clip;
-	padding-block: 12px;
-	padding-inline: var(--ui-popover-viewport-inline-padding);
+	padding: 12px;
 }

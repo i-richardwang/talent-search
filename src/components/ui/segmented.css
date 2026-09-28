@@ -1,9 +1,4 @@
-/*
- * 块的先后是层叠顺序，后面的块覆盖前面的：列表、列表的 block；选项、选项的 block、
- * 选项的尺寸；其后是选项里的图标与文字，最后是垫在选中项下的指示块。
- *
- * 两档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
- */
+/* 两档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。 */
 
 :root {
 	--segmented-height-small: 26px;
@@ -25,7 +20,7 @@
 	padding: 3px;
 	border: 1px solid var(--color-fill-quaternary);
 	border-radius: var(--radius-lg);
-	background: var(--color-layout);
+	background: var(--color-canvas);
 }
 
 .ui-segmented-list-block {
@@ -58,21 +53,16 @@
 
 	@apply focus-ring;
 
-	&:hover:not([data-disabled], [data-pressed]) {
+	&:hover:not([data-pressed]) {
 		color: var(--color-fg);
 	}
 
-	&:active:not([data-disabled]) {
-		transform: scale(0.98);
+	&:active {
+		transform: scale(var(--press-scale));
 	}
 
 	&[data-pressed] {
 		color: var(--color-fg);
-	}
-
-	&[data-disabled] {
-		cursor: not-allowed;
-		color: var(--color-fg-quaternary);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
@@ -87,14 +77,12 @@
 .ui-segmented-item-middle {
 	height: var(--segmented-height-middle);
 	padding-inline: var(--segmented-padding-middle);
-	border-radius: var(--radius-md);
 	font-size: var(--segmented-font-size-middle);
 }
 
 .ui-segmented-item-small {
 	height: var(--segmented-height-small);
 	padding-inline: var(--segmented-padding-small);
-	border-radius: var(--radius-md);
 	font-size: var(--segmented-font-size-small);
 }
 
@@ -118,7 +106,6 @@
 	height: var(--active-item-height);
 	border-radius: var(--radius-md);
 	background: var(--color-elevated);
-	box-shadow: none;
 	transition-timing-function: var(--ease-out);
 	transition-duration: 240ms;
 	transition-property: inset-inline-start, inset-block-start, width, height;

@@ -1,13 +1,11 @@
 import {
 	ArrowDown,
-	ArrowUp,
 	Copy,
 	Ellipsis,
 	type LucideIcon,
 	RefreshCw,
 	Star,
 	Trash2,
-	X,
 } from "lucide-react";
 import { useState } from "react";
 import { ActionIcon, type ActionIconProps } from "#/components/ui/action-icon";
@@ -21,7 +19,6 @@ import {
 	DropdownMenuTrigger,
 	renderDropdownMenuItems,
 } from "#/components/ui/dropdown-menu";
-import { TextArea } from "#/components/ui/input";
 import { Segmented } from "#/components/ui/segmented";
 import {
 	Table,
@@ -43,11 +40,11 @@ import { px, SizeCell, useMeasured } from "../../kit/readings";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { useTier } from "../../state";
 
-type State = "default" | "active" | "disabled" | "loading";
+type State = "default" | "active" | "disabled";
 type ActionIconVariant = NonNullable<ActionIconProps["variant"]>;
 type Tier = TierOf<"action-icon">;
 
-const VARIANTS: ActionIconVariant[] = ["borderless", "filled", "outlined"];
+const VARIANTS: ActionIconVariant[] = ["borderless", "outlined"];
 
 const ICONS: Record<string, [icon: LucideIcon, title: string]> = {
 	copy: [Copy, "复制搜索条件"],
@@ -56,7 +53,6 @@ const ICONS: Record<string, [icon: LucideIcon, title: string]> = {
 	trash: [Trash2, "删除这次搜索"],
 };
 
-/** 量试用里那个图标按钮：方块边长、圆角与图标边长。 */
 function measureIcon(root: HTMLElement) {
 	const button = root.querySelector("button");
 	const glyph = button?.querySelector("svg");
@@ -96,7 +92,6 @@ function Playground() {
 						onChange={setVariant}
 						options={[
 							{ label: "无边框", value: "borderless" },
-							{ label: "填充", value: "filled" },
 							{ label: "描边", value: "outlined" },
 						]}
 						value={variant}
@@ -109,7 +104,6 @@ function Playground() {
 							{ label: "默认", value: "default" },
 							{ label: "激活", value: "active" },
 							{ label: "禁用", value: "disabled" },
-							{ label: "加载中", value: "loading" },
 						]}
 						value={state}
 					/>
@@ -137,7 +131,6 @@ function Playground() {
 						aria-label={title}
 						disabled={state === "disabled"}
 						icon={glyph}
-						loading={state === "loading"}
 						size={sizeTier}
 						title={withTitle ? title : undefined}
 						variant={variant}
@@ -161,7 +154,6 @@ function Appearances() {
 						<TableHead>默认 · 可交互</TableHead>
 						<TableHead>激活</TableHead>
 						<TableHead>禁用</TableHead>
-						<TableHead>加载中</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -195,15 +187,6 @@ function Appearances() {
 									variant={variant}
 								/>
 							</TableCell>
-							<TableCell>
-								<ActionIcon
-									aria-label={COPY}
-									icon={Copy}
-									loading
-									size={sizeTier}
-									variant={variant}
-								/>
-							</TableCell>
 						</TableRow>
 					))}
 				</TableBody>
@@ -212,7 +195,6 @@ function Appearances() {
 	);
 }
 
-/** 尺寸表的一行：跟着右栏选中的档高亮。 */
 function SizeRow({ size }: { size: Tier }) {
 	const sizeTier = useTier("action-icon");
 	return (
@@ -260,7 +242,6 @@ function Sizes() {
 
 function Usage() {
 	const [starred, setStarred] = useState(false);
-	const [draft, setDraft] = useState("");
 	return (
 		<ExampleGrid>
 			<Example
@@ -304,45 +285,7 @@ function Usage() {
 				</Toolbar>
 			</Example>
 			<Example
-				description="提交放进输入框的底栏，用 filled 的小号；没写需求时禁用。"
-				title="输入框里的提交"
-			>
-				<TextArea
-					aria-label="需求"
-					autoSize={{ minRows: 2 }}
-					onChange={(event) => setDraft(event.target.value)}
-					placeholder="描述要找的人，比如做过支付风控的后端"
-					value={draft}
-				/>
-				<ActionIcon
-					aria-label="搜索"
-					disabled={draft.trim() === ""}
-					icon={ArrowUp}
-					size="small"
-					variant="filled"
-				/>
-			</Example>
-			<Example
-				description="贴着内容边缘的关闭按钮用 outdent 抵掉方块多出的半圈，图标与标题右缘对齐。"
-				title="详情头部的关闭"
-			>
-				<div className="flex w-full items-start justify-between gap-2">
-					<div className="min-w-0">
-						<p className="font-semibold text-base">候选人 A</p>
-						<p className="text-fg-secondary text-xs">
-							Talent 0123 · 后端工程师
-						</p>
-					</div>
-					<ActionIcon
-						aria-label="关闭详情"
-						icon={X}
-						outdent="end"
-						title="关闭详情"
-					/>
-				</div>
-			</Example>
-			<Example
-				description="压在滚动内容上的圆钮用 outlined 加 glass：半透明的浮层底糊掉底下的字，对话线程右下角回到最新就是它：尺寸直接给 36px 方块、全圆角、18px 图标。"
+				description="压在滚动内容上的圆钮用 floating 尺寸、outlined 加 glass：半透明的浮层底糊掉底下的字，对话线程右下角回到最新就是它。"
 				title="压在内容上"
 			>
 				<div className="relative h-28 w-full overflow-hidden rounded-md">
@@ -353,7 +296,7 @@ function Usage() {
 						className="absolute end-4 bottom-4"
 						glass
 						icon={ArrowDown}
-						size={{ blockSize: 36, borderRadius: 36, size: 18 }}
+						size="floating"
 						title="跳转到最新"
 						variant="outlined"
 					/>
@@ -385,7 +328,6 @@ function Usage() {
 	);
 }
 
-/** 图标按钮：三种外观、激活态、几档尺寸。 */
 export function ActionIconPage() {
 	const sizeTier = useTier("action-icon");
 	return (
@@ -401,8 +343,8 @@ export function ActionIconPage() {
 					"必须有名字：给 title 出悬停提示，或给 aria-label；菜单触发器没有 aria-label 时拿字符串 title 当名字。",
 					"放在 Toolbar 里时经 ToolbarButton 的 render 交进去，方向键在按钮之间移动焦点。",
 					"开关状态用 active，不另画选中装饰。",
-					'尺寸用 size，不覆盖宽高与圆角；贴着行尾对齐用 outdent="end"，不写负外边距。',
-					'栏顶页头（NavHeader）上的用 size="header"：28px 方块、16px 图标，正好填满页头去掉内边距的高度。',
+					"尺寸用 size，不覆盖宽高与圆角。",
+					'栏顶页头（NavHeader）上的用 size="header"，正好填满页头去掉内边距的高度。',
 				],
 				usage: `<ActionIcon\n  icon={Trash2}\n  size="small"\n  title="删除这次搜索"\n/>`,
 			}}

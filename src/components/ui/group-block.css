@@ -1,9 +1,5 @@
 /*
- * GroupBlock 的外观，类名以 `.ui-group-block` 开头。块的先后：一组、组头（组名、数、
- * 说明、动作）、条目列表、一条（record、prose）与条目里的几格、组名行尾的动作。
- *
- * 这一组画在首页的正文里，字号比导航与表格大一档：条目标题 15px、说明 13px，
- * 15px 不在字阶上，只用在这里。
+ * 这一组画在首页的正文里，字号比导航与表格大一档：条目标题 15px 不在字阶上，只用在这里。
  */
 
 .ui-group-block {
@@ -45,7 +41,6 @@
 	white-space: nowrap;
 }
 
-/* 组名后面的数：18px 高、至少 20px 宽、5px 圆角的一块 fill-tertiary。 */
 .ui-group-block-count {
 	display: inline-flex;
 	flex: none;
@@ -70,7 +65,7 @@
 	color: var(--color-fg-tertiary);
 }
 
-.ui-group-block-action {
+.ui-group-block-action-slot {
 	display: flex;
 	flex: none;
 	align-items: center;
@@ -88,6 +83,7 @@
 	align-items: flex-start;
 	gap: 12px;
 	min-width: 0;
+	/* 块向两边伸出：字和组名、上面的输入框对齐，悬停的底比它们宽一截。 */
 	margin-inline: -10px;
 	padding: 9px 10px;
 	border: 0;
@@ -107,10 +103,6 @@
 	}
 }
 
-/*
- * 一句话的条目是一枚按钮：至少 58px 高，条目之间 1px；字重中粗、行高 1 铺在整块上，
- * 标题自己写回常规字重和 22px 行高，说明沿用；按下时缩到 0.98。
- */
 .ui-group-block-item-prose {
 	min-height: 58px;
 	font-weight: 500;
@@ -120,7 +112,7 @@
 		transform 0.2s;
 
 	&:active {
-		transform: scale(0.98);
+		transform: scale(var(--press-scale));
 	}
 
 	.ui-group-block-items:has(> &) {
@@ -128,7 +120,7 @@
 	}
 }
 
-/* 图标和标题第一行居中：record 的图标上下各让 3px，prose 的往下让 2px。 */
+/* 图标和标题第一行居中。 */
 .ui-group-block-item-icon {
 	display: flex;
 	flex: none;
@@ -192,7 +184,7 @@
 	white-space: nowrap;
 }
 
-.ui-group-block-link {
+.ui-group-block-action {
 	padding: 0;
 	border: 0;
 	border-radius: var(--radius-xs);

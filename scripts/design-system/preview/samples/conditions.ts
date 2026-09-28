@@ -1,4 +1,5 @@
 import type { Condition } from "#/search/condition";
+import type { EmptyReason } from "#/search/empty";
 import { conditionsOfKeywords } from "#/search/keywords";
 import { type Claim, claimsOf } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
@@ -81,4 +82,32 @@ export const KEYWORD_SPEC: SearchSpec = {
 		school: [],
 		minMonths: 24,
 	}),
+};
+
+/**
+ * 每种空态的成因，和一份让它出现的搜索条件。按成因穷尽：检索层多一种成因，
+ * 这里少写一行就过不了类型检查。
+ */
+export const EMPTY_CASES: {
+	[K in EmptyReason["kind"]]: [
+		reason: Extract<EmptyReason, { kind: K }>,
+		spec: SearchSpec,
+	];
+} = {
+	unmet: [{ kind: "unmet" }, SPEC],
+	noHits: [{ kind: "noHits" }, SPEC],
+	filtered: [{ kind: "filtered" }, SPEC],
+	gatesUnmet: [
+		{ kind: "gatesUnmet" },
+		{
+			conditions: [
+				{ about: "person", mode: "must", field: "school", values: ["学校 E"] },
+			],
+		},
+	],
+	overflowEvidence: [{ kind: "overflowEvidence", claims: CLAIMS }, SPEC],
+	overflowPopulation: [{ kind: "overflowPopulation" }, SPEC],
+	allDisabled: [{ kind: "allDisabled" }, { conditions: [WIDE_CONDITION] }],
+	excludeOnly: [{ kind: "excludeOnly" }, { conditions: [EXCLUDE_INTERN] }],
+	noConditions: [{ kind: "noConditions" }, { conditions: [] }],
 };

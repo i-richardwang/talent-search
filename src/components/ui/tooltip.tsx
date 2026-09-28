@@ -1,13 +1,9 @@
 "use client";
 
-import {
-	Tooltip as BaseTooltip,
-	type TooltipPositionerProps as BaseTooltipPositionerProps,
-} from "@base-ui/react/tooltip";
+import { Tooltip as BaseTooltip } from "@base-ui/react/tooltip";
 import type { ReactElement, ReactNode } from "react";
 import {
 	defaultPortalContainer,
-	type Placement,
 	placementMap,
 	triggerRender,
 	useFloatingLayer,
@@ -16,31 +12,20 @@ import { Hotkey } from "#/components/ui/hotkey";
 import { cn } from "#/lib/utils";
 
 /*
- * 文字提示，样式在 tooltip.css。默认在触发器上方居中（`placement` 可改），悬停或聚焦
- * 400ms 后出现，离开 100ms 后收起；`title` 与 `hotkey` 都没有时直接返回 children。
- * 触发器是单个元素，触发器的属性与 ref 合进它本身，不另包一层（见 floating.ts）。
- *
- * - `hotkey` 画在文字后面，是收进一个键帽的 Hotkey（`compact`），两者隔 6px。
- * - 每个提示只有一个触发器，不在多个触发器之间共用浮层。
- * - `className` 落在浮层（popup）上。
- * - 不在弹出层里时 portal 到 `<body>`（见 floating.ts）。
- * - 定位器的 z 值是弹层档 `--z-index-popup`（写在 tooltip.css）。
+ * `title` 与 `hotkey` 都没有时直接返回 children。触发器是单个元素，属性与 ref 合进它本身，
+ * 不另包一层（见 floating.ts）。每个提示只有一个触发器，不在多个触发器之间共用浮层。
  */
 
 const OPEN_DELAY = 400;
 const CLOSE_DELAY = 100;
 
 export interface TooltipProps {
-	/** 触发器。 */
 	children: ReactElement;
+	/** 落在浮层上。 */
 	className?: string;
-	/** 快捷键，写法同 Hotkey 的 `keys`（`mod+k`）。 */
+	/** 写法同 Hotkey 的 `keys`（`mod+k`）。 */
 	hotkey?: string;
-	placement?: Placement;
-	positionerProps?: Omit<
-		BaseTooltipPositionerProps,
-		"className" | "style" | "children" | "side" | "align"
-	>;
+	placement?: "top" | "bottom";
 	title?: ReactNode;
 }
 
@@ -50,7 +35,6 @@ export function Tooltip({
 	className,
 	hotkey,
 	placement = "top",
-	positionerProps,
 }: TooltipProps) {
 	const floatingLayer = useFloatingLayer();
 
@@ -80,7 +64,6 @@ export function Tooltip({
 					data-placement={placement}
 					side={side}
 					sideOffset={6}
-					{...positionerProps}
 				>
 					<BaseTooltip.Popup className={cn("ui-tooltip-popup", className)}>
 						<BaseTooltip.Viewport className="ui-tooltip-viewport">

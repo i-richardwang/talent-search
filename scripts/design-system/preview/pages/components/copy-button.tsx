@@ -12,7 +12,7 @@ function Playground() {
 			footer={
 				<>
 					<span>按下后 2 秒是对勾与 active 态</span>
-					<span>尺寸与变体同 ActionIcon</span>
+					<span>尺寸同 ActionIcon</span>
 				</>
 			}
 		>
@@ -20,7 +20,6 @@ function Playground() {
 				<CopyButton content={EMP_ID} size="small" />
 				<CopyButton content={EMP_ID} size="header" />
 				<CopyButton content={EMP_ID} />
-				<CopyButton content={EMP_ID} variant="filled" />
 			</div>
 		</Stage>
 	);
@@ -42,10 +41,10 @@ function Usage() {
 				</span>
 			</Example>
 			<Example
-				description="代码块的复制钮就是它：浮在内容上，glass 把底下的字糊掉。"
+				description="代码块的复制钮就是它，浮在内容上。"
 				title="压在内容上"
 			>
-				<CodeBlock className="w-full" language="日志">
+				<CodeBlock language="日志">
 					{"[09:12:21] 完成：读了 126 段，跳过 2 段，用时 18 秒"}
 				</CodeBlock>
 			</Example>
@@ -53,11 +52,10 @@ function Usage() {
 	);
 }
 
-/** 复制按钮页：几档尺寸、产品里的两处用法。 */
 export function CopyButtonPage() {
 	return (
 		<DocPage
-			facts={["2 秒已复制态", "glass"]}
+			facts={["2 秒已复制态"]}
 			rules={{
 				notes: [
 					"复制一段值用 CopyButton，不自己拼剪贴板和对勾图标。",

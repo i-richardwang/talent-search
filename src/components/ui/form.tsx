@@ -11,16 +11,13 @@ import {
 import { cn } from "#/lib/utils";
 
 /*
- * 表单：Form 与 Field，样式在 form.css。字段挂在 `Form` 上（`Form.Field`）。
- *
- * - 外层样式用 `className`。
- * - 不传 `layout` 时，窄屏（`max-width: 575.98px` 的 `matchMedia`）上下排，宽屏左右排；
- *   服务端与首帧按宽屏渲染。
+ * 表单与字段（`Form.Field`）。窄屏上下排、宽屏左右排；服务端与首帧按宽屏渲染。
+ * 窄屏断点和 form.css 的同一个。
  */
 
 type FormLayout = "horizontal" | "vertical";
 
-const MOBILE = "(max-width: 575.98px)";
+const MOBILE = "(width < 36rem)";
 
 function subscribeMobile(onChange: () => void) {
 	const query = window.matchMedia(MOBILE);
@@ -28,7 +25,6 @@ function subscribeMobile(onChange: () => void) {
 	return () => query.removeEventListener("change", onChange);
 }
 
-/** 窄屏：宽度不超过 575.98px。 */
 function useMobile() {
 	return useSyncExternalStore(
 		subscribeMobile,
@@ -42,20 +38,13 @@ const FormLayoutContext = createContext<FormLayout>("horizontal");
 interface FormProps
 	extends Omit<BaseForm.Props, "render" | "className" | "style"> {
 	className?: string;
-	/** 字段之间的间距。 */
-	gap?: number | string;
-	layout?: FormLayout;
 }
 
-function FormRoot({ className, gap, layout, ...rest }: FormProps) {
+function FormRoot({ className, ...rest }: FormProps) {
 	const mobile = useMobile();
 	return (
-		<FormLayoutContext value={layout || (mobile ? "vertical" : "horizontal")}>
-			<BaseForm
-				className={cn("ui-form", className)}
-				style={{ gap }}
-				{...rest}
-			/>
+		<FormLayoutContext value={mobile ? "vertical" : "horizontal"}>
+			<BaseForm className={cn("ui-form", className)} {...rest} />
 		</FormLayoutContext>
 	);
 }

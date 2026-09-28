@@ -12,21 +12,19 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import { type ToastType, toast } from "#/components/ui/toast";
+import { toast } from "#/components/ui/toast";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
+type ToastType = keyof typeof toast;
+
 const TYPES: { label: string; value: ToastType }[] = [
-	{ label: "普通", value: "default" },
 	{ label: "成功", value: "success" },
-	{ label: "信息", value: "info" },
 	{ label: "留意", value: "warning" },
 	{ label: "失败", value: "error" },
-	{ label: "等待", value: "loading" },
 ];
 
-/** 形态表的行：写法、什么时候用、示例的参数。 */
 const FORMS: [call: string, when: string, show: () => void][] = [
 	["toast.success(文字)", "一次动作办成了", () => toast.success("名单已导出")],
 	[
@@ -42,15 +40,6 @@ const FORMS: [call: string, when: string, show: () => void][] = [
 		"toast.warning(文字)",
 		"没执行，要留意",
 		() => toast.warning("已有任务在排队，这次没有加入"),
-	],
-	["toast.info(文字)", "顺带告诉一声", () => toast.info("搜索链接已复制")],
-	[
-		"toast.loading(文字)",
-		"要等一会儿，不自己关",
-		() => {
-			const waiting = toast.loading("正在准备名单…");
-			setTimeout(() => waiting.close(), 2400);
-		},
 	],
 	[
 		"actions",
@@ -71,17 +60,11 @@ function Playground() {
 	const [description, setDescription] = useState("已导出 12 人的名单");
 	const show = () => {
 		const options = {
-			actions: withAction
-				? [
-						{ label: "打开", variant: "primary" as const },
-						{ label: "撤销", variant: "text" as const },
-					]
-				: undefined,
+			actions: withAction ? [{ label: "打开" }] : undefined,
 			description: description || undefined,
 			title: withTitle ? "导出完成" : undefined,
 		};
-		if (type === "default") toast(options);
-		else toast[type](options);
+		toast[type](options);
 	};
 	return (
 		<div className="flex flex-col gap-4">
@@ -102,7 +85,6 @@ function Playground() {
 						id="playground-toast-description"
 						onChange={(event) => setDescription(event.target.value)}
 						value={description}
-						variant="filled"
 					/>
 				</Control>
 				<Control>
@@ -120,17 +102,14 @@ function Playground() {
 				footer={
 					<>
 						<span>右下角，宽 360px</span>
-						<span>5 秒后关，等待不自己关</span>
+						<span>5 秒后关</span>
 						<span>最多 5 条</span>
 					</>
 				}
 			>
-				<div className="flex gap-2">
-					<Button onClick={show} type="primary">
-						显示通知
-					</Button>
-					<Button onClick={() => toast.dismiss()}>全部关掉</Button>
-				</div>
+				<Button onClick={show} type="primary">
+					显示通知
+				</Button>
 			</Stage>
 		</div>
 	);
@@ -169,29 +148,6 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="下载在后台准备，完了换成成功或失败的那一条；按钮本身不另画等待。"
-				title="导出名单"
-			>
-				<Button
-					onClick={() =>
-						toast
-							.promise(
-								new Promise<number>((resolve) =>
-									setTimeout(() => resolve(12), 1600),
-								),
-								{
-									error: "没能导出名单",
-									loading: "正在准备名单…",
-									success: (count) => `已导出 ${count} 人`,
-								},
-							)
-							.catch(() => {})
-					}
-				>
-					导出 CSV
-				</Button>
-			</Example>
-			<Example
 				description="同一个 id 连点几次只有一条，原地刷新并重新计时。"
 				title="重复的提醒"
 			>
@@ -210,14 +166,13 @@ function Usage() {
 	);
 }
 
-/** 通知页：试用、几种状态、使用场景。 */
 export function ToastPage() {
 	return (
 		<DocPage
 			facts={[`${TYPES.length} 种状态`, "右下角叠放", "指针移上去展开"]}
 			rules={{
 				notes: [
-					"<Toaster /> 在应用根上挂一次；其余地方只调 toast.success / error / warning / info / loading。",
+					"<Toaster /> 在应用根上挂一次；其余地方只调 toast.success / error / warning。",
 					"通知说一次动作的结果：办成了、没办成、没执行。页面上一直成立的状态用 Alert，不用通知。",
 					"失败的通知给 title 说哪件事没办成，description 说哪一环坏了；能当场重试就给「重试」按钮。",
 					"会重复触发的提醒给 id，同一件事只留一条。",

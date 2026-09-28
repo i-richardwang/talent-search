@@ -1,9 +1,5 @@
-/*
- * Collapsible 的外观：`.ui-collapsible-panel` 在面板上，管高度过渡；
- * `.ui-collapsible-content` 在内容上，管淡入与位移；其后是开关 `.ui-collapsible-trigger`
- * 与它的箭头。各块各在一个元素上。
- */
-
+/* 面板与内容的过渡，Accordion 的面板也用这两个类名。初始即展开的面板（Base UI 写上
+ * animation-name: none）不放过渡。 */
 .ui-collapsible-panel {
 	overflow: hidden;
 	height: auto;
@@ -34,19 +30,19 @@
 		opacity 200ms var(--ease-out),
 		translate 200ms var(--ease-out);
 
-	[data-starting-style] & {
+	[data-starting-style] > & {
 		translate: 0 6px;
 		opacity: 0;
 	}
 
-	[data-ending-style] & {
+	[data-ending-style] > & {
 		translate: 0 -6px;
 		opacity: 0;
 	}
 
 	/* Base UI 给初始即展开的面板写上 animation-name: none */
-	[style*="animation-name: none"] &,
-	[style*="animation-name:none"] & {
+	[style*="animation-name: none"] > &,
+	[style*="animation-name:none"] > & {
 		translate: none;
 		opacity: 1;
 		transition: none;
@@ -57,10 +53,6 @@
 	}
 }
 
-/*
- * 开关是一行可点的标题，宽度随内容：上下 4px、左右 8px，间隔 8px，8px 圆角，
- * 悬停铺 fill-tertiary。三角 18px、fg-tertiary，收着朝右，展开时转 90° 朝下。
- */
 .ui-collapsible-trigger {
 	cursor: pointer;
 	display: flex;

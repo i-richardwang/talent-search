@@ -40,7 +40,6 @@ function PersonRows() {
 	);
 }
 
-/** 量竖向滚动条现在的宽度（悬停时会变宽）。 */
 function measureScrollbar(root: HTMLElement) {
 	return root
 		.querySelector('[data-orientation="vertical"]')
@@ -86,7 +85,6 @@ function Usage() {
 			>
 				<ScrollArea
 					className="h-48 w-full"
-					disableContentFit
 					scrollFade
 					viewportProps={{
 						className: "data-has-overflow-y:overscroll-y-contain",
@@ -102,10 +100,10 @@ function Usage() {
 				</ScrollArea>
 			</Example>
 			<Example
-				description="内容里有断不开的一行宽文字时加 disableContentFit，滚动区不被它撑宽。"
+				description="内容里有断不开的一行宽文字时，滚动区不被它撑宽。"
 				title="不撑宽外层"
 			>
-				<ScrollArea className="h-40 w-full" disableContentFit>
+				<ScrollArea className="h-40 w-full">
 					<pre className="overflow-hidden text-ellipsis p-3 font-mono text-fg-secondary text-xs leading-5">
 						{PEOPLE.map(
 							(person) =>
@@ -118,7 +116,6 @@ function Usage() {
 	);
 }
 
-/** 滚动区页：淡出的试用、产品里的几处用法。 */
 export function ScrollAreaPage() {
 	return (
 		<DocPage
@@ -126,11 +123,11 @@ export function ScrollAreaPage() {
 			rules={{
 				notes: [
 					"高度由外层布局给（如 size-full min-h-0），滚动区自己不定高。",
-					"内容里有断不开的宽元素时加 disableContentFit，免得撑宽外层。",
+					"内容里有断不开的宽元素时，滚动区不被它撑宽外层。",
 					"只有还能滚的一端需要提示时用 scrollFade，不另画渐变遮罩。",
 					"只带一根纵向滚动条；视口的类名和 ref 经 viewportProps 交进去。",
 				],
-				usage: `<ScrollArea className="size-full min-h-0" disableContentFit scrollFade>\n  {children}\n</ScrollArea>`,
+				usage: `<ScrollArea className="size-full min-h-0" scrollFade>\n  {children}\n</ScrollArea>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用滚动区" },

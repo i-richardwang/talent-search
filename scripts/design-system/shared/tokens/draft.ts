@@ -9,18 +9,18 @@ import {
 } from "./registry";
 
 /*
- * 修改版的数据（代码里叫 draft）：只记与原版（源文件里的默认值）不同的令牌，
+ * 修改（代码里叫 draft）：只记与源文件里的值（修改前）不同的令牌，
  * 分三份：浅色、深色各一份颜色，其余令牌两种外观共用一份。
  */
 
 export type TokenValues = Record<string, string>;
 export type Draft = Record<Scope, TokenValues>;
-/** 原版的值：浅色一侧（及共用的令牌）与深色一侧。 */
+/** 修改前的值：浅色一侧（及共用的令牌）与深色一侧。 */
 export type Baseline = Record<Theme, TokenValues>;
 
 const SCOPES = ["light", "dark", "shared"] as const;
 
-/** 拖动中、还没提交的一个值：预览里先按它画，松手才写进修改版。 */
+/** 拖动中、还没提交的一个值：预览里先按它画，松手才写进修改。 */
 export interface TokenPreview {
 	scope: Scope;
 	key: string;
@@ -29,7 +29,7 @@ export interface TokenPreview {
 
 export const emptyDraft = (): Draft => ({ dark: {}, light: {}, shared: {} });
 
-/** 修改版里的全部修改，按变量名排。 */
+/** 全部修改，按变量名排。 */
 export const draftEntries = (draft: Draft) =>
 	SCOPES.flatMap((scope) =>
 		Object.entries(draft[scope]).map(([key, value]) => ({ key, scope, value })),
@@ -37,7 +37,7 @@ export const draftEntries = (draft: Draft) =>
 
 export const changeCount = (draft: Draft) => draftEntries(draft).length;
 
-/** 去掉几项修改，这几项回到原版值。 */
+/** 去掉几项修改，这几项回到修改前的值。 */
 export function resetTokens(
 	draft: Draft,
 	scope: Scope,
@@ -51,7 +51,7 @@ export function resetTokens(
 	};
 }
 
-/** 从存储、消息或请求里读回的修改版要逐项校验：键在令牌表里，值是这个令牌能取的写法和范围。 */
+/** 从存储、消息或请求里读回的修改要逐项校验：键在令牌表里，值是这个令牌能取的写法和范围。 */
 export function isDraft(value: unknown): value is Draft {
 	if (!value || typeof value !== "object") return false;
 	const candidate = value as Record<string, unknown>;
@@ -71,20 +71,19 @@ export function isDraft(value: unknown): value is Draft {
 	});
 }
 
-/** 在一份原版上读写修改版。设计系统用的是绑定了源文件原版的那一份（`source.ts`）。 */
+/** 在一份修改前的值上读写修改。设计系统用的是绑定源文件的那一份（`source.ts`）。 */
 export function draftModel(baseline: Baseline) {
-	/** 原版里的值。 */
 	const originalValue = (scope: Scope, key: string) =>
 		baseline[scope === "shared" ? "light" : scope][key];
 
-	/** 某一侧某个令牌现在的值：修改版里有就用修改版的，没有用原版的。 */
+	/** 某一侧某个令牌现在的值：改过就用修改后的，没改过用修改前的。 */
 	const tokenValue = (draft: Draft, scope: Scope, key: string): string => {
 		const value = draft[scope][key] ?? originalValue(scope, key);
 		if (value === undefined) throw new Error(`没有令牌 ${key}`);
 		return value;
 	};
 
-	/** 写一项修改；和原版相同（颜色按通道、数值按换算后的数）就从修改版里去掉。 */
+	/** 写一项修改；和修改前相同（颜色按通道、数值按换算后的数）就从修改里去掉。 */
 	const updateToken = (
 		draft: Draft,
 		scope: Scope,
@@ -104,7 +103,7 @@ export function draftModel(baseline: Baseline) {
 			: { ...draft, [scope]: { ...draft[scope], [key]: value } };
 	};
 
-	/** 去掉和原版已经相同的项：源文件改过之后，旧修改版里的这些项不再是修改。 */
+	/** 去掉和修改前已经相同的项：源文件改过之后，旧修改里的这些项不再是修改。 */
 	const pruneDraft = (draft: Draft): Draft =>
 		SCOPES.reduce(
 			(pruned, scope) =>

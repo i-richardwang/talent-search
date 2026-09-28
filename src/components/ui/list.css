@@ -1,11 +1,3 @@
-/*
- * List 的外观，类名以 `.ui-list` 开头。块的先后是层叠顺序：列表、一项、可点、当前项，
- * 然后是项里的几格（容器、内容、标题、说明、行尾小字、行尾动作）和标题链接。
- *
- * 一项：四周 12px、圆角 md、头像与内容间隔 8px；标题 14px 中粗、说明 12px，行高都是 1.2，
- * 两行间隔 4px。行尾动作离右边 16px、上下居中。
- */
-
 .ui-list {
 	display: flex;
 	flex-direction: column;
@@ -32,26 +24,6 @@
 	&:hover {
 		background: var(--color-fill-tertiary);
 	}
-}
-
-.ui-list-item-active {
-	&,
-	&:hover {
-		color: var(--color-fg);
-		background: var(--color-fill-secondary);
-	}
-
-	&.ui-list-item-clickable:hover {
-		background: var(--color-fill);
-	}
-}
-
-.ui-list-item-container {
-	overflow: hidden;
-	display: flex;
-	flex: 1;
-	gap: 8px;
-	align-items: flex-start;
 }
 
 .ui-list-item-content {
@@ -88,12 +60,6 @@
 	flex: none;
 	font-size: var(--text-xs);
 	color: var(--color-fg-quaternary);
-	transition: opacity 0.15s;
-
-	.ui-list-item:has(.ui-list-item-actions):is(:hover, :focus-within) &,
-	.ui-list-item:has(.ui-list-item-actions[data-show]) & {
-		opacity: 0;
-	}
 }
 
 .ui-list-item-actions {
@@ -103,23 +69,9 @@
 	transform: translateY(-50%);
 	display: flex;
 	gap: 4px;
-	opacity: 0;
-	transition: opacity 0.15s;
-
-	.ui-list-item:is(:hover, :focus-within) &,
-	&[data-show] {
-		opacity: 1;
-	}
-
-	@media (hover: none) {
-		opacity: 1;
-	}
 }
 
-/*
- * 标题链接：`::after` 铺满整行、圆角与行同档，焦点外框画在它上面，框住的是整行。
- * 外框读全站 `focus-ring` 的那组变量。
- */
+/* 标题链接的 `::after` 铺满整行当点击面，焦点外框画在它上面，框住的是整行。 */
 .ui-list-item-link {
 	color: inherit;
 	text-decoration: none;
@@ -139,13 +91,7 @@
 	}
 }
 
-/*
- * 可多选的列表视图，类名以 `.ui-list-view` 开头：一块描边的面（border-secondary、12px
- * 圆角、container 底），顶上一条吸顶的表头，下面一行一行用分隔线隔开。表头和每一行都是
- * 两格：24px 的选择格和内容，间隔 12px，上下 10px、左右 16px。
- *
- * 面用 `overflow: clip` 裁圆角：不成为滚动容器，表头才吸得住外面那层滚动。
- */
+/* 面用 `overflow: clip` 裁圆角：不成为滚动容器，表头才吸得住外面那层滚动。 */
 .ui-list-view {
 	position: relative;
 	overflow: clip;
@@ -154,7 +100,7 @@
 	background: var(--color-container);
 }
 
-/* 表头：12px 中粗次要色，elevated 底不透明，名单滚过它底下时不透出来。 */
+/* 底色不透明，名单滚过表头底下时不透出来。 */
 .ui-list-view-header {
 	position: sticky;
 	z-index: var(--z-index-stick);
@@ -164,7 +110,7 @@
 	gap: 12px;
 	align-items: center;
 	padding: 10px 16px;
-	border-block-end: 1px solid var(--color-split);
+	border-block-end: 1px solid var(--color-divider);
 	font-size: var(--text-xs);
 	font-weight: 500;
 	line-height: var(--text-xs--line-height);
@@ -172,11 +118,6 @@
 	background: var(--color-elevated);
 }
 
-/*
- * 一行：有 `extra` 时多一格行尾，宽随内容。悬停 fill-tertiary；当前项（`current`）是 fill-secondary 的底，悬停加深到 fill；
- * 勾上的一行是主色一侧最浅的底，悬停加深一档。最后一行不画分隔线。整行调暗（等待时）
- * 走 0.15s 的透明度过渡。
- */
 .ui-list-view-row {
 	position: relative;
 	display: grid;
@@ -184,7 +125,7 @@
 	gap: 12px;
 	align-items: start;
 	padding: 10px 16px;
-	border-block-end: 1px solid var(--color-split);
+	border-block-end: 1px solid var(--color-divider);
 	transition:
 		background 0.12s,
 		opacity 0.15s;
@@ -222,7 +163,7 @@
 	}
 }
 
-/* 选择格：高一行 13px 字，方框在里面居中；压在整行链接的覆盖层之上，点方框不会打开这一行。 */
+/* 选择格高一行正文，压在整行链接的覆盖层之上，点方框不会打开这一行。 */
 .ui-list-view-pick {
 	position: relative;
 	z-index: var(--z-index-raise);
@@ -231,7 +172,12 @@
 	height: var(--text-sm--line-height);
 }
 
-/* 行尾一格：上下居中，和选择格一样压在整行链接的覆盖层之上。 */
+/* 行上的方框边深一档，在行的悬停底和勾上的底上都看得清；表头的全选框不加深。 */
+.ui-list-view-row > .ui-list-view-pick .ui-checkbox:not([data-checked]) {
+	border-color: var(--color-border);
+}
+
+/* 和选择格一样压在整行链接的覆盖层之上。 */
 .ui-list-view-extra {
 	position: relative;
 	z-index: var(--z-index-raise);
@@ -240,10 +186,7 @@
 	align-items: center;
 }
 
-/*
- * 行里的那条链接：`::after` 铺满整行当点击面，焦点外框向里收，画在行的轮廓以内
- * （面裁掉了伸出去的部分）。外框读全站 `focus-ring` 的那组变量。
- */
+/* 焦点外框向里收，画在行的轮廓以内：面裁掉了伸出去的部分。 */
 .ui-list-view-link {
 	color: inherit;
 	text-decoration: none;

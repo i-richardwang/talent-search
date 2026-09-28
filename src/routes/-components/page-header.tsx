@@ -6,9 +6,7 @@ import { ToggleNavButton, useNavControl } from "./nav-control";
 
 /**
  * 一屏主栏顶上的页头：标题在左，`right` 放这一屏的动作。左端按导航栏的状态多一个开关：
- * lg 以下导航栏不常驻，放打开导航抽屉的开关；lg 以上导航栏收起时，放展开它的开关。
- *
- * 正文是居中的一列时传 `centered`，标题居中，和正文同一条中线。
+ * lg 以下打开导航抽屉，lg 以上导航栏收起时展开它。正文是居中的一列时传 `centered`。
  */
 export function PageHeader({
 	title,

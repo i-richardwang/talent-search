@@ -4,32 +4,19 @@ import { cn } from "#/lib/utils";
 import { Icon } from "./icon";
 
 /*
- * 名单上方一条条件的药丸，样式在 filter-chip.css：32px 高、半圆两端，三级填充的底
- * 加一圈次级描边，悬停时描边加深。左边是打开这一条菜单的开关（`FilterChipTrigger`，
- * 做下拉菜单的触发器），右边是清掉这一条的关闭格（`FilterChipClear`）。
- * `dashed` 时换成虚线描边、字退到次要色，表示这一条停用了。
- *
- * 开关里的字 13px 正文色；取值用 `FilterChipValue`（中粗），跟在后面的次要说明用
- * `FilterChipNote`（12px 次要色）。末尾的下箭头 10px。
+ * 一条搜索条件：左边是打开这一条菜单的开关（`FilterChipTrigger`），右边是清掉这一条的
+ * 关闭格（`FilterChipClear`）。`dashed` 表示这一条停用了。
  */
 
 export function FilterChip({
 	children,
-	className,
 	dashed = false,
 }: {
 	children: ReactNode;
-	className?: string;
 	dashed?: boolean;
 }) {
 	return (
-		<span
-			className={cn(
-				"ui-filter-chip",
-				dashed && "ui-filter-chip-dashed",
-				className,
-			)}
-		>
+		<span className={cn("ui-filter-chip", dashed && "ui-filter-chip-dashed")}>
 			{children}
 		</span>
 	);
@@ -47,6 +34,8 @@ export function FilterChipTrigger({
 		/>
 	);
 }
+
+/** 浮层触发器按它认出这是原生 `<button>`（见 `native-button.ts`）。 */
 FilterChipTrigger.displayName = "FilterChipTrigger";
 
 export function FilterChipValue({ children }: { children: ReactNode }) {

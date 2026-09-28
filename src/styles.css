@@ -3,7 +3,7 @@
  * 界面的尺度（版心、栏宽、层级）；以及几条必须写成规则而不是类名的行为。
  * 组件自己的样式在 `src/components/ui/*.css`。
  *
- * 颜色按用途命名：fg 是文字，layout / container / elevated 是三层底，fill 是叠在底上
+ * 颜色按用途命名：fg 是文字，canvas / container / elevated 是三层底，fill 是叠在底上
  * 的填充，border 是描边，primary 与四种状态色按用到的档位各有几档。深色一侧在 `.dark` 里覆盖
  * 同名变量。设计系统（`bun run ui`）画出全部令牌，可以调整并导出改动。
  */
@@ -28,7 +28,6 @@
 @import "./components/ui/hotkey.css" layer(components);
 @import "./components/ui/button.css" layer(components);
 @import "./components/ui/action-icon.css" layer(components);
-@import "./components/ui/copy-button.css" layer(components);
 @import "./components/ui/input.css" layer(components);
 @import "./components/ui/segmented.css" layer(components);
 @import "./components/ui/tag.css" layer(components);
@@ -36,9 +35,8 @@
 @import "./components/ui/code-block.css" layer(components);
 @import "./components/ui/collapsible.css" layer(components);
 @import "./components/ui/accordion.css" layer(components);
-@import "./components/ui/collapse.css" layer(components);
+@import "./components/ui/group-card.css" layer(components);
 @import "./components/ui/skeleton.css" layer(components);
-@import "./components/ui/neural-loading.css" layer(components);
 @import "./components/ui/checkbox.css" layer(components);
 @import "./components/ui/radio.css" layer(components);
 @import "./components/ui/form.css" layer(components);
@@ -74,12 +72,6 @@
  */
 @custom-variant dark (&:is(.dark *));
 
-/*
- * 只在真有指针的设备上出悬停态。触屏上 `:hover` 会在点过之后粘住，
- * 于是刚点过的那一块一直亮着，看起来像还选着。
- */
-@custom-variant hoverable (@media (hover: hover));
-
 @theme static {
 	/*
 	 * 清空 Tailwind 自带的色板、字阶、圆角、阴影和缓动：界面上只存在下面定义的
@@ -109,10 +101,7 @@
 		"Source Han Sans SC", "Noto Sans CJK SC", monospace, "Apple Color Emoji",
 		"Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 
-	/*
-	 * 字阶。12 / 14 / 16 是正文三档，20 / 24 是标题两档。13 是控件与密表的那一档：
-	 * 中号按钮、菜单说明、表格正文都是 13。行高：12 配 20，14 配 22，其余按整像素走。
-	 */
+	/* 字阶。sm（13）是控件与密表的一档，其余按 12 / 14 / 16 / 20 / 24 排。 */
 	--text-xs: 0.75rem;
 	--text-xs--line-height: 1.25rem;
 	--text-sm: 0.8125rem;
@@ -126,11 +115,7 @@
 	--text-2xl: 1.5rem;
 	--text-2xl--line-height: 2rem;
 
-	/*
-	 * 圆角五档：xs 4（小号图标按钮、复选框）、sm 6（按钮、小控件、菜单项）、
-	 * md 8（输入框、卡片、弹层、抽屉的关闭钮）、lg 12（内容卡片、对话框、抽屉、输入托盘）、
-	 * xl 20（首页那块大号输入托盘）。全圆用 `rounded-full`。
-	 */
+	/* 圆角五档；全圆用 `rounded-full`。 */
 	--radius-xs: 0.25rem;
 	--radius-sm: 0.375rem;
 	--radius-md: 0.5rem;
@@ -138,16 +123,12 @@
 	--radius-xl: 1.25rem;
 
 	/*
-	 * 动效。组件 CSS 里的过渡只读这几条曲线，不写字面的曲线；例外两处：提示进场的弹簧
-	 * （tooltip.css 里烘成 linear()），骨架屏往返的呼吸（skeleton.css 的 ease-in-out）。
-	 * - `--ease-out`：状态过渡（CSS 与 Tailwind 的 `ease-out`），也是提示的淡入淡出。
-	 * - `--ease-soft`：对话框和抽屉的面板进场、遮罩的淡入淡出，以及按钮和
-	 *   关闭钮的颜色、底色、缩放过渡。
-	 * - `--ease-accelerate`：面板退场，以及提示、弹出层、菜单的退场。
-	 * - `--ease-snap`：起步快、很快停稳，给小件出现用：键盘焦点框收拢、按钮里让出等待圈的位置。
-	 * 对话框和抽屉的面板进出场由 motion 执行，读这里的曲线和毫秒时长；遮罩的淡入淡出
-	 * 两者共用一个时长。可拖动面板（`DraggablePanel`）展开收起时的宽度动画也由 motion
-	 * 执行，走柔和曲线、`--duration-panel-fold`。
+	 * 动效。组件 CSS 的过渡只读这几条曲线，不写字面曲线；例外是 tooltip.css 烘成 linear()
+	 * 的弹簧和 skeleton.css 的往返。由 motion 执行的面板动画也读这里的曲线和时长。
+	 * - `--ease-out`：状态过渡。
+	 * - `--ease-soft`：面板进场、遮罩淡入淡出、按钮的颜色与缩放。
+	 * - `--ease-accelerate`：面板与弹层退场。
+	 * - `--ease-snap`：小件出现，如焦点框收拢。
 	 */
 	--ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
 	--ease-soft: cubic-bezier(0.32, 0.72, 0, 1);
@@ -161,13 +142,13 @@
 	--duration-panel-fold: 250ms;
 
 	/* 颜色，浅色一侧。深色一侧在下面的 `.dark` 里覆盖同名变量。 */
-	--color-layout: #f8f8f8;
+	--color-canvas: #f8f8f8;
 	--color-container: #ffffff;
 	--color-elevated: #ffffff;
-	/* 画布与卡片各半的底：首页那一屏的底，比卡片暗半档。随深浅两侧的两个底色走。 */
+	/* 画布与卡片各半的底，随深浅两侧的两个底色走。 */
 	--color-container-secondary: color-mix(
 		in srgb,
-		var(--color-layout) 50%,
+		var(--color-canvas) 50%,
 		var(--color-container)
 	);
 	/* 两种遮罩：对话框用半透明的容器底色盖住页面，随深浅两侧换色；抽屉用半透明黑压暗页面。 */
@@ -188,7 +169,7 @@
 	--color-fg-secondary: #666666;
 	--color-fg-tertiary: #999999;
 	--color-fg-quaternary: #bbbbbb;
-	--color-split: rgba(12, 12, 12, 0.07);
+	--color-divider: rgba(12, 12, 12, 0.07);
 
 	/* 主色是单色：浅色里近黑、深色里近白。色相只留给状态。 */
 	--color-primary: #222222;
@@ -198,11 +179,7 @@
 	--color-primary-bg-hover: #eeeeee;
 	--color-primary-border: #aaaaaa;
 
-	/*
-	 * 状态色。错误的浅底是出错输入框的外圈、菜单里危险项的悬停底和危险填充按钮的底，
-	 * 错误的悬停、按下与浅底悬停是危险按钮的三种状态；信息的两档是链接。
-	 * 四种状态各有一份三级填充，是带状态色的标签的底。
-	 */
+	/* 状态色。四种状态各有一份三级填充，是带状态色的标签的底。 */
 	--color-success: #379d4a;
 	--color-success-fill-tertiary: rgba(84, 205, 12, 0.1);
 	--color-warning: #ee9e0b;
@@ -230,7 +207,7 @@
 }
 
 .dark {
-	--color-layout: #000000;
+	--color-canvas: #000000;
 	--color-container: #0d0d0d;
 	--color-elevated: #1a1a1a;
 	--color-border: #202020;
@@ -244,7 +221,7 @@
 	--color-fg-secondary: #aaaaaa;
 	--color-fg-tertiary: #6f6f6f;
 	--color-fg-quaternary: #555555;
-	--color-split: rgba(230, 230, 230, 0.06);
+	--color-divider: rgba(230, 230, 230, 0.06);
 
 	--color-primary: #eeeeee;
 	--color-primary-hover: #ffffff;
@@ -273,21 +250,9 @@
 }
 
 /*
- * 投影。下面四个是纯黑的投影，深色一侧在 `.dark` 里加深：
- * - sm：提示气泡、选项卡的指示块。
- * - md：下拉菜单、弹出层。
- * - lg：对话框。
- * - chat-input：输入托盘底下一层短投影。
- *
- * 下面几个同样是纯黑的，深浅两侧共用：
- * - chat-input-large：首页那块大号输入托盘，一层贴身的细影加一层铺开的远影。
- * - switch-track、switch-track-checked：开关轨道的内凹，关着与开着各一份。
- * - switch-thumb、switch-thumb-hover：开关滑块的浮起，常态与悬停各一份。
- *
- * 下面三个引用颜色令牌，跟着深浅两侧的颜色走，所以在 `.dark` 上再算一次：
- * - edge：贴着描边的一层细投影，用描边色画。带 `shadow` 的 Block。
- * - drawer-left、drawer-right：抽屉面板朝内容一侧投的三层影，用 `--color-shadow` 画，
- *   两个名字是面板贴哪条边。
+ * 投影。sm、md、lg、chat-input 在 `.dark` 里加深，其余纯黑的深浅两侧共用；
+ * 引用颜色令牌的几个（edge、drawer-*）要在 `.dark` 上再算一次，才跟着换色。
+ * drawer-left、drawer-right 的名字是面板贴哪条边。
  */
 :root {
 	--elevation-sm: 0 1px 2px rgb(0 0 0 / 0.04), 0 2px 4px rgb(0 0 0 / 0.02);
@@ -343,44 +308,37 @@
 
 @theme {
 	/*
-	 * 版心：单列内容有多宽。名单那一列（关键词搜索时连同它上面的关键词框）
-	 * 读它。写成 `--container-*` 而不是 `--spacing-*`：`max-w-<名字>` 只认前一个命名空间。
-	 *
-	 * 46rem：一条证据行的预算（条件词 + 来源 + 字段值 + 右端时长）在 14px 下约 25 个汉字
-	 * 不截断，再加上行左右的内边距。再宽，右端的时长就离字段值太远。
+	 * 宽度写成 `--container-*` 而不是 `--spacing-*`：`max-w-<名字>` 只认前一个命名空间。
+	 * 版心：名单那一列（关键词搜索时连同上面的关键词框）。
 	 */
 	--container-page: 46rem;
 
-	/* 首页那一列（问句、输入面和下面接着的内容，`components/ui/app-layout.tsx` 的 `AppHome`）。 */
+	/* 首页那一列（`AppHome`）。 */
 	--container-home: 47.5rem;
 
 	/*
-	 * 从右边拉出的抽屉的宽度：窄屏上的对话线程、`Drawer` 的默认宽（25rem），数据页的员工
-	 * 详情（32.5rem，简历原文是里面唯一成段读的东西）。宽屏工作台的右栏可以拖宽，宽度记在
-	 * 浏览器里，不读这里（`s/$turnId/-components/side-panel.tsx`）。
+	 * 从右边拉出的抽屉：`Drawer` 的默认宽，和数据页的员工详情。宽屏工作台的右栏可拖宽、
+	 * 宽度记在浏览器里，不读这里。
 	 */
 	--container-detail: 25rem;
 	--container-detail-wide: 32.5rem;
 
-	/* 任务运行日志的抽屉（`routes/tasks/-components/task-card.tsx`）：长行在这个宽度里折行读。 */
+	/* 任务运行日志的抽屉。 */
 	--container-log: 46rem;
 
-	/*
-	 * lg 以下导航抽屉的宽度。lg 以上的导航栏默认也是这么宽，可以拖宽拖窄，数值写在
-	 * `components/ui/app-layout.tsx` 的 `NAV_WIDTH`。
-	 */
+	/* 导航抽屉的宽度，也是宽屏导航栏的默认宽；拖动范围在 `app-layout.tsx` 的 `NAV_WIDTH`。 */
 	--container-nav: 17.5rem;
 
-	/* 管理页的内容列（`routes/-components/admin-page.tsx`）。 */
+	/* 管理页的内容列。 */
 	--container-admin: 64rem;
 
-	/* 每一栏顶上那条页头的高度（`components/ui/app-layout.tsx` 的 `NavHeader`）。 */
+	/* 每一栏顶上的页头（`NavHeader`）。 */
 	--nav-header-height: 2.75rem;
 
-	/* 页头上图标按钮的边长（`ActionIcon` 的 `size="header"`）。 */
+	/* 页头上的图标按钮（`ActionIcon` 的 `size="header"`）。 */
 	--nav-header-action-size: 1.75rem;
 
-	/* 转圈，0.6 秒一圈：Icon 的 `spin` 与等待圈（icon.css 的 `.ui-spinner`）共用。 */
+	/* Icon 的 `spin` 与等待圈（`.ui-spinner`）共用。 */
 	--animate-spin: spin 0.6s linear infinite;
 	@keyframes spin {
 		to {
@@ -396,11 +354,11 @@
 	 * 自己的一档：它们和外壳是 body 下的兄弟，只要比外壳高就在最上面。`toast` 是
 	 * 通知：它在根上挂一次、比之后打开的弹层都早进文档，要压住开着的对话框就得再高一档。
 	 */
-	--z-index-raise: 1; /* 同一平面内的前后：时间轴节点压住脊线，选项压住滑动的指示块 */
-	--z-index-stick: 20; /* 吸顶：详情面板里那个吸顶的头、名单底下的操作栏 */
-	--z-index-escape: 40; /* 跳过导航链接。它必须压过外壳里的一切 */
-	--z-index-popup: 50; /* portal 出去的弹层：提示、弹出层、菜单、对话框、抽屉 */
-	--z-index-toast: 60; /* 通知：压在所有弹层上，开着对话框时也看得见 */
+	--z-index-raise: 1; /* 同一平面内的前后 */
+	--z-index-stick: 20; /* 吸顶或悬浮的栏 */
+	--z-index-escape: 40; /* 跳过导航链接，压过外壳里的一切 */
+	--z-index-popup: 50; /* portal 出去的弹层 */
+	--z-index-toast: 60; /* 通知，压在所有弹层上 */
 }
 
 @layer base {
@@ -412,9 +370,6 @@
 		@apply border-border-secondary;
 	}
 
-	/*
-	 * 文档级的排版：14px 正文，行高不带单位（字号变了按比例跟着走），字色是 fg。
-	 */
 	:root {
 		font-synthesis: style;
 		text-autospace: normal;
@@ -440,12 +395,12 @@
 		font-size-adjust: from-font;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
-		line-height: 1.5714285714285714;
+		line-height: var(--text-base--line-height);
 		color: var(--color-fg);
 		text-wrap: pretty;
 		text-rendering: optimizelegibility;
 		overflow-wrap: anywhere;
-		background-color: var(--color-layout);
+		background-color: var(--color-canvas);
 		-webkit-tap-highlight-color: transparent;
 	}
 
@@ -549,11 +504,14 @@
 	}
 }
 
+/* 按下时控件缩到的比例：按钮、分段控件、标签页、菜单项共用。 */
+:root {
+	--press-scale: 0.98;
+}
+
 /*
- * 键盘焦点：信息色 90% 的 2px 外框，离开元素 2px，出现时从 5px 外收拢进来；减少动效时
- * 不收拢，强制色模式下用系统文字色、不收拢。组件的 CSS 里写 `@apply focus-ring`；外框
- * 画在别的元素上的（Block 覆盖链接的 `::after`）读同一组变量。颜色引用颜色令牌，
- * 跟着深浅两侧走，所以在 `.dark` 上再算一次。
+ * 键盘焦点。组件的 CSS 里写 `@apply focus-ring`；外框画在别的元素上的（Block 覆盖链接的
+ * `::after`）读同一组变量。颜色引用颜色令牌，所以在 `.dark` 上再算一次。
  */
 :root,
 .dark {
@@ -588,10 +546,8 @@
 }
 
 /*
- * 中文阅读文本。正文行高 22/14 是扫读界面的值；汉字笔画密度高，
- * 成段阅读需要 1.7–1.8 才不糊成一团。只给「要读」的文本用（简历原文）。
- *
- * 行长封顶写在这里：34rem 在 14px 下约 38 个汉字，落在中文舒适行长 30–40 字里。
+ * 成段阅读的中文（简历原文）。正文行高是扫读界面的值，成段读汉字要更松；
+ * 34rem 在 14px 下约 38 个汉字，落在中文舒适行长 30–40 字里。
  */
 @utility read-cjk {
 	line-height: 1.8;
@@ -600,8 +556,7 @@
 }
 
 /*
- * 新东西到了的淡入：换人时的详情区。
- * 短而浅是硬要求：↑↓ 连按时每一帧都要在下一次按键之前结束，否则动画会排队。
+ * 换人时详情区的淡入。要短：↑↓ 连按时动画须在下一次按键之前结束，否则会排队。
  */
 @keyframes settle {
 	from {
@@ -616,6 +571,33 @@
 
 @utility settle {
 	animation: settle 160ms var(--ease-out) backwards;
+}
+
+/*
+ * 平时藏着、点不到，指针移进外层 `group/reveal` 或焦点落进来时出现；没有悬停的
+ * 设备上常显，否则摸不到。
+ */
+@utility reveal {
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 200ms var(--ease-out);
+
+	@media (hover: hover) {
+		&:is(:where(.group\/reveal):hover *) {
+			opacity: 1;
+			pointer-events: auto;
+		}
+	}
+
+	&:is(:where(.group\/reveal):focus-within *) {
+		opacity: 1;
+		pointer-events: auto;
+	}
+
+	@media (pointer: coarse) {
+		opacity: 1;
+		pointer-events: auto;
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {

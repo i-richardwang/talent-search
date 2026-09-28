@@ -7,11 +7,11 @@ import { emptyDraft } from "../shared/tokens/draft";
 import { UNCHANGED } from "./changes/token-changes";
 import { PreviewFrame } from "./preview-frame";
 
-/** 看修改版、只看原版，或两者并排。 */
+/** 看修改后、只看修改前，或两者并排。 */
 export type PreviewView = "edited" | "original" | "compare";
 
 /**
- * 画在预览里的页的中间一栏：一行写有几项修改，右边切「查看原版」「并排对比」；下面是一块或两块预览框。
+ * 画在预览里的页的中间一栏：一行写有几项修改，右边切「查看修改前」「并排对比」；下面是一块或两块预览框。
  */
 export function PreviewArea({
 	changes,
@@ -44,7 +44,7 @@ export function PreviewArea({
 						size="small"
 						type={view === "original" ? "fill" : "text"}
 					>
-						{view === "original" ? "返回修改版" : "查看原版"}
+						{view === "original" ? "返回修改后" : "查看修改前"}
 					</Button>
 					<Button
 						aria-pressed={view === "compare"}

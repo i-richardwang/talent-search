@@ -12,7 +12,7 @@ import { Unchanged } from "./token-changes";
 
 /**
  * 「应用到源码」：列出每一项修改会写进哪个文件的哪个块，确认后交给开发服务器写回。
- * 写完修改版清空；Vite 热更新后设计系统读到的原版就是刚写进去的值。
+ * 写完清空修改；Vite 热更新后，设计系统读到的源文件值就是刚写进去的值。
  */
 export function ApplyToSource({
 	draft,
@@ -42,14 +42,14 @@ export function ApplyToSource({
 				method: "POST",
 			}).catch(() => null);
 			if (!response) {
-				onNotice("没能写入源码：开发服务器没有响应，修改还在修改版里");
+				onNotice("没能写入源码：开发服务器没有响应，修改仍然保留");
 				return;
 			}
 			if (!response.ok) {
 				onNotice(
 					response.status === 400
-						? "没能写入源码：开发服务器认为修改版不合规，修改还在修改版里"
-						: "没能写入源码：开发服务器写文件时出错，详情见它的日志；修改还在修改版里",
+						? "没能写入源码：开发服务器认为修改不合规，修改仍然保留"
+						: "没能写入源码：开发服务器写文件时出错，详情见它的日志；修改仍然保留",
 				);
 				return;
 			}

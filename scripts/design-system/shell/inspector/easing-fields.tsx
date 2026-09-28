@@ -7,7 +7,7 @@ import { resetTokens } from "../../shared/tokens/draft";
 import { EASINGS, type EasingToken } from "../../shared/tokens/registry";
 import type { Editing } from "./editing";
 
-/** 缓动：每个令牌一排，从几条常用曲线里选；改过的可以单独恢复原版值。 */
+/** 缓动：每个令牌一排，从几条常用曲线里选；改过的可以单独还原。 */
 export function EasingFields({
 	editing: { draft, onEdit },
 	tokens,
@@ -29,7 +29,7 @@ export function EasingFields({
 									icon={RotateCcw}
 									onClick={() => onEdit(resetTokens(draft, "shared", [key]))}
 									size="small"
-									title={`${label}恢复原版值`}
+									title={`还原${label}`}
 								/>
 							</>
 						)}

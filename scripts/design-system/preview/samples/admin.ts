@@ -1,4 +1,4 @@
-import { PAGE_SIZE, pageAt, tablePage } from "#/lib/paging";
+import { PAGE_SIZE, pageAt, RUNS_PAGE, tablePage } from "#/lib/paging";
 import type { EmployeeRow, SegmentView } from "#/server/data";
 import type { SkillDetail, SkillEntry } from "#/server/skills";
 import type { CorpusCounts, TaskLane, TaskRunView } from "#/server/tasks";
@@ -34,9 +34,6 @@ function run(
 		outcome,
 	};
 }
-
-/** 任务台上一页放几次运行，和服务端的 `RUNS_PAGE` 一样。 */
-const RUNS_PAGE = 6;
 
 /** 一栏：看的是第一页，最新的一次在最前面，也就是组头说的那一次。 */
 function lane(kind: TaskLane["kind"], rows: TaskRunView[]): TaskLane {
@@ -135,7 +132,7 @@ const ROSTER_JOBS: [dept: string, title: string][] = [
 ];
 
 /**
- * 数据页那张表的全部行，按工号排：六位候选人（段数和待处理数照他们的经历算），
+ * 数据页那张表的全部行，按工号排：六位候选人（段数和待处理数按他们的经历算），
  * 后面补上只在表里出现的人，一共比一页多十个，表脚的翻页才出现。
  */
 export const EMPLOYEE_ROWS: EmployeeRow[] = [
@@ -164,7 +161,7 @@ export const EMPLOYEE_ROWS: EmployeeRow[] = [
 ];
 
 /**
- * 技能页那张表，照服务端按人数从多到少排：「推荐系统」一支和它上下的词。
+ * 技能页那张表，按人数从多到少排：「推荐系统」一支和它上下的词。
  * 点开的那个词（`SKILL_DETAIL`）从这里取。
  */
 export const SKILL_ROWS: SkillEntry[] = [

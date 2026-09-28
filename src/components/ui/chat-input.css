@@ -1,33 +1,6 @@
 /*
- * 输入托盘的外观，类名以 `.ui-chat-input` 开头。
- *
- * 一块浮起的面装下整件事：上面是会长高的文本区，下面一条动作栏（左边附加的动作，右边
- * 发送钮）。附加的动作是 12px、次要色的文字按钮，悬停时字变深、铺一层 fill-secondary。
- * 面是 elevated 底、一圈 fill 色的细边（深色一侧退到 fill-secondary）、12px
- * 圆角、底下一层短投影；聚焦时面不变，光标就是焦点。
- *
- * middle 的内容区至少两行，发送钮是 8px 圆角的方钮。large 是首页那一块：20px 圆角、
- * 内容区至少 108px、投影换成铺开的远影，发送钮是圆的，动作栏向里让 8px，圆钮不贴着圆角。
- *
- * 托盘上方可以挂一片「舌头」（tray）：elevated 底、fill-secondary 的边、上圆下直、
- * 不画底边，贴在面的上沿，放点一下就能办的事。
+ * 聚焦时面不变，光标就是焦点。large 的动作栏向里让 8px，圆的发送钮不贴着圆角。
  */
-
-.ui-chat-input-root {
-	display: flex;
-	flex-direction: column;
-}
-
-.ui-chat-input-tray {
-	margin-inline: 12px;
-	padding: 8px 14px;
-	border: 1px solid var(--color-fill-secondary);
-	border-bottom: none;
-	border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-	font-size: var(--text-xs);
-	color: var(--color-fg-secondary);
-	background: var(--color-elevated);
-}
 
 .ui-chat-input {
 	display: flex;
@@ -47,10 +20,6 @@
 	box-shadow: var(--elevation-chat-input-large);
 }
 
-/*
- * 面里的内容区。文本区和自定义内容（`ChatInputBody`）共用同一个最小高度：middle 两行，
- * large 108px。文字 14px、行高 1.4、字距 0.02em，第一行离面的上沿 12px。
- */
 .ui-chat-input-area,
 .ui-chat-input-body {
 	position: relative;
@@ -86,10 +55,7 @@
 	outline: none;
 }
 
-/*
- * 占位：画在文本区上面的一层，文本区空着时才显示。字是 fg-tertiary，后面可以跟一个
- * 提示（通常是换行的快捷键），所以不用原生的 placeholder。
- */
+/* 文本区的原生 placeholder 是一个空格，`:placeholder-shown` 因此能判断空着。 */
 .ui-chat-input-placeholder {
 	position: absolute;
 	inset-block-start: 12px;
@@ -137,11 +103,6 @@
 	margin-inline-start: auto;
 }
 
-/*
- * 动作栏按钮。缺省是取值的那种：28px 高、6px 圆角、12px 常规字重的次要色字，悬停时字变深、
- * 铺 fill-secondary。`-mode` 是切换做法的那一个：32px 高、8px 圆角、中粗、行高 1，按下时
- * 缩到 0.98。
- */
 .ui-chat-input-action {
 	display: inline-flex;
 	flex: 0 1 auto;
@@ -182,7 +143,7 @@
 	line-height: 1;
 
 	&:active:not(:disabled) {
-		transform: scale(0.98);
+		transform: scale(var(--press-scale));
 	}
 }
 
@@ -193,11 +154,6 @@
 	text-overflow: ellipsis;
 }
 
-/*
- * 发送钮：32px，主色底上一只实心的纸飞机，按下去的是整句话。不能发时底色抽掉，
- * 只剩一圈 border-secondary 的细边和 fg-quaternary 的图标；提交中同样的样子，
- * 图标换成转圈。
- */
 .ui-chat-input-send {
 	display: inline-flex;
 	flex: none;
@@ -209,7 +165,7 @@
 	border: 1px solid var(--color-primary);
 	border-radius: var(--radius-md);
 	font-size: var(--text-base);
-	color: var(--color-layout);
+	color: var(--color-canvas);
 	cursor: pointer;
 	background: var(--color-primary);
 	transition:

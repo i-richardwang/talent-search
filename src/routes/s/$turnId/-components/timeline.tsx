@@ -1,11 +1,11 @@
-import { Dot, phraseLabel } from "#/components/evidence";
 import { Tag } from "#/components/ui/tag";
 import type { CompanyMeta, Experience } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
 import { bestStrength, routeLabel } from "#/search/evidence";
 import type { Hit } from "#/search/result";
+import { Dot, phraseLabel } from "./evidence";
 
-/** 命中段按 experienceId 索引，一段可能同时命中多条条件 */
+/** 命中按 experienceId 索引，一段可能同时命中多条主张。 */
 type HitIndex = Map<number, Hit[]>;
 
 export function buildHitIndex(hits: Hit[]): HitIndex {
@@ -18,10 +18,7 @@ export function buildHitIndex(hits: Hit[]): HitIndex {
 	return index;
 }
 
-/**
- * 任职经历时间线：最近的在最上面，在职与入职前连着排，轨迹从哪一步跨过来一眼可见。
- * 每段左边一颗节点，就是全站那颗证据点，说这一段的证据有多强；右边是这一段的原文。
- */
+/** 任职经历时间线，最近的在最上面；每段的节点是证据点，说这一段的证据有多强。 */
 export function Timeline({
 	rows,
 	hitIndex,
@@ -60,18 +57,17 @@ function Segment({
 	names: readonly string[];
 }) {
 	const external = x.kind === "external";
-	// 入职前的段没有登记的序列，有的是模型对齐的一对，标成推断
+	// 入职前的段没有登记的序列，只有推断出的一对
 	const seq = external
 		? dots(x.seqInferredL1, x.seqInferredL2)
 		: dots(x.seqL1, x.seqL2, x.seqL3);
 
 	return (
-		/* 职业轨迹条上的色块点过来时滚到这里（career-bar.tsx） */
+		/* id 是职业轨迹条点击时的滚动目标（career-bar.tsx） */
 		<li
 			className="grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2"
 			id={`exp-${x.id}`}
 		>
-			{/* 节点列：节点压在一根发丝线上，线连到下一段 */}
 			<span className="flex flex-col items-center">
 				<span className="flex h-(--text-base--line-height) items-center">
 					<Dot className="size-2.5" strength={bestStrength(hits)} />
@@ -89,7 +85,6 @@ function Segment({
 					{external && <Tag size="small">入职前</Tag>}
 				</div>
 
-				{/* 起止、序列、公司、部门路径都是这一段的元数据：同一档字、同一个次要色 */}
 				<div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-fg-secondary text-xs">
 					<span className="tabular-nums">
 						{dots(period(x.startDate, x.endDate), duration(x.months))}
@@ -114,9 +109,7 @@ function Segment({
 	);
 }
 
-/**
- * 这一段为哪些主张提供了证据、走的哪一类。强度由节点说，标签不按强度上色。
- */
+/** 这一段为哪些主张提供了证据。强度由节点说，标签不按强度上色。 */
 function MatchedClaims({
 	hits,
 	names,

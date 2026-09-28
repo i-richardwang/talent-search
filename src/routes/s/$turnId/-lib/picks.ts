@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { evidenceText } from "#/components/evidence";
 import type {
 	Claim,
 	RankedResult,
 	ResultEmployee,
 	SearchOutcome,
 } from "#/search/result";
+import { evidenceText } from "../-components/evidence";
 import { type ClaimLine, claimLines } from "./claim-lines";
 
 /**

@@ -23,10 +23,8 @@ import { ZeroState } from "./zero-state";
 /**
  * 首页的正文。开哪种搜索由地址上的 `mode`（`asked`）和 AI 服务配没配共同决定：
  * 配了时默认 AI 搜索，地址说 `keyword` 才是关键词；没配时只有关键词，也不给切换。
- *
- * 页头不写标题、浮在顶上：这一屏的标题是正文里那句问句。换模式时正文整列重来，
- * 写到一半的字不带过去。输入面下面是最近搜索；一条记录都还没有时换成几条起步的例子，
- * 取不到时说一句并给重试。
+ * 换模式时正文整列重来，写到一半的字不带过去。输入面下面是最近搜索，一条记录都还没有
+ * 时放起步的例子。
  */
 export function HomeScreen({
 	understanding,
@@ -68,10 +66,7 @@ export function HomeScreen({
 	);
 }
 
-/**
- * 最近搜索：最近的八条，一条两行（标题、停在了哪些搜索条件上），右边一列是多久以前。
- * 列不完时组名行尾有「查看全部」，打开导航栏里那个全部记录的抽屉。
- */
+/** 首页的最近搜索；列不完时「查看全部」打开全部记录的抽屉。 */
 function RecentBlock({ recent }: { recent: TablePage<RecentSearch> | null }) {
 	const control = useNavControl();
 	const { retry, retrying } = useRetryRoot();

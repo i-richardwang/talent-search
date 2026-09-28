@@ -3,8 +3,6 @@ import type { ActionIcon } from "#/components/ui/action-icon";
 import type { ButtonProps } from "#/components/ui/button";
 import type { InputSize } from "#/components/ui/input";
 import type { Segmented } from "#/components/ui/segmented";
-import type { Table } from "#/components/ui/table";
-import type { Tabs } from "#/components/ui/tabs";
 import type { Tag } from "#/components/ui/tag";
 import { requirePage } from "../catalog";
 
@@ -36,7 +34,7 @@ export const COLOR_GROUPS: ColorGroup[] = [
 		id: "surfaces",
 		title: "底与容器",
 		tokens: [
-			["--color-layout", "页面底色"],
+			["--color-canvas", "页面底色"],
 			["--color-container", "容器底色"],
 			["--color-elevated", "浮层底色"],
 			["--color-mask-drawer", "抽屉遮罩"],
@@ -69,7 +67,7 @@ export const COLOR_GROUPS: ColorGroup[] = [
 		tokens: [
 			["--color-border", "边框"],
 			["--color-border-secondary", "分隔线"],
-			["--color-split", "细分隔线"],
+			["--color-divider", "细分隔线"],
 			["--color-ring", "浮层外沿"],
 			["--color-selection", "选中文字底色"],
 		],
@@ -191,31 +189,25 @@ const tiersOf =
 
 /**
  * 有组件令牌的组件和各自的档：令牌名以组件名开头，声明在 `src/components/ui/<它>.css`
- * 的 `:root` 上，每档一份。每个组件都有中档，它是组件不传 size 时的尺寸。
- * 档从组件 `size` 属性的类型核对，组件加一档或删一档，这里跟着改才过得了类型检查。
+ * 的 `:root` 上，每档一份。有档的组件都有中档，它是组件不传 size 时的尺寸；没有 `size`
+ * 的组件档表为空，令牌不分档。档从组件 `size` 属性的类型核对，组件加一档或删一档，
+ * 这里跟着改才过得了类型检查。
  */
 export const COMPONENT_TIERS = {
 	"action-icon": tiersOf<ComponentProps<typeof ActionIcon>["size"]>()([
 		"small",
 		"middle",
 	]),
-	button: tiersOf<ButtonProps["size"]>()(["small", "middle", "large"]),
+	button: tiersOf<ButtonProps["size"]>()(["small", "middle"]),
 	input: tiersOf<InputSize>()(["small", "middle"]),
 	segmented: tiersOf<ComponentProps<typeof Segmented>["size"]>()([
 		"small",
 		"middle",
 	]),
-	table: tiersOf<ComponentProps<typeof Table>["size"]>()([
-		"small",
-		"middle",
-		"large",
-	]),
-	tabs: tiersOf<ComponentProps<typeof Tabs>["size"]>()(["small", "middle"]),
-	tag: tiersOf<ComponentProps<typeof Tag>["size"]>()([
-		"small",
-		"middle",
-		"large",
-	]),
+	table: tiersOf<never>()([]),
+	/** 标签页只有一种尺寸，就是它的中档。 */
+	tabs: tiersOf<never>()([]),
+	tag: tiersOf<ComponentProps<typeof Tag>["size"]>()(["small", "middle"]),
 };
 
 export type ComponentSizing = keyof typeof COMPONENT_TIERS;
@@ -267,7 +259,7 @@ export function parseNumeric(
 	return token.unit === "rem" ? value * 16 : value;
 }
 
-/** 读一个一定合规的值（原版或校验过的修改版）；读不懂说明源文件写错了。 */
+/** 读一个一定合规的值（修改前的值或校验过的修改）；读不懂说明源文件写错了。 */
 export function numericValue(token: NumericToken, raw: string): number {
 	const value = parseNumeric(token, raw);
 	if (value === undefined)
@@ -401,16 +393,50 @@ export const NUMERIC_TOKENS: NumericToken[] = [
 	...tiered("action-icon", [["size", "方块边长", "□", 16, 64]]),
 	...tiered("input", [HEIGHT, PADDING, FONT_SIZE]),
 	...tiered("segmented", [HEIGHT, PADDING, FONT_SIZE]),
-	...tiered("tabs", [HEIGHT, PADDING, FONT_SIZE]),
+	{
+		group: "tabs",
+		key: "--tabs-padding",
+		label: "水平内边距",
+		max: 24,
+		min: 0,
+		step: 1,
+		symbol: "↔",
+		unit: "px",
+	},
+	{
+		group: "tabs",
+		key: "--tabs-font-size",
+		label: "字号",
+		max: 20,
+		min: 10,
+		step: 1,
+		symbol: "A",
+		unit: "px",
+	},
 	...tiered("tag", [
 		["height", "高度", "H", 14, 40],
 		["padding", "水平内边距", "↔", 0, 24],
-		["padding-round", "圆形水平内边距", "↔", 0, 24],
 	]),
-	...tiered("table", [
-		["padding-block", "单元格纵向内边距", "↕", 0, 32],
-		["padding-inline", "单元格横向内边距", "↔", 0, 32],
-	]),
+	{
+		group: "table",
+		key: "--table-padding-block",
+		label: "单元格纵向内边距",
+		max: 32,
+		min: 0,
+		step: 1,
+		symbol: "↕",
+		unit: "px",
+	},
+	{
+		group: "table",
+		key: "--table-padding-inline",
+		label: "单元格横向内边距",
+		max: 32,
+		min: 0,
+		step: 1,
+		symbol: "↔",
+		unit: "px",
+	},
 	{
 		group: "table",
 		key: "--table-padding-edge",

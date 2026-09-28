@@ -58,7 +58,7 @@ function patternsOf(key: string): RegExp[] {
 	return generated ? [direct, generated] : [direct];
 }
 
-export interface Usage {
+interface Usage {
 	file: string;
 	count: number;
 }

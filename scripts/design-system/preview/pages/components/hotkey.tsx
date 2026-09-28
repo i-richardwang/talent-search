@@ -17,7 +17,7 @@ import { DocPage } from "../../kit/page";
 import { useMeasured } from "../../kit/readings";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
-type Variant = "filled" | "outlined" | "borderless";
+type Variant = "filled" | "borderless";
 
 /** 苹果设备上画成符号的键名；方向键与空格两边都画成图标；其余键名首字母大写原样显示。 */
 const SYMBOL_KEYS = [
@@ -36,7 +36,6 @@ const SYMBOL_KEYS = [
 	"space",
 ];
 
-/** 键名表的行：写法与说明。 */
 const KEY_ROWS: [keys: string, what: string][] = [
 	["mod+k", "mod：苹果设备上是 ⌘，其他设备是 Ctrl"],
 	["shift+mod+z", "修饰键排到前面，按 Ctrl、⌘、Alt、Shift 的先后"],
@@ -48,15 +47,12 @@ const KEY_ROWS: [keys: string, what: string][] = [
 	["esc", "没有符号的键名"],
 ];
 
-/** 外观表的行：写法、说明。 */
 const VARIANTS: [variant: Variant, compact: boolean, what: string][] = [
 	["filled", false, "默认：每个键一个浅灰底的键帽"],
 	["filled", true, "compact：几个键收进一个键帽，跟在提示文字后面"],
-	["outlined", false, "容器底加一圈描边，放在浅灰的面上"],
 	["borderless", false, "不画底、颜色跟着那句话，夹在句子里"],
 ];
 
-/** 名单页底部那一排快捷键说明。 */
 const LIST_KEYS: [keys: string, what: string][] = [
 	["/", "修改需求"],
 	["up+down", "切换候选人"],
@@ -86,7 +82,6 @@ function Playground() {
 						id="playground-hotkey-keys"
 						onChange={(event) => setKeys(event.target.value)}
 						value={keys}
-						variant="filled"
 					/>
 				</Control>
 				<Control label="外观">
@@ -94,7 +89,6 @@ function Playground() {
 						onChange={setVariant}
 						options={[
 							{ label: "filled", value: "filled" },
-							{ label: "outlined", value: "outlined" },
 							{ label: "borderless", value: "borderless" },
 						]}
 						value={variant}
@@ -198,7 +192,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="按 ? 打开的快捷键列表：每一行一句动作，行尾是 large 一档的键帽——26px 见方、描一圈边、整组放大 1.1 倍，一眼扫得到。"
+				description="按 ? 打开的快捷键列表：每一行一句动作，行尾是 large 一档的键帽，一眼扫得到。"
 				title="快捷键列表"
 			>
 				<div className="flex w-full max-w-xs flex-col gap-3 text-sm">
@@ -248,7 +242,6 @@ function Usage() {
 	);
 }
 
-/** 快捷键：每个键一个键帽或收进一个，修饰键按设备换写法。 */
 export function HotkeyPage() {
 	return (
 		<DocPage
@@ -265,7 +258,7 @@ export function HotkeyPage() {
 					"单独摆着的说明用 filled；提示里跟在文字后面的用 compact（Tooltip 的 hotkey 自己会这样画）；夹在一句话里的用 borderless。",
 					"快捷键说明只在有指针的设备上显示，触屏上没有键盘。",
 					"放在输入框这类窄处时给 compact，几个键放进同一个键帽。",
-					'快捷键列表里的键用 size="large"：26px 见方、描边、键帽间 4px；别处都用默认尺寸。',
+					'快捷键列表里的键用 size="large"；别处都用默认尺寸。',
 				],
 				usage: `<Hotkey keys="mod+k" />`,
 			}}

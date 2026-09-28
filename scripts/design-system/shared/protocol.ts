@@ -17,7 +17,7 @@ import {
 /** 预览页的地址；同一个入口按它分出预览页和外壳。 */
 export const PREVIEW_PATH = "/preview";
 
-/** 开发服务器上把修改版写回源文件的接口：POST 一份修改版，回写入了的文件路径。 */
+/** 开发服务器上把修改写回源文件的接口：POST 一份修改，回写入了的文件路径。 */
 export const APPLY_PATH = "/__design-system/apply";
 
 export const PLAYBACK_SPEEDS = [1, 0.5, 0.25] as const;
@@ -34,7 +34,7 @@ export interface PreviewState {
 	selectedColor: string;
 }
 
-/** 外壳打开一页时预览状态的初值（页与修改版之外的几项）；换页时尺寸档回到这里。 */
+/** 外壳打开一页时预览状态的初值（页与修改之外的几项）；换页时尺寸档回到这里。 */
 export const INITIAL_PREVIEW = {
 	selectedColor: "--color-primary",
 	sizeTier: "middle",

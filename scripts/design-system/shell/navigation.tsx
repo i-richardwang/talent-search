@@ -8,7 +8,6 @@ import { href, type Route } from "../shared/routes";
 /** 窄屏时收进抽屉的那一份目录。 */
 export const NAV_DRAWER_ID = "design-system-navigation-drawer";
 
-/** 目录里的链接：当前那一项填一层底、字加粗；第一个 span 占满余下的宽。 */
 const LINK =
 	"flex min-w-0 items-center gap-2 rounded-md text-fg-secondary hover:bg-fill-tertiary focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2 aria-[current=page]:bg-fill-secondary aria-[current=page]:font-semibold aria-[current=page]:text-fg [&>span:first-of-type]:min-w-0 [&>span:first-of-type]:flex-1 [&>span:first-of-type]:truncate [&>svg]:size-4 [&>svg]:shrink-0";
 

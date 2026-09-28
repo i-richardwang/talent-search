@@ -3,7 +3,6 @@ import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
-import type { Placement } from "#/components/ui/floating";
 import { Input } from "#/components/ui/input";
 import { Segmented } from "#/components/ui/segmented";
 import {
@@ -15,12 +14,11 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import { Tag } from "#/components/ui/tag";
-import { Tooltip } from "#/components/ui/tooltip";
+import { Tooltip, type TooltipProps } from "#/components/ui/tooltip";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
-/** 形态表的行：写法、说明、提示的属性。 */
 const FORMS: [
 	name: string,
 	label: string,
@@ -37,12 +35,11 @@ const FORMS: [
 	['placement="bottom"', "在下方", { placement: "bottom", title: "收起导航" }],
 ];
 
-/** 试用区的四个方位；其余方位是在同一侧沿边对齐到一头。 */
+type Placement = NonNullable<TooltipProps["placement"]>;
+
 const PLACEMENTS: { label: string; value: Placement }[] = [
 	{ label: "上", value: "top" },
 	{ label: "下", value: "bottom" },
-	{ label: "左", value: "left" },
-	{ label: "右", value: "right" },
 ];
 
 function Playground() {
@@ -61,7 +58,6 @@ function Playground() {
 						id="playground-tooltip-title"
 						onChange={(event) => setTitle(event.target.value)}
 						value={title}
-						variant="filled"
 					/>
 				</Control>
 				<Control
@@ -74,7 +70,6 @@ function Playground() {
 						id="playground-tooltip-hotkey"
 						onChange={(event) => setHotkey(event.target.value)}
 						value={hotkey}
-						variant="filled"
 					/>
 				</Control>
 				<Control label="方位">
@@ -172,7 +167,6 @@ function Usage() {
 	);
 }
 
-/** 文字提示页：试用、几种形态、使用场景。 */
 export function TooltipPage() {
 	return (
 		<DocPage

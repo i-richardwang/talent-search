@@ -1,6 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { SearchXIcon, TagsIcon } from "lucide-react";
-import { useRef, useState } from "react";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
@@ -18,21 +17,16 @@ import { TextLink } from "#/components/ui/text-link";
 import { integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
 import type { SkillEntry } from "#/server/skills";
+import { listSearch, useSearchDraft } from "../../-components/admin-page";
 import { TablePager } from "../../-components/table-pager";
 
-/** 一个链接指向的这一页。页码和词总是一起走：换了词，页码就不是同一批词了。 */
-function at(page: number, q: string) {
-	return { page: page > 1 ? page : undefined, q };
-}
-
-function daysAgo(days: number) {
+export function daysAgo(days: number) {
 	return days === 0 ? "今天" : `${days} 天前`;
 }
 
 /**
- * 技能页（`routes/skills/route.tsx`）的内容：找词的输入框，和词表那张表。
- * `table` 是服务端按 `q` 找出、分好页的那一页，`selected` 是右侧开着详情的那个词，
- * `pending` 是换词或翻页后新的一页还没取回：表头和外框不动，表体换成同样行数的占位。
+ * 技能页的内容：找词，和词表那张表。`selected` 是右侧开着详情的词；`pending` 是换词
+ * 或翻页后新的一页还没取回，表体画同样行数的占位。
  */
 export function SkillTable({
 	table,
@@ -46,23 +40,13 @@ export function SkillTable({
 	pending?: boolean;
 }) {
 	const navigate = useNavigate({ from: "/skills" });
-	const [needle, setNeedle] = useState(q);
-	/*
-	 * 输入框里的草稿跟随地址栏上的 q，同数据页：后退、前进或从别的链接进来时，它要
-	 * 回到那一次搜索的词，否则输入框和它下面的表显示的不是同一件事。在渲染中直接
-	 * 同步，不放进 effect——effect 要等这一帧画完才跑，那一帧屏幕上是新表配旧词。
-	 */
-	const seen = useRef(q);
-	if (seen.current !== q) {
-		seen.current = q;
-		setNeedle(q);
-	}
-
-	const search = (needle: string) => void navigate({ search: at(1, needle) });
+	const [needle, setNeedle] = useSearchDraft(q);
+	// 换词就回到第一页
+	const search = (needle: string) =>
+		void navigate({ search: listSearch(1, needle) });
 
 	return (
 		<div className="flex flex-col gap-4">
-			{/* 换词就回到第一页：上一次翻到的第 7 页在新的结果里不是同一批词 */}
 			<SearchBar
 				aria-label="搜索技能"
 				className="max-w-70"
@@ -70,7 +54,6 @@ export function SkillTable({
 				onChange={setNeedle}
 				onSearch={search}
 				placeholder="搜索技能、写法或所属的词"
-				shortKey="k"
 				value={needle}
 			/>
 			<Block className="overflow-hidden" variant="outlined">
@@ -90,18 +73,19 @@ export function SkillTable({
 						title={q ? "没有匹配的技能" : "还没有技能"}
 					/>
 				) : (
-					/* 表脚数的是「项」不是「人」：这里一行是一个词，每一行右边那个数才是人。 */
+					/* 一行是一个词，表脚数「项」；人数在每一行里 */
 					<Table
 						busy={pending}
 						footer={
 							<TablePager
-								linkTo={(page) => <Link search={at(page, q)} to="/skills" />}
+								linkTo={(page) => (
+									<Link search={listSearch(page, q)} to="/skills" />
+								)}
 								table={table}
 								units={{ row: "项", total: "项" }}
 							/>
 						}
 						narrow="cards"
-						size="small"
 					>
 						<TableHeader>
 							<TableRow>
@@ -110,7 +94,7 @@ export function SkillTable({
 								<TableHead>属于</TableHead>
 								<TableHead className="text-end">细分</TableHead>
 								<TableHead className="w-full">其他写法</TableHead>
-								<TableHead className="text-end">上次更新</TableHead>
+								<TableHead className="text-end">上次整理</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
@@ -123,7 +107,7 @@ export function SkillTable({
 								table.rows.map((e) => {
 									const detail = {
 										params: { word: e.canonical },
-										search: at(table.page, q),
+										search: listSearch(table.page, q),
 										to: "/skills/$word",
 									} as const;
 									return (
@@ -134,10 +118,7 @@ export function SkillTable({
 											key={e.canonical}
 											onActivate={() => void navigate(detail)}
 										>
-											{/*
-											 * 整行点开详情，行本身在 Tab 序里；词仍是一个真链接，
-											 * 中键、右键、新标签页照常，所以它不单独占一个 Tab 位。
-											 */}
+											{/* 整行已在 Tab 序里；词是给中键、右键用的真链接，不另占 Tab 位 */}
 											<TableCell cellSlot="title" className="whitespace-nowrap">
 												<TextLink render={<Link {...detail} />} tabIndex={-1}>
 													{e.canonical}
@@ -155,13 +136,7 @@ export function SkillTable({
 											>
 												{e.parent ?? "—"}
 											</TableCell>
-											{/*
-											 * 往上一列、往下一列：「属于」说它归在哪个更宽的词底下，
-											 * 「细分」说有几项更细的词归在它底下。细分给的是项数不是
-											 * 词——多的一个词底下有二十几项，列出来这一格比整行都高，
-											 * 而扫表时要知道的只是「这个词有没有下一层」。具体是哪几项
-											 * 在点开的那一层里。
-											 */}
+											{/* 细分只给项数：多的有二十几项，列全了这一格比整行还高；具体几项在详情里 */}
 											<TableCell
 												cellLabel="细分"
 												className="whitespace-nowrap text-end text-fg-secondary tabular-nums"
@@ -175,7 +150,7 @@ export function SkillTable({
 												{e.aliases.length ? e.aliases.join("、") : "—"}
 											</TableCell>
 											<TableCell
-												cellLabel="上次更新"
+												cellLabel="上次整理"
 												className="whitespace-nowrap text-end text-fg-secondary tabular-nums"
 											>
 												{daysAgo(e.reviewedDaysAgo)}

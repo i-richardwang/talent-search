@@ -3,17 +3,8 @@ import { HomeScreen } from "./-components/home-screen";
 import { useCommit } from "./-lib/commit";
 
 /**
- * 零态：还没有查询的时候。
- *
- * 它是一个**独立的页面**，不是工作台的一个分支。两屏共用的只有外壳，
- * 页面本身完全不同——这一屏没有名单、没有筛选，输入面是主角而不是一条工具栏。
- *
- * 两种搜索各开一屏，由地址上的 `mode` 说是哪一种：输入托盘动作栏上的切换就是换这个
- * 参数，可以收藏、可以后退。对话是默认，地址上不写；查询理解没配置时只有关键词，
- * 地址写的是什么都一样。
- *
- * 没有 loader：这一屏要的最近搜索和查询理解配没配，和导航栏用的是同一份，
- * 由根路由取（`__root.tsx`）。
+ * 首页：开一次新的搜索。地址上的 `mode` 说开哪一种，对话是默认、不写；查询理解
+ * 没配置时只有关键词。最近搜索和查询理解配没配由根路由取，和导航栏用同一份。
  */
 export const Route = createFileRoute("/")({
 	validateSearch: (search: Record<string, unknown>): { mode?: "keyword" } =>
@@ -22,8 +13,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
-	// 提交在这一层，不在 ZeroState 里：那个组件只画界面，于是它能脱开路由测
-	// （tests/product-copy.test.tsx 直出它，不搭 router）。
+	// 提交放在路由这一层，界面组件不碰 router，tests/product-copy.test.tsx 才能直出它
 	const { commit, error } = useCommit();
 	const { recent, understanding } = useLoaderData({ from: "__root__" });
 	const { mode } = Route.useSearch();

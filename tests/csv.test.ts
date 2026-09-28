@@ -9,7 +9,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { evidenceText } from "#/components/evidence";
+import { evidenceText } from "#/routes/s/$turnId/-components/evidence";
 import { csvName, toCsv } from "#/routes/s/$turnId/-lib/csv";
 import type { Pick } from "#/routes/s/$turnId/-lib/picks";
 import type { ClaimBasis } from "#/search/result";

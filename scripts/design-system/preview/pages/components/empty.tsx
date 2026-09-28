@@ -47,7 +47,6 @@ function Playground() {
 						id="empty-title"
 						onChange={(event) => setTitle(event.target.value)}
 						value={title}
-						variant="filled"
 					/>
 				</Control>
 				<Control className="grow" htmlFor="empty-description" label="说明">
@@ -55,7 +54,6 @@ function Playground() {
 						id="empty-description"
 						onChange={(event) => setDescription(event.target.value)}
 						value={description}
-						variant="filled"
 					/>
 				</Control>
 				<Control label="图">
@@ -151,14 +149,15 @@ function Usage() {
 				description="名单那一栏为空时占满整栏（large）：说出是哪条条件挡住了人，并给一个能直接点的出路。"
 				title="名单为空"
 			>
-				<Empty
-					action={<Button>去掉「学校」这条</Button>}
-					className="w-full"
-					description="加上「学校」后一个人都不剩，其余条件下有 23 人。"
-					icon={SearchX}
-					size="large"
-					title="没有符合全部条件的人"
-				/>
+				<div className="w-full">
+					<Empty
+						action={<Button>去掉「学校」这条</Button>}
+						description="加上「学校」后一个人都不剩，其余条件下有 23 人。"
+						icon={SearchX}
+						size="large"
+						title="没有符合全部条件的人"
+					/>
+				</div>
 			</Example>
 			<Example
 				description="管理页的表里搜不到时，标题已经说清楚，不加说明。"
@@ -172,17 +171,17 @@ function Usage() {
 				description="人才库还没有数据时，说明下一步找谁，而不是描述程序状态。"
 				title="还没有数据"
 			>
-				<Empty
-					className="w-full"
-					description="还没有同步任何简历，请联系管理员。"
-					title="人才库还是空的"
-				/>
+				<div className="w-full">
+					<Empty
+						description="还没有同步任何简历，请联系管理员。"
+						title="人才库还是空的"
+					/>
+				</div>
 			</Example>
 		</ExampleGrid>
 	);
 }
 
-/** 空状态页：文字与图的试用，图与文字的矩阵，产品里的几种空态。 */
 export function EmptyPage() {
 	return (
 		<DocPage

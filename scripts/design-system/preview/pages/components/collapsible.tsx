@@ -39,7 +39,6 @@ function Playground() {
 	);
 }
 
-/** 筛选栏里一维的前几项常显，其余收进面板，开关写出还有几项。 */
 function RestOfFacet() {
 	const restId = useId();
 	const [all, setAll] = useState(false);
@@ -66,7 +65,6 @@ function RestOfFacet() {
 	);
 }
 
-/** AI 查词、试搜的每一步收在一行摘要下面。 */
 function StepTrace() {
 	const panelId = useId();
 	const [open, setOpen] = useState(false);
@@ -116,14 +114,13 @@ function Usage() {
 	);
 }
 
-/** 折叠面板页：开关与面板的试用、产品里的两处用法。 */
 export function CollapsiblePage() {
 	return (
 		<DocPage
 			facts={["受控开关", "开关带箭头", "收起时卸载"]}
 			rules={{
 				notes: [
-					"开关用 CollapsibleTrigger：一行可点的标题加一个箭头，悬停铺 fill-tertiary 的底；aria-expanded 与指向面板的 aria-controls 由它写；它和面板靠同一个 panelId 配对，不必相邻。",
+					"开关用 CollapsibleTrigger：一行可点的标题加一个箭头；aria-expanded 与指向面板的 aria-controls 由它写；它和面板靠同一个 panelId 配对，不必相邻。",
 					"open 是受控的，状态放在所属的 hook 或组件里。",
 					"收起时内容卸载，里面不放要保住的输入状态。",
 					"高度和淡入的过渡由组件给，不另加动效。",

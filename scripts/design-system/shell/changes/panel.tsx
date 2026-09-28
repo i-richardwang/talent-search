@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Block } from "#/components/ui/block";
 
-/** 修改管理各页共用的面：一块描边的块，有动作时右上角是这一页的动作。 */
+/** 修改管理各页共用的面，`actions` 是这一页的动作。 */
 export function ChangesPanel({
 	actions,
 	children,

@@ -67,11 +67,10 @@ function Playground() {
 	);
 }
 
-/** 筛选钮页：没选、选了一项、选了几项，和点开的菜单。 */
 export function FilterButtonPage() {
 	return (
 		<DocPage
-			facts={["24px", "全圆", "选了东西铺底"]}
+			facts={["一维一个", "全圆", "选了东西铺底"]}
 			rules={{
 				notes: [
 					"名单上方的筛选一维一个 FilterButton，间隔 4px，是下拉菜单的触发器。",

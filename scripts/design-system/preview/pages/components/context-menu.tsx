@@ -50,7 +50,6 @@ const RECORDS = [
 
 const COUNTS = ["5", "10", "15"] as const;
 
-/** 试用：在一块面上按右键，菜单在指针处打开；可以加上危险项和分隔线。 */
 function Playground() {
 	const [danger, setDanger] = useState(true);
 	const [picked, setPicked] = useState<string | null>(null);
@@ -114,7 +113,6 @@ const recordItems = (onPick: (label: string) => void): DropdownItem[] => [
 	},
 ];
 
-/** 导航栏里最近搜索那一组：组名和每一行都有右键菜单，和行尾「…」是同一份。 */
 function RecentGroupSample() {
 	const [open, setOpen] = useState(["recent"]);
 	const [count, setCount] = useState<string>(COUNTS[0]);
@@ -244,7 +242,6 @@ function Usage() {
 	);
 }
 
-/** 右键菜单页：试用、使用场景。 */
 export function ContextMenuPage() {
 	return (
 		<DocPage

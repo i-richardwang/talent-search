@@ -1,3 +1,4 @@
+import { NAV_WIDTH } from "#/components/ui/app-layout";
 import { Block } from "#/components/ui/block";
 import {
 	Table,
@@ -7,13 +8,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
+import { PANEL_WIDTH } from "#/routes/s/$turnId/-components/side-panel";
 import { originalValue } from "../../../shared/source";
 import { tokenLabel } from "../../../shared/tokens/registry";
 import { DocPage } from "../../kit/page";
 import { useTokenNumber } from "../../state";
-
-/** 名单两侧的内边距：`workspace-layout.tsx` 里名单那一栏 `px-6`。 */
-const GUTTER = 24;
 
 /** 常用的间距档：Tailwind 的间距单位是 4px，类名里的数乘 4 就是像素。 */
 const STEPS = [
@@ -41,10 +40,7 @@ const HEIGHTS = ["--nav-header-height"] as const;
 
 function Columns() {
 	const px = useTokenNumber();
-	const columns = COLUMNS.map(
-		(key) =>
-			[key, px(key) + (key === "--container-page" ? GUTTER * 2 : 0)] as const,
-	);
+	const columns = COLUMNS.map((key) => [key, px(key)] as const);
 	const total = columns.reduce((sum, [, width]) => sum + width, 0);
 	return (
 		<Block gap={16} padding={20} variant="outlined">
@@ -56,17 +52,14 @@ function Columns() {
 						style={{ flexGrow: width }}
 					>
 						<span className="font-medium">{tokenLabel(key)}</span>
-						<span className="text-fg-tertiary tabular-nums">
-							{key === "--container-page"
-								? `${px(key)} + 两侧各 ${GUTTER}`
-								: px(key)}
-						</span>
+						<span className="text-fg-tertiary tabular-nums">{px(key)}</span>
 					</div>
 				))}
 			</div>
 			<p className="text-fg-secondary text-xs tabular-nums">
 				两段相加 {total}
-				px。导航栏默认这么宽，可拖到 240–400px 或收起；右栏默认 400px，
+				px。导航栏默认这么宽，可拖到 {NAV_WIDTH.min}–{NAV_WIDTH.max}px
+				或收起；右栏默认 {PANEL_WIDTH.thread.fallback}px，
 				也可以拖宽；名单那一栏占剩下的宽，名单封在版心里居中。窄于 xl
 				右栏不常驻，窄于 lg 导航栏收进宽 {px("--container-nav")}px 的抽屉。
 				从右边拉出的抽屉 {px("--container-detail")}px，数据页的员工详情{" "}
@@ -131,7 +124,7 @@ function Steps() {
 function Layers() {
 	return (
 		<Block className="overflow-hidden" variant="outlined">
-			<Table size="middle">
+			<Table>
 				<TableHeader>
 					<TableRow>
 						<TableHead>层级</TableHead>

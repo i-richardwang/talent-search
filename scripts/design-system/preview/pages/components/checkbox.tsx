@@ -31,7 +31,6 @@ const CHANNELS = [
 	{ label: "猎头", value: "headhunter" },
 ];
 
-/** 量方框的边长，以及方框到文字的间距。 */
 function measureBox(root: HTMLElement) {
 	const box = root.querySelector('[role="checkbox"]');
 	const text = box?.nextElementSibling;
@@ -190,7 +189,6 @@ function Appearances() {
 	);
 }
 
-/** 名单上方的全选框：组给出 `allValues`，全选框写 `parent`，半选由组算出。 */
 function SelectAll() {
 	const people = ["Talent 0123", "Talent 0456", "Talent 0789"];
 	const [picked, setPicked] = useState<string[]>(["Talent 0123"]);
@@ -217,7 +215,6 @@ function SelectAll() {
 	);
 }
 
-/** 导航栏里一组筛选的写法：组不给 options，每一行由调用处排，行尾带人数。 */
 function FilterGroup() {
 	const counts: Record<string, number> = {
 		campus: 42,
@@ -285,7 +282,6 @@ function Usage() {
 	);
 }
 
-/** 复选框页：试用、状态、使用场景。 */
 export function CheckboxPage() {
 	return (
 		<DocPage

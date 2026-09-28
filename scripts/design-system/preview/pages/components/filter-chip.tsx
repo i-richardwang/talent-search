@@ -56,15 +56,14 @@ function Playground() {
 	);
 }
 
-/** 条件药丸页：必须、多取值、加分、排除、停用、太宽几种样子。 */
 export function FilterChipPage() {
 	return (
 		<DocPage
-			facts={["32px", "半圆两端", "虚线表示停用"]}
+			facts={["一条一枚", "半圆两端", "虚线表示停用"]}
 			rules={{
 				notes: [
 					"名单上方的一排条件用 FilterChip，一条一枚，间隔 6px。",
-					"点药丸打开这一条的菜单；右边的关闭格删掉这一条，菜单里不再重复删除。",
+					"点药丸打开这一条的菜单；右边的关闭格删掉这一条，菜单里没有删除项。",
 					"强度写成字跟在取值后面（FilterChipNote），必须是默认，不写。",
 				],
 				usage: `<FilterChip dashed={off}>

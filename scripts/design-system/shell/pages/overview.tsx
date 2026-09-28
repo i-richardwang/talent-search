@@ -5,7 +5,7 @@ import { Empty } from "#/components/ui/empty";
 import { type CatalogModule, catalog } from "../../shared/catalog";
 import { href } from "../../shared/routes";
 
-/** 总览：每个模块一张卡片，标题上的链接铺满整张，中键、右键和键盘都能用。 */
+/** 总览：每个模块一张卡片。 */
 export function Overview() {
 	return (
 		<div className="grid max-w-7xl grid-cols-3 gap-4 max-xl:grid-cols-2 max-sm:grid-cols-1">
@@ -43,7 +43,7 @@ export function Overview() {
 	);
 }
 
-/** 模块页：一句说明，下面每页一张横条卡片。 */
+/** 模块页：一句说明，下面每页一张卡片。 */
 export function ModuleIndex({ module }: { module: CatalogModule }) {
 	return (
 		<>

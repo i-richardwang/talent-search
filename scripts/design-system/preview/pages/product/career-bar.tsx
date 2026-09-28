@@ -1,7 +1,4 @@
 import { useState } from "react";
-import { CareerBar, packLanes, ym } from "#/components/career-bar";
-import { BAND_FILL } from "#/components/evidence";
-import { buildHitIndex, Timeline } from "#/components/timeline";
 import { Block } from "#/components/ui/block";
 import { Checkbox } from "#/components/ui/checkbox";
 import { ScrollArea } from "#/components/ui/scroll-area";
@@ -15,6 +12,16 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import type { Experience, Route } from "#/db/schema";
+import {
+	CareerBar,
+	packLanes,
+	ym,
+} from "#/routes/s/$turnId/-components/career-bar";
+import { BAND_FILL } from "#/routes/s/$turnId/-components/evidence";
+import {
+	buildHitIndex,
+	Timeline,
+} from "#/routes/s/$turnId/-components/timeline";
 import { claimName } from "#/search/condition-label";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";

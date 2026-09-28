@@ -10,12 +10,9 @@ import { Icon } from "#/components/ui/icon";
 import { cn } from "#/lib/utils";
 
 /*
- * 管理页上的运行状态。一种状态一个颜色，任务台和数据页读同一张表（`STATUS`）：
- * 成功是绿，正在运行是 amber 的转圈，中断是 amber 的感叹号，失败是红，待处理是四级灰。
- *
- * 两种画法：表格和一段经历的角上是 `StatusBadge`（6px 的点加 12px 的次要色字，正在运行
- * 时点换成 10px 的转圈）；任务台上一次运行那一行是 `StatusIcon`（16px 的圈形图标）。
- * 点不单独出现，总跟着一个说结论的字；图标旁边总有那一行的标题。
+ * 管理页上的运行状态，任务台和数据页读同一张表（`STATUS`）。两种画法：`StatusBadge`
+ * 是点加一个词，`StatusIcon` 是圈形图标。点不单独出现，总跟着一个说结论的字；
+ * 图标旁边总有那一行的标题。
  */
 export type StatusTone =
 	| "success"
@@ -42,7 +39,7 @@ const STATUS: Record<
 	success: { color: "text-success", dot: "bg-success", icon: CircleCheckIcon },
 };
 
-/** 正在运行：一圈淡环上转着一段实弧，中间一个实心点。颜色跟着 `currentColor`。 */
+/** 正在运行的转圈，点和图标两种画法共用。 */
 function RunningRing({ size }: { size: number }) {
 	const ring = "color-mix(in srgb, currentColor 35%, transparent)";
 	return (
@@ -90,7 +87,7 @@ export function StatusBadge({
 	);
 }
 
-/** 一次运行那一行开头的图标，默认 16px；组头说明那一行里用 14px。 */
+/** 一次运行那一行开头的图标；组头说明那一行里用小一号。 */
 export function StatusIcon({
 	tone,
 	size = 16,

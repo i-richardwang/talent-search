@@ -15,15 +15,9 @@ import {
 } from "#/components/ui/table";
 import { Tag } from "#/components/ui/tag";
 import { TextLink } from "#/components/ui/text-link";
-import {
-	COMPONENT_TIERS,
-	type SizeTier,
-} from "../../../shared/tokens/registry";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
-import { SizeCell, SizeReading } from "../../kit/readings";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-import { useTier } from "../../state";
 
 /** 合成的候选人名单。 */
 const PEOPLE = [
@@ -38,6 +32,7 @@ const PEOPLE = [
 type Person = (typeof PEOPLE)[number];
 
 const COLUMNS = 4;
+const SHOWN = 3;
 
 function PeopleHeader() {
 	return (
@@ -52,10 +47,6 @@ function PeopleHeader() {
 	);
 }
 
-/**
- * 一行候选人。给了 `onOpen` 就整行可点，名字那格是一个真链接，
- * 行在 Tab 序里，链接不单独占 Tab 位。
- */
 function PeopleRow({
 	onOpen,
 	person,
@@ -101,12 +92,10 @@ function PeopleRow({
 }
 
 function PeopleBody({
-	count = 3,
 	current,
 	loading,
 	onOpen,
 }: {
-	count?: number;
 	current?: string;
 	loading?: boolean;
 	onOpen?: (id: string) => void;
@@ -116,7 +105,7 @@ function PeopleBody({
 			{loading ? (
 				<TableSkeletonRows columns={COLUMNS} />
 			) : (
-				PEOPLE.slice(0, count).map((person) => (
+				PEOPLE.slice(0, SHOWN).map((person) => (
 					<PeopleRow
 						key={person.id}
 						onOpen={onOpen}
@@ -130,14 +119,11 @@ function PeopleBody({
 }
 
 function Playground() {
-	const sizeTier = useTier("table");
 	const [footer, setFooter] = useState(true);
 	const [clickable, setClickable] = useState(true);
 	const [loading, setLoading] = useState(false);
-	const [sticky, setSticky] = useState(false);
 	const [empty, setEmpty] = useState(false);
 	const [current, setCurrent] = useState<string | undefined>("0123");
-	const count = sticky ? PEOPLE.length : 3;
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
@@ -149,11 +135,6 @@ function Playground() {
 				<Control>
 					<Checkbox checked={clickable} onChange={setClickable}>
 						整行可点
-					</Checkbox>
-				</Control>
-				<Control>
-					<Checkbox checked={sticky} onChange={setSticky}>
-						钉住表头
 					</Checkbox>
 				</Control>
 				<Control>
@@ -171,8 +152,7 @@ function Playground() {
 				className="items-stretch"
 				footer={
 					<>
-						<SizeReading group="table" tier={sizeTier} />
-						<span>{empty ? "0" : count} 人</span>
+						<span>{empty ? "0" : SHOWN} 人</span>
 						<span>正在看：{current ? `Talent ${current}` : "无"}</span>
 					</>
 				}
@@ -187,14 +167,10 @@ function Playground() {
 					) : (
 						<Table
 							busy={loading}
-							className={sticky ? "max-h-56" : undefined}
-							footer={footer ? `共 ${count} 人，按匹配程度排序` : undefined}
-							size={sizeTier}
-							stickyHeader={sticky}
+							footer={footer ? `共 ${SHOWN} 人，按匹配程度排序` : undefined}
 						>
 							<PeopleHeader />
 							<PeopleBody
-								count={count}
 								current={current}
 								loading={loading}
 								onOpen={clickable ? setCurrent : undefined}
@@ -207,15 +183,10 @@ function Playground() {
 	);
 }
 
-/** 行的状态就用一张表来演示：每一行本身就是那种状态。 */
 function Appearances() {
-	const sizeTier = useTier("table");
 	return (
 		<Block className="overflow-hidden" variant="outlined">
-			<Table
-				footer="表脚：和表同一块面，写已显示数、总数与排序。"
-				size={sizeTier}
-			>
+			<Table footer="表脚：和表同一块面，写已显示数、总数与排序。">
 				<TableHeader>
 					<TableRow>
 						<TableHead>状态</TableHead>
@@ -263,12 +234,10 @@ function Appearances() {
 	);
 }
 
-/** 加载中：表头和外框照常，表体是几行占位，外层带 aria-busy。 */
 function Loading() {
-	const sizeTier = useTier("table");
 	return (
 		<Block className="overflow-hidden" variant="outlined">
-			<Table busy size={sizeTier}>
+			<Table busy>
 				<PeopleHeader />
 				<PeopleBody loading />
 			</Table>
@@ -276,50 +245,18 @@ function Loading() {
 	);
 }
 
-/** 一档的示例表：表头写档名与内边距读数，右栏选中的那一档用 Block 的选中态。 */
-function SizeBlock({ size }: { size: SizeTier }) {
-	const sizeTier = useTier("table");
-	return (
-		<div className="flex flex-col gap-2">
-			<SizeCell group="table" tier={size} />
-			<Block
-				className="overflow-hidden"
-				selected={size === sizeTier}
-				variant="outlined"
-			>
-				<Table size={size}>
-					<PeopleHeader />
-					<PeopleBody count={2} />
-				</Table>
-			</Block>
-		</div>
-	);
-}
-
-function Sizes() {
-	return (
-		<div className="flex flex-col gap-5">
-			{COMPONENT_TIERS.table.map((size) => (
-				<SizeBlock key={size} size={size} />
-			))}
-		</div>
-	);
-}
-
-/** 窄宽：同一张表放进不到 600px 宽的盒子，每行排成一张卡片。 */
 function NarrowCards() {
-	const sizeTier = useTier("table");
 	const [current, setCurrent] = useState("0456");
 	return (
 		<div className="flex flex-wrap items-start gap-5">
 			<Block className="w-full max-w-96 overflow-hidden" variant="outlined">
-				<Table narrow="cards" size={sizeTier}>
+				<Table narrow="cards">
 					<PeopleHeader />
 					<PeopleBody current={current} onOpen={setCurrent} />
 				</Table>
 			</Block>
 			<Block className="w-full max-w-96 overflow-hidden" variant="outlined">
-				<Table busy narrow="cards" size={sizeTier}>
+				<Table busy narrow="cards">
 					<PeopleHeader />
 					<PeopleBody loading />
 				</Table>
@@ -328,7 +265,6 @@ function NarrowCards() {
 	);
 }
 
-/** 管理页的表：翻页在表脚，计数说的是整张表。 */
 function TaskTable() {
 	const [page, setPage] = useState(1);
 	const runs = [
@@ -362,7 +298,6 @@ function TaskTable() {
 						</div>
 					</div>
 				}
-				size="small"
 			>
 				<TableHeader>
 					<TableRow>
@@ -385,12 +320,11 @@ function TaskTable() {
 	);
 }
 
-/** 名单：整行点开详情，正在看的那一行选中。 */
 function PeopleList() {
 	const [current, setCurrent] = useState("0123");
 	return (
 		<Block className="w-full overflow-hidden" variant="outlined">
-			<Table size="middle">
+			<Table>
 				<PeopleHeader />
 				<PeopleBody current={current} onOpen={setCurrent} />
 			</Table>
@@ -429,24 +363,14 @@ function Usage() {
 	);
 }
 
-/** 表格页：试用、行的状态、加载中、尺寸、窄宽卡片、使用场景。 */
 export function TablePage() {
-	const sizeTier = useTier("table");
 	return (
 		<DocPage
-			facts={[
-				`${COMPONENT_TIERS.table.length} 种尺寸`,
-				"选中行",
-				"整行可点",
-				"钉住表头",
-				"加载占位",
-				"窄宽卡片",
-				"表脚",
-			]}
+			facts={["选中行", "整行可点", "加载占位", "窄宽卡片", "表脚"]}
 			rules={{
 				notes: [
 					"表用 Table，放在一块描边的 Block 里，表脚在表下；圆角和外框归那块面。",
-					"表里不画线：表头是一条浅底，表体行间没有线，悬停出底；管理页的表用 small 档。",
+					"表里不画线：表头是一条浅底，表体行间没有线，悬停出底。",
 					"空表用 Empty，说明当前问题和可执行的出路。",
 					'通往详情的是整行：TableRow 的 onActivate。名字那格标 cellSlot="title"，里面仍是一个真链接（tabIndex -1），中键、右键、新标签页照常。',
 					"格里的按钮、链接、勾选框点下去归它们自己，不会触发整行。",
@@ -456,32 +380,27 @@ export function TablePage() {
 					"选中行用 TableRow 的 data-state，不加勾选列或额外的选中装饰。",
 					"列表不静默截断：表脚写已显示数、总数、排序和加载上限。",
 				],
-				usage: `<Block className="overflow-hidden" variant="outlined">\n  <Table footer="共 3 人，按匹配程度排序" narrow="cards" size="small">\n    <TableHeader>\n      <TableRow>\n        <TableHead>候选人</TableHead>\n        <TableHead>部门</TableHead>\n      </TableRow>\n    </TableHeader>\n    <TableBody>\n      <TableRow data-state="selected" onActivate={open}>\n        <TableCell cellSlot="title">\n          <TextLink render={<Link {...detail} />} tabIndex={-1}>Talent 0123</TextLink>\n        </TableCell>\n        <TableCell cellLabel="部门">数据平台部</TableCell>\n      </TableRow>\n    </TableBody>\n  </Table>\n</Block>`,
+				usage: `<Block className="overflow-hidden" variant="outlined">\n  <Table footer="共 3 人，按匹配程度排序" narrow="cards">\n    <TableHeader>\n      <TableRow>\n        <TableHead>候选人</TableHead>\n        <TableHead>部门</TableHead>\n      </TableRow>\n    </TableHeader>\n    <TableBody>\n      <TableRow data-state="selected" onActivate={open}>\n        <TableCell cellSlot="title">\n          <TextLink render={<Link {...detail} />} tabIndex={-1}>Talent 0123</TextLink>\n        </TableCell>\n        <TableCell cellLabel="部门">数据平台部</TableCell>\n      </TableRow>\n    </TableBody>\n  </Table>\n</Block>`,
 			}}
 			sections={[
 				{
 					children: <Playground />,
 					id: "playground",
-					tag: sizeTier,
 					title: "试用表格",
 				},
 				{
 					children: <Appearances />,
 					id: "appearance",
-					tag: sizeTier,
 					title: "行的状态",
 				},
 				{
 					children: <Loading />,
 					id: "loading",
-					tag: sizeTier,
 					title: "加载中",
 				},
-				{ children: <Sizes />, id: "sizes", title: "尺寸" },
 				{
 					children: <NarrowCards />,
 					id: "narrow",
-					tag: sizeTier,
 					title: "窄宽卡片",
 				},
 				{ children: <Usage />, id: "usage", title: "使用场景" },

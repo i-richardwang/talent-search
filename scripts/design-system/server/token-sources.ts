@@ -2,7 +2,6 @@ import { globSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { type Sources, TOKEN_SOURCE_PATTERNS } from "../shared/tokens/css";
 
-/** 仓库根目录。 */
 export const REPO_ROOT = resolve(import.meta.dirname, "../../..");
 
 /** 在磁盘上按 `TOKEN_SOURCE_PATTERNS` 读出声明令牌的源文件，键是仓库路径。 */

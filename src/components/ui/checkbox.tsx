@@ -7,12 +7,9 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "#/lib/utils";
 
 /*
- * 复选框与复选框组，样式在 checkbox.css。方框边长 `size`（默认 16px），圆角取边长的四分之一、
- * 至少 4px，勾与横线是边长的四分之三；标签文字与方框相隔边长的一半。点击面四周各多 6px。没有 children 时只渲染方框，
- * `className` 落在方框上；有 children 时外面包一层 `<label>`，`className` 落在这层上。
- * 标签文字是一个 `<span>`，平时与禁用的两种颜色写在 checkbox.css。
- * `CheckboxGroup` 只持有取值，不带布局：选项由调用处自己排（一行里还有计数、
- * 折起的选项、全选框）。
+ * 复选框与复选框组。没有 children 时只渲染方框，`className` 落在方框上；有 children 时
+ * 外面包一层 `<label>`，`className` 落在这层上。`CheckboxGroup` 只持有取值，不带布局：
+ * 选项由调用处自己排（一行里还有计数、折起的选项、全选框）。
  */
 
 type BaseCheckboxProps = Omit<
@@ -77,7 +74,7 @@ export function Checkbox({
 			<span
 				className={cn(
 					"ui-checkbox-text",
-					disabled && "ui-checkbox-text-secondary",
+					disabled && "ui-checkbox-text-disabled",
 				)}
 			>
 				{children}

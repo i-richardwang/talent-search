@@ -33,13 +33,11 @@ const VIEWS = [
 	{ icon: <Icon icon={LayoutGrid} />, title: "卡片", value: "card" },
 ];
 
-/** 外观表的行：选中的是哪一项。 */
 const LOOKS: [name: string, period: string, view: string][] = [
 	["选中第一项", "any", "list"],
 	["选中后面的项", "3y", "card"],
 ];
 
-/** 自己持有选中项的示例。 */
 function Sample({
 	initial,
 	...props
@@ -234,7 +232,6 @@ function Usage() {
 	);
 }
 
-/** 分段控制器页：试用、外观与状态、尺寸、使用场景。 */
 export function SegmentedPage() {
 	const size = useTier("segmented");
 	return (

@@ -18,7 +18,6 @@ type Variant = NonNullable<ComponentProps<typeof Block>["variant"]>;
 
 const VARIANTS: Variant[] = ["filled", "outlined", "borderless"];
 
-/** 一块面里放的内容：一位合成候选人的摘要。 */
 function Summary({ name = "Talent 0123" }: { name?: string }) {
 	return (
 		<>
@@ -140,7 +139,6 @@ function Appearances() {
 	);
 }
 
-/** 候选人卡片：名字是真链接，覆盖层铺满整块，正在看的那一张选中。 */
 function Cards() {
 	const [current, setCurrent] = useState("0123");
 	return (
@@ -174,7 +172,6 @@ function Cards() {
 	);
 }
 
-/** 名单的行：无边的块，悬停出底；正开着详情的那一行换成填充的面。 */
 function Rows() {
 	const [current, setCurrent] = useState("0123");
 	return (
@@ -243,7 +240,6 @@ function Usage() {
 	);
 }
 
-/** 块页：试用、外观与状态、使用场景。 */
 export function BlockPage() {
 	return (
 		<DocPage

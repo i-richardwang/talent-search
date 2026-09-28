@@ -1,11 +1,8 @@
-/*
- * Avatar 的外观，类名以 `.ui-avatar` 开头。边长、圆角、字号由组件按 `size` 写在元素上；
- * 底色读 `--ui-avatar-bg`（缺省 border 那一档），字色从底色的亮度取：亮度高于 0.62 取黑，
- * 否则取白。
- */
+/* 字色从底色的亮度取：亮度高于 0.62 取黑，否则取白。 */
 
 .ui-avatar {
-	--ui-avatar-bg-color: var(--ui-avatar-bg, var(--color-border));
+	--ui-avatar-size: 28px;
+	--ui-avatar-bg: var(--color-primary);
 
 	user-select: none;
 	position: relative;
@@ -14,11 +11,20 @@
 	flex: none;
 	align-items: center;
 	justify-content: center;
+	width: var(--ui-avatar-size);
+	height: var(--ui-avatar-size);
+	border-radius: calc(var(--ui-avatar-size) / 6);
+	font-size: calc(var(--ui-avatar-size) * 0.5);
 	color: oklch(
-		from var(--ui-avatar-bg-color) clamp(0, (l - 0.62) * -1000, 1) 0 h /
+		from var(--ui-avatar-bg) clamp(0, (l - 0.62) * -1000, 1) 0 h /
 		1
 	);
-	background: var(--ui-avatar-bg-color);
+	background: var(--ui-avatar-bg);
+}
+
+/* 两个汉字按边长一半排会顶满整块。 */
+.ui-avatar-wide {
+	font-size: calc(var(--ui-avatar-size) * 0.36);
 }
 
 .ui-avatar-content {

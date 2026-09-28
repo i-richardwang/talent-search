@@ -29,11 +29,10 @@ function Playground() {
 	);
 }
 
-/** 进度标签页：几种比例，和点开的气泡。 */
 export function ProgressTagPage() {
 	return (
 		<DocPage
-			facts={["24px", "圆环加几/几", "按钮"]}
+			facts={["圆环加几/几", "点开看依据", "按钮"]}
 			rules={{
 				notes: [
 					"名单一行行尾的 ProgressTag 写这个人几条条件里命中了几条，点开是逐条的依据。",

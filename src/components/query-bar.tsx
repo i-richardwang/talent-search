@@ -9,37 +9,24 @@ import {
 import { Hotkey } from "#/components/ui/hotkey";
 import type { QueryInput } from "#/search/spec";
 
-/** 外面能对这个框做的事。填入不提交：例子是起点，不是答案。 */
 export type QueryBarHandle = {
-	/** 填一句话进去并聚焦，光标落在末尾。不提交。 */
+	/** 填一句话进去并聚焦，不提交：例子是起点，不是答案。 */
 	fill: (text: string) => void;
-	/** 把光标放进框里。工作台的「/」和空态的出路都落到这里。 */
 	focus: () => void;
 };
 
 /**
- * 写需求的那个框。**全站只有这一个形状**：首页写下第一句（`large`），右栏线程底下补充
- * 下一句，两处做的是同一件事——把「我要找什么人」说成一句话。
+ * AI 搜索写需求的框：首页写第一句（`large`），工作台右栏补充下一句。Enter 提交、
+ * Shift+Enter 换行。middle 的占位后面跟快捷键提示：光标不在框里且给了 `focusKey` 时
+ * 是那个键，否则是换行的键。
  *
- * 一块输入托盘：文本区随内容长高，Enter 提交、Shift+Enter 换行，发送钮在面里的右下角。
- * `tray` 挂在托盘上沿，放作用于这句话之前的、点一下就能办的事；`left` 放在动作栏左端
- * （首页是搜索方式的切换）。middle 的占位后面跟着快捷键：光标在框里时是换行的键，
- * 接着说的时候才会写长到要换行；给了 `focusKey` 时，光标不在框里时换成把光标放进来的
- * 那个键（工作台的「/」）。首页那一句的占位本身就是例子，不再挂提示。
- *
- * 提交是**异步**的，但只异步一次 INSERT 那么久：查询理解在工作台里补
- * （见 `s/$turnId/route.tsx`）。**原话在提交成功之前不清空**：这一步会失败，
- * 中途清空等于把人刚敲的东西吞了，连重试都没得重试。
- *
- * 出去的永远是 `sentence`：框里是一句话，标签就在造出它的地方打上。
- * 草稿归它自己，「提交成功才清空」这条规则因此只写这一遍。
+ * 原话在提交成功之前不清空：提交（落一条记录）会失败，清掉就没法重试。
  */
 export function QueryBar({
 	onQuery,
 	ref,
 	placeholder,
 	size = "middle",
-	tray,
 	left,
 	autoFocus = false,
 	waiting = false,
@@ -49,7 +36,6 @@ export function QueryBar({
 	ref?: React.Ref<QueryBarHandle>;
 	placeholder: string;
 	size?: "middle" | "large";
-	tray?: ReactNode;
 	left?: ReactNode;
 	autoFocus?: boolean;
 	/** 上一句还在理解：可以接着写，先不能提交。 */
@@ -100,7 +86,7 @@ export function QueryBar({
 			}}
 			ref={formRef}
 		>
-			<ChatInput size={size} tray={tray}>
+			<ChatInput size={size}>
 				<ChatInputArea
 					aria-label="描述需求"
 					onBlur={() => setFocused(false)}

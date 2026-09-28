@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { navPhase, type Spot } from "#/routes/s/$turnId/-lib/nav-phase";
+import {
+	listWait,
+	navPhase,
+	type Spot,
+} from "#/routes/s/$turnId/-lib/nav-phase";
 
 const spot = (turn: string, view: Spot["view"] = {}): Spot => ({ turn, view });
 const QUERY = { seq: [{ l1: "技术", l2: "后端" }] };
@@ -76,5 +80,26 @@ describe("导航相位", () => {
 			navPhase(true, spot("a", { ...QUERY, n: 100 }), undefined),
 			{ ...IDLE, replacing: true },
 		);
+	});
+});
+
+describe("名单等待的样子", () => {
+	test("正在理解时画占位行，哪怕导航只是改筛选", () => {
+		assert.deepEqual(listWait(true, { ...IDLE, refreshing: true }), {
+			list: "skeleton",
+			phase: "interpreting",
+		});
+	});
+
+	test("换记录画占位行，改筛选把旧名单调暗，翻页不算等待", () => {
+		assert.deepEqual(listWait(false, { ...IDLE, replacing: true }), {
+			list: "skeleton",
+			phase: "searching",
+		});
+		assert.deepEqual(listWait(false, { ...IDLE, refreshing: true }), {
+			list: "dim",
+			phase: "searching",
+		});
+		assert.equal(listWait(false, { ...IDLE, growing: true }), null);
 	});
 });

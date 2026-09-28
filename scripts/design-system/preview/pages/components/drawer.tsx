@@ -12,17 +12,7 @@ import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Checkbox } from "#/components/ui/checkbox";
 import { CopyButton } from "#/components/ui/copy-button";
-import {
-	Drawer,
-	DrawerBackdrop,
-	DrawerClose,
-	DrawerExtra,
-	DrawerHeader,
-	DrawerPopup,
-	DrawerPortal,
-	DrawerRoot,
-	DrawerTitle,
-} from "#/components/ui/drawer";
+import { Drawer } from "#/components/ui/drawer";
 import { NavItem } from "#/components/ui/nav-item";
 import { Segmented } from "#/components/ui/segmented";
 import {
@@ -59,7 +49,6 @@ const EXPERIENCES: [period: string, role: string, detail: string][] = [
 	],
 ];
 
-/** 抽屉正文：一位候选人的经历列表。 */
 function CandidateBody() {
 	return (
 		<div className="flex flex-col gap-4">
@@ -81,24 +70,11 @@ function CandidateBody() {
 	);
 }
 
-/** 头部右侧的两个动作：复制合成的工号、在新页打开。 */
 function HeaderActions() {
 	return (
 		<>
 			<CopyButton content="E0012345" size="header" title="复制工号" />
 			<ActionIcon icon={ExternalLinkIcon} size="header" title="在新页打开" />
-		</>
-	);
-}
-
-/** 底部一条：两个按钮靠右。 */
-function FooterActions({ close }: { close: () => void }) {
-	return (
-		<>
-			<Button onClick={close}>取消</Button>
-			<Button onClick={close} type="primary">
-				加入名单
-			</Button>
 		</>
 	);
 }
@@ -118,7 +94,6 @@ function Playground() {
 	const [placement, setPlacement] = useState<Placement>("right");
 	const [header, setHeader] = useState(true);
 	const [extra, setExtra] = useState(false);
-	const [footer, setFooter] = useState(false);
 	const close = () => setOpen(false);
 	return (
 		<div className="flex flex-col gap-4">
@@ -140,11 +115,6 @@ function Playground() {
 						头部动作
 					</Checkbox>
 				</Control>
-				<Control>
-					<Checkbox checked={footer} onChange={setFooter}>
-						底部
-					</Checkbox>
-				</Control>
 			</Controls>
 			<Stage
 				footer={
@@ -161,7 +131,6 @@ function Playground() {
 				<Drawer
 					afterClose={afterClose}
 					extra={extra ? <HeaderActions /> : undefined}
-					footer={footer ? <FooterActions close={close} /> : undefined}
 					noHeader={!header}
 					onClose={close}
 					open={open}
@@ -220,20 +189,6 @@ function Forms() {
 						)}
 					/>
 					<OverlayRow
-						code="footer"
-						label="底部一条，按钮靠右，不随正文滚动"
-						render={(open, close) => (
-							<Drawer
-								footer={<FooterActions close={close} />}
-								onClose={close}
-								open={open}
-								title="候选人 A"
-							>
-								<CandidateBody />
-							</Drawer>
-						)}
-					/>
-					<OverlayRow
 						code="width"
 						label="加宽到宽屏右栏的宽度"
 						render={(open, close) => (
@@ -261,36 +216,6 @@ function Forms() {
 							</Drawer>
 						)}
 					/>
-					<OverlayRow
-						code="DrawerRoot …"
-						label="原子件拼：正文不带内边距"
-						render={(open, close) => (
-							<DrawerRoot
-								onOpenChange={(next) => {
-									if (!next) close();
-								}}
-								open={open}
-							>
-								<DrawerPortal>
-									<DrawerBackdrop />
-									<DrawerPopup width="var(--container-detail)">
-										<DrawerHeader>
-											<DrawerTitle>对话</DrawerTitle>
-											<DrawerExtra>
-												<DrawerClose />
-											</DrawerExtra>
-										</DrawerHeader>
-										<div className="flex flex-col gap-2 p-4 text-sm">
-											<p>找做过搜索召回的后端，3 年以上。</p>
-											<p className="text-fg-secondary">
-												已整理成 2 个搜索条件。
-											</p>
-										</div>
-									</DrawerPopup>
-								</DrawerPortal>
-							</DrawerRoot>
-						)}
-					/>
 				</TableBody>
 			</Table>
 		</Block>
@@ -308,7 +233,7 @@ function DetailDrawer() {
 					setBack(false);
 					setOpen(true);
 				}}
-				type="link"
+				type="text"
 			>
 				候选人 A
 			</Button>
@@ -325,7 +250,6 @@ function DetailDrawer() {
 	);
 }
 
-/** 窄屏的导航：从左边滑出，没有头部，宽度和常驻的导航栏一样。 */
 const NAV: [label: string, icon: LucideIcon][] = [
 	["数据", TableIcon],
 	["技能", TagsIcon],
@@ -387,18 +311,16 @@ function Usage() {
 	);
 }
 
-/** 抽屉页：试用、几种形态、使用场景。开合的动效在「设计基础 · 动效」。 */
 export function DrawerPage() {
 	return (
 		<DocPage
-			facts={[`${PLACEMENTS.length} 个方位`, "可不带头部", "头部动作", "底部"]}
+			facts={[`${PLACEMENTS.length} 个方位`, "可不带头部", "头部动作"]}
 			rules={{
 				notes: [
 					"一次阅读用 Drawer，两侧反复对照才用并列栏。",
 					"抽屉挂在打开它的组件里，用受控的 open，关闭走 onClose；滑出之后要做的事放 afterClose。",
 					"尺寸用 width，不覆盖面板的圆角、内边距和投影；要跟着视口收窄就写 min(…)。",
-					"标题旁的动作放 extra，排在关闭按钮左边；确认一类的按钮放 footer，靠右。",
-					"正文要贴边时用原子件自己拼，关闭按钮放进 DrawerExtra。",
+					"标题旁的动作放 extra，排在关闭按钮左边。",
 				],
 				usage: `<Drawer\n  onClose={() => setOpen(false)}\n  open={open}\n  title="候选人 A"\n>\n  …\n</Drawer>`,
 			}}

@@ -1,9 +1,6 @@
 /*
- * 可拖动面板的外观，类名以 `.ui-draggable-panel` 开头。
- *
- * 根是一个不收缩的横排；外框（frame）的宽由 motion 逐帧写，里面的内容（content）保持
- * 原宽，靠面板贴着的那一边对齐，收起时从另一边被裁掉。分隔条压在面板朝内容那一侧的
- * 边上，一半在面板里、一半在外面。
+ * 外框（frame）的宽由 motion 逐帧写，里面的内容（content）保持原宽，靠面板贴着的那一边
+ * 排，收起时从另一边被裁掉。分隔条压在面板朝内容那一侧的边上，一半在面板里、一半在外面。
  */
 
 .ui-draggable-panel {
@@ -40,10 +37,7 @@
 	transform-origin: right center;
 }
 
-/*
- * 分隔条：可点的宽度读 `--draggable-panel-handle-size`，中间两段 1px 的竖线就是面板的边。
- * 线的颜色平时 border-secondary、悬停 fill、拖动中主色，`data-border="false"` 时不画线。
- */
+/* 分隔条中间两段 1px 的竖线就是面板的边。 */
 .ui-draggable-panel-handle {
 	position: absolute;
 	z-index: var(--z-index-raise);

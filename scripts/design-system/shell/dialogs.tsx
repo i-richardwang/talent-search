@@ -7,7 +7,7 @@ import { ExportCode } from "./changes/export";
 import { EXPORT_DIALOG_WIDTH } from "./layout";
 import { MAX_NAME, MAX_SCHEMES } from "./storage";
 
-/** 把当前的修改版存成一个方案：起个名字，存在这台浏览器里。 */
+/** 把当前的修改存成一个方案：起个名字，存在这台浏览器里。 */
 export function SaveSchemeDialog({
 	count,
 	onClose,

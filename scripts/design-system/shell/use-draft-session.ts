@@ -5,9 +5,9 @@ import { editHistory } from "../shared/tokens/history";
 import { loadSession, MAX_SCHEMES, type Scheme, saveSession } from "./storage";
 
 /**
- * 这台浏览器里的修改版与方案：修改带撤销与重做，方案可以存、载入、删除；
- * 两样一变就写回 localStorage，写不进时 `storageFailed` 为真。读回的修改版先去掉
- * 已经和原版相同的项（源文件在两次打开之间改过）。
+ * 这台浏览器里的修改与方案：修改带撤销与重做，方案可以存、载入、删除；
+ * 两样一变就写回 localStorage，写不进时 `storageFailed` 为真。读回的修改先去掉
+ * 已经和源文件相同的项（源文件在两次打开之间改过）。
  */
 export function useDraftSession() {
 	const [session] = useState(loadSession);
@@ -31,11 +31,11 @@ export function useDraftSession() {
 			setSchemes(schemes.filter((scheme) => scheme.id !== id)),
 		draft,
 		edit: (next: Draft) => dispatch({ draft: next, type: "edit" }),
-		/** 载入一个方案：替换当前的修改版，可以撤销。 */
+		/** 载入一个方案：替换当前的修改，可以撤销。 */
 		loadScheme: (scheme: Scheme) =>
 			dispatch({ draft: pruneDraft(scheme.draft), type: "edit" }),
 		redo: () => dispatch({ type: "redo" }),
-		/** 把当前的修改版存成一个方案，排在最前；超过上限时最旧的挤掉。 */
+		/** 把当前的修改存成一个方案，排在最前；超过上限时最旧的挤掉。 */
 		saveScheme: (name: string) =>
 			setSchemes(
 				[

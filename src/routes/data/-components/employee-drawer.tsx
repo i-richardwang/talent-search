@@ -3,23 +3,18 @@ import { Block } from "#/components/ui/block";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { Empty } from "#/components/ui/empty";
-import { Text } from "#/components/ui/text";
 import type { Employee } from "#/db/schema";
 import { dots, duration, integer, period } from "#/lib/format";
 import { involvementRank } from "#/lib/involvement";
 import type { SegmentView } from "#/server/data";
-import { DetailDrawer } from "../../-components/detail-drawer";
+import {
+	DETAIL_LABEL_WIDTH,
+	DetailDrawer,
+	DetailSection,
+} from "../../-components/detail-drawer";
 import { StatusBadge } from "../../-components/status-badge";
 
-/*
- * 数据页点开一个人（`routes/data/$empId.tsx`）：抽屉的壳，和壳里这个人的每一段经历——
- * 登记的字段和解析出的结果并排。
- */
-
-/**
- * 这一层的壳，**真身和「没有这个工号」共用**——宽度只在这里写一次。关掉往哪回由
- * 调用方给（`close`），开合与动画归 `DetailDrawer`（技能页点一个词用的是同一件东西）。
- */
+/** 数据页一个人的抽屉，这个人和「没有这个工号」共用，宽度只写这一次。 */
 export function EmployeeDrawer({
 	close,
 	title,
@@ -27,7 +22,6 @@ export function EmployeeDrawer({
 	description,
 	children,
 }: {
-	/** 滑回右边之后往哪走：回到刚才那张表 */
 	close: () => void;
 	title: ReactNode;
 	extra?: ReactNode;
@@ -48,9 +42,7 @@ export function EmployeeDrawer({
 	);
 }
 
-/**
- * 一个人的档案和他名下的每一段。`close` 由路由给：关掉抽屉回到刚才那张表。
- */
+/** 一个人的档案和他名下的每一段：登记的字段和解析出的结果并排。 */
 export function EmployeeRecord({
 	employee,
 	segments,
@@ -63,7 +55,6 @@ export function EmployeeRecord({
 	const sequence = [employee.curSeqL1, employee.curSeqL2, employee.curSeqL3]
 		.filter(Boolean)
 		.join(" · ");
-	/* 档案只列有值的几条；标签栏定宽 96px，和下面每一段的属性不必对齐，但几人之间看着一样 */
 	const profile: [label: string, value: string | null][] = [
 		["部门", employee.curDept],
 		["岗位", employee.curTitle],
@@ -78,7 +69,7 @@ export function EmployeeRecord({
 		<EmployeeDrawer
 			close={close}
 			description={
-				<Descriptions labelWidth={96}>
+				<Descriptions labelWidth={DETAIL_LABEL_WIDTH}>
 					{profile.map(([label, value]) =>
 						value ? (
 							<DescriptionsItem key={label} label={label}>
@@ -88,9 +79,7 @@ export function EmployeeRecord({
 					)}
 				</Descriptions>
 			}
-			extra={
-				<CopyButton content={employee.empId} glass={false} title="复制工号" />
-			}
+			extra={<CopyButton content={employee.empId} title="复制工号" />}
 			title={
 				<>
 					{employee.name}
@@ -109,22 +98,17 @@ export function EmployeeRecord({
 				KINDS.map(([kind, label]) => {
 					const part = segments.filter((one) => one.kind === kind);
 					return part.length === 0 ? null : (
-						<section className="flex flex-col gap-2" key={kind}>
-							<h3 className="flex items-baseline gap-1.5">
-								<Text size="sm" type="secondary" weight="medium">
-									{label}
-								</Text>
-								<Text size="xs" type="quaternary">
-									{integer(part.length)} 段
-								</Text>
-							</h3>
-							{/* 一段一块描边的面，直接排在抽屉里，段与段隔 8px */}
+						<DetailSection
+							count={`${integer(part.length)} 段`}
+							key={kind}
+							title={label}
+						>
 							<div className="flex flex-col gap-2">
 								{part.map((segment) => (
 									<Segment key={segment.id} segment={segment} />
 								))}
 							</div>
-						</section>
+						</DetailSection>
 					);
 				})
 			)}
@@ -133,8 +117,8 @@ export function EmployeeRecord({
 }
 
 /**
- * 两组各叫什么，以及先画哪一组。分界读 `kind` 字段，不从入职日推：内部经历的开始日
- * 可能早于入职日（并购、转正）。标题一组画一次；用词和证据行的「公司内」「入职前」一致。
+ * 两组的先后与名字，名字与证据行共用同一套说法。分界读 `kind`，不从入职日推：
+ * 内部经历的开始日可能早于入职日（并购、转正）。
  */
 const KINDS = [
 	["external", "入职前"],
@@ -142,11 +126,8 @@ const KINDS = [
 ] as const;
 
 /**
- * 做过的事，按参与方式归组：每种参与方式说一次，后面跟它下面的几件事。参与方式
- * 不进检索（见 `db/schema.ts` 的 `involvement`），只给读的人看。
- *
- * 组的先后照 `lib/involvement.ts` 的原序；清单外的取值和没判断出参与方式的排在最后，
- * 左边那一格空着。按出现的值分组，意外的取值也照样显示。
+ * 做过的事按参与方式归组，组序按 `involvementRank`。按出现的值分组：清单外的取值
+ * 和没判断出参与方式的排在最后，也照样显示。
  */
 function didGroups(did: SegmentView["did"]) {
 	const kinds = [...new Set(did.map((one) => one.involvement))].sort(
@@ -188,7 +169,6 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 				{/* 徽章只标待处理的段；已处理是常态，不标 */}
 				{!s.derived && <StatusBadge tone="pending">待处理</StatusBadge>}
 			</div>
-			{/* 属性只列这一段有的；一条都没有就整块不画 */}
 			{(registered ||
 				inferred ||
 				s.skills.length > 0 ||
@@ -214,7 +194,7 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 						<DescriptionsItem label="职责">{didGroups(s.did)}</DescriptionsItem>
 					)}
 					{s.description && (
-						/* 简历原文是这一栏里唯一成段读的东西，行高走 `read-cjk` 那一档 */
+						/* 这一栏里唯一成段读的文字 */
 						<DescriptionsItem label="描述">
 							<span className="read-cjk block">{s.description}</span>
 						</DescriptionsItem>

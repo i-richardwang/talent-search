@@ -1,8 +1,4 @@
-/*
- * AutoComplete 自己的块，类名以 `.ui-auto-complete` 开头；定位器、弹层和选项用
- * dropdown-menu.css 的块，它在 `styles.css` 里先于本文件引入。块的先后照 DOM：
- * 浮层里的 popup、list。
- */
+/* 定位器、弹层和选项用 dropdown-menu.css 的块，它在 `styles.css` 里先于本文件引入。 */
 
 .ui-auto-complete-popup {
 	transform-origin: var(--transform-origin);

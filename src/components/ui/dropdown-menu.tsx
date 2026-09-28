@@ -23,37 +23,18 @@ import { resolveNativeButton } from "#/components/ui/native-button";
 import { cn } from "#/lib/utils";
 
 /*
- * 下拉菜单，样式在 dropdown-menu.css。用原子件拼：`DropdownMenuRoot` 里放
- * `DropdownMenuTrigger` 与 `DropdownMenuPortal` › `DropdownMenuPositioner` ›
- * `DropdownMenuPopup`，弹层里放单选项或 `renderDropdownMenuItems` 画出的项。
- * `items` 有六种：普通项、`divider`、`group`、`switch`（开关项）、`checkbox`（勾选项）、
- * `radio`（一组单选项）。普通项可以带 `icon`（左端 14px 的图标位，次要色；危险项跟着
- * 换成错误色）；菜单里有一项带图标，其余项都留出同样的图标位，文字对齐。勾选项和单选项
- * 的勾画在图标位上，点了菜单不收起，可以接着勾。普通项、勾选项和单选项都可以带 `extra`：
- * 行尾一个 12px 三级色的值，例如选了之后还剩几个。
+ * 下拉菜单，用原子件拼：`DropdownMenuRoot` 里放 `DropdownMenuTrigger` 与
+ * `DropdownMenuPortal` › `DropdownMenuPositioner` › `DropdownMenuPopup`，弹层里放单选项或
+ * `renderDropdownMenuItems` 画出的项。菜单里有一项带图标，其余项都留出同样的图标位，
+ * 文字对齐。勾选项和单选项点了菜单不收起，可以接着勾。开关只在菜单里用到，没有单独的
+ * Switch 组件。
  *
- * 开关项里的开关是受控的小号开关：按钮底、滑块、按下时滑块变宽、motion 弹簧
- * （damping 24、stiffness 360）。开关只在菜单里用到，没有单独的 Switch 组件。
- *
- * - 单选项：`DropdownMenuRadioGroup`、`DropdownMenuRadioItemPrimitive`、
- *   `DropdownMenuRadioItemIndicator`，Base UI 的 `Menu.RadioGroup` / `Menu.RadioItem`
- *   给出单选的语义。界面约定单选用 Radio（AGENTS.md「界面验收」），菜单里
- *   几选一的项用它。
- * - 子菜单：`DropdownMenuSubmenuRoot` 里放 `DropdownMenuSubmenuTrigger`（一项，行尾是
- *   `DropdownMenuItemExtra` 写的当前值和 `DropdownMenuSubmenuArrow`），再放
- *   `DropdownMenuPortal` › `DropdownMenuPositioner submenu` › `DropdownMenuPopup`。
- *   子菜单贴着那一项的右边打开，没有展开动画；开着时那一项留着悬停的底。
- * - 弹层在触发器左下方展开。portal 到 `<body>`；定位器的 z 值是 `--z-index-popup`
- *   这一档，不按打开先后另分配，碰撞边距用 Base UI 的默认（见 floating.ts）。
- * - 触发器不挂类：打开时的底色在 styles.css 的 base 层按
- *   `[aria-haspopup="menu"][data-popup-open]` 选。styles.css 的通用焦点框跳过带 `ui-` 类的
- *   元素，挂上类会让触发器没有焦点框。
+ * 触发器不挂类：打开时的底色在 styles.css 的 base 层按 `[aria-haspopup="menu"][data-popup-open]`
+ * 选。styles.css 的通用焦点框跳过带 `ui-` 类的元素，挂上类会让触发器没有焦点框。
  */
 
 interface MenuItemType {
 	danger?: boolean;
-	disabled?: boolean;
-	extra?: ReactNode;
 	icon?: LucideIcon;
 	key: Key;
 	label: string;
@@ -133,10 +114,7 @@ export function DropdownMenuPortal({ children }: { children: ReactNode }) {
 	);
 }
 
-/**
- * 定位器。菜单在触发器左下方、隔 6px；`submenu` 时是子菜单的定位器：贴着那一项的右边，
- * 上沿抵掉弹层的 4px 内边距，和那一项对齐。
- */
+/** 定位器。`submenu` 时贴着那一项的右边，上沿抵掉弹层的内边距，和那一项齐平。 */
 export function DropdownMenuPositioner({
 	children,
 	submenu = false,
@@ -222,7 +200,7 @@ export function DropdownMenuItemContent({ children }: { children: ReactNode }) {
 	return <div className="ui-dropdown-menu-item-content">{children}</div>;
 }
 
-/** 项左端的图标位，14px；没有子元素时是一格空位，让文字和别的项对齐。 */
+/** 项左端的图标位；没有子元素时是一格空位，让文字和别的项对齐。 */
 export function DropdownMenuItemIcon({ children }: { children?: ReactNode }) {
 	return <span className="ui-dropdown-menu-icon">{children}</span>;
 }
@@ -243,12 +221,11 @@ export function DropdownMenuItemDesc({ children }: { children: ReactNode }) {
 	return <span className="ui-dropdown-menu-desc">{children}</span>;
 }
 
-/** 项行尾的一个值（子菜单里选中的是哪个），等宽 12px 三级色。 */
+/** 项行尾的一个值，例如子菜单里选中的是哪个。 */
 export function DropdownMenuItemExtra({ children }: { children: ReactNode }) {
 	return <span className="ui-dropdown-menu-extra">{children}</span>;
 }
 
-/** 子菜单那一项行尾的实心小三角。 */
 export function DropdownMenuSubmenuArrow() {
 	return (
 		<span className="ui-dropdown-menu-submenu-arrow">
@@ -328,7 +305,7 @@ function SwitchThumb({
 	);
 }
 
-/** 开关项右端的小号开关：受控，不进 Tab 顺序，点它不再冒泡到菜单项。 */
+/** 开关项右端的开关：不进 Tab 顺序，点它不冒泡到菜单项。 */
 function MenuSwitch({
 	checked,
 	onCheckedChange,
@@ -392,8 +369,8 @@ function DropdownMenuSwitchItem({
 			{children}
 			{/* biome-ignore lint/a11y/noStaticElementInteractions: 只拦下开关冒上来的焦点事件，不让菜单把它当成移到了这一项 */}
 			<span
+				className="ui-dropdown-menu-switch"
 				onFocus={(event) => event.stopPropagation()}
-				style={{ display: "inline-flex", marginInlineStart: 16 }}
 			>
 				<MenuSwitch checked={checked} onCheckedChange={onCheckedChange} />
 			</span>
@@ -425,7 +402,6 @@ const itemContent = (
 const renderItem = (item: MenuItemType, reserveIconSpace: boolean) => (
 	<DropdownMenuItem
 		danger={item.danger}
-		disabled={item.disabled}
 		key={item.key}
 		label={item.label}
 		onClick={item.onClick}
@@ -434,7 +410,6 @@ const renderItem = (item: MenuItemType, reserveIconSpace: boolean) => (
 			item.label,
 			reserveIconSpace,
 			item.icon && <Icon icon={item.icon} />,
-			item.extra,
 		)}
 	</DropdownMenuItem>
 );
@@ -499,8 +474,8 @@ const hasAnyIcon = (items: DropdownItem[]): boolean =>
 	);
 
 /**
- * 把 `items` 画成菜单项，放进 `DropdownMenuPopup`。有一项带图标时每一项都留出图标位；
- * `reserveIconSpace` 在没有图标时也留，和同一菜单里带勾的单选项对齐。
+ * 把 `items` 画成菜单项，放进 `DropdownMenuPopup`。`reserveIconSpace` 在没有图标时也留出
+ * 图标位，和同一菜单里带勾的单选项对齐。
  */
 export const renderDropdownMenuItems = (
 	items: DropdownItem[],

@@ -14,7 +14,6 @@ const MIN = 200;
 const MAX = 420;
 const DEFAULT = 280;
 
-/** 面板里的一段示例内容：顶上一条页头，下面几行字。 */
 function PanelBody({ title, width }: { title: string; width?: number }) {
 	return (
 		<>
@@ -31,7 +30,6 @@ function PanelBody({ title, width }: { title: string; width?: number }) {
 	);
 }
 
-/** 旁边那一栏：面板变宽变窄时它让出或收回宽度。 */
 function Main() {
 	return (
 		<div className="flex min-w-0 flex-1 flex-col">
@@ -157,7 +155,6 @@ function Usage() {
 	);
 }
 
-/** 可拖动面板页：试用、产品里的两处用法。 */
 export function DraggablePanelPage() {
 	return (
 		<DocPage
@@ -168,7 +165,7 @@ export function DraggablePanelPage() {
 					"给了 size 就受控：拖完一次回调 onSizeChange，要不要记住由调用方定。",
 					"expand 为假时宽度动画到 0，内容保持原宽整块滑出，不可交互。",
 					"分隔条聚焦后方向键每次 10px、Shift 或 PageUp/PageDown 每次 50px，Home/End 到两头，回车或空格展开收起。",
-					"面板的边线由分隔条画：平时 border-secondary、悬停 fill、拖动中主色；showBorder 为假时不画线。",
+					"面板的边线由分隔条画，悬停和拖动时加深；showBorder 为假时不画线。",
 				],
 				usage: `<DraggablePanel\n  defaultSize={400}\n  expand={open}\n  maxWidth={560}\n  minWidth={400}\n  onSizeChange={setWidth}\n  placement="right"\n  showHandleWideArea={false}\n  size={width}\n>\n  {children}\n</DraggablePanel>`,
 			}}

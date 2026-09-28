@@ -12,9 +12,9 @@ import {
 import { SCOPE_LABEL, tokenLabel } from "../../shared/tokens/registry";
 
 /** 没有修改时各处都说的这一句。 */
-export const UNCHANGED = "与原版一致";
+export const UNCHANGED = "没有修改";
 
-/** 修改版和原版一样时的空态；`description` 说这一页在有修改时列什么。 */
+/** 没有修改时的空态；`description` 说这一页在有修改时列什么。 */
 export function Unchanged({ description }: { description?: string }) {
 	return (
 		<Empty description={description} icon={CircleCheck} title={UNCHANGED} />
@@ -32,8 +32,7 @@ function Value({ value }: { value: string }) {
 }
 
 /**
- * 当前的全部修改：先写一共几项，每项写原版值（划掉）与修改后的值，右侧是作用在哪一侧，
- * 可以单独恢复原版值。
+ * 当前的全部修改：每项写修改前（划掉）与修改后的值、作用在哪一侧，可以单独还原。
  */
 export function TokenChanges({
 	draft,
@@ -65,7 +64,7 @@ export function TokenChanges({
 								icon={RotateCcw}
 								onClick={() => onEdit(resetTokens(draft, scope, [key]))}
 								size="small"
-								title={`${tokenLabel(key)}（${SCOPE_LABEL[scope]}）恢复原版值`}
+								title={`还原${tokenLabel(key)}（${SCOPE_LABEL[scope]}）`}
 							/>
 						</div>
 						<code className="text-fg-tertiary">{key}</code>

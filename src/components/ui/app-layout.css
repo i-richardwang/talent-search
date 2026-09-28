@@ -1,10 +1,6 @@
 /*
- * 应用外壳的外观，类名以 `.ui-app-` 与 `.ui-nav-header` 开头。
- *
- * 画布是 layout 色；左侧导航直接落在画布上，不描边；内容是一张内缩 8px 的卡片，
- * 描边、8px 圆角、container 底，栏与卡片之间的分界全由卡片自己的边给出。
- * 导航栏在时卡片左边不内缩，贴着导航栏；导航栏收起、或 lg 以下导航不常驻（收进抽屉）
- * 时卡片四边都内缩。
+ * 导航栏直接落在画布上、不描边，栏与卡片之间的分界全由卡片自己的边给出。
+ * 导航栏在时卡片左边不内缩，贴着导航栏；导航栏收起或 lg 以下时卡片四边都内缩。
  */
 
 .ui-app-layout {
@@ -12,15 +8,15 @@
 	height: 100dvh;
 	overflow: hidden;
 	isolation: isolate;
-	background: var(--color-layout);
+	background: var(--color-canvas);
 }
 
-/* 导航栏的宽由 `DraggablePanel` 写；这里只管 lg 以下不显示、栏里的字色和它自己的底。 */
+/* 导航栏的宽由 `DraggablePanel` 写。 */
 .ui-app-nav {
 	display: none;
 	height: 100%;
 	color: var(--color-fg-secondary);
-	background: var(--color-layout);
+	background: var(--color-canvas);
 	user-select: none;
 
 	@media (width >= 64rem) {
@@ -91,10 +87,7 @@
 	border-color: var(--color-border-secondary);
 }
 
-/*
- * 一栏顶上的页头：44px 高、8px 内边距，左右两组各自 2px 间隔，中间一组占满剩下的宽。
- * 不画底边：页头与下面的内容同在一张面上。
- */
+/* 页头不画底边：页头与下面的内容同在一张面上。 */
 .ui-nav-header {
 	display: flex;
 	flex: none;
@@ -140,10 +133,6 @@
 	white-space: nowrap;
 }
 
-/*
- * 导航栏顶上那一行：左边是身份（28px 的主色方块图标加名字，整行可点、悬停出底），
- * 右边放这一栏的动作。上下 8px、左右 6px；身份占满左边剩下的宽，放不下时名字截断。
- */
 .ui-app-nav-header {
 	display: flex;
 	flex: none;
@@ -162,9 +151,8 @@
 }
 
 /*
- * 收起导航栏的开关：平时 0 宽、透明，指针进入导航栏时宽度 0.2s 展开到 32px 并立刻显形；
- * 键盘焦点落在它身上时同样展开。按钮居中在这一格里，展开途中两边被裁掉。
- * 画在抽屉里时这一格放的是关闭钮，一直显示。
+ * 收起导航栏的开关：平时 0 宽、透明，指针进入导航栏或焦点落在它身上时展开。按钮居中在
+ * 这一格里，展开途中两边被裁掉。画在抽屉里时这一格放的是关闭钮，一直显示。
  */
 .ui-app-nav-toggle {
 	display: flex;
@@ -188,7 +176,6 @@
 	}
 }
 
-/* 身份：常态没有底，悬停 fill-tertiary，底色随指针即时变。 */
 .ui-app-nav-brand {
 	display: flex;
 	flex: 0 1 auto;
@@ -208,7 +195,7 @@
 	}
 }
 
-/* 方块的圆角和 28px 的方形头像一样：边长的六分之一。 */
+/* 圆角和方形头像一样取边长的六分之一。 */
 .ui-app-nav-brand-logo {
 	display: flex;
 	flex: none;
@@ -217,7 +204,7 @@
 	width: 28px;
 	height: 28px;
 	border-radius: calc(28px / 6);
-	color: var(--color-layout);
+	color: var(--color-canvas);
 	background: var(--color-primary);
 }
 
@@ -227,16 +214,11 @@
 	white-space: nowrap;
 }
 
-/*
- * 从左边滑出的一栏（`AppNavDrawer`）：和导航栏同一块画布，layout 底、两侧一根
- * border-secondary 的线、向右 4px 的一层 4% 黑影，不圆角。顶上一行和导航栏顶上那一行
- * 同样的留白，标题 14px 半粗、左边再让 8px，关闭钮往行尾多伸 2px；下面是自己滚动的正文。
- */
 .ui-app-nav-drawer {
 	border-inline: 1px solid var(--color-border-secondary);
 	border-radius: 0;
 	color: var(--color-fg-secondary);
-	background: var(--color-layout);
+	background: var(--color-canvas);
 	box-shadow: 4px 0 8px -2px rgb(0 0 0 / 0.04);
 }
 
@@ -274,11 +256,8 @@
 }
 
 /*
- * 首页那一屏（`AppHome`）。底是 container-secondary；深色一侧自上而下从卡片色过渡到它。
- * 页头绝对定位浮在顶上。整页在卡片宽的滚动层上原生滚动，滚动层上 32px、下 24px、
- * 左右 24px 的边；正文一列最宽 `--container-home`，水平居中，列里问句、输入面、下面的
- * 内容之间各隔 24px。放得下时这一列上下居中，底下多垫一行问句加一段间隔的高，
- * 把输入面而不是整列的中点抬到中线上；放不下就从顶上排起、整页滚动。
+ * 首页那一屏：正文一列放得下时上下居中，底下多垫一行问句加一段间隔的高，
+ * 把输入面而不是整列的中点抬到中线上。
  */
 .ui-app-home {
 	--ui-app-home-title-size: 22px; /* 不在字阶上：这一屏的问句比 20 的标题大一点，只用在这里 */

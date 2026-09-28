@@ -1,8 +1,3 @@
-/*
- * ProgressTag 的外观，类名以 `.ui-progress-tag` 开头：胶囊、圆环的底环与进度、字。
- * 24px 高，左 4 右 8，环与字隔 4px；描边 border-secondary、container 底，两端圆角 24px。
- */
-
 .ui-progress-tag {
 	cursor: pointer;
 	display: inline-flex;

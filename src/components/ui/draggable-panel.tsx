@@ -16,23 +16,15 @@ import {
 	createPanelController,
 	type PanelController,
 	type PanelOptions,
-	type Placement,
+	type PanelPlacement,
 } from "./draggable-panel-controller";
 import { foldTransition } from "./motion-token";
 
 /*
- * 可拖动宽度的侧面板，样式在 draggable-panel.css，宽度状态在 draggable-panel-controller.ts。
- *
- * - 贴着面板朝内容那一侧的边有一条分隔条（`role="separator"`）：拖动调宽，夹在
- *   `minWidth`–`maxWidth` 之间；双击回到 `defaultSize`；聚焦后方向键每次 10px、按住
- *   Shift 或 PageUp/PageDown 每次 50px，Home/End 到两头，回车或空格展开收起。
- * - `size` 给了就是受控的宽：拖完一次（放手时）回调 `onSizeChange`，拖动过程中逐帧回调
- *   `onSizeDragging`，记不记住由调用方定。不给就自己记。
- * - `expand` 收起时外框宽度动画到 0，内容保持原宽整块滑出并缩到 0.97；收着时分隔条
- *   不渲染，内容不可交互（`inert`）。
- * - `showBorder` 为真时分隔条画出面板那一侧的 1px 边：平时 border-secondary，悬停
- *   fill，拖动中主色；为假时只留光标和手感，不画线。
- * - 分隔条的可点宽度 8px，`showHandleWideArea` 放到 16px；粗指针（触屏）一律 20px。
+ * 可拖动宽度的侧面板，宽度状态在 draggable-panel-controller.ts。贴着面板朝内容那一侧的边
+ * 有一条分隔条：拖动调宽，双击回到 `defaultSize`，聚焦后可用键盘调宽、展开收起。
+ * `size` 给了就是受控的宽，拖完一次（放手时）回调 `onSizeChange`，记不记住由调用方定。
+ * 收着时分隔条不渲染，内容不可交互。
  */
 
 /** 按下后挪过这么多像素才算开始拖，双击和点一下不会带出一次拖动。 */
@@ -82,22 +74,20 @@ export interface DraggablePanelProps
 	extends Omit<ComponentProps<"aside">, "onDrag"> {
 	/** 根元素。默认 `aside`；里面另有地标（如导航栏的 `nav`）时用 `div`。 */
 	as?: "aside" | "div";
-	/** 面板贴在哪一边；分隔条在它朝内容的那一侧。按行内方向解释，从右往左排版时对调。 */
-	placement?: Placement;
-	/** 受控的宽（px）。 */
+	/** 按行内方向解释，从右往左排版时对调。 */
+	placement?: PanelPlacement;
 	size?: number;
-	/** 不受控时的初始宽，也是双击复原到的宽（px）。默认 280。 */
+	/** 不受控时的初始宽，也是双击复原到的宽。 */
 	defaultSize?: number;
 	minWidth?: number;
 	maxWidth?: number;
 	/** 拖完一次、键盘调宽或双击复原后的宽。 */
 	onSizeChange?: (width: number) => void;
-	/** 拖动过程中逐帧的宽。 */
-	onSizeDragging?: (width: number) => void;
 	expand?: boolean;
-	defaultExpand?: boolean;
 	onExpandChange?: (expand: boolean) => void;
+	/** 为假时分隔条只留光标和手感，不画线。 */
 	showBorder?: boolean;
+	/** 放宽分隔条的可点宽度；粗指针（触屏）一律最宽。 */
 	showHandleWideArea?: boolean;
 	classNames?: { content?: string };
 }
@@ -110,9 +100,7 @@ export function DraggablePanel({
 	minWidth = 0,
 	maxWidth,
 	onSizeChange,
-	onSizeDragging,
 	expand,
-	defaultExpand = true,
 	onExpandChange,
 	showBorder = true,
 	showHandleWideArea = true,
@@ -121,7 +109,7 @@ export function DraggablePanel({
 	children,
 	...props
 }: DraggablePanelProps) {
-	const [innerExpand, setInnerExpand] = useState(defaultExpand);
+	const [innerExpand, setInnerExpand] = useState(true);
 	const isExpand = expand ?? innerExpand;
 	const setExpand = useCallback(
 		(next: boolean) => {
@@ -147,7 +135,6 @@ export function DraggablePanel({
 		min: minWidth,
 		onExpandChange: setExpand,
 		onSizeChange: commitSize,
-		onSizeDragging,
 		placement,
 		size: currentSize,
 	};

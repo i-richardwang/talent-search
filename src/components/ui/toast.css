@@ -1,10 +1,6 @@
 /*
- * 通知的长相。块按 DOM 的先后排：viewport、一条通知（root）、content、body、图标、
- * 正文列、标题行、标题、正文、关闭钮、按钮行、按钮。
- *
  * 叠放用 Base UI 写在每条通知上的变量：`--toast-index` 是第几条（最新的是 0），
- * `--toast-height` 是自己的高，`--toast-frontmost-height` 是最前面那条的高，
- * `--toast-offset-y` 是展开时前面几条的总高，`--toast-swipe-movement-x/y` 是滑动的位移。
+ * `--toast-frontmost-height` 是最前面那条的高，`--toast-offset-y` 是展开时前面几条的总高。
  */
 
 .ui-toast-viewport {
@@ -26,10 +22,7 @@
 	}
 }
 
-/*
- * 收起时每条往上露出 12px、每往后一条缩小 5%，高度都按最前面那条算；指针移上去
- * （data-expanded）按各自的高排开，条与条之间 12px。进出场从下方滑入滑出。
- */
+/* 收起时高度都按最前面那条算，指针移上去（data-expanded）按各自的高排开。 */
 .ui-toast {
 	--ui-toast-gap: 12px;
 	--ui-toast-peek: 12px;
@@ -141,21 +134,14 @@
 	align-items: flex-start;
 }
 
-/* 图标的颜色是这条通知的状态色；普通通知用正文色，等待用主色。 */
 .ui-toast-icon {
 	display: flex;
 	flex-shrink: 0;
 	align-items: center;
 	justify-content: center;
 
-	color: var(--color-fg);
-
 	[data-type="success"] & {
 		color: var(--color-success);
-	}
-
-	[data-type="info"] & {
-		color: var(--color-info);
 	}
 
 	[data-type="warning"] & {
@@ -164,10 +150,6 @@
 
 	[data-type="error"] & {
 		color: var(--color-error);
-	}
-
-	[data-type="loading"] & {
-		color: var(--color-primary);
 	}
 }
 
@@ -270,16 +252,14 @@
 	font-weight: 500;
 	line-height: 1;
 
+	color: var(--color-canvas);
+	background: var(--color-primary);
+
 	transition:
 		color 0.2s var(--ease-out),
 		background 0.2s var(--ease-out);
 
 	@apply focus-ring;
-}
-
-.ui-toast-action-primary {
-	color: var(--color-layout);
-	background: var(--color-primary);
 
 	&:hover {
 		background: var(--color-primary-hover);
@@ -287,18 +267,5 @@
 
 	&:active {
 		background: var(--color-primary-active);
-	}
-}
-
-.ui-toast-action-text {
-	color: var(--color-primary);
-	background: transparent;
-
-	&:hover {
-		background: var(--color-fill-tertiary);
-	}
-
-	&:active {
-		background: var(--color-fill-secondary);
 	}
 }

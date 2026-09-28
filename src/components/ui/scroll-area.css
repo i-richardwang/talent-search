@@ -1,8 +1,6 @@
 /*
- * 各块挂在各自的元素上，按 DOM 的先后排：root、viewport、淡出、scrollbar、thumb。
- *
- * 顶层注册淡出用的两个自定义属性，让它们在滚动驱动的动画里连续插值。原生 CSS 的嵌套里
- * 不能写 `@keyframes`，关键帧都放在顶层。
+ * 淡出用的两个自定义属性要注册，才能在滚动驱动的动画里连续插值。
+ * 原生 CSS 的嵌套里不能写 `@keyframes`，关键帧都放在顶层。
  */
 
 @property --ui-scroll-area-fade-top {
@@ -50,7 +48,7 @@
 
 	@apply focus-ring;
 
-	/* 焦点环画在内侧，理由见 scroll-area.tsx。 */
+	/* 焦点环画在内侧：滚动视口总是铺满一块常常 `overflow: hidden` 的面，画在外侧就被裁掉。 */
 	&:focus-visible {
 		outline-offset: -2px;
 	}
@@ -80,7 +78,7 @@
 	mask-repeat: no-repeat;
 	mask-size: 100% 100%;
 
-	/* 支持滚动驱动的动画时，淡出的深浅按离两端的距离（头尾各 40px）走，滚到头不会跳变。 */
+	/* 支持滚动驱动的动画时，淡出的深浅按离两端的距离走，滚到头不会跳变。 */
 	@supports (animation-timeline: scroll()) {
 		animation-name: ui-scroll-area-fade-top-in, ui-scroll-area-fade-bottom-out;
 		animation-duration: 1ms, 1ms;
@@ -108,7 +106,7 @@
 		opacity 150ms var(--ease-out),
 		width 150ms var(--ease-out);
 
-	/* 条两侧各放宽到 16px 的指针感应区。 */
+	/* 放宽指针感应区。 */
 	&::before {
 		content: "";
 		position: absolute;

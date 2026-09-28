@@ -21,23 +21,16 @@
 	}
 }
 
-/* 转圈读 `styles.css` 的 `--animate-spin`，与等待圈同一份关键帧。 */
 .ui-icon-spin {
 	animation: var(--animate-spin);
 }
 
-/*
- * 等待圈：一圈缺了上沿的环，颜色跟字色。按钮与对话框共用；边长和线宽默认是按钮里的
- * 12px、1.5px，别处用 `--spinner-size`、`--spinner-stroke` 改。
- */
+/* 按钮里的等待圈。 */
 .ui-spinner {
-	--spinner-size: 12px;
-	--spinner-stroke: 1.5px;
-
 	display: inline-block;
-	width: var(--spinner-size);
-	height: var(--spinner-size);
-	border: var(--spinner-stroke) solid currentcolor;
+	width: 12px;
+	height: 12px;
+	border: 1.5px solid currentcolor;
 	border-block-start-color: transparent;
 	border-radius: 50%;
 	animation: var(--animate-spin);

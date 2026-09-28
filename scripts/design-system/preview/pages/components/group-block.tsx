@@ -14,9 +14,7 @@ import {
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-
-/** 示例里的链接只在页内跳，不离开预览页。 */
-const stay = (event: { preventDefault: () => void }) => event.preventDefault();
+import { stay } from "../../kit/stay";
 
 const RECORDS = [
 	{
@@ -62,7 +60,7 @@ function Playground() {
 					</Checkbox>
 				</Control>
 			</Controls>
-			<Stage footer={<span>一条整行可点，悬停出 fill-quaternary 的底</span>}>
+			<Stage footer={<span>一条整行可点，悬停出底</span>}>
 				<div className="w-full max-w-page px-6">
 					<GroupBlock
 						action={action && <GroupBlockAction>查看全部</GroupBlockAction>}
@@ -91,7 +89,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="一句可以拿去用的话：标题常规字重、可以折行，图标 18px 次要色，至少 58px 高。整组往里收一点，组名下面一行小字说怎么用。"
+				description="一句可以拿去用的话：标题可以折行，组名下面一行小字说怎么用。"
 				title="起步的例子"
 			>
 				<div className="w-full px-3">
@@ -121,7 +119,6 @@ function Usage() {
 	);
 }
 
-/** 条目分组页：试用、使用场景。 */
 export function GroupBlockPage() {
 	return (
 		<DocPage
@@ -131,8 +128,8 @@ export function GroupBlockPage() {
 					"首页输入框下面的一组条目用它：做过的事（最近搜索）用缺省的 record，一句可以拿去用的话（起步的例子）用 prose。",
 					'一条整行可点：render 传路由的 <Link>，只填进输入框的一条传 render={<button type="button" />}。',
 					"组名后的 count 数的是这一组列出来的条数；列不完时组名行尾放 GroupBlockAction「查看全部」。",
-					"行尾的 extra 放时间，占住至少 56px 并右对齐，几行的时间竖着对成一列。",
-					"条目向两边各伸出 10px，字和组名、上面的输入框对齐，悬停的底比它们宽一截。",
+					"行尾的 extra 放时间，几行的时间竖着对成一列。",
+					"条目的字和组名、上面的输入框对齐，悬停的底比它们宽一截。",
 				],
 				usage: `<GroupBlock title="最近搜索" count={8} action={<GroupBlockAction>查看全部</GroupBlockAction>}>\n  <GroupBlockItem icon={MessageSquareTextIcon} title="…" description="…" extra="3 分钟前" render={<Link … />} />\n</GroupBlock>`,
 			}}

@@ -47,8 +47,7 @@ const TYPE_KEYS = [
 export const INSPECTOR_ID = "design-system-inspector";
 
 /**
- * 右栏：「设计」一栏按这一页在目录里写的事实列出能调的令牌，「修改」一栏是全部修改；
- * 底下是导出。右上角可以清空全部修改（能撤销），也可以收起右栏。
+ * 右栏：「设计」一栏按这一页在目录里写的事实列出能调的令牌，「修改」一栏是全部修改。
  */
 export function Inspector({
 	collapseRef,
@@ -112,8 +111,6 @@ export function Inspector({
 						setTab(key);
 						editing.onPreview(null);
 					}}
-					size="small"
-					variant="point"
 				/>
 				<div className="flex items-center gap-1">
 					<ActionIcon
@@ -121,7 +118,7 @@ export function Inspector({
 						icon={RotateCcw}
 						onClick={() => editing.onEdit(emptyDraft())}
 						size="small"
-						title="全部恢复原版值（可以撤销）"
+						title="全部还原（可以撤销）"
 					/>
 					<ActionIcon
 						aria-controls={INSPECTOR_ID}
@@ -239,7 +236,7 @@ function Design({
 	);
 }
 
-/** 组件尺寸：先选调哪一档，下面是这一档的令牌和不分档的令牌。 */
+/** 组件尺寸：有档时先选调哪一档，下面是这一档的令牌和不分档的令牌。 */
 function SizingSection({
 	editing,
 	group,
@@ -263,24 +260,26 @@ function SizingSection({
 						editing.onEdit(resetTokens(editing.draft, "shared", keys))
 					}
 					size="small"
-					title={`${componentLabel(group)}尺寸全部恢复原版值`}
+					title={`${componentLabel(group)}尺寸全部还原`}
 				/>
 			}
 			scope="组件"
 			title="尺寸"
 		>
-			<Segmented<SizeTier>
-				aria-label="调哪一档尺寸"
-				block
-				className="mb-3.5"
-				onChange={onSizeTier}
-				options={COMPONENT_TIERS[group].map((tier) => ({
-					label: TIER_LABEL[tier],
-					value: tier,
-				}))}
-				size="small"
-				value={sizeTier}
-			/>
+			{COMPONENT_TIERS[group].length > 1 && (
+				<Segmented<SizeTier>
+					aria-label="调哪一档尺寸"
+					block
+					className="mb-3.5"
+					onChange={onSizeTier}
+					options={COMPONENT_TIERS[group].map((tier) => ({
+						label: TIER_LABEL[tier],
+						value: tier,
+					}))}
+					size="small"
+					value={sizeTier}
+				/>
+			)}
 			<NumericFields
 				editing={editing}
 				tokens={tokens.filter(

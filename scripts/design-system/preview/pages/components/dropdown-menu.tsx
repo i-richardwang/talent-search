@@ -1,6 +1,5 @@
 import {
 	CheckIcon,
-	ChevronDown,
 	Ellipsis,
 	HashIcon,
 	LinkIcon,
@@ -50,7 +49,6 @@ import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { RECOMMEND } from "../../samples/conditions";
 
-/** 拼好的一个菜单：触发器，弹层里放 children。 */
 function Menu({
 	children,
 	trigger,
@@ -70,7 +68,6 @@ function Menu({
 	);
 }
 
-/** 强度的单选项：左端图标位里是勾；`hint` 给了就在名字下面加一行说明。 */
 function ModeItems({
 	hint,
 	mode,
@@ -183,13 +180,7 @@ function Playground() {
 					</>
 				}
 			>
-				<Menu
-					trigger={
-						<Button icon={ChevronDown} iconPosition="end" size="small">
-							Java 或 Go
-						</Button>
-					}
-				>
+				<Menu trigger={<Button size="small">Java 或 Go</Button>}>
 					{header && (
 						<DropdownMenuHeader className="max-w-64 text-fg-secondary text-xs">
 							说明栏在菜单最上面，写这个菜单作用的对象现在是什么状态。
@@ -215,7 +206,6 @@ function Playground() {
 	);
 }
 
-/** 项的类型表的一行：类型名、写法、只有这一种项的菜单。 */
 function ItemRow({
 	children,
 	code,
@@ -232,21 +222,12 @@ function ItemRow({
 				{code}
 			</TableCell>
 			<TableCell>
-				<Menu
-					trigger={
-						<Button icon={ChevronDown} iconPosition="end" size="small">
-							打开菜单
-						</Button>
-					}
-				>
-					{children}
-				</Menu>
+				<Menu trigger={<Button size="small">打开菜单</Button>}>{children}</Menu>
 			</TableCell>
 		</TableRow>
 	);
 }
 
-/** 开关项一行：开关状态存在这一行里。 */
 function SwitchRow() {
 	const [on, setOn] = useState(true);
 	return (
@@ -264,7 +245,6 @@ function SwitchRow() {
 	);
 }
 
-/** 子菜单一行：「显示」一项的子菜单里选列几条，行尾写着现在列几条。 */
 function SubmenuRow() {
 	const [count, setCount] = useState("5");
 	return (
@@ -312,7 +292,6 @@ function SubmenuRow() {
 	);
 }
 
-/** 单选项一行：选中的强度存在这一行里。 */
 function RadioRow() {
 	const [mode, setMode] = useState<Mode>("boost");
 	return (
@@ -380,7 +359,6 @@ function ItemTypes() {
 	);
 }
 
-/** 产品里的搜索条件菜单：强度单选带说明行，停用时有说明栏，还有启用开关和删除。 */
 function ConditionMenu() {
 	const [conditions, setConditions] = useState<Condition[]>([
 		{ ...RECOMMEND, off: "user" },
@@ -414,7 +392,6 @@ function Usage() {
 	);
 }
 
-/** 下拉菜单页：试用、项的类型、使用场景。 */
 export function DropdownMenuPage() {
 	return (
 		<DocPage
@@ -425,7 +402,7 @@ export function DropdownMenuPage() {
 					"几选一的项用 DropdownMenuRadioGroup，和其余项同在一个菜单时给 renderDropdownMenuItems 传 reserveIconSpace，让文字对齐。",
 					"危险项用 danger，放在最后并用 divider 隔开。",
 					'一次勾好几项用勾选项（type: "checkbox"），几选一的一组也可以写成 type: "radio"；两种都在图标位上画勾，点了菜单不收起。行尾的 extra 写选了之后还剩多少，点不了的项给 disabled。',
-					"项可以带 icon（14px、次要色，危险项是错误色）；有一项带图标，其余项自动留出图标位。",
+					"项可以带 icon；有一项带图标，其余项自动留出图标位。",
 					"一项下面还有一层选择时用子菜单：那一项行尾写当前值（DropdownMenuItemExtra）和小三角，子菜单贴着它的右边打开。",
 					"用原子件拼：Root › Trigger + Portal › Positioner › Popup；显示标签、键盘和触控行为要人工检查。",
 					"触发器是单个按钮组件，属性合进它本身，不另包一层。",

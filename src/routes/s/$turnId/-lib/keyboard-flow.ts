@@ -11,6 +11,7 @@ import type { View } from "./view-params";
  */
 export function useKeyboardFlow({
 	onEditQuery,
+	onCloseDetail,
 	results,
 	empId,
 	turnId,
@@ -22,6 +23,7 @@ export function useKeyboardFlow({
 }: {
 	/** 把光标放进改查询的地方：对话是右栏线程底下的输入框，关键词是名单上方的「经历或技能」。 */
 	onEditQuery: () => void;
+	onCloseDetail: () => void;
 	results: SearchResult[];
 	empId: string | undefined;
 	/** 换人只换详情面板，仍然停在这一条查询记录上 */
@@ -70,12 +72,7 @@ export function useKeyboardFlow({
 				if (busy) return;
 				if (empId) {
 					e.preventDefault();
-					navigate({
-						to: "/s/$turnId",
-						params: { turnId },
-						search: view,
-						replace: true,
-					});
+					onCloseDetail();
 					return;
 				}
 				if (picked > 0) {
@@ -128,7 +125,7 @@ export function useKeyboardFlow({
 				search: view,
 				replace: true,
 			});
-			// 块上有 scroll-my，落点会离容器边缘留一点余量；CSS.escape 与列表那边同源
+			// 名单行带 scroll-my，落点离容器边缘留一点余量
 			document
 				.querySelector(`[data-emp="${CSS.escape(target)}"]`)
 				?.scrollIntoView({ block: "nearest" });
@@ -138,6 +135,7 @@ export function useKeyboardFlow({
 		return () => window.removeEventListener("keydown", onKey);
 	}, [
 		onEditQuery,
+		onCloseDetail,
 		onPick,
 		picked,
 		onClearPicks,

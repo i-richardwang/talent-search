@@ -9,7 +9,7 @@ import {
 import { NumberField } from "../number-field";
 import type { Editing } from "./editing";
 
-/** 一组数值令牌（尺寸或时长），两列排开；改过的可以单独恢复原版值。 */
+/** 一组数值令牌（尺寸或时长），两列排开；改过的可以单独还原。 */
 export function NumericFields({
 	editing: { draft, onEdit, onPreview, previewDraft },
 	tokens,

@@ -140,7 +140,7 @@ function Sizes() {
 			{TIERS.map(([tier, px]) => (
 				<Block gap={14} key={tier} padding={20} variant="outlined">
 					<div className="flex h-12 items-center">
-						<Icon icon={SquarePen} size={tier} />
+						<Icon icon={SquarePen} size={px} />
 					</div>
 					<div className="flex flex-col gap-0.5 text-xs">
 						<code className="font-medium">{tier}</code>
@@ -176,7 +176,7 @@ function Vocabulary() {
 					padding={12}
 					variant="outlined"
 				>
-					<Icon icon={icon} size="middle" />
+					<Icon icon={icon} size={ICON_PRESET.middle} />
 					<div className="flex min-w-0 flex-col gap-0.5 text-xs">
 						<span className="font-medium">{meaning}</span>
 						<code className="text-fg-tertiary">{name}</code>

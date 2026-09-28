@@ -1,59 +1,48 @@
 "use client";
 
-import type { CSSProperties } from "react";
 import { Button, type ButtonProps } from "#/components/ui/button";
 import { ICON_PRESET, Icon, type IconProps } from "#/components/ui/icon";
 import { Tooltip, type TooltipProps } from "#/components/ui/tooltip";
 import { cn } from "#/lib/utils";
 
 /*
- * 一个正方形的 Button，字色是三级灰
- * （平时 tertiary、悬停 secondary、按下 fg），样式在 action-icon.css。
- * 三种面：borderless 没有底，filled 是浅灰底，outlined 是容器底加一圈描边；`glass` 把底换成
- * 半透明的浮层色并糊掉底下的内容，用在压在内容上的按钮。
- * 尺寸三档：small（24px，图标 14）放在行里，middle（36px，图标 20）单独摆着，两档的
- * 方块边长是 action-icon.css 的组件令牌；header（28px，图标 16）放在栏顶的页头上，
- * 边长是页头的布局令牌 `--nav-header-action-size`。三档之外可以直接给
- * `{ blockSize, borderRadius, size }`（像素）：方块边长、圆角、图标边长，按钮本身取 middle 一档。
- * 给了 `title` 或 `tooltipProps.hotkey` 就套一层提示，`tooltipProps` 转给它
- * （方位、快捷键）；提示本身不接指针。
- * 传进来的 `tabIndex` 优先，没传时禁用取 -1、否则 0：放在 Toolbar 里时
- * 漫游焦点靠 Toolbar 写的 `tabIndex`。
+ * 只有图标的正方形按钮。给了 `title` 或 `tooltipProps.hotkey` 就套一层提示。
+ * 传进来的 `tabIndex` 优先：放在 Toolbar 里时漫游焦点靠 Toolbar 写的 `tabIndex`。
  */
 
-type ActionIconSize =
-	| "small"
-	| "header"
-	| "middle"
-	| { blockSize: number; borderRadius: number; size: number };
+type ActionIconSize = "small" | "header" | "middle" | "floating";
 
 export interface ActionIconProps
 	extends Omit<
 		ButtonProps,
 		| "block"
 		| "children"
+		| "danger"
 		| "htmlType"
 		| "icon"
-		| "iconPosition"
-		| "outdent"
+		| "loading"
 		| "size"
 		| "title"
 		| "type"
 	> {
 	active?: boolean;
-	/** 压在内容上时：半透明的浮层底，底下的内容糊掉。 */
+	/** 压在内容上的按钮用。 */
 	glass?: boolean;
 	icon?: IconProps["icon"];
-	/** 只对 borderless：用负外边距抵掉方块比图标多出来的那半圈，让图标和行尾的字对齐。 */
-	outdent?: "end";
 	size?: ActionIconSize;
 	title?: TooltipProps["title"];
 	tooltipProps?: Omit<TooltipProps, "children" | "title">;
-	variant?: "borderless" | "filled" | "outlined";
+	variant?: "borderless" | "outlined";
 }
 
-/** 三档预设。圆角用全局的圆角档。 */
+/** `floating` 是浮在滚动内容上的圆钮。 */
 const PRESET = {
+	floating: {
+		blockSize: "var(--action-icon-size-middle)",
+		borderRadius: "50%",
+		button: "middle",
+		icon: 18,
+	},
 	header: {
 		blockSize: "var(--nav-header-action-size)",
 		borderRadius: "var(--radius-sm)",
@@ -74,26 +63,8 @@ const PRESET = {
 	},
 } as const;
 
-/** 方块边长、圆角，以及 outdent 要抵掉的那半圈（方块减图标的一半）。 */
-function measure(size: ActionIconSize) {
-	const preset =
-		typeof size === "string"
-			? PRESET[size]
-			: {
-					blockSize: `${size.blockSize}px`,
-					borderRadius: `${size.borderRadius}px`,
-					button: "middle" as const,
-					icon: size.size,
-				};
-	return {
-		...preset,
-		outdent: `calc((${preset.blockSize} - ${preset.icon}px) / 2)`,
-	};
-}
-
 const BUTTON_TYPE = {
 	borderless: "text",
-	filled: "fill",
 	outlined: "default",
 } as const;
 
@@ -103,7 +74,6 @@ export function ActionIcon({
 	disabled,
 	glass,
 	icon,
-	outdent,
 	size = "middle",
 	style,
 	title,
@@ -116,15 +86,10 @@ export function ActionIcon({
 		borderRadius,
 		button: buttonSize,
 		icon: iconSize,
-		outdent: inset,
-	} = measure(size);
+	} = PRESET[size];
 	// 提示不给触发器起名字：没给 aria-label 时拿字符串的 title 当按钮的名字。
 	const ariaLabel =
 		props["aria-label"] ?? (typeof title === "string" ? title : undefined);
-	const outdentMargin: CSSProperties | undefined =
-		variant === "borderless" && outdent === "end"
-			? { marginInlineEnd: `calc(-1 * ${inset})` }
-			: undefined;
 	const button = (
 		<Button
 			{...props}
@@ -144,7 +109,6 @@ export function ActionIcon({
 			}
 			size={buttonSize}
 			style={{
-				...outdentMargin,
 				borderRadius,
 				height: blockSize,
 				width: blockSize,

@@ -8,7 +8,7 @@ import { foldTransition } from "./motion-token";
  * 原宽，内容整块滑出而不是被挤窄重排。
  */
 
-export type Placement = "left" | "right";
+export type PanelPlacement = "left" | "right";
 
 /** 键盘每按一下调多少像素；按住 Shift 或用 PageUp/PageDown 时是快档。 */
 const KEY_STEP = 10;
@@ -18,7 +18,7 @@ const KEY_STEP_FAST = 50;
 const SCREEN_DELTA: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1 };
 
 /** 左边的面板往右拖变宽，右边的面板往左拖变宽。 */
-const GROW: Record<Placement, 1 | -1> = { left: 1, right: -1 };
+const GROW: Record<PanelPlacement, 1 | -1> = { left: 1, right: -1 };
 
 export interface PanelOptions {
 	defaultSize: number;
@@ -27,14 +27,13 @@ export interface PanelOptions {
 	min: number;
 	onExpandChange?: (expand: boolean) => void;
 	onSizeChange?: (size: number) => void;
-	onSizeDragging?: (size: number) => void;
-	placement: Placement;
+	placement: PanelPlacement;
 	size: number;
 }
 
 export interface PanelState {
 	dragging: boolean;
-	/** 展开或收起的宽度动画进行中 */
+	/** 展开或收起的宽度动画进行中。 */
 	folding: boolean;
 }
 
@@ -162,7 +161,6 @@ export function createPanelController(initial: PanelOptions) {
 			);
 			size.jump(next);
 			content.jump(next);
-			options.onSizeDragging?.(next);
 		},
 		start: () => {
 			Object.assign(session, {

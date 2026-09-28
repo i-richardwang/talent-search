@@ -1,8 +1,3 @@
-/*
- * `.ui-skeleton` 是每一块；其后是各形状在块上加的：avatar、button、circle、tag，
- * 以及外层的排法：text（Skeleton.Text 那一列）、tags（Skeleton.Tags 那一排）。
- */
-
 @keyframes ui-skeleton-fade {
 	0%,
 	100% {
@@ -36,26 +31,5 @@
 
 .ui-skeleton-avatar {
 	flex: none;
-}
-
-/* 与 Button 同档的圆角。 */
-.ui-skeleton-button {
-	flex: none;
-	border-radius: var(--radius-sm);
-}
-
-.ui-skeleton-circle {
 	border-radius: 50%;
-}
-
-/* 与 tag.css 里 Tag 的圆角一致。 */
-.ui-skeleton-tag {
-	flex: none;
-	border-radius: 3px;
-}
-
-.ui-skeleton-tags {
-	display: flex;
-	flex-wrap: wrap;
-	gap: calc(var(--spacing) * 2);
 }

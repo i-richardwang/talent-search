@@ -18,7 +18,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EvidenceLine, MissedClaims } from "#/components/evidence";
+import {
+	EvidenceLine,
+	MissedClaims,
+} from "#/routes/s/$turnId/-components/evidence";
 import type { ClaimBasis, Hit } from "#/search/result";
 import { classesWith, visibleText } from "./render";
 import { hit as row } from "./rows";

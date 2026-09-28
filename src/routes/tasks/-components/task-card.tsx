@@ -11,11 +11,11 @@ import { Alert } from "#/components/ui/alert";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { CodeBlock } from "#/components/ui/code-block";
-import { Collapse } from "#/components/ui/collapse";
 import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
 import { Divider } from "#/components/ui/divider";
 import { Drawer } from "#/components/ui/drawer";
 import { Empty } from "#/components/ui/empty";
+import { GroupCard } from "#/components/ui/group-card";
 import { Icon } from "#/components/ui/icon";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
@@ -46,12 +46,7 @@ import {
 const agoOf = (run: TaskRunView) =>
 	ago({ ageSeconds: run.ageSeconds, at: run.startedAt });
 
-/*
- * 任务页（`routes/tasks/route.tsx`）上一类任务的一组：头上是任务名、最近一次的结果
- * 和「立即运行」；下面白底的面里是库存数和按次列出的运行记录，每次的日志打开才取。
- */
-
-/** 翻到第 `page` 页的地址：只改这一类任务的页码，其余几类留在原来那页。 */
+/** 翻到第 `page` 页的地址：只改这一类任务的页码，其余几类的页码不动。 */
 function at(kind: TaskKind, page: number) {
 	return (previous: TaskPages): TaskPages => ({
 		...previous,
@@ -81,7 +76,10 @@ function Latest({ latest }: { latest: TaskRunView | null }) {
 	);
 }
 
-/** 一类任务的一组。`onDone` 在请求运行之后调用，让页面重新取一次状态。 */
+/**
+ * 任务页上一类任务的一组：任务名、最近一次的结果和「立即运行」，下面是库存数和按次
+ * 列出的运行记录。`onDone` 在请求运行之后调用，让页面重新取一次状态。
+ */
 export function TaskCard({
 	lane,
 	corpus,
@@ -121,7 +119,7 @@ export function TaskCard({
 
 	return (
 		<li>
-			<Collapse
+			<GroupCard
 				desc={<Latest latest={latest} />}
 				extra={
 					job && (
@@ -137,7 +135,6 @@ export function TaskCard({
 					)
 				}
 				title={TASK_NAME[kind]}
-				variant="filled"
 			>
 				<div className="flex flex-col gap-6">
 					{kind === "review" && judge === "off" && (
@@ -154,19 +151,16 @@ export function TaskCard({
 						</>
 					)}
 				</div>
-			</Collapse>
+			</GroupCard>
 		</li>
 	);
 }
 
-/** 库存数的格子：至少 150px 宽，一行最多四格，格间 8px，窄了自动换行。 */
+/** 一行最多四格（扣掉三道 `gap-2`），每格不窄于 9.375rem，放不下就换行。 */
 const FACT_COLUMNS =
 	"repeat(auto-fill, minmax(max(9.375rem, calc((100% - 3 * var(--spacing) * 2) / 4)), 1fr))";
 
-/**
- * 库存数，一格一个数：名字 16px 中粗、行高 32px；数 24px 粗体、千分位；构成在数下面
- * 隔 16px，一项一对「数 名字」，12px 三级灰，数加粗。
- */
+/** 库存数，一格一个数，构成写在数下面。 */
 function Facts({ kind, corpus }: { kind: TaskKind; corpus: CorpusCounts }) {
 	return (
 		<dl className="grid gap-2" style={{ gridTemplateColumns: FACT_COLUMNS }}>
@@ -205,10 +199,8 @@ function Facts({ kind, corpus }: { kind: TaskKind; corpus: CorpusCounts }) {
 }
 
 /**
- * 按次列出的运行记录，最新的在最前，可以整段收起。每次一行、没有边框，悬停出底：
- * 状态图标、结果、用时，右边是开始时刻和看日志的按钮（悬停才出现）；点这一行也打开日志。
- * 出错的那次多一个展开钮，错误收在行下，只有最新那次一开始就展开。日志只开一个抽屉，
- * 点哪一次换成哪一次。
+ * 按次列出的运行记录，最新的在最前。点一行打开那一次的日志；出错的那次错误收在行下，
+ * 只有最新那次一开始就展开。
  */
 function RunHistory({ lane }: { lane: TaskLane }) {
 	const { kind, runs } = lane;
@@ -217,10 +209,7 @@ function RunHistory({ lane }: { lane: TaskLane }) {
 	const [open, setOpen] = useState(false);
 	const [shown, setShown] = useState<LogView | null>(null);
 
-	/*
-	 * 抽屉只有一个，点哪一次的日志就换成哪一次、重新取。取回来时要是已经换成了
-	 * 别的一次，这份作废。
-	 */
+	// 日志抽屉只有一个；取回来时要是已经点了别的一次，这份作废
 	function openLog(run: TaskRunView) {
 		setShown({ lines: null, failed: false, run });
 		setOpen(true);
@@ -280,10 +269,6 @@ function RunHistory({ lane }: { lane: TaskLane }) {
 	);
 }
 
-/** 悬停才出现的动作：指针移进这一行或焦点落进来时显出，没有悬停的设备常显。 */
-const REVEAL =
-	"opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100";
-
 function RunRow({
 	kind,
 	run,
@@ -292,7 +277,6 @@ function RunRow({
 }: {
 	kind: TaskKind;
 	run: TaskRunView;
-	/** 出错的那次一开始是否展开错误 */
 	defaultExpanded: boolean;
 	onOpenLog: () => void;
 }) {
@@ -303,7 +287,7 @@ function RunRow({
 	return (
 		<Block
 			as="li"
-			className="group"
+			className="group/reveal"
 			clickable
 			gap={4}
 			onClick={onOpenLog}
@@ -351,7 +335,7 @@ function RunRow({
 					)}
 					<ActionIcon
 						aria-label={`${title}的日志`}
-						className={REVEAL}
+						className="reveal"
 						icon={ScrollTextIcon}
 						onClick={(event) => {
 							event.stopPropagation();
@@ -383,10 +367,7 @@ type LogView = {
 	failed: boolean;
 };
 
-/**
- * 一次运行的日志，在右侧抽屉里，打开时才取。取不到（服务端连不上、库出错）时说
- * 取不到，不停在加载上；关掉再点一次「日志」重新取。
- */
+/** 一次运行的日志，打开时才取；取不到时说取不到，不停在加载上。 */
 function RunLog({
 	kind,
 	log,
@@ -419,9 +400,7 @@ function RunLog({
 			) : lines.length === 0 ? (
 				<Empty description="这次运行没有留下输出。" title="没有日志" />
 			) : (
-				<CodeBlock language="日志" wrap>
-					{lines.join("\n")}
-				</CodeBlock>
+				<CodeBlock language="日志">{lines.join("\n")}</CodeBlock>
 			)}
 		</Drawer>
 	);

@@ -7,9 +7,7 @@ import {
 } from "@tanstack/react-router";
 import {
 	LinkIcon,
-	MessageSquareTextIcon,
 	MoreHorizontalIcon,
-	TextSearchIcon,
 	TrashIcon,
 	TriangleAlertIcon,
 } from "lucide-react";
@@ -33,20 +31,15 @@ import { toast } from "#/components/ui/toast";
 import { deleteRecent } from "#/server/functions";
 import type { RecentSearch } from "#/server/turn";
 import { recentLabel } from "../-lib/recent";
+import { SEARCH_MODE_ICON } from "./mode-select";
 
-/** 两种记录各自的图标：和首页搜索方式菜单里两种搜索的图标是同一对。 */
-export const RECENT_ICON = {
-	conversation: MessageSquareTextIcon,
-	keyword: TextSearchIcon,
-};
-
+/** 链头有原话的是对话，没有的是关键词搜索。 */
 export const recentIcon = (record: Pick<RecentSearch, "title">) =>
-	record.title === null ? RECENT_ICON.keyword : RECENT_ICON.conversation;
+	SEARCH_MODE_ICON[record.title === null ? "keyword" : "conversation"];
 
 /**
- * 删掉一条记录，也就是那一次找人任务的整条链：先问一句，确定了才删。人正看着的那一屏
- * 就在这条链上时回首页，留在原地的话下一次载入就是死链；否则叫根路由重取最近搜索。
- * 删的时候确定钮转圈；删不掉时右下角说一声，带一个重试。
+ * 删掉一条记录，也就是那一次找人任务的整条链，先确认。人正看着的那一屏就在这条链上
+ * 时回首页，留在原地的话下一次载入就是死链；否则叫根路由重取最近搜索。
  */
 function useRemoveRecent(onRemoved?: (turnId: string) => void) {
 	const router = useRouter();
@@ -71,21 +64,17 @@ function useRemoveRecent(onRemoved?: (turnId: string) => void) {
 	return (record: RecentSearch) =>
 		confirmModal({
 			content: `「${recentLabel(record)}」这次搜索的全部记录都会删除，删除后无法恢复。`,
-			danger: true,
 			okText: "删除",
 			onOk: () => remove(record),
 			title: "删除搜索记录",
 		});
 }
 
-/** 这条记录的链接，给「复制链接」用。 */
-function recentHref(turnId: string) {
-	return new URL(`/s/${turnId}`, location.origin).toString();
-}
-
 async function copyLink(turnId: string) {
 	try {
-		await navigator.clipboard.writeText(recentHref(turnId));
+		await navigator.clipboard.writeText(
+			new URL(`/s/${turnId}`, location.origin).toString(),
+		);
 		toast.success("已复制链接");
 	} catch {
 		toast.error("没能复制链接");
@@ -93,17 +82,16 @@ async function copyLink(turnId: string) {
 }
 
 /**
- * 导航栏和全部记录的抽屉里的一行搜索记录：整行是去那次搜索的链接，行尾一枚「…」
- * 打开这一行的菜单（复制链接、删除），两项各带图标，删除是危险项。在这一行上按右键
- * 打开的是同一份菜单。正开着的那次搜索是当前项：看的是它的哪一轮都算，记录上的
- * `turnId` 是链上最后一轮，拿正开着的那条链的最后一轮来比。
+ * 导航栏和全部记录的抽屉里的一行搜索记录；行尾「…」和右键打开同一份菜单。
+ * 正开着的那次搜索是当前项，看的是它的哪一轮都算：记录上的 `turnId` 是链上
+ * 最后一轮，拿正开着的那条链的最后一轮来比。
  */
 export function RecentItem({
 	record,
 	onRemoved,
 }: {
 	record: RecentSearch;
-	/** 删掉之后调用，全部记录的抽屉据此从自己取到的那几页里拿掉这一行。 */
+	/** 全部记录的抽屉据此从自己取到的那几页里拿掉这一行。 */
 	onRemoved?: (turnId: string) => void;
 }) {
 	const latest = useMatch({
@@ -161,15 +149,14 @@ export function RecentItem({
 }
 
 /**
- * 一列取不到时的一行：一句「加载失败」和一个重试，居中。取不到不能借用「还没有记录」
- * 那一句：那是把一次失败谎报成一个空结果，而两者该做的事正好相反（重试 vs 去搜一次）。
+ * 最近搜索取不到时的一行。取不到不能借用「还没有记录」那一句：失败该重试，空了该去搜一次。
  */
 export function LoadFailed({
 	onRetry,
 	retrying,
 }: {
 	onRetry: () => void;
-	retrying?: boolean;
+	retrying: boolean;
 }) {
 	return (
 		<div className="flex items-center justify-center gap-2 py-2">

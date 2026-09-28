@@ -19,7 +19,7 @@ import {
 
 export const PreviewStateContext = createContext<PreviewState | null>(null);
 
-/** 页里读当前的状态：修改版、外观、选中的颜色、尺寸档、动效速度。 */
+/** 页里读当前的状态：修改、外观、选中的颜色、尺寸档、动效速度。 */
 export function usePreviewState(): PreviewState {
 	const state = use(PreviewStateContext);
 	if (!state) throw new Error("页要画在预览页里");
@@ -31,7 +31,7 @@ export function useCurrentPage(): CatalogPage {
 	return requirePage(usePreviewState().page);
 }
 
-/** 读一个数值令牌现在的值（尺寸按像素、时长按毫秒），修改版优先。 */
+/** 读一个数值令牌修改后的值（尺寸按像素、时长按毫秒）。 */
 export function useTokenNumber() {
 	const { draft } = usePreviewState();
 	return (key: string) => {

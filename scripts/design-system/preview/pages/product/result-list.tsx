@@ -11,11 +11,12 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import {
-	type ListWait,
 	ResultList,
+	SKELETON_DELAY,
 } from "#/routes/s/$turnId/-components/result-list";
+import { ELAPSED_SHOW_AFTER_MS } from "#/routes/s/$turnId/-lib/elapsed";
+import type { ListWait } from "#/routes/s/$turnId/-lib/nav-phase";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
-import type { EmptyReason } from "#/search/empty";
 import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import type { InterpretFault, SearchMode } from "#/server/turn";
@@ -23,13 +24,7 @@ import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid } from "../../kit/stage";
 import { Routed } from "../../routed";
-import {
-	CLAIMS,
-	EXCLUDE_INTERN,
-	KEYWORD_SPEC,
-	SPEC,
-	WIDE_CONDITION,
-} from "../../samples/conditions";
+import { EMPTY_CASES, KEYWORD_SPEC, SPEC } from "../../samples/conditions";
 import {
 	EMPTY_OUTCOME,
 	firstOf,
@@ -166,25 +161,7 @@ function Playground() {
 	);
 }
 
-/** 每种空态的成因，和一份让它出现的查询。 */
-const EMPTIES: [reason: EmptyReason, spec: SearchSpec][] = [
-	[{ kind: "unmet" }, SPEC],
-	[{ kind: "noHits" }, SPEC],
-	[{ kind: "filtered" }, SPEC],
-	[
-		{ kind: "gatesUnmet" },
-		{
-			conditions: [
-				{ about: "person", mode: "must", field: "school", values: ["学校 E"] },
-			],
-		},
-	],
-	[{ kind: "overflowEvidence", claims: CLAIMS }, SPEC],
-	[{ kind: "overflowPopulation" }, SPEC],
-	[{ kind: "allDisabled" }, { conditions: [WIDE_CONDITION] }],
-	[{ kind: "excludeOnly" }, { conditions: [EXCLUDE_INTERN] }],
-	[{ kind: "noConditions" }, { conditions: [] }],
-];
+const EMPTIES = Object.values(EMPTY_CASES);
 
 function Empties() {
 	return (
@@ -256,7 +233,7 @@ function Usage() {
 	);
 }
 
-/** 名单：一次搜索找到的人，每人一张卡片、每条主张一行证据，以及选择、翻页和空态。 */
+/** 名单：一次搜索找到的人，每人固定两行、行尾写几条里命中几条，以及选择、翻页和空态。 */
 export function ResultListPage() {
 	return (
 		<DocPage
@@ -268,9 +245,9 @@ export function ResultListPage() {
 			rules={{
 				notes: [
 					"名单只从检索来，谁在上面、排第几由检索决定；名单位置表达顺序，分数和名次不上屏。",
-					"整张卡片可点，覆盖层是姓名那个真链接，支持中键、右键、键盘；选择框放在卡片外。",
+					"整行可点，覆盖层是真链接，支持中键、右键、键盘；选择框和行尾的命中标签压在覆盖层上，不进链接。",
 					"选择框一直在；按住 Shift 点选择框连选，Esc 清空已选。批量操作用选择非空时才出现的 Toolbar。",
-					"改筛选时旧名单留在原地调到六成；换问题时旧名单撤下，0.2 秒后换成同形的占位行，表头说在做什么，等过 2 秒写出秒数。",
+					`改筛选时旧名单留在原地调到六成；换问题时旧名单撤下，${SKELETON_DELAY / 1000} 秒后换成同形的占位行，表头说在做什么，等过 ${ELAPSED_SHOW_AFTER_MS / 1000} 秒写出秒数。`,
 					"列表不静默截断：说明已显示数、总数、排序和加载上限。",
 					"空态成因由检索层判定，这里穷尽翻译成结论和出路；理解失败不是空名单。",
 				],

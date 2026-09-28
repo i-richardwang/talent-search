@@ -1,20 +1,12 @@
 import { useEffect, useState } from "react";
-import { Block } from "#/components/ui/block";
 import { Checkbox } from "#/components/ui/checkbox";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "#/components/ui/table";
 import { PickDock } from "#/routes/s/$turnId/-components/pick-dock";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { claimName } from "#/search/condition-label";
 import type { SearchOutcome } from "#/search/result";
 import { Control, Controls } from "../../kit/controls";
+import { type FlowStep, FlowTable } from "../../kit/flow";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
@@ -90,7 +82,7 @@ function Playground() {
 }
 
 /** 挑选与导出的每一步。 */
-const STEPS: [step: string, does: string, answers: string][] = [
+const STEPS: FlowStep[] = [
 	[
 		"勾人",
 		"点名单左边的选择框，表头那一个全选；或者 ↑↓ 走到一个人，按空格",
@@ -128,33 +120,6 @@ const STEPS: [step: string, does: string, answers: string][] = [
 	],
 ];
 
-function Flow() {
-	return (
-		<Block className="overflow-hidden" variant="outlined">
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead>步骤</TableHead>
-						<TableHead>用户做什么</TableHead>
-						<TableHead>界面怎么回应</TableHead>
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{STEPS.map(([step, does, answers]) => (
-						<TableRow key={step}>
-							<TableCell className="whitespace-nowrap font-medium">
-								{step}
-							</TableCell>
-							<TableCell className="text-fg-secondary">{does}</TableCell>
-							<TableCell>{answers}</TableCell>
-						</TableRow>
-					))}
-				</TableBody>
-			</Table>
-		</Block>
-	);
-}
-
 /**
  * 单独一条操作栏：挂上时先选好前 `count` 个人。`outcome` 是名单此刻的样子，
  * 选的是完整名单上的人，所以名单变短之后多出来的那几位就不在名单上了。
@@ -188,7 +153,7 @@ function Dock({
 	);
 }
 
-/** 挂上时就要用的两份名单，放在模块里，引用不变，挂上后只选一次。 */
+/** 挂上时就要用的名单放在模块里：引用不变，挂上后只选一次。 */
 const NARROWED = firstOf(OUTCOME, 3);
 
 function Usage() {
@@ -239,7 +204,7 @@ export function PickingPage() {
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用挑选" },
-				{ children: <Flow />, id: "flow", title: "流程" },
+				{ children: <FlowTable steps={STEPS} />, id: "flow", title: "流程" },
 				{ children: <Usage />, id: "usage", title: "操作栏的几种情形" },
 			]}
 		/>

@@ -4,8 +4,7 @@ import {
 	RotateCwIcon,
 	SearchXIcon,
 } from "lucide-react";
-import { useEffect, useState } from "react";
-import { StrengthLegend } from "#/components/evidence";
+import { useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
 import { Text } from "#/components/ui/text";
@@ -13,9 +12,12 @@ import type { Condition } from "#/search/condition";
 import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import type { InterpretFault, SearchMode } from "#/server/turn";
+import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { emptyState } from "../-lib/empty-state";
 import { FAULT_COPY, FAULT_EXIT_LABEL, faultExits } from "../-lib/interpret";
+import type { SearchPhase } from "../-lib/nav-phase";
 import type { View } from "../-lib/view-params";
+import { StrengthLegend } from "./evidence";
 
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	evidence: "按匹配度排序",
@@ -23,8 +25,8 @@ const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 };
 
 /**
- * 名单的表头：这份名单有多少人、按什么排，有证据行时带上那三颗点的图例。等待时这一格
- * 换成在做什么。字跟着所在的表头（12px 中粗次要色），人数用等宽数字。
+ * 名单的表头：这份名单有多少人、按什么排，有证据行时带上强度图例。等待时这一格
+ * 写在做什么。
  */
 export function ResultHeader({
 	phase,
@@ -36,7 +38,7 @@ export function ResultHeader({
 	phase: SearchPhase | null;
 	order: SearchOutcome["order"];
 	total: number;
-	/** 名单上有证据行（或这一轮的条件会有）：图例才有点可对照。 */
+	/** 名单上有证据行（或这一轮的条件会有）：图例才有东西可对照。 */
 	evidence: boolean;
 }) {
 	return (
@@ -146,39 +148,21 @@ export function NotUnderstood({
 	);
 }
 
-const PHASE_TEXT = {
+const PHASE_TEXT: Record<SearchPhase, string> = {
 	interpreting: "正在理解你的需求…",
 	searching: "正在搜索…",
-} as const;
+};
 
-export type SearchPhase = keyof typeof PHASE_TEXT;
-
-/** 等过这么久才写已等的秒数：短于它的等待数字刚出现就消失，只是一闪。 */
-const ELAPSED_AFTER = 2100;
-
-/** 这一步开始后过了几秒，整秒向下取；每一步重新计（调用处按 `phase` 换 key）。 */
-function useElapsedSeconds(): number {
-	const [seconds, setSeconds] = useState(0);
-	useEffect(() => {
-		const start = Date.now();
-		const timer = setInterval(
-			() => setSeconds(Math.floor((Date.now() - start) / 1000)),
-			1000,
-		);
-		return () => clearInterval(timer);
-	}, []);
-	return seconds;
-}
-
-/** 在做什么，字上走流光；等过 2.1 秒后面跟一个「(12s)」。 */
+/** 在做什么，后面跟已等的秒数。每一步重新计：调用处按 `phase` 换 key。 */
 function Waiting({ phase }: { phase: SearchPhase }) {
-	const seconds = useElapsedSeconds();
+	const [since] = useState(Date.now);
+	const elapsed = useElapsed(since);
 	return (
 		<>
 			<Text shiny>{PHASE_TEXT[phase]}</Text>
-			{seconds * 1000 >= ELAPSED_AFTER && (
+			{elapsed >= ELAPSED_SHOW_AFTER_MS && (
 				<Text className="tabular-nums" type="tertiary">
-					({seconds}s)
+					（{lasting(elapsed)}）
 				</Text>
 			)}
 		</>

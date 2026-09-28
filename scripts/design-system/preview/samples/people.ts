@@ -644,7 +644,7 @@ export function hitsOf(empId: string): Hit[] {
 	return resultOf(empId)?.hits ?? [];
 }
 
-/** 各段经历抽出的能力词，已是标准写法；筛选栏「技能」一维从这里数。 */
+/** 各段经历抽出的能力词，已是标准写法；筛选「技能」一维从这里数。 */
 const SKILLS: Record<number, string[]> = {
 	101: ["团队管理"],
 	102: ["推荐系统"],
@@ -675,7 +675,7 @@ const FACTS: PopulationFact[] = EXPERIENCES.map((x) => {
 	};
 });
 
-/** 名单左边筛选栏的分面：用检索层同一份分面算法，从六个人的事实数出来，没有筛选。 */
+/** 名单上方筛选的分面：用检索层同一份分面算法，从六个人的事实数出来，没有筛选。 */
 export const FACETS: Facets = rankPopulation(FACTS, {}).facets;
 
 /** 超过一页的总数（两页）：名单下面还有「再加载」。 */
@@ -685,8 +685,8 @@ export const TWO_PAGES = 2 * RESULT_PAGE;
 export const OVER_LIMIT = 2 * RESULT_MAX;
 
 /**
- * 名单只取前 `count` 个人，总数另给：模拟改了筛选、符合条件的人比名单长，
- * 或示例格子窄放不下全部卡片。
+ * 名单只取前 `count` 个人，总数另给：模拟符合条件的人比名单长，或示例格子放不下全部行。
+ * 两支写法相同，各自收窄 `SearchOutcome` 的联合类型。
  */
 export function firstOf(
 	outcome: SearchOutcome,
@@ -698,7 +698,7 @@ export function firstOf(
 		: { ...outcome, results: outcome.results.slice(0, count), total };
 }
 
-/** 这一轮检索的结果：六个人、按匹配度排。 */
+/** 名单展示的检索结果：六个人、按匹配度排。 */
 export const OUTCOME: SearchOutcome = {
 	order: "evidence",
 	claims: CLAIMS,

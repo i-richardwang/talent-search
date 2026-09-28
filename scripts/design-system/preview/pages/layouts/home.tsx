@@ -20,7 +20,7 @@ export function Shell({ children }: { children: ReactNode }) {
 	);
 }
 
-/** 浮在页底正中的一个切换：换这一屏的状态，不属于产品界面。和名单底下的操作栏一样在吸附那一档。 */
+/** 浮在页底正中的一个切换：换这一屏的状态，不属于产品界面。 */
 export function LayoutSwitch<Value extends string>({
 	label,
 	onChange,

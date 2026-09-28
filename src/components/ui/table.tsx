@@ -9,54 +9,28 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { cn } from "#/lib/utils";
 
 /*
- * 数据表，样式在 table.css。结构是外层 `.ui-table-wrapper` → `.ui-table`（带尺寸类）
- * → `-container` → `-content` → `<table>`，表脚 `-footer` 接在 `-container` 后面，
- * 都在 `.ui-table` 里。表放在一块描边的 `Block` 里，圆角和外框归那块面，表自己不画圆角。
+ * 表放在一块描边的 `Block` 里，圆角和外框归那块面，表自己不画圆角。
  *
- * - 表头、行、单元格由调用处用 `TableHeader`、`TableBody`、`TableRow`、`TableHead`、
- *   `TableCell` 写出来。列宽、对齐由调用处写在单元格的类名上。
- * - `footer` 直接是内容。
- * - 选中的行是 `TableRow` 的 `data-state="selected"`，没有勾选列；行悬停用 `:hover`。
  * - 整行可点：`TableRow` 的 `onActivate`。行进 Tab 序，回车、空格也触发；点在行里的
- *   链接、按钮等控件上时归控件自己。通往详情的名字仍是一个真链接（`TextLink`），
- *   中键、右键、新标签页照常；它所在的格标 `cellSlot="title"`，行悬停时这格换成链接色。
- * - `stickyHeader`：表头钉在表的顶上，表体在表自己的盒子里纵向滚动；盒子的高度由
- *   调用处写在 `className` 上（`max-h-*` 或撑满的布局）。
- * - `narrow="cards"`：表的宽度不到 600px 时每一行排成一张卡片，表头不画，每格左边是
- *   `cellLabel`、右边是值；`cellSlot="title"` 的格是卡片标题，`"extra"` 在标题右边，
- *   `"actions"` 靠右。默认 `"scroll"`：窄于表时表在自己的盒子里横向滚动。
- * - 加载中：`busy` 让外层带 `aria-busy`，表体里放 `TableSkeletonRows`，表头和外框不变。
- * - 空表由调用处给 `Empty`。
+ *   控件上时归控件自己。通往详情的名字仍是一个真链接（`TextLink`），所在的格标
+ *   `cellSlot="title"`。
+ * - `narrow="cards"`：表的宽度不到 600px 时每一行排成一张卡片，每格左边是 `cellLabel`；
+ *   默认 `"scroll"` 是窄于表时横向滚动。
  */
-
-type TableSize = "small" | "middle" | "large";
 
 interface TableProps
 	extends Omit<ComponentProps<"table">, "className" | "style"> {
 	busy?: boolean;
 	className?: string;
-	/** 表下的一条表脚，和表同一块面。 */
 	footer?: ReactNode;
 	narrow?: "scroll" | "cards";
-	size?: TableSize;
-	stickyHeader?: boolean;
-	tableLayout?: "auto" | "fixed";
 }
-
-const SIZE = {
-	large: null,
-	middle: "ui-table-size-middle",
-	small: "ui-table-size-small",
-} as const;
 
 export function Table({
 	busy,
 	className,
 	footer,
 	narrow = "scroll",
-	size = "large",
-	stickyHeader,
-	tableLayout,
 	...props
 }: TableProps) {
 	return (
@@ -65,14 +39,13 @@ export function Table({
 			className={cn(
 				"ui-table-wrapper",
 				narrow === "cards" && "ui-table-narrow-cards",
-				stickyHeader && "ui-table-sticky",
 				className,
 			)}
 		>
-			<div className={cn("ui-table", SIZE[size])}>
+			<div className="ui-table">
 				<div className="ui-table-container">
 					<div className="ui-table-content">
-						<table style={{ tableLayout }} {...props} />
+						<table {...props} />
 					</div>
 				</div>
 				{footer != null && <div className="ui-table-footer">{footer}</div>}
@@ -99,7 +72,7 @@ function hitsControl(event: SyntheticEvent<HTMLTableRowElement>) {
 }
 
 interface TableRowProps extends ComponentProps<"tr"> {
-	/** 整行可点：点击这一行、在行上按回车或空格时调用。 */
+	/** 点击这一行、在行上按回车或空格时调用。 */
 	onActivate?: () => void;
 }
 
@@ -159,8 +132,8 @@ export function TableHead({ className, ...props }: ComponentProps<"th">) {
 interface TableCellProps extends ComponentProps<"td"> {
 	/** 卡片形态里这一格左边的标签，通常就是列头的字。 */
 	cellLabel?: string;
-	/** 这一格在一行里的角色：名字（`title`）、标题旁的附加（`extra`）、动作（`actions`）。 */
-	cellSlot?: "title" | "extra" | "actions";
+	/** 名字那一格：卡片形态里是卡片标题。 */
+	cellSlot?: "title";
 }
 
 export function TableCell({
@@ -179,7 +152,7 @@ export function TableCell({
 	);
 }
 
-/** 加载中的表体：`rows` 行、每行 `columns` 格占位，表头和外框照常画。 */
+/** 加载中的表体，表头和外框照常画；外层 `busy` 同时给上。 */
 export function TableSkeletonRows({
 	columns,
 	rows = 4,

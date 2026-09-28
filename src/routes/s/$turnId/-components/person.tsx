@@ -6,8 +6,6 @@ import {
 	XIcon,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { CareerBar } from "#/components/career-bar";
-import { buildHitIndex, Timeline } from "#/components/timeline";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { NavHeaderTitle } from "#/components/ui/app-layout";
 import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
@@ -21,19 +19,14 @@ import type { Employee, Experience } from "#/db/schema";
 import { dots } from "#/lib/format";
 import type { Hit } from "#/search/result";
 import type { ClaimLine } from "../-lib/claim-lines";
+import { CareerBar } from "./career-bar";
 import { ClaimEvidence } from "./claim-evidence";
 import { PaneHeader } from "./pane-header";
+import { buildHitIndex, Timeline } from "./timeline";
 
-/*
- * 右栏里一个人的详情（`p.$empId.tsx` 的三种内容）：详情本身、换人途中的骨架、
- * 找不到这个工号。页头左边是姓名和次要色的工号，右边是复制工号和关闭。
- */
+/* 一个人的详情（`p.$empId.tsx` 的三种内容）：详情本身、换人途中的骨架、找不到这个工号。 */
 
-/**
- * 详情的外壳：顶上一条和旁边各栏等高的页头，吸在顶上，滚到哪都看得见在看谁；
- * 下面是正文，上 16px、左右 16px、底下留 64px，块与块隔 16px。骨架和真身共用它，
- * 换人时页头不跳。
- */
+/** 详情的外壳：页头吸在顶上，滚到哪都看得见在看谁。骨架和真身共用它，换人时页头不跳。 */
 function Pane({
 	title,
 	close,
@@ -55,10 +48,7 @@ function Pane({
 	);
 }
 
-/**
- * 一节：标题是一行可点的开关（16px 三级灰的图标、13px 中等字重的次要色字、箭头），
- * 只有字那么宽；下面的内容左右缩进 12px，上下 4px，点标题收起。默认展开。
- */
+/** 一节：点标题收起，默认展开。 */
 function Section({
 	id,
 	icon,
@@ -111,13 +101,12 @@ const PENDING_WIDTHS = ["60%", "45%", "70%", "30%", "40%", "55%"];
 const PENDING_STAGES = [0, 1, 2] as const;
 
 /**
- * 换人途中的骨架，和详情同一个形状：页头的名字、同样几行属性（标签是真的字）、
- * 任职经历的轨迹条和几段时间轴节点。超过 200ms 才画（`p.$empId.tsx` 的 `pendingMs`），
- * 快的时候上一个人留着，直到下一个人画出来。
+ * 换人途中的骨架，和详情同一个形状，属性标签是真的字。等过 `p.$empId.tsx` 的
+ * `pendingMs` 才画，快的时候上一个人留着，直到下一个人画出来。
  */
 export function PersonPending() {
 	return (
-		<Pane title={<Skeleton.Title className="w-32" size="base" width="100%" />}>
+		<Pane title={<Skeleton.Text className="w-32" />}>
 			<Descriptions>
 				{ATTRIBUTES.map(({ label }, i) => (
 					<DescriptionsItem key={label} label={label}>
@@ -125,7 +114,6 @@ export function PersonPending() {
 						{"\u200b"}
 						<Skeleton
 							className="inline-block align-middle"
-							height="1em"
 							width={PENDING_WIDTHS[i]}
 						/>
 					</DescriptionsItem>
@@ -137,7 +125,7 @@ export function PersonPending() {
 				title="任职经历"
 			>
 				<div className="mb-4">
-					<Skeleton height={10} width="100%" />
+					<Skeleton height={10} />
 					<div className="mt-1.5 flex h-4 items-center justify-between">
 						<Skeleton.Text size="xs" width={28} />
 						<Skeleton.Text size="xs" width={28} />
@@ -151,18 +139,14 @@ export function PersonPending() {
 						>
 							<span className="flex flex-col items-center">
 								<span className="flex h-(--text-base--line-height) items-center">
-									<Skeleton.Avatar
-										className="size-2.5"
-										shape="circle"
-										size={10}
-									/>
+									<Skeleton.Avatar size={10} />
 								</span>
 								{stage < PENDING_STAGES.length - 1 && (
 									<span className="w-px flex-1 bg-border" />
 								)}
 							</span>
 							<div className={stage < PENDING_STAGES.length - 1 ? "pb-5" : ""}>
-								<Skeleton.Text size="base" width="45%" />
+								<Skeleton.Text width="45%" />
 								<Skeleton.Text className="mt-0.5" size="xs" width="65%" />
 							</div>
 						</li>
@@ -173,7 +157,7 @@ export function PersonPending() {
 	);
 }
 
-/** 走到头了：和页面不存在、记录不存在同一个组件族，不给媒介图。 */
+/** 和页面不存在、记录不存在同一个组件族，不给插图。 */
 export function PersonNotFound() {
 	return (
 		<Empty
@@ -184,9 +168,7 @@ export function PersonNotFound() {
 }
 
 /**
- * 一个人的详情，答的是逐段核对：先是这个人现在的几条属性，再是匹配依据——每条条件
- * 凭哪一段、多久，没命中哪几条——最后是任职经历：轨迹条给形状，时间线给每一段的原文。
- * 名单那一行只写几条里命中几条，逐条的依据在这里。
+ * 一个人的详情，用来逐段核对：当前的几条属性、每条条件的匹配依据、任职经历。
  *
  * `hits` 是这个人在当前检索里的全部命中（时间线据此标出段落），`names` 是各条主张的
  * 名字，`lines` 是逐条的依据；不在名单上、或名单按人排时三者都是空的。
@@ -207,17 +189,12 @@ export function Person({
 	const hitIndex = buildHitIndex(hits);
 
 	return (
-		/* ↑↓ 连着换人时整栏淡入一次（settle），160ms，赶在下一次按键之前结束。 */
+		/* 换人时整栏淡入一次；按 empId 换 key 让动画重播。 */
 		<div className="settle" key={e.empId}>
 			<Pane
 				close={
 					<>
-						<CopyButton
-							content={e.empId}
-							glass={false}
-							size="header"
-							title="复制工号"
-						/>
+						<CopyButton content={e.empId} size="header" title="复制工号" />
 						{/* 关闭是 Link 渲染成的图标按钮：<a> 里嵌 <button> 是非法嵌套。 */}
 						<ActionIcon
 							icon={XIcon}

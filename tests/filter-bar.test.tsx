@@ -64,7 +64,7 @@ const rows = (items: DropdownItem[]) =>
 					extra: o.extra,
 					label: o.label,
 				}))
-			: item.type === "checkbox" || item.type === undefined
+			: item.type === "checkbox"
 				? [
 						{
 							disabled: Boolean(item.disabled),
@@ -72,7 +72,9 @@ const rows = (items: DropdownItem[]) =>
 							label: item.label,
 						},
 					]
-				: [],
+				: item.type === undefined
+					? [{ disabled: false, extra: undefined, label: item.label }]
+					: [],
 	);
 
 describe("钮上的字", () => {

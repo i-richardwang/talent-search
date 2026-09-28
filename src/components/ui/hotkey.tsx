@@ -19,34 +19,19 @@ import { Center, Flexbox } from "./flex";
 import { Icon } from "./icon";
 
 /*
- * 样式在 hotkey.css。`keys` 用 `+` 连起几个键名（`mod+k`）；修饰键按
- * ctrl、meta、mod、alt、shift 的先后排到前面，其余键保持写的先后。
- *
- * 修饰键、回车、退格、Tab 在苹果设备上画成符号（⌘ ⌥ ⇧ ⌃ 等），其余设备写 Ctrl、Alt、Shift
- * 这样的名字；方向键和空格两边都画成图标；其余键名首字母大写原样显示。
- *
- * 默认每个键一个键帽，键帽之间 2px。`compact` 或 `borderless` 时几个键收进同一个键帽，
- * 键与键之间 6px：提示里跟在文字后面的快捷键用 `compact`，夹在一句话里的用 `borderless`。
- *
- * `size="large"` 是快捷键列表里那一档：键帽至少 26px 见方、一圈 `--color-border` 的描边，
- * 键帽之间 4px，整组放大到 1.1 倍（字和键帽一起放大）。
- *
- * 是不是苹果设备用 `useSyncExternalStore` 读 `navigator`，服务端快照取非苹果，
- * 服务端与浏览器首帧一致。
+ * `keys` 用 `+` 连起几个键名（`mod+k`）。修饰键、回车、退格、Tab 在苹果设备上画成符号，
+ * 其余设备写名字；方向键和空格两边都画成图标。
  */
 
 export interface HotkeyProps {
 	className?: string;
-	/** 几个键收进同一个键帽。`borderless` 总是这样排。 */
+	/** 几个键收进同一个键帽：提示里跟在文字后面的用它。`borderless` 总是这样排。 */
 	compact?: boolean;
 	keys: string;
-	/** `middle` 跟着字号走；`large` 是快捷键列表里 26px 见方、带描边的键帽。 */
+	/** `large` 是快捷键列表里那一档。 */
 	size?: "middle" | "large";
-	/**
-	 * `filled` 是浅灰底；`outlined` 是容器底加一圈描边，放在同样浅灰的面上；
-	 * `borderless` 不画底，颜色跟着所在那句话（例如输入托盘的占位）。
-	 */
-	variant?: "filled" | "outlined" | "borderless";
+	/** `borderless` 夹在一句话里，颜色跟着那句话。 */
+	variant?: "filled" | "borderless";
 }
 
 const APPLE = /mac|iphone|ipod|ipad|ios/i;
@@ -54,10 +39,7 @@ const APPLE = /mac|iphone|ipod|ipad|ios/i;
 /** 设备在一次会话里不变，没有要订阅的变化。 */
 const subscribeNothing = () => () => {};
 
-/**
- * 是不是苹果设备。服务端没有 `navigator`，快照取非苹果；水合时首帧与服务端一致，
- * 之后换成浏览器里的实际取值。
- */
+/** 服务端没有 `navigator`，快照取非苹果，水合时首帧与服务端相同。 */
 function useIsAppleDevice() {
 	return useSyncExternalStore(
 		subscribeNothing,
@@ -66,7 +48,7 @@ function useIsAppleDevice() {
 	);
 }
 
-/** 修饰键的先后：Ctrl、Win/⌘、mod、Alt/⌥、Shift，与系统菜单里快捷键的写法一致。 */
+/** 修饰键的先后，照系统菜单里快捷键的写法。 */
 const MODIFIER_ORDER = ["ctrl", "control", "meta", "mod", "alt", "shift"];
 
 const modifierRank = (key: string) => {

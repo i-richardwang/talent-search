@@ -4,43 +4,30 @@ import { cn } from "#/lib/utils";
 import { Icon } from "./icon";
 
 /*
- * 输入托盘，样式在 chat-input.css。`ChatInput` 是那一块面（可以在上沿挂一片 `tray`），
- * 里面依次放内容区（一段文字用 `ChatInputArea`，别的内容用 `ChatInputBody`，空着时的
- * 那句话用 `ChatInputPlaceholder`）和 `ChatInputBar`。动作栏左边放 `ChatInputAction`
- * （小号的文字按钮，常作菜单或弹层的触发器），右边放发送钮 `ChatInputSend`。内容区
- * 多高、发送钮什么形状跟着面的 `size` 走，零件自己不带尺寸。
+ * 输入托盘：`ChatInput` 是那一块面，里面依次放内容区（`ChatInputArea` 或 `ChatInputBody`）
+ * 和 `ChatInputBar`。内容区多高、发送钮什么形状跟着面的 `size` 走，零件自己不带尺寸。
  */
 
 export function ChatInput({
 	size = "middle",
-	tray,
 	className,
-	children,
 	...props
-}: ComponentProps<"div"> & {
-	size?: "middle" | "large";
-	/** 挂在面上沿的那一片，放点一下就能办的事。 */
-	tray?: ReactNode;
-}) {
+}: ComponentProps<"div"> & { size?: "middle" | "large" }) {
 	return (
-		<div className={cn("ui-chat-input-root", className)} {...props}>
-			{tray && <div className="ui-chat-input-tray">{tray}</div>}
-			<div
-				className={cn(
-					"ui-chat-input",
-					size === "large" && "ui-chat-input-large",
-				)}
-			>
-				{children}
-			</div>
-		</div>
+		<div
+			className={cn(
+				"ui-chat-input",
+				size === "large" && "ui-chat-input-large",
+				className,
+			)}
+			{...props}
+		/>
 	);
 }
 
 /**
- * 会随内容长高的文本区，超过 20rem 在里面滚动。`placeholder` 是空着时的那句话，
- * `hint` 跟在它后面（例如换行的快捷键）；两者画在文本区上面的一层，读屏读的是
- * `aria-placeholder`。
+ * 会随内容长高的文本区。`hint` 跟在占位那句话后面（例如换行的快捷键），所以占位不用原生的
+ * placeholder，而是画在文本区上面的一层，读屏读的是 `aria-placeholder`。
  */
 export function ChatInputArea({
 	placeholder,
@@ -65,9 +52,8 @@ export function ChatInputArea({
 }
 
 /**
- * 内容区空着时的那句话，画在第一行的位置上，后面可以跟 `hint`。只是给眼睛看的一层：
- * 读屏读的是输入框自己的 `aria-placeholder` 或 `aria-label`。`ChatInputArea` 自带一个；
- * `ChatInputBody` 里由调用处在空着时放上。
+ * 内容区空着时的那句话，只给眼睛看：读屏读的是输入框自己的 `aria-placeholder` 或
+ * `aria-label`。`ChatInputArea` 自带一个；`ChatInputBody` 里由调用处在空着时放上。
  */
 export function ChatInputPlaceholder({
 	hint,
@@ -84,7 +70,7 @@ export function ChatInputPlaceholder({
 	);
 }
 
-/** 不是一段文字的内容区：和文本区同样的最小高度与内边距，里面放什么由调用处定。 */
+/** 不是一段文字的内容区，和文本区同样的最小高度。 */
 export function ChatInputBody({ className, ...props }: ComponentProps<"div">) {
 	return <div className={cn("ui-chat-input-body", className)} {...props} />;
 }
@@ -106,10 +92,9 @@ export function ChatInputBar({
 }
 
 /**
- * 动作栏上的文字按钮：图标、一句话，`chevron` 时尾巴上一个向下的箭头，表示点开是
- * 菜单或弹层。两种：`value`（缺省）写着这一项现在取的值，28px 高、常规字重、12px 图标，
- * 字太长时截断，完整的话放进 `aria-label` 或 `title`；`mode` 是动作栏左端切换做法的那一个，
- * 32px 高、中粗、14px 图标，按下时微缩。
+ * 动作栏上的文字按钮，`chevron` 表示点开是菜单或弹层。`value`（缺省）写着这一项当前取的
+ * 值，字太长时截断，完整的话放进 `aria-label` 或 `title`；`mode` 是动作栏左端切换搜索方式
+ * 的那一个。
  */
 export function ChatInputAction({
 	icon,
@@ -140,8 +125,9 @@ export function ChatInputAction({
 		</button>
 	);
 }
+ChatInputAction.displayName = "ChatInputAction";
 
-/** 发送钮，默认是表单的提交钮。`loading` 时换成转圈并且按不下去。 */
+/** 发送钮，默认是表单的提交钮。 */
 export function ChatInputSend({
 	loading,
 	disabled,
@@ -162,7 +148,6 @@ export function ChatInputSend({
 	);
 }
 
-/** 实心的纸飞机，1em 见方，跟着按钮的字号。 */
 function SendGlyph() {
 	return (
 		<svg

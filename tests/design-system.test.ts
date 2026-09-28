@@ -1,5 +1,5 @@
 /**
- * 设计系统的纯逻辑：令牌表与源文件对得上、修改版的读写与校验、写出的 CSS 与写回源文件、
+ * 设计系统的纯逻辑：令牌表与源文件对得上、修改的读写与校验、写出的 CSS 与写回源文件、
  * 影响范围与本页颜色、撤销重做、颜色换算、外壳与预览页之间的消息、存储的解码、
  * 目录与地址。不启动浏览器。
  */
@@ -116,7 +116,7 @@ describe("令牌表与源文件", () => {
 		assert.deepEqual(globbed, [...TOKEN_SOURCE_PATTERNS]);
 	});
 
-	test("数值令牌的原版值写成它的单位，落在能调的范围里", () => {
+	test("数值令牌在源文件里的值写成它的单位，落在能调的范围里", () => {
 		for (const token of NUMERIC_TOKENS) {
 			const raw = baseline.light[token.key] ?? "";
 			const value = parseNumeric(token, raw);
@@ -142,7 +142,7 @@ describe("令牌表与源文件", () => {
 		}
 	});
 
-	test("缓动令牌的原版值是可选值之一", () => {
+	test("缓动令牌在源文件里的值是可选值之一", () => {
 		for (const { key } of EASING_TOKENS)
 			assert.ok(
 				EASINGS.some(([easing]) => easing === baseline.light[key]),
@@ -203,8 +203,8 @@ describe("令牌表与源文件", () => {
 	});
 });
 
-describe("修改版", () => {
-	test("改成和原版一样就从修改版里去掉；颜色按通道比", () => {
+describe("修改", () => {
+	test("改回源文件里的值就从修改里去掉；颜色按通道比", () => {
 		const original = originalValue("light", "--color-primary") ?? "";
 		const changed = updateToken(
 			emptyDraft(),
@@ -235,7 +235,7 @@ describe("修改版", () => {
 		);
 	});
 
-	test("读值时修改版优先，没有就用原版", () => {
+	test("读值时修改优先，没有就用源文件里的值", () => {
 		const draft = updateToken(emptyDraft(), "dark", "--color-fg", "#eeeeee");
 		assert.equal(tokenValue(draft, "dark", "--color-fg"), "#eeeeee");
 		assert.equal(
@@ -244,7 +244,7 @@ describe("修改版", () => {
 		);
 	});
 
-	test("恢复原版值：去掉指定的几项，别的留着", () => {
+	test("还原：去掉指定的几项，别的留着", () => {
 		const draft: Draft = {
 			dark: {},
 			light: {},
@@ -257,7 +257,7 @@ describe("修改版", () => {
 		});
 	});
 
-	test("校验收下合规的修改版", () => {
+	test("校验收下合规的修改", () => {
 		assert.ok(isDraft(emptyDraft()));
 		assert.ok(
 			isDraft({
@@ -342,8 +342,8 @@ describe("写出的 CSS", () => {
 		);
 	});
 
-	test("没有修改时导出一句「与原版一致」", () => {
-		assert.equal(exportCss(emptyDraft(), sources), "/* 与原版一致 */\n");
+	test("没有修改时导出一行注释", () => {
+		assert.equal(exportCss(emptyDraft(), sources), "/* 没有修改 */\n");
 	});
 });
 
@@ -392,7 +392,7 @@ describe("写回源文件", () => {
 		);
 	});
 
-	test("写回之后，修改版里和新原版相同的项都去掉", () => {
+	test("写回之后，修改里和源文件新值相同的项都去掉", () => {
 		const draft: Draft = {
 			dark: {},
 			light: { "--color-primary": "#112233" },
@@ -577,7 +577,7 @@ describe("颜色", () => {
 describe("外壳与预览页之间的消息", () => {
 	const state = previewState("components/button");
 
-	test("形状对的状态才收：页在目录里的预览页、速度可选、选中的是颜色、修改版合规", () => {
+	test("形状对的状态才收：页在目录里的预览页、速度可选、选中的是颜色、修改合规", () => {
 		assert.ok(isToPreview({ state, type: "design-system:state" }));
 		const bad = (patch: Record<string, unknown>) =>
 			isToPreview({

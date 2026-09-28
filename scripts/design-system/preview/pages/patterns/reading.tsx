@@ -93,7 +93,7 @@ function Logs() {
 
 /* ---------- 人的详情：名单旁的右栏，窄屏是弹窗 ---------- */
 
-/** 名单：每张卡片的名字是通往详情的真链接。 */
+/** 名单：每一行是通往详情的真链接。 */
 function Names({ selected }: { selected: string | undefined }) {
 	const picks = usePicks(LATEST_TURN_ID, OUTCOME);
 	const noop = () => {};
@@ -205,7 +205,7 @@ export function ReadingPage() {
 					"任务的原始输出不做页面内容，按次收在「日志」抽屉里，打开才取。",
 					"名单页的右栏由对话线程和人的详情共用：点开人时换成详情，关掉回到线程；窄屏上是弹窗。两样顶上都是一条页头，详情的页头写着姓名和工号，滚到哪都在。",
 					"一个对象的几条属性用 Descriptions：抽屉里的词、数据页的一段经历、右栏的人，写法同一种。",
-					"整块可点的卡片是真链接，支持中键、右键和键盘；详情里不画名单上已有的分数和名次。",
+					"整块可点的名单行是真链接，支持中键、右键和键盘；详情里不画名单上已有的分数和名次。",
 				],
 				usage: `<DetailDrawer\n  close={() => navigate({ search, to: "/data" })}\n  description={…}\n  title={employee.name}\n  width="var(--container-detail-wide)"\n>\n  …\n</DetailDrawer>`,
 			}}

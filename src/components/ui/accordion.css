@@ -1,23 +1,9 @@
-/*
- * Accordion 的外观，类名以 `.ui-accordion` 开头。块的先后是层叠顺序：root、item、
- * header（各 variant、inline）、trigger（各 variant）、indicator（各放法）、action、
- * panel、content（各 variant、缩进、inline）。
- *
- * `--accordion-hover-inset` 是 borderless 行向两边伸出的宽度，也是它行内左右的留白：
- * 悬停的底比字宽出这一截，字仍和外面的内容对齐。
- */
+/* 面板与内容的类名和过渡在 collapsible.css。 */
 
 .ui-accordion {
-	--accordion-hover-inset: 8px;
 	display: flex;
 	flex-direction: column;
 	width: 100%;
-}
-
-.ui-accordion-outlined {
-	overflow: hidden;
-	border: 1px solid var(--color-border-secondary);
-	border-radius: var(--radius-lg);
 }
 
 .ui-accordion-item {
@@ -25,45 +11,21 @@
 	flex-direction: column;
 }
 
-.ui-accordion-item-outlined + .ui-accordion-item-outlined {
-	border-block-start: 1px solid var(--color-border-secondary);
-}
-
-/* 行：整行悬停铺 fill-tertiary；悬停或焦点落进行里时，行尾的动作出现。 */
 .ui-accordion-header {
 	position: relative;
 	display: flex;
 	align-items: center;
 	margin: 0;
+	border-radius: var(--radius-md);
 	font-size: inherit;
 	font-weight: inherit;
 	transition: background 150ms var(--ease-out);
 
-	&:hover:not(:has([data-disabled])) {
+	&:hover {
 		background: var(--color-fill-tertiary);
 	}
 }
 
-.ui-accordion-header-borderless {
-	margin-inline: calc(var(--accordion-hover-inset) * -1);
-	border-radius: var(--radius-md);
-}
-
-.ui-accordion-header-filled {
-	border-radius: var(--radius-md);
-	background: var(--color-fill-tertiary);
-
-	&:hover:not(:has([data-disabled])) {
-		background: var(--color-fill-secondary);
-	}
-}
-
-/* 箭头紧跟在字后时，行不向外伸；行尾的动作上下各留 4px（写在 action 那一块里）。 */
-.ui-accordion-header-inline {
-	margin-inline: 0;
-}
-
-/* 开关占满整行，字 14px 正文色；禁用时换成禁用色和禁止手形。 */
 .ui-accordion-trigger {
 	cursor: pointer;
 	user-select: none;
@@ -72,6 +34,7 @@
 	gap: 8px;
 	align-items: center;
 	min-width: 0;
+	padding: 4px;
 	border: 0;
 	border-radius: inherit;
 	font: inherit;
@@ -82,68 +45,25 @@
 	outline: none;
 
 	@apply focus-ring;
-
-	&[data-disabled] {
-		cursor: not-allowed;
-		color: var(--color-fg-quaternary);
-	}
 }
 
-.ui-accordion-trigger-borderless {
-	padding-block: 8px;
-	padding-inline: var(--accordion-hover-inset);
-}
-
-.ui-accordion-trigger-filled {
-	padding-block: 8px;
-	padding-inline: 16px;
-}
-
-.ui-accordion-trigger-outlined {
-	padding-block: 12px;
-	padding-inline: 16px;
-
-	&[data-panel-open] {
-		padding-block-end: 8px;
-	}
-}
-
-/* 箭头是 fg-tertiary，开合时转 200ms。 */
 .ui-accordion-indicator {
 	display: flex;
 	flex-shrink: 0;
 	align-items: center;
-	color: var(--color-fg-tertiary);
-	transition: transform 200ms var(--ease-out);
-
-	@media (prefers-reduced-motion: reduce) {
-		transition-duration: 0s;
-	}
-}
-
-.ui-accordion-indicator-start {
-	[data-panel-open] > & {
-		transform: rotate(90deg);
-	}
-}
-
-.ui-accordion-indicator-end {
-	margin-inline-start: auto;
-
-	[data-panel-open] > & {
-		transform: rotate(180deg);
-	}
-}
-
-/* 18px 的方格里一枚 7px 的三角，向左收 6px，贴住前面的字。 */
-.ui-accordion-indicator-inline {
 	justify-content: center;
 	width: 18px;
 	height: 18px;
 	margin-inline-start: -6px;
+	color: var(--color-fg-tertiary);
+	transition: transform 200ms var(--ease-out);
 
 	[data-panel-open] > & {
 		transform: rotate(90deg);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
 	}
 }
 
@@ -152,104 +72,17 @@
 	flex-shrink: 0;
 	gap: 4px;
 	align-items: center;
-	padding-inline-end: var(--accordion-hover-inset);
+	padding-block: 4px;
+	padding-inline-end: 8px;
 	opacity: 0;
 	transition: opacity 150ms var(--ease-out);
-
-	.ui-accordion-header-inline > & {
-		padding-block: 4px;
-	}
 
 	.ui-accordion-header:is(:hover, :focus-within) > & {
 		opacity: 1;
 	}
 
+	/* 没有悬停的设备上常显，否则摸不到。 */
 	@media (hover: none) {
 		opacity: 1;
 	}
-}
-
-.ui-accordion-action-inset {
-	padding-inline-end: 16px;
-}
-
-.ui-accordion-action-visible {
-	opacity: 1;
-}
-
-/* 面板：高度在 200ms 里从 0 长到内容高；初始就开着的面板不放过渡。 */
-.ui-accordion-panel {
-	overflow: hidden;
-	height: auto;
-	transition: height 200ms var(--ease-out);
-
-	interpolate-size: allow-keywords;
-
-	&[data-starting-style],
-	&[data-ending-style] {
-		height: 0;
-	}
-
-	&[data-starting-style][style*="animation-name: none"],
-	&[data-starting-style][style*="animation-name:none"] {
-		height: auto;
-		transition: none;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		transition-duration: 0s;
-	}
-}
-
-/* 内容：展开时淡入并从下方 6px 移上来，收起时淡出并向上 6px。 */
-.ui-accordion-content {
-	font-size: var(--text-base);
-	line-height: 1.6;
-	transition:
-		opacity 200ms var(--ease-out),
-		translate 200ms var(--ease-out);
-
-	[data-starting-style] > & {
-		translate: 0 6px;
-		opacity: 0;
-	}
-
-	[data-ending-style] > & {
-		translate: 0 -6px;
-		opacity: 0;
-	}
-
-	/* Base UI 给初始即展开的面板写上 animation-name: none */
-	[style*="animation-name: none"] > &,
-	[style*="animation-name:none"] > & {
-		translate: none;
-		opacity: 1;
-		transition: none;
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		transition-duration: 0s;
-	}
-}
-
-.ui-accordion-content-borderless,
-.ui-accordion-content-filled {
-	padding-block: 0 12px;
-}
-
-.ui-accordion-content-outlined {
-	padding-block: 4px 14px;
-	padding-inline: 16px;
-}
-
-.ui-accordion-content-indent {
-	padding-inline-start: 24px;
-
-	&.ui-accordion-content-outlined {
-		padding-inline-start: 40px;
-	}
-}
-
-.ui-accordion-content-inline {
-	padding-block: 0;
 }

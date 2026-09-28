@@ -12,7 +12,7 @@ export function useNotice() {
 	return [notice, setNotice] as const;
 }
 
-/** 页面底部居中的提示：操作结果；存储写不进时常驻一条。 */
+/** 操作结果的提示；存储写不进时常驻一条。 */
 export function Notices({
 	notice,
 	onDismiss,
@@ -27,7 +27,6 @@ export function Notices({
 		<div className="pointer-events-none fixed inset-x-4 bottom-6 z-popup flex flex-col items-center gap-2 *:pointer-events-auto">
 			{storageFailed && (
 				<Alert
-					role="alert"
 					title="浏览器无法保存修改，请导出 CSS 以保留修改。"
 					type="warning"
 				/>

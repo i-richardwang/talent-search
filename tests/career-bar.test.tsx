@@ -12,7 +12,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CareerBar, packLanes, ym } from "#/components/career-bar";
+import {
+	CareerBar,
+	packLanes,
+	ym,
+} from "#/routes/s/$turnId/-components/career-bar";
 import { classLists } from "./render";
 import { experience, hit } from "./rows";
 

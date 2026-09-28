@@ -17,7 +17,7 @@ export function ChangesPage({
 	session,
 }: {
 	id: ChangesPageId;
-	/** 改修改版：外壳在提交前清掉拖动中的值。 */
+	/** 外壳的提交：先清掉拖动中的值。 */
 	onEdit: DraftSession["edit"];
 	onExport: () => void;
 	onNotice: (message: string) => void;

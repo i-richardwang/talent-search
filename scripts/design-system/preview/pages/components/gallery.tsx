@@ -25,7 +25,6 @@ import { Tooltip } from "#/components/ui/tooltip";
 import { cn } from "#/lib/utils";
 import { useCurrentPage } from "../../state";
 
-/** 一块总览卡片：左上是这一组叫什么，右上是用到的组件名。 */
 function Card({
 	children,
 	className,
@@ -62,7 +61,7 @@ const SURFACES = [
 	["bg-primary-bg", "选中"],
 ] as const;
 
-/** 组件总览：常用组件在同一份令牌下放在一起看，改令牌时一眼看出整体的变化。 */
+/** 常用组件放在同一份令牌下，改令牌时一眼看出整体的变化。 */
 export function GalleryPage() {
 	const { title } = useCurrentPage();
 	const [mode, setMode] = useState("ai");

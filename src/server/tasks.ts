@@ -36,11 +36,8 @@ import { type SourceConfig, sourceConfig } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
 import { db, pool } from "#/db";
 import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
-import { pageAt, type TablePage, tablePage } from "#/lib/paging";
+import { pageAt, RUNS_PAGE, type TablePage, tablePage } from "#/lib/paging";
 import { configured, reviewJudge } from "./review";
-
-/** 运行记录一页几行。往前的那些翻页看（`/tasks?derive=3`）。 */
-const RUNS_PAGE = 6;
 
 /** 攒多久写一次日志。够短，页面上看着是在动的；够长，上千行不变成上千次往返。 */
 const FLUSH_MS = 400;

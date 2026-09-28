@@ -10,10 +10,8 @@ import { LoadFailed, RecentItem } from "./recent-item";
 type Loaded = { rows: RecentSearch[]; total: number; page: number };
 
 /**
- * 全部搜索记录：外壳里只有一个（`app-shell.tsx`），导航栏的「更多」和首页的「查看全部」
- * 都打开它。`anchored`（导航栏常驻时）从导航栏的右缘滑出、盖在内容卡片上，点别处不收起，
- * 一边开着一边照常用导航栏和卡片；不然贴着窗口左边滑出。打开时取第一页，翻到底按
- * 「加载更多」接着取下一页，底下写着已列出几条、一共几条。
+ * 全部搜索记录，导航栏的「更多」和首页的「查看全部」都打开它。`anchored`（导航栏常驻时）
+ * 从导航栏的右缘滑出，点别处不收起；不然贴着窗口左边滑出。「加载更多」接着取下一页。
  */
 export function AllRecentsDrawer({
 	open,
@@ -115,7 +113,7 @@ export function AllRecentsDrawer({
 	);
 }
 
-/** 导航项形状的占位：和一行记录同高（36px），一块 28px 的方块和一条 16px 高的横条。 */
+/** 和一行记录同形的占位。 */
 function RecentSkeleton({ rows }: { rows: number }) {
 	return (
 		<div aria-hidden className="flex flex-col gap-0.5">

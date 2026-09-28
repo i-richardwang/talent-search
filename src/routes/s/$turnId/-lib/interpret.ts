@@ -60,7 +60,7 @@ export const FAULT_EXIT_LABEL = {
 	keyword: "改用关键词搜索",
 } as const;
 
-export type FaultExit = keyof typeof FAULT_EXIT_LABEL;
+type FaultExit = keyof typeof FAULT_EXIT_LABEL;
 
 /** 这一环坏了给哪几条出路，按按钮的先后；一条都没有是空表。 */
 export function faultExits(fault: InterpretFault): FaultExit[] {
@@ -76,7 +76,7 @@ const TRACE_POLL_MS = 1000;
  * 理解在这里的 effect 里补，等待显示在名单那一列。
  *
  * 服务端只补 `spec is null` 的行，重复触发拿回同一份结果。等的时候每秒问一次走到
- * 哪一步了（`turnTrace`），交出 `trace` 给线程边跑边画；理解落下后不再问。
+ * 哪一步了（`turnTrace`），交出 `trace` 给线程边跑边画；理解落下后停止询问。
  *
  * @param settledSpec 记录上已经理解好的完整查询；`null` 表示这一跳还欠着。
  */

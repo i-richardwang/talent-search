@@ -1,14 +1,8 @@
 /**
  * 外部判定方的接口：`GET /api/review` 取走待判的组，`POST /api/review` 提交判定。
  *
- * 一条路径两个动作，因为它们是同一件事的两头：拿走一组词，把判断交回来。分成
- * `/groups` 和 `/judgments` 只是把同一个资源写成两个名字。
- *
- * 这是应用里**唯一**不走 `createServerFn` 的服务端入口。那个边界是给页面用的
- * （`src/server/functions.ts`），它的入参出参是 TypeScript 的形状、编码是自己的；
- * 外部 agent 要的是一份说得清的 JSON 和几个状态码，所以这里写成普通的 HTTP。
- *
- * 认人与形状都在 `src/server/review.ts`，这个文件只把下场译成状态码。
+ * 应用里唯一不走 `createServerFn` 的服务端入口：那个边界给页面用，外部判定方要的是
+ * 普通的 JSON 和状态码。认人与形状都在 `src/server/review.ts`，这里只把结果译成状态码。
  */
 
 import { createFileRoute } from "@tanstack/react-router";
@@ -21,7 +15,7 @@ import {
 	submit,
 } from "#/server/review";
 
-/** 一份 JSON 响应。这条接口不给页面用，不必操心缓存与内容协商。 */
+/** 这条接口不给页面用，不处理缓存与内容协商。 */
 function json(body: unknown, status = 200): Response {
 	return new Response(JSON.stringify(body), {
 		headers: { "content-type": "application/json; charset=utf-8" },
@@ -55,10 +49,8 @@ export const Route = createFileRoute("/api/review")({
 				if (result.submission === "taken")
 					return json({ error: "这一组已经有人判过了" }, 409);
 				/*
-				 * 判定已经落库，这里只是催一次整理，好让这条决定几分钟内生效，而不是
-				 * 等第二天那一轮。催没催动不告诉外面：排着或在跑的已经有一个时催不动，
-				 * 判定也不会因此丢，下一轮照样生效——什么时候生效是服务端自己的事，
-				 * 提交的一方只需要知道「收下了」。
+				 * 判定已落库，这里请求一次整理让它尽快生效。请求没排上不告诉外面：
+				 * 已有一个排着或在跑时排不上，判定下一轮照样生效。
 				 */
 				await requestJob("review");
 				return json({ accepted: true });

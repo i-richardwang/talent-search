@@ -74,7 +74,7 @@ export function DialogPresenceRoot({
 	);
 }
 
-/** 背板：跟着 `open` 淡入淡出，时长与曲线读动效令牌（见 motion-token.ts）。 */
+/** 背板：跟着 `open` 淡入淡出。 */
 export function DialogPresenceBackdrop({ className }: { className: string }) {
 	const { open } = useDialogPresence();
 	return (

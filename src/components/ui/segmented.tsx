@@ -11,12 +11,7 @@ import {
 } from "react";
 import { cn } from "#/lib/utils";
 
-/*
- * 分段选择，样式在 segmented.css。选中的那一段垫一块 elevated 的底，换选项时这块底
- * 在 240ms 里滑过去：它的位置和尺寸由选中项的 offset 写成列表上的变量。
- * 选中哪一段由调用处持有（`value` / `onChange`）。
- * `className` 落在列表上；`aria-label` 给这组选项起名字。
- */
+/* 选中那一段垫的底换选项时滑过去：它的位置和尺寸由选中项的 offset 写成列表上的变量。 */
 
 type SegmentedSize = "middle" | "small";
 
@@ -34,7 +29,7 @@ interface SegmentedProps<Value extends string = string> {
 	block?: boolean;
 	className?: string;
 	onChange: (value: Value) => void;
-	options: (SegmentedOption<Value> | Value)[];
+	options: SegmentedOption<Value>[];
 	size?: SegmentedSize;
 	value: Value;
 }
@@ -43,11 +38,6 @@ const ITEM_SIZE = {
 	middle: "ui-segmented-item-middle",
 	small: "ui-segmented-item-small",
 } as const;
-
-const normalizeOption = <Value extends string>(
-	option: SegmentedOption<Value> | Value,
-): SegmentedOption<Value> =>
-	typeof option === "string" ? { label: option, value: option } : option;
 
 export function Segmented<Value extends string = string>({
 	"aria-label": ariaLabel,
@@ -59,7 +49,6 @@ export function Segmented<Value extends string = string>({
 	value,
 }: SegmentedProps<Value>) {
 	const listRef = useRef<HTMLDivElement>(null);
-	const normalized = options.map((option) => normalizeOption(option));
 
 	const updateIndicator = useCallback(() => {
 		const list = listRef.current;
@@ -110,7 +99,7 @@ export function Segmented<Value extends string = string>({
 			value={[value]}
 		>
 			<span aria-hidden className="ui-segmented-indicator" />
-			{normalized.map((option) => (
+			{options.map((option) => (
 				<Toggle<Value>
 					aria-label={
 						typeof option.label === "string" ? option.label : undefined

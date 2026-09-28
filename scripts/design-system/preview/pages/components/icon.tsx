@@ -28,7 +28,7 @@ import { DocPage } from "../../kit/page";
 import { px, useMeasured } from "../../kit/readings";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
-type SizeChoice = "inherit" | "small" | "middle";
+type SizeChoice = "inherit" | "small";
 type IconSize = IconProps["size"];
 type Tone = "inherit" | "secondary" | "success" | "warning";
 
@@ -39,7 +39,7 @@ const ICONS: Record<string, LucideIcon> = {
 	search: Search,
 };
 
-/** 色调对应的字色类；Icon 的字色跟着外层走。 */
+/** Icon 的字色跟着外层走，色调加在外层。 */
 const TONE_CLASS: Record<Tone, string> = {
 	inherit: "text-fg",
 	secondary: "text-fg-tertiary",
@@ -47,16 +47,13 @@ const TONE_CLASS: Record<Tone, string> = {
 	warning: "text-warning",
 };
 
-/** 表里每一行：写法、说明、size 的取值。 */
 const SIZE_ROWS: [code: string, label: string, size: IconSize][] = [
 	["undefined", "跟随字号（1em）", undefined],
 	['"small"', "小", "small"],
-	['"middle"', "中", "middle"],
 	["18", "直接给像素", 18],
 	['{ size: "0.95em" }', "按字号的倍数", { size: "0.95em" }],
 ];
 
-/** 量容器里第一个图标渲染后的边长和线宽。 */
 function measureGlyph(root: HTMLElement) {
 	const svg = root.querySelector("svg");
 	if (!svg) return undefined;
@@ -68,7 +65,7 @@ function measureGlyph(root: HTMLElement) {
 
 function Playground() {
 	const [name, setName] = useState("search");
-	const [size, setSize] = useState<SizeChoice>("middle");
+	const [size, setSize] = useState<SizeChoice>("inherit");
 	const [tone, setTone] = useState<Tone>("inherit");
 	const [spin, setSpin] = useState(false);
 	const { reading: measured, ref } = useMeasured(measureGlyph);
@@ -93,7 +90,6 @@ function Playground() {
 						options={[
 							{ label: "跟随字号", value: "inherit" },
 							{ label: "小", value: "small" },
-							{ label: "中", value: "middle" },
 						]}
 						value={size}
 					/>
@@ -257,7 +253,6 @@ function Usage() {
 	);
 }
 
-/** 图标：两档预设尺寸、跟随字号的默认值和按像素或字号倍数给的尺寸；字色随外层。 */
 export function IconPage() {
 	return (
 		<DocPage

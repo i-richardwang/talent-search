@@ -46,7 +46,7 @@ function ThemeColorEditor({
 	);
 }
 
-/** 一行颜色：名字、色块和 HEX，点开是这个颜色的编辑器，同时选中这个颜色。 */
+/** 一行颜色：点开是这个颜色的编辑器，同时选中这个颜色。 */
 function ColorRow({
 	editing,
 	onSelectColor,

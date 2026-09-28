@@ -3,6 +3,7 @@ import {
 	ArrowDownIcon,
 	CheckIcon,
 	EyeIcon,
+	Loader2Icon,
 	PencilLineIcon,
 	PlusIcon,
 	RotateCwIcon,
@@ -26,7 +27,6 @@ import { Button } from "#/components/ui/button";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Divider } from "#/components/ui/divider";
 import { Icon } from "#/components/ui/icon";
-import { NeuralLoading } from "#/components/ui/neural-loading";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { SuggestionChips } from "#/components/ui/suggestion-chips";
 import { Tag } from "#/components/ui/tag";
@@ -38,6 +38,7 @@ import type { QueryInput } from "#/search/spec";
 import { changesOf } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import type { InterpretFault, Turn } from "#/server/turn";
+import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/interpret";
 
 /** 这一轮比上一轮加了哪些、去了哪些。链头没有上一轮，整张表都算加的。 */
@@ -77,13 +78,6 @@ function editText(previous: Turn | null, spec: Condition[]) {
 		: "你修改了搜索条件";
 }
 
-/** 一段时长写成几秒、几分几秒。 */
-function lasting(ms: number) {
-	const seconds = Math.max(0, Math.round(ms / 1000));
-	if (seconds < 60) return `${seconds} 秒`;
-	return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
-}
-
 const pad = (n: number) => String(n).padStart(2, "0");
 
 /**
@@ -106,29 +100,8 @@ function clockOf(at: number) {
 }
 
 /**
- * 从 `since` 起过了多少毫秒，每秒更新一次；`active` 为假时停在 0。
- * 起点是记录落下的时刻，不是这一块画出来的时刻：刷新页面后照样从头接着数。
- */
-function useElapsed(since: number, active: boolean) {
-	const [elapsed, setElapsed] = useState(0);
-	useEffect(() => {
-		if (!active) {
-			setElapsed(0);
-			return;
-		}
-		const tick = () => setElapsed(Date.now() - since);
-		tick();
-		const timer = setInterval(tick, 1000);
-		return () => clearInterval(timer);
-	}, [since, active]);
-	return elapsed;
-}
-
-/** 等了这么久才补一个「（几秒）」：更短的等待不值得一个在跳的数。 */
-const ELAPSED_SHOW_AFTER_MS = 2100;
-
-/**
- * 等待时跟在那句话后面的秒数：理解中的那句话后面是三级灰，检索过程的标题后面降到四级灰。
+ * 等待时跟在那句话后面的时长。起点是记录落下的时刻，不是这一块画出来的时刻：
+ * 刷新页面后照样接着数。
  */
 function Elapsed({
 	since,
@@ -137,7 +110,7 @@ function Elapsed({
 	since: number;
 	type: "tertiary" | "quaternary";
 }) {
-	const elapsed = useElapsed(since, true);
+	const elapsed = useElapsed(since);
 	if (elapsed < ELAPSED_SHOW_AFTER_MS) return null;
 	return (
 		<Text className="shrink-0" type={type}>
@@ -147,8 +120,8 @@ function Elapsed({
 }
 
 /**
- * 离底多近算「在底下」：300px 以内。模型边跑边长出东西时，在底下就跟着滚；
- * 翻上去超过这个距离就不再拽人，右下角出现回到底部的按钮。
+ * 离底多近算「在底下」。模型边跑边长出东西时，在底下就跟着滚；翻上去超过这个
+ * 距离就不跟，右下角出现回到底部的按钮。
  */
 const AT_BOTTOM_PX = 300;
 
@@ -202,8 +175,8 @@ function useFollow(latestId: string, growth: string) {
 }
 
 /**
- * 换到哪一轮的结果，就把那一轮滚进视口并闪一下主色一侧的底（1400ms），
- * 人看得出名单换成了线程里的哪一次。首次画出时不闪：那是默认的样子。
+ * 换到哪一轮的结果，就把那一轮滚进视口并闪一下，人看得出名单换成了线程里的
+ * 哪一次。首次画出时不闪：那是默认的样子。
  */
 function useLocate(
 	viewportRef: React.RefObject<HTMLDivElement | null>,
@@ -241,20 +214,13 @@ function useLocate(
 type Phase = "running" | "settled" | "failed";
 
 /**
- * 对话栏：这次找人任务从第一句到最后一句的整条线程，底下是补充需求的输入托盘。
+ * 对话栏：这次找人任务的整条记录链，底下是补充需求的输入托盘。一轮是人说的话和
+ * AI 的回应：检索人才库的过程、条件怎么变了、替人定了什么读法、哪些要求没有采用。
+ * 直接在条件上改的一轮没有人说话，只记一条带字的分隔线。
  *
- * 名单是产物，对话是操作面：产物占画布，操作面靠边常驻。一轮是两条消息——
- * 人说的话靠右一块气泡；AI 的回应靠左，顶上是头像与名字，下面先是检索人才库的过程
- * （进行中摊开，完成后收成一行），再是搜索条件因此怎么变了、替人定了什么读法、
- * 哪些要求没有采用。正看着的那一轮，搜不了的要求附带的替代条件挂在回应底下，
- * 点一下就加进条件。直接在条件上改的一轮没有人说话，只在线程中间记一条带字的分隔线。
- *
- * 线程就是记录链，只往后长。消息的时刻和动作（复制、查看那一轮的结果）平时藏着，
- * 指针移到那条消息上才出现；名单跟着换到哪一轮，那一轮就闪一下。动作作用在正看着的
- * 条件上，新的一轮记在最后（`server/turn.ts` 的 `createTurn`）。
- *
- * 理解失败时最后一轮底下是一条提示，带重试；名单那一列另有同样的出路
- * （`result-state.tsx`），窄屏上这一栏收着时那边也看得见。
+ * 动作作用在正看着的条件上，新的一轮记在链尾（`server/turn.ts` 的 `createTurn`）。
+ * 理解失败时最后一轮底下给重试；名单那一列另有同样的出路（`result-state.tsx`），
+ * 窄屏上这一栏收着时那边也看得见。
  */
 export function Thread({
 	rounds,
@@ -305,7 +271,6 @@ export function Thread({
 			<div className="relative min-h-0 flex-1">
 				<ScrollArea
 					className="size-full"
-					disableContentFit
 					viewportProps={{
 						className: "data-has-overflow-y:overscroll-y-contain",
 						ref: viewportRef,
@@ -337,7 +302,7 @@ export function Thread({
 					glass
 					icon={ArrowDownIcon}
 					onClick={toBottom}
-					size={{ blockSize: 36, borderRadius: 36, size: 18 }}
+					size="floating"
 					tabIndex={atBottom ? -1 : undefined}
 					title="跳转到最新"
 					variant="outlined"
@@ -359,20 +324,13 @@ export function Thread({
 	);
 }
 
-/**
- * 一条消息的时刻与动作平时藏着，指针移进这条消息、焦点落进来时淡入（200ms）；
- * 没有悬停的设备上常显，否则摸不到。
- */
-const REVEAL =
-	"pointer-events-none opacity-0 transition-opacity duration-200 ease-out group-hover/message:pointer-events-auto group-hover/message:opacity-100 group-focus-within/message:pointer-events-auto group-focus-within/message:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100";
-
-/** 一轮落下的时刻，12px 次要色，悬停才出现；水合之前留着同样的高度。 */
+/** 一轮落下的时刻。按浏览器时区写，水合之前留着同样的高度。 */
 function Clock({ at }: { at: number }) {
 	const hydrated = useHydrated();
 	const clock = hydrated ? clockOf(at) : null;
 	return (
 		<Text
-			className={cn("min-h-5 whitespace-nowrap", REVEAL)}
+			className="reveal min-h-5 whitespace-nowrap"
 			size="xs"
 			type="secondary"
 		>
@@ -385,12 +343,11 @@ function Clock({ at }: { at: number }) {
 	);
 }
 
-/** 一条消息底下的一组图标动作：8px 圆角的浅灰底里一排小号图标按钮。 */
 function Actions({ children }: { children: ReactNode }) {
 	return (
 		<Block
 			align="center"
-			className={cn("w-fit rounded-md", REVEAL)}
+			className="reveal w-fit rounded-md"
 			horizontal
 			padding={2}
 			role="menubar"
@@ -446,7 +403,7 @@ function Round({
 		return (
 			<li
 				aria-current={viewing ? "page" : undefined}
-				className="group/message rounded-lg"
+				className="group/reveal rounded-lg"
 				data-turn={round.id}
 			>
 				<Divider className="my-0 py-5">
@@ -472,19 +429,18 @@ function Round({
 			className="flex flex-col rounded-lg"
 			data-turn={round.id}
 		>
-			{/* 人说的话：靠右一块气泡，左边让出 36px，头上是时刻，底下是复制 */}
-			<div className="group/message flex flex-col items-end gap-2 py-2 ps-9">
+			<div className="group/reveal flex flex-col items-end gap-2 py-2 ps-9">
 				<Clock at={round.at} />
 				<p className="max-w-full whitespace-pre-wrap break-words rounded-lg bg-fill-tertiary px-3 py-2">
 					{said}
 				</p>
 				<Actions>
-					<CopyButton content={said} glass={false} size="small" />
+					<CopyButton content={said} size="small" />
 				</Actions>
 			</div>
-			<div className="group/message flex flex-col gap-2 py-2">
+			<div className="group/reveal flex flex-col gap-2 py-2">
 				<div className="flex items-center gap-2">
-					<Avatar background="var(--color-primary)" size={28} title="AI" />
+					<Avatar title="AI" />
 					<Text className="whitespace-nowrap" weight="medium">
 						AI
 					</Text>
@@ -535,16 +491,17 @@ function lastStepAt(at: number, trace: readonly TraceStep[]) {
 	return trace[trace.length - 1]?.at ?? at;
 }
 
-/** 没采用的一条要求：amber 的警示三角，后面一句次要色的话，原因再降一档。 */
 function Declined({ said, why }: { said: string; why: string }) {
 	return (
 		<p className="flex items-start gap-2 px-1.5 py-2">
-			<Icon
-				aria-hidden="true"
-				className="mt-[3px] shrink-0 text-warning"
-				icon={TriangleAlertIcon}
-				size={16}
-			/>
+			<span className="flex h-(--text-base--line-height) shrink-0 items-center">
+				<Icon
+					aria-hidden="true"
+					className="text-warning"
+					icon={TriangleAlertIcon}
+					size={16}
+				/>
+			</span>
 			<span className="min-w-0">
 				<Text type="secondary">未采用「{said}」：</Text>
 				<Text size="xs" type="tertiary">
@@ -556,8 +513,8 @@ function Declined({ said, why }: { said: string; why: string }) {
 }
 
 /**
- * 最后一轮没理解出来：一条描边的提示说哪一环坏了，能重试的带一个重试钮。
- * 按下之后到这一轮重新进入理解之前，钮停在等待态，免得被连按两次。
+ * 最后一轮没理解出来：说哪一环坏了，能重试的带重试钮。按下之后到这一轮重新进入
+ * 理解之前，钮停在等待态，免得被连按两次。
  */
 function Fault({
 	fault,
@@ -574,8 +531,7 @@ function Fault({
 				copy.retry &&
 				onRetry && (
 					<Button
-						disabled={retrying}
-						icon={<RotateCwIcon size={14} />}
+						icon={RotateCwIcon}
 						loading={retrying}
 						onClick={() => {
 							setRetrying(true);
@@ -595,15 +551,11 @@ function Fault({
 	);
 }
 
-/**
- * 搜不了的要求附带的替代条件：正看着的那一轮回应底下一列，点一下就加进这一轮的
- * 条件表，记成新的一轮。一枚一枚从下往上浮出来（320ms），前后错开 60ms；悬停换底 150ms。
- * 一枚只占一行，放不下的收成省略号，悬停的提示是整句。
- */
 function offerText(item: { said: string; instead: Condition[] }) {
 	return `把「${item.said}」换成 ${inSentence(item.instead)}`;
 }
 
+/** 搜不了的要求附带的替代条件：点一下就加进正看着的条件表，记成新的一轮。 */
 function FollowUps({
 	offers,
 	onAdd,
@@ -657,7 +609,7 @@ function wordLine(w: {
 	].join("");
 }
 
-/** 行首 24px 的状态格：进行中是在跑的网，完成是绿色的对勾。 */
+/** 行首的状态格：进行中还是已完成。 */
 function StatusCell({ live }: { live: boolean }) {
 	return (
 		<Block
@@ -670,7 +622,13 @@ function StatusCell({ live }: { live: boolean }) {
 			width={24}
 		>
 			{live ? (
-				<NeuralLoading size={16} />
+				<Icon
+					aria-hidden="true"
+					className="text-fg-secondary"
+					icon={Loader2Icon}
+					size={12}
+					spin
+				/>
 			) : (
 				<Icon
 					aria-hidden="true"
@@ -700,12 +658,9 @@ function useDebounced(value: string, live: boolean) {
 }
 
 /**
- * 检索人才库的过程，一项手风琴：标题行首一枚状态格，箭头紧跟在字后。
- *
- * - 进行中默认摊开，标题是「检索人才库 N 步」带流光；人把它收起来时，标题换成正在做的
- *   那一步，换字时旧的向上淡出、新的从下面升上来（200ms），两秒之后跟上已等了多久。
- * - 完成后自动收起（人在进行中亲手点开过的除外），标题是步数与用时。
- * - 摊开是每一步一行：状态格、动作、对象；每一步再点开才是它的结论（`StepRow`）。
+ * 检索人才库的过程。进行中默认摊开；人把它收起来时，标题换成正在做的那一步。
+ * 完成后自动收起（人在进行中亲手点开过的除外），标题是步数与用时。
+ * 摊开是每一步一行，每一步再点开才是它的结论（`StepRow`）。
  */
 function Process({
 	steps,
@@ -738,12 +693,12 @@ function Process({
 		<span className="flex min-w-0 items-center gap-1.5">
 			<StatusCell live={live} />
 			{live ? (
-				<span className="flex min-h-[22px] min-w-0 items-center gap-1.5">
+				<span className="flex min-h-(--text-base--line-height) min-w-0 items-center gap-1.5">
 					<span className="relative min-w-0 overflow-hidden">
 						<AnimatePresence initial={false} mode="popLayout">
 							<motion.span
 								animate={{ opacity: 1, y: 0 }}
-								className="flex min-h-[22px] items-center"
+								className="flex min-h-(--text-base--line-height) items-center"
 								exit={{ opacity: 0, y: -8 }}
 								initial={{ opacity: 0, y: 8 }}
 								key={headline}
@@ -774,8 +729,6 @@ function Process({
 
 	return (
 		<Accordion
-			classNames={{ trigger: "p-1" }}
-			indicatorPlacement="inline"
 			items={[
 				{
 					children: (
@@ -797,7 +750,6 @@ function Process({
 				setOpen(next);
 			}}
 			value={open ? ["process"] : []}
-			variant="borderless"
 		/>
 	);
 }
@@ -808,16 +760,11 @@ export function stepFindings(step: TraceStep) {
 	return [`找到 ${step.total} 人`];
 }
 
-/**
- * 摊开后的一步，本身也是一项手风琴：标题行是状态格、动作与对象（对象用等宽的 12px），
- * 箭头紧跟在字后；点开是这一步的结论，底下一条虚线收尾。平时收着。
- */
+/** 摊开后的一步：平时收着，点开是这一步的结论。 */
 function StepRow({ step }: { step: TraceStep }) {
 	const { action, keyword } = stepTitle(step);
 	return (
 		<Accordion
-			classNames={{ trigger: "p-1" }}
-			indicatorPlacement="inline"
 			items={[
 				{
 					children: (
@@ -850,7 +797,6 @@ function StepRow({ step }: { step: TraceStep }) {
 					),
 				},
 			]}
-			variant="borderless"
 		/>
 	);
 }

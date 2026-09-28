@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Block } from "#/components/ui/block";
-import { Checkbox } from "#/components/ui/checkbox";
 import { Radio, RadioGroup } from "#/components/ui/radio";
 import {
 	Table,
@@ -10,7 +9,6 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { px, useMeasured } from "../../kit/readings";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
@@ -22,7 +20,6 @@ const EDUCATION = [
 	{ label: "博士", value: "doctor" },
 ];
 
-/** 量选中那一项的圆点直径与中心点直径。 */
 function measureDot(root: HTMLElement) {
 	const dot = root.querySelector('[role="radio"][aria-checked="true"]');
 	const center = dot?.firstElementChild;
@@ -35,83 +32,45 @@ function measureDot(root: HTMLElement) {
 
 function Playground() {
 	const [value, setValue] = useState("bachelor");
-	const [disabled, setDisabled] = useState(false);
-	const [oneDisabled, setOneDisabled] = useState(false);
 	const picked = EDUCATION.find((option) => option.value === value);
 	const { reading, ref } = useMeasured(measureDot);
 	return (
-		<div className="flex flex-col gap-4">
-			<Controls>
-				<Control>
-					<Checkbox checked={disabled} onChange={setDisabled}>
-						整组禁用
-					</Checkbox>
-				</Control>
-				<Control>
-					<Checkbox checked={oneDisabled} onChange={setOneDisabled}>
-						「博士」禁用
-					</Checkbox>
-				</Control>
-			</Controls>
-			<Stage
-				footer={
-					<>
-						{reading && (
-							<>
-								<span>圆点 {px(reading.dot)}</span>
-								<span>中心 {px(reading.center)}</span>
-							</>
-						)}
-						<span>当前：{picked?.label ?? "无"}</span>
-					</>
-				}
-			>
-				<div className="contents" ref={ref}>
-					<RadioGroup
-						aria-label="学历"
-						className="flex flex-wrap gap-3"
-						disabled={disabled}
-						onChange={setValue}
-						value={value}
-					>
-						{EDUCATION.map((option) => (
-							<Radio
-								disabled={option.value === "doctor" && oneDisabled}
-								key={option.value}
-								value={option.value}
-							>
-								{option.label}
-							</Radio>
-						))}
-					</RadioGroup>
-				</div>
-			</Stage>
-		</div>
+		<Stage
+			footer={
+				<>
+					{reading && (
+						<>
+							<span>圆点 {px(reading.dot)}</span>
+							<span>中心 {px(reading.center)}</span>
+						</>
+					)}
+					<span>当前：{picked?.label ?? "无"}</span>
+				</>
+			}
+		>
+			<div className="contents" ref={ref}>
+				<RadioGroup
+					aria-label="学历"
+					className="flex flex-wrap gap-3"
+					onChange={setValue}
+					value={value}
+				>
+					{EDUCATION.map((option) => (
+						<Radio key={option.value} value={option.value}>
+							{option.label}
+						</Radio>
+					))}
+				</RadioGroup>
+			</div>
+		</Stage>
 	);
 }
 
-/** 一格里一个单项组：Radio 只能放在 RadioGroup 里。 */
-function Single({
-	checked,
-	disabled,
-	label,
-}: {
-	checked?: boolean;
-	disabled?: boolean;
-	label?: string;
-}) {
+/** Radio 只能放在 RadioGroup 里，单个示例也包一层组。 */
+function Single({ checked, label }: { checked?: boolean; label: string }) {
 	return (
-		<RadioGroup
-			aria-label={label ?? "候选人 A"}
-			defaultValue={checked ? "on" : undefined}
-		>
-			{label ? (
-				<Radio disabled={disabled} value="on">
-					{label}
-				</Radio>
-			) : (
-				<Radio aria-label="候选人 A" disabled={disabled} value="on" />
-			)}
+		<RadioGroup aria-label={label} defaultValue={checked ? "on" : undefined}>
+			<Radio value="on">{label}</Radio>
 		</RadioGroup>
 	);
 }
@@ -122,41 +81,25 @@ function Appearances() {
 			<Table>
 				<TableHeader>
 					<TableRow>
-						<TableHead>内容</TableHead>
 						<TableHead>未选</TableHead>
 						<TableHead>已选</TableHead>
-						<TableHead>禁用</TableHead>
-						<TableHead>禁用 · 已选</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{[
-						["label", "硕士及以上"],
-						["dot", undefined],
-					].map(([kind, label]) => (
-						<TableRow key={kind}>
-							<TableCell className="font-mono text-xs">{kind}</TableCell>
-							<TableCell>
-								<Single label={label} />
-							</TableCell>
-							<TableCell>
-								<Single checked label={label} />
-							</TableCell>
-							<TableCell>
-								<Single disabled label={label} />
-							</TableCell>
-							<TableCell>
-								<Single checked disabled label={label} />
-							</TableCell>
-						</TableRow>
-					))}
+					<TableRow>
+						<TableCell>
+							<Single label="硕士及以上" />
+						</TableCell>
+						<TableCell>
+							<Single checked label="硕士及以上" />
+						</TableCell>
+					</TableRow>
 				</TableBody>
 			</Table>
 		</Block>
 	);
 }
 
-/** 导航栏里一组筛选的写法：每一行由调用处排，行尾带人数。 */
 function FilterGroup() {
 	const counts: Record<string, number> = {
 		"": 190,
@@ -223,20 +166,17 @@ function Usage() {
 				>
 					<Radio value="30">最近 30 天有变动的简历</Radio>
 					<Radio value="all">人才库里的全部简历</Radio>
-					<Radio disabled value="new">
-						只同步新入库的简历
-					</Radio>
+					<Radio value="new">只同步新入库的简历</Radio>
 				</RadioGroup>
 			</Example>
 		</ExampleGrid>
 	);
 }
 
-/** 单选框页：试用单选组、状态、使用场景。 */
 export function RadioPage() {
 	return (
 		<DocPage
-			facts={["单选组", "单项禁用"]}
+			facts={["单选组"]}
 			rules={{
 				notes: [
 					"单选用 Radio，多选用 Checkbox，一次动作用 Button。",

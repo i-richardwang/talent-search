@@ -1,9 +1,10 @@
-import { ClaimMarks, EvidenceLine, MissedClaims } from "#/components/evidence";
 import { Popover } from "#/components/ui/popover";
 import { ProgressTag } from "#/components/ui/progress-tag";
+import { cn } from "#/lib/utils";
 import { conditionKey } from "#/search/condition";
 import { strengthOf } from "#/search/evidence";
 import type { ClaimLine } from "../-lib/claim-lines";
+import { Dot, EvidenceLine, MissedClaims } from "./evidence";
 
 /*
  * 一个人在各条主张上的证据，三种画法：名单一行里的一排词（`ClaimRow`）、行尾的
@@ -32,16 +33,26 @@ export function ClaimEvidence({ lines }: { lines: ClaimLine[] }) {
 	);
 }
 
-/** 名单一行的第二行：每条主张一个词和一颗点，顺序和条件那一排相同。 */
+/**
+ * 名单一行的第二行：每条主张一个词和一颗点，顺序和条件那一排相同。只占一行：
+ * 放不下的词整个收掉，不截半个词。
+ */
 export function ClaimRow({ lines }: { lines: ClaimLine[] }) {
 	return (
-		<ClaimMarks
-			className="mt-1"
-			marks={lines.map(({ name, found }) => ({
-				name,
-				strength: found ? strengthOf(found.hit.route) : undefined,
-			}))}
-		/>
+		<ul className="mt-1 flex h-(--text-xs--line-height) flex-wrap items-center gap-x-3 overflow-hidden text-xs">
+			{lines.map(({ claim, name, found }) => (
+				<li
+					className={cn(
+						"flex h-(--text-xs--line-height) min-w-0 items-center gap-1.5",
+						found ? "text-fg-secondary" : "text-fg-tertiary",
+					)}
+					key={conditionKey(claim)}
+				>
+					<Dot strength={found ? strengthOf(found.hit.route) : undefined} />
+					<span className="truncate">{name}</span>
+				</li>
+			))}
+		</ul>
 	);
 }
 

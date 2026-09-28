@@ -1,9 +1,3 @@
-/*
- * Descriptions 的外观，类名以 `.ui-descriptions` 开头：两栏网格，标签栏缺省按最长的标签
- * 定宽（`--ui-descriptions-label-width` 给了就用它），长内容在内容栏里换行，两栏按首行
- * 基线对齐。
- */
-
 .ui-descriptions {
 	display: grid;
 	grid-template-columns: var(--ui-descriptions-label-width, auto) minmax(0, 1fr);
@@ -11,7 +5,6 @@
 	margin: 0;
 }
 
-/* 一行的字高 20px，上下各 4px，单行时正好 28px。 */
 .ui-descriptions-middle {
 	column-gap: 16px;
 	row-gap: 4px;

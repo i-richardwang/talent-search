@@ -1,9 +1,6 @@
 /*
- * ActionIcon 的外观。块的先后是 root、active、glass。
- * 根块用 `&&` 把特异性抬到两个类名，压过按钮变体类里的字色。
- *
- * small、middle 的方块边长写成 `:root` 上的组件令牌，`action-icon.tsx` 按档读它们；
- * 设计系统在预览里改它们。
+ * `&&` 把特异性抬到两个类名，压过按钮变体类里的字色和底。
+ * 方块边长是 `:root` 上的组件令牌，`action-icon.tsx` 按档读，设计系统在预览里改。
  */
 
 :root {
@@ -35,7 +32,6 @@
 	}
 }
 
-/* 压在内容上：半透明的浮层底，糊掉底下的内容。特异性抬到两个类名，压过按钮变体的底。 */
 .ui-action-icon-glass {
 	&& {
 		background: color-mix(in srgb, var(--color-elevated) 50%, transparent);

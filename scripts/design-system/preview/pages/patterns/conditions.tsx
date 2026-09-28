@@ -100,16 +100,14 @@ function Playground() {
 						<Button
 							onClick={() => setConditions(START)}
 							size="small"
-							type="link"
+							type="text"
 						>
 							还原
 						</Button>
 					</>
 				}
 			>
-				<div className="flex flex-wrap items-center gap-1.5">
-					<QueryChips conditions={conditions} onChange={setConditions} />
-				</div>
+				<QueryChips conditions={conditions} onChange={setConditions} />
 			</Stage>
 			<Stage
 				className="items-stretch p-0"
@@ -241,9 +239,7 @@ function Usage() {
 				title="直接改条件"
 			>
 				<div className="flex flex-col gap-3">
-					<div className="flex flex-wrap items-center gap-1.5">
-						<QueryChips conditions={conditions} onChange={setConditions} />
-					</div>
+					<QueryChips conditions={conditions} onChange={setConditions} />
 					<span className="text-fg-secondary text-xs">
 						{sentenceOf(conditions)}
 					</span>
@@ -263,12 +259,10 @@ function Usage() {
 				description="累计年限是一类经历加起来多久，经历时长是单段多久：两件事各有各的标签，不合并。"
 				title="累计与单段"
 			>
-				<div className="flex flex-wrap items-center gap-1.5">
-					<QueryChips
-						conditions={[CONDITIONS[1] as Condition]}
-						onChange={() => {}}
-					/>
-				</div>
+				<QueryChips
+					conditions={[CONDITIONS[1] as Condition]}
+					onChange={() => {}}
+				/>
 			</Example>
 			<Example
 				description="关键词搜索没有条件可点：词就在名单上方的框里改，这里再摆一排就是同一样东西画两遍。"

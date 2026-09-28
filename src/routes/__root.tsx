@@ -49,8 +49,7 @@ export const Route = createRootRoute({
 	// 最近搜索取不到时是 null：导航栏和首页各自说取不到并给重试，不当成还没有记录。
 	loader: async () => {
 		const [recent, understanding] = await Promise.all([
-			recentSearches({ data: { page: 1, size: RECENT_FIRST_PAGE } }).then(
-				(page) => page,
+			recentSearches({ data: { page: 1, size: RECENT_FIRST_PAGE } }).catch(
 				() => null,
 			),
 			understandingOn(),

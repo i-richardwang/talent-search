@@ -7,21 +7,19 @@ import type {
 import { cn } from "#/lib/utils";
 
 /*
- * Flexbox 与 Center，样式在 flex.css。布局参数写成元素上的 `--ui-flex-*` 变量，
- * flex.css 把它们落到对应的属性上；默认纵向排列，`horizontal` 改成横向。数字按像素。
+ * 布局参数写成元素上的 `--ui-flex-*` 变量，flex.css 把它们落到对应的属性上。
+ * 默认纵向排列；数字按像素。
  */
 
 export interface FlexboxProps extends HTMLAttributes<HTMLElement> {
 	align?: "center";
-	/** 根节点 `min-width: 0`，在 flex 容器里能正常收缩。 */
-	allowShrink?: boolean;
 	as?: ElementType;
 	children?: ReactNode;
 	flex?: number | string;
 	gap?: number | string;
 	height?: number | string;
 	horizontal?: boolean;
-	justify?: "center" | "flex-end";
+	justify?: "center";
 	padding?: number | string;
 	paddingBlock?: number | string;
 	paddingInline?: number | string;
@@ -39,7 +37,6 @@ export function Flexbox({
 	justify,
 	height,
 	width,
-	allowShrink,
 	padding,
 	paddingInline,
 	paddingBlock,
@@ -67,11 +64,7 @@ export function Flexbox({
 		<Container
 			{...props}
 			className={cn("ui-flex", className)}
-			style={{
-				...(vars as CSSProperties),
-				...(allowShrink ? { minWidth: 0 } : {}),
-				...style,
-			}}
+			style={{ ...(vars as CSSProperties), ...style }}
 		>
 			{children}
 		</Container>

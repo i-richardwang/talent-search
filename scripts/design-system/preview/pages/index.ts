@@ -12,7 +12,6 @@ import { ChatInputPage } from "./components/chat-input";
 import { CheckboxPage } from "./components/checkbox";
 import { ChoiceMenuPage } from "./components/choice-menu";
 import { CodeBlockPage } from "./components/code-block";
-import { CollapsePage } from "./components/collapse";
 import { CollapsiblePage } from "./components/collapsible";
 import { ContextMenuPage } from "./components/context-menu";
 import { CopyButtonPage } from "./components/copy-button";
@@ -28,13 +27,13 @@ import { FlexPage } from "./components/flex";
 import { FormPage } from "./components/form";
 import { GalleryPage } from "./components/gallery";
 import { GroupBlockPage } from "./components/group-block";
+import { GroupCardPage } from "./components/group-card";
 import { HotkeyPage } from "./components/hotkey";
 import { IconPage } from "./components/icon";
 import { InputPage } from "./components/input";
 import { ListPage } from "./components/list";
 import { ModalPage } from "./components/modal";
 import { NavItemPage } from "./components/nav-item";
-import { NeuralLoadingPage } from "./components/neural-loading";
 import { PopoverPage } from "./components/popover";
 import { ProgressTagPage } from "./components/progress-tag";
 import { RadioPage } from "./components/radio";
@@ -116,10 +115,9 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/toolbar": ToolbarPage,
 	"components/collapsible": CollapsiblePage,
 	"components/accordion": AccordionPage,
-	"components/collapse": CollapsePage,
+	"components/group-card": GroupCardPage,
 	"components/empty": EmptyPage,
 	"components/skeleton": SkeletonPage,
-	"components/neural-loading": NeuralLoadingPage,
 	"components/alert": AlertPage,
 	"components/code-block": CodeBlockPage,
 	"components/copy-button": CopyButtonPage,

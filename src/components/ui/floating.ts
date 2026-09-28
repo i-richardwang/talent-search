@@ -11,16 +11,13 @@ import {
 import { isNativeButtonElement } from "#/components/ui/native-button";
 
 /*
- * 浮层组件共用的部分：
+ * 浮层组件共用的部分。
  * - 弹出层把自己的定位器交给里面的浮层当 portal 容器，里面的提示渲染进弹出层自己的
  *   子树，和它一起叠放、一起卸载。
  * - 没有给容器时 portal 到 `<body>`。容器要显式给：不给的话 Base UI 会把浮层嵌进
  *   外层浮层的 portal。
- * - 定位器用 Base UI 的默认碰撞边距。
- * - 触发器不另包一层：Base UI 触发器的属性与 ref 合进子元素本身（`triggerRender`）。
- * - 方位用同一套名字（`Placement`），换算成 Base UI 的 side / align。
  * - 弹层都在 `--z-index-popup` 这一档，不按打开先后另分配 z 值：portal 按打开先后接在
- *   `<body>` 末尾，后开的在文档里靠后，自然压住先开的；嵌在弹出层里的提示渲染进弹出层的子树。
+ *   `<body>` 末尾，后开的在文档里靠后，自然压住先开的。
  */
 
 const FloatingLayerContext = createContext<HTMLElement | null>(null);
@@ -81,36 +78,21 @@ export function triggerRender(children: ReactElement) {
  */
 export type Placement =
 	| "top"
-	| "topLeft"
-	| "topRight"
 	| "bottom"
 	| "bottomLeft"
 	| "bottomRight"
-	| "left"
-	| "leftTop"
-	| "leftBottom"
-	| "right"
-	| "rightTop"
-	| "rightBottom";
+	| "left";
 
-/** 方位名到 Base UI 定位器的 side / align。 */
 export const placementMap: Record<
 	Placement,
 	{
 		align: "start" | "center" | "end";
-		side: "top" | "bottom" | "left" | "right";
+		side: "top" | "bottom" | "left";
 	}
 > = {
 	bottom: { align: "center", side: "bottom" },
 	bottomLeft: { align: "start", side: "bottom" },
 	bottomRight: { align: "end", side: "bottom" },
 	left: { align: "center", side: "left" },
-	leftBottom: { align: "end", side: "left" },
-	leftTop: { align: "start", side: "left" },
-	right: { align: "center", side: "right" },
-	rightBottom: { align: "end", side: "right" },
-	rightTop: { align: "start", side: "right" },
 	top: { align: "center", side: "top" },
-	topLeft: { align: "start", side: "top" },
-	topRight: { align: "end", side: "top" },
 };

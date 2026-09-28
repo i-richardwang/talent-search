@@ -8,7 +8,7 @@ import { changeCount } from "../../shared/tokens/draft";
 import { MAX_SCHEMES, type Scheme } from "../storage";
 import { ChangesPanel } from "./panel";
 
-/** 「保存方案」：存在这台浏览器里的方案；载入会替换当前的修改版（可以撤销）。 */
+/** 「保存方案」：存在这台浏览器里的方案；载入会替换当前的修改（可以撤销）。 */
 export function SavedSchemes({
 	onDelete,
 	onLoad,
