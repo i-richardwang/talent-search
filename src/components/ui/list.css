@@ -173,7 +173,7 @@
 }
 
 /*
- * 一行：悬停 fill-tertiary；当前项（`current`）是 fill-secondary 的底，悬停加深到 fill；
+ * 一行：有 `extra` 时多一格行尾，宽随内容。悬停 fill-tertiary；当前项（`current`）是 fill-secondary 的底，悬停加深到 fill；
  * 勾上的一行是主色一侧最浅的底，悬停加深一档。最后一行不画分隔线。整行调暗（等待时）
  * 走 0.15s 的透明度过渡。
  */
@@ -195,6 +195,10 @@
 
 	&:hover {
 		background: var(--color-fill-tertiary);
+	}
+
+	&:has(> .ui-list-view-extra) {
+		grid-template-columns: 24px minmax(0, 1fr) auto;
 	}
 
 	&:has(.ui-list-view-link) {
@@ -225,6 +229,15 @@
 	display: flex;
 	align-items: center;
 	height: var(--text-sm--line-height);
+}
+
+/* 行尾一格：上下居中，和选择格一样压在整行链接的覆盖层之上。 */
+.ui-list-view-extra {
+	position: relative;
+	z-index: var(--z-index-raise);
+	display: flex;
+	align-self: center;
+	align-items: center;
 }
 
 /*

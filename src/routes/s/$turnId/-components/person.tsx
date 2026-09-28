@@ -1,5 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { BriefcaseBusinessIcon, type LucideIcon, XIcon } from "lucide-react";
+import {
+	BriefcaseBusinessIcon,
+	type LucideIcon,
+	ScanSearchIcon,
+	XIcon,
+} from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { CareerBar } from "#/components/career-bar";
 import { buildHitIndex, Timeline } from "#/components/timeline";
@@ -17,6 +22,8 @@ import { Text } from "#/components/ui/text";
 import type { Employee, Experience } from "#/db/schema";
 import { dots } from "#/lib/format";
 import type { Hit } from "#/search/result";
+import type { ClaimLine } from "../-lib/claim-lines";
+import { ClaimEvidence } from "./claim-evidence";
 
 /*
  * 右栏里一个人的详情（`p.$empId.tsx` 的三种内容）：详情本身、换人途中的骨架、
@@ -185,21 +192,25 @@ export function PersonNotFound() {
 }
 
 /**
- * 一个人的详情，答的是逐段核对：先是这个人现在的几条属性，再是任职经历——轨迹条给
- * 形状，时间线给每一段的原文。命中摘要和名次在名单那一行，这里不重复。
+ * 一个人的详情，答的是逐段核对：先是这个人现在的几条属性，再是匹配依据——每条条件
+ * 凭哪一段、多久，没命中哪几条——最后是任职经历：轨迹条给形状，时间线给每一段的原文。
+ * 名单那一行只写几条里命中几条，逐条的依据在这里。
  *
- * `hits` 是这个人在当前检索里的命中，`names` 是各条主张的名字；不在名单上的人两者都是空的。
+ * `hits` 是这个人在当前检索里的全部命中（时间线据此标出段落），`names` 是各条主张的
+ * 名字，`lines` 是逐条的依据；不在名单上、或名单按人排时三者都是空的。
  */
 export function Person({
 	employee: e,
 	timeline,
 	hits,
 	names,
+	lines,
 }: {
 	employee: Employee;
 	timeline: Experience[];
 	hits: Hit[];
 	names: string[];
+	lines: ClaimLine[];
 }) {
 	const hitIndex = buildHitIndex(hits);
 
@@ -250,6 +261,12 @@ export function Person({
 						</DescriptionsItem>
 					))}
 				</Descriptions>
+
+				{lines.length > 0 && (
+					<Section icon={ScanSearchIcon} id="evidence" title="匹配依据">
+						<ClaimEvidence lines={lines} />
+					</Section>
+				)}
 
 				<Section icon={BriefcaseBusinessIcon} id="career" title="任职经历">
 					<CareerBar

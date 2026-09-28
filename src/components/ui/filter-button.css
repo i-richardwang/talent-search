@@ -1,0 +1,35 @@
+/*
+ * FilterButton 的外观，类名是 `.ui-filter-button`：24px 高，左 10 右 8，字与箭头隔 4px，
+ * 两端全圆。平时透明底、三级灰字；悬停、菜单开着、选了东西时正文色字、二级填充。
+ */
+
+.ui-filter-button {
+	cursor: pointer;
+	display: inline-flex;
+	flex: none;
+	gap: 4px;
+	align-items: center;
+	height: 24px;
+	padding-block: 0;
+	padding-inline: 10px 8px;
+	border: 0;
+	border-radius: 999px;
+	font: inherit;
+	font-size: var(--text-xs);
+	line-height: 1;
+	color: var(--color-fg-tertiary);
+	white-space: nowrap;
+	background: transparent;
+	transition:
+		color 150ms,
+		background 150ms;
+
+	@apply focus-ring;
+
+	&:hover,
+	&[data-popup-open],
+	&[data-active] {
+		color: var(--color-fg);
+		background: var(--color-fill-secondary);
+	}
+}

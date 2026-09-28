@@ -634,9 +634,14 @@ export const RESULTS: RankedResult[] = [
 	},
 ];
 
+/** 一个人在这次搜索里的那一条结果；不在名单上是 null。 */
+export function resultOf(empId: string): RankedResult | null {
+	return RESULTS.find((r) => r.employee.empId === empId) ?? null;
+}
+
 /** 一个人在这次搜索里的全部命中。 */
 export function hitsOf(empId: string): Hit[] {
-	return RESULTS.find((r) => r.employee.empId === empId)?.hits ?? [];
+	return resultOf(empId)?.hits ?? [];
 }
 
 /** 各段经历抽出的能力词，已是标准写法；筛选栏「技能」一维从这里数。 */

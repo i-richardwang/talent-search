@@ -204,6 +204,42 @@ export function EvidenceLine({
 	);
 }
 
+/**
+ * 名单一行的第二行：每条主张一个词，词前一颗点，命中的按可信度上色，没命中的是边框色
+ * 的实心点、词退到三级灰。12px 次要色，词与词隔 12px，只排一行：放不下的整个收掉，
+ * 不截半个词；几条里命中几条写在行尾的进度标签上，逐条的依据在它的气泡和人的详情里。
+ */
+export function ClaimMarks({
+	marks,
+	className,
+}: {
+	marks: { name: string; strength: Strength | undefined }[];
+	className?: string;
+}) {
+	return (
+		<ul
+			className={cn(
+				"flex h-(--text-xs--line-height) flex-wrap items-center gap-x-3 overflow-hidden text-xs",
+				className,
+			)}
+		>
+			{marks.map(({ name, strength }, i) => (
+				<li
+					className={cn(
+						"flex h-(--text-xs--line-height) min-w-0 items-center gap-1.5",
+						strength ? "text-fg-secondary" : "text-fg-tertiary",
+					)}
+					// biome-ignore lint/suspicious/noArrayIndexKey: 两条主张可以同名，位置就是它的身份
+					key={i}
+				>
+					<Dot strength={strength} />
+					<span className="truncate">{name}</span>
+				</li>
+			))}
+		</ul>
+	);
+}
+
 export function MissedClaims({ names }: { names: string[] }) {
 	if (names.length === 0) return null;
 	return (

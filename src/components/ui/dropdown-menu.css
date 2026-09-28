@@ -136,6 +136,17 @@
 	&[data-popup-open] {
 		background: var(--color-fill-tertiary);
 	}
+
+	/* 点不了的一项：字退到四级灰、整项半透明，悬停不出底色 */
+	&[data-disabled] {
+		cursor: not-allowed;
+		color: var(--color-fg-quaternary);
+		opacity: 0.5;
+
+		&:hover {
+			background: transparent;
+		}
+	}
 }
 
 .ui-dropdown-menu-danger {

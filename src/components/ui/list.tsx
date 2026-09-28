@@ -107,8 +107,10 @@ export function ListItem({
 
 /*
  * 可多选的列表视图：一块描边的面，`ListViewHeader` 吸在顶上，下面是一串 `ListViewRow`。
- * 表头和每一行的第一格是选择格（`pick`，放 18px 的 Checkbox），第二格是内容。
- * 一行整行可点时，内容里放一条 `ListViewLink`：它的覆盖层铺满整行，选择格压在它上面。
+ * 表头和每一行的第一格是选择格（`pick`，放 18px 的 Checkbox），第二格是内容；一行可以
+ * 再有第三格 `extra`，贴在行尾、上下居中，放这一行自己的一个小控件。
+ * 一行整行可点时，内容里放一条 `ListViewLink`：它的覆盖层铺满整行，选择格和 `extra`
+ * 压在它上面。
  * 勾上的一行换成主色一侧最浅的底，由行里的 Checkbox 的勾选状态决定，调用处不另传。
  */
 
@@ -135,12 +137,15 @@ export function ListViewHeader({
 
 export function ListViewRow({
 	pick,
+	extra,
 	current,
 	children,
 	className,
 	...props
 }: Omit<ComponentProps<"li">, "children"> & {
 	pick?: ReactNode;
+	/** 行尾的一格。 */
+	extra?: ReactNode;
 	/** 当前项：详情正开着的这一行。 */
 	current?: boolean;
 	children: ReactNode;
@@ -153,6 +158,7 @@ export function ListViewRow({
 		>
 			<div className="ui-list-view-pick">{pick}</div>
 			<div className="min-w-0">{children}</div>
+			{extra && <div className="ui-list-view-extra">{extra}</div>}
 		</li>
 	);
 }

@@ -7,10 +7,11 @@ import {
 	PersonPending,
 } from "#/routes/s/$turnId/-components/person";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
+import { claimLines } from "#/routes/s/$turnId/-lib/claim-lines";
 import { claimName } from "#/search/condition-label";
 import { Routed } from "../../routed";
 import { CLAIMS } from "../../samples/conditions";
-import { EMPLOYEES, experiencesOf, hitsOf } from "../../samples/people";
+import { EMPLOYEES, experiencesOf, resultOf } from "../../samples/people";
 import { LATEST_TURN_ID } from "../../samples/thread";
 import { Shell } from "./home";
 
@@ -26,10 +27,12 @@ const NAMES = CLAIMS.map(claimName);
 export function PersonPane({ empId }: { empId: string }) {
 	const employee = EMPLOYEES.find((row) => row.empId === empId);
 	if (!employee) return <PersonNotFound />;
+	const result = resultOf(empId);
 	return (
 		<Person
 			employee={employee}
-			hits={hitsOf(empId)}
+			hits={result?.hits ?? []}
+			lines={result ? claimLines(result, CLAIMS) : []}
 			names={NAMES}
 			timeline={experiencesOf(empId)}
 		/>
@@ -40,7 +43,7 @@ type State = "loaded" | "pending" | "missing";
 
 /**
  * 人的详情单独成页：产品外壳的内容卡片里，产品的右栏放在正中，页头右端是切换状态和
- * 候选人的控件。导航栏和搜索结果页一样是这次名单的筛选。
+ * 候选人的控件。
  */
 export function DetailPage() {
 	const [empId, setEmpId] = useState("T0101");

@@ -424,6 +424,7 @@ export function DropdownMenuPage() {
 					'菜单开关用开关项（type: "switch"），不能用两句交替的文案代替状态。',
 					"几选一的项用 DropdownMenuRadioGroup，和其余项同在一个菜单时给 renderDropdownMenuItems 传 reserveIconSpace，让文字对齐。",
 					"危险项用 danger，放在最后并用 divider 隔开。",
+					'一次勾好几项用勾选项（type: "checkbox"），几选一的一组也可以写成 type: "radio"；两种都在图标位上画勾，点了菜单不收起。行尾的 extra 写选了之后还剩多少，点不了的项给 disabled。',
 					"项可以带 icon（14px、次要色，危险项是错误色）；有一项带图标，其余项自动留出图标位。",
 					"一项下面还有一层选择时用子菜单：那一项行尾写当前值（DropdownMenuItemExtra）和小三角，子菜单贴着它的右边打开。",
 					"用原子件拼：Root › Trigger + Portal › Positioner › Popup；显示标签、键盘和触控行为要人工检查。",

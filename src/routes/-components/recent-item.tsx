@@ -1,5 +1,6 @@
 import {
 	Link,
+	useMatch,
 	useNavigate,
 	useParams,
 	useRouter,
@@ -94,7 +95,8 @@ async function copyLink(turnId: string) {
 /**
  * 导航栏和全部记录的抽屉里的一行搜索记录：整行是去那次搜索的链接，行尾一枚「…」
  * 打开这一行的菜单（复制链接、删除），两项各带图标，删除是危险项。在这一行上按右键
- * 打开的是同一份菜单。
+ * 打开的是同一份菜单。正开着的那次搜索是当前项：看的是它的哪一轮都算，记录上的
+ * `turnId` 是链上最后一轮，拿正开着的那条链的最后一轮来比。
  */
 export function RecentItem({
 	record,
@@ -104,7 +106,11 @@ export function RecentItem({
 	/** 删掉之后调用，全部记录的抽屉据此从自己取到的那几页里拿掉这一行。 */
 	onRemoved?: (turnId: string) => void;
 }) {
-	const { turnId: current } = useParams({ strict: false });
+	const latest = useMatch({
+		from: "/s/$turnId",
+		select: (match) => match.loaderData?.thread.at(-1)?.id,
+		shouldThrow: false,
+	});
 	const remove = useRemoveRecent(onRemoved);
 	const label = recentLabel(record);
 	const items: DropdownItem[] = [
@@ -143,7 +149,7 @@ export function RecentItem({
 						</DropdownMenuPortal>
 					</DropdownMenuRoot>
 				}
-				active={record.turnId === current}
+				active={record.turnId === latest}
 				icon={recentIcon(record)}
 				iconSize="small"
 				render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}

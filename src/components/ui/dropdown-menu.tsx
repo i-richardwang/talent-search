@@ -2,7 +2,7 @@
 
 import { Menu } from "@base-ui/react/menu";
 import { Switch as BaseSwitch } from "@base-ui/react/switch";
-import type { LucideIcon } from "lucide-react";
+import { CheckIcon, type LucideIcon } from "lucide-react";
 import { animate, motionValue } from "motion";
 import {
 	type ComponentProps,
@@ -26,9 +26,11 @@ import { cn } from "#/lib/utils";
  * 下拉菜单，样式在 dropdown-menu.css。用原子件拼：`DropdownMenuRoot` 里放
  * `DropdownMenuTrigger` 与 `DropdownMenuPortal` › `DropdownMenuPositioner` ›
  * `DropdownMenuPopup`，弹层里放单选项或 `renderDropdownMenuItems` 画出的项。
- * `items` 有四种：普通项、`divider`、`group`、`switch`（开关项）。普通项可以带 `icon`
- * （左端 14px 的图标位，次要色；危险项跟着换成错误色）；菜单里有一项带图标，其余项都
- * 留出同样的图标位，文字对齐。
+ * `items` 有六种：普通项、`divider`、`group`、`switch`（开关项）、`checkbox`（勾选项）、
+ * `radio`（一组单选项）。普通项可以带 `icon`（左端 14px 的图标位，次要色；危险项跟着
+ * 换成错误色）；菜单里有一项带图标，其余项都留出同样的图标位，文字对齐。勾选项和单选项
+ * 的勾画在图标位上，点了菜单不收起，可以接着勾。普通项、勾选项和单选项都可以带 `extra`：
+ * 行尾一个 12px 三级色的值，例如选了之后还剩几个。
  *
  * 开关项里的开关是受控的小号开关：按钮底、滑块、按下时滑块变宽、motion 弹簧
  * （damping 24、stiffness 360）。开关只在菜单里用到，没有单独的 Switch 组件。
@@ -50,11 +52,35 @@ import { cn } from "#/lib/utils";
 
 interface MenuItemType {
 	danger?: boolean;
+	disabled?: boolean;
+	extra?: ReactNode;
 	icon?: LucideIcon;
 	key: Key;
 	label: string;
 	onClick?: () => void;
 	type?: undefined;
+}
+
+interface MenuCheckboxItemType {
+	checked: boolean;
+	disabled?: boolean;
+	extra?: ReactNode;
+	key: Key;
+	label: string;
+	onCheckedChange: (checked: boolean) => void;
+	type: "checkbox";
+}
+
+interface MenuRadioGroupType {
+	onValueChange: (value: string) => void;
+	options: {
+		disabled?: boolean;
+		extra?: ReactNode;
+		label: string;
+		value: string;
+	}[];
+	type: "radio";
+	value: string;
 }
 
 interface MenuItemGroupType {
@@ -79,7 +105,9 @@ export type DropdownItem =
 	| MenuItemType
 	| MenuItemGroupType
 	| MenuDividerType
-	| MenuSwitchItemType;
+	| MenuSwitchItemType
+	| MenuCheckboxItemType
+	| MenuRadioGroupType;
 
 export const DropdownMenuRoot: typeof Menu.Root = (props) => (
 	<Menu.Root modal={false} {...props} />
@@ -373,39 +401,101 @@ function DropdownMenuSwitchItem({
 	);
 }
 
-/** 一项的内容：有图标画图标；`reserveIconSpace` 时没有图标也留一格空的图标位。 */
+/**
+ * 一项的内容：图标位里画 `lead`（图标，或勾选项、单选项的勾）；`reserveIconSpace` 时
+ * 没有也留一格空的图标位。`extra` 排在行尾。
+ */
 const itemContent = (
 	label: string,
 	reserveIconSpace: boolean,
-	icon?: LucideIcon,
+	lead?: ReactNode,
+	extra?: ReactNode,
 ) => (
 	<DropdownMenuItemContent>
-		{(icon || reserveIconSpace) && (
-			<DropdownMenuItemIcon>
-				{icon && <Icon icon={icon} />}
-			</DropdownMenuItemIcon>
+		{(lead || reserveIconSpace) && (
+			<DropdownMenuItemIcon>{lead}</DropdownMenuItemIcon>
 		)}
 		<DropdownMenuItemLabel>{label}</DropdownMenuItemLabel>
+		{extra !== undefined && (
+			<DropdownMenuItemExtra>{extra}</DropdownMenuItemExtra>
+		)}
 	</DropdownMenuItemContent>
 );
 
 const renderItem = (item: MenuItemType, reserveIconSpace: boolean) => (
 	<DropdownMenuItem
 		danger={item.danger}
+		disabled={item.disabled}
 		key={item.key}
 		label={item.label}
 		onClick={item.onClick}
 	>
-		{itemContent(item.label, reserveIconSpace, item.icon)}
+		{itemContent(
+			item.label,
+			reserveIconSpace,
+			item.icon && <Icon icon={item.icon} />,
+			item.extra,
+		)}
 	</DropdownMenuItem>
 );
 
-/** 这一组项里有没有带图标的（分组里的也算）。 */
+const CHECK = <Icon icon={CheckIcon} />;
+
+const renderCheckboxItem = (item: MenuCheckboxItemType) => (
+	<Menu.CheckboxItem
+		checked={item.checked}
+		className="ui-dropdown-menu-item"
+		disabled={item.disabled}
+		key={item.key}
+		label={item.label}
+		onCheckedChange={item.onCheckedChange}
+	>
+		{itemContent(
+			item.label,
+			true,
+			<Menu.CheckboxItemIndicator render={<span />}>
+				{CHECK}
+			</Menu.CheckboxItemIndicator>,
+			item.extra,
+		)}
+	</Menu.CheckboxItem>
+);
+
+const renderRadioGroup = (item: MenuRadioGroupType, index: number) => (
+	<Menu.RadioGroup
+		key={index}
+		onValueChange={(value) => item.onValueChange(value as string)}
+		value={item.value}
+	>
+		{item.options.map((option) => (
+			<Menu.RadioItem
+				className="ui-dropdown-menu-item"
+				disabled={option.disabled}
+				key={option.value}
+				label={option.label}
+				value={option.value}
+			>
+				{itemContent(
+					option.label,
+					true,
+					<Menu.RadioItemIndicator render={<span />}>
+						{CHECK}
+					</Menu.RadioItemIndicator>,
+					option.extra,
+				)}
+			</Menu.RadioItem>
+		))}
+	</Menu.RadioGroup>
+);
+
+/** 这一组项里有没有占图标位的：带图标的项、勾选项、单选项（分组里的也算）。 */
 const hasAnyIcon = (items: DropdownItem[]): boolean =>
 	items.some((item) =>
 		item.type === "group"
 			? hasAnyIcon(item.children)
-			: item.type === undefined && Boolean(item.icon),
+			: item.type === "checkbox" ||
+				item.type === "radio" ||
+				(item.type === undefined && Boolean(item.icon)),
 	);
 
 /**
@@ -433,6 +523,10 @@ export const renderDropdownMenuItems = (
 					{item.children.map((child) => renderItem(child, reserveIconSpace))}
 				</Menu.Group>
 			);
+
+		if (item.type === "checkbox") return renderCheckboxItem(item);
+
+		if (item.type === "radio") return renderRadioGroup(item, index);
 
 		if (item.type === "switch")
 			return (

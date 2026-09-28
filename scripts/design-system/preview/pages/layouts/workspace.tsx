@@ -1,8 +1,9 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import type { QueryBarHandle } from "#/components/query-bar";
 import { ConversationDrawer } from "#/routes/s/$turnId/-components/conversation-drawer";
 import { DetailModal } from "#/routes/s/$turnId/-components/detail-modal";
+import { FilterBar } from "#/routes/s/$turnId/-components/filter-bar";
 import { KeyHelp } from "#/routes/s/$turnId/-components/key-help";
 import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
 import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
@@ -10,6 +11,7 @@ import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
 import { Thread } from "#/routes/s/$turnId/-components/thread";
 import { WorkspaceLayout } from "#/routes/s/$turnId/-components/workspace-layout";
+import { filterFields, textFilters } from "#/routes/s/$turnId/-lib/filters";
 import { useIsWide } from "#/routes/s/$turnId/-lib/media";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { type View, validateView } from "#/routes/s/$turnId/-lib/view-params";
@@ -23,8 +25,8 @@ import { LayoutSwitch, Shell } from "./home";
 
 /*
  * 搜索结果页：产品的 `WorkspaceLayout` 喂样例数据。数据是样例里这次找人任务的
- * 最后一轮。导航栏是产品的筛选（`workbench-nav.tsx`，由内存 router 的
- * `/s/$turnId` 给出）；筛选和名单一样读写地址上的视图，但名单不重新检索。
+ * 最后一轮。名单上方是条件那一排和筛选；筛选和名单一样读写内存 router 地址上的视图，
+ * 但名单不重新检索。
  */
 
 type Panel = "thread" | "detail";
@@ -38,6 +40,7 @@ function Workspace() {
 	const [help, setHelp] = useState(false);
 	const [spec, setSpec] = useState<SearchSpec>(SPEC);
 	const outcome = OUTCOME;
+	const view = validateView(useSearch({ strict: false }));
 	const picks = usePicks(LATEST_TURN_ID, outcome);
 	const noop = () => {};
 
@@ -89,12 +92,19 @@ function Workspace() {
 					/>
 				}
 				notices={
-					<div className="flex flex-wrap items-center gap-1.5">
-						<QueryChips
-							conditions={spec.conditions}
-							onChange={(next) => setSpec({ conditions: next })}
+					<>
+						<div className="flex flex-wrap items-center gap-1.5">
+							<QueryChips
+								conditions={spec.conditions}
+								onChange={(next) => setSpec({ conditions: next })}
+							/>
+						</div>
+						<FilterBar
+							fields={filterFields(outcome.facets, view)}
+							onChange={updateView}
+							textFilters={textFilters(view)}
 						/>
-					</div>
+					</>
 				}
 				list={
 					<ResultList
@@ -165,7 +175,7 @@ function PanelSwitch() {
 	);
 }
 
-/** 搜索结果页：导航栏里的筛选、名单那一栏的抬头和名单、右栏，右栏在对话线程和人的详情之间切换。 */
+/** 搜索结果页：名单那一栏的抬头、条件与筛选、名单，右栏在对话线程和人的详情之间切换。 */
 export function WorkspacePage() {
 	return (
 		<Routed url={`/s/${LATEST_TURN_ID}`}>

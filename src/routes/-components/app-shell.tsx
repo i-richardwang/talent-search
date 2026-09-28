@@ -1,11 +1,5 @@
-import { useLoaderData, useLocation, useMatches } from "@tanstack/react-router";
-import {
-	type ComponentType,
-	type ReactNode,
-	useCallback,
-	useEffect,
-	useState,
-} from "react";
+import { useLoaderData, useLocation } from "@tanstack/react-router";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import {
 	AppContent,
 	AppLayout,
@@ -15,7 +9,7 @@ import {
 import { Button } from "#/components/ui/button";
 import { type NavPrefs, writeNavPrefs } from "../-lib/nav-prefs";
 import { AllRecentsDrawer } from "./all-recents";
-import { HomeNav } from "./home-nav";
+import { NavContent } from "./nav-content";
 import {
 	InDrawer,
 	NavControlContext,
@@ -23,18 +17,11 @@ import {
 	useNavHotkey,
 } from "./nav-control";
 
-declare module "@tanstack/react-router" {
-	interface StaticDataRouteOption {
-		/** 这一屏左侧导航栏里放什么；不给就是首页那一套（`HomeNav`）。 */
-		nav?: ComponentType;
-	}
-}
-
 /**
  * 每一屏共用的外壳：左侧导航落在画布上，右边一张内容卡片装这一屏。
  *
- * 导航栏里放什么由最深那一层路由的 `staticData.nav` 决定：搜索结果页放筛选，其余各屏
- * 是首页那一套（新搜索、最近搜索、管理页）。外壳只挂一次，换屏时导航栏不重挂。
+ * 导航栏每一屏都是同一套（`NavContent`：新搜索、最近搜索、管理页）。外壳只挂一次，
+ * 换屏时导航栏不重挂。
  *
  * lg 以上导航栏可以拖动调宽、可以收起（顶上的开关或 ⌘/Ctrl + [）。宽、收起和导航里
  * 哪几组收着记在 cookie 里，根路由的 loader 读出来交给这里，服务端直出的首帧就是记住的
@@ -46,14 +33,6 @@ declare module "@tanstack/react-router" {
  * 换屏就关上。
  */
 export function AppShell({ children }: { children: ReactNode }) {
-	const Nav =
-		useMatches({
-			select: (matches) =>
-				matches.reduce<ComponentType | undefined>(
-					(nav, m) => m.staticData.nav ?? nav,
-					undefined,
-				),
-		}) ?? HomeNav;
 	const [open, setOpen] = useState(false);
 	const [allRecents, setAllRecents] = useState(false);
 	const docked = useNavDocked();
@@ -109,7 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 					onWidthChange={(width) => setPrefs({ width: Math.round(width) })}
 					width={prefs.width}
 				>
-					<Nav />
+					<NavContent />
 					<AllRecentsDrawer
 						anchored={docked}
 						onClose={() => setAllRecents(false)}
@@ -121,7 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 			<AppNavDrawer label="导航" onClose={closeDrawer} open={open}>
 				<nav aria-label="导航" className="flex h-full flex-col">
 					<InDrawer value={closeDrawer}>
-						<Nav />
+						<NavContent />
 					</InDrawer>
 				</nav>
 			</AppNavDrawer>

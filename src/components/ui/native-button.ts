@@ -10,7 +10,9 @@ const NATIVE_BUTTON_COMPONENTS = new Set([
 	"ActionIcon",
 	"Button",
 	"CopyButton",
+	"FilterButton",
 	"FilterChipTrigger",
+	"ProgressTag",
 ]);
 
 /** 子元素是不是字面写的 `<button>`。 */

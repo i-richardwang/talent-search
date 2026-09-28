@@ -9,7 +9,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import { FilterPanel } from "#/routes/s/$turnId/-components/filter-panel";
+import { FilterBar } from "#/routes/s/$turnId/-components/filter-bar";
 import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
 import { filterFields, textFilters } from "#/routes/s/$turnId/-lib/filters";
 import type { View } from "#/routes/s/$turnId/-lib/view-params";
@@ -115,17 +115,10 @@ function Playground() {
 				className="items-stretch p-0"
 				footer={<span>筛选只换这次名单的看法，不改搜索条件</span>}
 			>
-				<div className="flex min-h-0">
-					<div className="w-nav flex-none bg-layout px-1 py-4">
-						<FilterPanel
-							fields={fields}
-							onChange={change}
-							textFilters={texts}
-						/>
-					</div>
-					<p className="min-w-0 flex-1 p-4 text-fg-secondary text-xs leading-5">
-						筛选在搜索结果页的导航栏里，身份和「新搜索」下面；窄屏上导航栏收进
-						抽屉，筛选跟着一起进去。
+				<div className="flex flex-col gap-3 p-4">
+					<FilterBar fields={fields} onChange={change} textFilters={texts} />
+					<p className="text-fg-secondary text-xs leading-5">
+						筛选在名单正上方，条件那一排的下面；点开一维，每一项后面写着选了之后还剩几个人。
 					</p>
 				</div>
 			</Stage>
@@ -257,10 +250,10 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
-				description="已选的筛选排在最前、带「清除」；公司、学校这类名称条件没有候选，只能看见和清掉。计数都是人。"
+				description="筛过的一维铺上底色、写出选了什么，菜单末尾有「清除」；公司、学校这类名称条件没有候选，只能看见和清掉。计数都是人。"
 				title="已经筛过的名单"
 			>
-				<FilterPanel
+				<FilterBar
 					fields={fields}
 					onChange={(next) => setView((old) => ({ ...old, ...next }))}
 					textFilters={textFilters(view)}
@@ -293,7 +286,7 @@ function Usage() {
 export function ConditionsPage() {
 	return (
 		<DocPage
-			facts={[`${MODES.length} 种强度`, "可停用", "导航栏里的筛选"]}
+			facts={[`${MODES.length} 种强度`, "可停用", "名单上方的筛选"]}
 			rules={{
 				notes: [
 					"强度写成字：必须是默认，不写；加分、排除跟在标签后面，和写进句子里的「（加分）」同一个说法。停用按条件本身记着，下次整理原样带回。",
@@ -301,9 +294,9 @@ export function ConditionsPage() {
 					"改条件是换一个问题，记成新的一次搜索；筛选是同一次搜索换个看法，写进地址，浏览器后退可撤销。",
 					"关键词搜索的查询面只放填词的维，有限取值的维只在筛选栏：同一维不在两处出现。",
 					"累计年限（搜索条件）和经历时长（筛选）不是一件事，各有各的标签。",
-					"筛选控件的计数单位是人；单选用 Radio，多选用 Checkbox，菜单里的开关用开关项。",
+					"筛选的计数单位是人；多选的维是菜单里的勾选项，单选的维是单选项，最前面是「不限」。",
 				],
-				usage: `<QueryChips conditions={spec.conditions} onChange={revise} />\n<FilterPanel\n  fields={filterFields(facets, view)}\n  onChange={updateView}\n  textFilters={textFilters(view)}\n/>`,
+				usage: `<QueryChips conditions={spec.conditions} onChange={revise} />\n<FilterBar\n  fields={filterFields(facets, view)}\n  onChange={updateView}\n  textFilters={textFilters(view)}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用" },

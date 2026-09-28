@@ -180,6 +180,8 @@ const CATALOG = [
 			component("collapse", "分组卡片", "Collapse"),
 			component("empty", "空状态", "Empty"),
 			component("filter-chip", "条件药丸", "FilterChip"),
+			component("filter-button", "筛选钮", "FilterButton"),
+			component("progress-tag", "进度标签", "ProgressTag"),
 			component("suggestion-chips", "建议列", "SuggestionChips"),
 			component("skeleton", "骨架屏", "Skeleton"),
 			component("neural-loading", "AI 进行中", "NeuralLoading"),
@@ -218,7 +220,7 @@ const CATALOG = [
 				slug: "conditions",
 				source: [
 					"src/routes/s/$turnId/-components/query-chips.tsx",
-					"src/routes/s/$turnId/-components/filter-panel.tsx",
+					"src/routes/s/$turnId/-components/filter-bar.tsx",
 				],
 				title: "搜索条件与筛选",
 			},
@@ -304,7 +306,7 @@ const CATALOG = [
 				slug: "home",
 				source: [
 					"src/routes/-components/app-shell.tsx",
-					"src/routes/-components/home-nav.tsx",
+					"src/routes/-components/nav-content.tsx",
 					"src/routes/-components/page-header.tsx",
 					"src/routes/-components/home-screen.tsx",
 				],
@@ -315,7 +317,6 @@ const CATALOG = [
 				slug: "workspace",
 				source: [
 					"src/routes/s/$turnId/-components/workspace-layout.tsx",
-					"src/routes/s/$turnId/-components/workbench-nav.tsx",
 					"src/routes/s/$turnId/-components/query-header.tsx",
 				],
 				title: "搜索工作台",

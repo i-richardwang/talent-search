@@ -41,13 +41,13 @@ import { LoadFailed, RecentItem, useRetryRoot } from "./recent-item";
 const GROUPS = ["recent"] as const;
 
 /**
- * 首页那一套导航：身份、新搜索，下面可以滚动的一栏里是最近搜索这一组，管理页的
- * 几项沉在这一栏的底上。除了搜索结果页，每一屏的导航栏都是它（`app-shell.tsx`）。
+ * 导航栏的内容，每一屏都是这一套（`app-shell.tsx`）：身份、新搜索，下面可以滚动的
+ * 一栏里是最近搜索这一组，管理页的几项沉在这一栏的底上。
  *
  * 最近搜索能收起，收没收着记在导航栏记住的样子里（`nav-prefs.ts`）。
  * 还没有搜索记录时这一组整个不画：首页那一栏有起步的例子。
  */
-export function HomeNav() {
+export function NavContent() {
 	const { recent } = useLoaderData({ from: "__root__" });
 	const control = useNavControl();
 	const matchRoute = useMatchRoute();

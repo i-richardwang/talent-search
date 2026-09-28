@@ -9,7 +9,6 @@ import {
 import { createContext, type ReactNode, use, useState } from "react";
 import type { TablePage } from "#/lib/paging";
 import { type NavPrefs, navPrefsOf } from "#/routes/-lib/nav-prefs";
-import { WorkbenchNav } from "#/routes/s/$turnId/-components/workbench-nav";
 import type { RecentSearch } from "#/server/turn";
 import { OUTCOME } from "./samples/people";
 import { RECENT, THREAD } from "./samples/thread";
@@ -20,8 +19,8 @@ import { RECENT, THREAD } from "./samples/thread";
  * `/preview`。页的内容是根路由画的东西，于是组件站在一个真的匹配里。
  *
  * 路由的形状和产品一致到组件读得到的程度：根路由的 loader 交出导航栏记住的样子、
- * 最近搜索和 AI 服务配没配，`/s/$turnId` 交出线程和名单、导航栏换成它的筛选（`staticData.nav`），
- * 人的详情挂在它下面。loader 都是同步读样例，建 router 时就把这一地址的匹配和
+ * 最近搜索和 AI 服务配没配，`/s/$turnId` 交出线程和名单，人的详情挂在它下面。
+ * loader 都是同步读样例，建 router 时就把这一地址的匹配和
  * loader 数据放好，服务端渲染（页的测试）一次就画得出来。
  */
 
@@ -61,7 +60,6 @@ function memoryRouter(url: string, rootData: RootData) {
 		getParentRoute: () => root,
 		loader: () => TURN_DATA,
 		path: "/s/$turnId",
-		staticData: { nav: WorkbenchNav },
 	});
 	const router = createRouter({
 		history: createMemoryHistory({ initialEntries: [url] }),

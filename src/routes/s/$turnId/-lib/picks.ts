@@ -1,15 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { evidenceText } from "#/components/evidence";
-import { claimName } from "#/search/condition-label";
-import { bestHitPerClaim } from "#/search/evidence";
 import type {
 	Claim,
-	ClaimBasis,
-	Hit,
 	RankedResult,
 	ResultEmployee,
 	SearchOutcome,
 } from "#/search/result";
+import { type ClaimLine, claimLines } from "./claim-lines";
 
 /**
  * 选中待导出的一个人：选中那一刻的快照。改筛选后被筛掉的人仍算选中，导出的就是
@@ -30,10 +27,8 @@ export type Pick = {
 /** 名单上的一项：渲染需要的数据和选中需要的数据出自同一次推导。 */
 type Row = {
 	employee: ResultEmployee;
-	/** 命中的主张，逐条渲染一行 */
-	hits: { claim: Claim; name: string; hit: Hit; basis: ClaimBasis }[];
-	/** 没命中的主张的名字，合成一行 */
-	missed: string[];
+	/** 每条主张一格，和 `SearchOutcome.claims` 同序 */
+	lines: ClaimLine[];
 	pick: Pick;
 };
 
@@ -50,7 +45,7 @@ function withAll(rows: Row[]) {
 
 /**
  * 把一条结果推导成名单上的一项。有没有证据由调用方按 `SearchOutcome.order` 决定，
- * 按人排时传 `null`。一条主张的样例段和聚合依据缺一个就算未命中。
+ * 按人排时传 `null`。
  */
 function rowOf(
 	e: ResultEmployee,
@@ -58,21 +53,15 @@ function rowOf(
 	rank: number,
 	claims: Claim[],
 ): Row {
-	const best = bestHitPerClaim(ranked?.hits ?? [], claims);
-	const lines = claims.map((claim, i) => {
-		const hit = best[i];
-		const basis = ranked?.basis[i];
-		return hit && basis ? { basis, hit, claim, name: claimName(claim) } : null;
-	});
+	const lines = claimLines(ranked, claims);
 	return {
 		employee: e,
-		hits: lines.filter((line) => line !== null),
-		missed: claims.filter((_, i) => !lines[i]).map(claimName),
+		lines,
 		pick: {
 			dept: e.curDept,
 			empId: e.empId,
-			evidence: lines.map((line) =>
-				line ? evidenceText(line.name, line.hit, line.basis) : null,
+			evidence: lines.map(({ name, found }) =>
+				found ? evidenceText(name, found.hit, found.basis) : null,
 			),
 			level: e.curLevel,
 			name: e.name,

@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { EvidenceLine, MissedClaims } from "#/components/evidence";
 import { Button } from "#/components/ui/button";
 import { Checkbox, CheckboxGroup } from "#/components/ui/checkbox";
 import {
@@ -15,7 +14,6 @@ import { Tooltip } from "#/components/ui/tooltip";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
-import { conditionKey } from "#/search/condition";
 import { claimName } from "#/search/condition-label";
 import { claimsOf, type SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
@@ -23,6 +21,7 @@ import { RESULT_PAGE } from "#/search/weights";
 import type { InterpretFault, SearchMode } from "#/server/turn";
 import type { Picks } from "../-lib/picks";
 import { reachOf, type View } from "../-lib/view-params";
+import { ClaimProgress, ClaimRow } from "./claim-evidence";
 import { PickDock } from "./pick-dock";
 import {
 	NoResults,
@@ -55,7 +54,7 @@ function useDelayed(on: boolean) {
 	return on && elapsed;
 }
 
-/** 名单一行的占位：姓名和岗位一行，两行证据，留白与真的一行相同。 */
+/** 名单一行的占位：姓名和岗位一行，下面一行条件词，留白与真的一行相同。 */
 function RowSkeleton() {
 	return (
 		<ListViewRow aria-hidden="true">
@@ -63,10 +62,7 @@ function RowSkeleton() {
 				<Skeleton.Text className="w-auto shrink-0" size="sm" width="4em" />
 				<Skeleton.Text className="min-w-0 flex-1" size="xs" width="40%" />
 			</div>
-			<div className="mt-1 space-y-1">
-				<Skeleton.Text size="sm" width="72%" />
-				<Skeleton.Text size="sm" width="56%" />
-			</div>
+			<Skeleton.Text className="mt-1" size="xs" width="48%" />
 		</ListViewRow>
 	);
 }
@@ -137,13 +133,20 @@ export function ResultList({
 		</ListViewHeader>
 	);
 
-	const rows = picks.rows.map(({ employee: e, hits, missed }) => {
+	/*
+	 * 一行固定两行字高，条件再多也不长：第一行姓名和岗位，行尾是几条里命中几条的进度
+	 * 标签；第二行每条条件一个词和一颗点。逐条的依据在进度标签的气泡和人的详情里。
+	 * 按人排的名单（没有主张）只有第一行。
+	 */
+	const evidenced = claims.length > 0;
+	const rows = picks.rows.map(({ employee: e, lines }) => {
 		const current = e.empId === empId;
 		return (
 			<ListViewRow
 				className={cn("scroll-my-12", wait?.list === "dim" && "opacity-60")}
 				current={current}
 				data-emp={e.empId}
+				extra={evidenced && <ClaimProgress lines={lines} name={e.name} />}
 				key={e.empId}
 				pick={
 					<Checkbox
@@ -183,20 +186,7 @@ export function ResultList({
 						{positionLabel(e)}
 					</Text>
 				</div>
-				{claims.length > 0 && (
-					<div className="mt-1 space-y-1">
-						{hits.map(({ claim, name, hit, basis }) => (
-							<EvidenceLine
-								basis={basis}
-								boost={claim.mode === "boost"}
-								hit={hit}
-								key={conditionKey(claim)}
-								name={name}
-							/>
-						))}
-						<MissedClaims names={missed} />
-					</div>
-				)}
+				{evidenced && <ClaimRow lines={lines} />}
 			</ListViewRow>
 		);
 	});

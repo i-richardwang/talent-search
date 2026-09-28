@@ -22,6 +22,7 @@ import { DraggablePanelPage } from "./components/draggable-panel";
 import { DrawerPage } from "./components/drawer";
 import { DropdownMenuPage } from "./components/dropdown-menu";
 import { EmptyPage } from "./components/empty";
+import { FilterButtonPage } from "./components/filter-button";
 import { FilterChipPage } from "./components/filter-chip";
 import { FlexPage } from "./components/flex";
 import { FormPage } from "./components/form";
@@ -35,6 +36,7 @@ import { ModalPage } from "./components/modal";
 import { NavItemPage } from "./components/nav-item";
 import { NeuralLoadingPage } from "./components/neural-loading";
 import { PopoverPage } from "./components/popover";
+import { ProgressTagPage } from "./components/progress-tag";
 import { RadioPage } from "./components/radio";
 import { ScrollAreaPage } from "./components/scroll-area";
 import { SearchBarPage } from "./components/search-bar";
@@ -122,6 +124,8 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/code-block": CodeBlockPage,
 	"components/copy-button": CopyButtonPage,
 	"components/filter-chip": FilterChipPage,
+	"components/filter-button": FilterButtonPage,
+	"components/progress-tag": ProgressTagPage,
 	"components/suggestion-chips": SuggestionChipsPage,
 	"components/tooltip": TooltipPage,
 	"components/popover": PopoverPage,

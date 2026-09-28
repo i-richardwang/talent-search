@@ -19,15 +19,16 @@ import { useCommit } from "../../-lib/commit";
 import { ConversationDrawer } from "./-components/conversation-drawer";
 import { DetailModal } from "./-components/detail-modal";
 import { Earlier } from "./-components/earlier";
+import { FilterBar } from "./-components/filter-bar";
 import { KeyHelp } from "./-components/key-help";
 import { QueryChips } from "./-components/query-chips";
 import { QueryHeader } from "./-components/query-header";
 import { type ListWait, ResultList } from "./-components/result-list";
 import { SidePanel } from "./-components/side-panel";
 import { Thread } from "./-components/thread";
-import { WorkbenchNav } from "./-components/workbench-nav";
 import { WorkspaceLayout } from "./-components/workspace-layout";
 import { useCloseDetail, useEditQuery } from "./-lib/edit-query";
+import { filterFields, textFilters } from "./-lib/filters";
 import { useInterpretation } from "./-lib/interpret";
 import { useKeyboardFlow } from "./-lib/keyboard-flow";
 import { useIsWide } from "./-lib/media";
@@ -68,7 +69,6 @@ export const Route = createFileRoute("/s/$turnId")({
 		if (!data) throw notFound();
 		return data;
 	},
-	staticData: { nav: WorkbenchNav },
 	component: Workbench,
 	notFoundComponent: TurnNotFound,
 });
@@ -126,6 +126,12 @@ function Workbench() {
 
 	const updateView = (next: Partial<View>) =>
 		navigate({ to: ".", search: (old) => ({ ...old, n: undefined, ...next }) });
+
+	const fields = filterFields(outcome.facets, view);
+	const texts = textFilters(view);
+	// 数得出人的维、或者生效的文本条件，至少有一样才有东西可筛
+	const filtering =
+		fields.some((f) => f.options.length > 0) || texts.length > 0;
 
 	const keywords = mode === "keyword" ? keywordsOf(spec.conditions) : null;
 	// 对话的条件表在 chip 上改；关键词的条件就在框里，不另排一行
@@ -226,8 +232,9 @@ function Workbench() {
 				}
 				notices={
 					/* 关键词搜索的框在名单正上方：改完第一眼看到的是它改了什么，
-				   再往下才是人。对话的输入不在这里，在右栏的线程里；这里是它的条件那一排。 */
-					(earlier || mode === "keyword" || chips) && (
+				   再往下才是人。对话的输入不在这里，在右栏的线程里；这里是它的条件那一排。
+				   筛选紧挨着名单，在条件或框的下面。 */
+					(earlier || mode === "keyword" || chips || filtering) && (
 						<>
 							{earlier && <Earlier latestId={latest.id} />}
 							{chips && (
@@ -244,6 +251,13 @@ function Workbench() {
 									key={turnId}
 									onSearch={(conditions) => reviseSpec({ conditions })}
 									ref={keywordBar}
+								/>
+							)}
+							{filtering && (
+								<FilterBar
+									fields={fields}
+									onChange={updateView}
+									textFilters={texts}
 								/>
 							)}
 						</>

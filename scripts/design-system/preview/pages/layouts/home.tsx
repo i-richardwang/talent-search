@@ -7,8 +7,8 @@ import { HomeScreen } from "#/routes/-components/home-screen";
 import { type RootData, Routed } from "../../routed";
 
 /*
- * 页面布局模块共用的外壳：产品的 `AppShell`。导航栏放什么、最近搜索有哪几条，
- * 都由预览页自己的内存 router 按地址给出（`routed.tsx`），链接也走它。
+ * 页面布局模块共用的外壳：产品的 `AppShell`。最近搜索有哪几条由预览页自己的内存
+ * router 给出（`routed.tsx`），链接也走它。
  */
 
 /** `<body>` 那一层的字色，然后是产品外壳和这一屏的内容。 */

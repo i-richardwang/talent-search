@@ -6,6 +6,7 @@ import {
 import { claimName } from "#/search/condition-label";
 import { fetchEmployee } from "#/server/functions";
 import { Person, PersonNotFound, PersonPending } from "./-components/person";
+import { claimLines } from "./-lib/claim-lines";
 
 export const Route = createFileRoute("/s/$turnId/p/$empId")({
 	loader: async ({ params }) => {
@@ -38,6 +39,7 @@ function Detail() {
 		<Person
 			employee={employee}
 			hits={result?.hits ?? []}
+			lines={result && search ? claimLines(result, search.claims) : []}
 			names={search?.claims.map(claimName) ?? []}
 			timeline={timeline}
 		/>
