@@ -1,72 +1,69 @@
 /**
- * 查询理解的三个工具：查词、查名称、交表。
+ * 查询理解时模型能用的三个工具：查经历词、查公司名和学校名、提交搜索条件。
  *
- * 查词和查名称回答同一个问题——「这样写，搜索会怎么读」：一个经历词按检索口径
- * 能找到多少人、宽不宽、命中了库里哪些能力词；一个公司名或学校名匹配到多少人、
- * 匹配到库里哪些名字。口径就是搜索的口径（`search/search.ts`），查到的和写进条件
- * 后搜到的是一回事。
+ * 前两个工具回答同一个问题：「这样写，搜索会找到什么」。查一个经历词，得到它能
+ * 找到多少人、是不是太宽、人才库里对应哪些能力词；查一个公司名或学校名，得到它能
+ * 匹配到多少人、匹配到人才库里哪些公司或学校。它们和搜索用同一套匹配规则
+ * （`search/search.ts`），查到的人数就是写进条件后搜出来的人数。
  *
- * 交表就是这一轮的答案，交上来先检查：词表外的取值、这一轮新写的太宽或一个人都
- * 找不到的经历词、一个人都匹配不到的名字、什么都没写，退回去让模型改。有的问题是
- * 用户要的本来就是库里没有的，模型原样再交一次就收下：没有这样的人也是一个结果。
- * 收下之后由调用方收窄落库（`server/turn.ts`）。
+ * 提交的搜索条件先检查：有没有词表里没有的取值，这一轮新写的经历词是不是太宽、
+ * 是不是一个人都找不到，名字是不是一个人都匹配不到，是不是什么都没写。有问题就把
+ * 问题告诉模型，让它改了再提交。有时问题出在用户明说的要求上，人才库里本来就没有
+ * 这样的人，这时模型把同一份条件原样再提交一次，就算通过：没有这样的人也是一个结果。
  *
- * 工具只交出数和库里的写法，不交出人：姓名、工号、任何一段经历都不出这台机器，
- * 名单也照旧只从检索来。交出去的词和名字至少有几个人写过（`search.ts`），
- * 部门名只计人数。
+ * 工具只给模型人数和人才库里的写法，不给人：姓名、工号、任何一段经历都不发给模型，
+ * 名单也只从搜索来。发给模型的能力词和公司、学校名，至少有几个人写过（`search.ts`）；
+ * 公司内的部门名只给人数。
  *
- * 查词、查名称每用一次记一步（`search/trace.ts`），由调用方落库，右栏的线程边跑边画。
+ * 模型每查一次，就记下一步（`search/trace.ts`），由调用方写进查询记录，界面边跑边画。
  */
 import "@tanstack/react-start/server-only";
 import { tool } from "ai";
 import { z } from "zod";
 import type { Condition } from "#/search/condition";
 import {
-	type Intent,
-	intentSchema,
-	measuredIn,
-	offVocabulary,
+	needsWidthCheck,
+	type Submission,
+	submissionSchema,
 	unanswered,
 	understood,
 	type Vocabulary,
+	valuesOutsideVocabulary,
 } from "#/search/intent";
-import { nameReach, termReach, vocabulary } from "#/search/search";
+import { findNames, findTerms, vocabulary } from "#/search/search";
 import type { NameField, TraceStep } from "#/search/trace";
 
-type Recorder = (step: TraceStep) => Promise<void>;
-
-/** 交表的工具名：这一轮的答案是它最后一次收到的那张表。 */
+/** 提交搜索条件的工具名。 */
 export const SUBMIT = "submit";
 
 /** 一次最多查几个词或名字。 */
-const ASK_MAX = 12;
+const LOOKUP_MAX = 12;
 
-function asked(list: readonly string[]): string[] {
+/** 模型要查的词或名字：去掉首尾空白、空的和重复的，最多 `LOOKUP_MAX` 个。 */
+function lookupInputs(list: readonly string[]): string[] {
 	return [...new Set(list.map((w) => w.trim()).filter(Boolean))].slice(
 		0,
-		ASK_MAX,
+		LOOKUP_MAX,
 	);
 }
 
 /**
- * 一份交上来的表有什么要退回去的，一处一句；没有就是空的。
- * 条件表和每一条搜不了的要求附带的替代条件一起查：替代条件点一下就进查询，
- * 同样没有人看过。
+ * 检查一份提交的搜索条件，每个问题一句话；没有问题返回空数组。
+ * 条件和每条「搜不了」附带的替代条件一起检查：替代条件点一下就会加进搜索。
  */
-async function problemsOf(
-	table: Intent,
+async function checkSubmission(
+	submitted: Submission,
 	vocab: Vocabulary,
 	base: readonly Condition[],
 ): Promise<string[]> {
-	const result = understood(table, vocab, base);
-	const failure = unanswered(table, result);
+	const result = understood(submitted, vocab, base);
+	const failure = unanswered(submitted, result);
 	if (failure) return [failure];
 	const conditions = [
 		...result.spec.conditions,
 		...(result.notes?.declined ?? []).flatMap((d) => d.instead),
 	];
-	const measured = measuredIn(base);
-	const words = conditions.filter(measured).flatMap((c) => c.what);
+	const words = conditions.filter(needsWidthCheck(base)).flatMap((c) => c.what);
 	const namesOf = (field: NameField) =>
 		conditions.flatMap((c) =>
 			field === "org"
@@ -78,17 +75,17 @@ async function problemsOf(
 					: [],
 		);
 	const [terms, orgs, schools] = await Promise.all([
-		termReach(words),
-		nameReach("org", namesOf("org")),
-		nameReach("school", namesOf("school")),
+		findTerms(words),
+		findNames("org", namesOf("org")),
+		findNames("school", namesOf("school")),
 	]);
 	return [
-		...offVocabulary(table, vocab),
+		...valuesOutsideVocabulary(submitted, vocab),
 		...terms.flatMap((t) =>
 			t.wide
 				? [`「${t.text}」能找到 ${t.people} 人，几乎不筛人，换更具体的说法`]
 				: t.people === 0
-					? [`「${t.text}」在人才库里一个人都找不到，换库里的说法`]
+					? [`「${t.text}」在人才库里一个人都找不到，换人才库里的说法`]
 					: [],
 		),
 		...[...orgs, ...schools].flatMap((n) =>
@@ -98,8 +95,8 @@ async function problemsOf(
 }
 
 /**
- * 交给模型的工具。`record` 每查一次记一步；词表和当前条件是这一轮的，交表的检查
- * 要它们。
+ * 一次查询理解用的工具，连同模型最后一次提交的搜索条件。
+ * `record` 在模型每查一次时记下一步；词表和上一轮的条件用来检查提交的搜索条件。
  */
 export function agentTools({
 	vocab,
@@ -108,26 +105,27 @@ export function agentTools({
 }: {
 	vocab: Vocabulary;
 	base: readonly Condition[];
-	record: Recorder;
+	record: (step: TraceStep) => Promise<void>;
 }) {
-	/** 上一次退回的那份表：原样再交一次就收下。 */
-	let returned: string | null = null;
-	return {
+	/** 模型最后一次提交的搜索条件，和检查出的问题。 */
+	let last: { submitted: Submission; json: string; problems: string[] } | null =
+		null;
+	const tools = {
 		find_terms: tool({
 			description:
-				"查几个经历词：按搜索的方式各能找到多少人、会不会太宽、命中了库里哪些能力词。",
+				"查几个经历词：按搜索的方式各能找到多少人、是不是太宽、对应人才库里哪些能力词。",
 			inputSchema: z.object({
 				texts: z.array(z.string()).describe("要查的词，一次可以几个"),
 			}),
 			execute: async ({ texts }) => {
-				const terms = await termReach(asked(texts));
+				const terms = await findTerms(lookupInputs(texts));
 				await record({ at: Date.now(), tool: "find_terms", terms });
 				return terms;
 			},
 		}),
 		find_names: tool({
 			description:
-				"查几个公司名或学校名：各能匹配到多少人、匹配到库里哪些名字。名字按包含匹配。",
+				"查几个公司名或学校名：各能匹配到多少人、匹配到人才库里哪些公司或学校。名字按包含匹配。",
 			inputSchema: z.object({
 				field: z
 					.enum(["org", "school"])
@@ -135,7 +133,7 @@ export function agentTools({
 				names: z.array(z.string()).describe("要查的名字，一次可以几个"),
 			}),
 			execute: async ({ field, names }) => {
-				const found = await nameReach(field, asked(names));
+				const found = await findNames(field, lookupInputs(names));
 				await record({
 					at: Date.now(),
 					tool: "find_names",
@@ -147,25 +145,34 @@ export function agentTools({
 		}),
 		[SUBMIT]: tool({
 			description:
-				"交出整张新的条件表和说明，这一轮就结束。有问题会退回并写明，改完再交；问题出在用户明说的要求上时，原样再交一次。",
-			inputSchema: intentSchema,
-			execute: async (table) => {
-				const key = JSON.stringify(table);
-				const problems =
-					key === returned ? [] : await problemsOf(table, vocab, base);
-				returned = problems.length > 0 ? key : null;
+				"提交整份新的搜索条件和说明。检查通过，这一轮就结束；没通过会告诉你哪里有问题，改好再提交。问题出在用户明说的要求上时，把同一份条件原样再提交一次。",
+			inputSchema: submissionSchema,
+			execute: async (submitted) => {
+				const json = JSON.stringify(submitted);
+				const resubmitted = last !== null && last.json === json;
+				const problems = resubmitted
+					? []
+					: await checkSubmission(submitted, vocab, base);
+				last = { submitted, json, problems };
 				return problems.length > 0
-					? { accepted: false as const, problems }
-					: { accepted: true as const };
+					? { passed: false, problems }
+					: { passed: true };
 			},
 		}),
+	};
+	return {
+		tools,
+		/** 最后一次提交通过了检查。 */
+		passed: () => last !== null && last.problems.length === 0,
+		/** 最后一次提交的搜索条件，没通过检查的也算；还没提交过是 undefined。 */
+		lastSubmitted: () => last?.submitted,
 	};
 }
 
 export type AgentTools = ReturnType<typeof agentTools>;
 
-/** 脚本用：不落库的一套工具，词表现取。 */
-export async function detachedTools(base: readonly Condition[]) {
+/** 给验收脚本用：不记步骤的一套工具，词表现取。 */
+export async function agentToolsWithoutTrace(base: readonly Condition[]) {
 	return agentTools({
 		vocab: await vocabulary(),
 		base,

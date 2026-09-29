@@ -132,7 +132,7 @@ function isPersonDim(field: PersonField): field is PersonDim {
 }
 
 /**
- * 一个经历词最长几个字。上限住在这里，`intentSchema` 的描述里不写数字：
+ * 一个经历词最长几个字。上限住在这里，`submissionSchema` 的描述里不写数字：
  * 写成 schema 约束的话，模型多给一个长词就是整条响应作废，而收窄只会丢掉那一个词。
  */
 export const MAX_TERM_LEN = 24;

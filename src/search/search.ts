@@ -92,31 +92,32 @@ function anyLike(names: readonly string[], columns: SQL[]) {
 }
 
 /**
- * 给查询理解看的库里的词和名字，至少这么多人写过才给出去。冷僻的写法和小公司的名字
- * 连着人数一起出门，就能被认回到具体的人；查询理解的端点可以在公网上。
+ * 发给查询理解模型的能力词和公司、学校名，至少这么多人写过才发。冷僻的写法和小公司的
+ * 名字连同人数一起发出去，就能反推出是哪个人；而查询理解的端点可以在公网上。
  */
-const SHOWN_MIN_PEOPLE = 5;
+const MIN_PEOPLE_TO_SHOW = 5;
 
 /** 一个词命中的标准能力词、一个名字匹配到的公司或学校，各最多给几个。 */
-const SHOWN_MAX = 8;
+const MAX_TO_SHOW = 8;
 
 /**
- * 这些经历词按检索口径各命中多少人、宽不宽、命中了哪些标准能力词。
+ * 这些经历词各能找到多少人、是不是太宽、对应人才库里哪些标准能力词。
  *
- * 口径就是取数的口径：同一次准入（`RELEVANCE_MIN`），同一批说法沿
- * `experience_phrase` 走到人。查询理解查一个词看到的人数，就是只拿这个词搜
- * 出来的人数；宽度也只有这一个量法，交表时和理解落库前都用它（`server/turn.ts`）。
+ * 和搜索用同一套匹配：同样的相关度门槛（`RELEVANCE_MIN`），同样沿
+ * `experience_phrase` 从说法找到人。查一个词看到的人数，就是只拿这个词搜出来的
+ * 人数。判断太宽也只有这一种算法，检查提交的条件和写进查询记录前都用它
+ * （`server/agent-tools.ts`、`server/turn.ts`）。
  *
  * 单位是人，不是经历段：一个囤了九段命中经历的人会被按段数成九个，段占比很高、
  * 名单上却只多他一个人的词，根本不宽。「一个词在语料里有几千种说法」也不是宽：
  * 短语上向量分不开「客服」和「相关」，两者过线的说法一样多。
  *
- * 命中的说法可以是整段简历原文，所以交出去的只有其中的能力词，映到标准写法
- * （`skill_term.canonical`），写的人少于 `SHOWN_MIN_PEOPLE` 的不给。
- * 只探语料、不带筛选：宽不宽只由词和语料决定。
- * 排除词按更高的 `RELEVANCE_MIN_EXCLUDE` 判，这里量出来的不是它搜出来的宽。
+ * 命中的说法可能是整段简历原文，所以发给模型的只有其中的能力词，换成标准写法
+ * （`skill_term.canonical`），写的人少于 `MIN_PEOPLE_TO_SHOW` 的不发。
+ * 不带筛选：宽不宽只由词和人才库决定。
+ * 排除词按更高的 `RELEVANCE_MIN_EXCLUDE` 判断，这里算出的宽度不适用于排除词。
  */
-export async function termReach(texts: string[]): Promise<TermFinding[]> {
+export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 	const asked = [...new Set(texts)];
 	if (asked.length === 0) return [];
 	return withAdmission(asked, RELEVANCE_MIN, async (store, { admitted }) => {
@@ -133,7 +134,7 @@ export async function termReach(texts: string[]): Promise<TermFinding[]> {
 			),
 		);
 		if (!table) return out;
-		const reach = await store.execute<{
+		const counts = await store.execute<{
 			claim_idx: number;
 			people: number;
 		}>(sql`
@@ -147,7 +148,7 @@ export async function termReach(texts: string[]): Promise<TermFinding[]> {
 				sql`select count(distinct emp_id)::int as n from experience`,
 			)
 		).rows;
-		for (const row of reach.rows) {
+		for (const row of counts.rows) {
 			const r = out[row.claim_idx];
 			if (!r) continue;
 			r.people = row.people;
@@ -168,13 +169,13 @@ export async function termReach(texts: string[]): Promise<TermFinding[]> {
 				left join skill_term t on t.word = ph.text
 				join experience e on e.id = ep.experience_id
 				group by q.claim_idx, 2
-				having count(distinct e.emp_id) >= ${SHOWN_MIN_PEOPLE}
+				having count(distinct e.emp_id) >= ${MIN_PEOPLE_TO_SHOW}
 			)
 			select claim_idx, name, people from (
 				select *, row_number() over (
 					partition by claim_idx order by relevance desc, people desc, name
 				) as n from hit
-			) ranked where n <= ${SHOWN_MAX}
+			) ranked where n <= ${MAX_TO_SHOW}
 			order by claim_idx, n`);
 		for (const row of terms.rows)
 			out[row.claim_idx]?.terms.push({ name: row.name, people: row.people });
@@ -183,13 +184,13 @@ export async function termReach(texts: string[]): Promise<TermFinding[]> {
 }
 
 /**
- * 这些名字按检索口径各匹配到多少人、匹配到库里的哪些名字。
+ * 这些名字各能匹配到多少人、匹配到人才库里哪些公司或学校。
  *
- * 匹配和条件同一个口径（`anyLike`）：名字是专有名词，按包含匹配，不进向量。
- * 公司名在公司内的任职上匹配的是部门名和部门路径，那是内部信息，只计人数，
- * 交出去的名字只取入职前经历的公司名，写的人少于 `SHOWN_MIN_PEOPLE` 的不给。
+ * 和搜索条件用同一套匹配（`anyLike`）：名字是专有名词，按包含匹配，不用向量。
+ * 公司名在公司内的任职上匹配的是部门名和部门路径，那是内部信息，只算进人数；
+ * 发给模型的名字只取入职前经历的公司名，写的人少于 `MIN_PEOPLE_TO_SHOW` 的不发。
  */
-export async function nameReach(
+export async function findNames(
 	field: NameField,
 	names: string[],
 ): Promise<NameFinding[]> {
@@ -197,7 +198,7 @@ export async function nameReach(
 	return withCorpusSnapshot(async (store) => {
 		const out: NameFinding[] = [];
 		for (const name of asked) {
-			const reach =
+			const countPeople =
 				field === "org"
 					? sql`select count(distinct e.emp_id)::int as n from experience e
 						where ${anyLike([name], [sql`e.org`, sql`e.org_path`])}`
@@ -212,11 +213,11 @@ export async function nameReach(
 					: sql`select p.school as name, count(*)::int as people
 						from employee p where ${anyLike([name], [sql`p.school`])}
 						group by p.school`;
-			const [people] = (await store.execute<{ n: number }>(reach)).rows;
+			const [people] = (await store.execute<{ n: number }>(countPeople)).rows;
 			const shown = await store.execute<{ name: string; people: number }>(sql`
 				select name, people from (${matched}) m
-				where people >= ${SHOWN_MIN_PEOPLE}
-				order by people desc, name limit ${SHOWN_MAX}`);
+				where people >= ${MIN_PEOPLE_TO_SHOW}
+				order by people desc, name limit ${MAX_TO_SHOW}`);
 			out.push({ name, people: people?.n ?? 0, names: shown.rows });
 		}
 		return out;
@@ -283,7 +284,7 @@ type FactLoad =
  *
  * 按贡献从大到小摘，直到剩余事实能进上限；同样行数按查询顺序稳定并列。
  * 返回时再恢复查询顺序，让界面上的点名顺序和 chips 一致。这个指标只解释
- * `FACT_MAX`，不借用按人数占比计算的宽度（`termReach`）。
+ * `FACT_MAX`，和按人数占比判断的太宽（`findTerms`）无关。
  */
 export function overflowContributors(
 	counts: readonly { claim: number; facts: number }[],

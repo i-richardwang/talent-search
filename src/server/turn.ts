@@ -14,13 +14,13 @@ import { searchTurn } from "#/db/schema";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { type Condition, withOff } from "#/search/condition";
 import {
-	measuredIn,
+	needsWidthCheck,
 	type TurnNotes,
 	unanswered,
 	understood,
 } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
-import { termReach, vocabulary } from "#/search/search";
+import { findTerms, vocabulary } from "#/search/search";
 import type { QueryInput, SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { agentTools } from "./agent-tools";
@@ -183,38 +183,38 @@ export async function createTurn(
 }
 
 /**
- * 给这一轮新写出的经历词量一遍宽度：命中的人多到几乎不筛人的词丢掉；
- * 条件表和每一条搜不了的要求附带的替代条件各是一组，一次量完。替代条件也是
- * 模型写的，同样没有人看过；在这里量过，用户点「加上」时才能原样提交。
- * 一条主张的经历词全宽，整条**可见地**停用，成因记在 `off` 上。
+ * 写进查询记录之前，检查这一轮新写出的经历词是不是太宽：命中的人多到几乎不筛人的词去掉。
+ * 条件表和每一条「搜不了」附带的替代条件各是一组，一次查完。替代条件也是模型写的，
+ * 同样没有人看过；在这里检查过，用户点「加上」时才能原样用。
+ * 一条主张的经历词全都太宽，整条**明示地**停用，原因记在 `off` 上。
  *
- * 交表时模型已经被告知过哪些词太宽（`agent-tools.ts`），这里是收下时的那一道：
- * 步数用完、或模型原样再交，太宽的词照样不静默地进查询。
+ * 模型提交时已经被告知过哪些词太宽（`agent-tools.ts`）；它原样再提交、或者调用次数
+ * 用完时，太宽的词仍会到这里，在这里处理，不会悄悄进入搜索。
  *
- * 一条主张里几个词同权，宽的那个丢掉不影响其余的词找人；全宽才说明这条
- * 主张本身几乎不筛人，那得让用户看见、换词，或者坚持启用——检索层不做无声拦截。
- * 两支看起来不对称，其实是同一条规则：**这些条件还没有人看过。** 它是模型
- * 刚写出来的，量宽是写这条搜索的最后一步，丢一个词和模型少写一个词是
- * 同一件事，落库之后 chip 上写的就是搜的。整条停用则不同——一条主张消失和
- * 一个词消失不一样，前者是「你说的这件事没法用来找人」，得说出来。词全宽也
- * 不把它降成一条没有词的主张：那会让「做过运营的」悄悄变成「有过任何经历的」。
- * 量哪些条件由 `measuredIn` 定，和交表时的检查同一条规则。
+ * 一条主张里几个词同权，去掉太宽的那个不影响其余的词找人；全都太宽才说明这条
+ * 主张本身几乎不筛人，那得让用户看见、换词，或者坚持要用——搜索时不悄悄拦掉。
+ * 两种处理看起来不对称，其实是同一条规则：**这些条件还没有人看过。** 它们是模型
+ * 刚写出来的，去掉一个词和模型少写一个词是同一件事，写进记录之后 chip 上写的就是
+ * 搜的。整条停用则不同——一条主张消失和一个词消失不一样，前者是「你说的这件事没法
+ * 用来找人」，得说出来。词全都太宽也不把它降成一条没有词的主张：那会让「做过运营的」
+ * 悄悄变成「有过任何经历的」。
+ * 检查哪些条件由 `needsWidthCheck` 决定，和提交时的检查是同一条规则。
  */
-async function benchWide(
+async function applyWidthCheck(
 	groups: readonly Condition[][],
 	base: readonly Condition[],
 ): Promise<Condition[][]> {
-	const measured = measuredIn(base);
-	const reach = await termReach(
+	const checked = needsWidthCheck(base);
+	const found = await findTerms(
 		groups
 			.flat()
-			.filter(measured)
+			.filter(checked)
 			.flatMap((c) => c.what),
 	);
-	const wide = new Set(reach.filter((r) => r.wide).map((r) => r.text));
+	const wide = new Set(found.filter((t) => t.wide).map((t) => t.text));
 	return groups.map((conditions) =>
 		conditions.map((c): Condition => {
-			if (!measured(c)) return c;
+			if (!checked(c)) return c;
 			const [first, ...rest] = c.what.filter((v) => !wide.has(v));
 			if (!first) return withOff(c, "wide");
 			return { ...c, what: [first, ...rest] };
@@ -223,14 +223,14 @@ async function benchWide(
 }
 
 /**
- * 补全一次自然语言理解。模型那一跳失败就原样抛出，记录停在「待理解」，
+ * 补全一次自然语言理解。调用模型失败就原样抛出，记录停在「待理解」，
  * 界面据此画出错误与重试；并发更新通过 `spec is null` 保证先到者获胜，
  * 晚到者读回同一份最终结果。
  *
  * 这一轮的基线是父记录的条件：一句「再加上带过团队的」只有放在那张表上才有意思。
  *
- * 模型每查一次词或名称就往 `trace` 上追加一步，界面轮询它（`turnTrace`）边跑边画。
- * 重来一次先清空：上一次失败的半截过程不该接在这一次前面。
+ * 模型每查一次就往 `trace` 上追加一步，界面轮询它（`turnTrace`）边跑边画。
+ * 重试时先清空：上一次失败时走到一半的过程不该接在这一次前面。
  */
 export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const row = await getRow(turnId);
@@ -241,10 +241,9 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
 	const base = parent?.spec?.conditions ?? [];
 
-	// 三段各自站在自己的语料快照上，中间不占着快照：词表是一次短读取，
-	// 模型那一跳在快照外（它可以慢到一分钟），量宽自己走一遍准入
-	// （`search/phrases.ts` 的 withAdmission）。占着快照等模型的话，一次理解
-	// 就占着池里的一条连接一分钟。
+	// 读词表、调用模型、检查太宽的词，三件事各自读数据库，不共用一个快照：
+	// 调用模型可能要一分钟，如果开着快照等它，一次理解就占着连接池里的一条连接一分钟。
+	// 模型的工具和太宽检查各自在自己的快照里读（`search/phrases.ts` 的 withAdmission）。
 	const vocab = await vocabulary();
 	await db
 		.update(searchTurn)
@@ -256,14 +255,14 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 			set trace = coalesce(trace, '[]'::jsonb) || ${JSON.stringify([step])}::jsonb
 			where id = ${row.id} and spec is null`);
 	};
-	const tools = agentTools({ vocab, base, record });
-	const raw = await understand(rawText, vocab, base, tools);
-	const result = understood(raw, vocab, base);
+	const agent = agentTools({ vocab, base, record });
+	const submitted = await understand(rawText, vocab, base, agent);
+	const result = understood(submitted, vocab, base);
 	// 没作答也抛：记录停在「待理解」，由 `interpret` 分出是哪一环坏了。
-	const failure = unanswered(raw, result);
+	const failure = unanswered(submitted, result);
 	if (failure) throw new UnansweredError(failure);
 	const declined = result.notes?.declined ?? [];
-	const [conditions = [], ...insteads] = await benchWide(
+	const [conditions = [], ...insteads] = await applyWidthCheck(
 		[result.spec.conditions, ...declined.map((d) => d.instead)],
 		base,
 	);
@@ -298,7 +297,7 @@ export type InterpretFault =
 	| "unanswered"
 	| "broken";
 
-/** 补全一次理解，失败时交回是哪一环坏了。原错误只进服务端日志，不出门。 */
+/** 补全一次理解，失败时返回是哪一环坏了。原错误只写进服务端日志，不发给页面。 */
 export async function interpret(
 	turnId: string,
 ): Promise<{ fault: InterpretFault | null }> {

@@ -178,7 +178,7 @@ export function holdNextRerank() {
 
 /**
  * 假理解：把那句话按一行查询语法读（`search/query-syntax.ts`），接在当前条件
- * 后面交回整张表——真模型遇到「再加上……」就是这么做的。模型说的和库里存的是
+ * 后面提交整张表——真模型遇到「再加上……」就是这么做的。模型说的和库里存的是
  * 同一个形状，所以这里不必翻译；词表检查在 intent.test.ts 里对着 `understood` 直接测。
  * 一行语法里的 `~` 会带出 `off`，而真模型从不写停用，去掉。
  */
@@ -319,7 +319,7 @@ function startModelServer() {
 						choices: [{ index: 0, message, finish_reason: finish }],
 						usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
 					});
-				// 查询理解认得出自己的提示词；它不查词，直接用交表工具交那张表
+				// 认得出查询理解的提示词；不查词，直接用提交工具提交那张表
 				const understanding = users.find((u) => u.includes(SENTENCE_PREFIX));
 				if (understanding !== undefined) {
 					const at = understanding.lastIndexOf(SENTENCE_PREFIX);

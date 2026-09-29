@@ -37,10 +37,10 @@ import { inSentence } from "#/search/condition-label";
 import type { QueryInput } from "#/search/spec";
 import { changesOf } from "#/search/spec";
 import type {
+	Matched,
 	NameFinding,
 	TermFinding,
 	TraceStep,
-	Written,
 } from "#/search/trace";
 import type { InterpretFault, Turn } from "#/server/turn";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
@@ -53,7 +53,7 @@ function diff(previous: Turn | null, spec: Condition[]) {
 }
 
 /**
- * 模型这一轮交回的条件怎么说。链头说按哪些条件搜；后面每一轮说添加了什么、
+ * 模型这一轮提交的条件怎么说。链头说按哪些条件搜；后面每一轮说添加了什么、
  * 移除了什么。模型丢掉一条用户要的条件，在这里就是一行看得见的字。
  */
 function replyText(previous: Turn | null, spec: Condition[]) {
@@ -598,7 +598,7 @@ function stepTitle(step: TraceStep) {
 }
 
 /** 人才库里对应的几项：名字和人数。 */
-function including(list: readonly Written[]) {
+function including(list: readonly Matched[]) {
 	return list.length > 0
 		? `，包括${list.map((x) => `${x.name} ${x.people} 人`).join("、")}`
 		: "";

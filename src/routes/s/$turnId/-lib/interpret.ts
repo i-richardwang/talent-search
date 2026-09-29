@@ -76,7 +76,7 @@ const TRACE_POLL_MS = 1000;
  * 理解在这里的 effect 里补，等待显示在名单那一列。
  *
  * 服务端只补 `spec is null` 的行，重复触发拿回同一份结果。等的时候每秒问一次走到
- * 哪一步了（`turnTrace`），交出 `trace` 给线程边跑边画；理解落下后停止询问。
+ * 哪一步了（`turnTrace`），把 `trace` 给线程边跑边画；理解完成后停止询问。
  *
  * @param settledSpec 记录上已经理解好的完整查询；`null` 表示这一跳还欠着。
  */

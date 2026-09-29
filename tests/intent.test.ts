@@ -1,21 +1,21 @@
 /**
- * 查询理解的收窄。**不连数据库，也不调模型**——这正是把形状和调用拆开换到的
+ * 查询理解的校验。**不连数据库，也不调模型**——这正是把形状和调用拆开换到的
  * 东西：模型输出的每一种走样都能在这里测出来，而 `src/server/llm.ts` 里剩下的
  * 只有「发出去、拿回来」。
  *
  * 这里的每个用例都该读成一句「模型对着这句话这么写的时候，查询应该变成什么」。
- * 模型写的和库里存的是同一个形状（`Condition[]`），所以这一层只剩词表检查和收窄。
+ * 模型写的和库里存的是同一个形状（`Condition[]`），所以这一层只剩词表检查和校验。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { Condition, Mode } from "#/search/condition";
 import {
-	intentSchema,
-	measuredIn,
-	offVocabulary,
+	needsWidthCheck,
+	submissionSchema,
 	unanswered,
 	understood,
 	type Vocabulary,
+	valuesOutsideVocabulary,
 } from "#/search/intent";
 import { claim as build } from "./conditions";
 
@@ -120,7 +120,7 @@ describe("模型写出的查询就是查询", () => {
 /**
  * 词表维的取值必须在词表里。模型是唯一会写出词表外取值的来源：「资深」对不上
  * 任何一档职级。对不上的丢掉，一项不剩的整项消失。该说明的由模型写进说明，
- * 收窄这一层只管形状。
+ * 校验这一层只管形状。
  */
 describe("词表维只认库里真有的取值", () => {
 	test("公司档、职级、招聘渠道、学历必须来自语料，凭常识造的词一律不认", () => {
@@ -184,7 +184,7 @@ describe("词表维只认库里真有的取值", () => {
 });
 
 describe("没作答", () => {
-	test("给了条件、收窄后一条不剩：没按约定作答", () => {
+	test("给了条件、校验后一条不剩：没按约定作答", () => {
 		for (const raw of [
 			{ conditions: [person("level", ["资深"]), person("city", ["北京"])] },
 			{ conditions: [claim({ minMonths: "三年" })] },
@@ -252,7 +252,7 @@ describe("停用跟着条件走", () => {
 });
 
 describe("说明", () => {
-	test("读法和搜不了的要求原样留下，替代条件走同一道收窄", () => {
+	test("读法和搜不了的要求原样留下，替代条件走同一道校验", () => {
 		const { notes } = read({
 			conditions: [claim({ what: ["算法"] })],
 			assumed: [" 「资深」按职级高的几档算 ", "", 42],
@@ -340,7 +340,7 @@ describe("模型是不可信输入", () => {
 describe("发给模型的形状", () => {
 	test("合法输出解析得过", () => {
 		assert.ok(
-			intentSchema.safeParse({
+			submissionSchema.safeParse({
 				conditions: [
 					claim({ what: ["渠道运营", "渠道拓展"], minMonths: 12 }),
 					claim({ org: ["字节"] }, "boost"),
@@ -358,9 +358,9 @@ describe("发给模型的形状", () => {
 		);
 	});
 
-	test("词表不进 schema：取值合不合法交表时说、收下时丢，不让整句作废", () => {
+	test("词表不进 schema：词表外的取值提交时告诉模型、最后丢掉，不让整句作废", () => {
 		assert.ok(
-			intentSchema.safeParse({
+			submissionSchema.safeParse({
 				conditions: [claim({ companyTag: ["一线大厂"] })],
 				assumed: [],
 				declined: [],
@@ -369,10 +369,10 @@ describe("发给模型的形状", () => {
 	});
 
 	test("词数与词长上限不写进 schema：多给一条不该让整句理解作废", () => {
-		// 上限的事实源是 conditionsOf / termOf，understood 会走它们收窄。写成 schema
+		// 上限的事实源是 conditionsOf / termOf，understood 会走它们校验。写成 schema
 		// 约束就是第二份契约：模型多给一条，整条响应作废、整句理解失败。
 		assert.ok(
-			intentSchema.safeParse({
+			submissionSchema.safeParse({
 				conditions: Array.from({ length: 20 }, (_, i) =>
 					claim({ what: [`条件${i}`] }),
 				),
@@ -382,7 +382,7 @@ describe("发给模型的形状", () => {
 		);
 		const long = "供应链金融风控建模";
 		assert.ok(
-			intentSchema.safeParse({
+			submissionSchema.safeParse({
 				conditions: [claim({ what: [long] })],
 				assumed: [],
 				declined: [],
@@ -393,11 +393,11 @@ describe("发给模型的形状", () => {
 	});
 });
 
-describe("交表时退回的词表外取值", () => {
+describe("提交时告诉模型的词表外取值", () => {
 	test("条件表和替代条件里的词表外取值各说一句，说出可选的档", () => {
 		assert.deepEqual(
-			offVocabulary(
-				intentSchema.parse({
+			valuesOutsideVocabulary(
+				submissionSchema.parse({
 					conditions: [
 						claim({ what: ["增长"], companyTag: ["一线大厂", "知名公司"] }),
 						{ about: "person", mode: "must", field: "level", atLeast: "P9" },
@@ -423,8 +423,8 @@ describe("交表时退回的词表外取值", () => {
 
 	test("学校写名字，不查词表", () => {
 		assert.deepEqual(
-			offVocabulary(
-				intentSchema.parse({
+			valuesOutsideVocabulary(
+				submissionSchema.parse({
 					conditions: [person("school", ["银河学院"])],
 					assumed: [],
 					declined: [],
@@ -436,10 +436,10 @@ describe("交表时退回的词表外取值", () => {
 	});
 });
 
-describe("哪些经历词要量宽", () => {
-	test("这一轮新写的正向主张；排除、没写经历词的、上一轮已有的不量", () => {
+describe("哪些条件要检查经历词是否太宽", () => {
+	test("这一轮新写的正向主张；排除、没写经历词的、上一轮已有的不检查", () => {
 		const kept = build("灵能驾驶");
-		const measured = measuredIn([kept]);
+		const measured = needsWidthCheck([kept]);
 		assert.deepEqual(
 			[
 				kept,

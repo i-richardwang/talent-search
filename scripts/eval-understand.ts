@@ -17,7 +17,7 @@
  *     "empty": true,                   // 可选：新表必须是空的
  *     "rewrite": true }                // 可选：这句话换了一件事，不要求保留 base
  *
- * 没有 rewrite 的题，base 里除了 drop 的每一条都必须原样留在新表里——这是这一跳最要紧
+ * 没有 rewrite 的题，base 里除了 drop 的每一条都必须原样留在新表里——这是查询理解最要紧
  * 的性质：模型不能顺手丢掉或改掉用户没提到的条件。词比对折叠全半角、大小写和空白，
  * 按包含算：模型写「团队管理」也算提到了「团队」。一题只要有一处不对就打叉，退出码
  * 看的是有没有打叉的题。模型写的说明原样上屏，里面出现内部用词（`lib/internal-words.ts`）
@@ -37,7 +37,7 @@ import { conditionLabel } from "#/search/condition-label";
 import { unanswered, understood } from "#/search/intent";
 import { parseQuery } from "#/search/query-syntax";
 import { vocabulary } from "#/search/search";
-import { detachedTools } from "#/server/agent-tools";
+import { agentToolsWithoutTrace } from "#/server/agent-tools";
 import { understand } from "#/server/llm";
 
 type Case = {
@@ -167,14 +167,14 @@ try {
 		const problems: string[] = [];
 		let summary = "";
 		try {
-			const raw = await understand(
+			const submitted = await understand(
 				c.say,
 				vocab,
 				c.base,
-				await detachedTools(c.base),
+				await agentToolsWithoutTrace(c.base),
 			);
-			const result = understood(raw, vocab, c.base);
-			const failure = unanswered(raw, result);
+			const result = understood(submitted, vocab, c.base);
+			const failure = unanswered(submitted, result);
 			if (failure) problems.push(failure);
 			const next = result.spec.conditions;
 			const has = new Set(next.map(conditionKey));

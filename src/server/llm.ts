@@ -1,14 +1,14 @@
 /**
- * 查询理解模型的唯一调用点。**薄到没有逻辑**——形状与收窄在
- * `#/search/intent`，工具在 `agent-tools.ts`；这里只负责「把话发出去、
- * 把交上来的表拿回来」。
+ * 查询理解模型的唯一调用点。**薄到没有逻辑**——条件的形状和校验在
+ * `#/search/intent`，工具在 `agent-tools.ts`；这里只负责把话发给模型，
+ * 拿回模型提交的搜索条件。
  *
  * 三条硬约束：
  *
  * 1. **发出去的只有这些**：用户自己敲的那句话、这条搜索当前的条件、语料里几维
- *    筛选的取值（公司档、职级、招聘渠道、学历），以及工具交回的人数和库里的
+ *    筛选的取值（公司档、职级、招聘渠道、学历），以及工具查到的人数和人才库里的
  *    写法——至少几个人写过的能力词、入职前公司名和学校名。姓名、工号、任何一个
- *    人的经历、公司内的部门名都不出这台机器。因此查询理解可以直接使用公网端点；
+ *    人的经历、公司内的部门名都不发给模型。因此查询理解可以直接使用公网端点；
  *    重排必须发送候选经历，端点位置需要由部署方的数据政策决定。
  * 2. **没配就抛，不降级。** 一句话只有模型能读成条件：语气（「最好」「不要」）、
  *    修饰语挂在哪件事上（「入职前」「三年以上」）和该搜什么词全靠它。没有第二种读法能
@@ -21,9 +21,9 @@
 
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, isStepCount, type StopCondition } from "ai";
+import { generateText, isStepCount } from "ai";
 import { type Condition, withOff } from "#/search/condition";
-import type { Vocabulary } from "#/search/intent";
+import type { Submission, Vocabulary } from "#/search/intent";
 import { type AgentTools, SUBMIT } from "./agent-tools";
 import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
 
@@ -62,23 +62,14 @@ const MAX_OUTPUT_TOKENS = positiveInt(
 );
 
 /**
- * 一轮最多走几步：每一步是一次模型调用，中间可以调几个工具。正常一轮查一次词和
- * 名字、交表，两步；交表被退回再改一次，三步。最后一步只留交表一个工具，并在消息里
- * 明说（`LAST_STEP`）：步数用完必须落在一张表上。
+ * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。通常查一次、提交一次，
+ * 两次调用；提交没通过检查、改完再提交，三次。最后一次只留提交这一个工具，并在
+ * 消息里明说（`LAST_STEP`），保证用完次数时模型提交了一份搜索条件。
  */
 const AGENT_STEPS = 6;
 
 const LAST_STEP =
-	"查询的次数用完了。不要再查，按已经得到的结果，现在用 submit 交表。";
-
-/** 交表收下了：这一轮到此为止。退回的不算，模型接着改。 */
-const accepted: StopCondition<AgentTools> = ({ steps }) =>
-	steps
-		.at(-1)
-		?.toolResults.some(
-			(r) =>
-				r.toolName === SUBMIT && (r.output as { accepted: boolean }).accepted,
-		) ?? false;
+	"查询的次数用完了。不要再查，按已经查到的结果，现在用 submit 提交搜索条件。";
 
 /**
  * 查询理解配好了没有。没配时只有关键词搜索，界面不给那个说一句话的框：
@@ -122,21 +113,20 @@ function getModel() {
  * **提示词的读者是模型，不是维护者。** 它只说要做什么、两种条件各是什么、拿不准
  * 时怎么办，再给几个完整的例子；不解释我们为什么这么设计。那些论证写在这里的
  * 注释和 `condition.ts` 里：向量空间里公司名和竞品是邻居，所以公司名走精确条件；
- * 一条主张里放几个词是替用户的不准确用词兜底，所以只放同一件事和更具体的
+ * 一条主张里放几个词，是为了用户用词不准时也能找到人，所以只放同一件事和更具体的
  * 事，不放更宽的；一个只有功能词的主张几乎不筛人，所以要并进旁边的领域词。
  *
- * 模型交回整张表而不是一串编辑：没提到的条件原样抄回来，用户就能从前后两张表
+ * 模型提交整张新表而不是一串编辑：没提到的条件原样抄回来，用户就能从前后两张表
  * 的差别里看见它动了什么（`changesOf`）。搜不了的要求写进 `declined`：用户说了的
  * 话要么变成条件，要么得到一句为什么。
  *
- * 词表有哪些取值只在这里说一遍，不进 schema（`intent.ts` 的 `intentSchema` 是
- * 静态的）：取值在不在词表里由交表时的检查说，收下时查不过的取值丢掉。
+ * 词表有哪些取值只在这里说一遍，不进 schema（`intent.ts` 的 `submissionSchema` 是
+ * 静态的）：提交时检查出词表外的取值会告诉模型，最后仍在词表外的取值丢掉。
  *
- * 例子写成交表工具的入参 JSON：模型照着例子的样子交，例子和 schema 说的是
- * 同一个形状。
+ * 例子写成提交工具的参数 JSON：模型照着例子的样子提交，例子和 schema 是同一个形状。
  */
 const SYSTEM = `你在帮 HR 维护一张找人的搜索条件表。给你的是当前的条件表（第一句话时是空的）
-和 HR 这一次说的话。用 submit 交回整张新表，再加两样说明。
+和 HR 这一次说的话。用 submit 提交整张新表，再加两样说明。
 
 改表的规则：
 - 这句话没提到的条件原样抄回来，一个字都不改。
@@ -185,7 +175,7 @@ declined：人才库里只有经历（做过什么、在哪、哪一档公司、
 HR 可以一键改成这样找；没有就空着。
 
 表里的每个词、每个名字，搜索都会拿去人才库里找：太宽的几乎不筛人，人才库里没人这么写的
-等于没写。交表之前你可以在人才库里查：
+等于没写。提交之前你可以在人才库里查：
 - find_terms：几个经历词按搜索的方式各能找到多少人、会不会太宽（几乎人人都沾边）、
   命中了人才库里哪些能力词。太宽的换更具体的说法；一个人都找不到的，换成人才库里的写法。
 - find_names：几个公司名或学校名各能匹配到多少人、匹配到人才库里哪些公司或学校。名字按包含匹配，
@@ -193,10 +183,10 @@ HR 可以一键改成这样找；没有就空着。
 查什么、查几次由你判断；当前表里原样留下的条件已经查过。工具只给人数和人才库里的写法，不给人；
 名单由搜索决定，你写的是条件。
 
-写好了用 submit 交，收下就结束这一轮。有问题会退回并写明哪里不对，改完再交；问题出在用户
-明说的要求上、人才库里本来就没有这样的人时，把同一张表原样再交一次：没有这样的人也是一个结果。
+写好了用 submit 提交，检查通过这一轮就结束。没通过会告诉你哪里有问题，改好再提交；问题出在
+用户明说的要求上、人才库里本来就没有这样的人时，把同一张表原样再提交一次：没有这样的人也是一个结果。
 
-交给 submit 的是一个这样的对象：
+提交给 submit 的是一个这样的对象：
 {"conditions": [条件……], "assumed": [一句一条……], "declined": [{"said": "", "why": "", "instead": [条件……]}]}
 没有的就写空数组。下面的例子假设取值是 level：P5、P6、P7、P8；companyTag：头部大厂、知名公司；
 education：大专、本科、硕士、博士；例子里的词和名字都已经查过，人才库里就是这样写的。
@@ -227,7 +217,7 @@ education：大专、本科、硕士、博士；例子里的词和名字都已�
   {"said": "有管理潜力", "why": "简历中看不出管理潜力，可以看是否带过团队", "instead": [
     {"about": "experience", "mode": "boost", "what": ["团队管理", "带团队"]}]}]}
 
-例四。当前的条件表是例一交回的四条。这句话：再加上带过团队的，不用非得是字节
+例四。当前的条件表是例一提交的四条。这句话：再加上带过团队的，不用非得是字节
 {"conditions": [
   {"about": "experience", "mode": "must", "what": ["算法", "推荐算法", "机器学习"]},
   {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
@@ -241,7 +231,7 @@ function listed(what: string, values: readonly string[]) {
 }
 
 /**
- * 端点答了，但没按约定作答：没给出合法对象，或给的东西收窄之后什么都不剩。
+ * 端点答了，但没按约定作答：没提交搜索条件，或提交的条件校验之后什么都不剩。
  * 和连不上、报错分开，是因为只有这一种换个说法可能有用。
  */
 export class UnansweredError extends Error {
@@ -249,18 +239,19 @@ export class UnansweredError extends Error {
 }
 
 /**
- * 当前条件 + 一句话 → 模型交的新条件表与说明。调用方必须再过一遍 `understood` 收窄。
+ * 当前条件 + 一句话 → 模型提交的新条件表与说明。调用方必须再用 `understood` 校验一遍。
  *
- * 模型可以先用 `tools` 查词、查名称（`agent-tools.ts`），再用 `submit` 交表；交表被退回
- * 就改了再交，收下就停，最多 `AGENT_STEPS` 步。答案是最后一次交的表：步数用完时
- * 最后一次交的即使被退回，也由收窄兜底。一次都没交就是没作答。
+ * 模型可以先查经历词和名字（`agent-tools.ts`），再用 `submit` 提交；没通过检查就改了再
+ * 提交，通过了就停，最多调用 `AGENT_STEPS` 次模型。结果是最后一次提交的搜索条件：
+ * 次数用完时最后一次提交即使没通过检查也用它，其中不合规的部分由 `understood` 去掉。
+ * 一次都没提交就是没作答。
  */
 export async function understand(
 	text: string,
 	vocab: Vocabulary,
 	base: readonly Condition[],
-	tools: AgentTools,
-): Promise<unknown> {
+	agent: AgentTools,
+): Promise<Submission> {
 	const m = getModel();
 	/*
 	 * 一次检索愿意多等的只有一次：人在等结果。可重试的应答由 SDK 试，
@@ -270,9 +261,9 @@ export async function understand(
 	const result = await retryingTimeouts(retries, () =>
 		generateText({
 			model: m,
-			tools,
+			tools: agent.tools,
 			toolChoice: "required",
-			stopWhen: [isStepCount(AGENT_STEPS), accepted],
+			stopWhen: [isStepCount(AGENT_STEPS), agent.passed],
 			prepareStep: ({ stepNumber, messages }) =>
 				stepNumber === AGENT_STEPS - 1
 					? {
@@ -288,8 +279,8 @@ export async function understand(
 				listed("education（从低到高）", vocab.education),
 				listed("recruitment", vocab.recruitment),
 				listed("companyTag", vocab.companyTag),
-				// 停用是用户在 chip 上的操作，模型写不出也不必看见：它交回同一条，
-				// 停用由 `understood` 带回去
+				// 停用是用户在 chip 上的操作，模型写不出也不必看见：它原样写回这一条，
+				// 停用状态由 `understood` 从上一轮带回来
 				`\n当前的条件表：${JSON.stringify(base.map((c) => withOff(c, null)))}`,
 				`\n这句话：${text}`,
 			].join("\n"),
@@ -299,18 +290,15 @@ export async function understand(
 			maxOutputTokens: MAX_OUTPUT_TOKENS,
 		}),
 	);
-	const submitted = result.steps
-		.flatMap((step) => step.toolCalls)
-		.filter((call) => call.toolName === SUBMIT && !call.invalid)
-		.at(-1);
-	if (submitted) return submitted.input;
+	const submitted = agent.lastSubmitted();
+	if (submitted) return submitted;
 	/*
 	 * 真正说明问题的是 `finishReason` 和 `usage`：`length` 配上 `reasoningTokens`
 	 * 吃掉几乎整个 `outputTokens`，一眼就是「预算被思考轨迹烧光」；`stop` 配上一段
 	 * 正文，是端点没理会必须调用工具。写进错误消息，查日志的人不必再翻 SDK 的结构。
 	 */
 	throw new UnansweredError(
-		`查询理解模型没有交表：finishReason=${result.finishReason}，` +
+		`查询理解模型没有提交搜索条件：finishReason=${result.finishReason}，` +
 			`usage=${JSON.stringify(result.totalUsage)}，text=${JSON.stringify(result.text.slice(0, 200))}`,
 	);
 }

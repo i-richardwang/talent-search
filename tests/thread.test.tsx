@@ -1,6 +1,6 @@
 /**
  * 右栏的线程：每一轮的需求、搜索条件怎么变了、替人定了什么理解方式、哪些要求没有采用。
- * 模型每一轮交回整张表，它丢掉的条件只在这里看得见。
+ * 模型每一轮提交整张表，它丢掉的条件只在这里看得见。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";

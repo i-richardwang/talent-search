@@ -1,11 +1,11 @@
 /**
- * 自然语言理解的可信边界。模型拿着当前条件和用户这一次说的话，交回整张新的
- * 条件表和一份说明；这里把不可信的那份收窄成 `SearchSpec` 与 `TurnNotes`，
+ * 自然语言理解的可信边界。模型拿着当前条件和用户这一次说的话，提交整张新的
+ * 条件表和一份说明；模型的输出不可信，这里把它校验成 `SearchSpec` 与 `TurnNotes`，
  * 不包含网络调用。
  *
- * **模型的任务是维护这条搜索，不是理解句子。** 它交出来的条件和用户在 chip 上
+ * **模型的任务是维护这条搜索，不是理解句子。** 它提交的条件和用户在 chip 上
  * 改的、库里存的是同一个形状（为什么是这个形状，见 `condition.ts`），中间没有
- * 翻译：这里只做词表检查和沿用停用状态，其余收窄和 RPC 入参走同一道 `sanitizeSpec`。
+ * 翻译：这里只做词表检查和沿用停用状态，其余校验和 RPC 入参走同一道 `sanitizeSpec`。
  *
  * **名单只从检索来。** 模型写的是条件，谁在名单上、排第几由检索决定。
  */
@@ -73,20 +73,20 @@ export const conditionItems = z.array(
 );
 
 /**
- * 交表工具的入参：整张新的条件表，加上这一轮的说明。**静态**：词表不进
- * schema，只在提示词里列一遍——同一份取值写两处就是两份契约；取值在不在词表里
- * 由交表时的检查（`offVocabulary`）告诉模型，收下时由 `understood` 丢掉。
+ * 模型用提交工具提交的内容：整张新的条件表，加上这一轮的说明。**静态**：词表不进
+ * schema，只在提示词里列一遍——同一份取值写两处就是两份契约；词表外的取值由提交时的
+ * 检查（`valuesOutsideVocabulary`）告诉模型，最后仍在词表外的由 `understood` 丢掉。
  *
- * 交回整张表而不是一串增删改：表和 chip、库里存的是同一个形状，这一轮改了什么
+ * 提交整张表而不是一串增删改：表和 chip、库里存的是同一个形状，这一轮改了什么
  * 由两张表一比就知道，模型不必再学一套编辑指令。
  *
  * 每一项有自己的类型：月数是数字、经历来源是二选一、词表维各是一栏——模型看
  * schema 就知道填什么，不必读一段「这一维填什么样子」的说明。
  *
- * 这里的描述只说每一栏**是什么**，不写字数、条数这些上限：上限住在收窄那一处
+ * 这里的描述只说每一栏**是什么**，不写字数、条数这些上限：上限放在校验那一处
  * （`condition.ts`），写进 schema 就是模型多给一个字整句失败。
  */
-export const intentSchema = z.object({
+export const submissionSchema = z.object({
 	conditions: conditionItems.describe(
 		"整张新的条件表。一条经历主张里的各项说的是同一段经历；不同的经历分别写一条",
 	),
@@ -106,12 +106,12 @@ export const intentSchema = z.object({
 		.describe("这句话里搜不了的要求；没有就空着"),
 });
 
-/** 交表工具收到的一张表：过了 schema，还没收窄。 */
-export type Intent = z.infer<typeof intentSchema>;
+/** 模型提交的一份搜索条件：符合 schema，还没经过 `understood` 校验。 */
+export type Submission = z.infer<typeof submissionSchema>;
 
 /**
  * 模型给出的一条「搜不了」：原话、原因、可以换成的条件。
- * `instead` 已经过和条件表同一道收窄，界面上点一下就能加进查询。
+ * `instead` 已经过和条件表同一道校验，界面上点一下就能加进查询。
  */
 type Declined = { said: string; why: string; instead: Condition[] };
 
@@ -124,7 +124,7 @@ export type TurnNotes = { assumed: string[]; declined: Declined[] };
 /** 说明里每一类最多几条。再多就不是交代，是一段需要人读完才能继续的正文。 */
 const NOTES_MAX = 3;
 
-/** 一次理解收窄之后的样子：新的条件表，和这一轮的说明。 */
+/** 一次理解校验之后的样子：新的条件表，和这一轮的说明。 */
 type Understood = { spec: SearchSpec; notes: TurnNotes | null };
 
 /**
@@ -134,9 +134,9 @@ type Understood = { spec: SearchSpec; notes: TurnNotes | null };
  *
  * 1. **词表维的取值必须在词表里。** 模型是唯一会写出词表外取值的来源（「资深」
  *    对不上任何一档职级），RPC 那一侧的取值来自屏幕上的候选。
- * 2. **停用状态跟着条件走。** 模型写不出停用（schema 里没有这一栏），交回来的
+ * 2. **停用状态跟着条件走。** 模型写不出停用（schema 里没有这一栏），提交的
  *    条件和上一轮某一条完全相同时，那一条的停用原样带过来：用户停掉的不会因为
- *    又说了一句话就复活，量出来太宽的也不会。
+ *    又说了一句话就复活，因为太宽被停用的也不会。
  */
 export function understood(
 	raw: unknown,
@@ -177,7 +177,7 @@ function textsOf(raw: unknown): string[] {
 	return out;
 }
 
-/** 一列不可信的条件 → 收窄且词表维取值都在词表里的条件。 */
+/** 一列不可信的条件 → 校验过、词表维取值都在词表里的条件。 */
 function conditionsIn(raw: unknown, vocab: Vocabulary): Condition[] {
 	const items = Array.isArray(raw) ? raw : [];
 	const inVocab = (key: VocabKey, list: unknown) =>
@@ -207,18 +207,18 @@ function conditionsIn(raw: unknown, vocab: Vocabulary): Condition[] {
  * 丢掉**单个**取值是设计内的：一个词表外的档、一个太长的词，丢掉比放行强。
  * 两种情况不是：
  *
- * - 模型给了条件，收窄后**一条不剩**：它整体没按约定作答。让查询带着一份空条件
+ * - 模型给了条件，校验后**一条不剩**：它整体没按约定作答。让查询带着一份空条件
  *   走下去，界面会画成「这句话里没有能找人的条件」，也就是把一次故障画成了用户
  *   的问题。
  * - 条件表空着，说明也空着：一句话要么能写成条件，要么说得出为什么写不了。
- *   什么都没交回来的是没作答，不是「成功但没有条件」。
+ *   什么都没写的是没作答，不是「成功但没有条件」。
  */
 export function unanswered(raw: unknown, result: Understood): string | null {
 	const value = (raw ?? {}) as Record<string, unknown>;
 	const asked = Array.isArray(value.conditions) ? value.conditions.length : 0;
 	if (result.spec.conditions.length > 0) return null;
 	if (asked > 0)
-		return `查询理解给出的条件全部不合规，收窄后一个不剩：${JSON.stringify(
+		return `查询理解给出的条件全部不合规，校验后一个不剩：${JSON.stringify(
 			value.conditions,
 		).slice(0, 400)}`;
 	if (!result.notes) return "查询理解既没有给出条件，也没有说明为什么";
@@ -226,10 +226,13 @@ export function unanswered(raw: unknown, result: Understood): string | null {
 }
 
 /**
- * 一份交上来的表里，词表维写了词表外的取值的地方，一处一句，交表时退回给模型改。
- * 收下时这些取值由 `understood` 丢掉；这里先说出来，模型有机会换成词表里的那一档。
+ * 一份提交的搜索条件里，词表维写了词表外取值的地方，每处一句话，告诉模型去改。
+ * 最后仍在词表外的取值由 `understood` 丢掉；先告诉模型，它就有机会换成词表里的那一档。
  */
-export function offVocabulary(table: Intent, vocab: Vocabulary): string[] {
+export function valuesOutsideVocabulary(
+	submitted: Submission,
+	vocab: Vocabulary,
+): string[] {
 	const out = new Set<string>();
 	const check = (key: VocabKey, values: readonly string[]) => {
 		for (const v of values)
@@ -239,8 +242,8 @@ export function offVocabulary(table: Intent, vocab: Vocabulary): string[] {
 				);
 	};
 	for (const c of [
-		...table.conditions,
-		...table.declined.flatMap((d) => d.instead),
+		...submitted.conditions,
+		...submitted.declined.flatMap((d) => d.instead),
 	]) {
 		if (c.about === "experience") check("companyTag", c.companyTag ?? []);
 		else if (isVocabKey(c.field))
@@ -249,22 +252,22 @@ export function offVocabulary(table: Intent, vocab: Vocabulary): string[] {
 	return [...out];
 }
 
-/** 一条要量经历词的条件：正向的、写了经历词的。 */
-type Measured = ExperienceCondition &
+/** 要检查经历词是否太宽的条件：正向的、写了经历词的。 */
+type WidthChecked = ExperienceCondition &
 	Required<Pick<ExperienceCondition, "what">>;
 
 /**
- * 哪些条件的经历词要量：这一轮新写出来的正向主张。
+ * 哪些条件要检查经历词是否太宽：这一轮新写出来的正向主张。
  *
- * 上一轮已经有的不量：它量过了，或者用户看过、坚持启用了。只量正向的：宽度答的是
- * 「它还筛不筛得掉人」，排除答的是「哪一段不作数」，命中面广恰恰是它在起作用；
- * 而且排除按更高的相关度线判，量出来的宽不是它搜出来的宽。
+ * 上一轮已经有的不检查：它检查过了，或者用户看过、坚持要用。只检查正向的：太宽说的是
+ * 「它筛不掉人」，而排除说的是「哪一段经历不算数」，命中的人多正说明它在起作用；
+ * 而且排除按更高的相关度门槛判断，算出来的宽度不适用于它。
  */
-export function measuredIn(
+export function needsWidthCheck(
 	base: readonly Condition[],
-): (c: Condition) => c is Measured {
+): (c: Condition) => c is WidthChecked {
 	const had = new Set(base.map(conditionKey));
-	return (c): c is Measured =>
+	return (c): c is WidthChecked =>
 		c.about === "experience" &&
 		c.mode !== "exclude" &&
 		c.what !== undefined &&
