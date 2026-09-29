@@ -3,25 +3,25 @@
  *
  * 检索的匹配单元是语料里去重后的**说法**（`phrase` 表：一条序列名、一个岗位名、
  * 一条部门路径、一段简历描述），不是经历段。一个查询词先在这里变成一批
- * 「命中的说法及其相关度」，`search.ts` 再沿 `experience_phrase` 走到经历段和人。
+ * 「命中的说法及其相关度」，`search.ts` 再通过 `experience_phrase` 关联到经历段和人。
  *
  * 两步，两个模型（阈值与理由见 weights.ts）：
  *
  * 1. **召回**用向量：余弦最近的 `RECALL_TOP` 条说法当候选，还得过 `RECALL_MIN`。
- *    它负责尽量不漏，成本由名次定死，和语料大小无关。
- * 2. **判定**用重排：交叉编码器读「说法：释义」给每个候选打相关度，过线才算命中。
+ *    它负责尽量不漏，候选条数固定，成本和语料大小无关。
+ * 2. **判定**用重排：交叉编码器读「说法：释义」给每个候选打相关度，达到门槛才算命中。
  *    它负责不错。
  *
  * 重排的分数按（重排空间，查询词，说法）永久缓存在 `phrase_relevance` 里：翻页、
- * 改筛选或再次搜索同一个词时直接命中缓存。只有召回出来却没打过分的对
- * 才会出去。
+ * 改筛选或再次搜索同一个词时直接命中缓存。只有召回出来却没打过分的（查询词，说法）
+ * 才会发给重排端点。
  *
  * **两次快照，模型调用夹在中间。** 快照（`#/db/snapshot` 的 `withCorpusSnapshot`）占着
- * 池里的一条连接，所以一次慢端点调用不能发生在快照内。于是这里把一次准入
+ * 池里的一条连接，所以一次慢端点调用不能发生在快照内。于是这里把一次相关度过滤（`withMatchedPhrases`）
  * 拆成三段：嵌入在快照外 → 第一次快照做召回和读缓存 → 重排在快照外 →
  * 调用方的那次快照（第二次）核对嵌入空间还是不是同一个，是就接着取数。
  * 计划里带的是 phrase id，换过嵌入空间它们就指向别的说法了，所以核对不能省，
- * 只能重算（`withAdmission`）。
+ * 只能重算（`withMatchedPhrases`）。
  */
 
 import "@tanstack/react-start/server-only";
@@ -32,7 +32,7 @@ import { rerank, rerankSpaceId } from "#/server/rerank";
 import { RECALL_MIN, RECALL_TOP } from "./weights";
 
 /** 一个查询词命中的一条说法。 */
-export type Admitted = { phraseId: number; relevance: number };
+export type PhraseHit = { phraseId: number; relevance: number };
 
 /**
  * 一个查询词在这一版语料里的候选说法与它们的分数。分数表的键集合最终**就是**
@@ -127,14 +127,14 @@ async function cachedScores(
 /** 这次新打出来的分。等进了快照、确认还是同一个嵌入空间，才写回缓存。 */
 type FreshScore = { query: string; phraseId: number; relevance: number };
 
-/** 一次准入的结果：各词命中了什么。 */
-export type Admission = {
+/** 一次相关度过滤的结果：各词命中了什么。 */
+export type PhraseMatches = {
 	/** 每个词命中的说法，按相关度从高到低。 */
-	admitted: Map<string, Admitted[]>;
+	phraseHits: Map<string, PhraseHit[]>;
 };
 
-/** 一次准入的完整计划：它站在哪一版语料上，命中了什么，欠着哪些缓存写。 */
-type Plan = Admission & {
+/** 一次相关度过滤的完整计划：基于哪一版语料、命中了什么、还有哪些新打的分没写进缓存。 */
+type Plan = PhraseMatches & {
 	generation: string;
 	fresh: FreshScore[];
 };
@@ -142,9 +142,9 @@ type Plan = Admission & {
 /**
  * 召回 + 判定，两个模型端点都在快照外打。
  *
- * 返回的计划带着它站的那一版语料：里面的 phrase id 只在那一版里有意义。
+ * 返回的计划记着它基于的那一版语料：里面的 phrase id 只在那一版里有意义。
  */
-async function planAdmission(
+async function planPhraseMatches(
 	texts: string[],
 	min: number,
 	space: string,
@@ -180,7 +180,7 @@ async function planAdmission(
 
 	return {
 		generation,
-		admitted: new Map(
+		phraseHits: new Map(
 			recalled.map((r) => [
 				r.text,
 				[...r.scores]
@@ -216,35 +216,35 @@ async function cacheScores(
 }
 
 /**
- * 一次准入连着一次快照内的取数，最多重来这么多次。
+ * 一次相关度过滤加一次快照内的取数，最多重试这么多次。
  *
- * 换嵌入空间是一件难得发生的事，一次检索连撞三回不再是巧合，
- * 而是某处不停地在换——继续重试只会把它磨成一串白打的端点调用。
+ * 换嵌入空间是一件难得发生的事，一次检索连续遇到三回不再是巧合，
+ * 而是某处不停地在换——继续重试只会变成一串白白浪费的端点调用。
  */
 const PLAN_ATTEMPTS = 3;
 
 /**
- * 在同一个嵌入空间上完成「准入 + 取数」。准入在快照外算（要打两个模型端点），
+ * 在同一个嵌入空间上完成「相关度过滤 + 取数」。相关度过滤在快照外算（要打两个模型端点），
  * 取数在快照内做。
  *
  * 两段之间嵌入空间可能被换掉、说法表整张重来，而计划里的 phrase id 是旧的：
  * 照着取数就是拿旧 id 去指新说法，得到的是一份看起来完全正常的错名单。所以进
  * 快照第一件事是核对代号，对不上就整个重算——重排缓存也在核对之后才写，旧 id
- * 的分数不该落进新空间的缓存里。派生的增量提交不改 id，不触发这条。
+ * 的分数不该写进新空间的缓存里。派生的增量提交不改 id，不触发这条。
  */
-export async function withAdmission<T>(
+export async function withMatchedPhrases<T>(
 	texts: string[],
 	min: number,
-	use: (store: DbExecutor, admission: Admission) => Promise<T>,
+	use: (store: DbExecutor, matches: PhraseMatches) => Promise<T>,
 ): Promise<T> {
-	// 一个词都没有就没有召回，计划里也就没有任何指向某一版语料的 id：直接进语料锁。
+	// 一个词都没有就没有召回，计划里也就没有任何指向某一版语料的 id：直接进语料快照。
 	if (texts.length === 0)
-		return withCorpusSnapshot((store) => use(store, { admitted: new Map() }));
+		return withCorpusSnapshot((store) => use(store, { phraseHits: new Map() }));
 	// 重排端点没配就在这里抛，不进语料快照：没有判定这一步，召回出来的候选里
 	// 一半是「前端」对「后端」这种反义，装作能用等于给一份错名单。
 	const space = rerankSpaceId();
 	for (let attempt = 0; attempt < PLAN_ATTEMPTS; attempt++) {
-		const plan = await planAdmission(texts, min, space);
+		const plan = await planPhraseMatches(texts, min, space);
 		const done = await withCorpusSnapshot(async (store, generation) => {
 			if (generation !== plan.generation) return null;
 			await cacheScores(store, space, plan.fresh);
@@ -259,12 +259,12 @@ export async function withAdmission<T>(
 
 /**
  * 命中的说法摆成一张 VALUES 表 `(claim_idx, value_idx, phrase_id, relevance)`，
- * 供取数 SQL 沿 `experience_phrase` 走到经历段。`value_idx` 是命中的是这条主张的
+ * 供取数 SQL 通过 `experience_phrase` 关联到经历段。`value_idx` 是命中的是这条主张的
  * 第几个经历词，只为证据行能说出「命中的是哪个词」。一行都没有时返回 null——
  * 空的 VALUES 不是合法 SQL，而且没有命中就没有取数可做。
  */
-export function admittedTable(
-	rows: { claimIdx: number; valueIdx: number; hit: Admitted }[],
+export function phraseHitTable(
+	rows: { claimIdx: number; valueIdx: number; hit: PhraseHit }[],
 ) {
 	if (rows.length === 0) return null;
 	return sql`(values ${sql.join(

@@ -69,8 +69,8 @@ const yearsAgo = (n: number) => `${NOW.getFullYear() - n}-01-01`;
 describe("先按可信度排，再按深度排", () => {
 	/*
 	 * 「序列是 HR 登记的归属，部门只说明他在那个组织里，简历原文提到不等于做过」
-	 * ——这三档由排序键的先后隔开，不靠把深度压扁：档内深度量程放满，档间
-	 * 再深也翻不了盘。
+	 * ——这三档由排序键的先后隔开，不靠把深度压小：档内深度的取值范围放满，档间
+	 * 深度再高也改变不了先后。
 	 */
 	const longOrg = fact({ empId: "A", route: "org", months: 240 });
 	const shortSeq = fact({
@@ -164,7 +164,7 @@ describe("时长", () => {
 		assert.ok(huge < 1, `${huge} 必须小于 1`);
 	});
 
-	test("量程放满：三个月和八年在同一档里拉得开", () => {
+	test("取值范围放满：三个月和八年在同一档里分得开", () => {
 		const short = depthOf([fact({ empId: "A", months: 3 })]);
 		const long = depthOf([fact({ empId: "B", months: 96 })]);
 		assert.ok(long > short * 5, `${long} 对 ${short}：时长不该只是装饰`);
@@ -272,7 +272,7 @@ describe("累计时长的门槛", () => {
 			"十二个月够不上三年，A 不该被抬",
 		);
 		// 名次里没有它，证据行上就不能有它：留一条「+ 词0 · 1 年」画成命中，
-		// 读者会问为什么它没把 A 抬到前面
+		// 读者会问为什么它没把 A 排到前面
 		assert.equal(ranked.find((r) => r.empId === "A")?.basis[1], null);
 		const shown = pageHits(facts, list, {}, new Set(["A"]), 3).get("A") ?? [];
 		assert.deepEqual(
@@ -500,7 +500,7 @@ describe("必须与加分", () => {
 		);
 	});
 
-	test("只有自述证据的人照样算命中：准入不看档，档只决定先后", () => {
+	test("只有自述证据的人照样算命中：去留不看档，档只决定先后", () => {
 		const claimed = [fact({ empId: "B", claim: 0, route: "description" })];
 		assert.equal(run(claimed, claims("must")).total, 1);
 	});
@@ -550,7 +550,7 @@ describe("分面与名次是同一个口径", () => {
 		assert.equal(total, 0, "没有人既是 P7 又在这条序列上");
 	});
 
-	test("跟人走的维度同样收窄别的维度", () => {
+	test("跟人走的维度同样减少别的维度的计数", () => {
 		const { facets, total } = run(facts, claims("must"), { level: ["P7"] });
 		assert.equal(total, 2);
 		assert.equal(facets.seq.find((s) => s.value.l2 === "算法")?.n, 1);
@@ -570,13 +570,13 @@ describe("分面与名次是同一个口径", () => {
 	});
 
 	test("被别的维度挤到 0 的选项留在原地，不消失", () => {
-		// 列表在手底下换形状，比列表长一点难用得多：消失的那一行是用户自己
+		// 列表在用户点选时变样，比列表长一点难用得多：消失的那一行是用户自己
 		// 刚做的事的后果，藏起来就没法回头
 		const { facets } = run(facts, claims("must"), { level: ["P6"] });
 		assert.equal(facets.seq.find((s) => s.value.l2 === "渠道")?.n, 0);
 	});
 
-	test("人数并列时按值稳定排序，不跟着事实输入顺序漂移", () => {
+	test("人数并列时按值稳定排序，不随事实输入顺序变化", () => {
 		const tied = [
 			fact({
 				empId: "A",

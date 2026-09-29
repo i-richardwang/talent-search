@@ -2,21 +2,21 @@
  * 检索的取数层：把几条条件变成「哪些经历段以多高的相似度命中了哪条主张」
  * 这一份事实，交给 `rank.ts` 去打分、排序、算分面。
  *
- * 这个文件里没有任何权重、没有 AND 判定、没有分面口径——它只回答「命中了什么」。
+ * 这个文件里没有任何权重、没有 AND 判定、没有分面计数——它只回答「命中了什么」。
  * 「怎么找到人」和「找到之后怎么排」分别演进；取数方式变化时，排名逻辑不动。
  *
  * 一条经历主张（`condition.ts`）的每一项都作用在**同一段经历**上：经历词由
- * `phrases.ts` 判定（向量召回 + 重排），这里拿到那批「命中的说法」沿
- * `experience_phrase` 走到经历段；公司名、公司档、经历来源是那一段上的谓词，
- * 在同一条 SQL 里裁掉不满足的段。累计时长不在这里判——它是跨段的，归 `rank.ts`。
+ * `phrases.ts` 判定（向量召回 + 重排），这里拿到那批「命中的说法」通过
+ * `experience_phrase` 关联到经历段；公司名、公司档、经历来源是那一段上的谓词，
+ * 在同一条 SQL 里过滤掉不满足的段。累计时长不在这里判——它是跨段的，归 `rank.ts`。
  *
  * 门槛（`result.ts` 的 `Gate`：人的条件，和没说做过什么的背景）不产出事实：
- * 它们是按人的谓词，必须的在每条取数 SQL 里裁人，偏好的另问一次谁满足。
- * 背景是「这个人有没有落在范围里的段、累计够不够」，被排除否决的段同样不算。
+ * 它们是按人的谓词，必须的在每条取数 SQL 里按人过滤，偏好的另查一次谁满足。
+ * 背景是「这个人有没有符合范围的段、累计够不够」，被排除否决的段同样不算。
  *
- * 取数**站在一个语料快照上**，但准入不在快照里：判定要打两个模型端点，而快照占着
- * 池里的一条连接，占着它等模型等于让一次端点抖动耗光连接池。所以这里
- * 每一条取数路径都从 `withAdmission` 进去——它在快照外算好命中的说法，进快照
+ * 取数**在一个语料快照里读**，但相关度过滤不在快照里：判定要调两个模型端点，而快照占着
+ * 池里的一条连接，占着它等模型等于让一次端点变慢就耗光连接池。所以这里
+ * 每一条取数路径都从 `withMatchedPhrases` 进去——它在快照外算好命中的说法，进快照
  * 时核对嵌入空间还是不是同一个（论证在 `phrases.ts` 和 `#/db`）。
  */
 
@@ -43,7 +43,7 @@ import {
 import { emptyReason } from "./empty";
 import type { Vocabulary } from "./intent";
 import type { SearchFilters } from "./params";
-import { type Admitted, admittedTable, withAdmission } from "./phrases";
+import { type PhraseHit, phraseHitTable, withMatchedPhrases } from "./phrases";
 import {
 	type Fact,
 	type PopulationFact,
@@ -103,14 +103,14 @@ const MAX_TO_SHOW = 8;
 /**
  * 这些经历词各能找到多少人、是不是太宽、对应人才库里哪些标准能力词。
  *
- * 和搜索用同一套匹配：同样的相关度门槛（`RELEVANCE_MIN`），同样沿
+ * 和搜索用同一套匹配：同样的相关度门槛（`RELEVANCE_MIN`），同样通过
  * `experience_phrase` 从说法找到人。查一个词看到的人数，就是只拿这个词搜出来的
  * 人数。判断太宽也只有这一种算法，检查提交的条件和写进查询记录前都用它
  * （`server/agent-tools.ts`、`server/turn.ts`）。
  *
- * 单位是人，不是经历段：一个囤了九段命中经历的人会被按段数成九个，段占比很高、
+ * 单位是人，不是经历段：一个有九段命中经历的人会被按段数成九个，段占比很高、
  * 名单上却只多他一个人的词，根本不宽。「一个词在语料里有几千种说法」也不是宽：
- * 短语上向量分不开「客服」和「相关」，两者过线的说法一样多。
+ * 短语上向量分不开「客服」和「相关」，两者达到相关度门槛的说法一样多。
  *
  * 命中的说法可能是整段简历原文，所以发给模型的只有其中的能力词，换成标准写法
  * （`skill_term.canonical`），写的人少于 `MIN_PEOPLE_TO_SHOW` 的不发。
@@ -120,45 +120,48 @@ const MAX_TO_SHOW = 8;
 export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 	const asked = [...new Set(texts)];
 	if (asked.length === 0) return [];
-	return withAdmission(asked, RELEVANCE_MIN, async (store, { admitted }) => {
-		const out = asked.map(
-			(text): TermFinding => ({ text, people: 0, wide: false, terms: [] }),
-		);
-		const table = admittedTable(
-			asked.flatMap((t, i) =>
-				(admitted.get(t) ?? []).map((hit) => ({
-					claimIdx: i,
-					valueIdx: 0,
-					hit,
-				})),
-			),
-		);
-		if (!table) return out;
-		const counts = await store.execute<{
-			claim_idx: number;
-			people: number;
-		}>(sql`
+	return withMatchedPhrases(
+		asked,
+		RELEVANCE_MIN,
+		async (store, { phraseHits }) => {
+			const out = asked.map(
+				(text): TermFinding => ({ text, people: 0, wide: false, terms: [] }),
+			);
+			const table = phraseHitTable(
+				asked.flatMap((t, i) =>
+					(phraseHits.get(t) ?? []).map((hit) => ({
+						claimIdx: i,
+						valueIdx: 0,
+						hit,
+					})),
+				),
+			);
+			if (!table) return out;
+			const counts = await store.execute<{
+				claim_idx: number;
+				people: number;
+			}>(sql`
 			with q(claim_idx, value_idx, phrase_id, relevance) as ${table}
 			select q.claim_idx, count(distinct e.emp_id)::int as people from q
 			join experience_phrase ep on ep.phrase_id = q.phrase_id
 			join experience e on e.id = ep.experience_id
 			group by q.claim_idx`);
-		const [total] = (
-			await store.execute<{ n: number }>(
-				sql`select count(distinct emp_id)::int as n from experience`,
-			)
-		).rows;
-		for (const row of counts.rows) {
-			const r = out[row.claim_idx];
-			if (!r) continue;
-			r.people = row.people;
-			r.wide = row.people > (total?.n ?? 0) * WIDE_SHARE;
-		}
-		const terms = await store.execute<{
-			claim_idx: number;
-			name: string;
-			people: number;
-		}>(sql`
+			const [total] = (
+				await store.execute<{ n: number }>(
+					sql`select count(distinct emp_id)::int as n from experience`,
+				)
+			).rows;
+			for (const row of counts.rows) {
+				const r = out[row.claim_idx];
+				if (!r) continue;
+				r.people = row.people;
+				r.wide = row.people > (total?.n ?? 0) * WIDE_SHARE;
+			}
+			const terms = await store.execute<{
+				claim_idx: number;
+				name: string;
+				people: number;
+			}>(sql`
 			with q(claim_idx, value_idx, phrase_id, relevance) as ${table},
 			hit as (
 				select q.claim_idx, coalesce(t.canonical, ph.text) as name,
@@ -177,10 +180,11 @@ export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 				) as n from hit
 			) ranked where n <= ${MAX_TO_SHOW}
 			order by claim_idx, n`);
-		for (const row of terms.rows)
-			out[row.claim_idx]?.terms.push({ name: row.name, people: row.people });
-		return out;
-	});
+			for (const row of terms.rows)
+				out[row.claim_idx]?.terms.push({ name: row.name, people: row.people });
+			return out;
+		},
+	);
 }
 
 /**
@@ -242,9 +246,9 @@ type PopulationRow = { id: number; emp_id: string } & DimSource;
 /**
  * 一份没有人的结果的公共部分：没有人、没有候选、总数为零，只差一句「为什么」。
  *
- * 它出现在三个地方（一条条件都没解析出来、取数撞上上限的两条路），各写一遍
+ * 它出现在三个地方（一条条件都没解析出来、取数超过上限的两条路径），各写一遍
  * 的话，`Facets` 或 `SearchOutcome` 上加一个字段就会有一处忘了跟上，而少一个
- * 字段的空结果在屏幕上和别的空结果长得一模一样。分面必须现造一个：它是可变的。
+ * 字段的空结果在屏幕上和别的空结果长得一模一样。分面每次都得新建一个：它是可变的。
  */
 function noOne(): { results: []; facets: Facets; total: number } {
 	return { results: [], facets: emptyFacets(), total: 0 };
@@ -252,8 +256,8 @@ function noOne(): { results: []; facets: Facets; total: number } {
 
 /**
  * 去掉被排除否决的那些段。语义检索和只有人的条件两条路共用这一步——
- * 「命中排除词的段丧失作证资格」对人口事实同样成立：一段被否决了，它就不能
- * 再算作这个人落在范围里的凭据。各写一份的话，「只写范围加一个排除词」
+ * 「命中排除词的段不再算作证据」对人员事实（`PopulationFact`）同样成立：一段被否决了，
+ * 它就不能再算作这个人符合范围的依据。各写一份的话，「只写范围加一个排除词」
  * 会安静地当那个排除词不存在。
  */
 function keepUnvetoed<F extends { id: number }>(
@@ -265,7 +269,7 @@ function keepUnvetoed<F extends { id: number }>(
 
 /**
  * 结果列表要画的那几列。列的集合由 `result.ts` 的 `ResultEmployee` 说了算，
- * 这里按它取——两条路径各抄一份的话，加一列就会有一条路径少画一样东西。
+ * 这里按它取——两条路径各写一份的话，加一列就会有一条路径少画一样东西。
  */
 const RESULT_COLUMNS = {
 	empId: employee.empId,
@@ -282,8 +286,8 @@ type FactLoad =
 /**
  * 从各主张的事实行数里找出造成超载的主要贡献者。
  *
- * 按贡献从大到小摘，直到剩余事实能进上限；同样行数按查询顺序稳定并列。
- * 返回时再恢复查询顺序，让界面上的点名顺序和 chips 一致。这个指标只解释
+ * 按贡献从大到小挑，直到剩余事实能进上限；同样行数按查询顺序稳定并列。
+ * 返回时再恢复查询顺序，让界面上列出的顺序和 chips 一致。这个指标只解释
  * `FACT_MAX`，和按人数占比判断的太宽（`findTerms`）无关。
  */
 export function overflowContributors(
@@ -306,9 +310,9 @@ export function overflowContributors(
 /**
  * 一段经历上供分面用的那几列，别名直接取 JS 里的字段名。
  *
- * 取回来的行**就是** `DimSource`，所以没有第二段「把 company_tag 抄成
- * companyTag」的映射——那种映射抄错一个字段不会报错，只会让这一维在内存里
- * 恒空，而屏幕上只是少一栏候选。`Record<keyof DimSource, SQL>` 让漏一列直接红。
+ * 取回来的行**就是** `DimSource`，所以没有第二段「把 company_tag 改名成
+ * companyTag」的映射——那种映射写错一个字段不会报错，只会让这一维在内存里
+ * 恒空，而屏幕上只是少一栏候选。`Record<keyof DimSource, SQL>` 让漏一列直接报类型错误。
  */
 const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	months: sql`e.months`,
@@ -353,7 +357,7 @@ function atLeastCond(key: OrdinalKey, band: string): SQL {
 	return sql`${rank} >= (select min(${rank}) from employee p where ${FACT_COLUMNS[key]} = ${band})`;
 }
 
-/** 事实列的 select 片段。两处取数共用，形状因此不可能分家。 */
+/** 事实列的 select 片段。两处取数共用，所以两处的列必然一致。 */
 const factSelect = sql.join(
 	Object.entries(FACT_COLUMNS).map(
 		(entry) => sql`${entry[1]} as "${sql.raw(entry[0])}"`,
@@ -400,7 +404,7 @@ function dimCond<K extends DimKey>(key: K, picked: Picked[K]): SQL | null {
 
 /**
  * 一条经历主张在**那一段经历**上的谓词：公司名、公司档、经历来源，一项一条。
- * 经历词不在这里（它由准入回答），累计时长也不在（它跨段，归 `rank.ts`）。
+ * 经历词不在这里（它由相关度过滤决定，见 `phrases.ts`），累计时长也不在（它跨段，归 `rank.ts`）。
  *
  * 公司名是专有名词，永远不进向量：「字节」和「腾讯」在向量空间里是邻居，
  * 语义匹配会把竞品全匹配进来。它按这一段的公司名或部门路径模糊匹配。
@@ -420,9 +424,9 @@ function segmentConds(claim: ExperienceCondition): SQL[] {
  * 门槛在 `employee p` 上的谓词，一条一个。
  *
  * 人的条件：词表维走维度自己的列表达式；学校名和公司名一样是专有名词，按名字
- * 模糊匹配。背景：这个人有落在范围里的段（`segmentConds`），写了累计时长就把
- * 那些段的月数加起来比。被排除否决的段（`veto`）不替背景作证，和不替主张作证
- * 是同一条语义。
+ * 模糊匹配。背景：这个人有符合范围的段（`segmentConds`），写了累计时长就把
+ * 那些段的月数加起来比。被排除否决的段（`veto`）不算作背景的证据，和不算作主张的
+ * 证据是同一条语义。
  */
 function gateConds(gates: readonly Gate[], veto: SQL | null): SQL[] {
 	return gates.flatMap((g) => {
@@ -444,10 +448,10 @@ function gateConds(gates: readonly Gate[], veto: SQL | null): SQL[] {
 }
 
 /**
- * URL 上的公司名 / 学校名筛选。它们没有分面，所以和必须的门槛一样在取数里
- * 按人裁掉：分面随之只数剩下的人——这正是「选了这一项之后还剩几人」该有的口径。
+ * URL 上的公司名 / 学校名筛选。它们没有分面，所以和必须的门槛一样在取数 SQL 里
+ * 按人过滤：分面随之只数剩下的人——这正是「选了这一项之后还剩几人」该有的口径。
  * 维度那八项**不能**这样下推，因为筛选栏还要回答「再勾一项会剩几人」，那个数
- * 只有把没筛之前的完整事实端在手里才算得出来（`rank.ts`）。
+ * 只有把没筛之前的完整事实拿在内存里才算得出来（`rank.ts`）。
  */
 function viewConds(view: Pick<SearchFilters, "org" | "school">): SQL[] {
 	const conds: SQL[] = [];
@@ -469,7 +473,7 @@ function whereAll(conds: readonly SQL[]): SQL {
 /**
  * 候选里满足一条**偏好**（加分的门槛）的那些人。
  *
- * 偏好不裁人，只改名次（`rank.ts` 各乘一次 `BOOST_WEIGHT`），所以它不能像
+ * 偏好不过滤人，只改名次（`rank.ts` 各乘一次 `BOOST_WEIGHT`），所以它不能像
  * 必须那样下推到取数的谓词里；也不在内存里判——事实行上没有学校，也没有
  * 主张以外的段。所以每条偏好单独问一次库，只问候选那批人，不扫全库。
  */
@@ -494,28 +498,32 @@ async function fetchPreferred(
 const FACT_ROW = sql`e.id, e.emp_id, e.end_date, ${factSelect}`;
 
 /**
- * 有经历词的主张：命中的说法沿 `experience_phrase` 走到段，同一主张、同一段
+ * 有经历词的主张：命中的说法通过 `experience_phrase` 关联到段，同一主张、同一段
  * 只留证据最强的那一次命中。
  *
  * 每条主张按经历词展开：词之间是 OR，但各自单独判定，因为「命中的是哪个词」
  * 要进证据行。一段几类都可能命中、几个词都可能命中，这里只留最强的一行：
- * 先比可信度那一档、同档比相关度——和 rank.ts 的 `stronger` 同一个口径，
+ * 先比可信度那一档、同档比相关度——和 rank.ts 的 `stronger` 同一套比较规则，
  * 否则这里留下的和那边选出来的不是同一条证据。打分层按事实累加月份，同段两行
- * 会把 12 个月数成 24；证据行也会把同一段列两遍。去重必须在 SQL 里做完再过
+ * 会把 12 个月数成 24；证据行也会把同一段列两遍。去重必须在 SQL 里做完再比
  * 上限：在内存里去重的话，三个词的宽主张会把 FACT_MAX 提前触发三倍。
  *
  * 主张自己的段谓词只作用在自己的行上（`q.claim_idx = i and …`）：「入职前在大厂
- * 做过增长」裁的是增长那一段，不裁同一查询里别的主张的段。
+ * 做过增长」限定的是增长那一段，不限定同一查询里别的主张的段。
  */
 function factsSql(
 	claims: readonly Claim[],
-	admitted: Map<string, Admitted[]>,
+	phraseHits: Map<string, PhraseHit[]>,
 	person: readonly SQL[],
 ): SQL | null {
-	const table = admittedTable(
+	const table = phraseHitTable(
 		claims.flatMap((claim, claimIdx) =>
 			claim.what.flatMap((value, valueIdx) =>
-				(admitted.get(value) ?? []).map((hit) => ({ claimIdx, valueIdx, hit })),
+				(phraseHits.get(value) ?? []).map((hit) => ({
+					claimIdx,
+					valueIdx,
+					hit,
+				})),
 			),
 		),
 	);
@@ -563,15 +571,15 @@ function factsSql(
  *
  * 取数不带分面维度的筛选：分面要回答「去掉这一维之后还剩几人」，它需要看到
  * 被筛掉的那些行。筛选、AND、人员打分、排序与分面都在 rank.ts 对这份事实求值。
- * 只有按人裁的那些（必须的门槛、URL 上的公司名 / 学校名）在这里生效——它们没有分面。
+ * 只有按人过滤的那些（必须的门槛、URL 上的公司名 / 学校名）在这里生效——它们没有分面。
  */
 async function fetchFacts(
 	store: DbExecutor,
 	claims: readonly Claim[],
-	admitted: Map<string, Admitted[]>,
+	phraseHits: Map<string, PhraseHit[]>,
 	person: readonly SQL[],
 ): Promise<FactLoad> {
-	const facts = factsSql(claims, admitted, person);
+	const facts = factsSql(claims, phraseHits, person);
 	if (!facts) return { kind: "loaded", facts: [] };
 	const rows = await store.execute<FactRow>(sql`
 		select * from (${facts}) facts
@@ -613,33 +621,33 @@ async function fetchFacts(
 }
 
 /**
- * 被排除的主张否决的**经历段**。这些段丧失为任何主张作证的资格；人不被判决——
+ * 被排除的主张否决的**经历段**。这些段不再算作任何主张的证据；人本身不被排除——
  * 没了这些段还有别的证据的人照常进结果，只有这些段的人过不了 AND，自然出局。
  * 排除因此和「从经历找人」是同一个语义，不是一套针对人的黑名单。
  *
  * 一条排除的主张同样是「一段经历同时满足这几项」：「不要入职前的实习」否决的是
- * 入职前而且是实习的段。没有经历词的排除（「不要入职前的经历」）否决落在范围里的
+ * 入职前而且是实习的段。没有经历词的排除（「不要入职前的经历」）否决符合范围的
  * 每一段。时长在这里按单段判（`e.months`）：否决问的是「这一段是不是 X」，
  * 而累计是人的属性。
  *
  * **不带当前筛选。** 否决问的是「这一段是不是 X」，答案只能由这段经历自己决定。
- * 让筛选参与，「只看在职经历」就会让入职前那段实习重新有资格作证，
- * 于是收窄一个筛选反而放出更多本来站不住的证据。
+ * 让筛选参与，「只看在职经历」就会让入职前那段实习重新算作证据，
+ * 于是多加一个筛选反而放出更多本该被否决的证据。
  *
  * **门槛比正向条件高**（RELEVANCE_MIN_EXCLUDE）：正向条件可以放宽，排除词必须准。
  */
 function vetoSql(
 	excludes: readonly ExperienceCondition[],
-	admitted: Map<string, Admitted[]>,
+	phraseHits: Map<string, PhraseHit[]>,
 ): SQL | null {
 	const parts = excludes.flatMap((claim, i) => {
 		const conds = segmentConds(claim);
 		if (claim.minMonths) conds.push(sql`e.months >= ${claim.minMonths}`);
 		if (!claim.what)
 			return [sql`select e.id from experience e ${whereAll(conds)}`];
-		const table = admittedTable(
+		const table = phraseHitTable(
 			claim.what.flatMap((value, valueIdx) =>
-				(admitted.get(value) ?? [])
+				(phraseHits.get(value) ?? [])
 					.filter((hit) => hit.relevance >= RELEVANCE_MIN_EXCLUDE)
 					.map((hit) => ({ claimIdx: i, valueIdx, hit })),
 			),
@@ -687,7 +695,7 @@ async function fetchVetoed(
 const VOCAB_MAX = 100;
 
 /**
- * 词表里的取值各自住在哪张表上。哪几维有词表由 `VOCAB_KEYS` 说，这里按它穷尽。
+ * 词表里的取值各自来自哪张表。哪几维有词表由 `VOCAB_KEYS` 说，这里按它穷尽。
  *
  * **取值表达式不重写**——和取数、下推谓词用的是同一份 `FACT_COLUMNS`，公司档
  * 哪天从 `org_meta` 挪成一列，改一处。
@@ -735,10 +743,10 @@ export async function vocabulary(): Promise<Vocabulary> {
 }
 
 /**
- * 没有经历主张、只有门槛时，过了门槛的人每段经历就是一条人口事实。它没有
+ * 没有经历主张、只有门槛时，过了门槛的人每段经历就是一条人员事实。它没有
  * route、相关度或证据段身份，不参与语义打分与证据展示；只用于人员筛选和分面计数。
  *
- * 排除的主张在这条路上同样否决证据段：一段被否决就不再算这个人的凭据，只有
+ * 排除的主张在这条路上同样否决证据段：一段被否决就不再算这个人的依据，只有
  * 这一段的人自然出局。两条路径共用 `keepUnvetoed`——各写一份的话，「只写人的
  * 条件加一条排除」会安静地当排除不存在。
  */
@@ -771,7 +779,7 @@ async function searchPopulation(
 	const facts: PopulationFact[] = keepUnvetoed(rows.rows, veto.ids).map(
 		({ id: _id, emp_id, ...dims }) => ({ ...dims, empId: emp_id }),
 	);
-	// org / school 已经在 SQL 里按人裁过，内存里那一遍不必再裁一次
+	// org / school 已经在 SQL 里按人过滤过，内存里不必再过滤一次
 	const inMemory = { ...view, org: undefined, school: undefined };
 	const empIdsAll = facts.map((f) => f.empId);
 	const preferred = await Promise.all(
@@ -806,9 +814,9 @@ async function searchPopulation(
 }
 
 /**
- * 一次检索的取数与排名。`limit` 与 `filters` 都当作**可信入参**：跨进程那一跳
- * 的收窄在 `server/functions.ts` 做完了（`sanitizeFilters` / `sanitizeLimit`），
- * 脚本传的是常量。同一件事收两遍的话，两份口径迟早不一样，而不一样的那一份
+ * 一次检索的取数与排名。`limit` 与 `filters` 都当作**可信入参**：跨进程的 RPC 入参
+ * 已经在 `server/functions.ts` 校验过（`sanitizeFilters` / `sanitizeLimit`），
+ * 脚本传的是常量。同一件事校验两遍的话，两份规则迟早不一样，而不一样的那一份
  * 不会报错。
  */
 export async function search(
@@ -840,21 +848,21 @@ export async function search(
 				overflow: null,
 			}),
 		};
-	// 准入（要打两个模型端点）在快照外算，取数在快照内做，见 phrases.ts。
-	// 正向的和排除的经历词一起进准入：它们查的是同一批说法，判定线的差别在
-	// fetchVetoed 里，不在这里。
-	return withAdmission(
+	// 相关度过滤（要调两个模型端点）在快照外算，取数在快照内做，见 phrases.ts。
+	// 正向的和排除的经历词一起做相关度过滤：它们查的是同一批说法，相关度门槛的差别在
+	// vetoSql 里，不在这里。
+	return withMatchedPhrases(
 		[...claims, ...excludes].flatMap((c) => c.what ?? []),
 		RELEVANCE_MIN,
-		async (store, { admitted }) => {
-			const vetoSource = vetoSql(excludes, admitted);
+		async (store, { phraseHits }) => {
+			const vetoSource = vetoSql(excludes, phraseHits);
 			const veto: Veto = {
 				sql: vetoSource,
 				ids: await fetchVetoed(store, vetoSource),
 			};
-			// 门槛和 URL 上的公司名 / 学校名都按人裁，在每一条取数 SQL 里生效
+			// 门槛和 URL 上的公司名 / 学校名都按人过滤，在每一条取数 SQL 里生效
 			const person = [...gateConds(gates, veto.sql), ...viewConds(filters)];
-			// 只有门槛时没有做过什么可量，名单按人排，不伪造一条主张来启动检索。
+			// 只有门槛时没有做过什么可比，名单按人排，不伪造一条主张来启动检索。
 			if (claims.length === 0)
 				return searchPopulation(
 					store,
@@ -866,7 +874,7 @@ export async function search(
 					person,
 				);
 
-			const loaded = await fetchFacts(store, claims, admitted, person);
+			const loaded = await fetchFacts(store, claims, phraseHits, person);
 			if (loaded.kind === "overflow") {
 				const contributors = new Set(loaded.claims);
 				return {

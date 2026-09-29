@@ -36,7 +36,7 @@ describe("框 → 条件表", () => {
 		);
 	});
 
-	test("年限挂在做过什么的每一条上，各自累计；没有做过什么就不起作用", () => {
+	test("年限加在做过什么的每一条上，各自累计；没有做过什么就不起作用", () => {
 		assert.deepEqual(
 			conditionsOfKeywords(k({ what: ["推荐", "搜索"], minMonths: 36 })),
 			[

@@ -64,7 +64,7 @@ export type Fact = PopulationFact & {
 	relevance: number;
 	/**
 	 * 命中的那条说法的文本，只有抽取的两类带（其余类的文本就是经历行上的
-	 * 字段，回表取得到；简历原文太长，不随事实行走）。不参与计算，只为在
+	 * 字段，回表取得到；简历原文太长，不放进事实行）。不参与计算，只为在
 	 * 证据行上说出「命中的是哪个能力词」。
 	 */
 	phrase: string | null;
@@ -87,7 +87,7 @@ function stronger(a: Fact, b: Fact) {
 
 /**
  * 饱和函数 `x / (x + half)`：恒在 [0, 1) 内、处处单调、没有断崖，所以拿它当因子
- * 永远不会把一段人口压平（见 weights.ts 的 TENURE_HALF）。
+ * 永远不会把一批人的分数压成同一个值（见 weights.ts 的 TENURE_HALF）。
  */
 function saturate(x: number, half: number) {
 	return x / (x + half);
@@ -113,7 +113,7 @@ export function gapMonths(endDate: string | null, now: Date) {
  * 一条主张对一个人说两件事：**可信度**是一档，**深度**是一个数。
  *
  * **可信度**取该人所有命中段里最强的一条证据所在的档。做过三段算法不比做过
- * 一段更「做过」，所以它不累加，回答的是「最硬的那条证据有多能说明他真的做过」。
+ * 一段更「做过」，所以它不累加，回答的是「最可信的那条证据有多能说明他真的做过」。
  *
  * **深度 = 相关度 × 时长 × 近因**，三个都是 (0, 1] 内的因子。相关度取最强那条
  * 证据的；**时长是全部命中段的累计**，近因取其中最近的一段。它们回答的是
@@ -178,7 +178,7 @@ function satisfies(claim: Claim, facts: Fact[] | undefined): facts is Fact[] {
 type Person = Map<number, Fact[]>;
 
 /** 一条事实放进这个人按主张归拢的那一格。 */
-function file(p: Person, f: Fact) {
+function addFact(p: Person, f: Fact) {
 	const list = p.get(f.claim);
 	if (list) list.push(f);
 	else p.set(f.claim, [f]);
@@ -187,7 +187,7 @@ function file(p: Person, f: Fact) {
 /** 把一个人的事实按主张归拢。AND 判定问的是「每条主张都有段吗」。 */
 function byClaim(facts: readonly Fact[]): Person {
 	const p: Person = new Map();
-	for (const f of facts) file(p, f);
+	for (const f of facts) addFact(p, f);
 	return p;
 }
 
@@ -201,7 +201,7 @@ function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 			p = new Map();
 			byEmp.set(f.empId, p);
 		}
-		file(p, f);
+		addFact(p, f);
 	}
 	return byEmp;
 }
@@ -211,9 +211,9 @@ function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
  *
  * 加分的主张不参与，这就是它「加分」的全部含义：只进分数，不进判定。
  *
- * 证据有多硬不在这里问。它是排序的第一把尺（`byEvidence`）：登记证据的人整体
- * 排在自述证据的人前面，每一行旁边那颗点还写着成色。拿它当准入的话，一个人是
- * 从名单里消失，而屏幕上没有任何东西能说明他本来在哪。
+ * 证据有多可信不在这里问。它是排序的第一个依据（`byEvidence`）：登记证据的人整体
+ * 排在自述证据的人前面，每一行旁边的圆点还标着证据的可信度。拿它决定去留的话，
+ * 一个人是从名单里消失，而屏幕上没有任何东西能说明他本来在哪。
  */
 function complete(p: Person, claims: Claim[]) {
 	for (const [i, claim] of claims.entries()) {
@@ -228,7 +228,7 @@ function complete(p: Person, claims: Claim[]) {
  *
  * **可信度**取必须的主张里最弱的那一档：名单说「这个人满足全部必须条件」，
  * 这句话只有它最弱的那条证据那么可信。加分的主张不参与——一条可有可无的主张
- * 再硬也不该替必须的作证。
+ * 证据再可信，也不该拉高必须主张的可信度。
  *
  * **深度 = 必须主张的乘积 × 加分主张的抬升 × 人的偏好的抬升。** 必须主张之间是
  * 乘积：一条浅，整个人就被压下去。淘汰由 `complete` 负责，不是由乘积负责——
@@ -258,7 +258,7 @@ function measure(
 				strength = value.strength;
 		} else if (value && satisfies(claim, fs)) {
 			// 够不上时长的加分主张不加分，依据也不留：留了它就会画成一行命中，
-			// 而名次里没有它——「看得见的东西能解释看到的名次」就此破掉
+			// 而名次里没有它——「看得见的东西能解释看到的名次」就不成立了
 			basis.push(value.basis);
 			depth *= 1 + BOOST_WEIGHT * value.depth;
 		} else basis.push(null);
@@ -288,19 +288,19 @@ function keeps(f: SearchFilters, except?: DimKey) {
  * - 人数（每行几个）：去掉这一维自己的筛选，带上其余各维——不摘的话选中一项
  *   之后其余项全是 0，用户不可点击第二次。
  *
- * 合成一个口径（只留数得出人的值）会让列表在手底下换形状：在职级里点一下 P6，
+ * 合成一个口径（只留数得出人的值）会让列表在用户点选时变样：在职级里点一下 P6，
  * 序列那一栏凡是没有 P6 的行当场消失，而屏幕上没有任何东西说这是刚才那一下
  * 造成的。分开之后，被别的筛选挤成 0 的行留在原地写着 0——它是用户自己刚做的
  * 事的后果，藏起来就没法回头（界面上那一项点不了，见 `filter-bar.tsx`）。
  *
  * 数不出人的值仍然不进值域：全站几百个二级序列，和这次查询无关的那些列出来
- * 只是几千行噪音。公司名 / 学校名那两个精确条件在 SQL 里就把人裁掉了，所以它们
- * 照样收窄值域——那是「换了一批候选」，不是「在同一批里挑一部分」。
+ * 只是几千行噪音。公司名 / 学校名那两个精确条件在 SQL 里就把人过滤掉了，所以它们
+ * 照样缩小值域——那是「换了一批候选」，不是「在同一批里挑一部分」。
  *
  * 代价是同一份事实要走两遍。没有任何分面筛选时两遍结果相同，但那是运行时才
- * 知道的事，为它加一条快路要多养一个「两遍必须等价」的不变量。
+ * 知道的事，为它加一条快速路径就要多维护一个「两遍必须等价」的不变量。
  *
- * **语义检索和只有人的条件的查询走的是同一份实现**，差别只在 `admits`：前者要凑齐
+ * **语义检索和只有人的条件的查询走的是同一份实现**，差别只在 `qualifies`：前者要凑齐
  * 全部必须的主张（AND），后者没有语义证据可言、人人算数。各写一份的话，同一栏
  * 筛选在两种查询下是两种东西——一种点得动，另一种选中一项之后其余项归零。
  */
@@ -308,10 +308,10 @@ function facetRows<K extends DimKey, F extends PopulationFact>(
 	facts: readonly F[],
 	key: K,
 	filters: SearchFilters,
-	admits: (person: readonly F[]) => boolean,
+	qualifies: (person: readonly F[]) => boolean,
 ): Facet<K>[] {
-	const domain = tally(facts, key, () => true, admits);
-	const live = tally(facts, key, keeps(filters, key), admits);
+	const domain = tally(facts, key, () => true, qualifies);
+	const live = tally(facts, key, keeps(filters, key), qualifies);
 	return [...domain].map(([id, { value, rank }]) => ({
 		value,
 		n: live.get(id)?.n ?? 0,
@@ -320,7 +320,7 @@ function facetRows<K extends DimKey, F extends PopulationFact>(
 }
 
 /**
- * 一维上「哪个取值下有几个人」。`keep` 决定哪些事实参与，`admits` 决定一个人
+ * 一维上「哪个取值下有几个人」。`keep` 决定哪些事实参与，`qualifies` 决定一个人
  * 在这个取值下算不算数。数不出人的取值不进结果——值域与计数的差别由调用方
  * 用两套参数跑两遍表达，不在这里分叉。
  */
@@ -328,7 +328,7 @@ function tally<K extends DimKey, F extends PopulationFact>(
 	facts: readonly F[],
 	key: K,
 	keep: (f: F) => boolean,
-	admits: (person: readonly F[]) => boolean,
+	qualifies: (person: readonly F[]) => boolean,
 ) {
 	const byValue = new Map<
 		string,
@@ -354,7 +354,7 @@ function tally<K extends DimKey, F extends PopulationFact>(
 	>();
 	for (const [id, bucket] of byValue) {
 		let n = 0;
-		for (const person of bucket.people.values()) if (admits(person)) n++;
+		for (const person of bucket.people.values()) if (qualifies(person)) n++;
 		if (n > 0) out.set(id, { value: bucket.value, rank: bucket.rank, n });
 	}
 	return out;
@@ -364,7 +364,7 @@ function tally<K extends DimKey, F extends PopulationFact>(
  * 各维度的选项与人数。
  *
  * 计数的口径是「在当前这次筛选下，选了这一项之后还剩多少人」；有哪些选项则
- * 只由这次查询决定，不随筛选变（见 `facetRows`）——一条会在手底下换形状的
+ * 只由这次查询决定，不随筛选变（见 `facetRows`）——一条会在用户点选时变样的
  * 筛选栏，比一条长一点的更难用。
  */
 function computeFacets(
@@ -387,7 +387,7 @@ function computeFacets(
 /**
  * 把一维的候选放进结果，顺带按这一维自己的规则排好。
  *
- * 每一维的取值类型各不相同，而循环里的 `key` 是联合——TS 收不拢这份对应关系，
+ * 每一维的取值类型各不相同，而循环里的 `key` 是联合——TS 推断不出这份对应关系，
  * 只能在这一处断言。断言之外没有别的地方需要知道「哪一维是什么形状」。
  */
 function fill(out: Facets, key: DimKey, rows: Facet[]) {
@@ -447,10 +447,10 @@ function byEvidence(a: Ranked, b: Ranked) {
 }
 
 /**
- * 一次检索的名次与分面。两者出自同一份事实，所以口径不可能分家。
+ * 一次检索的名次与分面。两者出自同一份事实，所以统计口径必然一致。
  *
  * `now` 是入参而不是函数体里的 `new Date()`：近因让深度依赖「今天」，而依赖
- * 当前时间的函数是测不动的。调用方传一次，测试传一个固定的日期。
+ * 当前时间的函数没法稳定地测。调用方传一次，测试传一个固定的日期。
  */
 export function rank(
 	facts: Fact[],
@@ -476,7 +476,7 @@ export function rank(
 /**
  * 这一页的人各自留哪几段经历当证据。
  *
- * 只对已经定好名次的那一页算，所以它不进排序的开销。排序键：证据硬的在前
+ * 只对已经定好名次的那一页算，所以它不进排序的开销。排序键：证据强的在前
  * （`stronger`：先档后相关度），再取长的，再按 id——展示顺序必须是确定的，否则
  * 同一次查询刷新两次证据会换位置。这里刻意不用主张的深度：那是**人**的属性
  * （累计、近因都跨段），而这里要选的是单独一段，两者不是同一个量。
@@ -514,7 +514,7 @@ export function pageHits(
 		acc.push(...list.slice(0, perClaim));
 		out.set(empId, acc);
 	}
-	// 主张的顺序即行序：结果里每个人的每条证据对应一条主张，按下标排好再交出去
+	// 主张的顺序即行序：结果里每个人的每条证据对应一条主张，按下标排好再返回
 	for (const list of out.values())
 		list.sort(
 			(a, b) => a.claim - b.claim || stronger(b, a) || b.months - a.months,

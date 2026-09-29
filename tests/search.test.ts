@@ -8,7 +8,7 @@
  *
  * 另外三件事各有自己的文件，因为它们要的语料和这里不是一份：语料锁
  * （`search-snapshot.test.ts`，其中一条真的把整库换掉了）、写入约束
- * （`search-constraints.test.ts`）、分面口径（`facets.test.ts`，那条穷举
+ * （`search-constraints.test.ts`）、分面计数（`facets.test.ts`，那条穷举
  * 不变量需要一份说得清的语料）。
  *
  * 嵌入是假的（见 fixture.ts 的 `fakeEmbedding`）：相关度 = 共有字数 / √(字数×字数)，
@@ -99,7 +99,7 @@ before(async () => {
 		},
 		{
 			empId: "T007",
-			name: "岗位名太长，相关度不过线",
+			name: "岗位名太长，相关度不够",
 			segments: [{ title: "算法平台运维工程师", months: 36 }],
 		},
 		{
@@ -132,7 +132,7 @@ before(async () => {
 });
 
 describe("抽取的两类 route", () => {
-	test("能力词命中时证据行带回命中的那条说法", async () => {
+	test("能力词命中时证据行带上命中的那条说法", async () => {
 		const { results } = await run("Python");
 		const hit = results
 			.find((r) => r.employee.empId === "T009")
@@ -141,13 +141,13 @@ describe("抽取的两类 route", () => {
 		assert.equal(hit?.phrase, "Python");
 	});
 
-	test("同一段可以有多条能力词，各自独立作证", async () => {
-		// 主键是（段、路、说法）三列：两条能力词落在同一段上，AND 要两个都过
+	test("同一段可以有多条能力词，各自独立算作证据", async () => {
+		// 主键是（段、路、说法）三列：两条能力词在同一段上，AND 要两个都命中
 		const { results } = await run("Python,Spark");
 		assert.ok(results.some((r) => r.employee.empId === "T009"));
 	});
 
-	test("做过的事只拿领域比相关度，参与方式随命中带回来", async () => {
+	test("做过的事只拿领域比相关度，参与方式随命中一起返回", async () => {
 		const { results } = await run("推荐系统");
 		const hit = results
 			.find((r) => r.employee.empId === "T009")
@@ -212,9 +212,9 @@ describe("事实行数量上限", () => {
 });
 
 describe("语义命中", () => {
-	test("假端点下通过的阈值只有一个数：召回下限不高于判定线", () => {
-		// 假重排分数就是假余弦。召回下限必须覆盖判定线，下面每条断言才由
-		// RELEVANCE_MIN 这一个成员门槛决定。
+	test("假端点下通过的阈值只有一个数：召回下限不高于判定门槛", () => {
+		// 假重排分数就是假余弦。召回下限必须不高于判定门槛，下面每条断言才只由
+		// RELEVANCE_MIN 这一个相关度门槛决定。
 		assert.ok(RECALL_MIN <= RELEVANCE_MIN);
 	});
 
@@ -282,7 +282,7 @@ describe("AND 语义", () => {
 		assert.ok(!ids.includes("T002"), "只命中「算法」的人必须被淘汰");
 	});
 
-	test("两个词可以落在不同的经历段上", async () => {
+	test("两个词可以命中不同的经历段", async () => {
 		const { results } = await run("算法,运营");
 		const t001 = results.find((r) => r.employee.empId === "T001");
 		const segs = new Set(t001?.hits.map((h) => h.experienceId));
@@ -298,7 +298,7 @@ describe("AND 语义", () => {
 
 /**
  * 背景（「只看入职前的经历」「待过字节」）：没说做过什么，只定去留。它和人的
- * 条件一样按人裁——不产出事实、不进名次、不上证据行。
+ * 条件一样按人过滤——不产出事实、不进名次、不上证据行。
  */
 describe("背景只定去留", () => {
 	const ids = (outcome: { results: { employee: { empId: string } }[] }) =>
@@ -319,7 +319,7 @@ describe("背景只定去留", () => {
 		assert.deepEqual(ids(outcome), ["T001"]);
 	});
 
-	test("被排除否决的段不替背景作证", async () => {
+	test("被排除否决的段不算作背景的证据", async () => {
 		// T003、T009 的入职前经历都在某公司：否决之后他们没有入职前经历可算
 		const outcome = await search({
 			conditions: parseQuery("kind:external,-org:某公司"),
@@ -327,7 +327,7 @@ describe("背景只定去留", () => {
 		assert.deepEqual(ids(outcome), ["T001"]);
 	});
 
-	test("主张里的各项说的是同一段：经历词和来源写在一条上，约束的是作证的那段", async () => {
+	test("主张里的各项说的是同一段：经历词和来源写在一条上，约束的是作为证据的那段", async () => {
 		const outcome = await run("算法 kind:external");
 		assert.deepEqual(
 			outcome.results.map((result) => result.employee.empId),
@@ -359,7 +359,7 @@ describe("背景只定去留", () => {
  * 查询变，计数随筛选变。两条路各写一份求值器的话，同一栏筛选在只有门槛的查询下
  * 会变成「点一项，别的维度里凑不出人的行当场消失」——而那正是筛选栏不能被信任的样子。
  */
-describe("只有门槛时的分面口径", () => {
+describe("只有门槛时的分面计数", () => {
 	before(async () => {
 		await seed([
 			{
@@ -524,7 +524,7 @@ describe("筛选条件", () => {
 		assert.equal(basis?.months, 36);
 	});
 
-	test("收窄筛选只会让人变少，不会变多", async () => {
+	test("多加筛选只会让人变少，不会变多", async () => {
 		const plain = await run("算法");
 		const narrowed = await run("算法", { kind: "external" });
 		assert.ok(narrowed.total < plain.total, "这个筛选真的筛掉了人");
@@ -598,13 +598,13 @@ describe("跟人走的筛选", () => {
 			"P003",
 		]);
 		assert.deepEqual(await ids("潜水,education:>=硕士"), ["P001", "P003"]);
-		// 加分的「及以上」不裁人，满足的排前面
+		// 加分的「及以上」不过滤人，满足的排前面
 		const boosted = await run("潜水,+education:>=硕士");
 		assert.equal(boosted.total, 3);
 		assert.equal(boosted.results[2]?.employee.empId, "P002");
 	});
 
-	test("职级筛选收窄人群，且这一维自己的候选不受自己影响", async () => {
+	test("职级筛选缩小人群，且这一维自己的候选不受自己影响", async () => {
 		const { facets, total } = await run("潜水", {
 			level: "P7",
 		});
@@ -617,7 +617,7 @@ describe("跟人走的筛选", () => {
 		]);
 	});
 
-	test("公司名是按人裁的精确条件，分面随之只数剩下的人", async () => {
+	test("公司名是按人过滤的精确条件，分面随之只数剩下的人", async () => {
 		const { results, facets } = await run("潜水", { org: ["字节"] });
 		assert.deepEqual(
 			results.map((r) => r.employee.empId),
@@ -626,7 +626,7 @@ describe("跟人走的筛选", () => {
 		assert.deepEqual(facets.level, [{ value: "P7", n: 1, rank: 7 }]);
 	});
 
-	test("偏好的公司名不裁人，只把满足的人排到前面", async () => {
+	test("偏好的公司名不过滤人，只把满足的人排到前面", async () => {
 		const preferred = await search({
 			conditions: parseQuery("潜水,+org:字节"),
 		});
@@ -763,7 +763,7 @@ describe("入职前经历对齐的序列", () => {
 		);
 	});
 
-	test("分面里对齐的序列和登记的序列是同一个口径", async () => {
+	test("分面里对齐的序列和登记的序列按同一套规则计数", async () => {
 		const { facets } = await run("深海算法工程师");
 		const seq = facets.seq.find((s) => s.value.l2 === "深海算法");
 		assert.deepEqual(seq, { value: { l1: "技术", l2: "深海算法" }, n: 1 });
@@ -827,16 +827,16 @@ describe("命中总数", () => {
 
 	test("太宽的词按人数占比判定", async () => {
 		// 55 个「深海潜航」远超库里两成的人；「考古」只有三个
-		const reach = await findTerms(["深海潜航", "考古"]);
+		const findings = await findTerms(["深海潜航", "考古"]);
 		assert.deepEqual(
-			reach.filter((r) => r.wide).map((r) => r.text),
+			findings.filter((r) => r.wide).map((r) => r.text),
 			["深海潜航"],
 		);
 	});
 });
 
 /**
- * 召回按名次截断：一个词只有余弦最近的 `RECALL_TOP` 条说法进重排。过线的说法
+ * 召回按名次截断：一个词只有余弦最近的 `RECALL_TOP` 条说法进重排。达到相关度门槛的说法
  * 再多，重排的条数也不变，词照样能用——搜一个词的成本和语料大小无关，这是
  * 这条截断存在的全部理由。说法多不等于宽，宽只按命中的人数占比量。
  */
@@ -845,7 +845,7 @@ describe("召回按名次截断", () => {
 	const extra = 50;
 	before(async () => {
 		// 直接往说法表里灌超过名额的、和查询词同一个向量的说法：它们不指向
-		// 任何经历段，只为让这个词过线的说法多过 RECALL_TOP
+		// 任何经历段，只为让这个词达到相关度门槛的说法多过 RECALL_TOP
 		await db.execute(sql`
 			insert into phrase (text, embedding)
 			select ${word} || g, ${vectorLiteral(fakeEmbedding(word))}::halfvec
@@ -866,15 +866,15 @@ describe("召回按名次截断", () => {
 	});
 
 	test("说法多不算宽：没命中两成的人就不宽", async () => {
-		const reach = await findTerms([word, "考古"]);
+		const findings = await findTerms([word, "考古"]);
 		assert.deepEqual(
-			reach.filter((r) => r.wide).map((r) => r.text),
+			findings.filter((r) => r.wide).map((r) => r.text),
 			[],
 		);
 	});
 });
 
-describe("证据的成色决定先后，不决定去留", () => {
+describe("证据的可信度决定先后，不决定去留", () => {
 	test("只在简历里提过的人也在名单里，排在受控命中之后", async () => {
 		const ids = (await run("算法,运营")).results.map((r) => r.employee.empId);
 		assert.ok(ids.includes("T001"), "序列 + 岗位命中");
@@ -960,11 +960,11 @@ describe("加分的主张", () => {
 		const { results } = await run("+算法,+运营");
 		const ids = results.map((r) => r.employee.empId);
 		assert.ok(ids.includes("T002"), "只有算法");
-		// 「渠道运营」对「运营」是 0.71，过线；对「算法」是 0——只命中第二条加分的主张
+		// 「渠道运营」对「运营」是 0.71，达到门槛；对「算法」是 0——只命中第二条加分的主张
 		assert.ok(ids.includes("T006"), "只有运营");
 	});
 
-	test("分面口径跟着走：加分的主张不参与「还剩几人」的计算", async () => {
+	test("分面计数跟着变：加分的主张不参与「还剩几人」的计算", async () => {
 		const boosted = await run("算法,+运营");
 		const plain = await run("算法");
 		assert.equal(boosted.total, plain.total);
@@ -1011,14 +1011,14 @@ describe("排除的主张：否决证据段，不否决人", () => {
 		assert.ok(RELEVANCE_MIN_EXCLUDE > RELEVANCE_MIN);
 	});
 
-	test("命中排除的主张的段丧失作证资格；只有这类证据的人自然出局", async () => {
+	test("命中排除的主张的段不再算作证据；只有这类证据的人自然出局", async () => {
 		const loose = await run("算法");
 		const tight = await run("算法,-运营");
 		assert.ok(loose.results.some((r) => r.employee.empId === "X001"));
 		assert.ok(!tight.results.some((r) => r.employee.empId === "X001"));
 	});
 
-	test("别的段还有证据的人留下——排除砍的是证据，不是人", async () => {
+	test("别的段还有证据的人留下——排除去掉的是证据，不是人", async () => {
 		// T001 的「算法」证据在序列段上，被否决的是他那段「运营」经历。
 		// 人级排除会把这种人整个剔掉，违背「排除只否决证据段」的语义。
 		const { results } = await run("算法,-运营");
@@ -1031,7 +1031,7 @@ describe("排除的主张：否决证据段，不否决人", () => {
 	});
 
 	test("相似但没到否决阈值的段不被否决", async () => {
-		// T003 的描述「算法运营」对「运营」是 0.71，过判定线、不过否决线
+		// T003 的描述「算法运营」对「运营」是 0.71，达到判定门槛、达不到否决门槛
 		assert.ok(fakeSimilarity("运营", "算法运营") < RELEVANCE_MIN_EXCLUDE);
 		const { results } = await run("算法,-运营");
 		assert.ok(results.some((r) => r.employee.empId === "T003"));
@@ -1059,12 +1059,12 @@ describe("排除的主张：否决证据段，不否决人", () => {
 	 * 「只看入职前经历，不要实习」会安静地当那条排除不存在——屏幕上那枚
 	 * chip 好端端画着，名单里却全是实习生。
 	 */
-	test("只有背景加一条排除时，被否决的段照样不替背景作证", async () => {
+	test("只有背景加一条排除时，被否决的段照样不算作背景的证据", async () => {
 		const scoped = await search({
 			conditions: parseQuery("-机甲实习,kind:external"),
 		});
 		const ids = scoped.results.map((r) => r.employee.empId);
-		assert.ok(!ids.includes("X002"), "只有这一段的人失去全部凭据，出局");
+		assert.ok(!ids.includes("X002"), "只有这一段的人失去全部证据，出局");
 		assert.ok(ids.includes("X003"), "还有别的段的人留下——砍的是段不是人");
 		const loose = await search({ conditions: parseQuery("kind:external") });
 		assert.ok(
@@ -1110,7 +1110,7 @@ describe("排除的主张：否决证据段，不否决人", () => {
 /**
  * 停用的词。
  *
- * 语义上它必须**彻底不存在**：不收窄、不排人、不产出列、不进分面。任何一处
+ * 语义上它必须**彻底不存在**：不缩小人群、不排人、不产出列、不进分面。任何一处
  * 漏掉都不会报错，只会让「我把这个条件关掉了」和实际结果对不上——而这正是
  * 停用这个功能存在的意义（关掉它看看还剩谁），对不上就等于没有这个功能。
  */
@@ -1206,8 +1206,8 @@ describe("一条条件的多个取值", () => {
 	});
 
 	test("同一段命中同一条件的两个取值，只贡献一次", async () => {
-		// 取值之间是 OR，不是两条证据：不去重的话 termValue 会把这 12 个月
-		// 累加成 24，分数、展示的累计月数、证据行全跟着说谎。
+		// 取值之间是 OR，不是两条证据：不去重的话 claimValue 会把这 12 个月
+		// 累加成 24，分数、展示的累计月数、证据行全跟着出错。
 		const { results } = await run("机甲算法/深度学习");
 		const m4 = results.find((r) => r.employee.empId === "M004");
 		assert.equal(m4?.basis[0]?.months, 12, "月份只能计一次");
@@ -1226,7 +1226,7 @@ describe("一条条件的多个取值", () => {
 
 /**
  * 一条条件的几个取值。用户用词不一定准，模型多写几个取值才不漏人；几个取值
- * 同权，证据行要说出「拿去比的是哪个词」。这里测它们真的走到了取数、命中
+ * 同权，证据行要说出「拿去比的是哪个词」。这里测它们真的用在了取数、命中
  * 标记和名次上。
  */
 describe("一条条件的几个取值", () => {
@@ -1278,9 +1278,9 @@ describe("一条条件的几个取值", () => {
 		assert.equal(v1?.hits[0]?.value, "星舰算法");
 	});
 
-	test("排除和正向撞了词：各自生效，写了什么就搜什么", async () => {
+	test("排除和正向用了同一个词：各自生效，写了什么就搜什么", async () => {
 		const { results } = await run("星舰算法/星舰推演,-星舰推演");
-		// 靠「星舰推演」作证的段被否决，只有它的人出局；靠代表词作证的人留下。
+		// 靠「星舰推演」命中的段被否决，只有这类证据的人出局；靠代表词命中的人留下。
 		// 不替用户猜他想要哪一头：两枚 chip 都在屏幕上，改哪个由他定。
 		const ids = results.map((r) => r.employee.empId);
 		assert.ok(!ids.includes("V002"));

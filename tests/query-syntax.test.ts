@@ -1,6 +1,6 @@
 /**
  * 手敲查询的一行语法。它只是命令行、验收用例和测试夹具的输入便利，产品里
- * 没有任何一处读写这行字，所以这里只测记号怎么读——收窄归 `condition.test.ts`。
+ * 没有任何一处读写这行字，所以这里只测记号怎么读——校验归 `condition.test.ts`。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";

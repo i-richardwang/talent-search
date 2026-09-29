@@ -1,6 +1,6 @@
 /**
  * 条件的边界与不变量。这一层是纯函数：模型输出、RPC 入参、命令行敲的字都从
- * `conditionsOf` 这一个口子进来，所以「取值不改字」「几条、几个词」「人的条件
+ * `conditionsOf` 这一个入口进来，所以「取值不改字」「几条、几个词」「人的条件
  * 没有排除」「一项都不剩的整条消失」在这里测一次，三条路一起算数。
  */
 import assert from "node:assert/strict";
@@ -63,8 +63,8 @@ describe("经历词的边界", () => {
 
 describe("不可信输入 → 条件", () => {
 	test("没给强度就是「必须」；给了认不出的也按必须算，不丢词", () => {
-		// 丢掉会静默放宽 AND 语义，而屏幕上看不出哪个条件被吃了。
-		// 当成必须最多是收得太紧，那是看得见、点得掉的。
+		// 丢掉会静默放宽 AND 语义，而屏幕上看不出哪个条件被丢了。
+		// 当成必须最多是条件太严，那是看得见、点得掉的。
 		assert.deepEqual(
 			conditionsOf([
 				{ about: "experience", what: ["线下渠道运营"] },
@@ -86,7 +86,7 @@ describe("不可信输入 → 条件", () => {
 		);
 	});
 
-	test("一条主张的每一项各自收窄，写下的项都留在同一条上", () => {
+	test("一条主张的每一项各自校验，写下的项都留在同一条上", () => {
 		assert.deepEqual(
 			conditionsOf([
 				{
@@ -113,7 +113,7 @@ describe("不可信输入 → 条件", () => {
 		);
 	});
 
-	test("三档强度与停用原样收下；没停用的身上不长 off，认不出的成因也不长", () => {
+	test("三档强度与停用原样收下；没停用的不带 off，认不出的成因也不带", () => {
 		assert.deepEqual(
 			conditionsOf([
 				{ about: "experience", what: ["渠道运营"], mode: "must" },
@@ -229,7 +229,7 @@ describe("不可信输入 → 条件", () => {
 			assert.deepEqual(conditionsOf(raw), [], JSON.stringify(raw));
 	});
 
-	test("收窄是幂等的：合规的条件再过一遍一个字段都不变", () => {
+	test("校验是幂等的：合规的条件再过一遍一个字段都不变", () => {
 		const once = conditionsOf([
 			{ about: "experience", what: ["大模型", "多模态", "LLM"], mode: "must" },
 			{ about: "experience", what: ["带团队"], mode: "boost", off: "user" },
@@ -288,7 +288,7 @@ describe("逐项去掉", () => {
 		minMonths: 36,
 	};
 
-	test("各项按朗读顺序排列：什么时候、在哪、做过什么、多久", () => {
+	test("各项按读出来的顺序排列：什么时候、在哪、做过什么、多久", () => {
 		assert.deepEqual(partsOf(claim), [
 			{ key: "kind", value: "external" },
 			{ key: "org", value: "字节" },
@@ -298,7 +298,7 @@ describe("逐项去掉", () => {
 		]);
 	});
 
-	test("只去点名的那一项，其余原样；去到一项不剩就是删整条", () => {
+	test("只去掉指定的那一项，其余原样；去到一项不剩就是删整条", () => {
 		assert.deepEqual(withoutPart(claim, { key: "what", value: "模型" }), {
 			...claim,
 			what: ["算法"],
@@ -341,7 +341,7 @@ describe("逐项去掉", () => {
 });
 
 describe("改强度", () => {
-	test("经历主张三档都行；人的条件没有排除，改不动就原样交回", () => {
+	test("经历主张三档都行；人的条件没有排除，改不了就原样返回", () => {
 		const word = exp("算法");
 		assert.deepEqual(modesOf(word), ["must", "boost", "exclude"]);
 		assert.equal(withMode(word, "exclude").mode, "exclude");

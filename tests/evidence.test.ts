@@ -46,7 +46,7 @@ describe("强度分档", () => {
 
 	test("每一路都归到确切的一档，不是「属于三档之一」", () => {
 		// 断言整张映射表而不是逐个判断「在集合里」：后者被任何兜底分支保证为真，
-		// 加一路而没决定它多硬时照样通过。这里少一路多一路都会失败。
+		// 加一路而没决定它多可信时照样通过。这里少一路多一路都会失败。
 		assert.deepEqual(
 			Object.fromEntries(
 				(Object.keys(ROUTE_STRENGTH) as Route[]).map((r) => [r, strengthOf(r)]),

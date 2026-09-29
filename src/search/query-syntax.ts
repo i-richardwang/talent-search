@@ -35,7 +35,7 @@ const AT_LEAST = ">=";
 
 const EXPERIENCE_KEYS = ["org", "companyTag", "kind", "minMonths"] as const;
 
-/** 一行查询 → 条件。收窄（词长、去重、条数）由 `conditionsOf` 做。 */
+/** 一行查询 → 条件。校验（词长、去重、条数）由 `conditionsOf` 做。 */
 export function parseQuery(text: string): Condition[] {
 	const drafts = text.split(CONDITION_SPLIT).map((group) => {
 		let g = group.trim();

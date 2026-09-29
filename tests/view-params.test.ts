@@ -122,7 +122,7 @@ describe("枚举", () => {
 });
 
 describe("URL 状态翻成检索条件", () => {
-	test("只挑收窄人群的那几维，翻页数不是检索条件", () => {
+	test("只挑缩小人群的那几维，翻页数不是检索条件", () => {
 		const f = toFilters({ seq: [{ l1: "技术", l2: "数据科学" }], n: 100 });
 		assert.deepEqual(f.seq, [{ l1: "技术", l2: "数据科学" }]);
 		assert.ok(!("n" in f));
@@ -136,7 +136,7 @@ describe("URL 状态翻成检索条件", () => {
  * 翻页。
  *
  * 它和范围筛选不同的地方在于：非法值不只是「说不通」，还会变成一次
- * 拉几万行的查询。而 `n=51` 这种数更阴——它不报错，只是让同一次查询
+ * 拉几万行的查询。而 `n=51` 这种数更隐蔽——它不报错，只是让同一次查询
  * 产生一份界面上任何按钮都到不了的结果。
  */
 describe("翻页只认整页", () => {
@@ -185,7 +185,7 @@ describe("还能不能再翻", () => {
 		assert.equal(morePage({ n: RESULT_MAX }).n, RESULT_MAX);
 	});
 
-	test("一次加载齐：能显示的人一跳到位，多出来的那一页不算", () => {
+	test("一次加载齐：能显示的人一次取到，多出来的那一页不算", () => {
 		// 只取整页的倍数，否则 `pageSize` 会把它当非法值丢掉，名单反而缩回第一页
 		assert.equal(allPages(RESULT_PAGE + 1).n, RESULT_PAGE * 2);
 		assert.equal(allPages(RESULT_PAGE).n, RESULT_PAGE);

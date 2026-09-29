@@ -32,7 +32,7 @@ export function narrows(filters: SearchFilters) {
 	return FILTER_KEYS.some((key) => filters[key] !== undefined);
 }
 
-/** 把 RPC 入参收成受结果载荷上限约束的页大小。 */
+/** 把 RPC 入参转成受结果载荷上限约束的页大小。 */
 export function sanitizeLimit(value: unknown): number {
 	const limit = Number(value);
 	if (!Number.isInteger(limit) || limit <= 0) return RESULT_PAGE;

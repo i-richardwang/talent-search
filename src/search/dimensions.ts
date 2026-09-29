@@ -7,22 +7,22 @@
  *
  * 所以这里声明的是**维度本身**，其余各处从它派生：
  *
- * - `values` 一处声明，供出三样东西——分面有哪些候选、每个候选几个人、以及
+ * - `values` 一处声明，提供三样东西——分面有哪些候选、每个候选几个人、以及
  *   「这个人过不过这一维的筛选」。三者一旦对不上，症状是分面预告的数点下去
  *   得不到（`tests/search.test.ts` 对此有断言）。
- * - `parse` 供出唯一那处清洗：URL / RPC 的筛选（`params.ts` 的 `parsePopulation`）
+ * - `parse` 提供唯一那处清洗：URL / RPC 的筛选（`params.ts` 的 `parsePopulation`）
  *   和查询条件里的取值（`condition.ts`）都走它。
- * - `label` / `option` / `text` 供出筛选栏标题、选项文案与条件 chip 的标签。
+ * - `label` / `option` / `text` 提供筛选栏标题、选项文案与条件 chip 的标签。
  * - SQL 那一份在 `search.ts`：谓词由这里的 `match` 家族和那里的一条列表达式
- *   一起推出来，不是第二份手写实现。它没法住在这里——这个文件要进客户端。
+ *   一起推出来，不是第二份手写实现。它没法放在这里——这个文件要进客户端。
  *
- * **为什么谓词必须求值两次。** 查询条件里的取值可以直接下推给数据库裁段；筛选栏
+ * **为什么谓词必须求值两次。** 查询条件里的取值可以直接下推给数据库过滤经历段；筛选栏
  * 里勾的不行，因为筛选栏还要回答「再勾一项会剩几人」，那个数只有把没筛之前的
- * 完整事实端在手里才算得出来。所以是「一份声明、两个通用求值器」，而不是
+ * 完整事实拿在内存里才算得出来。所以是「一份声明、两个通用求值器」，而不是
  * 「一份谓词」——求值器各写一次，和维度有几个无关。
  *
  * 查询条件里也用到其中几维（`condition.ts`：公司档、经历来源、经历时长在主张上，
- * 职级、学历、招聘渠道是人的条件），它们只借这里的 `parse` 与 `id`，形状按条件自己长。
+ * 职级、学历、招聘渠道是人的条件），它们只借这里的 `parse` 与 `id`，条件本身的形状由 `condition.ts` 定义。
  *
  * 公司名（`org`）与学校名（`school`）不在这里：它们是自由文本的模糊匹配、没有
  * 候选列表，硬塞进同一张表就得给每一项加一个「匹配方式」的分叉，那是用一个
@@ -117,7 +117,7 @@ export type Facet<K extends DimKey = DimKey> = {
 /**
  * 怎么算命中。只有两个家族，各写一次求值器：
  *
- * - `set`：取值落在选中的那几个里。
+ * - `set`：取值是选中的那几个之一。
  * - `atLeast`：一条阈值。候选档位由 `MIN_MONTHS_BUCKETS` 给出（一段 36 个月的
  *   经历同时算进 6/12/24/36 四档），但判定用的是原值——手拼的 `minMonths=7`
  *   仍然按 7 个月生效，而不是因为它不在档位上就静默筛空。
@@ -154,7 +154,7 @@ type Dimension<K extends DimKey> = Match<K> & {
 export const FILTER_LIST_MAX = 64;
 
 /**
- * 一列不可信的文本。空列表收成 `undefined`——「一项都没选」和「这一维不筛」是同
+ * 一列不可信的文本。空列表归为 `undefined`——「一项都没选」和「这一维不筛」是同
  * 一件事，留一个空数组在 URL 上只会让筛选栏的组名数出一项没有行可以点掉的筛选。哪些串不算这一维的取值由维度自己说（`plain` 的 `isValue`）。
  * 公司名与学校名（`params.ts`）走同一条：它们不在这张表里，但「一列名字」和
  * 「一列取值」是同一种东西，上限也是同一个。
@@ -178,7 +178,7 @@ const SEP = "\u0001";
  *
  * 它声明在这一处，三个求值器都从它派生——分面候选（`values`）、不可信输入的
  * 清洗（`parse`）、以及给模型的语料词表（`search.ts` 的 `vocabulary`）。
- * 分家的话，一个「未知」能被写进 URL、下推成 `in ('未知')` 选中一批行，
+ * 各写一份的话，一个「未知」能被写进 URL、下推成 `in ('未知')` 选中一批行，
  * 而内存里的谓词当场把它们否掉——屏幕上是一个选中了却空着的筛选。
  */
 export const NOT_A_VALUE = ["未知"] as const;
@@ -214,7 +214,7 @@ function plain(label: string, column: (fact: DimSource) => string | null) {
 		option: (v: string) => v,
 		parse: (raw: unknown) => {
 			// 筛掉不算取值的之后可能一个不剩：那和「这一维不筛」是同一件事，
-			// 留一个空数组会让「有没有筛选」说谎。
+			// 留一个空数组会让「有没有筛选」的判断出错。
 			const values = textList(raw)?.filter(isValue);
 			return values && values.length > 0 ? values : undefined;
 		},
@@ -279,7 +279,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		measure: (f) => f.months,
 		id: (v) => String(v),
 		option: (v) => duration(v),
-		// 收得最紧的一维：它是唯一参与数值比较的筛选，负数会让它恒真
+		// 校验最严的一维：它是唯一参与数值比较的筛选，负数会让它恒真
 		// （`months >= -999`），小数会渲染出「1 年 0.5 个月」这种档位——
 		// 两者都不报错，只会安静地给出说不通的结果。
 		parse: (raw) => {
@@ -335,7 +335,7 @@ export function orAbove(key: OrdinalKey, value: string): string {
 	return `${dimOption(key, value)}及以上`;
 }
 
-/** 全部维度，按声明顺序。加一维只要在上面加一段，其余各处跟着长。 */
+/** 全部维度，按声明顺序。加一维只要在上面加一段，其余各处自动跟着变。 */
 export const DIM_KEYS = Object.keys(DIMENSIONS) as DimKey[];
 
 /**
@@ -343,7 +343,7 @@ export const DIM_KEYS = Object.keys(DIMENSIONS) as DimKey[];
  * 不了——序列要先知道全套序列树，经历来源是二选一，经历时长是连续量。
  *
  * 取值从哪张表数出来是 SQL 那一半的事（`search.ts` 的 `VOCAB_SOURCE`），那份表
- * 按这里穷尽；词表本身的形状（`intent.ts` 的 `Vocabulary`）也从这里长出来。
+ * 按这里穷尽；词表本身的形状（`intent.ts` 的 `Vocabulary`）也从这里派生。
  */
 export const VOCAB_KEYS = [
 	"companyTag",

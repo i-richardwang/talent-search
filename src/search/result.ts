@@ -9,7 +9,7 @@ import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
 import type { Strength } from "./weights";
 
-/** 说了做过什么的经历主张：它量名次，也是卡片上的一行证据。 */
+/** 说了做过什么的经历主张：它决定名次，也是卡片上的一行证据。 */
 export type Claim = ExperienceCondition & {
 	mode: "must" | "boost";
 	what: NonNullable<ExperienceCondition["what"]>;
@@ -23,8 +23,8 @@ export type Claim = ExperienceCondition & {
 export type Gate = PersonCondition | ExperienceCondition;
 
 /**
- * 启用条件按执行角色拆分。名次只量做过什么：`claims` 产出事实、定档和深度、
- * 画成证据行；`gates` 在取数里按人裁；`prefer` 满足一条乘一份固定的加分；
+ * 启用条件按执行角色拆分。名次只看做过什么：`claims` 产出事实、定档和深度、
+ * 画成证据行；`gates` 在取数 SQL 里按人过滤；`prefer` 满足一条乘一份固定的加分；
  * `excludes` 只否决经历段。
  */
 export type Query = {

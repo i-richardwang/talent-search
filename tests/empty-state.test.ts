@@ -1,6 +1,6 @@
 /**
  * 空态说什么、给哪条出路——**文案与出口**这一半。成因怎么判定是另一半，
- * 归 `tests/empty.test.ts`（那一半住在检索层，它手里才有事实）。
+ * 归 `tests/empty.test.ts`（那一半在检索层，只有那里有事实）。
  *
  * 空态是这个界面里唯一「没有数据可看」的时刻，它说什么就是产品在这一刻的
  * 全部价值。出口分两类，这一层测：改筛选走 `onChange`（同一条查询，换个
@@ -47,7 +47,7 @@ function run(
 }
 
 describe("取数超限：是一种结果，不是一次失败", () => {
-	test("只点名实际贡献事实行最多的条件，出口是改条件不是清筛选", () => {
+	test("只列出实际贡献事实行最多的条件，出口是改条件不是清筛选", () => {
 		const s = run(
 			{ kind: "overflowEvidence", claims: claimsOf(parseQuery("经理")) },
 			"算法,经理",
@@ -59,7 +59,7 @@ describe("取数超限：是一种结果，不是一次失败", () => {
 		assert.equal(s.changed, undefined, "筛选不是病因");
 	});
 
-	test("人太多时提示继续收窄，不报成没有结果", () => {
+	test("人太多时提示继续缩小范围，不报成没有结果", () => {
 		const s = run({ kind: "overflowPopulation" });
 		assert.equal(s.title, "范围过大");
 		assert.equal(s.focused, true);

@@ -9,7 +9,7 @@
  */
 export const TEXT_MAX = 200;
 
-/** 不可信入参 → 一段收进边界的短文本。只去两头空白、限长度，不改写字面。 */
+/** 不可信入参 → 一段限定了长度的短文本。只去两头空白、限长度，不改写字面。 */
 export function boundedText(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const normalized = value.trim().slice(0, TEXT_MAX);

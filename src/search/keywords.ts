@@ -8,14 +8,14 @@
  *   两样都要。词按意思匹配，和对话模式写出的经历词走同一套召回。
  * - **公司或部门**：一条主张，名字含其中任一个就算，词之间是 OR。
  * - **学校**：一条人的条件，词之间是 OR。
- * - **累计年限**：挂在「经历或技能」的每一条主张上，各自累计。没有词时不起作用，
+ * - **累计年限**：加在「经历或技能」的每一条主张上，各自累计。没有词时不起作用，
  *   框也不让填。
  *
  * 「在字节做过三年推荐」这种把几项绑在同一段经历上的说法，关键词模式说不出来：
  * 公司和经历是两条条件，只要求同一个人。这是对话模式存在的理由。
  *
  * 条件表是两种模式共用的查询语言（`condition.ts`），这里只是它的一种写法；
- * 写出来的表照样过 `conditionsOf`，和别的入口是同一道收窄。
+ * 写出来的表照样过 `conditionsOf`，和别的入口是同一道校验。
  */
 import { dots, duration } from "#/lib/format";
 import {
@@ -50,7 +50,7 @@ export const KEYWORD_LABEL: Record<KeywordField, string> = {
 	school: "学校",
 };
 
-/** 框里的词 → 条件表。收窄之后一条不剩就是什么都没填。 */
+/** 框里的词 → 条件表。校验之后一条不剩就是什么都没填。 */
 export function conditionsOfKeywords(k: Keywords): Condition[] {
 	return conditionsOf([
 		...k.what.map((term) => ({

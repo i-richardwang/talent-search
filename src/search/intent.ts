@@ -117,7 +117,7 @@ type Declined = { said: string; why: string; instead: Condition[] };
 
 /**
  * 一次理解的说明，只属于写出它的那条记录。条件表是查询本身，说明是对这一轮的
- * 交代：替用户定了什么读法、哪些要求搜不了。两样都没有时不落库（`null`）。
+ * 交代：替用户做了哪些假设、哪些要求搜不了。两样都没有时不落库（`null`）。
  */
 export type TurnNotes = { assumed: string[]; declined: Declined[] };
 
@@ -144,9 +144,9 @@ export function understood(
 	base: readonly Condition[],
 ): Understood {
 	const value = (raw ?? {}) as Record<string, unknown>;
-	const narrow = (list: unknown) => conditionsIn(list, vocab);
+	const validate = (list: unknown) => conditionsIn(list, vocab);
 	const offs = new Map(base.map((c) => [conditionKey(c), c.off ?? null]));
-	const conditions = narrow(value.conditions).map((c) =>
+	const conditions = validate(value.conditions).map((c) =>
 		withOff(c, offs.get(conditionKey(c)) ?? null),
 	);
 	const assumed = textsOf(value.assumed);
@@ -157,7 +157,7 @@ export function understood(
 		const why = boundedText(entry.why);
 		// 同一段原话只交代一次：两行一样的「搜不了」说不出第二件事
 		if (!said || !why || declined.some((d) => d.said === said)) continue;
-		declined.push({ said, why, instead: narrow(entry.instead) });
+		declined.push({ said, why, instead: validate(entry.instead) });
 		if (declined.length === NOTES_MAX) break;
 	}
 	return {
