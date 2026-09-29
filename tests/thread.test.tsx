@@ -33,7 +33,7 @@ function turns(rounds: Round[]): Turn[] {
 	}));
 }
 
-/** 别的轮次底下有查看那一轮结果的 `Link`，得站在一个 router 里才画得出来。 */
+/** 别的轮次底下有查看那一轮结果的 `Link`，得放在一个 router 里才画得出来。 */
 async function seen(
 	rounds: Round[],
 	{
@@ -103,7 +103,7 @@ describe("后面每一轮", () => {
 		assert.doesNotMatch(text, /已添加|已移除|未变/);
 	});
 
-	test("没理解出来就记下是哪一环坏了，不装作还在进行，也不怪这段描述", async () => {
+	test("没理解出来就记下是哪个环节出了问题，不装作还在进行，也不怪这段描述", async () => {
 		const { text } = await seen(
 			[
 				{ said: "算法", spec: "算法" },
@@ -252,7 +252,7 @@ describe("检索人才库的过程", () => {
 		assert.doesNotMatch(text, /查找公司/, "每一步收在里面");
 	});
 
-	test("进行中摊开，每一步一行：动作、对象；结论收在这一步里面", async () => {
+	test("进行中展开，每一步一行：动作、对象；结论收在这一步里面", async () => {
 		const { text } = await seen([{ said: "推荐和后端", spec: null }], {
 			waiting: true,
 			liveTrace: trace,

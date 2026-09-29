@@ -11,7 +11,7 @@ import {
 } from "react";
 import { cn } from "#/lib/utils";
 
-/* 选中那一段垫的底换选项时滑过去：它的位置和尺寸由选中项的 offset 写成列表上的变量。 */
+/* 选中那一段的底色块在换选项时滑过去：它的位置和尺寸由选中项的 offset 写成列表上的变量。 */
 
 type SegmentedSize = "middle" | "small";
 

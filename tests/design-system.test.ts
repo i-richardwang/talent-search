@@ -591,7 +591,7 @@ describe("外壳与预览页之间的消息", () => {
 		assert.ok(!bad({ draft: { light: {} } }));
 	});
 
-	test("动效命令只认打开、关闭、重播", () => {
+	test("动效命令只接受打开、关闭、重播", () => {
 		assert.ok(isToPreview({ action: "replay", type: "design-system:motion" }));
 		assert.ok(!isToPreview({ action: "spin", type: "design-system:motion" }));
 	});

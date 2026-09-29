@@ -45,7 +45,7 @@ function NotFound({
 	);
 }
 
-/** 根路由接不住的地址（`__root.tsx` 的 `notFoundComponent`）。 */
+/** 没有任何路由匹配的地址（`__root.tsx` 的 `notFoundComponent`）。 */
 export function PageNotFound() {
 	return (
 		<NotFound

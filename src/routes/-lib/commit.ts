@@ -1,7 +1,7 @@
 /**
  * **改查询的唯一入口。** 界面上所有「让结果变一批人」的动作——首页敲一句话、
- * 在工作台里补充一句需求、改一个 chip 的强度、停用或删掉一个条件——最后都落到这里：
- * 落一条查询记录，然后导航到它。改筛选是重新看一遍同一批候选，走 `updateView`。
+ * 在工作台里补充一句需求、改一个 chip 的强度、停用或删掉一个条件——最后都调用这里：
+ * 写入一条查询记录，然后导航到它。改筛选是重新看一遍同一批候选，走 `updateView`。
  *
  * 改查询一律 push：记录不可变，浏览器的后退键就是撤销，回到上一条记录。
  */
@@ -10,12 +10,12 @@ import { useRef, useState } from "react";
 import type { QueryInput } from "#/search/spec";
 import { commitTurn } from "#/server/functions";
 
-/** 落记录失败时说什么。区分不了原因，也不必区分：能做的只有重试。 */
+/** 写入记录失败时说什么。区分不了原因，也不必区分：能做的只有重试。 */
 export const COMMIT_FAILED = "没能提交这次搜索，请重试。";
 
 export function useCommit() {
 	const navigate = useNavigate();
-	// 一次只能飞一条：两条同时在飞，先回来的会被后回来的覆盖。
+	// 同一时刻只发一个提交请求：两个请求并发时，先返回的结果会被后返回的覆盖。
 	const inFlight = useRef(false);
 	const [error, setError] = useState<string | null>(null);
 

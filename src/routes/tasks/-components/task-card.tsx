@@ -77,7 +77,7 @@ function Latest({ latest }: { latest: TaskRunView | null }) {
 }
 
 /**
- * 任务页上一类任务的一组：任务名、最近一次的结果和「立即运行」，下面是库存数和按次
+ * 任务页上一类任务的一组：任务名、最近一次的结果和「立即运行」，下面是统计数和按次
  * 列出的运行记录。`onDone` 在请求运行之后调用，让页面重新取一次状态。
  */
 export function TaskCard({
@@ -160,7 +160,7 @@ export function TaskCard({
 const FACT_COLUMNS =
 	"repeat(auto-fill, minmax(max(9.375rem, calc((100% - 3 * var(--spacing) * 2) / 4)), 1fr))";
 
-/** 库存数，一格一个数，构成写在数下面。 */
+/** 统计数，一格一个数，构成写在数下面。 */
 function Facts({ kind, corpus }: { kind: TaskKind; corpus: CorpusCounts }) {
 	return (
 		<dl className="grid gap-2" style={{ gridTemplateColumns: FACT_COLUMNS }}>

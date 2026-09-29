@@ -214,7 +214,7 @@ function ExportDialog({
 							/>
 						</Form.Field>
 					</Form>
-					{/* 选中的比能显示的少时，说清这份表里是谁，并给出补齐的一下 */}
+					{/* 选中的比能显示的少时，说清这份表里是谁，并给出补齐的按钮 */}
 					{picked.length < reach && (
 						<Alert
 							action={

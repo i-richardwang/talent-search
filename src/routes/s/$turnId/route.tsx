@@ -89,7 +89,7 @@ function Workbench() {
 
 	const nav = useNavPhase();
 	// 理解属于链上最后一轮，不属于正看着的这一轮：回头看早先的结果时，
-	// 最后一轮照样在理解，线程照样在长
+	// 最后一轮照样在理解，线程照样在追加步骤
 	const {
 		interpreting,
 		fault: interpretFault,

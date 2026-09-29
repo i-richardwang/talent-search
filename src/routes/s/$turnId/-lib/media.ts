@@ -21,7 +21,7 @@ function subscribe(onChange: () => void) {
  * 宽窄两套容器二选一地挂：窄屏的详情是模态浮层，CSS 藏得住它的样子，藏不住它的
  * 焦点陷阱和滚动锁定。
  *
- * 服务端与首帧一律答「宽」，水合前后是同一份 HTML。首帧在窄屏上落在某个人身上时，
+ * 服务端与首帧一律答「宽」，水合前后是同一份 HTML。首帧在窄屏上正打开某个人的详情时，
  * 右栏的槽靠 `max-xl:hidden`（workspace-layout.tsx）先藏住。
  */
 export function useIsWide() {

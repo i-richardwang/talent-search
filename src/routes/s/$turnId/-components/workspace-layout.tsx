@@ -9,7 +9,7 @@ import { useIsWide } from "../-lib/media";
  * 只在这里定。
  *
  * 宽窄两套右侧容器由 `useIsWide` 二选一地挂（理由见 media.ts）；右栏的槽另带
- * `max-xl:hidden`，兜住 JS 还没答话的首帧。
+ * `max-xl:hidden`，在 JS 还没判断出宽窄的首帧里先藏住它。
  */
 export function WorkspaceLayout({
 	header,

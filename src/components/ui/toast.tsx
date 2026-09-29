@@ -15,7 +15,7 @@ import { cn } from "#/lib/utils";
 
 /*
  * `<Toaster />` 在根上挂一次，别处调 `toast.success(...)` 这一组函数，不需要 React 上下文。
- * Base UI 的 toast 管理器只是一个广播：`<Toaster />` 挂上之后调用才有人接。
+ * Base UI 的 toast 管理器只负责分发：`<Toaster />` 挂载之后调用，通知才会显示出来。
  */
 
 type ToastType = "success" | "warning" | "error";

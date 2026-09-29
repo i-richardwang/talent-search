@@ -44,7 +44,7 @@ describe("表格里的年", () => {
 		assert.equal(years(12), "1.0 年");
 	});
 
-	test("不满一年也说年，不改口径", () => {
+	test("不满一年也说年，不换单位", () => {
 		assert.equal(years(6), "0.5 年");
 		assert.equal(years(0), "0.0 年");
 	});

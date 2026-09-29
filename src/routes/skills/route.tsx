@@ -5,7 +5,7 @@ import { AdminPage, useListPending } from "../-components/admin-page";
 import { SkillTable } from "./-components/skill-table";
 
 /**
- * 技能词表的管理页：哪些写法认成了同一个词、哪个词属于哪个更宽的词。点一个词看它的
+ * 技能词表的管理页：哪些写法归并成了同一个词、哪个词属于哪个更宽的词。点一个词看它的
  * 释义和上下从属（`/skills/$word`）。
  *
  * 只读：词表由后台整理自动写（`src/corpus/vocabulary.ts`），在这里改的下一轮就被覆盖；

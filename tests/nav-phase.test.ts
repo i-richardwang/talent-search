@@ -10,7 +10,7 @@ const spot = (turn: string, view: Spot["view"] = {}): Spot => ({ turn, view });
 const QUERY = { seq: [{ l1: "技术", l2: "后端" }] };
 const IDLE = { growing: false, refreshing: false, replacing: false };
 
-describe("导航相位", () => {
+describe("导航阶段", () => {
 	test("没有导航在进行时三项都为 false", () => {
 		assert.deepEqual(
 			navPhase(false, spot("a", { ...QUERY, n: 100 }), spot("a")),

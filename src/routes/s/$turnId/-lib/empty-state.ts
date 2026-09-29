@@ -8,7 +8,7 @@ import { CLEARED_FILTERS, type View } from "./view-params";
  * 名单空了该说什么，以及给一条什么样的出路。成因由检索层判定（`search/empty.ts`
  * 的 `emptyReason`），这里只翻译成文案，不用计数反推。
  *
- * 每一支配一个一键可走的动作：改视图走 `onChange`（同一条查询），改条件走
+ * 每种成因配一个一键可做的动作：改视图走 `onChange`（同一条查询），改条件走
  * `onReviseQuery`（派生一条新的查询记录）。表是穷尽的 `Record`，检索层多一种成因
  * 这里就编译不过。
  */
@@ -99,7 +99,7 @@ const COPY: {
 };
 
 export function emptyState(reason: EmptyReason, handlers: Handlers): EmptyCopy {
-	// 每一支带着自己的数据，TS 收不拢这份对应关系，在这一处断言。
+	// 每种成因带着自己的数据，TS 推断不出这份对应关系，在这一处断言。
 	const copy = COPY[reason.kind] as (r: EmptyReason, h: Handlers) => EmptyCopy;
 	return copy(reason, handlers);
 }

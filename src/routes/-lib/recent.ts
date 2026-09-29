@@ -14,7 +14,7 @@ export const RECENT_FIRST_PAGE = Math.max(...RECENT_COUNTS, HOME_RECENT_COUNT);
 
 /**
  * 一行记录读的是**任务标题**：对话的任务是链头那句话，回头找一次搜过的东西，
- * 认出来靠的是自己当时怎么开口的。关键词搜索没有那句话，框里的词就是它问的。
+ * 靠的是记得自己当时怎么说的。关键词搜索没有那句话，框里的词就是它问的。
  */
 export function recentLabel(record: Pick<RecentSearch, "spec" | "title">) {
 	if (record.title) return record.title;

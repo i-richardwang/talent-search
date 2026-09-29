@@ -54,7 +54,7 @@ describe("选择后浮起来的工具条", () => {
 		const html = markup([pick("林岚", 1), pick("周予", 2)]);
 		assert.match(visibleText(html), /已选\s*2\s*人/);
 		assert.ok(html.includes('aria-label="清空已选"'), html);
-		// 导出那一颗自己带上人数：指针落上去之前就知道这一下会导出几个人
+		// 导出按钮自己带上人数：指针移上去之前就知道点下去会导出几个人
 		assert.ok(html.includes('aria-label="导出 2 人"'), html);
 	});
 

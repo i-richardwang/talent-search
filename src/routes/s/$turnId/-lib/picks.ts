@@ -92,7 +92,7 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	);
 	const [picked, setPicked] = useState(NONE);
 
-	// 「选择全部」还没到的那一批：名单长出来的这一帧补上。
+	// 「选择全部」还没加载到的那一批：名单加载出新行的这一帧补上。
 	const sweeping = useRef(false);
 	const swept = useRef(rows);
 	if (sweeping.current && swept.current !== rows) {

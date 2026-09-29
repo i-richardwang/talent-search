@@ -55,7 +55,7 @@ const WEIGHT = {
 /** 元素以状态保存：提示套上或摘掉使元素重挂时，观察跟着换到新元素上。 */
 function useTruncated(node: HTMLElement | null, content: unknown) {
 	const [truncated, setTruncated] = useState(false);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 内容换了盒子尺寸可能不变，ResizeObserver 不触发，要靠 content 重量
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 内容换了盒子尺寸可能不变，ResizeObserver 不触发，要靠 content 触发重新测量
 	useEffect(() => {
 		if (!node) return;
 		const measure = () => setTruncated(node.scrollWidth > node.clientWidth);

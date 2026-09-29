@@ -15,7 +15,7 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 		return data;
 	},
 	component: Detail,
-	/* 找不到工号时只换这一栏：`notFound()` 由抛它的 loader 所属的路由接住，名单留着。 */
+	/* 找不到工号时只换这一栏：`notFound()` 由抛它的 loader 所属的路由处理，名单留着。 */
 	notFoundComponent: PersonNotFound,
 	/* 换人时 loader 要查一次库：快的时候不画骨架，免得闪一下；画出来就留够一段，也免得闪。 */
 	pendingMs: 200,

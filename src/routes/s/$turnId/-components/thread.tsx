@@ -105,7 +105,7 @@ function clockOf(at: number) {
 }
 
 /**
- * 等待时跟在那句话后面的时长。起点是记录落下的时刻，不是这一块画出来的时刻：
+ * 等待时跟在那句话后面的时长。起点是记录写入的时刻，不是这一块画出来的时刻：
  * 刷新页面后照样接着数。
  */
 function Elapsed({
@@ -125,20 +125,20 @@ function Elapsed({
 }
 
 /**
- * 离底多近算「在底下」。模型边跑边长出东西时，在底下就跟着滚；翻上去超过这个
+ * 离底多近算「在底下」。模型运行中不断追加内容时，在底下就跟着滚；翻上去超过这个
  * 距离就不跟，右下角出现回到底部的按钮。
  */
 const AT_BOTTOM_PX = 300;
 
 /**
- * 线程跟着长：链上多了一轮就滚到底，人刚说的话不该藏在滚动条底下；最后一轮
- * 边跑边长出东西时，只有人本来就在底下才跟着滚，翻上去看过去的轮次时不拽回来。
+ * 线程内容变多时的滚动：链上多了一轮就滚到底，人刚说的话不该藏在滚动条底下；最后一轮
+ * 运行中追加内容时，只有人本来就在底下才跟着滚，翻上去看过去的轮次时不拽回来。
  * 回头看早先那一轮的结果不算多了一轮，线程不动。
  *
  * 滚的是这一栏自己的视口，不用 `scrollIntoView`：那个会连外层一起滚，
- * 首帧能把整页顶走。
+ * 首帧会把整页滚走。
  *
- * @param growth 最后一轮长到哪了；它一变就重看一次要不要滚。
+ * @param growth 最后一轮当前的内容进度；它一变就重看一次要不要滚。
  */
 function useFollow(latestId: string, growth: string) {
 	const viewportRef = useRef<HTMLDivElement>(null);
@@ -159,9 +159,9 @@ function useFollow(latestId: string, growth: string) {
 		return () => viewport.removeEventListener("scroll", onScroll);
 	}, []);
 
-	// 多了一轮强制到底；同一轮长出东西只在跟着底下时到底
+	// 多了一轮强制到底；同一轮追加内容只在停在底部时到底
 	const seen = useRef<string | null>(null);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 长出一点就要重看一次
+	// biome-ignore lint/correctness/useExhaustiveDependencies: 每追加一点内容就要重看一次
 	useLayoutEffect(() => {
 		if (seen.current !== latestId) {
 			seen.current = latestId;
@@ -244,9 +244,9 @@ export function Thread({
 	rounds: readonly Turn[];
 	/** 名单正显示的那一轮。 */
 	viewing: string;
-	/** 最后一轮还在理解时走到的步骤；理解落下后为 null，读记录上的。 */
+	/** 最后一轮还在理解时走到的步骤；理解完成后为 null，读记录上的。 */
 	liveTrace?: TraceStep[] | null;
-	/** 最后一轮没理解出来时是哪一环坏了。 */
+	/** 最后一轮没理解出来时是哪个环节出了问题。 */
 	fault?: InterpretFault | null;
 	/** 把替代条件加进正看着的条件表：记成新的一轮。 */
 	onAdd: (conditions: Condition[]) => void;
@@ -329,7 +329,7 @@ export function Thread({
 	);
 }
 
-/** 一轮落下的时刻。按浏览器时区写，水合之前留着同样的高度。 */
+/** 一轮写入的时刻。按浏览器时区写，水合之前留着同样的高度。 */
 function Clock({ at }: { at: number }) {
 	const hydrated = useHydrated();
 	const clock = hydrated ? clockOf(at) : null;
@@ -392,7 +392,7 @@ function Round({
 	 */
 	mark: "link" | "viewing" | null;
 	phase: Phase;
-	/** 没理解出来时哪一环坏了，不是「这句话没读懂」。 */
+	/** 没理解出来时哪个环节出了问题，不是「这句话没读懂」。 */
 	failure: InterpretFault | null;
 	trace: readonly TraceStep[];
 	onAdd: (conditions: Condition[]) => void;
@@ -491,7 +491,7 @@ function Round({
 	);
 }
 
-/** AI 回应的时刻：最后一步落下的时候；没走过步骤就是那一轮落下的时候。 */
+/** AI 回应的时刻：最后一步完成的时候；没走过步骤就是那一轮写入的时候。 */
 function lastStepAt(at: number, trace: readonly TraceStep[]) {
 	return trace[trace.length - 1]?.at ?? at;
 }
@@ -518,7 +518,7 @@ function Declined({ said, why }: { said: string; why: string }) {
 }
 
 /**
- * 最后一轮没理解出来：说哪一环坏了，能重试的带重试钮。按下之后到这一轮重新进入
+ * 最后一轮没理解出来：说哪个环节出了问题，能重试的带重试钮。按下之后到这一轮重新进入
  * 理解之前，钮停在等待态，免得被连按两次。
  */
 function Fault({
@@ -669,9 +669,9 @@ function useDebounced(value: string, live: boolean) {
 }
 
 /**
- * 检索人才库的过程。进行中默认摊开；人把它收起来时，标题换成正在做的那一步。
+ * 检索人才库的过程。进行中默认展开；人把它收起来时，标题换成正在做的那一步。
  * 完成后自动收起（人在进行中亲手点开过的除外），标题是步数与用时。
- * 摊开是每一步一行，每一步再点开才是它的结论（`StepRow`）。
+ * 展开后每一步一行，每一步再点开才是它的结论（`StepRow`）。
  */
 function Process({
 	steps,
@@ -680,7 +680,7 @@ function Process({
 }: {
 	steps: readonly TraceStep[];
 	live: boolean;
-	/** 这一轮落下的时刻：进行中的计时和完成后的用时都从它算。 */
+	/** 这一轮写入的时刻：进行中的计时和完成后的用时都从它算。 */
 	since: number;
 }) {
 	const [open, setOpen] = useState(live);
@@ -772,7 +772,7 @@ export function stepFindings(step: TraceStep) {
 	return step.names.map(nameLine);
 }
 
-/** 摊开后的一步：平时收着，点开是这一步的结论。 */
+/** 展开后的一步：平时收着，点开是这一步的结论。 */
 function StepRow({ step }: { step: TraceStep }) {
 	const { action, keyword } = stepTitle(step);
 	return (

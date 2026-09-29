@@ -87,10 +87,10 @@ export function useKeyboardFlow({
 			// 反复选中又取消。
 			if (e.repeat) return;
 
-			// 当前这个人：↑↓ 走到的那一个，还没走到任何人时是 -1。
+			// 当前这个人：↑↓ 移到的那一个，还没移到任何人时是 -1。
 			const at = results.findIndex((r) => r.employee.empId === empId);
 
-			// 空格选中／取消正在看的这个人：↑↓ 走到谁，选的就是谁。没在看任何人时
+			// 空格选中／取消正在看的这个人：↑↓ 移到谁，选的就是谁。没在看任何人时
 			// 空格照常翻页。
 			if (e.key === " " && at >= 0) {
 				e.preventDefault();
@@ -108,7 +108,7 @@ export function useKeyboardFlow({
 			if (step === 0) return;
 			e.preventDefault();
 
-			// 还没选人时，↓ 落到第一个、↑ 落到最后一个
+			// 还没选人时，↓ 移到第一个、↑ 移到最后一个
 			const next =
 				at < 0
 					? step > 0

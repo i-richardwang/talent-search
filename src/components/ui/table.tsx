@@ -105,7 +105,7 @@ export function TableRow({
 	};
 	const keyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
 		onKeyDown?.(event);
-		// 只认焦点在行本身时的按键；格里控件上的回车、空格归控件
+		// 只处理焦点在行本身时的按键；格里控件上的回车、空格归控件
 		if (event.defaultPrevented || event.target !== event.currentTarget) return;
 		if (event.key !== "Enter" && event.key !== " ") return;
 		event.preventDefault();

@@ -46,7 +46,7 @@ export function FilterChipNote({ children }: { children: ReactNode }) {
 	return <span className="ui-filter-chip-note">{children}</span>;
 }
 
-/** 关闭格：`label` 是读屏念的那句，要说得出清掉的是哪一条。 */
+/** 关闭格：`label` 是读屏读出的那句，要说得出清掉的是哪一条。 */
 export function FilterChipClear({
 	label,
 	onClear,

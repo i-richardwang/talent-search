@@ -4,8 +4,8 @@
  * 钮上的字断言 visibleText，属性一律不算数：`aria-label` 会让文案存在于 DOM 里，
  * 按字符串搜 HTML 就能命中一个肉眼什么都看不到的空壳。菜单关着时不在 DOM 里，
  * 它的项由 `fieldItems` 给出，直接测这份项：每一项后面「选了还剩几个人」、数到 0 的
- * 点不了、选中的归零了照样点得动。裸值翻译、选中项不消失这些不变量产在
- * `filterFields`，在 `tests/filters.test.ts` 里测。
+ * 点不了、选中的归零了照样点得动。裸值翻译、选中项不消失这些不变量由
+ * `filterFields` 保证，在 `tests/filters.test.ts` 里测。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";

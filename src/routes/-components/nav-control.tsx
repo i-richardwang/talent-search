@@ -14,7 +14,7 @@ import type { NavPrefs } from "../-lib/nav-prefs";
  * 不和外壳互相引用。
  */
 
-/** 收起、展开导航栏的快捷键，画在提示里；`useNavHotkey` 认的是同一组键。 */
+/** 收起、展开导航栏的快捷键，画在提示里；`useNavHotkey` 响应的是同一组键。 */
 const TOGGLE_NAV_KEYS = "mod+[";
 
 /** 导航栏常驻的宽度：lg 以上。以下导航栏收进抽屉。 */
@@ -50,7 +50,7 @@ export const NavControlContext = createContext<NavControl | null>(null);
 /** 导航的内容画在抽屉里时是关上抽屉的函数，收起导航栏的开关那一格放关闭钮。 */
 export const InDrawer = createContext<(() => void) | null>(null);
 
-/** 在整页上认 ⌘/Ctrl + [，收起或展开宽屏的导航栏；lg 以下导航栏在抽屉里，不认。 */
+/** 在整页上监听 ⌘/Ctrl + [，收起或展开宽屏的导航栏；lg 以下导航栏在抽屉里，不响应。 */
 export function useNavHotkey(toggle: () => void) {
 	useEffect(() => {
 		const apple = /mac|iphone|ipod|ipad|ios/i.test(navigator.userAgent);

@@ -90,7 +90,7 @@ export function ResultList({
 	onReviseQuery: (next: Condition[]) => void;
 	onEditQuery: () => void;
 	picks: Picks;
-	/** 这一轮没理解出来：名单停在这里，说出哪一环坏了。 */
+	/** 这一轮没理解出来：名单停在这里，说出哪个环节出了问题。 */
 	failure?: { fault: InterpretFault; onRetry: () => void } | null;
 }) {
 	const { results, claims, order, total } = outcome;

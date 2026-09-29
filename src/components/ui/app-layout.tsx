@@ -150,7 +150,7 @@ export function AppNavDrawer({
 	open: boolean;
 	onClose: () => void;
 	title?: string;
-	/** 没有 `title` 时给读屏念的名字。 */
+	/** 没有 `title` 时给读屏读的名字。 */
 	label?: string;
 	anchored?: boolean;
 	children: ReactNode;

@@ -27,7 +27,7 @@
 .ui-text-shiny {
 	--shiny-duration: 1.5s;
 
-	/* 亮光的峰值色。不能用 currentColor：下面把字色调暗了，调暗的颜色会回灌进亮光。 */
+	/* 亮光的峰值色。不能用 currentColor：下面把字色调暗了，亮光也会跟着变暗。 */
 	--shiny-color: var(--color-fg);
 
 	user-select: none;

@@ -368,7 +368,7 @@ function YearsMenu({
  * 一维的框：已加的词、输入框和提醒，怎么摆由调用处经 `children` 定。
  *
  * 候选由服务端按输入给（所以 `filter={null}`），换了字就作废上一问；第一项是输入的字本身，
- * 不在候选里的写法也能加。AutoComplete 选中一项时会把它填进输入框，这里接住 `item-press`
+ * 不在候选里的写法也能加。AutoComplete 选中一项时会把它填进输入框，这里拦下 `item-press`
  * 那次改字，改成加词并清空。没有高亮项时回车加输入的字；输入框空着时回车交给表单提交。
  */
 function TermEntry({

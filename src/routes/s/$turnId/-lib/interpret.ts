@@ -6,7 +6,7 @@ import { interpretTurn, turnTrace } from "#/server/functions";
 import type { InterpretFault } from "#/server/turn";
 
 /**
- * 理解失败时各说什么。哪一环坏了由服务端判定（`server/turn.ts` 的 `interpret`），
+ * 理解失败时各说什么。哪个环节出了问题由服务端判定（`server/turn.ts` 的 `interpret`），
  * 这里只管文案：连不上、报错、没配时那句话没被读过，不说成没读懂，也不叫人换说法。
  * 屏幕上只说「AI 服务」。
  *
@@ -72,23 +72,23 @@ export function faultExits(fault: InterpretFault): FaultExit[] {
 const TRACE_POLL_MS = 1000;
 
 /**
- * 补上这条记录还欠的那一跳：把原话翻译成条件。提交只落一条记录、立刻进工作台，
+ * 补上这条记录还缺的一步：把原话翻译成条件。提交只写入一条记录、立刻进工作台，
  * 理解在这里的 effect 里补，等待显示在名单那一列。
  *
  * 服务端只补 `spec is null` 的行，重复触发拿回同一份结果。等的时候每秒问一次走到
  * 哪一步了（`turnTrace`），把 `trace` 给线程边跑边画；理解完成后停止询问。
  *
- * @param settledSpec 记录上已经理解好的完整查询；`null` 表示这一跳还欠着。
+ * @param settledSpec 记录上已经理解好的完整查询；`null` 表示还没理解。
  */
 export function useInterpretation(
 	turnId: string,
 	settledSpec: SearchSpec | null,
 ): {
 	interpreting: boolean;
-	/** 没理解出来时是哪一环坏了。 */
+	/** 没理解出来时是哪个环节出了问题。 */
 	fault: InterpretFault | null;
 	retry: () => void;
-	/** 到目前为止走过的步骤；理解落下后为 null，读记录上的那份。 */
+	/** 到目前为止走过的步骤；理解完成后为 null，读记录上的那份。 */
 	trace: TraceStep[] | null;
 } {
 	const router = useRouter();

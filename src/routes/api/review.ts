@@ -2,7 +2,7 @@
  * 外部判定方的接口：`GET /api/review` 取走待判的组，`POST /api/review` 提交判定。
  *
  * 应用里唯一不走 `createServerFn` 的服务端入口：那个边界给页面用，外部判定方要的是
- * 普通的 JSON 和状态码。认人与形状都在 `src/server/review.ts`，这里只把结果译成状态码。
+ * 普通的 JSON 和状态码。鉴权与请求格式校验都在 `src/server/review.ts`，这里只把结果译成状态码。
  */
 
 import { createFileRoute } from "@tanstack/react-router";
@@ -24,7 +24,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 /*
- * 没开这道口子（判定不归外部，或没配 `REVIEW_TOKEN`）时回 404 而不是 401：没开的
+ * 接口没启用（判定不归外部，或没配 `REVIEW_TOKEN`）时回 404 而不是 401：没开的
  * 部署不该让外面看出「这里有个要凭据的接口」。开了但凭据不对才是 401，而且不区分
  * 「没带」和「带错」。
  */

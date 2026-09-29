@@ -7,7 +7,7 @@ type IconSize = "small" | number | { size: string };
 
 export interface IconProps
 	extends Omit<React.ComponentProps<"span">, "children" | "ref"> {
-	// biome-ignore lint/suspicious/noExplicitAny: 收任何照 lucide 写法接参数的图标组件
+	// biome-ignore lint/suspicious/noExplicitAny: 接受任何按 lucide 方式传参的图标组件
 	icon: LucideIcon | FC<any> | ReactNode;
 	size?: IconSize;
 	spin?: boolean;

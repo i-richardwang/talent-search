@@ -63,7 +63,7 @@ export function Popover({
 
 	/*
 	 * Base UI 的 Popover.Trigger 总挂着点击：悬停打开后再按一下会以 `trigger-press`
-	 * 重新打开并钉住，移开也不关。只认悬停的触发器要取消这种打开。
+	 * 重新打开并钉住，移开也不关。只响应悬停的触发器要取消这种打开。
 	 */
 	const handleOpenChange = useCallback(
 		(

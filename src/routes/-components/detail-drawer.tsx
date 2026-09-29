@@ -9,7 +9,7 @@ export const DETAIL_LABEL_WIDTH = 96;
  * 管理页的详情抽屉：表在底下保持原样，点开的那一行从右侧覆盖上来。管数据的人顺着表
  * 往下看，跳页的话每次返回表格都已经滚回顶部。
  *
- * 开合由路由决定：挂上时滑进来；关的时候先落下 `open` 让它滑走，滑完（`afterClose`）
+ * 开合由路由决定：挂载时滑进来；关的时候先把 `open` 设为 false 让它滑走，滑完（`afterClose`）
  * 才由 `close` 导航回列表——直接导航的话这一层是被卸掉的，不是滑走的。
  */
 export function DetailDrawer({
@@ -23,7 +23,7 @@ export function DetailDrawer({
 	/** 不给是 `Drawer` 的详情档 */
 	width?: string;
 	extra?: ReactNode;
-	/** 滑走之后往哪走，带着列表要原样带回去的地址参数 */
+	/** 滑走之后导航去哪，带上回到列表时要保留的地址参数 */
 	close: () => void;
 	title: ReactNode;
 	/** 排在正文最前 */

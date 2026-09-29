@@ -1,5 +1,5 @@
 /**
- * 站在一个 router 里画一次。用了 `Link` 的组件离开 router 画不出来；
+ * 在一个 router 里渲染一次。用了 `Link` 的组件离开 router 画不出来；
  * 这里只搭一条路由，够组件读地址、判定当前、拼出 href。
  */
 import {
@@ -20,9 +20,9 @@ export async function routed(
 	}: {
 		/** 这条路由的路径模式，如 `/s/$turnId`。 */
 		path?: string;
-		/** 站在哪个地址上。 */
+		/** 当前所在的地址。 */
 		url?: string;
-		/** 这条路由的地址参数口径；不给就是不收参数。 */
+		/** 这条路由的地址参数校验函数；不给就是不收参数。 */
 		validateSearch?: (search: Record<string, unknown>) => object;
 	} = {},
 ): Promise<string> {

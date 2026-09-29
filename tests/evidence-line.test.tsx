@@ -52,14 +52,14 @@ describe("一行证据看得见的部分", () => {
 	});
 
 	test("显示的是参与打分的累计月数", () => {
-		// 时长只住在 basis 上：样例段自己不带月数，界面没有第二个数可挑。
+		// 时长只放在 basis 上：样例段自己不带月数，界面没有第二个数可挑。
 		assert.match(seen(hit(), basis({ months: 60 })), /5\.0 年/);
 	});
 
 	test("相关度不上屏", () => {
 		// 打分用得着它，读的人用不着（AGENTS.md「分数和名次不重复上屏」）。
 		// 一个没有单位的百分数只会被读成「这个人 83% 符合要求」，而低到不该
-		// 出现的那些早在收人时就挡掉了——屏幕上每一行都已经够格。
+		// 出现的那些早在召回时就过滤掉了——屏幕上每一行都已经够格。
 		const line = seen(hit({ relevance: 0.61 }), basis({ relevance: 0.83 }));
 		assert.doesNotMatch(line, /%/);
 		assert.doesNotMatch(line, /0\.83|0\.61/);
@@ -89,7 +89,7 @@ describe("一行证据看得见的部分", () => {
 		assert.ok(!ended.includes("text-fg-secondary"), ended.join(" "));
 	});
 
-	test("主张的名字永远在——它是上下对比的那条竖线", () => {
+	test("主张的名字总会显示：上下几行靠它对照", () => {
 		assert.match(seen(hit(), basis()), /算法/);
 	});
 

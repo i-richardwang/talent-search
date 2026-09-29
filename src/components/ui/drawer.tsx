@@ -16,7 +16,7 @@ import { cn } from "#/lib/utils";
 /*
  * 抽屉：`Drawer` 是组合好的一件，下面的 `Drawer*` 原子件可以自己拼。出场动画放完才卸载
  * （见 dialog-presence.tsx）。背板和浮层都在 `--z-index-popup` 这一档，portal 到 `<body>`，
- * 按打开先后接在末尾，后开的压住先开的（与 floating.ts 同一口径）。
+ * 按打开先后接在末尾，后开的压住先开的（与 floating.ts 同一套规则）。
  */
 
 type DrawerPlacement = "left" | "right";

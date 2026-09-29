@@ -2,7 +2,7 @@ import { isValidElement, type ReactNode } from "react";
 
 /*
  * Base UI 的触发器 `render` 成子元素时，要知道那个元素是不是原生 `<button>`。
- * 组件按 `displayName` 认、不 import 组件本身，浮层与按钮之间因此没有循环依赖。
+ * 组件按 `displayName` 识别、不 import 组件本身，浮层与按钮之间因此没有循环依赖。
  * 新写一个渲染原生 `<button>` 的组件要加进名单，并设 `displayName`。
  */
 

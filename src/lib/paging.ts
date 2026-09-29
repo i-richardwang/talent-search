@@ -40,7 +40,7 @@ export function pageParam(value: unknown): number | undefined {
 	return Number.isFinite(n) && n > 1 ? n : undefined;
 }
 
-/** 想看第几页（`want` 来自地址栏）落到实处，越界收回最后一页。 */
+/** 把想看的页码（`want` 来自地址栏）换算成实际的一页，越界收回最后一页。 */
 export function pageAt(
 	total: number,
 	want: unknown,
