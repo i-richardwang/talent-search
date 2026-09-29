@@ -14,7 +14,7 @@
  * 于是一句「算法, -实习」得到的条件是可以预先写出来的。测试用它们测**机制**
  * （阈值、AND、否决、分面、记录派生），不测语义质量；语义质量归 eval 和真模型。
  * 查询侧走的是真正的 HTTP 客户端代码（`src/server/embed.ts`、`src/server/rerank.ts`、
- * `src/server/llm.ts`），只有对面那台机器是假的。
+ * `src/server/llm.ts`），只有被调用的端点是假的。
  */
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
@@ -56,7 +56,7 @@ function ddl(schema: string, table: PgTable) {
 	const cols = columns.map((c) => {
 		const parts = [`"${c.name}"`, c.getSQLType()];
 		if (c.primary) parts.push("primary key");
-		// 约束名照 drizzle 的默认（`<表>_<列>_unique`），测试才能按名字认出它
+		// 约束名照 drizzle 的默认（`<表>_<列>_unique`），测试才能按名字识别它
 		if (c.isUnique)
 			parts.push(
 				`constraint "${c.uniqueName ?? `${name}_${c.name}_unique`}" unique`,
@@ -209,13 +209,13 @@ function baseIn(prompt: string): unknown[] {
 /**
  * 语料侧那三处聊天调用（抽取、对齐、整理）的假回答。
  *
- * 查询理解认得出自己的提示词（那句话前面有 `SENTENCE_PREFIX`），剩下的都是语料侧
+ * 查询理解的提示词可以识别出来（那句话前面有 `SENTENCE_PREFIX`），剩下的都是语料侧
  * 的。它们的回答不像查询理解那样能从输入算出来——「这段描述里有哪些能力词」本来
- * 就是判断——所以由测试自己给，顺便把问过什么收下来断言。
+ * 就是判断——所以由测试自己给，同时记下收到过哪些请求供断言。
  */
 let chatAnswer: ((system: string, prompt: string) => unknown) | null = null;
 
-/** 装一份语料侧聊天端点的回答，返回拆掉它的函数。 */
+/** 设置一份语料侧聊天端点的回答，返回移除它的函数。 */
 export function answerChat(
 	fn: (system: string, prompt: string) => unknown,
 ): () => void {
@@ -319,7 +319,7 @@ function startModelServer() {
 						choices: [{ index: 0, message, finish_reason: finish }],
 						usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
 					});
-				// 认得出查询理解的提示词；不查词，直接用提交工具提交那张表
+				// 识别出查询理解的提示词；不查词，直接用提交工具提交那张表
 				const understanding = users.find((u) => u.includes(SENTENCE_PREFIX));
 				if (understanding !== undefined) {
 					const at = understanding.lastIndexOf(SENTENCE_PREFIX);
@@ -352,7 +352,7 @@ function startModelServer() {
 						? JSON.stringify(await chatAnswer(system, prompt))
 						: undefined;
 				if (content === undefined) {
-					res.writeHead(400).end("没有人认领这份提示词");
+					res.writeHead(400).end("没有与这份提示词对应的假回答");
 					return;
 				}
 				reply({ role: "assistant", content }, "stop");
@@ -380,8 +380,8 @@ function startModelServer() {
 				url: `http://127.0.0.1:${port}`,
 				close: () =>
 					new Promise((done) => {
-						// close() 只停止接客并关空闲连接；查询侧 fetch 池里的 keep-alive
-						// 连接要靠 closeAllConnections() 一并掐断。Node 文档要求它在
+						// close() 只停止接受新连接并关闭空闲连接；查询侧 fetch 池里的 keep-alive
+						// 连接要靠 closeAllConnections() 一并关闭。Node 文档要求它在
 						// close() 之后调用，否则有竞争。
 						server.close(() => done());
 						server.closeAllConnections();
@@ -395,7 +395,7 @@ function startModelServer() {
  * 建好临时 schema、起好假模型端点，把 DATABASE_URL / EMBED_* / RERANK_* / LLM_*
  * 指过去，然后才 import 检索模块。
  *
- * `#/db`、`#/server/embed`、`#/server/rerank`、`#/server/llm` 都是模块级单例，一旦 import 就绑死了环境变量——
+ * `#/db`、`#/server/embed`、`#/server/rerank`、`#/server/llm` 都是模块级单例，一旦 import 就固定读取了当时的环境变量——
  * 所以顺序不能反，调用方必须 `await setup()` 之后再动态 import 被测代码。
  *
  * `bun test --parallel` 给每个文件一份独立的模块注册表与环境变量，所以单例这一条
@@ -454,12 +454,12 @@ export async function setup() {
 	process.env.RERANK_SPACE_ID = "fake-v1";
 	process.env.LLM_BASE_URL = modelServer.url;
 	process.env.LLM_MODEL = "fake";
-	// 语料侧那三处聊天调用也指向同一台假端点，回答由 `answerChat` 装
+	// 语料侧那三处聊天调用也指向同一台假端点，回答由 `answerChat` 设置
 	process.env.EXTRACT_BASE_URL = modelServer.url;
 	process.env.EXTRACT_MODEL = "fake";
 	process.env.EXTRACT_STRUCTURED_OUTPUTS = "true";
 	process.env.REVIEW_MODEL = "review-fake";
-	// 判定归自带模型：外部那条路由测它的用例自己开
+	// 判定默认交给自带模型：测试外部判定的用例自己开启外部模式
 	process.env.REVIEW_JUDGE = "model";
 	delete process.env.REVIEW_TOKEN;
 	process.env.EXTRACT_CONCURRENCY = "2";
@@ -479,9 +479,9 @@ export async function setup() {
 /**
  * 「这次写入被哪条约束拒绝了」。
  *
- * 认的是 Postgres 报回来的**约束名**，不是错误文案里恰好出现了那几个字：
- * 文案里能出现约束名的错有好几种（比如提到同一张表的另一条约束），认串就会
- * 出现「拦是拦住了，但不是被这一条拦住的」而测试照样通过。
+ * 识别的是 Postgres 返回的**约束名**，不是错误文案里恰好出现了那几个字：
+ * 文案里能出现约束名的错有好几种（比如提到同一张表的另一条约束），按文案匹配就会
+ * 出现「写入确实被拒绝了，但不是被这一条约束拒绝的」而测试照样通过。
  */
 export const violates = (constraint: string) => (error: unknown) =>
 	(error as { cause?: { constraint?: string } }).cause?.constraint ===
@@ -518,7 +518,7 @@ export type Seed = {
 		 */
 		extracted?: {
 			skills?: string[];
-			/** 领域是说法，参与方式落在边上（真语料里由 conform 收窄取值）。 */
+			/** 领域是说法，参与方式存在边上（真语料里由 conform 校验取值）。 */
 			did?: { involvement: Involvement; domain: string }[];
 		};
 	}>;

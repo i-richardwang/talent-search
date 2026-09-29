@@ -131,7 +131,7 @@ export function previewCss(draft: Draft): string {
 		.join("\n");
 }
 
-/** 一项修改落到哪里：文件、块，以及原文里现有的那条声明（深色一侧可能还没写）。 */
+/** 一项修改写到哪里：文件、块，以及原文里现有的那条声明（深色一侧可能还没写）。 */
 export interface Placement {
 	file: string;
 	selector: string;

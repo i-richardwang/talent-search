@@ -9,14 +9,14 @@ import type { Claim } from "#/search/result";
 import { search } from "#/search/search";
 import type { Strength } from "#/search/weights";
 
-/** 可信度那一档在命令行上的字：登记的岗位或序列、登记的部门或公司、自述。 */
+/** 可信度各档在命令行上的显示文字：登记的岗位或序列、登记的部门或公司、自述。 */
 const STRENGTH_LABEL: Record<Strength, string> = {
 	controlled: "登记",
 	org: "部门",
 	claimed: "自述",
 };
 
-/** 一条主张在命令行上怎么写：和一行查询语法同一种写法，对着输入就能核。 */
+/** 一条主张在命令行上怎么写：和一行查询语法同一种写法，可以直接和输入对照。 */
 function claimText(c: Claim) {
 	return [
 		c.what.join("/"),
@@ -49,7 +49,7 @@ console.log(`查询「${q}」→ 条件 [${shown}]`);
 console.log(`命中 ${total} 人，${ms}ms；以下是排在最前的 ${top.length} 个\n`);
 for (const r of top) {
 	const e = r.employee;
-	// 名次的两把尺都印出来：档在前、深度在后，和排序键同一个顺序
+	// 名次的两项依据都打印出来：档在前、深度在后，和排序键同一个顺序
 	console.log(
 		`${STRENGTH_LABEL[r.strength]} ${r.depth.toFixed(3)}  ${e.name} ${e.empId}  ${e.curDept} / ${e.curTitle}`,
 	);
@@ -59,7 +59,7 @@ for (const r of top) {
 		seen.add(h.claim);
 		const name = claimName(claims[h.claim] as Claim);
 		// 起止用界面上那一份写法（`lib/format.ts`）：命令行是拿来核对结果的，
-		// 两处把同一段经历写成两个样子，对起来就得先在脑子里换一次算。
+		// 两处把同一段经历写成两个样子，对照时就得先在脑子里换算一次。
 		console.log(
 			`     ${name}${h.value === name ? "" : ` ≈${h.value}`} ←[${routeLabel(h.route)}${h.phrase ? `「${dots(h.involvement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
 		);

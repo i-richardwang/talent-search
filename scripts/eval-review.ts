@@ -11,12 +11,12 @@
  *     "apart": [["销售数据分析", "数据分析"]],             // 绝不能并到一起的词对（宽细、兄弟、邻居）
  *     "parent": { "销售数据分析": ["数据分析"], "数据统计": [""] } }  // 可接受的归属，"" 是「没有归属」
  *
- * 量四样：same 里的词对有没有并上（召回）；apart 里的词对有没有被并（**有损合并**：筛选栏
+ * 检查四项：same 里的词对有没有并上（召回）；apart 里的词对有没有被并（**有损合并**：筛选栏
  * 少了一个更精确的选项、点剩下那一项混进别人，一条都不该有）；parent 里每个词的归属在不在可接受的集合里；起出来的归属名是不是能力词
  * 的写法（超 8 字、带「能力」「相关」「工作」的都不是招聘的人会点的）。验收共用生产的 `conform` 与 `merge`，
  * 从本题建立词表，按最终标准词和归属计分。每个题词都必须作答；任何一项失败均返回非零退出码。
  *
- * 合成用例进仓库（sample.json）；真实组是库里圈出来的词，不进版本库。走的是整理判定同一条路
+ * 合成用例进仓库（sample.json）；真实组是从库里分组得到的词，不进版本库。调用与整理判定相同的入口
  * （`corpus/vocabulary.ts` 的 `askModel`）：当前提示词、`REVIEW_MODEL`、温度 0，回答进同一份缓存。
  */
 
@@ -93,7 +93,7 @@ function loadCases(file: string): Case[] {
 			(apart as string[][]).length === 0 &&
 			Object.keys(parent).length === 0
 		)
-			throw new Error(`${where}「${c.name}」：没有答案的题什么都量不出来`);
+			throw new Error(`${where}「${c.name}」：没有答案的题无法衡量`);
 		return {
 			name: c.name,
 			words: words as Member[],

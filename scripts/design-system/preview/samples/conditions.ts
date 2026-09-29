@@ -16,7 +16,7 @@ export const RECOMMEND: Condition = {
 	what: ["推荐系统", "推荐算法"],
 };
 
-/** 在大厂累计三年以上（加分）：没写做过什么的背景主张，只把门不排名。 */
+/** 在大厂累计三年以上（加分）：没写做过什么的背景主张，只作门槛，不参与排名。 */
 export const BIG_COMPANY: Condition = {
 	about: "experience",
 	mode: "boost",

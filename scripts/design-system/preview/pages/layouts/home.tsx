@@ -56,7 +56,7 @@ const STATES: { label: string; value: HomeState }[] = [
 	{ label: "未配置 AI 服务", value: "keyword-only" },
 ];
 
-/** 根路由交出的几项按状态换掉；有记录是样例的默认值。 */
+/** 根路由提供的几项按状态换掉；有记录是样例的默认值。 */
 const ROOT: Record<HomeState, Partial<RootData>> = {
 	empty: { recent: { from: 0, page: 1, pages: 1, rows: [], total: 0 } },
 	failed: { recent: null },
@@ -64,7 +64,7 @@ const ROOT: Record<HomeState, Partial<RootData>> = {
 	recent: {},
 };
 
-/** 首页的正文：产品的 `HomeScreen`，数据读内存 router 根路由交出的那一份。 */
+/** 首页的正文：产品的 `HomeScreen`，数据读内存 router 根路由提供的那一份。 */
 function Home() {
 	const asked = useRouterState({
 		select: (state) => (state.location.search as { mode?: "keyword" }).mode,

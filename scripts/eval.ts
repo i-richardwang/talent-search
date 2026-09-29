@@ -10,15 +10,15 @@
  *     "expect": ["E1001", "E2042"],        // 已确认应当出现的工号
  *     "reject": ["E3007"] }                // 可选：已确认不该出现的工号
  *
- * `reject` 量的是精度。多写几个取值这类改动同时可能找回漏掉的人和放进不相干的人，
+ * `reject` 衡量精度。多写几个取值这类改动同时可能找回漏掉的人和放进不相干的人，
  * 只报召回的话，往查询里多塞几个词永远是「变好」。
  * 真实评估用例不进版本库（题目和答案指向真人）；仓库只带 `evals/search/sample.json`——
  * 全部指向合成样例语料（src/corpus/sources/sample/）的可执行基线，干净克隆也能跑通。
  *
- * 这把尺子存在的意义：提示词与权重都会被大幅调整，而每次调整既可能
+ * 这个验收存在的意义：提示词与权重都会被大幅调整，而每次调整既可能
  * 找回漏掉的人、也可能放进不相干的人——没有基线就分不清是变好还是变坏。
- * query 用一行查询语法而不是原话，是刻意的：这里量的是**检索与排序**，不含模型
- * 理解那一跳的方差；理解的对错由 tests/intent.test.ts 和人工评审管。
+ * query 用一行查询语法而不是原话，是刻意的：这里衡量的是**检索与排序**，不含模型
+ * 理解这一步的方差；理解的对错由 tests/intent.test.ts 和人工评审管。
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -31,8 +31,8 @@ import { RESULT_MAX } from "#/search/weights";
 type Case = { name: string; query: string; expect: string[]; reject: string[] };
 
 /**
- * 形状校验从严：尺子最大的罪是给虚假读数。没有 expect 的题会得出 0/0，
- * 界面上却是一个绿色的 ✓——那不是「暂时没答案」，是一次谎报，所以直接报错。
+ * 形状校验从严：验收最不能做的是给出虚假结果。没有 expect 的题会得出 0/0，
+ * 界面上却是一个绿色的 ✓——那不是「暂时没答案」，是一次错误报告，所以直接报错。
  */
 function loadCases(file: string): Case[] {
 	const data: unknown = JSON.parse(readFileSync(file, "utf8"));
@@ -55,7 +55,7 @@ function loadCases(file: string): Case[] {
 			)
 		)
 			throw new Error(
-				`${where}「${name}」：expect 至少要有一个已确认的工号——没有期望的题什么都量不出来`,
+				`${where}「${name}」：expect 至少要有一个已确认的工号——没有期望的题无法衡量`,
 			);
 		const expect = rawExpect.map((x) => x.trim());
 		if (new Set(expect).size !== expect.length)

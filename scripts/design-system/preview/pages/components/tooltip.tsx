@@ -175,7 +175,7 @@ export function TooltipPage() {
 				notes: [
 					"只有图标的按钮用 ActionIcon，它的 title 就是这里的提示，不外包一层 Tooltip。",
 					"提示只补一句名字或全文，不放按钮和链接；要交互的内容用 Popover。",
-					"文字用产品用词，站在 HR 这边说动作本身。",
+					"文字用产品用词，从 HR 的角度说动作本身。",
 					"有快捷键的动作把键写进 hotkey，不写进文字（不写「关闭（Esc）」）；图标按钮经 tooltipProps 传。",
 					'默认在上方；贴着页头顶边的按钮用 placement="bottom"，免得提示被窗口边切掉。',
 				],

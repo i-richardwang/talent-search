@@ -48,7 +48,7 @@ export function CodeBlockPage() {
 			rules={{
 				notes: [
 					"机器写的原文（运行输出）用 CodeBlock，不手写 pre 和底色。",
-					"原文只给管理员看；给 HR 的页面先用一句话说结论，原文不上屏。",
+					"原文只给管理员看；给 HR 的页面先用一句话说结论，原文不显示。",
 				],
 				usage: `<CodeBlock language="日志">\n  {lines.join("\\n")}\n</CodeBlock>`,
 			}}

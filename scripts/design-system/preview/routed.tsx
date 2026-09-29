@@ -16,10 +16,10 @@ import { RECENT, THREAD } from "./samples/thread";
 /*
  * 预览页里给用到 `Link`、`useNavigate`、`useParams`、`useLoaderData` 的产品组件搭的
  * 最小 router。历史记录在内存里，点链接只改这个 router 自己的地址，iframe 仍停在
- * `/preview`。页的内容是根路由画的东西，于是组件站在一个真的匹配里。
+ * `/preview`。页的内容是根路由画的东西，于是组件处在一个真实的路由匹配里。
  *
- * 路由的形状和产品一致到组件读得到的程度：根路由的 loader 交出导航栏记住的样子、
- * 最近搜索和 AI 服务配没配，`/s/$turnId` 交出线程和名单，人的详情挂在它下面。
+ * 路由的形状和产品一致到组件读得到的程度：根路由的 loader 提供导航栏记住的样子、
+ * 最近搜索和 AI 服务配没配，`/s/$turnId` 提供线程和名单，人的详情是它的子路由。
  * loader 都是同步读样例，建 router 时就把这一地址的匹配和
  * loader 数据放好，服务端渲染（页的测试）一次就画得出来。
  */
@@ -37,7 +37,7 @@ const PATHS = [
 	"/tasks",
 ];
 
-/** 根路由交出的东西：导航栏记住的样子取默认值，最近搜索是样例的第一页。 */
+/** 根路由提供的数据：导航栏记住的样子取默认值，最近搜索是样例的第一页。 */
 export type RootData = {
 	nav: NavPrefs;
 	recent: TablePage<RecentSearch> | null;
@@ -85,8 +85,8 @@ function memoryRouter(url: string, rootData: RootData) {
 }
 
 /**
- * 把页的内容放进一个站在 `url` 上的内存 router；点链接后地址在 router 里变，组件跟着重画。
- * `root` 换掉根路由交出的几项（没有搜索记录、取不到搜索记录），只在建 router 时读一次。
+ * 把页的内容放进一个以 `url` 为初始地址的内存 router；点链接后地址在 router 里变，组件跟着重画。
+ * `root` 换掉根路由提供的几项（没有搜索记录、取不到搜索记录），只在建 router 时读一次。
  */
 export function Routed({
 	children,
@@ -107,7 +107,7 @@ export function Routed({
 
 /**
  * 内存 router 地址上开着的是哪个人：`/s/:turnId/p/:empId` 的最后一段，没开是 undefined。
- * 页的内容站在根路由的匹配里，读不到子路由的参数，所以从地址上取。
+ * 页的内容处在根路由的匹配里，读不到子路由的参数，所以从地址上取。
  */
 export function useOpenEmpId() {
 	return useRouterState({

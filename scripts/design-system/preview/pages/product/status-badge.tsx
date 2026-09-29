@@ -108,7 +108,7 @@ function Tones() {
 	);
 }
 
-/** 任务台上的一栏：产品的任务卡片，喂样例的运行记录。 */
+/** 任务页上的一栏：产品的任务卡片，数据用样例的运行记录。 */
 function Lane({ kind }: { kind: TaskLane["kind"] }) {
 	const lane = TASK_LANES.find((item) => item.kind === kind);
 	if (!lane) return null;

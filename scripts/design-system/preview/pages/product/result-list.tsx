@@ -46,7 +46,7 @@ type ListProps = {
 	fault?: InterpretFault | null;
 };
 
-/** 选择状态住在这一层：换一份名单（`key` 变）就是换了一次搜索，选中的人清空。 */
+/** 选择状态放在这一层：换一份名单（`key` 变）就是换了一次搜索，选中的人清空。 */
 function List({
 	outcome = OUTCOME,
 	spec = SPEC,
@@ -244,12 +244,12 @@ export function ResultListPage() {
 			]}
 			rules={{
 				notes: [
-					"名单只从检索来，谁在上面、排第几由检索决定；名单位置表达顺序，分数和名次不上屏。",
+					"名单只从检索来，谁在上面、排第几由检索决定；名单位置表达顺序，分数和名次不显示。",
 					"整行可点，覆盖层是真链接，支持中键、右键、键盘；选择框和行尾的命中标签压在覆盖层上，不进链接。",
 					"选择框一直在；按住 Shift 点选择框连选，Esc 清空已选。批量操作用选择非空时才出现的 Toolbar。",
 					`改筛选时旧名单留在原地调到六成；换问题时旧名单撤下，${SKELETON_DELAY / 1000} 秒后换成同形的占位行，表头说在做什么，等过 ${ELAPSED_SHOW_AFTER_MS / 1000} 秒写出秒数。`,
 					"列表不静默截断：说明已显示数、总数、排序和加载上限。",
-					"空态成因由检索层判定，这里穷尽翻译成结论和出路；理解失败不是空名单。",
+					"空态成因由检索层判定，这里为每种原因写出结论和出路；理解失败不是空名单。",
 				],
 				usage: `<ResultList\n  outcome={outcome}\n  picks={usePicks(turnId, outcome)}\n  spec={spec}\n  turnId={turnId}\n  …\n/>`,
 			}}

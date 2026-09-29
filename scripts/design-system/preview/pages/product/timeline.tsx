@@ -151,7 +151,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="一段经历同时为两条主张作证：节点画最强的那一档，下面每条主张一枚描边标签。"
+				description="一段经历同时是两条主张的证据：节点画最强的那一档，下面每条主张一枚描边标签。"
 				title="一段命中两条"
 			>
 				<div className="w-full">

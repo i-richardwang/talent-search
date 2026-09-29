@@ -78,8 +78,8 @@ export const THREAD: Turn[] = [ROUND1, ROUND2, ROUND3];
 export const LATEST_TURN_ID = ROUND3.id;
 
 /**
- * 等理解的两轮落在打开页面前几秒：计时从记录落下的时刻数起，放在过去的固定时刻上
- * 会数出一整天。
+ * 等待理解的两轮发生在打开页面前几秒：计时从记录写入的时刻算起，放在过去的固定时刻上
+ * 会算出一整天。
  */
 const JUST_NOW = Date.now() - 3000;
 
@@ -96,7 +96,7 @@ export const PENDING_TURN: Turn = {
 	at: JUST_NOW,
 };
 
-/** 理解到一半时已经走过的步骤，线程边跑边画它。 */
+/** 理解到一半时已经走过的步骤，线程在运行中逐步显示它。 */
 export const PENDING_TRACE: TraceStep[] = [
 	{
 		at: JUST_NOW + 1200,

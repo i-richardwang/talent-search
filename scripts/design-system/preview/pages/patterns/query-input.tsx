@@ -221,7 +221,7 @@ function States() {
 	);
 }
 
-/** 过一会儿才交回结果的提交：发送按钮转圈，成功才清空。 */
+/** 过一会儿才返回结果的提交：发送按钮转圈，成功才清空。 */
 function slow(ok: boolean, report: (text: string) => void) {
 	return (input: QueryInput) =>
 		new Promise<boolean>((done) =>

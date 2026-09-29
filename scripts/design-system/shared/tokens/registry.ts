@@ -127,7 +127,7 @@ export const SHADOW_TOKENS: { key: string; label: string; use: string }[] = [
 	{
 		key: "--elevation-chat-input-large",
 		label: "大号输入托盘投影",
-		use: "首页 large 输入托盘托着的一层远影",
+		use: "首页 large 输入托盘底下一层较远的投影",
 	},
 	{
 		key: "--elevation-edge",

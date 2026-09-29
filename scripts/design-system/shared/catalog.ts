@@ -410,7 +410,7 @@ export function requirePage(id: string): CatalogPage {
 	return page;
 }
 
-/** 预览页画的全部页；外壳发来的页只认这些。 */
+/** 预览页画的全部页；外壳发来的页只接受这些。 */
 const PREVIEW_PAGE_IDS = catalog.flatMap((module) =>
 	module.content === "changes" ? [] : module.pages.map((page) => page.id),
 ) as PreviewPageId[];

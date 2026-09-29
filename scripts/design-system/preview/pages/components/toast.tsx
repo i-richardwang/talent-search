@@ -174,9 +174,9 @@ export function ToastPage() {
 				notes: [
 					"<Toaster /> 在应用根上挂一次；其余地方只调 toast.success / error / warning。",
 					"通知说一次动作的结果：办成了、没办成、没执行。页面上一直成立的状态用 Alert，不用通知。",
-					"失败的通知给 title 说哪件事没办成，description 说哪一环坏了；能当场重试就给「重试」按钮。",
+					"失败的通知给 title 说哪件事没办成，description 说哪个环节出了问题；能当场重试就给「重试」按钮。",
 					"会重复触发的提醒给 id，同一件事只留一条。",
-					"文字站在 HR 这边说结论，不描述程序在做什么。",
+					"文字从 HR 的角度说结论，不描述程序在做什么。",
 				],
 				usage: `toast.success("名单已导出");\n\ntoast.error({\n  title: "没能删除这次搜索",\n  description: "网络断开了。",\n  actions: [{ label: "重试", onClick: retry }],\n});`,
 			}}

@@ -22,7 +22,7 @@ import { PersonPane } from "./detail";
 import { LayoutSwitch, Shell } from "./home";
 
 /*
- * 搜索结果页：产品的 `WorkspaceLayout` 喂样例数据。数据是样例里这次找人任务的
+ * 搜索结果页：产品的 `WorkspaceLayout` 配上样例数据。数据是样例里这次找人任务的
  * 最后一轮。名单上方是条件那一排和筛选；筛选和名单一样读写内存 router 地址上的视图，
  * 但名单不重新检索。
  */

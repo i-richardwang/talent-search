@@ -73,7 +73,7 @@ const STATES: Record<
 
 const FAULTS = Object.keys(FAULT_COPY) as InterpretFault[];
 
-/** 一条线程放在一块描边的面里，站在记录链的地址上，链接画得出来。 */
+/** 一条线程放在一块描边的面里，内存 router 停在记录链的地址上，链接才渲染得出来。 */
 function Column({ children }: { children: ReactNode }) {
 	return (
 		<Routed url={`/s/${LATEST_TURN_ID}`}>
@@ -152,7 +152,7 @@ function Faults() {
 			<Table>
 				<TableHeader>
 					<TableRow>
-						<TableHead>哪一环</TableHead>
+						<TableHead>出错环节</TableHead>
 						<TableHead>线程里的提示</TableHead>
 						<TableHead>名单那一列的出路</TableHead>
 					</TableRow>
@@ -194,7 +194,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="搜不了的要求用 amber 的警示三角记在回应里；附带的替代条件挂在正在看的那次回应底下，点一下记成新的一次修改。"
+				description="搜不了的要求用 amber 的警示三角记在回应里；附带的替代条件显示在正在看的那次回应底下，点一下记成新的一次修改。"
 				title="搜不了的要求"
 			>
 				<Column>
@@ -271,9 +271,9 @@ export function ThreadPage() {
 				notes: [
 					"线程总是整条链；查看早先一次的结果只换名单，不截断线程，正在看的那一次标「正在查看」。",
 					"每次的回应按前后两组条件的差别说加了什么、去掉了什么，条件写进句子用 inSentence。",
-					"理解失败时说哪一环坏了：连不上和报错时需求没被读过，不能说成没读懂；线程里的提示带重试，名单那一列另有同样的出路。",
-					"替代条件跟着正在看的那一次，挂在那次回应底下，一枚一枚浮出来。",
-					"检索人才库的过程进行中摊开、完成后收起；只交出数，不交出任何一个人。",
+					"理解失败时说清是哪个环节出了问题：连不上和报错时需求没被读过，不能说成没读懂；线程里的提示带重试，名单那一列另有同样的出路。",
+					"替代条件跟着正在看的那一次，显示在那次回应底下，逐个浮现。",
+					"检索人才库的过程进行中展开、完成后收起；只给出人数，不给出任何一个人。",
 					"消息的时刻与动作（复制、查看这次的结果）悬停才出现；换到哪一次的结果，那一次闪一下。",
 				],
 				usage: `<Thread\n  onAdd={addConditions}\n  onQuery={submit}\n  onRetry={retry}\n  rounds={thread}\n  understanding\n  viewing={turnId}\n  waiting={interpreting}\n/>`,

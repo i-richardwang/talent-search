@@ -40,7 +40,7 @@ import { EMPTY_CASES, KEYWORD_SPEC, SPEC } from "../../samples/conditions";
 import { EMPTY_OUTCOME, OUTCOME } from "../../samples/people";
 import { LATEST_TURN_ID, ROOT_TURN_ID } from "../../samples/thread";
 
-/** 理解失败的每一环，按产品的文案表列。 */
+/** 理解失败的每种原因，按产品的文案表列。 */
 const FAULTS = Object.keys(FAULT_COPY) as InterpretFault[];
 
 const EMPTIES = Object.values(EMPTY_CASES);
@@ -51,7 +51,7 @@ type Ending = "results" | "empty" | "failed";
 
 type Step = "interpreting" | "searching" | "done";
 
-/** 一次提交的名单那一列：先理解、再搜索、最后落到选定的结局。 */
+/** 一次提交的名单那一列：先理解、再搜索、最后得到选定的结果。 */
 function Run({ ending, step }: { ending: Ending; step: Step }) {
 	const outcome = ending === "empty" ? EMPTY_OUTCOME : OUTCOME;
 	const picks = usePicks(LATEST_TURN_ID, outcome);
@@ -149,7 +149,7 @@ function Faults() {
 				<Table>
 					<TableHeader>
 						<TableRow>
-							<TableHead>哪一环</TableHead>
+							<TableHead>出错环节</TableHead>
 							<TableHead>名单那一列</TableHead>
 							<TableHead>出路</TableHead>
 						</TableRow>
@@ -243,7 +243,7 @@ function Empties() {
 				</Table>
 			</Block>
 			<p className="text-fg-secondary text-xs">
-				{last ?? "成因由检索判定，这里只翻译成结论和一条能一键走的出路。"}
+				{last ?? "成因由检索判定，这里只把它写成结论和一条一键就能执行的出路。"}
 			</p>
 		</div>
 	);
@@ -331,8 +331,8 @@ export function StatesPage() {
 			rules={{
 				notes: [
 					"AI 服务没开启或出错时明说，不退回成一份空名单：理解失败不是没有结果。",
-					"理解失败说哪一环坏了：连不上和报错时需求没被读过，不能说成没读懂，也不叫人换说法。",
-					"空态原因由检索层判定，界面穷尽翻译并给出路，不用二手计数重新推断。",
+					"理解失败时说清是哪个环节出了问题：连不上和报错时需求没被读过，不能说成没读懂，也不叫人换说法。",
+					"空态原因由检索层判定，界面为每种原因都给出文案和出路，不用二手计数重新推断。",
 					"空态文案说明当前问题和可执行的出路，标题已说明的内容不重复。",
 					"一次动作的结果（提交失败、导出完成）用通知；一直成立的状态（正在看较早的一次）用 Alert；查询条件的注解用行内文字。",
 				],
