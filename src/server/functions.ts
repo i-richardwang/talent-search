@@ -1,6 +1,6 @@
 /**
  * **页面唯一的 RPC 边界。** 页面能从服务端取值的地方只有这一个文件；真正干活的
- * 逻辑住在 `search.ts` / `turn.ts` / `llm.ts` 那几个服务端专属模块里。
+ * 逻辑在 `search.ts` / `turn.ts` / `llm.ts` 那几个服务端专属模块里。
  *
  * `createServerFn` 切走的只是 handler 的**函数体**，所以这里的规矩是：
  * **服务端模块的值只能出现在 `.handler()` 里面。**
@@ -46,11 +46,11 @@ import {
  * 工作台的一次载入：这条查询记录是什么，以及它当前筛选下的结果。
  *
  * **入参里没有检索条件，只有一个 id。** 条件从库里那条记录上取，客户端伪造
- * 不了，也不必再收窄一遍——它在写进记录的时候（`commitTurn`）已经过了
+ * 不了，也不必再校验一遍——它在写进记录的时候（`commitTurn`）已经过了
  * `sanitizeSpec`。URL 上剩下的那几个参数只描述「怎么看这批人」，
  * 所以它们仍然要过 `sanitizeFilters` / `sanitizeLimit`。
  *
- * 记录和结果一次往返一起取：分成两个端点的话，界面要么串行等两跳，
+ * 记录和结果一次往返一起取：分成两个端点的话，界面要么串行等两次往返，
  * 要么并发发出两条却在「还没理解」这一支上白跑一次检索。
  */
 export const loadWorkbench = createServerFn({ method: "GET" })
@@ -68,11 +68,11 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 			const turn = thread?.find((t) => t.id === data.turnId);
 			if (!thread || !turn) return null;
 			/*
-			 * 还没理解完：不跑检索，先把工作台交出去。
+			 * 还没理解完：不跑检索，先返回工作台要的数据。
 			 *
-			 * 这一支是整套设计里那句「转圈发生在结果将要出现的地方」的落点——
-			 * 页面拿着一条只有原话的记录就能把工作台画出来，模型那一跳由界面
-			 * 自己去补（`interpretTurn`），而不是让导航停在原地等它。
+			 * 这一分支实现的是「转圈发生在结果将要出现的地方」——
+			 * 页面拿着一条只有原话的记录就能把工作台画出来，模型调用由界面
+			 * 自己发起（`interpretTurn`），而不是让导航停在原地等它。
 			 */
 			if (!turn.spec) return { thread, result: null };
 			return {
@@ -85,8 +85,8 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 /**
  * 单人详情：完整档案加一条在职与入职前连起来的时间线。
  *
- * 整行出门是有意的：`employee` 的列集合本来就是按详情页要显示什么定的，
- * 所以 `Employee` 就是这个响应的形状，不是省事。收窄的那条路在 `result.ts`
+ * 整行发给页面是有意的：`employee` 的列集合本来就是按详情页要显示什么定的，
+ * 所以 `Employee` 就是这个响应的形状，不是省事。只传部分字段的那条路在 `result.ts`
  * 的 `ResultEmployee`（列表一次传最多 500 人，只传结果那一块画得出来的几个字段）。
  */
 export const fetchEmployee = createServerFn({ method: "GET" })
@@ -110,19 +110,19 @@ export const fetchEmployee = createServerFn({ method: "GET" })
 			}),
 	);
 
-/** 提交一次查询：落一条记录，返回它的 id。入参收窄在 `search/commit-input.ts`。 */
+/** 提交一次查询：写一条记录，返回它的 id。入参校验在 `search/commit-input.ts`。 */
 export const commitTurn = createServerFn({ method: "POST" })
 	.validator(validateCommit)
 	.handler(({ data }) => createTurn(data.input, data.from));
 
-/** 理解走到哪一步了。等理解时界面每秒问一次，线程里的步骤边跑边长出来。 */
+/** 理解走到哪一步了。等理解时界面每秒问一次，线程里的步骤边跑边追加。 */
 export const turnTrace = createServerFn({ method: "GET" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
 	.handler(({ data }) => traceOf(data.turnId));
 
 /**
  * 把一条只有原话的记录补上理解结果。工作台挂载后就地调它，不挡导航。
- * 失败不抛，交回是哪一环坏了（`interpret`）：页面要按它说话，而抛出去的错误
+ * 失败不抛，返回是哪个环节出了问题（`interpret`）：页面要按它显示提示，而抛出去的错误
  * 到了浏览器只剩一句不能给人看的原文。
  */
 export const interpretTurn = createServerFn({ method: "POST" })
@@ -150,7 +150,7 @@ export const understandingOn = createServerFn({ method: "GET" }).handler(() =>
 
 /**
  * 关键词模式下拉里的候选。哪一个框在问由 `field` 说，三个框的候选不混
- * （`server/suggest.ts`）。敲一个字就来一次，所以入参收得很短。
+ * （`server/suggest.ts`）。敲一个字就来一次，所以入参限制得很短。
  */
 export const suggestTerms = createServerFn({ method: "GET" })
 	.validator((d: { field: unknown; q: unknown }) => {
@@ -184,7 +184,7 @@ export const skillTerm = createServerFn({ method: "GET" })
  * 任务台的全部数据：三种任务各自跑过的记录里的一页，和语料此刻有多少东西。
  *
  * 每一栏要看第几页由页面给，来自地址栏，什么都可能：这里只负责它是个数，
- * 是不是越过了最后一页由 `tasksState` 收（`dataList` 同一条分工）。
+ * 是不是越过了最后一页由 `tasksState` 处理（`dataList` 同一条分工）。
  */
 export const tasksStatus = createServerFn({ method: "GET" })
 	.validator(
@@ -196,7 +196,7 @@ export const tasksStatus = createServerFn({ method: "GET" })
 	.handler(({ data }) => tasksState(data));
 
 /**
- * 某一次运行说过的每一行。任务台上打开那一次的日志时才取。
+ * 某一次运行输出的每一行。任务台上打开那一次的日志时才取。
  *
  * 和状态分开取：日志能有上千行，而任务台在跑的时候每两秒重新载入一次状态。
  */
@@ -207,9 +207,9 @@ export const taskLog = createServerFn({ method: "GET" })
 /**
  * 现在就跑一次派生或整理，立刻返回。
  *
- * **不等它跑完**：一轮是几分钟到几十分钟，而这是一次 HTTP 往返。进度由
- * `task_run` 那一行自己长出来，页面重新载入状态就看得见。排着或在跑的已经有
- * 一个时返回 `queued: false`，界面照它说明原因——把这件事画成一个转不完的圈是骗人。
+ * **不等它跑完**：一轮是几分钟到几十分钟，而这是一次 HTTP 往返。进度会持续
+ * 写进 `task_run` 那一行，页面重新载入状态就看得见。排着或在跑的已经有
+ * 一个时返回 `queued: false`，界面照它说明原因——把这件事画成一个转不完的圈会误导人。
  */
 export const requestTask = createServerFn({ method: "POST" })
 	.validator((kind: JobKind) => {

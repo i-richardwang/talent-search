@@ -35,7 +35,7 @@ const { sql } = await import("drizzle-orm");
 /**
  * 三处语料侧调用各自认出自己的提示词。
  *
- * 对齐照抄提示词里列出的第一对序列——那份列表是从这批样例数据自己长出来的，
+ * 对齐照抄提示词里列出的第一对序列——那份列表是从这批样例数据生成的，
  * 所以不必在这里再写一遍它有哪些序列。
  */
 function answers() {
@@ -71,7 +71,7 @@ function latest(state: Awaited<ReturnType<typeof tasksState>>, kind: string) {
 	return lane(state, kind).latest;
 }
 
-/** 那一次说过的每一行。状态里不带日志，要单取。 */
+/** 那一次输出的每一行。状态里不带日志，要单取。 */
 async function logText(runId: number | undefined): Promise<string> {
 	return runId === undefined ? "" : (await taskLog(runId)).join("\n");
 }
@@ -183,7 +183,7 @@ describe("同步与派生", () => {
 	});
 
 	/*
-	 * 说法只有作为边的终点才有意义。没人指的行留着会把召回的账算错：它一条命中
+	 * 说法只有作为边的终点才有意义。没有边指向的行留着会让召回出错：它一条命中
 	 * 都产生不了，却照样占 `RECALL_TOP` 的名额，挤掉真能找到人的说法。
 	 */
 	test("没有边指向的说法不留在表里", async () => {
@@ -194,7 +194,7 @@ describe("同步与派生", () => {
 			);
 		assert.equal(await orphans(), 0);
 
-		// 造一条没人指的：换过一次抽取提示词之后，掉线的旧说法就是这个样子
+		// 造一条没有边指向的：换过一次抽取提示词之后，失去所有边的旧说法就是这个样子
 		await db.execute(sql`
 			insert into phrase (text, embedding)
 			values ('没人会指的说法', (select embedding from phrase limit 1))`);
@@ -281,8 +281,8 @@ describe("同步与派生", () => {
 
 	/*
 	 * 失败是这张表存在的理由之一：看任务台的人看不到服务器的标准输出。
-	 * 数据源读不出来时，最外层那句话说的是「哪一步出的事」，真正发生了什么挂在
-	 * `cause` 上——两句都得在。
+	 * 数据源读不出来时，最外层那句话说的是「哪一步出的事」，真正发生了什么在
+	 * `cause` 里——两句都得在。
 	 */
 	test("跑失败时，那一行说得出为什么，连它的来由", async () => {
 		const configured = process.env.TALENT_SOURCE;
@@ -309,7 +309,7 @@ describe("同步与派生", () => {
 		assert.equal(await count("employee"), 20);
 	});
 
-	test("向量模型更换：说法整张作废，所有段重新派生，身份证重写", async () => {
+	test("向量模型更换：说法整张作废，所有段重新派生，空间记录重写", async () => {
 		await db.execute(sql`update embedding_space set space_id = 'old-space'`);
 		const run = await runTask("derive");
 		assert.ok(run);
@@ -483,7 +483,7 @@ describe("说法规划", () => {
 			],
 		);
 		assert.equal(texts.filter((t) => t === "算法工程师").length, 1);
-		// 做过的事的说法只是领域，参与方式落在边上；原文路的边那一列是空
+		// 做过的事的说法只是领域，参与方式存在边上；原文路的边那一列是空
 		assert.deepEqual(texts.slice(-2), ["召回", "推荐系统"]);
 		assert.deepEqual(
 			links.filter(
@@ -506,7 +506,7 @@ describe("说法规划", () => {
 				},
 			],
 		);
-		// 自述只有一份读法：读过的段，整段原文不再是说法
+		// 自述每一段只取一种来源：读过的段，整段原文不再是说法
 		assert.ok(!texts.includes("负责推荐系统召回"));
 		assert.ok(!links.some((l) => l.route === "description"));
 	});

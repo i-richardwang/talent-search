@@ -1,6 +1,6 @@
 /**
  * 整理的判定队列：收集、取走、提交判定、过期，以及生效时取回判定结果。两种组
- * （归并、释义）共用这一条队列和这一个判定方，各自的标准、收窄与落表在
+ * （归并、释义）共用这一条队列和这一个判定方，各自的标准、校验与写表在
  * `vocabulary.ts` 和 `gloss.ts`；整轮的顺序在 `review.ts`。
  *
  * 队列只认一件事：一份标准下的一组词、谁判的、判成什么。它不读判定结果的内容——
@@ -12,7 +12,7 @@ import type { GroupKind } from "#/db/schema";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
 
-/** 一个词判过之后多久才再做中心词；也是一组挂在队列里没人判的话多久过期。 */
+/** 一个词判过之后多久才再做中心词；也是一组在队列里没人判的话多久过期。 */
 export const REVIEW_INTERVAL_DAYS = 7;
 
 export type Judge = "model" | "external" | "off";
@@ -23,7 +23,7 @@ export function modelJudge(model: string): string {
 }
 
 /**
- * 外部判定方自报的名字，收窄成库里的写法；不合规矩的返回 null。
+ * 外部判定方自报的名字，校验并转成库里的写法；不合规矩的返回 null。
  *
  * 名字只作留痕（库里记下哪条是谁判的，任务日志按它计数），所以只要求它是个短标识：
  * 接口那一侧不必再想一遍什么算合法，这件事只有这一处知道。
@@ -54,7 +54,7 @@ export type Group = {
 /** 一组判过的：生效时读的形状，`judge` 与 `judgment` 都在。 */
 export type Judged = Group & { judge: string; judgment: unknown };
 
-/** 一组还没过期的判据，`collected_at` 上的那一句。读队列的地方共用它。 */
+/** 一组还没过期的 SQL 条件，判断的是 `collected_at`。读队列的地方共用它。 */
 const FRESH = `collected_at > now() - interval '${REVIEW_INTERVAL_DAYS} days'`;
 
 type Row = {
@@ -84,7 +84,7 @@ export type GuideIdentities = Record<GroupKind, string>;
  *
  * 两个读者：外部判定方取走（`src/server/review.ts`），以及自带模型判——模型判的
  * 是**所有**没判的组，不只是这一轮刚收的那些，于是上一次端点抖动漏掉的组下一轮
- * 会补上，从 `external` 切回 `model` 时挂着的组也接得上。
+ * 会补上，从 `external` 切回 `model` 时队列里剩下的组也能接着判。
  */
 export async function openGroups(
 	client: CorpusClient,
@@ -118,7 +118,7 @@ export async function busyWords(
 }
 
 /**
- * 收集：每组词落一行，进队列等人判。
+ * 收集：每组词写一行，进队列等人判。
  *
  * 一个词同时出现在两组同一种的组里，两份判定就会各说各的，而生效时挑哪一份都得
  * 有个说法——所以收集方先用 `busyWords` 绕开队列里已有的词。
@@ -138,7 +138,7 @@ export async function collect(
 }
 
 /**
- * 一次提交的下场。组不在了和已经有人判过分开说：提交的一方要据此决定重不重试。
+ * 一次提交的结果。组不在了和已经有人判过分开说：提交的一方要据此决定重不重试。
  */
 export type Submission = "accepted" | "missing" | "taken";
 
@@ -146,7 +146,7 @@ export type Submission = "accepted" | "missing" | "taken";
  * 把一份判定记在组上。**只写组这一行**，不碰词表、释义也不碰边——那些只在生效时改，
  * 而生效拿着语料的写者锁。所以外部提交不必等派生放锁。
  *
- * 先到先得：一组只有第一份判定落下，第二份得到 `taken`。不投票、不仲裁——两份
+ * 先到先得：一组只记下第一份判定，第二份得到 `taken`。不投票、不仲裁——两份
  * 判定不一致时挑哪一份都得有个说法，而「先到的算」是唯一不需要说法的那个。
  */
 export async function submitJudgment(
@@ -239,7 +239,7 @@ export async function judged(
 	}));
 }
 
-/** 生效完的组从队列里删掉。和落表在同一笔事务里，否则下一轮会把同一份判定再算一遍。 */
+/** 生效完的组从队列里删掉。和写表在同一笔事务里，否则下一轮会把同一份判定再算一遍。 */
 export async function remove(
 	client: CorpusClient,
 	ids: number[],

@@ -13,7 +13,7 @@ function decision(
 	return { canonical, judge: JUDGE, parent, reviewedAt };
 }
 
-describe("圈组", () => {
+describe("分组", () => {
 	const words = ["推荐系统", "推荐算法", "个性化推荐", "Python", "数据分析"];
 	const counts = [3, 5, 1, 4, 2];
 	// 推荐系统与推荐算法相近，个性化推荐只和推荐系统相近；Python、数据分析各自独立
@@ -62,7 +62,7 @@ describe("圈组", () => {
 	});
 });
 
-describe("收窄", () => {
+describe("校验", () => {
 	const words = ["运营数据分析", "销售数据分析", "数据分析报告"];
 	const judged = (word: string, sameAs: string, parent: string) => ({
 		word,
@@ -123,7 +123,7 @@ describe("收窄", () => {
 	});
 });
 
-describe("记账", () => {
+describe("记下判定结论", () => {
 	/** 按词的码点排，和库里 `order by word` 一个顺序，不受运行时的排序规则影响。 */
 	const byWord = (a: [string, ...unknown[]], b: [string, ...unknown[]]) =>
 		a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;

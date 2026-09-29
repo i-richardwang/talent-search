@@ -38,7 +38,7 @@ const TIMEOUT_MS = positiveInt(process.env.EMBED_TIMEOUT_MS, 30_000);
 
 /**
  * 同一串字永远得到同一个向量，所以缓存在语义上不可见。它省的是**每次导航**
- * 的一跳：翻页、改筛选都要重跑检索，而检索要先嵌入查询词——不缓存的话
+ * 时的一次模型调用：翻页、改筛选都要重跑检索，而检索要先嵌入查询词——不缓存的话
  * 每按一次筛选都等一次模型。上限只是防止进程长期运行时无限长。
  */
 const CACHE_MAX = 4096;
@@ -78,7 +78,7 @@ function getModel() {
 			name: "talent-embed",
 			baseURL: config.baseURL,
 			...(API_KEY && { apiKey: API_KEY }),
-			// 超时装在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
+			// 超时设在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
 			fetch: timeoutFetch(TIMEOUT_MS),
 		}).embeddingModel(config.model);
 	return model;

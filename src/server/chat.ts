@@ -1,6 +1,6 @@
 /**
  * 语料侧的聊天调用：模型请求、并发控制、进度和持久缓存。
- * 缓存保存通过 schema 校验的原始 JSON；领域收窄由调用方执行。
+ * 缓存保存通过 schema 校验的原始 JSON；领域校验由调用方执行。
  * 键由模型、提示词、schema 和输入文本确定，同键采用首个落库回答。
  * 无效回答报告后跳过且不缓存；持续的端点故障向调用方抛出。
  */
@@ -26,7 +26,7 @@ const API_KEY = process.env.EXTRACT_API_KEY;
 
 /**
  * 端点支不支持 `response_format: json_schema`。兼容层默认**关**这个开关，关着
- * 的时候 schema 根本没出门，模型全靠提示词自觉。所以这里默认打开；碰上老网关
+ * 的时候 schema 根本没发给端点，模型全靠提示词自觉。所以这里默认打开；碰上老网关
  * 不认 json_schema，把 `EXTRACT_STRUCTURED_OUTPUTS=false` 设上即可。
  */
 const STRUCTURED = process.env.EXTRACT_STRUCTURED_OUTPUTS !== "false";
@@ -34,7 +34,7 @@ const STRUCTURED = process.env.EXTRACT_STRUCTURED_OUTPUTS !== "false";
 /**
  * 推理模型的思考开关。设了才随请求发出（`enable_thinking`，SiliconFlow 一类
  * 网关认它）；不设就不发，标准 OpenAI 端点不会收到一个它不认的字段。抽取这几件
- * 事都不需要思考轨迹，而思考会先把输出预算烧光、返回空内容，所以带思考的模型
+ * 事都不需要思考轨迹，而思考会先把输出预算用光、返回空内容，所以带思考的模型
  * 应当设成 false。
  */
 const ENABLE_THINKING = process.env.EXTRACT_ENABLE_THINKING?.trim();
@@ -47,8 +47,8 @@ const CONCURRENCY = positiveInt(process.env.EXTRACT_CONCURRENCY, 4);
  */
 const RETRIES = 4;
 /**
- * 输出预算按「思考轨迹也算输出」给：推理模型在第一个字符之前先烧掉几百到上千
- * token，`auto` 一类按请求路由的网关还会换到更啰嗦的模型。给小了它在思考阶段撞上限，
+ * 输出预算按「思考轨迹也算输出」给：推理模型在第一个字符之前先消耗几百到上千
+ * token，`auto` 一类按请求路由的网关还会换到更啰嗦的模型。给小了它在思考阶段就用完预算，
  * 返回空内容而不报错。默认取宽，两个端点同一个数（`llm.ts`）。
  */
 const MAX_OUTPUT_TOKENS = positiveInt(
@@ -95,7 +95,7 @@ function getModel(model: string) {
 			baseURL: BASE_URL,
 			supportsStructuredOutputs: STRUCTURED,
 			...(API_KEY && { apiKey: API_KEY }),
-			// 超时装在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
+			// 超时设在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
 			fetch: timeoutFetch(TIMEOUT_MS),
 			// 兼容层的 provider 选项里没有 `enable_thinking`，它是网关自己的字段，
 			// 只能在请求体成形之后补上去——这个钩子正是为此存在的。
@@ -140,7 +140,7 @@ export function standardOf(system: string, schema: z.ZodType<unknown>): string {
 	return sha([system, JSON.stringify(z.toJSONSchema(schema))].join("\u001f"));
 }
 
-/** 一次查缓存问多少段。绑定参数有上限，几千段的语料一次问完会撞上它。 */
+/** 一次查缓存问多少段。绑定参数有上限，几千段的语料一次问完会超过它。 */
 const LOOKUP = 500;
 
 async function cached(
@@ -191,7 +191,7 @@ async function store(identity: string, text: string, payload: unknown) {
  *
  * 瞬时故障重试 `RETRIES` 次：5xx 与限流由 AI SDK 按指数退避、遵守 `Retry-After`
  * 地试，超时由 `retryingTimeouts` 试（分工见 `endpoint.ts`）；每一次尝试各有一份
- * `EXTRACT_TIMEOUT_MS` 的预算。持续失败仍然会把这一轮派生带倒，那说明并发调太高
+ * `EXTRACT_TIMEOUT_MS` 的预算。持续失败仍然会让这一轮派生中止，那说明并发调太高
  * 或端点真的不可用，该改 `EXTRACT_CONCURRENCY`，不该由重试掩盖。
  */
 async function ask(
@@ -228,7 +228,7 @@ async function ask(
 		if (!NoObjectGeneratedError.isInstance(error)) throw error;
 		return abandon(error.finishReason, error.usage);
 	}
-	// 正文为空的应答（思考轨迹烧光预算、finishReason 不是 stop）不在上面那个异常里：
+	// 正文为空的应答（思考轨迹用光预算、finishReason 不是 stop）不在上面那个异常里：
 	// SDK 把它推迟到取 `output` 的时候才抛。同样是这一段没答好，同样放弃这一段。
 	try {
 		return result.output;

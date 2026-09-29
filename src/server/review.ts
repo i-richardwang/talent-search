@@ -1,17 +1,17 @@
 /**
- * 外部判定方的那道口子：取走待判的组、提交判定。整理任务里「判定」这一步的 HTTP 形状。
+ * 外部判定方的 HTTP 接口：取走待判的组、提交判定。整理任务里「判定」这一步的 HTTP 形状。
  *
- * 只有两件事在这里——**认人**和**译形状**。谁能判、一组活多久在 `src/corpus/judgment.ts`，
+ * 只有两件事在这里——**鉴权**和**请求与响应格式的转换**。谁能判、一组多久过期在 `src/corpus/judgment.ts`，
  * 判定结果长什么样在各自那一种组的模块里：接口只是队列的另一个入口。
  *
- * **这条路只写组那一行。** 词表、释义和边由整理任务在写者锁里改（`corpus/session.ts`），
- * 所以提交不必等派生放锁几十分钟；外部也永远拿不到改词表的权限，它交上来的
- * 原话要过 `conform` 才算数，和自带模型交上来的走同一处收窄。
+ * **这个接口只写组那一行。** 词表、释义和边由整理任务在写者锁里改（`corpus/session.ts`），
+ * 所以提交不必等派生放锁几十分钟；外部也永远拿不到改词表的权限，它提交的
+ * 原话要经过 `conform` 校验才算数，和自带模型的回答走同一处校验。
  *
- * **出这台机器的只有短说法和人数。** 没有姓名、工号，也没有简历原文——这条接口的
- * 数据边界比抽取端点窄得多，README 的部署那一章按这一档写。
+ * **发出这台机器的只有短说法和人数。** 没有姓名、工号，也没有简历原文——这条接口的
+ * 数据边界比抽取端点窄得多，README 的部署那一章按这个范围写。
  *
- * 限流按老规矩做在网关层：进程内计数器盖不住多实例。
+ * 限流按惯例做在网关层：进程内计数器盖不住多实例。
  */
 
 import "@tanstack/react-start/server-only";
@@ -61,15 +61,15 @@ export function reviewJudge(): Judge {
 }
 
 /**
- * 这条路通不通：**判定归外部，而且配了凭据**，两样缺一就当接口不存在。
+ * 这个接口开没开：**判定归外部，而且配了凭据**，两样缺一就当接口不存在。
  *
  * 开关只有 `REVIEW_JUDGE` 一个。自带模型判定时队列里的组在同一轮就判完了，外面
  * 取到的永远是空名单、提交永远是 404 或 409——一条只会说「不」的接口不如没有；
  * 关掉整理时更没有人会来让判定生效。所以接口不另设一个开关，也不在 `model` 或 `off`
- * 下摆出一副能用的样子。判定归外部却没配凭据是配错了，整理任务会在记录里说出来
+ * 下假装可用。判定归外部却没配凭据是配错了，整理任务会在记录里说出来
  * （`src/server/tasks.ts`），这里只管不放行。
  *
- * 没配与配了但对不上，回给外面的下场不一样（404 与 401），判断只有这一处。
+ * 没配与配了但对不上，返回的状态码不一样（404 与 401），判断只有这一处。
  */
 export function configured(): boolean {
 	return reviewJudge() === "external" && token().length > 0;
@@ -84,7 +84,7 @@ export function authorized(request: Request): boolean {
 /**
  * 一组在响应里的样子：哪一种组，一组词各带人数。归并组里没有谁是「标准词」——标准
  * 写法由生效时按人数定，归属由判定方起名。`expiresAt` 说这一组还能判到什么时候，
- * 判定方据此排自己的活。
+ * 判定方据此安排自己的工作。
  */
 type GroupView = {
 	id: number;
@@ -136,14 +136,14 @@ export async function pending(limit: number): Promise<{
 	};
 }
 
-/** 从 URL 上读 `limit`。缺失、非法、超上限一律收窄，不为一个数否掉整次请求。 */
+/** 从 URL 上读 `limit`。缺失、非法时用默认值，超上限时取上限，不为一个数否掉整次请求。 */
 export function limitOf(url: string): number {
 	const raw = Number(new URL(url).searchParams.get("limit"));
 	if (!Number.isInteger(raw) || raw <= 0) return DEFAULT_LIMIT;
 	return Math.min(raw, MAX_LIMIT);
 }
 
-/** 提交的下场：`Submission` 加上两种形状不对。 */
+/** 提交的结果：`Submission` 加上两种形状不对。 */
 type Submitted =
 	| { ok: true; submission: Submission }
 	| { ok: false; why: string };
@@ -151,8 +151,8 @@ type Submitted =
 /**
  * 提交判定。
  *
- * **原话原样存进组里，这里不收窄**：什么算一条有效的判断是生效时的事
- * （`conform`），改收窄规则不该让已经提交的判定失效。这里只看形状——认得出
+ * **原话原样存进组里，这里不校验内容**：什么算一条有效的判断是生效时的事
+ * （`conform`），改校验规则不该让已经提交的判定失效。这里只看形状——能识别出
  * 是哪一组、是谁判的、判定是不是一串判断。
  */
 export async function submit(request: Request): Promise<Submitted> {

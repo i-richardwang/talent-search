@@ -1,5 +1,5 @@
 /**
- * 语料侧一次任务的生命周期：谁能开始、说过的话去哪、上一次是什么结果。
+ * 语料侧一次任务的生命周期：谁能开始、输出的日志写到哪、上一次是什么结果。
  *
  * 三种任务（`TASK_KINDS`）走同一条锁、同一张记录、同一个 `runTask`：同步是
  * `bun run sync` 跑的脚本，派生和整理是应用进程里的后台任务（`jobs.ts`）。
@@ -13,9 +13,9 @@
  *    收尾」那样的修补步骤——进程中断的那一行，此刻就看得出它是中断的。
  *    这要求**行写完才放锁**：锁在手里的时候行还没写完，读者只会读成「正在跑」；
  *    反过来先放锁，就会有一瞬间「没人持锁、行没写完」，读起来和进程中断一模一样。
- * 3. **说过的每一行都进那一行记录。** 攒着批量写，不是一行一次往返——整理能力词
- *    一轮能说出上千行。记录是关于这次运行的，不是它的前提：一批日志没能落库，
- *    去标准错误说一声，任务照跑，结果照写。
+ * 3. **输出的每一行都写进那一行记录。** 攒着批量写，不是一行一次往返——整理能力词
+ *    一轮能输出上千行。记录是关于这次运行的，不是它的前提：一批日志没能落库，
+ *    写一条到标准错误，任务照跑，结果照写。
  * 4. **失败写进记录，不只是抛给调用方。** 看任务台的人看不到服务器的标准输出，
  *    所以那条记录必须自己说得出为什么停了。
  */
@@ -71,7 +71,7 @@ const WORK: Record<TaskKind, TaskWork> = {
 		const judge = reviewJudge();
 		if (judge === "off") return;
 		await review(session.client, report, judge);
-		// 判定归外部却没配凭据，接口是关着的，组会挂到过期。这是配错了，得在记录里
+		// 判定归外部却没配凭据，接口是关着的，组会一直留到过期。这是配错了，得在记录里
 		// 说出来：整理一轮轮照跑、词表一动不动，没有这句没人看得出为什么
 		if (judge === "external" && !configured())
 			report("  ✖ 判定归外部，但 REVIEW_TOKEN 没配，接口关着，没人能提交判定");
@@ -89,7 +89,7 @@ export type TaskOutcome = "running" | "interrupted" | "failed" | "done";
  * 一次运行在页面上的样子。
  *
  * 时刻和用时**在库里算好**：服务端直出和浏览器水合各算一次的话，两边的时区
- * 不同就会渲染出两个不一样的字符串，而 React 只会在控制台嘀咕一句。
+ * 不同就会渲染出两个不一样的字符串，而 React 只会在控制台打一条警告。
  * 管理页 `/skills` 的「几天前」是同一个道理。
  */
 export type TaskRunView = {
@@ -113,7 +113,7 @@ export type TaskRunView = {
  * 给的是一页，连同这一栏一共几页、一共跑过几次：跑过几百次的一栏也要能一直往前
  * 翻到头（`/data` 同一条规矩）。
  *
- * 不带日志。一轮整理能说上千行，而任务台正在跑的时候每两秒重新载入一次——
+ * 不带日志。一轮整理能输出上千行，而任务台正在跑的时候每两秒重新载入一次——
  * 日志按需单取（`taskLog`），页面上也只在打开某一次的日志时才用得到。
  */
 export type TaskLane = {
@@ -135,7 +135,7 @@ export type TaskPages = Partial<Record<TaskKind, number>>;
 /**
  * 语料此刻有多少东西。任务台三张卡片上的数全是它——**问库，不问上一次跑的记录**。
  *
- * 一次运行说过的「人群 20 人」是那一刻的快照，跑完就开始过期：下一次同步之后，
+ * 一次运行输出的「人群 20 人」是那一刻的快照，跑完就开始过期：下一次同步之后，
  * 卡片还显示上一次记录里的数字，就成了屏幕上一个没人维护的旧值。这些数库里现成有，
  * 每次载入查一遍即可（都是主键或小表上的 count，不值得为它们再开一份存储）。
  */
@@ -180,7 +180,7 @@ type StoredRun = Omit<TaskRunView, "outcome">;
 /**
  * 一行记录现在算哪一种。
  *
- * `live` 只对**最近**那一行成立：锁至多有一个持有者，而它开跑时落下的正是最新的
+ * `live` 只对**最近**那一行成立：锁至多有一个持有者，而它开跑时写入的正是最新的
  * 一行，所以更早的那些没写完的行必然是中断留下的。
  */
 function outcome(run: StoredRun, live: boolean): TaskOutcome {
@@ -243,7 +243,7 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 	 * 因此只读一次无论先读谁都有缝。连续两次稳定观测把两个过渡区都排除在结果外。
 	 */
 	const { active, heads } = await stableTaskHeads();
-	// 锁一次只有一个持有者，它开跑时落下的是全表最新的那一行
+	// 锁一次只有一个持有者，它开跑时写入的是全表最新的那一行
 	const newest = Math.max(0, ...heads.map((row) => row.id));
 	/** 库里那一行在页面上的样子。逐个字段写出来，行上别的列不跟着发到页面。 */
 	const seen = (row: StoredRun): TaskRunView => ({
@@ -341,10 +341,10 @@ async function corpusCounts(): Promise<CorpusCounts> {
 }
 
 /**
- * 一次运行说过的每一行。
+ * 一次运行输出的每一行。
  *
- * 单取，不跟着任务台的状态一起来：这些行是排查时才看的东西，而一轮整理能说
- * 上千行，挂在每两秒一次的轮询上就是每两秒搬一遍。
+ * 单取，不跟着任务台的状态一起来：这些行是排查时才看的东西，而一轮整理能输出
+ * 上千行，放进每两秒一次的轮询就是每两秒传一遍。
  */
 export async function taskLog(runId: number): Promise<string[]> {
 	const { rows } = await db.execute<{ log: string[] }>(
@@ -359,7 +359,7 @@ export async function derivePending(): Promise<number> {
 }
 
 /**
- * 把说出来的话攒进那一行记录。
+ * 把输出的日志行攒着写进那一行记录。
  *
  * 每行一次 UPDATE 会让整理能力词那一段变成上千次往返；攒着写，并且**同一时刻只有
  * 一次在途的追加**——上一次还没落库时新来的行排在它后面，不并发改同一行。
@@ -390,7 +390,7 @@ function logger(runId: number) {
 					.where(eq(taskRun.id, runId));
 			})
 			/*
-			 * 这一批没落下去，下一批照追：链上不留一个拒绝的 promise，否则后面每一批
+			 * 这一批没写进去，下一批照样追加：链上不留一个拒绝的 promise，否则后面每一批
 			 * 都跟着拒绝，定时器那条路上还没人接它。丢掉的行只剩标准错误这一处。
 			 */
 			.catch((error) => {
@@ -414,7 +414,7 @@ function logger(runId: number) {
  * 一条错误连同它的来由，外层在前。
  *
  * 只取最外层那一句会把真正发生的事丢掉：加载数据源失败时，外层说的是「读取数据源
- * company-adapter 失败」，而 `cause` 上挂着的才是具体的模块加载错误。
+ * company-adapter 失败」，而 `cause` 里的才是具体的模块加载错误。
  */
 function causeChain(error: unknown): string[] {
 	const lines: string[] = [];
@@ -438,7 +438,7 @@ type TaskResult = { runId: number; failure: string | null };
  * 为 true 排队等。
  *
  * **它不抛。** 任务本身失败，结果是那一行上的一句话，也作为返回值交给调用方；
- * 连记录这件事本身都失败时（库没了），唯一还能说话的地方是标准错误。
+ * 连记录这件事本身都失败时（库没了），唯一还能输出的地方是标准错误。
  * 过程同时回显到 `echo`（命令行给标准输出，后台任务不给）。
  */
 export async function runTask(
@@ -455,7 +455,7 @@ export async function runTask(
 			.insert(taskRun)
 			.values({ kind, source: source?.name ?? "", log: [] })
 			.returning({ id: taskRun.id });
-		if (!row) throw new Error("没能落下这次任务的记录");
+		if (!row) throw new Error("没能写入这次任务的记录");
 		runId = row.id;
 	} catch (error) {
 		await session.release();

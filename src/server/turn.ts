@@ -45,18 +45,18 @@ export type Turn = {
 	title: string | null;
 	/** 这一轮说的话；这一轮是直接改条件时为 null。 */
 	said: string | null;
-	/** null 表示模型理解尚未落下。 */
+	/** null 表示模型理解尚未完成。 */
 	spec: SearchSpec | null;
 	notes: TurnNotes | null;
 	/** 理解这一轮时模型走过的步骤；还在理解时是到目前为止的。关键词的记录没有。 */
 	trace: TraceStep[] | null;
-	/** 这一轮落记录的时刻（epoch 毫秒）：线程上的时间和等理解时的计时都从它算。 */
+	/** 这一轮写入记录的时刻（epoch 毫秒）：线程上的时间和等理解时的计时都从它算。 */
 	at: number;
 };
 
 type Db = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** 在 `parent` 后面落一条新记录。没有 `parent` 就是一条新链的链头。 */
+/** 在 `parent` 后面写一条新记录。没有 `parent` 就是一条新链的链头。 */
 async function insertTurn(
 	tx: Db,
 	row: {
@@ -119,14 +119,14 @@ function admit(mode: SearchMode, input: QueryInput) {
 }
 
 /**
- * 落一轮新查询，不在导航前等待模型。没有 `from` 就开一条新链。
+ * 写入一轮新查询，不在导航前等待模型。没有 `from` 就开一条新链。
  *
  * 链是一条线：新的一轮总接在链尾，所以回头看过去某一轮的结果，后面那几轮
  * 照样在线程里。`from` 是人正看着的那一轮，动作作用在**它的**条件上：
  *
- * - 交一整张表（chip 上的改动、替代条件、关键词框）不依赖基线，接在链尾。
+ * - 提交一整张表（chip 上的改动、替代条件、关键词框）不依赖基线，接在链尾。
  * - 说一句话要有基线。`from` 就是链尾时直接接上；是更早的一轮时，先追加一轮
- *   原样抄回那一轮的条件，话再接在后面。线程里那一步记成一次修改，基线
+ *   原样复制那一轮的条件，话再接在后面。线程里那一步记成一次修改，基线
  *   仍然是这句话的上一轮——每一轮都是真实发生过的一步。
  *
  * 链尾还没理解出来的那一轮不算数：新的动作取代它（没作答时换个说法重说，
@@ -243,7 +243,7 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 
 	// 读词表、调用模型、检查太宽的词，三件事各自读数据库，不共用一个快照：
 	// 调用模型可能要一分钟，如果开着快照等它，一次理解就占着连接池里的一条连接一分钟。
-	// 模型的工具和太宽检查各自在自己的快照里读（`search/phrases.ts` 的 withAdmission）。
+	// 模型的工具和太宽检查各自在自己的快照里读（`search/phrases.ts` 的 withMatchedPhrases）。
 	const vocab = await vocabulary();
 	await db
 		.update(searchTurn)
@@ -258,7 +258,7 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const agent = agentTools({ vocab, base, record });
 	const submitted = await understand(rawText, vocab, base, agent);
 	const result = understood(submitted, vocab, base);
-	// 没作答也抛：记录停在「待理解」，由 `interpret` 分出是哪一环坏了。
+	// 没作答也抛：记录停在「待理解」，由 `interpret` 分出是哪个环节出了问题。
 	const failure = unanswered(submitted, result);
 	if (failure) throw new UnansweredError(failure);
 	const declined = result.notes?.declined ?? [];
@@ -283,7 +283,7 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 }
 
 /**
- * 这一轮为什么没理解出来。只有服务端知道是哪一环坏了，页面按它说话：
+ * 这一轮为什么没理解出来。只有服务端知道是哪个环节出了问题，页面按它显示提示：
  * 连不上和报错时那句话根本没被读过，不能说成「这句话没读懂」。
  *
  * - `unconfigured`：没配查询理解端点。
@@ -297,7 +297,7 @@ export type InterpretFault =
 	| "unanswered"
 	| "broken";
 
-/** 补全一次理解，失败时返回是哪一环坏了。原错误只写进服务端日志，不发给页面。 */
+/** 补全一次理解，失败时返回是哪个环节出了问题。原错误只写进服务端日志，不发给页面。 */
 export async function interpret(
 	turnId: string,
 ): Promise<{ fault: InterpretFault | null }> {
@@ -380,13 +380,13 @@ export type RecentSearch = {
 	spec: SearchSpec;
 	/** 这次找人任务的标题：链头那句话。关键词搜索没有。 */
 	title: string | null;
-	/** 最后一轮是多少秒以前落的记录。在库里算，服务端直出与水合读到的是同一个数。 */
+	/** 最后一轮是多少秒以前写入的记录。在库里算，服务端直出与水合读到的是同一个数。 */
 	ageSeconds: number;
-	/** 最后一轮落记录的时刻，`YYYY-MM-DD HH:MM` */
+	/** 最后一轮写入记录的时刻，`YYYY-MM-DD HH:MM` */
 	at: string;
 };
 
-/** 最近搜索一页最多取多少条：页面要多少由它自己说，超过的收到这个数。 */
+/** 最近搜索一页最多取多少条：页面要多少由它自己说，超过的按这个数取。 */
 const RECENT_PAGE_MAX = 50;
 
 /**
@@ -426,7 +426,7 @@ export async function listRecent(
  * 删掉一次找人任务：这条记录所在的整条链，返回删掉的每一条的 id。
  *
  * 「最近搜索」一行就是一条链，删一行就是删这条链——只删最后那一条的话，
- * 上一条会顶上来，那一行还在，只是退回了早一点的样子，和用户要的正相反。
+ * 那一行还在，只是显示成上一轮的样子，和用户要的正相反。
  * 一条语句删完整条链：链上每一条（含链头自己）的 `root_turn_id` 都是链头。
  *
  * 返回 id 是给界面的：人正看着的那一屏可能就在这条链上，删完得离开它。

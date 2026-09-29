@@ -3,11 +3,11 @@
  *
  * 读适配器、切段校验（`pipeline.ts`）、然后一笔短事务：这次没出现的人和段删掉，
  * 新出现的插进去，没变的一行不动。它**一次模型都不调**，几万段在几秒内跑完，
- * 所以可以挂在 cron 上按天跑、也可以随手跑；模型要做的事全在派生任务里
- * （`derive.ts`），它只盯着「哪些段还没派生」，同步完自然就有活干。
+ * 所以可以放进 cron 按天跑、也可以随手跑；模型要做的事全在派生任务里
+ * （`derive.ts`），它只看「哪些段还没派生」，同步完自然就有段要处理。
  *
  * **段按内容认，不按位置认**：`experience.key` 是原始列的摘要，由库自己算
- * （`src/db/schema.ts`）。同步把这一次的行灌进一张同结构的暂存表，暂存表里的键
+ * （`src/db/schema.ts`）。同步把这一次的行写进一张同结构的暂存表，暂存表里的键
  * 也是库算的，于是「这一段还在不在」就是两张表按键做差，不用应用代码再算一遍
  * 摘要——两处算法一旦漂开，每次同步都会把整库删了重插，派生结果全部作废，而
  * 且没有任何报错。
@@ -74,7 +74,7 @@ async function stageExperience(
 ): Promise<void> {
 	/*
 	 * `including generated`：暂存表的 key 和正式表用同一个表达式，由库算。
-	 * `including defaults`：派生那一半的列这里不写，靠默认值站住 not null。
+	 * `including defaults`：派生那一半的列这里不写，靠默认值满足 not null。
 	 * id 是正式表发的号，暂存表里没有它。
 	 */
 	await client.query(
@@ -116,7 +116,7 @@ const EXPERIENCE_COLUMNS =
 
 /**
  * 把暂存的两张表和正式表做差：删这次没有的，插这次新来的，改了档案的人更新。
- * 段走了边跟着级联走，于是收尾清一次没人指的说法（`prunePhrases`）。
+ * 段删掉时边跟着级联删除，于是收尾清一次没有边指向的说法（`prunePhrases`）。
  */
 async function reconcile({ client }: CorpusSession): Promise<{
 	employeesGone: number;
@@ -155,7 +155,7 @@ async function reconcile({ client }: CorpusSession): Promise<{
  * 一次同步：读数据源 → 切段校验 → 一笔事务做差。
  *
  * 幂等，可反复跑：同一份数据跑两遍，第二遍一行都不动。连接与锁由调用方给
- * （`session.ts`），说过的话交给 `report`。
+ * （`session.ts`），输出写到 `report`。
  */
 export async function sync(
 	session: CorpusSession,

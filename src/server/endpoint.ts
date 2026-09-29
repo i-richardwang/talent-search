@@ -1,6 +1,6 @@
 /**
  * 四个端点适配层（`embed` / `rerank` / `llm` / `chat`）共用的三样东西：把配置里的
- * 数读出来，给每一次请求装上超时，以及超时之后再试。
+ * 数读出来，给每一次请求设上超时，以及超时之后再试。
  */
 
 import "@tanstack/react-start/server-only";
@@ -18,14 +18,14 @@ export function positiveInt(value: string | undefined, fallback: number) {
 }
 
 /**
- * 给每一次 HTTP 请求装上超时的 `fetch`。四个 `*_TIMEOUT_MS` 因此是同一个意思：
+ * 给每一次 HTTP 请求设上超时的 `fetch`。四个 `*_TIMEOUT_MS` 因此是同一个意思：
  * **一次尝试最多等多久**。
  *
- * 超时是一次请求的属性，不是一通调用的属性：装在整通调用上（AI SDK 的 `timeout`
- * 数字是 `totalMs`，`abortSignal` 同样跨越全部尝试）时，第一次尝试撞上限就把整通
- * 调用连同它的重试一起掐了。装在这一层，每一次尝试各拿一份完整的预算。
+ * 超时是一次请求的属性，不是一通调用的属性：设在整通调用上（AI SDK 的 `timeout`
+ * 数字是 `totalMs`，`abortSignal` 同样跨越全部尝试）时，第一次尝试超时就把整通
+ * 调用连同它的重试一起中止了。设在这一层，每一次尝试各拿一份完整的预算。
  *
- * 调用方传进来的 signal 仍然管用：两个信号取并集，谁先响算谁的。
+ * 调用方传进来的 signal 仍然管用：两个信号取并集，哪个先触发就按哪个中止。
  */
 export function timeoutFetch(ms: number): typeof fetch {
 	return (input, init) => {
@@ -44,8 +44,8 @@ export function timeoutFetch(ms: number): typeof fetch {
  *
  * - **端点答了、答的是可重试的错**（429、5xx）——AI SDK 的 `maxRetries` 管，
  *   指数退避、遵守 `Retry-After`；
- * - **端点没答上来**（`timeoutFetch` 掐掉了这一次）——这里管。SDK 把中止一律
- *   当成调用方不想要了，直接抛、一次都不试，而这里的中止是我们自己装的表，
+ * - **端点没答上来**（`timeoutFetch` 中止了这一次）——这里管。SDK 把中止一律
+ *   当成调用方不想要了，直接抛、一次都不试，而这里的中止来自我们自己设的超时，
  *   它说的是「端点这一次太慢」，恰恰是最该再试一次的那类失败。
  *
  * 超时之前已经等满了一份预算，所以不再退避，立刻重来。SDK 里的重试发生在
@@ -65,7 +65,7 @@ export async function retryingTimeouts<T>(
 }
 
 /**
- * 是不是 `AbortSignal.timeout` 响的表。它是一个 `name` 为 `TimeoutError` 的
+ * 是不是 `AbortSignal.timeout` 触发的超时。它是一个 `name` 为 `TimeoutError` 的
  * `DOMException`，SDK 原样抛出；万一哪一层包了一次，沿 `cause` 往下找。
  */
 function isTimeout(error: unknown): boolean {
@@ -84,7 +84,7 @@ function isTimeout(error: unknown): boolean {
  * 都不是就是 null：端点好好地答了，问题出在答的内容或我们自己这一侧。
  *
  * SDK 把连不上包成一个没有状态码的 `APICallError`，重试用尽再包一层 `RetryError`；
- * 超时是 `timeoutFetch` 的表响了。这里沿 `lastError` 和 `cause` 往下找第一个认得的。
+ * 超时是 `timeoutFetch` 设的超时触发了。这里沿 `lastError` 和 `cause` 往下找第一个能识别的。
  */
 export type EndpointFault = "unreachable" | "rejected";
 

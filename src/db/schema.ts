@@ -146,7 +146,7 @@ export const embeddingCache = pgTable(
 	(t) => [primaryKey({ columns: [t.spaceId, t.model, t.textSha] })],
 );
 
-/** 聊天完成缓存。identity 包含模型、提示词和回答 schema；payload 保留未收窄原话。 */
+/** 聊天完成缓存。identity 包含模型、提示词和回答 schema；payload 保留未经领域校验的原话。 */
 export const completionCache = pgTable(
 	"completion_cache",
 	{
@@ -211,7 +211,7 @@ export const reviewGroup = pgTable(
 			.notNull()
 			.defaultNow(),
 		judge: text("judge"),
-		/** 判定原话；生效时执行领域收窄。 */
+		/** 判定原话；生效时做领域校验。 */
 		judgment: jsonb("judgment"),
 	},
 	(t) => [
@@ -313,7 +313,7 @@ export const searchTurn = pgTable(
 		rawText: text("raw_text"),
 		/** 查询条件快照；null 表示仍待理解。 */
 		spec: jsonb("spec").$type<SearchSpec>(),
-		/** 理解这一轮时模型的说明：替用户定的读法、搜不了的要求。没有就是 null。 */
+		/** 理解这一轮时模型的说明：替用户选定的理解、搜不了的要求。没有就是 null。 */
 		notes: jsonb("notes").$type<TurnNotes>(),
 		/** 理解这一轮时模型用工具走过的步骤，边跑边追加；关键词的记录没有。 */
 		trace: jsonb("trace").$type<TraceStep[]>(),

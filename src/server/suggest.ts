@@ -31,7 +31,7 @@ export async function suggest(
 	const prefix = `${escapeLike(q)}%`;
 
 	if (field === "what") {
-		// 词表里写法和标准词都认，交出去的是标准词；没人写过的词不给
+		// 词表里写法和标准词都认，返回的是标准词；没人写过的词不给
 		const { rows } = await db.execute<{ value: string }>(sql`
 			${UNDER}
 			select value from (

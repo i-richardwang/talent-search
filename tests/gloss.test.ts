@@ -1,6 +1,6 @@
 /**
- * 释义组。收窄规则是纯函数；收集、生效走真库——收谁、绕开谁、
- * 落表时清不清分数缓存，都是 SQL 里的事。判定方由测试装回答。
+ * 释义组。校验规则是纯函数；收集、生效走真库——收集哪些说法、跳过哪些、
+ * 写表时清不清分数缓存，都是 SQL 里的事。判定方由测试装回答。
  */
 
 import assert from "node:assert/strict";
@@ -22,7 +22,7 @@ async function client() {
 	return pool.connect();
 }
 
-/** 跑一轮整理，回收它说过的每一行。 */
+/** 跑一轮整理，收回它输出的每一行。 */
 async function runReview(): Promise<string[]> {
 	const said: string[] = [];
 	const connection = await client();
@@ -73,7 +73,7 @@ async function glosses(): Promise<[string, string][]> {
 	}
 }
 
-describe("收窄判定结果", () => {
+describe("校验判定结果", () => {
 	const words = ["客户开发", "服务端开发"];
 
 	test("只收组里的词，一句话，去掉抄在前面的词本身和句号", () => {

@@ -1,14 +1,14 @@
-/** 能力词的收窄、圈组与词表归并。生产的生效一步和验收共用这些纯函数。 */
+/** 能力词判定的校验、分组与词表归并。生产的生效一步和验收共用这些纯函数。 */
 import type { Member } from "./judgment";
 import { MAX_TAG_LEN, tag } from "./tag";
 
 /**
- * 两个能力词的向量相似度到这个数才圈进同一组。bge-m3 上同一项能力的不同写法
- * 多在 0.8 以上；再低会把「数据分析」和「数据仓库」这种相邻领域圈到一起——
+ * 两个能力词的向量相似度到这个数才分进同一组。bge-m3 上同一项能力的不同写法
+ * 多在 0.8 以上；再低会把「数据分析」和「数据仓库」这种相邻领域分到一起——
  * 判定方能拆，但每组的词一多它就开始漏。
  */
 const SIMILARITY = 0.8;
-/** 一组最多几个词。圈子再大就是阈值定低了，判定方面对二十个词会成片地判成同一项。 */
+/** 一组最多几个词。组再大就是阈值定低了，判定方面对二十个词会成片地判成同一项。 */
 const GROUP_MAX = 12;
 /** 中心词至少几个人才值得整理。 */
 const HEAD_MIN = 3;
@@ -51,7 +51,7 @@ export function validate(table: Table): void {
 		throw new Error(
 			`skill_term 表里 ${chained.join("、")} 的标准词自己又是别名，表被改坏了`,
 		);
-	const bent = [...table]
+	const underAlias = [...table]
 		.filter(([, decision]) => {
 			if (decision.parent === null) return false;
 			const target = table.get(decision.parent);
@@ -59,9 +59,9 @@ export function validate(table: Table): void {
 		})
 		.map(([word]) => word)
 		.sort();
-	if (bent.length)
+	if (underAlias.length)
 		throw new Error(
-			`skill_term 表里 ${bent.join("、")} 归属于一个别名，表被改坏了`,
+			`skill_term 表里 ${underAlias.join("、")} 归属于一个别名，表被改坏了`,
 		);
 	for (const [word] of table) {
 		const seen = new Set<string>();
@@ -74,7 +74,7 @@ export function validate(table: Table): void {
 }
 
 /**
- * 把相似的词圈成组，每组第一个词是中心词，后面至少一个候选。
+ * 把相似的词分成组，每组第一个词是中心词，后面至少一个候选。
  *
  * 人最多的词先做中心词，把还没分组、和它相似度够的词收进来。组和组不重叠：
  * 「数据分析 - 数据监控 - 监控告警」这种一环扣一环的链不会连成一大组。
@@ -127,18 +127,18 @@ function similarity(a: Float32Array, b: Float32Array): number {
 	return sum;
 }
 
-/** 判定方对一个词说了什么，收窄之后的样子。 */
+/** 判定方对一个词说了什么，校验之后的样子。 */
 type Verdict = { sameAs: string | null; parent: string | null };
 
 /**
- * 把判定方的原话收窄成逐词的判断：只认这一组里的词，一个词只认第一条。
+ * 校验判定方的原话，整理成逐词的判断：只认这一组里的词，一个词只认第一条。
  *
  * `sameAs` 必须是这一组里的另一个词；`parent` 是判定方起的名字，只要求它是一条能力词
  * （规范写法、不超过 `MAX_TAG_LEN`），不是这个词自己，也不含着这个词——含着它的词
  * 比它更具体，方向反了的归属（「数据分析」属于「销售数据分析」）在这里就拦下。
  *
  * **自带模型和外部 agent 走的是这同一处。** 外部交上来的东西比模型的更不可信，
- * 不给它第二个入口；接口那一侧只把原话原样存进组里，不在写入时收窄。
+ * 不给它第二个入口；接口那一侧只把原话原样存进组里，不在写入时校验。
  */
 export function conform(raw: unknown, words: string[]): Map<string, Verdict> {
 	const out = new Map<string, Verdict>();
@@ -176,7 +176,7 @@ export function conform(raw: unknown, words: string[]): Map<string, Verdict> {
  * 表里此前对到它们、归属于它们、又不在这一组里的词也一起跟过去，表里于是不会出现
  * 「别名的别名」和「归属于别名」；这一次被判过的词各有自己的判断，不跟。片的归属由片里的判断按人数投出来；它若是这一组里另一片的词就取那一片的
  * 标准写法，若是表里的别名就取它的标准词；沿表往上走会走回自己的归属丢掉，表里于是
- * 不会成环。归属是表里没有的词时给它落一行——它从此是一个标准词。
+ * 不会成环。归属是表里没有的词时给它写一行——它从此是一个标准词。
  *
  * 判过的每个词都记时间：判定方看过它，一周内不必再看。
  */

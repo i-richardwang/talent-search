@@ -2,7 +2,7 @@
  * 通用管线的不变量。
  *
  * 这里测的是「无论数据从哪来都必须成立」的那几条：非法区间必须被拒绝并报告数量、
- * 开放区间怎么封口、相邻段怎么合并、当前信息从哪派生。适配器自己的解析逻辑
+ * 开放区间的结束日怎么补、相邻段怎么合并、当前信息从哪派生。适配器自己的解析逻辑
  * 归各自的测试，不在这里。
  *
  * 全部对着 `build` 一个入口测：它是纯函数，进去四张表、出来两张表加一串话，
@@ -75,7 +75,7 @@ function source(rows: {
 	});
 }
 
-/** 跑一次管线，把它说过的话一起交出来。 */
+/** 跑一次管线，连同它输出的报告一起返回。 */
 function run(rows: Parameters<typeof source>[0]) {
 	const said: string[] = [];
 	const out = build(source(rows), (line) => said.push(line), AS_OF);
@@ -225,7 +225,7 @@ describe("公司内经历", () => {
 		assert.match(out.said, /缺少 segment_key 2 段，已保留为独立经历/);
 	});
 
-	test("同一个 key 落在两个人身上，永远不合并", () => {
+	test("同一个 key 出现在两个人身上，永远不合并", () => {
 		const out = run({
 			people: [{ emp_id: "E1" }, { emp_id: "E2" }],
 			assignments: [
@@ -242,7 +242,7 @@ describe("公司内经历", () => {
 });
 
 describe("入职前经历", () => {
-	test("开放区间封到入职日；没有入职日的封不上，拒绝", () => {
+	test("开放区间截止到入职日；没有入职日的拒绝", () => {
 		const out = run({
 			people: [
 				{ emp_id: "E1", hire_date: "2021-01-01" },
@@ -323,7 +323,7 @@ describe("入职前经历", () => {
 		assert.equal(external(out)[1]?.org_meta, null);
 	});
 
-	test("待业标记不是布尔就是适配器坏了，整轮出声退出", () => {
+	test("待业标记不是布尔就是适配器坏了，整轮报错退出", () => {
 		assert.throws(
 			() =>
 				sourceData({

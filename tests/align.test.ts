@@ -1,5 +1,5 @@
 /**
- * 序列对齐：树从哪来、收窄只认树上的一对、哪些段会去问、缓存身份随树变。
+ * 序列对齐：树从哪来、校验只接受树上的一对、哪些段会去问、缓存身份随树变。
  */
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
@@ -78,7 +78,7 @@ describe("序列树", () => {
 	});
 });
 
-describe("收窄", () => {
+describe("校验", () => {
 	const tree: [string, string][] = [["技术", "算法"]];
 
 	test("树上的一对，前后空白不算数", () => {

@@ -1,8 +1,8 @@
 /**
- * 外部判定方那道口子的形状：认人、收窄入参、提交的几种下场。
+ * 外部判定方 HTTP 接口的形状：鉴权、入参校验、提交的几种结果。
  *
  * 判定本身在 `vocabulary.test.ts` 里走完整一轮；这里只管接口自己那一层——凭据对不对、
- * `limit` 怎么收窄、什么样的判定根本进不了库。
+ * `limit` 怎么校验、什么样的判定根本进不了库。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
@@ -33,7 +33,7 @@ function bearer(value: string): Request {
 	});
 }
 
-describe("认人", () => {
+describe("鉴权", () => {
 	const judgeBefore = process.env.REVIEW_JUDGE;
 	before(() => {
 		process.env.REVIEW_JUDGE = "external";
@@ -47,7 +47,7 @@ describe("认人", () => {
 	test("没配 token 时这条路根本不通", () => {
 		delete process.env.REVIEW_TOKEN;
 		assert.equal(configured(), false);
-		// 凭据对不对已经不重要了：没开这道口子
+		// 凭据对不对已经不重要了：接口没开
 		assert.equal(authorized(bearer(`Bearer ${TOKEN}`)), false);
 	});
 
@@ -78,7 +78,7 @@ describe("认人", () => {
 });
 
 describe("取组的 limit", () => {
-	test("缺失、非法、超上限一律收窄，不否掉整次请求", () => {
+	test("缺失、非法用默认值，超上限取上限，不否掉整次请求", () => {
 		assert.equal(limitOf("http://x/api/review"), 20);
 		assert.equal(limitOf("http://x/api/review?limit=abc"), 20);
 		assert.equal(limitOf("http://x/api/review?limit=0"), 20);
@@ -187,7 +187,7 @@ describe("提交判定", () => {
 		assert.match(view.guides.group.text, /同一件事/);
 	});
 
-	test("原话原样存进组里，这里不收窄", async () => {
+	test("原话原样存进组里，这里不校验内容", async () => {
 		// 「别的词」不在组里、`sameAs` 指向外人——两样都留到生效时才被 `conform` 丢掉
 		const raw = [
 			{ word: "数据分析工作", why: "同义", sameAs: "数据分析", parent: "" },

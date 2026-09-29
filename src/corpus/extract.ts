@@ -6,18 +6,18 @@
  * 描述读成两类**短说法**，每条说法和登记的三类一样存进 `phrase`、指回这一段
  * （`experience_phrase` 的 `skill` / `did` 两类），检索链路对它们一视同仁：
  * 向量召回、重排判定、按可信度分档。它们的来源仍是自述，所以和 `description`
- * 同档（`src/search/weights.ts`）；读过的段整段原文不再作为说法，自述证据只有
- * 这一份读法（`route-texts.ts`）——所以这里的要求是**穷尽**，不是挑重点。
+ * 同档（`src/search/weights.ts`）；读过的段整段原文不再作为说法，自述证据只来自
+ * 这一份抽取（`route-texts.ts`）——所以这里的要求是**穷尽**，不是挑重点。
  *
  * **判断进提示词，阈值进代码**：什么算能力词、哪种语气是哪种参与方式，是逐段的
  * 判断，写在下面的提示词里，可以大改（缓存按提示词键入，改了旧抽取自然失效）；
  * 一条说法最长几个字、一段最多几条、参与方式只认哪几种，是全站的阈值，写在
  * `conform` 里，改了不必换 id——缓存里存的是模型的原话（`src/server/chat.ts`），
- * `conform` 每次派生都重新收窄一遍。
+ * 每次派生都重新经过 `conform` 校验。
  *
  * **模型输出是不可信输入。** schema 里不写枚举、不写长度上限：写了，模型多给
- * 一个字整条响应就作废，而收窄只会丢掉那一条（AGENTS.md「限制只写在收窄的
- * 地方」）。参与方式不在枚举里的那一件事留下领域、参与方式记空——它只是证据行上
+ * 一个字整条响应就作废，而 `conform` 校验只会丢掉那一条（数量和长度限制
+ * 只写在 `conform` 里）。参与方式不在枚举里的那一件事留下领域、参与方式记空——它只是证据行上
  * 的标签，不参与检索（为什么不进向量见 `src/db/schema.ts` 的 `involvement` 列）。
  *
  * 提示词里不写 JSON 形状：形状由 `SCHEMA` 随请求以 json_schema 送出（`src/server/chat.ts`），
@@ -43,7 +43,7 @@ const MAX_DID = 8;
 
 /**
  * 一段经历抽出来的东西。`did` 的每一项是（参与方式，领域）：领域是说法，
- * 参与方式落在边上，模型判断不出时是空。
+ * 参与方式存在边上，模型判断不出时是空。
  */
 export type Extraction = {
 	skills: string[];
@@ -106,7 +106,7 @@ export function promptInput(row: {
 
 function keep(word: string, org: string): boolean {
 	// 公司名永远不进向量：专有名词在向量空间里和同类名字是邻居。模型偶尔会把
-	// 公司名当领域吐回来，这里按原文的公司名兜一道。
+	// 公司名当领域返回，这里按原文的公司名再过滤一遍。
 	if (!word || [...word].length > MAX_TAG_LEN) return false;
 	return !(org && (word.includes(org) || org.includes(word)));
 }
@@ -121,7 +121,7 @@ function field(value: unknown, name: string): unknown {
 		: undefined;
 }
 
-/** 把模型的原话收窄成一份合法的抽取。收窄只丢单条，不丢整段。 */
+/** 校验模型的原话，得到一份合法的抽取。不合规的只丢单条，不丢整段。 */
 export function conform(raw: unknown, org: string): Extraction {
 	if (typeof raw !== "object" || raw === null) return EMPTY;
 	const skills: string[] = [];
@@ -152,7 +152,7 @@ export function extractIdentity(): string {
 }
 
 /**
- * 按入参顺序返回抽取结果。null 是「这一段没有读法」：不是入职前、没有描述，
+ * 按入参顺序返回抽取结果。null 是「这一段没有抽取结果」：不是入职前、没有描述，
  * 或模型未能作答；`{ skills: [], did: [] }` 是读了但没读出说法——两者在派生里
  * 走向不同（`route-texts.ts`），验收里前者算失败。只有入职前且有描述的段会去问端点。
  * 只要段的这四个字段：验收（`scripts/eval-extract.ts`）拿手写的段走同一条路。

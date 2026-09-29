@@ -6,7 +6,7 @@
  * 任务台上「排着还是在跑」的答案也就有了出处，不用本进程记。
  *
  * 两个队列都是 `exclusive`：排着或在跑的至多一个。定时器每几分钟发一个派生任务，
- * 上一轮还没跑完时这一发被吞掉，不堆积；任务台「立即运行」发的也是同一种任务，
+ * 上一轮还没跑完时这一次直接丢弃，不堆积；任务台「立即运行」发的也是同一种任务，
  * 同样规则。
  *
  * 任务本身不在这里：处理函数只做「该不该跑」的判断，然后交给 `tasks.ts` 的
@@ -23,9 +23,9 @@ import { derivePending, runTask } from "./tasks";
 export type JobKind = Exclude<TaskKind, "sync">;
 
 /**
- * 排班。派生盯着「有没有还没派生的段」，同步之后几分钟内就会接上；整理一天一次，
+ * 排班。派生只看「有没有还没派生的段」，同步之后几分钟内就会接上；整理一天一次，
  * 一个词一周判一次的节奏在它里面（`corpus/vocabulary.ts`）。判定归外部时这一轮仍然
- * 照跑——它要让外部交上来的判定生效，并且收集新的组。
+ * 照跑——它要让外部提交的判定生效，并且收集新的组。
  */
 const SCHEDULE: Record<JobKind, string> = {
 	derive: "*/5 * * * *",
@@ -37,7 +37,7 @@ if (!url) throw new Error("DATABASE_URL 未配置");
 
 /*
  * 进程里只有一个 boss。开发服务器改一个文件就重新求值一遍这个模块，而上一个
- * boss 还在轮询——挂在 globalThis 上，重新求值拿到的是同一个。
+ * boss 还在轮询——存在 globalThis 上，重新求值拿到的是同一个。
  */
 const HANDLE = Symbol.for("talent-search.jobs");
 type Handle = { boss: PgBoss; ready: Promise<void> };

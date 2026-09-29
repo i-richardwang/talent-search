@@ -83,7 +83,7 @@ export const GUIDE = `## 背景
 /**
  * 逐词给理由再下结论，不是直接列名单：让判定方一次列名单，它面对十来个相近的候选
  * 会整片说是或整片说否；逐词说完理由再判，每个词各判各的。理由只为约束判断，
- * 收窄时不读。schema 里不写长度和枚举：限制只写在收窄的地方（`conform`）。
+ * 校验时不读。schema 里不写长度和枚举：限制只写在校验的地方（`conform`）。
  */
 const SCHEMA = z.object({
 	judgments: z.array(
@@ -136,7 +136,7 @@ export async function read(client: CorpusClient): Promise<Table> {
  * 收的是**决定本身**，不是一串词名再回表里查：查得到查不到就得有个说法，而
  * 「查不到时写个空标准词」是一行悄悄坏掉的词表。`merge` 手里本来就有决定。
  * 归属指回本表，所以判定方起的名字也在这一批里作为一行写进去；外键在语句末尾才查，
- * 一条语句里父子同时落下没有先后。
+ * 一条语句里父子同时写入，没有先后。
  */
 async function write(client: CorpusClient, decisions: [string, Decision][]) {
 	if (decisions.length === 0) return;
@@ -184,13 +184,13 @@ export async function askModel(
  *
  * **词表里只有一种词。** 人写的词和判定方起的名字在这里没有分别：都是标准词，人数都按
  * 「写了它、它的其他写法或它下面任一个词的人」数（筛选栏同一口径，`src/server/skills.ts`），
- * 都一样圈组、收集、到期再判。所以词表是**表里的标准词，加上语料里还没进表的词**——后者是
+ * 都一样参与分组、收集、到期再判。所以词表是**表里的标准词，加上语料里还没进表的词**——后者是
  * 还没判过的标准词。只从语料取词的话，判定方起的名字永远不会被再问一次：「销售数据分析」
- * 挂不到「数据分析」下面，两组各自起的「数据分析」「数据分析能力」也永远并不到一起。
+ * 归不到「数据分析」下面，两组各自起的「数据分析」「数据分析能力」也永远并不到一起。
  *
- * 其他写法不做中心词、不单独圈组，只跟着它的标准词进组（`collectGroups`）：它和标准词是不是
+ * 其他写法不做中心词、不单独成组，只跟着它的标准词进组（`collectGroups`）：它和标准词是不是
  * 同一件事正是每次重判要问的，而它不在组里时拆不开，在别的组里单独出现又会被判进另一片，
- * 把它从标准词那里悄悄拽走。
+ * 把它从标准词那里悄悄分走。
  *
  * 下面一个人都没有的词不在这一轮里：没人会点它，也就没什么可整理的。
  */
@@ -249,7 +249,7 @@ async function vocabulary(client: CorpusClient) {
 }
 
 /**
- * 让判过的归并组生效：收窄判定结果、更新词表、组从队列里删掉。
+ * 让判过的归并组生效：校验判定结果、更新词表、组从队列里删掉。
  *
  * 两样在同一笔事务里：组没删掉，下一轮会把同一份判定再算一遍。人身上的词不动，
  * 所以这一步判错了，下一次重判改回来就是改回来了，没有要恢复的东西。
@@ -308,13 +308,13 @@ export async function applyGroups(
 }
 
 /**
- * 收集：到期的词圈成组，每个标准词带上它名下的其他写法，每组落一行。
+ * 收集：到期的词分成组，每个标准词带上它名下的其他写法，每组写一行。
  *
- * 队列里挂着的组涉及的词整个不参与这一轮圈组——一个词同时出现在两组里，两份
+ * 队列里还没处理完的组涉及的词整个不参与这一轮分组——一个词同时出现在两组里，两份
  * 判定就会各说各的，而生效时挑哪一份都得有个说法。其他写法跟着标准词进出，
  * 标准词不在别的组里，它的写法也就不在。
  *
- * 带上写法之后一组可以超过圈组的上限（`vocabulary-rules.ts`）：上限管的是有多少件要分辨的事，
+ * 带上写法之后一组可以超过分组的上限（`vocabulary-rules.ts`）：上限管的是有多少件要分辨的事，
  * 已经判成同一件事的写法摆在标准词旁边，是让判定方重新确认这一片，不是多出来的候选。
  */
 export async function collectGroups(
@@ -344,11 +344,11 @@ export async function collectGroups(
 			return !decision || decision.reviewedAt.getTime() <= overdue;
 		}),
 	);
-	const circles = words.length
+	const clusters = words.length
 		? groups(words, counts, await embed(words, report), due)
 		: [];
-	report(`  圈成 ${circles.length} 组`);
-	if (circles.length === 0) return;
+	report(`  分成 ${clusters.length} 组`);
+	if (clusters.length === 0) return;
 
 	const people = new Map(
 		words.map((word, index) => [word, counts[index] ?? 0]),
@@ -357,8 +357,8 @@ export async function collectGroups(
 		client,
 		"group",
 		identity,
-		circles.map((circle) =>
-			circle.flatMap((word) => [
+		clusters.map((cluster) =>
+			cluster.flatMap((word) => [
 				{ people: people.get(word) ?? 0, word },
 				...(all.aliases.get(word) ?? []),
 			]),

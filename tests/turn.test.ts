@@ -77,7 +77,7 @@ describe("补充需求", () => {
 		);
 	});
 
-	test("理解时的步骤记在记录上：开始先清空，落下后能读回", async () => {
+	test("理解时的步骤记在记录上：开始先清空，写入后能读回", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		assert.deepEqual(await traceOf(turnId), { settled: false, trace: [] });
 		await resolveTurn(turnId);
@@ -228,7 +228,7 @@ describe("补充需求", () => {
 });
 
 describe("说明", () => {
-	test("读法和搜不了的要求跟着这一轮落库，替代条件也查词表", async () => {
+	test("替用户选定的理解和搜不了的要求跟着这一轮落库，替代条件也查词表", async () => {
 		const { turnId } = await createTurn({
 			kind: "sentence",
 			text: "北京的算法，有潜力",
@@ -395,8 +395,8 @@ describe("两种搜索各走各的链", () => {
 
 describe("理解失败", () => {
 	/**
-	 * 模型那一跳失败时记录必须停在「待理解」：spec 仍是 null，下一次调用
-	 * 再跑一遍。落一份空 spec 的话，这条 `/s/:id` 就永久变成「没有条件」，
+	 * 模型调用失败时记录必须停在「待理解」：spec 仍是 null，下一次调用
+	 * 再跑一遍。写入一份空 spec 的话，这条 `/s/:id` 就永久变成「没有条件」，
 	 * 而故障在屏幕上和「没有这样的人」长得一模一样。
 	 */
 	test("模型报错时不落库，记录仍待理解，再试一次照常成立", async () => {
@@ -414,11 +414,11 @@ describe("理解失败", () => {
 	});
 
 	/**
-	 * 模型答得合法却没按约定作答——给了条件，取值却全在词表外——收窄之后
+	 * 模型答得合法却没按约定作答——给了条件，取值却全在词表外——校验之后
 	 * 一个不剩。这一份空条件走下去，界面画的是「一个条件都没解析出来」，
 	 * 也就是把一次故障画成了「你没说条件」。它和端点报错走同一条路。
 	 */
-	test("模型给了条件、收窄后一个不剩：也是失败，不落库", async () => {
+	test("模型给了条件、校验后一个不剩：也是失败，不落库", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		await assert.rejects(
 			answering(
@@ -523,7 +523,7 @@ describe("查询记录状态", () => {
 });
 
 describe("删除", () => {
-	test("删一行就是删整条链，早先几轮不会顶上来", async () => {
+	test("删一行就是删整条链，早先几轮不会留在列表里", async () => {
 		const root = await sentence("产品经理");
 		const rewritten = await sentence("渠道运营", root.turnId);
 

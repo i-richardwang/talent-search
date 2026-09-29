@@ -52,7 +52,7 @@ async function withRequestSlot<T>(request: () => Promise<T>): Promise<T> {
 /**
  * 校验端点配置并返回缓存使用的重排空间身份。
  *
- * 唯一的调用点在编排那一侧（`search/phrases.ts` 的 `withAdmission`）：没配这件事
+ * 唯一的调用点在编排那一侧（`search/phrases.ts` 的 `withMatchedPhrases`）：没配这件事
  * 要在进语料快照之前就抛出来，而且分数是按这个身份缓存的，编排本来就要拿到它。
  * 同一件事在两处各查一遍，只会让人以为「没配」有两种不同的表现。
  */
@@ -118,7 +118,7 @@ export async function rerank(
 	const batches: string[][] = [];
 	for (let start = 0; start < documents.length; start += BATCH)
 		batches.push(documents.slice(start, start + BATCH));
-	// 全部批次一起交出去，实际并发由那把进程级信号量说了算。这里再搭一套
+	// 全部批次一起发出，实际并发由进程级信号量控制。这里再搭一套
 	// worker 池的话，实际上限是两个数的关系，而调其中一个不会改变它。
 	const scored = await Promise.all(
 		batches.map((batch) => withRequestSlot(() => rerankBatch(query, batch))),

@@ -1,6 +1,6 @@
 /**
  * 短说法的释义：整理收集的释义组。给技能、做过的事、岗位名、序列名这四类短说法各写
- * 一句「它指什么」，落进 `phrase_gloss`；检索时重排模型读「说法：释义」而不是光秃秃
+ * 一句「它指什么」，写进 `phrase_gloss`；检索时重排模型读「说法：释义」而不是光秃秃
  * 的四个字（为什么见 `db/schema.ts` 的 `phraseGloss`）。
  *
  * 释义是词的属性，不到期重写：一个说法指什么不随时间变。要收集的因此只有两种说法
@@ -35,7 +35,7 @@ const GLOSSED_ROUTES = ["skill", "did", "title", "seq"] as const;
 export const BATCH = 40;
 
 /**
- * 释义最长几个字。标准里要的是三十字以内的一句话；收窄放到两倍，多写了几个字的
+ * 释义最长几个字。标准里要的是三十字以内的一句话；校验时放宽到两倍，多写了几个字的
  * 句子仍是释义，不为此重出。超过这个数的是在写简介。
  */
 export const GLOSS_MAX = 60;
@@ -57,7 +57,7 @@ export const GLOSS_GUIDE = `## 背景
 - 不写程度、不写评价、不写「相关」「等」这类字。`;
 
 /**
- * 逐词一条。schema 里不写长度：限制只写在收窄的地方（`conformGlosses`），
+ * 逐词一条。schema 里不写长度：限制只写在校验的地方（`conformGlosses`），
  * 改了限制不该让已经提交的判定失效。
  */
 const SCHEMA = z.object({
@@ -68,8 +68,8 @@ const SCHEMA = z.object({
  * 写释义这件事此刻的标准是哪一版：`GLOSS_GUIDE` 加它要求的回答形状（`standardOf`）。
  *
  * 每条释义身上记着自己算到哪一版（`phrase_gloss.guide_identity`），标准一改，旧的那些
- * 下一轮整理自动重收——和一段经历身上的 `derived_identity` 同一个道理：**一批数据得
- * 出自同一份标准**，重排拿两条说法比的时候，两段释义不是一个口径就比不出名次。
+ * 下一轮整理自动重新收集——和一段经历身上的 `derived_identity` 同一个道理：**一批数据得
+ * 出自同一份标准**，重排拿两条说法比的时候，两段释义不是按同一份标准写的就比不出名次。
  *
  */
 export function glossIdentity(): string {
@@ -77,7 +77,7 @@ export function glossIdentity(): string {
 }
 
 /**
- * 收窄一份判定结果：组里的词 → 它的释义。
+ * 校验一份判定结果：组里的词 → 它的释义。
  *
  * 丢掉的：不在组里的词；空的；超过 `GLOSS_MAX` 的；和词本身一样的；带换行的
  * （一句话没有换行）。判定方把词又抄了一遍在前面（「客户开发：销售……」）的，把那
@@ -259,8 +259,8 @@ export async function judgeGlossesByModel(
 /**
  * 有多少条短说法已有这一版标准的释义、多少条还没有。任务台那张卡片报的数。
  *
- * 口径和 `collectGlosses` 收集的那一条一模一样：旧标准的释义在这里不算数。两处口径
- * 不同的话，卡片会说「15494/15494 条」，而整理每天照样在重收——没人看得出为什么。
+ * 计数条件和 `collectGlosses` 的收集条件一模一样：旧标准的释义在这里不算数。两处条件
+ * 不同的话，卡片会说「15494/15494 条」，而整理每天照样在重新收集——没人看得出为什么。
  */
 export async function glossCounts(
 	client: CorpusClient,
