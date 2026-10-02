@@ -105,6 +105,7 @@ try {
 	const extractions = await extract(
 		cases.map((c) => ({
 			kind: "external",
+			unemployed: false,
 			title: c.title,
 			org: c.org,
 			description: c.description,
@@ -112,9 +113,10 @@ try {
 		(line) => console.error(line),
 	);
 	for (const [index, c] of cases.entries()) {
-		const skills = extractions[index]?.skills ?? [];
+		const result = extractions[index];
+		const skills = result?.status === "done" ? result.value.skills : [];
 		const problems: string[] = [];
-		if (extractions[index] == null) problems.push("没有得到合法 JSON");
+		if (result?.status !== "done") problems.push("没有得到合法 JSON");
 		let recall = "";
 		if (c.gold) {
 			const gold = c.gold;

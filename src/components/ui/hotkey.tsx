@@ -23,7 +23,7 @@ import { Icon } from "./icon";
  * 其余设备写名字；方向键和空格两边都画成图标。
  */
 
-export interface HotkeyProps {
+interface HotkeyProps {
 	className?: string;
 	/** 几个键收进同一个键帽：提示里跟在文字后面的用它。`borderless` 总是这样排。 */
 	compact?: boolean;

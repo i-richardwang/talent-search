@@ -70,7 +70,7 @@ export const PERSON_FIELDS = [
 	"recruitment",
 	"school",
 ] as const;
-export type PersonField = (typeof PERSON_FIELDS)[number];
+type PersonField = (typeof PERSON_FIELDS)[number];
 /** 人的条件里属于 `dimensions.ts` 那张表的几维；学校名不在表里。 */
 export type PersonDim = Exclude<PersonField, "school">;
 

@@ -31,7 +31,7 @@ export interface PanelOptions {
 	size: number;
 }
 
-export interface PanelState {
+interface PanelState {
 	dragging: boolean;
 	/** 展开或收起的宽度动画进行中。 */
 	folding: boolean;

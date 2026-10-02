@@ -58,8 +58,8 @@ import {
 	type Keywords,
 	NO_KEYWORDS,
 } from "#/search/keywords";
+import type { Suggestion } from "#/search/result";
 import { suggestTerms } from "#/server/functions";
-import type { Suggestion } from "#/server/suggest";
 
 export type KeywordBarHandle = {
 	/** 把光标放进「经历或技能」。 */

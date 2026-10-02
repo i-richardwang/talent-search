@@ -111,16 +111,14 @@ before(async () => {
 	]);
 	const { db } = await import("#/db");
 	const { skillTerm } = await import("#/db/schema");
-	const judge = "model:test";
 	const reviewedAt = new Date();
 	await db.insert(skillTerm).values([
-		{ word: "推荐系统", canonical: "推荐系统", judge, reviewedAt },
-		{ word: "推荐算法", canonical: "推荐系统", judge, reviewedAt },
+		{ word: "推荐系统", canonical: "推荐系统", reviewedAt },
+		{ word: "推荐算法", canonical: "推荐系统", reviewedAt },
 		{
 			word: "电商推荐系统",
 			canonical: "电商推荐系统",
 			parent: "推荐系统",
-			judge,
 			reviewedAt,
 		},
 	]);

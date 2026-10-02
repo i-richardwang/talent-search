@@ -1,7 +1,7 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { TASK_KINDS } from "#/db/schema";
 import { pageParam } from "#/lib/paging";
+import { TASK_KINDS } from "#/lib/task";
 import { tasksStatus } from "#/server/functions";
 import type { TaskPages } from "#/server/tasks";
 import { AdminPage } from "../-components/admin-page";

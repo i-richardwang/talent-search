@@ -62,27 +62,23 @@ describe("能力词词表", () => {
 		]);
 		const today = new Date();
 		const lastWeek = new Date(today.getTime() - 7 * 86_400_000);
-		const judge = "model:test";
 		await db.insert(skillTerm).values([
-			{ word: "推荐系统", canonical: "推荐系统", judge, reviewedAt: today },
+			{ word: "推荐系统", canonical: "推荐系统", reviewedAt: today },
 			{
 				word: "电商推荐系统",
 				canonical: "电商推荐系统",
 				parent: "推荐系统",
-				judge,
 				reviewedAt: today,
 			},
-			{ word: "推荐算法", canonical: "推荐系统", judge, reviewedAt: today },
+			{ word: "推荐算法", canonical: "推荐系统", reviewedAt: today },
 			{
 				word: "个性化推荐",
 				canonical: "推荐系统",
-				// 同一个标准词底下几条决定可以出自不同的判定方：谁判的只记在库里，词表不报
-				judge: "agent:hr-bot",
 				reviewedAt: lastWeek,
 			},
-			{ word: "Python", canonical: "Python", judge, reviewedAt: lastWeek },
+			{ word: "Python", canonical: "Python", reviewedAt: lastWeek },
 			// 标准词已不在语料里：照样列出，人数 0
-			{ word: "Hadoop", canonical: "Hadoop", judge, reviewedAt: lastWeek },
+			{ word: "Hadoop", canonical: "Hadoop", reviewedAt: lastWeek },
 		]);
 	});
 

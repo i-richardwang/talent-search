@@ -9,7 +9,7 @@ import { seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { suggest } = await import("#/server/suggest");
+const { suggest } = await import("#/search/search");
 
 describe("关键词候选", () => {
 	before(async () => {
@@ -52,13 +52,12 @@ describe("关键词候选", () => {
 				],
 			},
 		]);
-		const judge = "model:test";
 		const reviewedAt = new Date();
 		await db.insert(skillTerm).values([
-			{ word: "推荐系统", canonical: "推荐系统", judge, reviewedAt },
-			{ word: "个性化推荐", canonical: "推荐系统", judge, reviewedAt },
+			{ word: "推荐系统", canonical: "推荐系统", reviewedAt },
+			{ word: "个性化推荐", canonical: "推荐系统", reviewedAt },
 			// 词表里有、语料里没人写过的词不给
-			{ word: "推荐广告", canonical: "推荐广告", judge, reviewedAt },
+			{ word: "推荐广告", canonical: "推荐广告", reviewedAt },
 		]);
 	});
 

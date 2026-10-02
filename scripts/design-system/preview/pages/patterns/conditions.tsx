@@ -58,7 +58,7 @@ const LOOKS: [name: string, condition: Condition, note: string][] = [
 	[
 		"exclude",
 		EXCLUDE_INTERN,
-		"排除：描边，标签后跟一个灰色的「排除」，有这类经历的人不上名单",
+		"排除：描边，标签后跟一个灰色的「排除」，符合该条件的经历不再作为匹配依据",
 	],
 	[
 		"off · user",

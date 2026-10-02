@@ -3,10 +3,10 @@ import { Block } from "#/components/ui/block";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { Empty } from "#/components/ui/empty";
-import type { Employee } from "#/db/schema";
+
 import { dots, duration, integer, period } from "#/lib/format";
 import { involvementRank } from "#/lib/involvement";
-import type { SegmentView } from "#/server/data";
+import type { EmployeeProfile, SegmentView } from "#/server/data";
 import {
 	DETAIL_LABEL_WIDTH,
 	DetailDrawer,
@@ -48,7 +48,7 @@ export function EmployeeRecord({
 	segments,
 	close,
 }: {
-	employee: Employee;
+	employee: EmployeeProfile;
 	segments: SegmentView[];
 	close: () => void;
 }) {

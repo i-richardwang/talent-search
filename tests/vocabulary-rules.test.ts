@@ -4,13 +4,12 @@ import { conform, groups, merge } from "#/corpus/vocabulary-rules";
 
 const NOW = new Date("2026-09-08T00:00:00Z");
 const OLD = new Date(NOW.getTime() - 30 * 86_400_000);
-const JUDGE = "model:test";
 function decision(
 	canonical: string,
 	reviewedAt: Date,
 	parent: string | null = null,
 ) {
-	return { canonical, judge: JUDGE, parent, reviewedAt };
+	return { canonical, parent, reviewedAt };
 }
 
 describe("分组", () => {
@@ -145,7 +144,6 @@ describe("记下判定结论", () => {
 			members(["Python", 2], ["Python 语言", 3]),
 			verdicts(["Python", "Python 语言", null], ["Python 语言", null, null]),
 			NOW,
-			JUDGE,
 		);
 		assert.deepEqual(
 			changed
@@ -186,7 +184,6 @@ describe("记下判定结论", () => {
 				["跨部门协作", "跨部门协同", null],
 			),
 			NOW,
-			JUDGE,
 		);
 		assert.equal(table.get("跨部门协作")?.canonical, "跨部门协同");
 		assert.equal(table.get("跨部门沟通")?.canonical, "跨部门沟通");
@@ -203,7 +200,6 @@ describe("记下判定结论", () => {
 				["销售数据分析", null, "数据分析"],
 			),
 			NOW,
-			JUDGE,
 		);
 		assert.deepEqual(
 			changed
@@ -235,7 +231,6 @@ describe("记下判定结论", () => {
 				["用户行为分析", null, null],
 			),
 			NOW,
-			JUDGE,
 		);
 		assert.equal(table.get("产品数据分析")?.parent, "数据分析");
 		// 用户数据分析和用户行为分析是同一件事，人多的做标准写法；归属按人数投出来
@@ -254,7 +249,6 @@ describe("记下判定结论", () => {
 			members(["数据分析", 9]),
 			verdicts(["数据分析", null, "销售数据分析"]),
 			NOW,
-			JUDGE,
 		);
 		assert.equal(table.get("数据分析")?.parent, null);
 	});
@@ -272,24 +266,22 @@ describe("记下判定结论", () => {
 				["Data Analysis", null, null],
 			),
 			NOW,
-			JUDGE,
 		);
 		assert.equal(table.get("数据分析")?.canonical, "Data Analysis");
 		assert.equal(table.get("销售数据分析")?.parent, "Data Analysis");
 	});
 
-	test("没判到的词不记，判过的那一方跟着决定走", () => {
+	test("仅判过的词记录决定与日期", () => {
 		const table = new Map();
 		const changed = merge(
 			table,
 			members(["Python", 3], ["Java", 3]),
 			verdicts(["Python", null, null]),
 			NOW,
-			"agent:hr-bot",
 		);
 		assert.deepEqual(
-			changed.map(([word, one]) => [word, one.judge]),
-			[["Python", "agent:hr-bot"]],
+			changed.map(([word, one]) => [word, one.reviewedAt]),
+			[["Python", NOW]],
 		);
 		assert.equal(table.has("Java"), false);
 	});

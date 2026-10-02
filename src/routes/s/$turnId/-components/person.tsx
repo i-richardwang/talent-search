@@ -15,9 +15,8 @@ import { Empty } from "#/components/ui/empty";
 import { Icon } from "#/components/ui/icon";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
-import type { Employee, Experience } from "#/db/schema";
 import { dots } from "#/lib/format";
-import type { Hit } from "#/search/result";
+import type { EmployeeDetail, Hit } from "#/search/result";
 import type { ClaimLine } from "../-lib/claim-lines";
 import { CareerBar } from "./career-bar";
 import { ClaimEvidence } from "./claim-evidence";
@@ -79,7 +78,10 @@ function Section({
 }
 
 /** 详情顶上的几条属性。骨架按同一张表画标签，换人时标签一栏不跳。 */
-const ATTRIBUTES: { label: string; value: (e: Employee) => ReactNode }[] = [
+const ATTRIBUTES: {
+	label: string;
+	value: (e: EmployeeDetail["employee"]) => ReactNode;
+}[] = [
 	{ label: "部门", value: (e) => e.curDept || "—" },
 	{ label: "岗位", value: (e) => dots(e.curTitle, e.curLevel) || "—" },
 	{
@@ -180,8 +182,8 @@ export function Person({
 	names,
 	lines,
 }: {
-	employee: Employee;
-	timeline: Experience[];
+	employee: EmployeeDetail["employee"];
+	timeline: EmployeeDetail["timeline"];
 	hits: Hit[];
 	names: string[];
 	lines: ClaimLine[];

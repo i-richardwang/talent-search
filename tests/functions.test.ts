@@ -59,7 +59,24 @@ describe("提交查询的服务端边界", () => {
 		);
 		assert.throws(
 			() => validateCommit({ input: { kind: "spec", spec: {} } }),
-			/查询为空/,
+			/查询格式无效/,
+		);
+	});
+	test("删除最后一条条件后仍能保存完整的空表，畸形条件不能伪装为空表", () => {
+		assert.deepEqual(
+			validateCommit({
+				from: "seen",
+				input: { kind: "spec", spec: { conditions: [] } },
+			}),
+			{
+				from: "seen",
+				input: { kind: "spec", spec: { conditions: [] } },
+			},
+		);
+		assert.throws(
+			() =>
+				validateCommit({ input: { kind: "spec", spec: { conditions: [{}] } } }),
+			/搜索条件无效/,
 		);
 	});
 });

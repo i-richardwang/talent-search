@@ -43,7 +43,7 @@ export function promptOf(words: Member[]): string {
 }
 
 /** 队列里的一组待判的词。 */
-export type Group = {
+type Group = {
 	id: number;
 	kind: GroupKind;
 	guideIdentity: string;
@@ -52,7 +52,7 @@ export type Group = {
 };
 
 /** 一组判过的：生效时读的形状，`judge` 与 `judgment` 都在。 */
-export type Judged = Group & { judge: string; judgment: unknown };
+type Judged = Group & { judge: string; judgment: unknown };
 
 /** 一组还没过期的 SQL 条件，判断的是 `collected_at`。读队列的地方共用它。 */
 const FRESH = `collected_at > now() - interval '${REVIEW_INTERVAL_DAYS} days'`;

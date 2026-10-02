@@ -1,16 +1,11 @@
 /**
- * 短说法的释义：整理收集的释义组。给技能、做过的事、岗位名、序列名这四类短说法各写
- * 一句「它指什么」，写进 `phrase_gloss`；检索时重排模型读「说法：释义」而不是光秃秃
- * 的四个字（为什么见 `db/schema.ts` 的 `phraseGloss`）。
- *
- * 释义是词的属性，不到期重写：一个说法指什么不随时间变。要收集的因此只有两种说法
- * ——语料里新来的、还没释义的，以及释义出自旧标准的（`glossIdentity`）。收集按向量
- * 把相近的说法凑成一批：界线是对着邻居才写得出来的——「客户开发」和「服务端开发」
- * 在同一批里，写的人自然会把「销售」和「服务器程序」写出来。
+ * 当前短说法的释义整理。适用路线由 GLOSSED_ROUTES 定义；缺释义或标准过期的文本
+ * 按向量相近程度组批，提交的释义写入 phrase_gloss，供重排读取「说法：释义」。
  */
 
 import "@tanstack/react-start/server-only";
 import { z } from "zod";
+import { GLOSSED_ROUTES } from "#/db/schema";
 import { complete, reviewModel, standardOf } from "#/server/chat";
 import {
 	busyWords,
@@ -27,9 +22,6 @@ import {
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
 import { tag } from "./tag";
-
-/** 写释义的那四类。整段原文本来就是一段话，部门路径答的是「待过哪儿」，都不写。 */
-const GLOSSED_ROUTES = ["skill", "did", "title", "seq"] as const;
 
 /** 一批几个说法。判定方一次面对几十个相近的词还写得出界线；再多就开始互相抄。 */
 export const BATCH = 40;
@@ -65,12 +57,7 @@ const SCHEMA = z.object({
 });
 
 /**
- * 写释义这件事此刻的标准是哪一版：`GLOSS_GUIDE` 加它要求的回答形状（`standardOf`）。
- *
- * 每条释义身上记着自己算到哪一版（`phrase_gloss.guide_identity`），标准一改，旧的那些
- * 下一轮整理自动重新收集——和一段经历身上的 `derived_identity` 同一个道理：**一批数据得
- * 出自同一份标准**，重排拿两条说法比的时候，两段释义不是按同一份标准写的就比不出名次。
- *
+ * 释义标准是 GLOSS_GUIDE 与回答形状的摘要；不符合当前标准的释义由整理重新收集。
  */
 export function glossIdentity(): string {
 	return standardOf(GLOSS_GUIDE, SCHEMA);
@@ -159,13 +146,7 @@ export async function collectGlosses(
 	report(`  收了 ${batches.length} 组释义，每组最多 ${BATCH} 个说法`);
 }
 
-/**
- * 生效：释义落表，这些说法的分数缓存清掉，组从队列里删。三样一笔事务。
- *
- * 分数是按重排时读到的字打的：没释义时读的是四个字，有了释义读的是一段话，旧分
- * 对新字不成立。按文本找 `phrase` 行再删 `phrase_relevance`——释义按文本存，说法
- * 表换过嵌入空间之后 id 变了也照样对得上。
- */
+/** 释义与队列在一笔事务中生效。完整重排文本改变后，检索自动使用新的缓存身份。 */
 export async function applyGlosses(
 	client: CorpusClient,
 	report: Report,
@@ -173,15 +154,13 @@ export async function applyGlosses(
 	const identity = glossIdentity();
 	const rows = await judged(client, "gloss", identity);
 	if (rows.length === 0) return;
-	const now = new Date();
-	const written = new Map<string, { gloss: string; judge: string }>();
+	const written = new Map<string, string>();
 	let missed = 0;
 	for (const row of rows) {
 		const words = row.words.map((one) => one.word);
 		const glosses = conformGlosses(row.judgment, words);
 		missed += words.length - glosses.size;
-		for (const [word, gloss] of glosses)
-			written.set(word, { gloss, judge: row.judge });
+		for (const [word, gloss] of glosses) written.set(word, gloss);
 	}
 	const entries = [...written];
 	const texts = entries.map(([text]) => text);
@@ -189,26 +168,13 @@ export async function applyGlosses(
 	try {
 		if (entries.length > 0) {
 			await client.query(
-				`insert into phrase_gloss (text, gloss, written_at, judge, guide_identity)
-				 select *, $5::text
-				 from unnest($1::text[], $2::text[], $3::timestamptz[], $4::text[])
+				`insert into phrase_gloss (text, gloss, guide_identity)
+				 select *, $3::text
+				 from unnest($1::text[], $2::text[])
 				 on conflict (text) do update
 				 set gloss = excluded.gloss,
-				     written_at = excluded.written_at,
-				     judge = excluded.judge,
 				     guide_identity = excluded.guide_identity`,
-				[
-					texts,
-					entries.map(([, one]) => one.gloss),
-					entries.map(() => now),
-					entries.map(([, one]) => one.judge),
-					identity,
-				],
-			);
-			await client.query(
-				`delete from phrase_relevance r using phrase p
-				 where p.id = r.phrase_id and p.text = any($1::text[])`,
-				[texts],
+				[texts, entries.map(([, gloss]) => gloss), identity],
 			);
 		}
 		await remove(
@@ -257,10 +223,7 @@ export async function judgeGlossesByModel(
 }
 
 /**
- * 有多少条短说法已有这一版标准的释义、多少条还没有。任务台那张卡片报的数。
- *
- * 计数条件和 `collectGlosses` 的收集条件一模一样：旧标准的释义在这里不算数。两处条件
- * 不同的话，卡片会说「15494/15494 条」，而整理每天照样在重新收集——没人看得出为什么。
+ * 当前适用短说法的总数，以及符合本版标准的释义数；与收集范围一致。
  */
 export async function glossCounts(
 	client: CorpusClient,

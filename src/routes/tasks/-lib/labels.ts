@@ -1,4 +1,4 @@
-import type { TaskKind } from "#/db/schema";
+import type { TaskKind } from "#/lib/task";
 import type { StatusTone } from "#/routes/-components/status-badge";
 import type { CorpusCounts, TaskRunView } from "#/server/tasks";
 

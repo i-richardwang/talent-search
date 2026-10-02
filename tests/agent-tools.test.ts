@@ -56,11 +56,10 @@ before(async () => {
 			segments: [external("考古研究所", ["考古"])],
 		})),
 	]);
-	const judge = "model:test";
 	const reviewedAt = new Date();
 	await db.insert(skillTerm).values([
-		{ word: "推荐系统", canonical: "推荐系统", judge, reviewedAt },
-		{ word: "个性化推荐", canonical: "推荐系统", judge, reviewedAt },
+		{ word: "推荐系统", canonical: "推荐系统", reviewedAt },
+		{ word: "个性化推荐", canonical: "推荐系统", reviewedAt },
 	]);
 });
 

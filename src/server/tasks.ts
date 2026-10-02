@@ -1,23 +1,9 @@
 /**
- * 语料侧一次任务的生命周期：谁能开始、输出的日志写到哪、上一次是什么结果。
+ * 语料任务的运行记录、日志与状态。
  *
- * 三种任务（`TASK_KINDS`）走同一条锁、同一张记录、同一个 `runTask`：同步是
- * `bun run sync` 跑的脚本，派生和整理是应用进程里的后台任务（`jobs.ts`）。
- * 各自做什么在 `src/corpus/` 下的同名模块里，这里只管边界上的四件事：
- *
- * 1. **写者一次只有一个**（`corpus/session.ts`）。后台任务拿不到锁就当场放弃，
- *    它反正还会再来；命令行的同步排队等。
- * 2. **活性问锁，历史问表。** 一行记录说的是「这一次发生过什么」；「此刻有没有人
- *    在跑」是连接的属性，由 `corpusSessionActive()` 去问 Postgres。两件事各有各的
- *    出处，于是没有一个要靠人来对齐的中间状态，也不需要「下一次开始时先给上一次
- *    收尾」那样的修补步骤——进程中断的那一行，此刻就看得出它是中断的。
- *    这要求**行写完才放锁**：锁在手里的时候行还没写完，读者只会读成「正在跑」；
- *    反过来先放锁，就会有一瞬间「没人持锁、行没写完」，读起来和进程中断一模一样。
- * 3. **输出的每一行都写进那一行记录。** 攒着批量写，不是一行一次往返——整理能力词
- *    一轮能输出上千行。记录是关于这次运行的，不是它的前提：一批日志没能落库，
- *    写一条到标准错误，任务照跑，结果照写。
- * 4. **失败写进记录，不只是抛给调用方。** 看任务台的人看不到服务器的标准输出，
- *    所以那条记录必须自己说得出为什么停了。
+ * 写者由 corpus/session.ts 串行化；运行记录发布前在持锁连接登记运行身份。
+ * 状态读取保护当前记录并核对持锁者，完成记录先于释放锁。
+ * 输出批量写入 task_run，任务失败写入 error；日志写入失败只报告到服务端。
  */
 
 import "@tanstack/react-start/server-only";
@@ -30,13 +16,14 @@ import { review } from "#/corpus/review";
 import {
 	acquireCorpusSession,
 	type CorpusSession,
-	corpusSessionActive,
+	corpusSessionOwner,
 } from "#/corpus/session";
 import { type SourceConfig, sourceConfig } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
 import { db, pool } from "#/db";
-import { TASK_KINDS, type TaskKind, taskRun } from "#/db/schema";
+import { taskRun } from "#/db/schema";
 import { pageAt, RUNS_PAGE, type TablePage, tablePage } from "#/lib/paging";
+import { TASK_KINDS, type TaskKind } from "#/lib/task";
 import { configured, reviewJudge } from "./review";
 
 /** 攒多久写一次日志。够短，页面上看着是在动的；够长，上千行不变成上千次往返。 */
@@ -81,7 +68,7 @@ const WORK: Record<TaskKind, TaskWork> = {
 /**
  * 一次运行的四种样子。
  *
- * 「中断」不是事后补写进库的一句话，是当场看出来的：这一行没写完，而锁没人拿着。
+ * 「中断」由未完成记录和写者身份判定：当前写者不属于这次运行。
  */
 export type TaskOutcome = "running" | "interrupted" | "failed" | "done";
 
@@ -163,7 +150,7 @@ type TasksState = {
 	lanes: TaskLane[];
 	corpus: CorpusCounts;
 	/**
-	 * 此刻有没有人在跑（问锁，见文件头第 2 条）。页面照它决定轮询快慢，以及
+	 * 此刻有没有人在跑（按运行记录的身份核对锁的持有者）。页面照它决定轮询快慢，以及
 	 * 「立即运行」能不能按——跑着的时候按下去只会被回绝。
 	 */
 	running: boolean;
@@ -177,12 +164,7 @@ type TasksState = {
 
 type StoredRun = Omit<TaskRunView, "outcome">;
 
-/**
- * 一行记录现在算哪一种。
- *
- * `live` 只对**最近**那一行成立：锁至多有一个持有者，而它开跑时写入的正是最新的
- * 一行，所以更早的那些没写完的行必然是中断留下的。
- */
+/** 未完成的运行只有在持锁连接明确登记了它的身份时才算正在运行。 */
 function outcome(run: StoredRun, live: boolean): TaskOutcome {
 	if (run.seconds !== null) return run.error ? "failed" : "done";
 	return live ? "running" : "interrupted";
@@ -190,92 +172,69 @@ function outcome(run: StoredRun, live: boolean): TaskOutcome {
 
 type TaskHead = StoredRun & { total: number };
 
-async function readTaskHeads(): Promise<{
-	active: boolean;
-	heads: TaskHead[];
-	signature: string;
-} | null> {
-	const before = await corpusSessionActive();
-	const { rows: heads } = await db.execute<TaskHead>(sql`
-		select distinct on (kind)
-			kind, id, source,
-			to_char(started_at, 'YYYY-MM-DD HH24:MI') as "startedAt",
-			extract(epoch from now() - started_at)::int as "ageSeconds",
-			extract(epoch from (finished_at - started_at))::int as seconds,
-			error,
-			count(*) over (partition by kind)::int as total
-		from task_run
-		order by kind, started_at desc, id desc`);
-	const active = await corpusSessionActive();
-	if (before !== active) return null;
-	return {
-		active,
-		heads,
-		signature: JSON.stringify([
-			active,
-			heads.map((row) => [row.kind, row.id, row.seconds, row.error, row.total]),
-		]),
-	};
-}
+const taskSessionName = (runId: number) => `talent-search task ${runId}`;
 
-/** 锁与运行行连续两次给出同一幅图，才把它当作当前状态。 */
-async function stableTaskHeads(): Promise<{
-	active: boolean;
-	heads: TaskHead[];
-}> {
-	let previous: string | null = null;
-	for (let attempt = 0; attempt < 5; attempt += 1) {
-		const sample = await readTaskHeads();
-		if (!sample) {
-			previous = null;
-			continue;
-		}
-		if (sample.signature === previous)
-			return { active: sample.active, heads: sample.heads };
-		previous = sample.signature;
-	}
-	throw new Error("任务状态正在连续切换，请重新载入");
+async function readTaskHeads(
+	store: Pick<typeof db, "execute">,
+): Promise<TaskHead[]> {
+	const { rows } = await store.execute<TaskHead>(sql`
+		with heads as (
+			select distinct on (kind) id,
+				count(*) over (partition by kind)::int as total
+			from task_run order by kind, started_at desc, id desc
+		)
+		select r.kind, r.id, r.source,
+			to_char(r.started_at, 'YYYY-MM-DD HH24:MI') as "startedAt",
+			extract(epoch from now() - r.started_at)::int as "ageSeconds",
+			extract(epoch from (r.finished_at - r.started_at))::int as seconds,
+			r.error, h.total
+		from task_run r join heads h on h.id = r.id
+		for share of r`);
+	return rows;
 }
 
 export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
-	/*
-	 * 锁与行不是同一份 MVCC 快照：任务会先拿锁再插运行行，结束时先写完行再放锁。
-	 * 因此只读一次无论先读谁都有缝。连续两次稳定观测把两个过渡区都排除在结果外。
-	 */
-	const { active, heads } = await stableTaskHeads();
-	// 锁一次只有一个持有者，它开跑时写入的是全表最新的那一行
-	const newest = Math.max(0, ...heads.map((row) => row.id));
-	/** 库里那一行在页面上的样子。逐个字段写出来，行上别的列不跟着发到页面。 */
-	const seen = (row: StoredRun): TaskRunView => ({
-		error: row.error,
-		id: row.id,
-		kind: row.kind,
-		outcome: outcome(row, active && row.id === newest),
-		seconds: row.seconds,
-		source: row.source,
-		startedAt: row.startedAt,
-		ageSeconds: row.ageSeconds,
-	});
-	const lanes = TASK_KINDS.map((kind) => {
-		const head = heads.find((row) => row.kind === kind);
-		const total = head?.total ?? 0;
-		return {
-			at: pageAt(total, want[kind], RUNS_PAGE),
-			kind,
-			latest: head ? seen(head) : null,
-			total,
-		};
-	});
-	/* 每一栏要的那一页。哪几行算这一页只在这条查询里说一次。 */
-	const { rows } = await db.execute<StoredRun>(sql`
+	const corpus = await corpusCounts();
+	return db.transaction(async (store) => {
+		// 锁住当前运行行，再读持锁连接；收尾在这次观察完成后才能更新行、释放锁。
+		const heads = await readTaskHeads(store);
+		const owner = await corpusSessionOwner(store);
+		const active = owner !== null;
+		/** 库里那一行在页面上的样子。逐个字段写出来，行上别的列不跟着发到页面。 */
+		const seen = (row: StoredRun): TaskRunView => ({
+			error: row.error,
+			id: row.id,
+			kind: row.kind,
+			outcome: outcome(row, owner === taskSessionName(row.id)),
+			seconds: row.seconds,
+			source: row.source,
+			startedAt: row.startedAt,
+			ageSeconds: row.ageSeconds,
+		});
+		const lanes = TASK_KINDS.map((kind) => {
+			const head = heads.find((row) => row.kind === kind);
+			const total = head?.total ?? 0;
+			return {
+				at: pageAt(total, want[kind], RUNS_PAGE),
+				kind,
+				latest: head ? seen(head) : null,
+				total,
+			};
+		});
+		/* 每一栏要的那一页。哪几行算这一页只在这条查询里说一次。 */
+		const { rows } = await store.execute<StoredRun>(sql`
 		select recent.id, recent.kind, recent.source,
 			to_char(recent.started_at, 'YYYY-MM-DD HH24:MI') as "startedAt",
 			extract(epoch from now() - recent.started_at)::int as "ageSeconds",
 			extract(epoch from (recent.finished_at - recent.started_at))::int as seconds,
 			recent.error
 		from (
-			select *, row_number() over (partition by kind order by started_at desc, id desc) as n
-			from task_run
+			select r.*, row_number() over (partition by r.kind order by r.started_at desc, r.id desc) as n
+			from task_run r
+			join unnest(
+				${sql.param(heads.map((h) => h.kind))}::text[],
+				${sql.param(heads.map((h) => h.id))}::int[]
+			) head(kind, id) on head.kind = r.kind and r.id <= head.id
 		) recent
 		join unnest(
 			${sql.param(lanes.map((lane) => lane.kind))}::text[],
@@ -285,22 +244,22 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 		where recent.n > want.skip and recent.n <= want.skip + want.take
 		order by recent.started_at desc, recent.id desc`);
 
-	return {
-		corpus: await corpusCounts(),
-		judge: reviewJudge(),
-		lanes: lanes.map(({ at, kind, latest, total }) => ({
-			kind,
-			latest,
-			runs: tablePage(
-				rows.filter((row) => row.kind === kind).map(seen),
-				total,
-				at,
-			),
-		})),
-		running: active,
-	};
+		return {
+			corpus,
+			judge: reviewJudge(),
+			lanes: lanes.map(({ at, kind, latest, total }) => ({
+				kind,
+				latest,
+				runs: tablePage(
+					rows.filter((row) => row.kind === kind).map(seen),
+					total,
+					at,
+				),
+			})),
+			running: active,
+		};
+	});
 }
-
 /**
  * 语料此刻的几个数，一趟问完。
  *
@@ -437,8 +396,8 @@ type TaskResult = { runId: number; failure: string | null };
  * 跑一次任务，跑完才返回。已经有写者在跑时：`wait` 为 false 返回 `null`，
  * 为 true 排队等。
  *
- * **它不抛。** 任务本身失败，结果是那一行上的一句话，也作为返回值交给调用方；
- * 连记录这件事本身都失败时（库没了），唯一还能输出的地方是标准错误。
+ * 任务执行失败写入运行记录并返回 failure；取得会话或创建运行记录失败时抛出错误。
+ * 任务执行后记录失败的错误写入服务端日志。
  * 过程同时回显到 `echo`（命令行给标准输出，后台任务不给）。
  */
 export async function runTask(
@@ -450,15 +409,27 @@ export async function runTask(
 	const source = kind === "sync" ? sourceConfig() : null;
 
 	let runId: number;
+	const { client } = session;
 	try {
-		const [row] = await db
-			.insert(taskRun)
-			.values({ kind, source: source?.name ?? "", log: [] })
-			.returning({ id: taskRun.id });
+		await client.query("begin");
+		const { rows } = await client.query<{ id: number }>(
+			"insert into task_run (kind, source, log) values ($1, $2, '{}'::text[]) returning id",
+			[kind, source?.name ?? ""],
+		);
+		const row = rows[0];
 		if (!row) throw new Error("没能写入这次任务的记录");
 		runId = row.id;
+		// 运行行发布前，持锁连接先登记自己的运行身份。
+		await client.query("select set_config('application_name', $1, false)", [
+			taskSessionName(runId),
+		]);
+		await client.query("commit");
 	} catch (error) {
-		await session.release();
+		try {
+			await client.query("rollback");
+		} finally {
+			await session.release();
+		}
 		throw error;
 	}
 
@@ -488,7 +459,7 @@ export async function runTask(
 		console.error(`任务 ${runId} 的记录没能收尾：`, error);
 		failure ??= causeChain(error)[0] ?? String(error);
 	} finally {
-		// 行写完才放锁（见文件头第 2 条）；行的更新走连接池，不依赖这条会话
+		// 运行记录写完才释放写者锁；记录更新使用连接池。
 		await session.release();
 	}
 	return { runId, failure };

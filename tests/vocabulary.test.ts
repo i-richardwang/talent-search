@@ -21,7 +21,6 @@ const { reviewJudge } = await import("#/server/review");
 
 const NOW = new Date("2026-09-08T00:00:00Z");
 const OLD = new Date(NOW.getTime() - 30 * 86_400_000);
-const JUDGE = "model:test";
 
 async function client() {
 	return pool.connect();
@@ -41,8 +40,8 @@ async function seedTable(rows: SeedRow[]) {
 		await connection.query("delete from skill_term");
 		for (const [word, canonical, reviewedAt, parent] of rows)
 			await connection.query(
-				"insert into skill_term (word, canonical, parent, reviewed_at, judge) values ($1, $2, $3, $4, $5)",
-				[word, canonical, parent ?? null, reviewedAt, JUDGE],
+				"insert into skill_term (word, canonical, parent, reviewed_at) values ($1, $2, $3, $4)",
+				[word, canonical, parent ?? null, reviewedAt],
 			);
 	} finally {
 		connection.release();
@@ -235,8 +234,6 @@ describe("整轮整理", () => {
 			assert.equal(table.get("团队管理")?.parent, "管理");
 			assert.equal(table.get("管理")?.canonical, "管理");
 			assert.equal(table.get("Py")?.canonical, "Python");
-			// 自带模型判的，决定上记着是谁判的
-			assert.match(table.get("团队管理")?.judge ?? "", /^model:/);
 			// 队列跑空了才算完：收集、判定、生效在同一轮里连着做
 			assert.deepEqual(await openGroup(later), []);
 		} finally {
@@ -371,8 +368,6 @@ describe("判定交给外部", () => {
 			);
 			assert.equal(table.get("线下销售数据分析")?.parent, "销售数据分析");
 			assert.equal(table.get("线上销售数据分析")?.parent, "销售数据分析");
-			assert.equal(table.get("线下销售数据分析")?.judge, AGENT);
-			assert.equal(table.get("销售数据分析")?.judge, AGENT);
 		} finally {
 			connection.release();
 		}

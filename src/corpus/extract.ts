@@ -1,29 +1,7 @@
 /**
- * 入职前经历 → 能力词与做过的事。
- *
- * 经历段上只有简历描述是自由文本，而它整段池化成一个向量分不清主语和重点：
- * 「配合算法团队完成上线」会和「算法」相近，主语却是别人。这里让模型把一段
- * 描述读成两类**短说法**，每条说法和登记的三类一样存进 `phrase`、指回这一段
- * （`experience_phrase` 的 `skill` / `did` 两类），检索链路对它们一视同仁：
- * 向量召回、重排判定、按可信度分档。它们的来源仍是自述，所以和 `description`
- * 同档（`src/search/weights.ts`）；读过的段整段原文不再作为说法，自述证据只来自
- * 这一份抽取（`route-texts.ts`）——所以这里的要求是**穷尽**，不是挑重点。
- *
- * **判断进提示词，阈值进代码**：什么算能力词、哪种语气是哪种参与方式，是逐段的
- * 判断，写在下面的提示词里，可以大改（缓存按提示词键入，改了旧抽取自然失效）；
- * 一条说法最长几个字、一段最多几条、参与方式只认哪几种，是全站的阈值，写在
- * `conform` 里，改了不必换 id——缓存里存的是模型的原话（`src/server/chat.ts`），
- * 每次派生都重新经过 `conform` 校验。
- *
- * **模型输出是不可信输入。** schema 里不写枚举、不写长度上限：写了，模型多给
- * 一个字整条响应就作废，而 `conform` 校验只会丢掉那一条（数量和长度限制
- * 只写在 `conform` 里）。参与方式不在枚举里的那一件事留下领域、参与方式记空——它只是证据行上
- * 的标签，不参与检索（为什么不进向量见 `src/db/schema.ts` 的 `involvement` 列）。
- *
- * 提示词里不写 JSON 形状：形状由 `SCHEMA` 随请求以 json_schema 送出（`src/server/chat.ts`），
- * 提示词只解释每个字段是什么意思。写两遍就有两处要同步。
- *
- * 只对入职前、有描述的段调用；公司内任职段没有自由文本，抽不出东西也不该去问。
+ * 读取入职前经历中的能力词和做过的事；自述证据只来自这份穷尽抽取。
+ * 模型负责领域判断，schema 校验回答形状，conform 按领域规则过滤单条说法。
+ * 未调用、未能作答与成功抽取分别返回，成功的空抽取也是已读结果。
  */
 
 import { z } from "zod";
@@ -49,6 +27,11 @@ export type Extraction = {
 	skills: string[];
 	did: { involvement: Involvement | null; domain: string }[];
 };
+
+export type ExtractionResult =
+	| { status: "skipped" }
+	| { status: "failed" }
+	| { status: "done"; value: Extraction };
 
 const EMPTY: Extraction = { skills: [], did: [] };
 
@@ -85,11 +68,7 @@ did 是这个人在这段经历里做过的具体事，每件写成一种参与�
 - 判断不出参与方式就把 involvement 写成空字符串，不要硬选。
 - 没有具体的事就给空数组。`;
 
-/**
- * schema 只描述形状，不描述取值：枚举和长度上限一律留给 `conform`。
- * 结构化输出是「整条响应要么合法要么作废」的，写进去等于让模型多说一个字就
- * 丢掉一整段。
- */
+/** 回答形状；取值规则由 conform 校验。 */
 const SCHEMA = z.object({
 	skills: z.array(z.string()),
 	did: z.array(z.object({ involvement: z.string(), domain: z.string() })),
@@ -151,18 +130,18 @@ export function extractIdentity(): string {
 	return identityOf(extractModel(), SYSTEM, SCHEMA);
 }
 
-/**
- * 按入参顺序返回抽取结果。null 是「这一段没有抽取结果」：不是入职前、没有描述，
- * 或模型未能作答；`{ skills: [], did: [] }` 是读了但没读出说法——两者在派生里
- * 走向不同（`route-texts.ts`），验收里前者算失败。只有入职前且有描述的段会去问端点。
- * 只要段的这四个字段：验收（`scripts/eval-extract.ts`）拿手写的段走同一条路。
- */
+/** 按入参顺序返回调用状态与抽取；验收和派生共用此入口。 */
 export async function extract(
-	rows: Pick<ExperienceRow, "kind" | "title" | "org" | "description">[],
+	rows: Pick<
+		ExperienceRow,
+		"kind" | "unemployed" | "title" | "org" | "description"
+	>[],
 	report: Report,
-): Promise<(Extraction | null)[]> {
+): Promise<ExtractionResult[]> {
 	const asked = rows.map((row) =>
-		row.kind === "external" && row.description ? promptInput(row) : null,
+		row.kind === "external" && !row.unemployed && row.description
+			? promptInput(row)
+			: null,
 	);
 	const payloads = await complete(
 		extractModel(),
@@ -174,7 +153,8 @@ export async function extract(
 	);
 	return rows.map((row, index) => {
 		const text = asked[index];
-		if (text == null || !payloads.has(text)) return null;
-		return conform(payloads.get(text), row.org);
+		if (text == null) return { status: "skipped" };
+		if (!payloads.has(text)) return { status: "failed" };
+		return { status: "done", value: conform(payloads.get(text), row.org) };
 	});
 }

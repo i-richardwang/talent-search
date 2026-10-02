@@ -1,20 +1,7 @@
 /**
- * 通用管线：源契约的四张表 → 库里的 employee / experience 两张表。
- *
- * 这里不出现任何一家公司的字段名、字典码或组织名。它只做「无论数据从哪来都
- * 必须做」的那几件事：
- *
- * 1. 区间合法性——日期格式错误、没有开始日、结束早于开始、生效日在未来的记录
- *    一律**拒绝导入并报出数量**，不猜日期，也不靠 `Math.max(1, ...)` 把错误区间
- *    伪装成一月经历；
- * 2. 补齐开放区间的结束日——公司内开放段算时长时截止到 `asOf`，入职前开放段截止到入职日；
- * 3. 相邻段合并——`segment_key` 相同且时间连续或重叠的记录合成一段经历；
- * 4. 时长与当前信息派生，包括当前职级归哪一档、学历在第几档。
- *
- * 这几件事只写一遍，接第二个数据源时才不会出现第二套「什么算一段经历」。
- *
- * 整个模块是纯函数：进去四张表，出来两张表，报告的内容写到 `report`。没有它自己
- * 的入口，测试对着 `build` 一个函数就能把上面四条逐条摆出来。
+ * 源契约转换为 employee 与 experience 写入行的纯管线。
+ * 拒绝并报告非法、倒置、缺开始日或未来生效的区间；补齐开放区间，合并相邻同键段，
+ * 计算时长、当前信息、职级档与学历档。asOf 由调用方指定或使用当地日历日。
  */
 
 import type { CompanyMeta } from "#/db/schema";
@@ -54,6 +41,7 @@ export type EmployeeRow = {
 export type ExperienceRow = {
 	emp_id: string;
 	kind: "internal" | "external";
+	unemployed: boolean;
 	start_date: string;
 	/** 为空表示至今 */
 	end_date: string | null;
@@ -129,12 +117,7 @@ function isoDate(at: Date): string {
 	return at.toISOString().slice(0, 10);
 }
 
-/**
- * 把一个**已经校验过**的闭区间换算成月数。
- *
- * 非法区间在这里抛错而不是兜底：能走到这一步说明上面的校验漏了，
- * 悄悄返回 1 会让一段错数据以合法经历的样子进库。
- */
+/** 已校验闭区间按含首尾日的天数换算月数；倒置区间拒绝写库。 */
 function durationMonths(start: Date, end: Date): number {
 	if (end < start)
 		throw new Error(`无效日期区间：${isoDate(start)} — ${isoDate(end)}`);
@@ -324,6 +307,7 @@ function mergeAdjacent(
 function buildExternal(
 	rows: SourceExternal[],
 	hireDates: Map<string, Date>,
+	asOf: Date,
 	report: Report,
 ): ExperienceRow[] {
 	let parsed = rows.map((row) => ({
@@ -369,6 +353,13 @@ function buildExternal(
 	).map((row) => ({ ...row, end: required(row.end) }));
 
 	valid = reject(valid, (r) => r.end < r.start, "入职前经历日期倒置", report);
+	valid = reject(
+		valid,
+		(r) => r.start > asOf,
+		"入职前经历生效日在未来",
+		report,
+	);
+	valid = reject(valid, (r) => r.end > asOf, "入职前经历结束日在未来", report);
 	// 入职前经历不能越过已知入职日；开放区间截止到入职日是合法的边界。
 	valid = reject(
 		valid,
@@ -383,6 +374,7 @@ function buildExternal(
 	return valid.map((row) => ({
 		emp_id: row.emp_id,
 		kind: "external" as const,
+		unemployed: row.unemployed,
 		start_date: isoDate(row.start),
 		end_date: isoDate(row.end),
 		org: row.org,
@@ -469,13 +461,7 @@ function educationRank(education: string): number | null {
 
 type Band = { band: string; rank: number };
 
-/**
- * 职级表 → 职级到档的对照。
- *
- * 这张表是适配器算出来的分档规则，不是逐行的源数据：写错了（空的档、不是整数的档高、
- * 同一职级归两档、同一档两个高度）说明适配器坏了，整轮报错退出，而不是挑一行
- * 算数——挑错一行，整档的人就在「某档及以上」里错位。
- */
+/** 适配器的职级分档规则：档名非空、档高为整数，职级归档与档名高度各自唯一。无效规则拒绝整轮同步。 */
 function levelBands(rows: SourceLevel[]): Map<string, Band> {
 	const bands = new Map<string, Band>();
 	const heights = new Map<string, number>();
@@ -652,8 +638,8 @@ export function build(
 	for (const profile of profiles)
 		if (profile.hire_date) hireDates.set(profile.emp_id, profile.hire_date);
 
-	const outside = buildExternal(external, hireDates, report);
-	const idle = outside.filter((row) => row.title === UNEMPLOYED).length;
+	const outside = buildExternal(external, hireDates, asOf, report);
+	const idle = outside.filter((row) => row.unemployed).length;
 	report(`  入职前 ${outside.length} 段（其中待业 ${idle} 段）`);
 
 	const experience = [
@@ -661,6 +647,7 @@ export function build(
 			(segment): ExperienceRow => ({
 				emp_id: segment.emp_id,
 				kind: "internal",
+				unemployed: false,
 				start_date: isoDate(segment.start),
 				end_date: segment.end ? isoDate(segment.end) : null,
 				org: segment.org,

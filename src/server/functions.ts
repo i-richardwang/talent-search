@@ -1,36 +1,20 @@
 /**
- * **页面唯一的 RPC 边界。** 页面能从服务端取值的地方只有这一个文件；真正干活的
- * 逻辑在 `search.ts` / `turn.ts` / `llm.ts` 那几个服务端专属模块里。
- *
- * `createServerFn` 切走的只是 handler 的**函数体**，所以这里的规矩是：
- * **服务端模块的值只能出现在 `.handler()` 里面。**
- *
- * 应用里还有一个服务端入口不在这里：`src/routes/api/review.ts`，外部 agent 判定用的
- * 那条 HTTP 接口。它不给页面用——页面要的是 TypeScript 的形状，外部 agent 要的是一份
- * 说得清的 JSON 和几个状态码，两种读者摆不进同一个边界。
+ * 页面的 RPC 边界，负责不可信入参校验与接线。
+ * 服务端值只在 createServerFn 的 handler 中使用。外部判定接口属于 routes/api/review.ts。
  */
 
 import { createServerFn } from "@tanstack/react-start";
-import { asc, eq } from "drizzle-orm";
-import {
-	type Employee,
-	type Experience,
-	employee,
-	experience,
-	TASK_KINDS,
-} from "#/db/schema";
-import { withCorpusSnapshot } from "#/db/snapshot";
+import { TASK_KINDS } from "#/lib/task";
 import { validateCommit } from "#/search/commit-input";
 import { MAX_TERM_LEN } from "#/search/condition";
 import { KEYWORD_FIELDS } from "#/search/keywords";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
-import { search } from "#/search/search";
-import { employeeData, listEmployees } from "./data";
+import { search, suggest } from "#/search/search";
+import { employeeData, employeeDetail, listEmployees } from "./data";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
 import { listSkills, skillDetail } from "./skills";
-import { suggest } from "./suggest";
 import { taskLog as runLog, type TaskPages, tasksState } from "./tasks";
 import {
 	createTurn,
@@ -67,13 +51,7 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 			const thread = await loadThread(data.turnId);
 			const turn = thread?.find((t) => t.id === data.turnId);
 			if (!thread || !turn) return null;
-			/*
-			 * 还没理解完：不跑检索，先返回工作台要的数据。
-			 *
-			 * 这一分支实现的是「转圈发生在结果将要出现的地方」——
-			 * 页面拿着一条只有原话的记录就能把工作台画出来，模型调用由界面
-			 * 自己发起（`interpretTurn`），而不是让导航停在原地等它。
-			 */
+			/* 待理解记录先显示线程与等待态；页面通过 interpretTurn 发起理解。 */
 			if (!turn.spec) return { thread, result: null };
 			return {
 				thread,
@@ -82,33 +60,10 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 		},
 	);
 
-/**
- * 单人详情：完整档案加一条在职与入职前连起来的时间线。
- *
- * 整行发给页面是有意的：`employee` 的列集合本来就是按详情页要显示什么定的，
- * 所以 `Employee` 就是这个响应的形状，不是省事。只传部分字段的那条路在 `result.ts`
- * 的 `ResultEmployee`（列表一次传最多 500 人，只传结果那一块画得出来的几个字段）。
- */
+/** 单人详情的显示属性与经历时间线。 */
 export const fetchEmployee = createServerFn({ method: "GET" })
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
-	.handler(
-		({
-			data,
-		}): Promise<{ employee: Employee; timeline: Experience[] } | null> =>
-			withCorpusSnapshot(async (store) => {
-				const [emp] = await store
-					.select()
-					.from(employee)
-					.where(eq(employee.empId, data.empId));
-				if (!emp) return null;
-				const timeline = await store
-					.select()
-					.from(experience)
-					.where(eq(experience.empId, data.empId))
-					.orderBy(asc(experience.startDate), asc(experience.id));
-				return { employee: emp, timeline };
-			}),
-	);
+	.handler(({ data }) => employeeDetail(data.empId));
 
 /** 提交一次查询：写一条记录，返回它的 id。入参校验在 `search/commit-input.ts`。 */
 export const commitTurn = createServerFn({ method: "POST" })
@@ -150,7 +105,7 @@ export const understandingOn = createServerFn({ method: "GET" }).handler(() =>
 
 /**
  * 关键词模式下拉里的候选。哪一个框在问由 `field` 说，三个框的候选不混
- * （`server/suggest.ts`）。敲一个字就来一次，所以入参限制得很短。
+ * （`search/search.ts`）。敲一个字就来一次，所以入参限制得很短。
  */
 export const suggestTerms = createServerFn({ method: "GET" })
 	.validator((d: { field: unknown; q: unknown }) => {

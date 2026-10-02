@@ -1,8 +1,8 @@
 import { Tag } from "#/components/ui/tag";
-import type { CompanyMeta, Experience } from "#/db/schema";
+import type { CompanyMeta } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
 import { bestStrength, routeLabel } from "#/search/evidence";
-import type { Hit } from "#/search/result";
+import type { EmployeeDetail, Hit } from "#/search/result";
 import { Dot, phraseLabel } from "./evidence";
 
 /** 命中按 experienceId 索引，一段可能同时命中多条主张。 */
@@ -24,7 +24,7 @@ export function Timeline({
 	hitIndex,
 	names,
 }: {
-	rows: Experience[];
+	rows: EmployeeDetail["timeline"];
 	hitIndex: HitIndex;
 	/** 每条主张的名字，按 `Hit.claim` 的下标。 */
 	names: readonly string[];
@@ -51,7 +51,7 @@ function Segment({
 	isLast,
 	names,
 }: {
-	row: Experience;
+	row: EmployeeDetail["timeline"][number];
 	hits: Hit[] | undefined;
 	isLast: boolean;
 	names: readonly string[];

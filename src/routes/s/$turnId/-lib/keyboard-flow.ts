@@ -41,7 +41,7 @@ export function useKeyboardFlow({
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if (e.metaKey || e.ctrlKey || e.altKey) return;
+			if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
 			// 输入法组合输入期间的按键归输入法。
 			if (e.isComposing || e.keyCode === 229) return;
 			const el = document.activeElement;
@@ -50,19 +50,25 @@ export function useKeyboardFlow({
 				el instanceof HTMLElement &&
 				(el.tagName === "INPUT" ||
 					el.tagName === "TEXTAREA" ||
+					el.tagName === "SELECT" ||
 					el.isContentEditable ||
 					el.closest('[role="listbox"],[role="dialog"],[role="menu"]') !==
 						null);
+			const control =
+				el instanceof HTMLElement &&
+				el.closest(
+					'button,a[href],[role="button"],[role="checkbox"],[role="radio"],[role="switch"],[role="combobox"],[role="slider"],[role="tab"],[role="spinbutton"],[role="textbox"]',
+				) !== null;
 			// 焦点在详情面板里时，↑↓ 用来滚动详情，不换人。
 			const reading =
 				el instanceof HTMLElement && el.closest("[data-pane=detail]") !== null;
 
-			if (e.key === "/" && !busy) {
+			if (e.key === "/" && !busy && !control) {
 				e.preventDefault();
 				onEditQuery();
 				return;
 			}
-			if (e.key === "?" && !busy) {
+			if (e.key === "?" && !busy && !control) {
 				e.preventDefault();
 				onHelp();
 				return;
@@ -81,7 +87,7 @@ export function useKeyboardFlow({
 					return;
 				}
 			}
-			if (busy || reading || results.length === 0) return;
+			if (busy || control || reading || results.length === 0) return;
 
 			// 长按不连发：按键重复比导航快，连续几次会读到同一个 empId，按住空格则会
 			// 反复选中又取消。

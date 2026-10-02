@@ -1,20 +1,7 @@
 /**
- * 检索的集成测试跑在一个临时 schema 上：真 Postgres、真 SQL、真 pgvector，
- * 但不碰人才库，也不碰真的嵌入模型。
- *
- * 建表语句由 schema.ts 现场推导，不手抄——加一列而忘了同步测试夹具这件事，
- * 在这里不可能发生。索引一概不建：夹具只有十几行，全表扫比建索引快，
- * 而索引不参与被测的语义。
- *
- * **三个模型端点由一个进程内的假端点提供。** 嵌入按字符袋算向量（见
- * `fakeEmbedding`），重排分数就是同一个余弦，于是相关度是可以手算的——「算法」对
- * 「算法工程师」是 2/√(2×5) ≈ 0.63，对「运营」是 0。召回下限不高于判定线
- * （`RECALL_MIN <= RELEVANCE_MIN`，search.test.ts 有断言），所以在这里通过的阈值就是
- * `RELEVANCE_MIN` 一个数。查询理解按一行查询语法读那句话（见 `fakeIntent`），
- * 于是一句「算法, -实习」得到的条件是可以预先写出来的。测试用它们测**机制**
- * （阈值、AND、否决、分面、记录派生），不测语义质量；语义质量归 eval 和真模型。
- * 查询侧走的是真正的 HTTP 客户端代码（`src/server/embed.ts`、`src/server/rerank.ts`、
- * `src/server/llm.ts`），只有被调用的端点是假的。
+ * 集成测试使用临时 schema、真实 PostgreSQL/pgvector 和进程内合成模型端点。
+ * 表结构由 schema.ts 推导；不创建索引。字符袋嵌入、余弦重排与查询语法理解用于验证机制，
+ * 真实模型的语义质量由 eval 验收。测试运行不读取真实人才数据或模型密钥。
  */
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
@@ -32,7 +19,7 @@ import {
 	experiencePhrase,
 	phrase,
 	phraseGloss,
-	phraseRelevance,
+	rerankCache,
 	reviewGroup,
 	searchTurn,
 	skillTerm,
@@ -42,10 +29,8 @@ import type { Involvement } from "#/lib/involvement";
 import { parseQuery } from "#/search/query-syntax";
 
 /**
- * 每个测试文件一个 schema。名字带进程号**和**一段随机：`bun test --parallel`
- * 只隔离模块注册表与环境变量，几个文件会落在同一个 worker 进程上，光靠进程号
- * 两个文件就会抢同一个 schema——后建的那个 `drop ... cascade` 会把前一个正在
- * 用的表整片删掉，症状是另一个文件里毫不相干的一条断言报「表不存在」。
+ * 每个测试文件使用进程号和随机值组成的临时 schema。
+ * bun test --parallel 隔离模块与环境，但多个文件可共用同一 worker 进程。
  */
 const SCHEMA = `talent_test_${process.pid}_${randomBytes(4).toString("hex")}`;
 
@@ -63,7 +48,7 @@ function ddl(schema: string, table: PgTable) {
 			);
 		if (c.notNull && !c.primary) parts.push("not null");
 		if (c.generated) {
-			// 库自己算的列（experience.key）。表达式是 SQL 或字符串，照 drizzle 的形态取
+			// 库自己算的列（experience.content_key）。表达式是 SQL 或字符串，照 drizzle 的形态取
 			const as =
 				typeof c.generated.as === "function"
 					? c.generated.as()
@@ -141,7 +126,7 @@ export function fakeEmbedding(text: string): number[] {
 }
 
 /**
- * 语料侧写进 `embedding_space` 的 canary 原文。查询侧首次嵌入前会重嵌它核对
+ * 语料侧写进 `embedding_space` 的 canary 原文。查询侧每次嵌入时都会重嵌它核对
  * 端点还在同一个空间里，所以测试模拟一次发布时也得原样写回这一串。
  */
 export const CANARY = "talent-search embedding canary";
@@ -154,16 +139,16 @@ export function fakeSimilarity(a: string, b: string) {
 	return Math.min(1, Math.max(0, similarity));
 }
 
-type RerankGate = {
+type ModelGate = {
 	enter: () => void;
 	wait: Promise<void>;
 };
 
-let nextRerankGate: RerankGate | null = null;
+let nextRerankGate: ModelGate | null = null;
 
-/** 暂停下一次重排请求，用来观察检索事务进行到模型调用期间的数据库状态。 */
-export function holdNextRerank() {
-	if (nextRerankGate) throw new Error("已经有一条重排请求在等待");
+let nextEmbeddingGate: ModelGate | null = null;
+
+function modelGate() {
 	let enter = () => {};
 	let release = () => {};
 	const entered = new Promise<void>((resolve) => {
@@ -172,8 +157,33 @@ export function holdNextRerank() {
 	const wait = new Promise<void>((resolve) => {
 		release = resolve;
 	});
-	nextRerankGate = { enter, wait };
-	return { entered, release };
+	return { gate: { enter, wait }, entered, release };
+}
+
+/** 暂停下一次重排请求，观察模型调用期间的语料变化。 */
+export function holdNextRerank() {
+	if (nextRerankGate) throw new Error("已经有一条重排请求在等待");
+	const { gate, ...control } = modelGate();
+	nextRerankGate = gate;
+	return control;
+}
+
+/** 暂停下一次嵌入请求，观察向量生成到首份快照之间的空间变化。 */
+export function holdNextEmbedding() {
+	if (nextEmbeddingGate) throw new Error("已经有一条嵌入请求在等待");
+	const { gate, ...control } = modelGate();
+	nextEmbeddingGate = gate;
+	return control;
+}
+
+let embeddingAnswer = fakeEmbedding;
+
+/** 设置嵌入端点的输出，用来验证端点漂移的拒绝行为。 */
+export function answerEmbedding(answer: (text: string) => number[]) {
+	embeddingAnswer = answer;
+	return () => {
+		embeddingAnswer = fakeEmbedding;
+	};
 }
 
 /**
@@ -358,6 +368,12 @@ function startModelServer() {
 				reply({ role: "assistant", content }, "stop");
 				return;
 			}
+			const gate = nextEmbeddingGate;
+			nextEmbeddingGate = null;
+			if (gate) {
+				gate.enter();
+				await gate.wait;
+			}
 			const { input } = JSON.parse(body) as { input: string | string[] };
 			const texts = Array.isArray(input) ? input : [input];
 			json({
@@ -366,7 +382,7 @@ function startModelServer() {
 				data: texts.map((t, index) => ({
 					object: "embedding",
 					index,
-					embedding: fakeEmbedding(t),
+					embedding: embeddingAnswer(t),
 				})),
 				usage: { prompt_tokens: 0, total_tokens: 0 },
 			});
@@ -392,14 +408,8 @@ function startModelServer() {
 }
 
 /**
- * 建好临时 schema、起好假模型端点，把 DATABASE_URL / EMBED_* / RERANK_* / LLM_*
- * 指过去，然后才 import 检索模块。
- *
- * `#/db`、`#/server/embed`、`#/server/rerank`、`#/server/llm` 都是模块级单例，一旦 import 就固定读取了当时的环境变量——
- * 所以顺序不能反，调用方必须 `await setup()` 之后再动态 import 被测代码。
- *
- * `bun test --parallel` 给每个文件一份独立的模块注册表与环境变量，所以单例这一条
- * 逐文件成立；但**进程是共用的**，schema 名因此不能只靠进程号区分（见 `SCHEMA`）。
+ * 建立临时 schema 和合成端点，配置环境后才加载服务端单例。
+ * 调用方必须 await setup() 后动态导入被测服务端模块；各文件使用 --parallel 隔离模块与环境。
  */
 export async function setup() {
 	const base = process.env.DATABASE_URL;
@@ -418,7 +428,7 @@ export async function setup() {
 		embeddingSpace,
 		phrase,
 		experiencePhrase,
-		phraseRelevance,
+		rerankCache,
 		phraseGloss,
 		searchTurn,
 		skillTerm,
@@ -498,6 +508,7 @@ export type Seed = {
 	school?: string;
 	segments: Array<{
 		kind?: "internal" | "external";
+		unemployed?: boolean;
 		months: number;
 		/** 省略表示至今。近因因子看的就是它。 */
 		endDate?: string;
@@ -550,6 +561,7 @@ export async function seed(rows: Seed[]) {
 		})),
 	);
 	let day = 1;
+	if (rows.every((row) => row.segments.length === 0)) return;
 	const inserted = await db
 		.insert(exp)
 		.values(
@@ -560,6 +572,7 @@ export async function seed(rows: Seed[]) {
 					return {
 						empId: r.empId,
 						kind: s.kind ?? "internal",
+						unemployed: s.unemployed ?? false,
 						startDate: start,
 						endDate: s.endDate ?? null,
 						org: s.org ?? "",

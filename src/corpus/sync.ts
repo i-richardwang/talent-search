@@ -1,19 +1,7 @@
 /**
- * 同步：把数据源里的原始人事数据搬进库，只搬原始的那一半。
- *
- * 读适配器、切段校验（`pipeline.ts`）、然后一笔短事务：这次没出现的人和段删掉，
- * 新出现的插进去，没变的一行不动。它**一次模型都不调**，几万段在几秒内跑完，
- * 所以可以放进 cron 按天跑、也可以随手跑；模型要做的事全在派生任务里
- * （`derive.ts`），它只看「哪些段还没派生」，同步完自然就有段要处理。
- *
- * **段按内容认，不按位置认**：`experience.key` 是原始列的摘要，由库自己算
- * （`src/db/schema.ts`）。同步把这一次的行写进一张同结构的暂存表，暂存表里的键
- * 也是库算的，于是「这一段还在不在」就是两张表按键做差，不用应用代码再算一遍
- * 摘要——两处算法一旦漂开，每次同步都会把整库删了重插，派生结果全部作废，而
- * 且没有任何报错。
- *
- * 一笔事务，所以原子：读者要么看到上一版的人群，要么看到这一版，不会看到删了
- * 一半的中间态。它短，锁不住谁。
+ * 读取数据源，经 pipeline.ts 校验、切段后，在一笔短事务中同步人员与经历。
+ * 正式表与暂存表共用数据库生成的 content_key：删除消失的段，插入新增段，
+ * 同内容的段刷新累计月数并保留 id、边和派生版本。同步不调用模型。
  */
 
 import "@tanstack/react-start/server-only";
@@ -73,7 +61,7 @@ async function stageExperience(
 	rows: ExperienceRow[],
 ): Promise<void> {
 	/*
-	 * `including generated`：暂存表的 key 和正式表用同一个表达式，由库算。
+	 * `including generated`：暂存表的内容键和正式表用同一个表达式，由库算。
 	 * `including defaults`：派生那一半的列这里不写，靠默认值满足 not null。
 	 * id 是正式表发的号，暂存表里没有它。
 	 */
@@ -84,15 +72,16 @@ async function stageExperience(
 	for (const chunk of chunked(rows, ROWS_PER_STATEMENT))
 		await client.query(
 			`insert into staged_experience (
-				emp_id, kind, start_date, end_date, org, org_path, org_meta, title,
+				emp_id, kind, unemployed, start_date, end_date, org, org_path, org_meta, title,
 				seq_l1, seq_l2, seq_l3, level, description, months)
 			 select * from unnest(
-				$1::text[], $2::text[], $3::date[], $4::date[], $5::text[], $6::text[],
-				$7::jsonb[], $8::text[], $9::text[], $10::text[], $11::text[],
-				$12::text[], $13::text[], $14::int[])`,
+				$1::text[], $2::text[], $3::boolean[], $4::date[], $5::date[], $6::text[], $7::text[],
+				$8::jsonb[], $9::text[], $10::text[], $11::text[], $12::text[],
+				$13::text[], $14::text[], $15::int[])`,
 			[
 				chunk.map((r) => r.emp_id),
 				chunk.map((r) => r.kind),
+				chunk.map((r) => r.unemployed),
 				chunk.map((r) => r.start_date),
 				chunk.map((r) => r.end_date),
 				chunk.map((r) => r.org),
@@ -112,7 +101,7 @@ async function stageExperience(
 const EMPLOYEE_COLUMNS =
 	"emp_id, name, cur_dept, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date, education_level, education_rank, school, recruitment";
 const EXPERIENCE_COLUMNS =
-	"emp_id, kind, start_date, end_date, org, org_path, org_meta, title, seq_l1, seq_l2, seq_l3, level, description, months";
+	"emp_id, kind, unemployed, start_date, end_date, org, org_path, org_meta, title, seq_l1, seq_l2, seq_l3, level, description, months";
 
 /**
  * 把暂存的两张表和正式表做差：删这次没有的，插这次新来的，改了档案的人更新。
@@ -136,12 +125,16 @@ async function reconcile({ client }: CorpusSession): Promise<{
 				.join(", ")}`,
 	);
 	const experienceGone = await client.query(
-		"delete from experience where key not in (select key from staged_experience)",
+		"delete from experience where content_key not in (select content_key from staged_experience)",
+	);
+	await client.query(
+		`update experience e set months = s.months
+		 from staged_experience s where e.content_key = s.content_key and e.months <> s.months`,
 	);
 	const experienceNew = await client.query(
 		`insert into experience (${EXPERIENCE_COLUMNS})
 		 select ${EXPERIENCE_COLUMNS} from staged_experience s
-		 where not exists (select 1 from experience e where e.key = s.key)`,
+		 where not exists (select 1 from experience e where e.content_key = s.content_key)`,
 	);
 	await prunePhrases(client);
 	return {
@@ -154,7 +147,7 @@ async function reconcile({ client }: CorpusSession): Promise<{
 /**
  * 一次同步：读数据源 → 切段校验 → 一笔事务做差。
  *
- * 幂等，可反复跑：同一份数据跑两遍，第二遍一行都不动。连接与锁由调用方给
+ * 同内容的段保留身份，累计月数按本次日期刷新。连接与锁由调用方给
  * （`session.ts`），输出写到 `report`。
  */
 export async function sync(

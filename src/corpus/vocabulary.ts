@@ -113,14 +113,12 @@ export async function read(client: CorpusClient): Promise<Table> {
 		canonical: string;
 		parent: string | null;
 		reviewed_at: Date;
-		judge: string;
-	}>("select word, canonical, parent, reviewed_at, judge from skill_term");
+	}>("select word, canonical, parent, reviewed_at from skill_term");
 	const table: Table = new Map(
 		rows.map((row) => [
 			row.word,
 			{
 				canonical: row.canonical,
-				judge: row.judge,
 				parent: row.parent,
 				reviewedAt: row.reviewed_at,
 			},
@@ -131,29 +129,22 @@ export async function read(client: CorpusClient): Promise<Table> {
 }
 
 /**
- * 把这些决定写回表。
- *
- * 收的是**决定本身**，不是一串词名再回表里查：查得到查不到就得有个说法，而
- * 「查不到时写个空标准词」是一行悄悄坏掉的词表。`merge` 手里本来就有决定。
- * 归属指回本表，所以判定方起的名字也在这一批里作为一行写进去；外键在语句末尾才查，
- * 一条语句里父子同时写入，没有先后。
+ * 按决定写入词表，包含判定方命名的父词；同一语句写入父子，外键在语句末尾检查。
  */
 async function write(client: CorpusClient, decisions: [string, Decision][]) {
 	if (decisions.length === 0) return;
 	await client.query(
-		`insert into skill_term (word, canonical, parent, reviewed_at, judge)
-		 select * from unnest($1::text[], $2::text[], $3::text[], $4::timestamptz[], $5::text[])
+		`insert into skill_term (word, canonical, parent, reviewed_at)
+		 select * from unnest($1::text[], $2::text[], $3::text[], $4::timestamptz[])
 		 on conflict (word) do update
 		 set canonical = excluded.canonical,
 		     parent = excluded.parent,
-		     reviewed_at = excluded.reviewed_at,
-		     judge = excluded.judge`,
+		     reviewed_at = excluded.reviewed_at`,
 		[
 			decisions.map(([word]) => word),
 			decisions.map(([, decision]) => decision.canonical),
 			decisions.map(([, decision]) => decision.parent),
 			decisions.map(([, decision]) => decision.reviewedAt),
-			decisions.map(([, decision]) => decision.judge),
 		],
 	);
 }
@@ -180,19 +171,8 @@ export async function askModel(
 }
 
 /**
- * 这一轮要整理的词表：标准词和各自的人数，按词排序；以及每个标准词名下其他写法各自的人数。
- *
- * **词表里只有一种词。** 人写的词和判定方起的名字在这里没有分别：都是标准词，人数都按
- * 「写了它、它的其他写法或它下面任一个词的人」数（筛选栏同一口径，`src/server/skills.ts`），
- * 都一样参与分组、收集、到期再判。所以词表是**表里的标准词，加上语料里还没进表的词**——后者是
- * 还没判过的标准词。只从语料取词的话，判定方起的名字永远不会被再问一次：「销售数据分析」
- * 归不到「数据分析」下面，两组各自起的「数据分析」「数据分析能力」也永远并不到一起。
- *
- * 其他写法不做中心词、不单独成组，只跟着它的标准词进组（`collectGroups`）：它和标准词是不是
- * 同一件事正是每次重判要问的，而它不在组里时拆不开，在别的组里单独出现又会被判进另一片，
- * 把它从标准词那里悄悄分走。
- *
- * 下面一个人都没有的词不在这一轮里：没人会点它，也就没什么可整理的。
+ * 收集有实际人群的标准词及其人数；标准词包括判定方命名的父词和尚未入词表的语料词。
+ * 人数包含其别名与后代。别名保留原写法的人数，跟标准词一起进组接受重判。
  */
 async function vocabulary(client: CorpusClient) {
 	const { rows } = await client.query<{ word: string; people: string }>(
@@ -269,13 +249,7 @@ export async function applyGroups(
 			row.judgment,
 			row.words.map((one) => one.word),
 		);
-		for (const [word, decision] of merge(
-			table,
-			row.words,
-			verdicts,
-			now,
-			row.judge,
-		))
+		for (const [word, decision] of merge(table, row.words, verdicts, now))
 			changed.set(word, decision);
 	}
 	const merged = [...changed].filter(

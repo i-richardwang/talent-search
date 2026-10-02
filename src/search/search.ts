@@ -1,27 +1,16 @@
 /**
- * 检索的取数层：把几条条件变成「哪些经历段以多高的相似度命中了哪条主张」
- * 这一份事实，交给 `rank.ts` 去打分、排序、算分面。
+ * 检索取数与词表匹配，产出事实；打分、AND 判定、排序、分面交给 rank.ts。
  *
- * 这个文件里没有任何权重、没有 AND 判定、没有分面计数——它只回答「命中了什么」。
- * 「怎么找到人」和「找到之后怎么排」分别演进；取数方式变化时，排名逻辑不动。
+ * 一条经历主张的各项约束作用于同一段经历；累计时长由 rank.ts 跨段求值。
+ * 背景与人的条件是门槛，不产生经历证据：必须的过滤人，加分的记录满足情况。
+ * 被排除否决的段不能作为背景依据。
  *
- * 一条经历主张（`condition.ts`）的每一项都作用在**同一段经历**上：经历词由
- * `phrases.ts` 判定（向量召回 + 重排），这里拿到那批「命中的说法」通过
- * `experience_phrase` 关联到经历段；公司名、公司档、经历来源是那一段上的谓词，
- * 在同一条 SQL 里过滤掉不满足的段。累计时长不在这里判——它是跨段的，归 `rank.ts`。
- *
- * 门槛（`result.ts` 的 `Gate`：人的条件，和没说做过什么的背景）不产出事实：
- * 它们是按人的谓词，必须的在每条取数 SQL 里按人过滤，偏好的另查一次谁满足。
- * 背景是「这个人有没有符合范围的段、累计够不够」，被排除否决的段同样不算。
- *
- * 取数**在一个语料快照里读**，但相关度过滤不在快照里：判定要调两个模型端点，而快照占着
- * 池里的一条连接，占着它等模型等于让一次端点变慢就耗光连接池。所以这里
- * 每一条取数路径都从 `withMatchedPhrases` 进去——它在快照外算好命中的说法，进快照
- * 时核对嵌入空间还是不是同一个（论证在 `phrases.ts` 和 `#/db`）。
+ * 模型重排在快照外完成，取事实的快照重新召回、核对空间及完整候选文本的分数。
  */
 
 import "@tanstack/react-start/server-only";
 import { inArray, type SQL, sql } from "drizzle-orm";
+import { db } from "#/db";
 import { EXTRACTED_ROUTES, employee, experience } from "#/db/schema";
 import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
 import { dots } from "#/lib/format";
@@ -42,6 +31,7 @@ import {
 } from "./dimensions";
 import { emptyReason } from "./empty";
 import type { Vocabulary } from "./intent";
+import type { KeywordField } from "./keywords";
 import type { SearchFilters } from "./params";
 import { type PhraseHit, phraseHitTable, withMatchedPhrases } from "./phrases";
 import {
@@ -61,6 +51,7 @@ import {
 	type RankedResult,
 	type ResultEmployee,
 	type SearchOutcome,
+	type Suggestion,
 } from "./result";
 import type { SearchSpec } from "./spec";
 import type { NameField, NameFinding, TermFinding } from "./trace";
@@ -101,21 +92,10 @@ const MIN_PEOPLE_TO_SHOW = 5;
 const MAX_TO_SHOW = 8;
 
 /**
- * 这些经历词各能找到多少人、是不是太宽、对应人才库里哪些标准能力词。
- *
- * 和搜索用同一套匹配：同样的相关度门槛（`RELEVANCE_MIN`），同样通过
- * `experience_phrase` 从说法找到人。查一个词看到的人数，就是只拿这个词搜出来的
- * 人数。判断太宽也只有这一种算法，检查提交的条件和写进查询记录前都用它
- * （`server/agent-tools.ts`、`server/turn.ts`）。
- *
- * 单位是人，不是经历段：一个有九段命中经历的人会被按段数成九个，段占比很高、
- * 名单上却只多他一个人的词，根本不宽。「一个词在语料里有几千种说法」也不是宽：
- * 短语上向量分不开「客服」和「相关」，两者达到相关度门槛的说法一样多。
- *
- * 命中的说法可能是整段简历原文，所以发给模型的只有其中的能力词，换成标准写法
- * （`skill_term.canonical`），写的人少于 `MIN_PEOPLE_TO_SHOW` 的不发。
- * 不带筛选：宽不宽只由词和人才库决定。
- * 排除词按更高的 `RELEVANCE_MIN_EXCLUDE` 判断，这里算出的宽度不适用于排除词。
+ * 经历词的命中人数、宽度与标准能力词，和搜索共用召回、相关度门槛及经历边。
+ * 人数按员工去重，宽度按人才库人群占比判定，不带视图筛选。
+ * 仅向模型展示至少 MIN_PEOPLE_TO_SHOW 人使用的标准能力词，最多 MAX_TO_SHOW 项。
+ * 这里采用正向门槛；排除主张使用更严格的 RELEVANCE_MIN_EXCLUDE。
  */
 export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 	const asked = [...new Set(texts)];
@@ -145,10 +125,11 @@ export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 			select q.claim_idx, count(distinct e.emp_id)::int as people from q
 			join experience_phrase ep on ep.phrase_id = q.phrase_id
 			join experience e on e.id = ep.experience_id
+			where not e.unemployed
 			group by q.claim_idx`);
 			const [total] = (
 				await store.execute<{ n: number }>(
-					sql`select count(distinct emp_id)::int as n from experience`,
+					sql`select count(distinct emp_id)::int as n from experience where not unemployed`,
 				)
 			).rows;
 			for (const row of counts.rows) {
@@ -171,6 +152,7 @@ export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 				join phrase ph on ph.id = ep.phrase_id
 				left join skill_term t on t.word = ph.text
 				join experience e on e.id = ep.experience_id
+				where not e.unemployed
 				group by q.claim_idx, 2
 				having count(distinct e.emp_id) >= ${MIN_PEOPLE_TO_SHOW}
 			)
@@ -205,14 +187,14 @@ export async function findNames(
 			const countPeople =
 				field === "org"
 					? sql`select count(distinct e.emp_id)::int as n from experience e
-						where ${anyLike([name], [sql`e.org`, sql`e.org_path`])}`
+						where not e.unemployed and ${anyLike([name], [sql`e.org`, sql`e.org_path`])}`
 					: sql`select count(*)::int as n from employee p
 						where ${anyLike([name], [sql`p.school`])}`;
 			const matched =
 				field === "org"
 					? sql`select e.org as name, count(distinct e.emp_id)::int as people
 						from experience e
-						where e.kind = 'external' and ${anyLike([name], [sql`e.org`])}
+						where not e.unemployed and e.kind = 'external' and ${anyLike([name], [sql`e.org`])}
 						group by e.org`
 					: sql`select p.school as name, count(*)::int as people
 						from employee p where ${anyLike([name], [sql`p.school`])}
@@ -239,37 +221,19 @@ type FactRow = {
 	involvement: string | null;
 	emp_id: string;
 	end_date: string | null;
-} & DimSource;
+} & Pick<Fact, keyof DimSource>;
 
-type PopulationRow = { id: number; emp_id: string } & DimSource;
+type PopulationRow = { emp_id: string } & DimSource;
 
 /**
- * 一份没有人的结果的公共部分：没有人、没有候选、总数为零，只差一句「为什么」。
- *
- * 它出现在三个地方（一条条件都没解析出来、取数超过上限的两条路径），各写一遍
- * 的话，`Facets` 或 `SearchOutcome` 上加一个字段就会有一处忘了跟上，而少一个
- * 字段的空结果在屏幕上和别的空结果长得一模一样。分面每次都得新建一个：它是可变的。
+ * 新建没有候选人的结果字段；分面集合不共享可变状态。
  */
 function noOne(): { results: []; facets: Facets; total: number } {
 	return { results: [], facets: emptyFacets(), total: 0 };
 }
 
 /**
- * 去掉被排除否决的那些段。语义检索和只有人的条件两条路共用这一步——
- * 「命中排除词的段不再算作证据」对人员事实（`PopulationFact`）同样成立：一段被否决了，
- * 它就不能再算作这个人符合范围的依据。各写一份的话，「只写范围加一个排除词」
- * 会安静地当那个排除词不存在。
- */
-function keepUnvetoed<F extends { id: number }>(
-	facts: F[],
-	vetoed: Set<number>,
-): F[] {
-	return vetoed.size === 0 ? facts : facts.filter((f) => !vetoed.has(f.id));
-}
-
-/**
- * 结果列表要画的那几列。列的集合由 `result.ts` 的 `ResultEmployee` 说了算，
- * 这里按它取——两条路径各写一份的话，加一列就会有一条路径少画一样东西。
+ * 名单的展示投影，两种检索路径共用。
  */
 const RESULT_COLUMNS = {
 	empId: employee.empId,
@@ -308,11 +272,8 @@ export function overflowContributors(
 }
 
 /**
- * 一段经历上供分面用的那几列，别名直接取 JS 里的字段名。
- *
- * 取回来的行**就是** `DimSource`，所以没有第二段「把 company_tag 改名成
- * companyTag」的映射——那种映射写错一个字段不会报错，只会让这一维在内存里
- * 恒空，而屏幕上只是少一栏候选。`Record<keyof DimSource, SQL>` 让漏一列直接报类型错误。
+ * 分面与筛选共用的事实列表达式，别名对应 DimSource。
+ * 外连接没有经历时保留空属性；人员属性始终从 employee 读取。
  */
 const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	months: sql`e.months`,
@@ -322,13 +283,7 @@ const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	seqL2: sql`coalesce(nullif(e.seq_l2, ''), e.seq_inferred_l2)`,
 	kind: sql`e.kind`,
 	companyTag: sql`e.org_meta ->> 'company_tag'`,
-	/*
-	 * 一段的能力词是一列，不是一个值。段上的边是简历里的原话，筛选栏里的一项是标准词：
-	 * 列里放的是每个词的标准写法（`skill_term.canonical`，没进表的词就是它自己），和它
-	 * 往上的每一层更宽的词（`skill_term.parent`）。点「团队管理」要看到写了「人员管理」
-	 * 的人，点「数据分析」要看到写了「销售数据分析」的人，点细的只看到细的；别名自己
-	 * 不成为一项。往上走用 union 而不是 union all：词表不成环由整理任务保证，这里不再为它多一道。
-	 */
+	/** 经历技能的标准写法及全部父词，作为技能筛选的取值；UNION 去重。 */
 	skills: sql`array(
 		with recursive up(word) as (
 			select coalesce(t.canonical, ph.text)
@@ -366,14 +321,8 @@ const factSelect = sql.join(
 );
 
 /**
- * 每一维拿来比较的那个表达式，由上面的事实列拼出来——集合维给的是它的**身份**
- * （和 `dimensions.ts` 里 `id()` 算出来的必须是同一个字符串），阈值维给的是被
- * 比较的那个量。一段一个值的写 `one`，一段一列值的（能力词）写 `any`：内存里
- * `values()` 本来就返回一列，SQL 这边得说清楚列在哪一层。
- *
- * 谓词本身不写在这里，它由维度自己的 `match` 家族推出来（见 `dimCond`）：漏一维
- * 会被 `Record` 拦住，写歪一维会被「同一个条件下推还是在内存里筛」那条检索测试
- * 拦住。
+ * 维度 SQL 的集合身份或阈值表达式。one 为单值，any 为一段的取值集合；
+ * 谓词由 DIMENSIONS 的匹配家族生成。
  */
 const DIM_COLUMN: Record<DimKey, { one: SQL } | { any: SQL }> = {
 	// 序列的身份是两列拼出来的，分隔符和 `dimensions.ts` 的 `id()` 必须是同一个
@@ -410,7 +359,7 @@ function dimCond<K extends DimKey>(key: K, picked: Picked[K]): SQL | null {
  * 语义匹配会把竞品全匹配进来。它按这一段的公司名或部门路径模糊匹配。
  */
 function segmentConds(claim: ExperienceCondition): SQL[] {
-	const conds: SQL[] = [];
+	const conds: SQL[] = [sql`not e.unemployed`];
 	if (claim.org)
 		conds.push(sql`(${anyLike(claim.org, [sql`e.org`, sql`e.org_path`])})`);
 	const tag = dimCond("companyTag", claim.companyTag && [...claim.companyTag]);
@@ -457,7 +406,7 @@ function viewConds(view: Pick<SearchFilters, "org" | "school">): SQL[] {
 	const conds: SQL[] = [];
 	if (view.org?.length)
 		conds.push(sql`exists (
-			select 1 from experience x where x.emp_id = p.emp_id
+			select 1 from experience x where x.emp_id = p.emp_id and not x.unemployed
 			and (${anyLike(view.org, [sql`x.org`, sql`x.org_path`])}))`);
 	if (view.school?.length)
 		conds.push(sql`(${anyLike(view.school, [sql`p.school`])})`);
@@ -670,24 +619,6 @@ function vetoSql(
 }
 
 /**
- * 排除否决的段，两种用法各一份：SQL 给门槛的谓词嵌进去，id 取回内存给事实行
- * 过滤（`keepUnvetoed`）。
- */
-type Veto = { sql: SQL | null; ids: Set<number> };
-
-/** 被否决的段，取回内存。 */
-async function fetchVetoed(
-	store: DbExecutor,
-	veto: SQL | null,
-): Promise<Set<number>> {
-	if (!veto) return new Set();
-	const rows = await store.execute<{ id: number }>(
-		sql`select distinct id from (${veto}) v`,
-	);
-	return new Set(rows.rows.map((r) => r.id));
-}
-
-/**
  * 每一维取值最多取几个。这是一条**读语料的上限**，不是模型契约：这几维都是
  * 个位数到两位数量级，取 100 已经是「全都要」，它挡的是脏数据把一整列不同的
  * 公司名当成档位灌进 prompt。
@@ -708,18 +639,8 @@ const VOCAB_SOURCE: Record<VocabKey, SQL> = {
 };
 
 /**
- * 查询理解能用的筛选词汇表——**语料里真实存在的取值**。
- *
- * 模型只能从这里挑，不能凭常识造一个「一线大厂」或「P8」出来：造出来的值
- * 筛不到任何人，而界面上那一维会显示成一个选中了却空着的筛选。语料就是词典。
- *
- * 「哪些串不算这一维的取值」（空串、`NOT_A_VALUE`）不在这里判断，它是维度
- * 自己的声明：词表、内存判定、URL 清洗三处各写一份的话，模型能挑一个内存
- * 谓词当场否掉的值，而屏幕上是一个选中了却空着的筛选。
- *
- * 一维一条 SQL：四条小查询在同一次快照里跑完，换来的是每一维的取值原样成行，
- * 不必把四个数组拼进一行再逐维拆开。有高低的维按档从低到高列，模型据此说
- * 「某档及以上」；其余按人数从多到少。
+ * 查询理解能选择的语料取值。空值与 NOT_A_VALUE 不进词表；
+ * 有序维按档高排列，其余按人数排列。各维在同一语料快照中读取。
  */
 export async function vocabulary(): Promise<Vocabulary> {
 	return withCorpusSnapshot(async (store) => {
@@ -743,12 +664,9 @@ export async function vocabulary(): Promise<Vocabulary> {
 }
 
 /**
- * 没有经历主张、只有门槛时，过了门槛的人每段经历就是一条人员事实。它没有
- * route、相关度或证据段身份，不参与语义打分与证据展示；只用于人员筛选和分面计数。
- *
- * 排除的主张在这条路上同样否决证据段：一段被否决就不再算这个人的依据，只有
- * 这一段的人自然出局。两条路径共用 `keepUnvetoed`——各写一份的话，「只写人的
- * 条件加一条排除」会安静地当排除不存在。
+ * 人员查询从 employee 产生候选，关联未被否决的工作经历供筛选与分面使用。
+ * 没有工作经历时保留人员及空经历属性；背景门槛在 SQL 中独立求值。
+ * 这条路径不产生经历证据或语义评分。
  */
 async function searchPopulation(
 	store: DbExecutor,
@@ -756,14 +674,16 @@ async function searchPopulation(
 	prefer: readonly Gate[],
 	view: SearchFilters,
 	limit: number,
-	veto: Veto,
+	veto: SQL | null,
 	person: readonly SQL[],
 ): Promise<SearchOutcome> {
 	const rows = await store.execute<PopulationRow>(sql`
-		select e.id, e.emp_id, ${factSelect}
-		from experience e join employee p on p.emp_id = e.emp_id
+		select p.emp_id, ${factSelect}
+		from employee p left join experience e
+		  on e.emp_id = p.emp_id and not e.unemployed
+		  ${veto ? sql`and e.id not in (${veto})` : sql``}
 		${whereAll(person)}
-		order by e.id limit ${FACT_MAX + 1}`);
+		order by p.emp_id, e.id limit ${FACT_MAX + 1}`);
 	if (rows.rows.length > FACT_MAX)
 		return {
 			order: "employee",
@@ -776,14 +696,15 @@ async function searchPopulation(
 				overflow: { kind: "overflowPopulation" },
 			}),
 		};
-	const facts: PopulationFact[] = keepUnvetoed(rows.rows, veto.ids).map(
-		({ id: _id, emp_id, ...dims }) => ({ ...dims, empId: emp_id }),
-	);
+	const facts: PopulationFact[] = rows.rows.map(({ emp_id, ...dims }) => ({
+		...dims,
+		empId: emp_id,
+	}));
 	// org / school 已经在 SQL 里按人过滤过，内存里不必再过滤一次
 	const inMemory = { ...view, org: undefined, school: undefined };
 	const empIdsAll = facts.map((f) => f.empId);
 	const preferred = await Promise.all(
-		prefer.map((g) => fetchPreferred(store, g, veto.sql, empIdsAll)),
+		prefer.map((g) => fetchPreferred(store, g, veto, empIdsAll)),
 	);
 	const { empIds, facets, total } = rankPopulation(facts, inMemory, preferred);
 	const pageIds = empIds.slice(0, limit);
@@ -814,23 +735,13 @@ async function searchPopulation(
 }
 
 /**
- * 一次检索的取数与排名。`limit` 与 `filters` 都当作**可信入参**：跨进程的 RPC 入参
- * 已经在 `server/functions.ts` 校验过（`sanitizeFilters` / `sanitizeLimit`），
- * 脚本传的是常量。同一件事校验两遍的话，两份规则迟早不一样，而不一样的那一份
- * 不会报错。
+ * 在同一语料快照中完成取数、排序与分面。RPC 入参由 functions.ts 校验，脚本传入领域值。
  */
 export async function search(
 	/** 完整查询语义来自不可变记录；filters 只描述这一次怎样查看结果。 */
 	spec: SearchSpec,
 	filters: SearchFilters = {},
-	/**
-	 * 要多少人。翻页靠把它调大重查，而不是靠 offset 续拉。
-	 *
-	 * offset 分页在这里是错的：排序键是算出来的分数，第二页的语义得是「同一次
-	 * 排序里的第 51 到 100 名」，而 offset 只保证「再跑一次排序，跳过前 50」。
-	 * 两次跑之间只要有一条经历落库，就会有人重复出现或整个消失，而界面上看不出来。
-	 * 重拉一遍前 n 个总是自洽的。
-	 */
+	/** 本次返回前多少人；每次翻页重新取得同一快照内排名的完整前缀。 */
 	limit: number = RESULT_PAGE,
 ): Promise<SearchOutcome> {
 	const { claims, gates, prefer, excludes } = queryOf(spec.conditions);
@@ -855,13 +766,9 @@ export async function search(
 		[...claims, ...excludes].flatMap((c) => c.what ?? []),
 		RELEVANCE_MIN,
 		async (store, { phraseHits }) => {
-			const vetoSource = vetoSql(excludes, phraseHits);
-			const veto: Veto = {
-				sql: vetoSource,
-				ids: await fetchVetoed(store, vetoSource),
-			};
+			const veto = vetoSql(excludes, phraseHits);
 			// 门槛和 URL 上的公司名 / 学校名都按人过滤，在每一条取数 SQL 里生效
-			const person = [...gateConds(gates, veto.sql), ...viewConds(filters)];
+			const person = [...gateConds(gates, veto), ...viewConds(filters)];
 			// 只有门槛时没有做过什么可比，名单按人排，不伪造一条主张来启动检索。
 			if (claims.length === 0)
 				return searchPopulation(
@@ -874,7 +781,10 @@ export async function search(
 					person,
 				);
 
-			const loaded = await fetchFacts(store, claims, phraseHits, person);
+			const loaded = await fetchFacts(store, claims, phraseHits, [
+				...person,
+				...(veto ? [sql`e.id not in (${veto})`] : []),
+			]);
 			if (loaded.kind === "overflow") {
 				const contributors = new Set(loaded.claims);
 				return {
@@ -892,10 +802,10 @@ export async function search(
 					}),
 				};
 			}
-			const facts = keepUnvetoed(loaded.facts, veto.ids);
+			const facts = loaded.facts;
 			const candidates = facts.map((f) => f.empId);
 			const preferred = await Promise.all(
-				prefer.map((g) => fetchPreferred(store, g, veto.sql, candidates)),
+				prefer.map((g) => fetchPreferred(store, g, veto, candidates)),
 			);
 
 			const { ranked, facets, total } = rank(
@@ -994,4 +904,78 @@ export async function search(
 			};
 		},
 	);
+}
+
+/**
+ * 一个标准词连同它的其他写法、它的细分，全部展开成 `(term, word)`。
+ *
+ * 人数是按这一堆词一起数的：`term` 是某一个标准词，`word` 是算进它那个数里的每一种
+ * 写法——它自己、并进它的写法，以及它的细分连各自的写法，一层层往下。
+ */
+export const UNDER = sql`
+	with recursive under(term, word) as (
+		select canonical, word from skill_term
+		union
+		select u.term, a.word from under u
+		join skill_term c on c.parent = u.word
+		join skill_term a on a.canonical = c.word
+	)`;
+
+/**
+ * 一个标准词底下有多少人，和筛选栏「入职前技能」同一口径：写了它、它的其他写法，
+ * 或它任一项细分的人，各算一次。词表里的词有可能已经不在语料里（写它的人的简历
+ * 改了），那就是 0。
+ */
+export function peopleUnder(term: SQL | string) {
+	return sql`coalesce((
+		select count(distinct e.emp_id)::int
+		from under u
+		join phrase p on p.text = u.word
+		join experience_phrase ep on ep.phrase_id = p.id and ep.route = 'skill'
+		join experience e on e.id = ep.experience_id
+		where u.term = ${term} and not e.unemployed), 0)`;
+}
+
+/** 一次给几条候选。下拉是用来挑的，不是用来翻的：再多就该多敲一个字。 */
+const SUGGEST_MAX = 8;
+
+/** 关键词候选只查询所属维度，前缀匹配优先，再按人数；经历词返回标准写法且不显示人数。 */
+export async function suggest(
+	field: KeywordField,
+	needle: string,
+): Promise<Suggestion[]> {
+	const q = needle.trim();
+	if (!q) return [];
+	const contains = `%${escapeLike(q)}%`;
+	const prefix = `${escapeLike(q)}%`;
+
+	if (field === "what") {
+		// 词表里写法和标准词都认，返回的是标准词；没人写过的词不给
+		const { rows } = await db.execute<{ value: string }>(sql`
+			${UNDER}
+			select value from (
+				select a.canonical as value, ${peopleUnder(sql`a.canonical`)} as people,
+					bool_or(a.word ilike ${prefix}) as lead
+				from skill_term a
+				where a.word ilike ${contains}
+				group by a.canonical
+			) t
+			where people > 0
+			order by lead desc, people desc, value
+			limit ${SUGGEST_MAX}`);
+		return rows.map((r) => ({ value: r.value, people: null }));
+	}
+
+	const source =
+		field === "org"
+			? sql`select org as value, emp_id from experience where not unemployed and org ilike ${contains}`
+			: sql`select school as value, emp_id from employee where school ilike ${contains}`;
+	const { rows } = await db.execute<{ value: string; people: number }>(sql`
+		select value, count(distinct emp_id)::int as people
+		from (${source}) t
+		where value <> ''
+		group by value
+		order by (value ilike ${prefix}) desc, people desc, value
+		limit ${SUGGEST_MAX}`);
+	return rows;
 }

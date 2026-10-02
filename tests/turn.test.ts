@@ -58,6 +58,25 @@ async function talkedTo(query: string) {
 }
 
 describe("补充需求", () => {
+	test("最近搜索取链上最后一份完整条件，同刻记录和待理解末轮不改变链序", async () => {
+		const { db } = await import("#/db");
+		const { sql } = await import("drizzle-orm");
+		const first = { conditions: parseQuery("算法") };
+		const last = { conditions: parseQuery("算法, 渠道运营") };
+		await db.execute(sql`insert into search_turn
+			(id, root_turn_id, parent_turn_id, raw_text, spec, created_at) values
+			('recent-Z', 'recent-Z', null, '合成同刻任务', ${JSON.stringify(first)}::jsonb, '2020-01-01'),
+			('recent-Y', 'recent-Z', 'recent-Z', null, ${JSON.stringify(first)}::jsonb, '2020-01-01'),
+			('recent-A', 'recent-Z', 'recent-Y', '再加渠道运营', null, '2020-01-01')`);
+		const inChain = async () =>
+			(await recent()).find((row) => row.title === "合成同刻任务");
+		assert.equal((await inChain())?.turnId, "recent-Y");
+		await db.execute(sql`update search_turn set spec = ${JSON.stringify(last)}::jsonb
+			where id = 'recent-A' and spec is null`);
+		assert.equal((await inChain())?.turnId, "recent-A");
+		assert.deepEqual((await inChain())?.spec, last);
+	});
+
 	test("一句话作用在上一轮的条件上，链上仍是同一次找人任务", async () => {
 		const root = await sentence("算法");
 		const child = await sentence("渠道运营", root.turnId);
@@ -343,6 +362,39 @@ describe("任务标题", () => {
 });
 
 describe("两种搜索各走各的链", () => {
+	for (const mode of ["conversation", "keyword"] as const) {
+		test(`${mode} 移除全部条件后仍在同一条链上，并可继续填写`, async () => {
+			const root =
+				mode === "conversation"
+					? await sentence("算法")
+					: await createTurn({
+							kind: "spec",
+							spec: { conditions: parseQuery("算法") },
+						});
+			const empty = await createTurn(
+				{ kind: "spec", spec: { conditions: [] } },
+				root.turnId,
+			);
+			assert.deepEqual((await loadTurn(empty.turnId))?.spec, {
+				conditions: [],
+			});
+			assert.deepEqual(
+				(await loadTurn(root.turnId))?.spec?.conditions,
+				parseQuery("算法"),
+			);
+			const next = await createTurn(
+				{ kind: "spec", spec: { conditions: parseQuery("运营") } },
+				empty.turnId,
+			);
+			const thread = await loadThread(next.turnId);
+			assert.deepEqual(
+				thread?.map((turn) => turn.id),
+				[root.turnId, empty.turnId, next.turnId],
+			);
+			assert.equal((await loadTurn(next.turnId))?.mode, mode);
+		});
+	}
+
 	test("链头定下种类：有原话是对话，直接是条件是关键词，整条链不变", async () => {
 		const talk = await sentence("算法");
 		const tuned = await createTurn(

@@ -1,14 +1,4 @@
-/**
- * 自然语言理解的可信边界。模型拿着当前条件和用户这一次说的话，提交整张新的
- * 条件表和一份说明；模型的输出不可信，这里把它校验成 `SearchSpec` 与 `TurnNotes`，
- * 不包含网络调用。
- *
- * **模型的任务是维护这条搜索，不是理解句子。** 它提交的条件和用户在 chip 上
- * 改的、库里存的是同一个形状（为什么是这个形状，见 `condition.ts`），中间没有
- * 翻译：这里只做词表检查和沿用停用状态，其余校验和 RPC 入参走同一道 `sanitizeSpec`。
- *
- * **名单只从检索来。** 模型写的是条件，谁在名单上、排第几由检索决定。
- */
+/** 查询理解的领域校验：校验整张条件表、核对词表取值并沿用停用状态；条件与说明分别保存。 */
 import { z } from "zod";
 import {
 	type Condition,
@@ -68,24 +58,11 @@ const personItem = z.object({
 		.describe("这一档及以上，只用于 level 和 education，从给出的取值里挑一档"),
 });
 
-export const conditionItems = z.array(
+const conditionItems = z.array(
 	z.discriminatedUnion("about", [experienceItem, personItem]),
 );
 
-/**
- * 模型用提交工具提交的内容：整张新的条件表，加上这一轮的说明。**静态**：词表不进
- * schema，只在提示词里列一遍——同一份取值写两处就是两份契约；词表外的取值由提交时的
- * 检查（`valuesOutsideVocabulary`）告诉模型，最后仍在词表外的由 `understood` 丢掉。
- *
- * 提交整张表而不是一串增删改：表和 chip、库里存的是同一个形状，这一轮改了什么
- * 由两张表一比就知道，模型不必再学一套编辑指令。
- *
- * 每一项有自己的类型：月数是数字、经历来源是二选一、词表维各是一栏——模型看
- * schema 就知道填什么，不必读一段「这一维填什么样子」的说明。
- *
- * 这里的描述只说每一栏**是什么**，不写字数、条数这些上限：上限放在校验那一处
- * （`condition.ts`），写进 schema 就是模型多给一个字整句失败。
- */
+/** 提交工具的回答形状。词表由提示词提供，数量与文本上限在 condition.ts 校验。 */
 export const submissionSchema = z.object({
 	conditions: conditionItems.describe(
 		"整张新的条件表。一条经历主张里的各项说的是同一段经历；不同的经历分别写一条",

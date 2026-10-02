@@ -1,9 +1,6 @@
 /**
- * 查询记录的持久化与派生规则。一条链是一次找人任务，链上每一条是一轮：
- * 上一轮的条件加上这一轮的动作（说一句话，或直接改条件）得出新的条件。
- * 链是一条线，新的一轮只接在最后（`createTurn`）。
- * 记录不可变：能改的只有补全待理解记录那两列；能删的是整条链（`deleteSearch`），
- * 以及被下一次动作取代的、没理解出来的末轮。
+ * 查询记录的持久化与理解。一条线性链表示一次找人任务，追加按链头行锁串行化。
+ * 记录不可变；待理解末轮可以补全一次，或由下一次动作取代。
  */
 import "@tanstack/react-start/server-only";
 import { randomBytes } from "node:crypto";
@@ -106,10 +103,7 @@ function modeOf(rootRawText: string | null | undefined): SearchMode {
 }
 
 /**
- * 关键词搜索的链只收那几个框写得出的条件表：一句话进不来，别的形状也进不来。
- * 结果页要把当前的查询填回框里接着改，框表达不了的一条既填不回去，也就改不了、
- * 看不见。对话的链上什么形状都行——chip 上的改动、搜不了时一键添加的替代条件，
- * 都是条件表。
+ * 关键词链只接受关键词框可完整读写的条件表；对话链可保存任意合法条件表。
  */
 function admit(mode: SearchMode, input: QueryInput) {
 	if (mode !== "keyword") return;
@@ -119,19 +113,9 @@ function admit(mode: SearchMode, input: QueryInput) {
 }
 
 /**
- * 写入一轮新查询，不在导航前等待模型。没有 `from` 就开一条新链。
- *
- * 链是一条线：新的一轮总接在链尾，所以回头看过去某一轮的结果，后面那几轮
- * 照样在线程里。`from` 是人正看着的那一轮，动作作用在**它的**条件上：
- *
- * - 提交一整张表（chip 上的改动、替代条件、关键词框）不依赖基线，接在链尾。
- * - 说一句话要有基线。`from` 就是链尾时直接接上；是更早的一轮时，先追加一轮
- *   原样复制那一轮的条件，话再接在后面。线程里那一步记成一次修改，基线
- *   仍然是这句话的上一轮——每一轮都是真实发生过的一步。
- *
- * 链尾还没理解出来的那一轮不算数：新的动作取代它（没作答时换个说法重说，
- * 就是这一步）。同一条链上的追加按链头的行锁排队，`search_turn_line`
- * 保证链不分叉。
+ * 追加一轮查询；没有 from 时创建新链。完整条件表直接接链尾，原话依据正查看的那轮。
+ * 在历史轮上补充原话时，先追加一次条件恢复，再追加待理解轮。
+ * 待理解末轮由新动作取代；链头行锁串行化追加，唯一 parent_turn_id 保证不分叉。
  */
 export async function createTurn(
 	input: QueryInput,
@@ -183,22 +167,8 @@ export async function createTurn(
 }
 
 /**
- * 写进查询记录之前，检查这一轮新写出的经历词是不是太宽：命中的人多到几乎不筛人的词去掉。
- * 条件表和每一条「搜不了」附带的替代条件各是一组，一次查完。替代条件也是模型写的，
- * 同样没有人看过；在这里检查过，用户点「加上」时才能原样用。
- * 一条主张的经历词全都太宽，整条**明示地**停用，原因记在 `off` 上。
- *
- * 模型提交时已经被告知过哪些词太宽（`agent-tools.ts`）；它原样再提交、或者调用次数
- * 用完时，太宽的词仍会到这里，在这里处理，不会悄悄进入搜索。
- *
- * 一条主张里几个词同权，去掉太宽的那个不影响其余的词找人；全都太宽才说明这条
- * 主张本身几乎不筛人，那得让用户看见、换词，或者坚持要用——搜索时不悄悄拦掉。
- * 两种处理看起来不对称，其实是同一条规则：**这些条件还没有人看过。** 它们是模型
- * 刚写出来的，去掉一个词和模型少写一个词是同一件事，写进记录之后 chip 上写的就是
- * 搜的。整条停用则不同——一条主张消失和一个词消失不一样，前者是「你说的这件事没法
- * 用来找人」，得说出来。词全都太宽也不把它降成一条没有词的主张：那会让「做过运营的」
- * 悄悄变成「有过任何经历的」。
- * 检查哪些条件由 `needsWidthCheck` 决定，和提交时的检查是同一条规则。
+ * 检查模型新写的经历词与替代条件。保留基线条件的宽度与停用状态。
+ * 删除一项内过宽的取值；全部过宽时保留主张并明示停用，避免把经历主张变成背景门槛。
  */
 async function applyWidthCheck(
 	groups: readonly Condition[][],
@@ -390,46 +360,43 @@ export type RecentSearch = {
 const RECENT_PAGE_MAX = 50;
 
 /**
- * 最近搜索的一页，新的在前。每条链只展示最后一份完整查询；打开 turnId 即可精确回放
- * 全部条件。标题是链头那句话：一次找人任务从那句话开始，后面每一轮都是在它上面改。
- * 页码由 `pageAt` 定夺，越界收回最后一页。
+ * 每条链最后一份完整条件表，按记录时间排列。待理解末轮之前的完整记录仍可回放。
+ * 链序由 parent_turn_id 决定；时间仅用于跨任务展示与排序。
  */
 export async function listRecent(
 	page: unknown,
 	size: number,
 ): Promise<TablePage<RecentSearch>> {
-	const found = await db.execute<{ n: number }>(sql`
+	return db.transaction(
+		async (store) => {
+			const found = await store.execute<{ n: number }>(sql`
 		select count(distinct root_turn_id)::int as n
 		from search_turn where spec is not null`);
-	const total = found.rows[0]?.n ?? 0;
-	const at = pageAt(
-		total,
-		page,
-		Math.min(Math.max(Math.trunc(size) || 1, 1), RECENT_PAGE_MAX),
-	);
-	const rows = await db.execute<RecentSearch>(sql`
+			const total = found.rows[0]?.n ?? 0;
+			const at = pageAt(
+				total,
+				page,
+				Math.min(Math.max(Math.trunc(size) || 1, 1), RECENT_PAGE_MAX),
+			);
+			const rows = await store.execute<RecentSearch>(sql`
 			select latest.id as "turnId", latest.spec, root.raw_text as title,
 				extract(epoch from now() - latest.created_at)::int as "ageSeconds",
 				to_char(latest.created_at, 'YYYY-MM-DD HH24:MI') as at
-			from (
-				select distinct on (root_turn_id) id, root_turn_id, spec, created_at
-				from search_turn where spec is not null
-				order by root_turn_id, created_at desc, id desc
-			) latest
-			join search_turn root on root.id = latest.root_turn_id
+				from search_turn latest
+				join search_turn root on root.id = latest.root_turn_id
+				where latest.spec is not null and not exists (
+					select 1 from search_turn next
+					where next.parent_turn_id = latest.id and next.spec is not null)
 			order by latest.created_at desc, latest.id desc
 			limit ${at.limit} offset ${at.offset}`);
-	return tablePage(rows.rows, total, at);
+			return tablePage(rows.rows, total, at);
+		},
+		{ isolationLevel: "repeatable read" },
+	);
 }
 
 /**
- * 删掉一次找人任务：这条记录所在的整条链，返回删掉的每一条的 id。
- *
- * 「最近搜索」一行就是一条链，删一行就是删这条链——只删最后那一条的话，
- * 那一行还在，只是显示成上一轮的样子，和用户要的正相反。
- * 一条语句删完整条链：链上每一条（含链头自己）的 `root_turn_id` 都是链头。
- *
- * 返回 id 是给界面的：人正看着的那一屏可能就在这条链上，删完得离开它。
+ * 删除给定记录所属的整条链，并返回全部被删 id，供当前页面离开已删记录。
  */
 export async function deleteSearch(turnId: string): Promise<string[]> {
 	const rows = await db

@@ -25,7 +25,7 @@ const { groupIdentity } = await import("#/corpus/vocabulary");
 const { formatDuration, LANE_FACTS } = await import(
 	"#/routes/tasks/-lib/labels"
 );
-const { acquireCorpusSession, corpusSessionActive } = await import(
+const { acquireCorpusSession, corpusSessionOwner } = await import(
 	"#/corpus/session"
 );
 const { db } = await import("#/db");
@@ -86,11 +86,11 @@ describe("同步与派生", () => {
 	test("已经有写者的时候后台任务当场放弃，而活性问的是锁", async () => {
 		const held = await acquireCorpusSession();
 		assert.ok(held);
-		assert.equal(await corpusSessionActive(), true);
+		assert.notEqual(await corpusSessionOwner(), null);
 		assert.equal(await runTask("derive"), null);
 		await held.release();
 		// 持锁的连接一断，这件事当场就不成立了——不需要谁来打扫
-		assert.equal(await corpusSessionActive(), false);
+		assert.equal(await corpusSessionOwner(), null);
 	});
 
 	test("同步只搬原始的一半：人和段进来了，说法一条都没有", async () => {
@@ -130,6 +130,37 @@ describe("同步与派生", () => {
 		);
 		assert.equal(await derivePending(), 0);
 		assert.equal(latest(await tasksState(), "derive")?.outcome, "done");
+	});
+
+	test("开放段再次同步会刷新时长并保留身份、说法边与派生版本", async () => {
+		const before = await db.execute<{
+			id: number;
+			content_key: string;
+			months: number;
+			version: string;
+			edges: number;
+		}>(sql`
+			select id, content_key, months, derived_identity as version,
+			(select count(*)::int from experience_phrase ep where ep.experience_id = e.id) as edges
+			from experience e where end_date is null and months > 12 order by id limit 1`);
+		const original = before.rows[0];
+		assert.ok(original);
+		await db.execute(
+			sql`update experience set months = 1 where id = ${original.id}`,
+		);
+		const run = await runTask("sync");
+		assert.equal(run?.failure, null);
+		const after = await db.execute<{
+			id: number;
+			content_key: string;
+			months: number;
+			version: string;
+			edges: number;
+		}>(sql`
+			select id, content_key, months, derived_identity as version,
+			(select count(*)::int from experience_phrase ep where ep.experience_id = e.id) as edges
+			from experience e where id = ${original.id}`);
+		assert.deepEqual(after.rows[0], original);
 	});
 
 	test("数据页看得到每一段的派生结果", async () => {
@@ -228,8 +259,8 @@ describe("同步与派生", () => {
 
 	/*
 	 * 任务台那条路：后台开一轮，过程记录在那一行上，页面隔一会儿看一眼。
-	 * 从「正在跑」到「成功」之间不能有一刻读作「中断」——判据是先看锁、再看行，
-	 * 而行是写完了才放锁的；这两条哪一条反了，页面就会在收尾那一瞬停掉轮询。
+	 * 从「正在跑」到「成功」之间不能读作「中断」：读取期间保护记录，核对持锁连接
+	 * 标记的运行 id，结束记录先于释放锁。
 	 */
 	test("后台跑的那一轮：一路轮询到成功，中间没有一刻像中断", async () => {
 		const running = runTask("derive");
@@ -266,6 +297,22 @@ describe("同步与派生", () => {
 		assert.equal(stopped?.id, stale.id);
 		assert.equal(stopped?.outcome, "interrupted");
 		assert.equal(stopped?.seconds, null);
+
+		const starting = await acquireCorpusSession();
+		assert.ok(starting);
+		try {
+			const states = await Promise.all(
+				Array.from({ length: 12 }, () => tasksState()),
+			);
+			assert.ok(states.every((state) => state.running));
+			assert.ok(
+				states.every(
+					(state) => latest(state, "review")?.outcome === "interrupted",
+				),
+			);
+		} finally {
+			await starting.release();
+		}
 
 		const run = await runTask("review");
 		assert.ok(run);
@@ -418,6 +465,7 @@ describe("说法规划", () => {
 		id: 1,
 		emp_id: "E1",
 		kind: "internal" as const,
+		unemployed: false,
 		start_date: "2020-01-01",
 		end_date: null,
 		org: "平台技术部",
@@ -437,6 +485,7 @@ describe("说法规划", () => {
 	const outside = segment({
 		id: 7,
 		kind: "external",
+		unemployed: false,
 		org: "云枢智能",
 		org_path: "",
 		seq_l1: "",

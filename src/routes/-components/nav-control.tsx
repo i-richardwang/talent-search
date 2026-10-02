@@ -35,7 +35,7 @@ export function useNavDocked() {
 	);
 }
 
-export interface NavControl {
+interface NavControl {
 	/** 窄屏上打开导航抽屉 */
 	openDrawer: () => void;
 	/** 宽屏上导航栏展开着 */

@@ -20,6 +20,7 @@ function segment(row: Partial<ExperienceRow>): ExperienceRow {
 	return {
 		emp_id: "E1",
 		kind: "internal",
+		unemployed: false,
 		start_date: "2019-01-01",
 		end_date: "2020-01-01",
 		org: "",
@@ -55,7 +56,13 @@ function corpus(...external: [string, string][]): ExperienceRow[] {
 		}),
 		segment({ org: "渠道部", title: "实习生", seq_l1: "运营", seq_l2: "" }),
 		...external.map(([title, description]) =>
-			segment({ kind: "external", org: "云枢智能", title, description }),
+			segment({
+				kind: "external",
+				unemployed: title === UNEMPLOYED,
+				org: "云枢智能",
+				title,
+				description,
+			}),
 		),
 	];
 }
@@ -120,7 +127,7 @@ describe("对齐", () => {
 
 		assert.equal(asked.length, 2);
 		assert.deepEqual(
-			out.map((row) => [row.seq_inferred_l1, row.seq_inferred_l2]),
+			out.map((row) => [row?.seq_inferred_l1, row?.seq_inferred_l2]),
 			[
 				["", ""],
 				["", ""],
@@ -132,7 +139,7 @@ describe("对齐", () => {
 		);
 		// 登记的三列不被碰
 		assert.deepEqual(
-			out.slice(3).map((row) => row.seq_l1),
+			out.slice(3).map((row) => row?.seq_l1),
 			["", "", ""],
 		);
 	});
@@ -148,7 +155,7 @@ describe("对齐", () => {
 		restore();
 
 		assert.deepEqual(
-			out.map((row) => row.seq_inferred_l1),
+			out.map((row) => row?.seq_inferred_l1),
 			[""],
 		);
 	});

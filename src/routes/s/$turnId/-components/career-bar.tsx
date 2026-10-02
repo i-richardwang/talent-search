@@ -1,8 +1,7 @@
-import type { Experience } from "#/db/schema";
 import { duration, period } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { bestStrength } from "#/search/evidence";
-import type { Hit } from "#/search/result";
+import type { EmployeeDetail, Hit } from "#/search/result";
 import { BAND_FILL } from "./evidence";
 
 /**
@@ -57,7 +56,7 @@ export function CareerBar({
 	hitIndex,
 	hireDate,
 }: {
-	rows: Experience[];
+	rows: EmployeeDetail["timeline"];
 	hitIndex: Map<number, Hit[]>;
 	hireDate: string | null;
 }) {

@@ -270,10 +270,7 @@ export async function complete(
 }
 
 /**
- * 最多 `limit` 个一起跑，做完一个补一个。
- *
- * 不用 `Promise.all` 切批：切批的话每一批都得等最慢的那一个，几千段下来白等的
- * 时间比跑的时间还长。
+ * 保持最多 limit 个并发任务，完成一个后读取下一项。
  */
 async function pool<T>(
 	items: T[],

@@ -45,7 +45,7 @@ import {
 const MODE_HINT: Record<Mode, string> = {
 	must: "只保留满足此条件的人",
 	boost: "满足此条件的人排在前面",
-	exclude: "排除有这类经历的人",
+	exclude: "这类经历不作为匹配依据",
 };
 
 /**

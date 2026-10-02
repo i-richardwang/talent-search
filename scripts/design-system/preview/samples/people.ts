@@ -1,6 +1,7 @@
-import type { Employee, Experience } from "#/db/schema";
+import type { Employee } from "#/db/schema";
 import { type PopulationFact, rankPopulation } from "#/search/rank";
 import {
+	type EmployeeDetail,
 	emptyFacets,
 	type Facets,
 	type Hit,
@@ -14,6 +15,8 @@ import { CLAIMS } from "./conditions";
  * 候选人：六位候选人的档案、经历与命中，名单、分面与几种检索结果。
  * 人名、工号、公司、部门、学校全是编的，和人才库无关；类型都从产品代码导入。
  */
+
+type SampleExperience = EmployeeDetail["timeline"][number] & { empId: string };
 
 /** 本公司在部门路径里的写法。 */
 const HOME = "某某科技";
@@ -127,7 +130,7 @@ export const EMPLOYEES: Employee[] = [
 /** 一段公司内的任职：部门路径由本公司名和部门拼出来，入职前那几列留空。 */
 function internal(
 	row: Pick<
-		Experience,
+		SampleExperience,
 		| "id"
 		| "empId"
 		| "startDate"
@@ -140,26 +143,23 @@ function internal(
 		| "level"
 		| "months"
 	> & { center?: string },
-): Experience {
+): SampleExperience {
 	const { center = "技术中心", ...rest } = row;
 	return {
 		...rest,
-		key: `x${row.id}`,
 		kind: "internal",
 		orgPath: `${HOME}/${center}/${row.org}`,
 		orgMeta: null,
 		seqInferredL1: "",
 		seqInferredL2: "",
 		description: "",
-		derivedIdentity: "d1",
-		derivedAt: new Date("2026-09-20T00:00:00Z"),
 	};
 }
 
 /** 一段入职前的经历：公司档、行业、性质写在 `orgMeta`，序列是推断的一对。 */
 function external(
 	row: Pick<
-		Experience,
+		SampleExperience,
 		| "id"
 		| "empId"
 		| "startDate"
@@ -171,11 +171,10 @@ function external(
 		| "seqInferredL1"
 		| "seqInferredL2"
 	> & { tag: string; industry?: string },
-): Experience {
+): SampleExperience {
 	const { tag, industry = "互联网", ...rest } = row;
 	return {
 		...rest,
-		key: `x${row.id}`,
 		kind: "external",
 		orgPath: "",
 		orgMeta: { company_tag: tag, industry, nature: "民营" },
@@ -183,13 +182,11 @@ function external(
 		seqL2: "",
 		seqL3: "",
 		level: "",
-		derivedIdentity: "d1",
-		derivedAt: new Date("2026-09-20T00:00:00Z"),
 	};
 }
 
 /** 全部经历段，按人、按开始时间从早到晚。 */
-export const EXPERIENCES: Experience[] = [
+export const EXPERIENCES: SampleExperience[] = [
 	external({
 		id: 101,
 		empId: "T0101",
@@ -395,7 +392,7 @@ export const EXPERIENCES: Experience[] = [
 ];
 
 /** 一个人的全部经历段，按开始时间从早到晚。 */
-export function experiencesOf(empId: string): Experience[] {
+export function experiencesOf(empId: string): SampleExperience[] {
 	return EXPERIENCES.filter((x) => x.empId === empId);
 }
 
@@ -404,7 +401,7 @@ export function experiencesOf(empId: string): Experience[] {
  * 没有说法与参与方式；`over` 里写这条命中自己的几项，也可以盖掉抄来的。
  */
 export function hitOn(
-	x: Experience,
+	x: SampleExperience,
 	over: Pick<Hit, "value" | "route"> & Partial<Hit>,
 ): Hit {
 	const seq =
@@ -427,7 +424,7 @@ export function hitOn(
 }
 
 /** 样例里的一段经历，按编号取。 */
-export function experience(id: number): Experience {
+export function experience(id: number): SampleExperience {
 	const x = EXPERIENCES.find((row) => row.id === id);
 	if (!x) throw new Error(`样例里没有经历段 ${id}`);
 	return x;

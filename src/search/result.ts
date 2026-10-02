@@ -1,4 +1,4 @@
-import type { Employee, Route } from "#/db/schema";
+import type { Employee, Experience, Route } from "#/db/schema";
 import {
 	activeConditions,
 	type Condition,
@@ -27,7 +27,7 @@ export type Gate = PersonCondition | ExperienceCondition;
  * 画成证据行；`gates` 在取数 SQL 里按人过滤；`prefer` 满足一条乘一份固定的加分；
  * `excludes` 只否决经历段。
  */
-export type Query = {
+type Query = {
 	claims: Claim[];
 	gates: Gate[];
 	prefer: Gate[];
@@ -69,6 +69,44 @@ export type ResultEmployee = Pick<
 	Employee,
 	"empId" | "name" | "curDept" | "curTitle" | "curLevel"
 >;
+
+/** 单人详情的显示契约；不包含内容键、派生版本或筛选档高。 */
+export type EmployeeDetail = {
+	employee: Pick<
+		Employee,
+		| "empId"
+		| "name"
+		| "curDept"
+		| "curTitle"
+		| "curSeqL1"
+		| "curSeqL2"
+		| "curSeqL3"
+		| "curLevel"
+		| "hireDate"
+		| "educationLevel"
+		| "school"
+		| "recruitment"
+	>;
+	timeline: Pick<
+		Experience,
+		| "id"
+		| "kind"
+		| "startDate"
+		| "endDate"
+		| "org"
+		| "orgPath"
+		| "orgMeta"
+		| "title"
+		| "seqL1"
+		| "seqL2"
+		| "seqL3"
+		| "seqInferredL1"
+		| "seqInferredL2"
+		| "level"
+		| "description"
+		| "months"
+	>[];
+};
 
 type PopulationResult = {
 	employee: ResultEmployee;
@@ -120,3 +158,6 @@ export function emptyFacets(): Facets {
 	for (const key of DIM_KEYS) facets[key] = [];
 	return facets;
 }
+
+/** 关键词输入框的候选，经历词不显示人数。 */
+export type Suggestion = { value: string; people: number | null };

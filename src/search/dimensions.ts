@@ -1,44 +1,14 @@
 /**
- * 筛选维度的**唯一声明**：一维一段，写在一起。
- *
- * 一个维度会出现在十几处：查询条件里的一个字段、URL 里的一个字段、清洗、SQL
- * 里的一个条件、内存里的一个条件、候选值、排序规则、筛选面板里的一行、中文名。
- * 这些各写一份的话，加一维要手工重演十几步，漏一步不会报错，只会算错。
- *
- * 所以这里声明的是**维度本身**，其余各处从它派生：
- *
- * - `values` 一处声明，提供三样东西——分面有哪些候选、每个候选几个人、以及
- *   「这个人过不过这一维的筛选」。三者一旦对不上，症状是分面预告的数点下去
- *   得不到（`tests/search.test.ts` 对此有断言）。
- * - `parse` 提供唯一那处清洗：URL / RPC 的筛选（`params.ts` 的 `parsePopulation`）
- *   和查询条件里的取值（`condition.ts`）都走它。
- * - `label` / `option` / `text` 提供筛选栏标题、选项文案与条件 chip 的标签。
- * - SQL 那一份在 `search.ts`：谓词由这里的 `match` 家族和那里的一条列表达式
- *   一起推出来，不是第二份手写实现。它没法放在这里——这个文件要进客户端。
- *
- * **为什么谓词必须求值两次。** 查询条件里的取值可以直接下推给数据库过滤经历段；筛选栏
- * 里勾的不行，因为筛选栏还要回答「再勾一项会剩几人」，那个数只有把没筛之前的
- * 完整事实拿在内存里才算得出来。所以是「一份声明、两个通用求值器」，而不是
- * 「一份谓词」——求值器各写一次，和维度有几个无关。
- *
- * 查询条件里也用到其中几维（`condition.ts`：公司档、经历来源、经历时长在主张上，
- * 职级、学历、招聘渠道是人的条件），它们只借这里的 `parse` 与 `id`，条件本身的形状由 `condition.ts` 定义。
- *
- * 公司名（`org`）与学校名（`school`）不在这里：它们是自由文本的模糊匹配、没有
- * 候选列表，硬塞进同一张表就得给每一项加一个「匹配方式」的分叉，那是用一个
- * 形状盖住两件不同的事。它们是另一类，见 `SearchFilters`。
+ * 筛选维度的唯一声明：取值、身份、解析、匹配方式、排序和文案。
+ * 条件与 URL/RPC 共用 parse；分面与内存筛选共用 values。
+ * SQL 求值器在 search.ts 按 match 家族执行；自由文本公司名、学校名属于 SearchFilters。
  */
 import { duration } from "#/lib/format";
 import { boundedText } from "./text";
 import { MIN_MONTHS_BUCKETS } from "./weights";
 
 /**
- * 选中的一条序列。二级序列名跨一级会重名（技术/数据科学 与 商业分析/数据科学），
- * 所以它是一对值，不是一个名字。
- *
- * 从 URL 到 SQL 谓词全程都是这个形状，中间不拼成字符串再切开：序列名里出现斜杠
- * 并不稀奇，任何拼接式的编码都会在某个名字上切错，而切错的表现是一份说不通的
- * 名单，不是一个报错。（`id` 那条内部身份用的是数据里不可能出现的字符。）
+ * 序列取值是完整的一级、二级组合；二级名称可能跨一级重名。
  */
 type SeqPick = { l1: string; l2: string };
 
@@ -82,12 +52,12 @@ export type Picked = {
 	[K in DimKey]?: K extends MultiKey ? DimUnit[K][] : DimUnit[K];
 };
 
-/** 分面取值要读一段经历上的这几列。事实的形状因此跟着声明走。 */
+/** 分面读取的人员与经历属性；没有有效经历时，单值经历属性为空。 */
 export type DimSource = {
-	months: number;
+	months: number | null;
 	/** 登记的序列，入职前的段是模型对齐的序列（`search.ts` 的 `FACT_COLUMNS`） */
-	seqL1: string;
-	seqL2: string;
+	seqL1: string | null;
+	seqL2: string | null;
 	companyTag: string | null;
 	/**
 	 * 这一段抽出来的能力词，连同每个词往上的每一层更宽的词（`search.ts` 的 `FACT_COLUMNS.skills`）：
@@ -95,7 +65,7 @@ export type DimSource = {
 	 * 词表里的标准写法，别名不成为一项。没有就是空数组
 	 */
 	skills: string[];
-	kind: "internal" | "external";
+	kind: "internal" | "external" | null;
 	/** 当前职级归入的档（`employee.cur_level_band`），不是职级原文 */
 	level: string;
 	levelRank: number | null;
@@ -129,7 +99,7 @@ type Match<K extends DimKey> =
 			/** 有高低的维：这段事实上那个取值的档高 */
 			rank?: (fact: DimSource) => number | null;
 	  }
-	| { match: "atLeast"; measure: (fact: DimSource) => number };
+	| { match: "atLeast"; measure: (fact: DimSource) => number | null };
 
 type Dimension<K extends DimKey> = Match<K> & {
 	/** 维度名。筛选栏的分区标题、条件 chip 上的前缀都读它。 */
@@ -173,13 +143,7 @@ export function textList(input: unknown): string[] | undefined {
 const SEP = "\u0001";
 
 /**
- * 取值即标签的那几维里，这些串**不是取值**：「未知」说的是「这一项没被标过」，
- * 不是一个公司档、一个学历。
- *
- * 它声明在这一处，三个求值器都从它派生——分面候选（`values`）、不可信输入的
- * 清洗（`parse`）、以及给模型的语料词表（`search.ts` 的 `vocabulary`）。
- * 各写一份的话，一个「未知」能被写进 URL、下推成 `in ('未知')` 选中一批行，
- * 而内存里的谓词当场把它们否掉——屏幕上是一个选中了却空着的筛选。
+ * 未知不属于维度取值。分面、输入解析与模型词表共用这一排除范围。
  */
 export const NOT_A_VALUE = ["未知"] as const;
 
@@ -265,7 +229,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	kind: {
 		label: "经历来源",
 		match: "set",
-		values: (f) => [f.kind],
+		values: (f) => (f.kind === null ? [] : [f.kind]),
 		id: (v) => v,
 		option: (v) => (v === "internal" ? "公司内经历" : "入职前经历"),
 		parse: (raw) =>
@@ -295,10 +259,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	skill: {
 		label: "入职前技能",
 		match: "set",
-		// 唯一一段有多个取值的维。能力词只从入职前经历的简历描述里抽（src/corpus/extract.ts），
-		// 而只有三分之一的人有描述：勾任何一项都把没写简历的人整个筛掉。这一维能回答
-		// 「谁写过」，回答不了「谁不会」——搜索框里敲能力词没有这个问题，没简历的人
-		// 靠岗位名排后面，不消失。
+		// 技能来自入职前自述，只说明写过；没有技能边的段不满足此筛选。
 		values: (f) => f.skills,
 		id: (v) => v,
 		option: (v) => v,
@@ -319,7 +280,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
  * 有高低的维：职级档和学历。取值是档名，档高来自语料（`employee` 上的档高列），
  * 条件可以说「某档及以上」（`condition.ts` 的 `atLeast`）。
  */
-export const ORDINAL_KEYS = [
+const ORDINAL_KEYS = [
 	"level",
 	"education",
 ] as const satisfies readonly DimKey[];
@@ -364,11 +325,13 @@ export function dimValues<K extends DimKey>(
 	fact: DimSource,
 ): DimUnit[K][] {
 	const dim = DIMENSIONS[key];
-	return dim.match === "set"
-		? dim.values(fact)
-		: (MIN_MONTHS_BUCKETS.filter(
-				(bucket) => dim.measure(fact) >= bucket,
-			) as DimUnit[K][]);
+	if (dim.match === "set") return dim.values(fact);
+	const measured = dim.measure(fact);
+	return (
+		measured === null
+			? []
+			: MIN_MONTHS_BUCKETS.filter((bucket) => measured >= bucket)
+	) as DimUnit[K][];
 }
 
 /** 这段事实上这一维取值的档高。没有高低的维、或这一项没有档，都是 `undefined`。 */
@@ -386,7 +349,10 @@ export function dimMatches<K extends DimKey>(
 ): boolean {
 	if (picked === undefined) return true;
 	const dim = DIMENSIONS[key];
-	if (dim.match === "atLeast") return dim.measure(fact) >= (picked as number);
+	if (dim.match === "atLeast") {
+		const measured = dim.measure(fact);
+		return measured !== null && measured >= (picked as number);
+	}
 	const ids = new Set(dimPicked<K>(picked).map((v) => dim.id(v)));
 	return dim.values(fact).some((v) => ids.has(dim.id(v)));
 }

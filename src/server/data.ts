@@ -7,11 +7,18 @@
  */
 
 import "@tanstack/react-start/server-only";
+import { asc, eq } from "drizzle-orm";
 import { currentTree, identity } from "#/corpus/derive";
-import type { Employee, Experience } from "#/db/schema";
-import { withReadSnapshot } from "#/db/snapshot";
+import {
+	type Employee,
+	type Experience,
+	employee,
+	experience,
+} from "#/db/schema";
+import { withCorpusSnapshot, withReadSnapshot } from "#/db/snapshot";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
+import type { EmployeeDetail } from "#/search/result";
 
 /** 数据页那张表的一行。 */
 export type EmployeeRow = Pick<
@@ -80,8 +87,10 @@ export type SegmentView = Pick<
 	did: { involvement: string | null; domain: string }[];
 };
 
+export type EmployeeProfile = EmployeeDetail["employee"];
+
 type EmployeeData = {
-	employee: Employee;
+	employee: EmployeeProfile;
 	segments: SegmentView[];
 };
 
@@ -90,7 +99,7 @@ export async function employeeData(
 ): Promise<EmployeeData | null> {
 	return withReadSnapshot(async (client) => {
 		const version = identity(await currentTree(client));
-		const found = await client.query<Employee>(
+		const found = await client.query<EmployeeProfile>(
 			`select emp_id as "empId", name, cur_dept as "curDept", cur_title as "curTitle",
 			cur_seq_l1 as "curSeqL1", cur_seq_l2 as "curSeqL2", cur_seq_l3 as "curSeqL3",
 			cur_level as "curLevel", hire_date::text as "hireDate",
@@ -131,5 +140,52 @@ export async function employeeData(
 				did: row.did ?? [],
 			})),
 		};
+	});
+}
+
+/** 单人详情只读取展示所需的字段，存储身份与派生状态留在服务端。 */
+export function employeeDetail(empId: string): Promise<EmployeeDetail | null> {
+	return withCorpusSnapshot(async (store) => {
+		const [emp] = await store
+			.select({
+				empId: employee.empId,
+				name: employee.name,
+				curDept: employee.curDept,
+				curTitle: employee.curTitle,
+				curSeqL1: employee.curSeqL1,
+				curSeqL2: employee.curSeqL2,
+				curSeqL3: employee.curSeqL3,
+				curLevel: employee.curLevel,
+				hireDate: employee.hireDate,
+				educationLevel: employee.educationLevel,
+				school: employee.school,
+				recruitment: employee.recruitment,
+			})
+			.from(employee)
+			.where(eq(employee.empId, empId));
+		if (!emp) return null;
+		const timeline = await store
+			.select({
+				id: experience.id,
+				kind: experience.kind,
+				startDate: experience.startDate,
+				endDate: experience.endDate,
+				org: experience.org,
+				orgPath: experience.orgPath,
+				orgMeta: experience.orgMeta,
+				title: experience.title,
+				level: experience.level,
+				description: experience.description,
+				seqL1: experience.seqL1,
+				seqL2: experience.seqL2,
+				seqL3: experience.seqL3,
+				seqInferredL1: experience.seqInferredL1,
+				seqInferredL2: experience.seqInferredL2,
+				months: experience.months,
+			})
+			.from(experience)
+			.where(eq(experience.empId, empId))
+			.orderBy(asc(experience.startDate), asc(experience.id));
+		return { employee: emp, timeline };
 	});
 }

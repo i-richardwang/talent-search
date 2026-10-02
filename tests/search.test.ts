@@ -1,20 +1,6 @@
 /**
- * 检索语义的集成测试。跑在临时 schema 上的真 SQL、真 pgvector。
- *
- * 打分本身不在这里——它是纯函数，在 `tests/rank.test.ts` 里测，不必起数据库。
- * 这里管的是参与打分的事实：哪一类过了阈值、相关度、月数和结束日期
- * 有没有原样传到打分那一层。列名或日期序列化错误只有走真 SQL 才看得见，
- * 而纯函数测试对它完全无感。
- *
- * 另外三件事各有自己的文件，因为它们要的语料和这里不是一份：语料锁
- * （`search-snapshot.test.ts`，其中一条真的把整库换掉了）、写入约束
- * （`search-constraints.test.ts`）、分面计数（`facets.test.ts`，那条穷举
- * 不变量需要一份说得清的语料）。
- *
- * 嵌入是假的（见 fixture.ts 的 `fakeEmbedding`）：相关度 = 共有字数 / √(字数×字数)，
- * 所以每条断言旁边都算得出那个数。「算法」对「算法工程师」是 2/√(2×5) ≈ 0.63，
- * 过 `RELEVANCE_MIN`；对「算法平台运维工程师」是 2/√(2×9) ≈ 0.47，不过。
- * 种子里的文本都按这个指标挑过，它们测的是机制，不是语义。
+ * 检索语义的集成测试：真实 SQL 与 pgvector，合成端点和经历。
+ * 验证召回、事实、约束、否决与排序输入的传递；纯打分规则由 rank.test.ts 验证。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
@@ -233,21 +219,14 @@ describe("语义命中", () => {
 		const doc = "渠道运营：销售团队的人员招聘与上岗培训";
 		assert.ok(fakeSimilarity("线下渠道运营", doc) < RELEVANCE_MIN);
 		await db.execute(sql`
-			insert into phrase_gloss (text, gloss, written_at, judge, guide_identity)
-			values ('渠道运营', '销售团队的人员招聘与上岗培训', now(), 'agent:test',
+			insert into phrase_gloss (text, gloss, guide_identity)
+			values ('渠道运营', '销售团队的人员招聘与上岗培训',
 			        ${glossIdentity()})`);
-		// 释义一变分数缓存跟着清，生效时是同一笔事务（corpus/gloss.ts）；这里手动模拟
-		await db.execute(sql`
-			delete from phrase_relevance r using phrase p
-			where p.id = r.phrase_id and p.text = '渠道运营'`);
 		try {
 			const { results } = await run("线下渠道运营");
 			assert.ok(!results.some((r) => r.employee.empId === "T006"));
 		} finally {
 			await db.execute(sql`delete from phrase_gloss where text = '渠道运营'`);
-			await db.execute(sql`
-				delete from phrase_relevance r using phrase p
-				where p.id = r.phrase_id and p.text = '渠道运营'`);
 		}
 	});
 
@@ -270,7 +249,11 @@ describe("语义命中", () => {
 		assert.ok(Math.abs((t2?.basis[0]?.relevance ?? 0) - expected) < 0.01);
 		assert.ok(Math.abs((t2?.hits[0]?.relevance ?? 0) - expected) < 0.01);
 		const t1 = results.find((r) => r.employee.empId === "T001");
-		assert.equal(t1?.basis[0]?.relevance, 1, "原文和条件一字不差就是 1");
+		assert.equal(
+			t1?.basis[0]?.relevance,
+			fakeSimilarity("算法", "算法"),
+			"与条件相同的原文也保留端点原始精度",
+		);
 	});
 });
 
@@ -861,7 +844,7 @@ describe("召回按名次截断", () => {
 		assert.notEqual(outcome.empty?.kind, "overflowEvidence");
 		// 重排分逐对缓存，缓存里这个词的行数就是进过重排的条数
 		const judged = await db.execute<{ n: number }>(sql`
-			select count(*)::int as n from phrase_relevance where query = ${word}`);
+			select count(*)::int as n from rerank_cache where query = ${word}`);
 		assert.equal(judged.rows[0]?.n, RECALL_TOP);
 	});
 
@@ -1285,5 +1268,45 @@ describe("一条条件的几个取值", () => {
 		const ids = results.map((r) => r.employee.empId);
 		assert.ok(!ids.includes("V002"));
 		assert.ok(ids.includes("V001"));
+	});
+});
+
+describe("待业只属于时间线", () => {
+	test("待业不召回、不满足背景年限，也不提供公司名；岗位文字不是判据", async () => {
+		await seed([
+			{
+				empId: "IDLE001",
+				name: "合成空档",
+				segments: [
+					{
+						kind: "external",
+						unemployed: true,
+						title: "空档判据验证",
+						org: "只在待业里的合成公司",
+						companyTag: "大厂",
+						months: 36,
+					},
+				],
+			},
+			{
+				empId: "IDLE002",
+				name: "合成工作",
+				segments: [{ kind: "external", title: "空档判据验证", months: 12 }],
+			},
+		]);
+		const result = await run("空档判据验证");
+		assert.ok(result.results.some((r) => r.employee.empId === "IDLE002"));
+		assert.ok(!result.results.some((r) => r.employee.empId === "IDLE001"));
+		const gate = await search({
+			conditions: parseQuery(
+				"org:只在待业里的合成公司 kind:external minMonths:36",
+			),
+		});
+		assert.equal(gate.total, 0);
+		const { findNames } = await import("#/search/search");
+		assert.equal(
+			(await findNames("org", ["只在待业里的合成公司"]))[0]?.people,
+			0,
+		);
 	});
 });

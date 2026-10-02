@@ -30,6 +30,24 @@ before(async () => {
 });
 
 describe("检索数据约束", () => {
+	test("待业标记属于内容身份，其他原始字段相同也区分两段", async () => {
+		const { rows } = await db.execute<{ content_key: string }>(sql`
+			insert into experience (emp_id, kind, unemployed, start_date, title, months)
+			values ('C001', 'external', false, '2019-01-01', '相同原始字段', 12),
+				('C001', 'external', true, '2019-01-01', '相同原始字段', 12)
+			returning content_key`);
+		assert.equal(new Set(rows.map((row) => row.content_key)).size, 2);
+	});
+
+	test("待业只能属于入职前经历", async () => {
+		await assert.rejects(
+			db.execute(sql`
+			insert into experience (emp_id, kind, unemployed, start_date, months)
+			values ('C001', 'internal', true, '2018-01-01', 12)`),
+			violates("experience_unemployed_external"),
+		);
+	});
+
 	const insert = (
 		kind: string,
 		start: string,
@@ -90,9 +108,9 @@ describe("检索数据约束", () => {
 	test("重排相关度只能在零到一之间", async () => {
 		await assert.rejects(
 			db.execute(sql`
-				insert into phrase_relevance (space, query, phrase_id, relevance)
-				select 'fake-v1', '非法分数', min(id), 1.1 from phrase`),
-			violates("phrase_relevance_range"),
+				insert into rerank_cache (space, query, document_sha, relevance)
+				values ('fake-v1', '非法分数', 'synthetic', 1.1)`),
+			violates("rerank_cache_range"),
 		);
 	});
 });

@@ -1,26 +1,12 @@
 /**
- * 入职前经历 → 公司序列。
- *
- * 序列是受控字段：公司内任职段自带 HR 登记的序列三级，入职前的段只有岗位名、
- * 公司名和（三成的人有的）简历描述。序列筛选如果只认登记，「找做过算法的人」
- * 就看不见入职前在别处做算法的那几年。这里让模型把每个入职前的段对到公司序列树
- * 上的一对一级二级，写进 `seq_inferred_l1 / seq_inferred_l2` 两列，序列筛选读
- * 「登记的，没有就读对齐的」（`src/search/search.ts` 的 `FACT_COLUMNS`）。
- *
- * **对齐的结果只进筛选，不做证据。** 登记的序列进 `seq` 那一类、按受控强度打分；
- * 对齐的不进任何一路——它是推断，混进打分会和 HR 登记的可信度分不开。
- * `seq_l1..3` 三列因此永远只有登记值，对齐值另存两列（论证见 `src/db/schema.ts`）。
- *
- * **封闭集合，宁可漏不可错。** 序列树从当前语料的公司内任职段取（不另维护一份）；
- * 模型只能选树上存在的一对，要么两级都给，要么两级都空。二级拿不准的段就是空——
- * 用户按二级筛时它不出现，比对错了出现在名单上好；简历里的脏数据、公司没有的
- * 业务（「无法对齐」）也是空，这是合法结果，不是失败。
+ * 入职前经历对齐到登记序列树上完整的一对，存入推断列，仅用于筛选。
+ * 两级均空是合法的无法对齐；无效回答返回 null，派生下一轮重试。
  */
 
 import { z } from "zod";
 import { complete, extractModel, identityOf } from "#/server/chat";
 import { promptInput } from "./extract";
-import { type ExperienceRow, UNEMPLOYED } from "./pipeline";
+import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
 
 const SCHEMA = z.object({ l1: z.string(), l2: z.string() });
@@ -64,12 +50,7 @@ function name(value: unknown): string {
 	return typeof value === "string" ? value.normalize("NFKC").trim() : "";
 }
 
-/**
- * 校验模型的原话，只接受树上存在的一对；不在树上就是两个空串。
- *
- * 每次都把树展开成一张查找表：树只有几百对，而这一步的代价和一次端点往返比不值一提。
- * 好处是**键的拼法只在这个模块里**——调用方手里只有一棵树，没有一串它得拼对的键。
- */
+/** 只接受序列树上存在的完整一对，其余取值置空。 */
 export function conform(raw: unknown, tree: SeqPair[]): SeqPair {
 	if (typeof raw !== "object" || raw === null) return ["", ""];
 	const row = raw as Record<string, unknown>;
@@ -94,13 +75,11 @@ export async function align<Row extends ExperienceRow>(
 	experience: Row[],
 	tree: SeqPair[],
 	report: Report,
-): Promise<Row[]> {
+): Promise<(Row | null)[]> {
 	if (tree.length === 0) return experience;
 
 	const asked = experience.map((row) =>
-		row.kind === "external" && row.title !== UNEMPLOYED
-			? promptInput(row)
-			: null,
+		row.kind === "external" && !row.unemployed ? promptInput(row) : null,
 	);
 	const texts = asked.filter((text): text is string => text !== null);
 	const payloads = await complete(
@@ -116,6 +95,7 @@ export async function align<Row extends ExperienceRow>(
 	const out = experience.map((row, index) => {
 		const text = asked[index];
 		if (text === null || text === undefined) return row;
+		if (!payloads.has(text)) return null;
 		const [l1, l2] = conform(payloads.get(text), tree);
 		if (!l1) return row;
 		aligned++;

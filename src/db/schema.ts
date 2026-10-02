@@ -1,8 +1,10 @@
 import { sql } from "drizzle-orm";
 import {
 	type AnyPgColumn,
+	boolean,
 	check,
 	date,
+	doublePrecision,
 	foreignKey,
 	halfvec,
 	index,
@@ -10,11 +12,11 @@ import {
 	jsonb,
 	pgTable,
 	primaryKey,
-	real,
 	serial,
 	text,
 	timestamp,
 } from "drizzle-orm/pg-core";
+import { TASK_KINDS } from "#/lib/task";
 import type { TurnNotes } from "#/search/intent";
 import type { SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
@@ -63,21 +65,17 @@ export const employee = pgTable(
 	],
 );
 
-/** 原始字段由同步写，推断序列与派生版本由派生任务写。`key` 是原始内容的数据库生成摘要。 */
+/** 原始字段由同步写，推断序列与派生版本由派生任务写。`content_key` 是原始内容的数据库生成摘要。 */
 export const experience = pgTable(
 	"experience",
 	{
 		id: serial("id").primaryKey(),
-		key: text("key")
-			.notNull()
-			.unique()
-			.generatedAlwaysAs(
-				sql`md5(emp_id || E'\\x1f' || kind || E'\\x1f' || (start_date - date '1970-01-01')::text || E'\\x1f' || coalesce((end_date - date '1970-01-01')::text, '') || E'\\x1f' || org || E'\\x1f' || org_path || E'\\x1f' || coalesce(org_meta::text, '') || E'\\x1f' || title || E'\\x1f' || seq_l1 || E'\\x1f' || seq_l2 || E'\\x1f' || seq_l3 || E'\\x1f' || level || E'\\x1f' || description)`,
-			),
 		empId: text("emp_id")
 			.notNull()
 			.references(() => employee.empId, { onDelete: "cascade" }),
 		kind: text("kind", { enum: ["internal", "external"] }).notNull(),
+		/** 待业只保留在时间线上，不进入检索、累计工作年限或模型派生。 */
+		unemployed: boolean("unemployed").notNull().default(false),
 		startDate: date("start_date").notNull(),
 		endDate: date("end_date"),
 		/** 内部：末级部门；外部：公司名 */
@@ -102,12 +100,21 @@ export const experience = pgTable(
 		level: text("level").notNull().default(""),
 		description: text("description").notNull().default(""),
 		months: integer("months").notNull(),
+		contentKey: text("content_key")
+			.notNull()
+			.unique()
+			.generatedAlwaysAs(
+				sql`md5(emp_id || E'\\x1f' || kind || E'\\x1f' || unemployed::text || E'\\x1f' || (start_date - date '1970-01-01')::text || E'\\x1f' || coalesce((end_date - date '1970-01-01')::text, '') || E'\\x1f' || org || E'\\x1f' || org_path || E'\\x1f' || coalesce(org_meta::text, '') || E'\\x1f' || title || E'\\x1f' || seq_l1 || E'\\x1f' || seq_l2 || E'\\x1f' || seq_l3 || E'\\x1f' || level || E'\\x1f' || description)`,
+			),
 		derivedIdentity: text("derived_identity"),
-		derivedAt: timestamp("derived_at", { withTimezone: true }),
 	},
 	(t) => [
 		index("experience_derived").on(t.derivedIdentity),
 		check("experience_kind_valid", sql`${t.kind} in ('internal', 'external')`),
+		check(
+			"experience_unemployed_external",
+			sql`not ${t.unemployed} or ${t.kind} = 'external'`,
+		),
 		check("experience_months_positive", sql`${t.months} > 0`),
 		check(
 			"experience_dates_ordered",
@@ -157,9 +164,6 @@ export const completionCache = pgTable(
 	(t) => [primaryKey({ columns: [t.identity, t.textSha] })],
 );
 
-export const TASK_KINDS = ["sync", "derive", "review"] as const;
-export type TaskKind = (typeof TASK_KINDS)[number];
-
 /** 一次语料任务的持久记录；实时运行状态由会话锁判断。 */
 export const taskRun = pgTable("task_run", {
 	id: serial("id").primaryKey(),
@@ -183,8 +187,6 @@ export const skillTerm = pgTable(
 		canonical: text("canonical").notNull(),
 		parent: text("parent").references((): AnyPgColumn => skillTerm.word),
 		reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
-		/** `model:<模型名>` 或 `agent:<外部判定方>`。 */
-		judge: text("judge").notNull(),
 	},
 	(t) => [
 		check(
@@ -194,7 +196,7 @@ export const skillTerm = pgTable(
 	],
 );
 
-export const GROUP_KINDS = ["group", "gloss"] as const;
+const GROUP_KINDS = ["group", "gloss"] as const;
 export type GroupKind = (typeof GROUP_KINDS)[number];
 
 /** 待判队列。归并组写 skill_term，释义组写 phrase_gloss；生效或过期后删除。 */
@@ -222,12 +224,10 @@ export const reviewGroup = pgTable(
 	],
 );
 
-/** 短说法的释义。按文本跨语料保留，更新时清理对应的重排缓存。 */
+/** 短说法的释义；文本与释义共同组成重排缓存的输入身份。 */
 export const phraseGloss = pgTable("phrase_gloss", {
 	text: text("text").primaryKey(),
 	gloss: text("gloss").notNull(),
-	writtenAt: timestamp("written_at", { withTimezone: true }).notNull(),
-	judge: text("judge").notNull(),
 	/** 释义标准的摘要；标准变化后旧释义重新收集。 */
 	guideIdentity: text("guide_identity").notNull(),
 });
@@ -239,6 +239,13 @@ export type Route = (typeof ROUTES)[number];
 export const EXTRACTED_ROUTES = [
 	"skill",
 	"did",
+] as const satisfies readonly Route[];
+/** 当前仍有这些边的说法使用释义；收集、计数、版本核验与召回共用此范围。 */
+export const GLOSSED_ROUTES = [
+	"skill",
+	"did",
+	"title",
+	"seq",
 ] as const satisfies readonly Route[];
 
 /** 去重后的说法及其半精度向量。 */
@@ -265,11 +272,7 @@ export const experiencePhrase = pgTable(
 	(t) => [
 		primaryKey({ columns: [t.experienceId, t.route, t.phraseId] }),
 		index("experience_phrase_phrase").on(t.phraseId),
-		/*
-		 * 约束名带着路的数目：drizzle-kit push 不比较 check 的表达式，只认名字，
-		 * 同名改表达式它会报「已应用」而库里还是旧的——发布时被旧约束报错才发现。
-		 * 加一路就改名，push 才会先删旧的再建新的。
-		 */
+		// drizzle-kit push 只比较 check 名称；改变表达式时同步改名。
 		check(
 			"experience_phrase_route_valid_6",
 			sql`${t.route} in ('seq', 'title', 'org', 'description', 'skill', 'did')`,
@@ -277,21 +280,19 @@ export const experiencePhrase = pgTable(
 	],
 );
 
-/** 按重排空间缓存查询词与候选说法的相关度。 */
-export const phraseRelevance = pgTable(
-	"phrase_relevance",
+/** 按模型实际输入缓存相关度，与语料行的生命周期无关。 */
+export const rerankCache = pgTable(
+	"rerank_cache",
 	{
 		space: text("space").notNull(),
 		query: text("query").notNull(),
-		phraseId: integer("phrase_id")
-			.notNull()
-			.references(() => phrase.id, { onDelete: "cascade" }),
-		relevance: real("relevance").notNull(),
+		documentSha: text("document_sha").notNull(),
+		relevance: doublePrecision("relevance").notNull(),
 	},
 	(t) => [
-		primaryKey({ columns: [t.space, t.query, t.phraseId] }),
+		primaryKey({ columns: [t.space, t.query, t.documentSha] }),
 		check(
-			"phrase_relevance_range",
+			"rerank_cache_range",
 			sql`${t.relevance} >= 0 and ${t.relevance} <= 1`,
 		),
 	],
@@ -340,7 +341,7 @@ export const searchTurn = pgTable(
 			"search_turn_notes",
 			sql`${t.notes} is null or ${t.spec} is not null`,
 		),
-		index("search_turn_recent").on(t.rootTurnId, t.createdAt),
+		index("search_turn_root").on(t.rootTurnId),
 	],
 );
 

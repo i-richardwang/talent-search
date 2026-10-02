@@ -70,8 +70,7 @@ function usePanel(controller: PanelController) {
 	return { state, target };
 }
 
-export interface DraggablePanelProps
-	extends Omit<ComponentProps<"aside">, "onDrag"> {
+interface DraggablePanelProps extends Omit<ComponentProps<"aside">, "onDrag"> {
 	/** 根元素。默认 `aside`；里面另有地标（如导航栏的 `nav`）时用 `div`。 */
 	as?: "aside" | "div";
 	/** 按行内方向解释，从右往左排版时对调。 */

@@ -2,6 +2,7 @@ import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
 import type { PoolClient } from "pg";
 import { db, pool } from ".";
+import { GLOSSED_ROUTES } from "./schema";
 
 /** 应用查询与事务共享的最小数据库能力。 */
 export type DbExecutor = Pick<typeof db, "execute" | "select">;
@@ -34,21 +35,9 @@ export async function withReadSnapshot<T>(
 }
 
 /**
- * 在同一个语料快照上完成一组读取，并告诉回调这个快照对应哪个嵌入空间。
- *
- * 语料是增量长的：派生任务几百段一批地提交（`src/corpus/derive.ts`），同步一笔
- * 事务增删人和段（`src/corpus/sync.ts`）。一次检索要跨好几条语句取数，读提交
- * 隔离下两条语句之间一批派生刚好提交，同一份结果里就会一半是新边一半是旧边。
- * 所以这组读取跑在 **repeatable read** 里：事务开头拍一张快照，之后每条语句
- * 看到的都是它——Postgres 里这只是多一个快照，写者不用等读者，读者也不用等写者。
- *
- * **模型调用不能发生在这组读取里。** 嵌入和重排是秒级的，快照拿着不放没有锁的
- * 代价，但有连接的代价：一个慢端点占着一条池里的连接，并发一高池子就空了。
- * 所以相关度过滤（召回 + 重排，`withMatchedPhrases`）在快照外算好，进快照只取数。
- *
- * `generation` 是嵌入空间那一行的行版本号，给调用方核对「相关度过滤是在哪个空间
- * 算的」：换嵌入空间时派生任务重写这一行（并清掉整张说法表），行版本变了就是
- * 换了空间，之前召回到的说法 id 已经不在了。
+ * 在可重复读快照中核验语料标准与空间身份，再读取事实。
+ * 已派生段和当前短说法的释义各自只能有一份标准；空版本表示未派生。
+ * 模型调用在快照外完成，调用方以空间行版本核对嵌入与召回依据。
  */
 export function withCorpusSnapshot<T>(
 	read: (store: DbExecutor, generation: string) => Promise<T>,
@@ -59,8 +48,23 @@ export function withCorpusSnapshot<T>(
 				sql`select space_id || ':' || xmin::text as generation from embedding_space`,
 			);
 			const [row] = rows.rows;
-			if (!row)
+			if (!row || rows.rows.length !== 1)
 				throw new Error("语料还没有派生过：先跑 bun run sync，派生会接上");
+			const standards = await store.execute<{
+				derived: boolean;
+				glossed: boolean;
+			}>(sql`
+				select
+					(select count(distinct derived_identity) > 1 from experience) as derived,
+					(select count(distinct g.guide_identity) > 1
+					 from phrase_gloss g join phrase p on p.text = g.text
+					 where exists (select 1 from experience_phrase ep
+					   where ep.phrase_id = p.id and ep.route in (${sql.join(
+								GLOSSED_ROUTES.map((route) => sql`${route}`),
+								sql`, `,
+							)}))) as glossed`);
+			if (standards.rows[0]?.derived || standards.rows[0]?.glossed)
+				throw new Error("人才库正在更新判定标准，请等待派生与整理完成后重试");
 			return read(store, row.generation);
 		},
 		{ isolationLevel: "repeatable read" },

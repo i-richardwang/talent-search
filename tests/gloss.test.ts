@@ -1,9 +1,10 @@
 /**
  * 释义组。校验规则是纯函数；收集、生效走真库——收集哪些说法、跳过哪些、
- * 写表时清不清分数缓存，都是 SQL 里的事。判定方由测试装回答。
+ * 释义与队列的原子落库，以及重排缓存的独立性。判定方由测试装回答。
  */
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { after, before, describe, test } from "node:test";
 
 import { answerChat, seed, setup } from "./fixture";
@@ -237,18 +238,21 @@ describe("收集与生效", () => {
 		}
 	});
 
-	test("生效：释义落表、这些说法的分数缓存清掉、没判的下一轮重收", async () => {
+	test("生效：释义落表、保留原输入缓存、没判的下一轮重收", async () => {
 		const connection = await client();
+		const cacheKeys = ["服务端开发", "客户开发", "订单系统"].map((text) =>
+			createHash("sha256").update(text).digest("hex"),
+		);
 		let id = 0;
 		try {
 			const group = (await openGlosses(connection))[0];
 			assert.ok(group);
 			id = group.id;
-			// 先给两条说法各留一个假分数：生效之后它们必须不在了
+			// 模型输入的缓存独立于释义写者；旧输入的分数仍可复用。
 			await connection.query(
-				`insert into phrase_relevance (space, query, phrase_id, relevance)
-				 select 'fake-rerank', '服务端开发', p.id, 0.9 from phrase p
-				 where p.text in ('服务端开发', '客户开发', '订单系统')`,
+				`insert into rerank_cache (space, query, document_sha, relevance)
+				 select 'fake-rerank', '服务端开发', sha, 0.9 from unnest($1::text[]) as sha`,
+				[cacheKeys],
 			);
 			assert.equal(
 				await submitGlosses(connection, id, AGENT, [
@@ -275,13 +279,12 @@ describe("收集与生效", () => {
 		const later = await client();
 		try {
 			const { rows } = await later.query<{ text: string }>(
-				`select p.text from phrase_relevance r join phrase p on p.id = r.phrase_id
-				 order by p.text`,
+				`select document_sha as text from rerank_cache order by document_sha`,
 			);
-			// 写了释义的两条清掉了；没写的「订单系统」的分数还在
+			// 写释义不会改写已经判过的输入；新输入由检索另行判定。
 			assert.deepEqual(
 				rows.map((row) => row.text),
-				["订单系统"],
+				cacheKeys.sort(),
 			);
 			// 同一轮里没判的三个又收成了一组
 			const open = await openGlosses(later);

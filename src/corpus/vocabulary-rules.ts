@@ -15,13 +15,12 @@ const HEAD_MIN = 3;
 
 /**
  * 一个词的决定：它的标准写法（等于自己就是标准词）、标准词属于哪个更宽的词
- * （别名上恒为 null）、上次判它的时间，和判它的那一方。
+ * （别名上恒为 null）和上次判它的时间。
  */
 export type Decision = {
 	canonical: string;
 	parent: string | null;
 	reviewedAt: Date;
-	judge: string;
 };
 export type Table = Map<string, Decision>;
 
@@ -185,7 +184,6 @@ export function merge(
 	members: Member[],
 	verdicts: Map<string, Verdict>,
 	now: Date,
-	judge: string,
 ): [string, Decision][] {
 	const people = new Map(members.map((one) => [one.word, one.people]));
 	const classes = sameClasses(
@@ -204,7 +202,7 @@ export function merge(
 
 	const changed = new Map<string, Decision>();
 	const decide = (word: string, canonical: string, parent: string | null) => {
-		const decision: Decision = { canonical, judge, parent, reviewedAt: now };
+		const decision: Decision = { canonical, parent, reviewedAt: now };
 		table.set(word, decision);
 		changed.set(word, decision);
 	};

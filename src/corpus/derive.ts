@@ -1,36 +1,22 @@
 /**
- * 派生：给还没派生到当前版本的段问模型、嵌入、连边。语料里凡是模型算出来的
- * 东西都从这里来。
- *
- * 一段的派生结果有三样：抽出来的能力词与做过的事（`extract.ts`）、对齐到的公司
- * 序列（`align.ts`）、六路说法的向量与边（`phrase` / `experience_phrase`）。它们
- * 依赖的东西合起来是一个**版本**（`identity`）：抽取和对齐的提示词与模型、嵌入
- * 空间。段上记着它派生到了哪一版，和当前版本不等的段就是这一轮要处理的。改一次
- * 提示词等于所有段待派生；缓存表（`embedding_cache` / `completion_cache`）让
- * 答案没变的那部分几乎不花钱。
- *
- * **一批一批地做，每批一笔短事务。** 一批几百段：模型调用在事务外（论证见
- * `src/db/index.ts`），算完了再开一笔事务把说法、边和段上的版本一起写进去。
- * 进程中途没了，已提交的批留下，没提交的批下次重来；读者随时看到的都是整批
- * 的结果。一轮有时间预算，用完就退出，下一轮接着——它是后台任务，不是一次
- * 要跑到底的脚本。
- *
- * 说法的文本和向量不改，**但没有边指向的行会被删掉**：一条说法只有作为边的终点
- * 才有意义，留着它会让召回出错（论证在 `commitBatch`）。还在语料里的说法
- * id 稳定，重排分数的缓存（`phrase_relevance`）跟着稳定；被删的那些说法，它们
- * 的分数也随之级联清掉——语料里没有的说法，分数不是缓存，是垃圾。整张表作废
- * 只有一个时刻：换嵌入空间，旧向量在新空间里没有意义，边和分数一起没，所有段
- * 待派生。
+ * 为待处理经历段抽取说法、对齐序列、嵌入并连边。
+ * 模型调用在事务外；成功段按批提交说法、边和派生版本，失败段下一轮重试。
+ * 每轮按 id 向后处理，时间预算耗尽后退出；标准混用期间检索拒绝读取。
  */
 
 import "@tanstack/react-start/server-only";
 import { createHash } from "node:crypto";
 import { EMBED_DIM } from "#/db/schema";
 import { chatConfigured } from "#/server/chat";
-import { embedSpace } from "#/server/embed";
+import { assertCanary, embedSpace } from "#/server/embed";
 import { align, alignIdentity, type SeqPair, seqTree } from "./align";
 import { embed, probe } from "./embed";
-import { type Extraction, extract, extractIdentity } from "./extract";
+import {
+	type Extraction,
+	type ExtractionResult,
+	extract,
+	extractIdentity,
+} from "./extract";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
 import { type Phrasing, phrasesOf } from "./route-texts";
@@ -56,7 +42,7 @@ type Link = Phrasing & { experienceId: number };
  * 恰好和某个岗位名是同一串字时只嵌一次，两条边各指向它。做过的事的说法是
  * 领域，参与方式存在边的第四列，其余类那一列是空。
  *
- * `extractions` 按段对齐：null 是这一段没读过（抽取没配、模型没作答），它的
+ * `extractions` 按段对齐：null 是这一段没有抽取（未配置或无需调用），它的
  * 自述证据退回整段原文。
  */
 export function phrasePlan(
@@ -68,6 +54,7 @@ export function phrasePlan(
 		const phrasings = phrasesOf(
 			{
 				kind: row.kind,
+				unemployed: row.unemployed,
 				org: row.org,
 				orgPath: row.org_path,
 				title: row.title,
@@ -83,23 +70,30 @@ export function phrasePlan(
 	return { texts: [...new Set(links.map((link) => link.text))], links };
 }
 
-/**
- * 确认库里的嵌入空间就是配置的这一个；不是就换：清说法、清版本、写入新的空间记录。
- * 返回 canary 向量，写进这条空间记录。
- */
+/** 核验当前空间的端点输出；换空间时清空说法和派生版本。 */
 async function ensureSpace(client: CorpusClient, report: Report) {
 	const space = embedSpace();
-	const canary = await probe(CANARY_TEXT);
-	const { rows } = await client.query<{ space_id: string; model: string }>(
-		"select space_id, model from embedding_space",
+	const { rows } = await client.query<{
+		space_id: string;
+		model: string;
+		dimension: number;
+		canary_text: string;
+		canary_embedding: string;
+	}>(
+		"select space_id, model, dimension, canary_text, canary_embedding from embedding_space",
 	);
+	if (rows.length > 1) throw new Error("语料的嵌入空间元数据不唯一");
 	const current = rows[0];
-	if (
-		current &&
-		current.space_id === space.spaceId &&
-		current.model === space.model
-	)
+	if (current?.space_id === space.spaceId) {
+		if (current.model !== space.model || current.dimension !== EMBED_DIM)
+			throw new Error("嵌入空间身份发生变化，请更换 EMBED_SPACE_ID");
+		assertCanary(
+			JSON.parse(current.canary_embedding),
+			await probe(current.canary_text),
+		);
 		return;
+	}
+	const canary = await probe(CANARY_TEXT);
 
 	await client.query("begin");
 	try {
@@ -156,17 +150,18 @@ export async function pending(client: CorpusClient, version: string) {
 async function nextBatch(
 	client: CorpusClient,
 	version: string,
+	afterId: number,
 ): Promise<StoredRow[]> {
 	const { rows } = await client.query<
 		Omit<StoredRow, "seq_inferred_l1" | "seq_inferred_l2">
 	>(
-		`select id, emp_id, kind, start_date::text, end_date::text, org, org_path,
+		`select id, emp_id, kind, unemployed, start_date::text, end_date::text, org, org_path,
 			org_meta, title, seq_l1, seq_l2, seq_l3, level, description, months
 		 from experience
-		 where derived_identity is distinct from $1
+		 where derived_identity is distinct from $1 and id > $2
 		 order by id
 		 limit ${BATCH}`,
-		[version],
+		[version, afterId],
 	);
 	// 对齐的两列是这一轮要重新算的：上一版对到的不算数，对不上的就是空
 	return rows.map((row) => ({
@@ -176,19 +171,7 @@ async function nextBatch(
 	}));
 }
 
-/**
- * 没有边指向的说法行，删掉。
- *
- * 一条 `phrase` 只有作为边的终点才有意义。留着没有边指向的行不是省事，而是会让召回
- * 出错：召回按余弦从整张说法表取最近的 `RECALL_TOP` 条，一条命中都产生
- * 不了的旧说法照样占名额，挤掉的是真能找到人的说法——换过一次抽取提示词，
- * 整段简历描述那种什么都沾一点的长说法成千上万地留下来，名额一大半是它们的。
- *
- * 每次删的是**全表里**没有边指向的，不是这一次刚断开的那几条：说法失去最后一条边
- * 有两条路——派生重写一段的边，和同步删掉一段（边跟着级联走）。按「谁断开的谁
- * 清理」写就得在两处各维护一份逻辑，而这条反连接查询一句话就说完了「没有边指向
- * 的都删掉」，两处调同一个它。表是几万行量级，一批几百段之间跑一次，代价可以忽略。
- */
+/** 清除全表孤立说法，避免占用召回名额。同步删除段与派生重写边都可能留下孤立说法。 */
 export async function prunePhrases(client: CorpusClient): Promise<void> {
 	await client.query(
 		`delete from phrase p
@@ -251,7 +234,7 @@ async function commitBatch(
 		await client.query(
 			`update experience e
 			 set seq_inferred_l1 = r.l1, seq_inferred_l2 = r.l2,
-				derived_identity = $4, derived_at = now()
+				derived_identity = $4
 			 from unnest($1::int[], $2::text[], $3::text[]) as r(id, l1, l2)
 			 where e.id = r.id`,
 			[
@@ -293,26 +276,43 @@ export async function derive(
 	report(`  待派生 ${total} 段`);
 
 	let done = 0;
-	while (done < total && Date.now() < deadline) {
-		const rows = await nextBatch(client, version);
+	let afterId = 0;
+	while (Date.now() < deadline) {
+		const rows = await nextBatch(client, version, afterId);
 		if (rows.length === 0) break;
+		afterId = rows[rows.length - 1]?.id ?? afterId;
 		report("");
-		report(`第 ${done + 1}–${done + rows.length} 段…`);
+		report(`处理一批 ${rows.length} 段…`);
 
 		// 没配抽取端点，每一段都是「没读过」：自述证据退回整段原文（route-texts.ts）
-		let extractions: (Extraction | null)[] = rows.map(() => null);
-		let aligned = rows;
+		let extractions: ExtractionResult[] = rows.map(() => ({
+			status: "skipped",
+		}));
+		let aligned: (StoredRow | null)[] = rows;
 		if (chatConfigured()) {
 			extractions = await extract(rows, report);
 			aligned = await align(rows, tree, report);
 		}
-		const { texts, links } = phrasePlan(aligned, extractions);
+		const ready: StoredRow[] = [];
+		const readings: (Extraction | null)[] = [];
+		for (const [index, row] of aligned.entries()) {
+			const extraction = extractions[index];
+			if (!row || !extraction || extraction.status === "failed") continue;
+			ready.push(row);
+			readings.push(extraction.status === "done" ? extraction.value : null);
+		}
+		if (ready.length !== rows.length)
+			report(
+				`  ${rows.length - ready.length} 段未能作答，保留待派生，下一轮重试`,
+			);
+		const { texts, links } = phrasePlan(ready, readings);
 		const vectors = await embed(texts, report);
-		await commitBatch(client, version, aligned, texts, vectors, links);
-		done += rows.length;
+		if (ready.length > 0)
+			await commitBatch(client, version, ready, texts, vectors, links);
+		done += ready.length;
 		report(`  已派生 ${done}/${total} 段`);
 	}
-	const left = total - done;
+	const left = await pending(client, version);
 	report("");
 	report(
 		left > 0 ? `这一轮到此为止，还剩 ${left} 段下一轮接着` : "全部派生完毕",

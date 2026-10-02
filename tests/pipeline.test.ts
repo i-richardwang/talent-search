@@ -288,6 +288,24 @@ describe("入职前经历", () => {
 		assert.match(out.said, /日期格式无效 1 段，已拒绝导入/);
 	});
 
+	test("入职日未知时仍拒绝未来的入职前经历", () => {
+		const out = run({
+			people: [{ hire_date: "" }],
+			external: [{ start_date: "2030-01-01", end_date: "2031-01-01" }],
+		});
+		assert.equal(external(out).length, 0);
+		assert.match(out.said, /生效日在未来 1 段/);
+	});
+
+	test("入职前经历的结束日同样不能在未来", () => {
+		const out = run({
+			people: [{ hire_date: "" }],
+			external: [{ start_date: "2020-01-01", end_date: "2031-01-01" }],
+		});
+		assert.equal(external(out).length, 0);
+		assert.match(out.said, /结束日在未来 1 段/);
+	});
+
 	test("待业段显示为待业，且不带描述", () => {
 		const out = run({
 			external: [
@@ -300,6 +318,7 @@ describe("入职前经历", () => {
 			],
 		});
 
+		assert.equal(external(out)[0]?.unemployed, true);
 		assert.equal(external(out)[0]?.title, UNEMPLOYED);
 		assert.equal(external(out)[0]?.description, "");
 	});

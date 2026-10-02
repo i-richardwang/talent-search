@@ -1,17 +1,10 @@
-/**
- * 唯一一处调用重排模型的地方（查询侧）。**薄到没有逻辑**：一个查询词、一批
- * 候选文本去，每个候选一个相关度回来。哪些候选、分数怎么用、缓存在哪，都在
- * `#/search/phrases`。
- *
- * 接口是 Cohere 式的 `/rerank`（SiliconFlow、Jina、Voyage 都是这一形状）：
- * `{model, query, documents}` → `{results: [{index, relevance_score}]}`。
- * 端点和密钥默认沿用嵌入的那一套——同一家服务商通常两个都提供；分开配也行。
- *
- * 和 `embed.ts` 同一条硬约束：**没配就抛，不降级。** 没有判定这一步，召回
- * 出来的候选里一半是「前端」对「后端」这种反义，装作能用等于给一份错名单。
- */
+/** 重排端点与持久缓存。每个查询词和完整候选文本采用首个成功落库的相关度。 */
 
 import "@tanstack/react-start/server-only";
+import { createHash } from "node:crypto";
+import { and, eq, inArray } from "drizzle-orm";
+import { db } from "#/db";
+import { rerankCache } from "#/db/schema";
 import { positiveInt, timeoutFetch } from "./endpoint";
 
 const BASE_URL = process.env.RERANK_BASE_URL || process.env.EMBED_BASE_URL;
@@ -24,6 +17,7 @@ const RERANK_SPACE_ID = process.env.RERANK_SPACE_ID ?? "";
  * 100 是都能过的数；候选是短文本，分批的开销只是几次往返。
  */
 const BATCH = 100;
+const LOOKUP_BATCH = 500;
 /** 这一层不重试，所以一次请求就是一次尝试；超时的含义和另外三层一致。 */
 const fetchWithTimeout = timeoutFetch(
 	positiveInt(process.env.RERANK_TIMEOUT_MS, 30_000),
@@ -49,13 +43,7 @@ async function withRequestSlot<T>(request: () => Promise<T>): Promise<T> {
 	}
 }
 
-/**
- * 校验端点配置并返回缓存使用的重排空间身份。
- *
- * 唯一的调用点在编排那一侧（`search/phrases.ts` 的 `withMatchedPhrases`）：没配这件事
- * 要在进语料快照之前就抛出来，而且分数是按这个身份缓存的，编排本来就要拿到它。
- * 同一件事在两处各查一遍，只会让人以为「没配」有两种不同的表现。
- */
+/** 检索在进入语料快照前校验重排配置。 */
 export function rerankSpaceId() {
 	if (!BASE_URL || !RERANK_MODEL || !RERANK_SPACE_ID)
 		throw new Error(
@@ -82,18 +70,22 @@ async function rerankBatch(query: string, documents: string[]) {
 		},
 	);
 	if (!response.ok) throw new Error(`重排端点返回 HTTP ${response.status}`);
-	const payload = (await response.json()) as Record<string, unknown>;
-	if (!Array.isArray(payload.results))
+	const payload = await response.json();
+	if (!payload || !Array.isArray(payload.results))
 		throw new Error("重排端点响应缺少 results 数组");
-	const scores = new Array<number>(documents.length);
+	const scores = new Array<number | undefined>(documents.length).fill(
+		undefined,
+	);
 	for (const item of payload.results) {
 		const row = (item ?? {}) as Record<string, unknown>;
-		const index = Number(row.index);
-		const score = Number(row.relevance_score);
+		const index = row.index;
+		const score = row.relevance_score;
 		if (
+			typeof index !== "number" ||
 			!Number.isInteger(index) ||
 			index < 0 ||
 			index >= documents.length ||
+			typeof score !== "number" ||
 			!Number.isFinite(score) ||
 			score < 0 ||
 			score > 1 ||
@@ -106,23 +98,72 @@ async function rerankBatch(query: string, documents: string[]) {
 		throw new Error(
 			`重排端点返回 ${payload.results.length} 个分数，送去的是 ${documents.length} 个候选`,
 		);
-	return scores;
+	return scores as number[];
 }
 
-/** 查询词对每个候选的相关度，[0, 1]，按入参顺序返回。空数组直接返回，不打端点。 */
+function documentSha(text: string): string {
+	return createHash("sha256").update(text).digest("hex");
+}
+
+/** 完整候选文本包括释义；缓存身份不依赖说法行的 id。 */
+async function cached(space: string, query: string, documents: string[]) {
+	const out = new Map<string, number>();
+	const hashes = documents.map(documentSha);
+	for (let start = 0; start < hashes.length; start += LOOKUP_BATCH) {
+		const rows = await db
+			.select()
+			.from(rerankCache)
+			.where(
+				and(
+					eq(rerankCache.space, space),
+					eq(rerankCache.query, query),
+					inArray(
+						rerankCache.documentSha,
+						hashes.slice(start, start + LOOKUP_BATCH),
+					),
+				),
+			);
+		for (const row of rows) out.set(row.documentSha, row.relevance);
+	}
+	return out;
+}
+
+/** 查询词对每个候选的相关度，[0, 1]，按入参顺序返回；并发调用消费相同的已保存值。 */
 export async function rerank(
 	query: string,
 	documents: string[],
 ): Promise<number[]> {
 	if (documents.length === 0) return [];
+	const space = rerankSpaceId();
+	const unique = [...new Set(documents)];
+	const scores = await cached(space, query, unique);
+	const missing = unique.filter((text) => !scores.has(documentSha(text)));
 	const batches: string[][] = [];
-	for (let start = 0; start < documents.length; start += BATCH)
-		batches.push(documents.slice(start, start + BATCH));
-	// 全部批次一起发出，实际并发由进程级信号量控制。这里再搭一套
-	// worker 池的话，实际上限是两个数的关系，而调其中一个不会改变它。
-	const scored = await Promise.all(
-		batches.map((batch) => withRequestSlot(() => rerankBatch(query, batch))),
+	for (let start = 0; start < missing.length; start += BATCH)
+		batches.push(missing.slice(start, start + BATCH));
+	await Promise.all(
+		batches.map((batch) =>
+			withRequestSlot(async () => {
+				const values = await rerankBatch(query, batch);
+				await db
+					.insert(rerankCache)
+					.values(
+						batch.map((text, index) => ({
+							space,
+							query,
+							documentSha: documentSha(text),
+							relevance: values[index] as number,
+						})),
+					)
+					.onConflictDoNothing();
+				for (const [key, value] of await cached(space, query, batch))
+					scores.set(key, value);
+			}),
+		),
 	);
-	// 批次按顺序切、按顺序拼，位置对应关系因此不必再算一遍下标
-	return scored.flat();
+	return documents.map((text) => {
+		const value = scores.get(documentSha(text));
+		if (value === undefined) throw new Error("重排分数未能落库");
+		return value;
+	});
 }

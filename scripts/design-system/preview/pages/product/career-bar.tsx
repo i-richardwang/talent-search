@@ -53,7 +53,7 @@ function reshape(
 		...base,
 		endDate,
 		id,
-		key: `reshape-${id}`,
+		contentKey: `reshape-${id}`,
 		months: Math.max(end - ym(startDate), 1),
 		startDate,
 	};

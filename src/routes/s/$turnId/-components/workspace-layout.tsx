@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { useIsWide } from "../-lib/media";
 
-/** 名单那一栏两侧的内边距。 */
 /**
  * 搜索结果页的排法：左边是名单那一栏，宽屏时右边一栏（`panel`），窄屏时人的详情是
  * 浮层（`detailModal`）。每一块由路由接好数据再放进来；在哪个断点出现、滚动归谁，

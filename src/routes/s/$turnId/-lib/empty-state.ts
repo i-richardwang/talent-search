@@ -64,11 +64,14 @@ const COPY: {
 		hint: "目前只有排除条件，请再添加一项要找的条件。",
 		action: { label: "添加条件", onClick: h.onEditQuery },
 	}),
-	// 只在一整句都搜不了时出现；为什么搜不了，线程里那一轮底下逐条说了
+	// 搜索条件为空时仍保留查询记录，用户可以继续添加需求或回退。
 	noConditions: (_reason, h) => ({
 		title: "没有可用的搜索条件",
-		hint: `目前支持${SEARCHABLE}，请换一种描述。`,
-		action: { label: "修改需求", onClick: h.onEditQuery },
+		hint: `目前支持${SEARCHABLE}，请添加搜索条件。`,
+		action: {
+			label: h.mode === "keyword" ? "填写关键词" : "修改需求",
+			onClick: h.onEditQuery,
+		},
 	}),
 	gatesUnmet: (_reason, h) => ({
 		title: "没有符合条件的人",

@@ -16,6 +16,7 @@ const of = (row: Partial<RouteSource>, extraction: Extraction | null = null) =>
 		phrasesOf(
 			{
 				kind: "internal",
+				unemployed: false,
 				org: "",
 				orgPath: "",
 				title: "",
@@ -60,7 +61,12 @@ describe("登记的三类 route", () => {
 
 	test("入职前经历嵌公司名，有部门路径也不用", () => {
 		assert.equal(
-			of({ kind: "external", org: "云枢智能", orgPath: "云枢智能/算法部" }).org,
+			of({
+				kind: "external",
+				unemployed: false,
+				org: "云枢智能",
+				orgPath: "云枢智能/算法部",
+			}).org,
 			"云枢智能",
 		);
 	});
@@ -73,6 +79,7 @@ describe("登记的三类 route", () => {
 describe("自述每一段只取一种来源", () => {
 	const external: Partial<RouteSource> = {
 		kind: "external",
+		unemployed: false,
 		org: "云枢智能",
 		description: "负责推荐系统召回，配合算法团队完成上线",
 	};
@@ -88,6 +95,7 @@ describe("自述每一段只取一种来源", () => {
 		const phrasings = phrasesOf(
 			{
 				kind: "external",
+				unemployed: false,
 				org: "云枢智能",
 				orgPath: "",
 				title: "",
@@ -113,4 +121,20 @@ describe("自述每一段只取一种来源", () => {
 			org: "云枢智能",
 		});
 	});
+});
+
+test("待业属性阻止登记和抽取说法进入语料，不依赖岗位文字", () => {
+	assert.deepEqual(
+		of(
+			{
+				kind: "external",
+				unemployed: true,
+				title: "算法",
+				org: "某公司",
+				description: "算法开发",
+			},
+			{ skills: ["算法"], did: [] },
+		),
+		{},
+	);
 });

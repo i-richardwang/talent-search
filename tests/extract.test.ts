@@ -23,6 +23,7 @@ function segment(row: Partial<ExperienceRow>): ExperienceRow {
 	return {
 		emp_id: "E1",
 		kind: "external",
+		unemployed: false,
 		start_date: "2019-01-01",
 		end_date: "2020-01-01",
 		org: "云枢智能",
@@ -149,7 +150,12 @@ describe("抽取哪些段", () => {
 		});
 		const got = await extract(
 			[
-				segment({ kind: "internal", org: "平台技术部", description: "" }),
+				segment({
+					kind: "internal",
+					unemployed: false,
+					org: "平台技术部",
+					description: "",
+				}),
 				segment({ description: "" }),
 				segment({ description: "负责推荐系统召回" }),
 			],
@@ -160,11 +166,17 @@ describe("抽取哪些段", () => {
 		assert.deepEqual(asked, [
 			"岗位：算法工程师\n公司：云枢智能\n描述：负责推荐系统召回",
 		]);
-		// 没问的段是「没读过」，和模型没作答一样是 null，不是一份空抽取
-		assert.deepEqual(got.slice(0, 2), [null, null]);
+		// 无需抽取的段与失败段有不同状态。
+		assert.deepEqual(got.slice(0, 2), [
+			{ status: "skipped" },
+			{ status: "skipped" },
+		]);
 		assert.deepEqual(got[2], {
-			skills: ["召回"],
-			did: [{ involvement: "负责建设", domain: "推荐系统" }],
+			status: "done",
+			value: {
+				skills: ["召回"],
+				did: [{ involvement: "负责建设", domain: "推荐系统" }],
+			},
 		});
 	});
 
@@ -181,7 +193,10 @@ describe("抽取哪些段", () => {
 		restore();
 
 		assert.equal(asked, 1);
-		assert.deepEqual(second[0]?.skills, ["风控"]);
+		assert.deepEqual(second[0], {
+			status: "done",
+			value: { skills: ["风控"], did: [] },
+		});
 	});
 });
 
@@ -189,13 +204,15 @@ test("模型失败与成功的空抽取保持可区分，失败不缓存", async
 	const rows = [segment({ description: "抽取状态合成样例" })];
 	const bad = answerChat(() => ({ skills: "invalid", did: [] }));
 	try {
-		assert.deepEqual(await extract(rows, quiet), [null]);
+		assert.deepEqual(await extract(rows, quiet), [{ status: "failed" }]);
 	} finally {
 		bad();
 	}
 	const empty = answerChat(() => ({ skills: [], did: [] }));
 	try {
-		assert.deepEqual(await extract(rows, quiet), [EMPTY]);
+		assert.deepEqual(await extract(rows, quiet), [
+			{ status: "done", value: EMPTY },
+		]);
 	} finally {
 		empty();
 	}

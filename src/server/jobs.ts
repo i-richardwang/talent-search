@@ -1,21 +1,12 @@
 /**
- * 后台任务的调度：派生与整理定时跑在应用进程里，由 pg-boss 排班。
- *
- * 用 pg-boss 而不是自己 `setInterval`：它把「几点跑」「同时只跑一个」「进程重启
- * 之后接着跑」记在同一个 Postgres 里（自己的 `pgboss` schema），不引入第二个服务；
- * 任务台上「排着还是在跑」的答案也就有了出处，不用本进程记。
- *
- * 两个队列都是 `exclusive`：排着或在跑的至多一个。定时器每几分钟发一个派生任务，
- * 上一轮还没跑完时这一次直接丢弃，不堆积；任务台「立即运行」发的也是同一种任务，
- * 同样规则。
- *
- * 任务本身不在这里：处理函数只做「该不该跑」的判断，然后交给 `tasks.ts` 的
- * `runTask`——记录、锁、日志都在那边，命令行的同步走的也是它。
+ * pg-boss 在应用进程中调度派生与整理，队列和时刻存于 pgboss schema。
+ * exclusive 队列各只保留一个待处理或运行任务。处理函数检查任务是否需要运行，
+ * 记录、锁、日志与执行交给 tasks.ts。
  */
 
 import "@tanstack/react-start/server-only";
 import { PgBoss } from "pg-boss";
-import type { TaskKind } from "#/db/schema";
+import type { TaskKind } from "#/lib/task";
 import { reviewJudge } from "./review";
 import { derivePending, runTask } from "./tasks";
 

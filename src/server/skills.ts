@@ -3,6 +3,7 @@ import { type SQL, sql } from "drizzle-orm";
 import { withCorpusSnapshot } from "#/db/snapshot";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
+import { peopleUnder, UNDER } from "#/search/search";
 
 /** 一个标准词：它属于哪个更宽的词、并进来的写法、它和它的细分词一共多少人、上次整理的时间。 */
 export type SkillEntry = {
@@ -28,36 +29,6 @@ export type SkillDetail = Omit<SkillEntry, "parent" | "children"> & {
 	children: { canonical: string; people: number }[];
 };
 
-/**
- * 一个标准词连同它的其他写法、它的细分，全部展开成 `(term, word)`。
- *
- * 人数是按这一堆词一起数的：`term` 是某一个标准词，`word` 是算进它那个数里的每一种
- * 写法——它自己、并进它的写法，以及它的细分连各自的写法，一层层往下。
- */
-export const UNDER = sql`
-	with recursive under(term, word) as (
-		select canonical, word from skill_term
-		union
-		select u.term, a.word from under u
-		join skill_term c on c.parent = u.word
-		join skill_term a on a.canonical = c.word
-	)`;
-
-/**
- * 一个标准词底下有多少人，和筛选栏「入职前技能」同一口径：写了它、它的其他写法，
- * 或它任一项细分的人，各算一次。词表里的词有可能已经不在语料里（写它的人的简历
- * 改了），那就是 0。
- */
-export function peopleUnder(term: SQL | string) {
-	return sql`coalesce((
-		select count(distinct e.emp_id)::int
-		from under u
-		join phrase p on p.text = u.word
-		join experience_phrase ep on ep.phrase_id = p.id and ep.route = 'skill'
-		join experience e on e.id = ep.experience_id
-		where u.term = ${term}), 0)`;
-}
-
 /** 属于这个标准词的标准词有几项。并进去的写法不算：那是同一件事的另一种写法。 */
 function childrenOf(term: SQL) {
 	return sql`(select count(*)::int from skill_term c
@@ -65,17 +36,9 @@ function childrenOf(term: SQL) {
 }
 
 /**
- * 能力词词表的一页，给管理页看。
- *
- * 只读：表由整理任务写（`src/corpus/vocabulary.ts`），这里不提供改它的路，改了下一轮整理
- * 就会被判定的结果盖回去。人数按标准词连同它的其他写法、它的细分一起数，和筛选栏
- * 「入职前技能」同一口径——「团队管理」的人数包含写了「人员管理」的人，「数据分析」的
- * 人数包含写了「销售数据分析」的人。判定方起的名字（语料里没人写过的更宽的词）也是一行，
- * 人数全部来自它的细分。「几天前」在库里算：页面直出和水合两边都不用碰时区。
- *
- * 找词和翻页都在服务端做，同数据页（`listEmployees`）：词表是一千多行，一次全发到页面
- * 要三兆多的 HTML，而过滤只作用于当前页的表会误导人——搜出来的总数、第几页到第几页，
- * 说的必须是整个词表里的那些词。找词认三样：标准词、并进它的写法、它属于的那个更宽的词。
+ * 管理页的标准能力词列表，服务端搜索并分页。
+ * 匹配标准词、别名与父词；人数包含别名和全部后代，与筛选栏共用统计。
+ * 判定方命名的父词同样参与展示；整理时间在数据库中换算为天数。
  */
 export function listSkills(
 	needle: string,

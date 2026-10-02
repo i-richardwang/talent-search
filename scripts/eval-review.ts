@@ -140,7 +140,7 @@ try {
 		const unanswered = words.filter((word) => !verdicts.has(word));
 		if (unanswered.length) problems.push(`漏答 ${unanswered.join("、")}`);
 		const table: Table = new Map();
-		merge(table, c.words, verdicts, new Date(), "eval");
+		merge(table, c.words, verdicts, new Date());
 		const cls = new Map(
 			words.map((word) => [word, table.get(word)?.canonical ?? word]),
 		);

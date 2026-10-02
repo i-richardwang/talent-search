@@ -79,7 +79,7 @@ function FilterMenu({
 }
 
 /** 钮上的字：维度名，选了一项跟那一项，选了几项写几项。 */
-export function fieldLabel(field: FilterField): string {
+function fieldLabel(field: FilterField): string {
 	const picked = field.options.filter((o) => field.values.includes(o.value));
 	if (picked.length === 0) return field.title;
 	if (picked.length === 1) return `${field.title}：${picked[0]?.label}`;
