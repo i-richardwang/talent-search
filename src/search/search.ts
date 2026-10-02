@@ -397,20 +397,26 @@ function gateConds(gates: readonly Gate[], veto: SQL | null): SQL[] {
 }
 
 /**
- * URL 上的公司名 / 学校名筛选。它们没有分面，所以和必须的门槛一样在取数 SQL 里
- * 按人过滤：分面随之只数剩下的人——这正是「选了这一项之后还剩几人」该有的口径。
- * 维度那八项**不能**这样下推，因为筛选栏还要回答「再勾一项会剩几人」，那个数
- * 只有把没筛之前的完整事实拿在内存里才算得出来（`rank.ts`）。
+ * 公司和学校的视图筛选共用门槛谓词，在 SQL 中按人过滤；分面读取过滤后的事实。
+ * 公司依赖未被否决的工作经历，学校只读员工档案。视图筛选不写入条件表。
  */
-function viewConds(view: Pick<SearchFilters, "org" | "school">): SQL[] {
-	const conds: SQL[] = [];
-	if (view.org?.length)
-		conds.push(sql`exists (
-			select 1 from experience x where x.emp_id = p.emp_id and not x.unemployed
-			and (${anyLike(view.org, [sql`x.org`, sql`x.org_path`])}))`);
-	if (view.school?.length)
-		conds.push(sql`(${anyLike(view.school, [sql`p.school`])})`);
-	return conds;
+function viewConds(
+	view: Pick<SearchFilters, "org" | "school">,
+	veto: SQL | null,
+): SQL[] {
+	const gates: Gate[] = [];
+	const [org, ...otherOrgs] = view.org ?? [];
+	if (org !== undefined)
+		gates.push({ about: "experience", mode: "must", org: [org, ...otherOrgs] });
+	const [school, ...otherSchools] = view.school ?? [];
+	if (school !== undefined)
+		gates.push({
+			about: "person",
+			mode: "must",
+			field: "school",
+			values: [school, ...otherSchools],
+		});
+	return gateConds(gates, veto);
 }
 
 function whereAll(conds: readonly SQL[]): SQL {
@@ -420,11 +426,8 @@ function whereAll(conds: readonly SQL[]): SQL {
 }
 
 /**
- * 候选里满足一条**偏好**（加分的门槛）的那些人。
- *
- * 偏好不过滤人，只改名次（`rank.ts` 各乘一次 `BOOST_WEIGHT`），所以它不能像
- * 必须那样下推到取数的谓词里；也不在内存里判——事实行上没有学校，也没有
- * 主张以外的段。所以每条偏好单独问一次库，只问候选那批人，不扫全库。
+ * 当前候选里满足一条加分门槛的人，在同一语料快照内读取。
+ * 候选集合使用单个数组参数，参数数量不随候选人数增长。
  */
 async function fetchPreferred(
 	store: DbExecutor,
@@ -436,10 +439,8 @@ async function fetchPreferred(
 	if (ids.length === 0) return new Set();
 	const rows = await store.execute<{ emp_id: string }>(sql`
 		select p.emp_id from employee p
-		where p.emp_id in (${sql.join(
-			ids.map((id) => sql`${id}`),
-			sql`, `,
-		)}) and ${sql.join(gateConds([gate], veto), sql` and `)}`);
+		where p.emp_id = any(${sql.param(ids)}::text[])
+		and ${sql.join(gateConds([gate], veto), sql` and `)}`);
 	return new Set(rows.rows.map((r) => r.emp_id));
 }
 
@@ -768,7 +769,7 @@ export async function search(
 		async (store, { phraseHits }) => {
 			const veto = vetoSql(excludes, phraseHits);
 			// 门槛和 URL 上的公司名 / 学校名都按人过滤，在每一条取数 SQL 里生效
-			const person = [...gateConds(gates, veto), ...viewConds(filters)];
+			const person = [...gateConds(gates, veto), ...viewConds(filters, veto)];
 			// 只有门槛时没有做过什么可比，名单按人排，不伪造一条主张来启动检索。
 			if (claims.length === 0)
 				return searchPopulation(

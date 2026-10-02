@@ -123,20 +123,18 @@ export async function withMatchedPhrases<T>(
 }
 
 /**
- * 命中的说法摆成一张 VALUES 表 `(claim_idx, value_idx, phrase_id, relevance)`，
- * 供取数 SQL 通过 `experience_phrase` 关联到经历段。`value_idx` 是命中的是这条主张的
- * 第几个经历词，只为证据行能说出「命中的是哪个词」。一行都没有时返回 null——
- * 空的 VALUES 不是合法 SQL，而且没有命中就没有取数可做。
+ * 召回记录通过四个等长数组参数组成 `(claim_idx, value_idx, phrase_id, relevance)` 表，
+ * 供取数 SQL 关联到经历段。参数数量不随召回规模增长，相关度保留双精度。
+ * `value_idx` 标识主张中命中的经历词；没有命中时返回 null，无需取数。
  */
 export function phraseHitTable(
-	rows: { claimIdx: number; valueIdx: number; hit: PhraseHit }[],
+	rows: readonly { claimIdx: number; valueIdx: number; hit: PhraseHit }[],
 ) {
 	if (rows.length === 0) return null;
-	return sql`(values ${sql.join(
-		rows.map(
-			(r) =>
-				sql`(${r.claimIdx}::int, ${r.valueIdx}::int, ${r.hit.phraseId}::int, ${r.hit.relevance}::float)`,
-		),
-		sql`, `,
-	)})`;
+	return sql`(select * from unnest(
+		${sql.param(rows.map((r) => r.claimIdx))}::int[],
+		${sql.param(rows.map((r) => r.valueIdx))}::int[],
+		${sql.param(rows.map((r) => r.hit.phraseId))}::int[],
+		${sql.param(rows.map((r) => r.hit.relevance))}::double precision[]
+	))`;
 }
