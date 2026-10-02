@@ -1,5 +1,6 @@
 /** 命令行跑一条查询，用于验收用例与调参：bun run query "算法 kind:external,+产品,-后端"（语法见 `search/query-syntax.ts`） */
 
+import "@tanstack/react-start/server-only";
 import { pool } from "#/db";
 import { dots, period } from "#/lib/format";
 import { claimName } from "#/search/condition-label";

@@ -1,17 +1,7 @@
 /**
- * 外部判定方的 HTTP 接口：取走待判的组、提交判定。整理任务里「判定」这一步的 HTTP 形状。
- *
- * 只有两件事在这里——**鉴权**和**请求与响应格式的转换**。谁能判、一组多久过期在 `src/corpus/judgment.ts`，
- * 判定结果长什么样在各自那一种组的模块里：接口只是队列的另一个入口。
- *
- * **这个接口只写组那一行。** 词表、释义和边由整理任务在写者锁里改（`corpus/session.ts`），
- * 所以提交不必等派生放锁几十分钟；外部也永远拿不到改词表的权限，它提交的
- * 原话要经过 `conform` 校验才算数，和自带模型的回答走同一处校验。
- *
- * **发出这台机器的只有短说法和人数。** 没有姓名、工号，也没有简历原文——这条接口的
- * 数据边界比抽取端点窄得多，README 的部署那一章按这个范围写。
- *
- * 限流按惯例做在网关层：进程内计数器盖不住多实例。
+ * 外部判定接口负责鉴权和 HTTP 格式转换，队列规则归 corpus/judgment.ts。
+ * 接口只保存组上的判定原话，词表、释义和边由整理任务持锁校验并写入。
+ * 对外提供短说法、人数和判定标准；部署限流由网关承担。
  */
 
 import "@tanstack/react-start/server-only";
@@ -61,15 +51,8 @@ export function reviewJudge(): Judge {
 }
 
 /**
- * 这个接口开没开：**判定归外部，而且配了凭据**，两样缺一就当接口不存在。
- *
- * 开关只有 `REVIEW_JUDGE` 一个。自带模型判定时队列里的组在同一轮就判完了，外面
- * 取到的永远是空名单、提交永远是 404 或 409——一条只会说「不」的接口不如没有；
- * 关掉整理时更没有人会来让判定生效。所以接口不另设一个开关，也不在 `model` 或 `off`
- * 下假装可用。判定归外部却没配凭据是配错了，整理任务会在记录里说出来
- * （`src/server/tasks.ts`），这里只管不放行。
- *
- * 没配与配了但对不上，返回的状态码不一样（404 与 401），判断只有这一处。
+ * 仅外部判定模式且已配置凭据时开放接口。
+ * 路由据此区分接口不可用（404）与凭据错误（401）。
  */
 export function configured(): boolean {
 	return reviewJudge() === "external" && token().length > 0;
@@ -96,13 +79,8 @@ type GroupView = {
 };
 
 /**
- * 取走：还没人判、还没过期的组，最早收集的在前。
- *
- * **没有租约。** 两方取到同一组是允许的，先提交的算（`submitJudgment`）；租约会
- * 换来一个新的中间状态——「取了没判」，而它的代价只是偶尔一次白判。
- *
- * `guides` 按组的种类给出发给自带模型的那段标准，一字不差：标准每种只有一份，
- * 两边照着同一段字判。
+ * 未判定且未过期的组按收集顺序返回，可被多个读者取走，接受首份提交。
+ * guides 与自带模型共用各类组的判定标准。
  */
 export async function pending(limit: number): Promise<{
 	groups: GroupView[];
@@ -149,18 +127,15 @@ type Submitted =
 	| { ok: false; why: string };
 
 /**
- * 提交判定。
- *
- * **原话原样存进组里，这里不校验内容**：什么算一条有效的判断是生效时的事
- * （`conform`），改校验规则不该让已经提交的判定失效。这里只看形状——能识别出
- * 是哪一组、是谁判的、判定是不是一串判断。
+ * 校验请求大小、组身份、判定方和判定数组形状，原话原样保存。
+ * 内容按组的当前标准在整理任务生效时校验。
  */
 export async function submit(request: Request): Promise<Submitted> {
-	const raw = await request.text();
-	if (raw.length > MAX_BODY) return { ok: false, why: "这份判定太大" };
+	const raw = await request.arrayBuffer();
+	if (raw.byteLength > MAX_BODY) return { ok: false, why: "这份判定太大" };
 	let body: unknown;
 	try {
-		body = JSON.parse(raw);
+		body = JSON.parse(new TextDecoder().decode(raw));
 	} catch {
 		return { ok: false, why: "这份判定不是 JSON" };
 	}

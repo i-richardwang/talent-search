@@ -4,6 +4,7 @@
  * 它排队等锁：派生正跑着的话，等它这一轮结束（最多十分钟）再开始。过程输出到
  * 标准输出，同一份也写进 `task_run` 那一行，在任务页（`/tasks`）上可以看到。退出码只反映同步本身。
  */
+import "@tanstack/react-start/server-only";
 import { pool } from "#/db";
 import { runTask } from "#/server/tasks";
 

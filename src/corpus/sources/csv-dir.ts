@@ -1,9 +1,7 @@
 /**
  * 参考数据源：一个目录里的四个 CSV，列名就是 `src/corpus/contract.ts` 的契约列。
  *
- * 它有两个作用：**契约的可执行说明**——想接自己的人事数据，最省事的路径就是从
- * 上游导出这四张表；以及**开箱可跑**——不配任何环境变量时读仓库自带的合成样例，
- * `bun run sync` 直接能把库填满。
+ * 未配置输入目录时读取仓库自带的合成样例。
  *
  *     <TALENT_CSV_DIR>/
  *       employees.csv    emp_id,name,hire_date,education_level,school,recruitment
@@ -28,23 +26,14 @@ import { type RawRow, type SourceData, sourceData } from "../contract";
 import type { Report } from "../report";
 
 /**
- * 不配 `TALENT_CSV_DIR` 时读的合成样例。它进版本库，因为里面没有一个真人。
- *
- * 按仓库根目录解析，不按这个模块的位置：源码打包之后模块旁边不会有 CSV，而
- * 「开箱可跑」本来就是**在这个仓库里**才成立的性质——部署出去的服务读的是
- * 配好的数据源。路径写死在这里，改目录时 grep 得到。
+ * 合成样例相对仓库根目录解析；部署服务通过 TALENT_CSV_DIR 指定输入目录。
  */
 const SAMPLE_DIR = "src/corpus/sources/sample";
 
 const TRUE_VALUES = new Set(["true", "1", "y", "yes", "是"]);
 
 /**
- * 读一个 CSV，只做 CSV 自己表达不了的事：去掉 BOM、修掉表头两侧的空白、补上可省的列。
- * 表头里的空白和 BOM 一样是导出工具的毛刺，不是列名的一部分——`emp_id ` 找不到
- * 契约列，报出来的却是「缺少 emp_id」，人对着文件怎么看都有。
- *
- * 列齐不齐由契约（`sourceData`）判，不在这里判一遍：两处判，改契约列的人就得
- * 记得改两处，而只有一处会失败。
+ * 去掉 BOM、修剪表头、补齐可省列；必需列由 sourceData 逐行核验。
  */
 async function read(
 	directory: string,

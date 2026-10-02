@@ -95,20 +95,72 @@ describe("校验", () => {
 		]);
 	});
 
-	test("其余组合一律视为没对上", () => {
+	test("两级均空是合法的无法对齐", () => {
+		assert.deepEqual(conform({ l1: "", l2: "" }, tree), ["", ""]);
+	});
+
+	test("序列名保留登记字面，不折叠全半角", () => {
+		assert.deepEqual(
+			conform({ l1: "技术Ａ", l2: "算法Ｂ" }, [["技术Ａ", "算法Ｂ"]]),
+			["技术Ａ", "算法Ｂ"],
+		);
+	});
+
+	test("无效回答与合法的无法对齐分开", () => {
 		for (const raw of [
 			{ l1: "技术", l2: "推荐" },
 			{ l1: "技术", l2: "" },
-			{ l1: "", l2: "" },
+			{ l1: 9, l2: "算法" },
 			{ l1: "技术" },
 			"技术 · 算法",
 			null,
 		])
-			assert.deepEqual(conform(raw, tree), ["", ""]);
+			assert.equal(conform(raw, tree), null);
 	});
 });
 
 describe("对齐", () => {
+	test("登记的全角序列名可以原样对齐", async () => {
+		const rows = [
+			segment({ seq_l1: "技术Ａ", seq_l2: "算法Ｂ" }),
+			segment({ kind: "external", title: "全角序列对齐样例" }),
+		];
+		const restore = answerChat(() => ({ l1: "技术Ａ", l2: "算法Ｂ" }));
+		try {
+			assert.equal(
+				(await align(rows, seqTree(rows), quiet))[1]?.seq_inferred_l2,
+				"算法Ｂ",
+			);
+		} finally {
+			restore();
+		}
+	});
+
+	for (const [label, answer] of [
+		["树外序列", { l1: "技术", l2: "推荐" }],
+		["只有一级", { l1: "技术", l2: "" }],
+		["跨行组合", { l1: "技术", l2: "渠道运营" }],
+	] as const) {
+		test(`${label}不缓存，下一次成功后才复用回答`, async () => {
+			const rows = corpus(["算法工程师", `${label}重试样例`]);
+			const tree = seqTree(rows);
+			let calls = 0;
+			const restore = answerChat(() => {
+				calls++;
+				return calls === 1 ? answer : { l1: "技术", l2: "算法" };
+			});
+			try {
+				assert.equal((await align(rows, tree, quiet)).at(-1), null);
+				const retried = await align(rows, tree, quiet);
+				assert.equal(retried.at(-1)?.seq_inferred_l2, "算法");
+				assert.deepEqual(await align(rows, tree, quiet), retried);
+				assert.equal(calls, 2);
+			} finally {
+				restore();
+			}
+		});
+	}
+
 	test("只问入职前的非待业段，结果写进推断的两列", async () => {
 		const rows = corpus(
 			["推荐算法工程师", "负责召回"],

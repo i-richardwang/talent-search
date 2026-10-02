@@ -95,43 +95,47 @@ test("抽取失败保留待派生与旧边，下一轮成功的空抽取才算�
 	);
 });
 
-test("对齐失败不记录完成版本，合法的无法对齐可以完成", async () => {
-	await seed([
-		{
-			empId: "E1",
-			name: "合成对齐",
-			segments: [
-				{
-					kind: "internal",
-					title: "工程师",
-					seqL1: "技术",
-					seqL2: "算法",
-					months: 12,
-				},
-				segment("对齐失败恢复样例"),
-			],
-		},
-	]);
-	let restore = answerChat((system) =>
-		system.includes("两类短说法")
-			? { skills: [], did: [] }
-			: { l1: 9, l2: "算法" },
-	);
-	try {
-		assert.deepEqual(await runDerive(), { done: 1, left: 1 });
-	} finally {
-		restore();
-	}
-	assert.ok((await identities())[0]);
-	assert.equal((await identities())[1], null);
-	restore = answerChat(() => ({ l1: "", l2: "" }));
-	try {
-		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
-	} finally {
-		restore();
-	}
-	assert.ok((await identities()).every(Boolean));
-});
+for (const [label, invalid] of [
+	["回答形状无效", { l1: 9, l2: "算法" }],
+	["序列不在树上", { l1: "技术", l2: "推荐" }],
+	["序列只有一级", { l1: "技术", l2: "" }],
+] as const) {
+	test(`${label}不记录完成版本，合法的无法对齐可以完成`, async () => {
+		await seed([
+			{
+				empId: "E1",
+				name: "合成对齐",
+				segments: [
+					{
+						kind: "internal",
+						title: "工程师",
+						seqL1: "技术",
+						seqL2: "算法",
+						months: 12,
+					},
+					segment(`${label}恢复样例`),
+				],
+			},
+		]);
+		let restore = answerChat((system) =>
+			system.includes("两类短说法") ? { skills: [], did: [] } : invalid,
+		);
+		try {
+			assert.deepEqual(await runDerive(), { done: 1, left: 1 });
+		} finally {
+			restore();
+		}
+		assert.ok((await identities())[0]);
+		assert.equal((await identities())[1], null);
+		restore = answerChat(() => ({ l1: "", l2: "" }));
+		try {
+			assert.deepEqual(await runDerive(), { done: 1, left: 0 });
+		} finally {
+			restore();
+		}
+		assert.ok((await identities()).every(Boolean));
+	});
+}
 
 test("失败批次不阻塞本轮后面的段，失败段下一轮重试", async () => {
 	await seed(

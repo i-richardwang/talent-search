@@ -535,6 +535,34 @@ describe("人群", () => {
 });
 
 describe("契约", () => {
+	for (const [table, row] of [
+		["employees", PERSON],
+		["assignments", ASSIGNMENT],
+		["external", EXTERNAL],
+		["levels", LEVELS[0]],
+	] as const) {
+		test(`${table}逐行核验契约列，显式空值不等于缺列`, () => {
+			assert.ok(row);
+			const empty = Object.fromEntries(
+				Object.keys(row).map((key) => [key, ""]),
+			);
+			const raw = {
+				employees: [],
+				assignments: [],
+				external: [],
+				levels: [],
+				[table]: [row, empty],
+			};
+			assert.equal(sourceData(raw)[table].length, 2);
+			delete empty.emp_id;
+			delete empty.level;
+			assert.throws(
+				() => sourceData(raw),
+				new RegExp(`${table} 第 2 行.*缺少契约列`),
+			);
+		});
+	}
+
 	test("缺一列就按名字报出来", () => {
 		assert.throws(
 			() =>

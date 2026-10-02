@@ -27,15 +27,8 @@ import {
 } from "./turn";
 
 /**
- * 工作台的一次载入：这条查询记录是什么，以及它当前筛选下的结果。
- *
- * **入参里没有检索条件，只有一个 id。** 条件从库里那条记录上取，客户端伪造
- * 不了，也不必再校验一遍——它在写进记录的时候（`commitTurn`）已经过了
- * `sanitizeSpec`。URL 上剩下的那几个参数只描述「怎么看这批人」，
- * 所以它们仍然要过 `sanitizeFilters` / `sanitizeLimit`。
- *
- * 记录和结果一次往返一起取：分成两个端点的话，界面要么串行等两次往返，
- * 要么并发发出两条却在「还没理解」这一支上白跑一次检索。
+ * 按记录 id 载入完整线程和当前筛选下的结果。条件来自已校验的查询记录；
+ * 视图入参在此独立校验。待理解记录只返回线程，由工作台发起理解。
  */
 export const loadWorkbench = createServerFn({ method: "GET" })
 	.validator((d: { turnId: unknown; filters?: unknown; limit?: unknown }) => ({

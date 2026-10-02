@@ -17,7 +17,7 @@ export const RECOMMEND: Condition = {
 };
 
 /** 在大厂累计三年以上（加分）：没写做过什么的背景主张，只作门槛，不参与排名。 */
-export const BIG_COMPANY: Condition = {
+const BIG_COMPANY: Condition = {
 	about: "experience",
 	mode: "boost",
 	companyTag: ["大厂"],
@@ -25,7 +25,7 @@ export const BIG_COMPANY: Condition = {
 };
 
 /** 带过团队（加分）：第二轮补充的主张。 */
-export const TEAM: Condition = {
+const TEAM: Condition = {
 	about: "experience",
 	mode: "boost",
 	what: ["团队管理"],

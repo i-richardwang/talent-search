@@ -22,6 +22,7 @@
  * 「此刻配置下的抽取」，换模型也用它。
  */
 
+import "@tanstack/react-start/server-only";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { extract } from "#/corpus/extract";

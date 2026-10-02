@@ -149,6 +149,31 @@ describe("提交判定的形状", () => {
 		assert.equal(got.ok, false);
 		assert.match(got.ok ? "" : got.why, /太大/);
 	});
+
+	test("判定上限按 UTF-8 字节计算", async () => {
+		const body = JSON.stringify({ id: 1, big: "词".repeat(23_000) });
+		assert.ok(body.length < 64 * 1024);
+		assert.ok(Buffer.byteLength(body, "utf8") > 64 * 1024);
+		assert.deepEqual(await submit(request(body)), {
+			ok: false,
+			why: "这份判定太大",
+		});
+	});
+
+	test("大小在解码前核验，UTF-8 BOM 也计入正文", async () => {
+		const raw = JSON.stringify({ id: 1 }).padEnd(64 * 1024, " ");
+		assert.deepEqual(await submit(request(raw)), {
+			ok: false,
+			why: "kind 不是 group 或 gloss",
+		});
+		const bytes = new TextEncoder().encode(`\uFEFF${raw}`);
+		assert.deepEqual(
+			await submit(
+				new Request("http://x/api/review", { method: "POST", body: bytes }),
+			),
+			{ ok: false, why: "这份判定太大" },
+		);
+	});
 });
 
 describe("提交判定", () => {

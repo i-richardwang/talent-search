@@ -60,7 +60,8 @@ export async function acquireCorpusSession(
 			}
 		}
 	} catch (error) {
-		client.release();
+		// 请求失败时可能已取得锁；销毁连接才能释放未知的会话状态。
+		client.release(true);
 		throw error;
 	}
 	return {

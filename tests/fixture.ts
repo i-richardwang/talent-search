@@ -498,7 +498,7 @@ export const violates = (constraint: string) => (error: unknown) =>
 	constraint;
 
 /** 一个人 + 他的若干段经历。字段用默认值兜底，测试里只写与断言相关的那几个。 */
-export type Seed = {
+type Seed = {
 	empId: string;
 	name: string;
 	/** 夹具里职级自成一档，档高取名字里的数字（P6 → 6） */

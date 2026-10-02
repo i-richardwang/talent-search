@@ -28,6 +28,7 @@
  * 合成用例进仓库（sample.json）；真实的找人问题不进版本库。
  */
 
+import "@tanstack/react-start/server-only";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "#/db";

@@ -7,10 +7,7 @@ import "@tanstack/react-start/server-only";
 import { APICallError, RetryError } from "ai";
 
 /**
- * 一个正整数环境变量。缺失、空、非法、非正一律用默认值。
- *
- * 配错一个数不该让整条检索或整条理解倒下，而各写一份解析的话，
- * 「`RERANK_TIMEOUT_MS=0` 到底是永不超时还是立刻超时」在四个文件里会有四个答案。
+ * 正整数环境配置；缺失、空、非法或非正值使用默认值。
  */
 export function positiveInt(value: string | undefined, fallback: number) {
 	const parsed = Number(value);
@@ -18,14 +15,8 @@ export function positiveInt(value: string | undefined, fallback: number) {
 }
 
 /**
- * 给每一次 HTTP 请求设上超时的 `fetch`。四个 `*_TIMEOUT_MS` 因此是同一个意思：
- * **一次尝试最多等多久**。
- *
- * 超时是一次请求的属性，不是一通调用的属性：设在整通调用上（AI SDK 的 `timeout`
- * 数字是 `totalMs`，`abortSignal` 同样跨越全部尝试）时，第一次尝试超时就把整通
- * 调用连同它的重试一起中止了。设在这一层，每一次尝试各拿一份完整的预算。
- *
- * 调用方传进来的 signal 仍然管用：两个信号取并集，哪个先触发就按哪个中止。
+ * 每次 HTTP 尝试各有一份超时预算。调用方的 signal 与本次超时信号共用，
+ * 任一信号触发时中止请求。
  */
 export function timeoutFetch(ms: number): typeof fetch {
 	return (input, init) => {
@@ -40,16 +31,8 @@ export function timeoutFetch(ms: number): typeof fetch {
 /**
  * 超时了就再试，最多 `retries` 次。
  *
- * 重试分两个循环，各管一类错误，互不重叠：
- *
- * - **端点答了、答的是可重试的错**（429、5xx）——AI SDK 的 `maxRetries` 管，
- *   指数退避、遵守 `Retry-After`；
- * - **端点没答上来**（`timeoutFetch` 中止了这一次）——这里管。SDK 把中止一律
- *   当成调用方不想要了，直接抛、一次都不试，而这里的中止来自我们自己设的超时，
- *   它说的是「端点这一次太慢」，恰恰是最该再试一次的那类失败。
- *
- * 超时之前已经等满了一份预算，所以不再退避，立刻重来。SDK 里的重试发生在
- * 一次 `run` 之内，两个循环相乘的最坏次数由调用方给的两个 `retries` 决定。
+ * timeoutFetch 触发的超时在此立即重试；429 和 5xx 由 SDK 退避重试。
+ * SDK 重试发生在每次 run 内，最坏尝试次数为两个重试循环次数的乘积。
  */
 export async function retryingTimeouts<T>(
 	retries: number,

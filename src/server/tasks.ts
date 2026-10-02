@@ -120,11 +120,7 @@ export type TaskLane = {
 export type TaskPages = Partial<Record<TaskKind, number>>;
 
 /**
- * 语料此刻有多少东西。任务台三张卡片上的数全是它——**问库，不问上一次跑的记录**。
- *
- * 一次运行输出的「人群 20 人」是那一刻的快照，跑完就开始过期：下一次同步之后，
- * 卡片还显示上一次记录里的数字，就成了屏幕上一个没人维护的旧值。这些数库里现成有，
- * 每次载入查一遍即可（都是主键或小表上的 count，不值得为它们再开一份存储）。
+ * 任务台三张卡片共用的语料计数，每次载入读取数据库当前状态。
  */
 export type CorpusCounts = {
 	/** 库里多少人 */
@@ -340,11 +336,7 @@ function logger(runId: number) {
 			.then(async () => {
 				await db
 					.update(taskRun)
-					/*
-					 * `sql.param` 把这一批行当**一个**数组参数送出去。直接内插的话
-					 * 模板会把数组摊成一串参数，拼出来是 `($1, $2)` 一个记录，
-					 * 而记录转不成 text[]——这条错只在多行一起落库时才出现。
-					 */
+					// 这一批日志作为单个 text[] 参数追加。
 					.set({ log: sql`${taskRun.log} || ${sql.param(lines)}::text[]` })
 					.where(eq(taskRun.id, runId));
 			})

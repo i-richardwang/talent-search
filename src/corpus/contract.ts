@@ -105,21 +105,22 @@ export type RawRow = Record<string, unknown>;
 /**
  * 按契约列整理一张表；缺列时报出人看得懂的错误。
  *
- * 多出来的列丢掉，缺的列报错——适配器算中间值很正常，但它们不能顺着管线漏
- * 进库里（见 AGENTS.md「不落没有读者的列」）。值一律转成字符串，**不做修剪**：
- * 修剪是管线的事，而且只发生在管线明确要修剪的那几列上。
+ * 逐行核验必需列，额外列丢弃。标量转成字符串；指定字段的修剪归管线处理。
  */
-function conform<T>(rows: RawRow[], columns: readonly string[], what: string) {
-	const first = rows[0];
-	if (first) {
-		const missing = columns.filter((column) => !(column in first));
+function conform<C extends readonly string[]>(
+	rows: RawRow[],
+	columns: C,
+	what: string,
+) {
+	return rows.map((row, index) => {
+		const missing = columns.filter((column) => !Object.hasOwn(row, column));
 		if (missing.length)
-			throw new Error(`数据源的 ${what} 缺少契约列：${missing.join("、")}`);
-	}
-	return rows.map((row) => {
+			throw new Error(
+				`数据源的 ${what} 第 ${index + 1} 行缺少契约列：${missing.join("、")}`,
+			);
 		const out: Record<string, string> = {};
 		for (const column of columns) out[column] = text(row[column]);
-		return out as T;
+		return out as Record<C[number], string>;
 	});
 }
 
@@ -148,24 +149,14 @@ export function sourceData(raw: {
 	levels: RawRow[];
 }): SourceData {
 	return {
-		employees: conform<SourceEmployee>(
-			raw.employees,
-			EMPLOYEE_COLUMNS,
-			"employees",
+		employees: conform(raw.employees, EMPLOYEE_COLUMNS, "employees"),
+		assignments: conform(raw.assignments, ASSIGNMENT_COLUMNS, "assignments"),
+		external: conform(raw.external, EXTERNAL_COLUMNS, "external").map(
+			(row, index) => ({
+				...row,
+				unemployed: flag(raw.external[index]?.unemployed, index),
+			}),
 		),
-		assignments: conform<SourceAssignment>(
-			raw.assignments,
-			ASSIGNMENT_COLUMNS,
-			"assignments",
-		),
-		external: conform<SourceExternal>(
-			raw.external,
-			EXTERNAL_COLUMNS,
-			"external",
-		).map((row, index) => ({
-			...row,
-			unemployed: flag(raw.external[index]?.unemployed, index),
-		})),
-		levels: conform<SourceLevel>(raw.levels, LEVEL_COLUMNS, "levels"),
+		levels: conform(raw.levels, LEVEL_COLUMNS, "levels"),
 	};
 }

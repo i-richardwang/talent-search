@@ -20,6 +20,7 @@
  * query 用一行查询语法而不是原话，是刻意的：这里衡量的是**检索与排序**，不含模型
  * 理解这一步的方差；理解的对错由 tests/intent.test.ts 和人工评审管。
  */
+import "@tanstack/react-start/server-only";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "#/db";

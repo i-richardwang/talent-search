@@ -2,15 +2,10 @@
  * 语料侧三种任务连起来跑：同步读仓库自带的合成样例、派生给段算说法与向量、
  * 任务的记录与活性。
  *
- * 这是唯一一处把整条语料链路连起来跑的测试。链路上的每一段单独看都对得上、
- * 连起来却可能对不上：暂存表的列、`unnest` 每一列的类型、段的内容键有没有让
- * 派生结果跨同步活下来、说法和边有没有指对。这些错一旦发生，屏幕上的表现是
- * 「搜什么都搜不到」，而不会有任何单元测试失败。
- *
  * 端点是进程内那三台假的，所以这里量的是**机制**，不是抽得准不准。
  */
 import assert from "node:assert/strict";
-import { after, before, describe, test } from "node:test";
+import { after, before, describe, mock, test } from "node:test";
 import type { CorpusCounts, TaskOutcome } from "#/server/tasks";
 import { answerChat, setup } from "./fixture";
 
@@ -28,7 +23,7 @@ const { formatDuration, LANE_FACTS } = await import(
 const { acquireCorpusSession, corpusSessionOwner } = await import(
 	"#/corpus/session"
 );
-const { db } = await import("#/db");
+const { db, pool } = await import("#/db");
 const { taskRun } = await import("#/db/schema");
 const { sql } = await import("drizzle-orm");
 
@@ -610,4 +605,62 @@ describe("页面文案", () => {
 		assert.equal(formatDuration(3_600 + 23 * 60 + 5), "1h 23m");
 		assert.equal(formatDuration(86_400 + 2 * 3_600 + 5 * 60), "1d 2h 5m");
 	});
+});
+
+/** 写者连接在锁请求或收尾失败时销毁，未知的会话状态不进入连接池。 */
+for (const wait of [false, true]) {
+	test(`锁请求结果未知时销毁连接（wait=${wait}）`, async () => {
+		const client = await pool.connect();
+		const query = client.query.bind(client);
+		const failure = new Error("合成锁响应失败");
+		const release = mock.method(client, "release");
+		const connect = mock.method(pool, "connect", async () => client);
+		const broken = mock.method(client, "query", async (text: string) => {
+			await query(text);
+			throw failure;
+		});
+		try {
+			await assert.rejects(
+				acquireCorpusSession(wait),
+				(error) => error === failure,
+			);
+		} finally {
+			connect.mock.restore();
+			broken.mock.restore();
+			release.mock.restore();
+		}
+		const returned = await pool.connect();
+		try {
+			assert.equal(release.mock.calls.length, 1);
+			assert.equal(release.mock.calls[0]?.arguments[0], true);
+			assert.notEqual(returned, client);
+			assert.equal(await corpusSessionOwner(), null);
+		} finally {
+			await returned.query("select pg_advisory_unlock_all()");
+			returned.release();
+		}
+	});
+}
+
+test("收尾失败时销毁持锁连接", async () => {
+	const held = await acquireCorpusSession();
+	assert.ok(held);
+	const release = mock.method(held.client, "release");
+	const broken = mock.method(held.client, "query", async () => {
+		throw new Error("合成收尾失败");
+	});
+	try {
+		await held.release();
+		assert.equal(release.mock.calls[0]?.arguments[0], true);
+	} finally {
+		broken.mock.restore();
+		release.mock.restore();
+	}
+	const returned = await pool.connect();
+	try {
+		assert.notEqual(returned, held.client);
+		assert.equal(await corpusSessionOwner(), null);
+	} finally {
+		returned.release();
+	}
 });

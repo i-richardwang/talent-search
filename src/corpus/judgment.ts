@@ -120,8 +120,7 @@ export async function busyWords(
 /**
  * 收集：每组词写一行，进队列等人判。
  *
- * 一个词同时出现在两组同一种的组里，两份判定就会各说各的，而生效时挑哪一份都得
- * 有个说法——所以收集方先用 `busyWords` 绕开队列里已有的词。
+ * 收集方用 busyWords 绕开同类队列里已有的词，一个词同时只属于一组。
  */
 export async function collect(
 	client: CorpusClient,
@@ -146,8 +145,7 @@ export type Submission = "accepted" | "missing" | "taken";
  * 把一份判定记在组上。**只写组这一行**，不碰词表、释义也不碰边——那些只在生效时改，
  * 而生效拿着语料的写者锁。所以外部提交不必等派生放锁。
  *
- * 先到先得：一组只记下第一份判定，第二份得到 `taken`。不投票、不仲裁——两份
- * 判定不一致时挑哪一份都得有个说法，而「先到的算」是唯一不需要说法的那个。
+ * 一组只记下第一份判定，后续提交返回 taken。
  */
 export async function submitJudgment(
 	client: CorpusClient,

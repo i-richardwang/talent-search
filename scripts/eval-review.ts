@@ -20,6 +20,7 @@
  * （`corpus/vocabulary.ts` 的 `askModel`）：当前提示词、`REVIEW_MODEL`、温度 0，回答进同一份缓存。
  */
 
+import "@tanstack/react-start/server-only";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Member } from "#/corpus/judgment";

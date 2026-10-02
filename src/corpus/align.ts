@@ -46,22 +46,28 @@ ${listing}
 - 只有岗位名说明不了做什么（经理、专员、管培生、合伙人）、列表里没有相应的序列、或者经历与列表里任何序列都不相关时，l1 和 l2 才都给空字符串。不要硬选一个最接近的。`;
 }
 
-function name(value: unknown): string {
-	return typeof value === "string" ? value.normalize("NFKC").trim() : "";
+/** 树上的完整一对或两级均空；其余回答无效。 */
+export function conform(raw: unknown, tree: SeqPair[]): SeqPair | null {
+	const parsed = SCHEMA.safeParse(raw);
+	if (!parsed.success) return null;
+	const pair: SeqPair = [parsed.data.l1.trim(), parsed.data.l2.trim()];
+	if (!pair[0] && !pair[1]) return pair;
+	return tree.some(([l1, l2]) => l1 === pair[0] && l2 === pair[1])
+		? pair
+		: null;
 }
 
-/** 只接受序列树上存在的完整一对，其余取值置空。 */
-export function conform(raw: unknown, tree: SeqPair[]): SeqPair {
-	if (typeof raw !== "object" || raw === null) return ["", ""];
-	const row = raw as Record<string, unknown>;
-	const pair: SeqPair = [name(row.l1), name(row.l2)];
-	const known = new Set(tree.map(([l1, l2]) => `${l1}${PAIR}${l2}`));
-	return known.has(`${pair[0]}${PAIR}${pair[1]}`) ? pair : ["", ""];
+/** 取值随树进入回答形状和版本身份，成对校验在缓存写入前执行。 */
+function alignmentSchema(tree: SeqPair[]) {
+	return SCHEMA.extend({
+		l1: z.enum(["", ...new Set(tree.map(([l1]) => l1))]),
+		l2: z.enum(["", ...new Set(tree.map(([, l2]) => l2))]),
+	}).refine((pair) => conform(pair, tree) !== null);
 }
 
 /** 对齐这一步的身份：模型、带着这棵树的提示词、schema。派生版本的一部分。 */
 export function alignIdentity(tree: SeqPair[]): string {
-	return identityOf(extractModel(), systemPrompt(tree), SCHEMA);
+	return identityOf(extractModel(), systemPrompt(tree), alignmentSchema(tree));
 }
 
 /**
@@ -85,7 +91,7 @@ export async function align<Row extends ExperienceRow>(
 	const payloads = await complete(
 		extractModel(),
 		systemPrompt(tree),
-		SCHEMA,
+		alignmentSchema(tree),
 		texts,
 		"对齐",
 		report,
@@ -96,7 +102,12 @@ export async function align<Row extends ExperienceRow>(
 		const text = asked[index];
 		if (text === null || text === undefined) return row;
 		if (!payloads.has(text)) return null;
-		const [l1, l2] = conform(payloads.get(text), tree);
+		const pair = conform(payloads.get(text), tree);
+		if (!pair) {
+			report("  对齐回答不是序列树上的完整一对或两级均空，放弃这一段");
+			return null;
+		}
+		const [l1, l2] = pair;
 		if (!l1) return row;
 		aligned++;
 		return { ...row, seq_inferred_l1: l1, seq_inferred_l2: l2 };
