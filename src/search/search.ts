@@ -444,7 +444,6 @@ async function fetchPreferred(
 	return new Set(rows.rows.map((r) => r.emp_id));
 }
 
-/** 事实行的公共列：主张下标、段、路、相关度、说法、人、结束日期，再加分面要读的几列。 */
 const FACT_ROW = sql`e.id, e.emp_id, e.end_date, ${factSelect}`;
 
 /**

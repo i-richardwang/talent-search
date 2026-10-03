@@ -207,7 +207,6 @@ function fakeIntent(text: string, base: unknown[]) {
 const SENTENCE_PREFIX = "这句话：";
 const BASE_PREFIX = "当前的条件表：";
 
-/** 提示词里的当前条件表：`BASE_PREFIX` 那一行的 JSON。 */
 function baseIn(prompt: string): unknown[] {
 	const line = prompt
 		.split("\n")
@@ -225,7 +224,6 @@ function baseIn(prompt: string): unknown[] {
  */
 let chatAnswer: ((system: string, prompt: string) => unknown) | null = null;
 
-/** 设置一份语料侧聊天端点的回答，返回移除它的函数。 */
 export function answerChat(
 	fn: (system: string, prompt: string) => unknown,
 ): () => void {

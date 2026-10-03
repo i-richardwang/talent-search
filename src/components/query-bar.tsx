@@ -40,7 +40,7 @@ export function QueryBar({
 	autoFocus?: boolean;
 	/** 上一句还在理解：可以接着写，先不能提交。 */
 	waiting?: boolean;
-	/** 页面上把光标放进这个框的快捷键，光标不在框里时写在占位后面。 */
+	/** 页面上把光标放进这个框的快捷键。 */
 	focusKey?: string;
 }) {
 	const [draft, setDraft] = useState("");

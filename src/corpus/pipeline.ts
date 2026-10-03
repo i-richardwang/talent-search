@@ -112,7 +112,6 @@ function today(): Date {
 	return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 }
 
-/** ISO 日期串，写库用。 */
 function isoDate(at: Date): string {
 	return at.toISOString().slice(0, 10);
 }
@@ -424,8 +423,6 @@ type Profile = {
 };
 
 /**
- * 归一化是每一批档案都要做的第一件事：修剪文本、读入职日。
- *
  * 入职日读不懂时留空并报出来——它不像经历上那两个日期那样定义一段区间，缺了
  * 只是详情页少一行、入职前开放段少一个结束日，为此拒绝整个人反而丢得更多。
  */
@@ -548,7 +545,6 @@ function few(ids: string[]): string {
 	return ids.slice(0, 5).join("、") + (ids.length > 5 ? "…" : "");
 }
 
-/** 按写法数过的行：「3 行（硕士研究生 2、技校 1）」，多的写法在前。 */
 function tallied(counts: Map<string, number>, unit: string): string {
 	const sorted = [...counts].sort((a, b) => b[1] - a[1]);
 	const total = sorted.reduce((n, [, c]) => n + c, 0);
@@ -558,8 +554,6 @@ function tallied(counts: Map<string, number>, unit: string): string {
 // ---------------------------------------------------------------------- 入口
 
 /**
- * 源契约 → 可以直接写库的两张表。
- *
  * `asOf` 是这一次同步眼里的「今天」：公司内的开放段算时长截止到它，生效日晚于它
  * 的记录是脏数据。默认取当天，调用方给一个固定值就能让整条管线可复现。
  */

@@ -81,7 +81,6 @@ function Playground() {
 	);
 }
 
-/** 挑选与导出的每一步。 */
 const STEPS: FlowStep[] = [
 	[
 		"勾人",

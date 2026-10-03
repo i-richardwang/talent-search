@@ -37,7 +37,6 @@ export function EmployeeTable({
 }) {
 	const navigate = useNavigate({ from: "/data" });
 	const [needle, setNeedle] = useSearchDraft(q);
-	// 换词就回到第一页
 	const search = (needle: string) =>
 		void navigate({ search: listSearch(1, needle) });
 

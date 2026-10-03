@@ -42,7 +42,6 @@ export function csvName(now = new Date()) {
 	return `人才搜索-${day}.csv`;
 }
 
-/** 把一份 CSV 文本交给浏览器下载。 */
 export function download(name: string, text: string) {
 	const url = URL.createObjectURL(
 		new Blob([text], { type: "text/csv;charset=utf-8" }),

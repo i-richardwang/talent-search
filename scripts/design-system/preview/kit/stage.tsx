@@ -38,7 +38,7 @@ export function Stage({
 	);
 }
 
-/** 一格示例：标题、一句说明，下面是组件。两列排开的使用场景用它。 */
+/** 一格示例：两列排开的使用场景用它。 */
 export function Example({
 	children,
 	description,
@@ -63,7 +63,6 @@ export function Example({
 	);
 }
 
-/** 两列的示例网格。 */
 export function ExampleGrid({ children }: { children: ReactNode }) {
 	return (
 		<div className="grid grid-cols-2 gap-3.5 max-md:grid-cols-1">

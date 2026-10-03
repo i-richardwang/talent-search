@@ -11,7 +11,6 @@ import { type RootData, Routed } from "../../routed";
  * router 给出（`routed.tsx`），链接也走它。
  */
 
-/** `<body>` 那一层的字色，然后是产品外壳和这一屏的内容。 */
 export function Shell({ children }: { children: ReactNode }) {
 	return (
 		<div className="text-fg">

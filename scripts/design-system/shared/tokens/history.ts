@@ -1,6 +1,5 @@
 import type { Draft } from "./draft";
 
-/** 撤销与重做记的步数。 */
 export const HISTORY_LIMIT = 100;
 
 export interface History {

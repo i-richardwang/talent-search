@@ -35,7 +35,6 @@ export const MODE_NAME: Record<Mode, string> = {
 	exclude: "排除",
 };
 
-/** 一串条件写进一句话里：必须是默认，不标；加分、排除在后面注一句。 */
 export function inSentence(list: readonly Condition[]): string {
 	return list
 		.map((c) =>
@@ -83,10 +82,7 @@ export function claimName(claim: Claim): string {
 	return claim.what[0];
 }
 
-/**
- * chip 上只写每一项的第一个取值，其余几个收在菜单里；这里数的是收起来的有几个，
- * chip 上写成「+N」。
- */
+/** chip 上收进菜单的取值有几个，写成「+N」。 */
 export function moreCount(condition: Condition): number {
 	if (condition.about === "person")
 		return "values" in condition ? Math.max(condition.values.length - 1, 0) : 0;

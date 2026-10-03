@@ -25,7 +25,6 @@ export function Swatch({
 	);
 }
 
-/** 改过的项名字旁边的一个小圆点。 */
 export function ModifiedMark() {
 	return (
 		<span

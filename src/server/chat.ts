@@ -240,8 +240,7 @@ async function ask(
 
 /**
  * 对每段文字要一份 JSON；返回文字 → 模型给的 JSON，放弃的段不在里面。
- *
- * 先查缓存、再去重、最后才打端点；`what` 是进度和报错里的名字（「抽取」「对齐」）。
+ * `what` 是进度和报错里的名字（「抽取」「对齐」）。
  */
 export async function complete(
 	model: string,
@@ -269,9 +268,6 @@ export async function complete(
 	return payloads;
 }
 
-/**
- * 保持最多 limit 个并发任务，完成一个后读取下一项。
- */
 async function pool<T>(
 	items: T[],
 	limit: number,

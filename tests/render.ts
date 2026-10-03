@@ -34,7 +34,6 @@ export function classLists(html: string): string[][] {
 	);
 }
 
-/** 第一个带某个类名的元素的完整类名表；没有就是 undefined。 */
 export function classesWith(html: string, name: string) {
 	return classLists(html).find((list) => list.includes(name));
 }

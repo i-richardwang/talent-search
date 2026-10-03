@@ -24,7 +24,7 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
 import { KEYWORD_SPEC } from "../../samples/conditions";
 
-/** 关键词搜索结果页框里填回的词：经历「推荐系统」、公司「某甲科技」、两年以上。 */
+/** 关键词搜索结果页框里填回的词。 */
 const KEYWORDS = keywordsOf(KEYWORD_SPEC.conditions) ?? NO_KEYWORDS;
 
 /** 还没有搜索记录：首页输入框下面是起步的例子。 */

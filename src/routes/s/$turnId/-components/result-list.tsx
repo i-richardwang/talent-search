@@ -44,7 +44,7 @@ function useDelayed(on: boolean) {
 	return on && elapsed;
 }
 
-/** 名单一行的占位：姓名和岗位一行，下面一行条件词，留白与真的一行相同。 */
+/** 名单一行的占位，留白与真的一行相同。 */
 function RowSkeleton() {
 	return (
 		<ListViewRow aria-hidden="true">

@@ -174,7 +174,6 @@ function PanelSwitch() {
 	);
 }
 
-/** 搜索结果页：名单那一栏的抬头、条件与筛选、名单，右栏在对话线程和人的详情之间切换。 */
 export function WorkspacePage() {
 	return (
 		<Routed url={`/s/${LATEST_TURN_ID}`}>

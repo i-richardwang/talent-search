@@ -6,7 +6,6 @@ import { cn } from "#/lib/utils";
  * 不带标签的格（复选框自己带字）高度与中档控件相同，文字和旁边控件的中线对齐。
  */
 
-/** 一排控件：换行排开，格底对齐。 */
 export function Controls({
 	children,
 	className,

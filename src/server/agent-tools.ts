@@ -39,7 +39,6 @@ export const SUBMIT = "submit";
 /** 一次最多查几个词或名字。 */
 const LOOKUP_MAX = 12;
 
-/** 模型要查的词或名字：去掉首尾空白、空的和重复的，最多 `LOOKUP_MAX` 个。 */
 function lookupInputs(list: readonly string[]): string[] {
 	return [...new Set(list.map((w) => w.trim()).filter(Boolean))].slice(
 		0,
@@ -107,7 +106,6 @@ export function agentTools({
 	base: readonly Condition[];
 	record: (step: TraceStep) => Promise<void>;
 }) {
-	/** 模型最后一次提交的搜索条件，和检查出的问题。 */
 	let last: { submitted: Submission; json: string; problems: string[] } | null =
 		null;
 	const tools = {
@@ -162,9 +160,8 @@ export function agentTools({
 	};
 	return {
 		tools,
-		/** 最后一次提交通过了检查。 */
 		passed: () => last !== null && last.problems.length === 0,
-		/** 最后一次提交的搜索条件，没通过检查的也算；还没提交过是 undefined。 */
+		/** 没通过检查的提交也算。 */
 		lastSubmitted: () => last?.submitted,
 	};
 }

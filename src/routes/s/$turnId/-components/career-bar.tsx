@@ -78,7 +78,6 @@ export function CareerBar({
 	const height = laneCount * LANE_H + (laneCount - 1) * LANE_GAP;
 
 	const hire = hireDate ? ym(hireDate) : null;
-	// 入职日落在跨度之外时不画
 	const hireAt = hire !== null && hire > from && hire < to ? hire : null;
 	const hireFrac = hireAt === null ? 0 : (hireAt - from) / span;
 	const showHireLabel =

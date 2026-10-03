@@ -378,10 +378,6 @@ function DropdownMenuSwitchItem({
 	);
 }
 
-/**
- * 一项的内容：图标位里画 `lead`（图标，或勾选项、单选项的勾）；`reserveIconSpace` 时
- * 没有也留一格空的图标位。`extra` 排在行尾。
- */
 const itemContent = (
 	label: string,
 	reserveIconSpace: boolean,
@@ -463,7 +459,6 @@ const renderRadioGroup = (item: MenuRadioGroupType, index: number) => (
 	</Menu.RadioGroup>
 );
 
-/** 这一组项里有没有占图标位的：带图标的项、勾选项、单选项（分组里的也算）。 */
 const hasAnyIcon = (items: DropdownItem[]): boolean =>
 	items.some((item) =>
 		item.type === "group"

@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 /** 等过这么久才写出已等的时长：更短的等待里数字刚出现就消失，只是一闪。 */
 export const ELAPSED_SHOW_AFTER_MS = 2100;
 
-/** 一段时长写成几秒、几分几秒。 */
 export function lasting(ms: number) {
 	const seconds = Math.max(0, Math.round(ms / 1000));
 	if (seconds < 60) return `${seconds} 秒`;

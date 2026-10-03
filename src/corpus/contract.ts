@@ -103,9 +103,7 @@ export type SourceData = {
 export type RawRow = Record<string, unknown>;
 
 /**
- * 按契约列整理一张表；缺列时报出人看得懂的错误。
- *
- * 逐行核验必需列，额外列丢弃。标量转成字符串；指定字段的修剪归管线处理。
+ * 按契约列整理一张表；缺列时报出人看得懂的错误。额外列丢弃，字段修剪归管线处理。
  */
 function conform<C extends readonly string[]>(
 	rows: RawRow[],

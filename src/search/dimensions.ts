@@ -187,7 +187,7 @@ function plain(label: string, column: (fact: DimSource) => string | null) {
 }
 
 /**
- * 八个维度。这张表是它们在全站的唯一定义。
+ * 这张表是维度在全站的唯一定义。
  *
  * 顺序就是筛选栏里从上到下的顺序。
  */
@@ -291,7 +291,6 @@ export function isOrdinal(key: string): key is OrdinalKey {
 	return (ORDINAL_KEYS as readonly string[]).includes(key);
 }
 
-/** 「某档及以上」怎么写。 */
 export function orAbove(key: OrdinalKey, value: string): string {
 	return `${dimOption(key, value)}及以上`;
 }
@@ -341,7 +340,7 @@ export function dimRank(key: DimKey, fact: DimSource): number | undefined {
 	return dim.rank(fact) ?? undefined;
 }
 
-/** 这一段经历过不过这一维的筛选。没选就是不筛。 */
+/** 这一段经历过不过这一维的筛选。 */
 export function dimMatches<K extends DimKey>(
 	key: K,
 	picked: Picked[K],
@@ -363,12 +362,10 @@ export function dimPicked<K extends DimKey>(picked: Picked[K]): DimUnit[K][] {
 	return (Array.isArray(picked) ? picked : [picked]) as DimUnit[K][];
 }
 
-/** 分桶与比较用的内部身份。 */
 export function dimId<K extends DimKey>(key: K, value: DimUnit[K]): string {
 	return DIMENSIONS[key].id(value);
 }
 
-/** 候选怎么排。 */
 export function dimCompare<K extends DimKey>(
 	key: K,
 	a: Facet<K>,
@@ -377,12 +374,10 @@ export function dimCompare<K extends DimKey>(
 	return DIMENSIONS[key].compare(a, b);
 }
 
-/** 一个取值在筛选栏里怎么写。 */
 export function dimOption<K extends DimKey>(key: K, value: DimUnit[K]): string {
 	return DIMENSIONS[key].option(value);
 }
 
-/** 一个取值单独拎出来怎么显示（人的条件在 chip 上的标签）。 */
 export function dimText<K extends DimKey>(key: K, value: DimUnit[K]): string {
 	const dim = DIMENSIONS[key];
 	return dim.text?.(value) ?? `${dim.label} · ${dim.option(value)}`;

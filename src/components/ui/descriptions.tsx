@@ -36,7 +36,6 @@ export function Descriptions({
 	);
 }
 
-/** 一条属性：一对 `dt`/`dd`。 */
 export function DescriptionsItem({
 	label,
 	children,

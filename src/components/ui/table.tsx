@@ -72,7 +72,6 @@ function hitsControl(event: SyntheticEvent<HTMLTableRowElement>) {
 }
 
 interface TableRowProps extends ComponentProps<"tr"> {
-	/** 点击这一行、在行上按回车或空格时调用。 */
 	onActivate?: () => void;
 }
 

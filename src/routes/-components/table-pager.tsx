@@ -5,7 +5,7 @@ import { integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
 
 /**
- * 管理页一张表的表脚：左边这一页的范围和总数，右边翻页。只有一页时只说总数、不放翻页。
+ * 管理页一张表的表脚。
  * `units.row` 数行、`units.total` 数总数：人的表写「第 1–50 个，共 320 人」。
  */
 export function TablePager({
@@ -15,7 +15,6 @@ export function TablePager({
 }: {
 	table: TablePage<unknown>;
 	units: { row: string; total: string };
-	/** 指向第 n 页的链接 */
 	linkTo: (page: number) => ReactElement;
 }) {
 	const { from, page, pages, rows, total } = table;

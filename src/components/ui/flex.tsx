@@ -71,7 +71,6 @@ export function Flexbox({
 	);
 }
 
-/** 两个轴都居中的 Flexbox。 */
 export function Center(props: Omit<FlexboxProps, "align" | "justify">) {
 	return <Flexbox {...props} align="center" justify="center" />;
 }

@@ -163,7 +163,6 @@ function satisfies(claim: Claim, facts: Fact[] | undefined): facts is Fact[] {
 /** 一个人在一次检索里的全部事实：主张下标 → 命中的段 */
 type Person = Map<number, Fact[]>;
 
-/** 一条事实放进这个人按主张归拢的那一格。 */
 function addFact(p: Person, f: Fact) {
 	const list = p.get(f.claim);
 	if (list) list.push(f);
@@ -445,7 +444,6 @@ export function pageHits(
 	perClaim: number,
 ): Map<string, Fact[]> {
 	const keep = keeps(filters);
-	// 按人和主张收集证据，桶保留其人员身份。
 	const byKey = new Map<string, { empId: string; facts: Fact[] }>();
 	for (const f of facts) {
 		if (!empIds.has(f.empId) || !keep(f)) continue;

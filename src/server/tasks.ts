@@ -45,7 +45,7 @@ type TaskWork = (
 	source: SourceConfig | null,
 ) => Promise<void>;
 
-/** 三种任务各自做什么。各自的道理在 `src/corpus/` 下的同名模块里。 */
+/** 各自的道理在 `src/corpus/` 下的同名模块里。 */
 const WORK: Record<TaskKind, TaskWork> = {
 	sync: (session, report, source) => {
 		if (!source) throw new Error("同步任务缺少数据源配置");
@@ -66,8 +66,6 @@ const WORK: Record<TaskKind, TaskWork> = {
 };
 
 /**
- * 一次运行的四种样子。
- *
  * 「中断」由未完成记录和写者身份判定：当前写者不属于这次运行。
  */
 export type TaskOutcome = "running" | "interrupted" | "failed" | "done";
@@ -112,7 +110,7 @@ export type TaskLane = {
 	 * 拿那一页的第一行来说，卡片就会报一个几天前的结果当现状。
 	 */
 	latest: TaskRunView | null;
-	/** 要的那一页运行记录，最新的一次在最前面；页码由 `pageAt` 定夺，越界收回最后一页 */
+	/** 页码由 `pageAt` 定夺，越界收回最后一页 */
 	runs: TablePage<TaskRunView>;
 };
 
@@ -123,7 +121,6 @@ export type TaskPages = Partial<Record<TaskKind, number>>;
  * 任务台三张卡片共用的语料计数，每次载入读取数据库当前状态。
  */
 export type CorpusCounts = {
-	/** 库里多少人 */
 	employees: number;
 	/** 段：公司内、入职前，以及两者之和 */
 	internal: number;
@@ -196,7 +193,7 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 		const heads = await readTaskHeads(store);
 		const owner = await corpusSessionOwner(store);
 		const active = owner !== null;
-		/** 库里那一行在页面上的样子。逐个字段写出来，行上别的列不跟着发到页面。 */
+		/** 逐个字段写出来，行上别的列不跟着发到页面。 */
 		const seen = (row: StoredRun): TaskRunView => ({
 			error: row.error,
 			id: row.id,
@@ -217,7 +214,6 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 				total,
 			};
 		});
-		/* 每一栏要的那一页。哪几行算这一页只在这条查询里说一次。 */
 		const { rows } = await store.execute<StoredRun>(sql`
 		select recent.id, recent.kind, recent.source,
 			to_char(recent.started_at, 'YYYY-MM-DD HH24:MI') as "startedAt",
@@ -295,12 +291,6 @@ async function corpusCounts(): Promise<CorpusCounts> {
 	};
 }
 
-/**
- * 一次运行输出的每一行。
- *
- * 单取，不跟着任务台的状态一起来：这些行是排查时才看的东西，而一轮整理能输出
- * 上千行，放进每两秒一次的轮询就是每两秒传一遍。
- */
 export async function taskLog(runId: number): Promise<string[]> {
 	const { rows } = await db.execute<{ log: string[] }>(
 		sql`select log from task_run where id = ${runId}`,
@@ -336,7 +326,6 @@ function logger(runId: number) {
 			.then(async () => {
 				await db
 					.update(taskRun)
-					// 这一批日志作为单个 text[] 参数追加。
 					.set({ log: sql`${taskRun.log} || ${sql.param(lines)}::text[]` })
 					.where(eq(taskRun.id, runId));
 			})

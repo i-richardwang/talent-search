@@ -34,7 +34,7 @@ type Row = {
 
 const NONE: ReadonlyMap<string, Pick> = new Map();
 
-/** 名单上这批人全部选中，名单外已经选中的原样留着（快照的道理见 `Pick`）。 */
+/** 名单外已经选中的原样留着（快照的道理见 `Pick`）。 */
 function withAll(rows: Row[]) {
 	return (old: ReadonlyMap<string, Pick>) => {
 		const next = new Map(old);
@@ -72,8 +72,7 @@ function rowOf(
 }
 
 /**
- * 选择的全部状态：选中了谁。名单每一行前面都有复选框，勾上第一个就开始选，
- * 清空就结束。
+ * 选择的全部状态：选中了谁。
  *
  * 只在内存里，不进地址：每勾一次都压一条历史记录会让后退键失效。换一条查询记录
  * 就清空，选中的人不带到按别的条件搜出的名单上。
@@ -147,7 +146,6 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 		[rows],
 	);
 
-	// 空格选中／取消一个人：先试着删，删不掉再从名单上取这一行的快照。
 	const toggle = useCallback(
 		(empId: string) => {
 			anchor.current = empId;

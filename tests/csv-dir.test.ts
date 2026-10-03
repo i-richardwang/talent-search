@@ -28,7 +28,6 @@ after(() => {
 	for (const directory of directories) rmSync(directory, { recursive: true });
 });
 
-/** 建一个临时目录，把 TALENT_CSV_DIR 指过去，读一次。 */
 function read(files: Partial<Record<string, string>> = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "talent-csv-"));
 	directories.push(directory);

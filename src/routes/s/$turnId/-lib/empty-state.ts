@@ -33,7 +33,6 @@ type Handlers = {
 	onEditQuery: () => void;
 };
 
-/** 成因 → 说什么、给哪条出路。 */
 const COPY: {
 	[K in EmptyReason["kind"]]: (
 		reason: Extract<EmptyReason, { kind: K }>,
@@ -55,7 +54,6 @@ const COPY: {
 		hint: "请启用已停用的条件，或添加新条件。",
 		action: {
 			label: "启用全部",
-			// 启用改的是条件，派生一条新记录
 			onClick: () => h.onReviseQuery(h.conditions.map((c) => withOff(c, null))),
 		},
 	}),

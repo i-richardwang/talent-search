@@ -33,7 +33,6 @@ export function ResultHeader({
 	total,
 	evidence,
 }: {
-	/** 在等什么；null 时写人数和排序。 */
 	wait: ListWait | null;
 	order: SearchOutcome["order"];
 	total: number;

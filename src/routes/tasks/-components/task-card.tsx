@@ -42,7 +42,6 @@ import {
 	TASK_NAME,
 } from "../-lib/labels";
 
-/** 一次运行开始了多久：最近的写「3 分钟前」，精确时刻放在悬停提示里。 */
 const agoOf = (run: TaskRunView) =>
 	ago({ ageSeconds: run.ageSeconds, at: run.startedAt });
 
@@ -59,7 +58,6 @@ function durationOf(run: TaskRunView) {
 	return run.seconds ? formatDuration(run.seconds) : null;
 }
 
-/** 组头标题下面那一行：最近一次的结果、开始时刻和用时。 */
 function Latest({ latest }: { latest: TaskRunView | null }) {
 	if (!latest) return <span>还没有运行过</span>;
 	const status = RUN_STATUS[latest.outcome];
@@ -76,10 +74,7 @@ function Latest({ latest }: { latest: TaskRunView | null }) {
 	);
 }
 
-/**
- * 任务页上一类任务的一组：任务名、最近一次的结果和「立即运行」，下面是库里的现状和
- * 按次列出的运行记录。`onDone` 在请求运行之后调用，让页面重新取一次状态。
- */
+/** `onDone` 在请求运行之后调用，让页面重新取一次状态。 */
 export function TaskCard({
 	lane,
 	corpus,
@@ -197,10 +192,7 @@ function Facts({ kind, corpus }: { kind: TaskKind; corpus: CorpusCounts }) {
 	);
 }
 
-/**
- * 按次列出的运行记录，最新的在最前。点一行打开那一次的日志；出错的那次错误收在行下，
- * 只有最新那次一开始就展开。
- */
+/** 按次列出的运行记录，最新的在最前。 */
 function RunHistory({ lane }: { lane: TaskLane }) {
 	const { kind, runs } = lane;
 	const panelId = useId();

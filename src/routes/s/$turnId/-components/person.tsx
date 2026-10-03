@@ -47,7 +47,6 @@ function Pane({
 	);
 }
 
-/** 一节：点标题收起，默认展开。 */
 function Section({
 	id,
 	icon,

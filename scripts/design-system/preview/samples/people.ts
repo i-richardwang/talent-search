@@ -423,7 +423,6 @@ export function hitOn(
 	};
 }
 
-/** 样例里的一段经历，按编号取。 */
 export function experience(id: number): SampleExperience {
 	const x = EXPERIENCES.find((row) => row.id === id);
 	if (!x) throw new Error(`样例里没有经历段 ${id}`);
@@ -636,7 +635,6 @@ export function resultOf(empId: string): RankedResult | null {
 	return RESULTS.find((r) => r.employee.empId === empId) ?? null;
 }
 
-/** 一个人在这次搜索里的全部命中。 */
 export function hitsOf(empId: string): Hit[] {
 	return resultOf(empId)?.hits ?? [];
 }

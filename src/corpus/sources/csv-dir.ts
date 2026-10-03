@@ -77,7 +77,6 @@ export async function extract(report: Report): Promise<SourceData> {
 		read(directory, "levels.csv"),
 	]);
 
-	// 没给 segment_key 就按「部门 + 岗位」判断相邻段是不是同一件事
 	for (const row of assignments)
 		if (!trimmed(row, "segment_key"))
 			row.segment_key = `${trimmed(row, "org")}|${trimmed(row, "title")}`;

@@ -23,7 +23,6 @@ export const APPLY_PATH = "/__design-system/apply";
 export const PLAYBACK_SPEEDS = [1, 0.5, 0.25] as const;
 export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
 
-/** 预览页要画的样子。 */
 export interface PreviewState {
 	page: PreviewPageId;
 	draft: Draft;
@@ -45,12 +44,10 @@ export const INITIAL_PREVIEW = {
 export const MOTION_ACTIONS = ["open", "close", "replay"] as const;
 export type MotionAction = (typeof MOTION_ACTIONS)[number];
 
-/** 外壳发给预览页的。 */
 type ToPreview =
 	| { type: "design-system:state"; state: PreviewState }
 	| { type: "design-system:motion"; action: MotionAction };
 
-/** 预览页发给外壳的。 */
 type ToShell =
 	| { type: "design-system:ready" }
 	| { type: "design-system:select-color"; token: string };

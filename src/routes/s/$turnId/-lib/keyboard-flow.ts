@@ -31,10 +31,8 @@ export function useKeyboardFlow({
 	view: View;
 	/** 选中或取消正在看的这个人。 */
 	onPick: (empId: string) => void;
-	/** 已经选了几个人。 */
 	picked: number;
 	onClearPicks: () => void;
-	/** 打开快捷键列表。 */
 	onHelp: () => void;
 }) {
 	const navigate = useNavigate();
@@ -74,7 +72,6 @@ export function useKeyboardFlow({
 				return;
 			}
 			if (e.key === "Escape") {
-				// 输入框、下拉、对话框里的 Esc 归它们自己。
 				if (busy) return;
 				if (empId) {
 					e.preventDefault();
@@ -93,7 +90,6 @@ export function useKeyboardFlow({
 			// 反复选中又取消。
 			if (e.repeat) return;
 
-			// 当前这个人：↑↓ 移到的那一个，还没移到任何人时是 -1。
 			const at = results.findIndex((r) => r.employee.empId === empId);
 
 			// 空格选中／取消正在看的这个人：↑↓ 移到谁，选的就是谁。没在看任何人时
@@ -114,7 +110,6 @@ export function useKeyboardFlow({
 			if (step === 0) return;
 			e.preventDefault();
 
-			// 还没选人时，↓ 移到第一个、↑ 移到最后一个
 			const next =
 				at < 0
 					? step > 0

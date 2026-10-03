@@ -51,7 +51,6 @@ type Group = {
 	collectedAt: Date;
 };
 
-/** 一组判过的：生效时读的形状，`judge` 与 `judgment` 都在。 */
 type Judged = Group & { judge: string; judgment: unknown };
 
 /** 一组还没过期的 SQL 条件，判断的是 `collected_at`。读队列的地方共用它。 */
@@ -117,11 +116,7 @@ export async function busyWords(
 	return new Set(rows.flatMap((row) => row.words.map((one) => one.word)));
 }
 
-/**
- * 收集：每组词写一行，进队列等人判。
- *
- * 收集方用 busyWords 绕开同类队列里已有的词，一个词同时只属于一组。
- */
+/** 收集方用 busyWords 绕开同类队列里已有的词，一个词同时只属于一组。 */
 export async function collect(
 	client: CorpusClient,
 	kind: GroupKind,
@@ -248,7 +243,7 @@ export async function remove(
 	]);
 }
 
-/** 判定按判定方计数，报告里用：`agent:hr-bot 3 组、model:x 1 组`。 */
+/** 判定按判定方计数，报告里用。 */
 export function byJudge(rows: Judged[]): string {
 	const counts = new Map<string, number>();
 	for (const row of rows)

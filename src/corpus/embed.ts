@@ -30,7 +30,6 @@ const LOOKUP = 500;
  */
 const IMPORT_RETRIES = 4;
 
-/** 每多少批报一次进度。 */
 const PROGRESS_EVERY = 10;
 
 function sha(text: string): string {

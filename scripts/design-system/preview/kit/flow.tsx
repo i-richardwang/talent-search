@@ -11,7 +11,6 @@ import {
 /** 流程的一步：步骤名、用户做什么、界面怎么回应。 */
 export type FlowStep = [step: string, does: string, answers: string];
 
-/** 一个模式的流程表。 */
 export function FlowTable({ steps }: { steps: readonly FlowStep[] }) {
 	return (
 		<Block className="overflow-hidden" variant="outlined">

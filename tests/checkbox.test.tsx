@@ -24,7 +24,6 @@ const parentBox = (html: string) => {
 	return html.slice(start, end);
 };
 
-/** 全选框里画的图标。 */
 const parentIcons = (html: string) =>
 	[...parentBox(html).matchAll(/lucide-(minus|check)\b/g)].map(
 		([, name]) => name,

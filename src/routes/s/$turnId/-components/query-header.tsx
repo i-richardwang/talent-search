@@ -15,7 +15,6 @@ export function QueryHeader({
 	right,
 }: {
 	title: string | null;
-	/** 打开快捷键列表。 */
 	onHelp?: () => void;
 	/** 页头右端的动作：窄屏上打开对话的按钮。 */
 	right?: ReactNode;

@@ -60,7 +60,6 @@ function embeddingModelAt(url: string) {
 	}).embeddingModel("fake");
 }
 
-/** 一台慢端点、一个模型，跑完关掉。 */
 async function withEndpoint(
 	slowTimes: number,
 	run: (

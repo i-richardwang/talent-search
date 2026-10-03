@@ -96,7 +96,7 @@
 		"Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", monospace,
 		"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 
-	/* 字阶。sm（13）是控件与密表的一档，其余按 12 / 14 / 16 / 20 / 24 排。 */
+	/* 字阶。sm（13）是控件与密表的一档。 */
 	--text-xs: 0.75rem;
 	--text-xs--line-height: 1.25rem;
 	--text-sm: 0.8125rem;
@@ -136,7 +136,7 @@
 	--duration-backdrop: 180ms;
 	--duration-panel-fold: 250ms;
 
-	/* 颜色，浅色一侧。深色一侧在下面的 `.dark` 里覆盖同名变量。 */
+	/* 颜色，浅色一侧。 */
 	--color-canvas: #f8f8f8;
 	--color-container: #ffffff;
 	--color-elevated: #ffffff;

@@ -25,13 +25,11 @@ import type { CorpusClient, CorpusSession } from "./session";
 /** 查询侧核对嵌入空间时重新嵌的那一串字。改它等于让已有语料的 canary 失效。 */
 const CANARY_TEXT = "talent-search embedding canary";
 
-/** 一批多少段。 */
 const BATCH = 200;
 
 /** 说法一条语句写多少行：一行带一个一千多维的向量，几百行已经是几兆的语句。 */
 const PHRASE_ROWS_PER_STATEMENT = 500;
 
-/** 库里的一段：原始的一半加 id。 */
 type StoredRow = ExperienceRow & { id: number };
 
 /** 一段经历指向一条说法的边。 */
@@ -122,7 +120,6 @@ async function ensureSpace(client: CorpusClient, report: Report) {
 	}
 }
 
-/** 公司内任职段登记过的序列树，从库里取。 */
 export async function currentTree(client: CorpusClient): Promise<SeqPair[]> {
 	const { rows } = await client.query<{ seq_l1: string; seq_l2: string }>(
 		"select distinct seq_l1, seq_l2 from experience where kind = 'internal'",
@@ -180,7 +177,7 @@ export async function prunePhrases(client: CorpusClient): Promise<void> {
 	);
 }
 
-/** 一批的结果落库：边先删后写，段上记版本，没有边指向的说法行跟着清掉。 */
+/** 边先删后写，段上记版本，没有边指向的说法行跟着清掉。 */
 async function commitBatch(
 	client: CorpusClient,
 	version: string,
@@ -251,14 +248,9 @@ async function commitBatch(
 	}
 }
 
-/** 一轮派生做完之后：做了几段，还剩几段。 */
 type DeriveOutcome = { done: number; left: number };
 
-/**
- * 一轮派生：待派生的段一批一批地做，直到做完或时间预算用完。
- *
- * 连接与锁由调用方给（`session.ts`），输出写到 `report`。
- */
+/** 一批一批地做，直到做完或时间预算用完。连接与锁由调用方给（`session.ts`）。 */
 export async function derive(
 	session: CorpusSession,
 	report: Report,

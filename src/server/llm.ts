@@ -12,7 +12,6 @@ import type { Submission, Vocabulary } from "#/search/intent";
 import { type AgentTools, SUBMIT } from "./agent-tools";
 import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
 
-/** OpenAI 兼容工具调用端点，配置由环境提供。 */
 const BASE_URL = process.env.LLM_BASE_URL;
 const API_KEY = process.env.LLM_API_KEY;
 const MODEL = process.env.LLM_MODEL;

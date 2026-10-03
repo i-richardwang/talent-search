@@ -78,7 +78,6 @@ function FilterMenu({
 	);
 }
 
-/** 钮上的字：维度名，选了一项跟那一项，选了几项写几项。 */
 function fieldLabel(field: FilterField): string {
 	const picked = field.options.filter((o) => field.values.includes(o.value));
 	if (picked.length === 0) return field.title;
@@ -86,10 +85,6 @@ function fieldLabel(field: FilterField): string {
 	return `${field.title}：${picked.length} 项`;
 }
 
-/**
- * 一维的菜单项。多选的维：每个候选一项勾选项，选了东西时末尾隔一条线放「清除」；
- * 单选的维：一组单选项，最前面是「不限」。
- */
 export function fieldItems(
 	field: FilterField,
 	onChange: (next: Partial<View>) => void,

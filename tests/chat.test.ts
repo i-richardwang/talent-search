@@ -17,7 +17,6 @@ const { complete } = await import("#/server/chat");
 const SCHEMA = z.object({ a: z.number() });
 const quiet = () => {};
 
-/** 跑一次，回答固定，顺便数一数问了几次、问的是什么。 */
 function asking(answer: unknown = { a: 1 }) {
 	const asked: string[] = [];
 	const restore = answerChat((_system, prompt) => {

@@ -11,7 +11,6 @@ import { Dot, EvidenceLine, MissedClaims } from "./evidence";
  * 进度标签（`ClaimProgress`）和点开它的气泡、人的详情里逐条的依据（`ClaimEvidence`）。
  */
 
-/** 逐条的依据：命中的一条一行证据，没命中的合成最后一行。 */
 export function ClaimEvidence({ lines }: { lines: ClaimLine[] }) {
 	const missed = lines.filter((l) => !l.found).map((l) => l.name);
 	return (
@@ -56,7 +55,6 @@ export function ClaimRow({ lines }: { lines: ClaimLine[] }) {
 	);
 }
 
-/** 行尾的进度标签：几条里命中了几条，点开是逐条的依据。 */
 export function ClaimProgress({
 	name,
 	lines,

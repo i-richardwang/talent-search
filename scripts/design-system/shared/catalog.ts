@@ -419,13 +419,11 @@ const PREVIEW_PAGE_IDS = catalog.flatMap((module) =>
 export const isPreviewPageId = (value: unknown): value is PreviewPageId =>
 	PREVIEW_PAGE_IDS.some((id) => id === value);
 
-/** 画在预览页里的页。 */
 export const isPreviewPage = (
 	page: CatalogPage,
 ): page is CatalogPage & { id: PreviewPageId } =>
 	page.module.content !== "changes";
 
-/** 外壳自己画的修改管理页。 */
 export const isChangesPage = (
 	page: CatalogPage,
 ): page is CatalogPage & { id: ChangesPageId } =>

@@ -48,7 +48,6 @@ async function seedTable(rows: SeedRow[]) {
 	}
 }
 
-/** 跑一轮整理，收回它输出的每一行。 */
 async function runReview(): Promise<string[]> {
 	const said: string[] = [];
 	const connection = await client();

@@ -65,7 +65,7 @@ function alignmentSchema(tree: SeqPair[]) {
 	}).refine((pair) => conform(pair, tree) !== null);
 }
 
-/** 对齐这一步的身份：模型、带着这棵树的提示词、schema。派生版本的一部分。 */
+/** 派生版本的一部分。 */
 export function alignIdentity(tree: SeqPair[]): string {
 	return identityOf(extractModel(), systemPrompt(tree), alignmentSchema(tree));
 }

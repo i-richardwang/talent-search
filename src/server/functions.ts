@@ -44,7 +44,6 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 			const thread = await loadThread(data.turnId);
 			const turn = thread?.find((t) => t.id === data.turnId);
 			if (!thread || !turn) return null;
-			/* 待理解记录先显示线程与等待态；页面通过 interpretTurn 发起理解。 */
 			if (!turn.spec) return { thread, result: null };
 			return {
 				thread,

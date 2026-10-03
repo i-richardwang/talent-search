@@ -341,7 +341,6 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 	}));
 }
 
-/** 一条记录理解到哪一步了：界面在等理解时轮询它。 */
 export async function loadProgress(id: string): Promise<Progress | null> {
 	const { rows } = await db.execute<{
 		trace: TraceStep[] | null;

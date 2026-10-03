@@ -4,7 +4,6 @@ import { DocPage } from "../../kit/page";
 import { TokenName } from "../../kit/token-name";
 import { useTokenNumber } from "../../state";
 
-/** 两种字体：令牌、名字与工具类。 */
 const FONTS = [
 	["--font-sans", "正文字体", "font-sans"],
 	["--font-mono", "等宽字体", "font-mono"],

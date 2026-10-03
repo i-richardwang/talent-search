@@ -167,7 +167,6 @@ function RecentGroup({ recent }: { recent: TablePage<RecentSearch> | null }) {
 	);
 }
 
-/** 这一组的菜单：「显示」的子菜单里选列几条。 */
 function RecentMenuItems({
 	count,
 	onCount,

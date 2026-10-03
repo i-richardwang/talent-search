@@ -15,9 +15,7 @@
  * 真实评估用例不进版本库（题目和答案指向真人）；仓库只带 `evals/search/sample.json`——
  * 全部指向合成样例语料（src/corpus/sources/sample/）的可执行基线，干净克隆也能跑通。
  *
- * 这个验收存在的意义：提示词与权重都会被大幅调整，而每次调整既可能
- * 找回漏掉的人、也可能放进不相干的人——没有基线就分不清是变好还是变坏。
- * query 用一行查询语法而不是原话，是刻意的：这里衡量的是**检索与排序**，不含模型
+ * query 用一行查询语法而不是原话：这里衡量的是**检索与排序**，不含模型
  * 理解这一步的方差；理解的对错由 tests/intent.test.ts 和人工评审管。
  */
 import "@tanstack/react-start/server-only";
@@ -32,8 +30,7 @@ import { RESULT_MAX } from "#/search/weights";
 type Case = { name: string; query: string; expect: string[]; reject: string[] };
 
 /**
- * 形状校验从严：验收最不能做的是给出虚假结果。没有 expect 的题会得出 0/0，
- * 界面上却是一个绿色的 ✓——那不是「暂时没答案」，是一次错误报告，所以直接报错。
+ * 形状校验从严：没有 expect 的题会得出 0/0，却显示成绿色的 ✓，所以直接报错。
  */
 function loadCases(file: string): Case[] {
 	const data: unknown = JSON.parse(readFileSync(file, "utf8"));

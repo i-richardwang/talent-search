@@ -39,7 +39,6 @@ function blocks(html: string) {
 	);
 }
 
-/** 每个色块的类名表，按 DOM 顺序 */
 function bandClasses(html: string) {
 	return classLists(
 		[...html.matchAll(/<button[^>]*>/g)].map((m) => m[0]).join(""),

@@ -21,7 +21,6 @@ export function PreviewArea({
 	state,
 	view,
 }: {
-	/** 当前有几项修改。 */
 	changes: number;
 	onSelectColor: (token: string) => void;
 	onView: (view: PreviewView) => void;

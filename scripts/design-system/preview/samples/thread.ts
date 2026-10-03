@@ -77,7 +77,6 @@ const ROUND3: Turn = {
 /** 整条对话链，链头在前；名单看的是最后一轮。 */
 export const THREAD: Turn[] = [ROUND1, ROUND2, ROUND3];
 
-/** 最后一轮的 id。 */
 export const LATEST_TURN_ID = ROUND3.id;
 
 /**

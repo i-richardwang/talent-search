@@ -41,7 +41,6 @@ export function SkillTable({
 }) {
 	const navigate = useNavigate({ from: "/skills" });
 	const [needle, setNeedle] = useSearchDraft(q);
-	// 换词就回到第一页
 	const search = (needle: string) =>
 		void navigate({ search: listSearch(1, needle) });
 

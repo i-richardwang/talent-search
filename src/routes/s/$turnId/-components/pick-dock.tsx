@@ -135,10 +135,6 @@ function Chosen({
 	);
 }
 
-/**
- * 导出成一份 CSV。先弹一个对话框：列出表格的列，决定要不要带上匹配证据，并说清
- * 这份表里是不是符合条件的全部人。
- */
 function ExportDialog({
 	picked,
 	names,
@@ -214,7 +210,6 @@ function ExportDialog({
 							/>
 						</Form.Field>
 					</Form>
-					{/* 选中的比能显示的少时，说清这份表里是谁，并给出补齐的按钮 */}
 					{picked.length < reach && (
 						<Alert
 							action={

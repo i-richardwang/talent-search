@@ -6,9 +6,6 @@
 import "@tanstack/react-start/server-only";
 import { APICallError, RetryError } from "ai";
 
-/**
- * 正整数环境配置；缺失、空、非法或非正值使用默认值。
- */
 export function positiveInt(value: string | undefined, fallback: number) {
 	const parsed = Number(value);
 	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
@@ -29,8 +26,6 @@ export function timeoutFetch(ms: number): typeof fetch {
 }
 
 /**
- * 超时了就再试，最多 `retries` 次。
- *
  * timeoutFetch 触发的超时在此立即重试；429 和 5xx 由 SDK 退避重试。
  * SDK 重试发生在每次 run 内，最坏尝试次数为两个重试循环次数的乘积。
  */

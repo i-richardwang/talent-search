@@ -88,7 +88,6 @@ export function useInterpretation(
 	settledSpec: SearchSpec | null,
 ): {
 	interpreting: boolean;
-	/** 没理解出来时是哪个环节出了问题。 */
 	fault: InterpretFault | null;
 	retry: () => void;
 	/** 这一次理解到目前为止的进度；理解完成后为 null，读记录上的那份。 */

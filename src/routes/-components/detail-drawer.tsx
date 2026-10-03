@@ -26,7 +26,6 @@ export function DetailDrawer({
 	/** 滑走之后导航去哪，带上回到列表时要保留的地址参数 */
 	close: () => void;
 	title: ReactNode;
-	/** 排在正文最前 */
 	description?: ReactNode;
 	children: ReactNode;
 }) {

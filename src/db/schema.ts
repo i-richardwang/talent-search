@@ -207,7 +207,6 @@ export const reviewGroup = pgTable(
 		kind: text("kind", { enum: GROUP_KINDS }).notNull(),
 		/** 收集与判定这组词所依据的 GUIDE 与回答形状摘要。 */
 		guideIdentity: text("guide_identity").notNull(),
-		/** 收集时的 `[{ word, people }]`。 */
 		words: jsonb("words").$type<{ word: string; people: number }[]>().notNull(),
 		collectedAt: timestamp("collected_at", { withTimezone: true })
 			.notNull()

@@ -46,16 +46,12 @@ import type { InterpretFault, Progress, Turn } from "#/server/turn";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/interpret";
 
-/** 这一轮比上一轮加了哪些、去了哪些。链头没有上一轮，整张表都算加的。 */
 function diff(previous: Turn | null, spec: Condition[]) {
 	if (previous === null) return { added: spec, removed: [] };
 	return changesOf(previous.spec?.conditions ?? [], spec);
 }
 
-/**
- * 模型这一轮提交的条件怎么说。链头说按哪些条件搜；后面每一轮说添加了什么、
- * 移除了什么。模型丢掉一条用户要的条件，在这里就是一行看得见的字。
- */
+/** 模型丢掉一条用户要的条件，在这里就是一行看得见的字。 */
 function replyText(previous: Turn | null, spec: Condition[]) {
 	if (previous === null)
 		return spec.length > 0
@@ -71,7 +67,6 @@ function replyText(previous: Turn | null, spec: Condition[]) {
 		.join("；");
 }
 
-/** 用户直接在条件上改的一轮怎么记：没有人说话，改动本身就是那一步。 */
 function editText(previous: Turn | null, spec: Condition[]) {
 	const { added, removed } = diff(previous, spec);
 	const parts = [
@@ -85,10 +80,7 @@ function editText(previous: Turn | null, spec: Condition[]) {
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-/**
- * 一轮的时刻怎么写：今天只写时分，今年写月日，更早写年月日；悬停的提示是完整的时刻。
- * 按浏览器的时区算，所以只在水合之后画。
- */
+/** 按浏览器的时区算，所以只在水合之后画。 */
 function clockOf(at: number) {
 	const d = new Date(at);
 	const now = new Date();
@@ -104,7 +96,6 @@ function clockOf(at: number) {
 	return { full, text };
 }
 
-/** 等待时跟在那句话后面的时长，从这一次理解开始时算。 */
 function Elapsed({
 	since,
 	type,
@@ -212,13 +203,10 @@ function useLocate(
 	}, [viewing, viewportRef]);
 }
 
-/** 最后一轮的状态：还在读、读完了、没理解出来。之前的轮次都已读完。 */
 type Phase = "running" | "settled" | "failed";
 
 /**
- * 对话栏：这次找人任务的整条记录链，底下是补充需求的输入托盘。一轮是人说的话和
- * AI 的回应：检索人才库的过程、条件怎么变了、替人定了什么读法、哪些要求没有采用。
- * 直接在条件上改的一轮没有人说话，只记一条带字的分隔线。
+ * 对话栏：这次找人任务的整条记录链。
  *
  * 动作作用在正看着的条件上，新的一轮记在链尾（`server/turn.ts` 的 `createTurn`）。
  * 理解失败时最后一轮底下给重试；名单那一列另有同样的出路（`result-state.tsx`），
@@ -243,7 +231,6 @@ export function Thread({
 	viewing: string;
 	/** 最后一轮这一次理解的进度；理解完成后为 null，读记录上的。 */
 	progress?: Progress | null;
-	/** 最后一轮没理解出来时是哪个环节出了问题。 */
 	fault?: InterpretFault | null;
 	/** 把替代条件加进正看着的条件表：记成新的一轮。 */
 	onAdd: (conditions: Condition[]) => void;
@@ -400,7 +387,7 @@ function Round({
 	const viewingTag = mark === "viewing" && <Tag size="small">正在查看</Tag>;
 	const link = mark === "link" && <ViewResult turnId={round.id} />;
 
-	// 直接改条件的一轮没有人说话，也没有 AI 的回应：线程中间一条带字的分隔线
+	// 直接改条件的一轮没有人说话，也没有 AI 的回应
 	if (said === null)
 		return (
 			<li
@@ -518,10 +505,7 @@ function Declined({ said, why }: { said: string; why: string }) {
 	);
 }
 
-/**
- * 最后一轮没理解出来：说哪个环节出了问题，能重试的带重试钮。按下之后到这一轮重新进入
- * 理解之前，钮停在等待态，免得被连按两次。
- */
+/** 按下重试之后到这一轮重新进入理解之前，钮停在等待态，免得被连按两次。 */
 function Fault({
 	fault,
 	onRetry,
@@ -582,10 +566,7 @@ function FollowUps({
 	);
 }
 
-/**
- * 一步做了什么，说成动作和对象：查找几个说法、几个公司或学校。
- * 说的是找了什么，不是调了什么——调的是哪样东西对人没有意义。
- */
+/** 说的是找了什么，不是调了什么——调的是哪样东西对人没有意义。 */
 function stepTitle(step: TraceStep) {
 	if (step.tool === "find_terms")
 		return {
@@ -598,14 +579,12 @@ function stepTitle(step: TraceStep) {
 	};
 }
 
-/** 人才库里对应的几项：名字和人数。 */
 function including(list: readonly Matched[]) {
 	return list.length > 0
 		? `，包括${list.map((x) => `${x.name} ${x.people} 人`).join("、")}`
 		: "";
 }
 
-/** 查找的一个说法在人才库里找到多少人、对应哪些技能。 */
 function termLine(t: TermFinding) {
 	if (t.people === 0) return `人才库中没有「${t.text}」`;
 	return [
@@ -615,13 +594,11 @@ function termLine(t: TermFinding) {
 	].join("");
 }
 
-/** 查找的一个名字在人才库里匹配到多少人、对应哪些公司或学校。 */
 function nameLine(n: NameFinding) {
 	if (n.people === 0) return `人才库中没有「${n.name}」`;
 	return `「${n.name}」${n.people} 人${including(n.names)}`;
 }
 
-/** 行首的状态格：进行中还是已完成。 */
 function StatusCell({ live }: { live: boolean }) {
 	return (
 		<Block
@@ -672,7 +649,6 @@ function useDebounced(value: string, live: boolean) {
 /**
  * 检索人才库的过程。进行中默认展开；人把它收起来时，标题换成正在做的那一步。
  * 完成后自动收起（人在进行中亲手点开过的除外），标题是步数与用时。
- * 展开后每一步一行，每一步再点开才是它的结论（`StepRow`）。
  */
 function Process({
 	steps,
@@ -767,13 +743,11 @@ function Process({
 	);
 }
 
-/** 一步的结论：查找的每个说法、每个名字各一行。 */
 export function stepFindings(step: TraceStep) {
 	if (step.tool === "find_terms") return step.terms.map(termLine);
 	return step.names.map(nameLine);
 }
 
-/** 展开后的一步：平时收着，点开是这一步的结论。 */
 function StepRow({ step }: { step: TraceStep }) {
 	const { action, keyword } = stepTitle(step);
 	return (

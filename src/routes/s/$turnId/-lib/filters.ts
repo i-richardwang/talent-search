@@ -42,7 +42,6 @@ export type FilterField = {
 	set: (values: string[]) => Partial<View>;
 };
 
-/** 文本条件：一个已经生效的精确条件，只能看见和清掉。 */
 export type TextFilter = {
 	key: "org" | "school";
 	title: string;
@@ -88,7 +87,6 @@ function field(key: DimKey, facets: Facets, view: View): FilterField {
 	};
 }
 
-/** 把选中的那几个身份写回成这一维在 URL 上的样子。 */
 function write(key: DimKey, ids: string[], all: Facet[]): Partial<View> {
 	const kept = all
 		.filter((r) => ids.includes(dimId(key, r.value)))

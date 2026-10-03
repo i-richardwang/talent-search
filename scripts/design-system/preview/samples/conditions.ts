@@ -54,7 +54,6 @@ export const WIDE_CONDITION: Condition = {
 	off: "wide",
 };
 
-/** 第一轮的条件表。 */
 export const ROUND1_CONDITIONS: Condition[] = [RECOMMEND, BIG_COMPANY];
 
 /** 第二轮的条件表：加了带团队和学历。 */
@@ -74,7 +73,7 @@ export const SPEC: SearchSpec = { conditions: CONDITIONS };
 /** 名单上证据行按的主张：做过推荐系统、带过团队。 */
 export const CLAIMS: Claim[] = claimsOf(CONDITIONS);
 
-/** 关键词搜索的一张条件表：经历「推荐系统」、公司「某甲科技」、累计两年以上。 */
+/** 关键词搜索的一张条件表。 */
 export const KEYWORD_SPEC: SearchSpec = {
 	conditions: conditionsOfKeywords({
 		what: ["推荐系统"],

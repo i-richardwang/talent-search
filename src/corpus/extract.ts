@@ -125,7 +125,7 @@ export function conform(raw: unknown, org: string): Extraction {
 	return { skills, did };
 }
 
-/** 抽取这一步的身份：模型、提示词、schema。派生版本的一部分。 */
+/** 派生版本的一部分。 */
 export function extractIdentity(): string {
 	return identityOf(extractModel(), SYSTEM, SCHEMA);
 }

@@ -17,7 +17,6 @@ export function emptySpec(): SearchSpec {
 	return { conditions: [] };
 }
 
-/** 这份条件表是否非空。 */
 export function hasMeaning(spec: SearchSpec) {
 	return spec.conditions.length > 0;
 }

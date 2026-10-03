@@ -75,7 +75,6 @@ function source(rows: {
 	});
 }
 
-/** 跑一次管线，连同它输出的报告一起返回。 */
 function run(rows: Parameters<typeof source>[0]) {
 	const said: string[] = [];
 	const out = build(source(rows), (line) => said.push(line), AS_OF);

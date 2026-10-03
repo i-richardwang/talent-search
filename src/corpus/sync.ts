@@ -11,7 +11,6 @@ import type { Report } from "./report";
 import type { CorpusSession } from "./session";
 import { loadSource, type SourceConfig } from "./sources";
 
-/** 一条语句写多少行。 */
 const ROWS_PER_STATEMENT = 5_000;
 
 function* chunked<T>(rows: T[], size: number): Generator<T[]> {
@@ -145,10 +144,7 @@ async function reconcile({ client }: CorpusSession): Promise<{
 }
 
 /**
- * 一次同步：读数据源 → 切段校验 → 一笔事务做差。
- *
- * 同内容的段保留身份，累计月数按本次日期刷新。连接与锁由调用方给
- * （`session.ts`），输出写到 `report`。
+ * 同内容的段保留身份，累计月数按本次日期刷新。连接与锁由调用方给（`session.ts`）。
  */
 export async function sync(
 	session: CorpusSession,

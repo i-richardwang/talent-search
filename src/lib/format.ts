@@ -5,7 +5,6 @@ export function dots(...parts: (string | null | undefined)[]) {
 	return parts.filter(Boolean).join(" · ");
 }
 
-/** 一个人现在在哪儿：部门 · 职位 · 职级。 */
 export function positionLabel(e: {
 	curDept: string;
 	curTitle: string;
@@ -14,12 +13,10 @@ export function positionLabel(e: {
 	return dots(e.curDept, e.curTitle, e.curLevel);
 }
 
-/** 起止：2021-03 – 2024-10 / 2021-03 – 至今 */
 export function period(start: string, end: string | null) {
 	return `${start.slice(0, 7)} – ${end ? end.slice(0, 7) : "至今"}`;
 }
 
-/** 精确到月的时长：11 个月 / 2 年 / 2 年 3 个月。 */
 export function duration(months: number) {
 	if (months < 12) return `${months} 个月`;
 	const y = Math.floor(months / 12);
@@ -37,7 +34,6 @@ export function years(months: number) {
 	return `${y >= 9.95 ? Math.round(y) : y.toFixed(1)} 年`;
 }
 
-/** 整数带千分位：`31,279`。 */
 export function integer(n: number) {
 	return n.toLocaleString("en-US");
 }

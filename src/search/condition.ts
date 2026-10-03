@@ -27,8 +27,8 @@
  * 两份不同的查询，屏幕上看得出来、改得动。
  *
  * **搜索词是模型对「要找什么人」的表达，不是用户的原话。** 用户说「搞推荐的」，
- * 模型写「推荐算法」「推荐系统」，找人更准，屏幕上也看得懂。取值不标来源、
- * 不按来源打折、不让模型把原话一并返回来核对：那些东西服务的读者不存在。
+ * 模型写「推荐算法」「推荐系统」，找人更准，屏幕上也看得懂。取值不标来源，
+ * 也不按来源打折。
  *
  * 库里表达不了的要求不进条件表：模型把它写进这一轮的说明（`intent.ts` 的
  * `declined`），说出库里没有什么，能换成库里有的说法就附上替代条件。「资深」是
@@ -165,7 +165,6 @@ export const CONDITION_MAX = 12;
  */
 export const VALUES_MAX = 6;
 
-/** 一列不可信的经历词 → 去重、限长、限个数之后的那几个。 */
 function whatOf(raw: unknown): string[] {
 	const out: string[] = [];
 	for (const item of Array.isArray(raw) ? raw : []) {
@@ -295,7 +294,6 @@ export function withOff(condition: Condition, off: OffCause | null): Condition {
 	return off ? ({ ...rest, off } as Condition) : (rest as Condition);
 }
 
-/** 这条条件允许的几档强度：人的条件没有排除（见 `MODES`）。 */
 export function modesOf(condition: Condition): readonly Mode[] {
 	return condition.about === "experience" ? MODES : PERSON_MODES;
 }
@@ -361,7 +359,6 @@ export function withoutPart(
 	return partsOf(next).length > 0 ? next : null;
 }
 
-/** 这份查询里的经历主张。 */
 export function experienceConditions(list: readonly Condition[]) {
 	return list.filter((c): c is ExperienceCondition => c.about === "experience");
 }

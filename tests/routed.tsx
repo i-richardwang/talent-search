@@ -20,7 +20,6 @@ export async function routed(
 	}: {
 		/** 这条路由的路径模式，如 `/s/$turnId`。 */
 		path?: string;
-		/** 当前所在的地址。 */
 		url?: string;
 		/** 这条路由的地址参数校验函数；不给就是不收参数。 */
 		validateSearch?: (search: Record<string, unknown>) => object;

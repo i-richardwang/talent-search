@@ -30,8 +30,7 @@ export function CodeBlock({
 				<pre className="ui-code-block-pre">
 					<code className="ui-code-block-code">
 						{text.split("\n").map((line, index) => (
-							// 行没有别的身份：同一份原文里第几行就是它的键。
-							// biome-ignore lint/suspicious/noArrayIndexKey: 见上
+							// biome-ignore lint/suspicious/noArrayIndexKey: 行没有别的身份，第几行就是它的键
 							<span className="ui-code-block-line" key={index}>
 								{line}
 							</span>

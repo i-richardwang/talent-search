@@ -19,7 +19,6 @@
 import type { Route } from "#/db/schema";
 import type { Extraction } from "./extract";
 
-/** 拼说法要读经历段上的哪几个字段。 */
 export type RouteSource = {
 	kind: "internal" | "external";
 	unemployed: boolean;

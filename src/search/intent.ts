@@ -101,7 +101,6 @@ export type TurnNotes = { assumed: string[]; declined: Declined[] };
 /** 说明里每一类最多几条。再多就不是交代，是一段需要人读完才能继续的正文。 */
 const NOTES_MAX = 3;
 
-/** 一次理解校验之后的样子：新的条件表，和这一轮的说明。 */
 type Understood = { spec: SearchSpec; notes: TurnNotes | null };
 
 /**
@@ -229,7 +228,6 @@ export function valuesOutsideVocabulary(
 	return [...out];
 }
 
-/** 要检查经历词是否太宽的条件：正向的、写了经历词的。 */
 type WidthChecked = ExperienceCondition &
 	Required<Pick<ExperienceCondition, "what">>;
 

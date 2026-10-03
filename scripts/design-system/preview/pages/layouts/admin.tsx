@@ -133,7 +133,6 @@ function Admin() {
 	);
 }
 
-/** 页底切换：任务、数据、技能三页。 */
 function PageSwitch() {
 	const navigate = useNavigate();
 	return (
@@ -156,7 +155,6 @@ function PageSwitch() {
 	);
 }
 
-/** 管理页：标题和一块内容，任务、数据、技能三种内容切换。 */
 export function AdminLayoutPage() {
 	return (
 		<Routed url="/tasks">

@@ -5,7 +5,6 @@ import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
 import { peopleUnder, UNDER } from "#/search/search";
 
-/** 一个标准词：它属于哪个更宽的词、并进来的写法、它和它的细分词一共多少人、上次整理的时间。 */
 export type SkillEntry = {
 	canonical: string;
 	/** 更宽的词；没有就是 null */
@@ -19,7 +18,6 @@ export type SkillEntry = {
 	reviewedDaysAgo: number;
 };
 
-/** 一个标准词的全部关系：它是什么意思、往上属于谁、往下带着谁。 */
 export type SkillDetail = Omit<SkillEntry, "parent" | "children"> & {
 	/** 判定方给这个词写的那一句；还没写过是 null */
 	gloss: string | null;

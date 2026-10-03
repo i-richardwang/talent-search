@@ -45,7 +45,6 @@ function serialize(prefs: NavPrefs): string {
 	}).toString();
 }
 
-/** 写回 cookie，一年后过期。 */
 export function writeNavPrefs(prefs: NavPrefs) {
 	// biome-ignore lint/suspicious/noDocumentCookie: 服务端直出要读到它，只能是 cookie
 	document.cookie = `${NAV_COOKIE}=${encodeURIComponent(serialize(prefs))}; path=/; max-age=31536000; samesite=lax`;

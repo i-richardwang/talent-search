@@ -23,7 +23,6 @@ async function client() {
 	return pool.connect();
 }
 
-/** 跑一轮整理，收回它输出的每一行。 */
 async function runReview(): Promise<string[]> {
 	const said: string[] = [];
 	const connection = await client();

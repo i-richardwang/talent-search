@@ -65,7 +65,6 @@ function Drawers() {
 
 /* ---------- 任务日志：按次打开才取 ---------- */
 
-/** 同步那一栏的运行记录。 */
 const SYNC_LANE = TASK_LANES.find((lane) => lane.kind === "sync");
 
 function Logs() {

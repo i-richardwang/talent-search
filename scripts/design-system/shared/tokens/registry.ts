@@ -166,7 +166,6 @@ export const SHADOW_TOKENS: { key: string; label: string; use: string }[] = [
 	},
 ];
 
-/** 组件尺寸的档，从小到大。 */
 export type SizeTier = "small" | "middle" | "large";
 export const SIZE_TIERS: SizeTier[] = ["small", "middle", "large"];
 export const TIER_LABEL: Record<SizeTier, string> = {
@@ -211,7 +210,6 @@ export const COMPONENT_TIERS = {
 };
 
 export type ComponentSizing = keyof typeof COMPONENT_TIERS;
-/** 一个组件有的档。 */
 export type TierOf<G extends ComponentSizing> =
 	(typeof COMPONENT_TIERS)[G][number];
 
@@ -452,7 +450,6 @@ export const NUMERIC_TOKENS: NumericToken[] = [
 export const numericToken = (key: string): NumericToken | undefined =>
 	NUMERIC_TOKENS.find((token) => token.key === key);
 
-/** 一组数值令牌。 */
 export const numericTokens = (group: NumericToken["group"]) =>
 	NUMERIC_TOKENS.filter((token) => token.group === group);
 

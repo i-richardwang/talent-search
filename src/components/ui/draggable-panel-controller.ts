@@ -174,7 +174,6 @@ export function createPanelController(initial: PanelOptions) {
 		},
 	};
 
-	/** 分隔条上的键盘：左右方向键、PageUp/PageDown 调宽，Home/End 到两头，回车或空格展开收起。 */
 	const resizeByKey = (event: KeyInput) => {
 		if (event.key === "Enter" || event.key === " ") {
 			if (!options.onExpandChange) return;
