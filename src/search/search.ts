@@ -62,10 +62,7 @@ import {
 	RELEVANCE_MIN,
 	RELEVANCE_MIN_EXCLUDE,
 	RESULT_PAGE,
-	ROUTE_ORDER,
-	ROUTE_STRENGTH,
 	type Route,
-	strengthRank,
 } from "./weights";
 
 function like(term: string) {
@@ -440,11 +437,11 @@ const FACT_ROW = sql`e.id, e.emp_id, e.end_date, ${factSelect}`;
 
 /**
  * 有经历词的主张：命中的说法通过 `experience_phrase` 关联到段，同一主张、同一段
- * 只留证据最强的那一次命中。
+ * 只留最对得上的那一次命中。
  *
  * 每条主张按经历词展开：词之间是 OR，但各自单独判定，因为「命中的是哪个词」
- * 要进证据行。一段几类都可能命中、几个词都可能命中，这里只留最强的一行：
- * 先比可信度那一档、同档比相关度——和 rank.ts 的 `stronger` 同一套比较规则，
+ * 要进证据行。一段几类都可能命中、几个词都可能命中，这里只留相关度最高的一行
+ * ——和 rank.ts 的 `closer` 同一套比较规则，
  * 否则这里留下的和那边选出来的不是同一条证据。打分层按事实累加月份，同段两行
  * 会把 12 个月数成 24；证据行也会把同一段列两遍。去重必须在 SQL 里做完再比
  * 上限：在内存里去重的话，三个词的宽主张会把 FACT_MAX 提前触发三倍。
@@ -469,16 +466,6 @@ function factsSql(
 		),
 	);
 	if (!table) return null;
-	const strength = sql`case ep.route ${sql.join(
-		ROUTE_ORDER.map(
-			(r) => sql`when ${r} then ${strengthRank(ROUTE_STRENGTH[r])}`,
-		),
-		sql` `,
-	)} end`;
-	const routeOrder = sql`case ep.route ${sql.join(
-		ROUTE_ORDER.map((route, index) => sql`when ${route} then ${index}`),
-		sql` `,
-	)} end`;
 	const own = sql.join(
 		claims.map((claim, i) => {
 			const conds = segmentConds(claim);
@@ -503,8 +490,7 @@ function factsSql(
 		join experience e on e.id = ep.experience_id
 		join employee p on p.emp_id = e.emp_id
 		${whereAll([sql`(${own})`, ...person])}
-		order by q.claim_idx, e.id, ${strength}, q.relevance desc,
-			q.value_idx, ${routeOrder}`;
+		order by q.claim_idx, e.id, q.relevance desc, q.value_idx, ep.route`;
 }
 
 /**
@@ -887,7 +873,6 @@ export async function search(
 			return [
 				{
 					employee: person,
-					strength: row.strength,
 					depth: row.depth,
 					basis: row.basis,
 					hits,

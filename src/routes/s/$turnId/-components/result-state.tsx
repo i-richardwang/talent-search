@@ -16,43 +16,33 @@ import { emptyState } from "../-lib/empty-state";
 import { FAULT_COPY, FAULT_EXIT_LABEL, faultExits } from "../-lib/interpret";
 import type { ListWait, SearchPhase } from "../-lib/nav-phase";
 import type { View } from "../-lib/view-params";
-import { StrengthLegend } from "./evidence";
 
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	evidence: "按匹配度排序",
 	employee: "默认顺序",
 };
 
-/**
- * 名单的表头：这份名单有多少人、按什么排，有证据行时带上强度图例。等待时这一格
- * 写在做什么。
- */
+/** 名单的表头：这份名单有多少人、按什么排。等待时这一格写在做什么。 */
 export function ResultHeader({
 	wait,
 	order,
 	total,
-	evidence,
 }: {
 	wait: ListWait | null;
 	order: SearchOutcome["order"];
 	total: number;
-	/** 名单上有证据行（或这一轮的条件会有）：图例才有东西可对照。 */
-	evidence: boolean;
 }) {
 	return (
-		<div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
-			<p className="flex items-center gap-1" role="status">
-				{wait ? (
-					<Waiting key={wait.phase} phase={wait.phase} since={wait.since} />
-				) : (
-					<>
-						<span className="tabular-nums">{total.toLocaleString()}</span>
-						{` 人 · ${ORDER_LABEL[order]}`}
-					</>
-				)}
-			</p>
-			{evidence && <StrengthLegend />}
-		</div>
+		<p className="flex min-w-0 items-center gap-1" role="status">
+			{wait ? (
+				<Waiting key={wait.phase} phase={wait.phase} since={wait.since} />
+			) : (
+				<>
+					<span className="tabular-nums">{total.toLocaleString()}</span>
+					{` 人 · ${ORDER_LABEL[order]}`}
+				</>
+			)}
+		</p>
 	);
 }
 

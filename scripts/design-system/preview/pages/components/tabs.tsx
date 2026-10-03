@@ -10,7 +10,7 @@ const ITEMS = [
 ];
 
 const PANEL_TEXT: Record<string, string> = {
-	evidence: "登记证据 2 条，简历自述 3 条，命中「数据平台」「团队管理」。",
+	evidence: "任职记录 2 条，简历 3 条，命中「数据平台」「团队管理」。",
 	experience: "2019 – 至今 · 数据平台研发，负责离线计算与调度。",
 	raw: "这一段还没读过，显示简历里的整段原文。",
 };

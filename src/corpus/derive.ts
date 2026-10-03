@@ -19,7 +19,7 @@ import {
 } from "./extract";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
-import { type Phrasing, phrasesOf } from "./route-texts";
+import { PHRASING, type Phrasing, phrasesOf } from "./route-texts";
 import type { CorpusClient, CorpusSession } from "./session";
 
 /** 查询侧核对嵌入空间时重新嵌的那一串字。改它等于让已有语料的 canary 失效。 */
@@ -36,7 +36,7 @@ type StoredRow = ExperienceRow & { id: number };
 type Link = Phrasing & { experienceId: number };
 
 /**
- * 这一批段的说法与边（拼法见 `route-texts.ts`）。六路进同一张说法表：一个能力词
+ * 这一批段的说法与边（拼法见 `route-texts.ts`）。五类进同一张说法表：一个能力词
  * 恰好和某个岗位名是同一串字时只嵌一次，两条边各指向它。做过的事的说法是
  * 领域，参与方式存在边的第四列，其余类那一列是空。
  *
@@ -127,10 +127,13 @@ export async function currentTree(client: CorpusClient): Promise<SeqPair[]> {
 	return seqTree(rows.map((row) => ({ kind: "internal", ...row })));
 }
 
-/** 当前的派生版本。抽取和对齐没配端点时它们不在版本里：配上了就该重新派生。 */
+/**
+ * 当前的派生版本：嵌入空间、说法的拼法，以及抽取和对齐的标准。抽取和对齐没配端点时
+ * 它们不在版本里：配上了就该重新派生。
+ */
 export function identity(tree: SeqPair[]): string {
 	const space = embedSpace();
-	const parts = [space.spaceId, space.model];
+	const parts = [space.spaceId, space.model, PHRASING];
 	if (chatConfigured()) parts.push(extractIdentity(), alignIdentity(tree));
 	return createHash("sha256").update(parts.join("")).digest("hex");
 }

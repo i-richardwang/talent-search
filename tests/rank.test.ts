@@ -27,7 +27,7 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 		id: nextId++,
 		claim: 0,
 		value: "词0",
-		route: "seq",
+		route: "role",
 		relevance: 1,
 		phrase: null,
 		involvement: null,
@@ -66,59 +66,33 @@ const orderOf = (facts: Fact[], t?: Claim[], f?: SearchFilters) =>
 /** 若干年前结束的一段：近因因子据此衰减 */
 const yearsAgo = (n: number) => `${NOW.getFullYear() - n}-01-01`;
 
-describe("先按可信度排，再按深度排", () => {
+describe("名次只看深度，来源不参与", () => {
 	/*
-	 * 「序列是 HR 登记的归属，部门只说明他在那个组织里，简历原文提到不等于做过」
-	 * ——这三档由排序键的先后隔开，不靠把深度压小：档内深度的取值范围放满，档间
-	 * 深度再高也改变不了先后。
+	 * 任职记录和简历里写的都在说这个人做过什么。按来源分档的话，一条勉强对得上的
+	 * 任职记录会压过一段做了二十年、对得很准的经历；来源写在证据行上，由 HR 判断。
 	 */
-	const longOrg = fact({ empId: "A", route: "org", months: 240 });
-	const shortSeq = fact({
-		empId: "B",
-		route: "seq",
-		months: 1,
-		endDate: yearsAgo(30),
+	test("深度一样时，来源不同深度也一样", () => {
+		const role = depthOf([fact({ empId: "A", route: "role" })]);
+		const skill = depthOf([fact({ empId: "A", route: "skill" })]);
+		const raw = depthOf([fact({ empId: "A", route: "description" })]);
+		assert.equal(role, skill);
+		assert.equal(role, raw);
 	});
 
-	test("干了二十年且还在做的部门命中，排在一段刚开始的序列命中后面", () => {
-		assert.deepEqual(orderOf([longOrg, shortSeq]), ["B", "A"]);
-		const { ranked } = run([longOrg, shortSeq]);
-		assert.equal(ranked[0]?.strength, "controlled");
-		assert.equal(ranked[1]?.strength, "org");
-	});
-
-	test("简历原文同理，排在任何受控命中后面", () => {
+	test("简历里做了很久、对得很准的，排在一条勉强对得上、早已离开的任职记录前面", () => {
 		assert.deepEqual(
 			orderOf([
-				fact({ empId: "A", route: "description", months: 240 }),
-				fact({ empId: "B", route: "org", months: 1, endDate: yearsAgo(30) }),
+				fact({
+					empId: "A",
+					route: "role",
+					relevance: RELEVANCE_MIN,
+					months: 6,
+					endDate: yearsAgo(10),
+				}),
+				fact({ empId: "B", route: "skill", relevance: 0.95, months: 96 }),
 			]),
 			["B", "A"],
 		);
-	});
-
-	test("人的可信度是必须的主张里最弱的那一档；加分的主张不参与", () => {
-		const facts = [
-			fact({ empId: "A", claim: 0, route: "seq" }),
-			fact({ empId: "A", claim: 1, route: "description" }),
-			fact({ empId: "B", claim: 0, route: "org" }),
-			fact({ empId: "B", claim: 1, route: "org" }),
-			fact({ empId: "C", claim: 0, route: "description" }),
-			fact({ empId: "C", claim: 1, route: "seq" }),
-		];
-		const both = run(facts, claims("must", "must")).ranked;
-		assert.deepEqual(
-			both.map((r) => [r.empId, r.strength]),
-			[
-				["B", "org"],
-				["A", "claimed"],
-				["C", "claimed"],
-			],
-		);
-		// 第二条改成加分：A 的档由第一条（序列）说了算，C 的档是自述
-		const boosted = run(facts, claims("must", "boost")).ranked;
-		assert.equal(boosted.find((r) => r.empId === "A")?.strength, "controlled");
-		assert.equal(boosted.find((r) => r.empId === "C")?.strength, "claimed");
 	});
 });
 
@@ -137,7 +111,7 @@ describe("取值", () => {
 		]);
 		const one = depthOf([fact({ empId: "A", id: 7, value: "词0" })]);
 		// 同段两行本该在取数 SQL 里就去重掉（search.ts 的 factsSql），
-		// 这里只保证万一漏到内存里，强度按最强的那条算，月份也不因此翻倍。
+		// 这里只保证万一漏到内存里，相关度按最高的那条算，月份也不因此翻倍。
 		assert.equal(both, one);
 	});
 });
@@ -164,7 +138,7 @@ describe("时长", () => {
 		assert.ok(huge < 1, `${huge} 必须小于 1`);
 	});
 
-	test("取值范围放满：三个月和八年在同一档里分得开", () => {
+	test("取值范围放满：三个月和八年分得开", () => {
 		const short = depthOf([fact({ empId: "A", months: 3 })]);
 		const long = depthOf([fact({ empId: "B", months: 96 })]);
 		assert.ok(long > short * 5, `${long} 对 ${short}：时长不该只是装饰`);
@@ -293,7 +267,7 @@ describe("排名依据", () => {
 		const { ranked } = run(facts);
 		assert.deepEqual(ranked[0]?.basis, [
 			{
-				route: "seq",
+				route: "role",
 				value: "词0",
 				relevance: 1,
 				months: 145,
@@ -318,7 +292,7 @@ describe("排名依据", () => {
 		);
 		assert.deepEqual(ranked[0]?.basis, [
 			{
-				route: "seq",
+				route: "role",
 				value: "词0",
 				relevance: 1,
 				months: 24,
@@ -331,13 +305,13 @@ describe("排名依据", () => {
 
 	test("全部证据段共同累计，不分哪一类：一段简历里提过的算法经历也是算法经历", () => {
 		const { ranked } = run([
-			fact({ empId: "A", route: "seq", months: 12 }),
-			fact({ empId: "A", route: "title", months: 18 }),
-			fact({ empId: "A", route: "description", months: 60 }),
+			fact({ empId: "A", route: "role", months: 12 }),
+			fact({ empId: "A", route: "title", months: 18, relevance: 0.9 }),
+			fact({ empId: "A", route: "description", months: 60, relevance: 0.8 }),
 		]);
 		assert.equal(ranked[0]?.basis[0]?.months, 90);
-		// 强度仍只看最强那条：累计不会把自述抬成登记
-		assert.equal(ranked[0]?.basis[0]?.route, "seq");
+		// 依据取最对得上的那条
+		assert.equal(ranked[0]?.basis[0]?.route, "role");
 	});
 
 	/**
@@ -361,7 +335,7 @@ describe("排名依据", () => {
 
 	test("「入职前」和累计看的是同一批段：弱证据段也算", () => {
 		const { ranked } = run([
-			fact({ empId: "A", route: "seq", kind: "external", months: 24 }),
+			fact({ empId: "A", route: "title", kind: "external", months: 24 }),
 			fact({
 				empId: "A",
 				route: "description",
@@ -382,18 +356,17 @@ describe("相关度", () => {
 		assert.ok(near > 0, "过了阈值就不是不算");
 	});
 
-	test("刚过阈值的受控命中仍排在相似 1.0 的部门命中前面", () => {
-		// 登记字段说他真在干这个，相关度只是翻译损耗——档在前，相关度在档内比
+	test("相关度高的在前，不看来源", () => {
 		assert.deepEqual(
 			orderOf([
-				fact({ empId: "A", route: "org", relevance: 1 }),
-				fact({ empId: "B", route: "seq", relevance: RELEVANCE_MIN }),
+				fact({ empId: "A", route: "role", relevance: RELEVANCE_MIN }),
+				fact({ empId: "B", route: "description", relevance: 1 }),
 			]),
 			["B", "A"],
 		);
 	});
 
-	test("低相似的段续时长，但档和相关度仍取最强那条", () => {
+	test("低相似的段续时长，但相关度仍取最对得上的那条", () => {
 		const mixed = run([
 			fact({ empId: "A", months: 12 }),
 			fact({ empId: "A", relevance: 0.7, months: 240 }),
@@ -413,39 +386,12 @@ describe("相关度", () => {
 		assert.ok(longNear > shortExact);
 	});
 
-	test("依据里带着最强那条证据的相关度", () => {
+	test("依据里带着最对得上那条证据的相关度", () => {
 		const { ranked } = run([
 			fact({ empId: "A", relevance: 0.65 }),
 			fact({ empId: "A", relevance: 0.9 }),
 		]);
 		assert.equal(ranked[0]?.basis[0]?.relevance, 0.9);
-	});
-
-	test("档位看的是路，与相关度正交：比得再像，自述还是自述", () => {
-		const registered = [fact({ empId: "A", route: "seq", relevance: 0.6 })];
-		const claimed = [fact({ empId: "B", route: "description", relevance: 1 })];
-		assert.equal(run(registered).ranked[0]?.strength, "controlled");
-		assert.equal(run(claimed).ranked[0]?.strength, "claimed");
-	});
-});
-
-describe("累计能跨档位，但不能压过档位本身", () => {
-	test("简历里提过一句给序列命中续时长，却压不过一段短的序列命中的档位", () => {
-		const mixed = [
-			fact({ empId: "A", route: "seq", months: 12 }),
-			fact({ empId: "A", route: "description", months: 240 }),
-		];
-		const clean = fact({ empId: "B", route: "seq", months: 12 });
-		assert.ok(
-			depthOf(mixed) > depthOf([clean]),
-			"累计答的是「沉淀了多久」，自述的段也算",
-		);
-		const orgLong = fact({ empId: "C", route: "org", months: 252 });
-		assert.deepEqual(
-			orderOf([...mixed, clean, orgLong]),
-			["A", "B", "C"],
-			"档位仍由最强证据定，时长翻不了盘",
-		);
 	});
 });
 
@@ -464,16 +410,16 @@ describe("必须与加分", () => {
 		);
 	});
 
-	test("必须的主张之间：档取最弱的一条，深度相乘", () => {
+	test("必须的主张之间深度相乘；来源不同不改变名次", () => {
 		const facts = [
 			fact({ empId: "A", claim: 0 }),
-			fact({ empId: "A", claim: 1, route: "seq" }),
+			fact({ empId: "A", claim: 1, route: "role" }),
 			fact({ empId: "B", claim: 0 }),
 			fact({ empId: "B", claim: 1, route: "description" }),
 			fact({ empId: "C", claim: 0 }),
 			fact({ empId: "C", claim: 1, relevance: 0.6 }),
 		];
-		assert.deepEqual(orderOf(facts, two), ["A", "C", "B"]);
+		assert.deepEqual(orderOf(facts, two), ["A", "B", "C"]);
 		const { ranked } = run(facts, two);
 		const a = ranked.find((r) => r.empId === "A");
 		const c = ranked.find((r) => r.empId === "C");
@@ -500,7 +446,7 @@ describe("必须与加分", () => {
 		);
 	});
 
-	test("只有自述证据的人照样算命中：去留不看档，档只决定先后", () => {
+	test("只有简历里写的证据的人照样算命中", () => {
 		const claimed = [fact({ empId: "B", claim: 0, route: "description" })];
 		assert.equal(run(claimed, claims("must")).total, 1);
 	});
@@ -640,7 +586,7 @@ describe("同分的顺序是确定的", () => {
 	 * 翻页靠把 limit 调大重查，所以前一页必须逐位不变。分数相同时若不定序，
 	 * 第二页会漏人或让人重复出现，而界面上看不出来。
 	 */
-	test("同档同深按工号，两次求值结果一致", () => {
+	test("同深按工号，两次求值结果一致", () => {
 		const facts = ["C", "A", "B"].map((empId) => fact({ empId }));
 		const once = run(facts).ranked.map((r) => r.empId);
 		const twice = run([...facts].reverse()).ranked.map((r) => r.empId);

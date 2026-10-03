@@ -430,23 +430,22 @@ export function experience(id: number): SampleExperience {
 }
 
 /**
- * 名单上的六个人，按名次排好：登记的证据在前，只有简历自述的在后。
+ * 名单上的六个人，按名次排好：对得上、做得久、离现在近的在前。
  * 第一条主张是「推荐系统」，第二条是「团队管理」（加分，有的人没命中）。
  */
 export const RESULTS: RankedResult[] = [
 	{
 		employee: EMPLOYEES[0] as Employee,
-		strength: "controlled",
 		depth: 86,
 		hits: [
 			hitOn(experience(103), {
 				value: "推荐系统",
-				route: "seq",
+				route: "role",
 				relevance: 0.93,
 			}),
 			hitOn(experience(102), {
 				value: "推荐系统",
-				route: "seq",
+				route: "role",
 				relevance: 0.93,
 			}),
 			hitOn(experience(101), {
@@ -460,7 +459,7 @@ export const RESULTS: RankedResult[] = [
 		],
 		basis: [
 			{
-				route: "seq",
+				route: "role",
 				value: "推荐系统",
 				relevance: 0.93,
 				months: 86,
@@ -479,18 +478,17 @@ export const RESULTS: RankedResult[] = [
 	},
 	{
 		employee: EMPLOYEES[1] as Employee,
-		strength: "controlled",
 		depth: 78,
 		hits: [
 			hitOn(experience(202), {
 				value: "推荐系统",
-				route: "title",
+				route: "role",
 				relevance: 0.9,
 			}),
 		],
 		basis: [
 			{
-				route: "title",
+				route: "role",
 				value: "推荐系统",
 				relevance: 0.9,
 				months: 78,
@@ -502,29 +500,28 @@ export const RESULTS: RankedResult[] = [
 	},
 	{
 		employee: EMPLOYEES[2] as Employee,
-		strength: "org",
 		depth: 102,
 		hits: [
 			hitOn(experience(303), {
 				value: "推荐算法",
-				route: "org",
+				route: "role",
 				relevance: 0.74,
 			}),
 			hitOn(experience(302), {
 				value: "推荐算法",
-				route: "org",
+				route: "role",
 				relevance: 0.74,
 			}),
 			hitOn(experience(303), {
 				claim: 1,
 				value: "带团队",
-				route: "title",
+				route: "role",
 				relevance: 0.78,
 			}),
 		],
 		basis: [
 			{
-				route: "org",
+				route: "role",
 				value: "推荐算法",
 				relevance: 0.74,
 				months: 102,
@@ -532,7 +529,7 @@ export const RESULTS: RankedResult[] = [
 				external: false,
 			},
 			{
-				route: "title",
+				route: "role",
 				value: "带团队",
 				relevance: 0.78,
 				months: 45,
@@ -543,7 +540,6 @@ export const RESULTS: RankedResult[] = [
 	},
 	{
 		employee: EMPLOYEES[5] as Employee,
-		strength: "claimed",
 		depth: 76,
 		hits: [
 			hitOn(experience(602), {
@@ -582,7 +578,6 @@ export const RESULTS: RankedResult[] = [
 	},
 	{
 		employee: EMPLOYEES[3] as Employee,
-		strength: "claimed",
 		depth: 67,
 		hits: [
 			hitOn(experience(401), {
@@ -607,7 +602,6 @@ export const RESULTS: RankedResult[] = [
 	},
 	{
 		employee: EMPLOYEES[4] as Employee,
-		strength: "claimed",
 		depth: 36,
 		hits: [
 			hitOn(experience(501), {

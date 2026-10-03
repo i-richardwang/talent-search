@@ -2,7 +2,6 @@ import { Popover } from "#/components/ui/popover";
 import { ProgressTag } from "#/components/ui/progress-tag";
 import { cn } from "#/lib/utils";
 import { conditionKey } from "#/search/condition";
-import { strengthOf } from "#/search/evidence";
 import type { ClaimLine } from "../-lib/claim-lines";
 import { Dot, EvidenceLine, MissedClaims } from "./evidence";
 
@@ -47,7 +46,7 @@ export function ClaimRow({ lines }: { lines: ClaimLine[] }) {
 					)}
 					key={conditionKey(claim)}
 				>
-					<Dot strength={found ? strengthOf(found.hit.route) : undefined} />
+					<Dot hit={Boolean(found)} />
 					<span className="truncate">{name}</span>
 				</li>
 			))}

@@ -30,7 +30,7 @@ const hit = (over: Partial<Hit> = {}) =>
 	row({ relevance: 0.83, org: "某部门", ...over });
 
 const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
-	route: "seq",
+	route: "role",
 	value: "算法",
 	relevance: 0.83,
 	months: 27,
@@ -95,20 +95,14 @@ describe("一行证据看得见的部分", () => {
 
 	test("写出来的必须是真正命中的那个字段，不是固定取岗位", () => {
 		// 屏幕上出现一个和条件毫不相干的字段值，读起来就是系统匹配错了。
-		const bySeq = seen(hit({ route: "seq" }), basis());
-		assert.match(bySeq, /序列/);
-		assert.match(bySeq, /技术 · 算法/);
+		const byRole = seen(hit({ route: "role", org: "算法平台部" }), basis());
+		assert.match(byRole, /任职记录/);
+		assert.match(byRole, /算法工程师/);
+		assert.match(byRole, /算法平台部/);
 
 		const byTitle = seen(hit({ route: "title" }), basis({ route: "title" }));
 		assert.match(byTitle, /岗位/);
 		assert.match(byTitle, /算法工程师/);
-
-		const byOrg = seen(
-			hit({ route: "org", org: "算法平台部" }),
-			basis({ route: "org" }),
-		);
-		assert.match(byOrg, /部门或公司/);
-		assert.match(byOrg, /算法平台部/);
 	});
 
 	test("简历原文命中时不显示引用的原文", () => {

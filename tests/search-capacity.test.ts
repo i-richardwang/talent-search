@@ -19,17 +19,21 @@ test("超过事实载荷上限的被否决段不导致有效候选溢出", async
 		{
 			empId: "C1",
 			name: "合成被否决",
-			segments: [{ title: "工程师", org: "排除部门", months: 12 }],
+			segments: [
+				{ kind: "external", title: "工程师", org: "排除部门", months: 12 },
+			],
 		},
 		{
 			empId: "C2",
 			name: "合成有效",
-			segments: [{ title: "工程师", org: "保留部门", months: 12 }],
+			segments: [
+				{ kind: "external", title: "工程师", org: "保留部门", months: 12 },
+			],
 		},
 	]);
 	await db.execute(sql`with added as (
 		insert into experience (emp_id, kind, start_date, title, org, months)
-		select 'C1', 'internal', date '1000-01-01' + n, '工程师', '排除部门', 1
+		select 'C1', 'external', date '1000-01-01' + n, '工程师', '排除部门', 1
 		from generate_series(1, ${FACT_MAX}) n returning id)
 		insert into experience_phrase (experience_id, route, phrase_id)
 		select a.id, 'title', p.id from added a cross join phrase p where p.text = '工程师'`);
@@ -94,7 +98,9 @@ test("经历候选超过单语句参数上限时，加分门槛保留全部证�
 			empId: "S00001",
 			name: "合成大候选",
 			education: "本科",
-			segments: [{ title: "工程师", org: "合成普通公司", months: 12 }],
+			segments: [
+				{ kind: "external", title: "工程师", org: "合成普通公司", months: 12 },
+			],
 		},
 	]);
 	await db.execute(sql`insert into employee (emp_id, name, education_level, education_rank)
@@ -104,7 +110,7 @@ test("经历候选超过单语句参数上限时，加分门槛保留全部证�
 		from generate_series(2, 66000) n`);
 	await db.execute(sql`with added as (
 		insert into experience (emp_id, kind, start_date, title, org, months)
-		select 'S' || lpad(n::text, 5, '0'), 'internal', date '2000-01-01', '工程师',
+		select 'S' || lpad(n::text, 5, '0'), 'external', date '2000-01-01', '工程师',
 			'合成普通公司', 12
 		from generate_series(2, 66000) n returning id)
 		insert into experience_phrase (experience_id, route, phrase_id)

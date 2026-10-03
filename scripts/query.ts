@@ -8,14 +8,7 @@ import { routeLabel } from "#/search/evidence";
 import { parseQuery } from "#/search/query-syntax";
 import type { Claim } from "#/search/result";
 import { search } from "#/search/search";
-import { RECALL_TOP, type Strength } from "#/search/weights";
-
-/** 可信度各档在命令行上的显示文字：登记的岗位或序列、登记的部门或公司、自述。 */
-const STRENGTH_LABEL: Record<Strength, string> = {
-	controlled: "登记",
-	org: "部门",
-	claimed: "自述",
-};
+import { RECALL_TOP } from "#/search/weights";
 
 /** 一条主张在命令行上怎么写：和一行查询语法同一种写法，可以直接和输入对照。 */
 function claimText(c: Claim) {
@@ -52,9 +45,9 @@ if (outcome.capped.length > 0)
 console.log(`命中 ${total} 人，${ms}ms；以下是排在最前的 ${top.length} 个\n`);
 for (const r of top) {
 	const e = r.employee;
-	// 名次的两项依据都打印出来：档在前、深度在后，和排序键同一个顺序
+	// 打印名次依据：深度就是排序键
 	console.log(
-		`${STRENGTH_LABEL[r.strength]} ${r.depth.toFixed(3)}  ${e.name} ${e.empId}  ${e.curDept} / ${e.curTitle}`,
+		`${r.depth.toFixed(3)}  ${e.name} ${e.empId}  ${e.curDept} / ${e.curTitle}`,
 	);
 	const seen = new Set<number>();
 	for (const h of r.hits) {

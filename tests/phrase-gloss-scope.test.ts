@@ -20,7 +20,7 @@ beforeEach(async () => {
 	);
 });
 
-test("仅在原文和部门中出现的文本不用保留释义，不参与释义版本核验或收集", async () => {
+test("仅在原文和公司内任职整句中出现的文本不用保留释义，不参与释义版本核验或收集", async () => {
 	await seed([
 		{
 			empId: "G1",
@@ -63,8 +63,8 @@ test("保留文本重新成为短说法时，旧标准被收集，生效后恢�
 			empId: "G1",
 			name: "合成短说法",
 			segments: [
-				{ title: "工程师", months: 12 },
-				{ title: word, months: 12 },
+				{ kind: "external", title: "工程师", months: 12 },
+				{ kind: "external", title: word, months: 12 },
 			],
 		},
 	]);
@@ -105,7 +105,7 @@ test("模型调用期间说法失去短说法边时，重新按原文判定，�
 		{
 			empId: "G1",
 			name: "合成边变化",
-			segments: [{ title: word, months: 12 }],
+			segments: [{ kind: "external", title: word, months: 12 }],
 		},
 	]);
 	await db.execute(

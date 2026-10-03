@@ -3,7 +3,7 @@ import { bestHitPerClaim } from "#/search/evidence";
 import type { Claim, ClaimBasis, Hit, RankedResult } from "#/search/result";
 
 /**
- * 一条主张在一个人身上的样子：命中了带着最强的那一段（`hit`）和聚合依据（`basis`），
+ * 一条主张在一个人身上的样子：命中了带着最对得上的那一段（`hit`）和聚合依据（`basis`），
  * 没命中是 null。名单那一行、它的依据气泡、人的详情和导出读的都是这一份。
  */
 export type ClaimLine = {

@@ -41,7 +41,7 @@ before(async () => {
 	await seed([
 		{
 			empId: "T001",
-			name: "两条主张都受控",
+			name: "两条主张都在任职记录或岗位上",
 			segments: [
 				{ seqL2: "算法", months: 36 },
 				{ title: "运营", months: 24, kind: "external" },
@@ -80,8 +80,8 @@ before(async () => {
 		},
 		{
 			empId: "T006",
-			name: "序列里写着渠道运营",
-			segments: [{ seqL2: "渠道运营", months: 36 }],
+			name: "入职前岗位写着渠道运营",
+			segments: [{ kind: "external", title: "渠道运营", months: 36 }],
 		},
 		{
 			empId: "T007",
@@ -90,7 +90,7 @@ before(async () => {
 		},
 		{
 			empId: "T008",
-			name: "同权重路径稳定并列",
+			name: "序列和岗位都写着算法",
 			segments: [{ seqL2: "算法", title: "算法", months: 36 }],
 		},
 		{
@@ -112,7 +112,7 @@ before(async () => {
 		{
 			empId: "T010",
 			name: "岗位名恰好和别人的能力词是同一串字",
-			segments: [{ title: "Python", months: 36 }],
+			segments: [{ kind: "external", title: "Python", months: 36 }],
 		},
 	]);
 });
@@ -160,12 +160,6 @@ describe("抽取的两类 route", () => {
 		assert.equal(hit?.phrase, null);
 		assert.equal(hit?.involvement, null);
 	});
-
-	test("能力词和简历原文同档：受控命中仍排在前面", async () => {
-		const { results } = await run("Python");
-		const rank = results.map((r) => r.employee.empId);
-		assert.ok(rank.indexOf("T010") < rank.indexOf("T009"));
-	});
 });
 
 describe("事实行数量上限", () => {
@@ -205,7 +199,7 @@ describe("语义命中", () => {
 	});
 
 	test("整词不必出现在原文里：相关度过阈值就是命中", async () => {
-		// 「线下渠道运营」对序列「渠道运营」是 4/√(6×4) ≈ 0.82
+		// 「线下渠道运营」对岗位「渠道运营」是 4/√(6×4) ≈ 0.82
 		assert.ok(fakeSimilarity("线下渠道运营", "渠道运营") >= RELEVANCE_MIN);
 		const { results } = await run("线下渠道运营");
 		assert.ok(results.some((r) => r.employee.empId === "T006"));
@@ -290,11 +284,11 @@ describe("背景只定去留", () => {
 	test("只有背景：过了门槛的人按人排，没有分数也没有证据", async () => {
 		const outcome = await search({ conditions: parseQuery("kind:external") });
 		assert.equal(outcome.order, "employee");
-		assert.deepEqual(ids(outcome), ["T001", "T003", "T009"]);
+		assert.deepEqual(ids(outcome), ["T001", "T003", "T006", "T009", "T010"]);
 	});
 
 	test("视图筛选改的是看哪些经历，不改谁过了门槛", async () => {
-		// 三人都有入职前经历；只看公司内的经历时，留下有公司内经历的那个
+		// 五人都有入职前经历；只看公司内的经历时，留下有公司内经历的那个
 		const outcome = await search(
 			{ conditions: parseQuery("kind:external") },
 			{ kind: "internal" },
@@ -307,7 +301,7 @@ describe("背景只定去留", () => {
 		const outcome = await search({
 			conditions: parseQuery("kind:external,-org:某公司"),
 		});
-		assert.deepEqual(ids(outcome), ["T001"]);
+		assert.deepEqual(ids(outcome), ["T001", "T006", "T010"]);
 	});
 
 	test("主张里的各项说的是同一段：经历词和来源写在一条上，约束的是作为证据的那段", async () => {
@@ -399,29 +393,13 @@ describe("只有门槛时的分面计数", () => {
 });
 
 describe("命中路径判定", () => {
-	test("一段同时有多类过阈值时优先保留更可信的路径", async () => {
+	test("一段同时有多类过阈值时保留最对得上的那一类", async () => {
+		// 「安全」对任职记录「安全部」是 2/√(2×3) ≈ 0.82，对原文「安全巡检」是 0.71
 		const { results } = await run("安全");
 		const hit = results
 			.find((r) => r.employee.empId === "T004")
 			?.hits.find((h) => h.claim === 0);
-		assert.equal(hit?.route, "org");
-	});
-
-	test("加权强度相同时按全站路径顺序稳定选择", async () => {
-		const { results } = await run("算法");
-		const hit = results
-			.find((result) => result.employee.empId === "T008")
-			?.hits.find((item) => item.claim === 0);
-		assert.equal(hit?.route, "seq");
-	});
-
-	test("受控字段命中排在仅简历自述之前", async () => {
-		const { results } = await run("算法,运营");
-		const rank = results.map((r) => r.employee.empId);
-		assert.ok(
-			rank.indexOf("T001") < rank.indexOf("T003"),
-			"序列＋岗位命中应当排在两条主张都只是简历提及的人之前",
-		);
+		assert.equal(hit?.route, "role");
 	});
 });
 
@@ -754,7 +732,7 @@ describe("入职前经历对齐的序列", () => {
 		const { results } = await run("深海算法");
 		const hit = results.find((r) => r.employee.empId === "A001");
 		assert.ok(hit);
-		assert.ok(hit.hits.every((h) => h.route !== "seq"));
+		assert.ok(hit.hits.every((h) => h.route === "title"));
 	});
 });
 
@@ -838,15 +816,11 @@ describe("召回按名次截断", () => {
 	});
 });
 
-describe("证据的可信度决定先后，不决定去留", () => {
-	test("只在简历里提过的人也在名单里，排在受控命中之后", async () => {
+describe("证据来源不决定去留", () => {
+	test("只在简历里提过的人也在名单里", async () => {
 		const ids = (await run("算法,运营")).results.map((r) => r.employee.empId);
-		assert.ok(ids.includes("T001"), "序列 + 岗位命中");
+		assert.ok(ids.includes("T001"), "任职记录 + 岗位命中");
 		assert.ok(ids.includes("T003"), "两个词都只在简历原文里，照样算命中");
-		assert.ok(
-			ids.indexOf("T001") < ids.indexOf("T003"),
-			"登记证据在前，自述在后",
-		);
 	});
 });
 
@@ -886,7 +860,7 @@ describe("为什么没有人", () => {
 		const { total, empty, results } = await run("幽蓝抄写");
 		assert.equal(total, 1);
 		assert.equal(empty, null);
-		assert.equal(results[0]?.strength, "claimed");
+		assert.equal(results[0]?.hits[0]?.route, "description");
 	});
 });
 
@@ -1164,7 +1138,7 @@ describe("一条条件的多个取值", () => {
 		// 而这条条件的名字是它的代表词——取值只是它的几种写法之一。
 		assert.equal(m1?.hits[0]?.claim, 0);
 		assert.equal(m1?.hits[0]?.value, "深度学习");
-		assert.equal(m1?.hits[0]?.route, "seq");
+		assert.equal(m1?.hits[0]?.route, "role");
 	});
 
 	test("同一段命中同一条件的两个取值，只贡献一次", async () => {

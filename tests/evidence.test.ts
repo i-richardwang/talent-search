@@ -1,18 +1,11 @@
 /**
- * 证据可信度的分档。这层没有数据库，但它决定了界面上「绿点 / 灰点 / 空心圈」
- * 分别是什么意思，也是排序的第一依据——档一改，这里必须跟着重新论证。
+ * 证据的来源怎么写、每条主张取哪条命中。来源只用字写在证据行上，不分档、不进名次。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { bestHitPerClaim, bestStrength, strengthOf } from "#/search/evidence";
+import { bestHitPerClaim, routeLabel } from "#/search/evidence";
 import type { Claim } from "#/search/result";
-import {
-	ROUTE_ORDER,
-	ROUTE_STRENGTH,
-	type Route,
-	STRENGTHS,
-	strengthRank,
-} from "#/search/weights";
+import type { Route } from "#/search/weights";
 import { claim } from "./conditions";
 import { hit as row } from "./rows";
 
@@ -21,70 +14,40 @@ const hit = (claim: number, route: Route) => row({ claim, route });
 const claims = (...what: string[]): Claim[] =>
 	what.map((w) => claim(w) as Claim);
 
-describe("强度分档", () => {
-	test("三档由强到弱：登记的序列或岗位、登记的部门或公司、自述", () => {
-		assert.deepEqual(STRENGTHS, ["controlled", "org", "claimed"]);
-		assert.ok(strengthRank("controlled") < strengthRank("org"));
-		assert.ok(strengthRank("org") < strengthRank("claimed"));
-	});
-
-	test("抽取的两类来源仍是自述，和简历原文同档", () => {
-		// 强度只看字段来源：模型读得再好也不会让自述变成登记
-		assert.equal(strengthOf("skill"), "claimed");
-		assert.equal(strengthOf("did"), "claimed");
-		assert.equal(strengthOf("description"), "claimed");
-	});
-
-	test("六路按档由强到弱排，取数去重和界面枚举读的是同一份", () => {
-		const ranks = ROUTE_ORDER.map((r) => strengthRank(ROUTE_STRENGTH[r]));
+describe("来源的写法", () => {
+	test("每一类来源各有确切的写法；做过的事不另起类型名", () => {
+		// 断言整张表：少一类多一类都会失败，加一类时必须决定它在屏幕上叫什么
+		const routes: Route[] = ["role", "title", "skill", "did", "description"];
 		assert.deepEqual(
-			ranks,
-			[...ranks].sort((a, b) => a - b),
-		);
-		assert.equal(ROUTE_ORDER.length, Object.keys(ROUTE_STRENGTH).length);
-	});
-
-	test("每一路都归到确切的一档，不是「属于三档之一」", () => {
-		// 断言整张映射表而不是逐个判断「在集合里」：后者被任何兜底分支保证为真，
-		// 加一路而没决定它多可信时照样通过。这里少一路多一路都会失败。
-		assert.deepEqual(
-			Object.fromEntries(
-				(Object.keys(ROUTE_STRENGTH) as Route[]).map((r) => [r, strengthOf(r)]),
-			),
+			Object.fromEntries(routes.map((r) => [r, routeLabel(r)])),
 			{
-				seq: "controlled",
-				title: "controlled",
-				org: "org",
-				skill: "claimed",
-				did: "claimed",
-				description: "claimed",
+				role: "任职记录",
+				title: "岗位",
+				skill: "技能",
+				did: "",
+				description: "简历原文",
 			},
 		);
-	});
-
-	test("一段经历按最强的那一类命中着色", () => {
-		assert.equal(bestStrength([hit(0, "description"), hit(1, "org")]), "org");
-		assert.equal(bestStrength([]), undefined);
 	});
 });
 
 describe("每条主张取最好的那条命中", () => {
 	test("按主张的顺序对齐，不按命中的顺序", () => {
 		const best = bestHitPerClaim(
-			[hit(1, "org"), hit(0, "seq")],
+			[hit(1, "skill"), hit(0, "role")],
 			claims("算法", "运营"),
 		);
 		assert.deepEqual(
 			best.map((h) => h?.route),
-			["seq", "org"],
+			["role", "skill"],
 		);
 	});
 
 	test("同一条主张有多条时取展示列表中排在第一的那条", () => {
 		const best = bestHitPerClaim(
-			[hit(0, "seq"), hit(0, "description")],
+			[hit(0, "description"), hit(0, "role")],
 			claims("算法"),
 		);
-		assert.equal(best[0]?.route, "seq");
+		assert.equal(best[0]?.route, "description");
 	});
 });

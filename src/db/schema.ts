@@ -93,7 +93,7 @@ export const experience = pgTable(
 		 * 外部：模型按岗位名、公司名与描述对到公司序列树上的一对一级二级
 		 * （`src/corpus/align.ts`），两列要么都有要么都空。只有序列筛选读它（search.ts 的
 		 * `FACT_COLUMNS`：登记的优先，没有才读这两列），人页上标「按岗位名对齐」；
-		 * 不进 `seq` 那一类——那一类按受控强度打分，推断混进去就和登记分不开了。
+		 * 不进说法：推断的序列不是这个人登记过的任职，拿来当做过什么的证据就是在猜。
 		 */
 		seqInferredL1: text("seq_inferred_l1").notNull().default(""),
 		seqInferredL2: text("seq_inferred_l2").notNull().default(""),
@@ -231,8 +231,12 @@ export const phraseGloss = pgTable("phrase_gloss", {
 	guideIdentity: text("guide_identity").notNull(),
 });
 
-/** 经历的六类独立说法；字段来源决定证据可信度。 */
-const ROUTES = ["seq", "title", "org", "description", "skill", "did"] as const;
+/**
+ * 一段经历说自己做过什么的五类说法（拼法见 `corpus/route-texts.ts`）：公司内一段任职
+ * 整句一条，入职前的岗位名，读出来的能力词和做过的事，没读过的简历原文。
+ * 公司名和单独的部门名只回答「在哪」，不在这里。
+ */
+const ROUTES = ["role", "title", "description", "skill", "did"] as const;
 export type Route = (typeof ROUTES)[number];
 /** 文本只存在 phrase 表中的两类说法。 */
 export const EXTRACTED_ROUTES = [
@@ -244,7 +248,6 @@ export const GLOSSED_ROUTES = [
 	"skill",
 	"did",
 	"title",
-	"seq",
 ] as const satisfies readonly Route[];
 
 /** 去重后的说法及其半精度向量。 */
@@ -273,8 +276,8 @@ export const experiencePhrase = pgTable(
 		index("experience_phrase_phrase").on(t.phraseId),
 		// drizzle-kit push 只比较 check 名称；改变表达式时同步改名。
 		check(
-			"experience_phrase_route_valid_6",
-			sql`${t.route} in ('seq', 'title', 'org', 'description', 'skill', 'did')`,
+			"experience_phrase_route_valid_7",
+			sql`${t.route} in ('role', 'title', 'description', 'skill', 'did')`,
 		),
 	],
 );

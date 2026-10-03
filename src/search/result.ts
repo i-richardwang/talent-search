@@ -7,7 +7,6 @@ import {
 } from "./condition";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
-import type { Strength } from "./weights";
 
 /** 说了做过什么的经历主张：它决定名次，也是卡片上的一行证据。 */
 export type Claim = ExperienceCondition & {
@@ -113,7 +112,6 @@ type PopulationResult = {
 };
 
 export type RankedResult = PopulationResult & {
-	strength: Strength;
 	depth: number;
 	basis: (ClaimBasis | null)[];
 	hits: Hit[];
@@ -140,7 +138,7 @@ type Outcome = {
 	empty: EmptyReason | null;
 };
 
-/** evidence 按证据可信度与深度排序；employee 用于没有经历证据的人员查询。 */
+/** evidence 按深度排序；employee 用于没有经历证据的人员查询。 */
 export type Evaluated =
 	| (Outcome & {
 			order: "evidence";

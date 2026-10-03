@@ -27,7 +27,7 @@ const pick = (over: Partial<Pick> = {}): Pick => ({
 });
 
 const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
-	route: "seq",
+	route: "role",
 	value: "算法",
 	relevance: 0.83,
 	months: 27,

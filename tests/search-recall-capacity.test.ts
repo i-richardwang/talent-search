@@ -22,7 +22,6 @@ await seed(
 				? skills.map((skill) => ({
 						months: 12,
 						title: skill,
-						org: "合成保留公司",
 						extracted: { skills: [skill] },
 					}))
 				: [

@@ -16,7 +16,7 @@ import {
 	Timeline,
 } from "#/routes/s/$turnId/-components/timeline";
 import { claimName } from "#/search/condition-label";
-import type { Strength } from "#/search/evidence";
+import type { Route } from "#/search/weights";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
@@ -35,12 +35,10 @@ const NAMES = CLAIMS.map(claimName);
  * 节点状态表的一行：一段经历配一条指定来源的命中。编号加一个偏移，
  * 同一页上的几条时间线不共用锚点 id。
  */
-function nodeRow(strength: Strength | null, offset: number) {
-	const base = strength === "claimed" ? experience(101) : experience(103);
+function nodeRow(route: Route | null, offset: number) {
+	const base = route === "did" ? experience(101) : experience(103);
 	const row = { ...base, id: base.id + offset };
-	const route =
-		strength === "controlled" ? "seq" : strength === "org" ? "org" : "did";
-	const hits = strength
+	const hits = route
 		? [
 				hitOn(row, {
 					involvement: route === "did" ? "从零搭建" : null,
@@ -53,10 +51,9 @@ function nodeRow(strength: Strength | null, offset: number) {
 	return { hitIndex: buildHitIndex(hits), rows: [row] };
 }
 
-const NODES: [label: string, strength: Strength | null][] = [
-	["岗位或序列", "controlled"],
-	["部门或公司", "org"],
-	["简历自述", "claimed"],
+const NODES: [label: string, route: Route | null][] = [
+	["命中 · 任职记录", "role"],
+	["命中 · 简历里做过的事", "did"],
 	["未命中", null],
 ];
 
@@ -114,13 +111,13 @@ function Nodes() {
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{NODES.map(([label, strength], i) => {
-						const node = nodeRow(strength, 1000 * (i + 1));
+					{NODES.map(([label, route], i) => {
+						const node = nodeRow(route, 1000 * (i + 1));
 						return (
 							<TableRow key={label}>
 								<TableCell className="whitespace-nowrap">
 									<span className="flex items-center gap-1.5 text-xs">
-										<Dot strength={strength ?? undefined} />
+										<Dot hit={route !== null} />
 										{label}
 									</span>
 								</TableCell>
@@ -151,7 +148,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="一段经历同时是两条主张的证据：节点画最强的那一档，下面每条主张一枚描边标签。"
+				description="一段经历同时是两条主张的证据：节点是实心点，下面每条主张一枚描边标签。"
 				title="一段命中两条"
 			>
 				<div className="w-full">
@@ -193,9 +190,9 @@ export function TimelinePage() {
 			facts={[`${NODES.length} 种节点`, "入职前标签", "命中标签"]}
 			rules={{
 				notes: [
-					"节点就是证据行那颗 Dot，说的是这一段证据最强的一档；不另画一套命中点。",
-					"「入职前」用描边标签说，不占用空心节点：空心在点阵里是「简历自述」。",
-					"命中标签全部描边、不按强度上色，强度只由节点表示。",
+					"节点就是证据行那颗 Dot，只说这一段命中了没有；不分来源，不另画一套命中点。",
+					"「入职前」用描边标签说，不靠节点的样子区分。",
+					"命中标签全部描边、不上色；来源写在标签里的字上。",
 					"推断序列只标「推断」，不和登记的序列混为一谈。",
 					"时间线放在人的详情里：宽屏在名单旁的右栏，窄屏在详情浮层，不另开一栏。",
 				],

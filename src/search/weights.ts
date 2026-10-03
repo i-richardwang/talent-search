@@ -1,27 +1,4 @@
-import type { Route } from "#/db/schema";
-
 export type { Route } from "#/db/schema";
-
-export const STRENGTHS = ["controlled", "org", "claimed"] as const;
-export type Strength = (typeof STRENGTHS)[number];
-
-export function strengthRank(strength: Strength): number {
-	return STRENGTHS.indexOf(strength);
-}
-
-// 可信度只由字段来源决定；排序时它先于连续的深度分数。
-export const ROUTE_STRENGTH: Record<Route, Strength> = {
-	seq: "controlled",
-	title: "controlled",
-	org: "org",
-	skill: "claimed",
-	did: "claimed",
-	description: "claimed",
-};
-
-export const ROUTE_ORDER = (Object.keys(ROUTE_STRENGTH) as Route[]).sort(
-	(a, b) => strengthRank(ROUTE_STRENGTH[a]) - strengthRank(ROUTE_STRENGTH[b]),
-);
 
 // 向量只负责召回候选；重排分数决定是否命中。
 export const RECALL_MIN = 0.5;

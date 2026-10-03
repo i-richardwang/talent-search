@@ -6,7 +6,7 @@ export const hit = (over: Partial<Hit> = {}): Hit => ({
 	experienceId: 1,
 	claim: 0,
 	value: "算法",
-	route: "seq",
+	route: "role",
 	relevance: 1,
 	phrase: null,
 	involvement: null,

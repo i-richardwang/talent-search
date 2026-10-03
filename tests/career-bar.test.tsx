@@ -17,6 +17,8 @@ import {
 	packLanes,
 	ym,
 } from "#/routes/s/$turnId/-components/career-bar";
+import { HIT_FILL } from "#/routes/s/$turnId/-components/evidence";
+import type { Hit } from "#/search/result";
 import { classLists } from "./render";
 import { experience, hit } from "./rows";
 
@@ -122,7 +124,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
-				hitIndex={new Map([[1, [hit({ route: "seq" })]]])}
+				hitIndex={new Map([[1, [hit({ route: "role" })]]])}
 				rows={rows}
 			/>,
 		);
@@ -133,30 +135,22 @@ describe("带子的几何", () => {
 		assert.equal(missed?.top, "3px");
 	});
 
-	test("受控字段命中才是绿的，未命中段不着色", () => {
-		const html = renderToStaticMarkup(
-			<CareerBar
-				hireDate={null}
-				hitIndex={new Map([[1, [hit({ route: "seq" })]]])}
-				rows={rows}
-			/>,
-		);
-		const [matched, missed] = bandClasses(html);
-		assert.ok(matched?.includes("bg-success"));
-		assert.ok(!missed?.includes("bg-success"));
-	});
-
-	test("简历原文命中不是绿的，强度编码与点阵一致", () => {
-		const html = renderToStaticMarkup(
-			<CareerBar
-				hireDate={null}
-				hitIndex={new Map([[1, [hit({ route: "description" })]]])}
-				rows={rows}
-			/>,
-		);
-		const [first] = bandClasses(html);
-		assert.ok(!first?.includes("bg-success"));
-		assert.ok(first?.some((c) => c.startsWith("ring-")));
+	test("命中段和证据行的点同色，不分来源；未命中段不着色", () => {
+		const colorOf = (route: Hit["route"]) =>
+			bandClasses(
+				renderToStaticMarkup(
+					<CareerBar
+						hireDate={null}
+						hitIndex={new Map([[1, [hit({ route })]]])}
+						rows={rows}
+					/>,
+				),
+			);
+		const [role, missed] = colorOf("role");
+		const [raw] = colorOf("description");
+		assert.ok(role?.includes(HIT_FILL));
+		assert.deepEqual(raw, role);
+		assert.ok(!missed?.includes(HIT_FILL));
 	});
 
 	test("入职线按比例定位", () => {

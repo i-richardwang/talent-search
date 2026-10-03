@@ -488,23 +488,15 @@ describe("说法规划", () => {
 		description: "负责推荐系统召回",
 	});
 
-	test("同一串字只嵌一次，几条边各指向它；没读过的段把整段原文当说法", () => {
+	test("公司内一段整句一条，入职前岗位一条、公司名不进；没读过的段把整段原文当说法", () => {
 		const { texts, links } = phrasePlan([segment({}), outside], [null, null]);
-		assert.deepEqual(texts, [
-			"技术 · 算法",
-			"算法工程师",
-			"示例科技/技术中心/平台技术部",
-			"云枢智能",
-			"负责推荐系统召回",
-		]);
+		const role = "技术 · 算法｜算法工程师｜示例科技/技术中心/平台技术部";
+		assert.deepEqual(texts, [role, "算法工程师", "负责推荐系统召回"]);
 		assert.deepEqual(
 			links.map((l) => [l.experienceId, l.route, l.text]),
 			[
-				[1, "seq", "技术 · 算法"],
-				[1, "title", "算法工程师"],
-				[1, "org", "示例科技/技术中心/平台技术部"],
+				[1, "role", role],
 				[7, "title", "算法工程师"],
-				[7, "org", "云枢智能"],
 				[7, "description", "负责推荐系统召回"],
 			],
 		);
@@ -514,8 +506,8 @@ describe("说法规划", () => {
 		assert.deepEqual(phrasePlan([], []), { texts: [], links: [] });
 	});
 
-	test("抽出来的两类和登记的三类共用同一张说法表；读过的段原文不再是说法", () => {
-		// 能力词「算法工程师」和第 1 段的岗位名是同一串字：只嵌一次，两条边各成一条边
+	test("抽出来的两类和岗位共用同一张说法表；读过的段原文不再是说法", () => {
+		// 能力词「算法工程师」和第 7 段的岗位名是同一串字：只嵌一次，两条边各指向它
 		const { texts, links } = phrasePlan(
 			[segment({}), outside],
 			[

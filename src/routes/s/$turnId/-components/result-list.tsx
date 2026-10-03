@@ -15,7 +15,7 @@ import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
 import { claimName } from "#/search/condition-label";
-import { claimsOf, type SearchOutcome } from "#/search/result";
+import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import { RESULT_PAGE } from "#/search/weights";
 import type { InterpretFault, SearchMode } from "#/server/turn";
@@ -95,8 +95,6 @@ export function ResultList({
 }) {
 	const { results, claims, order, total } = outcome;
 	const reach = reachOf(total);
-	// 名单上有证据行，或这一轮的条件搜出来会有：图例才有点可对照
-	const evidence = claims.length > 0 || claimsOf(spec.conditions).length > 0;
 	const skeleton = useDelayed(wait?.list === "skeleton");
 	// 等占位的那 200 毫秒里旧名单原样留着；没有旧名单时只有表头，空态不抢先闪出来
 	const blank = skeleton || (wait?.list === "skeleton" && results.length === 0);
@@ -114,12 +112,7 @@ export function ResultList({
 				</Tooltip>
 			}
 		>
-			<ResultHeader
-				evidence={evidence}
-				order={order}
-				wait={wait}
-				total={total}
-			/>
+			<ResultHeader order={order} wait={wait} total={total} />
 		</ListViewHeader>
 	);
 

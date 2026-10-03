@@ -2,17 +2,12 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ZeroState } from "#/routes/-components/zero-state";
-import {
-	StrengthGuide,
-	StrengthLegend,
-} from "#/routes/s/$turnId/-components/evidence";
 import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { ResultHeader } from "#/routes/s/$turnId/-components/result-state";
 import type { Picks } from "#/routes/s/$turnId/-lib/picks";
 import type { Condition } from "#/search/condition";
 import { conditionLabel, partLabel } from "#/search/condition-label";
-import { routeLabel } from "#/search/evidence";
 import { emptyFacets } from "#/search/result";
 import type { InterpretFault } from "#/server/turn";
 import { person } from "./conditions";
@@ -109,9 +104,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 	});
 
 	test("结果数量使用中性状态，不暴露检索术语", () => {
-		const text = seen(
-			<ResultHeader evidence order="evidence" total={12} wait={null} />,
-		);
+		const text = seen(<ResultHeader order="evidence" total={12} wait={null} />);
 		// 数和单位挨着，中间不能插别的东西。不要求「共」字：它是名单的表头
 		// （12 / 人 / 按匹配度排序），不是句子里的一截。
 		assert.match(text, /12\s*人/);
@@ -230,17 +223,5 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.match(text, /没有同时满足必须条件的人/);
 		assert.doesNotMatch(text, /0\s*人/);
 		assert.doesNotMatch(text, /按证据排序/);
-	});
-
-	test("点阵图例说明判断依据，不要求用户理解字段治理", () => {
-		assert.match(seen(<StrengthLegend />), /匹配来源/);
-		const text = seen(<StrengthGuide />);
-		assert.match(text, /岗位或序列/);
-		assert.match(text, /部门或公司/);
-		// 档名说的是「谁写的」；「简历原文」是路的名字，只指还没读过的段
-		assert.match(text, /简历自述/);
-		assert.doesNotMatch(text, /简历原文/);
-		assert.equal(routeLabel("skill"), "技能");
-		assert.equal(routeLabel("did"), "");
 	});
 });

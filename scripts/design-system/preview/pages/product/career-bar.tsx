@@ -17,7 +17,6 @@ import {
 	packLanes,
 	ym,
 } from "#/routes/s/$turnId/-components/career-bar";
-import { BAND_FILL } from "#/routes/s/$turnId/-components/evidence";
 import {
 	buildHitIndex,
 	Timeline,
@@ -84,9 +83,8 @@ const OVERLAP = [
 ];
 
 const ENCODINGS: [label: string, bar: ReturnType<typeof encodingRow>][] = [
-	["命中 · 岗位或序列", encodingRow("seq")],
-	["命中 · 部门或公司", encodingRow("org")],
-	["命中 · 简历自述", encodingRow("skill")],
+	["命中 · 任职记录", encodingRow("role")],
+	["命中 · 简历里的技能", encodingRow("skill")],
 	["未命中", encodingRow(null)],
 	[
 		"重叠的两段分两条轨",
@@ -239,15 +237,11 @@ function Usage() {
 export function CareerBarPage() {
 	return (
 		<DocPage
-			facts={[
-				`${Object.keys(BAND_FILL).length} 档命中颜色`,
-				"未命中细线",
-				"重叠分轨",
-			]}
+			facts={["命中一种颜色", "未命中细线", "重叠分轨"]}
 			rules={{
 				notes: [
-					"高度说这一段命中了没有，颜色说证据有多强；颜色取自 evidence.tsx 的 BAND_FILL，和证据行同义。",
-					"绿色只表示登记的岗位或序列命中；未命中的段是一道 fill 色的细条，永远不上色。",
+					"高度和颜色都只说这一段命中了没有：命中的颜色取自 evidence.tsx 的 HIT_FILL，和证据行的点同色，不分来源。",
+					"未命中的段是一道 fill 色的细条。",
 					"段与段之间留一道缝，四角是最小的圆角；深浅两色下都看得出每一段。",
 					"在职与入职前连续排，转折点只由「入职」那根竖线说明。",
 					"每个色块是一个按钮，点了滚到经历时间线上对应的那一段。",

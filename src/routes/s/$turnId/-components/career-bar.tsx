@@ -1,12 +1,11 @@
 import { duration, period } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import { bestStrength } from "#/search/evidence";
 import type { EmployeeDetail, Hit } from "#/search/result";
-import { BAND_FILL } from "./evidence";
+import { HIT_FILL } from "./evidence";
 
 /**
- * 职业轨迹条：一个人的经历段按真实年份排成一条带子。命中的段占满一条轨、按证据强度
- * 上色（`BAND_FILL`），没命中的是轨中间一道细条；入职日画一根竖线。
+ * 职业轨迹条：一个人的经历段按真实年份排成一条带子。命中的段占满一条轨、和证据行的
+ * 点同色（`HIT_FILL`），没命中的是轨中间一道细条；入职日画一根竖线。
  */
 
 const LANE_H = 10;
@@ -87,16 +86,16 @@ export function CareerBar({
 		<figure className="mb-4">
 			<div className="relative" style={{ height }}>
 				{rows.map((x, i) => {
-					const strength = bestStrength(hitIndex.get(x.id));
+					const hit = (hitIndex.get(x.id)?.length ?? 0) > 0;
 					const s = spans[i];
 					if (!s) return null;
 					const laneTop = (lanes[i] ?? 0) * (LANE_H + LANE_GAP);
 					return (
 						<button
-							aria-label={`${x.org} ${x.title}，${period(x.startDate, x.endDate)}，${duration(x.months)}${strength ? "，与本次条件相关" : ""}`}
+							aria-label={`${x.org} ${x.title}，${period(x.startDate, x.endDate)}，${duration(x.months)}${hit ? "，与本次条件相关" : ""}`}
 							className={cn(
 								"absolute rounded-xs after:absolute after:-inset-x-1 after:-inset-y-4 after:content-['']",
-								strength ? BAND_FILL[strength] : "bg-fill",
+								hit ? HIT_FILL : "bg-fill",
 							)}
 							key={x.id}
 							onClick={() =>
@@ -107,9 +106,9 @@ export function CareerBar({
 							style={{
 								left: `${pct(s.start - from)}%`,
 								width: `calc(${pct(Math.max(s.end - s.start, 1))}% - ${SEAM}px)`,
-								minWidth: strength ? MIN_HIT_W : MIN_W,
-								top: strength ? laneTop : laneTop + (LANE_H - MISS_H) / 2,
-								height: strength ? LANE_H : MISS_H,
+								minWidth: hit ? MIN_HIT_W : MIN_W,
+								top: hit ? laneTop : laneTop + (LANE_H - MISS_H) / 2,
+								height: hit ? LANE_H : MISS_H,
 							}}
 							type="button"
 						/>

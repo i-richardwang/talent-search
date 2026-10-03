@@ -43,7 +43,7 @@ function measureBox(root: HTMLElement) {
 }
 
 function Playground() {
-	const [label, setLabel] = useState("只看有登记证据的人");
+	const [label, setLabel] = useState("只看公司内经历");
 	const [mark, setMark] = useState<Mark>("checked");
 	const [disabled, setDisabled] = useState(false);
 	const { reading, ref } = useMeasured(measureBox);

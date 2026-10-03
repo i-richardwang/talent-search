@@ -61,9 +61,7 @@ before(async () => {
 			curLevel: "P7",
 			recruitment: "校招",
 			education: "硕士",
-			segments: [
-				{ seqL1: "运营", seqL2: "渠道", title: "算法运维", months: 36 },
-			],
+			segments: [{ seqL1: "运营", seqL2: "渠道", title: "算法", months: 36 }],
 		},
 		{
 			empId: "F004",
@@ -73,6 +71,7 @@ before(async () => {
 					kind: "external",
 					seqL1: "技术",
 					seqL2: "算法",
+					title: "算法",
 					months: 36,
 					companyTag: "头部互联网T1",
 					// 能力词那一维是一段多个值：两个词都得成为候选，各数一个人
@@ -162,7 +161,7 @@ describe("候选与计数", () => {
 	});
 
 	test("口径和主检索一致：一个人要在这一项里凑齐全部条件才算数", async () => {
-		// F003 一段之内既有岗位「算法运维」又有序列「渠道」，两个词都落在「运营/渠道」里
+		// F003 一段之内既有岗位「算法」又有序列「渠道」，两个词都落在「运营/渠道」里
 		const { facets } = await run("算法,渠道");
 		assert.equal(seqOf(facets).get("运营/渠道"), 1);
 		// F001/F002 在「技术/算法」里凑不齐「渠道」，这一项一个人都不剩

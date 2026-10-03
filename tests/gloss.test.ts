@@ -140,7 +140,7 @@ describe("收集与生效", () => {
 			if (previous === undefined) delete process.env.REVIEW_JUDGE;
 			else process.env.REVIEW_JUDGE = previous;
 		};
-		// 四类短说法各来一条，外加一段没读过的整段原文和一条部门路径：后两样不写释义
+		// 三类短说法各来一条，外加一段公司内任职整句和一段没读过的整段原文：后两样不写释义
 		await seed([
 			{
 				empId: "g1",
@@ -158,6 +158,7 @@ describe("收集与生效", () => {
 						kind: "external",
 						months: 12,
 						org: "某公司",
+						title: "高级后端开发工程师",
 						extracted: {
 							skills: ["服务端开发", "客户开发"],
 							did: [{ involvement: "负责建设", domain: "订单系统" }],
@@ -186,7 +187,7 @@ describe("收集与生效", () => {
 
 	after(() => restoreEnv());
 
-	test("技能、做过的事、岗位名、序列名进组，带人数；原文和部门路径不进", async () => {
+	test("技能、做过的事、入职前岗位名进组，带人数；原文和公司内任职整句不进", async () => {
 		const said = await runReview();
 		assert.match(said.join("\n"), /条短说法还没有这一版的释义/);
 		assert.match(said.join("\n"), /收了 1 组释义/);
@@ -200,7 +201,6 @@ describe("收集与生效", () => {
 			assert.deepEqual(
 				[...words].sort((a, b) => a.word.localeCompare(b.word)),
 				[
-					{ people: 1, word: "技术 · 后端研发" },
 					{ people: 1, word: "订单系统" },
 					{ people: 2, word: "服务端开发" },
 					{ people: 1, word: "客户开发" },
@@ -268,7 +268,7 @@ describe("收集与生效", () => {
 		const said = await runReview();
 		assert.match(
 			said.join("\n"),
-			/生效 1 组释义（agent:hr-bot 1 组），写下 2 条释义，3 个说法没判或判得不合规矩，下一轮重收/,
+			/生效 1 组释义（agent:hr-bot 1 组），写下 2 条释义，2 个说法没判或判得不合规矩，下一轮重收/,
 		);
 		assert.deepEqual(await glosses(), [
 			["客户开发", "销售拓展新客户、促成签约"],
@@ -285,11 +285,11 @@ describe("收集与生效", () => {
 				rows.map((row) => row.text),
 				cacheKeys.sort(),
 			);
-			// 同一轮里没判的三个又收成了一组
+			// 同一轮里没判的两个又收成了一组
 			const open = await openGlosses(later);
 			assert.deepEqual(
 				open.flatMap((one) => one.words.map((member) => member.word)).sort(),
-				["技术 · 后端研发", "订单系统", "高级后端开发工程师"],
+				["订单系统", "高级后端开发工程师"],
 			);
 			assert.ok(!open.some((one) => one.id === id));
 		} finally {
@@ -306,7 +306,7 @@ describe("收集与生效", () => {
 			);
 			const said = await runReview();
 			assert.match(said.join("\n"), /收了 1 组释义/);
-			// 上一场留在队列里的那三个没被动，重收的只有写过释义的这两个
+			// 上一场留在队列里的那两个没被动，重收的只有写过释义的这两个
 			const back = (await openGlosses(connection)).find((one) =>
 				one.words.some((member) => member.word === "客户开发"),
 			);
@@ -349,12 +349,12 @@ describe("收集与生效", () => {
 		try {
 			const said = await runReview();
 			assert.match(said.join("\n"), /写 1 组释义/);
-			assert.match(said.join("\n"), /写下 3 条释义/);
+			assert.match(said.join("\n"), /写下 2 条释义/);
 		} finally {
 			restore();
 			process.env.REVIEW_JUDGE = "external";
 		}
 		assert.ok(systems.includes(GLOSS_GUIDE));
-		assert.equal((await glosses()).length, 5);
+		assert.equal((await glosses()).length, 4);
 	});
 });

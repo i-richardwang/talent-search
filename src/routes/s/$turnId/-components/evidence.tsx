@@ -1,16 +1,8 @@
-import { Button } from "#/components/ui/button";
-import { Popover } from "#/components/ui/popover";
 import { Text } from "#/components/ui/text";
 import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import { routeLabel, type Strength, strengthOf } from "#/search/evidence";
+import { routeLabel } from "#/search/evidence";
 import type { ClaimBasis, Hit } from "#/search/result";
-
-const STRENGTH_LABEL: Record<Strength, string> = {
-	controlled: "岗位或序列",
-	org: "部门或公司",
-	claimed: "简历自述",
-};
 
 /**
  * 证据行与未命中行共用的四列：点、条件词、匹配到的字段、右端时长。
@@ -21,75 +13,20 @@ const LINE_GRID =
 
 const MATCHED_BY = "匹配依据";
 
-const STRENGTH_HINT: Record<Strength, string> = {
-	controlled: "来自任职记录",
-	org: "部门或公司名称与条件相近",
-	claimed: "来自入职前简历，本人自述、无校验",
-};
+/** 时间带上命中的段；和证据行的点同一个颜色。 */
+export const HIT_FILL = "bg-fg-tertiary";
 
-const DOT_FILL: Record<Strength, string> = {
-	controlled: "bg-success",
-	org: "bg-fg-tertiary",
-	claimed: "bg-transparent ring-1 ring-fg-tertiary ring-inset",
-};
-
-/** 时间带中的 claimed 需要可见底色，不能复用点阵的空心样式。 */
-export const BAND_FILL: Record<Strength, string> = {
-	controlled: "bg-success",
-	org: "bg-fg-tertiary",
-	claimed: "bg-fill-tertiary ring-1 ring-fg-quaternary ring-inset",
-};
-
-export function Dot({
-	strength,
-	className,
-}: {
-	strength: Strength | undefined;
-	className?: string;
-}) {
+/** 证据行前的点：命中是深一档的实心点，没命中是浅色的点。 */
+export function Dot({ hit, className }: { hit: boolean; className?: string }) {
 	return (
 		<span
 			aria-hidden="true"
 			className={cn(
 				"size-2 shrink-0 rounded-full",
-				strength ? DOT_FILL[strength] : "bg-border",
+				hit ? HIT_FILL : "bg-border",
 				className,
 			)}
 		/>
-	);
-}
-
-const STRENGTHS = ["controlled", "org", "claimed"] as const;
-
-export function StrengthGuide() {
-	return (
-		<dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-1.5 text-sm">
-			{STRENGTHS.map((s) => (
-				<div className="contents" key={s}>
-					<dt className="flex items-center gap-2 whitespace-nowrap">
-						<Dot strength={s} />
-						{STRENGTH_LABEL[s]}
-					</dt>
-					<dd className="text-fg-secondary text-xs">{STRENGTH_HINT[s]}</dd>
-				</div>
-			))}
-		</dl>
-	);
-}
-
-/** 名单表头的图例，展开是 `StrengthGuide`。 */
-export function StrengthLegend() {
-	return (
-		<Popover content={<StrengthGuide />} placement="bottomRight">
-			<Button className="text-fg-secondary" size="small" type="text">
-				<span className="flex items-center gap-1">
-					{STRENGTHS.map((s) => (
-						<Dot key={s} strength={s} />
-					))}
-				</span>
-				匹配来源
-			</Button>
-		</Popover>
 	);
 }
 
@@ -104,12 +41,10 @@ function matchedField(hit: Hit): {
 } {
 	const label = routeLabel(hit.route);
 	switch (hit.route) {
-		case "seq":
-			return { label, value: hit.seq, context: hit.org };
+		case "role":
+			return { label, value: dots(hit.title, hit.org), context: hit.seq };
 		case "title":
 			return { label, value: hit.title, context: hit.org };
-		case "org":
-			return { label, value: hit.org, context: hit.title };
 		case "description":
 			return { label, value: null, context: dots(hit.title, hit.org) };
 		case "skill":
@@ -166,7 +101,7 @@ export function EvidenceLine({
 	return (
 		<div className="@container">
 			<div className={LINE_GRID}>
-				<Dot className="translate-y-0.5" strength={strengthOf(hit.route)} />
+				<Dot className="translate-y-0.5" hit />
 				<span className="col-span-2 min-w-0 @xl:col-span-1">{head}</span>
 				<span className="col-span-3 col-start-2 row-start-2 flex min-w-0 items-baseline gap-1.5 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1">
 					{byOther(name, hit) && (
@@ -204,7 +139,7 @@ export function MissedClaims({ names }: { names: string[] }) {
 	if (names.length === 0) return null;
 	return (
 		<div className={`${LINE_GRID} text-fg-tertiary`}>
-			<Dot className="translate-y-0.5" strength={undefined} />
+			<Dot className="translate-y-0.5" hit={false} />
 			<span>未命中</span>
 			<Text className="col-span-2 min-w-0" ellipsis>
 				{names.join("、")}

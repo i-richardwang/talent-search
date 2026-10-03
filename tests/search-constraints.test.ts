@@ -91,8 +91,8 @@ describe("检索数据约束", () => {
 		await assert.rejects(
 			db.execute(sql`
 				insert into experience_phrase (experience_id, route, phrase_id)
-				values (1, 'summary', (select min(id) from phrase))`),
-			violates("experience_phrase_route_valid_6"),
+				values (1, 'org', (select min(id) from phrase))`),
+			violates("experience_phrase_route_valid_7"),
 		);
 	});
 

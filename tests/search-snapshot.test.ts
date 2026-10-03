@@ -215,7 +215,7 @@ describe("模型调用期间的语料变化", () => {
 			{
 				empId: "GLOSS001",
 				name: "合成释义",
-				segments: [{ title: word, months: 12 }],
+				segments: [{ kind: "external", title: word, months: 12 }],
 			},
 		]);
 		const gate = holdNextRerank();

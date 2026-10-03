@@ -228,16 +228,16 @@ function Usage() {
 				/>
 			</Example>
 			<Example
-				description="颜色由外层的字色类给；绿表示受控字段命中，amber 表示需要留意。"
+				description="颜色由外层的字色类给；绿表示成功，amber 表示需要留意。"
 				title="状态色"
 			>
 				<span className="inline-flex items-center gap-1.5 text-sm text-success">
 					<Icon icon={BadgeCheck} size="small" />
-					岗位名命中
+					同步完成
 				</span>
 				<span className="inline-flex items-center gap-1.5 text-sm text-warning">
 					<Icon icon={TriangleAlert} size="small" />
-					只有简历自述
+					名单可能缺人
 				</span>
 			</Example>
 			<Example
@@ -264,7 +264,7 @@ export function IconPage() {
 			rules={{
 				notes: [
 					"组件的 icon 属性直接传图标组件，由组件按自己的尺寸画；单独放图标才用 Icon。",
-					"颜色用外层的字色令牌类，不在 color 里写色值；绿表示受控字段命中，amber 表示需要留意。",
+					"颜色用外层的字色令牌类，不在 color 里写色值；绿表示成功，amber 表示需要留意。",
 					"与文字并排时不传 size，图标跟着字号走。",
 					"加载中用 spin，不另写动画。",
 				],

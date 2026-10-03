@@ -1,7 +1,7 @@
 import { Tag } from "#/components/ui/tag";
 import type { CompanyMeta } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
-import { bestStrength, routeLabel } from "#/search/evidence";
+import { routeLabel } from "#/search/evidence";
 import type { EmployeeDetail, Hit } from "#/search/result";
 import { Dot, phraseLabel } from "./evidence";
 
@@ -70,7 +70,7 @@ function Segment({
 		>
 			<span className="flex flex-col items-center">
 				<span className="flex h-(--text-base--line-height) items-center">
-					<Dot className="size-2.5" strength={bestStrength(hits)} />
+					<Dot className="size-2.5" hit={(hits?.length ?? 0) > 0} />
 				</span>
 				{!isLast && <span className="w-px flex-1 bg-border" />}
 			</span>
