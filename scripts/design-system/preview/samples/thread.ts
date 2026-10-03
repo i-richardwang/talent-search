@@ -108,7 +108,6 @@ export const PENDING_TRACE: TraceStep[] = [
 			{
 				text: "搜索排序",
 				people: 31,
-				wide: false,
 				terms: [{ name: "搜索排序", people: 27 }],
 			},
 		],

@@ -2,12 +2,12 @@
  * 查询理解时模型能用的三个工具：查经历词、查公司名和学校名、提交搜索条件。
  *
  * 前两个工具回答同一个问题：「这样写，搜索会找到什么」。查一个经历词，得到它能
- * 找到多少人、是不是太宽、人才库里对应哪些能力词；查一个公司名或学校名，得到它能
+ * 找到多少人、人才库里对应哪些能力词；查一个公司名或学校名，得到它能
  * 匹配到多少人、匹配到人才库里哪些公司或学校。它们和搜索用同一套匹配规则
  * （`search/search.ts`），查到的人数就是写进条件后搜出来的人数。
  *
- * 提交的搜索条件先检查：有没有词表里没有的取值，这一轮新写的经历词是不是太宽、
- * 是不是一个人都找不到，名字是不是一个人都匹配不到，是不是什么都没写。有问题就把
+ * 提交的搜索条件先检查：有没有词表里没有的取值，这一轮新写的经历词是不是
+ * 一个人都找不到，名字是不是一个人都匹配不到，是不是什么都没写。有问题就把
  * 问题告诉模型，让它改了再提交。有时问题出在用户明说的要求上，人才库里本来就没有
  * 这样的人，这时模型把同一份条件原样再提交一次，就算通过：没有这样的人也是一个结果。
  *
@@ -22,7 +22,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import type { Condition } from "#/search/condition";
 import {
-	needsWidthCheck,
+	isNewClaim,
 	type Submission,
 	submissionSchema,
 	unanswered,
@@ -62,7 +62,7 @@ async function checkSubmission(
 		...result.spec.conditions,
 		...(result.notes?.declined ?? []).flatMap((d) => d.instead),
 	];
-	const words = conditions.filter(needsWidthCheck(base)).flatMap((c) => c.what);
+	const words = conditions.filter(isNewClaim(base)).flatMap((c) => c.what);
 	const namesOf = (field: NameField) =>
 		conditions.flatMap((c) =>
 			field === "org"
@@ -81,11 +81,9 @@ async function checkSubmission(
 	return [
 		...valuesOutsideVocabulary(submitted, vocab),
 		...terms.flatMap((t) =>
-			t.wide
-				? [`「${t.text}」能找到 ${t.people} 人，几乎不筛人，换更具体的说法`]
-				: t.people === 0
-					? [`「${t.text}」在人才库里一个人都找不到，换人才库里的说法`]
-					: [],
+			t.people === 0
+				? [`「${t.text}」在人才库里一个人都找不到，换人才库里的说法`]
+				: [],
 		),
 		...[...orgs, ...schools].flatMap((n) =>
 			n.people === 0 ? [`「${n.name}」在人才库里一个人都匹配不到`] : [],
@@ -111,7 +109,7 @@ export function agentTools({
 	const tools = {
 		find_terms: tool({
 			description:
-				"查几个经历词：按搜索的方式各能找到多少人、是不是太宽、对应人才库里哪些能力词。",
+				"查几个经历词：按搜索的方式各能找到多少人、对应人才库里哪些能力词。",
 			inputSchema: z.object({
 				texts: z.array(z.string()).describe("要查的词，一次可以几个"),
 			}),

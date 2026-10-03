@@ -50,7 +50,6 @@ function Playground() {
 				<Chip notes={["加分"]} value="带过团队" />
 				<Chip notes={["排除"]} value="外包" />
 				<Chip off value="沟通能力" />
-				<Chip notes={["太宽"]} off value="互联网" />
 			</div>
 		</Stage>
 	);

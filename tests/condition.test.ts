@@ -113,7 +113,7 @@ describe("不可信输入 → 条件", () => {
 		);
 	});
 
-	test("三档强度与停用原样收下；没停用的不带 off，认不出的成因也不带", () => {
+	test("三档强度与停用原样收下；没停用的不带 off，认不出的停用也不带", () => {
 		assert.deepEqual(
 			conditionsOf([
 				{ about: "experience", what: ["渠道运营"], mode: "must" },
@@ -125,7 +125,7 @@ describe("不可信输入 → 条件", () => {
 				exp("渠道运营"),
 				{ ...exp("带团队"), mode: "boost", off: "user" },
 				{ ...exp("实习"), mode: "exclude" },
-				{ ...exp("经理"), off: "wide" },
+				exp("经理"),
 			],
 		);
 	});
@@ -254,17 +254,16 @@ describe("停用", () => {
 		what: ["带团队", "带项目", "团队管理"],
 	};
 
-	test("停用与启用不碰强度、不碰取值；成因跟着 off 走", () => {
+	test("停用与启用不碰强度、不碰取值", () => {
 		const off = withOff(boost, "user");
 		assert.deepEqual(off, { ...boost, off: "user" });
 		assert.deepEqual(withOff(off, null), boost);
-		assert.deepEqual(withOff(withOff(boost, "wide"), null), boost);
 	});
 
 	test("activeConditions 去掉停用的，顺序不变", () => {
 		const list = conditionsOf([
 			{ about: "experience", what: ["算法"] },
-			{ about: "experience", what: ["运营"], off: "wide" },
+			{ about: "experience", what: ["运营"], off: "user" },
 			{ about: "experience", what: ["产品"] },
 		]);
 		assert.deepEqual(activeConditions(list), [exp("算法"), exp("产品")]);

@@ -587,11 +587,7 @@ function including(list: readonly Matched[]) {
 
 function termLine(t: TermFinding) {
 	if (t.people === 0) return `人才库中没有「${t.text}」`;
-	return [
-		`「${t.text}」${t.people} 人`,
-		t.wide ? "，范围较大" : "",
-		including(t.terms),
-	].join("");
+	return `「${t.text}」${t.people} 人${including(t.terms)}`;
 }
 
 function nameLine(n: NameFinding) {

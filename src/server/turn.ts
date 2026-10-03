@@ -9,15 +9,9 @@ import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
-import { type Condition, withOff } from "#/search/condition";
-import {
-	needsWidthCheck,
-	type TurnNotes,
-	unanswered,
-	understood,
-} from "#/search/intent";
+import { type TurnNotes, unanswered, understood } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
-import { findTerms, vocabulary } from "#/search/search";
+import { vocabulary } from "#/search/search";
 import type { QueryInput, SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { agentTools } from "./agent-tools";
@@ -172,32 +166,6 @@ export async function createTurn(
 }
 
 /**
- * 检查模型新写的经历词与替代条件。保留基线条件的宽度与停用状态。
- * 删除一项内过宽的取值；全部过宽时保留主张并明示停用，避免把经历主张变成背景门槛。
- */
-async function applyWidthCheck(
-	groups: readonly Condition[][],
-	base: readonly Condition[],
-): Promise<Condition[][]> {
-	const checked = needsWidthCheck(base);
-	const found = await findTerms(
-		groups
-			.flat()
-			.filter(checked)
-			.flatMap((c) => c.what),
-	);
-	const wide = new Set(found.filter((t) => t.wide).map((t) => t.text));
-	return groups.map((conditions) =>
-		conditions.map((c): Condition => {
-			if (!checked(c)) return c;
-			const [first, ...rest] = c.what.filter((v) => !wide.has(v));
-			if (!first) return withOff(c, "wide");
-			return { ...c, what: [first, ...rest] };
-		}),
-	);
-}
-
-/**
  * 补全一次自然语言理解。调用模型失败就原样抛出，记录停在「待理解」，
  * 界面据此画出错误与重试；并发更新通过 `spec is null` 保证先到者获胜，
  * 晚到者读回同一份最终结果。
@@ -217,9 +185,9 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
 	const base = parent?.spec?.conditions ?? [];
 
-	// 读词表、调用模型、检查太宽的词，三件事各自读数据库，不共用一个快照：
-	// 调用模型可能要一分钟，如果开着快照等它，一次理解就占着连接池里的一条连接一分钟。
-	// 模型的工具和太宽检查各自在自己的快照里读（`search/phrases.ts` 的 withMatchedPhrases）。
+	// 读词表和调用模型各自读数据库，不共用一个快照：调用模型可能要一分钟，如果开着
+	// 快照等它，一次理解就占着连接池里的一条连接一分钟。模型的工具在自己的快照里读
+	// （`search/phrases.ts` 的 withMatchedPhrases）。
 	const vocab = await vocabulary();
 	await db
 		.update(searchTurn)
@@ -237,16 +205,7 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	// 没作答也抛：记录停在「待理解」，由 `interpret` 分出是哪个环节出了问题。
 	const failure = unanswered(submitted, result);
 	if (failure) throw new UnansweredError(failure);
-	const declined = result.notes?.declined ?? [];
-	const [conditions = [], ...insteads] = await applyWidthCheck(
-		[result.spec.conditions, ...declined.map((d) => d.instead)],
-		base,
-	);
-	const spec: SearchSpec = { conditions };
-	const notes = result.notes && {
-		...result.notes,
-		declined: declined.map((d, i) => ({ ...d, instead: insteads[i] ?? [] })),
-	};
+	const { spec, notes } = result;
 
 	await db
 		.update(searchTurn)

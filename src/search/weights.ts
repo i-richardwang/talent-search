@@ -52,8 +52,5 @@ export const HITS_PER_CLAIM = 3;
 // 筛选栏的常用单段时长选项；解析仍接受任意正整数月数。
 export const MIN_MONTHS_BUCKETS = [6, 12, 24, 36] as const;
 
-// 命中人数占比超过此值的词会被标为过宽。
-export const WIDE_SHARE = 0.2;
-
 // 排名和分面在内存完成；超过上限时返回 overflow，不对事实静默截断。
 export const FACT_MAX = 200_000;

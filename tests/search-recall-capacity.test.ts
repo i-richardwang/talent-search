@@ -123,7 +123,6 @@ test("提交条件查词的大召回集合完整统计人数并返回人才库�
 	);
 	for (const finding of findings) {
 		assert.equal(finding.people, 6);
-		assert.equal(finding.wide, true);
 		assert.equal(finding.terms.length, 8);
 		assert.ok(
 			finding.terms.every(

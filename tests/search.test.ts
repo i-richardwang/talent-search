@@ -12,7 +12,7 @@ const teardown = await setup();
 after(teardown);
 
 // import 必须在 setup() 之后：#/db 与 #/server/embed 在模块求值时就绑死了环境变量
-const { overflowContributors, search, findTerms, vocabulary } = await import(
+const { overflowContributors, search, vocabulary } = await import(
 	"#/search/search"
 );
 const run = async (query: string, filters = {}, limit?: number) => {
@@ -803,21 +803,12 @@ describe("命中总数", () => {
 		assert.equal(results.length, 10);
 		assert.equal((await run("深海潜航", {}, 999)).results.length, 55);
 	});
-
-	test("太宽的词按人数占比判定", async () => {
-		// 55 个「深海潜航」远超库里两成的人；「考古」只有三个
-		const findings = await findTerms(["深海潜航", "考古"]);
-		assert.deepEqual(
-			findings.filter((r) => r.wide).map((r) => r.text),
-			["深海潜航"],
-		);
-	});
 });
 
 /**
  * 召回按名次截断：一个词只有余弦最近的 `RECALL_TOP` 条说法进重排。达到相关度门槛的说法
  * 再多，重排的条数也不变，词照样能用——搜一个词的成本和语料大小无关，这是
- * 这条截断存在的全部理由。说法多不等于宽，宽只按命中的人数占比量。
+ * 这条截断存在的全部理由。
  */
 describe("召回按名次截断", () => {
 	const word = "星门导航";
@@ -842,14 +833,6 @@ describe("召回按名次截断", () => {
 		const judged = await db.execute<{ n: number }>(sql`
 			select count(*)::int as n from rerank_cache where query = ${word}`);
 		assert.equal(judged.rows[0]?.n, RECALL_TOP);
-	});
-
-	test("说法多不算宽：没命中两成的人就不宽", async () => {
-		const findings = await findTerms([word, "考古"]);
-		assert.deepEqual(
-			findings.filter((r) => r.wide).map((r) => r.text),
-			[],
-		);
 	});
 });
 

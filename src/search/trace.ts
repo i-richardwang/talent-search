@@ -16,8 +16,6 @@ export type TermFinding = {
 	text: string;
 	/** 命中的人数：按人，不按段。 */
 	people: number;
-	/** 命中的人多到几乎不筛人。 */
-	wide: boolean;
 	/** 命中的标准能力词，相关度高的在前；写的人太少的不给。 */
 	terms: Matched[];
 };

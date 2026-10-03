@@ -25,15 +25,11 @@ import { DIM_KEYS, DIMENSIONS } from "#/search/dimensions";
 import { KEYWORD_LABEL } from "#/search/keywords";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-import {
-	CONDITIONS,
-	EXCLUDE_INTERN,
-	WIDE_CONDITION,
-} from "../../samples/conditions";
+import { CONDITIONS, EXCLUDE_INTERN } from "../../samples/conditions";
 import { FACETS } from "../../samples/people";
 
-/** 试用区一开始的搜索条件：名单那一次的三条，加一条排除和一条太宽被停用的。 */
-const START: Condition[] = [...CONDITIONS, EXCLUDE_INTERN, WIDE_CONDITION];
+/** 试用区一开始的搜索条件：名单那一次的三条，加一条排除。 */
+const START: Condition[] = [...CONDITIONS, EXCLUDE_INTERN];
 
 /** 用户自己停用的一条：带过团队（加分）。 */
 const TEAM_OFF = withOff(CONDITIONS[2] as Condition, "user");
@@ -64,11 +60,6 @@ const LOOKS: [name: string, condition: Condition, note: string][] = [
 		"off · user",
 		TEAM_OFF,
 		"自己停用：虚线边、字退成次要色、眼睛图标，重新启用后强度不变",
-	],
-	[
-		"off · wide",
-		WIDE_CONDITION,
-		"几乎所有人都满足，AI 整理时就停用了，标「太宽」",
 	],
 	[
 		"person",

@@ -65,7 +65,6 @@ import {
 	ROUTE_STRENGTH,
 	type Route,
 	strengthRank,
-	WIDE_SHARE,
 } from "./weights";
 
 function like(term: string) {
@@ -92,8 +91,8 @@ const MIN_PEOPLE_TO_SHOW = 5;
 const MAX_TO_SHOW = 8;
 
 /**
- * 经历词的命中人数、宽度与标准能力词，和搜索共用召回、相关度门槛及经历边。
- * 人数按员工去重，宽度按人才库人群占比判定，不带视图筛选。
+ * 经历词的命中人数与标准能力词，和搜索共用召回、相关度门槛及经历边。
+ * 人数按员工去重，不带视图筛选。
  * 仅向模型展示至少 MIN_PEOPLE_TO_SHOW 人使用的标准能力词，最多 MAX_TO_SHOW 项。
  * 这里采用正向门槛；排除主张使用更严格的 RELEVANCE_MIN_EXCLUDE。
  */
@@ -105,7 +104,7 @@ export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 		RELEVANCE_MIN,
 		async (store, { phraseHits }) => {
 			const out = asked.map(
-				(text): TermFinding => ({ text, people: 0, wide: false, terms: [] }),
+				(text): TermFinding => ({ text, people: 0, terms: [] }),
 			);
 			const table = phraseHitTable(
 				asked.flatMap((t, i) =>
@@ -127,16 +126,9 @@ export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 			join experience e on e.id = ep.experience_id
 			where not e.unemployed
 			group by q.claim_idx`);
-			const [total] = (
-				await store.execute<{ n: number }>(
-					sql`select count(distinct emp_id)::int as n from experience where not unemployed`,
-				)
-			).rows;
 			for (const row of counts.rows) {
 				const r = out[row.claim_idx];
-				if (!r) continue;
-				r.people = row.people;
-				r.wide = row.people > (total?.n ?? 0) * WIDE_SHARE;
+				if (r) r.people = row.people;
 			}
 			const terms = await store.execute<{
 				claim_idx: number;
@@ -251,8 +243,7 @@ type FactLoad =
  * 从各主张的事实行数里找出造成超载的主要贡献者。
  *
  * 按贡献从大到小挑，直到剩余事实能进上限；同样行数按查询顺序稳定并列。
- * 返回时再恢复查询顺序，让界面上列出的顺序和 chips 一致。这个指标只解释
- * `FACT_MAX`，和按人数占比判断的太宽（`findTerms`）无关。
+ * 返回时再恢复查询顺序，让界面上列出的顺序和 chips 一致。
  */
 export function overflowContributors(
 	counts: readonly { claim: number; facts: number }[],

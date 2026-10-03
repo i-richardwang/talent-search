@@ -127,11 +127,11 @@ describe("关键词搜索的出路只说框里能做的事", () => {
 		assert.match(unmet.hint, /移除一个关键词/);
 		assert.equal(unmet.focused, true);
 
-		const wide = run(
+		const overflow = run(
 			{ kind: "overflowEvidence", claims: claimsOf(parseQuery("经理")) },
 			"经理",
 			"keyword",
 		);
-		assert.doesNotMatch(wide.hint, /停用/);
+		assert.doesNotMatch(overflow.hint, /停用/);
 	});
 });

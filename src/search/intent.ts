@@ -112,7 +112,7 @@ type Understood = { spec: SearchSpec; notes: TurnNotes | null };
  *    对不上任何一档职级），RPC 那一侧的取值来自屏幕上的候选。
  * 2. **停用状态跟着条件走。** 模型写不出停用（schema 里没有这一栏），提交的
  *    条件和上一轮某一条完全相同时，那一条的停用原样带过来：用户停掉的不会因为
- *    又说了一句话就复活，因为太宽被停用的也不会。
+ *    又说了一句话就复活。
  */
 export function understood(
 	raw: unknown,
@@ -228,21 +228,20 @@ export function valuesOutsideVocabulary(
 	return [...out];
 }
 
-type WidthChecked = ExperienceCondition &
+type NewClaim = ExperienceCondition &
 	Required<Pick<ExperienceCondition, "what">>;
 
 /**
- * 哪些条件要检查经历词是否太宽：这一轮新写出来的正向主张。
+ * 哪些条件要检查经历词找不找得到人：这一轮新写出来的正向主张。
  *
- * 上一轮已经有的不检查：它检查过了，或者用户看过、坚持要用。只检查正向的：太宽说的是
- * 「它筛不掉人」，而排除说的是「哪一段经历不算数」，命中的人多正说明它在起作用；
- * 而且排除按更高的相关度门槛判断，算出来的宽度不适用于它。
+ * 上一轮已经有的不检查：它检查过了，或者用户看过、坚持要用。排除不检查：它按更高的
+ * 相关度门槛判断，查词工具给的人数不适用于它。
  */
-export function needsWidthCheck(
+export function isNewClaim(
 	base: readonly Condition[],
-): (c: Condition) => c is WidthChecked {
+): (c: Condition) => c is NewClaim {
 	const had = new Set(base.map(conditionKey));
-	return (c): c is WidthChecked =>
+	return (c): c is NewClaim =>
 		c.about === "experience" &&
 		c.mode !== "exclude" &&
 		c.what !== undefined &&

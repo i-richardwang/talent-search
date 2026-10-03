@@ -77,18 +77,13 @@ export type PersonDim = Exclude<PersonField, "school">;
 type Kind = DimUnit["kind"];
 
 /**
- * 一条条件为什么被停用。
+ * 一条条件被停用。停用只有一个来源：用户在 chip 上点的。这条还在查询里、还画在
+ * 屏幕上，但这一次检索完全当它不存在。招聘检索是反复试的——加一条发现只剩三个人，
+ * 想知道是不是它太窄。删掉再手打回来会丢掉它的强度，也丢掉「我试过这个」这件事。
  *
- * `user` 是用户在 chip 上点的：这条还在查询里、还画在屏幕上，但这一次检索
- * 完全当它不存在。招聘检索是反复试的——加一条发现只剩三个人，想知道是不是
- * 它太窄。删掉再手打回来会丢掉它的强度，也丢掉「我试过这个」这件事。
- *
- * `wide` 是理解落库时量出来的：这条主张的经历词在语料里命中的人太多
- * （`WIDE_SHARE`），几乎筛不掉人。成因写在这里，界面据此说「太宽」而不是
- * 一个无缘无故的停用；用户可以换词，也可以坚持启用。
+ * 系统不替用户停用条件：用户说了的就搜，名单多长由用户看着人数决定。
  */
-const OFF_CAUSES = ["user", "wide"] as const;
-type OffCause = (typeof OFF_CAUSES)[number];
+type Off = "user";
 
 type Some<T> = readonly [T, ...T[]];
 
@@ -105,13 +100,13 @@ export type ExperienceCondition = {
 	kind?: Kind;
 	/** 满足其余各项的段累计至少这么多个月。 */
 	minMonths?: number;
-	off?: OffCause;
+	off?: Off;
 };
 
 export type PersonCondition = {
 	about: "person";
 	mode: PersonMode;
-	off?: OffCause;
+	off?: Off;
 } & (
 	| {
 			field: PersonField;
@@ -210,9 +205,7 @@ export function conditionsOf(raw: unknown): Condition[] {
 		const mode = MODES.includes(entry.mode as Mode)
 			? (entry.mode as Mode)
 			: "must";
-		const off = OFF_CAUSES.includes(entry.off as OffCause)
-			? (entry.off as OffCause)
-			: undefined;
+		const off = entry.off === "user" ? ("user" as const) : undefined;
 		const condition =
 			entry.about === "experience"
 				? experienceOf(entry, mode)
@@ -289,7 +282,7 @@ export function activeConditions(list: readonly Condition[]): Condition[] {
 }
 
 /** 停用或启用一条条件。强度与取值原样留着——停用不是重写。 */
-export function withOff(condition: Condition, off: OffCause | null): Condition {
+export function withOff(condition: Condition, off: Off | null): Condition {
 	const { off: _off, ...rest } = condition;
 	return off ? ({ ...rest, off } as Condition) : (rest as Condition);
 }

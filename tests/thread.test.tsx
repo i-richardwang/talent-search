@@ -222,11 +222,10 @@ describe("检索人才库的过程", () => {
 				{
 					text: "推荐",
 					people: 128,
-					wide: false,
 					terms: [{ name: "推荐算法", people: 96 }],
 				},
-				{ text: "互联网", people: 900, wide: true, terms: [] },
-				{ text: "量子炼金", people: 0, wide: false, terms: [] },
+				{ text: "互联网", people: 900, terms: [] },
+				{ text: "量子炼金", people: 0, terms: [] },
 			],
 		},
 		{
@@ -266,10 +265,10 @@ describe("检索人才库的过程", () => {
 		assert.doesNotMatch(text, /正在理解你的需求/, "有了步骤就不再说在理解");
 	});
 
-	test("一步的结论：一个说法多少人、范围大不大、包括哪些技能；一个名字匹配到哪些", () => {
+	test("一步的结论：一个说法多少人、包括哪些技能；一个名字匹配到哪些", () => {
 		assert.deepEqual(stepFindings(trace[0] as TraceStep), [
 			"「推荐」128 人，包括推荐算法 96 人",
-			"「互联网」900 人，范围较大",
+			"「互联网」900 人",
 			"人才库中没有「量子炼金」",
 		]);
 		assert.deepEqual(stepFindings(trace[1] as TraceStep), [

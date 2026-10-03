@@ -84,14 +84,14 @@ describe("查询 chip", () => {
 		assert.doesNotMatch(text, /必须/);
 	});
 
-	test("自动停用的写「太宽」，自己停的不写", () => {
-		const wide = seen([
-			{ about: "experience", mode: "must", what: ["经理"], off: "wide" },
-		]);
-		assert.match(wide, /太宽/);
-		const user = seen([
+	test("停用的仍画在屏幕上，读屏说「已停用」", () => {
+		const off: Condition[] = [
 			{ about: "experience", mode: "must", what: ["经理"], off: "user" },
-		]);
-		assert.doesNotMatch(user, /太宽/);
+		];
+		assert.match(seen(off), /经理/);
+		assert.match(
+			renderToStaticMarkup(<QueryChips conditions={off} onChange={() => {}} />),
+			/aria-label="[^"]*已停用"/,
+		);
 	});
 });

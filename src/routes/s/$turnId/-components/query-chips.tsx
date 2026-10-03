@@ -73,7 +73,6 @@ export function QueryChips({
 				const label = conditionLabel(chip);
 				const more = moreCount(chip);
 				const parts = partsOf(chip);
-				const wide = chip.off === "wide";
 				const actions: DropdownItem[] = [
 					...(parts.length > 1
 						? [
@@ -109,7 +108,7 @@ export function QueryChips({
 										MODE_NAME[chip.mode],
 										label,
 										more && "等",
-										wide ? "太宽，已停用" : chip.off && "已停用",
+										chip.off && "已停用",
 									]
 										.filter(Boolean)
 										.join("，")}
@@ -120,7 +119,6 @@ export function QueryChips({
 									{chip.mode !== "must" && (
 										<FilterChipNote>{MODE_NAME[chip.mode]}</FilterChipNote>
 									)}
-									{wide && <FilterChipNote>太宽</FilterChipNote>}
 									<Icon icon={ChevronDownIcon} size={10} />
 								</FilterChipTrigger>
 							</DropdownMenuTrigger>
@@ -129,9 +127,7 @@ export function QueryChips({
 									<DropdownMenuPopup>
 										{chip.off && (
 											<DropdownMenuHeader className="max-w-64 text-fg-secondary text-xs">
-												{wide
-													? "范围过大，几乎所有人都满足，已停用。请换一个更具体的词。"
-													: `已停用，重新启用后仍为「${MODE_NAME[chip.mode]}」。`}
+												{`已停用，重新启用后仍为「${MODE_NAME[chip.mode]}」。`}
 											</DropdownMenuHeader>
 										)}
 										<DropdownMenuRadioGroup

@@ -46,14 +46,6 @@ export const EXCLUDE_INTERN: Condition = {
 	what: ["实习"],
 };
 
-/** 被停用的一条：命中的人太多，理解时量出来「太宽」。 */
-export const WIDE_CONDITION: Condition = {
-	about: "experience",
-	mode: "must",
-	what: ["数据分析"],
-	off: "wide",
-};
-
 export const ROUND1_CONDITIONS: Condition[] = [RECOMMEND, BIG_COMPANY];
 
 /** 第二轮的条件表：加了带团队和学历。 */
@@ -106,7 +98,10 @@ export const EMPTY_CASES: {
 	],
 	overflowEvidence: [{ kind: "overflowEvidence", claims: CLAIMS }, SPEC],
 	overflowPopulation: [{ kind: "overflowPopulation" }, SPEC],
-	allDisabled: [{ kind: "allDisabled" }, { conditions: [WIDE_CONDITION] }],
+	allDisabled: [
+		{ kind: "allDisabled" },
+		{ conditions: [{ ...RECOMMEND, off: "user" }] },
+	],
 	excludeOnly: [{ kind: "excludeOnly" }, { conditions: [EXCLUDE_INTERN] }],
 	noConditions: [{ kind: "noConditions" }, { conditions: [] }],
 };

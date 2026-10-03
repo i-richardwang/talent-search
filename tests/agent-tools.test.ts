@@ -95,14 +95,14 @@ describe("查经历词", () => {
 		assert.deepEqual(few?.terms, [], "只有两个人写过，不给");
 	});
 
-	test("命中的人超过全库两成就是太宽；一个人都找不到的是 0", async () => {
+	test("人数按人数，一个人都找不到的是 0", async () => {
 		const found = await findTerms(["推荐", "考古", "量子炼金"]);
 		assert.deepEqual(
-			found.map((t) => [t.text, t.people, t.wide]),
+			found.map((t) => [t.text, t.people]),
 			[
-				["推荐", 9, false],
-				["考古", 40, true],
-				["量子炼金", 0, false],
+				["推荐", 9],
+				["考古", 40],
+				["量子炼金", 0],
 			],
 		);
 	});
@@ -161,18 +161,26 @@ describe("提交搜索条件", () => {
 		});
 	});
 
-	test("这一轮新写的太宽的词不通过；上一轮就有的不检查", async () => {
-		const fresh = await agentOn();
-		const wide = (await run(
-			fresh.tools.submit,
-			table(parseQuery("考古")),
-		)) as Checked;
-		assert.equal(wide.passed, false);
-		assert.match(wide.problems?.join() ?? "", /考古.*几乎不筛人/);
-		const kept = await agentOn(parseQuery("考古"));
-		assert.deepEqual(await run(kept.tools.submit, table(parseQuery("考古"))), {
+	test("人多的词照样通过：名单多长由 HR 决定", async () => {
+		const agent = await agentOn();
+		assert.deepEqual(await run(agent.tools.submit, table(parseQuery("考古"))), {
 			passed: true,
 		});
+	});
+
+	test("这一轮新写的找不到人的词不通过；上一轮就有的不检查", async () => {
+		const fresh = await agentOn();
+		const none = (await run(
+			fresh.tools.submit,
+			table(parseQuery("量子炼金")),
+		)) as Checked;
+		assert.equal(none.passed, false);
+		assert.match(none.problems?.join() ?? "", /量子炼金.*一个人都找不到/);
+		const kept = await agentOn(parseQuery("量子炼金"));
+		assert.deepEqual(
+			await run(kept.tools.submit, table(parseQuery("量子炼金"))),
+			{ passed: true },
+		);
 	});
 
 	test("什么都没写不通过", async () => {

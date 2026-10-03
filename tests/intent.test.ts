@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { Condition, Mode } from "#/search/condition";
 import {
-	needsWidthCheck,
+	isNewClaim,
 	submissionSchema,
 	unanswered,
 	understood,
@@ -218,7 +218,7 @@ describe("没作答", () => {
 describe("停用跟着条件走", () => {
 	const base: Condition[] = [
 		{ ...exp("must", "算法"), off: "user" },
-		{ ...exp("must", "渠道运营"), off: "wide" },
+		{ ...exp("must", "渠道运营"), off: "user" },
 		exp("must", "产品"),
 	];
 
@@ -436,10 +436,10 @@ describe("提交时告诉模型的词表外取值", () => {
 	});
 });
 
-describe("哪些条件要检查经历词是否太宽", () => {
+describe("哪些条件要检查经历词找不找得到人", () => {
 	test("这一轮新写的正向主张；排除、没写经历词的、上一轮已有的不检查", () => {
 		const kept = build("灵能驾驶");
-		const measured = needsWidthCheck([kept]);
+		const measured = isNewClaim([kept]);
 		assert.deepEqual(
 			[
 				kept,

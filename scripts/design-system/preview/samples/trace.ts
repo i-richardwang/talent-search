@@ -17,7 +17,6 @@ export const ROUND1_TRACE: TraceStep[] = [
 			{
 				text: "推荐系统",
 				people: 46,
-				wide: false,
 				terms: [
 					{ name: "推荐系统", people: 38 },
 					{ name: "搜索推荐", people: 12 },
@@ -26,14 +25,13 @@ export const ROUND1_TRACE: TraceStep[] = [
 			{
 				text: "推荐算法",
 				people: 41,
-				wide: false,
 				terms: [{ name: "推荐系统", people: 38 }],
 			},
 		],
 	},
 ];
 
-/** 第二轮的步骤：一个说法范围较大，一个在人才库里对不上。 */
+/** 第二轮的步骤：一个说法人多，一个在人才库里对不上。 */
 export const ROUND2_TRACE: TraceStep[] = [
 	{
 		at: T0 + 60_000,
@@ -42,13 +40,12 @@ export const ROUND2_TRACE: TraceStep[] = [
 			{
 				text: "团队管理",
 				people: 212,
-				wide: true,
 				terms: [
 					{ name: "团队管理", people: 180 },
 					{ name: "项目管理", people: 64 },
 				],
 			},
-			{ text: "技术口碑", people: 0, wide: false, terms: [] },
+			{ text: "技术口碑", people: 0, terms: [] },
 		],
 	},
 ];
