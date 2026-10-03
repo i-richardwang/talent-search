@@ -19,7 +19,14 @@ type Recalled = {
 	text: string;
 	candidates: { phraseId: number; text: string }[];
 };
-type PhraseMatches = { phraseHits: Map<string, PhraseHit[]> };
+type PhraseMatches = {
+	phraseHits: Map<string, PhraseHit[]>;
+	/**
+	 * 相近的说法多到用满了 `RECALL_TOP` 的词：排在名额之外的说法没有判断过，
+	 * 只写在那些说法上的人不在结果里。检索把它们交给界面明说，不当作结果完整。
+	 */
+	capped: string[];
+};
 
 async function recall(
 	store: DbExecutor,
@@ -72,7 +79,9 @@ export async function withMatchedPhrases<T>(
 	use: (store: DbExecutor, matches: PhraseMatches) => Promise<T>,
 ): Promise<T> {
 	if (texts.length === 0)
-		return withCorpusSnapshot((store) => use(store, { phraseHits: new Map() }));
+		return withCorpusSnapshot((store) =>
+			use(store, { phraseHits: new Map(), capped: [] }),
+		);
 	rerankSpaceId();
 	const unique = [...new Set(texts)];
 	for (let attempt = 0; attempt < PLAN_ATTEMPTS; attempt++) {
@@ -113,7 +122,10 @@ export async function withMatchedPhrases<T>(
 					hits.sort((a, b) => b.relevance - a.relevance),
 				);
 			}
-			return { value: await use(store, { phraseHits }) };
+			const capped = current
+				.filter((r) => r.candidates.length >= RECALL_TOP)
+				.map((r) => r.text);
+			return { value: await use(store, { phraseHits, capped }) };
 		});
 		if (done) return done.value;
 	}

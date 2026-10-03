@@ -829,6 +829,8 @@ describe("召回按名次截断", () => {
 		const outcome = await run(word);
 		assert.equal(outcome.total, 0);
 		assert.notEqual(outcome.empty?.kind, "overflowEvidence");
+		assert.deepEqual(outcome.capped, [word], "用满名额的词要交给界面明说");
+		assert.deepEqual((await run("考古")).capped, []);
 		// 重排分逐对缓存，缓存里这个词的行数就是进过重排的条数
 		const judged = await db.execute<{ n: number }>(sql`
 			select count(*)::int as n from rerank_cache where query = ${word}`);

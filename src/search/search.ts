@@ -43,6 +43,7 @@ import {
 } from "./rank";
 import {
 	type Claim,
+	type Evaluated,
 	emptyFacets,
 	type Facets,
 	type Gate,
@@ -667,7 +668,7 @@ async function searchPopulation(
 	limit: number,
 	veto: SQL | null,
 	person: readonly SQL[],
-): Promise<SearchOutcome> {
+): Promise<Evaluated> {
 	const rows = await store.execute<PopulationRow>(sql`
 		select p.emp_id, ${factSelect}
 		from employee p left join experience e
@@ -749,6 +750,7 @@ export async function search(
 				total: 0,
 				overflow: null,
 			}),
+			capped: [],
 		};
 	// 相关度过滤（要调两个模型端点）在快照外算，取数在快照内做，见 phrases.ts。
 	// 正向的和排除的经历词一起做相关度过滤：它们查的是同一批说法，相关度门槛的差别在
@@ -756,145 +758,151 @@ export async function search(
 	return withMatchedPhrases(
 		[...claims, ...excludes].flatMap((c) => c.what ?? []),
 		RELEVANCE_MIN,
-		async (store, { phraseHits }) => {
-			const veto = vetoSql(excludes, phraseHits);
-			// 门槛和 URL 上的公司名 / 学校名都按人过滤，在每一条取数 SQL 里生效
-			const person = [...gateConds(gates, veto), ...viewConds(filters, veto)];
-			// 只有门槛时没有做过什么可比，名单按人排，不伪造一条主张来启动检索。
-			if (claims.length === 0)
-				return searchPopulation(
-					store,
-					spec,
-					prefer,
-					filters,
-					limit,
-					veto,
-					person,
-				);
+		async (store, { phraseHits, capped }) => ({
+			...(await evaluate(store, phraseHits)),
+			capped,
+		}),
+	);
 
-			const loaded = await fetchFacts(store, claims, phraseHits, [
-				...person,
-				...(veto ? [sql`e.id not in (${veto})`] : []),
-			]);
-			if (loaded.kind === "overflow") {
-				const contributors = new Set(loaded.claims);
-				return {
-					order: "evidence",
-					claims,
-					...noOne(),
-					empty: emptyReason({
-						spec,
-						filters,
-						total: 0,
-						overflow: {
-							kind: "overflowEvidence",
-							claims: claims.filter((_, index) => contributors.has(index)),
-						},
-					}),
-				};
-			}
-			const facts = loaded.facts;
-			const candidates = facts.map((f) => f.empId);
-			const preferred = await Promise.all(
-				prefer.map((g) => fetchPreferred(store, g, veto, candidates)),
-			);
-
-			const { ranked, facets, total } = rank(
-				facts,
-				claims,
-				filters,
-				new Date(),
-				preferred,
-			);
-			const empty = emptyReason({
+	async function evaluate(
+		store: DbExecutor,
+		phraseHits: Map<string, PhraseHit[]>,
+	): Promise<Evaluated> {
+		const veto = vetoSql(excludes, phraseHits);
+		// 门槛和 URL 上的公司名 / 学校名都按人过滤，在每一条取数 SQL 里生效
+		const person = [...gateConds(gates, veto), ...viewConds(filters, veto)];
+		// 只有门槛时没有做过什么可比，名单按人排，不伪造一条主张来启动检索。
+		if (claims.length === 0)
+			return searchPopulation(
+				store,
 				spec,
+				prefer,
 				filters,
-				total,
-				overflow: null,
-			});
-			const page = ranked.slice(0, limit);
-			if (page.length === 0)
-				return {
-					order: "evidence",
-					claims,
-					results: [],
-					facets,
-					total,
-					empty,
-				};
-
-			const empIds = page.map((row) => row.empId);
-			const evidence = pageHits(
-				facts,
-				claims,
-				filters,
-				new Set(empIds),
-				HITS_PER_CLAIM,
+				limit,
+				veto,
+				person,
 			);
 
-			// 名次确定后按 id 读取展示原文；命中判定只产生事实，不承担内容读取。
-			const ids = [
-				...new Set([...evidence.values()].flat().map((fact) => fact.id)),
-			];
-			const segments = await store
-				.select()
-				.from(experience)
-				.where(inArray(experience.id, ids));
-			const employees = await store
-				.select(RESULT_COLUMNS)
-				.from(employee)
-				.where(inArray(employee.empId, empIds));
-
-			const segById = new Map(segments.map((segment) => [segment.id, segment]));
-			const empById = new Map(
-				employees.map((person) => [person.empId, person]),
-			);
-
-			// 名次已经定好，回表只是按 id 把要画的原文取回来：这一页就是取得回来的
-			// 那些行，取数和定名次读的是同一次快照里的同一批 id。
-			const results: RankedResult[] = page.flatMap((row) => {
-				const person = empById.get(row.empId);
-				if (!person) return [];
-				const hits = (evidence.get(row.empId) ?? []).flatMap<Hit>((fact) => {
-					const segment = segById.get(fact.id);
-					if (!segment) return [];
-					return [
-						{
-							experienceId: segment.id,
-							claim: fact.claim,
-							value: fact.value,
-							route: fact.route,
-							relevance: fact.relevance,
-							phrase: fact.phrase,
-							involvement: fact.involvement,
-							startDate: segment.startDate,
-							endDate: segment.endDate,
-							org: segment.org,
-							title: segment.title,
-							seq: dots(segment.seqL1, segment.seqL2, segment.seqL3),
-						},
-					];
-				});
-				return [
-					{
-						employee: person,
-						strength: row.strength,
-						depth: row.depth,
-						basis: row.basis,
-						hits,
-					},
-				];
-			});
+		const loaded = await fetchFacts(store, claims, phraseHits, [
+			...person,
+			...(veto ? [sql`e.id not in (${veto})`] : []),
+		]);
+		if (loaded.kind === "overflow") {
+			const contributors = new Set(loaded.claims);
 			return {
 				order: "evidence",
 				claims,
-				results,
+				...noOne(),
+				empty: emptyReason({
+					spec,
+					filters,
+					total: 0,
+					overflow: {
+						kind: "overflowEvidence",
+						claims: claims.filter((_, index) => contributors.has(index)),
+					},
+				}),
+			};
+		}
+		const facts = loaded.facts;
+		const candidates = facts.map((f) => f.empId);
+		const preferred = await Promise.all(
+			prefer.map((g) => fetchPreferred(store, g, veto, candidates)),
+		);
+
+		const { ranked, facets, total } = rank(
+			facts,
+			claims,
+			filters,
+			new Date(),
+			preferred,
+		);
+		const empty = emptyReason({
+			spec,
+			filters,
+			total,
+			overflow: null,
+		});
+		const page = ranked.slice(0, limit);
+		if (page.length === 0)
+			return {
+				order: "evidence",
+				claims,
+				results: [],
 				facets,
 				total,
 				empty,
 			};
-		},
-	);
+
+		const empIds = page.map((row) => row.empId);
+		const evidence = pageHits(
+			facts,
+			claims,
+			filters,
+			new Set(empIds),
+			HITS_PER_CLAIM,
+		);
+
+		// 名次确定后按 id 读取展示原文；命中判定只产生事实，不承担内容读取。
+		const ids = [
+			...new Set([...evidence.values()].flat().map((fact) => fact.id)),
+		];
+		const segments = await store
+			.select()
+			.from(experience)
+			.where(inArray(experience.id, ids));
+		const employees = await store
+			.select(RESULT_COLUMNS)
+			.from(employee)
+			.where(inArray(employee.empId, empIds));
+
+		const segById = new Map(segments.map((segment) => [segment.id, segment]));
+		const empById = new Map(employees.map((person) => [person.empId, person]));
+
+		// 名次已经定好，回表只是按 id 把要画的原文取回来：这一页就是取得回来的
+		// 那些行，取数和定名次读的是同一次快照里的同一批 id。
+		const results: RankedResult[] = page.flatMap((row) => {
+			const person = empById.get(row.empId);
+			if (!person) return [];
+			const hits = (evidence.get(row.empId) ?? []).flatMap<Hit>((fact) => {
+				const segment = segById.get(fact.id);
+				if (!segment) return [];
+				return [
+					{
+						experienceId: segment.id,
+						claim: fact.claim,
+						value: fact.value,
+						route: fact.route,
+						relevance: fact.relevance,
+						phrase: fact.phrase,
+						involvement: fact.involvement,
+						startDate: segment.startDate,
+						endDate: segment.endDate,
+						org: segment.org,
+						title: segment.title,
+						seq: dots(segment.seqL1, segment.seqL2, segment.seqL3),
+					},
+				];
+			});
+			return [
+				{
+					employee: person,
+					strength: row.strength,
+					depth: row.depth,
+					basis: row.basis,
+					hits,
+				},
+			];
+		});
+		return {
+			order: "evidence",
+			claims,
+			results,
+			facets,
+			total,
+			empty,
+		};
+	}
 }
 
 /**

@@ -6,16 +6,18 @@ import type { Facets } from "#/search/result";
 import type { SearchMode } from "#/server/turn";
 import { filterFields, textFilters } from "../-lib/filters";
 import type { View } from "../-lib/view-params";
+import { Capped } from "./capped";
 import { Earlier } from "./earlier";
 import { FilterBar } from "./filter-bar";
 import { QueryChips } from "./query-chips";
 
 /**
- * 名单上方那一组：正看着较早的一次时的提示、搜索条件、筛选。对话的条件在 chip 上改；
+ * 名单上方那一组：正看着较早的一次时的提示、名单可能缺人的提示、搜索条件、筛选。对话的条件在 chip 上改；
  * 关键词的条件就在框里，不另排一行。
  */
 export function WorkspaceNotices({
 	earlier,
+	capped,
 	latestId,
 	turnId,
 	mode,
@@ -27,6 +29,7 @@ export function WorkspaceNotices({
 	onViewChange,
 }: {
 	earlier: boolean;
+	capped: readonly string[];
 	latestId: string;
 	turnId: string;
 	mode: SearchMode;
@@ -47,6 +50,7 @@ export function WorkspaceNotices({
 	return (
 		<>
 			{earlier && <Earlier latestId={latestId} />}
+			{capped.length > 0 && <Capped words={capped} />}
 			{chips && <QueryChips conditions={conditions} onChange={onRevise} />}
 			{mode === "keyword" && (
 				<KeywordBar

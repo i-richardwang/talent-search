@@ -8,7 +8,7 @@ import { routeLabel } from "#/search/evidence";
 import { parseQuery } from "#/search/query-syntax";
 import type { Claim } from "#/search/result";
 import { search } from "#/search/search";
-import type { Strength } from "#/search/weights";
+import { RECALL_TOP, type Strength } from "#/search/weights";
 
 /** 可信度各档在命令行上的显示文字：登记的岗位或序列、登记的部门或公司、自述。 */
 const STRENGTH_LABEL: Record<Strength, string> = {
@@ -45,6 +45,10 @@ const top = results.slice(0, Number(process.env.TOPN ?? 8));
 
 console.log(`查询「${q}」→ 条件 [${shown}]`);
 // 报 total 不报 results.length：后者被 RESULT_PAGE 截过，调权重要看命中的总人数。
+if (outcome.capped.length > 0)
+	console.log(
+		`相近说法超过 ${RECALL_TOP} 条、只判断了最接近的那些：${outcome.capped.join("、")}`,
+	);
 console.log(`命中 ${total} 人，${ms}ms；以下是排在最前的 ${top.length} 个\n`);
 for (const r of top) {
 	const e = r.employee;

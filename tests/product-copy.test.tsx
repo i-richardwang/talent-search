@@ -143,6 +143,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 						facets: emptyFacets(),
 						total: 0,
 						empty: null,
+						capped: [],
 					}}
 					picks={NO_PICKS}
 					spec={{ conditions: [] }}
@@ -215,6 +216,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 					facets: emptyFacets(),
 					total: 0,
 					empty: { kind: "unmet" },
+					capped: [],
 				}}
 				spec={{
 					conditions: [

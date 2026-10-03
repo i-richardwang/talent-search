@@ -141,7 +141,7 @@ type Outcome = {
 };
 
 /** evidence 按证据可信度与深度排序；employee 用于没有经历证据的人员查询。 */
-export type SearchOutcome =
+export type Evaluated =
 	| (Outcome & {
 			order: "evidence";
 			claims: Claim[];
@@ -152,6 +152,11 @@ export type SearchOutcome =
 			claims: [];
 			results: PopulationResult[];
 	  });
+
+export type SearchOutcome = Evaluated & {
+	/** 相近的说法多过一次能判断的条数的经历词；它们的结果可能缺人（`phrases.ts`）。 */
+	capped: string[];
+};
 
 export function emptyFacets(): Facets {
 	const facets = {} as Facets;
