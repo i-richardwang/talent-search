@@ -45,15 +45,16 @@
 	/*
 	 * 动 background-position 每一帧都重绘每个字。支持 mask-clip: text 时，把一层位移
 	 * 动画的亮光裁到字形上，动画留在合成层。遮罩也裁掉子元素，所以里面还有图标、
-	 * 小块的文字仍走 background-clip。
+	 * 小块的文字仍走 background-clip。`text` 只有带前缀的写法，且要写在 mask-image
+	 * 之后：Chrome 里写在前面不生效，亮光会盖住整块。
 	 */
 	@supports (-webkit-mask-clip: text) {
 		&:not(:has(*)) {
 			position: relative;
 			background: none;
 			animation: none;
-			mask-clip: text;
 			mask-image: linear-gradient(#fff, #fff);
+			-webkit-mask-clip: text;
 
 			&::after {
 				pointer-events: none;
