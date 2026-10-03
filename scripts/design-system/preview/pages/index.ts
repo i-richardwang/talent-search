@@ -35,6 +35,7 @@ import { ListPage } from "./components/list";
 import { ModalPage } from "./components/modal";
 import { NavItemPage } from "./components/nav-item";
 import { PopoverPage } from "./components/popover";
+import { ProgressPage } from "./components/progress";
 import { ProgressTagPage } from "./components/progress-tag";
 import { RadioPage } from "./components/radio";
 import { ScrollAreaPage } from "./components/scroll-area";
@@ -123,6 +124,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/copy-button": CopyButtonPage,
 	"components/filter-chip": FilterChipPage,
 	"components/filter-button": FilterButtonPage,
+	"components/progress": ProgressPage,
 	"components/progress-tag": ProgressTagPage,
 	"components/suggestion-chips": SuggestionChipsPage,
 	"components/tooltip": TooltipPage,

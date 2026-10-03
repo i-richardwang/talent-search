@@ -181,6 +181,7 @@ const CATALOG = [
 			component("empty", "空状态", "Empty"),
 			component("filter-chip", "条件药丸", "FilterChip"),
 			component("filter-button", "筛选钮", "FilterButton"),
+			component("progress", "进度条", "Progress"),
 			component("progress-tag", "进度标签", "ProgressTag"),
 			component("suggestion-chips", "建议列", "SuggestionChips"),
 			component("skeleton", "骨架屏", "Skeleton"),

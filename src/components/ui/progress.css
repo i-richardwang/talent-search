@@ -1,0 +1,17 @@
+.ui-progress-track {
+	overflow: hidden;
+	height: 8px;
+	border-radius: 9999px;
+	background: var(--color-fill-secondary);
+}
+
+.ui-progress-indicator {
+	height: 100%;
+	border-radius: inherit;
+	background: var(--color-primary);
+	transition: width 300ms var(--ease-out);
+
+	@media (prefers-reduced-motion: reduce) {
+		transition-duration: 0s;
+	}
+}

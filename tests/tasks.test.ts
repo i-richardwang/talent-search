@@ -571,31 +571,35 @@ describe("页面文案", () => {
 		...over,
 	});
 
-	/** 一组库存数读成一句，方便比对：「名字 数（构成）」用顿号连起来。 */
-	const read = (facts: ReturnType<typeof LANE_FACTS.sync>) =>
-		facts
-			.map((f) => {
-				const parts = f.parts
-					?.map((part) => `${part.value} ${part.label}`)
-					.join(" · ");
-				return `${f.label} ${f.value}${parts ? `（${parts}）` : ""}`;
+	/** 一组现状读成一句，方便比对。 */
+	const read = ({ progress, counts }: ReturnType<typeof LANE_FACTS.sync>) => {
+		const line = counts
+			.map((c) => {
+				const parts = c.parts
+					?.map((part) => `${part.label} ${part.value}`)
+					.join(" / ");
+				return `${c.value} ${c.label}${parts ? `（${parts}）` : ""}`;
 			})
 			.join("、");
+		return progress
+			? `${progress.done} / ${progress.total} ${progress.label}；${line}`
+			: line;
+	};
 
-	test("解析那一组说还剩几条经历没处理，和一共几条", () => {
-		assert.match(
+	test("解析那一组说经历解析到哪了，和有多少说法", () => {
+		assert.equal(
 			read(LANE_FACTS.derive(corpus({ pending: 3 }))),
-			/待处理经历 3（10 条经历）/,
+			"7 / 10 段经历已解析；30 条说法",
 		);
 	});
-	test("同步与整理那两组说的是构成和结果", () => {
+	test("同步说构成，整理说释义写到哪了和词表", () => {
 		assert.equal(
 			read(LANE_FACTS.sync(corpus())),
-			"人 8、经历 10（6 公司内 · 4 入职前）",
+			"8 人、10 段经历（公司内 6 / 入职前 4）",
 		);
-		assert.match(
+		assert.equal(
 			read(LANE_FACTS.review(corpus())),
-			/技能 9、已归并写法 2、释义 12（30 条该写）/,
+			"12 / 30 条说法已写释义；9 个技能、2 种写法已归并",
 		);
 	});
 	test("用时一小时以内到秒，以上到分，满一天进位成天", () => {

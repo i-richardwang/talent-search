@@ -12,11 +12,11 @@ import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { CodeBlock } from "#/components/ui/code-block";
 import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
-import { Divider } from "#/components/ui/divider";
 import { Drawer } from "#/components/ui/drawer";
 import { Empty } from "#/components/ui/empty";
 import { GroupCard } from "#/components/ui/group-card";
 import { Icon } from "#/components/ui/icon";
+import { Progress } from "#/components/ui/progress";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
 import { toast } from "#/components/ui/toast";
@@ -77,8 +77,8 @@ function Latest({ latest }: { latest: TaskRunView | null }) {
 }
 
 /**
- * 任务页上一类任务的一组：任务名、最近一次的结果和「立即运行」，下面是统计数和按次
- * 列出的运行记录。`onDone` 在请求运行之后调用，让页面重新取一次状态。
+ * 任务页上一类任务的一组：任务名、最近一次的结果和「立即运行」，下面是库里的现状和
+ * 按次列出的运行记录。`onDone` 在请求运行之后调用，让页面重新取一次状态。
  */
 export function TaskCard({
 	lane,
@@ -136,7 +136,7 @@ export function TaskCard({
 				}
 				title={TASK_NAME[kind]}
 			>
-				<div className="flex flex-col gap-6">
+				<div className="flex flex-col gap-4">
 					{kind === "review" && judge === "off" && (
 						<Alert
 							title="自动整理已关闭，技能与释义不再更新"
@@ -144,57 +144,56 @@ export function TaskCard({
 						/>
 					)}
 					<Facts corpus={corpus} kind={kind} />
-					{lane.runs.total > 0 && (
-						<>
-							<Divider className="my-0" dashed />
-							<RunHistory lane={lane} />
-						</>
-					)}
+					{lane.runs.total > 0 && <RunHistory lane={lane} />}
 				</div>
 			</GroupCard>
 		</li>
 	);
 }
 
-/** 一行最多四格（扣掉三道 `gap-2`），每格不窄于 9.375rem，放不下就换行。 */
-const FACT_COLUMNS =
-	"repeat(auto-fill, minmax(max(9.375rem, calc((100% - 3 * var(--spacing) * 2) / 4)), 1fr))";
+/** 几分之几写成百分数，向下取整：还差一条时不写成 100%。 */
+const percentOf = (done: number, total: number) =>
+	Math.floor((done / total) * 100);
 
-/** 统计数，一格一个数，构成写在数下面。 */
 function Facts({ kind, corpus }: { kind: TaskKind; corpus: CorpusCounts }) {
+	const { progress, counts } = LANE_FACTS[kind](corpus);
 	return (
-		<dl className="grid gap-2" style={{ gridTemplateColumns: FACT_COLUMNS }}>
-			{LANE_FACTS[kind](corpus).map((fact) => (
-				<div className="flex min-w-0 flex-col" key={fact.label}>
-					<dt className="leading-8">
-						<Text ellipsis={{ tooltip: true }} size="lg" weight="medium">
-							{fact.label}
-						</Text>
-					</dt>
-					<dd className="flex flex-col gap-4">
-						<Text
-							className="leading-tight tabular-nums"
-							size="2xl"
-							weight="bold"
-						>
-							{integer(fact.value)}
-						</Text>
-						{fact.parts && (
-							<span className="flex flex-wrap gap-x-3 gap-y-1 text-fg-tertiary text-xs">
-								{fact.parts.map((part) => (
-									<span className="flex gap-1" key={part.label}>
-										<span className="font-bold tabular-nums">
-											{integer(part.value)}
-										</span>
-										<span>{part.label}</span>
-									</span>
-								))}
+		<Block gap={12} padding={16}>
+			{progress && (
+				<div className="flex flex-col gap-2.5">
+					<div className="flex items-baseline justify-between gap-2 text-fg-tertiary text-xs tabular-nums">
+						<span>
+							<span className="font-medium text-fg text-sm">
+								{integer(progress.done)}
+							</span>
+							{` / ${integer(progress.total)} ${progress.label}`}
+						</span>
+						{progress.total > 0 && (
+							<span className="text-fg-secondary">
+								{percentOf(progress.done, progress.total)}%
 							</span>
 						)}
-					</dd>
+					</div>
+					<Progress
+						aria-label={progress.label}
+						max={progress.total}
+						value={progress.done}
+					/>
 				</div>
-			))}
-		</dl>
+			)}
+			<p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-fg-tertiary text-xs">
+				{counts.map((count) => (
+					<span className="flex items-baseline gap-1" key={count.label}>
+						<span className="font-medium text-fg text-sm tabular-nums">
+							{integer(count.value)}
+						</span>
+						{count.label}
+						{count.parts &&
+							`（${count.parts.map((part) => `${part.label} ${integer(part.value)}`).join(" / ")}）`}
+					</span>
+				))}
+			</p>
+		</Block>
 	);
 }
 

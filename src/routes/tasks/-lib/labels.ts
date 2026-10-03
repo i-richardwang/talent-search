@@ -20,50 +20,49 @@ export const RUN_STATUS: Record<
 	done: { label: "成功", tone: "success" },
 };
 
-/**
- * 一格统计数：名字、数，数下面可选一行构成。构成的每一项数在前、说它是什么在后
- * （`21,267 公司内`）。
- */
-type LaneFact = {
-	label: string;
-	value: number;
-	parts?: { value: number; label: string }[];
+type Count = { value: number; label: string };
+
+type LaneFacts = {
+	progress?: { label: string; done: number; total: number };
+	counts: (Count & { parts?: Count[] })[];
 };
 
-/** 每类任务说库里此刻有什么：同步说构成，解析说还剩多少，整理说归并与释义。 */
-export const LANE_FACTS: Record<
-	TaskKind,
-	(corpus: CorpusCounts) => LaneFact[]
-> = {
-	derive: (corpus) => [
-		{
-			label: "待处理经历",
-			parts: [{ label: "条经历", value: corpus.segments }],
-			value: corpus.pending,
-		},
-		{ label: "说法", value: corpus.phrases },
-	],
-	review: (corpus) => [
-		{ label: "技能", value: corpus.words },
-		{ label: "已归并写法", value: corpus.merged },
-		{
-			label: "释义",
-			parts: [{ label: "条该写", value: corpus.glossable }],
-			value: corpus.glossed,
-		},
-	],
-	sync: (corpus) => [
-		{ label: "人", value: corpus.employees },
-		{
-			label: "经历",
-			parts: [
-				{ label: "公司内", value: corpus.internal },
-				{ label: "入职前", value: corpus.external },
+/** 每类任务在库里的现状。 */
+export const LANE_FACTS: Record<TaskKind, (corpus: CorpusCounts) => LaneFacts> =
+	{
+		derive: (corpus) => ({
+			counts: [{ label: "条说法", value: corpus.phrases }],
+			progress: {
+				done: corpus.segments - corpus.pending,
+				label: "段经历已解析",
+				total: corpus.segments,
+			},
+		}),
+		review: (corpus) => ({
+			counts: [
+				{ label: "个技能", value: corpus.words },
+				{ label: "种写法已归并", value: corpus.merged },
 			],
-			value: corpus.segments,
-		},
-	],
-};
+			progress: {
+				done: corpus.glossed,
+				label: "条说法已写释义",
+				total: corpus.glossable,
+			},
+		}),
+		sync: (corpus) => ({
+			counts: [
+				{ label: "人", value: corpus.employees },
+				{
+					label: "段经历",
+					parts: [
+						{ label: "公司内", value: corpus.internal },
+						{ label: "入职前", value: corpus.external },
+					],
+					value: corpus.segments,
+				},
+			],
+		}),
+	};
 
 /** 用时写成 `42s`、`3m 7s`、`1h 23m`、`1d 2h 5m`：一小时以内到秒，以上到分。 */
 export function formatDuration(seconds: number): string {
