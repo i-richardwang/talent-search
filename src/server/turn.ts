@@ -47,9 +47,14 @@ export type Turn = {
 	notes: TurnNotes | null;
 	/** 理解这一轮时模型走过的步骤；还在理解时是到目前为止的。关键词的记录没有。 */
 	trace: TraceStep[] | null;
-	/** 这一轮写入记录的时刻（epoch 毫秒）：线程上的时间和等理解时的计时都从它算。 */
+	/** 这一次理解开始的时刻（epoch 毫秒）；没开始理解过为 null。 */
+	startedAt: number | null;
+	/** 这一轮写入记录的时刻（epoch 毫秒）：线程上这句话的时间。 */
 	at: number;
 };
+
+/** 正在进行的这一次理解：走过的步骤和它开始的时刻。界面等理解时轮询它。 */
+export type Progress = { trace: TraceStep[]; startedAt: number | null };
 
 type Db = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -199,8 +204,9 @@ async function applyWidthCheck(
  *
  * 这一轮的基线是父记录的条件：一句「再加上带过团队的」只有放在那张表上才有意思。
  *
- * 模型每查一次就往 `trace` 上追加一步，界面轮询它（`turnTrace`）边跑边画。
- * 重试时先清空：上一次失败时走到一半的过程不该接在这一次前面。
+ * 模型每查一次就往 `trace` 上追加一步，界面轮询它（`turnProgress`）边跑边画。
+ * 每一次理解开始时清空它并记下开始的时刻：上一次失败时走到一半的过程和花掉的
+ * 时间都不该算进这一次。
  */
 export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const row = await getRow(turnId);
@@ -217,7 +223,7 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 	const vocab = await vocabulary();
 	await db
 		.update(searchTurn)
-		.set({ trace: [] })
+		.set({ trace: [], interpretStartedAt: sql`now()` })
 		.where(and(eq(searchTurn.id, row.id), isNull(searchTurn.spec)));
 	const record = async (step: TraceStep) => {
 		await db.execute(sql`
@@ -301,18 +307,21 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 		spec: SearchSpec | null;
 		notes: TurnNotes | null;
 		trace: TraceStep[] | null;
+		started_at: number | null;
 		at: number;
 	}>(sql`
 		with recursive line as (
-			select id, root_turn_id, raw_text, spec, notes, trace, created_at, 0 as depth
+			select id, root_turn_id, raw_text, spec, notes, trace,
+				interpret_started_at, created_at, 0 as depth
 			from search_turn
 			where id = (select root_turn_id from search_turn where id = ${id})
 			union all
 			select t.id, t.root_turn_id, t.raw_text, t.spec, t.notes, t.trace,
-				t.created_at, line.depth + 1
+				t.interpret_started_at, t.created_at, line.depth + 1
 			from search_turn t join line on t.parent_turn_id = line.id
 		)
 		select id, root_turn_id, raw_text, spec, notes, trace,
+			(extract(epoch from interpret_started_at) * 1000)::float8 as started_at,
 			(extract(epoch from created_at) * 1000)::float8 as at
 		from line order by depth`);
 	if (rows.length === 0) return null;
@@ -327,17 +336,23 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 		spec: row.spec,
 		notes: row.notes,
 		trace: row.trace,
+		startedAt: row.started_at,
 		at: row.at,
 	}));
 }
 
 /** 一条记录理解到哪一步了：界面在等理解时轮询它。 */
-export async function traceOf(
-	id: string,
-): Promise<{ settled: boolean; trace: TraceStep[] } | null> {
-	const row = await getRow(id);
+export async function loadProgress(id: string): Promise<Progress | null> {
+	const { rows } = await db.execute<{
+		trace: TraceStep[] | null;
+		started_at: number | null;
+	}>(sql`
+		select trace,
+			(extract(epoch from interpret_started_at) * 1000)::float8 as started_at
+		from search_turn where id = ${id}`);
+	const [row] = rows;
 	if (!row) return null;
-	return { settled: row.spec !== null, trace: row.trace ?? [] };
+	return { trace: row.trace ?? [], startedAt: row.started_at };
 }
 
 export async function loadTurn(id: string): Promise<Turn | null> {

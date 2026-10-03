@@ -117,7 +117,7 @@ export function ResultList({
 			<ResultHeader
 				evidence={evidence}
 				order={order}
-				phase={wait?.phase ?? null}
+				wait={wait}
 				total={total}
 			/>
 		</ListViewHeader>

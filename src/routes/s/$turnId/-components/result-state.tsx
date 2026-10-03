@@ -4,7 +4,6 @@ import {
 	RotateCwIcon,
 	SearchXIcon,
 } from "lucide-react";
-import { useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
 import { Text } from "#/components/ui/text";
@@ -15,7 +14,7 @@ import type { InterpretFault, SearchMode } from "#/server/turn";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { emptyState } from "../-lib/empty-state";
 import { FAULT_COPY, FAULT_EXIT_LABEL, faultExits } from "../-lib/interpret";
-import type { SearchPhase } from "../-lib/nav-phase";
+import type { ListWait, SearchPhase } from "../-lib/nav-phase";
 import type { View } from "../-lib/view-params";
 import { StrengthLegend } from "./evidence";
 
@@ -29,13 +28,13 @@ const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
  * 写在做什么。
  */
 export function ResultHeader({
-	phase,
+	wait,
 	order,
 	total,
 	evidence,
 }: {
 	/** 在等什么；null 时写人数和排序。 */
-	phase: SearchPhase | null;
+	wait: ListWait | null;
 	order: SearchOutcome["order"];
 	total: number;
 	/** 名单上有证据行（或这一轮的条件会有）：图例才有东西可对照。 */
@@ -44,8 +43,8 @@ export function ResultHeader({
 	return (
 		<div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
 			<p className="flex items-center gap-1" role="status">
-				{phase ? (
-					<Waiting key={phase} phase={phase} />
+				{wait ? (
+					<Waiting key={wait.phase} phase={wait.phase} since={wait.since} />
 				) : (
 					<>
 						<span className="tabular-nums">{total.toLocaleString()}</span>
@@ -154,8 +153,13 @@ const PHASE_TEXT: Record<SearchPhase, string> = {
 };
 
 /** 在做什么，后面跟已等的秒数。每一步重新计：调用处按 `phase` 换 key。 */
-function Waiting({ phase }: { phase: SearchPhase }) {
-	const [since] = useState(Date.now);
+function Waiting({
+	phase,
+	since,
+}: {
+	phase: SearchPhase;
+	since: number | null;
+}) {
 	const elapsed = useElapsed(since);
 	return (
 		<>

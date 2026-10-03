@@ -16,8 +16,8 @@ const markup = (evidence = true) =>
 		<ResultHeader
 			evidence={evidence}
 			order="evidence"
-			phase={null}
 			total={38}
+			wait={null}
 		/>,
 	);
 

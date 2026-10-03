@@ -110,7 +110,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 
 	test("结果数量使用中性状态，不暴露检索术语", () => {
 		const text = seen(
-			<ResultHeader evidence order="evidence" phase={null} total={12} />,
+			<ResultHeader evidence order="evidence" total={12} wait={null} />,
 		);
 		// 数和单位挨着，中间不能插别的东西。不要求「共」字：它是名单的表头
 		// （12 / 人 / 按匹配度排序），不是句子里的一截。

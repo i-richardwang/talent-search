@@ -42,7 +42,7 @@ import type {
 	TermFinding,
 	TraceStep,
 } from "#/search/trace";
-import type { InterpretFault, Turn } from "#/server/turn";
+import type { InterpretFault, Progress, Turn } from "#/server/turn";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/interpret";
 
@@ -104,15 +104,12 @@ function clockOf(at: number) {
 	return { full, text };
 }
 
-/**
- * 等待时跟在那句话后面的时长。起点是记录写入的时刻，不是这一块画出来的时刻：
- * 刷新页面后照样接着数。
- */
+/** 等待时跟在那句话后面的时长，从这一次理解开始时算。 */
 function Elapsed({
 	since,
 	type,
 }: {
-	since: number;
+	since: number | null;
 	type: "tertiary" | "quaternary";
 }) {
 	const elapsed = useElapsed(since);
@@ -236,7 +233,7 @@ export function Thread({
 	waiting,
 	understanding,
 	composer,
-	liveTrace = null,
+	progress = null,
 	fault = null,
 	autoFocus = false,
 }: {
@@ -244,8 +241,8 @@ export function Thread({
 	rounds: readonly Turn[];
 	/** 名单正显示的那一轮。 */
 	viewing: string;
-	/** 最后一轮还在理解时走到的步骤；理解完成后为 null，读记录上的。 */
-	liveTrace?: TraceStep[] | null;
+	/** 最后一轮这一次理解的进度；理解完成后为 null，读记录上的。 */
+	progress?: Progress | null;
 	/** 最后一轮没理解出来时是哪个环节出了问题。 */
 	fault?: InterpretFault | null;
 	/** 把替代条件加进正看着的条件表：记成新的一轮。 */
@@ -262,7 +259,7 @@ export function Thread({
 }) {
 	const last = rounds.length - 1;
 	const latest = rounds[last];
-	const latestTrace = liveTrace ?? latest?.trace ?? [];
+	const latestTrace = progress?.trace ?? latest?.trace ?? [];
 	const phase: Phase = latest?.spec ? "settled" : fault ? "failed" : "running";
 	const { atBottom, toBottom, viewportRef } = useFollow(
 		latest?.id ?? "",
@@ -294,7 +291,7 @@ export function Thread({
 								phase={i === last ? phase : "settled"}
 								previous={i > 0 ? (rounds[i - 1] ?? null) : null}
 								round={round}
-								trace={i === last ? latestTrace : (round.trace ?? [])}
+								progress={i === last && progress ? progress : progressOf(round)}
 							/>
 						))}
 					</ol>
@@ -380,7 +377,7 @@ function Round({
 	mark,
 	phase,
 	failure,
-	trace,
+	progress: { trace, startedAt },
 	onAdd,
 	onRetry,
 }: {
@@ -394,7 +391,7 @@ function Round({
 	phase: Phase;
 	/** 没理解出来时哪个环节出了问题，不是「这句话没读懂」。 */
 	failure: InterpretFault | null;
-	trace: readonly TraceStep[];
+	progress: Progress;
 	onAdd: (conditions: Condition[]) => void;
 	onRetry?: () => void;
 }) {
@@ -455,7 +452,7 @@ function Round({
 					{trace.length > 0 ? (
 						<Process
 							live={phase === "running"}
-							since={round.at}
+							since={startedAt}
 							steps={trace}
 						/>
 					) : (
@@ -464,7 +461,7 @@ function Round({
 								<Text shiny type="secondary">
 									正在理解你的需求…
 								</Text>
-								<Elapsed since={round.at} type="tertiary" />
+								<Elapsed since={startedAt} type="tertiary" />
 							</p>
 						)
 					)}
@@ -489,6 +486,10 @@ function Round({
 			</div>
 		</li>
 	);
+}
+
+function progressOf(turn: Turn): Progress {
+	return { trace: turn.trace ?? [], startedAt: turn.startedAt };
 }
 
 /** AI 回应的时刻：最后一步完成的时候；没走过步骤就是那一轮写入的时候。 */
@@ -680,8 +681,8 @@ function Process({
 }: {
 	steps: readonly TraceStep[];
 	live: boolean;
-	/** 这一轮写入的时刻：进行中的计时和完成后的用时都从它算。 */
-	since: number;
+	/** 这一次理解开始的时刻：进行中的计时和完成后的用时都从它算。 */
+	since: number | null;
 }) {
 	const [open, setOpen] = useState(live);
 	const openedByHand = useRef(false);
@@ -698,7 +699,7 @@ function Process({
 		open || !current ? count : `${current.action} ${current.keyword}`,
 		live,
 	);
-	const took = latest ? latest.at - since : 0;
+	const took = latest && since !== null ? latest.at - since : 0;
 
 	const title = (
 		<span className="flex min-w-0 items-center gap-1.5">

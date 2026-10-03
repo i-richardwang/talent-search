@@ -18,8 +18,7 @@ import {
 	faultExits,
 } from "#/routes/s/$turnId/-lib/interpret";
 import { inSentence } from "#/search/condition-label";
-import type { TraceStep } from "#/search/trace";
-import type { InterpretFault, Turn } from "#/server/turn";
+import type { InterpretFault, Progress, Turn } from "#/server/turn";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
@@ -41,31 +40,31 @@ const STATES: Record<
 	{
 		rounds: Turn[];
 		viewing: string;
-		liveTrace: TraceStep[] | null;
+		progress: Progress | null;
 		fault: InterpretFault | null;
 	}
 > = {
 	earlier: {
 		fault: null,
-		liveTrace: null,
+		progress: null,
 		rounds: THREAD,
 		viewing: ROOT_TURN_ID,
 	},
 	failed: {
 		fault: "unreachable",
-		liveTrace: [],
+		progress: { trace: [], startedAt: PENDING_TURN.startedAt },
 		rounds: [...THREAD, PENDING_TURN],
 		viewing: PENDING_TURN.id,
 	},
 	running: {
 		fault: null,
-		liveTrace: PENDING_TRACE,
+		progress: { trace: PENDING_TRACE, startedAt: PENDING_TURN.startedAt },
 		rounds: [...THREAD, PENDING_TURN],
 		viewing: PENDING_TURN.id,
 	},
 	settled: {
 		fault: null,
-		liveTrace: null,
+		progress: null,
 		rounds: THREAD,
 		viewing: LATEST_TURN_ID,
 	},
@@ -165,7 +164,7 @@ function Faults() {
 								<Column>
 									<Thread
 										fault={fault}
-										liveTrace={[]}
+										progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
 										onAdd={() => {}}
 										onQuery={() => true}
 										onRetry={() => {}}
@@ -214,7 +213,7 @@ function Usage() {
 			>
 				<Column>
 					<Thread
-						liveTrace={[]}
+						progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
 						onAdd={noop}
 						onQuery={() => true}
 						rounds={[FRESH_TURN]}

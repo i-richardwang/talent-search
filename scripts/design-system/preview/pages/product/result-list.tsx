@@ -106,8 +106,8 @@ const STATE_PROPS: Record<State, ListProps> = {
 			],
 		},
 	},
-	refreshing: { wait: { list: "dim", phase: "searching" } },
-	searching: { wait: { list: "skeleton", phase: "searching" } },
+	refreshing: { wait: { list: "dim", phase: "searching", since: null } },
+	searching: { wait: { list: "skeleton", phase: "searching", since: null } },
 };
 
 function Playground() {

@@ -32,6 +32,7 @@ const ROUND1: Turn = {
 		declined: [],
 	},
 	trace: ROUND1_TRACE,
+	startedAt: T0 - 1500,
 	at: T0 - 1500,
 };
 
@@ -55,6 +56,7 @@ const ROUND2: Turn = {
 		],
 	},
 	trace: ROUND2_TRACE,
+	startedAt: T0 + 58_000,
 	at: T0 + 58_000,
 };
 
@@ -68,6 +70,7 @@ const ROUND3: Turn = {
 	spec: SPEC,
 	notes: null,
 	trace: null,
+	startedAt: null,
 	at: T0 + 90_000,
 };
 
@@ -78,8 +81,8 @@ export const THREAD: Turn[] = [ROUND1, ROUND2, ROUND3];
 export const LATEST_TURN_ID = ROUND3.id;
 
 /**
- * 等待理解的两轮发生在打开页面前几秒：计时从记录写入的时刻算起，放在过去的固定时刻上
- * 会算出一整天。
+ * 等待理解的两轮发生在打开页面前几秒：计时从这一次理解开始的时刻算起，放在过去的
+ * 固定时刻上会算出一整天。
  */
 const JUST_NOW = Date.now() - 3000;
 
@@ -93,6 +96,7 @@ export const PENDING_TURN: Turn = {
 	spec: null,
 	notes: null,
 	trace: null,
+	startedAt: JUST_NOW,
 	at: JUST_NOW,
 };
 
@@ -130,6 +134,7 @@ export const FRESH_TURN: Turn = {
 	spec: null,
 	notes: null,
 	trace: null,
+	startedAt: JUST_NOW,
 	at: JUST_NOW,
 };
 

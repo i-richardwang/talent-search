@@ -8,7 +8,7 @@ import { stepFindings, Thread } from "#/routes/s/$turnId/-components/thread";
 import type { TurnNotes } from "#/search/intent";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
-import type { InterpretFault, Turn } from "#/server/turn";
+import type { InterpretFault, Progress, Turn } from "#/server/turn";
 import { visibleText } from "./render";
 import { routed } from "./routed";
 
@@ -29,6 +29,7 @@ function turns(rounds: Round[]): Turn[] {
 		spec: r.spec === null ? null : { conditions: parseQuery(r.spec) },
 		notes: r.notes ?? null,
 		trace: r.trace ?? null,
+		startedAt: null,
 		at: 0,
 	}));
 }
@@ -39,14 +40,14 @@ async function seen(
 	{
 		understanding = true,
 		waiting = false,
-		liveTrace = null,
+		progress = null,
 		fault = null,
 		onRetry,
 		viewing = rounds.length - 1,
 	}: {
 		understanding?: boolean;
 		waiting?: boolean;
-		liveTrace?: TraceStep[] | null;
+		progress?: Progress | null;
 		fault?: InterpretFault | null;
 		onRetry?: () => void;
 		/** 名单正显示第几轮，默认最后一轮。 */
@@ -57,7 +58,7 @@ async function seen(
 		() => (
 			<Thread
 				fault={fault}
-				liveTrace={liveTrace}
+				progress={progress}
 				onAdd={() => {}}
 				onQuery={() => true}
 				onRetry={onRetry}
@@ -255,7 +256,7 @@ describe("检索人才库的过程", () => {
 	test("进行中展开，每一步一行：动作、对象；结论收在这一步里面", async () => {
 		const { text } = await seen([{ said: "推荐和后端", spec: null }], {
 			waiting: true,
-			liveTrace: trace,
+			progress: { trace, startedAt: null },
 		});
 		assert.match(text, /检索人才库 3 步/);
 		assert.match(text, /查找\s*推荐、互联网、量子炼金/);

@@ -318,6 +318,13 @@ export const searchTurn = pgTable(
 		notes: jsonb("notes").$type<TurnNotes>(),
 		/** 理解这一轮时模型用工具走过的步骤，边跑边追加；关键词的记录没有。 */
 		trace: jsonb("trace").$type<TraceStep[]>(),
+		/**
+		 * 这一次理解开始的时刻，和清空 `trace` 同时写：等理解时的计时和完成后的用时
+		 * 都从它算，重试过也只算这一次。没开始理解过的记录为 null。
+		 */
+		interpretStartedAt: timestamp("interpret_started_at", {
+			withTimezone: true,
+		}),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),

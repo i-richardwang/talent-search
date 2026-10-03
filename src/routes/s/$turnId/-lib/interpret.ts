@@ -1,9 +1,8 @@
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { SearchSpec } from "#/search/spec";
-import type { TraceStep } from "#/search/trace";
-import { interpretTurn, turnTrace } from "#/server/functions";
-import type { InterpretFault } from "#/server/turn";
+import { interpretTurn, turnProgress } from "#/server/functions";
+import type { InterpretFault, Progress } from "#/server/turn";
 
 /**
  * 理解失败时各说什么。哪个环节出了问题由服务端判定（`server/turn.ts` 的 `interpret`），
@@ -69,14 +68,18 @@ export function faultExits(fault: InterpretFault): FaultExit[] {
 }
 
 /** 等理解时多久问一次走到哪一步了；一步是一次工具调用，秒级。 */
-const TRACE_POLL_MS = 1000;
+const PROGRESS_POLL_MS = 1000;
+
+/** 第一次问到之前：还没有步骤，也不知道这一次从哪一刻开始。 */
+const NOT_STARTED: Progress = { trace: [], startedAt: null };
 
 /**
  * 补上这条记录还缺的一步：把原话翻译成条件。提交只写入一条记录、立刻进工作台，
  * 理解在这里的 effect 里补，等待显示在名单那一列。
  *
- * 服务端只补 `spec is null` 的行，重复触发拿回同一份结果。等的时候每秒问一次走到
- * 哪一步了（`turnTrace`），把 `trace` 给线程边跑边画；理解完成后停止询问。
+ * 服务端只补 `spec is null` 的行，重复触发拿回同一份结果。等的时候每秒问一次进度
+ * （`turnProgress`）：线程边跑边画步骤，线程和名单从这一次开始的时刻计时；理解完成后
+ * 停止询问。
  *
  * @param settledSpec 记录上已经理解好的完整查询；`null` 表示还没理解。
  */
@@ -88,8 +91,8 @@ export function useInterpretation(
 	/** 没理解出来时是哪个环节出了问题。 */
 	fault: InterpretFault | null;
 	retry: () => void;
-	/** 到目前为止走过的步骤；理解完成后为 null，读记录上的那份。 */
-	trace: TraceStep[] | null;
+	/** 这一次理解到目前为止的进度；理解完成后为 null，读记录上的那份。 */
+	progress: Progress | null;
 } {
 	const router = useRouter();
 	const [attempt, setAttempt] = useState(0);
@@ -97,7 +100,7 @@ export function useInterpretation(
 		key: string;
 		fault: InterpretFault;
 	} | null>(null);
-	const [trace, setTrace] = useState<TraceStep[] | null>(null);
+	const [progress, setProgress] = useState<Progress | null>(null);
 	const key = `${turnId}#${attempt}`;
 
 	useEffect(() => {
@@ -125,16 +128,16 @@ export function useInterpretation(
 	useEffect(() => {
 		if (!interpreting) return;
 		let alive = true;
-		setTrace([]);
+		setProgress(NOT_STARTED);
 		const ask = async () => {
 			try {
-				const now = await turnTrace({ data: { turnId } });
-				if (alive && now) setTrace(now.trace);
+				const now = await turnProgress({ data: { turnId } });
+				if (alive && now) setProgress(now);
 			} catch {
 				// 问不到就下一秒再问：这只是进度，理解本身不靠它
 			}
 		};
-		const timer = setInterval(ask, TRACE_POLL_MS);
+		const timer = setInterval(ask, PROGRESS_POLL_MS);
 		return () => {
 			alive = false;
 			clearInterval(timer);
@@ -145,6 +148,6 @@ export function useInterpretation(
 		interpreting,
 		fault,
 		retry: () => setAttempt((a) => a + 1),
-		trace: interpreting || fault ? trace : null,
+		progress: interpreting || fault ? progress : null,
 	};
 }

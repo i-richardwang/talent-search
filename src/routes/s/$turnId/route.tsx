@@ -94,7 +94,7 @@ function Workbench() {
 		interpreting,
 		fault: interpretFault,
 		retry: retryInterpret,
-		trace: liveTrace,
+		progress,
 	} = useInterpretation(latest.id, latest.spec);
 	// 没理解出来的只可能是最后一轮；名单停在等待或失败，只当看着的就是它
 	const pending = settledSpec === null;
@@ -111,7 +111,11 @@ function Workbench() {
 	const spec = settledSpec ?? EMPTY_SPEC;
 	const outcome = result ?? NO_OUTCOME;
 	const { results, total } = outcome;
-	const wait = listWait(pending && interpreting, nav);
+	const wait = listWait(
+		pending && interpreting,
+		progress?.startedAt ?? null,
+		nav,
+	);
 
 	const updateView = (next: Partial<View>) =>
 		navigate({ to: ".", search: (old) => ({ ...old, n: undefined, ...next }) });
@@ -139,7 +143,7 @@ function Workbench() {
 			autoFocus={threadOpen}
 			composer={composer}
 			fault={interpretFault}
-			liveTrace={liveTrace}
+			progress={progress}
 			onAdd={addConditions}
 			onQuery={(input) => commit(input, { from: turnId })}
 			onRetry={retryInterpret}

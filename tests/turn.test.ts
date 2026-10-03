@@ -22,7 +22,7 @@ const {
 	loadThread,
 	loadTurn,
 	resolveTurn,
-	traceOf,
+	loadProgress,
 } = await import("#/server/turn");
 
 /** 最近搜索的第一页，取得够多，这个文件建的链都在里面。 */
@@ -96,14 +96,21 @@ describe("补充需求", () => {
 		);
 	});
 
-	test("理解时的步骤记在记录上：开始先清空，写入后能读回", async () => {
+	test("理解时的步骤记在记录上：开始先清空、记下开始的时刻，写入后能读回", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
-		assert.deepEqual(await traceOf(turnId), { settled: false, trace: [] });
+		assert.deepEqual(await loadProgress(turnId), {
+			trace: [],
+			startedAt: null,
+		});
 		await resolveTurn(turnId);
 		// 假模型不用工具，走完就是零步；有步的路在 agent-tools.test.ts 里
-		assert.deepEqual(await traceOf(turnId), { settled: true, trace: [] });
-		assert.deepEqual((await loadTurn(turnId))?.trace, []);
-		assert.equal(await traceOf("nope"), null);
+		const done = await loadProgress(turnId);
+		assert.deepEqual(done?.trace, []);
+		assert.equal(typeof done?.startedAt, "number");
+		const turn = await loadTurn(turnId);
+		assert.deepEqual(turn?.trace, []);
+		assert.equal(turn?.startedAt, done?.startedAt);
+		assert.equal(await loadProgress("nope"), null);
 	});
 
 	test("从哪一轮取线程都是整条链；不存在的记录没有线程", async () => {
@@ -459,10 +466,16 @@ describe("理解失败", () => {
 		} finally {
 			restore();
 		}
-		assert.equal((await loadTurn(turnId))?.spec, null);
+		const failed = await loadTurn(turnId);
+		assert.equal(failed?.spec, null);
 
+		await new Promise((resolve) => setTimeout(resolve, 5));
 		const spec = await resolveTurn(turnId);
 		assert.deepEqual(wordsOf(spec), ["算法"]);
+		assert.ok(
+			((await loadTurn(turnId))?.startedAt ?? 0) > (failed?.startedAt ?? 0),
+			"重试从这一次开始的时刻重新计时，不接着失败的那一次",
+		);
 	});
 
 	/**

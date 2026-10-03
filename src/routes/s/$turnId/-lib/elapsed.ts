@@ -10,14 +10,19 @@ export function lasting(ms: number) {
 	return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
 
-/** 从 `since` 起过了多少毫秒，每秒更新一次。 */
-export function useElapsed(since: number) {
+/**
+ * 从 `since` 起过了多少毫秒，每秒更新一次。`since` 为 null 是不知道这件事从哪一刻
+ * 开始，从调用处第一次画出来时算起。
+ */
+export function useElapsed(since: number | null) {
+	const [shown] = useState(Date.now);
+	const start = since ?? shown;
 	const [elapsed, setElapsed] = useState(0);
 	useEffect(() => {
-		const tick = () => setElapsed(Date.now() - since);
+		const tick = () => setElapsed(Date.now() - start);
 		tick();
 		const timer = setInterval(tick, 1000);
 		return () => clearInterval(timer);
-	}, [since]);
+	}, [start]);
 	return elapsed;
 }

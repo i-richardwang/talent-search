@@ -57,7 +57,7 @@ function Run({ ending, step }: { ending: Ending; step: Step }) {
 	const picks = usePicks(LATEST_TURN_ID, outcome);
 	const failed = ending === "failed" && step === "done";
 	const wait: ListWait | null =
-		step === "done" ? null : { list: "skeleton", phase: step };
+		step === "done" ? null : { list: "skeleton", phase: step, since: null };
 	const noop = () => {};
 	return (
 		<Routed url={`/s/${LATEST_TURN_ID}`}>

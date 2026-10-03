@@ -21,9 +21,9 @@ import {
 	deleteSearch,
 	interpret,
 	listRecent,
+	loadProgress,
 	loadThread,
 	type Turn,
-	traceOf,
 } from "./turn";
 
 /**
@@ -63,10 +63,10 @@ export const commitTurn = createServerFn({ method: "POST" })
 	.validator(validateCommit)
 	.handler(({ data }) => createTurn(data.input, data.from));
 
-/** 理解走到哪一步了。等理解时界面每秒问一次，线程里的步骤边跑边追加。 */
-export const turnTrace = createServerFn({ method: "GET" })
+/** 理解走到哪一步了、这一次从哪一刻开始。等理解时界面每秒问一次。 */
+export const turnProgress = createServerFn({ method: "GET" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
-	.handler(({ data }) => traceOf(data.turnId));
+	.handler(({ data }) => loadProgress(data.turnId));
 
 /**
  * 把一条只有原话的记录补上理解结果。工作台挂载后就地调它，不挡导航。

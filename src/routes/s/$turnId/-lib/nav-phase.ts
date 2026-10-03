@@ -38,16 +38,29 @@ export type SearchPhase = "interpreting" | "searching";
  * 名单在等什么、等的时候长什么样。`dim`：改了筛选，旧名单还是这批候选，留在原地
  * 调暗；`skeleton`：换了问题或第一次进来，旧名单不成立，画同形的占位行。
  */
-export type ListWait = { phase: SearchPhase; list: "dim" | "skeleton" };
+export type ListWait = {
+	phase: SearchPhase;
+	list: "dim" | "skeleton";
+	/**
+	 * 从哪一刻开始等：理解是服务端记下的这一次开始的时刻。搜索由导航发起，没有记下的
+	 * 时刻，为 null。
+	 */
+	since: number | null;
+};
 
-/** `interpreting`：看着的这一轮还没理解出条件，正在理解。 */
+/**
+ * `interpreting`：看着的这一轮还没理解出条件，正在理解；`startedAt` 是这一次理解
+ * 开始的时刻。
+ */
 export function listWait(
 	interpreting: boolean,
+	startedAt: number | null,
 	{ refreshing, replacing }: NavPhase,
 ): ListWait | null {
-	if (interpreting) return { list: "skeleton", phase: "interpreting" };
-	if (replacing) return { list: "skeleton", phase: "searching" };
-	if (refreshing) return { list: "dim", phase: "searching" };
+	if (interpreting)
+		return { list: "skeleton", phase: "interpreting", since: startedAt };
+	if (replacing) return { list: "skeleton", phase: "searching", since: null };
+	if (refreshing) return { list: "dim", phase: "searching", since: null };
 	return null;
 }
 

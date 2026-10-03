@@ -85,21 +85,24 @@ describe("导航阶段", () => {
 
 describe("名单等待的样子", () => {
 	test("正在理解时画占位行，哪怕导航只是改筛选", () => {
-		assert.deepEqual(listWait(true, { ...IDLE, refreshing: true }), {
+		assert.deepEqual(listWait(true, 1000, { ...IDLE, refreshing: true }), {
 			list: "skeleton",
 			phase: "interpreting",
+			since: 1000,
 		});
 	});
 
 	test("换记录画占位行，改筛选把旧名单调暗，翻页不算等待", () => {
-		assert.deepEqual(listWait(false, { ...IDLE, replacing: true }), {
+		assert.deepEqual(listWait(false, null, { ...IDLE, replacing: true }), {
 			list: "skeleton",
 			phase: "searching",
+			since: null,
 		});
-		assert.deepEqual(listWait(false, { ...IDLE, refreshing: true }), {
+		assert.deepEqual(listWait(false, null, { ...IDLE, refreshing: true }), {
 			list: "dim",
 			phase: "searching",
+			since: null,
 		});
-		assert.equal(listWait(false, { ...IDLE, growing: true }), null);
+		assert.equal(listWait(false, null, { ...IDLE, growing: true }), null);
 	});
 });
