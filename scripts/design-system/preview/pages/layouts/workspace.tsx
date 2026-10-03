@@ -91,7 +91,6 @@ function Workspace() {
 				}
 				notices={
 					<WorkspaceNotices
-						capped={outcome.capped}
 						conditions={spec.conditions}
 						earlier={false}
 						facets={outcome.facets}

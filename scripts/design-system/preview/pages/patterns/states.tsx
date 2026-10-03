@@ -13,7 +13,6 @@ import {
 import { toast } from "#/components/ui/toast";
 import { PageNotFound, TurnNotFound } from "#/routes/-components/not-found";
 import { COMMIT_FAILED } from "#/routes/-lib/commit";
-import { Capped } from "#/routes/s/$turnId/-components/capped";
 import { Earlier } from "#/routes/s/$turnId/-components/earlier";
 import {
 	ResultList,
@@ -311,12 +310,6 @@ function Events() {
 							<Routed url={`/s/${ROOT_TURN_ID}`}>
 								<Earlier latestId={LATEST_TURN_ID} />
 							</Routed>
-						</TableCell>
-					</TableRow>
-					<TableRow>
-						<TableCell className="whitespace-nowrap">名单可能缺人</TableCell>
-						<TableCell className="w-full">
-							<Capped words={["数据分析"]} />
 						</TableCell>
 					</TableRow>
 				</TableBody>

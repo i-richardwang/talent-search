@@ -43,7 +43,6 @@ import {
 } from "./rank";
 import {
 	type Claim,
-	type Evaluated,
 	emptyFacets,
 	type Facets,
 	type Gate,
@@ -654,7 +653,7 @@ async function searchPopulation(
 	limit: number,
 	veto: SQL | null,
 	person: readonly SQL[],
-): Promise<Evaluated> {
+): Promise<SearchOutcome> {
 	const rows = await store.execute<PopulationRow>(sql`
 		select p.emp_id, ${factSelect}
 		from employee p left join experience e
@@ -736,7 +735,6 @@ export async function search(
 				total: 0,
 				overflow: null,
 			}),
-			capped: [],
 		};
 	// 相关度过滤（要调两个模型端点）在快照外算，取数在快照内做，见 phrases.ts。
 	// 正向的和排除的经历词一起做相关度过滤：它们查的是同一批说法，相关度门槛的差别在
@@ -744,16 +742,13 @@ export async function search(
 	return withMatchedPhrases(
 		[...claims, ...excludes].flatMap((c) => c.what ?? []),
 		RELEVANCE_MIN,
-		async (store, { phraseHits, capped }) => ({
-			...(await evaluate(store, phraseHits)),
-			capped,
-		}),
+		(store, { phraseHits }) => evaluate(store, phraseHits),
 	);
 
 	async function evaluate(
 		store: DbExecutor,
 		phraseHits: Map<string, PhraseHit[]>,
-	): Promise<Evaluated> {
+	): Promise<SearchOutcome> {
 		const veto = vetoSql(excludes, phraseHits);
 		// 门槛和 URL 上的公司名 / 学校名都按人过滤，在每一条取数 SQL 里生效
 		const person = [...gateConds(gates, veto), ...viewConds(filters, veto)];

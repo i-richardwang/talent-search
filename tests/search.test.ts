@@ -25,13 +25,8 @@ const run = async (query: string, filters = {}, limit?: number) => {
 		throw new Error("要求查询得有经历主张，只有人的条件排不出名次");
 	return outcome;
 };
-const {
-	RESULT_PAGE,
-	RECALL_TOP,
-	RECALL_MIN,
-	RELEVANCE_MIN,
-	RELEVANCE_MIN_EXCLUDE,
-} = await import("#/search/weights");
+const { RESULT_PAGE, RECALL_MIN, RELEVANCE_MIN, RELEVANCE_MIN_EXCLUDE } =
+	await import("#/search/weights");
 const { glossIdentity } = await import("#/corpus/gloss");
 const { db } = await import("#/db");
 const { sql } = await import("drizzle-orm");
@@ -784,35 +779,32 @@ describe("命中总数", () => {
 });
 
 /**
- * 召回按名次截断：一个词只有余弦最近的 `RECALL_TOP` 条说法进重排。达到相关度门槛的说法
- * 再多，重排的条数也不变，词照样能用——搜一个词的成本和语料大小无关，这是
- * 这条截断存在的全部理由。
+ * 召回不按条数截断：和查询词相近的说法再多，过了 `RECALL_MIN` 的都交给重排判断。
+ * 截掉的那些说法上的人会无声地不在名单上。
  */
-describe("召回按名次截断", () => {
+describe("相近的说法全部判断", () => {
 	const word = "星门导航";
-	const extra = 50;
+	const many = 1500;
 	before(async () => {
-		// 直接往说法表里灌超过名额的、和查询词同一个向量的说法：它们不指向
-		// 任何经历段，只为让这个词达到相关度门槛的说法多过 RECALL_TOP
+		// 直接往说法表里灌和查询词同一个向量的说法：它们不指向任何经历段，
+		// 只为让这个词相近的说法多到上千条
 		await db.execute(sql`
 			insert into phrase (text, embedding)
 			select ${word} || g, ${vectorLiteral(fakeEmbedding(word))}::halfvec
-			from generate_series(1, ${RECALL_TOP + extra}) g`);
+			from generate_series(1, ${many}) g`);
 	});
 	after(async () => {
 		await db.execute(sql`delete from phrase where text like ${`${word}%`}`);
 	});
 
-	test("只重排名额之内的候选，词不因说法多而作废", async () => {
+	test("过线的候选每一条都进重排", async () => {
 		const outcome = await run(word);
 		assert.equal(outcome.total, 0);
 		assert.notEqual(outcome.empty?.kind, "overflowEvidence");
-		assert.deepEqual(outcome.capped, [word], "用满名额的词要交给界面明说");
-		assert.deepEqual((await run("考古")).capped, []);
 		// 重排分逐对缓存，缓存里这个词的行数就是进过重排的条数
 		const judged = await db.execute<{ n: number }>(sql`
 			select count(*)::int as n from rerank_cache where query = ${word}`);
-		assert.equal(judged.rows[0]?.n, RECALL_TOP);
+		assert.equal(judged.rows[0]?.n, many);
 	});
 });
 

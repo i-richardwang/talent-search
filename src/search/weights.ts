@@ -1,11 +1,8 @@
 export type { Route } from "#/db/schema";
 
-// 向量只负责召回候选；重排分数决定是否命中。
+// 向量只排除明显无关的说法，过线的全部交给重排；重排分数决定是否命中。
 export const RECALL_MIN = 0.5;
 export const RELEVANCE_MIN = 0.55;
-
-// 固定候选数使重排成本不随语料规模线性增长。
-export const RECALL_TOP = 1000;
 
 // 排除错误会让证据无声消失，因此采用更严格的相关度门槛。
 export const RELEVANCE_MIN_EXCLUDE = 0.75;

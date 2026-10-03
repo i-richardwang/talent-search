@@ -48,7 +48,6 @@ const NO_OUTCOME: SearchOutcome = {
 	facets: emptyFacets(),
 	total: 0,
 	empty: null,
-	capped: [],
 };
 const EMPTY_SPEC = emptySpec();
 
@@ -219,7 +218,6 @@ function Workbench() {
 				}
 				notices={
 					<WorkspaceNotices
-						capped={outcome.capped}
 						conditions={spec.conditions}
 						earlier={earlier}
 						facets={outcome.facets}

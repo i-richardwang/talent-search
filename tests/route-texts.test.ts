@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { Extraction } from "#/corpus/extract";
-import { phrasesOf, type RouteSource } from "#/corpus/route-texts";
+import { PHRASING, phrasesOf, type RouteSource } from "#/corpus/route-texts";
 
 const of = (row: Partial<RouteSource>, extraction: Extraction | null = null) =>
 	Object.fromEntries(
@@ -133,4 +133,18 @@ test("待业属性阻止登记和抽取说法进入语料，不依赖岗位文�
 		),
 		{},
 	);
+});
+
+test("拼法的身份由样例走一遍拼法得出，每一类说法都在里面", () => {
+	// 新加一类说法而样例没覆盖到它，改这一类的拼法就不会触发重新派生
+	const routes = new Set(
+		(JSON.parse(PHRASING) as { route: string }[][]).flat().map((p) => p.route),
+	);
+	assert.deepEqual([...routes].sort(), [
+		"description",
+		"did",
+		"role",
+		"skill",
+		"title",
+	]);
 });

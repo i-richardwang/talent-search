@@ -2,16 +2,12 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { conditionsOf } from "#/search/condition";
-import { RECALL_TOP } from "#/search/weights";
 import { seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
 const { search, findTerms } = await import("#/search/search");
-const skills = Array.from(
-	{ length: RECALL_TOP },
-	(_, i) => "工程师".repeat(6) + i,
-);
+const skills = Array.from({ length: 1000 }, (_, i) => "工程师".repeat(6) + i);
 await seed(
 	Array.from({ length: 6 }, (_, i) => ({
 		empId: `R${i + 1}`,

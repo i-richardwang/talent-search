@@ -78,9 +78,32 @@ function roleText(s: RouteSource): string {
 		.join(ROLE_SEPARATOR);
 }
 
+const SAMPLE: RouteSource = {
+	kind: "internal",
+	unemployed: false,
+	org: "部门",
+	orgPath: "公司/中心/部门",
+	title: "岗位",
+	seqL1: "一级",
+	seqL2: "二级",
+	seqL3: "三级",
+	description: "原文",
+};
+
 /**
- * 这份拼法的说明，进派生版本（`derive.ts` 的 `identity`）：拼法一变，所有段按新拼法
- * 重新派生。改了上面的拼法就改这句话。
+ * 拼法的身份，进派生版本（`derive.ts` 的 `identity`）：几段写满各项的样例经历走一遍
+ * 拼法，得到的说法就是身份。拼法一变，这串字跟着变，所有段按新拼法重新派生。
  */
-export const PHRASING =
-	"公司内：序列 · 三级｜岗位｜部门路径；入职前：岗位；自述：能力词与做过的事，未读为原文";
+export const PHRASING = JSON.stringify(
+	[
+		SAMPLE,
+		{ ...SAMPLE, orgPath: "" },
+		{ ...SAMPLE, kind: "external" as const },
+	].flatMap((s) => [
+		phrasesOf(s, null),
+		phrasesOf(s, {
+			skills: ["能力"],
+			did: [{ involvement: "负责建设", domain: "领域" }],
+		}),
+	]),
+);

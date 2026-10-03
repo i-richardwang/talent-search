@@ -695,7 +695,6 @@ export const OUTCOME: SearchOutcome = {
 	facets: FACETS,
 	total: RESULTS.length,
 	empty: null,
-	capped: [],
 };
 
 /** 只有人的条件时的结果：没有证据行，按人排。 */
@@ -706,7 +705,6 @@ export const PEOPLE_OUTCOME: SearchOutcome = {
 	facets: FACETS,
 	total: RESULTS.length,
 	empty: null,
-	capped: [],
 };
 
 /** 一个人都没有：必须的主张没人满足。 */
@@ -717,5 +715,4 @@ export const EMPTY_OUTCOME: SearchOutcome = {
 	facets: emptyFacets(),
 	total: 0,
 	empty: { kind: "unmet" },
-	capped: [],
 };

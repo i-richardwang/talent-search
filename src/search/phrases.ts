@@ -1,5 +1,7 @@
 /**
- * 查询词先按向量召回说法，再按「说法：释义」判定相关度。
+ * 查询词先按向量召回说法，再按「说法：释义」判定相关度。向量只排除明显无关的说法；
+ * 过了 `RECALL_MIN` 的全部交给重排判断，不按条数截断：截在哪里，排在后面的人就
+ * 无声地从名单上消失。重排分数按查询词和候选文本缓存，同一个词只在第一次判断全量。
  * 模型调用在快照外完成；取数快照重新召回，只消费当前候选文本的已保存分数。
  * 当前候选还有未判定的输入、或嵌入空间已经改变时，重新准备下一份计划。
  */
@@ -10,7 +12,7 @@ import { GLOSSED_ROUTES } from "#/db/schema";
 import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
 import { embed, vectorLiteral } from "#/server/embed";
 import { rerank, rerankSpaceId } from "#/server/rerank";
-import { RECALL_MIN, RECALL_TOP } from "./weights";
+import { RECALL_MIN } from "./weights";
 
 /** 一个查询词命中的一条说法。 */
 export type PhraseHit = { phraseId: number; relevance: number };
@@ -19,14 +21,7 @@ type Recalled = {
 	text: string;
 	candidates: { phraseId: number; text: string }[];
 };
-type PhraseMatches = {
-	phraseHits: Map<string, PhraseHit[]>;
-	/**
-	 * 相近的说法多到用满了 `RECALL_TOP` 的词：排在名额之外的说法没有判断过，
-	 * 只写在那些说法上的人不在结果里。检索把它们交给界面明说，不当作结果完整。
-	 */
-	capped: string[];
-};
+type PhraseMatches = { phraseHits: Map<string, PhraseHit[]> };
 
 async function recall(
 	store: DbExecutor,
@@ -47,21 +42,15 @@ async function recall(
 		text: string;
 	}>(sql`
 		with q(ord, v) as ${q}
-		select q.ord, c.phrase_id, c.text
-		from q cross join lateral (
-			select p.id as phrase_id,
-				case when g.gloss is null then p.text else p.text || '：' || g.gloss end as text
-			from phrase p
-			left join phrase_gloss g on g.text = p.text and exists (
-				select 1 from experience_phrase ep where ep.phrase_id = p.id
-				and ep.route in (${sql.join(
-					GLOSSED_ROUTES.map((route) => sql`${route}`),
-					sql`, `,
-				)}))
-			where 1 - (p.embedding <=> q.v) >= ${RECALL_MIN}
-			order by p.embedding <=> q.v, p.id
-			limit ${RECALL_TOP}
-		) c`);
+		select q.ord, p.id as phrase_id,
+			case when g.gloss is null then p.text else p.text || '：' || g.gloss end as text
+		from q join phrase p on 1 - (p.embedding <=> q.v) >= ${RECALL_MIN}
+		left join phrase_gloss g on g.text = p.text and exists (
+			select 1 from experience_phrase ep where ep.phrase_id = p.id
+			and ep.route in (${sql.join(
+				GLOSSED_ROUTES.map((route) => sql`${route}`),
+				sql`, `,
+			)}))`);
 	for (const row of rows.rows)
 		out[row.ord]?.candidates.push({
 			phraseId: row.phrase_id,
@@ -79,9 +68,7 @@ export async function withMatchedPhrases<T>(
 	use: (store: DbExecutor, matches: PhraseMatches) => Promise<T>,
 ): Promise<T> {
 	if (texts.length === 0)
-		return withCorpusSnapshot((store) =>
-			use(store, { phraseHits: new Map(), capped: [] }),
-		);
+		return withCorpusSnapshot((store) => use(store, { phraseHits: new Map() }));
 	rerankSpaceId();
 	const unique = [...new Set(texts)];
 	for (let attempt = 0; attempt < PLAN_ATTEMPTS; attempt++) {
@@ -122,10 +109,7 @@ export async function withMatchedPhrases<T>(
 					hits.sort((a, b) => b.relevance - a.relevance),
 				);
 			}
-			const capped = current
-				.filter((r) => r.candidates.length >= RECALL_TOP)
-				.map((r) => r.text);
-			return { value: await use(store, { phraseHits, capped }) };
+			return { value: await use(store, { phraseHits }) };
 		});
 		if (done) return done.value;
 	}
