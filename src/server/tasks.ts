@@ -8,7 +8,13 @@
 
 import "@tanstack/react-start/server-only";
 import { eq, sql } from "drizzle-orm";
-import { currentTree, derive, identity, pending } from "#/corpus/derive";
+import {
+	currentTree,
+	derive,
+	identity,
+	type Progress,
+	progress,
+} from "#/corpus/derive";
 import { glossCounts } from "#/corpus/gloss";
 import type { Judge } from "#/corpus/judgment";
 import type { Report } from "#/corpus/report";
@@ -126,8 +132,10 @@ export type CorpusCounts = {
 	internal: number;
 	external: number;
 	segments: number;
-	/** 还不是当前派生版本的段数 */
-	pending: number;
+	/** 已有当前标准结果的段，其中 AI 未能作答的段，以及检索是否还在读上一版 */
+	derived: number;
+	unanswered: number;
+	staging: boolean;
 	/** 说法条数 */
 	phrases: number;
 	/** 能力词个数，以及其中已经并到别的写法上的 */
@@ -259,8 +267,8 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
  * 「已经并到别的写法上」数的是词表里指向别人的那些词。
  */
 async function corpusCounts(): Promise<CorpusCounts> {
-	const [pending, gloss, counted] = await Promise.all([
-		derivePending(),
+	const [derived, gloss, counted] = await Promise.all([
+		deriveProgress(),
 		glossCounts(pool),
 		pool.query<Record<string, string>>(
 			`select
@@ -284,7 +292,9 @@ async function corpusCounts(): Promise<CorpusCounts> {
 		glossed: gloss.glossed,
 		internal,
 		merged: n("merged"),
-		pending,
+		derived: derived.done,
+		unanswered: derived.unanswered,
+		staging: derived.staging,
 		phrases: n("phrases"),
 		segments: internal + external,
 		words: n("words"),
@@ -298,9 +308,9 @@ export async function taskLog(runId: number): Promise<string[]> {
 	return rows[0]?.log ?? [];
 }
 
-/** 还不是当前派生版本的段数。后台任务用它决定这一轮有没有活，任务台用它画进度。 */
-export async function derivePending(): Promise<number> {
-	return pending(pool, identity(await currentTree(pool)));
+/** 当前标准下的派生进度。后台任务用它决定这一轮有没有活，任务台用它画进度。 */
+export async function deriveProgress(): Promise<Progress> {
+	return progress(pool, identity(await currentTree(pool)));
 }
 
 /**

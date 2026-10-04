@@ -8,13 +8,13 @@ import "@tanstack/react-start/server-only";
 import { PgBoss } from "pg-boss";
 import type { TaskKind } from "#/lib/task";
 import { reviewJudge } from "./review";
-import { derivePending, runTask } from "./tasks";
+import { deriveProgress, runTask } from "./tasks";
 
 /** 后台跑的两种任务。同步不在其中：它读的是别处的数据，由命令行按外面的节奏跑。 */
 export type JobKind = Exclude<TaskKind, "sync">;
 
 /**
- * 排班。派生只看「有没有还没派生的段」，同步之后几分钟内就会接上；整理一天一次，
+ * 排班。派生只看「有没有还没有当前标准结果、或还没换入的段」，同步之后几分钟内就会接上；整理一天一次，
  * 一个词一周判一次的节奏在它里面（`corpus/vocabulary.ts`）。判定归外部时这一轮仍然
  * 照跑——它要让外部提交的判定生效，并且收集新的组。
  */
@@ -45,7 +45,8 @@ async function setup(boss: PgBoss): Promise<void> {
 	}
 	await boss.work("derive", async () => {
 		// 没有活就不留一行记录：每五分钟一行「没事」的历史没人要看
-		if ((await derivePending()) === 0) return;
+		const { done, total, staging } = await deriveProgress();
+		if (done === total && !staging) return;
 		await runTask("derive");
 	});
 	await boss.work("review", async () => {

@@ -31,10 +31,15 @@ type LaneFacts = {
 export const LANE_FACTS: Record<TaskKind, (corpus: CorpusCounts) => LaneFacts> =
 	{
 		derive: (corpus) => ({
-			counts: [{ label: "条说法", value: corpus.phrases }],
+			counts: [
+				{ label: "条说法", value: corpus.phrases },
+				{ label: "段 AI 未能作答", value: corpus.unanswered },
+			],
 			progress: {
-				done: corpus.segments - corpus.pending,
-				label: "段经历已解析",
+				done: corpus.derived,
+				label: corpus.staging
+					? "段已按新标准解析，解析完之前检索沿用上一版"
+					: "段经历已解析",
 				total: corpus.segments,
 			},
 		}),

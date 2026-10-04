@@ -1,6 +1,6 @@
 /**
  * 入职前经历对齐到登记序列树上完整的一对，存入推断列，仅用于筛选。
- * 两级均空是合法的无法对齐；无效回答返回 null，派生下一轮重试。
+ * 两级均空是合法的无法对齐；无效回答返回 null，派生把这一段记为未能作答。
  */
 
 import { z } from "zod";
@@ -107,7 +107,7 @@ export async function align<Row extends ExperienceRow>(
 		if (!payloads.has(text)) return null;
 		const pair = conform(payloads.get(text), tree);
 		if (!pair) {
-			report("  对齐回答不是序列树上的完整一对或两级均空，放弃这一段");
+			report("  对齐回答不是序列树上的完整一对或两级均空，这一段不推断序列");
 			return null;
 		}
 		const [l1, l2] = pair;

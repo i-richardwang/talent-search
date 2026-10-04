@@ -1,8 +1,9 @@
 /**
  * 为待处理经历段抽取说法、对齐序列、嵌入并连边。
- * 模型调用在事务外；成功段按批提交说法、边和派生版本，失败段下一轮重试。
+ * 模型调用在事务外，结果按批提交说法、边和派生版本。模型答不出的段同样有结果：
+ * 记为未能作答，判定标准变了才重新问；端点故障让这一轮中止，下一轮接着。
  * 每轮按 id 向后处理，时间预算耗尽后退出。判定标准变了以后，新结果先写进
- * `experience_next`，走完一遍待派生的段再整体换进正式表：检索一直读一份完整的标准。
+ * `experience_next`，每一段都有了新结果再整体换进正式表：检索一直读一份完整的标准。
  */
 
 import "@tanstack/react-start/server-only";
@@ -33,6 +34,9 @@ const PHRASE_ROWS_PER_STATEMENT = 500;
 
 type StoredRow = ExperienceRow & { id: number };
 
+/** 这一版标准下的一段结果；`unanswered` 见 schema 同名列。 */
+type DerivedRow = StoredRow & { unanswered: boolean };
+
 /** 一段经历指向一条说法的边。 */
 type Link = Phrasing & { experienceId: number };
 
@@ -41,8 +45,8 @@ type Link = Phrasing & { experienceId: number };
  * 恰好和某个岗位名是同一串字时只嵌一次，两条边各指向它。做过的事的说法是
  * 领域，参与方式存在边的第四列，其余类那一列是空。
  *
- * `extractions` 按段对齐：null 是这一段没有抽取（未配置或无需调用），它的
- * 自述证据退回整段原文。
+ * `extractions` 按段对齐：null 是这一段没有抽取（未配置、无需调用或模型答不出），
+ * 它的自述证据退回整段原文。
  */
 export function phrasePlan(
 	rows: StoredRow[],
@@ -99,7 +103,9 @@ async function ensureSpace(client: CorpusClient, report: Report) {
 		if (current) {
 			report("  向量模型已更换，既有结果全部作废，所有段重新派生");
 			await client.query("truncate phrase restart identity cascade");
-			await client.query("update experience set derived_identity = null");
+			await client.query(
+				"update experience set derived_identity = null, unanswered = false",
+			);
 		}
 		await client.query("delete from embedding_space");
 		await client.query(
@@ -139,16 +145,48 @@ export function identity(tree: SeqPair[]): string {
 	return createHash("sha256").update(parts.join("")).digest("hex");
 }
 
-/** 检索读到的还不是这一版的段有多少。待换入的结果换进去之前，这些段都算。 */
-export async function pending(client: CorpusClient, version: string) {
-	const { rows } = await client.query<{ n: string }>(
-		"select count(*) as n from experience where derived_identity is distinct from $1",
+/**
+ * 派生进度。`done` 是已有这一版结果的段，正式表里的和待换入的都算，其中 `unanswered`
+ * 段未能作答；`staging` 是检索此刻还在读上一版。后台任务看它决定有没有活，任务台画它。
+ */
+export type Progress = {
+	total: number;
+	done: number;
+	unanswered: number;
+	staging: boolean;
+};
+
+export async function progress(
+	client: CorpusClient,
+	version: string,
+): Promise<Progress> {
+	const { rows } = await client.query<{
+		total: string;
+		done: string;
+		unanswered: string;
+		staging: boolean | null;
+	}>(
+		`select count(*) as total,
+			count(r.unanswered) as done,
+			count(*) filter (where r.unanswered) as unanswered,
+			bool_or(e.derived_identity <> $1) as staging
+		 from experience e
+		 left join experience_next n on n.experience_id = e.id and n.derived_identity = $1
+		 cross join lateral (select case
+			when n.experience_id is not null then n.unanswered
+			when e.derived_identity = $1 then e.unanswered end as unanswered) r`,
 		[version],
 	);
-	return Number(rows[0]?.n ?? 0);
+	const row = rows[0];
+	return {
+		total: Number(row?.total ?? 0),
+		done: Number(row?.done ?? 0),
+		unanswered: Number(row?.unanswered ?? 0),
+		staging: row?.staging ?? false,
+	};
 }
 
-/** 还要调模型的段：检索读到的不是这一版，待换入的结果里也没有。 */
+/** 还要调模型的段：正式表里不是这一版，待换入的结果里也没有。 */
 const UNDERIVED = `e.derived_identity is distinct from $1
 	and not exists (select 1 from experience_next n
 		where n.experience_id = e.id and n.derived_identity = $1)`;
@@ -227,7 +265,7 @@ async function commitBatch(
 	client: CorpusClient,
 	version: string,
 	staged: boolean,
-	rows: StoredRow[],
+	rows: DerivedRow[],
 	texts: string[],
 	vectors: number[][],
 	links: Link[],
@@ -259,17 +297,20 @@ async function commitBatch(
 			ids,
 			rows.map((row) => row.seq_inferred_l1),
 			rows.map((row) => row.seq_inferred_l2),
+			rows.map((row) => row.unanswered),
 			version,
 		];
 		if (staged)
 			await client.query(
 				`insert into experience_next
-					(experience_id, seq_inferred_l1, seq_inferred_l2, derived_identity)
-				 select r.id, r.l1, r.l2, $4
-				 from unnest($1::int[], $2::text[], $3::text[]) as r(id, l1, l2)
+					(experience_id, seq_inferred_l1, seq_inferred_l2, unanswered, derived_identity)
+				 select r.id, r.l1, r.l2, r.unanswered, $5
+				 from unnest($1::int[], $2::text[], $3::text[], $4::bool[])
+					as r(id, l1, l2, unanswered)
 				 on conflict (experience_id) do update
 				 set seq_inferred_l1 = excluded.seq_inferred_l1,
 					seq_inferred_l2 = excluded.seq_inferred_l2,
+					unanswered = excluded.unanswered,
 					derived_identity = excluded.derived_identity`,
 				inferred,
 			);
@@ -297,8 +338,9 @@ async function commitBatch(
 			await client.query(
 				`update experience e
 				 set seq_inferred_l1 = r.l1, seq_inferred_l2 = r.l2,
-					derived_identity = $4
-				 from unnest($1::int[], $2::text[], $3::text[]) as r(id, l1, l2)
+					unanswered = r.unanswered, derived_identity = $5
+				 from unnest($1::int[], $2::text[], $3::text[], $4::bool[])
+					as r(id, l1, l2, unanswered)
 				 where e.id = r.id`,
 				inferred,
 			);
@@ -310,8 +352,8 @@ async function commitBatch(
 }
 
 /**
- * 把待换入的结果整体换进正式表，返回换入后仍未按这一版派生的段数。这一遍没能作答
- * 的段不留旧结果：一份语料只依据一份标准，它们回到待派生，下一轮重试。
+ * 把待换入的结果整体换进正式表。调用方已确认每一段都有这一版的结果，换入后正式表
+ * 只有这一版。
  */
 async function promote(client: CorpusClient, version: string) {
 	await client.query("begin");
@@ -328,19 +370,12 @@ async function promote(client: CorpusClient, version: string) {
 		await client.query(
 			`update experience e
 			 set seq_inferred_l1 = n.seq_inferred_l1, seq_inferred_l2 = n.seq_inferred_l2,
-				derived_identity = n.derived_identity
+				unanswered = n.unanswered, derived_identity = n.derived_identity
 			 from experience_next n where n.experience_id = e.id`,
-		);
-		const { rowCount } = await client.query(
-			`update experience
-			 set seq_inferred_l1 = '', seq_inferred_l2 = '', derived_identity = null
-			 where derived_identity is distinct from $1`,
-			[version],
 		);
 		await client.query("delete from experience_next");
 		await prunePhrases(client);
 		await client.query("commit");
-		return rowCount ?? 0;
 	} catch (error) {
 		await client.query("rollback");
 		throw error;
@@ -367,17 +402,13 @@ export async function derive(
 		report("  未配置语义模型，自述按整段原文处理，入职前经历不推断序列");
 	report(`  待派生 ${total} 段`);
 	if (staged)
-		report("  判定标准已更新：全部派生完之前，检索继续使用上一版结果");
+		report("  判定标准已更新：每一段都有新结果之前，检索继续使用上一版结果");
 
 	let done = 0;
 	let afterId = 0;
-	let swept = false;
 	while (Date.now() < deadline) {
 		const rows = await nextBatch(client, version, afterId);
-		if (rows.length === 0) {
-			swept = true;
-			break;
-		}
+		if (rows.length === 0) break;
 		afterId = rows[rows.length - 1]?.id ?? afterId;
 		report("");
 		report(`处理一批 ${rows.length} 段…`);
@@ -391,35 +422,30 @@ export async function derive(
 			extractions = await extract(rows, report);
 			aligned = await align(rows, tree, report);
 		}
-		const ready: StoredRow[] = [];
-		const readings: (Extraction | null)[] = [];
-		for (const [index, row] of aligned.entries()) {
-			const extraction = extractions[index];
-			if (!row || !extraction || extraction.status === "failed") continue;
-			ready.push(row);
-			readings.push(extraction.status === "done" ? extraction.value : null);
-		}
-		if (ready.length !== rows.length)
-			report(
-				`  ${rows.length - ready.length} 段未能作答，保留待派生，下一轮重试`,
-			);
-		const { texts, links } = phrasePlan(ready, readings);
+		// 抽取答不出的段按没读过拼说法，对齐答不出的段保持 nextBatch 给的空序列
+		const results: DerivedRow[] = rows.map((row, index) => ({
+			...(aligned[index] ?? row),
+			unanswered:
+				extractions[index]?.status === "failed" || aligned[index] === null,
+		}));
+		const unanswered = results.filter((row) => row.unanswered).length;
+		if (unanswered > 0)
+			report(`  ${unanswered} 段未能作答，记下结果，判定标准变了再问`);
+		const { texts, links } = phrasePlan(
+			results,
+			extractions.map((one) => (one.status === "done" ? one.value : null)),
+		);
 		const vectors = await embed(texts, report);
-		if (ready.length > 0)
-			await commitBatch(client, version, staged, ready, texts, vectors, links);
-		done += ready.length;
+		await commitBatch(client, version, staged, results, texts, vectors, links);
+		done += rows.length;
 		report(`  已派生 ${done}/${total} 段`);
 	}
 	report("");
-	if (staged && swept) {
-		const unanswered = await promote(client, version);
-		report(
-			unanswered > 0
-				? `新标准已生效；${unanswered} 段未能作答，暂不在检索中，下一轮重试`
-				: "新标准已生效",
-		);
+	const left = await underived(client, version);
+	if (staged && left === 0) {
+		await promote(client, version);
+		report("新标准已生效");
 	}
-	const left = await pending(client, version);
 	report(
 		left > 0 ? `这一轮到此为止，还剩 ${left} 段下一轮接着` : "全部派生完毕",
 	);

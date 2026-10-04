@@ -55,44 +55,41 @@ function find() {
 	});
 }
 
-test("抽取失败保留待派生与旧边，下一轮成功的空抽取才算已读", async () => {
+async function unanswered() {
+	return (
+		await db.execute<{ unanswered: boolean }>(sql`
+		select unanswered from experience order by id`)
+	).rows.map((r) => r.unanswered);
+}
+
+async function routes(empId: string) {
+	return (
+		await db.execute<{ route: string }>(sql`
+		select distinct ep.route from experience_phrase ep
+		join experience e on e.id = ep.experience_id
+		where e.emp_id = ${empId} order by ep.route`)
+	).rows.map((r) => r.route);
+}
+
+test("抽取答不出记为未能作答、按原文检索，成功的空抽取不退回原文", async () => {
 	await seed([
-		{ empId: "E1", name: "合成抽取", segments: [segment("失败恢复样例")] },
+		{ empId: "E1", name: "合成抽取", segments: [segment("答不出样例")] },
+		{ empId: "E2", name: "合成抽取", segments: [segment("空抽取样例")] },
 	]);
-	const original = await db.execute(
-		sql`select * from experience_phrase order by route, phrase_id`,
+	const restore = answerChat((_system, prompt) =>
+		prompt.includes("答不出样例")
+			? { skills: "invalid", did: [] }
+			: { skills: [], did: [] },
 	);
-	let restore = answerChat(() => ({ skills: "invalid", did: [] }));
 	try {
-		assert.deepEqual(await runDerive(), { done: 0, left: 1 });
+		assert.deepEqual(await runDerive(), { done: 2, left: 0 });
 	} finally {
 		restore();
 	}
-	assert.deepEqual(await identities(), [null]);
-	assert.deepEqual(
-		(
-			await db.execute(
-				sql`select * from experience_phrase order by route, phrase_id`,
-			)
-		).rows,
-		original.rows,
-	);
-	restore = answerChat(() => ({ skills: [], did: [] }));
-	try {
-		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
-	} finally {
-		restore();
-	}
-	assert.ok((await identities())[0]);
-	assert.equal(
-		(
-			await db.execute(
-				sql`select * from experience_phrase where route = 'description'`,
-			)
-		).rows.length,
-		0,
-		"成功的空抽取不退回原文",
-	);
+	assert.ok((await identities()).every(Boolean));
+	assert.deepEqual(await unanswered(), [true, false]);
+	assert.ok((await routes("E1")).includes("description"));
+	assert.ok(!(await routes("E2")).includes("description"));
 });
 
 for (const [label, invalid] of [
@@ -100,7 +97,7 @@ for (const [label, invalid] of [
 	["序列不在树上", { seq: "推荐（技术）" }],
 	["序列只有一级", { seq: "技术" }],
 ] as const) {
-	test(`${label}不记录完成版本，合法的无法对齐可以完成`, async () => {
+	test(`对齐${label}记为未能作答，不推断序列，抽取结果照常落库`, async () => {
 		await seed([
 			{
 				empId: "E1",
@@ -113,49 +110,60 @@ for (const [label, invalid] of [
 						seqL2: "算法",
 						months: 12,
 					},
-					segment(`${label}恢复样例`),
+					segment(`${label}样例`),
 				],
 			},
 		]);
-		let restore = answerChat((system) =>
-			system.includes("两类短说法") ? { skills: [], did: [] } : invalid,
+		const restore = answerChat((system) =>
+			system.includes("两类短说法")
+				? { skills: ["数据分析"], did: [] }
+				: invalid,
 		);
 		try {
-			assert.deepEqual(await runDerive(), { done: 1, left: 1 });
-		} finally {
-			restore();
-		}
-		assert.ok((await identities())[0]);
-		assert.equal((await identities())[1], null);
-		restore = answerChat(() => ({ seq: "" }));
-		try {
-			assert.deepEqual(await runDerive(), { done: 1, left: 0 });
+			assert.deepEqual(await runDerive(), { done: 2, left: 0 });
 		} finally {
 			restore();
 		}
 		assert.ok((await identities()).every(Boolean));
+		assert.deepEqual(await unanswered(), [false, true]);
+		const { rows } = await db.execute<{ l1: string; l2: string }>(sql`
+			select seq_inferred_l1 as l1, seq_inferred_l2 as l2
+			from experience where kind = 'external'`);
+		assert.deepEqual(rows, [{ l1: "", l2: "" }]);
+		assert.ok((await routes("E1")).includes("skill"));
 	});
 }
 
-test("失败批次不阻塞本轮后面的段，失败段下一轮重试", async () => {
-	await seed(
-		Array.from({ length: 201 }, (_, i) => ({
-			empId: `E${i}`,
-			name: `合成样例${i}`,
-			segments: [segment(i < 200 ? "本轮失败样例" : "本轮成功样例")],
-		})),
-	);
-	const restore = answerChat((_system, prompt) =>
-		prompt.includes("本轮失败样例") ? { bad: true } : { skills: [], did: [] },
-	);
+test("答不出的段标准不变不再问，标准变了重新问", async () => {
+	await seed([
+		{ empId: "E1", name: "合成重问", segments: [segment("一直答不出样例")] },
+	]);
+	let asked = 0;
+	let restore = answerChat(() => {
+		asked++;
+		return { bad: true };
+	});
 	try {
-		assert.deepEqual(await runDerive(), { done: 1, left: 200 });
+		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
+		assert.deepEqual(await runDerive(), { done: 0, left: 0 });
 	} finally {
 		restore();
 	}
-	const versions = await identities();
-	assert.ok(versions.slice(0, 200).every((version) => version === null));
-	assert.ok(versions[200]);
+	assert.equal(asked, 1);
+	await db.execute(
+		sql`update experience set derived_identity = 'old-standard'`,
+	);
+	restore = answerChat(() => {
+		asked++;
+		return { skills: [], did: [] };
+	});
+	try {
+		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
+	} finally {
+		restore();
+	}
+	assert.equal(asked, 2);
+	assert.deepEqual(await unanswered(), [false]);
 });
 
 async function staged() {
@@ -166,7 +174,7 @@ async function staged() {
 	).rows[0]?.n;
 }
 
-test("标准更新期间检索读上一版，走完一遍后整体换入", async () => {
+test("标准更新期间检索读上一版，每一段都有新结果后整体换入", async () => {
 	await seed(
 		Array.from({ length: 201 }, (_, i) => ({
 			empId: `E${i}`,
@@ -182,7 +190,7 @@ test("标准更新期间检索读上一版，走完一遍后整体换入", async
 		return { skills: [], did: [] };
 	});
 	try {
-		assert.deepEqual(await runDerive(1_000), { done: 200, left: 201 });
+		assert.deepEqual(await runDerive(1_000), { done: 200, left: 1 });
 		assert.equal(await staged(), 200);
 		assert.ok((await identities()).every((v) => v === "old-standard"));
 		assert.equal((await find()).total, 201);
@@ -197,7 +205,7 @@ test("标准更新期间检索读上一版，走完一遍后整体换入", async
 	assert.equal((await find()).total, 201);
 });
 
-test("换入时没能作答的段不留旧结果，回到待派生", async () => {
+test("换入时答不出的段带着未能作答换入，仍按原文留在检索里", async () => {
 	await seed([
 		{ empId: "E1", name: "合成换入", segments: [segment("换入成功样例")] },
 		{ empId: "E2", name: "合成换入", segments: [segment("换入失败样例")] },
@@ -205,24 +213,19 @@ test("换入时没能作答的段不留旧结果，回到待派生", async () =>
 	await db.execute(
 		sql`update experience set derived_identity = 'old-standard'`,
 	);
-	let restore = answerChat((_system, prompt) =>
+	const restore = answerChat((_system, prompt) =>
 		prompt.includes("换入失败样例") ? { bad: true } : { skills: [], did: [] },
 	);
 	try {
-		assert.deepEqual(await runDerive(), { done: 1, left: 1 });
+		assert.deepEqual(await runDerive(), { done: 2, left: 0 });
 	} finally {
 		restore();
 	}
-	const [kept, dropped] = await identities();
-	assert.ok(kept && kept !== "old-standard");
-	assert.equal(dropped, null);
-	assert.equal((await find()).total, 1);
-	restore = answerChat(() => ({ skills: [], did: [] }));
-	try {
-		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
-	} finally {
-		restore();
-	}
+	const versions = await identities();
+	assert.ok(versions[0] && versions[0] !== "old-standard");
+	assert.ok(versions.every((v) => v === versions[0]));
+	assert.deepEqual(await unanswered(), [false, true]);
+	assert.ok((await routes("E2")).includes("description"));
 	assert.equal((await find()).total, 2);
 });
 

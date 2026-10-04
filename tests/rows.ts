@@ -39,5 +39,6 @@ export const experience = (over: Partial<Experience> = {}): Experience => ({
 	description: "",
 	months: 24,
 	derivedIdentity: null,
+	unanswered: false,
 	...over,
 });

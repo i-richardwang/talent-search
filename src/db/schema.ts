@@ -107,9 +107,19 @@ export const experience = pgTable(
 				sql`md5(emp_id || E'\\x1f' || kind || E'\\x1f' || unemployed::text || E'\\x1f' || (start_date - date '1970-01-01')::text || E'\\x1f' || coalesce((end_date - date '1970-01-01')::text, '') || E'\\x1f' || org || E'\\x1f' || org_path || E'\\x1f' || coalesce(org_meta::text, '') || E'\\x1f' || title || E'\\x1f' || seq_l1 || E'\\x1f' || seq_l2 || E'\\x1f' || seq_l3 || E'\\x1f' || level || E'\\x1f' || description)`,
 			),
 		derivedIdentity: text("derived_identity"),
+		/**
+		 * 这一版标准下模型没给出合法回答：抽取答不出时自述按整段原文检索，对齐答不出时
+		 * 不推断序列。同一段文字、同一套标准再问也是同样的回答，标准变了才重新问。
+		 * 任务台数它，人页上标出来。
+		 */
+		unanswered: boolean("unanswered").notNull().default(false),
 	},
 	(t) => [
 		index("experience_derived").on(t.derivedIdentity),
+		check(
+			"experience_unanswered_derived",
+			sql`not ${t.unanswered} or ${t.derivedIdentity} is not null`,
+		),
 		check("experience_kind_valid", sql`${t.kind} in ('internal', 'external')`),
 		check(
 			"experience_unemployed_external",
@@ -284,7 +294,7 @@ export const experiencePhrase = pgTable(
 
 /**
  * 判定标准变了以后，新标准的派生结果先写在这里，检索继续读正式的两列和
- * `experience_phrase`；派生走完一遍待派生的段，在一个事务里整体换进去
+ * `experience_phrase`；每一段都有了新标准的结果，在一个事务里整体换进去
  * （`corpus/derive.ts` 的 `promote`）。标准没变时不经过这里。
  */
 export const experienceNext = pgTable("experience_next", {
@@ -294,6 +304,7 @@ export const experienceNext = pgTable("experience_next", {
 	derivedIdentity: text("derived_identity").notNull(),
 	seqInferredL1: text("seq_inferred_l1").notNull(),
 	seqInferredL2: text("seq_inferred_l2").notNull(),
+	unanswered: boolean("unanswered").notNull(),
 });
 
 /** `experience_next` 那些段在新标准下的边。 */

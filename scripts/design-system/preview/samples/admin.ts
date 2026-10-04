@@ -86,7 +86,9 @@ export const CORPUS_COUNTS: CorpusCounts = {
 	internal: EXPERIENCES.filter((x) => x.kind === "internal").length,
 	external: EXPERIENCES.filter((x) => x.kind === "external").length,
 	segments: EXPERIENCES.length,
-	pending: 2,
+	derived: EXPERIENCES.length - 2,
+	unanswered: 1,
+	staging: false,
 	phrases: 84,
 	words: 37,
 	merged: 5,
@@ -112,6 +114,7 @@ export const SEGMENTS: SegmentView[] = experiencesOf("T0101").map((x) => ({
 	seqInferredL1: x.seqInferredL1,
 	seqInferredL2: x.seqInferredL2,
 	derived: x.id !== 103,
+	unanswered: x.id === 102,
 	skills: x.kind === "external" ? ["推荐系统", "实时特征"] : [],
 	did:
 		x.kind === "external"

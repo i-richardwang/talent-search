@@ -80,6 +80,7 @@ export type SegmentView = Pick<
 	| "seqL3"
 	| "seqInferredL1"
 	| "seqInferredL2"
+	| "unanswered"
 > & {
 	/** 派生到当前版本了没有 */
 	derived: boolean;
@@ -120,7 +121,7 @@ export async function employeeData(
 			x.months, x.org, x.org_path as "orgPath", x.title, x.level, x.description,
 			x.seq_l1 as "seqL1", x.seq_l2 as "seqL2", x.seq_l3 as "seqL3",
 			x.seq_inferred_l1 as "seqInferredL1", x.seq_inferred_l2 as "seqInferredL2",
-			x.derived_identity is not distinct from $2 as derived,
+			x.derived_identity is not distinct from $2 as derived, x.unanswered,
 			(select array_agg(p.text order by p.text)
 			 from experience_phrase ep join phrase p on p.id = ep.phrase_id
 			 where ep.experience_id = x.id and ep.route = 'skill') as skills,

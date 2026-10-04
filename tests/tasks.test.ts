@@ -12,10 +12,16 @@ import { answerChat, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { runTask, tasksState, taskLog, derivePending } = await import(
+const { runTask, tasksState, taskLog, deriveProgress } = await import(
 	"#/server/tasks"
 );
 const { phrasePlan } = await import("#/corpus/derive");
+
+/** 还没有当前标准结果的段数。 */
+async function underived() {
+	const { done, total } = await deriveProgress();
+	return total - done;
+}
 const { groupIdentity } = await import("#/corpus/vocabulary");
 const { formatDuration, LANE_FACTS } = await import(
 	"#/routes/tasks/-lib/labels"
@@ -96,14 +102,14 @@ describe("同步与派生", () => {
 		assert.equal(await count("employee"), 20);
 		assert.ok((await count("experience")) > 20);
 		assert.equal(await count("phrase"), 0);
-		assert.equal(await derivePending(), await count("experience"));
+		assert.equal(await underived(), await count("experience"));
 
 		const state = await tasksState();
 		const sync = latest(state, "sync");
 		assert.equal(sync?.outcome, "done");
 		assert.equal(sync?.source, "csv-dir");
 		assert.match(await logText(sync?.id), /人群 20 人/);
-		assert.equal(state.corpus.pending, state.corpus.segments);
+		assert.equal(state.corpus.derived, 0);
 	});
 
 	test("派生给每一段算说法、连边、对齐序列，做完一段不剩", async () => {
@@ -122,7 +128,7 @@ describe("同步与派生", () => {
 				"kind = 'external' and seq_inferred_l1 <> '' and seq_l1 = ''",
 			)) > 0,
 		);
-		assert.equal(await derivePending(), 0);
+		assert.equal(await underived(), 0);
 		assert.equal(latest(await tasksState(), "derive")?.outcome, "done");
 	});
 
@@ -204,7 +210,7 @@ describe("同步与派生", () => {
 		assert.equal(run.failure, null);
 		assert.equal(await count("employee"), 20);
 		assert.equal(await count("experience_phrase"), edges);
-		assert.equal(await derivePending(), 0);
+		assert.equal(await underived(), 0);
 	});
 
 	/*
@@ -244,7 +250,7 @@ describe("同步与派生", () => {
 		assert.ok(run);
 		assert.equal(run.failure, null);
 		assert.equal(await count("experience", `id = ${changed}`), 0);
-		assert.equal(await derivePending(), 1);
+		assert.equal(await underived(), 1);
 		assert.match(
 			await logText(latest(await tasksState(), "sync")?.id),
 			/新增 1 段、离开 1 段/,
@@ -273,7 +279,7 @@ describe("同步与派生", () => {
 
 		assert.ok(!seen.has("interrupted"), "没有一刻读作中断");
 		assert.equal(final?.outcome, "done");
-		assert.equal(await derivePending(), 0);
+		assert.equal(await underived(), 0);
 	});
 
 	/*
@@ -366,7 +372,7 @@ describe("同步与派生", () => {
 			rows.map((row) => row.space_id),
 			["fake-v1"],
 		);
-		assert.equal(await derivePending(), 0);
+		assert.equal(await underived(), 0);
 		assert.ok((await count("experience_phrase")) > 0);
 	});
 });
@@ -554,10 +560,12 @@ describe("页面文案", () => {
 		glossable: 30,
 		glossed: 12,
 		internal: 6,
+		derived: 10,
 		merged: 2,
-		pending: 0,
 		phrases: 30,
 		segments: 10,
+		staging: false,
+		unanswered: 0,
 		words: 9,
 		...over,
 	});
@@ -577,10 +585,16 @@ describe("页面文案", () => {
 			: line;
 	};
 
-	test("解析那一组说经历解析到哪了，和有多少说法", () => {
+	test("解析那一组说经历解析到哪了、有多少说法和几段没能作答", () => {
 		assert.equal(
-			read(LANE_FACTS.derive(corpus({ pending: 3 }))),
-			"7 / 10 段经历已解析；30 条说法",
+			read(LANE_FACTS.derive(corpus({ derived: 7, unanswered: 1 }))),
+			"7 / 10 段经历已解析；30 条说法、1 段 AI 未能作答",
+		);
+	});
+	test("标准更新期间解析那一组说检索还在用上一版", () => {
+		assert.equal(
+			read(LANE_FACTS.derive(corpus({ derived: 4, staging: true }))),
+			"4 / 10 段已按新标准解析，解析完之前检索沿用上一版；30 条说法、0 段 AI 未能作答",
 		);
 	});
 	test("同步说构成，整理说释义写到哪了和词表", () => {
