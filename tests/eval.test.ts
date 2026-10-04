@@ -122,7 +122,7 @@ describe("语料验收门禁", () => {
 			1,
 		);
 	});
-	test("没有 parent 预期的题也检查每个词的作答覆盖", async () => {
+	test("只要求了一部分词的题也检查每个词的作答覆盖", async () => {
 		const words = ["数据分析", "数据统计", "团队管理"].map((word) => ({
 			word,
 			people: 3,
@@ -130,8 +130,8 @@ describe("语料验收门禁", () => {
 		const c = {
 			name: "覆盖",
 			words,
-			same: [["数据分析", "数据统计"]],
-			apart: [["数据统计", "团队管理"]],
+			found: [["数据分析", "数据统计"]],
+			notFound: [["数据统计", "团队管理"]],
 		};
 		assert.equal(
 			await runCorpus("review", [c], {
@@ -142,7 +142,7 @@ describe("语料验收门禁", () => {
 			1,
 		);
 	});
-	test("归属按生产归并的最终投票结果验收", async () => {
+	test("带不带出按生产归并的最终结果验收", async () => {
 		const words = [
 			{ word: "数据分析", people: 10 },
 			{ word: "数据统计", people: 3 },
@@ -150,8 +150,10 @@ describe("语料验收门禁", () => {
 		const c = {
 			name: "生效",
 			words,
-			same: [["数据分析", "数据统计"]],
-			parent: { 数据分析: ["业务分析"], 数据统计: ["业务分析"] },
+			found: [
+				["数据分析", "数据统计"],
+				["业务分析", "数据统计"],
+			],
 		};
 		const judgments = [
 			{ word: "数据分析", why: "归属", sameAs: "", parent: "业务分析" },
