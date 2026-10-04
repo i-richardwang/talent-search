@@ -27,7 +27,7 @@ import {
 import { type SourceConfig, sourceConfig } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
 import { db, pool } from "#/db";
-import { taskRun } from "#/db/schema";
+import { SHORT_ROUTES, taskRun } from "#/db/schema";
 import { pageAt, RUNS_PAGE, type TablePage, tablePage } from "#/lib/paging";
 import { TASK_KINDS, type TaskKind } from "#/lib/task";
 import { configured, reviewJudge } from "./review";
@@ -81,7 +81,7 @@ export type TaskOutcome = "running" | "interrupted" | "failed" | "done";
  *
  * 时刻和用时**在库里算好**：服务端直出和浏览器水合各算一次的话，两边的时区
  * 不同就会渲染出两个不一样的字符串，而 React 只会在控制台打一条警告。
- * 管理页 `/skills` 的「几天前」是同一个道理。
+ * 管理页 `/terms` 的「几天前」是同一个道理。
  */
 export type TaskRunView = {
 	id: number;
@@ -263,7 +263,7 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 /**
  * 语料此刻的几个数，一趟问完。
  *
- * 「技能」数的是边上 `route = 'skill'` 那一类指到的说法，也就是人身上此刻有的词；
+ * 「词」数的是短说法（`SHORT_ROUTES`）那几类边指到的说法，也就是人身上此刻有的、进词表的词；
  * 「已经并到别的写法上」数的是词表里指向别人的那些词。
  */
 async function corpusCounts(): Promise<CorpusCounts> {
@@ -277,8 +277,9 @@ async function corpusCounts(): Promise<CorpusCounts> {
 				(select count(*) from experience where kind = 'external') as external,
 				(select count(*) from phrase) as phrases,
 				(select count(distinct phrase_id) from experience_phrase
-					where route = 'skill') as words,
-				(select count(*) from skill_term where canonical <> word) as merged`,
+					where route = any($1::text[])) as words,
+				(select count(*) from term where canonical <> word) as merged`,
+			[[...SHORT_ROUTES]],
 		),
 	]);
 	const row = counted.rows[0];

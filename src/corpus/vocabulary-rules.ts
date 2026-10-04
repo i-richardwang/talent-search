@@ -48,7 +48,7 @@ export function validate(table: Table): void {
 		.sort();
 	if (chained.length)
 		throw new Error(
-			`skill_term 表里 ${chained.join("、")} 的标准词自己又是别名，表被改坏了`,
+			`term 表里 ${chained.join("、")} 的标准词自己又是别名，表被改坏了`,
 		);
 	const underAlias = [...table]
 		.filter(([, decision]) => {
@@ -60,13 +60,13 @@ export function validate(table: Table): void {
 		.sort();
 	if (underAlias.length)
 		throw new Error(
-			`skill_term 表里 ${underAlias.join("、")} 归属于一个别名，表被改坏了`,
+			`term 表里 ${underAlias.join("、")} 归属于一个别名，表被改坏了`,
 		);
 	for (const [word] of table) {
 		const seen = new Set<string>();
 		for (let at: string | null = word; at !== null; at = ancestor(table, at)) {
 			if (seen.has(at))
-				throw new Error(`skill_term 表里 ${word} 的归属成环，表被改坏了`);
+				throw new Error(`term 表里 ${word} 的归属成环，表被改坏了`);
 			seen.add(at);
 		}
 	}

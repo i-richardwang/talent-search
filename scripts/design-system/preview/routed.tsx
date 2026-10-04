@@ -32,8 +32,8 @@ const PATHS = [
 	"/",
 	"/data",
 	"/data/$empId",
-	"/skills",
-	"/skills/$word",
+	"/terms",
+	"/terms/$word",
 	"/tasks",
 ];
 

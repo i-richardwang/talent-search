@@ -109,9 +109,9 @@ before(async () => {
 		},
 	]);
 	const { db } = await import("#/db");
-	const { skillTerm } = await import("#/db/schema");
+	const { term } = await import("#/db/schema");
 	const reviewedAt = new Date();
-	await db.insert(skillTerm).values([
+	await db.insert(term).values([
 		{ word: "推荐系统", canonical: "推荐系统", reviewedAt },
 		{ word: "推荐算法", canonical: "推荐系统", reviewedAt },
 		{

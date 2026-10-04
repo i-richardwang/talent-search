@@ -2,7 +2,7 @@ import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
 import type { PoolClient } from "pg";
 import { db, pool } from ".";
-import { GLOSSED_ROUTES } from "./schema";
+import { SHORT_ROUTES } from "./schema";
 
 /** 应用查询与事务共享的最小数据库能力。 */
 export type DbExecutor = Pick<typeof db, "execute" | "select">;
@@ -60,7 +60,7 @@ export function withCorpusSnapshot<T>(
 					 from phrase_gloss g join phrase p on p.text = g.text
 					 where exists (select 1 from experience_phrase ep
 					   where ep.phrase_id = p.id and ep.route in (${sql.join(
-								GLOSSED_ROUTES.map((route) => sql`${route}`),
+								SHORT_ROUTES.map((route) => sql`${route}`),
 								sql`, `,
 							)}))) as glossed`);
 			if (standards.rows[0]?.derived || standards.rows[0]?.glossed)

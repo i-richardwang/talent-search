@@ -5,7 +5,7 @@ import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
 import { peopleUnder, UNDER } from "#/search/search";
 
-export type SkillEntry = {
+export type TermEntry = {
 	canonical: string;
 	/** 更宽的词；没有就是 null */
 	parent: string | null;
@@ -18,7 +18,7 @@ export type SkillEntry = {
 	reviewedDaysAgo: number;
 };
 
-export type SkillDetail = Omit<SkillEntry, "parent" | "children"> & {
+export type TermDetail = Omit<TermEntry, "parent" | "children"> & {
 	/** 判定方给这个词写的那一句；还没写过是 null */
 	gloss: string | null;
 	/** 更宽的词，连它那一层的人数；没有就是 null */
@@ -29,7 +29,7 @@ export type SkillDetail = Omit<SkillEntry, "parent" | "children"> & {
 
 /** 属于这个标准词的标准词有几项。并进去的写法不算：那是同一件事的另一种写法。 */
 function childrenOf(term: SQL) {
-	return sql`(select count(*)::int from skill_term c
+	return sql`(select count(*)::int from term c
 		where c.parent = ${term} and c.word = c.canonical)`;
 }
 
@@ -38,10 +38,10 @@ function childrenOf(term: SQL) {
  * 匹配标准词、别名与父词；人数包含别名和全部后代，与筛选栏共用统计。
  * 判定方命名的父词同样参与展示；整理时间在数据库中换算为天数。
  */
-export function listSkills(
+export function listTerms(
 	needle: string,
 	page: unknown,
-): Promise<TablePage<SkillEntry>> {
+): Promise<TablePage<TermEntry>> {
 	const pattern = `%${escapeLike(needle.trim())}%`;
 	return withCorpusSnapshot(async (store) => {
 		/*
@@ -49,7 +49,7 @@ export function listSkills(
 		 * 不碰人数——它是这里最贵的一段（每一行一次递归展开），而数行数用不着它。
 		 */
 		const MATCHED = sql`
-			from skill_term a
+			from term a
 			group by a.canonical
 			having bool_or(a.word ilike ${pattern})
 				or max(a.parent) filter (where a.word = a.canonical) ilike ${pattern}`;
@@ -58,7 +58,7 @@ export function listSkills(
 		);
 		const total = found.rows[0]?.n ?? 0;
 		const at = pageAt(total, page);
-		const { rows } = await store.execute<SkillEntry>(sql`
+		const { rows } = await store.execute<TermEntry>(sql`
 			${UNDER}
 			select
 				a.canonical,
@@ -75,7 +75,7 @@ export function listSkills(
 }
 
 /**
- * 一个词的详情，给技能页点开的那一层看。
+ * 一个词的详情，给词表页点开的那一层看。
  *
  * 传进来的可以是并进去的写法——地址栏是能手改的，而「数据分析能力」和「数据分析」
  * 在词表里是同一件事，那就把标准词那一份给出来，不是一句找不到。词表里没有这个词
@@ -84,16 +84,16 @@ export function listSkills(
  * 更宽的那个词和每一项细分各带自己那一支的人数：这一层要答的是「这个词底下的人是从
  * 哪几支来的」，而光有名字答不了——顺着往下点之前，得先看得出哪一支下面有人。
  */
-export function skillDetail(word: string): Promise<SkillDetail | null> {
+export function describeTerm(word: string): Promise<TermDetail | null> {
 	return withCorpusSnapshot(async (store) => {
 		const named = await store.execute<{ canonical: string }>(
-			sql`select canonical from skill_term where word = ${word}`,
+			sql`select canonical from term where word = ${word}`,
 		);
 		const canonical = named.rows[0]?.canonical;
 		if (!canonical) return null;
 
 		const self = await store.execute<
-			Omit<SkillDetail, "parent" | "children"> & { parent: string | null }
+			Omit<TermDetail, "parent" | "children"> & { parent: string | null }
 		>(sql`
 			${UNDER}
 			select
@@ -103,7 +103,7 @@ export function skillDetail(word: string): Promise<SkillDetail | null> {
 				${peopleUnder(sql`a.canonical`)} as people,
 				(current_date - max(a.reviewed_at)::date)::int as "reviewedDaysAgo",
 				(select g.gloss from phrase_gloss g where g.text = a.canonical) as gloss
-			from skill_term a
+			from term a
 			where a.canonical = ${canonical}
 			group by a.canonical`);
 		const row = self.rows[0];
@@ -116,7 +116,7 @@ export function skillDetail(word: string): Promise<SkillDetail | null> {
 		}>(sql`
 			${UNDER}
 			select c.word as canonical, ${peopleUnder(sql`c.word`)} as people
-			from skill_term c
+			from term c
 			where c.parent = ${canonical} and c.word = c.canonical
 			order by people desc, c.word`);
 

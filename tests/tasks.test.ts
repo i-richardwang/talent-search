@@ -389,7 +389,7 @@ test("词表跨嵌入空间保留，生效一条技能边都不动", async () =>
 		assert.equal((await runTask("review"))?.failure, null);
 		await db.execute(sql`update embedding_space set space_id = 'reset-space'`);
 		assert.equal((await runTask("derive"))?.failure, null);
-		assert.equal(await count("skill_term", "word = '业务分析'"), 1);
+		assert.equal(await count("term", "word = '业务分析'"), 1);
 		const edges = sql`select array_agg(ep.experience_id || ':' || p.text order by ep.experience_id, p.text)::text as all
 			from experience_phrase ep join phrase p on p.id = ep.phrase_id where ep.route = 'skill'`;
 		const before = (await db.execute<{ all: string }>(edges)).rows[0]?.all;
@@ -400,7 +400,7 @@ test("词表跨嵌入空间保留，生效一条技能边都不动", async () =>
 			'{"judgments":[{"word":"业务分析","sameAs":"","parent":""},{"word":"数据分析","sameAs":"业务分析","parent":""}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
 		assert.equal(
-			await count("skill_term", "word = '数据分析' and canonical = '业务分析'"),
+			await count("term", "word = '数据分析' and canonical = '业务分析'"),
 			1,
 		);
 		// 词表只决定筛选栏怎么摆：人身上仍是简历里的原话
@@ -604,7 +604,7 @@ describe("页面文案", () => {
 		);
 		assert.equal(
 			read(LANE_FACTS.review(corpus())),
-			"12 / 30 条说法已写释义；9 个技能、2 种写法已归并",
+			"12 / 30 条说法已写释义；9 个标签、2 种写法已归并",
 		);
 	});
 	test("用时一小时以内到秒，以上到分，满一天进位成天", () => {

@@ -8,8 +8,8 @@ import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
 import { Thread } from "#/routes/s/$turnId/-components/thread";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
-import { TermRecord } from "#/routes/skills/-components/term-drawer";
 import { TaskCard } from "#/routes/tasks/-components/task-card";
+import { TermRecord } from "#/routes/terms/-components/term-drawer";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Stage } from "../../kit/stage";
@@ -25,7 +25,7 @@ import { EMPLOYEES, OUTCOME } from "../../samples/people";
 import { LATEST_TURN_ID, THREAD } from "../../samples/thread";
 import { PersonPane } from "../layouts/detail";
 
-/* ---------- 抽屉：数据页的人、技能页的词 ---------- */
+/* ---------- 抽屉：数据页的人、「标签」页的词 ---------- */
 
 /** 数据页点开 Talent 0101：登记的内容和解析出的技能、职责并排。 */
 function PersonDrawer({ close }: { close: () => void }) {
@@ -52,10 +52,10 @@ function Drawers() {
 					数据页：打开 Talent 0101
 				</Button>
 				<Button onClick={() => setOpen("term")}>
-					技能页：打开「推荐系统」
+					「标签」页：打开「推荐系统」
 				</Button>
 			</div>
-			<Routed url="/skills">
+			<Routed url="/terms">
 				{open === "person" && <PersonDrawer close={close} />}
 				{open === "term" && <TermRecord close={close} term={SKILL_DETAIL} />}
 			</Routed>
@@ -209,7 +209,7 @@ export function ReadingPage() {
 				usage: `<DetailDrawer\n  close={() => navigate({ search, to: "/data" })}\n  description={…}\n  title={employee.name}\n  width="var(--container-detail-wide)"\n>\n  …\n</DetailDrawer>`,
 			}}
 			sections={[
-				{ children: <Drawers />, id: "drawer", title: "抽屉：数据页与技能页" },
+				{ children: <Drawers />, id: "drawer", title: "抽屉：数据页与「标签」页" },
 				{ children: <Logs />, id: "logs", title: "任务日志" },
 				{ children: <Side />, id: "detail", title: "人的详情" },
 			]}

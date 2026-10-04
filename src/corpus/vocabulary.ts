@@ -1,13 +1,15 @@
 /**
- * 能力词词表：整理收集的归并组。相近的能力词圈成组送进队列，判定方判每个词和谁是
- * 同一件事、属于哪个更宽的词，生效时写进 `skill_term`。
- * 整理只写词表，不碰人身上的词：边上永远是简历里的原话，词表只决定筛选栏怎么把
- * 写法摆成一项项、每一项数到谁（`src/search/search.ts` 的 `FACT_COLUMNS.skills`）。
+ * 短说法的词表：整理收集的归并组。相近的短说法（`SHORT_ROUTES`）圈成组送进队列，
+ * 判定方判每个词和谁是同一件事、属于哪个更宽的词，生效时写进 `term`。
+ * 整理只写词表，不碰人身上的词：边上永远是简历里的原话。检索按词表把命中往细的词
+ * 带、对更宽的词挡住（`src/search/phrases.ts` 的 `throughVocabulary`），筛选栏按它
+ * 把写法摆成一项项（`src/search/search.ts` 的 `FACT_COLUMNS.skills`）。
  * 归并和归属规则见 vocabulary-rules.ts；判定队列在 judgment.ts；模型和外部判定方共用 GUIDE。
  */
 
 import "@tanstack/react-start/server-only";
 import { z } from "zod";
+import { SHORT_ROUTES } from "#/db/schema";
 import { complete, reviewModel, standardOf } from "#/server/chat";
 import { embed } from "./embed";
 import {
@@ -41,21 +43,21 @@ import {
  */
 export const GUIDE = `## 背景
 
-这是一个公司内部的人才库。招聘的人和业务负责人要找做过某件事的人：在筛选栏里点能力词，再读这个人简历里的原话确认。能力词是从每个人的简历里读出来的，人身上留的永远是他自己的写法，检索和证据用的都是原话。
+这是一个公司内部的人才库。招聘的人和业务负责人要找做过某件事的人：输入一个词搜索，或在筛选栏里点一项，再读这个人简历里的原话确认。每个人的简历被读成几个字的短说法：能力词、做过的事、入职前的岗位名。人身上留的永远是他自己的写法，证据用的都是原话。
 
-词表不改人身上的词，只决定筛选栏怎么把这些写法摆成一项项、每一项数到哪些人。它记两件事：哪些写法是同一件事，在筛选栏里合成一项；一个词属于哪个更宽的词，点宽的词时把写了细的词的人一起带出来。这两件事由你来判。判过的词过一段时间会连同之前判成同一件事的写法再拿出来重判。
+词表不改人身上的词，它记两件事：哪些写法是同一件事；一个词属于哪个更宽的词。搜索和筛选都按它走：搜一个词或点一项，写了它的其他写法、写了属于它的细词的人一起出来；搜细的词时，只写了更宽的词的人不算，因为没法确认他做过细的那件。这两件事由你来判。判过的词过一段时间会连同之前判成同一件事的写法再拿出来重判。
 
 ## 判错的代价
 
-- 两件事判成同一件事：筛选栏里少了一项，点剩下那一项会混进不符合要求的人，更精确的那个选项也没了。
-- 同一件事判成两件：筛选栏里多一项，点其中一项会漏掉写了另一种写法的人。
-- 归属判错，点宽的词会混进不相干的人；归属漏判，点宽的词会漏掉做过其中一种的人。
+- 两件事判成同一件事：搜其中一个会混进不符合要求的人，筛选栏里更精确的那个选项也没了。
+- 同一件事判成两件：搜其中一个会漏掉写了另一种写法的人，筛选栏里多一项。
+- 归属判错，搜宽的词会混进不相干的人，搜细的词会挡掉其实符合的人；归属漏判，搜宽的词会漏掉做过其中一种的人。
 
 合成一项会抹掉一个选项，挂归属不会。所以两个词一个比另一个宽的，用归属表达，不写成同一件事；拿不准是不是同一件事就不写。拿不准一个词属不属于某个更宽的词，写上：混进来的人点开能看到原话，漏掉的人没人知道。
 
 ## 任务
 
-下面是一组写法相近的能力词，括号里是人数（写了它、它的其他写法或它下面任一个词的人）。组里可能有之前判成同一件事的写法，每个词照样按下面的标准重新判，不沿用之前的结论。对每个词判两件事：sameAs 和 parent。每个词一条 judgment：word 原样照抄；why 先用一句话说理由；再给 sameAs 和 parent，没有的写空字符串。每个词都要有一条。
+下面是一组写法相近的短说法，括号里是人数（写了它、它的其他写法或它下面任一个词的人）。组里可能有之前判成同一件事的写法，每个词照样按下面的标准重新判，不沿用之前的结论。对每个词判两件事：sameAs 和 parent。每个词一条 judgment：word 原样照抄；why 先用一句话说理由；再给 sameAs 和 parent，没有的写空字符串。每个词都要有一条。
 
 ## 同一件事（sameAs）
 
@@ -76,7 +78,7 @@ export const GUIDE = `## 背景
 
 检验方法：招聘要求里写更宽的词，写了这个词的人都符合。也就是这个词是更宽的词的一种，只是限定了行业、对象、产品、渠道或技术。「销售数据分析」属于「数据分析」，「技术招聘」属于「招聘」，「品牌营销」属于「营销」。「团队培训」不属于「团队管理」，做过培训不等于管过团队；「数据分析报告」不属于「数据分析」，写报告不等于会分析。环节、产出物、工具、平台都不属于它服务的那项能力。
 
-更宽的词可以不在这组里，也可以是简历里没人写过的，由你起名。这个名字会直接成为筛选栏里的一项，所以它得是招聘的人会点的能力词：招聘要求里「熟悉 ___」「有 ___ 经验」能填进去的业务通名，一般不超过八个字，不带动作、程度词，不带「能力」「相关」「工作」这类字。「销售数据分析」的更宽的词写「数据分析」，不写「数据相关」「分析能力」。别的组也在各自起名，用这项能力最通行的叫法，几组起出来的才会是同一个词。
+更宽的词可以不在这组里，也可以是简历里没人写过的，由你起名。写法相近的词才分在一组，所以最常见的更宽的词往往不在组里：按招聘时的行当去想，岗位名属于它所在的那一行。这个名字会成为筛选栏里的一项，也是招聘的人搜索时会输入的词，所以它得是：招聘要求里「熟悉 ___」「有 ___ 经验」能填进去的业务通名，一般不超过八个字，不带动作、程度词，不带「能力」「相关」「工作」这类字。「销售数据分析」的更宽的词写「数据分析」，不写「数据相关」「分析能力」。别的组也在各自起名，用这项能力最通行的叫法，几组起出来的才会是同一个词。
 
 写最近的一层：「电商销售数据分析」属于「销售数据分析」，不直接写「数据分析」。更宽的词永远是更宽的那个：「数据分析」不属于「销售数据分析」。`;
 
@@ -111,7 +113,7 @@ export async function read(client: CorpusClient): Promise<Table> {
 		canonical: string;
 		parent: string | null;
 		reviewed_at: Date;
-	}>("select word, canonical, parent, reviewed_at from skill_term");
+	}>("select word, canonical, parent, reviewed_at from term");
 	const table: Table = new Map(
 		rows.map((row) => [
 			row.word,
@@ -132,7 +134,7 @@ export async function read(client: CorpusClient): Promise<Table> {
 async function write(client: CorpusClient, decisions: [string, Decision][]) {
 	if (decisions.length === 0) return;
 	await client.query(
-		`insert into skill_term (word, canonical, parent, reviewed_at)
+		`insert into term (word, canonical, parent, reviewed_at)
 		 select * from unnest($1::text[], $2::text[], $3::text[], $4::timestamptz[])
 		 on conflict (word) do update
 		 set canonical = excluded.canonical,
@@ -174,30 +176,31 @@ export async function askModel(
  */
 async function vocabulary(client: CorpusClient) {
 	const { rows } = await client.query<{ word: string; people: string }>(
-		`with recursive term(word) as (
-		   select word from skill_term where word = canonical
+		`with recursive head(word) as (
+		   select word from term where word = canonical
 		   union
 		   select p.text from phrase p
 		   where exists (select 1 from experience_phrase ep
-		                 where ep.phrase_id = p.id and ep.route = 'skill')
-		     and not exists (select 1 from skill_term t where t.word = p.text)
+		                 where ep.phrase_id = p.id and ep.route = any($1::text[]))
+		     and not exists (select 1 from term t where t.word = p.text)
 		 ), under(term, word) as (
-		   select word, word from term
+		   select word, word from head
 		   union
-		   select canonical, word from skill_term where word <> canonical
+		   select canonical, word from term where word <> canonical
 		   union
 		   select u.term, a.word from under u
-		   join skill_term c on c.parent = u.word
-		   join skill_term a on a.canonical = c.word
+		   join term c on c.parent = u.word
+		   join term a on a.canonical = c.word
 		 )
 		 select u.term as word, count(distinct e.emp_id) as people
 		 from under u
-		 join term t on t.word = u.term
+		 join head h on h.word = u.term
 		 join phrase p on p.text = u.word
-		 join experience_phrase ep on ep.phrase_id = p.id and ep.route = 'skill'
+		 join experience_phrase ep on ep.phrase_id = p.id and ep.route = any($1::text[])
 		 join experience e on e.id = ep.experience_id
 		 group by u.term
 		 order by u.term`,
+		[[...SHORT_ROUTES]],
 	);
 	const { rows: spellings } = await client.query<{
 		word: string;
@@ -205,13 +208,14 @@ async function vocabulary(client: CorpusClient) {
 		people: string;
 	}>(
 		`select t.word, t.canonical, count(distinct e.emp_id) as people
-		 from skill_term t
+		 from term t
 		 join phrase p on p.text = t.word
-		 join experience_phrase ep on ep.phrase_id = p.id and ep.route = 'skill'
+		 join experience_phrase ep on ep.phrase_id = p.id and ep.route = any($1::text[])
 		 join experience e on e.id = ep.experience_id
 		 where t.word <> t.canonical
 		 group by t.word, t.canonical
 		 order by t.word`,
+		[[...SHORT_ROUTES]],
 	);
 	const aliases = new Map<string, Member[]>();
 	for (const row of spellings)

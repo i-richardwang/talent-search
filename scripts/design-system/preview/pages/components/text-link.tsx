@@ -90,7 +90,7 @@ export function TextLinkPage() {
 					"颜色、字重、字号跟着所在的字走，调用处在外层写，不给链接另染颜色。",
 					"整块可点的名单行用 Block 的 BlockLink，按钮样子的跳转用 Button 的 render，不用它。",
 				],
-				usage: `<TextLink render={<Link params={{ word }} to="/skills/$word" />}>\n  {word}\n</TextLink>`,
+				usage: `<TextLink render={<Link params={{ word }} to="/terms/$word" />}>\n  {word}\n</TextLink>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用文字链接" },

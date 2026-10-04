@@ -4,20 +4,20 @@ import { DrawerDescription } from "#/components/ui/drawer";
 import { List, ListItem } from "#/components/ui/list";
 import { TextLink } from "#/components/ui/text-link";
 import { integer } from "#/lib/format";
-import type { SkillDetail } from "#/server/skills";
+import type { TermDetail } from "#/server/terms";
 import {
 	DETAIL_LABEL_WIDTH,
 	DetailDrawer,
 	DetailSection,
 } from "../../-components/detail-drawer";
-import { daysAgo } from "./skill-table";
+import { daysAgo } from "./term-table";
 
 /** 一个词的释义、人数、往上属于谁、往下带着谁。 */
 export function TermRecord({
 	term,
 	close,
 }: {
-	term: SkillDetail;
+	term: TermDetail;
 	close: () => void;
 }) {
 	return (
@@ -80,10 +80,10 @@ export function TermRecord({
 function termRoute(word: string) {
 	return (
 		<Link
-			from="/skills/$word"
+			from="/terms/$word"
 			params={{ word }}
 			search={(prev) => prev}
-			to="/skills/$word"
+			to="/terms/$word"
 		/>
 	);
 }

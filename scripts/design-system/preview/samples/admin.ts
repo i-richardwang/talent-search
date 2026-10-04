@@ -1,11 +1,11 @@
 import { PAGE_SIZE, pageAt, RUNS_PAGE, tablePage } from "#/lib/paging";
 import type { EmployeeRow, SegmentView } from "#/server/data";
-import type { SkillDetail, SkillEntry } from "#/server/skills";
 import type { CorpusCounts, TaskLane, TaskRunView } from "#/server/tasks";
+import type { TermDetail, TermEntry } from "#/server/terms";
 import { EMPLOYEES, EXPERIENCES, experiencesOf } from "./people";
 
 /*
- * 管理页：任务台的运行记录、库存数、数据页与技能页的表。
+ * 管理页：任务台的运行记录、库存数、数据页与「标签」页的表。
  * 人名、工号、公司、部门、学校全是编的，和人才库无关；类型都从产品代码导入。
  */
 
@@ -164,10 +164,10 @@ export const EMPLOYEE_ROWS: EmployeeRow[] = [
 ];
 
 /**
- * 技能页那张表，按人数从多到少排：「推荐系统」一支和它上下的词。
+ * 「标签」页那张表，按人数从多到少排：「推荐系统」一支和它上下的词。
  * 点开的那个词（`SKILL_DETAIL`）从这里取。
  */
-export const SKILL_ROWS: SkillEntry[] = [
+export const SKILL_ROWS: TermEntry[] = [
 	{
 		canonical: "机器学习",
 		parent: null,
@@ -226,16 +226,16 @@ export const SKILL_ROWS: SkillEntry[] = [
 	},
 ];
 
-/** 技能页上点开的一个词：「推荐系统」。关系与人数从技能表的行里取，释义是它自己的。 */
-export const SKILL_DETAIL: SkillDetail = detailOf(
+/** 「标签」页上点开的一个词：「推荐系统」。关系与人数从词表的行里取，释义是它自己的。 */
+export const SKILL_DETAIL: TermDetail = detailOf(
 	"推荐系统",
 	"为用户挑选内容或商品的系统，含召回、排序与效果评估。",
 );
 
-/** 技能表里一个词点开后的样子：它那一行，加上往上一层与往下一层的词。 */
-function detailOf(canonical: string, gloss: string): SkillDetail {
+/** 词表里一个词点开后的样子：它那一行，加上往上一层与往下一层的词。 */
+function detailOf(canonical: string, gloss: string): TermDetail {
 	const row = SKILL_ROWS.find((entry) => entry.canonical === canonical);
-	if (!row) throw new Error(`技能表里没有 ${canonical}`);
+	if (!row) throw new Error(`词表里没有 ${canonical}`);
 	const parent = SKILL_ROWS.find((entry) => entry.canonical === row.parent);
 	return {
 		aliases: row.aliases,

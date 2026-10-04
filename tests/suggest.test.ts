@@ -14,7 +14,7 @@ const { suggest } = await import("#/search/search");
 describe("关键词候选", () => {
 	before(async () => {
 		const { db } = await import("#/db");
-		const { skillTerm } = await import("#/db/schema");
+		const { term } = await import("#/db/schema");
 		await seed([
 			{
 				empId: "S001",
@@ -53,7 +53,7 @@ describe("关键词候选", () => {
 			},
 		]);
 		const reviewedAt = new Date();
-		await db.insert(skillTerm).values([
+		await db.insert(term).values([
 			{ word: "推荐系统", canonical: "推荐系统", reviewedAt },
 			{ word: "个性化推荐", canonical: "推荐系统", reviewedAt },
 			// 词表里有、语料里没人写过的词不给

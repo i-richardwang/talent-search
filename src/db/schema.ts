@@ -189,18 +189,18 @@ export const taskRun = pgTable("task_run", {
 	error: text("error"),
 });
 
-/** 能力词的标准写法与宽细归属。词表跨语料保留，不改经历上的原始说法。 */
-export const skillTerm = pgTable(
-	"skill_term",
+/** 词表：短说法的标准写法与宽细归属。跨语料保留，不改经历上的原始说法。 */
+export const term = pgTable(
+	"term",
 	{
 		word: text("word").primaryKey(),
 		canonical: text("canonical").notNull(),
-		parent: text("parent").references((): AnyPgColumn => skillTerm.word),
+		parent: text("parent").references((): AnyPgColumn => term.word),
 		reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
 	},
 	(t) => [
 		check(
-			"skill_term_parent_on_canonical_1",
+			"term_parent_on_canonical",
 			sql`${t.parent} is null or (${t.canonical} = ${t.word} and ${t.parent} <> ${t.word})`,
 		),
 	],
@@ -209,7 +209,7 @@ export const skillTerm = pgTable(
 const GROUP_KINDS = ["group", "gloss"] as const;
 export type GroupKind = (typeof GROUP_KINDS)[number];
 
-/** 待判队列。归并组写 skill_term，释义组写 phrase_gloss；生效或过期后删除。 */
+/** 待判队列。归并组写 term，释义组写 phrase_gloss；生效或过期后删除。 */
 export const reviewGroup = pgTable(
 	"review_group",
 	{
@@ -253,8 +253,11 @@ export const EXTRACTED_ROUTES = [
 	"skill",
 	"did",
 ] as const satisfies readonly Route[];
-/** 当前仍有这些边的说法使用释义；收集、计数、版本核验与召回共用此范围。 */
-export const GLOSSED_ROUTES = [
+/**
+ * 短说法：几个字的能力词、做过的事、入职前岗位名。只有当前仍有这些边的说法使用释义、
+ * 进词表；释义和词表的收集、计数、版本核验与召回共用此范围。
+ */
+export const SHORT_ROUTES = [
 	"skill",
 	"did",
 	"title",

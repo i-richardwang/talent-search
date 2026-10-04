@@ -1,11 +1,11 @@
 /**
- * 当前短说法的释义整理。适用路线由 GLOSSED_ROUTES 定义；缺释义或标准过期的文本
+ * 当前短说法的释义整理。适用路线由 SHORT_ROUTES 定义；缺释义或标准过期的文本
  * 按向量相近程度组批，提交的释义写入 phrase_gloss，供重排读取「说法：释义」。
  */
 
 import "@tanstack/react-start/server-only";
 import { z } from "zod";
-import { GLOSSED_ROUTES } from "#/db/schema";
+import { SHORT_ROUTES } from "#/db/schema";
 import { complete, reviewModel, standardOf } from "#/server/chat";
 import {
 	busyWords,
@@ -119,7 +119,7 @@ export async function collectGlosses(
 		     where g.text = p.text and g.guide_identity = $3)
 		   and p.text <> all($2::text[])
 		 group by p.id`,
-		[[...GLOSSED_ROUTES], [...busy], identity],
+		[[...SHORT_ROUTES], [...busy], identity],
 	);
 	const { rows: total } = await client.query<{ n: number }>(
 		"select count(*)::int as n from gloss_pool",
@@ -236,7 +236,7 @@ export async function glossCounts(
 		 from phrase p
 		 where exists (select 1 from experience_phrase ep
 		               where ep.phrase_id = p.id and ep.route = any($1::text[]))`,
-		[[...GLOSSED_ROUTES], glossIdentity()],
+		[[...SHORT_ROUTES], glossIdentity()],
 	);
 	return rows[0] ?? { glossable: 0, glossed: 0 };
 }

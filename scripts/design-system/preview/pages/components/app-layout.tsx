@@ -221,7 +221,7 @@ function Headers() {
 						<TableCell>
 							<Block padding={0} variant="outlined">
 								<NavHeader
-									left={<NavHeaderTitle as="h2">技能</NavHeaderTitle>}
+									left={<NavHeaderTitle as="h2">标签</NavHeaderTitle>}
 									right={
 										<ActionIcon aria-label="关闭" icon={XIcon} size="header" />
 									}

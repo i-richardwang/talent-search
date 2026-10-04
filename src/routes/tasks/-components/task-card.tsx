@@ -134,7 +134,7 @@ export function TaskCard({
 				<div className="flex flex-col gap-4">
 					{kind === "review" && judge === "off" && (
 						<Alert
-							title="自动整理已关闭，技能与释义不再更新"
+							title="自动整理已关闭，标签与释义不再更新"
 							type="secondary"
 						/>
 					)}

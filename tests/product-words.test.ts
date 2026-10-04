@@ -12,7 +12,7 @@ import ts from "typescript";
 import { internalWordsIn } from "#/lib/internal-words";
 
 /** 管理页的读者是管理员；`api/` 是给外部判定方的接口，不上屏。 */
-const ADMIN = /^src\/routes\/(api\/|tasks|skills|data)/;
+const ADMIN = /^src\/routes\/(api\/|tasks|terms|data)/;
 
 function sources(dir: string): string[] {
 	return readdirSync(dir, { withFileTypes: true, recursive: true })

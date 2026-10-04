@@ -3,7 +3,7 @@
  * HR 不懂「词表」「条件表」，也不关心 AI 「查词」查了几次。
  *
  * 两处检查它：界面文案的测试（`tests/product-words.test.ts`）扫搜索相关页面的全部
- * 字面文字，`eval:understand` 查模型写给 HR 看的说明。管理页（任务、技能、数据）
+ * 字面文字，`eval:understand` 查模型写给 HR 看的说明。管理页（任务、标签、数据）
  * 的读者是管理员，不在此列。
  */
 const INTERNAL_WORDS = [

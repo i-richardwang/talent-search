@@ -3,9 +3,9 @@ import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { AdminPage } from "#/routes/-components/admin-page";
 import { EmployeeRecord } from "#/routes/data/-components/employee-drawer";
 import { EmployeeTable } from "#/routes/data/-components/employee-table";
-import { SkillTable } from "#/routes/skills/-components/skill-table";
-import { TermRecord } from "#/routes/skills/-components/term-drawer";
 import { TaskBoard } from "#/routes/tasks/-components/task-board";
+import { TermRecord } from "#/routes/terms/-components/term-drawer";
+import { TermTable } from "#/routes/terms/-components/term-table";
 import { Routed } from "../../routed";
 import {
 	CORPUS_COUNTS,
@@ -19,23 +19,23 @@ import { EMPLOYEES } from "../../samples/people";
 import { LayoutSwitch, Shell } from "./home";
 
 /*
- * 管理页：`src/routes/-components/admin-page.tsx` 的外壳里放任务、数据、技能三页的
- * 产品内容（`task-board.tsx`、`employee-table.tsx`、`skill-table.tsx`）。哪一页由内存
+ * 管理页：`src/routes/-components/admin-page.tsx` 的外壳里放任务、数据、词表三页的
+ * 产品内容（`task-board.tsx`、`employee-table.tsx`、`term-table.tsx`）。哪一页由内存
  * router 的地址决定，导航栏「管理」一组的三项和页底的切换都能换。服务端函数
  * 在设计系统里是调用即失败的桩：找词和翻页按地址上的 `q`、`page` 在样例上算，
  * 一页的行数是产品的 `pageAt` 给的；「立即运行」和「日志」落在各自取不到的那一支。
  * 点开 Talent 0101 或「推荐系统」那一行，右侧出产品的详情抽屉（样例只备了这两份）。
  */
 
-type Page = "tasks" | "data" | "skills";
+type Page = "tasks" | "data" | "terms";
 
-/** 地址在 `/data` 下是数据页，`/skills` 下是技能页，其余是任务页。 */
+/** 地址在 `/data` 下是数据页，`/terms` 下是「标签」页，其余是任务页。 */
 function usePage(): Page {
 	return useRouterState({
 		select: (state) => {
 			const path = state.location.pathname;
 			if (path.startsWith("/data")) return "data";
-			if (path.startsWith("/skills")) return "skills";
+			if (path.startsWith("/terms")) return "terms";
 			return "tasks";
 		},
 	});
@@ -99,8 +99,8 @@ function Data() {
 	);
 }
 
-/** 技能页：词本身、其他写法或所属的词里有这个词就算匹配。 */
-function Skills() {
+/** 「标签」页：词本身、其他写法或所属的词里有这个词就算匹配。 */
+function Terms() {
 	const { opened, page, q } = useListView();
 	const found = SKILL_ROWS.filter((row) =>
 		[row.canonical, ...row.aliases, row.parent ?? ""].some((word) =>
@@ -110,11 +110,11 @@ function Skills() {
 	const navigate = useNavigate();
 	const word = opened && decodeURIComponent(opened);
 	return (
-		<AdminPage title="技能">
-			<SkillTable q={q} selected={word} table={pageOfRows(found, page)} />
+		<AdminPage title="标签">
+			<TermTable q={q} selected={word} table={pageOfRows(found, page)} />
 			{word === SKILL_DETAIL.canonical && (
 				<TermRecord
-					close={() => void navigate({ search: { page, q }, to: "/skills" })}
+					close={() => void navigate({ search: { page, q }, to: "/terms" })}
 					term={SKILL_DETAIL}
 				/>
 			)}
@@ -124,13 +124,7 @@ function Skills() {
 
 function Admin() {
 	const page = usePage();
-	return page === "data" ? (
-		<Data />
-	) : page === "skills" ? (
-		<Skills />
-	) : (
-		<Tasks />
-	);
+	return page === "data" ? <Data /> : page === "terms" ? <Terms /> : <Tasks />;
 }
 
 function PageSwitch() {
@@ -148,7 +142,7 @@ function PageSwitch() {
 			options={[
 				{ label: "任务", value: "tasks" },
 				{ label: "数据", value: "data" },
-				{ label: "技能", value: "skills" },
+				{ label: "标签", value: "terms" },
 			]}
 			value={usePage()}
 		/>

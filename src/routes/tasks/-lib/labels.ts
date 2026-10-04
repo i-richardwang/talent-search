@@ -45,7 +45,7 @@ export const LANE_FACTS: Record<TaskKind, (corpus: CorpusCounts) => LaneFacts> =
 		}),
 		review: (corpus) => ({
 			counts: [
-				{ label: "个技能", value: corpus.words },
+				{ label: "个标签", value: corpus.words },
 				{ label: "种写法已归并", value: corpus.merged },
 			],
 			progress: {

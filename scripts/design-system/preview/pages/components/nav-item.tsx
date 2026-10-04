@@ -135,7 +135,7 @@ function Usage() {
 	const [open, setOpen] = useState<string[]>(["recent"]);
 	const admin = [
 		{ icon: TableIcon, key: "data", label: "数据" },
-		{ icon: TagsIcon, key: "skills", label: "技能" },
+		{ icon: TagsIcon, key: "terms", label: "标签" },
 		{ icon: ActivityIcon, key: "tasks", label: "任务" },
 	];
 	return (

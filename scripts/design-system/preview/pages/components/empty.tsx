@@ -101,12 +101,12 @@ function Appearances() {
 						<TableCell className="font-mono text-xs">simple</TableCell>
 						<TableCell>
 							<Empty
-								description="经历处理完成后，这里会列出技能及相关写法。"
-								title="还没有技能"
+								description="经历解析完成后，这里会列出简历里读出的标签及相关写法。"
+								title="还没有标签"
 							/>
 						</TableCell>
 						<TableCell>
-							<Empty title="没有匹配的技能" />
+							<Empty title="没有匹配的标签" />
 						</TableCell>
 					</TableRow>
 					<TableRow>
@@ -164,7 +164,7 @@ function Usage() {
 				title="表内搜不到"
 			>
 				<Block className="w-full overflow-hidden" variant="outlined">
-					<Empty title="没有匹配的技能" />
+					<Empty title="没有匹配的标签" />
 				</Block>
 			</Example>
 			<Example

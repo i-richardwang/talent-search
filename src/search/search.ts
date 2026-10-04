@@ -11,7 +11,12 @@
 import "@tanstack/react-start/server-only";
 import { inArray, type SQL, sql } from "drizzle-orm";
 import { db } from "#/db";
-import { EXTRACTED_ROUTES, employee, experience } from "#/db/schema";
+import {
+	EXTRACTED_ROUTES,
+	employee,
+	experience,
+	SHORT_ROUTES,
+} from "#/db/schema";
 import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
 import { dots } from "#/lib/format";
 import { escapeLike } from "#/lib/sql";
@@ -139,7 +144,7 @@ export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 				from q
 				join experience_phrase ep on ep.phrase_id = q.phrase_id and ep.route = 'skill'
 				join phrase ph on ph.id = ep.phrase_id
-				left join skill_term t on t.word = ph.text
+				left join term t on t.word = ph.text
 				join experience e on e.id = ep.experience_id
 				where not e.unemployed
 				group by q.claim_idx, 2
@@ -276,10 +281,10 @@ const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 		with recursive up(word) as (
 			select coalesce(t.canonical, ph.text)
 			from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
-			left join skill_term t on t.word = ph.text
+			left join term t on t.word = ph.text
 			where ep.experience_id = e.id and ep.route = 'skill'
 			union
-			select t.parent from up join skill_term t on t.word = up.word
+			select t.parent from up join term t on t.word = up.word
 			where t.parent is not null
 		)
 		select word from up order by word)`,
@@ -893,15 +898,15 @@ export async function search(
  */
 export const UNDER = sql`
 	with recursive under(term, word) as (
-		select canonical, word from skill_term
+		select canonical, word from term
 		union
 		select u.term, a.word from under u
-		join skill_term c on c.parent = u.word
-		join skill_term a on a.canonical = c.word
+		join term c on c.parent = u.word
+		join term a on a.canonical = c.word
 	)`;
 
 /**
- * 一个标准词底下有多少人，和筛选栏「入职前技能」同一口径：写了它、它的其他写法，
+ * 一个标准词底下有多少人，和检索顺着词表往下带的是同一批：短说法里写了它、它的其他写法，
  * 或它任一项细分的人，各算一次。词表里的词有可能已经不在语料里（写它的人的简历
  * 改了），那就是 0。
  */
@@ -910,7 +915,10 @@ export function peopleUnder(term: SQL | string) {
 		select count(distinct e.emp_id)::int
 		from under u
 		join phrase p on p.text = u.word
-		join experience_phrase ep on ep.phrase_id = p.id and ep.route = 'skill'
+		join experience_phrase ep on ep.phrase_id = p.id and ep.route in (${sql.join(
+			SHORT_ROUTES.map((route) => sql`${route}`),
+			sql`, `,
+		)})
 		join experience e on e.id = ep.experience_id
 		where u.term = ${term} and not e.unemployed), 0)`;
 }
@@ -935,7 +943,7 @@ export async function suggest(
 			select value from (
 				select a.canonical as value, ${peopleUnder(sql`a.canonical`)} as people,
 					bool_or(a.word ilike ${prefix}) as lead
-				from skill_term a
+				from term a
 				where a.word ilike ${contains}
 				group by a.canonical
 			) t

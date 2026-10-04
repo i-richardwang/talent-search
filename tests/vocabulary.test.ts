@@ -37,10 +37,10 @@ async function seedTable(rows: SeedRow[]) {
 	const connection = await client();
 	try {
 		await connection.query("delete from review_group");
-		await connection.query("delete from skill_term");
+		await connection.query("delete from term");
 		for (const [word, canonical, reviewedAt, parent] of rows)
 			await connection.query(
-				"insert into skill_term (word, canonical, parent, reviewed_at) values ($1, $2, $3, $4)",
+				"insert into term (word, canonical, parent, reviewed_at) values ($1, $2, $3, $4)",
 				[word, canonical, parent ?? null, reviewedAt],
 			);
 	} finally {
@@ -164,9 +164,7 @@ describe("读表", () => {
 		]);
 		const connection = await client();
 		try {
-			await connection.query(
-				"update skill_term set parent = '乙' where word = '甲'",
-			);
+			await connection.query("update term set parent = '乙' where word = '甲'");
 			await assert.rejects(() => read(connection), /的归属成环/);
 		} finally {
 			connection.release();
@@ -415,7 +413,7 @@ describe("判定交给外部", () => {
 		try {
 			// 「销售数据分析」是上一轮判定方起的，没人在简历里写过；让它到期
 			await connection.query(
-				"update skill_term set reviewed_at = $1 where word = '销售数据分析'",
+				"update term set reviewed_at = $1 where word = '销售数据分析'",
 				[OLD],
 			);
 		} finally {
@@ -484,7 +482,7 @@ describe("判定交给外部", () => {
 		try {
 			await connection.query("delete from review_group");
 			await connection.query(
-				"update skill_term set reviewed_at = $1 where word = '销售数据分析'",
+				"update term set reviewed_at = $1 where word = '销售数据分析'",
 				[OLD],
 			);
 		} finally {

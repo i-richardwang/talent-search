@@ -65,10 +65,10 @@ function Playground() {
 				}
 			>
 				<Searchable
-					label="搜索技能"
+					label="搜索标签"
 					loading={loading}
 					onSearched={setSearched}
-					placeholder="搜索技能、写法或所属的词"
+					placeholder="搜索标签、写法或所属的标签"
 				/>
 			</Stage>
 		</div>
@@ -88,14 +88,14 @@ function States() {
 				<TableBody>
 					<TableRow>
 						<TableCell>
-							<Searchable label="搜索技能" placeholder="搜索技能" />
+							<Searchable label="搜索标签" placeholder="搜索标签" />
 						</TableCell>
 						<TableCell>
 							<Searchable
 								initial="推荐系统"
-								label="搜索技能"
+								label="搜索标签"
 								loading
-								placeholder="搜索技能"
+								placeholder="搜索标签"
 							/>
 						</TableCell>
 					</TableRow>
@@ -109,10 +109,10 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="技能页的表上方：按词、写法或所属的词找，回车换一页结果。"
-				title="技能页找词"
+				description="「标签」页的表上方：按词、写法或所属的词找，回车换一页结果。"
+				title="「标签」页找词"
 			>
-				<Searchable label="搜索技能" placeholder="搜索技能、写法或所属的词" />
+				<Searchable label="搜索标签" placeholder="搜索标签、写法或所属的标签" />
 			</Example>
 			<Example
 				description="数据页的表上方，框里是地址上那一次搜索的词，清空就回到整张表。"
@@ -140,7 +140,7 @@ export function SearchBarPage() {
 					"结果还在取时给 loading，前面的搜索图标换成转圈，框照常可输入。",
 					"按 mod+k 把焦点移进框里，所以一页只放一个 SearchBar；框空着、没焦点时右端提示这组键。",
 				],
-				usage: `<SearchBar\n  aria-label="搜索技能"\n  onChange={setNeedle}\n  onSearch={(q) => navigate({ search: { q } })}\n  placeholder="搜索技能、写法或所属的词"\n  value={needle}\n/>`,
+				usage: `<SearchBar\n  aria-label="搜索标签"\n  onChange={setNeedle}\n  onSearch={(q) => navigate({ search: { q } })}\n  placeholder="搜索标签、写法或所属的标签"\n  value={needle}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用搜索框" },

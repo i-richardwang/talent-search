@@ -19,7 +19,7 @@ const { findNames, findTerms, search, vocabulary } = await import(
 
 before(async () => {
 	const { db } = await import("#/db");
-	const { skillTerm } = await import("#/db/schema");
+	const { term } = await import("#/db/schema");
 	const external = (org: string, skills: string[]) => ({
 		kind: "external" as const,
 		months: 24,
@@ -49,6 +49,11 @@ before(async () => {
 				},
 			],
 		},
+		...Array.from({ length: 2 }, (_, i) => ({
+			empId: `E${i}`,
+			name: `戊${i}`,
+			segments: [external("星图工作室", ["星图测绘"])],
+		})),
 		...Array.from({ length: 40 }, (_, i) => ({
 			empId: `D${i}`,
 			name: `丁${i}`,
@@ -57,7 +62,7 @@ before(async () => {
 		})),
 	]);
 	const reviewedAt = new Date();
-	await db.insert(skillTerm).values([
+	await db.insert(term).values([
 		{ word: "推荐系统", canonical: "推荐系统", reviewedAt },
 		{ word: "个性化推荐", canonical: "推荐系统", reviewedAt },
 	]);
@@ -91,7 +96,14 @@ describe("查经历词", () => {
 		// 两种写法并成一个标准词、8 人；原文只计人数
 		const [found] = await findTerms(["推荐"]);
 		assert.deepEqual(found?.terms, [{ name: "推荐系统", people: 8 }]);
-		const [few] = await findTerms(["个性化推荐"]);
+		const [same] = await findTerms(["个性化推荐"]);
+		assert.deepEqual(
+			same?.terms,
+			[{ name: "推荐系统", people: 8 }],
+			"同一件事的写法顺着词表一起找到",
+		);
+		const [few] = await findTerms(["星图测绘"]);
+		assert.equal(few?.people, 2);
 		assert.deepEqual(few?.terms, [], "只有两个人写过，不给");
 	});
 

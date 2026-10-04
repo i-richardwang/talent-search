@@ -11,12 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DataRouteRouteImport } from './routes/data/route'
-import { Route as SkillsRouteRouteImport } from './routes/skills/route'
 import { Route as TasksRouteRouteImport } from './routes/tasks/route'
+import { Route as TermsRouteRouteImport } from './routes/terms/route'
 import { Route as ApiReviewRouteImport } from './routes/api/review'
 import { Route as DataEmpIdRouteImport } from './routes/data/$empId'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
-import { Route as SkillsWordRouteImport } from './routes/skills/$word'
+import { Route as TermsWordRouteImport } from './routes/terms/$word'
 import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,14 +29,14 @@ const DataRouteRoute = DataRouteRouteImport.update({
   path: '/data',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SkillsRouteRoute = SkillsRouteRouteImport.update({
-  id: '/skills',
-  path: '/skills',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const TasksRouteRoute = TasksRouteRouteImport.update({
   id: '/tasks',
   path: '/tasks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRouteRoute = TermsRouteRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiReviewRoute = ApiReviewRouteImport.update({
@@ -54,10 +54,10 @@ const STurnIdRouteRoute = STurnIdRouteRouteImport.update({
   path: '/s/$turnId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SkillsWordRoute = SkillsWordRouteImport.update({
+const TermsWordRoute = TermsWordRouteImport.update({
   id: '/$word',
   path: '/$word',
-  getParentRoute: () => SkillsRouteRoute,
+  getParentRoute: () => TermsRouteRoute,
 } as any)
 const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
   id: '/p/$empId',
@@ -68,35 +68,35 @@ const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/data': typeof DataRouteRouteWithChildren
-  '/skills': typeof SkillsRouteRouteWithChildren
   '/tasks': typeof TasksRouteRoute
+  '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
-  '/skills/$word': typeof SkillsWordRoute
+  '/terms/$word': typeof TermsWordRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/data': typeof DataRouteRouteWithChildren
-  '/skills': typeof SkillsRouteRouteWithChildren
   '/tasks': typeof TasksRouteRoute
+  '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
-  '/skills/$word': typeof SkillsWordRoute
+  '/terms/$word': typeof TermsWordRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/data': typeof DataRouteRouteWithChildren
-  '/skills': typeof SkillsRouteRouteWithChildren
   '/tasks': typeof TasksRouteRoute
+  '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
-  '/skills/$word': typeof SkillsWordRoute
+  '/terms/$word': typeof TermsWordRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRouteTypes {
@@ -104,42 +104,42 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/data'
-    | '/skills'
     | '/tasks'
+    | '/terms'
     | '/s/$turnId'
     | '/api/review'
     | '/data/$empId'
-    | '/skills/$word'
+    | '/terms/$word'
     | '/s/$turnId/p/$empId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/data'
-    | '/skills'
     | '/tasks'
+    | '/terms'
     | '/s/$turnId'
     | '/api/review'
     | '/data/$empId'
-    | '/skills/$word'
+    | '/terms/$word'
     | '/s/$turnId/p/$empId'
   id:
     | '__root__'
     | '/'
     | '/data'
-    | '/skills'
     | '/tasks'
+    | '/terms'
     | '/s/$turnId'
     | '/api/review'
     | '/data/$empId'
-    | '/skills/$word'
+    | '/terms/$word'
     | '/s/$turnId/p/$empId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DataRouteRoute: typeof DataRouteRouteWithChildren
-  SkillsRouteRoute: typeof SkillsRouteRouteWithChildren
   TasksRouteRoute: typeof TasksRouteRoute
+  TermsRouteRoute: typeof TermsRouteRouteWithChildren
   STurnIdRouteRoute: typeof STurnIdRouteRouteWithChildren
   ApiReviewRoute: typeof ApiReviewRoute
 }
@@ -160,18 +160,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DataRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/skills': {
-      id: '/skills'
-      path: '/skills'
-      fullPath: '/skills'
-      preLoaderRoute: typeof SkillsRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/tasks': {
       id: '/tasks'
       path: '/tasks'
       fullPath: '/tasks'
       preLoaderRoute: typeof TasksRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/review': {
@@ -195,12 +195,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof STurnIdRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/skills/$word': {
-      id: '/skills/$word'
+    '/terms/$word': {
+      id: '/terms/$word'
       path: '/$word'
-      fullPath: '/skills/$word'
-      preLoaderRoute: typeof SkillsWordRouteImport
-      parentRoute: typeof SkillsRouteRoute
+      fullPath: '/terms/$word'
+      preLoaderRoute: typeof TermsWordRouteImport
+      parentRoute: typeof TermsRouteRoute
     }
     '/s/$turnId/p/$empId': {
       id: '/s/$turnId/p/$empId'
@@ -224,16 +224,16 @@ const DataRouteRouteWithChildren = DataRouteRoute._addFileChildren(
   DataRouteRouteChildren,
 )
 
-interface SkillsRouteRouteChildren {
-  SkillsWordRoute: typeof SkillsWordRoute
+interface TermsRouteRouteChildren {
+  TermsWordRoute: typeof TermsWordRoute
 }
 
-const SkillsRouteRouteChildren: SkillsRouteRouteChildren = {
-  SkillsWordRoute: SkillsWordRoute,
+const TermsRouteRouteChildren: TermsRouteRouteChildren = {
+  TermsWordRoute: TermsWordRoute,
 }
 
-const SkillsRouteRouteWithChildren = SkillsRouteRoute._addFileChildren(
-  SkillsRouteRouteChildren,
+const TermsRouteRouteWithChildren = TermsRouteRoute._addFileChildren(
+  TermsRouteRouteChildren,
 )
 
 interface STurnIdRouteRouteChildren {
@@ -251,8 +251,8 @@ const STurnIdRouteRouteWithChildren = STurnIdRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DataRouteRoute: DataRouteRouteWithChildren,
-  SkillsRouteRoute: SkillsRouteRouteWithChildren,
   TasksRouteRoute: TasksRouteRoute,
+  TermsRouteRoute: TermsRouteRouteWithChildren,
   STurnIdRouteRoute: STurnIdRouteRouteWithChildren,
   ApiReviewRoute: ApiReviewRoute,
 }

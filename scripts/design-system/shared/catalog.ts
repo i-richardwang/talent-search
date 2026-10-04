@@ -234,7 +234,7 @@ const CATALOG = [
 				source: [
 					"src/routes/-components/detail-drawer.tsx",
 					"src/routes/data/-components/employee-drawer.tsx",
-					"src/routes/skills/-components/term-drawer.tsx",
+					"src/routes/terms/-components/term-drawer.tsx",
 					"src/routes/tasks/-components/task-card.tsx",
 					"src/routes/s/$turnId/-components/person.tsx",
 				],

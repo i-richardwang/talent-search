@@ -16,7 +16,7 @@ import {
 import { TextLink } from "#/components/ui/text-link";
 import { integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
-import type { SkillEntry } from "#/server/skills";
+import type { TermEntry } from "#/server/terms";
 import { listSearch, useSearchDraft } from "../../-components/admin-page";
 import { TablePager } from "../../-components/table-pager";
 
@@ -25,21 +25,21 @@ export function daysAgo(days: number) {
 }
 
 /**
- * 技能页的内容：找词，和词表那张表。`selected` 是右侧开着详情的词；`pending` 是换词
+ * 词表页的内容：找词，和词表那张表。`selected` 是右侧开着详情的词；`pending` 是换词
  * 或翻页后新的一页还没取回，表体画同样行数的占位。
  */
-export function SkillTable({
+export function TermTable({
 	table,
 	q,
 	selected,
 	pending = false,
 }: {
-	table: TablePage<SkillEntry>;
+	table: TablePage<TermEntry>;
 	q: string;
 	selected: string | undefined;
 	pending?: boolean;
 }) {
-	const navigate = useNavigate({ from: "/skills" });
+	const navigate = useNavigate({ from: "/terms" });
 	const [needle, setNeedle] = useSearchDraft(q);
 	const search = (needle: string) =>
 		void navigate({ search: listSearch(1, needle) });
@@ -47,12 +47,12 @@ export function SkillTable({
 	return (
 		<div className="flex flex-col gap-4">
 			<SearchBar
-				aria-label="搜索技能"
+				aria-label="搜索标签"
 				className="max-w-70"
 				loading={pending}
 				onChange={setNeedle}
 				onSearch={search}
-				placeholder="搜索技能、写法或所属的词"
+				placeholder="搜索标签、写法或所属的标签"
 				value={needle}
 			/>
 			<Block className="overflow-hidden" variant="outlined">
@@ -65,11 +65,13 @@ export function SkillTable({
 							) : undefined
 						}
 						description={
-							q ? undefined : "经历解析完成后，这里会列出技能及相关写法。"
+							q
+								? undefined
+								: "经历解析完成后，这里会列出简历里读出的标签及相关写法。"
 						}
 						icon={q ? SearchXIcon : TagsIcon}
 						size="large"
-						title={q ? "没有匹配的技能" : "还没有技能"}
+						title={q ? "没有匹配的标签" : "还没有标签"}
 					/>
 				) : (
 					/* 一行是一个词，表脚数「项」；人数在每一行里 */
@@ -78,7 +80,7 @@ export function SkillTable({
 						footer={
 							<TablePager
 								linkTo={(page) => (
-									<Link search={listSearch(page, q)} to="/skills" />
+									<Link search={listSearch(page, q)} to="/terms" />
 								)}
 								table={table}
 								units={{ row: "项", total: "项" }}
@@ -88,7 +90,7 @@ export function SkillTable({
 					>
 						<TableHeader>
 							<TableRow>
-								<TableHead>技能</TableHead>
+								<TableHead>标签</TableHead>
 								<TableHead className="text-end">人数</TableHead>
 								<TableHead>属于</TableHead>
 								<TableHead className="text-end">细分</TableHead>
@@ -107,7 +109,7 @@ export function SkillTable({
 									const detail = {
 										params: { word: e.canonical },
 										search: listSearch(table.page, q),
-										to: "/skills/$word",
+										to: "/terms/$word",
 									} as const;
 									return (
 										<TableRow

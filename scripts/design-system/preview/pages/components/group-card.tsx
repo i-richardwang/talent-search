@@ -62,7 +62,7 @@ function Stacked() {
 					<DescriptionsItem label="经历">5,902 段</DescriptionsItem>
 				</Descriptions>
 			</GroupCard>
-			<GroupCard desc="判定方每周重判一次" title="技能词表">
+			<GroupCard desc="判定方每周重判一次" title="词表">
 				<Descriptions>
 					<DescriptionsItem label="标准词">812 个</DescriptionsItem>
 					<DescriptionsItem label="待判">14 组</DescriptionsItem>

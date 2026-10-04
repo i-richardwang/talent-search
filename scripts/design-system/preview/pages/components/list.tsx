@@ -231,7 +231,7 @@ function Usage() {
 				</List>
 			</Example>
 			<Example
-				description="技能抽屉里的细分：一行一条链接，人数写在行尾。"
+				description="「标签」页抽屉里的细分：一行一条链接，人数写在行尾。"
 				title="细分的词"
 			>
 				<List className="w-full">
@@ -260,7 +260,7 @@ export function ListPage() {
 					"行尾放 extra（小字）或 actions（动作）之一；actions 画在链接外，一直显示。",
 					"可以多选的一串结果用 ListView：表头和每一行的第一格是选择框，整行的链接用 ListViewLink，选择格压在它上面。",
 				],
-				usage: `<List>\n  <ListItem\n    extra={people}\n    render={<Link params={{ word }} to="/skills/$word" />}\n    title={word}\n  />\n</List>`,
+				usage: `<List>\n  <ListItem\n    extra={people}\n    render={<Link params={{ word }} to="/terms/$word" />}\n    title={word}\n  />\n</List>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用列表" },

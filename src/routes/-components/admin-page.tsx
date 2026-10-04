@@ -3,7 +3,7 @@ import { type ReactNode, useRef, useState } from "react";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { PageHeader } from "./page-header";
 
-/** 三个管理页（`/data`、`/skills`、`/tasks`）共用的一屏：居中的页头和一条可滚动的内容列。 */
+/** 三个管理页（`/data`、`/terms`、`/tasks`）共用的一屏：居中的页头和一条可滚动的内容列。 */
 export function AdminPage({
 	title,
 	children,
@@ -28,10 +28,10 @@ export function AdminPage({
 }
 
 /**
- * 列表页（`/data`、`/skills`）这一刻是不是在换一批行：地址上的词或页码已经变了，
+ * 列表页（`/data`、`/terms`）这一刻是不是在换一批行：地址上的词或页码已经变了，
  * 新的一页还没取回来。打开、关上右侧的详情不算——路径变了，列表那一段地址没变。
  */
-export function useListPending(path: "/data" | "/skills") {
+export function useListPending(path: "/data" | "/terms") {
 	return useRouterState({
 		select: (state) =>
 			state.status === "pending" &&

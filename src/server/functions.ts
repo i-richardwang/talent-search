@@ -14,8 +14,8 @@ import { search, suggest } from "#/search/search";
 import { employeeData, employeeDetail, listEmployees } from "./data";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
-import { listSkills, skillDetail } from "./skills";
 import { taskLog as runLog, type TaskPages, tasksState } from "./tasks";
+import { describeTerm, listTerms } from "./terms";
 import {
 	createTurn,
 	deleteSearch,
@@ -112,20 +112,20 @@ export const deleteRecent = createServerFn({ method: "POST" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
 	.handler(({ data }) => deleteSearch(data.turnId));
 
-/** 技能页的词表：按标准词、写法或所属的词找，一页一页地给。 */
-export const skillTable = createServerFn({ method: "GET" })
+/** 词表页的表：按标准词、写法或所属的词找，一页一页地给。 */
+export const termTable = createServerFn({ method: "GET" })
 	.validator((d: { q: unknown; page: unknown }) => ({
 		q: String(d.q ?? "").slice(0, 64),
 		page: Number(d.page) || 1,
 	}))
-	.handler(({ data }) => listSkills(data.q, data.page));
+	.handler(({ data }) => listTerms(data.q, data.page));
 
-/** 技能页点开的那一个词：释义、上下从属、其他写法，各自的人数。 */
-export const skillTerm = createServerFn({ method: "GET" })
+/** 词表页点开的那一个词：释义、上下从属、其他写法，各自的人数。 */
+export const termDetail = createServerFn({ method: "GET" })
 	.validator((d: { word: unknown }) => ({
 		word: String(d.word ?? "").slice(0, 64),
 	}))
-	.handler(({ data }) => skillDetail(data.word));
+	.handler(({ data }) => describeTerm(data.word));
 
 /**
  * 任务台的全部数据：三种任务各自跑过的记录里的一页，和语料此刻有多少东西。

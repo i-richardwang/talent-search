@@ -48,7 +48,7 @@ export function NavContent() {
 	const { recent } = useLoaderData({ from: "__root__" });
 	const control = useNavControl();
 	const matchRoute = useMatchRoute();
-	const on = (to: "/" | "/data" | "/skills" | "/tasks") =>
+	const on = (to: "/" | "/data" | "/terms" | "/tasks") =>
 		Boolean(matchRoute({ to, fuzzy: to !== "/" }));
 	const folded = control?.prefs.folded ?? [];
 	return (
@@ -90,11 +90,11 @@ export function NavContent() {
 					数据
 				</NavItem>
 				<NavItem
-					active={on("/skills")}
+					active={on("/terms")}
 					icon={TagsIcon}
-					render={<Link search={{ page: undefined, q: "" }} to="/skills" />}
+					render={<Link search={{ page: undefined, q: "" }} to="/terms" />}
 				>
-					技能
+					标签
 				</NavItem>
 				<NavItem
 					active={on("/tasks")}

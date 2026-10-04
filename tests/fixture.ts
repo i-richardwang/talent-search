@@ -24,8 +24,8 @@ import {
 	rerankCache,
 	reviewGroup,
 	searchTurn,
-	skillTerm,
 	taskRun,
+	term,
 } from "#/db/schema";
 import type { Involvement } from "#/lib/involvement";
 import { parseQuery } from "#/search/query-syntax";
@@ -441,7 +441,7 @@ export async function setup() {
 		rerankCache,
 		phraseGloss,
 		searchTurn,
-		skillTerm,
+		term,
 		reviewGroup,
 		embeddingCache,
 		completionCache,

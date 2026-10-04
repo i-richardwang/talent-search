@@ -1,5 +1,5 @@
 /**
- * 管理页「能力词」的数据：词表按标准词收拢，人数连同下面的词一起数，和筛选栏同一口径。
+ * 管理页「词表」的数据：按标准词收拢，人数连同下面的词一起数，和检索顺着词表找到的同一批人。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
@@ -8,12 +8,12 @@ import { seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { listSkills } = await import("#/server/skills");
+const { listTerms } = await import("#/server/terms");
 
 describe("能力词词表", () => {
 	before(async () => {
 		const { db } = await import("#/db");
-		const { skillTerm } = await import("#/db/schema");
+		const { term } = await import("#/db/schema");
 		await seed([
 			{
 				empId: "U001",
@@ -62,7 +62,7 @@ describe("能力词词表", () => {
 		]);
 		const today = new Date();
 		const lastWeek = new Date(today.getTime() - 7 * 86_400_000);
-		await db.insert(skillTerm).values([
+		await db.insert(term).values([
 			{ word: "推荐系统", canonical: "推荐系统", reviewedAt: today },
 			{
 				word: "电商推荐系统",
@@ -83,7 +83,7 @@ describe("能力词词表", () => {
 	});
 
 	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段、连同别名和下面的词", async () => {
-		const table = await listSkills("", 1);
+		const table = await listTerms("", 1);
 		assert.deepEqual(table.rows, [
 			{
 				canonical: "推荐系统",
@@ -123,24 +123,24 @@ describe("能力词词表", () => {
 	});
 
 	test("找词认标准词、并进去的写法和它属于的那个更宽的词", async () => {
-		const byCanonical = await listSkills("Python", 1);
+		const byCanonical = await listTerms("Python", 1);
 		assert.deepEqual(
 			byCanonical.rows.map((row) => row.canonical),
 			["Python"],
 		);
 		// 「个性化推荐」是并进「推荐系统」的写法，搜它出的是标准词那一行
-		const byAlias = await listSkills("个性化推荐", 1);
+		const byAlias = await listTerms("个性化推荐", 1);
 		assert.deepEqual(
 			byAlias.rows.map((row) => row.canonical),
 			["推荐系统"],
 		);
 		// 「电商推荐系统」属于「推荐系统」，搜父词时两行都在
-		const byParent = await listSkills("推荐系统", 1);
+		const byParent = await listTerms("推荐系统", 1);
 		assert.deepEqual(
 			byParent.rows.map((row) => row.canonical),
 			["推荐系统", "电商推荐系统"],
 		);
-		const none = await listSkills("没有这个词", 1);
+		const none = await listTerms("没有这个词", 1);
 		assert.deepEqual(none.rows, []);
 		assert.equal(none.total, 0);
 		assert.equal(none.pages, 1);
