@@ -209,7 +209,11 @@ export function ReadingPage() {
 				usage: `<DetailDrawer\n  close={() => navigate({ search, to: "/data" })}\n  description={…}\n  title={employee.name}\n  width="var(--container-detail-wide)"\n>\n  …\n</DetailDrawer>`,
 			}}
 			sections={[
-				{ children: <Drawers />, id: "drawer", title: "抽屉：数据页与「标签」页" },
+				{
+					children: <Drawers />,
+					id: "drawer",
+					title: "抽屉：数据页与「标签」页",
+				},
 				{ children: <Logs />, id: "logs", title: "任务日志" },
 				{ children: <Side />, id: "detail", title: "人的详情" },
 			]}
