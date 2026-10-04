@@ -1,8 +1,8 @@
 /**
  * 一段经历有哪些说法。
  *
- * 它决定了库里那些向量是从什么字符串来的：公司内一段任职是序列、岗位、部门连成的一句，
- * 入职前只有岗位名，公司名不进，空的那一样不写、全空就没有，自述每一段只取一种来源。
+ * 它决定了库里那些向量是从什么字符串来的：公司内一段任职是序列和岗位连成的一句，
+ * 入职前只有岗位名，部门名和公司名都不进，空的那一样不写、全空就没有，自述每一段只取一种来源。
  * 写库和测试夹具用的是同一个函数，所以这里测的不是「两处一不一致」，而是**拼法本身**
  * ——改了它，库里的向量和查询词就不再可比，而症状只是结果悄悄变差。
  */
@@ -17,8 +17,6 @@ const of = (row: Partial<RouteSource>, extraction: Extraction | null = null) =>
 			{
 				kind: "internal",
 				unemployed: false,
-				org: "",
-				orgPath: "",
 				title: "",
 				seqL1: "",
 				seqL2: "",
@@ -30,31 +28,22 @@ const of = (row: Partial<RouteSource>, extraction: Extraction | null = null) =>
 		).map((p) => [p.route, p.text]),
 	);
 
-describe("公司内一段任职整句一条", () => {
-	test("序列、岗位、部门路径连成一句：放在一起才分得清这个人做的是什么", () => {
+describe("公司内一段任职一条", () => {
+	test("序列和岗位连成一句：岗位名太空时，序列说清做的是哪一行", () => {
 		assert.deepEqual(
 			of({
-				org: "平台技术部",
-				orgPath: "示例科技/技术中心/平台技术部",
 				title: "算法工程师",
 				seqL1: "技术",
 				seqL2: "算法",
 				seqL3: "推荐",
 			}),
-			{ role: "技术 · 算法 · 推荐｜算法工程师｜示例科技/技术中心/平台技术部" },
+			{ role: "技术 · 算法 · 推荐｜算法工程师" },
 		);
 	});
 
 	test("缺的那样不写，不留空的分隔", () => {
 		assert.equal(of({ seqL1: "技术", seqL2: "算法" }).role, "技术 · 算法");
-		assert.equal(
-			of({ title: "算法工程师", org: "平台技术部" }).role,
-			"算法工程师｜平台技术部",
-		);
-	});
-
-	test("缺部门路径时落回部门名", () => {
-		assert.equal(of({ org: "平台技术部", orgPath: "" }).role, "平台技术部");
+		assert.equal(of({ title: "算法工程师" }).role, "算法工程师");
 	});
 
 	test("空的 route 不出现，一行全空就没有 route", () => {
@@ -64,15 +53,9 @@ describe("公司内一段任职整句一条", () => {
 
 describe("入职前的岗位", () => {
 	test("岗位名原样一条；公司名只回答「在哪」，不进说法", () => {
-		assert.deepEqual(
-			of({
-				kind: "external",
-				org: "云枢智能",
-				orgPath: "云枢智能/算法部",
-				title: "推荐算法工程师",
-			}),
-			{ title: "推荐算法工程师" },
-		);
+		assert.deepEqual(of({ kind: "external", title: "推荐算法工程师" }), {
+			title: "推荐算法工程师",
+		});
 	});
 });
 
@@ -80,7 +63,6 @@ describe("自述每一段只取一种来源", () => {
 	const external: Partial<RouteSource> = {
 		kind: "external",
 		unemployed: false,
-		org: "云枢智能",
 		description: "负责推荐系统召回，配合算法团队完成上线",
 	};
 
@@ -95,8 +77,6 @@ describe("自述每一段只取一种来源", () => {
 			{
 				kind: "external",
 				unemployed: false,
-				org: "云枢智能",
-				orgPath: "",
 				title: "",
 				seqL1: "",
 				seqL2: "",
@@ -126,7 +106,6 @@ test("待业属性阻止登记和抽取说法进入语料，不依赖岗位文�
 				kind: "external",
 				unemployed: true,
 				title: "算法",
-				org: "某公司",
 				description: "算法开发",
 			},
 			{ skills: ["算法"], did: [] },

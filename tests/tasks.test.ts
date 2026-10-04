@@ -493,9 +493,9 @@ describe("说法规划", () => {
 		description: "负责推荐系统召回",
 	});
 
-	test("公司内一段整句一条，入职前岗位一条、公司名不进；没读过的段把整段原文当说法", () => {
+	test("公司内一段序列和岗位一句，入职前岗位一条，部门名和公司名不进；没读过的段把整段原文当说法", () => {
 		const { texts, links } = phrasePlan([segment({}), outside], [null, null]);
-		const role = "技术 · 算法｜算法工程师｜示例科技/技术中心/平台技术部";
+		const role = "技术 · 算法｜算法工程师";
 		assert.deepEqual(texts, [role, "算法工程师", "负责推荐系统召回"]);
 		assert.deepEqual(
 			links.map((l) => [l.experienceId, l.route, l.text]),

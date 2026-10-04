@@ -58,8 +58,6 @@ export function phrasePlan(
 			{
 				kind: row.kind,
 				unemployed: row.unemployed,
-				org: row.org,
-				orgPath: row.org_path,
 				title: row.title,
 				seqL1: row.seq_l1,
 				seqL2: row.seq_l2,

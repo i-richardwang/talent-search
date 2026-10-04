@@ -31,8 +31,8 @@ test("仅在原文和公司内任职整句中出现的文本不用保留释义�
 		},
 		{
 			empId: "G2",
-			name: "合成部门",
-			segments: [{ org: word, title: "工程师", months: 12 }],
+			name: "合成序列",
+			segments: [{ seqL1: word, months: 12 }],
 		},
 	]);
 	await db.execute(sql`insert into phrase_gloss (text, gloss, guide_identity) values

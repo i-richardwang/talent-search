@@ -3,10 +3,10 @@
  *
  * 派生与测试夹具共用此拼法；每条说法独立嵌入，判断相关度时整条读。
  *
- * - `role`：公司内的一段任职整句一条，序列、岗位、部门连在一起
- *   （「技术 · 研发 · 后端｜高级工程师｜示例科技/技术中心/推荐算法组」）。三样拆开读
- *   都会误判：岗位名常常太空，部门做什么不等于这个人做什么；放在一起，在推荐部做
- *   HRBP 的人和在推荐算法组写代码的人才分得开。
+ * - `role`：公司内的一段任职一条，序列和岗位连成一句（「技术 · 研发 · 后端｜高级工程师」）：
+ *   岗位名常常太空，有了序列才说得清做的是哪一行。部门只回答「在哪」，由按名字找的
+ *   条件使用，不进这里：部门做什么不等于这个人做什么，而重排模型读到部门名时，
+ *   既会把坐在推荐算法组的后端判成做推荐算法，又会因为一长串路径压低真正对得上的分数。
  * - `title`：入职前的岗位名，原样。入职前的公司名只回答「在哪」，由按名字找的条件
  *   使用，不进这里。
  * - 自述每段只有一种来源：已读段取抽出的能力词（`skill`）和做过的事（`did`），
@@ -22,8 +22,6 @@ import type { Extraction } from "./extract";
 export type RouteSource = {
 	kind: "internal" | "external";
 	unemployed: boolean;
-	org: string;
-	orgPath: string;
 	title: string;
 	seqL1: string;
 	seqL2: string;
@@ -67,13 +65,9 @@ export function phrasesOf(
 
 const ROLE_SEPARATOR = "｜";
 
-/** 公司内一段任职的整句：序列三级、岗位名、部门路径，缺的那样不写。 */
+/** 公司内一段任职的一句：序列三级和岗位名，缺的那样不写。 */
 function roleText(s: RouteSource): string {
-	return [
-		[s.seqL1, s.seqL2, s.seqL3].filter(Boolean).join(" · "),
-		s.title,
-		s.orgPath || s.org,
-	]
+	return [[s.seqL1, s.seqL2, s.seqL3].filter(Boolean).join(" · "), s.title]
 		.filter(Boolean)
 		.join(ROLE_SEPARATOR);
 }
@@ -81,8 +75,6 @@ function roleText(s: RouteSource): string {
 const SAMPLE: RouteSource = {
 	kind: "internal",
 	unemployed: false,
-	org: "部门",
-	orgPath: "公司/中心/部门",
 	title: "岗位",
 	seqL1: "一级",
 	seqL2: "二级",
@@ -97,7 +89,7 @@ const SAMPLE: RouteSource = {
 export const PHRASING = JSON.stringify(
 	[
 		SAMPLE,
-		{ ...SAMPLE, orgPath: "" },
+		{ ...SAMPLE, seqL3: "" },
 		{ ...SAMPLE, kind: "external" as const },
 	].flatMap((s) => [
 		phrasesOf(s, null),

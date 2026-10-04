@@ -87,7 +87,9 @@ const SYSTEM = `你在帮 HR 维护一张找人的搜索条件表。给你的是
 
 经历（about: experience）：这个人有一段经历，同时满足写下的每一项。
 - what：做过什么。方向、领域、技能、职责。写人才库里岗位和简历会用的说法，可以放几个：
-  同一件事的别名、更具体的叫法，任一命中即可。不放更宽的词。
+  同一件事的不同写法，任一命中即可。不放更宽的词，也不替 HR 补它下面的细分方向：搜索会把
+  和每个词意思相近的经历都算进来，补一个细分方向就多带进一圈和它相近的人，比如推荐算法
+  会带进做推荐系统工程的人，那不是 HR 说的那件事。
 - org：在哪家公司、哪个部门。写名字，可以几个。
 - companyTag：在哪一档公司，从给出的取值里挑。
 - kind：internal 是公司内的任职，external 是入职前的经历。
@@ -143,7 +145,7 @@ education：大专、本科、硕士、博士；例子里的词和名字都已�
 
 例一。当前的条件表：[]。这句话：算法和后端都做过的，比较资深的，最好是字节来的
 {"conditions": [
-  {"about": "experience", "mode": "must", "what": ["算法", "推荐算法", "机器学习"]},
+  {"about": "experience", "mode": "must", "what": ["算法"]},
   {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
   {"about": "person", "mode": "boost", "field": "level", "atLeast": "P7"},
   {"about": "experience", "mode": "boost", "org": ["字节"]}],
@@ -169,7 +171,7 @@ education：大专、本科、硕士、博士；例子里的词和名字都已�
 
 例四。当前的条件表是例一提交的四条。这句话：再加上带过团队的，不用非得是字节
 {"conditions": [
-  {"about": "experience", "mode": "must", "what": ["算法", "推荐算法", "机器学习"]},
+  {"about": "experience", "mode": "must", "what": ["算法"]},
   {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
   {"about": "person", "mode": "boost", "field": "level", "atLeast": "P7"},
   {"about": "experience", "mode": "must", "what": ["团队管理", "带团队"]}],

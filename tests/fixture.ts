@@ -141,6 +141,14 @@ export function fakeSimilarity(a: string, b: string) {
 	return Math.min(1, Math.max(0, similarity));
 }
 
+/**
+ * 假重排给的相关度：假余弦的平方。真重排对短查询词的分数也比余弦低一档，
+ * 所以召回下限和判定门槛不在同一个尺度上，各自的作用在测试里也分得开。
+ */
+export function fakeRelevance(query: string, document: string) {
+	return fakeSimilarity(query, document) ** 2;
+}
+
 type ModelGate = {
 	enter: () => void;
 	wait: Promise<void>;
@@ -303,7 +311,7 @@ function startModelServer() {
 				json({
 					results: documents.map((d, index) => ({
 						index,
-						relevance_score: fakeSimilarity(query, d),
+						relevance_score: fakeRelevance(query, d),
 					})),
 				});
 				return;

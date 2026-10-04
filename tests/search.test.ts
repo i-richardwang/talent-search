@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { NOT_A_VALUE, VOCAB_KEYS } from "#/search/dimensions";
 import { parseQuery } from "#/search/query-syntax";
-import { fakeEmbedding, fakeSimilarity, seed, setup } from "./fixture";
+import { fakeEmbedding, fakeRelevance, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -61,8 +61,8 @@ before(async () => {
 		},
 		{
 			empId: "T004",
-			name: "同段既在部门名又在简历里",
-			segments: [{ org: "安全部", description: "安全巡检", months: 36 }],
+			name: "同段既在岗位名又在简历里",
+			segments: [{ title: "安全员", description: "安全巡检", months: 36 }],
 		},
 		{
 			empId: "T005",
@@ -187,15 +187,15 @@ describe("事实行数量上限", () => {
 });
 
 describe("语义命中", () => {
-	test("假端点下通过的阈值只有一个数：召回下限不高于判定门槛", () => {
-		// 假重排分数就是假余弦。召回下限必须不高于判定门槛，下面每条断言才只由
-		// RELEVANCE_MIN 这一个相关度门槛决定。
-		assert.ok(RECALL_MIN <= RELEVANCE_MIN);
+	test("假端点下通过的阈值只有一个数：召回不挡住重排会判命中的说法", () => {
+		// 假重排分数是假余弦的平方。过判定门槛的说法余弦至少是 √RELEVANCE_MIN，
+		// 召回下限不高于它，下面每条断言才只由 RELEVANCE_MIN 这一个相关度门槛决定。
+		assert.ok(RECALL_MIN ** 2 <= RELEVANCE_MIN);
 	});
 
 	test("整词不必出现在原文里：相关度过阈值就是命中", async () => {
-		// 「线下渠道运营」对岗位「渠道运营」是 4/√(6×4) ≈ 0.82
-		assert.ok(fakeSimilarity("线下渠道运营", "渠道运营") >= RELEVANCE_MIN);
+		// 「线下渠道运营」对岗位「渠道运营」是 (4/√(6×4))² ≈ 0.67
+		assert.ok(fakeRelevance("线下渠道运营", "渠道运营") >= RELEVANCE_MIN);
 		const { results } = await run("线下渠道运营");
 		assert.ok(results.some((r) => r.employee.empId === "T006"));
 	});
@@ -206,7 +206,7 @@ describe("语义命中", () => {
 	 */
 	test("说法有释义时按「说法：释义」判", async () => {
 		const doc = "渠道运营：销售团队的人员招聘与上岗培训";
-		assert.ok(fakeSimilarity("线下渠道运营", doc) < RELEVANCE_MIN);
+		assert.ok(fakeRelevance("线下渠道运营", doc) < RELEVANCE_MIN);
 		await db.execute(sql`
 			insert into phrase_gloss (text, gloss, guide_identity)
 			values ('渠道运营', '销售团队的人员招聘与上岗培训',
@@ -220,8 +220,8 @@ describe("语义命中", () => {
 	});
 
 	test("相关度不过阈值的段不算命中", async () => {
-		// 「算法」对「算法平台运维工程师」是 2/√(2×9) ≈ 0.47
-		assert.ok(fakeSimilarity("算法", "算法平台运维工程师") < RELEVANCE_MIN);
+		// 「算法」对「算法平台运维工程师」是 (2/√(2×9))² ≈ 0.22
+		assert.ok(fakeRelevance("算法", "算法平台运维工程师") < RELEVANCE_MIN);
 		const { results } = await run("算法");
 		assert.ok(!results.some((r) => r.employee.empId === "T007"));
 	});
@@ -234,13 +234,13 @@ describe("语义命中", () => {
 	test("相关度原样到达打分层与证据行", async () => {
 		const { results } = await run("算法");
 		const t2 = results.find((r) => r.employee.empId === "T002");
-		const expected = fakeSimilarity("算法", "算法工程师");
+		const expected = fakeRelevance("算法", "算法工程师");
 		assert.ok(Math.abs((t2?.basis[0]?.relevance ?? 0) - expected) < 0.01);
 		assert.ok(Math.abs((t2?.hits[0]?.relevance ?? 0) - expected) < 0.01);
 		const t1 = results.find((r) => r.employee.empId === "T001");
 		assert.equal(
 			t1?.basis[0]?.relevance,
-			fakeSimilarity("算法", "算法"),
+			fakeRelevance("算法", "算法"),
 			"与条件相同的原文也保留端点原始精度",
 		);
 	});
@@ -389,7 +389,7 @@ describe("只有门槛时的分面计数", () => {
 
 describe("命中路径判定", () => {
 	test("一段同时有多类过阈值时保留最对得上的那一类", async () => {
-		// 「安全」对任职记录「安全部」是 2/√(2×3) ≈ 0.82，对原文「安全巡检」是 0.71
+		// 「安全」对任职记录「安全员」是 (2/√(2×3))² ≈ 0.67，对原文「安全巡检」是 0.5
 		const { results } = await run("安全");
 		const hit = results
 			.find((r) => r.employee.empId === "T004")
@@ -961,8 +961,9 @@ describe("排除的主张：否决证据段，不否决人", () => {
 	});
 
 	test("相似但没到否决阈值的段不被否决", async () => {
-		// T003 的描述「算法运营」对「运营」是 0.71，达到判定门槛、达不到否决门槛
-		assert.ok(fakeSimilarity("运营", "算法运营") < RELEVANCE_MIN_EXCLUDE);
+		// T003 的描述「算法运营」对「运营」是 0.5，达到判定门槛、达不到否决门槛
+		assert.ok(fakeRelevance("运营", "算法运营") >= RELEVANCE_MIN);
+		assert.ok(fakeRelevance("运营", "算法运营") < RELEVANCE_MIN_EXCLUDE);
 		const { results } = await run("算法,-运营");
 		assert.ok(results.some((r) => r.employee.empId === "T003"));
 	});
