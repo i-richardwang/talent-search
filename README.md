@@ -81,7 +81,7 @@ REVIEW_TOKEN=...        # external 模式必需
 
 外部接口使用 `Authorization: Bearer <REVIEW_TOKEN>`：
 
-- `GET /api/review?limit=20`：返回尚未判定且未过期的 `group` 或 `gloss` 组，以及各类判定标准的身份。
+- `GET /api/review?limit=20`：返回尚未判定且未过期的 `group` 或 `gloss` 组，以及各类判定标准的身份；加 `kind=group` 或 `kind=gloss` 只取那一种。
 - `POST /api/review`：提交一组的首份判定；请求必须原样带回 `id`、`kind` 和 `guideIdentity`。
 
 归并判定逐词提交 `sameAs` 与 `parent`；释义判定逐词提交 `gloss`。请求正文最多 64 KiB，按 UTF-8 字节计算。接口只保存判定原话，整理任务在写者锁内校验并生效；它不允许直接修改词表、释义或经历边。形状错误返回 400，凭据错误返回 401，不可用或过期返回 404，重复提交返回 409。

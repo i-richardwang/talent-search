@@ -79,18 +79,25 @@ type GroupView = {
 };
 
 /**
- * 未判定且未过期的组按收集顺序返回，可被多个读者取走，接受首份提交。
+ * 未判定且未过期的组按收集顺序返回，可被多个读者取走，接受首份提交。给了 `kind`
+ * 就只取那一种：两种组各有各的标准，判定方可以先做或只做其中一种。
  * guides 与自带模型共用各类组的判定标准。
  */
-export async function pending(limit: number): Promise<{
+export async function pending(
+	limit: number,
+	kind?: GroupKind,
+): Promise<{
 	groups: GroupView[];
 	guides: Record<GroupKind, { identity: string; text: string }>;
 }> {
 	const identities = guideIdentities();
-	const rows = [
-		...(await openGroups(pool, "group", identities.group, limit)),
-		...(await openGroups(pool, "gloss", identities.gloss, limit)),
-	]
+	const kinds: GroupKind[] = kind ? [kind] : ["group", "gloss"];
+	const rows = (
+		await Promise.all(
+			kinds.map((one) => openGroups(pool, one, identities[one], limit)),
+		)
+	)
+		.flat()
 		.sort(
 			(a, b) =>
 				a.collectedAt.getTime() - b.collectedAt.getTime() || a.id - b.id,
@@ -119,6 +126,12 @@ export function limitOf(url: string): number {
 	const raw = Number(new URL(url).searchParams.get("limit"));
 	if (!Number.isInteger(raw) || raw <= 0) return DEFAULT_LIMIT;
 	return Math.min(raw, MAX_LIMIT);
+}
+
+/** 从 URL 上读 `kind`。缺失或不认得时两种都取，和 `limit` 一样不为一个参数否掉整次请求。 */
+export function kindOf(url: string): GroupKind | undefined {
+	const raw = new URL(url).searchParams.get("kind");
+	return raw === "group" || raw === "gloss" ? raw : undefined;
 }
 
 /** 提交的结果：`Submission` 加上两种形状不对。 */

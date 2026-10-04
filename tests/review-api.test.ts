@@ -11,9 +11,8 @@ import { seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { authorized, configured, limitOf, pending, submit } = await import(
-	"#/server/review"
-);
+const { authorized, configured, kindOf, limitOf, pending, submit } =
+	await import("#/server/review");
 const { openGroups } = await import("#/corpus/judgment");
 const { groupIdentity } = await import("#/corpus/vocabulary");
 const { pool } = await import("#/db");
@@ -85,6 +84,15 @@ describe("取组的 limit", () => {
 		assert.equal(limitOf("http://x/api/review?limit=-3"), 20);
 		assert.equal(limitOf("http://x/api/review?limit=5"), 5);
 		assert.equal(limitOf("http://x/api/review?limit=9999"), 100);
+	});
+});
+
+describe("取组的 kind", () => {
+	test("认得的只取那一种，缺失或不认得两种都取", () => {
+		assert.equal(kindOf("http://x/api/review?kind=group"), "group");
+		assert.equal(kindOf("http://x/api/review?kind=gloss"), "gloss");
+		assert.equal(kindOf("http://x/api/review"), undefined);
+		assert.equal(kindOf("http://x/api/review?kind=all"), undefined);
 	});
 });
 
@@ -210,6 +218,10 @@ describe("提交判定", () => {
 		assert.equal(group.guideIdentity, groupIdentity());
 		assert.equal(view.guides.group.identity, group.guideIdentity);
 		assert.match(view.guides.group.text, /同一件事/);
+		assert.ok((await pending(20, "group")).groups.some((one) => one.id === id));
+		assert.ok(
+			(await pending(20, "gloss")).groups.every((one) => one.kind === "gloss"),
+		);
 	});
 
 	test("原话原样存进组里，这里不校验内容", async () => {
