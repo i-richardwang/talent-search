@@ -36,9 +36,29 @@ import { parseQuery } from "#/search/query-syntax";
  */
 const SCHEMA = `talent_test_${process.pid}_${randomBytes(4).toString("hex")}`;
 
+/** Postgres 把更长的名字静默截短；截短后和 schema 里的名字对不上，db:push 每次都会删了重建。 */
+const NAME_MAX_BYTES = 63;
+
 function ddl(schema: string, table: PgTable) {
-	const { name, columns, checks, foreignKeys, uniqueConstraints, primaryKeys } =
-		getTableConfig(table);
+	const {
+		name,
+		columns,
+		checks,
+		foreignKeys,
+		indexes,
+		uniqueConstraints,
+		primaryKeys,
+	} = getTableConfig(table);
+	for (const named of [
+		...checks.map((c) => c.name),
+		...foreignKeys.map((f) => f.getName()),
+		...indexes.map((i) => i.config.name ?? ""),
+		...uniqueConstraints.map((u) => u.getName() ?? ""),
+	])
+		if (Buffer.byteLength(named) > NAME_MAX_BYTES)
+			throw new Error(
+				`${name} 的约束或索引名超过 ${NAME_MAX_BYTES} 字节：${named}`,
+			);
 	const dialect = new PgDialect();
 	const cols = columns.map((c) => {
 		const parts = [`"${c.name}"`, c.getSQLType()];

@@ -314,9 +314,7 @@ export const experienceNext = pgTable("experience_next", {
 export const experiencePhraseNext = pgTable(
 	"experience_phrase_next",
 	{
-		experienceId: integer("experience_id")
-			.notNull()
-			.references(() => experienceNext.experienceId, { onDelete: "cascade" }),
+		experienceId: integer("experience_id").notNull(),
 		route: text("route", { enum: ROUTES }).notNull(),
 		phraseId: integer("phrase_id")
 			.notNull()
@@ -325,6 +323,12 @@ export const experiencePhraseNext = pgTable(
 	},
 	(t) => [
 		primaryKey({ columns: [t.experienceId, t.route, t.phraseId] }),
+		// 默认名按两张表名和列名拼出来超过 63 字节，Postgres 会截短，db:push 就每次都当它变了
+		foreignKey({
+			name: "experience_phrase_next_segment_fk",
+			columns: [t.experienceId],
+			foreignColumns: [experienceNext.experienceId],
+		}).onDelete("cascade"),
 		index("experience_phrase_next_phrase").on(t.phraseId),
 		check(
 			"experience_phrase_next_route_valid_1",
