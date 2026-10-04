@@ -96,9 +96,9 @@ test("抽取失败保留待派生与旧边，下一轮成功的空抽取才算�
 });
 
 for (const [label, invalid] of [
-	["回答形状无效", { l1: 9, l2: "算法" }],
-	["序列不在树上", { l1: "技术", l2: "推荐" }],
-	["序列只有一级", { l1: "技术", l2: "" }],
+	["回答形状无效", { seq: 9 }],
+	["序列不在树上", { seq: "推荐（技术）" }],
+	["序列只有一级", { seq: "技术" }],
 ] as const) {
 	test(`${label}不记录完成版本，合法的无法对齐可以完成`, async () => {
 		await seed([
@@ -127,7 +127,7 @@ for (const [label, invalid] of [
 		}
 		assert.ok((await identities())[0]);
 		assert.equal((await identities())[1], null);
-		restore = answerChat(() => ({ l1: "", l2: "" }));
+		restore = answerChat(() => ({ seq: "" }));
 		try {
 			assert.deepEqual(await runDerive(), { done: 1, left: 0 });
 		} finally {

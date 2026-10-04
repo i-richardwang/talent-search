@@ -30,7 +30,7 @@ const { sql } = await import("drizzle-orm");
 /**
  * 三处语料侧调用各自认出自己的提示词。
  *
- * 对齐照抄提示词里列出的第一对序列——那份列表是从这批样例数据生成的，
+ * 对齐照抄提示词里列出的第一行序列——那份列表是从这批样例数据生成的，
  * 所以不必在这里再写一遍它有哪些序列。
  */
 function answers() {
@@ -41,8 +41,7 @@ function answers() {
 				did: [{ involvement: "负责建设", domain: "推荐系统" }],
 			};
 		if (system.includes("属于哪个序列")) {
-			const first = /^- (.+) · (.+)$/m.exec(system);
-			return { l1: first?.[1] ?? "", l2: first?.[2] ?? "" };
+			return { seq: /^- (.+)$/m.exec(system)?.[1] ?? "" };
 		}
 		return { judgments: [] };
 	});
