@@ -1,7 +1,8 @@
 /**
  * 为待处理经历段抽取说法、对齐序列、嵌入并连边。
  * 模型调用在事务外；成功段按批提交说法、边和派生版本，失败段下一轮重试。
- * 每轮按 id 向后处理，时间预算耗尽后退出；标准混用期间检索拒绝读取。
+ * 每轮按 id 向后处理，时间预算耗尽后退出。判定标准变了以后，新结果先写进
+ * `experience_next`，走完一遍待派生的段再整体换进正式表：检索一直读一份完整的标准。
  */
 
 import "@tanstack/react-start/server-only";
@@ -138,13 +139,49 @@ export function identity(tree: SeqPair[]): string {
 	return createHash("sha256").update(parts.join("")).digest("hex");
 }
 
-/** 还不是这一版的段有多少。 */
+/** 检索读到的还不是这一版的段有多少。待换入的结果换进去之前，这些段都算。 */
 export async function pending(client: CorpusClient, version: string) {
 	const { rows } = await client.query<{ n: string }>(
 		"select count(*) as n from experience where derived_identity is distinct from $1",
 		[version],
 	);
 	return Number(rows[0]?.n ?? 0);
+}
+
+/** 还要调模型的段：检索读到的不是这一版，待换入的结果里也没有。 */
+const UNDERIVED = `e.derived_identity is distinct from $1
+	and not exists (select 1 from experience_next n
+		where n.experience_id = e.id and n.derived_identity = $1)`;
+
+async function underived(client: CorpusClient, version: string) {
+	const { rows } = await client.query<{ n: string }>(
+		`select count(*) as n from experience e where ${UNDERIVED}`,
+		[version],
+	);
+	return Number(rows[0]?.n ?? 0);
+}
+
+/**
+ * 这一版要不要先写进 `experience_next`：正式表里已经有另一版的结果时要，检索在读它们；
+ * 正式表是空的或已经是这一版时直接写。顺带清掉不是这一版的待换入结果。
+ */
+async function staging(
+	client: CorpusClient,
+	version: string,
+): Promise<boolean> {
+	const { rows } = await client.query<{ staged: boolean }>(
+		`select exists (select 1 from experience
+			where derived_identity is distinct from $1 and derived_identity is not null) as staged`,
+		[version],
+	);
+	const staged = rows[0]?.staged ?? false;
+	await client.query(
+		staged
+			? "delete from experience_next where derived_identity <> $1"
+			: "delete from experience_next",
+		staged ? [version] : [],
+	);
+	return staged;
 }
 
 async function nextBatch(
@@ -157,8 +194,8 @@ async function nextBatch(
 	>(
 		`select id, emp_id, kind, unemployed, start_date::text, end_date::text, org, org_path,
 			org_meta, title, seq_l1, seq_l2, seq_l3, level, description, months
-		 from experience
-		 where derived_identity is distinct from $1 and id > $2
+		 from experience e
+		 where ${UNDERIVED} and id > $2
 		 order by id
 		 limit ${BATCH}`,
 		[version, afterId],
@@ -176,14 +213,20 @@ export async function prunePhrases(client: CorpusClient): Promise<void> {
 	await client.query(
 		`delete from phrase p
 		 where not exists (
-			select 1 from experience_phrase ep where ep.phrase_id = p.id)`,
+			select 1 from experience_phrase ep where ep.phrase_id = p.id)
+		 and not exists (
+			select 1 from experience_phrase_next ep where ep.phrase_id = p.id)`,
 	);
 }
 
-/** 边先删后写，段上记版本，没有边指向的说法行跟着清掉。 */
+/**
+ * 边先删后写，段上记版本，没有边指向的说法行跟着清掉。`staged` 时写进待换入的
+ * 两张表，正式表里这些段的旧结果不动。
+ */
 async function commitBatch(
 	client: CorpusClient,
 	version: string,
+	staged: boolean,
 	rows: StoredRow[],
 	texts: string[],
 	vectors: number[][],
@@ -212,12 +255,31 @@ async function commitBatch(
 			);
 		}
 		const ids = rows.map((row) => row.id);
+		const inferred = [
+			ids,
+			rows.map((row) => row.seq_inferred_l1),
+			rows.map((row) => row.seq_inferred_l2),
+			version,
+		];
+		if (staged)
+			await client.query(
+				`insert into experience_next
+					(experience_id, seq_inferred_l1, seq_inferred_l2, derived_identity)
+				 select r.id, r.l1, r.l2, $4
+				 from unnest($1::int[], $2::text[], $3::text[]) as r(id, l1, l2)
+				 on conflict (experience_id) do update
+				 set seq_inferred_l1 = excluded.seq_inferred_l1,
+					seq_inferred_l2 = excluded.seq_inferred_l2,
+					derived_identity = excluded.derived_identity`,
+				inferred,
+			);
+		const edges = staged ? "experience_phrase_next" : "experience_phrase";
 		await client.query(
-			"delete from experience_phrase where experience_id = any($1::int[])",
+			`delete from ${edges} where experience_id = any($1::int[])`,
 			[ids],
 		);
 		await client.query(
-			`insert into experience_phrase (experience_id, route, phrase_id, involvement)
+			`insert into ${edges} (experience_id, route, phrase_id, involvement)
 			 select l.experience_id, l.route, p.id, l.involvement
 			 from unnest($1::int[], $2::text[], $3::text[], $4::text[])
 				as l(experience_id, route, text, involvement)
@@ -231,20 +293,54 @@ async function commitBatch(
 			],
 		);
 		await prunePhrases(client);
+		if (!staged)
+			await client.query(
+				`update experience e
+				 set seq_inferred_l1 = r.l1, seq_inferred_l2 = r.l2,
+					derived_identity = $4
+				 from unnest($1::int[], $2::text[], $3::text[]) as r(id, l1, l2)
+				 where e.id = r.id`,
+				inferred,
+			);
+		await client.query("commit");
+	} catch (error) {
+		await client.query("rollback");
+		throw error;
+	}
+}
+
+/**
+ * 把待换入的结果整体换进正式表，返回换入后仍未按这一版派生的段数。这一遍没能作答
+ * 的段不留旧结果：一份语料只依据一份标准，它们回到待派生，下一轮重试。
+ */
+async function promote(client: CorpusClient, version: string) {
+	await client.query("begin");
+	try {
+		await client.query(
+			`delete from experience_phrase ep using experience e
+			 where e.id = ep.experience_id and e.derived_identity is distinct from $1`,
+			[version],
+		);
+		await client.query(
+			`insert into experience_phrase (experience_id, route, phrase_id, involvement)
+			 select experience_id, route, phrase_id, involvement from experience_phrase_next`,
+		);
 		await client.query(
 			`update experience e
-			 set seq_inferred_l1 = r.l1, seq_inferred_l2 = r.l2,
-				derived_identity = $4
-			 from unnest($1::int[], $2::text[], $3::text[]) as r(id, l1, l2)
-			 where e.id = r.id`,
-			[
-				ids,
-				rows.map((row) => row.seq_inferred_l1),
-				rows.map((row) => row.seq_inferred_l2),
-				version,
-			],
+			 set seq_inferred_l1 = n.seq_inferred_l1, seq_inferred_l2 = n.seq_inferred_l2,
+				derived_identity = n.derived_identity
+			 from experience_next n where n.experience_id = e.id`,
 		);
+		const { rowCount } = await client.query(
+			`update experience
+			 set seq_inferred_l1 = '', seq_inferred_l2 = '', derived_identity = null
+			 where derived_identity is distinct from $1`,
+			[version],
+		);
+		await client.query("delete from experience_next");
+		await prunePhrases(client);
 		await client.query("commit");
+		return rowCount ?? 0;
 	} catch (error) {
 		await client.query("rollback");
 		throw error;
@@ -265,16 +361,23 @@ export async function derive(
 	await ensureSpace(client, report);
 	const tree = await currentTree(client);
 	const version = identity(tree);
-	const total = await pending(client, version);
+	const staged = await staging(client, version);
+	const total = await underived(client, version);
 	if (!chatConfigured())
 		report("  未配置语义模型，自述按整段原文处理，入职前经历不推断序列");
 	report(`  待派生 ${total} 段`);
+	if (staged)
+		report("  判定标准已更新：全部派生完之前，检索继续使用上一版结果");
 
 	let done = 0;
 	let afterId = 0;
+	let swept = false;
 	while (Date.now() < deadline) {
 		const rows = await nextBatch(client, version, afterId);
-		if (rows.length === 0) break;
+		if (rows.length === 0) {
+			swept = true;
+			break;
+		}
 		afterId = rows[rows.length - 1]?.id ?? afterId;
 		report("");
 		report(`处理一批 ${rows.length} 段…`);
@@ -303,12 +406,20 @@ export async function derive(
 		const { texts, links } = phrasePlan(ready, readings);
 		const vectors = await embed(texts, report);
 		if (ready.length > 0)
-			await commitBatch(client, version, ready, texts, vectors, links);
+			await commitBatch(client, version, staged, ready, texts, vectors, links);
 		done += ready.length;
 		report(`  已派生 ${done}/${total} 段`);
 	}
-	const left = await pending(client, version);
 	report("");
+	if (staged && swept) {
+		const unanswered = await promote(client, version);
+		report(
+			unanswered > 0
+				? `新标准已生效；${unanswered} 段未能作答，暂不在检索中，下一轮重试`
+				: "新标准已生效",
+		);
+	}
+	const left = await pending(client, version);
 	report(
 		left > 0 ? `这一轮到此为止，还剩 ${left} 段下一轮接着` : "全部派生完毕",
 	);

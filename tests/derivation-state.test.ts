@@ -158,7 +158,15 @@ test("失败批次不阻塞本轮后面的段，失败段下一轮重试", async
 	assert.ok(versions[200]);
 });
 
-test("标准更新分批提交时拒绝混排名单，全部统一后恢复", async () => {
+async function staged() {
+	return (
+		await db.execute<{ n: number }>(
+			sql`select count(*)::int as n from experience_next`,
+		)
+	).rows[0]?.n;
+}
+
+test("标准更新期间检索读上一版，走完一遍后整体换入", async () => {
 	await seed(
 		Array.from({ length: 201 }, (_, i) => ({
 			empId: `E${i}`,
@@ -174,13 +182,68 @@ test("标准更新分批提交时拒绝混排名单，全部统一后恢复", as
 		return { skills: [], did: [] };
 	});
 	try {
-		assert.deepEqual(await runDerive(1_000), { done: 200, left: 1 });
-		await assert.rejects(find(), /人才库正在更新判定标准/);
-		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
+		assert.deepEqual(await runDerive(1_000), { done: 200, left: 201 });
+		assert.equal(await staged(), 200);
+		assert.ok((await identities()).every((v) => v === "old-standard"));
 		assert.equal((await find()).total, 201);
+		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
 	} finally {
 		restore();
 	}
+	assert.equal(await staged(), 0);
+	const versions = await identities();
+	assert.ok(versions[0] && versions[0] !== "old-standard");
+	assert.ok(versions.every((v) => v === versions[0]));
+	assert.equal((await find()).total, 201);
+});
+
+test("换入时没能作答的段不留旧结果，回到待派生", async () => {
+	await seed([
+		{ empId: "E1", name: "合成换入", segments: [segment("换入成功样例")] },
+		{ empId: "E2", name: "合成换入", segments: [segment("换入失败样例")] },
+	]);
+	await db.execute(
+		sql`update experience set derived_identity = 'old-standard'`,
+	);
+	let restore = answerChat((_system, prompt) =>
+		prompt.includes("换入失败样例") ? { bad: true } : { skills: [], did: [] },
+	);
+	try {
+		assert.deepEqual(await runDerive(), { done: 1, left: 1 });
+	} finally {
+		restore();
+	}
+	const [kept, dropped] = await identities();
+	assert.ok(kept && kept !== "old-standard");
+	assert.equal(dropped, null);
+	assert.equal((await find()).total, 1);
+	restore = answerChat(() => ({ skills: [], did: [] }));
+	try {
+		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
+	} finally {
+		restore();
+	}
+	assert.equal((await find()).total, 2);
+});
+
+test("正式表混着两版时换入，已是这一版的段保留自己的边", async () => {
+	await seed([
+		{ empId: "E1", name: "合成混合", segments: [segment("已是新版样例")] },
+		{ empId: "E2", name: "合成混合", segments: [segment("仍是旧版样例")] },
+	]);
+	const restore = answerChat(() => ({ skills: [], did: [] }));
+	try {
+		assert.deepEqual(await runDerive(), { done: 2, left: 0 });
+		await db.execute(
+			sql`update experience set derived_identity = 'old-standard' where emp_id = 'E2'`,
+		);
+		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
+	} finally {
+		restore();
+	}
+	const versions = await identities();
+	assert.ok(versions[0] && versions.every((v) => v === versions[0]));
+	assert.equal((await find()).total, 2);
 });
 
 test("当前说法的释义依据不同标准时拒绝检索，无读者的保留释义不影响检索", async () => {

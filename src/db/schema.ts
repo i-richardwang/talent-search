@@ -282,6 +282,43 @@ export const experiencePhrase = pgTable(
 	],
 );
 
+/**
+ * 判定标准变了以后，新标准的派生结果先写在这里，检索继续读正式的两列和
+ * `experience_phrase`；派生走完一遍待派生的段，在一个事务里整体换进去
+ * （`corpus/derive.ts` 的 `promote`）。标准没变时不经过这里。
+ */
+export const experienceNext = pgTable("experience_next", {
+	experienceId: integer("experience_id")
+		.primaryKey()
+		.references(() => experience.id, { onDelete: "cascade" }),
+	derivedIdentity: text("derived_identity").notNull(),
+	seqInferredL1: text("seq_inferred_l1").notNull(),
+	seqInferredL2: text("seq_inferred_l2").notNull(),
+});
+
+/** `experience_next` 那些段在新标准下的边。 */
+export const experiencePhraseNext = pgTable(
+	"experience_phrase_next",
+	{
+		experienceId: integer("experience_id")
+			.notNull()
+			.references(() => experienceNext.experienceId, { onDelete: "cascade" }),
+		route: text("route", { enum: ROUTES }).notNull(),
+		phraseId: integer("phrase_id")
+			.notNull()
+			.references(() => phrase.id, { onDelete: "cascade" }),
+		involvement: text("involvement"),
+	},
+	(t) => [
+		primaryKey({ columns: [t.experienceId, t.route, t.phraseId] }),
+		index("experience_phrase_next_phrase").on(t.phraseId),
+		check(
+			"experience_phrase_next_route_valid_1",
+			sql`${t.route} in ('role', 'title', 'description', 'skill', 'did')`,
+		),
+	],
+);
+
 /** 按模型实际输入缓存相关度，与语料行的生命周期无关。 */
 export const rerankCache = pgTable(
 	"rerank_cache",
