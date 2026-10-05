@@ -31,6 +31,9 @@ before(async () => {
 		person("V7", "SQL数据库"),
 		person("V8", "数据库产品"),
 		person("V9", "查询优化"),
+		person("V10", "算法工程师"),
+		person("V11", "算法工程师"),
+		person("V12", "推荐算法开发岗"),
 	]);
 	const reviewedAt = new Date();
 	await db.insert(term).values([
@@ -39,6 +42,8 @@ before(async () => {
 		{ word: "运营", canonical: "运营", reviewedAt },
 		{ word: "数据库", canonical: "数据库", reviewedAt },
 		{ word: "SQL数据库", canonical: "SQL数据库", reviewedAt },
+		{ word: "算法工程师", canonical: "算法工程师", reviewedAt },
+		{ word: "推荐算法开发岗", canonical: "算法工程师", reviewedAt },
 	]);
 	await db.insert(term).values([
 		{ word: "爪哇编程", canonical: "爪哇编程", parent: "后端开发", reviewedAt },
@@ -68,6 +73,29 @@ const found = async (what: string) =>
 	).results
 		.map((r) => r.employee.empId)
 		.sort();
+
+test("其他写法沿用标准写法的相关度：冷门写法自己得分高，只算它自己", async () => {
+	assert.ok(fakeRelevance("推荐算法", "推荐算法开发岗") >= RELEVANCE_MIN);
+	assert.ok(fakeRelevance("推荐算法", "算法工程师") < RELEVANCE_MIN);
+	assert.deepEqual(await found("推荐算法"), ["V12"]);
+	assert.deepEqual(await found("算法工程师"), ["V10", "V11", "V12"]);
+});
+
+test("同一项的写法都读标准写法的释义", async () => {
+	const { db } = await import("#/db");
+	const { sql } = await import("drizzle-orm");
+	const { glossIdentity } = await import("#/corpus/gloss");
+	const read = "推荐算法开发岗：做语音识别模型的岗位";
+	assert.ok(fakeRelevance("推荐算法", read) < RELEVANCE_MIN);
+	await db.execute(sql`
+		insert into phrase_gloss (text, gloss, guide_identity)
+		values ('算法工程师', '做语音识别模型的岗位', ${glossIdentity()})`);
+	try {
+		assert.deepEqual(await found("推荐算法"), []);
+	} finally {
+		await db.execute(sql`delete from phrase_gloss where text = '算法工程师'`);
+	}
+});
 
 describe("往下带", () => {
 	test("其他写法和属于它的细词都算命中，相关度沿用命中的那个词", async () => {

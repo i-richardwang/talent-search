@@ -5,6 +5,9 @@
  * 模型调用在快照外完成；取数快照重新召回，只消费当前候选文本的已保存分数。
  * 当前候选还有未判定的输入、或嵌入空间已经改变时，重新准备下一份计划。
  *
+ * 词表里同一项的几种写法是同一件事，重排都读标准写法的释义：各写各的释义，措辞一变分数就差很远
+ * （「SQL」和「sql」对「数据库」一个 0.17 一个 0.54），冷门写法的释义写偏了还会把整项带偏。
+ *
  * 重排只认得字面相近，不知道「Java 开发」属于「后端开发」、「新媒体运营」比「短视频运营」宽。
  * 这些关系记在词表里（`term`），判定之后再按词表走一遍（`throughVocabulary`）。
  */
@@ -48,7 +51,12 @@ async function recall(
 		select q.ord, p.id as phrase_id,
 			case when g.gloss is null then p.text else p.text || '：' || g.gloss end as text
 		from q join phrase p on 1 - (p.embedding <=> q.v) >= ${RECALL_MIN}
-		left join phrase_gloss g on g.text = p.text and exists (
+		left join term t on t.word = p.text
+		left join lateral (
+			select x.gloss from phrase_gloss x
+			where x.text in (t.canonical, p.text)
+			order by x.text = t.canonical desc limit 1
+		) g on exists (
 			select 1 from experience_phrase ep where ep.phrase_id = p.id
 			and ep.route in (${sql.join(
 				SHORT_ROUTES.map((route) => sql`${route}`),
@@ -139,7 +147,10 @@ export async function withMatchedPhrases<T>(
  *   搜「后端开发」时写了「Java 开发」的人也在名单上，证据仍是他自己的原话。别的命中词下面的细词
  *   不跟着带：搜「短视频运营」命中了「媒体运营」，不等于写了「公众号运营」的人做过短视频。
  *
- * 不在词表里的说法原样保留。同一条说法几处得分取最高的。
+ * 一项的几种写法是同一件事。要找的词本身就是其中一种写法时，整项按最对得上的那种写法算。
+ * 别的命中项沿用标准写法（写的人最多的那个）的相关度，不沿用其中最高的：冷门写法的释义写偏了
+ * （「算法开发岗」写成解决推荐问题），不能让写了「算法工程师」的人都算做过推荐。每条说法自己判得的
+ * 分照样算它自己。被挡掉的项连同它的写法不算命中；不在词表里的说法原样保留。同一条说法几处得分取最高的。
  */
 async function throughVocabulary(
 	store: DbExecutor,
@@ -161,7 +172,9 @@ async function throughVocabulary(
 			${sql.param(rows.map((r) => r.hit.relevance))}::double precision[]
 		)),
 		matched as (
-			select h.ord, t.canonical as term, max(h.relevance) as relevance
+			select h.ord, t.canonical as term,
+				max(h.relevance) filter (where t.word = t.canonical) as relevance,
+				max(h.relevance) as best
 			from hit h join phrase p on p.id = h.phrase_id
 			join term t on t.word = p.text
 			group by h.ord, t.canonical
@@ -172,28 +185,29 @@ async function throughVocabulary(
 				${sql.param(texts)}::text[]
 			) as q(ord, text) join term t on t.word = q.text
 		),
-		anchor(ord, term) as (
-			select ord, term from query
+		anchor(ord, term, relevance) as (
+			select q.ord, q.term, m.best from query q
+			join matched m on m.ord = q.ord and m.term = q.term
 			union all
-			select m.ord, m.term from matched m
+			select m.ord, m.term, m.relevance from matched m
 			where not exists (select 1 from query q where q.ord = m.ord)
 				and m.relevance = (select max(x.relevance) from matched x where x.ord = m.ord)
 		),
 		broader(ord, term) as (
-			select a.ord, t.parent from anchor a
-			join term t on t.word = a.term where t.parent is not null
+			select q.ord, t.parent from (
+				select ord, term from query union select ord, term from anchor
+			) q join term t on t.word = q.term where t.parent is not null
 			union
 			select b.ord, t.parent from broader b
 			join term t on t.word = b.term where t.parent is not null
 		),
 		kept as (
-			select m.* from matched m
-			where not exists (select 1 from broader b
+			select m.ord, m.term, m.relevance from matched m
+			where m.relevance is not null and not exists (select 1 from broader b
 				where b.ord = m.ord and b.term = m.term)
 		),
 		down(ord, term, relevance) as (
-			select k.ord, k.term, k.relevance from kept k
-			join anchor a on a.ord = k.ord and a.term = k.term
+			select ord, term, relevance from anchor
 			union
 			select d.ord, c.word, d.relevance from down d
 			join term c on c.parent = d.term
@@ -204,12 +218,14 @@ async function throughVocabulary(
 			join term a on a.canonical = d.term
 			join phrase p on p.text = a.word
 		),
-		outside as (
+		standing as (
 			select h.* from hit h join phrase p on p.id = h.phrase_id
-			where not exists (select 1 from term t where t.word = p.text)
+			left join term t on t.word = p.text
+			where t.word is null or not exists (select 1 from broader b
+				where b.ord = h.ord and b.term = t.canonical)
 		)
 		select ord, phrase_id, max(relevance) as relevance
-		from (select * from through union all select * from outside) all_hits
+		from (select * from through union all select * from standing) all_hits
 		group by ord, phrase_id`);
 	const out = new Map<string, PhraseHit[]>(texts.map((text) => [text, []]));
 	for (const row of corrected)
