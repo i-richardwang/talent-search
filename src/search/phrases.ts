@@ -128,10 +128,16 @@ export async function withMatchedPhrases<T>(
 /**
  * 按词表修正一个查询词的命中，两个方向用的是同一句话：写了细的人符合宽的要求，反过来不成立。
  *
- * - 往上挡：命中的词里，一个词是另一个更对得上的命中词的上级，它就比要找的宽，
- *   连同它的写法不算命中。搜「短视频运营」时只写了「新媒体运营」的人，没法确认做过短视频。
- * - 往下带：留下的词，它的其他写法和它下面的细词（一层层往下）都算命中，相关度沿用它的。
- *   搜「后端」命中「后端开发」，写了「Java 开发」的人也在名单上，证据仍是他自己的原话。
+ * 两个方向都从要找的词在词表里的位置出发：它在词表里就是它，不在词表里就用最对得上的命中词。
+ * 重排分不出宽细，「媒体运营」对「短视频运营」也给高分，所以别的命中词和要找的谁宽谁细不知道，
+ * 它们只算自己和自己的其他写法。
+ *
+ * - 往上挡：这个位置往上的上级比要找的宽，连同它们的写法不算命中。搜「短视频运营」时只写了
+ *   「新媒体运营」的人，没法确认做过短视频。别的分支上一个子词得分高过它的上级，不说明那个
+ *   上级比要找的宽：搜「数据库」时「SQL Server」略高于「SQL」，「SQL」照样算命中。
+ * - 往下带：这个位置下面的细词（一层层往下）和它们的写法都算命中，相关度沿用这个位置的。
+ *   搜「后端开发」时写了「Java 开发」的人也在名单上，证据仍是他自己的原话。别的命中词下面的细词
+ *   不跟着带：搜「短视频运营」命中了「媒体运营」，不等于写了「公众号运营」的人做过短视频。
  *
  * 不在词表里的说法原样保留。同一条说法几处得分取最高的。
  */
@@ -160,18 +166,25 @@ async function throughVocabulary(
 			join term t on t.word = p.text
 			group by h.ord, t.canonical
 		),
-		up(ord, term, above) as (
-			select m.ord, m.term, t.parent from matched m
-			join term t on t.word = m.term where t.parent is not null
-			union
-			select u.ord, u.term, t.parent from up u
-			join term t on t.word = u.above where t.parent is not null
+		query(ord, term) as (
+			select q.ord, t.canonical from unnest(
+				${sql.param(texts.map((_, ord) => ord))}::int[],
+				${sql.param(texts)}::text[]
+			) as q(ord, text) join term t on t.word = q.text
 		),
-		broader as (
-			select distinct u.ord, u.above as term from up u
-			join matched below on below.ord = u.ord and below.term = u.term
-			join matched wide on wide.ord = u.ord and wide.term = u.above
-			where wide.relevance < below.relevance
+		anchor(ord, term) as (
+			select ord, term from query
+			union all
+			select m.ord, m.term from matched m
+			where not exists (select 1 from query q where q.ord = m.ord)
+				and m.relevance = (select max(x.relevance) from matched x where x.ord = m.ord)
+		),
+		broader(ord, term) as (
+			select a.ord, t.parent from anchor a
+			join term t on t.word = a.term where t.parent is not null
+			union
+			select b.ord, t.parent from broader b
+			join term t on t.word = b.term where t.parent is not null
 		),
 		kept as (
 			select m.* from matched m
@@ -179,13 +192,15 @@ async function throughVocabulary(
 				where b.ord = m.ord and b.term = m.term)
 		),
 		down(ord, term, relevance) as (
-			select ord, term, relevance from kept
+			select k.ord, k.term, k.relevance from kept k
+			join anchor a on a.ord = k.ord and a.term = k.term
 			union
 			select d.ord, c.word, d.relevance from down d
 			join term c on c.parent = d.term
 		),
 		through as (
-			select d.ord, p.id as phrase_id, d.relevance from down d
+			select d.ord, p.id as phrase_id, d.relevance
+			from (select * from kept union select * from down) d
 			join term a on a.canonical = d.term
 			join phrase p on p.text = a.word
 		),
