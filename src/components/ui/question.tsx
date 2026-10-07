@@ -36,9 +36,7 @@ export function Question({
 	};
 	return (
 		<div className="ui-question">
-			<p className="ui-question-text" id={id}>
-				{question}
-			</p>
+			<p id={id}>{question}</p>
 			<fieldset aria-labelledby={id} className="ui-question-options">
 				{options.map((option, i) => {
 					const body = (

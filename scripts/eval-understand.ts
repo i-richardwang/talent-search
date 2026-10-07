@@ -243,7 +243,10 @@ try {
 				? [
 						notes.says,
 						...(notes.choices ? [notes.choices.current] : []),
-						...others.flatMap((o) => [o.label, o.detail]),
+						...others.flatMap((o) => [
+							o.label,
+							...(o.detail ? [o.detail] : []),
+						]),
 					]
 				: [];
 			for (const line of shown) {
@@ -268,7 +271,7 @@ try {
 				...(notes?.choices ? [`现在：${notes.choices.current}`] : []),
 				...others.map(
 					(o) =>
-						`可选：${o.label}——${o.detail}（${inSentence(changesOf(next, o.conditions).added) || "只去掉条件"}）`,
+						`可选：${o.label}——${o.detail ?? ""}（${inSentence(changesOf(next, o.conditions).added) || "只去掉条件"}）`,
 				),
 			].join(" | ");
 		} catch (e) {

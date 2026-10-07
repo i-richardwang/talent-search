@@ -94,7 +94,11 @@ export const submissionSchema = z.object({
 export type Submission = z.infer<typeof submissionSchema>;
 
 /** HR 可以换成的一种理解。`conditions` 已经过和条件表同一道校验，选它就是换成这张表。 */
-export type Choice = { label: string; detail: string; conditions: Condition[] };
+export type Choice = {
+	label: string;
+	detail?: string;
+	conditions: Condition[];
+};
 
 /**
  * 一次理解给 HR 的一句话，只属于写出它的那条记录。名单已经按条件表出来了，这句话只说名单上
@@ -120,10 +124,9 @@ type Understood = { spec: SearchSpec; notes: TurnNotes | null };
  *    对不上任何一档职级），RPC 那一侧的取值来自屏幕上的候选。
  * 2. **停用状态跟着条件走。** 模型写不出停用（schema 里没有这一栏），提交的
  *    条件和上一轮某一条完全相同时，那一条的停用原样带过来：用户停掉的不会因为
- *    又说了一句话就复活。选项里的整张表也一样。
+ *    又说了一句话就复活。
  *
- * 选项校验后和现在的表一样、和前面的选项一样，或者一条都不剩，就不算一种理解；
- * 没写现在是哪种理解时整组选项不用：HR 分不清点了会换成什么。
+ * 说明里每个选项的整张表走同一道校验（`notesOf`）。
  */
 export function understood(
 	raw: unknown,
@@ -143,6 +146,10 @@ export function understood(
 	};
 }
 
+/**
+ * 模型写的说明 → 落库的说明。选项校验后和现在的表一样、和前面的选项一样，或者一条都不剩，
+ * 就不算一种理解；没写现在是哪种理解时整组选项不用：HR 分不清点了会换成什么。
+ */
 function notesOf(
 	raw: unknown,
 	conditions: readonly Condition[],
@@ -160,11 +167,8 @@ function notesOf(
 		const key = tableKey(table);
 		if (!label || table.length === 0 || seen.has(key)) continue;
 		seen.add(key);
-		others.push({
-			label,
-			detail: boundedText(entry.detail) ?? "",
-			conditions: table,
-		});
+		const detail = boundedText(entry.detail);
+		others.push({ label, ...(detail && { detail }), conditions: table });
 		if (others.length === OTHERS_MAX) break;
 	}
 	const current = boundedText(note.current);

@@ -76,7 +76,7 @@ const ROUND3: Turn = {
 
 /** 第二轮之后 HR 点了 AI 给的那一项：没有说话，条件换成那一项的表。 */
 export const ANSWERED_TURN: Turn = {
-	id: "turn-a3b",
+	id: "turn-a3-chosen",
 	rootTurnId: ROOT_TURN_ID,
 	mode: "conversation",
 	title: TASK_TITLE,

@@ -535,20 +535,31 @@ function Note({
 	return (
 		<Question
 			onChoose={(key) => {
-				const picked = choices.others[Number(key)];
-				return picked && onRevise(picked.conditions);
+				const table = choiceAt(choices, Number(key));
+				return table && onRevise(table);
 			}}
 			options={[
-				{ current: true, key: "current", label: choices.current },
+				{ current: true, key: "1", label: choices.current },
 				...choices.others.map((o, i) => ({
-					description: o.detail || undefined,
-					key: String(i),
+					description: o.detail,
+					key: String(i + 2),
 					label: o.label,
 				})),
 			]}
 			question={says}
 		/>
 	);
+}
+
+/**
+ * 问题里第 n 项（从 1 数，和选项前的编号一样）换成的整张表。第 1 项是现在用着的那一种，
+ * 和没有这一项一样，不换。
+ */
+export function choiceAt(
+	choices: NonNullable<TurnNotes["choices"]>,
+	n: number,
+): Condition[] | null {
+	return choices.others[n - 2]?.conditions ?? null;
 }
 
 function sameTable(a: readonly Condition[], b: readonly Condition[]) {

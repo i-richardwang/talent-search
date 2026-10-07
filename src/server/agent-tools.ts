@@ -78,12 +78,12 @@ async function checkSubmission(
 		findNames("org", namesOf("org")),
 		findNames("school", namesOf("school")),
 	]);
-	const unlabeled =
+	const optionsUnused =
 		(submitted.note?.options.length ?? 0) > 0 && !result.notes?.choices;
 	return [
-		...(unlabeled
+		...(optionsUnused
 			? [
-					"note 写了 options 就要写 current：现在这张表是哪种理解；选项的表要和现在的表不一样",
+					"note 的 options 一项都用不上：写了 options 就要写 current，说现在这张表是哪种理解；每一项的表要和现在的表不一样",
 				]
 			: []),
 		...valuesOutsideVocabulary(submitted, vocab),

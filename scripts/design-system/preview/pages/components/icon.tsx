@@ -237,7 +237,7 @@ function Usage() {
 				</span>
 				<span className="inline-flex items-center gap-1.5 text-sm text-warning">
 					<Icon icon={TriangleAlert} size="small" />
-					未采用「必须是 985」
+					已有任务在排队
 				</span>
 			</Example>
 			<Example

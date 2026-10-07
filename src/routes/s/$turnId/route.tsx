@@ -21,7 +21,7 @@ import { KeyHelp } from "./-components/key-help";
 import { QueryHeader } from "./-components/query-header";
 import { ResultList } from "./-components/result-list";
 import { SidePanel } from "./-components/side-panel";
-import { Thread } from "./-components/thread";
+import { choiceAt, Thread } from "./-components/thread";
 import { WorkspaceLayout } from "./-components/workspace-layout";
 import { WorkspaceNotices } from "./-components/workspace-notices";
 import { useCloseDetail, useEditQuery } from "./-lib/edit-query";
@@ -127,15 +127,15 @@ function Workbench() {
 
 	const reviseTo = (conditions: Condition[]) => reviseSpec({ conditions });
 
-	// 最后一轮 AI 问的那一问：按数字键选，1 是现在用着的那一种。线程看不见时不接
-	const others =
-		latest.spec && (wide || threadOpen)
-			? (latest.notes?.choices?.others ?? [])
-			: [];
-	const chooseOther = (n: number) => {
-		const picked = others[n - 2];
-		if (picked) reviseTo(picked.conditions);
-	};
+	// 最后一轮 AI 问的那一问：按选项前的数字选。线程看不见时不接
+	const choices =
+		latest.spec && (wide || threadOpen) ? latest.notes?.choices : null;
+	const choose =
+		choices &&
+		((n: number) => {
+			const table = choiceAt(choices, n);
+			if (table) reviseTo(table);
+		});
 
 	const picks = usePicks(turnId, outcome);
 
@@ -166,7 +166,7 @@ function Workbench() {
 	const [help, setHelp] = useState(false);
 
 	useKeyboardFlow({
-		onChoose: others.length > 0 ? chooseOther : undefined,
+		onChoose: choose ?? undefined,
 		onClearPicks: picks.clear,
 		onCloseDetail: closeDetail,
 		onEditQuery: editQuery,
