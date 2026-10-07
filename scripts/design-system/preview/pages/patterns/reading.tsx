@@ -127,7 +127,7 @@ function Wide() {
 			<SidePanel
 				conversation={
 					<Thread
-						onAdd={() => {}}
+						onRevise={() => {}}
 						onQuery={() => true}
 						rounds={THREAD}
 						understanding

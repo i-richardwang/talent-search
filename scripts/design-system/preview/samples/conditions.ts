@@ -56,6 +56,12 @@ export const ROUND2_CONDITIONS: Condition[] = [
 	MASTER,
 ];
 
+/** 第二轮 AI 问的那一问里可以换成的表：再加做过技术分享的，加分。 */
+export const SHARING_CONDITIONS: Condition[] = [
+	...ROUND2_CONDITIONS,
+	{ about: "experience", mode: "boost", what: ["技术分享"] },
+];
+
 /** 第三轮（在条件上直接改）的条件表：移除了学历。名单展示的就是这一轮。 */
 export const CONDITIONS: Condition[] = [RECOMMEND, BIG_COMPANY, TEAM];
 

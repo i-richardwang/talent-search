@@ -19,6 +19,13 @@ const EDIT_KEY: Record<SearchMode, Key> = {
 	},
 };
 
+/** AI 问你要哪种理解时按数字选：只有 AI 搜索会问。 */
+const CHOOSE_KEY: Key = {
+	desc: "AI 问你要哪种理解时，按选项前的数字",
+	keys: "1",
+	title: "选一项",
+};
+
 const KEYS: Key[] = [
 	{ desc: "也可以按 J、K", keys: "up+down", title: "切换员工" },
 	{ desc: "选中或取消正在看的这个人", keys: "space", title: "选择或取消" },
@@ -49,7 +56,11 @@ export function KeyHelp({
 	return (
 		<Modal noFooter onCancel={onClose} open={open} title="快捷键">
 			<div className="flex flex-col gap-8 pt-6 pb-2">
-				{[...(editable ? [EDIT_KEY[mode]] : []), ...KEYS].map((key) => (
+				{[
+					...(editable ? [EDIT_KEY[mode]] : []),
+					...(mode === "conversation" ? [CHOOSE_KEY] : []),
+					...KEYS,
+				].map((key) => (
 					<div className="flex items-start gap-4" key={key.title}>
 						<div className="flex min-w-0 flex-1 flex-col gap-1">
 							<Text>{key.title}</Text>

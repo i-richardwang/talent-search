@@ -48,7 +48,7 @@ function lookupInputs(list: readonly string[]): string[] {
 
 /**
  * 检查一份提交的搜索条件，每个问题一句话；没有问题返回空数组。
- * 条件和每条「搜不了」附带的替代条件一起检查：替代条件点一下就会加进搜索。
+ * 条件和说明里每个选项的整张表一起检查：HR 点一下选项，搜的就是那张表。
  */
 async function checkSubmission(
 	submitted: Submission,
@@ -60,7 +60,7 @@ async function checkSubmission(
 	if (failure) return [failure];
 	const conditions = [
 		...result.spec.conditions,
-		...(result.notes?.declined ?? []).flatMap((d) => d.instead),
+		...(result.notes?.choices?.others ?? []).flatMap((o) => o.conditions),
 	];
 	const words = conditions.filter(isNewClaim(base)).flatMap((c) => c.what);
 	const namesOf = (field: NameField) =>
@@ -78,7 +78,14 @@ async function checkSubmission(
 		findNames("org", namesOf("org")),
 		findNames("school", namesOf("school")),
 	]);
+	const unlabeled =
+		(submitted.note?.options.length ?? 0) > 0 && !result.notes?.choices;
 	return [
+		...(unlabeled
+			? [
+					"note 写了 options 就要写 current：现在这张表是哪种理解；选项的表要和现在的表不一样",
+				]
+			: []),
 		...valuesOutsideVocabulary(submitted, vocab),
 		...terms.flatMap((t) =>
 			t.people === 0

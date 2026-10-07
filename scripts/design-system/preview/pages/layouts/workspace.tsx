@@ -60,7 +60,7 @@ function Workspace() {
 		<Thread
 			autoFocus={threadOpen}
 			composer={composer}
-			onAdd={(more) => setSpec({ conditions: [...spec.conditions, ...more] })}
+			onRevise={(conditions) => setSpec({ conditions })}
 			onQuery={() => true}
 			rounds={THREAD}
 			understanding

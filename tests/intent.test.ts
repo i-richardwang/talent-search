@@ -193,14 +193,14 @@ describe("没作答", () => {
 	});
 
 	test("条件和说明都空着：没作答", () => {
-		const raw = { conditions: [], assumed: [], declined: [] };
+		const raw = { conditions: [], note: null };
 		assert.match(unanswered(raw, read(raw)) ?? "", /也没有说明/);
 	});
 
 	test("条件为空、说得出为什么：这是一个答案", () => {
 		const raw = {
 			conditions: [],
-			declined: [{ said: "北京的", why: "库里没有工作地点", instead: [] }],
+			note: { says: "人才库里没有工作地点", current: null, options: [] },
 		};
 		assert.equal(unanswered(raw, read(raw)), null);
 	});
@@ -252,72 +252,147 @@ describe("停用跟着条件走", () => {
 });
 
 describe("说明", () => {
-	test("替用户做的假设和搜不了的要求原样留下，替代条件走同一道校验", () => {
+	const algo = claim({ what: ["算法"] });
+
+	test("一句话和选项原样留下，选项的表走同一道校验", () => {
 		const { notes } = read({
-			conditions: [claim({ what: ["算法"] })],
-			assumed: [" 「资深」按职级高的几档算 ", "", 42],
-			declined: [
-				{ said: "北京的", why: "库里没有工作地点", instead: [] },
-				{
-					said: "大厂出身",
-					why: "按公司档找",
-					instead: [claim({ companyTag: ["一线大厂", "头部互联网T1"] })],
-				},
-				{ said: "没说原因的", instead: [] },
-			],
+			conditions: [algo],
+			note: {
+				says: " 简历里看不出是不是大厂出身，要不要按公司档找？ ",
+				current: "先不管这条",
+				options: [
+					{
+						label: "按公司档找",
+						detail: "头部互联网待过的有一百多位",
+						conditions: [
+							algo,
+							claim({ companyTag: ["一线大厂", "头部互联网T1"] }),
+						],
+					},
+				],
+			},
 		});
 		assert.deepEqual(notes, {
-			assumed: ["「资深」按职级高的几档算"],
-			declined: [
-				{ said: "北京的", why: "库里没有工作地点", instead: [] },
-				{
-					said: "大厂出身",
-					why: "按公司档找",
-					instead: [
+			says: "简历里看不出是不是大厂出身，要不要按公司档找？",
+			choices: {
+				current: "先不管这条",
+				others: [
+					{
+						label: "按公司档找",
+						detail: "头部互联网待过的有一百多位",
+						conditions: [
+							exp("must", "算法"),
+							{
+								about: "experience",
+								mode: "must",
+								companyTag: ["头部互联网T1"],
+							},
+						],
+					},
+				],
+			},
+		});
+	});
+
+	test("选项的表沿用上一轮的停用", () => {
+		const base: Condition[] = [{ ...exp("must", "产品"), off: "user" }];
+		const { notes } = read(
+			{
+				conditions: [algo],
+				note: {
+					says: "要不要把做过产品的也带上？",
+					current: "只看算法",
+					options: [
 						{
-							about: "experience",
-							mode: "must",
-							companyTag: ["头部互联网T1"],
+							label: "带上",
+							detail: "",
+							conditions: [algo, claim({ what: ["产品"] })],
 						},
 					],
 				},
-			],
-		});
-	});
-
-	test("同一段原话只留第一条", () => {
-		const { notes } = read({
-			conditions: [],
-			declined: [
-				{ said: "北京的", why: "库里没有工作地点", instead: [] },
-				{ said: "北京的", why: "没有城市", instead: [] },
-			],
-		});
-		assert.deepEqual(notes?.declined, [
-			{ said: "北京的", why: "库里没有工作地点", instead: [] },
+			},
+			base,
+		);
+		assert.deepEqual(notes?.choices?.others[0]?.conditions, [
+			exp("must", "算法"),
+			{ ...exp("must", "产品"), off: "user" },
 		]);
 	});
 
-	test("什么都没说明就是 null", () => {
-		assert.equal(read({ conditions: [claim({ what: ["算法"] })] }).notes, null);
-		assert.equal(
-			read({ conditions: [], assumed: [], declined: "不是数组" }).notes,
-			null,
+	test("和现在一样、和前面的选项一样、或校验后一条不剩的表不算一种理解", () => {
+		const { notes } = read({
+			conditions: [algo],
+			note: {
+				says: "算法有几种常见的意思，你要的是哪种？",
+				current: "算法工程",
+				options: [
+					{ label: "一样", detail: "", conditions: [algo] },
+					{
+						label: "加上推荐",
+						detail: "",
+						conditions: [algo, claim({ what: ["推荐"] })],
+					},
+					{
+						label: "还是加上推荐",
+						detail: "",
+						conditions: [claim({ what: ["推荐"] }), algo],
+					},
+					{
+						label: "全不合规",
+						detail: "",
+						conditions: [person("level", ["资深"])],
+					},
+				],
+			},
+		});
+		assert.deepEqual(
+			notes?.choices?.others.map((o) => o.label),
+			["加上推荐"],
 		);
 	});
 
-	test("每一类最多三条", () => {
+	test("最多再给两种理解", () => {
 		const { notes } = read({
-			conditions: [],
-			assumed: ["一", "二", "三", "四"],
-			declined: ["甲", "乙", "丙", "丁"].map((said) => ({
-				said,
-				why: "库里没有",
-				instead: [],
-			})),
+			conditions: [algo],
+			note: {
+				says: "要不要放宽？",
+				current: "不放宽",
+				options: ["推荐", "搜索", "广告"].map((word) => ({
+					label: word,
+					detail: "",
+					conditions: [algo, claim({ what: [word] })],
+				})),
+			},
 		});
-		assert.equal(notes?.assumed.length, 3);
-		assert.equal(notes?.declined.length, 3);
+		assert.equal(notes?.choices?.others.length, 2);
+	});
+
+	test("没写现在是哪种、或者没有一种能用的选项，只留那句话", () => {
+		const options = [
+			{
+				label: "加上推荐",
+				detail: "",
+				conditions: [algo, claim({ what: ["推荐"] })],
+			},
+		];
+		for (const note of [
+			{ says: "要不要加上推荐？", current: null, options },
+			{ says: "要不要加上推荐？", current: "不加", options: [] },
+		])
+			assert.deepEqual(read({ conditions: [algo], note }).notes, {
+				says: "要不要加上推荐？",
+				choices: null,
+			});
+	});
+
+	test("没有那句话就是 null", () => {
+		assert.equal(read({ conditions: [algo] }).notes, null);
+		assert.equal(read({ conditions: [algo], note: null }).notes, null);
+		assert.equal(
+			read({ conditions: [algo], note: { says: " ", options: "不是数组" } })
+				.notes,
+			null,
+		);
 	});
 });
 
@@ -346,14 +421,17 @@ describe("发给模型的形状", () => {
 					claim({ org: ["字节"] }, "boost"),
 					person("level", ["P7"], "boost"),
 				],
-				assumed: ["「资深」按职级高的几档算"],
-				declined: [
-					{
-						said: "有潜力",
-						why: "经历里看不出潜力",
-						instead: [claim({ what: ["带团队"] }, "boost")],
-					},
-				],
+				note: {
+					says: "简历里看不出潜力，要不要先看带过团队的？",
+					current: "先不管这条",
+					options: [
+						{
+							label: "带过团队的优先",
+							detail: "写过带团队的有两百多位",
+							conditions: [claim({ what: ["带团队"] }, "boost")],
+						},
+					],
+				},
 			}).success,
 		);
 	});
@@ -362,8 +440,7 @@ describe("发给模型的形状", () => {
 		assert.ok(
 			submissionSchema.safeParse({
 				conditions: [claim({ companyTag: ["一线大厂"] })],
-				assumed: [],
-				declined: [],
+				note: null,
 			}).success,
 		);
 	});
@@ -376,16 +453,14 @@ describe("发给模型的形状", () => {
 				conditions: Array.from({ length: 20 }, (_, i) =>
 					claim({ what: [`条件${i}`] }),
 				),
-				assumed: [],
-				declined: [],
+				note: null,
 			}).success,
 		);
 		const long = "供应链金融风控建模";
 		assert.ok(
 			submissionSchema.safeParse({
 				conditions: [claim({ what: [long] })],
-				assumed: [],
-				declined: [],
+				note: null,
 			}).success,
 		);
 		assert.deepEqual(of(claim({ what: ["算".repeat(25)] })), []);
@@ -394,7 +469,7 @@ describe("发给模型的形状", () => {
 });
 
 describe("提交时告诉模型的词表外取值", () => {
-	test("条件表和替代条件里的词表外取值各说一句，说出可选的档", () => {
+	test("条件表和选项的表里的词表外取值各说一句，说出可选的档", () => {
 		assert.deepEqual(
 			valuesOutsideVocabulary(
 				submissionSchema.parse({
@@ -403,14 +478,17 @@ describe("提交时告诉模型的词表外取值", () => {
 						{ about: "person", mode: "must", field: "level", atLeast: "P9" },
 						person("education", ["硕士"]),
 					],
-					assumed: [],
-					declined: [
-						{
-							said: "有潜力",
-							why: "看不出",
-							instead: [claim({ companyTag: ["一线大厂"] }, "boost")],
-						},
-					],
+					note: {
+						says: "简历里看不出潜力，要不要按公司档找？",
+						current: "先不管这条",
+						options: [
+							{
+								label: "按公司档找",
+								detail: "",
+								conditions: [claim({ companyTag: ["一线大厂"] }, "boost")],
+							},
+						],
+					},
 				}),
 				VOCAB,
 			),
@@ -426,8 +504,7 @@ describe("提交时告诉模型的词表外取值", () => {
 			valuesOutsideVocabulary(
 				submissionSchema.parse({
 					conditions: [person("school", ["银河学院"])],
-					assumed: [],
-					declined: [],
+					note: null,
 				}),
 				VOCAB,
 			),

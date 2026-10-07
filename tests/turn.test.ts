@@ -178,7 +178,7 @@ describe("补充需求", () => {
 		await answering(
 			(_text, base) => {
 				seen = base;
-				return { conditions: base, assumed: [], declined: [] };
+				return { conditions: base, note: null };
 			},
 			async () => {
 				const { turnId } = await createTurn(
@@ -199,7 +199,7 @@ describe("补充需求", () => {
 	test("模型按这句话重写了整张表：新表就是新表", async () => {
 		const root = await sentence("算法");
 		const spec = await answering(
-			() => ({ conditions: parseQuery("产品经理"), assumed: [], declined: [] }),
+			() => ({ conditions: parseQuery("产品经理"), note: null }),
 			async () => {
 				const { turnId } = await createTurn(
 					{ kind: "sentence", text: "换成找产品经理" },
@@ -254,7 +254,7 @@ describe("补充需求", () => {
 });
 
 describe("说明", () => {
-	test("替用户选定的理解和搜不了的要求跟着这一轮落库，替代条件也查词表", async () => {
+	test("那句话和选项跟着这一轮落库，选项的表也查词表", async () => {
 		const { turnId } = await createTurn({
 			kind: "sentence",
 			text: "北京的算法，有潜力",
@@ -262,51 +262,55 @@ describe("说明", () => {
 		await answering(
 			() => ({
 				conditions: parseQuery("算法"),
-				assumed: ["「算法」按算法工程方向读"],
-				declined: [
-					{ said: "北京的", why: "库里没有工作地点", instead: [] },
-					{
-						said: "有潜力",
-						why: "经历里看不出潜力",
-						instead: [
-							{ about: "experience", mode: "boost", what: ["带团队"] },
-							{
-								about: "person",
-								mode: "must",
-								field: "level",
-								values: ["资深"],
-							},
-						],
-					},
-				],
+				note: {
+					says: "人才库里没有工作地点，也看不出潜力，要不要先看带过团队的？",
+					current: "先不管这两条",
+					options: [
+						{
+							label: "带过团队的优先",
+							detail: "写过带团队的有两百多位",
+							conditions: [
+								...parseQuery("算法"),
+								{ about: "experience", mode: "boost", what: ["带团队"] },
+								{
+									about: "person",
+									mode: "must",
+									field: "level",
+									values: ["资深"],
+								},
+							],
+						},
+					],
+				},
 			}),
 			() => resolveTurn(turnId),
 		);
 		assert.deepEqual((await loadTurn(turnId))?.notes, {
-			assumed: ["「算法」按算法工程方向读"],
-			declined: [
-				{ said: "北京的", why: "库里没有工作地点", instead: [] },
-				{
-					said: "有潜力",
-					why: "经历里看不出潜力",
-					instead: parseQuery("+带团队"),
-				},
-			],
+			says: "人才库里没有工作地点，也看不出潜力，要不要先看带过团队的？",
+			choices: {
+				current: "先不管这两条",
+				others: [
+					{
+						label: "带过团队的优先",
+						detail: "写过带团队的有两百多位",
+						conditions: parseQuery("算法, +带团队"),
+					},
+				],
+			},
 		});
 	});
 
-	test("一条都搜不了的话是一个合法的结果：条件为空，说明在", async () => {
+	test("一条都搜不了的话是一个合法的结果：条件为空，那句话在", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "北京的" });
 		const spec = await answering(
 			() => ({
 				conditions: [],
-				assumed: [],
-				declined: [{ said: "北京的", why: "库里没有工作地点", instead: [] }],
+				note: { says: "人才库里没有工作地点", current: null, options: [] },
 			}),
 			() => resolveTurn(turnId),
 		);
 		assert.deepEqual(spec.conditions, []);
-		assert.equal((await loadTurn(turnId))?.notes?.declined.length, 1);
+		assert.equal((await loadTurn(turnId))?.notes?.says, "人才库里没有工作地点");
 	});
 
 	test("没有可说明的就不落说明", async () => {
@@ -491,8 +495,7 @@ describe("理解失败", () => {
 					conditions: [
 						{ about: "person", field: "level", mode: "must", values: ["资深"] },
 					],
-					assumed: [],
-					declined: [],
+					note: null,
 				}),
 				() => resolveTurn(turnId),
 			),
@@ -507,7 +510,7 @@ describe("理解失败", () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		await assert.rejects(
 			answering(
-				() => ({ conditions: [], assumed: [], declined: [] }),
+				() => ({ conditions: [], note: null }),
 				() => resolveTurn(turnId),
 			),
 			/既没有给出条件，也没有说明/,
@@ -524,8 +527,7 @@ describe("理解失败", () => {
 					{ about: "experience", mode: "must", minMonths: -36 },
 					{ about: "experience", mode: "must", what: ["算法"] },
 				],
-				assumed: [],
-				declined: [],
+				note: null,
 			}),
 			() => resolveTurn(turnId),
 		);

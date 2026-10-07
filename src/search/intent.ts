@@ -67,39 +67,47 @@ export const submissionSchema = z.object({
 	conditions: conditionItems.describe(
 		"整张新的条件表。一条经历主张里的各项说的是同一段经历；不同的经历分别写一条",
 	),
-	assumed: z
-		.array(z.string())
-		.describe("你替用户选定的读法，一句一条；没有就空着"),
-	declined: z
-		.array(
-			z.object({
-				said: z.string().describe("用户的原话片段"),
-				why: z.string().describe("为什么搜不了：库里有什么、没有什么"),
-				instead: conditionItems.describe(
-					"能换成库里有的说法就写成条件，换不了就空着",
+	note: z
+		.object({
+			says: z.string().describe("对 HR 说的一句话"),
+			current: z
+				.string()
+				.nullable()
+				.describe(
+					"有选项时，现在这张表是哪种理解，写成 HR 会回的话；没有选项写 null",
 				),
-			}),
-		)
-		.describe("这句话里搜不了的要求；没有就空着"),
+			options: z
+				.array(
+					z.object({
+						label: z.string().describe("HR 选这一项时会回的话"),
+						detail: z.string().describe("一句说明，人数来自查到的结果"),
+						conditions: conditionItems.describe("选了这一项之后的整张条件表"),
+					}),
+				)
+				.describe("HR 还可以换成的理解；没有就空着"),
+		})
+		.nullable()
+		.describe("名单上看不出、要 HR 知道或拿主意的一件事；没有就写 null"),
 });
 
 /** 模型提交的一份搜索条件：符合 schema，还没经过 `understood` 校验。 */
 export type Submission = z.infer<typeof submissionSchema>;
 
-/**
- * 模型给出的一条「搜不了」：原话、原因、可以换成的条件。
- * `instead` 已经过和条件表同一道校验，界面上点一下就能加进查询。
- */
-type Declined = { said: string; why: string; instead: Condition[] };
+/** HR 可以换成的一种理解。`conditions` 已经过和条件表同一道校验，选它就是换成这张表。 */
+export type Choice = { label: string; detail: string; conditions: Condition[] };
 
 /**
- * 一次理解的说明，只属于写出它的那条记录。条件表是查询本身，说明是对这一轮的
- * 交代：替用户做了哪些假设、哪些要求搜不了。两样都没有时不落库（`null`）。
+ * 一次理解给 HR 的一句话，只属于写出它的那条记录。名单已经按条件表出来了，这句话只说名单上
+ * 看不出的：哪些要求人才库里没有，或者一个词有几种理解、现在按的是哪种。HR 还可以换成别的理解时
+ * 带上选项，`current` 是现在这张表的那一种。没有要说的时候不落库（`null`）。
  */
-export type TurnNotes = { assumed: string[]; declined: Declined[] };
+export type TurnNotes = {
+	says: string;
+	choices: { current: string; others: Choice[] } | null;
+};
 
-/** 说明里每一类最多几条。再多就不是交代，是一段需要人读完才能继续的正文。 */
-const NOTES_MAX = 3;
+/** 除了现在这一种，最多再给几种理解。再多 HR 就得读完一屏才能选。 */
+const OTHERS_MAX = 2;
 
 type Understood = { spec: SearchSpec; notes: TurnNotes | null };
 
@@ -112,7 +120,10 @@ type Understood = { spec: SearchSpec; notes: TurnNotes | null };
  *    对不上任何一档职级），RPC 那一侧的取值来自屏幕上的候选。
  * 2. **停用状态跟着条件走。** 模型写不出停用（schema 里没有这一栏），提交的
  *    条件和上一轮某一条完全相同时，那一条的停用原样带过来：用户停掉的不会因为
- *    又说了一句话就复活。
+ *    又说了一句话就复活。选项里的整张表也一样。
+ *
+ * 选项校验后和现在的表一样、和前面的选项一样，或者一条都不剩，就不算一种理解；
+ * 没写现在是哪种理解时整组选项不用：HR 分不清点了会换成什么。
  */
 export function understood(
 	raw: unknown,
@@ -120,37 +131,52 @@ export function understood(
 	base: readonly Condition[],
 ): Understood {
 	const value = (raw ?? {}) as Record<string, unknown>;
-	const validate = (list: unknown) => conditionsIn(list, vocab);
 	const offs = new Map(base.map((c) => [conditionKey(c), c.off ?? null]));
-	const conditions = validate(value.conditions).map((c) =>
-		withOff(c, offs.get(conditionKey(c)) ?? null),
-	);
-	const assumed = textsOf(value.assumed);
-	const declined: Declined[] = [];
-	for (const item of Array.isArray(value.declined) ? value.declined : []) {
-		const entry = (item ?? {}) as Record<string, unknown>;
-		const said = boundedText(entry.said);
-		const why = boundedText(entry.why);
-		// 同一段原话只交代一次：两行一样的「搜不了」说不出第二件事
-		if (!said || !why || declined.some((d) => d.said === said)) continue;
-		declined.push({ said, why, instead: validate(entry.instead) });
-		if (declined.length === NOTES_MAX) break;
-	}
+	const validate = (list: unknown) =>
+		conditionsIn(list, vocab).map((c) =>
+			withOff(c, offs.get(conditionKey(c)) ?? null),
+		);
+	const conditions = validate(value.conditions);
 	return {
 		spec: { conditions },
-		notes:
-			assumed.length > 0 || declined.length > 0 ? { assumed, declined } : null,
+		notes: notesOf(value.note, conditions, validate),
 	};
 }
 
-function textsOf(raw: unknown): string[] {
-	const out: string[] = [];
-	for (const item of Array.isArray(raw) ? raw : []) {
-		const text = boundedText(item);
-		if (text && !out.includes(text)) out.push(text);
-		if (out.length === NOTES_MAX) break;
+function notesOf(
+	raw: unknown,
+	conditions: readonly Condition[],
+	validate: (list: unknown) => Condition[],
+): TurnNotes | null {
+	const note = (raw ?? {}) as Record<string, unknown>;
+	const says = boundedText(note.says);
+	if (!says) return null;
+	const seen = new Set([tableKey(conditions)]);
+	const others: Choice[] = [];
+	for (const item of Array.isArray(note.options) ? note.options : []) {
+		const entry = (item ?? {}) as Record<string, unknown>;
+		const label = boundedText(entry.label);
+		const table = validate(entry.conditions);
+		const key = tableKey(table);
+		if (!label || table.length === 0 || seen.has(key)) continue;
+		seen.add(key);
+		others.push({
+			label,
+			detail: boundedText(entry.detail) ?? "",
+			conditions: table,
+		});
+		if (others.length === OTHERS_MAX) break;
 	}
-	return out;
+	const current = boundedText(note.current);
+	return {
+		says,
+		choices: current && others.length > 0 ? { current, others } : null,
+	};
+}
+
+/** 一张条件表的身份：同样几条，不论先后。 */
+function tableKey(conditions: readonly Condition[]) {
+	return JSON.stringify(conditions.map(conditionKey).sort());
 }
 
 /** 一列不可信的条件 → 校验过、词表维取值都在词表里的条件。 */
@@ -219,7 +245,7 @@ export function valuesOutsideVocabulary(
 	};
 	for (const c of [
 		...submitted.conditions,
-		...submitted.declined.flatMap((d) => d.instead),
+		...(submitted.note?.options ?? []).flatMap((o) => o.conditions),
 	]) {
 		if (c.about === "experience") check("companyTag", c.companyTag ?? []);
 		else if (isVocabKey(c.field))

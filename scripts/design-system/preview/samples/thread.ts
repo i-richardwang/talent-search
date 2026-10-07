@@ -4,6 +4,7 @@ import {
 	KEYWORD_SPEC,
 	ROUND1_CONDITIONS,
 	ROUND2_CONDITIONS,
+	SHARING_CONDITIONS,
 	SPEC,
 } from "./conditions";
 import { ROUND1_TRACE, ROUND2_TRACE, T0 } from "./trace";
@@ -19,7 +20,7 @@ export const ROOT_TURN_ID = "turn-a1";
 /** 链头那句话：这次找人任务的标题。 */
 export const TASK_TITLE = "找做过推荐系统的算法工程师，最好在大厂待过三年以上";
 
-/** 链头：一句需求，整理出两条条件，替 HR 定了一个读法。 */
+/** 链头：一句需求，整理出两条条件，意思都明确，AI 不多说。 */
 const ROUND1: Turn = {
 	id: ROOT_TURN_ID,
 	rootTurnId: ROOT_TURN_ID,
@@ -27,16 +28,13 @@ const ROUND1: Turn = {
 	title: TASK_TITLE,
 	said: TASK_TITLE,
 	spec: { conditions: ROUND1_CONDITIONS },
-	notes: {
-		assumed: ["「三年以上」按在大厂的累计时长算，满足的人排在前面。"],
-		declined: [],
-	},
+	notes: null,
 	trace: ROUND1_TRACE,
 	startedAt: T0 - 1500,
 	at: T0 - 1500,
 };
 
-/** 第二轮：补充一句，加了两条；两处要求人才库里搜不了，其中一处给了替代条件。 */
+/** 第二轮：补充一句，加了两条；两处要求人才库里搜不了，AI 问要不要换成相近的找法。 */
 const ROUND2: Turn = {
 	id: "turn-a2",
 	rootTurnId: ROOT_TURN_ID,
@@ -45,15 +43,17 @@ const ROUND2: Turn = {
 	said: "还要带过团队，最好是硕士，base 北京，技术口碑好",
 	spec: { conditions: ROUND2_CONDITIONS },
 	notes: {
-		assumed: ["「最好是硕士」按学历硕士及以上加分。"],
-		declined: [
-			{ said: "base 北京", why: "人才库里没有工作地点。", instead: [] },
-			{
-				said: "技术口碑好",
-				why: "简历里没有同事评价。",
-				instead: [{ about: "experience", mode: "boost", what: ["技术分享"] }],
-			},
-		],
+		says: "人才库里没有工作地点，简历里也看不出技术口碑，要不要先看做过技术分享的？",
+		choices: {
+			current: "先不管这两条",
+			others: [
+				{
+					label: "做过技术分享的优先",
+					detail: "简历里写过技术分享的有六十多位",
+					conditions: SHARING_CONDITIONS,
+				},
+			],
+		},
 	},
 	trace: ROUND2_TRACE,
 	startedAt: T0 + 58_000,
@@ -72,6 +72,20 @@ const ROUND3: Turn = {
 	trace: null,
 	startedAt: null,
 	at: T0 + 90_000,
+};
+
+/** 第二轮之后 HR 点了 AI 给的那一项：没有说话，条件换成那一项的表。 */
+export const ANSWERED_TURN: Turn = {
+	id: "turn-a3b",
+	rootTurnId: ROOT_TURN_ID,
+	mode: "conversation",
+	title: TASK_TITLE,
+	said: null,
+	spec: { conditions: SHARING_CONDITIONS },
+	notes: null,
+	trace: null,
+	startedAt: null,
+	at: T0 + 70_000,
 };
 
 /** 整条对话链，链头在前；名单看的是最后一轮。 */

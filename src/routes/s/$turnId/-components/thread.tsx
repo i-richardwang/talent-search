@@ -5,9 +5,7 @@ import {
 	EyeIcon,
 	Loader2Icon,
 	PencilLineIcon,
-	PlusIcon,
 	RotateCwIcon,
-	TriangleAlertIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -27,13 +25,14 @@ import { Button } from "#/components/ui/button";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Divider } from "#/components/ui/divider";
 import { Icon } from "#/components/ui/icon";
+import { AnsweredQuestion, Question } from "#/components/ui/question";
 import { ScrollArea } from "#/components/ui/scroll-area";
-import { SuggestionChips } from "#/components/ui/suggestion-chips";
 import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
 import { inSentence } from "#/search/condition-label";
+import type { TurnNotes } from "#/search/intent";
 import type { QueryInput } from "#/search/spec";
 import { changesOf } from "#/search/spec";
 import type {
@@ -215,7 +214,7 @@ type Phase = "running" | "settled" | "failed";
 export function Thread({
 	rounds,
 	viewing,
-	onAdd,
+	onRevise,
 	onQuery,
 	onRetry,
 	waiting,
@@ -232,8 +231,8 @@ export function Thread({
 	/** 最后一轮这一次理解的进度；理解完成后为 null，读记录上的。 */
 	progress?: Progress | null;
 	fault?: InterpretFault | null;
-	/** 把替代条件加进正看着的条件表：记成新的一轮。 */
-	onAdd: (conditions: Condition[]) => void;
+	/** 换成 AI 给的另一种理解：整张条件表记成新的一轮。 */
+	onRevise: (conditions: Condition[]) => unknown;
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
 	/** 再理解一次最后一轮；不给就没有重试钮。 */
 	onRetry?: () => void;
@@ -270,11 +269,12 @@ export function Thread({
 							<Round
 								failure={i === last ? fault : null}
 								key={round.id}
+								next={rounds[i + 1] ?? null}
 								mark={
 									round.id !== viewing ? "link" : previewing ? "viewing" : null
 								}
-								onAdd={onAdd}
 								onRetry={onRetry}
+								onRevise={onRevise}
 								phase={i === last ? phase : "settled"}
 								previous={i > 0 ? (rounds[i - 1] ?? null) : null}
 								round={round}
@@ -361,15 +361,18 @@ function ViewResult({ turnId }: { turnId: string }) {
 function Round({
 	round,
 	previous,
+	next,
 	mark,
 	phase,
 	failure,
 	progress: { trace, startedAt },
-	onAdd,
+	onRevise,
 	onRetry,
 }: {
 	round: Turn;
 	previous: Turn | null;
+	/** 下一轮；这一轮的问题答没答、答了哪一项，看它。 */
+	next: Turn | null;
 	/**
 	 * 这一轮的记号：别的轮次带查看结果的链接；正看着的一轮不是最后一轮时
 	 * 标出来，是最后一轮就什么都不标——那是默认的样子。
@@ -379,7 +382,7 @@ function Round({
 	/** 没理解出来时哪个环节出了问题，不是「这句话没读懂」。 */
 	failure: InterpretFault | null;
 	progress: Progress;
-	onAdd: (conditions: Condition[]) => void;
+	onRevise: (conditions: Condition[]) => unknown;
 	onRetry?: () => void;
 }) {
 	const { said, spec, notes } = round;
@@ -406,11 +409,6 @@ function Round({
 				</Divider>
 			</li>
 		);
-
-	const offers =
-		mark !== "link" && phase === "settled"
-			? (notes?.declined ?? []).filter((d) => d.instead.length > 0)
-			: [];
 
 	return (
 		<li
@@ -453,17 +451,11 @@ function Round({
 						)
 					)}
 					{spec && <p>{replyText(previous, spec.conditions)}</p>}
-					{notes?.assumed.map((line) => (
-						<Text as="p" key={line} type="secondary">
-							{line}
-						</Text>
-					))}
-					{notes?.declined.map((item) => (
-						<Declined key={item.said} said={item.said} why={item.why} />
-					))}
+					{spec && notes && (
+						<Note next={next} notes={notes} onRevise={onRevise} />
+					)}
 					{failure && <Fault fault={failure} onRetry={onRetry} />}
 				</div>
-				{offers.length > 0 && <FollowUps offers={offers} onAdd={onAdd} />}
 				{(link || viewingTag) && (
 					<div className="flex items-center gap-1">
 						{viewingTag}
@@ -482,27 +474,6 @@ function progressOf(turn: Turn): Progress {
 /** AI 回应的时刻：最后一步完成的时候；没走过步骤就是那一轮写入的时候。 */
 function lastStepAt(at: number, trace: readonly TraceStep[]) {
 	return trace[trace.length - 1]?.at ?? at;
-}
-
-function Declined({ said, why }: { said: string; why: string }) {
-	return (
-		<p className="flex items-start gap-2 px-1.5 py-2">
-			<span className="flex h-(--text-base--line-height) shrink-0 items-center">
-				<Icon
-					aria-hidden="true"
-					className="text-warning"
-					icon={TriangleAlertIcon}
-					size={16}
-				/>
-			</span>
-			<span className="min-w-0">
-				<Text type="secondary">未采用「{said}」：</Text>
-				<Text size="xs" type="tertiary">
-					{why}
-				</Text>
-			</span>
-		</p>
-	);
 }
 
 /** 按下重试之后到这一轮重新进入理解之前，钮停在等待态，免得被连按两次。 */
@@ -541,29 +512,48 @@ function Fault({
 	);
 }
 
-function offerText(item: { said: string; instead: Condition[] }) {
-	return `把「${item.said}」换成 ${inSentence(item.instead)}`;
-}
-
-/** 搜不了的要求附带的替代条件：点一下就加进正看着的条件表，记成新的一轮。 */
-function FollowUps({
-	offers,
-	onAdd,
+/**
+ * AI 对 HR 说的那句话。带选项时是一问：最后一轮的问题可以点，点了就换成那张表、记成新的一轮；
+ * 有了下一轮就收起来，下一轮恰好是换成某一项的那张表时写出答的是哪一项。
+ */
+function Note({
+	notes: { says, choices },
+	next,
+	onRevise,
 }: {
-	offers: { said: string; instead: Condition[] }[];
-	onAdd: (conditions: Condition[]) => void;
+	notes: TurnNotes;
+	next: Turn | null;
+	onRevise: (conditions: Condition[]) => unknown;
 }) {
+	if (!choices) return <p>{says}</p>;
+	if (next) {
+		const picked = choices.others.find(
+			(o) => next.spec && sameTable(o.conditions, next.spec.conditions),
+		);
+		return <AnsweredQuestion answer={picked?.label ?? null} question={says} />;
+	}
 	return (
-		<SuggestionChips
-			icon={PlusIcon}
-			items={offers.map((item) => ({
-				key: item.said,
-				label: offerText(item),
-				onClick: () => onAdd(item.instead),
-			}))}
-			label="可以改为"
+		<Question
+			onChoose={(key) => {
+				const picked = choices.others[Number(key)];
+				return picked && onRevise(picked.conditions);
+			}}
+			options={[
+				{ current: true, key: "current", label: choices.current },
+				...choices.others.map((o, i) => ({
+					description: o.detail || undefined,
+					key: String(i),
+					label: o.label,
+				})),
+			]}
+			question={says}
 		/>
 	);
+}
+
+function sameTable(a: readonly Condition[], b: readonly Condition[]) {
+	const { added, removed } = changesOf(a, b);
+	return added.length === 0 && removed.length === 0;
 }
 
 /** 说的是找了什么，不是调了什么——调的是哪样东西对人没有意义。 */

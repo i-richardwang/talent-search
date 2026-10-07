@@ -5,11 +5,12 @@ import type { View } from "./view-params";
 
 /**
  * `/` 改查询，↑↓ / jk 换人，空格选中或取消正在看的这个人，Esc 先关详情、没开详情时
- * 清空已选的人，`?` 打开快捷键列表。批量筛人时手不必离开键盘。
+ * 清空已选的人，`?` 打开快捷键列表，数字键选 AI 问的那一问的第几项。批量筛人时手不必离开键盘。
  *
  * 窄屏详情浮层、导出对话框、快捷键列表的 Esc 归它们自己：焦点在 `[role=dialog]` 里时这里不接。
  */
 export function useKeyboardFlow({
+	onChoose,
 	onEditQuery,
 	onCloseDetail,
 	results,
@@ -21,6 +22,8 @@ export function useKeyboardFlow({
 	onClearPicks,
 	onHelp,
 }: {
+	/** 选 AI 问的那一问的第几项（从 1 数）；没有在问的就不给。 */
+	onChoose?: (n: number) => void;
 	/** 把光标放进改查询的地方：对话是右栏线程底下的输入框，关键词是名单上方的「经历或技能」。 */
 	onEditQuery: () => void;
 	onCloseDetail: () => void;
@@ -69,6 +72,12 @@ export function useKeyboardFlow({
 			if (e.key === "?" && !busy && !control) {
 				e.preventDefault();
 				onHelp();
+				return;
+			}
+			if (onChoose && /^[1-9]$/.test(e.key) && !busy && !control) {
+				if (e.repeat) return;
+				e.preventDefault();
+				onChoose(Number(e.key));
 				return;
 			}
 			if (e.key === "Escape") {
@@ -135,6 +144,7 @@ export function useKeyboardFlow({
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
 	}, [
+		onChoose,
 		onEditQuery,
 		onCloseDetail,
 		onPick,

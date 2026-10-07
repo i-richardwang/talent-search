@@ -183,7 +183,7 @@ const CATALOG = [
 			component("filter-button", "筛选钮", "FilterButton"),
 			component("progress", "进度条", "Progress"),
 			component("progress-tag", "进度标签", "ProgressTag"),
-			component("suggestion-chips", "建议列", "SuggestionChips"),
+			component("question", "一问几选", "Question · AnsweredQuestion"),
 			component("skeleton", "骨架屏", "Skeleton"),
 			component("alert", "警告提示", "Alert"),
 			component("code-block", "代码块", "CodeBlock"),

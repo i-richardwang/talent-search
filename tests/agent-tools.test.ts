@@ -80,7 +80,7 @@ function run(
 }
 
 function table(conditions: unknown[]) {
-	return { conditions, assumed: [], declined: [] };
+	return { conditions, note: null };
 }
 
 describe("查经历词", () => {
@@ -193,6 +193,33 @@ describe("提交搜索条件", () => {
 			await run(kept.tools.submit, table(parseQuery("量子炼金"))),
 			{ passed: true },
 		);
+	});
+
+	test("选项的表一样检查；写了选项没写现在是哪种理解，告诉模型去补", async () => {
+		const agent = await agentOn();
+		const option = (conditions: unknown[]) => ({
+			label: "加上",
+			detail: "",
+			conditions,
+		});
+		const unfound = (await run(agent.tools.submit, {
+			conditions: parseQuery("推荐"),
+			note: {
+				says: "要不要加上？",
+				current: "不加",
+				options: [option(parseQuery("推荐, 量子炼金"))],
+			},
+		})) as Checked;
+		assert.match(unfound.problems?.join() ?? "", /量子炼金.*一个人都找不到/);
+		const unlabeled = (await run(agent.tools.submit, {
+			conditions: parseQuery("推荐"),
+			note: {
+				says: "要不要加上？",
+				current: null,
+				options: [option(parseQuery("推荐, 考古"))],
+			},
+		})) as Checked;
+		assert.match(unlabeled.problems?.join() ?? "", /current/);
 	});
 
 	test("什么都没写不通过", async () => {

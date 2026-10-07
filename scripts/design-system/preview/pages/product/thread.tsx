@@ -24,6 +24,7 @@ import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
 import {
+	ANSWERED_TURN,
 	FRESH_TURN,
 	LATEST_TURN_ID,
 	PENDING_TRACE,
@@ -32,7 +33,7 @@ import {
 	THREAD,
 } from "../../samples/thread";
 
-type State = "settled" | "earlier" | "running" | "failed";
+type State = "settled" | "asking" | "earlier" | "running" | "failed";
 
 /** 线程在每种状态下的几样输入。 */
 const STATES: Record<
@@ -44,6 +45,12 @@ const STATES: Record<
 		fault: InterpretFault | null;
 	}
 > = {
+	asking: {
+		fault: null,
+		progress: null,
+		rounds: THREAD.slice(0, 2),
+		viewing: THREAD[1]?.id ?? "",
+	},
 	earlier: {
 		fault: null,
 		progress: null,
@@ -101,6 +108,7 @@ function Playground() {
 						onChange={setState}
 						options={[
 							{ label: "已理解", value: "settled" },
+							{ label: "AI 在问", value: "asking" },
 							{ label: "看较早的结果", value: "earlier" },
 							{ label: "理解中", value: "running" },
 							{ label: "理解失败", value: "failed" },
@@ -116,15 +124,17 @@ function Playground() {
 			</Controls>
 			<Stage
 				className="items-stretch p-0"
-				footer={<span>{last ?? "在输入框里补充一句需求，或点「添加」"}</span>}
+				footer={
+					<span>{last ?? "在输入框里补充一句需求，或选 AI 给的一项"}</span>
+				}
 			>
 				<div className="mx-auto h-160 w-full max-w-(--container-detail-wide)">
 					<Routed url={`/s/${LATEST_TURN_ID}`}>
 						<Thread
 							{...props}
 							key={state}
-							onAdd={(conditions) =>
-								setLast(`添加了 ${inSentence(conditions)}`)
+							onRevise={(conditions) =>
+								setLast(`换成了 ${inSentence(conditions)}`)
 							}
 							onQuery={(input) => {
 								setLast(
@@ -165,9 +175,9 @@ function Faults() {
 									<Thread
 										fault={fault}
 										progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
-										onAdd={() => {}}
 										onQuery={() => true}
 										onRetry={() => {}}
+										onRevise={() => {}}
 										rounds={[FRESH_TURN]}
 										understanding={false}
 										viewing={FRESH_TURN.id}
@@ -193,16 +203,31 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="搜不了的要求用 amber 的警示三角记在回应里；附带的替代条件显示在正在看的那次回应底下，点一下记成新的一次修改。"
-				title="搜不了的要求"
+				description="搜不了的要求或者有几种意思的词，AI 用一句话问，下面是几种做法：第一项是名单现在用的，其余点一下就换成那张条件表，记成新的一次修改。"
+				title="AI 在问"
 			>
 				<Column>
 					<Thread
-						onAdd={noop}
 						onQuery={() => true}
+						onRevise={noop}
 						rounds={THREAD.slice(0, 2)}
 						understanding
 						viewing={THREAD[1]?.id ?? ""}
+						waiting={false}
+					/>
+				</Column>
+			</Example>
+			<Example
+				description="有了下一次，问题收成一行：问话照常，选了的那一项淡一档；下一次不是选项里的哪一张表时只留问话。"
+				title="问过的"
+			>
+				<Column>
+					<Thread
+						onQuery={() => true}
+						onRevise={noop}
+						rounds={[...THREAD.slice(0, 2), ANSWERED_TURN]}
+						understanding
+						viewing={ANSWERED_TURN.id}
 						waiting={false}
 					/>
 				</Column>
@@ -214,7 +239,7 @@ function Usage() {
 				<Column>
 					<Thread
 						progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
-						onAdd={noop}
+						onRevise={noop}
 						onQuery={() => true}
 						rounds={[FRESH_TURN]}
 						understanding
@@ -229,7 +254,7 @@ function Usage() {
 			>
 				<Column>
 					<Thread
-						onAdd={noop}
+						onRevise={noop}
 						onQuery={() => true}
 						rounds={THREAD}
 						understanding={false}
@@ -244,7 +269,7 @@ function Usage() {
 			>
 				<Column>
 					<Thread
-						onAdd={noop}
+						onRevise={noop}
 						onQuery={() => true}
 						rounds={THREAD.slice(0, 1)}
 						understanding={false}
@@ -264,18 +289,18 @@ export function ThreadPage() {
 			facts={[
 				`${Object.keys(STATES).length} 种末尾状态`,
 				`${FAULTS.length} 种出错`,
-				"替代条件",
+				"一问几选",
 			]}
 			rules={{
 				notes: [
 					"线程总是整条链；查看早先一次的结果只换名单，不截断线程，正在看的那一次标「正在查看」。",
 					"每次的回应按前后两组条件的差别说加了什么、去掉了什么，条件写进句子用 inSentence。",
 					"理解失败时说清是哪个环节出了问题：连不上和报错时需求没被读过，不能说成没读懂；线程里的提示带重试，名单那一列另有同样的出路。",
-					"替代条件跟着正在看的那一次，显示在那次回应底下，逐个浮现。",
+					"AI 每次最多问一件事：一句问话，第一项是现在用的，其余点一下或按数字键换成那张条件表；不理就照现在的名单。最后一次才能点，有了下一次就收成一行。",
 					"检索人才库的过程进行中展开、完成后收起；只给出人数，不给出任何一个人。",
 					"消息的时刻与动作（复制、查看这次的结果）悬停才出现；换到哪一次的结果，那一次闪一下。",
 				],
-				usage: `<Thread\n  onAdd={addConditions}\n  onQuery={submit}\n  onRetry={retry}\n  rounds={thread}\n  understanding\n  viewing={turnId}\n  waiting={interpreting}\n/>`,
+				usage: `<Thread\n  onRevise={reviseTo}\n  onQuery={submit}\n  onRetry={retry}\n  rounds={thread}\n  understanding\n  viewing={turnId}\n  waiting={interpreting}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用线程" },

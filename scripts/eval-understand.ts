@@ -11,7 +11,10 @@
  *     "drop": "+org:字节",             // 可选：新表里必须没有的条件，一行查询语法
  *     "has": "education:>=本科",       // 可选：新表里必须原样有的条件，一行查询语法
  *     "add": ["+团队"],                // 可选：新加的条件里必须提到的词，前缀 + / - 是加分 / 排除
- *     "declined": ["北京"],            // 可选：必须说成搜不了的原话片段
+ *     "tells": true,                   // 可选：必须对 HR 说一句话（有搜不了的要求）
+ *     "asks": true,                    // 可选：必须给出可以换成的理解（一个词有几种意思）
+ *     "offer": ["iOS"],                // 可选：某个选项新加的条件里必须提到的词
+ *     "quiet": true,                   // 可选：不该对 HR 说任何话
  *     "together": [["字节", "算法"]],  // 可选：每组词写在同一条新条件里（同一段经历）
  *     "apart": [["字节", "算法"]],     // 可选：每组词分写在不同的新条件里（只要求同一个人）
  *     "empty": true,                   // 可选：新表必须是空的
@@ -21,7 +24,7 @@
  * 的性质：模型不能顺手丢掉或改掉用户没提到的条件。词比对折叠全半角、大小写和空白，
  * 按包含算：模型写「团队管理」也算提到了「团队」。一题只要有一处不对就打叉，退出码
  * 看的是有没有打叉的题。模型写的说明原样显示在界面上，里面出现内部用词（`lib/internal-words.ts`）
- * 也算一处不对。
+ * 也算一处不对；那句话要像同事说话，那句话不止一句、说明和选项带括号也算。
  *
  * 调用与工作台相同的入口（`server/llm.ts` 的 `understand`，再经 `understood` 校验），用
  * 当前配置的端点和模型；词表从 `.env.local` 那个库里取，和线上发给模型的是同一份。
@@ -34,10 +37,11 @@ import { join } from "node:path";
 import { pool } from "#/db";
 import { internalWordsIn } from "#/lib/internal-words";
 import { type Condition, conditionKey, type Mode } from "#/search/condition";
-import { conditionLabel } from "#/search/condition-label";
+import { conditionLabel, inSentence } from "#/search/condition-label";
 import { unanswered, understood } from "#/search/intent";
 import { parseQuery } from "#/search/query-syntax";
 import { vocabulary } from "#/search/search";
+import { changesOf } from "#/search/spec";
 import { agentToolsWithoutTrace } from "#/server/agent-tools";
 import { understand } from "#/server/llm";
 
@@ -48,7 +52,10 @@ type Case = {
 	drop: Condition[];
 	has: Condition[];
 	add: { mode: Mode; word: string }[];
-	declined: string[];
+	tells: boolean;
+	asks: boolean;
+	offer: string[];
+	quiet: boolean;
 	together: string[][];
 	apart: string[][];
 	empty: boolean;
@@ -90,7 +97,10 @@ function loadCases(file: string): Case[] {
 					? { mode: "exclude" as const, word: word.slice(1) }
 					: { mode: "must" as const, word },
 		);
-		const declined = list("declined");
+		const tells = c.tells === true;
+		const asks = c.asks === true;
+		const offer = list("offer");
+		const quiet = c.quiet === true;
 		const groups = (key: string) => {
 			const value = c[key] ?? [];
 			if (
@@ -110,13 +120,16 @@ function loadCases(file: string): Case[] {
 		const has = syntax("has");
 		if (
 			!add.length &&
-			!declined.length &&
+			!tells &&
+			!asks &&
+			!offer.length &&
+			!quiet &&
 			!drop.length &&
 			!has.length &&
 			!empty
 		)
 			throw new Error(
-				`${where}：至少要有 add、drop、has、declined、empty 之一`,
+				`${where}：至少要有 add、drop、has、tells、asks、offer、quiet、empty 之一`,
 			);
 		return {
 			name: c.name.trim(),
@@ -125,7 +138,10 @@ function loadCases(file: string): Case[] {
 			drop,
 			has,
 			add,
-			declined,
+			tells,
+			asks,
+			offer,
+			quiet,
 			together,
 			apart,
 			empty,
@@ -210,20 +226,35 @@ try {
 				)
 					problems.push(`「${group.join("」「")}」不该写在同一条里`);
 
-			const said = result.notes?.declined.map((d) => d.said) ?? [];
-			for (const word of c.declined)
-				if (!said.some((s) => norm(s).includes(norm(word))))
-					problems.push(`没说「${word}」搜不了`);
+			const notes = result.notes;
+			const others = notes?.choices?.others ?? [];
+			if ((c.tells || c.asks) && !notes) problems.push("没对 HR 说那句话");
+			if (c.asks && others.length === 0) problems.push("没给可以换成的理解");
+			if (c.quiet && notes) problems.push(`不该说话：${notes.says}`);
+			const offered = others.flatMap(
+				(o) => changesOf(next, o.conditions).added,
+			);
+			for (const word of c.offer)
+				if (!offered.some((one) => mentions(one, word)))
+					problems.push(`选项里没有「${word}」`);
 			if (c.empty && next.length > 0) problems.push("条件表应当是空的");
-			// 说明原样显示给 HR：不能带代码和模型那一侧的词
-			for (const line of [
-				...(result.notes?.assumed ?? []),
-				...(result.notes?.declined ?? []).map((d) => d.why),
-			]) {
+			// 那句话和选项原样显示给 HR：不能带代码和模型那一侧的词，要像同事说话
+			const shown = notes
+				? [
+						notes.says,
+						...(notes.choices ? [notes.choices.current] : []),
+						...others.flatMap((o) => [o.label, o.detail]),
+					]
+				: [];
+			for (const line of shown) {
 				const leaked = internalWordsIn(line);
 				if (leaked.length > 0)
 					problems.push(`说明里有内部用词「${leaked.join("、")}」：${line}`);
 			}
+			for (const line of shown)
+				if (/[（）()[\]【】]/.test(line)) problems.push(`说明带括号：${line}`);
+			if (notes && /[。！？!?].+/.test(notes.says))
+				problems.push(`那句话不止一句：${notes.says}`);
 
 			summary = [
 				next
@@ -233,9 +264,11 @@ try {
 							(one.mode === "must" ? "" : `(${one.mode})`),
 					)
 					.join("、") || "（空）",
-				...(result.notes?.assumed ?? []).map((a) => `读法：${a}`),
-				...(result.notes?.declined ?? []).map(
-					(d) => `搜不了：${d.said}——${d.why}`,
+				...(notes ? [`说：${notes.says}`] : []),
+				...(notes?.choices ? [`现在：${notes.choices.current}`] : []),
+				...others.map(
+					(o) =>
+						`可选：${o.label}——${o.detail}（${inSentence(changesOf(next, o.conditions).added) || "只去掉条件"}）`,
 				),
 			].join(" | ");
 		} catch (e) {

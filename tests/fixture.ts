@@ -228,8 +228,7 @@ function fakeIntent(text: string, base: unknown[]) {
 			...base,
 			...parseQuery(text).map(({ off: _off, ...rest }) => rest),
 		],
-		assumed: [],
-		declined: [],
+		note: null,
 	};
 }
 

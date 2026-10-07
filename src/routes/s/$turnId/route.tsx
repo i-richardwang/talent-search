@@ -125,8 +125,17 @@ function Workbench() {
 	const reviseSpec = (next: SearchSpec) =>
 		commit({ kind: "spec", spec: next }, { from: turnId });
 
-	const addConditions = (more: Condition[]) =>
-		reviseSpec({ conditions: [...spec.conditions, ...more] });
+	const reviseTo = (conditions: Condition[]) => reviseSpec({ conditions });
+
+	// 最后一轮 AI 问的那一问：按数字键选，1 是现在用着的那一种。线程看不见时不接
+	const others =
+		latest.spec && (wide || threadOpen)
+			? (latest.notes?.choices?.others ?? [])
+			: [];
+	const chooseOther = (n: number) => {
+		const picked = others[n - 2];
+		if (picked) reviseTo(picked.conditions);
+	};
 
 	const picks = usePicks(turnId, outcome);
 
@@ -144,7 +153,7 @@ function Workbench() {
 			composer={composer}
 			fault={interpretFault}
 			progress={progress}
-			onAdd={addConditions}
+			onRevise={reviseTo}
 			onQuery={(input) => commit(input, { from: turnId })}
 			onRetry={retryInterpret}
 			rounds={thread}
@@ -157,6 +166,7 @@ function Workbench() {
 	const [help, setHelp] = useState(false);
 
 	useKeyboardFlow({
+		onChoose: others.length > 0 ? chooseOther : undefined,
 		onClearPicks: picks.clear,
 		onCloseDetail: closeDetail,
 		onEditQuery: editQuery,

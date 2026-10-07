@@ -1,5 +1,5 @@
 /**
- * 右栏的线程：每一轮的需求、搜索条件怎么变了、替人定了什么理解方式、哪些要求没有采用。
+ * 右栏的线程：每一轮的需求、搜索条件怎么变了、AI 对 HR 说了什么、问了什么。
  * 模型每一轮提交整张表，它丢掉的条件只在这里看得见。
  */
 import assert from "node:assert/strict";
@@ -59,9 +59,9 @@ async function seen(
 			<Thread
 				fault={fault}
 				progress={progress}
-				onAdd={() => {}}
 				onQuery={() => true}
 				onRetry={onRetry}
+				onRevise={() => {}}
 				rounds={turns(rounds)}
 				understanding={understanding}
 				viewing={`t${viewing}`}
@@ -142,41 +142,77 @@ describe("第一轮", () => {
 		assert.match(text, /已按以下条件搜索：算法、后端/);
 	});
 
-	test("理解方式和未采用的要求都写出来，有替代就在那次回应底下给一键添加", async () => {
+	test("AI 说的那句话写在回应里", async () => {
 		const { text } = await seen([
 			{
-				said: "北京的算法，有潜力",
+				said: "北京的算法",
 				spec: "算法",
-				notes: {
-					assumed: ["「算法」按算法工程方向理解"],
-					declined: [
-						{ said: "北京的", why: "暂不支持按工作地点筛选", instead: [] },
-						{
-							said: "有潜力",
-							why: "简历中看不出潜力",
-							instead: parseQuery("+带团队"),
-						},
-					],
-				},
+				notes: { says: "人才库里没有工作地点，这条先没管。", choices: null },
 			},
 		]);
-		assert.match(text, /「算法」按算法工程方向理解/);
-		assert.match(text, /未采用「北京的」：\s*暂不支持按工作地点筛选/);
-		assert.match(text, /未采用「有潜力」：\s*简历中看不出潜力/);
-		assert.match(text, /把「有潜力」换成 带团队（加分）/);
-		assert.doesNotMatch(text, /把「北京的」换成/, "没有替代就不给");
+		assert.match(
+			text,
+			/已按以下条件搜索：算法\s*人才库里没有工作地点，这条先没管。/,
+		);
+	});
+});
+
+const ASKED: TurnNotes = {
+	says: "简历里看不出潜力，要不要先看带过团队的？",
+	choices: {
+		current: "先不管这条",
+		others: [
+			{
+				label: "带过团队的优先",
+				detail: "写过带团队的有两百多位",
+				conditions: parseQuery("算法, +带团队"),
+			},
+		],
+	},
+};
+
+describe("AI 问的那一问", () => {
+	test("最后一轮的问题可以选：现在用的那一项标当前、不能点，其余每项是一个按钮", async () => {
+		const { html, text } = await seen([
+			{ said: "算法，有潜力", spec: "算法", notes: ASKED },
+		]);
+		assert.match(text, /要不要先看带过团队的？/);
+		assert.match(text, /1\s*先不管这条\s*当前/);
+		assert.match(text, /2\s*带过团队的优先\s*写过带团队的有两百多位/);
+		assert.match(html, /<button[^>]*>(?:(?!<\/button>)[\s\S])*带过团队的优先/);
+		assert.doesNotMatch(
+			html,
+			/<button[^>]*>(?:(?!<\/button>)[\s\S])*先不管这条/,
+			"现在用的那一项已经生效，点它什么都不会发生",
+		);
+	});
+
+	test("有了下一轮就收起来：下一轮恰好换成某一项的表，写出答的是哪一项", async () => {
+		const { html, text } = await seen([
+			{ said: "算法，有潜力", spec: "算法", notes: ASKED },
+			{ said: null, spec: "算法, +带团队" },
+		]);
+		assert.match(text, /要不要先看带过团队的？\s*带过团队的优先/);
+		assert.doesNotMatch(text, /先不管这条/);
+		assert.doesNotMatch(
+			html,
+			/<button[^>]*>(?:(?!<\/button>)[\s\S])*带过团队的优先/,
+		);
+	});
+
+	test("接着说了别的话：只留问话", async () => {
+		const { text } = await seen([
+			{ said: "算法，有潜力", spec: "算法", notes: ASKED },
+			{ said: "再加后端", spec: "算法, 后端" },
+		]);
+		assert.match(text, /要不要先看带过团队的？/);
+		assert.doesNotMatch(text, /带过团队的优先|先不管这条/);
 	});
 });
 
 describe("线程就是记录链", () => {
-	const declined: TurnNotes = {
-		assumed: [],
-		declined: [
-			{ said: "有潜力", why: "看不出", instead: parseQuery("+带团队") },
-		],
-	};
 	const chain: Round[] = [
-		{ said: "算法，有潜力", spec: "算法", notes: declined },
+		{ said: "算法，有潜力", spec: "算法" },
 		{ said: "再加后端", spec: "算法, 后端" },
 	];
 
@@ -186,8 +222,6 @@ describe("线程就是记录链", () => {
 		assert.doesNotMatch(html, /href="\/s\/t1"/, "正看着的这一轮不是链接");
 		assert.match(html, /aria-current="page"/);
 		assert.doesNotMatch(text, /正在查看/, "看着最后一轮是默认的样子，不标");
-		assert.match(text, /未采用「有潜力」：\s*看不出/);
-		assert.doesNotMatch(text, /换成/, "替代条件跟着正看着的那一轮");
 	});
 
 	test("回头看早先一轮：后面的轮次都还在，那一轮标出正在查看", async () => {
@@ -196,11 +230,6 @@ describe("线程就是记录链", () => {
 		assert.match(html, /href="\/s\/t1"/, "最后一轮能点回去");
 		assert.doesNotMatch(html, /href="\/s\/t0"/);
 		assert.match(text, /正在查看/);
-		assert.match(
-			text,
-			/把「有潜力」换成 带团队（加分）/,
-			"替代条件作用在正看着的那一轮上",
-		);
 	});
 
 	test("AI 搜索没开启就没有输入框", async () => {
