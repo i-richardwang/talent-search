@@ -16,6 +16,7 @@
  * 公司内的部门名只给人数。
  *
  * 模型每查一次，就记下一步（`search/trace.ts`），由调用方写进查询记录，界面边跑边画。
+ * 同一次理解里查同样几个词或名字，答案不会变：只查一次、只记一步，再问就给同一份答案。
  */
 import "@tanstack/react-start/server-only";
 import { tool } from "ai";
@@ -113,6 +114,15 @@ export function agentTools({
 }) {
 	let last: { submitted: Submission; json: string; problems: string[] } | null =
 		null;
+	const answered = new Map<string, Promise<unknown>>();
+	/** 同样的输入只查一次；并发的两次等同一份答案。 */
+	const once = <T>(key: string, look: () => Promise<T>): Promise<T> => {
+		const hit = answered.get(key);
+		if (hit) return hit as Promise<T>;
+		const answer = look();
+		answered.set(key, answer);
+		return answer;
+	};
 	const tools = {
 		find_terms: tool({
 			description:
@@ -120,10 +130,16 @@ export function agentTools({
 			inputSchema: z.object({
 				texts: z.array(z.string()).describe("要查的词，一次可以几个"),
 			}),
-			execute: async ({ texts }) => {
-				const terms = await findTerms(lookupInputs(texts));
-				await record({ at: Date.now(), tool: "find_terms", terms });
-				return terms;
+			execute: ({ texts }) => {
+				const inputs = lookupInputs(texts);
+				return once(
+					JSON.stringify(["terms", ...[...inputs].sort()]),
+					async () => {
+						const terms = await findTerms(inputs);
+						await record({ at: Date.now(), tool: "find_terms", terms });
+						return terms;
+					},
+				);
 			},
 		}),
 		find_names: tool({
@@ -135,15 +151,21 @@ export function agentTools({
 					.describe("org=公司或部门；school=学校"),
 				names: z.array(z.string()).describe("要查的名字，一次可以几个"),
 			}),
-			execute: async ({ field, names }) => {
-				const found = await findNames(field, lookupInputs(names));
-				await record({
-					at: Date.now(),
-					tool: "find_names",
-					field,
-					names: found,
-				});
-				return found;
+			execute: ({ field, names }) => {
+				const inputs = lookupInputs(names);
+				return once(
+					JSON.stringify([field, ...[...inputs].sort()]),
+					async () => {
+						const found = await findNames(field, inputs);
+						await record({
+							at: Date.now(),
+							tool: "find_names",
+							field,
+							names: found,
+						});
+						return found;
+					},
+				);
 			},
 		}),
 		[SUBMIT]: tool({

@@ -247,3 +247,27 @@ test("每查一次记一步，步里只有人数和人才库里的写法，没�
 	);
 	assert.doesNotMatch(JSON.stringify(steps), /甲|乙|丙|A0|推荐召回|星河事业部/);
 });
+
+test("同一次理解里查同样几个词只记一步，同时问两次也一样，答案相同", async () => {
+	const steps: TraceStep[] = [];
+	const { tools } = agentTools({
+		vocab: await vocabulary(),
+		base: [],
+		record: async (step) => {
+			steps.push(step);
+		},
+	});
+	const [first, second] = await Promise.all([
+		run(tools.find_terms, { texts: ["推荐", "考古"] }),
+		run(tools.find_terms, { texts: ["考古", " 推荐"] }),
+	]);
+	await run(tools.find_names, { field: "org", names: ["星河"] });
+	await run(tools.find_names, { field: "school", names: ["星河"] });
+	await run(tools.find_names, { field: "org", names: ["星河"] });
+	assert.deepEqual(second, first);
+	assert.deepEqual(
+		steps.map((s) => s.tool),
+		["find_terms", "find_names", "find_names"],
+		"公司和学校查同一个名字是两件事",
+	);
+});
