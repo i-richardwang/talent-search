@@ -27,8 +27,8 @@ const ASSIGNMENT = {
 	emp_id: "E1",
 	start_date: "2020-01-01",
 	end_date: "",
-	org: "部门",
-	org_path: "公司/中心/部门",
+	department: "部门",
+	department_path: "公司/中心/部门",
 	title: "岗位",
 	level: "P6",
 	seq_l1: "技术",
@@ -40,7 +40,7 @@ const EXTERNAL = {
 	emp_id: "E1",
 	start_date: "2018-01-01",
 	end_date: "",
-	org: "某公司",
+	company: "某公司",
 	title: "工程师",
 	description: "",
 	company_tag: "",
@@ -336,9 +336,9 @@ describe("入职前经历", () => {
 			],
 		});
 
-		assert.deepEqual(external(out)[0]?.org_meta, { company_tag: "大厂" });
+		assert.deepEqual(external(out)[0]?.company_meta, { company_tag: "大厂" });
 		// 三项全空写 null，不写 `{}`——空对象读起来像「有属性但都是空的」
-		assert.equal(external(out)[1]?.org_meta, null);
+		assert.equal(external(out)[1]?.company_meta, null);
 	});
 
 	test("待业标记不是布尔就是适配器坏了，整轮报错退出", () => {

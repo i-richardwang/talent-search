@@ -6,14 +6,15 @@ import { dots, period } from "#/lib/format";
 import { claimName } from "#/search/condition-label";
 import { routeLabel } from "#/search/evidence";
 import { parseQuery } from "#/search/query-syntax";
-import type { Claim } from "#/search/result";
+import { type Claim, placeOf } from "#/search/result";
 import { search } from "#/search/search";
 
 /** 一条主张在命令行上怎么写：和一行查询语法同一种写法，可以直接和输入对照。 */
 function claimText(c: Claim) {
 	return [
 		c.what.join("/"),
-		c.org && `org:${c.org.join("/")}`,
+		c.company && `company:${c.company.join("/")}`,
+		c.department && `department:${c.department.join("/")}`,
 		c.companyTag && `companyTag:${c.companyTag.join("/")}`,
 		c.kind && `kind:${c.kind}`,
 		c.minMonths && `minMonths:${c.minMonths}`,
@@ -51,7 +52,7 @@ for (const r of top) {
 		const name = claimName(claims[h.claim] as Claim);
 		// 起止用界面上那一份写法（`lib/format.ts`），和界面对照时不用换算。
 		console.log(
-			`     ${name}${h.value === name ? "" : ` ≈${h.value}`} ←[${routeLabel(h.route)}${h.phrase ? `「${dots(h.involvement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${h.org} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
+			`     ${name}${h.value === name ? "" : ` ≈${h.value}`} ←[${routeLabel(h.route)}${h.phrase ? `「${dots(h.involvement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${placeOf(h)} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
 		);
 	}
 }

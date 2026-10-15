@@ -159,7 +159,7 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 					<p className="font-medium">
 						{s.title || "（无岗位）"}
 						<span className="ms-2 font-normal text-fg-secondary">
-							{s.kind === "internal" ? s.orgPath || s.org : s.org}
+							{s.company || s.departmentPath || s.department}
 						</span>
 					</p>
 					<p className="text-fg-secondary text-xs tabular-nums">

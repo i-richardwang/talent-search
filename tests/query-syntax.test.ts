@@ -41,9 +41,10 @@ describe("一行查询语法", () => {
 				},
 			],
 		);
-		// 只有键没有词的主张：「待过字节」
-		assert.deepEqual(parseQuery("+org:字节/腾讯"), [
-			{ about: "experience", mode: "boost", org: ["字节", "腾讯"] },
+		// 只有键没有词的主张：「待过字节」「在推荐平台部」
+		assert.deepEqual(parseQuery("+company:字节/腾讯,department:推荐平台部"), [
+			{ about: "experience", mode: "boost", company: ["字节", "腾讯"] },
+			{ about: "experience", mode: "must", department: ["推荐平台部"] },
 		]);
 	});
 

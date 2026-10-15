@@ -9,6 +9,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, isStepCount } from "ai";
 import { type Condition, withOff } from "#/search/condition";
 import type { Submission, Vocabulary } from "#/search/intent";
+import type { Matched } from "#/search/trace";
 import { type AgentTools, SUBMIT } from "./agent-tools";
 import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
 
@@ -90,14 +91,16 @@ const SYSTEM = `你在帮 HR 维护一张找人的搜索条件表。给你的是
   同一件事的不同写法，任一命中即可。不放更宽的词，也不替 HR 补它下面的细分方向：搜索会把
   和每个词意思相近的经历都算进来，补一个细分方向就多带进一圈和它相近的人，比如推荐算法
   会带进做推荐系统工程的人，那不是 HR 说的那件事。
-- org：在哪家公司、哪个部门。写名字，可以几个。
-- companyTag：在哪一档公司，从给出的取值里挑。
+- company：入职前在哪家公司。写名字，可以几个。
+- department：公司内在哪个部门。写名字，可以几个。
+- companyTag：入职前在哪一档公司，从给出的取值里挑。
 - kind：internal 是公司内的任职，external 是入职前的经历。
 - minMonths：这样的经历累计至少多少个月，三年以上就是 36。
 没提到的项不写。修饰语挂在它修饰的那件事上。在哪、哪一档、入职前还是公司内、多久，
 和一件做过的事说在一起时，默认说的是同一段经历，写成一条：「入职前在大厂做过三年增长」
 四项都写在一条里。用户把它们说成两件事（「做过推荐，也待过字节」），或者修饰的是整个人
-而不是某一件事（例一的「最好是字节来的」）时才分开写，一条只有 what，一条只有 org。
+而不是某一件事（例一的「最好是字节来的」）时才分开写，一条只有 what，一条只有 company。
+company 和 companyTag 只在入职前的经历上，department 只在公司内的任职上，不写在同一条里。
 拿不准挂在哪时按同一段写：条件上看得出是这样读的，HR 不同意会说。
 
 人（about: person）：这个人本身。field 是 level、education、recruitment 之一，
@@ -136,11 +139,12 @@ says 像同事之间说话：一句话，有话直说，同一件事只说一遍
 
 表里的每个词、每个名字，搜索都会拿去人才库里找：人才库里没人这么写的等于没写；
 比 HR 说的更泛的词会把不相干的人找进来。提交之前你可以在人才库里查：
-- find_terms：几个经历词按搜索的方式各能找到多少人、命中了人才库里哪些能力词。
-  同一件事有几种写法时，用人才库里有人这么写、又和 HR 说的一样具体的那种；
-  一个人都找不到的，换成人才库里的写法。人多不是问题：名单多长由 HR 看着人数决定。
-- find_names：几个公司名或学校名各能匹配到多少人、匹配到人才库里哪些公司或学校。名字按包含匹配，
-  匹配到不相干的就写全称。
+- lookup_experience：几个经历词按搜索的方式各能找到多少人、命中了人才库里哪些能力词，
+  每个能力词更宽和更细的词是什么。同一件事有几种写法时，用人才库里有人这么写、又和 HR 说的
+  一样具体的那种；一个人都找不到的，换成人才库里的写法。人多不是问题：名单多长由 HR 看着人数决定。
+- lookup_attribute：一种属性在人才库里怎么写、各有多少人。职级、学历、招聘渠道、公司档的全部取值
+  下面已经给了，要再看也可以查。公司、部门、学校按包含匹配：匹配到不相干的就写全称；
+  一个都匹配不到时换个写法再查，比如中文名、英文名、简称、全称。
 查什么、查几次由你判断；当前表里原样留下的条件已经查过。工具只给人数和人才库里的写法，不给人；
 名单由搜索决定，你写的是条件。
 
@@ -158,7 +162,7 @@ education：大专、本科、硕士、博士；例子里的词和名字都已�
   {"about": "experience", "mode": "must", "what": ["算法"]},
   {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
   {"about": "person", "mode": "boost", "field": "level", "atLeast": "P7"},
-  {"about": "experience", "mode": "boost", "org": ["字节"]}],
+  {"about": "experience", "mode": "boost", "company": ["字节"]}],
  "note": null}
 
 例二。当前的条件表：[]。这句话：入职前在大厂做过三年以上增长，不要实习
@@ -198,8 +202,8 @@ education：大专、本科、硕士、博士；例子里的词和名字都已�
    {"label": "把 iOS 和 Android 也算上", "detail": "人才库里写 iOS 或 Android 开发的还有四十多位", "conditions": [
     {"about": "experience", "mode": "must", "what": ["前端开发", "Web前端", "iOS开发", "Android开发"]}]}]}}`;
 
-function listed(what: string, values: readonly string[]) {
-	return `${what}：${values.join("、") || "（无）"}`;
+function listed(what: string, values: readonly Matched[]) {
+	return `${what}：${values.map((v) => `${v.name}（${v.people} 人）`).join("、") || "（无）"}`;
 }
 
 /**

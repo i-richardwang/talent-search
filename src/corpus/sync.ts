@@ -71,21 +71,22 @@ async function stageExperience(
 	for (const chunk of chunked(rows, ROWS_PER_STATEMENT))
 		await client.query(
 			`insert into staged_experience (
-				emp_id, kind, unemployed, start_date, end_date, org, org_path, org_meta, title,
-				seq_l1, seq_l2, seq_l3, level, description, months)
+				emp_id, kind, unemployed, start_date, end_date, company, department, department_path, company_meta,
+				title, seq_l1, seq_l2, seq_l3, level, description, months)
 			 select * from unnest(
 				$1::text[], $2::text[], $3::boolean[], $4::date[], $5::date[], $6::text[], $7::text[],
-				$8::jsonb[], $9::text[], $10::text[], $11::text[], $12::text[],
-				$13::text[], $14::text[], $15::int[])`,
+				$8::text[], $9::jsonb[], $10::text[], $11::text[], $12::text[], $13::text[],
+				$14::text[], $15::text[], $16::int[])`,
 			[
 				chunk.map((r) => r.emp_id),
 				chunk.map((r) => r.kind),
 				chunk.map((r) => r.unemployed),
 				chunk.map((r) => r.start_date),
 				chunk.map((r) => r.end_date),
-				chunk.map((r) => r.org),
-				chunk.map((r) => r.org_path),
-				chunk.map((r) => r.org_meta && JSON.stringify(r.org_meta)),
+				chunk.map((r) => r.company),
+				chunk.map((r) => r.department),
+				chunk.map((r) => r.department_path),
+				chunk.map((r) => r.company_meta && JSON.stringify(r.company_meta)),
 				chunk.map((r) => r.title),
 				chunk.map((r) => r.seq_l1),
 				chunk.map((r) => r.seq_l2),
@@ -100,7 +101,7 @@ async function stageExperience(
 const EMPLOYEE_COLUMNS =
 	"emp_id, name, cur_dept, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date, education_level, education_rank, school, recruitment";
 const EXPERIENCE_COLUMNS =
-	"emp_id, kind, unemployed, start_date, end_date, org, org_path, org_meta, title, seq_l1, seq_l2, seq_l3, level, description, months";
+	"emp_id, kind, unemployed, start_date, end_date, company, department, department_path, company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months";
 
 /**
  * 把暂存的两张表和正式表做差：删这次没有的，插这次新来的，改了档案的人更新。

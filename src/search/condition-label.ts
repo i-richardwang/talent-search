@@ -9,10 +9,14 @@ import { DIMENSIONS, dimOption, dimText, orAbove } from "#/search/dimensions";
 import type { Claim } from "#/search/result";
 
 /**
- * 公司名与学校名怎么称呼。这两维不在 `dimensions.ts` 那张表里（自由文本，没有
- * 候选列表），称呼也只有这一处：chip 上、筛选栏上用的是同一个词。
+ * 入职前公司、公司内部门与学校怎么称呼。这三维不在 `dimensions.ts` 那张表里
+ * （自由文本，没有候选列表），称呼也只有这一处：chip 上、筛选栏上用的是同一个词。
  */
-export const NAME_LABEL = { org: "组织", school: "学校" } as const;
+export const NAME_LABEL = {
+	company: "公司",
+	department: "部门",
+	school: "学校",
+} as const;
 
 /**
  * 这里能按什么搜索：一段经历，加上人的几项条件。整句都搜不了的空态说这一句；
@@ -71,7 +75,8 @@ export function conditionLabel(condition: Condition): string {
 	return dots(
 		condition.kind ? dimOption("kind", condition.kind) : null,
 		condition.companyTag?.[0],
-		condition.org?.[0],
+		condition.company?.[0],
+		condition.department?.[0],
 		condition.what?.[0],
 		condition.minMonths ? `${duration(condition.minMonths)}以上` : null,
 	);
@@ -86,10 +91,12 @@ export function claimName(claim: Claim): string {
 export function moreCount(condition: Condition): number {
 	if (condition.about === "person")
 		return "values" in condition ? Math.max(condition.values.length - 1, 0) : 0;
-	return [condition.what, condition.org, condition.companyTag].reduce(
-		(sum, list) => sum + Math.max((list?.length ?? 0) - 1, 0),
-		0,
-	);
+	return [
+		condition.what,
+		condition.company,
+		condition.department,
+		condition.companyTag,
+	].reduce((sum, list) => sum + Math.max((list?.length ?? 0) - 1, 0), 0);
 }
 
 /**

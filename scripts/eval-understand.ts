@@ -6,9 +6,9 @@
  *
  * 用例文件是一个 JSON 数组，每项：
  *   { "name": "补充需求，去掉一条",
- *     "base": "推荐算法, +org:字节",   // 可选：当前条件，一行查询语法（search/query-syntax.ts）
+ *     "base": "推荐算法, +company:字节",   // 可选：当前条件，一行查询语法（search/query-syntax.ts）
  *     "say": "不用非得是字节",          // 这一句话
- *     "drop": "+org:字节",             // 可选：新表里必须没有的条件，一行查询语法
+ *     "drop": "+company:字节",             // 可选：新表里必须没有的条件，一行查询语法
  *     "has": "education:>=本科",       // 可选：新表里必须原样有的条件，一行查询语法
  *     "add": ["+团队"],                // 可选：新加的条件里必须提到的词，前缀 + / - 是加分 / 排除
  *     "tells": true,                   // 可选：必须对 HR 说一句话（有搜不了的要求）
@@ -172,7 +172,8 @@ function wordsOf(condition: Condition): string[] {
 			: [...condition.values]
 		: [
 				...(condition.what ?? []),
-				...(condition.org ?? []),
+				...(condition.company ?? []),
+				...(condition.department ?? []),
 				...(condition.companyTag ?? []),
 			];
 }

@@ -33,15 +33,15 @@ const EMPLOYEE_COLUMNS = [
  * `segment_key` 是「这两段是不是同一件事」的判据，只被相邻段合并读。源系统里
  * 部门被重新登记、或一次异动被拆成两条时，会切出内容相同的相邻段——它们不是
  * 两段经历。判据只有源自己知道（组织 id + job code 比中文名可靠），所以由
- * 适配器给；没有更好的东西时填 `org` + `title` 也是成立的。
+ * 适配器给；没有更好的东西时填 `department` + `title` 也是成立的。
  * 空值表示没有可靠判据；管线会报出数量并把这些记录各自保留为独立经历。
  */
 const ASSIGNMENT_COLUMNS = [
 	"emp_id",
 	"start_date",
 	"end_date",
-	"org",
-	"org_path",
+	"department",
+	"department_path",
 	"title",
 	"level",
 	"seq_l1",
@@ -60,7 +60,7 @@ const EXTERNAL_COLUMNS = [
 	"emp_id",
 	"start_date",
 	"end_date",
-	"org",
+	"company",
 	"title",
 	"description",
 	"company_tag",

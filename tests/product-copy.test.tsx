@@ -47,7 +47,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			about: "experience",
 			mode: "must",
 			what: ["增长", "用户增长"],
-			org: ["字节"],
+			company: ["字节"],
 			companyTag: ["大厂"],
 			kind: "external",
 			minMonths: 24,
@@ -57,7 +57,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			"入职前经历 · 大厂 · 字节 · 增长 · 2 年以上",
 		);
 		assert.equal(
-			conditionLabel({ about: "experience", mode: "boost", org: ["字节"] }),
+			conditionLabel({ about: "experience", mode: "boost", company: ["字节"] }),
 			"字节",
 		);
 		assert.equal(
@@ -99,7 +99,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		);
 		const text = visibleText(html);
 		assert.doesNotMatch(html, /<textarea/);
-		for (const label of ["经历或技能", "公司或部门", "学校", "累计年限"])
+		for (const label of ["经历或技能", "公司", "部门", "学校", "累计年限"])
 			assert.match(text, new RegExp(label));
 	});
 

@@ -77,17 +77,17 @@ const SCHEMA = z.object({
 /** 送给模型的那段话。它也是缓存的键：同一段话永远得到同一份抽取。 */
 export function promptInput(row: {
 	title: string;
-	org: string;
+	company: string;
 	description: string;
 }): string {
-	return `岗位：${row.title}\n公司：${row.org}\n描述：${row.description}`;
+	return `岗位：${row.title}\n公司：${row.company}\n描述：${row.description}`;
 }
 
-function keep(word: string, org: string): boolean {
-	// 公司名永远不进向量：专有名词在向量空间里和同类名字是邻居。模型偶尔会把
-	// 公司名当领域返回，这里按原文的公司名再过滤一遍。
+function keep(word: string, company: string): boolean {
+	// 公司名不进说法：专有名词在向量空间里和同类名字是邻居。描述里也会写公司名，
+	// 抽出的词含这段的公司名或被它包含的都丢掉。
 	if (!word || [...word].length > MAX_TAG_LEN) return false;
-	return !(org && (word.includes(org) || org.includes(word)));
+	return !(company && (word.includes(company) || company.includes(word)));
 }
 
 function items(value: unknown): unknown[] {
@@ -101,14 +101,14 @@ function field(value: unknown, name: string): unknown {
 }
 
 /** 校验模型的原话，得到一份合法的抽取。不合规的只丢单条，不丢整段。 */
-export function conform(raw: unknown, org: string): Extraction {
+export function conform(raw: unknown, company: string): Extraction {
 	if (typeof raw !== "object" || raw === null) return EMPTY;
 	const skills: string[] = [];
 	// 只认数组：字符串也可迭代，"Python" 会被拆成六个单字标签
 	for (const item of items(field(raw, "skills"))) {
 		if (skills.length === MAX_SKILLS) break;
 		const skill = tag(item);
-		if (keep(skill, org) && !skills.includes(skill)) skills.push(skill);
+		if (keep(skill, company) && !skills.includes(skill)) skills.push(skill);
 	}
 	const did: Extraction["did"] = [];
 	// 一段对同一个领域只留第一条：边的主键是（段、路、说法），领域就是说法
@@ -116,7 +116,7 @@ export function conform(raw: unknown, org: string): Extraction {
 		if (did.length === MAX_DID) break;
 		const involvement = tag(field(item, "involvement"));
 		const domain = tag(field(item, "domain"));
-		if (keep(domain, org) && !did.some((d) => d.domain === domain))
+		if (keep(domain, company) && !did.some((d) => d.domain === domain))
 			did.push({
 				involvement: isInvolvement(involvement) ? involvement : null,
 				domain,
@@ -134,7 +134,7 @@ export function extractIdentity(): string {
 export async function extract(
 	rows: Pick<
 		ExperienceRow,
-		"kind" | "unemployed" | "title" | "org" | "description"
+		"kind" | "unemployed" | "title" | "company" | "description"
 	>[],
 	report: Report,
 ): Promise<ExtractionResult[]> {
@@ -155,6 +155,6 @@ export async function extract(
 		const text = asked[index];
 		if (text == null) return { status: "skipped" };
 		if (!payloads.has(text)) return { status: "failed" };
-		return { status: "done", value: conform(payloads.get(text), row.org) };
+		return { status: "done", value: conform(payloads.get(text), row.company) };
 	});
 }

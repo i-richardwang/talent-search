@@ -228,8 +228,8 @@ async function nextBatch(
 	const { rows } = await client.query<
 		Omit<StoredRow, "seq_inferred_l1" | "seq_inferred_l2">
 	>(
-		`select id, emp_id, kind, unemployed, start_date::text, end_date::text, org, org_path,
-			org_meta, title, seq_l1, seq_l2, seq_l3, level, description, months
+		`select id, emp_id, kind, unemployed, start_date::text, end_date::text, company, department,
+			department_path, company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months
 		 from experience e
 		 where ${UNDERIVED} and id > $2
 		 order by id

@@ -1,10 +1,16 @@
 /**
- * 查询理解时模型能用的三个工具：查经历词、查公司名和学校名、提交搜索条件。
+ * 查询理解时模型能用的三个工具：查经历、查属性、提交搜索条件。
  *
- * 前两个工具回答同一个问题：「这样写，搜索会找到什么」。查一个经历词，得到它能
- * 找到多少人、人才库里对应哪些能力词；查一个公司名或学校名，得到它能
- * 匹配到多少人、匹配到人才库里哪些公司或学校。它们和搜索用同一套匹配规则
- * （`search/search.ts`），查到的人数就是写进条件后搜出来的人数。
+ * 条件里的取值只有两类，一类一个工具，回答的都是「这样写，搜索会找到什么」：
+ *
+ * - 查经历（`lookup_experience`）：做过什么。按意思匹配，要挑的是粒度。查一个词，
+ *   得到它能找到多少人、对应人才库里哪些标准能力词，以及每个能力词在词表里更宽和更细的词。
+ * - 查属性（`lookup_attribute`）：职级、学历、招聘渠道、公司档、入职前公司、公司内部门、
+ *   学校。按字面匹配，要挑的是写法。有限取值的几维给出全部取值和人数，和提示词里预先
+ *   给的是同一份；名字按包含匹配，给出匹配到的人数和人才库里的写法。
+ *
+ * 两个查询工具和搜索用同一套匹配规则（`search/search.ts`），查到的人数就是写进条件后
+ * 搜出来的人数。
  *
  * 提交的搜索条件先检查：有没有词表里没有的取值，这一轮新写的经历词是不是
  * 一个人都找不到，名字是不是一个人都匹配不到，是不是什么都没写。有问题就把
@@ -22,6 +28,7 @@ import "@tanstack/react-start/server-only";
 import { tool } from "ai";
 import { z } from "zod";
 import type { Condition } from "#/search/condition";
+import { isVocabKey } from "#/search/dimensions";
 import {
 	isNewClaim,
 	type Submission,
@@ -31,8 +38,14 @@ import {
 	type Vocabulary,
 	valuesOutsideVocabulary,
 } from "#/search/intent";
-import { findNames, findTerms, vocabulary } from "#/search/search";
-import type { NameField, TraceStep } from "#/search/trace";
+import { lookupExperience, lookupNames, vocabulary } from "#/search/search";
+import {
+	ATTRIBUTE_FIELDS,
+	type Matched,
+	type NameField,
+	type NameFinding,
+	type TraceStep,
+} from "#/search/trace";
 
 /** 提交搜索条件的工具名。 */
 export const SUBMIT = "submit";
@@ -66,18 +79,19 @@ async function checkSubmission(
 	const words = conditions.filter(isNewClaim(base)).flatMap((c) => c.what);
 	const namesOf = (field: NameField) =>
 		conditions.flatMap((c) =>
-			field === "org"
-				? c.about === "experience"
-					? (c.org ?? [])
-					: []
-				: c.about === "person" && c.field === "school" && "values" in c
+			field === "school"
+				? c.about === "person" && c.field === "school" && "values" in c
 					? c.values
+					: []
+				: c.about === "experience"
+					? (c[field] ?? [])
 					: [],
 		);
-	const [terms, orgs, schools] = await Promise.all([
-		findTerms(words),
-		findNames("org", namesOf("org")),
-		findNames("school", namesOf("school")),
+	const [terms, companies, departments, schools] = await Promise.all([
+		lookupExperience(words),
+		lookupNames("company", namesOf("company")),
+		lookupNames("department", namesOf("department")),
+		lookupNames("school", namesOf("school")),
 	]);
 	const optionsUnused =
 		(submitted.note?.options.length ?? 0) > 0 && !result.notes?.choices;
@@ -93,8 +107,8 @@ async function checkSubmission(
 				? [`「${t.text}」在人才库里一个人都找不到，换人才库里的说法`]
 				: [],
 		),
-		...[...orgs, ...schools].flatMap((n) =>
-			n.people === 0 ? [`「${n.name}」在人才库里一个人都匹配不到`] : [],
+		...[...companies, ...departments, ...schools].flatMap((n) =>
+			n.people === 0 ? [`「${n.query}」在人才库里一个人都匹配不到`] : [],
 		),
 	];
 }
@@ -124,44 +138,60 @@ export function agentTools({
 		return answer;
 	};
 	const tools = {
-		find_terms: tool({
+		lookup_experience: tool({
 			description:
-				"查几个经历词：按搜索的方式各能找到多少人、对应人才库里哪些能力词。",
+				"查几个经历词：按搜索的方式各能找到多少人、对应人才库里哪些标准能力词，以及每个能力词更宽和更细的词。",
 			inputSchema: z.object({
 				texts: z.array(z.string()).describe("要查的词，一次可以几个"),
 			}),
 			execute: ({ texts }) => {
 				const inputs = lookupInputs(texts);
 				return once(
-					JSON.stringify(["terms", ...[...inputs].sort()]),
+					JSON.stringify(["experience", ...[...inputs].sort()]),
 					async () => {
-						const terms = await findTerms(inputs);
-						await record({ at: Date.now(), tool: "find_terms", terms });
+						const terms = await lookupExperience(inputs);
+						await record({ at: Date.now(), tool: "lookup_experience", terms });
 						return terms;
 					},
 				);
 			},
 		}),
-		find_names: tool({
+		lookup_attribute: tool({
 			description:
-				"查几个公司名或学校名：各能匹配到多少人、匹配到人才库里哪些公司或学校。名字按包含匹配。",
+				"查一种属性在人才库里怎么写、各有多少人。level、education、recruitment、companyTag 不用给 queries，返回全部取值；company、department、school 按包含匹配 queries 里的每个名字，部门只给人数。",
 			inputSchema: z.object({
 				field: z
-					.enum(["org", "school"])
-					.describe("org=公司或部门；school=学校"),
-				names: z.array(z.string()).describe("要查的名字，一次可以几个"),
+					.enum(ATTRIBUTE_FIELDS)
+					.describe(
+						"level=职级；education=学历；recruitment=招聘渠道；companyTag=公司档；company=入职前公司；department=公司内部门；school=学校",
+					),
+				queries: z
+					.array(z.string())
+					.optional()
+					.describe("要查的名字，一次可以几个；有限取值的属性不用写"),
 			}),
-			execute: ({ field, names }) => {
-				const inputs = lookupInputs(names);
+			execute: ({ field, queries }): Promise<Matched[] | NameFinding[]> => {
+				if (isVocabKey(field))
+					return once(JSON.stringify([field]), async () => {
+						const values = [...vocab[field]];
+						await record({
+							at: Date.now(),
+							tool: "lookup_attribute",
+							field,
+							values,
+						});
+						return values;
+					});
+				const inputs = lookupInputs(queries ?? []);
 				return once(
 					JSON.stringify([field, ...[...inputs].sort()]),
 					async () => {
-						const found = await findNames(field, inputs);
+						const found = await lookupNames(field, inputs);
 						await record({
 							at: Date.now(),
-							tool: "find_names",
+							tool: "lookup_attribute",
 							field,
-							names: found,
+							found,
 						});
 						return found;
 					},

@@ -24,7 +24,7 @@ describe("关键词候选", () => {
 					{
 						kind: "external",
 						months: 12,
-						org: "星河科技",
+						company: "星河科技",
 						extracted: { skills: ["推荐系统"] },
 					},
 				],
@@ -34,8 +34,8 @@ describe("关键词候选", () => {
 				name: "乙",
 				school: "东海大学",
 				segments: [
-					{ kind: "external", months: 12, org: "星河科技" },
-					{ kind: "internal", months: 6, org: "银河星河事业部" },
+					{ kind: "external", months: 12, company: "星河科技" },
+					{ kind: "internal", months: 6, department: "银河星河事业部" },
 				],
 			},
 			{
@@ -46,7 +46,7 @@ describe("关键词候选", () => {
 					{
 						kind: "external",
 						months: 12,
-						org: "银河星河事业部",
+						company: "银河星河事业部",
 						extracted: { skills: ["个性化推荐"] },
 					},
 				],
@@ -70,10 +70,13 @@ describe("关键词候选", () => {
 		]);
 	});
 
-	test("公司或部门：开头是这几个字的排前面，人数按人不按段", async () => {
-		assert.deepEqual(await suggest("org", "星河"), [
+	test("公司只给入职前的公司名，部门只给公司内的部门名；开头是这几个字的排前面，人数按人不按段", async () => {
+		assert.deepEqual(await suggest("company", "星河"), [
 			{ value: "星河科技", people: 2 },
-			{ value: "银河星河事业部", people: 2 },
+			{ value: "银河星河事业部", people: 1 },
+		]);
+		assert.deepEqual(await suggest("department", "星河"), [
+			{ value: "银河星河事业部", people: 1 },
 		]);
 	});
 
@@ -85,6 +88,6 @@ describe("关键词候选", () => {
 	});
 
 	test("通配符按字面匹配", async () => {
-		assert.deepEqual(await suggest("org", "%"), []);
+		assert.deepEqual(await suggest("company", "%"), []);
 	});
 });

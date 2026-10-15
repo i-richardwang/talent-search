@@ -152,12 +152,12 @@ describe("收集与生效", () => {
 						seqL1: "技术",
 						seqL2: "后端研发",
 						title: "高级后端开发工程师",
-						orgPath: "技术部>基础平台",
+						departmentPath: "技术部>基础平台",
 					},
 					{
 						kind: "external",
 						months: 12,
-						org: "某公司",
+						company: "某公司",
 						title: "高级后端开发工程师",
 						extracted: {
 							skills: ["服务端开发", "客户开发"],

@@ -19,11 +19,14 @@ import {
 } from "#/search/intent";
 import { claim as build } from "./conditions";
 
+const values = (...names: string[]) =>
+	names.map((name) => ({ name, people: 10 }));
+
 const VOCAB: Vocabulary = {
-	companyTag: ["头部互联网T1", "知名公司", "外包公司"],
-	level: ["P5", "P6", "P7", "P8"],
-	recruitment: ["校招", "社招"],
-	education: ["本科", "硕士", "博士"],
+	companyTag: values("头部互联网T1", "知名公司", "外包公司"),
+	level: values("P5", "P6", "P7", "P8"),
+	recruitment: values("校招", "社招"),
+	education: values("本科", "硕士", "博士"),
 };
 const of = (...conditions: unknown[]) =>
 	understood({ conditions }, VOCAB, []).spec.conditions;
@@ -52,7 +55,7 @@ describe("模型写出的查询就是查询", () => {
 				claim({ what: ["算法", "推荐算法", "机器学习"] }),
 				claim({ what: ["后端", "后端开发", "服务端"] }),
 				person("level", ["P7", "P8"], "boost"),
-				claim({ org: ["字节"] }, "boost"),
+				claim({ company: ["字节"] }, "boost"),
 			),
 			[
 				exp("must", "算法", "推荐算法", "机器学习"),
@@ -63,7 +66,7 @@ describe("模型写出的查询就是查询", () => {
 					field: "level",
 					values: ["P7", "P8"],
 				},
-				{ about: "experience", mode: "boost", org: ["字节"] },
+				{ about: "experience", mode: "boost", company: ["字节"] },
 			],
 		);
 	});
@@ -208,7 +211,7 @@ describe("没作答", () => {
 	test("只识别出背景或人的偏好不算失败：各自是一份完整的查询", () => {
 		for (const raw of [
 			{ conditions: [claim({ kind: "external" })] },
-			{ conditions: [claim({ org: ["字节"] }, "boost")] },
+			{ conditions: [claim({ company: ["字节"] }, "boost")] },
 			{ conditions: [person("education", ["硕士"], "boost")] },
 		])
 			assert.equal(unanswered(raw, read(raw)), null);
@@ -418,7 +421,7 @@ describe("发给模型的形状", () => {
 			submissionSchema.safeParse({
 				conditions: [
 					claim({ what: ["渠道运营", "渠道拓展"], minMonths: 12 }),
-					claim({ org: ["字节"] }, "boost"),
+					claim({ company: ["字节"] }, "boost"),
 					person("level", ["P7"], "boost"),
 				],
 				note: {
@@ -523,7 +526,7 @@ describe("哪些条件要检查经历词找不找得到人", () => {
 				build("机甲算法"),
 				build("幽冥测绘", { mode: "boost" }),
 				build("实习", { mode: "exclude" }),
-				{ about: "experience", mode: "must", org: ["星河"] } as Condition,
+				{ about: "experience", mode: "must", company: ["星河"] } as Condition,
 			].map((c) => measured(c)),
 			[false, true, true, false, false],
 		);

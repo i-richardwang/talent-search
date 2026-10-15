@@ -93,7 +93,7 @@ describe("不可信输入 → 条件", () => {
 					about: "experience",
 					mode: "must",
 					what: ["增长", "用户增长"],
-					org: ["字节"],
+					company: ["字节"],
 					companyTag: ["大厂", "未知"],
 					kind: "external",
 					minMonths: "36",
@@ -104,7 +104,7 @@ describe("不可信输入 → 条件", () => {
 					about: "experience",
 					mode: "must",
 					what: ["增长", "用户增长"],
-					org: ["字节"],
+					company: ["字节"],
 					companyTag: ["大厂"],
 					kind: "external",
 					minMonths: 36,
@@ -139,9 +139,9 @@ describe("不可信输入 → 条件", () => {
 					values: ["校招"],
 					mode: "exclude",
 				},
-				{ about: "experience", org: ["字节"], mode: "boost" },
+				{ about: "experience", company: ["字节"], mode: "boost" },
 			]),
-			[{ about: "experience", mode: "boost", org: ["字节"] }],
+			[{ about: "experience", mode: "boost", company: ["字节"] }],
 		);
 	});
 
@@ -161,13 +161,42 @@ describe("不可信输入 → 条件", () => {
 		);
 	});
 
+	test("一段经历满足不了的主张整条丢掉：公司和公司档只在入职前，部门只在公司内", () => {
+		const department = { about: "experience", department: ["推荐平台部"] };
+		assert.deepEqual(
+			conditionsOf([
+				{ ...department, company: ["字节"] },
+				{ ...department, companyTag: ["大厂"] },
+				{ ...department, kind: "external" },
+				{ about: "experience", company: ["字节"], kind: "internal" },
+				{ ...department, kind: "internal", what: ["推荐"] },
+				{ about: "experience", company: ["字节"], kind: "external" },
+			]),
+			[
+				{
+					about: "experience",
+					mode: "must",
+					what: ["推荐"],
+					department: ["推荐平台部"],
+					kind: "internal",
+				},
+				{
+					about: "experience",
+					mode: "must",
+					company: ["字节"],
+					kind: "external",
+				},
+			],
+		);
+	});
+
 	test("不合规的取值只丢那一个，其余照常；一项不剩的条件整条消失", () => {
 		assert.deepEqual(
 			conditionsOf([
 				{ about: "experience", what: ["算法", "  ", 7, "算", null] },
 				{ about: "experience", what: [] },
 				{ about: "experience", what: ["的"] },
-				{ about: "experience", org: ["   "] },
+				{ about: "experience", company: ["   "] },
 				{ about: "experience", minMonths: "三年" },
 				{ about: "person", field: "school", values: [] },
 				null,
@@ -234,7 +263,7 @@ describe("不可信输入 → 条件", () => {
 			{ about: "experience", what: ["大模型", "多模态", "LLM"], mode: "must" },
 			{ about: "experience", what: ["带团队"], mode: "boost", off: "user" },
 			{ about: "experience", what: ["实习"], mode: "exclude" },
-			{ about: "experience", org: ["字节"], mode: "boost" },
+			{ about: "experience", company: ["字节"], mode: "boost" },
 			{ about: "experience", what: ["增长"], kind: "external", minMonths: 36 },
 			{ about: "person", field: "school", values: ["清华"] },
 		]);
@@ -280,7 +309,7 @@ describe("逐项去掉", () => {
 		about: "experience",
 		mode: "must",
 		what: ["算法", "模型"],
-		org: ["字节"],
+		company: ["字节"],
 		kind: "external",
 		minMonths: 36,
 	};
@@ -288,7 +317,7 @@ describe("逐项去掉", () => {
 	test("各项按读出来的顺序排列：什么时候、在哪、做过什么、多久", () => {
 		assert.deepEqual(partsOf(claim), [
 			{ key: "kind", value: "external" },
-			{ key: "org", value: "字节" },
+			{ key: "company", value: "字节" },
 			{ key: "what", value: "算法" },
 			{ key: "what", value: "模型" },
 			{ key: "minMonths", value: 36 },
@@ -305,8 +334,11 @@ describe("逐项去掉", () => {
 			withoutPart(claim, { key: "kind", value: "external" }),
 			noKind,
 		);
-		const { org: _org, ...noOrg } = claim;
-		assert.deepEqual(withoutPart(claim, { key: "org", value: "字节" }), noOrg);
+		const { company: _company, ...noCompany } = claim;
+		assert.deepEqual(
+			withoutPart(claim, { key: "company", value: "字节" }),
+			noCompany,
+		);
 		const { minMonths: _m, ...noMonths } = claim;
 		assert.deepEqual(
 			withoutPart(claim, { key: "minMonths", value: 36 }),

@@ -1,6 +1,6 @@
 import { duration, period } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import type { EmployeeDetail, Hit } from "#/search/result";
+import { type EmployeeDetail, type Hit, placeOf } from "#/search/result";
 import { HIT_FILL } from "./evidence";
 
 /**
@@ -92,7 +92,7 @@ export function CareerBar({
 					const laneTop = (lanes[i] ?? 0) * (LANE_H + LANE_GAP);
 					return (
 						<button
-							aria-label={`${x.org} ${x.title}，${period(x.startDate, x.endDate)}，${duration(x.months)}${hit ? "，与本次条件相关" : ""}`}
+							aria-label={`${placeOf(x)} ${x.title}，${period(x.startDate, x.endDate)}，${duration(x.months)}${hit ? "，与本次条件相关" : ""}`}
 							className={cn(
 								"absolute rounded-xs after:absolute after:-inset-x-1 after:-inset-y-4 after:content-['']",
 								hit ? HIT_FILL : "bg-fill",

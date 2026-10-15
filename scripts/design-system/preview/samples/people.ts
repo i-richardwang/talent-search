@@ -135,7 +135,7 @@ function internal(
 		| "empId"
 		| "startDate"
 		| "endDate"
-		| "org"
+		| "department"
 		| "title"
 		| "seqL1"
 		| "seqL2"
@@ -148,15 +148,16 @@ function internal(
 	return {
 		...rest,
 		kind: "internal",
-		orgPath: `${HOME}/${center}/${row.org}`,
-		orgMeta: null,
+		company: "",
+		departmentPath: `${HOME}/${center}/${row.department}`,
+		companyMeta: null,
 		seqInferredL1: "",
 		seqInferredL2: "",
 		description: "",
 	};
 }
 
-/** 一段入职前的经历：公司档、行业、性质写在 `orgMeta`，序列是推断的一对。 */
+/** 一段入职前的经历：公司档、行业、性质写在 `companyMeta`，序列是推断的一对。 */
 function external(
 	row: Pick<
 		SampleExperience,
@@ -164,7 +165,7 @@ function external(
 		| "empId"
 		| "startDate"
 		| "endDate"
-		| "org"
+		| "company"
 		| "title"
 		| "description"
 		| "months"
@@ -176,8 +177,9 @@ function external(
 	return {
 		...rest,
 		kind: "external",
-		orgPath: "",
-		orgMeta: { company_tag: tag, industry, nature: "民营" },
+		department: "",
+		departmentPath: "",
+		companyMeta: { company_tag: tag, industry, nature: "民营" },
 		seqL1: "",
 		seqL2: "",
 		seqL3: "",
@@ -192,7 +194,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0101",
 		startDate: "2015-07-01",
 		endDate: "2019-06-30",
-		org: "某甲科技",
+		company: "某甲科技",
 		title: "算法工程师",
 		description:
 			"负责信息流推荐系统的召回与排序，从零搭建实时特征管线；后期带 4 人算法小组，负责新人培养。",
@@ -206,7 +208,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0101",
 		startDate: "2019-07-01",
 		endDate: "2021-03-31",
-		org: "推荐算法部",
+		department: "推荐算法部",
 		title: "算法工程师",
 		seqL1: "技术",
 		seqL2: "算法",
@@ -219,7 +221,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0101",
 		startDate: "2021-04-01",
 		endDate: null,
-		org: "推荐算法部",
+		department: "推荐算法部",
 		title: "高级算法工程师",
 		seqL1: "技术",
 		seqL2: "算法",
@@ -232,7 +234,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0102",
 		startDate: "2016-03-01",
 		endDate: "2020-02-29",
-		org: "某乙网络",
+		company: "某乙网络",
 		title: "后端开发工程师",
 		description: "负责商品详情页服务端开发，参与过推荐接口的性能优化。",
 		months: 48,
@@ -245,7 +247,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0102",
 		startDate: "2020-03-02",
 		endDate: null,
-		org: "搜索推荐部",
+		department: "搜索推荐部",
 		title: "推荐系统工程师",
 		seqL1: "技术",
 		seqL2: "算法",
@@ -258,7 +260,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0103",
 		startDate: "2013-07-01",
 		endDate: "2018-03-31",
-		org: "某丙数据",
+		company: "某丙数据",
 		title: "研发组长",
 		description: "带 6 人研发小组，负责数据平台的调度与存储。",
 		months: 57,
@@ -272,7 +274,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0103",
 		startDate: "2018-04-09",
 		endDate: "2022-12-31",
-		org: "推荐平台部",
+		department: "推荐平台部",
 		title: "高级后端开发工程师",
 		seqL1: "技术",
 		seqL2: "后端开发",
@@ -285,7 +287,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0103",
 		startDate: "2023-01-01",
 		endDate: null,
-		org: "推荐平台部",
+		department: "推荐平台部",
 		title: "技术经理",
 		seqL1: "技术",
 		seqL2: "后端开发",
@@ -298,7 +300,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0104",
 		startDate: "2017-07-01",
 		endDate: "2023-01-31",
-		org: "某丁智能",
+		company: "某丁智能",
 		title: "算法研究员",
 		description:
 			"研究短视频推荐的多目标排序，负责排序策略上线与效果评估；指导两名实习生。",
@@ -313,7 +315,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0104",
 		startDate: "2023-02-13",
 		endDate: null,
-		org: "内容理解部",
+		department: "内容理解部",
 		title: "算法工程师",
 		seqL1: "技术",
 		seqL2: "算法",
@@ -326,7 +328,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0105",
 		startDate: "2019-07-01",
 		endDate: "2022-06-30",
-		org: "某戊电商",
+		company: "某戊电商",
 		title: "数据分析师",
 		description: "为首页推荐位做过 A/B 实验分析，写过推荐效果的日报。",
 		months: 36,
@@ -340,7 +342,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0105",
 		startDate: "2022-07-04",
 		endDate: null,
-		org: "用户增长部",
+		department: "用户增长部",
 		title: "数据分析师",
 		center: "增长中心",
 		seqL1: "技术",
@@ -354,7 +356,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0106",
 		startDate: "2012-07-01",
 		endDate: "2017-12-31",
-		org: "某己科技",
+		company: "某己科技",
 		title: "算法工程师",
 		description: "负责搜索广告的点击率预估。",
 		months: 66,
@@ -367,7 +369,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0106",
 		startDate: "2018-01-01",
 		endDate: "2024-04-30",
-		org: "某甲科技",
+		company: "某甲科技",
 		title: "推荐算法负责人",
 		description:
 			"负责电商推荐算法团队，管理 12 人；主导推荐系统从离线到实时的改造。",
@@ -381,7 +383,7 @@ export const EXPERIENCES: SampleExperience[] = [
 		empId: "T0106",
 		startDate: "2024-05-20",
 		endDate: null,
-		org: "广告算法部",
+		department: "广告算法部",
 		title: "算法专家",
 		seqL1: "技术",
 		seqL2: "算法",
@@ -416,7 +418,8 @@ export function hitOn(
 		involvement: null,
 		startDate: x.startDate,
 		endDate: x.endDate,
-		org: x.org,
+		company: x.company,
+		department: x.department,
 		title: x.title,
 		seq: seq.filter(Boolean).join(" · "),
 		...over,
@@ -654,7 +657,7 @@ const FACTS: PopulationFact[] = EXPERIENCES.map((x) => {
 		seqL1: x.seqL1 || x.seqInferredL1,
 		seqL2: x.seqL2 || x.seqInferredL2,
 		kind: x.kind,
-		companyTag: x.orgMeta?.company_tag ?? null,
+		companyTag: x.companyMeta?.company_tag ?? null,
 		skills: SKILLS[x.id] ?? [],
 		level: person.curLevelBand,
 		levelRank: person.curLevelRank,

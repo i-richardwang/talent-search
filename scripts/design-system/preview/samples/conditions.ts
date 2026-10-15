@@ -75,7 +75,8 @@ export const CLAIMS: Claim[] = claimsOf(CONDITIONS);
 export const KEYWORD_SPEC: SearchSpec = {
 	conditions: conditionsOfKeywords({
 		what: ["推荐系统"],
-		org: ["某甲科技"],
+		company: ["某甲科技"],
+		department: [],
 		school: [],
 		minMonths: 24,
 	}),

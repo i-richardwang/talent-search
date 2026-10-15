@@ -30,13 +30,23 @@ import { experience, hitOn, RESULTS } from "../../samples/people";
 /** 每类来源在试用里配的命中：命中的词、抽取出的说法和参与方式。 */
 const ROUTE_HIT: Record<
 	Route,
-	Pick<Hit, "value" | "phrase" | "involvement" | "org" | "title" | "seq">
+	Pick<
+		Hit,
+		| "value"
+		| "phrase"
+		| "involvement"
+		| "company"
+		| "department"
+		| "title"
+		| "seq"
+	>
 > = {
 	role: {
 		value: "推荐系统",
 		phrase: null,
 		involvement: null,
-		org: "推荐算法部",
+		company: "",
+		department: "推荐算法部",
 		title: "高级算法工程师",
 		seq: "技术 · 算法 · 推荐",
 	},
@@ -44,7 +54,8 @@ const ROUTE_HIT: Record<
 		value: "推荐系统",
 		phrase: null,
 		involvement: null,
-		org: "某乙网络",
+		company: "某乙网络",
+		department: "",
 		title: "推荐系统工程师",
 		seq: "技术 · 算法",
 	},
@@ -52,7 +63,8 @@ const ROUTE_HIT: Record<
 		value: "推荐系统",
 		phrase: "推荐系统",
 		involvement: null,
-		org: "某甲科技",
+		company: "某甲科技",
+		department: "",
 		title: "算法工程师",
 		seq: "技术 · 算法",
 	},
@@ -60,7 +72,8 @@ const ROUTE_HIT: Record<
 		value: "推荐系统",
 		phrase: "实时推荐系统",
 		involvement: "从零搭建",
-		org: "某甲科技",
+		company: "某甲科技",
+		department: "",
 		title: "算法工程师",
 		seq: "技术 · 算法",
 	},
@@ -68,7 +81,8 @@ const ROUTE_HIT: Record<
 		value: "推荐系统",
 		phrase: null,
 		involvement: null,
-		org: "某戊电商",
+		company: "某戊电商",
+		department: "",
 		title: "数据分析师",
 		seq: "技术 · 数据分析",
 	},

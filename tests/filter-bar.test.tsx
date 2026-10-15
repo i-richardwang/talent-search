@@ -101,8 +101,9 @@ describe("钮上的字", () => {
 		assert.ok(text.includes("序列：2 项"), text);
 	});
 
-	test("公司、学校这类名称条件写出它的值", () => {
-		assert.ok(seen({ org: ["某甲科技"] }).includes("某甲科技"));
+	test("公司、部门、学校这类名称条件写出它的值", () => {
+		assert.ok(seen({ company: ["某甲科技"] }).includes("某甲科技"));
+		assert.ok(seen({ department: ["推荐平台部"] }).includes("推荐平台部"));
 	});
 });
 

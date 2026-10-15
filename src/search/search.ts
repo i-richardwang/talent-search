@@ -59,7 +59,7 @@ import {
 	type Suggestion,
 } from "./result";
 import type { SearchSpec } from "./spec";
-import type { NameField, NameFinding, TermFinding } from "./trace";
+import type { Matched, NameField, NameFinding, TermFinding } from "./trace";
 import {
 	FACT_MAX,
 	HITS_PER_CLAIM,
@@ -92,13 +92,20 @@ const MIN_PEOPLE_TO_SHOW = 5;
 /** 一个词命中的标准能力词、一个名字匹配到的公司或学校，各最多给几个。 */
 const MAX_TO_SHOW = 8;
 
+/** 一个能力词更细的几个词最多给几个。 */
+const MAX_NARROWER = 5;
+
 /**
  * 经历词的命中人数与标准能力词，和搜索共用召回、相关度门槛及经历边。
  * 人数按员工去重，不带视图筛选。
- * 仅向模型展示至少 MIN_PEOPLE_TO_SHOW 人使用的标准能力词，最多 MAX_TO_SHOW 项。
+ * 仅向模型展示至少 MIN_PEOPLE_TO_SHOW 人使用的标准能力词，最多 MAX_TO_SHOW 项；
+ * 每个能力词带上它在词表里更宽和更细的词，人数按检索顺着词表往下带的同一批人算
+ * （`peopleUnder`），门槛相同。
  * 这里采用正向门槛；排除主张使用更严格的 RELEVANCE_MIN_EXCLUDE。
  */
-export async function findTerms(texts: string[]): Promise<TermFinding[]> {
+export async function lookupExperience(
+	texts: string[],
+): Promise<TermFinding[]> {
 	const asked = [...new Set(texts)];
 	if (asked.length === 0) return [];
 	return withMatchedPhrases(
@@ -136,8 +143,11 @@ export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 				claim_idx: number;
 				name: string;
 				people: number;
+				broader: string | null;
+				narrower: string[];
 			}>(sql`
-			with q(claim_idx, value_idx, phrase_id, relevance) as ${table},
+			${UNDER},
+			q(claim_idx, value_idx, phrase_id, relevance) as ${table},
 			hit as (
 				select q.claim_idx, coalesce(t.canonical, ph.text) as name,
 					count(distinct e.emp_id)::int as people, max(q.relevance) as relevance
@@ -149,15 +159,32 @@ export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 				where not e.unemployed
 				group by q.claim_idx, 2
 				having count(distinct e.emp_id) >= ${MIN_PEOPLE_TO_SHOW}
+			),
+			shown as (
+				select * from (
+					select *, row_number() over (
+						partition by claim_idx order by relevance desc, people desc, name
+					) as n from hit
+				) ranked where n <= ${MAX_TO_SHOW}
 			)
-			select claim_idx, name, people from (
-				select *, row_number() over (
-					partition by claim_idx order by relevance desc, people desc, name
-				) as n from hit
-			) ranked where n <= ${MAX_TO_SHOW}
-			order by claim_idx, n`);
+			select s.claim_idx, s.name, s.people,
+				case when ${peopleUnder(sql`t.parent`)} >= ${MIN_PEOPLE_TO_SHOW}
+					then t.parent end as broader,
+				array(
+					select c.word from term c
+					where c.parent = s.name and ${peopleUnder(sql`c.word`)} >= ${MIN_PEOPLE_TO_SHOW}
+					order by ${peopleUnder(sql`c.word`)} desc, c.word
+					limit ${MAX_NARROWER}
+				) as narrower
+			from shown s left join term t on t.word = s.name
+			order by s.claim_idx, s.n`);
 			for (const row of terms.rows)
-				out[row.claim_idx]?.terms.push({ name: row.name, people: row.people });
+				out[row.claim_idx]?.terms.push({
+					name: row.name,
+					people: row.people,
+					broader: row.broader,
+					narrower: row.narrower,
+				});
 			return out;
 		},
 	);
@@ -166,11 +193,12 @@ export async function findTerms(texts: string[]): Promise<TermFinding[]> {
 /**
  * 这些名字各能匹配到多少人、匹配到人才库里哪些公司或学校。
  *
- * 和搜索条件用同一套匹配（`anyLike`）：名字是专有名词，按包含匹配，不用向量。
- * 公司名在公司内的任职上匹配的是部门名和部门路径，那是内部信息，只算进人数；
- * 发给模型的名字只取入职前经历的公司名，写的人少于 `MIN_PEOPLE_TO_SHOW` 的不发。
+ * 和搜索条件用同一套匹配：名字是专有名词，按包含匹配，不用向量。公司按入职前经历的
+ * 公司名（`placeCond`），部门按公司内任职的部门名和部门路径，学校按人员档案。
+ * 部门名是内部信息，只算人数，不给写法；公司名和学校名写的人少于
+ * `MIN_PEOPLE_TO_SHOW` 的不给。
  */
-export async function findNames(
+export async function lookupNames(
 	field: NameField,
 	names: string[],
 ): Promise<NameFinding[]> {
@@ -178,27 +206,27 @@ export async function findNames(
 	return withCorpusSnapshot(async (store) => {
 		const out: NameFinding[] = [];
 		for (const name of asked) {
-			const countPeople =
-				field === "org"
-					? sql`select count(distinct e.emp_id)::int as n from experience e
-						where not e.unemployed and ${anyLike([name], [sql`e.org`, sql`e.org_path`])}`
-					: sql`select count(*)::int as n from employee p
-						where ${anyLike([name], [sql`p.school`])}`;
 			const matched =
-				field === "org"
-					? sql`select e.org as name, count(distinct e.emp_id)::int as people
-						from experience e
-						where not e.unemployed and e.kind = 'external' and ${anyLike([name], [sql`e.org`])}
-						group by e.org`
-					: sql`select p.school as name, count(*)::int as people
-						from employee p where ${anyLike([name], [sql`p.school`])}
-						group by p.school`;
-			const [people] = (await store.execute<{ n: number }>(countPeople)).rows;
-			const shown = await store.execute<{ name: string; people: number }>(sql`
-				select name, people from (${matched}) m
-				where people >= ${MIN_PEOPLE_TO_SHOW}
-				order by people desc, name limit ${MAX_TO_SHOW}`);
-			out.push({ name, people: people?.n ?? 0, names: shown.rows });
+				field === "school"
+					? sql`select p.school as name, p.emp_id from employee p
+						where ${anyLike([name], [sql`p.school`])}`
+					: sql`select ${PLACE_NAME[field]} as name, e.emp_id from experience e
+						where not e.unemployed and ${placeCond(field, [name])}`;
+			const [people] = (
+				await store.execute<{ n: number }>(sql`
+				select count(distinct emp_id)::int as n from (${matched}) m`)
+			).rows;
+			const shown =
+				field === "department"
+					? []
+					: (
+							await store.execute<Matched>(sql`
+							select name, count(distinct emp_id)::int as people
+							from (${matched}) m group by name
+							having count(distinct emp_id) >= ${MIN_PEOPLE_TO_SHOW}
+							order by people desc, name limit ${MAX_TO_SHOW}`)
+						).rows;
+			out.push({ query: name, people: people?.n ?? 0, values: shown });
 		}
 		return out;
 	});
@@ -275,7 +303,7 @@ const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	seqL1: sql`coalesce(nullif(e.seq_l1, ''), e.seq_inferred_l1)`,
 	seqL2: sql`coalesce(nullif(e.seq_l2, ''), e.seq_inferred_l2)`,
 	kind: sql`e.kind`,
-	companyTag: sql`e.org_meta ->> 'company_tag'`,
+	companyTag: sql`e.company_meta ->> 'company_tag'`,
 	/** 经历技能的标准写法及全部父词，作为技能筛选的取值；UNION 去重。 */
 	skills: sql`array(
 		with recursive up(word) as (
@@ -344,17 +372,36 @@ function dimCond<K extends DimKey>(key: K, picked: Picked[K]): SQL | null {
 		: sql`${column.one} in (${sql.join(ids, sql`, `)})`;
 }
 
+type Place = "company" | "department";
+
+/** 一段经历在哪的名字：入职前是公司名，公司内是末级部门名。 */
+const PLACE_NAME: Record<Place, SQL> = {
+	company: sql`e.company`,
+	department: sql`e.department`,
+};
+
+/** 这一段的公司名含其中一个，或部门名、部门路径含其中一个。 */
+function placeCond(field: Place, names: readonly string[]) {
+	return sql`(${anyLike(
+		names,
+		field === "company"
+			? [PLACE_NAME.company]
+			: [PLACE_NAME.department, sql`e.department_path`],
+	)})`;
+}
+
 /**
- * 一条经历主张在**那一段经历**上的谓词：公司名、公司档、经历来源，一项一条。
+ * 一条经历主张在**那一段经历**上的谓词：公司名、部门名、公司档、经历来源，一项一条。
  * 经历词不在这里（它由相关度过滤决定，见 `phrases.ts`），累计时长也不在（它跨段，归 `rank.ts`）。
  *
- * 公司名是专有名词，永远不进向量：「字节」和「腾讯」在向量空间里是邻居，
- * 语义匹配会把竞品全匹配进来。它按这一段的公司名或部门路径模糊匹配。
+ * 公司名和部门名是专有名词，永远不进向量：「字节」和「腾讯」在向量空间里是邻居，
+ * 语义匹配会把竞品全匹配进来。公司名只在入职前经历上有值，部门名和部门路径只在
+ * 公司内任职上有值，各自按包含匹配。
  */
 function segmentConds(claim: ExperienceCondition): SQL[] {
 	const conds: SQL[] = [sql`not e.unemployed`];
-	if (claim.org)
-		conds.push(sql`(${anyLike(claim.org, [sql`e.org`, sql`e.org_path`])})`);
+	if (claim.company) conds.push(placeCond("company", claim.company));
+	if (claim.department) conds.push(placeCond("department", claim.department));
 	const tag = dimCond("companyTag", claim.companyTag && [...claim.companyTag]);
 	if (tag) conds.push(tag);
 	const kind = dimCond("kind", claim.kind);
@@ -390,17 +437,28 @@ function gateConds(gates: readonly Gate[], veto: SQL | null): SQL[] {
 }
 
 /**
- * 公司和学校的视图筛选共用门槛谓词，在 SQL 中按人过滤；分面读取过滤后的事实。
- * 公司依赖未被否决的工作经历，学校只读员工档案。视图筛选不写入条件表。
+ * 公司、部门和学校的视图筛选共用门槛谓词，在 SQL 中按人过滤；分面读取过滤后的事实。
+ * 公司和部门依赖未被否决的工作经历，学校只读员工档案。视图筛选不写入条件表。
  */
 function viewConds(
-	view: Pick<SearchFilters, "org" | "school">,
+	view: Pick<SearchFilters, "company" | "department" | "school">,
 	veto: SQL | null,
 ): SQL[] {
 	const gates: Gate[] = [];
-	const [org, ...otherOrgs] = view.org ?? [];
-	if (org !== undefined)
-		gates.push({ about: "experience", mode: "must", org: [org, ...otherOrgs] });
+	const [company, ...otherCompanies] = view.company ?? [];
+	if (company !== undefined)
+		gates.push({
+			about: "experience",
+			mode: "must",
+			company: [company, ...otherCompanies],
+		});
+	const [department, ...otherDepartments] = view.department ?? [];
+	if (department !== undefined)
+		gates.push({
+			about: "experience",
+			mode: "must",
+			department: [department, ...otherDepartments],
+		});
 	const [school, ...otherSchools] = view.school ?? [];
 	if (school !== undefined)
 		gates.push({
@@ -608,38 +666,44 @@ function vetoSql(
 const VOCAB_MAX = 100;
 
 /**
- * 词表里的取值各自来自哪张表。哪几维有词表由 `VOCAB_KEYS` 说，这里按它穷尽。
+ * 词表里的取值各自从哪些行数出来、按谁数人。哪几维有词表由 `VOCAB_KEYS` 说，这里按它穷尽。
+ * 公司档在经历段上，和检索一样不算待业段；其余几维在人员档案上。
  *
  * **取值表达式不重写**——和取数、下推谓词用的是同一份 `FACT_COLUMNS`，公司档
- * 哪天从 `org_meta` 挪成一列，改一处。
+ * 哪天从 `company_meta` 挪成一列，改一处。
  */
-const VOCAB_SOURCE: Record<VocabKey, SQL> = {
-	companyTag: sql`experience e`,
-	level: sql`employee p`,
-	recruitment: sql`employee p`,
-	education: sql`employee p`,
+const PERSON_ROWS = { rows: sql`employee p`, person: sql`p.emp_id` };
+const VOCAB_SOURCE: Record<VocabKey, { rows: SQL; person: SQL }> = {
+	companyTag: {
+		rows: sql`(select * from experience where not unemployed) e`,
+		person: sql`e.emp_id`,
+	},
+	level: PERSON_ROWS,
+	recruitment: PERSON_ROWS,
+	education: PERSON_ROWS,
 };
 
 /**
- * 查询理解能选择的语料取值。空值与 NOT_A_VALUE 不进词表；
+ * 查询理解能选择的语料取值和有这个值的人数。空值与 NOT_A_VALUE 不进词表；
  * 有序维按档高排列，其余按人数排列。各维在同一语料快照中读取。
  */
 export async function vocabulary(): Promise<Vocabulary> {
 	return withCorpusSnapshot(async (store) => {
-		const vocab = {} as Vocabulary;
+		const vocab = {} as { [K in VocabKey]: Matched[] };
 		for (const key of VOCAB_KEYS) {
 			const column = FACT_COLUMNS[key];
-			const rows = await store.execute<{ value: string }>(sql`
-				select ${column} as value, count(*) as n
-				from ${VOCAB_SOURCE[key]}
+			const { rows: from, person } = VOCAB_SOURCE[key];
+			const rows = await store.execute<Matched>(sql`
+				select ${column} as name, count(distinct ${person})::int as people
+				from ${from}
 				where ${column} is not null and ${column} not in (${sql.join(
 					["", ...NOT_A_VALUE].map((v) => sql`${v}`),
 					sql`, `,
 				)})
 				group by 1 order by ${
 					isOrdinal(key) ? sql`min(${FACT_COLUMNS[`${key}Rank`]}), ` : sql``
-				}n desc, value limit ${VOCAB_MAX}`);
-			vocab[key] = rows.rows.map((row) => row.value);
+				}people desc, name limit ${VOCAB_MAX}`);
+			vocab[key] = rows.rows;
 		}
 		return vocab;
 	});
@@ -682,8 +746,13 @@ async function searchPopulation(
 		...dims,
 		empId: emp_id,
 	}));
-	// org / school 已经在 SQL 里按人过滤过，内存里不必再过滤一次
-	const inMemory = { ...view, org: undefined, school: undefined };
+	// 公司、部门和学校已经在 SQL 里按人过滤过，内存里不必再过滤一次
+	const inMemory = {
+		...view,
+		company: undefined,
+		department: undefined,
+		school: undefined,
+	};
 	const empIdsAll = facts.map((f) => f.empId);
 	const preferred = await Promise.all(
 		prefer.map((g) => fetchPreferred(store, g, veto, empIdsAll)),
@@ -864,7 +933,8 @@ export async function search(
 						involvement: fact.involvement,
 						startDate: segment.startDate,
 						endDate: segment.endDate,
-						org: segment.org,
+						company: segment.company,
+						department: segment.department,
 						title: segment.title,
 						seq: dots(segment.seqL1, segment.seqL2, segment.seqL3),
 					},
@@ -954,9 +1024,10 @@ export async function suggest(
 	}
 
 	const source =
-		field === "org"
-			? sql`select org as value, emp_id from experience where not unemployed and org ilike ${contains}`
-			: sql`select school as value, emp_id from employee where school ilike ${contains}`;
+		field === "school"
+			? sql`select school as value, emp_id from employee where school ilike ${contains}`
+			: sql`select ${PLACE_NAME[field]} as value, e.emp_id from experience e
+				where not e.unemployed and ${PLACE_NAME[field]} ilike ${contains}`;
 	const { rows } = await db.execute<{ value: string; people: number }>(sql`
 		select value, count(distinct emp_id)::int as people
 		from (${source}) t

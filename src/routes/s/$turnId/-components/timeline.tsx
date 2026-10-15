@@ -2,7 +2,7 @@ import { Tag } from "#/components/ui/tag";
 import type { CompanyMeta } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
 import { routeLabel } from "#/search/evidence";
-import type { EmployeeDetail, Hit } from "#/search/result";
+import { type EmployeeDetail, type Hit, placeOf } from "#/search/result";
 import { Dot, phraseLabel } from "./evidence";
 
 /** 命中按 experienceId 索引，一段可能同时命中多条主张。 */
@@ -77,7 +77,7 @@ function Segment({
 
 			<div className={isLast ? "" : "pb-5"}>
 				<div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-base">
-					<span className="font-medium">{x.org}</span>
+					<span className="font-medium">{placeOf(x)}</span>
 					<span>{x.title}</span>
 					{x.level && (
 						<span className="text-fg-secondary text-xs">{x.level}</span>
@@ -90,10 +90,10 @@ function Segment({
 						{dots(period(x.startDate, x.endDate), duration(x.months))}
 					</span>
 					{seq && <span>{external ? `${seq}（推断）` : seq}</span>}
-					{x.orgMeta && <CompanyLine meta={x.orgMeta} />}
+					{x.companyMeta && <CompanyLine meta={x.companyMeta} />}
 				</div>
-				{!external && x.orgPath && (
-					<p className="text-fg-tertiary text-xs">{x.orgPath}</p>
+				{x.departmentPath && (
+					<p className="text-fg-tertiary text-xs">{x.departmentPath}</p>
 				)}
 
 				{hits && hits.length > 0 && <MatchedClaims hits={hits} names={names} />}

@@ -70,8 +70,9 @@ export type SegmentView = Pick<
 	| "startDate"
 	| "endDate"
 	| "months"
-	| "org"
-	| "orgPath"
+	| "company"
+	| "department"
+	| "departmentPath"
 	| "title"
 	| "level"
 	| "description"
@@ -118,7 +119,7 @@ export async function employeeData(
 			}
 		>(
 			`select x.id, x.kind, x.start_date::text as "startDate", x.end_date::text as "endDate",
-			x.months, x.org, x.org_path as "orgPath", x.title, x.level, x.description,
+			x.months, x.company, x.department, x.department_path as "departmentPath", x.title, x.level, x.description,
 			x.seq_l1 as "seqL1", x.seq_l2 as "seqL2", x.seq_l3 as "seqL3",
 			x.seq_inferred_l1 as "seqInferredL1", x.seq_inferred_l2 as "seqInferredL2",
 			x.derived_identity is not distinct from $2 as derived, x.unanswered,
@@ -171,9 +172,10 @@ export function employeeDetail(empId: string): Promise<EmployeeDetail | null> {
 				kind: experience.kind,
 				startDate: experience.startDate,
 				endDate: experience.endDate,
-				org: experience.org,
-				orgPath: experience.orgPath,
-				orgMeta: experience.orgMeta,
+				company: experience.company,
+				department: experience.department,
+				departmentPath: experience.departmentPath,
+				companyMeta: experience.companyMeta,
 				title: experience.title,
 				level: experience.level,
 				description: experience.description,

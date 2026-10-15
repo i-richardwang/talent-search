@@ -12,9 +12,17 @@ import {
 import { isOrdinal, isVocabKey, type VocabKey } from "./dimensions";
 import { type SearchSpec, sanitizeSpec } from "./spec";
 import { boundedText } from "./text";
+import type { Matched } from "./trace";
 
-/** 模型选择词表取值时只能看语料真实拥有的词表。哪几维有词表见 `VOCAB_KEYS`。 */
-export type Vocabulary = { [K in VocabKey]: readonly string[] };
+/**
+ * 模型选择词表取值时只能看语料真实拥有的词表，每个取值带着有这个值的人数。
+ * 哪几维有词表见 `VOCAB_KEYS`。
+ */
+export type Vocabulary = { [K in VocabKey]: readonly Matched[] };
+
+function has(vocab: Vocabulary, key: VocabKey, value: string) {
+	return vocab[key].some((v) => v.name === value);
+}
 
 const experienceItem = z.object({
 	about: z.literal("experience"),
@@ -25,10 +33,14 @@ const experienceItem = z.object({
 		.array(z.string())
 		.optional()
 		.describe("做过什么，任一命中即可；不限就不写"),
-	org: z
+	company: z
 		.array(z.string())
 		.optional()
-		.describe("在哪家公司或哪个部门，任一即可；不限就不写"),
+		.describe("入职前在哪家公司，任一即可；不限就不写"),
+	department: z
+		.array(z.string())
+		.optional()
+		.describe("公司内在哪个部门，任一即可；不限就不写"),
 	companyTag: z
 		.array(z.string())
 		.optional()
@@ -189,7 +201,7 @@ function conditionsIn(raw: unknown, vocab: Vocabulary): Condition[] {
 	const inVocab = (key: VocabKey, list: unknown) =>
 		(Array.isArray(list) ? list : [])
 			.map(boundedText)
-			.filter((t): t is string => t !== undefined && vocab[key].includes(t));
+			.filter((t): t is string => t !== undefined && has(vocab, key, t));
 	const conditions = items.flatMap((item) => {
 		const entry = (item ?? {}) as Record<string, unknown>;
 		// 停用只由上一轮带过来，模型那一侧写的一律不认
@@ -242,9 +254,9 @@ export function valuesOutsideVocabulary(
 	const out = new Set<string>();
 	const check = (key: VocabKey, values: readonly string[]) => {
 		for (const v of values)
-			if (!vocab[key].includes(v))
+			if (!has(vocab, key, v))
 				out.add(
-					`${key} 没有「${v}」这个取值，可选：${vocab[key].join("、") || "（无）"}`,
+					`${key} 没有「${v}」这个取值，可选：${vocab[key].map((x) => x.name).join("、") || "（无）"}`,
 				);
 	};
 	for (const c of [

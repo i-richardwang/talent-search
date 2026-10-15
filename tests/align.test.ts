@@ -23,9 +23,10 @@ function segment(row: Partial<ExperienceRow>): ExperienceRow {
 		unemployed: false,
 		start_date: "2019-01-01",
 		end_date: "2020-01-01",
-		org: "",
-		org_path: "",
-		org_meta: null,
+		company: "",
+		department: "",
+		department_path: "",
+		company_meta: null,
 		title: "",
 		seq_l1: "",
 		seq_l2: "",
@@ -43,23 +44,28 @@ function segment(row: Partial<ExperienceRow>): ExperienceRow {
 function corpus(...external: [string, string][]): ExperienceRow[] {
 	return [
 		segment({
-			org: "平台技术部",
+			department: "平台技术部",
 			title: "算法工程师",
 			seq_l1: "技术",
 			seq_l2: "算法",
 		}),
 		segment({
-			org: "渠道部",
+			department: "渠道部",
 			title: "渠道运营",
 			seq_l1: "运营",
 			seq_l2: "渠道运营",
 		}),
-		segment({ org: "渠道部", title: "实习生", seq_l1: "运营", seq_l2: "" }),
+		segment({
+			department: "渠道部",
+			title: "实习生",
+			seq_l1: "运营",
+			seq_l2: "",
+		}),
 		...external.map(([title, description]) =>
 			segment({
 				kind: "external",
 				unemployed: title === UNEMPLOYED,
-				org: "云枢智能",
+				company: "云枢智能",
 				title,
 				description,
 			}),

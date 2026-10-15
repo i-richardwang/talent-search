@@ -1,5 +1,5 @@
 /**
- * 查询理解的三个工具：查经历词、查公司名和学校名、提交搜索条件。跑在临时 schema 上的
+ * 查询理解的三个工具：查经历、查属性、提交搜索条件。跑在临时 schema 上的
  * 真 SQL 和假模型端点，数据全是合成的。查到的人数和搜出来的人数一致；发给模型的只有
  * 人数和至少几个人写过的写法，没有人；提交的条件有问题就不通过，原样再提交就通过。
  */
@@ -13,17 +13,17 @@ const teardown = await setup();
 after(teardown);
 
 const { agentTools } = await import("#/server/agent-tools");
-const { findNames, findTerms, search, vocabulary } = await import(
+const { lookupExperience, lookupNames, search, vocabulary } = await import(
 	"#/search/search"
 );
 
 before(async () => {
 	const { db } = await import("#/db");
 	const { term } = await import("#/db/schema");
-	const external = (org: string, skills: string[]) => ({
+	const external = (company: string, skills: string[]) => ({
 		kind: "external" as const,
 		months: 24,
-		org,
+		company,
 		extracted: { skills },
 	});
 	await seed([
@@ -43,8 +43,8 @@ before(async () => {
 			segments: [
 				{
 					months: 12,
-					org: "推荐中台",
-					orgPath: "星河事业部/推荐中台",
+					department: "推荐中台",
+					departmentPath: "星河事业部/推荐中台",
 					description: "推荐召回",
 				},
 			],
@@ -60,11 +60,19 @@ before(async () => {
 			school: "银河学院",
 			segments: [external("考古研究所", ["考古"])],
 		})),
+		...Array.from({ length: 5 }, (_, i) => ({
+			empId: `F${i}`,
+			name: `己${i}`,
+			segments: [external("测年实验室", ["碳十四测年"])],
+		})),
 	]);
 	const reviewedAt = new Date();
 	await db.insert(term).values([
 		{ word: "推荐系统", canonical: "推荐系统", reviewedAt },
 		{ word: "个性化推荐", canonical: "推荐系统", reviewedAt },
+		{ word: "文物", canonical: "文物", reviewedAt },
+		{ word: "考古", canonical: "考古", parent: "文物", reviewedAt },
+		{ word: "碳十四测年", canonical: "碳十四测年", parent: "考古", reviewedAt },
 	]);
 });
 
@@ -83,9 +91,9 @@ function table(conditions: unknown[]) {
 	return { conditions, note: null };
 }
 
-describe("查经历词", () => {
+describe("查经历", () => {
 	test("人数就是只拿这个词搜出来的人数，按人算", async () => {
-		const [found] = await findTerms(["推荐"]);
+		const [found] = await lookupExperience(["推荐"]);
 		const { total } = await search({ conditions: parseQuery("推荐") }, {}, 1);
 		assert.equal(found?.people, 9);
 		assert.equal(found?.people, total);
@@ -94,45 +102,95 @@ describe("查经历词", () => {
 	test("命中的能力词换成标准写法；整段简历原文不发给模型；写的人太少的不给", async () => {
 		// 「推荐」命中了「推荐系统」「个性化推荐」两种写法和一段简历原文「推荐召回」：
 		// 两种写法并成一个标准词、8 人；原文只计人数
-		const [found] = await findTerms(["推荐"]);
-		assert.deepEqual(found?.terms, [{ name: "推荐系统", people: 8 }]);
-		const [same] = await findTerms(["个性化推荐"]);
+		const [found] = await lookupExperience(["推荐"]);
+		const recommend = {
+			name: "推荐系统",
+			people: 8,
+			broader: null,
+			narrower: [],
+		};
+		assert.deepEqual(found?.terms, [recommend]);
+		const [same] = await lookupExperience(["个性化推荐"]);
 		assert.deepEqual(
 			same?.terms,
-			[{ name: "推荐系统", people: 8 }],
+			[recommend],
 			"同一件事的写法顺着词表一起找到",
 		);
-		const [few] = await findTerms(["星图测绘"]);
+		const [few] = await lookupExperience(["星图测绘"]);
 		assert.equal(few?.people, 2);
 		assert.deepEqual(few?.terms, [], "只有两个人写过，不给");
 	});
 
 	test("人数按人数，一个人都找不到的是 0", async () => {
-		const found = await findTerms(["推荐", "考古", "量子炼金"]);
+		const found = await lookupExperience(["推荐", "考古", "量子炼金"]);
 		assert.deepEqual(
 			found.map((t) => [t.text, t.people]),
 			[
 				["推荐", 9],
-				["考古", 40],
+				["考古", 45],
 				["量子炼金", 0],
 			],
+			"写了细词「碳十四测年」的五个人也符合「考古」",
 		);
+	});
+
+	test("每个能力词带上词表里更宽和更细的词", async () => {
+		const [found] = await lookupExperience(["考古"]);
+		assert.deepEqual(found?.terms, [
+			{ name: "考古", people: 40, broader: "文物", narrower: ["碳十四测年"] },
+			{ name: "碳十四测年", people: 5, broader: "考古", narrower: [] },
+		]);
 	});
 });
 
-describe("查公司名和学校名", () => {
-	test("公司名连部门路径一起数人；发给模型的只有入职前的公司名，且写的人够多", async () => {
-		const [found] = await findNames("org", ["星河"]);
-		assert.equal(found?.people, 9, "星河科技 6、星河小厂 2、星河事业部 1");
-		assert.deepEqual(found?.names, [{ name: "星河科技", people: 6 }]);
+describe("查属性", () => {
+	test("公司只匹配入职前的公司名，部门只匹配公司内的部门，两边人数不混", async () => {
+		const [company] = await lookupNames("company", ["星河"]);
+		assert.deepEqual(company, {
+			query: "星河",
+			people: 8,
+			values: [{ name: "星河科技", people: 6 }],
+		});
+		const [department] = await lookupNames("department", ["星河"]);
+		assert.deepEqual(
+			department,
+			{ query: "星河", people: 1, values: [] },
+			"部门路径里的「星河事业部」只算人数，部门名不发给模型",
+		);
 	});
 
 	test("学校名按包含匹配；匹配不到的是 0", async () => {
-		const found = await findNames("school", ["银河", "北辰大学"]);
+		const found = await lookupNames("school", ["银河", "北辰大学"]);
 		assert.deepEqual(found, [
-			{ name: "银河", people: 40, names: [{ name: "银河学院", people: 40 }] },
-			{ name: "北辰大学", people: 0, names: [] },
+			{
+				query: "银河",
+				people: 40,
+				values: [{ name: "银河学院", people: 40 }],
+			},
+			{ query: "北辰大学", people: 0, values: [] },
 		]);
+	});
+
+	test("有限取值的属性给出全部取值和人数，和提示词里预先给的是同一份", async () => {
+		const vocab = await vocabulary();
+		const { tools } = agentTools({ vocab, base: [], record: async () => {} });
+		assert.deepEqual(
+			await run(tools.lookup_attribute, {
+				field: "school",
+				queries: ["银河"],
+			}),
+			[
+				{
+					query: "银河",
+					people: 40,
+					values: [{ name: "银河学院", people: 40 }],
+				},
+			],
+		);
+		assert.deepEqual(
+			await run(tools.lookup_attribute, { field: "companyTag" }),
+			vocab.companyTag,
+		);
 	});
 });
 
@@ -156,7 +214,7 @@ describe("提交搜索条件", () => {
 		const agent = await agentOn();
 		const submitted = table([
 			{ about: "experience", mode: "must", what: ["量子炼金"] },
-			{ about: "experience", mode: "boost", org: ["北辰"] },
+			{ about: "experience", mode: "boost", company: ["北辰"] },
 			{ about: "person", mode: "must", field: "education", atLeast: "博后" },
 		]);
 		const first = (await run(agent.tools.submit, submitted)) as Checked;
@@ -238,12 +296,16 @@ test("每查一次记一步，步里只有人数和人才库里的写法，没�
 			steps.push(step);
 		},
 	});
-	await run(tools.find_terms, { texts: ["推荐"] });
-	await run(tools.find_names, { field: "org", names: ["星河"] });
+	await run(tools.lookup_experience, { texts: ["推荐"] });
+	await run(tools.lookup_attribute, { field: "company", queries: ["星河"] });
+	await run(tools.lookup_attribute, {
+		field: "department",
+		queries: ["星河"],
+	});
 	await run(tools.submit, table(parseQuery("推荐")));
 	assert.deepEqual(
 		steps.map((s) => s.tool),
-		["find_terms", "find_names"],
+		["lookup_experience", "lookup_attribute", "lookup_attribute"],
 	);
 	assert.doesNotMatch(JSON.stringify(steps), /甲|乙|丙|A0|推荐召回|星河事业部/);
 });
@@ -258,16 +320,16 @@ test("同一次理解里查同样几个词只记一步，同时问两次也一�
 		},
 	});
 	const [first, second] = await Promise.all([
-		run(tools.find_terms, { texts: ["推荐", "考古"] }),
-		run(tools.find_terms, { texts: ["考古", " 推荐"] }),
+		run(tools.lookup_experience, { texts: ["推荐", "考古"] }),
+		run(tools.lookup_experience, { texts: ["考古", " 推荐"] }),
 	]);
-	await run(tools.find_names, { field: "org", names: ["星河"] });
-	await run(tools.find_names, { field: "school", names: ["星河"] });
-	await run(tools.find_names, { field: "org", names: ["星河"] });
+	await run(tools.lookup_attribute, { field: "company", queries: ["星河"] });
+	await run(tools.lookup_attribute, { field: "school", queries: ["星河"] });
+	await run(tools.lookup_attribute, { field: "company", queries: ["星河"] });
 	assert.deepEqual(second, first);
 	assert.deepEqual(
 		steps.map((s) => s.tool),
-		["find_terms", "find_names", "find_names"],
+		["lookup_experience", "lookup_attribute", "lookup_attribute"],
 		"公司和学校查同一个名字是两件事",
 	);
 });

@@ -2,7 +2,7 @@ import { Text } from "#/components/ui/text";
 import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { routeLabel } from "#/search/evidence";
-import type { ClaimBasis, Hit } from "#/search/result";
+import { type ClaimBasis, type Hit, placeOf } from "#/search/result";
 
 /**
  * 证据行与未命中行共用的四列：点、条件词、匹配到的字段、右端时长。
@@ -42,17 +42,17 @@ function matchedField(hit: Hit): {
 	const label = routeLabel(hit.route);
 	switch (hit.route) {
 		case "role":
-			return { label, value: dots(hit.title, hit.org), context: hit.seq };
+			return { label, value: dots(hit.title, placeOf(hit)), context: hit.seq };
 		case "title":
-			return { label, value: hit.title, context: hit.org };
+			return { label, value: hit.title, context: placeOf(hit) };
 		case "description":
-			return { label, value: null, context: dots(hit.title, hit.org) };
+			return { label, value: null, context: dots(hit.title, placeOf(hit)) };
 		case "skill":
 		case "did":
 			return {
 				label,
 				value: phraseLabel(hit),
-				context: dots(hit.title, hit.org),
+				context: dots(hit.title, placeOf(hit)),
 			};
 	}
 }

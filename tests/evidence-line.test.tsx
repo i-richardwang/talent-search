@@ -27,7 +27,7 @@ import { classesWith, visibleText } from "./render";
 import { hit as row } from "./rows";
 
 const hit = (over: Partial<Hit> = {}) =>
-	row({ relevance: 0.83, org: "某部门", ...over });
+	row({ relevance: 0.83, department: "某部门", ...over });
 
 const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
 	route: "role",
@@ -95,7 +95,10 @@ describe("一行证据看得见的部分", () => {
 
 	test("写出来的必须是真正命中的那个字段，不是固定取岗位", () => {
 		// 屏幕上出现一个和条件毫不相干的字段值，读起来就是系统匹配错了。
-		const byRole = seen(hit({ route: "role", org: "算法平台部" }), basis());
+		const byRole = seen(
+			hit({ route: "role", department: "算法平台部" }),
+			basis(),
+		);
 		assert.match(byRole, /任职记录/);
 		assert.match(byRole, /算法工程师/);
 		assert.match(byRole, /算法平台部/);

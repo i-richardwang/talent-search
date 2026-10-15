@@ -76,7 +76,7 @@ async function seen(
 describe("后面每一轮", () => {
 	test("复述那段需求，说出添加了什么、移除了什么", async () => {
 		const { text } = await seen([
-			{ said: "算法，最好字节的", spec: "算法, +org:字节" },
+			{ said: "算法，最好字节的", spec: "算法, +company:字节" },
 			{ said: "再加上带过团队的，不用非得是字节", spec: "算法, 带团队" },
 		]);
 		assert.match(text, /再加上带过团队的，不用非得是字节/);
@@ -246,12 +246,19 @@ describe("检索人才库的过程", () => {
 	const trace: TraceStep[] = [
 		{
 			at: 1,
-			tool: "find_terms",
+			tool: "lookup_experience",
 			terms: [
 				{
 					text: "推荐",
 					people: 128,
-					terms: [{ name: "推荐算法", people: 96 }],
+					terms: [
+						{
+							name: "推荐算法",
+							people: 96,
+							broader: "推荐",
+							narrower: ["召回"],
+						},
+					],
 				},
 				{ text: "互联网", people: 900, terms: [] },
 				{ text: "量子炼金", people: 0, terms: [] },
@@ -259,17 +266,30 @@ describe("检索人才库的过程", () => {
 		},
 		{
 			at: 1,
-			tool: "find_names",
-			field: "org",
-			names: [
-				{ name: "星河", people: 44, names: [{ name: "星河科技", people: 38 }] },
+			tool: "lookup_attribute",
+			field: "company",
+			found: [
+				{
+					query: "星河",
+					people: 44,
+					values: [{ name: "星河科技", people: 38 }],
+				},
 			],
 		},
 		{
 			at: 2,
-			tool: "find_names",
+			tool: "lookup_attribute",
 			field: "school",
-			names: [{ name: "银河学院", people: 0, names: [] }],
+			found: [{ query: "银河学院", people: 0, values: [] }],
+		},
+		{
+			at: 3,
+			tool: "lookup_attribute",
+			field: "education",
+			values: [
+				{ name: "本科", people: 300 },
+				{ name: "硕士", people: 120 },
+			],
 		},
 	];
 
@@ -277,7 +297,7 @@ describe("检索人才库的过程", () => {
 		const { text } = await seen([
 			{ said: "推荐和后端", spec: "推荐算法, 后端", trace },
 		]);
-		assert.match(text, /检索人才库 3 步/);
+		assert.match(text, /检索人才库 4 步/);
 		assert.doesNotMatch(text, /查找公司/, "每一步收在里面");
 	});
 
@@ -286,10 +306,11 @@ describe("检索人才库的过程", () => {
 			waiting: true,
 			progress: { trace, startedAt: null },
 		});
-		assert.match(text, /检索人才库 3 步/);
+		assert.match(text, /检索人才库 4 步/);
 		assert.match(text, /查找\s*推荐、互联网、量子炼金/);
 		assert.match(text, /查找公司\s*星河/);
 		assert.match(text, /查找学校\s*银河学院/);
+		assert.match(text, /查看学历/);
 		assert.doesNotMatch(text, /\d+ 人/, "结论点开这一步才看得见");
 		assert.doesNotMatch(text, /正在理解你的需求/, "有了步骤就不再说在理解");
 	});
@@ -305,6 +326,9 @@ describe("检索人才库的过程", () => {
 		]);
 		assert.deepEqual(stepFindings(trace[2] as TraceStep), [
 			"人才库中没有「银河学院」",
+		]);
+		assert.deepEqual(stepFindings(trace[3] as TraceStep), [
+			"本科 300 人、硕士 120 人",
 		]);
 	});
 

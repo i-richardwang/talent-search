@@ -2,8 +2,10 @@ import { DIM_KEYS, type Picked, parsePicked, textList } from "./dimensions";
 import { RESULT_MAX, RESULT_PAGE } from "./weights";
 
 export type SearchFilters = Picked & {
-	/** 部门或公司名称的精确文本条件。 */
-	org?: readonly string[];
+	/** 入职前公司名的文本条件。 */
+	company?: readonly string[];
+	/** 公司内部门名或部门路径的文本条件。 */
+	department?: readonly string[];
 	school?: readonly string[];
 };
 
@@ -15,8 +17,10 @@ function nameList(raw: unknown) {
 export function sanitizeFilters(value: unknown): SearchFilters {
 	const raw = (value ?? {}) as Record<string, unknown>;
 	const filters: SearchFilters = { ...parsePicked(raw) };
-	const org = nameList(raw.org);
-	if (org) filters.org = org;
+	const company = nameList(raw.company);
+	if (company) filters.company = company;
+	const department = nameList(raw.department);
+	if (department) filters.department = department;
 	const school = nameList(raw.school);
 	if (school) filters.school = school;
 	return filters;
@@ -24,7 +28,8 @@ export function sanitizeFilters(value: unknown): SearchFilters {
 
 export const FILTER_KEYS = [
 	...DIM_KEYS,
-	"org",
+	"company",
+	"department",
 	"school",
 ] as const satisfies readonly (keyof SearchFilters)[];
 

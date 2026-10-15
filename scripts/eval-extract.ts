@@ -6,7 +6,7 @@
  *
  * 用例文件是一个 JSON 数组，每项：
  *   { "name": "A1：Java开发工程师",
- *     "title": "Java开发工程师", "org": "某科技", "description": "负责……",
+ *     "title": "Java开发工程师", "company": "某科技", "description": "负责……",
  *     "gold": [["Java"], ["数据库设计"], ["接口开发", "API 开发"]],  // 每项是一组可接受的写法
  *     "keep": ["售后"],          // 可选：这段必须保住的限定语，出现在任一个词里即算保住
  *     "reject": ["华为"] }       // 可选：不该出现的字样（项目名、公司名）
@@ -31,7 +31,7 @@ import { pool } from "#/db";
 type Case = {
 	name: string;
 	title: string;
-	org: string;
+	company: string;
 	description: string;
 	gold: string[][] | null;
 	keep: string[];
@@ -49,7 +49,7 @@ function loadCases(file: string): Case[] {
 	return data.map((raw, i) => {
 		const c = (raw ?? {}) as Record<string, unknown>;
 		const where = `${file} 第 ${i + 1} 段`;
-		for (const key of ["name", "title", "org", "description"])
+		for (const key of ["name", "title", "company", "description"])
 			if (typeof c[key] !== "string" || !(c[key] as string).trim())
 				throw new Error(`${where}：${key} 必须是非空字符串`);
 		const gold = c.gold ?? null;
@@ -66,7 +66,7 @@ function loadCases(file: string): Case[] {
 		return {
 			name: c.name as string,
 			title: c.title as string,
-			org: c.org as string,
+			company: c.company as string,
 			description: c.description as string,
 			gold: gold as string[][] | null,
 			keep,
@@ -108,7 +108,7 @@ try {
 			kind: "external",
 			unemployed: false,
 			title: c.title,
-			org: c.org,
+			company: c.company,
 			description: c.description,
 		})),
 		(line) => console.error(line),

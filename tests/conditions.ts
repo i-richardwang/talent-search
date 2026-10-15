@@ -61,7 +61,17 @@ export function asConditions(
 		if (values?.length) out.push(person(field, values));
 	}
 	if (pick.school?.length) out.push(person("school", pick.school));
-	if (pick.org?.length)
-		out.push({ about: "experience", mode: "must", org: some(pick.org) });
+	if (pick.company?.length)
+		out.push({
+			about: "experience",
+			mode: "must",
+			company: some(pick.company),
+		});
+	if (pick.department?.length)
+		out.push({
+			about: "experience",
+			mode: "must",
+			department: some(pick.department),
+		});
 	return out;
 }

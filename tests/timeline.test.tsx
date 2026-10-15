@@ -19,7 +19,14 @@ describe("时间轴卡片内容", () => {
 				seqL1: "",
 				seqL2: "",
 				seqL3: "",
-				orgMeta: { company_tag: "某档", industry: "某行业", nature: "某性质" },
+				company: "某公司",
+				department: "",
+				departmentPath: "",
+				companyMeta: {
+					company_tag: "某档",
+					industry: "某行业",
+					nature: "某性质",
+				},
 			}),
 		]);
 		assert.ok(s.includes("入职前"));

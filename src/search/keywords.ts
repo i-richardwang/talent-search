@@ -6,7 +6,8 @@
  *
  * - **经历或技能**：每个词一条必须主张，词之间是 AND——「推荐」「机器学习」
  *   两样都要。词按意思匹配，和对话模式写出的经历词走同一套召回。
- * - **公司或部门**：一条主张，名字含其中任一个就算，词之间是 OR。
+ * - **公司**：入职前经历的一条主张，公司名含其中任一个就算，词之间是 OR。
+ * - **部门**：公司内任职的一条主张，部门名或部门路径含其中任一个就算，词之间是 OR。
  * - **学校**：一条人的条件，词之间是 OR。
  * - **累计年限**：加在「经历或技能」的每一条主张上，各自累计。没有词时不起作用，
  *   框也不让填。
@@ -27,7 +28,8 @@ import {
 
 export type Keywords = {
 	what: string[];
-	org: string[];
+	company: string[];
+	department: string[];
 	school: string[];
 	/** 累计至少几个月；不限为 null。 */
 	minMonths: number | null;
@@ -35,18 +37,25 @@ export type Keywords = {
 
 export const NO_KEYWORDS: Keywords = {
 	what: [],
-	org: [],
+	company: [],
+	department: [],
 	school: [],
 	minMonths: null,
 };
 
-/** 三个填词的框，按屏幕上的顺序。 */
-export const KEYWORD_FIELDS = ["what", "org", "school"] as const;
+/** 填词的框，按屏幕上的顺序。 */
+export const KEYWORD_FIELDS = [
+	"what",
+	"company",
+	"department",
+	"school",
+] as const;
 export type KeywordField = (typeof KEYWORD_FIELDS)[number];
 
 export const KEYWORD_LABEL: Record<KeywordField, string> = {
 	what: "经历或技能",
-	org: "公司或部门",
+	company: "公司",
+	department: "部门",
 	school: "学校",
 };
 
@@ -59,7 +68,8 @@ export function conditionsOfKeywords(k: Keywords): Condition[] {
 			what: [term],
 			minMonths: k.minMonths ?? undefined,
 		})),
-		{ about: "experience", mode: "must", org: k.org },
+		{ about: "experience", mode: "must", company: k.company },
+		{ about: "experience", mode: "must", department: k.department },
 		{ about: "person", mode: "must", field: "school", values: k.school },
 	]);
 }
@@ -70,20 +80,20 @@ const isWhat = (
 	c.about === "experience" &&
 	c.mode === "must" &&
 	c.what?.length === 1 &&
-	!c.org &&
+	!c.company &&
+	!c.department &&
 	!c.companyTag &&
 	!c.kind;
 
-const isOrg = (
-	c: Condition,
-): c is ExperienceCondition & { org: readonly [string, ...string[]] } =>
-	c.about === "experience" &&
-	c.mode === "must" &&
-	c.org !== undefined &&
-	!c.what &&
-	!c.companyTag &&
-	!c.kind &&
-	!c.minMonths;
+/** 只写了这一项名字的必须主张：公司框或部门框写出的那一条。 */
+const onlyNames =
+	<F extends "company" | "department">(field: F) =>
+	(
+		c: Condition,
+	): c is ExperienceCondition & Required<Pick<ExperienceCondition, F>> =>
+		c.about === "experience" &&
+		c.mode === "must" &&
+		Object.keys(c).sort().join() === ["about", "mode", field].sort().join();
 
 const isSchool = (c: Condition): c is PersonCondition & { field: "school" } =>
 	c.about === "person" && c.mode === "must" && c.field === "school";
@@ -99,16 +109,22 @@ export function keywordsOf(conditions: readonly Condition[]): Keywords | null {
 	// 框里没有停用：停用的一条填回框里就成了启用的
 	if (conditions.some((c) => c.off)) return null;
 	const what = conditions.filter(isWhat);
-	const org = conditions.filter(isOrg);
+	const company = conditions.filter(onlyNames("company"));
+	const department = conditions.filter(onlyNames("department"));
 	const school = conditions.filter(isSchool);
-	if (what.length + org.length + school.length !== conditions.length)
+	if (
+		what.length + company.length + department.length + school.length !==
+		conditions.length
+	)
 		return null;
-	if (org.length > 1 || school.length > 1) return null;
+	if (company.length > 1 || department.length > 1 || school.length > 1)
+		return null;
 	const months = new Set(what.map((c) => c.minMonths ?? null));
 	if (months.size > 1) return null;
 	return {
 		what: what.map((c) => c.what[0]),
-		org: [...(org[0]?.org ?? [])],
+		company: [...(company[0]?.company ?? [])],
+		department: [...(department[0]?.department ?? [])],
 		school: [...(school[0]?.values ?? [])],
 		minMonths: [...months][0] ?? null,
 	};
@@ -121,7 +137,8 @@ export function keywordsOf(conditions: readonly Condition[]): Keywords | null {
 export function keywordTitle(k: Keywords): string {
 	return dots(
 		k.what.join("、") || null,
-		k.org.join("、") || null,
+		k.company.join("、") || null,
+		k.department.join("、") || null,
 		k.school.join("、") || null,
 		k.minMonths && k.what.length > 0
 			? `累计 ${duration(k.minMonths)}以上`

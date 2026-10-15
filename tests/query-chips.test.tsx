@@ -67,7 +67,7 @@ describe("查询 chip", () => {
 
 	test("「待过字节」是一条只有公司名的主张，偏好和加分的经历词一样写「加分」", () => {
 		const text = seen([
-			{ about: "experience", mode: "boost", org: ["字节"] },
+			{ about: "experience", mode: "boost", company: ["字节"] },
 			{ about: "experience", mode: "boost", what: ["带团队"] },
 		]);
 		assert.match(text, /字节\s*加分/);

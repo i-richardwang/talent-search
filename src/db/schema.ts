@@ -78,12 +78,14 @@ export const experience = pgTable(
 		unemployed: boolean("unemployed").notNull().default(false),
 		startDate: date("start_date").notNull(),
 		endDate: date("end_date"),
-		/** 内部：末级部门；外部：公司名 */
-		org: text("org").notNull().default(""),
+		/** 外部：公司名 */
+		company: text("company").notNull().default(""),
+		/** 内部：末级部门 */
+		department: text("department").notNull().default(""),
 		/** 内部：段起始日有效的完整部门路径 */
-		orgPath: text("org_path").notNull().default(""),
+		departmentPath: text("department_path").notNull().default(""),
 		/** 外部：公司档、行业、性质等规范字段 */
-		orgMeta: jsonb("org_meta").$type<CompanyMeta>(),
+		companyMeta: jsonb("company_meta").$type<CompanyMeta>(),
 		title: text("title").notNull().default(""),
 		/** 内部：HR 登记的序列三级。外部段这三列永远是空——登记值不和推断值混在一列 */
 		seqL1: text("seq_l1").notNull().default(""),
@@ -104,7 +106,7 @@ export const experience = pgTable(
 			.notNull()
 			.unique()
 			.generatedAlwaysAs(
-				sql`md5(emp_id || E'\\x1f' || kind || E'\\x1f' || unemployed::text || E'\\x1f' || (start_date - date '1970-01-01')::text || E'\\x1f' || coalesce((end_date - date '1970-01-01')::text, '') || E'\\x1f' || org || E'\\x1f' || org_path || E'\\x1f' || coalesce(org_meta::text, '') || E'\\x1f' || title || E'\\x1f' || seq_l1 || E'\\x1f' || seq_l2 || E'\\x1f' || seq_l3 || E'\\x1f' || level || E'\\x1f' || description)`,
+				sql`md5(emp_id || E'\\x1f' || kind || E'\\x1f' || unemployed::text || E'\\x1f' || (start_date - date '1970-01-01')::text || E'\\x1f' || coalesce((end_date - date '1970-01-01')::text, '') || E'\\x1f' || company || E'\\x1f' || department || E'\\x1f' || department_path || E'\\x1f' || coalesce(company_meta::text, '') || E'\\x1f' || title || E'\\x1f' || seq_l1 || E'\\x1f' || seq_l2 || E'\\x1f' || seq_l3 || E'\\x1f' || level || E'\\x1f' || description)`,
 			),
 		derivedIdentity: text("derived_identity"),
 		/**
@@ -121,6 +123,10 @@ export const experience = pgTable(
 			sql`not ${t.unanswered} or ${t.derivedIdentity} is not null`,
 		),
 		check("experience_kind_valid", sql`${t.kind} in ('internal', 'external')`),
+		check(
+			"experience_place_by_kind",
+			sql`case ${t.kind} when 'internal' then ${t.company} = '' else ${t.department} = '' and ${t.departmentPath} = '' end`,
+		),
 		check(
 			"experience_unemployed_external",
 			sql`not ${t.unemployed} or ${t.kind} = 'external'`,

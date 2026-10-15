@@ -59,10 +59,16 @@ export type Hit = {
 	involvement: string | null;
 	startDate: string;
 	endDate: string | null;
-	org: string;
+	company: string;
+	department: string;
 	title: string;
 	seq: string;
 };
+
+/** 一段经历在哪：入职前是公司，公司内是部门，两者只有其一。 */
+export function placeOf(segment: { company: string; department: string }) {
+	return segment.company || segment.department;
+}
 
 export type ResultEmployee = Pick<
 	Employee,
@@ -92,9 +98,10 @@ export type EmployeeDetail = {
 		| "kind"
 		| "startDate"
 		| "endDate"
-		| "org"
-		| "orgPath"
-		| "orgMeta"
+		| "company"
+		| "department"
+		| "departmentPath"
+		| "companyMeta"
 		| "title"
 		| "seqL1"
 		| "seqL2"

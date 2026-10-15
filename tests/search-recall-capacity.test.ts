@@ -6,7 +6,7 @@ import { seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
-const { search, findTerms } = await import("#/search/search");
+const { search, lookupExperience } = await import("#/search/search");
 const skills = Array.from({ length: 1000 }, (_, i) => "工程师".repeat(6) + i);
 await seed(
 	Array.from({ length: 6 }, (_, i) => ({
@@ -23,7 +23,7 @@ await seed(
 				: [
 						{
 							months: 12,
-							org: i === 5 ? "合成排除公司" : "合成保留公司",
+							department: i === 5 ? "合成排除部门" : "合成保留部门",
 							extracted: { skills },
 						},
 					],
@@ -78,7 +78,7 @@ test("多个排除主张的大召回集合完整否决指定经历", async () =>
 			about: "experience",
 			mode: "exclude",
 			what,
-			org: ["合成排除公司"],
+			department: ["合成排除部门"],
 			minMonths: i + 1,
 		})),
 	);
@@ -95,7 +95,7 @@ test("多个排除主张的大召回集合完整否决指定经历", async () =>
 				...excludes,
 			],
 		},
-		{ org: ["合成排除公司"] },
+		{ department: ["合成排除部门"] },
 	);
 	assert.equal(result.total, 0);
 	const retained = await search({
@@ -110,7 +110,7 @@ test("多个排除主张的大召回集合完整否决指定经历", async () =>
 
 test("提交条件查词的大召回集合完整统计人数并返回人才库写法", async () => {
 	const texts = groups.flat();
-	const findings = await findTerms(texts);
+	const findings = await lookupExperience(texts);
 	assert.equal(findings.length, 18);
 	assert.deepEqual(
 		findings.map((finding) => finding.text),

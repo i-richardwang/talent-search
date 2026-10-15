@@ -8,9 +8,10 @@
  * HR 找人的一句话里只有两种东西，条件因此也只有两种：
  *
  * - **经历主张**（`about: "experience"`）：这个人有一段（或几段）经历，**同时**
- *   满足写下的每一项——做过什么（`what`）、在哪（`org` / `companyTag`）、
+ *   满足写下的每一项——做过什么（`what`）、在哪（入职前的 `company` / `companyTag`，
+ *   公司内的 `department`）、
  *   什么时候（`kind`）、多久（`minMonths`，满足其余各项的段累计的月数）。
- *   少写的项就是不限：只有 `what` 是今天最常见的经历词，只有 `org` 是「待过字节」。
+ *   少写的项就是不限：只有 `what` 是今天最常见的经历词，只有 `company` 是「待过字节」。
  *   没写 `what` 的主张说的是背景，和人的条件一样只定去留、不量名次（`result.ts`）。
  * - **人的条件**（`about: "person"`）：这个人本身是什么样——职级、学历、
  *   招聘渠道、学校。一人一个值，和哪段经历都没关系。有高低的两维（职级档、学历）
@@ -18,7 +19,7 @@
  *
  *     { about: "experience", mode: "must", what: ["增长", "用户增长"],
  *       companyTag: ["大厂"], kind: "external", minMonths: 36 }
- *     { about: "experience", mode: "boost", org: ["字节"] }
+ *     { about: "experience", mode: "boost", company: ["字节"] }
  *     { about: "person", mode: "boost", field: "level", atLeast: "P7" }
  *     { about: "person", mode: "must", field: "education", values: ["硕士"] }
  *
@@ -91,8 +92,10 @@ export type ExperienceCondition = {
 	mode: Mode;
 	/** 做过什么。取值 OR，都拿去比相似度；`what[0]` 是代表词。 */
 	what?: Some<string>;
-	/** 在名字含这几个字之一的公司或部门。专有名词，永远不进向量。 */
-	org?: Some<string>;
+	/** 入职前在名字含这几个字之一的公司。专有名词，永远不进向量。 */
+	company?: Some<string>;
+	/** 公司内在名字或部门路径含这几个字之一的部门。 */
+	department?: Some<string>;
 	/** 在这几档公司之一。取值是词表里的档。 */
 	companyTag?: Some<string>;
 	/** 公司内的任职，还是入职前的经历。 */
@@ -226,16 +229,23 @@ function experienceOf(
 	mode: Mode,
 ): ExperienceCondition | null {
 	const what = some(whatOf(entry.what));
-	const org = some(textList(entry.org));
+	const company = some(textList(entry.company));
+	const department = some(textList(entry.department));
 	const companyTag = some(dimList("companyTag", entry.companyTag));
 	const kind = DIMENSIONS.kind.parse(entry.kind);
 	const minMonths = DIMENSIONS.minMonths.parse(entry.minMonths);
-	if (!what && !org && !companyTag && !kind && !minMonths) return null;
+	if (!what && !company && !department && !companyTag && !kind && !minMonths)
+		return null;
+	// 公司和公司档只在入职前经历上，部门只在公司内任职上：一段经历不能两样都是
+	const external = Boolean(company || companyTag) || kind === "external";
+	const internal = Boolean(department) || kind === "internal";
+	if (external && internal) return null;
 	return {
 		about: "experience",
 		mode,
 		...(what && { what }),
-		...(org && { org }),
+		...(company && { company }),
+		...(department && { department }),
 		...(companyTag && { companyTag }),
 		...(kind && { kind }),
 		...(minMonths && { minMonths }),
@@ -298,13 +308,19 @@ export function withMode(condition: Condition, mode: Mode): Condition {
 }
 
 /**
- * 一条条件里可以单独拿掉的一项。经历主张的每个经历词、每个公司名、每个公司档
+ * 一条条件里可以单独拿掉的一项。经历主张的每个经历词、每个公司名、每个部门名、每个公司档
  * 各是一项，`kind` 与 `minMonths` 各是一项；人的条件的每个取值是一项。
  * chip 的菜单按它逐项画「去掉」。
  */
 export type Part =
 	| {
-			key: "what" | "org" | "companyTag" | "values" | "atLeast";
+			key:
+				| "what"
+				| "company"
+				| "department"
+				| "companyTag"
+				| "values"
+				| "atLeast";
 			value: string;
 	  }
 	| { key: "kind"; value: Kind }
@@ -320,7 +336,10 @@ export function partsOf(condition: Condition): Part[] {
 	if (condition.kind) parts.push({ key: "kind", value: condition.kind });
 	for (const value of condition.companyTag ?? [])
 		parts.push({ key: "companyTag", value });
-	for (const value of condition.org ?? []) parts.push({ key: "org", value });
+	for (const value of condition.company ?? [])
+		parts.push({ key: "company", value });
+	for (const value of condition.department ?? [])
+		parts.push({ key: "department", value });
 	for (const value of condition.what ?? []) parts.push({ key: "what", value });
 	if (condition.minMonths)
 		parts.push({ key: "minMonths", value: condition.minMonths });

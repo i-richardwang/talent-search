@@ -43,7 +43,7 @@ export type FilterField = {
 };
 
 export type TextFilter = {
-	key: "org" | "school";
+	key: "company" | "department" | "school";
 	title: string;
 	value: string;
 	clear: Partial<View>;
@@ -104,12 +104,19 @@ export function filterFields(facets: Facets, view: View): FilterField[] {
 /** 已生效的文本条件。没生效的不出现——它们没有候选列表可展开。 */
 export function textFilters(view: View): TextFilter[] {
 	const out: TextFilter[] = [];
-	if (view.org)
+	if (view.company)
 		out.push({
-			key: "org",
-			title: NAME_LABEL.org,
-			value: view.org.join(" / "),
-			clear: { org: undefined },
+			key: "company",
+			title: NAME_LABEL.company,
+			value: view.company.join(" / "),
+			clear: { company: undefined },
+		});
+	if (view.department)
+		out.push({
+			key: "department",
+			title: NAME_LABEL.department,
+			value: view.department.join(" / "),
+			clear: { department: undefined },
 		});
 	if (view.school)
 		out.push({

@@ -10,19 +10,21 @@ describe("检索端点参数", () => {
 			level: [" P6 ", "P7", "P6", "  "],
 			minMonths: "24",
 			kind: "external",
-			org: "  字节  ",
+			company: "  字节  ",
+			department: ["推荐平台部", " "],
 		});
 		assert.deepEqual(filters.seq, [{ l1: "技术", l2: "后端" }]);
 		// 去重、丢掉空的：同一个值来两遍会让「或」多比一次，空值会让它恒真
 		assert.deepEqual(filters.level, ["P6", "P7"]);
 		assert.equal(filters.minMonths, 24);
 		assert.equal(filters.kind, "external");
-		assert.deepEqual(filters.org, ["字节"]);
+		assert.deepEqual(filters.company, ["字节"]);
+		assert.deepEqual(filters.department, ["推荐平台部"]);
 	});
 
 	test("筛选文本在 URL 与 RPC 边界都有硬上限", () => {
 		assert.equal(
-			sanitizeFilters({ org: "甲".repeat(300) }).org?.[0]?.length,
+			sanitizeFilters({ company: "甲".repeat(300) }).company?.[0]?.length,
 			200,
 		);
 	});

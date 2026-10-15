@@ -5,9 +5,9 @@
  *
  *     <TALENT_CSV_DIR>/
  *       employees.csv    emp_id,name,hire_date,education_level,school,recruitment
- *       assignments.csv  emp_id,start_date,end_date,org,org_path,title,level,
+ *       assignments.csv  emp_id,start_date,end_date,department,department_path,title,level,
  *                        seq_l1,seq_l2,seq_l3[,segment_key]
- *       external.csv     emp_id,start_date,end_date,org,title,description,
+ *       external.csv     emp_id,start_date,end_date,company,title,description,
  *                        company_tag,industry,nature,unemployed
  *       levels.csv       level,band,rank
  *
@@ -79,7 +79,7 @@ export async function extract(report: Report): Promise<SourceData> {
 
 	for (const row of assignments)
 		if (!trimmed(row, "segment_key"))
-			row.segment_key = `${trimmed(row, "org")}|${trimmed(row, "title")}`;
+			row.segment_key = `${trimmed(row, "department")}|${trimmed(row, "title")}`;
 
 	// CSV 里没有布尔，只有字面量
 	for (const row of external)

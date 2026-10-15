@@ -117,21 +117,21 @@ export const PENDING_TURN: Turn = {
 export const PENDING_TRACE: TraceStep[] = [
 	{
 		at: JUST_NOW + 1200,
-		tool: "find_terms",
+		tool: "lookup_experience",
 		terms: [
 			{
 				text: "搜索排序",
 				people: 31,
-				terms: [{ name: "搜索排序", people: 27 }],
+				terms: [{ name: "搜索排序", people: 27, broader: null, narrower: [] }],
 			},
 		],
 	},
 	{
 		at: JUST_NOW + 1300,
-		tool: "find_names",
-		field: "org",
-		names: [
-			{ name: "星河", people: 44, names: [{ name: "星河科技", people: 38 }] },
+		tool: "lookup_attribute",
+		field: "company",
+		found: [
+			{ query: "星河", people: 44, values: [{ name: "星河科技", people: 38 }] },
 		],
 	},
 ];

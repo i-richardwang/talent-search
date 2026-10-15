@@ -31,11 +31,13 @@ import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
-import { inSentence } from "#/search/condition-label";
+import { inSentence, NAME_LABEL } from "#/search/condition-label";
+import { DIMENSIONS, isVocabKey } from "#/search/dimensions";
 import type { TurnNotes } from "#/search/intent";
 import type { QueryInput } from "#/search/spec";
 import { changesOf } from "#/search/spec";
 import type {
+	AttributeField,
 	Matched,
 	NameFinding,
 	TermFinding,
@@ -569,15 +571,21 @@ function sameTable(a: readonly Condition[], b: readonly Condition[]) {
 
 /** 说的是找了什么，不是调了什么——调的是哪样东西对人没有意义。 */
 function stepTitle(step: TraceStep) {
-	if (step.tool === "find_terms")
+	if (step.tool === "lookup_experience")
 		return {
 			action: "查找",
 			keyword: step.terms.map((t) => t.text).join("、"),
 		};
+	if ("values" in step)
+		return { action: `查看${fieldLabel(step.field)}`, keyword: "" };
 	return {
-		action: step.field === "org" ? "查找公司" : "查找学校",
-		keyword: step.names.map((n) => n.name).join("、"),
+		action: `查找${fieldLabel(step.field)}`,
+		keyword: step.found.map((f) => f.query).join("、"),
 	};
+}
+
+function fieldLabel(field: AttributeField) {
+	return isVocabKey(field) ? DIMENSIONS[field].label : NAME_LABEL[field];
 }
 
 function including(list: readonly Matched[]) {
@@ -591,9 +599,9 @@ function termLine(t: TermFinding) {
 	return `「${t.text}」${t.people} 人${including(t.terms)}`;
 }
 
-function nameLine(n: NameFinding) {
-	if (n.people === 0) return `人才库中没有「${n.name}」`;
-	return `「${n.name}」${n.people} 人${including(n.names)}`;
+function nameLine(f: NameFinding) {
+	if (f.people === 0) return `人才库中没有「${f.query}」`;
+	return `「${f.query}」${f.people} 人${including(f.values)}`;
 }
 
 function StatusCell({ live }: { live: boolean }) {
@@ -741,8 +749,10 @@ function Process({
 }
 
 export function stepFindings(step: TraceStep) {
-	if (step.tool === "find_terms") return step.terms.map(termLine);
-	return step.names.map(nameLine);
+	if (step.tool === "lookup_experience") return step.terms.map(termLine);
+	if ("values" in step)
+		return [step.values.map((x) => `${x.name} ${x.people} 人`).join("、")];
+	return step.found.map(nameLine);
 }
 
 function StepRow({ step }: { step: TraceStep }) {

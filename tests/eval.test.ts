@@ -97,7 +97,7 @@ describe("语料验收门禁", () => {
 		const c = {
 			name: "形状",
 			title: "合成岗位",
-			org: "合成公司",
+			company: "合成公司",
 			description: "合成描述状态",
 		};
 		assert.equal(
@@ -110,7 +110,7 @@ describe("语料验收门禁", () => {
 		const c = {
 			name: "精确",
 			title: "合成岗位",
-			org: "合成公司",
+			company: "合成公司",
 			description: "合成精确描述",
 			gold: [["数据分析"]],
 		};

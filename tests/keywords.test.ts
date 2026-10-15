@@ -18,19 +18,21 @@ import { parseQuery } from "#/search/query-syntax";
 const k = (over: Partial<Keywords>): Keywords => ({ ...NO_KEYWORDS, ...over });
 
 describe("框 → 条件表", () => {
-	test("做过什么每个词一条必须主张；公司、学校各一条，词之间满足其一", () => {
+	test("做过什么每个词一条必须主张；公司、部门、学校各一条，词之间满足其一", () => {
 		assert.deepEqual(
 			conditionsOfKeywords(
 				k({
 					what: ["推荐", "机器学习"],
-					org: ["字节", "快手"],
+					company: ["字节", "快手"],
+					department: ["推荐平台部"],
 					school: ["浙大"],
 				}),
 			),
 			[
 				{ about: "experience", mode: "must", what: ["推荐"] },
 				{ about: "experience", mode: "must", what: ["机器学习"] },
-				{ about: "experience", mode: "must", org: ["字节", "快手"] },
+				{ about: "experience", mode: "must", company: ["字节", "快手"] },
+				{ about: "experience", mode: "must", department: ["推荐平台部"] },
 				{ about: "person", mode: "must", field: "school", values: ["浙大"] },
 			],
 		);
@@ -45,8 +47,8 @@ describe("框 → 条件表", () => {
 			],
 		);
 		assert.deepEqual(
-			conditionsOfKeywords(k({ org: ["字节"], minMonths: 36 })),
-			[{ about: "experience", mode: "must", org: ["字节"] }],
+			conditionsOfKeywords(k({ company: ["字节"], minMonths: 36 })),
+			[{ about: "experience", mode: "must", company: ["字节"] }],
 		);
 	});
 
@@ -60,7 +62,8 @@ describe("条件表 → 框", () => {
 		const cases = [
 			k({
 				what: ["推荐", "机器学习"],
-				org: ["字节"],
+				company: ["字节"],
+				department: ["推荐平台部"],
 				school: ["浙大", "清华"],
 			}),
 			k({ what: ["推荐"], minMonths: 30 }),
@@ -76,7 +79,24 @@ describe("条件表 → 框", () => {
 		// 一条主张里既有公司又有做过什么：同一段经历，框说不出来
 		assert.equal(
 			keywordsOf([
-				{ about: "experience", mode: "must", what: ["推荐"], org: ["字节"] },
+				{
+					about: "experience",
+					mode: "must",
+					what: ["推荐"],
+					company: ["字节"],
+				},
+			]),
+			null,
+		);
+		// 公司和部门写在一条里不是框写得出的表（也不是一段经历能满足的）
+		assert.equal(
+			keywordsOf([
+				{
+					about: "experience",
+					mode: "must",
+					company: ["字节"],
+					department: ["推荐平台部"],
+				},
 			]),
 			null,
 		);
@@ -88,11 +108,12 @@ test("标题是框里的词，按框的顺序", () => {
 		keywordTitle(
 			k({
 				what: ["推荐", "搜索"],
-				org: ["字节"],
+				company: ["字节"],
+				department: ["推荐平台部"],
 				school: ["浙大"],
 				minMonths: 36,
 			}),
 		),
-		"推荐、搜索 · 字节 · 浙大 · 累计 3 年以上",
+		"推荐、搜索 · 字节 · 推荐平台部 · 浙大 · 累计 3 年以上",
 	);
 });

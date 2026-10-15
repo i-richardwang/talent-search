@@ -21,12 +21,12 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
 /** 合成的候选人名单。 */
 const PEOPLE = [
-	{ id: "0123", org: "数据平台部", skill: "推荐系统", years: 6 },
-	{ id: "0456", org: "基础架构部", skill: "Kubernetes", years: 4.5 },
-	{ id: "0789", org: "增长产品部", skill: "用户增长", years: 3 },
-	{ id: "1012", org: "搜索技术部", skill: "检索排序", years: 5 },
-	{ id: "1345", org: "安全平台部", skill: "风控策略", years: 2 },
-	{ id: "1678", org: "商业化部", skill: "广告投放", years: 7 },
+	{ id: "0123", department: "数据平台部", skill: "推荐系统", years: 6 },
+	{ id: "0456", department: "基础架构部", skill: "Kubernetes", years: 4.5 },
+	{ id: "0789", department: "增长产品部", skill: "用户增长", years: 3 },
+	{ id: "1012", department: "搜索技术部", skill: "检索排序", years: 5 },
+	{ id: "1345", department: "安全平台部", skill: "风控策略", years: 2 },
+	{ id: "1678", department: "商业化部", skill: "广告投放", years: 7 },
 ];
 
 type Person = (typeof PEOPLE)[number];
@@ -76,7 +76,7 @@ function PeopleRow({
 				)}
 			</TableCell>
 			<TableCell cellLabel="部门" className="text-fg-secondary">
-				{person.org}
+				{person.department}
 			</TableCell>
 			<TableCell cellLabel="技能">
 				<Tag size="small">{person.skill}</Tag>

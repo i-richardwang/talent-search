@@ -54,7 +54,7 @@ before(async () => {
 				{
 					kind: "external",
 					months: 36,
-					org: "某公司",
+					company: "某公司",
 					description: "算法运营",
 				},
 			],
@@ -95,7 +95,7 @@ before(async () => {
 				{
 					kind: "external",
 					months: 36,
-					org: "某公司",
+					company: "某公司",
 					description: "负责服务端",
 					extracted: {
 						skills: ["Python", "Spark"],
@@ -294,7 +294,7 @@ describe("背景只定去留", () => {
 	test("被排除否决的段不算作背景的证据", async () => {
 		// T003、T009 的入职前经历都在某公司：否决之后他们没有入职前经历可算
 		const outcome = await search({
-			conditions: parseQuery("kind:external,-org:某公司"),
+			conditions: parseQuery("kind:external,-company:某公司"),
 		});
 		assert.deepEqual(ids(outcome), ["T001", "T006", "T010"]);
 	});
@@ -510,7 +510,12 @@ describe("跟人走的筛选", () => {
 				school: "北岭大学",
 				segments: [
 					{ seqL2: "潜水", months: 12 },
-					{ kind: "external", org: "字节跳动", title: "产品经理", months: 24 },
+					{
+						kind: "external",
+						company: "字节跳动",
+						title: "产品经理",
+						months: 24,
+					},
 				],
 			},
 			{
@@ -572,7 +577,7 @@ describe("跟人走的筛选", () => {
 	});
 
 	test("公司名是按人过滤的精确条件，分面随之只数剩下的人", async () => {
-		const { results, facets } = await run("潜水", { org: ["字节"] });
+		const { results, facets } = await run("潜水", { company: ["字节"] });
 		assert.deepEqual(
 			results.map((r) => r.employee.empId),
 			["P002"],
@@ -582,7 +587,7 @@ describe("跟人走的筛选", () => {
 
 	test("偏好的公司名不过滤人，只把满足的人排到前面", async () => {
 		const preferred = await search({
-			conditions: parseQuery("潜水,+org:字节"),
+			conditions: parseQuery("潜水,+company:字节"),
 		});
 		const plain = await search({ conditions: parseQuery("潜水") });
 		assert.equal(preferred.total, 3);
@@ -632,9 +637,9 @@ describe("跟人走的筛选", () => {
 
 	test("「在字节做过潜水」和「做过潜水，也待过字节」是两份查询", async () => {
 		// P002 的潜水在公司内，字节那段是产品经理：同一段满足不了
-		assert.equal((await run("潜水 org:字节")).total, 0);
+		assert.equal((await run("潜水 company:字节")).total, 0);
 		assert.deepEqual(
-			(await run("潜水,org:字节")).results.map((r) => r.employee.empId),
+			(await run("潜水,company:字节")).results.map((r) => r.employee.empId),
 			["P002"],
 		);
 	});
@@ -649,7 +654,7 @@ describe("跟人走的筛选", () => {
 
 	test("文本条件里的通配符只能是字面量", async () => {
 		// 不转义的话「%%」就让每一行恒真，这个条件等于没筛
-		assert.equal((await run("潜水", { org: ["%%"] })).total, 0);
+		assert.equal((await run("潜水", { company: ["%%"] })).total, 0);
 		assert.equal((await run("潜水", { school: ["明_大学"] })).total, 0);
 	});
 
@@ -661,18 +666,31 @@ describe("跟人走的筛选", () => {
 		const v = await vocabulary();
 		assert.deepEqual(Object.keys(v).sort(), [...VOCAB_KEYS].sort());
 		for (const key of VOCAB_KEYS) {
-			assert.ok(v[key].length > 0, `${key} 一个取值都没数出来`);
-			assert.ok(!v[key].includes(""), `${key} 把空串当成了取值`);
+			const names = v[key].map((x) => x.name);
+			assert.ok(names.length > 0, `${key} 一个取值都没数出来`);
+			assert.ok(!names.includes(""), `${key} 把空串当成了取值`);
 			for (const notValue of NOT_A_VALUE)
 				assert.ok(
-					!v[key].includes(notValue),
+					!names.includes(notValue),
 					`${key} 把「${notValue}」当成了取值`,
 				);
+			assert.ok(
+				v[key].every((x) => x.people > 0),
+				`${key} 的取值都至少有一个人`,
+			);
 		}
-		assert.ok(v.level.includes("P6") && v.level.includes("P7"));
-		assert.ok(v.recruitment.includes("校招") && v.recruitment.includes("社招"));
-		assert.ok(v.education.includes("硕士") && v.education.includes("本科"));
-		assert.ok(v.companyTag.includes("星域联盟"));
+		const names = (key: (typeof VOCAB_KEYS)[number]) =>
+			v[key].map((x) => x.name);
+		assert.ok(names("level").includes("P6") && names("level").includes("P7"));
+		assert.ok(
+			names("recruitment").includes("校招") &&
+				names("recruitment").includes("社招"),
+		);
+		assert.ok(
+			names("education").includes("硕士") &&
+				names("education").includes("本科"),
+		);
+		assert.ok(names("companyTag").includes("星域联盟"));
 	});
 });
 
@@ -686,7 +704,7 @@ describe("入职前经历对齐的序列", () => {
 					{
 						kind: "external",
 						months: 36,
-						org: "某公司",
+						company: "某公司",
 						title: "深海算法工程师",
 						seqInferredL1: "技术",
 						seqInferredL2: "深海算法",
@@ -700,7 +718,7 @@ describe("入职前经历对齐的序列", () => {
 					{
 						kind: "external",
 						months: 36,
-						org: "某公司",
+						company: "某公司",
 						title: "深海算法工程师",
 					},
 				],
@@ -842,7 +860,7 @@ describe("为什么没有人", () => {
 				segments: [
 					{
 						kind: "external",
-						org: "某厂",
+						company: "某厂",
 						description: "幽蓝抄写",
 						months: 24,
 					},
@@ -912,7 +930,7 @@ describe("排除的主张：否决证据段，不否决人", () => {
 				segments: [
 					{
 						kind: "external",
-						org: "某厂",
+						company: "某厂",
 						title: "运营",
 						description: "算法",
 						months: 36,
@@ -923,15 +941,20 @@ describe("排除的主张：否决证据段，不否决人", () => {
 				empId: "X002",
 				name: "入职前只实习过",
 				segments: [
-					{ kind: "external", org: "某厂", title: "机甲实习", months: 6 },
+					{ kind: "external", company: "某厂", title: "机甲实习", months: 6 },
 				],
 			},
 			{
 				empId: "X003",
 				name: "实习起步，后来真干过",
 				segments: [
-					{ kind: "external", org: "某厂", title: "机甲实习", months: 6 },
-					{ kind: "external", org: "另一厂", title: "深海造船", months: 24 },
+					{ kind: "external", company: "某厂", title: "机甲实习", months: 6 },
+					{
+						kind: "external",
+						company: "另一厂",
+						title: "深海造船",
+						months: 24,
+					},
 				],
 			},
 		]);
@@ -1228,7 +1251,7 @@ describe("待业只属于时间线", () => {
 						kind: "external",
 						unemployed: true,
 						title: "空档判据验证",
-						org: "只在待业里的合成公司",
+						company: "只在待业里的合成公司",
 						companyTag: "大厂",
 						months: 36,
 					},
@@ -1245,13 +1268,13 @@ describe("待业只属于时间线", () => {
 		assert.ok(!result.results.some((r) => r.employee.empId === "IDLE001"));
 		const gate = await search({
 			conditions: parseQuery(
-				"org:只在待业里的合成公司 kind:external minMonths:36",
+				"company:只在待业里的合成公司 kind:external minMonths:36",
 			),
 		});
 		assert.equal(gate.total, 0);
-		const { findNames } = await import("#/search/search");
+		const { lookupNames } = await import("#/search/search");
 		assert.equal(
-			(await findNames("org", ["只在待业里的合成公司"]))[0]?.people,
+			(await lookupNames("company", ["只在待业里的合成公司"]))[0]?.people,
 			0,
 		);
 	});

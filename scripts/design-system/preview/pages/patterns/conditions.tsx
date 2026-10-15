@@ -220,7 +220,7 @@ function Usage() {
 	const [conditions, setConditions] = useState<Condition[]>(CONDITIONS);
 	const [view, setView] = useState<View>({
 		level: ["L7"],
-		org: ["某甲科技"],
+		company: ["某甲科技"],
 	});
 	const fields = filterFields(FACETS, view);
 	return (

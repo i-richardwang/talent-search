@@ -541,8 +541,11 @@ type Seed = {
 		months: number;
 		/** 省略表示至今。近因因子看的就是它。 */
 		endDate?: string;
-		org?: string;
-		orgPath?: string;
+		/** 入职前的公司名 */
+		company?: string;
+		/** 公司内的部门名与部门路径 */
+		department?: string;
+		departmentPath?: string;
 		title?: string;
 		seqL1?: string;
 		seqL2?: string;
@@ -604,8 +607,9 @@ export async function seed(rows: Seed[]) {
 						unemployed: s.unemployed ?? false,
 						startDate: start,
 						endDate: s.endDate ?? null,
-						org: s.org ?? "",
-						orgPath: s.orgPath ?? "",
+						company: s.company ?? "",
+						department: s.department ?? "",
+						departmentPath: s.departmentPath ?? "",
 						title: s.title ?? "",
 						seqL1: s.seqL1 ?? "",
 						seqL2: s.seqL2 ?? "",
@@ -613,7 +617,7 @@ export async function seed(rows: Seed[]) {
 						seqInferredL2: s.seqInferredL2 ?? "",
 						description: s.description ?? "",
 						months: s.months,
-						orgMeta: s.companyTag
+						companyMeta: s.companyTag
 							? {
 									company_tag: s.companyTag,
 									industry: "",

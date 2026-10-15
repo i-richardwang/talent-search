@@ -12,20 +12,20 @@ export const T0 = Date.UTC(2026, 8, 26, 2, 0, 0);
 export const ROUND1_TRACE: TraceStep[] = [
 	{
 		at: T0,
-		tool: "find_terms",
+		tool: "lookup_experience",
 		terms: [
 			{
 				text: "推荐系统",
 				people: 46,
 				terms: [
-					{ name: "推荐系统", people: 38 },
-					{ name: "搜索推荐", people: 12 },
+					{ name: "推荐系统", people: 38, broader: null, narrower: [] },
+					{ name: "搜索推荐", people: 12, broader: null, narrower: [] },
 				],
 			},
 			{
 				text: "推荐算法",
 				people: 41,
-				terms: [{ name: "推荐系统", people: 38 }],
+				terms: [{ name: "推荐系统", people: 38, broader: null, narrower: [] }],
 			},
 		],
 	},
@@ -35,14 +35,14 @@ export const ROUND1_TRACE: TraceStep[] = [
 export const ROUND2_TRACE: TraceStep[] = [
 	{
 		at: T0 + 60_000,
-		tool: "find_terms",
+		tool: "lookup_experience",
 		terms: [
 			{
 				text: "团队管理",
 				people: 212,
 				terms: [
-					{ name: "团队管理", people: 180 },
-					{ name: "项目管理", people: 64 },
+					{ name: "团队管理", people: 180, broader: null, narrower: [] },
+					{ name: "项目管理", people: 64, broader: null, narrower: [] },
 				],
 			},
 			{ text: "技术口碑", people: 0, terms: [] },

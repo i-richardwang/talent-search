@@ -1,4 +1,4 @@
-emp_id,start_date,end_date,org,org_path,title,level,seq_l1,seq_l2,seq_l3
+emp_id,start_date,end_date,department,department_path,title,level,seq_l1,seq_l2,seq_l3
 E1001,2019-03-04,2021-06-30,平台技术部,示例科技/技术中心/平台技术部,后端开发工程师,P6,技术,后端开发,服务端
 E1001,2021-07-01,,平台技术部,示例科技/技术中心/平台技术部,高级后端开发工程师,P7,技术,后端开发,服务端
 E1002,2017-07-03,2019-12-31,用户增长部,示例科技/增长中心/用户增长部,渠道运营专员,P5,运营,渠道运营,

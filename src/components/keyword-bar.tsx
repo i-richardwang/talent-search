@@ -5,6 +5,7 @@ import {
 	GraduationCapIcon,
 	Loader2,
 	type LucideIcon,
+	NetworkIcon,
 } from "lucide-react";
 import {
 	type ReactNode,
@@ -71,12 +72,14 @@ type NameField = Exclude<KeywordField, "what">;
 /** 候选第一项（输入的字本身）旁的说明：经历按语义搜，名称按包含找。 */
 const AS_TYPED: Record<KeywordField, string> = {
 	what: "直接搜索",
-	org: "名称包含",
+	company: "名称包含",
+	department: "名称包含",
 	school: "名称包含",
 };
 
 const NAME_ICON: Record<NameField, LucideIcon> = {
-	org: Building2Icon,
+	company: Building2Icon,
+	department: NetworkIcon,
 	school: GraduationCapIcon,
 };
 
@@ -99,7 +102,7 @@ const monthsOf = (years: number | null) =>
 	years != null && years > 0 ? Math.round(years * 12) : null;
 
 /**
- * 关键词搜索的查询面：托盘里写经历或技能，公司或部门、学校、累计年限是动作栏上的按钮。
+ * 关键词搜索的查询面：托盘里写经历或技能，公司、部门、学校、累计年限是动作栏上的按钮。
  * 词在各维之间怎么组合写在 `search/keywords.ts`。发送时还没回车的那个词也算数。
  */
 export function KeywordBar({
@@ -202,7 +205,7 @@ export function KeywordBar({
 					left={
 						<>
 							{left}
-							{(["org", "school"] as const).map((field) => (
+							{(["company", "department", "school"] as const).map((field) => (
 								<NameButton
 									field={field}
 									key={field}
@@ -226,7 +229,7 @@ export function KeywordBar({
 	);
 }
 
-/** 公司或部门、学校：弹层收起时，框里还没回车的字按回车处理。 */
+/** 公司、部门、学校：弹层收起时，框里还没回车的字按回车处理。 */
 function NameButton({
 	field,
 	values,

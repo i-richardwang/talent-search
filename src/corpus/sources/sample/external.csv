@@ -1,4 +1,4 @@
-emp_id,start_date,end_date,org,title,description,company_tag,industry,nature,unemployed
+emp_id,start_date,end_date,company,title,description,company_tag,industry,nature,unemployed
 E1001,2015-07-01,2019-02-28,星澜科技,后端开发工程师,负责交易系统的服务端开发 主导过一次分库分表改造,大厂,互联网,民营,
 E1003,2016-04-01,2020-08-15,云枢智能,算法工程师,从 0 到 1 搭建实时推荐系统 负责召回与排序模型的迭代 使用 Python 和 Spark 做特征处理,大厂,人工智能,民营,
 E1003,2014-07-01,2016-03-20,远岸数据,数据挖掘工程师,参与用户画像标签体系建设,中型,互联网,民营,

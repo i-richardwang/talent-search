@@ -14,12 +14,17 @@ await seed([
 		name: "合成保留经历",
 		school: "合成大学_%",
 		segments: [
-			{ title: "工程师", org: "合成保留公司", kind: "external", months: 12 },
-			{ title: "工程师", org: "合成排除公司", kind: "external", months: 6 },
 			{
 				title: "工程师",
-				org: "合成部门",
-				orgPath: "合成总部/合成排除部门",
+				company: "合成保留公司",
+				kind: "external",
+				months: 12,
+			},
+			{ title: "工程师", company: "合成排除公司", kind: "external", months: 6 },
+			{
+				title: "工程师",
+				department: "合成部门",
+				departmentPath: "合成总部/合成排除部门",
 				months: 12,
 			},
 		],
@@ -28,13 +33,13 @@ await seed([
 		empId: "N2",
 		name: "合成全部否决",
 		school: "合成大学_%",
-		segments: [{ title: "工程师", org: "合成排除公司", months: 12 }],
+		segments: [{ title: "工程师", department: "合成排除事业部", months: 12 }],
 	},
 	{
 		empId: "N3",
 		name: "合成相近校名",
 		school: "合成大学甲乙",
-		segments: [{ title: "工程师", org: "合成其他公司", months: 12 }],
+		segments: [{ title: "工程师", department: "合成其他部门", months: 12 }],
 	},
 	{ empId: "N4", name: "合成无经历", school: "合成大学_%", segments: [] },
 	{
@@ -42,16 +47,20 @@ await seed([
 		name: "合成待业",
 		school: "合成大学_%",
 		segments: [
-			{ unemployed: true, kind: "external", org: "合成排除公司", months: 12 },
+			{
+				unemployed: true,
+				kind: "external",
+				company: "合成排除公司",
+				months: 12,
+			},
 		],
 	},
 ]);
 
-const exclude: Condition = {
-	about: "experience",
-	mode: "exclude",
-	org: ["合成排除"],
-};
+const exclude: Condition[] = [
+	{ about: "experience", mode: "exclude", company: ["合成排除"] },
+	{ about: "experience", mode: "exclude", department: ["合成排除"] },
+];
 const ids = (result: Awaited<ReturnType<typeof search>>) =>
 	result.results.map((row) => row.employee.empId);
 
@@ -62,22 +71,22 @@ for (const [name, base] of [
 	],
 	["经历查询", { about: "experience", mode: "must", what: ["工程师"] }],
 ] as const satisfies readonly (readonly [string, Condition])[]) {
-	test(`${name}的公司筛选与背景门槛一致，被否决公司或部门不提供筛选依据`, async () => {
-		for (const [org, expected] of [
-			[["合成排除公司"], []],
-			[["合成排除部门"], []],
-			[["合成保留公司"], ["N1"]],
-			[["合成排除公司", "合成保留公司"], ["N1"]],
+	test(`${name}的公司筛选与背景门槛一致，被否决的公司或部门不提供筛选依据`, async () => {
+		for (const [field, names, expected] of [
+			["company", ["合成排除公司"], []],
+			["department", ["合成排除部门"], []],
+			["company", ["合成保留公司"], ["N1"]],
+			["company", ["合成排除公司", "合成保留公司"], ["N1"]],
 		] as const) {
-			const conditions = [base, exclude];
-			const view = await search({ conditions }, { org });
+			const conditions = [base, ...exclude];
+			const view = await search({ conditions }, { [field]: names });
 			const gate = await search({
 				conditions: [
 					...conditions,
 					{
 						about: "experience",
 						mode: "must",
-						org,
+						[field]: names,
 					} satisfies ExperienceCondition,
 				],
 			});
@@ -89,7 +98,7 @@ for (const [name, base] of [
 	});
 
 	test(`${name}的学校筛选与人员门槛一致，百分号和下划线按字面匹配`, async () => {
-		const conditions = [base, exclude];
+		const conditions = [base, ...exclude];
 		const view = await search({ conditions }, { school: ["合成大学_%"] });
 		const gate = await search({
 			conditions: [

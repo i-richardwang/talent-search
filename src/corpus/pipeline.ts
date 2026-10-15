@@ -45,9 +45,13 @@ export type ExperienceRow = {
 	start_date: string;
 	/** 为空表示至今 */
 	end_date: string | null;
-	org: string;
-	org_path: string;
-	org_meta: CompanyMeta | null;
+	/** 入职前经历的公司名；公司内任职为空 */
+	company: string;
+	/** 公司内任职的末级部门；入职前经历为空 */
+	department: string;
+	/** 公司内任职在段起始日有效的完整部门路径；入职前经历为空 */
+	department_path: string;
+	company_meta: CompanyMeta | null;
 	title: string;
 	seq_l1: string;
 	seq_l2: string;
@@ -164,8 +168,8 @@ type Segment = {
 	emp_id: string;
 	start: Date;
 	end: Date | null;
-	org: string;
-	org_path: string;
+	department: string;
+	department_path: string;
 	title: string;
 	level: string;
 	seq_l1: string;
@@ -184,8 +188,8 @@ function buildInternal(
 		emp_id: row.emp_id,
 		start: parseDate(row.start_date),
 		end: parseDate(row.end_date),
-		org: row.org.trim(),
-		org_path: row.org_path.trim(),
+		department: row.department.trim(),
+		department_path: row.department_path.trim(),
 		title: row.title.trim(),
 		level: row.level.trim(),
 		seq_l1: row.seq_l1.trim(),
@@ -313,7 +317,7 @@ function buildExternal(
 		emp_id: row.emp_id,
 		start: parseDate(row.start_date),
 		end: parseDate(row.end_date),
-		org: row.org.trim(),
+		company: row.company.trim(),
 		title: row.title.trim(),
 		description: row.description.trim(),
 		company_tag: row.company_tag.trim(),
@@ -376,9 +380,10 @@ function buildExternal(
 		unemployed: row.unemployed,
 		start_date: isoDate(row.start),
 		end_date: isoDate(row.end),
-		org: row.org,
-		org_path: "",
-		org_meta: companyMeta(row),
+		company: row.company,
+		department: "",
+		department_path: "",
+		company_meta: companyMeta(row),
 		title: row.unemployed ? UNEMPLOYED : row.title,
 		seq_l1: "",
 		seq_l2: "",
@@ -520,7 +525,7 @@ function buildEmployee(
 			return {
 				emp_id: profile.emp_id,
 				name: profile.name,
-				cur_dept: current?.org ?? "",
+				cur_dept: current?.department ?? "",
 				cur_title: current?.title ?? "",
 				cur_seq_l1: current?.seq_l1 ?? "",
 				cur_seq_l2: current?.seq_l2 ?? "",
@@ -644,9 +649,10 @@ export function build(
 				unemployed: false,
 				start_date: isoDate(segment.start),
 				end_date: segment.end ? isoDate(segment.end) : null,
-				org: segment.org,
-				org_path: segment.org_path,
-				org_meta: null,
+				company: "",
+				department: segment.department,
+				department_path: segment.department_path,
+				company_meta: null,
 				title: segment.title,
 				seq_l1: segment.seq_l1,
 				seq_l2: segment.seq_l2,

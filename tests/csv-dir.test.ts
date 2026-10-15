@@ -15,10 +15,10 @@ const EMPLOYEES =
 	"emp_id,name,hire_date,education_level,school,recruitment\n" +
 	"E1,某人,2020-01-01,本科,示例大学,校招\n";
 const ASSIGNMENTS =
-	"emp_id,start_date,end_date,org,org_path,title,level,seq_l1,seq_l2,seq_l3\n" +
+	"emp_id,start_date,end_date,department,department_path,title,level,seq_l1,seq_l2,seq_l3\n" +
 	"E1,2024-01-01,,平台技术部,示例科技/平台技术部,算法工程师,P6,技术,算法,\n";
 const EXTERNAL =
-	"emp_id,start_date,end_date,org,title,description," +
+	"emp_id,start_date,end_date,company,title,description," +
 	"company_tag,industry,nature,unemployed\n" +
 	"E1,2018-01-01,2019-12-31,云枢智能,算法工程师,做召回,,,,\n";
 const LEVELS = "level,band,rank\nP6,中级,6\n";
