@@ -110,7 +110,7 @@ REVIEW_TOKEN=...        # external 模式必需
 ```bash
 bun run dev          # 开发服务器
 bun run sync         # 同步数据源
-bun run derive       # 运行一轮派生
+bun run derive       # 运行一轮解析
 bun run query "算法,+后端"
 bun run eval
 bun run eval:extract

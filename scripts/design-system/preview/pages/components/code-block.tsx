@@ -2,8 +2,8 @@ import { CodeBlock } from "#/components/ui/code-block";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
-/** 一次合成的派生运行输出，字段和人都是编的。 */
-const RUN_LOG = `[09:12:03] 开始派生：待读 128 段，嵌入空间 demo-space
+/** 一次合成的解析运行输出，字段和人都是编的。 */
+const RUN_LOG = `[09:12:03] 开始解析：待读 128 段，嵌入空间 demo-space
 [09:12:04] 第 1 批 32 段已提交
 [09:12:09] 第 2 批 32 段已提交
 [09:12:15] 第 3 批：2 段的回答没有通过校验，已跳过且不缓存

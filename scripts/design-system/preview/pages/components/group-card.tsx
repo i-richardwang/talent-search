@@ -38,7 +38,7 @@ function Playground() {
 function TaskCard() {
 	return (
 		<div className="w-full">
-			<GroupCard extra={<Button size="small">立即运行</Button>} title="派生">
+			<GroupCard extra={<Button size="small">立即运行</Button>} title="解析">
 				<div className="flex flex-col gap-2">
 					<p className="text-fg-secondary text-xs">上次 3 小时前完成</p>
 					<p className="text-base">5,902 段经历里已读 5,870 段。</p>
@@ -97,7 +97,7 @@ export function GroupCardPage() {
 					"一组有名字的内容用 GroupCard：title 说这一组是什么，desc 补一句，这一组的动作放 extra，挂在行尾。",
 					"外层极浅的底，内容在里面一块描边的面上；内容一直展开，不收起。",
 				],
-				usage: `<GroupCard extra={<Button size="small">立即运行</Button>} title="派生">\n  {facts}\n</GroupCard>`,
+				usage: `<GroupCard extra={<Button size="small">立即运行</Button>} title="解析">\n  {facts}\n</GroupCard>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用分组卡片" },

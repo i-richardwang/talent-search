@@ -60,7 +60,7 @@ function pageOfRows<T>(rows: T[], want: unknown): TablePage<T> {
 	);
 }
 
-/** 任务页：每类任务一张卡，派生正在跑，所以「立即运行」都是禁用的。 */
+/** 任务页：每类任务一张卡，解析正在跑，所以「立即运行」都是禁用的。 */
 function Tasks() {
 	const running = TASK_LANES.some((lane) => lane.latest?.outcome === "running");
 	return (

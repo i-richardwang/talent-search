@@ -55,7 +55,7 @@ const dailySync = (days: number) =>
 		"done",
 	);
 
-/** 任务台的三栏：同步刚跑完（记录比一页多，有翻页）、派生正在跑、整理上一次失败。 */
+/** 任务台的三栏：同步刚跑完（记录比一页多，有翻页）、解析正在跑、整理上一次失败。 */
 export const TASK_LANES: TaskLane[] = [
 	lane("sync", [
 		run(31, "sync", "09-26 08:00", 42, "done"),
@@ -96,7 +96,7 @@ export const CORPUS_COUNTS: CorpusCounts = {
 	glossed: 9,
 };
 
-/** 数据页上 Talent 0101 的几段，连同派生出的技能和做过的事。 */
+/** 数据页上 Talent 0101 的几段，连同解析出的技能和做过的事。 */
 export const SEGMENTS: SegmentView[] = experiencesOf("T0101").map((x) => ({
 	id: x.id,
 	kind: x.kind,

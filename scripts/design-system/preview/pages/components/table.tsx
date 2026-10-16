@@ -269,7 +269,7 @@ function TaskTable() {
 	const [page, setPage] = useState(1);
 	const runs = [
 		["同步", "成功", "12 秒"],
-		["派生", "成功", "4 分 10 秒"],
+		["解析", "成功", "4 分 10 秒"],
 		["整理", "等待中", "—"],
 	];
 	return (

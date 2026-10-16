@@ -127,7 +127,7 @@ function ddl(schema: string, table: PgTable) {
 /**
  * 假嵌入：字符袋。每个字占一个维度（按出现顺序分配），向量归一化，
  * 所以两串字的余弦 = 共有字数 / √(字数 × 字数)。同一进程里种子与查询共用
- * 这张表，两边的向量自然可比。
+ * 这张表，种子和查询的向量自然可比。
  */
 const charDims = new Map<string, number>();
 export function fakeEmbedding(text: string): number[] {
@@ -629,7 +629,7 @@ export async function seed(rows: Seed[]) {
 			),
 		)
 		.returning();
-	// 说法去重后各嵌一次，经历段按路指向它们——拼法和 src/corpus/derive.ts 是
+	// 说法去重后各嵌一次，经历段按路指向它们——组合方式和 src/corpus/derive.ts 是
 	// 同一个函数。抽取结果夹具直接给：seed 的入参和 inserted 顺序一致，按下标对回去。
 	const specs = rows.flatMap((r) => r.segments);
 	const links = inserted.flatMap((s, i) => {
