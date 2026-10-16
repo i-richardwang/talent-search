@@ -85,7 +85,7 @@ export function Question({
 	);
 }
 
-/** 问过的一问：问话照常，答了哪一项淡一档；没答就只留问话。 */
+/** 问过的一问：问话不变，答了哪一项淡一档；没答就只留问话。 */
 export function AnsweredQuestion({
 	question,
 	answer,

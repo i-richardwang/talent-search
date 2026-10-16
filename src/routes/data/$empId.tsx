@@ -5,7 +5,7 @@ import { EmployeeDrawer, EmployeeRecord } from "./-components/employee-drawer";
 
 /**
  * 一个人的每一段经历：登记的内容、推断的序列、抽取出的能力词和做过的事，以及这一段
- * 有没有派生到当前版本——没有的话抽取结果是上一版的。
+ * 有没有解析到当前版本——没有的话抽取结果是上一版的。
  */
 export const Route = createFileRoute("/data/$empId")({
 	loader: async ({ params }) => {

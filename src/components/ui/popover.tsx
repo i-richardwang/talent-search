@@ -21,7 +21,7 @@ import { resolveNativeButton } from "#/components/ui/native-button";
 import { cn } from "#/lib/utils";
 
 /*
- * 子元素是单个元素，触发器的属性与 ref 合进它本身（见 floating.ts）。定位器同时是里面提示的
+ * 子元素是单个元素，触发器的属性与 ref 合进这个子元素（见 floating.ts）。定位器同时是里面提示的
  * portal 容器；z 值是 `--z-index-popup` 这一档，不按打开先后另分配。
  */
 

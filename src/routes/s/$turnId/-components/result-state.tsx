@@ -72,7 +72,7 @@ export function NoResults({
 	return (
 		<Empty
 			action={
-				/* 筛掉了所有人时出路是清掉筛选，一次撤回，不是主操作 */
+				/* 筛掉了所有人时下一步是清掉筛选，一次撤回，不是主操作 */
 				<Button
 					onClick={state.action.onClick}
 					type={reason.kind === "filtered" ? "default" : "primary"}

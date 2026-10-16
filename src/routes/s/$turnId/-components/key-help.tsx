@@ -39,7 +39,7 @@ const KEYS: Key[] = [
 ];
 
 /**
- * 快捷键列表，按「?」打开；按键本身由 `-lib/keyboard-flow.ts` 处理。
+ * 快捷键列表，按「?」打开；按键由 `-lib/keyboard-flow.ts` 处理。
  * `editable` 为假时这条链改不了查询（对话的链没配 AI 服务），不列「/」。
  */
 export function KeyHelp({

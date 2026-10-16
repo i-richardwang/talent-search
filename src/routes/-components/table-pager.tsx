@@ -57,7 +57,7 @@ function pageItems(page: number, pages: number): PageItem[] {
 
 /**
  * 到头的那一头禁用但位置留着，别的按钮不会跳过去。能去的那一页把 `Link` 交给按钮
- * 渲染，中键、右键照常。
+ * 渲染，中键、右键也能用。
  */
 function PageNav({
 	page,

@@ -53,7 +53,7 @@ export function EmployeeTable({
 			/>
 			<Block className="overflow-hidden" variant="outlined">
 				{list.rows.length === 0 && !pending ? (
-					// 找不到人时标题已经说完了，出路是清掉这个词；库是空的才说去哪同步
+					// 找不到人时标题已经说完了，下一步是清掉这个词；库是空的才说去哪同步
 					<Empty
 						action={
 							q ? (

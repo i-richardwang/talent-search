@@ -5,7 +5,7 @@ import { Icon } from "#/components/ui/icon";
 import { PageHeader } from "./page-header";
 
 /**
- * 地址指向的东西不存在：页面不存在和记录不存在都是一条死链、一个出路，共用这一屏，
+ * 地址指向的东西不存在：页面不存在和记录不存在都是一条死链、一个下一步，共用这一屏，
  * 只有措辞和水印不同。两个 `notFoundComponent` 都渲染在 `<Outlet />` 的位置上，
  * 所以页头和 `<main>` 由它自己给。
  */

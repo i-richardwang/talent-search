@@ -56,7 +56,7 @@ export type ExperienceRow = {
 	seq_l1: string;
 	seq_l2: string;
 	seq_l3: string;
-	/** 推断的那两级由派生时的 `align.ts` 填，管线一律交空 */
+	/** 推断的那两级由解析时的 `align.ts` 填，管线交空 */
 	seq_inferred_l1: string;
 	seq_inferred_l2: string;
 	level: string;
@@ -487,7 +487,7 @@ function levelBands(rows: SourceLevel[]): Map<string, Band> {
 }
 
 /**
- * 档案字段来自归一化后的源行，`cur_*` 一律从唯一的开放公司内经历派生。
+ * 档案字段来自归一化后的源行，`cur_*` 从唯一的开放公司内经历算出来。
  *
  * 当前部门、岗位、序列、职级不从源的快照里另取一份：那样库里就有两个「他现在
  * 在哪」，而时间线和结果行会各读一个。没有开放段就没有当前岗位；同时存在多段
@@ -675,7 +675,7 @@ export function build(
 }
 
 /**
- * 人群以 `employees` 为准：经历表里指向库外的人一律丢弃。
+ * 人群以 `employees` 为准：经历表里指向库外的人丢弃。
  *
  * 留着它们只会违反 `experience.emp_id` 的外键，报一条读不懂的数据库错误。
  */

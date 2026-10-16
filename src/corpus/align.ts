@@ -1,6 +1,6 @@
 /**
  * 入职前经历对齐到登记序列树上完整的一对，存入推断列，仅用于筛选。
- * 两级均空是合法的无法对齐；无效回答返回 null，派生把这一段记为未能作答。
+ * 两级均空是合法的无法对齐；无效回答返回 null，解析把这一段记为未能作答。
  */
 
 import { z } from "zod";
@@ -68,7 +68,7 @@ function alignmentSchema(tree: SeqPair[]) {
 	return z.object({ seq: z.enum(["", ...tree.map(line)]) });
 }
 
-/** 派生版本的一部分。 */
+/** 解析版本的一部分。 */
 export function alignIdentity(tree: SeqPair[]): string {
 	return identityOf(extractModel(), systemPrompt(tree), alignmentSchema(tree));
 }

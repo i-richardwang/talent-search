@@ -5,11 +5,11 @@ import type { SearchMode } from "#/server/turn";
 import { CLEARED_FILTERS, type View } from "./view-params";
 
 /**
- * 名单空了该说什么，以及给一条什么样的出路。成因由检索层判定（`search/empty.ts`
+ * 名单空了该说什么，以及给一条什么样的下一步。成因由检索层判定（`search/empty.ts`
  * 的 `emptyReason`），这里只翻译成文案，不用计数反推。
  *
  * 每种成因配一个一键可做的动作：改视图走 `onChange`（同一条查询），改条件走
- * `onReviseQuery`（派生一条新的查询记录）。表是穷尽的 `Record`，检索层多一种成因
+ * `onReviseQuery`（记一条新的查询记录）。表是穷尽的 `Record`，检索层多一种成因
  * 这里就编译不过。
  */
 type EmptyCopy = {
@@ -20,7 +20,7 @@ type EmptyCopy = {
 
 type Handlers = {
 	/**
-	 * 对话还是关键词。出路按各自手里有的东西说：关键词没有「加分」也没有停用，
+	 * 对话还是关键词。下一步按各自手里有的东西说：关键词没有「加分」也没有停用，
 	 * 只有框里的词可改；「修改需求」只属于 AI 搜索。
 	 */
 	mode: SearchMode;
@@ -28,7 +28,7 @@ type Handlers = {
 	conditions: readonly Condition[];
 	/** 改视图：筛选、翻页。不产生新的查询记录。 */
 	onChange: (next: Partial<View>) => void;
-	/** 改查询：派生一条新记录。 */
+	/** 改查询：记一条新记录。 */
 	onReviseQuery: (next: Condition[]) => void;
 	onEditQuery: () => void;
 };

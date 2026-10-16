@@ -110,7 +110,7 @@ export function ZeroState({
 			</div>
 		),
 		starters: (
-			// 比输入托盘和列表行各往里收一点：两边都是有内边距的面，贴着列边排会显得悬在外面
+			// 比输入托盘和列表行各往里收一点：输入托盘和列表行都是有内边距的面，贴着列边排会显得悬在外面
 			<GroupBlock
 				className="px-3 py-2"
 				description="点一条填进输入框，改成你要找的人再发送"

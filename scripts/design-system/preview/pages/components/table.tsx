@@ -336,7 +336,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="整行点开详情；名字那格是真链接，中键、右键照常。正在看的那一行选中。"
+				description="整行点开详情；名字那格是真链接，中键、右键也能用。正在看的那一行选中。"
 				title="候选人名单"
 			>
 				<PeopleList />
@@ -348,7 +348,7 @@ function Usage() {
 				<TaskTable />
 			</Example>
 			<Example
-				description="没有结果时不画空表，换成 Empty，说清问题和出路。"
+				description="没有结果时不画空表，换成 Empty，说清问题和下一步。"
 				title="空表"
 			>
 				<Block className="w-full" variant="outlined">
@@ -371,8 +371,8 @@ export function TablePage() {
 				notes: [
 					"表用 Table，放在一块描边的 Block 里，表脚在表下；圆角和外框归那块面。",
 					"表里不画线：表头是一条浅底，表体行间没有线，悬停出底。",
-					"空表用 Empty，说明当前问题和可执行的出路。",
-					'通往详情的是整行：TableRow 的 onActivate。名字那格标 cellSlot="title"，里面仍是一个真链接（tabIndex -1），中键、右键、新标签页照常。',
+					"空表用 Empty，说明当前问题和可执行的下一步。",
+					'通往详情的是整行：TableRow 的 onActivate。名字那格标 cellSlot="title"，里面仍是一个真链接（tabIndex -1），中键、右键、新标签页也能用。',
 					"格里的按钮、链接、勾选框点下去归它们自己，不会触发整行。",
 					"加载中保留表头和外框，表体放 TableSkeletonRows，Table 带 busy。",
 					'narrow="cards" 的表在不到 600px 宽时每行排成卡片；除标题格外每格写 cellLabel。',

@@ -1,5 +1,5 @@
 /**
- * 语料侧三种任务连起来跑：同步读仓库自带的合成样例、派生给段算说法与向量、
+ * 语料侧三种任务连起来跑：同步读仓库自带的合成样例、解析给段算说法与向量、
  * 任务的记录与活性。
  *
  * 端点是进程内那三台假的，所以这里量的是**机制**，不是抽得准不准。
@@ -76,7 +76,7 @@ async function logText(runId: number | undefined): Promise<string> {
 	return runId === undefined ? "" : (await taskLog(runId)).join("\n");
 }
 
-describe("同步与派生", () => {
+describe("同步与解析", () => {
 	let restore = () => {};
 	before(() => {
 		restore = answers();
@@ -89,7 +89,7 @@ describe("同步与派生", () => {
 		assert.notEqual(await corpusSessionOwner(), null);
 		assert.equal(await runTask("derive"), null);
 		await held.release();
-		// 持锁的连接一断，这件事当场就不成立了——不需要谁来打扫
+		// 拿到锁的连接一断，这件事当场就不成立了——不需要谁来打扫
 		assert.equal(await corpusSessionOwner(), null);
 	});
 
@@ -112,7 +112,7 @@ describe("同步与派生", () => {
 		assert.equal(state.corpus.derived, 0);
 	});
 
-	test("派生给每一段算说法、连边、对齐序列，做完一段不剩", async () => {
+	test("解析给每一段算说法、连边、对齐序列，做完一段不剩", async () => {
 		const run = await runTask("derive");
 		assert.ok(run);
 		assert.equal(run.failure, null);
@@ -132,7 +132,7 @@ describe("同步与派生", () => {
 		assert.equal(latest(await tasksState(), "derive")?.outcome, "done");
 	});
 
-	test("开放段再次同步会刷新时长并保留身份、说法边与派生版本", async () => {
+	test("开放段再次同步会刷新时长并保留身份、说法边与解析版本", async () => {
 		const before = await db.execute<{
 			id: number;
 			content_key: string;
@@ -163,7 +163,7 @@ describe("同步与派生", () => {
 		assert.deepEqual(after.rows[0], original);
 	});
 
-	test("数据页看得到每一段的派生结果", async () => {
+	test("数据页看得到每一段的解析结果", async () => {
 		const { listEmployees, employeeData } = await import("#/server/data");
 		const list = await listEmployees("", 1);
 		assert.equal(list.total, 20);
@@ -203,7 +203,7 @@ describe("同步与派生", () => {
 		assert.equal(await employeeData("没有这个人"), null);
 	});
 
-	test("再同步一次是幂等的：段按内容认，派生结果原样留下", async () => {
+	test("再同步一次是幂等的：段按内容认，解析结果原样留下", async () => {
 		const edges = await count("experience_phrase");
 		const run = await runTask("sync");
 		assert.ok(run);
@@ -237,7 +237,7 @@ describe("同步与派生", () => {
 		assert.equal(await orphans(), 0);
 	});
 
-	test("一段的内容变了就是新段：旧段连边一起走，新段待派生", async () => {
+	test("一段的内容变了就是新段：旧段连边一起走，新段待解析", async () => {
 		// 直接改库里一段的描述：键由库算，跟着变；下一次同步认不出它，当它走了
 		const { rows } = await db.execute<{ id: number }>(sql`
 			update experience set description = description || '（改过）'
@@ -259,7 +259,7 @@ describe("同步与派生", () => {
 
 	/*
 	 * 任务台那条路：后台开一轮，过程记录在那一行上，页面隔一会儿看一眼。
-	 * 从「正在跑」到「成功」之间不能读作「中断」：读取期间保护记录，核对持锁连接
+	 * 从「正在跑」到「成功」之间不能读作「中断」：读取期间保护记录，确认锁在谁手里
 	 * 标记的运行 id，结束记录先于释放锁。
 	 */
 	test("后台跑的那一轮：一路轮询到成功，中间没有一刻像中断", async () => {
@@ -328,7 +328,7 @@ describe("同步与派生", () => {
 
 	/*
 	 * 失败是这张表存在的理由之一：看任务台的人看不到服务器的标准输出。
-	 * 数据源读不出来时，最外层那句话说的是「哪一步出的事」，真正发生了什么在
+	 * 数据源读不出来时，最外层那句话说的是「哪一步出的事」，实际发生了什么在
 	 * `cause` 里——两句都得在。
 	 */
 	test("跑失败时，那一行说得出为什么，连它的来由", async () => {
@@ -356,7 +356,7 @@ describe("同步与派生", () => {
 		assert.equal(await count("employee"), 20);
 	});
 
-	test("向量模型更换：说法整张作废，所有段重新派生，空间记录重写", async () => {
+	test("向量模型更换：说法整张作废，所有段重新解析，空间记录重写", async () => {
 		await db.execute(sql`update embedding_space set space_id = 'old-space'`);
 		const run = await runTask("derive");
 		assert.ok(run);
@@ -653,7 +653,7 @@ for (const wait of [false, true]) {
 	});
 }
 
-test("收尾失败时销毁持锁连接", async () => {
+test("收尾失败时销毁拿到锁的连接", async () => {
 	const held = await acquireCorpusSession();
 	assert.ok(held);
 	const release = mock.method(held.client, "release");

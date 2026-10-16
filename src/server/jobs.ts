@@ -1,5 +1,5 @@
 /**
- * pg-boss 在应用进程中调度派生与整理，队列和时刻存于 pgboss schema。
+ * pg-boss 在应用进程中调度解析与整理，队列和时刻存于 pgboss schema。
  * exclusive 队列各只保留一个待处理或运行任务。处理函数检查任务是否需要运行，
  * 记录、锁、日志与执行交给 tasks.ts。
  */
@@ -14,9 +14,9 @@ import { deriveProgress, runTask } from "./tasks";
 export type JobKind = Exclude<TaskKind, "sync">;
 
 /**
- * 排班。派生只看「有没有还没有当前标准结果、或还没换入的段」，同步之后几分钟内就会接上；整理一天一次，
- * 一个词一周判一次的节奏在它里面（`corpus/vocabulary.ts`）。判定归外部时这一轮仍然
- * 照跑——它要让外部提交的判定生效，并且收集新的组。
+ * 排班。解析只看「有没有还没有当前标准结果、或暂存结果还没替换进去的段」，同步之后几分钟内解析会自动继续；整理一天一次，
+ * 一个词一周判一次的节奏在它里面（`corpus/vocabulary.ts`）。判定归外部时这一轮
+ * 仍然会跑——它要让外部提交的判定生效，并且收集新的组。
  */
 const SCHEDULE: Record<JobKind, string> = {
 	derive: "*/5 * * * *",

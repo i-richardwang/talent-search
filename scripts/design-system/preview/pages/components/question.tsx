@@ -74,7 +74,7 @@ function States() {
 				/>
 			</Example>
 			<Example
-				description="问过之后收成两行：问话照常，答的是哪一项淡一档，不画边框和图标。"
+				description="问过之后收成两行：问话不变，答的是哪一项淡一档，不画边框和图标。"
 				title="答过"
 			>
 				<AnsweredQuestion
@@ -102,7 +102,7 @@ export function QuestionPage() {
 					"回复里要对方拿主意时用 Question：一句问话，下面两三项，每项一个短标题和一行说明。",
 					"现在用着的那一项铺底、标「当前」，不能点；其余每项是一个按钮，点了就办，没有另外的提交钮和跳过钮。",
 					"onChoose 返回的 Promise 结束前，几项都不能再点。",
-					"问过之后换成 AnsweredQuestion，问话照常，答案淡一档。",
+					"问过之后换成 AnsweredQuestion，问话不变，答案淡一档。",
 				],
 				usage: `<Question
   onChoose={(key) => revise(key)}

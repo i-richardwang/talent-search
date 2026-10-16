@@ -12,7 +12,7 @@ import { Hotkey } from "#/components/ui/hotkey";
 import { cn } from "#/lib/utils";
 
 /*
- * `title` 与 `hotkey` 都没有时直接返回 children。触发器是单个元素，属性与 ref 合进它本身，
+ * `title` 与 `hotkey` 都没有时直接返回 children。触发器是单个元素，属性与 ref 合进这个子元素，
  * 不另包一层（见 floating.ts）。每个提示只有一个触发器，不在多个触发器之间共用浮层。
  */
 
@@ -41,7 +41,7 @@ export function Tooltip({
 	if (title == null && !hotkey) return children;
 
 	const child = children as ReactElement<Record<string, unknown>>;
-	// 子元素本身是某个弹层的触发器（带 aria-haspopup 与 id）时，提示的触发器沿用它的 id。
+	// 子元素是某个弹层的触发器（带 aria-haspopup 与 id）时，提示的触发器沿用这个子元素的 id。
 	const popupTriggerId =
 		child.props["aria-haspopup"] !== undefined &&
 		typeof child.props.id === "string"

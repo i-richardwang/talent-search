@@ -1,8 +1,8 @@
 /**
  * 打分与排序。**不连数据库**，全部语义以纯函数方式验证。
  *
- * 这里测的是「一份事实应该排出什么名次」；「事实本身对不对」是 search.test.ts
- * 的事，两边不重叠。
+ * 这里测的是「一份事实应该排出什么名次」；「事实对不对」是 search.test.ts
+ * 的事，检索和打分各测各的，不重叠。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -452,7 +452,7 @@ describe("必须与加分", () => {
 	});
 });
 
-describe("分面与名次是同一个口径", () => {
+describe("分面与名次是同一个计数方法", () => {
 	const facts = [
 		fact({ empId: "A", seqL1: "技术", seqL2: "算法", level: "P6" }),
 		fact({ empId: "B", seqL1: "技术", seqL2: "算法", level: "P7" }),
@@ -473,7 +473,7 @@ describe("分面与名次是同一个口径", () => {
 		const { facets, total } = run(facts, claims("must"), {
 			seq: [{ l1: "技术", l2: "算法" }],
 		});
-		assert.equal(total, 2, "结果本身是被筛过的");
+		assert.equal(total, 2, "结果是被筛过的");
 		assert.equal(
 			facets.seq.find((s) => s.value.l2 === "渠道")?.n,
 			1,
@@ -481,7 +481,7 @@ describe("分面与名次是同一个口径", () => {
 		);
 	});
 
-	test("一维之内多选是「或」：两个职级都要，人就是两边的并集", () => {
+	test("一维之内多选是「或」：两个职级都要，人就是两个职级的并集", () => {
 		const both = run(facts, claims("must"), { level: ["P6", "P7"] });
 		const p6 = run(facts, claims("must"), { level: ["P6"] });
 		const p7 = run(facts, claims("must"), { level: ["P7"] });

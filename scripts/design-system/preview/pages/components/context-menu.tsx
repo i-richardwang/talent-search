@@ -250,7 +250,7 @@ export function ContextMenuPage() {
 				notes: [
 					"只给已经有「…」菜单的东西加右键菜单，项和「…」打开的是同一份，不多也不少。",
 					"弹层、项、子菜单都用下拉菜单的 renderDropdownMenuItems 与原子件；右键菜单只管在哪儿打开，没有展开动画。",
-					"触发区不占版面，包住的元素照常排；里面再有右键菜单时，按在里面那一块上只开里面那一个。",
+					"触发区不占版面，包住的元素按平常排；里面再有右键菜单时，按在里面那一块上只开里面那一个。",
 					"触屏上长按打开；键盘用户走行尾的「…」，右键菜单不是唯一的入口。",
 				],
 				usage: `<ContextMenu menu={renderDropdownMenuItems(items)}>\n  <NavItem actions={…} icon={…} render={<Link … />}>\n    做过推荐系统的后端\n  </NavItem>\n</ContextMenu>`,

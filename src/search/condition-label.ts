@@ -53,7 +53,7 @@ export function inSentence(list: readonly Condition[]): string {
  * 一条条件在屏幕上怎么显示。
  *
  * 经历主张按它的表述顺序排列：什么时候、在哪一档、在哪、做过什么、累计多久——
- * 「入职前 · 大厂 · 增长 · 3 年以上」，读起来就是那句话本身。每一项只显示第一个
+ * 「入职前 · 大厂 · 增长 · 3 年以上」，读起来就是那句话。每一项只显示第一个
  * 取值，其余收在菜单里（`query-chips.tsx`），chip 上留一个记号说「这里还有」：
  * 几档职级全写出来是一行放不下的文字，会把同一排别的条件挤出屏幕。
  *
@@ -101,7 +101,7 @@ export function moreCount(condition: Condition): number {
 
 /**
  * 一条条件里的一项怎么显示。它出现在已经写明了是哪条条件的地方（chip 的菜单），
- * 所以只显示这一项本身：「P7」，不是「当前职级 · P7」；月数写成「累计 3 年以上」，
+ * 所以只显示这一项：「P7」，不是「当前职级 · P7」；月数写成「累计 3 年以上」，
  * 好让它和旁边的经历词分得开。
  */
 export function partLabel(condition: Condition, part: Part): string {

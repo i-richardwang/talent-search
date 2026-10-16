@@ -277,7 +277,7 @@ function Usage() {
 				<DeleteRecord />
 			</Example>
 			<Example
-				description="导出前说清表里有什么；确定钮的文字写动作本身。"
+				description="导出前说清表里有什么；确定钮的文字写动作。"
 				title="导出名单"
 			>
 				<ExportList />
@@ -294,7 +294,7 @@ export function ModalPage() {
 				notes: [
 					"对话框挂在打开它的组件里，用受控的 open；关掉走 onCancel，确定后由调用处关。",
 					"只用来打断需要确认或补一项输入的动作；一次阅读用 Drawer。",
-					"确定钮的文字写动作本身（okText），需要时用 okIcon 加图标。",
+					"确定钮的文字写动作（okText），需要时用 okIcon 加图标。",
 					"删除这类收不回的动作用 confirmModal({ title, content, okText, onOk }) 问一句：onOk 返回 Promise 时确定钮转圈，兑现后关上；<ModalHost /> 在应用根上挂一次。",
 					"正文里的控件用 components/ui 的组件，宽度用 className 给容器宽度的档（max-w-md 之类）；正文要贴边用 ModalContent 的 flush，不覆盖面板的圆角和内边距。",
 				],

@@ -100,7 +100,7 @@ describe("聊天端点", () => {
 	});
 });
 
-test("并发合法回答统一采用首个落库值", async () => {
+test("并发合法回答统一采用第一个成功写入的值", async () => {
 	let release!: () => void;
 	const both = new Promise<void>((resolve) => {
 		release = resolve;

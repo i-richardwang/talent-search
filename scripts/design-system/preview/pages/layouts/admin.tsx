@@ -99,7 +99,7 @@ function Data() {
 	);
 }
 
-/** 「标签」页：词本身、其他写法或所属的词里有这个词就算匹配。 */
+/** 「标签」页：词、其他写法或所属的词里有这个词就算匹配。 */
 function Terms() {
 	const { opened, page, q } = useListView();
 	const found = SKILL_ROWS.filter((row) =>

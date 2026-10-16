@@ -1,8 +1,8 @@
 /**
- * 数据页看的东西：库里此刻有谁、每个人的每一段、以及派生给这一段算出了什么。
+ * 数据页看的东西：库里此刻有谁、每个人的每一段、以及解析给这一段算出了什么。
  *
  * 检索给招聘的人看命中；这两页给管数据的人看**库里到底是什么**——同步进来的
- * 原始一半和派生写上的那一半并排放着，一段有没有派生到当前版本、抽出了哪些能力词
+ * 原始一半和解析写上的那一半并排放着，一段有没有解析到当前版本、抽出了哪些能力词
  * 和做过的事、对到了哪个序列，都在这里核对。只读。
  */
 
@@ -27,7 +27,7 @@ export type EmployeeRow = Pick<
 > & {
 	/** 这个人有几段 */
 	segments: number;
-	/** 其中几段还没派生到当前版本 */
+	/** 其中几段还没解析到当前版本 */
 	pending: number;
 };
 
@@ -62,7 +62,7 @@ export async function listEmployees(
 	});
 }
 
-/** 一段连它的派生结果。 */
+/** 一段连它的解析结果。 */
 export type SegmentView = Pick<
 	Experience,
 	| "id"
@@ -83,7 +83,7 @@ export type SegmentView = Pick<
 	| "seqInferredL2"
 	| "unanswered"
 > & {
-	/** 派生到当前版本了没有 */
+	/** 解析到当前版本了没有 */
 	derived: boolean;
 	skills: string[];
 	did: { involvement: string | null; domain: string }[];
@@ -145,7 +145,7 @@ export async function employeeData(
 	});
 }
 
-/** 单人详情只读取展示所需的字段，存储身份与派生状态留在服务端。 */
+/** 单人详情只读取展示所需的字段，存储身份与解析状态留在服务端。 */
 export function employeeDetail(empId: string): Promise<EmployeeDetail | null> {
 	return withCorpusSnapshot(async (store) => {
 		const [emp] = await store

@@ -206,7 +206,7 @@ function Usage() {
 				</Button>
 			</Example>
 			<Example
-				description="文字写动作本身；长短不同的两个按钮并排时各按内容取宽。"
+				description="文字写动作；长短不同的两个按钮并排时各按内容取宽。"
 				title="文字长度"
 			>
 				<Button>保存</Button>

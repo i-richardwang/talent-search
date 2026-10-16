@@ -25,7 +25,7 @@ export function recentLabel(record: Pick<RecentSearch, "spec" | "title">) {
 }
 
 /**
- * 标题下面那一行：对话的任务最后停在了哪些搜索条件上。关键词搜索的标题就是条件本身，
+ * 标题下面那一行：对话的任务最后停在了哪些搜索条件上。关键词搜索的标题就是条件，
  * 没有这一行。
  */
 export function recentSummary(

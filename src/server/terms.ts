@@ -12,7 +12,7 @@ export type TermEntry = {
 	aliases: string[];
 	/** 属于它的标准词有几项；没有就是 0 */
 	children: number;
-	/** 写了这个词、它的其他写法或它任一项细分的人数，和筛选栏同一口径 */
+	/** 写了这个词、它的其他写法或它任一项细分的人数，和筛选栏计数方法一致 */
 	people: number;
 	/** 上次整理这个词是几天前；0 是今天 */
 	reviewedDaysAgo: number;

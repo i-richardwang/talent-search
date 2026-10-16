@@ -146,7 +146,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="名单那一栏为空时占满整栏（large）：说出是哪条条件挡住了人，并给一个能直接点的出路。"
+				description="名单那一栏为空时占满整栏（large）：说出是哪条条件挡住了人，并给一个能直接点的下一步。"
 				title="名单为空"
 			>
 				<div className="w-full">
@@ -189,9 +189,9 @@ export function EmptyPage() {
 			rules={{
 				notes: [
 					"空态用 Empty，不手写一块灰字。",
-					"文案说明当前问题和可执行的出路；标题已说明的内容，说明里不重复。",
+					"文案说明当前问题和可执行的下一步；标题已说明的内容，说明里不重复。",
 					"空态原因由检索层判定，界面按原因给文案，不拿计数重新推断。",
-					"出路是一次动作时放进 action，用 Button。",
+					"下一步是一次动作时放进 action，用 Button。",
 					"放在一块面里（表格、抽屉、弹层）用缺省的 middle；一整栏或一整页为空用 large，不在调用处加上下内边距。",
 				],
 				usage: `<Empty\n  action={<Button>放宽年限</Button>}\n  description="「累计 8 年以上」把范围收得太窄，可以放宽年限再看。"\n  title="没有符合全部条件的人"\n/>`,

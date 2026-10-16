@@ -1,7 +1,7 @@
 /**
  * 语料侧的聊天调用：模型请求、并发控制、进度和持久缓存。
  * 缓存保存通过 schema 校验的原始 JSON；领域校验由调用方执行。
- * 键由模型、提示词、schema 和输入文本确定，同键采用首个落库回答。
+ * 键由模型、提示词、schema 和输入文本确定，同一个输入只保留第一次写入的回答。
  * 无效回答报告后跳过且不缓存；持续的端点故障向调用方抛出。
  */
 
@@ -42,7 +42,7 @@ const ENABLE_THINKING = process.env.EXTRACT_ENABLE_THINKING?.trim();
 const TIMEOUT_MS = positiveInt(process.env.EXTRACT_TIMEOUT_MS, 120_000);
 const CONCURRENCY = positiveInt(process.env.EXTRACT_CONCURRENCY, 4);
 /**
- * 一段文字失败了再试几次。比查询侧多：一轮派生要跑几千段、几十分钟，为一次端点
+ * 一段文字失败了再试几次。比查询侧多：一轮解析要跑几千段、几十分钟，为一次端点
  * 抖动整轮重来的代价远高于多等几次。
  */
 const RETRIES = 4;
@@ -57,8 +57,8 @@ const MAX_OUTPUT_TOKENS = positiveInt(
 );
 
 /**
- * 端点整体配好了没有。地址和模型名缺一个就当没配：派生会打印说明后跳过这三件
- * 事，检索照常可用，只是能力词与做过的事两类为空、入职前经历不对齐序列。
+ * 端点整体配好了没有。地址和模型名缺一个就当没配：解析会打印说明后跳过这三件
+ * 事，检索还能用，只是能力词与做过的事两类为空、入职前经历不对齐序列。
  */
 export function chatConfigured(): boolean {
 	return Boolean(BASE_URL && process.env.EXTRACT_MODEL?.trim());
@@ -115,8 +115,8 @@ function sha(text: string): string {
 
 /**
  * 一批问题的身份：模型、提示词、schema。它是缓存的一半键，另一半是那段文字。
- * 派生任务也拿它算「派生到哪一版」（`corpus/derive.ts`）：会改变回答的东西变了，
- * 段就该重新派生，和缓存失效是同一个判据。
+ * 解析任务也拿它算「解析到哪一版」（`corpus/derive.ts`）：会改变回答的东西变了，
+ * 段就该重新解析，和缓存失效是同一个判据。
  */
 export function identityOf(
 	model: string,
@@ -131,7 +131,7 @@ export function identityOf(
 /**
  * 一份标准的身份：那段提示词，加它要求的回答形状。**不含模型。**
  *
- * 派生物拿它记「这一行算到哪一版标准」（`corpus/gloss.ts` 的 `glossIdentity`），
+ * 解析出来的行拿它记「这一行算到哪一版标准」（`corpus/gloss.ts` 的 `glossIdentity`），
  * 判据和 `identityOf` 那一条一样——会改变回答的东西变了，这一行就该重来。模型不进
  * 这个数：自带模型和外部 agent 照着同一段字判，判出来的东西就是可比的
  * （`src/server/review.ts`），换个判定方不该让整张表作废。
@@ -172,7 +172,7 @@ async function cached(
 	return out;
 }
 
-/** 同键采用第一份成功落库的回答，所有调用者返回该值。 */
+/** 同一个输入只保留第一次写入的回答，所有调用者返回该值。 */
 async function store(identity: string, text: string, payload: unknown) {
 	const inserted = await db
 		.insert(completionCache)
@@ -191,7 +191,7 @@ async function store(identity: string, text: string, payload: unknown) {
  *
  * 瞬时故障重试 `RETRIES` 次：5xx 与限流由 AI SDK 按指数退避、遵守 `Retry-After`
  * 地试，超时由 `retryingTimeouts` 试（分工见 `endpoint.ts`）；每一次尝试各有一份
- * `EXTRACT_TIMEOUT_MS` 的预算。持续失败仍然会让这一轮派生中止，那说明并发调太高
+ * `EXTRACT_TIMEOUT_MS` 的预算。持续失败仍然会让这一轮解析中止，那说明并发调太高
  * 或端点真的不可用，该改 `EXTRACT_CONCURRENCY`，不该由重试掩盖。
  */
 async function ask(

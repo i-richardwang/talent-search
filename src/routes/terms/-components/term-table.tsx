@@ -57,7 +57,7 @@ export function TermTable({
 			/>
 			<Block className="overflow-hidden" variant="outlined">
 				{table.rows.length === 0 && !pending ? (
-					// 没匹配上时标题已经说完了，出路是清掉这个词；词表本身是空的才说它从哪来
+					// 没匹配上时标题已经说完了，下一步是清掉这个词；词表是空的才说它从哪来
 					<Empty
 						action={
 							q ? (

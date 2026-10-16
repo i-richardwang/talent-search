@@ -1,9 +1,9 @@
 /**
  * 为待处理经历段抽取说法、对齐序列、嵌入并连边。
- * 模型调用在事务外，结果按批提交说法、边和派生版本。模型答不出的段同样有结果：
+ * 模型调用在事务外，结果按批提交说法、边和解析版本。模型答不出的段同样有结果：
  * 记为未能作答，判定标准变了才重新问；端点故障让这一轮中止，下一轮接着。
  * 每轮按 id 向后处理，时间预算耗尽后退出。判定标准变了以后，新结果先写进
- * `experience_next`，每一段都有了新结果再整体换进正式表：检索一直读一份完整的标准。
+ * `experience_next`，每一段都有了新结果再一次替换正式表：检索一直读一份完整的标准。
  */
 
 import "@tanstack/react-start/server-only";
@@ -41,7 +41,7 @@ type DerivedRow = StoredRow & { unanswered: boolean };
 type Link = Phrasing & { experienceId: number };
 
 /**
- * 这一批段的说法与边（拼法见 `route-texts.ts`）。五类进同一张说法表：一个能力词
+ * 这一批段的说法与边（组合方式见 `route-texts.ts`）。五类进同一张说法表：一个能力词
  * 恰好和某个岗位名是同一串字时只嵌一次，两条边各指向它。做过的事的说法是
  * 领域，参与方式存在边的第四列，其余类那一列是空。
  *
@@ -71,7 +71,7 @@ export function phrasePlan(
 	return { texts: [...new Set(links.map((link) => link.text))], links };
 }
 
-/** 核验当前空间的端点输出；换空间时清空说法和派生版本。 */
+/** 核验当前空间的端点输出；换嵌入空间时清空说法和解析版本。 */
 async function ensureSpace(client: CorpusClient, report: Report) {
 	const space = embedSpace();
 	const { rows } = await client.query<{
@@ -99,7 +99,7 @@ async function ensureSpace(client: CorpusClient, report: Report) {
 	await client.query("begin");
 	try {
 		if (current) {
-			report("  向量模型已更换，既有结果全部作废，所有段重新派生");
+			report("  向量模型已更换，既有结果全部作废，所有段重新解析");
 			await client.query("truncate phrase restart identity cascade");
 			await client.query(
 				"update experience set derived_identity = null, unanswered = false",
@@ -133,8 +133,8 @@ export async function currentTree(client: CorpusClient): Promise<SeqPair[]> {
 }
 
 /**
- * 当前的派生版本：嵌入空间、说法的拼法，以及抽取和对齐的标准。抽取和对齐没配端点时
- * 它们不在版本里：配上了就该重新派生。
+ * 当前的解析版本：嵌入空间、说法的组合方式，以及抽取和对齐的标准。抽取和对齐没配端点时
+ * 它们不在版本里：配上了就该重新解析。
  */
 export function identity(tree: SeqPair[]): string {
 	const space = embedSpace();
@@ -144,7 +144,7 @@ export function identity(tree: SeqPair[]): string {
 }
 
 /**
- * 派生进度。`done` 是已有这一版结果的段，正式表里的和待换入的都算，其中 `unanswered`
+ * 解析进度。`done` 是已有这一版结果的段，正式表里的和暂存的新结果都算，其中 `unanswered`
  * 段未能作答；`staging` 是检索此刻还在读上一版。后台任务看它决定有没有活，任务台画它。
  */
 export type Progress = {
@@ -184,7 +184,7 @@ export async function progress(
 	};
 }
 
-/** 还要调模型的段：正式表里不是这一版，待换入的结果里也没有。 */
+/** 还要调模型的段：正式表里不是这一版，暂存的新结果里也没有。 */
 const UNDERIVED = `e.derived_identity is distinct from $1
 	and not exists (select 1 from experience_next n
 		where n.experience_id = e.id and n.derived_identity = $1)`;
@@ -199,7 +199,7 @@ async function underived(client: CorpusClient, version: string) {
 
 /**
  * 这一版要不要先写进 `experience_next`：正式表里已经有另一版的结果时要，检索在读它们；
- * 正式表是空的或已经是这一版时直接写。顺带清掉不是这一版的待换入结果。
+ * 正式表是空的或已经是这一版时直接写。顺带清掉不是这一版的暂存结果。
  */
 async function staging(
 	client: CorpusClient,
@@ -244,7 +244,7 @@ async function nextBatch(
 	}));
 }
 
-/** 清除全表孤立说法，避免占用召回名额。同步删除段与派生重写边都可能留下孤立说法。 */
+/** 清除全表孤立说法，避免占用召回名额。同步删除段与解析重写边都可能留下孤立说法。 */
 export async function prunePhrases(client: CorpusClient): Promise<void> {
 	await client.query(
 		`delete from phrase p
@@ -256,7 +256,7 @@ export async function prunePhrases(client: CorpusClient): Promise<void> {
 }
 
 /**
- * 边先删后写，段上记版本，没有边指向的说法行跟着清掉。`staged` 时写进待换入的
+ * 边先删后写，段上记版本，没有边指向的说法行跟着清掉。`staged` 时写进暂存的
  * 两张表，正式表里这些段的旧结果不动。
  */
 async function commitBatch(
@@ -350,7 +350,7 @@ async function commitBatch(
 }
 
 /**
- * 把待换入的结果整体换进正式表。调用方已确认每一段都有这一版的结果，换入后正式表
+ * 把暂存的新结果一次替换正式表。调用方已确认每一段都有这一版的结果，替换后正式表
  * 只有这一版。
  */
 async function promote(client: CorpusClient, version: string) {
@@ -398,7 +398,7 @@ export async function derive(
 	const total = await underived(client, version);
 	if (!chatConfigured())
 		report("  未配置语义模型，自述按整段原文处理，入职前经历不推断序列");
-	report(`  待派生 ${total} 段`);
+	report(`  待解析 ${total} 段`);
 	if (staged)
 		report("  判定标准已更新：每一段都有新结果之前，检索继续使用上一版结果");
 
@@ -436,7 +436,7 @@ export async function derive(
 		const vectors = await embed(texts, report);
 		await commitBatch(client, version, staged, results, texts, vectors, links);
 		done += rows.length;
-		report(`  已派生 ${done}/${total} 段`);
+		report(`  已解析 ${done}/${total} 段`);
 	}
 	report("");
 	const left = await underived(client, version);
@@ -445,7 +445,7 @@ export async function derive(
 		report("新标准已生效");
 	}
 	report(
-		left > 0 ? `这一轮到此为止，还剩 ${left} 段下一轮接着` : "全部派生完毕",
+		left > 0 ? `这一轮到此为止，还剩 ${left} 段下一轮接着` : "全部解析完毕",
 	);
 	return { done, left };
 }

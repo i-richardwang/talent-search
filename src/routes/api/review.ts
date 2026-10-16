@@ -51,7 +51,7 @@ export const Route = createFileRoute("/api/review")({
 				if (result.submission === "taken")
 					return json({ error: "这一组已经有人判过了" }, 409);
 				/*
-				 * 判定已落库，这里请求一次整理让它尽快生效。请求没排上不告诉外面：
+				 * 判定已写入，这里请求一次整理让它尽快生效。请求没排上不告诉外面：
 				 * 已有一个排着或在跑时排不上，判定下一轮照样生效。
 				 */
 				await requestJob("review");

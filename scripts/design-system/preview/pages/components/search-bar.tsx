@@ -137,7 +137,7 @@ export function SearchBarPage() {
 					"表上方找词用 SearchBar：回车就搜，有字时末尾出现清空，没有「搜索」按钮。",
 					"框里的字受控；地址上的词变了（后退、前进）时，调用处把它同步回框里。",
 					"宽度属于外层布局，常用 max-w-96。",
-					"结果还在取时给 loading，前面的搜索图标换成转圈，框照常可输入。",
+					"结果还在取时给 loading，前面的搜索图标换成转圈，框还能输入。",
 					"按 mod+k 把焦点移进框里，所以一页只放一个 SearchBar；框空着、没焦点时右端提示这组键。",
 				],
 				usage: `<SearchBar\n  aria-label="搜索标签"\n  onChange={setNeedle}\n  onSearch={(q) => navigate({ search: { q } })}\n  placeholder="搜索标签、写法或所属的标签"\n  value={needle}\n/>`,

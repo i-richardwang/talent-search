@@ -20,7 +20,7 @@ const SYNC_COLOR_MODE = `(()=>{try{const m=matchMedia("(prefers-color-scheme: da
 
 /**
  * 导航栏记住的样子：服务端直出时读请求带来的 cookie，浏览器里（换屏、重取时）读
- * `document.cookie`，两边读的是同一个 cookie。
+ * `document.cookie`，服务端和浏览器读的是同一个 cookie。
  */
 const readNavPrefs = createIsomorphicFn()
 	.server(() => navPrefsOf(getCookie(NAV_COOKIE)))

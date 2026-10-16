@@ -210,7 +210,7 @@ type Phase = "running" | "settled" | "failed";
  * 对话栏：这次找人任务的整条记录链。
  *
  * 动作作用在正看着的条件上，新的一轮记在链尾（`server/turn.ts` 的 `createTurn`）。
- * 理解失败时最后一轮底下给重试；名单那一列另有同样的出路（`result-state.tsx`），
+ * 理解失败时最后一轮底下给重试；名单那一列另有同样的下一步（`result-state.tsx`），
  * 窄屏上这一栏收着时那边也看得见。
  */
 export function Thread({
@@ -348,7 +348,7 @@ function Actions({ children }: { children: ReactNode }) {
 	);
 }
 
-/** 查看那一轮的结果：真链接，中键、右键、键盘都照常。 */
+/** 查看那一轮的结果：真链接，中键、右键、键盘都能用。 */
 function ViewResult({ turnId }: { turnId: string }) {
 	return (
 		<ActionIcon

@@ -1,8 +1,8 @@
 /**
  * 语料任务的运行记录、日志与状态。
  *
- * 写者由 corpus/session.ts 串行化；运行记录发布前在持锁连接登记运行身份。
- * 状态读取保护当前记录并核对持锁者，完成记录先于释放锁。
+ * 写者由 corpus/session.ts 串行化；运行记录发布前，在拿到锁的那个连接上登记运行身份。
+ * 状态读取保护当前记录并确认锁在谁手里，完成记录先于释放锁。
  * 输出批量写入 task_run，任务失败写入 error；日志写入失败只报告到服务端。
  */
 
@@ -39,12 +39,12 @@ const FLUSH_MS = 400;
 const CAUSE_DEPTH = 5;
 
 /**
- * 一轮派生最多跑多久。到点就放锁退出，下一轮接着：同步在排队的话能插进来，
+ * 一轮解析最多跑多久。到点就放锁退出，下一轮接着：同步在排队的话能插进来，
  * 一轮的记录也不至于长到没法看。
  */
 const DERIVE_BUDGET_MS = 10 * 60_000;
 
-/** 任务本身：拿着写者连接干活，过程交给 `report`。 */
+/** 任务：拿着写者连接干活，过程交给 `report`。 */
 type TaskWork = (
 	session: CorpusSession,
 	report: Report,
@@ -79,7 +79,7 @@ export type TaskOutcome = "running" | "interrupted" | "failed" | "done";
 /**
  * 一次运行在页面上的样子。
  *
- * 时刻和用时**在库里算好**：服务端直出和浏览器水合各算一次的话，两边的时区
+ * 时刻和用时**在库里算好**：服务端直出和浏览器水合各算一次的话，服务端的时区和浏览器
  * 不同就会渲染出两个不一样的字符串，而 React 只会在控制台打一条警告。
  * 管理页 `/terms` 的「几天前」是同一个道理。
  */
@@ -165,7 +165,7 @@ type TasksState = {
 
 type StoredRun = Omit<TaskRunView, "outcome">;
 
-/** 未完成的运行只有在持锁连接明确登记了它的身份时才算正在运行。 */
+/** 未完成的运行，只有拿到锁的那个连接明确登记了它的身份，才算正在运行。 */
 function outcome(run: StoredRun, live: boolean): TaskOutcome {
 	if (run.seconds !== null) return run.error ? "failed" : "done";
 	return live ? "running" : "interrupted";
@@ -197,7 +197,7 @@ async function readTaskHeads(
 export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 	const corpus = await corpusCounts();
 	return db.transaction(async (store) => {
-		// 锁住当前运行行，再读持锁连接；收尾在这次观察完成后才能更新行、释放锁。
+		// 锁住当前运行行，再读拿到锁的那个连接；收尾在这次观察完成后才能更新行、释放锁。
 		const heads = await readTaskHeads(store);
 		const owner = await corpusSessionOwner(store);
 		const active = owner !== null;
@@ -309,7 +309,7 @@ export async function taskLog(runId: number): Promise<string[]> {
 	return rows[0]?.log ?? [];
 }
 
-/** 当前标准下的派生进度。后台任务用它决定这一轮有没有活，任务台用它画进度。 */
+/** 当前标准下的解析进度。后台任务用它决定这一轮有没有活，任务台用它画进度。 */
 export async function deriveProgress(): Promise<Progress> {
 	return progress(pool, identity(await currentTree(pool)));
 }
@@ -317,8 +317,8 @@ export async function deriveProgress(): Promise<Progress> {
 /**
  * 把输出的日志行攒着写进那一行记录。
  *
- * 每行一次 UPDATE 会让整理能力词那一段变成上千次往返；攒着写，并且**同一时刻只有
- * 一次在途的追加**——上一次还没落库时新来的行排在它后面，不并发改同一行。
+ * 每行一次 UPDATE 会让整理能力词那一段变成上千次往返；攒着写，并且同一时刻只有
+ * 一次进行中的追加——上一次还没写入时新来的行排在它后面，不并发改同一行。
  */
 function logger(runId: number) {
 	let pending: string[] = [];
@@ -346,7 +346,7 @@ function logger(runId: number) {
 			 */
 			.catch((error) => {
 				console.error(
-					`任务 ${runId} 的 ${lines.length} 行日志没能落库：`,
+					`任务 ${runId} 的 ${lines.length} 行日志没能写入：`,
 					error,
 				);
 			});
@@ -364,7 +364,7 @@ function logger(runId: number) {
 /**
  * 一条错误连同它的来由，外层在前。
  *
- * 只取最外层那一句会把真正发生的事丢掉：加载数据源失败时，外层说的是「读取数据源
+ * 只取最外层那一句会把发生的事丢掉：加载数据源失败时，外层说的是「读取数据源
  * company-adapter 失败」，而 `cause` 里的才是具体的模块加载错误。
  */
 function causeChain(error: unknown): string[] {
@@ -411,7 +411,7 @@ export async function runTask(
 		const row = rows[0];
 		if (!row) throw new Error("没能写入这次任务的记录");
 		runId = row.id;
-		// 运行行发布前，持锁连接先登记自己的运行身份。
+		// 运行行发布前，拿到锁的那个连接先登记自己的运行身份。
 		await client.query("select set_config('application_name', $1, false)", [
 			taskSessionName(runId),
 		]);

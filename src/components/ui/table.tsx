@@ -104,7 +104,7 @@ export function TableRow({
 	};
 	const keyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
 		onKeyDown?.(event);
-		// 只处理焦点在行本身时的按键；格里控件上的回车、空格归控件
+		// 只处理焦点在行上时的按键；格里控件上的回车、空格归控件
 		if (event.defaultPrevented || event.target !== event.currentTarget) return;
 		if (event.key !== "Enter" && event.key !== " ") return;
 		event.preventDefault();
@@ -151,7 +151,7 @@ export function TableCell({
 	);
 }
 
-/** 加载中的表体，表头和外框照常画；外层 `busy` 同时给上。 */
+/** 加载中的表体，表头和外框按平常画；外层 `busy` 同时给上。 */
 export function TableSkeletonRows({
 	columns,
 	rows = 4,

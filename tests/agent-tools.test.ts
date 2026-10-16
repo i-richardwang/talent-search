@@ -144,7 +144,7 @@ describe("查经历", () => {
 });
 
 describe("查属性", () => {
-	test("公司只匹配入职前的公司名，部门只匹配公司内的部门，两边人数不混", async () => {
+	test("公司只匹配入职前的公司名，部门只匹配公司内的部门，公司的人数和部门的人数各算各的", async () => {
 		const [company] = await lookupNames("company", ["星河"]);
 		assert.deepEqual(company, {
 			query: "星河",

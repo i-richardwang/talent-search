@@ -159,7 +159,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="选了几个人时的操作栏：数字本身是入口，点开能看是谁、逐个移除。点导出，对话框说清这份表只是选中的这些人，并给出「选择全部」。"
+				description="选了几个人时的操作栏：数字是入口，点开能看是谁、逐个移除。点导出，对话框说清这份表只是选中的这些人，并给出「选择全部」。"
 				title="选了两个人"
 			>
 				<Dock count={2} />

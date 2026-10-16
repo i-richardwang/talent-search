@@ -114,7 +114,7 @@ describe("校验", () => {
 	test("格式不对的原话不产出任何结果", () => {
 		assert.equal(conform({ judgments: "运营数据分析" }, words).size, 0);
 		assert.equal(conform("运营数据分析", words).size, 0);
-		// 缺字段的那一条按空处理，词本身还是判过了
+		// 缺字段的那一条按空处理，词还是判过了
 		assert.deepEqual(
 			[...conform({ judgments: [{ word: "销售数据分析" }] }, words)],
 			[["销售数据分析", { parent: null, sameAs: null }]],

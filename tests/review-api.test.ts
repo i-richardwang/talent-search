@@ -1,7 +1,7 @@
 /**
  * 外部判定方 HTTP 接口的形状：鉴权、入参校验、提交的几种结果。
  *
- * 判定本身在 `vocabulary.test.ts` 里走完整一轮；这里只管接口自己那一层——凭据对不对、
+ * 判定在 `vocabulary.test.ts` 里走完整一轮；这里只管接口自己那一层——凭据对不对、
  * `limit` 怎么校验、什么样的判定根本进不了库。
  */
 import assert from "node:assert/strict";

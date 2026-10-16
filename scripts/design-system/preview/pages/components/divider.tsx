@@ -146,7 +146,7 @@ export function DividerPage() {
 					"横线的 dashed 画成虚线，用在一段内容的收尾；分隔两段并列的内容用实线。",
 					"竖线放在一行 flex 里，窄屏换行时用外层的响应式类把它藏起来。",
 					"线的颜色来自 --color-divider，不覆盖。",
-					"横线正中可以放内容（children），这时它不是分隔符，内容照常读出。",
+					"横线正中可以放内容（children），这时它不是分隔符，内容正常读出。",
 				],
 				usage: `<Divider />\n<Divider dashed />\n<Divider orientation="vertical" />\n<Divider><Tag>…</Tag></Divider>`,
 			}}

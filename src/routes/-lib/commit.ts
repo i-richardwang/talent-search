@@ -3,7 +3,7 @@
  * 在工作台里补充一句需求、改一个 chip 的强度、停用或删掉一个条件——最后都调用这里：
  * 写入一条查询记录，然后导航到它。改筛选是重新看一遍同一批候选，走 `updateView`。
  *
- * 改查询一律 push：记录不可变，浏览器的后退键就是撤销，回到上一条记录。
+ * 改查询都 push：记录不可变，浏览器的后退键就是撤销，回到上一条记录。
  */
 import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";

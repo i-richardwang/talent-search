@@ -1,10 +1,10 @@
 /**
  * URL 视图状态的统一出口。
  *
- * 查询本身已经不在 URL 里了（它是一条有 id 的记录，见 `server/turn.ts`），
+ * 查询已经不在 URL 里了（它是一条有 id 的记录，见 `server/turn.ts`），
  * 这里剩下的是「怎么看这批人」：范围筛选与翻页数。它们仍然是这个
  * 应用最不可信的入口——手改地址、旧书签、同事粘来的链接都会原样送进来。
- * 这一层的职责是让非法值一律退化成「没填」，而不是带着一个说不通的值往下走
+ * 这一层的职责是让非法值都退化成「没填」，而不是带着一个说不通的值往下走
  * ——`minMonths` 尤其，它是唯一参与数值比较的筛选。
  */
 import assert from "node:assert/strict";
@@ -31,7 +31,7 @@ describe("最短时长只收正整数", () => {
 		assert.equal(validateView({ minMonths: "12.5" }).minMonths, undefined);
 	});
 
-	test("非数字与零一律当没填", () => {
+	test("非数字与零都当没填", () => {
 		for (const v of ["", "abc", "0", null, undefined, {}, []]) {
 			assert.equal(
 				validateView({ minMonths: v }).minMonths,
@@ -100,7 +100,7 @@ describe("可多选的维度", () => {
 		assert.deepEqual(validateView({ level: ["P6", "P7"] }).level, ["P6", "P7"]);
 	});
 
-	test("不是列表的一律当没填——单个字符串也不行", () => {
+	test("不是列表的都当没填——单个字符串也不行", () => {
 		assert.equal(validateView({ level: "P6" }).level, undefined);
 		assert.equal(validateView({ level: 6 }).level, undefined);
 	});
@@ -158,7 +158,7 @@ describe("翻页只认整页", () => {
 		);
 	});
 
-	test("半页、负数、小数、非数字一律当没翻过页", () => {
+	test("半页、负数、小数、非数字都当没翻过页", () => {
 		for (const v of ["51", -50, 12.5, "abc", "", null, {}]) {
 			assert.equal(
 				validateView({ n: v }).n,

@@ -13,7 +13,7 @@ import type { ComponentSizing, MotionScope } from "./tokens/registry";
  * 设计系统的目录：每一页的事实都写在这里，导航、总览、路由、页头、右栏、使用规则的
  * 源文件与「影响范围」都从这里读。页的身份是 `模块/页`（如 `components/button`），
  * 和地址 `#/components/button` 一致；预览页按它找这一页画什么（`preview/pages/index.ts`），
- * 那张表按目录定类型，两边多一项或少一项都过不了类型检查。
+ * 那张表按目录定类型，目录里多一项或少一项都过不了类型检查。
  */
 
 /** 右栏完整列出的令牌组：`layout` 多一节版心与栏高，`type` 的文字一节列全部字阶。 */

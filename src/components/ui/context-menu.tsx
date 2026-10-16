@@ -6,7 +6,7 @@ import { DropdownMenuPopup, DropdownMenuPortal } from "./dropdown-menu";
 
 /*
  * 右键菜单：`children` 那一块上按右键（触屏上长按）时，在指针处打开 `menu`。项用下拉菜单
- * 那一套，没有展开动画。触发区不占版面，包住的元素照常排；里面再有右键菜单时，按在里面
+ * 那一套，没有展开动画。触发区不占版面，包住的元素按平常排；里面再有右键菜单时，按在里面
  * 那一块上只开里面那一个。
  */
 export function ContextMenu({

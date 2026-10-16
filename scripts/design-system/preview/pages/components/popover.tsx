@@ -219,7 +219,7 @@ export function PopoverPage() {
 					'里面有输入的气泡用 trigger="click"，悬停打开的气泡只放只读内容。',
 					"内容可能很长时给 className 限高到 --available-height，在浮层里滚动。",
 					"气泡里的控件同样用 components/ui 的组件，不手写边框、阴影和圆角。",
-					"要标题就在 content 里第一行写，气泡本身没有标题位。",
+					"要标题就在 content 里第一行写，气泡没有标题位。",
 				],
 				usage: `<Popover content={<ChosenList />} placement="bottomLeft" trigger="click">\n  <Button>已选 3 人</Button>\n</Popover>`,
 			}}

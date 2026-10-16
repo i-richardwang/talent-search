@@ -22,7 +22,7 @@ import type { View } from "./view-params";
 type FilterOption = {
 	value: string;
 	label: string;
-	/** 选了这一项之后还剩多少人，和名单表头的人数同一口径（rank.ts 的 computeFacets）。 */
+	/** 选了这一项之后还剩多少人，和名单表头的人数计数方法一致（rank.ts 的 computeFacets）。 */
 	n: number;
 };
 

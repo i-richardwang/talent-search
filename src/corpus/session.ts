@@ -1,7 +1,8 @@
 /**
- * 同步、派生、整理共用一个会话级 advisory lock；写者独占连接，跨批次短事务持锁。
+ * 同步、解析、整理共用一个会话级 advisory lock；写者独占一个连接，跨批次的短事务
+ * 都拿着锁。
  * 后台任务拿不到锁就返回，命令行同步排队等待。检索使用自己的数据库快照。
- * 持锁连接的 application_name 标记运行身份，连接断开后锁随之释放。
+ * 拿到锁的那个连接用 application_name 标记自己在跑哪一次，连接断开后锁跟着释放。
  */
 
 import "@tanstack/react-start/server-only";
@@ -22,7 +23,7 @@ export type CorpusSession = {
 	release: () => Promise<void>;
 };
 
-/** 当前数据库持锁连接的会话名；没有持锁连接时为 null。 */
+/** 当前数据库里拿到锁的那个连接的会话名；没有连接拿到锁时为 null。 */
 export async function corpusSessionOwner(
 	store: DbExecutor = db,
 ): Promise<string | null> {

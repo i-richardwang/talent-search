@@ -132,7 +132,7 @@ export function keywordsOf(conditions: readonly Condition[]): Keywords | null {
 
 /**
  * 一次关键词搜索叫什么：框里的词按框的顺序排开。对话的任务拿链头那句话当标题，
- * 关键词没有那句话，词本身就是它问的——吸顶那条和「最近搜索」都读这一份。
+ * 关键词没有那句话，词就是它问的——吸顶那条和「最近搜索」都读这一份。
  */
 export function keywordTitle(k: Keywords): string {
 	return dots(

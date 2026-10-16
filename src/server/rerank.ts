@@ -1,4 +1,4 @@
-/** 重排端点与持久缓存。每个查询词和完整候选文本采用首个成功落库的相关度。 */
+/** 重排端点与持久缓存。每个查询词和完整候选文本采用第一个成功写入的相关度。 */
 
 import "@tanstack/react-start/server-only";
 import { createHash } from "node:crypto";
@@ -163,7 +163,7 @@ export async function rerank(
 	);
 	return documents.map((text) => {
 		const value = scores.get(documentSha(text));
-		if (value === undefined) throw new Error("重排分数未能落库");
+		if (value === undefined) throw new Error("重排分数没能写入");
 		return value;
 	});
 }

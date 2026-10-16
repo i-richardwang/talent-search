@@ -139,7 +139,7 @@ describe("往上挡", () => {
 		assert.deepEqual(await found("数据库"), ["V7", "V8"]);
 	});
 
-	test("搜的就是宽词时它不被挡，细词照常带上", async () => {
+	test("搜的就是宽词时它不被挡，细词也带上", async () => {
 		assert.deepEqual(await found("运营"), ["V4", "V5", "V6"]);
 	});
 });

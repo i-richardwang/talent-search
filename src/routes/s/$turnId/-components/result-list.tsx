@@ -83,7 +83,7 @@ export function ResultList({
 	onAll: () => void;
 	onMore: () => void;
 	spec: SearchSpec;
-	/** 这次搜索是对话还是关键词：空态的出路说法不一样。 */
+	/** 这次搜索是对话还是关键词：空态的下一步说法不一样。 */
 	mode: SearchMode;
 	turnId: string;
 	onChange: (next: Partial<View>) => void;

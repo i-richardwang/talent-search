@@ -251,7 +251,7 @@ export function BlockPage() {
 					"同一对象的多块面是填充的 Block 里放描边的 Block；表放在描边的 Block 里。",
 					"整块可点击必须是真链接：块里的那条链接用 BlockLink，它铺满整块、焦点框画在整块上；覆盖层内不嵌套别的动作，选择框放块外。",
 					"选中用 selected，不另加选中装饰。",
-					"Block 本身是 Flexbox，间距和内边距用 gap、padding。",
+					"Block 是 Flexbox，间距和内边距用 gap、padding。",
 				],
 				usage: `<Block gap={4} padding={16} variant="outlined">\n  <div>Talent 0123</div>\n  <div>数据平台部 · 推荐系统 6 年</div>\n</Block>`,
 			}}

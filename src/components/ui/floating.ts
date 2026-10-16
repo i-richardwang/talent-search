@@ -54,7 +54,7 @@ function mergeRefs<T>(refs: (Ref<T> | undefined)[]) {
 type TriggerChildProps = Record<string, unknown> & { ref?: Ref<never> };
 
 /**
- * 浮层触发器的 `render`：Base UI 给的属性与 ref 合进子元素本身。Base UI 给的
+ * 浮层触发器的 `render`：Base UI 给的属性与 ref 合进子元素。Base UI 给的
  * `type="button"` 只交给字面写的 `<button>`；子元素是组件（Button、ActionIcon）时不传，
  * 它们的 `type` 是外观，原生的 type 由组件自己定。Tooltip、Popover、DropdownMenu 共用。
  */

@@ -214,7 +214,7 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
-				description="超出加载上限时不静默截断：说清显示了多少、共多少，出路是加条件缩小范围。"
+				description="超出加载上限时不静默截断：说清显示了多少、共多少，下一步是加条件缩小范围。"
 				title="超出上限"
 			>
 				<div className="w-full">
@@ -222,7 +222,7 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
-				description="关键词搜索的空态出路说法不同：回到名单上方的框里改词，而不是换一种说法。"
+				description="关键词搜索的空态下一步说法不同：回到名单上方的框里改词，而不是换一种说法。"
 				title="关键词搜索没有结果"
 			>
 				<div className="w-full">
@@ -249,7 +249,7 @@ export function ResultListPage() {
 					"选择框一直在；按住 Shift 点选择框连选，Esc 清空已选。批量操作用选择非空时才出现的 Toolbar。",
 					`改筛选时旧名单留在原地调到六成；换问题时旧名单撤下，${SKELETON_DELAY / 1000} 秒后换成同形的占位行，表头说在做什么，等过 ${ELAPSED_SHOW_AFTER_MS / 1000} 秒写出秒数。`,
 					"列表不静默截断：说明已显示数、总数、排序和加载上限。",
-					"空态成因由检索层判定，这里为每种原因写出结论和出路；理解失败不是空名单。",
+					"空态成因由检索层判定，这里为每种原因写出结论和下一步；理解失败不是空名单。",
 				],
 				usage: `<ResultList\n  outcome={outcome}\n  picks={usePicks(turnId, outcome)}\n  spec={spec}\n  turnId={turnId}\n  …\n/>`,
 			}}

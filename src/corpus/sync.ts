@@ -1,7 +1,7 @@
 /**
  * 读取数据源，经 pipeline.ts 校验、切段后，在一笔短事务中同步人员与经历。
  * 正式表与暂存表共用数据库生成的 content_key：删除消失的段，插入新增段，
- * 同内容的段刷新累计月数并保留 id、边和派生版本。同步不调用模型。
+ * 同内容的段刷新累计月数并保留 id、边和解析版本。同步不调用模型。
  */
 
 import "@tanstack/react-start/server-only";
@@ -61,7 +61,7 @@ async function stageExperience(
 ): Promise<void> {
 	/*
 	 * `including generated`：暂存表的内容键和正式表用同一个表达式，由库算。
-	 * `including defaults`：派生那一半的列这里不写，靠默认值满足 not null。
+	 * `including defaults`：解析那一半的列这里不写，靠默认值满足 not null。
 	 * id 是正式表发的号，暂存表里没有它。
 	 */
 	await client.query(
@@ -115,7 +115,7 @@ async function reconcile({ client }: CorpusSession): Promise<{
 	const employeesGone = await client.query(
 		"delete from employee where emp_id not in (select emp_id from staged_employee)",
 	);
-	// 档案没有派生的一半，整行照这一次的写
+	// 档案没有解析的那一半，整行照这一次的写
 	await client.query(
 		`insert into employee (${EMPLOYEE_COLUMNS})
 		 select ${EMPLOYEE_COLUMNS} from staged_employee

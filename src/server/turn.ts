@@ -72,7 +72,7 @@ async function insertTurn(
 			spec: row.spec,
 		})
 		.returning();
-	if (!inserted) throw new Error("查询记录未能落库");
+	if (!inserted) throw new Error("查询记录没能写入");
 	return inserted;
 }
 
@@ -213,7 +213,7 @@ export async function resolveTurn(turnId: string): Promise<SearchSpec> {
 		.where(and(eq(searchTurn.id, row.id), isNull(searchTurn.spec)));
 
 	const resolved = await getRow(row.id);
-	if (!resolved?.spec) throw new Error("查询理解结果未能落库");
+	if (!resolved?.spec) throw new Error("查询理解结果没能写入");
 	return resolved.spec;
 }
 

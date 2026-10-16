@@ -69,7 +69,7 @@ export type KeywordBarHandle = {
 
 type NameField = Exclude<KeywordField, "what">;
 
-/** 候选第一项（输入的字本身）旁的说明：经历按语义搜，名称按包含找。 */
+/** 候选第一项（输入的字）旁的说明：经历按语义搜，名称按包含找。 */
 const AS_TYPED: Record<KeywordField, string> = {
 	what: "直接搜索",
 	company: "名称包含",
@@ -370,7 +370,7 @@ function YearsMenu({
 /**
  * 一维的框：已加的词、输入框和提醒，怎么摆由调用处经 `children` 定。
  *
- * 候选由服务端按输入给（所以 `filter={null}`），换了字就作废上一问；第一项是输入的字本身，
+ * 候选由服务端按输入给（所以 `filter={null}`），换了字就作废上一问；第一项是输入的字，
  * 不在候选里的写法也能加。AutoComplete 选中一项时会把它填进输入框，这里拦下 `item-press`
  * 那次改字，改成加词并清空。没有高亮项时回车加输入的字；输入框空着时回车交给表单提交。
  */

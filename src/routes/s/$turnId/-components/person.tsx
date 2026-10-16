@@ -23,9 +23,9 @@ import { ClaimEvidence } from "./claim-evidence";
 import { PaneHeader } from "./pane-header";
 import { buildHitIndex, Timeline } from "./timeline";
 
-/* 一个人的详情（`p.$empId.tsx` 的三种内容）：详情本身、换人途中的骨架、找不到这个工号。 */
+/* 一个人的详情（`p.$empId.tsx` 的三种内容）：详情、换人途中的骨架、找不到这个工号。 */
 
-/** 详情的外壳：页头吸在顶上，滚到哪都看得见在看谁。骨架和真正的详情共用它，换人时页头不跳。 */
+/** 详情的外壳：页头吸在顶上，滚到哪都看得见在看谁。骨架和详情共用它，换人时页头不跳。 */
 function Pane({
 	title,
 	close,

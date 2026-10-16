@@ -5,7 +5,7 @@ import { Button } from "#/components/ui/button";
 
 /**
  * 正看着的不是最后一次的结果。名单那一列说出来：窄屏上线程收着，只有这里看得见。
- * 在这里改条件、补充需求照常可以，作用在眼前这份条件上，记在最后。
+ * 在这里改条件、补充需求也可以，作用在眼前这份条件上，记在最后。
  */
 export function Earlier({ latestId }: { latestId: string }) {
 	return (

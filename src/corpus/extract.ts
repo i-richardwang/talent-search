@@ -125,12 +125,12 @@ export function conform(raw: unknown, company: string): Extraction {
 	return { skills, did };
 }
 
-/** 派生版本的一部分。 */
+/** 解析版本的一部分。 */
 export function extractIdentity(): string {
 	return identityOf(extractModel(), SYSTEM, SCHEMA);
 }
 
-/** 按入参顺序返回调用状态与抽取；验收和派生共用此入口。 */
+/** 按入参顺序返回调用状态与抽取；验收和解析共用此入口。 */
 export async function extract(
 	rows: Pick<
 		ExperienceRow,

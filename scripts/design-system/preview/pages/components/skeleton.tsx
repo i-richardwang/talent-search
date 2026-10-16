@@ -140,7 +140,7 @@ function Usage() {
 				</div>
 			</Example>
 			<Example
-				description="数值还在算时，只占住那个数的位置，周围的字照常显示。"
+				description="数值还在算时，只占住那个数的位置，周围的字正常显示。"
 				title="行内数值"
 			>
 				<div className="flex items-center gap-2 text-sm">

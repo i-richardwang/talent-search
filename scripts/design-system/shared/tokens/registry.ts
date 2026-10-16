@@ -239,12 +239,12 @@ export interface NumericToken {
 	overlays?: readonly Overlay[];
 }
 
-/** 编辑器里显示和输入的单位：尺寸一律像素，时长毫秒。 */
+/** 编辑器里显示和输入的单位：尺寸取像素，时长取毫秒。 */
 export const editUnit = (token: NumericToken) =>
 	token.unit === "ms" ? "ms" : "px";
 
 /**
- * 源文件写法读成编辑器里的数：`rem` 按 16px 换成像素，`px`、`ms` 取数本身。
+ * 源文件写法读成编辑器里的数：`rem` 按 16px 换成像素，`px`、`ms` 取数。
  * 单位不是这个令牌的单位、或写得不对时返回 undefined。
  */
 export function parseNumeric(

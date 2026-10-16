@@ -3,7 +3,7 @@ import { type Draft, emptyDraft, isDraft } from "../shared/tokens/draft";
 
 /*
  * 存在这台浏览器 localStorage 里的东西：当前的修改与保存的方案（最多 `MAX_SCHEMES` 个），
- * 以及外壳的几项偏好。读不到、写不进或内容不合形状时退回空的一份，页面照常能用；
+ * 以及外壳的几项偏好。读不到、写不进或内容不合形状时退回空的一份，页面还能用；
  * 写不进时外壳提示一次，修改只在这个标签页里。
  */
 

@@ -23,7 +23,7 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 	pendingComponent: PersonPending,
 });
 
-/** 这个人的档案接上父路由那次检索里他的命中，命中不另查库。 */
+/** 这个人的档案用父路由那次检索里他的命中，命中不另查库。 */
 function Detail() {
 	const { employee, timeline } = Route.useLoaderData();
 	const { result: search } = useLoaderData({ from: "/s/$turnId" });

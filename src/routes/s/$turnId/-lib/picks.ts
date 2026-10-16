@@ -189,7 +189,7 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	/**
 	 * 点了名单上一个人的选择框。按着 Shift、且上一次选过的人还在名单上时，把两人之间
 	 * （含两端）全部选中，已选的不取消，返回 true，调用处拦下这个框自己的切换；
-	 * 否则只把这个人记作下一次连选的起点，返回 false，框照常切换。
+	 * 否则只把这个人记作下一次连选的起点，返回 false，框按它自己的切换来。
 	 */
 	const pointAt = useCallback(
 		(empId: string, shift: boolean) => {

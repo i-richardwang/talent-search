@@ -22,8 +22,8 @@ export function hasMeaning(spec: SearchSpec) {
 }
 
 /**
- * 不可信的一份查询 → 校验后的查询。RPC 入参走它，模型输出也走它：两边的
- * 不可信程度一样，规则只有 `conditionsOf` 那一份。
+ * 不可信的一份查询 → 校验后的查询。RPC 入参走它，模型输出也走它：RPC 入参和
+ * 模型输出的不可信程度一样，规则只有 `conditionsOf` 那一份。
  */
 export function sanitizeSpec(raw: unknown): SearchSpec {
 	const value = (raw ?? {}) as Record<string, unknown>;

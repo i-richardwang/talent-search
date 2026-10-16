@@ -1,6 +1,6 @@
 /**
  * 释义组。校验规则是纯函数；收集、生效走真库——收集哪些说法、跳过哪些、
- * 释义与队列的原子落库，以及重排缓存的独立性。判定方由测试装回答。
+ * 释义与队列的原子写入，以及重排缓存的独立性。判定方由测试装回答。
  */
 
 import assert from "node:assert/strict";
@@ -76,7 +76,7 @@ async function glosses(): Promise<[string, string][]> {
 describe("校验判定结果", () => {
 	const words = ["客户开发", "服务端开发"];
 
-	test("只收组里的词，一句话，去掉抄在前面的词本身和句号", () => {
+	test("只收组里的词，一句话，去掉抄在前面的词原样和句号", () => {
 		const got = conformGlosses(
 			{
 				judgments: [

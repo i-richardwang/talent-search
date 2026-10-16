@@ -38,8 +38,8 @@ import {
 
 /**
  * 判定的标准。发给自带模型的是它，通过接口交给外部 agent 的也是它
- * （`src/server/review.ts` 的 `guides.group`）——**标准只有一份**，改了这段字两边
- * 一起变。
+ * （`src/server/review.ts` 的 `guides.group`）——标准只有一份，改了这段字，
+ * 模型和接口读到的都变。
  */
 export const GUIDE = `## 背景
 

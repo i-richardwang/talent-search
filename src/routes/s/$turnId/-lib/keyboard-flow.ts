@@ -101,8 +101,7 @@ export function useKeyboardFlow({
 
 			const at = results.findIndex((r) => r.employee.empId === empId);
 
-			// 空格选中／取消正在看的这个人：↑↓ 移到谁，选的就是谁。没在看任何人时
-			// 空格照常翻页。
+			// 空格选中／取消正在看的这个人：↑↓ 移到谁，选的就是谁。没在看任何人时空格只翻页。
 			if (e.key === " " && at >= 0) {
 				e.preventDefault();
 				const one = results[at]?.employee.empId;

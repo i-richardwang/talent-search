@@ -12,7 +12,7 @@ import { MIN_MONTHS_BUCKETS } from "./weights";
  */
 type SeqPick = { l1: string; l2: string };
 
-/** 每一维**一个取值**的类型。选中的那些是它的集合还是它本身，由 `Picked` 说。 */
+/** 每一维**一个取值**的类型。选中的那些是它的集合还是单个取值，由 `Picked` 说。 */
 export type DimUnit = {
 	seq: SeqPick;
 	level: string;
@@ -104,7 +104,7 @@ type Match<K extends DimKey> =
 type Dimension<K extends DimKey> = Match<K> & {
 	/** 维度名。筛选栏的分区标题、条件 chip 上的前缀都读它。 */
 	label: string;
-	/** 分桶与比较用的内部身份。不出现在 URL 上。 */
+	/** 分组与比较用的内部身份。不出现在 URL 上。 */
 	id: (value: DimUnit[K]) => string;
 	/** 一个取值在筛选栏里怎么写。分区标题已经说了是什么的，这里不必重复。 */
 	option: (value: DimUnit[K]) => string;
@@ -303,7 +303,7 @@ export const DIM_KEYS = Object.keys(DIMENSIONS) as DimKey[];
  * 不了——序列要先知道全套序列树，经历来源是二选一，经历时长是连续量。
  *
  * 取值从哪张表数出来是 SQL 那一半的事（`search.ts` 的 `VOCAB_SOURCE`），那份表
- * 按这里穷尽；词表本身的形状（`intent.ts` 的 `Vocabulary`）也从这里派生。
+ * 按这里穷尽；词表的形状（`intent.ts` 的 `Vocabulary`）也从这里来。
  */
 export const VOCAB_KEYS = [
 	"companyTag",

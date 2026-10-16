@@ -190,7 +190,7 @@ describe("不可信输入 → 条件", () => {
 		);
 	});
 
-	test("不合规的取值只丢那一个，其余照常；一项不剩的条件整条消失", () => {
+	test("不合规的取值只丢那一个，其余保留；一项不剩的条件整条消失", () => {
 		assert.deepEqual(
 			conditionsOf([
 				{ about: "experience", what: ["算法", "  ", 7, "算", null] },

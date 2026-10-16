@@ -1,8 +1,8 @@
 /**
- * 查询记录的派生语义。跑在临时 schema 上的真 SQL，理解走夹具里的假模型端点
- * （按一行查询语法读那句话、接在当前条件后面，见 `fixture.ts` 的 `fakeIntent`）。
+ * 查询记录怎么长出来。跑在临时 schema 上的真 SQL，理解走夹具里的假模型端点
+ * （按一行查询语法读那句话、放在当前条件后面，见 `fixture.ts` 的 `fakeIntent`）。
  *
- * 一条链是一次找人任务，派生有两种：**补充需求**（一句话作用在正看着的条件上）
+ * 一条链是一次找人任务，新轮次有两种：**补充需求**（一句话作用在正看着的条件上）
  * 和**改条件**（直接交一整张表）。两者都记在同一条链的最后——「最近搜索」一次
  * 找人任务只占一行、线程从头读到尾、后退键能回到上一步，靠的都是链是一条线。
  */
@@ -144,7 +144,7 @@ describe("补充需求", () => {
 		assert.deepEqual(wordsOf(await resolveTurn(turnId)), ["算法", "带团队"]);
 	});
 
-	test("同时追加两轮：排着队接上，链仍是一条线", async () => {
+	test("同时追加两轮：排队继续，链仍是一条线", async () => {
 		const root = await sentence("算法");
 		const spec = (q: string) => ({
 			kind: "spec" as const,
@@ -254,7 +254,7 @@ describe("补充需求", () => {
 });
 
 describe("说明", () => {
-	test("那句话和选项跟着这一轮落库，选项的表也查词表", async () => {
+	test("那句话和选项跟着这一轮写入，选项的表也查词表", async () => {
 		const { turnId } = await createTurn({
 			kind: "sentence",
 			text: "北京的算法，有潜力",
@@ -462,7 +462,7 @@ describe("理解失败", () => {
 	 * 再跑一遍。写入一份空 spec 的话，这条 `/s/:id` 就永久变成「没有条件」，
 	 * 而故障在屏幕上和「没有这样的人」长得一模一样。
 	 */
-	test("模型报错时不落库，记录仍待理解，再试一次照常成立", async () => {
+	test("模型报错时不写入，记录仍待理解，再试一次也能成立", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const restore = breakUnderstanding();
 		try {
@@ -487,7 +487,7 @@ describe("理解失败", () => {
 	 * 一个不剩。这一份空条件走下去，界面画的是「一个条件都没解析出来」，
 	 * 也就是把一次故障画成了「你没说条件」。它和端点报错走同一条路。
 	 */
-	test("模型给了条件、校验后一个不剩：也是失败，不落库", async () => {
+	test("模型给了条件、校验后一个不剩：也是失败，不写入", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		await assert.rejects(
 			answering(
@@ -506,7 +506,7 @@ describe("理解失败", () => {
 		assert.deepEqual(wordsOf(await resolveTurn(turnId)), ["算法"]);
 	});
 
-	test("条件和说明都空着：没作答，不落库", async () => {
+	test("条件和说明都空着：没作答，不写入", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		await assert.rejects(
 			answering(
@@ -518,7 +518,7 @@ describe("理解失败", () => {
 		assert.equal((await loadTurn(turnId))?.spec, null);
 	});
 
-	test("只丢一部分是设计内的：剩下的条件照常落库", async () => {
+	test("只丢一部分是设计内的：剩下的条件继续写入", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const spec = await answering(
 			() => ({
@@ -554,7 +554,7 @@ describe("理解只落一次", () => {
 			resolveTurn(turnId),
 		]);
 		assert.deepEqual(first, second, "两跳必须读到同一份 spec");
-		assert.deepEqual((await loadTurn(turnId))?.spec, first, "落库的就是那一份");
+		assert.deepEqual((await loadTurn(turnId))?.spec, first, "写入的就是那一份");
 	});
 });
 

@@ -65,7 +65,7 @@ export const employee = pgTable(
 	],
 );
 
-/** 原始字段由同步写，推断序列与派生版本由派生任务写。`content_key` 是原始内容的数据库生成摘要。 */
+/** 原始字段由同步写，推断序列与解析版本由解析任务写。`content_key` 是原始内容的数据库生成摘要。 */
 export const experience = pgTable(
 	"experience",
 	{
@@ -74,7 +74,7 @@ export const experience = pgTable(
 			.notNull()
 			.references(() => employee.empId, { onDelete: "cascade" }),
 		kind: text("kind", { enum: ["internal", "external"] }).notNull(),
-		/** 待业只保留在时间线上，不进入检索、累计工作年限或模型派生。 */
+		/** 待业只保留在时间线上，不进入检索、累计工作年限或模型解析。 */
 		unemployed: boolean("unemployed").notNull().default(false),
 		startDate: date("start_date").notNull(),
 		endDate: date("end_date"),
@@ -248,7 +248,7 @@ export const phraseGloss = pgTable("phrase_gloss", {
 });
 
 /**
- * 一段经历说自己做过什么的五类说法（拼法见 `corpus/route-texts.ts`）：公司内一段任职
+ * 一段经历说自己做过什么的五类说法（组合方式见 `corpus/route-texts.ts`）：公司内一段任职
  * 整句一条，入职前的岗位名，读出来的能力词和做过的事，没读过的简历原文。
  * 公司名和单独的部门名只回答「在哪」，不在这里。
  */
@@ -302,8 +302,8 @@ export const experiencePhrase = pgTable(
 );
 
 /**
- * 判定标准变了以后，新标准的派生结果先写在这里，检索继续读正式的两列和
- * `experience_phrase`；每一段都有了新标准的结果，在一个事务里整体换进去
+ * 判定标准变了以后，新标准的解析结果先写在这里，检索继续读正式的两列和
+ * `experience_phrase`；每一段都有了新标准的结果，在一个事务里一次替换进去
  * （`corpus/derive.ts` 的 `promote`）。标准没变时不经过这里。
  */
 export const experienceNext = pgTable("experience_next", {

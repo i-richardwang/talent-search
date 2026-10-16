@@ -115,7 +115,7 @@ export type Choice = {
 /**
  * 一次理解给 HR 的一句话，只属于写出它的那条记录。名单已经按条件表出来了，这句话只说名单上
  * 看不出的：哪些要求人才库里没有，或者一个词有几种理解、现在按的是哪种。HR 还可以换成别的理解时
- * 带上选项，`current` 是现在这张表的那一种。没有要说的时候不落库（`null`）。
+ * 带上选项，`current` 是现在这张表的那一种。没有要说的时候不写入（`null`）。
  */
 export type TurnNotes = {
 	says: string;
@@ -159,7 +159,7 @@ export function understood(
 }
 
 /**
- * 模型写的说明 → 落库的说明。选项校验后和现在的表一样、和前面的选项一样，或者一条都不剩，
+ * 模型写的说明 → 写入的说明。选项校验后和现在的表一样、和前面的选项一样，或者一条都不剩，
  * 就不算一种理解；没写现在是哪种理解时整组选项不用：HR 分不清点了会换成什么。
  */
 function notesOf(
@@ -204,7 +204,7 @@ function conditionsIn(raw: unknown, vocab: Vocabulary): Condition[] {
 			.filter((t): t is string => t !== undefined && has(vocab, key, t));
 	const conditions = items.flatMap((item) => {
 		const entry = (item ?? {}) as Record<string, unknown>;
-		// 停用只由上一轮带过来，模型那一侧写的一律不认
+		// 停用只由上一轮带过来，模型那一侧写的都不认
 		const { off: _off, ...rest } = entry;
 		if (rest.about === "experience")
 			return [{ ...rest, companyTag: inVocab("companyTag", rest.companyTag) }];

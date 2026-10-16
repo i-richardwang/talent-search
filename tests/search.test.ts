@@ -138,7 +138,7 @@ describe("抽取的两类 route", () => {
 		assert.equal(hit?.involvement, "从零搭建");
 	});
 
-	test("参与方式不进向量：查它本身命不中做过的事", async () => {
+	test("参与方式不进向量：查它命不中做过的事", async () => {
 		const { results } = await run("从零搭建");
 		const hit = results
 			.find((r) => r.employee.empId === "T009")
@@ -399,7 +399,7 @@ describe("命中路径判定", () => {
 });
 
 /**
- * 打分公式本身在 rank.test.ts 里测，这里只验一件事：**月数和结束日期确实
+ * 打分公式在 rank.test.ts 里测，这里只验一件事：**月数和结束日期确实
  * 原样穿过了 SQL 到达打分层**。这两个字段任何一个在取数那一层丢掉或者写错列名，
  * 纯函数测试都照样全绿，而界面上的表现是「排序看起来有点怪」——不会有任何断言失败。
  */
@@ -762,11 +762,11 @@ describe("命中总数", () => {
 
 	test("报的是截断之前的人数，不是那一页有多长", async () => {
 		const { results, total } = await run("深海潜航");
-		assert.equal(results.length, RESULT_PAGE, "结果本身仍然截断");
+		assert.equal(results.length, RESULT_PAGE, "结果仍然截断");
 		assert.equal(total, 55, "总数必须说真话");
 	});
 
-	test("分面和总数是同一个口径，不会一个 55 一个 50", async () => {
+	test("分面和总数是同一个计数方法，不会一个 55 一个 50", async () => {
 		const { total, facets } = await run("深海潜航");
 		const seq = facets.seq.find((s) => s.value.l2 === "深海潜航");
 		assert.equal(seq?.n, total);
@@ -836,7 +836,7 @@ describe("证据来源不决定去留", () => {
 
 /**
  * 空名单的成因由检索层给出，不由界面反推（论证在 `search/empty.ts`）。
- * 这里测的是「它真的接上了这次检索的事实」——判定本身的分支在
+ * 这里测的是「用的正是这次检索的事实」——判定的分支在
  * `tests/empty.test.ts`，那一层不连库。
  */
 describe("为什么没有人", () => {
@@ -845,7 +845,7 @@ describe("为什么没有人", () => {
 		assert.equal(empty, null);
 	});
 
-	test("AND 没满足和「筛没了」是两种成因，出路正好不同", async () => {
+	test("AND 没满足和「筛没了」是两种成因，下一步正好不同", async () => {
 		assert.deepEqual((await run("量子炼金")).empty, { kind: "unmet" });
 		assert.deepEqual((await run("算法", { level: ["P0"] })).empty, {
 			kind: "filtered",

@@ -152,7 +152,7 @@ export const taskLog = createServerFn({ method: "GET" })
 	.handler(({ data }) => runLog(data.runId));
 
 /**
- * 现在就跑一次派生或整理，立刻返回。
+ * 现在就跑一次解析或整理，立刻返回。
  *
  * **不等它跑完**：一轮是几分钟到几十分钟，而这是一次 HTTP 往返。进度会持续
  * 写进 `task_run` 那一行，页面重新载入状态就看得见。排着或在跑的已经有
@@ -178,7 +178,7 @@ export const dataList = createServerFn({ method: "GET" })
 	}))
 	.handler(({ data }) => listEmployees(data.q, data.page));
 
-/** 数据页的一个人：档案、每一段、每一段的派生结果。 */
+/** 数据页的一个人：档案、每一段、每一段的解析结果。 */
 export const dataEmployee = createServerFn({ method: "GET" })
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
 	.handler(({ data }) => employeeData(data.empId));

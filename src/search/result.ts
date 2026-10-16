@@ -75,7 +75,7 @@ export type ResultEmployee = Pick<
 	"empId" | "name" | "curDept" | "curTitle" | "curLevel"
 >;
 
-/** 单人详情的显示契约；不包含内容键、派生版本或筛选档高。 */
+/** 单人详情的显示契约；不包含内容键、解析版本或筛选档高。 */
 export type EmployeeDetail = {
 	employee: Pick<
 		Employee,

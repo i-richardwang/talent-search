@@ -5,7 +5,7 @@ import { AdminPage, useListPending } from "../-components/admin-page";
 import { EmployeeTable } from "./-components/employee-table";
 
 /**
- * 数据页：库里此刻有谁。点一个人看他的每一段和派生结果（`/data/$empId`）。
+ * 数据页：库里此刻有谁。点一个人看他的每一段和解析结果（`/data/$empId`）。
  * 按名字或工号找人，找词和翻页在服务端做，词和页码写进地址。
  */
 export const Route = createFileRoute("/data")({

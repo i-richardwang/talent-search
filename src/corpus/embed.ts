@@ -1,6 +1,6 @@
 /**
  * 语料的批量嵌入与持久缓存；端点及配置共用 server/embed.ts。
- * 按空间、模型和文本摘要保存第一份成功落库的向量，按输入顺序返回。
+ * 按空间、模型和文本摘要保存第一个成功写入的向量，按输入顺序返回。
  */
 
 import "@tanstack/react-start/server-only";
@@ -25,7 +25,7 @@ const BATCH = 32;
 const LOOKUP = 500;
 
 /**
- * 派生时嵌入失败重试几次。比查询侧那一个大：一轮派生要跑几十分钟，为一次端点
+ * 解析时嵌入失败重试几次。比查询侧那一个多：一轮解析要跑几十分钟，为一次端点
  * 抖动整轮重来的代价远高于多等几秒。
  */
 const IMPORT_RETRIES = 4;
@@ -63,7 +63,7 @@ async function cached(texts: string[]): Promise<Map<string, number[]>> {
 	return out;
 }
 
-/** 同键采用第一份落库的向量，返回数据库保存的精度。 */
+/** 同一个输入只保留第一次写入的向量，返回数据库保存的精度。 */
 async function store(fresh: [string, number[]][]) {
 	const space = embedSpace();
 	await db

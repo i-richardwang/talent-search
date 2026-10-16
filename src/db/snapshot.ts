@@ -36,7 +36,7 @@ export async function withReadSnapshot<T>(
 
 /**
  * 在可重复读快照中核验语料标准与空间身份，再读取事实。
- * 已派生段和当前短说法的释义各自只能有一份标准；空版本表示未派生。
+ * 已解析段和当前短说法的释义各自只能有一份标准；空版本表示还没解析。
  * 模型调用在快照外完成，调用方以空间行版本核对嵌入与召回依据。
  */
 export function withCorpusSnapshot<T>(
@@ -49,7 +49,9 @@ export function withCorpusSnapshot<T>(
 			);
 			const [row] = rows.rows;
 			if (!row || rows.rows.length !== 1)
-				throw new Error("语料还没有派生过：先跑 bun run sync，派生会接上");
+				throw new Error(
+					"语料还没有解析过：先跑 bun run sync，同步进来的新段解析会自动继续",
+				);
 			const standards = await store.execute<{
 				derived: boolean;
 				glossed: boolean;
@@ -64,7 +66,7 @@ export function withCorpusSnapshot<T>(
 								sql`, `,
 							)}))) as glossed`);
 			if (standards.rows[0]?.derived || standards.rows[0]?.glossed)
-				throw new Error("人才库正在更新判定标准，请等待派生与整理完成后重试");
+				throw new Error("人才库正在更新判定标准，请等待解析与整理完成后重试");
 			return read(store, row.generation);
 		},
 		{ isolationLevel: "repeatable read" },

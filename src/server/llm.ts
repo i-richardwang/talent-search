@@ -231,7 +231,7 @@ export async function understand(
 	const m = getModel();
 	/*
 	 * 一次检索愿意多等的只有一次：人在等结果。可重试的应答由 SDK 试，
-	 * 超时由 `retryingTimeouts` 试，两边给同一个数。
+	 * 超时由 `retryingTimeouts` 试，SDK 和超时重试用同一个数。
 	 */
 	const retries = 1;
 	const result = await retryingTimeouts(retries, () =>
@@ -269,9 +269,10 @@ export async function understand(
 	const submitted = agent.lastSubmitted();
 	if (submitted) return submitted;
 	/*
-	 * 真正说明问题的是 `finishReason` 和 `usage`：`length` 配上 `reasoningTokens`
+	 * 出问题的是 `finishReason` 和 `usage`：`length` 配上 `reasoningTokens`
 	 * 吃掉几乎整个 `outputTokens`，一眼就是「预算被思考轨迹烧光」；`stop` 配上一段
-	 * 正文，是端点没理会必须调用工具。写进错误消息，查日志的人不必再翻 SDK 的结构。
+	 * 正文，是端点没理会必须调用工具。写进错误消息，
+	 * 查日志的人能直接看到原因，不必再翻 SDK 的结构。
 	 */
 	throw new UnansweredError(
 		`查询理解模型没有提交搜索条件：finishReason=${result.finishReason}，` +

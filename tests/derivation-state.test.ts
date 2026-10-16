@@ -1,4 +1,4 @@
-/** 派生完成状态与整份语料的判定标准，用真实事务和合成端点验证。 */
+/** 解析完成状态与整份语料的判定标准，用真实事务和合成端点验证。 */
 import assert from "node:assert/strict";
 import { after, beforeEach, test } from "node:test";
 import { sql } from "drizzle-orm";
@@ -97,7 +97,7 @@ for (const [label, invalid] of [
 	["序列不在树上", { seq: "推荐（技术）" }],
 	["序列只有一级", { seq: "技术" }],
 ] as const) {
-	test(`对齐${label}记为未能作答，不推断序列，抽取结果照常落库`, async () => {
+	test(`对齐${label}记为未能作答，不推断序列，抽取结果照旧写入`, async () => {
 		await seed([
 			{
 				empId: "E1",
@@ -174,7 +174,7 @@ async function staged() {
 	).rows[0]?.n;
 }
 
-test("标准更新期间检索读上一版，每一段都有新结果后整体换入", async () => {
+test("标准更新期间检索读上一版，每一段都有新结果后一次替换正式表", async () => {
 	await seed(
 		Array.from({ length: 201 }, (_, i) => ({
 			empId: `E${i}`,
@@ -205,16 +205,16 @@ test("标准更新期间检索读上一版，每一段都有新结果后整体�
 	assert.equal((await find()).total, 201);
 });
 
-test("换入时答不出的段带着未能作答换入，仍按原文留在检索里", async () => {
+test("暂存结果替换进去时，答不出的段带着未能作答进去，仍按原文留在检索里", async () => {
 	await seed([
-		{ empId: "E1", name: "合成换入", segments: [segment("换入成功样例")] },
-		{ empId: "E2", name: "合成换入", segments: [segment("换入失败样例")] },
+		{ empId: "E1", name: "合成替换", segments: [segment("替换成功样例")] },
+		{ empId: "E2", name: "合成替换", segments: [segment("替换失败样例")] },
 	]);
 	await db.execute(
 		sql`update experience set derived_identity = 'old-standard'`,
 	);
 	const restore = answerChat((_system, prompt) =>
-		prompt.includes("换入失败样例") ? { bad: true } : { skills: [], did: [] },
+		prompt.includes("替换失败样例") ? { bad: true } : { skills: [], did: [] },
 	);
 	try {
 		assert.deepEqual(await runDerive(), { done: 2, left: 0 });
@@ -229,7 +229,7 @@ test("换入时答不出的段带着未能作答换入，仍按原文留在检�
 	assert.equal((await find()).total, 2);
 });
 
-test("正式表混着两版时换入，已是这一版的段保留自己的边", async () => {
+test("正式表混着两版时替换进去，已是这一版的段保留自己的边", async () => {
 	await seed([
 		{ empId: "E1", name: "合成混合", segments: [segment("已是新版样例")] },
 		{ empId: "E2", name: "合成混合", segments: [segment("仍是旧版样例")] },
@@ -271,7 +271,7 @@ test("当前说法的释义依据不同标准时拒绝检索，无读者的保�
 	await find();
 });
 
-test("派生每轮核验现有空间的 fresh canary，漂移不写入完成状态", async () => {
+test("解析每轮核验现有空间的 fresh canary，漂移不写入完成状态", async () => {
 	await seed([
 		{
 			empId: "E1",

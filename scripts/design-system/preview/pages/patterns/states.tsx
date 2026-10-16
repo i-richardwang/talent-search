@@ -151,7 +151,7 @@ function Faults() {
 						<TableRow>
 							<TableHead>出错环节</TableHead>
 							<TableHead>名单那一列</TableHead>
-							<TableHead>出路</TableHead>
+							<TableHead>下一步</TableHead>
 						</TableRow>
 					</TableHeader>
 					<TableBody>
@@ -243,7 +243,8 @@ function Empties() {
 				</Table>
 			</Block>
 			<p className="text-fg-secondary text-xs">
-				{last ?? "成因由检索判定，这里只把它写成结论和一条一键就能执行的出路。"}
+				{last ??
+					"成因由检索判定，这里只把它写成结论和一条一键就能执行的下一步。"}
 			</p>
 		</div>
 	);
@@ -318,7 +319,7 @@ function Events() {
 	);
 }
 
-/** 加载、空态与报错：名单那一列在等待、没结果、没理解出来时各说什么，给哪条出路。 */
+/** 加载、空态与报错：名单那一列在等待、没结果、没理解出来时各说什么，给哪条下一步。 */
 export function StatesPage() {
 	return (
 		<DocPage
@@ -332,8 +333,8 @@ export function StatesPage() {
 				notes: [
 					"AI 服务没开启或出错时明说，不退回成一份空名单：理解失败不是没有结果。",
 					"理解失败时说清是哪个环节出了问题：连不上和报错时需求没被读过，不能说成没读懂，也不叫人换说法。",
-					"空态原因由检索层判定，界面为每种原因都给出文案和出路，不用二手计数重新推断。",
-					"空态文案说明当前问题和可执行的出路，标题已说明的内容不重复。",
+					"空态原因由检索层判定，界面为每种原因都给出文案和下一步，不用二手计数重新推断。",
+					"空态文案说明当前问题和可执行的下一步，标题已说明的内容不重复。",
 					"一次动作的结果（提交失败、导出完成）用通知；一直成立的状态（正在看较早的一次）用 Alert；查询条件的注解用行内文字。",
 				],
 				usage: `<ResultList\n  wait={{ list: "skeleton", phase: "interpreting" }}\n  failure={fault ? { fault, onRetry: retry } : null}\n  …\n/>`,

@@ -137,7 +137,7 @@ async function storedSpace(store: DbExecutor) {
 		.limit(2);
 	const stored = rows[0];
 	if (!stored || rows.length !== 1)
-		throw new Error("语料没有唯一的嵌入空间元数据，等派生跑一轮");
+		throw new Error("语料没有唯一的嵌入空间元数据，等解析跑一轮");
 	return stored;
 }
 
@@ -170,7 +170,7 @@ export function assertCanary(stored: number[], fresh: number[] | undefined) {
 	const similarity = fresh ? cosineSimilarity(fresh, stored) : Number.NaN;
 	if (!Number.isFinite(similarity) || similarity < 0.999)
 		throw new Error(
-			"嵌入端点的实际输出与语料 canary 不一致，请更换 EMBED_SPACE_ID，派生会重算",
+			"嵌入端点的实际输出与语料 canary 不一致，请更换 EMBED_SPACE_ID，解析会重算",
 		);
 }
 

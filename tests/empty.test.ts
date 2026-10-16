@@ -2,7 +2,7 @@
  * 名单为什么是空的——**成因判定**这一半（`search/empty.ts`）。
  *
  * 这几种成因在屏幕上长得一模一样（都是零行），说错了不会有任何断言失败，
- * 用户只会拿到一句不对症的建议。所以每一支都在这里测；说什么、给哪条出路
+ * 用户只会拿到一句不对症的建议。所以每一支都在这里测；说什么、给哪条下一步
  * 是另一半，归 `tests/empty-state.test.ts`。
  */
 import assert from "node:assert/strict";
@@ -35,7 +35,7 @@ test("有人就没有成因：要不要画空态和空态说什么是同一个�
 });
 
 describe("取数超限", () => {
-	test("排在最前：它不是「没有人」，而且和筛选太窄的出路相反", () => {
+	test("排在最前：它不是「没有人」，而且和筛选太窄的下一步相反", () => {
 		const overflow = {
 			kind: "overflowEvidence" as const,
 			claims: [claim("运营") as Claim],
@@ -92,7 +92,7 @@ describe("有条件但没人", () => {
 		assert.deepEqual(why({ query: "算法" }), { kind: "unmet" });
 	});
 
-	test("没有一条是必须的：出路是换词，不是「把条件改成加分」", () => {
+	test("没有一条是必须的：下一步是换词，不是「把条件改成加分」", () => {
 		assert.deepEqual(why({ query: "+算法" }), { kind: "noHits" });
 		// 人的偏好不删人，「没有这样的人」对它不成立
 		assert.deepEqual(why({ query: "+education:硕士" }), { kind: "noHits" });

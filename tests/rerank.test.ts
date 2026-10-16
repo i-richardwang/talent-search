@@ -1,4 +1,4 @@
-/** 重排回答必须完整，缓存按完整输入采用首个落库值。 */
+/** 重排回答必须完整，缓存按完整输入采用第一个成功写入的值。 */
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
 import { setup } from "./fixture";
@@ -82,7 +82,7 @@ describe("重排端点边界", () => {
 });
 
 describe("重排输入缓存", () => {
-	test("落库与缓存命中保留端点的小数精度，阈值附近不改变相关度", async () => {
+	test("写入与缓存命中保留端点的小数精度，阈值附近不改变相关度", async () => {
 		const values = [0.55, 0.78, 0.9];
 		let calls = 0;
 		await answering(
@@ -149,7 +149,7 @@ describe("重排输入缓存", () => {
 		assert.equal(calls, 2);
 	});
 
-	test("并发的不同回答都消费第一份成功落库的值", async () => {
+	test("并发的不同回答都消费第一份成功写入的值", async () => {
 		let enter = () => {},
 			release = () => {};
 		const entered = new Promise<void>((resolve) => {

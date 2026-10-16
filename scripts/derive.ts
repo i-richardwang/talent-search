@@ -1,5 +1,5 @@
 /**
- * 运行一轮派生，完成后才返回。应用进程里的任务调度平时会自动运行它；这个脚本用于应用
+ * 运行一轮解析，完成后才返回。应用进程里的任务调度平时会自动运行它；这个脚本用于应用
  * 没有启动、或者想在标准输出里看完一轮的时候。已经有写者在运行就立即退出。
  */
 import "@tanstack/react-start/server-only";
@@ -17,6 +17,6 @@ if (!run) {
 
 const seconds = Math.round((Date.now() - started) / 1000);
 console.log(
-	run.failure ? `\n派生失败，用时 ${seconds}s` : `\n完成，用时 ${seconds}s`,
+	run.failure ? `\n解析失败，用时 ${seconds}s` : `\n完成，用时 ${seconds}s`,
 );
 if (run.failure) process.exit(1);

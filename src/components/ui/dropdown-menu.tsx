@@ -98,7 +98,7 @@ export const DropdownMenuRadioGroup = Menu.RadioGroup;
 export const DropdownMenuSubmenuRoot = Menu.SubmenuRoot;
 export const DropdownMenuRadioItemIndicator = Menu.RadioItemIndicator;
 
-/** 触发器：子元素是一个按钮，触发器的属性与 ref 合进它本身（见 floating.ts）。 */
+/** 触发器：子元素是一个按钮，触发器的属性与 ref 合进这个子元素（见 floating.ts）。 */
 export function DropdownMenuTrigger({ children }: { children: ReactElement }) {
 	return (
 		<Menu.Trigger

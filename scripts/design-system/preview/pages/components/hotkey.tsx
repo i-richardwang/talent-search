@@ -19,7 +19,7 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 
 type Variant = "filled" | "borderless";
 
-/** 苹果设备上画成符号的键名；方向键与空格两边都画成图标；其余键名首字母大写原样显示。 */
+/** 苹果设备上画成符号的键名；方向键与空格在苹果和其余设备上都画成图标；其余键名首字母大写原样显示。 */
 const SYMBOL_KEYS = [
 	"mod",
 	"ctrl",

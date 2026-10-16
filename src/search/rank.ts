@@ -177,7 +177,7 @@ function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 /**
  * 这个人算不算数：**每条必须的主张**都得满足（AND 语义）。
  *
- * 加分的主张不参与，这就是它「加分」的全部含义：只进分数，不进判定。
+ * 加分的主张不参与判定：只进分数，不进判定。
  */
 function complete(p: Person, claims: Claim[]) {
 	for (const [i, claim] of claims.entries()) {

@@ -86,7 +86,7 @@ interface DraggablePanelProps extends Omit<ComponentProps<"aside">, "onDrag"> {
 	onExpandChange?: (expand: boolean) => void;
 	/** 为假时分隔条只留光标和手感，不画线。 */
 	showBorder?: boolean;
-	/** 放宽分隔条的可点宽度；粗指针（触屏）一律最宽。 */
+	/** 放宽分隔条的可点宽度；粗指针（触屏）取最宽。 */
 	showHandleWideArea?: boolean;
 	classNames?: { content?: string };
 }
