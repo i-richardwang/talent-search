@@ -22,6 +22,8 @@ export type DimUnit = {
 	skill: string;
 	recruitment: string;
 	education: string;
+	schoolTier: string;
+	overseas: string;
 };
 
 export type DimKey = keyof DimUnit;
@@ -39,6 +41,8 @@ const MULTI_KEYS = [
 	"skill",
 	"recruitment",
 	"education",
+	"schoolTier",
+	"overseas",
 ] as const;
 type MultiKey = (typeof MULTI_KEYS)[number];
 
@@ -72,6 +76,10 @@ export type DimSource = {
 	recruitment: string;
 	education: string;
 	educationRank: number | null;
+	/** 最高学历那所学校的档（`employee.school_tier`），档与档之间不比高低 */
+	schoolTier: string;
+	/** 最高学历是不是海外取得（`overseasValue`）；没有记录时为空 */
+	overseas: string | null;
 };
 
 /**
@@ -147,6 +155,11 @@ const SEP = "\u0001";
  */
 export const NOT_A_VALUE = ["未知"] as const;
 
+/** 海外学历这一维的取值：登记的是布尔，筛选和条件里写「是」「否」。 */
+export function overseasValue(abroad: boolean | null): string | null {
+	return abroad === null ? null : abroad ? "是" : "否";
+}
+
 /** 有高低的维按档从低到高排；档高相同（不该发生）时按名字。 */
 const byRank = (
 	a: { value: string; rank?: number },
@@ -161,8 +174,8 @@ const byCountThenValue = (
 ) => b.n - a.n || a.value.localeCompare(b.value, "zh-Hans-CN");
 
 /**
- * 取值即标签的那几个集合维（职级、公司档、招聘渠道、学历）共用这一份声明：
- * 从事实的哪一列读、哪些串不算取值，都只说一次。
+ * 取值即标签的那几个集合维（职级、公司档、招聘渠道、学历、学校档、海外学历）共用
+ * 这一份声明：从事实的哪一列读、哪些串不算取值，都只说一次。
  */
 function plain(label: string, column: (fact: DimSource) => string | null) {
 	const isValue = (v: string | null): v is string =>
@@ -274,6 +287,10 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		rank: (f) => f.educationRank,
 		compare: byRank,
 	},
+
+	schoolTier: plain("学校档", (f) => f.schoolTier),
+
+	overseas: plain("海外学历", (f) => f.overseas),
 };
 
 /**
@@ -310,6 +327,8 @@ export const VOCAB_KEYS = [
 	"level",
 	"recruitment",
 	"education",
+	"schoolTier",
+	"overseas",
 ] as const satisfies readonly DimKey[];
 
 export type VocabKey = (typeof VOCAB_KEYS)[number];

@@ -27,6 +27,8 @@ const VOCAB: Vocabulary = {
 	level: values("P5", "P6", "P7", "P8"),
 	recruitment: values("校招", "社招"),
 	education: values("本科", "硕士", "博士"),
+	schoolTier: values("985", "211", "QS100"),
+	overseas: values("是", "否"),
 };
 const of = (...conditions: unknown[]) =>
 	understood({ conditions }, VOCAB, []).spec.conditions;

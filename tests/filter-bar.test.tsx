@@ -39,6 +39,8 @@ const FACETS: Facets = {
 	recruitment: [],
 	skill: [],
 	education: [],
+	schoolTier: [],
+	overseas: [],
 };
 
 const seen = (view: View) =>

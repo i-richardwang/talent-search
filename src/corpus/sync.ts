@@ -30,11 +30,13 @@ async function stageEmployee(
 			`insert into staged_employee (
 				emp_id, name, cur_dept, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3,
 				cur_level, cur_level_band, cur_level_rank, hire_date,
-				education_level, education_rank, school, recruitment)
+				education_level, education_rank, school, school_tier, overseas_educated,
+				recruitment)
 			 select * from unnest(
 				$1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[],
 				$7::text[], $8::text[], $9::text[], $10::int[], $11::date[],
-				$12::text[], $13::int[], $14::text[], $15::text[])`,
+				$12::text[], $13::int[], $14::text[], $15::text[], $16::boolean[],
+				$17::text[])`,
 			[
 				chunk.map((row) => row.emp_id),
 				chunk.map((row) => row.name),
@@ -50,6 +52,8 @@ async function stageEmployee(
 				chunk.map((row) => row.education_level),
 				chunk.map((row) => row.education_rank),
 				chunk.map((row) => row.school),
+				chunk.map((row) => row.school_tier),
+				chunk.map((row) => row.overseas_educated),
 				chunk.map((row) => row.recruitment),
 			],
 		);
@@ -99,7 +103,7 @@ async function stageExperience(
 }
 
 const EMPLOYEE_COLUMNS =
-	"emp_id, name, cur_dept, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date, education_level, education_rank, school, recruitment";
+	"emp_id, name, cur_dept, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date, education_level, education_rank, school, school_tier, overseas_educated, recruitment";
 const EXPERIENCE_COLUMNS =
 	"emp_id, kind, unemployed, start_date, end_date, company, department, department_path, company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months";
 

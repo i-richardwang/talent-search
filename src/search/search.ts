@@ -30,6 +30,7 @@ import {
 	isOrdinal,
 	NOT_A_VALUE,
 	type OrdinalKey,
+	overseasValue,
 	type Picked,
 	VOCAB_KEYS,
 	type VocabKey,
@@ -321,6 +322,8 @@ const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	recruitment: sql`p.recruitment`,
 	education: sql`p.education_level`,
 	educationRank: sql`p.education_rank`,
+	schoolTier: sql`p.school_tier`,
+	overseas: sql`case p.overseas_educated when true then ${overseasValue(true)}::text when false then ${overseasValue(false)}::text end`,
 };
 
 /**
@@ -355,6 +358,8 @@ const DIM_COLUMN: Record<DimKey, { one: SQL } | { any: SQL }> = {
 	skill: { any: FACT_COLUMNS.skills },
 	recruitment: { one: FACT_COLUMNS.recruitment },
 	education: { one: FACT_COLUMNS.education },
+	schoolTier: { one: FACT_COLUMNS.schoolTier },
+	overseas: { one: FACT_COLUMNS.overseas },
 };
 
 /** 一维的下推谓词。两个家族各写一次，和维度有几个无关。 */
@@ -681,6 +686,8 @@ const VOCAB_SOURCE: Record<VocabKey, { rows: SQL; person: SQL }> = {
 	level: PERSON_ROWS,
 	recruitment: PERSON_ROWS,
 	education: PERSON_ROWS,
+	schoolTier: PERSON_ROWS,
+	overseas: PERSON_ROWS,
 };
 
 /**

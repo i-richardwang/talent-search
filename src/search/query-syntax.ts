@@ -10,8 +10,8 @@
  * 经历），`/` 隔开一项里的**取值**（OR）。条件开头的 `+` `-` 是强度、`~` 是停用
  * （叠在强度符号前面）。没有 `键:` 的字是经历词——几段没有键的字连起来算一个
  * 词（「machine learning」），所以经历词写在一起；`company:` `department:` `companyTag:` `kind:`
- * `minMonths:` 是经历主张的其余几项；`level:` `education:` `recruitment:` `school:`
- * 是人的条件，一条只有它自己。`level:>=P7/M1` 是「这一档及以上」，`>=` 后面整段
+ * `minMonths:` 是经历主张的其余几项；`level:` `education:` `recruitment:` `schoolTier:`
+ * `overseas:` `school:` 是人的条件，一条只有它自己。`level:>=P7/M1` 是「这一档及以上」，`>=` 后面整段
  * 是一个档名，不按 `/` 切。除此之外没有别的语法：一个取值就是那几个字，
  * 不切词、不剥句式——自然语言由模型翻译（`intent.ts`），这里只认记号。
  */

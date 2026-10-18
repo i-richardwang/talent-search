@@ -14,8 +14,9 @@
  *   少写的项就是不限：只有 `what` 是今天最常见的经历词，只有 `company` 是「待过字节」。
  *   没写 `what` 的主张说的是背景，和人的条件一样只定去留、不量名次（`result.ts`）。
  * - **人的条件**（`about: "person"`）：这个人是什么样——职级、学历、
- *   招聘渠道、学校。一人一个值，和哪段经历都没关系。有高低的两维（职级档、学历）
- *   还可以说「某档及以上」（`atLeast`），比高低的是库里的档高，不是一串枚举的档名。
+ *   招聘渠道、学校档、海外学历、学校。一人一个值，和哪段经历都没关系。有高低的
+ *   两维（职级档、学历）还可以说「某档及以上」（`atLeast`），比高低的是库里的档高，
+ *   不是一串枚举的档名。
  *
  *     { about: "experience", mode: "must", what: ["增长", "用户增长"],
  *       companyTag: ["大厂"], kind: "external", minMonths: 36 }
@@ -63,11 +64,13 @@ export type Mode = (typeof MODES)[number];
 export const PERSON_MODES = ["must", "boost"] as const;
 export type PersonMode = (typeof PERSON_MODES)[number];
 
-/** 人的条件能写在哪几维：有词表的三维是 `employee` 上的列，学校名是自由文本。 */
+/** 人的条件能写在哪几维：有词表的几维是 `employee` 上的列，学校名是自由文本。 */
 export const PERSON_FIELDS = [
 	"level",
 	"education",
 	"recruitment",
+	"schoolTier",
+	"overseas",
 	"school",
 ] as const;
 type PersonField = (typeof PERSON_FIELDS)[number];

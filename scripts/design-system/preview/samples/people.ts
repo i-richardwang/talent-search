@@ -1,4 +1,5 @@
 import type { Employee } from "#/db/schema";
+import { overseasValue } from "#/search/dimensions";
 import { type PopulationFact, rankPopulation } from "#/search/rank";
 import {
 	type EmployeeDetail,
@@ -38,6 +39,8 @@ export const EMPLOYEES: Employee[] = [
 		educationLevel: "硕士",
 		educationRank: 4,
 		school: "学校 A",
+		schoolTier: "985",
+		overseasEducated: false,
 		recruitment: "社招",
 	},
 	{
@@ -55,6 +58,8 @@ export const EMPLOYEES: Employee[] = [
 		educationLevel: "本科",
 		educationRank: 3,
 		school: "学校 B",
+		schoolTier: "211",
+		overseasEducated: false,
 		recruitment: "社招",
 	},
 	{
@@ -72,6 +77,8 @@ export const EMPLOYEES: Employee[] = [
 		educationLevel: "硕士",
 		educationRank: 4,
 		school: "学校 C",
+		schoolTier: "QS100",
+		overseasEducated: true,
 		recruitment: "社招",
 	},
 	{
@@ -89,6 +96,8 @@ export const EMPLOYEES: Employee[] = [
 		educationLevel: "博士",
 		educationRank: 5,
 		school: "学校 A",
+		schoolTier: "985",
+		overseasEducated: false,
 		recruitment: "社招",
 	},
 	{
@@ -106,6 +115,8 @@ export const EMPLOYEES: Employee[] = [
 		educationLevel: "本科",
 		educationRank: 3,
 		school: "学校 D",
+		schoolTier: "普通高校",
+		overseasEducated: false,
 		recruitment: "校招",
 	},
 	{
@@ -123,6 +134,8 @@ export const EMPLOYEES: Employee[] = [
 		educationLevel: "硕士",
 		educationRank: 4,
 		school: "学校 B",
+		schoolTier: "211",
+		overseasEducated: false,
 		recruitment: "社招",
 	},
 ];
@@ -664,6 +677,8 @@ const FACTS: PopulationFact[] = EXPERIENCES.map((x) => {
 		recruitment: person.recruitment,
 		education: person.educationLevel,
 		educationRank: person.educationRank,
+		schoolTier: person.schoolTier,
+		overseas: overseasValue(person.overseasEducated),
 	};
 });
 

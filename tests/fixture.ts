@@ -535,6 +535,8 @@ type Seed = {
 	recruitment?: string;
 	education?: string;
 	school?: string;
+	schoolTier?: string;
+	overseasEducated?: boolean;
 	segments: Array<{
 		kind?: "internal" | "external";
 		unemployed?: boolean;
@@ -590,6 +592,8 @@ export async function seed(rows: Seed[]) {
 			educationLevel: r.education ?? "",
 			educationRank: r.education ? educationRank(r.education) : null,
 			school: r.school ?? "",
+			schoolTier: r.schoolTier ?? "",
+			overseasEducated: r.overseasEducated ?? null,
 		})),
 	);
 	let day = 1;

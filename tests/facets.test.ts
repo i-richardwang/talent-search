@@ -37,14 +37,16 @@ const run = async (query: string, filters: SearchFilters = {}) => {
 
 before(async () => {
 	await seed([
-		// 跟人走的那三维也要有值：不然「分面计数方法和主检索一致」那条穷举
-		// 在它们身上一个候选都拿不到，会安静地少验三维。
+		// 跟人走的那几维也要有值：不然「分面计数方法和主检索一致」那条穷举
+		// 在它们身上一个候选都拿不到，会安静地少验几维。
 		{
 			empId: "F001",
 			name: "分面甲",
 			curLevel: "P6",
 			recruitment: "校招",
 			education: "本科",
+			schoolTier: "985",
+			overseasEducated: false,
 			segments: [{ seqL1: "技术", seqL2: "算法", months: 36 }],
 		},
 		{
@@ -53,6 +55,8 @@ before(async () => {
 			curLevel: "P7",
 			recruitment: "社招",
 			education: "硕士",
+			schoolTier: "QS100",
+			overseasEducated: true,
 			segments: [{ seqL1: "技术", seqL2: "算法", months: 36 }],
 		},
 		{
@@ -61,6 +65,7 @@ before(async () => {
 			curLevel: "P7",
 			recruitment: "校招",
 			education: "硕士",
+			schoolTier: "985",
 			segments: [{ seqL1: "运营", seqL2: "渠道", title: "算法", months: 36 }],
 		},
 		{

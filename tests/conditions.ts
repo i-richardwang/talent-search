@@ -43,6 +43,8 @@ const PERSON_DIMS = [
 	"level",
 	"education",
 	"recruitment",
+	"schoolTier",
+	"overseas",
 ] as const satisfies readonly PersonDim[];
 
 export function asConditions(

@@ -5,9 +5,10 @@
  *
  * - 查经历（`lookup_experience`）：做过什么。按意思匹配，要挑的是粒度。查一个词，
  *   得到它能找到多少人、对应人才库里哪些标准能力词，以及每个能力词在词表里更宽和更细的词。
- * - 查属性（`lookup_attribute`）：职级、学历、招聘渠道、公司档、入职前公司、公司内部门、
- *   学校。按字面匹配，要挑的是写法。有限取值的几维给出全部取值和人数，和提示词里预先
- *   给的是同一份；名字按包含匹配，给出匹配到的人数和人才库里的写法。
+ * - 查属性（`lookup_attribute`）：职级、学历、招聘渠道、学校档、海外学历、公司档、
+ *   入职前公司、公司内部门、学校。按字面匹配，要挑的是写法。有限取值的几维给出全部
+ *   取值和人数，和提示词里预先给的是同一份；名字按包含匹配，给出匹配到的人数和
+ *   人才库里的写法。
  *
  * 两个查询工具和搜索用同一套匹配规则（`search/search.ts`），查到的人数就是写进条件后
  * 搜出来的人数。
@@ -158,12 +159,12 @@ export function agentTools({
 		}),
 		lookup_attribute: tool({
 			description:
-				"查一种属性在人才库里怎么写、各有多少人。level、education、recruitment、companyTag 不用给 queries，返回全部取值；company、department、school 按包含匹配 queries 里的每个名字，部门只给人数。",
+				"查一种属性在人才库里怎么写、各有多少人。level、education、recruitment、schoolTier、overseas、companyTag 不用给 queries，返回全部取值；company、department、school 按包含匹配 queries 里的每个名字，部门只给人数。",
 			inputSchema: z.object({
 				field: z
 					.enum(ATTRIBUTE_FIELDS)
 					.describe(
-						"level=职级；education=学历；recruitment=招聘渠道；companyTag=公司档；company=入职前公司；department=公司内部门；school=学校",
+						"level=职级；education=学历；recruitment=招聘渠道；schoolTier=学校档；overseas=海外学历；companyTag=公司档；company=入职前公司；department=公司内部门；school=学校",
 					),
 				queries: z
 					.array(z.string())

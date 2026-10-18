@@ -12,8 +12,8 @@ import { after, describe, test } from "node:test";
 import { extract } from "#/corpus/sources/csv-dir";
 
 const EMPLOYEES =
-	"emp_id,name,hire_date,education_level,school,recruitment\n" +
-	"E1,某人,2020-01-01,本科,示例大学,校招\n";
+	"emp_id,name,hire_date,education_level,school,school_tier,overseas_educated,recruitment\n" +
+	"E1,某人,2020-01-01,本科,示例大学,211,,校招\n";
 const ASSIGNMENTS =
 	"emp_id,start_date,end_date,department,department_path,title,level,seq_l1,seq_l2,seq_l3\n" +
 	"E1,2024-01-01,,平台技术部,示例科技/平台技术部,算法工程师,P6,技术,算法,\n";
@@ -48,6 +48,28 @@ describe("CSV 数据源", () => {
 	test("职级表原样交给契约", async () => {
 		const data = await read();
 		assert.deepEqual(data.levels, [{ level: "P6", band: "中级", rank: "6" }]);
+	});
+
+	test("海外学历分是、否和没有记录，认不出的写法报错", async () => {
+		const header = EMPLOYEES.split("\n")[0];
+		const data = await read({
+			"employees.csv":
+				`${header}\n` +
+				"E1,甲,2020-01-01,本科,示例大学,QS100,是,社招\n" +
+				"E2,乙,2020-01-01,本科,示例大学,211,false,社招\n" +
+				"E3,丙,2020-01-01,,,,,社招\n",
+		});
+		assert.deepEqual(
+			data.employees.map((row) => row.overseas_educated),
+			[true, false, null],
+		);
+		await assert.rejects(
+			() =>
+				read({
+					"employees.csv": `${header}\nE1,甲,2020-01-01,本科,示例大学,211,也许,社招\n`,
+				}),
+			/overseas_educated/,
+		);
 	});
 
 	test("必需的列不会被悄悄补上", async () => {
@@ -112,6 +134,13 @@ describe("CSV 数据源", () => {
 		assert.deepEqual(
 			data.external.map((row) => row.unemployed),
 			[true, true, true, true, false, false],
+		);
+		await assert.rejects(
+			() =>
+				read({
+					"external.csv": `${header}\nE1,2018-01-01,2018-06-30,,,,,,,也许\n`,
+				}),
+			/unemployed/,
 		);
 	});
 });

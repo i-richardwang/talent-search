@@ -17,7 +17,14 @@ const { understand, UnansweredError } = await import("#/server/llm");
 const { endpointFault } = await import("#/server/endpoint");
 const { APICallError, RetryError } = await import("ai");
 
-const VOCAB = { companyTag: [], level: [], recruitment: [], education: [] };
+const VOCAB = {
+	companyTag: [],
+	level: [],
+	recruitment: [],
+	education: [],
+	schoolTier: [],
+	overseas: [],
+};
 
 test("端点连不上时抛给调用方，不返回一份假理解", async () => {
 	await assert.rejects(understand("做过算法的人", VOCAB, [], {} as never));

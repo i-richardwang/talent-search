@@ -339,6 +339,8 @@ describe("只有门槛时的分面计数", () => {
 				name: "范围甲",
 				curLevel: "P4",
 				recruitment: "校招",
+				schoolTier: "985",
+				overseasEducated: true,
 				segments: [
 					{
 						kind: "external",
@@ -353,6 +355,7 @@ describe("只有门槛时的分面计数", () => {
 				name: "范围乙",
 				curLevel: "P9",
 				recruitment: "社招",
+				schoolTier: "普通高校",
 				segments: [
 					{
 						kind: "external",
@@ -383,6 +386,31 @@ describe("只有门槛时的分面计数", () => {
 				{ value: "社招", n: 0 },
 			],
 			"值域只随查询变：被职级挤到 0 的那一行写着 0，不消失",
+		);
+	});
+
+	test("学校档和海外学历按人筛，没有记录的人不算「否」", async () => {
+		const scope = { conditions: parseQuery("companyTag:星域联盟") };
+		const base = await search(scope);
+		assert.deepEqual(base.facets.schoolTier, [
+			{ value: "985", n: 1 },
+			{ value: "普通高校", n: 1 },
+		]);
+		assert.deepEqual(base.facets.overseas, [{ value: "是", n: 1 }]);
+
+		const abroad = await search({
+			conditions: parseQuery("companyTag:星域联盟,overseas:是"),
+		});
+		assert.deepEqual(
+			abroad.results.map((r) => r.employee.empId),
+			["S001"],
+		);
+		const tier = await search({
+			conditions: parseQuery("companyTag:星域联盟,schoolTier:普通高校/211"),
+		});
+		assert.deepEqual(
+			tier.results.map((r) => r.employee.empId),
+			["S002"],
 		);
 	});
 });

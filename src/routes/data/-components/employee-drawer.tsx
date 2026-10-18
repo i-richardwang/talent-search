@@ -6,6 +6,7 @@ import { Empty } from "#/components/ui/empty";
 
 import { dots, duration, integer, period } from "#/lib/format";
 import { involvementRank } from "#/lib/involvement";
+import { overseasValue } from "#/search/dimensions";
 import type { EmployeeProfile, SegmentView } from "#/server/data";
 import {
 	DETAIL_LABEL_WIDTH,
@@ -64,6 +65,8 @@ export function EmployeeRecord({
 		["招聘渠道", employee.recruitment],
 		["学历", employee.educationLevel],
 		["学校", employee.school],
+		["学校档", employee.schoolTier],
+		["海外学历", overseasValue(employee.overseasEducated)],
 	];
 	return (
 		<EmployeeDrawer

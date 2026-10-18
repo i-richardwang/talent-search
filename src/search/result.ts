@@ -90,6 +90,8 @@ export type EmployeeDetail = {
 		| "hireDate"
 		| "educationLevel"
 		| "school"
+		| "schoolTier"
+		| "overseasEducated"
 		| "recruitment"
 	>;
 	timeline: Pick<

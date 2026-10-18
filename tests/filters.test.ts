@@ -37,6 +37,8 @@ const FACETS: Facets = {
 	recruitment: [{ value: "校招", n: 5 }],
 	skill: [{ value: "推荐系统", n: 3 }],
 	education: [{ value: "硕士", n: 8 }],
+	schoolTier: [{ value: "985", n: 6 }],
+	overseas: [{ value: "是", n: 2 }],
 };
 
 const fields = (view: View) => filterFields(FACETS, view);
@@ -205,6 +207,8 @@ describe("控件侧", () => {
 				"入职前技能",
 				"招聘渠道",
 				"学历",
+				"学校档",
+				"海外学历",
 			],
 		);
 	});

@@ -92,7 +92,16 @@ const ATTRIBUTES: {
 		value: (e) => <span className="tabular-nums">{e.hireDate ?? "—"}</span>,
 	},
 	{ label: "招聘渠道", value: (e) => e.recruitment || "—" },
-	{ label: "学历", value: (e) => dots(e.educationLevel, e.school) || "—" },
+	{
+		label: "学历",
+		value: (e) =>
+			dots(
+				e.educationLevel,
+				e.school,
+				e.schoolTier,
+				e.overseasEducated ? "海外学历" : "",
+			) || "—",
+	},
 ];
 
 /** 骨架里各条属性值的宽：长短错开，看得出是几行不同的字。 */

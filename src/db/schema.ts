@@ -51,6 +51,10 @@ export const employee = pgTable(
 		educationLevel: text("education_level").notNull().default(""),
 		educationRank: integer("education_rank"),
 		school: text("school").notNull().default(""),
+		/** 最高学历那所学校的档，数据源的写法，档与档之间不比高低 */
+		schoolTier: text("school_tier").notNull().default(""),
+		/** 最高学历是不是在海外取得；没有记录时为空 */
+		overseasEducated: boolean("overseas_educated"),
 		recruitment: text("recruitment").notNull().default(""),
 	},
 	(t) => [

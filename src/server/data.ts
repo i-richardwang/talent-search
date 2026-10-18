@@ -105,7 +105,8 @@ export async function employeeData(
 			`select emp_id as "empId", name, cur_dept as "curDept", cur_title as "curTitle",
 			cur_seq_l1 as "curSeqL1", cur_seq_l2 as "curSeqL2", cur_seq_l3 as "curSeqL3",
 			cur_level as "curLevel", hire_date::text as "hireDate",
-			education_level as "educationLevel", school, recruitment
+			education_level as "educationLevel", school, school_tier as "schoolTier",
+			overseas_educated as "overseasEducated", recruitment
 		 from employee where emp_id = $1`,
 			[empId],
 		);
@@ -161,6 +162,8 @@ export function employeeDetail(empId: string): Promise<EmployeeDetail | null> {
 				hireDate: employee.hireDate,
 				educationLevel: employee.educationLevel,
 				school: employee.school,
+				schoolTier: employee.schoolTier,
+				overseasEducated: employee.overseasEducated,
 				recruitment: employee.recruitment,
 			})
 			.from(employee)

@@ -35,6 +35,10 @@ export type EmployeeRow = {
 	/** 学历在五档里的位置，从 1 起；没有学历时为空 */
 	education_rank: number | null;
 	school: string;
+	/** 最高学历那所学校的档，数据源的写法 */
+	school_tier: string;
+	/** 最高学历是不是在海外取得；没有记录时为空 */
+	overseas_educated: boolean | null;
 	recruitment: string;
 };
 
@@ -424,6 +428,8 @@ type Profile = {
 	hire_date: Date | null;
 	education_level: string;
 	school: string;
+	school_tier: string;
+	overseas_educated: boolean | null;
 	recruitment: string;
 };
 
@@ -446,6 +452,8 @@ function normalizeProfiles(rows: SourceEmployee[], report: Report): Profile[] {
 			hire_date: hire === "invalid" ? null : hire,
 			education_level: known ? education : "",
 			school: row.school.trim(),
+			school_tier: row.school_tier.trim(),
+			overseas_educated: row.overseas_educated,
 			recruitment: row.recruitment.trim(),
 		};
 	});
@@ -537,6 +545,8 @@ function buildEmployee(
 				education_level: profile.education_level,
 				education_rank: educationRank(profile.education_level),
 				school: profile.school,
+				school_tier: profile.school_tier,
+				overseas_educated: profile.overseas_educated,
 				recruitment: profile.recruitment,
 			};
 		});
@@ -585,6 +595,8 @@ export function build(
 			profile.hire_date?.getTime() ?? null,
 			profile.education_level,
 			profile.school,
+			profile.school_tier,
+			profile.overseas_educated,
 			profile.recruitment,
 		]);
 		if (!unique.has(identity)) unique.set(identity, profile);

@@ -17,13 +17,21 @@ export const EDUCATION_LADDER = [
 	"博士",
 ] as const;
 
-/** 一人一行。`emp_id` 是全库主键，其余是详情页会读的档案字段。 */
+/**
+ * 一人一行。`emp_id` 是全库主键，其余是详情页会读的档案字段。
+ *
+ * `school` 和 `school_tier` 说的都是最高学历那所学校；学校档的分法（985、QS100……）
+ * 由数据源给，档与档之间没有高低，只按取值筛。`overseas_educated` 是最高学历是不是
+ * 在海外取得：是、否，或者没有记录（留空）。
+ */
 const EMPLOYEE_COLUMNS = [
 	"emp_id",
 	"name",
 	"hire_date",
 	"education_level",
 	"school",
+	"school_tier",
+	"overseas_educated",
 	"recruitment",
 ] as const;
 
@@ -79,7 +87,10 @@ const EXTERNAL_COLUMNS = [
  */
 const LEVEL_COLUMNS = ["level", "band", "rank"] as const;
 
-export type SourceEmployee = Record<(typeof EMPLOYEE_COLUMNS)[number], string>;
+export type SourceEmployee = Record<
+	Exclude<(typeof EMPLOYEE_COLUMNS)[number], "overseas_educated">,
+	string
+> & { overseas_educated: boolean | null };
 export type SourceAssignment = Record<
 	(typeof ASSIGNMENT_COLUMNS)[number],
 	string
@@ -130,12 +141,21 @@ function text(value: unknown): string {
 	return String(value);
 }
 
-/** 契约内待业标记为布尔，缺失表示否；具体源的标记格式由适配器转换。 */
-function flag(value: unknown, index: number): boolean {
+/**
+ * 契约内的标记是布尔，留空返回 `null`，缺失算什么由调用处说：待业缺失即否，海外学历
+ * 缺失是没有记录。具体源的标记格式由适配器转换。
+ */
+function flag(
+	rows: RawRow[],
+	what: string,
+	column: string,
+	index: number,
+): boolean | null {
+	const value = rows[index]?.[column];
 	if (typeof value === "boolean") return value;
-	if (value === null || value === undefined || value === "") return false;
+	if (value === null || value === undefined || value === "") return null;
 	throw new Error(
-		`数据源的 external 第 ${index + 1} 行 unemployed 不是布尔值：${JSON.stringify(value)}`,
+		`数据源的 ${what} 第 ${index + 1} 行 ${column} 不是布尔值：${JSON.stringify(value)}`,
 	);
 }
 
@@ -147,12 +167,23 @@ export function sourceData(raw: {
 	levels: RawRow[];
 }): SourceData {
 	return {
-		employees: conform(raw.employees, EMPLOYEE_COLUMNS, "employees"),
+		employees: conform(raw.employees, EMPLOYEE_COLUMNS, "employees").map(
+			(row, index) => ({
+				...row,
+				overseas_educated: flag(
+					raw.employees,
+					"employees",
+					"overseas_educated",
+					index,
+				),
+			}),
+		),
 		assignments: conform(raw.assignments, ASSIGNMENT_COLUMNS, "assignments"),
 		external: conform(raw.external, EXTERNAL_COLUMNS, "external").map(
 			(row, index) => ({
 				...row,
-				unemployed: flag(raw.external[index]?.unemployed, index),
+				unemployed:
+					flag(raw.external, "external", "unemployed", index) ?? false,
 			}),
 		),
 		levels: conform(raw.levels, LEVEL_COLUMNS, "levels"),

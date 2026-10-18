@@ -21,6 +21,8 @@ const PERSON = {
 	hire_date: "2020-01-01",
 	education_level: "",
 	school: "",
+	school_tier: "",
+	overseas_educated: null,
 	recruitment: "",
 };
 const ASSIGNMENT = {

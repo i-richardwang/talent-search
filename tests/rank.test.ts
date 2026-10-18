@@ -43,6 +43,8 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 		recruitment: "",
 		education: "",
 		educationRank: null,
+		schoolTier: "",
+		overseas: null,
 		...p,
 	};
 }
