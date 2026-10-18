@@ -5,7 +5,6 @@ import { ActionIconPage } from "./components/action-icon";
 import { AlertPage } from "./components/alert";
 import { AppLayoutPage } from "./components/app-layout";
 import { AutoCompletePage } from "./components/auto-complete";
-import { AvatarPage } from "./components/avatar";
 import { BlockPage } from "./components/block";
 import { ButtonPage } from "./components/button";
 import { ChatInputPage } from "./components/chat-input";
@@ -111,7 +110,6 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"components/descriptions": DescriptionsPage,
 	"components/list": ListPage,
 	"components/group-block": GroupBlockPage,
-	"components/avatar": AvatarPage,
 	"components/scroll-area": ScrollAreaPage,
 	"components/toolbar": ToolbarPage,
 	"components/collapsible": CollapsiblePage,

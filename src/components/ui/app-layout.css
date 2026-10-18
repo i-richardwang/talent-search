@@ -195,7 +195,6 @@
 	}
 }
 
-/* 圆角和方形头像一样取边长的六分之一。 */
 .ui-app-nav-brand-logo {
 	display: flex;
 	flex: none;

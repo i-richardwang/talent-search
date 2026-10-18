@@ -19,7 +19,6 @@ import { QueryBar, type QueryBarHandle } from "#/components/query-bar";
 import { Accordion } from "#/components/ui/accordion";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Alert } from "#/components/ui/alert";
-import { Avatar } from "#/components/ui/avatar";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { CopyButton } from "#/components/ui/copy-button";
@@ -429,7 +428,6 @@ function Round({
 			</div>
 			<div className="group/reveal flex flex-col gap-2 py-2">
 				<div className="flex items-center gap-2">
-					<Avatar title="AI" />
 					<Text className="whitespace-nowrap" weight="medium">
 						AI
 					</Text>
