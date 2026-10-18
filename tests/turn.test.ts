@@ -1,6 +1,7 @@
 /**
  * 查询记录怎么长出来。跑在临时 schema 上的真 SQL，理解走夹具里的假模型端点
  * （按一行查询语法读那句话、放在当前条件后面，见 `fixture.ts` 的 `fakeIntent`）。
+ * 提交时服务端不等理解就返回；这里等它跑完（`settle`）再看记录。
  *
  * 一条链是一次找人任务，新轮次有两种：**补充需求**（一句话作用在正看着的条件上）
  * 和**改条件**（直接交一整张表）。两者都记在同一条链的最后——「最近搜索」一次
@@ -21,9 +22,37 @@ const {
 	listRecent,
 	loadThread,
 	loadTurn,
-	resolveTurn,
-	loadProgress,
+	interpret,
+	loadInterpretation,
+	restartTurn,
 } = await import("#/server/turn");
+const { db } = await import("#/db");
+const { searchTurn } = await import("#/db/schema");
+const { eq, sql } = await import("drizzle-orm");
+
+/** 这一轮现在这一次理解的编号。 */
+async function attemptOf(turnId: string) {
+	const [row] = await db
+		.select({ attempt: searchTurn.interpretAttempt })
+		.from(searchTurn)
+		.where(eq(searchTurn.id, turnId));
+	assert.ok(row?.attempt, "说了一句话的一轮带着这一次理解的编号");
+	return row.attempt;
+}
+
+/** 跑完这一轮现在这一次理解，和提交后服务端做的一样；没写下条件就抛出失败原因。 */
+async function settle(turnId: string) {
+	await interpret(turnId, await attemptOf(turnId));
+	const spec = (await loadTurn(turnId))?.spec;
+	if (!spec) throw new Error((await loadInterpretation(turnId))?.fault ?? "");
+	return spec;
+}
+
+/** 人点了重试：换一次理解，跑完。 */
+async function retried(turnId: string) {
+	assert.ok(await restartTurn(turnId), "上一次失败了，可以重试");
+	return settle(turnId);
+}
 
 /** 最近搜索的第一页，取得够多，这个文件建的链都在里面。 */
 const recent = async () => (await listRecent(1, 50)).rows;
@@ -40,7 +69,7 @@ const wordsOf = (spec: SearchSpec) =>
 
 async function sentence(text: string, from?: string) {
 	const { turnId } = await createTurn({ kind: "sentence", text }, from);
-	const spec = await resolveTurn(turnId);
+	const spec = await settle(turnId);
 	return { turnId, spec, words: wordsOf(spec) };
 }
 
@@ -59,15 +88,17 @@ async function talkedTo(query: string) {
 
 describe("补充需求", () => {
 	test("最近搜索取链上最后一份完整条件，同刻记录和待理解末轮不改变链序", async () => {
-		const { db } = await import("#/db");
-		const { sql } = await import("drizzle-orm");
 		const first = { conditions: parseQuery("算法") };
 		const last = { conditions: parseQuery("算法, 渠道运营") };
 		await db.execute(sql`insert into search_turn
-			(id, root_turn_id, parent_turn_id, raw_text, spec, created_at) values
-			('recent-Z', 'recent-Z', null, '合成同刻任务', ${JSON.stringify(first)}::jsonb, '2020-01-01'),
-			('recent-Y', 'recent-Z', 'recent-Z', null, ${JSON.stringify(first)}::jsonb, '2020-01-01'),
-			('recent-A', 'recent-Z', 'recent-Y', '再加渠道运营', null, '2020-01-01')`);
+			(id, root_turn_id, parent_turn_id, raw_text, spec, created_at,
+				interpret_attempt, interpret_started_at, trace) values
+			('recent-Z', 'recent-Z', null, '合成同刻任务', ${JSON.stringify(first)}::jsonb,
+				'2020-01-01', 'a-Z', '2020-01-01', '[]'),
+			('recent-Y', 'recent-Z', 'recent-Z', null, ${JSON.stringify(first)}::jsonb,
+				'2020-01-01', null, null, null),
+			('recent-A', 'recent-Z', 'recent-Y', '再加渠道运营', null,
+				'2020-01-01', 'a-A', '2020-01-01', '[]')`);
 		const inChain = async () =>
 			(await recent()).find((row) => row.title === "合成同刻任务");
 		assert.equal((await inChain())?.turnId, "recent-Y");
@@ -96,21 +127,28 @@ describe("补充需求", () => {
 		);
 	});
 
-	test("理解时的步骤记在记录上：开始先清空、记下开始的时刻，写入后能读回", async () => {
+	test("理解随这一轮写下开始：步骤和开始的时刻记在记录上，写入后能读回", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
-		assert.deepEqual(await loadProgress(turnId), {
-			trace: [],
-			startedAt: null,
-		});
-		await resolveTurn(turnId);
+		const started = await loadInterpretation(turnId);
+		assert.deepEqual(
+			{ ...started, startedAt: typeof started?.startedAt },
+			{
+				trace: [],
+				startedAt: "number",
+				fault: null,
+				settled: false,
+			},
+		);
+		await settle(turnId);
 		// 假模型不用工具，走完就是零步；有步的路在 agent-tools.test.ts 里
-		const done = await loadProgress(turnId);
+		const done = await loadInterpretation(turnId);
 		assert.deepEqual(done?.trace, []);
-		assert.equal(typeof done?.startedAt, "number");
+		assert.equal(done?.settled, true);
+		assert.equal(done?.startedAt, started?.startedAt);
 		const turn = await loadTurn(turnId);
 		assert.deepEqual(turn?.trace, []);
 		assert.equal(turn?.startedAt, done?.startedAt);
-		assert.equal(await loadProgress("nope"), null);
+		assert.equal(await loadInterpretation("nope"), null);
 	});
 
 	test("从哪一轮取线程都是整条链；不存在的记录没有线程", async () => {
@@ -141,7 +179,7 @@ describe("补充需求", () => {
 		assert.equal(restored?.said, null, "恢复是一次直接改条件");
 		assert.deepEqual(restored?.spec, root.spec);
 		assert.equal(said?.id, turnId);
-		assert.deepEqual(wordsOf(await resolveTurn(turnId)), ["算法", "带团队"]);
+		assert.deepEqual(wordsOf(await settle(turnId)), ["算法", "带团队"]);
 	});
 
 	test("同时追加两轮：排队继续，链仍是一条线", async () => {
@@ -185,7 +223,7 @@ describe("补充需求", () => {
 					{ kind: "sentence", text: "就这样" },
 					at,
 				);
-				await resolveTurn(turnId);
+				await settle(turnId);
 			},
 		);
 		assert.deepEqual(seen, parseQuery("算法, 渠道运营"));
@@ -205,7 +243,7 @@ describe("补充需求", () => {
 					{ kind: "sentence", text: "换成找产品经理" },
 					root.turnId,
 				);
-				return resolveTurn(turnId);
+				return settle(turnId);
 			},
 		);
 		assert.deepEqual(spec.conditions, parseQuery("产品经理"));
@@ -226,7 +264,7 @@ describe("补充需求", () => {
 			(await loadThread(turnId))?.map((t) => t.id),
 			[root.turnId, turnId],
 		);
-		assert.deepEqual(wordsOf(await resolveTurn(turnId)), ["算法", "带团队"]);
+		assert.deepEqual(wordsOf(await settle(turnId)), ["算法", "带团队"]);
 	});
 
 	test("链头就没理解出来：下一句成了新的链头", async () => {
@@ -283,7 +321,7 @@ describe("说明", () => {
 					],
 				},
 			}),
-			() => resolveTurn(turnId),
+			() => settle(turnId),
 		);
 		assert.deepEqual((await loadTurn(turnId))?.notes, {
 			says: "人才库里没有工作地点，也看不出潜力，要不要先看带过团队的？",
@@ -307,7 +345,7 @@ describe("说明", () => {
 				conditions: [],
 				note: { says: "人才库里没有工作地点", current: null, options: [] },
 			}),
-			() => resolveTurn(turnId),
+			() => settle(turnId),
 		);
 		assert.deepEqual(spec.conditions, []);
 		assert.equal((await loadTurn(turnId))?.notes?.says, "人才库里没有工作地点");
@@ -458,23 +496,24 @@ describe("两种搜索各走各的链", () => {
 
 describe("理解失败", () => {
 	/**
-	 * 模型调用失败时记录必须停在「待理解」：spec 仍是 null，下一次调用
-	 * 再跑一遍。写入一份空 spec 的话，这条 `/s/:id` 就永久变成「没有条件」，
+	 * 模型调用失败时记录必须停在「待理解」：spec 仍是 null，记下是哪个环节出了问题，
+	 * 人点重试再跑一遍。写入一份空 spec 的话，这条 `/s/:id` 就永久变成「没有条件」，
 	 * 而故障在屏幕上和「没有这样的人」长得一模一样。
 	 */
-	test("模型报错时不写入，记录仍待理解，再试一次也能成立", async () => {
+	test("模型报错时不写入，记下原因；重试换一次理解，能成立", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const restore = breakUnderstanding();
 		try {
-			await assert.rejects(resolveTurn(turnId));
+			await assert.rejects(settle(turnId), /rejected/);
 		} finally {
 			restore();
 		}
 		const failed = await loadTurn(turnId);
 		assert.equal(failed?.spec, null);
+		assert.equal(failed?.fault, "rejected", "刷新页面读到的是同一个失败");
 
 		await new Promise((resolve) => setTimeout(resolve, 5));
-		const spec = await resolveTurn(turnId);
+		const spec = await retried(turnId);
 		assert.deepEqual(wordsOf(spec), ["算法"]);
 		assert.ok(
 			((await loadTurn(turnId))?.startedAt ?? 0) > (failed?.startedAt ?? 0),
@@ -497,13 +536,13 @@ describe("理解失败", () => {
 					],
 					note: null,
 				}),
-				() => resolveTurn(turnId),
+				() => settle(turnId),
 			),
-			/全部不合规/,
+			/unanswered/,
 		);
 		assert.equal((await loadTurn(turnId))?.spec, null);
 
-		assert.deepEqual(wordsOf(await resolveTurn(turnId)), ["算法"]);
+		assert.deepEqual(wordsOf(await retried(turnId)), ["算法"]);
 	});
 
 	test("条件和说明都空着：没作答，不写入", async () => {
@@ -511,9 +550,9 @@ describe("理解失败", () => {
 		await assert.rejects(
 			answering(
 				() => ({ conditions: [], note: null }),
-				() => resolveTurn(turnId),
+				() => settle(turnId),
 			),
-			/既没有给出条件，也没有说明/,
+			/unanswered/,
 		);
 		assert.equal((await loadTurn(turnId))?.spec, null);
 	});
@@ -529,7 +568,7 @@ describe("理解失败", () => {
 				],
 				note: null,
 			}),
-			() => resolveTurn(turnId),
+			() => settle(turnId),
 		);
 		assert.deepEqual(spec.conditions, [
 			{ about: "experience", mode: "must", what: ["算法"] },
@@ -537,31 +576,42 @@ describe("理解失败", () => {
 	});
 });
 
-describe("理解只落一次", () => {
+describe("一轮只有一次理解", () => {
 	/**
-	 * 工作台挂载后就地补理解，而同一条 `/s/:id` 可能被同时打开两次（两个标签页、
-	 * 一次刷新）。记录是不可变的，所以这两跳不能各写一份：`where spec is null`
-	 * 让先写入的生效，后到的读回同一份最终结果。写成「后到的覆盖」的话，同一条
-	 * 查询的条件会在两次刷新之间悄悄变一次，而 URL 承诺的正是它不变。
+	 * 理解随这一轮写下开始，重新开始只有人点重试这一个入口。还在跑的那一次不能被
+	 * 重试顶掉：否则两次理解同时往一条记录上写步骤，线程里就是两遍的步骤混在一起。
 	 */
-	test("并发理解同一条记录：先写入的生效，后到的读回同一份", async () => {
-		const { turnId } = await createTurn({
-			kind: "sentence",
-			text: "算法、渠道运营",
-		});
-		const [first, second] = await Promise.all([
-			resolveTurn(turnId),
-			resolveTurn(turnId),
-		]);
-		assert.deepEqual(first, second, "两跳必须读到同一份 spec");
-		assert.deepEqual((await loadTurn(turnId))?.spec, first, "写入的就是那一份");
+	test("理解还在跑时点重试：什么都不做", async () => {
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		assert.equal(await restartTurn(turnId), null);
+		await settle(turnId);
+		assert.equal(await restartTurn(turnId), null, "理解好了也不再开始");
+	});
+
+	/**
+	 * 进程在理解到一半时没了：过了时限还没有结果也没有失败，读记录时就是失败，
+	 * 可以重试。万一那一次其实还活着、后来才写回来，编号已经换掉，它写不进来。
+	 */
+	test("过了时限的那一次算作失败；重试之后，它写不进来", async () => {
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const lost = await attemptOf(turnId);
+		await db
+			.update(searchTurn)
+			.set({ interpretStartedAt: sql`now() - interval '1 hour'` })
+			.where(eq(searchTurn.id, turnId));
+		assert.equal((await loadInterpretation(turnId))?.fault, "broken");
+
+		assert.ok(await restartTurn(turnId));
+		assert.equal((await loadInterpretation(turnId))?.fault, null);
+
+		await interpret(turnId, lost);
+		assert.equal((await loadTurn(turnId))?.spec, null, "换掉的那一次没写进来");
+		assert.deepEqual(wordsOf(await settle(turnId)), ["算法"]);
 	});
 });
 
 describe("查询记录状态", () => {
 	test("链不分叉：一轮后面至多接一轮", async () => {
-		const { db } = await import("#/db");
-		const { searchTurn } = await import("#/db/schema");
 		const root = await sentence("算法");
 		await sentence("渠道运营", root.turnId);
 		await assert.rejects(
@@ -570,14 +620,38 @@ describe("查询记录状态", () => {
 				rootTurnId: root.turnId,
 				parentTurnId: root.turnId,
 				rawText: "带团队",
+				interpretAttempt: "forked_attempt",
+				interpretStartedAt: new Date(),
+				trace: [],
 			}),
 			violates("search_turn_line"),
 		);
 	});
 
+	test("说了话的一轮带着理解的编号、开始的时刻和步骤，没说话的一轮都没有", async () => {
+		const root = await sentence("算法");
+		await assert.rejects(
+			db.insert(searchTurn).values({
+				id: "said_without_attempt",
+				rootTurnId: root.turnId,
+				rawText: "带团队",
+			}),
+			violates("search_turn_interpret"),
+		);
+		await assert.rejects(
+			db.insert(searchTurn).values({
+				id: "attempt_without_saying",
+				rootTurnId: root.turnId,
+				spec: root.spec,
+				interpretAttempt: "stray",
+				interpretStartedAt: new Date(),
+				trace: [],
+			}),
+			violates("search_turn_interpret"),
+		);
+	});
+
 	test("数据库不接受既没原话也没条件的记录", async () => {
-		const { db } = await import("#/db");
-		const { searchTurn } = await import("#/db/schema");
 		await assert.rejects(
 			db.insert(searchTurn).values({
 				id: "invalid_pending_spec",

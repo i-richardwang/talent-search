@@ -386,12 +386,20 @@ export const searchTurn = pgTable(
 		/** 理解这一轮时模型用工具走过的步骤，边跑边追加；关键词的记录没有。 */
 		trace: jsonb("trace").$type<TraceStep[]>(),
 		/**
-		 * 这一次理解开始的时刻，和清空 `trace` 同时写：等理解时的计时和完成后的用时
-		 * 都从它算，重试过也只算这一次。没开始理解过的记录为 null。
+		 * 这一次理解的编号。说了一句话的一轮写入时就开始理解，重试换一个新编号；理解写步骤、
+		 * 结果和失败原因都只写编号还是自己的那一行，被换掉的那一次写不进来。
+		 * 没说话的一轮没有，`trace` 和开始的时刻也没有（`search_turn_interpret`）。
+		 */
+		interpretAttempt: text("interpret_attempt"),
+		/**
+		 * 这一次理解开始的时刻，和编号、清空 `trace` 同时写：等理解时的计时和完成后的用时
+		 * 都从它算，重试过也只算这一次。
 		 */
 		interpretStartedAt: timestamp("interpret_started_at", {
 			withTimezone: true,
 		}),
+		/** 这一次理解为什么没成（`server/turn.ts` 的 `InterpretFault`）；还在理解或已理解为 null。 */
+		interpretFault: text("interpret_fault"),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
@@ -414,6 +422,16 @@ export const searchTurn = pgTable(
 		check(
 			"search_turn_notes",
 			sql`${t.notes} is null or ${t.spec} is not null`,
+		),
+		check(
+			"search_turn_interpret",
+			sql`(${t.rawText} is null) = (${t.interpretAttempt} is null)
+				and (${t.interpretAttempt} is null) = (${t.interpretStartedAt} is null)
+				and (${t.interpretAttempt} is null) = (${t.trace} is null)`,
+		),
+		check(
+			"search_turn_fault",
+			sql`${t.interpretFault} is null or ${t.spec} is null`,
 		),
 		index("search_turn_root").on(t.rootTurnId),
 	],

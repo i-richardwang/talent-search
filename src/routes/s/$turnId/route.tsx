@@ -95,7 +95,7 @@ function Workbench() {
 		fault: interpretFault,
 		retry: retryInterpret,
 		progress,
-	} = useInterpretation(latest.id, latest.spec);
+	} = useInterpretation(latest);
 	// 没理解出来的只可能是最后一轮；名单停在等待或失败，只当看着的就是它
 	const pending = settledSpec === null;
 

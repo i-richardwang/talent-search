@@ -21,14 +21,15 @@ import {
 	deleteSearch,
 	interpret,
 	listRecent,
-	loadProgress,
+	loadInterpretation,
 	loadThread,
+	restartTurn,
 	type Turn,
 } from "./turn";
 
 /**
  * 按记录 id 载入完整线程和当前筛选下的结果。条件来自已校验的查询记录；
- * 视图入参在此独立校验。待理解记录只返回线程，由工作台发起理解。
+ * 视图入参在此独立校验。待理解记录只返回线程，工作台读进度等它理解完。
  */
 export const loadWorkbench = createServerFn({ method: "GET" })
 	.validator((d: { turnId: unknown; filters?: unknown; limit?: unknown }) => ({
@@ -57,24 +58,34 @@ export const fetchEmployee = createServerFn({ method: "GET" })
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
 	.handler(({ data }) => employeeDetail(data.empId));
 
-/** 提交一次查询：写一条记录，返回它的 id。入参校验在 `search/commit-input.ts`。 */
+/**
+ * 提交一次查询：写一条记录，返回它的 id。入参校验在 `search/commit-input.ts`。
+ * 说了一句话就在这里开始理解，不等它完成：页面先进工作台，在那里读进度。
+ */
 export const commitTurn = createServerFn({ method: "POST" })
 	.validator(validateCommit)
-	.handler(({ data }) => createTurn(data.input, data.from));
+	.handler(async ({ data }) => {
+		const { turnId, attempt } = await createTurn(data.input, data.from);
+		if (attempt) void interpret(turnId, attempt);
+		return { turnId };
+	});
 
-/** 理解走到哪一步了、这一次从哪一刻开始。等理解时界面每秒问一次。 */
-export const turnProgress = createServerFn({ method: "GET" })
+/** 理解走到哪一步了、这一次从哪一刻开始、成没成。等理解时界面每秒问一次。 */
+export const turnInterpretation = createServerFn({ method: "GET" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
-	.handler(({ data }) => loadProgress(data.turnId));
+	.handler(({ data }) => loadInterpretation(data.turnId));
 
 /**
- * 把一条只有原话的记录补上理解结果。工作台挂载后就地调它，不挡导航。
- * 失败不抛，返回是哪个环节出了问题（`interpret`）：页面要按它显示提示，而抛出去的错误
- * 到了浏览器只剩一句不能给人看的原文。
+ * 人点了重试：上一次失败了就重新开始理解（`restartTurn`），返回这一轮现在的样子。
+ * 上一次还在跑时什么都不做，返回的就是它的进度。
  */
-export const interpretTurn = createServerFn({ method: "POST" })
+export const retryTurn = createServerFn({ method: "POST" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
-	.handler(({ data }) => interpret(data.turnId));
+	.handler(async ({ data }) => {
+		const attempt = await restartTurn(data.turnId);
+		if (attempt) void interpret(data.turnId, attempt);
+		return loadInterpretation(data.turnId);
+	});
 
 /**
  * 最近搜索的一页。第一页由**根路由的 loader** 取（`routes/__root.tsx`），导航栏和首页

@@ -1,8 +1,12 @@
 import { useRouter } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import type { SearchSpec } from "#/search/spec";
-import { interpretTurn, turnProgress } from "#/server/functions";
-import type { InterpretFault, Progress } from "#/server/turn";
+import { useCallback, useEffect, useState } from "react";
+import { retryTurn, turnInterpretation } from "#/server/functions";
+import type {
+	Interpretation,
+	InterpretFault,
+	Progress,
+	Turn,
+} from "#/server/turn";
 
 /**
  * 理解失败时各说什么。哪个环节出了问题由服务端判定（`server/turn.ts` 的 `interpret`），
@@ -70,23 +74,14 @@ export function faultExits(fault: InterpretFault): FaultExit[] {
 /** 等理解时多久问一次走到哪一步了；一步是一次工具调用，秒级。 */
 const PROGRESS_POLL_MS = 1000;
 
-/** 第一次问到之前：还没有步骤，也不知道这一次从哪一刻开始。 */
-const NOT_STARTED: Progress = { trace: [], startedAt: null };
-
 /**
- * 补上这条记录还缺的一步：把原话翻译成条件。提交只写入一条记录、立刻进工作台，
- * 理解在这里的 effect 里补，等待显示在名单那一列。
+ * 链上最后一轮的理解，只读。理解在提交那一刻由服务端开始（`server/turn.ts`），
+ * 这里不开始任何事：打开、刷新、多开几个标签页都只是多几个人在看。
  *
- * 服务端只补 `spec is null` 的行，重复触发拿回同一份结果。等的时候每秒问一次进度
- * （`turnProgress`）：线程边跑边画步骤，线程和名单从这一次开始的时刻计时；理解完成后
- * 停止询问。
- *
- * @param settledSpec 记录上已经理解好的完整查询；`null` 表示还没理解。
+ * 还在理解时每秒读一次（`turnInterpretation`）：线程边跑边画步骤，线程和名单从这一次
+ * 开始的时刻计时；读到条件写好了就重新载入这一轮，读到失败就停下，等人点重试。
  */
-export function useInterpretation(
-	turnId: string,
-	settledSpec: SearchSpec | null,
-): {
+export function useInterpretation(latest: Turn): {
 	interpreting: boolean;
 	fault: InterpretFault | null;
 	retry: () => void;
@@ -94,59 +89,69 @@ export function useInterpretation(
 	progress: Progress | null;
 } {
 	const router = useRouter();
-	const [attempt, setAttempt] = useState(0);
-	const [failed, setFailed] = useState<{
-		key: string;
-		fault: InterpretFault;
+	const turnId = latest.id;
+	const settled = latest.spec !== null;
+	// 最近一次读到的这一轮；还没读过就是载入页面时记录上的那份
+	const [read, setRead] = useState<{
+		turnId: string;
+		state: Interpretation;
 	} | null>(null);
-	const [progress, setProgress] = useState<Progress | null>(null);
-	const key = `${turnId}#${attempt}`;
+	const state: Interpretation =
+		read?.turnId === turnId
+			? read.state
+			: {
+					trace: latest.trace ?? [],
+					startedAt: latest.startedAt,
+					fault: latest.fault,
+					settled,
+				};
+	const fault = settled ? null : state.fault;
+	const interpreting = !settled && fault === null;
 
-	useEffect(() => {
-		if (settledSpec !== null) return;
-		let alive = true;
-		interpretTurn({ data: { turnId } })
-			.then(async ({ fault }) => {
-				if (!alive) return;
-				if (fault) setFailed({ key, fault });
-				else await router.invalidate();
-			})
-			.catch(() => {
-				// 连 RPC 都没走通：自家服务器这一侧的事
-				if (alive) setFailed({ key, fault: "broken" });
-			});
-		return () => {
-			alive = false;
-		};
-	}, [settledSpec, turnId, key, router]);
-
-	const fault =
-		settledSpec === null && failed?.key === key ? failed.fault : null;
-	const interpreting = settledSpec === null && fault === null;
+	const show = useCallback(
+		(next: Interpretation | null) => {
+			if (!next) return;
+			if (next.settled) void router.invalidate();
+			else setRead({ turnId, state: next });
+		},
+		[router, turnId],
+	);
 
 	useEffect(() => {
 		if (!interpreting) return;
 		let alive = true;
-		setProgress(NOT_STARTED);
-		const ask = async () => {
+		const timer = setInterval(async () => {
 			try {
-				const now = await turnProgress({ data: { turnId } });
-				if (alive && now) setProgress(now);
+				const next = await turnInterpretation({ data: { turnId } });
+				if (!alive) return;
+				// 写好了就不再问：重新载入这一轮要一会儿，不必每秒再催一次
+				if (next?.settled) clearInterval(timer);
+				show(next);
 			} catch {
 				// 问不到就下一秒再问：这只是进度，理解不靠它
 			}
-		};
-		const timer = setInterval(ask, PROGRESS_POLL_MS);
+		}, PROGRESS_POLL_MS);
 		return () => {
 			alive = false;
 			clearInterval(timer);
 		};
-	}, [interpreting, turnId]);
+	}, [interpreting, turnId, show]);
+
+	const retry = () => {
+		retryTurn({ data: { turnId } })
+			.then(show)
+			.catch(() => {
+				// 连 RPC 都没走通：自家服务器这一侧的事
+				setRead({ turnId, state: { ...state, fault: "broken" } });
+			});
+	};
 
 	return {
 		interpreting,
 		fault,
-		retry: () => setAttempt((a) => a + 1),
-		progress: interpreting || fault ? progress : null,
+		retry,
+		progress: settled
+			? null
+			: { trace: state.trace, startedAt: state.startedAt },
 	};
 }

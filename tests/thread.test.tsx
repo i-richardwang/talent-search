@@ -30,6 +30,7 @@ function turns(rounds: Round[]): Turn[] {
 		notes: r.notes ?? null,
 		trace: r.trace ?? null,
 		startedAt: null,
+		fault: null,
 		at: 0,
 	}));
 }

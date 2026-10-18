@@ -31,6 +31,7 @@ const ROUND1: Turn = {
 	notes: null,
 	trace: ROUND1_TRACE,
 	startedAt: T0 - 1500,
+	fault: null,
 	at: T0 - 1500,
 };
 
@@ -57,6 +58,7 @@ const ROUND2: Turn = {
 	},
 	trace: ROUND2_TRACE,
 	startedAt: T0 + 58_000,
+	fault: null,
 	at: T0 + 58_000,
 };
 
@@ -71,6 +73,7 @@ const ROUND3: Turn = {
 	notes: null,
 	trace: null,
 	startedAt: null,
+	fault: null,
 	at: T0 + 90_000,
 };
 
@@ -85,6 +88,7 @@ export const ANSWERED_TURN: Turn = {
 	notes: null,
 	trace: null,
 	startedAt: null,
+	fault: null,
 	at: T0 + 70_000,
 };
 
@@ -110,6 +114,7 @@ export const PENDING_TURN: Turn = {
 	notes: null,
 	trace: null,
 	startedAt: JUST_NOW,
+	fault: null,
 	at: JUST_NOW,
 };
 
@@ -147,6 +152,7 @@ export const FRESH_TURN: Turn = {
 	notes: null,
 	trace: null,
 	startedAt: JUST_NOW,
+	fault: null,
 	at: JUST_NOW,
 };
 

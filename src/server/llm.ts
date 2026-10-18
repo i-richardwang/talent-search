@@ -1,7 +1,7 @@
 /**
  * 查询理解的端点适配层：发送需求、当前条件与语料词表，消费提交工具的条件表。
  * 工具回答只提供人数与写法，不发送个人信息或经历。模型不可增删或重排候选人。
- * 未配置或未能作答时抛出错误，查询记录保持待理解供重试。
+ * 未配置、超过时限或未能作答时抛出错误，查询记录保持待理解供重试。
  */
 
 import "@tanstack/react-start/server-only";
@@ -30,6 +30,12 @@ const MAX_OUTPUT_TOKENS = positiveInt(
 	process.env.LLM_MAX_OUTPUT_TOKENS,
 	16_000,
 );
+
+/**
+ * 一轮理解最多花多久，含全部模型调用与重试：人在等，三次请求的超时之后不再等下去。
+ * 过了这个时限的理解一定已经结束，`server/turn.ts` 据此认出进程中途没了的那一次。
+ */
+export const UNDERSTAND_LIMIT_MS = 3 * TIMEOUT_MS;
 
 /**
  * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。通常查一次、提交一次，
@@ -238,8 +244,10 @@ export async function understand(
 	 * 超时由 `retryingTimeouts` 试，SDK 和超时重试用同一个数。
 	 */
 	const retries = 1;
+	const limit = AbortSignal.timeout(UNDERSTAND_LIMIT_MS);
 	const result = await retryingTimeouts(retries, () =>
 		generateText({
+			abortSignal: limit,
 			model: m,
 			tools: agent.tools,
 			toolChoice: "required",
