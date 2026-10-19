@@ -143,7 +143,9 @@ export function agentTools({
 			description:
 				"查几个经历词：按搜索的方式各能找到多少人、对应人才库里哪些标准能力词，以及每个能力词更宽和更细的词。",
 			inputSchema: z.object({
-				texts: z.array(z.string()).describe("要查的词，一次可以几个"),
+				texts: z
+					.array(z.string())
+					.meta({ description: "要查的词，一次可以几个" }),
 			}),
 			execute: ({ texts }) => {
 				const inputs = lookupInputs(texts);
@@ -161,15 +163,13 @@ export function agentTools({
 			description:
 				"查一种属性在人才库里怎么写、各有多少人。level、education、recruitment、schoolTier、overseas、companyTag 不用给 queries，返回全部取值；company、department、school 按包含匹配 queries 里的每个名字，部门只给人数。",
 			inputSchema: z.object({
-				field: z
-					.enum(ATTRIBUTE_FIELDS)
-					.describe(
+				field: z.enum(ATTRIBUTE_FIELDS).meta({
+					description:
 						"level=职级；education=学历；recruitment=招聘渠道；schoolTier=学校档；overseas=海外学历；companyTag=公司档；company=入职前公司；department=公司内部门；school=学校",
-					),
-				queries: z
-					.array(z.string())
-					.optional()
-					.describe("要查的名字，一次可以几个；有限取值的属性不用写"),
+				}),
+				queries: z.array(z.string()).optional().meta({
+					description: "要查的名字，一次可以几个；有限取值的属性不用写",
+				}),
 			}),
 			execute: ({ field, queries }): Promise<Matched[] | NameFinding[]> => {
 				if (isVocabKey(field))

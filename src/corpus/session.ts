@@ -41,6 +41,22 @@ export async function corpusSessionOwner(
 }
 
 /**
+ * 放锁并清掉这个写者留在会话上的东西（整理任务的临时表、运行身份），连接才能还回池里。
+ * 停在事务里或清理失败的连接残留会话状态，下一个使用者会出错，返回 false。
+ */
+async function reset(client: PoolClient): Promise<boolean> {
+	if (client.getTransactionStatus() !== "I") return false;
+	try {
+		await client.query(`select pg_advisory_unlock(${CORPUS_LOCK}::bigint)`);
+		await client.query("discard temp");
+		await client.query("reset application_name");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * 取得写者连接与锁。`wait` 为 false 时已经有写者就返回 `null`，调用方负责报告；
  * 为 true 时排队等到拿到为止。
  */
@@ -67,19 +83,7 @@ export async function acquireCorpusSession(
 	}
 	return {
 		client,
-		release: async () => {
-			let broken = false;
-			try {
-				await client.query(`select pg_advisory_unlock(${CORPUS_LOCK}::bigint)`);
-				// 清理整理任务的会话级临时表与运行身份，再将连接归还池。
-				await client.query("discard temp");
-				await client.query("reset application_name");
-			} catch {
-				// 收不了尾的连接不能还回池里：它可能残留会话状态，下一个使用者会出错
-				broken = true;
-			} finally {
-				client.release(broken);
-			}
-		},
+		// 收不了尾的连接销毁而不还回池里，销毁连接同时释放锁
+		release: async () => client.release(!(await reset(client))),
 	};
 }

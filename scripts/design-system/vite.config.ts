@@ -11,7 +11,6 @@ import { stubsPlugin } from "./server/stubs-plugin";
  */
 export default defineConfig({
 	plugins: [stubsPlugin(), tailwindcss(), viteReact(), applyPlugin()],
-	resolve: { tsconfigPaths: true },
 	root: import.meta.dirname,
 	server: { port: 3200 },
 });

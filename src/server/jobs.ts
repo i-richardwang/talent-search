@@ -5,7 +5,7 @@
  */
 
 import "@tanstack/react-start/server-only";
-import { PgBoss } from "pg-boss";
+import { PgBoss, type UpdateQueueOptions } from "pg-boss";
 import type { TaskKind } from "#/lib/task";
 import { reviewJudge } from "./review";
 import { deriveProgress, runTask } from "./tasks";
@@ -23,6 +23,20 @@ const SCHEDULE: Record<JobKind, string> = {
 	review: "0 3 * * *",
 };
 
+/**
+ * 两个队列共用的设置，每次启动写一遍，库里的队列总是这里的样子。失败不重试：下一次
+ * 排班自然再来。
+ *
+ * pg-boss 把跑过 `expireInSeconds` 的任务判失败，而一轮解析可能跑好几个小时，所以时限
+ * 放到它允许的最长一天；进程死掉由心跳在一两分钟内发现，exclusive 队列不会因为一个
+ * 没人在跑的任务停一整天。
+ */
+const QUEUE = {
+	retryLimit: 0,
+	expireInSeconds: 24 * 60 * 60,
+	heartbeatSeconds: 60,
+} satisfies UpdateQueueOptions;
+
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL 未配置");
 
@@ -37,10 +51,16 @@ const registry = globalThis as { [HANDLE]?: Handle };
 async function setup(boss: PgBoss): Promise<void> {
 	reviewJudge();
 	boss.on("error", (error) => console.error("pg-boss：", error));
-	await boss.start();
+	boss.on("warning", ({ message, data }) =>
+		console.warn("pg-boss：", message, data),
+	);
+	// 进程可能比库先起来：先等一会儿库，约两分半钟后仍不通才放弃
+	await boss.start({ attempts: 10 });
 	const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 	for (const kind of Object.keys(SCHEDULE) as JobKind[]) {
-		await boss.createQueue(kind, { policy: "exclusive", retryLimit: 0 });
+		// 策略只能在建队列时定；已有的队列 `createQueue` 不动它，其余设置由 `updateQueue` 写
+		await boss.createQueue(kind, { policy: "exclusive" });
+		await boss.updateQueue(kind, QUEUE);
 		await boss.schedule(kind, SCHEDULE[kind], null, { tz });
 	}
 	await boss.work("derive", async () => {

@@ -28,46 +28,44 @@ const experienceItem = z.object({
 	about: z.literal("experience"),
 	mode: z
 		.enum(MODES)
-		.describe("must=必须；boost=最好有；exclude=不要这样的经历"),
+		.meta({ description: "must=必须；boost=最好有；exclude=不要这样的经历" }),
 	what: z
 		.array(z.string())
 		.optional()
-		.describe("做过什么，任一命中即可；不限就不写"),
+		.meta({ description: "做过什么，任一命中即可；不限就不写" }),
 	company: z
 		.array(z.string())
 		.optional()
-		.describe("入职前在哪家公司，任一即可；不限就不写"),
+		.meta({ description: "入职前在哪家公司，任一即可；不限就不写" }),
 	department: z
 		.array(z.string())
 		.optional()
-		.describe("公司内在哪个部门，任一即可；不限就不写"),
+		.meta({ description: "公司内在哪个部门，任一即可；不限就不写" }),
 	companyTag: z
 		.array(z.string())
 		.optional()
-		.describe("在哪一档公司，从给出的取值里挑；不限就不写"),
-	kind: z
-		.enum(["internal", "external"])
-		.optional()
-		.describe("internal=公司内的任职；external=入职前的经历；不限就不写"),
+		.meta({ description: "在哪一档公司，从给出的取值里挑；不限就不写" }),
+	kind: z.enum(["internal", "external"]).optional().meta({
+		description: "internal=公司内的任职；external=入职前的经历；不限就不写",
+	}),
 	minMonths: z
-		.number()
 		.int()
 		.optional()
-		.describe("这样的经历累计至少多少个月；不限就不写"),
+		.meta({ description: "这样的经历累计至少多少个月；不限就不写" }),
 });
 
 const personItem = z.object({
 	about: z.literal("person"),
-	mode: z.enum(PERSON_MODES).describe("must=必须；boost=最好是"),
+	mode: z.enum(PERSON_MODES).meta({ description: "must=必须；boost=最好是" }),
 	field: z.enum(PERSON_FIELDS),
 	values: z
 		.array(z.string())
 		.optional()
-		.describe("任一即可；词表维从给出的取值里挑"),
-	atLeast: z
-		.string()
-		.optional()
-		.describe("这一档及以上，只用于 level 和 education，从给出的取值里挑一档"),
+		.meta({ description: "任一即可；词表维从给出的取值里挑" }),
+	atLeast: z.string().optional().meta({
+		description:
+			"这一档及以上，只用于 level 和 education，从给出的取值里挑一档",
+	}),
 });
 
 const conditionItems = z.array(
@@ -76,30 +74,35 @@ const conditionItems = z.array(
 
 /** 提交工具的回答形状。词表由提示词提供，数量与文本上限在 condition.ts 校验。 */
 export const submissionSchema = z.object({
-	conditions: conditionItems.describe(
-		"整张新的条件表。一条经历主张里的各项说的是同一段经历；不同的经历分别写一条",
-	),
+	conditions: conditionItems.meta({
+		description:
+			"整张新的条件表。一条经历主张里的各项说的是同一段经历；不同的经历分别写一条",
+	}),
 	note: z
 		.object({
-			says: z.string().describe("对 HR 说的一句话"),
-			current: z
-				.string()
-				.nullable()
-				.describe(
+			says: z.string().meta({ description: "对 HR 说的一句话" }),
+			current: z.string().nullable().meta({
+				description:
 					"有选项时，现在这张表是哪种理解，写成 HR 会回的话；没有选项写 null",
-				),
+			}),
 			options: z
 				.array(
 					z.object({
-						label: z.string().describe("HR 选这一项时会回的话"),
-						detail: z.string().describe("一句说明，人数来自查到的结果"),
-						conditions: conditionItems.describe("选了这一项之后的整张条件表"),
+						label: z.string().meta({ description: "HR 选这一项时会回的话" }),
+						detail: z
+							.string()
+							.meta({ description: "一句说明，人数来自查到的结果" }),
+						conditions: conditionItems.meta({
+							description: "选了这一项之后的整张条件表",
+						}),
 					}),
 				)
-				.describe("HR 还可以换成的理解；没有就空着"),
+				.meta({ description: "HR 还可以换成的理解；没有就空着" }),
 		})
 		.nullable()
-		.describe("名单上看不出、要 HR 知道或拿主意的一件事；没有就写 null"),
+		.meta({
+			description: "名单上看不出、要 HR 知道或拿主意的一件事；没有就写 null",
+		}),
 });
 
 /** 模型提交的一份搜索条件：符合 schema，还没经过 `understood` 校验。 */

@@ -77,16 +77,16 @@
 
 /* 悬停包在 `:where()` 里不增加特异性，选中行的底色因此压得住悬停。 */
 .ui-table-wrapper .ui-table-tbody .ui-table-row {
+	&:where(:hover) > .ui-table-cell {
+		background: var(--color-fill-tertiary);
+	}
+
 	&[data-state="selected"] > .ui-table-cell {
 		background: var(--color-primary-bg);
 
 		&:where(.ui-table-row:hover > *) {
 			background: var(--color-primary-bg-hover);
 		}
-	}
-
-	&:where(:hover) > .ui-table-cell {
-		background: var(--color-fill-tertiary);
 	}
 
 	/* 焦点框画在行的内侧，不被装着表的那块面裁掉。 */

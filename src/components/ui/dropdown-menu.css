@@ -132,10 +132,10 @@
 		cursor: not-allowed;
 		color: var(--color-fg-quaternary);
 		opacity: 0.5;
+	}
 
-		&:hover {
-			background: transparent;
-		}
+	&[data-disabled]:hover {
+		background: transparent;
 	}
 }
 

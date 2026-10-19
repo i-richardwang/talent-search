@@ -1,55 +1,94 @@
 /**
- * 四个端点适配层（`embed` / `rerank` / `llm` / `chat`）共用的三样东西：把配置里的
- * 数读出来，给每一次请求设上超时，以及超时之后再试。
+ * 四个端点适配层（`embed` / `rerank` / `llm` / `chat`）共用的两样东西：把配置里的
+ * 数读出来，以及每一次 HTTP 请求的超时与重试。
  */
 
 import "@tanstack/react-start/server-only";
-import { APICallError, RetryError } from "ai";
+import { APICallError } from "ai";
 
 export function positiveInt(value: string | undefined, fallback: number) {
 	const parsed = Number(value);
 	return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+/** 退避从 2 秒起、每次翻倍；`Retry-After` 在 60 秒内时照它等。和 AI SDK 的默认一致。 */
+const FIRST_DELAY_MS = 2_000;
+const RETRY_AFTER_MAX_MS = 60_000;
+
 /**
- * 每次 HTTP 尝试各有一份超时预算。调用方的 signal 与本次超时信号共用，
- * 任一信号触发时中止请求。
+ * 一次 HTTP 请求的超时与重试，四个适配层只经过这一处：SDK 的 provider 拿它当
+ * `fetch`、调用时 `maxRetries: 0`，重排直接调它。重试的单位是这一个请求，所以
+ * 多步对话里第几步超时就只重发第几步，分批嵌入里哪一批超时就只重发哪一批。
+ *
+ * - 每次尝试各有 `timeoutMs` 的预算，最多重发 `retries` 次。超时的那次已经等满了预算，
+ *   立即重发；连不上和 408/409/429/5xx（和 SDK 判定可重试的状态码相同）退避后重发。
+ * - 调用方的 signal 触发（整次调用的时限、取消）立即停下，不再重发。
+ * - 用尽后交回最后一次的结果：HTTP 错误原样作为应答交给调用方，超时与连不上原样抛出。
  */
-export function timeoutFetch(ms: number): typeof fetch {
-	return (input, init) => {
-		const own = AbortSignal.timeout(ms);
-		return fetch(input, {
-			...init,
-			signal: init?.signal ? AbortSignal.any([init.signal, own]) : own,
-		});
+export function endpointFetch({
+	timeoutMs,
+	retries,
+}: {
+	timeoutMs: number;
+	retries: number;
+}): typeof fetch {
+	return async (input, init) => {
+		const caller = init?.signal ?? undefined;
+		for (let attempt = 0; ; attempt++) {
+			const own = AbortSignal.timeout(timeoutMs);
+			const signal = caller ? AbortSignal.any([caller, own]) : own;
+			let wait: number;
+			try {
+				const response = await fetch(input, { ...init, signal });
+				if (attempt >= retries || !retryable(response.status)) return response;
+				wait = delayOf(response, attempt);
+				await response.body?.cancel();
+			} catch (error) {
+				if (caller?.aborted || attempt >= retries) throw error;
+				if (isTimeout(error)) continue;
+				// 按 Fetch 标准，请求没发出去（拒绝连接、断网、DNS）一律是 TypeError
+				if (!(error instanceof TypeError)) throw error;
+				wait = FIRST_DELAY_MS * 2 ** attempt;
+			}
+			await sleep(wait, caller);
+		}
 	};
 }
 
-/**
- * timeoutFetch 触发的超时在此立即重试；429 和 5xx 由 SDK 退避重试。
- * SDK 重试发生在每次 run 内，最坏尝试次数为两个重试循环次数的乘积。
- */
-export async function retryingTimeouts<T>(
-	retries: number,
-	run: () => Promise<T>,
-): Promise<T> {
-	for (let attempt = 0; ; attempt++) {
-		try {
-			return await run();
-		} catch (error) {
-			if (attempt >= retries || !isTimeout(error)) throw error;
-		}
-	}
+function retryable(status: number) {
+	return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
-/**
- * 是不是 `AbortSignal.timeout` 触发的超时。它是一个 `name` 为 `TimeoutError` 的
- * `DOMException`，SDK 原样抛出；万一哪一层包了一次，沿 `cause` 往下找。
- */
-function isTimeout(error: unknown): boolean {
-	for (let current = error; current instanceof Error; current = current.cause)
-		if (current.name === "TimeoutError") return true;
-	return false;
+function isTimeout(error: unknown) {
+	return error instanceof Error && error.name === "TimeoutError";
+}
+
+function delayOf(response: Response, attempt: number) {
+	const backoff = FIRST_DELAY_MS * 2 ** attempt;
+	const ms = Number.parseFloat(response.headers.get("retry-after-ms") ?? "");
+	if (ms >= 0 && ms <= RETRY_AFTER_MAX_MS) return ms;
+	const after = response.headers.get("retry-after");
+	if (!after) return backoff;
+	const seconds = Number.parseFloat(after);
+	const wait = Number.isNaN(seconds)
+		? Date.parse(after) - Date.now()
+		: seconds * 1000;
+	return wait >= 0 && wait <= RETRY_AFTER_MAX_MS ? wait : backoff;
+}
+
+function sleep(ms: number, signal: AbortSignal | undefined) {
+	return new Promise<void>((resolve, reject) => {
+		if (signal?.aborted) return reject(signal.reason);
+		const timer = setTimeout(resolve, ms);
+		signal?.addEventListener(
+			"abort",
+			() => {
+				clearTimeout(timer);
+				reject(signal.reason);
+			},
+			{ once: true },
+		);
+	});
 }
 
 /**
@@ -61,22 +100,16 @@ function isTimeout(error: unknown): boolean {
  *
  * 都不是就是 null：端点好好地答了，问题出在答的内容或我们自己这一侧。
  *
- * SDK 把连不上包成一个没有状态码的 `APICallError`，重试用尽再包一层 `RetryError`；
- * 超时是 `timeoutFetch` 设的超时触发了。这里沿 `lastError` 和 `cause` 往下找第一个能识别的。
+ * 超时是 `TimeoutError`（单次尝试的，或整次调用的时限）；SDK 把连不上包成没有状态码的
+ * `APICallError`，把 HTTP 错误包成带状态码的。这里沿 `cause` 往下找第一个能识别的。
  */
 export type EndpointFault = "unreachable" | "rejected";
 
 export function endpointFault(error: unknown): EndpointFault | null {
-	const seen = new Set<unknown>();
-	let current = error;
-	while (current instanceof Error && !seen.has(current)) {
-		seen.add(current);
+	for (let current = error; current instanceof Error; current = current.cause) {
 		if (current.name === "TimeoutError") return "unreachable";
 		if (APICallError.isInstance(current))
 			return current.statusCode === undefined ? "unreachable" : "rejected";
-		current = RetryError.isInstance(current)
-			? current.lastError
-			: current.cause;
 	}
 	return null;
 }

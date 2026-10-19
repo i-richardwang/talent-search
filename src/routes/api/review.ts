@@ -16,22 +16,16 @@ import {
 	submit,
 } from "#/server/review";
 
-/** 这条接口不给页面用，不处理缓存与内容协商。 */
-function json(body: unknown, status = 200): Response {
-	return new Response(JSON.stringify(body), {
-		headers: { "content-type": "application/json; charset=utf-8" },
-		status,
-	});
-}
-
 /*
  * 接口没启用（判定不归外部，或没配 `REVIEW_TOKEN`）时回 404 而不是 401：没开的
  * 部署不该让外面看出「这里有个要凭据的接口」。开了但凭据不对才是 401，而且不区分
  * 「没带」和「带错」。
  */
 function reject(request: Request): Response | null {
-	if (!configured()) return json({ error: "not found" }, 404);
-	if (!authorized(request)) return json({ error: "unauthorized" }, 401);
+	if (!configured())
+		return Response.json({ error: "not found" }, { status: 404 });
+	if (!authorized(request))
+		return Response.json({ error: "unauthorized" }, { status: 401 });
 	return null;
 }
 
@@ -40,22 +34,29 @@ export const Route = createFileRoute("/api/review")({
 		handlers: {
 			GET: async ({ request }) =>
 				reject(request) ??
-				json(await pending(limitOf(request.url), kindOf(request.url))),
+				Response.json(await pending(limitOf(request.url), kindOf(request.url))),
 			POST: async ({ request }) => {
 				const denied = reject(request);
 				if (denied) return denied;
 				const result = await submit(request);
-				if (!result.ok) return json({ error: result.why }, 400);
+				if (!result.ok)
+					return Response.json({ error: result.why }, { status: 400 });
 				if (result.submission === "missing")
-					return json({ error: "这一组不在队列里，或者已经过期" }, 404);
+					return Response.json(
+						{ error: "这一组不在队列里，或者已经过期" },
+						{ status: 404 },
+					);
 				if (result.submission === "taken")
-					return json({ error: "这一组已经有人判过了" }, 409);
+					return Response.json(
+						{ error: "这一组已经有人判过了" },
+						{ status: 409 },
+					);
 				/*
 				 * 判定已写入，这里请求一次整理让它尽快生效。请求没排上不告诉外面：
 				 * 已有一个排着或在跑时排不上，判定下一轮照样生效。
 				 */
 				await requestJob("review");
-				return json({ accepted: true });
+				return Response.json({ accepted: true });
 			},
 		},
 	},

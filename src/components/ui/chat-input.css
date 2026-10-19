@@ -67,10 +67,10 @@
 	color: var(--color-fg-tertiary);
 	pointer-events: none;
 	user-select: none;
+}
 
-	.ui-chat-input-textarea:not(:placeholder-shown) + & {
-		display: none;
-	}
+.ui-chat-input-textarea:not(:placeholder-shown) + .ui-chat-input-placeholder {
+	display: none;
 }
 
 .ui-chat-input-bar {

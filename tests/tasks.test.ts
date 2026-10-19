@@ -6,6 +6,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, mock, test } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { CorpusCounts, TaskOutcome } from "#/server/tasks";
 import { answerChat, setup } from "./fixture";
 
@@ -618,6 +619,18 @@ describe("页面文案", () => {
 	});
 });
 
+/**
+ * 销毁连接后锁由服务端随会话退出释放，会话退出不与 `release(true)` 同步：等它走完，
+ * 两秒还没放就是没放。
+ */
+async function lockReleased() {
+	for (const started = Date.now(); Date.now() - started < 2_000; ) {
+		if ((await corpusSessionOwner()) === null) return true;
+		await sleep(20);
+	}
+	return false;
+}
+
 /** 写者连接在锁请求或收尾失败时销毁，未知的会话状态不进入连接池。 */
 for (const wait of [false, true]) {
 	test(`锁请求结果未知时销毁连接（wait=${wait}）`, async () => {
@@ -645,7 +658,7 @@ for (const wait of [false, true]) {
 			assert.equal(release.mock.calls.length, 1);
 			assert.equal(release.mock.calls[0]?.arguments[0], true);
 			assert.notEqual(returned, client);
-			assert.equal(await corpusSessionOwner(), null);
+			assert.ok(await lockReleased());
 		} finally {
 			await returned.query("select pg_advisory_unlock_all()");
 			returned.release();
@@ -670,7 +683,28 @@ test("收尾失败时销毁拿到锁的连接", async () => {
 	const returned = await pool.connect();
 	try {
 		assert.notEqual(returned, held.client);
-		assert.equal(await corpusSessionOwner(), null);
+		assert.ok(await lockReleased());
+	} finally {
+		returned.release();
+	}
+});
+
+test("停在事务里的写者连接不还回池里", async () => {
+	const held = await acquireCorpusSession();
+	assert.ok(held);
+	await held.client.query("begin");
+	const release = mock.method(held.client, "release");
+	try {
+		await held.release();
+		assert.equal(release.mock.calls[0]?.arguments[0], true);
+	} finally {
+		release.mock.restore();
+	}
+	const returned = await pool.connect();
+	try {
+		assert.notEqual(returned, held.client);
+		assert.equal(returned.getTransactionStatus(), "I");
+		assert.ok(await lockReleased());
 	} finally {
 		returned.release();
 	}

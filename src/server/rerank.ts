@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "#/db";
 import { rerankCache } from "#/db/schema";
-import { positiveInt, timeoutFetch } from "./endpoint";
+import { endpointFetch, positiveInt } from "./endpoint";
 
 const BASE_URL = process.env.RERANK_BASE_URL || process.env.EMBED_BASE_URL;
 const API_KEY = process.env.RERANK_API_KEY || process.env.EMBED_API_KEY;
@@ -18,10 +18,14 @@ const RERANK_SPACE_ID = process.env.RERANK_SPACE_ID ?? "";
  */
 const BATCH = 100;
 const LOOKUP_BATCH = 500;
-/** 这一层不重试，所以一次请求就是一次尝试；超时的含义和另外三层一致。 */
-const fetchWithTimeout = timeoutFetch(
-	positiveInt(process.env.RERANK_TIMEOUT_MS, 30_000),
-);
+/**
+ * 每一批的请求各自超时、各自重试（见 `endpoint.ts`）。重排发生在检索里，人在等，
+ * 只多等一次。
+ */
+const rerankFetch = endpointFetch({
+	timeoutMs: positiveInt(process.env.RERANK_TIMEOUT_MS, 30_000),
+	retries: 1,
+});
 const CONCURRENCY = positiveInt(process.env.RERANK_CONCURRENCY, 4);
 
 let activeRequests = 0;
@@ -53,22 +57,19 @@ export function rerankSpaceId() {
 }
 
 async function rerankBatch(query: string, documents: string[]) {
-	const response = await fetchWithTimeout(
-		`${BASE_URL?.replace(/\/$/, "")}/rerank`,
-		{
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				...(API_KEY && { authorization: `Bearer ${API_KEY}` }),
-			},
-			body: JSON.stringify({
-				model: RERANK_MODEL,
-				query,
-				documents,
-				return_documents: false,
-			}),
+	const response = await rerankFetch(`${BASE_URL?.replace(/\/$/, "")}/rerank`, {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+			...(API_KEY && { authorization: `Bearer ${API_KEY}` }),
 		},
-	);
+		body: JSON.stringify({
+			model: RERANK_MODEL,
+			query,
+			documents,
+			return_documents: false,
+		}),
+	});
 	if (!response.ok) throw new Error(`重排端点返回 HTTP ${response.status}`);
 	const payload = await response.json();
 	if (!payload || !Array.isArray(payload.results))

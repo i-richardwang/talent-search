@@ -6,13 +6,13 @@
 
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { cosineSimilarity, embedMany } from "ai";
+import { cosineSimilarity, embedMany, InvalidResponseDataError } from "ai";
 import { getTableColumns, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "#/db";
 import { EMBED_DIM, embeddingSpace } from "#/db/schema";
 import type { DbExecutor } from "#/db/snapshot";
-import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
+import { endpointFetch, positiveInt } from "./endpoint";
 
 /** 两侧共用修剪后的空间配置。 */
 const BASE_URL = process.env.EMBED_BASE_URL?.trim();
@@ -50,84 +50,88 @@ export function embedSpace(): { spaceId: string; model: string } {
 	return { spaceId, model };
 }
 
-let model: ReturnType<
+type EmbeddingModel = ReturnType<
 	ReturnType<typeof createOpenAICompatible>["embeddingModel"]
-> | null = null;
-function getModel() {
+>;
+/** 重试次数装在 provider 的 `fetch` 上，查询侧和语料侧各用各的次数，各一个模型。 */
+const models = new Map<number, EmbeddingModel>();
+function getModel(retries: number) {
 	const config = configured();
-	if (!model)
+	let model = models.get(retries);
+	if (!model) {
 		model = createOpenAICompatible({
 			name: "talent-embed",
 			baseURL: config.baseURL,
 			...(API_KEY && { apiKey: API_KEY }),
-			// 超时设在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
-			fetch: timeoutFetch(TIMEOUT_MS),
+			// 每一批的请求各自超时、各自重试（见 `endpoint.ts`）
+			fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries }),
 		}).embeddingModel(config.model);
+		models.set(retries, model);
+	}
 	return model;
 }
 
 const EMBEDDING_RESPONSE = z.object({
 	data: z.array(
 		z.object({
-			index: z.number().int().nonnegative(),
+			index: z.int().nonnegative(),
 			embedding: z.array(z.number()),
 		}),
 	),
 });
 
-/** 按响应索引对应请求文本，拒绝遗漏、重复或无效向量。SDK 负责分批、超时与 HTTP 重试。 */
+/**
+ * 按响应索引对应请求文本，拒绝重复、越界或无效向量。SDK 负责分批并核对每批的向量数，
+ * 每一批的超时与重试在 `endpointFetch`。SDK 按回答里的先后排列向量、不读索引，所以
+ * 对应关系在这里按原始响应体里的索引重排。
+ */
 async function request(
 	values: string[],
-	maxRetries: number,
+	retries: number,
 ): Promise<Map<string, number[]>> {
-	// 两种失败各自重试同样的次数：可重试的应答由 SDK 在里面试，超时由外面这一层试
-	const model = getModel();
-	const { responses } = await retryingTimeouts(maxRetries, () =>
-		embedMany({ model, values, maxRetries }),
-	);
-	const limit = (await model.maxEmbeddingsPerCall) ?? values.length;
-	const embeddings: number[][] = [];
-	for (const response of responses ?? []) {
+	const { responses } = await embedMany({
+		model: getModel(retries),
+		values,
+		maxRetries: 0,
+	}).catch((error) => {
+		// SDK 比对每批的向量数，比到不一致时抛它的英文错误
+		if (InvalidResponseDataError.isInstance(error))
+			throw new Error("嵌入端点返回的向量数与请求不一致", { cause: error });
+		throw error;
+	});
+	const out = new Map<string, number[]>();
+	let offset = 0;
+	// 原始响应体是可选字段；没有它就对不上索引
+	for (const response of responses ?? [undefined]) {
 		const parsed = EMBEDDING_RESPONSE.safeParse(response?.body);
 		if (!parsed.success) throw new Error("嵌入端点响应缺少有效的索引与向量");
-		const count = Math.min(limit, values.length - embeddings.length);
-		if (parsed.data.data.length !== count)
-			throw new Error("嵌入端点返回的向量数与请求不一致");
-		const batch = new Array<number[] | undefined>(count).fill(undefined);
-		for (const { index, embedding } of parsed.data.data) {
-			if (index >= count || batch[index] !== undefined)
+		// 每批的向量数 SDK 已经核对过等于这一批的文本数，索引各占一位就一个不缺
+		const batch = parsed.data.data;
+		const seen = new Set<number>();
+		for (const { index, embedding } of batch) {
+			if (index >= batch.length || seen.has(index))
 				throw new Error("嵌入端点返回了重复或越界的向量索引");
-			batch[index] = embedding;
+			seen.add(index);
+			if (
+				embedding.length !== EMBED_DIM ||
+				embedding.some((value) => !Number.isFinite(value)) ||
+				!embedding.some((value) => value !== 0)
+			)
+				throw new Error(
+					`嵌入端点返回了无效向量：期望 ${EMBED_DIM} 个有限数值且范数非零`,
+				);
+			const text = values[offset + index];
+			if (text !== undefined) out.set(text, embedding);
 		}
-		for (const vector of batch) {
-			if (!vector) throw new Error("嵌入端点遗漏了请求文本的向量");
-			embeddings.push(vector);
-		}
+		offset += batch.length;
 	}
-	const out = new Map<string, number[]>();
-	for (const [index, vector] of embeddings.entries()) {
-		if (
-			vector.length !== EMBED_DIM ||
-			vector.some((value) => !Number.isFinite(value)) ||
-			!vector.some((value) => value !== 0)
-		)
-			throw new Error(
-				`嵌入端点返回了无效向量：期望 ${EMBED_DIM} 个有限数值且范数非零`,
-			);
-		const text = values[index];
-		if (text !== undefined) out.set(text, vector);
-	}
-	if (out.size !== new Set(values).size)
-		throw new Error(
-			`嵌入端点返回 ${embeddings.length} 个向量，送去的是 ${values.length} 个文本`,
-		);
 	return out;
 }
 
 const knownSpaceIdentities = new Map<string, string>();
 
 async function storedSpace(store: DbExecutor) {
-	getModel();
+	configured();
 	const rows = await store
 		.select({
 			...getTableColumns(embeddingSpace),
@@ -221,10 +225,10 @@ export async function embed(
 /** 直接请求端点，按入参顺序返回向量；语料侧管理持久缓存和空间核验。 */
 export async function embedFresh(
 	values: string[],
-	maxRetries: number,
+	retries: number,
 ): Promise<number[][]> {
 	if (values.length === 0) return [];
-	const vectors = await request(values, maxRetries);
+	const vectors = await request(values, retries);
 	return values.map((text) => {
 		const vector = vectors.get(text);
 		if (!vector)

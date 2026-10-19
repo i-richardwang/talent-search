@@ -6,12 +6,12 @@
 
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, isStepCount } from "ai";
+import { generateText, isStepCount, ToolChoiceViolationError } from "ai";
 import { type Condition, withOff } from "#/search/condition";
 import type { Submission, Vocabulary } from "#/search/intent";
 import type { Matched } from "#/search/trace";
 import { type AgentTools, SUBMIT } from "./agent-tools";
-import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
+import { endpointFetch, positiveInt } from "./endpoint";
 
 const BASE_URL = process.env.LLM_BASE_URL;
 const API_KEY = process.env.LLM_API_KEY;
@@ -30,6 +30,8 @@ const MAX_OUTPUT_TOKENS = positiveInt(
 	process.env.LLM_MAX_OUTPUT_TOKENS,
 	16_000,
 );
+/** 一次请求失败再试几次：人在等结果，只多等一次。 */
+const RETRIES = 1;
 
 /**
  * 一轮理解最多花多久，含全部模型调用与重试：人在等，三次请求的超时之后不再等下去。
@@ -64,8 +66,8 @@ function getModel() {
 			name: "talent-llm",
 			baseURL: BASE_URL,
 			...(API_KEY && { apiKey: API_KEY }),
-			// 超时装在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
-			fetch: timeoutFetch(TIMEOUT_MS),
+			// 每一步的请求各自超时、各自重试（见 `endpoint.ts`）
+			fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
 			// `enable_thinking` 是网关自己的字段，兼容层的选项里没有，请求体成形后补上
 			...(ENABLE_THINKING && {
 				transformRequestBody: (body: Record<string, unknown>) => ({
@@ -238,58 +240,58 @@ export async function understand(
 	base: readonly Condition[],
 	agent: AgentTools,
 ): Promise<Submission> {
-	const m = getModel();
-	/*
-	 * 一次检索愿意多等的只有一次：人在等结果。可重试的应答由 SDK 试，
-	 * 超时由 `retryingTimeouts` 试，SDK 和超时重试用同一个数。
-	 */
-	const retries = 1;
-	const limit = AbortSignal.timeout(UNDERSTAND_LIMIT_MS);
-	const result = await retryingTimeouts(retries, () =>
-		generateText({
-			abortSignal: limit,
-			model: m,
-			tools: agent.tools,
-			toolChoice: "required",
-			stopWhen: [isStepCount(AGENT_STEPS), agent.passed],
-			prepareStep: ({ stepNumber, messages }) =>
-				stepNumber === AGENT_STEPS - 1
-					? {
-							activeTools: [SUBMIT],
-							toolChoice: { type: "tool", toolName: SUBMIT },
-							messages: [...messages, { role: "user", content: LAST_STEP }],
-						}
-					: undefined,
-			system: SYSTEM,
-			prompt: [
-				"取值",
-				listed("level（从低到高）", vocab.level),
-				listed("education（从低到高）", vocab.education),
-				listed("recruitment", vocab.recruitment),
-				listed("companyTag", vocab.companyTag),
-				listed("schoolTier", vocab.schoolTier),
-				listed("overseas", vocab.overseas),
-				// 停用是用户在 chip 上的操作，模型写不出也不必看见：它原样写回这一条，
-				// 停用状态由 `understood` 从上一轮带回来
-				`\n当前的条件表：${JSON.stringify(base.map((c) => withOff(c, null)))}`,
-				`\n这句话：${text}`,
-			].join("\n"),
-			// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件
-			temperature: 0,
-			maxRetries: retries,
-			maxOutputTokens: MAX_OUTPUT_TOKENS,
-		}),
+	const result = await generateText({
+		model: getModel(),
+		// 整次理解的时限；到了就停，不再重发（重试在 `endpointFetch` 里，以一步为单位）
+		timeout: UNDERSTAND_LIMIT_MS,
+		maxRetries: 0,
+		tools: agent.tools,
+		toolChoice: "required",
+		stopWhen: [isStepCount(AGENT_STEPS), agent.passed],
+		prepareStep: ({ stepNumber, messages }) =>
+			stepNumber === AGENT_STEPS - 1
+				? {
+						activeTools: [SUBMIT],
+						toolChoice: { type: "tool", toolName: SUBMIT },
+						messages: [...messages, { role: "user", content: LAST_STEP }],
+					}
+				: undefined,
+		instructions: SYSTEM,
+		prompt: [
+			"取值",
+			listed("level（从低到高）", vocab.level),
+			listed("education（从低到高）", vocab.education),
+			listed("recruitment", vocab.recruitment),
+			listed("companyTag", vocab.companyTag),
+			listed("schoolTier", vocab.schoolTier),
+			listed("overseas", vocab.overseas),
+			// 停用是用户在 chip 上的操作，模型写不出也不必看见：它原样写回这一条，
+			// 停用状态由 `understood` 从上一轮带回来
+			`\n当前的条件表：${JSON.stringify(base.map((c) => withOff(c, null)))}`,
+			`\n这句话：${text}`,
+		].join("\n"),
+		// 这是一次翻译，不是创作：要的是同一句话每次给同一组条件
+		temperature: 0,
+		maxOutputTokens: MAX_OUTPUT_TOKENS,
+	}).then(
+		({ finishReason, text }) => ({ finishReason, text }),
+		(error) => {
+			// 必须调用工具的一步没有调用，SDK 在这一步抛错；之前的提交仍然算数
+			if (!ToolChoiceViolationError.isInstance(error)) throw error;
+			const text = error.content
+				.flatMap((part) => (part.type === "text" ? [part.text] : []))
+				.join("");
+			return { finishReason: error.finishReason, text };
+		},
 	);
 	const submitted = agent.lastSubmitted();
 	if (submitted) return submitted;
 	/*
-	 * 出问题的是 `finishReason` 和 `usage`：`length` 配上 `reasoningTokens`
-	 * 吃掉几乎整个 `outputTokens`，一眼就是「预算被思考轨迹烧光」；`stop` 配上一段
-	 * 正文，是端点没理会必须调用工具。写进错误消息，
-	 * 查日志的人能直接看到原因，不必再翻 SDK 的结构。
+	 * 写进错误消息的是停下的原因：`length` 是输出预算（含思考轨迹）用光了，`stop` 配上
+	 * 一段正文是端点没理会必须调用工具。查日志的人直接看得到，不必再翻 SDK 的结构。
 	 */
 	throw new UnansweredError(
 		`查询理解模型没有提交搜索条件：finishReason=${result.finishReason}，` +
-			`usage=${JSON.stringify(result.totalUsage)}，text=${JSON.stringify(result.text.slice(0, 200))}`,
+			`text=${JSON.stringify(result.text.slice(0, 200))}`,
 	);
 }

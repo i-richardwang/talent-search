@@ -19,7 +19,7 @@ import { z } from "zod";
 import type { Report } from "#/corpus/report";
 import { db } from "#/db";
 import { completionCache } from "#/db/schema";
-import { positiveInt, retryingTimeouts, timeoutFetch } from "./endpoint";
+import { endpointFetch, positiveInt } from "./endpoint";
 
 const BASE_URL = process.env.EXTRACT_BASE_URL?.trim();
 const API_KEY = process.env.EXTRACT_API_KEY;
@@ -95,8 +95,8 @@ function getModel(model: string) {
 			baseURL: BASE_URL,
 			supportsStructuredOutputs: STRUCTURED,
 			...(API_KEY && { apiKey: API_KEY }),
-			// 超时设在每一次请求上，每一次尝试各有一份预算（见 `endpoint.ts`）
-			fetch: timeoutFetch(TIMEOUT_MS),
+			// 每一次请求各自超时、各自重试（见 `endpoint.ts`）
+			fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
 			// 兼容层的 provider 选项里没有 `enable_thinking`，它是网关自己的字段，
 			// 只能在请求体成形之后补上去——这个钩子正是为此存在的。
 			...(ENABLE_THINKING && {
@@ -189,10 +189,9 @@ async function store(identity: string, text: string, payload: unknown) {
 /**
  * 一段文字的回答；答不出合法 JSON 就说一句、放弃这一段。
  *
- * 瞬时故障重试 `RETRIES` 次：5xx 与限流由 AI SDK 按指数退避、遵守 `Retry-After`
- * 地试，超时由 `retryingTimeouts` 试（分工见 `endpoint.ts`）；每一次尝试各有一份
- * `EXTRACT_TIMEOUT_MS` 的预算。持续失败仍然会让这一轮解析中止，那说明并发调太高
- * 或端点真的不可用，该改 `EXTRACT_CONCURRENCY`，不该由重试掩盖。
+ * 瞬时故障（超时、连不上、5xx、限流）由 `endpointFetch` 重试 `RETRIES` 次，每一次
+ * 尝试各有一份 `EXTRACT_TIMEOUT_MS` 的预算。持续失败仍然会让这一轮解析中止，那说明
+ * 并发调太高或端点真的不可用，该改 `EXTRACT_CONCURRENCY`，不该由重试掩盖。
  */
 async function ask(
 	model: string,
@@ -212,18 +211,16 @@ async function ask(
 	};
 	let result: Awaited<ReturnType<typeof generateText>>;
 	try {
-		result = await retryingTimeouts(RETRIES, () =>
-			generateText({
-				model: getModel(model),
-				output: Output.object({ schema }),
-				system,
-				prompt: text,
-				// 降低生成随机性；并发结果的一致性由缓存决定。
-				temperature: 0,
-				maxRetries: RETRIES,
-				maxOutputTokens: MAX_OUTPUT_TOKENS,
-			}),
-		);
+		result = await generateText({
+			model: getModel(model),
+			output: Output.object({ schema }),
+			instructions: system,
+			prompt: text,
+			// 降低生成随机性；并发结果的一致性由缓存决定。
+			temperature: 0,
+			maxRetries: 0,
+			maxOutputTokens: MAX_OUTPUT_TOKENS,
+		});
 	} catch (error) {
 		if (!NoObjectGeneratedError.isInstance(error)) throw error;
 		return abandon(error.finishReason, error.usage);

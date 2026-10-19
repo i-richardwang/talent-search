@@ -482,22 +482,32 @@ function whereAll(conds: readonly SQL[]): SQL {
 }
 
 /**
- * 当前候选里满足一条加分门槛的人，在同一语料快照内读取。
+ * 当前候选里分别满足每条加分门槛的人，一条 SQL 在同一语料快照内读完。
  * 候选集合使用单个数组参数，参数数量不随候选人数增长。
  */
 async function fetchPreferred(
 	store: DbExecutor,
-	gate: Gate,
+	gates: readonly Gate[],
 	veto: SQL | null,
 	empIds: Iterable<string>,
-): Promise<Set<string>> {
+): Promise<Set<string>[]> {
+	const sets = gates.map(() => new Set<string>());
 	const ids = [...new Set(empIds)];
-	if (ids.length === 0) return new Set();
-	const rows = await store.execute<{ emp_id: string }>(sql`
-		select p.emp_id from employee p
-		where p.emp_id = any(${sql.param(ids)}::text[])
-		and ${sql.join(gateConds([gate], veto), sql` and `)}`);
-	return new Set(rows.rows.map((r) => r.emp_id));
+	if (gates.length === 0 || ids.length === 0) return sets;
+	const met = gates.map((gate) => {
+		const conds = gateConds([gate], veto);
+		return conds.length > 0
+			? sql`coalesce(${sql.join(conds, sql` and `)}, false)`
+			: sql`true`;
+	});
+	const rows = await store.execute<{ emp_id: string; met: boolean[] }>(sql`
+		select p.emp_id, array[${sql.join(met, sql`, `)}] as met from employee p
+		where p.emp_id = any(${sql.param(ids)}::text[])`);
+	for (const row of rows.rows)
+		row.met.forEach((yes, i) => {
+			if (yes) sets[i]?.add(row.emp_id);
+		});
+	return sets;
 }
 
 const FACT_ROW = sql`e.id, e.emp_id, e.end_date, ${factSelect}`;
@@ -761,9 +771,7 @@ async function searchPopulation(
 		school: undefined,
 	};
 	const empIdsAll = facts.map((f) => f.empId);
-	const preferred = await Promise.all(
-		prefer.map((g) => fetchPreferred(store, g, veto, empIdsAll)),
-	);
+	const preferred = await fetchPreferred(store, prefer, veto, empIdsAll);
 	const { empIds, facets, total } = rankPopulation(facts, inMemory, preferred);
 	const pageIds = empIds.slice(0, limit);
 	const employees =
@@ -868,9 +876,7 @@ export async function search(
 		}
 		const facts = loaded.facts;
 		const candidates = facts.map((f) => f.empId);
-		const preferred = await Promise.all(
-			prefer.map((g) => fetchPreferred(store, g, veto, candidates)),
-		);
+		const preferred = await fetchPreferred(store, prefer, veto, candidates);
 
 		const { ranked, facets, total } = rank(
 			facts,
