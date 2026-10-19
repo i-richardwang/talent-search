@@ -69,6 +69,10 @@ function ddl(schema: string, table: PgTable) {
 				`constraint "${c.uniqueName ?? `${name}_${c.name}_unique`}" unique`,
 			);
 		if (c.notNull && !c.primary) parts.push("not null");
+		if (c.generatedIdentity)
+			parts.push(
+				`generated ${c.generatedIdentity.type === "always" ? "always" : "by default"} as identity`,
+			);
 		if (c.generated) {
 			// 库自己算的列（experience.content_key）。表达式是 SQL 或字符串，照 drizzle 的形态取
 			const as =

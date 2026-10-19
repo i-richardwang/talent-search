@@ -12,7 +12,6 @@ import {
 	jsonb,
 	pgTable,
 	primaryKey,
-	serial,
 	text,
 	timestamp,
 } from "drizzle-orm/pg-core";
@@ -73,7 +72,7 @@ export const employee = pgTable(
 export const experience = pgTable(
 	"experience",
 	{
-		id: serial("id").primaryKey(),
+		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
 		empId: text("emp_id")
 			.notNull()
 			.references(() => employee.empId, { onDelete: "cascade" }),
@@ -186,7 +185,7 @@ export const completionCache = pgTable(
 
 /** 一次语料任务的持久记录；实时运行状态由会话锁判断。 */
 export const taskRun = pgTable("task_run", {
-	id: serial("id").primaryKey(),
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
 	kind: text("kind", { enum: TASK_KINDS }).notNull(),
 	/** 同步所用适配器的显示名；其余两种任务为空串 */
 	source: text("source").notNull().default(""),
@@ -223,7 +222,7 @@ export type GroupKind = (typeof GROUP_KINDS)[number];
 export const reviewGroup = pgTable(
 	"review_group",
 	{
-		id: serial("id").primaryKey(),
+		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
 		kind: text("kind", { enum: GROUP_KINDS }).notNull(),
 		/** 收集与判定这组词所依据的 GUIDE 与回答形状摘要。 */
 		guideIdentity: text("guide_identity").notNull(),
@@ -275,7 +274,7 @@ export const SHORT_ROUTES = [
 
 /** 去重后的说法及其半精度向量。 */
 export const phrase = pgTable("phrase", {
-	id: serial("id").primaryKey(),
+	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
 	text: text("text").notNull().unique(),
 	embedding: halfvec("embedding", { dimensions: EMBED_DIM }).notNull(),
 });
