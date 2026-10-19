@@ -312,25 +312,23 @@ describe("检索人才库的过程", () => {
 		assert.match(text, /查找公司\s*星河/);
 		assert.match(text, /查找学校\s*银河学院/);
 		assert.match(text, /查看学历/);
-		assert.doesNotMatch(text, /\d+ 人/, "结论点开这一步才看得见");
+		assert.doesNotMatch(text, /人才库中/, "结论点开这一步才看得见");
 		assert.doesNotMatch(text, /正在理解你的需求/, "有了步骤就不再说在理解");
 	});
 
-	test("一步的结论：一个说法多少人、包括哪些技能；一个名字匹配到哪些", () => {
+	test("一步的结论：人才库里有没有、包括哪些写法，不写全库人数", () => {
 		assert.deepEqual(stepFindings(trace[0] as TraceStep), [
-			"「推荐」128 人，包括推荐算法 96 人",
-			"「互联网」900 人",
+			"人才库中有「推荐」，包括推荐算法",
+			"人才库中有「互联网」",
 			"人才库中没有「量子炼金」",
 		]);
 		assert.deepEqual(stepFindings(trace[1] as TraceStep), [
-			"「星河」44 人，包括星河科技 38 人",
+			"人才库中有「星河」，包括星河科技",
 		]);
 		assert.deepEqual(stepFindings(trace[2] as TraceStep), [
 			"人才库中没有「银河学院」",
 		]);
-		assert.deepEqual(stepFindings(trace[3] as TraceStep), [
-			"本科 300 人、硕士 120 人",
-		]);
+		assert.deepEqual(stepFindings(trace[3] as TraceStep), ["本科、硕士"]);
 	});
 
 	test("查看结果是一枚带名字的图标链接，不包任何动作", async () => {

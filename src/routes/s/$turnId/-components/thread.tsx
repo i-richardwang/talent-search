@@ -35,13 +35,7 @@ import { DIMENSIONS, isVocabKey } from "#/search/dimensions";
 import type { TurnNotes } from "#/search/intent";
 import type { QueryInput } from "#/search/spec";
 import { changesOf } from "#/search/spec";
-import type {
-	AttributeField,
-	Matched,
-	NameFinding,
-	TermFinding,
-	TraceStep,
-} from "#/search/trace";
+import type { AttributeField, Matched, TraceStep } from "#/search/trace";
 import type { InterpretFault, Progress, Turn } from "#/server/turn";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/interpret";
@@ -586,20 +580,14 @@ function fieldLabel(field: AttributeField) {
 	return isVocabKey(field) ? DIMENSIONS[field].label : NAME_LABEL[field];
 }
 
-function including(list: readonly Matched[]) {
-	return list.length > 0
-		? `，包括${list.map((x) => `${x.name} ${x.people} 人`).join("、")}`
-		: "";
-}
-
-function termLine(t: TermFinding) {
-	if (t.people === 0) return `人才库中没有「${t.text}」`;
-	return `「${t.text}」${t.people} 人${including(t.terms)}`;
-}
-
-function nameLine(f: NameFinding) {
-	if (f.people === 0) return `人才库中没有「${f.query}」`;
-	return `「${f.query}」${f.people} 人${including(f.values)}`;
+/**
+ * 一步查到的结论：人才库里有没有、有哪些写法。人数是全库写过的人，只给模型挑词用；
+ * 放在名单旁边会被读成这条条件搜出的人，所以不显示。
+ */
+function findingLine(query: string, people: number, list: readonly Matched[]) {
+	if (people === 0) return `人才库中没有「${query}」`;
+	const names = list.map((x) => x.name).join("、");
+	return `人才库中有「${query}」${names ? `，包括${names}` : ""}`;
 }
 
 function StatusCell({ live }: { live: boolean }) {
@@ -747,10 +735,10 @@ function Process({
 }
 
 export function stepFindings(step: TraceStep) {
-	if (step.tool === "lookup_experience") return step.terms.map(termLine);
-	if ("values" in step)
-		return [step.values.map((x) => `${x.name} ${x.people} 人`).join("、")];
-	return step.found.map(nameLine);
+	if (step.tool === "lookup_experience")
+		return step.terms.map((t) => findingLine(t.text, t.people, t.terms));
+	if ("values" in step) return [step.values.map((x) => x.name).join("、")];
+	return step.found.map((f) => findingLine(f.query, f.people, f.values));
 }
 
 function StepRow({ step }: { step: TraceStep }) {
