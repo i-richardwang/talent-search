@@ -1,4 +1,5 @@
 import "#/styles.css";
+import { MotionConfig } from "motion/react";
 import { createRoot } from "react-dom/client";
 import { PREVIEW_PATH } from "./shared/protocol";
 
@@ -11,8 +12,16 @@ const root = createRoot(document.getElementById("root") as HTMLElement);
 if (location.pathname === PREVIEW_PATH) {
 	await import("./preview/playback");
 	const { Preview } = await import("./preview/entry");
-	root.render(<Preview />);
+	root.render(
+		<MotionConfig reducedMotion="user">
+			<Preview />
+		</MotionConfig>,
+	);
 } else {
 	const { App } = await import("./shell/app");
-	root.render(<App />);
+	root.render(
+		<MotionConfig reducedMotion="user">
+			<App />
+		</MotionConfig>,
+	);
 }

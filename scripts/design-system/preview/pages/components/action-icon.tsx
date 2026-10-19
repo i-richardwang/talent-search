@@ -5,7 +5,7 @@ import {
 	type LucideIcon,
 	RefreshCw,
 	Star,
-	Trash2,
+	Trash,
 } from "lucide-react";
 import { useState } from "react";
 import { ActionIcon, type ActionIconProps } from "#/components/ui/action-icon";
@@ -50,7 +50,7 @@ const ICONS: Record<string, [icon: LucideIcon, title: string]> = {
 	copy: [Copy, "复制搜索条件"],
 	refresh: [RefreshCw, "重新搜索"],
 	star: [Star, "收藏候选人"],
-	trash: [Trash2, "删除这次搜索"],
+	trash: [Trash, "删除这次搜索"],
 };
 
 function measureIcon(root: HTMLElement) {
@@ -276,7 +276,7 @@ function Usage() {
 						render={
 							<ActionIcon
 								aria-label="移出名单"
-								icon={Trash2}
+								icon={Trash}
 								size="small"
 								title="移出名单"
 							/>
@@ -346,7 +346,7 @@ export function ActionIconPage() {
 					"尺寸用 size，不覆盖宽高与圆角。",
 					'栏顶页头（NavHeader）上的用 size="header"，正好填满页头去掉内边距的高度。',
 				],
-				usage: `<ActionIcon\n  icon={Trash2}\n  size="small"\n  title="删除这次搜索"\n/>`,
+				usage: `<ActionIcon\n  icon={Trash}\n  size="small"\n  title="删除这次搜索"\n/>`,
 			}}
 			sections={[
 				{

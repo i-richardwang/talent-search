@@ -1,4 +1,4 @@
-import { Download, PanelLeftClose, Share2, Trash2 } from "lucide-react";
+import { Download, PanelLeftClose, Share2, Trash } from "lucide-react";
 import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
@@ -138,7 +138,7 @@ function Usage() {
 			>
 				<ActionIcon icon={Download} title="导出名单" />
 				<ActionIcon icon={Share2} title="复制搜索链接" />
-				<ActionIcon icon={Trash2} title="删除这次搜索" />
+				<ActionIcon icon={Trash} title="删除这次搜索" />
 			</Example>
 			<Example
 				description="页头上开合导航的按钮：提示在下方，文字后面跟着快捷键。"

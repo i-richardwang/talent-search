@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useReducedMotion } from "motion/react";
+import { useState } from "react";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Drawer } from "#/components/ui/drawer";
@@ -54,16 +55,8 @@ export function MotionPage() {
 	const read = useTokenNumber();
 	const [example, setExample] = useState<Overlay>("modal");
 	const [open, setOpen] = useState(false);
-	const [reduced, setReduced] = useState(false);
+	const reduced = useReducedMotion();
 	const afterClose = useMotionCommands(open, setOpen);
-
-	useEffect(() => {
-		const query = matchMedia("(prefers-reduced-motion: reduce)");
-		const sync = () => setReduced(query.matches);
-		sync();
-		query.addEventListener("change", sync);
-		return () => query.removeEventListener("change", sync);
-	}, []);
 
 	const duration = (phase: "enter" | "exit") =>
 		read(`--duration-${example}-${phase}`);
@@ -90,7 +83,7 @@ export function MotionPage() {
 						<div className="flex flex-col gap-4">
 							{reduced && (
 								<p className="text-fg-secondary text-xs" role="status">
-									系统开启了「减少动态效果」，组件的动画已经关闭。
+									系统开启了「减少动态效果」，组件的位移和缩放动画已经关闭。
 								</p>
 							)}
 							<Controls>

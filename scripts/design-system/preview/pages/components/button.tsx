@@ -1,4 +1,4 @@
-import { Plus, Send, Trash2 } from "lucide-react";
+import { Plus, Send, Trash } from "lucide-react";
 import { useState } from "react";
 import { Block } from "#/components/ui/block";
 import { Button, type ButtonProps } from "#/components/ui/button";
@@ -216,7 +216,7 @@ function Usage() {
 				description="删掉就找不回来的动作，确认框里的那一下用 primary 加 danger。"
 				title="不可撤回的动作"
 			>
-				<Button danger icon={Trash2} type="primary">
+				<Button danger icon={Trash} type="primary">
 					确认删除
 				</Button>
 			</Example>

@@ -4,6 +4,7 @@ import { Menu } from "@base-ui/react/menu";
 import { Switch as BaseSwitch } from "@base-ui/react/switch";
 import { CheckIcon, type LucideIcon } from "lucide-react";
 import { animate, motionValue } from "motion";
+import { useReducedMotion } from "motion/react";
 import {
 	type ComponentProps,
 	type CSSProperties,
@@ -283,9 +284,9 @@ function SwitchThumb({
 		};
 	}, [values]);
 
+	// 直接推 motion 值的动画不读 `MotionConfig`，减少动态效果要自己判断。
+	const reduceMotion = useReducedMotion();
 	useEffect(() => {
-		const reduceMotion =
-			window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 		const transition = reduceMotion ? { duration: 0 } : THUMB_SPRING;
 		const animations = [
 			animate(values.on, on, transition),
@@ -294,7 +295,7 @@ function SwitchThumb({
 		return () => {
 			for (const animation of animations) animation.stop();
 		};
-	}, [values, on, press]);
+	}, [values, on, press, reduceMotion]);
 
 	return (
 		<BaseSwitch.Thumb

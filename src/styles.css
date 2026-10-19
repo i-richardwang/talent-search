@@ -70,7 +70,7 @@
  * 深色走 class。`<html>` 上那个 `dark` 类是唯一的开关，由 `__root.tsx` 的
  * 首屏内联脚本按系统偏好写入；脚本必须在首帧前把类名写好。
  */
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme static {
 	/*
@@ -118,7 +118,7 @@
 
 	/*
 	 * 动效。组件 CSS 的过渡只读这几条曲线，不写字面曲线；例外是 tooltip.css 预先算成 linear()
-	 * 的弹簧和 skeleton.css 的往返。由 motion 执行的面板动画也读这里的曲线和时长。
+	 * 的弹簧和 skeleton.css 的往返。由 motion 执行的面板动画也读这里的曲线，时长在下面的 `:root`。
 	 * - `--ease-out`：状态过渡。
 	 * - `--ease-soft`：面板进场、遮罩淡入淡出、按钮的颜色与缩放。
 	 * - `--ease-accelerate`：面板与弹层退场。
@@ -128,12 +128,6 @@
 	--ease-soft: cubic-bezier(0.32, 0.72, 0, 1);
 	--ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
 	--ease-snap: cubic-bezier(0.22, 1, 0.36, 1);
-	--duration-modal-enter: 220ms;
-	--duration-modal-exit: 120ms;
-	--duration-drawer-enter: 300ms;
-	--duration-drawer-exit: 220ms;
-	--duration-backdrop: 180ms;
-	--duration-panel-fold: 250ms;
 
 	/* 颜色，浅色一侧。 */
 	--color-canvas: #f8f8f8;
@@ -326,12 +320,6 @@
 	/* 管理页的内容列。 */
 	--container-admin: 64rem;
 
-	/* 每一栏顶上的页头（`NavHeader`）。 */
-	--nav-header-height: 2.75rem;
-
-	/* 页头上的图标按钮（`ActionIcon` 的 `size="header"`）。 */
-	--nav-header-action-size: 1.75rem;
-
 	/* Icon 的 `spin` 与等待圈（`.ui-spinner`）共用。 */
 	--animate-spin: spin 0.6s linear infinite;
 	@keyframes spin {
@@ -353,6 +341,23 @@
 	--z-index-escape: 40; /* 跳过导航链接，压过外壳里的一切 */
 	--z-index-popup: 50; /* portal 出去的弹层 */
 	--z-index-toast: 60; /* 通知，压在所有弹层上 */
+}
+
+/* 没有对应工具类的令牌，组件和 motion 用 `var()` 读。 */
+:root {
+	/* 每一栏顶上的页头（`NavHeader`）。 */
+	--nav-header-height: 2.75rem;
+
+	/* 页头上的图标按钮（`ActionIcon` 的 `size="header"`）。 */
+	--nav-header-action-size: 1.75rem;
+
+	/* 由 motion 执行的面板动画的时长。 */
+	--duration-modal-enter: 220ms;
+	--duration-modal-exit: 120ms;
+	--duration-drawer-enter: 300ms;
+	--duration-drawer-exit: 220ms;
+	--duration-backdrop: 180ms;
+	--duration-panel-fold: 250ms;
 }
 
 @layer base {

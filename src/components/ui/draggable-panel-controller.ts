@@ -46,6 +46,7 @@ interface KeyInput {
 const clamp = (value: number, min: number, max: number) =>
 	Math.min(Math.max(value, min), max);
 
+/** 直接推 motion 值的动画不读 `MotionConfig`，减少动态效果在这里自己判断。 */
 const reducedMotion = () =>
 	typeof matchMedia === "function" &&
 	matchMedia("(prefers-reduced-motion: reduce)").matches;

@@ -1,8 +1,8 @@
 import {
 	ActivityIcon,
 	CheckIcon,
+	EllipsisIcon,
 	MessageSquareTextIcon,
-	MoreHorizontalIcon,
 	TableIcon,
 	TagsIcon,
 } from "lucide-react";
@@ -81,7 +81,7 @@ function SidebarGroups() {
 					</span>
 				</AccordionTrigger>
 				<AccordionAction>
-					<ActionIcon icon={MoreHorizontalIcon} size="small" title="更多" />
+					<ActionIcon icon={EllipsisIcon} size="small" title="更多" />
 				</AccordionAction>
 			</AccordionHeader>
 			<AccordionPanel>

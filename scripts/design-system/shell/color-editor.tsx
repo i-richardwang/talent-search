@@ -61,7 +61,6 @@ export function ColorEditor({
 	const [clipped, setClipped] = useState(false);
 	const [precise, setPrecise] = useState(false);
 	const hexDirty = useRef(false);
-	const picked = useRef<Rgba | undefined>(undefined);
 	const oklch = toOklch(color);
 
 	useEffect(() => {
@@ -92,12 +91,6 @@ export function ColorEditor({
 		const parsed = parseColor(text.startsWith("#") ? text : `#${text}`);
 		return parsed && parsed.a === 1 ? parsed : undefined;
 	};
-	/** 色板上拖动或按方向键时只预览，松开时提交最后一次选中的颜色。 */
-	function commitPicked() {
-		if (!picked.current) return;
-		commit(withAlpha(picked.current));
-		picked.current = undefined;
-	}
 	const commitHex = () => {
 		if (!hexDirty.current) return;
 		const parsed = fromHex(hexInput.trim());
@@ -116,11 +109,14 @@ export function ColorEditor({
 				className="h-40! w-full!"
 				color={hex}
 				onChange={(next) => {
-					picked.current = fromHex(next);
-					if (picked.current) onPreview(withAlpha(picked.current));
+					const parsed = fromHex(next);
+					if (parsed) onPreview(withAlpha(parsed));
 				}}
-				onKeyUp={commitPicked}
-				onPointerUp={commitPicked}
+				onChangeEnd={(next) => {
+					const parsed = fromHex(next);
+					if (parsed && toHex(parsed) !== hex) commit(withAlpha(parsed));
+					else onPreview(null);
+				}}
 			/>
 			<div className="flex items-center gap-2">
 				<Input

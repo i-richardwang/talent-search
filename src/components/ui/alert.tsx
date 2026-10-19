@@ -1,12 +1,12 @@
 "use client";
 
 import {
-	CheckCircle,
+	CircleCheckBig,
+	CircleX,
 	Info,
 	type LucideIcon,
 	TriangleAlert,
 	X,
-	XCircle,
 } from "lucide-react";
 import type { AriaRole, ReactNode } from "react";
 import { Icon, type IconProps } from "#/components/ui/icon";
@@ -30,10 +30,10 @@ interface AlertProps {
 }
 
 const TYPE_ICONS = {
-	error: XCircle,
+	error: CircleX,
 	info: Info,
 	secondary: TriangleAlert,
-	success: CheckCircle,
+	success: CircleCheckBig,
 	warning: TriangleAlert,
 } satisfies Record<AlertType, LucideIcon>;
 

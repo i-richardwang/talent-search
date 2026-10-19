@@ -6,8 +6,8 @@ import {
 	useRouter,
 } from "@tanstack/react-router";
 import {
+	EllipsisIcon,
 	LinkIcon,
-	MoreHorizontalIcon,
 	TrashIcon,
 	TriangleAlertIcon,
 } from "lucide-react";
@@ -124,7 +124,7 @@ export function RecentItem({
 						<DropdownMenuTrigger>
 							<ActionIcon
 								aria-label={`「${label}」的更多操作`}
-								icon={MoreHorizontalIcon}
+								icon={EllipsisIcon}
 								size="small"
 							/>
 						</DropdownMenuTrigger>

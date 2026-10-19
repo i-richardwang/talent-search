@@ -1,4 +1,4 @@
-import { Search, Trash2 } from "lucide-react";
+import { Search, Trash } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Alert } from "#/components/ui/alert";
@@ -93,7 +93,7 @@ export function GalleryPage() {
 						<Button type="fill">保存为模板</Button>
 						<Button type="text">清空</Button>
 						<Button disabled>不可用</Button>
-						<ActionIcon icon={Trash2} title="删除" />
+						<ActionIcon icon={Trash} title="删除" />
 					</div>
 				</Card>
 				<Card name="Input · Checkbox · Radio" title="输入与选择">

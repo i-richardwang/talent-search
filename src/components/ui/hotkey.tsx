@@ -9,7 +9,7 @@ import {
 	Command,
 	CornerDownLeftIcon,
 	Delete,
-	Grid2X2Icon,
+	Grid2x2Icon,
 	Option,
 	SpaceIcon,
 } from "lucide-react";
@@ -71,7 +71,7 @@ const mappingKey = (isAppleDevice: boolean): Record<string, ReactNode> => ({
 	meta: isAppleDevice ? (
 		<Icon icon={Command} size={{ size: "0.95em" }} />
 	) : (
-		<Icon icon={Grid2X2Icon} />
+		<Icon icon={Grid2x2Icon} />
 	),
 	mod: isAppleDevice ? (
 		<Icon icon={Command} size={{ size: "0.95em" }} />

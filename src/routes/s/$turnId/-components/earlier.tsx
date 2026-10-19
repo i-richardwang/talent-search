@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { HistoryIcon } from "lucide-react";
+import { RotateCcwClockIcon } from "lucide-react";
 import { Alert } from "#/components/ui/alert";
 import { Button } from "#/components/ui/button";
 
@@ -20,7 +20,7 @@ export function Earlier({ latestId }: { latestId: string }) {
 					回到最新
 				</Button>
 			}
-			icon={HistoryIcon}
+			icon={RotateCcwClockIcon}
 			title="正在查看较早的一次结果。在此基础上修改，会记为最新的一次。"
 			type="info"
 		/>

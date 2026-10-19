@@ -1,10 +1,5 @@
 import { PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
-import {
-	createContext,
-	useContext,
-	useEffect,
-	useSyncExternalStore,
-} from "react";
+import { createContext, use, useEffect, useSyncExternalStore } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { AppNavDrawerClose } from "#/components/ui/app-layout";
 import type { NavPrefs } from "../-lib/nav-prefs";
@@ -68,7 +63,7 @@ export function useNavHotkey(toggle: () => void) {
 }
 
 export function useNavControl() {
-	return useContext(NavControlContext);
+	return use(NavControlContext);
 }
 
 /**
@@ -77,7 +72,7 @@ export function useNavControl() {
  */
 export function ToggleNavButton({ className }: { className?: string }) {
 	const control = useNavControl();
-	const closeDrawer = useContext(InDrawer);
+	const closeDrawer = use(InDrawer);
 	if (closeDrawer) return <AppNavDrawerClose onClose={closeDrawer} />;
 	if (!control) return null;
 	const label = control.expanded ? "收起导航栏" : "展开导航栏";

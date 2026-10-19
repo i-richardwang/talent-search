@@ -1,4 +1,8 @@
-import { ChevronDownIcon, Loader2Icon, type LucideIcon } from "lucide-react";
+import {
+	ChevronDownIcon,
+	LoaderCircleIcon,
+	type LucideIcon,
+} from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "#/lib/utils";
 import { Icon } from "./icon";
@@ -143,7 +147,11 @@ export function ChatInputSend({
 			type={type}
 			{...props}
 		>
-			{loading ? <Icon icon={Loader2Icon} size={14} spin /> : <SendGlyph />}
+			{loading ? (
+				<Icon icon={LoaderCircleIcon} size={14} spin />
+			) : (
+				<SendGlyph />
+			)}
 		</button>
 	);
 }

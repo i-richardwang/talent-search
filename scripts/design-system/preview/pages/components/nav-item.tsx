@@ -1,7 +1,7 @@
 import {
 	ActivityIcon,
+	EllipsisIcon,
 	MessageSquareTextIcon,
-	MoreHorizontalIcon,
 	PlusIcon,
 	TableIcon,
 	TagsIcon,
@@ -29,7 +29,7 @@ function More({ label }: { label: string }) {
 	return (
 		<ActionIcon
 			aria-label={`「${label}」的更多操作`}
-			icon={MoreHorizontalIcon}
+			icon={EllipsisIcon}
 			size="small"
 		/>
 	);
@@ -169,10 +169,7 @@ function Usage() {
 							>
 								推荐系统 · 某甲科技
 							</NavItem>
-							<NavItem
-								icon={MoreHorizontalIcon}
-								render={<button type="button" />}
-							>
+							<NavItem icon={EllipsisIcon} render={<button type="button" />}>
 								更多
 							</NavItem>
 						</NavGroup>

@@ -1,4 +1,4 @@
-import { MoreHorizontalIcon } from "lucide-react";
+import { EllipsisIcon } from "lucide-react";
 import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Button } from "#/components/ui/button";
@@ -52,9 +52,7 @@ function Stacked() {
 	return (
 		<div className="flex w-full flex-col gap-4">
 			<GroupCard
-				extra={
-					<ActionIcon icon={MoreHorizontalIcon} size="small" title="更多" />
-				}
+				extra={<ActionIcon icon={EllipsisIcon} size="small" title="更多" />}
 				title="人才库"
 			>
 				<Descriptions>

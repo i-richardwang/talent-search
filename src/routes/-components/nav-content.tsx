@@ -2,8 +2,8 @@ import { Link, useLoaderData, useMatchRoute } from "@tanstack/react-router";
 import {
 	ActivityIcon,
 	CheckIcon,
+	EllipsisIcon,
 	HashIcon,
-	MoreHorizontalIcon,
 	SquarePenIcon,
 	TableIcon,
 	TagsIcon,
@@ -130,7 +130,7 @@ function RecentGroup({ recent }: { recent: TablePage<RecentSearch> | null }) {
 					<DropdownMenuTrigger>
 						<ActionIcon
 							aria-label="最近搜索的更多操作"
-							icon={MoreHorizontalIcon}
+							icon={EllipsisIcon}
 							size="small"
 						/>
 					</DropdownMenuTrigger>
@@ -154,7 +154,7 @@ function RecentGroup({ recent }: { recent: TablePage<RecentSearch> | null }) {
 					))}
 					{recent.total > count && (
 						<NavItem
-							icon={MoreHorizontalIcon}
+							icon={EllipsisIcon}
 							onClick={control?.openAllRecents}
 							render={<button type="button" />}
 						>

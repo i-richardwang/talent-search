@@ -1,4 +1,4 @@
-import { History } from "lucide-react";
+import { RotateCcwClock } from "lucide-react";
 import { type ComponentProps, useState } from "react";
 import { Alert } from "#/components/ui/alert";
 import { Block } from "#/components/ui/block";
@@ -208,7 +208,7 @@ function Usage() {
 			>
 				<Alert
 					action={<Button size="small">回到最新</Button>}
-					icon={History}
+					icon={RotateCcwClock}
 					title="正在查看较早的一次结果。"
 					type="secondary"
 				/>

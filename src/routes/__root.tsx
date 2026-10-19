@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { createIsomorphicFn } from "@tanstack/react-start";
 import { getCookie } from "@tanstack/react-start/server";
+import { MotionConfig } from "motion/react";
 import { ModalHost } from "#/components/ui/modal";
 import { Toaster } from "#/components/ui/toast";
 import { recentSearches, understandingOn } from "#/server/functions";
@@ -75,9 +76,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 				<script dangerouslySetInnerHTML={{ __html: SYNC_COLOR_MODE }} />
 			</head>
 			<body className="bg-layout text-fg">
-				{children}
-				<Toaster />
-				<ModalHost />
+				{/* 系统开了「减少动态效果」时，motion 组件不放位移、缩放和布局动画，只留淡入淡出。 */}
+				<MotionConfig reducedMotion="user">
+					{children}
+					<Toaster />
+					<ModalHost />
+				</MotionConfig>
 				<Scripts />
 			</body>
 		</html>

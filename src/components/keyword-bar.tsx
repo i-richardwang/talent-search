@@ -1,9 +1,9 @@
 import {
-	Building2Icon,
+	BuildingComplexIcon,
 	CheckIcon,
 	ClockIcon,
 	GraduationCapIcon,
-	Loader2,
+	LoaderCircle,
 	type LucideIcon,
 	NetworkIcon,
 } from "lucide-react";
@@ -78,7 +78,7 @@ const AS_TYPED: Record<KeywordField, string> = {
 };
 
 const NAME_ICON: Record<NameField, LucideIcon> = {
-	company: Building2Icon,
+	company: BuildingComplexIcon,
 	department: NetworkIcon,
 	school: GraduationCapIcon,
 };
@@ -525,7 +525,9 @@ function TermEntry({
 				open={shown}
 				options={options}
 				placeholder={placeholder}
-				suffix={pending ? <Icon icon={Loader2} size="small" spin /> : undefined}
+				suffix={
+					pending ? <Icon icon={LoaderCircle} size="small" spin /> : undefined
+				}
 				value={typed}
 				variant={variant}
 			/>

@@ -1,5 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { FileQuestionIcon, type LucideIcon, SearchXIcon } from "lucide-react";
+import {
+	FileQuestionMarkIcon,
+	type LucideIcon,
+	SearchXIcon,
+} from "lucide-react";
 import { Button } from "#/components/ui/button";
 import { Icon } from "#/components/ui/icon";
 import { PageHeader } from "./page-header";
@@ -51,7 +55,7 @@ export function PageNotFound() {
 		<NotFound
 			description="链接无效或页面已被移除。"
 			hint="检查一下地址，或回到首页重新开始一次搜索。"
-			icon={FileQuestionIcon}
+			icon={FileQuestionMarkIcon}
 			title="页面不存在"
 		/>
 	);

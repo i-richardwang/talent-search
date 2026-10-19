@@ -326,7 +326,11 @@ describe("写出的 CSS", () => {
 		const css = exportCss(draft, sources);
 		assert.match(
 			css,
-			/合进 src\/styles\.css 的 `@theme static`[^\n]*\n@theme static \{\n\t--color-primary: #112233;\n\t--duration-modal-enter: 300ms;\n\t--radius-md: 0\.625rem;\n\}/,
+			/合进 src\/styles\.css 的 `@theme static`[^\n]*\n@theme static \{\n\t--color-primary: #112233;\n\t--radius-md: 0\.625rem;\n\}/,
+		);
+		assert.match(
+			css,
+			/合进 src\/styles\.css 的 `:root`[^\n]*\n:root \{\n\t--duration-modal-enter: 300ms;\n\}/,
 		);
 		assert.match(
 			css,

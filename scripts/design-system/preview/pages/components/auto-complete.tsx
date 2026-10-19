@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AutoComplete } from "#/components/ui/auto-complete";
 import { Checkbox } from "#/components/ui/checkbox";
@@ -65,7 +65,9 @@ function Playground() {
 						options={OPTIONS}
 						placeholder="输入关键词，比如风控"
 						suffix={
-							pending ? <Icon icon={Loader2} size="small" spin /> : undefined
+							pending ? (
+								<Icon icon={LoaderCircle} size="small" spin />
+							) : undefined
 						}
 						value={value}
 					/>
@@ -127,7 +129,9 @@ function ServerSuggestions() {
 			onChange={setTyped}
 			options={found}
 			placeholder="输入关键词"
-			suffix={pending ? <Icon icon={Loader2} size="small" spin /> : undefined}
+			suffix={
+				pending ? <Icon icon={LoaderCircle} size="small" spin /> : undefined
+			}
 			value={typed}
 		/>
 	);

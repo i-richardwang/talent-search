@@ -1,6 +1,6 @@
 import {
+	EllipsisIcon,
 	MessageSquareTextIcon,
-	MoreHorizontalIcon,
 	PanelLeftOpenIcon,
 	PlusIcon,
 	UsersRoundIcon,
@@ -65,7 +65,7 @@ function Nav() {
 						做过推荐系统的算法工程师
 					</NavItem>
 					<NavItem
-						icon={MoreHorizontalIcon}
+						icon={EllipsisIcon}
 						onClick={() => setAll(true)}
 						render={<button type="button" />}
 					>

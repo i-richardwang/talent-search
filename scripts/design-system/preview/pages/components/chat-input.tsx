@@ -1,4 +1,4 @@
-import { Building2Icon, MessageSquareTextIcon } from "lucide-react";
+import { BuildingComplexIcon, MessageSquareTextIcon } from "lucide-react";
 import { type ComponentProps, useState } from "react";
 import { Block } from "#/components/ui/block";
 import {
@@ -70,7 +70,7 @@ function Composer({
 							>
 								AI 搜索
 							</ChatInputAction>
-							<ChatInputAction chevron icon={Building2Icon}>
+							<ChatInputAction chevron icon={BuildingComplexIcon}>
 								公司
 							</ChatInputAction>
 						</>

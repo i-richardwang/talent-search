@@ -1,4 +1,11 @@
-import { Code2, PanelLeft, Redo2, Save, Undo2, UsersRound } from "lucide-react";
+import {
+	CodeXml,
+	PanelLeft,
+	Redo2,
+	Save,
+	Undo2,
+	UsersRound,
+} from "lucide-react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Button } from "#/components/ui/button";
 import { Divider } from "#/components/ui/divider";
@@ -70,7 +77,7 @@ export function TopBar({
 				<Button icon={Save} onClick={onSave}>
 					<span className="max-md:hidden">保存方案</span>
 				</Button>
-				<Button icon={Code2} onClick={onExport} type="primary">
+				<Button icon={CodeXml} onClick={onExport} type="primary">
 					<span className="max-md:hidden">导出修改</span>
 				</Button>
 			</div>

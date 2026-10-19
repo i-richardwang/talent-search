@@ -3,7 +3,7 @@ import {
 	ArrowDownIcon,
 	CheckIcon,
 	EyeIcon,
-	Loader2Icon,
+	LoaderCircleIcon,
 	PencilLineIcon,
 	RotateCwIcon,
 } from "lucide-react";
@@ -617,7 +617,7 @@ function StatusCell({ live }: { live: boolean }) {
 				<Icon
 					aria-hidden="true"
 					className="text-fg-secondary"
-					icon={Loader2Icon}
+					icon={LoaderCircleIcon}
 					size={12}
 					spin
 				/>

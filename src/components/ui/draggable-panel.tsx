@@ -37,9 +37,6 @@ const HANDLE_SIZE_COARSE = 20;
 /** 收着时内容缩到这么大，从面板贴着的那一边缩。 */
 const COLLAPSED_SCALE = 0.97;
 
-const useIsomorphicLayoutEffect =
-	typeof window === "undefined" ? useEffect : useLayoutEffect;
-
 const subscribeCoarse = (onChange: () => void) => {
 	const list = matchMedia("(pointer: coarse)");
 	list.addEventListener("change", onChange);
@@ -141,10 +138,10 @@ export function DraggablePanel({
 	const { state, target } = usePanel(controller);
 	const ref = useRef<HTMLDivElement>(null);
 
-	useIsomorphicLayoutEffect(() => {
+	useLayoutEffect(() => {
 		controller.sync(options);
 	});
-	useIsomorphicLayoutEffect(() => {
+	useLayoutEffect(() => {
 		const node = ref.current;
 		return node ? controller.attach(node) : undefined;
 	}, [controller]);

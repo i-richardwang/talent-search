@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+import { Trash } from "lucide-react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
@@ -70,7 +70,7 @@ export function SavedSchemes({
 									})}
 								</span>
 								<ActionIcon
-									icon={Trash2}
+									icon={Trash}
 									onClick={() => onDelete(scheme.id)}
 									size="small"
 									title={`删除「${scheme.name}」`}

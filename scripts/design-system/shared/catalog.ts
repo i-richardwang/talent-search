@@ -1,10 +1,10 @@
 import {
 	BriefcaseBusiness,
 	Component,
-	History,
 	LayoutPanelLeft,
 	type LucideIcon,
 	Palette,
+	RotateCcwClock,
 	Workflow,
 } from "lucide-react";
 import type { ComponentSizing, MotionScope } from "./tokens/registry";
@@ -344,7 +344,7 @@ const CATALOG = [
 		content: "changes",
 		description:
 			"查看当前的修改、保存的方案、导出的 CSS、修改波及的范围，以及写回源码。",
-		icon: History,
+		icon: RotateCcwClock,
 		id: "changes",
 		pages: [
 			{ slug: "review", title: "修改记录" },

@@ -3,7 +3,7 @@ import {
 	Briefcase,
 	Clock,
 	GraduationCap,
-	Loader2,
+	LoaderCircle,
 	type LucideIcon,
 	RefreshCw,
 	Search,
@@ -224,7 +224,7 @@ function Usage() {
 					aria-label="经历或技能"
 					placeholder="输入关键词"
 					prefix={<Icon icon={Search} size="small" />}
-					suffix={<Icon icon={Loader2} size="small" spin />}
+					suffix={<Icon icon={LoaderCircle} size="small" spin />}
 				/>
 			</Example>
 			<Example

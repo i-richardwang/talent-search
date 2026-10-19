@@ -1,9 +1,9 @@
 import {
 	CheckIcon,
+	EllipsisIcon,
 	HashIcon,
 	LinkIcon,
 	MessageSquareTextIcon,
-	MoreHorizontalIcon,
 	TextSearchIcon,
 	TrashIcon,
 } from "lucide-react";
@@ -168,7 +168,7 @@ function RecentGroupSample() {
 								<DropdownMenuTrigger>
 									<ActionIcon
 										aria-label="最近搜索的更多操作"
-										icon={MoreHorizontalIcon}
+										icon={EllipsisIcon}
 										size="small"
 									/>
 								</DropdownMenuTrigger>
@@ -197,7 +197,7 @@ function RecentGroupSample() {
 												<DropdownMenuTrigger>
 													<ActionIcon
 														aria-label={`「${record.label}」的更多操作`}
-														icon={MoreHorizontalIcon}
+														icon={EllipsisIcon}
 														size="small"
 													/>
 												</DropdownMenuTrigger>
