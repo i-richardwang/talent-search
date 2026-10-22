@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { pageParam } from "#/lib/paging";
 import { TASK_KINDS } from "#/lib/task";
@@ -8,6 +8,9 @@ import { AdminPage } from "../-components/admin-page";
 import { TaskBoard } from "./-components/task-board";
 
 export const Route = createFileRoute("/tasks")({
+	beforeLoad: ({ context }) => {
+		if (!context.user?.admin) throw redirect({ to: "/" });
+	},
 	validateSearch: (search: Record<string, unknown>): TaskPages => {
 		const pages: TaskPages = {};
 		for (const kind of TASK_KINDS) {

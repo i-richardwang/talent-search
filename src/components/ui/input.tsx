@@ -10,9 +10,10 @@ import { cn } from "#/lib/utils";
  */
 
 export type InputVariant = "filled" | "borderless";
-export type InputSize = "small" | "middle";
+export type InputSize = "small" | "middle" | "large";
 
 const SIZE = {
+	large: "ui-input-size-large",
 	middle: "ui-input-size-middle",
 	small: "ui-input-size-small",
 } as const;

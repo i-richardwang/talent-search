@@ -19,6 +19,14 @@
 	padding-block: 16px;
 }
 
+.ui-form-vertical {
+	gap: calc(var(--spacing) * 5);
+
+	> .ui-form-field {
+		padding-block: 0;
+	}
+}
+
 .ui-form-field-horizontal {
 	flex-direction: row;
 	align-items: center;

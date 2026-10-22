@@ -68,6 +68,23 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
+				description="登录等连续填写场景，标签固定在输入框上方。"
+				title="纵向填写"
+			>
+				<Form layout="vertical">
+					<Form.Field label="用户名" name="username">
+						<Input placeholder="输入用户名" autoComplete="username" />
+					</Form.Field>
+					<Form.Field label="密码" name="password">
+						<Input
+							placeholder="输入密码"
+							type="password"
+							autoComplete="current-password"
+						/>
+					</Form.Field>
+				</Form>
+			</Example>
+			<Example
 				description="只有一个开关项时，用一个字段写清勾上之后会发生什么。"
 				title="单项设置"
 			>
@@ -93,7 +110,7 @@ export function FormPage() {
 					"字段用 Form.Field 包住控件，标签和说明写在 label、desc 上，不手写标签行。",
 					"输入用 Input，图标与提交放进它的插槽或表单底部。",
 					'提交用 onFormSubmit 拿到按 name 收集的字段值，提交按钮是 htmlType="submit" 的 Button。',
-					"窄屏标签在上、宽屏标签在左，排法不由调用处选。",
+					'默认窄屏标签在上、宽屏标签在左；连续填写的表单用 layout="vertical"。',
 				],
 				usage: `<Form>\n  <Form.Field desc="勾上之后，导出的表里会多出每一条搜索条件。" label="每条条件一列，写上匹配证据">\n    <Checkbox checked={evidence} onChange={setEvidence} />\n  </Form.Field>\n</Form>`,
 			}}

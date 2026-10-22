@@ -9,6 +9,7 @@ import {
 import { createContext, type ReactNode, use, useState } from "react";
 import type { TablePage } from "#/lib/paging";
 import { type NavPrefs, navPrefsOf } from "#/routes/-lib/nav-prefs";
+import type { viewer } from "#/server/access";
 import type { RecentSearch } from "#/server/turn";
 import { OUTCOME } from "./samples/people";
 import { RECENT, THREAD } from "./samples/thread";
@@ -42,9 +43,15 @@ export type RootData = {
 	nav: NavPrefs;
 	recent: TablePage<RecentSearch> | null;
 	understanding: boolean;
+	user: Awaited<ReturnType<typeof viewer>>;
 };
 
 const ROOT_DATA: RootData = {
+	user: {
+		id: "sample-admin",
+		name: "演示管理员",
+		admin: true,
+	},
 	nav: navPrefsOf(undefined),
 	recent: { from: 1, page: 1, pages: 1, rows: RECENT, total: RECENT.length },
 	understanding: true,

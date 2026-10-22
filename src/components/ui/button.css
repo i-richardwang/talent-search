@@ -12,6 +12,9 @@
 	--button-height-middle: 32px;
 	--button-padding-middle: 14px;
 	--button-font-size-middle: 13px;
+	--button-height-large: 40px;
+	--button-padding-large: 16px;
+	--button-font-size-large: 14px;
 }
 
 .ui-button {
@@ -60,6 +63,13 @@
 	padding-inline: var(--button-padding-middle);
 	border-radius: var(--radius-sm);
 	font-size: var(--button-font-size-middle);
+}
+
+.ui-button-size-large {
+	height: var(--button-height-large);
+	padding-inline: var(--button-padding-large);
+	border-radius: var(--radius-md);
+	font-size: var(--button-font-size-large);
 }
 
 .ui-button-variant-default {
@@ -166,6 +176,11 @@
 
 .ui-button-icon-only-middle {
 	width: var(--button-height-middle);
+	padding-inline: 0;
+}
+
+.ui-button-icon-only-large {
+	width: var(--button-height-large);
 	padding-inline: 0;
 }
 

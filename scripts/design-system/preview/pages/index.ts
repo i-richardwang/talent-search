@@ -60,6 +60,7 @@ import { TypographyPage } from "./foundations/typography";
 import { AdminLayoutPage } from "./layouts/admin";
 import { DetailPage } from "./layouts/detail";
 import { HomePage } from "./layouts/home";
+import { LoginPage } from "./layouts/login";
 import { WorkspacePage } from "./layouts/workspace";
 import { ConditionsPage } from "./patterns/conditions";
 import { PickingPage } from "./patterns/picking";
@@ -143,6 +144,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"product/result-list": ResultListPage,
 	"product/thread": ThreadPage,
 	"product/status-badge": StatusBadgePage,
+	"layouts/login": LoginPage,
 	"layouts/home": HomePage,
 	"layouts/workspace": WorkspacePage,
 	"layouts/detail": DetailPage,

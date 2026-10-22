@@ -11,6 +11,8 @@ const FONTS = [
 
 const TEXT_CLASS: Record<string, string> = {
 	"--text-2xl": "text-2xl",
+	"--text-auth-title": "text-auth-title",
+	"--text-auth-description": "text-auth-description",
 	"--text-base": "text-base",
 	"--text-lg": "text-lg",
 	"--text-sm": "text-sm",
@@ -76,6 +78,7 @@ export function TypographyPage() {
 									["常规 400", "font-normal"],
 									["中粗 500", "font-medium"],
 									["半粗 600", "font-semibold"],
+									["粗体 700", "font-bold"],
 								] as const
 							).map(([name, className]) => (
 								<div

@@ -46,10 +46,11 @@ export function LayoutSwitch<Value extends string>({
 }
 
 /** 首页的几种样子：有没有搜索记录、取不取得到，AI 服务配没配。 */
-type HomeState = "recent" | "empty" | "failed" | "keyword-only";
+type HomeState = "recent" | "empty" | "failed" | "keyword-only" | "user";
 
 const STATES: { label: string; value: HomeState }[] = [
 	{ label: "有搜索记录", value: "recent" },
+	{ label: "普通用户", value: "user" },
 	{ label: "还没有记录", value: "empty" },
 	{ label: "记录取不到", value: "failed" },
 	{ label: "未配置 AI 服务", value: "keyword-only" },
@@ -57,6 +58,13 @@ const STATES: { label: string; value: HomeState }[] = [
 
 /** 根路由提供的几项按状态换掉；有记录是样例的默认值。 */
 const ROOT: Record<HomeState, Partial<RootData>> = {
+	user: {
+		user: {
+			id: "sample-user",
+			name: "演示用户",
+			admin: false,
+		},
+	},
 	empty: { recent: { from: 0, page: 1, pages: 1, rows: [], total: 0 } },
 	failed: { recent: null },
 	"keyword-only": { understanding: false },

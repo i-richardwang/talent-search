@@ -1,7 +1,7 @@
 /*
  * 块的先后是层叠顺序，同特异性时靠后的胜出：外壳、出错、尺寸、variant。
  * `.ui-input-auto` 的主题写在 `:where()` 里，特异性和单个类名一样。
- * 两档尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
+ * 尺寸写成 `:root` 上的组件令牌，设计系统在预览里改它们。
  */
 
 :root {
@@ -11,6 +11,9 @@
 	--input-height-middle: 32px;
 	--input-padding-middle: 12px;
 	--input-font-size-middle: 14px;
+	--input-height-large: 40px;
+	--input-padding-large: 12px;
+	--input-font-size-large: 16px;
 }
 
 .ui-input-root {
@@ -57,6 +60,13 @@
 	padding-inline: var(--input-padding-small);
 	border-radius: var(--radius-sm);
 	font-size: var(--input-font-size-small);
+}
+
+.ui-input-size-large {
+	height: var(--input-height-large);
+	padding-inline: var(--input-padding-large);
+	border-radius: var(--radius-lg);
+	font-size: var(--input-font-size-large);
 }
 
 .ui-input-filled,

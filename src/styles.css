@@ -108,6 +108,10 @@
 	--text-xl--line-height: 1.75rem;
 	--text-2xl: 1.5rem;
 	--text-2xl--line-height: 2rem;
+	--text-auth-title: 1.75rem;
+	--text-auth-title--line-height: 2.45rem;
+	--text-auth-description: 1.125rem;
+	--text-auth-description--line-height: 1.575rem;
 
 	/* 圆角五档；全圆用 `rounded-full`。 */
 	--radius-xs: 0.25rem;
@@ -303,6 +307,9 @@
 
 	/* 首页那一列（`AppHome`）。 */
 	--container-home: 47.5rem;
+
+	/* 登录表单，与抽屉的阅读宽度分开。 */
+	--container-auth: 27.5rem;
 
 	/*
 	 * 从右边拉出的抽屉：`Drawer` 的默认宽，和数据页的员工详情。宽屏工作台的右栏可拖宽、

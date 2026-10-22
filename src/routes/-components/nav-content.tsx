@@ -9,8 +9,10 @@ import {
 	TagsIcon,
 	UsersRoundIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { AppNavHeader } from "#/components/ui/app-layout";
+import { Button } from "#/components/ui/button";
 import {
 	DropdownMenuItemContent,
 	DropdownMenuItemExtra,
@@ -31,8 +33,10 @@ import {
 import { Icon } from "#/components/ui/icon";
 import { NavGroup, NavGroups, NavItem } from "#/components/ui/nav-item";
 import { ScrollArea } from "#/components/ui/scroll-area";
+import { toast } from "#/components/ui/toast";
 import type { TablePage } from "#/lib/paging";
 import type { RecentSearch } from "#/server/turn";
+import { authClient } from "../-lib/auth-client";
 import { RECENT_COUNTS, type RecentCount } from "../-lib/nav-prefs";
 import { ToggleNavButton, useNavControl } from "./nav-control";
 import { LoadFailed, RecentItem, useRetryRoot } from "./recent-item";
@@ -45,7 +49,8 @@ const GROUPS = ["recent"] as const;
  * 还没有搜索记录时最近搜索这一组整个不画：首页那一栏有起步的例子。
  */
 export function NavContent() {
-	const { recent } = useLoaderData({ from: "__root__" });
+	const { recent, user } = useLoaderData({ from: "__root__" });
+	const [leaving, setLeaving] = useState(false);
 	const control = useNavControl();
 	const matchRoute = useMatchRoute();
 	const on = (to: "/" | "/data" | "/terms" | "/tasks") =>
@@ -96,14 +101,46 @@ export function NavContent() {
 				>
 					标签
 				</NavItem>
-				<NavItem
-					active={on("/tasks")}
-					icon={ActivityIcon}
-					render={<Link to="/tasks" />}
-				>
-					任务
-				</NavItem>
+				{user?.admin && (
+					<NavItem
+						active={on("/tasks")}
+						icon={ActivityIcon}
+						render={<Link to="/tasks" />}
+					>
+						任务
+					</NavItem>
+				)}
 			</ScrollArea>
+			{user && (
+				<div className="flex items-center justify-between gap-2 px-3 py-3">
+					<div className="min-w-0 text-sm">
+						<p className="truncate" title={user.name}>
+							{user.name}
+						</p>
+						<p className="text-xs text-fg-tertiary">
+							{user.admin ? "管理员" : "普通用户"}
+						</p>
+					</div>
+					<Button
+						loading={leaving}
+						onClick={async () => {
+							setLeaving(true);
+							try {
+								const { error } = await authClient.signOut();
+								if (error) throw error;
+								window.location.replace("/login");
+							} catch {
+								toast.error("退出失败，请重试");
+								setLeaving(false);
+							}
+						}}
+						size="small"
+						type="text"
+					>
+						退出登录
+					</Button>
+				</div>
+			)}
 		</>
 	);
 }

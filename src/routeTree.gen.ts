@@ -11,12 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DataRouteRouteImport } from './routes/data/route'
+import { Route as LoginRouteRouteImport } from './routes/login/route'
 import { Route as TasksRouteRouteImport } from './routes/tasks/route'
 import { Route as TermsRouteRouteImport } from './routes/terms/route'
 import { Route as ApiReviewRouteImport } from './routes/api/review'
 import { Route as DataEmpIdRouteImport } from './routes/data/$empId'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
 import { Route as TermsWordRouteImport } from './routes/terms/$word'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -27,6 +29,11 @@ const IndexRoute = IndexRouteImport.update({
 const DataRouteRoute = DataRouteRouteImport.update({
   id: '/data',
   path: '/data',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRouteRoute = LoginRouteRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TasksRouteRoute = TasksRouteRouteImport.update({
@@ -59,6 +66,11 @@ const TermsWordRoute = TermsWordRouteImport.update({
   path: '/$word',
   getParentRoute: () => TermsRouteRoute,
 } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
   id: '/p/$empId',
   path: '/p/$empId',
@@ -68,35 +80,41 @@ const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/data': typeof DataRouteRouteWithChildren
+  '/login': typeof LoginRouteRoute
   '/tasks': typeof TasksRouteRoute
   '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
   '/terms/$word': typeof TermsWordRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/data': typeof DataRouteRouteWithChildren
+  '/login': typeof LoginRouteRoute
   '/tasks': typeof TasksRouteRoute
   '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
   '/terms/$word': typeof TermsWordRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/data': typeof DataRouteRouteWithChildren
+  '/login': typeof LoginRouteRoute
   '/tasks': typeof TasksRouteRoute
   '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
   '/terms/$word': typeof TermsWordRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRouteTypes {
@@ -104,44 +122,52 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/data'
+    | '/login'
     | '/tasks'
     | '/terms'
     | '/s/$turnId'
     | '/api/review'
     | '/data/$empId'
     | '/terms/$word'
+    | '/api/auth/$'
     | '/s/$turnId/p/$empId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/data'
+    | '/login'
     | '/tasks'
     | '/terms'
     | '/s/$turnId'
     | '/api/review'
     | '/data/$empId'
     | '/terms/$word'
+    | '/api/auth/$'
     | '/s/$turnId/p/$empId'
   id:
     | '__root__'
     | '/'
     | '/data'
+    | '/login'
     | '/tasks'
     | '/terms'
     | '/s/$turnId'
     | '/api/review'
     | '/data/$empId'
     | '/terms/$word'
+    | '/api/auth/$'
     | '/s/$turnId/p/$empId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DataRouteRoute: typeof DataRouteRouteWithChildren
+  LoginRouteRoute: typeof LoginRouteRoute
   TasksRouteRoute: typeof TasksRouteRoute
   TermsRouteRoute: typeof TermsRouteRouteWithChildren
   STurnIdRouteRoute: typeof STurnIdRouteRouteWithChildren
   ApiReviewRoute: typeof ApiReviewRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -158,6 +184,13 @@ declare module '@tanstack/react-router' {
       path: '/data'
       fullPath: '/data'
       preLoaderRoute: typeof DataRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tasks': {
@@ -201,6 +234,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/terms/$word'
       preLoaderRoute: typeof TermsWordRouteImport
       parentRoute: typeof TermsRouteRoute
+    }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/s/$turnId/p/$empId': {
       id: '/s/$turnId/p/$empId'
@@ -251,20 +291,23 @@ const STurnIdRouteRouteWithChildren = STurnIdRouteRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DataRouteRoute: DataRouteRouteWithChildren,
+  LoginRouteRoute: LoginRouteRoute,
   TasksRouteRoute: TasksRouteRoute,
   TermsRouteRoute: TermsRouteRouteWithChildren,
   STurnIdRouteRoute: STurnIdRouteRouteWithChildren,
   ApiReviewRoute: ApiReviewRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
+import type { startInstance } from './start.ts'
 declare module '@tanstack/react-start' {
   interface Register {
     ssr: true
     router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
   }
 }

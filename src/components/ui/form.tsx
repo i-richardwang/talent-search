@@ -11,7 +11,7 @@ import {
 import { cn } from "#/lib/utils";
 
 /*
- * 表单与字段（`Form.Field`）。窄屏上下排、宽屏左右排；服务端与首帧按宽屏渲染。
+ * 表单与字段（`Form.Field`）。默认窄屏上下排、宽屏左右排；layout="vertical" 用于连续填写的紧凑表单。
  * 窄屏断点和 form.css 的同一个。
  */
 
@@ -38,13 +38,21 @@ const FormLayoutContext = createContext<FormLayout>("horizontal");
 interface FormProps
 	extends Omit<BaseForm.Props, "render" | "className" | "style"> {
 	className?: string;
+	layout?: FormLayout;
 }
 
-function FormRoot({ className, ...rest }: FormProps) {
+function FormRoot({ className, layout, ...rest }: FormProps) {
 	const mobile = useMobile();
 	return (
-		<FormLayoutContext value={mobile ? "vertical" : "horizontal"}>
-			<BaseForm className={cn("ui-form", className)} {...rest} />
+		<FormLayoutContext value={layout ?? (mobile ? "vertical" : "horizontal")}>
+			<BaseForm
+				className={cn(
+					"ui-form",
+					layout === "vertical" && "ui-form-vertical",
+					className,
+				)}
+				{...rest}
+			/>
 		</FormLayoutContext>
 	);
 }

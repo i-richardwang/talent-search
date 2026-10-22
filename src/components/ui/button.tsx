@@ -13,7 +13,7 @@ import { cn } from "#/lib/utils";
  */
 
 type ButtonType = "default" | "primary" | "fill" | "text";
-type ButtonSize = "small" | "middle";
+type ButtonSize = "small" | "middle" | "large";
 
 export interface ButtonProps
 	extends Omit<useRender.ComponentProps<"button">, "type"> {
@@ -28,11 +28,13 @@ export interface ButtonProps
 }
 
 const SIZE = {
+	large: "ui-button-size-large",
 	small: "ui-button-size-small",
 	middle: "ui-button-size-middle",
 } as const;
 
 const ICON_ONLY = {
+	large: "ui-button-icon-only-large",
 	small: "ui-button-icon-only-small",
 	middle: "ui-button-icon-only-middle",
 } as const;

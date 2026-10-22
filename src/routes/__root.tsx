@@ -2,13 +2,17 @@ import {
 	createRootRoute,
 	HeadContent,
 	Outlet,
+	redirect,
 	Scripts,
+	useLocation,
 } from "@tanstack/react-router";
 import { createIsomorphicFn } from "@tanstack/react-start";
 import { getCookie } from "@tanstack/react-start/server";
 import { MotionConfig } from "motion/react";
 import { ModalHost } from "#/components/ui/modal";
 import { Toaster } from "#/components/ui/toast";
+import { loginDestination } from "#/lib/auth";
+import { currentUser } from "#/server/auth-functions";
 import { recentSearches, understandingOn } from "#/server/functions";
 import appCss from "../styles.css?url";
 import { AppShell } from "./-components/app-shell";
@@ -43,15 +47,27 @@ export const Route = createRootRoute({
 		],
 		links: [{ rel: "stylesheet", href: appCss }],
 	}),
+	beforeLoad: async ({ location }) => {
+		const user = await currentUser();
+		if (!user && location.pathname !== "/login") {
+			throw redirect({
+				to: "/login",
+				search: { redirect: loginDestination(location.href) },
+			});
+		}
+		return { user };
+	},
 	// 最近搜索取不到时是 null：导航栏和首页各自说取不到并给重试，不当成还没有记录。
-	loader: async () => {
+	loader: async ({ context }) => {
+		const base = { nav: readNavPrefs(), user: context.user };
+		if (!context.user) return { ...base, recent: null, understanding: false };
 		const [recent, understanding] = await Promise.all([
 			recentSearches({ data: { page: 1, size: RECENT_FIRST_PAGE } }).catch(
 				() => null,
 			),
 			understandingOn(),
 		]);
-		return { nav: readNavPrefs(), recent, understanding };
+		return { ...base, recent, understanding };
 	},
 	shellComponent: RootDocument,
 	component: RootComponent,
@@ -59,6 +75,10 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+	const login = useLocation({
+		select: (location) => location.pathname === "/login",
+	});
+	if (login) return <Outlet />;
 	return (
 		<AppShell>
 			<Outlet />

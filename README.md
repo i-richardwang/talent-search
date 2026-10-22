@@ -17,13 +17,58 @@ docker exec talent-pg psql -U talent -d talent \
   -c "create extension if not exists vector"
 
 cp .env.example .env.local
+# 编辑 .env.local：设置数据库、模型配置；用 openssl rand -base64 32 生成 BETTER_AUTH_SECRET。
 bun install
 bun run db:push
+bun run auth:user create --username admin --name 管理员 --role admin
 bun run sync
 bun run dev
 ```
 
 应用默认监听 `http://localhost:3100`。默认数据源是 `src/corpus/sources/sample/` 中的合成样例；启动后，后台任务会继续完成抽取、嵌入和词表整理。
+
+## 登录与账号管理
+
+所有业务页面和 RPC 都要求登录。普通用户可以搜索、查看人才库与标签；只有管理员能看「任务」、
+读取任务状态和日志、手动触发解析或整理。任务权限在服务端检查，直接访问地址或调用接口也不能绕过。
+搜索记录仍由登录用户共享，包括查看、追加和删除，不是个人私有历史。
+外部 `GET/POST /api/review` 继续使用独立的 `REVIEW_TOKEN`，不使用浏览器会话。
+
+认证使用 Better Auth 的 Username、Admin 插件与 PostgreSQL Drizzle Adapter，不开放注册。
+用户名不区分大小写，由 3–30 个英文字母、数字、下划线或点组成；密码长度为 12–128 个字符。
+账号由能登录部署机器的管理员通过交互终端管理，密码输入不回显，也不写进命令行参数：
+
+```bash
+bun run auth:user create --username admin --name 管理员 --role admin
+bun run auth:user create --username hr_user --name 招聘同事
+bun run auth:user reset-password --username hr_user
+```
+
+创建时用户名重复会拒绝，不覆盖已有账号。重置密码在同一事务里撤销该账号的已有会话。
+没有默认账号或默认密码。浏览器只开放认证的登录、退出和会话接口，不开放 Admin 插件的账号管理、
+提权或模拟登录接口。数据库里的认证用户和人才库员工没有关联外键。
+Better Auth 内部仍要求 email 字段，创建时使用随机的 `@users.invalid` 不可投递地址；用户无需提供邮箱，
+系统不发邮件，不使用邮箱登录或邮箱找回密码。
+
+`BETTER_AUTH_SECRET` 必须至少 32 个字符，保存在部署环境；`BETTER_AUTH_URL` 是应用固定来源地址，
+生产必须是 HTTPS。会话使用 HttpOnly Cookie，不在浏览器存 token；未启用 Cookie 会话缓存，
+退出或撤销后下一次服务端请求即失效。认证缺少配置或数据库不可用时拒绝访问，不退回匿名模式。
+Better Auth 的进程内登录限流保持开启；公网部署还应在网关限制登录及查询理解请求，
+并覆盖而不是透传客户端提交的转发 IP 头，多实例不能只依赖进程内计数。
+
+### 已有数据库的无损升级
+
+认证只新增 `auth_user`、`auth_session`、`auth_account`、`auth_verification` 四张表及其约束和索引。
+不修改业务表、不关联已有员工、不回填搜索记录、不改变解析版本或嵌入空间。
+
+1. 停止应用及后台任务，使用现有数据库备份流程备份完整 Postgres，并确认备份可以恢复；备份含业务数据，不能进版本库。
+2. 配好认证环境变量，运行 `bun run db:push`。只批准新增上述四张表及其索引、约束；已有同名表时先核对来源。
+   如果提示删除、重建、截断或修改任何业务表，立即取消，先处理数据库与代码间的结构差异，不使用 `--force`。
+3. 创建首个管理员，再启动应用，核对登录、普通用户权限与任务页。
+
+初始化认证表**不需要运行 sync 或 derive，也不需要重新整理词表**。不要用初始化人才库的命令代替认证表升级。
+认证初始化失败时保持应用停止，修复配置或认证表后再启动；新表可以留在库里，不影响原有业务数据。
+回退到无认证的旧版本必须先由网关封闭访问，不能为了回退重新开放人才数据。
 
 ## 数据管线
 

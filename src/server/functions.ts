@@ -11,6 +11,7 @@ import { KEYWORD_FIELDS } from "#/search/keywords";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search, suggest } from "#/search/search";
+import { administrator, authenticated } from "./auth-functions";
 import { employeeData, employeeDetail, listEmployees } from "./data";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
@@ -32,6 +33,7 @@ import {
  * 视图入参在此独立校验。待理解记录只返回线程，工作台读进度等它理解完。
  */
 export const loadWorkbench = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { turnId: unknown; filters?: unknown; limit?: unknown }) => ({
 		turnId: String(d.turnId ?? ""),
 		filters: sanitizeFilters(d.filters),
@@ -55,6 +57,7 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 
 /** 单人详情的显示属性与经历时间线。 */
 export const fetchEmployee = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
 	.handler(({ data }) => employeeDetail(data.empId));
 
@@ -63,6 +66,7 @@ export const fetchEmployee = createServerFn({ method: "GET" })
  * 说了一句话就在这里开始理解，不等它完成：页面先进工作台，在那里读进度。
  */
 export const commitTurn = createServerFn({ method: "POST" })
+	.middleware([authenticated])
 	.validator(validateCommit)
 	.handler(async ({ data }) => {
 		const { turnId, attempt } = await createTurn(data.input, data.from);
@@ -72,6 +76,7 @@ export const commitTurn = createServerFn({ method: "POST" })
 
 /** 理解走到哪一步了、这一次从哪一刻开始、成没成。等理解时界面每秒问一次。 */
 export const turnInterpretation = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
 	.handler(({ data }) => loadInterpretation(data.turnId));
 
@@ -80,6 +85,7 @@ export const turnInterpretation = createServerFn({ method: "GET" })
  * 上一次还在跑时什么都不做，返回的就是它的进度。
  */
 export const retryTurn = createServerFn({ method: "POST" })
+	.middleware([authenticated])
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
 	.handler(async ({ data }) => {
 		const attempt = await restartTurn(data.turnId);
@@ -92,6 +98,7 @@ export const retryTurn = createServerFn({ method: "POST" })
  * 共用：它是外壳的数据，换屏时不重取。全部记录的抽屉按页往后取。
  */
 export const recentSearches = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { page?: unknown; size?: unknown }) => ({
 		page: d.page,
 		size: Number(d.size),
@@ -102,15 +109,16 @@ export const recentSearches = createServerFn({ method: "GET" })
  * 能不能说一句话来找人。和最近搜索一起由根路由取：零态和工作台都据此决定
  * 摆不摆那个说话的框。它只读环境配置，不会失败。
  */
-export const understandingOn = createServerFn({ method: "GET" }).handler(() =>
-	understandingConfigured(),
-);
+export const understandingOn = createServerFn({ method: "GET" })
+	.middleware([authenticated])
+	.handler(() => understandingConfigured());
 
 /**
  * 关键词模式下拉里的候选。哪一个框在问由 `field` 说，三个框的候选不混
  * （`search/search.ts`）。敲一个字就来一次，所以入参限制得很短。
  */
 export const suggestTerms = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { field: unknown; q: unknown }) => {
 		const field = KEYWORD_FIELDS.find((f) => f === d.field);
 		if (!field) throw new Error("没有这个框");
@@ -120,11 +128,13 @@ export const suggestTerms = createServerFn({ method: "GET" })
 
 /** 删掉「最近搜索」里的一行，也就是那一次找人任务的整条链。返回删掉的记录 id。 */
 export const deleteRecent = createServerFn({ method: "POST" })
+	.middleware([authenticated])
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
 	.handler(({ data }) => deleteSearch(data.turnId));
 
 /** 词表页的表：按标准词、写法或所属的词找，一页一页地给。 */
 export const termTable = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { q: unknown; page: unknown }) => ({
 		q: String(d.q ?? "").slice(0, 64),
 		page: Number(d.page) || 1,
@@ -133,6 +143,7 @@ export const termTable = createServerFn({ method: "GET" })
 
 /** 词表页点开的那一个词：释义、上下从属、其他写法，各自的人数。 */
 export const termDetail = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { word: unknown }) => ({
 		word: String(d.word ?? "").slice(0, 64),
 	}))
@@ -145,6 +156,7 @@ export const termDetail = createServerFn({ method: "GET" })
  * 是不是越过了最后一页由 `tasksState` 处理（`dataList` 同一条分工）。
  */
 export const tasksStatus = createServerFn({ method: "GET" })
+	.middleware([administrator])
 	.validator(
 		(pages: TaskPages): TaskPages =>
 			Object.fromEntries(
@@ -159,6 +171,7 @@ export const tasksStatus = createServerFn({ method: "GET" })
  * 和状态分开取：日志能有上千行，而任务台在跑的时候每两秒重新载入一次状态。
  */
 export const taskLog = createServerFn({ method: "GET" })
+	.middleware([administrator])
 	.validator((d: { runId: unknown }) => ({ runId: Number(d.runId) }))
 	.handler(({ data }) => runLog(data.runId));
 
@@ -170,6 +183,7 @@ export const taskLog = createServerFn({ method: "GET" })
  * 一个时返回 `queued: false`，界面照它说明原因——把这件事画成一个转不完的圈会误导人。
  */
 export const requestTask = createServerFn({ method: "POST" })
+	.middleware([administrator])
 	.validator((kind: JobKind) => {
 		if (kind !== "derive" && kind !== "review")
 			throw new Error(`没有这种后台任务：${String(kind)}`);
@@ -183,6 +197,7 @@ export const requestTask = createServerFn({ method: "POST" })
 
 /** 数据页的人员列表：按名字或工号找，一页一页地给。 */
 export const dataList = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { q: unknown; page: unknown }) => ({
 		q: String(d.q ?? "").slice(0, 64),
 		page: Number(d.page) || 1,
@@ -191,5 +206,6 @@ export const dataList = createServerFn({ method: "GET" })
 
 /** 数据页的一个人：档案、每一段、每一段的解析结果。 */
 export const dataEmployee = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
 	.handler(({ data }) => employeeData(data.empId));

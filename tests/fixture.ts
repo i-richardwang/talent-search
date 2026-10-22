@@ -10,6 +10,10 @@ import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import { phrasesOf } from "#/corpus/route-texts";
 import {
+	authAccount,
+	authSession,
+	authUser,
+	authVerification,
 	completionCache,
 	EMBED_DIM,
 	embeddingCache,
@@ -465,6 +469,10 @@ export async function setup() {
 	await admin.query(`drop schema if exists ${SCHEMA} cascade`);
 	await admin.query(`create schema ${SCHEMA}`);
 	for (const t of [
+		authUser,
+		authSession,
+		authAccount,
+		authVerification,
 		employee,
 		experience,
 		embeddingSpace,

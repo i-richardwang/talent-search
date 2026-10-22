@@ -302,6 +302,12 @@ const CATALOG = [
 		id: "layouts",
 		pages: [
 			{
+				slug: "login",
+				source: ["src/routes/login/-components/login-screen.tsx"],
+				title: "登录",
+				tokenGroups: ["layout", "type"],
+			},
+			{
 				slug: "home",
 				source: [
 					"src/routes/-components/app-shell.tsx",
