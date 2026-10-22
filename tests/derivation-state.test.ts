@@ -14,6 +14,7 @@ const teardown = await setup();
 after(teardown);
 const { db, pool } = await import("#/db");
 const { derive } = await import("#/corpus/derive");
+const { SYSTEM: EXTRACT_SYSTEM } = await import("#/corpus/extract");
 const { search } = await import("#/search/search");
 const { employeeDetail } = await import("#/server/data");
 
@@ -77,9 +78,7 @@ test("抽取答不出记为未能作答、按原文检索，成功的空抽取�
 		{ empId: "E2", name: "合成抽取", segments: [segment("空抽取样例")] },
 	]);
 	const restore = answerChat((_system, prompt) =>
-		prompt.includes("答不出样例")
-			? { skills: "invalid", did: [] }
-			: { skills: [], did: [] },
+		prompt.includes("答不出样例") ? { items: "invalid" } : { items: [] },
 	);
 	try {
 		assert.deepEqual(await runDerive(), { done: 2, left: 0 });
@@ -115,8 +114,8 @@ for (const [label, invalid] of [
 			},
 		]);
 		const restore = answerChat((system) =>
-			system.includes("两类短说法")
-				? { skills: ["数据分析"], did: [] }
+			system === EXTRACT_SYSTEM
+				? { items: [{ text: "数据分析", depth: "做过" }] }
 				: invalid,
 		);
 		try {
@@ -155,7 +154,7 @@ test("答不出的段标准不变不再问，标准变了重新问", async () =>
 	);
 	restore = answerChat(() => {
 		asked++;
-		return { skills: [], did: [] };
+		return { items: [] };
 	});
 	try {
 		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
@@ -174,7 +173,7 @@ async function staged() {
 	).rows[0]?.n;
 }
 
-test("标准更新期间检索读上一版，每一段都有新结果后一次替换正式表", async () => {
+test("标准更新期间检索读上一版，换模型保留暂存进度，完成后换模型和端点也不重跑", async () => {
 	await seed(
 		Array.from({ length: 201 }, (_, i) => ({
 			empId: `E${i}`,
@@ -187,15 +186,33 @@ test("标准更新期间检索读上一版，每一段都有新结果后一次�
 	);
 	const restore = answerChat(async () => {
 		await new Promise((resolve) => setTimeout(resolve, 1_200));
-		return { skills: [], did: [] };
+		return { items: [] };
 	});
+	const originalModel = process.env.EXTRACT_MODEL;
+	const originalAlignModel = process.env.ALIGN_MODEL;
+	const originalAlignURL = process.env.ALIGN_BASE_URL;
 	try {
 		assert.deepEqual(await runDerive(1_000), { done: 200, left: 1 });
 		assert.equal(await staged(), 200);
 		assert.ok((await identities()).every((v) => v === "old-standard"));
 		assert.equal((await find()).total, 201);
+		process.env.EXTRACT_MODEL = "another-qualified-model";
+		process.env.ALIGN_MODEL = "another-alignment-model";
 		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
+		const completedVersions = await identities();
+		const saved = await employeeDetail("E0");
+		process.env.EXTRACT_MODEL = "latest-qualified-model";
+		process.env.ALIGN_MODEL = "latest-alignment-model";
+		process.env.ALIGN_BASE_URL = "http://127.0.0.1:1";
+		assert.deepEqual(await runDerive(), { done: 0, left: 0 });
+		assert.deepEqual(await identities(), completedVersions);
+		assert.deepEqual(await employeeDetail("E0"), saved);
 	} finally {
+		process.env.EXTRACT_MODEL = originalModel;
+		if (originalAlignModel === undefined) delete process.env.ALIGN_MODEL;
+		else process.env.ALIGN_MODEL = originalAlignModel;
+		if (originalAlignURL === undefined) delete process.env.ALIGN_BASE_URL;
+		else process.env.ALIGN_BASE_URL = originalAlignURL;
 		restore();
 	}
 	assert.equal(await staged(), 0);
@@ -203,6 +220,7 @@ test("标准更新期间检索读上一版，每一段都有新结果后一次�
 	assert.ok(versions[0] && versions[0] !== "old-standard");
 	assert.ok(versions.every((v) => v === versions[0]));
 	assert.equal((await find()).total, 201);
+	assert.deepEqual(await runDerive(), { done: 0, left: 0 });
 });
 
 test("暂存结果替换进去时，答不出的段带着未能作答进去，仍按原文留在检索里", async () => {
@@ -214,7 +232,7 @@ test("暂存结果替换进去时，答不出的段带着未能作答进去，�
 		sql`update experience set derived_identity = 'old-standard'`,
 	);
 	const restore = answerChat((_system, prompt) =>
-		prompt.includes("替换失败样例") ? { bad: true } : { skills: [], did: [] },
+		prompt.includes("替换失败样例") ? { bad: true } : { items: [] },
 	);
 	try {
 		assert.deepEqual(await runDerive(), { done: 2, left: 0 });
@@ -234,7 +252,7 @@ test("正式表混着两版时替换进去，已是这一版的段保留自己�
 		{ empId: "E1", name: "合成混合", segments: [segment("已是新版样例")] },
 		{ empId: "E2", name: "合成混合", segments: [segment("仍是旧版样例")] },
 	]);
-	const restore = answerChat(() => ({ skills: [], did: [] }));
+	const restore = answerChat(() => ({ items: [] }));
 	try {
 		assert.deepEqual(await runDerive(), { done: 2, left: 0 });
 		await db.execute(

@@ -12,6 +12,7 @@ after(teardown);
 const { align, conform, seqTree, systemPrompt } = await import(
 	"#/corpus/align"
 );
+const { extract, SYSTEM: EXTRACT_SYSTEM } = await import("#/corpus/extract");
 const { UNEMPLOYED } = await import("#/corpus/pipeline");
 
 const quiet = () => {};
@@ -126,6 +127,48 @@ describe("校验", () => {
 });
 
 describe("对齐", () => {
+	test("独立选择对齐模型，未配置时沿用抽取模型，抽取不受影响", async () => {
+		const original = process.env.ALIGN_MODEL;
+		const rows = corpus(["模型分工样例", "合成经历描述"]);
+		const restore = answerChat((system, _prompt, request) => {
+			if (system === EXTRACT_SYSTEM)
+				return {
+					items: [
+						{
+							text: request.model === "fake" ? "数据分析" : "错误模型",
+							depth: "做过",
+						},
+					],
+				};
+			return {
+				seq:
+					request.model === "align-fake" ? "算法（技术）" : "渠道运营（运营）",
+			};
+		});
+		try {
+			for (const [model, expected] of [
+				[undefined, "渠道运营"],
+				[" align-fake ", "算法"],
+				[" ", "渠道运营"],
+			] as const) {
+				if (model === undefined) delete process.env.ALIGN_MODEL;
+				else process.env.ALIGN_MODEL = model;
+				assert.equal(
+					(await align(rows, seqTree(rows), quiet)).at(-1)?.seq_inferred_l2,
+					expected,
+				);
+				assert.deepEqual((await extract(rows, quiet)).at(-1), {
+					status: "done",
+					value: { items: [{ text: "数据分析", engagement: "做过" }] },
+				});
+			}
+		} finally {
+			if (original === undefined) delete process.env.ALIGN_MODEL;
+			else process.env.ALIGN_MODEL = original;
+			restore();
+		}
+	});
+
 	test("登记的全角序列名可以原样对齐", async () => {
 		const rows = [
 			segment({ seq_l1: "技术Ａ", seq_l2: "算法Ｂ" }),

@@ -96,7 +96,7 @@ export const CORPUS_COUNTS: CorpusCounts = {
 	glossed: 9,
 };
 
-/** 数据页上 Talent 0101 的几段，连同解析出的技能和做过的事。 */
+/** 数据页上 Talent 0101 的几段，连同解析出的技能和投入档。 */
 export const SEGMENTS: SegmentView[] = experiencesOf("T0101").map((x) => ({
 	id: x.id,
 	kind: x.kind,
@@ -116,12 +116,14 @@ export const SEGMENTS: SegmentView[] = experiencesOf("T0101").map((x) => ({
 	seqInferredL2: x.seqInferredL2,
 	derived: x.id !== 103,
 	unanswered: x.id === 102,
-	skills: x.kind === "external" ? ["推荐系统", "实时特征"] : [],
-	did:
+	skills:
 		x.kind === "external"
 			? [
-					{ involvement: "从零搭建", domain: "实时特征管线" },
-					{ involvement: "负责", domain: "带 4 人算法小组" },
+					{ text: "实时特征管线", engagement: "主导" },
+					{ text: "算法团队管理", engagement: "主导" },
+					{ text: "推荐系统", engagement: "做过" },
+					{ text: "实时特征", engagement: "做过" },
+					{ text: "Flink", engagement: "提到" },
 				]
 			: [],
 }));

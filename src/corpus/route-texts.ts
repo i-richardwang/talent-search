@@ -9,14 +9,15 @@
  *   既会把坐在推荐算法组的后端判成做推荐算法，又会因为一长串路径压低对得上的分数。
  * - `title`：入职前的岗位名，原样。入职前的公司名只回答「在哪」，由按名字找的条件
  *   使用，不进这里。
- * - 自述每段只有一种来源：已读段取抽出的能力词（`skill`）和做过的事（`did`），
- *   未读段取原文（`description`）。原文始终保留在经历行上供核对。
- *   模型失败的段不提交解析结果，保留上一份状态等待重试。
+ * - 自述每段只有一种来源：已读段取抽出的能力（`skill`），连同这个人在每一项上
+ *   投入多深；未读段取原文（`description`）。原文始终保留在经历行上供核对。
+ *   抽取答不出记为未能作答，按未读段取原文；端点故障中止当前批次，下一轮接着。
  *
  * 哪一类为空就没有那一类：不嵌空串，也不存零向量。
  */
 
 import type { Route } from "#/db/schema";
+import type { Engagement } from "#/lib/engagement";
 import type { Extraction } from "./extract";
 
 export type RouteSource = {
@@ -29,11 +30,11 @@ export type RouteSource = {
 	description: string;
 };
 
-/** 一条说法与它属于哪一类。参与方式只有做过的事那一类带。 */
+/** 一条说法与它属于哪一类。投入档只有能力那一类带。 */
 export type Phrasing = {
 	route: Route;
 	text: string;
-	involvement: string | null;
+	engagement: Engagement | null;
 };
 
 /** 这一段的全部说法。`extraction` 为 null 是「没读过」，不是「读了没读出来」。 */
@@ -44,22 +45,15 @@ export function phrasesOf(
 	if (s.unemployed) return [];
 	const registered: Phrasing[] =
 		s.kind === "internal"
-			? [{ route: "role", text: roleText(s), involvement: null }]
-			: [{ route: "title", text: s.title, involvement: null }];
+			? [{ route: "role", text: roleText(s), engagement: null }]
+			: [{ route: "title", text: s.title, engagement: null }];
 	const claimed: Phrasing[] = extraction
-		? [
-				...extraction.skills.map((text) => ({
-					route: "skill" as const,
-					text,
-					involvement: null,
-				})),
-				...extraction.did.map(({ domain, involvement }) => ({
-					route: "did" as const,
-					text: domain,
-					involvement,
-				})),
-			]
-		: [{ route: "description", text: s.description, involvement: null }];
+		? extraction.items.map(({ text, engagement }) => ({
+				route: "skill" as const,
+				text,
+				engagement,
+			}))
+		: [{ route: "description", text: s.description, engagement: null }];
 	return [...registered, ...claimed].filter((p) => p.text);
 }
 
@@ -93,9 +87,6 @@ export const PHRASING = JSON.stringify(
 		{ ...SAMPLE, kind: "external" as const },
 	].flatMap((s) => [
 		phrasesOf(s, null),
-		phrasesOf(s, {
-			skills: ["能力"],
-			did: [{ involvement: "负责建设", domain: "领域" }],
-		}),
+		phrasesOf(s, { items: [{ text: "能力", engagement: "主导" }] }),
 	]),
 );

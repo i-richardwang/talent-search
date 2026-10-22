@@ -92,16 +92,26 @@ describe("检索数据约束", () => {
 			db.execute(sql`
 				insert into experience_phrase (experience_id, route, phrase_id)
 				values (1, 'org', (select min(id) from phrase))`),
-			violates("experience_phrase_route_valid_7"),
+			violates("experience_phrase_route_valid_8"),
 		);
 	});
 
-	test("同一串字只存一次：说法表按原文唯一", async () => {
+	test("投入档只能是三档之一", async () => {
+		await assert.rejects(
+			db.execute(sql`
+				update experience_phrase set engagement = '负责建设'
+				where (experience_id, route, phrase_id) in
+					(select experience_id, route, phrase_id from experience_phrase limit 1)`),
+			violates("experience_phrase_engagement_valid_1"),
+		);
+	});
+
+	test("同一串字只存一次：说法表按原文的摘要唯一", async () => {
 		await assert.rejects(
 			db.execute(sql`
 				insert into phrase (text, embedding)
 				select text, embedding from phrase limit 1`),
-			violates("phrase_text_unique"),
+			violates("phrase_text_key_unique"),
 		);
 	});
 

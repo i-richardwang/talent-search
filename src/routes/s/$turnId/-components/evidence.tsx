@@ -31,7 +31,7 @@ export function Dot({ hit, className }: { hit: boolean; className?: string }) {
 }
 
 export function phraseLabel(hit: Hit) {
-	return hit.phrase === null ? null : dots(hit.involvement, hit.phrase);
+	return hit.phrase === null ? null : dots(hit.engagement, hit.phrase);
 }
 
 function matchedField(hit: Hit): {
@@ -48,7 +48,6 @@ function matchedField(hit: Hit): {
 		case "description":
 			return { label, value: null, context: dots(hit.title, placeOf(hit)) };
 		case "skill":
-		case "did":
 			return {
 				label,
 				value: phraseLabel(hit),

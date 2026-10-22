@@ -131,10 +131,10 @@ type Verdict = { sameAs: string | null; parent: string | null };
 
 /**
  * 校验判定方的原话，整理成逐词的判断：只认这一组里的词，一个词只认第一条。
+ * 原样命中的词保留组内写法，否则清理全半角会让简历里的原词失去身份。
  *
- * `sameAs` 必须是这一组里的另一个词；`parent` 是判定方起的名字，只要求它是一条能力词
- * （规范写法、不超过 `MAX_TAG_LEN`），不是这个词自己，也不含着这个词——含着它的词
- * 比它更具体，方向反了的归属（「数据分析」属于「销售数据分析」）在这里就拦下。
+ * `sameAs` 必须是这一组里的另一个词；`parent` 可以引用组内原词或由判定方起名，
+ * 不超过 `MAX_TAG_LEN` 且不是自己。宽细关系由判定方按 GUIDE 判断，不按字面包含推断。
  *
  * **自带模型和外部 agent 走的是这同一处。** 外部交上来的东西比模型的更不可信，
  * 不给它第二个入口；接口那一侧只把原话原样存进组里，不在写入时校验。
@@ -144,6 +144,8 @@ export function conform(raw: unknown, words: string[]): Map<string, Verdict> {
 	if (typeof raw !== "object" || raw === null) return out;
 	const judgments = (raw as { judgments?: unknown }).judgments;
 	const allowed = new Set(words);
+	const spellingOf = (value: unknown) =>
+		typeof value === "string" && allowed.has(value) ? value : tag(value);
 	for (const item of Array.isArray(judgments) ? judgments : []) {
 		if (typeof item !== "object" || item === null) continue;
 		const judgment = item as {
@@ -151,17 +153,14 @@ export function conform(raw: unknown, words: string[]): Map<string, Verdict> {
 			sameAs?: unknown;
 			parent?: unknown;
 		};
-		const word = tag(judgment.word);
+		const word = spellingOf(judgment.word);
 		if (!allowed.has(word) || out.has(word)) continue;
-		const sameAs = tag(judgment.sameAs);
-		const parent = tag(judgment.parent);
-		const broader =
-			parent !== "" &&
-			[...parent].length <= MAX_TAG_LEN &&
-			parent !== word &&
-			!parent.includes(word);
+		const sameAs = spellingOf(judgment.sameAs);
+		const parent = spellingOf(judgment.parent);
+		const validParent =
+			parent !== "" && [...parent].length <= MAX_TAG_LEN && parent !== word;
 		out.set(word, {
-			parent: broader ? parent : null,
+			parent: validParent ? parent : null,
 			sameAs: allowed.has(sameAs) && sameAs !== word ? sameAs : null,
 		});
 	}
@@ -206,6 +205,12 @@ export function merge(
 		table.set(word, decision);
 		changed.set(word, decision);
 	};
+
+	// 拆开的旧别名先成为标准词，归属遍历才不会沿旧别名回到新父词。
+	for (const head of new Set(headOf.values())) {
+		const previous = table.get(head);
+		if (previous && previous.canonical !== head) decide(head, head, null);
+	}
 
 	for (const cluster of classes) {
 		const head = headOf.get(cluster[0] as string) as string;

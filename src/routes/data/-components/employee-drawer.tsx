@@ -3,9 +3,8 @@ import { Block } from "#/components/ui/block";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { Empty } from "#/components/ui/empty";
-
+import { ENGAGEMENTS } from "#/lib/engagement";
 import { dots, duration, integer, period } from "#/lib/format";
-import { involvementRank } from "#/lib/involvement";
 import { overseasValue } from "#/search/dimensions";
 import type { EmployeeProfile, SegmentView } from "#/server/data";
 import {
@@ -128,21 +127,18 @@ const KINDS = [
 	["internal", "公司内"],
 ] as const;
 
-/**
- * 做过的事按参与方式归组，组序按 `involvementRank`。按出现的值分组：清单外的取值
- * 和没判断出参与方式的排在最后，也照样显示。
- */
-function didGroups(did: SegmentView["did"]) {
-	const kinds = [...new Set(did.map((one) => one.involvement))].sort(
-		(a, b) => involvementRank(a) - involvementRank(b),
+/** 技能按投入档归组，从深到浅；没判断出档的排在最后，也照样显示。 */
+function skillGroups(skills: SegmentView["skills"]) {
+	const levels = [...ENGAGEMENTS, null].filter((level) =>
+		skills.some((one) => one.engagement === level),
 	);
 	return (
 		<Descriptions size="small">
-			{kinds.map((kind) => (
-				<DescriptionsItem key={kind ?? ""} label={kind}>
-					{did
-						.filter((one) => one.involvement === kind)
-						.map((one) => one.domain)
+			{levels.map((level) => (
+				<DescriptionsItem key={level ?? ""} label={level}>
+					{skills
+						.filter((one) => one.engagement === level)
+						.map((one) => one.text)
 						.join("、")}
 				</DescriptionsItem>
 			))}
@@ -178,11 +174,7 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 					)
 				)}
 			</div>
-			{(registered ||
-				inferred ||
-				s.skills.length > 0 ||
-				s.did.length > 0 ||
-				s.description) && (
+			{(registered || inferred || s.skills.length > 0 || s.description) && (
 				<Descriptions size="small">
 					{(registered || inferred) && (
 						<DescriptionsItem label="序列">
@@ -196,11 +188,8 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 					)}
 					{s.skills.length > 0 && (
 						<DescriptionsItem label="技能">
-							{s.skills.join("、")}
+							{skillGroups(s.skills)}
 						</DescriptionsItem>
-					)}
-					{s.did.length > 0 && (
-						<DescriptionsItem label="职责">{didGroups(s.did)}</DescriptionsItem>
 					)}
 					{s.description && (
 						/* 这一栏里唯一成段读的文字 */

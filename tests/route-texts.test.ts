@@ -72,7 +72,7 @@ describe("自述每一段只取一种来源", () => {
 		});
 	});
 
-	test("读过的段，说法是读出来的能力词与做过的事，原文不再是说法", () => {
+	test("读过的段，说法是读出来的能力连同投入档，原文不再是说法", () => {
 		const phrasings = phrasesOf(
 			{
 				kind: "external",
@@ -84,18 +84,20 @@ describe("自述每一段只取一种来源", () => {
 				description: external.description as string,
 			},
 			{
-				skills: ["召回"],
-				did: [{ involvement: "负责建设", domain: "推荐系统" }],
+				items: [
+					{ text: "推荐系统", engagement: "主导" },
+					{ text: "召回", engagement: null },
+				],
 			},
 		);
 		assert.deepEqual(phrasings, [
-			{ route: "skill", text: "召回", involvement: null },
-			{ route: "did", text: "推荐系统", involvement: "负责建设" },
+			{ route: "skill", text: "推荐系统", engagement: "主导" },
+			{ route: "skill", text: "召回", engagement: null },
 		]);
 	});
 
 	test("读过但什么都没读出来，也不退回原文：那是模型说这段没有可找的能力", () => {
-		assert.deepEqual(of(external, { skills: [], did: [] }), {});
+		assert.deepEqual(of(external, { items: [] }), {});
 	});
 });
 
@@ -108,7 +110,7 @@ test("待业属性阻止登记和抽取说法进入语料，不依赖岗位文�
 				title: "算法",
 				description: "算法开发",
 			},
-			{ skills: ["算法"], did: [] },
+			{ items: [{ text: "算法", engagement: "做过" }] },
 		),
 		{},
 	);
@@ -121,7 +123,6 @@ test("组合方式的身份由样例走一遍得出，每一类说法都在里�
 	);
 	assert.deepEqual([...routes].sort(), [
 		"description",
-		"did",
 		"role",
 		"skill",
 		"title",

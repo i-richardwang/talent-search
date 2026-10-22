@@ -18,6 +18,7 @@ import {
 	SHORT_ROUTES,
 } from "#/db/schema";
 import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
+import type { Engagement } from "#/lib/engagement";
 import { dots } from "#/lib/format";
 import { escapeLike } from "#/lib/sql";
 import type { ExperienceCondition } from "./condition";
@@ -62,6 +63,7 @@ import {
 import type { SearchSpec } from "./spec";
 import type { Matched, NameField, NameFinding, TermFinding } from "./trace";
 import {
+	ENGAGEMENT_FACTOR,
 	FACT_MAX,
 	HITS_PER_CLAIM,
 	RELEVANCE_MIN,
@@ -241,7 +243,7 @@ type FactRow = {
 	route: Route;
 	relevance: number;
 	phrase: string | null;
-	involvement: string | null;
+	engagement: Engagement | null;
 	emp_id: string;
 	end_date: string | null;
 } & Pick<Fact, keyof DimSource>;
@@ -517,11 +519,10 @@ const FACT_ROW = sql`e.id, e.emp_id, e.end_date, ${factSelect}`;
  * 只留最对得上的那一次命中。
  *
  * 每条主张按经历词展开：词之间是 OR，但各自单独判定，因为「命中的是哪个词」
- * 要进证据行。一段几类都可能命中、几个词都可能命中，这里只留相关度最高的一行
- * ——和 rank.ts 的 `closer` 同一套比较规则，
- * 否则这里留下的和那边选出来的不是同一条证据。打分层按事实累加月份，同段两行
- * 会把 12 个月数成 24；证据行也会把同一段列两遍。去重必须在 SQL 里做完再比
- * 上限：在内存里去重的话，三个词的宽主张会把 FACT_MAX 提前触发三倍。
+ * 要进证据行。一段几类、几个词都可能命中，只留相关度乘投入系数最高的一行，
+ * 同强度再比原始相关度，与 rank.ts 的 `closer` 一致。
+ * 去重必须在 SQL 里做完再比上限，证据也不重复列段；否则三个词的宽主张会把
+ * FACT_MAX 提前触发三倍。
  *
  * 主张自己的段谓词只作用在自己的行上（`q.claim_idx = i and …`）：「入职前在大厂
  * 做过增长」限定的是增长那一段，不限定同一查询里别的主张的段。
@@ -552,6 +553,15 @@ function factsSql(
 		}),
 		sql` or `,
 	);
+	const strength = sql`q.relevance * case when ep.route = 'skill' then
+		case ep.engagement ${sql.join(
+			Object.entries(ENGAGEMENT_FACTOR).map(
+				([engagement, factor]) =>
+					sql`when ${engagement} then ${factor}::double precision`,
+			),
+			sql` `,
+		)} else ${ENGAGEMENT_FACTOR.做过}::double precision end
+		else 1 end`;
 	return sql`
 		with q(claim_idx, value_idx, phrase_id, relevance) as ${table}
 		select distinct on (q.claim_idx, e.id)
@@ -560,14 +570,15 @@ function factsSql(
 				EXTRACTED_ROUTES.map((r) => sql`${r}`),
 				sql`, `,
 			)}) then ph.text end as phrase,
-			ep.involvement, ${FACT_ROW}
+			ep.engagement, ${FACT_ROW}
 		from q
 		join experience_phrase ep on ep.phrase_id = q.phrase_id
 		join phrase ph on ph.id = ep.phrase_id
 		join experience e on e.id = ep.experience_id
 		join employee p on p.emp_id = e.emp_id
 		${whereAll([sql`(${own})`, ...person])}
-		order by q.claim_idx, e.id, q.relevance desc, q.value_idx, ep.route`;
+		order by q.claim_idx, e.id, ${strength} desc, q.relevance desc,
+			q.value_idx, ep.route, ep.phrase_id`;
 }
 
 /**
@@ -943,7 +954,7 @@ export async function search(
 						route: fact.route,
 						relevance: fact.relevance,
 						phrase: fact.phrase,
-						involvement: fact.involvement,
+						engagement: fact.engagement,
 						startDate: segment.startDate,
 						endDate: segment.endDate,
 						company: segment.company,

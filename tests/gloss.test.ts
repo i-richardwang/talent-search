@@ -160,8 +160,11 @@ describe("收集与生效", () => {
 						company: "某公司",
 						title: "高级后端开发工程师",
 						extracted: {
-							skills: ["服务端开发", "客户开发"],
-							did: [{ involvement: "负责建设", domain: "订单系统" }],
+							skills: [
+								"服务端开发",
+								"客户开发",
+								{ text: "订单系统", engagement: "主导" },
+							],
 						},
 					},
 					{
@@ -187,7 +190,7 @@ describe("收集与生效", () => {
 
 	after(() => restoreEnv());
 
-	test("技能、做过的事、入职前岗位名进组，带人数；原文和公司内任职整句不进", async () => {
+	test("技能、入职前岗位名进组，带人数；原文和公司内任职整句不进", async () => {
 		const said = await runReview();
 		assert.match(said.join("\n"), /条短说法还没有这一版的释义/);
 		assert.match(said.join("\n"), /收了 1 组释义/);

@@ -3,6 +3,7 @@
  * 排名和分面读取同一份事实；时间由调用方传入，候选载荷上限由取数层执行。
  */
 
+import type { Engagement } from "#/lib/engagement";
 import {
 	DIM_KEYS,
 	type DimKey,
@@ -22,7 +23,13 @@ import {
 	emptyFacets,
 	type Facets,
 } from "./result";
-import { BOOST_WEIGHT, RECENCY_HALF, type Route, TENURE_HALF } from "./weights";
+import {
+	BOOST_WEIGHT,
+	ENGAGEMENT_FACTOR,
+	RECENCY_HALF,
+	type Route,
+	TENURE_HALF,
+} from "./weights";
 
 /** 候选人的分面属性；没有工作经历时经历单值为空，集合为空数组。 */
 export type PopulationFact = DimSource & { empId: string };
@@ -43,24 +50,30 @@ export type Fact = PopulationFact & {
 	/** 说法与这一类原文的相关度，已过 RELEVANCE_MIN */
 	relevance: number;
 	/**
-	 * 命中的那条说法的文本，只有抽取的两类带（其余类的文本就是经历行上的
+	 * 命中的那条说法的文本，只有抽取的那类带（其余类的文本就是经历行上的
 	 * 字段，回表取得到；简历原文太长，不放进事实行）。不参与计算，只为在
 	 * 证据行上说出「命中的是哪个能力词」。
 	 */
 	phrase: string | null;
-	/** 做过的事那一类的参与方式（「从零搭建」），其余类为 null。只为证据行显示。 */
-	involvement: string | null;
+	/** 能力那一类的投入档（「主导」），参与深度并在证据行显示，其余类为 null。 */
+	engagement: Engagement | null;
 	/** null 表示至今 */
 	endDate: string | null;
 };
 
 /**
- * 两条证据谁更对得上：只比相关度。来源不参与比较——任职记录和简历里写的都在说
- * 这个人做过什么，来源写在证据行上，信不信由 HR 判断。一条主张的几个经历词同权：
+ * 两条证据谁更对得上：比相关度乘投入系数，同强度再比原始相关度。来源不参与比较——任职记录和简历里写的都在说
+ * 这个人做过什么，来源写在证据行上，信不信由 HR 判断。投入档只有抽取的技能上有：
+ * 「负责搭建数据仓库」比「熟悉数据仓库」更像要找的人。一条主张的几个经历词同权：
  * 它们都是模型对「要找什么」的表达，没有哪个更像原话。
  */
 function closer(a: Fact, b: Fact) {
-	return a.relevance - b.relevance;
+	return weighted(a) - weighted(b) || a.relevance - b.relevance;
+}
+
+function weighted(f: Fact) {
+	if (f.route !== "skill") return f.relevance;
+	return f.relevance * ENGAGEMENT_FACTOR[f.engagement ?? "做过"];
 }
 
 /**
@@ -88,8 +101,8 @@ export function gapMonths(endDate: string | null, now: Date) {
 }
 
 /**
- * 一条主张对一个人的**深度 = 相关度 × 时长 × 近因**，三个都是 (0, 1] 内的因子。
- * 相关度取最对得上的那条证据的；**时长是全部命中段的累计**，近因取其中最近的一段。
+ * 一条主张对一个人的**深度 = 相关度 × 投入 × 时长 × 近因**，四个都是 (0, 1] 内的因子。
+ * 相关度和投入取最对得上的那条证据的（见 closer）；**时长是全部命中段的累计**，近因取其中最近的一段。
  * 它们回答的是「做的事有多对得上、做了多久、离现在多近」。
  * 主张上的 `minMonths` 判的就是这个累计值：筛和排看的是同一个数，证据行上写的也是它。
  */
@@ -111,7 +124,7 @@ function claimValue(facts: Fact[], now: Date) {
 	}
 	return {
 		depth:
-			best.relevance * saturate(months, TENURE_HALF) * decay(gap, RECENCY_HALF),
+			weighted(best) * saturate(months, TENURE_HALF) * decay(gap, RECENCY_HALF),
 		basis: {
 			route: best.route,
 			value: best.value,

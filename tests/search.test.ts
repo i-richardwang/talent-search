@@ -90,7 +90,7 @@ before(async () => {
 		},
 		{
 			empId: "T009",
-			name: "能力词与做过的事是从简历里抽出来的",
+			name: "能力词和投入档是从简历里抽出来的",
 			segments: [
 				{
 					kind: "external",
@@ -98,8 +98,11 @@ before(async () => {
 					company: "某公司",
 					description: "负责服务端",
 					extracted: {
-						skills: ["Python", "Spark"],
-						did: [{ involvement: "从零搭建", domain: "推荐系统" }],
+						skills: [
+							{ text: "Python", engagement: "做过" },
+							"Spark",
+							{ text: "推荐系统", engagement: "主导" },
+						],
 					},
 				},
 			],
@@ -112,7 +115,7 @@ before(async () => {
 	]);
 });
 
-describe("抽取的两类 route", () => {
+describe("抽取的能力", () => {
 	test("能力词命中时证据行带上命中的那条说法", async () => {
 		const { results } = await run("Python");
 		const hit = results
@@ -128,21 +131,21 @@ describe("抽取的两类 route", () => {
 		assert.ok(results.some((r) => r.employee.empId === "T009"));
 	});
 
-	test("做过的事只拿领域比相关度，参与方式随命中一起返回", async () => {
+	test("能力只拿词比相关度，投入档随命中一起返回", async () => {
 		const { results } = await run("推荐系统");
 		const hit = results
 			.find((r) => r.employee.empId === "T009")
 			?.hits.find((h) => h.claim === 0);
-		assert.equal(hit?.route, "did");
+		assert.equal(hit?.route, "skill");
 		assert.equal(hit?.phrase, "推荐系统");
-		assert.equal(hit?.involvement, "从零搭建");
+		assert.equal(hit?.engagement, "主导");
 	});
 
-	test("参与方式不进向量：查它命不中做过的事", async () => {
-		const { results } = await run("从零搭建");
+	test("投入档不进向量：查它命不中能力", async () => {
+		const { results } = await run("主导");
 		const hit = results
 			.find((r) => r.employee.empId === "T009")
-			?.hits.find((h) => h.route === "did");
+			?.hits.find((h) => h.route === "skill");
 		assert.equal(hit, undefined);
 	});
 
@@ -153,7 +156,7 @@ describe("抽取的两类 route", () => {
 			?.hits.find((h) => h.claim === 0);
 		assert.equal(hit?.route, "title");
 		assert.equal(hit?.phrase, null);
-		assert.equal(hit?.involvement, null);
+		assert.equal(hit?.engagement, null);
 	});
 });
 
@@ -1306,4 +1309,71 @@ describe("待业只属于时间线", () => {
 			0,
 		);
 	});
+});
+
+test("同段按投入加权选择证据，保留较低相关度的主导技能，岗位不打折", async () => {
+	const what = "跨境支付风控";
+	await seed([
+		{
+			empId: "DEPTH_A",
+			name: "合成主导与提到",
+			segments: [
+				{
+					months: 24,
+					extracted: {
+						skills: [
+							{ text: `${what}甲`, engagement: "主导" },
+							{ text: what, engagement: "提到" },
+						],
+					},
+				},
+			],
+		},
+		{
+			empId: "DEPTH_B",
+			name: "合成主导",
+			segments: [
+				{
+					months: 24,
+					extracted: {
+						skills: [{ text: `${what}乙丙`, engagement: "主导" }],
+					},
+				},
+			],
+		},
+		{
+			empId: "DEPTH_C",
+			name: "合成未判投入",
+			segments: [{ months: 24, extracted: { skills: [what] } }],
+		},
+		{
+			empId: "DEPTH_D",
+			name: "合成岗位与提到",
+			segments: [
+				{
+					kind: "external",
+					title: what,
+					months: 24,
+					extracted: { skills: [{ text: what, engagement: "提到" }] },
+				},
+			],
+		},
+	]);
+	const { results } = await run(what);
+	assert.deepEqual(
+		results.map((r) => r.employee.empId),
+		["DEPTH_D", "DEPTH_A", "DEPTH_C", "DEPTH_B"],
+	);
+	// 六个不同字，主导候选各多一字、两字：假重排分别为 6/7、6/8。
+	// 全部仍在做且只有 24 个月，时长因子为 24/(24+48) = 1/3。
+	for (const [i, strength] of [1, 6 / 7, 0.85, 6 / 8].entries()) {
+		const result = results[i];
+		assert.ok(result);
+		assert.ok(Math.abs(result.depth - strength / 3) < 1e-6);
+		assert.equal(result.hits.length, 1);
+		assert.equal(result.basis[0]?.months, 24);
+	}
+	assert.equal(results[0]?.hits[0]?.route, "title");
+	assert.equal(results[1]?.hits[0]?.phrase, `${what}甲`);
+	assert.equal(results[1]?.hits[0]?.engagement, "主导");
 });

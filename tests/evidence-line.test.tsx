@@ -121,7 +121,7 @@ describe("一行证据看得见的部分", () => {
 		assert.match(said, /某部门/);
 	});
 
-	test("抽取的两类：技能写出类型，做过的事只写说法本身", () => {
+	test("抽取的能力写出类型，投入档跟在说法前面", () => {
 		const bySkill = seen(
 			hit({ route: "skill", phrase: "Spark", value: "Spark" }),
 			basis({ route: "skill", value: "Spark" }),
@@ -130,18 +130,17 @@ describe("一行证据看得见的部分", () => {
 		assert.match(bySkill, /Spark/);
 		assert.doesNotMatch(bySkill, /能力词/);
 
-		const byDid = seen(
+		const byDepth = seen(
 			hit({
-				route: "did",
+				route: "skill",
 				phrase: "推荐系统",
-				involvement: "从零搭建",
+				engagement: "主导",
 				value: "推荐系统",
 			}),
-			basis({ route: "did", value: "推荐系统" }),
+			basis({ route: "skill", value: "推荐系统" }),
 		);
-		assert.match(byDid, /从零搭建/);
-		assert.match(byDid, /推荐系统/);
-		assert.doesNotMatch(byDid, /做过的事|工作内容/);
+		assert.match(byDepth, /技能/);
+		assert.match(byDepth, /主导 · 推荐系统/);
 	});
 });
 

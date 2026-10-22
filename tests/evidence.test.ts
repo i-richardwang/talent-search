@@ -15,16 +15,15 @@ const claims = (...what: string[]): Claim[] =>
 	what.map((w) => claim(w) as Claim);
 
 describe("来源的写法", () => {
-	test("每一类来源各有确切的写法；做过的事不另起类型名", () => {
+	test("每一类来源各有确切的写法", () => {
 		// 断言整张表：少一类多一类都会失败，加一类时必须决定它在屏幕上叫什么
-		const routes: Route[] = ["role", "title", "skill", "did", "description"];
+		const routes: Route[] = ["role", "title", "skill", "description"];
 		assert.deepEqual(
 			Object.fromEntries(routes.map((r) => [r, routeLabel(r)])),
 			{
 				role: "任职记录",
 				title: "岗位",
 				skill: "技能",
-				did: "",
 				description: "简历原文",
 			},
 		);

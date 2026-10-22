@@ -1,4 +1,5 @@
 import type { Employee, Experience, Route } from "#/db/schema";
+import type { Engagement } from "#/lib/engagement";
 import {
 	activeConditions,
 	type Condition,
@@ -56,7 +57,7 @@ export type Hit = {
 	route: Route;
 	relevance: number;
 	phrase: string | null;
-	involvement: string | null;
+	engagement: Engagement | null;
 	startDate: string;
 	endDate: string | null;
 	company: string;

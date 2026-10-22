@@ -41,9 +41,9 @@ type DerivedRow = StoredRow & { unanswered: boolean };
 type Link = Phrasing & { experienceId: number };
 
 /**
- * 这一批段的说法与边（组合方式见 `route-texts.ts`）。五类进同一张说法表：一个能力词
- * 恰好和某个岗位名是同一串字时只嵌一次，两条边各指向它。做过的事的说法是
- * 领域，参与方式存在边的第四列，其余类那一列是空。
+ * 这一批段的说法与边（组合方式见 `route-texts.ts`）。四类进同一张说法表：一个能力词
+ * 恰好和某个岗位名是同一串字时只嵌一次，两条边各指向它。能力的投入档存在边的
+ * 第四列，其余类那一列是空。
  *
  * `extractions` 按段对齐：null 是这一段没有抽取（未配置、无需调用或模型答不出），
  * 它的自述证据退回整段原文。
@@ -279,7 +279,7 @@ async function commitBatch(
 			await client.query(
 				`insert into phrase (text, embedding)
 				 select * from unnest($1::text[], $2::halfvec[])
-				 on conflict (text) do nothing`,
+				 on conflict (text_key) do nothing`,
 				[
 					part,
 					part.map((_, index) => {
@@ -318,17 +318,17 @@ async function commitBatch(
 			[ids],
 		);
 		await client.query(
-			`insert into ${edges} (experience_id, route, phrase_id, involvement)
-			 select l.experience_id, l.route, p.id, l.involvement
+			`insert into ${edges} (experience_id, route, phrase_id, engagement)
+			 select l.experience_id, l.route, p.id, l.engagement
 			 from unnest($1::int[], $2::text[], $3::text[], $4::text[])
-				as l(experience_id, route, text, involvement)
+				as l(experience_id, route, text, engagement)
 			 join phrase p on p.text = l.text
 			 on conflict do nothing`,
 			[
 				links.map((link) => link.experienceId),
 				links.map((link) => link.route),
 				links.map((link) => link.text),
-				links.map((link) => link.involvement),
+				links.map((link) => link.engagement),
 			],
 		);
 		await prunePhrases(client);
@@ -362,8 +362,8 @@ async function promote(client: CorpusClient, version: string) {
 			[version],
 		);
 		await client.query(
-			`insert into experience_phrase (experience_id, route, phrase_id, involvement)
-			 select experience_id, route, phrase_id, involvement from experience_phrase_next`,
+			`insert into experience_phrase (experience_id, route, phrase_id, engagement)
+			 select experience_id, route, phrase_id, engagement from experience_phrase_next`,
 		);
 		await client.query(
 			`update experience e

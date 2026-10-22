@@ -5,6 +5,7 @@
  * 端点是进程内那三台假的，所以这里量的是**机制**，不是抽得准不准。
  */
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { after, before, describe, mock, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { CorpusCounts, TaskOutcome } from "#/server/tasks";
@@ -17,6 +18,7 @@ const { runTask, tasksState, taskLog, deriveProgress } = await import(
 	"#/server/tasks"
 );
 const { phrasePlan } = await import("#/corpus/derive");
+const { SYSTEM: EXTRACT_SYSTEM } = await import("#/corpus/extract");
 
 /** 还没有当前标准结果的段数。 */
 async function underived() {
@@ -42,10 +44,12 @@ const { sql } = await import("drizzle-orm");
  */
 function answers() {
 	return answerChat((system, _prompt) => {
-		if (system.includes("两类短说法"))
+		if (system === EXTRACT_SYSTEM)
 			return {
-				skills: ["数据分析"],
-				did: [{ involvement: "负责建设", domain: "推荐系统" }],
+				items: [
+					{ text: "数据分析", depth: "做过" },
+					{ text: "推荐系统", depth: "主导" },
+				],
 			};
 		if (system.includes("属于哪个序列")) {
 			return { seq: /^- (.+)$/m.exec(system)?.[1] ?? "" };
@@ -120,7 +124,7 @@ describe("同步与解析", () => {
 
 		assert.ok((await count("phrase")) > 0);
 		assert.ok((await count("experience_phrase")) > 0);
-		// 抽取的两类确实指回了经历段
+		// 抽取的能力确实指回了经历段
 		assert.ok((await count("experience_phrase", "route = 'skill'")) > 0);
 		// 对齐只写推断的两列，登记的三列不动
 		assert.ok(
@@ -191,14 +195,14 @@ describe("同步与解析", () => {
 		assert.ok(person);
 		assert.equal(person.segments.length, one.segments);
 		assert.ok(person.segments.every((segment) => segment.derived));
-		// 假端点给每一段入职前描述都抽出「数据分析」和「负责建设 · 推荐系统」
+		// 假端点给每一段入职前描述都抽出「做过 · 数据分析」和「主导 · 推荐系统」
 		const described = person.segments.find(
 			(segment) => segment.kind === "external" && segment.description,
 		);
 		if (described) {
-			assert.deepEqual(described.skills, ["数据分析"]);
-			assert.deepEqual(described.did, [
-				{ involvement: "负责建设", domain: "推荐系统" },
+			assert.deepEqual(described.skills, [
+				{ text: "推荐系统", engagement: "主导" },
+				{ text: "数据分析", engagement: "做过" },
 			]);
 		}
 		assert.equal(await employeeData("没有这个人"), null);
@@ -256,6 +260,39 @@ describe("同步与解析", () => {
 			await logText(latest(await tasksState(), "sync")?.id),
 			/新增 1 段、离开 1 段/,
 		);
+	});
+
+	test("抽取答不出的长描述整段当说法，长过 btree 一行也照样写进去", async () => {
+		// 一万字节没有重复片段的文字：压缩不下来，超过 btree 一行 2704 字节的上限
+		const long = Array.from({ length: 160 }, (_, i) =>
+			createHash("sha256").update(String(i)).digest("hex"),
+		).join("");
+		// 同步会照样例重写这一段，所以直接在库里改，并让它回到待解析
+		await db.execute(sql`
+			update experience set description = ${long}, derived_identity = null
+			where id = (select min(id) from experience where kind = 'external' and not unemployed)`);
+
+		const restoreLong = answerChat((system, prompt) =>
+			system === EXTRACT_SYSTEM && prompt.includes(long)
+				? {}
+				: system.includes("属于哪个序列")
+					? { seq: "" }
+					: { items: [] },
+		);
+		try {
+			const run = await runTask("derive");
+			assert.ok(run);
+			assert.equal(run.failure, null);
+		} finally {
+			restoreLong();
+			restore = answers();
+		}
+		assert.equal(await underived(), 0);
+		const { rows } = await db.execute<{ n: number }>(sql`
+			select count(*)::int as n from experience_phrase ep
+			join phrase p on p.id = ep.phrase_id
+			where ep.route = 'description' and p.text = ${long}`);
+		assert.equal(rows[0]?.n, 1);
 	});
 
 	/*
@@ -514,39 +551,39 @@ describe("说法规划", () => {
 		assert.deepEqual(phrasePlan([], []), { texts: [], links: [] });
 	});
 
-	test("抽出来的两类和岗位共用同一张说法表；读过的段原文不再是说法", () => {
+	test("抽出来的能力和岗位共用同一张说法表；读过的段原文不再是说法", () => {
 		// 能力词「算法工程师」和第 7 段的岗位名是同一串字：只嵌一次，两条边各指向它
 		const { texts, links } = phrasePlan(
 			[segment({}), outside],
 			[
 				null,
 				{
-					skills: ["算法工程师", "召回"],
-					did: [{ involvement: "负责建设", domain: "推荐系统" }],
+					items: [
+						{ text: "算法工程师", engagement: "做过" },
+						{ text: "召回", engagement: null },
+						{ text: "推荐系统", engagement: "主导" },
+					],
 				},
 			],
 		);
 		assert.equal(texts.filter((t) => t === "算法工程师").length, 1);
-		// 做过的事的说法只是领域，参与方式存在边上；原文路的边那一列是空
+		// 说法只是词，投入档存在边上
 		assert.deepEqual(texts.slice(-2), ["召回", "推荐系统"]);
 		assert.deepEqual(
-			links.filter(
-				(l) =>
-					l.experienceId === 7 && (l.route === "skill" || l.route === "did"),
-			),
+			links.filter((l) => l.experienceId === 7 && l.route === "skill"),
 			[
 				{
 					experienceId: 7,
 					route: "skill",
 					text: "算法工程师",
-					involvement: null,
+					engagement: "做过",
 				},
-				{ experienceId: 7, route: "skill", text: "召回", involvement: null },
+				{ experienceId: 7, route: "skill", text: "召回", engagement: null },
 				{
 					experienceId: 7,
-					route: "did",
+					route: "skill",
 					text: "推荐系统",
-					involvement: "负责建设",
+					engagement: "主导",
 				},
 			],
 		);

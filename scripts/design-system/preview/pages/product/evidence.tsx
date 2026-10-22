@@ -27,14 +27,14 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { CLAIMS } from "../../samples/conditions";
 import { experience, hitOn, RESULTS } from "../../samples/people";
 
-/** 每类来源在试用里配的命中：命中的词、抽取出的说法和参与方式。 */
+/** 每类来源在试用里配的命中：命中的词、抽取出的说法和投入档。 */
 const ROUTE_HIT: Record<
 	Route,
 	Pick<
 		Hit,
 		| "value"
 		| "phrase"
-		| "involvement"
+		| "engagement"
 		| "company"
 		| "department"
 		| "title"
@@ -44,7 +44,7 @@ const ROUTE_HIT: Record<
 	role: {
 		value: "推荐系统",
 		phrase: null,
-		involvement: null,
+		engagement: null,
 		company: "",
 		department: "推荐算法部",
 		title: "高级算法工程师",
@@ -53,7 +53,7 @@ const ROUTE_HIT: Record<
 	title: {
 		value: "推荐系统",
 		phrase: null,
-		involvement: null,
+		engagement: null,
 		company: "某乙网络",
 		department: "",
 		title: "推荐系统工程师",
@@ -61,17 +61,8 @@ const ROUTE_HIT: Record<
 	},
 	skill: {
 		value: "推荐系统",
-		phrase: "推荐系统",
-		involvement: null,
-		company: "某甲科技",
-		department: "",
-		title: "算法工程师",
-		seq: "技术 · 算法",
-	},
-	did: {
-		value: "推荐系统",
 		phrase: "实时推荐系统",
-		involvement: "从零搭建",
+		engagement: "主导",
 		company: "某甲科技",
 		department: "",
 		title: "算法工程师",
@@ -80,7 +71,7 @@ const ROUTE_HIT: Record<
 	description: {
 		value: "推荐系统",
 		phrase: null,
-		involvement: null,
+		engagement: null,
 		company: "某戊电商",
 		department: "",
 		title: "数据分析师",
@@ -135,7 +126,7 @@ function Playground() {
 					<Segmented<Route>
 						onChange={setRoute}
 						options={ROUTES.map((value) => ({
-							label: routeLabel(value) || "做过的事",
+							label: routeLabel(value),
 							value,
 						}))}
 						value={route}
@@ -295,7 +286,7 @@ export function EvidencePage() {
 			facts={[`${ROUTES.length} 类来源`, "命中与未命中两种点", "加分标记"]}
 			rules={{
 				notes: [
-					"点只说命中没有：Dot 和 HIT_FILL 不分来源，职业轨迹条和时间线读同一套。来源用字写在证据行上：任职记录、岗位、技能、做过的事、简历原文。",
+					"点只说命中没有：Dot 和 HIT_FILL 不分来源，职业轨迹条和时间线读同一套。来源用字写在证据行上：任职记录、岗位、技能、简历原文；技能前面带投入档（主导、做过、提到）。",
 					"来源不决定名次也不决定去留：名次只看对得上多少、做了多久、离现在多近。",
 					"右端显示的时长和排序用的时长是同一份，不另算。",
 					"证据行出现在名单行尾的依据气泡和人的详情「匹配依据」里，12px：条件词和时长是次要色（做完的时长退到三级灰），命中的字段与字段名三级灰，上下文四级灰。",

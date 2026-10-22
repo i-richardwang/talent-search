@@ -52,7 +52,7 @@ for (const r of top) {
 		const name = claimName(claims[h.claim] as Claim);
 		// 起止用界面上那一份写法（`lib/format.ts`），和界面对照时不用换算。
 		console.log(
-			`     ${name}${h.value === name ? "" : ` ≈${h.value}`} ←[${routeLabel(h.route)}${h.phrase ? `「${dots(h.involvement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${placeOf(h)} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
+			`     ${name}${h.value === name ? "" : ` ≈${h.value}`} ←[${routeLabel(h.route)}${h.phrase ? `「${dots(h.engagement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${placeOf(h)} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
 		);
 	}
 }

@@ -27,7 +27,7 @@ import {
 	taskRun,
 	term,
 } from "#/db/schema";
-import type { Involvement } from "#/lib/involvement";
+import type { Engagement } from "#/lib/engagement";
 import { parseQuery } from "#/search/query-syntax";
 
 /**
@@ -253,12 +253,22 @@ function baseIn(prompt: string): unknown[] {
  *
  * 查询理解的提示词可以识别出来（那句话前面有 `SENTENCE_PREFIX`），剩下的都是语料侧
  * 的。它们的回答不像查询理解那样能从输入算出来——「这段描述里有哪些能力词」本来
- * 就是判断——所以由测试自己给，同时记下收到过哪些请求供断言。
+ * 就是判断——所以由测试自己给，也把请求交给需要模拟端点限制的测试。
  */
-let chatAnswer: ((system: string, prompt: string) => unknown) | null = null;
+let chatAnswer:
+	| ((
+			system: string,
+			prompt: string,
+			request: Record<string, unknown>,
+	  ) => unknown)
+	| null = null;
 
 export function answerChat(
-	fn: (system: string, prompt: string) => unknown,
+	fn: (
+		system: string,
+		prompt: string,
+		request: Record<string, unknown>,
+	) => unknown,
 ): () => void {
 	chatAnswer = fn;
 	return () => {
@@ -344,9 +354,10 @@ function startModelServer() {
 					res.writeHead(500).end("假模型按要求失败");
 					return;
 				}
-				const { messages } = JSON.parse(body) as {
+				const request = JSON.parse(body) as {
 					messages: { role: string; content: string | null }[];
 				};
+				const { messages } = request;
 				const users = messages
 					.filter((m) => m.role === "user")
 					.map((m) => m.content ?? "");
@@ -390,7 +401,7 @@ function startModelServer() {
 				const prompt = users.at(-1);
 				const content =
 					prompt !== undefined && chatAnswer
-						? JSON.stringify(await chatAnswer(system, prompt))
+						? JSON.stringify(await chatAnswer(system, prompt, request))
 						: undefined;
 				if (content === undefined) {
 					res.writeHead(400).end("没有与这份提示词对应的假回答");
@@ -501,6 +512,9 @@ export async function setup() {
 	process.env.EXTRACT_BASE_URL = modelServer.url;
 	process.env.EXTRACT_MODEL = "fake";
 	process.env.EXTRACT_STRUCTURED_OUTPUTS = "true";
+	delete process.env.ALIGN_MODEL;
+	delete process.env.ALIGN_BASE_URL;
+	delete process.env.ALIGN_API_KEY;
 	process.env.REVIEW_MODEL = "review-fake";
 	// 判定默认交给自带模型：测试外部判定的用例自己开启外部模式
 	process.env.REVIEW_JUDGE = "model";
@@ -566,9 +580,8 @@ type Seed = {
 		 * 「没读过」，整段 description 当说法（`corpus/route-texts.ts`）。
 		 */
 		extracted?: {
-			skills?: string[];
-			/** 领域是说法，参与方式存在边上（真语料里由 conform 校验取值）。 */
-			did?: { involvement: Involvement; domain: string }[];
+			/** 只写词就是没判断出档；档存在边上（真语料里由 conform 校验取值）。 */
+			skills?: (string | { text: string; engagement: Engagement })[];
 		};
 	}>;
 };
@@ -645,7 +658,11 @@ export async function seed(rows: Seed[]) {
 		return phrasesOf(
 			s,
 			extracted
-				? { skills: extracted.skills ?? [], did: extracted.did ?? [] }
+				? {
+						items: (extracted.skills ?? []).map((one) =>
+							typeof one === "string" ? { text: one, engagement: null } : one,
+						),
+					}
 				: null,
 		).map((p) => ({ experienceId: s.id, ...p }));
 	});
@@ -663,7 +680,7 @@ export async function seed(rows: Seed[]) {
 			experienceId: l.experienceId,
 			route: l.route,
 			phraseId: idOf.get(l.text) as number,
-			involvement: l.involvement,
+			engagement: l.engagement,
 		})),
 	);
 }

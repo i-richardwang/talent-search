@@ -15,6 +15,7 @@ import {
 	text,
 	timestamp,
 } from "drizzle-orm/pg-core";
+import { ENGAGEMENTS } from "#/lib/engagement";
 import { TASK_KINDS } from "#/lib/task";
 import type { TurnNotes } from "#/search/intent";
 import type { SearchSpec } from "#/search/spec";
@@ -251,33 +252,40 @@ export const phraseGloss = pgTable("phrase_gloss", {
 });
 
 /**
- * 一段经历说自己做过什么的五类说法（组合方式见 `corpus/route-texts.ts`）：公司内一段任职
- * 整句一条，入职前的岗位名，读出来的能力词和做过的事，没读过的简历原文。
+ * 一段经历说自己做过什么的四类说法（组合方式见 `corpus/route-texts.ts`）：公司内一段任职
+ * 整句一条，入职前的岗位名，读出来的能力，没读过的简历原文。
  * 公司名和单独的部门名只回答「在哪」，不在这里。
  */
-const ROUTES = ["role", "title", "description", "skill", "did"] as const;
+const ROUTES = ["role", "title", "description", "skill"] as const;
 export type Route = (typeof ROUTES)[number];
-/** 文本只存在 phrase 表中的两类说法。 */
-export const EXTRACTED_ROUTES = [
-	"skill",
-	"did",
-] as const satisfies readonly Route[];
+/** 文本只存在 phrase 表中的那类说法。 */
+export const EXTRACTED_ROUTES = ["skill"] as const satisfies readonly Route[];
 /**
- * 短说法：几个字的能力词、做过的事、入职前岗位名。只有当前仍有这些边的说法使用释义、
+ * 短说法：几个字的能力词、入职前岗位名。只有当前仍有这些边的说法使用释义、
  * 进词表；释义和词表的收集、计数、版本核验与召回共用此范围。
  */
 export const SHORT_ROUTES = [
 	"skill",
-	"did",
 	"title",
 ] as const satisfies readonly Route[];
 
-/** 去重后的说法及其半精度向量。 */
-export const phrase = pgTable("phrase", {
-	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-	text: text("text").notNull().unique(),
-	embedding: halfvec("embedding", { dimensions: EMBED_DIM }).notNull(),
-});
+/**
+ * 去重后的说法及其半精度向量。未读段的整段原文也是说法，可以长过 btree 一行的上限，
+ * 所以唯一性落在库生成的摘要 `text_key` 上，按文字等值查找走 hash 索引。
+ */
+export const phrase = pgTable(
+	"phrase",
+	{
+		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+		text: text("text").notNull(),
+		textKey: text("text_key")
+			.notNull()
+			.unique()
+			.generatedAlwaysAs(sql`md5(text)`),
+		embedding: halfvec("embedding", { dimensions: EMBED_DIM }).notNull(),
+	},
+	(t) => [index("phrase_text").using("hash", t.text)],
+);
 
 /** 经历到说法的边；同一段同一路可指向多条去重说法。 */
 export const experiencePhrase = pgTable(
@@ -290,16 +298,20 @@ export const experiencePhrase = pgTable(
 		phraseId: integer("phrase_id")
 			.notNull()
 			.references(() => phrase.id, { onDelete: "cascade" }),
-		/** did 的展示前缀，不参与向量与相关度。 */
-		involvement: text("involvement"),
+		/** 能力那一类的投入档（`lib/engagement.ts`），不进向量，排名时给相关度打折；其余类为空。 */
+		engagement: text("engagement", { enum: ENGAGEMENTS }),
 	},
 	(t) => [
 		primaryKey({ columns: [t.experienceId, t.route, t.phraseId] }),
 		index("experience_phrase_phrase").on(t.phraseId),
 		// drizzle-kit push 只比较 check 名称；改变表达式时同步改名。
 		check(
-			"experience_phrase_route_valid_7",
-			sql`${t.route} in ('role', 'title', 'description', 'skill', 'did')`,
+			"experience_phrase_route_valid_8",
+			sql`${t.route} in ('role', 'title', 'description', 'skill')`,
+		),
+		check(
+			"experience_phrase_engagement_valid_1",
+			sql`${t.engagement} in ('主导', '做过', '提到')`,
 		),
 	],
 );
@@ -328,7 +340,7 @@ export const experiencePhraseNext = pgTable(
 		phraseId: integer("phrase_id")
 			.notNull()
 			.references(() => phrase.id, { onDelete: "cascade" }),
-		involvement: text("involvement"),
+		engagement: text("engagement", { enum: ENGAGEMENTS }),
 	},
 	(t) => [
 		primaryKey({ columns: [t.experienceId, t.route, t.phraseId] }),
@@ -340,8 +352,12 @@ export const experiencePhraseNext = pgTable(
 		}).onDelete("cascade"),
 		index("experience_phrase_next_phrase").on(t.phraseId),
 		check(
-			"experience_phrase_next_route_valid_1",
-			sql`${t.route} in ('role', 'title', 'description', 'skill', 'did')`,
+			"experience_phrase_next_route_valid_2",
+			sql`${t.route} in ('role', 'title', 'description', 'skill')`,
+		),
+		check(
+			"experience_phrase_next_engagement_valid_1",
+			sql`${t.engagement} in ('主导', '做过', '提到')`,
 		),
 	],
 );

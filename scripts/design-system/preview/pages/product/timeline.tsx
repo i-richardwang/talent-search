@@ -36,13 +36,13 @@ const NAMES = CLAIMS.map(claimName);
  * 同一页上的几条时间线不共用锚点 id。
  */
 function nodeRow(route: Route | null, offset: number) {
-	const base = route === "did" ? experience(101) : experience(103);
+	const base = route === "skill" ? experience(101) : experience(103);
 	const row = { ...base, id: base.id + offset };
 	const hits = route
 		? [
 				hitOn(row, {
-					involvement: route === "did" ? "从零搭建" : null,
-					phrase: route === "did" ? "实时推荐系统" : null,
+					engagement: route === "skill" ? "主导" : null,
+					phrase: route === "skill" ? "实时推荐系统" : null,
 					route,
 					value: "推荐系统",
 				}),
@@ -53,7 +53,7 @@ function nodeRow(route: Route | null, offset: number) {
 
 const NODES: [label: string, route: Route | null][] = [
 	["命中 · 任职记录", "role"],
-	["命中 · 简历里做过的事", "did"],
+	["命中 · 简历里的技能", "skill"],
 	["未命中", null],
 ];
 
@@ -165,7 +165,7 @@ function Usage() {
 			</Example>
 			<Example
 				description="抽取出的说法写进标签，HR 对着下面的简历原文就能看出凭什么算命中；原文不做字面高亮。"
-				title="做过的事与原文"
+				title="技能与原文"
 			>
 				<div className="w-full">
 					<Timeline names={NAMES} {...single(101, "T0101", 7000)} />

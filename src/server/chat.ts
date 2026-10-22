@@ -33,32 +33,20 @@ const STRUCTURED = process.env.EXTRACT_STRUCTURED_OUTPUTS !== "false";
 
 /**
  * 推理模型的思考开关。设了才随请求发出（`enable_thinking`，SiliconFlow 一类
- * 网关认它）；不设就不发，标准 OpenAI 端点不会收到一个它不认的字段。抽取这几件
- * 事都不需要思考轨迹，而思考会先把输出预算用光、返回空内容，所以带思考的模型
- * 应当设成 false。
+ * 网关认它）；不设就尊重端点默认值，标准 OpenAI 端点不会收到一个它不认的字段。
  */
 const ENABLE_THINKING = process.env.EXTRACT_ENABLE_THINKING?.trim();
 
-const TIMEOUT_MS = positiveInt(process.env.EXTRACT_TIMEOUT_MS, 120_000);
+const TIMEOUT_MS = positiveInt(process.env.EXTRACT_TIMEOUT_MS, 180_000);
 const CONCURRENCY = positiveInt(process.env.EXTRACT_CONCURRENCY, 4);
 /**
- * 一段文字失败了再试几次。比查询侧多：一轮解析要跑几千段、几十分钟，为一次端点
- * 抖动整轮重来的代价远高于多等几次。
+ * 瞬时故障最多重试几次，全部尝试共用这一段的 TIMEOUT_MS 总时限。
  */
 const RETRIES = 4;
-/**
- * 输出预算按「思考轨迹也算输出」给：推理模型在第一个字符之前先消耗几百到上千
- * token，`auto` 一类按请求路由的网关还会换到更啰嗦的模型。给小了它在思考阶段就用完预算，
- * 返回空内容而不报错。默认取宽，两个端点同一个数（`llm.ts`）。
- */
-const MAX_OUTPUT_TOKENS = positiveInt(
-	process.env.EXTRACT_MAX_OUTPUT_TOKENS,
-	16_000,
-);
 
 /**
  * 端点整体配好了没有。地址和模型名缺一个就当没配：解析会打印说明后跳过这三件
- * 事，检索还能用，只是能力词与做过的事两类为空、入职前经历不对齐序列。
+ * 事，检索还能用，只是能力词为空、入职前经历不对齐序列。
  */
 export function chatConfigured(): boolean {
 	return Boolean(BASE_URL && process.env.EXTRACT_MODEL?.trim());
@@ -73,6 +61,11 @@ export function extractModel(): string {
 	return process.env.EXTRACT_MODEL?.trim() ?? "";
 }
 
+/** 序列对齐用的模型；不设就用抽取模型。 */
+export function alignModel(): string {
+	return process.env.ALIGN_MODEL?.trim() || extractModel();
+}
+
 /**
  * 整理能力词写法用的模型，同一个端点；不设就用抽取模型。这一步只有两百来组，
  * 却要在「团队培训」和「团队管理」之间划线，小模型划不动，值得单独给一个大的。
@@ -81,32 +74,34 @@ export function reviewModel(): string {
 	return process.env.REVIEW_MODEL?.trim() || extractModel();
 }
 
-// provider 延迟到首次使用时创建，未配置端点的进程可以安全导入本模块。
-// 三处调用共用同一个端点，只有模型名不同，所以 provider 只有一个。
-let provider: ReturnType<typeof createOpenAICompatible> | null = null;
-function getModel(model: string) {
-	if (!BASE_URL || !model)
+type ChatEndpoint = "extract" | "align";
+
+// 按调用用途选端点，不按模型名选：同名模型也可能来自不同服务。
+function getModel(model: string, endpoint: ChatEndpoint) {
+	const alignURL =
+		endpoint === "align" ? process.env.ALIGN_BASE_URL?.trim() : undefined;
+	const baseURL = alignURL || BASE_URL;
+	const apiKey = alignURL ? process.env.ALIGN_API_KEY : API_KEY;
+	if (!baseURL || !model)
 		throw new Error(
-			"聊天端点未配置：需要 EXTRACT_BASE_URL 与调用所需的模型（见 .env.example）",
+			"聊天端点未配置：需要调用所需的地址与模型（见 .env.example）",
 		);
-	if (!provider)
-		provider = createOpenAICompatible({
-			name: "talent-chat",
-			baseURL: BASE_URL,
-			supportsStructuredOutputs: STRUCTURED,
-			...(API_KEY && { apiKey: API_KEY }),
-			// 每一次请求各自超时、各自重试（见 `endpoint.ts`）
-			fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
-			// 兼容层的 provider 选项里没有 `enable_thinking`，它是网关自己的字段，
-			// 只能在请求体成形之后补上去——这个钩子正是为此存在的。
-			...(ENABLE_THINKING && {
-				transformRequestBody: (body: Record<string, unknown>) => ({
-					...body,
-					enable_thinking: ENABLE_THINKING === "true",
-				}),
+	return createOpenAICompatible({
+		name: "talent-chat",
+		baseURL,
+		supportsStructuredOutputs: STRUCTURED,
+		...(apiKey && { apiKey }),
+		// 每一次请求各自超时、各自重试（见 `endpoint.ts`）
+		fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
+		// 兼容层的 provider 选项里没有 `enable_thinking`，它是网关自己的字段，
+		// 只能在请求体成形之后补上去——这个钩子正是为此存在的。
+		...(ENABLE_THINKING && {
+			transformRequestBody: (body: Record<string, unknown>) => ({
+				...body,
+				enable_thinking: ENABLE_THINKING === "true",
 			}),
-		});
-	return provider(model);
+		}),
+	})(model);
 }
 
 function sha(text: string): string {
@@ -115,10 +110,10 @@ function sha(text: string): string {
 
 /**
  * 一批问题的身份：模型、提示词、schema。它是缓存的一半键，另一半是那段文字。
- * 解析任务也拿它算「解析到哪一版」（`corpus/derive.ts`）：会改变回答的东西变了，
- * 段就该重新解析，和缓存失效是同一个判据。
+ * 服务地址不参与身份：同一模型按同一标准给出的回答可跨端点复用。
+ * 换模型只影响新调用的缓存复用，不让已按同一标准处理的语料失效。
  */
-export function identityOf(
+function identityOf(
 	model: string,
 	system: string,
 	schema: z.ZodType<unknown>,
@@ -131,10 +126,8 @@ export function identityOf(
 /**
  * 一份标准的身份：那段提示词，加它要求的回答形状。**不含模型。**
  *
- * 解析出来的行拿它记「这一行算到哪一版标准」（`corpus/gloss.ts` 的 `glossIdentity`），
- * 判据和 `identityOf` 那一条一样——会改变回答的东西变了，这一行就该重来。模型不进
- * 这个数：自带模型和外部 agent 照着同一段字判，判出来的东西就是可比的
- * （`src/server/review.ts`），换个判定方不该让整张表作废。
+ * 抽取、对齐、释义和归并用它记录结果依据的标准。不同模型或外部判定方按同一份
+ * 标准作答，已有结果继续有效；提示词或回答形状变化后才重新处理。
  */
 export function standardOf(system: string, schema: z.ZodType<unknown>): string {
 	return sha([system, JSON.stringify(z.toJSONSchema(schema))].join("\u001f"));
@@ -189,9 +182,8 @@ async function store(identity: string, text: string, payload: unknown) {
 /**
  * 一段文字的回答；答不出合法 JSON 就说一句、放弃这一段。
  *
- * 瞬时故障（超时、连不上、5xx、限流）由 `endpointFetch` 重试 `RETRIES` 次，每一次
- * 尝试各有一份 `EXTRACT_TIMEOUT_MS` 的预算。持续失败仍然会让这一轮解析中止，那说明
- * 并发调太高或端点真的不可用，该改 `EXTRACT_CONCURRENCY`，不该由重试掩盖。
+ * 瞬时故障由 `endpointFetch` 重试，整次调用（含重试与正文读取）受 `EXTRACT_TIMEOUT_MS`
+ * 限制；不发送输出 token 上限，让模型在时限内完成思考与回答。持续失败让这一轮解析中止。
  */
 async function ask(
 	model: string,
@@ -200,26 +192,26 @@ async function ask(
 	text: string,
 	what: string,
 	report: Report,
+	endpoint: ChatEndpoint,
 ): Promise<unknown> {
 	const abandon = (finishReason: unknown, usage: unknown) => {
 		report(
 			`  ${what}没有得到合法 JSON（finishReason=${finishReason}，` +
-				`usage=${JSON.stringify(usage)}），放弃这一段；` +
-				"若 finishReason 是 length，调大 EXTRACT_MAX_OUTPUT_TOKENS",
+				`usage=${JSON.stringify(usage)}），放弃这一段`,
 		);
 		return undefined;
 	};
 	let result: Awaited<ReturnType<typeof generateText>>;
 	try {
 		result = await generateText({
-			model: getModel(model),
+			model: getModel(model, endpoint),
 			output: Output.object({ schema }),
 			instructions: system,
 			prompt: text,
 			// 降低生成随机性；并发结果的一致性由缓存决定。
 			temperature: 0,
 			maxRetries: 0,
-			maxOutputTokens: MAX_OUTPUT_TOKENS,
+			timeout: TIMEOUT_MS,
 		});
 	} catch (error) {
 		if (!NoObjectGeneratedError.isInstance(error)) throw error;
@@ -246,6 +238,7 @@ export async function complete(
 	texts: string[],
 	what: string,
 	report: Report,
+	endpoint: ChatEndpoint = "extract",
 ): Promise<Map<string, unknown>> {
 	const identity = identityOf(model, system, schema);
 	const unique = [...new Set(texts)];
@@ -254,7 +247,15 @@ export async function complete(
 
 	let done = 0;
 	await pool(missing, CONCURRENCY, async (text) => {
-		const payload = await ask(model, system, schema, text, what, report);
+		const payload = await ask(
+			model,
+			system,
+			schema,
+			text,
+			what,
+			report,
+			endpoint,
+		);
 		done++;
 		if (payload !== undefined) {
 			payloads.set(text, await store(identity, text, payload));
@@ -265,20 +266,29 @@ export async function complete(
 	return payloads;
 }
 
+/** 失败后不再领新段，在途请求收尾后才交回首个错误，退出后不遗留后台请求。 */
 async function pool<T>(
 	items: T[],
 	limit: number,
 	work: (item: T) => Promise<void>,
 ): Promise<void> {
 	let next = 0;
+	let failed = false;
+	let firstError: unknown;
 	const workers = Array.from(
 		{ length: Math.min(limit, items.length) },
 		async () => {
-			while (next < items.length) {
-				const item = items[next++];
-				if (item !== undefined) await work(item);
+			try {
+				while (!failed && next < items.length) {
+					const item = items[next++];
+					if (item !== undefined) await work(item);
+				}
+			} catch (error) {
+				if (!failed) firstError = error;
+				failed = true;
 			}
 		},
 	);
 	await Promise.all(workers);
+	if (failed) throw firstError;
 }

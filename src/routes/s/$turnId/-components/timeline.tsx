@@ -124,7 +124,7 @@ function MatchedClaims({
 		<div className="mt-2 flex flex-wrap items-center gap-1.5">
 			{unique.map((h) => (
 				<Tag key={h.claim} size="small">
-					{/* 抽取的两类带上命中的那条说法，和旁边的原文对得上 */}
+					{/* 抽取的能力带上命中的那条说法，和旁边的原文对得上 */}
 					{dots(names[h.claim], routeLabel(h.route), phraseLabel(h))}
 				</Tag>
 			))}

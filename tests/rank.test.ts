@@ -30,7 +30,7 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 		route: "role",
 		relevance: 1,
 		phrase: null,
-		involvement: null,
+		engagement: null,
 		months: 24,
 		endDate: null,
 		seqL1: "技术",
@@ -75,7 +75,9 @@ describe("名次只看深度，来源不参与", () => {
 	 */
 	test("深度一样时，来源不同深度也一样", () => {
 		const role = depthOf([fact({ empId: "A", route: "role" })]);
-		const skill = depthOf([fact({ empId: "A", route: "skill" })]);
+		const skill = depthOf([
+			fact({ empId: "A", route: "skill", engagement: "主导" }),
+		]);
 		const raw = depthOf([fact({ empId: "A", route: "description" })]);
 		assert.equal(role, skill);
 		assert.equal(role, raw);
@@ -94,6 +96,72 @@ describe("名次只看深度，来源不参与", () => {
 				fact({ empId: "B", route: "skill", relevance: 0.95, months: 96 }),
 			]),
 			["B", "A"],
+		);
+	});
+});
+
+describe("投入档", () => {
+	test("同一个技能，负责的排在做过的前面，做过的排在只说熟悉的前面", () => {
+		assert.deepEqual(
+			orderOf([
+				fact({ empId: "A", route: "skill", engagement: "提到" }),
+				fact({ empId: "B", route: "skill", engagement: "主导" }),
+				fact({ empId: "C", route: "skill", engagement: "做过" }),
+			]),
+			["B", "C", "A"],
+		);
+	});
+
+	test("没判出档的技能按做过算", () => {
+		const unknown = depthOf([fact({ empId: "A", route: "skill" })]);
+		const did = depthOf([
+			fact({ empId: "A", route: "skill", engagement: "做过" }),
+		]);
+		assert.equal(unknown, did);
+	});
+
+	test("一段里同时有负责和熟悉的写法时取负责那条，不按相关度最高那条", () => {
+		const { ranked } = run([
+			fact({
+				id: 900,
+				empId: "A",
+				route: "skill",
+				relevance: 0.8,
+				engagement: "主导",
+			}),
+			fact({
+				id: 900,
+				empId: "A",
+				route: "skill",
+				value: "别的取值",
+				relevance: 0.9,
+				engagement: "提到",
+			}),
+		]);
+		const only = depthOf([
+			fact({ empId: "A", route: "skill", relevance: 0.8, engagement: "主导" }),
+		]);
+		assert.equal(ranked[0]?.depth, only);
+	});
+
+	test("投入档只给技能打折：相关度更高的任职记录仍排在只说熟悉的技能前面", () => {
+		assert.deepEqual(
+			orderOf([
+				fact({
+					empId: "A",
+					route: "skill",
+					relevance: 0.9,
+					engagement: "主导",
+				}),
+				fact({ empId: "B", route: "role", relevance: 0.85 }),
+				fact({
+					empId: "C",
+					route: "skill",
+					relevance: 0.95,
+					engagement: "提到",
+				}),
+			]),
+			["A", "B", "C"],
 		);
 	});
 });

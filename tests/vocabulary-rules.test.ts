@@ -94,20 +94,59 @@ describe("校验", () => {
 		);
 	});
 
-	test("方向反了的归属拦下：更宽的词不能是自己，也不能含着这个词", () => {
+	test("组内原写法优先于全半角清理，归并与归属不丢词", () => {
+		const words = ["ＣＡＤ", "CAD", "国产ＣＡＤ"];
 		const got = conform(
 			{
 				judgments: [
-					judged("运营数据分析", "", "运营数据分析"),
-					judged("销售数据分析", "", "电商销售数据分析"),
-					judged("数据分析报告", "", "这个名字长得不像一条能力词而像半句话"),
+					judged("ＣＡＤ", "", ""),
+					judged("CAD", "ＣＡＤ", ""),
+					judged("国产ＣＡＤ", "", "ＣＡＤ"),
 				],
 			},
 			words,
 		);
 		assert.deepEqual(
+			[...got],
+			[
+				["ＣＡＤ", { parent: null, sameAs: null }],
+				["CAD", { parent: null, sameAs: "ＣＡＤ" }],
+				["国产ＣＡＤ", { parent: "ＣＡＤ", sameAs: null }],
+			],
+		);
+		const table = new Map();
+		merge(
+			table,
+			[
+				{ word: "ＣＡＤ", people: 2 },
+				{ word: "CAD", people: 7 },
+				{ word: "国产ＣＡＤ", people: 3 },
+			],
+			got,
+			NOW,
+		);
+		assert.deepEqual(table.get("ＣＡＤ"), decision("CAD", NOW));
+		assert.deepEqual(table.get("CAD"), decision("CAD", NOW));
+		assert.deepEqual(
+			table.get("国产ＣＡＤ"),
+			decision("国产ＣＡＤ", NOW, "CAD"),
+		);
+	});
+
+	test("归属拒绝自指和过长名称，宽细关系不由字面包含推断", () => {
+		const got = conform(
+			{
+				judgments: [
+					judged("运营数据分析", "", "运营数据分析"),
+					judged("Java", "", "Java编程语言"),
+					judged("数据分析报告", "", "这个名字长得不像一条能力词而像半句话"),
+				],
+			},
+			[...words, "Java"],
+		);
+		assert.deepEqual(
 			[...got.values()].map((one) => one.parent),
-			[null, null, null],
+			[null, "Java编程语言", null],
 		);
 	});
 
@@ -188,6 +227,30 @@ describe("记下判定结论", () => {
 		assert.equal(table.get("跨部门协作")?.canonical, "跨部门协同");
 		assert.equal(table.get("跨部门沟通")?.canonical, "跨部门沟通");
 		assert.equal(table.get("跨部门合作")?.canonical, "跨部门协同");
+	});
+
+	test("旧别名拆成更宽的词时，其他词仍能归属到原标准词", () => {
+		const table = new Map([
+			["软件开发", decision("软件开发", OLD)],
+			["开发", decision("软件开发", OLD)],
+			["后端开发", decision("后端开发", OLD, "软件开发")],
+		]);
+		merge(
+			table,
+			members(["软件开发", 9], ["后端开发", 3], ["开发", 5]),
+			verdicts(
+				["软件开发", null, "开发"],
+				["后端开发", null, "软件开发"],
+				["开发", null, null],
+			),
+			NOW,
+		);
+		assert.deepEqual(table.get("软件开发"), decision("软件开发", NOW, "开发"));
+		assert.deepEqual(
+			table.get("后端开发"),
+			decision("后端开发", NOW, "软件开发"),
+		);
+		assert.deepEqual(table.get("开发"), decision("开发", NOW));
 	});
 
 	test("兄弟各自保留，共同的更宽的词落成一行", () => {

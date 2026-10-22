@@ -3,7 +3,7 @@
  *
  * 检索给招聘的人看命中；这两页给管数据的人看**库里到底是什么**——同步进来的
  * 原始一半和解析写上的那一半并排放着，一段有没有解析到当前版本、抽出了哪些能力词
- * 和做过的事、对到了哪个序列，都在这里核对。只读。
+ * 和各自的投入档、对到了哪个序列，都在这里核对。只读。
  */
 
 import "@tanstack/react-start/server-only";
@@ -16,6 +16,7 @@ import {
 	experience,
 } from "#/db/schema";
 import { withCorpusSnapshot, withReadSnapshot } from "#/db/snapshot";
+import type { Engagement } from "#/lib/engagement";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
 import type { EmployeeDetail } from "#/search/result";
@@ -85,8 +86,7 @@ export type SegmentView = Pick<
 > & {
 	/** 解析到当前版本了没有 */
 	derived: boolean;
-	skills: string[];
-	did: { involvement: string | null; domain: string }[];
+	skills: { text: string; engagement: Engagement | null }[];
 };
 
 export type EmployeeProfile = EmployeeDetail["employee"];
@@ -114,22 +114,16 @@ export async function employeeData(
 		if (!employee) return null;
 
 		const { rows } = await client.query<
-			Omit<SegmentView, "skills" | "did"> & {
-				skills: string[] | null;
-				did: { involvement: string | null; domain: string }[] | null;
-			}
+			Omit<SegmentView, "skills"> & { skills: SegmentView["skills"] | null }
 		>(
 			`select x.id, x.kind, x.start_date::text as "startDate", x.end_date::text as "endDate",
 			x.months, x.company, x.department, x.department_path as "departmentPath", x.title, x.level, x.description,
 			x.seq_l1 as "seqL1", x.seq_l2 as "seqL2", x.seq_l3 as "seqL3",
 			x.seq_inferred_l1 as "seqInferredL1", x.seq_inferred_l2 as "seqInferredL2",
 			x.derived_identity is not distinct from $2 as derived, x.unanswered,
-			(select array_agg(p.text order by p.text)
+			(select json_agg(json_build_object('text', p.text, 'engagement', ep.engagement) order by p.text)
 			 from experience_phrase ep join phrase p on p.id = ep.phrase_id
-			 where ep.experience_id = x.id and ep.route = 'skill') as skills,
-			(select json_agg(json_build_object('involvement', ep.involvement, 'domain', p.text) order by p.text)
-			 from experience_phrase ep join phrase p on p.id = ep.phrase_id
-			 where ep.experience_id = x.id and ep.route = 'did') as did
+			 where ep.experience_id = x.id and ep.route = 'skill') as skills
 		 from experience x
 		 where x.emp_id = $1
 		 order by x.start_date, x.id`,
@@ -140,7 +134,6 @@ export async function employeeData(
 			segments: rows.map((row) => ({
 				...row,
 				skills: row.skills ?? [],
-				did: row.did ?? [],
 			})),
 		};
 	});

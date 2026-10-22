@@ -1,8 +1,8 @@
 /**
  * 抽取：校验规则，以及哪些段会去问端点。
  *
- * 校验是这一步的全部判断力所在——模型多说一个字、把公司名当领域返回、同一个
- * 领域说两遍，都只丢那一条，不丢整段。
+ * 校验是这一步的全部判断力所在——模型多说一个字、把公司名当能力返回、同一个
+ * 词说两遍、给出三档以外的档，都只处理那一条，不丢整段。
  */
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
@@ -15,7 +15,7 @@ after(teardown);
 const { conform, extract, SYSTEM } = await import("#/corpus/extract");
 
 /** 读了但什么都没读出来。 */
-const EMPTY = { skills: [], did: [] };
+const EMPTY = { items: [] };
 
 const quiet = () => {};
 
@@ -43,99 +43,91 @@ function segment(row: Partial<ExperienceRow>): ExperienceRow {
 	};
 }
 
-describe("参与方式", () => {
-	test("每一种取值都写进了提示词", () => {
-		for (const involvement of [
-			"从零搭建",
-			"负责建设",
-			"优化改进",
-			"参与执行",
-			"带队管理",
-		])
-			assert.ok(SYSTEM.includes(involvement));
+describe("投入档", () => {
+	test("三档都写进了提示词", () => {
+		for (const depth of ["主导", "做过", "提到"])
+			assert.ok(SYSTEM.includes(depth));
 	});
 });
+
+/** 只写词时档是「做过」，省得每条都写。 */
+const answer = (...items: (string | { text: string; depth: string })[]) => ({
+	items: items.map((one) =>
+		typeof one === "string" ? { text: one, depth: "做过" } : one,
+	),
+});
+const texts = (raw: unknown, company = "") =>
+	conform(raw, company).items.map((one) => one.text);
 
 describe("校验", () => {
 	test("短说法按顺序留下，全半角折叠后去重", () => {
 		assert.deepEqual(
-			conform(
-				{
-					skills: ["推荐算法", " Python ", "推荐算法", "Ｐｙｔｈｏｎ"],
-					did: [],
-				},
+			texts(
+				answer("推荐算法", " Python ", "推荐算法", "Ｐｙｔｈｏｎ"),
 				"云枢智能",
-			).skills,
+			),
 			["推荐算法", "Python"],
 		);
 	});
 
 	test("公司名和过长的说法一律丢掉", () => {
-		const got = conform(
-			{
-				skills: [
+		assert.deepEqual(
+			texts(
+				answer(
 					"云枢智能",
 					"云枢智能的推荐",
 					"推荐",
 					"负责推荐系统召回与排序模型的迭代和上线",
-				],
-				did: [{ involvement: "负责建设", domain: "云枢智能" }],
-			},
-			"云枢智能",
+				),
+				"云枢智能",
+			),
+			["推荐"],
 		);
-		assert.deepEqual(got.skills, ["推荐"]);
-		assert.deepEqual(got.did, []);
 	});
 
-	test("参与方式不在那五种里就留领域、参与方式记空", () => {
+	test("档不在三档里就留词、档记空", () => {
 		assert.deepEqual(
 			conform(
 				{
-					skills: [],
-					did: [
-						{ involvement: "主导", domain: "推荐系统" },
-						{ involvement: "", domain: "搜索系统" },
-						{ involvement: "从零搭建", domain: "推荐系统" },
+					items: [
+						{ text: "推荐系统", depth: "负责建设" },
+						{ text: "搜索系统", depth: "" },
+						{ text: "排序模型" },
 						"not an object",
 					],
 				},
 				"",
-			).did,
+			).items,
 			[
-				{ involvement: null, domain: "推荐系统" },
-				{ involvement: null, domain: "搜索系统" },
+				{ text: "推荐系统", engagement: null },
+				{ text: "搜索系统", engagement: null },
+				{ text: "排序模型", engagement: null },
 			],
 		);
 	});
 
-	test("同一个领域只留第一条：领域就是说法，边的主键容不下第二条", () => {
+	test("同一个词只留一条，档取最深的那次", () => {
 		assert.deepEqual(
 			conform(
-				{
-					skills: [],
-					did: [
-						{ involvement: "从零搭建", domain: "推荐系统" },
-						{ involvement: "优化改进", domain: "推荐系统" },
-						{ involvement: "优化改进", domain: "搜索系统" },
-					],
-				},
+				answer(
+					{ text: "推荐系统", depth: "做过" },
+					{ text: "搜索系统", depth: "提到" },
+					{ text: "推荐系统", depth: "主导" },
+					{ text: "搜索系统", depth: "无效" },
+					{ text: "推荐系统", depth: "提到" },
+				),
 				"",
-			).did,
+			).items,
 			[
-				{ involvement: "从零搭建", domain: "推荐系统" },
-				{ involvement: "优化改进", domain: "搜索系统" },
+				{ text: "推荐系统", engagement: "主导" },
+				{ text: "搜索系统", engagement: "提到" },
 			],
 		);
-	});
-
-	test("条数有上限", () => {
-		const many = Array.from({ length: 30 }, (_, i) => `技能${i}`);
-		assert.equal(conform({ skills: many, did: [] }, "").skills.length, 12);
 	});
 
 	test("格式不对的原话解析为空", () => {
 		assert.deepEqual(conform("nope", ""), EMPTY);
-		assert.deepEqual(conform({ skills: "Python" }, ""), EMPTY);
+		assert.deepEqual(conform({ items: "Python" }, ""), EMPTY);
 	});
 });
 
@@ -144,10 +136,7 @@ describe("抽取哪些段", () => {
 		const asked: string[] = [];
 		const restore = answerChat((_system, prompt) => {
 			asked.push(prompt);
-			return {
-				skills: ["召回"],
-				did: [{ involvement: "负责建设", domain: "推荐系统" }],
-			};
+			return answer({ text: "推荐系统", depth: "主导" }, "召回");
 		});
 		const got = await extract(
 			[
@@ -176,8 +165,10 @@ describe("抽取哪些段", () => {
 		assert.deepEqual(got[2], {
 			status: "done",
 			value: {
-				skills: ["召回"],
-				did: [{ involvement: "负责建设", domain: "推荐系统" }],
+				items: [
+					{ text: "推荐系统", engagement: "主导" },
+					{ text: "召回", engagement: "做过" },
+				],
 			},
 		});
 	});
@@ -188,7 +179,7 @@ describe("抽取哪些段", () => {
 		const restore = answerChat(() => {
 			asked++;
 			// 公司名混在里面：校验每次都重新做，所以缓存里存的是模型的原话
-			return { skills: ["风控", "云枢智能"], did: [] };
+			return answer("风控", "云枢智能");
 		});
 		await extract(rows, quiet);
 		const second = await extract(rows, quiet);
@@ -197,20 +188,20 @@ describe("抽取哪些段", () => {
 		assert.equal(asked, 1);
 		assert.deepEqual(second[0], {
 			status: "done",
-			value: { skills: ["风控"], did: [] },
+			value: { items: [{ text: "风控", engagement: "做过" }] },
 		});
 	});
 });
 
 test("模型失败与成功的空抽取保持可区分，失败不缓存", async () => {
 	const rows = [segment({ description: "抽取状态合成样例" })];
-	const bad = answerChat(() => ({ skills: "invalid", did: [] }));
+	const bad = answerChat(() => ({ items: "invalid" }));
 	try {
 		assert.deepEqual(await extract(rows, quiet), [{ status: "failed" }]);
 	} finally {
 		bad();
 	}
-	const empty = answerChat(() => ({ skills: [], did: [] }));
+	const empty = answerChat(() => ({ items: [] }));
 	try {
 		assert.deepEqual(await extract(rows, quiet), [
 			{ status: "done", value: EMPTY },

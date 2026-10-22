@@ -413,7 +413,7 @@ export function experiencesOf(empId: string): SampleExperience[] {
 
 /**
  * 一条命中：起止、组织、岗位和序列从经历段 `x` 抄，默认第一条主张、相关度 0.9、
- * 没有说法与参与方式；`over` 里写这条命中自己的几项，也可以盖掉抄来的。
+ * 没有说法与投入档；`over` 里写这条命中自己的几项，也可以盖掉抄来的。
  */
 export function hitOn(
 	x: SampleExperience,
@@ -428,7 +428,7 @@ export function hitOn(
 		claim: 0,
 		relevance: 0.9,
 		phrase: null,
-		involvement: null,
+		engagement: null,
 		startDate: x.startDate,
 		endDate: x.endDate,
 		company: x.company,
@@ -467,10 +467,10 @@ export const RESULTS: RankedResult[] = [
 			hitOn(experience(101), {
 				claim: 1,
 				value: "团队管理",
-				route: "did",
+				route: "skill",
 				relevance: 0.81,
-				phrase: "带 4 人算法小组",
-				involvement: "负责",
+				phrase: "算法团队管理",
+				engagement: "主导",
 			}),
 		],
 		basis: [
@@ -483,7 +483,7 @@ export const RESULTS: RankedResult[] = [
 				external: false,
 			},
 			{
-				route: "did",
+				route: "skill",
 				value: "团队管理",
 				relevance: 0.81,
 				months: 48,
@@ -567,10 +567,10 @@ export const RESULTS: RankedResult[] = [
 			hitOn(experience(602), {
 				claim: 1,
 				value: "团队管理",
-				route: "did",
+				route: "skill",
 				relevance: 0.86,
-				phrase: "管理 12 人算法团队",
-				involvement: "负责",
+				phrase: "算法团队管理",
+				engagement: "主导",
 			}),
 		],
 		basis: [
@@ -583,7 +583,7 @@ export const RESULTS: RankedResult[] = [
 				external: true,
 			},
 			{
-				route: "did",
+				route: "skill",
 				value: "团队管理",
 				relevance: 0.86,
 				months: 76,
@@ -598,15 +598,15 @@ export const RESULTS: RankedResult[] = [
 		hits: [
 			hitOn(experience(401), {
 				value: "推荐系统",
-				route: "did",
+				route: "skill",
 				relevance: 0.84,
 				phrase: "短视频推荐多目标排序",
-				involvement: "研究",
+				engagement: "做过",
 			}),
 		],
 		basis: [
 			{
-				route: "did",
+				route: "skill",
 				value: "推荐系统",
 				relevance: 0.84,
 				months: 67,

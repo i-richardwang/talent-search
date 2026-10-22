@@ -100,11 +100,8 @@ describe("语料验收门禁", () => {
 			company: "合成公司",
 			description: "合成描述状态",
 		};
-		assert.equal(
-			await runCorpus("extract", [c], { skills: "invalid", did: [] }),
-			1,
-		);
-		assert.equal(await runCorpus("extract", [c], { skills: [], did: [] }), 0);
+		assert.equal(await runCorpus("extract", [c], { items: "invalid" }), 1);
+		assert.equal(await runCorpus("extract", [c], { items: [] }), 0);
 	});
 	test("抽取的精确率问题也使验收失败", async () => {
 		const c = {
@@ -112,15 +109,44 @@ describe("语料验收门禁", () => {
 			title: "合成岗位",
 			company: "合成公司",
 			description: "合成精确描述",
-			gold: [["数据分析"]],
+			gold: [{ words: ["数据分析"] }],
 		};
+		const said = (...texts: string[]) => ({
+			items: texts.map((text) => ({ text, depth: "做过" })),
+		});
 		assert.equal(
-			await runCorpus("extract", [c], {
-				skills: ["数据分析", "需求分析"],
-				did: [],
-			}),
+			await runCorpus("extract", [c], said("数据分析", "需求分析")),
 			1,
 		);
+		// 写了不算错的写法另列，不算多写
+		assert.equal(
+			await runCorpus(
+				"extract",
+				[{ ...c, ok: ["需求分析"] }],
+				said("数据分析", "需求分析"),
+			),
+			0,
+		);
+	});
+	test("投入档判错也使验收失败，两档都对的写法判成哪一档都通过", async () => {
+		// 每次换一段描述：同一段的回答进了缓存，第二次不会再问
+		const judged = (depth: string) =>
+			runCorpus(
+				"extract",
+				[
+					{
+						name: "档",
+						title: "合成岗位",
+						company: "合成公司",
+						description: `合成档描述${depth}`,
+						gold: [{ words: ["数据分析"], depth: "主导|做过" }],
+					},
+				],
+				{ items: [{ text: "数据分析", depth }] },
+			);
+		assert.equal(await judged("提到"), 1);
+		assert.equal(await judged("做过"), 0);
+		assert.equal(await judged("主导"), 0);
 	});
 	test("只要求了一部分词的题也检查每个词的作答覆盖", async () => {
 		const words = ["数据分析", "数据统计", "团队管理"].map((word) => ({

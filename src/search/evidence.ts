@@ -9,8 +9,6 @@ const ROUTE_LABEL: Record<Route, string> = {
 	title: "岗位",
 	description: "简历原文",
 	skill: "技能",
-	// 做过的事那一类，说法已经是「从零搭建 · 推荐系统」，不再另起类型名
-	did: "",
 };
 
 /** 一条命中的来源怎么显示——证据行、时间线、命令行用的是同一个词。 */

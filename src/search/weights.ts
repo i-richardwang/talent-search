@@ -1,3 +1,5 @@
+import type { Engagement } from "#/lib/engagement";
+
 export type { Route } from "#/db/schema";
 
 // 向量只排除明显无关的说法，过线的全部交给重排；重排分数决定是否命中。
@@ -8,6 +10,14 @@ export const RELEVANCE_MIN = 0.3;
 
 // 排除错误会让证据无声消失，因此采用更严格的相关度门槛。
 export const RELEVANCE_MIN_EXCLUDE = 0.75;
+
+// 技能的相关度按投入档打折：结果归他的不打折，只说会、熟悉的打七折。任职记录、岗位名和
+// 简历原文没有档，不打折；模型没判出档的技能按「做过」算。
+export const ENGAGEMENT_FACTOR: Record<Engagement, number> = {
+	主导: 1,
+	做过: 0.85,
+	提到: 0.7,
+};
 
 // 时长使用 m / (m + half) 的饱和曲线，并累计所有命中经历。
 export const TENURE_HALF = 48;

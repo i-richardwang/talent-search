@@ -5,7 +5,7 @@ import { AdminPage, useListPending } from "../-components/admin-page";
 import { TermTable } from "./-components/term-table";
 
 /**
- * 词表的管理页：简历里读出的短说法（能力词、做过的事、入职前岗位名）哪些写法归并成了
+ * 词表的管理页：简历里读出的短说法（能力词、入职前岗位名）哪些写法归并成了
  * 同一个词、哪个词属于哪个更宽的词。点一个词看它的释义和上下从属（`/terms/$word`）。
  *
  * 只读：词表由后台整理自动写（`src/corpus/vocabulary.ts`），在这里改的下一轮就被覆盖；

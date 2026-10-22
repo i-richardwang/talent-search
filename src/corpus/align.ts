@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { complete, extractModel, identityOf } from "#/server/chat";
+import { alignModel, complete, standardOf } from "#/server/chat";
 import { promptInput } from "./extract";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
@@ -68,9 +68,9 @@ function alignmentSchema(tree: SeqPair[]) {
 	return z.object({ seq: z.enum(["", ...tree.map(line)]) });
 }
 
-/** 解析版本的一部分。 */
+/** 对齐标准随提示词、回答形状和序列树变化，不随执行模型变化。 */
 export function alignIdentity(tree: SeqPair[]): string {
-	return identityOf(extractModel(), systemPrompt(tree), alignmentSchema(tree));
+	return standardOf(systemPrompt(tree), alignmentSchema(tree));
 }
 
 /**
@@ -92,12 +92,13 @@ export async function align<Row extends ExperienceRow>(
 	);
 	const texts = asked.filter((text): text is string => text !== null);
 	const payloads = await complete(
-		extractModel(),
+		alignModel(),
 		systemPrompt(tree),
 		alignmentSchema(tree),
 		texts,
 		"对齐",
 		report,
+		"align",
 	);
 
 	let aligned = 0;

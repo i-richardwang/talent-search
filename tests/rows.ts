@@ -9,7 +9,7 @@ export const hit = (over: Partial<Hit> = {}): Hit => ({
 	route: "role",
 	relevance: 1,
 	phrase: null,
-	involvement: null,
+	engagement: null,
 	startDate: "2020-01-01",
 	endDate: null,
 	company: "",
