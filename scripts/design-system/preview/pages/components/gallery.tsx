@@ -165,7 +165,7 @@ export function GalleryPage() {
 								<DropdownMenuPositioner>
 									<DropdownMenuPopup>
 										{renderDropdownMenuItems([
-											{ key: "csv", label: "导出为 CSV" },
+											{ key: "xlsx", label: "导出为 Excel" },
 											{ key: "xlsx", label: "导出为 Excel" },
 										])}
 									</DropdownMenuPopup>

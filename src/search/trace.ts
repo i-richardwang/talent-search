@@ -13,7 +13,7 @@ import { VOCAB_KEYS, type VocabKey } from "./dimensions";
 export type Matched = { name: string; people: number };
 
 /** 命中的一个标准能力词，连同它在词表里的上一级和下一级。 */
-export type TermMatch = Matched & {
+type TermMatch = Matched & {
 	/** 更宽的那个词；没有，或写的人太少时为 null。 */
 	broader: string | null;
 	/** 更细的那几个词，人多的在前；写的人太少的不给。 */
@@ -30,7 +30,7 @@ export type TermFinding = {
 };
 
 /** 按名字包含匹配的三种属性：入职前公司、公司内部门、学校。 */
-export const NAME_FIELDS = ["company", "department", "school"] as const;
+const NAME_FIELDS = ["company", "department", "school"] as const;
 export type NameField = (typeof NAME_FIELDS)[number];
 
 /** 模型能查的属性：有限取值的词表维和按名字匹配的属性。 */

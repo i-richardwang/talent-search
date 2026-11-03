@@ -107,6 +107,11 @@ export function TaskCard({
 					title: `已有任务在排队，这次${TASK_NAME[kind]}没有加入`,
 				});
 			onDone();
+		} catch {
+			toast.error({
+				title: "没能确认任务是否加入队列",
+				description: "请刷新任务状态后再试。",
+			});
 		} finally {
 			setRequesting(false);
 		}

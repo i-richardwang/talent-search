@@ -67,9 +67,12 @@ export function CareerBar({
 		end: ym(x.endDate ?? now),
 	}));
 	const from = Math.min(...spans.map((s) => s.start));
-	// 至少一年宽：同一年内的单段经历会让跨度归零，除法就成了 NaN。
-	const to = Math.max(Math.max(...spans.map((s) => s.end)), from + 12);
-	const span = to - from;
+	const to = Math.max(...spans.map((s) => s.end));
+	const endLabel = rows.some((row) => row.endDate === null)
+		? "至今"
+		: Math.floor(to / 12);
+	// 月是轨迹条的最小分辨率，同月开始结束也保留一个月的宽度。
+	const span = Math.max(to - from, 1);
 	const pct = (months: number) => (months / span) * 100;
 
 	const lanes = packLanes(spans);
@@ -124,7 +127,7 @@ export function CareerBar({
 				)}
 			</div>
 
-			{/* 只标起点年、入职年和至今；精确起止在时间线里 */}
+			{/* 标签与轨迹条共用时间范围；精确起止在时间线里。 */}
 			<figcaption className="relative mt-1.5 h-4 text-fg-secondary text-xs tabular-nums">
 				<span className="absolute left-0">{Math.floor(from / 12)}</span>
 				{showHireLabel && hireAt !== null && (
@@ -135,7 +138,7 @@ export function CareerBar({
 						入职 {Math.floor(hireAt / 12)}
 					</span>
 				)}
-				<span className="absolute right-0">至今</span>
+				<span className="absolute right-0">{endLabel}</span>
 			</figcaption>
 		</figure>
 	);

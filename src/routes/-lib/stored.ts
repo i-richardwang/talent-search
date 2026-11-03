@@ -13,7 +13,8 @@ const listeners = new Set<() => void>();
 const memory = new Map<string, string>();
 
 function onStorage(event: StorageEvent) {
-	if (event.key?.startsWith(PREFIX))
+	if (event.key === null) memory.clear();
+	else if (event.key.startsWith(PREFIX))
 		memory.delete(event.key.slice(PREFIX.length));
 	for (const listener of listeners) listener();
 }

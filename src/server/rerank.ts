@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "#/db";
 import { rerankCache } from "#/db/schema";
+import { concurrently } from "#/lib/concurrent";
 import { endpointFetch, positiveInt } from "./endpoint";
 
 const BASE_URL = process.env.RERANK_BASE_URL || process.env.EMBED_BASE_URL;
@@ -142,25 +143,24 @@ export async function rerank(
 	const batches: string[][] = [];
 	for (let start = 0; start < missing.length; start += BATCH)
 		batches.push(missing.slice(start, start + BATCH));
-	await Promise.all(
-		batches.map((batch) =>
-			withRequestSlot(async () => {
-				const values = await rerankBatch(query, batch);
-				await db
-					.insert(rerankCache)
-					.values(
-						batch.map((text, index) => ({
-							space,
-							query,
-							documentSha: documentSha(text),
-							relevance: values[index] as number,
-						})),
-					)
-					.onConflictDoNothing();
-				for (const [key, value] of await cached(space, query, batch))
-					scores.set(key, value);
-			}),
-		),
+	await concurrently(batches, CONCURRENCY, async (batch, stopped) =>
+		withRequestSlot(async () => {
+			if (stopped.aborted) return;
+			const values = await rerankBatch(query, batch);
+			await db
+				.insert(rerankCache)
+				.values(
+					batch.map((text, index) => ({
+						space,
+						query,
+						documentSha: documentSha(text),
+						relevance: values[index] as number,
+					})),
+				)
+				.onConflictDoNothing();
+			for (const [key, value] of await cached(space, query, batch))
+				scores.set(key, value);
+		}),
 	);
 	return documents.map((text) => {
 		const value = scores.get(documentSha(text));

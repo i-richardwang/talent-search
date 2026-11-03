@@ -34,6 +34,40 @@ async function runDerive(budgetMs = 10_000) {
 	}
 }
 
+test("空间重置立即作废全部解析产物，未重建的序列不能继续筛出人", async () => {
+	await seed([
+		{
+			empId: "RESET",
+			name: "合成重置",
+			school: "合成学校",
+			segments: [
+				{ ...segment(""), seqInferredL1: "技术", seqInferredL2: "算法" },
+			],
+		},
+	]);
+	await db.execute(
+		sql`update embedding_space set space_id = 'reset-synthetic-space'`,
+	);
+	await runDerive(0);
+	const detail = await employeeDetail("RESET");
+	assert.equal(detail?.timeline[0]?.seqInferredL1, "");
+	assert.equal(detail?.timeline[0]?.seqInferredL2, "");
+	const result = await search(
+		{
+			conditions: [
+				{
+					about: "person",
+					mode: "must",
+					field: "school",
+					values: ["合成学校"],
+				},
+			],
+		},
+		{ seq: [{ l1: "技术", l2: "算法" }] },
+	);
+	assert.equal(result.total, 0);
+});
+
 function segment(description: string) {
 	return {
 		kind: "external" as const,

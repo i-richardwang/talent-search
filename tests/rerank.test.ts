@@ -8,6 +8,61 @@ after(teardown);
 const { rerank } = await import("#/server/rerank");
 const { pool } = await import("#/db");
 
+test("批次失败停止领取候选，在途请求全部收尾后才退出", async () => {
+	let release = () => {},
+		entered = () => {};
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const started = new Promise<void>((resolve) => {
+		entered = resolve;
+	});
+	let calls = 0,
+		settled = false;
+	await answering(
+		async ({ documents }) => {
+			const first = ++calls === 1;
+			if (calls === 4) entered();
+			if (first) {
+				await started;
+				return { results: null };
+			}
+			await held;
+			return {
+				results: documents.map((_, index) => ({ index, relevance_score: 0.8 })),
+			};
+		},
+		async () => {
+			const rejected = assert
+				.rejects(
+					rerank(
+						"停止批次",
+						Array.from({ length: 1000 }, (_, i) => `合成候选${i}`),
+					),
+					/results 数组/,
+				)
+				.then(() => {
+					settled = true;
+				});
+			await started;
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			assert.equal(settled, false);
+			assert.equal(calls, 4);
+			release();
+			await rejected;
+			assert.equal(calls, 4);
+			assert.equal(
+				(
+					await pool.query(
+						"select count(*)::int as n from rerank_cache where query='停止批次'",
+					)
+				).rows[0].n,
+				300,
+			);
+		},
+	);
+});
+
 async function answering<T>(
 	answer: (body: { documents: string[] }) => unknown,
 	use: () => Promise<T>,

@@ -109,7 +109,7 @@ export const submissionSchema = z.object({
 export type Submission = z.infer<typeof submissionSchema>;
 
 /** HR 可以换成的一种理解。`conditions` 已经过和条件表同一道校验，选它就是换成这张表。 */
-export type Choice = {
+type Choice = {
 	label: string;
 	detail?: string;
 	conditions: Condition[];

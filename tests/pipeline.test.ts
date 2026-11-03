@@ -89,6 +89,29 @@ const external = (rows: ReturnType<typeof run>) =>
 	rows.experience.filter((row) => row.kind === "external");
 
 describe("公司内经历", () => {
+	for (const [field, value] of Object.entries({
+		level: "P7",
+		seq_l2: "算法",
+		department_path: "公司/新中心/部门",
+	})) {
+		test(`同一任职的 ${field} 变化保留分段与当前信息`, () => {
+			const out = run({
+				assignments: [
+					{ start_date: "2020-01-01", end_date: "2021-12-31" },
+					{ start_date: "2022-01-01", [field]: value },
+				],
+			});
+			assert.equal(internal(out).length, 2);
+			assert.equal(
+				internal(out)[1]?.[field as "level" | "seq_l2" | "department_path"],
+				value,
+			);
+			if (field === "level") {
+				assert.equal(out.employee[0]?.cur_level, "P7");
+				assert.equal(out.employee[0]?.cur_level_band, "高级");
+			}
+		});
+	}
 	test("非法区间拒绝并报告数量", () => {
 		const out = run({
 			people: [

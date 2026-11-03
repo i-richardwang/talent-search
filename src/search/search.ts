@@ -41,13 +41,7 @@ import type { Vocabulary } from "./intent";
 import type { KeywordField } from "./keywords";
 import type { SearchFilters } from "./params";
 import { type PhraseHit, phraseHitTable, withMatchedPhrases } from "./phrases";
-import {
-	type Fact,
-	type PopulationFact,
-	pageHits,
-	rank,
-	rankPopulation,
-} from "./rank";
+import { type Fact, type PopulationFact, pageHits, rank } from "./rank";
 import {
 	type Claim,
 	emptyFacets,
@@ -302,7 +296,7 @@ export function overflowContributors(
 const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	months: sql`e.months`,
 	// 序列筛选认登记的，登记为空（入职前的段）才认模型对齐的；两对各自成对，不会
-	// 一级来自登记、二级来自对齐。证据路 `seq` 不读这里，只嵌登记值。
+	// 一级来自登记、二级来自对齐。任职说法只使用登记序列，不读取推断值。
 	seqL1: sql`coalesce(nullif(e.seq_l1, ''), e.seq_inferred_l1)`,
 	seqL2: sql`coalesce(nullif(e.seq_l2, ''), e.seq_inferred_l2)`,
 	kind: sql`e.kind`,
@@ -737,78 +731,20 @@ export async function vocabulary(): Promise<Vocabulary> {
 	});
 }
 
-/**
- * 人员查询从 employee 产生候选，关联未被否决的工作经历供筛选与分面使用。
- * 没有工作经历时保留人员及空经历属性；背景门槛在 SQL 中独立求值。
- * 这条路径不产生经历证据或语义评分。
- */
-async function searchPopulation(
+/** 人员候选及其有效工作经历；无经历时仍保留人员属性。 */
+async function fetchPopulation(
 	store: DbExecutor,
-	spec: SearchSpec,
-	prefer: readonly Gate[],
-	view: SearchFilters,
-	limit: number,
 	veto: SQL | null,
 	person: readonly SQL[],
-): Promise<SearchOutcome> {
+): Promise<PopulationFact[] | null> {
 	const rows = await store.execute<PopulationRow>(sql`
 		select p.emp_id, ${factSelect}
-		from employee p left join experience e
-		  on e.emp_id = p.emp_id and not e.unemployed
-		  ${veto ? sql`and e.id not in (${veto})` : sql``}
+		from employee p left join experience e on e.emp_id = p.emp_id and not e.unemployed
+		${veto ? sql`and e.id not in (${veto})` : sql``}
 		${whereAll(person)}
 		order by p.emp_id, e.id limit ${FACT_MAX + 1}`);
-	if (rows.rows.length > FACT_MAX)
-		return {
-			order: "employee",
-			claims: [],
-			...noOne(),
-			empty: emptyReason({
-				spec,
-				filters: view,
-				total: 0,
-				overflow: { kind: "overflowPopulation" },
-			}),
-		};
-	const facts: PopulationFact[] = rows.rows.map(({ emp_id, ...dims }) => ({
-		...dims,
-		empId: emp_id,
-	}));
-	// 公司、部门和学校已经在 SQL 里按人过滤过，内存里不必再过滤一次
-	const inMemory = {
-		...view,
-		company: undefined,
-		department: undefined,
-		school: undefined,
-	};
-	const empIdsAll = facts.map((f) => f.empId);
-	const preferred = await fetchPreferred(store, prefer, veto, empIdsAll);
-	const { empIds, facets, total } = rankPopulation(facts, inMemory, preferred);
-	const pageIds = empIds.slice(0, limit);
-	const employees =
-		pageIds.length === 0
-			? []
-			: await store
-					.select(RESULT_COLUMNS)
-					.from(employee)
-					.where(inArray(employee.empId, pageIds));
-	const byId = new Map(employees.map((row) => [row.empId, row]));
-	return {
-		order: "employee",
-		claims: [],
-		results: pageIds.flatMap((empId) => {
-			const person = byId.get(empId);
-			return person ? [{ employee: person }] : [];
-		}),
-		facets,
-		total,
-		empty: emptyReason({
-			spec,
-			filters: view,
-			total,
-			overflow: null,
-		}),
-	};
+	if (rows.rows.length > FACT_MAX) return null;
+	return rows.rows.map(({ emp_id, ...dims }) => ({ ...dims, empId: emp_id }));
 }
 
 /**
@@ -852,17 +788,6 @@ export async function search(
 		const veto = vetoSql(excludes, phraseHits);
 		// 门槛和 URL 上的公司名 / 学校名都按人过滤，在每一条取数 SQL 里生效
 		const person = [...gateConds(gates, veto), ...viewConds(filters, veto)];
-		// 只有门槛时没有做过什么可比，名单按人排，不伪造一条主张来启动检索。
-		if (claims.length === 0)
-			return searchPopulation(
-				store,
-				spec,
-				prefer,
-				filters,
-				limit,
-				veto,
-				person,
-			);
 
 		const loaded = await fetchFacts(store, claims, phraseHits, [
 			...person,
@@ -886,11 +811,29 @@ export async function search(
 			};
 		}
 		const facts = loaded.facts;
-		const candidates = facts.map((f) => f.empId);
+		// 必须经历限定候选；没有必须经历时，偏好只排序，候选来自人员。
+		const population = claims.some((claim) => claim.mode === "must")
+			? facts
+			: await fetchPopulation(store, veto, person);
+		if (population === null)
+			return {
+				...(claims.length
+					? { order: "evidence" as const, claims }
+					: { order: "employee" as const, claims: [] as [] }),
+				...noOne(),
+				empty: emptyReason({
+					spec,
+					filters,
+					total: 0,
+					overflow: { kind: "overflowPopulation" },
+				}),
+			};
+		const candidates = population.map((f) => f.empId);
 		const preferred = await fetchPreferred(store, prefer, veto, candidates);
 
 		const { ranked, facets, total } = rank(
 			facts,
+			population,
 			claims,
 			filters,
 			new Date(),
@@ -903,17 +846,30 @@ export async function search(
 			overflow: null,
 		});
 		const page = ranked.slice(0, limit);
-		if (page.length === 0)
+		const empIds = page.map((row) => row.empId);
+		const employees =
+			empIds.length === 0
+				? []
+				: await store
+						.select(RESULT_COLUMNS)
+						.from(employee)
+						.where(inArray(employee.empId, empIds));
+		const empById = new Map(employees.map((person) => [person.empId, person]));
+		if (claims.length === 0)
 			return {
-				order: "evidence",
-				claims,
-				results: [],
+				order: "employee",
+				claims: [],
 				facets,
 				total,
 				empty,
+				results: page.flatMap((row) => {
+					const person = empById.get(row.empId);
+					return person ? [{ employee: person }] : [];
+				}),
 			};
+		if (page.length === 0)
+			return { order: "evidence", claims, results: [], facets, total, empty };
 
-		const empIds = page.map((row) => row.empId);
 		const evidence = pageHits(
 			facts,
 			claims,
@@ -930,13 +886,7 @@ export async function search(
 			.select()
 			.from(experience)
 			.where(inArray(experience.id, ids));
-		const employees = await store
-			.select(RESULT_COLUMNS)
-			.from(employee)
-			.where(inArray(employee.empId, empIds));
-
 		const segById = new Map(segments.map((segment) => [segment.id, segment]));
-		const empById = new Map(employees.map((person) => [person.empId, person]));
 
 		// 名次已经定好，回表只是按 id 把要画的原文取回来：这一页就是取得回来的
 		// 那些行，取数和定名次读的是同一次快照里的同一批 id。

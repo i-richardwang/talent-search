@@ -6,6 +6,7 @@
  * 仍然分得清连不上和端点报错。
  */
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import { createServer, type IncomingMessage } from "node:http";
 import { describe, test } from "node:test";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -90,6 +91,26 @@ async function failure(run: () => Promise<unknown>) {
 }
 
 describe("每一次请求各自超时、各自重试", () => {
+	test("重试成功后释放调用方的取消监听器", async () => {
+		const server = await endpoint((_body, hit) =>
+			hit === 1
+				? { status: 503, headers: NOW }
+				: { status: 200, body: EMBEDDING },
+		);
+		const controller = new AbortController();
+		try {
+			const response = await endpointFetch({
+				timeoutMs: TIMEOUT_MS,
+				retries: 1,
+			})(server.url, { method: "POST", body: "{}", signal: controller.signal });
+			await response.json();
+			assert.equal(server.bodies.length, 2);
+			assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+		} finally {
+			await server.stop();
+		}
+	});
+
 	test("第二步超时只重发第二步，第一步不重来", async () => {
 		let secondStepTries = 0;
 		const server = await endpoint((body) => {

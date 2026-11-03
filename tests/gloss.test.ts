@@ -19,6 +19,52 @@ const { guideIdentities, review } = await import("#/corpus/review");
 const { pool } = await import("#/db");
 const { reviewJudge } = await import("#/server/review");
 
+test("不合规释义不会锁死重试；下一轮可取得合规答案", async () => {
+	const { collectGlosses, judgeGlossesByModel, applyGlosses } = await import(
+		"#/corpus/gloss"
+	);
+	await seed([
+		{
+			empId: "G-RETRY",
+			name: "合成重试",
+			segments: [{ kind: "external", title: "合成重试岗位", months: 12 }],
+		},
+	]);
+	const connection = await client();
+	let calls = 0;
+	const restore = answerChat(() => ({
+		judgments: [
+			{
+				word: "合成重试岗位",
+				gloss: ++calls === 1 ? "合成重试岗位" : "维护合成样例的程序与接口",
+			},
+		],
+	}));
+	try {
+		for (let round = 0; round < 2; round++) {
+			await collectGlosses(connection, () => {});
+			await judgeGlossesByModel(connection, () => {});
+			await applyGlosses(connection, () => {});
+		}
+		assert.equal(calls, 2);
+		assert.equal(
+			(
+				await connection.query(
+					"select gloss from phrase_gloss where text='合成重试岗位'",
+				)
+			).rows[0]?.gloss,
+			"维护合成样例的程序与接口",
+		);
+	} finally {
+		restore();
+		await connection.query("delete from employee where emp_id='G-RETRY'");
+		await connection.query(
+			"delete from phrase_gloss where text='合成重试岗位'",
+		);
+		connection.release();
+	}
+});
+
 async function client() {
 	return pool.connect();
 }
@@ -126,6 +172,21 @@ describe("校验判定结果", () => {
 		);
 		assert.equal(conformGlosses({ judgments: "都好" }, words).size, 0);
 		assert.equal(conformGlosses(null, words).size, 0);
+		for (const lineBreak of ["\n", "\r\n", "\r", "\u2028", "\u2029"])
+			assert.equal(
+				conformGlosses(
+					{
+						judgments: [
+							{
+								word: "客户开发",
+								gloss: `销售拓展${lineBreak}新客户`,
+							},
+						],
+					},
+					words,
+				).size,
+				0,
+			);
 	});
 });
 

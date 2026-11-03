@@ -153,11 +153,29 @@ describe("校验", () => {
 	test("格式不对的原话不产出任何结果", () => {
 		assert.equal(conform({ judgments: "运营数据分析" }, words).size, 0);
 		assert.equal(conform("运营数据分析", words).size, 0);
-		// 缺字段的那一条按空处理，词还是判过了
-		assert.deepEqual(
-			[...conform({ judgments: [{ word: "销售数据分析" }] }, words)],
-			[["销售数据分析", { parent: null, sameAs: null }]],
+		for (const item of [
+			{ word: "销售数据分析" },
+			{ word: "销售数据分析", why: "合成理由", sameAs: null, parent: "" },
+			{ word: "销售数据分析", why: "合成理由", sameAs: "", parent: 1 },
+		])
+			assert.equal(conform({ judgments: [item] }, words).size, 0);
+	});
+
+	test("缺失判断不能清除旧归属，也不能刷新判定时间", () => {
+		const prior = {
+			canonical: "销售数据分析",
+			parent: "数据分析",
+			reviewedAt: new Date("2020-01-01"),
+		};
+		const table = new Map([["销售数据分析", prior]]);
+		const changed = merge(
+			table,
+			[{ word: "销售数据分析", people: 3 }],
+			conform({ judgments: [{ word: "销售数据分析" }] }, ["销售数据分析"]),
+			new Date(),
 		);
+		assert.deepEqual(changed, []);
+		assert.deepEqual(table.get("销售数据分析"), prior);
 	});
 });
 

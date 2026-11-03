@@ -7,6 +7,7 @@ import type {
 	Progress,
 	Turn,
 } from "#/server/turn";
+import { poll } from "./poll";
 
 /**
  * 理解失败时各说什么。哪个环节出了问题由服务端判定（`server/turn.ts` 的 `interpret`），
@@ -78,7 +79,7 @@ const PROGRESS_POLL_MS = 1000;
  * 链上最后一轮的理解，只读。理解在提交那一刻由服务端开始（`server/turn.ts`），
  * 这里不开始任何事：打开、刷新、多开几个标签页都只是多几个人在看。
  *
- * 还在理解时每秒读一次（`turnInterpretation`）：线程边跑边画步骤，线程和名单从这一次
+ * 还在理解时串行读取，相邻读取间隔一秒（`turnInterpretation`）：线程边跑边画步骤，线程和名单从这一次
  * 开始的时刻计时；读到条件写好了就重新载入这一轮，读到失败就停下，等人点重试。
  */
 export function useInterpretation(latest: Turn): {
@@ -119,22 +120,12 @@ export function useInterpretation(latest: Turn): {
 
 	useEffect(() => {
 		if (!interpreting) return;
-		let alive = true;
-		const timer = setInterval(async () => {
-			try {
-				const next = await turnInterpretation({ data: { turnId } });
-				if (!alive) return;
-				// 写好了就不再问：重新载入这一轮要一会儿，不必每秒再催一次
-				if (next?.settled) clearInterval(timer);
-				show(next);
-			} catch {
-				// 问不到就下一秒再问：这只是进度，理解不靠它
-			}
-		}, PROGRESS_POLL_MS);
-		return () => {
-			alive = false;
-			clearInterval(timer);
-		};
+		return poll(PROGRESS_POLL_MS, async (signal) => {
+			const next = await turnInterpretation({ data: { turnId }, signal });
+			if (signal.aborted) return false;
+			show(next);
+			return !next?.settled && !next?.fault;
+		});
 	}, [interpreting, turnId, show]);
 
 	const retry = () => {

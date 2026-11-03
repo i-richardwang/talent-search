@@ -108,6 +108,21 @@ describe("带子的几何", () => {
 		exp(1, "2016-01-01", "2020-01-01"),
 		exp(2, "2020-01-01", "2024-01-01"),
 	];
+	test("结束的轨迹标实际终点，有开放经历时才标至今", () => {
+		const closed = renderToStaticMarkup(
+			<CareerBar hireDate={null} hitIndex={new Map()} rows={rows} />,
+		);
+		assert.match(closed, /right-0">2024<\/span>/);
+		assert.ok(!closed.includes("至今"));
+		const open = renderToStaticMarkup(
+			<CareerBar
+				hireDate={null}
+				hitIndex={new Map()}
+				rows={[exp(1, "2020-01-01", null)]}
+			/>,
+		);
+		assert.match(open, /right-0">至今<\/span>/);
+	});
 
 	test("起点对齐左边，跨度按真实月数计算", () => {
 		const html = renderToStaticMarkup(
@@ -179,6 +194,18 @@ describe("带子的几何", () => {
 			/>,
 		);
 		assert.ok(!html.includes("NaN"));
+	});
+
+	test("十二月同月起止保留可见宽度，终点年份不移到下一年", () => {
+		const html = renderToStaticMarkup(
+			<CareerBar
+				hireDate={null}
+				hitIndex={new Map()}
+				rows={[exp(9, "2024-12-01", "2024-12-15")]}
+			/>,
+		);
+		assert.equal(blocks(html)[0]?.width, "calc(100% - 2px)");
+		assert.match(html, /right-0">2024<\/span>/);
 	});
 
 	test("一段经历都没有时不渲染", () => {

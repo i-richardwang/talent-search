@@ -336,29 +336,18 @@ function fill(out: Facets, key: DimKey, rows: Facet[]) {
 	});
 }
 
-/**
- * 没有经历主张时，人员按满足的加分门槛数排序，再按工号排序。
- * 没有工作经历的人员事实仍可参与人员筛选，空经历属性不产生经历分面。
- */
-export function rankPopulation(
+function populationFacets(
 	facts: PopulationFact[],
 	filters: SearchFilters,
-	/** 每条人的偏好各一份满足它的人（`search.ts` 的 `fetchPreferred`）。 */
-	preferred: readonly ReadonlySet<string>[] = [],
-): { empIds: string[]; facets: Facets; total: number } {
-	// 没有分数可排的路上，偏好就是唯一的先后：满足得多的在前，其余按工号
-	const met = (id: string) => preferred.filter((set) => set.has(id)).length;
-	const empIds = [
-		...new Set(facts.filter(keeps(filters)).map((fact) => fact.empId)),
-	].sort((a, b) => met(b) - met(a) || a.localeCompare(b));
-	const facets = emptyFacets();
+): Facets {
+	const out = emptyFacets();
 	for (const key of DIM_KEYS)
 		fill(
-			facets,
+			out,
 			key,
 			facetRows(facts, key, filters, () => true),
 		);
-	return { empIds, facets, total: empIds.length };
+	return out;
 }
 
 type Ranked = {
@@ -381,6 +370,7 @@ function byDepth(a: Ranked, b: Ranked) {
  */
 export function rank(
 	facts: Fact[],
+	population: PopulationFact[],
 	claims: Claim[],
 	filters: SearchFilters,
 	now: Date,
@@ -388,14 +378,21 @@ export function rank(
 	preferred: readonly ReadonlySet<string>[] = [],
 ): { ranked: Ranked[]; facets: Facets; total: number } {
 	const ranked: Ranked[] = [];
-	for (const [empId, p] of bucket(facts, keeps(filters))) {
+	const evidence = bucket(facts, keeps(filters));
+	const candidates = new Set(
+		population.filter(keeps(filters)).map((row) => row.empId),
+	);
+	for (const empId of candidates) {
+		const p = evidence.get(empId) ?? new Map<number, Fact[]>();
 		if (!complete(p, claims)) continue;
 		ranked.push({ empId, ...measure(p, claims, preferred, empId, now) });
 	}
 	ranked.sort(byDepth);
 	return {
 		ranked,
-		facets: computeFacets(facts, claims, filters),
+		facets: claims.some((claim) => claim.mode === "must")
+			? computeFacets(facts, claims, filters)
+			: populationFacets(population, filters),
 		total: ranked.length,
 	};
 }

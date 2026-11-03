@@ -12,7 +12,6 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
-import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { type TurnNotes, unanswered, understood } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
 import { vocabulary } from "#/search/search";
@@ -106,7 +105,7 @@ async function getRow(id: string, tx: Db = db): Promise<SearchTurn | null> {
 	return row ?? null;
 }
 
-/** 一条链的最后一轮：链上唯一没有下一轮的那条。 */
+/** 锁住链尾再读取状态，追加与模型补全在这条记录上串行化。调用方已持有链头锁。 */
 async function tailOf(tx: Db, rootTurnId: string): Promise<SearchTurn> {
 	const [tail] = await tx
 		.select()
@@ -117,7 +116,8 @@ async function tailOf(tx: Db, rootTurnId: string): Promise<SearchTurn> {
 				sql`not exists (select 1 from ${searchTurn} next
 					where next.parent_turn_id = ${searchTurn.id})`,
 			),
-		);
+		)
+		.for("update");
 	if (!tail) throw new Error("查询记录链没有末轮");
 	return tail;
 }
@@ -397,11 +397,6 @@ export async function loadInterpretation(
 	return row ?? null;
 }
 
-export async function loadTurn(id: string): Promise<Turn | null> {
-	const thread = await loadThread(id);
-	return thread?.find((turn) => turn.id === id) ?? null;
-}
-
 export type RecentSearch = {
 	turnId: string;
 	spec: SearchSpec;
@@ -416,37 +411,74 @@ export type RecentSearch = {
 /** 最近搜索一页最多取多少条：页面要多少由它自己说，超过的按这个数取。 */
 const RECENT_PAGE_MAX = 50;
 
+export type RecentPage = {
+	rows: RecentSearch[];
+	total: number;
+	next: string | null;
+};
+
+/** 游标保存精确时刻和 id；删除游标对应的记录不影响继续读取。 */
+function recentCursor(raw: unknown): [string, string] | null {
+	if (raw == null) return null;
+	if (typeof raw !== "string" || raw.length > 160)
+		throw new Error("搜索记录游标无效");
+	let value: unknown;
+	try {
+		value = JSON.parse(raw);
+	} catch {
+		throw new Error("搜索记录游标无效");
+	}
+	if (
+		!Array.isArray(value) ||
+		value.length !== 2 ||
+		typeof value[0] !== "string" ||
+		!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(value[0]) ||
+		!Number.isFinite(Date.parse(value[0])) ||
+		typeof value[1] !== "string" ||
+		!/^[\w-]{1,64}$/.test(value[1])
+	)
+		throw new Error("搜索记录游标无效");
+	return [value[0], value[1]];
+}
+
 /**
  * 每条链最后一份完整条件表，按记录时间排列。待理解末轮之前的完整记录仍可回放。
  * 链序由 parent_turn_id 决定；时间仅用于跨任务展示与排序。
  */
 export async function listRecent(
-	page: unknown,
 	size: number,
-): Promise<TablePage<RecentSearch>> {
+	after?: unknown,
+): Promise<RecentPage> {
+	const cursor = recentCursor(after);
+	const limit = Math.min(Math.max(Math.trunc(size) || 1, 1), RECENT_PAGE_MAX);
 	return db.transaction(
 		async (store) => {
-			const found = await store.execute<{ n: number }>(sql`
-		select count(distinct root_turn_id)::int as n
-		from search_turn where spec is not null`);
-			const total = found.rows[0]?.n ?? 0;
-			const at = pageAt(
-				total,
-				page,
-				Math.min(Math.max(Math.trunc(size) || 1, 1), RECENT_PAGE_MAX),
+			const found = await store.execute<{ n: number }>(
+				sql`select count(distinct root_turn_id)::int as n from search_turn where spec is not null`,
 			);
-			const rows = await store.execute<RecentSearch>(sql`
-			select latest.id as "turnId", latest.spec, root.raw_text as title,
-				extract(epoch from now() - latest.created_at)::int as "ageSeconds",
-				to_char(latest.created_at, 'YYYY-MM-DD HH24:MI') as at
-				from search_turn latest
-				join search_turn root on root.id = latest.root_turn_id
+			const result = await store.execute<
+				RecentSearch & { cursorAt: string }
+			>(sql`
+				select latest.id as "turnId", latest.spec, root.raw_text as title,
+					extract(epoch from now() - latest.created_at)::int as "ageSeconds",
+					to_char(latest.created_at, 'YYYY-MM-DD HH24:MI') as at,
+					to_char(latest.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z' as "cursorAt"
+				from search_turn latest join search_turn root on root.id = latest.root_turn_id
 				where latest.spec is not null and not exists (
 					select 1 from search_turn next
 					where next.parent_turn_id = latest.id and next.spec is not null)
-			order by latest.created_at desc, latest.id desc
-			limit ${at.limit} offset ${at.offset}`);
-			return tablePage(rows.rows, total, at);
+				${cursor ? sql`and (latest.created_at, latest.id) < (${cursor[0]}::timestamptz, ${cursor[1]})` : sql``}
+				order by latest.created_at desc, latest.id desc limit ${limit + 1}`);
+			const rows = result.rows.slice(0, limit);
+			const last = rows.at(-1);
+			return {
+				total: found.rows[0]?.n ?? 0,
+				rows: rows.map(({ cursorAt: _, ...row }) => row),
+				next:
+					result.rows.length > limit && last
+						? JSON.stringify([last.cursorAt, last.turnId])
+						: null,
+			};
 		},
 		{ isolationLevel: "repeatable read" },
 	);

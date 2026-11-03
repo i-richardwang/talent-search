@@ -6,7 +6,7 @@ import { Tag } from "./tag";
  * 不能点；其余每一项是一个按钮，点了就办，没有另外的提交。问过之后收成 `AnsweredQuestion`。
  */
 
-export interface QuestionOption {
+interface QuestionOption {
 	key: string;
 	label: string;
 	description?: string;

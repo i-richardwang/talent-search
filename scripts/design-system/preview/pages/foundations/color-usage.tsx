@@ -10,7 +10,6 @@ import { cn } from "#/lib/utils";
 import { contrastRatio, parseColor, type Rgba } from "../../../shared/color";
 import { tokenLabel } from "../../../shared/tokens/registry";
 import { usePreviewState } from "../../state";
-import { selectColor } from "./colors";
 
 /** 每种用途用到哪几个颜色；点令牌名在右栏编辑它。 */
 const MAPPINGS: [role: string, tokens: string[]][] = [
@@ -250,7 +249,11 @@ function MeasuredSample({
  * 用途与对比度：每种用途用到的颜色，以及几种真实控件在各个状态下量出来的对比度。
  * 文字按 WCAG 1.4.3 要 4.5:1，焦点框按 1.4.11 要 3:1；禁用的控件不计。
  */
-export function ColorUsage() {
+export function ColorUsage({
+	onSelect,
+}: {
+	onSelect: (token: string) => void;
+}) {
 	const { draft, theme } = usePreviewState();
 	const [disabled, setDisabled] = useState(false);
 	const [invalid, setInvalid] = useState(false);
@@ -274,7 +277,7 @@ export function ColorUsage() {
 								{tokens.map((token) => (
 									<Button
 										key={token}
-										onClick={() => selectColor(token)}
+										onClick={() => onSelect(token)}
 										size="small"
 										title={`编辑${tokenLabel(token)}`}
 										type="fill"

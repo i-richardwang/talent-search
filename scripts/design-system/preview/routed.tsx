@@ -7,10 +7,9 @@ import {
 	useRouterState,
 } from "@tanstack/react-router";
 import { createContext, type ReactNode, use, useState } from "react";
-import type { TablePage } from "#/lib/paging";
 import { type NavPrefs, navPrefsOf } from "#/routes/-lib/nav-prefs";
 import type { viewer } from "#/server/access";
-import type { RecentSearch } from "#/server/turn";
+import type { RecentPage } from "#/server/turn";
 import { OUTCOME } from "./samples/people";
 import { RECENT, THREAD } from "./samples/thread";
 
@@ -41,7 +40,7 @@ const PATHS = [
 /** 根路由提供的数据：导航栏记住的样子取默认值，最近搜索是样例的第一页。 */
 export type RootData = {
 	nav: NavPrefs;
-	recent: TablePage<RecentSearch> | null;
+	recent: RecentPage | null;
 	understanding: boolean;
 	user: Awaited<ReturnType<typeof viewer>>;
 };
@@ -53,7 +52,7 @@ const ROOT_DATA: RootData = {
 		admin: true,
 	},
 	nav: navPrefsOf(undefined),
-	recent: { from: 1, page: 1, pages: 1, rows: RECENT, total: RECENT.length },
+	recent: { next: null, rows: RECENT, total: RECENT.length },
 	understanding: true,
 };
 const TURN_DATA = { result: OUTCOME, thread: THREAD };

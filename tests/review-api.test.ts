@@ -5,7 +5,7 @@
  * `limit` 怎么校验、什么样的判定根本进不了库。
  */
 import assert from "node:assert/strict";
-import { after, before, describe, test } from "node:test";
+import { after, before, describe, mock, test } from "node:test";
 import { seed, setup } from "./fixture";
 
 const teardown = await setup();
@@ -18,6 +18,61 @@ const { groupIdentity } = await import("#/corpus/vocabulary");
 const { pool } = await import("#/db");
 
 const TOKEN = "test-token";
+
+test("判定已持久化时，调度故障不把接收结果改成失败", async () => {
+	const { Route } = await import("#/routes/api/review");
+	const previousJudge = process.env.REVIEW_JUDGE;
+	const previousToken = process.env.REVIEW_TOKEN;
+	process.env.REVIEW_JUDGE = "external";
+	process.env.REVIEW_TOKEN = TOKEN;
+	const logged = mock.method(console, "error", () => {});
+	try {
+		const { rows } = await pool.query<{ id: number }>(
+			`insert into review_group (kind, guide_identity, words)
+			 values ('group', $1, '[{"word":"合成调度能力","people":3}]'::jsonb) returning id`,
+			[groupIdentity()],
+		);
+		const id = rows[0]?.id;
+		assert.ok(id);
+		const input = request({
+			id,
+			kind: "group",
+			guideIdentity: groupIdentity(),
+			judge: "synthetic",
+			judgments: [
+				{ word: "合成调度能力", why: "独立能力", sameAs: "", parent: "" },
+			],
+		});
+		input.headers.set("authorization", `Bearer ${TOKEN}`);
+		const handlers = Route.options.server?.handlers;
+		assert.ok(handlers && typeof handlers !== "function");
+		const post = handlers.POST;
+		assert.equal(typeof post, "function");
+		assert.ok(typeof post === "function");
+		const response = await post({ request: input } as Parameters<
+			typeof post
+		>[0]);
+		assert.ok(response instanceof Response);
+		assert.equal(response.status, 200);
+		assert.deepEqual(await response.json(), { accepted: true });
+		assert.equal(
+			(await pool.query("select judge from review_group where id = $1", [id]))
+				.rows[0]?.judge,
+			"agent:synthetic",
+		);
+		assert.equal(logged.mock.callCount(), 1);
+		assert.match(
+			String(logged.mock.calls[0]?.arguments[1]),
+			/后台任务没有启动/,
+		);
+	} finally {
+		logged.mock.restore();
+		if (previousJudge === undefined) delete process.env.REVIEW_JUDGE;
+		else process.env.REVIEW_JUDGE = previousJudge;
+		if (previousToken === undefined) delete process.env.REVIEW_TOKEN;
+		else process.env.REVIEW_TOKEN = previousToken;
+	}
+});
 
 function request(body: unknown): Request {
 	return new Request("http://x/api/review", {
@@ -156,6 +211,33 @@ describe("提交判定的形状", () => {
 		const got = await submit(request({ id: 1, big: "x".repeat(70_000) }));
 		assert.equal(got.ok, false);
 		assert.match(got.ok ? "" : got.why, /太大/);
+	});
+
+	test("流式正文越过上限立即取消，不等待发送结束或信任长度头", async () => {
+		let reads = 0;
+		let cancelled = false;
+		const body = new ReadableStream<Uint8Array>(
+			{
+				pull(controller) {
+					reads++;
+					controller.enqueue(new Uint8Array(32 * 1024));
+				},
+				cancel() {
+					cancelled = true;
+				},
+			},
+			{ highWaterMark: 0 },
+		);
+		const result = await submit(
+			new Request("http://x/api/review", {
+				method: "POST",
+				headers: { "content-length": "1" },
+				body,
+			}),
+		);
+		assert.deepEqual(result, { ok: false, why: "这份判定太大" });
+		assert.equal(reads, 3);
+		assert.equal(cancelled, true);
 	});
 
 	test("判定上限按 UTF-8 字节计算", async () => {

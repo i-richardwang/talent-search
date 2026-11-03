@@ -95,6 +95,27 @@ test("只有加分的人的条件时全部员工进入名单，满足偏好的�
 	assert.deepEqual(ids(result), ["P2", "P3", "P1", "P4"]);
 });
 
+test("经历偏好只排序，不缩小人员候选；没有经历的人仍保留", async () => {
+	const boost: Condition = {
+		about: "experience",
+		mode: "boost",
+		what: ["工程师"],
+	};
+	const plain = await find();
+	const boosted = await find([boost]);
+	assert.deepEqual(new Set(ids(boosted)), new Set(ids(plain)));
+	assert.equal(ids(boosted)[0], "P3");
+	assert.deepEqual(boosted.facets, plain.facets);
+	assert.deepEqual(ids(await find([boost], { education: ["本科"] })), ["P1"]);
+	const everyone = await search({ conditions: [boost] });
+	assert.equal(everyone.total, 4);
+	assert.equal(
+		(await search({ conditions: [{ ...boost, what: ["不存在的合成技能"] }] }))
+			.total,
+		4,
+	);
+});
+
 test("排除仅否决经历，人员条件仍生效，被否决的段不参与筛选或背景门槛", async () => {
 	const exclude: Condition = {
 		about: "experience",

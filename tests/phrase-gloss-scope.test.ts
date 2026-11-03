@@ -16,9 +16,46 @@ const find = () =>
 	search({ conditions: [{ about: "experience", mode: "must", what: [word] }] });
 beforeEach(async () => {
 	await db.execute(
-		sql`truncate employee, phrase, phrase_gloss, review_group restart identity cascade`,
+		sql`truncate employee, phrase, phrase_gloss, review_group, term, rerank_cache restart identity cascade`,
 	);
 });
+
+for (const retainedAsRaw of [false, true]) {
+	test(`标准写法${retainedAsRaw ? "仅剩原文" : "已离开语料"}时，保留释义不通过别名参与检索`, async () => {
+		const canonical = "合成旧标准岗位";
+		await seed([
+			{
+				empId: "G1",
+				name: "合成当前写法",
+				segments: [{ kind: "external", title: word, months: 12 }],
+			},
+			...(retainedAsRaw
+				? [
+						{
+							empId: "G2",
+							name: "合成保留原文",
+							segments: [
+								{
+									kind: "external" as const,
+									description: canonical,
+									months: 12,
+								},
+							],
+						},
+					]
+				: []),
+		]);
+		await db.execute(sql`insert into term (word, canonical, reviewed_at) values
+			(${canonical}, ${canonical}, now()), (${word}, ${canonical}, now())`);
+		await db.execute(sql`insert into phrase_gloss (text, gloss, guide_identity) values
+			(${canonical}, ${"厨房烹饪".repeat(10)}, 'old-guide'),
+			(${word}, '分析数据规律', ${glossIdentity()})`);
+		assert.deepEqual(
+			(await find()).results.map((row) => row.employee.empId),
+			["G1"],
+		);
+	});
+}
 
 test("仅在原文和公司内任职整句中出现的文本不用保留释义，不参与释义版本核验或收集", async () => {
 	await seed([

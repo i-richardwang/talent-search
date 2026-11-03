@@ -145,6 +145,8 @@ export async function extract(
 		asked.filter((text): text is string => text !== null),
 		"抽取",
 		report,
+		// 单条无效说法由 conform 丢弃，合法空列表同样是一份已读结果。
+		(payload) => SCHEMA.safeParse(payload).success,
 	);
 	return rows.map((row, index) => {
 		const text = asked[index];

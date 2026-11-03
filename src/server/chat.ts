@@ -1,6 +1,6 @@
 /**
  * 语料侧的聊天调用：模型请求、并发控制、进度和持久缓存。
- * 缓存保存通过 schema 校验的原始 JSON；领域校验由调用方执行。
+ * 缓存保存通过 schema 与调用方领域校验的回答；读取与写入使用同一道校验。
  * 键由模型、提示词、schema 和输入文本确定，同一个输入只保留第一次写入的回答。
  * 无效回答报告后跳过且不缓存；持续的端点故障向调用方抛出。
  */
@@ -19,15 +19,15 @@ import { z } from "zod";
 import type { Report } from "#/corpus/report";
 import { db } from "#/db";
 import { completionCache } from "#/db/schema";
+import { concurrently } from "#/lib/concurrent";
 import { endpointFetch, positiveInt } from "./endpoint";
 
 const BASE_URL = process.env.EXTRACT_BASE_URL?.trim();
 const API_KEY = process.env.EXTRACT_API_KEY;
 
 /**
- * 端点支不支持 `response_format: json_schema`。兼容层默认**关**这个开关，关着
- * 的时候 schema 根本没发给端点，模型全靠提示词自觉。所以这里默认打开；碰上老网关
- * 不认 json_schema，把 `EXTRACT_STRUCTURED_OUTPUTS=false` 设上即可。
+ * 是否向端点发送 `response_format: json_schema`，默认开启。
+ * 不支持结构化输出的端点可设置 `EXTRACT_STRUCTURED_OUTPUTS=false`；回答仍须通过校验。
  */
 const STRUCTURED = process.env.EXTRACT_STRUCTURED_OUTPUTS !== "false";
 
@@ -45,8 +45,8 @@ const CONCURRENCY = positiveInt(process.env.EXTRACT_CONCURRENCY, 4);
 const RETRIES = 4;
 
 /**
- * 端点整体配好了没有。地址和模型名缺一个就当没配：解析会打印说明后跳过这三件
- * 事，检索还能用，只是能力词为空、入职前经历不对齐序列。
+ * 抽取端点是否完整配置。缺少地址或模型名时，解析报告并跳过抽取与对齐，
+ * 自述使用原文检索；整理是否运行由 reviewConfigured 单独判断。
  */
 export function chatConfigured(): boolean {
 	return Boolean(BASE_URL && process.env.EXTRACT_MODEL?.trim());
@@ -67,8 +67,7 @@ export function alignModel(): string {
 }
 
 /**
- * 整理能力词写法用的模型，同一个端点；不设就用抽取模型。这一步只有两百来组，
- * 却要在「团队培训」和「团队管理」之间划线，小模型划不动，值得单独给一个大的。
+ * 词表与释义整理使用抽取端点；未指定整理模型时使用抽取模型。
  */
 export function reviewModel(): string {
 	return process.env.REVIEW_MODEL?.trim() || extractModel();
@@ -238,15 +237,30 @@ export async function complete(
 	texts: string[],
 	what: string,
 	report: Report,
+	/** 调用方决定何为可用回答；合法空结果可接受，完全无效的回答不缓存。 */
+	accept: (payload: unknown, text: string) => boolean,
 	endpoint: ChatEndpoint = "extract",
 ): Promise<Map<string, unknown>> {
 	const identity = identityOf(model, system, schema);
 	const unique = [...new Set(texts)];
 	const payloads = await cached(identity, unique);
+	for (const [text, payload] of payloads) {
+		if (schema.safeParse(payload).success && accept(payload, text)) continue;
+		await db
+			.delete(completionCache)
+			.where(
+				and(
+					eq(completionCache.identity, identity),
+					eq(completionCache.textSha, sha(text)),
+					eq(completionCache.payload, payload),
+				),
+			);
+		payloads.delete(text);
+	}
 	const missing = unique.filter((text) => !payloads.has(text));
 
 	let done = 0;
-	await pool(missing, CONCURRENCY, async (text) => {
+	await concurrently(missing, CONCURRENCY, async (text) => {
 		const payload = await ask(
 			model,
 			system,
@@ -257,38 +271,13 @@ export async function complete(
 			endpoint,
 		);
 		done++;
-		if (payload !== undefined) {
+		if (payload !== undefined && accept(payload, text)) {
 			payloads.set(text, await store(identity, text, payload));
+		} else if (payload !== undefined) {
+			report(`  ${what}回答不符合领域规则，未保存`);
 		}
 		if (done % 20 === 0 || done === missing.length)
 			report(`  已${what} ${done}/${missing.length}`);
 	});
 	return payloads;
-}
-
-/** 失败后不再领新段，在途请求收尾后才交回首个错误，退出后不遗留后台请求。 */
-async function pool<T>(
-	items: T[],
-	limit: number,
-	work: (item: T) => Promise<void>,
-): Promise<void> {
-	let next = 0;
-	let failed = false;
-	let firstError: unknown;
-	const workers = Array.from(
-		{ length: Math.min(limit, items.length) },
-		async () => {
-			try {
-				while (!failed && next < items.length) {
-					const item = items[next++];
-					if (item !== undefined) await work(item);
-				}
-			} catch (error) {
-				if (!failed) firstError = error;
-				failed = true;
-			}
-		},
-	);
-	await Promise.all(workers);
-	if (failed) throw firstError;
 }

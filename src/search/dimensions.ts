@@ -402,7 +402,7 @@ export function dimText<K extends DimKey>(key: K, value: DimUnit[K]): string {
 	return dim.text?.(value) ?? `${dim.label} · ${dim.option(value)}`;
 }
 
-/** 不可信输入 → 一次完整的选择。全站唯一那处清洗（`parsePopulation`）从这里来。 */
+/** 不可信输入 → 一次完整的选择。URL 与 RPC 的维度校验共用此入口。 */
 export function parsePicked(raw: Record<string, unknown>): Picked {
 	const out: Record<string, unknown> = {};
 	for (const key of DIM_KEYS) {

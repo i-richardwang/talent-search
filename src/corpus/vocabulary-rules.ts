@@ -1,6 +1,19 @@
 /** 能力词判定的校验、分组与词表归并。生产的生效一步和验收共用这些纯函数。 */
+import { z } from "zod";
 import type { Member } from "./judgment";
 import { MAX_TAG_LEN, tag } from "./tag";
+
+/** 模型回答与外部判定共用的形状；空字符串表示明确没有关系，缺字段不是判断。 */
+export const GROUP_SCHEMA = z.object({
+	judgments: z.array(
+		z.object({
+			word: z.string(),
+			why: z.string(),
+			sameAs: z.string(),
+			parent: z.string(),
+		}),
+	),
+});
 
 /**
  * 两个能力词的向量相似度到这个数才分进同一组。bge-m3 上同一项能力的不同写法
@@ -147,12 +160,9 @@ export function conform(raw: unknown, words: string[]): Map<string, Verdict> {
 	const spellingOf = (value: unknown) =>
 		typeof value === "string" && allowed.has(value) ? value : tag(value);
 	for (const item of Array.isArray(judgments) ? judgments : []) {
-		if (typeof item !== "object" || item === null) continue;
-		const judgment = item as {
-			word?: unknown;
-			sameAs?: unknown;
-			parent?: unknown;
-		};
+		const parsed = GROUP_SCHEMA.shape.judgments.element.safeParse(item);
+		if (!parsed.success) continue;
+		const judgment = parsed.data;
 		const word = spellingOf(judgment.word);
 		if (!allowed.has(word) || out.has(word)) continue;
 		const sameAs = spellingOf(judgment.sameAs);

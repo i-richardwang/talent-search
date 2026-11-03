@@ -44,20 +44,18 @@ import { Popover } from "#/components/ui/popover";
 import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
+import { type Condition, conditionKey } from "#/search/condition";
 import {
-	type Condition,
-	conditionKey,
-	MAX_TERM_LEN,
-	MIN_TERM_LEN,
-	termOf,
-	VALUES_MAX,
-} from "#/search/condition";
-import {
+	addKeyword,
+	applyKeywordDrafts,
 	conditionsOfKeywords,
 	KEYWORD_LABEL,
+	KEYWORD_RULES,
 	type KeywordField,
 	type Keywords,
+	keywordLimit,
 	NO_KEYWORDS,
+	parseKeyword,
 } from "#/search/keywords";
 import type { Suggestion } from "#/search/result";
 import { suggestTerms } from "#/server/functions";
@@ -85,15 +83,7 @@ const NAME_ICON: Record<NameField, LucideIcon> = {
 
 /** 累计年限的几档。填回来的值不在其中时，它自己也列进去。 */
 const YEAR_STEPS = [1, 2, 3, 5, 10];
-
-const accepts = (text: string) => termOf(text) !== undefined;
-
-function plus(values: string[], text: string) {
-	const t = text.trim();
-	return accepts(t) && !values.includes(t) && values.length < VALUES_MAX
-		? [...values, t]
-		: values;
-}
+const EMPTY_DRAFTS = { what: "", company: "", department: "", school: "" };
 
 const identity = (conditions: readonly Condition[]) =>
 	conditions.map(conditionKey).join("\n");
@@ -122,7 +112,9 @@ export function KeywordBar({
 	ref?: React.Ref<KeywordBarHandle>;
 }) {
 	const [picked, setPicked] = useState<Keywords>(initial);
-	const [typed, setTyped] = useState("");
+	const [drafts, setDrafts] = useState(EMPTY_DRAFTS);
+	const setTyped = (field: KeywordField) => (text: string) =>
+		setDrafts((current) => ({ ...current, [field]: text }));
 	const [years, setYears] = useState<number | null>(
 		initial.minMonths ? initial.minMonths / 12 : null,
 	);
@@ -137,9 +129,9 @@ export function KeywordBar({
 		if (autoFocus) whatBox.current?.querySelector("input")?.focus();
 	}, [autoFocus]);
 
+	const drafted = applyKeywordDrafts(picked, drafts);
 	const keywords: Keywords = {
-		...picked,
-		what: plus(picked.what, typed),
+		...(drafted ?? picked),
 		minMonths: monthsOf(years),
 	};
 	const conditions = conditionsOfKeywords(keywords);
@@ -151,12 +143,12 @@ export function KeywordBar({
 		<form
 			onSubmit={async (event) => {
 				event.preventDefault();
-				if (same || busy) return;
+				if (same || busy || drafted === null) return;
 				setBusy(true);
 				try {
 					if (await onSearch(conditions)) {
 						setPicked(keywords);
-						setTyped("");
+						setDrafts(EMPTY_DRAFTS);
 					}
 				} finally {
 					setBusy(false);
@@ -167,9 +159,10 @@ export function KeywordBar({
 				<ChatInputBody>
 					<TermEntry
 						field="what"
-						onTypedChange={setTyped}
+						limit={keywordLimit(picked, "what")}
+						onTypedChange={setTyped("what")}
 						onValuesChange={setField("what")}
-						typed={typed}
+						typed={drafts.what}
 						values={picked.what}
 						variant="borderless"
 					>
@@ -182,7 +175,7 @@ export function KeywordBar({
 									{tags}
 									{input}
 								</div>
-								{picked.what.length === 0 && !typed && (
+								{picked.what.length === 0 && !drafts.what && (
 									<ChatInputPlaceholder
 										hint={
 											<span className="inline-flex items-center">
@@ -209,7 +202,10 @@ export function KeywordBar({
 								<NameButton
 									field={field}
 									key={field}
+									keywords={keywords}
+									onTypedChange={setTyped(field)}
 									onValuesChange={setField(field)}
+									typed={drafts[field]}
 									values={picked[field]}
 								/>
 							))}
@@ -221,7 +217,11 @@ export function KeywordBar({
 						</>
 					}
 					right={
-						<ChatInputSend aria-label="搜索" disabled={same} loading={busy} />
+						<ChatInputSend
+							aria-label="搜索"
+							disabled={same || drafted === null}
+							loading={busy}
+						/>
 					}
 				/>
 			</ChatInput>
@@ -231,15 +231,21 @@ export function KeywordBar({
 
 /** 公司、部门、学校：弹层收起时，框里还没回车的字按回车处理。 */
 function NameButton({
+	keywords,
 	field,
 	values,
 	onValuesChange,
+	typed,
+	onTypedChange,
 }: {
+	keywords: Keywords;
 	field: NameField;
 	values: string[];
 	onValuesChange: (values: string[]) => void;
+	typed: string;
+	onTypedChange: (text: string) => void;
 }) {
-	const [typed, setTyped] = useState("");
+	const [open, setOpen] = useState(false);
 	const label = KEYWORD_LABEL[field];
 	const shown =
 		values.length === 0
@@ -253,7 +259,8 @@ function NameButton({
 				<div className="flex w-72 flex-col gap-2">
 					<TermEntry
 						field={field}
-						onTypedChange={setTyped}
+						limit={keywordLimit(keywords, field)}
+						onTypedChange={onTypedChange}
 						onValuesChange={onValuesChange}
 						placeholder={`输入${label}，回车添加`}
 						typed={typed}
@@ -280,10 +287,14 @@ function NameButton({
 				</div>
 			}
 			onOpenChange={(open) => {
-				if (open) return;
-				onValuesChange(plus(values, typed));
-				setTyped("");
+				if (open) return setOpen(true);
+				const next = addKeyword(keywords, field, typed);
+				if (next === null) return;
+				onValuesChange(next);
+				onTypedChange("");
+				setOpen(false);
 			}}
+			open={open}
 			placement="bottomLeft"
 			trigger="click"
 		>
@@ -375,6 +386,7 @@ function YearsMenu({
  * 那次改字，改成加词并清空。没有高亮项时回车加输入的字；输入框空着时回车交给表单提交。
  */
 function TermEntry({
+	limit,
 	field,
 	values,
 	onValuesChange,
@@ -384,6 +396,7 @@ function TermEntry({
 	placeholder = "",
 	children,
 }: {
+	limit: number;
 	field: KeywordField;
 	values: string[];
 	onValuesChange: (values: string[]) => void;
@@ -405,7 +418,13 @@ function TermEntry({
 	const [pending, startTransition] = useTransition();
 	const asking = useRef<AbortController | null>(null);
 	const q = typed.trim();
-	const full = values.length >= VALUES_MAX;
+	const rule = KEYWORD_RULES[field];
+	const full = values.length >= limit;
+	useEffect(() => () => asking.current?.abort(), []);
+	const invalidText = (text: string) =>
+		text.length < rule.min
+			? `「${text}」太短，至少 ${rule.min} 个字。`
+			: `「${text.slice(0, 8)}…」太长，最多 ${rule.max} 个字。`;
 
 	function ask(text: string) {
 		onTypedChange(text);
@@ -441,13 +460,9 @@ function TermEntry({
 	/** 加不上时说为什么，字留在框里。 */
 	function add(text: string) {
 		const t = text.trim();
-		const term = termOf(t);
+		const term = parseKeyword(field, t);
 		if (!term) {
-			setRejected(
-				t.length < MIN_TERM_LEN
-					? `「${t}」太短，至少 ${MIN_TERM_LEN} 个字。`
-					: `「${t.slice(0, 8)}…」太长，最多 ${MAX_TERM_LEN} 个字。`,
-			);
+			setRejected(invalidText(t));
 			return;
 		}
 		if (full) return;
@@ -456,7 +471,8 @@ function TermEntry({
 		ask("");
 	}
 
-	const asTyped = accepts(q) && !values.includes(q) && !full ? q : null;
+	const parsed = parseKeyword(field, q);
+	const asTyped = parsed && !values.includes(parsed) && !full ? parsed : null;
 	const option = (value: string, note: string | null) => ({
 		label: (
 			<span className="flex min-w-0 flex-1 items-baseline justify-between gap-3">
@@ -483,10 +499,13 @@ function TermEntry({
 
 	const note =
 		rejected ??
+		(q && !parsed ? invalidText(q) : null) ??
 		(failed
 			? "暂无建议，可直接回车添加。"
 			: full
-				? `最多 ${VALUES_MAX} 个，请先移除一个。`
+				? limit === 0
+					? "搜索条件已满，请先移除一条。"
+					: `最多 ${limit} 个，请先移除一个。`
 				: null);
 
 	const tags = values.map((v) => (

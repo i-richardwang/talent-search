@@ -1,13 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
 import { AppNavDrawer } from "#/components/ui/app-layout";
 import { Button } from "#/components/ui/button";
 import { Skeleton } from "#/components/ui/skeleton";
-import { recentSearches } from "#/server/functions";
-import type { RecentSearch } from "#/server/turn";
-import { RECENT_FIRST_PAGE } from "../-lib/recent";
+import { useRecents } from "../-lib/use-recents";
 import { LoadFailed, RecentItem } from "./recent-item";
-
-type Loaded = { rows: RecentSearch[]; total: number; page: number };
 
 /**
  * 全部搜索记录，导航栏的「更多」和首页的「查看全部」都打开它。`anchored`（导航栏常驻时）
@@ -22,45 +17,7 @@ export function AllRecentsDrawer({
 	onClose: () => void;
 	anchored: boolean;
 }) {
-	const [loaded, setLoaded] = useState<Loaded | null>(null);
-	const [loading, setLoading] = useState(false);
-	const [failed, setFailed] = useState(false);
-
-	const load = useCallback(async (page: number) => {
-		setLoading(true);
-		setFailed(false);
-		try {
-			const next = await recentSearches({
-				data: { page, size: RECENT_FIRST_PAGE },
-			});
-			setLoaded((current) => ({
-				page: next.page,
-				rows:
-					page === 1 || !current ? next.rows : [...current.rows, ...next.rows],
-				total: next.total,
-			}));
-		} catch {
-			setFailed(true);
-		} finally {
-			setLoading(false);
-		}
-	}, []);
-
-	// 每次打开都从第一页取起：关着的时候可能又搜过、删过
-	useEffect(() => {
-		if (open) void load(1);
-		else setLoaded(null);
-	}, [open, load]);
-
-	const removed = (turnId: string) =>
-		setLoaded(
-			(current) =>
-				current && {
-					...current,
-					rows: current.rows.filter((r) => r.turnId !== turnId),
-					total: current.total - 1,
-				},
-		);
+	const { loaded, loading, failed, load, removed } = useRecents(open);
 
 	return (
 		<AppNavDrawer
@@ -72,7 +29,7 @@ export function AllRecentsDrawer({
 			<div className="flex flex-col gap-px px-1 py-px">
 				{loaded === null ? (
 					failed ? (
-						<LoadFailed onRetry={() => void load(1)} retrying={loading} />
+						<LoadFailed onRetry={() => void load(null)} retrying={loading} />
 					) : (
 						<RecentSkeleton rows={5} />
 					)
@@ -87,16 +44,16 @@ export function AllRecentsDrawer({
 						))}
 						{failed ? (
 							<LoadFailed
-								onRetry={() => void load(loaded.page + 1)}
+								onRetry={() => void load(loaded.next)}
 								retrying={loading}
 							/>
 						) : (
-							loaded.rows.length < loaded.total && (
+							loaded.next !== null && (
 								<Button
 									block
 									className="mt-1"
 									loading={loading}
-									onClick={() => void load(loaded.page + 1)}
+									onClick={() => void load(loaded.next)}
 									type="text"
 								>
 									加载更多

@@ -18,8 +18,8 @@
  * `overseas_educated` 写 `true` / `1` / `Y` 表示海外学历，`false` / `0` / `N` 表示不是，
  * 留空表示没有记录。
  *
- * `segment_key` 这一列可以不给：不给时按「部门 + 岗位」判定相邻段是否同一件事。
- * 源系统里有更可靠的判据（组织 id、job code）时才需要自己填。
+ * `segment_key` 这一列可以不给：缺列时用「部门 + 岗位」作为任职标识；显式空值表示没有可靠标识。
+ * 源系统有组织 id、job code 等稳定标识时可自行填写；管线只合并登记事实相同的连续段。
  */
 
 import { readFile } from "node:fs/promises";
@@ -37,13 +37,9 @@ const TRUE_VALUES = new Set(["true", "1", "y", "yes", "是"]);
 const FALSE_VALUES = new Set(["false", "0", "n", "no", "否"]);
 
 /**
- * 去掉 BOM、修剪表头、补齐可省列；必需列由 sourceData 逐行核验。
+ * 去掉 BOM、修剪表头；必需列由 sourceData 逐行核验。
  */
-async function read(
-	directory: string,
-	name: string,
-	optional: readonly string[] = [],
-): Promise<RawRow[]> {
+async function read(directory: string, name: string): Promise<RawRow[]> {
 	const path = join(directory, name);
 	let text: string;
 	try {
@@ -51,15 +47,19 @@ async function read(
 	} catch (cause) {
 		throw new Error(`源文件缺失：${path}`, { cause });
 	}
-	const rows: Record<string, string>[] = parse(text, {
-		columns: (header: string[]) => header.map((column) => column.trim()),
+	return parse(text, {
+		columns: (header: string[]) => {
+			const columns = header.map((column) => column.trim());
+			const seen = new Set<string>();
+			for (const column of columns) {
+				if (seen.has(column))
+					throw new Error(`源文件 ${name} 有重复列名：${column}`);
+				seen.add(column);
+			}
+			return columns;
+		},
 		bom: true,
 		skip_empty_lines: true,
-	});
-	return rows.map((row) => {
-		const out: RawRow = { ...row };
-		for (const column of optional) if (!(column in out)) out[column] = "";
-		return out;
 	});
 }
 
@@ -88,13 +88,13 @@ export async function extract(report: Report): Promise<SourceData> {
 
 	const [employees, assignments, external, levels] = await Promise.all([
 		read(directory, "employees.csv"),
-		read(directory, "assignments.csv", ["segment_key"]),
+		read(directory, "assignments.csv"),
 		read(directory, "external.csv"),
 		read(directory, "levels.csv"),
 	]);
 
 	for (const row of assignments)
-		if (!trimmed(row, "segment_key"))
+		if (!Object.hasOwn(row, "segment_key"))
 			row.segment_key = `${trimmed(row, "department")}|${trimmed(row, "title")}`;
 
 	for (const row of external) toFlag(row, "unemployed");

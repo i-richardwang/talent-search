@@ -6,8 +6,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { TASK_KINDS } from "#/lib/task";
 import { validateCommit } from "#/search/commit-input";
-import { MAX_TERM_LEN } from "#/search/condition";
-import { KEYWORD_FIELDS } from "#/search/keywords";
+import { KEYWORD_FIELDS, KEYWORD_RULES } from "#/search/keywords";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search, suggest } from "#/search/search";
@@ -74,7 +73,7 @@ export const commitTurn = createServerFn({ method: "POST" })
 		return { turnId };
 	});
 
-/** 理解走到哪一步了、这一次从哪一刻开始、成没成。等理解时界面每秒问一次。 */
+/** 理解走到哪一步了、这一次从哪一刻开始、成没成。界面串行轮询，相邻读取间隔一秒。 */
 export const turnInterpretation = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
@@ -99,11 +98,11 @@ export const retryTurn = createServerFn({ method: "POST" })
  */
 export const recentSearches = createServerFn({ method: "GET" })
 	.middleware([authenticated])
-	.validator((d: { page?: unknown; size?: unknown }) => ({
-		page: d.page,
+	.validator((d: { after?: unknown; size?: unknown }) => ({
+		after: d.after,
 		size: Number(d.size),
 	}))
-	.handler(({ data }) => listRecent(data.page, data.size));
+	.handler(({ data }) => listRecent(data.size, data.after));
 
 /**
  * 能不能说一句话来找人。和最近搜索一起由根路由取：零态和工作台都据此决定
@@ -114,7 +113,7 @@ export const understandingOn = createServerFn({ method: "GET" })
 	.handler(() => understandingConfigured());
 
 /**
- * 关键词模式下拉里的候选。哪一个框在问由 `field` 说，三个框的候选不混
+ * 关键词模式下拉里的候选。哪一个框在问由 `field` 指定，各维的候选分开查询
  * （`search/search.ts`）。敲一个字就来一次，所以入参限制得很短。
  */
 export const suggestTerms = createServerFn({ method: "GET" })
@@ -122,7 +121,12 @@ export const suggestTerms = createServerFn({ method: "GET" })
 	.validator((d: { field: unknown; q: unknown }) => {
 		const field = KEYWORD_FIELDS.find((f) => f === d.field);
 		if (!field) throw new Error("没有这个框");
-		return { field, q: String(d.q ?? "").slice(0, MAX_TERM_LEN) };
+		return {
+			field,
+			q: String(d.q ?? "")
+				.trim()
+				.slice(0, KEYWORD_RULES[field].max),
+		};
 	})
 	.handler(({ data }) => suggest(data.field, data.q));
 

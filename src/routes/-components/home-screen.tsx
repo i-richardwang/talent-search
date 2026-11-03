@@ -5,9 +5,8 @@ import {
 	GroupBlockAction,
 	GroupBlockItem,
 } from "#/components/ui/group-block";
-import type { TablePage } from "#/lib/paging";
 import type { QueryInput } from "#/search/spec";
-import type { RecentSearch, SearchMode } from "#/server/turn";
+import type { RecentPage, SearchMode } from "#/server/turn";
 import {
 	ago,
 	HOME_RECENT_COUNT,
@@ -38,7 +37,7 @@ export function HomeScreen({
 	error: string | null;
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
 	/** 根路由取的最近搜索第一页；取不到是 null。 */
-	recent: TablePage<RecentSearch> | null;
+	recent: RecentPage | null;
 }) {
 	const mode: SearchMode =
 		understanding && asked !== "keyword" ? "conversation" : "keyword";
@@ -67,7 +66,7 @@ export function HomeScreen({
 }
 
 /** 首页的最近搜索；列不完时「查看全部」打开全部记录的抽屉。 */
-function RecentBlock({ recent }: { recent: TablePage<RecentSearch> | null }) {
+function RecentBlock({ recent }: { recent: RecentPage | null }) {
 	const control = useNavControl();
 	const { retry, retrying } = useRetryRoot();
 	const shown = recent?.rows.slice(0, HOME_RECENT_COUNT) ?? [];

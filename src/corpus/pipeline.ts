@@ -60,9 +60,6 @@ export type ExperienceRow = {
 	seq_l1: string;
 	seq_l2: string;
 	seq_l3: string;
-	/** 推断的那两级由解析时的 `align.ts` 填，管线交空 */
-	seq_inferred_l1: string;
-	seq_inferred_l2: string;
 	level: string;
 	description: string;
 	months: number;
@@ -243,9 +240,9 @@ function buildInternal(
 }
 
 /**
- * 合并 `segment_key` 相同的相邻段，并按合并后的区间重算时长。
+ * 合并任职标识与全部登记事实相同的相邻段，并按区间重算时长。
  *
- * 相同 key 只说明内容相同；时间连续或重叠才说明它们是同一段经历。合并区间取
+ * 部门、路径、岗位、职级和序列均相同，且时间连续或重叠才合并。合并区间取
  * 最早开始和最晚结束，只要其中一段开放，合并结果就开放；重算时长截止到 `asOf`。
  */
 function mergeAdjacent(
@@ -256,10 +253,17 @@ function mergeAdjacent(
 	/* 没有 key 的行各自成组：内容相同只是巧合，合并它们等于凭空拼出一段经历。 */
 	const groups = new Map<string, Omit<Segment, "months">[]>();
 	for (const [index, row] of rows.entries()) {
-		const key = [
+		const key = JSON.stringify([
 			row.emp_id,
 			row.segment_key ? `segment:${row.segment_key}` : `row:${index}`,
-		].join("\u001f");
+			row.department,
+			row.department_path,
+			row.title,
+			row.level,
+			row.seq_l1,
+			row.seq_l2,
+			row.seq_l3,
+		]);
 		const group = groups.get(key);
 		if (group) group.push(row);
 		else groups.set(key, [row]);
@@ -392,8 +396,6 @@ function buildExternal(
 		seq_l1: "",
 		seq_l2: "",
 		seq_l3: "",
-		seq_inferred_l1: "",
-		seq_inferred_l2: "",
 		level: "",
 		description: row.unemployed ? "" : row.description,
 		months: durationMonths(row.start, row.end),
@@ -669,8 +671,6 @@ export function build(
 				seq_l1: segment.seq_l1,
 				seq_l2: segment.seq_l2,
 				seq_l3: segment.seq_l3,
-				seq_inferred_l1: "",
-				seq_inferred_l2: "",
 				level: segment.level,
 				description: "",
 				months: segment.months,

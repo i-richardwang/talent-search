@@ -76,19 +76,21 @@ function delayOf(response: Response, attempt: number) {
 	return wait >= 0 && wait <= RETRY_AFTER_MAX_MS ? wait : backoff;
 }
 
-function sleep(ms: number, signal: AbortSignal | undefined) {
-	return new Promise<void>((resolve, reject) => {
-		if (signal?.aborted) return reject(signal.reason);
-		const timer = setTimeout(resolve, ms);
-		signal?.addEventListener(
-			"abort",
-			() => {
+async function sleep(ms: number, signal: AbortSignal | undefined) {
+	let abort: (() => void) | undefined;
+	try {
+		await new Promise<void>((resolve, reject) => {
+			if (signal?.aborted) return reject(signal.reason);
+			const timer = setTimeout(resolve, ms);
+			abort = () => {
 				clearTimeout(timer);
-				reject(signal.reason);
-			},
-			{ once: true },
-		);
-	});
+				reject(signal?.reason);
+			};
+			signal?.addEventListener("abort", abort, { once: true });
+		});
+	} finally {
+		if (abort) signal?.removeEventListener("abort", abort);
+	}
 }
 
 /**

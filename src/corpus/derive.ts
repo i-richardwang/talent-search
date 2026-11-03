@@ -19,6 +19,7 @@ import {
 	extract,
 	extractIdentity,
 } from "./extract";
+import { prunePhrases } from "./phrases";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
 import { PHRASING, type Phrasing, phrasesOf } from "./route-texts";
@@ -35,7 +36,11 @@ const PHRASE_ROWS_PER_STATEMENT = 500;
 type StoredRow = ExperienceRow & { id: number };
 
 /** 这一版标准下的一段结果；`unanswered` 见 schema 同名列。 */
-type DerivedRow = StoredRow & { unanswered: boolean };
+type DerivedRow = StoredRow & {
+	seq_inferred_l1: string;
+	seq_inferred_l2: string;
+	unanswered: boolean;
+};
 
 /** 一段经历指向一条说法的边。 */
 type Link = Phrasing & { experienceId: number };
@@ -102,7 +107,7 @@ async function ensureSpace(client: CorpusClient, report: Report) {
 			report("  向量模型已更换，既有结果全部作废，所有段重新解析");
 			await client.query("truncate phrase restart identity cascade");
 			await client.query(
-				"update experience set derived_identity = null, unanswered = false",
+				"update experience set derived_identity = null, unanswered = false, seq_inferred_l1 = '', seq_inferred_l2 = ''",
 			);
 		}
 		await client.query("delete from embedding_space");
@@ -225,9 +230,7 @@ async function nextBatch(
 	version: string,
 	afterId: number,
 ): Promise<StoredRow[]> {
-	const { rows } = await client.query<
-		Omit<StoredRow, "seq_inferred_l1" | "seq_inferred_l2">
-	>(
+	const { rows } = await client.query<StoredRow>(
 		`select id, emp_id, kind, unemployed, start_date::text, end_date::text, company, department,
 			department_path, company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months
 		 from experience e
@@ -236,23 +239,7 @@ async function nextBatch(
 		 limit ${BATCH}`,
 		[version, afterId],
 	);
-	// 对齐的两列是这一轮要重新算的：上一版对到的不算数，对不上的就是空
-	return rows.map((row) => ({
-		...row,
-		seq_inferred_l1: "",
-		seq_inferred_l2: "",
-	}));
-}
-
-/** 清除全表孤立说法，避免占用召回名额。同步删除段与解析重写边都可能留下孤立说法。 */
-export async function prunePhrases(client: CorpusClient): Promise<void> {
-	await client.query(
-		`delete from phrase p
-		 where not exists (
-			select 1 from experience_phrase ep where ep.phrase_id = p.id)
-		 and not exists (
-			select 1 from experience_phrase_next ep where ep.phrase_id = p.id)`,
-	);
+	return rows;
 }
 
 /**
@@ -415,14 +402,16 @@ export async function derive(
 		let extractions: ExtractionResult[] = rows.map(() => ({
 			status: "skipped",
 		}));
-		let aligned: (StoredRow | null)[] = rows;
+		let aligned: (SeqPair | null)[] = rows.map(() => ["", ""]);
 		if (chatConfigured()) {
 			extractions = await extract(rows, report);
 			aligned = await align(rows, tree, report);
 		}
-		// 抽取答不出的段按没读过拼说法，对齐答不出的段保持 nextBatch 给的空序列
+		// 抽取未能作答使用原文；对齐未能作答的结果为空序列。
 		const results: DerivedRow[] = rows.map((row, index) => ({
-			...(aligned[index] ?? row),
+			...row,
+			seq_inferred_l1: aligned[index]?.[0] ?? "",
+			seq_inferred_l2: aligned[index]?.[1] ?? "",
 			unanswered:
 				extractions[index]?.status === "failed" || aligned[index] === null,
 		}));

@@ -12,7 +12,7 @@ import { useCurrentPage, usePreviewState } from "../../state";
 import { ColorUsage } from "./color-usage";
 
 /** 在外壳里选中一个颜色，右栏换成它的编辑器。 */
-export const selectColor = (token: string) =>
+const selectColor = (token: string) =>
 	sendToShell({ token, type: "design-system:select-color" });
 
 /** 颜色页：色板，以及用途与对比度。 */
@@ -119,7 +119,7 @@ export function ColorsPage() {
 				</div>
 			) : (
 				<div className="pt-3">
-					<ColorUsage />
+					<ColorUsage onSelect={selectColor} />
 				</div>
 			)}
 		</div>

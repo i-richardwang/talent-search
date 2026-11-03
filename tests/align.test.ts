@@ -32,8 +32,6 @@ function segment(row: Partial<ExperienceRow>): ExperienceRow {
 		seq_l1: "",
 		seq_l2: "",
 		seq_l3: "",
-		seq_inferred_l1: "",
-		seq_inferred_l2: "",
 		level: "",
 		description: "",
 		months: 12,
@@ -154,7 +152,7 @@ describe("对齐", () => {
 				if (model === undefined) delete process.env.ALIGN_MODEL;
 				else process.env.ALIGN_MODEL = model;
 				assert.equal(
-					(await align(rows, seqTree(rows), quiet)).at(-1)?.seq_inferred_l2,
+					(await align(rows, seqTree(rows), quiet)).at(-1)?.[1],
 					expected,
 				);
 				assert.deepEqual((await extract(rows, quiet)).at(-1), {
@@ -176,10 +174,7 @@ describe("对齐", () => {
 		];
 		const restore = answerChat(() => ({ seq: "算法Ｂ（技术Ａ）" }));
 		try {
-			assert.equal(
-				(await align(rows, seqTree(rows), quiet))[1]?.seq_inferred_l2,
-				"算法Ｂ",
-			);
+			assert.equal((await align(rows, seqTree(rows), quiet))[1]?.[1], "算法Ｂ");
 		} finally {
 			restore();
 		}
@@ -201,7 +196,7 @@ describe("对齐", () => {
 			try {
 				assert.equal((await align(rows, tree, quiet)).at(-1), null);
 				const retried = await align(rows, tree, quiet);
-				assert.equal(retried.at(-1)?.seq_inferred_l2, "算法");
+				assert.equal(retried.at(-1)?.[1], "算法");
 				assert.deepEqual(await align(rows, tree, quiet), retried);
 				assert.equal(calls, 2);
 			} finally {
@@ -226,7 +221,7 @@ describe("对齐", () => {
 
 		assert.equal(asked.length, 2);
 		assert.deepEqual(
-			out.map((row) => [row?.seq_inferred_l1, row?.seq_inferred_l2]),
+			out.map((row) => [row?.[0], row?.[1]]),
 			[
 				["", ""],
 				["", ""],
@@ -238,7 +233,7 @@ describe("对齐", () => {
 		);
 		// 登记的三列不被碰
 		assert.deepEqual(
-			out.slice(3).map((row) => row?.seq_l1),
+			rows.slice(3).map((row) => row.seq_l1),
 			["", "", ""],
 		);
 	});
@@ -254,7 +249,7 @@ describe("对齐", () => {
 		restore();
 
 		assert.deepEqual(
-			out.map((row) => row?.seq_inferred_l1),
+			out.map((row) => row?.[0]),
 			[""],
 		);
 	});

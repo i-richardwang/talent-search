@@ -117,6 +117,21 @@ describe("同步与解析", () => {
 		assert.equal(state.corpus.derived, 0);
 	});
 
+	test("任务页的归并计数只包含当前短说法，不包含保留的旧词表", async () => {
+		await db.execute(sql`insert into term (word, canonical, parent, reviewed_at) values
+			('合成过往能力', '合成过往能力', null, now()),
+			('合成过往写法', '合成过往能力', null, now())`);
+		try {
+			const { corpus } = await tasksState();
+			assert.equal(corpus.words, 0);
+			assert.equal(corpus.merged, 0);
+		} finally {
+			await db.execute(
+				sql`delete from term where word in ('合成过往能力', '合成过往写法')`,
+			);
+		}
+	});
+
 	test("解析给每一段算说法、连边、对齐序列，做完一段不剩", async () => {
 		const run = await runTask("derive");
 		assert.ok(run);
@@ -423,7 +438,7 @@ test("词表跨嵌入空间保留，生效一条技能边都不动", async () =>
 		await db.execute(sql`delete from review_group`);
 		await db.execute(sql`insert into review_group (kind, guide_identity, words, judge, judgment) values (
 			'group', ${groupIdentity()}, '[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
-			'{"judgments":[{"word":"数据分析","sameAs":"","parent":"业务分析"}]}'::jsonb)`);
+			'{"judgments":[{"word":"数据分析","why":"属于业务分析","sameAs":"","parent":"业务分析"}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
 		await db.execute(sql`update embedding_space set space_id = 'reset-space'`);
 		assert.equal((await runTask("derive"))?.failure, null);
@@ -435,7 +450,7 @@ test("词表跨嵌入空间保留，生效一条技能边都不动", async () =>
 		await db.execute(sql`delete from review_group`);
 		await db.execute(sql`insert into review_group (kind, guide_identity, words, judge, judgment) values (
 			'group', ${groupIdentity()}, '[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
-			'{"judgments":[{"word":"业务分析","sameAs":"","parent":""},{"word":"数据分析","sameAs":"业务分析","parent":""}]}'::jsonb)`);
+			'{"judgments":[{"word":"业务分析","why":"采用标准写法","sameAs":"","parent":""},{"word":"数据分析","why":"同一能力的写法","sameAs":"业务分析","parent":""}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
 		assert.equal(
 			await count("term", "word = '数据分析' and canonical = '业务分析'"),
@@ -667,6 +682,40 @@ async function lockReleased() {
 	}
 	return false;
 }
+
+test("进度日志暂时写入失败时，成功收尾仍保存完整日志", async () => {
+	const query = pool.query.bind(pool);
+	let failed = false;
+	const broken = mock.method(
+		pool,
+		"query",
+		(...args: Parameters<typeof pool.query>) => {
+			const statement = args[0] as unknown as { text?: string };
+			if (
+				!failed &&
+				statement.text?.startsWith('update "task_run" set "log"')
+			) {
+				failed = true;
+				return Promise.reject(new Error("合成日志写入失败"));
+			}
+			return query(...args);
+		},
+	);
+	const output: string[] = [];
+	const logged = mock.method(console, "error", () => {});
+	let run: Awaited<ReturnType<typeof runTask>>;
+	try {
+		run = await runTask("sync", { echo: (line) => output.push(line) });
+	} finally {
+		broken.mock.restore();
+		logged.mock.restore();
+	}
+	assert.ok(failed, "已触发一次日志写入故障");
+	assert.ok(run);
+	assert.equal(run.failure, null);
+	assert.ok(output.length > 0);
+	assert.deepEqual(await taskLog(run.runId), output);
+});
 
 /** 写者连接在锁请求或收尾失败时销毁，未知的会话状态不进入连接池。 */
 for (const wait of [false, true]) {

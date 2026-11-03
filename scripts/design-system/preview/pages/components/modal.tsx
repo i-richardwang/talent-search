@@ -217,7 +217,7 @@ function ExportList() {
 			>
 				<div className="flex flex-col gap-4">
 					<p className="text-fg-secondary">
-						一份 CSV，Excel 和飞书表格都打得开。
+						一份 Excel 表格，保留完整工号和匹配证据。
 					</p>
 					<div className="flex flex-wrap gap-1.5">
 						{["当前岗位", "部门", "职级档", "学历"].map((col) => (

@@ -7,8 +7,9 @@ import { pool } from "#/db";
 import { runTask } from "#/server/tasks";
 
 const started = Date.now();
-const run = await runTask("derive", { echo: (line) => console.log(line) });
-await pool.end();
+const run = await runTask("derive", {
+	echo: (line) => console.log(line),
+}).finally(() => pool.end());
 
 if (!run) {
 	console.error("已经有一个语料侧的任务在跑");

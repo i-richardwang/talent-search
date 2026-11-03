@@ -7,8 +7,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
+	addKeyword,
+	applyKeywordDrafts,
 	conditionsOfKeywords,
 	type Keywords,
+	keywordLimit,
 	keywordsOf,
 	keywordTitle,
 	NO_KEYWORDS,
@@ -16,6 +19,57 @@ import {
 import { parseQuery } from "#/search/query-syntax";
 
 const k = (over: Partial<Keywords>): Keywords => ({ ...NO_KEYWORDS, ...over });
+
+test("名称与经历词分别校验，长名称和单字名称可以完整往返", () => {
+	for (const field of ["company", "department", "school"] as const) {
+		const name = "合成星海智能系统与跨区域企业服务技术研究开发有限公司";
+		const value = k({ [field]: addKeyword(NO_KEYWORDS, field, name) });
+		assert.deepEqual(keywordsOf(conditionsOfKeywords(value))?.[field], [name]);
+		assert.deepEqual(addKeyword(NO_KEYWORDS, field, "甲"), ["甲"]);
+	}
+	assert.equal(addKeyword(NO_KEYWORDS, "what", "甲"), null);
+	const full = k({ what: Array.from({ length: 12 }, (_, i) => `能力${i}`) });
+	assert.equal(keywordLimit(full, "company"), 0);
+	assert.equal(addKeyword(full, "company", "合成公司"), null);
+	const names = k({ company: Array.from({ length: 8 }, (_, i) => `公司${i}`) });
+	assert.equal(addKeyword(names, "company", "合成公司")?.length, 9);
+});
+
+test("关键词草稿区分无改动与无法接纳，不能提交时丢弃输入", () => {
+	const initial = k({ what: ["推荐算法"] });
+	assert.equal(addKeyword(initial, "what", "  "), initial.what);
+	assert.equal(addKeyword(initial, "what", " 推荐算法 "), initial.what);
+	assert.equal(addKeyword(initial, "what", "能".repeat(25)), null);
+	assert.equal(addKeyword(initial, "company", "名".repeat(201)), null);
+	const drafted = k({ what: Array.from({ length: 12 }, (_, i) => `能力${i}`) });
+	assert.equal(addKeyword(drafted, "what", "能力0"), drafted.what);
+	assert.equal(addKeyword(drafted, "what", "额外能力"), null);
+});
+
+test("所有框的草稿一起提交，未确认的词同样占用条件容量", () => {
+	const initial = k({ what: Array.from({ length: 10 }, (_, i) => `能力${i}`) });
+	const accepted = applyKeywordDrafts(initial, {
+		what: "推荐算法",
+		company: "合成公司",
+	});
+	assert.ok(accepted);
+	assert.equal(accepted.what.length, 11);
+	assert.deepEqual(accepted.company, ["合成公司"]);
+	assert.deepEqual(keywordsOf(conditionsOfKeywords(accepted)), accepted);
+	assert.equal(
+		applyKeywordDrafts(initial, {
+			what: "推荐算法",
+			company: "合成公司",
+			school: "合成学校",
+		}),
+		null,
+	);
+	assert.equal(
+		applyKeywordDrafts(initial, { company: "名".repeat(201) }),
+		null,
+	);
+	assert.deepEqual(initial.company, []);
+});
 
 describe("框 → 条件表", () => {
 	test("做过什么每个词一条必须主张；公司、部门、学校各一条，词之间满足其一", () => {

@@ -80,10 +80,11 @@ export function conformGlosses(
 	const asked = new Set(words);
 	for (const { word, gloss } of parsed.data.judgments) {
 		if (!asked.has(word) || out.has(word)) continue;
+		if (/[\r\n\u2028\u2029]/.test(gloss)) continue;
 		const text = tag(gloss)
 			.replace(new RegExp(`^${escapeRegExp(word)}\\s*[：:]\\s*`), "")
 			.replace(/[。.]$/, "");
-		if (!text || text === word || text.includes("\n")) continue;
+		if (!text || text === word) continue;
 		if ([...text].length > GLOSS_MAX) continue;
 		out.set(word, text);
 	}
@@ -95,7 +96,7 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * 收集：语料里那四类上还没释义、也不在队列里的说法，按向量凑成一批批。
+ * 收集：当前短说法中还没释义、也不在队列里的说法，按向量凑成一批批。
  *
  * 凑批在库里做：每次拿字序最前的一条当锚，取离它最近的 `BATCH` 条成一批，从池里
  * 拿走，直到池空。几万条说法第一次是几百次扫描，之后每天只有新来的几十条。
@@ -203,6 +204,12 @@ export async function judgeGlossesByModel(
 	const model = reviewModel();
 	report(`  写 ${pending.length} 组释义`);
 	const inputs = pending.map((one) => promptOf(one.words));
+	const wordsByInput = new Map(
+		pending.map((one) => [
+			promptOf(one.words),
+			one.words.map((member) => member.word),
+		]),
+	);
 	const payloads = await complete(
 		model,
 		GLOSS_GUIDE,
@@ -210,6 +217,8 @@ export async function judgeGlossesByModel(
 		inputs,
 		"释义",
 		report,
+		(payload, input) =>
+			conformGlosses(payload, wordsByInput.get(input) ?? []).size > 0,
 	);
 	await recordJudgments(
 		client,

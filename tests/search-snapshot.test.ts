@@ -194,7 +194,7 @@ describe("模型调用期间的语料变化", () => {
 		const gate = holdNextRerank();
 		const pending = run("删除竞态验证");
 		await gate.entered;
-		const { prunePhrases } = await import("#/corpus/derive");
+		const { prunePhrases } = await import("#/corpus/phrases");
 		const writer = await pool.connect();
 		try {
 			await writer.query("begin");

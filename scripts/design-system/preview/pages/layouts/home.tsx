@@ -65,7 +65,7 @@ const ROOT: Record<HomeState, Partial<RootData>> = {
 			admin: false,
 		},
 	},
-	empty: { recent: { from: 0, page: 1, pages: 1, rows: [], total: 0 } },
+	empty: { recent: { next: null, rows: [], total: 0 } },
 	failed: { recent: null },
 	"keyword-only": { understanding: false },
 	recent: {},

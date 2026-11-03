@@ -28,7 +28,7 @@ import { KEYWORD_SPEC } from "../../samples/conditions";
 const KEYWORDS = keywordsOf(KEYWORD_SPEC.conditions) ?? NO_KEYWORDS;
 
 /** 还没有搜索记录：首页输入框下面是起步的例子。 */
-const NO_RECENT = { from: 0, page: 1, pages: 1, rows: [], total: 0 };
+const NO_RECENT = { next: null, rows: [], total: 0 };
 
 /** 一次提交说成一句话，写在展示台的读数条上。 */
 function describe(input: QueryInput) {

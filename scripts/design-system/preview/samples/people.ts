@@ -1,6 +1,6 @@
 import type { Employee } from "#/db/schema";
 import { overseasValue } from "#/search/dimensions";
-import { type PopulationFact, rankPopulation } from "#/search/rank";
+import { type PopulationFact, rank } from "#/search/rank";
 import {
 	type EmployeeDetail,
 	emptyFacets,
@@ -683,7 +683,13 @@ const FACTS: PopulationFact[] = EXPERIENCES.map((x) => {
 });
 
 /** 名单上方筛选的分面：用检索层同一份分面算法，从六个人的事实数出来，没有筛选。 */
-export const FACETS: Facets = rankPopulation(FACTS, {}).facets;
+export const FACETS: Facets = rank(
+	[],
+	FACTS,
+	[],
+	{},
+	new Date(2026, 0, 1),
+).facets;
 
 /** 超过一页的总数（两页）：名单下面还有「再加载」。 */
 export const TWO_PAGES = 2 * RESULT_PAGE;

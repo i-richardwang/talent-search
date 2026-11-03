@@ -34,8 +34,7 @@ import { Icon } from "#/components/ui/icon";
 import { NavGroup, NavGroups, NavItem } from "#/components/ui/nav-item";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { toast } from "#/components/ui/toast";
-import type { TablePage } from "#/lib/paging";
-import type { RecentSearch } from "#/server/turn";
+import type { RecentPage } from "#/server/turn";
 import { authClient } from "../-lib/auth-client";
 import { RECENT_COUNTS, type RecentCount } from "../-lib/nav-prefs";
 import { ToggleNavButton, useNavControl } from "./nav-control";
@@ -149,7 +148,7 @@ export function NavContent() {
  * 最近搜索这一组：条数在组名旁的菜单里选，列不完时最后一行「更多」打开全部记录的抽屉。
  * 组名上按右键打开和行尾「…」同一份菜单。
  */
-function RecentGroup({ recent }: { recent: TablePage<RecentSearch> | null }) {
+function RecentGroup({ recent }: { recent: RecentPage | null }) {
 	const control = useNavControl();
 	const { retry, retrying } = useRetryRoot();
 	const count = control?.prefs.recentCount ?? RECENT_COUNTS[0];

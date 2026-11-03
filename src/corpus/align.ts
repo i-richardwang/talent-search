@@ -74,18 +74,18 @@ export function alignIdentity(tree: SeqPair[]): string {
 }
 
 /**
- * 把对到了的入职前段写进 `seq_inferred_l1 / seq_inferred_l2`；其余段保持空。
+ * 按输入顺序返回推断序列；无需对齐为两级均空，未能作答为 null。
  *
  * 待业段没有岗位可对，不去问。序列树写在提示词里，也就在缓存的键里：树变了，
  * 旧回答是对着另一棵树给的，自然失效。树是空的（语料里没有登记的序列）就
- * 什么都对不上，直接原样返回。
+ * 什么都对不上，返回两级均空。
  */
-export async function align<Row extends ExperienceRow>(
-	experience: Row[],
+export async function align(
+	experience: ExperienceRow[],
 	tree: SeqPair[],
 	report: Report,
-): Promise<(Row | null)[]> {
-	if (tree.length === 0) return experience;
+): Promise<(SeqPair | null)[]> {
+	if (tree.length === 0) return experience.map(() => ["", ""]);
 
 	const asked = experience.map((row) =>
 		row.kind === "external" && !row.unemployed ? promptInput(row) : null,
@@ -98,23 +98,22 @@ export async function align<Row extends ExperienceRow>(
 		texts,
 		"对齐",
 		report,
+		(payload) => conform(payload, tree) !== null,
 		"align",
 	);
 
 	let aligned = 0;
-	const out = experience.map((row, index) => {
+	const out = experience.map((_, index): SeqPair | null => {
 		const text = asked[index];
-		if (text === null || text === undefined) return row;
+		if (text === null || text === undefined) return ["", ""];
 		if (!payloads.has(text)) return null;
 		const pair = conform(payloads.get(text), tree);
 		if (!pair) {
 			report("  对齐回答不是序列树上的完整一对或两级均空，这一段不推断序列");
 			return null;
 		}
-		const [l1, l2] = pair;
-		if (!l1) return row;
-		aligned++;
-		return { ...row, seq_inferred_l1: l1, seq_inferred_l2: l2 };
+		if (pair[0]) aligned++;
+		return pair;
 	});
 	report(`  入职前 ${texts.length} 段里 ${aligned} 段有推断序列`);
 	return out;

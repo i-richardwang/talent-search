@@ -31,6 +31,34 @@ function asking(answer: unknown = { a: 1 }) {
 	return { asked, restore };
 }
 
+test("领域不接受的回答不缓存，缓存读取也服从同一道校验", async () => {
+	let calls = 0;
+	const restore = answerChat(() => ({ a: ++calls === 1 ? -1 : 2 }));
+	const accept = (raw: unknown) => SCHEMA.parse(raw).a > 0;
+	const ask = () =>
+		complete("fake", "领域缓存", SCHEMA, ["合成问题"], "校验", quiet, accept);
+	try {
+		assert.equal((await ask()).size, 0);
+		assert.deepEqual((await ask()).get("合成问题"), { a: 2 });
+		await ask();
+		assert.equal(calls, 2);
+		// 同一缓存记录在当前领域规则下不再有效时，重新请求并保存合规结果。
+		const stronger = await complete(
+			"fake",
+			"领域缓存",
+			SCHEMA,
+			["合成问题"],
+			"校验",
+			quiet,
+			(raw) => SCHEMA.parse(raw).a > 2,
+		);
+		assert.equal(stronger.size, 0);
+		assert.equal(calls, 3);
+	} finally {
+		restore();
+	}
+});
+
 describe("聊天端点", () => {
 	test("未缓存的对齐调用使用独立端点和密钥，同名模型也不转发抽取密钥", async () => {
 		const originalURL = process.env.ALIGN_BASE_URL;
@@ -80,6 +108,7 @@ describe("聊天端点", () => {
 					[`对齐${expected}`],
 					"对齐",
 					quiet,
+					() => true,
 					"align",
 				);
 				assert.deepEqual(got.get(`对齐${expected}`), { a: expected });
@@ -91,6 +120,7 @@ describe("聊天端点", () => {
 				["抽取"],
 				"抽取",
 				quiet,
+				() => true,
 			);
 			assert.deepEqual(extracted.get("抽取"), { a: 7 });
 		} finally {
@@ -115,6 +145,7 @@ describe("聊天端点", () => {
 			["甲", "乙", "甲"],
 			"抽取",
 			quiet,
+			() => true,
 		);
 		restore();
 
@@ -125,7 +156,15 @@ describe("聊天端点", () => {
 
 	test("再跑一次读缓存；换提示词或换模型就重新问", async () => {
 		const first = asking();
-		await complete("fake", "缓存提示", SCHEMA, ["丙"], "抽取", quiet);
+		await complete(
+			"fake",
+			"缓存提示",
+			SCHEMA,
+			["丙"],
+			"抽取",
+			quiet,
+			() => true,
+		);
 		first.restore();
 		assert.equal(first.asked.length, 1);
 
@@ -137,12 +176,29 @@ describe("聊天端点", () => {
 			["丙"],
 			"抽取",
 			quiet,
+			() => true,
 		);
 		assert.equal(again.asked.length, 0);
 		assert.deepEqual(got.get("丙"), { a: 1 });
 
-		await complete("fake", "另一份提示", SCHEMA, ["丙"], "抽取", quiet);
-		await complete("another", "缓存提示", SCHEMA, ["丙"], "抽取", quiet);
+		await complete(
+			"fake",
+			"另一份提示",
+			SCHEMA,
+			["丙"],
+			"抽取",
+			quiet,
+			() => true,
+		);
+		await complete(
+			"another",
+			"缓存提示",
+			SCHEMA,
+			["丙"],
+			"抽取",
+			quiet,
+			() => true,
+		);
 		again.restore();
 		assert.equal(again.asked.length, 2);
 	});
@@ -159,6 +215,7 @@ describe("聊天端点", () => {
 				["同一输入"],
 				"对齐",
 				quiet,
+				() => true,
 				"align",
 			);
 			process.env.ALIGN_BASE_URL = "http://127.0.0.1:1";
@@ -169,6 +226,7 @@ describe("聊天端点", () => {
 				["同一输入"],
 				"对齐",
 				quiet,
+				() => true,
 				"align",
 			);
 			assert.deepEqual(got.get("同一输入"), { a: 7 });
@@ -197,6 +255,7 @@ describe("聊天端点", () => {
 				["长思考后的回答"],
 				"抽取",
 				quiet,
+				() => true,
 			);
 			assert.deepEqual(got.get("长思考后的回答"), { a: 42 });
 		} finally {
@@ -209,7 +268,15 @@ describe("聊天端点", () => {
 		try {
 			const started = Date.now();
 			await assert.rejects(
-				complete("fake", "限时回答", SCHEMA, ["一直思考"], "抽取", quiet),
+				complete(
+					"fake",
+					"限时回答",
+					SCHEMA,
+					["一直思考"],
+					"抽取",
+					quiet,
+					() => true,
+				),
 				{ name: "TimeoutError" },
 			);
 			assert.ok(Date.now() - started < 3 * TIMEOUT_MS);
@@ -248,6 +315,7 @@ describe("聊天端点", () => {
 			["失败段", "在途段", "未开始甲", "未开始乙"],
 			"抽取",
 			quiet,
+			() => true,
 		).then(
 			() => assert.fail("应当报告端点失败"),
 			(error: unknown) => {
@@ -270,6 +338,7 @@ describe("聊天端点", () => {
 				["在途段"],
 				"抽取",
 				quiet,
+				() => true,
 			);
 			assert.deepEqual(saved.get("在途段"), { a: 7 });
 			assert.equal(asked.length, 2);
@@ -290,6 +359,7 @@ describe("聊天端点", () => {
 			["丁"],
 			"抽取",
 			(line) => said.push(line),
+			() => true,
 		);
 		bad.restore();
 
@@ -305,6 +375,7 @@ describe("聊天端点", () => {
 			["丁"],
 			"抽取",
 			quiet,
+			() => true,
 		);
 		retry.restore();
 		assert.equal(retry.asked.length, 1);
@@ -326,7 +397,15 @@ test("并发合法回答统一采用第一个成功写入的值", async () => {
 	});
 	try {
 		const ask = () =>
-			complete("fake", "并发缓存", SCHEMA, ["相同问题"], "抽取", quiet);
+			complete(
+				"fake",
+				"并发缓存",
+				SCHEMA,
+				["相同问题"],
+				"抽取",
+				quiet,
+				() => true,
+			);
 		const [a, b] = await Promise.all([ask(), ask()]);
 		assert.equal(calls, 2);
 		assert.deepEqual(a, b);

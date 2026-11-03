@@ -139,16 +139,39 @@ type Submitted =
 	| { ok: true; submission: Submission }
 	| { ok: false; why: string };
 
+/** 按实际字节限制读取；超过上限立即取消正文，不依赖 Content-Length。 */
+async function readBody(request: Request): Promise<string | null> {
+	if (!request.body) return "";
+	const reader = request.body.getReader();
+	const decoder = new TextDecoder();
+	let bytes = 0;
+	let text = "";
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) return text + decoder.decode();
+			bytes += value.byteLength;
+			if (bytes > MAX_BODY) {
+				await reader.cancel();
+				return null;
+			}
+			text += decoder.decode(value, { stream: true });
+		}
+	} finally {
+		reader.releaseLock();
+	}
+}
+
 /**
  * 校验请求大小、组身份、判定方和判定数组形状，原话原样保存。
  * 内容按组的当前标准在整理任务生效时校验。
  */
 export async function submit(request: Request): Promise<Submitted> {
-	const raw = await request.arrayBuffer();
-	if (raw.byteLength > MAX_BODY) return { ok: false, why: "这份判定太大" };
+	const raw = await readBody(request);
+	if (raw === null) return { ok: false, why: "这份判定太大" };
 	let body: unknown;
 	try {
-		body = JSON.parse(new TextDecoder().decode(raw));
+		body = JSON.parse(raw);
 	} catch {
 		return { ok: false, why: "这份判定不是 JSON" };
 	}

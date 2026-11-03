@@ -8,7 +8,6 @@
  */
 
 import "@tanstack/react-start/server-only";
-import { z } from "zod";
 import { SHORT_ROUTES } from "#/db/schema";
 import { complete, reviewModel, standardOf } from "#/server/chat";
 import { embed } from "./embed";
@@ -30,6 +29,7 @@ import type { CorpusClient } from "./session";
 import {
 	conform,
 	type Decision,
+	GROUP_SCHEMA,
 	groups,
 	merge,
 	type Table,
@@ -88,25 +88,9 @@ export const GUIDE = `## 背景
 
 写最近的一层：「电商销售数据分析」属于「销售数据分析」，不直接写「数据分析」。更宽的词永远是更宽的那个：「数据分析」不属于「销售数据分析」。`;
 
-/**
- * 逐词给理由再下结论，不是直接列名单：让判定方一次列名单，它面对十来个相近的候选
- * 会整片说是或整片说否；逐词说完理由再判，每个词各判各的。理由只为约束判断，
- * 校验时不读。schema 里不写长度和枚举：限制只写在校验的地方（`conform`）。
- */
-const SCHEMA = z.object({
-	judgments: z.array(
-		z.object({
-			word: z.string(),
-			why: z.string(),
-			sameAs: z.string(),
-			parent: z.string(),
-		}),
-	),
-});
-
 /** 归并与归属这件事此刻的判定标准。队列与外部判定接口都按它隔离版本。 */
 export function groupIdentity(): string {
-	return standardOf(GUIDE, SCHEMA);
+	return standardOf(GUIDE, GROUP_SCHEMA);
 }
 
 /**
@@ -165,13 +149,23 @@ export async function askModel(
 	report: Report,
 ): Promise<(unknown | undefined)[]> {
 	const inputs = groups.map(promptOf);
+	const wordsByInput = new Map(
+		groups.map((group) => [
+			promptOf(group),
+			group.map((member) => member.word),
+		]),
+	);
 	const payloads = await complete(
 		reviewModel(),
 		GUIDE,
-		SCHEMA,
+		GROUP_SCHEMA,
 		inputs,
 		"整理",
 		report,
+		(payload, input) => {
+			const words = wordsByInput.get(input) ?? [];
+			return conform(payload, words).size > 0;
+		},
 	);
 	return inputs.map((input) => payloads.get(input));
 }

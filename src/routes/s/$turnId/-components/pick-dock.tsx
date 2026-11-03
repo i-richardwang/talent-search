@@ -16,7 +16,7 @@ import {
 	ToolbarButton,
 	ToolbarSeparator,
 } from "#/components/ui/toolbar";
-import { csvName, download, FIXED, toCsv } from "../-lib/csv";
+import { download, exportName, exportWorkbook, FIXED } from "../-lib/export";
 import type { Pick, Picks } from "../-lib/picks";
 import { reachOf } from "../-lib/view-params";
 
@@ -172,9 +172,9 @@ function ExportDialog({
 				okIcon={DownloadIcon}
 				okText="下载"
 				onCancel={() => setOpen(false)}
-				onOk={() => {
+				onOk={async () => {
 					try {
-						download(csvName(), toCsv(picked, names, on));
+						download(exportName(), await exportWorkbook(picked, names, on));
 					} catch {
 						toast.error("没能导出名单，请重试。");
 						return;
@@ -187,7 +187,7 @@ function ExportDialog({
 			>
 				<div className="flex flex-col gap-4">
 					<p className="text-fg-secondary">
-						一份 CSV，Excel 和飞书表格都打得开。
+						一份 Excel 表格，保留完整工号和匹配证据。
 					</p>
 					<div className="flex flex-wrap gap-1.5">
 						{FIXED.map((col) => (

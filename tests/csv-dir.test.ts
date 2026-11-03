@@ -2,13 +2,14 @@
  * 公开 CSV 适配器只解析格式，不替数据源编造契约字段。
  *
  * 测的是 `extract()` 这一整条路：CSV 表达不了的东西（BOM、可省的列、布尔字面量）
- * 由适配器补齐，列齐不齐由契约报错。适配器不判列。
+ * 由适配器转换，重复表头由适配器拒绝，必需列由契约核验。
  */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
+import { build } from "#/corpus/pipeline";
 import { extract } from "#/corpus/sources/csv-dir";
 
 const EMPLOYEES =
@@ -87,6 +88,16 @@ describe("CSV 数据源", () => {
 		);
 	});
 
+	test("修剪后重复的表头拒绝读取，不覆盖前一列的值", async () => {
+		await assert.rejects(
+			() =>
+				read({
+					"employees.csv": EMPLOYEES.replace("emp_id,name", "emp_id, emp_id "),
+				}),
+			/employees\.csv.*重复列名.*emp_id/,
+		);
+	});
+
 	test("表头两侧的空白不算列名的一部分", async () => {
 		const [header, ...body] = EMPLOYEES.split("\n");
 		const padded = (header ?? "")
@@ -110,7 +121,7 @@ describe("CSV 数据源", () => {
 		);
 	});
 
-	test("给了 segment_key 就用给的，空着的才落回默认", async () => {
+	test("给了 segment_key 就保留登记值，显式空值不补任职标识", async () => {
 		const data = await read({
 			"assignments.csv":
 				`${ASSIGNMENTS.replace("seq_l3\n", "seq_l3,segment_key\n").replace(
@@ -121,8 +132,29 @@ describe("CSV 数据源", () => {
 		});
 		assert.deepEqual(
 			data.assignments.map((row) => row.segment_key),
-			["JOB-7", "推荐工程部|算法工程师"],
+			["JOB-7", ""],
 		);
+	});
+
+	test("显式空标识的相邻同岗记录经过完整管线后仍是两段", async () => {
+		const header = `${ASSIGNMENTS.split("\n")[0]},segment_key`;
+		const data = await read({
+			"assignments.csv":
+				`${header}\n` +
+				"E1,2024-01-01,2024-01-31,合成部门,合成组织/合成部门,合成岗位,P6,技术,算法,,\n" +
+				"E1,2024-02-01,2024-02-29,合成部门,合成组织/合成部门,合成岗位,P6,技术,算法,, \n",
+		});
+		const logs: string[] = [];
+		const result = build(
+			data,
+			(line) => logs.push(line),
+			new Date("2024-03-01"),
+		);
+		assert.equal(
+			result.experience.filter((row) => row.kind === "internal").length,
+			2,
+		);
+		assert.match(logs.join("\n"), /缺少 segment_key 2 段/);
 	});
 
 	test("待业标记认文档里写的那几种写法", async () => {

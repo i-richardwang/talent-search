@@ -21,13 +21,15 @@ import type { Report } from "#/corpus/report";
 import { review } from "#/corpus/review";
 import {
 	acquireCorpusSession,
+	type CorpusClient,
 	type CorpusSession,
 	corpusSessionOwner,
 } from "#/corpus/session";
 import { type SourceConfig, sourceConfig } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
-import { db, pool } from "#/db";
+import { db } from "#/db";
 import { SHORT_ROUTES, taskRun } from "#/db/schema";
+import { withReadSnapshot } from "#/db/snapshot";
 import { pageAt, RUNS_PAGE, type TablePage, tablePage } from "#/lib/paging";
 import { TASK_KINDS, type TaskKind } from "#/lib/task";
 import { configured, reviewJudge } from "./review";
@@ -264,13 +266,13 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
  * 语料此刻的几个数，一趟问完。
  *
  * 「词」数的是短说法（`SHORT_ROUTES`）那几类边指到的说法，也就是人身上此刻有的、进词表的词；
- * 「已经并到别的写法上」数的是词表里指向别人的那些词。
+ * 「已经并到别的写法上」只数当前短说法中已归并的词；全部计数读取同一份快照。
  */
 async function corpusCounts(): Promise<CorpusCounts> {
-	const [derived, gloss, counted] = await Promise.all([
-		deriveProgress(),
-		glossCounts(pool),
-		pool.query<Record<string, string>>(
+	return withReadSnapshot(async (client) => {
+		const derived = await readDeriveProgress(client);
+		const gloss = await glossCounts(client);
+		const counted = await client.query<Record<string, string>>(
 			`select
 				(select count(*) from employee) as employees,
 				(select count(*) from experience where kind = 'internal') as internal,
@@ -278,28 +280,31 @@ async function corpusCounts(): Promise<CorpusCounts> {
 				(select count(*) from phrase) as phrases,
 				(select count(distinct phrase_id) from experience_phrase
 					where route = any($1::text[])) as words,
-				(select count(*) from term where canonical <> word) as merged`,
+				(select count(*) from term t join phrase p on p.text = t.word
+				 where t.canonical <> t.word and exists (
+				   select 1 from experience_phrase ep
+				   where ep.phrase_id = p.id and ep.route = any($1::text[]))) as merged`,
 			[[...SHORT_ROUTES]],
-		),
-	]);
-	const row = counted.rows[0];
-	const n = (name: string) => Number(row?.[name] ?? 0);
-	const internal = n("internal");
-	const external = n("external");
-	return {
-		employees: n("employees"),
-		external,
-		glossable: gloss.glossable,
-		glossed: gloss.glossed,
-		internal,
-		merged: n("merged"),
-		derived: derived.done,
-		unanswered: derived.unanswered,
-		staging: derived.staging,
-		phrases: n("phrases"),
-		segments: internal + external,
-		words: n("words"),
-	};
+		);
+		const row = counted.rows[0];
+		const n = (name: string) => Number(row?.[name] ?? 0);
+		const internal = n("internal");
+		const external = n("external");
+		return {
+			employees: n("employees"),
+			external,
+			glossable: gloss.glossable,
+			glossed: gloss.glossed,
+			internal,
+			merged: n("merged"),
+			derived: derived.done,
+			unanswered: derived.unanswered,
+			staging: derived.staging,
+			phrases: n("phrases"),
+			segments: internal + external,
+			words: n("words"),
+		};
+	});
 }
 
 export async function taskLog(runId: number): Promise<string[]> {
@@ -311,17 +316,20 @@ export async function taskLog(runId: number): Promise<string[]> {
 
 /** 当前标准下的解析进度。后台任务用它决定这一轮有没有活，任务台用它画进度。 */
 export async function deriveProgress(): Promise<Progress> {
-	return progress(pool, identity(await currentTree(pool)));
+	return withReadSnapshot(readDeriveProgress);
+}
+
+async function readDeriveProgress(client: CorpusClient): Promise<Progress> {
+	return progress(client, identity(await currentTree(client)));
 }
 
 /**
- * 把输出的日志行攒着写进那一行记录。
+ * 任务进程保留完整输出，定时写入快照；完成时和运行结果一起保存。
  *
- * 每行一次 UPDATE 会让整理能力词那一段变成上千次往返；攒着写，并且同一时刻只有
- * 一次进行中的追加——上一次还没写入时新来的行排在它后面，不并发改同一行。
+ * 同一时刻只写一份快照，后来的不能被先前的覆盖。进度写入失败不会丢掉内存里的输出。
  */
 function logger(runId: number) {
-	let pending: string[] = [];
+	const log: string[] = [];
 	let writing: Promise<void> = Promise.resolve();
 	let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -330,35 +338,33 @@ function logger(runId: number) {
 			clearTimeout(timer);
 			timer = null;
 		}
-		if (pending.length === 0) return writing;
-		const lines = pending;
-		pending = [];
+		if (log.length === 0) return writing;
+		const lines = [...log];
 		writing = writing
 			.then(async () => {
 				await db
 					.update(taskRun)
-					.set({ log: sql`${taskRun.log} || ${sql.param(lines)}::text[]` })
+					.set({ log: lines })
 					.where(eq(taskRun.id, runId));
 			})
-			/*
-			 * 这一批没写进去，下一批照样追加：链上不留一个拒绝的 promise，否则后面每一批
-			 * 都跟着拒绝，定时器那条路上还没人接它。丢掉的行只剩标准错误这一处。
-			 */
 			.catch((error) => {
-				console.error(
-					`任务 ${runId} 的 ${lines.length} 行日志没能写入：`,
-					error,
-				);
+				console.error(`任务 ${runId} 的日志进度没能写入：`, error);
 			});
 		return writing;
 	};
 
 	const report: Report = (line) => {
-		pending.push(line);
+		log.push(line);
 		if (!timer) timer = setTimeout(flush, FLUSH_MS);
 	};
 
-	return { report, flush };
+	return {
+		report,
+		finish: async () => {
+			await flush();
+			return log;
+		},
+	};
 }
 
 /**
@@ -425,7 +431,7 @@ export async function runTask(
 		throw error;
 	}
 
-	const { report, flush } = logger(runId);
+	const { report, finish } = logger(runId);
 	const say: Report = (line) => {
 		options.echo?.(line);
 		report(line);
@@ -442,10 +448,10 @@ export async function runTask(
 			for (const [depth, line] of chain.entries())
 				say(depth === 0 ? `✖ ${line}` : `  ${"  ".repeat(depth)}↳ ${line}`);
 		}
-		await flush();
+		const log = await finish();
 		await db
 			.update(taskRun)
-			.set({ finishedAt: new Date(), error: failure })
+			.set({ finishedAt: new Date(), error: failure, log })
 			.where(eq(taskRun.id, runId));
 	} catch (error) {
 		console.error(`任务 ${runId} 的记录没能收尾：`, error);

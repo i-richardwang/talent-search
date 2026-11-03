@@ -5,7 +5,7 @@
  */
 
 import "@tanstack/react-start/server-only";
-import { prunePhrases } from "./derive";
+import { prunePhrases } from "./phrases";
 import { build, type EmployeeRow, type ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
 import type { CorpusSession } from "./session";

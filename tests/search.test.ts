@@ -935,7 +935,7 @@ describe("加分的主张", () => {
 		);
 	});
 
-	test("整句都是加分的主张时退化成 OR：命中任意一条就算数", async () => {
+	test("整句都是加分时，命中任意一条的人获得相应加分", async () => {
 		const { results } = await run("+算法,+运营");
 		const ids = results.map((r) => r.employee.empId);
 		assert.ok(ids.includes("T002"), "只有算法");

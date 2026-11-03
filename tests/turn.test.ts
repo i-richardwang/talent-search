@@ -21,14 +21,18 @@ const {
 	deleteSearch,
 	listRecent,
 	loadThread,
-	loadTurn,
 	interpret,
 	loadInterpretation,
 	restartTurn,
 } = await import("#/server/turn");
-const { db } = await import("#/db");
+const { db, pool } = await import("#/db");
 const { searchTurn } = await import("#/db/schema");
 const { eq, sql } = await import("drizzle-orm");
+
+/** 从生产接口返回的完整线程中取得断言所需的一轮。 */
+async function loadTurn(id: string) {
+	return (await loadThread(id))?.find((turn) => turn.id === id) ?? null;
+}
 
 /** 这一轮现在这一次理解的编号。 */
 async function attemptOf(turnId: string) {
@@ -55,7 +59,7 @@ async function retried(turnId: string) {
 }
 
 /** 最近搜索的第一页，取得够多，这个文件建的链都在里面。 */
-const recent = async () => (await listRecent(1, 50)).rows;
+const recent = async () => (await listRecent(50)).rows;
 
 /** 每条条件的代表词：主张的第一个经历词，人的条件的第一个取值。 */
 const wordsOf = (spec: SearchSpec) =>
@@ -87,6 +91,53 @@ async function talkedTo(query: string) {
 }
 
 describe("补充需求", () => {
+	test("追加等待链尾补全后保留已完成的一轮，不按等待前的状态删除", async () => {
+		const root = await sentence("算法");
+		const pending = await createTurn(
+			{ kind: "sentence", text: "渠道运营" },
+			root.turnId,
+		);
+		const completed = { conditions: parseQuery("算法, 渠道运营") };
+		const writer = await pool.connect();
+		let appended: ReturnType<typeof createTurn> | undefined;
+		try {
+			await writer.query("begin");
+			await writer.query("update search_turn set spec = $2 where id = $1", [
+				pending.turnId,
+				JSON.stringify(completed),
+			]);
+			const { rows: owners } = await writer.query<{ pid: number }>(
+				"select pg_backend_pid() as pid",
+			);
+			appended = createTurn({ kind: "spec", spec: root.spec }, root.turnId);
+			const deadline = Date.now() + 3000;
+			let blocked = false;
+			while (Date.now() < deadline) {
+				const { rows } = await writer.query<{ blocked: boolean }>(
+					"select exists (select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))) as blocked",
+					[owners[0]?.pid],
+				);
+				if (rows[0]?.blocked) {
+					blocked = true;
+					break;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 5));
+			}
+			assert.ok(blocked, "追加已经等待补全事务的行锁");
+			await writer.query("commit");
+			const next = await appended;
+			const thread = await loadThread(next.turnId);
+			assert.deepEqual(
+				thread?.map((turn) => turn.id),
+				[root.turnId, pending.turnId, next.turnId],
+			);
+			assert.deepEqual(thread?.[1]?.spec, completed);
+		} finally {
+			await writer.query("rollback");
+			writer.release();
+			await appended;
+		}
+	});
 	test("最近搜索取链上最后一份完整条件，同刻记录和待理解末轮不改变链序", async () => {
 		const first = { conditions: parseQuery("算法") };
 		const last = { conditions: parseQuery("算法, 渠道运营") };
@@ -384,20 +435,19 @@ describe("任务标题", () => {
 		assert.equal(rows[0]?.title, "产品经理");
 	});
 
-	test("最近搜索按页取，新的在前，越界的页码收回最后一页", async () => {
+	test("最近搜索按游标读取，删除或新增记录不会使后续记录错位", async () => {
 		const first = await sentence("数据分析");
 		const second = await sentence("用户研究");
-		const page = await listRecent(1, 1);
-		assert.equal(page.rows.length, 1);
-		assert.equal(page.rows[0]?.turnId, second.turnId, "新的在前");
-		assert.ok(page.total >= 2);
-		assert.equal(page.pages, page.total);
-		const next = await listRecent(2, 1);
+		const page = await listRecent(1);
+		assert.equal(page.rows[0]?.turnId, second.turnId);
+		assert.ok(page.next);
+		await deleteSearch(second.turnId);
+		const inserted = await sentence("合成新需求");
+		const next = await listRecent(1, page.next);
 		assert.equal(next.rows[0]?.turnId, first.turnId);
-		const beyond = await listRecent(page.pages + 5, 1);
-		assert.equal(beyond.page, page.pages);
+		assert.ok(!next.rows.some((row) => row.turnId === inserted.turnId));
 		assert.ok((next.rows[0]?.ageSeconds ?? -1) >= 0);
-		assert.match(next.rows[0]?.at ?? "", /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+		await assert.rejects(listRecent(1, "invalid"), /游标无效/);
 	});
 
 	test("关键词搜索没有标题", async () => {

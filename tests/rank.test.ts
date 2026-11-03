@@ -7,13 +7,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SearchFilters } from "#/search/params";
-import {
-	type Fact,
-	gapMonths,
-	pageHits,
-	rank,
-	rankPopulation,
-} from "#/search/rank";
+import { type Fact, gapMonths, pageHits, rank } from "#/search/rank";
 import type { Claim } from "#/search/result";
 import { BOOST_WEIGHT, RELEVANCE_MIN } from "#/search/weights";
 import { claim } from "./conditions";
@@ -53,7 +47,7 @@ const claims = (...modes: Claim["mode"][]): Claim[] =>
 	modes.map((mode, i) => claim(`词${i}`, { mode }) as Claim);
 
 const run = (facts: Fact[], t = claims("must"), f: SearchFilters = {}) =>
-	rank(facts, t, f, NOW);
+	rank(facts, facts, t, f, NOW);
 
 /** 排在最前的那个人的深度。 */
 const depthOf = (facts: Fact[], t?: Claim[], f?: SearchFilters) => {
@@ -263,7 +257,7 @@ describe("人的偏好", () => {
 	test("满足的人每条各乘一次加分的份量，不满足的什么都不乘", () => {
 		const facts = [fact({ empId: "A" }), fact({ empId: "B" })];
 		const plain = run(facts).ranked;
-		const { ranked } = rank(facts, claims("must"), {}, NOW, [
+		const { ranked } = rank(facts, facts, claims("must"), {}, NOW, [
 			new Set(["B"]),
 			new Set(["A", "B"]),
 		]);
@@ -629,17 +623,29 @@ describe("只有人的条件的人群排序", () => {
 	];
 
 	test("没有语义证据时按工号稳定排序，不制造分数或证据强度", () => {
-		const result = rankPopulation(facts, {});
-		assert.deepEqual(result.empIds, ["A", "B"]);
+		const result = rank([], facts, [], {}, NOW);
+		assert.deepEqual(
+			result.ranked.map((row) => row.empId),
+			["A", "B"],
+		);
 		assert.equal(result.total, 2);
 	});
 
 	test("筛选要求同一经历段满足，分面仍去掉自己的维度", () => {
-		const result = rankPopulation(facts, {
-			seq: [{ l1: "技术", l2: "算法" }],
-			kind: "external",
-		});
-		assert.deepEqual(result.empIds, ["B"]);
+		const result = rank(
+			[],
+			facts,
+			[],
+			{
+				seq: [{ l1: "技术", l2: "算法" }],
+				kind: "external",
+			},
+			NOW,
+		);
+		assert.deepEqual(
+			result.ranked.map((row) => row.empId),
+			["B"],
+		);
 		assert.equal(
 			result.facets.kind.find((item) => item.value === "internal")?.n,
 			1,

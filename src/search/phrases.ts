@@ -29,6 +29,16 @@ type Recalled = {
 };
 type PhraseMatches = { phraseHits: Map<string, PhraseHit[]> };
 
+/** 释义与词表只作用于当前仍有短说法边的文本。 */
+function shortPhrases() {
+	return sql`select p.id, p.text from phrase p
+		where exists (select 1 from experience_phrase ep where ep.phrase_id = p.id
+			and ep.route in (${sql.join(
+				SHORT_ROUTES.map((route) => sql`${route}`),
+				sql`, `,
+			)}))`;
+}
+
 async function recall(
 	store: DbExecutor,
 	texts: string[],
@@ -47,21 +57,17 @@ async function recall(
 		phrase_id: number;
 		text: string;
 	}>(sql`
-		with q(ord, v) as ${q}
+		with q(ord, v) as ${q}, short_phrase as (${shortPhrases()}), gloss as (
+			select g.text, g.gloss from phrase_gloss g join short_phrase sp on sp.text = g.text
+		)
 		select q.ord, p.id as phrase_id,
-			case when g.gloss is null then p.text else p.text || '：' || g.gloss end as text
+			case when coalesce(canonical.gloss, own.gloss) is null then p.text
+				else p.text || '：' || coalesce(canonical.gloss, own.gloss) end as text
 		from q join phrase p on 1 - (p.embedding <=> q.v) >= ${RECALL_MIN}
-		left join term t on t.word = p.text
-		left join lateral (
-			select x.gloss from phrase_gloss x
-			where x.text in (t.canonical, p.text)
-			order by x.text = t.canonical desc limit 1
-		) g on exists (
-			select 1 from experience_phrase ep where ep.phrase_id = p.id
-			and ep.route in (${sql.join(
-				SHORT_ROUTES.map((route) => sql`${route}`),
-				sql`, `,
-			)}))`);
+		left join short_phrase sp on sp.id = p.id
+		left join term t on t.word = sp.text
+		left join gloss canonical on canonical.text = t.canonical
+		left join gloss own on own.text = sp.text`);
 	for (const row of rows.rows)
 		out[row.ord]?.candidates.push({
 			phraseId: row.phrase_id,
@@ -166,7 +172,8 @@ async function throughVocabulary(
 		phrase_id: number;
 		relevance: number;
 	}>(sql`
-		with recursive hit(ord, phrase_id, relevance) as (select * from unnest(
+		with recursive short_phrase as (${shortPhrases()}),
+		hit(ord, phrase_id, relevance) as (select * from unnest(
 			${sql.param(rows.map((r) => r.ord))}::int[],
 			${sql.param(rows.map((r) => r.hit.phraseId))}::int[],
 			${sql.param(rows.map((r) => r.hit.relevance))}::double precision[]
@@ -175,7 +182,7 @@ async function throughVocabulary(
 			select h.ord, t.canonical as term,
 				max(h.relevance) filter (where t.word = t.canonical) as relevance,
 				max(h.relevance) as best
-			from hit h join phrase p on p.id = h.phrase_id
+			from hit h join short_phrase p on p.id = h.phrase_id
 			join term t on t.word = p.text
 			group by h.ord, t.canonical
 		),
@@ -216,11 +223,12 @@ async function throughVocabulary(
 			select d.ord, p.id as phrase_id, d.relevance
 			from (select * from kept union select * from down) d
 			join term a on a.canonical = d.term
-			join phrase p on p.text = a.word
+			join short_phrase p on p.text = a.word
 		),
 		standing as (
 			select h.* from hit h join phrase p on p.id = h.phrase_id
-			left join term t on t.word = p.text
+			left join short_phrase sp on sp.id = p.id
+			left join term t on t.word = sp.text
 			where t.word is null or not exists (select 1 from broader b
 				where b.ord = h.ord and b.term = t.canonical)
 		)

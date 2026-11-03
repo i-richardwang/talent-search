@@ -62,9 +62,7 @@ export const Route = createRootRoute({
 		const base = { nav: readNavPrefs(), user: context.user };
 		if (!context.user) return { ...base, recent: null, understanding: false };
 		const [recent, understanding] = await Promise.all([
-			recentSearches({ data: { page: 1, size: RECENT_FIRST_PAGE } }).catch(
-				() => null,
-			),
+			recentSearches({ data: { size: RECENT_FIRST_PAGE } }).catch(() => null),
 			understandingOn(),
 		]);
 		return { ...base, recent, understanding };

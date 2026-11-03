@@ -120,7 +120,7 @@ interface ModalProps {
 	okIcon?: LucideIcon;
 	okText?: ReactNode;
 	onCancel: () => void;
-	onOk?: () => void;
+	onOk?: () => void | Promise<void>;
 	open: boolean;
 	title: ReactNode;
 }
@@ -137,6 +137,16 @@ export function Modal({
 	className,
 	afterClose,
 }: ModalProps) {
+	const [submitting, setSubmitting] = useState(false);
+	async function submit() {
+		if (submitting) return;
+		setSubmitting(true);
+		try {
+			await onOk?.();
+		} finally {
+			setSubmitting(false);
+		}
+	}
 	return (
 		<ModalRoot
 			onExitComplete={afterClose}
@@ -156,7 +166,12 @@ export function Modal({
 					{!noFooter && (
 						<div className="ui-modal-footer">
 							<Button onClick={onCancel}>取消</Button>
-							<Button icon={okIcon} onClick={onOk} type="primary">
+							<Button
+								icon={okIcon}
+								loading={submitting}
+								onClick={submit}
+								type="primary"
+							>
 								{okText}
 							</Button>
 						</div>

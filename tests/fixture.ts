@@ -465,7 +465,6 @@ export async function setup() {
 		);
 
 	const admin = new Pool({ connectionString: base });
-	await admin.query("create extension if not exists vector");
 	await admin.query(`drop schema if exists ${SCHEMA} cascade`);
 	await admin.query(`create schema ${SCHEMA}`);
 	for (const t of [

@@ -20,11 +20,17 @@
  */
 import { dots, duration } from "#/lib/format";
 import {
+	CONDITION_MAX,
 	type Condition,
 	conditionsOf,
 	type ExperienceCondition,
+	MAX_TERM_LEN,
+	MIN_TERM_LEN,
 	type PersonCondition,
+	termOf,
 } from "./condition";
+import { FILTER_LIST_MAX } from "./dimensions";
+import { boundedText, TEXT_MAX } from "./text";
 
 export type Keywords = {
 	what: string[];
@@ -51,6 +57,60 @@ export const KEYWORD_FIELDS = [
 	"school",
 ] as const;
 export type KeywordField = (typeof KEYWORD_FIELDS)[number];
+
+/** 经历词走语义匹配，名称走文本匹配；输入框与候选接口共用字段边界。 */
+const NAME_RULE = { min: 1, max: TEXT_MAX, parse: boundedText };
+export const KEYWORD_RULES = {
+	what: { min: MIN_TERM_LEN, max: MAX_TERM_LEN, parse: termOf },
+	company: NAME_RULE,
+	department: NAME_RULE,
+	school: NAME_RULE,
+};
+
+/** 输入边界拒绝超长值，不把名称或经历词截成另一种写法。 */
+export function parseKeyword(field: KeywordField, input: string) {
+	const rule = KEYWORD_RULES[field];
+	return input.trim().length <= rule.max ? rule.parse(input) : undefined;
+}
+
+/** 每个经历词占一条条件；同一维的所有名称共用一条条件。 */
+export function keywordLimit(k: Keywords, field: KeywordField): number {
+	const names = KEYWORD_FIELDS.filter(
+		(key) => key !== "what" && k[key].length > 0,
+	).length;
+	if (field === "what") return CONDITION_MAX - names;
+	return k[field].length || k.what.length + names < CONDITION_MAX
+		? FILTER_LIST_MAX
+		: 0;
+}
+
+/** 空输入或重复值保持原表；无效或超容量的输入返回 null，调用方必须保留草稿。 */
+export function addKeyword(
+	k: Keywords,
+	field: KeywordField,
+	input: string,
+): string[] | null {
+	const values = k[field];
+	if (!input.trim()) return values;
+	const value = parseKeyword(field, input);
+	if (!value) return null;
+	if (values.includes(value)) return values;
+	return values.length < keywordLimit(k, field) ? [...values, value] : null;
+}
+
+/** 提交包含所有框的未确认输入；任意一框无法接纳时整次提交无效。 */
+export function applyKeywordDrafts(
+	keywords: Keywords,
+	drafts: Partial<Record<KeywordField, string>>,
+): Keywords | null {
+	let next = keywords;
+	for (const field of KEYWORD_FIELDS) {
+		const values = addKeyword(next, field, drafts[field] ?? "");
+		if (values === null) return null;
+		next = { ...next, [field]: values };
+	}
+	return next;
+}
 
 export const KEYWORD_LABEL: Record<KeywordField, string> = {
 	what: "经历或技能",

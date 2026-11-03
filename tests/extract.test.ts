@@ -34,8 +34,6 @@ function segment(row: Partial<ExperienceRow>): ExperienceRow {
 		seq_l1: "",
 		seq_l2: "",
 		seq_l3: "",
-		seq_inferred_l1: "",
-		seq_inferred_l2: "",
 		level: "",
 		description: "",
 		months: 12,

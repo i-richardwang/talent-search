@@ -51,11 +51,12 @@ export const Route = createFileRoute("/api/review")({
 						{ error: "这一组已经有人判过了" },
 						{ status: 409 },
 					);
-				/*
-				 * 判定已写入，这里请求一次整理让它尽快生效。请求没排上不告诉外面：
-				 * 已有一个排着或在跑时排不上，判定下一轮照样生效。
-				 */
-				await requestJob("review");
+				// 接收以判定持久化为准；立即整理未排上时，由定时整理继续处理。
+				try {
+					await requestJob("review");
+				} catch (error) {
+					console.error("判定已接收，立即整理调度失败：", error);
+				}
 				return Response.json({ accepted: true });
 			},
 		},
