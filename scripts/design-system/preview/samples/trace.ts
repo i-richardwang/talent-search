@@ -76,7 +76,7 @@ export const ROUND1_TRACE: TraceStep[] = [
 	{ at: T0 + 2400, tool: "probe", probe: tried(ROUND1_CONDITIONS, 64) },
 ];
 
-/** 第二轮的步骤：一个说法人多，一个在人才库里对不上。 */
+/** 第二轮的步骤：一个说法人多，一个在人才库里对不上；第一次交的条件里还留着它，要再改。 */
 export const ROUND2_TRACE: TraceStep[] = [
 	{
 		at: T0 + 60_000,
@@ -107,4 +107,9 @@ export const ROUND2_TRACE: TraceStep[] = [
 		},
 	},
 	{ at: T0 + 63_000, tool: "probe", probe: tried(ROUND2_CONDITIONS, 21) },
+	{
+		at: T0 + 64_500,
+		tool: "submit",
+		issues: [{ kind: "unfound", subject: "技术口碑" }],
+	},
 ];

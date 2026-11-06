@@ -62,7 +62,7 @@ test("端点没理会必须调用工具、只回了正文，算没作答，不�
 			submit: tool({ inputSchema: z.object({}), execute: async () => "" }),
 		},
 		passed: () => false,
-		lastSubmitted: () => null,
+		answer: () => null,
 	};
 	const original = globalThis.fetch;
 	globalThis.fetch = async () =>

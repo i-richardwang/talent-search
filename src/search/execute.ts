@@ -39,7 +39,6 @@ import type { SearchFilters } from "./params";
 import { type PhraseHit, withMatchedPhrases } from "./phrases";
 import {
 	type Claim,
-	type DraftCondition,
 	type Gate,
 	hasTerms,
 	type Query,
@@ -75,7 +74,7 @@ class InvalidQueryError extends Error {
 	override name = "InvalidQueryError";
 }
 
-export function scopeOf(c: DraftCondition): WhereScope {
+export function scopeOf(c: QueryCondition): WhereScope {
 	return c.from === "person"
 		? { from: "person" }
 		: { from: "experience", terms: hasTerms(c) };
@@ -463,16 +462,6 @@ export async function execute(
 ): Promise<SearchOutcome> {
 	const roles = rolesOf(query);
 	const { claims, gates, prefer, excludes } = roles;
-	// 没有正向的主张也没有门槛时，排除自己不产出候选人。只有偏好的查询
-	// （「最好是硕士」）是「所有人，满足偏好的在前」，照跑。
-	if (claims.length === 0 && gates.length === 0 && prefer.length === 0)
-		return {
-			order: "evidence",
-			claims,
-			...noOne(),
-			counts: {},
-			empty: emptyReason({ query, filters, total: 0, overflow: null }),
-		};
 	const index = new Map(query.conditions.map((c, i) => [c, i]));
 	const at = (c: QueryCondition) => index.get(c) as number;
 	const all = await Promise.all(
@@ -485,7 +474,8 @@ export async function execute(
 		async (store, { phraseHits }) => {
 			await materializeHits(store, query.conditions, phraseHits);
 			const shell = new Shell(all, excludes.map(at));
-			// chip 上的人数在同一张命中表上顺手数：不随筛选变，和试跑同一个数
+			// chip 上的人数在同一张命中表上顺手数：不随筛选变，和试跑同一个数。人数是条件的，
+			// 名单出不出得来是另一回事，所以先数人
 			const counted = await countEach(store, shell, all);
 			const counts = Object.fromEntries(
 				query.conditions.flatMap((c, i) => {
@@ -493,6 +483,16 @@ export async function execute(
 					return n && "people" in n ? [[c.id, n.people]] : [];
 				}),
 			);
+			// 没有正向的主张也没有门槛时，排除自己不产出候选人。只有偏好的查询
+			// （「最好是硕士」）是「所有人，满足偏好的在前」，照跑。
+			if (claims.length === 0 && gates.length === 0 && prefer.length === 0)
+				return {
+					order: "evidence" as const,
+					claims,
+					...noOne(),
+					counts,
+					empty: emptyReason({ query, filters, total: 0, overflow: null }),
+				};
 			const read = await restricted(store, () =>
 				evaluate(store, shell, roles, at, filters),
 			);

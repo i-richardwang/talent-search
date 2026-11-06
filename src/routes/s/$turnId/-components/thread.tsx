@@ -39,6 +39,7 @@ import type {
 	Discovery,
 	Matched,
 	Probe,
+	SubmitIssue,
 	TraceStep,
 } from "#/search/trace";
 import type { InterpretFault, Progress, Turn } from "#/server/turn";
@@ -579,6 +580,13 @@ function stepTitle(step: TraceStep) {
 			action: "试搜",
 			keyword: step.probe.conditions.map((c) => c.label).join("、"),
 		};
+	if (step.tool === "submit")
+		return {
+			action: "调整搜索条件",
+			keyword: [
+				...new Set(step.issues.flatMap((i) => (i.subject ? [i.subject] : []))),
+			].join("、"),
+		};
 	if ("values" in step)
 		return { action: `查看${fieldLabel(step.field)}`, keyword: "" };
 	return {
@@ -629,6 +637,15 @@ function probeFindings(p: Probe): string[] {
 		...p.conditions.map((c) => `${c.label}：${people(c)}`),
 		...(p.total !== null ? [`合起来：${p.total} 人`] : []),
 	];
+}
+
+/** 整理出的搜索条件哪里还要改：和试搜、查找的说法一致，AI 改完再交。 */
+function issueLine({ kind, subject }: SubmitIssue): string {
+	if (kind === "form" || subject === null) return "有的搜索条件没写完整";
+	if (kind === "wording") return `「${subject}」的说法要换成更直白的话`;
+	if (kind === "unrunnable") return `「${subject}」这样写搜不了`;
+	if (kind === "unfound") return `人才库中没有「${subject}」`;
+	return `「${subject}」找出的太多，名单出不来`;
 }
 
 function fieldLabel(field: AttributeField) {
@@ -794,6 +811,7 @@ export function stepFindings(step: TraceStep) {
 		return step.terms.map((t) => findingLine(t.text, t.people, t.terms));
 	if (step.tool === "discover") return discoveryFindings(step.discovery);
 	if (step.tool === "probe") return probeFindings(step.probe);
+	if (step.tool === "submit") return step.issues.map(issueLine);
 	if ("values" in step) return [step.values.map((x) => x.name).join("、")];
 	return step.found.map((f) => findingLine(f.query, f.people, f.values));
 }

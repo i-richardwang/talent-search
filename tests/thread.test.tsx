@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { internalWordsIn } from "#/lib/internal-words";
 import { stepFindings, Thread } from "#/routes/s/$turnId/-components/thread";
 import { compileConditions } from "#/search/compile";
 import type { TurnNotes } from "#/search/intent";
@@ -357,6 +358,31 @@ describe("检索人才库的过程", () => {
 		});
 		assert.deepEqual(facts, ["人才库中有绩效记录，2023-01-01 起"]);
 		assert.doesNotMatch(facts.join(""), /120|80/);
+	});
+
+	test("提交没通过：说哪一条还要改、为什么，用 HR 读得懂的话", () => {
+		const findings = stepFindings({
+			at: 0,
+			tool: "submit",
+			issues: [
+				{ kind: "form", subject: null },
+				{ kind: "wording", subject: "词表里的推荐" },
+				{ kind: "unrunnable", subject: "近三年两次 A" },
+				{ kind: "unfound", subject: "量子炼金" },
+				{ kind: "tooBroad", subject: "做过开发" },
+			],
+		});
+		assert.deepEqual(findings, [
+			"有的搜索条件没写完整",
+			"「词表里的推荐」的说法要换成更直白的话",
+			"「近三年两次 A」这样写搜不了",
+			"人才库中没有「量子炼金」",
+			"「做过开发」找出的太多，名单出不来",
+		]);
+		assert.deepEqual(
+			internalWordsIn(findings.join("").replace("词表里的推荐", "")),
+			[],
+		);
 	});
 
 	test("试搜：每条单独找到几个人、合起来几个人；写不对的说搜不了", () => {

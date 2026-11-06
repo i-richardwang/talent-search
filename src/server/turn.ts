@@ -15,15 +15,8 @@ import { searchTurn } from "#/db/schema";
 import { compileConditions } from "#/search/compile";
 import type { Condition } from "#/search/condition";
 import { scopeOf } from "#/search/execute";
-import {
-	type Choice,
-	type Submission,
-	type TurnNotes,
-	unanswered,
-	understood,
-} from "#/search/intent";
+import { type Choice, type TurnNotes, unanswered } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
-import { contentKey, type DraftCondition, draftsOf } from "#/search/query";
 import { vocabulary } from "#/search/search";
 import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
@@ -31,7 +24,7 @@ import { agentTools } from "./agent-tools";
 import { streamFacts } from "./discover";
 import { type EndpointFault, endpointFault } from "./endpoint";
 import {
-	UNDERSTAND_LIMIT_MS,
+	STEP_LIMIT_MS,
 	UnansweredError,
 	understand,
 	understandingConfigured,
@@ -162,28 +155,6 @@ async function admitWhere(input: QueryInput) {
 }
 
 /**
- * 模型提交里哪些条件的 `where` 过得了解析白名单，按内容认（`contentKey`）。条件和说明里每个
- * 选项的条件表一起查：HR 点选项就是换成那一份。模型的提交检查已经把跑不了的报回去要它改，
- * 但次数用完时最后一次提交没通过也照收，这里是写进不可变记录之前的最后一道。
- */
-async function runnable(
-	submitted: Submission,
-): Promise<(draft: DraftCondition) => boolean> {
-	const drafts = [
-		submitted.conditions,
-		...(submitted.note?.options ?? []).map((o) => o.conditions),
-	].flatMap(draftsOf);
-	const failed = new Set<string>();
-	await Promise.all(
-		drafts.map(async (d) => {
-			const result = await compileWhere(d.where, d.params ?? {}, scopeOf(d));
-			if (!result.ok) failed.add(contentKey(d));
-		}),
-	);
-	return (draft) => !failed.has(contentKey(draft));
-}
-
-/**
  * 追加一轮查询；没有 from 时创建新链。完整条件表直接接链尾，原话依据正查看的那轮。
  * 在历史轮上补充原话时，先追加一次条件恢复，再追加待理解轮。
  * 待理解末轮由新动作取代；链头行锁串行化追加，唯一 parent_turn_id 保证不分叉。
@@ -245,7 +216,7 @@ export async function createTurn(
  * 连不上和报错时那句话根本没被读过，不能说成「这句话没读懂」。
  *
  * - `unconfigured`：没配查询理解端点。
- * - `unreachable` / `rejected`：见 `endpointFault`；超过一轮的时限也算没答上来。
+ * - `unreachable` / `rejected`：见 `endpointFault`；一次请求等满超时也算没答上来。
  * - `unanswered`：端点答了，没按约定作答——只有这一种换个说法可能有用。
  * - `broken`：别的，我们自己这一侧的意外，包括理解到一半进程没了。原错误写进服务端日志。
  */
@@ -255,17 +226,23 @@ export type InterpretFault =
 	| "unanswered"
 	| "broken";
 
-/** 写完结果要的那一点时间：时限到了模型调用就停，之后只剩校验和一次写入。 */
+/** 一步的工具跑完、写下这一步要的那一点时间，也是最后一步之后校验和写入结果的时间。 */
 const SETTLE_MS = 10_000;
 
 /**
- * 过了时限还没写下结果也没写下失败的那一次：它的进程没了，不会再写了。
- * 读记录时把它当作 `broken`，重试也只换掉这样的和已经失败的那一次。
+ * 这一次理解最近一次写下东西的时刻：开始的时刻，或者最后一步的时刻（步骤的 `at`，见
+ * `search/trace.ts`）。每次工具调用和没通过的提交都记一步，所以它就是心跳。
+ */
+const lastBeat = sql`greatest(${searchTurn.interpretStartedAt},
+	to_timestamp((${searchTurn.trace} -> -1 ->> 'at')::float8 / 1000))`;
+
+/**
+ * 还没写下结果也没写下失败、而且隔了一步的上限还没有新的一步的那一次：它的进程没了，
+ * 不会再写了。读记录时把它当作 `broken`，重试也只换掉这样的和已经失败的那一次。
  */
 const abandoned = sql`(${searchTurn.spec} is null
 	and ${searchTurn.interpretFault} is null
-	and ${searchTurn.interpretStartedAt}
-		< now() - make_interval(secs => ${(UNDERSTAND_LIMIT_MS + SETTLE_MS) / 1000}))`;
+	and ${lastBeat} < now() - make_interval(secs => ${(STEP_LIMIT_MS + SETTLE_MS) / 1000}))`;
 
 const currentFault = sql<InterpretFault | null>`case when ${abandoned}
 	then 'broken' else ${searchTurn.interpretFault} end`;
@@ -331,8 +308,13 @@ async function understandTurn(
 			.where(ownedBy(turnId, attempt));
 	};
 	const agent = agentTools({ base, record });
-	const submitted = await understand(rawText, { vocab, streams }, base, agent);
-	const result = understood(submitted, base, await runnable(submitted));
+	// 写进记录的是提交检查录取的那份：跑不了的条件已经丢掉，丢空了就是没作答
+	const { submitted, admitted: result } = await understand(
+		rawText,
+		{ vocab, streams },
+		base,
+		agent,
+	);
 	const failure = unanswered(submitted, result);
 	if (failure) throw new UnansweredError(failure);
 

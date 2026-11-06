@@ -8,7 +8,7 @@ import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, isStepCount, ToolChoiceViolationError } from "ai";
 import { catalogText } from "#/search/catalog";
-import type { Submission, Vocabulary } from "#/search/intent";
+import type { Submission, Understood, Vocabulary } from "#/search/intent";
 import { type QueryCondition, withOff } from "#/search/query";
 import type { Matched, StreamFact } from "#/search/trace";
 import { type AgentTools, SUBMIT } from "./agent-tools";
@@ -38,17 +38,19 @@ const RETRIES = 1;
  * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。通常看一次目录或查一次词、
  * 试跑一次、提交一次；提交没通过检查、改完再提交，再多一两次。最后一次只留提交这一个工具，并在
  * 消息里明说（`LAST_STEP`），保证用完次数时模型提交了一份搜索条件。
+ *
+ * 整轮不另设时限：每次请求有自己的超时和重试（`endpoint.ts`），整轮最多 `AGENT_STEPS` 次，
+ * 总时间由此封顶。一轮在等的人看得到每一步，不需要一个更早的截止。
  */
 const AGENT_STEPS = 8;
 
 /**
- * 一轮理解最多花多久，含全部模型调用、重试和工具：每一步给一份单次请求的超时。一步是一次
- * 模型请求加上它调的工具，试跑和提交检查都要嵌入、重排，步数用满时总时间跟着步数涨；时限按
- * 固定几次请求算，步数一多，正常走完的理解也会被截断。卡住的单次请求由它自己的超时截住
- * （`endpoint.ts`），不靠这个总时限。
- * 过了这个时限的理解一定已经结束，`server/turn.ts` 据此认出进程中途没了的那一次。
+ * 一次模型请求最多等多久：每次尝试一份超时，连重试一共 `RETRIES + 1` 次。`server/turn.ts`
+ * 拿它判断一次理解还在不在：每一步工具调用和没通过的提交都写一步，隔了这么久还没有新的
+ * 一步，进程就是没了。不含重试前的退避和工具里嵌入、重排的时间——那些通常是几秒，
+ * 撑到这个数的是端点卡住；按真正的最坏情况算，服务重启后那一轮要多等好几分钟才能重试。
  */
-export const UNDERSTAND_LIMIT_MS = AGENT_STEPS * TIMEOUT_MS;
+export const STEP_LIMIT_MS = TIMEOUT_MS * (RETRIES + 1);
 
 const LAST_STEP =
 	"查询的次数用完了。不要再查，按已经查到的结果，现在用 submit 提交搜索条件。";
@@ -282,24 +284,21 @@ export class UnansweredError extends Error {
 }
 
 /**
- * 当前条件 + 一句话 → 模型提交的新条件表与说明。调用方必须再用 `understood` 校验一遍。
+ * 当前条件 + 一句话 → 模型最后一次提交的条件和说明，以及提交检查录取的那份。
  *
  * 模型可以先查经历词和名字（`agent-tools.ts`），再用 `submit` 提交；没通过检查就改了再
- * 提交，通过了就停，最多调用 `AGENT_STEPS` 次模型。结果是最后一次提交的搜索条件：
- * 次数用完时最后一次提交即使没通过检查也用它，其中形状不合规、`where` 过不了白名单的条件
- * 在写入前去掉（`server/turn.ts`）。
- * 一次都没提交就是没作答。
+ * 提交，通过了就停，最多调用 `AGENT_STEPS` 次模型。次数用完时最后一次提交即使没通过检查
+ * 也用它：录取的那份里没有跑不了的条件，形状不合规的也已去掉。一次都没提交就是没作答。
  */
 export async function understand(
 	text: string,
 	{ vocab, streams }: Facts,
 	base: readonly QueryCondition[],
 	agent: AgentTools,
-): Promise<Submission> {
+): Promise<{ submitted: Submission; admitted: Understood }> {
 	const result = await generateText({
 		model: getModel(),
-		// 整次理解的时限；到了就停，不再重发（重试在 `endpointFetch` 里，以一步为单位）
-		timeout: UNDERSTAND_LIMIT_MS,
+		// 重试在 `endpointFetch` 里，以一次请求为单位
 		maxRetries: 0,
 		tools: agent.tools,
 		toolChoice: "required",
@@ -339,8 +338,8 @@ export async function understand(
 			return { finishReason: error.finishReason, text };
 		},
 	);
-	const submitted = agent.lastSubmitted();
-	if (submitted) return submitted;
+	const answer = agent.answer();
+	if (answer) return answer;
 	/*
 	 * 写进错误消息的是停下的原因：`length` 是输出预算（含思考轨迹）用光了，`stop` 配上
 	 * 一段正文是端点没理会必须调用工具。查日志的人直接看得到，不必再翻 SDK 的结构。

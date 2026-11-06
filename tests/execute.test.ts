@@ -269,6 +269,23 @@ describe("原型二：限定公司内的语义经历", () => {
 		);
 	});
 
+	test("名单出不来时 chip 上照样有人数：只剩排除，或者正向的都停用了", async () => {
+		for (const [conditions, empty] of [
+			[[noIntern], "excludeOnly"],
+			[[{ ...atJiachen, off: "user" as const }, noIntern], "allDisabled"],
+		] as const) {
+			const outcome = await execute(query(...conditions));
+			assert.equal(outcome.total, 0);
+			assert.equal(outcome.empty?.kind, empty);
+			const tried = await probe(query(...conditions));
+			assert.deepEqual(outcome.counts, { intern: 1 });
+			assert.deepEqual(
+				tried.conditions.flatMap((c) => (c.people === null ? [] : [c])),
+				[{ id: "intern", people: 1, problem: null }],
+			);
+		}
+	});
+
 	test("不写排除时实习那段是合格证据", async () => {
 		const outcome = await execute(query(atJiachen));
 		assert.deepEqual(ids(outcome.results).sort(), ["E1", "E2", "E4"]);

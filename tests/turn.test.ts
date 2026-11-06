@@ -33,6 +33,7 @@ const {
 	loadInterpretation,
 	restartTurn,
 } = await import("#/server/turn");
+const { STEP_LIMIT_MS } = await import("#/server/llm");
 const { db, pool } = await import("#/db");
 const { searchTurn } = await import("#/db/schema");
 const { eq, sql } = await import("drizzle-orm");
@@ -202,13 +203,16 @@ describe("补充需求", () => {
 			},
 		);
 		await settle(turnId);
-		// 假模型不用工具，走完就是零步；有步的路在 agent-tools.test.ts 里
+		// 假模型不用工具，只交条件：记下的只有没通过的提交；查和试跑的步在 agent-tools.test.ts 里
 		const done = await loadInterpretation(turnId);
-		assert.deepEqual(done?.trace, []);
+		assert.ok(
+			done?.trace.every((step) => step.tool === "submit"),
+			JSON.stringify(done?.trace),
+		);
 		assert.equal(done?.settled, true);
 		assert.equal(done?.startedAt, started?.startedAt);
 		const turn = await loadTurn(turnId);
-		assert.deepEqual(turn?.trace, []);
+		assert.deepEqual(turn?.trace, done?.trace);
 		assert.equal(turn?.startedAt, done?.startedAt);
 		assert.equal(await loadInterpretation("nope"), null);
 	});
@@ -635,7 +639,7 @@ describe("理解失败", () => {
 	});
 });
 
-describe("写入前的白名单", () => {
+describe("写进记录的是提交检查录取的那份", () => {
 	/** 这条 `where` 调了白名单外的函数：模型怎么重交，提交检查都不收。 */
 	const sleeper = {
 		label: "睡一会儿",
@@ -677,6 +681,46 @@ describe("写入前的白名单", () => {
 		);
 	});
 
+	test("编得过、执行才报错的条件：最后一次交了它，记录和选项里都没有它", async () => {
+		const lately = {
+			label: "最近有过绩效",
+			mode: "must",
+			from: "person",
+			where:
+				"exists (select 1 from rating r where r.emp_id = p.emp_id and r.period_end >= current_date - :days)",
+			params: { days: "九十" },
+		};
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const spec = await answering(
+			() => ({
+				conditions: [...drafted("算法"), lately],
+				note: {
+					says: "要不要只看带过团队的？",
+					current: "不限",
+					options: [
+						{
+							label: "只看带过团队的",
+							detail: "",
+							conditions: [...drafted("算法, 带团队"), lately],
+						},
+					],
+				},
+			}),
+			() => settle(turnId),
+		);
+		assert.deepEqual(shapeOf(spec), expected("算法"));
+		const others = (await loadTurn(turnId))?.notes?.choices?.others ?? [];
+		assert.deepEqual(
+			others.map((o) => contentOf(o.conditions)),
+			[expected("算法, 带团队")],
+		);
+		const trace = (await loadTurn(turnId))?.trace ?? [];
+		assert.ok(
+			trace.some((step) => step.tool === "submit"),
+			"没通过的提交记在步骤里",
+		);
+	});
+
 	test("条件全都跑不了：按没作答失败，不写入", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		await assert.rejects(
@@ -703,10 +747,10 @@ describe("一轮只有一次理解", () => {
 	});
 
 	/**
-	 * 进程在理解到一半时没了：过了时限还没有结果也没有失败，读记录时就是失败，
+	 * 进程在理解到一半时没了：隔了一步的上限没有新的一步，也没有结果和失败，读记录时就是失败，
 	 * 可以重试。万一那一次其实还活着、后来才写回来，编号已经换掉，它写不进来。
 	 */
-	test("过了时限的那一次算作失败；重试之后，它写不进来", async () => {
+	test("没了的那一次算作失败；重试之后，它写不进来", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const lost = await attemptOf(turnId);
 		await db
@@ -721,6 +765,47 @@ describe("一轮只有一次理解", () => {
 		await interpret(turnId, lost);
 		assert.equal((await loadTurn(turnId))?.spec, null, "换掉的那一次没写进来");
 		assert.deepEqual(wordsOf(await settle(turnId)), ["算法"]);
+	});
+});
+
+describe("这一次理解还在不在", () => {
+	/** 把这一次理解的开始和最后一步挪到若干毫秒以前：进程没了时记录停在的样子。 */
+	async function quietFor(turnId: string, started: number, lastStep?: number) {
+		await db
+			.update(searchTurn)
+			.set({
+				interpretStartedAt: sql`now() - make_interval(secs => ${started / 1000})`,
+				trace:
+					lastStep === undefined
+						? []
+						: [
+								{
+									at: Date.now() - lastStep,
+									tool: "probe",
+									probe: { conditions: [], total: null },
+								},
+							],
+			})
+			.where(eq(searchTurn.id, turnId));
+		return (await loadInterpretation(turnId))?.fault ?? null;
+	}
+
+	test("开始之后一直没有新的一步：过了一步的上限读到 broken，没过的不算", async () => {
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		assert.equal(await quietFor(turnId, STEP_LIMIT_MS - 5_000), null);
+		assert.equal(await quietFor(turnId, STEP_LIMIT_MS + 15_000), "broken");
+	});
+
+	test("心跳看最近一步：开始得再早，一步刚写过就还活着；最后一步也停了太久才算没了", async () => {
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const hour = 3_600_000;
+		assert.equal(await quietFor(turnId, hour, 1_000), null);
+		assert.equal(await quietFor(turnId, hour, STEP_LIMIT_MS - 5_000), null);
+		assert.equal(
+			await quietFor(turnId, hour, STEP_LIMIT_MS + 15_000),
+			"broken",
+		);
+		assert.ok(await restartTurn(turnId), "没了的那一次可以重试");
 	});
 });
 

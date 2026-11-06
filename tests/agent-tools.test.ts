@@ -345,7 +345,12 @@ describe("提交搜索条件", () => {
 			passed: true,
 		});
 		assert.equal(agent.passed(), true);
-		assert.deepEqual(agent.lastSubmitted(), submitted);
+		assert.deepEqual(agent.answer()?.submitted, submitted);
+		assert.deepEqual(
+			agent.answer()?.admitted.query.conditions.map((c) => c.label),
+			drafted("推荐").map((c) => c.label),
+			"跑得通的全部录取",
+		);
 	});
 
 	test("找不到人的词、匹配不到的名字不通过；原样再提交就通过：没有这样的人也是一个结果", async () => {
@@ -358,16 +363,23 @@ describe("提交搜索条件", () => {
 		assert.match(problems, /量子炼金/);
 		assert.match(problems, /北辰/);
 		assert.equal(agent.passed(), false);
-		assert.deepEqual(agent.lastSubmitted(), submitted, "没通过的也记着");
+		assert.deepEqual(agent.answer()?.submitted, submitted, "没通过的也记着");
 		assert.deepEqual(await run(agent.tools.submit, submitted), {
 			passed: true,
 		});
 	});
 
 	test("写不对、跑不了的 SQL 原样再提交也不通过；同一份里找不到人的那条不再提", async () => {
-		const agent = agentOn();
+		const steps: TraceStep[] = [];
+		const agent = agentTools({
+			base: [],
+			record: async (step) => {
+				steps.push(step);
+			},
+		});
+		const [unfound] = drafted("量子炼金");
 		const submitted = table([
-			...drafted("量子炼金"),
+			unfound,
 			{
 				label: "学历很高",
 				mode: "must",
@@ -392,6 +404,68 @@ describe("提交搜索条件", () => {
 			assert.doesNotMatch(problems, /量子炼金/);
 			assert.equal(agent.passed(), false);
 		}
+		assert.deepEqual(
+			agent.answer()?.admitted.query.conditions.map((c) => c.label),
+			[unfound?.label],
+			"录取的只有跑得通的那条，找不到人不妨碍录取",
+		);
+		assert.equal(steps.length, 3, "没通过的提交每次记一步");
+		assert.deepEqual(steps[0], {
+			at: steps[0]?.at,
+			tool: "submit",
+			issues: [
+				{ kind: "unrunnable", subject: "学历很高" },
+				{ kind: "unrunnable", subject: "睡一会儿" },
+				{ kind: "unfound", subject: "量子炼金" },
+			],
+		});
+		assert.doesNotMatch(JSON.stringify(steps), /pg_sleep|where|label/);
+	});
+
+	test("编得过、执行才报错的条件不录取，选项里的同样不录取", async () => {
+		const agent = agentOn();
+		const lately = {
+			label: "最近有过绩效",
+			mode: "must",
+			from: "person",
+			where:
+				"exists (select 1 from rating r where r.emp_id = p.emp_id and r.period_end >= current_date - :days)",
+			params: { days: "九十" },
+		};
+		const { compileWhere } = await import("#/server/sandbox");
+		assert.ok(
+			(await compileWhere(lately.where, lately.params, { from: "person" })).ok,
+			"白名单放行：只有真跑才知道跑不了",
+		);
+		const result = (await run(agent.tools.submit, {
+			conditions: [...drafted("推荐"), lately],
+			note: {
+				says: "要不要再加上考古？",
+				current: "不加",
+				options: [
+					{
+						label: "加上",
+						detail: "",
+						conditions: [...drafted("推荐, 考古"), lately],
+					},
+				],
+			},
+		})) as Checked;
+		assert.match(
+			result.problems?.join() ?? "",
+			/最近有过绩效.*原样再提交也不收/,
+		);
+		const admitted = agent.answer()?.admitted;
+		assert.deepEqual(
+			admitted?.query.conditions.map((c) => c.label),
+			drafted("推荐").map((c) => c.label),
+		);
+		assert.deepEqual(
+			admitted?.notes?.choices?.others.map((o) =>
+				o.conditions.map((c) => c.label),
+			),
+			[drafted("推荐, 考古").map((c) => c.label)],
+		);
 	});
 
 	test("形状不对被丢、标签里有内部用词：原样再提交也不通过", async () => {

@@ -6,7 +6,9 @@
  *
  * 这里只有类型和属性的名单，没有逻辑：查询记录表（`db/schema.ts`）、搜索（`search.ts`）
  * 和页面都用它，所以不能引用服务端代码。一步记的就是工具返回给模型的内容：模型据此写
- * 条件，HR 据此看出条件里的词和名字是怎么来的。提交不记步：它的结果就是这一轮的条件。
+ * 条件，HR 据此看出条件里的词和名字是怎么来的。提交通过不记步，它的结果就是这一轮的
+ * 条件；没通过的记一步，只记哪一条、哪一类问题，回给模型的那句话不记（里面是写给模型的词）。
+ * 步骤也是这一次理解还在进行的心跳（`server/turn.ts`）。
  */
 import { VOCAB_KEYS, type VocabKey } from "./dimensions";
 
@@ -83,6 +85,21 @@ export type Probe = {
 	total: number | null;
 };
 
+/**
+ * 提交没通过检查的一处：哪一条条件（标签）或哪个词，哪一类问题。说整份的（没写完整）
+ * 没有 `subject`。
+ *
+ * - `form`：没写完整，有的条件或选项用不上。
+ * - `wording`：标签里有 HR 读不懂的词。
+ * - `unrunnable`：这样写搜不了。
+ * - `unfound`：人才库里一个人都找不到。
+ * - `tooBroad`：找出的太多，名单出不来。
+ */
+export type SubmitIssue = {
+	kind: "form" | "wording" | "unrunnable" | "unfound" | "tooBroad";
+	subject: string | null;
+};
+
 /** 这一步是什么时候记下的（epoch 毫秒）。 */
 type Stamped = { at: number };
 
@@ -98,4 +115,5 @@ export type TraceStep = Stamped &
 		| { tool: "lookup_attribute"; field: NameField; found: NameFinding[] }
 		| { tool: "discover"; discovery: Discovery }
 		| { tool: "probe"; probe: Probe }
+		| { tool: "submit"; issues: SubmitIssue[] }
 	);

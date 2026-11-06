@@ -40,8 +40,8 @@
  * 里面出现内部用词（`lib/internal-words.ts`）也算一处不对；那句话要书面简洁：一句话、
  * 不带括号，说明和选项带括号也算。
  *
- * 调用与工作台相同的入口（`server/llm.ts` 的 `understand`，再经 `understood` 校验），用
- * 当前配置的端点和模型；词表和记录流从当前库里取，和线上发给模型的是同一份。
+ * 调用与工作台相同的入口（`server/llm.ts` 的 `understand`，评的是提交检查录取、会写进记录
+ * 的那份），用当前配置的端点和模型；词表和记录流从当前库里取，和线上发给模型的是同一份。
  * 合成用例进仓库（sample.json）；真实的找人问题不进版本库。
  */
 
@@ -52,7 +52,7 @@ import { pool } from "#/db";
 import { internalWordsIn } from "#/lib/internal-words";
 import { compileConditions } from "#/search/compile";
 import { execute, probe } from "#/search/execute";
-import { unanswered, understood } from "#/search/intent";
+import { unanswered } from "#/search/intent";
 import {
 	contentKey,
 	labelsInSentence,
@@ -242,13 +242,12 @@ try {
 		const problems: string[] = [];
 		let summary = "";
 		try {
-			const submitted = await understand(
+			const { submitted, admitted: result } = await understand(
 				c.say,
 				facts,
 				c.base,
 				agentToolsWithoutTrace(c.base),
 			);
-			const result = understood(submitted, c.base);
 			const failure = unanswered(submitted, result);
 			if (failure) problems.push(failure);
 			const next = result.query.conditions;
