@@ -641,8 +641,8 @@ function probeFindings(p: Probe): string[] {
 
 /** 整理出的搜索条件哪里还要改：和试搜、查找的说法一致，AI 改完再交。 */
 function issueLine({ kind, subject }: SubmitIssue): string {
+	if (kind === "wording") return "有一条的说法要换成更直白的话";
 	if (kind === "form" || subject === null) return "有的搜索条件没写完整";
-	if (kind === "wording") return `「${subject}」的说法要换成更直白的话`;
 	if (kind === "unrunnable") return `「${subject}」这样写搜不了`;
 	if (kind === "unfound") return `人才库中没有「${subject}」`;
 	return `「${subject}」找出的太多，名单出不来`;

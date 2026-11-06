@@ -305,6 +305,27 @@ describe("检索人才库的过程", () => {
 		assert.doesNotMatch(text, /查找公司/, "每一步收在里面");
 	});
 
+	test("提交没通过的那一步：标题和结论里都没有内部用词，说法要改的那条不点名", async () => {
+		const { text } = await seen([{ said: "推荐", spec: null }], {
+			waiting: true,
+			progress: {
+				trace: [
+					{
+						at: 1,
+						tool: "submit",
+						issues: [
+							{ kind: "wording", subject: null },
+							{ kind: "unfound", subject: "量子炼金" },
+						],
+					},
+				],
+				startedAt: null,
+			},
+		});
+		assert.match(text, /调整搜索条件\s*量子炼金/);
+		assert.deepEqual(internalWordsIn(text), []);
+	});
+
 	test("进行中展开，每一步一行：动作、对象；结论收在这一步里面", async () => {
 		const { text } = await seen([{ said: "推荐和后端", spec: null }], {
 			waiting: true,
@@ -366,7 +387,7 @@ describe("检索人才库的过程", () => {
 			tool: "submit",
 			issues: [
 				{ kind: "form", subject: null },
-				{ kind: "wording", subject: "词表里的推荐" },
+				{ kind: "wording", subject: null },
 				{ kind: "unrunnable", subject: "近三年两次 A" },
 				{ kind: "unfound", subject: "量子炼金" },
 				{ kind: "tooBroad", subject: "做过开发" },
@@ -374,15 +395,12 @@ describe("检索人才库的过程", () => {
 		});
 		assert.deepEqual(findings, [
 			"有的搜索条件没写完整",
-			"「词表里的推荐」的说法要换成更直白的话",
+			"有一条的说法要换成更直白的话",
 			"「近三年两次 A」这样写搜不了",
 			"人才库中没有「量子炼金」",
 			"「做过开发」找出的太多，名单出不来",
 		]);
-		assert.deepEqual(
-			internalWordsIn(findings.join("").replace("词表里的推荐", "")),
-			[],
-		);
+		assert.deepEqual(internalWordsIn(findings.join("")), []);
 	});
 
 	test("试搜：每条单独找到几个人、合起来几个人；写不对的说搜不了", () => {

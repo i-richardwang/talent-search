@@ -132,7 +132,8 @@ async function checkSubmission(
 			if (leaked.length > 0)
 				add(hard, {
 					kind: "wording",
-					subject: c.label,
+					// 标签里正是 HR 不该看到的词，步骤里不记它（见 `SubmitIssue`）
+					subject: null,
 					message: `「${c.label}」的 label 原样显示给 HR，不要用「${leaked.join("、")}」这样的词`,
 				});
 		}

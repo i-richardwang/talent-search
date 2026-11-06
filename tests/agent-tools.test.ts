@@ -505,14 +505,25 @@ describe("提交搜索条件", () => {
 		});
 	});
 
-	test("标签原样显示给 HR：里面有内部用词不通过", async () => {
-		const agent = agentOn();
+	test("标签原样显示给 HR：里面有内部用词不通过；记进步骤的不带那条标签", async () => {
+		const steps: TraceStep[] = [];
+		const agent = agentTools({
+			base: [],
+			record: async (step) => {
+				steps.push(step);
+			},
+		});
 		const [one] = drafted("推荐");
 		const result = (await run(
 			agent.tools.submit,
 			table([{ ...one, label: "词表里的推荐" }]),
 		)) as Checked;
 		assert.match(result.problems?.join() ?? "", /词表/);
+		assert.deepEqual(
+			steps.map((step) => step.tool === "submit" && step.issues),
+			[[{ kind: "wording", subject: null }]],
+		);
+		assert.doesNotMatch(JSON.stringify(steps), /词表/);
 	});
 
 	test("选项的条件一样检查；写了选项没写现在是哪种理解，告诉模型去补", async () => {
