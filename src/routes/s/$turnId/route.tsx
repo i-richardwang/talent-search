@@ -48,6 +48,7 @@ const NO_OUTCOME: SearchOutcome = {
 	results: [],
 	facets: emptyFacets(),
 	total: 0,
+	counts: {},
 	empty: null,
 };
 const EMPTY_SPEC = emptySpec();
@@ -71,7 +72,7 @@ export const Route = createFileRoute("/s/$turnId")({
 });
 
 function Workbench() {
-	const { thread, result, counts } = Route.useLoaderData();
+	const { thread, result } = Route.useLoaderData();
 	const { turnId } = Route.useParams();
 	const { understanding } = useLoaderData({ from: "__root__" });
 	// loader 保证线程非空、正看着的这一轮在链上
@@ -238,7 +239,7 @@ function Workbench() {
 				notices={
 					<WorkspaceNotices
 						conditions={query.conditions}
-						counts={counts}
+						counts={outcome.counts}
 						keywords={keywords}
 						earlier={earlier}
 						facets={outcome.facets}

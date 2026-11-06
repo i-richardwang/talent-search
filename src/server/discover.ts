@@ -113,14 +113,21 @@ async function overview(): Promise<Discovery> {
 	const schema = sql.identifier(catalogSchema());
 	const [counts, streams] = await Promise.all([
 		withCorpusSnapshot(async (store) => {
-			const out: { name: string; label: string; rows: number }[] = [];
-			for (const r of CATALOG) {
-				const { rows } = await store.execute<{ n: number }>(
-					sql`select count(*)::int as n from ${schema}.${sql.identifier(r.name)}`,
-				);
-				out.push({ name: r.name, label: r.label, rows: rows[0]?.n ?? 0 });
-			}
-			return out;
+			// 各视图的行数在一条语句里数完，每个视图一列
+			const { rows } = await store.execute<Record<string, number>>(
+				sql`select ${sql.join(
+					CATALOG.map(
+						(r, i) =>
+							sql`(select count(*)::int from ${schema}.${sql.identifier(r.name)}) as ${sql.identifier(`n${i}`)}`,
+					),
+					sql`, `,
+				)}`,
+			);
+			return CATALOG.map((r, i) => ({
+				name: r.name,
+				label: r.label,
+				rows: rows[0]?.[`n${i}`] ?? 0,
+			}));
 		}),
 		streamFacts(),
 	]);

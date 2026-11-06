@@ -8,8 +8,9 @@
  * - 试跑（`probe`）：一份完整的条件，每条单独有多少人、整份多少人，哪一条写不对、跑不了。
  * - 提交（`submit`）：先检查再收下。查的是：形状和白名单、标签里有没有内部用词、这一轮新写或
  *   改过的条件是不是一个人都找不到、新写的语义词是不是一个人都找不到、整份是不是宽到名单出不来。
- *   有问题就告诉模型，让它改了再提交；问题出在用户明说的要求上、人才库里本来就没有这样的人时，
- *   模型把同一份条件原样再提交一次就算通过：没有这样的人也是一个结果。
+ *   有问题就告诉模型，让它改了再提交。只是找不到人或太宽、而这正是用户明说的要求时，模型把
+ *   同一份条件原样再提交一次就算通过：没有这样的人也是一个结果。形状、标签、写不对和跑不了的
+ *   问题原样再交也不收。
  *
  * 工具只给模型人数和人才库里的写法，不给人：姓名、工号、任何一段经历都不发给模型，名单也只从
  * 搜索来。发给模型的能力词和公司、学校名，至少有几个人写过（`search.ts`）；公司内的部门名只给人数。
@@ -72,16 +73,21 @@ async function trial(query: Query): Promise<Probe & { overflow: string[] }> {
 }
 
 /**
- * 检查一份提交的条件，每个问题一句话；没有问题返回空数组。条件和说明里每个选项的整份条件
- * 一起检查：HR 点一下选项，搜的就是那一份。
+ * 一份提交的问题，每个问题一句话。条件和说明里每个选项的整份条件一起检查：HR 点一下选项，
+ * 搜的就是那一份。
+ *
+ * - `hard`：没作答、形状不对被丢、标签里有内部用词、`where` 过不了白名单或执行报错。写成这样
+ *   HR 看到的不是用户要的，或者根本搜不了，原样再交也不收，一定要改。
+ * - `soft`：新写的条件或语义词一个人都找不到、宽到名单出不来。人才库里可能本来就没有这样的人，
+ *   或者用户要的就这么宽：模型确认是用户的原意，同一份原样再交就收。
  */
 async function checkSubmission(
 	submitted: Submission,
 	result: Understood,
 	base: readonly QueryCondition[],
-): Promise<string[]> {
+): Promise<{ hard: string[]; soft: string[] }> {
 	const failure = unanswered(submitted, result);
-	if (failure) return [failure];
+	if (failure) return { hard: [failure], soft: [] };
 	const tables = [
 		result.query.conditions,
 		...(result.notes?.choices?.others ?? []).map((o) => o.conditions),
@@ -89,23 +95,24 @@ async function checkSubmission(
 	const known = new Set(base.map((c) => `${c.id}\u0001${contentKey(c)}`));
 	const isNew = (c: QueryCondition) =>
 		!known.has(`${c.id}\u0001${contentKey(c)}`);
-	const problems = new Set<string>();
+	const hard = new Set<string>();
+	const soft = new Set<string>();
 	const optionsUnused =
 		(submitted.note?.options.length ?? 0) > 0 && !result.notes?.choices;
 	if (optionsUnused)
-		problems.add(
+		hard.add(
 			"note 的 options 一项都用不上：写了 options 就要写 current，说现在这份条件是哪种理解；每一项的条件要和现在的不一样",
 		);
 	const dropped = submitted.conditions.length - result.query.conditions.length;
 	if (dropped > 0)
-		problems.add(
+		hard.add(
 			`有 ${dropped} 条条件形状不对被丢掉了：每条要有 label、mode、from、where；exclude 只用于 experience；terms、minMonths 只写在 experience 上`,
 		);
 	for (const table of tables)
 		for (const c of table) {
 			const leaked = internalWordsIn(c.label);
 			if (leaked.length > 0)
-				problems.add(
+				hard.add(
 					`「${c.label}」的 label 原样显示给 HR，不要用「${leaked.join("、")}」这样的词`,
 				);
 		}
@@ -124,7 +131,9 @@ async function checkSubmission(
 		terms.filter((t) => t.people === 0).map((t) => t.text),
 	);
 	for (const word of unfound)
-		problems.add(`「${word}」在人才库里一个人都找不到，换人才库里的说法`);
+		soft.add(
+			`「${word}」在人才库里一个人都找不到：是你补的就换人才库里的说法；是用户点名的，照原样再提交`,
+		);
 	for (const [n, table] of tables.entries()) {
 		const tried = trials[n];
 		if (!tried) continue;
@@ -132,7 +141,8 @@ async function checkSubmission(
 		for (const [i, c] of active.entries()) {
 			const one = tried.conditions[i];
 			if (!one) continue;
-			if (one.problem) problems.add(`「${c.label}」：${one.problem}`);
+			if (one.problem)
+				hard.add(`「${c.label}」写不对，原样再提交也不收：${one.problem}`);
 			// 找不到人的词已经单独说了，这一条不再重复
 			else if (
 				one.people === 0 &&
@@ -140,16 +150,16 @@ async function checkSubmission(
 				c.mode !== "exclude" &&
 				!termValues(c).some((w) => unfound.has(w))
 			)
-				problems.add(
+				soft.add(
 					`「${c.label}」在人才库里一个人都找不到：是你补的就改；是用户点名的，照原样再提交，在 note 里说一句`,
 				);
 		}
 		if (tried.overflow.length > 0)
-			problems.add(
+			soft.add(
 				`「${tried.overflow.join("」「")}」找出的经历太多，名单出不来：写得更具体一些`,
 			);
 	}
-	return [...problems];
+	return { hard: [...hard], soft: [...soft] };
 }
 
 /**
@@ -247,14 +257,17 @@ export function agentTools({
 		}),
 		[SUBMIT]: tool({
 			description:
-				"提交整份新的条件和说明。检查通过，这一轮就结束；没通过会告诉你哪里有问题，改好再提交。问题出在用户明说的要求上时，把同一份条件原样再提交一次。",
+				"提交整份新的条件和说明。检查通过，这一轮就结束；没通过会告诉你哪里有问题，改好再提交。只是找不到人或太宽、而这正是用户明说的要求时，把同一份条件原样再提交一次；写不对、跑不了的原样再交也不收。",
 			inputSchema: submissionSchema,
 			execute: async (submitted) => {
 				const json = JSON.stringify(submitted);
 				const resubmitted = last !== null && last.json === json;
-				const problems = resubmitted
-					? []
-					: await checkSubmission(submitted, understood(submitted, base), base);
+				const { hard, soft } = await checkSubmission(
+					submitted,
+					understood(submitted, base),
+					base,
+				);
+				const problems = resubmitted ? hard : [...hard, ...soft];
 				last = { submitted, json, problems };
 				return problems.length > 0
 					? { passed: false, problems }

@@ -118,6 +118,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 						results: [],
 						facets: emptyFacets(),
 						total: 0,
+						counts: {},
 						empty: null,
 					}}
 					picks={NO_PICKS}
@@ -190,6 +191,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 					results: [],
 					facets: emptyFacets(),
 					total: 0,
+					counts: {},
 					empty: { kind: "unmet" },
 				}}
 				spec={{

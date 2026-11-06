@@ -67,9 +67,9 @@ export type Roles = {
 	excludes: QueryCondition[];
 };
 
-export function hasTerms(c: QueryCondition): c is QueryCondition & {
-	terms: Terms;
-} {
+export function hasTerms<C extends DraftCondition>(
+	c: C,
+): c is C & { terms: Terms } {
 	return Boolean(c.terms && Object.values(c.terms).some((v) => v.length > 0));
 }
 

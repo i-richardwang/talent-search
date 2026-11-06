@@ -718,6 +718,7 @@ export const OUTCOME: SearchOutcome = {
 	results: RESULTS,
 	facets: FACETS,
 	total: RESULTS.length,
+	counts: {},
 	empty: null,
 };
 
@@ -728,6 +729,7 @@ export const PEOPLE_OUTCOME: SearchOutcome = {
 	results: RESULTS.map((r) => ({ employee: r.employee })),
 	facets: FACETS,
 	total: RESULTS.length,
+	counts: {},
 	empty: null,
 };
 
@@ -738,5 +740,6 @@ export const EMPTY_OUTCOME: SearchOutcome = {
 	results: [],
 	facets: emptyFacets(),
 	total: 0,
+	counts: {},
 	empty: { kind: "unmet" },
 };

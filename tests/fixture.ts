@@ -690,6 +690,8 @@ export async function seed(rows: Seed[]) {
 		experience: exp,
 		phrase: ph,
 		experiencePhrase: ep,
+		scale: sc,
+		ORDINAL_STREAM,
 	} = await import("#/db/schema");
 	const { EDUCATION_LADDER } = await import("#/corpus/contract");
 	const rankOf = (level: string) => Number(level.replace(/\D/g, ""));
@@ -710,6 +712,26 @@ export async function seed(rows: Seed[]) {
 			overseasEducated: r.overseasEducated ?? null,
 		})),
 	);
+	// 档位表和同步写的一样（`corpus/pipeline.ts` 的 `scaleRows`）：职级档取人身上出现过的档和
+	// 档高，学历按契约的五档；「某档及以上」查的就是它。多次 seed 时已有的档不重写
+	const levels = new Map(
+		rows.flatMap((r) => (r.curLevel ? [[r.curLevel, rankOf(r.curLevel)]] : [])),
+	);
+	await db
+		.insert(sc)
+		.values([
+			...[...levels].map(([value, rank]) => ({
+				stream: ORDINAL_STREAM.level,
+				value,
+				rank,
+			})),
+			...EDUCATION_LADDER.map((value, index) => ({
+				stream: ORDINAL_STREAM.education,
+				value,
+				rank: index + 1,
+			})),
+		])
+		.onConflictDoNothing();
 	let day = 1;
 	if (rows.every((row) => row.segments.length === 0)) return;
 	const inserted = await db

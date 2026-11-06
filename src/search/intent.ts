@@ -137,7 +137,8 @@ function resolveIds(
 }
 
 /**
- * 模型输出 → 这一轮的查询与说明。形状不合规的条件局部丢弃，不牵连整份。
+ * 模型输出 → 这一轮的查询与说明。形状不合规的条件局部丢弃，不牵连整份；`admit` 不收的
+ * 条件（写入前 `where` 过不了解析白名单的，见 `server/turn.ts`）按同一条规则丢弃。
  *
  * 停用状态跟着条件走：模型写不出停用，提交的条件和上一轮同一个 id、内容也没变时，那一条的
  * 停用原样带过来；用户停掉的不会因为又说了一句话就复活。说明里每个选项的整份条件走同一道校验。
@@ -145,12 +146,15 @@ function resolveIds(
 export function understood(
 	raw: unknown,
 	base: readonly QueryCondition[],
+	admit: (draft: DraftCondition) => boolean = () => true,
 ): Understood {
 	const value = (raw ?? {}) as Record<string, unknown>;
 	const prior = new Map(base.map((c) => [c.id, c]));
 	const validate = (list: unknown, known: readonly QueryCondition[]) =>
 		resolveIds(
-			draftsOf(list).map((d) => withOff(d, null)),
+			draftsOf(list)
+				.filter(admit)
+				.map((d) => withOff(d, null)),
 			known,
 		).map((c) => {
 			const before = prior.get(c.id);

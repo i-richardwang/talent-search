@@ -14,7 +14,6 @@ const teardown = await setup();
 after(teardown);
 
 const { execute, probe } = await import("#/search/execute");
-const { conditionCounts } = await import("#/search/search");
 const { db, pool } = await import("#/db");
 const { recordStream, scale, employeeRecord } = await import("#/db/schema");
 
@@ -248,14 +247,25 @@ describe("原型二：限定公司内的语义经历", () => {
 		assert.equal(tried.total, 2);
 	});
 
-	test("chip 上的人数就是试跑的每条人数，按条件 id；停用的没有", async () => {
+	test("chip 上的人数随执行一起回来，就是试跑的每条人数，按条件 id；停用的没有，不随筛选变", async () => {
+		const conditions = [
+			atJiachen,
+			noIntern,
+			{ ...highTwice, off: "user" as const },
+		];
+		const tried = await probe(query(...conditions));
+		const outcome = await execute(query(...conditions), {
+			school: ["人才库里没有的学校"],
+		});
+		assert.equal(outcome.total, 0, "筛选把名单筛空了");
+		assert.deepEqual(outcome.counts, { rec: 2, intern: 1 });
 		assert.deepEqual(
-			await conditionCounts({
-				query: {
-					conditions: [atJiachen, noIntern, { ...highTwice, off: "user" }],
-				},
-			}),
-			{ rec: 2, intern: 1 },
+			outcome.counts,
+			Object.fromEntries(
+				tried.conditions.flatMap((c) =>
+					c.people === null ? [] : [[c.id, c.people]],
+				),
+			),
 		);
 	});
 

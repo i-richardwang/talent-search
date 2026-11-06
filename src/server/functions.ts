@@ -9,7 +9,7 @@ import { validateCommit } from "#/search/commit-input";
 import { KEYWORD_FIELDS, KEYWORD_RULES } from "#/search/keywords";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
-import { conditionCounts, search, suggest } from "#/search/search";
+import { search, suggest } from "#/search/search";
 import { administrator, authenticated } from "./auth-functions";
 import {
 	employeeData,
@@ -47,21 +47,16 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 	.handler(
 		async ({
 			data,
-		}): Promise<{
-			thread: Turn[];
-			result: SearchOutcome | null;
-			counts: Record<string, number>;
-		} | null> => {
+		}): Promise<{ thread: Turn[]; result: SearchOutcome | null } | null> => {
 			// 整条链一次取回：对话栏画的是全部，名单是正看着的这一轮
 			const thread = await loadThread(data.turnId);
 			const turn = thread?.find((t) => t.id === data.turnId);
 			if (!thread || !turn) return null;
-			if (!turn.spec) return { thread, result: null, counts: {} };
-			const [result, counts] = await Promise.all([
-				search(turn.spec, data.filters, data.limit),
-				turn.mode === "conversation" ? conditionCounts(turn.spec) : {},
-			]);
-			return { thread, result, counts };
+			if (!turn.spec) return { thread, result: null };
+			return {
+				thread,
+				result: await search(turn.spec, data.filters, data.limit),
+			};
 		},
 	);
 

@@ -635,6 +635,61 @@ describe("理解失败", () => {
 	});
 });
 
+describe("写入前的白名单", () => {
+	/** 这条 `where` 调了白名单外的函数：模型怎么重交，提交检查都不收。 */
+	const sleeper = {
+		label: "睡一会儿",
+		mode: "must",
+		from: "person",
+		where: "pg_sleep(1) is not null",
+	};
+
+	test("次数用完时最后一次交了跑不了的条件：那一条不进记录，选项里的也一样", async () => {
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const spec = await answering(
+			() => ({
+				conditions: [...drafted("算法"), sleeper],
+				note: {
+					says: "要不要只看带过团队的？",
+					current: "不限",
+					options: [
+						{
+							label: "只看带过团队的",
+							detail: "",
+							conditions: [...drafted("算法, 带团队"), sleeper],
+						},
+						{
+							label: "只差那一条",
+							detail: "",
+							conditions: [...drafted("算法"), sleeper],
+						},
+					],
+				},
+			}),
+			() => settle(turnId),
+		);
+		assert.deepEqual(shapeOf(spec), expected("算法"));
+		const others = (await loadTurn(turnId))?.notes?.choices?.others ?? [];
+		assert.deepEqual(
+			others.map((o) => contentOf(o.conditions)),
+			[expected("算法, 带团队")],
+			"丢掉那一条后和现在一样的选项不算一种理解",
+		);
+	});
+
+	test("条件全都跑不了：按没作答失败，不写入", async () => {
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		await assert.rejects(
+			answering(
+				() => ({ conditions: [sleeper], note: null }),
+				() => settle(turnId),
+			),
+			/unanswered/,
+		);
+		assert.equal((await loadTurn(turnId))?.spec, null);
+	});
+});
+
 describe("一轮只有一次理解", () => {
 	/**
 	 * 理解随这一轮写下开始，重新开始只有人点重试这一个入口。还在跑的那一次不能被

@@ -101,6 +101,11 @@ type Outcome = {
 	facets: Facets;
 	total: number;
 	empty: EmptyReason | null;
+	/**
+	 * chip 上的人数：每条条件单独能找到多少人，按条件 id。和查询理解试跑是同一个数，不随名单上的
+	 * 筛选变；停用的、跑不了的，以及查询没有可找人的条件、没去检索时，没有人数。
+	 */
+	counts: Record<string, number>;
 };
 
 /** evidence 按深度排序；employee 用于没有经历证据的人员查询。 */

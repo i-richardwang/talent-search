@@ -4,6 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
+import { compileConditions } from "#/search/compile";
 import { NOT_A_VALUE, VOCAB_KEYS } from "#/search/dimensions";
 import { claimName, termValues } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
@@ -592,6 +593,23 @@ describe("跟人走的筛选", () => {
 		const boosted = await run("潜水,+education:>=硕士");
 		assert.equal(boosted.total, 3);
 		assert.equal(boosted.results[2]?.employee.empId, "P002");
+	});
+
+	test("档高查档位表，和教给 AI 的写法是同一句：人才库里没人在的档也比得出", async () => {
+		const [condition] = compileConditions(
+			parseQuery("education:>=大专"),
+		).conditions;
+		assert.match(
+			condition?.where ?? "",
+			/^p\.education_rank >= \(select s\.rank from scale s where s\.stream = 'education' and s\.value = :\w+\)$/,
+		);
+		const ids = async (query: string) =>
+			(await run(query)).results.map((r) => r.employee.empId).sort();
+		assert.deepEqual(await ids("潜水,education:>=大专"), [
+			"P001",
+			"P002",
+			"P003",
+		]);
 	});
 
 	test("职级筛选缩小人群，且这一维自己的候选不受自己影响", async () => {

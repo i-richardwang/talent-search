@@ -17,11 +17,13 @@ import type { Condition } from "#/search/condition";
 import { scopeOf } from "#/search/execute";
 import {
 	type Choice,
+	type Submission,
 	type TurnNotes,
 	unanswered,
 	understood,
 } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
+import { contentKey, type DraftCondition, draftsOf } from "#/search/query";
 import { vocabulary } from "#/search/search";
 import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
@@ -157,6 +159,28 @@ async function admitWhere(input: QueryInput) {
 		if (!result.ok)
 			throw new Error(`搜索条件「${c.label}」不能执行：${result.problem}`);
 	}
+}
+
+/**
+ * 模型提交里哪些条件的 `where` 过得了解析白名单，按内容认（`contentKey`）。条件和说明里每个
+ * 选项的条件表一起查：HR 点选项就是换成那一份。模型的提交检查已经把跑不了的报回去要它改，
+ * 但次数用完时最后一次提交没通过也照收，这里是写进不可变记录之前的最后一道。
+ */
+async function runnable(
+	submitted: Submission,
+): Promise<(draft: DraftCondition) => boolean> {
+	const drafts = [
+		submitted.conditions,
+		...(submitted.note?.options ?? []).map((o) => o.conditions),
+	].flatMap(draftsOf);
+	const failed = new Set<string>();
+	await Promise.all(
+		drafts.map(async (d) => {
+			const result = await compileWhere(d.where, d.params ?? {}, scopeOf(d));
+			if (!result.ok) failed.add(contentKey(d));
+		}),
+	);
+	return (draft) => !failed.has(contentKey(draft));
 }
 
 /**
@@ -308,7 +332,7 @@ async function understandTurn(
 	};
 	const agent = agentTools({ base, record });
 	const submitted = await understand(rawText, { vocab, streams }, base, agent);
-	const result = understood(submitted, base);
+	const result = understood(submitted, base, await runnable(submitted));
 	const failure = unanswered(submitted, result);
 	if (failure) throw new UnansweredError(failure);
 

@@ -203,6 +203,23 @@ describe("看目录", () => {
 			["person", "experience", "rating", "status", "scale"],
 		);
 		assert.doesNotMatch(JSON.stringify(overview), /甲|乙|A0|星河科技/);
+		// 一条语句里数出的每一列，和逐个视图单独数的一样，没有错位
+		const { db } = await import("#/db");
+		const { catalogSchema } = await import("#/server/sandbox");
+		const { sql } = await import("drizzle-orm");
+		for (const r of overview.relations) {
+			const { rows } = await db.execute<{ n: number }>(
+				sql`select count(*)::int as n from ${sql.identifier(catalogSchema())}.${sql.identifier(r.name)}`,
+			);
+			assert.equal(r.rows, rows[0]?.n, r.name);
+		}
+		const rows = Object.fromEntries(
+			overview.relations.map((r) => [r.name, r.rows]),
+		);
+		assert.ok(
+			(rows.person ?? 0) > 0 && (rows.scale ?? 0) > 0,
+			JSON.stringify(rows),
+		);
 	});
 
 	test("问不了的给一句原因：岗位名不列取值，评级的档要说是哪条流", async () => {
@@ -331,22 +348,13 @@ describe("提交搜索条件", () => {
 		assert.deepEqual(agent.lastSubmitted(), submitted);
 	});
 
-	test("找不到人的词、匹配不到的名字、写不对的 SQL 不通过；原样再提交就通过", async () => {
+	test("找不到人的词、匹配不到的名字不通过；原样再提交就通过：没有这样的人也是一个结果", async () => {
 		const agent = agentOn();
-		const submitted = table([
-			...drafted("量子炼金, +company:北辰"),
-			{
-				label: "学历很高",
-				mode: "must",
-				from: "person",
-				where: "p.education_rank >= (select max(x.rank) from scale)",
-			},
-		]);
+		const submitted = table(drafted("量子炼金, +company:北辰"));
 		const first = (await run(agent.tools.submit, submitted)) as Checked;
 		assert.equal(first.passed, false);
-		assert.equal(first.problems?.length, 3, first.problems?.join("\n") ?? "");
+		assert.equal(first.problems?.length, 2, first.problems?.join("\n") ?? "");
 		const problems = first.problems?.join("\n") ?? "";
-		assert.match(problems, /学历很高/);
 		assert.match(problems, /量子炼金/);
 		assert.match(problems, /北辰/);
 		assert.equal(agent.passed(), false);
@@ -354,6 +362,51 @@ describe("提交搜索条件", () => {
 		assert.deepEqual(await run(agent.tools.submit, submitted), {
 			passed: true,
 		});
+	});
+
+	test("写不对、跑不了的 SQL 原样再提交也不通过；同一份里找不到人的那条不再提", async () => {
+		const agent = agentOn();
+		const submitted = table([
+			...drafted("量子炼金"),
+			{
+				label: "学历很高",
+				mode: "must",
+				from: "person",
+				where: "p.education_rank >= (select max(x.rank) from scale)",
+			},
+			{
+				label: "睡一会儿",
+				mode: "must",
+				from: "person",
+				where: "pg_sleep(1) is not null",
+			},
+		]);
+		const first = (await run(agent.tools.submit, submitted)) as Checked;
+		assert.equal(first.problems?.length, 3, first.problems?.join("\n") ?? "");
+		for (const _ of [1, 2]) {
+			const again = (await run(agent.tools.submit, submitted)) as Checked;
+			assert.equal(again.passed, false);
+			const problems = again.problems?.join("\n") ?? "";
+			assert.match(problems, /学历很高.*原样再提交也不收/);
+			assert.match(problems, /睡一会儿.*pg_sleep/);
+			assert.doesNotMatch(problems, /量子炼金/);
+			assert.equal(agent.passed(), false);
+		}
+	});
+
+	test("形状不对被丢、标签里有内部用词：原样再提交也不通过", async () => {
+		const agent = agentOn();
+		const [one] = drafted("推荐");
+		const submitted = table([
+			{ ...one, label: "词表里的推荐" },
+			{ label: "资深", mode: "exclude", from: "person", where: "true" },
+		]);
+		for (const _ of [1, 2]) {
+			const result = (await run(agent.tools.submit, submitted)) as Checked;
+			assert.equal(result.passed, false);
+			assert.match(result.problems?.join() ?? "", /词表/);
+			assert.match(result.problems?.join() ?? "", /形状不对/);
+		}
 	});
 
 	test("人多的词照样通过：名单多长由 HR 决定", async () => {

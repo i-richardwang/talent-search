@@ -4,7 +4,7 @@
  * 计算时长、当前信息、职级档与学历档；记录按期去重修订。asOf 由调用方指定或使用当地日历日。
  */
 
-import type { CompanyMeta } from "#/db/schema";
+import { type CompanyMeta, ORDINAL_STREAM } from "#/db/schema";
 import {
 	EDUCATION_LADDER,
 	type SourceAssignment,
@@ -594,9 +594,7 @@ function tallied(counts: Map<string, number>, unit: string): string {
 // ---------------------------------------------------------------------- 记录
 
 /** 职级档与学历档在 `scale` 里的流名，数据源的记录流不能用。 */
-const LEVEL_STREAM = "level";
-const EDUCATION_STREAM = "education";
-const RESERVED_STREAMS = new Set([LEVEL_STREAM, EDUCATION_STREAM]);
+const RESERVED_STREAMS = new Set<string>(Object.values(ORDINAL_STREAM));
 
 /** 记录流的声明：流名非空、唯一、不占用保留名，种类是两种之一。无效声明拒绝整轮同步。 */
 function recordStreams(rows: SourceStream[]): StreamRow[] {
@@ -635,13 +633,13 @@ function scaleRows(
 	const out: ScaleRow[] = [];
 	const seen = new Set<string>();
 	for (const { band, rank } of bands.values()) {
-		const key = `${LEVEL_STREAM}\u0001${band}`;
+		const key = `${ORDINAL_STREAM.level}\u0001${band}`;
 		if (seen.has(key)) continue;
 		seen.add(key);
-		out.push({ stream: LEVEL_STREAM, value: band, rank });
+		out.push({ stream: ORDINAL_STREAM.level, value: band, rank });
 	}
 	for (const [index, value] of EDUCATION_LADDER.entries())
-		out.push({ stream: EDUCATION_STREAM, value, rank: index + 1 });
+		out.push({ stream: ORDINAL_STREAM.education, value, rank: index + 1 });
 	const ratings = new Set(
 		streams.filter((s) => s.kind === "rating").map((s) => s.stream),
 	);

@@ -12,6 +12,7 @@
  * 身份由旧条件的 `conditionKey` 散列而来：同一份旧表每次编译出同样的 id，停用状态
  * 和一轮前后的差别照旧按条件比。
  */
+import { ORDINAL_STREAM } from "#/db/schema";
 import { escapeLike } from "#/lib/sql";
 import {
 	type Condition,
@@ -93,11 +94,9 @@ function segment(c: ExperienceCondition): Where {
 function person(c: Extract<Condition, { about: "person" }>): Where {
 	const w = new Where();
 	if ("atLeast" in c) {
-		const rank = RANK_COLUMN[c.field];
-		const band = PERSON_COLUMN[c.field];
-		// 档高当场从库里查：同一档的人档高相同（同步时校验过），取哪一个都一样
+		// 档高查档位表，和目录、提示词教模型的写法是同一句
 		w.add(
-			`${rank} >= (select min(x.${rank.slice(2)}) from person x where x.${band.slice(2)} = ${w.param(c.atLeast)})`,
+			`${RANK_COLUMN[c.field]} >= (select s.rank from scale s where s.stream = '${ORDINAL_STREAM[c.field]}' and s.value = ${w.param(c.atLeast)})`,
 		);
 	} else if (c.field === "school") w.anyLike(["p.school"], c.values);
 	else w.inList(PERSON_COLUMN[c.field], c.values);

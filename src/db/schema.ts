@@ -262,7 +262,16 @@ export const recordStream = pgTable(
 );
 
 /**
- * 档位表：职级档（流名 `level`）、学历五档（`education`）和各评级流的档。比高低只比
+ * 职级档和学历档在档位表里的流名。同步按它写（`corpus/pipeline.ts`），旧条件的「某档及以上」
+ * 按它查（`search/compile.ts`）；数据源的记录流不能用这两个名字。
+ */
+export const ORDINAL_STREAM = {
+	level: "level",
+	education: "education",
+} as const;
+
+/**
+ * 档位表：职级档、学历五档（流名见 `ORDINAL_STREAM`）和各评级流的档。比高低只比
  * `rank`，不比档名字面。同步时整表重写（`corpus/pipeline.ts` 的 `scaleRows`）。
  */
 export const scale = pgTable(

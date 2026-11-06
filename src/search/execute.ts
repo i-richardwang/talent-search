@@ -39,6 +39,7 @@ import type { SearchFilters } from "./params";
 import { type PhraseHit, withMatchedPhrases } from "./phrases";
 import {
 	type Claim,
+	type DraftCondition,
 	type Gate,
 	hasTerms,
 	type Query,
@@ -74,7 +75,7 @@ class InvalidQueryError extends Error {
 	override name = "InvalidQueryError";
 }
 
-export function scopeOf(c: QueryCondition): WhereScope {
+export function scopeOf(c: DraftCondition): WhereScope {
 	return c.from === "person"
 		? { from: "person" }
 		: { from: "experience", terms: hasTerms(c) };
@@ -469,6 +470,7 @@ export async function execute(
 			order: "evidence",
 			claims,
 			...noOne(),
+			counts: {},
 			empty: emptyReason({ query, filters, total: 0, overflow: null }),
 		};
 	const index = new Map(query.conditions.map((c, i) => [c, i]));
@@ -483,17 +485,35 @@ export async function execute(
 		async (store, { phraseHits }) => {
 			await materializeHits(store, query.conditions, phraseHits);
 			const shell = new Shell(all, excludes.map(at));
+			// chip 上的人数在同一张命中表上顺手数：不随筛选变，和试跑同一个数
+			const counted = await countEach(store, shell, all);
+			const counts = Object.fromEntries(
+				query.conditions.flatMap((c, i) => {
+					const n = counted[i];
+					return n && "people" in n ? [[c.id, n.people]] : [];
+				}),
+			);
 			const read = await restricted(store, () =>
 				evaluate(store, shell, roles, at, filters),
 			);
-			if (read.kind !== "ranked") return read.outcome;
-			return present(store, read, claims, filters, limit, query);
+			const outcome =
+				read.kind === "ranked"
+					? await present(store, read, claims, filters, limit, query)
+					: read.outcome;
+			return { ...outcome, counts };
 		},
 	);
 }
 
+/** 名单那一半的结果；chip 上的人数（`counts`）由 `execute` 在同一张命中表上另外数，最后合上。 */
+type Uncounted = SearchOutcome extends infer O
+	? O extends SearchOutcome
+		? Omit<O, "counts">
+		: never
+	: never;
+
 type Evaluated =
-	| { kind: "done"; outcome: SearchOutcome }
+	| { kind: "done"; outcome: Uncounted }
 	| {
 			kind: "ranked";
 			facts: Fact[];
@@ -574,7 +594,7 @@ async function present(
 	filters: SearchFilters,
 	limit: number,
 	query: Query,
-): Promise<SearchOutcome> {
+): Promise<Uncounted> {
 	const empty = emptyReason({ query, filters, total, overflow: null });
 	const page = ranked.slice(0, limit);
 	const empIds = page.map((row) => row.empId);
@@ -664,8 +684,7 @@ export type ProbeResult = {
  * 试跑一份查询：每条条件单独数人，再整份跑一遍数总人数。只给人数，不给人。
  *
  * 单条的人数和执行同一套规则：经历条件只算没被排除否决的段，写了累计时长的按去重后的段
- * 累计；排除数的是它否决了多少人的段；人的条件数满足它的人。每条在自己的保存点里跑，
- * 一条报错不影响别的条；数据库的错误脱敏后作为这一条的问题（`sandboxProblem`）。
+ * 累计；排除数的是它否决了多少人的段；人的条件数满足它的人（`countEach`）。
  */
 export async function probe(query: Query): Promise<ProbeResult> {
 	const roles = rolesOf(query);
@@ -686,22 +705,11 @@ export async function probe(query: Query): Promise<ProbeResult> {
 		async (store, { phraseHits }) => {
 			await materializeHits(store, query.conditions, phraseHits);
 			const shell = new Shell(all, roles.excludes.filter(valid).map(at));
-			for (const i of query.conditions.keys()) {
-				const one = all[i];
+			for (const [i, n] of (await countEach(store, shell, all)).entries()) {
 				const result = results[i];
-				if (!one || !result) continue;
-				try {
-					result.people = await restricted(store, async () => {
-						const rows = await store.execute<{ n: number }>(
-							countOf(shell, one, i),
-						);
-						return rows.rows[0]?.n ?? 0;
-					});
-				} catch (error) {
-					const problem = sandboxProblem(error);
-					if (problem === null) throw error;
-					result.problem = problem;
-				}
+				if (!n || !result) continue;
+				if ("people" in n) result.people = n.people;
+				else result.problem = n.problem;
 			}
 			const runnable =
 				results.every((r) => r.problem === null) &&
@@ -723,6 +731,37 @@ export async function probe(query: Query): Promise<ProbeResult> {
 			};
 		},
 	);
+}
+
+/**
+ * 每条条件单独数人，按条件的下标；停用的、编不出的（`all` 里是 null）不数。每条在自己的
+ * 保存点里跑，一条报错不影响别的条；数据库的错误脱敏后作为这一条的问题（`sandboxProblem`）。
+ * 试跑给模型的人数和执行时 chip 上的人数都从这里来。
+ */
+async function countEach(
+	store: DbExecutor,
+	shell: Shell,
+	all: readonly (Compiled | null)[],
+): Promise<({ people: number } | { problem: string } | null)[]> {
+	const out: ({ people: number } | { problem: string } | null)[] = [];
+	for (const [i, one] of all.entries()) {
+		if (!one) {
+			out.push(null);
+			continue;
+		}
+		try {
+			const people = await restricted(store, async () => {
+				const rows = await store.execute<{ n: number }>(countOf(shell, one, i));
+				return rows.rows[0]?.n ?? 0;
+			});
+			out.push({ people });
+		} catch (error) {
+			const problem = sandboxProblem(error);
+			if (problem === null) throw error;
+			out.push({ problem });
+		}
+	}
+	return out;
 }
 
 /** 单条条件的人数语句；规则见 `probe`。 */

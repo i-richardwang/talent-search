@@ -13,7 +13,7 @@ import { withCorpusSnapshot } from "#/db/snapshot";
 import { escapeLike } from "#/lib/sql";
 import { catalogSchema } from "#/server/sandbox";
 import { NOT_A_VALUE, VOCAB_KEYS, type VocabKey } from "./dimensions";
-import { execute, probe } from "./execute";
+import { execute } from "./execute";
 import type { Vocabulary } from "./intent";
 import type { KeywordField } from "./keywords";
 import type { SearchFilters } from "./params";
@@ -272,19 +272,6 @@ export function search(
 	limit: number = RESULT_PAGE,
 ): Promise<SearchOutcome> {
 	return execute(queryOfSpec(spec), filters, limit);
-}
-
-/**
- * chip 上的人数：每条条件单独能找到多少人，按条件 id。和查询理解试跑（`probe`）是同一个数，
- * 不随名单上的筛选变；停用的和跑不了的没有人数。
- */
-export async function conditionCounts(
-	spec: SearchSpec,
-): Promise<Record<string, number>> {
-	const { conditions } = await probe(queryOfSpec(spec));
-	return Object.fromEntries(
-		conditions.flatMap((c) => (c.people === null ? [] : [[c.id, c.people]])),
-	);
 }
 
 /**
