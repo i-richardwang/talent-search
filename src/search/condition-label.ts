@@ -1,10 +1,5 @@
 import { dots, duration } from "#/lib/format";
-import {
-	type Condition,
-	type Mode,
-	type Part,
-	PERSON_FIELDS,
-} from "#/search/condition";
+import { type Condition, type Mode, PERSON_FIELDS } from "#/search/condition";
 import { DIMENSIONS, dimOption, dimText, orAbove } from "#/search/dimensions";
 
 /**
@@ -38,23 +33,12 @@ export const MODE_NAME: Record<Mode, string> = {
 	exclude: "排除",
 };
 
-export function inSentence(list: readonly Condition[]): string {
-	return list
-		.map((c) =>
-			c.mode === "must"
-				? conditionLabel(c)
-				: `${conditionLabel(c)}（${MODE_NAME[c.mode]}）`,
-		)
-		.join("、");
-}
-
 /**
  * 一条条件在屏幕上怎么显示。
  *
  * 经历主张按它的表述顺序排列：什么时候、在哪一档、在哪、做过什么、累计多久——
- * 「入职前 · 大厂 · 增长 · 3 年以上」，读起来就是那句话。每一项只显示第一个
- * 取值，其余收在菜单里（`query-chips.tsx`），chip 上留一个记号说「这里还有」：
- * 几档职级全写出来是一行放不下的文字，会把同一排别的条件挤出屏幕。
+ * 「入职前 · 大厂 · 增长 · 3 年以上」，读起来就是那句话。每一项只写第一个取值：
+ * 它是旧条件编译成查询时的标签（`compile.ts`），chip 上一行放得下。
  *
  * 人的条件带一次维度名（「当前职级 · P7」「学历 · 本科及以上」），维度名怎么写
  * 归维度自己声明（`dimensions.ts` 的 `text`）；学校归 `NAME_LABEL`。
@@ -79,42 +63,4 @@ export function conditionLabel(condition: Condition): string {
 		condition.what?.[0],
 		condition.minMonths ? `${duration(condition.minMonths)}以上` : null,
 	);
-}
-
-/** chip 上收进菜单的取值有几个，写成「+N」。 */
-export function moreCount(condition: Condition): number {
-	if (condition.about === "person")
-		return "values" in condition ? Math.max(condition.values.length - 1, 0) : 0;
-	return [
-		condition.what,
-		condition.company,
-		condition.department,
-		condition.companyTag,
-	].reduce((sum, list) => sum + Math.max((list?.length ?? 0) - 1, 0), 0);
-}
-
-/**
- * 一条条件里的一项怎么显示。它出现在已经写明了是哪条条件的地方（chip 的菜单），
- * 所以只显示这一项：「P7」，不是「当前职级 · P7」；月数写成「累计 3 年以上」，
- * 好让它和旁边的经历词分得开。
- */
-export function partLabel(condition: Condition, part: Part): string {
-	switch (part.key) {
-		case "values":
-			return condition.about === "person" && condition.field !== "school"
-				? dimOption(condition.field, part.value)
-				: part.value;
-		case "atLeast":
-			return condition.about === "person" && "atLeast" in condition
-				? orAbove(condition.field, part.value)
-				: part.value;
-		case "companyTag":
-			return dimOption("companyTag", part.value);
-		case "kind":
-			return dimOption("kind", part.value);
-		case "minMonths":
-			return `累计 ${duration(part.value)}以上`;
-		default:
-			return part.value;
-	}
 }

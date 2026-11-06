@@ -18,7 +18,6 @@ import {
 	type ExperienceCondition,
 	MODES,
 	PERSON_FIELDS,
-	withOff,
 } from "#/search/condition";
 import { DIM_KEYS, DIMENSIONS } from "#/search/dimensions";
 import { KEYWORD_LABEL } from "#/search/keywords";
@@ -37,7 +36,7 @@ import { FACETS } from "../../samples/people";
 const START: QueryCondition[] = asQuery([...CONDITIONS, EXCLUDE_INTERN]);
 
 /** 用户自己停用的一条：带过团队（加分）。 */
-const TEAM_OFF = withOff(CONDITIONS[2] as Condition, "user");
+const TEAM_OFF: Condition = { ...(CONDITIONS[2] as Condition), off: "user" };
 
 /** 一条条件的每种样子。 */
 const LOOKS: [name: string, condition: Condition, note: string][] = [

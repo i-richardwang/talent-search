@@ -1,40 +1,20 @@
 /**
- * 一条**查询条件**，以及校验不可信输入、把它变成条件的那道边界。
+ * 旧的条件表形状：关键词链存的条件，以及较早的对话记录。读取时经 `compile.ts` 编译成
+ * 查询（`query.ts`）再执行；新的对话轮次存的是查询本身，不再写这种形状。
  *
- * 查询在模型输出里、在 RPC 上、在库里、在屏幕上只有这一种形状：一个条件数组。
- * 模型的任务是**写这条搜索**，用户在 chip 上改的也是它，评估拿它做 diff。
- * 三个读者读的是同一个对象，中间没有翻译。
+ * 一张条件表里有两种条件：
  *
- * HR 找人的一句话里只有两种东西，条件因此也只有两种：
+ * - **经历主张**（`about: "experience"`）：这个人有一段（或几段）经历，**同时**满足写下的
+ *   每一项——做过什么（`what`）、在哪（入职前的 `company` / `companyTag`，公司内的
+ *   `department`）、什么时候（`kind`）、多久（`minMonths`，满足其余各项的段累计的月数）。
+ * - **人的条件**（`about: "person"`）：职级、学历、招聘渠道、学校档、海外学历、学校。
+ *   有高低的两维（职级档、学历）还可以说「某档及以上」（`atLeast`）。
  *
- * - **经历主张**（`about: "experience"`）：这个人有一段（或几段）经历，**同时**
- *   满足写下的每一项——做过什么（`what`）、在哪（入职前的 `company` / `companyTag`，
- *   公司内的 `department`）、
- *   什么时候（`kind`）、多久（`minMonths`，满足其余各项的段累计的月数）。
- *   少写的项就是不限：只有 `what` 是今天最常见的经历词，只有 `company` 是「待过字节」。
- *   没写 `what` 的主张说的是背景，和人的条件一样只定去留、不量名次（`result.ts`）。
- * - **人的条件**（`about: "person"`）：这个人是什么样——职级、学历、
- *   招聘渠道、学校档、海外学历、学校。一人一个值，和哪段经历都没关系。有高低的
- *   两维（职级档、学历）还可以说「某档及以上」（`atLeast`），比高低的是库里的档高，
- *   不是一串枚举的档名。
- *
- *     { about: "experience", mode: "must", what: ["增长", "用户增长"],
- *       companyTag: ["大厂"], kind: "external", minMonths: 36 }
- *     { about: "experience", mode: "boost", company: ["字节"] }
+ *     { about: "experience", mode: "must", what: ["增长"], kind: "external", minMonths: 36 }
  *     { about: "person", mode: "boost", field: "level", atLeast: "P7" }
- *     { about: "person", mode: "must", field: "education", values: ["硕士"] }
  *
- * 执行语义只有两句：**一条主张之内是同一段经历，条件之间是同一个人。** 修饰语挂在
- * 哪个动词上由模型在读句子时决定，「在字节做推荐」和「做过推荐，也待过字节」是
- * 两份不同的查询，屏幕上看得出来、改得动。
- *
- * **搜索词是模型对「要找什么人」的表达，不是用户的原话。** 用户说「搞推荐的」，
- * 模型写「推荐算法」「推荐系统」，找人更准，屏幕上也看得懂。取值不标来源，
- * 也不按来源打折。
- *
- * 库里表达不了的要求不进条件表：模型在这一轮的说明（`intent.ts` 的 `TurnNotes`）里
- * 说出库里没有什么，能换成库里有的说法就作为一个选项附上换过之后的整张表。「北京的」
- * 库里没有，条件表里不写，说明里说。
+ * 一条主张之内是同一段经历，条件之间是同一个人。这里还有校验不可信输入的边界
+ * （`conditionsOf`）和语义词的长短上限（`termOf`），查询的形状校验共用后者。
  */
 import {
 	DIMENSIONS,
@@ -61,7 +41,7 @@ import { boundedText } from "./text";
 export const MODES = ["must", "boost", "exclude"] as const;
 export type Mode = (typeof MODES)[number];
 /** 人的条件能有的强度：没有排除。 */
-export const PERSON_MODES = ["must", "boost"] as const;
+const PERSON_MODES = ["must", "boost"] as const;
 export type PersonMode = (typeof PERSON_MODES)[number];
 
 /** 人的条件能写在哪几维：有词表的几维是 `employee` 上的列，学校名是自由文本。 */
@@ -286,93 +266,4 @@ export function conditionKey(condition: Condition): string {
 	return JSON.stringify(
 		Object.entries(rest).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
 	);
-}
-
-/** 把停用的那些去掉。检索、证据行、分面都只看这一份。 */
-export function activeConditions(list: readonly Condition[]): Condition[] {
-	return list.filter((c) => !c.off);
-}
-
-/** 停用或启用一条条件。强度与取值原样留着——停用不是重写。 */
-export function withOff(condition: Condition, off: Off | null): Condition {
-	const { off: _off, ...rest } = condition;
-	return off ? ({ ...rest, off } as Condition) : (rest as Condition);
-}
-
-export function modesOf(condition: Condition): readonly Mode[] {
-	return condition.about === "experience" ? MODES : PERSON_MODES;
-}
-
-/** 改一条条件的强度。这条给不了的强度不改——调用方拿到的是原样的它。 */
-export function withMode(condition: Condition, mode: Mode): Condition {
-	return modesOf(condition).includes(mode)
-		? ({ ...condition, mode } as Condition)
-		: condition;
-}
-
-/**
- * 一条条件里可以单独拿掉的一项。经历主张的每个经历词、每个公司名、每个部门名、每个公司档
- * 各是一项，`kind` 与 `minMonths` 各是一项；人的条件的每个取值是一项。
- * chip 的菜单按它逐项画「去掉」。
- */
-export type Part =
-	| {
-			key:
-				| "what"
-				| "company"
-				| "department"
-				| "companyTag"
-				| "values"
-				| "atLeast";
-			value: string;
-	  }
-	| { key: "kind"; value: Kind }
-	| { key: "minMonths"; value: number };
-
-/** 一条条件拆成可以单独拿掉的几项，按屏幕上显示的顺序。 */
-export function partsOf(condition: Condition): Part[] {
-	if (condition.about === "person")
-		return "atLeast" in condition
-			? [{ key: "atLeast", value: condition.atLeast }]
-			: condition.values.map((value) => ({ key: "values", value }));
-	const parts: Part[] = [];
-	if (condition.kind) parts.push({ key: "kind", value: condition.kind });
-	for (const value of condition.companyTag ?? [])
-		parts.push({ key: "companyTag", value });
-	for (const value of condition.company ?? [])
-		parts.push({ key: "company", value });
-	for (const value of condition.department ?? [])
-		parts.push({ key: "department", value });
-	for (const value of condition.what ?? []) parts.push({ key: "what", value });
-	if (condition.minMonths)
-		parts.push({ key: "minMonths", value: condition.minMonths });
-	return parts;
-}
-
-/**
- * 拿掉一项。拿到一项不剩就是删掉整条，返回 `null`——一条什么都没说的条件
- * 在屏幕上画不出来，在检索里也没有意义。
- */
-export function withoutPart(
-	condition: Condition,
-	part: Part,
-): Condition | null {
-	if (condition.about === "person") {
-		if ("atLeast" in condition) return null;
-		const values = some(condition.values.filter((v) => v !== part.value));
-		return values ? { ...condition, values } : null;
-	}
-	const next: ExperienceCondition = { ...condition };
-	if (part.key === "kind") delete next.kind;
-	else if (part.key === "minMonths") delete next.minMonths;
-	else if (part.key !== "values" && part.key !== "atLeast") {
-		const kept = some(next[part.key]?.filter((v) => v !== part.value));
-		if (kept) next[part.key] = kept;
-		else delete next[part.key];
-	}
-	return partsOf(next).length > 0 ? next : null;
-}
-
-export function experienceConditions(list: readonly Condition[]) {
-	return list.filter((c): c is ExperienceCondition => c.about === "experience");
 }

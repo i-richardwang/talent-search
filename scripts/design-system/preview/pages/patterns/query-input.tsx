@@ -14,7 +14,7 @@ import {
 } from "#/components/ui/table";
 import { HomeScreen } from "#/routes/-components/home-screen";
 import { COMMIT_FAILED } from "#/routes/-lib/commit";
-import { inSentence } from "#/search/condition-label";
+import { compileConditions } from "#/search/compile";
 import { keywordsOf, NO_KEYWORDS } from "#/search/keywords";
 import { labelsInSentence } from "#/search/query";
 import { type QueryInput, queryOfSpec } from "#/search/spec";
@@ -279,7 +279,9 @@ function Usage() {
 					<KeywordBar
 						initial={KEYWORDS}
 						onSearch={(conditions) => {
-							setKeyword(`搜索：${inSentence(conditions)}`);
+							setKeyword(
+								`搜索：${labelsInSentence(compileConditions(conditions).conditions)}`,
+							);
 							return true;
 						}}
 					/>

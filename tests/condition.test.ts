@@ -1,26 +1,20 @@
 /**
- * 条件的边界与不变量。这一层是纯函数：模型输出、RPC 入参、命令行敲的字都从
+ * 旧条件表的边界与不变量。这一层是纯函数：关键词框、RPC 入参、命令行敲的字都从
  * `conditionsOf` 这一个入口进来，所以「取值不改字」「几条、几个词」「人的条件
- * 没有排除」「一项都不剩的整条消失」在这里测一次，三条路一起算数。
+ * 没有排除」「一项都不剩的整条消失」在这里测一次，几条路一起算数。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
-	activeConditions,
 	CONDITION_MAX,
 	type Condition,
 	conditionKey,
 	conditionsOf,
 	MAX_TERM_LEN,
-	modesOf,
-	partsOf,
 	termOf,
 	VALUES_MAX,
-	withMode,
-	withOff,
-	withoutPart,
 } from "#/search/condition";
-import { conditionLabel, partLabel } from "#/search/condition-label";
+import { conditionLabel } from "#/search/condition-label";
 import { dimCompare, FILTER_LIST_MAX } from "#/search/dimensions";
 import { parseQuery } from "#/search/query-syntax";
 import { hasMeaning } from "#/search/spec";
@@ -276,111 +270,18 @@ describe("不可信输入 → 条件", () => {
  * 停一条加分的主张再开回来，它必须还是加分的。做成第四档强度的话，那次退化
  * 会安静地发生，界面上没有任何提示。
  */
-describe("停用", () => {
-	const boost: Condition = {
-		about: "experience",
-		mode: "boost",
-		what: ["带团队", "带项目", "团队管理"],
-	};
-
-	test("停用与启用不碰强度、不碰取值", () => {
-		const off = withOff(boost, "user");
-		assert.deepEqual(off, { ...boost, off: "user" });
-		assert.deepEqual(withOff(off, null), boost);
-	});
-
-	test("activeConditions 去掉停用的，顺序不变", () => {
-		const list = conditionsOf([
-			{ about: "experience", what: ["算法"] },
-			{ about: "experience", what: ["运营"], off: "user" },
-			{ about: "experience", what: ["产品"] },
-		]);
-		assert.deepEqual(activeConditions(list), [exp("算法"), exp("产品")]);
-	});
-
-	test("身份不看停用：同一条条件停与不停是同一个 chip", () => {
-		assert.equal(conditionKey(boost), conditionKey(withOff(boost, "user")));
-		assert.notEqual(conditionKey(boost), conditionKey(withMode(boost, "must")));
-	});
-});
-
-describe("逐项去掉", () => {
-	const claim: Condition = {
-		about: "experience",
-		mode: "must",
-		what: ["算法", "模型"],
-		company: ["字节"],
-		kind: "external",
-		minMonths: 36,
-	};
-
-	test("各项按读出来的顺序排列：什么时候、在哪、做过什么、多久", () => {
-		assert.deepEqual(partsOf(claim), [
-			{ key: "kind", value: "external" },
-			{ key: "company", value: "字节" },
-			{ key: "what", value: "算法" },
-			{ key: "what", value: "模型" },
-			{ key: "minMonths", value: 36 },
-		]);
-	});
-
-	test("只去掉指定的那一项，其余原样；去到一项不剩就是删整条", () => {
-		assert.deepEqual(withoutPart(claim, { key: "what", value: "模型" }), {
-			...claim,
-			what: ["算法"],
-		});
-		const { kind: _kind, ...noKind } = claim;
-		assert.deepEqual(
-			withoutPart(claim, { key: "kind", value: "external" }),
-			noKind,
-		);
-		const { company: _company, ...noCompany } = claim;
-		assert.deepEqual(
-			withoutPart(claim, { key: "company", value: "字节" }),
-			noCompany,
-		);
-		const { minMonths: _m, ...noMonths } = claim;
-		assert.deepEqual(
-			withoutPart(claim, { key: "minMonths", value: 36 }),
-			noMonths,
-		);
-		assert.equal(
-			withoutPart(exp("算法"), { key: "what", value: "算法" }),
-			null,
-		);
-
-		const person: Condition = {
-			about: "person",
-			mode: "must",
-			field: "level",
-			values: ["D7", "D8"],
+describe("身份", () => {
+	test("身份不看停用：同一条条件停与不停是同一个 chip；强度变了是另一条", () => {
+		const boost: Condition = {
+			about: "experience",
+			mode: "boost",
+			what: ["带团队", "带项目", "团队管理"],
 		};
-		assert.deepEqual(withoutPart(person, { key: "values", value: "D7" }), {
-			...person,
-			values: ["D8"],
-		});
-		assert.equal(
-			withoutPart(
-				{ ...person, values: ["D7"] },
-				{ key: "values", value: "D7" },
-			),
-			null,
+		assert.equal(conditionKey(boost), conditionKey({ ...boost, off: "user" }));
+		assert.notEqual(
+			conditionKey(boost),
+			conditionKey({ ...boost, mode: "must" }),
 		);
-	});
-});
-
-describe("改强度", () => {
-	test("经历主张三档都行；人的条件没有排除，改不了就原样返回", () => {
-		const word = exp("算法");
-		assert.deepEqual(modesOf(word), ["must", "boost", "exclude"]);
-		assert.equal(withMode(word, "exclude").mode, "exclude");
-		const [level] = conditionsOf([
-			{ about: "person", field: "level", values: ["D7"] },
-		]);
-		if (!level) throw new Error("夹具丢了");
-		assert.deepEqual(modesOf(level), ["must", "boost"]);
-		assert.equal(withMode(level, "boost").mode, "boost");
-		assert.equal(withMode(level, "exclude"), level);
 	});
 });
 
@@ -418,14 +319,10 @@ describe("有高低的维：某档及以上", () => {
 		assert.deepEqual(conditionsOf([{ ...atLeast, atLeast: "" }]), []);
 	});
 
-	test("写成一句话是「学历 · 本科及以上」，整条是一项，拿掉就没了", () => {
+	test("写成一句话是「学历 · 本科及以上」", () => {
 		const [condition] = conditionsOf([atLeast]);
 		assert.ok(condition);
 		assert.equal(conditionLabel(condition), "学历 · 本科及以上");
-		const part = { key: "atLeast", value: "本科" } as const;
-		assert.deepEqual(partsOf(condition), [part]);
-		assert.equal(partLabel(condition, part), "本科及以上");
-		assert.equal(withoutPart(condition, part), null);
 	});
 
 	test("命令行写 >= 就是及以上", () => {

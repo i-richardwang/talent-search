@@ -7,7 +7,7 @@ import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { ResultHeader } from "#/routes/s/$turnId/-components/result-state";
 import type { Picks } from "#/routes/s/$turnId/-lib/picks";
 import type { Condition } from "#/search/condition";
-import { conditionLabel, partLabel } from "#/search/condition-label";
+import { conditionLabel } from "#/search/condition-label";
 import { emptyFacets } from "#/search/result";
 import type { InterpretFault } from "#/server/turn";
 import { compiledClaim, person } from "./conditions";
@@ -32,7 +32,7 @@ const NO_PICKS: Picks = {
 
 describe("产品文案使用常规 SaaS 语言", () => {
 	test("条件使用稳定的人话，不把存储值露给最近搜索", () => {
-		// 几个取值只显示代表词：其余的收在菜单里，chip 上有「还有」的记号
+		// 旧条件编译成查询时的标签：几个取值只写代表词
 		assert.deepEqual(
 			[
 				conditionLabel(person("level", ["P7", "P8"])),
@@ -63,23 +63,6 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.equal(
 			conditionLabel({ about: "experience", mode: "must", what: ["算法"] }),
 			"算法",
-		);
-		// 菜单里的各项出现在已经写明了是哪条条件的地方，只显示这一项
-		assert.equal(
-			partLabel(person("level", ["P7", "P8"]), { key: "values", value: "P8" }),
-			"P8",
-		);
-		assert.equal(
-			partLabel(claim, { key: "kind", value: "external" }),
-			"入职前经历",
-		);
-		assert.equal(
-			partLabel(claim, { key: "minMonths", value: 24 }),
-			"累计 2 年以上",
-		);
-		assert.equal(
-			partLabel(claim, { key: "what", value: "用户增长" }),
-			"用户增长",
 		);
 	});
 
