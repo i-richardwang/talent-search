@@ -57,22 +57,40 @@ export const ROUND2_CONDITIONS: Condition[] = [
 	MASTER,
 ];
 
+/** 做过技术分享（加分）：AI 问的那一问里的选项多出的一条。 */
+const SHARING: Condition = {
+	about: "experience",
+	mode: "boost",
+	what: ["技术分享"],
+};
+
 /** 第二轮 AI 问的那一问里可以换成的表：再加做过技术分享的，加分。 */
-export const SHARING_CONDITIONS: Condition[] = [
-	...ROUND2_CONDITIONS,
-	{ about: "experience", mode: "boost", what: ["技术分享"] },
-];
+export const SHARING_CONDITIONS: Condition[] = [...ROUND2_CONDITIONS, SHARING];
 
 /** 第三轮（在条件上直接改）的条件表：移除了学历。名单展示的就是这一轮。 */
 export const CONDITIONS: Condition[] = [RECOMMEND, BIG_COMPANY, TEAM];
 
-/** 名单展示的这一轮的完整查询。 */
 /** 对话的条件在界面上是一份查询：样例写成条件表，经编译器写出标签和 id。 */
 export function asQuery(list: readonly Condition[]): QueryCondition[] {
 	return compileConditions(list).conditions;
 }
 
+/** 名单展示的这一轮的完整查询。 */
 export const SPEC: SearchSpec = { query: { conditions: asQuery(CONDITIONS) } };
+
+/** 每条条件单独能找到的人数（chip 最右边），按条件 id；数是编的。 */
+export const COUNTS: Record<string, number> = Object.fromEntries(
+	(
+		[
+			[RECOMMEND, 186],
+			[BIG_COMPANY, 412],
+			[TEAM, 97],
+			[MASTER, 1240],
+			[SHARING, 58],
+			[EXCLUDE_INTERN, 23],
+		] as const
+	).map(([c, people]) => [asQuery([c])[0]?.id, people]),
+);
 
 /** 名单上证据行按的主张：做过推荐系统、带过团队。 */
 export const CLAIMS: Claim[] = rolesOf(compileConditions(CONDITIONS)).claims;

@@ -71,7 +71,7 @@ export const Route = createFileRoute("/s/$turnId")({
 });
 
 function Workbench() {
-	const { thread, result } = Route.useLoaderData();
+	const { thread, result, counts } = Route.useLoaderData();
 	const { turnId } = Route.useParams();
 	const { understanding } = useLoaderData({ from: "__root__" });
 	// loader 保证线程非空、正看着的这一轮在链上
@@ -238,6 +238,7 @@ function Workbench() {
 				notices={
 					<WorkspaceNotices
 						conditions={query.conditions}
+						counts={counts}
 						keywords={keywords}
 						earlier={earlier}
 						facets={outcome.facets}

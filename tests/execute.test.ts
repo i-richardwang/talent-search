@@ -14,6 +14,7 @@ const teardown = await setup();
 after(teardown);
 
 const { execute, probe } = await import("#/search/execute");
+const { conditionCounts } = await import("#/search/search");
 const { db, pool } = await import("#/db");
 const { recordStream, scale, employeeRecord } = await import("#/db/schema");
 
@@ -245,6 +246,17 @@ describe("原型二：限定公司内的语义经历", () => {
 			{ id: "intern", people: 1, problem: null },
 		]);
 		assert.equal(tried.total, 2);
+	});
+
+	test("chip 上的人数就是试跑的每条人数，按条件 id；停用的没有", async () => {
+		assert.deepEqual(
+			await conditionCounts({
+				query: {
+					conditions: [atJiachen, noIntern, { ...highTwice, off: "user" }],
+				},
+			}),
+			{ rec: 2, intern: 1 },
+		);
 	});
 
 	test("不写排除时实习那段是合格证据", async () => {

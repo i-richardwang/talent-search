@@ -134,11 +134,18 @@ export const PENDING_TRACE: TraceStep[] = [
 	},
 	{
 		at: JUST_NOW + 1300,
-		tool: "lookup_attribute",
-		field: "company",
-		found: [
-			{ query: "星河", people: 44, values: [{ name: "星河科技", people: 38 }] },
-		],
+		tool: "discover",
+		discovery: {
+			kind: "names",
+			subject: "公司",
+			found: [
+				{
+					query: "星河",
+					people: 44,
+					values: [{ name: "星河科技", people: 38 }],
+				},
+			],
+		},
 	},
 ];
 

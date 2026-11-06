@@ -614,13 +614,19 @@ function discoveryFindings(d: Discovery): string[] {
 	return ["这一项人才库中查不到"];
 }
 
-/** 试搜的人数就是这条条件单独能找到的人，和名单上方那条条件说的是同一件事。 */
+/**
+ * 试搜的人数就是这条条件单独能找到的人，和 chip 上的人数是同一个数；排除数的是它排除了
+ * 多少人的经历。
+ */
 function probeFindings(p: Probe): string[] {
+	const people = (c: Probe["conditions"][number]) =>
+		c.problem
+			? "这样写搜不了"
+			: c.people === null
+				? "已停用"
+				: `${c.mode === "exclude" ? "排除 " : ""}${c.people} 人`;
 	return [
-		...p.conditions.map(
-			(c) =>
-				`${c.label}：${c.problem ? "这样写搜不了" : c.people === null ? "已停用" : `${c.people} 人`}`,
-		),
+		...p.conditions.map((c) => `${c.label}：${people(c)}`),
 		...(p.total !== null ? [`合起来：${p.total} 人`] : []),
 	];
 }

@@ -178,7 +178,7 @@ describe("看目录", () => {
 			await discover({ relation: "person", column: "school", match: ["银河"] }),
 			{
 				kind: "names",
-				subject: "员工·学校",
+				subject: "学校",
 				found: await lookupNames("school", ["银河"]),
 			},
 		);
@@ -189,7 +189,7 @@ describe("看目录", () => {
 		});
 		assert.deepEqual(values, {
 			kind: "values",
-			subject: "工作经历·公司档",
+			subject: "公司档",
 			values: vocab.companyTag,
 		});
 	});
@@ -215,6 +215,51 @@ describe("看目录", () => {
 			"problem",
 		);
 		assert.equal((await discover({ relation: "employee" })).kind, "problem");
+	});
+
+	test("记录流的档按档高排，标题写流的名字；没有这条流给一句原因", async () => {
+		const { db, pool } = await import("#/db");
+		const { recordStream, scale, employeeRecord } = await import("#/db/schema");
+		await db.insert(recordStream).values({
+			stream: "perf",
+			kind: "rating",
+			label: "绩效",
+			period: "半年",
+		});
+		await db
+			.insert(scale)
+			.values(
+				["B", "A"].map((value, rank) => ({ stream: "perf", value, rank })),
+			);
+		await db.insert(employeeRecord).values(
+			["A0", "A1", "A2"].map((empId, i) => ({
+				empId,
+				stream: "perf",
+				periodStart: "2025-01-01",
+				periodEnd: "2025-06-30",
+				value: i === 0 ? "B" : "A",
+			})),
+		);
+		try {
+			assert.deepEqual(
+				await discover({ relation: "rating", column: "value", stream: "perf" }),
+				{
+					kind: "values",
+					subject: "绩效的档",
+					values: [
+						{ name: "B", people: 1 },
+						{ name: "A", people: 2 },
+					],
+				},
+			);
+			assert.equal(
+				(await discover({ relation: "rating", column: "value", stream: "x" }))
+					.kind,
+				"problem",
+			);
+		} finally {
+			await pool.query("delete from record_stream");
+		}
 	});
 });
 

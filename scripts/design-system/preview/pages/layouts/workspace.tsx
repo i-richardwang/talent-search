@@ -15,7 +15,7 @@ import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { type View, validateView } from "#/routes/s/$turnId/-lib/view-params";
 import { queryOfSpec, type SearchSpec } from "#/search/spec";
 import { Routed, useOpenEmpId } from "../../routed";
-import { SPEC } from "../../samples/conditions";
+import { COUNTS, SPEC } from "../../samples/conditions";
 import { OUTCOME } from "../../samples/people";
 import { LATEST_TURN_ID, TASK_TITLE, THREAD } from "../../samples/thread";
 import { PersonPane } from "./detail";
@@ -92,6 +92,7 @@ function Workspace() {
 				notices={
 					<WorkspaceNotices
 						conditions={queryOfSpec(spec).conditions}
+						counts={COUNTS}
 						keywords={null}
 						earlier={false}
 						facets={outcome.facets}

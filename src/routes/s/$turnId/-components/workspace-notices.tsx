@@ -21,6 +21,7 @@ export function WorkspaceNotices({
 	turnId,
 	mode,
 	conditions,
+	counts,
 	keywords,
 	onRevise,
 	onKeywords,
@@ -34,6 +35,8 @@ export function WorkspaceNotices({
 	turnId: string;
 	mode: SearchMode;
 	conditions: readonly QueryCondition[];
+	/** 每条条件单独的人数，按 id */
+	counts: Readonly<Record<string, number>>;
 	/** 关键词链框里的词；对话链为 null */
 	keywords: Keywords | null;
 	onRevise: (conditions: QueryCondition[]) => boolean | Promise<boolean>;
@@ -53,7 +56,13 @@ export function WorkspaceNotices({
 	return (
 		<>
 			{earlier && <Earlier latestId={latestId} />}
-			{chips && <QueryChips conditions={conditions} onChange={onRevise} />}
+			{chips && (
+				<QueryChips
+					conditions={conditions}
+					counts={counts}
+					onChange={onRevise}
+				/>
+			)}
 			{mode === "keyword" && (
 				<KeywordBar
 					initial={keywords ?? undefined}

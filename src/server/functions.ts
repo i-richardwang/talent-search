@@ -9,7 +9,7 @@ import { validateCommit } from "#/search/commit-input";
 import { KEYWORD_FIELDS, KEYWORD_RULES } from "#/search/keywords";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
-import { search, suggest } from "#/search/search";
+import { conditionCounts, search, suggest } from "#/search/search";
 import { administrator, authenticated } from "./auth-functions";
 import {
 	employeeData,
@@ -35,6 +35,7 @@ import {
 /**
  * 按记录 id 载入完整线程和当前筛选下的结果。条件来自已校验的查询记录；
  * 视图入参在此独立校验。待理解记录只返回线程，工作台读进度等它理解完。
+ * 对话的条件画成 chip，连同每条单独的人数一起返回；关键词的条件在框里，没有人数。
  */
 export const loadWorkbench = createServerFn({ method: "GET" })
 	.middleware([authenticated])
@@ -46,16 +47,21 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 	.handler(
 		async ({
 			data,
-		}): Promise<{ thread: Turn[]; result: SearchOutcome | null } | null> => {
+		}): Promise<{
+			thread: Turn[];
+			result: SearchOutcome | null;
+			counts: Record<string, number>;
+		} | null> => {
 			// 整条链一次取回：对话栏画的是全部，名单是正看着的这一轮
 			const thread = await loadThread(data.turnId);
 			const turn = thread?.find((t) => t.id === data.turnId);
 			if (!thread || !turn) return null;
-			if (!turn.spec) return { thread, result: null };
-			return {
-				thread,
-				result: await search(turn.spec, data.filters, data.limit),
-			};
+			if (!turn.spec) return { thread, result: null, counts: {} };
+			const [result, counts] = await Promise.all([
+				search(turn.spec, data.filters, data.limit),
+				turn.mode === "conversation" ? conditionCounts(turn.spec) : {},
+			]);
+			return { thread, result, counts };
 		},
 	);
 

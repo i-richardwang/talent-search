@@ -70,7 +70,8 @@ export async function discover(input: DiscoverInput): Promise<Discovery> {
 		relation.columns as Record<string, CatalogRelation["columns"][string]>
 	)[column];
 	if (!declared) return problem(`${relation.name} 没有 ${column} 这一列`);
-	const subject = `${relation.label}·${declared.label}`;
+	// 线程里这一步的标题写给 HR：列的中文名，记录流写它的名字，不写目录里的英文名
+	const subject = declared.label;
 	const field = NAME_COLUMNS[relation.name]?.[column];
 	if (field) {
 		const names = (input.match ?? []).map((m) => m.trim()).filter(Boolean);
@@ -83,17 +84,25 @@ export async function discover(input: DiscoverInput): Promise<Discovery> {
 			`${column} 不是有限取值的列，不列取值；做过什么写进 terms，按意思找`,
 		);
 	const byStream = relation.name === "rating" || relation.name === "status";
-	if (byStream && column === "value" && !input.stream)
+	const stream = byStream ? input.stream : undefined;
+	if (byStream && column === "value" && !stream)
 		return problem("各条记录流的档不一样：在 stream 里写是哪一条流");
+	const streamLabel = stream ? await labelOf(stream) : null;
+	if (stream && !streamLabel) return problem(`没有 ${stream} 这条记录流`);
 	return {
 		kind: "values",
-		subject: input.stream ? `${subject}（${input.stream}）` : subject,
-		values: await valuesOf(
-			relation.name,
-			column,
-			byStream ? input.stream : undefined,
-		),
+		subject: streamLabel ? `${streamLabel}的${subject}` : subject,
+		values: await valuesOf(relation.name, column, stream),
 	};
+}
+
+async function labelOf(stream: string): Promise<string | null> {
+	const { rows } = await withCorpusSnapshot((store) =>
+		store.execute<{ label: string }>(
+			sql`select label from record_stream where stream = ${stream}`,
+		),
+	);
+	return rows[0]?.label ?? null;
 }
 
 function problem(text: string): Discovery {

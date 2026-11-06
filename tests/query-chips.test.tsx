@@ -9,9 +9,12 @@ import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
 import type { QueryCondition } from "#/search/query";
 import { visibleText } from "./render";
 
-const markup = (conditions: QueryCondition[]) =>
+const markup = (
+	conditions: QueryCondition[],
+	counts?: Record<string, number>,
+) =>
 	renderToStaticMarkup(
-		<QueryChips conditions={conditions} onChange={() => {}} />,
+		<QueryChips conditions={conditions} counts={counts} onChange={() => {}} />,
 	);
 const seen = (conditions: QueryCondition[]) => visibleText(markup(conditions));
 
@@ -62,6 +65,24 @@ describe("查询 chip", () => {
 		const off = [chip("经理", "must", { off: "user" })];
 		assert.match(seen(off), /经理/);
 		assert.match(markup(off), /aria-label="[^"]*已停用"/);
+	});
+
+	test("最右边是这一条单独的人数，读屏也读出来；停用的、没有人数的不写", () => {
+		const html = markup(
+			[
+				chip("推荐"),
+				chip("实习", "exclude"),
+				chip("经理", "must", { off: "user" }),
+				chip("带团队", "boost"),
+			],
+			{ 推荐: 12, 实习: 3, 经理: 40 },
+		);
+		const text = visibleText(html);
+		assert.match(text, /推荐\s*12 人/);
+		assert.match(text, /实习\s*排除\s*3 人/);
+		assert.doesNotMatch(text, /40 人/, "停用的没参与检索");
+		assert.doesNotMatch(text, /带团队\s*加分\s*\d/);
+		assert.match(html, /aria-label="必须，推荐，12 人"/);
 	});
 
 	test("删除钮说清删的是哪一条", () => {

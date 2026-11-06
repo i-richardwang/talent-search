@@ -386,11 +386,12 @@ describe("检索人才库的过程", () => {
 				probe: {
 					conditions: [
 						{ label: "做过推荐", mode: "must", people: 12, problem: null },
+						{ label: "实习不算", mode: "exclude", people: 2, problem: null },
 					],
 					total: 12,
 				},
 			}),
-			["做过推荐：12 人", "合起来：12 人"],
+			["做过推荐：12 人", "实习不算：排除 2 人", "合起来：12 人"],
 		);
 	});
 
