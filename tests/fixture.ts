@@ -6,7 +6,12 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { SQL } from "drizzle-orm";
-import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
+import {
+	getTableConfig,
+	getViewConfig,
+	PgDialect,
+	type PgTable,
+} from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import { phrasesOf } from "#/corpus/route-texts";
 import {
@@ -14,19 +19,23 @@ import {
 	authSession,
 	authUser,
 	authVerification,
+	CATALOG_VIEWS,
 	completionCache,
 	EMBED_DIM,
 	embeddingCache,
 	embeddingSpace,
 	employee,
+	employeeRecord,
 	experience,
 	experienceNext,
 	experiencePhrase,
 	experiencePhraseNext,
 	phrase,
 	phraseGloss,
+	recordStream,
 	rerankCache,
 	reviewGroup,
+	scale,
 	searchTurn,
 	taskRun,
 	term,
@@ -39,6 +48,9 @@ import { parseQuery } from "#/search/query-syntax";
  * bun test --parallel 隔离模块与环境，但多个文件可共用同一 worker 进程。
  */
 const SCHEMA = `talent_test_${process.pid}_${randomBytes(4).toString("hex")}`;
+
+/** 这个测试文件的数据目录（`schema.ts` 的 `catalog`）：视图建在这里，指向本文件的表。 */
+const CATALOG = `${SCHEMA}_catalog`;
 
 /** Postgres 把更长的名字静默截短；截短后和 schema 里的名字对不上，db:push 每次都会删了重建。 */
 const NAME_MAX_BYTES = 63;
@@ -487,8 +499,27 @@ export async function setup() {
 		embeddingCache,
 		completionCache,
 		taskRun,
+		recordStream,
+		scale,
+		employeeRecord,
 	])
 		await admin.query(ddl(SCHEMA, t));
+	// 视图里的表名不带 schema，建视图时按本文件的 schema 解析，绑定的就是本文件的表
+	await admin.query(`create schema ${CATALOG}`);
+	const viewClient = await admin.connect();
+	try {
+		await viewClient.query(`set search_path to ${SCHEMA}, public`);
+		for (const view of CATALOG_VIEWS) {
+			const { name, query } = getViewConfig(view);
+			if (!query) throw new Error(`目录视图 ${name} 没有定义`);
+			await viewClient.query(
+				`create view ${CATALOG}."${name}" as ${new PgDialect().sqlToQuery(query).sql}`,
+			);
+		}
+		await viewClient.query("reset search_path");
+	} finally {
+		viewClient.release();
+	}
 	await admin.query(
 		`insert into ${SCHEMA}.embedding_space
 			(space_id, model, dimension, canary_text, canary_embedding)
@@ -529,12 +560,14 @@ export async function setup() {
 	process.env.EXTRACT_CONCURRENCY = "2";
 	process.env.TALENT_SOURCE = "csv-dir";
 	process.env.TALENT_CSV_DIR = "";
+	process.env.TALENT_CATALOG_SCHEMA = CATALOG;
 
 	return async function teardown() {
 		const { pool } = await import("#/db");
 		await pool.end();
 		await modelServer.close();
 		const a = new Pool({ connectionString: base });
+		await a.query(`drop schema if exists ${CATALOG} cascade`);
 		await a.query(`drop schema if exists ${SCHEMA} cascade`);
 		await a.end();
 	};

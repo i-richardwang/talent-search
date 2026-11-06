@@ -10,6 +10,7 @@ import {
 	index,
 	integer,
 	jsonb,
+	pgSchema,
 	pgTable,
 	primaryKey,
 	text,
@@ -237,6 +238,194 @@ export const experience = pgTable(
 
 export type Employee = typeof employee.$inferSelect;
 export type Experience = typeof experience.$inferSelect;
+
+const RECORD_KINDS = ["rating", "status"] as const;
+
+/**
+ * 记录流的声明，同步时由适配器给（`corpus/contract.ts` 的 `streams`）。`label`、`period`、
+ * `notes` 进数据目录给查询理解读，管理页「数据」按它列出每条流的覆盖。
+ */
+export const recordStream = pgTable(
+	"record_stream",
+	{
+		stream: text("stream").primaryKey(),
+		kind: text("kind", { enum: RECORD_KINDS }).notNull(),
+		label: text("label").notNull(),
+		/** 一期多长（「半年」）；状态流为空 */
+		period: text("period").notNull().default(""),
+		/** 这条流的口径：怎么评、缺一期意味着什么 */
+		notes: text("notes").notNull().default(""),
+	},
+	(t) => [
+		check("record_stream_kind_1", sql`${t.kind} in ('rating', 'status')`),
+	],
+);
+
+/**
+ * 档位表：职级档（流名 `level`）、学历五档（`education`）和各评级流的档。比高低只比
+ * `rank`，不比档名字面。同步时整表重写（`corpus/pipeline.ts` 的 `scaleRows`）。
+ */
+export const scale = pgTable(
+	"scale",
+	{
+		stream: text("stream").notNull(),
+		value: text("value").notNull(),
+		rank: integer("rank").notNull(),
+	},
+	(t) => [primaryKey({ columns: [t.stream, t.value] })],
+);
+
+/**
+ * 按期登记的记录：评级一期一行，状态一段一行。同一人同一流同一期只有一行，修订在
+ * 同步时去重（只留最终一条）。没有某一期的行表示没有记录，不表示任何档。
+ */
+export const employeeRecord = pgTable(
+	"employee_record",
+	{
+		empId: text("emp_id")
+			.notNull()
+			.references(() => employee.empId, { onDelete: "cascade" }),
+		stream: text("stream")
+			.notNull()
+			.references(() => recordStream.stream, { onDelete: "cascade" }),
+		periodStart: date("period_start").notNull(),
+		/** 评级是这一期的结束日；状态为空表示仍有效 */
+		periodEnd: date("period_end"),
+		value: text("value").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.empId, t.stream, t.periodStart] }),
+		check(
+			"employee_record_period_ordered",
+			sql`${t.periodEnd} is null or ${t.periodEnd} >= ${t.periodStart}`,
+		),
+	],
+);
+
+/**
+ * 数据目录：查询条件里模型写的 SQL 只能读这个 schema 里的视图（`server/sandbox.ts`
+ * 以只读角色执行）。视图不含姓名，也不含简历原文：按意思找的经历由语义命中表 `hit`
+ * 回答，模型不按原文筛。每一列的中文名、含义和口径在 `search/catalog.ts`。
+ * 空串一律读成 null：模型写 `is null` 就是「没有记录」。
+ */
+export const catalog = pgSchema("catalog");
+
+export const catalogPerson = catalog
+	.view("person", {
+		emp_id: text("emp_id"),
+		level_band: text("level_band"),
+		level_rank: integer("level_rank"),
+		education: text("education"),
+		education_rank: integer("education_rank"),
+		school: text("school"),
+		school_tier: text("school_tier"),
+		overseas: text("overseas"),
+		recruitment: text("recruitment"),
+		hire_date: date("hire_date"),
+		cur_dept: text("cur_dept"),
+		cur_seq_l1: text("cur_seq_l1"),
+		cur_seq_l2: text("cur_seq_l2"),
+		cur_seq_l3: text("cur_seq_l3"),
+	})
+	.as(sql`select emp_id,
+		nullif(cur_level_band, '') as level_band, cur_level_rank as level_rank,
+		nullif(education_level, '') as education, education_rank,
+		nullif(school, '') as school, nullif(school_tier, '') as school_tier,
+		case overseas_educated when true then '是' when false then '否' end as overseas,
+		nullif(recruitment, '') as recruitment, hire_date,
+		nullif(cur_dept, '') as cur_dept, nullif(cur_seq_l1, '') as cur_seq_l1,
+		nullif(cur_seq_l2, '') as cur_seq_l2, nullif(cur_seq_l3, '') as cur_seq_l3
+	from employee`);
+
+/**
+ * 一段工作经历；待业段不在这里。序列登记的优先，没有才取模型对齐的（两级成对）；
+ * `skills` 是这段抽出的能力词的标准写法连同全部更宽的词。
+ */
+export const catalogExperience = catalog
+	.view("experience", {
+		id: integer("id"),
+		emp_id: text("emp_id"),
+		kind: text("kind"),
+		start_date: date("start_date"),
+		end_date: date("end_date"),
+		months: integer("months"),
+		company: text("company"),
+		company_tag: text("company_tag"),
+		department: text("department"),
+		department_path: text("department_path"),
+		title: text("title"),
+		level: text("level"),
+		seq_l1: text("seq_l1"),
+		seq_l2: text("seq_l2"),
+		skills: text("skills").array(),
+	})
+	.as(sql`select e.id, e.emp_id, e.kind, e.start_date, e.end_date, e.months,
+		nullif(e.company, '') as company,
+		nullif(e.company_meta ->> 'company_tag', '') as company_tag,
+		nullif(e.department, '') as department,
+		nullif(e.department_path, '') as department_path,
+		nullif(e.title, '') as title, nullif(e.level, '') as level,
+		nullif(coalesce(nullif(e.seq_l1, ''), e.seq_inferred_l1), '') as seq_l1,
+		nullif(coalesce(nullif(e.seq_l2, ''), e.seq_inferred_l2), '') as seq_l2,
+		array(
+			with recursive up(word) as (
+				select coalesce(t.canonical, ph.text)
+				from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
+				left join term t on t.word = ph.text
+				where ep.experience_id = e.id and ep.route = 'skill'
+				union
+				select t.parent from up join term t on t.word = up.word
+				where t.parent is not null
+			)
+			select word from up order by word) as skills
+	from experience e where not e.unemployed`);
+
+/** 一期评级。`value_rank` 是这一档在档位表里的高低。 */
+export const catalogRating = catalog
+	.view("rating", {
+		emp_id: text("emp_id"),
+		stream: text("stream"),
+		period_start: date("period_start"),
+		period_end: date("period_end"),
+		value: text("value"),
+		value_rank: integer("value_rank"),
+	})
+	.as(sql`select r.emp_id, r.stream, r.period_start, r.period_end, r.value,
+		s.rank as value_rank
+	from employee_record r
+	join record_stream rs on rs.stream = r.stream and rs.kind = 'rating'
+	left join scale s on s.stream = r.stream and s.value = r.value`);
+
+/** 一段状态；`valid_to` 为空表示仍有效。 */
+export const catalogStatus = catalog
+	.view("status", {
+		emp_id: text("emp_id"),
+		stream: text("stream"),
+		value: text("value"),
+		valid_from: date("valid_from"),
+		valid_to: date("valid_to"),
+	})
+	.as(sql`select r.emp_id, r.stream, r.value,
+		r.period_start as valid_from, r.period_end as valid_to
+	from employee_record r
+	join record_stream rs on rs.stream = r.stream and rs.kind = 'status'`);
+
+export const catalogScale = catalog
+	.view("scale", {
+		stream: text("stream"),
+		value: text("value"),
+		rank: integer("rank"),
+	})
+	.as(sql`select stream, value, rank from scale`);
+
+/** 目录里的全部视图，按目录的顺序。 */
+export const CATALOG_VIEWS = [
+	catalogPerson,
+	catalogExperience,
+	catalogRating,
+	catalogStatus,
+	catalogScale,
+] as const;
 
 /** 嵌入维数的唯一来源；更换维数必须同时更换嵌入空间。 */
 export const EMBED_DIM = 1024;

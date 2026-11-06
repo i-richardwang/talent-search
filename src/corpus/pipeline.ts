@@ -1,7 +1,7 @@
 /**
- * 源契约转换为 employee 与 experience 写入行的纯管线。
+ * 源契约转换为 employee、experience 与记录各表写入行的纯管线。
  * 拒绝并报告非法、倒置、缺开始日或未来生效的区间；补齐开放区间，合并相邻同键段，
- * 计算时长、当前信息、职级档与学历档。asOf 由调用方指定或使用当地日历日。
+ * 计算时长、当前信息、职级档与学历档；记录按期去重修订。asOf 由调用方指定或使用当地日历日。
  */
 
 import type { CompanyMeta } from "#/db/schema";
@@ -12,6 +12,9 @@ import {
 	type SourceEmployee,
 	type SourceExternal,
 	type SourceLevel,
+	type SourceRecord,
+	type SourceScale,
+	type SourceStream,
 } from "./contract";
 import type { Report } from "./report";
 
@@ -63,6 +66,26 @@ export type ExperienceRow = {
 	level: string;
 	description: string;
 	months: number;
+};
+
+export type StreamRow = {
+	stream: string;
+	kind: "rating" | "status";
+	label: string;
+	period: string;
+	notes: string;
+};
+
+/** 一个档：职级档（`level`）、学历档（`education`）和各评级流的档都在这里。 */
+export type ScaleRow = { stream: string; value: string; rank: number };
+
+export type RecordRow = {
+	emp_id: string;
+	stream: string;
+	period_start: string;
+	/** 评级必有；状态为空表示仍有效 */
+	period_end: string | null;
+	value: string;
 };
 
 /** 待业段的岗位显示。它不是一个岗位名，是「这段时间没有工作」的表达。 */
@@ -568,6 +591,222 @@ function tallied(counts: Map<string, number>, unit: string): string {
 	return `${total} ${unit}（${few(sorted.map(([value, n]) => `${value} ${n}`))}）`;
 }
 
+// ---------------------------------------------------------------------- 记录
+
+/** 职级档与学历档在 `scale` 里的流名，数据源的记录流不能用。 */
+const LEVEL_STREAM = "level";
+const EDUCATION_STREAM = "education";
+const RESERVED_STREAMS = new Set([LEVEL_STREAM, EDUCATION_STREAM]);
+
+/** 记录流的声明：流名非空、唯一、不占用保留名，种类是两种之一。无效声明拒绝整轮同步。 */
+function recordStreams(rows: SourceStream[]): StreamRow[] {
+	const out = new Map<string, StreamRow>();
+	for (const [index, row] of rows.entries()) {
+		const where = `数据源的 streams 第 ${index + 1} 行`;
+		const stream = row.stream.trim();
+		const kind = row.kind.trim();
+		if (!stream || !row.label.trim())
+			throw new Error(`${where}不完整：${JSON.stringify(row)}`);
+		if (RESERVED_STREAMS.has(stream))
+			throw new Error(`${where}：流名 ${stream} 留给职级档与学历档`);
+		if (kind !== "rating" && kind !== "status")
+			throw new Error(`${where}：kind 只能是 rating 或 status`);
+		if (out.has(stream)) throw new Error(`${where}：流 ${stream} 重复声明`);
+		out.set(stream, {
+			stream,
+			kind,
+			label: row.label.trim(),
+			period: row.period.trim(),
+			notes: row.notes.trim(),
+		});
+	}
+	return [...out.values()];
+}
+
+/**
+ * 档位表：职级档来自 `levels`，学历五档来自契约，评级流的档来自 `scales`。
+ * 评级流的档名在流里唯一、档高为整数；档位表只属于评级流。无效档位表拒绝整轮同步。
+ */
+function scaleRows(
+	bands: Map<string, Band>,
+	streams: StreamRow[],
+	rows: SourceScale[],
+): ScaleRow[] {
+	const out: ScaleRow[] = [];
+	const seen = new Set<string>();
+	for (const { band, rank } of bands.values()) {
+		const key = `${LEVEL_STREAM}\u0001${band}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push({ stream: LEVEL_STREAM, value: band, rank });
+	}
+	for (const [index, value] of EDUCATION_LADDER.entries())
+		out.push({ stream: EDUCATION_STREAM, value, rank: index + 1 });
+	const ratings = new Set(
+		streams.filter((s) => s.kind === "rating").map((s) => s.stream),
+	);
+	for (const [index, row] of rows.entries()) {
+		const where = `数据源的 scales 第 ${index + 1} 行`;
+		const stream = row.stream.trim();
+		const value = row.value.trim();
+		const rank = Number.parseInt(row.rank.trim(), 10);
+		if (!stream || !value || String(rank) !== row.rank.trim())
+			throw new Error(`${where}不完整：${JSON.stringify(row)}`);
+		if (!ratings.has(stream))
+			throw new Error(`${where}：${stream} 不是 streams 里声明的评级流`);
+		const key = `${stream}\u0001${value}`;
+		if (seen.has(key))
+			throw new Error(`${where}：${stream} 的档 ${value} 重复`);
+		seen.add(key);
+		out.push({ stream, value, rank });
+	}
+	return out;
+}
+
+/**
+ * 记录：拒绝并报告不属于声明过的流、日期读不懂、缺开始日、倒置、开始日在未来的行；
+ * 评级还必须有结束日、档在档位表里。同一人同一流同一期的几条修订按 `recorded_at`
+ * 留最晚的一条；最晚的不止一条且档不同、或修订缺登记时刻时，分不出哪条是最终的，
+ * 整组拒绝。
+ */
+function buildRecords(
+	rows: SourceRecord[],
+	streams: StreamRow[],
+	scale: ScaleRow[],
+	asOf: Date,
+	report: Report,
+): RecordRow[] {
+	const kindOf = new Map(streams.map((s) => [s.stream, s.kind]));
+	const bands = new Set(scale.map((s) => `${s.stream}\u0001${s.value}`));
+	type Parsed = {
+		emp_id: string;
+		stream: string;
+		start: Maybe;
+		end: Maybe;
+		value: string;
+		recorded: Maybe;
+	};
+	let parsed: Parsed[] = rows.map((row) => ({
+		emp_id: row.emp_id.trim(),
+		stream: row.stream.trim(),
+		start: parseDate(row.period_start),
+		end: parseDate(row.period_end),
+		value: row.value.trim(),
+		recorded: parseDate(row.recorded_at),
+	}));
+	const unit = "条";
+	parsed = reject(
+		parsed,
+		(r) => !kindOf.has(r.stream),
+		"记录不属于声明过的流",
+		report,
+		unit,
+	);
+	parsed = reject(
+		parsed,
+		(r) =>
+			r.start === "invalid" || r.end === "invalid" || r.recorded === "invalid",
+		"记录日期格式无效",
+		report,
+		unit,
+	);
+	parsed = reject(
+		parsed,
+		(r) => r.start === null,
+		"记录缺少开始日",
+		report,
+		unit,
+	);
+	parsed = reject(
+		parsed,
+		(r) => r.start instanceof Date && r.end instanceof Date && r.end < r.start,
+		"记录日期倒置",
+		report,
+		unit,
+	);
+	parsed = reject(
+		parsed,
+		(r) => r.start instanceof Date && r.start > asOf,
+		"记录开始日在未来",
+		report,
+		unit,
+	);
+	parsed = reject(
+		parsed,
+		(r) => kindOf.get(r.stream) === "rating" && r.end === null,
+		"评级缺少这一期的结束日",
+		report,
+		unit,
+	);
+	parsed = reject(
+		parsed,
+		(r) =>
+			kindOf.get(r.stream) === "rating" &&
+			!bands.has(`${r.stream}\u0001${r.value}`),
+		"评级的档不在档位表里",
+		report,
+		unit,
+	);
+	parsed = reject(parsed, (r) => !r.value, "记录缺少取值", report, unit);
+
+	const groups = new Map<string, Parsed[]>();
+	for (const r of parsed) {
+		const key = `${r.emp_id}\u0001${r.stream}\u0001${isoDate(r.start as Date)}`;
+		const group = groups.get(key);
+		if (group) group.push(r);
+		else groups.set(key, [r]);
+	}
+	const out: RecordRow[] = [];
+	let revised = 0;
+	let ambiguous = 0;
+	for (const group of groups.values()) {
+		const distinct = new Map(
+			group.map((r) => [
+				JSON.stringify([
+					r.value,
+					r.end instanceof Date ? isoDate(r.end) : null,
+					r.recorded instanceof Date ? isoDate(r.recorded) : null,
+				]),
+				r,
+			]),
+		);
+		let final = [...distinct.values()];
+		if (final.length > 1) {
+			revised++;
+			if (final.some((r) => !(r.recorded instanceof Date))) final = [];
+			else {
+				const latest = Math.max(
+					...final.map((r) => (r.recorded as Date).getTime()),
+				);
+				final = final.filter((r) => (r.recorded as Date).getTime() === latest);
+			}
+			if (final.length !== 1) {
+				ambiguous++;
+				continue;
+			}
+		}
+		const [r] = final as [Parsed];
+		out.push({
+			emp_id: r.emp_id,
+			stream: r.stream,
+			period_start: isoDate(r.start as Date),
+			period_end: r.end instanceof Date ? isoDate(r.end) : null,
+			value: r.value,
+		});
+	}
+	if (revised)
+		report(
+			`  同一期有多条修订 ${revised} 组，按登记时刻留最终一条` +
+				(ambiguous ? `；其中 ${ambiguous} 组分不出最终一条，已拒绝导入` : ""),
+		);
+	return out.sort(
+		(a, b) =>
+			a.emp_id.localeCompare(b.emp_id) ||
+			a.stream.localeCompare(b.stream) ||
+			a.period_start.localeCompare(b.period_start),
+	);
+}
+
 // ---------------------------------------------------------------------- 入口
 
 /**
@@ -578,7 +817,13 @@ export function build(
 	data: SourceData,
 	report: Report,
 	asOf: Date = today(),
-): { employee: EmployeeRow[]; experience: ExperienceRow[] } {
+): {
+	employee: EmployeeRow[];
+	experience: ExperienceRow[];
+	streams: StreamRow[];
+	scale: ScaleRow[];
+	records: RecordRow[];
+} {
 	let profiles = normalizeProfiles(data.employees, report);
 	profiles = reject(
 		profiles,
@@ -641,12 +886,8 @@ export function build(
 	const internal = buildInternal(assignments, asOf, report);
 	report(`  公司内 ${internal.length} 段`);
 
-	const employee = buildEmployee(
-		profiles,
-		internal,
-		levelBands(data.levels),
-		report,
-	);
+	const bands = levelBands(data.levels);
+	const employee = buildEmployee(profiles, internal, bands, report);
 	const hireDates = new Map<string, Date>();
 	for (const profile of profiles)
 		if (profile.hire_date) hireDates.set(profile.emp_id, profile.hire_date);
@@ -683,7 +924,19 @@ export function build(
 			a.start_date.localeCompare(b.start_date),
 	);
 
-	return { employee, experience };
+	const streams = recordStreams(data.streams);
+	const scale = scaleRows(bands, streams, data.scales);
+	const records = buildRecords(
+		inPopulation(data.records, population, "记录", report),
+		streams,
+		scale,
+		asOf,
+		report,
+	);
+	if (streams.length)
+		report(`  记录 ${records.length} 条（${streams.length} 条流）`);
+
+	return { employee, experience, streams, scale, records };
 }
 
 /**

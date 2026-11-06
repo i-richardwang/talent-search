@@ -63,6 +63,46 @@ export async function listEmployees(
 	});
 }
 
+/**
+ * 一条记录流的覆盖：多少人有记录、记录从哪一期到哪一期、最近一期是哪一期。
+ * 评级按期数（不同的开始日）计，状态按段的开始日。
+ */
+export type StreamCoverage = {
+	stream: string;
+	label: string;
+	kind: "rating" | "status";
+	period: string;
+	people: number;
+	/** 不同的开始日有几个：评级是几期，状态是几次进出 */
+	periods: number;
+	first: string | null;
+	/** 最近一期（一段）的起止；状态仍有效时结束为空 */
+	latest: { start: string; end: string | null } | null;
+};
+
+/** 每条记录流的覆盖，按流名排。没有记录流的数据源返回空表。 */
+export async function streamCoverage(): Promise<StreamCoverage[]> {
+	return withReadSnapshot(async (client) => {
+		const { rows } = await client.query<StreamCoverage>(
+			`select s.stream, s.label, s.kind, s.period,
+				count(distinct r.emp_id)::int as people,
+				count(distinct r.period_start)::int as periods,
+				to_char(min(r.period_start), 'YYYY-MM-DD') as first,
+				(select json_build_object(
+					'start', to_char(l.period_start, 'YYYY-MM-DD'),
+					'end', to_char(max(l.period_end), 'YYYY-MM-DD'))
+				 from employee_record l
+				 where l.stream = s.stream
+				   and l.period_start = (select max(m.period_start) from employee_record m
+					where m.stream = s.stream)
+				 group by l.period_start) as latest
+			 from record_stream s left join employee_record r on r.stream = s.stream
+			 group by s.stream order by s.stream`,
+		);
+		return rows;
+	});
+}
+
 /** 一段连它的解析结果。 */
 export type SegmentView = Pick<
 	Experience,

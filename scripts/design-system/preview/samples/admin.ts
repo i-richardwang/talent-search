@@ -1,5 +1,5 @@
 import { PAGE_SIZE, pageAt, RUNS_PAGE, tablePage } from "#/lib/paging";
-import type { EmployeeRow, SegmentView } from "#/server/data";
+import type { EmployeeRow, SegmentView, StreamCoverage } from "#/server/data";
 import type { CorpusCounts, TaskLane, TaskRunView } from "#/server/tasks";
 import type { TermDetail, TermEntry } from "#/server/terms";
 import { EMPLOYEES, EXPERIENCES, experiencesOf } from "./people";
@@ -135,6 +135,30 @@ const ROSTER_JOBS: [dept: string, title: string][] = [
 	["用户增长部", "产品经理"],
 	["基础架构部", "后端开发工程师"],
 	["商业化部", "销售经理"],
+];
+
+/** 数据页上方的记录流：半年一期的绩效和一条高潜池。 */
+export const STREAM_ROWS: StreamCoverage[] = [
+	{
+		first: "2023-07-01",
+		kind: "status",
+		label: "高潜人才池",
+		latest: { end: null, start: "2025-01-01" },
+		people: 38,
+		period: "",
+		periods: 5,
+		stream: "hipo",
+	},
+	{
+		first: "2023-07-01",
+		kind: "rating",
+		label: "绩效",
+		latest: { end: "2026-06-30", start: "2026-01-01" },
+		people: 412,
+		period: "半年",
+		periods: 6,
+		stream: "perf",
+	},
 ];
 
 /**

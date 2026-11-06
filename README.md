@@ -92,13 +92,13 @@ CSV 缺少可选的 `segment_key` 列时按部门与岗位生成任职标识；�
 
 ## 接入数据源
 
-所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments`、`external` 和 `levels`。契约逐行核验必需列，显式空值可以保留，缺列则报告表名、行号和列名并拒绝。通用校验、切段与解析在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
+所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments`、`external` 和 `levels`，可选再给记录的三批：`streams`（记录流：评级或状态）、`scales`（评级流的档位表）和 `records`（一期一档的评级、一段一段的状态）。同一人同一期的几条修订按登记时刻只留最终一条，分不出的整组拒绝并报告；记录流的覆盖在管理页「数据」上看。契约逐行核验必需列，显式空值可以保留，缺列则报告表名、行号和列名并拒绝。通用校验、切段与解析在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
 
 职级和学历按档检索。`levels` 是职级表，写明每个职级归哪一档、档有多高，分档方法由数据源自己定；学历写契约里的五档之一（高中及以下、大专、本科、硕士、博士），源里的写法由适配器归档。筛选和「某档及以上」都按档走，职级原文只在详情里显示。
 
 两种接入方式：
 
-1. 按 `src/corpus/sources/sample/` 的列名导出四个 CSV，并设置 `TALENT_CSV_DIR`。
+1. 按 `src/corpus/sources/sample/` 的列名导出四个 CSV（记录另有三个可选的 CSV），并设置 `TALENT_CSV_DIR`。
 2. 实现一个导出 `extract(report): Promise<SourceData>` 的模块，并将 `TALENT_SOURCE` 设为该文件的绝对路径。
 
 `src/corpus/sources/` 默认忽略私有适配器，只保留 `csv-dir` 与合成样例。私有模块在运行时加载，不进入 Vite 构建产物。适配器使用的 npm 包应安装在根 `package.json`，以便从项目根 `node_modules` 解析。

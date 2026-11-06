@@ -1,5 +1,6 @@
 /**
- * 数据源与管线的唯一契约：员工档案、公司内任职、入职前经历和公司自己的职级分档。
+ * 数据源与管线的唯一契约：员工档案、公司内任职、入职前经历、公司自己的职级分档，
+ * 以及按期登记的记录（绩效评级、高潜池这类状态）。
  * 适配器提供摊平的事实，决定人群和源特有的切段、字段翻译；
  * 管线处理来源无关的区间校验、相邻段合并、时长及当前信息计算。
  */
@@ -88,6 +89,37 @@ const EXTERNAL_COLUMNS = [
  */
 const LEVEL_COLUMNS = ["level", "band", "rank"] as const;
 
+/**
+ * 记录流，一条流一行：`perf` 是一条绩效流，`hipo` 是一条高潜池。`kind` 说这条流的记录是什么：
+ *
+ * - `rating`：按期评级，每一期一档（半年一期的绩效）。档有高低，档位表在 `scales`。
+ * - `status`：一段时间里处于某个状态（在高潜池里），`period_end` 留空表示仍有效。
+ *
+ * `label` 是中文名，`period` 是一期多长（「半年」），`notes` 是这条流的口径（怎么评、
+ * 缺一期意味着什么），原样写进数据目录给查询理解读。流名 `level`、`education` 留给
+ * 职级档与学历档，数据源不能用。
+ */
+const STREAM_COLUMNS = ["stream", "kind", "label", "period", "notes"] as const;
+
+/** 评级流的档位表，一档一行：`rank` 越大越高，同一条流里档名唯一。 */
+const SCALE_COLUMNS = ["stream", "value", "rank"] as const;
+
+/**
+ * 一条记录一行。评级是一期一档：`period_start`、`period_end` 是这一期的起止，`value`
+ * 是档位表里的档。状态是一段：`period_end` 留空表示仍有效。
+ *
+ * 同一人同一流同一期（同一个 `period_start`）可以有几条修订，`recorded_at` 是登记时刻，
+ * 管线只留最晚的一条；分不出最晚的那一组整组拒绝并报告。只有一条时可以留空。
+ */
+const RECORD_COLUMNS = [
+	"emp_id",
+	"stream",
+	"period_start",
+	"period_end",
+	"value",
+	"recorded_at",
+] as const;
+
 export type SourceEmployee = Record<
 	Exclude<(typeof EMPLOYEE_COLUMNS)[number], "overseas_educated">,
 	string
@@ -102,6 +134,9 @@ export type SourceExternal = Record<
 > & { unemployed: boolean };
 
 export type SourceLevel = Record<(typeof LEVEL_COLUMNS)[number], string>;
+export type SourceStream = Record<(typeof STREAM_COLUMNS)[number], string>;
+export type SourceScale = Record<(typeof SCALE_COLUMNS)[number], string>;
+export type SourceRecord = Record<(typeof RECORD_COLUMNS)[number], string>;
 
 /** 一次抽取的全部产出。适配器的 `extract()` 返回它。 */
 export type SourceData = {
@@ -109,6 +144,9 @@ export type SourceData = {
 	assignments: SourceAssignment[];
 	external: SourceExternal[];
 	levels: SourceLevel[];
+	streams: SourceStream[];
+	scales: SourceScale[];
+	records: SourceRecord[];
 };
 
 /** 适配器提供的原样行：键是列名，值还没有约定形态。 */
@@ -160,12 +198,18 @@ function flag(
 	);
 }
 
-/** 把适配器提供的四批行转成契约的形状。适配器的 `extract()` 最后调用它。 */
+/**
+ * 把适配器提供的几批行转成契约的形状。适配器的 `extract()` 最后调用它。
+ * 记录的三批可以不给：没有记录流的数据源照样同步，目录里就没有评级和状态。
+ */
 export function sourceData(raw: {
 	employees: RawRow[];
 	assignments: RawRow[];
 	external: RawRow[];
 	levels: RawRow[];
+	streams?: RawRow[];
+	scales?: RawRow[];
+	records?: RawRow[];
 }): SourceData {
 	return {
 		employees: conform(raw.employees, EMPLOYEE_COLUMNS, "employees").map(
@@ -188,5 +232,8 @@ export function sourceData(raw: {
 			}),
 		),
 		levels: conform(raw.levels, LEVEL_COLUMNS, "levels"),
+		streams: conform(raw.streams ?? [], STREAM_COLUMNS, "streams"),
+		scales: conform(raw.scales ?? [], SCALE_COLUMNS, "scales"),
+		records: conform(raw.records ?? [], RECORD_COLUMNS, "records"),
 	};
 }
