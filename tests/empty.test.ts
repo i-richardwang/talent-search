@@ -7,11 +7,11 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { compileConditions } from "#/search/compile";
 import { emptyReason } from "#/search/empty";
 import type { SearchFilters } from "#/search/params";
 import { parseQuery } from "#/search/query-syntax";
-import type { Claim } from "#/search/result";
-import { claim } from "./conditions";
+import { compiledClaim } from "./conditions";
 
 function why(args: {
 	/** 一行查询语法，见 `search/query-syntax.ts`。 */
@@ -21,7 +21,7 @@ function why(args: {
 	overflow?: Parameters<typeof emptyReason>[0]["overflow"];
 }) {
 	return emptyReason({
-		spec: { conditions: parseQuery(args.query ?? "") },
+		query: compileConditions(parseQuery(args.query ?? "")),
 		filters: args.filters ?? {},
 		total: args.total ?? 0,
 		overflow: args.overflow ?? null,
@@ -38,7 +38,7 @@ describe("取数超限", () => {
 	test("排在最前：它不是「没有人」，而且和筛选太窄的下一步相反", () => {
 		const overflow = {
 			kind: "overflowEvidence" as const,
-			claims: [claim("运营") as Claim],
+			claims: [compiledClaim("运营")],
 		};
 		const reason = why({
 			query: "运营",

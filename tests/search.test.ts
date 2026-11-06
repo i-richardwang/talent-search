@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import { NOT_A_VALUE, VOCAB_KEYS } from "#/search/dimensions";
+import { claimName, termValues } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import { fakeEmbedding, fakeRelevance, seed, setup } from "./fixture";
 
@@ -12,9 +13,8 @@ const teardown = await setup();
 after(teardown);
 
 // import 必须在 setup() 之后：#/db 与 #/server/embed 在模块求值时就绑死了环境变量
-const { overflowContributors, search, vocabulary } = await import(
-	"#/search/search"
-);
+const { search, vocabulary } = await import("#/search/search");
+const { overflowContributors } = await import("#/search/execute");
 const run = async (query: string, filters = {}, limit?: number) => {
 	const outcome = await search(
 		{ conditions: parseQuery(query) },
@@ -314,7 +314,7 @@ describe("背景只定去留", () => {
 		const gated = await run("算法,kind:external");
 		assert.deepEqual(ids(gated), ["T001", "T003"]);
 		assert.deepEqual(
-			gated.claims.map((c) => c.what),
+			gated.claims.map(termValues),
 			[["算法"]],
 			"背景不是一条主张，证据行上没有它",
 		);
@@ -1031,10 +1031,7 @@ describe("排除的主张：否决证据段，不否决人", () => {
 
 	test("排除条件不产出证据列", async () => {
 		const { claims } = await run("算法,-运营");
-		assert.deepEqual(
-			claims.map((c) => c.what?.[0]),
-			["算法"],
-		);
+		assert.deepEqual(claims.map(claimName), ["算法"]);
 	});
 
 	/**
@@ -1110,10 +1107,7 @@ describe("停用的词", () => {
 
 	test("停用的词不产出证据列", async () => {
 		const { claims } = await run("算法,~运营");
-		assert.deepEqual(
-			claims.map((c) => c.what?.[0]),
-			["算法"],
-		);
+		assert.deepEqual(claims.map(claimName), ["算法"]);
 	});
 
 	test("停用一条排除的主张，被它排掉的人回来了", async () => {

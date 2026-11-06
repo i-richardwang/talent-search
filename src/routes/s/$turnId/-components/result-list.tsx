@@ -14,7 +14,7 @@ import { Tooltip } from "#/components/ui/tooltip";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import type { Condition } from "#/search/condition";
-import { claimName } from "#/search/condition-label";
+import { claimName } from "#/search/query";
 import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import { RESULT_PAGE } from "#/search/weights";

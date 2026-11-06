@@ -7,10 +7,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SearchFilters } from "#/search/params";
+import type { Claim } from "#/search/query";
 import { type Fact, gapMonths, pageHits, rank } from "#/search/rank";
-import type { Claim } from "#/search/result";
 import { BOOST_WEIGHT, RELEVANCE_MIN } from "#/search/weights";
-import { claim } from "./conditions";
+import { compiledClaim } from "./conditions";
 
 /** 固定的「今天」：近因因子让分数依赖当前时间，测试不能跟着日历漂 */
 const NOW = new Date(2026, 0, 1);
@@ -44,7 +44,7 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 }
 
 const claims = (...modes: Claim["mode"][]): Claim[] =>
-	modes.map((mode, i) => claim(`词${i}`, { mode }) as Claim);
+	modes.map((mode, i) => compiledClaim(`词${i}`, { mode }));
 
 const run = (facts: Fact[], t = claims("must"), f: SearchFilters = {}) =>
 	rank(facts, facts, t, f, NOW);
@@ -273,12 +273,7 @@ describe("人的偏好", () => {
 });
 
 describe("累计时长的门槛", () => {
-	const three: Claim = {
-		about: "experience",
-		mode: "must",
-		what: ["词0"],
-		minMonths: 36,
-	};
+	const three: Claim = compiledClaim("词0", { minMonths: 36 });
 
 	test("判的是累计：两段各二十个月的人过得了三年，一段二十个月的过不了", () => {
 		const facts = [

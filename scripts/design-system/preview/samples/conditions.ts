@@ -1,7 +1,8 @@
+import { compileConditions } from "#/search/compile";
 import type { Condition } from "#/search/condition";
 import type { EmptyReason } from "#/search/empty";
 import { conditionsOfKeywords } from "#/search/keywords";
-import { type Claim, claimsOf } from "#/search/result";
+import { type Claim, rolesOf } from "#/search/query";
 import type { SearchSpec } from "#/search/spec";
 
 /*
@@ -69,7 +70,7 @@ export const CONDITIONS: Condition[] = [RECOMMEND, BIG_COMPANY, TEAM];
 export const SPEC: SearchSpec = { conditions: CONDITIONS };
 
 /** 名单上证据行按的主张：做过推荐系统、带过团队。 */
-export const CLAIMS: Claim[] = claimsOf(CONDITIONS);
+export const CLAIMS: Claim[] = rolesOf(compileConditions(CONDITIONS)).claims;
 
 /** 关键词搜索的一张条件表。 */
 export const KEYWORD_SPEC: SearchSpec = {

@@ -3,7 +3,7 @@ import { Checkbox } from "#/components/ui/checkbox";
 import { PickDock } from "#/routes/s/$turnId/-components/pick-dock";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
-import { claimName } from "#/search/condition-label";
+import { claimName } from "#/search/query";
 import type { SearchOutcome } from "#/search/result";
 import { Control, Controls } from "../../kit/controls";
 import { type FlowStep, FlowTable } from "../../kit/flow";

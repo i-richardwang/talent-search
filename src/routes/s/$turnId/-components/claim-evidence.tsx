@@ -1,7 +1,6 @@
 import { Popover } from "#/components/ui/popover";
 import { ProgressTag } from "#/components/ui/progress-tag";
 import { cn } from "#/lib/utils";
-import { conditionKey } from "#/search/condition";
 import type { ClaimLine } from "../-lib/claim-lines";
 import { Dot, EvidenceLine, MissedClaims } from "./evidence";
 
@@ -21,7 +20,7 @@ export function ClaimEvidence({ lines }: { lines: ClaimLine[] }) {
 							basis={found.basis}
 							boost={claim.mode === "boost"}
 							hit={found.hit}
-							key={conditionKey(claim)}
+							key={claim.id}
 							name={name}
 						/>
 					),
@@ -44,7 +43,7 @@ export function ClaimRow({ lines }: { lines: ClaimLine[] }) {
 						"flex h-(--text-xs--line-height) min-w-0 items-center gap-1.5",
 						found ? "text-fg-secondary" : "text-fg-tertiary",
 					)}
-					key={conditionKey(claim)}
+					key={claim.id}
 				>
 					<Dot hit={Boolean(found)} />
 					<span className="truncate">{name}</span>

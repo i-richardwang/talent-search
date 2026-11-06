@@ -3,7 +3,7 @@ import {
 	notFound,
 	useLoaderData,
 } from "@tanstack/react-router";
-import { claimName } from "#/search/condition-label";
+import { claimName } from "#/search/query";
 import { fetchEmployee } from "#/server/functions";
 import { Person, PersonNotFound, PersonPending } from "./-components/person";
 import { claimLines } from "./-lib/claim-lines";

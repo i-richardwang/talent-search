@@ -10,7 +10,7 @@ import type { Condition } from "#/search/condition";
 import { conditionLabel, partLabel } from "#/search/condition-label";
 import { emptyFacets } from "#/search/result";
 import type { InterpretFault } from "#/server/turn";
-import { person } from "./conditions";
+import { compiledClaim, person } from "./conditions";
 import { visibleText } from "./render";
 import { routed } from "./routed";
 
@@ -203,7 +203,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				picks={NO_PICKS}
 				outcome={{
 					order: "evidence",
-					claims: [{ about: "experience", mode: "must", what: ["量子炼金"] }],
+					claims: [compiledClaim("量子炼金")],
 					results: [],
 					facets: emptyFacets(),
 					total: 0,

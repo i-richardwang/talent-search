@@ -1,7 +1,8 @@
 /**
  * 证据的来源与展示选择；排名与界面共用同一份说法。
  */
-import type { Claim, Hit } from "#/search/result";
+import type { Claim } from "#/search/query";
+import type { Hit } from "#/search/result";
 import type { Route } from "#/search/weights";
 
 const ROUTE_LABEL: Record<Route, string> = {

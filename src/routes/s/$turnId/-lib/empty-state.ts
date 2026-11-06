@@ -1,6 +1,7 @@
 import { type Condition, withOff } from "#/search/condition";
-import { claimName, SEARCHABLE } from "#/search/condition-label";
+import { SEARCHABLE } from "#/search/condition-label";
 import type { EmptyReason } from "#/search/empty";
+import { claimName } from "#/search/query";
 import type { SearchMode } from "#/server/turn";
 import { CLEARED_FILTERS, type View } from "./view-params";
 

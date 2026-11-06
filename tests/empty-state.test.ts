@@ -15,10 +15,11 @@ import {
 	CLEARED_FILTERS,
 	type View,
 } from "#/routes/s/$turnId/-lib/view-params";
+import { compileConditions } from "#/search/compile";
 import type { Condition } from "#/search/condition";
 import type { EmptyReason } from "#/search/empty";
+import { rolesOf } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
-import { claimsOf } from "#/search/result";
 
 /** 跑一次空态，把按钮按下去，回收它想改的东西 */
 function run(
@@ -49,7 +50,10 @@ function run(
 describe("取数超限：是一种结果，不是一次失败", () => {
 	test("只列出实际贡献事实行最多的条件，出口是改条件不是清筛选", () => {
 		const s = run(
-			{ kind: "overflowEvidence", claims: claimsOf(parseQuery("经理")) },
+			{
+				kind: "overflowEvidence",
+				claims: rolesOf(compileConditions(parseQuery("经理"))).claims,
+			},
 			"算法,经理",
 		);
 		assert.equal(s.title, "条件范围过大");
@@ -128,7 +132,10 @@ describe("关键词搜索的下一步只说框里能做的事", () => {
 		assert.equal(unmet.focused, true);
 
 		const overflow = run(
-			{ kind: "overflowEvidence", claims: claimsOf(parseQuery("经理")) },
+			{
+				kind: "overflowEvidence",
+				claims: rolesOf(compileConditions(parseQuery("经理"))).claims,
+			},
 			"经理",
 			"keyword",
 		);

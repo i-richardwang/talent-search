@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import type { Claim } from "#/search/query";
 import type {
-	Claim,
 	RankedResult,
 	ResultEmployee,
 	SearchOutcome,

@@ -6,7 +6,6 @@ import {
 	PERSON_FIELDS,
 } from "#/search/condition";
 import { DIMENSIONS, dimOption, dimText, orAbove } from "#/search/dimensions";
-import type { Claim } from "#/search/result";
 
 /**
  * 入职前公司、公司内部门与学校怎么称呼。这三维不在 `dimensions.ts` 那张表里
@@ -80,11 +79,6 @@ export function conditionLabel(condition: Condition): string {
 		condition.what?.[0],
 		condition.minMonths ? `${duration(condition.minMonths)}以上` : null,
 	);
-}
-
-/** 一条主张在证据行上的名字：代表词。证据行那一列窄，放不下整句。 */
-export function claimName(claim: Claim): string {
-	return claim.what[0];
 }
 
 /** chip 上收进菜单的取值有几个，写成「+N」。 */

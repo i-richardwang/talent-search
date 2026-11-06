@@ -17,12 +17,8 @@ import {
 	type Facet,
 } from "./dimensions";
 import type { SearchFilters } from "./params";
-import {
-	type Claim,
-	type ClaimBasis,
-	emptyFacets,
-	type Facets,
-} from "./result";
+import type { Claim } from "./query";
+import { type ClaimBasis, emptyFacets, type Facets } from "./result";
 import {
 	BOOST_WEIGHT,
 	ENGAGEMENT_FACTOR,

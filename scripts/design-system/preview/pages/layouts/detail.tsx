@@ -8,7 +8,7 @@ import {
 } from "#/routes/s/$turnId/-components/person";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
 import { claimLines } from "#/routes/s/$turnId/-lib/claim-lines";
-import { claimName } from "#/search/condition-label";
+import { claimName } from "#/search/query";
 import { Routed } from "../../routed";
 import { CLAIMS } from "../../samples/conditions";
 import { EMPLOYEES, experiencesOf, resultOf } from "../../samples/people";

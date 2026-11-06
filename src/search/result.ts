@@ -1,53 +1,8 @@
 import type { Employee, Experience, Route } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
-import {
-	activeConditions,
-	type Condition,
-	type ExperienceCondition,
-	type PersonCondition,
-} from "./condition";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason } from "./empty";
-
-/** 说了做过什么的经历主张：它决定名次，也是卡片上的一行证据。 */
-export type Claim = ExperienceCondition & {
-	mode: "must" | "boost";
-	what: NonNullable<ExperienceCondition["what"]>;
-};
-
-/**
- * 只定去留的条件：人的条件，和没说做过什么的经历主张——背景（「来自大厂」
- * 「待过字节」「入职前 3 年以上」）。背景说的是这个人待过哪、待了多久，
- * 不是他做得多深，所以和职级、学历一样是门槛。
- */
-export type Gate = PersonCondition | ExperienceCondition;
-
-/**
- * 启用条件按执行角色拆分。名次只看做过什么：`claims` 产出事实、定档和深度、
- * 画成证据行；`gates` 在取数 SQL 里按人过滤；`prefer` 满足一条乘一份固定的加分；
- * `excludes` 只否决经历段。
- */
-type Query = {
-	claims: Claim[];
-	gates: Gate[];
-	prefer: Gate[];
-	excludes: ExperienceCondition[];
-};
-
-export function queryOf(conditions: readonly Condition[]): Query {
-	const q: Query = { claims: [], gates: [], prefer: [], excludes: [] };
-	for (const c of activeConditions(conditions)) {
-		if (c.about === "experience" && c.mode === "exclude") q.excludes.push(c);
-		else if (c.about === "experience" && c.what) q.claims.push(c as Claim);
-		else if (c.mode === "must") q.gates.push(c);
-		else q.prefer.push(c);
-	}
-	return q;
-}
-
-export function claimsOf(conditions: readonly Condition[]): Claim[] {
-	return queryOf(conditions).claims;
-}
+import type { Claim } from "./query";
 
 export type Hit = {
 	experienceId: number;
