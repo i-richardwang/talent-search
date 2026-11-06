@@ -17,7 +17,7 @@ import {
 	FAULT_EXIT_LABEL,
 	faultExits,
 } from "#/routes/s/$turnId/-lib/interpret";
-import { inSentence } from "#/search/condition-label";
+import { labelsInSentence } from "#/search/query";
 import type { InterpretFault, Progress, Turn } from "#/server/turn";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
@@ -134,7 +134,7 @@ function Playground() {
 							{...props}
 							key={state}
 							onRevise={(conditions) =>
-								setLast(`换成了 ${inSentence(conditions)}`)
+								setLast(`换成了 ${labelsInSentence(conditions)}`)
 							}
 							onQuery={(input) => {
 								setLast(
@@ -294,7 +294,7 @@ export function ThreadPage() {
 			rules={{
 				notes: [
 					"线程总是整条链；查看早先一次的结果只换名单，不截断线程，正在看的那一次标「正在查看」。",
-					"每次的回应按前后两组条件的差别说加了什么、去掉了什么，条件写进句子用 inSentence。",
+					"每次的回应按前后两组条件的差别说加了什么、去掉了什么，条件写进句子用 labelsInSentence。",
 					"理解失败时说清是哪个环节出了问题：连不上和报错时需求没被读过，不能说成没读懂；线程里的提示带重试，名单那一列另有同样的下一步。",
 					"AI 每次最多问一件事：一句问话，第一项是现在用的，其余点一下或按数字键换成那张条件表；不理就照现在的名单。最后一次才能点，有了下一次就收成一行。",
 					"检索人才库的过程进行中展开、完成后收起；每一步只说人才库里有没有、有哪些写法，不写人数，也不给出任何一个人。",

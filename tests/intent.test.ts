@@ -1,200 +1,221 @@
 /**
- * 查询理解的校验。**不连数据库，也不调模型**——这正是把形状和调用拆开的
- * 好处：模型输出的每一种偏差都能在这里测出来，而 `src/server/llm.ts` 里剩下的
- * 只有「发出去、拿回来」。
+ * 查询理解的校验。**不连数据库，也不调模型**：模型输出的每一种偏差都能在这里测出来，
+ * `src/server/llm.ts` 里剩下的只有「发出去、拿回来」。`where` 合不合白名单、能不能跑由
+ * 提交工具试跑（`tests/agent-tools.test.ts`），这里只看形状、身份、停用与说明。
  *
- * 这里的每个用例都该读成一句「模型对着这句话这么写的时候，查询应该变成什么」。
- * 模型写的和库里存的是同一个形状（`Condition[]`），所以这一层只剩词表检查和校验。
+ * 每个用例读成一句「模型这么写的时候，这一轮的条件应该是什么」。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import type { Condition, Mode } from "#/search/condition";
-import {
-	isNewClaim,
-	submissionSchema,
-	unanswered,
-	understood,
-	type Vocabulary,
-	valuesOutsideVocabulary,
-} from "#/search/intent";
-import { claim as build } from "./conditions";
+import { submissionSchema, unanswered, understood } from "#/search/intent";
+import type { QueryCondition } from "#/search/query";
 
-const values = (...names: string[]) =>
-	names.map((name) => ({ name, people: 10 }));
+const read = (raw: unknown, base: QueryCondition[] = []) =>
+	understood(raw, base);
+const of = (...conditions: unknown[]) => read({ conditions }).query.conditions;
+/** 去掉服务端发的 id，比较内容。 */
+const bare = (list: readonly QueryCondition[]) =>
+	list.map(({ id: _id, ...rest }) => rest);
 
-const VOCAB: Vocabulary = {
-	companyTag: values("头部互联网T1", "知名公司", "外包公司"),
-	level: values("P5", "P6", "P7", "P8"),
-	recruitment: values("校招", "社招"),
-	education: values("本科", "硕士", "博士"),
-	schoolTier: values("985", "211", "QS100"),
-	overseas: values("是", "否"),
-};
-const of = (...conditions: unknown[]) =>
-	understood({ conditions }, VOCAB, []).spec.conditions;
-const read = (raw: unknown, base: Condition[] = []) =>
-	understood(raw, VOCAB, base);
-/** 模型写一条经历主张的最简写法。 */
-const claim = (parts: Record<string, unknown>, mode: unknown = "must") => ({
-	about: "experience",
-	mode,
-	...parts,
-});
+/** 模型写一条经历条件的最简写法。 */
+const exp = (
+	label: string,
+	parts: Record<string, unknown> = {},
+	mode: unknown = "must",
+) => ({ label, mode, from: "experience", where: "true", ...parts });
 /** 模型写一条人的条件的最简写法。 */
-const person = (field: string, values: string[], mode: unknown = "must") => ({
-	about: "person",
+const person = (label: string, where: string, mode: unknown = "must") => ({
+	label,
 	mode,
-	field,
-	values,
+	from: "person",
+	where,
 });
-const exp = (mode: Mode, ...what: [string, ...string[]]): Condition =>
-	build(what, { mode });
+const algo = exp("做过算法", { terms: { what: ["算法"] } });
 
 describe("模型写出的查询就是查询", () => {
-	test("算法和后端都做过的，比较资深的，最好是字节来的", () => {
-		assert.deepEqual(
-			of(
-				claim({ what: ["算法", "推荐算法", "机器学习"] }),
-				claim({ what: ["后端", "后端开发", "服务端"] }),
-				person("level", ["P7", "P8"], "boost"),
-				claim({ company: ["字节"] }, "boost"),
-			),
-			[
-				exp("must", "算法", "推荐算法", "机器学习"),
-				exp("must", "后端", "后端开发", "服务端"),
+	test("标签、强度、语义词、where、参数、累计时长原样留下", () => {
+		const raw = [
+			exp(
+				"在甲辰科技做过推荐",
 				{
-					about: "person",
-					mode: "boost",
-					field: "level",
-					values: ["P7", "P8"],
-				},
-				{ about: "experience", mode: "boost", company: ["字节"] },
-			],
-		);
-	});
-
-	test("入职前在大厂做过三年以上增长，不要实习：修饰语写在同一条主张上", () => {
-		assert.deepEqual(
-			of(
-				claim({
-					what: ["增长", "用户增长"],
-					kind: "external",
-					companyTag: ["头部互联网T1"],
-					minMonths: 36,
-				}),
-				claim({ what: ["实习"] }, "exclude"),
-			),
-			[
-				{
-					about: "experience",
-					mode: "must",
-					what: ["增长", "用户增长"],
-					companyTag: ["头部互联网T1"],
-					kind: "external",
+					terms: { what: ["推荐算法", "推荐系统"] },
+					where: "e.company = :company",
+					params: { company: "甲辰科技" },
 					minMonths: 36,
 				},
-				exp("exclude", "实习"),
-			],
-		);
-	});
-
-	test("三档语气都翻译得出来；认不出的强度按必须算，不是丢掉这个词", () => {
-		assert.deepEqual(
-			of(
-				claim({ what: ["渠道运营"] }),
-				claim({ what: ["带团队"] }, "boost"),
-				claim({ what: ["实习"] }, "exclude"),
-				claim({ what: ["产品"] }, "很重要"),
+				"must",
 			),
-			[
-				exp("must", "渠道运营"),
-				exp("boost", "带团队"),
-				exp("exclude", "实习"),
-				exp("must", "产品"),
-			],
-		);
-	});
-
-	test("搜索词是模型的表达，不要求是用户原话：只做边界，不改字", () => {
-		assert.deepEqual(of(claim({ what: [" 推荐算法 ", "机器 学习"] })), [
-			exp("must", "推荐算法", "机器 学习"),
+			person("职级 P7 及以上", "p.level_rank >= :rank", "boost"),
+		];
+		assert.deepEqual(bare(of(...raw)), [
+			{
+				label: "在甲辰科技做过推荐",
+				mode: "must",
+				from: "experience",
+				terms: { what: ["推荐算法", "推荐系统"] },
+				where: "e.company = :company",
+				params: { company: "甲辰科技" },
+				minMonths: 36,
+			},
+			{
+				label: "职级 P7 及以上",
+				mode: "boost",
+				from: "person",
+				where: "p.level_rank >= :rank",
+			},
 		]);
 	});
-});
 
-/**
- * 词表维的取值必须在词表里。模型是唯一会写出词表外取值的来源：「资深」对不上
- * 任何一档职级。对不上的丢掉，一项不剩的整项消失。该说明的由模型写进说明，
- * 校验这一层只管形状。
- */
-describe("词表维只认库里真有的取值", () => {
-	test("公司档、职级、招聘渠道、学历必须来自语料，凭常识造的词不认", () => {
-		assert.deepEqual(
-			of(
-				person("level", ["资深", "P7"]),
-				claim({ what: ["增长"], companyTag: ["一线大厂"] }),
-				claim({ companyTag: ["一线大厂"] }),
-				person("recruitment", ["社招"]),
-				person("education", ["研究生"]),
-			),
-			[
-				{ about: "person", mode: "must", field: "level", values: ["P7"] },
-				// 公司档没对上，主张里剩下的经历词保留；只有公司档的主张整条消失
-				exp("must", "增长"),
-				{
-					about: "person",
-					mode: "must",
-					field: "recruitment",
-					values: ["社招"],
-				},
-			],
+	test("语义词是模型的表达：只做边界，不改字；重复的写法只留一次", () => {
+		const [c] = of(
+			exp("做过增长", {
+				terms: { what: [" 用户增长 ", "用户增长", "算".repeat(25)] },
+			}),
 		);
-	});
-
-	test("「及以上」的那一档也得在词表里；对不上就整条丢掉，不退回成列举", () => {
-		const atLeast = (field: string, value: string) => ({
-			about: "person",
-			mode: "must",
-			field,
-			atLeast: value,
-		});
-		assert.deepEqual(
-			of(
-				atLeast("level", "P7"),
-				atLeast("education", "研究生"),
-				// 同时写了列举：「及以上」说的范围更宽，按它读
-				{ ...atLeast("education", "本科"), values: ["硕士"] },
-			),
-			[
-				{ about: "person", mode: "must", field: "level", atLeast: "P7" },
-				{ about: "person", mode: "must", field: "education", atLeast: "本科" },
-			],
-		);
+		assert.deepEqual(c?.terms, { what: ["用户增长"] });
 	});
 
 	test("人的条件上的排除没有表示，整条丢掉", () => {
-		assert.deepEqual(of(person("recruitment", ["校招"], "exclude")), []);
+		assert.deepEqual(
+			of(person("不要本科", "p.education = '本科'", "exclude")),
+			[],
+		);
 	});
 
-	test("库里没有的维度整条丢掉：它该出现在说明里，不在条件表里", () => {
+	test("语义词只写在经历上，累计时长只在经历的必须与加分上", () => {
+		const [p, ex] = of(
+			{
+				...person("硕士", "p.education = '硕士'"),
+				terms: { what: ["算法"] },
+				minMonths: 12,
+			},
+			exp("不要外包", { terms: { what: ["外包"] }, minMonths: 12 }, "exclude"),
+		);
+		assert.equal(p?.terms, undefined);
+		assert.equal(p?.minMonths, undefined);
+		assert.deepEqual(ex?.terms, { what: ["外包"] });
+		assert.equal(ex?.minMonths, undefined);
+	});
+
+	test("缺标签、认不出的强度或来源、空 where、过长的 where 整条丢掉", () => {
 		assert.deepEqual(
 			of(
-				person("city", ["北京"]),
-				{ about: "location", values: ["北京"] },
-				claim({ what: ["算法"] }),
+				exp(""),
+				exp("强度不对", {}, "maybe"),
+				{ ...exp("来源不对"), from: "team" },
+				exp("where 空着", { where: " " }),
+				exp("where 太长", { where: `true and ${"x".repeat(2_000)}` }),
 			),
-			[exp("must", "算法")],
+			[],
 		);
+	});
+
+	test("累计时长不是正整数或超过五十年就不写，条件留下", () => {
+		for (const minMonths of ["三年", 0, -3, 1.5, 601]) {
+			const [c] = of(exp("做过算法", { terms: { what: ["算法"] }, minMonths }));
+			assert.ok(c, String(minMonths));
+			assert.equal(c.minMonths, undefined, String(minMonths));
+		}
+	});
+
+	test("参数名和语义词名要像标识符；参数只收数字和短文字", () => {
+		const [c] = of(
+			exp("参数", {
+				terms: { what: ["算法"], "坏 名": ["推荐"] },
+				params: {
+					ok: 1,
+					s: "甲辰科技",
+					"bad name": 2,
+					long: "字".repeat(201),
+					obj: {},
+				},
+			}),
+		);
+		assert.deepEqual(c?.terms, { what: ["算法"] });
+		assert.deepEqual(c?.params, { ok: 1, s: "甲辰科技" });
+	});
+});
+
+describe("条件的身份", () => {
+	const base: QueryCondition[] = [
+		{
+			id: "keep01",
+			label: "做过算法",
+			mode: "must",
+			from: "experience",
+			terms: { what: ["算法"] },
+			where: "true",
+		},
+		{
+			id: "keep02",
+			label: "硕士",
+			mode: "boost",
+			from: "person",
+			where: "p.education = '硕士'",
+		},
+	];
+
+	test("新写的条件由服务端发 id", () => {
+		const [c] = of(algo);
+		assert.match(c?.id ?? "", /^[0-9a-f]{8}$/);
+	});
+
+	test("沿用上一轮的条件照抄 id，改了内容也照抄", () => {
+		const { query } = read(
+			{
+				conditions: [
+					{ ...algo, id: "keep01", mode: "boost" },
+					{ ...person("硕士", "p.education = '硕士'", "boost"), id: "keep02" },
+				],
+			},
+			base,
+		);
+		assert.deepEqual(
+			query.conditions.map((c) => [c.id, c.mode]),
+			[
+				["keep01", "boost"],
+				["keep02", "boost"],
+			],
+		);
+	});
+
+	test("没写 id、内容和上一轮某一条一样的，用那一条的 id", () => {
+		const { query } = read(
+			{ conditions: [person("硕士优先", "p.education = '硕士'", "boost")] },
+			base,
+		);
+		assert.equal(query.conditions[0]?.id, "keep02");
+	});
+
+	test("编造的 id 不认；同一个 id 一份查询里只用一次", () => {
+		const { query } = read(
+			{
+				conditions: [
+					{ ...algo, id: "made-up" },
+					{ ...exp("做过推荐", { terms: { what: ["推荐"] } }), id: "keep01" },
+					{ ...exp("做过搜索", { terms: { what: ["搜索"] } }), id: "keep01" },
+				],
+			},
+			base,
+		);
+		const ids = query.conditions.map((c) => c.id);
+		assert.equal(ids[0], "keep01", "内容和 keep01 一样，用它的 id");
+		assert.notEqual(ids[1], "keep01");
+		assert.notEqual(ids[2], "keep01");
+		assert.equal(new Set(ids).size, 3);
+		assert.ok(!ids.includes("made-up"));
 	});
 });
 
 describe("没作答", () => {
 	test("给了条件、校验后一条不剩：没按约定作答", () => {
-		for (const raw of [
-			{ conditions: [person("level", ["资深"]), person("city", ["北京"])] },
-			{ conditions: [claim({ minMonths: "三年" })] },
-		])
-			assert.match(unanswered(raw, read(raw)) ?? "", /全部不合规/);
+		const raw = {
+			conditions: [
+				person("不要本科", "true", "exclude"),
+				{ label: "缺 where" },
+			],
+		};
+		assert.match(unanswered(raw, read(raw)) ?? "", /全部不合规/);
 	});
 
 	test("条件和说明都空着：没作答", () => {
@@ -210,97 +231,134 @@ describe("没作答", () => {
 		assert.equal(unanswered(raw, read(raw)), null);
 	});
 
-	test("只识别出背景或人的偏好不算失败：各自是一份完整的查询", () => {
+	test("只有背景或人的偏好不算失败：各自是一份完整的查询", () => {
 		for (const raw of [
-			{ conditions: [claim({ kind: "external" })] },
-			{ conditions: [claim({ company: ["字节"] }, "boost")] },
-			{ conditions: [person("education", ["硕士"], "boost")] },
+			{
+				conditions: [
+					exp("入职前在甲辰科技待过", { where: "e.company = '甲辰科技'" }),
+				],
+			},
+			{ conditions: [person("硕士", "p.education = '硕士'", "boost")] },
 		])
 			assert.equal(unanswered(raw, read(raw)), null);
 	});
 });
 
 describe("停用跟着条件走", () => {
-	const base: Condition[] = [
-		{ ...exp("must", "算法"), off: "user" },
-		{ ...exp("must", "渠道运营"), off: "user" },
-		exp("must", "产品"),
+	const base: QueryCondition[] = [
+		{
+			id: "a",
+			label: "做过算法",
+			mode: "must",
+			off: "user",
+			from: "experience",
+			terms: { what: ["算法"] },
+			where: "true",
+		},
+		{
+			id: "b",
+			label: "做过产品",
+			mode: "must",
+			from: "experience",
+			terms: { what: ["产品"] },
+			where: "true",
+		},
 	];
 
-	test("原样沿用的条件保留上一轮的停用", () => {
-		const raw = {
-			conditions: [
-				claim({ what: ["算法"] }),
-				claim({ what: ["渠道运营"] }),
-				claim({ what: ["产品"] }),
-				claim({ what: ["带团队"] }),
+	test("同一个 id、内容没变的条件保留上一轮的停用；标签改了不算改", () => {
+		const { query } = read(
+			{
+				conditions: [
+					{ ...algo, id: "a", label: "算法方向" },
+					{ ...exp("做过产品", { terms: { what: ["产品"] } }), id: "b" },
+				],
+			},
+			base,
+		);
+		assert.deepEqual(
+			query.conditions.map((c) => [c.id, c.label, c.off]),
+			[
+				["a", "算法方向", "user"],
+				["b", "做过产品", undefined],
 			],
-		};
-		assert.deepEqual(read(raw, base).spec.conditions, [
-			...base,
-			exp("must", "带团队"),
-		]);
+		);
 	});
 
-	test("改过的条件是一条新条件，没有停用；模型自己写的停用不认", () => {
-		const raw = {
-			conditions: [
-				claim({ what: ["算法"] }, "boost"),
-				{ ...claim({ what: ["销售"] }), off: "user" },
-			],
-		};
-		assert.deepEqual(read(raw, base).spec.conditions, [
-			exp("boost", "算法"),
-			exp("must", "销售"),
-		]);
+	test("没写 id 但内容一样的，同样带上停用", () => {
+		const { query } = read({ conditions: [algo] }, base);
+		assert.deepEqual(
+			[query.conditions[0]?.id, query.conditions[0]?.off],
+			["a", "user"],
+		);
+	});
+
+	test("改过内容的条件没有停用；模型自己写的停用不认", () => {
+		const { query } = read(
+			{
+				conditions: [
+					{ ...algo, id: "a", mode: "boost" },
+					{ ...exp("做过销售", { terms: { what: ["销售"] } }), off: "user" },
+				],
+			},
+			base,
+		);
+		assert.deepEqual(
+			query.conditions.map((c) => c.off),
+			[undefined, undefined],
+		);
 	});
 });
 
 describe("说明", () => {
-	const algo = claim({ what: ["算法"] });
+	const recommend = exp("做过推荐", { terms: { what: ["推荐"] } });
 
 	test("一句话和选项原样留下，选项的表走同一道校验", () => {
-		const { notes } = read({
+		const { query, notes } = read({
 			conditions: [algo],
 			note: {
-				says: " 简历里看不出是不是大厂出身，要不要按公司档找？ ",
-				current: "先不管这条",
+				says: " 算法有几种常见的意思，要不要把推荐也算上？ ",
+				current: "只看算法",
 				options: [
 					{
-						label: "按公司档找",
-						detail: "头部互联网待过的有一百多位",
+						label: "把推荐也算上",
+						detail: "做过推荐的有二十多位",
 						conditions: [
 							algo,
-							claim({ companyTag: ["一线大厂", "头部互联网T1"] }),
+							recommend,
+							person("不要本科", "true", "exclude"),
 						],
 					},
 				],
 			},
 		});
-		assert.deepEqual(notes, {
-			says: "简历里看不出是不是大厂出身，要不要按公司档找？",
-			choices: {
-				current: "先不管这条",
-				others: [
-					{
-						label: "按公司档找",
-						detail: "头部互联网待过的有一百多位",
-						conditions: [
-							exp("must", "算法"),
-							{
-								about: "experience",
-								mode: "must",
-								companyTag: ["头部互联网T1"],
-							},
-						],
-					},
-				],
-			},
-		});
+		assert.equal(notes?.says, "算法有几种常见的意思，要不要把推荐也算上？");
+		assert.equal(notes?.choices?.current, "只看算法");
+		const [option] = notes?.choices?.others ?? [];
+		assert.equal(option?.label, "把推荐也算上");
+		assert.equal(option?.detail, "做过推荐的有二十多位");
+		assert.deepEqual(
+			option?.conditions.map((c) => c.label),
+			["做过算法", "做过推荐"],
+		);
+		assert.equal(
+			option?.conditions[0]?.id,
+			query.conditions[0]?.id,
+			"选项里和现在一样的条件用同一个 id：选了它，chip 的身份不变",
+		);
 	});
 
 	test("选项的表沿用上一轮的停用", () => {
-		const base: Condition[] = [{ ...exp("must", "产品"), off: "user" }];
+		const base: QueryCondition[] = [
+			{
+				id: "p",
+				label: "做过产品",
+				mode: "must",
+				off: "user",
+				from: "experience",
+				terms: { what: ["产品"] },
+				where: "true",
+			},
+		];
 		const { notes } = read(
 			{
 				conditions: [algo],
@@ -311,17 +369,23 @@ describe("说明", () => {
 						{
 							label: "带上",
 							detail: "",
-							conditions: [algo, claim({ what: ["产品"] })],
+							conditions: [
+								algo,
+								exp("做过产品", { terms: { what: ["产品"] } }),
+							],
 						},
 					],
 				},
 			},
 			base,
 		);
-		assert.deepEqual(notes?.choices?.others[0]?.conditions, [
-			exp("must", "算法"),
-			{ ...exp("must", "产品"), off: "user" },
-		]);
+		assert.deepEqual(
+			notes?.choices?.others[0]?.conditions.map((c) => [c.label, c.off]),
+			[
+				["做过算法", undefined],
+				["做过产品", "user"],
+			],
+		);
 	});
 
 	test("和现在一样、和前面的选项一样、或校验后一条不剩的表不算一种理解", () => {
@@ -331,21 +395,17 @@ describe("说明", () => {
 				says: "算法有几种常见的意思，你要的是哪种？",
 				current: "算法工程",
 				options: [
-					{ label: "一样", detail: "", conditions: [algo] },
 					{
-						label: "加上推荐",
+						label: "一样",
 						detail: "",
-						conditions: [algo, claim({ what: ["推荐"] })],
+						conditions: [{ ...algo, label: "换个说法" }],
 					},
-					{
-						label: "还是加上推荐",
-						detail: "",
-						conditions: [claim({ what: ["推荐"] }), algo],
-					},
+					{ label: "加上推荐", detail: "", conditions: [algo, recommend] },
+					{ label: "还是加上推荐", detail: "", conditions: [recommend, algo] },
 					{
 						label: "全不合规",
 						detail: "",
-						conditions: [person("level", ["资深"])],
+						conditions: [person("x", "true", "exclude")],
 					},
 				],
 			},
@@ -365,7 +425,7 @@ describe("说明", () => {
 				options: ["推荐", "搜索", "广告"].map((word) => ({
 					label: word,
 					detail: "",
-					conditions: [algo, claim({ what: [word] })],
+					conditions: [algo, exp(`做过${word}`, { terms: { what: [word] } })],
 				})),
 			},
 		});
@@ -374,11 +434,7 @@ describe("说明", () => {
 
 	test("没写现在是哪种、或者没有一种能用的选项，只留那句话", () => {
 		const options = [
-			{
-				label: "加上推荐",
-				detail: "",
-				conditions: [algo, claim({ what: ["推荐"] })],
-			},
+			{ label: "加上推荐", detail: "", conditions: [algo, recommend] },
 		];
 		for (const note of [
 			{ says: "要不要加上推荐？", current: null, options },
@@ -412,8 +468,9 @@ describe("模型是不可信输入", () => {
 			"一句话",
 			[42],
 			{ conditions: 1 },
+			{ conditions: [null, 1, "x", []] },
 		])
-			assert.deepEqual(read(raw).spec.conditions, [], JSON.stringify(raw));
+			assert.deepEqual(read(raw).query.conditions, [], JSON.stringify(raw));
 	});
 });
 
@@ -422,18 +479,20 @@ describe("发给模型的形状", () => {
 		assert.ok(
 			submissionSchema.safeParse({
 				conditions: [
-					claim({ what: ["渠道运营", "渠道拓展"], minMonths: 12 }),
-					claim({ company: ["字节"] }, "boost"),
-					person("level", ["P7"], "boost"),
+					{ ...algo, minMonths: 12 },
+					{
+						...person("P7 及以上", "p.level_rank >= :r", "boost"),
+						params: { r: 7 },
+					},
 				],
 				note: {
-					says: "简历里看不出潜力，要不要先看带过团队的？",
+					says: "人才库里看不出潜力，要不要先看高潜名单上的？",
 					current: "先不管这条",
 					options: [
 						{
-							label: "带过团队的优先",
-							detail: "写过带团队的有两百多位",
-							conditions: [claim({ what: ["带团队"] }, "boost")],
+							label: "高潜名单上的优先",
+							detail: "最近一期高潜名单上有二十多位",
+							conditions: [algo, person("最近一期高潜", "true", "boost")],
 						},
 					],
 				},
@@ -441,96 +500,21 @@ describe("发给模型的形状", () => {
 		);
 	});
 
-	test("词表不进 schema：词表外的取值提交时告诉模型、最后丢掉，不让整句作废", () => {
-		assert.ok(
-			submissionSchema.safeParse({
-				conditions: [claim({ companyTag: ["一线大厂"] })],
-				note: null,
-			}).success,
-		);
-	});
-
-	test("词数与词长上限不写进 schema：多给一条不该让整句理解作废", () => {
-		// 上限的事实源是 conditionsOf / termOf，understood 会走它们校验。写成 schema
-		// 约束就是第二份契约：模型多给一条，整条响应作废、整句理解失败。
+	test("数量与长度上限不写进 schema：多给一条不该让整句理解作废", () => {
+		// 上限的事实源是 draftsOf；写成 schema 约束就是第二份契约：模型多给一条，整条响应作废。
 		assert.ok(
 			submissionSchema.safeParse({
 				conditions: Array.from({ length: 20 }, (_, i) =>
-					claim({ what: [`条件${i}`] }),
+					exp(`条件${i}`, { terms: { what: [`词${i}`] } }),
 				),
 				note: null,
 			}).success,
 		);
-		const long = "供应链金融风控建模";
 		assert.ok(
 			submissionSchema.safeParse({
-				conditions: [claim({ what: [long] })],
+				conditions: [exp("长", { where: "x".repeat(5_000) })],
 				note: null,
 			}).success,
-		);
-		assert.deepEqual(of(claim({ what: ["算".repeat(25)] })), []);
-		assert.deepEqual(of(claim({ what: [long] })), [exp("must", long)]);
-	});
-});
-
-describe("提交时告诉模型的词表外取值", () => {
-	test("条件表和选项的表里的词表外取值各说一句，说出可选的档", () => {
-		assert.deepEqual(
-			valuesOutsideVocabulary(
-				submissionSchema.parse({
-					conditions: [
-						claim({ what: ["增长"], companyTag: ["一线大厂", "知名公司"] }),
-						{ about: "person", mode: "must", field: "level", atLeast: "P9" },
-						person("education", ["硕士"]),
-					],
-					note: {
-						says: "简历里看不出潜力，要不要按公司档找？",
-						current: "先不管这条",
-						options: [
-							{
-								label: "按公司档找",
-								detail: "",
-								conditions: [claim({ companyTag: ["一线大厂"] }, "boost")],
-							},
-						],
-					},
-				}),
-				VOCAB,
-			),
-			[
-				"companyTag 没有「一线大厂」这个取值，可选：头部互联网T1、知名公司、外包公司",
-				"level 没有「P9」这个取值，可选：P5、P6、P7、P8",
-			],
-		);
-	});
-
-	test("学校写名字，不查词表", () => {
-		assert.deepEqual(
-			valuesOutsideVocabulary(
-				submissionSchema.parse({
-					conditions: [person("school", ["银河学院"])],
-					note: null,
-				}),
-				VOCAB,
-			),
-			[],
-		);
-	});
-});
-
-describe("哪些条件要检查经历词找不找得到人", () => {
-	test("这一轮新写的正向主张；排除、没写经历词的、上一轮已有的不检查", () => {
-		const kept = build("灵能驾驶");
-		const measured = isNewClaim([kept]);
-		assert.deepEqual(
-			[
-				kept,
-				build("机甲算法"),
-				build("幽冥测绘", { mode: "boost" }),
-				build("实习", { mode: "exclude" }),
-				{ about: "experience", mode: "must", company: ["星河"] } as Condition,
-			].map((c) => measured(c)),
-			[false, true, true, false, false],
 		);
 	});
 });

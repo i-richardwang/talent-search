@@ -18,21 +18,24 @@ const { understand, UnansweredError } = await import("#/server/llm");
 const { endpointFault } = await import("#/server/endpoint");
 const { APICallError, tool } = await import("ai");
 
-const VOCAB = {
-	companyTag: [],
-	level: [],
-	recruitment: [],
-	education: [],
-	schoolTier: [],
-	overseas: [],
+const FACTS = {
+	vocab: {
+		companyTag: [],
+		level: [],
+		recruitment: [],
+		education: [],
+		schoolTier: [],
+		overseas: [],
+	},
+	streams: [],
 };
 
 test("端点连不上时抛给调用方，不返回一份假理解", async () => {
-	await assert.rejects(understand("做过算法的人", VOCAB, [], {} as never));
+	await assert.rejects(understand("做过算法的人", FACTS, [], {} as never));
 });
 
 test("连不上认作 unreachable：那句话根本没被读过", async () => {
-	const error = await understand("做过算法的人", VOCAB, [], {} as never).catch(
+	const error = await understand("做过算法的人", FACTS, [], {} as never).catch(
 		(e) => e,
 	);
 	assert.equal(endpointFault(error), "unreachable");
@@ -78,7 +81,7 @@ test("端点没理会必须调用工具、只回了正文，算没作答，不�
 	try {
 		const error = await understand(
 			"做过算法的人",
-			VOCAB,
+			FACTS,
 			[],
 			agent as never,
 		).catch((e) => e);

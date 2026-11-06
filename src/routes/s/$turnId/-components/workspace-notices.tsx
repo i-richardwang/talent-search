@@ -1,7 +1,8 @@
 import type { Ref } from "react";
 import { KeywordBar, type KeywordBarHandle } from "#/components/keyword-bar";
 import type { Condition } from "#/search/condition";
-import { keywordsOf } from "#/search/keywords";
+import type { Keywords } from "#/search/keywords";
+import type { QueryCondition } from "#/search/query";
 import type { Facets } from "#/search/result";
 import type { SearchMode } from "#/server/turn";
 import { filterFields, textFilters } from "../-lib/filters";
@@ -20,7 +21,9 @@ export function WorkspaceNotices({
 	turnId,
 	mode,
 	conditions,
+	keywords,
 	onRevise,
+	onKeywords,
 	keywordBar,
 	facets,
 	view,
@@ -30,8 +33,11 @@ export function WorkspaceNotices({
 	latestId: string;
 	turnId: string;
 	mode: SearchMode;
-	conditions: readonly Condition[];
-	onRevise: (conditions: Condition[]) => boolean | Promise<boolean>;
+	conditions: readonly QueryCondition[];
+	/** 关键词链框里的词；对话链为 null */
+	keywords: Keywords | null;
+	onRevise: (conditions: QueryCondition[]) => boolean | Promise<boolean>;
+	onKeywords: (conditions: Condition[]) => boolean | Promise<boolean>;
 	keywordBar?: Ref<KeywordBarHandle>;
 	facets: Facets;
 	view: View;
@@ -50,9 +56,9 @@ export function WorkspaceNotices({
 			{chips && <QueryChips conditions={conditions} onChange={onRevise} />}
 			{mode === "keyword" && (
 				<KeywordBar
-					initial={keywordsOf(conditions) ?? undefined}
+					initial={keywords ?? undefined}
 					key={turnId}
-					onSearch={onRevise}
+					onSearch={onKeywords}
 					ref={keywordBar}
 				/>
 			)}

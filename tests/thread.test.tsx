@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { stepFindings, Thread } from "#/routes/s/$turnId/-components/thread";
+import { compileConditions } from "#/search/compile";
 import type { TurnNotes } from "#/search/intent";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
@@ -26,7 +27,8 @@ function turns(rounds: Round[]): Turn[] {
 		mode: "conversation",
 		title: rounds[0]?.said ?? null,
 		said: r.said,
-		spec: r.spec === null ? null : { conditions: parseQuery(r.spec) },
+		spec:
+			r.spec === null ? null : { query: compileConditions(parseQuery(r.spec)) },
 		notes: r.notes ?? null,
 		trace: r.trace ?? null,
 		startedAt: null,
@@ -166,7 +168,7 @@ const ASKED: TurnNotes = {
 			{
 				label: "带过团队的优先",
 				detail: "写过带团队的有两百多位",
-				conditions: parseQuery("算法, +带团队"),
+				conditions: compileConditions(parseQuery("算法, +带团队")).conditions,
 			},
 		],
 	},
@@ -329,6 +331,67 @@ describe("检索人才库的过程", () => {
 			"人才库中没有「银河学院」",
 		]);
 		assert.deepEqual(stepFindings(trace[3] as TraceStep), ["本科、硕士"]);
+	});
+
+	test("看人才库概况：只说有哪些记录、从什么时候起，不写人数", () => {
+		const facts = stepFindings({
+			at: 0,
+			tool: "discover",
+			discovery: {
+				kind: "overview",
+				relations: [{ name: "person", label: "人", rows: 120 }],
+				streams: [
+					{
+						stream: "perf",
+						label: "绩效",
+						kind: "rating",
+						period: "半年",
+						people: 80,
+						periods: 6,
+						first: "2023-01-01",
+						latest: { start: "2025-07-01", end: "2025-12-31" },
+						scale: ["C", "B", "A", "S"],
+					},
+				],
+			},
+		});
+		assert.deepEqual(facts, ["人才库中有绩效记录，2023-01-01 起"]);
+		assert.doesNotMatch(facts.join(""), /120|80/);
+	});
+
+	test("试搜：每条单独找到几个人、合起来几个人；写不对的说搜不了", () => {
+		assert.deepEqual(
+			stepFindings({
+				at: 0,
+				tool: "probe",
+				probe: {
+					conditions: [
+						{ label: "做过推荐", mode: "must", people: 12, problem: null },
+						{
+							label: "近三年两次 A",
+							mode: "must",
+							people: null,
+							problem: "没有这一列",
+						},
+					],
+					total: null,
+				},
+			}),
+			["做过推荐：12 人", "近三年两次 A：这样写搜不了"],
+		);
+		assert.deepEqual(
+			stepFindings({
+				at: 0,
+				tool: "probe",
+				probe: {
+					conditions: [
+						{ label: "做过推荐", mode: "must", people: 12, problem: null },
+					],
+					total: 12,
+				},
+			}),
+			["做过推荐：12 人", "合起来：12 人"],
+		);
 	});
 
 	test("查看结果是一枚带名字的图标链接，不包任何动作", async () => {

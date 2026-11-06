@@ -1,52 +1,42 @@
 /**
- * 查询理解时模型能用的三个工具：查经历、查属性、提交搜索条件。
+ * 查询理解时模型能用的四个工具：看目录、查经历词、试跑、提交。
  *
- * 条件里的取值只有两类，一类一个工具，回答的都是「这样写，搜索会找到什么」：
+ * - 看目录（`discover`）：数据目录里有什么（`search/catalog.ts`），一列有哪些取值、各多少人，
+ *   公司、部门、学校的名字能匹配到多少人和人才库里的写法，记录流覆盖了多少人、哪几期。
+ * - 查经历词（`lookup_experience`）：做过什么。按意思匹配，要挑的是粒度。查一个词，得到它能
+ *   找到多少人、对应人才库里哪些标准能力词，以及每个能力词在词表里更宽和更细的词。
+ * - 试跑（`probe`）：一份完整的条件，每条单独有多少人、整份多少人，哪一条写不对、跑不了。
+ * - 提交（`submit`）：先检查再收下。查的是：形状和白名单、标签里有没有内部用词、这一轮新写或
+ *   改过的条件是不是一个人都找不到、新写的语义词是不是一个人都找不到、整份是不是宽到名单出不来。
+ *   有问题就告诉模型，让它改了再提交；问题出在用户明说的要求上、人才库里本来就没有这样的人时，
+ *   模型把同一份条件原样再提交一次就算通过：没有这样的人也是一个结果。
  *
- * - 查经历（`lookup_experience`）：做过什么。按意思匹配，要挑的是粒度。查一个词，
- *   得到它能找到多少人、对应人才库里哪些标准能力词，以及每个能力词在词表里更宽和更细的词。
- * - 查属性（`lookup_attribute`）：职级、学历、招聘渠道、学校档、海外学历、公司档、
- *   入职前公司、公司内部门、学校。按字面匹配，要挑的是写法。有限取值的几维给出全部
- *   取值和人数，和提示词里预先给的是同一份；名字按包含匹配，给出匹配到的人数和
- *   人才库里的写法。
- *
- * 两个查询工具和搜索用同一套匹配规则（`search/search.ts`），查到的人数就是写进条件后
- * 搜出来的人数。
- *
- * 提交的搜索条件先检查：有没有词表里没有的取值，这一轮新写的经历词是不是
- * 一个人都找不到，名字是不是一个人都匹配不到，是不是什么都没写。有问题就把
- * 问题告诉模型，让它改了再提交。有时问题出在用户明说的要求上，人才库里本来就没有
- * 这样的人，这时模型把同一份条件原样再提交一次，就算通过：没有这样的人也是一个结果。
- *
- * 工具只给模型人数和人才库里的写法，不给人：姓名、工号、任何一段经历都不发给模型，
- * 名单也只从搜索来。发给模型的能力词和公司、学校名，至少有几个人写过（`search.ts`）；
- * 公司内的部门名只给人数。
- *
- * 模型每查一次，就记下一步（`search/trace.ts`），由调用方写进查询记录，界面边跑边画。
- * 同一次理解里查同样几个词或名字，答案不会变：只查一次、只记一步，再问就给同一份答案。
+ * 工具只给模型人数和人才库里的写法，不给人：姓名、工号、任何一段经历都不发给模型，名单也只从
+ * 搜索来。发给模型的能力词和公司、学校名，至少有几个人写过（`search.ts`）；公司内的部门名只给人数。
+ * 查询记录里每查一次记一步（`search/trace.ts`），界面边跑边画。同一次理解里同样的问题只查一次。
  */
 import "@tanstack/react-start/server-only";
 import { tool } from "ai";
 import { z } from "zod";
-import type { Condition } from "#/search/condition";
-import { isVocabKey } from "#/search/dimensions";
+import { internalWordsIn } from "#/lib/internal-words";
+import { CATALOG } from "#/search/catalog";
+import { probe as probeQuery } from "#/search/execute";
 import {
-	isNewClaim,
 	type Submission,
 	submissionSchema,
+	type Understood,
 	unanswered,
 	understood,
-	type Vocabulary,
-	valuesOutsideVocabulary,
 } from "#/search/intent";
-import { lookupExperience, lookupNames, vocabulary } from "#/search/search";
 import {
-	ATTRIBUTE_FIELDS,
-	type Matched,
-	type NameField,
-	type NameFinding,
-	type TraceStep,
-} from "#/search/trace";
+	contentKey,
+	type Query,
+	type QueryCondition,
+	termValues,
+} from "#/search/query";
+import { lookupExperience } from "#/search/search";
+import type { Probe, TraceStep } from "#/search/trace";
+import { discover } from "./discover";
 
 /** 提交搜索条件的工具名。 */
 export const SUBMIT = "submit";
@@ -61,70 +51,116 @@ function lookupInputs(list: readonly string[]): string[] {
 	);
 }
 
-/**
- * 检查一份提交的搜索条件，每个问题一句话；没有问题返回空数组。
- * 条件和说明里每个选项的整张表一起检查：HR 点一下选项，搜的就是那张表。
- */
-async function checkSubmission(
-	submitted: Submission,
-	vocab: Vocabulary,
-	base: readonly Condition[],
-): Promise<string[]> {
-	const result = understood(submitted, vocab, base);
-	const failure = unanswered(submitted, result);
-	if (failure) return [failure];
-	const conditions = [
-		...result.spec.conditions,
-		...(result.notes?.choices?.others ?? []).flatMap((o) => o.conditions),
-	];
-	const words = conditions.filter(isNewClaim(base)).flatMap((c) => c.what);
-	const namesOf = (field: NameField) =>
-		conditions.flatMap((c) =>
-			field === "school"
-				? c.about === "person" && c.field === "school" && "values" in c
-					? c.values
-					: []
-				: c.about === "experience"
-					? (c[field] ?? [])
-					: [],
-		);
-	const [terms, companies, departments, schools] = await Promise.all([
-		lookupExperience(words),
-		lookupNames("company", namesOf("company")),
-		lookupNames("department", namesOf("department")),
-		lookupNames("school", namesOf("school")),
-	]);
-	const optionsUnused =
-		(submitted.note?.options.length ?? 0) > 0 && !result.notes?.choices;
-	return [
-		...(optionsUnused
-			? [
-					"note 的 options 一项都用不上：写了 options 就要写 current，说现在这张表是哪种理解；每一项的表要和现在的表不一样",
-				]
-			: []),
-		...valuesOutsideVocabulary(submitted, vocab),
-		...terms.flatMap((t) =>
-			t.people === 0
-				? [`「${t.text}」在人才库里一个人都找不到，换人才库里的说法`]
-				: [],
-		),
-		...[...companies, ...departments, ...schools].flatMap((n) =>
-			n.people === 0 ? [`「${n.query}」在人才库里一个人都匹配不到`] : [],
-		),
-	];
+/** 试跑一份查询，给模型的和记进步骤的是同一份：标签、强度、人数、问题。 */
+async function trial(query: Query): Promise<Probe & { overflow: string[] }> {
+	const result = await probeQuery(query);
+	const byId = new Map(result.conditions.map((c) => [c.id, c]));
+	return {
+		conditions: query.conditions
+			.filter((c) => !c.off)
+			.map((c) => ({
+				label: c.label,
+				mode: c.mode,
+				people: byId.get(c.id)?.people ?? null,
+				problem: byId.get(c.id)?.problem ?? null,
+			})),
+		total: result.total,
+		overflow: query.conditions
+			.filter((c) => result.overflow.includes(c.id))
+			.map((c) => c.label),
+	};
 }
 
 /**
- * 一次查询理解用的工具，连同模型最后一次提交的搜索条件。
- * `record` 在模型每查一次时记下一步；词表和上一轮的条件用来检查提交的搜索条件。
+ * 检查一份提交的条件，每个问题一句话；没有问题返回空数组。条件和说明里每个选项的整份条件
+ * 一起检查：HR 点一下选项，搜的就是那一份。
+ */
+async function checkSubmission(
+	submitted: Submission,
+	result: Understood,
+	base: readonly QueryCondition[],
+): Promise<string[]> {
+	const failure = unanswered(submitted, result);
+	if (failure) return [failure];
+	const tables = [
+		result.query.conditions,
+		...(result.notes?.choices?.others ?? []).map((o) => o.conditions),
+	];
+	const known = new Set(base.map((c) => `${c.id}\u0001${contentKey(c)}`));
+	const isNew = (c: QueryCondition) =>
+		!known.has(`${c.id}\u0001${contentKey(c)}`);
+	const problems = new Set<string>();
+	const optionsUnused =
+		(submitted.note?.options.length ?? 0) > 0 && !result.notes?.choices;
+	if (optionsUnused)
+		problems.add(
+			"note 的 options 一项都用不上：写了 options 就要写 current，说现在这份条件是哪种理解；每一项的条件要和现在的不一样",
+		);
+	const dropped = submitted.conditions.length - result.query.conditions.length;
+	if (dropped > 0)
+		problems.add(
+			`有 ${dropped} 条条件形状不对被丢掉了：每条要有 label、mode、from、where；exclude 只用于 experience；terms、minMonths 只写在 experience 上`,
+		);
+	for (const table of tables)
+		for (const c of table) {
+			const leaked = internalWordsIn(c.label);
+			if (leaked.length > 0)
+				problems.add(
+					`「${c.label}」的 label 原样显示给 HR，不要用「${leaked.join("、")}」这样的词`,
+				);
+		}
+	const words = [
+		...new Set(
+			tables.flatMap((t) =>
+				t.filter((c) => isNew(c) && c.mode !== "exclude").flatMap(termValues),
+			),
+		),
+	];
+	const [terms, ...trials] = await Promise.all([
+		lookupExperience(words),
+		...tables.map((conditions) => trial({ conditions })),
+	]);
+	const unfound = new Set(
+		terms.filter((t) => t.people === 0).map((t) => t.text),
+	);
+	for (const word of unfound)
+		problems.add(`「${word}」在人才库里一个人都找不到，换人才库里的说法`);
+	for (const [n, table] of tables.entries()) {
+		const tried = trials[n];
+		if (!tried) continue;
+		const active = table.filter((c) => !c.off);
+		for (const [i, c] of active.entries()) {
+			const one = tried.conditions[i];
+			if (!one) continue;
+			if (one.problem) problems.add(`「${c.label}」：${one.problem}`);
+			// 找不到人的词已经单独说了，这一条不再重复
+			else if (
+				one.people === 0 &&
+				isNew(c) &&
+				c.mode !== "exclude" &&
+				!termValues(c).some((w) => unfound.has(w))
+			)
+				problems.add(
+					`「${c.label}」在人才库里一个人都找不到：是你补的就改；是用户点名的，照原样再提交，在 note 里说一句`,
+				);
+		}
+		if (tried.overflow.length > 0)
+			problems.add(
+				`「${tried.overflow.join("」「")}」找出的经历太多，名单出不来：写得更具体一些`,
+			);
+	}
+	return [...problems];
+}
+
+/**
+ * 一次查询理解用的工具，连同模型最后一次提交的条件。
+ * `record` 在模型每查一次时记下一步；上一轮的条件用来定 id、沿用停用、判断哪些是新写的。
  */
 export function agentTools({
-	vocab,
 	base,
 	record,
 }: {
-	vocab: Vocabulary;
-	base: readonly Condition[];
+	base: readonly QueryCondition[];
 	record: (step: TraceStep) => Promise<void>;
 }) {
 	let last: { submitted: Submission; json: string; problems: string[] } | null =
@@ -139,6 +175,42 @@ export function agentTools({
 		return answer;
 	};
 	const tools = {
+		discover: tool({
+			description:
+				"看数据目录：不写 relation 是总览（各关系多少行、记录流覆盖了多少人和哪几期）；写 relation 和 column 列出这一列的取值和人数；公司、部门、学校这几列按名字包含匹配 match 里的名字。",
+			inputSchema: z.object({
+				relation: z
+					.enum(CATALOG.map((r) => r.name) as [string, ...string[]])
+					.optional(),
+				column: z.string().optional(),
+				stream: z
+					.string()
+					.optional()
+					.meta({ description: "看 rating 或 status 的 value 时写是哪一条流" }),
+				match: z
+					.array(z.string())
+					.optional()
+					.meta({ description: "按名字找时要找的名字，一次可以几个" }),
+			}),
+			execute: (input) => {
+				const match = lookupInputs(input.match ?? []);
+				const ask = { ...input, match };
+				return once(
+					JSON.stringify([
+						"discover",
+						ask.relation,
+						ask.column,
+						ask.stream,
+						...[...match].sort(),
+					]),
+					async () => {
+						const discovery = await discover(ask);
+						await record({ at: Date.now(), tool: "discover", discovery });
+						return discovery;
+					},
+				);
+			},
+		}),
 		lookup_experience: tool({
 			description:
 				"查几个经历词：按搜索的方式各能找到多少人、对应人才库里哪些标准能力词，以及每个能力词更宽和更细的词。",
@@ -159,56 +231,30 @@ export function agentTools({
 				);
 			},
 		}),
-		lookup_attribute: tool({
+		probe: tool({
 			description:
-				"查一种属性在人才库里怎么写、各有多少人。level、education、recruitment、schoolTier、overseas、companyTag 不用给 queries，返回全部取值；company、department、school 按包含匹配 queries 里的每个名字，部门只给人数。",
-			inputSchema: z.object({
-				field: z.enum(ATTRIBUTE_FIELDS).meta({
-					description:
-						"level=职级；education=学历；recruitment=招聘渠道；schoolTier=学校档；overseas=海外学历；companyTag=公司档；company=入职前公司；department=公司内部门；school=学校",
-				}),
-				queries: z.array(z.string()).optional().meta({
-					description: "要查的名字，一次可以几个；有限取值的属性不用写",
-				}),
-			}),
-			execute: ({ field, queries }): Promise<Matched[] | NameFinding[]> => {
-				if (isVocabKey(field))
-					return once(JSON.stringify([field]), async () => {
-						const values = [...vocab[field]];
-						await record({
-							at: Date.now(),
-							tool: "lookup_attribute",
-							field,
-							values,
-						});
-						return values;
-					});
-				const inputs = lookupInputs(queries ?? []);
-				return once(
-					JSON.stringify([field, ...[...inputs].sort()]),
-					async () => {
-						const found = await lookupNames(field, inputs);
-						await record({
-							at: Date.now(),
-							tool: "lookup_attribute",
-							field,
-							found,
-						});
-						return found;
-					},
-				);
+				"试跑一份完整的条件：每条单独能找到多少人、整份能找到多少人，哪一条写不对或跑不了。只给人数，不给人。",
+			inputSchema: z.object({ conditions: submissionSchema.shape.conditions }),
+			execute: ({ conditions }) => {
+				const { query } = understood({ conditions }, base);
+				const json = JSON.stringify(query.conditions.map(contentKey));
+				return once(JSON.stringify(["probe", json]), async () => {
+					const { overflow, ...probe } = await trial(query);
+					await record({ at: Date.now(), tool: "probe", probe });
+					return overflow.length > 0 ? { ...probe, tooBroad: overflow } : probe;
+				});
 			},
 		}),
 		[SUBMIT]: tool({
 			description:
-				"提交整份新的搜索条件和说明。检查通过，这一轮就结束；没通过会告诉你哪里有问题，改好再提交。问题出在用户明说的要求上时，把同一份条件原样再提交一次。",
+				"提交整份新的条件和说明。检查通过，这一轮就结束；没通过会告诉你哪里有问题，改好再提交。问题出在用户明说的要求上时，把同一份条件原样再提交一次。",
 			inputSchema: submissionSchema,
 			execute: async (submitted) => {
 				const json = JSON.stringify(submitted);
 				const resubmitted = last !== null && last.json === json;
 				const problems = resubmitted
 					? []
-					: await checkSubmission(submitted, vocab, base);
+					: await checkSubmission(submitted, understood(submitted, base), base);
 				last = { submitted, json, problems };
 				return problems.length > 0
 					? { passed: false, problems }
@@ -226,11 +272,7 @@ export function agentTools({
 
 export type AgentTools = ReturnType<typeof agentTools>;
 
-/** 给验收脚本用：不记步骤的一套工具，词表现取。 */
-export async function agentToolsWithoutTrace(base: readonly Condition[]) {
-	return agentTools({
-		vocab: await vocabulary(),
-		base,
-		record: async () => {},
-	});
+/** 给验收脚本用：不记步骤的一套工具。 */
+export function agentToolsWithoutTrace(base: readonly QueryCondition[]) {
+	return agentTools({ base, record: async () => {} });
 }

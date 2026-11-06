@@ -41,6 +41,7 @@ import {
 	term,
 } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
+import { compileConditions } from "#/search/compile";
 import { parseQuery } from "#/search/query-syntax";
 
 /**
@@ -237,18 +238,36 @@ export function answerEmbedding(answer: (text: string) => number[]) {
 }
 
 /**
- * 假理解：把那句话按一行查询语法读（`search/query-syntax.ts`），接在当前条件
- * 后面提交整张表——真模型遇到「再加上……」就是这么做的。模型说的和库里存的是
- * 同一个形状，所以这里不必翻译；词表检查在 intent.test.ts 里对着 `understood` 直接测。
- * 一行语法里的 `~` 会带出 `off`，而真模型从不写停用，去掉。
+ * 一行查询语法（`search/query-syntax.ts`）写成模型会提交的条件：经编译器写成查询，去掉 id
+ * （新写的条件不带 id，由服务端发）和停用（真模型从不写停用）。
+ */
+export function drafted(syntax: string) {
+	return compileConditions(parseQuery(syntax)).conditions.map(
+		({ id: _id, off: _off, ...rest }) => rest,
+	);
+}
+
+/**
+ * 假理解：把那句话按一行查询语法读，接在当前条件后面提交整份——真模型遇到「再加上……」
+ * 就是这么做的。
  */
 function fakeIntent(text: string, base: unknown[]) {
+	return { conditions: [...base, ...drafted(text)], note: null };
+}
+
+/**
+ * 打开后，假理解先用一遍三个查询工具（看目录、查经历词、试跑）再提交，并记下发给
+ * 查询理解端点的每一个请求体：工具的回答会跟着下一次请求发出去，隐私测试看的就是它们。
+ */
+let exploring: string[] | null = null;
+export function exploreAndCapture(): { bodies: string[]; stop: () => void } {
+	const bodies: string[] = [];
+	exploring = bodies;
 	return {
-		conditions: [
-			...base,
-			...parseQuery(text).map(({ off: _off, ...rest }) => rest),
-		],
-		note: null,
+		bodies,
+		stop: () => {
+			exploring = null;
+		},
 	};
 }
 
@@ -387,14 +406,52 @@ function startModelServer() {
 						choices: [{ index: 0, message, finish_reason: finish }],
 						usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
 					});
-				// 识别出查询理解的提示词；不查词，直接用提交工具提交那张表
+				// 识别出查询理解的提示词；默认不查词，直接用提交工具提交那张表
 				const understanding = users.find((u) => u.includes(SENTENCE_PREFIX));
 				if (understanding !== undefined) {
 					const at = understanding.lastIndexOf(SENTENCE_PREFIX);
+					const said = understanding.slice(at + SENTENCE_PREFIX.length);
 					const table = (intentAnswer ?? fakeIntent)(
-						understanding.slice(at + SENTENCE_PREFIX.length),
+						said,
 						baseIn(understanding),
 					);
+					exploring?.push(body);
+					const explored = messages.some((m) => m.role === "tool");
+					if (exploring && !explored) {
+						const call = (name: string, input: unknown, n: number) => ({
+							id: `explore-${n}`,
+							type: "function",
+							function: { name, arguments: JSON.stringify(input) },
+						});
+						const words = drafted(said).flatMap((c) =>
+							Object.values(c.terms ?? {}).flat(),
+						);
+						reply(
+							{
+								role: "assistant",
+								content: null,
+								tool_calls: [
+									call("discover", {}, 0),
+									call(
+										"discover",
+										{ relation: "person", column: "education" },
+										1,
+									),
+									call("lookup_experience", { texts: words }, 2),
+									call(
+										"probe",
+										{
+											conditions: (table as { conditions: unknown[] })
+												.conditions,
+										},
+										3,
+									),
+								],
+							},
+							"tool_calls",
+						);
+						return;
+					}
 					reply(
 						{
 							role: "assistant",

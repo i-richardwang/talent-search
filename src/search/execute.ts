@@ -29,6 +29,7 @@ import { escapeLike } from "#/lib/sql";
 import {
 	compileWhere,
 	restricted,
+	sandboxProblem,
 	shareTemp,
 	type WhereScope,
 } from "#/server/sandbox";
@@ -79,14 +80,24 @@ export function scopeOf(c: QueryCondition): WhereScope {
 		: { from: "experience", terms: hasTerms(c) };
 }
 
-/** 条件的 `where` 经解析白名单编成 SQL 片段；不合规的抛出，带上是哪一条、为什么。 */
-async function compiled(c: QueryCondition): Promise<Compiled> {
+/** 条件的 `where` 经解析白名单编成 SQL 片段；不合规的给出原因。 */
+async function compiledOf(
+	c: QueryCondition,
+): Promise<{ ok: true; compiled: Compiled } | { ok: false; problem: string }> {
 	const result = await compileWhere(c.where, c.params ?? {}, scopeOf(c));
+	return result.ok
+		? { ok: true, compiled: { condition: c, where: result.sql } }
+		: result;
+}
+
+/** 执行用：不合规的抛出，带上是哪一条、为什么。 */
+async function compiled(c: QueryCondition): Promise<Compiled> {
+	const result = await compiledOf(c);
 	if (!result.ok)
 		throw new InvalidQueryError(
 			`条件「${c.label}」不能执行：${result.problem}`,
 		);
-	return { condition: c, where: result.sql };
+	return result.compiled;
 }
 
 /** 新建没有候选人的结果字段；分面集合不共享可变状态。 */
@@ -632,4 +643,99 @@ async function present(
 		return [{ employee: person, depth: row.depth, basis: row.basis, hits }];
 	});
 	return { order: "evidence", claims, results, facets, total, empty };
+}
+
+/** 一条条件单独试跑的结果：满足它的有多少人，或者它为什么跑不了。停用的不跑。 */
+export type ConditionProbe = {
+	id: string;
+	people: number | null;
+	problem: string | null;
+};
+
+export type ProbeResult = {
+	conditions: ConditionProbe[];
+	/** 整份查询搜出多少人；有条件跑不了、或事实超过内存上限时为 null */
+	total: number | null;
+	/** 事实超过内存上限：哪几条太宽 */
+	overflow: string[];
+};
+
+/**
+ * 试跑一份查询：每条条件单独数人，再整份跑一遍数总人数。只给人数，不给人。
+ *
+ * 单条的人数和执行同一套规则：经历条件只算没被排除否决的段，写了累计时长的按去重后的段
+ * 累计；排除数的是它否决了多少人的段；人的条件数满足它的人。每条在自己的保存点里跑，
+ * 一条报错不影响别的条；数据库的错误脱敏后作为这一条的问题（`sandboxProblem`）。
+ */
+export async function probe(query: Query): Promise<ProbeResult> {
+	const roles = rolesOf(query);
+	const index = new Map(query.conditions.map((c, i) => [c, i]));
+	const at = (c: QueryCondition) => index.get(c) as number;
+	const checked = await Promise.all(
+		query.conditions.map((c) => (c.off ? null : compiledOf(c))),
+	);
+	const all = checked.map((r) => (r?.ok ? r.compiled : null));
+	const results: ConditionProbe[] = query.conditions.map((c, i) => {
+		const r = checked[i];
+		return { id: c.id, people: null, problem: r && !r.ok ? r.problem : null };
+	});
+	const valid = (c: QueryCondition) => all[at(c)] !== null;
+	return withMatchedPhrases(
+		[...roles.claims, ...roles.excludes].filter(valid).flatMap(termValues),
+		RELEVANCE_MIN,
+		async (store, { phraseHits }) => {
+			await materializeHits(store, query.conditions, phraseHits);
+			const shell = new Shell(all, roles.excludes.filter(valid).map(at));
+			for (const i of query.conditions.keys()) {
+				const one = all[i];
+				const result = results[i];
+				if (!one || !result) continue;
+				try {
+					result.people = await restricted(store, async () => {
+						const rows = await store.execute<{ n: number }>(
+							countOf(shell, one, i),
+						);
+						return rows.rows[0]?.n ?? 0;
+					});
+				} catch (error) {
+					const problem = sandboxProblem(error);
+					if (problem === null) throw error;
+					result.problem = problem;
+				}
+			}
+			const runnable =
+				results.every((r) => r.problem === null) &&
+				roles.claims.length + roles.gates.length + roles.prefer.length > 0;
+			if (!runnable) return { conditions: results, total: null, overflow: [] };
+			const read = await restricted(store, () =>
+				evaluate(store, shell, roles, at, {}),
+			);
+			if (read.kind === "ranked")
+				return { conditions: results, total: read.ranked.total, overflow: [] };
+			const empty = read.outcome.empty;
+			return {
+				conditions: results,
+				total: null,
+				overflow:
+					empty?.kind === "overflowEvidence"
+						? empty.claims.map((c) => c.id)
+						: [],
+			};
+		},
+	);
+}
+
+/** 单条条件的人数语句；规则见 `probe`。 */
+function countOf(shell: Shell, one: Compiled, i: number): SQL {
+	const c = one.condition;
+	if (c.from === "person")
+		return sql`select count(*)::int as n from person p where ${one.where}`;
+	const veto = c.mode === "exclude" ? [] : shell.notVetoed();
+	const segments = sql`select distinct e.emp_id, e.id, e.months
+		from ${segmentsOf(one, i)} ${whereAll([one.where, ...veto])}`;
+	return c.minMonths
+		? sql`select count(*)::int as n from (
+				select emp_id from (${segments}) s group by emp_id
+				having sum(months) >= ${c.minMonths}) qualified`
+		: sql`select count(distinct emp_id)::int as n from (${segments}) s`;
 }

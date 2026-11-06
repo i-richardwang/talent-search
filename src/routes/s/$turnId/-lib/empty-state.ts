@@ -1,7 +1,6 @@
-import { type Condition, withOff } from "#/search/condition";
 import { SEARCHABLE } from "#/search/condition-label";
 import type { EmptyReason } from "#/search/empty";
-import { claimName } from "#/search/query";
+import { claimName, type QueryCondition, withOff } from "#/search/query";
 import type { SearchMode } from "#/server/turn";
 import { CLEARED_FILTERS, type View } from "./view-params";
 
@@ -26,11 +25,11 @@ type Handlers = {
 	 */
 	mode: SearchMode;
 	/** 这条查询的条件。「把停用的全部启用」改的是它。 */
-	conditions: readonly Condition[];
+	conditions: readonly QueryCondition[];
 	/** 改视图：筛选、翻页。不产生新的查询记录。 */
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：记一条新记录。 */
-	onReviseQuery: (next: Condition[]) => void;
+	onReviseQuery: (next: QueryCondition[]) => void;
 	onEditQuery: () => void;
 };
 

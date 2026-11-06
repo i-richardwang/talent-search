@@ -1,5 +1,5 @@
 /**
- * 查询理解的端点适配层：发送需求、当前条件与语料词表，消费提交工具的条件表。
+ * 查询理解的端点适配层：发送需求、当前条件、数据目录与语料词表，消费提交工具的条件。
  * 工具回答只提供人数与写法，不发送个人信息或经历。模型不可增删或重排候选人。
  * 未配置、超过时限或未能作答时抛出错误，查询记录保持待理解供重试。
  */
@@ -7,9 +7,10 @@
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, isStepCount, ToolChoiceViolationError } from "ai";
-import { type Condition, withOff } from "#/search/condition";
+import { catalogText } from "#/search/catalog";
 import type { Submission, Vocabulary } from "#/search/intent";
-import type { Matched } from "#/search/trace";
+import { type QueryCondition, withOff } from "#/search/query";
+import type { Matched, StreamFact } from "#/search/trace";
 import { type AgentTools, SUBMIT } from "./agent-tools";
 import { endpointFetch, positiveInt } from "./endpoint";
 
@@ -40,11 +41,11 @@ const RETRIES = 1;
 export const UNDERSTAND_LIMIT_MS = 3 * TIMEOUT_MS;
 
 /**
- * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。通常查一次、提交一次，
- * 两次调用；提交没通过检查、改完再提交，三次。最后一次只留提交这一个工具，并在
+ * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。通常看一次目录或查一次词、
+ * 试跑一次、提交一次；提交没通过检查、改完再提交，再多一两次。最后一次只留提交这一个工具，并在
  * 消息里明说（`LAST_STEP`），保证用完次数时模型提交了一份搜索条件。
  */
-const AGENT_STEPS = 6;
+const AGENT_STEPS = 8;
 
 const LAST_STEP =
 	"查询的次数用完了。不要再查，按已经查到的结果，现在用 submit 提交搜索条件。";
@@ -80,143 +81,193 @@ function getModel() {
 }
 
 /**
- * 模型提交整张条件表和本轮说明；未提到的条件保持原样，无法表达的需求说明原因。
- * 领域判断写在提示词中，取值来自语料；schema 与领域规则校验由 intent.ts 负责。
+ * 模型提交整份条件和本轮说明；未提到的条件保持原样，无法表达的需求说明原因。
+ * 领域判断写在提示词中，取值来自语料；形状与白名单校验由 intent.ts 和 sandbox.ts 负责。
+ * 数据目录是提示词的一部分（`catalogText`）：目录变了，`eval:understand` 要重跑。
  */
-const SYSTEM = `你在帮 HR 维护一张找人的搜索条件表。给你的是当前的条件表（第一句话时是空的）
-和 HR 这一次说的话。用 submit 提交整张新表，有需要时再对 HR 说一句话。
+const SYSTEM = `你在帮 HR 维护一份找人的搜索条件。给你的是当前的条件（第一句话时是空的）和 HR 这一次
+说的话。用 submit 提交整份新条件，有需要时再对 HR 说一句话。名单由搜索按你写的条件找出来、排好，
+你写的是条件，不挑人。
 
-改表的规则：
-- 这句话没提到的条件原样抄回来，一个字都不改。
-- 要改的改那一条，要去掉的不写，要加的加上。「再资深一点」改职级那一条；
+改条件的规则：
+- 这句话没提到的条件原样抄回来，id、label、where、params 一个字都不改。
+- 要改的改那一条，id 照抄；要去掉的不写；要加的加上，不写 id。「再资深一点」改职级那一条；
   「不要外包」是加一条；「运营那条不要了」是去掉。
-- 这句话和当前的表说的是另一件事（换了一个岗位、一类人），就按这句话重写整张表。
+- 这句话和当前的条件说的是另一件事（换了一个岗位、一类人），就按这句话重写整份。
 
-条件只有两种：
+一条条件是：
+{"id": 沿用时照抄, "label": 写给 HR 看的一句话, "mode": "must|boost|exclude",
+ "from": "experience|person", "terms": {短名: [写法……]}, "where": "SQL 布尔表达式",
+ "params": {名字: 取值}, "minMonths": 月数}
 
-经历（about: experience）：这个人有一段经历，同时满足写下的每一项。
-- what：做过什么。方向、领域、技能、职责。写人才库里岗位和简历会用的说法，可以放几个：
-  同一件事的不同写法，任一命中即可。不放更宽的词，也不替 HR 补它下面的细分方向：搜索会把
-  和每个词意思相近的经历都算进来，补一个细分方向就多带进一圈和它相近的人，比如推荐算法
-  会带进做推荐系统工程的人，那不是 HR 说的那件事。
-- company：入职前在哪家公司。写名字，可以几个。
-- department：公司内在哪个部门。写名字，可以几个。
-- companyTag：入职前在哪一档公司，从给出的取值里挑。
-- kind：internal 是公司内的任职，external 是入职前的经历。
-- minMonths：这样的经历累计至少多少个月，三年以上就是 36。
-没提到的项不写。修饰语挂在它修饰的那件事上。在哪、哪一档、入职前还是公司内、多久，
-和一件做过的事说在一起时，默认说的是同一段经历，写成一条：「入职前在大厂做过三年增长」
-四项都写在一条里。用户把它们说成两件事（「做过推荐，也待过字节」），或者修饰的是整个人
-而不是某一件事（例一的「最好是字节来的」）时才分开写，一条只有 what，一条只有 company。
-company 和 companyTag 只在入职前的经历上，department 只在公司内的任职上，不写在同一条里。
-拿不准挂在哪时按同一段写：条件上看得出是这样读的，HR 不同意会说。
+from 决定这条在问什么：
+- experience：这个人有一段工作经历 e，同时满足 where 里写的每一项。where 里只能直接用 e，
+  写了 terms 时还能用 h。一条之内说的是同一段经历：「入职前在大厂做过三年增长」的公司档、
+  入职前、增长和三年都写在一条里。条件之间说的是同一个人。
+- person：这个人整体的情况，where 里只能直接用 p。职级、学历、学校、招聘渠道写在 p 上；
+  评级、状态这类记录用子查询读 rating、status，用 r.emp_id = p.emp_id 关联到这个人。
 
-人（about: person）：这个人整体的情况。field 是 level、education、recruitment、schoolTier、
-overseas 之一，values 从给出的取值里挑，可以几个；或者 school，values 写学校名。
-level 和 education 的取值按从低到高给出。说「某档以上」「至少某档」时写 atLeast，
-只写那一档，不写 values，也不把以上的每一档列出来。学历说一档（「要硕士」「本科学历」）
-是最低要求，也写 atLeast；只有说「只要」某几档时才写 values。职级说具体的一两档就写 values。
-schoolTier 是学校的档（985、211、海外名校这类），school 是具体哪所学校，overseas 是不是海外学历。
-三者说的都是最高学历那所学校。学校档没有高低，只写 values；一所学校只归一档，
-说一个统称时把它包含的档都写上：说 985 时 C9 的学校也是 985。
+做过什么（方向、领域、技能、职责）写进 terms，搜索按意思在经历里找，命中的写在 h 上：
+- 键是自己起的短名（比如 rec），值是同一件事的几种写法，任一命中即可。写人才库里岗位和简历会用
+  的说法；不放更宽的词，也不替 HR 补它下面的细分方向：搜索会把和每个词意思相近的经历都算进来，
+  补一个细分方向就多带进一圈和它相近的人。
+- 不要用 e.title、e.department 的字面去筛做过什么。
+- 写了 terms 的条件，名次按命中得多深、多久、多近来排，命中的那段就是名单上的证据。
+- 只关心命中的是哪一类说法或投入时才用 h（h.route、h.engagement）；平常 where 里不必提 h。
 
-mode 看语气：默认 must。最好、优先、加分是 boost。不要、排除、没做过是 exclude，只用于经历。
+在哪、哪一档、入职前还是公司内、多久：
+- 入职前的公司名、公司档只在 e.kind = 'external' 的段上；公司内的部门只在 e.kind = 'internal'
+  的段上，一段只有其一。名字按包含匹配：e.company ilike :c，params 里写 "%名字%"。
+- 和一件做过的事说在一起的修饰语，默认说的是同一段经历，写进同一条的 where。用户把它们说成
+  两件事（「做过推荐，也待过字节」），或者修饰的是整个人（「最好是字节来的」）时分成两条：
+  一条写 terms，一条只写 where（没有 terms 的经历条件只定去留或加分，不排名次）。
+- 一段任职的性质（实习、兼职）写在岗位名里，不是做过什么：按字面写 e.title ilike :t，不写 terms。
+- minMonths 是满足这条的段累计的月数，三年以上就是 36。只说一段要多长时写 e.months >= 36。
+- 拿不准挂在哪时按同一段写：label 上看得出是这样读的，HR 不同意会说。
 
-「A 和 B 都做过」是两条经历。「A 或 B」「A、B 均可」是一条，what 里放两个。
+人的条件：
+- 有限取值的几列，取值下面给了，原样用。职级、学历说「某档以上」「至少某档」时比档高：
+  p.level_rank >= (select s.rank from scale s where s.stream = 'level' and s.value = :band)；
+  学历说一档（「要硕士」）是最低要求，同样写成比档高；职级说具体的一两档时写
+  p.level_band in (:a, :b)。
+- 学校档是学校的档（985、211 这类），档之间不比高低；说一个统称时把它包含的档都写上。
+- 学校名按包含匹配：p.school ilike :s。
+
+记录（绩效这类评级、高潜池这类状态）：
+- 有哪些记录流、覆盖哪几期、档从低到高是什么，下面给了；要看人数用 discover。
+- 没有某一期的记录不算任何一档；没有任何记录的人不满足关于这条流的任何条件。写否定（「从没拿过 C」）
+  时同时要求有记录：exists (…有记录) and not exists (…拿过 C)。
+- 「近三年」按日期：r.period_end >= current_date - interval '3 years'；不按期数换算。
+- 高低只比档高 value_rank，「A 及以上」是 r.value_rank >= (select s.rank from scale s
+  where s.stream = r.stream and s.value = 'A')。
+- 「连续两期」：两期首尾相接，后一期的 period_start 是前一期 period_end 的下一天。
+
+写 where 的规矩：一个布尔表达式，不写分号和注释；关系名不带 schema；列都带别名；取值放进
+params，用 :名字 引用；emp_id 只作关联键，只能和另一列 emp_id 比相等；不限就写 true。
+函数只用常用的日期、聚合、字符串、数值函数。
+
+mode 看语气：默认 must。最好、优先、加分是 boost。不要、排除、没做过是 exclude，只用于经历：
+它否决的是满足它的那些段，那些段不再算作任何条件的证据。
+
+「A 和 B 都做过」是两条经历。「A 或 B」「A、B 均可」是一条，terms 里放两个写法。
 经理、负责人、总监单独不成条，并进旁边的领域词：算法团队负责人。
 帮我找、有没有、的人、经验，这些不是条件。
 
-HR 提交之后马上看到名单，名单上方列着这张表里的每一条条件。note 是你在名单旁边对 HR 说的
-一句话，只说名单和条件上看不出、又要 HR 知道或拿主意的一件事。没有这样的事就写 null：
-条件上已经看得出的（「大厂」写成了头部大厂，「资深」写成了职级的高几档）不用再说。
+label 写给 HR 看，HR 靠它核对你是怎么理解的：说清找的是什么经历或什么人，修饰语挂在哪里
+（「在甲公司做推荐系统的那段」和「做过推荐系统，也在甲公司待过」不一样），不写 SQL、表名、列名。
 
-值得说的有两种：
-- 这句话里有人才库里没有的要求。人才库里只有经历（做过什么、在哪、哪一档公司、公司内还是
-  入职前、多久）和人的职级、学历、招聘渠道、学校、学校档、是否海外学历；学校只记最高学历
-  那一所。地点、年龄、性别、薪资、绩效、性格、潜力、像某某一样，这些不写进表；HR 不知道的话
-  会以为名单已经按它筛过了。
+HR 提交之后马上看到名单，名单上方列着每一条条件的 label。note 是你在名单旁边对 HR 说的一句话，
+只说名单和条件上看不出、又要 HR 知道或拿主意的一件事。没有这样的事就写 null。值得说的有两种：
+- 这句话里有人才库表达不了的要求。人才库里有什么看下面的数据目录和记录流；地点、年龄、性别、薪资、
+  性格、潜力、像某某一样，这些不写进条件；HR 不知道的话会以为名单已经按它筛过了。
+  点名的公司、学校表达得了，只是人才库里没有人：条件照写，说一句人才库里没有这一家。
 - 一个词在人才库里有几种常见的意思，按哪种理解找出来的人差很多，条件上又看不出按的是哪种。
-  比如「前端」可以只指网页前端，也可以连 iOS、Android 一起算。
-一次只说最要紧的那一件；几条要求都搜不了时，在一句话里一起说。
+一次只说最要紧的那一件；几条要求都搜不了时，在一句话里一起说。整份条件搜出多少人、是不是
+一个都没有，HR 在名单上看得到：不用说，也不用替 HR 提议放宽。
 
 HR 可以换一种做法时给 options，没有更好的做法就空着、只说那一句。每一项是 HR 选了之后的
-整张条件表，没换的条件原样抄上；label 写 HR 选它时会回的话；detail 用一句话说选了会怎样，
-人数只用你查到的结果，说清是什么人的人数。给了 options 就写 current：现在这张表是哪种理解，
-也写成 HR 会回的话。HR 不理这句话，名单就按现在这张表。
+整份条件，没换的条件原样抄上；label 写 HR 选它时会回的话；detail 用一句话说选了会怎样，人数只用
+你查到的结果，说清是什么人的人数。给了 options 就写 current：现在这份条件是哪种理解，也写成 HR
+会回的话。HR 不理这句话，名单就按现在这份条件。
 
-says 写给 HR 看：书面、简洁，一句话说清一件事，不复述条件，不写「已为你」「请注意」
-这类套话。says、label、detail 都不用括号。这些字原样显示给 HR 看，用 HR 的话写：
-说「人才库」「简历」「职级」，不说表、词表、库、字段、工具、模型；不说你做了什么操作
-（改表、重写、查词、查名字）。
+says 写给 HR 看：书面、简洁，一句话说清一件事，不复述条件，不写「已为你」「请注意」这类套话。
+says、label、detail 都不用括号。用 HR 的话写：说「人才库」「简历」「职级」「绩效」，不说表、
+词表、库、字段、工具、模型、SQL；不说你做了什么操作。
 
-表里的每个词、每个名字，搜索都会拿去人才库里找：人才库里没人这么写的等于没写；
-比 HR 说的更泛的词会把不相干的人找进来。提交之前你可以在人才库里查：
-- lookup_experience：几个经历词按搜索的方式各能找到多少人、命中了人才库里哪些能力词，
-  每个能力词更宽和更细的词是什么。同一件事有几种写法时，用人才库里有人这么写、又和 HR 说的
-  一样具体的那种；一个人都找不到的，换成人才库里的写法。人多不是问题：名单多长由 HR 看着人数决定。
-- lookup_attribute：一种属性在人才库里怎么写、各有多少人。职级、学历、招聘渠道、公司档、
-  学校档、海外学历的全部取值下面已经给了，要再看也可以查。公司、部门、学校按包含匹配：
-  匹配到不相干的就写全称；一个都匹配不到时换个写法再查，比如中文名、英文名、简称、全称。
-查什么、查几次由你判断；当前表里原样留下的条件已经查过。工具只给人数和人才库里的写法，不给人；
-名单由搜索决定，你写的是条件。
+提交之前你可以查：
+- discover：数据目录里一列有哪些取值、各多少人；公司、部门、学校的名字能匹配到多少人、人才库里
+  怎么写；记录流的覆盖。
+- lookup_experience：几个经历词按搜索的方式各能找到多少人、命中了人才库里哪些能力词，每个能力词
+  更宽和更细的词。一个人都找不到的，换成人才库里的写法。人多不是问题：名单多长由 HR 看着人数决定。
+- probe：试跑一份完整的条件，看每条单独有多少人、整份有多少人、哪一条写不对。人数和你理解的
+  对不上时，回头看 where。
+查什么、查几次由你判断；当前条件里原样留下的已经查过。工具只给人数和写法，不给人。
 
 写好了用 submit 提交，检查通过这一轮就结束。没通过会告诉你哪里有问题，改好再提交；问题出在
-用户明说的要求上、人才库里本来就没有这样的人时，把同一张表原样再提交一次：没有这样的人也是一个结果。
+用户明说的要求上、人才库里本来就没有这样的人时，把同一份原样再提交一次：没有这样的人也是一个结果。
+用户点名的公司、学校、档找不到人，不换成别的名字、别的档，也不因此拆开或改写修饰语挂在哪；
+照用户说的写，在 note 里说一句人才库里没有。
 
-提交给 submit 的是一个这样的对象：
-{"conditions": [条件……], "note": {"says": "", "current": "", "options": [{"label": "", "detail": "", "conditions": [条件……]}]}}
-没有要说的 note 写 null，没有选项时 current 写 null、options 写空数组。
-下面的例子假设取值是 level：P5、P6、P7、P8；companyTag：头部大厂、知名公司；
-education：大专、本科、硕士、博士；例子里的词和名字都已经查过，人才库里就是这样写的。
+提交给 submit 的是 {"conditions": [条件……], "note": {"says": "", "current": "", "options":
+[{"label": "", "detail": "", "conditions": [条件……]}]}}。没有要说的 note 写 null，没有选项时
+current 写 null、options 写空数组。
 
-例一。当前的条件表：[]。这句话：算法和后端都做过的，比较资深的，最好是字节来的
+数据目录：
+
+${catalogText()}
+
+下面的例子假设 level_band 有 P5、P6、P7、P8；company_tag 有 头部大厂、知名公司；记录流 perf 是
+半年一期的绩效，档从低到高 C、B、B+、A、A+。例子里的词和名字都已经查过，人才库里就是这样写的。
+
+例一。当前的条件：[]。这句话：算法和后端都做过的，比较资深的，最好是字节来的
 {"conditions": [
-  {"about": "experience", "mode": "must", "what": ["算法"]},
-  {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
-  {"about": "person", "mode": "boost", "field": "level", "atLeast": "P7"},
-  {"about": "experience", "mode": "boost", "company": ["字节"]}],
+  {"label": "做过算法", "mode": "must", "from": "experience", "terms": {"algo": ["算法"]}, "where": "true"},
+  {"label": "做过后端开发", "mode": "must", "from": "experience", "terms": {"be": ["后端", "后端开发", "服务端"]}, "where": "true"},
+  {"label": "职级 P7 及以上", "mode": "boost", "from": "person", "where": "p.level_rank >= (select s.rank from scale s where s.stream = 'level' and s.value = :band)", "params": {"band": "P7"}},
+  {"label": "入职前在字节待过", "mode": "boost", "from": "experience", "where": "e.kind = 'external' and e.company ilike :c", "params": {"c": "%字节%"}}],
  "note": null}
 
-例二。当前的条件表：[]。这句话：入职前在大厂做过三年以上增长，不要实习
+例二。当前的条件：[]。这句话：入职前在大厂做过三年以上增长，不要实习
 {"conditions": [
-  {"about": "experience", "mode": "must", "what": ["增长", "用户增长"], "kind": "external", "companyTag": ["头部大厂"], "minMonths": 36},
-  {"about": "experience", "mode": "exclude", "what": ["实习"]}],
+  {"label": "入职前在头部大厂做增长，累计三年以上", "mode": "must", "from": "experience", "terms": {"growth": ["增长", "用户增长"]}, "where": "e.kind = 'external' and e.company_tag = :tag", "params": {"tag": "头部大厂"}, "minMonths": 36},
+  {"label": "实习经历不算", "mode": "exclude", "from": "experience", "where": "e.title ilike :t", "params": {"t": "%实习%"}}],
  "note": null}
 
-例三。当前的条件表：[]。这句话：北京的大模型或推荐系统方向，有管理潜力，硕士
+例三。当前的条件：[]。这句话：在甲辰科技做过推荐系统的，只算在甲辰那段
 {"conditions": [
-  {"about": "experience", "mode": "must", "what": ["大模型", "LLM", "推荐系统"]},
-  {"about": "person", "mode": "must", "field": "education", "atLeast": "硕士"}],
+  {"label": "在甲辰科技做推荐系统的那段经历", "mode": "must", "from": "experience", "terms": {"rec": ["推荐系统", "推荐算法"]}, "where": "e.kind = 'external' and e.company ilike :c", "params": {"c": "%甲辰科技%"}}],
+ "note": null}
+
+例四。当前的条件：[]。这句话：近三年至少两次绩效 A 以上，现在在高潜池里的优先
+{"conditions": [
+  {"label": "近三年绩效至少两次 A 及以上", "mode": "must", "from": "person", "where": "(select count(*) from rating r where r.emp_id = p.emp_id and r.stream = 'perf' and r.period_end >= current_date - interval '3 years' and r.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band)) >= :times", "params": {"band": "A", "times": 2}},
+  {"label": "目前在高潜池里", "mode": "boost", "from": "person", "where": "exists (select 1 from status t where t.emp_id = p.emp_id and t.stream = 'hipo' and (t.valid_to is null or t.valid_to >= current_date))"}],
+ "note": null}
+
+例五。当前的条件是例一提交的四条（带着各自的 id）。这句话：再加上带过团队的，不用非得是字节
+{"conditions": [
+  {"id": "沿用例一第一条的 id", "label": "做过算法", "mode": "must", "from": "experience", "terms": {"algo": ["算法"]}, "where": "true"},
+  {"id": "沿用例一第二条的 id", "label": "做过后端开发", "mode": "must", "from": "experience", "terms": {"be": ["后端", "后端开发", "服务端"]}, "where": "true"},
+  {"id": "沿用例一第三条的 id", "label": "职级 P7 及以上", "mode": "boost", "from": "person", "where": "p.level_rank >= (select s.rank from scale s where s.stream = 'level' and s.value = :band)", "params": {"band": "P7"}},
+  {"label": "带过团队", "mode": "must", "from": "experience", "terms": {"lead": ["团队管理", "带团队"]}, "where": "true"}],
+ "note": null}
+
+例六。当前的条件：[]。这句话：北京的大模型方向，有管理潜力，硕士
+{"conditions": [
+  {"label": "做过大模型", "mode": "must", "from": "experience", "terms": {"llm": ["大模型", "LLM"]}, "where": "true"},
+  {"label": "硕士及以上", "mode": "must", "from": "person", "where": "p.education_rank >= (select s.rank from scale s where s.stream = 'education' and s.value = :edu)", "params": {"edu": "硕士"}}],
  "note": {
   "says": "人才库里没有工作地点，简历里也看不出管理潜力，要不要先看带过团队的？",
   "current": "先不管这两条",
   "options": [
    {"label": "带过团队的优先", "detail": "简历里写过带团队的有两百多位", "conditions": [
-    {"about": "experience", "mode": "must", "what": ["大模型", "LLM", "推荐系统"]},
-    {"about": "person", "mode": "must", "field": "education", "atLeast": "硕士"},
-    {"about": "experience", "mode": "boost", "what": ["团队管理", "带团队"]}]}]}}
+    {"label": "做过大模型", "mode": "must", "from": "experience", "terms": {"llm": ["大模型", "LLM"]}, "where": "true"},
+    {"label": "硕士及以上", "mode": "must", "from": "person", "where": "p.education_rank >= (select s.rank from scale s where s.stream = 'education' and s.value = :edu)", "params": {"edu": "硕士"}},
+    {"label": "带过团队", "mode": "boost", "from": "experience", "terms": {"lead": ["团队管理", "带团队"]}, "where": "true"}]}]}}`;
 
-例四。当前的条件表是例一提交的四条。这句话：再加上带过团队的，不用非得是字节
-{"conditions": [
-  {"about": "experience", "mode": "must", "what": ["算法"]},
-  {"about": "experience", "mode": "must", "what": ["后端", "后端开发", "服务端"]},
-  {"about": "person", "mode": "boost", "field": "level", "atLeast": "P7"},
-  {"about": "experience", "mode": "must", "what": ["团队管理", "带团队"]}],
- "note": null}
-
-例五。当前的条件表：[]。这句话：找做前端的
-{"conditions": [
-  {"about": "experience", "mode": "must", "what": ["前端开发", "Web前端"]}],
- "note": {
-  "says": "前端有两种常见的意思，你要的是哪种？",
-  "current": "只看网页前端",
-  "options": [
-   {"label": "把 iOS 和 Android 也算上", "detail": "人才库里写 iOS 或 Android 开发的还有四十多位", "conditions": [
-    {"about": "experience", "mode": "must", "what": ["前端开发", "Web前端", "iOS开发", "Android开发"]}]}]}}`;
+/** 有限取值的几维写进提示词时用的名字：目录里的列。 */
+const VOCAB_COLUMN: Record<keyof Vocabulary, string> = {
+	level: "person.level_band（从低到高）",
+	education: "person.education（从低到高）",
+	recruitment: "person.recruitment",
+	companyTag: "experience.company_tag",
+	schoolTier: "person.school_tier",
+	overseas: "person.overseas",
+};
 
 function listed(what: string, values: readonly Matched[]) {
 	return `${what}：${values.map((v) => `${v.name}（${v.people} 人）`).join("、") || "（无）"}`;
 }
+
+function streamLine(s: StreamFact) {
+	const span = s.first
+		? `${s.first} 起，最近一期 ${s.latest?.start ?? ""}${s.latest?.end ? ` 至 ${s.latest.end}` : " 起至今"}`
+		: "还没有记录";
+	return `${s.stream}（${s.label}，${s.kind === "rating" ? "评级" : "状态"}${s.period ? `，${s.period}一期` : ""}）：${s.people} 人，${span}${s.scale.length > 0 ? `；档从低到高 ${s.scale.join("、")}` : ""}`;
+}
+
+/** 预先写进提示词的活统计：有限取值几维的取值和人数，记录流的覆盖。 */
+export type Facts = { vocab: Vocabulary; streams: readonly StreamFact[] };
 
 /**
  * 端点答了，但没按约定作答：没提交搜索条件，或提交的条件校验之后什么都不剩。
@@ -236,8 +287,8 @@ export class UnansweredError extends Error {
  */
 export async function understand(
 	text: string,
-	vocab: Vocabulary,
-	base: readonly Condition[],
+	{ vocab, streams }: Facts,
+	base: readonly QueryCondition[],
 	agent: AgentTools,
 ): Promise<Submission> {
 	const result = await generateText({
@@ -259,12 +310,11 @@ export async function understand(
 		instructions: SYSTEM,
 		prompt: [
 			"取值",
-			listed("level（从低到高）", vocab.level),
-			listed("education（从低到高）", vocab.education),
-			listed("recruitment", vocab.recruitment),
-			listed("companyTag", vocab.companyTag),
-			listed("schoolTier", vocab.schoolTier),
-			listed("overseas", vocab.overseas),
+			...(Object.keys(VOCAB_COLUMN) as (keyof Vocabulary)[]).map((key) =>
+				listed(VOCAB_COLUMN[key], vocab[key]),
+			),
+			"\n记录流",
+			...(streams.length > 0 ? streams.map(streamLine) : ["（没有）"]),
 			// 停用是用户在 chip 上的操作，模型写不出也不必看见：它原样写回这一条，
 			// 停用状态由 `understood` 从上一轮带回来
 			`\n当前的条件表：${JSON.stringify(base.map((c) => withOff(c, null)))}`,

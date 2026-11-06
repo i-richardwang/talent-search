@@ -15,12 +15,10 @@ import { loadModule, parseSync, type ScanToken, scanSync } from "libpg-query";
 import { pool } from "#/db";
 import type { DbExecutor } from "#/db/snapshot";
 import { CATALOG, type CatalogRelation, HIT } from "#/search/catalog";
+import { WHERE_MAX } from "#/search/query";
 
 /** 只读角色的名字。它只有目录视图的 SELECT，由 `ensureQueryRole` 建好并授权。 */
 const QUERY_ROLE = "talent_query";
-
-/** 一条 `where` 最长几个字。写得出一条条件的 SQL 用不到这么长。 */
-const WHERE_MAX = 2_000;
 
 /** 一个参数值最长几个字。 */
 const PARAM_TEXT_MAX = 200;
@@ -233,7 +231,18 @@ function walkAll(list: unknown, scopes: Scope[]) {
 	for (const item of Array.isArray(list) ? list : []) walk(item, scopes);
 }
 
-function walk(node: unknown, scopes: Scope[]): void {
+/** 工号列：只作关联键。 */
+const KEY_COLUMN = "emp_id";
+
+function isColumn(node: unknown) {
+	return Boolean(node && typeof node === "object" && "ColumnRef" in node);
+}
+
+/**
+ * `key` 为真时这里可以出现工号列：和另一列比相等、在聚合 count 里、在 group by 里。别处不行——
+ * 工号和常量比、转成别的类型、写进子查询的输出，都能把一次计数缩到一个人身上。
+ */
+function walk(node: unknown, scopes: Scope[], key = false): void {
 	if (node === undefined || node === null) return;
 	const [type, body] = unwrap(node);
 	if (type === "SelectStmt") {
@@ -251,15 +260,24 @@ function walk(node: unknown, scopes: Scope[]): void {
 				reject("只能用 current_date、current_timestamp 这类日期值");
 			return;
 		case "ColumnRef":
+			if (!key && names(body.fields).at(-1) === KEY_COLUMN)
+				reject("emp_id 只作关联键：只能和另一列 emp_id 比相等");
 			column(body, scopes);
 			return;
 		case "A_Expr": {
 			if (!A_EXPR_KINDS.has(String(body.kind)))
 				reject(`不允许的运算：${String(body.kind)}`);
-			for (const op of names(body.name))
+			const ops = names(body.name);
+			for (const op of ops)
 				if (!OPERATORS.has(op)) reject(`不允许的运算符：${op}`);
-			walk(body.lexpr, scopes);
-			walk(body.rexpr, scopes);
+			const join =
+				body.kind === "AEXPR_OP" &&
+				ops.length === 1 &&
+				ops[0] === "=" &&
+				isColumn(body.lexpr) &&
+				isColumn(body.rexpr);
+			walk(body.lexpr, scopes, join);
+			walk(body.rexpr, scopes, join);
 			return;
 		}
 		case "List":
@@ -331,7 +349,10 @@ function func(body: AnyNode, scopes: Scope[]) {
 		reject(`不允许的函数：${parts.join(".")}`);
 	if (body.over) reject("不允许窗口函数");
 	if (body.func_variadic) reject("不允许 VARIADIC");
-	walkAll(body.args, scopes);
+	// 数一数有几个人不会把谁认出来
+	const counting = last === "count";
+	for (const arg of Array.isArray(body.args) ? body.args : [])
+		walk(arg, scopes, counting && isColumn(arg));
 	walk(body.agg_filter, scopes);
 	for (const sort of Array.isArray(body.agg_order) ? body.agg_order : [])
 		walk((unwrap(sort)[1] as AnyNode).node, scopes);
@@ -417,7 +438,8 @@ function select(body: AnyNode, outer: Scope[]) {
 		if (!isStar(t.val)) walk(t.val, scopes);
 	}
 	walk(body.whereClause, scopes);
-	walkAll(body.groupClause, scopes);
+	for (const group of Array.isArray(body.groupClause) ? body.groupClause : [])
+		walk(group, scopes, isColumn(group));
 	walk(body.havingClause, scopes);
 	for (const sort of Array.isArray(body.sortClause) ? body.sortClause : [])
 		walk((unwrap(sort)[1] as AnyNode).node, scopes);
@@ -678,4 +700,21 @@ export async function restricted<T>(
 export async function shareTemp(store: DbExecutor, table: string) {
 	await provision();
 	await store.execute(sql.raw(`grant select on ${table} to ${QUERY_ROLE}`));
+}
+
+/**
+ * 执行出错时回给模型的那句话：SQLSTATE 加 Postgres 的一句错误，不带计划、不带行。
+ * 数据异常（22 类，比如类型转换失败）的原话会带出某一行的取值，只给类别。
+ * 不是数据库错误的返回 null，由调用方当故障处理。
+ */
+export function sandboxProblem(error: unknown): string | null {
+	const cause = (error as { cause?: unknown }).cause ?? error;
+	const pg = cause as { code?: unknown; message?: unknown };
+	if (typeof pg.code !== "string" || !/^[0-9A-Z]{5}$/.test(pg.code))
+		return null;
+	if (pg.code.startsWith("22"))
+		return `执行出错（${pg.code}）：取值和类型对不上，或者算出来越界了；检查比较两边的类型和参数`;
+	if (pg.code === "57014")
+		return `执行出错（${pg.code}）：超时了，写得简单一些`;
+	return `执行出错（${pg.code}）：${String(pg.message).split("\n")[0]}`;
 }

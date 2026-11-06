@@ -12,12 +12,21 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
-import { type TurnNotes, unanswered, understood } from "#/search/intent";
+import { compileConditions } from "#/search/compile";
+import type { Condition } from "#/search/condition";
+import { scopeOf } from "#/search/execute";
+import {
+	type Choice,
+	type TurnNotes,
+	unanswered,
+	understood,
+} from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
 import { vocabulary } from "#/search/search";
-import type { QueryInput, SearchSpec } from "#/search/spec";
+import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { agentTools } from "./agent-tools";
+import { streamFacts } from "./discover";
 import { type EndpointFault, endpointFault } from "./endpoint";
 import {
 	UNDERSTAND_LIMIT_MS,
@@ -25,6 +34,7 @@ import {
 	understand,
 	understandingConfigured,
 } from "./llm";
+import { compileWhere } from "./sandbox";
 
 function newId() {
 	return randomBytes(8).toString("base64url");
@@ -132,8 +142,21 @@ function modeOf(rootRawText: string | null | undefined): SearchMode {
 function admit(mode: SearchMode, input: QueryInput) {
 	if (mode !== "keyword") return;
 	if (input.kind === "sentence") throw new Error("关键词搜索不收一句话的需求");
-	if (!keywordsOf(input.spec.conditions))
+	if (!("conditions" in input.spec) || !keywordsOf(input.spec.conditions))
 		throw new Error("关键词搜索只收关键词框里写得出的条件");
+}
+
+/**
+ * 写进记录之前，查询里每条条件的 `where` 都要过解析白名单：RPC 上来的和模型写的一样不可信，
+ * 记录不可变，执行时才发现跑不了就晚了。
+ */
+async function admitWhere(input: QueryInput) {
+	if (input.kind !== "spec" || !("query" in input.spec)) return;
+	for (const c of input.spec.query.conditions) {
+		const result = await compileWhere(c.where, c.params ?? {}, scopeOf(c));
+		if (!result.ok)
+			throw new Error(`搜索条件「${c.label}」不能执行：${result.problem}`);
+	}
 }
 
 /**
@@ -147,6 +170,7 @@ export async function createTurn(
 	input: QueryInput,
 	from?: string,
 ): Promise<{ turnId: string; attempt: string | null }> {
+	await admitWhere(input);
 	return db.transaction(async (tx) => {
 		const text = input.kind === "sentence" ? input.text : null;
 		const spec = input.kind === "spec" ? input.spec : null;
@@ -268,12 +292,12 @@ async function understandTurn(
 	if (row?.interpretAttempt !== attempt || row.rawText === null) return null;
 	const rawText = row.rawText;
 	const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
-	const base = parent?.spec?.conditions ?? [];
+	const base = parent?.spec ? queryOfSpec(parent.spec).conditions : [];
 
 	// 读词表和调用模型各自读数据库，不共用一个快照：调用模型可能要一分钟，如果开着
 	// 快照等它，一次理解就占着连接池里的一条连接一分钟。模型的工具在自己的快照里读
 	// （`search/phrases.ts` 的 withMatchedPhrases）。
-	const vocab = await vocabulary();
+	const [vocab, streams] = await Promise.all([vocabulary(), streamFacts()]);
 	const record = async (step: TraceStep) => {
 		await db
 			.update(searchTurn)
@@ -282,15 +306,15 @@ async function understandTurn(
 			})
 			.where(ownedBy(turnId, attempt));
 	};
-	const agent = agentTools({ vocab, base, record });
-	const submitted = await understand(rawText, vocab, base, agent);
-	const result = understood(submitted, vocab, base);
+	const agent = agentTools({ base, record });
+	const submitted = await understand(rawText, { vocab, streams }, base, agent);
+	const result = understood(submitted, base);
 	const failure = unanswered(submitted, result);
 	if (failure) throw new UnansweredError(failure);
 
 	await db
 		.update(searchTurn)
-		.set({ spec: result.spec, notes: result.notes })
+		.set({ spec: { query: result.query }, notes: result.notes })
 		.where(ownedBy(turnId, attempt));
 	return null;
 }
@@ -366,12 +390,27 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 		title: root?.raw_text ?? null,
 		said: row.raw_text,
 		spec: row.spec,
-		notes: row.notes,
+		notes: row.notes && notesOfRecord(row.notes),
 		trace: row.trace,
 		startedAt: row.started_at,
 		fault: row.fault,
 		at: row.at,
 	}));
+}
+
+/**
+ * 记录里的说明 → 界面读的说明。较早的记录里选项是旧条件表，当场编译成查询，和那一轮的
+ * 条件编译出同样的 id。
+ */
+function notesOfRecord(notes: TurnNotes): TurnNotes {
+	if (!notes.choices) return notes;
+	const others = notes.choices.others.map((o): Choice => {
+		const list = o.conditions as unknown[];
+		return list.some((c) => (c as { about?: unknown }).about !== undefined)
+			? { ...o, conditions: compileConditions(list as Condition[]).conditions }
+			: o;
+	});
+	return { ...notes, choices: { ...notes.choices, others } };
 }
 
 /** 这一轮的理解现在怎样了；没有这一轮或这一轮没说话为 null。 */

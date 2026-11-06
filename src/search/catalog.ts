@@ -267,7 +267,8 @@ const scale: CatalogRelation<ColumnsOf<typeof catalogScale>> & {
 		rank: { type: "int", label: "档高", meaning: "越大越高" },
 	},
 	notes: [
-		"「A 及以上」写成 value_rank >= (select rank from scale where stream = … and value = 'A')。",
+		"「A 及以上」写成 r.value_rank >= (select s.rank from scale s where s.stream = r.stream and s.value = 'A')。",
+		"职级和学历的「某档及以上」同样比档高：p.level_rank >= (select s.rank from scale s where s.stream = 'level' and s.value = :band)。",
 	],
 };
 
@@ -339,3 +340,24 @@ export const CATALOG: readonly CatalogRelation[] = [
 	status,
 	scale,
 ];
+
+/** 目录写进提示词的样子：每个关系一段，列一行，口径跟在后面。 */
+export function catalogText(): string {
+	const relation = (r: CatalogRelation, alias: string) =>
+		[
+			`${r.name}（${r.label}，一行是${r.rows}${alias}）`,
+			...Object.entries(r.columns).map(
+				([name, c]) =>
+					`  ${name} ${c.type}：${c.label}。${c.meaning}${c.values === "ordinal" ? "（有高低）" : c.values === "enum" ? "（有限取值）" : ""}`,
+			),
+			...r.notes.map((n) => `  · ${n}`),
+		].join("\n");
+	return [
+		relation(person, "；人的条件里别名是 p"),
+		relation(experience, "；经历条件里别名是 e"),
+		relation(HIT, "；只在写了 terms 的经历条件里，别名是 h"),
+		relation(rating, ""),
+		relation(status, ""),
+		relation(scale, ""),
+	].join("\n\n");
+}

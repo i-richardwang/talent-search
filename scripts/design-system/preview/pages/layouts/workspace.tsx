@@ -13,7 +13,7 @@ import { WorkspaceNotices } from "#/routes/s/$turnId/-components/workspace-notic
 import { useIsWide } from "#/routes/s/$turnId/-lib/media";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { type View, validateView } from "#/routes/s/$turnId/-lib/view-params";
-import type { SearchSpec } from "#/search/spec";
+import { queryOfSpec, type SearchSpec } from "#/search/spec";
 import { Routed, useOpenEmpId } from "../../routed";
 import { SPEC } from "../../samples/conditions";
 import { OUTCOME } from "../../samples/people";
@@ -60,7 +60,7 @@ function Workspace() {
 		<Thread
 			autoFocus={threadOpen}
 			composer={composer}
-			onRevise={(conditions) => setSpec({ conditions })}
+			onRevise={(conditions) => setSpec({ query: { conditions } })}
 			onQuery={() => true}
 			rounds={THREAD}
 			understanding
@@ -91,13 +91,15 @@ function Workspace() {
 				}
 				notices={
 					<WorkspaceNotices
-						conditions={spec.conditions}
+						conditions={queryOfSpec(spec).conditions}
+						keywords={null}
 						earlier={false}
 						facets={outcome.facets}
 						latestId={LATEST_TURN_ID}
 						mode="conversation"
+						onKeywords={() => true}
 						onRevise={(conditions) => {
-							setSpec({ conditions });
+							setSpec({ query: { conditions } });
 							return true;
 						}}
 						onViewChange={updateView}
@@ -117,7 +119,7 @@ function Workspace() {
 						onChange={updateView}
 						onEditQuery={noop}
 						onMore={noop}
-						onReviseQuery={(conditions) => setSpec({ conditions })}
+						onReviseQuery={(conditions) => setSpec({ query: { conditions } })}
 						outcome={outcome}
 						picks={picks}
 						spec={spec}

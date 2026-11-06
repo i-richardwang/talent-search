@@ -2,7 +2,7 @@
  * RPC 查询写入边界的纯校验：不可信入参转换为完整的 QueryInput。
  */
 
-import { type QueryInput, sanitizeSpec } from "./spec";
+import { askedCount, type QueryInput, queryOfSpec, sanitizeSpec } from "./spec";
 import { boundedText } from "./text";
 
 /**
@@ -22,10 +22,14 @@ export function validateCommit(d: unknown): {
 		return { from, input: { kind: "sentence", text } };
 	}
 	if (input.kind !== "spec") throw new Error("查询格式无效");
-	const raw = input.spec as { conditions?: unknown } | null | undefined;
-	if (!Array.isArray(raw?.conditions)) throw new Error("查询格式无效");
-	const spec = sanitizeSpec(input.spec);
-	if (raw.conditions.length > 0 && spec.conditions.length === 0)
+	const raw = (input.spec ?? {}) as Record<string, unknown>;
+	const list =
+		raw.query !== undefined
+			? ((raw.query ?? {}) as Record<string, unknown>).conditions
+			: raw.conditions;
+	if (!Array.isArray(list)) throw new Error("查询格式无效");
+	const spec = sanitizeSpec(raw);
+	if (askedCount(raw) > 0 && queryOfSpec(spec).conditions.length === 0)
 		throw new Error("搜索条件无效");
 	return { from, input: { kind: "spec", spec } };
 }

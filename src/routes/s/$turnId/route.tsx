@@ -10,8 +10,9 @@ import { useEffect, useState } from "react";
 import { toast } from "#/components/ui/toast";
 import type { Condition } from "#/search/condition";
 import { keywordsOf, keywordTitle } from "#/search/keywords";
+import type { QueryCondition } from "#/search/query";
 import { emptyFacets, type SearchOutcome } from "#/search/result";
-import { emptySpec, type SearchSpec } from "#/search/spec";
+import { emptySpec, queryOfSpec, type SearchSpec } from "#/search/spec";
 import { loadWorkbench } from "#/server/functions";
 import { TurnNotFound } from "../../-components/not-found";
 import { useCommit } from "../../-lib/commit";
@@ -120,12 +121,20 @@ function Workbench() {
 	const updateView = (next: Partial<View>) =>
 		navigate({ to: ".", search: (old) => ({ ...old, n: undefined, ...next }) });
 
-	const keywords = mode === "keyword" ? keywordsOf(spec.conditions) : null;
+	const keywords =
+		mode === "keyword" && "conditions" in spec
+			? keywordsOf(spec.conditions)
+			: null;
+	const query = queryOfSpec(spec);
 
 	const reviseSpec = (next: SearchSpec) =>
 		commit({ kind: "spec", spec: next }, { from: turnId });
 
-	const reviseTo = (conditions: Condition[]) => reviseSpec({ conditions });
+	/** 对话的条件在 chip 和问题的选项上改，改完是一份查询；关键词的条件在框里改。 */
+	const reviseTo = (conditions: QueryCondition[]) =>
+		reviseSpec({ query: { conditions } });
+	const reviseKeywords = (conditions: Condition[]) =>
+		reviseSpec({ conditions });
 
 	// 最后一轮 AI 问的那一问：按选项前的数字选。线程看不见时不接
 	const choices =
@@ -218,7 +227,7 @@ function Workbench() {
 						onChange={updateView}
 						onEditQuery={editQuery}
 						onMore={() => updateView(morePage(view))}
-						onReviseQuery={(conditions) => reviseSpec({ conditions })}
+						onReviseQuery={reviseTo}
 						outcome={outcome}
 						picks={picks}
 						spec={spec}
@@ -228,13 +237,15 @@ function Workbench() {
 				}
 				notices={
 					<WorkspaceNotices
-						conditions={spec.conditions}
+						conditions={query.conditions}
+						keywords={keywords}
 						earlier={earlier}
 						facets={outcome.facets}
 						keywordBar={keywordBar}
 						latestId={latest.id}
 						mode={mode}
-						onRevise={(conditions) => reviseSpec({ conditions })}
+						onRevise={reviseTo}
+						onKeywords={reviseKeywords}
 						onViewChange={updateView}
 						turnId={turnId}
 						view={view}

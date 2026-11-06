@@ -16,7 +16,8 @@ import { HomeScreen } from "#/routes/-components/home-screen";
 import { COMMIT_FAILED } from "#/routes/-lib/commit";
 import { inSentence } from "#/search/condition-label";
 import { keywordsOf, NO_KEYWORDS } from "#/search/keywords";
-import type { QueryInput } from "#/search/spec";
+import { labelsInSentence } from "#/search/query";
+import { type QueryInput, queryOfSpec } from "#/search/spec";
 import { Control, Controls } from "../../kit/controls";
 import { type FlowStep, FlowTable } from "../../kit/flow";
 import { DocPage } from "../../kit/page";
@@ -34,7 +35,7 @@ const NO_RECENT = { next: null, rows: [], total: 0 };
 function describe(input: QueryInput) {
 	return input.kind === "sentence"
 		? `提交了需求「${input.text}」`
-		: `提交了搜索条件：${inSentence(input.spec.conditions)}`;
+		: `提交了搜索条件：${labelsInSentence(queryOfSpec(input.spec).conditions)}`;
 }
 
 /** 产品的首页正文；搜索方式读内存 router 地址上的 `mode`。 */

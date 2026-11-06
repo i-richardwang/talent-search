@@ -9,7 +9,8 @@
  * - 排除：时长按单段判，写进 `where`（`e.months >= :months`），否决问的是「这一段是不是 X」。
  * - 人的条件：词表维按档名，「某档及以上」按档高，学校按名字包含。
  *
- * 身份是旧条件的 `conditionKey`：同一份旧表每次编译出同样的 id。
+ * 身份由旧条件的 `conditionKey` 散列而来：同一份旧表每次编译出同样的 id，停用状态
+ * 和一轮前后的差别照旧按条件比。
  */
 import { escapeLike } from "#/lib/sql";
 import {
@@ -103,10 +104,25 @@ function person(c: Extract<Condition, { about: "person" }>): Where {
 	return w;
 }
 
+/** 32 位 FNV-1a，两个起点各算一遍拼成 16 位十六进制：只用来给旧条件一个短而稳定的 id。 */
+function fnv(text: string, seed: number): string {
+	let h = seed;
+	for (let i = 0; i < text.length; i++) {
+		h ^= text.charCodeAt(i);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h.toString(16).padStart(8, "0");
+}
+
+function legacyId(c: Condition): string {
+	const key = conditionKey(c);
+	return `c${fnv(key, 0x811c9dc5)}${fnv(key, 0x01234567)}`;
+}
+
 /** 一条旧条件 → 一条查询条件。 */
 export function compileCondition(c: Condition): QueryCondition {
 	const base = {
-		id: conditionKey(c),
+		id: legacyId(c),
 		label: conditionLabel(c),
 		mode: c.mode,
 		...(c.off && { off: c.off }),

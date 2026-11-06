@@ -16,10 +16,13 @@ import {
 	type View,
 } from "#/routes/s/$turnId/-lib/view-params";
 import { compileConditions } from "#/search/compile";
-import type { Condition } from "#/search/condition";
 import type { EmptyReason } from "#/search/empty";
-import { rolesOf } from "#/search/query";
+import { type QueryCondition, rolesOf } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
+
+/** 一行查询语法写成的条件，和旧记录读取时编译的是同一份。 */
+const compiled = (query: string) =>
+	compileConditions(parseQuery(query)).conditions;
 
 /** 跑一次空态，把按钮按下去，回收它想改的东西 */
 function run(
@@ -28,11 +31,11 @@ function run(
 	mode: "conversation" | "keyword" = "conversation",
 ) {
 	let changed: Partial<View> | undefined;
-	let revised: Condition[] | undefined;
+	let revised: QueryCondition[] | undefined;
 	let focused = false;
 	const copy = emptyState(reason, {
 		mode,
-		conditions: parseQuery(query),
+		conditions: compiled(query),
 		onChange: (next) => {
 			changed = next;
 		},
@@ -76,7 +79,7 @@ describe("条件全被停用", () => {
 		assert.match(s.title, /没有启用/);
 		assert.deepEqual(
 			s.revised,
-			parseQuery("渠道运营,+带团队"),
+			compiled("渠道运营,+带团队"),
 			"启用要保住原来的强度",
 		);
 		assert.equal(s.changed, undefined, "改条件不是改视图");
@@ -84,7 +87,7 @@ describe("条件全被停用", () => {
 
 	test("启用不是重写：取值一个都不能少", () => {
 		const s = run({ kind: "allDisabled" }, "~大模型/多模态,~+带团队/带项目");
-		assert.deepEqual(s.revised, parseQuery("大模型/多模态,+带团队/带项目"));
+		assert.deepEqual(s.revised, compiled("大模型/多模态,+带团队/带项目"));
 	});
 });
 

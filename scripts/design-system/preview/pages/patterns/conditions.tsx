@@ -20,16 +20,16 @@ import {
 	PERSON_FIELDS,
 	withOff,
 } from "#/search/condition";
-import { inSentence } from "#/search/condition-label";
 import { DIM_KEYS, DIMENSIONS } from "#/search/dimensions";
 import { KEYWORD_LABEL } from "#/search/keywords";
+import { labelsInSentence, type QueryCondition } from "#/search/query";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-import { CONDITIONS, EXCLUDE_INTERN } from "../../samples/conditions";
+import { asQuery, CONDITIONS, EXCLUDE_INTERN } from "../../samples/conditions";
 import { FACETS } from "../../samples/people";
 
 /** 试用区一开始的搜索条件：名单那一次的三条，加一条排除。 */
-const START: Condition[] = [...CONDITIONS, EXCLUDE_INTERN];
+const START: QueryCondition[] = asQuery([...CONDITIONS, EXCLUDE_INTERN]);
 
 /** 用户自己停用的一条：带过团队（加分）。 */
 const TEAM_OFF = withOff(CONDITIONS[2] as Condition, "user");
@@ -44,7 +44,7 @@ const LOOKS: [name: string, condition: Condition, note: string][] = [
 	[
 		"must · 多个取值",
 		CONDITIONS[0] as Condition,
-		"一项里有几个取值时标签后写收起了几个（「+2」），展开能逐个去掉",
+		"标签是 AI 写给 HR 的一句话，几个写法都在这一句里",
 	],
 	[
 		"boost",
@@ -69,13 +69,13 @@ const LOOKS: [name: string, condition: Condition, note: string][] = [
 ];
 
 /** 已启用的条件写成一句话；一条都没启用时照实说。 */
-function sentenceOf(conditions: readonly Condition[]) {
+function sentenceOf(conditions: readonly QueryCondition[]) {
 	const on = conditions.filter((c) => !c.off);
-	return on.length > 0 ? inSentence(on) : "没有启用的条件";
+	return on.length > 0 ? labelsInSentence(on) : "没有启用的条件";
 }
 
 function Playground() {
-	const [conditions, setConditions] = useState<Condition[]>(START);
+	const [conditions, setConditions] = useState<QueryCondition[]>(START);
 	const [view, setView] = useState<View>({});
 	const fields = filterFields(FACETS, view);
 	const texts = textFilters(view);
@@ -116,7 +116,7 @@ function Playground() {
 }
 
 function Looks() {
-	const [rows, setRows] = useState(LOOKS.map(([, c]) => c));
+	const [rows, setRows] = useState(asQuery(LOOKS.map(([, c]) => c)));
 	return (
 		<Block className="overflow-hidden" variant="outlined">
 			<Table>
@@ -141,9 +141,7 @@ function Looks() {
 											conditions={[one]}
 											onChange={(next) =>
 												setRows((old) =>
-													old.map((c, j) =>
-														j === i ? (next[0] ?? LOOKS[i]?.[1] ?? c) : c,
-													),
+													old.map((c, j) => (j === i ? (next[0] ?? c) : c)),
 												)
 											}
 										/>
@@ -217,7 +215,9 @@ function Split() {
 }
 
 function Usage() {
-	const [conditions, setConditions] = useState<Condition[]>(CONDITIONS);
+	const [conditions, setConditions] = useState<QueryCondition[]>(
+		asQuery(CONDITIONS),
+	);
 	const [view, setView] = useState<View>({
 		level: ["L7"],
 		company: ["某甲科技"],
@@ -226,7 +226,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="在条件上直接改强度、去掉一个取值、停用或删除，都是换一个问题：记成新的一次搜索，右栏线程里记一行改了什么。"
+				description="在条件上直接改强度、停用或删除，都是换一个问题：记成新的一次搜索，右栏线程里记一行改了什么。"
 				title="直接改条件"
 			>
 				<div className="flex flex-col gap-3">
@@ -251,7 +251,7 @@ function Usage() {
 				title="累计与单段"
 			>
 				<QueryChips
-					conditions={[CONDITIONS[1] as Condition]}
+					conditions={asQuery([CONDITIONS[1] as Condition])}
 					onChange={() => {}}
 				/>
 			</Example>

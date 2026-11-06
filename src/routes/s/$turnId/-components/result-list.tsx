@@ -13,7 +13,7 @@ import { Text } from "#/components/ui/text";
 import { Tooltip } from "#/components/ui/tooltip";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import type { Condition } from "#/search/condition";
+import type { QueryCondition } from "#/search/query";
 import { claimName } from "#/search/query";
 import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
@@ -87,7 +87,7 @@ export function ResultList({
 	mode: SearchMode;
 	turnId: string;
 	onChange: (next: Partial<View>) => void;
-	onReviseQuery: (next: Condition[]) => void;
+	onReviseQuery: (next: QueryCondition[]) => void;
 	onEditQuery: () => void;
 	picks: Picks;
 	/** 这一轮没理解出来：名单停在这里，说出哪个环节出了问题。 */

@@ -1,6 +1,7 @@
 import type { TraceStep } from "#/search/trace";
 import type { RecentSearch, Turn } from "#/server/turn";
 import {
+	asQuery,
 	KEYWORD_SPEC,
 	ROUND1_CONDITIONS,
 	ROUND2_CONDITIONS,
@@ -27,7 +28,7 @@ const ROUND1: Turn = {
 	mode: "conversation",
 	title: TASK_TITLE,
 	said: TASK_TITLE,
-	spec: { conditions: ROUND1_CONDITIONS },
+	spec: { query: { conditions: asQuery(ROUND1_CONDITIONS) } },
 	notes: null,
 	trace: ROUND1_TRACE,
 	startedAt: T0 - 1500,
@@ -42,7 +43,7 @@ const ROUND2: Turn = {
 	mode: "conversation",
 	title: TASK_TITLE,
 	said: "还要带过团队，最好是硕士，base 北京，技术口碑好",
-	spec: { conditions: ROUND2_CONDITIONS },
+	spec: { query: { conditions: asQuery(ROUND2_CONDITIONS) } },
 	notes: {
 		says: "人才库里没有工作地点，简历里也看不出技术口碑，要不要先看做过技术分享的？",
 		choices: {
@@ -51,7 +52,7 @@ const ROUND2: Turn = {
 				{
 					label: "做过技术分享的优先",
 					detail: "简历里写过技术分享的有六十多位",
-					conditions: SHARING_CONDITIONS,
+					conditions: asQuery(SHARING_CONDITIONS),
 				},
 			],
 		},
@@ -84,7 +85,7 @@ export const ANSWERED_TURN: Turn = {
 	mode: "conversation",
 	title: TASK_TITLE,
 	said: null,
-	spec: { conditions: SHARING_CONDITIONS },
+	spec: { query: { conditions: asQuery(SHARING_CONDITIONS) } },
 	notes: null,
 	trace: null,
 	startedAt: null,

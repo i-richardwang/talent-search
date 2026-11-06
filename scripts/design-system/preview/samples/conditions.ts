@@ -2,7 +2,7 @@ import { compileConditions } from "#/search/compile";
 import type { Condition } from "#/search/condition";
 import type { EmptyReason } from "#/search/empty";
 import { conditionsOfKeywords } from "#/search/keywords";
-import { type Claim, rolesOf } from "#/search/query";
+import { type Claim, type QueryCondition, rolesOf } from "#/search/query";
 import type { SearchSpec } from "#/search/spec";
 
 /*
@@ -67,13 +67,18 @@ export const SHARING_CONDITIONS: Condition[] = [
 export const CONDITIONS: Condition[] = [RECOMMEND, BIG_COMPANY, TEAM];
 
 /** 名单展示的这一轮的完整查询。 */
-export const SPEC: SearchSpec = { conditions: CONDITIONS };
+/** 对话的条件在界面上是一份查询：样例写成条件表，经编译器写出标签和 id。 */
+export function asQuery(list: readonly Condition[]): QueryCondition[] {
+	return compileConditions(list).conditions;
+}
+
+export const SPEC: SearchSpec = { query: { conditions: asQuery(CONDITIONS) } };
 
 /** 名单上证据行按的主张：做过推荐系统、带过团队。 */
 export const CLAIMS: Claim[] = rolesOf(compileConditions(CONDITIONS)).claims;
 
 /** 关键词搜索的一张条件表。 */
-export const KEYWORD_SPEC: SearchSpec = {
+export const KEYWORD_SPEC: { conditions: Condition[] } = {
 	conditions: conditionsOfKeywords({
 		what: ["推荐系统"],
 		company: ["某甲科技"],

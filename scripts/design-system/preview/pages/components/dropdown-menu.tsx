@@ -42,12 +42,13 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
-import { type Condition, MODES, type Mode } from "#/search/condition";
+import { MODES, type Mode } from "#/search/condition";
 import { MODE_NAME } from "#/search/condition-label";
+import type { QueryCondition } from "#/search/query";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-import { RECOMMEND } from "../../samples/conditions";
+import { asQuery, RECOMMEND } from "../../samples/conditions";
 
 function Menu({
 	children,
@@ -360,9 +361,9 @@ function ItemTypes() {
 }
 
 function ConditionMenu() {
-	const [conditions, setConditions] = useState<Condition[]>([
-		{ ...RECOMMEND, off: "user" },
-	]);
+	const [conditions, setConditions] = useState<QueryCondition[]>(
+		asQuery([{ ...RECOMMEND, off: "user" }]),
+	);
 	return <QueryChips conditions={conditions} onChange={setConditions} />;
 }
 

@@ -1,97 +1,74 @@
 /**
- * chip 上写什么。每一项只显示代表取值，其余不上 chip、只留一个记号——一排 chip
- * 得读得过来；经历主张和人的条件是同一种 chip。菜单是弹层，静态渲染画不出来：
- * 菜单里的几个动作各是 `condition.ts` 里的一个纯函数，归 `tests/condition.test.ts`。
+ * chip 上写什么。一条条件一枚 chip，写的是 AI 给 HR 的那句标签；强度写成字。
+ * 菜单是弹层，静态渲染画不出来，这里只看 chip 本身。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
-import type { Condition } from "#/search/condition";
+import type { QueryCondition } from "#/search/query";
 import { visibleText } from "./render";
 
-const seen = (conditions: Condition[]) =>
-	visibleText(
-		renderToStaticMarkup(
-			<QueryChips conditions={conditions} onChange={() => {}} />,
-		),
+const markup = (conditions: QueryCondition[]) =>
+	renderToStaticMarkup(
+		<QueryChips conditions={conditions} onChange={() => {}} />,
 	);
+const seen = (conditions: QueryCondition[]) => visibleText(markup(conditions));
+
+const chip = (
+	label: string,
+	mode: QueryCondition["mode"] = "must",
+	more: Partial<QueryCondition> = {},
+): QueryCondition => ({
+	id: label,
+	label,
+	mode,
+	from: "experience",
+	terms: { what: [label] },
+	where: "true",
+	...more,
+});
 
 describe("查询 chip", () => {
-	test("经历词只写代表词，其余取值不写、只写收起了几个", () => {
+	test("chip 上是那句标签，SQL 和语义词不上 chip", () => {
 		const text = seen([
-			{
-				about: "experience",
-				mode: "must",
-				what: ["大模型", "LLM", "推荐系统"],
-			},
+			chip("近三年两次绩效 A 及以上", "must", {
+				from: "person",
+				terms: undefined,
+				where: "(select count(*) from rating r where r.emp_id = p.emp_id) >= 2",
+			}),
+			chip("在甲辰科技做过推荐", "must", {
+				terms: { what: ["推荐算法", "推荐系统"] },
+			}),
 		]);
-		assert.match(text, /大模型/);
-		assert.match(text, /\+2/);
-		assert.doesNotMatch(text, /LLM|推荐系统/, "其余取值不上 chip");
+		assert.match(text, /近三年两次绩效 A 及以上/);
+		assert.match(text, /在甲辰科技做过推荐/);
+		assert.doesNotMatch(text, /select|推荐系统/);
 	});
 
-	test("人的条件也只写代表词：十档职级是一个 chip，不是一行放不下的文字", () => {
+	test("加分、排除写成字，必须是默认，不写强度", () => {
 		const text = seen([
-			{
-				about: "person",
-				mode: "boost",
-				field: "level",
-				values: ["D8", "D9", "D10", "M5", "M6", "S6"],
-			},
+			chip("带团队", "boost"),
+			chip("实习", "exclude"),
+			chip("算法"),
 		]);
-		assert.match(text, /当前职级 · D8/);
-		assert.match(text, /\+5/);
-		assert.doesNotMatch(text, /D9|M5|S6/);
-	});
-
-	test("一条主张的各项都在 chip 上，读起来就是那句话", () => {
-		const text = seen([
-			{
-				about: "experience",
-				mode: "must",
-				what: ["增长"],
-				companyTag: ["大厂"],
-				kind: "external",
-				minMonths: 36,
-			},
-		]);
-		assert.match(text, /入职前经历 · 大厂 · 增长 · 3 年以上/);
-		assert.doesNotMatch(text, /≈/, "每项只有一个取值，没有「还有」");
-	});
-
-	test("只有一个取值就没有记号：默认状态不该有标记", () => {
-		const text = seen([{ about: "experience", mode: "must", what: ["算法"] }]);
-		assert.doesNotMatch(text, /≈/);
-	});
-
-	test("「待过字节」是一条只有公司名的主张，偏好和加分的经历词一样写「加分」", () => {
-		const text = seen([
-			{ about: "experience", mode: "boost", company: ["字节"] },
-			{ about: "experience", mode: "boost", what: ["带团队"] },
-		]);
-		assert.match(text, /字节\s*加分/);
 		assert.match(text, /带团队\s*加分/);
+		assert.match(text, /实习\s*排除/);
+		assert.doesNotMatch(text, /必须/);
 		assert.doesNotMatch(text, /[+−]/, "强度写成字，不写符号");
 	});
 
-	test("排除写「排除」，必须是默认，不写强度", () => {
-		const text = seen([
-			{ about: "experience", mode: "exclude", what: ["实习"] },
-			{ about: "experience", mode: "must", what: ["算法"] },
-		]);
-		assert.match(text, /实习\s*排除/);
-		assert.doesNotMatch(text, /必须/);
+	test("停用的仍画在屏幕上，读屏说「已停用」", () => {
+		const off = [chip("经理", "must", { off: "user" })];
+		assert.match(seen(off), /经理/);
+		assert.match(markup(off), /aria-label="[^"]*已停用"/);
 	});
 
-	test("停用的仍画在屏幕上，读屏说「已停用」", () => {
-		const off: Condition[] = [
-			{ about: "experience", mode: "must", what: ["经理"], off: "user" },
-		];
-		assert.match(seen(off), /经理/);
-		assert.match(
-			renderToStaticMarkup(<QueryChips conditions={off} onChange={() => {}} />),
-			/aria-label="[^"]*已停用"/,
-		);
+	test("删除钮说清删的是哪一条", () => {
+		assert.match(markup([chip("算法")]), /删除条件「算法」/);
+	});
+
+	test("没有条件就不画", () => {
+		assert.equal(markup([]), "");
 	});
 });

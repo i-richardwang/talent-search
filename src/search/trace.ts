@@ -1,7 +1,8 @@
 /**
- * 查询理解这一轮查过什么。模型提交搜索条件之前，可以查经历词、查人和经历段上的属性
- * （`server/agent-tools.ts`），每查一次记一步，存在查询记录的 `trace` 上，右栏的
- * 线程边跑边画（`thread.tsx`）。
+ * 查询理解这一轮查过什么。模型提交搜索条件之前，可以看数据目录里的取值、查经历词、试跑
+ * 一份条件（`server/agent-tools.ts`），每查一次记一步，存在查询记录的 `trace` 上，右栏的
+ * 线程边跑边画（`thread.tsx`）。较早的记录里还有查属性（`lookup_attribute`）那一种，
+ * 记录不改，照样画。
  *
  * 这里只有类型和属性的名单，没有逻辑：查询记录表（`db/schema.ts`）、搜索（`search.ts`）
  * 和页面都用它，所以不能引用服务端代码。一步记的就是工具返回给模型的内容：模型据此写
@@ -46,6 +47,42 @@ export type NameFinding = {
 	values: Matched[];
 };
 
+/** 一条记录流的覆盖：多少人、几期、最早和最近一期。 */
+export type StreamFact = {
+	stream: string;
+	label: string;
+	kind: "rating" | "status";
+	period: string;
+	people: number;
+	periods: number;
+	first: string | null;
+	latest: { start: string; end: string | null } | null;
+	/** 评级流的档，从低到高；状态流为空 */
+	scale: string[];
+};
+
+/** 看数据目录得到的：总览、一列的取值、按名字匹配到的写法，或者这一问为什么答不了。 */
+export type Discovery =
+	| {
+			kind: "overview";
+			relations: { name: string; label: string; rows: number }[];
+			streams: StreamFact[];
+	  }
+	| { kind: "values"; subject: string; values: Matched[] }
+	| { kind: "names"; subject: string; found: NameFinding[] }
+	| { kind: "problem"; problem: string };
+
+/** 试跑一份条件得到的：每条单独有多少人，整份多少人。 */
+export type Probe = {
+	conditions: {
+		label: string;
+		mode: "must" | "boost" | "exclude";
+		people: number | null;
+		problem: string | null;
+	}[];
+	total: number | null;
+};
+
 /** 这一步是什么时候记下的（epoch 毫秒）。 */
 type Stamped = { at: number };
 
@@ -59,4 +96,6 @@ export type TraceStep = Stamped &
 				values: Matched[];
 		  }
 		| { tool: "lookup_attribute"; field: NameField; found: NameFinding[] }
+		| { tool: "discover"; discovery: Discovery }
+		| { tool: "probe"; probe: Probe }
 	);

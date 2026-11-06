@@ -9,9 +9,17 @@
  */
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
+import { compileConditions } from "#/search/compile";
+import { type QueryCondition, termValues } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
-import type { SearchSpec } from "#/search/spec";
-import { answering, breakUnderstanding, setup, violates } from "./fixture";
+import { queryOfSpec, type SearchSpec } from "#/search/spec";
+import {
+	answering,
+	breakUnderstanding,
+	drafted,
+	setup,
+	violates,
+} from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -61,15 +69,18 @@ async function retried(turnId: string) {
 /** 最近搜索的第一页，取得够多，这个文件建的链都在里面。 */
 const recent = async () => (await listRecent(50)).rows;
 
-/** 每条条件的代表词：主张的第一个经历词，人的条件的第一个取值。 */
+/** 每条条件的代表词：第一个经历词，没有经历词的是它的标签。 */
 const wordsOf = (spec: SearchSpec) =>
-	spec.conditions.map((c) =>
-		c.about === "experience"
-			? c.what?.[0]
-			: "atLeast" in c
-				? c.atLeast
-				: c.values[0],
-	);
+	queryOfSpec(spec).conditions.map((c) => termValues(c)[0] ?? c.label);
+
+/** 一份条件按内容比：服务端给新写的条件发的 id 每次不同。 */
+const contentOf = (list: readonly QueryCondition[]) =>
+	list.map(({ id: _id, ...rest }) => rest);
+const shapeOf = (spec: SearchSpec) => contentOf(queryOfSpec(spec).conditions);
+/** 一行查询语法编译成的条件，和旧记录读取时编译的是同一份。 */
+const compiled = (syntax: string) =>
+	compileConditions(parseQuery(syntax)).conditions;
+const expected = (syntax: string) => contentOf(compiled(syntax));
 
 async function sentence(text: string, from?: string) {
 	const { turnId } = await createTurn({ kind: "sentence", text }, from);
@@ -277,18 +288,19 @@ describe("补充需求", () => {
 				await settle(turnId);
 			},
 		);
-		assert.deepEqual(seen, parseQuery("算法, 渠道运营"));
+		// 发给模型的表不带停用：停用只是用户在 chip 上的开关，模型照抄 id 就会原样带回
+		assert.deepEqual(seen, compiled("算法, 渠道运营"));
 	});
 
 	test("用户停掉的条件不会因为又说了一句话就复活", async () => {
 		const child = await sentence("渠道运营", await talkedTo("~算法"));
-		assert.deepEqual(child.spec.conditions, parseQuery("~算法, 渠道运营"));
+		assert.deepEqual(shapeOf(child.spec), expected("~算法, 渠道运营"));
 	});
 
 	test("模型按这句话重写了整张表：新表就是新表", async () => {
 		const root = await sentence("算法");
 		const spec = await answering(
-			() => ({ conditions: parseQuery("产品经理"), note: null }),
+			() => ({ conditions: drafted("产品经理"), note: null }),
 			async () => {
 				const { turnId } = await createTurn(
 					{ kind: "sentence", text: "换成找产品经理" },
@@ -297,7 +309,7 @@ describe("补充需求", () => {
 				return settle(turnId);
 			},
 		);
-		assert.deepEqual(spec.conditions, parseQuery("产品经理"));
+		assert.deepEqual(shapeOf(spec), expected("产品经理"));
 	});
 
 	test("没理解出来的最后一轮被下一句取代，不留在链上", async () => {
@@ -343,14 +355,14 @@ describe("补充需求", () => {
 });
 
 describe("说明", () => {
-	test("那句话和选项跟着这一轮写入，选项的表也查词表", async () => {
+	test("那句话和选项跟着这一轮写入，选项的表走同一道校验", async () => {
 		const { turnId } = await createTurn({
 			kind: "sentence",
 			text: "北京的算法，有潜力",
 		});
 		await answering(
 			() => ({
-				conditions: parseQuery("算法"),
+				conditions: drafted("算法"),
 				note: {
 					says: "人才库里没有工作地点，也看不出潜力，要不要先看带过团队的？",
 					current: "先不管这两条",
@@ -359,13 +371,12 @@ describe("说明", () => {
 							label: "带过团队的优先",
 							detail: "写过带团队的有两百多位",
 							conditions: [
-								...parseQuery("算法"),
-								{ about: "experience", mode: "boost", what: ["带团队"] },
+								...drafted("算法, +带团队"),
 								{
-									about: "person",
-									mode: "must",
-									field: "level",
-									values: ["资深"],
+									label: "资深",
+									mode: "exclude",
+									from: "person",
+									where: "true",
 								},
 							],
 						},
@@ -374,19 +385,20 @@ describe("说明", () => {
 			}),
 			() => settle(turnId),
 		);
-		assert.deepEqual((await loadTurn(turnId))?.notes, {
-			says: "人才库里没有工作地点，也看不出潜力，要不要先看带过团队的？",
-			choices: {
-				current: "先不管这两条",
-				others: [
-					{
-						label: "带过团队的优先",
-						detail: "写过带团队的有两百多位",
-						conditions: parseQuery("算法, +带团队"),
-					},
-				],
-			},
-		});
+		const notes = (await loadTurn(turnId))?.notes;
+		assert.equal(
+			notes?.says,
+			"人才库里没有工作地点，也看不出潜力，要不要先看带过团队的？",
+		);
+		assert.equal(notes?.choices?.current, "先不管这两条");
+		const [option, ...rest] = notes?.choices?.others ?? [];
+		assert.equal(rest.length, 0);
+		assert.equal(option?.label, "带过团队的优先");
+		assert.equal(option?.detail, "写过带团队的有两百多位");
+		assert.deepEqual(
+			contentOf(option?.conditions ?? []),
+			expected("算法, +带团队"),
+		);
 	});
 
 	test("一条都搜不了的话是一个合法的结果：条件为空，那句话在", async () => {
@@ -398,7 +410,7 @@ describe("说明", () => {
 			}),
 			() => settle(turnId),
 		);
-		assert.deepEqual(spec.conditions, []);
+		assert.deepEqual(shapeOf(spec), []);
 		assert.equal((await loadTurn(turnId))?.notes?.says, "人才库里没有工作地点");
 	});
 
@@ -477,10 +489,9 @@ describe("两种搜索各走各的链", () => {
 			assert.deepEqual((await loadTurn(empty.turnId))?.spec, {
 				conditions: [],
 			});
-			assert.deepEqual(
-				(await loadTurn(root.turnId))?.spec?.conditions,
-				parseQuery("算法"),
-			);
+			const rootSpec = (await loadTurn(root.turnId))?.spec;
+			assert.ok(rootSpec);
+			assert.deepEqual(shapeOf(rootSpec), expected("算法"));
 			const next = await createTurn(
 				{ kind: "spec", spec: { conditions: parseQuery("运营") } },
 				empty.turnId,
@@ -572,7 +583,7 @@ describe("理解失败", () => {
 	});
 
 	/**
-	 * 模型答得合法却没按约定作答——给了条件，取值却全在词表外——校验之后
+	 * 模型答得合法却没按约定作答——给了条件，形状却全不合规——校验之后
 	 * 一个不剩。这一份空条件走下去，界面画的是「一个条件都没解析出来」，
 	 * 也就是把一次故障画成了「你没说条件」。它和端点报错走同一条路。
 	 */
@@ -582,7 +593,7 @@ describe("理解失败", () => {
 			answering(
 				() => ({
 					conditions: [
-						{ about: "person", field: "level", mode: "must", values: ["资深"] },
+						{ label: "资深", mode: "exclude", from: "person", where: "true" },
 					],
 					note: null,
 				}),
@@ -612,17 +623,15 @@ describe("理解失败", () => {
 		const spec = await answering(
 			() => ({
 				conditions: [
-					{ about: "person", field: "level", mode: "boost", values: ["资深"] },
-					{ about: "experience", mode: "must", minMonths: -36 },
-					{ about: "experience", mode: "must", what: ["算法"] },
+					{ label: "资深", mode: "exclude", from: "person", where: "true" },
+					{ label: " ", mode: "must", from: "experience", where: "true" },
+					...drafted("算法"),
 				],
 				note: null,
 			}),
 			() => settle(turnId),
 		);
-		assert.deepEqual(spec.conditions, [
-			{ about: "experience", mode: "must", what: ["算法"] },
-		]);
+		assert.deepEqual(shapeOf(spec), expected("算法"));
 	});
 });
 

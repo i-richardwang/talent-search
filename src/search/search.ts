@@ -12,7 +12,6 @@ import { SHORT_ROUTES } from "#/db/schema";
 import { withCorpusSnapshot } from "#/db/snapshot";
 import { escapeLike } from "#/lib/sql";
 import { catalogSchema } from "#/server/sandbox";
-import { compileConditions } from "./compile";
 import { NOT_A_VALUE, VOCAB_KEYS, type VocabKey } from "./dimensions";
 import { execute } from "./execute";
 import type { Vocabulary } from "./intent";
@@ -20,7 +19,7 @@ import type { KeywordField } from "./keywords";
 import type { SearchFilters } from "./params";
 import { phraseHitTable, withMatchedPhrases } from "./phrases";
 import type { SearchOutcome, Suggestion } from "./result";
-import type { SearchSpec } from "./spec";
+import { queryOfSpec, type SearchSpec } from "./spec";
 import type { Matched, NameField, NameFinding, TermFinding } from "./trace";
 import { RELEVANCE_MIN, RESULT_PAGE } from "./weights";
 
@@ -263,8 +262,7 @@ export async function vocabulary(): Promise<Vocabulary> {
 }
 
 /**
- * 旧条件表经 `compile.ts` 编译成查询，交给执行外壳（`execute.ts`）。
- * 查询记录不迁数据，读取时编译。
+ * 一份记录的查询交给执行外壳（`execute.ts`）；较早的条件表读取时编译（`spec.ts`）。
  */
 export function search(
 	/** 完整查询语义来自不可变记录；filters 只描述这一次怎样查看结果。 */
@@ -273,7 +271,7 @@ export function search(
 	/** 本次返回前多少人；每次翻页重新取得同一快照内排名的完整前缀。 */
 	limit: number = RESULT_PAGE,
 ): Promise<SearchOutcome> {
-	return execute(compileConditions(spec.conditions), filters, limit);
+	return execute(queryOfSpec(spec), filters, limit);
 }
 
 /**
