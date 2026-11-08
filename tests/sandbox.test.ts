@@ -60,6 +60,17 @@ describe("解析白名单接受的写法", () => {
 		assert.deepEqual(q.params, ["perf", "perf", "A"]);
 	});
 
+	test("工号作关联键：和另一列工号比相等、在 count 里、在 group by 里", async () => {
+		await text("exists (select 1 from rating r where p.emp_id = r.emp_id)");
+		await text(
+			"(select count(r.emp_id) from rating r where r.emp_id = p.emp_id) >= 2",
+		);
+		await text(
+			`exists (select 1 from rating r where r.emp_id = p.emp_id
+				group by r.emp_id having count(*) >= 2)`,
+		);
+	});
+
 	test("从没拿过 C：否定同时要求有记录", async () => {
 		await text(
 			`exists (select 1 from rating r where r.emp_id = p.emp_id and r.stream = 'perf')
@@ -141,16 +152,38 @@ describe("解析白名单拒绝的写法", () => {
 			EXPERIENCE,
 		],
 		[
+			"FROM 里的派生表",
+			"exists (select 1 from (select r.value from rating r) x)",
+			/只能写目录里的关系/,
+		],
+		[
 			"lateral",
 			"exists (select 1 from person x, lateral (select 1) y)",
-			/lateral/,
+			/只能写目录里的关系/,
 		],
+		[
+			"工号只和工号比",
+			"exists (select 1 from experience x where p.emp_id = x.title)",
+			/emp_id 只作关联键/,
+		],
+		["工号和常量比", "p.emp_id = 'S1'", /emp_id 只作关联键/],
 		["不是布尔表达式里的语句", "true union select 1", /一个表达式/],
 	];
 	for (const [name, where, reason, scope] of cases)
 		test(name, async () => {
 			assert.match(await problem(where, scope), reason);
 		});
+
+	test("派生表把工号换成参数：一次计数缩到一个人，不放行", async () => {
+		assert.match(
+			await problem(
+				"exists (select 1 from (select :target as k) x where p.emp_id = x.k)",
+				PERSON,
+				{ target: "S1" },
+			),
+			/只能写目录里的关系/,
+		);
+	});
 
 	test("参数必须用到、用到的必须给", async () => {
 		assert.match(await problem("p.level_band = :band", PERSON), /band/);

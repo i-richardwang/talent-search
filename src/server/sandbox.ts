@@ -203,10 +203,10 @@ const SQL_VALUE_FUNCTIONS = new Set([
 type AnyNode = Record<string, unknown>;
 
 /**
- * 一个别名指向的关系：目录里的关系（核对列），子查询（列由 Postgres 核对），或者这里
- * 不能用、要告诉模型为什么的别名。
+ * 一个别名指向的关系：目录里的关系（核对列），或者这里不能用、要告诉模型为什么的别名。
+ * FROM 里只有目录里的关系，所以每个别名的列都核对得了。
  */
-type Bound = CatalogRelation | "subselect" | { unavailable: string };
+type Bound = CatalogRelation | { unavailable: string };
 type Scope = Map<string, Bound>;
 
 class Rejected extends Error {}
@@ -243,9 +243,17 @@ function isColumn(node: unknown) {
 	return Boolean(node && typeof node === "object" && "ColumnRef" in node);
 }
 
+/** 一个工号列的引用，比如 `p.emp_id`。 */
+function isKey(node: unknown) {
+	if (!isColumn(node)) return false;
+	const fields = (node as { ColumnRef: AnyNode }).ColumnRef.fields;
+	return names(fields).at(-1) === KEY_COLUMN;
+}
+
 /**
- * `key` 为真时这里可以出现工号列：和另一列比相等、在聚合 count 里、在 group by 里。别处不行——
- * 工号和常量比、转成别的类型、写进子查询的输出，都能把一次计数缩到一个人身上。
+ * `key` 为真时这里可以出现工号列：和另一列工号比相等、在聚合 count 里、在 group by 里。别处
+ * 不行——工号和常量比、和别的列比、转成别的类型、写进子查询的输出，都能把一次计数缩到一个人
+ * 身上。
  */
 function walk(node: unknown, scopes: Scope[], key = false): void {
 	if (node === undefined || node === null) return;
@@ -279,8 +287,8 @@ function walk(node: unknown, scopes: Scope[], key = false): void {
 				body.kind === "AEXPR_OP" &&
 				ops.length === 1 &&
 				ops[0] === "=" &&
-				isColumn(body.lexpr) &&
-				isColumn(body.rexpr);
+				isKey(body.lexpr) &&
+				isKey(body.rexpr);
 			walk(body.lexpr, scopes, join);
 			walk(body.rexpr, scopes, join);
 			return;
@@ -380,7 +388,7 @@ function column(body: AnyNode, scopes: Scope[]) {
 			if (bound === undefined) continue;
 			if (typeof bound === "object" && "unavailable" in bound)
 				reject(bound.unavailable);
-			if (bound !== "subselect" && !Object.hasOwn(bound.columns, name))
+			if (!Object.hasOwn(bound.columns, name))
 				reject(`${bound.name} 没有 ${name} 这一列`);
 			return;
 		}
@@ -392,12 +400,9 @@ function column(body: AnyNode, scopes: Scope[]) {
 	if (!inner || scopes.length === BASE_SCOPES)
 		reject(`列 ${name} 要带别名，例如 e.${name}`);
 	const owners = [...inner.values()].filter(
-		(bound) =>
-			bound === "subselect" ||
-			("columns" in bound && Object.hasOwn(bound.columns, name)),
+		(bound) => "columns" in bound && Object.hasOwn(bound.columns, name),
 	);
-	if (owners.length !== 1 || owners[0] === "subselect")
-		reject(`列 ${name} 要带别名`);
+	if (owners.length !== 1) reject(`列 ${name} 要带别名`);
 }
 
 function isStar(node: unknown) {
@@ -484,17 +489,9 @@ function fromItem(node: unknown, scope: Scope, scopes: Scope[]) {
 		walk(body.quals, scopes);
 		return;
 	}
-	if (type === "RangeSubselect") {
-		if (body.lateral) reject("不允许 lateral");
-		const alias = (body.alias as AnyNode | undefined)?.aliasname as
-			| string
-			| undefined;
-		if (!alias) reject("FROM 里的子查询要有别名");
-		walk(body.subquery, scopes.slice(0, -1));
-		scope.set(alias, "subselect");
-		return;
-	}
-	reject(`FROM 里不允许 ${type}`);
+	reject(
+		"FROM 里只能写目录里的关系；要先算再比，把算的那一步写成标量子查询、EXISTS 或 IN",
+	);
 }
 
 let loaded: Promise<void> | null = null;
