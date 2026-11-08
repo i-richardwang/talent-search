@@ -1,7 +1,7 @@
 /**
  * 条件 SQL 的两层隔离：解析白名单（`compileWhere`）挡住目录以外的关系、函数和语句；
- * 解析层漏过的，只读角色（`restricted`）在数据库里再挡一次。旧条件表编译出的每一种
- * 写法都要过得了白名单。
+ * 解析层漏过的，只读角色（`restricted`）在数据库里再挡一次。关键词链的条件表编译出的
+ * 每一种写法都要过得了白名单。
  */
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
@@ -13,7 +13,8 @@ import { seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { catalogSchema, compileWhere, createVetoed, restricted } = await import(
+const { catalogSchema } = await import("#/search/catalog");
+const { compileWhere, createVetoed, restricted } = await import(
 	"#/server/sandbox"
 );
 const { compileConditions } = await import("#/search/compile");
@@ -92,7 +93,7 @@ describe("解析白名单接受的写法", () => {
 		assert.deepEqual(q.params, [24]);
 	});
 
-	test("旧条件表和关键词框编译出的每一种写法都过得了白名单", async () => {
+	test("关键词链的条件表和关键词框编译出的每一种写法都过得了白名单", async () => {
 		const conditions = [
 			...parseQuery(
 				"算法 kind:external companyTag:大厂 minMonths:24,+产品 company:甲辰,-实习 minMonths:6",

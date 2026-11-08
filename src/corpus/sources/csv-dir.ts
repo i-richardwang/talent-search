@@ -16,8 +16,8 @@
  *       scales.csv       stream,value,rank                         （可选）
  *       records.csv      emp_id,stream,period_start,period_end,value,recorded_at（可选）
  *
- * 记录的三个文件要么都给、要么都不给：只给一部分时，缺的那几个当作空表，由管线报出
- * 记录不属于声明过的流、档不在档位表里。
+ * 记录的三个文件各自可选，没有的当作空表。只有状态流时不用 `scales.csv`；有评级流就要有
+ * `scales.csv`，否则管线报「评级的档不在档位表里」。记录不属于声明过的流同样由管线报出。
  * 日期写 `YYYY-MM-DD`，留空表示「至今」或「未知」，具体含义见契约。
  * `education_level` 写契约里学历五档之一（`EDUCATION_LADDER`），`rank` 写整数。
  * `unemployed` 写 `true` / `1` / `Y` 表示待业段，留空即否。

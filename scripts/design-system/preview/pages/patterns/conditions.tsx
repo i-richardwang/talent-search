@@ -265,6 +265,7 @@ function Usage() {
 			>
 				<QueryChips
 					conditions={asQuery([CONDITIONS[1] as Condition])}
+					counts={{}}
 					onChange={() => {}}
 				/>
 			</Example>

@@ -45,6 +45,7 @@ import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
 import { type Condition, conditionKey } from "#/search/condition";
+import type { NameField } from "#/search/condition-label";
 import {
 	addKeyword,
 	applyKeywordDrafts,
@@ -64,8 +65,6 @@ export type KeywordBarHandle = {
 	/** 把光标放进「经历或技能」。 */
 	focus: () => void;
 };
-
-type NameField = Exclude<KeywordField, "what">;
 
 /** 候选第一项（输入的字）旁的说明：经历按语义搜，名称按包含找。 */
 const AS_TYPED: Record<KeywordField, string> = {

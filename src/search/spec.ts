@@ -1,8 +1,8 @@
 import { compileConditions } from "./compile";
 import { type Condition, conditionsOf } from "./condition";
 import {
-	contentKey,
 	draftsOf,
+	identityKey,
 	type Query,
 	type QueryCondition,
 	withIds,
@@ -26,7 +26,7 @@ export function emptySpec(): SearchSpec {
 	return { conditions: [] };
 }
 
-/** 一份记录要执行、要显示的查询：较早的条件表当场编译。 */
+/** 一份记录要执行、要显示的查询：关键词链形状的条件表当场编译。 */
 export function queryOfSpec(spec: SearchSpec): Query {
 	return "query" in spec ? spec.query : compileConditions(spec.conditions);
 }
@@ -48,14 +48,16 @@ export function sanitizeSpec(raw: unknown): SearchSpec {
 	return { conditions: conditionsOf(value.conditions) };
 }
 
-/** 一份不可信查询里写了几条条件：校验之前的条数，用来认出「写了却一条不剩」。 */
-export function askedCount(raw: unknown): number {
+/**
+ * 一份不可信查询里写下的条件，校验之前的原样，用来认出「写了却一条不剩」；不是数组时为 null。
+ */
+export function askedConditions(raw: unknown): unknown[] | null {
 	const value = (raw ?? {}) as Record<string, unknown>;
 	const list =
 		value.query !== undefined
 			? ((value.query ?? {}) as Record<string, unknown>).conditions
 			: value.conditions;
-	return Array.isArray(list) ? list.length : 0;
+	return Array.isArray(list) ? list : null;
 }
 
 /**
@@ -67,11 +69,10 @@ export function changesOf(
 	base: readonly QueryCondition[],
 	next: readonly QueryCondition[],
 ): { added: QueryCondition[]; removed: QueryCondition[] } {
-	const key = (c: QueryCondition) => `${c.id}\u0001${contentKey(c)}`;
-	const had = new Set(base.map(key));
-	const has = new Set(next.map(key));
+	const had = new Set(base.map(identityKey));
+	const has = new Set(next.map(identityKey));
 	return {
-		added: next.filter((c) => !had.has(key(c))),
-		removed: base.filter((c) => !has.has(key(c))),
+		added: next.filter((c) => !had.has(identityKey(c))),
+		removed: base.filter((c) => !has.has(identityKey(c))),
 	};
 }

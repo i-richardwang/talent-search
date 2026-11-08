@@ -46,7 +46,7 @@ async function seen(
 		waiting = false,
 		progress = null,
 		fault = null,
-		onRetry,
+		onRetry = () => {},
 		viewing = rounds.length - 1,
 	}: {
 		understanding?: boolean;
@@ -58,15 +58,19 @@ async function seen(
 		viewing?: number;
 	} = {},
 ) {
+	const chain = turns(rounds);
+	const latest = chain.pop();
+	assert.ok(latest, "至少一轮");
 	const html = await routed(
 		() => (
 			<Thread
+				earlier={chain}
 				fault={fault}
-				progress={progress}
+				latest={latest}
 				onQuery={() => true}
 				onRetry={onRetry}
 				onRevise={() => {}}
-				rounds={turns(rounds)}
+				progress={progress}
 				understanding={understanding}
 				viewing={`t${viewing}`}
 				waiting={waiting}
@@ -270,30 +274,39 @@ describe("检索人才库的过程", () => {
 		},
 		{
 			at: 1,
-			tool: "lookup_attribute",
-			field: "company",
-			found: [
-				{
-					query: "星河",
-					people: 44,
-					values: [{ name: "星河科技", people: 38 }],
-				},
-			],
+			tool: "discover",
+			discovery: {
+				kind: "names",
+				subject: "公司",
+				found: [
+					{
+						query: "星河",
+						people: 44,
+						values: [{ name: "星河科技", people: 38 }],
+					},
+				],
+			},
 		},
 		{
 			at: 2,
-			tool: "lookup_attribute",
-			field: "school",
-			found: [{ query: "银河学院", people: 0, values: [] }],
+			tool: "discover",
+			discovery: {
+				kind: "names",
+				subject: "学校",
+				found: [{ query: "银河学院", people: 0, values: [] }],
+			},
 		},
 		{
 			at: 3,
-			tool: "lookup_attribute",
-			field: "education",
-			values: [
-				{ name: "本科", people: 300 },
-				{ name: "硕士", people: 120 },
-			],
+			tool: "discover",
+			discovery: {
+				kind: "values",
+				subject: "学历",
+				values: [
+					{ name: "本科", people: 300 },
+					{ name: "硕士", people: 120 },
+				],
+			},
 		},
 	];
 

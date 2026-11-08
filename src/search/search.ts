@@ -1,5 +1,5 @@
 /**
- * 检索入口与词表匹配：查经历词、查名字、词表、关键词候选，以及旧条件表的检索。
+ * 检索入口与词表匹配：查经历词、查名字、词表、关键词候选，以及按一份记录检索（`search`）。
  * 取数、去重和打分在执行外壳（`execute.ts`）与 rank.ts，这里不按条件类型手写取数。
  *
  * 模型重排在快照外完成，取事实的快照重新召回、核对空间及完整候选文本的分数。
@@ -9,9 +9,10 @@ import "@tanstack/react-start/server-only";
 import { type SQL, sql } from "drizzle-orm";
 import { db } from "#/db";
 import { SHORT_ROUTES } from "#/db/schema";
-import { withCorpusSnapshot } from "#/db/snapshot";
+import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
 import { escapeLike } from "#/lib/sql";
-import { catalogSchema } from "#/server/sandbox";
+import { catalogSchema, rankOf } from "./catalog";
+import type { NameField } from "./condition-label";
 import { NOT_A_VALUE, VOCAB_KEYS, type VocabKey } from "./dimensions";
 import { execute } from "./execute";
 import type { Vocabulary } from "./intent";
@@ -20,7 +21,7 @@ import type { SearchFilters } from "./params";
 import { phraseHitTable, withMatchedPhrases } from "./phrases";
 import type { SearchOutcome, Suggestion } from "./result";
 import { queryOfSpec, type SearchSpec } from "./spec";
-import type { Matched, NameField, NameFinding, TermFinding } from "./trace";
+import type { Matched, NameFinding, TermFinding } from "./trace";
 import { RELEVANCE_MIN, RESULT_PAGE } from "./weights";
 
 function like(term: string) {
@@ -208,61 +209,67 @@ export async function lookupNames(
 }
 
 /**
- * 每一维取值最多取几个。这是一条**读语料的上限**，不是模型契约：这几维都是
- * 个位数到两位数量级，取 100 已经是「全都要」，它挡的是脏数据把一整列不同的
- * 公司名当成档位灌进 prompt。
+ * 一列最多列几个取值。这是一条**读语料的上限**，不是模型契约：有限取值的列都是个位数到
+ * 两位数量级，取 100 已经是「全都要」，它挡的是脏数据把一整列不同的公司名当成档位灌进 prompt。
  */
-const VOCAB_MAX = 100;
+const LISTED_MAX = 100;
 
 /**
- * 词表里的取值各自读数据目录的哪一列、按谁数人。哪几维有词表由 `VOCAB_KEYS` 说，这里按它穷尽。
+ * 一列的取值和有这个值的人数：词表（`vocabulary`）和看目录（`server/discover.ts`）共用这一条
+ * 语句。空值与 `NOT_A_VALUE` 不算取值；有高低的列按档高从低到高（`catalog.ts` 声明的 `rank`），
+ * 其余人多的在前。给了 `stream` 只数这一条记录流。
+ */
+export async function valuesOf(
+	store: DbExecutor,
+	relation: string,
+	column: string,
+	stream?: string,
+): Promise<Matched[]> {
+	const col = sql.identifier(column);
+	const rank = rankOf(relation, column);
+	const { rows } = await store.execute<Matched>(sql`
+		select ${col}::text as name, count(distinct emp_id)::int as people
+		from ${sql.identifier(catalogSchema())}.${sql.identifier(relation)}
+		where ${col} is not null and ${col}::text not in (${sql.join(
+			["", ...NOT_A_VALUE].map((v) => sql`${v}`),
+			sql`, `,
+		)}) ${stream ? sql`and stream = ${stream}` : sql``}
+		group by 1
+		order by ${rank ? sql`min(${sql.identifier(rank)}), ` : sql``}people desc, name
+		limit ${LISTED_MAX}`);
+	return rows;
+}
+
+/**
+ * 词表里的取值各自读数据目录的哪一列。哪几维有词表由 `VOCAB_KEYS` 说，这里按它穷尽。
  * 取值表达式只在目录视图里写一次（`db/schema.ts`），检索读的是同一份。
  */
 const VOCAB_COLUMN: Record<
 	VocabKey,
-	{ relation: "person" | "experience"; column: string; rank?: string }
+	{ relation: "person" | "experience"; column: string }
 > = {
 	companyTag: { relation: "experience", column: "company_tag" },
-	level: { relation: "person", column: "level_band", rank: "level_rank" },
+	level: { relation: "person", column: "level_band" },
 	recruitment: { relation: "person", column: "recruitment" },
-	education: {
-		relation: "person",
-		column: "education",
-		rank: "education_rank",
-	},
+	education: { relation: "person", column: "education" },
 	schoolTier: { relation: "person", column: "school_tier" },
 	overseas: { relation: "person", column: "overseas" },
 };
 
-/**
- * 查询理解能选择的语料取值和有这个值的人数。空值与 NOT_A_VALUE 不进词表；
- * 有序维按档高排列，其余按人数排列。各维在同一语料快照中读取。
- */
+/** 查询理解能选择的语料取值和有这个值的人数（`valuesOf`）。各维在同一语料快照中读取。 */
 export async function vocabulary(): Promise<Vocabulary> {
-	const schema = sql.identifier(catalogSchema());
 	return withCorpusSnapshot(async (store) => {
 		const vocab = {} as { [K in VocabKey]: Matched[] };
 		for (const key of VOCAB_KEYS) {
-			const { relation, column: name, rank } = VOCAB_COLUMN[key];
-			const column = sql.identifier(name);
-			const rows = await store.execute<Matched>(sql`
-				select ${column} as name, count(distinct emp_id)::int as people
-				from ${schema}.${sql.identifier(relation)}
-				where ${column} is not null and ${column} not in (${sql.join(
-					["", ...NOT_A_VALUE].map((v) => sql`${v}`),
-					sql`, `,
-				)})
-				group by 1 order by ${
-					rank ? sql`min(${sql.identifier(rank)}), ` : sql``
-				}people desc, name limit ${VOCAB_MAX}`);
-			vocab[key] = rows.rows;
+			const { relation, column } = VOCAB_COLUMN[key];
+			vocab[key] = await valuesOf(store, relation, column);
 		}
 		return vocab;
 	});
 }
 
 /**
- * 一份记录的查询交给执行外壳（`execute.ts`）；较早的条件表读取时编译（`spec.ts`）。
+ * 一份记录的查询交给执行外壳（`execute.ts`）；关键词链形状的条件表读取时编译（`spec.ts`）。
  */
 export function search(
 	/** 完整查询语义来自不可变记录；filters 只描述这一次怎样查看结果。 */

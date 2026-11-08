@@ -32,7 +32,7 @@ const NO_PICKS: Picks = {
 
 describe("产品文案使用常规 SaaS 语言", () => {
 	test("条件使用稳定的人话，不把存储值露给最近搜索", () => {
-		// 旧条件编译成查询时的标签：几个取值只写代表词
+		// 关键词链的条件编译成查询时的标签：几个取值只写代表词
 		assert.deepEqual(
 			[
 				conditionLabel(person("level", ["P7", "P8"])),
@@ -176,6 +176,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			<ResultList
 				canMore={false}
 				empId={undefined}
+				failure={null}
 				growing={false}
 				wait={null}
 				mode="conversation"

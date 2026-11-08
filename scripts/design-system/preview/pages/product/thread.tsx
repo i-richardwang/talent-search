@@ -25,10 +25,13 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
 import {
 	ANSWERED_TURN,
+	ASKING_TURN,
 	FRESH_TURN,
+	LATEST_TURN,
 	LATEST_TURN_ID,
 	PENDING_TRACE,
 	PENDING_TURN,
+	ROOT_TURN,
 	ROOT_TURN_ID,
 	THREAD,
 } from "../../samples/thread";
@@ -39,7 +42,8 @@ type State = "settled" | "asking" | "earlier" | "running" | "failed";
 const STATES: Record<
 	State,
 	{
-		rounds: Turn[];
+		earlier: Turn[];
+		latest: Turn;
 		viewing: string;
 		progress: Progress | null;
 		fault: InterpretFault | null;
@@ -48,31 +52,36 @@ const STATES: Record<
 	asking: {
 		fault: null,
 		progress: null,
-		rounds: THREAD.slice(0, 2),
-		viewing: THREAD[1]?.id ?? "",
+		earlier: THREAD.slice(0, 1),
+		latest: ASKING_TURN,
+		viewing: ASKING_TURN.id,
 	},
 	earlier: {
 		fault: null,
 		progress: null,
-		rounds: THREAD,
+		earlier: THREAD.slice(0, -1),
+		latest: LATEST_TURN,
 		viewing: ROOT_TURN_ID,
 	},
 	failed: {
 		fault: "unreachable",
 		progress: { trace: [], startedAt: PENDING_TURN.startedAt },
-		rounds: [...THREAD, PENDING_TURN],
+		earlier: THREAD,
+		latest: PENDING_TURN,
 		viewing: PENDING_TURN.id,
 	},
 	running: {
 		fault: null,
 		progress: { trace: PENDING_TRACE, startedAt: PENDING_TURN.startedAt },
-		rounds: [...THREAD, PENDING_TURN],
+		earlier: THREAD,
+		latest: PENDING_TURN,
 		viewing: PENDING_TURN.id,
 	},
 	settled: {
 		fault: null,
 		progress: null,
-		rounds: THREAD,
+		earlier: THREAD.slice(0, -1),
+		latest: LATEST_TURN,
 		viewing: LATEST_TURN_ID,
 	},
 };
@@ -178,7 +187,8 @@ function Faults() {
 										onQuery={() => true}
 										onRetry={() => {}}
 										onRevise={() => {}}
-										rounds={[FRESH_TURN]}
+										earlier={[]}
+										latest={FRESH_TURN}
 										understanding={false}
 										viewing={FRESH_TURN.id}
 										waiting={false}
@@ -208,11 +218,15 @@ function Usage() {
 			>
 				<Column>
 					<Thread
+						earlier={THREAD.slice(0, 1)}
+						fault={null}
+						latest={ASKING_TURN}
 						onQuery={() => true}
+						onRetry={noop}
 						onRevise={noop}
-						rounds={THREAD.slice(0, 2)}
+						progress={null}
 						understanding
-						viewing={THREAD[1]?.id ?? ""}
+						viewing={ASKING_TURN.id}
 						waiting={false}
 					/>
 				</Column>
@@ -223,9 +237,13 @@ function Usage() {
 			>
 				<Column>
 					<Thread
+						earlier={THREAD.slice(0, 2)}
+						fault={null}
+						latest={ANSWERED_TURN}
 						onQuery={() => true}
+						onRetry={noop}
 						onRevise={noop}
-						rounds={[...THREAD.slice(0, 2), ANSWERED_TURN]}
+						progress={null}
 						understanding
 						viewing={ANSWERED_TURN.id}
 						waiting={false}
@@ -238,10 +256,13 @@ function Usage() {
 			>
 				<Column>
 					<Thread
-						progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
-						onRevise={noop}
+						earlier={[]}
+						fault={null}
+						latest={FRESH_TURN}
 						onQuery={() => true}
-						rounds={[FRESH_TURN]}
+						onRetry={noop}
+						onRevise={noop}
+						progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
 						understanding
 						viewing={FRESH_TURN.id}
 						waiting
@@ -254,9 +275,13 @@ function Usage() {
 			>
 				<Column>
 					<Thread
-						onRevise={noop}
+						earlier={THREAD.slice(0, -1)}
+						fault={null}
+						latest={LATEST_TURN}
 						onQuery={() => true}
-						rounds={THREAD}
+						onRetry={noop}
+						onRevise={noop}
+						progress={null}
 						understanding={false}
 						viewing={LATEST_TURN_ID}
 						waiting={false}
@@ -269,9 +294,13 @@ function Usage() {
 			>
 				<Column>
 					<Thread
-						onRevise={noop}
+						earlier={[]}
+						fault={null}
+						latest={ROOT_TURN}
 						onQuery={() => true}
-						rounds={THREAD.slice(0, 1)}
+						onRetry={noop}
+						onRevise={noop}
+						progress={null}
 						understanding={false}
 						viewing={ROOT_TURN_ID}
 						waiting={false}

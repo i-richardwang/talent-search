@@ -72,7 +72,7 @@ export function ResultList({
 	onReviseQuery,
 	onEditQuery,
 	picks,
-	failure = null,
+	failure,
 }: {
 	outcome: SearchOutcome;
 	empId: string | undefined;
@@ -90,8 +90,8 @@ export function ResultList({
 	onReviseQuery: (next: QueryCondition[]) => void;
 	onEditQuery: () => void;
 	picks: Picks;
-	/** 这一轮没理解出来：名单停在这里，说出哪个环节出了问题。 */
-	failure?: { fault: InterpretFault; onRetry: () => void } | null;
+	/** 这一轮没理解出来：名单停在这里，说出哪个环节出了问题；没有出错为 null。 */
+	failure: { fault: InterpretFault; onRetry: () => void } | null;
 }) {
 	const { results, claims, order, total } = outcome;
 	const reach = reachOf(total);

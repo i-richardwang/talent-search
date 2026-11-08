@@ -5,16 +5,14 @@
  */
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { exploreAndCapture, seed, setup } from "./fixture";
+import { exploreAndCapture, seed, seedStream, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
 
 const { createTurn, interpret, loadThread } = await import("#/server/turn");
 const { db } = await import("#/db");
-const { searchTurn, recordStream, scale, employeeRecord } = await import(
-	"#/db/schema"
-);
+const { searchTurn } = await import("#/db/schema");
 const { eq } = await import("drizzle-orm");
 
 /** 每个人身上只属于他自己的东西：一样都不该出现在请求体里。 */
@@ -51,37 +49,29 @@ before(async () => {
 			],
 		})),
 	);
-	await db.insert(recordStream).values({
+	await seedStream({
 		stream: "perf",
 		kind: "rating",
 		label: "绩效",
 		period: "半年",
-	});
-	await db
-		.insert(scale)
-		.values(
-			["C", "B", "A"].map((value, rank) => ({ stream: "perf", value, rank })),
-		);
-	await db.insert(employeeRecord).values(
-		SECRETS.empIds.map((empId) => ({
+		scale: ["C", "B", "A"],
+		records: SECRETS.empIds.map((empId) => ({
 			empId,
-			stream: "perf",
 			periodStart: "2025-01-01",
 			periodEnd: "2025-06-30",
 			value: "A",
 		})),
-	);
-	await db
-		.insert(recordStream)
-		.values({ stream: "hipo", kind: "status", label: "高潜" });
-	await db.insert(employeeRecord).values(
-		SECRETS.empIds.map((empId) => ({
+	});
+	await seedStream({
+		stream: "hipo",
+		kind: "status",
+		label: "高潜",
+		records: SECRETS.empIds.map((empId) => ({
 			empId,
-			stream: "hipo",
 			periodStart: "2025-01-01",
 			value: "高潜池",
 		})),
-	);
+	});
 });
 
 test("一次理解发给模型的请求体里没有人", async () => {

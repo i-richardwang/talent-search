@@ -13,6 +13,7 @@ import { compileConditions } from "#/search/compile";
 import { type QueryCondition, termValues } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import { queryOfSpec, type SearchSpec } from "#/search/spec";
+import { lately, sleeper } from "./conditions";
 import {
 	answering,
 	breakUnderstanding,
@@ -78,7 +79,7 @@ const wordsOf = (spec: SearchSpec) =>
 const contentOf = (list: readonly QueryCondition[]) =>
 	list.map(({ id: _id, ...rest }) => rest);
 const shapeOf = (spec: SearchSpec) => contentOf(queryOfSpec(spec).conditions);
-/** 一行查询语法编译成的条件，和旧记录读取时编译的是同一份。 */
+/** 一行查询语法编译成的条件，和关键词链的记录读取时编译的是同一份。 */
 const compiled = (syntax: string) =>
 	compileConditions(parseQuery(syntax)).conditions;
 const expected = (syntax: string) => contentOf(compiled(syntax));
@@ -640,14 +641,6 @@ describe("理解失败", () => {
 });
 
 describe("写进记录的是提交检查录取的那份", () => {
-	/** 这条 `where` 调了白名单外的函数：模型怎么重交，提交检查都不收。 */
-	const sleeper = {
-		label: "睡一会儿",
-		mode: "must",
-		from: "person",
-		where: "pg_sleep(1) is not null",
-	};
-
 	test("次数用完时最后一次交了跑不了的条件：那一条不进记录，选项里的也一样", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const spec = await answering(
@@ -682,14 +675,6 @@ describe("写进记录的是提交检查录取的那份", () => {
 	});
 
 	test("编得过、执行才报错的条件：最后一次交了它，记录和选项里都没有它", async () => {
-		const lately = {
-			label: "最近有过绩效",
-			mode: "must",
-			from: "person",
-			where:
-				"exists (select 1 from rating r where r.emp_id = p.emp_id and r.period_end >= current_date - :days)",
-			params: { days: "九十" },
-		};
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const spec = await answering(
 			() => ({

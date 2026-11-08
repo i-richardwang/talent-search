@@ -96,7 +96,14 @@ export const ANSWERED_TURN: Turn = {
 /** 整条对话链，链头在前；名单看的是最后一轮。 */
 export const THREAD: Turn[] = [ROUND1, ROUND2, ROUND3];
 
-export const LATEST_TURN_ID = ROUND3.id;
+/** 链头那一轮；只看它时它也是最后一轮。 */
+export const ROOT_TURN = ROUND1;
+
+/** 第二轮 AI 在问；只看前两轮时它是最后一轮。 */
+export const ASKING_TURN = ROUND2;
+
+export const LATEST_TURN = ROUND3;
+export const LATEST_TURN_ID = LATEST_TURN.id;
 
 /**
  * 等待理解的两轮发生在打开页面前几秒：计时从这一次理解开始的时刻算起，放在过去的

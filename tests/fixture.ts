@@ -175,7 +175,7 @@ export function fakeEmbedding(text: string): number[] {
 export const CANARY = "talent-search embedding canary";
 
 /** 两串字在假嵌入下的余弦，测试里用来解释断言的边界。 */
-export function fakeSimilarity(a: string, b: string) {
+function fakeSimilarity(a: string, b: string) {
 	const va = fakeEmbedding(a);
 	const vb = fakeEmbedding(b);
 	const similarity = va.reduce((s, x, i) => s + x * (vb[i] ?? 0), 0);
@@ -682,6 +682,43 @@ type Seed = {
 		};
 	}>;
 };
+
+/** 一条合成的记录流：评级流带档（从低到高），记录按期给。 */
+export type StreamSeed = {
+	stream: string;
+	kind: "rating" | "status";
+	label: string;
+	period?: string;
+	scale?: readonly string[];
+	records: {
+		empId: string;
+		value: string;
+		periodStart: string;
+		periodEnd?: string;
+	}[];
+};
+
+/** 写一条记录流：流本身、评级流的档位表和每个人的记录，和同步写的三张表一样。 */
+export async function seedStream(s: StreamSeed) {
+	const { db } = await import("#/db");
+	const { recordStream, scale, employeeRecord } = await import("#/db/schema");
+	await db.insert(recordStream).values({
+		stream: s.stream,
+		kind: s.kind,
+		label: s.label,
+		period: s.period ?? "",
+	});
+	if (s.scale?.length)
+		await db
+			.insert(scale)
+			.values(
+				s.scale.map((value, rank) => ({ stream: s.stream, value, rank })),
+			);
+	if (s.records.length > 0)
+		await db
+			.insert(employeeRecord)
+			.values(s.records.map((r) => ({ ...r, stream: s.stream })));
+}
 
 export async function seed(rows: Seed[]) {
 	const { db } = await import("#/db");

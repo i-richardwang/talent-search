@@ -15,13 +15,15 @@
  * 还是分成两条，由模型读句子时判断，HR 看标签核对。
  */
 
-import { CONDITION_MAX, termOf, VALUES_MAX } from "./condition";
+import {
+	CONDITION_MAX,
+	MODES,
+	type Mode,
+	termOf,
+	VALUES_MAX,
+} from "./condition";
 import { MODE_NAME } from "./condition-label";
 import { boundedText } from "./text";
-
-/** 一条条件的强度：必须、加分、排除。排除只用于经历。 */
-export const QUERY_MODES = ["must", "boost", "exclude"] as const;
-type QueryMode = (typeof QUERY_MODES)[number];
 
 /** 按意思找的词：键是 `hit.term` 的取值，值是同一件事的几种写法，任一命中即可。 */
 type Terms = Record<string, string[]>;
@@ -31,7 +33,8 @@ export type QueryCondition = {
 	id: string;
 	/** 写给 HR 的一句话：这条在找什么。不当作已验证的解释 */
 	label: string;
-	mode: QueryMode;
+	/** 强度：必须、加分、排除（`condition.ts` 的 `MODES`）。排除只用于经历。 */
+	mode: Mode;
 	/** 只有用户能停用 */
 	off?: "user";
 	from: "experience" | "person";
@@ -156,7 +159,7 @@ function paramsOf(raw: unknown): QueryCondition["params"] {
 function draftOf(raw: unknown): DraftCondition | null {
 	const entry = (raw ?? {}) as Record<string, unknown>;
 	const label = boundedText(entry.label);
-	const mode = QUERY_MODES.find((m) => m === entry.mode);
+	const mode = MODES.find((m) => m === entry.mode);
 	const from =
 		entry.from === "experience" || entry.from === "person" ? entry.from : null;
 	const where = typeof entry.where === "string" ? entry.where.trim() : "";
@@ -233,6 +236,11 @@ export function contentKey(c: DraftCondition): string {
 		sorted(c.params),
 		c.minMonths ?? null,
 	]);
+}
+
+/** 一条条件的身份：id 加内容。id 相同、内容变了算另一条。 */
+export function identityKey(c: QueryCondition): string {
+	return `${c.id}\u0001${contentKey(c)}`;
 }
 
 /** 停用或启用一条条件，别的原样。 */

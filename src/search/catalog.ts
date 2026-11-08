@@ -22,15 +22,15 @@ type ColumnsOf<V> =
 		? keyof F & string
 		: never;
 
-type CatalogColumn = {
+/**
+ * 一列的声明。有限取值的列 `discover` 给出取值和人数：enum 只筛；ordinal 还能比高低，
+ * `rank` 是同一关系里它的档高列，列取值时按它从低到高排。
+ */
+type CatalogColumn<C extends string = string> = {
 	type: "text" | "int" | "float" | "date" | "bool" | "text[]";
 	label: string;
 	meaning: string;
-	/** 有限取值：enum 只筛，ordinal 还能比高低（配 `*_rank` 列）。`discover` 给出取值和人数 */
-	values?: "enum" | "ordinal";
-};
-
-type Columns<V> = { [K in ColumnsOf<V>]: CatalogColumn };
+} & ({ values?: "enum" } | { values: "ordinal"; rank: C });
 
 export type CatalogRelation<C extends string = string> = {
 	/** 关系名，也是 SQL 里写的名字 */
@@ -38,14 +38,12 @@ export type CatalogRelation<C extends string = string> = {
 	label: string;
 	/** 一行是什么 */
 	rows: string;
-	columns: Record<C, CatalogColumn>;
+	columns: Record<C, CatalogColumn<C>>;
 	/** 口径：缺失算什么、怎么去重、能不能跨期比 */
 	notes: string[];
 };
 
-const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> & {
-	columns: Columns<typeof catalogPerson>;
-} = {
+const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> = {
 	name: "person",
 	label: "员工",
 	rows: "一个员工",
@@ -60,6 +58,7 @@ const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> & {
 			label: "职级档",
 			meaning: "当前职级归入的档",
 			values: "ordinal",
+			rank: "level_rank",
 		},
 		level_rank: {
 			type: "int",
@@ -71,6 +70,7 @@ const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> & {
 			label: "学历",
 			meaning: "最高学历：高中及以下、大专、本科、硕士、博士",
 			values: "ordinal",
+			rank: "education_rank",
 		},
 		education_rank: {
 			type: "int",
@@ -122,9 +122,7 @@ const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> & {
 	notes: ["空值表示没有记录，不表示任何一档。"],
 };
 
-const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> & {
-	columns: Columns<typeof catalogExperience>;
-} = {
+const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 	name: "experience",
 	label: "工作经历",
 	rows: "一段工作经历（公司内的一段任职，或入职前的一段经历）",
@@ -190,9 +188,7 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> & {
 	],
 };
 
-const rating: CatalogRelation<ColumnsOf<typeof catalogRating>> & {
-	columns: Columns<typeof catalogRating>;
-} = {
+const rating: CatalogRelation<ColumnsOf<typeof catalogRating>> = {
 	name: "rating",
 	label: "评级",
 	rows: "一个人在一条评级流里的一期评级（例如一期绩效）",
@@ -211,6 +207,7 @@ const rating: CatalogRelation<ColumnsOf<typeof catalogRating>> & {
 			label: "档",
 			meaning: "这一期评的档",
 			values: "ordinal",
+			rank: "value_rank",
 		},
 		value_rank: {
 			type: "int",
@@ -227,9 +224,7 @@ const rating: CatalogRelation<ColumnsOf<typeof catalogRating>> & {
 	],
 };
 
-const status: CatalogRelation<ColumnsOf<typeof catalogStatus>> & {
-	columns: Columns<typeof catalogStatus>;
-} = {
+const status: CatalogRelation<ColumnsOf<typeof catalogStatus>> = {
 	name: "status",
 	label: "状态",
 	rows: "一个人在一条状态流里的一段（例如在高潜池里的一段时间）",
@@ -260,9 +255,7 @@ const status: CatalogRelation<ColumnsOf<typeof catalogStatus>> & {
 	],
 };
 
-const scale: CatalogRelation<ColumnsOf<typeof catalogScale>> & {
-	columns: Columns<typeof catalogScale>;
-} = {
+const scale: CatalogRelation<ColumnsOf<typeof catalogScale>> = {
 	name: "scale",
 	label: "档位表",
 	rows: "一个档：职级档（stream = 'level'）、学历档（'education'）和各评级流的档",
@@ -345,6 +338,31 @@ export const CATALOG: readonly CatalogRelation[] = [
 	status,
 	scale,
 ];
+
+/**
+ * 目录所在的 schema。生产是 `catalog`（`db/schema.ts`）；同一个库里要放几套目录时（比如每个
+ * 测试文件一套）用 `TALENT_CATALOG_SCHEMA` 指定。
+ */
+export function catalogSchema(): string {
+	const name = process.env.TALENT_CATALOG_SCHEMA?.trim() || "catalog";
+	if (!/^[a-z_][a-z0-9_]*$/.test(name))
+		throw new Error(`TALENT_CATALOG_SCHEMA 不是合法的 schema 名：${name}`);
+	return name;
+}
+
+/** 一列的声明；目录里没有这个关系或这一列时为 undefined。 */
+export function columnOf(relation: string, column: string) {
+	const found = CATALOG.find((r) => r.name === relation);
+	return found && Object.hasOwn(found.columns, column)
+		? found.columns[column]
+		: undefined;
+}
+
+/** 有高低的列的档高列：同一关系里和它并列声明的 `*_rank`。不是有高低的列为 null。 */
+export function rankOf(relation: string, column: string): string | null {
+	const declared = columnOf(relation, column);
+	return declared?.values === "ordinal" ? declared.rank : null;
+}
 
 /** 目录写进提示词的样子：每个关系一段，列一行，口径跟在后面。 */
 export function catalogText(): string {

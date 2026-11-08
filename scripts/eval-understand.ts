@@ -31,8 +31,8 @@
  *
  * 名单这一半（has、includes、excludes、before、evidence）按搜索的真实执行打分：模型写的 SQL
  * 搜出谁、证据是哪几段、累计多久，和工作台同一条路（`search/execute.ts`）。标签只是写给 HR
- * 的话，不当作已验证的解释；名单对了才算对。这一半要在有对应数据的库上跑：§10 的原型样例
- * 用合成样例同步出的库（`TALENT_SOURCE=csv-dir`，样例目录 `src/corpus/sources/sample`）。
+ * 的话，不当作已验证的解释；名单对了才算对。这一半要在有对应数据的库上跑：按期记录和
+ * 限定公司的经历那几题用合成样例同步出的库（`TALENT_SOURCE=csv-dir`，样例目录 `src/corpus/sources/sample`）。
  *
  * 设了 `EVAL_SHOW_SQL=1` 时每题下面列出每条的 FROM、语义词、where 和参数，给人对照标签读。
  *

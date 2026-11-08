@@ -1,35 +1,25 @@
 /**
  * 数据目录的活统计：查询理解的 `discover` 工具和提示词里预先给的那一份。
  *
- * 只给人数和写法，不给人：有限取值的列给每个取值有多少人（和 `vocabulary()` 同一口径，
- * 空值与 `NOT_A_VALUE` 不算取值）；公司、部门、学校按名字包含匹配，和条件一样
+ * 只给人数和写法，不给人：有限取值的列给每个取值有多少人（和词表同一条语句，`search.ts`
+ * 的 `valuesOf`）；公司、部门、学校按名字包含匹配，和条件一样
  * （`search.ts` 的 `lookupNames`），写法至少有几个人写过才给，部门只给人数；记录流给覆盖
  * 的人数、期数和起止，不给任何一个人的记录。
  */
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
 import { withCorpusSnapshot } from "#/db/snapshot";
-import { CATALOG, type CatalogRelation } from "#/search/catalog";
-import { NOT_A_VALUE } from "#/search/dimensions";
-import { lookupNames } from "#/search/search";
-import type { Discovery, Matched, NameField, StreamFact } from "#/search/trace";
+import { CATALOG, catalogSchema, columnOf } from "#/search/catalog";
+import type { NameField } from "#/search/condition-label";
+import { lookupNames, valuesOf } from "#/search/search";
+import type { Discovery, StreamFact } from "#/search/trace";
 import { streamCoverage } from "./data";
-import { catalogSchema } from "./sandbox";
-
-/** 有高低的列按哪一列排，按关系分：评级的档有档高，状态的取值没有高低。 */
-const RANK_OF: Record<string, Record<string, string>> = {
-	person: { level_band: "level_rank", education: "education_rank" },
-	rating: { value: "value_rank" },
-};
 
 /** 按名字匹配的列，对应 `lookupNames` 的哪一种。 */
 const NAME_COLUMNS: Record<string, Record<string, NameField>> = {
 	experience: { company: "company", department: "department" },
 	person: { school: "school" },
 };
-
-/** 一列最多列几个取值，和词表同一个上限。 */
-const VALUES_MAX = 100;
 
 /**
  * 每条记录流的覆盖与取值，提示词和 `discover` 的总览共用。评级流的取值是档位表里的档，
@@ -51,12 +41,16 @@ export async function streamFacts(): Promise<StreamFact[]> {
 			values:
 				c.kind === "rating"
 					? (scaleOf.get(c.stream) ?? [])
-					: (await valuesOf("status", "value", c.stream)).map((v) => v.name),
+					: (
+							await withCorpusSnapshot((store) =>
+								valuesOf(store, "status", "value", c.stream),
+							)
+						).map((v) => v.name),
 		})),
 	);
 }
 
-export type DiscoverInput = {
+type DiscoverInput = {
 	relation?: string;
 	column?: string;
 	stream?: string;
@@ -73,9 +67,7 @@ export async function discover(input: DiscoverInput): Promise<Discovery> {
 		);
 	const column = input.column;
 	if (!column) return problem(`要说看 ${relation.name} 的哪一列`);
-	const declared = (
-		relation.columns as Record<string, CatalogRelation["columns"][string]>
-	)[column];
+	const declared = columnOf(relation.name, column);
 	if (!declared) return problem(`${relation.name} 没有 ${column} 这一列`);
 	// 线程里这一步的标题写给 HR：列的中文名，记录流写它的名字，不写目录里的英文名
 	const subject = declared.label;
@@ -99,7 +91,9 @@ export async function discover(input: DiscoverInput): Promise<Discovery> {
 	return {
 		kind: "values",
 		subject: streamLabel ? `${streamLabel}的${subject}` : subject,
-		values: await valuesOf(relation.name, column, stream),
+		values: await withCorpusSnapshot((store) =>
+			valuesOf(store, relation.name, column, stream),
+		),
 	};
 }
 
@@ -139,27 +133,4 @@ async function overview(): Promise<Discovery> {
 		streamFacts(),
 	]);
 	return { kind: "overview", relations: counts, streams };
-}
-
-async function valuesOf(
-	relation: string,
-	column: string,
-	stream: string | undefined,
-): Promise<Matched[]> {
-	const schema = sql.identifier(catalogSchema());
-	const col = sql.identifier(column);
-	const rank = RANK_OF[relation]?.[column];
-	return withCorpusSnapshot(async (store) => {
-		const { rows } = await store.execute<Matched>(sql`
-			select ${col}::text as name, count(distinct emp_id)::int as people
-			from ${schema}.${sql.identifier(relation)}
-			where ${col} is not null and ${col}::text not in (${sql.join(
-				["", ...NOT_A_VALUE].map((v) => sql`${v}`),
-				sql`, `,
-			)}) ${stream ? sql`and stream = ${stream}` : sql``}
-			group by 1
-			order by ${rank ? sql`min(${sql.identifier(rank)}), ` : sql``}people desc, name
-			limit ${VALUES_MAX}`);
-		return rows;
-	});
 }

@@ -90,3 +90,21 @@ export function asConditions(
 		});
 	return out;
 }
+
+/** 模型交上来的一条人的条件，`where` 调了白名单外的函数：编不过，怎么重交提交检查都不收。 */
+export const sleeper = {
+	label: "睡一会儿",
+	mode: "must",
+	from: "person",
+	where: "pg_sleep(1) is not null",
+};
+
+/** 模型交上来的一条人的条件，编得过、执行才报错：`:days` 传的「九十」转不成日期差。 */
+export const lately = {
+	label: "最近有过绩效",
+	mode: "must",
+	from: "person",
+	where:
+		"exists (select 1 from rating r where r.emp_id = p.emp_id and r.period_end >= current_date - :days)",
+	params: { days: "九十" },
+};

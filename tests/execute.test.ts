@@ -1,27 +1,27 @@
 /**
- * 两条原型（设计稿 §10）按手写的查询跑执行外壳：条件是固定 FROM + 写好的 WHERE + 绑定参数，
- * 名单、证据、累计时长和名次都只从合格证据来。跑在临时 schema 上的真 SQL，数据全是合成的；
- * 记录的日期按数据库的今天往回推，用例不随日子过去而失效。
+ * 按期记录的门槛和限定公司的语义经历，按手写的查询跑执行外壳：条件是固定 FROM + 写好的
+ * WHERE + 绑定参数，名单、证据、累计时长和名次都只从合格证据来。跑在临时 schema 上的真
+ * SQL，数据全是合成的；记录的日期按数据库的今天往回推，用例不随日子过去而失效。
  *
  * 同一期的修订只留最终一条是同步的事（`tests/pipeline.test.ts`），这里的记录已经是最终的。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import type { Query, QueryCondition } from "#/search/query";
-import { seed, setup } from "./fixture";
+import { seed, seedStream, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
 
 const { execute, probe, selection } = await import("#/search/execute");
 const { db, pool } = await import("#/db");
-const { recordStream, scale, employeeRecord } = await import("#/db/schema");
+const { employeeRecord } = await import("#/db/schema");
 
 const query = (...conditions: QueryCondition[]): Query => ({ conditions });
 const ids = (list: { employee: { empId: string } }[]) =>
 	list.map((r) => r.employee.empId);
 
-/** 例四的写法：近三年至少几次某档及以上。 */
+/** 近三年至少几次某档及以上：数记录行，档高查档位表。 */
 const highTwice: QueryCondition = {
 	id: "high",
 	label: "近三年绩效至少两次 A 及以上",
@@ -52,7 +52,7 @@ const neverC: QueryCondition = {
 	params: { low: "C" },
 };
 
-/** 例三的写法：只算在甲辰科技的那段推荐系统。 */
+/** 只算在甲辰科技的那段推荐系统：语义词和公司写在同一条里，说的是同一段。 */
 const atJiachen: QueryCondition = {
 	id: "rec",
 	label: "在甲辰科技做推荐系统的那段经历",
@@ -89,12 +89,7 @@ before(async () => {
 	};
 	/** 近三年六期，按 k = 1..6 给档。 */
 	const sixHalves = (empId: string, values: string[]) =>
-		values.map((value, i) => ({
-			empId,
-			stream: "perf",
-			value,
-			...half(i + 1),
-		}));
+		values.map((value, i) => ({ empId, value, ...half(i + 1) }));
 	const threeYearsAndADayAgo = new Date(today);
 	threeYearsAndADayAgo.setUTCFullYear(today.getUTCFullYear() - 3);
 	threeYearsAndADayAgo.setUTCDate(threeYearsAndADayAgo.getUTCDate() - 1);
@@ -143,33 +138,29 @@ before(async () => {
 			segments: [external("甲辰科技", 6, { title: "推荐系统实习生" })],
 		},
 	]);
-	await db
-		.insert(recordStream)
-		.values({ stream: "perf", kind: "rating", label: "绩效", period: "半年" });
-	await db.insert(scale).values(
-		["C", "B", "B+", "A", "A+"].map((value, rank) => ({
-			stream: "perf",
-			value,
-			rank,
-		})),
-	);
-	await db.insert(employeeRecord).values([
-		...sixHalves("R1", ["A", "B", "A", "B", "B", "B"]),
-		...sixHalves("R2", ["B", "A", "B", "B", "B", "B"]),
-		{
-			empId: "R2",
-			stream: "perf",
-			value: "A",
-			periodStart: iso(outside),
-			periodEnd: iso(threeYearsAndADayAgo),
-		},
-		...sixHalves("R3", ["B", "B", "B", "B", "B", "B"]),
-		...sixHalves("R4", ["A", "A"]),
-		...sixHalves("R6", ["A", "A", "C"]),
-	]);
+	await seedStream({
+		stream: "perf",
+		kind: "rating",
+		label: "绩效",
+		period: "半年",
+		scale: ["C", "B", "B+", "A", "A+"],
+		records: [
+			...sixHalves("R1", ["A", "B", "A", "B", "B", "B"]),
+			...sixHalves("R2", ["B", "A", "B", "B", "B", "B"]),
+			{
+				empId: "R2",
+				value: "A",
+				periodStart: iso(outside),
+				periodEnd: iso(threeYearsAndADayAgo),
+			},
+			...sixHalves("R3", ["B", "B", "B", "B", "B", "B"]),
+			...sixHalves("R4", ["A", "A"]),
+			...sixHalves("R6", ["A", "A", "C"]),
+		],
+	});
 });
 
-describe("原型一：三年内两次高绩效", () => {
+describe("按期记录的门槛：三年内两次高绩效", () => {
 	test("缺的期不算低也不算高；边界外的一次不算；没有记录的人不满足", async () => {
 		const outcome = await execute(query(highTwice));
 		assert.deepEqual(ids(outcome.results).sort(), ["R1", "R4", "R6"]);
@@ -221,7 +212,7 @@ describe("原型一：三年内两次高绩效", () => {
 	});
 });
 
-describe("原型二：限定公司内的语义经历", () => {
+describe("限定公司的语义经历", () => {
 	test("名单、证据、累计时长、名次都只用甲辰那段；唯一证据被排除否决的人不在", async () => {
 		const outcome = await execute(query(atJiachen, noIntern));
 		assert.equal(outcome.order, "evidence");

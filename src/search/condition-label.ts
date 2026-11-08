@@ -12,6 +12,9 @@ export const NAME_LABEL = {
 	school: "学校",
 } as const;
 
+/** 按名字包含匹配的三种属性：入职前公司、公司内部门、学校。 */
+export type NameField = keyof typeof NAME_LABEL;
+
 /**
  * 这里能按什么搜索：一段经历，加上人的几项条件。整句都搜不了的空态说这一句；
  * 人的条件多一维，这句话跟着长。
@@ -38,7 +41,7 @@ export const MODE_NAME: Record<Mode, string> = {
  *
  * 经历主张按它的表述顺序排列：什么时候、在哪一档、在哪、做过什么、累计多久——
  * 「入职前 · 大厂 · 增长 · 3 年以上」，读起来就是那句话。每一项只写第一个取值：
- * 它是旧条件编译成查询时的标签（`compile.ts`），chip 上一行放得下。
+ * 它是关键词链的条件编译成查询时的标签（`compile.ts`），chip 上一行放得下。
  *
  * 人的条件带一次维度名（「当前职级 · P7」「学历 · 本科及以上」），维度名怎么写
  * 归维度自己声明（`dimensions.ts` 的 `text`）；学校归 `NAME_LABEL`。

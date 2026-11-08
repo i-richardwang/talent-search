@@ -161,12 +161,13 @@ function Workbench() {
 		<Thread
 			autoFocus={threadOpen}
 			composer={composer}
+			earlier={thread.slice(0, -1)}
 			fault={interpretFault}
+			latest={latest}
 			progress={progress}
 			onRevise={reviseTo}
 			onQuery={(input) => commit(input, { from: turnId })}
 			onRetry={retryInterpret}
-			rounds={thread}
 			understanding={understanding}
 			viewing={turnId}
 			waiting={interpreting}
@@ -238,16 +239,24 @@ function Workbench() {
 				}
 				notices={
 					<WorkspaceNotices
-						conditions={query.conditions}
-						counts={outcome.counts}
-						keywords={keywords}
+						conditions={
+							mode === "conversation"
+								? {
+										mode,
+										list: query.conditions,
+										counts: outcome.counts,
+										onRevise: reviseTo,
+									}
+								: {
+										mode,
+										keywords,
+										onSearch: reviseKeywords,
+										bar: keywordBar,
+									}
+						}
 						earlier={earlier}
 						facets={outcome.facets}
-						keywordBar={keywordBar}
 						latestId={latest.id}
-						mode={mode}
-						onRevise={reviseTo}
-						onKeywords={reviseKeywords}
 						onViewChange={updateView}
 						turnId={turnId}
 						view={view}

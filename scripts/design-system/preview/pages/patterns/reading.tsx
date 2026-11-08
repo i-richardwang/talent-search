@@ -22,7 +22,7 @@ import {
 } from "../../samples/admin";
 import { SPEC } from "../../samples/conditions";
 import { EMPLOYEES, OUTCOME } from "../../samples/people";
-import { LATEST_TURN_ID, THREAD } from "../../samples/thread";
+import { LATEST_TURN, LATEST_TURN_ID, THREAD } from "../../samples/thread";
 import { PersonPane } from "../layouts/detail";
 
 /* ---------- 抽屉：数据页的人、「标签」页的词 ---------- */
@@ -100,6 +100,7 @@ function Names({ selected }: { selected: string | undefined }) {
 		<ResultList
 			canMore={false}
 			empId={selected}
+			failure={null}
 			growing={false}
 			wait={null}
 			mode="conversation"
@@ -127,9 +128,13 @@ function Wide() {
 			<SidePanel
 				conversation={
 					<Thread
-						onRevise={() => {}}
+						earlier={THREAD.slice(0, -1)}
+						fault={null}
+						latest={LATEST_TURN}
 						onQuery={() => true}
-						rounds={THREAD}
+						onRetry={() => {}}
+						onRevise={() => {}}
+						progress={null}
 						understanding
 						viewing={LATEST_TURN_ID}
 						waiting={false}

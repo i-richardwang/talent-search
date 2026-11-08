@@ -18,7 +18,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { ENGAGEMENTS } from "#/lib/engagement";
 import { TASK_KINDS } from "#/lib/task";
-import type { TurnNotes } from "#/search/intent";
+import type { NotesRecord } from "#/search/intent";
 import type { SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 
@@ -121,7 +121,7 @@ export type CompanyMeta = {
 
 /**
  * 职级存原文、档名和档高，学历存档名和档高：筛选按档名，「某档及以上」按档高比
- * （`search.ts` 的 `atLeastCond`）。档高和档名同有同无。
+ * （`search/compile.ts`，模型写的条件同样查 `scale` 的档高）。档高和档名同有同无。
  */
 export const employee = pgTable(
 	"employee",
@@ -257,12 +257,12 @@ export const recordStream = pgTable(
 		notes: text("notes").notNull().default(""),
 	},
 	(t) => [
-		check("record_stream_kind_1", sql`${t.kind} in ('rating', 'status')`),
+		check("record_stream_kind_valid", sql`${t.kind} in ('rating', 'status')`),
 	],
 );
 
 /**
- * 职级档和学历档在档位表里的流名。同步按它写（`corpus/pipeline.ts`），旧条件的「某档及以上」
+ * 职级档和学历档在档位表里的流名。同步按它写（`corpus/pipeline.ts`），关键词链条件的「某档及以上」
  * 按它查（`search/compile.ts`）；数据源的记录流不能用这两个名字。
  */
 export const ORDINAL_STREAM = {
@@ -686,7 +686,7 @@ export const searchTurn = pgTable(
 		/** 查询条件快照；null 表示仍待理解。 */
 		spec: jsonb("spec").$type<SearchSpec>(),
 		/** 理解这一轮时模型的说明：替用户选定的理解、搜不了的要求。没有就是 null。 */
-		notes: jsonb("notes").$type<TurnNotes>(),
+		notes: jsonb("notes").$type<NotesRecord>(),
 		/** 理解这一轮时模型用工具走过的步骤，边跑边追加；关键词的记录没有。 */
 		trace: jsonb("trace").$type<TraceStep[]>(),
 		/**

@@ -32,6 +32,7 @@ import {
 } from "#/search/intent";
 import {
 	contentKey,
+	identityKey,
 	type Query,
 	type QueryCondition,
 	termValues,
@@ -103,9 +104,8 @@ async function checkSubmission(
 		result.query.conditions,
 		...(result.notes?.choices?.others ?? []).map((o) => o.conditions),
 	];
-	const known = new Set(base.map((c) => `${c.id}\u0001${contentKey(c)}`));
-	const isNew = (c: QueryCondition) =>
-		!known.has(`${c.id}\u0001${contentKey(c)}`);
+	const known = new Set(base.map(identityKey));
+	const isNew = (c: QueryCondition) => !known.has(identityKey(c));
 	const hard = new Map<string, Problem>();
 	const soft = new Map<string, Problem>();
 	const add = (to: Map<string, Problem>, problem: Problem) =>

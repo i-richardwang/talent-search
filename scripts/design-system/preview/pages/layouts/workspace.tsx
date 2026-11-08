@@ -17,7 +17,12 @@ import { queryOfSpec, type SearchSpec } from "#/search/spec";
 import { Routed, useOpenEmpId } from "../../routed";
 import { COUNTS, SPEC } from "../../samples/conditions";
 import { OUTCOME } from "../../samples/people";
-import { LATEST_TURN_ID, TASK_TITLE, THREAD } from "../../samples/thread";
+import {
+	LATEST_TURN,
+	LATEST_TURN_ID,
+	TASK_TITLE,
+	THREAD,
+} from "../../samples/thread";
 import { PersonPane } from "./detail";
 import { LayoutSwitch, Shell } from "./home";
 
@@ -60,9 +65,13 @@ function Workspace() {
 		<Thread
 			autoFocus={threadOpen}
 			composer={composer}
-			onRevise={(conditions) => setSpec({ query: { conditions } })}
+			earlier={THREAD.slice(0, -1)}
+			fault={null}
+			latest={LATEST_TURN}
 			onQuery={() => true}
-			rounds={THREAD}
+			onRetry={() => {}}
+			onRevise={(conditions) => setSpec({ query: { conditions } })}
+			progress={null}
 			understanding
 			viewing={LATEST_TURN_ID}
 			waiting={false}
@@ -91,18 +100,18 @@ function Workspace() {
 				}
 				notices={
 					<WorkspaceNotices
-						conditions={queryOfSpec(spec).conditions}
-						counts={COUNTS}
-						keywords={null}
+						conditions={{
+							mode: "conversation",
+							list: queryOfSpec(spec).conditions,
+							counts: COUNTS,
+							onRevise: (conditions) => {
+								setSpec({ query: { conditions } });
+								return true;
+							},
+						}}
 						earlier={false}
 						facets={outcome.facets}
 						latestId={LATEST_TURN_ID}
-						mode="conversation"
-						onKeywords={() => true}
-						onRevise={(conditions) => {
-							setSpec({ query: { conditions } });
-							return true;
-						}}
 						onViewChange={updateView}
 						turnId={LATEST_TURN_ID}
 						view={view}

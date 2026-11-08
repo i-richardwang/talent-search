@@ -10,6 +10,8 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import {
 	type ReactNode,
+	type Ref,
+	type RefObject,
 	useEffect,
 	useLayoutEffect,
 	useRef,
@@ -29,13 +31,10 @@ import { ScrollArea } from "#/components/ui/scroll-area";
 import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
-import { NAME_LABEL } from "#/search/condition-label";
-import { DIMENSIONS, isVocabKey } from "#/search/dimensions";
 import { type TurnNotes, tableKey } from "#/search/intent";
 import { labelsInSentence, type QueryCondition } from "#/search/query";
 import { changesOf, type QueryInput, queryOfSpec } from "#/search/spec";
 import type {
-	AttributeField,
 	Discovery,
 	Matched,
 	Probe,
@@ -175,7 +174,7 @@ function useFollow(latestId: string, growth: string) {
  * 哪一次。首次画出时不闪：那是默认的样子。
  */
 function useLocate(
-	viewportRef: React.RefObject<HTMLDivElement | null>,
+	viewportRef: RefObject<HTMLDivElement | null>,
 	viewing: string,
 ) {
 	const shown = useRef(viewing);
@@ -216,7 +215,8 @@ type Phase = "running" | "settled" | "failed";
  * 窄屏上这一栏收着时那边也看得见。
  */
 export function Thread({
-	rounds,
+	earlier,
+	latest,
 	viewing,
 	onRevise,
 	onQuery,
@@ -224,39 +224,42 @@ export function Thread({
 	waiting,
 	understanding,
 	composer,
-	progress = null,
-	fault = null,
+	progress,
+	fault,
 	autoFocus = false,
 }: {
-	/** 整条链，链头在前。 */
-	rounds: readonly Turn[];
+	/** 链上最后一轮之前的几轮，链头在前。 */
+	earlier: readonly Turn[];
+	/** 链上最后一轮：理解属于它。 */
+	latest: Turn;
 	/** 名单正显示的那一轮。 */
 	viewing: string;
 	/** 最后一轮这一次理解的进度；理解完成后为 null，读记录上的。 */
-	progress?: Progress | null;
-	fault?: InterpretFault | null;
+	progress: Progress | null;
+	/** 最后一轮没理解出来时哪个环节出了问题；没有出错为 null。 */
+	fault: InterpretFault | null;
 	/** 换成 AI 给的另一种理解：整张条件表记成新的一轮。 */
 	onRevise: (conditions: QueryCondition[]) => unknown;
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
-	/** 再理解一次最后一轮；不给就没有重试钮。 */
-	onRetry?: () => void;
+	/** 再理解一次最后一轮。 */
+	onRetry: () => void;
 	/** 最后一轮还没理解完：可以接着写，先不能提交。 */
 	waiting: boolean;
 	/** 配了查询理解才有输入框；没配时线程只能看，条件在 chip 上改。 */
 	understanding: boolean;
-	composer?: React.Ref<QueryBarHandle>;
+	composer?: Ref<QueryBarHandle>;
 	autoFocus?: boolean;
 }) {
-	const last = rounds.length - 1;
-	const latest = rounds[last];
-	const latestTrace = progress?.trace ?? latest?.trace ?? [];
-	const phase: Phase = latest?.spec ? "settled" : fault ? "failed" : "running";
+	const rounds = [...earlier, latest];
+	const last = earlier.length;
+	const latestTrace = progress?.trace ?? latest.trace ?? [];
+	const phase: Phase = latest.spec ? "settled" : fault ? "failed" : "running";
 	const { atBottom, toBottom, viewportRef } = useFollow(
-		latest?.id ?? "",
+		latest.id,
 		`${phase}:${latestTrace.length}`,
 	);
 	useLocate(viewportRef, viewing);
-	const previewing = latest?.id !== viewing;
+	const previewing = latest.id !== viewing;
 
 	return (
 		<section aria-label="对话" className="flex h-full flex-col">
@@ -280,7 +283,7 @@ export function Thread({
 								onRetry={onRetry}
 								onRevise={onRevise}
 								phase={i === last ? phase : "settled"}
-								previous={i > 0 ? (rounds[i - 1] ?? null) : null}
+								previous={rounds[i - 1] ?? null}
 								round={round}
 								progress={i === last && progress ? progress : progressOf(round)}
 							/>
@@ -387,7 +390,7 @@ function Round({
 	failure: InterpretFault | null;
 	progress: Progress;
 	onRevise: (conditions: QueryCondition[]) => unknown;
-	onRetry?: () => void;
+	onRetry: () => void;
 }) {
 	const { said, spec, notes } = round;
 	const viewing = mark !== "link";
@@ -485,15 +488,14 @@ function Fault({
 	onRetry,
 }: {
 	fault: InterpretFault;
-	onRetry?: () => void;
+	onRetry: () => void;
 }) {
 	const [retrying, setRetrying] = useState(false);
 	const copy = FAULT_COPY[fault];
 	return (
 		<Alert
 			action={
-				copy.retry &&
-				onRetry && (
+				copy.retry && (
 					<Button
 						icon={RotateCwIcon}
 						loading={retrying}
@@ -569,30 +571,29 @@ export function choiceAt(
 
 /** 说的是找了什么，不是调了什么——调的是哪样东西对人没有意义。 */
 function stepTitle(step: TraceStep) {
-	if (step.tool === "lookup_experience")
-		return {
-			action: "查找",
-			keyword: step.terms.map((t) => t.text).join("、"),
-		};
-	if (step.tool === "discover") return discoveryTitle(step.discovery);
-	if (step.tool === "probe")
-		return {
-			action: "试搜",
-			keyword: step.probe.conditions.map((c) => c.label).join("、"),
-		};
-	if (step.tool === "submit")
-		return {
-			action: "调整搜索条件",
-			keyword: [
-				...new Set(step.issues.flatMap((i) => (i.subject ? [i.subject] : []))),
-			].join("、"),
-		};
-	if ("values" in step)
-		return { action: `查看${fieldLabel(step.field)}`, keyword: "" };
-	return {
-		action: `查找${fieldLabel(step.field)}`,
-		keyword: step.found.map((f) => f.query).join("、"),
-	};
+	switch (step.tool) {
+		case "lookup_experience":
+			return {
+				action: "查找",
+				keyword: step.terms.map((t) => t.text).join("、"),
+			};
+		case "discover":
+			return discoveryTitle(step.discovery);
+		case "probe":
+			return {
+				action: "试搜",
+				keyword: step.probe.conditions.map((c) => c.label).join("、"),
+			};
+		case "submit":
+			return {
+				action: "调整搜索条件",
+				keyword: [
+					...new Set(
+						step.issues.flatMap((i) => (i.subject ? [i.subject] : [])),
+					),
+				].join("、"),
+			};
+	}
 }
 
 function discoveryTitle(d: Discovery) {
@@ -646,10 +647,6 @@ function issueLine({ kind, subject }: SubmitIssue): string {
 	if (kind === "unrunnable") return `「${subject}」这样写搜不了`;
 	if (kind === "unfound") return `人才库中没有「${subject}」`;
 	return `「${subject}」找出的太多，名单出不来`;
-}
-
-function fieldLabel(field: AttributeField) {
-	return isVocabKey(field) ? DIMENSIONS[field].label : NAME_LABEL[field];
 }
 
 /**
@@ -806,14 +803,17 @@ function Process({
 	);
 }
 
-export function stepFindings(step: TraceStep) {
-	if (step.tool === "lookup_experience")
-		return step.terms.map((t) => findingLine(t.text, t.people, t.terms));
-	if (step.tool === "discover") return discoveryFindings(step.discovery);
-	if (step.tool === "probe") return probeFindings(step.probe);
-	if (step.tool === "submit") return step.issues.map(issueLine);
-	if ("values" in step) return [step.values.map((x) => x.name).join("、")];
-	return step.found.map((f) => findingLine(f.query, f.people, f.values));
+export function stepFindings(step: TraceStep): string[] {
+	switch (step.tool) {
+		case "lookup_experience":
+			return step.terms.map((t) => findingLine(t.text, t.people, t.terms));
+		case "discover":
+			return discoveryFindings(step.discovery);
+		case "probe":
+			return probeFindings(step.probe);
+		case "submit":
+			return step.issues.map(issueLine);
+	}
 }
 
 function StepRow({ step }: { step: TraceStep }) {

@@ -20,7 +20,7 @@ import type { EmptyReason } from "#/search/empty";
 import { type QueryCondition, rolesOf } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 
-/** 一行查询语法写成的条件，和旧记录读取时编译的是同一份。 */
+/** 一行查询语法写成的条件，和关键词链的记录读取时编译的是同一份。 */
 const compiled = (query: string) =>
 	compileConditions(parseQuery(query)).conditions;
 

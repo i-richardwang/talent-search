@@ -370,7 +370,7 @@ export function rank(
 	claims: Claim[],
 	filters: SearchFilters,
 	now: Date,
-	/** 每条人的偏好各一份满足它的人（`search.ts` 的 `fetchPreferred`）。 */
+	/** 每条人的偏好各一份满足它的人（`execute.ts` 的 `fetchPreferred`）。 */
 	preferred: readonly ReadonlySet<string>[] = [],
 ): { ranked: Ranked[]; facets: Facets; total: number } {
 	const ranked: Ranked[] = [];
@@ -393,6 +393,9 @@ export function rank(
 	};
 }
 
+/** 「这个人的这条主张」的复合 key：工号里不可能出现的字符。 */
+const PER_CLAIM = "\u0001";
+
 /**
  * 这一页的人各自留哪几段经历当证据。
  *
@@ -404,9 +407,6 @@ export function rank(
  * 没满足的主张一段都不留（`satisfies`，和打分同一条判定）：够不上累计时长的
  * 加分主张在名次里没有份，证据行和时间线上也不能有它。
  */
-/** 「这个人的这条主张」的复合 key：工号里不可能出现的字符。 */
-const PER_CLAIM = "\u0001";
-
 export function pageHits(
 	facts: Fact[],
 	claims: readonly Claim[],

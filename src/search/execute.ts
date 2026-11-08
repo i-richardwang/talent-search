@@ -29,7 +29,6 @@ import type { Engagement } from "#/lib/engagement";
 import { dots } from "#/lib/format";
 import { escapeLike } from "#/lib/sql";
 import {
-	catalogSchema,
 	compileWhere,
 	createVetoed,
 	restricted,
@@ -37,6 +36,7 @@ import {
 	shareTemp,
 	type WhereScope,
 } from "#/server/sandbox";
+import { catalogSchema } from "./catalog";
 import type { DimSource } from "./dimensions";
 import { emptyReason } from "./empty";
 import type { SearchFilters } from "./params";
@@ -92,16 +92,6 @@ async function compiledOf(
 	return result.ok
 		? { ok: true, compiled: { condition: c, where: result.sql } }
 		: result;
-}
-
-/** 执行用：不合规的抛出，带上是哪一条、为什么。 */
-async function compiled(c: QueryCondition): Promise<Compiled> {
-	const result = await compiledOf(c);
-	if (!result.ok)
-		throw new InvalidQueryError(
-			`条件「${c.label}」不能执行：${result.problem}`,
-		);
-	return result.compiled;
 }
 
 /** 新建没有候选人的结果字段；分面集合不共享可变状态。 */
@@ -280,9 +270,21 @@ async function excludeFirst(
 
 /** 外壳在只读角色下拼出的语句。下标都指向 `query.conditions`。 */
 class Shell {
-	constructor(private readonly all: readonly (Compiled | null)[]) {}
+	private readonly index: Map<QueryCondition, number>;
 
-	at(i: number): Compiled {
+	constructor(
+		query: Query,
+		private readonly all: readonly (Compiled | null)[],
+	) {
+		this.index = new Map(query.conditions.map((c, i) => [c, i]));
+	}
+
+	/** 一条条件在 `query.conditions` 里的下标。 */
+	at(c: QueryCondition): number {
+		return this.index.get(c) as number;
+	}
+
+	compiled(i: number): Compiled {
 		const c = this.all[i];
 		if (!c) throw new Error(`第 ${i} 条条件没有编译`);
 		return c;
@@ -293,7 +295,7 @@ class Shell {
 	 * 写了累计时长就把合格段的月数加起来比。
 	 */
 	gate(i: number): SQL {
-		const c = this.at(i);
+		const c = this.compiled(i);
 		if (c.condition.from === "person") return c.where;
 		const where = whereAll([sql`e.emp_id = p.emp_id`, c.where]);
 		return c.condition.minMonths
@@ -339,7 +341,7 @@ class Shell {
 	 * 再比原始相关度，与 rank.ts 的 `closer` 一致。去重在 SQL 里做完再比上限，证据也不重复列段。
 	 */
 	facts(i: number, person: readonly SQL[]): SQL {
-		const c = this.at(i);
+		const c = this.compiled(i);
 		const strength = sql`h.relevance * case when h.route = 'skill' then
 			case h.engagement ${sql.join(
 				Object.entries(ENGAGEMENT_FACTOR).map(
@@ -479,52 +481,41 @@ export async function execute(
 	limit: number = RESULT_PAGE,
 ): Promise<SearchOutcome> {
 	const roles = rolesOf(query);
-	const { claims, gates, prefer, excludes } = roles;
-	const index = new Map(query.conditions.map((c, i) => [c, i]));
-	const at = (c: QueryCondition) => index.get(c) as number;
-	const all = await Promise.all(
-		query.conditions.map((c) => (c.off ? null : compiled(c))),
-	);
-	// 正向的和排除的语义词一起召回重排：它们查的是同一批说法，门槛的差别在物化命中时分开
-	return withMatchedPhrases(
-		[...claims, ...excludes].flatMap(termValues),
-		RELEVANCE_MIN,
-		async (store, { phraseHits }) => {
-			await materializeHits(store, query.conditions, phraseHits);
-			for (const [i, problem] of await excludeFirst(store, all))
+	const { claims, gates, prefer } = roles;
+	return prepared(query, async (store, ready, problems) => {
+		for (const [i, problem] of problems.entries())
+			if (problem !== null)
 				throw new InvalidQueryError(
 					`条件「${query.conditions[i]?.label}」不能执行：${problem}`,
 				);
-			const shell = new Shell(all);
-			// chip 上的人数在同一张命中表上顺手数：不随筛选变，和试跑同一个数。人数是条件的，
-			// 名单出不出得来是另一回事，所以先数人
-			const counted = await eachSelected<number>(store, all, PEOPLE);
-			const counts = Object.fromEntries(
-				query.conditions.flatMap((c, i) => {
-					const n = counted[i];
-					return n && "value" in n ? [[c.id, n.value]] : [];
-				}),
-			);
-			// 没有正向的主张也没有门槛时，排除自己不产出候选人。只有偏好的查询
-			// （「最好是硕士」）是「所有人，满足偏好的在前」，照跑。
-			if (claims.length === 0 && gates.length === 0 && prefer.length === 0)
-				return {
-					order: "evidence" as const,
-					claims,
-					...noOne(),
-					counts,
-					empty: emptyReason({ query, filters, total: 0, overflow: null }),
-				};
-			const read = await restricted(store, () =>
-				evaluate(store, shell, roles, at, filters),
-			);
-			const outcome =
-				read.kind === "ranked"
-					? await present(store, read, claims, filters, limit, query)
-					: read.outcome;
-			return { ...outcome, counts };
-		},
-	);
+		// chip 上的人数在同一张命中表上顺手数：不随筛选变，和试跑同一个数。人数是条件的，
+		// 名单出不出得来是另一回事，所以先数人
+		const counted = await eachSelected<number>(store, ready, PEOPLE);
+		const counts = Object.fromEntries(
+			query.conditions.flatMap((c, i) => {
+				const n = counted[i];
+				return n && "value" in n ? [[c.id, n.value]] : [];
+			}),
+		);
+		// 没有正向的主张也没有门槛时，排除自己不产出候选人。只有偏好的查询
+		// （「最好是硕士」）是「所有人，满足偏好的在前」，照跑。
+		if (claims.length === 0 && gates.length === 0 && prefer.length === 0)
+			return {
+				order: "evidence" as const,
+				claims,
+				...noOne(),
+				counts,
+				empty: emptyReason({ query, filters, total: 0, overflow: null }),
+			};
+		const read = await restricted(store, () =>
+			evaluate(store, new Shell(query, ready), roles, filters),
+		);
+		const outcome =
+			read.kind === "ranked"
+				? await present(store, read, claims, filters, limit, query)
+				: read.outcome;
+		return { ...outcome, counts };
+	});
 }
 
 /** 名单那一半的结果；chip 上的人数（`counts`）由 `execute` 在同一张命中表上另外数，最后合上。 */
@@ -547,18 +538,17 @@ async function evaluate(
 	store: DbExecutor,
 	shell: Shell,
 	{ claims, gates, prefer }: Roles,
-	at: (c: QueryCondition) => number,
 	filters: SearchFilters,
 ): Promise<Evaluated> {
 	// 门槛和 URL 上的公司名 / 学校名都按人过滤，在每一条取数 SQL 里生效
 	const person = [
-		...gates.map((g: Gate) => shell.gate(at(g))),
+		...gates.map((g: Gate) => shell.gate(shell.at(g))),
 		...shell.view(filters),
 	];
 	const loaded = await fetchFacts(
 		store,
 		shell,
-		claims.map((claim) => ({ index: at(claim), claim })),
+		claims.map((claim) => ({ index: shell.at(claim), claim })),
 		person,
 	);
 	if (loaded.kind === "overflow") {
@@ -595,7 +585,7 @@ async function evaluate(
 	const preferred = await fetchPreferred(
 		store,
 		shell,
-		prefer.map(at),
+		prefer.map((c) => shell.at(c)),
 		population.map((f) => f.empId),
 	);
 	return {
@@ -688,13 +678,13 @@ async function present(
 }
 
 /** 一条条件单独试跑的结果：满足它的有多少人，或者它为什么跑不了。停用的不跑。 */
-export type ConditionProbe = {
+type ConditionProbe = {
 	id: string;
 	people: number | null;
 	problem: string | null;
 };
 
-export type ProbeResult = {
+type ProbeResult = {
 	conditions: ConditionProbe[];
 	/** 整份查询搜出多少人；有条件跑不了、或事实超过内存上限时为 null */
 	total: number | null;
@@ -711,8 +701,6 @@ export type ProbeResult = {
  */
 export async function probe(query: Query): Promise<ProbeResult> {
 	const roles = rolesOf(query);
-	const index = new Map(query.conditions.map((c, i) => [c, i]));
-	const at = (c: QueryCondition) => index.get(c) as number;
 	return prepared(query, async (store, ready, problems) => {
 		const counts = await eachSelected<number>(store, ready, PEOPLE);
 		const results: ConditionProbe[] = query.conditions.map((c, i) => {
@@ -728,7 +716,7 @@ export async function probe(query: Query): Promise<ProbeResult> {
 			roles.claims.length + roles.gates.length + roles.prefer.length > 0;
 		if (!runnable) return { conditions: results, total: null, overflow: [] };
 		const read = await restricted(store, () =>
-			evaluate(store, new Shell(ready), roles, at, {}),
+			evaluate(store, new Shell(query, ready), roles, {}),
 		);
 		if (read.kind === "ranked")
 			return { conditions: results, total: read.ranked.total, overflow: [] };
@@ -743,7 +731,7 @@ export async function probe(query: Query): Promise<ProbeResult> {
 }
 
 /** 一条条件选中了谁：经历条件是段（`工号:段 id`），人的条件是人（工号），按字面排好。 */
-export type ConditionSelection = {
+type ConditionSelection = {
 	id: string;
 	selected: string[] | null;
 	problem: string | null;
@@ -773,9 +761,10 @@ export async function selection(query: Query): Promise<ConditionSelection[]> {
 }
 
 /**
- * `probe` 和 `selection` 的前半段：编译每条条件，在检索事务里物化命中、排除先行，再交给
- * `run`。`ready` 按条件下标给出能跑的条件；停用的、编不出的、否决段没算出来的是 null，
- * 后两种的原因在 `problems`。否决段没算出来的排除不再单独跑：它没否决任何段，跑出来的空是假的。
+ * `execute`、`probe` 和 `selection` 的前半段：编译每条条件，在检索事务里物化命中、排除先行，
+ * 再交给 `run`。正向的和排除的语义词一起召回重排：它们查的是同一批说法，门槛的差别在物化
+ * 命中时分开。`ready` 按条件下标给出能跑的条件；停用的、编不出的、否决段没算出来的是 null，
+ * 后两种的原因在 `problems`。否决段没算出来的排除不单独跑：它没否决任何段，跑出来的空是假的。
  */
 async function prepared<T>(
 	query: Query,

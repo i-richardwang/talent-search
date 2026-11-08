@@ -8,7 +8,8 @@ import { after, before, describe, test } from "node:test";
 import { compileConditions } from "#/search/compile";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
-import { drafted, seed, setup } from "./fixture";
+import { lately, sleeper } from "./conditions";
+import { drafted, seed, seedStream, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -205,7 +206,7 @@ describe("看目录", () => {
 		assert.doesNotMatch(JSON.stringify(overview), /甲|乙|A0|星河科技/);
 		// 一条语句里数出的每一列，和逐个视图单独数的一样，没有错位
 		const { db } = await import("#/db");
-		const { catalogSchema } = await import("#/server/sandbox");
+		const { catalogSchema } = await import("#/search/catalog");
 		const { sql } = await import("drizzle-orm");
 		for (const r of overview.relations) {
 			const { rows } = await db.execute<{ n: number }>(
@@ -235,28 +236,20 @@ describe("看目录", () => {
 	});
 
 	test("记录流的档按档高排，标题写流的名字；没有这条流给一句原因", async () => {
-		const { db, pool } = await import("#/db");
-		const { recordStream, scale, employeeRecord } = await import("#/db/schema");
-		await db.insert(recordStream).values({
+		const { pool } = await import("#/db");
+		await seedStream({
 			stream: "perf",
 			kind: "rating",
 			label: "绩效",
 			period: "半年",
-		});
-		await db
-			.insert(scale)
-			.values(
-				["B", "A"].map((value, rank) => ({ stream: "perf", value, rank })),
-			);
-		await db.insert(employeeRecord).values(
-			["A0", "A1", "A2"].map((empId, i) => ({
+			scale: ["B", "A"],
+			records: ["A0", "A1", "A2"].map((empId, i) => ({
 				empId,
-				stream: "perf",
 				periodStart: "2025-01-01",
 				periodEnd: "2025-06-30",
 				value: i === 0 ? "B" : "A",
 			})),
-		);
+		});
 		try {
 			assert.deepEqual(
 				await discover({ relation: "rating", column: "value", stream: "perf" }),
@@ -279,21 +272,17 @@ describe("看目录", () => {
 		}
 	});
 	test("状态流的取值和评级流走同一条路：按人数列出每个取值，总览里也带上", async () => {
-		const { db, pool } = await import("#/db");
-		const { recordStream, employeeRecord } = await import("#/db/schema");
-		await db.insert(recordStream).values({
+		const { pool } = await import("#/db");
+		await seedStream({
 			stream: "hipo",
 			kind: "status",
 			label: "高潜",
-		});
-		await db.insert(employeeRecord).values(
-			["A0", "A1", "A2"].map((empId, i) => ({
+			records: ["A0", "A1", "A2"].map((empId, i) => ({
 				empId,
-				stream: "hipo",
 				periodStart: "2025-01-01",
 				value: i === 0 ? "观察" : "高潜",
 			})),
-		);
+		});
 		try {
 			assert.deepEqual(
 				await discover({ relation: "status", column: "value", stream: "hipo" }),
@@ -430,12 +419,7 @@ describe("提交搜索条件", () => {
 				from: "person",
 				where: "p.education_rank >= (select max(x.rank) from scale)",
 			},
-			{
-				label: "睡一会儿",
-				mode: "must",
-				from: "person",
-				where: "pg_sleep(1) is not null",
-			},
+			sleeper,
 		]);
 		const first = (await run(agent.tools.submit, submitted)) as Checked;
 		assert.equal(first.problems?.length, 3, first.problems?.join("\n") ?? "");
@@ -468,14 +452,6 @@ describe("提交搜索条件", () => {
 
 	test("编得过、执行才报错的条件不录取，选项里的同样不录取", async () => {
 		const agent = agentOn();
-		const lately = {
-			label: "最近有过绩效",
-			mode: "must",
-			from: "person",
-			where:
-				"exists (select 1 from rating r where r.emp_id = p.emp_id and r.period_end >= current_date - :days)",
-			params: { days: "九十" },
-		};
 		const { compileWhere } = await import("#/server/sandbox");
 		assert.ok(
 			(await compileWhere(lately.where, lately.params, { from: "person" })).ok,

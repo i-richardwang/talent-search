@@ -19,7 +19,12 @@ import { type SQL, sql } from "drizzle-orm";
 import { loadModule, parseSync, type ScanToken, scanSync } from "libpg-query";
 import { pool } from "#/db";
 import type { DbExecutor } from "#/db/snapshot";
-import { CATALOG, type CatalogRelation, HIT } from "#/search/catalog";
+import {
+	CATALOG,
+	type CatalogRelation,
+	catalogSchema,
+	HIT,
+} from "#/search/catalog";
 import { WHERE_MAX } from "#/search/query";
 
 /** 只读角色的名字。它只有目录视图的 SELECT，由 `ensureQueryRole` 建好并授权。 */
@@ -31,17 +36,6 @@ const PARAM_TEXT_MAX = 200;
 /** 一条语句最多跑多久、用多少内存。 */
 const STATEMENT_TIMEOUT = "20s";
 const WORK_MEM = "64MB";
-
-/**
- * 目录所在的 schema。生产是 `catalog`（`db/schema.ts`）；同一个库里要放几套目录时（比如每个
- * 测试文件一套）用 `TALENT_CATALOG_SCHEMA` 指定。
- */
-export function catalogSchema(): string {
-	const name = process.env.TALENT_CATALOG_SCHEMA?.trim() || "catalog";
-	if (!/^[a-z_][a-z0-9_]*$/.test(name))
-		throw new Error(`TALENT_CATALOG_SCHEMA 不是合法的 schema 名：${name}`);
-	return name;
-}
 
 /** 条件的两种 FROM：经历的段 `e`（有语义词时还有命中 `h`），或人 `p`。 */
 export type WhereScope =

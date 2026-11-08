@@ -57,12 +57,12 @@ function withMode(c: QueryCondition, mode: Mode): QueryCondition {
  */
 export function QueryChips({
 	conditions,
-	counts = {},
+	counts,
 	onChange,
 }: {
 	conditions: readonly QueryCondition[];
 	/** 每条条件单独的人数，按 id；没有的不画 */
-	counts?: Readonly<Record<string, number>>;
+	counts: Readonly<Record<string, number>>;
 	onChange: (next: QueryCondition[]) => void;
 }) {
 	if (conditions.length === 0) return null;
@@ -76,7 +76,7 @@ export function QueryChips({
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			{conditions.map((chip, i) => {
-				const label = chip.label;
+				const { label } = chip;
 				const people = chip.off ? undefined : counts[chip.id];
 				const actions: DropdownItem[] = [
 					{ type: "divider" },

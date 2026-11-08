@@ -11,7 +11,7 @@ import { visibleText } from "./render";
 
 const markup = (
 	conditions: QueryCondition[],
-	counts?: Record<string, number>,
+	counts: Record<string, number> = {},
 ) =>
 	renderToStaticMarkup(
 		<QueryChips conditions={conditions} counts={counts} onChange={() => {}} />,

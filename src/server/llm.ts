@@ -251,15 +251,15 @@ ${catalogText()}
     {"label": "硕士及以上", "mode": "must", "from": "person", "where": "p.education_rank >= (select s.rank from scale s where s.stream = 'education' and s.value = :edu)", "params": {"edu": "硕士"}},
     {"label": "带过团队", "mode": "boost", "from": "experience", "terms": {"lead": ["团队管理", "带团队"]}, "where": "true"}]}]}}`;
 
-/** 有限取值的几维写进提示词时用的名字：目录里的列。 */
-const VOCAB_COLUMN: Record<keyof Vocabulary, string> = {
-	level: "person.level_band（从低到高）",
-	education: "person.education（从低到高）",
-	recruitment: "person.recruitment",
-	companyTag: "experience.company_tag",
-	schoolTier: "person.school_tier",
-	overseas: "person.overseas",
-};
+/** 有限取值的几维写进提示词时的标题（目录里的列），按提示词里的顺序。 */
+const VOCAB_HEADING: readonly (readonly [keyof Vocabulary, string])[] = [
+	["level", "person.level_band（从低到高）"],
+	["education", "person.education（从低到高）"],
+	["recruitment", "person.recruitment"],
+	["companyTag", "experience.company_tag"],
+	["schoolTier", "person.school_tier"],
+	["overseas", "person.overseas"],
+];
 
 function listed(what: string, values: readonly Matched[]) {
 	return `${what}：${values.map((v) => `${v.name}（${v.people} 人）`).join("、") || "（无）"}`;
@@ -279,9 +279,6 @@ function valuesText(s: StreamFact) {
 		: `；取值有 ${s.values.join("、")}`;
 }
 
-/** 预先写进提示词的活统计：有限取值几维的取值和人数，记录流的覆盖。 */
-export type Facts = { vocab: Vocabulary; streams: readonly StreamFact[] };
-
 /**
  * 端点答了，但没按约定作答：没提交搜索条件，或提交的条件校验之后什么都不剩。
  * 和连不上、报错分开，是因为只有这一种换个说法可能有用。
@@ -299,7 +296,8 @@ export class UnansweredError extends Error {
  */
 export async function understand(
 	text: string,
-	{ vocab, streams }: Facts,
+	/** 预先写进提示词的活统计：有限取值几维的取值和人数，记录流的覆盖。 */
+	{ vocab, streams }: { vocab: Vocabulary; streams: readonly StreamFact[] },
 	base: readonly QueryCondition[],
 	agent: AgentTools,
 ): Promise<{ submitted: Submission; admitted: Understood }> {
@@ -321,9 +319,7 @@ export async function understand(
 		instructions: SYSTEM,
 		prompt: [
 			"取值",
-			...(Object.keys(VOCAB_COLUMN) as (keyof Vocabulary)[]).map((key) =>
-				listed(VOCAB_COLUMN[key], vocab[key]),
-			),
+			...VOCAB_HEADING.map(([key, heading]) => listed(heading, vocab[key])),
 			"\n记录流",
 			...(streams.length > 0 ? streams.map(streamLine) : ["（没有）"]),
 			// 停用是用户在 chip 上的操作，模型写不出也不必看见：它原样写回这一条，

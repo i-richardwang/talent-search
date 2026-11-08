@@ -3,13 +3,13 @@
  * `draftsOf` 校验，`where` 合不合白名单、能不能跑在提交工具里试跑时查（`server/agent-tools.ts`）。
  */
 import { z } from "zod";
+import { type Condition, MODES } from "./condition";
 import type { VocabKey } from "./dimensions";
 import {
 	contentKey,
 	type DraftCondition,
 	draftsOf,
 	newConditionId,
-	QUERY_MODES,
 	type Query,
 	type QueryCondition,
 	withOff,
@@ -29,7 +29,7 @@ const conditionItem = z.object({
 	label: z.string().meta({
 		description: "写给 HR 看的一句话：这条在找什么样的人或经历",
 	}),
-	mode: z.enum(QUERY_MODES).meta({
+	mode: z.enum(MODES).meta({
 		description:
 			"must=必须；boost=最好有；exclude=不要这样的经历，只用于 experience",
 	}),
@@ -90,7 +90,7 @@ export const submissionSchema = z.object({
 export type Submission = z.infer<typeof submissionSchema>;
 
 /** HR 可以换成的一种理解。`conditions` 已经过和条件同一道校验，选它就是换成这份条件。 */
-export type Choice = {
+type Choice = {
 	label: string;
 	detail?: string;
 	conditions: QueryCondition[];
@@ -104,6 +104,20 @@ export type Choice = {
 export type TurnNotes = {
 	says: string;
 	choices: { current: string; others: Choice[] } | null;
+};
+
+/**
+ * 记录里存的说明。选项的条件表和 `SearchSpec` 一样有两种形状：查询的条件，或关键词链形状的
+ * 条件；读取时编译成查询（`server/turn.ts`）。
+ */
+export type NotesRecord = {
+	says: string;
+	choices: {
+		current: string;
+		others: (Omit<Choice, "conditions"> & {
+			conditions: QueryCondition[] | Condition[];
+		})[];
+	} | null;
 };
 
 /** 除了现在这一种，最多再给几种理解。再多 HR 就得读完一屏才能选。 */

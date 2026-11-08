@@ -15,8 +15,9 @@ import { searchTurn } from "#/db/schema";
 import { compileConditions } from "#/search/compile";
 import type { Condition } from "#/search/condition";
 import { scopeOf } from "#/search/execute";
-import { type Choice, type TurnNotes, unanswered } from "#/search/intent";
+import { type NotesRecord, type TurnNotes, unanswered } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
+import type { QueryCondition } from "#/search/query";
 import { vocabulary } from "#/search/search";
 import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
@@ -170,7 +171,7 @@ export async function createTurn(
 		const text = input.kind === "sentence" ? input.text : null;
 		const spec = input.kind === "spec" ? input.spec : null;
 		if (!from) {
-			admit(text === null ? "keyword" : "conversation", input);
+			admit(modeOf(text), input);
 			const head = await insertTurn(tx, { parent: null, rawText: text, spec });
 			return { turnId: head.id, attempt: head.interpretAttempt };
 		}
@@ -367,7 +368,7 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 		root_turn_id: string;
 		raw_text: string | null;
 		spec: SearchSpec | null;
-		notes: TurnNotes | null;
+		notes: NotesRecord | null;
 		trace: TraceStep[] | null;
 		started_at: number | null;
 		fault: InterpretFault | null;
@@ -405,18 +406,24 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 }
 
 /**
- * 记录里的说明 → 界面读的说明。较早的记录里选项是旧条件表，当场编译成查询，和那一轮的
- * 条件编译出同样的 id。
+ * 记录里的说明 → 界面读的说明：选项里关键词链形状的条件表经 `compile.ts` 编译成查询，和那一轮
+ * 的条件编译出同样的 id。
  */
-function notesOfRecord(notes: TurnNotes): TurnNotes {
-	if (!notes.choices) return notes;
-	const others = notes.choices.others.map((o): Choice => {
-		const list = o.conditions as unknown[];
-		return list.some((c) => (c as { about?: unknown }).about !== undefined)
-			? { ...o, conditions: compileConditions(list as Condition[]).conditions }
-			: o;
-	});
+function notesOfRecord(notes: NotesRecord): TurnNotes {
+	if (!notes.choices) return { says: notes.says, choices: null };
+	const others = notes.choices.others.map((o) => ({
+		...o,
+		conditions: isKeywordShape(o.conditions)
+			? compileConditions(o.conditions).conditions
+			: o.conditions,
+	}));
 	return { ...notes, choices: { ...notes.choices, others } };
+}
+
+function isKeywordShape(
+	list: QueryCondition[] | Condition[],
+): list is Condition[] {
+	return list.some((c) => "about" in c);
 }
 
 /** 这一轮的理解现在怎样了；没有这一轮或这一轮没说话为 null。 */

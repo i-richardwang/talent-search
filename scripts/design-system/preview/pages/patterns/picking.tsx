@@ -57,6 +57,7 @@ function Playground() {
 						<ResultList
 							canMore={false}
 							empId={undefined}
+							failure={null}
 							growing={growing}
 							wait={null}
 							mode="conversation"

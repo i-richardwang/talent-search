@@ -20,6 +20,7 @@ import type { Engagement } from "#/lib/engagement";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
 import type { EmployeeDetail } from "#/search/result";
+import type { StreamFact } from "#/search/trace";
 
 /** 数据页那张表的一行。 */
 export type EmployeeRow = Pick<
@@ -65,20 +66,9 @@ export async function listEmployees(
 
 /**
  * 一条记录流的覆盖：多少人有记录、记录从哪一期到哪一期、最近一期是哪一期。
- * 评级按期数（不同的开始日）计，状态按段的开始日。
+ * 评级按期数（不同的开始日）计，状态按段的开始日。不带取值（取值见 `discover.ts`）。
  */
-export type StreamCoverage = {
-	stream: string;
-	label: string;
-	kind: "rating" | "status";
-	period: string;
-	people: number;
-	/** 不同的开始日有几个：评级是几期，状态是几次进出 */
-	periods: number;
-	first: string | null;
-	/** 最近一期（一段）的起止；状态仍有效时结束为空 */
-	latest: { start: string; end: string | null } | null;
-};
+export type StreamCoverage = Omit<StreamFact, "values">;
 
 /** 每条记录流的覆盖，按流名排。没有记录流的数据源返回空表。 */
 export async function streamCoverage(): Promise<StreamCoverage[]> {
