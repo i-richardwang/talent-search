@@ -167,6 +167,16 @@ describe("解析白名单拒绝的写法", () => {
 			/emp_id 只作关联键/,
 		],
 		["工号和常量比", "p.emp_id = 'S1'", /emp_id 只作关联键/],
+		[
+			"别名带列名表",
+			"exists (select 1 from rating x(a, b) where x.a = p.emp_id)",
+			/别名只换关系名/,
+		],
+		[
+			"连接带别名",
+			"exists (select 1 from (rating r join status s on r.emp_id = s.emp_id) as j)",
+			/连接不带别名/,
+		],
 		["不是布尔表达式里的语句", "true union select 1", /一个表达式/],
 	];
 	for (const [name, where, reason, scope] of cases)
@@ -182,6 +192,17 @@ describe("解析白名单拒绝的写法", () => {
 				{ target: "S1" },
 			),
 			/只能写目录里的关系/,
+		);
+	});
+
+	test("别名按位置把工号改名成学校：拿它和参数比，不放行", async () => {
+		assert.match(
+			await problem(
+				"exists (select 1 from person x(school) where x.school = :target)",
+				PERSON,
+				{ target: "S1" },
+			),
+			/别名只换关系名/,
 		);
 	});
 

@@ -463,6 +463,11 @@ function select(body: AnyNode, outer: Scope[]) {
 	);
 }
 
+/**
+ * FROM 里只有目录里的关系和它们之间的连接。别名只换关系名：列名始终是目录里的那一套，
+ * 白名单按列名认列（工号是关联键、学校是取值列）。别名带列名表会按位置给列改名，把工号
+ * 叫成学校就能拿它和参数比；连接带别名也能这样改名。
+ */
 function fromItem(node: unknown, scope: Scope, scopes: Scope[]) {
 	const [type, body] = unwrap(node);
 	if (type === "RangeVar") {
@@ -475,15 +480,19 @@ function fromItem(node: unknown, scope: Scope, scopes: Scope[]) {
 			reject("hit 只能经别名 h 读，不能在子查询里另外 from 它");
 		const relation = RELATIONS.get(relname);
 		if (!relation) reject(`目录里没有 ${relname}`);
-		const alias =
-			((body.alias as AnyNode | undefined)?.aliasname as string | undefined) ??
-			relname;
+		const declared = body.alias as AnyNode | undefined;
+		if (Array.isArray(declared?.colnames) && declared.colnames.length > 0)
+			reject(
+				`别名只换关系名，不改列名：写 from ${relname} x，不写 from ${relname} x(…)`,
+			);
+		const alias = (declared?.aliasname as string | undefined) ?? relname;
 		scope.set(alias, relation);
 		return;
 	}
 	if (type === "JoinExpr") {
 		if (body.isNatural || body.usingClause)
 			reject("连接条件写成 on …，不用 natural 或 using");
+		if (body.alias) reject("连接不带别名：列用各自关系的别名读，例如 r.value");
 		fromItem(body.larg, scope, scopes);
 		fromItem(body.rarg, scope, scopes);
 		walk(body.quals, scopes);
