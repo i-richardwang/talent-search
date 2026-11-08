@@ -13,7 +13,7 @@ import { seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { execute, probe } = await import("#/search/execute");
+const { execute, probe, selection } = await import("#/search/execute");
 const { db, pool } = await import("#/db");
 const { recordStream, scale, employeeRecord } = await import("#/db/schema");
 
@@ -336,5 +336,61 @@ describe("原型二：限定公司内的语义经历", () => {
 	test("不写排除时实习那段是合格证据", async () => {
 		const outcome = await execute(query(atJiachen));
 		assert.deepEqual(ids(outcome.results).sort(), ["E1", "E2", "E4"]);
+	});
+});
+
+describe("选中了什么：验收给条件认身份", () => {
+	/** E1 在甲辰 12 个月、在乙未 96 个月：两条排除各自只碰到 E1，碰到的是不同的段。 */
+	const excludeAt = (id: string, company: string, months: number) =>
+		({
+			id,
+			label: `${company}那段不算`,
+			mode: "exclude",
+			from: "experience",
+			where: "e.company ilike :c and e.months = :m",
+			params: { c: `%${company}%`, m: months },
+		}) satisfies QueryCondition;
+	const selected = async (c: QueryCondition) => {
+		const [one] = await selection(query(c));
+		assert.ok(one?.selected, one?.problem ?? "没有跑");
+		return one.selected;
+	};
+	const people = (list: string[]) =>
+		[...new Set(list.map((s) => s.split(":")[0]))].sort();
+
+	test("同一个人的两段：人一样，段不一样", async () => {
+		const jia = await selected(excludeAt("jia", "甲辰科技", 12));
+		const yi = await selected(excludeAt("yi", "乙未网络", 96));
+		assert.deepEqual(people(jia), ["E1"]);
+		assert.deepEqual(people(yi), ["E1"]);
+		assert.equal(jia.length, 1);
+		assert.equal(yi.length, 1);
+		assert.notDeepEqual(jia, yi);
+		assert.match(jia[0] ?? "", /^E1:\d+$/);
+	});
+
+	test("同一个要求的两种写法选中同样的段；人的条件列的是人", async () => {
+		const loose: QueryCondition = { ...atJiachen, where: "e.company ilike :c" };
+		assert.deepEqual(await selected(loose), await selected(atJiachen));
+		assert.deepEqual(await selected(highTwice), ["R1", "R4", "R6"]);
+	});
+
+	test("试跑的人数就是选中的人数：同一份语句", async () => {
+		const longOnes: QueryCondition = {
+			id: "long",
+			label: "入职前累计五年",
+			mode: "must",
+			from: "experience",
+			where: "e.kind = 'external'",
+			minMonths: 60,
+		};
+		const all = query(atJiachen, noIntern, longOnes, highTwice);
+		const [tried, lists] = await Promise.all([probe(all), selection(all)]);
+		assert.deepEqual(
+			tried.conditions.map((c) => c.people),
+			lists.map((l) => (l.selected ? people(l.selected).length : null)),
+		);
+		assert.deepEqual(people(lists[2]?.selected ?? []), ["E1", "E3"]);
+		assert.equal(lists[2]?.selected?.length, 3, "累计够了的人的每一段");
 	});
 });

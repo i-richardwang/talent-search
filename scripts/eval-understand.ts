@@ -9,7 +9,7 @@
  *     "base": "推荐算法, +company:字节",   // 可选：当前条件，一行查询语法（search/query-syntax.ts），编译成查询
  *     "say": "不用非得是字节",          // 这一句话
  *     "drop": "+company:字节",             // 可选：新表里必须没有的条件，一行查询语法
- *     "has": "education:>=本科",       // 可选：新表里必须有一条同强度、搜出同一群人的条件
+ *     "has": "education:>=本科",       // 可选：新表里必须有一条同强度、选中同样的段或人的条件
  *     "add": ["+团队"],                // 可选：新加的条件里必须提到的词，前缀 + / - 是加分 / 排除
  *     "tells": true,                   // 可选：必须对 HR 说一句话（有搜不了的要求）
  *     "asks": true,                    // 可选：必须给出可以换成的理解（一个词有几种意思）
@@ -51,7 +51,7 @@ import { join } from "node:path";
 import { pool } from "#/db";
 import { internalWordsIn } from "#/lib/internal-words";
 import { compileConditions } from "#/search/compile";
-import { execute } from "#/search/execute";
+import { execute, selection } from "#/search/execute";
 import { unanswered } from "#/search/intent";
 import {
 	contentKey,
@@ -216,19 +216,13 @@ const mentions = (c: QueryCondition, word: string) =>
 	wordsOf(c).some((w) => norm(w).includes(norm(word)));
 
 /**
- * 一条条件搜出的那群人，用来比两条条件是不是一回事：三种强度都按必须单独跑一遍，比的是
- * 人的集合。排除执行时的门槛更严，那是执行的事，不影响两条是不是同一个要求。
+ * 一条条件的身份，用来比两条条件是不是同一个要求：经历条件比选中的段，人的条件比满足的人；
+ * 强度不改写，排除按排除的门槛比它实际否决的段。跑不了的条件抛出原因。
  */
-async function crowdOf(c: QueryCondition): Promise<string> {
-	const outcome = await execute(
-		{ conditions: [{ ...c, mode: "must" }] },
-		{},
-		RESULT_MAX,
-	);
-	return `${outcome.total}:${outcome.results
-		.map((r) => r.employee.empId)
-		.sort()
-		.join(",")}`;
+async function selectedBy(c: QueryCondition): Promise<string> {
+	const [one] = await selection({ conditions: [c] });
+	if (!one?.selected) throw new Error(one?.problem ?? "这条条件没有跑");
+	return one.selected.join(",");
 }
 
 let failed = 0;
@@ -260,17 +254,18 @@ try {
 			for (const gone of c.drop)
 				if (next.some(sameAs(gone))) problems.push(`没去掉「${gone.label}」`);
 			for (const want of c.has) {
-				const target = await crowdOf(want);
+				const target = await selectedBy(want);
 				const peers = next.filter(
 					(n) => n.mode === want.mode && n.from === want.from,
 				);
 				let found = false;
 				for (const n of peers)
-					if ((await crowdOf(n).catch(() => null)) === target) {
+					if ((await selectedBy(n).catch(() => null)) === target) {
 						found = true;
 						break;
 					}
-				if (!found) problems.push(`没有一条和「${want.label}」搜出同一群人`);
+				if (!found)
+					problems.push(`没有一条和「${want.label}」选中同样的段或人`);
 			}
 
 			const { added } = changesOf(c.base, next);

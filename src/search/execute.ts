@@ -498,11 +498,11 @@ export async function execute(
 			const shell = new Shell(all);
 			// chip 上的人数在同一张命中表上顺手数：不随筛选变，和试跑同一个数。人数是条件的，
 			// 名单出不出得来是另一回事，所以先数人
-			const counted = await countEach(store, all);
+			const counted = await eachSelected<number>(store, all, PEOPLE);
 			const counts = Object.fromEntries(
 				query.conditions.flatMap((c, i) => {
 					const n = counted[i];
-					return n && "people" in n ? [[c.id, n.people]] : [];
+					return n && "value" in n ? [[c.id, n.value]] : [];
 				}),
 			);
 			// 没有正向的主张也没有门槛时，排除自己不产出候选人。只有偏好的查询
@@ -706,84 +706,131 @@ export type ProbeResult = {
  * 试跑一份查询：每条条件单独数人，再整份跑一遍数总人数。只给人数，不给人。
  *
  * 单条的人数和执行同一套规则：经历条件只算没被排除否决的段，写了累计时长的按去重后的段
- * 累计；排除数的是它否决了多少人的段；人的条件数满足它的人（`countEach`）。和执行一样先
+ * 累计；排除数的是它否决了多少人的段；人的条件数满足它的人（`selectedOf`）。和执行一样先
  * 排除先行，模型子查询里读到的经历也不含否决段。
  */
 export async function probe(query: Query): Promise<ProbeResult> {
 	const roles = rolesOf(query);
 	const index = new Map(query.conditions.map((c, i) => [c, i]));
 	const at = (c: QueryCondition) => index.get(c) as number;
+	return prepared(query, async (store, ready, problems) => {
+		const counts = await eachSelected<number>(store, ready, PEOPLE);
+		const results: ConditionProbe[] = query.conditions.map((c, i) => {
+			const n = counts[i];
+			return {
+				id: c.id,
+				people: n && "value" in n ? n.value : null,
+				problem: problems[i] ?? (n && "problem" in n ? n.problem : null),
+			};
+		});
+		const runnable =
+			results.every((r) => r.problem === null) &&
+			roles.claims.length + roles.gates.length + roles.prefer.length > 0;
+		if (!runnable) return { conditions: results, total: null, overflow: [] };
+		const read = await restricted(store, () =>
+			evaluate(store, new Shell(ready), roles, at, {}),
+		);
+		if (read.kind === "ranked")
+			return { conditions: results, total: read.ranked.total, overflow: [] };
+		const empty = read.outcome.empty;
+		return {
+			conditions: results,
+			total: null,
+			overflow:
+				empty?.kind === "overflowEvidence" ? empty.claims.map((c) => c.id) : [],
+		};
+	});
+}
+
+/** 一条条件选中了谁：经历条件是段（`工号:段 id`），人的条件是人（工号），按字面排好。 */
+export type ConditionSelection = {
+	id: string;
+	selected: string[] | null;
+	problem: string | null;
+};
+
+/**
+ * 每条条件单独跑，列出它选中的段或人：和 `probe` 同一条路、同一份语句，`probe` 数人，这里列出
+ * 来。验收脚本拿它比两条条件是不是同一个要求。它给的是人和段的标识，只给验收用：不接 RPC，
+ * 也不进查询理解的工具，模型仍只看得到人数。
+ */
+export async function selection(query: Query): Promise<ConditionSelection[]> {
+	return prepared(query, async (store, ready, problems) => {
+		const lists = await eachSelected<string[]>(
+			store,
+			ready,
+			sql`coalesce(array_agg(concat_ws(':', s.emp_id, s.id)), '{}')`,
+		);
+		return query.conditions.map((c, i) => {
+			const n = lists[i];
+			return {
+				id: c.id,
+				selected: n && "value" in n ? n.value.sort() : null,
+				problem: problems[i] ?? (n && "problem" in n ? n.problem : null),
+			};
+		});
+	});
+}
+
+/**
+ * `probe` 和 `selection` 的前半段：编译每条条件，在检索事务里物化命中、排除先行，再交给
+ * `run`。`ready` 按条件下标给出能跑的条件；停用的、编不出的、否决段没算出来的是 null，
+ * 后两种的原因在 `problems`。否决段没算出来的排除不再单独跑：它没否决任何段，跑出来的空是假的。
+ */
+async function prepared<T>(
+	query: Query,
+	run: (
+		store: DbExecutor,
+		ready: readonly (Compiled | null)[],
+		problems: readonly (string | null)[],
+	) => Promise<T>,
+): Promise<T> {
+	const roles = rolesOf(query);
 	const checked = await Promise.all(
 		query.conditions.map((c) => (c.off ? null : compiledOf(c))),
 	);
 	const all = checked.map((r) => (r?.ok ? r.compiled : null));
-	const results: ConditionProbe[] = query.conditions.map((c, i) => {
-		const r = checked[i];
-		return { id: c.id, people: null, problem: r && !r.ok ? r.problem : null };
-	});
-	const valid = (c: QueryCondition) => all[at(c)] !== null;
+	const problems = checked.map((r) => (r && !r.ok ? r.problem : null));
+	const terms = [...roles.claims, ...roles.excludes]
+		.filter((c) => all[query.conditions.indexOf(c)] !== null)
+		.flatMap(termValues);
 	return withMatchedPhrases(
-		[...roles.claims, ...roles.excludes].filter(valid).flatMap(termValues),
+		terms,
 		RELEVANCE_MIN,
 		async (store, { phraseHits }) => {
 			await materializeHits(store, query.conditions, phraseHits);
-			// 否决段没算出来的排除记下问题、不再数人：它没否决任何段，数出来的 0 是假的
-			const vetoProblems = await excludeFirst(store, all);
-			for (const [i, problem] of vetoProblems) {
-				const result = results[i];
-				if (result) result.problem = problem;
-			}
-			const counted = all.map((c, i) => (vetoProblems.has(i) ? null : c));
-			const shell = new Shell(all);
-			for (const [i, n] of (await countEach(store, counted)).entries()) {
-				const result = results[i];
-				if (!n || !result) continue;
-				if ("people" in n) result.people = n.people;
-				else result.problem = n.problem;
-			}
-			const runnable =
-				results.every((r) => r.problem === null) &&
-				roles.claims.length + roles.gates.length + roles.prefer.length > 0;
-			if (!runnable) return { conditions: results, total: null, overflow: [] };
-			const read = await restricted(store, () =>
-				evaluate(store, shell, roles, at, {}),
-			);
-			if (read.kind === "ranked")
-				return { conditions: results, total: read.ranked.total, overflow: [] };
-			const empty = read.outcome.empty;
-			return {
-				conditions: results,
-				total: null,
-				overflow:
-					empty?.kind === "overflowEvidence"
-						? empty.claims.map((c) => c.id)
-						: [],
-			};
+			for (const [i, problem] of await excludeFirst(store, all))
+				problems[i] = problem;
+			const ready = all.map((c, i) => (problems[i] === null ? c : null));
+			return run(store, ready, problems);
 		},
 	);
 }
 
 /**
- * 每条条件单独数人，按条件的下标；停用的、编不出的（`all` 里是 null）不数。每条在自己的
- * 保存点里跑，一条报错不影响别的条；数据库的错误脱敏后作为这一条的问题（`sandboxProblem`）。
- * 试跑给模型的人数和执行时 chip 上的人数都从这里来。
+ * 每条条件单独在只读角色里跑一遍 `select <aggregate> from (selectedOf) s`，按条件的下标；
+ * `ready` 里是 null 的不跑。每条在自己的保存点里跑，一条报错不影响别的条；数据库的错误脱敏后
+ * 作为这一条的问题（`sandboxProblem`）。试跑给模型的人数和执行时 chip 上的人数都从这里来。
  */
-async function countEach(
+async function eachSelected<T>(
 	store: DbExecutor,
-	all: readonly (Compiled | null)[],
-): Promise<({ people: number } | { problem: string } | null)[]> {
-	const out: ({ people: number } | { problem: string } | null)[] = [];
-	for (const [i, one] of all.entries()) {
+	ready: readonly (Compiled | null)[],
+	aggregate: SQL,
+): Promise<({ value: T } | { problem: string } | null)[]> {
+	const out: ({ value: T } | { problem: string } | null)[] = [];
+	for (const [i, one] of ready.entries()) {
 		if (!one) {
 			out.push(null);
 			continue;
 		}
 		try {
-			const people = await restricted(store, async () => {
-				const rows = await store.execute<{ n: number }>(countOf(one, i));
-				return rows.rows[0]?.n ?? 0;
+			const value = await restricted(store, async () => {
+				const { rows } = await store.execute<{ v: T }>(
+					sql`select ${aggregate} as v from (${selectedOf(one, i)}) s`,
+				);
+				return rows[0]?.v as T;
 			});
-			out.push({ people });
+			out.push({ value });
 		} catch (error) {
 			const problem = sandboxProblem(error);
 			if (problem === null) throw error;
@@ -793,18 +840,25 @@ async function countEach(
 	return out;
 }
 
-/** 单条条件的人数语句；规则见 `probe`。排除数的是排除先行记下的它否决的段。 */
-function countOf(one: Compiled, i: number): SQL {
+/** 一条条件选中了多少人：试跑的人数和 chip 上的人数。 */
+const PEOPLE = sql`count(distinct s.emp_id)::int`;
+
+/**
+ * 一条条件选中了什么，`emp_id, id` 的行；规则见 `probe`。经历条件是选中的段，写了累计时长的
+ * 只留累计够了的人的段；排除是排除先行记下的它否决的段；人的条件是满足它的人，id 为 null。
+ */
+function selectedOf(one: Compiled, i: number): SQL {
 	const c = one.condition;
 	if (c.from === "person")
-		return sql`select count(*)::int as n from person p where ${one.where}`;
+		return sql`select p.emp_id, null::int as id from person p where ${one.where}`;
 	if (c.mode === "exclude")
-		return sql`select count(distinct emp_id)::int as n from vetoed where cond = ${i}`;
+		return sql`select v.emp_id, v.id from vetoed v where v.cond = ${i}`;
 	const segments = sql`select distinct e.emp_id, e.id, e.months
 		from ${segmentsOf(one, i)} ${whereAll([one.where])}`;
 	return c.minMonths
-		? sql`select count(*)::int as n from (
-				select emp_id from (${segments}) s group by emp_id
-				having sum(months) >= ${c.minMonths}) qualified`
-		: sql`select count(distinct emp_id)::int as n from (${segments}) s`;
+		? sql`with s as (${segments})
+			select s.emp_id, s.id from s
+			where s.emp_id in (
+				select emp_id from s group by emp_id having sum(months) >= ${c.minMonths})`
+		: sql`select s.emp_id, s.id from (${segments}) s`;
 }
