@@ -15,7 +15,7 @@ import {
 	buildHitIndex,
 	Timeline,
 } from "#/routes/s/$turnId/-components/timeline";
-import { claimName } from "#/search/condition-label";
+import { claimName } from "#/search/query";
 import type { Route } from "#/search/weights";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";

@@ -10,6 +10,8 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import {
 	type ReactNode,
+	type Ref,
+	type RefObject,
 	useEffect,
 	useLayoutEffect,
 	useRef,
@@ -29,43 +31,49 @@ import { ScrollArea } from "#/components/ui/scroll-area";
 import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
-import type { Condition } from "#/search/condition";
-import { inSentence, NAME_LABEL } from "#/search/condition-label";
-import { DIMENSIONS, isVocabKey } from "#/search/dimensions";
-import type { TurnNotes } from "#/search/intent";
-import type { QueryInput } from "#/search/spec";
-import { changesOf } from "#/search/spec";
-import type { AttributeField, Matched, TraceStep } from "#/search/trace";
+import { type TurnNotes, tableKey } from "#/search/intent";
+import { labelsInSentence, type QueryCondition } from "#/search/query";
+import { changesOf, type QueryInput, queryOfSpec } from "#/search/spec";
+import type {
+	Discovery,
+	Matched,
+	Probe,
+	SubmitIssue,
+	TraceStep,
+} from "#/search/trace";
 import type { InterpretFault, Progress, Turn } from "#/server/turn";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/interpret";
 
-function diff(previous: Turn | null, spec: Condition[]) {
+function diff(previous: Turn | null, spec: QueryCondition[]) {
 	if (previous === null) return { added: spec, removed: [] };
-	return changesOf(previous.spec?.conditions ?? [], spec);
+	return changesOf(
+		previous.spec ? queryOfSpec(previous.spec).conditions : [],
+		spec,
+	);
 }
 
 /** 模型丢掉一条用户要的条件，在这里就是一行看得见的字。 */
-function replyText(previous: Turn | null, spec: Condition[]) {
+function replyText(previous: Turn | null, spec: QueryCondition[]) {
 	if (previous === null)
 		return spec.length > 0
-			? `已按以下条件搜索：${inSentence(spec)}`
+			? `已按以下条件搜索：${labelsInSentence(spec)}`
 			: "没有整理出可用的搜索条件";
 	const { added, removed } = diff(previous, spec);
 	if (added.length === 0 && removed.length === 0) return "搜索条件未变";
 	return [
-		added.length > 0 ? `已添加 ${inSentence(added)}` : null,
-		removed.length > 0 ? `已移除 ${inSentence(removed)}` : null,
+		added.length > 0 ? `已添加 ${labelsInSentence(added)}` : null,
+		removed.length > 0 ? `已移除 ${labelsInSentence(removed)}` : null,
 	]
 		.filter((part) => part !== null)
 		.join("；");
 }
 
-function editText(previous: Turn | null, spec: Condition[]) {
+function editText(previous: Turn | null, spec: QueryCondition[]) {
 	const { added, removed } = diff(previous, spec);
 	const parts = [
-		added.length > 0 ? `添加 ${inSentence(added)}` : null,
-		removed.length > 0 ? `移除 ${inSentence(removed)}` : null,
+		added.length > 0 ? `添加 ${labelsInSentence(added)}` : null,
+		removed.length > 0 ? `移除 ${labelsInSentence(removed)}` : null,
 	].filter((part) => part !== null);
 	return parts.length > 0
 		? `你修改了搜索条件：${parts.join("；")}`
@@ -166,7 +174,7 @@ function useFollow(latestId: string, growth: string) {
  * 哪一次。首次画出时不闪：那是默认的样子。
  */
 function useLocate(
-	viewportRef: React.RefObject<HTMLDivElement | null>,
+	viewportRef: RefObject<HTMLDivElement | null>,
 	viewing: string,
 ) {
 	const shown = useRef(viewing);
@@ -207,7 +215,8 @@ type Phase = "running" | "settled" | "failed";
  * 窄屏上这一栏收着时那边也看得见。
  */
 export function Thread({
-	rounds,
+	earlier,
+	latest,
 	viewing,
 	onRevise,
 	onQuery,
@@ -215,39 +224,42 @@ export function Thread({
 	waiting,
 	understanding,
 	composer,
-	progress = null,
-	fault = null,
+	progress,
+	fault,
 	autoFocus = false,
 }: {
-	/** 整条链，链头在前。 */
-	rounds: readonly Turn[];
+	/** 链上最后一轮之前的几轮，链头在前。 */
+	earlier: readonly Turn[];
+	/** 链上最后一轮：理解属于它。 */
+	latest: Turn;
 	/** 名单正显示的那一轮。 */
 	viewing: string;
 	/** 最后一轮这一次理解的进度；理解完成后为 null，读记录上的。 */
-	progress?: Progress | null;
-	fault?: InterpretFault | null;
+	progress: Progress | null;
+	/** 最后一轮没理解出来时哪个环节出了问题；没有出错为 null。 */
+	fault: InterpretFault | null;
 	/** 换成 AI 给的另一种理解：整张条件表记成新的一轮。 */
-	onRevise: (conditions: Condition[]) => unknown;
+	onRevise: (conditions: QueryCondition[]) => unknown;
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
-	/** 再理解一次最后一轮；不给就没有重试钮。 */
-	onRetry?: () => void;
+	/** 再理解一次最后一轮。 */
+	onRetry: () => void;
 	/** 最后一轮还没理解完：可以接着写，先不能提交。 */
 	waiting: boolean;
 	/** 配了查询理解才有输入框；没配时线程只能看，条件在 chip 上改。 */
 	understanding: boolean;
-	composer?: React.Ref<QueryBarHandle>;
+	composer?: Ref<QueryBarHandle>;
 	autoFocus?: boolean;
 }) {
-	const last = rounds.length - 1;
-	const latest = rounds[last];
-	const latestTrace = progress?.trace ?? latest?.trace ?? [];
-	const phase: Phase = latest?.spec ? "settled" : fault ? "failed" : "running";
+	const rounds = [...earlier, latest];
+	const last = earlier.length;
+	const latestTrace = progress?.trace ?? latest.trace ?? [];
+	const phase: Phase = latest.spec ? "settled" : fault ? "failed" : "running";
 	const { atBottom, toBottom, viewportRef } = useFollow(
-		latest?.id ?? "",
+		latest.id,
 		`${phase}:${latestTrace.length}`,
 	);
 	useLocate(viewportRef, viewing);
-	const previewing = latest?.id !== viewing;
+	const previewing = latest.id !== viewing;
 
 	return (
 		<section aria-label="对话" className="flex h-full flex-col">
@@ -271,7 +283,7 @@ export function Thread({
 								onRetry={onRetry}
 								onRevise={onRevise}
 								phase={i === last ? phase : "settled"}
-								previous={i > 0 ? (rounds[i - 1] ?? null) : null}
+								previous={rounds[i - 1] ?? null}
 								round={round}
 								progress={i === last && progress ? progress : progressOf(round)}
 							/>
@@ -377,8 +389,8 @@ function Round({
 	/** 没理解出来时哪个环节出了问题，不是「这句话没读懂」。 */
 	failure: InterpretFault | null;
 	progress: Progress;
-	onRevise: (conditions: Condition[]) => unknown;
-	onRetry?: () => void;
+	onRevise: (conditions: QueryCondition[]) => unknown;
+	onRetry: () => void;
 }) {
 	const { said, spec, notes } = round;
 	const viewing = mark !== "link";
@@ -396,7 +408,7 @@ function Round({
 				<Divider className="my-0 py-5">
 					<span className="flex min-w-0 items-center gap-1">
 						<Tag className="min-w-0 whitespace-normal" icon={PencilLineIcon}>
-							{spec && editText(previous, spec.conditions)}
+							{spec && editText(previous, queryOfSpec(spec).conditions)}
 						</Tag>
 						{viewingTag}
 						{link && <Actions>{link}</Actions>}
@@ -444,7 +456,7 @@ function Round({
 							</p>
 						)
 					)}
-					{spec && <p>{replyText(previous, spec.conditions)}</p>}
+					{spec && <p>{replyText(previous, queryOfSpec(spec).conditions)}</p>}
 					{spec && notes && (
 						<Note next={next} notes={notes} onRevise={onRevise} />
 					)}
@@ -476,15 +488,14 @@ function Fault({
 	onRetry,
 }: {
 	fault: InterpretFault;
-	onRetry?: () => void;
+	onRetry: () => void;
 }) {
 	const [retrying, setRetrying] = useState(false);
 	const copy = FAULT_COPY[fault];
 	return (
 		<Alert
 			action={
-				copy.retry &&
-				onRetry && (
+				copy.retry && (
 					<Button
 						icon={RotateCwIcon}
 						loading={retrying}
@@ -517,12 +528,14 @@ function Note({
 }: {
 	notes: TurnNotes;
 	next: Turn | null;
-	onRevise: (conditions: Condition[]) => unknown;
+	onRevise: (conditions: QueryCondition[]) => unknown;
 }) {
 	if (!choices) return <p>{says}</p>;
 	if (next) {
 		const picked = choices.others.find(
-			(o) => next.spec && sameTable(o.conditions, next.spec.conditions),
+			(o) =>
+				next.spec &&
+				tableKey(o.conditions) === tableKey(queryOfSpec(next.spec).conditions),
 		);
 		return <AnsweredQuestion answer={picked?.label ?? null} question={says} />;
 	}
@@ -552,32 +565,88 @@ function Note({
 export function choiceAt(
 	choices: NonNullable<TurnNotes["choices"]>,
 	n: number,
-): Condition[] | null {
+): QueryCondition[] | null {
 	return choices.others[n - 2]?.conditions ?? null;
-}
-
-function sameTable(a: readonly Condition[], b: readonly Condition[]) {
-	const { added, removed } = changesOf(a, b);
-	return added.length === 0 && removed.length === 0;
 }
 
 /** 说的是找了什么，不是调了什么——调的是哪样东西对人没有意义。 */
 function stepTitle(step: TraceStep) {
-	if (step.tool === "lookup_experience")
-		return {
-			action: "查找",
-			keyword: step.terms.map((t) => t.text).join("、"),
-		};
-	if ("values" in step)
-		return { action: `查看${fieldLabel(step.field)}`, keyword: "" };
-	return {
-		action: `查找${fieldLabel(step.field)}`,
-		keyword: step.found.map((f) => f.query).join("、"),
-	};
+	switch (step.tool) {
+		case "lookup_experience":
+			return {
+				action: "查找",
+				keyword: step.terms.map((t) => t.text).join("、"),
+			};
+		case "discover":
+			return discoveryTitle(step.discovery);
+		case "probe":
+			return {
+				action: "试搜",
+				keyword: step.probe.conditions.map((c) => c.label).join("、"),
+			};
+		case "submit":
+			return {
+				action: "调整搜索条件",
+				keyword: [
+					...new Set(
+						step.issues.flatMap((i) => (i.subject ? [i.subject] : [])),
+					),
+				].join("、"),
+			};
+	}
 }
 
-function fieldLabel(field: AttributeField) {
-	return isVocabKey(field) ? DIMENSIONS[field].label : NAME_LABEL[field];
+function discoveryTitle(d: Discovery) {
+	if (d.kind === "overview") return { action: "查看人才库概况", keyword: "" };
+	if (d.kind === "values") return { action: `查看${d.subject}`, keyword: "" };
+	if (d.kind === "names")
+		return {
+			action: `查找${d.subject}`,
+			keyword: d.found.map((f) => f.query).join("、"),
+		};
+	return { action: "查看人才库", keyword: "" };
+}
+
+/** 概况只说有哪些记录、从什么时候起；人数是全库的，不放在名单旁边。 */
+function discoveryFindings(d: Discovery): string[] {
+	if (d.kind === "overview")
+		return d.streams.length > 0
+			? d.streams.map(
+					(s) =>
+						`人才库中有${s.label}记录${s.first ? `，${s.first} 起` : "，还没有内容"}`,
+				)
+			: ["人才库中没有绩效、高潜这类记录"];
+	if (d.kind === "values")
+		return [d.values.map((x) => x.name).join("、") || "人才库中没有取值"];
+	if (d.kind === "names")
+		return d.found.map((f) => findingLine(f.query, f.people, f.values));
+	return ["这一项人才库中查不到"];
+}
+
+/**
+ * 试搜的人数就是这条条件单独能找到的人，和 chip 上的人数是同一个数；排除数的是它排除了
+ * 多少人的经历。
+ */
+function probeFindings(p: Probe): string[] {
+	const people = (c: Probe["conditions"][number]) =>
+		c.problem
+			? "这样写搜不了"
+			: c.people === null
+				? "已停用"
+				: `${c.mode === "exclude" ? "排除 " : ""}${c.people} 人`;
+	return [
+		...p.conditions.map((c) => `${c.label}：${people(c)}`),
+		...(p.total !== null ? [`合起来：${p.total} 人`] : []),
+	];
+}
+
+/** 整理出的搜索条件哪里还要改：和试搜、查找的说法一致，AI 改完再交。 */
+function issueLine({ kind, subject }: SubmitIssue): string {
+	if (kind === "wording") return "有一条的说法要换成更直白的话";
+	if (kind === "form" || subject === null) return "有的搜索条件没写完整";
+	if (kind === "unrunnable") return `「${subject}」这样写搜不了`;
+	if (kind === "unfound") return `人才库中没有「${subject}」`;
+	return `「${subject}」找出的太多，名单出不来`;
 }
 
 /**
@@ -734,11 +803,17 @@ function Process({
 	);
 }
 
-export function stepFindings(step: TraceStep) {
-	if (step.tool === "lookup_experience")
-		return step.terms.map((t) => findingLine(t.text, t.people, t.terms));
-	if ("values" in step) return [step.values.map((x) => x.name).join("、")];
-	return step.found.map((f) => findingLine(f.query, f.people, f.values));
+export function stepFindings(step: TraceStep): string[] {
+	switch (step.tool) {
+		case "lookup_experience":
+			return step.terms.map((t) => findingLine(t.text, t.people, t.terms));
+		case "discover":
+			return discoveryFindings(step.discovery);
+		case "probe":
+			return probeFindings(step.probe);
+		case "submit":
+			return step.issues.map(issueLine);
+	}
 }
 
 function StepRow({ step }: { step: TraceStep }) {

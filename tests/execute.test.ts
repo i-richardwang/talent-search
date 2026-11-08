@@ -1,0 +1,387 @@
+/**
+ * 按期记录的门槛和限定公司的语义经历，按手写的查询跑执行外壳：条件是固定 FROM + 写好的
+ * WHERE + 绑定参数，名单、证据、累计时长和名次都只从合格证据来。跑在临时 schema 上的真
+ * SQL，数据全是合成的；记录的日期按数据库的今天往回推，用例不随日子过去而失效。
+ *
+ * 同一期的修订只留最终一条是同步的事（`tests/pipeline.test.ts`），这里的记录已经是最终的。
+ */
+import assert from "node:assert/strict";
+import { after, before, describe, test } from "node:test";
+import type { Query, QueryCondition } from "#/search/query";
+import { seed, seedStream, setup } from "./fixture";
+
+const teardown = await setup();
+after(teardown);
+
+const { execute, probe, selection } = await import("#/search/execute");
+const { db, pool } = await import("#/db");
+const { employeeRecord } = await import("#/db/schema");
+
+const query = (...conditions: QueryCondition[]): Query => ({ conditions });
+const ids = (list: { employee: { empId: string } }[]) =>
+	list.map((r) => r.employee.empId);
+
+/** 近三年至少几次某档及以上：数记录行，档高查档位表。 */
+const highTwice: QueryCondition = {
+	id: "high",
+	label: "近三年绩效至少两次 A 及以上",
+	mode: "must",
+	from: "person",
+	where:
+		"(select count(*) from rating r where r.emp_id = p.emp_id and r.stream = 'perf' and r.period_end >= current_date - interval '3 years' and r.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band)) >= :times",
+	params: { band: "A", times: 2 },
+};
+
+const twoInARow: QueryCondition = {
+	id: "row",
+	label: "连续两期绩效 A 及以上",
+	mode: "must",
+	from: "person",
+	where:
+		"exists (select 1 from rating a join rating b on b.emp_id = a.emp_id and b.stream = a.stream and b.period_start = a.period_end + 1 where a.emp_id = p.emp_id and a.stream = 'perf' and a.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band) and b.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band))",
+	params: { band: "A" },
+};
+
+const neverC: QueryCondition = {
+	id: "never",
+	label: "有绩效记录，从没拿过 C",
+	mode: "must",
+	from: "person",
+	where:
+		"exists (select 1 from rating r where r.emp_id = p.emp_id and r.stream = 'perf') and not exists (select 1 from rating r where r.emp_id = p.emp_id and r.stream = 'perf' and r.value = :low)",
+	params: { low: "C" },
+};
+
+/** 只算在甲辰科技的那段推荐系统：语义词和公司写在同一条里，说的是同一段。 */
+const atJiachen: QueryCondition = {
+	id: "rec",
+	label: "在甲辰科技做推荐系统的那段经历",
+	mode: "must",
+	from: "experience",
+	terms: { rec: ["推荐系统"] },
+	where: "e.kind = 'external' and e.company ilike :c",
+	params: { c: "%甲辰科技%" },
+};
+
+const noIntern: QueryCondition = {
+	id: "intern",
+	label: "实习经历不算",
+	mode: "exclude",
+	from: "experience",
+	where: "e.title ilike :t",
+	params: { t: "%实习%" },
+};
+
+before(async () => {
+	const { rows } = await pool.query<{ today: string }>(
+		"select current_date::text as today",
+	);
+	const today = new Date(`${rows[0]?.today}T00:00:00Z`);
+	const iso = (d: Date) => d.toISOString().slice(0, 10);
+	/** 往前第 k 个已经结束的半年（k = 1 是最近的一个）。 */
+	const half = (k: number) => {
+		const at =
+			today.getUTCFullYear() * 2 + (today.getUTCMonth() < 6 ? 0 : 1) - k;
+		const year = Math.floor(at / 2);
+		return at % 2 === 0
+			? { periodStart: `${year}-01-01`, periodEnd: `${year}-06-30` }
+			: { periodStart: `${year}-07-01`, periodEnd: `${year}-12-31` };
+	};
+	/** 近三年六期，按 k = 1..6 给档。 */
+	const sixHalves = (empId: string, values: string[]) =>
+		values.map((value, i) => ({ empId, value, ...half(i + 1) }));
+	const threeYearsAndADayAgo = new Date(today);
+	threeYearsAndADayAgo.setUTCFullYear(today.getUTCFullYear() - 3);
+	threeYearsAndADayAgo.setUTCDate(threeYearsAndADayAgo.getUTCDate() - 1);
+	const outside = new Date(threeYearsAndADayAgo);
+	outside.setUTCMonth(outside.getUTCMonth() - 6);
+
+	const external = (company: string, months: number, more = {}) => ({
+		kind: "external" as const,
+		months,
+		company,
+		title: "算法工程师",
+		extracted: { skills: ["推荐系统"] },
+		...more,
+	});
+	await seed([
+		...["R1", "R2", "R3", "R4", "R5", "R6"].map((empId) => ({
+			empId,
+			name: `合成${empId}`,
+			segments: [],
+		})),
+		{
+			empId: "E1",
+			name: "合成E1",
+			education: "硕士",
+			segments: [
+				external("甲辰科技", 12, { endDate: "2022-12-31" }),
+				external("乙未网络", 96),
+			],
+		},
+		{
+			empId: "E2",
+			name: "合成E2",
+			education: "硕士",
+			segments: [external("甲辰科技", 36)],
+		},
+		{
+			empId: "E3",
+			name: "合成E3",
+			education: "硕士",
+			segments: [external("乙未网络", 60)],
+		},
+		{
+			empId: "E4",
+			name: "合成E4",
+			education: "硕士",
+			segments: [external("甲辰科技", 6, { title: "推荐系统实习生" })],
+		},
+	]);
+	await seedStream({
+		stream: "perf",
+		kind: "rating",
+		label: "绩效",
+		period: "半年",
+		scale: ["C", "B", "B+", "A", "A+"],
+		records: [
+			...sixHalves("R1", ["A", "B", "A", "B", "B", "B"]),
+			...sixHalves("R2", ["B", "A", "B", "B", "B", "B"]),
+			{
+				empId: "R2",
+				value: "A",
+				periodStart: iso(outside),
+				periodEnd: iso(threeYearsAndADayAgo),
+			},
+			...sixHalves("R3", ["B", "B", "B", "B", "B", "B"]),
+			...sixHalves("R4", ["A", "A"]),
+			...sixHalves("R6", ["A", "A", "C"]),
+		],
+	});
+});
+
+describe("按期记录的门槛：三年内两次高绩效", () => {
+	test("缺的期不算低也不算高；边界外的一次不算；没有记录的人不满足", async () => {
+		const outcome = await execute(query(highTwice));
+		assert.deepEqual(ids(outcome.results).sort(), ["R1", "R4", "R6"]);
+		assert.equal(outcome.total, 3);
+		const tried = await probe(query(highTwice));
+		assert.deepEqual(tried.conditions, [
+			{ id: "high", people: 3, problem: null },
+		]);
+		assert.equal(tried.total, 3);
+	});
+
+	test("连续两期：两期首尾相接", async () => {
+		const outcome = await execute(query(twoInARow));
+		assert.deepEqual(ids(outcome.results).sort(), ["R4", "R6"]);
+	});
+
+	test("从没拿过 C：没有任何记录的人不因此满足", async () => {
+		const outcome = await execute(query(neverC));
+		assert.deepEqual(ids(outcome.results).sort(), ["R1", "R2", "R3", "R4"]);
+	});
+
+	test("记录只是门槛：和经历主张一起时只定去留，证据和累计时长仍只来自那段经历", async () => {
+		const records = ["2025-01-01", "2025-07-01"].map((periodStart) => ({
+			empId: "E1",
+			stream: "perf",
+			value: "A+",
+			periodStart,
+			periodEnd: periodStart
+				.replace(/01-01$/, "06-30")
+				.replace(/07-01$/, "12-31"),
+		}));
+		await db.insert(employeeRecord).values(records);
+		try {
+			const outcome = await execute(query(atJiachen, highTwice));
+			assert.equal(outcome.order, "evidence");
+			if (outcome.order !== "evidence") return;
+			assert.deepEqual(ids(outcome.results), ["E1"], "E2 没有绩效记录");
+			const [e1] = outcome.results;
+			assert.deepEqual(
+				[...new Set(e1?.hits.map((h) => h.company))],
+				["甲辰科技"],
+				"记录不产出证据行",
+			);
+			assert.equal(e1?.basis[0]?.months, 12);
+			assert.equal(e1?.basis.length, 1, "只有经历主张有依据");
+		} finally {
+			await pool.query("delete from employee_record where emp_id = 'E1'");
+		}
+	});
+});
+
+describe("限定公司的语义经历", () => {
+	test("名单、证据、累计时长、名次都只用甲辰那段；唯一证据被排除否决的人不在", async () => {
+		const outcome = await execute(query(atJiachen, noIntern));
+		assert.equal(outcome.order, "evidence");
+		if (outcome.order !== "evidence") return;
+		assert.deepEqual(ids(outcome.results), ["E2", "E1"], "E2 在 E1 前");
+		const [e2, e1] = outcome.results;
+		for (const r of outcome.results)
+			for (const hit of r.hits)
+				assert.equal(hit.company, "甲辰科技", `${r.employee.empId} 的证据`);
+		assert.equal(e1?.basis[0]?.months, 12, "乙未那 96 个月不算");
+		assert.equal(e2?.basis[0]?.months, 36);
+		assert.equal(outcome.total, 2);
+		const education = outcome.facets.education.reduce((n, f) => n + f.n, 0);
+		assert.equal(education, outcome.total, "分面人数与总数一致");
+	});
+
+	test("试跑的人数和执行一致：排除数的是它否决了多少人的段", async () => {
+		const tried = await probe(query(atJiachen, noIntern));
+		assert.deepEqual(tried.conditions, [
+			{ id: "rec", people: 2, problem: null },
+			{ id: "intern", people: 1, problem: null },
+		]);
+		assert.equal(tried.total, 2);
+	});
+
+	test("chip 上的人数随执行一起回来，就是试跑的每条人数，按条件 id；停用的没有，不随筛选变", async () => {
+		const conditions = [
+			atJiachen,
+			noIntern,
+			{ ...highTwice, off: "user" as const },
+		];
+		const tried = await probe(query(...conditions));
+		const outcome = await execute(query(...conditions), {
+			school: ["人才库里没有的学校"],
+		});
+		assert.equal(outcome.total, 0, "筛选把名单筛空了");
+		assert.deepEqual(outcome.counts, { rec: 2, intern: 1 });
+		assert.deepEqual(
+			outcome.counts,
+			Object.fromEntries(
+				tried.conditions.flatMap((c) =>
+					c.people === null ? [] : [[c.id, c.people]],
+				),
+			),
+		);
+	});
+
+	test("名单出不来时 chip 上照样有人数：只剩排除，或者正向的都停用了", async () => {
+		for (const [conditions, empty] of [
+			[[noIntern], "excludeOnly"],
+			[[{ ...atJiachen, off: "user" as const }, noIntern], "allDisabled"],
+		] as const) {
+			const outcome = await execute(query(...conditions));
+			assert.equal(outcome.total, 0);
+			assert.equal(outcome.empty?.kind, empty);
+			const tried = await probe(query(...conditions));
+			assert.deepEqual(outcome.counts, { intern: 1 });
+			assert.deepEqual(
+				tried.conditions.flatMap((c) => (c.people === null ? [] : [c])),
+				[{ id: "intern", people: 1, problem: null }],
+			);
+		}
+	});
+
+	test("排除否决的段，人的条件的子查询里也读不到：写成经历条件还是人的条件，名单一样", async () => {
+		const atCompany: QueryCondition = {
+			id: "jiachen",
+			label: "待过甲辰科技",
+			mode: "must",
+			from: "experience",
+			where: "e.company ilike :c",
+			params: { c: "%甲辰科技%" },
+		};
+		const viaPerson: QueryCondition = {
+			id: "jiachen",
+			label: "待过甲辰科技",
+			mode: "must",
+			from: "person",
+			where:
+				"exists (select 1 from experience x where x.emp_id = p.emp_id and x.company ilike :c)",
+			params: { c: "%甲辰科技%" },
+		};
+		const asSegment = await execute(query(atCompany, noIntern));
+		const asPerson = await execute(query(viaPerson, noIntern));
+		assert.deepEqual(ids(asSegment.results).sort(), ["E1", "E2"]);
+		assert.deepEqual(
+			ids(asPerson.results).sort(),
+			["E1", "E2"],
+			"E4 只有那段实习",
+		);
+		assert.deepEqual(asPerson.counts, asSegment.counts);
+		const tried = await probe(query(viaPerson, noIntern));
+		assert.deepEqual(tried.conditions, [
+			{ id: "jiachen", people: 2, problem: null },
+			{ id: "intern", people: 1, problem: null },
+		]);
+	});
+
+	test("排除跑不了：试跑把问题记在它自己身上，不数人；执行时整份不能执行", async () => {
+		const broken: QueryCondition = {
+			...noIntern,
+			where: "e.title ilike :t and e.months > :t::int",
+		};
+		const tried = await probe(query(atJiachen, broken));
+		assert.equal(tried.conditions[0]?.people, 3, "它没否决任何段");
+		assert.equal(tried.conditions[1]?.people, null);
+		assert.match(tried.conditions[1]?.problem ?? "", /22P02/);
+		assert.equal(tried.total, null);
+		await assert.rejects(execute(query(atJiachen, broken)), /实习经历不算/);
+	});
+
+	test("不写排除时实习那段是合格证据", async () => {
+		const outcome = await execute(query(atJiachen));
+		assert.deepEqual(ids(outcome.results).sort(), ["E1", "E2", "E4"]);
+	});
+});
+
+describe("选中了什么：验收给条件认身份", () => {
+	/** E1 在甲辰 12 个月、在乙未 96 个月：两条排除各自只碰到 E1，碰到的是不同的段。 */
+	const excludeAt = (id: string, company: string, months: number) =>
+		({
+			id,
+			label: `${company}那段不算`,
+			mode: "exclude",
+			from: "experience",
+			where: "e.company ilike :c and e.months = :m",
+			params: { c: `%${company}%`, m: months },
+		}) satisfies QueryCondition;
+	const selected = async (c: QueryCondition) => {
+		const [one] = await selection(query(c));
+		assert.ok(one?.selected, one?.problem ?? "没有跑");
+		return one.selected;
+	};
+	const people = (list: string[]) =>
+		[...new Set(list.map((s) => s.split(":")[0]))].sort();
+
+	test("同一个人的两段：人一样，段不一样", async () => {
+		const jia = await selected(excludeAt("jia", "甲辰科技", 12));
+		const yi = await selected(excludeAt("yi", "乙未网络", 96));
+		assert.deepEqual(people(jia), ["E1"]);
+		assert.deepEqual(people(yi), ["E1"]);
+		assert.equal(jia.length, 1);
+		assert.equal(yi.length, 1);
+		assert.notDeepEqual(jia, yi);
+		assert.match(jia[0] ?? "", /^E1:\d+$/);
+	});
+
+	test("同一个要求的两种写法选中同样的段；人的条件列的是人", async () => {
+		const loose: QueryCondition = { ...atJiachen, where: "e.company ilike :c" };
+		assert.deepEqual(await selected(loose), await selected(atJiachen));
+		assert.deepEqual(await selected(highTwice), ["R1", "R4", "R6"]);
+	});
+
+	test("试跑的人数就是选中的人数：同一份语句", async () => {
+		const longOnes: QueryCondition = {
+			id: "long",
+			label: "入职前累计五年",
+			mode: "must",
+			from: "experience",
+			where: "e.kind = 'external'",
+			minMonths: 60,
+		};
+		const all = query(atJiachen, noIntern, longOnes, highTwice);
+		const [tried, lists] = await Promise.all([probe(all), selection(all)]);
+		assert.deepEqual(
+			tried.conditions.map((c) => c.people),
+			lists.map((l) => (l.selected ? people(l.selected).length : null)),
+		);
+		assert.deepEqual(people(lists[2]?.selected ?? []), ["E1", "E3"]);
+		assert.equal(lists[2]?.selected?.length, 3, "累计够了的人的每一段");
+	});
+});

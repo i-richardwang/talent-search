@@ -92,13 +92,13 @@ CSV 缺少可选的 `segment_key` 列时按部门与岗位生成任职标识；�
 
 ## 接入数据源
 
-所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments`、`external` 和 `levels`。契约逐行核验必需列，显式空值可以保留，缺列则报告表名、行号和列名并拒绝。通用校验、切段与解析在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
+所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments`、`external` 和 `levels`，可选再给记录的三批：`streams`（记录流：评级或状态）、`scales`（评级流的档位表）和 `records`（一期一档的评级、一段一段的状态）。同一人同一期的几条修订按登记时刻只留最终一条，分不出的整组拒绝并报告；记录流的覆盖在管理页「数据」上看。契约逐行核验必需列，显式空值可以保留，缺列则报告表名、行号和列名并拒绝。通用校验、切段与解析在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
 
 职级和学历按档检索。`levels` 是职级表，写明每个职级归哪一档、档有多高，分档方法由数据源自己定；学历写契约里的五档之一（高中及以下、大专、本科、硕士、博士），源里的写法由适配器归档。筛选和「某档及以上」都按档走，职级原文只在详情里显示。
 
 两种接入方式：
 
-1. 按 `src/corpus/sources/sample/` 的列名导出四个 CSV，并设置 `TALENT_CSV_DIR`。
+1. 按 `src/corpus/sources/sample/` 的列名导出四个 CSV（记录另有三个可选的 CSV），并设置 `TALENT_CSV_DIR`。
 2. 实现一个导出 `extract(report): Promise<SourceData>` 的模块，并将 `TALENT_SOURCE` 设为该文件的绝对路径。
 
 `src/corpus/sources/` 默认忽略私有适配器，只保留 `csv-dir` 与合成样例。私有模块在运行时加载，不进入 Vite 构建产物。适配器使用的 npm 包应安装在根 `package.json`，以便从项目根 `node_modules` 解析。
@@ -107,7 +107,7 @@ CSV 缺少可选的 `segment_key` 列时按部门与岗位生成任职标识；�
 
 | 能力 | 接收的数据 | 失败行为 |
 |---|---|---|
-| 查询理解 | 用户输入、当前条件、少量筛选值，以及工具查到的人数与人才库里的写法 | 查询报错，可重试；未配置时只有关键词搜索 |
+| 查询理解 | 用户输入、当前条件、数据目录的说明、少量筛选值与记录流的覆盖，以及工具查到的人数与人才库里的写法 | 查询报错，可重试；未配置时只有关键词搜索 |
 | 嵌入 | 查询词与经历说法 | 检索或解析报错 |
 | 重排 | 查询词、候选说法及释义 | 检索报错 |
 | 抽取与对齐 | 入职前岗位、公司和描述 | 端点故障时解析记录错误、下一轮接着；单段答不出记为未能作答 |
@@ -153,6 +153,7 @@ REVIEW_TOKEN=...        # external 模式必需
 | `REVIEW_JUDGE` / `REVIEW_TOKEN` | 否 | 判定方与外部接口凭据 |
 | `TALENT_SOURCE` | 否 | `csv-dir` 或私有适配器的绝对路径 |
 | `TALENT_CSV_DIR` | 否 | `csv-dir` 的输入目录；默认使用合成样例 |
+| `TALENT_CATALOG_SCHEMA` | 否 | 数据目录视图所在的 schema，默认 `catalog`；测试用（`tests/fixture.ts` 每个测试文件一套） |
 
 各端点的 API key、超时、并发、结构化输出与思考开关见 `.env.example`。`EXTRACT_TIMEOUT_MS` 是语料侧一次模型调用的总时限，默认三分钟，含思考、正文读取与重试；总时限耗尽后中止本机请求，不再重试。持续的端点故障使这一批停止领取新段，等在途调用收尾后报错退出，期间成功的回答保留在缓存。不发送输出 token 上限，实际输出仍受模型服务自身限制。其他 `*_TIMEOUT_MS` 表示每次尝试的上限。嵌入维数只在 `src/db/schema.ts` 的 `EMBED_DIM` 定义。
 
@@ -179,7 +180,7 @@ bun run ui           # 设计系统：浏览、调整设计令牌与组件，导
 ```text
 src/corpus/       数据同步、解析、词表整理与数据源契约
 src/db/           Drizzle 表结构与数据库连接
-src/search/       查询契约、召回、排名、分面与结果类型
+src/search/       查询契约、数据目录、执行外壳、召回、排名、分面与结果类型
 src/server/       RPC、查询记录、后台任务和模型端点
 src/routes/       页面、路由私有组件与交互逻辑
 src/components/   跨页面产品组件与通用组件（ui/）
@@ -190,4 +191,4 @@ evals/            合成验收样例；真实用例仅保存在本机
 tests/            单元、渲染与 Postgres 集成测试
 ```
 
-公开表结构的唯一来源是 `src/db/schema.ts`；修改后运行 `bun run db:push`。页面通过 `src/server/functions.ts` 的 RPC 访问服务端，带连接或密钥的模块必须保持 `server-only`。
+公开表结构和数据目录视图（`catalog` schema）的唯一来源是 `src/db/schema.ts`；修改后运行 `bun run db:push`，视图一并建。AI 搜索里模型写的条件只读这些视图，经 Postgres 解析器的白名单后在只读角色 `talent_query` 下执行：应用的数据库用户要么能建角色，要么事先建好 `talent_query` 并授予应用用户。页面通过 `src/server/functions.ts` 的 RPC 访问服务端，带连接或密钥的模块必须保持 `server-only`。

@@ -1,15 +1,15 @@
 /**
- * 查询理解验收：拿「当前条件 + 一句话」跑真模型，看新的条件表和说明对不对。
+ * 查询理解验收：拿「当前条件 + 一句话」跑真模型，看新的条件表、说明和**搜出来的名单**对不对。
  *
  * 用法：bun run eval:understand            # 读 evals/understand/*.json
  *      bun run eval:understand 文件.json
  *
  * 用例文件是一个 JSON 数组，每项：
  *   { "name": "补充需求，去掉一条",
- *     "base": "推荐算法, +company:字节",   // 可选：当前条件，一行查询语法（search/query-syntax.ts）
+ *     "base": "推荐算法, +company:字节",   // 可选：当前条件，一行查询语法（search/query-syntax.ts），编译成查询
  *     "say": "不用非得是字节",          // 这一句话
  *     "drop": "+company:字节",             // 可选：新表里必须没有的条件，一行查询语法
- *     "has": "education:>=本科",       // 可选：新表里必须原样有的条件，一行查询语法
+ *     "has": "education:>=本科",       // 可选：新表里必须有一条同强度、选中同样的段或人的条件
  *     "add": ["+团队"],                // 可选：新加的条件里必须提到的词，前缀 + / - 是加分 / 排除
  *     "tells": true,                   // 可选：必须对 HR 说一句话（有搜不了的要求）
  *     "asks": true,                    // 可选：必须给出可以换成的理解（一个词有几种意思）
@@ -18,16 +18,30 @@
  *     "together": [["字节", "算法"]],  // 可选：每组词写在同一条新条件里（同一段经历）
  *     "apart": [["字节", "算法"]],     // 可选：每组词分写在不同的新条件里（只要求同一个人）
  *     "empty": true,                   // 可选：新表必须是空的
- *     "rewrite": true }                // 可选：这句话换了一件事，不要求保留 base
+ *     "rewrite": true,                 // 可选：这句话换了一件事，不要求保留 base
+ *     "includes": ["E1026"],           // 可选：名单上必须有的工号
+ *     "excludes": ["E1029"],           // 可选：名单上不能有的工号
+ *     "before": [["E1027", "E1026"]],  // 可选：前一个人排在后一个人前面
+ *     "evidence": { "E1026": { "months": 12, "place": "甲辰科技" } } }
+ *                                      // 可选：这个人第一条主张的累计月数；每一行证据都在这个地方
  *
- * 没有 rewrite 的题，base 里除了 drop 的每一条都必须原样留在新表里——这是查询理解最要紧
- * 的性质：模型不能顺手丢掉或改掉用户没提到的条件。词比对折叠全半角、大小写和空白，
- * 按包含算：模型写「团队管理」也算提到了「团队」。一题只要有一处不对就打叉，退出码
- * 看的是有没有打叉的题。模型写的说明原样显示在界面上，里面出现内部用词（`lib/internal-words.ts`）
- * 也算一处不对；那句话要书面简洁：一句话、不带括号，说明和选项带括号也算。
+ * 没有 rewrite 的题，base 里除了 drop 的每一条都必须原样留在新表里（同一个 id、同样的内容）——
+ * 模型不能顺手丢掉或改掉用户没提到的条件。词比对折叠全半角、大小写和空白，按包含算，
+ * 比的是条件拿来搜的字（语义词、文字参数、where 里的文字取值）：模型写「团队管理」也算提到了「团队」。
  *
- * 调用与工作台相同的入口（`server/llm.ts` 的 `understand`，再经 `understood` 校验），用
- * 当前配置的端点和模型；词表从 `.env.local` 那个库里取，和线上发给模型的是同一份。
+ * 名单这一半（has、includes、excludes、before、evidence）按搜索的真实执行打分：模型写的 SQL
+ * 搜出谁、证据是哪几段、累计多久，和工作台同一条路（`search/execute.ts`）。标签只是写给 HR
+ * 的话，不当作已验证的解释；名单对了才算对。这一半要在有对应数据的库上跑：按期记录和
+ * 限定公司的经历那几题用合成样例同步出的库（`TALENT_SOURCE=csv-dir`，样例目录 `src/corpus/sources/sample`）。
+ *
+ * 设了 `EVAL_SHOW_SQL=1` 时每题下面列出每条的 FROM、语义词、where 和参数，给人对照标签读。
+ *
+ * 一题只要有一处不对就打叉，退出码看的是有没有打叉的题。模型写的说明原样显示在界面上，
+ * 里面出现内部用词（`lib/internal-words.ts`）也算一处不对；那句话要书面简洁：一句话、
+ * 不带括号，说明和选项带括号也算。
+ *
+ * 调用与工作台相同的入口（`server/llm.ts` 的 `understand`，评的是提交检查录取、会写进记录
+ * 的那份），用当前配置的端点和模型；词表和记录流从当前库里取，和线上发给模型的是同一份。
  * 合成用例进仓库（sample.json）；真实的找人问题不进版本库。
  */
 
@@ -36,21 +50,31 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "#/db";
 import { internalWordsIn } from "#/lib/internal-words";
-import { type Condition, conditionKey, type Mode } from "#/search/condition";
-import { conditionLabel, inSentence } from "#/search/condition-label";
-import { unanswered, understood } from "#/search/intent";
+import { compileConditions } from "#/search/compile";
+import { execute, selection } from "#/search/execute";
+import { unanswered } from "#/search/intent";
+import {
+	contentKey,
+	labelsInSentence,
+	type QueryCondition,
+	termValues,
+} from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import { vocabulary } from "#/search/search";
 import { changesOf } from "#/search/spec";
+import { RESULT_MAX } from "#/search/weights";
 import { agentToolsWithoutTrace } from "#/server/agent-tools";
+import { streamFacts } from "#/server/discover";
 import { understand } from "#/server/llm";
+
+type Mode = QueryCondition["mode"];
 
 type Case = {
 	name: string;
-	base: Condition[];
+	base: QueryCondition[];
 	say: string;
-	drop: Condition[];
-	has: Condition[];
+	drop: QueryCondition[];
+	has: QueryCondition[];
 	add: { mode: Mode; word: string }[];
 	tells: boolean;
 	asks: boolean;
@@ -60,6 +84,10 @@ type Case = {
 	apart: string[][];
 	empty: boolean;
 	rewrite: boolean;
+	includes: string[];
+	excludes: string[];
+	before: [string, string][];
+	evidence: Record<string, { months?: number; place?: string }>;
 };
 
 const strings = (value: unknown): value is string[] =>
@@ -83,7 +111,7 @@ function loadCases(file: string): Case[] {
 			const parsed = typeof value === "string" ? parseQuery(value) : [];
 			if (parsed.length === 0)
 				throw new Error(`${where}：${key} 解析不出任何条件`);
-			return parsed;
+			return compileConditions(parsed).conditions;
 		};
 		const list = (key: string) => {
 			const value = c[key] ?? [];
@@ -97,56 +125,63 @@ function loadCases(file: string): Case[] {
 					? { mode: "exclude" as const, word: word.slice(1) }
 					: { mode: "must" as const, word },
 		);
-		const tells = c.tells === true;
-		const asks = c.asks === true;
-		const offer = list("offer");
-		const quiet = c.quiet === true;
-		const groups = (key: string) => {
+		const groups = (key: string, size?: number) => {
 			const value = c[key] ?? [];
 			if (
 				!Array.isArray(value) ||
-				!value.every((g) => strings(g) && g.length > 1)
+				!value.every(
+					(g) =>
+						strings(g) &&
+						(size === undefined ? g.length > 1 : g.length === size),
+				)
 			)
 				throw new Error(
-					`${where}：${key} 只能是字符串数组的数组，每组至少两个词`,
+					`${where}：${key} 只能是字符串数组的数组，每组${size ? ` ${size} 个` : "至少两个"}词`,
 				);
 			return value as string[][];
 		};
-		const together = groups("together");
-		const apart = groups("apart");
-		const empty = c.empty === true;
-		const rewrite = c.rewrite === true;
-		const drop = syntax("drop");
-		const has = syntax("has");
-		if (
-			!add.length &&
-			!tells &&
-			!asks &&
-			!offer.length &&
-			!quiet &&
-			!drop.length &&
-			!has.length &&
-			!empty
-		)
-			throw new Error(
-				`${where}：至少要有 add、drop、has、tells、asks、offer、quiet、empty 之一`,
-			);
-		return {
+		const evidence = (c.evidence ?? {}) as Case["evidence"];
+		if (typeof evidence !== "object" || Array.isArray(evidence))
+			throw new Error(`${where}：evidence 是工号到 { months, place } 的对象`);
+		const parsed: Case = {
 			name: c.name.trim(),
 			base: syntax("base"),
 			say: c.say.trim(),
-			drop,
-			has,
+			drop: syntax("drop"),
+			has: syntax("has"),
 			add,
-			tells,
-			asks,
-			offer,
-			quiet,
-			together,
-			apart,
-			empty,
-			rewrite,
+			tells: c.tells === true,
+			asks: c.asks === true,
+			offer: list("offer"),
+			quiet: c.quiet === true,
+			together: groups("together"),
+			apart: groups("apart"),
+			empty: c.empty === true,
+			rewrite: c.rewrite === true,
+			includes: list("includes"),
+			excludes: list("excludes"),
+			before: groups("before", 2) as [string, string][],
+			evidence,
 		};
+		const checks = [
+			parsed.add.length,
+			parsed.tells,
+			parsed.asks,
+			parsed.offer.length,
+			parsed.quiet,
+			parsed.drop.length,
+			parsed.has.length,
+			parsed.empty,
+			parsed.includes.length,
+			parsed.excludes.length,
+			parsed.before.length,
+			Object.keys(parsed.evidence).length,
+		];
+		if (!checks.some(Boolean))
+			throw new Error(
+				`${where}：至少要有 add、drop、has、tells、asks、offer、quiet、empty、includes、excludes、before、evidence 之一`,
+			);
+		return parsed;
 	});
 }
 
@@ -164,55 +199,76 @@ const cases = files.flatMap(loadCases);
 const norm = (word: string) =>
 	word.normalize("NFKC").toLowerCase().replace(/\s/g, "");
 
-/** 一条条件里写下的全部词：经历词、公司名、公司档、人的取值。 */
-function wordsOf(condition: Condition): string[] {
-	return condition.about === "person"
-		? "atLeast" in condition
-			? [condition.atLeast]
-			: [...condition.values]
-		: [
-				...(condition.what ?? []),
-				...(condition.company ?? []),
-				...(condition.department ?? []),
-				...(condition.companyTag ?? []),
-			];
+/**
+ * 一条条件拿来搜的字：语义词、文字参数和 where 里直接写的文字取值。标签不算：它只是写给 HR
+ * 的话，「不要求做算法」里有「算法」，搜的却不是算法。
+ */
+function wordsOf(c: QueryCondition): string[] {
+	return [
+		...termValues(c),
+		...Object.values(c.params ?? {}).filter(
+			(v): v is string => typeof v === "string",
+		),
+		...[...c.where.matchAll(/'((?:[^']|'')*)'/g)].map((m) => m[1] ?? ""),
+	];
+}
+const mentions = (c: QueryCondition, word: string) =>
+	wordsOf(c).some((w) => norm(w).includes(norm(word)));
+
+/**
+ * 一条条件的身份，用来比两条条件是不是同一个要求：经历条件比选中的段，人的条件比满足的人；
+ * 强度不改写，排除按排除的门槛比它实际否决的段。跑不了的条件抛出原因。
+ */
+async function selectedBy(c: QueryCondition): Promise<string> {
+	const [one] = await selection({ conditions: [c] });
+	if (!one?.selected) throw new Error(one?.problem ?? "这条条件没有跑");
+	return one.selected.join(",");
 }
 
 let failed = 0;
 try {
-	const vocab = await vocabulary();
+	const facts = { vocab: await vocabulary(), streams: await streamFacts() };
 	for (const c of cases) {
 		const problems: string[] = [];
 		let summary = "";
 		try {
-			const submitted = await understand(
+			const { submitted, admitted: result } = await understand(
 				c.say,
-				vocab,
+				facts,
 				c.base,
-				await agentToolsWithoutTrace(c.base),
+				agentToolsWithoutTrace(c.base),
 			);
-			const result = understood(submitted, vocab, c.base);
 			const failure = unanswered(submitted, result);
 			if (failure) problems.push(failure);
-			const next = result.spec.conditions;
-			const has = new Set(next.map(conditionKey));
-			const dropped = new Set(c.drop.map(conditionKey));
+			const next = result.query.conditions;
+			const sameAs = (a: QueryCondition) => (b: QueryCondition) =>
+				contentKey(a) === contentKey(b);
 
 			if (!c.rewrite)
 				for (const kept of c.base)
-					if (!dropped.has(conditionKey(kept)) && !has.has(conditionKey(kept)))
-						problems.push(`没保住「${conditionLabel(kept)}」`);
+					if (
+						!c.drop.some(sameAs(kept)) &&
+						!next.some((n) => n.id === kept.id && sameAs(kept)(n))
+					)
+						problems.push(`没保住「${kept.label}」`);
 			for (const gone of c.drop)
-				if (has.has(conditionKey(gone)))
-					problems.push(`没去掉「${conditionLabel(gone)}」`);
-			for (const want of c.has)
-				if (!has.has(conditionKey(want)))
-					problems.push(`没写成「${conditionLabel(want)}」`);
+				if (next.some(sameAs(gone))) problems.push(`没去掉「${gone.label}」`);
+			for (const want of c.has) {
+				const target = await selectedBy(want);
+				const peers = next.filter(
+					(n) => n.mode === want.mode && n.from === want.from,
+				);
+				let found = false;
+				for (const n of peers)
+					if ((await selectedBy(n).catch(() => null)) === target) {
+						found = true;
+						break;
+					}
+				if (!found)
+					problems.push(`没有一条和「${want.label}」选中同样的段或人`);
+			}
 
-			const had = new Set(c.base.map(conditionKey));
-			const added = next.filter((one) => !had.has(conditionKey(one)));
-			const mentions = (one: Condition, word: string) =>
-				wordsOf(one).some((w) => norm(w).includes(norm(word)));
+			const { added } = changesOf(c.base, next);
 			for (const { mode, word } of c.add)
 				if (!added.some((one) => one.mode === mode && mentions(one, word)))
 					problems.push(`没加上「${word}」（${mode}）`);
@@ -239,7 +295,7 @@ try {
 				if (!offered.some((one) => mentions(one, word)))
 					problems.push(`选项里没有「${word}」`);
 			if (c.empty && next.length > 0) problems.push("条件表应当是空的");
-			// 那句话和选项原样显示给 HR：不能带代码和模型那一侧的词，要书面简洁
+			// 那句话、选项和每条标签原样显示给 HR：不能带代码和模型那一侧的词，要书面简洁
 			const shown = notes
 				? [
 						notes.says,
@@ -250,31 +306,81 @@ try {
 						]),
 					]
 				: [];
-			for (const line of shown) {
+			for (const line of [...shown, ...next.map((n) => n.label)]) {
 				const leaked = internalWordsIn(line);
 				if (leaked.length > 0)
-					problems.push(`说明里有内部用词「${leaked.join("、")}」：${line}`);
+					problems.push(
+						`给 HR 看的话里有内部用词「${leaked.join("、")}」：${line}`,
+					);
 			}
 			for (const line of shown)
 				if (/[（）()[\]【】]/.test(line)) problems.push(`说明带括号：${line}`);
 			if (notes && /[。！？!?].+/.test(notes.says))
 				problems.push(`那句话不止一句：${notes.says}`);
 
+			const listed =
+				c.includes.length +
+					c.excludes.length +
+					c.before.length +
+					Object.keys(c.evidence).length >
+				0;
+			let roster = "";
+			if (listed) {
+				const outcome = await execute({ conditions: next }, {}, RESULT_MAX);
+				const order = outcome.results.map((r) => r.employee.empId);
+				roster = `名单 ${outcome.total} 人：${order.slice(0, 12).join(" ")}${order.length > 12 ? " …" : ""}`;
+				for (const id of c.includes)
+					if (!order.includes(id)) problems.push(`名单上没有 ${id}`);
+				for (const id of c.excludes)
+					if (order.includes(id)) problems.push(`名单上不该有 ${id}`);
+				for (const [a, b] of c.before) {
+					const [i, j] = [order.indexOf(a), order.indexOf(b)];
+					if (i < 0 || j < 0 || i > j) problems.push(`${a} 没排在 ${b} 前面`);
+				}
+				for (const [id, want] of Object.entries(c.evidence)) {
+					const row =
+						outcome.order === "evidence"
+							? outcome.results.find((r) => r.employee.empId === id)
+							: undefined;
+					if (!row) {
+						problems.push(`${id} 没有证据行`);
+						continue;
+					}
+					const months = row.basis.find((b) => b !== null)?.months;
+					if (want.months !== undefined && months !== want.months)
+						problems.push(
+							`${id} 的累计是 ${months ?? "?"} 个月，应是 ${want.months}`,
+						);
+					const place = want.place;
+					if (place) {
+						const elsewhere = row.hits.filter(
+							(h) => !(h.company || h.department).includes(place),
+						);
+						if (elsewhere.length > 0)
+							problems.push(
+								`${id} 的证据有不在${place}的：${[...new Set(elsewhere.map((h) => h.company || h.department))].join("、")}`,
+							);
+					}
+				}
+			}
+
 			summary = [
-				next
-					.map(
-						(one) =>
-							conditionLabel(one) +
-							(one.mode === "must" ? "" : `(${one.mode})`),
-					)
-					.join("、") || "（空）",
+				labelsInSentence(next) || "（空）",
 				...(notes ? [`说：${notes.says}`] : []),
 				...(notes?.choices ? [`现在：${notes.choices.current}`] : []),
 				...others.map(
 					(o) =>
-						`可选：${o.label}——${o.detail ?? ""}（${inSentence(changesOf(next, o.conditions).added) || "只去掉条件"}）`,
+						`可选：${o.label}——${o.detail ?? ""}（${labelsInSentence(changesOf(next, o.conditions).added) || "只去掉条件"}）`,
 				),
+				...(roster ? [roster] : []),
 			].join(" | ");
+			if (process.env.EVAL_SHOW_SQL)
+				summary += next
+					.map(
+						(n) =>
+							`\n     ${n.label}：${n.from} ${JSON.stringify(n.terms ?? {})} where ${n.where} ${JSON.stringify(n.params ?? {})}${n.minMonths ? ` ≥${n.minMonths}月` : ""}`,
+					)
+					.join("");
 		} catch (e) {
 			problems.push(e instanceof Error ? e.message : String(e));
 		}

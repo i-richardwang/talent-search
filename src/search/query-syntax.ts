@@ -1,8 +1,8 @@
 /**
- * 手敲查询的一行语法。它是**输入便利**，不是查询的表示：查询在库里、在 RPC 上、
- * 在屏幕上只有 `Condition[]` 这一种形状，产品里没有任何一处读或写这行字。
- * 用它的是命令行（`scripts/query.ts`）、验收用例（`scripts/eval.ts`）和测试
- * 夹具——那几处要一口气写下几条条件，一行字比一段 JSON 顺手。
+ * 手敲查询的一行语法。它是**输入便利**，不是查询的表示：条件表在库里和 RPC 上是
+ * `SearchSpec`（`spec.ts`），产品里没有任何一处读或写这行字。这行字只被命令行
+ * （`scripts/query.ts`）、验收用例（`scripts/eval.ts`）和测试夹具读——那几处要一口气
+ * 写下几条条件，一行字比一段 JSON 顺手。
  *
  *     大模型/推荐系统 kind:external companyTag:大厂 minMonths:36,-实习,+company:字节,+level:>=P7
  *

@@ -57,11 +57,31 @@ const LEVELS = [
 	{ level: "P7", band: "高级", rank: "7" },
 ];
 
+const STREAMS = [
+	{ stream: "perf", kind: "rating", label: "绩效", period: "半年", notes: "" },
+	{ stream: "hipo", kind: "status", label: "高潜", period: "", notes: "" },
+];
+const SCALES = [
+	{ stream: "perf", value: "B", rank: "2" },
+	{ stream: "perf", value: "A", rank: "4" },
+];
+const RECORD = {
+	emp_id: "E1",
+	stream: "perf",
+	period_start: "2023-01-01",
+	period_end: "2023-06-30",
+	value: "A",
+	recorded_at: "",
+};
+
 function source(rows: {
 	people?: Partial<typeof PERSON>[];
 	assignments?: Partial<typeof ASSIGNMENT>[];
 	external?: Partial<typeof EXTERNAL>[];
 	levels?: { level: string; band: string; rank: string }[];
+	streams?: RawRow[];
+	scales?: RawRow[];
+	records?: Partial<typeof RECORD>[];
 }): SourceData {
 	return sourceData({
 		employees: (rows.people ?? [{}]).map(
@@ -74,6 +94,9 @@ function source(rows: {
 			(row): RawRow => ({ ...EXTERNAL, ...row }),
 		),
 		levels: rows.levels ?? LEVELS,
+		streams: rows.streams ?? STREAMS,
+		scales: rows.scales ?? SCALES,
+		records: (rows.records ?? []).map((row): RawRow => ({ ...RECORD, ...row })),
 	});
 }
 
@@ -555,6 +578,94 @@ describe("人群", () => {
 		);
 		assert.match(out.said, /字段冲突 1 人/);
 		assert.match(out.said, /E1/);
+	});
+});
+
+describe("记录", () => {
+	test("档位表合并职级档、学历五档和评级流的档", () => {
+		const out = run({});
+		assert.deepEqual(
+			out.scale.filter((row) => row.stream === "level"),
+			[
+				{ stream: "level", value: "中级", rank: 6 },
+				{ stream: "level", value: "高级", rank: 7 },
+			],
+		);
+		assert.equal(
+			out.scale.filter((row) => row.stream === "education").length,
+			5,
+		);
+		assert.deepEqual(
+			out.scale.filter((row) => row.stream === "perf").map((row) => row.value),
+			["B", "A"],
+		);
+	});
+
+	test("同一期的修订按登记时刻留最终一条，分不出的整组拒绝", () => {
+		const out = run({
+			people: [{}, { emp_id: "E2" }],
+			records: [
+				{ value: "A", recorded_at: "2023-07-10" },
+				{ value: "B", recorded_at: "2023-07-20" },
+				{ emp_id: "E2", value: "A", recorded_at: "2023-07-10" },
+				{ emp_id: "E2", value: "B", recorded_at: "2023-07-10" },
+				{ period_start: "2023-07-01", period_end: "2023-12-31", value: "A" },
+				{ period_start: "2023-07-01", period_end: "2023-12-31", value: "A" },
+			],
+		});
+		assert.deepEqual(
+			out.records.map((r) => [r.emp_id, r.period_start, r.value]),
+			[
+				["E1", "2023-01-01", "B"],
+				["E1", "2023-07-01", "A"],
+			],
+		);
+		assert.match(out.said, /多条修订 2 组.*其中 1 组分不出最终一条/);
+	});
+
+	test("拒绝并报告读不懂、倒置、未来、缺结束日和档外的记录", () => {
+		const out = run({
+			records: [
+				{ stream: "salary" },
+				{ period_start: "2023-13-01" },
+				{ period_start: "2023-06-30", period_end: "2023-01-01" },
+				{ period_start: "2024-07-01", period_end: "2024-12-31" },
+				{ period_end: "" },
+				{ value: "S" },
+				{ stream: "hipo", period_end: "", value: "入池" },
+			],
+		});
+		assert.deepEqual(
+			out.records.map((r) => [r.stream, r.period_end]),
+			[["hipo", null]],
+		);
+		for (const why of [
+			/不属于声明过的流 1 条/,
+			/日期格式无效 1 条/,
+			/日期倒置 1 条/,
+			/开始日在未来 1 条/,
+			/缺少这一期的结束日 1 条/,
+			/档不在档位表里 1 条/,
+		])
+			assert.match(out.said, why);
+	});
+
+	test("流名不能占用职级档和学历档", () => {
+		assert.throws(
+			() =>
+				run({
+					streams: [
+						{
+							stream: "level",
+							kind: "rating",
+							label: "x",
+							period: "",
+							notes: "",
+						},
+					],
+				}),
+			/留给职级档与学历档/,
+		);
 	});
 });
 

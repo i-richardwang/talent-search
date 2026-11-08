@@ -7,5 +7,7 @@ if (!url) throw new Error("DATABASE_URL 未配置");
 export default defineConfig({
 	schema: "./src/db/schema.ts",
 	dialect: "postgresql",
+	// 数据目录的视图在 catalog schema（`schema.ts` 的 `catalog`）；pg-boss 自管的 pgboss 不在此列
+	schemaFilter: ["public", "catalog"],
 	dbCredentials: { url },
 });

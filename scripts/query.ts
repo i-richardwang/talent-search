@@ -3,20 +3,18 @@
 import "@tanstack/react-start/server-only";
 import { pool } from "#/db";
 import { dots, period } from "#/lib/format";
-import { claimName } from "#/search/condition-label";
 import { routeLabel } from "#/search/evidence";
+import { type Claim, claimName, termValues } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
-import { type Claim, placeOf } from "#/search/result";
+import { placeOf } from "#/search/result";
 import { search } from "#/search/search";
 
-/** 一条主张在命令行上怎么写：和一行查询语法同一种写法，可以直接和输入对照。 */
+/** 一条主张在命令行上怎么写：语义词，加上编译出的 `where` 和累计时长，可以和输入对照。 */
 function claimText(c: Claim) {
 	return [
-		c.what.join("/"),
-		c.company && `company:${c.company.join("/")}`,
-		c.department && `department:${c.department.join("/")}`,
-		c.companyTag && `companyTag:${c.companyTag.join("/")}`,
-		c.kind && `kind:${c.kind}`,
+		termValues(c).join("/"),
+		c.where !== "true" && `where:${c.where}`,
+		c.params && `params:${JSON.stringify(c.params)}`,
 		c.minMonths && `minMonths:${c.minMonths}`,
 	]
 		.filter(Boolean)

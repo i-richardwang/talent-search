@@ -7,9 +7,9 @@ import {
 import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
 import { Text } from "#/components/ui/text";
-import type { Condition } from "#/search/condition";
+import type { QueryCondition } from "#/search/query";
 import type { SearchOutcome } from "#/search/result";
-import type { SearchSpec } from "#/search/spec";
+import { queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { InterpretFault, SearchMode } from "#/server/turn";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { emptyState } from "../-lib/empty-state";
@@ -58,13 +58,13 @@ export function NoResults({
 	spec: SearchSpec;
 	mode: SearchMode;
 	onChange: (next: Partial<View>) => void;
-	onReviseQuery: (next: Condition[]) => void;
+	onReviseQuery: (next: QueryCondition[]) => void;
 	onEditQuery: () => void;
 }) {
 	const reason = outcome.empty ?? { kind: "noConditions" };
 	const state = emptyState(reason, {
 		mode,
-		conditions: spec.conditions,
+		conditions: queryOfSpec(spec).conditions,
 		onChange,
 		onEditQuery,
 		onReviseQuery,

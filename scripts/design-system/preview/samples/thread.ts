@@ -1,6 +1,7 @@
 import type { TraceStep } from "#/search/trace";
 import type { RecentSearch, Turn } from "#/server/turn";
 import {
+	asQuery,
 	KEYWORD_SPEC,
 	ROUND1_CONDITIONS,
 	ROUND2_CONDITIONS,
@@ -27,7 +28,7 @@ const ROUND1: Turn = {
 	mode: "conversation",
 	title: TASK_TITLE,
 	said: TASK_TITLE,
-	spec: { conditions: ROUND1_CONDITIONS },
+	spec: { query: { conditions: asQuery(ROUND1_CONDITIONS) } },
 	notes: null,
 	trace: ROUND1_TRACE,
 	startedAt: T0 - 1500,
@@ -42,7 +43,7 @@ const ROUND2: Turn = {
 	mode: "conversation",
 	title: TASK_TITLE,
 	said: "还要带过团队，最好是硕士，base 北京，技术口碑好",
-	spec: { conditions: ROUND2_CONDITIONS },
+	spec: { query: { conditions: asQuery(ROUND2_CONDITIONS) } },
 	notes: {
 		says: "人才库里没有工作地点，简历里也看不出技术口碑，要不要先看做过技术分享的？",
 		choices: {
@@ -51,7 +52,7 @@ const ROUND2: Turn = {
 				{
 					label: "做过技术分享的优先",
 					detail: "简历里写过技术分享的有六十多位",
-					conditions: SHARING_CONDITIONS,
+					conditions: asQuery(SHARING_CONDITIONS),
 				},
 			],
 		},
@@ -84,7 +85,7 @@ export const ANSWERED_TURN: Turn = {
 	mode: "conversation",
 	title: TASK_TITLE,
 	said: null,
-	spec: { conditions: SHARING_CONDITIONS },
+	spec: { query: { conditions: asQuery(SHARING_CONDITIONS) } },
 	notes: null,
 	trace: null,
 	startedAt: null,
@@ -95,7 +96,14 @@ export const ANSWERED_TURN: Turn = {
 /** 整条对话链，链头在前；名单看的是最后一轮。 */
 export const THREAD: Turn[] = [ROUND1, ROUND2, ROUND3];
 
-export const LATEST_TURN_ID = ROUND3.id;
+/** 链头那一轮；只看它时它也是最后一轮。 */
+export const ROOT_TURN = ROUND1;
+
+/** 第二轮 AI 在问；只看前两轮时它是最后一轮。 */
+export const ASKING_TURN = ROUND2;
+
+export const LATEST_TURN = ROUND3;
+export const LATEST_TURN_ID = LATEST_TURN.id;
 
 /**
  * 等待理解的两轮发生在打开页面前几秒：计时从这一次理解开始的时刻算起，放在过去的
@@ -133,11 +141,18 @@ export const PENDING_TRACE: TraceStep[] = [
 	},
 	{
 		at: JUST_NOW + 1300,
-		tool: "lookup_attribute",
-		field: "company",
-		found: [
-			{ query: "星河", people: 44, values: [{ name: "星河科技", people: 38 }] },
-		],
+		tool: "discover",
+		discovery: {
+			kind: "names",
+			subject: "公司",
+			found: [
+				{
+					query: "星河",
+					people: 44,
+					values: [{ name: "星河科技", people: 38 }],
+				},
+			],
+		},
 	},
 ];
 

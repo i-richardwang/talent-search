@@ -17,12 +17,8 @@ import {
 	type Facet,
 } from "./dimensions";
 import type { SearchFilters } from "./params";
-import {
-	type Claim,
-	type ClaimBasis,
-	emptyFacets,
-	type Facets,
-} from "./result";
+import type { Claim } from "./query";
+import { type ClaimBasis, emptyFacets, type Facets } from "./result";
 import {
 	BOOST_WEIGHT,
 	ENGAGEMENT_FACTOR,
@@ -204,7 +200,7 @@ function complete(p: Person, claims: Claim[]) {
  * 一个人的名次依据：**深度 = 必须主张的乘积 × 加分主张的抬升 × 人的偏好的抬升。** 必须主张之间是
  * 乘积：一条浅，整个人就被压下去。淘汰由 `complete` 负责，不是由乘积负责——
  * 加分那一半恒大于 1，只抬不压，所以不会出现「命中得越少分越高」。满足的每
- * 一条偏好（人的条件和背景，见 `result.ts` 的 `Gate`）各乘一次 `BOOST_WEIGHT`：
+ * 一条偏好（人的条件和背景，见 `query.ts` 的 `Gate`）各乘一次 `BOOST_WEIGHT`：
  * 「最好字节来的」和「最好是硕士」满足一条就该得一条的分，不看在字节待了多久。
  */
 function measure(
@@ -374,7 +370,7 @@ export function rank(
 	claims: Claim[],
 	filters: SearchFilters,
 	now: Date,
-	/** 每条人的偏好各一份满足它的人（`search.ts` 的 `fetchPreferred`）。 */
+	/** 每条人的偏好各一份满足它的人（`execute.ts` 的 `fetchPreferred`）。 */
 	preferred: readonly ReadonlySet<string>[] = [],
 ): { ranked: Ranked[]; facets: Facets; total: number } {
 	const ranked: Ranked[] = [];
@@ -397,6 +393,9 @@ export function rank(
 	};
 }
 
+/** 「这个人的这条主张」的复合 key：工号里不可能出现的字符。 */
+const PER_CLAIM = "\u0001";
+
 /**
  * 这一页的人各自留哪几段经历当证据。
  *
@@ -408,9 +407,6 @@ export function rank(
  * 没满足的主张一段都不留（`satisfies`，和打分同一条判定）：够不上累计时长的
  * 加分主张在名次里没有份，证据行和时间线上也不能有它。
  */
-/** 「这个人的这条主张」的复合 key：工号里不可能出现的字符。 */
-const PER_CLAIM = "\u0001";
-
 export function pageHits(
 	facts: Fact[],
 	claims: readonly Claim[],

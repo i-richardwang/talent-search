@@ -4,7 +4,9 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { internalWordsIn } from "#/lib/internal-words";
 import { stepFindings, Thread } from "#/routes/s/$turnId/-components/thread";
+import { compileConditions } from "#/search/compile";
 import type { TurnNotes } from "#/search/intent";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
@@ -26,7 +28,8 @@ function turns(rounds: Round[]): Turn[] {
 		mode: "conversation",
 		title: rounds[0]?.said ?? null,
 		said: r.said,
-		spec: r.spec === null ? null : { conditions: parseQuery(r.spec) },
+		spec:
+			r.spec === null ? null : { query: compileConditions(parseQuery(r.spec)) },
 		notes: r.notes ?? null,
 		trace: r.trace ?? null,
 		startedAt: null,
@@ -43,7 +46,7 @@ async function seen(
 		waiting = false,
 		progress = null,
 		fault = null,
-		onRetry,
+		onRetry = () => {},
 		viewing = rounds.length - 1,
 	}: {
 		understanding?: boolean;
@@ -55,15 +58,19 @@ async function seen(
 		viewing?: number;
 	} = {},
 ) {
+	const chain = turns(rounds);
+	const latest = chain.pop();
+	assert.ok(latest, "至少一轮");
 	const html = await routed(
 		() => (
 			<Thread
+				earlier={chain}
 				fault={fault}
-				progress={progress}
+				latest={latest}
 				onQuery={() => true}
 				onRetry={onRetry}
 				onRevise={() => {}}
-				rounds={turns(rounds)}
+				progress={progress}
 				understanding={understanding}
 				viewing={`t${viewing}`}
 				waiting={waiting}
@@ -166,7 +173,7 @@ const ASKED: TurnNotes = {
 			{
 				label: "带过团队的优先",
 				detail: "写过带团队的有两百多位",
-				conditions: parseQuery("算法, +带团队"),
+				conditions: compileConditions(parseQuery("算法, +带团队")).conditions,
 			},
 		],
 	},
@@ -267,30 +274,39 @@ describe("检索人才库的过程", () => {
 		},
 		{
 			at: 1,
-			tool: "lookup_attribute",
-			field: "company",
-			found: [
-				{
-					query: "星河",
-					people: 44,
-					values: [{ name: "星河科技", people: 38 }],
-				},
-			],
+			tool: "discover",
+			discovery: {
+				kind: "names",
+				subject: "公司",
+				found: [
+					{
+						query: "星河",
+						people: 44,
+						values: [{ name: "星河科技", people: 38 }],
+					},
+				],
+			},
 		},
 		{
 			at: 2,
-			tool: "lookup_attribute",
-			field: "school",
-			found: [{ query: "银河学院", people: 0, values: [] }],
+			tool: "discover",
+			discovery: {
+				kind: "names",
+				subject: "学校",
+				found: [{ query: "银河学院", people: 0, values: [] }],
+			},
 		},
 		{
 			at: 3,
-			tool: "lookup_attribute",
-			field: "education",
-			values: [
-				{ name: "本科", people: 300 },
-				{ name: "硕士", people: 120 },
-			],
+			tool: "discover",
+			discovery: {
+				kind: "values",
+				subject: "学历",
+				values: [
+					{ name: "本科", people: 300 },
+					{ name: "硕士", people: 120 },
+				],
+			},
 		},
 	];
 
@@ -300,6 +316,27 @@ describe("检索人才库的过程", () => {
 		]);
 		assert.match(text, /检索人才库 4 步/);
 		assert.doesNotMatch(text, /查找公司/, "每一步收在里面");
+	});
+
+	test("提交没通过的那一步：标题和结论里都没有内部用词，说法要改的那条不点名", async () => {
+		const { text } = await seen([{ said: "推荐", spec: null }], {
+			waiting: true,
+			progress: {
+				trace: [
+					{
+						at: 1,
+						tool: "submit",
+						issues: [
+							{ kind: "wording", subject: null },
+							{ kind: "unfound", subject: "量子炼金" },
+						],
+					},
+				],
+				startedAt: null,
+			},
+		});
+		assert.match(text, /调整搜索条件\s*量子炼金/);
+		assert.deepEqual(internalWordsIn(text), []);
 	});
 
 	test("进行中展开，每一步一行：动作、对象；结论收在这一步里面", async () => {
@@ -329,6 +366,90 @@ describe("检索人才库的过程", () => {
 			"人才库中没有「银河学院」",
 		]);
 		assert.deepEqual(stepFindings(trace[3] as TraceStep), ["本科、硕士"]);
+	});
+
+	test("看人才库概况：只说有哪些记录、从什么时候起，不写人数", () => {
+		const facts = stepFindings({
+			at: 0,
+			tool: "discover",
+			discovery: {
+				kind: "overview",
+				relations: [{ name: "person", label: "人", rows: 120 }],
+				streams: [
+					{
+						stream: "perf",
+						label: "绩效",
+						kind: "rating",
+						period: "半年",
+						people: 80,
+						periods: 6,
+						first: "2023-01-01",
+						latest: { start: "2025-07-01", end: "2025-12-31" },
+						values: ["C", "B", "A", "S"],
+					},
+				],
+			},
+		});
+		assert.deepEqual(facts, ["人才库中有绩效记录，2023-01-01 起"]);
+		assert.doesNotMatch(facts.join(""), /120|80/);
+	});
+
+	test("提交没通过：说哪一条还要改、为什么，用 HR 读得懂的话", () => {
+		const findings = stepFindings({
+			at: 0,
+			tool: "submit",
+			issues: [
+				{ kind: "form", subject: null },
+				{ kind: "wording", subject: null },
+				{ kind: "unrunnable", subject: "近三年两次 A" },
+				{ kind: "unfound", subject: "量子炼金" },
+				{ kind: "tooBroad", subject: "做过开发" },
+			],
+		});
+		assert.deepEqual(findings, [
+			"有的搜索条件没写完整",
+			"有一条的说法要换成更直白的话",
+			"「近三年两次 A」这样写搜不了",
+			"人才库中没有「量子炼金」",
+			"「做过开发」找出的太多，名单出不来",
+		]);
+		assert.deepEqual(internalWordsIn(findings.join("")), []);
+	});
+
+	test("试搜：每条单独找到几个人、合起来几个人；写不对的说搜不了", () => {
+		assert.deepEqual(
+			stepFindings({
+				at: 0,
+				tool: "probe",
+				probe: {
+					conditions: [
+						{ label: "做过推荐", mode: "must", people: 12, problem: null },
+						{
+							label: "近三年两次 A",
+							mode: "must",
+							people: null,
+							problem: "没有这一列",
+						},
+					],
+					total: null,
+				},
+			}),
+			["做过推荐：12 人", "近三年两次 A：这样写搜不了"],
+		);
+		assert.deepEqual(
+			stepFindings({
+				at: 0,
+				tool: "probe",
+				probe: {
+					conditions: [
+						{ label: "做过推荐", mode: "must", people: 12, problem: null },
+						{ label: "实习不算", mode: "exclude", people: 2, problem: null },
+					],
+					total: 12,
+				},
+			}),
+			["做过推荐：12 人", "实习不算：排除 2 人", "合起来：12 人"],
+		);
 	});
 
 	test("查看结果是一枚带名字的图标链接，不包任何动作", async () => {

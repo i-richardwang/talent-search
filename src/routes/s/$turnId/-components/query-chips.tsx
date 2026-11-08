@@ -20,27 +20,15 @@ import {
 import {
 	FilterChip,
 	FilterChipClear,
+	FilterChipCount,
 	FilterChipNote,
 	FilterChipTrigger,
 	FilterChipValue,
 } from "#/components/ui/filter-chip";
 import { Icon } from "#/components/ui/icon";
-import {
-	type Condition,
-	conditionKey,
-	type Mode,
-	modesOf,
-	partsOf,
-	withMode,
-	withOff,
-	withoutPart,
-} from "#/search/condition";
-import {
-	conditionLabel,
-	MODE_NAME,
-	moreCount,
-	partLabel,
-} from "#/search/condition-label";
+import type { Mode } from "#/search/condition";
+import { MODE_NAME } from "#/search/condition-label";
+import { type QueryCondition, withOff } from "#/search/query";
 
 const MODE_HINT: Record<Mode, string> = {
 	must: "只保留满足此条件的人",
@@ -48,20 +36,38 @@ const MODE_HINT: Record<Mode, string> = {
 	exclude: "这类经历不作为匹配依据",
 };
 
+/** 一条条件能换成的强度：排除只用于经历。 */
+function modesOf(c: QueryCondition): readonly Mode[] {
+	return c.from === "experience"
+		? ["must", "boost", "exclude"]
+		: ["must", "boost"];
+}
+
+/** 换强度。换成排除时累计时长不再有意义（排除按单段判），去掉。 */
+function withMode(c: QueryCondition, mode: Mode): QueryCondition {
+	const { minMonths, ...rest } = c;
+	return mode === "exclude" ? { ...rest, mode } : { ...c, mode };
+}
+
 /**
- * 一排条件，一条一枚 `FilterChip`，点开是这一条的菜单。强度写成字：必须是默认，不标；
- * 加分、排除和写进句子里（`inSentence`）的是同一个说法。
+ * 一排条件，一条一枚 `FilterChip`，点开是这一条的菜单。chip 上是 AI 写给 HR 的那句标签；
+ * 强度写成字：必须是默认，不标；加分、排除和写进句子里（`labelsInSentence`）的是同一个说法。
+ * 最右边是这一条单独能找到的人数（排除是它否决了多少人的经历），和线程里试搜的是同一个数；
+ * 停用的没有人数。
  */
 export function QueryChips({
 	conditions,
+	counts,
 	onChange,
 }: {
-	conditions: readonly Condition[];
-	onChange: (next: Condition[]) => void;
+	conditions: readonly QueryCondition[];
+	/** 每条条件单独的人数，按 id；没有的不画 */
+	counts: Readonly<Record<string, number>>;
+	onChange: (next: QueryCondition[]) => void;
 }) {
 	if (conditions.length === 0) return null;
 
-	const replaceAt = (i: number, next: Condition | null) =>
+	const replaceAt = (i: number, next: QueryCondition | null) =>
 		onChange(
 			next === null
 				? conditions.filter((_, j) => j !== i)
@@ -70,25 +76,9 @@ export function QueryChips({
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			{conditions.map((chip, i) => {
-				const label = conditionLabel(chip);
-				const more = moreCount(chip);
-				const parts = partsOf(chip);
+				const { label } = chip;
+				const people = chip.off ? undefined : counts[chip.id];
 				const actions: DropdownItem[] = [
-					...(parts.length > 1
-						? [
-								{ type: "divider" as const },
-								{
-									children: parts.map((part) => ({
-										key: `${part.key}\u0001${part.value}`,
-										label: `去掉「${partLabel(chip, part)}」`,
-										onClick: () => replaceAt(i, withoutPart(chip, part)),
-									})),
-									label:
-										chip.about === "experience" ? "同一段经历" : "任一满足即可",
-									type: "group" as const,
-								},
-							]
-						: []),
 					{ type: "divider" },
 					{
 						checked: !chip.off,
@@ -100,14 +90,14 @@ export function QueryChips({
 					},
 				];
 				return (
-					<FilterChip dashed={Boolean(chip.off)} key={conditionKey(chip)}>
+					<FilterChip dashed={Boolean(chip.off)} key={chip.id}>
 						<DropdownMenuRoot>
 							<DropdownMenuTrigger>
 								<FilterChipTrigger
 									aria-label={[
 										MODE_NAME[chip.mode],
 										label,
-										more && "等",
+										people !== undefined && `${people} 人`,
 										chip.off && "已停用",
 									]
 										.filter(Boolean)
@@ -115,9 +105,11 @@ export function QueryChips({
 								>
 									{chip.off && <Icon icon={EyeOffIcon} size={12} />}
 									<FilterChipValue>{label}</FilterChipValue>
-									{more > 0 && <FilterChipNote>+{more}</FilterChipNote>}
 									{chip.mode !== "must" && (
 										<FilterChipNote>{MODE_NAME[chip.mode]}</FilterChipNote>
+									)}
+									{people !== undefined && (
+										<FilterChipCount>{people} 人</FilterChipCount>
 									)}
 									<Icon icon={ChevronDownIcon} size={10} />
 								</FilterChipTrigger>

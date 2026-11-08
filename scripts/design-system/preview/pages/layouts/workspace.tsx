@@ -13,11 +13,16 @@ import { WorkspaceNotices } from "#/routes/s/$turnId/-components/workspace-notic
 import { useIsWide } from "#/routes/s/$turnId/-lib/media";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { type View, validateView } from "#/routes/s/$turnId/-lib/view-params";
-import type { SearchSpec } from "#/search/spec";
+import { queryOfSpec, type SearchSpec } from "#/search/spec";
 import { Routed, useOpenEmpId } from "../../routed";
-import { SPEC } from "../../samples/conditions";
+import { COUNTS, SPEC } from "../../samples/conditions";
 import { OUTCOME } from "../../samples/people";
-import { LATEST_TURN_ID, TASK_TITLE, THREAD } from "../../samples/thread";
+import {
+	LATEST_TURN,
+	LATEST_TURN_ID,
+	TASK_TITLE,
+	THREAD,
+} from "../../samples/thread";
 import { PersonPane } from "./detail";
 import { LayoutSwitch, Shell } from "./home";
 
@@ -60,9 +65,13 @@ function Workspace() {
 		<Thread
 			autoFocus={threadOpen}
 			composer={composer}
-			onRevise={(conditions) => setSpec({ conditions })}
+			earlier={THREAD.slice(0, -1)}
+			fault={null}
+			latest={LATEST_TURN}
 			onQuery={() => true}
-			rounds={THREAD}
+			onRetry={() => {}}
+			onRevise={(conditions) => setSpec({ query: { conditions } })}
+			progress={null}
 			understanding
 			viewing={LATEST_TURN_ID}
 			waiting={false}
@@ -91,15 +100,18 @@ function Workspace() {
 				}
 				notices={
 					<WorkspaceNotices
-						conditions={spec.conditions}
+						conditions={{
+							mode: "conversation",
+							list: queryOfSpec(spec).conditions,
+							counts: COUNTS,
+							onRevise: (conditions) => {
+								setSpec({ query: { conditions } });
+								return true;
+							},
+						}}
 						earlier={false}
 						facets={outcome.facets}
 						latestId={LATEST_TURN_ID}
-						mode="conversation"
-						onRevise={(conditions) => {
-							setSpec({ conditions });
-							return true;
-						}}
 						onViewChange={updateView}
 						turnId={LATEST_TURN_ID}
 						view={view}
@@ -117,7 +129,7 @@ function Workspace() {
 						onChange={updateView}
 						onEditQuery={noop}
 						onMore={noop}
-						onReviseQuery={(conditions) => setSpec({ conditions })}
+						onReviseQuery={(conditions) => setSpec({ query: { conditions } })}
 						outcome={outcome}
 						picks={picks}
 						spec={spec}

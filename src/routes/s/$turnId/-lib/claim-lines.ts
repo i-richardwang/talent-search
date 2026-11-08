@@ -1,6 +1,6 @@
-import { claimName } from "#/search/condition-label";
 import { bestHitPerClaim } from "#/search/evidence";
-import type { Claim, ClaimBasis, Hit, RankedResult } from "#/search/result";
+import { type Claim, claimName } from "#/search/query";
+import type { ClaimBasis, Hit, RankedResult } from "#/search/result";
 
 /**
  * 一条主张在一个人身上的样子：命中了带着最对得上的那一段（`hit`）和聚合依据（`basis`），

@@ -22,7 +22,7 @@ import "@tanstack/react-start/server-only";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "#/db";
-import { claimName } from "#/search/condition-label";
+import { claimName } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import { search } from "#/search/search";
 import { RESULT_MAX } from "#/search/weights";

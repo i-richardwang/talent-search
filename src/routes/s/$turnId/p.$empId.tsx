@@ -3,7 +3,7 @@ import {
 	notFound,
 	useLoaderData,
 } from "@tanstack/react-router";
-import { claimName } from "#/search/condition-label";
+import { claimName } from "#/search/query";
 import { fetchEmployee } from "#/server/functions";
 import { Person, PersonNotFound, PersonPending } from "./-components/person";
 import { claimLines } from "./-lib/claim-lines";
@@ -27,16 +27,22 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 function Detail() {
 	const { employee, timeline } = Route.useLoaderData();
 	const { result: search } = useLoaderData({ from: "/s/$turnId" });
-	const result =
-		search && search.order !== "employee"
-			? search.results.find((r) => r.employee.empId === employee.empId)
-			: undefined;
+	// 按人排的名单没有主张也没有命中：档案只有时间线
+	const { claims, result } =
+		search?.order === "evidence"
+			? {
+					claims: search.claims,
+					result: search.results.find(
+						(r) => r.employee.empId === employee.empId,
+					),
+				}
+			: { claims: [], result: undefined };
 	return (
 		<Person
 			employee={employee}
 			hits={result?.hits ?? []}
-			lines={result && search ? claimLines(result, search.claims) : []}
-			names={search?.claims.map(claimName) ?? []}
+			lines={result ? claimLines(result, claims) : []}
+			names={claims.map(claimName)}
 			timeline={timeline}
 		/>
 	);

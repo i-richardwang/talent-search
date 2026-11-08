@@ -1,12 +1,20 @@
 /**
- * 读取数据源，经 pipeline.ts 校验、切段后，在一笔短事务中同步人员与经历。
+ * 读取数据源，经 pipeline.ts 校验、切段后，在一笔短事务中同步人员、经历与记录。
  * 正式表与暂存表共用数据库生成的 content_key：删除消失的段，插入新增段，
- * 同内容的段刷新累计月数并保留 id、边和解析版本。同步不调用模型。
+ * 同内容的段刷新累计月数并保留 id、边和解析版本。记录没有解析产物，整表重写。
+ * 同步不调用模型。
  */
 
 import "@tanstack/react-start/server-only";
 import { prunePhrases } from "./phrases";
-import { build, type EmployeeRow, type ExperienceRow } from "./pipeline";
+import {
+	build,
+	type EmployeeRow,
+	type ExperienceRow,
+	type RecordRow,
+	type ScaleRow,
+	type StreamRow,
+} from "./pipeline";
 import type { Report } from "./report";
 import type { CorpusSession } from "./session";
 import { loadSource, type SourceConfig } from "./sources";
@@ -148,6 +156,50 @@ async function reconcile({ client }: CorpusSession): Promise<{
 	};
 }
 
+/** 记录流、档位表与记录照这一次的写；在人员之后写，记录的外键指向本次的人。 */
+async function replaceRecords(
+	{ client }: CorpusSession,
+	streams: StreamRow[],
+	scale: ScaleRow[],
+	records: RecordRow[],
+): Promise<void> {
+	await client.query("delete from employee_record");
+	await client.query("delete from record_stream");
+	await client.query("delete from scale");
+	await client.query(
+		`insert into record_stream (stream, kind, label, period, notes)
+		 select * from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])`,
+		[
+			streams.map((r) => r.stream),
+			streams.map((r) => r.kind),
+			streams.map((r) => r.label),
+			streams.map((r) => r.period),
+			streams.map((r) => r.notes),
+		],
+	);
+	await client.query(
+		`insert into scale (stream, value, rank)
+		 select * from unnest($1::text[], $2::text[], $3::int[])`,
+		[
+			scale.map((r) => r.stream),
+			scale.map((r) => r.value),
+			scale.map((r) => r.rank),
+		],
+	);
+	for (const chunk of chunked(records, ROWS_PER_STATEMENT))
+		await client.query(
+			`insert into employee_record (emp_id, stream, period_start, period_end, value)
+			 select * from unnest($1::text[], $2::text[], $3::date[], $4::date[], $5::text[])`,
+			[
+				chunk.map((r) => r.emp_id),
+				chunk.map((r) => r.stream),
+				chunk.map((r) => r.period_start),
+				chunk.map((r) => r.period_end),
+				chunk.map((r) => r.value),
+			],
+		);
+}
+
 /**
  * 同内容的段保留身份，累计月数按本次日期刷新。连接与锁由调用方给（`session.ts`）。
  */
@@ -162,7 +214,7 @@ export async function sync(
 
 	report("");
 	report("切段与校验…");
-	const { employee, experience } = build(data, report);
+	const { employee, experience, streams, scale, records } = build(data, report);
 
 	report("");
 	report("写入…");
@@ -173,6 +225,7 @@ export async function sync(
 		await stageEmployee(session, employee);
 		await stageExperience(session, experience);
 		counts = await reconcile(session);
+		await replaceRecords(session, streams, scale, records);
 		await client.query("commit");
 	} catch (error) {
 		await client.query("rollback");

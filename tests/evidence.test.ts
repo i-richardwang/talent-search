@@ -4,15 +4,15 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { bestHitPerClaim, routeLabel } from "#/search/evidence";
-import type { Claim } from "#/search/result";
+import type { Claim } from "#/search/query";
 import type { Route } from "#/search/weights";
-import { claim } from "./conditions";
+import { compiledClaim } from "./conditions";
 import { hit as row } from "./rows";
 
 const hit = (claim: number, route: Route) => row({ claim, route });
 
 const claims = (...what: string[]): Claim[] =>
-	what.map((w) => claim(w) as Claim);
+	what.map((w) => compiledClaim(w));
 
 describe("来源的写法", () => {
 	test("每一类来源各有确切的写法", () => {

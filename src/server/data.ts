@@ -20,6 +20,7 @@ import type { Engagement } from "#/lib/engagement";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
 import type { EmployeeDetail } from "#/search/result";
+import type { StreamFact } from "#/search/trace";
 
 /** 数据页那张表的一行。 */
 export type EmployeeRow = Pick<
@@ -60,6 +61,35 @@ export async function listEmployees(
 			[version, pattern],
 		);
 		return tablePage(rows, total, at);
+	});
+}
+
+/**
+ * 一条记录流的覆盖：多少人有记录、记录从哪一期到哪一期、最近一期是哪一期。
+ * 评级按期数（不同的开始日）计，状态按段的开始日。不带取值（取值见 `discover.ts`）。
+ */
+export type StreamCoverage = Omit<StreamFact, "values">;
+
+/** 每条记录流的覆盖，按流名排。没有记录流的数据源返回空表。 */
+export async function streamCoverage(): Promise<StreamCoverage[]> {
+	return withReadSnapshot(async (client) => {
+		const { rows } = await client.query<StreamCoverage>(
+			`select s.stream, s.label, s.kind, s.period,
+				count(distinct r.emp_id)::int as people,
+				count(distinct r.period_start)::int as periods,
+				to_char(min(r.period_start), 'YYYY-MM-DD') as first,
+				(select json_build_object(
+					'start', to_char(l.period_start, 'YYYY-MM-DD'),
+					'end', to_char(max(l.period_end), 'YYYY-MM-DD'))
+				 from employee_record l
+				 where l.stream = s.stream
+				   and l.period_start = (select max(m.period_start) from employee_record m
+					where m.stream = s.stream)
+				 group by l.period_start) as latest
+			 from record_stream s left join employee_record r on r.stream = s.stream
+			 group by s.stream order by s.stream`,
+		);
+		return rows;
 	});
 }
 

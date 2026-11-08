@@ -11,7 +11,12 @@ import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search, suggest } from "#/search/search";
 import { administrator, authenticated } from "./auth-functions";
-import { employeeData, employeeDetail, listEmployees } from "./data";
+import {
+	employeeData,
+	employeeDetail,
+	listEmployees,
+	streamCoverage,
+} from "./data";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
 import { taskLog as runLog, type TaskPages, tasksState } from "./tasks";
@@ -30,6 +35,7 @@ import {
 /**
  * 按记录 id 载入完整线程和当前筛选下的结果。条件来自已校验的查询记录；
  * 视图入参在此独立校验。待理解记录只返回线程，工作台读进度等它理解完。
+ * 对话的条件画成 chip，连同每条单独的人数一起返回；关键词的条件在框里，没有人数。
  */
 export const loadWorkbench = createServerFn({ method: "GET" })
 	.middleware([authenticated])
@@ -207,6 +213,11 @@ export const dataList = createServerFn({ method: "GET" })
 		page: Number(d.page) || 1,
 	}))
 	.handler(({ data }) => listEmployees(data.q, data.page));
+
+/** 数据页的记录流：每条流覆盖多少人、哪些期、最近一期。 */
+export const dataStreams = createServerFn({ method: "GET" })
+	.middleware([authenticated])
+	.handler(() => streamCoverage());
 
 /** 数据页的一个人：档案、每一段、每一段的解析结果。 */
 export const dataEmployee = createServerFn({ method: "GET" })

@@ -17,7 +17,7 @@ import {
 	FAULT_EXIT_LABEL,
 	faultExits,
 } from "#/routes/s/$turnId/-lib/interpret";
-import { inSentence } from "#/search/condition-label";
+import { labelsInSentence } from "#/search/query";
 import type { InterpretFault, Progress, Turn } from "#/server/turn";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
@@ -25,10 +25,13 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
 import {
 	ANSWERED_TURN,
+	ASKING_TURN,
 	FRESH_TURN,
+	LATEST_TURN,
 	LATEST_TURN_ID,
 	PENDING_TRACE,
 	PENDING_TURN,
+	ROOT_TURN,
 	ROOT_TURN_ID,
 	THREAD,
 } from "../../samples/thread";
@@ -39,7 +42,8 @@ type State = "settled" | "asking" | "earlier" | "running" | "failed";
 const STATES: Record<
 	State,
 	{
-		rounds: Turn[];
+		earlier: Turn[];
+		latest: Turn;
 		viewing: string;
 		progress: Progress | null;
 		fault: InterpretFault | null;
@@ -48,31 +52,36 @@ const STATES: Record<
 	asking: {
 		fault: null,
 		progress: null,
-		rounds: THREAD.slice(0, 2),
-		viewing: THREAD[1]?.id ?? "",
+		earlier: THREAD.slice(0, 1),
+		latest: ASKING_TURN,
+		viewing: ASKING_TURN.id,
 	},
 	earlier: {
 		fault: null,
 		progress: null,
-		rounds: THREAD,
+		earlier: THREAD.slice(0, -1),
+		latest: LATEST_TURN,
 		viewing: ROOT_TURN_ID,
 	},
 	failed: {
 		fault: "unreachable",
 		progress: { trace: [], startedAt: PENDING_TURN.startedAt },
-		rounds: [...THREAD, PENDING_TURN],
+		earlier: THREAD,
+		latest: PENDING_TURN,
 		viewing: PENDING_TURN.id,
 	},
 	running: {
 		fault: null,
 		progress: { trace: PENDING_TRACE, startedAt: PENDING_TURN.startedAt },
-		rounds: [...THREAD, PENDING_TURN],
+		earlier: THREAD,
+		latest: PENDING_TURN,
 		viewing: PENDING_TURN.id,
 	},
 	settled: {
 		fault: null,
 		progress: null,
-		rounds: THREAD,
+		earlier: THREAD.slice(0, -1),
+		latest: LATEST_TURN,
 		viewing: LATEST_TURN_ID,
 	},
 };
@@ -134,7 +143,7 @@ function Playground() {
 							{...props}
 							key={state}
 							onRevise={(conditions) =>
-								setLast(`换成了 ${inSentence(conditions)}`)
+								setLast(`换成了 ${labelsInSentence(conditions)}`)
 							}
 							onQuery={(input) => {
 								setLast(
@@ -178,7 +187,8 @@ function Faults() {
 										onQuery={() => true}
 										onRetry={() => {}}
 										onRevise={() => {}}
-										rounds={[FRESH_TURN]}
+										earlier={[]}
+										latest={FRESH_TURN}
 										understanding={false}
 										viewing={FRESH_TURN.id}
 										waiting={false}
@@ -208,11 +218,15 @@ function Usage() {
 			>
 				<Column>
 					<Thread
+						earlier={THREAD.slice(0, 1)}
+						fault={null}
+						latest={ASKING_TURN}
 						onQuery={() => true}
+						onRetry={noop}
 						onRevise={noop}
-						rounds={THREAD.slice(0, 2)}
+						progress={null}
 						understanding
-						viewing={THREAD[1]?.id ?? ""}
+						viewing={ASKING_TURN.id}
 						waiting={false}
 					/>
 				</Column>
@@ -223,9 +237,13 @@ function Usage() {
 			>
 				<Column>
 					<Thread
+						earlier={THREAD.slice(0, 2)}
+						fault={null}
+						latest={ANSWERED_TURN}
 						onQuery={() => true}
+						onRetry={noop}
 						onRevise={noop}
-						rounds={[...THREAD.slice(0, 2), ANSWERED_TURN]}
+						progress={null}
 						understanding
 						viewing={ANSWERED_TURN.id}
 						waiting={false}
@@ -238,10 +256,13 @@ function Usage() {
 			>
 				<Column>
 					<Thread
-						progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
-						onRevise={noop}
+						earlier={[]}
+						fault={null}
+						latest={FRESH_TURN}
 						onQuery={() => true}
-						rounds={[FRESH_TURN]}
+						onRetry={noop}
+						onRevise={noop}
+						progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
 						understanding
 						viewing={FRESH_TURN.id}
 						waiting
@@ -254,9 +275,13 @@ function Usage() {
 			>
 				<Column>
 					<Thread
-						onRevise={noop}
+						earlier={THREAD.slice(0, -1)}
+						fault={null}
+						latest={LATEST_TURN}
 						onQuery={() => true}
-						rounds={THREAD}
+						onRetry={noop}
+						onRevise={noop}
+						progress={null}
 						understanding={false}
 						viewing={LATEST_TURN_ID}
 						waiting={false}
@@ -269,9 +294,13 @@ function Usage() {
 			>
 				<Column>
 					<Thread
-						onRevise={noop}
+						earlier={[]}
+						fault={null}
+						latest={ROOT_TURN}
 						onQuery={() => true}
-						rounds={THREAD.slice(0, 1)}
+						onRetry={noop}
+						onRevise={noop}
+						progress={null}
 						understanding={false}
 						viewing={ROOT_TURN_ID}
 						waiting={false}
@@ -294,7 +323,7 @@ export function ThreadPage() {
 			rules={{
 				notes: [
 					"线程总是整条链；查看早先一次的结果只换名单，不截断线程，正在看的那一次标「正在查看」。",
-					"每次的回应按前后两组条件的差别说加了什么、去掉了什么，条件写进句子用 inSentence。",
+					"每次的回应按前后两组条件的差别说加了什么、去掉了什么，条件写进句子用 labelsInSentence。",
 					"理解失败时说清是哪个环节出了问题：连不上和报错时需求没被读过，不能说成没读懂；线程里的提示带重试，名单那一列另有同样的下一步。",
 					"AI 每次最多问一件事：一句问话，第一项是现在用的，其余点一下或按数字键换成那张条件表；不理就照现在的名单。最后一次才能点，有了下一次就收成一行。",
 					"检索人才库的过程进行中展开、完成后收起；每一步只说人才库里有没有、有哪些写法，不写人数，也不给出任何一个人。",

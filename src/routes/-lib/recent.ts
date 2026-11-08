@@ -1,6 +1,6 @@
-import { activeConditions } from "#/search/condition";
-import { inSentence } from "#/search/condition-label";
 import { keywordsOf, keywordTitle } from "#/search/keywords";
+import { labelsInSentence } from "#/search/query";
+import { queryOfSpec } from "#/search/spec";
 import type { RecentSearch } from "#/server/turn";
 import { RECENT_COUNTS } from "./nav-prefs";
 
@@ -18,10 +18,11 @@ export const RECENT_FIRST_PAGE = Math.max(...RECENT_COUNTS, HOME_RECENT_COUNT);
  */
 export function recentLabel(record: Pick<RecentSearch, "spec" | "title">) {
 	if (record.title) return record.title;
-	const keywords = keywordsOf(record.spec.conditions);
+	const keywords =
+		"conditions" in record.spec ? keywordsOf(record.spec.conditions) : null;
 	if (keywords) return keywordTitle(keywords);
-	// 读不回框里的条件表照条件写，停用的没参与检索、不写
-	return inSentence(activeConditions(record.spec.conditions)) || "无搜索条件";
+	// 读不回框里的条件照条件写，停用的没参与检索、不写
+	return active(record) || "无搜索条件";
 }
 
 /**
@@ -32,7 +33,13 @@ export function recentSummary(
 	record: Pick<RecentSearch, "spec" | "title">,
 ): string | undefined {
 	if (!record.title) return undefined;
-	return inSentence(activeConditions(record.spec.conditions)) || undefined;
+	return active(record) || undefined;
+}
+
+function active(record: Pick<RecentSearch, "spec">) {
+	return labelsInSentence(
+		queryOfSpec(record.spec).conditions.filter((c) => !c.off),
+	);
 }
 
 const MINUTE = 60;

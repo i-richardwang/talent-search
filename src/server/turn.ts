@@ -12,19 +12,25 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
-import { type TurnNotes, unanswered, understood } from "#/search/intent";
+import { compileConditions } from "#/search/compile";
+import type { Condition } from "#/search/condition";
+import { scopeOf } from "#/search/execute";
+import { type NotesRecord, type TurnNotes, unanswered } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
+import type { QueryCondition } from "#/search/query";
 import { vocabulary } from "#/search/search";
-import type { QueryInput, SearchSpec } from "#/search/spec";
+import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { agentTools } from "./agent-tools";
+import { streamFacts } from "./discover";
 import { type EndpointFault, endpointFault } from "./endpoint";
 import {
-	UNDERSTAND_LIMIT_MS,
+	STEP_LIMIT_MS,
 	UnansweredError,
 	understand,
 	understandingConfigured,
 } from "./llm";
+import { compileWhere } from "./sandbox";
 
 function newId() {
 	return randomBytes(8).toString("base64url");
@@ -132,8 +138,21 @@ function modeOf(rootRawText: string | null | undefined): SearchMode {
 function admit(mode: SearchMode, input: QueryInput) {
 	if (mode !== "keyword") return;
 	if (input.kind === "sentence") throw new Error("关键词搜索不收一句话的需求");
-	if (!keywordsOf(input.spec.conditions))
+	if (!("conditions" in input.spec) || !keywordsOf(input.spec.conditions))
 		throw new Error("关键词搜索只收关键词框里写得出的条件");
+}
+
+/**
+ * 写进记录之前，查询里每条条件的 `where` 都要过解析白名单：RPC 上来的和模型写的一样不可信，
+ * 记录不可变，执行时才发现跑不了就晚了。
+ */
+async function admitWhere(input: QueryInput) {
+	if (input.kind !== "spec" || !("query" in input.spec)) return;
+	for (const c of input.spec.query.conditions) {
+		const result = await compileWhere(c.where, c.params ?? {}, scopeOf(c));
+		if (!result.ok)
+			throw new Error(`搜索条件「${c.label}」不能执行：${result.problem}`);
+	}
 }
 
 /**
@@ -147,11 +166,12 @@ export async function createTurn(
 	input: QueryInput,
 	from?: string,
 ): Promise<{ turnId: string; attempt: string | null }> {
+	await admitWhere(input);
 	return db.transaction(async (tx) => {
 		const text = input.kind === "sentence" ? input.text : null;
 		const spec = input.kind === "spec" ? input.spec : null;
 		if (!from) {
-			admit(text === null ? "keyword" : "conversation", input);
+			admit(modeOf(text), input);
 			const head = await insertTurn(tx, { parent: null, rawText: text, spec });
 			return { turnId: head.id, attempt: head.interpretAttempt };
 		}
@@ -197,7 +217,7 @@ export async function createTurn(
  * 连不上和报错时那句话根本没被读过，不能说成「这句话没读懂」。
  *
  * - `unconfigured`：没配查询理解端点。
- * - `unreachable` / `rejected`：见 `endpointFault`；超过一轮的时限也算没答上来。
+ * - `unreachable` / `rejected`：见 `endpointFault`；一次请求等满超时也算没答上来。
  * - `unanswered`：端点答了，没按约定作答——只有这一种换个说法可能有用。
  * - `broken`：别的，我们自己这一侧的意外，包括理解到一半进程没了。原错误写进服务端日志。
  */
@@ -207,17 +227,23 @@ export type InterpretFault =
 	| "unanswered"
 	| "broken";
 
-/** 写完结果要的那一点时间：时限到了模型调用就停，之后只剩校验和一次写入。 */
+/** 一步的工具跑完、写下这一步要的那一点时间，也是最后一步之后校验和写入结果的时间。 */
 const SETTLE_MS = 10_000;
 
 /**
- * 过了时限还没写下结果也没写下失败的那一次：它的进程没了，不会再写了。
- * 读记录时把它当作 `broken`，重试也只换掉这样的和已经失败的那一次。
+ * 这一次理解最近一次写下东西的时刻：开始的时刻，或者最后一步的时刻（步骤的 `at`，见
+ * `search/trace.ts`）。每次工具调用和没通过的提交都记一步，所以它就是心跳。
+ */
+const lastBeat = sql`greatest(${searchTurn.interpretStartedAt},
+	to_timestamp((${searchTurn.trace} -> -1 ->> 'at')::float8 / 1000))`;
+
+/**
+ * 还没写下结果也没写下失败、而且隔了一步的上限还没有新的一步的那一次：它的进程没了，
+ * 不会再写了。读记录时把它当作 `broken`，重试也只换掉这样的和已经失败的那一次。
  */
 const abandoned = sql`(${searchTurn.spec} is null
 	and ${searchTurn.interpretFault} is null
-	and ${searchTurn.interpretStartedAt}
-		< now() - make_interval(secs => ${(UNDERSTAND_LIMIT_MS + SETTLE_MS) / 1000}))`;
+	and ${lastBeat} < now() - make_interval(secs => ${(STEP_LIMIT_MS + SETTLE_MS) / 1000}))`;
 
 const currentFault = sql<InterpretFault | null>`case when ${abandoned}
 	then 'broken' else ${searchTurn.interpretFault} end`;
@@ -268,12 +294,12 @@ async function understandTurn(
 	if (row?.interpretAttempt !== attempt || row.rawText === null) return null;
 	const rawText = row.rawText;
 	const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
-	const base = parent?.spec?.conditions ?? [];
+	const base = parent?.spec ? queryOfSpec(parent.spec).conditions : [];
 
 	// 读词表和调用模型各自读数据库，不共用一个快照：调用模型可能要一分钟，如果开着
 	// 快照等它，一次理解就占着连接池里的一条连接一分钟。模型的工具在自己的快照里读
 	// （`search/phrases.ts` 的 withMatchedPhrases）。
-	const vocab = await vocabulary();
+	const [vocab, streams] = await Promise.all([vocabulary(), streamFacts()]);
 	const record = async (step: TraceStep) => {
 		await db
 			.update(searchTurn)
@@ -282,15 +308,20 @@ async function understandTurn(
 			})
 			.where(ownedBy(turnId, attempt));
 	};
-	const agent = agentTools({ vocab, base, record });
-	const submitted = await understand(rawText, vocab, base, agent);
-	const result = understood(submitted, vocab, base);
+	const agent = agentTools({ base, record });
+	// 写进记录的是提交检查录取的那份：跑不了的条件已经丢掉，丢空了就是没作答
+	const { submitted, admitted: result } = await understand(
+		rawText,
+		{ vocab, streams },
+		base,
+		agent,
+	);
 	const failure = unanswered(submitted, result);
 	if (failure) throw new UnansweredError(failure);
 
 	await db
 		.update(searchTurn)
-		.set({ spec: result.spec, notes: result.notes })
+		.set({ spec: { query: result.query }, notes: result.notes })
 		.where(ownedBy(turnId, attempt));
 	return null;
 }
@@ -337,7 +368,7 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 		root_turn_id: string;
 		raw_text: string | null;
 		spec: SearchSpec | null;
-		notes: TurnNotes | null;
+		notes: NotesRecord | null;
 		trace: TraceStep[] | null;
 		started_at: number | null;
 		fault: InterpretFault | null;
@@ -366,12 +397,33 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 		title: root?.raw_text ?? null,
 		said: row.raw_text,
 		spec: row.spec,
-		notes: row.notes,
+		notes: row.notes && notesOfRecord(row.notes),
 		trace: row.trace,
 		startedAt: row.started_at,
 		fault: row.fault,
 		at: row.at,
 	}));
+}
+
+/**
+ * 记录里的说明 → 界面读的说明：选项里关键词链形状的条件表经 `compile.ts` 编译成查询，和那一轮
+ * 的条件编译出同样的 id。
+ */
+function notesOfRecord(notes: NotesRecord): TurnNotes {
+	if (!notes.choices) return { says: notes.says, choices: null };
+	const others = notes.choices.others.map((o) => ({
+		...o,
+		conditions: isKeywordShape(o.conditions)
+			? compileConditions(o.conditions).conditions
+			: o.conditions,
+	}));
+	return { ...notes, choices: { ...notes.choices, others } };
+}
+
+function isKeywordShape(
+	list: QueryCondition[] | Condition[],
+): list is Condition[] {
+	return list.some((c) => "about" in c);
 }
 
 /** 这一轮的理解现在怎样了；没有这一轮或这一轮没说话为 null。 */

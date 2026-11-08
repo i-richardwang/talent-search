@@ -6,7 +6,12 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import type { SQL } from "drizzle-orm";
-import { getTableConfig, PgDialect, type PgTable } from "drizzle-orm/pg-core";
+import {
+	getTableConfig,
+	getViewConfig,
+	PgDialect,
+	type PgTable,
+} from "drizzle-orm/pg-core";
 import { Pool } from "pg";
 import { phrasesOf } from "#/corpus/route-texts";
 import {
@@ -14,24 +19,29 @@ import {
 	authSession,
 	authUser,
 	authVerification,
+	CATALOG_VIEWS,
 	completionCache,
 	EMBED_DIM,
 	embeddingCache,
 	embeddingSpace,
 	employee,
+	employeeRecord,
 	experience,
 	experienceNext,
 	experiencePhrase,
 	experiencePhraseNext,
 	phrase,
 	phraseGloss,
+	recordStream,
 	rerankCache,
 	reviewGroup,
+	scale,
 	searchTurn,
 	taskRun,
 	term,
 } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
+import { compileConditions } from "#/search/compile";
 import { parseQuery } from "#/search/query-syntax";
 
 /**
@@ -39,6 +49,9 @@ import { parseQuery } from "#/search/query-syntax";
  * bun test --parallel 隔离模块与环境，但多个文件可共用同一 worker 进程。
  */
 const SCHEMA = `talent_test_${process.pid}_${randomBytes(4).toString("hex")}`;
+
+/** 这个测试文件的数据目录（`schema.ts` 的 `catalog`）：视图建在这里，指向本文件的表。 */
+const CATALOG = `${SCHEMA}_catalog`;
 
 /** Postgres 把更长的名字静默截短；截短后和 schema 里的名字对不上，db:push 每次都会删了重建。 */
 const NAME_MAX_BYTES = 63;
@@ -162,7 +175,7 @@ export function fakeEmbedding(text: string): number[] {
 export const CANARY = "talent-search embedding canary";
 
 /** 两串字在假嵌入下的余弦，测试里用来解释断言的边界。 */
-export function fakeSimilarity(a: string, b: string) {
+function fakeSimilarity(a: string, b: string) {
 	const va = fakeEmbedding(a);
 	const vb = fakeEmbedding(b);
 	const similarity = va.reduce((s, x, i) => s + x * (vb[i] ?? 0), 0);
@@ -225,18 +238,36 @@ export function answerEmbedding(answer: (text: string) => number[]) {
 }
 
 /**
- * 假理解：把那句话按一行查询语法读（`search/query-syntax.ts`），接在当前条件
- * 后面提交整张表——真模型遇到「再加上……」就是这么做的。模型说的和库里存的是
- * 同一个形状，所以这里不必翻译；词表检查在 intent.test.ts 里对着 `understood` 直接测。
- * 一行语法里的 `~` 会带出 `off`，而真模型从不写停用，去掉。
+ * 一行查询语法（`search/query-syntax.ts`）写成模型会提交的条件：经编译器写成查询，去掉 id
+ * （新写的条件不带 id，由服务端发）和停用（真模型从不写停用）。
+ */
+export function drafted(syntax: string) {
+	return compileConditions(parseQuery(syntax)).conditions.map(
+		({ id: _id, off: _off, ...rest }) => rest,
+	);
+}
+
+/**
+ * 假理解：把那句话按一行查询语法读，接在当前条件后面提交整份——真模型遇到「再加上……」
+ * 就是这么做的。
  */
 function fakeIntent(text: string, base: unknown[]) {
+	return { conditions: [...base, ...drafted(text)], note: null };
+}
+
+/**
+ * 打开后，假理解先用一遍三个查询工具（看目录、查经历词、试跑）再提交，并记下发给
+ * 查询理解端点的每一个请求体：工具的回答会跟着下一次请求发出去，隐私测试看的就是它们。
+ */
+let exploring: string[] | null = null;
+export function exploreAndCapture(): { bodies: string[]; stop: () => void } {
+	const bodies: string[] = [];
+	exploring = bodies;
 	return {
-		conditions: [
-			...base,
-			...parseQuery(text).map(({ off: _off, ...rest }) => rest),
-		],
-		note: null,
+		bodies,
+		stop: () => {
+			exploring = null;
+		},
 	};
 }
 
@@ -375,14 +406,52 @@ function startModelServer() {
 						choices: [{ index: 0, message, finish_reason: finish }],
 						usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
 					});
-				// 识别出查询理解的提示词；不查词，直接用提交工具提交那张表
+				// 识别出查询理解的提示词；默认不查词，直接用提交工具提交那张表
 				const understanding = users.find((u) => u.includes(SENTENCE_PREFIX));
 				if (understanding !== undefined) {
 					const at = understanding.lastIndexOf(SENTENCE_PREFIX);
+					const said = understanding.slice(at + SENTENCE_PREFIX.length);
 					const table = (intentAnswer ?? fakeIntent)(
-						understanding.slice(at + SENTENCE_PREFIX.length),
+						said,
 						baseIn(understanding),
 					);
+					exploring?.push(body);
+					const explored = messages.some((m) => m.role === "tool");
+					if (exploring && !explored) {
+						const call = (name: string, input: unknown, n: number) => ({
+							id: `explore-${n}`,
+							type: "function",
+							function: { name, arguments: JSON.stringify(input) },
+						});
+						const words = drafted(said).flatMap((c) =>
+							Object.values(c.terms ?? {}).flat(),
+						);
+						reply(
+							{
+								role: "assistant",
+								content: null,
+								tool_calls: [
+									call("discover", {}, 0),
+									call(
+										"discover",
+										{ relation: "person", column: "education" },
+										1,
+									),
+									call("lookup_experience", { texts: words }, 2),
+									call(
+										"probe",
+										{
+											conditions: (table as { conditions: unknown[] })
+												.conditions,
+										},
+										3,
+									),
+								],
+							},
+							"tool_calls",
+						);
+						return;
+					}
 					reply(
 						{
 							role: "assistant",
@@ -487,8 +556,27 @@ export async function setup() {
 		embeddingCache,
 		completionCache,
 		taskRun,
+		recordStream,
+		scale,
+		employeeRecord,
 	])
 		await admin.query(ddl(SCHEMA, t));
+	// 视图里的表名不带 schema，建视图时按本文件的 schema 解析，绑定的就是本文件的表
+	await admin.query(`create schema ${CATALOG}`);
+	const viewClient = await admin.connect();
+	try {
+		await viewClient.query(`set search_path to ${SCHEMA}, public`);
+		for (const view of CATALOG_VIEWS) {
+			const { name, query } = getViewConfig(view);
+			if (!query) throw new Error(`目录视图 ${name} 没有定义`);
+			await viewClient.query(
+				`create view ${CATALOG}."${name}" as ${new PgDialect().sqlToQuery(query).sql}`,
+			);
+		}
+		await viewClient.query("reset search_path");
+	} finally {
+		viewClient.release();
+	}
 	await admin.query(
 		`insert into ${SCHEMA}.embedding_space
 			(space_id, model, dimension, canary_text, canary_embedding)
@@ -529,12 +617,14 @@ export async function setup() {
 	process.env.EXTRACT_CONCURRENCY = "2";
 	process.env.TALENT_SOURCE = "csv-dir";
 	process.env.TALENT_CSV_DIR = "";
+	process.env.TALENT_CATALOG_SCHEMA = CATALOG;
 
 	return async function teardown() {
 		const { pool } = await import("#/db");
 		await pool.end();
 		await modelServer.close();
 		const a = new Pool({ connectionString: base });
+		await a.query(`drop schema if exists ${CATALOG} cascade`);
 		await a.query(`drop schema if exists ${SCHEMA} cascade`);
 		await a.end();
 	};
@@ -593,6 +683,43 @@ type Seed = {
 	}>;
 };
 
+/** 一条合成的记录流：评级流带档（从低到高），记录按期给。 */
+export type StreamSeed = {
+	stream: string;
+	kind: "rating" | "status";
+	label: string;
+	period?: string;
+	scale?: readonly string[];
+	records: {
+		empId: string;
+		value: string;
+		periodStart: string;
+		periodEnd?: string;
+	}[];
+};
+
+/** 写一条记录流：流本身、评级流的档位表和每个人的记录，和同步写的三张表一样。 */
+export async function seedStream(s: StreamSeed) {
+	const { db } = await import("#/db");
+	const { recordStream, scale, employeeRecord } = await import("#/db/schema");
+	await db.insert(recordStream).values({
+		stream: s.stream,
+		kind: s.kind,
+		label: s.label,
+		period: s.period ?? "",
+	});
+	if (s.scale?.length)
+		await db
+			.insert(scale)
+			.values(
+				s.scale.map((value, rank) => ({ stream: s.stream, value, rank })),
+			);
+	if (s.records.length > 0)
+		await db
+			.insert(employeeRecord)
+			.values(s.records.map((r) => ({ ...r, stream: s.stream })));
+}
+
 export async function seed(rows: Seed[]) {
 	const { db } = await import("#/db");
 	const {
@@ -600,6 +727,8 @@ export async function seed(rows: Seed[]) {
 		experience: exp,
 		phrase: ph,
 		experiencePhrase: ep,
+		scale: sc,
+		ORDINAL_STREAM,
 	} = await import("#/db/schema");
 	const { EDUCATION_LADDER } = await import("#/corpus/contract");
 	const rankOf = (level: string) => Number(level.replace(/\D/g, ""));
@@ -620,6 +749,26 @@ export async function seed(rows: Seed[]) {
 			overseasEducated: r.overseasEducated ?? null,
 		})),
 	);
+	// 档位表和同步写的一样（`corpus/pipeline.ts` 的 `scaleRows`）：职级档取人身上出现过的档和
+	// 档高，学历按契约的五档；「某档及以上」查的就是它。多次 seed 时已有的档不重写
+	const levels = new Map(
+		rows.flatMap((r) => (r.curLevel ? [[r.curLevel, rankOf(r.curLevel)]] : [])),
+	);
+	await db
+		.insert(sc)
+		.values([
+			...[...levels].map(([value, rank]) => ({
+				stream: ORDINAL_STREAM.level,
+				value,
+				rank,
+			})),
+			...EDUCATION_LADDER.map((value, index) => ({
+				stream: ORDINAL_STREAM.education,
+				value,
+				rank: index + 1,
+			})),
+		])
+		.onConflictDoNothing();
 	let day = 1;
 	if (rows.every((row) => row.segments.length === 0)) return;
 	const inserted = await db

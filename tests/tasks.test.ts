@@ -103,8 +103,11 @@ describe("同步与解析", () => {
 		assert.ok(run);
 		assert.equal(run.failure, null);
 
-		// 样例里是编出来的二十个人
-		assert.equal(await count("employee"), 20);
+		// 样例里是编出来的二十九个人，连同他们的绩效与高潜记录
+		assert.equal(await count("employee"), 29);
+		assert.equal(await count("record_stream"), 2);
+		// 48 行记录里同一期的两条修订只留最终一条
+		assert.equal(await count("employee_record"), 47);
 		assert.ok((await count("experience")) > 20);
 		assert.equal(await count("phrase"), 0);
 		assert.equal(await underived(), await count("experience"));
@@ -113,7 +116,7 @@ describe("同步与解析", () => {
 		const sync = latest(state, "sync");
 		assert.equal(sync?.outcome, "done");
 		assert.equal(sync?.source, "csv-dir");
-		assert.match(await logText(sync?.id), /人群 20 人/);
+		assert.match(await logText(sync?.id), /人群 29 人/);
 		assert.equal(state.corpus.derived, 0);
 	});
 
@@ -183,11 +186,37 @@ describe("同步与解析", () => {
 		assert.deepEqual(after.rows[0], original);
 	});
 
+	test("数据页列出每条记录流的覆盖", async () => {
+		const { streamCoverage } = await import("#/server/data");
+		assert.deepEqual(await streamCoverage(), [
+			{
+				first: "2023-01-01",
+				kind: "status",
+				label: "高潜人才池",
+				latest: { end: null, start: "2024-01-01" },
+				people: 2,
+				period: "",
+				periods: 2,
+				stream: "hipo",
+			},
+			{
+				first: "2023-01-01",
+				kind: "rating",
+				label: "绩效",
+				latest: { end: "2026-06-30", start: "2026-01-01" },
+				people: 8,
+				period: "半年",
+				periods: 7,
+				stream: "perf",
+			},
+		]);
+	});
+
 	test("数据页看得到每一段的解析结果", async () => {
 		const { listEmployees, employeeData } = await import("#/server/data");
 		const list = await listEmployees("", 1);
-		assert.equal(list.total, 20);
-		assert.equal(list.rows.length, 20);
+		assert.equal(list.total, 29);
+		assert.equal(list.rows.length, 29);
 		// 20 个人装得下一页，所以只有一页，第一个人排第一
 		assert.equal(list.pages, 1);
 		assert.equal(list.from, 1);
@@ -228,7 +257,7 @@ describe("同步与解析", () => {
 		const run = await runTask("sync");
 		assert.ok(run);
 		assert.equal(run.failure, null);
-		assert.equal(await count("employee"), 20);
+		assert.equal(await count("employee"), 29);
 		assert.equal(await count("experience_phrase"), edges);
 		assert.equal(await underived(), 0);
 	});
@@ -406,7 +435,7 @@ describe("同步与解析", () => {
 		// 来由那一层：模块加载自己报的话，不是我们替它编的
 		assert.match(log, /↳/);
 		// 失败的同步一行都没动
-		assert.equal(await count("employee"), 20);
+		assert.equal(await count("employee"), 29);
 	});
 
 	test("向量模型更换：说法整张作废，所有段重新解析，空间记录重写", async () => {
