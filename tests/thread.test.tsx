@@ -372,7 +372,7 @@ describe("检索人才库的过程", () => {
 						periods: 6,
 						first: "2023-01-01",
 						latest: { start: "2025-07-01", end: "2025-12-31" },
-						scale: ["C", "B", "A", "S"],
+						values: ["C", "B", "A", "S"],
 					},
 				],
 			},

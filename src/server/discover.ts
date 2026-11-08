@@ -16,11 +16,10 @@ import type { Discovery, Matched, NameField, StreamFact } from "#/search/trace";
 import { streamCoverage } from "./data";
 import { catalogSchema } from "./sandbox";
 
-/** 有高低的列按哪一列排。 */
-const RANK_OF: Record<string, string> = {
-	level_band: "level_rank",
-	education: "education_rank",
-	value: "value_rank",
+/** 有高低的列按哪一列排，按关系分：评级的档有档高，状态的取值没有高低。 */
+const RANK_OF: Record<string, Record<string, string>> = {
+	person: { level_band: "level_rank", education: "education_rank" },
+	rating: { value: "value_rank" },
 };
 
 /** 按名字匹配的列，对应 `lookupNames` 的哪一种。 */
@@ -32,7 +31,10 @@ const NAME_COLUMNS: Record<string, Record<string, NameField>> = {
 /** 一列最多列几个取值，和词表同一个上限。 */
 const VALUES_MAX = 100;
 
-/** 每条记录流的覆盖与档位，提示词和 `discover` 的总览共用。 */
+/**
+ * 每条记录流的覆盖与取值，提示词和 `discover` 的总览共用。评级流的取值是档位表里的档，
+ * 从低到高；状态流的取值和看这条流的 `value` 列得到的是同一份，人多的在前。
+ */
 export async function streamFacts(): Promise<StreamFact[]> {
 	const [coverage, scales] = await Promise.all([
 		streamCoverage(),
@@ -43,10 +45,15 @@ export async function streamFacts(): Promise<StreamFact[]> {
 		),
 	]);
 	const scaleOf = new Map(scales.rows.map((r) => [r.stream, r.values]));
-	return coverage.map((c) => ({
-		...c,
-		scale: c.kind === "rating" ? (scaleOf.get(c.stream) ?? []) : [],
-	}));
+	return Promise.all(
+		coverage.map(async (c) => ({
+			...c,
+			values:
+				c.kind === "rating"
+					? (scaleOf.get(c.stream) ?? [])
+					: (await valuesOf("status", "value", c.stream)).map((v) => v.name),
+		})),
+	);
 }
 
 export type DiscoverInput = {
@@ -86,7 +93,7 @@ export async function discover(input: DiscoverInput): Promise<Discovery> {
 	const byStream = relation.name === "rating" || relation.name === "status";
 	const stream = byStream ? input.stream : undefined;
 	if (byStream && column === "value" && !stream)
-		return problem("各条记录流的档不一样：在 stream 里写是哪一条流");
+		return problem("各条记录流的取值不一样：在 stream 里写是哪一条流");
 	const streamLabel = stream ? await labelOf(stream) : null;
 	if (stream && !streamLabel) return problem(`没有 ${stream} 这条记录流`);
 	return {
@@ -141,7 +148,7 @@ async function valuesOf(
 ): Promise<Matched[]> {
 	const schema = sql.identifier(catalogSchema());
 	const col = sql.identifier(column);
-	const rank = RANK_OF[column];
+	const rank = RANK_OF[relation]?.[column];
 	return withCorpusSnapshot(async (store) => {
 		const { rows } = await store.execute<Matched>(sql`
 			select ${col}::text as name, count(distinct emp_id)::int as people

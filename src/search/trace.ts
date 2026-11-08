@@ -59,8 +59,8 @@ export type StreamFact = {
 	periods: number;
 	first: string | null;
 	latest: { start: string; end: string | null } | null;
-	/** 评级流的档，从低到高；状态流为空 */
-	scale: string[];
+	/** 取值：评级流是档，从低到高；状态流是库里出现过的状态，人多的在前 */
+	values: string[];
 };
 
 /** 看数据目录得到的：总览、一列的取值、按名字匹配到的写法，或者这一问为什么答不了。 */

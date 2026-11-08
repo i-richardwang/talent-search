@@ -269,7 +269,14 @@ function streamLine(s: StreamFact) {
 	const span = s.first
 		? `${s.first} 起，最近一期 ${s.latest?.start ?? ""}${s.latest?.end ? ` 至 ${s.latest.end}` : " 起至今"}`
 		: "还没有记录";
-	return `${s.stream}（${s.label}，${s.kind === "rating" ? "评级" : "状态"}${s.period ? `，${s.period}一期` : ""}）：${s.people} 人，${span}${s.scale.length > 0 ? `；档从低到高 ${s.scale.join("、")}` : ""}`;
+	return `${s.stream}（${s.label}，${s.kind === "rating" ? "评级" : "状态"}${s.period ? `，${s.period}一期` : ""}）：${s.people} 人，${span}${valuesText(s)}`;
+}
+
+function valuesText(s: StreamFact) {
+	if (s.values.length === 0) return "";
+	return s.kind === "rating"
+		? `；档从低到高 ${s.values.join("、")}`
+		: `；取值有 ${s.values.join("、")}`;
 }
 
 /** 预先写进提示词的活统计：有限取值几维的取值和人数，记录流的覆盖。 */

@@ -71,6 +71,17 @@ before(async () => {
 			value: "A",
 		})),
 	);
+	await db
+		.insert(recordStream)
+		.values({ stream: "hipo", kind: "status", label: "高潜" });
+	await db.insert(employeeRecord).values(
+		SECRETS.empIds.map((empId) => ({
+			empId,
+			stream: "hipo",
+			periodStart: "2025-01-01",
+			value: "高潜池",
+		})),
+	);
 });
 
 test("一次理解发给模型的请求体里没有人", async () => {
@@ -101,6 +112,9 @@ test("一次理解发给模型的请求体里没有人", async () => {
 	);
 	assert.match(answered, /硕士.{0,8}people.{0,4}3/, "一列的取值和人数发出去了");
 	assert.match(answered, /绩效/, "记录流的概况发出去了");
+	const prompt = bodies[0] ?? "";
+	assert.match(prompt, /档从低到高 C、B、A/, "评级流写档");
+	assert.match(prompt, /取值有 高潜池/, "状态流写取值");
 	for (const body of bodies)
 		for (const secret of [
 			...SECRETS.names,

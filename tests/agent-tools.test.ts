@@ -278,6 +278,50 @@ describe("看目录", () => {
 			await pool.query("delete from record_stream");
 		}
 	});
+	test("状态流的取值和评级流走同一条路：按人数列出每个取值，总览里也带上", async () => {
+		const { db, pool } = await import("#/db");
+		const { recordStream, employeeRecord } = await import("#/db/schema");
+		await db.insert(recordStream).values({
+			stream: "hipo",
+			kind: "status",
+			label: "高潜",
+		});
+		await db.insert(employeeRecord).values(
+			["A0", "A1", "A2"].map((empId, i) => ({
+				empId,
+				stream: "hipo",
+				periodStart: "2025-01-01",
+				value: i === 0 ? "观察" : "高潜",
+			})),
+		);
+		try {
+			assert.deepEqual(
+				await discover({ relation: "status", column: "value", stream: "hipo" }),
+				{
+					kind: "values",
+					subject: "高潜的状态",
+					values: [
+						{ name: "高潜", people: 2 },
+						{ name: "观察", people: 1 },
+					],
+				},
+			);
+			assert.equal(
+				(await discover({ relation: "status", column: "value" })).kind,
+				"problem",
+				"不写是哪条流，问不了",
+			);
+			const overview = await discover({});
+			assert.equal(overview.kind, "overview");
+			if (overview.kind !== "overview") return;
+			assert.deepEqual(
+				overview.streams.map((s) => [s.stream, s.values]),
+				[["hipo", ["高潜", "观察"]]],
+			);
+		} finally {
+			await pool.query("delete from record_stream");
+		}
+	});
 });
 
 describe("试跑", () => {

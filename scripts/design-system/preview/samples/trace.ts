@@ -49,7 +49,7 @@ export const ROUND1_TRACE: TraceStep[] = [
 					periods: 6,
 					first: "2023-07-01",
 					latest: { start: "2026-01-01", end: "2026-06-30" },
-					scale: ["C", "B", "B+", "A", "A+"],
+					values: ["C", "B", "B+", "A", "A+"],
 				},
 			],
 		},

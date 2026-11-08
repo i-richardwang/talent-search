@@ -241,7 +241,12 @@ const status: CatalogRelation<ColumnsOf<typeof catalogStatus>> & {
 			meaning: "哪一条状态流，例如高潜池；有哪些流用 discover 查",
 			values: "enum",
 		},
-		value: { type: "text", label: "状态", meaning: "这一段处于什么状态" },
+		value: {
+			type: "text",
+			label: "状态",
+			meaning: "这一段处于什么状态",
+			values: "enum",
+		},
 		valid_from: { type: "date", label: "起", meaning: "这一段的开始日" },
 		valid_to: {
 			type: "date",
