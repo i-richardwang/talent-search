@@ -7,12 +7,14 @@
  * 1. 物化命中：全部语义词一起召回、重排（快照外调模型，见 phrases.ts），按词表修正后在检索
  *    事务里建临时表 `hit`。每条条件按自己的强度取门槛：正向 `RELEVANCE_MIN`，排除
  *    `RELEVANCE_MIN_EXCLUDE`。
- * 2. 排除先行：每条排除否决的段，在下面每一条语句里都不算证据、也不算背景。
+ * 2. 排除先行：每条排除否决的段记进 `vetoed`，之后只读角色里的 `experience` 就不含它们
+ *    （`server/sandbox.ts` 的 `restricted`）。模型写的子查询和外壳的语句读的是同一份，
+ *    被否决的段既不算证据、也不算背景。
  * 3. 每条必须与加分：经历主张产出事实行，同一条主张、同一段只留相关度乘投入系数最高的
  *    一行（和 rank.ts 的 `closer` 一致）；背景与人的条件按人过滤（必须）或记成一条偏好（加分）。
  * 4. 候选与名次：rank.ts 原样消费事实行与偏好集合。
  *
- * 第 2、3 步在只读角色下执行（`server/sandbox.ts`），只读得到数据目录和 `hit`。
+ * 第 2、3 步在只读角色下执行（`server/sandbox.ts`），只读得到数据目录、`hit` 和 `vetoed`。
  * 名单要显示的姓名和经历原文在回到应用角色后按 id 取。
  *
  * 一条经历主张的各项约束作用于同一段经历；累计时长由 rank.ts 跨段求值。背景与人的条件是门槛，
@@ -27,7 +29,9 @@ import type { Engagement } from "#/lib/engagement";
 import { dots } from "#/lib/format";
 import { escapeLike } from "#/lib/sql";
 import {
+	catalogSchema,
 	compileWhere,
+	createVetoed,
 	restricted,
 	sandboxProblem,
 	shareTemp,
@@ -223,35 +227,60 @@ async function materializeHits(
 	await shareTemp(store, "hit");
 }
 
-/** 这条条件读到的段：带语义词的接上它自己的那几行命中。 */
-function segmentsOf(c: Compiled, index: number): SQL {
+/**
+ * 这条条件读到的段：带语义词的接上它自己的那几行命中。`experience` 在只读角色里是去掉否决段
+ * 的那份；算否决段时读目录里的原始经历。
+ */
+function segmentsOf(
+	c: Compiled,
+	index: number,
+	from: SQL = sql`experience`,
+): SQL {
 	return hasTerms(c.condition)
-		? sql`experience e join hit h on h.experience_id = e.id and h.cond = ${index}`
-		: sql`experience e`;
+		? sql`${from} e join hit h on h.experience_id = e.id and h.cond = ${index}`
+		: sql`${from} e`;
 }
 
 /**
- * 外壳在只读角色下拼出的语句。下标都指向 `query.conditions`，`veto` 是被排除否决的段。
+ * 排除先行：每条排除否决了哪些段，写进 `vetoed`。每条在自己的保存点里跑，读的是目录里的原始
+ * 经历；全部算完再写，谁先谁后结果都一样。跑不了的那几条不写，返回它们的下标和原因。
  */
-class Shell {
-	readonly veto: SQL | null;
-
-	constructor(
-		private readonly all: readonly (Compiled | null)[],
-		excludes: readonly number[],
-	) {
-		const parts = excludes.map((i) => {
-			const c = this.at(i);
-			return sql`select e.id from ${segmentsOf(c, i)} where ${c.where}`;
-		});
-		this.veto =
-			parts.length > 0
-				? sql`select id from (${sql.join(
-						parts.map((p) => sql`(${p})`),
-						sql` union all `,
-					)}) vetoed`
-				: null;
+async function excludeFirst(
+	store: DbExecutor,
+	all: readonly (Compiled | null)[],
+): Promise<Map<number, string>> {
+	await createVetoed(store);
+	const raw = sql`${sql.identifier(catalogSchema())}.experience`;
+	const vetoed: { cond: number; id: number; emp_id: string }[] = [];
+	const problems = new Map<number, string>();
+	for (const [i, c] of all.entries()) {
+		if (c?.condition.mode !== "exclude") continue;
+		try {
+			const { rows } = await restricted(store, () =>
+				store.execute<{ id: number; emp_id: string }>(sql`
+					select distinct e.id, e.emp_id from ${segmentsOf(c, i, raw)}
+					where ${c.where}`),
+			);
+			for (const row of rows) vetoed.push({ cond: i, ...row });
+		} catch (error) {
+			const problem = sandboxProblem(error);
+			if (problem === null) throw error;
+			problems.set(i, problem);
+		}
 	}
+	if (vetoed.length > 0)
+		await store.execute(sql`
+			insert into vetoed (cond, id, emp_id)
+			select * from unnest(
+				${sql.param(vetoed.map((v) => v.cond))}::int[],
+				${sql.param(vetoed.map((v) => v.id))}::int[],
+				${sql.param(vetoed.map((v) => v.emp_id))}::text[])`);
+	return problems;
+}
+
+/** 外壳在只读角色下拼出的语句。下标都指向 `query.conditions`。 */
+class Shell {
+	constructor(private readonly all: readonly (Compiled | null)[]) {}
 
 	at(i: number): Compiled {
 		const c = this.all[i];
@@ -259,30 +288,22 @@ class Shell {
 		return c;
 	}
 
-	notVetoed(): SQL[] {
-		return this.veto ? [sql`e.id not in (${this.veto})`] : [];
-	}
-
 	/**
 	 * 一条门槛在人 `p` 上的谓词。人的条件就是它的 `where`；背景是这个人有合格的段，
-	 * 写了累计时长就把合格段的月数加起来比。被否决的段不算背景的证据。
+	 * 写了累计时长就把合格段的月数加起来比。
 	 */
 	gate(i: number): SQL {
 		const c = this.at(i);
 		if (c.condition.from === "person") return c.where;
-		const where = whereAll([
-			sql`e.emp_id = p.emp_id`,
-			c.where,
-			...this.notVetoed(),
-		]);
+		const where = whereAll([sql`e.emp_id = p.emp_id`, c.where]);
 		return c.condition.minMonths
 			? sql`(select coalesce(sum(e.months), 0) from experience e ${where}) >= ${c.condition.minMonths}`
 			: sql`exists (select 1 from experience e ${where})`;
 	}
 
 	/**
-	 * URL 上的公司、部门和学校筛选：按名字包含，在 SQL 里按人过滤；公司和部门要求有未被
-	 * 否决的工作经历，学校只读员工档案。它们不是条件，不写进查询。
+	 * URL 上的公司、部门和学校筛选：按名字包含，在 SQL 里按人过滤；公司和部门要求有对得上的
+	 * 工作经历，学校只读员工档案。它们不是条件，不写进查询。
 	 */
 	view(filters: Pick<SearchFilters, "company" | "department" | "school">) {
 		const like = (names: readonly string[], columns: SQL[]) =>
@@ -298,7 +319,6 @@ class Shell {
 			sql`exists (select 1 from experience e ${whereAll([
 				sql`e.emp_id = p.emp_id`,
 				like(names, columns),
-				...this.notVetoed(),
 			])})`;
 		const out: SQL[] = [];
 		if (filters.company?.length)
@@ -335,7 +355,7 @@ class Shell {
 				to_char(e.end_date, 'YYYY-MM-DD') as end_date, ${factSelect}
 			from ${segmentsOf(c, i)}
 			join person p on p.emp_id = e.emp_id
-			${whereAll([c.where, ...this.notVetoed(), ...person])}
+			${whereAll([c.where, ...person])}
 			order by e.id, ${strength} desc, h.relevance desc, h.value_idx, h.route,
 				h.phrase_id`;
 	}
@@ -414,13 +434,11 @@ type PopulationRow = { emp_id: string } & DimSource;
 /** 人员候选及其有效工作经历；无经历时仍保留人员属性。 */
 async function fetchPopulation(
 	store: DbExecutor,
-	shell: Shell,
 	person: readonly SQL[],
 ): Promise<PopulationFact[] | null> {
 	const rows = await store.execute<PopulationRow>(sql`
 		select p.emp_id, ${factSelect}
 		from person p left join experience e on e.emp_id = p.emp_id
-		${shell.veto ? sql`and e.id not in (${shell.veto})` : sql``}
 		${whereAll(person)}
 		order by p.emp_id, e.id limit ${FACT_MAX + 1}`);
 	if (rows.rows.length > FACT_MAX) return null;
@@ -473,10 +491,14 @@ export async function execute(
 		RELEVANCE_MIN,
 		async (store, { phraseHits }) => {
 			await materializeHits(store, query.conditions, phraseHits);
-			const shell = new Shell(all, excludes.map(at));
+			for (const [i, problem] of await excludeFirst(store, all))
+				throw new InvalidQueryError(
+					`条件「${query.conditions[i]?.label}」不能执行：${problem}`,
+				);
+			const shell = new Shell(all);
 			// chip 上的人数在同一张命中表上顺手数：不随筛选变，和试跑同一个数。人数是条件的，
 			// 名单出不出得来是另一回事，所以先数人
-			const counted = await countEach(store, shell, all);
+			const counted = await countEach(store, all);
 			const counts = Object.fromEntries(
 				query.conditions.flatMap((c, i) => {
 					const n = counted[i];
@@ -558,7 +580,7 @@ async function evaluate(
 	// 必须经历限定候选；没有必须经历时，偏好只排序，候选来自人员。
 	const population = claims.some((claim) => claim.mode === "must")
 		? facts
-		: await fetchPopulation(store, shell, person);
+		: await fetchPopulation(store, person);
 	if (population === null)
 		return {
 			kind: "done",
@@ -684,7 +706,8 @@ export type ProbeResult = {
  * 试跑一份查询：每条条件单独数人，再整份跑一遍数总人数。只给人数，不给人。
  *
  * 单条的人数和执行同一套规则：经历条件只算没被排除否决的段，写了累计时长的按去重后的段
- * 累计；排除数的是它否决了多少人的段；人的条件数满足它的人（`countEach`）。
+ * 累计；排除数的是它否决了多少人的段；人的条件数满足它的人（`countEach`）。和执行一样先
+ * 排除先行，模型子查询里读到的经历也不含否决段。
  */
 export async function probe(query: Query): Promise<ProbeResult> {
 	const roles = rolesOf(query);
@@ -704,8 +727,15 @@ export async function probe(query: Query): Promise<ProbeResult> {
 		RELEVANCE_MIN,
 		async (store, { phraseHits }) => {
 			await materializeHits(store, query.conditions, phraseHits);
-			const shell = new Shell(all, roles.excludes.filter(valid).map(at));
-			for (const [i, n] of (await countEach(store, shell, all)).entries()) {
+			// 否决段没算出来的排除记下问题、不再数人：它没否决任何段，数出来的 0 是假的
+			const vetoProblems = await excludeFirst(store, all);
+			for (const [i, problem] of vetoProblems) {
+				const result = results[i];
+				if (result) result.problem = problem;
+			}
+			const counted = all.map((c, i) => (vetoProblems.has(i) ? null : c));
+			const shell = new Shell(all);
+			for (const [i, n] of (await countEach(store, counted)).entries()) {
 				const result = results[i];
 				if (!n || !result) continue;
 				if ("people" in n) result.people = n.people;
@@ -740,7 +770,6 @@ export async function probe(query: Query): Promise<ProbeResult> {
  */
 async function countEach(
 	store: DbExecutor,
-	shell: Shell,
 	all: readonly (Compiled | null)[],
 ): Promise<({ people: number } | { problem: string } | null)[]> {
 	const out: ({ people: number } | { problem: string } | null)[] = [];
@@ -751,7 +780,7 @@ async function countEach(
 		}
 		try {
 			const people = await restricted(store, async () => {
-				const rows = await store.execute<{ n: number }>(countOf(shell, one, i));
+				const rows = await store.execute<{ n: number }>(countOf(one, i));
 				return rows.rows[0]?.n ?? 0;
 			});
 			out.push({ people });
@@ -764,14 +793,15 @@ async function countEach(
 	return out;
 }
 
-/** 单条条件的人数语句；规则见 `probe`。 */
-function countOf(shell: Shell, one: Compiled, i: number): SQL {
+/** 单条条件的人数语句；规则见 `probe`。排除数的是排除先行记下的它否决的段。 */
+function countOf(one: Compiled, i: number): SQL {
 	const c = one.condition;
 	if (c.from === "person")
 		return sql`select count(*)::int as n from person p where ${one.where}`;
-	const veto = c.mode === "exclude" ? [] : shell.notVetoed();
+	if (c.mode === "exclude")
+		return sql`select count(distinct emp_id)::int as n from vetoed where cond = ${i}`;
 	const segments = sql`select distinct e.emp_id, e.id, e.months
-		from ${segmentsOf(one, i)} ${whereAll([one.where, ...veto])}`;
+		from ${segmentsOf(one, i)} ${whereAll([one.where])}`;
 	return c.minMonths
 		? sql`select count(*)::int as n from (
 				select emp_id from (${segments}) s group by emp_id

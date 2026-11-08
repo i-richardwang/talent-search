@@ -6,8 +6,13 @@
  *   节点、函数、类型都按白名单；`:name` 换成绑定参数。执行的是按词法单元重新拼出的文本
  *   （去掉注释、括号配平），不是模型的原文。
  * - **数据库层**（`restricted`）：在保存点里切到只读角色 `talent_query`，它只有目录视图的
- *   SELECT；同时只读、限时、限内存，`search_path` 只有目录和临时表。回滚到保存点后一切
+ *   SELECT；同时只读、限时、限内存，`search_path` 先临时关系后目录。回滚到保存点后一切
  *   设置还原，调用方接着用应用角色读名单要显示的东西。
+ *
+ * 只读角色读到的 `experience` 是去掉排除否决段的那份：每次进保存点，应用角色先建一个同名的
+ * 临时视图遮住目录视图，读 `vetoed` 里记下的否决段（`createVetoed`）。模型的子查询和外壳的
+ * 语句读的是同一个名字，排除先行只有这一个定义；视图随保存点回滚消失，应用角色自己的语句
+ * 读不到它。只有应用角色建得了东西，白名单只放 SELECT 表达式，所以遮蔽安全。
  */
 import "@tanstack/react-start/server-only";
 import { type SQL, sql } from "drizzle-orm";
@@ -671,29 +676,50 @@ function provision(): Promise<void> {
 
 /**
  * 在当前事务的一个保存点里以只读角色跑 `run`，跑完（成功或失败）回滚到保存点：角色、
- * 只读、超时和 `search_path` 都还原，事务可以接着用。临时表 `hit` 要在进来之前建好、授权。
+ * 只读、超时、`search_path` 和遮住目录的 `experience` 都还原，事务可以接着用。
+ * 临时表 `hit` 和 `vetoed` 要在进来之前建好、授权。
  */
 export async function restricted<T>(
 	store: DbExecutor,
 	run: () => Promise<T>,
 ): Promise<T> {
 	await provision();
+	const schema = catalogSchema();
 	await store.execute(sql.raw("savepoint sandbox"));
 	try {
+		await store.execute(
+			sql.raw(`create temp view experience as
+				select e.* from ${schema}.experience e
+				where not exists (select 1 from vetoed v where v.id = e.id)`),
+		);
+		await store.execute(
+			sql.raw(`grant select on pg_temp.experience to ${QUERY_ROLE}`),
+		);
 		await store.execute(sql.raw(`set local role ${QUERY_ROLE}`));
 		await store.execute(sql.raw("set local transaction_read_only = on"));
 		await store.execute(
 			sql.raw(`set local statement_timeout = '${STATEMENT_TIMEOUT}'`),
 		);
 		await store.execute(sql.raw(`set local work_mem = '${WORK_MEM}'`));
-		await store.execute(
-			sql.raw(`set local search_path = ${catalogSchema()}, pg_temp`),
-		);
+		await store.execute(sql.raw(`set local search_path = pg_temp, ${schema}`));
 		return await run();
 	} finally {
 		await store.execute(sql.raw("rollback to savepoint sandbox"));
 		await store.execute(sql.raw("release savepoint sandbox"));
 	}
+}
+
+/**
+ * 这次检索被排除否决的段：每行是哪条排除（`cond`，条件在查询里的下标）否决了哪一段、
+ * 是谁的。应用角色建、事务结束即删；建好时是空的，排除先行把否决段写进来之前，只读角色读到的
+ * `experience` 就是目录里的全部。只读角色能读它，用来数每条排除否决了多少人。
+ */
+export async function createVetoed(store: DbExecutor) {
+	await store.execute(sql`
+		create temp table vetoed (cond int not null, id int not null, emp_id text not null)
+		on commit drop`);
+	await store.execute(sql`create index on vetoed (id)`);
+	await shareTemp(store, "vetoed");
 }
 
 /** 允许只读角色读这张临时表。表由应用角色在同一个事务里建。 */

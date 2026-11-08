@@ -286,6 +286,53 @@ describe("原型二：限定公司内的语义经历", () => {
 		}
 	});
 
+	test("排除否决的段，人的条件的子查询里也读不到：写成经历条件还是人的条件，名单一样", async () => {
+		const atCompany: QueryCondition = {
+			id: "jiachen",
+			label: "待过甲辰科技",
+			mode: "must",
+			from: "experience",
+			where: "e.company ilike :c",
+			params: { c: "%甲辰科技%" },
+		};
+		const viaPerson: QueryCondition = {
+			id: "jiachen",
+			label: "待过甲辰科技",
+			mode: "must",
+			from: "person",
+			where:
+				"exists (select 1 from experience x where x.emp_id = p.emp_id and x.company ilike :c)",
+			params: { c: "%甲辰科技%" },
+		};
+		const asSegment = await execute(query(atCompany, noIntern));
+		const asPerson = await execute(query(viaPerson, noIntern));
+		assert.deepEqual(ids(asSegment.results).sort(), ["E1", "E2"]);
+		assert.deepEqual(
+			ids(asPerson.results).sort(),
+			["E1", "E2"],
+			"E4 只有那段实习",
+		);
+		assert.deepEqual(asPerson.counts, asSegment.counts);
+		const tried = await probe(query(viaPerson, noIntern));
+		assert.deepEqual(tried.conditions, [
+			{ id: "jiachen", people: 2, problem: null },
+			{ id: "intern", people: 1, problem: null },
+		]);
+	});
+
+	test("排除跑不了：试跑把问题记在它自己身上，不数人；执行时整份不能执行", async () => {
+		const broken: QueryCondition = {
+			...noIntern,
+			where: "e.title ilike :t and e.months > :t::int",
+		};
+		const tried = await probe(query(atJiachen, broken));
+		assert.equal(tried.conditions[0]?.people, 3, "它没否决任何段");
+		assert.equal(tried.conditions[1]?.people, null);
+		assert.match(tried.conditions[1]?.problem ?? "", /22P02/);
+		assert.equal(tried.total, null);
+		await assert.rejects(execute(query(atJiachen, broken)), /实习经历不算/);
+	});
+
 	test("不写排除时实习那段是合格证据", async () => {
 		const outcome = await execute(query(atJiachen));
 		assert.deepEqual(ids(outcome.results).sort(), ["E1", "E2", "E4"]);

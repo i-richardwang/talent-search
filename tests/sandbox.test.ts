@@ -8,12 +8,14 @@ import { after, describe, test } from "node:test";
 import { conditionsOfKeywords } from "#/search/keywords";
 import { parseQuery } from "#/search/query-syntax";
 import { claim, person } from "./conditions";
-import { setup } from "./fixture";
+import { seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
 
-const { compileWhere, restricted } = await import("#/server/sandbox");
+const { catalogSchema, compileWhere, createVetoed, restricted } = await import(
+	"#/server/sandbox"
+);
 const { compileConditions } = await import("#/search/compile");
 const { scopeOf } = await import("#/search/execute");
 const { db } = await import("#/db");
@@ -160,6 +162,7 @@ describe("只读角色", () => {
 	/** 在一个事务里以只读角色跑一句，返回 SQLSTATE；跑通了返回 null。 */
 	async function refused(statement: ReturnType<typeof sql>) {
 		return db.transaction(async (tx) => {
+			await createVetoed(tx);
 			try {
 				await restricted(tx, () => tx.execute(statement));
 				return null;
@@ -195,12 +198,45 @@ describe("只读角色", () => {
 		);
 	});
 
-	test("只读：建表、写入都不行", async () => {
+	test("只读：建表、写入都不行，否决段也写不进", async () => {
 		assert.equal(await refused(sql`create temp table x (a int)`), "25006");
+		assert.equal(
+			await refused(sql`insert into vetoed values (0, 1, 'S1')`),
+			"42501",
+		);
+	});
+
+	test("读到的经历不含否决段，目录的原始经历照样在；出了保存点，遮住它的视图也没了", async () => {
+		await seed([
+			{ empId: "S1", name: "甲", segments: [{ title: "实习生", months: 6 }] },
+			{ empId: "S2", name: "乙", segments: [{ title: "工程师", months: 24 }] },
+		]);
+		const catalog = sql.identifier(catalogSchema());
+		const seen = await db.transaction(async (tx) => {
+			await createVetoed(tx);
+			const [intern] = (
+				await tx.execute<{ id: number }>(
+					sql`select id from ${catalog}.experience where emp_id = 'S1'`,
+				)
+			).rows;
+			assert.ok(intern);
+			await tx.execute(sql`insert into vetoed values (0, ${intern.id}, 'S1')`);
+			const inside = await restricted(tx, () =>
+				tx.execute<{ raw: string[]; read: string[] }>(sql`select
+					array(select emp_id from ${catalog}.experience order by emp_id) as raw,
+					array(select emp_id from experience order by emp_id) as read`),
+			);
+			const after = await tx.execute<{ shadow: string | null }>(
+				sql`select to_regclass('pg_temp.experience')::text as shadow`,
+			);
+			return { ...inside.rows[0], shadow: after.rows[0]?.shadow };
+		});
+		assert.deepEqual(seen, { raw: ["S1", "S2"], read: ["S2"], shadow: null });
 	});
 
 	test("出了保存点回到应用角色，事务接着可用", async () => {
 		const role = await db.transaction(async (tx) => {
+			await createVetoed(tx);
 			const inside = await restricted(tx, () =>
 				tx.execute<{ who: string }>(sql`select current_user as who`),
 			);
