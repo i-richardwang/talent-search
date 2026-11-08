@@ -51,7 +51,7 @@ import { join } from "node:path";
 import { pool } from "#/db";
 import { internalWordsIn } from "#/lib/internal-words";
 import { compileConditions } from "#/search/compile";
-import { execute, probe } from "#/search/execute";
+import { execute } from "#/search/execute";
 import { unanswered } from "#/search/intent";
 import {
 	contentKey,
@@ -216,14 +216,10 @@ const mentions = (c: QueryCondition, word: string) =>
 	wordsOf(c).some((w) => norm(w).includes(norm(word)));
 
 /**
- * 一条条件搜出的那群人，用来比两条条件是不是一回事：必须与加分都按必须单独跑一遍，
- * 排除比的是它否决了多少人的段。
+ * 一条条件搜出的那群人，用来比两条条件是不是一回事：三种强度都按必须单独跑一遍，比的是
+ * 人的集合。排除执行时的门槛更严，那是执行的事，不影响两条是不是同一个要求。
  */
 async function crowdOf(c: QueryCondition): Promise<string> {
-	if (c.mode === "exclude") {
-		const tried = await probe({ conditions: [c] });
-		return `否决 ${tried.conditions[0]?.people ?? "?"} 人`;
-	}
 	const outcome = await execute(
 		{ conditions: [{ ...c, mode: "must" }] },
 		{},
