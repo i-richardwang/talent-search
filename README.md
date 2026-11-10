@@ -92,7 +92,7 @@ CSV 缺少可选的 `segment_key` 列时按部门与岗位生成任职标识；�
 
 ## 接入数据源
 
-所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments`、`external` 和 `levels`，可选再给记录的三批：`streams`（记录流：评级或状态）、`scales`（评级流的档位表）和 `records`（一期一档的评级、一段一段的状态）。同一人同一期的几条修订按登记时刻只留最终一条，分不出的整组拒绝并报告；记录流的覆盖在管理页「数据」上看。契约逐行核验必需列，显式空值可以保留，缺列则报告表名、行号和列名并拒绝。通用校验、切段与解析在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
+所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments`、`external` 和 `levels`，可选再给记录的三批：`streams`（记录流：评级或状态）、`scales`（评级流的档位表）和 `records`（一期一档的评级、一段一段的状态）；以及公司知识的五批：`industries`（行业树）、`companies`（公司和所属集团）、`company_industries`（公司做哪些行业、哪些是主营）、`company_circles`（名企组合）和 `company_aliases`（经历上的公司写法对到哪家公司）。公司是什么不由本项目判断，数据源给结论；对不上的公司写法按人数列在同步报告里。同一人同一期的几条修订按登记时刻只留最终一条，分不出的整组拒绝并报告；记录流的覆盖在管理页「数据」上看。契约逐行核验必需列，显式空值可以保留，缺列则报告表名、行号和列名并拒绝。通用校验、切段与解析在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
 
 职级和学历按档检索。`levels` 是职级表，写明每个职级归哪一档、档有多高，分档方法由数据源自己定；学历写契约里的五档之一（高中及以下、大专、本科、硕士、博士），源里的写法由适配器归档。筛选和「某档及以上」都按档走，职级原文只在详情里显示。
 

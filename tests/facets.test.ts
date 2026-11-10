@@ -21,7 +21,7 @@ import {
 import { type SearchFilters, sanitizeFilters } from "#/search/params";
 import { parseQuery } from "#/search/query-syntax";
 import { asConditions } from "./conditions";
-import { seed, setup } from "./fixture";
+import { seed, seedCompanies, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -78,6 +78,7 @@ before(async () => {
 					seqL2: "算法",
 					title: "算法",
 					months: 36,
+					company: "分面外卖公司",
 					companyTag: "头部互联网T1",
 					// 能力词那一维是一段多个值：两个词都得成为候选，各数一个人
 					extracted: { skills: ["推荐系统", "Python"] },
@@ -93,6 +94,8 @@ before(async () => {
 					kind: "external",
 					title: "算法",
 					months: 12,
+					// 主营是另一个细分，同一个上级：点上级行业两个人都在，点细分各一个
+					company: "分面零售公司",
 					extracted: { skills: ["电商推荐系统"] },
 				},
 			],
@@ -113,6 +116,22 @@ before(async () => {
 			],
 		},
 	]);
+	await seedCompanies(
+		{ "消费/零售": null, 外卖: "消费/零售", 零售连锁: "消费/零售", 物流: null },
+		[
+			{
+				name: "分面外卖公司",
+				// 涉足的行业不进筛选：物流不该成为候选
+				industries: ["外卖", "消费/零售", "物流"],
+				mainIndustries: ["外卖", "消费/零售"],
+			},
+			{
+				name: "分面零售公司",
+				industries: ["消费/零售", "零售连锁"],
+				mainIndustries: ["消费/零售", "零售连锁"],
+			},
+		],
+	);
 	const { db } = await import("#/db");
 	const { term } = await import("#/db/schema");
 	const reviewedAt = new Date();
@@ -265,10 +284,14 @@ describe("分面预告的数就是点下去会得到的数", () => {
 	test("同一个条件下推给数据库还是在内存里筛，选出的是同一批人", async () => {
 		const base = await run(QUERY);
 		const covered = new Set<DimKey>();
-		// 序列与能力词不是查询条件能写的维度；经历时长写进主张是累计计数，
+		// 序列、能力词与行业不是关键词条件能写的维度；经历时长写进主张是累计计数，
 		// 和视图筛选的单段计数不是同一件事（`tests/conditions.ts`）
 		const scopable = DIM_KEYS.filter(
-			(key) => key !== "seq" && key !== "skill" && key !== "minMonths",
+			(key) =>
+				key !== "seq" &&
+				key !== "skill" &&
+				key !== "industry" &&
+				key !== "minMonths",
 		);
 		const [claim] = parseQuery(QUERY);
 		if (claim?.about !== "experience")
@@ -298,6 +321,23 @@ describe("分面预告的数就是点下去会得到的数", () => {
 	 * 下推出去的 `in ('未知')` 会选中一批内存谓词当场否掉的行，而屏幕上是一个
 	 * 选中了却空着的筛选。
 	 */
+	test("行业按主营算，上级行业包含它下面的细分", async () => {
+		const { facets } = await run(QUERY);
+		assert.deepEqual(
+			facets.industry.map((row) => [row.value, row.n]),
+			[
+				["消费/零售", 2],
+				["零售连锁", 1],
+				["外卖", 1],
+			],
+		);
+		const { results } = await run(QUERY, { industry: ["消费/零售"] });
+		assert.deepEqual(results.map((r) => r.employee.empId).sort(), [
+			"F004",
+			"F005",
+		]);
+	});
+
 	test("「未知」不是取值：候选里没有，清洗留不下，谓词也不认", async () => {
 		const { facets } = await run(QUERY);
 		assert.ok(

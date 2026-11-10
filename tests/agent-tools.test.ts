@@ -9,7 +9,7 @@ import { compileConditions } from "#/search/compile";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
 import { lately, sleeper } from "./conditions";
-import { drafted, seed, seedStream, setup } from "./fixture";
+import { drafted, seed, seedCompanies, seedStream, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -18,7 +18,7 @@ const { agentTools } = await import("#/server/agent-tools");
 const { lookupExperience, lookupNames, search, vocabulary } = await import(
 	"#/search/search"
 );
-const { discover } = await import("#/server/discover");
+const { companyFacts, discover } = await import("#/server/discover");
 
 before(async () => {
 	const { db } = await import("#/db");
@@ -69,6 +69,25 @@ before(async () => {
 			segments: [external("测年实验室", ["碳十四测年"])],
 		})),
 	]);
+	// 星河科技主营外卖、也做物流；星河小厂主营即时配送；别的公司没有收录
+	await seedCompanies(
+		{ "消费/零售": null, 外卖: "消费/零售", 物流: null, 即时配送: "物流" },
+		[
+			{
+				name: "星河科技",
+				group: "星河集团",
+				industries: ["外卖", "消费/零售", "物流"],
+				mainIndustries: ["外卖", "消费/零售"],
+				circles: ["某组合"],
+			},
+			{
+				name: "星河小厂",
+				group: "星河集团",
+				industries: ["即时配送", "物流"],
+				mainIndustries: ["即时配送", "物流"],
+			},
+		],
+	);
 	const reviewedAt = new Date();
 	await db.insert(term).values([
 		{ word: "推荐系统", canonical: "推荐系统", reviewedAt },
@@ -193,6 +212,43 @@ describe("看目录", () => {
 			subject: "公司档",
 			values: vocab.companyTag,
 		});
+	});
+
+	test("行业是数组列：每个取值各数各的人，上级行业数进它下面的每个细分", async () => {
+		const byName = async (column: string) => {
+			const found = await discover({ relation: "experience", column });
+			if (found.kind !== "values") throw new Error("该是一列取值");
+			return Object.fromEntries(found.values.map((v) => [v.name, v.people]));
+		};
+		assert.deepEqual(await byName("main_industries"), {
+			"消费/零售": 6,
+			外卖: 6,
+			物流: 2,
+			即时配送: 2,
+		});
+		// 涉足的也算：星河科技的六个人数进物流
+		assert.deepEqual(await byName("industries"), {
+			"消费/零售": 6,
+			外卖: 6,
+			物流: 8,
+			即时配送: 2,
+		});
+		assert.deepEqual(await byName("company_circles"), { 某组合: 6 });
+	});
+
+	test("提示词里预先给的公司概况：行业按树排，带两种人数和认出公司的段数", async () => {
+		const facts = await companyFacts();
+		assert.deepEqual(facts.industries, [
+			{ name: "物流", parent: null, main: 2, any: 8 },
+			{ name: "即时配送", parent: "物流", main: 2, any: 2 },
+			{ name: "消费/零售", parent: null, main: 6, any: 6 },
+			{ name: "外卖", parent: "消费/零售", main: 6, any: 6 },
+		]);
+		assert.deepEqual(facts.circles, [{ name: "某组合", people: 6 }]);
+		assert.deepEqual(
+			[facts.segments, facts.recognized, facts.labelled],
+			[55, 8, 8],
+		);
 	});
 
 	test("总览给出各关系的行数，不给人", async () => {
@@ -324,6 +380,47 @@ describe("试跑", () => {
 			[9, 8],
 		);
 		assert.equal(result.total, 9);
+	});
+
+	test("按行业、按集团找：主营和涉足人数不同；「不要某行业来的」是人的条件", async () => {
+		const { tools } = agentTools({ base: [], record: async () => {} });
+		const inIndustry = (label: string, column: string, value: string) => ({
+			label,
+			mode: "boost",
+			from: "experience",
+			where: `:v = any(e.${column})`,
+			params: { v: value },
+		});
+		const result = (await run(tools.probe, {
+			conditions: [
+				inIndustry("主营物流", "main_industries", "物流"),
+				inIndustry("做物流", "industries", "物流"),
+				inIndustry("主营消费零售", "main_industries", "消费/零售"),
+				{
+					label: "星河集团旗下",
+					mode: "boost",
+					from: "experience",
+					where: "e.company_group = :g",
+					params: { g: "星河集团" },
+				},
+				{
+					label: "没在主营外卖的公司待过",
+					mode: "must",
+					from: "person",
+					where:
+						"not exists (select 1 from experience x where x.emp_id = p.emp_id and :v = any(x.main_industries))",
+					params: { v: "外卖" },
+				},
+			],
+		})) as {
+			conditions: { people: number | null; problem: string | null }[];
+			total: number | null;
+		};
+		assert.deepEqual(
+			result.conditions.map((c) => c.problem ?? c.people),
+			[2, 8, 6, 8, 50],
+		);
+		assert.equal(result.total, 50);
 	});
 
 	test("写错的那一条给出原因，别的照数；整份不数", async () => {

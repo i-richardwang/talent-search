@@ -150,7 +150,41 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 		company_tag: {
 			type: "text",
 			label: "公司档",
-			meaning: "入职前那家公司的档；公司内的任职为空",
+			meaning: "人事登记的入职前那家公司的档；公司内的任职为空",
+			values: "enum",
+		},
+		company_nature: {
+			type: "text",
+			label: "企业性质",
+			meaning: "人事登记的入职前那家公司的性质：民企、外企、国企这类",
+			values: "enum",
+		},
+		company_name: {
+			type: "text",
+			label: "公司规范名",
+			meaning: "company 的各种写法对到的那家公司；没认出是哪家公司时为空",
+		},
+		company_group: {
+			type: "text",
+			label: "集团",
+			meaning: "那家公司所属的集团，没有上级的就是它自己",
+		},
+		main_industries: {
+			type: "text[]",
+			label: "主营行业",
+			meaning: "那家公司的主营行业，连同每一级上级行业",
+			values: "enum",
+		},
+		industries: {
+			type: "text[]",
+			label: "涉足行业",
+			meaning: "那家公司做的全部行业（主营在内），连同每一级上级行业",
+			values: "enum",
+		},
+		company_circles: {
+			type: "text[]",
+			label: "名企组合",
+			meaning: "那家公司属于的约定俗成的组合，例如四大、MBB",
 			values: "enum",
 		},
 		department: {
@@ -183,7 +217,10 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 	},
 	notes: [
 		"待业不是一段工作经历，不在这里。",
-		"公司和公司档只在入职前的经历上，部门只在公司内的任职上，一段只有其一。",
+		"公司和公司的各项属性只在入职前的经历上，部门只在公司内的任职上，一段只有其一。",
+		"行业、集团、名企组合说的是那家公司，不是这个人做的事：在外卖公司待过不等于做过外卖业务，做过什么仍写进 terms。",
+		"行业是一棵树，取值连同上级都在数组里：:v = any(e.main_industries) 写上级行业就包含它下面的每一个细分。",
+		"公司没认出来、或认出来了但没有行业时，行业两列为空，不满足任何行业条件；「不是某行业」同样不成立。",
 		"做过什么不按岗位名或部门名的字面筛：写进 terms，在 hit 上按意思找。",
 	],
 };

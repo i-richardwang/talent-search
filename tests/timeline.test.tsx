@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { Experience } from "#/db/schema";
 import { Timeline } from "#/routes/s/$turnId/-components/timeline";
-import { experience as seg } from "./rows";
+import { type Segment, experience as seg } from "./rows";
 
-const html = (rows: Experience[]) =>
+const html = (rows: Segment[]) =>
 	renderToStaticMarkup(
 		<Timeline hitIndex={new Map()} names={[]} rows={rows} />,
 	);
@@ -22,15 +21,12 @@ describe("时间轴卡片内容", () => {
 				company: "某公司",
 				department: "",
 				departmentPath: "",
-				companyMeta: {
-					company_tag: "某档",
-					industry: "某行业",
-					nature: "某性质",
-				},
+				companyMeta: { company_tag: "某档", nature: "某性质" },
+				mainIndustries: ["某行业", "另一行业"],
 			}),
 		]);
 		assert.ok(s.includes("入职前"));
-		assert.ok(s.includes("某档 · 某行业 · 某性质"));
+		assert.ok(s.includes("某档 · 某行业、另一行业 · 某性质"));
 		assert.ok(s.includes("负责渠道拓展与团队管理。"));
 	});
 

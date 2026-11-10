@@ -28,6 +28,14 @@ const FACTS = {
 		overseas: [],
 	},
 	streams: [],
+	company: {
+		industries: [],
+		circles: [],
+		natures: [],
+		segments: 0,
+		recognized: 0,
+		labelled: 0,
+	},
 };
 
 test("端点连不上时抛给调用方，不返回一份假理解", async () => {

@@ -46,7 +46,6 @@ const EXTERNAL = {
 	title: "工程师",
 	description: "",
 	company_tag: "",
-	industry: "",
 	nature: "",
 	unemployed: false,
 };
@@ -82,6 +81,11 @@ function source(rows: {
 	streams?: RawRow[];
 	scales?: RawRow[];
 	records?: Partial<typeof RECORD>[];
+	industries?: RawRow[];
+	companies?: RawRow[];
+	companyIndustries?: RawRow[];
+	companyCircles?: RawRow[];
+	companyAliases?: RawRow[];
 }): SourceData {
 	return sourceData({
 		employees: (rows.people ?? [{}]).map(
@@ -97,6 +101,11 @@ function source(rows: {
 		streams: rows.streams ?? STREAMS,
 		scales: rows.scales ?? SCALES,
 		records: (rows.records ?? []).map((row): RawRow => ({ ...RECORD, ...row })),
+		industries: rows.industries,
+		companies: rows.companies,
+		companyIndustries: rows.companyIndustries,
+		companyCircles: rows.companyCircles,
+		companyAliases: rows.companyAliases,
 	});
 }
 
@@ -666,6 +675,143 @@ describe("记录", () => {
 				}),
 			/留给职级档与学历档/,
 		);
+	});
+});
+
+describe("公司知识", () => {
+	const INDUSTRIES = [
+		{ name: "消费/零售", parent: "" },
+		{ name: "外卖", parent: "消费/零售" },
+		{ name: "物流", parent: "" },
+		{ name: "即时配送", parent: "物流" },
+	];
+	const KNOWLEDGE = {
+		industries: INDUSTRIES,
+		companies: [
+			{ name: "乙未网络", group_name: "乙未集团" },
+			{ name: "没人待过的公司", group_name: "" },
+		],
+		companyIndustries: [
+			{ company: "乙未网络", industry: "外卖", main: true },
+			{ company: "乙未网络", industry: "即时配送", main: null },
+		],
+		companyCircles: [{ company: "乙未网络", circle: "某组合" }],
+		companyAliases: [{ raw_name: "乙未", company: "乙未网络" }],
+	};
+	const worked = (company: string, emp_id = "E1") => ({
+		emp_id,
+		company,
+		start_date: "2018-01-01",
+		end_date: "2019-01-01",
+	});
+
+	test("行业连同上级展开，主营和涉足分开；没人待过的公司不留", () => {
+		const out = run({ ...KNOWLEDGE, external: [worked("乙未网络")] });
+		assert.deepEqual(out.companies, [
+			{
+				name: "乙未网络",
+				group_name: "乙未集团",
+				industries: ["即时配送", "外卖", "消费/零售", "物流"],
+				main_industries: ["外卖", "消费/零售"],
+				circles: ["某组合"],
+			},
+		]);
+		assert.deepEqual(out.industries.length, INDUSTRIES.length);
+		assert.deepEqual(
+			out.industries.find((i) => i.name === "外卖"),
+			{ name: "外卖", parent: "消费/零售" },
+		);
+	});
+
+	test("经历上的写法先按别名、再按规范名对，不分大小写和首尾空白；经历上的公司名不改", () => {
+		const out = run({
+			...KNOWLEDGE,
+			companies: [...KNOWLEDGE.companies, { name: "Acme", group_name: "" }],
+			external: [worked("乙未"), worked("acme")],
+		});
+		assert.deepEqual(out.companyAliases, [
+			{ raw_name: "acme", company: "Acme" },
+			{ raw_name: "乙未", company: "乙未网络" },
+		]);
+		assert.deepEqual(
+			external(out)
+				.map((row) => row.company)
+				.sort(),
+			["acme", "乙未"],
+		);
+		// 没有集团的公司，集团是它自己
+		assert.equal(
+			out.companies.find((c) => c.name === "Acme")?.group_name,
+			"Acme",
+		);
+	});
+
+	test("对不上的写法按人数报出来；待业不算公司", () => {
+		const people = ["E1", "E2", "E3"].map((emp_id) => ({ emp_id }));
+		const out = run({
+			...KNOWLEDGE,
+			people,
+			external: [
+				worked("乙未网络"),
+				worked("甲公司", "E1"),
+				worked("甲公司", "E2"),
+				worked("丙公司", "E3"),
+				{ ...worked("", "E3"), start_date: "2019-02-01", unemployed: true },
+			],
+		});
+		assert.match(out.said, /入职前 4 段里 1 段对上了公司，1 段有行业/);
+		assert.match(out.said, /没对上 2 种，人多的：甲公司 2 人、丙公司 1 人/);
+	});
+
+	test("一种写法按别名对到两家公司，哪家都不算", () => {
+		const out = run({
+			...KNOWLEDGE,
+			companies: [...KNOWLEDGE.companies, { name: "乙未物流", group_name: "" }],
+			companyAliases: [
+				{ raw_name: "乙未", company: "乙未网络" },
+				{ raw_name: "乙未", company: "乙未物流" },
+			],
+			external: [worked("乙未")],
+		});
+		assert.deepEqual(out.companyAliases, []);
+		assert.match(out.said, /别名对到不止一家公司 1 种写法/);
+	});
+
+	test("引用了没声明的公司或行业、行业树成环，是数据源坏了，整轮退出", () => {
+		assert.throws(
+			() =>
+				run({
+					...KNOWLEDGE,
+					companyIndustries: [
+						{ company: "乙未网络", industry: "没这个行业", main: true },
+					],
+				}),
+			/没这个行业 不在 industries 里/,
+		);
+		assert.throws(
+			() =>
+				run({
+					...KNOWLEDGE,
+					companyAliases: [{ raw_name: "某写法", company: "没这家公司" }],
+				}),
+			/没这家公司 不在 companies 里/,
+		);
+		assert.throws(
+			() =>
+				run({
+					industries: [
+						{ name: "甲", parent: "乙" },
+						{ name: "乙", parent: "甲" },
+					],
+				}),
+			/成环/,
+		);
+	});
+
+	test("数据源没有公司知识时照样同步，什么都不报", () => {
+		const out = run({ external: [worked("乙未网络")] });
+		assert.deepEqual(out.companies, []);
+		assert.doesNotMatch(out.said, /公司写法|对上了公司/);
 	});
 });
 

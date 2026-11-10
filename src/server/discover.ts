@@ -12,7 +12,7 @@ import { withCorpusSnapshot } from "#/db/snapshot";
 import { CATALOG, catalogSchema, columnOf } from "#/search/catalog";
 import type { NameField } from "#/search/condition-label";
 import { lookupNames, valuesOf } from "#/search/search";
-import type { Discovery, StreamFact } from "#/search/trace";
+import type { CompanyFacts, Discovery, StreamFact } from "#/search/trace";
 import { streamCoverage } from "./data";
 
 /** 按名字匹配的列，对应 `lookupNames` 的哪一种。 */
@@ -48,6 +48,67 @@ export async function streamFacts(): Promise<StreamFact[]> {
 						).map((v) => v.name),
 		})),
 	);
+}
+
+/**
+ * 入职前那些公司的概况。行业两列的人数和看这两列取值得到的是同一份（`valuesOf`），
+ * 这里按行业树排好：上级在前，下级跟在它后面。
+ */
+export async function companyFacts(): Promise<CompanyFacts> {
+	return withCorpusSnapshot(async (store) => {
+		const view = sql`${sql.identifier(catalogSchema())}.experience`;
+		const [tree, main, any, circles, natures, coverage] = [
+			await store.execute<{ name: string; parent: string | null }>(
+				sql`select name, parent from industry`,
+			),
+			await valuesOf(store, "experience", "main_industries"),
+			await valuesOf(store, "experience", "industries"),
+			await valuesOf(store, "experience", "company_circles"),
+			await valuesOf(store, "experience", "company_nature"),
+			await store.execute<{
+				segments: number;
+				recognized: number;
+				labelled: number;
+			}>(sql`
+				select count(*)::int as segments,
+					count(company_name)::int as recognized,
+					count(industries)::int as labelled
+				from ${view} where kind = 'external'`),
+		];
+		const peopleOf = (values: typeof main) =>
+			new Map(values.map((v) => [v.name, v.people]));
+		const mainOf = peopleOf(main);
+		const anyOf = peopleOf(any);
+		const children = new Map<string | null, string[]>();
+		for (const row of tree.rows)
+			children.set(row.parent, [...(children.get(row.parent) ?? []), row.name]);
+		const ordered: CompanyFacts["industries"] = [];
+		const visit = (parent: string | null) => {
+			const names = (children.get(parent) ?? []).sort(
+				(a, b) =>
+					(anyOf.get(b) ?? 0) - (anyOf.get(a) ?? 0) ||
+					a.localeCompare(b, "zh-Hans-CN"),
+			);
+			for (const name of names) {
+				ordered.push({
+					name,
+					parent,
+					main: mainOf.get(name) ?? 0,
+					any: anyOf.get(name) ?? 0,
+				});
+				visit(name);
+			}
+		};
+		visit(null);
+		return {
+			industries: ordered,
+			circles,
+			natures,
+			segments: coverage.rows[0]?.segments ?? 0,
+			recognized: coverage.rows[0]?.recognized ?? 0,
+			labelled: coverage.rows[0]?.labelled ?? 0,
+		};
+	});
 }
 
 type DiscoverInput = {

@@ -10,7 +10,7 @@ import { generateText, isStepCount, ToolChoiceViolationError } from "ai";
 import { catalogText } from "#/search/catalog";
 import type { Submission, Understood, Vocabulary } from "#/search/intent";
 import { type QueryCondition, withOff } from "#/search/query";
-import type { Matched, StreamFact } from "#/search/trace";
+import type { CompanyFacts, Matched, StreamFact } from "#/search/trace";
 import { type AgentTools, SUBMIT } from "./agent-tools";
 import { endpointFetch, positiveInt } from "./endpoint";
 
@@ -179,6 +179,20 @@ says 写给 HR 看：书面、简洁，一句话说清一件事，不复述条�
 says、label、detail 都不用括号。用 HR 的话写：说「人才库」「简历」「职级」「绩效」，不说表、
 词表、库、字段、工具、模型、SQL；不说你做了什么操作。
 
+入职前那家公司是什么，人才库里有两类说法。人事登记的：company_tag 公司档、company_nature 企业性质。
+公司知识给的：company_name 规范名、company_group 集团、main_industries 与 industries 行业、
+company_circles 名企组合。
+- 「某行业来的」「某行业背景」说的是在哪类公司待过，是经历条件的 where，不是 terms。在那个行业里
+  做什么岗位写进同一条的 terms：「外卖行业的运营」是一条，terms 写运营，where 写行业。
+- 行业默认按主营找（main_industries）。HR 说的是「有这块业务的公司」「涉足」时按 industries。
+  两种找法人数差得多、这句话又看不出要哪种时，照主营写，在 note 里说一句，另一种放进 options。
+- 行业说的是公司，不是这个人：HR 要亲手做过这块业务的人（「做过外卖配送调度」）时，那是经历词，
+  写进 terms，不靠行业。
+- 「某某系」「某集团出来的」按 company_group；点名一家公司仍按 company。「四大」「MBB」这类
+  说法在 company_circles 里有就按它，「大厂」这类档次按 company_tag。
+- 「不要某行业来的」是人的条件：这个人没有任何一段经历在那类公司。exclude 只否决那几段经历，
+  人还在名单里。
+
 提交之前你可以查：
 - discover：数据目录里一列有哪些取值、各多少人；公司、部门、学校的名字能匹配到多少人、人才库里
   怎么写；记录流的覆盖。
@@ -202,8 +216,8 @@ current 写 null、options 写空数组。
 
 ${catalogText()}
 
-下面的例子假设 level_band 有 P5、P6、P7、P8；company_tag 有 头部大厂、知名公司；记录流 perf 是
-半年一期的绩效，档从低到高 C、B、B+、A、A+。例子里的词和名字都已经查过，人才库里就是这样写的。
+下面的例子假设 level_band 有 P5、P6、P7、P8；company_tag 有 头部大厂、知名公司；行业里有
+消费/零售 和它下面的 外卖；记录流 perf 是半年一期的绩效，档从低到高 C、B、B+、A、A+。例子里的词和名字都已经查过，人才库里就是这样写的。
 
 例一。当前的条件：[]。这句话：算法和后端都做过的，比较资深的，最好是字节来的
 {"conditions": [
@@ -249,7 +263,14 @@ ${catalogText()}
    {"label": "带过团队的优先", "detail": "简历里写过带团队的有两百多位", "conditions": [
     {"label": "做过大模型", "mode": "must", "from": "experience", "terms": {"llm": ["大模型", "LLM"]}, "where": "true"},
     {"label": "硕士及以上", "mode": "must", "from": "person", "where": "p.education_rank >= (select s.rank from scale s where s.stream = 'education' and s.value = :edu)", "params": {"edu": "硕士"}},
-    {"label": "带过团队", "mode": "boost", "from": "experience", "terms": {"lead": ["团队管理", "带团队"]}, "where": "true"}]}]}}`;
+    {"label": "带过团队", "mode": "boost", "from": "experience", "terms": {"lead": ["团队管理", "带团队"]}, "where": "true"}]}]}}
+
+例七。当前的条件：[]。这句话：外卖行业的运营，甲辰系的优先，不要咨询行业出来的
+{"conditions": [
+  {"label": "在主营外卖的公司做运营", "mode": "must", "from": "experience", "terms": {"ops": ["运营"]}, "where": ":ind = any(e.main_industries)", "params": {"ind": "外卖"}},
+  {"label": "入职前在甲辰集团旗下的公司待过", "mode": "boost", "from": "experience", "where": "e.company_group ilike :g", "params": {"g": "%甲辰%"}},
+  {"label": "没有在主营咨询的公司待过", "mode": "must", "from": "person", "where": "not exists (select 1 from experience x where x.emp_id = p.emp_id and :ind = any(x.main_industries))", "params": {"ind": "咨询"}}],
+ "note": null}`;
 
 /** 有限取值的几维写进提示词时的标题（目录里的列），按提示词里的顺序。 */
 const VOCAB_HEADING: readonly (readonly [keyof Vocabulary, string])[] = [
@@ -263,6 +284,32 @@ const VOCAB_HEADING: readonly (readonly [keyof Vocabulary, string])[] = [
 
 function listed(what: string, values: readonly Matched[]) {
 	return `${what}：${values.map((v) => `${v.name}（${v.people} 人）`).join("、") || "（无）"}`;
+}
+
+/**
+ * 公司的概况写进提示词的样子：企业性质、名企组合各一行，行业按树缩进，一行两个人数。
+ * 最后一行是覆盖：没认出公司的段不满足任何行业条件。数据源没有公司知识时只说没有。
+ */
+function companyLines(company: CompanyFacts): string[] {
+	const depth = new Map<string, number>();
+	const lines = [
+		listed("experience.company_nature", company.natures),
+		listed("experience.company_circles", company.circles),
+	];
+	if (company.industries.length === 0)
+		return [...lines, "行业：（人才库里没有行业数据）"];
+	lines.push(
+		"行业（缩进的是下级；人数是 待过主营是它的公司的人 / 待过做它的公司的人，分别对应 experience.main_industries 与 experience.industries）：",
+	);
+	for (const i of company.industries) {
+		const level = i.parent === null ? 0 : (depth.get(i.parent) ?? 0) + 1;
+		depth.set(i.name, level);
+		lines.push(`${"  ".repeat(level + 1)}${i.name} ${i.main} / ${i.any}`);
+	}
+	lines.push(
+		`入职前的经历 ${company.segments} 段，其中认出公司的 ${company.recognized} 段、有行业的 ${company.labelled} 段。`,
+	);
+	return lines;
 }
 
 function streamLine(s: StreamFact) {
@@ -296,8 +343,16 @@ export class UnansweredError extends Error {
  */
 export async function understand(
 	text: string,
-	/** 预先写进提示词的活统计：有限取值几维的取值和人数，记录流的覆盖。 */
-	{ vocab, streams }: { vocab: Vocabulary; streams: readonly StreamFact[] },
+	/** 预先写进提示词的活统计：有限取值几维的取值和人数，记录流的覆盖，公司的概况。 */
+	{
+		vocab,
+		streams,
+		company,
+	}: {
+		vocab: Vocabulary;
+		streams: readonly StreamFact[];
+		company: CompanyFacts;
+	},
 	base: readonly QueryCondition[],
 	agent: AgentTools,
 ): Promise<{ submitted: Submission; admitted: Understood }> {
@@ -320,6 +375,7 @@ export async function understand(
 		prompt: [
 			"取值",
 			...VOCAB_HEADING.map(([key, heading]) => listed(heading, vocab[key])),
+			...companyLines(company),
 			"\n记录流",
 			...(streams.length > 0 ? streams.map(streamLine) : ["（没有）"]),
 			// 停用是用户在 chip 上的操作，模型写不出也不必看见：它原样写回这一条，

@@ -19,7 +19,10 @@ export const hit = (over: Partial<Hit> = {}): Hit => ({
 	...over,
 });
 
-export const experience = (over: Partial<Experience> = {}): Experience => ({
+/** 详情里的一段：库里的一行，加上那家公司的主营行业。 */
+export type Segment = Experience & { mainIndustries: string[] };
+
+export const experience = (over: Partial<Segment> = {}): Segment => ({
 	id: 1,
 	contentKey: "",
 	empId: "T0001",
@@ -42,5 +45,6 @@ export const experience = (over: Partial<Experience> = {}): Experience => ({
 	months: 24,
 	derivedIdentity: null,
 	unanswered: false,
+	mainIndustries: [],
 	...over,
 });

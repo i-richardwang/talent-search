@@ -19,6 +19,7 @@ export type DimUnit = {
 	kind: "internal" | "external";
 	minMonths: number;
 	companyTag: string;
+	industry: string;
 	skill: string;
 	recruitment: string;
 	education: string;
@@ -38,6 +39,7 @@ const MULTI_KEYS = [
 	"seq",
 	"level",
 	"companyTag",
+	"industry",
 	"skill",
 	"recruitment",
 	"education",
@@ -63,6 +65,11 @@ export type DimSource = {
 	seqL1: string | null;
 	seqL2: string | null;
 	companyTag: string | null;
+	/**
+	 * 入职前那家公司的主营行业，连同每一级上级（目录视图的 `main_industries`）：点上级行业
+	 * 能看到它下面每个细分的人。没认出公司、公司没有行业时是空数组
+	 */
+	mainIndustries: string[];
 	/**
 	 * 这一段抽出来的能力词，连同每个词往上的每一层更宽的词（`search.ts` 的 `FACT_COLUMNS.skills`）：
 	 * 写了「销售数据分析」的段在这里也有「数据分析」，点宽的词能看到细的人。每个词取的是
@@ -268,6 +275,17 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	},
 
 	companyTag: plain("入职前公司", (f) => f.companyTag),
+
+	industry: {
+		label: "入职前行业",
+		match: "set",
+		// 按主营算：涉足的业务一家大公司能有十来个，都算进来每个行业下都是同一批人
+		values: (f) => f.mainIndustries,
+		id: (v) => v,
+		option: (v) => v,
+		parse: textList,
+		compare: byCountThenValue,
+	},
 
 	skill: {
 		label: "入职前技能",

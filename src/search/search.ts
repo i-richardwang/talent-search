@@ -11,7 +11,7 @@ import { db } from "#/db";
 import { SHORT_ROUTES } from "#/db/schema";
 import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
 import { escapeLike } from "#/lib/sql";
-import { catalogSchema, rankOf } from "./catalog";
+import { catalogSchema, columnOf, rankOf } from "./catalog";
 import type { NameField } from "./condition-label";
 import { NOT_A_VALUE, VOCAB_KEYS, type VocabKey } from "./dimensions";
 import { execute } from "./execute";
@@ -217,7 +217,7 @@ const LISTED_MAX = 100;
 /**
  * 一列的取值和有这个值的人数：词表（`vocabulary`）和看目录（`server/discover.ts`）共用这一条
  * 语句。空值与 `NOT_A_VALUE` 不算取值；有高低的列按档高从低到高（`catalog.ts` 声明的 `rank`），
- * 其余人多的在前。给了 `stream` 只数这一条记录流。
+ * 其余人多的在前。数组列的每个取值各数各的。给了 `stream` 只数这一条记录流。
  */
 export async function valuesOf(
 	store: DbExecutor,
@@ -225,17 +225,23 @@ export async function valuesOf(
 	column: string,
 	stream?: string,
 ): Promise<Matched[]> {
-	const col = sql.identifier(column);
+	const col = sql`t.${sql.identifier(column)}`;
 	const rank = rankOf(relation, column);
+	// 数组列（行业、名企组合）一行有几个取值，各算各的
+	const value =
+		columnOf(relation, column)?.type === "text[]"
+			? sql`unnest(${col})`
+			: sql`(values (${col}::text))`;
 	const { rows } = await store.execute<Matched>(sql`
-		select ${col}::text as name, count(distinct emp_id)::int as people
-		from ${sql.identifier(catalogSchema())}.${sql.identifier(relation)}
-		where ${col} is not null and ${col}::text not in (${sql.join(
+		select v.name, count(distinct t.emp_id)::int as people
+		from ${sql.identifier(catalogSchema())}.${sql.identifier(relation)} t
+		cross join lateral ${value} as v(name)
+		where v.name is not null and v.name not in (${sql.join(
 			["", ...NOT_A_VALUE].map((v) => sql`${v}`),
 			sql`, `,
-		)}) ${stream ? sql`and stream = ${stream}` : sql``}
+		)}) ${stream ? sql`and t.stream = ${stream}` : sql``}
 		group by 1
-		order by ${rank ? sql`min(${sql.identifier(rank)}), ` : sql``}people desc, name
+		order by ${rank ? sql`min(t.${sql.identifier(rank)}), ` : sql``}people desc, name
 		limit ${LISTED_MAX}`);
 	return rows;
 }

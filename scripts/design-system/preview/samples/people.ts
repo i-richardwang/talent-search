@@ -164,13 +164,14 @@ function internal(
 		company: "",
 		departmentPath: `${HOME}/${center}/${row.department}`,
 		companyMeta: null,
+		mainIndustries: [],
 		seqInferredL1: "",
 		seqInferredL2: "",
 		description: "",
 	};
 }
 
-/** 一段入职前的经历：公司档、行业、性质写在 `companyMeta`，序列是推断的一对。 */
+/** 一段入职前的经历：公司档、性质写在 `companyMeta`，主营行业另列，序列是推断的一对。 */
 function external(
 	row: Pick<
 		SampleExperience,
@@ -186,13 +187,14 @@ function external(
 		| "seqInferredL2"
 	> & { tag: string; industry?: string },
 ): SampleExperience {
-	const { tag, industry = "互联网", ...rest } = row;
+	const { tag, industry = "软件/IT", ...rest } = row;
 	return {
 		...rest,
 		kind: "external",
 		department: "",
 		departmentPath: "",
-		companyMeta: { company_tag: tag, industry, nature: "民营" },
+		companyMeta: { company_tag: tag, nature: "民营" },
+		mainIndustries: [industry],
 		seqL1: "",
 		seqL2: "",
 		seqL3: "",
@@ -671,6 +673,7 @@ const FACTS: PopulationFact[] = EXPERIENCES.map((x) => {
 		seqL2: x.seqL2 || x.seqInferredL2,
 		kind: x.kind,
 		companyTag: x.companyMeta?.company_tag ?? null,
+		mainIndustries: x.mainIndustries,
 		skills: SKILLS[x.id] ?? [],
 		level: person.curLevelBand,
 		levelRank: person.curLevelRank,

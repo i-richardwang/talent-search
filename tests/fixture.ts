@@ -20,6 +20,8 @@ import {
 	authUser,
 	authVerification,
 	CATALOG_VIEWS,
+	company,
+	companyAlias,
 	completionCache,
 	EMBED_DIM,
 	embeddingCache,
@@ -30,6 +32,7 @@ import {
 	experienceNext,
 	experiencePhrase,
 	experiencePhraseNext,
+	industry,
 	phrase,
 	phraseGloss,
 	recordStream,
@@ -559,6 +562,9 @@ export async function setup() {
 		recordStream,
 		scale,
 		employeeRecord,
+		industry,
+		company,
+		companyAlias,
 	])
 		await admin.query(ddl(SCHEMA, t));
 	// 视图里的表名不带 schema，建视图时按本文件的 schema 解析，绑定的就是本文件的表
@@ -698,6 +704,51 @@ export type StreamSeed = {
 	}[];
 };
 
+/**
+ * 一家合成的公司。行业两列照库里存的样子给：已经连同上级展开（真语料里由管线展开）。
+ * 经历上的公司写法默认就是公司名，另有写法时写在 `aliases`。
+ */
+export type CompanySeed = {
+	name: string;
+	group?: string;
+	industries?: string[];
+	mainIndustries?: string[];
+	circles?: string[];
+	aliases?: string[];
+};
+
+/** 写公司知识：行业树（行业 → 上级）、公司和经历上的写法，和同步写的三张表一样。 */
+export async function seedCompanies(
+	tree: Record<string, string | null>,
+	companies: CompanySeed[],
+) {
+	const { db } = await import("#/db");
+	const { industry, company, companyAlias } = await import("#/db/schema");
+	// 上级先写：自引用的外键逐行检查
+	const names = Object.keys(tree);
+	const depth = (name: string): number =>
+		tree[name] ? depth(tree[name]) + 1 : 0;
+	for (const name of names.sort((a, b) => depth(a) - depth(b)))
+		await db.insert(industry).values({ name, parent: tree[name] });
+	await db.insert(company).values(
+		companies.map((c) => ({
+			name: c.name,
+			groupName: c.group ?? c.name,
+			industries: c.industries ?? [],
+			mainIndustries: c.mainIndustries ?? [],
+			circles: c.circles ?? [],
+		})),
+	);
+	await db.insert(companyAlias).values(
+		companies.flatMap((c) =>
+			(c.aliases ?? [c.name]).map((rawName) => ({
+				rawName,
+				company: c.name,
+			})),
+		),
+	);
+}
+
 /** 写一条记录流：流本身、评级流的档位表和每个人的记录，和同步写的三张表一样。 */
 export async function seedStream(s: StreamSeed) {
 	const { db } = await import("#/db");
@@ -797,7 +848,6 @@ export async function seed(rows: Seed[]) {
 						companyMeta: s.companyTag
 							? {
 									company_tag: s.companyTag,
-									industry: "",
 									nature: "",
 								}
 							: null,

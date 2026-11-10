@@ -30,6 +30,7 @@ const FACETS: Facets = {
 		{ value: { l1: "技术", l2: "工程" }, n: 80 },
 	],
 	companyTag: [],
+	industry: [],
 	kind: [
 		{ value: "internal", n: 31 },
 		{ value: "external", n: 0 },

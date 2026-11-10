@@ -20,8 +20,8 @@ const ASSIGNMENTS =
 	"E1,2024-01-01,,平台技术部,示例科技/平台技术部,算法工程师,P6,技术,算法,\n";
 const EXTERNAL =
 	"emp_id,start_date,end_date,company,title,description," +
-	"company_tag,industry,nature,unemployed\n" +
-	"E1,2018-01-01,2019-12-31,云枢智能,算法工程师,做召回,,,,\n";
+	"company_tag,nature,unemployed\n" +
+	"E1,2018-01-01,2019-12-31,云枢智能,算法工程师,做召回,,,\n";
 const LEVELS = "level,band,rank\nP6,中级,6\n";
 
 const directories: string[] = [];
@@ -157,10 +157,38 @@ describe("CSV 数据源", () => {
 		assert.match(logs.join("\n"), /缺少 segment_key 2 段/);
 	});
 
+	test("公司知识的五个文件都可以没有；有就按契约列读，主营认布尔的那几种写法", async () => {
+		const none = await read();
+		assert.deepEqual(none.companies, []);
+		assert.deepEqual(none.industries, []);
+		const data = await read({
+			"industries.csv": "name,parent\n消费/零售,\n外卖,消费/零售\n",
+			"companies.csv": "name,group_name\n云枢智能,云枢集团\n",
+			"company_industries.csv":
+				"company,industry,main\n云枢智能,外卖,true\n云枢智能,消费/零售,\n",
+			"company_circles.csv": "company,circle\n云枢智能,某组合\n",
+			"company_aliases.csv": "raw_name,company\n云枢,云枢智能\n",
+		});
+		assert.deepEqual(data.industries[1], { name: "外卖", parent: "消费/零售" });
+		assert.deepEqual(data.companies, [
+			{ name: "云枢智能", group_name: "云枢集团" },
+		]);
+		assert.deepEqual(
+			data.companyIndustries.map((row) => row.main),
+			[true, false],
+		);
+		assert.deepEqual(data.companyCircles, [
+			{ company: "云枢智能", circle: "某组合" },
+		]);
+		assert.deepEqual(data.companyAliases, [
+			{ raw_name: "云枢", company: "云枢智能" },
+		]);
+	});
+
 	test("待业标记认文档里写的那几种写法", async () => {
 		const header = EXTERNAL.split("\n")[0] as string;
 		const rows = ["true", "Y", "是", "1", "", "no"]
-			.map((written) => `E1,2018-01-01,2018-06-30,,,,,,,${written}\n`)
+			.map((written) => `E1,2018-01-01,2018-06-30,,,,,,${written}\n`)
 			.join("");
 		const data = await read({ "external.csv": `${header}\n${rows}` });
 		assert.deepEqual(
@@ -170,7 +198,7 @@ describe("CSV 数据源", () => {
 		await assert.rejects(
 			() =>
 				read({
-					"external.csv": `${header}\nE1,2018-01-01,2018-06-30,,,,,,,也许\n`,
+					"external.csv": `${header}\nE1,2018-01-01,2018-06-30,,,,,,也许\n`,
 				}),
 			/unemployed/,
 		);

@@ -56,6 +56,28 @@ export type StreamFact = {
 	values: string[];
 };
 
+/** 行业树上的一个行业：待过主营是它的公司的人数，和待过做它（主营或涉足）的公司的人数。 */
+export type IndustryFact = {
+	name: string;
+	/** 上一级行业；顶层为 null */
+	parent: string | null;
+	main: number;
+	any: number;
+};
+
+/**
+ * 入职前那些公司的概况，提示词里预先给：行业树和人数、名企组合、企业性质，以及有多少段
+ * 入职前的经历认出了公司、有行业——没认出的段不满足任何行业条件，模型要知道名单可能漏人。
+ */
+export type CompanyFacts = {
+	industries: IndustryFact[];
+	circles: Matched[];
+	natures: Matched[];
+	segments: number;
+	recognized: number;
+	labelled: number;
+};
+
 /** 看数据目录得到的：总览、一列的取值、按名字匹配到的写法，或者这一问为什么答不了。 */
 export type Discovery =
 	| {

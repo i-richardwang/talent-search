@@ -1,7 +1,7 @@
 /**
- * 读取数据源，经 pipeline.ts 校验、切段后，在一笔短事务中同步人员、经历与记录。
+ * 读取数据源，经 pipeline.ts 校验、切段后，在一笔短事务中同步人员、经历、记录与公司知识。
  * 正式表与暂存表共用数据库生成的 content_key：删除消失的段，插入新增段，
- * 同内容的段刷新累计月数并保留 id、边和解析版本。记录没有解析产物，整表重写。
+ * 同内容的段刷新累计月数并保留 id、边和解析版本。记录和公司知识没有解析产物，整表重写。
  * 同步不调用模型。
  */
 
@@ -9,8 +9,11 @@ import "@tanstack/react-start/server-only";
 import { prunePhrases } from "./phrases";
 import {
 	build,
+	type CompanyAliasRow,
+	type CompanyRow,
 	type EmployeeRow,
 	type ExperienceRow,
+	type IndustryRow,
 	type RecordRow,
 	type ScaleRow,
 	type StreamRow,
@@ -201,6 +204,42 @@ async function replaceRecords(
 }
 
 /**
+ * 行业树、公司和公司写法照这一次的写。经历上不存公司是什么，所以公司知识变了不动任何一段
+ * 经历的身份和解析结果。数组逐行以 JSON 送入：`unnest` 会把二维数组摊平。
+ */
+async function replaceCompanies(
+	{ client }: CorpusSession,
+	industries: IndustryRow[],
+	companies: CompanyRow[],
+	aliases: CompanyAliasRow[],
+): Promise<void> {
+	await client.query("delete from company_alias");
+	await client.query("delete from company");
+	await client.query("delete from industry");
+	await client.query(
+		`insert into industry (name, parent)
+		 select * from unnest($1::text[], $2::text[])`,
+		[industries.map((r) => r.name), industries.map((r) => r.parent)],
+	);
+	const texts = (column: string) =>
+		`array(select jsonb_array_elements_text(r -> '${column}'))`;
+	for (const chunk of chunked(companies, ROWS_PER_STATEMENT))
+		await client.query(
+			`insert into company (name, group_name, industries, main_industries, circles)
+			 select r ->> 'name', r ->> 'group_name', ${texts("industries")},
+				${texts("main_industries")}, ${texts("circles")}
+			 from unnest($1::jsonb[]) as r`,
+			[chunk.map((r) => JSON.stringify(r))],
+		);
+	for (const chunk of chunked(aliases, ROWS_PER_STATEMENT))
+		await client.query(
+			`insert into company_alias (raw_name, company)
+			 select * from unnest($1::text[], $2::text[])`,
+			[chunk.map((r) => r.raw_name), chunk.map((r) => r.company)],
+		);
+}
+
+/**
  * 同内容的段保留身份，累计月数按本次日期刷新。连接与锁由调用方给（`session.ts`）。
  */
 export async function sync(
@@ -214,7 +253,16 @@ export async function sync(
 
 	report("");
 	report("切段与校验…");
-	const { employee, experience, streams, scale, records } = build(data, report);
+	const {
+		employee,
+		experience,
+		streams,
+		scale,
+		records,
+		industries,
+		companies,
+		companyAliases,
+	} = build(data, report);
 
 	report("");
 	report("写入…");
@@ -226,6 +274,7 @@ export async function sync(
 		await stageExperience(session, experience);
 		counts = await reconcile(session);
 		await replaceRecords(session, streams, scale, records);
+		await replaceCompanies(session, industries, companies, companyAliases);
 		await client.query("commit");
 	} catch (error) {
 		await client.query("rollback");

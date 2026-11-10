@@ -141,6 +141,7 @@ const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
 	seqL2: sql`e.seq_l2`,
 	kind: sql`e.kind`,
 	companyTag: sql`e.company_tag`,
+	mainIndustries: sql`coalesce(e.main_industries, '{}')`,
 	skills: sql`coalesce(e.skills, '{}')`,
 	level: sql`coalesce(p.level_band, '')`,
 	levelRank: sql`p.level_rank`,

@@ -22,7 +22,7 @@ import { vocabulary } from "#/search/search";
 import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { agentTools } from "./agent-tools";
-import { streamFacts } from "./discover";
+import { companyFacts, streamFacts } from "./discover";
 import { type EndpointFault, endpointFault } from "./endpoint";
 import {
 	STEP_LIMIT_MS,
@@ -299,7 +299,11 @@ async function understandTurn(
 	// 读词表和调用模型各自读数据库，不共用一个快照：调用模型可能要一分钟，如果开着
 	// 快照等它，一次理解就占着连接池里的一条连接一分钟。模型的工具在自己的快照里读
 	// （`search/phrases.ts` 的 withMatchedPhrases）。
-	const [vocab, streams] = await Promise.all([vocabulary(), streamFacts()]);
+	const [vocab, streams, company] = await Promise.all([
+		vocabulary(),
+		streamFacts(),
+		companyFacts(),
+	]);
 	const record = async (step: TraceStep) => {
 		await db
 			.update(searchTurn)
@@ -312,7 +316,7 @@ async function understandTurn(
 	// 写进记录的是提交检查录取的那份：跑不了的条件已经丢掉，丢空了就是没作答
 	const { submitted, admitted: result } = await understand(
 		rawText,
-		{ vocab, streams },
+		{ vocab, streams, company },
 		base,
 		agent,
 	);
