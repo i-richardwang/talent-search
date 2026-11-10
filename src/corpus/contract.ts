@@ -1,6 +1,6 @@
 /**
  * 数据源与管线的唯一契约：员工档案、公司内任职、入职前经历、公司自己的职级分档，
- * 以及按期登记的记录（绩效评级、高潜池这类状态）。
+ * 按期登记的记录（绩效评级、高潜池这类状态），以及入职前那些公司是什么（行业、集团、名企组合）。
  * 适配器提供摊平的事实，决定人群和源特有的切段、字段翻译；
  * 管线处理来源无关的区间校验、相邻段合并、时长及当前信息计算。
  */
@@ -63,6 +63,8 @@ const ASSIGNMENT_COLUMNS = [
 /**
  * 入职前经历，一段一行。`end_date` 留空的以入职日为结束日。
  *
+ * `company` 是源里登记的写法，不必是规范名：它对到哪家公司由 `company_aliases` 说。
+ * `company_tag`、`nature` 是人事系统给这一段登记的公司档和企业性质。
  * `unemployed` 为真时岗位显示为「待业」且不接描述：待业段要保留（它解释了
  * 履历上的空档），但它不是一段可检索的经历。
  */
@@ -74,7 +76,6 @@ const EXTERNAL_COLUMNS = [
 	"title",
 	"description",
 	"company_tag",
-	"industry",
 	"nature",
 	"unemployed",
 ] as const;
@@ -120,6 +121,35 @@ const RECORD_COLUMNS = [
 	"recorded_at",
 ] as const;
 
+/**
+ * 公司知识，五批行，回答「入职前那家公司是什么」。它不是人事系统知道的事，判断在数据源
+ * 之外做完（查资料、综合判断），这里只接收结论；没有这部分知识的数据源五批都不给。
+ *
+ * 行业是一棵树，一个行业一行：`parent` 是上一级，顶层留空。细分的赛道就是行业的下级。
+ */
+const INDUSTRY_COLUMNS = ["name", "parent"] as const;
+
+/**
+ * 一家公司一行。`name` 是规范名，`group_name` 是它所属的集团（没有上级的写自己）。
+ * 集团、子公司、业务品牌各是各的公司，各有各的行业，不沿上下级继承。
+ */
+const COMPANY_COLUMNS = ["name", "group_name"] as const;
+
+/**
+ * 公司做哪些行业，一家公司一个行业一行，写最细的那一级，上级由管线推出。
+ * `main` 为真是主营（行业外的人对这家公司的第一反应），其余是涉足。
+ */
+const COMPANY_INDUSTRY_COLUMNS = ["company", "industry", "main"] as const;
+
+/** 公司属于哪些约定俗成的名企组合（「四大」「MBB」），一家公司一个组合一行。 */
+const COMPANY_CIRCLE_COLUMNS = ["company", "circle"] as const;
+
+/**
+ * 源里的公司写法对到哪家公司，一种写法一行。和 `external.company` 比时不分大小写、
+ * 不计首尾空白；规范名自己不用再写一行。
+ */
+const COMPANY_ALIAS_COLUMNS = ["raw_name", "company"] as const;
+
 export type SourceEmployee = Record<
 	Exclude<(typeof EMPLOYEE_COLUMNS)[number], "overseas_educated">,
 	string
@@ -137,6 +167,20 @@ export type SourceLevel = Record<(typeof LEVEL_COLUMNS)[number], string>;
 export type SourceStream = Record<(typeof STREAM_COLUMNS)[number], string>;
 export type SourceScale = Record<(typeof SCALE_COLUMNS)[number], string>;
 export type SourceRecord = Record<(typeof RECORD_COLUMNS)[number], string>;
+export type SourceIndustry = Record<(typeof INDUSTRY_COLUMNS)[number], string>;
+export type SourceCompany = Record<(typeof COMPANY_COLUMNS)[number], string>;
+export type SourceCompanyIndustry = Record<
+	Exclude<(typeof COMPANY_INDUSTRY_COLUMNS)[number], "main">,
+	string
+> & { main: boolean };
+export type SourceCompanyCircle = Record<
+	(typeof COMPANY_CIRCLE_COLUMNS)[number],
+	string
+>;
+export type SourceCompanyAlias = Record<
+	(typeof COMPANY_ALIAS_COLUMNS)[number],
+	string
+>;
 
 /** 一次抽取的全部产出。适配器的 `extract()` 返回它。 */
 export type SourceData = {
@@ -147,6 +191,11 @@ export type SourceData = {
 	streams: SourceStream[];
 	scales: SourceScale[];
 	records: SourceRecord[];
+	industries: SourceIndustry[];
+	companies: SourceCompany[];
+	companyIndustries: SourceCompanyIndustry[];
+	companyCircles: SourceCompanyCircle[];
+	companyAliases: SourceCompanyAlias[];
 };
 
 /** 适配器提供的原样行：键是列名，值还没有约定形态。 */
@@ -181,8 +230,8 @@ function text(value: unknown): string {
 }
 
 /**
- * 契约内的标记是布尔，留空返回 `null`，缺失算什么由调用处说：待业缺失即否，海外学历
- * 缺失是没有记录。具体源的标记格式由适配器转换。
+ * 契约内的标记是布尔，留空返回 `null`，缺失算什么由调用处说：待业、主营缺失即否，
+ * 海外学历缺失是没有记录。具体源的标记格式由适配器转换。
  */
 function flag(
 	rows: RawRow[],
@@ -201,6 +250,7 @@ function flag(
 /**
  * 把适配器提供的几批行转成契约的形状。适配器的 `extract()` 最后调用它。
  * 记录的三批可以不给：没有记录流的数据源照样同步，目录里就没有评级和状态。
+ * 公司知识的五批同样可以不给：入职前的经历照样同步，只是没有行业、集团和名企组合。
  */
 export function sourceData(raw: {
 	employees: RawRow[];
@@ -210,7 +260,13 @@ export function sourceData(raw: {
 	streams?: RawRow[];
 	scales?: RawRow[];
 	records?: RawRow[];
+	industries?: RawRow[];
+	companies?: RawRow[];
+	companyIndustries?: RawRow[];
+	companyCircles?: RawRow[];
+	companyAliases?: RawRow[];
 }): SourceData {
+	const companyIndustries = raw.companyIndustries ?? [];
 	return {
 		employees: conform(raw.employees, EMPLOYEE_COLUMNS, "employees").map(
 			(row, index) => ({
@@ -235,5 +291,26 @@ export function sourceData(raw: {
 		streams: conform(raw.streams ?? [], STREAM_COLUMNS, "streams"),
 		scales: conform(raw.scales ?? [], SCALE_COLUMNS, "scales"),
 		records: conform(raw.records ?? [], RECORD_COLUMNS, "records"),
+		industries: conform(raw.industries ?? [], INDUSTRY_COLUMNS, "industries"),
+		companies: conform(raw.companies ?? [], COMPANY_COLUMNS, "companies"),
+		companyIndustries: conform(
+			companyIndustries,
+			COMPANY_INDUSTRY_COLUMNS,
+			"company_industries",
+		).map((row, index) => ({
+			...row,
+			main:
+				flag(companyIndustries, "company_industries", "main", index) ?? false,
+		})),
+		companyCircles: conform(
+			raw.companyCircles ?? [],
+			COMPANY_CIRCLE_COLUMNS,
+			"company_circles",
+		),
+		companyAliases: conform(
+			raw.companyAliases ?? [],
+			COMPANY_ALIAS_COLUMNS,
+			"company_aliases",
+		),
 	};
 }

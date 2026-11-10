@@ -21,6 +21,7 @@ const FACETS: Facets = {
 		{ value: { l1: "商业分析", l2: "数据科学" }, n: 27 },
 	],
 	companyTag: [{ value: "大厂", n: 42 }],
+	industry: [{ value: "电商", n: 30 }],
 	kind: [
 		{ value: "internal", n: 31 },
 		{ value: "external", n: 12 },
@@ -204,6 +205,7 @@ describe("控件侧", () => {
 				"经历来源",
 				"经历时长",
 				"入职前公司",
+				"入职前行业",
 				"入职前技能",
 				"招聘渠道",
 				"学历",

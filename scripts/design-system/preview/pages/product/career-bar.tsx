@@ -11,7 +11,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import type { Experience, Route } from "#/db/schema";
+import type { Route, Experience as StoredExperience } from "#/db/schema";
 import {
 	CareerBar,
 	packLanes,
@@ -27,6 +27,8 @@ import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { CLAIMS } from "../../samples/conditions";
 import { EMPLOYEES, experiencesOf, hitOn, hitsOf } from "../../samples/people";
+
+type Experience = StoredExperience & { mainIndustries: string[] };
 
 const NAMES = CLAIMS.map(claimName);
 

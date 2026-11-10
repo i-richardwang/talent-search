@@ -50,7 +50,7 @@ export type EmployeeDetail = {
 		| "overseasEducated"
 		| "recruitment"
 	>;
-	timeline: Pick<
+	timeline: (Pick<
 		Experience,
 		| "id"
 		| "kind"
@@ -69,7 +69,10 @@ export type EmployeeDetail = {
 		| "level"
 		| "description"
 		| "months"
-	>[];
+	> & {
+		/** 入职前那家公司的主营行业，只写最细的一级；没认出公司或没有行业时为空 */
+		mainIndustries: string[];
+	})[];
 };
 
 type PopulationResult = {

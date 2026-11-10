@@ -64,7 +64,7 @@ import { vocabulary } from "#/search/search";
 import { changesOf } from "#/search/spec";
 import { RESULT_MAX } from "#/search/weights";
 import { agentToolsWithoutTrace } from "#/server/agent-tools";
-import { streamFacts } from "#/server/discover";
+import { companyFacts, streamFacts } from "#/server/discover";
 import { understand } from "#/server/llm";
 
 type Mode = QueryCondition["mode"];
@@ -227,7 +227,11 @@ async function selectedBy(c: QueryCondition): Promise<string> {
 
 let failed = 0;
 try {
-	const facts = { vocab: await vocabulary(), streams: await streamFacts() };
+	const facts = {
+		vocab: await vocabulary(),
+		streams: await streamFacts(),
+		company: await companyFacts(),
+	};
 	for (const c of cases) {
 		const problems: string[] = [];
 		let summary = "";

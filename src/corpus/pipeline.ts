@@ -1,5 +1,5 @@
 /**
- * 源契约转换为 employee、experience 与记录各表写入行的纯管线。
+ * 源契约转换为 employee、experience、记录与公司知识各表写入行的纯管线。
  * 拒绝并报告非法、倒置、缺开始日或未来生效的区间；补齐开放区间，合并相邻同键段，
  * 计算时长、当前信息、职级档与学历档；记录按期去重修订。asOf 由调用方指定或使用当地日历日。
  */
@@ -8,9 +8,14 @@ import { type CompanyMeta, ORDINAL_STREAM } from "#/db/schema";
 import {
 	EDUCATION_LADDER,
 	type SourceAssignment,
+	type SourceCompany,
+	type SourceCompanyAlias,
+	type SourceCompanyCircle,
+	type SourceCompanyIndustry,
 	type SourceData,
 	type SourceEmployee,
 	type SourceExternal,
+	type SourceIndustry,
 	type SourceLevel,
 	type SourceRecord,
 	type SourceScale,
@@ -87,6 +92,21 @@ export type RecordRow = {
 	period_end: string | null;
 	value: string;
 };
+
+export type IndustryRow = { name: string; parent: string | null };
+
+export type CompanyRow = {
+	name: string;
+	group_name: string;
+	/** 做的全部行业，连同每一个的上级 */
+	industries: string[];
+	/** 其中的主营，连同上级 */
+	main_industries: string[];
+	circles: string[];
+};
+
+/** `raw_name` 是经历上登记的公司写法原样。 */
+export type CompanyAliasRow = { raw_name: string; company: string };
 
 /** 待业段的岗位显示。它不是一个岗位名，是「这段时间没有工作」的表达。 */
 export const UNEMPLOYED = "待业";
@@ -351,7 +371,6 @@ function buildExternal(
 		title: row.title.trim(),
 		description: row.description.trim(),
 		company_tag: row.company_tag.trim(),
-		industry: row.industry.trim(),
 		nature: row.nature.trim(),
 		unemployed: row.unemployed,
 	}));
@@ -433,12 +452,10 @@ function required(end: Date | null): Date {
 /** 公司属性只存非空项。整体为空时写 NULL，不写 `{}`。 */
 function companyMeta(row: {
 	company_tag: string;
-	industry: string;
 	nature: string;
 }): CompanyMeta | null {
 	const meta: CompanyMeta = {};
 	if (row.company_tag) meta.company_tag = row.company_tag;
-	if (row.industry) meta.industry = row.industry;
 	if (row.nature) meta.nature = row.nature;
 	return Object.keys(meta).length ? meta : null;
 }
@@ -804,6 +821,200 @@ function buildRecords(
 	);
 }
 
+// ------------------------------------------------------------------ 公司知识
+
+/** 公司写法怎么比：不分大小写，不计首尾空白。 */
+function nameKey(name: string): string {
+	return name.trim().toLowerCase();
+}
+
+/** 行业树：名字非空、唯一，上级声明过，没有环。无效的树拒绝整轮同步。 */
+function industryTree(rows: SourceIndustry[]): Map<string, string | null> {
+	const parentOf = new Map<string, string | null>();
+	for (const [index, row] of rows.entries()) {
+		const name = row.name.trim();
+		const where = `数据源的 industries 第 ${index + 1} 行`;
+		if (!name) throw new Error(`${where}没有行业名`);
+		if (parentOf.has(name)) throw new Error(`${where}：行业 ${name} 重复声明`);
+		parentOf.set(name, row.parent.trim() || null);
+	}
+	for (const [name, parent] of parentOf) {
+		if (parent !== null && !parentOf.has(parent))
+			throw new Error(`行业 ${name} 的上级 ${parent} 没有声明`);
+		const seen = new Set([name]);
+		for (let up = parent; up !== null; up = parentOf.get(up) ?? null) {
+			if (seen.has(up)) throw new Error(`行业 ${name} 的上级成环`);
+			seen.add(up);
+		}
+	}
+	return parentOf;
+}
+
+/** 几个行业连同各自的每一级上级，按名字排。 */
+function withAncestors(
+	names: Iterable<string>,
+	parentOf: Map<string, string | null>,
+): string[] {
+	const out = new Set<string>();
+	for (const name of names)
+		for (
+			let at: string | null = name;
+			at !== null && !out.has(at);
+			at = parentOf.get(at) ?? null
+		)
+			out.add(at);
+	return [...out].sort();
+}
+
+/**
+ * 公司知识 → 行业树、人才库里出现过的公司、经历上的写法对到哪家公司。
+ *
+ * 管线不判断公司是什么，只核对数据源给的结论自洽（引用的公司和行业都声明过），把行业
+ * 展开到上级，再把入职前经历上的公司写法对上去：先按别名，再按规范名。一种写法按别名
+ * 对到两家公司时哪家都不算。没人待过的公司不留。对不上的写法按人数报出来，
+ * 由维护公司知识的一方去补。
+ */
+function buildCompanies(
+	data: {
+		industries: SourceIndustry[];
+		companies: SourceCompany[];
+		companyIndustries: SourceCompanyIndustry[];
+		companyCircles: SourceCompanyCircle[];
+		companyAliases: SourceCompanyAlias[];
+	},
+	outside: ExperienceRow[],
+	report: Report,
+): {
+	industries: IndustryRow[];
+	companies: CompanyRow[];
+	aliases: CompanyAliasRow[];
+} {
+	const parentOf = industryTree(data.industries);
+
+	const known = new Map<
+		string,
+		{
+			group: string;
+			industries: Set<string>;
+			main: Set<string>;
+			circles: Set<string>;
+		}
+	>();
+	for (const [index, row] of data.companies.entries()) {
+		const name = row.name.trim();
+		const where = `数据源的 companies 第 ${index + 1} 行`;
+		if (!name) throw new Error(`${where}没有公司名`);
+		if (known.has(name)) throw new Error(`${where}：公司 ${name} 重复`);
+		known.set(name, {
+			group: row.group_name.trim() || name,
+			industries: new Set(),
+			main: new Set(),
+			circles: new Set(),
+		});
+	}
+	const declared = (company: string, where: string) => {
+		const found = known.get(company.trim());
+		if (!found) throw new Error(`${where}：公司 ${company} 不在 companies 里`);
+		return found;
+	};
+	for (const [index, row] of data.companyIndustries.entries()) {
+		const where = `数据源的 company_industries 第 ${index + 1} 行`;
+		const company = declared(row.company, where);
+		const name = row.industry.trim();
+		if (!parentOf.has(name))
+			throw new Error(`${where}：行业 ${name} 不在 industries 里`);
+		company.industries.add(name);
+		if (row.main) company.main.add(name);
+	}
+	for (const [index, row] of data.companyCircles.entries()) {
+		const where = `数据源的 company_circles 第 ${index + 1} 行`;
+		const circle = row.circle.trim();
+		if (!circle) throw new Error(`${where}没有组合名`);
+		declared(row.company, where).circles.add(circle);
+	}
+
+	const byAlias = new Map<string, Set<string>>();
+	for (const [index, row] of data.companyAliases.entries()) {
+		const where = `数据源的 company_aliases 第 ${index + 1} 行`;
+		const key = nameKey(row.raw_name);
+		if (!key) throw new Error(`${where}没有写法`);
+		declared(row.company, where);
+		const targets = byAlias.get(key) ?? new Set();
+		byAlias.set(key, targets.add(row.company.trim()));
+	}
+	const byName = new Map<string, Set<string>>();
+	for (const name of known.keys()) {
+		const key = nameKey(name);
+		byName.set(key, (byName.get(key) ?? new Set()).add(name));
+	}
+	const only = (targets: Set<string> | undefined) =>
+		targets?.size === 1 ? [...targets][0] : undefined;
+
+	const worked = outside.filter((row) => !row.unemployed && row.company);
+	const aliases = new Map<string, string>();
+	const unresolved = new Map<string, Set<string>>();
+	let resolvedSegments = 0;
+	for (const row of worked) {
+		const key = nameKey(row.company);
+		const aliased = byAlias.get(key);
+		const company = aliased ? only(aliased) : only(byName.get(key));
+		if (company) {
+			aliases.set(row.company, company);
+			resolvedSegments++;
+		} else
+			unresolved.set(
+				row.company,
+				(unresolved.get(row.company) ?? new Set()).add(row.emp_id),
+			);
+	}
+
+	const companies = [...new Set(aliases.values())].sort().map((name) => {
+		const company = declared(name, "公司知识");
+		return {
+			name,
+			group_name: company.group,
+			industries: withAncestors(company.industries, parentOf),
+			main_industries: withAncestors(company.main, parentOf),
+			circles: [...company.circles].sort(),
+		};
+	});
+
+	if (known.size > 0) {
+		const labelled = worked.filter((row) => {
+			const company = aliases.get(row.company);
+			return company && declared(company, "公司知识").industries.size > 0;
+		}).length;
+		report(
+			`  公司 ${companies.length} 家：入职前 ${worked.length} 段里 ${resolvedSegments} 段对上了公司，${labelled} 段有行业`,
+		);
+		const ambiguous = [...byAlias.values()].filter((t) => t.size > 1).length;
+		if (ambiguous)
+			report(`  别名对到不止一家公司 ${ambiguous} 种写法，这些写法不算`);
+		if (unresolved.size) {
+			const byPeople = [...unresolved]
+				.map(([name, people]) => [name, people.size] as const)
+				.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+			report(
+				`  公司写法没对上 ${unresolved.size} 种，人多的：${byPeople
+					.slice(0, UNRESOLVED_LISTED)
+					.map(([name, people]) => `${name} ${people} 人`)
+					.join("、")}`,
+			);
+		}
+	}
+
+	return {
+		industries: [...parentOf].map(([name, parent]) => ({ name, parent })),
+		companies,
+		aliases: [...aliases]
+			.map(([raw_name, company]) => ({ raw_name, company }))
+			.sort((a, b) => a.raw_name.localeCompare(b.raw_name)),
+	};
+}
+
+/** 同步报告里列出多少种没对上的公司写法：够维护的人排出先补哪些。 */
+const UNRESOLVED_LISTED = 30;
+
 // ---------------------------------------------------------------------- 入口
 
 /**
@@ -820,6 +1031,9 @@ export function build(
 	streams: StreamRow[];
 	scale: ScaleRow[];
 	records: RecordRow[];
+	industries: IndustryRow[];
+	companies: CompanyRow[];
+	companyAliases: CompanyAliasRow[];
 } {
 	let profiles = normalizeProfiles(data.employees, report);
 	profiles = reject(
@@ -892,6 +1106,7 @@ export function build(
 	const outside = buildExternal(external, hireDates, asOf, report);
 	const idle = outside.filter((row) => row.unemployed).length;
 	report(`  入职前 ${outside.length} 段（其中待业 ${idle} 段）`);
+	const knowledge = buildCompanies(data, outside, report);
 
 	const experience = [
 		...internal.map(
@@ -933,7 +1148,16 @@ export function build(
 	if (streams.length)
 		report(`  记录 ${records.length} 条（${streams.length} 条流）`);
 
-	return { employee, experience, streams, scale, records };
+	return {
+		employee,
+		experience,
+		streams,
+		scale,
+		records,
+		industries: knowledge.industries,
+		companies: knowledge.companies,
+		companyAliases: knowledge.aliases,
+	};
 }
 
 /**

@@ -7,9 +7,11 @@
  */
 
 import "@tanstack/react-start/server-only";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { currentTree, identity } from "#/corpus/derive";
 import {
+	company,
+	companyAlias,
 	type Employee,
 	type Experience,
 	employee,
@@ -211,8 +213,17 @@ export function employeeDetail(empId: string): Promise<EmployeeDetail | null> {
 				seqInferredL1: experience.seqInferredL1,
 				seqInferredL2: experience.seqInferredL2,
 				months: experience.months,
+				// 库里的主营连同上级；详情只写最细的一级，上级从它看得出来
+				mainIndustries: sql<string[]>`array(
+					select m from unnest(${company.mainIndustries}) as m
+					where not exists (
+						select 1 from industry i
+						where i.parent = m and i.name = any(${company.mainIndustries}))
+					order by m)`,
 			})
 			.from(experience)
+			.leftJoin(companyAlias, eq(companyAlias.rawName, experience.company))
+			.leftJoin(company, eq(company.name, companyAlias.company))
 			.where(eq(experience.empId, empId))
 			.orderBy(asc(experience.startDate), asc(experience.id));
 		return { employee: emp, timeline };

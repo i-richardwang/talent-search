@@ -30,6 +30,7 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 		seqL1: "技术",
 		seqL2: "算法",
 		companyTag: null,
+		mainIndustries: [],
 		skills: [],
 		kind: "internal",
 		level: "",

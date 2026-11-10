@@ -113,9 +113,9 @@ export const authVerification = pgTable(
 	(t) => [index("auth_verification_identifier").on(t.identifier)],
 );
 
+/** 人事系统给一段入职前经历登记的公司属性：公司档、企业性质。 */
 export type CompanyMeta = {
 	company_tag?: string;
-	industry?: string;
 	nature?: string;
 };
 
@@ -180,7 +180,7 @@ export const experience = pgTable(
 		department: text("department").notNull().default(""),
 		/** 内部：段起始日有效的完整部门路径 */
 		departmentPath: text("department_path").notNull().default(""),
-		/** 外部：公司档、行业、性质等规范字段 */
+		/** 外部：人事系统登记的公司档、企业性质 */
 		companyMeta: jsonb("company_meta").$type<CompanyMeta>(),
 		title: text("title").notNull().default(""),
 		/** 内部：HR 登记的序列三级。外部段这三列永远是空——登记值不和推断值混在一列 */
@@ -285,6 +285,37 @@ export const scale = pgTable(
 );
 
 /**
+ * 行业树，一个行业一行；`parent` 是上一级，顶层为空。细分的赛道是行业的下级。
+ * 公司知识的三张表都由同步整表重写，数据源没有这部分知识时为空。
+ */
+export const industry = pgTable("industry", {
+	name: text("name").primaryKey(),
+	parent: text("parent").references((): AnyPgColumn => industry.name, {
+		onDelete: "cascade",
+	}),
+});
+
+/**
+ * 入职前待过的公司是什么。只有人才库里出现过的公司。两列行业都已连同上级展开：
+ * `industries` 是做的全部行业，`main_industries` 是其中的主营。`circles` 是它属于的名企组合。
+ */
+export const company = pgTable("company", {
+	name: text("name").primaryKey(),
+	groupName: text("group_name").notNull(),
+	industries: text("industries").array().notNull(),
+	mainIndustries: text("main_industries").array().notNull(),
+	circles: text("circles").array().notNull(),
+});
+
+/** 经历上登记的公司写法（`experience.company` 原样）对到哪家公司。 */
+export const companyAlias = pgTable("company_alias", {
+	rawName: text("raw_name").primaryKey(),
+	company: text("company")
+		.notNull()
+		.references(() => company.name, { onDelete: "cascade" }),
+});
+
+/**
  * 按期登记的记录：评级一期一行，状态一段一行。同一人同一流同一期只有一行，修订在
  * 同步时去重（只留最终一条）。没有某一期的行表示没有记录，不表示任何档。
  */
@@ -360,6 +391,12 @@ export const catalogExperience = catalog
 		months: integer("months"),
 		company: text("company"),
 		company_tag: text("company_tag"),
+		company_nature: text("company_nature"),
+		company_name: text("company_name"),
+		company_group: text("company_group"),
+		main_industries: text("main_industries").array(),
+		industries: text("industries").array(),
+		company_circles: text("company_circles").array(),
 		department: text("department"),
 		department_path: text("department_path"),
 		title: text("title"),
@@ -371,6 +408,11 @@ export const catalogExperience = catalog
 	.as(sql`select e.id, e.emp_id, e.kind, e.start_date, e.end_date, e.months,
 		nullif(e.company, '') as company,
 		nullif(e.company_meta ->> 'company_tag', '') as company_tag,
+		nullif(e.company_meta ->> 'nature', '') as company_nature,
+		c.name as company_name, c.group_name as company_group,
+		nullif(c.main_industries, '{}') as main_industries,
+		nullif(c.industries, '{}') as industries,
+		nullif(c.circles, '{}') as company_circles,
 		nullif(e.department, '') as department,
 		nullif(e.department_path, '') as department_path,
 		nullif(e.title, '') as title, nullif(e.level, '') as level,
@@ -387,7 +429,10 @@ export const catalogExperience = catalog
 				where t.parent is not null
 			)
 			select word from up order by word) as skills
-	from experience e where not e.unemployed`);
+	from experience e
+	left join company_alias ca on ca.raw_name = e.company and e.kind = 'external'
+	left join company c on c.name = ca.company
+	where not e.unemployed`);
 
 /** 一期评级。`value_rank` 是这一档在档位表里的高低。 */
 export const catalogRating = catalog

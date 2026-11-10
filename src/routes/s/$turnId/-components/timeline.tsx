@@ -90,7 +90,9 @@ function Segment({
 						{dots(period(x.startDate, x.endDate), duration(x.months))}
 					</span>
 					{seq && <span>{external ? `${seq}（推断）` : seq}</span>}
-					{x.companyMeta && <CompanyLine meta={x.companyMeta} />}
+					{external && (
+						<CompanyLine industries={x.mainIndustries} meta={x.companyMeta} />
+					)}
 				</div>
 				{x.departmentPath && (
 					<p className="text-fg-tertiary text-xs">{x.departmentPath}</p>
@@ -132,10 +134,17 @@ function MatchedClaims({
 	);
 }
 
-function CompanyLine({ meta }: { meta: CompanyMeta }) {
+/** 入职前那家公司是什么：人事登记的公司档和企业性质，中间是它的主营行业。 */
+function CompanyLine({
+	meta,
+	industries,
+}: {
+	meta: CompanyMeta | null;
+	industries: string[];
+}) {
 	// 「未知」是源里的占位串，和空值一样不占一格
 	const line = dots(
-		...[meta.company_tag, meta.industry, meta.nature].map((v) =>
+		...[meta?.company_tag, industries.join("、"), meta?.nature].map((v) =>
 			v === "未知" ? "" : v,
 		),
 	);
