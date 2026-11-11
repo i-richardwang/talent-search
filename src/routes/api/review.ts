@@ -10,7 +10,6 @@ import { requestJob } from "#/server/jobs";
 import {
 	authorized,
 	configured,
-	kindOf,
 	limitOf,
 	pending,
 	submit,
@@ -33,8 +32,7 @@ export const Route = createFileRoute("/api/review")({
 	server: {
 		handlers: {
 			GET: async ({ request }) =>
-				reject(request) ??
-				Response.json(await pending(limitOf(request.url), kindOf(request.url))),
+				reject(request) ?? Response.json(await pending(limitOf(request.url))),
 			POST: async ({ request }) => {
 				const denied = reject(request);
 				if (denied) return denied;

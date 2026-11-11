@@ -30,10 +30,22 @@ before(async () => {
 });
 
 /**
- * 子进程要向本进程里的假嵌入端点要向量，所以这里**不能用 spawnSync**：
- * 它会卡住本进程的事件循环，端点答不了，子进程也退不了，互相等死。
- * 返回退出码；子进程的输出直通终端，失败时能直接看到它报了什么。
+ * 跑一个验收脚本，返回退出码。抽取和整理的验收要向本进程里的假模型端点提问，所以**不能用
+ * spawnSync**：它会卡住本进程的事件循环，端点答不了，子进程也退不了，互相等死。
  */
+function exitCodeOf(script: string, file: string, stdio: "inherit" | "ignore") {
+	const child = spawn(process.execPath, [script, file], {
+		cwd: process.cwd(),
+		env: process.env,
+		stdio,
+	});
+	return new Promise<number | null>((resolve, reject) => {
+		child.once("error", reject);
+		child.once("close", resolve);
+	});
+}
+
+/** 检索验收的退出码；子进程的输出直通终端，失败时能直接看到它报了什么。 */
 function run(expect: string, reject: string[] = []) {
 	const file = join(dir, `${expect}-${reject.join("-")}.json`);
 	writeFileSync(
@@ -42,15 +54,7 @@ function run(expect: string, reject: string[] = []) {
 			{ name: "评估退出码", query: "算法/运算", expect: [expect], reject },
 		]),
 	);
-	const child = spawn(process.execPath, ["scripts/eval.ts", file], {
-		cwd: process.cwd(),
-		env: process.env,
-		stdio: "inherit",
-	});
-	return new Promise<number | null>((resolve, reject) => {
-		child.once("error", reject);
-		child.once("close", resolve);
-	});
+	return exitCodeOf("scripts/eval.ts", file, "inherit");
 }
 
 describe("评估门禁", () => {
@@ -78,15 +82,7 @@ async function runCorpus(
 	writeFileSync(file, JSON.stringify(cases));
 	const restore = answerChat(() => answer);
 	try {
-		const child = spawn(process.execPath, [`scripts/eval-${kind}.ts`, file], {
-			cwd: process.cwd(),
-			env: process.env,
-			stdio: "ignore",
-		});
-		return await new Promise<number | null>((resolve, reject) => {
-			child.once("error", reject);
-			child.once("close", resolve);
-		});
+		return await exitCodeOf(`scripts/eval-${kind}.ts`, file, "ignore");
 	} finally {
 		restore();
 	}

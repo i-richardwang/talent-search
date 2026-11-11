@@ -78,5 +78,27 @@ describe("提交查询的服务端边界", () => {
 				validateCommit({ input: { kind: "spec", spec: { conditions: [{}] } } }),
 			/搜索条件无效/,
 		);
+		assert.throws(
+			() =>
+				validateCommit({
+					input: {
+						kind: "spec",
+						spec: {
+							query: {
+								conditions: [
+									{
+										label: "做过设备巡检",
+										from: "experience",
+										mode: "must",
+										where: "true",
+										seek: { patterns: [], criterion: "" },
+									},
+								],
+							},
+						},
+					},
+				}),
+			/搜索条件无效/,
+		);
 	});
 });

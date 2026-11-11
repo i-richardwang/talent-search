@@ -252,7 +252,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="搜索结果页导航栏的筛选里，一个维度能多选，每项后面是这次检索里的人数。"
+				description="名单上方的筛选里，一个维度能多选，每项后面是这次检索里的人数。"
 				title="筛选多选"
 			>
 				<FilterGroup />

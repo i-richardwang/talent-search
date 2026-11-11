@@ -15,14 +15,13 @@
  * 真实评估用例不进版本库（题目和答案指向真人）；仓库只带 `evals/search/sample.json`——
  * 全部指向合成样例语料（src/corpus/sources/sample/）的可执行基线，干净克隆也能跑通。
  *
- * query 用一行查询语法而不是原话：这里衡量的是**检索与排序**，不含模型
- * 理解这一步的方差；理解的对错由 tests/intent.test.ts 和人工评审管。
+ * query 用一行查询语法而不是原话：这里衡量的是**检索与排序**，不含模型理解这一步；
+ * 理解的对错由 `bun run eval:understand` 验收。用例没有所属的找人任务，经历词按字面捞到的都算。
  */
 import "@tanstack/react-start/server-only";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pool } from "#/db";
-import { claimName } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import { search } from "#/search/search";
 import { RESULT_MAX } from "#/search/weights";
@@ -99,6 +98,7 @@ try {
 	for (const c of cases) {
 		const outcome = await search(
 			{ conditions: parseQuery(c.query) },
+			null,
 			{},
 			RESULT_MAX,
 		);
@@ -126,7 +126,7 @@ try {
 					: "") +
 				`，命中 ${total} 人${
 					empty?.kind === "overflowEvidence"
-						? `（匹配事实过多：${empty.claims.map(claimName).join("、")}）`
+						? `（匹配事实过多：${empty.claims.map((claim) => claim.label).join("、")}）`
 						: ""
 				}`,
 		);

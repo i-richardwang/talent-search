@@ -29,7 +29,11 @@ after(teardown);
 const { search } = await import("#/search/search");
 
 const run = async (query: string, filters: SearchFilters = {}) => {
-	const outcome = await search({ conditions: parseQuery(query) }, filters);
+	const outcome = await search(
+		{ conditions: parseQuery(query) },
+		null,
+		filters,
+	);
 	if (outcome.order === "employee")
 		throw new Error("要求查询得有经历主张，只有人的条件排不出名次");
 	return outcome;
@@ -277,9 +281,8 @@ describe("分面预告的数就是点下去会得到的数", () => {
 	 * 同一个条件，写进查询（下推给 SQL）和作为筛选（在内存里求值），
 	 * 必须选出同一批人。
 	 *
-	 * 这是「一份声明、两个求值器」成立的前提：两个求值器读的是同一段声明，
-	 * 但它们分别实现在 `search.ts` 的列表达式和 `dimensions.ts` 的 `values` 上，
-	 * 写歪一个不会有任何东西报错——名单会安静地少几个人。
+	 * 同一维有两个求值器：`compile.ts` 把条件编成的 `where` 和 `dimensions.ts` 的
+	 * `values`。写歪一个不会有任何东西报错——名单会安静地少几个人。
 	 */
 	test("同一个条件下推给数据库还是在内存里筛，选出的是同一批人", async () => {
 		const base = await run(QUERY);
@@ -302,6 +305,7 @@ describe("分面预告的数就是点下去会得到的数", () => {
 				const filtered = await run(QUERY, pick(key, row.value));
 				const scoped = await search(
 					{ conditions: asConditions(pick(key, row.value), claim) },
+					null,
 					{},
 				);
 				assert.deepEqual(

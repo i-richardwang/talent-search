@@ -14,7 +14,7 @@
  *     { about: "person", mode: "boost", field: "level", atLeast: "P7" }
  *
  * 一条主张之内是同一段经历，条件之间是同一个人。这里还有校验不可信输入的边界
- * （`conditionsOf`）和语义词的长短上限（`termOf`），查询的形状校验共用后者。
+ * （`conditionsOf`）和经历词的长短上限（`termOf`）。
  */
 import {
 	DIMENSIONS,
@@ -33,9 +33,8 @@ import { boundedText } from "./text";
  * - `must`：这个人必须满足。多条 must 之间是 AND。
  * - `boost`：满足了排前面，不满足也留在结果里。「这个人还得会点 X」和
  *   「会 X 更好」之间的差别，招聘里这两句话不是一句话。
- * - `exclude`：只对经历主张有意义。命中它的**经历段**不再算作任何主张的证据。
- *   否决的是证据，不是人——实习起步、后来真干了八年算法的人留下，因为他有
- *   别的证据；只有那段实习的人自然出不来，因为他没有证据了。
+ * - `exclude`：只用于经历。这个人不能有任何一段这样的经历：有一段，人就不在名单上。
+ *   「实习不算」这类对某一条的限定不是排除，写进那一条自己的范围里。
  *   人的条件没有排除：「不要校招的」在这套维度里该说成「社招」。
  */
 export const MODES = ["must", "boost", "exclude"] as const;
@@ -73,9 +72,9 @@ type Some<T> = readonly [T, ...T[]];
 export type ExperienceCondition = {
 	about: "experience";
 	mode: Mode;
-	/** 做过什么。取值 OR，都拿去比相似度；`what[0]` 是代表词。 */
+	/** 做过什么。取值 OR，各按字面包含匹配；`what[0]` 是代表词。 */
 	what?: Some<string>;
-	/** 入职前在名字含这几个字之一的公司。专有名词，永远不进向量。 */
+	/** 入职前在名字含这几个字之一的公司。 */
 	company?: Some<string>;
 	/** 公司内在名字或部门路径含这几个字之一的部门。 */
 	department?: Some<string>;
@@ -111,20 +110,17 @@ function isPersonDim(field: PersonField): field is PersonDim {
 	return field !== "school";
 }
 
-/**
- * 一个经历词最长几个字。上限定义在这里，`submissionSchema` 的描述里不写数字：
- * 写成 schema 约束的话，模型多给一个长词就是整条响应作废，而校验只会丢掉那一个词。
- */
+/** 关键词搜索里一个经历词最长几个字。 */
 export const MAX_TERM_LEN = 24;
 
-/** 一个经历词最短几个字。单字对语义匹配说不出任何东西。 */
+/** 一个经历词最短几个字。单字按字面包含会捞进几乎所有说法。 */
 export const MIN_TERM_LEN = 2;
 
 /**
  * 不可信的一段字 → 一个经历词，或者什么都不是。
  *
  * 只做边界工作——去两头空白、限长度——不改写字面：屏幕上写的那几个字和拿去
- * 比相似度的那几个字是同一串，改写发生在哪里都是一次看不见的查询变更。
+ * 匹配的那几个字是同一串，改写发生在哪里都是一次看不见的查询变更。
  */
 export function termOf(value: unknown): string | undefined {
 	const text = boundedText(value);
@@ -158,8 +154,7 @@ function whatOf(raw: unknown): string[] {
 /**
  * 一列不可信的取值 → 词表维上的取值，写成这一维自己的身份（`dimId`）。
  * 读不回来的丢掉：一个「资深」在屏幕上画得出来、在检索里却不筛任何人，那是
- * 一个名不副实的 chip。取值在不在**词表**里这里不查——RPC 这一侧没有词表，而模型
- * 那一侧是唯一会写出词表外取值的来源，它多一道检查（`intent.ts`）。
+ * 一个名不副实的 chip。这里只校验取值形状，不查人才库里是否有这个取值。
  */
 function dimList<K extends (typeof VOCAB_KEYS)[number]>(
 	key: K,
@@ -176,8 +171,7 @@ function some(list: readonly string[] | undefined): Some<string> | undefined {
 }
 
 /**
- * 不可信的一份条件列表 → 校验后的条件。模型输出和 RPC 入参走的是同一个入口：
- * 模型输出和 RPC 入参的不可信程度一样，上游声明过 schema 也省不掉这一道。
+ * 关键词链里不可信的一份条件列表 → 校验后的条件，用于 RPC 入参。
  *
  * 不合规的取值局部丢弃，不牵连整条；一项都不剩的条件整条消失。完全相同的
  * 条件只留第一条。人的条件没有排除（`PERSON_MODES`），带着排除的整条丢掉。
@@ -258,12 +252,16 @@ function personOf(
 
 /**
  * 条件的身份：它说的是什么、多强。停用与否不算——那是同一条条件的两种状态。
- * 按键名排序后再序列化：从库里 jsonb 读回来的条件键序和刚校验出来的不一样，
- * 身份不能跟着键序变。取值的先后算数（`what[0]` 是代表词）。
+ * 按键名排序后再序列化；取值的先后算数（`what[0]` 是代表词）。
  */
 export function conditionKey(condition: Condition): string {
 	const { off: _off, ...rest } = condition;
-	return JSON.stringify(
-		Object.entries(rest).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+	return JSON.stringify(sortedEntries(rest));
+}
+
+/** 按键名排好的键值对：从库里 jsonb 读回来的键序和刚校验出来的不一样，身份不能跟着键序变。 */
+export function sortedEntries(record: object) {
+	return Object.entries(record).toSorted(([a], [b]) =>
+		a < b ? -1 : a > b ? 1 : 0,
 	);
 }

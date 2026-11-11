@@ -3,7 +3,7 @@
  * `draftsOf` 校验，`where` 合不合白名单、能不能跑在提交工具里试跑时查（`server/agent-tools.ts`）。
  */
 import { z } from "zod";
-import { type Condition, MODES } from "./condition";
+import { MODES } from "./condition";
 import type { VocabKey } from "./dimensions";
 import {
 	contentKey,
@@ -31,16 +31,25 @@ const conditionItem = z.object({
 	}),
 	mode: z.enum(MODES).meta({
 		description:
-			"must=必须；boost=最好有；exclude=不要这样的经历，只用于 experience",
+			"must=必须；boost=最好有；exclude=这个人不能有这样的经历，只用于 experience",
 	}),
 	from: z.enum(["experience", "person"]).meta({
 		description:
-			"experience=一段工作经历 e（有 terms 时还有命中 h）；person=人 p",
+			"experience=一段工作经历 e（写了 seek 时还有命中 h）；person=人 p",
 	}),
-	terms: z.record(z.string(), z.array(z.string())).optional().meta({
-		description:
-			"只用于 experience：按意思找的词，键是自己起的短名，值是同一件事的几种写法",
-	}),
+	seek: z
+		.object({
+			criterion: z.string().meta({
+				description:
+					"两三句话：什么样的经历算要找的，什么不算。之后你照它从候选人的经历里挑出符合的",
+			}),
+			patterns: z.array(z.string()).meta({
+				description:
+					"正则，不分大小写，在人才库全部说法上按字面把候选捞出来，任一条匹配就捞到；这件事按字面找不出来时给空数组，where 圈出的每一段都是候选",
+			}),
+		})
+		.optional()
+		.meta({ description: "只用于 experience：这段经历做过什么" }),
 	where: z.string().meta({
 		description: "SQL 布尔表达式；不限就写 true",
 	}),
@@ -61,24 +70,25 @@ export const submissionSchema = z.object({
 	}),
 	note: z
 		.object({
-			says: z.string().meta({ description: "对 HR 说的一句话" }),
+			says: z
+				.string()
+				.meta({ description: "对 HR 说的一句话，或者问的一个问题" }),
 			current: z.string().nullable().meta({
 				description:
-					"有选项时，现在这份条件是哪种理解，写成 HR 会回的话；没有选项写 null",
+					"问了问题时，现在这份条件是按哪种理解找的，写成 HR 会回的话；没有问题写 null",
 			}),
 			options: z
 				.array(
 					z.object({
-						label: z.string().meta({ description: "HR 选这一项时会回的话" }),
+						label: z.string().meta({
+							description: "HR 可以选的另一种回答，写成 HR 会说的一句完整的话",
+						}),
 						detail: z
 							.string()
 							.meta({ description: "一句说明，人数来自查到的结果" }),
-						conditions: z.array(conditionItem).meta({
-							description: "选了这一项之后的整份条件",
-						}),
 					}),
 				)
-				.meta({ description: "HR 还可以换成的理解；没有就空着" }),
+				.meta({ description: "HR 可以选的别的回答；没有就空着" }),
 		})
 		.nullable()
 		.meta({
@@ -89,39 +99,21 @@ export const submissionSchema = z.object({
 /** 模型提交的一份查询：符合 schema，还没经过 `understood` 校验。 */
 export type Submission = z.infer<typeof submissionSchema>;
 
-/** HR 可以换成的一种理解。`conditions` 已经过和条件同一道校验，选它就是换成这份条件。 */
-type Choice = {
-	label: string;
-	detail?: string;
-	conditions: QueryCondition[];
-};
+/** HR 可以选的另一种回答：选它就是把这句话说给 AI，接着这一轮往下找。 */
+type Choice = { label: string; detail?: string };
 
 /**
  * 一次理解给 HR 的一句话，只属于写出它的那条记录。名单已经按条件出来了，这句话只说名单上
- * 看不出的：哪些要求人才库里没有，或者一个词有几种理解、现在按的是哪种。HR 还可以换成别的理解时
- * 带上选项，`current` 是现在这份条件的那一种。没有要说的时候不写入（`null`）。
+ * 看不出的：哪些要求人才库里没有，一个词有几种理解、现在按的是哪种。问的是一个问题时带上
+ * 可选的回答，`current` 是现在这份条件按的那一种。没有要说的时候不写入（`null`）。
  */
 export type TurnNotes = {
 	says: string;
 	choices: { current: string; others: Choice[] } | null;
 };
 
-/**
- * 记录里存的说明。选项的条件表和 `SearchSpec` 一样有两种形状：查询的条件，或关键词链形状的
- * 条件；读取时编译成查询（`server/turn.ts`）。
- */
-export type NotesRecord = {
-	says: string;
-	choices: {
-		current: string;
-		others: (Omit<Choice, "conditions"> & {
-			conditions: QueryCondition[] | Condition[];
-		})[];
-	} | null;
-};
-
-/** 除了现在这一种，最多再给几种理解。再多 HR 就得读完一屏才能选。 */
-const OTHERS_MAX = 2;
+/** 除了现在这一种，最多再给几种回答。再多 HR 就得读完一屏才能选。 */
+const OTHERS_MAX = 3;
 
 export type Understood = { query: Query; notes: TurnNotes | null };
 
@@ -155,7 +147,7 @@ function resolveIds(
  * 条件（提交检查里跑不通的，见 `server/agent-tools.ts`）按同一条规则丢弃。
  *
  * 停用状态跟着条件走：模型写不出停用，提交的条件和上一轮同一个 id、内容也没变时，那一条的
- * 停用原样带过来；用户停掉的不会因为又说了一句话就复活。说明里每个选项的整份条件走同一道校验。
+ * 停用原样带过来；用户停掉的不会因为又说了一句话就复活。
  */
 export function understood(
 	raw: unknown,
@@ -164,62 +156,44 @@ export function understood(
 ): Understood {
 	const value = (raw ?? {}) as Record<string, unknown>;
 	const prior = new Map(base.map((c) => [c.id, c]));
-	const validate = (list: unknown, known: readonly QueryCondition[]) =>
-		resolveIds(
-			draftsOf(list)
-				.filter(admit)
-				.map((d) => withOff(d, null)),
-			known,
-		).map((c) => {
-			const before = prior.get(c.id);
-			return before?.off && contentKey(before) === contentKey(c)
-				? withOff(c, before.off)
-				: c;
-		});
-	const conditions = validate(value.conditions, base);
-	return {
-		query: { conditions },
-		notes: notesOf(value.note, conditions, (list) =>
-			validate(list, [...conditions, ...base]),
-		),
-	};
+	const conditions = resolveIds(
+		draftsOf(value.conditions)
+			.filter(admit)
+			.map((d) => withOff(d, null)),
+		base,
+	).map((c) => {
+		const before = prior.get(c.id);
+		return before?.off && contentKey(before) === contentKey(c)
+			? withOff(c, before.off)
+			: c;
+	});
+	return { query: { conditions }, notes: notesOf(value.note) };
 }
 
 /**
- * 模型写的说明 → 写入的说明。选项校验后和现在的条件一样、和前面的选项一样，或者一条都不剩，
- * 就不算一种理解；没写现在是哪种理解时整组选项不用：HR 分不清点了会换成什么。
+ * 模型写的说明 → 写入的说明。没写话的回答、重复的回答不用；没写现在按的是哪种理解时整组
+ * 回答不用：HR 分不清不选会怎样。
  */
-function notesOf(
-	raw: unknown,
-	conditions: readonly QueryCondition[],
-	validate: (list: unknown) => QueryCondition[],
-): TurnNotes | null {
+function notesOf(raw: unknown): TurnNotes | null {
 	const note = (raw ?? {}) as Record<string, unknown>;
 	const says = boundedText(note.says);
 	if (!says) return null;
-	const seen = new Set([tableKey(conditions)]);
+	const current = boundedText(note.current);
+	const seen = new Set(current ? [current] : []);
 	const others: Choice[] = [];
 	for (const item of Array.isArray(note.options) ? note.options : []) {
 		const entry = (item ?? {}) as Record<string, unknown>;
 		const label = boundedText(entry.label);
-		const table = validate(entry.conditions);
-		const key = tableKey(table);
-		if (!label || table.length === 0 || seen.has(key)) continue;
-		seen.add(key);
+		if (!label || seen.has(label)) continue;
+		seen.add(label);
 		const detail = boundedText(entry.detail);
-		others.push({ label, ...(detail && { detail }), conditions: table });
+		others.push({ label, ...(detail && { detail }) });
 		if (others.length === OTHERS_MAX) break;
 	}
-	const current = boundedText(note.current);
 	return {
 		says,
 		choices: current && others.length > 0 ? { current, others } : null,
 	};
-}
-
-/** 一份条件的身份：同样几条（按内容），不论先后。 */
-export function tableKey(conditions: readonly QueryCondition[]) {
-	return JSON.stringify(conditions.map(contentKey).sort());
 }
 
 /**

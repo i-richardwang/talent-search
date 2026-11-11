@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
-import { DrawerDescription } from "#/components/ui/drawer";
 import { List, ListItem } from "#/components/ui/list";
 import { TextLink } from "#/components/ui/text-link";
 import { integer } from "#/lib/format";
@@ -12,7 +11,7 @@ import {
 } from "../../-components/detail-drawer";
 import { daysAgo } from "./term-table";
 
-/** 一个词的释义、人数、往上属于谁、往下带着谁。 */
+/** 一个词的人数、往上属于谁、往下带着谁。 */
 export function TermRecord({
 	term,
 	close,
@@ -21,17 +20,7 @@ export function TermRecord({
 	close: () => void;
 }) {
 	return (
-		<DetailDrawer
-			close={close}
-			description={
-				term.gloss ? (
-					<DrawerDescription className="text-fg-secondary text-sm">
-						{term.gloss}
-					</DrawerDescription>
-				) : undefined
-			}
-			title={term.canonical}
-		>
+		<DetailDrawer close={close} title={term.canonical}>
 			<Descriptions labelWidth={DETAIL_LABEL_WIDTH}>
 				<DescriptionsItem label="人数">
 					<span className="tabular-nums">{integer(term.people)}</span>

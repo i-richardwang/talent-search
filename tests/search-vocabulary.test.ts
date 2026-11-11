@@ -1,15 +1,20 @@
 /**
- * 检索按词表修正命中：写了细的人符合宽的要求，反过来不成立。词和关系都是合成的；
- * 假重排是字面重合，所以「爪哇编程」对「后端开发」一个字都不重合，只能顺着词表找到。
+ * 检索只用词表的同义这一层：捞到一项的任一种写法，整项的写法都算捞到。宽细关系不带出也不
+ * 挡掉命中：细的词、宽的词算不算，看它自己被没被捞到。写了判据的条件也一样先按字面和同义
+ * 捞，哪一段算数再看存下的结论。词和关系都是合成的。
  */
 import assert from "node:assert/strict";
-import { after, before, describe, test } from "node:test";
-import { fakeRelevance, seed, setup } from "./fixture";
+import { after, before, test } from "node:test";
+import type { SearchSpec } from "#/search/spec";
+import { claim } from "./conditions";
+import { conclude, judged, openSearch, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
-const { search } = await import("#/search/search");
-const { RELEVANCE_MIN } = await import("#/search/weights");
+const { search: find } = await import("#/search/search");
+/** 本文件的查询都在同一次找人任务里：结论记在它名下，也只认它名下的。 */
+const SEARCH = await openSearch();
+const search = (spec: SearchSpec) => find(spec, SEARCH);
 
 before(async () => {
 	const { db } = await import("#/db");
@@ -23,123 +28,75 @@ before(async () => {
 	});
 	await seed([
 		person("V1", "后端开发"),
-		person("V2", "服务端开发"),
+		person("V2", "服务端研发"),
 		person("V3", "爪哇编程"),
 		person("V4", "运营"),
 		person("V5", "抖音运营"),
-		person("V6", "快手运营"),
-		person("V7", "SQL数据库"),
-		person("V8", "数据库产品"),
-		person("V9", "查询优化"),
-		person("V10", "算法工程师"),
-		person("V11", "算法工程师"),
-		person("V12", "推荐算法开发岗"),
 	]);
 	const reviewedAt = new Date();
 	await db.insert(term).values([
 		{ word: "后端开发", canonical: "后端开发", reviewedAt },
-		{ word: "服务端开发", canonical: "后端开发", reviewedAt },
+		{ word: "服务端研发", canonical: "后端开发", reviewedAt },
 		{ word: "运营", canonical: "运营", reviewedAt },
-		{ word: "数据库", canonical: "数据库", reviewedAt },
-		{ word: "SQL数据库", canonical: "SQL数据库", reviewedAt },
-		{ word: "算法工程师", canonical: "算法工程师", reviewedAt },
-		{ word: "推荐算法开发岗", canonical: "算法工程师", reviewedAt },
 	]);
 	await db.insert(term).values([
 		{ word: "爪哇编程", canonical: "爪哇编程", parent: "后端开发", reviewedAt },
 		{ word: "抖音运营", canonical: "抖音运营", parent: "运营", reviewedAt },
-		{ word: "快手运营", canonical: "快手运营", parent: "运营", reviewedAt },
-		// 挂在别的分支上的一条归属：「数据库产品」属于「SQL数据库」
-		{
-			word: "数据库产品",
-			canonical: "数据库产品",
-			parent: "SQL数据库",
-			reviewedAt,
-		},
-		{
-			word: "查询优化",
-			canonical: "查询优化",
-			parent: "SQL数据库",
-			reviewedAt,
-		},
 	]);
 });
 
-const found = async (what: string) =>
-	(
-		await search({
-			conditions: [{ about: "experience", mode: "must", what: [what] }],
-		})
-	).results
-		.map((r) => r.employee.empId)
-		.sort();
+const ids = (outcome: { results: { employee: { empId: string } }[] }) =>
+	outcome.results.map((r) => r.employee.empId).sort();
 
-test("其他写法沿用标准写法的相关度：冷门写法自己得分高，只算它自己", async () => {
-	assert.ok(fakeRelevance("推荐算法", "推荐算法开发岗") >= RELEVANCE_MIN);
-	assert.ok(fakeRelevance("推荐算法", "算法工程师") < RELEVANCE_MIN);
-	assert.deepEqual(await found("推荐算法"), ["V12"]);
-	assert.deepEqual(await found("算法工程师"), ["V10", "V11", "V12"]);
+test("捞到一项的一种写法，整项的写法都算；属于它的细词不跟着带", async () => {
+	assert.deepEqual(ids(await search({ conditions: [claim("服务端")] })), [
+		"V1",
+		"V2",
+	]);
+	assert.deepEqual(ids(await search({ conditions: [claim("后端开发")] })), [
+		"V1",
+		"V2",
+	]);
+	assert.deepEqual(ids(await search({ conditions: [claim("爪哇")] })), ["V3"]);
 });
 
-test("同一项的写法都读标准写法的释义", async () => {
-	const { db } = await import("#/db");
-	const { sql } = await import("drizzle-orm");
-	const { glossIdentity } = await import("#/corpus/gloss");
-	const read = "推荐算法开发岗：做语音识别模型的岗位";
-	assert.ok(fakeRelevance("推荐算法", read) < RELEVANCE_MIN);
-	await db.execute(sql`
-		insert into phrase_gloss (text, gloss, guide_identity)
-		values ('算法工程师', '做语音识别模型的岗位', ${glossIdentity()})`);
-	try {
-		assert.deepEqual(await found("推荐算法"), []);
-	} finally {
-		await db.execute(sql`delete from phrase_gloss where text = '算法工程师'`);
-	}
+test("写了判据的条件同样带出整项的写法：同义写法上的经历也是要看的候选，各听各的结论", async () => {
+	const criterion = "本人做后端开发";
+	const backend = {
+		query: { conditions: [judged("后端", ["服务端"], criterion)] },
+	};
+	const standing = async () => {
+		const outcome = await search(backend);
+		if (outcome.order !== "evidence") throw new Error("该是按证据排的名单");
+		return { people: ids(outcome), incomplete: outcome.incomplete };
+	};
+	// 正则只对得上「服务端研发」，同一项的「后端开发」跟着捞到；都还没确认，谁也不上名单
+	assert.deepEqual(await standing(), {
+		people: [],
+		incomplete: { above: null },
+	});
+	await conclude(SEARCH, criterion, true, ["V1"]);
+	assert.deepEqual(await standing(), {
+		people: ["V1"],
+		incomplete: { above: null },
+	});
+	await conclude(SEARCH, criterion, false, ["V2"]);
+	assert.deepEqual(await standing(), { people: ["V1"], incomplete: undefined });
 });
 
-describe("往下带", () => {
-	test("其他写法和属于它的细词都算命中，相关度沿用命中的那个词", async () => {
-		assert.equal(fakeRelevance("后端开发", "爪哇编程"), 0);
-		assert.deepEqual(await found("后端开发"), ["V1", "V2", "V3"]);
-		const result = await search({
-			conditions: [{ about: "experience", mode: "must", what: ["后端开发"] }],
-		});
-		assert.equal(result.order, "evidence");
-		if (result.order !== "evidence") return;
-		const v3 = result.results.find((r) => r.employee.empId === "V3");
-		assert.equal(v3?.hits[0]?.phrase, "爪哇编程", "证据是这个人自己的原话");
-		assert.equal(v3?.hits[0]?.relevance, 1);
+test("细词和它的上级都被捞到时都算命中", async () => {
+	assert.deepEqual(ids(await search({ conditions: [claim("运营")] })), [
+		"V4",
+		"V5",
+	]);
+	const criterion = "本人做运营，哪一种都算";
+	await conclude(SEARCH, criterion, true, ["V4", "V5"]);
+	const outcome = await search({
+		query: { conditions: [judged("运营", ["运营$"], criterion)] },
 	});
-
-	test("别的命中词下面的细词不跟着带：它和要找的谁宽谁细不知道", async () => {
-		assert.ok(fakeRelevance("数据库", "SQL数据库") >= RELEVANCE_MIN);
-		assert.equal(fakeRelevance("数据库", "查询优化"), 0);
-		assert.ok(!(await found("数据库")).includes("V9"));
-		assert.deepEqual(await found("SQL数据库"), ["V7", "V8", "V9"]);
-	});
-});
-
-describe("往上挡", () => {
-	test("比更对得上的命中词宽的词不算命中：只写了宽词的人没法确认做过细的那件", async () => {
-		assert.ok(fakeRelevance("抖音运营", "运营") >= RELEVANCE_MIN);
-		assert.deepEqual(await found("抖音运营"), ["V5"]);
-	});
-
-	test("要找的词不在词表里时，最对得上的命中词代表它的位置", async () => {
-		assert.ok(fakeRelevance("抖音的运营", "运营") >= RELEVANCE_MIN);
-		assert.deepEqual(await found("抖音的运营"), ["V5"]);
-	});
-
-	test("只挡要找的词往上的那条线：别的分支上子词得分高过上级，上级照样算命中", async () => {
-		assert.ok(
-			fakeRelevance("数据库", "数据库产品") >
-				fakeRelevance("数据库", "SQL数据库"),
-		);
-		assert.ok(fakeRelevance("数据库", "SQL数据库") >= RELEVANCE_MIN);
-		assert.deepEqual(await found("数据库"), ["V7", "V8"]);
-	});
-
-	test("搜的就是宽词时它不被挡，细词也带上", async () => {
-		assert.deepEqual(await found("运营"), ["V4", "V5", "V6"]);
-	});
+	assert.deepEqual(
+		ids(outcome),
+		["V4", "V5"],
+		"上级照它自己的结论算，不因为有更细的命中被挡掉",
+	);
 });

@@ -92,9 +92,6 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 		"insert into term (word, canonical, parent, reviewed_at) values ('合成技能', '合成技能', null, now())",
 	);
 	await pool.query(
-		"insert into phrase_gloss (text, gloss, guide_identity) values ('合成技能', '合成测试释义', 'synthetic-guide')",
-	);
-	await pool.query(
 		"update experience set derived_identity = 'synthetic-derived'",
 	);
 	const corpus = async () => {
@@ -106,8 +103,6 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 			"experience_phrase_next",
 			"phrase",
 			"term",
-			"phrase_gloss",
-			"embedding_space",
 		];
 		return Promise.all(
 			tables.map(

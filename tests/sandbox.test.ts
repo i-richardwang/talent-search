@@ -8,23 +8,20 @@ import { after, describe, test } from "node:test";
 import { conditionsOfKeywords } from "#/search/keywords";
 import { parseQuery } from "#/search/query-syntax";
 import { claim, person } from "./conditions";
-import { seed, setup } from "./fixture";
+import { setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
 
-const { catalogSchema } = await import("#/search/catalog");
-const { compileWhere, createVetoed, restricted } = await import(
-	"#/server/sandbox"
-);
+const { compileWhere, restricted } = await import("#/server/sandbox");
 const { compileConditions } = await import("#/search/compile");
-const { scopeOf } = await import("#/search/execute");
+const { compileCondition } = await import("#/search/execute");
 const { db } = await import("#/db");
 const { sql } = await import("drizzle-orm");
 const { PgDialect } = await import("drizzle-orm/pg-core");
 
-const EXPERIENCE = { from: "experience", terms: false } as const;
-const WITH_HIT = { from: "experience", terms: true } as const;
+const EXPERIENCE = { from: "experience", seeks: false } as const;
+const WITH_HIT = { from: "experience", seeks: true } as const;
 const PERSON = { from: "person" } as const;
 
 type Scope = Parameters<typeof compileWhere>[2];
@@ -113,7 +110,7 @@ describe("解析白名单接受的写法", () => {
 			}),
 		] as const;
 		for (const c of compileConditions([...conditions]).conditions) {
-			const result = await compileWhere(c.where, c.params ?? {}, scopeOf(c));
+			const result = await compileCondition(c);
 			assert.ok(result.ok, `${c.label}：${result.ok ? "" : result.problem}`);
 		}
 	});
@@ -138,7 +135,8 @@ describe("解析白名单拒绝的写法", () => {
 		["括号提前闭合", "true) or (true", /括号/],
 		["位置参数", "p.level_rank > $1", /:name/],
 		["经历条件读不到人", "p.level_band = 'P7'", /没有 p/, EXPERIENCE],
-		["没写语义词就没有命中", "h.relevance > 0.9", /terms/, EXPERIENCE],
+		["没写 seek 就没有命中", "h.route = 'skill'", /seek/, EXPERIENCE],
+		["命中算不算是外壳自用的列，读不到", "h.fits", /没有 fits/, WITH_HIT],
 		["人的条件读不到段", "e.kind = 'internal'", /没有 e/],
 		[
 			"目录里没有的列",
@@ -217,7 +215,6 @@ describe("只读角色", () => {
 	/** 在一个事务里以只读角色跑一句，返回 SQLSTATE；跑通了返回 null。 */
 	async function refused(statement: ReturnType<typeof sql>) {
 		return db.transaction(async (tx) => {
-			await createVetoed(tx);
 			try {
 				await restricted(tx, () => tx.execute(statement));
 				return null;
@@ -253,45 +250,12 @@ describe("只读角色", () => {
 		);
 	});
 
-	test("只读：建表、写入都不行，否决段也写不进", async () => {
+	test("只读：建表不行", async () => {
 		assert.equal(await refused(sql`create temp table x (a int)`), "25006");
-		assert.equal(
-			await refused(sql`insert into vetoed values (0, 1, 'S1')`),
-			"42501",
-		);
-	});
-
-	test("读到的经历不含否决段，目录的原始经历照样在；出了保存点，遮住它的视图也没了", async () => {
-		await seed([
-			{ empId: "S1", name: "甲", segments: [{ title: "实习生", months: 6 }] },
-			{ empId: "S2", name: "乙", segments: [{ title: "工程师", months: 24 }] },
-		]);
-		const catalog = sql.identifier(catalogSchema());
-		const seen = await db.transaction(async (tx) => {
-			await createVetoed(tx);
-			const [intern] = (
-				await tx.execute<{ id: number }>(
-					sql`select id from ${catalog}.experience where emp_id = 'S1'`,
-				)
-			).rows;
-			assert.ok(intern);
-			await tx.execute(sql`insert into vetoed values (0, ${intern.id}, 'S1')`);
-			const inside = await restricted(tx, () =>
-				tx.execute<{ raw: string[]; read: string[] }>(sql`select
-					array(select emp_id from ${catalog}.experience order by emp_id) as raw,
-					array(select emp_id from experience order by emp_id) as read`),
-			);
-			const after = await tx.execute<{ shadow: string | null }>(
-				sql`select to_regclass('pg_temp.experience')::text as shadow`,
-			);
-			return { ...inside.rows[0], shadow: after.rows[0]?.shadow };
-		});
-		assert.deepEqual(seen, { raw: ["S1", "S2"], read: ["S2"], shadow: null });
 	});
 
 	test("出了保存点回到应用角色，事务接着可用", async () => {
 		const role = await db.transaction(async (tx) => {
-			await createVetoed(tx);
 			const inside = await restricted(tx, () =>
 				tx.execute<{ who: string }>(sql`select current_user as who`),
 			);

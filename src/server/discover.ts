@@ -3,7 +3,7 @@
  *
  * 只给人数和写法，不给人：有限取值的列给每个取值有多少人（和词表同一条语句，`search.ts`
  * 的 `valuesOf`）；公司、部门、学校按名字包含匹配，和条件一样
- * （`search.ts` 的 `lookupNames`），写法至少有几个人写过才给，部门只给人数；记录流给覆盖
+ * （`search.ts` 的 `lookupNames`）；记录流给覆盖
  * 的人数、期数和起止，不给任何一个人的记录。
  */
 import "@tanstack/react-start/server-only";
@@ -134,14 +134,14 @@ export async function discover(input: DiscoverInput): Promise<Discovery> {
 	const subject = declared.label;
 	const field = NAME_COLUMNS[relation.name]?.[column];
 	if (field) {
-		const names = (input.match ?? []).map((m) => m.trim()).filter(Boolean);
+		const names = input.match ?? [];
 		if (names.length === 0)
 			return problem(`${column} 按名字包含匹配：在 match 里写要找的名字`);
 		return { kind: "names", subject, found: await lookupNames(field, names) };
 	}
 	if (!declared.values)
 		return problem(
-			`${column} 不是有限取值的列，不列取值；做过什么写进 terms，按意思找`,
+			`${column} 不是有限取值的列，不列取值；做过什么写进 seek，按字面捞说法`,
 		);
 	const byStream = relation.name === "rating" || relation.name === "status";
 	const stream = byStream ? input.stream : undefined;

@@ -131,9 +131,9 @@ function Wide() {
 						earlier={THREAD.slice(0, -1)}
 						fault={null}
 						latest={LATEST_TURN}
+						onAnswer={() => true}
 						onQuery={() => true}
 						onRetry={() => {}}
-						onRevise={() => {}}
 						progress={null}
 						understanding
 						viewing={LATEST_TURN_ID}

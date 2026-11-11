@@ -11,13 +11,16 @@ import { Thread } from "#/routes/s/$turnId/-components/thread";
 import { WorkspaceLayout } from "#/routes/s/$turnId/-components/workspace-layout";
 import { WorkspaceNotices } from "#/routes/s/$turnId/-components/workspace-notices";
 import { useIsWide } from "#/routes/s/$turnId/-lib/media";
+import { listWait } from "#/routes/s/$turnId/-lib/nav-phase";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { type View, validateView } from "#/routes/s/$turnId/-lib/view-params";
 import { queryOfSpec, type SearchSpec } from "#/search/spec";
 import { Routed, useOpenEmpId } from "../../routed";
-import { COUNTS, SPEC } from "../../samples/conditions";
-import { OUTCOME } from "../../samples/people";
+import { SPEC } from "../../samples/conditions";
+import { INCOMPLETE_OUTCOME, OUTCOME } from "../../samples/people";
 import {
+	COMPLETING_TRACE,
+	COMPLETING_TURN,
 	LATEST_TURN,
 	LATEST_TURN_ID,
 	TASK_TITLE,
@@ -32,9 +35,19 @@ import { LayoutSwitch, Shell } from "./home";
  * 但名单不重新检索。
  */
 
-type Panel = "thread" | "detail";
+/**
+ * 页底切换的几种样子：前两种换右栏，后三种是名单还不完整的时候——候选人较多、
+ * HR 直接改了条件 AI 正在补人、补人没成。
+ */
+type Scene = "thread" | "detail" | "incomplete" | "completing" | "notCompleted";
 
-function Workspace() {
+/** 名单那一侧的状态；右栏放什么由地址决定。 */
+type ListScene = Exclude<Scene, "detail">;
+
+/** 没有导航在进行。 */
+const STILL = { growing: false, refreshing: false, replacing: false };
+
+function Workspace({ scene }: { scene: ListScene }) {
 	const navigate = useNavigate();
 	const empId = useOpenEmpId();
 	const wide = useIsWide();
@@ -42,7 +55,16 @@ function Workspace() {
 	const [threadOpen, setThreadOpen] = useState(false);
 	const [help, setHelp] = useState(false);
 	const [spec, setSpec] = useState<SearchSpec>(SPEC);
-	const outcome = OUTCOME;
+	const outcome = scene === "incomplete" ? INCOMPLETE_OUTCOME : OUTCOME;
+	const completing = scene === "completing";
+	const notCompleted = scene === "notCompleted";
+	// 补人是最后一轮自己的处理：线程那一轮底下画过程，没补成时给重试
+	const latest = completing || notCompleted ? COMPLETING_TURN : LATEST_TURN;
+	const progress = completing
+		? { trace: COMPLETING_TRACE, startedAt: latest.startedAt }
+		: notCompleted
+			? { trace: [], startedAt: latest.startedAt }
+			: null;
 	const view = validateView(useSearch({ strict: false }));
 	const picks = usePicks(LATEST_TURN_ID, outcome);
 	const noop = () => {};
@@ -66,12 +88,12 @@ function Workspace() {
 			autoFocus={threadOpen}
 			composer={composer}
 			earlier={THREAD.slice(0, -1)}
-			fault={null}
-			latest={LATEST_TURN}
+			fault={notCompleted ? "unreachable" : null}
+			latest={latest}
+			onAnswer={() => true}
 			onQuery={() => true}
-			onRetry={() => {}}
-			onRevise={(conditions) => setSpec({ query: { conditions } })}
-			progress={null}
+			onRetry={noop}
+			progress={progress}
 			understanding
 			viewing={LATEST_TURN_ID}
 			waiting={false}
@@ -103,7 +125,6 @@ function Workspace() {
 						conditions={{
 							mode: "conversation",
 							list: queryOfSpec(spec).conditions,
-							counts: COUNTS,
 							onRevise: (conditions) => {
 								setSpec({ query: { conditions } });
 								return true;
@@ -111,7 +132,11 @@ function Workspace() {
 						}}
 						earlier={false}
 						facets={outcome.facets}
+						incomplete={outcome.incomplete ?? null}
 						latestId={LATEST_TURN_ID}
+						notCompleted={
+							notCompleted ? { fault: "unreachable", onRetry: noop } : null
+						}
 						onViewChange={updateView}
 						turnId={LATEST_TURN_ID}
 						view={view}
@@ -123,7 +148,11 @@ function Workspace() {
 						empId={empId}
 						failure={null}
 						growing={false}
-						wait={null}
+						wait={
+							completing
+								? listWait("completing", latest.startedAt, STILL)
+								: null
+						}
 						mode="conversation"
 						onAll={() => picks.pickAll(false)}
 						onChange={updateView}
@@ -153,15 +182,25 @@ function Workspace() {
 	);
 }
 
-/** 页底切换：右栏显示对话线程还是第一位候选人的详情。点名单上的人也会换过去。 */
-function PanelSwitch() {
+/**
+ * 页底切换：右栏显示对话线程还是第一位候选人的详情（点名单上的人也会换过去），
+ * 以及名单还不完整的三种时候。后三种的右栏是线程。
+ */
+function SceneSwitch({
+	onChange,
+	scene,
+}: {
+	onChange: (next: ListScene) => void;
+	scene: ListScene;
+}) {
 	const navigate = useNavigate();
 	const empId = useOpenEmpId();
 	const first = OUTCOME.results[0]?.employee.empId ?? "T0101";
 	return (
-		<LayoutSwitch<Panel>
-			label="右栏"
-			onChange={(next) =>
+		<LayoutSwitch<Scene>
+			label="工作台的状态"
+			onChange={(next) => {
+				if (next !== "detail") onChange(next);
 				void navigate(
 					next === "detail"
 						? {
@@ -175,24 +214,28 @@ function PanelSwitch() {
 								search: {},
 								to: "/s/$turnId",
 							},
-				)
-			}
+				);
+			}}
 			options={[
 				{ label: "右栏：对话线程", value: "thread" },
 				{ label: "右栏：人的详情", value: "detail" },
+				{ label: "候选人较多", value: "incomplete" },
+				{ label: "改条件后补人", value: "completing" },
+				{ label: "补人没成", value: "notCompleted" },
 			]}
-			value={empId ? "detail" : "thread"}
+			value={empId ? "detail" : scene}
 		/>
 	);
 }
 
 export function WorkspacePage() {
+	const [scene, setScene] = useState<ListScene>("thread");
 	return (
 		<Routed url={`/s/${LATEST_TURN_ID}`}>
 			<Shell>
-				<Workspace />
+				<Workspace scene={scene} />
 			</Shell>
-			<PanelSwitch />
+			<SceneSwitch onChange={setScene} scene={scene} />
 		</Routed>
 	);
 }

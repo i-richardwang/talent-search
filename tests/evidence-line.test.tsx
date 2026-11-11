@@ -1,19 +1,14 @@
 /**
  * 一个人一个条件的那一行证据。
  *
- * 它画的是**排序依据本身**：点管强度、相关度和右端的数管参与打分的两个量、
- * 数的深浅管近因。所以这里测的第一件事是「看得见的数就是参与打分的那个数」——
- * 显示单段月数而排序用累计月数，会让两个名次不同的人显示同一个数，这个界面的
- * 说服力全在于两者一致。
+ * 它画的是**排序依据本身**：右端的数是参与打分的累计时长，数的深浅是近因。所以这里测的
+ * 第一件事是「看得见的数就是参与打分的那个数」——显示单段月数而排序用累计月数，会让两个
+ * 名次不同的人显示同一个数。
  *
- * 第二件事是**行内必须写出到底是哪个字段命中的**。一行的宽度足够写下它，
- * 不写就等于把「凭什么算命中」这个问题推给详情面板。写错字段比不写更坏——
- * 屏幕上会出现一个和条件毫不相干的岗位名，读起来像是系统匹配错了——
- * 所以每一路都单独测一遍。
+ * 第二件事是**行内必须写出到底是哪个字段命中的**。写错字段比不写更坏——屏幕上会出现一个
+ * 和条件毫不相干的岗位名，读起来像是系统匹配错了——所以每一种来源都单独测一遍。
  *
- * 点是 aria-hidden 的，强度全在类名里——正好是 `visibleText` 要防的形态：
- * 属性完整、肉眼却什么都看不到。所以断言的一律是可见文本，只有「近因」那一档
- * 因为编码在字色上，才去看类名。
+ * 点是 aria-hidden 的，断言的一律是可见文本，只有「近因」那一档因为编码在字色上，才去看类名。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -22,65 +17,50 @@ import {
 	EvidenceLine,
 	MissedClaims,
 } from "#/routes/s/$turnId/-components/evidence";
-import type { ClaimBasis, Hit } from "#/search/result";
+import type { ClaimBasis, Evidence } from "#/search/result";
 import { classesWith, visibleText } from "./render";
-import { hit as row } from "./rows";
+import { evidence as row } from "./rows";
 
-const hit = (over: Partial<Hit> = {}) =>
-	row({ relevance: 0.83, department: "某部门", ...over });
+const evidence = (over: Partial<Evidence> = {}) =>
+	row({ department: "某部门", ...over });
 
 const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
-	route: "role",
-	value: "算法",
-	relevance: 0.83,
 	months: 27,
 	endDate: null,
 	external: false,
 	...over,
 });
 
-const markup = (h: Hit, b: ClaimBasis) =>
+const markup = (h: Evidence, b: ClaimBasis) =>
 	renderToStaticMarkup(
-		<EvidenceLine basis={b} boost={false} hit={h} name="算法" />,
+		<EvidenceLine basis={b} boost={false} evidence={h} name="算法" />,
 	);
 
-const seen = (h: Hit, b: ClaimBasis) => visibleText(markup(h, b));
+const seen = (h: Evidence, b: ClaimBasis) => visibleText(markup(h, b));
 
 describe("一行证据看得见的部分", () => {
 	test("有命中就必须看得见时长，不能只剩一颗点", () => {
-		assert.match(seen(hit(), basis()), /2\.3 年/);
+		assert.match(seen(evidence(), basis()), /2\.3 年/);
 	});
 
 	test("显示的是参与打分的累计月数", () => {
 		// 时长只放在 basis 上：样例段自己不带月数，界面没有第二个数可挑。
-		assert.match(seen(hit(), basis({ months: 60 })), /5\.0 年/);
-	});
-
-	test("相关度不上屏", () => {
-		// 打分用得着它，读的人用不着（AGENTS.md「分数和名次不重复上屏」）。
-		// 一个没有单位的百分数只会被读成「这个人 83% 符合要求」，而低到不该
-		// 出现的那些早在召回时就过滤掉了——屏幕上每一行都已经够格。
-		const line = seen(hit({ relevance: 0.61 }), basis({ relevance: 0.83 }));
-		assert.doesNotMatch(line, /%/);
-		assert.doesNotMatch(line, /0\.83|0\.61/);
-	});
-
-	test("靠别的取值命中的写出比的是哪个词，靠代表词命中的不写", () => {
-		const near = hit({ value: "推荐算法" });
-		assert.match(seen(near, basis()), /匹配依据 推荐算法/);
-		assert.doesNotMatch(seen(hit(), basis()), /匹配依据/);
+		assert.match(seen(evidence(), basis({ months: 60 })), /5\.0 年/);
 	});
 
 	test("「前」由累计的那些段一起决定", () => {
 		// 累计里只要有在职的段，这个数就不配叫「前」
-		assert.match(seen(hit(), basis({ external: false })), /公司内 2\.3 年/);
-		assert.match(seen(hit(), basis({ external: true })), /入职前 2\.3 年/);
+		assert.match(
+			seen(evidence(), basis({ external: false })),
+			/公司内 2\.3 年/,
+		);
+		assert.match(seen(evidence(), basis({ external: true })), /入职前 2\.3 年/);
 	});
 
 	test("还在做的把数字提到次要色，做完了的留在三级灰", () => {
 		// 定字色的是右端那个数所在的元素，只它一个
 		const number = (b: ClaimBasis) =>
-			classesWith(markup(hit(), b), "tabular-nums") ?? [];
+			classesWith(markup(evidence(), b), "tabular-nums") ?? [];
 		const ongoing = number(basis({ endDate: null }));
 		assert.ok(ongoing.includes("text-fg-secondary"), ongoing.join(" "));
 		assert.ok(!ongoing.includes("text-fg-tertiary"), ongoing.join(" "));
@@ -90,31 +70,28 @@ describe("一行证据看得见的部分", () => {
 	});
 
 	test("主张的名字总会显示：上下几行靠它对照", () => {
-		assert.match(seen(hit(), basis()), /算法/);
+		assert.match(seen(evidence(), basis()), /算法/);
 	});
 
 	test("写出来的必须是真正命中的那个字段，不是固定取岗位", () => {
 		// 屏幕上出现一个和条件毫不相干的字段值，读起来就是系统匹配错了。
 		const byRole = seen(
-			hit({ route: "role", department: "算法平台部" }),
+			evidence({ route: "role", department: "算法平台部" }),
 			basis(),
 		);
 		assert.match(byRole, /任职记录/);
 		assert.match(byRole, /算法工程师/);
 		assert.match(byRole, /算法平台部/);
 
-		const byTitle = seen(hit({ route: "title" }), basis({ route: "title" }));
+		const byTitle = seen(evidence({ route: "title" }), basis());
 		assert.match(byTitle, /岗位/);
 		assert.match(byTitle, /算法工程师/);
 	});
 
 	test("简历原文命中时不显示引用的原文", () => {
-		// 命中事实里根本不带原文片段（见 search/result.ts 的 Hit）。
-		// 摆一段岗位名出来当引文，等于把最弱的一路伪装成可核对的证据。
-		const said = seen(
-			hit({ route: "description" }),
-			basis({ route: "description" }),
-		);
+		// 命中事实里根本不带原文片段（见 search/result.ts 的 Evidence）。
+		// 摆一段岗位名出来当引文，等于把没有原文片段的一路写成可核对的证据。
+		const said = seen(evidence({ route: "description" }), basis());
 		assert.match(said, /简历原文/);
 		// 这一段经历的身份还是要给：不然「在哪儿提过」无从查起。
 		assert.match(said, /算法工程师/);
@@ -123,21 +100,20 @@ describe("一行证据看得见的部分", () => {
 
 	test("抽取的能力写出类型，投入档跟在说法前面", () => {
 		const bySkill = seen(
-			hit({ route: "skill", phrase: "Spark", value: "Spark" }),
-			basis({ route: "skill", value: "Spark" }),
+			evidence({ route: "skill", phrase: "Spark" }),
+			basis(),
 		);
 		assert.match(bySkill, /技能/);
 		assert.match(bySkill, /Spark/);
 		assert.doesNotMatch(bySkill, /能力词/);
 
 		const byDepth = seen(
-			hit({
+			evidence({
 				route: "skill",
 				phrase: "推荐系统",
 				engagement: "主导",
-				value: "推荐系统",
 			}),
-			basis({ route: "skill", value: "推荐系统" }),
+			basis(),
 		);
 		assert.match(byDepth, /技能/);
 		assert.match(byDepth, /主导 · 推荐系统/);

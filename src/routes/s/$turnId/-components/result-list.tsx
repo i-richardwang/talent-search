@@ -14,17 +14,16 @@ import { Tooltip } from "#/components/ui/tooltip";
 import { positionLabel } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import type { QueryCondition } from "#/search/query";
-import { claimName } from "#/search/query";
 import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
 import { RESULT_PAGE } from "#/search/weights";
-import type { InterpretFault, SearchMode } from "#/server/turn";
+import type { AttemptFault, SearchMode } from "#/server/turn";
 import type { ListWait } from "../-lib/nav-phase";
 import type { Picks } from "../-lib/picks";
 import { reachOf, type View } from "../-lib/view-params";
 import { ClaimProgress, ClaimRow } from "./claim-evidence";
 import { PickDock } from "./pick-dock";
-import { NoResults, NotUnderstood, ResultHeader } from "./result-state";
+import { ListFailed, NoResults, ResultHeader } from "./result-state";
 
 /** 占位等过这么久才出现：更快回来的等待里旧画面原样留着，不闪一下占位。 */
 export const SKELETON_DELAY = 200;
@@ -90,14 +89,18 @@ export function ResultList({
 	onReviseQuery: (next: QueryCondition[]) => void;
 	onEditQuery: () => void;
 	picks: Picks;
-	/** 这一轮没理解出来：名单停在这里，说出哪个环节出了问题；没有出错为 null。 */
-	failure: { fault: InterpretFault; onRetry: () => void } | null;
+	/** AI 没处理成、名单上又没有人：名单停在这里，说出哪个环节出了问题；没有出错为 null。 */
+	failure: { fault: AttemptFault; onRetry: () => void } | null;
 }) {
 	const { results, claims, order, total } = outcome;
 	const reach = reachOf(total);
-	const skeleton = useDelayed(wait?.list === "skeleton");
+	// 还在补人的名单上一个人都没有时也画占位：说「没有这样的人」还太早
+	const unsettled =
+		wait?.list === "skeleton" ||
+		(wait?.list === "keep" && results.length === 0);
+	const skeleton = useDelayed(unsettled);
 	// 等占位的那 200 毫秒里旧名单原样留着；没有旧名单时只有表头，空态不抢先闪出来
-	const blank = skeleton || (wait?.list === "skeleton" && results.length === 0);
+	const blank = skeleton || (unsettled && results.length === 0);
 
 	const head = (
 		<ListViewHeader
@@ -112,7 +115,7 @@ export function ResultList({
 				</Tooltip>
 			}
 		>
-			<ResultHeader order={order} wait={wait} total={total} />
+			<ResultHeader order={order} total={total} wait={wait} />
 		</ListViewHeader>
 	);
 
@@ -170,7 +173,7 @@ export function ResultList({
 	});
 
 	const content = failure ? (
-		<NotUnderstood fault={failure.fault} onRetry={failure.onRetry} />
+		<ListFailed fault={failure.fault} onRetry={failure.onRetry} />
 	) : blank ? (
 		<ListView aria-busy="true">
 			{head}
@@ -195,7 +198,8 @@ export function ResultList({
 			/>
 		</div>
 	) : (
-		<div aria-busy={wait ? "true" : undefined}>
+		// 还在补人的名单照常可用，不算没就绪
+		<div aria-busy={wait && wait.list !== "keep" ? "true" : undefined}>
 			<ListView>
 				{head}
 				{rows}
@@ -232,7 +236,7 @@ export function ResultList({
 			{content}
 			<PickDock
 				loading={growing}
-				names={claims.map(claimName)}
+				names={claims.map((claim) => claim.label)}
 				onAll={onAll}
 				picks={picks}
 				total={total}

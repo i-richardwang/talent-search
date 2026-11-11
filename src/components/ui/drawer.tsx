@@ -3,7 +3,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 import { AnimatePresence, type MotionProps, motion } from "motion/react";
-import { type ReactElement, type ReactNode, useRef } from "react";
+import { type ReactElement, type ReactNode, useState } from "react";
 import {
 	DialogPresenceBackdrop,
 	DialogPresenceRoot,
@@ -80,14 +80,16 @@ export function DrawerPopup({
 	 * 退场中的面板在 AnimatePresence 里留着打开时的属性，浮层却按调用处这一次给的重画。
 	 * 退场期间冻住几何，关的同时换了方位也不会让浮层先跳到另一条边。
 	 */
-	const openGeometryRef = useRef({
+	const [geometry, setGeometry] = useState({
 		placement: placementProp,
 		width: widthProp,
 	});
-	if (open) {
-		openGeometryRef.current = { placement: placementProp, width: widthProp };
-	}
-	const { placement, width } = openGeometryRef.current;
+	if (
+		open &&
+		(geometry.placement !== placementProp || geometry.width !== widthProp)
+	)
+		setGeometry({ placement: placementProp, width: widthProp });
+	const { placement, width } = geometry;
 
 	return (
 		<Dialog.Popup
@@ -137,8 +139,6 @@ export function DrawerTitle({
 		</Dialog.Title>
 	);
 }
-
-export const DrawerDescription = Dialog.Description;
 
 function DrawerClose() {
 	return (

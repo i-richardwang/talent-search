@@ -11,10 +11,10 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "bun --bun vite dev --port 3100",
+    "dev": "bun --env-file=.env.local --bun vite dev --port 3100",
     "ui": "bun --bun vite --config scripts/design-system/vite.config.ts",
     "build": "bun --bun vite build",
-    "preview": "bun --bun vite preview",
+    "preview": "bun --env-file=.env.local --bun vite preview",
     "db:push": "bun --env-file=.env.local --bun drizzle-kit push",
     "db:studio": "bun --env-file=.env.local --bun drizzle-kit studio",
     "auth:user": "bun --env-file=.env.local scripts/auth-user.ts",
@@ -24,11 +24,11 @@
     "test": "bun --env-file=.env.local scripts/test.ts",
     "sync": "bun --env-file=.env.local scripts/sync.ts",
     "derive": "bun --env-file=.env.local scripts/derive.ts",
-    "query": "bun scripts/query.ts",
-    "eval": "bun scripts/eval.ts",
-    "eval:extract": "bun scripts/eval-extract.ts",
-    "eval:review": "bun scripts/eval-review.ts",
-    "eval:understand": "bun scripts/eval-understand.ts",
+    "query": "bun --env-file=.env.local scripts/query.ts",
+    "eval": "bun --env-file=.env.local scripts/eval.ts",
+    "eval:extract": "bun --env-file=.env.local scripts/eval-extract.ts",
+    "eval:review": "bun --env-file=.env.local scripts/eval-review.ts",
+    "eval:understand": "bun --env-file=.env.local scripts/eval-understand.ts",
     "verify": "bun run check && bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {

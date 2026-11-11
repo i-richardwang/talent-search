@@ -243,6 +243,7 @@ const CATALOG = [
 				slug: "states",
 				source: [
 					"src/routes/s/$turnId/-components/result-state.tsx",
+					"src/routes/s/$turnId/-components/completeness.tsx",
 					"src/routes/-components/not-found.tsx",
 				],
 				title: "加载、空态与报错",

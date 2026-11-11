@@ -32,35 +32,38 @@ export function navPhase(
 	return { ...IDLE, refreshing: viewChanged(next.view, prev.view) };
 }
 
-export type SearchPhase = "interpreting" | "searching";
+export type SearchPhase = "understanding" | "searching" | "completing";
 
 /**
  * 名单在等什么、等的时候长什么样。`dim`：改了筛选，旧名单还是这批候选，留在原地
- * 调暗；`skeleton`：换了问题或第一次进来，旧名单不成立，画同形的占位行。
+ * 调暗；`skeleton`：换了问题或第一次进来，旧名单不成立，画同形的占位行；`keep`：名单上已有的
+ * 人都成立、照常可用，只是还会再多出几个。
  */
 export type ListWait = {
 	phase: SearchPhase;
-	list: "dim" | "skeleton";
+	list: "dim" | "skeleton" | "keep";
 	/**
-	 * 从哪一刻开始等：理解是服务端记下的这一次开始的时刻。搜索由导航发起，没有记下的
+	 * 从哪一刻开始等：AI 的处理是服务端记下的这一次开始的时刻。搜索由导航发起，没有记下的
 	 * 时刻，为 null。
 	 */
 	since: number | null;
 };
 
 /**
- * `interpreting`：看着的这一轮还没理解出条件，正在理解；`startedAt` 是这一次理解
- * 开始的时刻。
+ * AI 正在处理看着的这一轮：`understanding` 是还没理解出条件；`completing` 是条件已经有了
+ * （HR 直接改的），名单先按已有的出，AI 在补上新进范围的人。`startedAt` 是这一次开始的时刻。
  */
 export function listWait(
-	interpreting: boolean,
+	ai: "understanding" | "completing" | null,
 	startedAt: number | null,
 	{ refreshing, replacing }: NavPhase,
 ): ListWait | null {
-	if (interpreting)
-		return { list: "skeleton", phase: "interpreting", since: startedAt };
+	if (ai === "understanding")
+		return { list: "skeleton", phase: "understanding", since: startedAt };
 	if (replacing) return { list: "skeleton", phase: "searching", since: null };
 	if (refreshing) return { list: "dim", phase: "searching", since: null };
+	if (ai === "completing")
+		return { list: "keep", phase: "completing", since: startedAt };
 	return null;
 }
 

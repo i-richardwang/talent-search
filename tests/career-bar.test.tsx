@@ -17,10 +17,10 @@ import {
 	packLanes,
 	ym,
 } from "#/routes/s/$turnId/-components/career-bar";
-import { HIT_FILL } from "#/routes/s/$turnId/-components/evidence";
-import type { Hit } from "#/search/result";
+import { EVIDENCE_FILL } from "#/routes/s/$turnId/-components/evidence";
+import type { Evidence } from "#/search/result";
 import { classLists } from "./render";
-import { experience, hit } from "./rows";
+import { evidence, experience } from "./rows";
 
 const exp = (id: number, startDate: string, endDate: string | null) =>
 	experience({ id, startDate, endDate });
@@ -110,14 +110,14 @@ describe("带子的几何", () => {
 	];
 	test("结束的轨迹标实际终点，有开放经历时才标至今", () => {
 		const closed = renderToStaticMarkup(
-			<CareerBar hireDate={null} hitIndex={new Map()} rows={rows} />,
+			<CareerBar hireDate={null} evidenceIndex={new Map()} rows={rows} />,
 		);
 		assert.match(closed, /right-0">2024<\/span>/);
 		assert.ok(!closed.includes("至今"));
 		const open = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
-				hitIndex={new Map()}
+				evidenceIndex={new Map()}
 				rows={[exp(1, "2020-01-01", null)]}
 			/>,
 		);
@@ -126,7 +126,7 @@ describe("带子的几何", () => {
 
 	test("起点对齐左边，跨度按真实月数计算", () => {
 		const html = renderToStaticMarkup(
-			<CareerBar hireDate={null} hitIndex={new Map()} rows={rows} />,
+			<CareerBar hireDate={null} evidenceIndex={new Map()} rows={rows} />,
 		);
 		const [a, b] = blocks(html);
 		assert.equal(a?.left, "0%");
@@ -139,7 +139,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
-				hitIndex={new Map([[1, [hit({ route: "role" })]]])}
+				evidenceIndex={new Map([[1, [evidence({ route: "role" })]]])}
 				rows={rows}
 			/>,
 		);
@@ -151,26 +151,26 @@ describe("带子的几何", () => {
 	});
 
 	test("命中段和证据行的点同色，不分来源；未命中段不着色", () => {
-		const colorOf = (route: Hit["route"]) =>
+		const colorOf = (route: Evidence["route"]) =>
 			bandClasses(
 				renderToStaticMarkup(
 					<CareerBar
 						hireDate={null}
-						hitIndex={new Map([[1, [hit({ route })]]])}
+						evidenceIndex={new Map([[1, [evidence({ route })]]])}
 						rows={rows}
 					/>,
 				),
 			);
 		const [role, missed] = colorOf("role");
 		const [raw] = colorOf("description");
-		assert.ok(role?.includes(HIT_FILL));
+		assert.ok(role?.includes(EVIDENCE_FILL));
 		assert.deepEqual(raw, role);
-		assert.ok(!missed?.includes(HIT_FILL));
+		assert.ok(!missed?.includes(EVIDENCE_FILL));
 	});
 
 	test("入职线按比例定位", () => {
 		const html = renderToStaticMarkup(
-			<CareerBar hireDate="2020-01-01" hitIndex={new Map()} rows={rows} />,
+			<CareerBar hireDate="2020-01-01" evidenceIndex={new Map()} rows={rows} />,
 		);
 		// 2016-01 到 2024-01 共 96 个月，2020-01 在正中
 		assert.equal(hireLine(html)?.left, "50%");
@@ -179,7 +179,7 @@ describe("带子的几何", () => {
 
 	test("入职日落在经历跨度之外时不显示线和标签", () => {
 		const html = renderToStaticMarkup(
-			<CareerBar hireDate="1999-01-01" hitIndex={new Map()} rows={rows} />,
+			<CareerBar hireDate="1999-01-01" evidenceIndex={new Map()} rows={rows} />,
 		);
 		assert.equal(hireLine(html), undefined);
 		assert.ok(!html.includes("入职"));
@@ -189,7 +189,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
-				hitIndex={new Map()}
+				evidenceIndex={new Map()}
 				rows={[exp(9, "2024-02-01", "2024-05-01")]}
 			/>,
 		);
@@ -200,7 +200,7 @@ describe("带子的几何", () => {
 		const html = renderToStaticMarkup(
 			<CareerBar
 				hireDate={null}
-				hitIndex={new Map()}
+				evidenceIndex={new Map()}
 				rows={[exp(9, "2024-12-01", "2024-12-15")]}
 			/>,
 		);
@@ -210,7 +210,7 @@ describe("带子的几何", () => {
 
 	test("一段经历都没有时不渲染", () => {
 		const html = renderToStaticMarkup(
-			<CareerBar hireDate="2020-01-01" hitIndex={new Map()} rows={[]} />,
+			<CareerBar hireDate="2020-01-01" evidenceIndex={new Map()} rows={[]} />,
 		);
 		assert.equal(html, "");
 	});

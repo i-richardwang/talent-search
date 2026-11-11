@@ -5,12 +5,16 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { internalWordsIn } from "#/lib/internal-words";
-import { stepFindings, Thread } from "#/routes/s/$turnId/-components/thread";
+import {
+	answerAt,
+	stepFindings,
+	Thread,
+} from "#/routes/s/$turnId/-components/thread";
 import { compileConditions } from "#/search/compile";
 import type { TurnNotes } from "#/search/intent";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
-import type { InterpretFault, Progress, Turn } from "#/server/turn";
+import type { AttemptFault, Progress, Turn } from "#/server/turn";
 import { visibleText } from "./render";
 import { routed } from "./routed";
 
@@ -19,6 +23,8 @@ type Round = {
 	spec: string | null;
 	notes?: TurnNotes | null;
 	trace?: TraceStep[] | null;
+	/** AI 处理完了没有；不写时看有没有条件：说了话的一轮，条件写下就是处理完了。 */
+	settled?: boolean;
 };
 
 function turns(rounds: Round[]): Turn[] {
@@ -34,6 +40,7 @@ function turns(rounds: Round[]): Turn[] {
 		trace: r.trace ?? null,
 		startedAt: null,
 		fault: null,
+		settled: r.settled ?? r.spec !== null,
 		at: 0,
 	}));
 }
@@ -52,7 +59,7 @@ async function seen(
 		understanding?: boolean;
 		waiting?: boolean;
 		progress?: Progress | null;
-		fault?: InterpretFault | null;
+		fault?: AttemptFault | null;
 		onRetry?: () => void;
 		/** 名单正显示第几轮，默认最后一轮。 */
 		viewing?: number;
@@ -67,9 +74,9 @@ async function seen(
 				earlier={chain}
 				fault={fault}
 				latest={latest}
+				onAnswer={() => true}
 				onQuery={() => true}
 				onRetry={onRetry}
-				onRevise={() => {}}
 				progress={progress}
 				understanding={understanding}
 				viewing={`t${viewing}`}
@@ -170,24 +177,26 @@ const ASKED: TurnNotes = {
 	choices: {
 		current: "先不管这条",
 		others: [
-			{
-				label: "带过团队的优先",
-				detail: "写过带团队的有两百多位",
-				conditions: compileConditions(parseQuery("算法, +带团队")).conditions,
-			},
+			{ label: "带过团队的优先", detail: "写过带团队的有两百多位" },
+			{ label: "只看带过团队的" },
 		],
 	},
 };
 
 describe("AI 问的那一问", () => {
-	test("最后一轮的问题可以选：现在用的那一项标当前、不能点，其余每项是一个按钮", async () => {
+	test("最后一轮的问题可以选：现在用的那一项标当前、不能点，其余每句回答是一个按钮", async () => {
 		const { html, text } = await seen([
 			{ said: "算法，有潜力", spec: "算法", notes: ASKED },
 		]);
 		assert.match(text, /要不要先看带过团队的？/);
 		assert.match(text, /1\s*先不管这条\s*当前/);
 		assert.match(text, /2\s*带过团队的优先\s*写过带团队的有两百多位/);
-		assert.match(html, /<button[^>]*>(?:(?!<\/button>)[\s\S])*带过团队的优先/);
+		assert.match(text, /3\s*只看带过团队的/);
+		for (const answer of ["带过团队的优先", "只看带过团队的"])
+			assert.match(
+				html,
+				new RegExp(`<button[^>]*>(?:(?!</button>)[\\s\\S])*${answer}`),
+			);
 		assert.doesNotMatch(
 			html,
 			/<button[^>]*>(?:(?!<\/button>)[\s\S])*先不管这条/,
@@ -195,26 +204,39 @@ describe("AI 问的那一问", () => {
 		);
 	});
 
-	test("有了下一轮就收起来：下一轮恰好换成某一项的表，写出答的是哪一项", async () => {
-		const { html, text } = await seen([
-			{ said: "算法，有潜力", spec: "算法", notes: ASKED },
-			{ said: null, spec: "算法, +带团队" },
-		]);
-		assert.match(text, /要不要先看带过团队的？\s*带过团队的优先/);
-		assert.doesNotMatch(text, /先不管这条/);
-		assert.doesNotMatch(
-			html,
-			/<button[^>]*>(?:(?!<\/button>)[\s\S])*带过团队的优先/,
-		);
+	test("选第几项就是说哪句回答：编号和选项前的一样，第 1 项是现在这一种，不用再说", () => {
+		const choices = ASKED.choices;
+		assert.ok(choices);
+		assert.equal(answerAt(choices, 1), null);
+		assert.equal(answerAt(choices, 2), "带过团队的优先");
+		assert.equal(answerAt(choices, 3), "只看带过团队的");
+		assert.equal(answerAt(choices, 4), null);
+		assert.equal(answerAt(choices, Number.NaN), null);
 	});
 
-	test("接着说了别的话：只留问话", async () => {
-		const { text } = await seen([
+	test("有了下一轮就收起来：下一轮说的正是其中一句回答，问话底下写出答的是哪一句", async () => {
+		const { html, text } = await seen([
 			{ said: "算法，有潜力", spec: "算法", notes: ASKED },
-			{ said: "再加后端", spec: "算法, 后端" },
+			{ said: "带过团队的优先", spec: "算法, +带团队" },
 		]);
-		assert.match(text, /要不要先看带过团队的？/);
-		assert.doesNotMatch(text, /带过团队的优先|先不管这条/);
+		assert.match(text, /要不要先看带过团队的？\s*带过团队的优先/);
+		assert.doesNotMatch(text, /先不管这条|只看带过团队的|两百多位/);
+		assert.doesNotMatch(html, /<button[^>]*class="ui-question-option"/);
+	});
+
+	test("接着说了别的话，或者直接改了条件：只留问话", async () => {
+		for (const next of [
+			{ said: "再加后端", spec: "算法, 后端" },
+			{ said: null, spec: "算法, +带团队" },
+		]) {
+			const { html, text } = await seen([
+				{ said: "算法，有潜力", spec: "算法", notes: ASKED },
+				next,
+			]);
+			assert.match(text, /要不要先看带过团队的？/);
+			assert.doesNotMatch(text, /带过团队的优先|先不管这条/);
+			assert.doesNotMatch(html, /ui-question-answer"/);
+		}
 	});
 });
 
@@ -254,22 +276,10 @@ describe("检索人才库的过程", () => {
 	const trace: TraceStep[] = [
 		{
 			at: 1,
-			tool: "lookup_experience",
-			terms: [
-				{
-					text: "推荐",
-					people: 128,
-					terms: [
-						{
-							name: "推荐算法",
-							people: 96,
-							broader: "推荐",
-							narrower: ["召回"],
-						},
-					],
-				},
-				{ text: "互联网", people: 900, terms: [] },
-				{ text: "量子炼金", people: 0, terms: [] },
+			tool: "find",
+			found: [
+				{ phrases: 12, top: ["推荐算法", "推荐系统"] },
+				{ phrases: 0, top: [] },
 			],
 		},
 		{
@@ -278,13 +288,7 @@ describe("检索人才库的过程", () => {
 			discovery: {
 				kind: "names",
 				subject: "公司",
-				found: [
-					{
-						query: "星河",
-						people: 44,
-						values: [{ name: "星河科技", people: 38 }],
-					},
-				],
+				found: [{ query: "星河", values: ["星河科技"] }],
 			},
 		},
 		{
@@ -293,7 +297,7 @@ describe("检索人才库的过程", () => {
 			discovery: {
 				kind: "names",
 				subject: "学校",
-				found: [{ query: "银河学院", people: 0, values: [] }],
+				found: [{ query: "银河学院", values: [] }],
 			},
 		},
 		{
@@ -302,10 +306,7 @@ describe("检索人才库的过程", () => {
 			discovery: {
 				kind: "values",
 				subject: "学历",
-				values: [
-					{ name: "本科", people: 300 },
-					{ name: "硕士", people: 120 },
-				],
+				values: ["本科", "硕士"],
 			},
 		},
 	];
@@ -345,7 +346,8 @@ describe("检索人才库的过程", () => {
 			progress: { trace, startedAt: null },
 		});
 		assert.match(text, /检索人才库 4 步/);
-		assert.match(text, /查找\s*推荐、互联网、量子炼金/);
+		assert.match(text, /查看人才库里的说法/);
+		assert.doesNotMatch(text, /推荐\(算法/, "找的时候用的写法不上屏");
 		assert.match(text, /查找公司\s*星河/);
 		assert.match(text, /查找学校\s*银河学院/);
 		assert.match(text, /查看学历/);
@@ -355,9 +357,7 @@ describe("检索人才库的过程", () => {
 
 	test("一步的结论：人才库里有没有、包括哪些写法，不写全库人数", () => {
 		assert.deepEqual(stepFindings(trace[0] as TraceStep), [
-			"人才库中有「推荐」，包括推荐算法",
-			"人才库中有「互联网」",
-			"人才库中没有「量子炼金」",
+			"人才库中有推荐算法、推荐系统等 12 种说法",
 		]);
 		assert.deepEqual(stepFindings(trace[1] as TraceStep), [
 			"人才库中有「星河」，包括星河科技",
@@ -374,24 +374,10 @@ describe("检索人才库的过程", () => {
 			tool: "discover",
 			discovery: {
 				kind: "overview",
-				relations: [{ name: "person", label: "人", rows: 120 }],
-				streams: [
-					{
-						stream: "perf",
-						label: "绩效",
-						kind: "rating",
-						period: "半年",
-						people: 80,
-						periods: 6,
-						first: "2023-01-01",
-						latest: { start: "2025-07-01", end: "2025-12-31" },
-						values: ["C", "B", "A", "S"],
-					},
-				],
+				streams: [{ label: "绩效", first: "2023-01-01" }],
 			},
 		});
 		assert.deepEqual(facts, ["人才库中有绩效记录，2023-01-01 起"]);
-		assert.doesNotMatch(facts.join(""), /120|80/);
 	});
 
 	test("提交没通过：说哪一条还要改、为什么，用 HR 读得懂的话", () => {
@@ -404,6 +390,7 @@ describe("检索人才库的过程", () => {
 				{ kind: "unrunnable", subject: "近三年两次 A" },
 				{ kind: "unfound", subject: "量子炼金" },
 				{ kind: "tooBroad", subject: "做过开发" },
+				{ kind: "unread", subject: null },
 			],
 		});
 		assert.deepEqual(findings, [
@@ -412,44 +399,168 @@ describe("检索人才库的过程", () => {
 			"「近三年两次 A」这样写搜不了",
 			"人才库中没有「量子炼金」",
 			"「做过开发」找出的太多，名单出不来",
+			"还有候选人没确认完",
 		]);
 		assert.deepEqual(internalWordsIn(findings.join("")), []);
 	});
 
-	test("试搜：每条单独找到几个人、合起来几个人；写不对的说搜不了", () => {
+	test("读经历、下结论各是一步：标题说在做什么，结论说取了几段、后面还有几段、几段符合几段不符合", async () => {
+		const steps: TraceStep[] = [
+			{ at: 1, tool: "read", segments: 80, left: 130 },
+			{ at: 2, tool: "judge", fits: 31, unfit: 49 },
+			{ at: 3, tool: "read", segments: 50, left: 50 },
+			{ at: 4, tool: "judge", fits: 0, unfit: 50 },
+		];
+		assert.deepEqual(steps.map(stepFindings), [
+			["取了 80 段经历，后面还有 50 段"],
+			["31 段符合，49 段不符合"],
+			["取了 50 段经历"],
+			["0 段符合，50 段不符合"],
+		]);
 		assert.deepEqual(
-			stepFindings({
-				at: 0,
-				tool: "probe",
-				probe: {
+			[
+				{ at: 5, tool: "read", segments: 0, left: 0 } as const,
+				{ at: 6, tool: "read", segments: 0, left: 40 } as const,
+				{ at: 7, tool: "read", unlisted: true } as const,
+				{ at: 8, tool: "judge", redo: true } as const,
+			].map(stepFindings),
+			[
+				["候选人的经历都确认过了"],
+				["这一次能确认的经历已经到上限"],
+				["这份条件还出不了名单"],
+				["这一批要重新判断"],
+			],
+		);
+		const { text } = await seen([{ said: "做风控策略的", spec: null }], {
+			waiting: true,
+			progress: { trace: steps, startedAt: null },
+		});
+		assert.match(text, /检索人才库 4 步/);
+		assert.match(
+			text,
+			/查看候选人的经历\s*判断这些经历是否符合\s*查看候选人的经历\s*判断这些经历是否符合/,
+		);
+		assert.deepEqual(internalWordsIn(text), []);
+		assert.deepEqual(internalWordsIn(steps.flatMap(stepFindings).join("")), []);
+	});
+
+	describe("直接改条件的一轮", () => {
+		const steps: TraceStep[] = [
+			{ at: 1, tool: "read", segments: 40, left: 40 },
+			{ at: 2, tool: "judge", fits: 12, unfit: 28 },
+		];
+		const edited = (over: Partial<Round> = {}): Round[] => [
+			{ said: "做推荐的", spec: "推荐算法" },
+			{ said: null, spec: "推荐算法, 后端", ...over },
+		];
+
+		test("AI 接着补人：分隔线下面是检索过程，进行中展开，做完收起；不用 AI 处理的一轮没有过程", async () => {
+			const running = await seen(edited({ settled: false }), {
+				progress: { trace: steps, startedAt: null },
+			});
+			assert.match(running.text, /你修改了搜索条件：添加 后端/);
+			assert.match(
+				running.text,
+				/检索人才库 2 步\s*查看候选人的经历\s*判断这些经历是否符合/,
+			);
+			assert.doesNotMatch(running.text, /正在理解你的需求/);
+			assert.deepEqual(internalWordsIn(running.text), []);
+
+			const done = await seen(edited({ trace: steps }));
+			assert.match(done.text, /检索人才库 2 步/);
+			assert.doesNotMatch(done.text, /查看候选人的经历/);
+
+			const plain = await seen(edited());
+			assert.doesNotMatch(plain.text, /检索人才库/);
+		});
+
+		test("补人没成：这一轮底下说哪个环节出了问题，给重试", async () => {
+			const { text } = await seen(edited({ settled: false }), {
+				fault: "unreachable",
+				progress: { trace: [], startedAt: null },
+			});
+			assert.match(text, /你修改了搜索条件：添加 后端/);
+			assert.match(text, /AI 服务暂时不可用/);
+			assert.match(text, /重试/);
+		});
+	});
+
+	describe("试搜", () => {
+		const probed = (probe: Extract<TraceStep, { tool: "probe" }>["probe"]) =>
+			stepFindings({ at: 0, tool: "probe", probe });
+		const must = { mode: "must" as const };
+
+		test("每条单独搜到几个人；有一条写不对时说搜不了，不写合起来的人数", () => {
+			assert.deepEqual(
+				probed({
 					conditions: [
-						{ label: "做过推荐", mode: "must", people: 12, problem: null },
-						{
-							label: "近三年两次 A",
-							mode: "must",
-							people: null,
-							problem: "没有这一列",
-						},
+						{ ...must, label: "做过推荐", people: 12 },
+						{ ...must, label: "近三年两次 A", people: null },
 					],
 					total: null,
-				},
-			}),
-			["做过推荐：12 人", "近三年两次 A：这样写搜不了"],
-		);
-		assert.deepEqual(
-			stepFindings({
-				at: 0,
-				tool: "probe",
-				probe: {
+					candidates: null,
+					unread: 0,
+				}),
+				["做过推荐：搜到 12 人", "近三年两次 A：这样写搜不了"],
+			);
+		});
+
+		test("经历都确认过了：合起来写符合的人数；排除和 chip 上一样标出来", () => {
+			assert.deepEqual(
+				probed({
 					conditions: [
-						{ label: "做过推荐", mode: "must", people: 12, problem: null },
-						{ label: "实习不算", mode: "exclude", people: 2, problem: null },
+						{ ...must, label: "做过推荐", people: 20 },
+						{ label: "做过销售", mode: "exclude", people: 2 },
 					],
 					total: 12,
-				},
-			}),
-			["做过推荐：12 人", "实习不算：排除 2 人", "合起来：12 人"],
-		);
+					candidates: 12,
+					unread: 0,
+				}),
+				[
+					"做过推荐：搜到 20 人",
+					"做过销售（排除）：搜到 2 人",
+					"合起来：12 人符合",
+				],
+			);
+		});
+
+		test("还没确认完：写候选多少人，已确认的里面有人时接着写符合的人数，不把没确认的人说成符合", () => {
+			const conditions = [
+				{ ...must, label: "做过推荐", people: 40 },
+				{ ...must, label: "硕士及以上", people: 300 },
+			];
+			const each = ["做过推荐：搜到 40 人", "硕士及以上：搜到 300 人"];
+			const unseen = probed({
+				conditions,
+				total: 0,
+				candidates: 30,
+				unread: 37,
+			});
+			assert.deepEqual(unseen, [...each, "合起来：候选 30 人，还没确认完"]);
+			const partly = probed({
+				conditions,
+				total: 2,
+				candidates: 30,
+				unread: 20,
+			});
+			assert.deepEqual(partly, [
+				...each,
+				"合起来：候选 30 人，还没确认完，已确认 2 人符合",
+			]);
+			assert.deepEqual(internalWordsIn([...unseen, ...partly].join("")), []);
+		});
+
+		test("字面一个都对不上的条件写搜到 0 人，不说成还没确认", () => {
+			assert.deepEqual(
+				probed({
+					conditions: [{ ...must, label: "量子炼金", people: 0 }],
+					total: 0,
+					candidates: 0,
+					unread: 0,
+				}),
+				["量子炼金：搜到 0 人", "合起来：0 人符合"],
+			);
+		});
 	});
 
 	test("查看结果是一枚带名字的图标链接，不包任何动作", async () => {

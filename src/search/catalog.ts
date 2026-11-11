@@ -1,7 +1,7 @@
 /**
  * 数据目录：查询理解的模型能读的数据，每个关系、每一列的中文名、含义和口径。
  *
- * 关系就是 `db/schema.ts` 里 `catalog` schema 的视图，加上每次检索由外壳物化的语义命中表
+ * 关系就是 `db/schema.ts` 里 `catalog` schema 的视图，加上每次检索由外壳物化的命中表
  * `hit`。这里的声明有三个读者：查询理解的系统提示词（静态的一份目录）、SQL 白名单
  * （`server/sandbox.ts` 按它核对引用的关系和列）、`discover` 工具（活的统计）。
  * 视图的列名由类型和 schema 绑定：视图多一列、这里少写一列，类型检查不过。
@@ -27,7 +27,7 @@ type ColumnsOf<V> =
  * `rank` 是同一关系里它的档高列，列取值时按它从低到高排。
  */
 type CatalogColumn<C extends string = string> = {
-	type: "text" | "int" | "float" | "date" | "bool" | "text[]";
+	type: "text" | "int" | "date" | "text[]";
 	label: string;
 	meaning: string;
 } & ({ values?: "enum" } | { values: "ordinal"; rank: C });
@@ -218,10 +218,10 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 	notes: [
 		"待业不是一段工作经历，不在这里。",
 		"公司和公司的各项属性只在入职前的经历上，部门只在公司内的任职上，一段只有其一。",
-		"行业、集团、名企组合说的是那家公司，不是这个人做的事：在外卖公司待过不等于做过外卖业务，做过什么仍写进 terms。",
+		"行业、集团、名企组合说的是那家公司，不是这个人做的事：在外卖公司待过不等于做过外卖业务，做过什么仍写进 seek。",
 		"行业是一棵树，取值连同上级都在数组里：:v = any(e.main_industries) 写上级行业就包含它下面的每一个细分。",
 		"公司没认出来、或认出来了但没有行业时，行业两列为空，不满足任何行业条件；「不是某行业」同样不成立。",
-		"做过什么不按岗位名或部门名的字面筛：写进 terms，在 hit 上按意思找。",
+		"做过什么不按岗位名或部门名的字面筛：写进 seek，命中在 hit 上。",
 	],
 };
 
@@ -308,33 +308,16 @@ const scale: CatalogRelation<ColumnsOf<typeof catalogScale>> = {
 };
 
 /**
- * 语义命中表：一行是一个语义词在一段经历上的一次命中，每次检索由外壳按这条条件的 `terms`
- * 物化，只能通过别名 `h` 读，不能在子查询里另外 from 它。
+ * 命中表：一行是这条条件的「做过什么」在一段经历上命中的一条说法，每次检索由外壳按这条条件的
+ * `seek` 物化，只能通过别名 `h` 读，不能在子查询里另外 from 它。
  */
 export const HIT: CatalogRelation<
-	| "term"
-	| "experience_id"
-	| "emp_id"
-	| "route"
-	| "relevance"
-	| "phrase"
-	| "engagement"
-	| "value"
+	"experience_id" | "emp_id" | "route" | "phrase" | "engagement"
 > = {
 	name: "hit",
-	label: "语义命中",
-	rows: "这条条件的一个语义词在一段经历上的一次命中",
+	label: "命中",
+	rows: "这条条件的 seek 在一段经历上命中的一条说法",
 	columns: {
-		term: {
-			type: "text",
-			label: "词名",
-			meaning: "命中的是 terms 里哪个键",
-		},
-		value: {
-			type: "text",
-			label: "写法",
-			meaning: "命中的是那个键下的哪种写法",
-		},
 		experience_id: { type: "int", label: "段", meaning: "命中的段，等于 e.id" },
 		emp_id: { type: "text", label: "工号", meaning: "命中的人" },
 		route: {
@@ -343,11 +326,6 @@ export const HIT: CatalogRelation<
 			meaning:
 				"命中的是哪一类说法：role 公司内任职整句、title 入职前岗位名、skill 简历读出的能力词、description 没读过的简历原文",
 			values: "enum",
-		},
-		relevance: {
-			type: "float",
-			label: "相关度",
-			meaning: "重排相关度，0 到 1，已过门槛",
 		},
 		phrase: {
 			type: "text",
@@ -362,7 +340,8 @@ export const HIT: CatalogRelation<
 		},
 	},
 	notes: [
-		"排除的条件按更严的相关度门槛物化。",
+		"命中只说明这一段是候选；写了判据的条件，确认过符合的段才算数，排除也只认确认过符合的段。",
+		"seek 没写 patterns 时每一段各有一行，route 是它登记的那条说法：公司内 role、入职前 title。",
 		"一段可以有几行命中；外壳按段去重，留最对得上的一行。",
 	],
 };
@@ -415,7 +394,7 @@ export function catalogText(): string {
 	return [
 		relation(person, "；人的条件里别名是 p"),
 		relation(experience, "；经历条件里别名是 e"),
-		relation(HIT, "；只在写了 terms 的经历条件里，别名是 h"),
+		relation(HIT, "；只在写了 seek 的经历条件里，别名是 h"),
 		relation(rating, ""),
 		relation(status, ""),
 		relation(scale, ""),

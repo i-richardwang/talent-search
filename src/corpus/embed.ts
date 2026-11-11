@@ -1,5 +1,5 @@
 /**
- * 语料的批量嵌入与持久缓存；端点及配置共用 server/embed.ts。
+ * 整理用的批量嵌入与持久缓存；端点及配置在 server/embed.ts。
  * 按空间、模型和文本摘要保存第一个成功写入的向量，按输入顺序返回。
  */
 
@@ -12,23 +12,17 @@ import { embedFresh, embedSpace } from "#/server/embed";
 import type { Report } from "./report";
 
 /**
- * 一次请求送多少段。bge-m3 在 CPU 上一批几十条是延迟与吞吐的平衡点，再大只是
- * 让单次请求更容易超时。整条链路只有这一个批量：调用方把整份语料一次交给
+ * 一次请求送多少个词。bge-m3 在 CPU 上一批几十条是延迟与吞吐的平衡点，再大只是
+ * 让单次请求更容易超时。整条链路只有这一个批量：调用方把全部的词一次交给
  * `embed`，请求批量、缓存和进度都由它决定。
  */
 const BATCH = 32;
 
 /**
- * 一次查缓存问多少个文本。绑定参数和结果集都随它涨：几万种说法一次问完，
+ * 一次查缓存问多少个文本。绑定参数和结果集都随它涨：几万个词一次问完，
  * 光是把向量读进内存就是一次几百兆的尖峰。
  */
 const LOOKUP = 500;
-
-/**
- * 解析时嵌入失败重试几次。比查询侧那一个多：一轮解析要跑几十分钟，为一次端点
- * 抖动整轮重来的代价远高于多等几秒。
- */
-const IMPORT_RETRIES = 4;
 
 const PROGRESS_EVERY = 10;
 
@@ -90,7 +84,7 @@ export async function embed(
 	const missing = unique.filter((text) => !vectors.has(text));
 	for (let start = 0; start < missing.length; start += BATCH) {
 		const chunk = missing.slice(start, start + BATCH);
-		const embeddings = await embedFresh(chunk, IMPORT_RETRIES);
+		const embeddings = await embedFresh(chunk);
 		const fresh: [string, number[]][] = [];
 		for (const [index, text] of chunk.entries()) {
 			const vector = embeddings[index];
@@ -100,20 +94,13 @@ export async function embed(
 		}
 		for (const [text, vector] of await store(fresh)) vectors.set(text, vector);
 		const done = start + chunk.length;
-		// 几万种说法就是几百批：每批报一行的话，日志里除了进度什么都看不见了
+		// 几万个词就是几百批：每批报一行的话，日志里除了进度什么都看不见了
 		if (done === missing.length || (start / BATCH) % PROGRESS_EVERY === 0)
-			report(`  已嵌入 ${done}/${missing.length} 种新说法`);
+			report(`  已嵌入 ${done}/${missing.length} 个新词`);
 	}
 	return texts.map((text) => {
 		const vector = vectors.get(text);
 		if (!vector) throw new Error(`没有拿到向量：${text.slice(0, 40)}`);
 		return vector;
 	});
-}
-
-/** 绕过缓存读端点的真实输出，给语料的嵌入空间 canary 用。 */
-export async function probe(text: string): Promise<number[]> {
-	const [vector] = await embedFresh([text], IMPORT_RETRIES);
-	if (!vector) throw new Error("嵌入端点没有返回 canary 向量");
-	return vector;
 }

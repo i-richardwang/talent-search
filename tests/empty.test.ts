@@ -8,23 +8,23 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { compileConditions } from "#/search/compile";
-import { emptyReason } from "#/search/empty";
+import { emptyReason, type Incomplete } from "#/search/empty";
 import type { SearchFilters } from "#/search/params";
 import { parseQuery } from "#/search/query-syntax";
-import { compiledClaim } from "./conditions";
 
 function why(args: {
 	/** 一行查询语法，见 `search/query-syntax.ts`。 */
 	query?: string;
 	filters?: SearchFilters;
 	total?: number;
-	overflow?: Parameters<typeof emptyReason>[0]["overflow"];
+	/** 候选人还没确认完时确认到了哪一档 */
+	incomplete?: Incomplete;
 }) {
 	return emptyReason({
 		query: compileConditions(parseQuery(args.query ?? "")),
 		filters: args.filters ?? {},
 		total: args.total ?? 0,
-		overflow: args.overflow ?? null,
+		incomplete: args.incomplete,
 	});
 }
 
@@ -34,18 +34,22 @@ test("有人就没有成因：要不要画空态和空态说什么是同一个�
 	assert.equal(why({ query: "education:硕士", total: 3 }), null);
 });
 
-describe("取数超限", () => {
-	test("排在最前：它不是「没有人」，而且和筛选太窄的下一步相反", () => {
-		const overflow = {
-			kind: "overflowEvidence" as const,
-			claims: [compiledClaim("运营")],
-		};
-		const reason = why({
-			query: "运营",
-			filters: { seq: [{ l1: "技术", l2: "后端" }] },
-			overflow,
-		});
-		assert.deepEqual(reason, overflow);
+describe("候选人还没确认完", () => {
+	const incomplete = { above: "P7" };
+
+	test("名单上没人、候选人没确认完：说的是还没确认完和确认到了哪一档，不是没有这样的人，也不怪筛选", () => {
+		const reason = { kind: "incomplete", above: "P7" };
+		assert.deepEqual(why({ query: "运营", incomplete }), reason);
+		assert.deepEqual(
+			why({ query: "运营", filters: { level: ["P7"] }, incomplete }),
+			reason,
+			"排在筛选太窄前面：没确认的那些人就在这份筛选里",
+		);
+	});
+
+	test("名单上有人就没有成因，哪怕候选人没确认完；都确认过了才轮到别的成因", () => {
+		assert.equal(why({ query: "运营", total: 3, incomplete }), null);
+		assert.deepEqual(why({ query: "运营" }), { kind: "unmet" });
 	});
 });
 
@@ -54,14 +58,11 @@ describe("没有可执行的经历主张", () => {
 		assert.deepEqual(why({ query: "~渠道运营,~+带团队" }), {
 			kind: "allDisabled",
 		});
+		assert.deepEqual(why({ query: "~-实习" }), { kind: "allDisabled" });
 	});
 
-	test("停用的排除不算「我把条件停了」：它本来就不产出人", () => {
-		assert.deepEqual(why({ query: "~-实习" }), { kind: "excludeOnly" });
-	});
-
-	test("只写了排除", () => {
-		assert.deepEqual(why({ query: "-实习" }), { kind: "excludeOnly" });
+	test("只写了排除：它和门槛一样只定去留，没人就是没有这样的人", () => {
+		assert.deepEqual(why({ query: "-实习" }), { kind: "gatesUnmet" });
 	});
 
 	test("一个条件都没解析出来", () => {
@@ -93,12 +94,14 @@ describe("有条件但没人", () => {
 	});
 
 	test("没有一条是必须的：下一步是换词，不是「把条件改成加分」", () => {
-		assert.deepEqual(why({ query: "+算法" }), { kind: "noHits" });
+		assert.deepEqual(why({ query: "+算法" }), { kind: "noneMatched" });
 		// 人的偏好不删人，「没有这样的人」对它不成立
-		assert.deepEqual(why({ query: "+education:硕士" }), { kind: "noHits" });
+		assert.deepEqual(why({ query: "+education:硕士" }), {
+			kind: "noneMatched",
+		});
 		// 必须的人的条件加上加分的主张：候选是条件里沾上主张的人，说不清是哪一头空了
 		assert.deepEqual(why({ query: "+算法,education:硕士" }), {
-			kind: "noHits",
+			kind: "noneMatched",
 		});
 	});
 });

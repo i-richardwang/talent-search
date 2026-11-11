@@ -50,6 +50,7 @@ import {
 	Trash,
 	TriangleAlert,
 	UserRound,
+	Users,
 	UsersRound,
 	X,
 } from "lucide-react";
@@ -100,6 +101,7 @@ export const PRODUCT_ICONS: [
 	["PanelLeftClose", PanelLeftClose, "收起导航栏"],
 	["MessagesSquare", MessagesSquare, "对话"],
 	["UsersRound", UsersRound, "人才搜索"],
+	["Users", Users, "候选人较多，名单还不完整"],
 	["UserRound", UserRound, "登录账号"],
 	["LockKeyhole", LockKeyhole, "登录密码"],
 	["Table", Table, "数据"],

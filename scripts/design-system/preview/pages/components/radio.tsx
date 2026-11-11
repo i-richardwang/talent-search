@@ -133,12 +133,12 @@ function FilterGroup() {
 }
 
 function Usage() {
-	const [order, setOrder] = useState("relevance");
+	const [order, setOrder] = useState("depth");
 	const [range, setRange] = useState("30");
 	return (
 		<ExampleGrid>
 			<Example
-				description="搜索结果页导航栏的筛选里，只能取一个值的维度：第一项是「不限」，行尾是人数。"
+				description="名单上方的筛选里，只能取一个值的维度：第一项是「不限」，行尾是人数。"
 				title="筛选单选"
 			>
 				<FilterGroup />
@@ -153,7 +153,7 @@ function Usage() {
 					onChange={setOrder}
 					value={order}
 				>
-					<Radio value="relevance">按匹配程度</Radio>
+					<Radio value="depth">按经历深度</Radio>
 					<Radio value="years">按累计年限</Radio>
 				</RadioGroup>
 			</Example>

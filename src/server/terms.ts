@@ -1,9 +1,42 @@
 import "@tanstack/react-start/server-only";
 import { type SQL, sql } from "drizzle-orm";
+import { SHORT_ROUTES } from "#/db/schema";
 import { withCorpusSnapshot } from "#/db/snapshot";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
-import { peopleUnder, UNDER } from "#/search/search";
+
+/**
+ * 一个标准词连同它的其他写法、它的细分，全部展开成 `(term, word)`。
+ *
+ * 人数是按这一堆词一起数的：`term` 是某一个标准词，`word` 是算进它那个数里的每一种
+ * 写法——它自己、并进它的写法，以及它的细分连各自的写法，一层层往下。
+ */
+const UNDER = sql`
+	with recursive under(term, word) as (
+		select canonical, word from term
+		union
+		select u.term, a.word from under u
+		join term c on c.parent = u.word
+		join term a on a.canonical = c.word
+	)`;
+
+/**
+ * 一个标准词底下有多少人：短说法里写了它、它的其他写法，或它任一项细分的人，各算一次。
+ * 这是词表页呈现一支词有多大用的数；检索不顺着词表往下带。词表里的词有可能已经不在语料里（写它的人的简历
+ * 改了），那就是 0。
+ */
+function peopleUnder(term: SQL | string) {
+	return sql`coalesce((
+		select count(distinct e.emp_id)::int
+		from under u
+		join phrase p on p.text = u.word
+		join experience_phrase ep on ep.phrase_id = p.id and ep.route in (${sql.join(
+			SHORT_ROUTES.map((route) => sql`${route}`),
+			sql`, `,
+		)})
+		join experience e on e.id = ep.experience_id
+		where u.term = ${term} and not e.unemployed), 0)`;
+}
 
 export type TermEntry = {
 	canonical: string;
@@ -19,8 +52,6 @@ export type TermEntry = {
 };
 
 export type TermDetail = Omit<TermEntry, "parent" | "children"> & {
-	/** 判定方给这个词写的那一句；还没写过是 null */
-	gloss: string | null;
 	/** 更宽的词，连它那一层的人数；没有就是 null */
 	parent: { canonical: string; people: number } | null;
 	/** 属于它的标准词，人多的在前；每个各带自己那一支的人数 */
@@ -101,8 +132,7 @@ export function describeTerm(word: string): Promise<TermDetail | null> {
 				max(a.parent) filter (where a.word = a.canonical) as parent,
 				coalesce(array_agg(a.word order by a.word) filter (where a.word <> a.canonical), '{}') as aliases,
 				${peopleUnder(sql`a.canonical`)} as people,
-				(current_date - max(a.reviewed_at)::date)::int as "reviewedDaysAgo",
-				(select g.gloss from phrase_gloss g where g.text = a.canonical) as gloss
+				(current_date - max(a.reviewed_at)::date)::int as "reviewedDaysAgo"
 			from term a
 			where a.canonical = ${canonical}
 			group by a.canonical`);

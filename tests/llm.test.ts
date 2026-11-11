@@ -38,14 +38,25 @@ const FACTS = {
 	},
 };
 
-test("端点连不上时抛给调用方，不返回一份假理解", async () => {
-	await assert.rejects(understand("做过算法的人", FACTS, [], {} as never));
-});
+/**
+ * 一套不碰数据库的工具：只有提交这一个，从来没提交过。这里看的是端点怎么失败，模型调不到别的
+ * 工具。
+ */
+const STUB_AGENT = {
+	base: [],
+	tools: {
+		submit: tool({ inputSchema: z.object({}), execute: async () => "" }),
+	},
+	passed: () => false,
+	answer: () => null,
+	advance: () => {},
+} as never;
 
-test("连不上认作 unreachable：那句话根本没被读过", async () => {
-	const error = await understand("做过算法的人", FACTS, [], {} as never).catch(
+test("端点连不上时抛给调用方，不返回一份假理解；认作 unreachable：那句话根本没被读过", async () => {
+	const error = await understand("做过算法的人", FACTS, STUB_AGENT).catch(
 		(e) => e,
 	);
+	assert.ok(error instanceof Error);
 	assert.equal(endpointFault(error), "unreachable");
 });
 
@@ -65,13 +76,6 @@ test("端点答了但没按约定作答，不是端点的错", () => {
 });
 
 test("端点没理会必须调用工具、只回了正文，算没作答，不算意外", async () => {
-	const agent = {
-		tools: {
-			submit: tool({ inputSchema: z.object({}), execute: async () => "" }),
-		},
-		passed: () => false,
-		answer: () => null,
-	};
 	const original = globalThis.fetch;
 	globalThis.fetch = async () =>
 		Response.json({
@@ -87,12 +91,9 @@ test("端点没理会必须调用工具、只回了正文，算没作答，不�
 			],
 		});
 	try {
-		const error = await understand(
-			"做过算法的人",
-			FACTS,
-			[],
-			agent as never,
-		).catch((e) => e);
+		const error = await understand("做过算法的人", FACTS, STUB_AGENT).catch(
+			(e) => e,
+		);
 		assert.ok(error instanceof UnansweredError, String(error));
 		assert.match(error.message, /finishReason=stop/);
 		assert.match(error.message, /我觉得应该找算法/);

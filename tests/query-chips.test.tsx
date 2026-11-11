@@ -9,12 +9,9 @@ import { QueryChips } from "#/routes/s/$turnId/-components/query-chips";
 import type { QueryCondition } from "#/search/query";
 import { visibleText } from "./render";
 
-const markup = (
-	conditions: QueryCondition[],
-	counts: Record<string, number> = {},
-) =>
+const markup = (conditions: QueryCondition[]) =>
 	renderToStaticMarkup(
-		<QueryChips conditions={conditions} counts={counts} onChange={() => {}} />,
+		<QueryChips conditions={conditions} onChange={() => {}} />,
 	);
 const seen = (conditions: QueryCondition[]) => visibleText(markup(conditions));
 
@@ -27,21 +24,21 @@ const chip = (
 	label,
 	mode,
 	from: "experience",
-	terms: { what: [label] },
+	seek: { patterns: [label] },
 	where: "true",
 	...more,
 });
 
 describe("查询 chip", () => {
-	test("chip 上是那句标签，SQL 和语义词不上 chip", () => {
+	test("chip 上是那句标签，SQL 和正则不上 chip", () => {
 		const text = seen([
 			chip("近三年两次绩效 A 及以上", "must", {
 				from: "person",
-				terms: undefined,
+				seek: undefined,
 				where: "(select count(*) from rating r where r.emp_id = p.emp_id) >= 2",
 			}),
 			chip("在甲辰科技做过推荐", "must", {
-				terms: { what: ["推荐算法", "推荐系统"] },
+				seek: { patterns: ["推荐算法", "推荐系统"] },
 			}),
 		]);
 		assert.match(text, /近三年两次绩效 A 及以上/);
@@ -67,22 +64,11 @@ describe("查询 chip", () => {
 		assert.match(markup(off), /aria-label="[^"]*已停用"/);
 	});
 
-	test("最右边是这一条单独的人数，读屏也读出来；停用的、没有人数的不写", () => {
-		const html = markup(
-			[
-				chip("推荐"),
-				chip("实习", "exclude"),
-				chip("经理", "must", { off: "user" }),
-				chip("带团队", "boost"),
-			],
-			{ 推荐: 12, 实习: 3, 经理: 40 },
-		);
-		const text = visibleText(html);
-		assert.match(text, /推荐\s*12 人/);
-		assert.match(text, /实习\s*排除\s*3 人/);
-		assert.doesNotMatch(text, /40 人/, "停用的没参与检索");
-		assert.doesNotMatch(text, /带团队\s*加分\s*\d/);
-		assert.match(html, /aria-label="必须，推荐，12 人"/);
+	test("读屏读出强度和标签；chip 上不写人数", () => {
+		const html = markup([chip("推荐"), chip("实习", "exclude")]);
+		assert.match(html, /aria-label="必须，推荐"/);
+		assert.match(html, /aria-label="排除，实习"/);
+		assert.doesNotMatch(visibleText(html), /\d\s*人/);
 	});
 
 	test("删除钮说清删的是哪一条", () => {

@@ -19,7 +19,7 @@ import type { ListWait } from "#/routes/s/$turnId/-lib/nav-phase";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import type { SearchOutcome } from "#/search/result";
 import type { SearchSpec } from "#/search/spec";
-import type { InterpretFault, SearchMode } from "#/server/turn";
+import type { AttemptFault, SearchMode } from "#/server/turn";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid } from "../../kit/stage";
@@ -43,7 +43,7 @@ type ListProps = {
 	empId?: string;
 	wait?: ListWait | null;
 	canMore?: boolean;
-	fault?: InterpretFault | null;
+	fault?: AttemptFault | null;
 };
 
 /** 选择状态放在这一层：换一份名单（`key` 变）就是换了一次搜索，选中的人清空。 */
@@ -88,13 +88,20 @@ function List({
 
 type State =
 	| "list"
+	| "completing"
+	| "completingEmpty"
 	| "people"
 	| "refreshing"
 	| "searching"
 	| "empty"
 	| "failed";
 
+/** HR 直接改了条件，AI 正在补上新进范围的人：名单照常可用。 */
+const COMPLETING: ListWait = { list: "keep", phase: "completing", since: null };
+
 const STATE_PROPS: Record<State, ListProps> = {
+	completing: { wait: COMPLETING },
+	completingEmpty: { outcome: EMPTY_OUTCOME, wait: COMPLETING },
 	empty: { outcome: EMPTY_OUTCOME },
 	failed: { fault: "unreachable" },
 	list: {},
@@ -132,6 +139,8 @@ function Playground() {
 						onChange={setState}
 						options={[
 							{ label: "按匹配度", value: "list" },
+							{ label: "正在补人", value: "completing" },
+							{ label: "正在补人，还没有人", value: "completingEmpty" },
 							{ label: "按人排", value: "people" },
 							{ label: "改筛选", value: "refreshing" },
 							{ label: "换问题", value: "searching" },
@@ -249,6 +258,8 @@ export function ResultListPage() {
 					"选择框一直在；按住 Shift 点选择框连选，Esc 清空已选。批量操作用选择非空时才出现的 Toolbar。",
 					`改筛选时旧名单留在原地调到六成；换问题时旧名单撤下，${SKELETON_DELAY / 1000} 秒后换成同形的占位行，表头说在做什么，等过 ${ELAPSED_SHOW_AFTER_MS / 1000} 秒写出秒数。`,
 					"列表不静默截断：说明已显示数、总数、排序和加载上限。",
+					"名单上只有 AI 确认过的人。直接改条件之后 AI 接着补上新进范围的人：名单照常可用，表头在人数后面写在做什么；名单上还没有人时画占位行，不抢先说没有这样的人。",
+					"候选人多到一轮确认不完时，名单从职级高的人起完整覆盖到某一档：这句话在名单上方（见「加载、空态与报错」），名单空着时在空态里。",
 					"空态成因由检索层判定，这里为每种原因写出结论和下一步；理解失败不是空名单。",
 				],
 				usage: `<ResultList\n  outcome={outcome}\n  picks={usePicks(turnId, outcome)}\n  spec={spec}\n  turnId={turnId}\n  …\n/>`,

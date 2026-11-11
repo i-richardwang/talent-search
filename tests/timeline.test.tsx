@@ -6,7 +6,7 @@ import { type Segment, experience as seg } from "./rows";
 
 const html = (rows: Segment[]) =>
 	renderToStaticMarkup(
-		<Timeline hitIndex={new Map()} names={[]} rows={rows} />,
+		<Timeline evidenceIndex={new Map()} names={[]} rows={rows} />,
 	);
 
 describe("时间轴卡片内容", () => {

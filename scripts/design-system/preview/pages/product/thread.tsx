@@ -11,14 +11,13 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import { Thread } from "#/routes/s/$turnId/-components/thread";
-import { ELAPSED_SHOW_AFTER_MS } from "#/routes/s/$turnId/-lib/elapsed";
 import {
 	FAULT_COPY,
 	FAULT_EXIT_LABEL,
 	faultExits,
-} from "#/routes/s/$turnId/-lib/interpret";
-import { labelsInSentence } from "#/search/query";
-import type { InterpretFault, Progress, Turn } from "#/server/turn";
+} from "#/routes/s/$turnId/-lib/attempt";
+import { ELAPSED_SHOW_AFTER_MS } from "#/routes/s/$turnId/-lib/elapsed";
+import type { AttemptFault, Progress, Turn } from "#/server/turn";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
@@ -26,6 +25,8 @@ import { Routed } from "../../routed";
 import {
 	ANSWERED_TURN,
 	ASKING_TURN,
+	COMPLETING_TRACE,
+	COMPLETING_TURN,
 	FRESH_TURN,
 	LATEST_TURN,
 	LATEST_TURN_ID,
@@ -36,7 +37,14 @@ import {
 	THREAD,
 } from "../../samples/thread";
 
-type State = "settled" | "asking" | "earlier" | "running" | "failed";
+type State =
+	| "settled"
+	| "asking"
+	| "earlier"
+	| "running"
+	| "failed"
+	| "completing"
+	| "notCompleted";
 
 /** 线程在每种状态下的几样输入。 */
 const STATES: Record<
@@ -46,7 +54,7 @@ const STATES: Record<
 		latest: Turn;
 		viewing: string;
 		progress: Progress | null;
-		fault: InterpretFault | null;
+		fault: AttemptFault | null;
 	}
 > = {
 	asking: {
@@ -55,6 +63,23 @@ const STATES: Record<
 		earlier: THREAD.slice(0, 1),
 		latest: ASKING_TURN,
 		viewing: ASKING_TURN.id,
+	},
+	completing: {
+		fault: null,
+		progress: {
+			trace: COMPLETING_TRACE,
+			startedAt: COMPLETING_TURN.startedAt,
+		},
+		earlier: THREAD.slice(0, -1),
+		latest: COMPLETING_TURN,
+		viewing: COMPLETING_TURN.id,
+	},
+	notCompleted: {
+		fault: "unreachable",
+		progress: { trace: [], startedAt: COMPLETING_TURN.startedAt },
+		earlier: THREAD.slice(0, -1),
+		latest: COMPLETING_TURN,
+		viewing: COMPLETING_TURN.id,
 	},
 	earlier: {
 		fault: null,
@@ -86,7 +111,7 @@ const STATES: Record<
 	},
 };
 
-const FAULTS = Object.keys(FAULT_COPY) as InterpretFault[];
+const FAULTS = Object.keys(FAULT_COPY) as AttemptFault[];
 
 /** 一条线程放在一块描边的面里，内存 router 停在记录链的地址上，链接才渲染得出来。 */
 function Column({ children }: { children: ReactNode }) {
@@ -121,6 +146,8 @@ function Playground() {
 							{ label: "看较早的结果", value: "earlier" },
 							{ label: "理解中", value: "running" },
 							{ label: "理解失败", value: "failed" },
+							{ label: "改条件后补人", value: "completing" },
+							{ label: "补人没成", value: "notCompleted" },
 						]}
 						value={state}
 					/>
@@ -134,7 +161,7 @@ function Playground() {
 			<Stage
 				className="items-stretch p-0"
 				footer={
-					<span>{last ?? "在输入框里补充一句需求，或选 AI 给的一项"}</span>
+					<span>{last ?? "在输入框里补充一句需求，或选 AI 给的一句回答"}</span>
 				}
 			>
 				<div className="mx-auto h-160 w-full max-w-(--container-detail-wide)">
@@ -142,9 +169,7 @@ function Playground() {
 						<Thread
 							{...props}
 							key={state}
-							onRevise={(conditions) =>
-								setLast(`换成了 ${labelsInSentence(conditions)}`)
-							}
+							onAnswer={(text) => setLast(`回答了「${text}」`)}
 							onQuery={(input) => {
 								setLast(
 									input.kind === "sentence"
@@ -184,9 +209,9 @@ function Faults() {
 									<Thread
 										fault={fault}
 										progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
+										onAnswer={() => true}
 										onQuery={() => true}
 										onRetry={() => {}}
-										onRevise={() => {}}
 										earlier={[]}
 										latest={FRESH_TURN}
 										understanding={false}
@@ -208,12 +233,21 @@ function Faults() {
 	);
 }
 
+/** 只是摆出来看的线程：能说话，不在等理解，动作都不做事。 */
+const IDLE = {
+	onAnswer: () => true,
+	onQuery: () => true,
+	onRetry: () => {},
+	understanding: true,
+	waiting: false,
+} as const;
+
 function Usage() {
 	const noop = () => {};
 	return (
 		<ExampleGrid>
 			<Example
-				description="搜不了的要求或者有几种意思的词，AI 用一句话问，下面是几种做法：第一项是名单现在用的，其余点一下就换成那张条件表，记成新的一次修改。"
+				description="搜不了的要求、有几种意思的词，或者候选太多要再说细一点，AI 用一句话问，下面是几句回答：第一项是名单现在按的那一种，其余点一下就是把那句话说给 AI，记成新的一次需求。"
 				title="AI 在问"
 			>
 				<Column>
@@ -221,9 +255,9 @@ function Usage() {
 						earlier={THREAD.slice(0, 1)}
 						fault={null}
 						latest={ASKING_TURN}
+						onAnswer={() => true}
 						onQuery={() => true}
 						onRetry={noop}
-						onRevise={noop}
 						progress={null}
 						understanding
 						viewing={ASKING_TURN.id}
@@ -232,7 +266,7 @@ function Usage() {
 				</Column>
 			</Example>
 			<Example
-				description="有了下一次，问题收成一行：问话不变，选了的那一项淡一档；下一次不是选项里的哪一张表时只留问话。"
+				description="有了下一次，问题收成一行：问话不变，选了的那句回答淡一档；下一次说的不是其中哪一句时只留问话。"
 				title="问过的"
 			>
 				<Column>
@@ -240,9 +274,9 @@ function Usage() {
 						earlier={THREAD.slice(0, 2)}
 						fault={null}
 						latest={ANSWERED_TURN}
+						onAnswer={() => true}
 						onQuery={() => true}
 						onRetry={noop}
-						onRevise={noop}
 						progress={null}
 						understanding
 						viewing={ANSWERED_TURN.id}
@@ -259,9 +293,9 @@ function Usage() {
 						earlier={[]}
 						fault={null}
 						latest={FRESH_TURN}
+						onAnswer={() => true}
 						onQuery={() => true}
 						onRetry={noop}
-						onRevise={noop}
 						progress={{ trace: [], startedAt: FRESH_TURN.startedAt }}
 						understanding
 						viewing={FRESH_TURN.id}
@@ -270,7 +304,7 @@ function Usage() {
 				</Column>
 			</Example>
 			<Example
-				description="在条件上直接改的一次没有人说话，线程中间是一条带字的分隔线；指针移到早先几次上，出现查看结果的图标链接。"
+				description="在条件上直接改的一次没有人说话，线程中间是一条带字的分隔线；改完有新进范围的候选人时，分隔线下面是 AI 补人的检索过程，做完收起。指针移到早先几次上，出现查看结果的图标链接。"
 				title="直接改条件"
 			>
 				<Column>
@@ -278,14 +312,30 @@ function Usage() {
 						earlier={THREAD.slice(0, -1)}
 						fault={null}
 						latest={LATEST_TURN}
+						onAnswer={() => true}
 						onQuery={() => true}
 						onRetry={noop}
-						onRevise={noop}
 						progress={null}
 						understanding={false}
 						viewing={LATEST_TURN_ID}
 						waiting={false}
 					/>
+				</Column>
+			</Example>
+			<Example
+				description="改完条件 AI 还在补人：过程展开着，标题跟着正在做的那一步；这时可以接着说话，不用等它。"
+				title="改条件后补人"
+			>
+				<Column>
+					<Thread {...STATES.completing} {...IDLE} />
+				</Column>
+			</Example>
+			<Example
+				description="补人没成：分隔线下面说哪个环节出了问题，带重试；名单上已有的人仍然成立，名单上方另有同样的提示。"
+				title="补人没成"
+			>
+				<Column>
+					<Thread {...STATES.notCompleted} {...IDLE} />
 				</Column>
 			</Example>
 			<Example
@@ -297,9 +347,9 @@ function Usage() {
 						earlier={[]}
 						fault={null}
 						latest={ROOT_TURN}
+						onAnswer={() => true}
 						onQuery={() => true}
 						onRetry={noop}
-						onRevise={noop}
 						progress={null}
 						understanding={false}
 						viewing={ROOT_TURN_ID}
@@ -325,11 +375,12 @@ export function ThreadPage() {
 					"线程总是整条链；查看早先一次的结果只换名单，不截断线程，正在看的那一次标「正在查看」。",
 					"每次的回应按前后两组条件的差别说加了什么、去掉了什么，条件写进句子用 labelsInSentence。",
 					"理解失败时说清是哪个环节出了问题：连不上和报错时需求没被读过，不能说成没读懂；线程里的提示带重试，名单那一列另有同样的下一步。",
-					"AI 每次最多问一件事：一句问话，第一项是现在用的，其余点一下或按数字键换成那张条件表；不理就照现在的名单。最后一次才能点，有了下一次就收成一行。",
-					"检索人才库的过程进行中展开、完成后收起；每一步只说人才库里有没有、有哪些写法，不写人数，也不给出任何一个人。",
+					"AI 每次最多问一件事：一句问话，第一项是现在按的那一种，其余每项是一句回答，点一下或按数字键就是把它当下一句需求说给 AI；不理就照现在的名单。最后一次才能点，有了下一次就收成一行。",
+					"检索人才库的过程进行中展开、完成后收起；查找的步骤只说人才库里有没有、有哪些写法，试搜和读经历的步骤写搜到几人、看了几段、几段符合，不给出任何一个人。",
+					"直接改条件的一次没有人说话，AI 也不回话；改完有新进范围的候选人时，AI 接着把他们的经历看完，分隔线下面是同样的检索过程，没成时是同样的提示和重试。",
 					"消息的时刻与动作（复制、查看这次的结果）悬停才出现；换到哪一次的结果，那一次闪一下。",
 				],
-				usage: `<Thread\n  onRevise={reviseTo}\n  onQuery={submit}\n  onRetry={retry}\n  rounds={thread}\n  understanding\n  viewing={turnId}\n  waiting={interpreting}\n/>`,
+				usage: `<Thread\n  earlier={earlier}\n  fault={fault}\n  latest={latest}\n  onAnswer={answer}\n  onQuery={submit}\n  onRetry={retry}\n  progress={progress}\n  understanding\n  viewing={turnId}\n  waiting={working && latest.spec === null}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用线程" },

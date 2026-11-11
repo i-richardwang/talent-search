@@ -3,7 +3,6 @@ import { Checkbox } from "#/components/ui/checkbox";
 import { PickDock } from "#/routes/s/$turnId/-components/pick-dock";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
-import { claimName } from "#/search/query";
 import type { SearchOutcome } from "#/search/result";
 import { Control, Controls } from "../../kit/controls";
 import { type FlowStep, FlowTable } from "../../kit/flow";
@@ -14,7 +13,7 @@ import { CLAIMS, SPEC } from "../../samples/conditions";
 import { firstOf, OUTCOME, OVER_LIMIT } from "../../samples/people";
 import { LATEST_TURN_ID } from "../../samples/thread";
 
-const NAMES = CLAIMS.map(claimName);
+const NAMES = CLAIMS.map((claim) => claim.label);
 
 function Playground() {
 	const [narrowed, setNarrowed] = useState(false);
@@ -200,7 +199,7 @@ export function PickingPage() {
 					"选择状态只在内存里，不写进地址。",
 					"导出中间隔一层对话框：先看清有哪些列、带不带匹配证据，以及这份表是不是全部符合条件的人。",
 				],
-				usage: `const picks = usePicks(turnId, outcome);\n\n<PickDock\n  loading={growing}\n  names={outcome.claims.map(claimName)}\n  onAll={pickAll}\n  picks={picks}\n  total={outcome.total}\n/>`,
+				usage: `const picks = usePicks(turnId, outcome);\n\n<PickDock\n  loading={growing}\n  names={outcome.claims.map((claim) => claim.label)}\n  onAll={pickAll}\n  picks={picks}\n  total={outcome.total}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用挑选" },

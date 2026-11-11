@@ -20,7 +20,6 @@ import {
 import {
 	FilterChip,
 	FilterChipClear,
-	FilterChipCount,
 	FilterChipNote,
 	FilterChipTrigger,
 	FilterChipValue,
@@ -33,7 +32,7 @@ import { type QueryCondition, withOff } from "#/search/query";
 const MODE_HINT: Record<Mode, string> = {
 	must: "只保留满足此条件的人",
 	boost: "满足此条件的人排在前面",
-	exclude: "这类经历不作为匹配依据",
+	exclude: "不保留有这类经历的人",
 };
 
 /** 一条条件能换成的强度：排除只用于经历。 */
@@ -43,7 +42,7 @@ function modesOf(c: QueryCondition): readonly Mode[] {
 		: ["must", "boost"];
 }
 
-/** 换强度。换成排除时累计时长不再有意义（排除按单段判），去掉。 */
+/** 换强度。换成排除时累计时长不再有意义（有一段就排除），去掉。 */
 function withMode(c: QueryCondition, mode: Mode): QueryCondition {
 	const { minMonths, ...rest } = c;
 	return mode === "exclude" ? { ...rest, mode } : { ...c, mode };
@@ -52,17 +51,13 @@ function withMode(c: QueryCondition, mode: Mode): QueryCondition {
 /**
  * 一排条件，一条一枚 `FilterChip`，点开是这一条的菜单。chip 上是 AI 写给 HR 的那句标签；
  * 强度写成字：必须是默认，不标；加分、排除和写进句子里（`labelsInSentence`）的是同一个说法。
- * 最右边是这一条单独能找到的人数（排除是它否决了多少人的经历），和线程里试搜的是同一个数；
- * 停用的没有人数。
+ * 在这里改的条件立刻生效，名单先按已经确认过的人出。
  */
 export function QueryChips({
 	conditions,
-	counts,
 	onChange,
 }: {
 	conditions: readonly QueryCondition[];
-	/** 每条条件单独的人数，按 id；没有的不画 */
-	counts: Readonly<Record<string, number>>;
 	onChange: (next: QueryCondition[]) => void;
 }) {
 	if (conditions.length === 0) return null;
@@ -77,7 +72,6 @@ export function QueryChips({
 		<div className="flex flex-wrap items-center gap-1.5">
 			{conditions.map((chip, i) => {
 				const { label } = chip;
-				const people = chip.off ? undefined : counts[chip.id];
 				const actions: DropdownItem[] = [
 					{ type: "divider" },
 					{
@@ -97,7 +91,6 @@ export function QueryChips({
 									aria-label={[
 										MODE_NAME[chip.mode],
 										label,
-										people !== undefined && `${people} 人`,
 										chip.off && "已停用",
 									]
 										.filter(Boolean)
@@ -107,9 +100,6 @@ export function QueryChips({
 									<FilterChipValue>{label}</FilterChipValue>
 									{chip.mode !== "must" && (
 										<FilterChipNote>{MODE_NAME[chip.mode]}</FilterChipNote>
-									)}
-									{people !== undefined && (
-										<FilterChipCount>{people} 人</FilterChipCount>
 									)}
 									<Icon icon={ChevronDownIcon} size={10} />
 								</FilterChipTrigger>

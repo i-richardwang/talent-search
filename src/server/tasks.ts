@@ -15,7 +15,6 @@ import {
 	type Progress,
 	progress,
 } from "#/corpus/derive";
-import { glossCounts } from "#/corpus/gloss";
 import type { Judge } from "#/corpus/judgment";
 import type { Report } from "#/corpus/report";
 import { review } from "#/corpus/review";
@@ -143,9 +142,6 @@ export type CorpusCounts = {
 	/** 能力词个数，以及其中已经并到别的写法上的 */
 	words: number;
 	merged: number;
-	/** 该有释义的短说法条数，以及其中已经写了的 */
-	glossable: number;
-	glossed: number;
 };
 
 /** 任务台一次载入要的全部。 */
@@ -271,7 +267,6 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 async function corpusCounts(): Promise<CorpusCounts> {
 	return withReadSnapshot(async (client) => {
 		const derived = await readDeriveProgress(client);
-		const gloss = await glossCounts(client);
 		const counted = await client.query<Record<string, string>>(
 			`select
 				(select count(*) from employee) as employees,
@@ -293,8 +288,6 @@ async function corpusCounts(): Promise<CorpusCounts> {
 		return {
 			employees: n("employees"),
 			external,
-			glossable: gloss.glossable,
-			glossed: gloss.glossed,
 			internal,
 			merged: n("merged"),
 			derived: derived.done,

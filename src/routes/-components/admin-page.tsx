@@ -1,5 +1,5 @@
 import { useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { PageHeader } from "./page-header";
 
@@ -53,9 +53,9 @@ export function listSearch(page: number, q: string) {
  */
 export function useSearchDraft(q: string) {
 	const [draft, setDraft] = useState(q);
-	const seen = useRef(q);
-	if (seen.current !== q) {
-		seen.current = q;
+	const [seen, setSeen] = useState(q);
+	if (seen !== q) {
+		setSeen(q);
 		setDraft(q);
 	}
 	return [draft, setDraft] as const;

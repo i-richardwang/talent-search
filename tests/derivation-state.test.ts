@@ -2,13 +2,7 @@
 import assert from "node:assert/strict";
 import { after, beforeEach, test } from "node:test";
 import { sql } from "drizzle-orm";
-import {
-	answerChat,
-	answerEmbedding,
-	fakeEmbedding,
-	seed,
-	setup,
-} from "./fixture";
+import { answerChat, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -19,9 +13,7 @@ const { search } = await import("#/search/search");
 const { employeeDetail } = await import("#/server/data");
 
 beforeEach(async () => {
-	await db.execute(
-		sql`truncate employee, phrase, phrase_gloss restart identity cascade`,
-	);
+	await db.execute(sql`truncate employee, phrase restart identity cascade`);
 });
 
 async function runDerive(budgetMs = 10_000) {
@@ -33,40 +25,6 @@ async function runDerive(budgetMs = 10_000) {
 		await session.release();
 	}
 }
-
-test("空间重置立即作废全部解析产物，未重建的序列不能继续筛出人", async () => {
-	await seed([
-		{
-			empId: "RESET",
-			name: "合成重置",
-			school: "合成学校",
-			segments: [
-				{ ...segment(""), seqInferredL1: "技术", seqInferredL2: "算法" },
-			],
-		},
-	]);
-	await db.execute(
-		sql`update embedding_space set space_id = 'reset-synthetic-space'`,
-	);
-	await runDerive(0);
-	const detail = await employeeDetail("RESET");
-	assert.equal(detail?.timeline[0]?.seqInferredL1, "");
-	assert.equal(detail?.timeline[0]?.seqInferredL2, "");
-	const result = await search(
-		{
-			conditions: [
-				{
-					about: "person",
-					mode: "must",
-					field: "school",
-					values: ["合成学校"],
-				},
-			],
-		},
-		{ seq: [{ l1: "技术", l2: "算法" }] },
-	);
-	assert.equal(result.total, 0);
-});
 
 function segment(description: string) {
 	return {
@@ -85,9 +43,12 @@ async function identities() {
 }
 
 function find() {
-	return search({
-		conditions: [{ about: "experience", mode: "must", what: ["数据分析师"] }],
-	});
+	return search(
+		{
+			conditions: [{ about: "experience", mode: "must", what: ["数据分析师"] }],
+		},
+		null,
+	);
 }
 
 async function unanswered() {
@@ -301,48 +262,18 @@ test("正式表混着两版时替换进去，已是这一版的段保留自己�
 	assert.equal((await find()).total, 2);
 });
 
-test("当前说法的释义依据不同标准时拒绝检索，无读者的保留释义不影响检索", async () => {
+test("正式表里有两份解析标准时拒绝检索，统一后恢复", async () => {
 	await seed([
-		{
-			empId: "E1",
-			name: "合成释义",
-			segments: [
-				{ ...segment("释义标准样例"), extracted: { skills: ["数据分析"] } },
-			],
-		},
+		{ empId: "E1", name: "合成两版", segments: [segment("一版样例")] },
+		{ empId: "E2", name: "合成两版", segments: [segment("另一版样例")] },
 	]);
-	await db.execute(sql`insert into phrase_gloss (text, gloss, guide_identity) values
-		('数据分析师', '数据分析岗位', 'guide-a'), ('数据分析', '分析项目', 'guide-b')`);
+	await db.execute(sql`update experience set derived_identity = 'standard-a'`);
+	await db.execute(
+		sql`update experience set derived_identity = 'standard-b' where emp_id = 'E2'`,
+	);
 	await assert.rejects(find(), /人才库正在更新判定标准/);
-	await db.execute(
-		sql`update phrase_gloss set guide_identity = 'guide-b' where text = '数据分析师'`,
-	);
-	await db.execute(
-		sql`insert into phrase_gloss (text, gloss, guide_identity) values ('无读者的历史词', '保留释义', 'guide-a')`,
-	);
+	await db.execute(sql`update experience set derived_identity = 'standard-a'`);
 	await find();
-});
-
-test("解析每轮核验现有空间的 fresh canary，漂移不写入完成状态", async () => {
-	await seed([
-		{
-			empId: "E1",
-			name: "合成漂移",
-			segments: [{ title: "工程师", months: 12 }],
-		},
-	]);
-	const restore = answerEmbedding((text) =>
-		Array.from({ length: fakeEmbedding(text).length }, (_, i) =>
-			i === 1023 ? 1 : 0,
-		),
-	);
-	try {
-		await assert.rejects(runDerive(), /canary 不一致/);
-	} finally {
-		restore();
-	}
-	assert.deepEqual(await identities(), [null]);
-	assert.deepEqual(await runDerive(), { done: 1, left: 0 });
 });
 
 test("详情仅返回展示字段，记录身份与排序工作值留在服务端", async () => {

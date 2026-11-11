@@ -108,9 +108,9 @@ export function GalleryPage() {
 							<RadioGroup
 								aria-label="排序"
 								className="flex gap-3"
-								defaultValue="relevance"
+								defaultValue="depth"
 							>
-								<Radio value="relevance">按相关度</Radio>
+								<Radio value="depth">按经历深度</Radio>
 								<Radio value="tenure">按年限</Radio>
 							</RadioGroup>
 						</div>

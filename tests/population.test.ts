@@ -51,7 +51,7 @@ const school: Condition = {
 	values: ["合成大学"],
 };
 const find = (more: Condition[] = [], filters = {}) =>
-	search({ conditions: [school, ...more] }, filters);
+	search({ conditions: [school, ...more] }, null, filters);
 const ids = (result: Awaited<ReturnType<typeof find>>) =>
 	result.results.map((row) => row.employee.empId);
 
@@ -72,7 +72,7 @@ test("人的条件不要求工作经历；人员分面含全部候选，经历�
 	);
 	assert.deepEqual(result.facets.kind, [{ value: "internal", n: 1 }]);
 	assert.equal(result.facets.minMonths.find((row) => row.value === 12)?.n, 1);
-	assert.ok(!result.results.some((row) => "hits" in row));
+	assert.ok(!result.results.some((row) => "evidence" in row));
 });
 
 test("人员筛选保留无经历的人，经历筛选与背景门槛要求有效工作经历", async () => {
@@ -87,11 +87,19 @@ test("人员筛选保留无经历的人，经历筛选与背景门槛要求有�
 });
 
 test("只有加分的人的条件时全部员工进入名单，满足偏好的在前", async () => {
-	const result = await search({
-		conditions: [
-			{ about: "person", mode: "boost", field: "education", values: ["硕士"] },
-		],
-	});
+	const result = await search(
+		{
+			conditions: [
+				{
+					about: "person",
+					mode: "boost",
+					field: "education",
+					values: ["硕士"],
+				},
+			],
+		},
+		null,
+	);
 	assert.deepEqual(ids(result), ["P2", "P3", "P1", "P4"]);
 });
 
@@ -107,25 +115,28 @@ test("经历偏好只排序，不缩小人员候选；没有经历的人仍保�
 	assert.equal(ids(boosted)[0], "P3");
 	assert.deepEqual(boosted.facets, plain.facets);
 	assert.deepEqual(ids(await find([boost], { education: ["本科"] })), ["P1"]);
-	const everyone = await search({ conditions: [boost] });
+	const everyone = await search({ conditions: [boost] }, null);
 	assert.equal(everyone.total, 4);
 	assert.equal(
-		(await search({ conditions: [{ ...boost, what: ["不存在的合成技能"] }] }))
-			.total,
+		(
+			await search(
+				{ conditions: [{ ...boost, what: ["不存在的合成技能"] }] },
+				null,
+			)
+		).total,
 		4,
 	);
 });
 
-test("排除仅否决经历，人员条件仍生效，被否决的段不参与筛选或背景门槛", async () => {
+test("排除按人生效：有那种经历的人不在名单上，没有经历的人不受影响", async () => {
 	const exclude: Condition = {
 		about: "experience",
 		mode: "exclude",
 		kind: "internal",
 	};
 	const result = await find([exclude]);
-	assert.deepEqual(ids(result), ["P1", "P2", "P3"]);
+	assert.deepEqual(ids(result), ["P1", "P2"], "P3 有一段公司内任职");
 	assert.deepEqual(result.facets.kind, []);
-	assert.equal((await find([exclude], { kind: "internal" })).total, 0);
 	assert.equal(
 		(
 			await find([
@@ -134,5 +145,6 @@ test("排除仅否决经历，人员条件仍生效，被否决的段不参与�
 			])
 		).total,
 		0,
+		"要有、又不能有同一种经历：没有这样的人",
 	);
 });

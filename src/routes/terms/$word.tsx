@@ -5,7 +5,7 @@ import { DetailDrawer } from "../-components/detail-drawer";
 import { TermRecord } from "./-components/term-drawer";
 
 /**
- * 一个能力词：它是什么意思，往上属于谁，往下带着哪几支、各有多少人。
+ * 一个能力词：往上属于谁，往下带着哪几支、各有多少人。
  * 父词和子词都是链接，换一个词是又看了一个词，进历史，后退原路退回去。
  */
 export const Route = createFileRoute("/terms/$word")({

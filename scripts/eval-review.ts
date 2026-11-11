@@ -1,5 +1,7 @@
 /**
- * 整理质量验收：拿一组组短说法让判定方判，按判定生效后搜索会带出谁来计分。
+ * 整理质量验收：拿一组组短说法让判定方判，按判定生效后点一个词会带出谁来计分。
+ * 词表让一个词带出两种人：同一项的其他写法（搜索和筛选都带），以及它下面的细词（只在筛选栏
+ * 点宽的那一项时带）。这里按筛选栏的口径判，它包含搜索带出的那部分。
  *
  * 用法：bun run eval:review                        # 读 evals/review/*.json，自带模型作答
  *      bun run eval:review 文件.json
@@ -9,18 +11,17 @@
  * 外部判定方拿到的和判定接口给的一样：`guide` 是判定标准全文，每题 `{ name, words }`；
  * 回答是 `[{ name, judgments }]`，`judgments` 和提交判定时的写法一样。
  *
- * 用例文件是一个 JSON 数组，每项是一组词和搜索上必须成立的结果：
+ * 用例文件是一个 JSON 数组，每项是一组词和必须成立的结果：
  *   { "name": "数据分析",
  *     "words": [{ "word": "数据分析", "people": 40 }, { "word": "销售数据分析", "people": 6 }, …],
- *     "found": [["数据分析", "销售数据分析"]],      // 搜前一个词，写了后一个词的人要出来
- *     "notFound": [["销售数据分析", "数据分析"]] }  // 搜前一个词，写了后一个词的人不能出来
+ *     "found": [["数据分析", "销售数据分析"]],      // 点前一个词，写了后一个词的人要出来
+ *     "notFound": [["销售数据分析", "数据分析"]] }  // 点前一个词，写了后一个词的人不能出来
  *
- * 答案只写会改变搜索结果的要求：说得通的几种判法都满足的不写，判定方选哪一种都算对。
- * 前一个词可以不在组里（判定方会起的更宽的词）。违反 notFound 是混人：搜的人看到不符合要求的人；
- * 违反 found 是漏人：词表本该带出的人没出来，只剩重排自己认得出的那部分。另查起出来的归属名
- * 是不是能力词的写法（超 8 字、带「能力」「相关」「工作」的都不是招聘的人会点的）。验收共用生产的
- * `conform` 与 `merge`，从本题建立词表，按检索修正命中的方向判断带不带出。每个题词都必须作答；
- * 任何一项失败均返回非零退出码。
+ * 答案只写会改变带出结果的要求：说得通的几种判法都满足的不写，判定方选哪一种都算对。
+ * 前一个词可以不在组里（判定方会起的更宽的词）。违反 notFound 是混人：找的人看到不符合要求的人；
+ * 违反 found 是漏人：词表本该带出的人没出来。另查起出来的归属名是不是能力词的写法（超 8 字、
+ * 带「能力」「相关」「工作」的都不是招聘的人会点的）。验收共用生产的 `conform` 与 `merge`，
+ * 从本题建立词表再判断带不带出。每个题词都必须作答；任何一项失败均返回非零退出码。
  *
  * 合成用例进仓库（sample.json）；真实组是从库里分组得到的词，不进版本库。自带模型作答时调用与整理
  * 判定相同的入口（`corpus/vocabulary.ts` 的 `askModel`）：当前提示词、`REVIEW_MODEL`、温度 0，
@@ -139,8 +140,8 @@ function answersFrom(file: string): (unknown | undefined)[] {
 const UNCLICKABLE = /(能力|相关|工作|事务|方面|类$|等$)/;
 
 /**
- * 搜 `query` 会不会顺着词表带出写了 `word` 的人：和检索修正命中同一个方向，
- * 同一个标准词的写法和它下面一层层的细词都带出来，往上不带。
+ * 在筛选栏点 `query` 会不会带出写了 `word` 的人：同一个标准词的写法和它下面一层层的
+ * 细词都带出来，往上不带。
  */
 function carries(table: Table, query: string, word: string): boolean {
 	const canonical = (w: string) => table.get(w)?.canonical ?? w;
@@ -184,14 +185,14 @@ try {
 		missed += lost.length;
 		if (lost.length)
 			problems.push(
-				`漏人 ${lost.map(([q, w]) => `搜${q}不带${w}`).join("、")}`,
+				`漏人 ${lost.map(([q, w]) => `点${q}不带${w}`).join("、")}`,
 			);
 		const wrong = c.notFound.filter(([q, w]) => carries(table, q, w));
 		notFound += c.notFound.length;
 		mixed += wrong.length;
 		if (wrong.length)
 			problems.push(
-				`混人 ${wrong.map(([q, w]) => `搜${q}带出${w}`).join("、")}`,
+				`混人 ${wrong.map(([q, w]) => `点${q}带出${w}`).join("、")}`,
 			);
 		const bad: string[] = [];
 		for (const decision of table.values()) {

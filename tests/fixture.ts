@@ -1,11 +1,10 @@
 /**
- * 集成测试使用临时 schema、真实 PostgreSQL/pgvector 和进程内合成模型端点。
- * 表结构由 schema.ts 推导；不创建索引。字符袋嵌入、余弦重排与查询语法理解用于验证机制，
- * 真实模型的语义质量由 eval 验收。测试运行不读取真实人才数据或模型密钥。
+ * 集成测试使用临时 schema、真实 PostgreSQL 和进程内合成模型端点。
+ * 表结构由 schema.ts 推导；不创建索引。字符袋嵌入、按查询语法读句子和按字面读经历的假理解用于
+ * 验证机制，真实模型的语义质量由 eval 验收。测试运行不读取真实人才数据或模型密钥。
  */
-import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
-import type { SQL } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import {
 	getTableConfig,
 	getViewConfig,
@@ -25,18 +24,16 @@ import {
 	completionCache,
 	EMBED_DIM,
 	embeddingCache,
-	embeddingSpace,
 	employee,
 	employeeRecord,
 	experience,
 	experienceNext,
 	experiencePhrase,
 	experiencePhraseNext,
+	experienceVerdict,
 	industry,
 	phrase,
-	phraseGloss,
 	recordStream,
-	rerankCache,
 	reviewGroup,
 	scale,
 	searchTurn,
@@ -45,16 +42,19 @@ import {
 } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
 import { compileConditions } from "#/search/compile";
+import type { QueryCondition } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
+import type { TraceStep } from "#/search/trace";
+import { catalogOf, tempSchema } from "./temp-schema";
 
 /**
  * 每个测试文件使用进程号和随机值组成的临时 schema。
  * bun test --parallel 隔离模块与环境，但多个文件可共用同一 worker 进程。
  */
-const SCHEMA = `talent_test_${process.pid}_${randomBytes(4).toString("hex")}`;
+const SCHEMA = tempSchema();
 
 /** 这个测试文件的数据目录（`schema.ts` 的 `catalog`）：视图建在这里，指向本文件的表。 */
-const CATALOG = `${SCHEMA}_catalog`;
+const CATALOG = catalogOf(SCHEMA);
 
 /** Postgres 把更长的名字静默截短；截短后和 schema 里的名字对不上，db:push 每次都会删了重建。 */
 const NAME_MAX_BYTES = 63;
@@ -150,8 +150,7 @@ function ddl(schema: string, table: PgTable) {
 
 /**
  * 假嵌入：字符袋。每个字占一个维度（按出现顺序分配），向量归一化，
- * 所以两串字的余弦 = 共有字数 / √(字数 × 字数)。同一进程里种子与查询共用
- * 这张表，种子和查询的向量自然可比。
+ * 所以两串字的余弦 = 共有字数 / √(字数 × 字数)：整理把哪些词分进一组在测试里算得出来。
  */
 const charDims = new Map<string, number>();
 export function fakeEmbedding(text: string): number[] {
@@ -172,62 +171,18 @@ export function fakeEmbedding(text: string): number[] {
 }
 
 /**
- * 语料侧写进 `embedding_space` 的 canary 原文。查询侧每次嵌入时都会重嵌它核对
- * 端点还在同一个空间里，所以测试模拟一次发布时也得原样写回这一串。
+ * 假模型读一段经历算不算：测试里的判据写成「符合：甲、乙；不算：丁」，经历的文字里含「不算」
+ * 后面的任一个词就是不算，否则含「符合」的词才算。真模型怎么判由验收衡量，这里只让机制有
+ * 确定的输入。
  */
-export const CANARY = "talent-search embedding canary";
-
-/** 两串字在假嵌入下的余弦，测试里用来解释断言的边界。 */
-function fakeSimilarity(a: string, b: string) {
-	const va = fakeEmbedding(a);
-	const vb = fakeEmbedding(b);
-	const similarity = va.reduce((s, x, i) => s + x * (vb[i] ?? 0), 0);
-	return Math.min(1, Math.max(0, similarity));
-}
-
-/**
- * 假重排给的相关度：假余弦的平方。真重排对短查询词的分数也比余弦低一档，
- * 所以召回下限和判定门槛不在同一个尺度上，各自的作用在测试里也分得开。
- */
-export function fakeRelevance(query: string, document: string) {
-	return fakeSimilarity(query, document) ** 2;
-}
-
-type ModelGate = {
-	enter: () => void;
-	wait: Promise<void>;
-};
-
-let nextRerankGate: ModelGate | null = null;
-
-let nextEmbeddingGate: ModelGate | null = null;
-
-function modelGate() {
-	let enter = () => {};
-	let release = () => {};
-	const entered = new Promise<void>((resolve) => {
-		enter = resolve;
-	});
-	const wait = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	return { gate: { enter, wait }, entered, release };
-}
-
-/** 暂停下一次重排请求，观察模型调用期间的语料变化。 */
-export function holdNextRerank() {
-	if (nextRerankGate) throw new Error("已经有一条重排请求在等待");
-	const { gate, ...control } = modelGate();
-	nextRerankGate = gate;
-	return control;
-}
-
-/** 暂停下一次嵌入请求，观察向量生成到首份快照之间的空间变化。 */
-export function holdNextEmbedding() {
-	if (nextEmbeddingGate) throw new Error("已经有一条嵌入请求在等待");
-	const { gate, ...control } = modelGate();
-	nextEmbeddingGate = gate;
-	return control;
+function fakeFits(criterion: string, text: string): boolean {
+	const has = (list: "符合" | "不算") =>
+		(new RegExp(`${list}：([^；]*)`).exec(criterion)?.[1] ?? "")
+			.split("、")
+			.map((word) => word.trim())
+			.filter(Boolean)
+			.some((word) => text.includes(word));
+	return !has("不算") && has("符合");
 }
 
 let embeddingAnswer = fakeEmbedding;
@@ -242,24 +197,155 @@ export function answerEmbedding(answer: (text: string) => number[]) {
 
 /**
  * 一行查询语法（`search/query-syntax.ts`）写成模型会提交的条件：经编译器写成查询，去掉 id
- * （新写的条件不带 id，由服务端发）和停用（真模型从不写停用）。
+ * （新写的条件不带 id，由服务端发）和停用（真模型从不写停用）。经历词除了编成按字面包含的
+ * 正则，还写成判据「符合：词、词」：模型写的「做过什么」都带判据，假模型读经历时把文字里含
+ * 这些词的段判成符合（`fakeFits`）。
  */
 export function drafted(syntax: string) {
-	return compileConditions(parseQuery(syntax)).conditions.map(
-		({ id: _id, off: _off, ...rest }) => rest,
+	const conditions = parseQuery(syntax);
+	return compileConditions(conditions).conditions.map(
+		({ id: _id, off: _off, seek, ...rest }, i) => {
+			const asked = conditions[i];
+			const words = asked?.about === "experience" ? asked.what : undefined;
+			return {
+				...rest,
+				...(seek && {
+					seek: { ...seek, criterion: `符合：${words?.join("、")}` },
+				}),
+			};
+		},
 	);
 }
 
 /**
- * 假理解：把那句话按一行查询语法读，接在当前条件后面提交整份——真模型遇到「再加上……」
- * 就是这么做的。
+ * 一条写了判据的经历条件，对话里模型写的那种：几条正则按字面捞，哪一段算数看存下的结论。
+ * id 也当标签用，`where` 默认不限，别的项从 `over` 上盖。
+ */
+export function judged(
+	id: string,
+	patterns: readonly string[],
+	criterion: string,
+	over: Omit<Partial<QueryCondition>, "seek"> = {},
+): QueryCondition & { seek: { patterns: string[]; criterion: string } } {
+	return {
+		id,
+		label: id,
+		mode: "must",
+		from: "experience",
+		seek: { patterns: [...patterns], criterion },
+		where: "true",
+		...over,
+	};
+}
+
+/**
+ * 假理解写的条件：把那句话按一行查询语法读，接在当前条件后面提交整份——真模型遇到「再加上……」
+ * 就是这么做的。提交之前它先用 `read` 把候选人没看过的经历取来，一批一批用 `judge` 交上符合
+ * 的段的编号（`fakeFits`），都看完了再交（见 `startModelServer`）。
  */
 function fakeIntent(text: string, base: unknown[]) {
 	return { conditions: [...base, ...drafted(text)], note: null };
 }
 
 /**
- * 打开后，假理解先用一遍三个查询工具（看目录、查经历词、试跑）再提交，并记下发给
+ * `read` 和 `judge` 带回的样子（`server/agent-tools.ts`）：还剩几段，一批经历按条件分组、每段有
+ * 编号；没有可读的时没有 `groups`。
+ */
+export type Batch = {
+	left: number;
+	groups?: {
+		label: string;
+		criterion: string;
+		segments: { n: number; text: string }[];
+	}[];
+	todo?: string;
+	saved?: number;
+	problem?: string;
+};
+
+/** `probe` 带回的样子。 */
+export type Tried = {
+	conditions: { people: number | null; problem: string | null }[];
+	total: number | null;
+	candidates: number | null;
+	unread: number;
+	todo: string;
+};
+
+/** `submit` 带回的样子。 */
+export type Checked = { passed: boolean; problems?: string[] };
+
+/** 模型提交的一整份：条件和说明。 */
+export function table(conditions: unknown[], note: unknown = null) {
+	return { conditions, note };
+}
+
+/**
+ * 一套查询理解的工具，连同它记下的步骤；结论和生产一样存在这次找人任务名下。`call` 按工具的
+ * 入参直接调：SDK 的工具外壳只在模型调用时才有上下文。每调一次就是模型的一步，调之前先走到
+ * 下一步（`advance`），上一步给出的那一批才到模型眼前。
+ */
+export async function agentOn(
+	rootTurnId: string,
+	base: readonly QueryCondition[] = [],
+) {
+	const { agentTools } = await import("#/server/agent-tools");
+	const { saveVerdicts } = await import("#/server/judged");
+	const { db } = await import("#/db");
+	const steps: TraceStep[] = [];
+	const agent = agentTools({
+		rootTurnId,
+		base,
+		record: async (step, verdicts) => {
+			await saveVerdicts(rootTurnId, verdicts, db);
+			steps.push(step);
+		},
+	});
+	const call = <T = unknown>(
+		name: keyof typeof agent.tools,
+		input: unknown,
+	): Promise<T> => {
+		agent.advance();
+		const execute = agent.tools[name].execute as (
+			input: unknown,
+			options: unknown,
+		) => Promise<T>;
+		return execute(input, { toolCallId: "t", messages: [] });
+	};
+	return { ...agent, call, steps };
+}
+
+/** 一段文字是不是一批要读的经历。 */
+function batchOf(text: string | null | undefined) {
+	if (!text) return null;
+	try {
+		const result = JSON.parse(text) as Partial<Batch>;
+		return Array.isArray(result.groups) ? (result as Batch) : null;
+	} catch {
+		return null;
+	}
+}
+
+/** 最后一条消息是不是工具带回的一批要读的经历。 */
+function batchIn(
+	message: { role: string; content: string | null } | undefined,
+) {
+	return message?.role === "tool" ? batchOf(message.content) : null;
+}
+
+/** 假模型交的结论：这一批里符合的段的编号。 */
+function fitsIn(batch: Batch | null) {
+	return {
+		fits: (batch?.groups ?? []).flatMap((group) =>
+			group.segments
+				.filter((segment) => fakeFits(group.criterion, segment.text))
+				.map((segment) => segment.n),
+		),
+	};
+}
+
+/**
+ * 打开后，假理解先用一遍三个查询工具（看目录、捞说法、试跑）再读经历、提交，并记下发给
  * 查询理解端点的每一个请求体：工具的回答会跟着下一次请求发出去，隐私测试看的就是它们。
  */
 let exploring: string[] | null = null;
@@ -347,14 +433,13 @@ export function breakUnderstanding(): () => void {
 }
 
 /**
- * OpenAI 兼容的 `/embeddings` 与 `/chat/completions`，加上 Cohere 式的
- * `/rerank`，只认这三个路径。
+ * OpenAI 兼容的 `/embeddings` 与 `/chat/completions`，只认这两个路径。
  */
 function startModelServer() {
 	const server = createServer((req, res) => {
 		if (
 			req.method !== "POST" ||
-			!["/embeddings", "/rerank", "/chat/completions"].includes(req.url ?? "")
+			!["/embeddings", "/chat/completions"].includes(req.url ?? "")
 		) {
 			res.writeHead(404).end();
 			return;
@@ -368,32 +453,19 @@ function startModelServer() {
 				res
 					.writeHead(200, { "content-type": "application/json" })
 					.end(JSON.stringify(payload));
-			if (req.url === "/rerank") {
-				const gate = nextRerankGate;
-				nextRerankGate = null;
-				if (gate) {
-					gate.enter();
-					await gate.wait;
-				}
-				const { query, documents } = JSON.parse(body) as {
-					query: string;
-					documents: string[];
-				};
-				json({
-					results: documents.map((d, index) => ({
-						index,
-						relevance_score: fakeRelevance(query, d),
-					})),
-				});
-				return;
-			}
 			if (req.url === "/chat/completions") {
 				if (intentBroken) {
 					res.writeHead(500).end("假模型按要求失败");
 					return;
 				}
 				const request = JSON.parse(body) as {
-					messages: { role: string; content: string | null }[];
+					messages: {
+						role: string;
+						content: string | null;
+						tool_calls?: { function: { name: string } }[];
+					}[];
+					tool_choice?: { function?: { name?: string } } | string;
+					tools?: { function: { name: string } }[];
 				};
 				const { messages } = request;
 				const users = messages
@@ -409,7 +481,30 @@ function startModelServer() {
 						choices: [{ index: 0, message, finish_reason: finish }],
 						usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
 					});
-				// 识别出查询理解的提示词；默认不查词，直接用提交工具提交那张表
+				const calls = (list: [name: string, input: unknown][]) =>
+					reply(
+						{
+							role: "assistant",
+							content: null,
+							tool_calls: list.map(([name, input], n) => ({
+								id: `call-${messages.length}-${n}`,
+								type: "function",
+								function: { name, arguments: JSON.stringify(input) },
+							})),
+						},
+						"tool_calls",
+					);
+				// 只给了交结论这一个工具：HR 直接改条件之后把候选人确认完（`llm.ts` 的 `confirm`）。
+				// 每一批都在最后一条工具消息里：第一批也是作为一次交结论带回的结果给的
+				if (
+					request.tools?.length === 1 &&
+					request.tools[0]?.function.name === "judge"
+				) {
+					exploring?.push(body);
+					calls([["judge", fitsIn(batchIn(messages.at(-1)))]]);
+					return;
+				}
+				// 识别出查询理解的提示词：先把候选人的经历读完、交上结论，再用提交工具提交那张表
 				const understanding = users.find((u) => u.includes(SENTENCE_PREFIX));
 				if (understanding !== undefined) {
 					const at = understanding.lastIndexOf(SENTENCE_PREFIX);
@@ -417,61 +512,37 @@ function startModelServer() {
 					const table = (intentAnswer ?? fakeIntent)(
 						said,
 						baseIn(understanding),
-					);
+					) as { conditions?: unknown };
 					exploring?.push(body);
-					const explored = messages.some((m) => m.role === "tool");
-					if (exploring && !explored) {
-						const call = (name: string, input: unknown, n: number) => ({
-							id: `explore-${n}`,
-							type: "function",
-							function: { name, arguments: JSON.stringify(input) },
-						});
-						const words = drafted(said).flatMap((c) =>
-							Object.values(c.terms ?? {}).flat(),
-						);
-						reply(
-							{
-								role: "assistant",
-								content: null,
-								tool_calls: [
-									call("discover", {}, 0),
-									call(
-										"discover",
-										{ relation: "person", column: "education" },
-										1,
-									),
-									call("lookup_experience", { texts: words }, 2),
-									call(
-										"probe",
-										{
-											conditions: (table as { conditions: unknown[] })
-												.conditions,
-										},
-										3,
-									),
-								],
-							},
-							"tool_calls",
-						);
-						return;
-					}
-					reply(
-						{
-							role: "assistant",
-							content: null,
-							tool_calls: [
+					const called = new Set(
+						messages.flatMap((m) =>
+							(m.tool_calls ?? []).map((c) => c.function.name),
+						),
+					);
+					const conditions = table?.conditions ?? [];
+					const batch = batchIn(messages.at(-1));
+					// 最后一次只剩提交这一个工具
+					const submitOnly =
+						typeof request.tool_choice === "object" &&
+						request.tool_choice.function?.name === "submit";
+					if (submitOnly) calls([["submit", table]]);
+					else if (exploring && called.size === 0)
+						calls([
+							["discover", {}],
+							["discover", { relation: "person", column: "education" }],
+							[
+								"find",
 								{
-									id: `call-${messages.length}`,
-									type: "function",
-									function: {
-										name: "submit",
-										arguments: JSON.stringify(table),
-									},
+									patterns: drafted(said).flatMap(
+										(c) => c.seek?.patterns ?? [],
+									),
 								},
 							],
-						},
-						"tool_calls",
-					);
+							["probe", { conditions }],
+						]);
+					else if (batch) calls([["judge", fitsIn(batch)]]);
+					else if (!called.has("read")) calls([["read", { conditions }]]);
+					else calls([["submit", table]]);
 					return;
 				}
 				const prompt = users.at(-1);
@@ -485,12 +556,6 @@ function startModelServer() {
 				}
 				reply({ role: "assistant", content }, "stop");
 				return;
-			}
-			const gate = nextEmbeddingGate;
-			nextEmbeddingGate = null;
-			if (gate) {
-				gate.enter();
-				await gate.wait;
 			}
 			const { input } = JSON.parse(body) as { input: string | string[] };
 			const texts = Array.isArray(input) ? input : [input];
@@ -532,9 +597,7 @@ function startModelServer() {
 export async function setup() {
 	const base = process.env.DATABASE_URL;
 	if (!base)
-		throw new Error(
-			"DATABASE_URL 未配置，集成测试需要一个装了 pgvector 的本地 Postgres",
-		);
+		throw new Error("DATABASE_URL 未配置，集成测试需要一个本地 Postgres 17");
 
 	const admin = new Pool({ connectionString: base });
 	await admin.query(`drop schema if exists ${SCHEMA} cascade`);
@@ -546,14 +609,12 @@ export async function setup() {
 		authVerification,
 		employee,
 		experience,
-		embeddingSpace,
 		phrase,
 		experiencePhrase,
 		experienceNext,
 		experiencePhraseNext,
-		rerankCache,
-		phraseGloss,
 		searchTurn,
+		experienceVerdict,
 		term,
 		reviewGroup,
 		embeddingCache,
@@ -583,18 +644,6 @@ export async function setup() {
 	} finally {
 		viewClient.release();
 	}
-	await admin.query(
-		`insert into ${SCHEMA}.embedding_space
-			(space_id, model, dimension, canary_text, canary_embedding)
-		 values ($1, $2, $3, $4, $5::halfvec)`,
-		[
-			"fake-v1",
-			"fake",
-			EMBED_DIM,
-			CANARY,
-			`[${fakeEmbedding(CANARY).join(",")}]`,
-		],
-	);
 	await admin.end();
 
 	const url = new URL(base);
@@ -605,8 +654,6 @@ export async function setup() {
 	process.env.EMBED_BASE_URL = modelServer.url;
 	process.env.EMBED_MODEL = "fake";
 	process.env.EMBED_SPACE_ID = "fake-v1";
-	process.env.RERANK_MODEL = "fake";
-	process.env.RERANK_SPACE_ID = "fake-v1";
 	process.env.LLM_BASE_URL = modelServer.url;
 	process.env.LLM_MODEL = "fake";
 	// 语料侧那三处聊天调用也指向同一台假端点，回答由 `answerChat` 设置
@@ -690,7 +737,7 @@ type Seed = {
 };
 
 /** 一条合成的记录流：评级流带档（从低到高），记录按期给。 */
-export type StreamSeed = {
+type StreamSeed = {
 	stream: string;
 	kind: "rating" | "status";
 	label: string;
@@ -708,7 +755,7 @@ export type StreamSeed = {
  * 一家合成的公司。行业两列照库里存的样子给：已经连同上级展开（真语料里由管线展开）。
  * 经历上的公司写法默认就是公司名，另有写法时写在 `aliases`。
  */
-export type CompanySeed = {
+type CompanySeed = {
 	name: string;
 	group?: string;
 	industries?: string[];
@@ -856,7 +903,7 @@ export async function seed(rows: Seed[]) {
 			),
 		)
 		.returning();
-	// 说法去重后各嵌一次，经历段按路指向它们——组合方式和 src/corpus/derive.ts 是
+	// 说法去重后各存一行，经历段按路指向它们——组合方式和 src/corpus/derive.ts 是
 	// 同一个函数。抽取结果夹具直接给：seed 的入参和 inserted 顺序一致，按下标对回去。
 	const specs = rows.flatMap((r) => r.segments);
 	const links = inserted.flatMap((s, i) => {
@@ -876,7 +923,7 @@ export async function seed(rows: Seed[]) {
 	if (texts.length === 0) return;
 	const phrases = await db
 		.insert(ph)
-		.values(texts.map((text) => ({ text, embedding: fakeEmbedding(text) })))
+		.values(texts.map((text) => ({ text })))
 		.onConflictDoNothing()
 		.returning({ id: ph.id, text: ph.text });
 	const existing = await db.select({ id: ph.id, text: ph.text }).from(ph);
@@ -888,5 +935,45 @@ export async function seed(rows: Seed[]) {
 			phraseId: idOf.get(l.text) as number,
 			engagement: l.engagement,
 		})),
+	);
+}
+
+/** 开一次找人任务（一条空条件的链），返回它的 id：结论记在一次任务名下，也只在它里面算数。 */
+export async function openSearch(): Promise<string> {
+	const { createTurn } = await import("#/server/turn");
+	const { emptySpec } = await import("#/search/spec");
+	const { turnId } = await createTurn({ kind: "spec", spec: emptySpec() });
+	return turnId;
+}
+
+/**
+ * 给几个人的经历在一次找人任务里、一条判据下存上结论（算或不算），和查询理解看完交上来的
+ * 走同一条路（`server/judged.ts`）。
+ * 这几个人的每一段都存；写了 `title` 只存岗位是它的那些段。
+ */
+export async function conclude(
+	rootTurnId: string,
+	criterion: string,
+	fits: boolean,
+	empIds: readonly string[],
+	title?: string,
+) {
+	const { db } = await import("#/db");
+	const { saveVerdicts, segmentTexts } = await import("#/server/judged");
+	const { rows } = await db.execute<{ id: number }>(sql`
+		select id from experience
+		where emp_id = any(${sql.param([...empIds])}::text[])
+			and (${title ?? null}::text is null or title = ${title ?? null})`);
+	const segments = await segmentTexts(rows.map((row) => row.id));
+	if (segments.size !== rows.length || rows.length === 0)
+		throw new Error(`没有找到要存结论的经历：${empIds.join("、")}`);
+	await saveVerdicts(
+		rootTurnId,
+		[...segments.values()].map(({ content }) => ({
+			criterion,
+			content,
+			fits,
+		})),
+		db,
 	);
 }

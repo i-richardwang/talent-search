@@ -2,7 +2,6 @@ import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
 import type { PoolClient } from "pg";
 import { db, pool } from ".";
-import { SHORT_ROUTES } from "./schema";
 
 /** 应用查询与事务共享的最小数据库能力。 */
 export type DbExecutor = Pick<typeof db, "execute" | "select">;
@@ -35,39 +34,20 @@ export async function withReadSnapshot<T>(
 }
 
 /**
- * 在可重复读快照中核验语料标准与空间身份，再读取事实。
- * 已解析段和当前短说法的释义各自只能有一份标准；空版本表示还没解析。
- * 模型调用在快照外完成，调用方以空间行版本核对嵌入与召回依据。
+ * 在可重复读快照中核验语料标准，再读取事实。
+ * 已解析段只能有一份标准；空版本表示还没解析。模型调用在快照外完成。
  */
 export function withCorpusSnapshot<T>(
-	read: (store: DbExecutor, generation: string) => Promise<T>,
+	read: (store: DbExecutor) => Promise<T>,
 ): Promise<T> {
 	return db.transaction(
 		async (store) => {
-			const rows = await store.execute<{ generation: string }>(
-				sql`select space_id || ':' || xmin::text as generation from embedding_space`,
+			const standards = await store.execute<{ mixed: boolean }>(
+				sql`select count(distinct derived_identity) > 1 as mixed from experience`,
 			);
-			const [row] = rows.rows;
-			if (!row || rows.rows.length !== 1)
-				throw new Error(
-					"语料还没有解析过：先跑 bun run sync，同步进来的新段解析会自动继续",
-				);
-			const standards = await store.execute<{
-				derived: boolean;
-				glossed: boolean;
-			}>(sql`
-				select
-					(select count(distinct derived_identity) > 1 from experience) as derived,
-					(select count(distinct g.guide_identity) > 1
-					 from phrase_gloss g join phrase p on p.text = g.text
-					 where exists (select 1 from experience_phrase ep
-					   where ep.phrase_id = p.id and ep.route in (${sql.join(
-								SHORT_ROUTES.map((route) => sql`${route}`),
-								sql`, `,
-							)}))) as glossed`);
-			if (standards.rows[0]?.derived || standards.rows[0]?.glossed)
-				throw new Error("人才库正在更新判定标准，请等待解析与整理完成后重试");
-			return read(store, row.generation);
+			if (standards.rows[0]?.mixed)
+				throw new Error("人才库正在更新判定标准，请等待解析完成后重试");
+			return read(store);
 		},
 		{ isolationLevel: "repeatable read" },
 	);

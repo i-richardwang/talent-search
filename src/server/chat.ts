@@ -1,5 +1,6 @@
 /**
- * 语料侧的聊天调用：模型请求、并发控制、进度和持久缓存。
+ * 抽取端点的聊天调用：模型请求、并发控制、进度和持久缓存。语料的抽取、对齐、整理都经
+ * `complete`。
  * 缓存保存通过 schema 与调用方领域校验的回答；读取与写入使用同一道校验。
  * 键由模型、提示词、schema 和输入文本确定，同一个输入只保留第一次写入的回答。
  * 无效回答报告后跳过且不缓存；持续的端点故障向调用方抛出。
@@ -20,7 +21,7 @@ import type { Report } from "#/corpus/report";
 import { db } from "#/db";
 import { completionCache } from "#/db/schema";
 import { concurrently } from "#/lib/concurrent";
-import { endpointFetch, positiveInt } from "./endpoint";
+import { endpointFetch, positiveInt, thinkingSwitch } from "./endpoint";
 
 const BASE_URL = process.env.EXTRACT_BASE_URL?.trim();
 const API_KEY = process.env.EXTRACT_API_KEY;
@@ -32,8 +33,9 @@ const API_KEY = process.env.EXTRACT_API_KEY;
 const STRUCTURED = process.env.EXTRACT_STRUCTURED_OUTPUTS !== "false";
 
 /**
- * 推理模型的思考开关。设了才随请求发出（`enable_thinking`，SiliconFlow 一类
- * 网关认它）；不设就尊重端点默认值，标准 OpenAI 端点不会收到一个它不认的字段。
+ * 推理模型的思考开关。设了才随请求发出；不设就尊重端点默认值，标准 OpenAI 端点不会收到
+ * 它不认的字段。开关没有统一写法，两种都发：`enable_thinking`（SiliconFlow 一类网关）和
+ * `thinking.type`（DeepSeek 一类）。只发其中一种时，不认它的端点会照默认带着思考作答。
  */
 const ENABLE_THINKING = process.env.EXTRACT_ENABLE_THINKING?.trim();
 
@@ -67,7 +69,7 @@ export function alignModel(): string {
 }
 
 /**
- * 词表与释义整理使用抽取端点；未指定整理模型时使用抽取模型。
+ * 词表整理使用抽取端点；未指定整理模型时使用抽取模型。
  */
 export function reviewModel(): string {
 	return process.env.REVIEW_MODEL?.trim() || extractModel();
@@ -92,14 +94,7 @@ function getModel(model: string, endpoint: ChatEndpoint) {
 		...(apiKey && { apiKey }),
 		// 每一次请求各自超时、各自重试（见 `endpoint.ts`）
 		fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
-		// 兼容层的 provider 选项里没有 `enable_thinking`，它是网关自己的字段，
-		// 只能在请求体成形之后补上去——这个钩子正是为此存在的。
-		...(ENABLE_THINKING && {
-			transformRequestBody: (body: Record<string, unknown>) => ({
-				...body,
-				enable_thinking: ENABLE_THINKING === "true",
-			}),
-		}),
+		...thinkingSwitch(ENABLE_THINKING),
 	})(model);
 }
 
@@ -125,7 +120,7 @@ function identityOf(
 /**
  * 一份标准的身份：那段提示词，加它要求的回答形状。**不含模型。**
  *
- * 抽取、对齐、释义和归并用它记录结果依据的标准。不同模型或外部判定方按同一份
+ * 抽取、对齐和词表归并用它记录结果依据的标准。不同模型或外部判定方按同一份
  * 标准作答，已有结果继续有效；提示词或回答形状变化后才重新处理。
  */
 export function standardOf(system: string, schema: z.ZodType<unknown>): string {

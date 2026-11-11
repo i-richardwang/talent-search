@@ -1,36 +1,37 @@
 /**
- * 查询记录的持久化与理解。一条线性链表示一次找人任务，追加按链头行锁串行化。
- * 记录不可变；待理解末轮可以补全一次，或由下一次动作取代。
+ * 查询记录的持久化，和 AI 对每一轮的处理。一条线性链表示一次找人任务，追加按链头行锁串行化。
+ * 记录不可变；待理解末轮可以补全一次，或由下一次动作取代。AI 的处理只属于链上最后一轮：
+ * 追加新的一轮时，上一轮没做完的那一次随之结束。
  *
- * 理解是写入这一轮的那个动作的后半段：说一句话写下一轮，服务端随即开始理解它。
- * 页面只读进度，打开、刷新、多开几次都不会再开始一次理解；重新开始只有一个入口，
- * 人点「重试」（`restartTurn`）。
+ * 条件决定名单，条件怎么变的都一样：说一句话，AI 理解它、写出条件、把候选人的经历确认完
+ * （`understandTurn`）；直接在条件上改，条件立刻生效，名单先按确认过的出，AI 接着把新进范围的
+ * 候选人确认完（`confirmTurn`）。处理是写入这一轮的那个动作的后半段，服务端随即开始。
+ * 页面只读进度，打开、刷新、多开几次都不会再开始一次；重新开始只有一个入口，人点「重试」
+ * （`restartTurn`）。
  */
 import "@tanstack/react-start/server-only";
 import { randomBytes } from "node:crypto";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, not, sql } from "drizzle-orm";
 import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
-import { compileConditions } from "#/search/compile";
-import type { Condition } from "#/search/condition";
-import { scopeOf } from "#/search/execute";
-import { type NotesRecord, type TurnNotes, unanswered } from "#/search/intent";
+import { compileCondition } from "#/search/execute";
+import type { TurnNotes } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
-import type { QueryCondition } from "#/search/query";
 import { vocabulary } from "#/search/search";
 import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
-import { agentTools } from "./agent-tools";
+import { agentTools, type RecordStep } from "./agent-tools";
 import { companyFacts, streamFacts } from "./discover";
 import { type EndpointFault, endpointFault } from "./endpoint";
+import { saveVerdicts } from "./judged";
 import {
+	confirm,
 	STEP_LIMIT_MS,
 	UnansweredError,
 	understand,
 	understandingConfigured,
 } from "./llm";
-import { compileWhere } from "./sandbox";
 
 function newId() {
 	return randomBytes(8).toString("base64url");
@@ -44,7 +45,6 @@ export type SearchMode = "conversation" | "keyword";
 
 export type Turn = {
 	id: string;
-	rootTurnId: string;
 	mode: SearchMode;
 	/** 这次找人任务的标题：链头那句话。关键词搜索没有。 */
 	title: string | null;
@@ -53,40 +53,44 @@ export type Turn = {
 	/** null 表示模型理解尚未完成。 */
 	spec: SearchSpec | null;
 	notes: TurnNotes | null;
-	/** 理解这一轮时模型走过的步骤；还在理解时是到目前为止的。没说话的一轮没有。 */
+	/** AI 处理这一轮时走过的步骤；还在处理时是到目前为止的。不用 AI 处理的一轮没有。 */
 	trace: TraceStep[] | null;
-	/** 这一次理解开始的时刻（epoch 毫秒）；没说话的一轮没有。 */
+	/** 这一次处理开始的时刻（epoch 毫秒）；不用 AI 处理的一轮没有。 */
 	startedAt: number | null;
-	/** 这一次理解为什么没成；还在理解或已理解为 null。 */
-	fault: InterpretFault | null;
+	/** 这一次处理为什么没成；还在处理或已完成为 null。 */
+	fault: AttemptFault | null;
+	/** AI 处理完了，或者这一轮不用 AI 处理。 */
+	settled: boolean;
 	/** 这一轮写入记录的时刻（epoch 毫秒）：线程上这句话的时间。 */
 	at: number;
 };
 
-/** 正在进行的这一次理解：走过的步骤和它开始的时刻。 */
+/** AI 正在进行的这一次处理：走过的步骤和它开始的时刻。 */
 export type Progress = { trace: TraceStep[]; startedAt: number | null };
 
-/** 一轮理解现在怎样了。界面等理解时每秒读一次。 */
-export type Interpretation = Progress & {
-	fault: InterpretFault | null;
-	/** 条件已经写进记录：该重新载入这一轮了。 */
+/** AI 对一轮的处理现在怎样了。界面等它时每秒读一次。 */
+export type Attempt = Progress & {
+	fault: AttemptFault | null;
+	/** 处理完了：该重新载入这一轮了。 */
 	settled: boolean;
 };
 
 type Db = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** 在 `parent` 后面写一条新记录。没有 `parent` 就是一条新链的链头。 */
+/**
+ * 在 `parent` 后面写一条新记录。没有 `parent` 就是一条新链的链头。`run`：这一轮要 AI 接着
+ * 处理，写下时就是第一次处理开始的时候。
+ */
 async function insertTurn(
 	tx: Db,
 	row: {
 		parent: SearchTurn | null;
 		rawText: string | null;
 		spec: SearchSpec | null;
+		run: boolean;
 	},
 ): Promise<SearchTurn> {
 	const id = newId();
-	// 说了一句话的一轮写下时就是第一次理解开始的时候
-	const said = row.rawText !== null;
 	const [inserted] = await tx
 		.insert(searchTurn)
 		.values({
@@ -95,9 +99,9 @@ async function insertTurn(
 			parentTurnId: row.parent?.id ?? null,
 			rawText: row.rawText,
 			spec: row.spec,
-			...(said && {
-				interpretAttempt: newId(),
-				interpretStartedAt: sql`now()`,
+			...(row.run && {
+				attempt: newId(),
+				attemptStartedAt: sql`now()`,
 				trace: [],
 			}),
 		})
@@ -149,10 +153,22 @@ function admit(mode: SearchMode, input: QueryInput) {
 async function admitWhere(input: QueryInput) {
 	if (input.kind !== "spec" || !("query" in input.spec)) return;
 	for (const c of input.spec.query.conditions) {
-		const result = await compileWhere(c.where, c.params ?? {}, scopeOf(c));
+		const result = await compileCondition(c);
 		if (!result.ok)
 			throw new Error(`搜索条件「${c.label}」不能执行：${result.problem}`);
 	}
+}
+
+/**
+ * 直接改条件的一轮要不要 AI 接着处理：对话的链上，条件里有写了判据的「做过什么」时，改完可能
+ * 有新进范围的候选人还没确认过。没配查询理解时没有谁能确认，名单就按确认过的出。
+ */
+function needsConfirming(mode: SearchMode, spec: SearchSpec): boolean {
+	return (
+		mode === "conversation" &&
+		understandingConfigured() &&
+		queryOfSpec(spec).conditions.some((c) => !c.off && c.seek?.criterion)
+	);
 }
 
 /**
@@ -160,7 +176,7 @@ async function admitWhere(input: QueryInput) {
  * 在历史轮上补充原话时，先追加一次条件恢复，再追加待理解轮。
  * 待理解末轮由新动作取代；链头行锁串行化追加，唯一 parent_turn_id 保证不分叉。
  *
- * 说一句话的那一轮带着它第一次理解的编号返回：事务提交之后由调用方交给 `interpret`。
+ * 要 AI 接着处理的那一轮带着它第一次处理的编号返回：事务提交之后由调用方交给 `processTurn`。
  */
 export async function createTurn(
 	input: QueryInput,
@@ -172,8 +188,14 @@ export async function createTurn(
 		const spec = input.kind === "spec" ? input.spec : null;
 		if (!from) {
 			admit(modeOf(text), input);
-			const head = await insertTurn(tx, { parent: null, rawText: text, spec });
-			return { turnId: head.id, attempt: head.interpretAttempt };
+			// 链头直接是条件的是关键词搜索：按字面找，不用 AI
+			const head = await insertTurn(tx, {
+				parent: null,
+				rawText: text,
+				spec,
+				run: text !== null,
+			});
+			return { turnId: head.id, attempt: head.attempt };
 		}
 
 		const rootTurnId = (await getRow(from, tx))?.rootTurnId;
@@ -187,12 +209,24 @@ export async function createTurn(
 		// 排在别的追加后面时，看着的那一轮可能刚被取代：拿到锁再读一遍
 		const seen = root ? await getRow(from, tx) : null;
 		if (!root || !seen) throw new Error("要修改的查询记录不存在");
-		admit(modeOf(root.rawText), input);
+		const mode = modeOf(root.rawText);
+		admit(mode, input);
 
 		let tail: SearchTurn | null = await tailOf(tx, seen.rootTurnId);
 		if (tail.spec === null) {
 			await tx.delete(searchTurn).where(eq(searchTurn.id, tail.id));
 			tail = tail.parentTurnId ? await getRow(tail.parentTurnId, tx) : null;
+		} else if (tail.attempt !== null && !tail.attemptDone) {
+			// 还在补人、或没补成的那一次到此为止：新的一轮自己把它的候选人确认完
+			await tx
+				.update(searchTurn)
+				.set({
+					attempt: null,
+					attemptStartedAt: null,
+					attemptFault: null,
+					trace: null,
+				})
+				.where(eq(searchTurn.id, tail.id));
 		}
 		// 没理解出来的只可能是链尾；人看着它时，动作作用在它之前那一轮上
 		const base = seen.spec ? seen : tail;
@@ -204,24 +238,30 @@ export async function createTurn(
 				parent: tail,
 				rawText: null,
 				spec: base.spec,
+				run: false,
 			});
 		// 原话只记这一轮说了什么。直接改条件的一轮没有说话；任务的标题是链头那句，
 		// 不必往下抄。
-		const turn = await insertTurn(tx, { parent, rawText: text, spec });
-		return { turnId: turn.id, attempt: turn.interpretAttempt };
+		const turn = await insertTurn(tx, {
+			parent,
+			rawText: text,
+			spec,
+			run: spec === null || needsConfirming(mode, spec),
+		});
+		return { turnId: turn.id, attempt: turn.attempt };
 	});
 }
 
 /**
- * 这一轮为什么没理解出来。只有服务端知道是哪个环节出了问题，页面按它显示提示：
+ * AI 对这一轮的处理为什么没成。只有服务端知道是哪个环节出了问题，页面按它显示提示：
  * 连不上和报错时那句话根本没被读过，不能说成「这句话没读懂」。
  *
  * - `unconfigured`：没配查询理解端点。
  * - `unreachable` / `rejected`：见 `endpointFault`；一次请求等满超时也算没答上来。
  * - `unanswered`：端点答了，没按约定作答——只有这一种换个说法可能有用。
- * - `broken`：别的，我们自己这一侧的意外，包括理解到一半进程没了。原错误写进服务端日志。
+ * - `broken`：别的，我们自己这一侧的意外，包括处理到一半进程没了。原错误写进服务端日志。
  */
-export type InterpretFault =
+export type AttemptFault =
 	| "unconfigured"
 	| EndpointFault
 	| "unanswered"
@@ -231,68 +271,150 @@ export type InterpretFault =
 const SETTLE_MS = 10_000;
 
 /**
- * 这一次理解最近一次写下东西的时刻：开始的时刻，或者最后一步的时刻（步骤的 `at`，见
- * `search/trace.ts`）。每次工具调用和没通过的提交都记一步，所以它就是心跳。
+ * 这一次处理最近一次写下东西的时刻：开始的时刻，或者最后一步的时刻（步骤的 `at`，见
+ * `search/trace.ts`）。模型每调一次工具都记一步，所以它就是心跳。
  */
-const lastBeat = sql`greatest(${searchTurn.interpretStartedAt},
+const lastBeat = sql`greatest(${searchTurn.attemptStartedAt},
 	to_timestamp((${searchTurn.trace} -> -1 ->> 'at')::float8 / 1000))`;
 
 /**
- * 还没写下结果也没写下失败、而且隔了一步的上限还没有新的一步的那一次：它的进程没了，
+ * 还没做完也没写下失败、而且隔了一步的上限还没有新的一步的那一次：它的进程没了，
  * 不会再写了。读记录时把它当作 `broken`，重试也只换掉这样的和已经失败的那一次。
  */
-const abandoned = sql`(${searchTurn.spec} is null
-	and ${searchTurn.interpretFault} is null
+const abandoned = sql`(${searchTurn.attempt} is not null
+	and not ${searchTurn.attemptDone}
+	and ${searchTurn.attemptFault} is null
 	and ${lastBeat} < now() - make_interval(secs => ${(STEP_LIMIT_MS + SETTLE_MS) / 1000}))`;
 
-const currentFault = sql<InterpretFault | null>`case when ${abandoned}
-	then 'broken' else ${searchTurn.interpretFault} end`;
+const currentFault = sql<AttemptFault | null>`case when ${abandoned}
+	then 'broken' else ${searchTurn.attemptFault} end`;
 
-/** 还是这一次理解在管的那一行：编号没被换掉，结果和失败原因都还没写下。 */
+/** 还是这一次处理在管的那一行：编号没被换掉，还没做完，也没写下失败原因。 */
 function ownedBy(turnId: string, attempt: string) {
 	return and(
 		eq(searchTurn.id, turnId),
-		eq(searchTurn.interpretAttempt, attempt),
-		isNull(searchTurn.spec),
-		isNull(searchTurn.interpretFault),
+		eq(searchTurn.attempt, attempt),
+		not(searchTurn.attemptDone),
+		isNull(searchTurn.attemptFault),
 	);
 }
 
 /**
- * 理解一轮，结果或失败原因写进记录。不抛：它在请求之外跑完，没有人接它的错误。
+ * AI 处理一轮，结果或失败原因写进记录。不抛：它在请求之外跑完，没有人接它的错误。
  *
- * 这一轮的基线是父记录的条件：一句「再加上带过团队的」只有放在那张表上才有意思。
- * 模型每查一次就往 `trace` 上追加一步，界面轮询它边跑边画。每一次写入都只写编号
- * 还是 `attempt` 的那一行：这一轮被下一句话取代、或这一次被重试换掉之后，它写不进来。
+ * 模型每调一次工具就往 `trace` 上追加一步，界面轮询它边跑边画。每一次写入都只写编号
+ * 还是 `attempt` 的那一行：这一轮被新的一轮取代、或这一次被重试换掉之后，它写不进来，
+ * 也就此停下，不再调模型。
  */
-export async function interpret(turnId: string, attempt: string) {
-	let fault: InterpretFault | null;
+export async function processTurn(turnId: string, attempt: string) {
+	let fault: AttemptFault | null;
 	try {
-		fault = await understandTurn(turnId, attempt);
+		fault = await performAttempt(turnId, attempt);
 	} catch (error) {
-		console.error(`查询理解失败（记录 ${turnId}）：`, error);
-		fault = interpretFault(error);
+		console.error(`AI 处理查询失败（记录 ${turnId}）：`, error);
+		fault = faultOf(error);
 	}
 	if (!fault) return;
 	try {
 		await db
 			.update(searchTurn)
-			.set({ interpretFault: fault })
+			.set({ attemptFault: fault })
 			.where(ownedBy(turnId, attempt));
 	} catch (error) {
-		console.error(`查询理解失败原因没能写入（记录 ${turnId}）：`, error);
+		console.error(`AI 处理查询的失败原因没能写入（记录 ${turnId}）：`, error);
 	}
 }
 
-async function understandTurn(
+/** 一次处理做完时和「做完了」一起写进这一轮的：理解一句话写条件和说明，直接改条件的不动条件。 */
+type Settled = Partial<Pick<SearchTurn, "spec" | "notes">>;
+
+/**
+ * 真正做这一次处理：理解一句话，或者把直接改条件之后的候选人确认完；做完时写下「做完了」，
+ * 理解一句话的连同条件和说明。没配查询理解返回失败原因，别的失败照常抛出，由 `processTurn`
+ * 接住写进记录。
+ * 这一次已被换掉时返回 null，什么都不写。
+ */
+async function performAttempt(
 	turnId: string,
 	attempt: string,
-): Promise<InterpretFault | null> {
+): Promise<AttemptFault | null> {
 	if (!understandingConfigured()) return "unconfigured";
 	const row = await getRow(turnId);
 	// 这一轮已被下一句话取代，或这一次已被重试换掉
-	if (row?.interpretAttempt !== attempt || row.rawText === null) return null;
-	const rawText = row.rawText;
+	if (row?.attempt !== attempt) return null;
+	const replaced = new AbortController();
+	const record: RecordStep = async (step, verdicts) => {
+		const written = await db.transaction(async (tx) => {
+			// 结论与追加都先锁链头：归属核验、进度和结论在同一事务里生效。
+			if (verdicts.length > 0)
+				await tx
+					.select({ id: searchTurn.id })
+					.from(searchTurn)
+					.where(eq(searchTurn.id, row.rootTurnId))
+					.for("update");
+			const rows = await tx
+				.update(searchTurn)
+				.set({
+					trace: sql`${searchTurn.trace} || ${JSON.stringify([step])}::jsonb`,
+				})
+				.where(ownedBy(turnId, attempt))
+				.returning({ id: searchTurn.id });
+			if (rows.length === 0) return false;
+			await saveVerdicts(row.rootTurnId, verdicts, tx);
+			return true;
+		});
+		if (!written) {
+			replaced.abort();
+			replaced.signal.throwIfAborted();
+		}
+	};
+	let settled: Settled;
+	try {
+		settled =
+			row.rawText !== null
+				? await understandTurn(row, row.rawText, record, replaced.signal)
+				: await confirmTurn(row, record, replaced.signal);
+	} catch (error) {
+		// 被取代之后停下来的那一下不是失败
+		if (replaced.signal.aborted) return null;
+		throw error;
+	}
+	await db
+		.update(searchTurn)
+		.set({ ...settled, attemptDone: true })
+		.where(ownedBy(turnId, attempt));
+	return null;
+}
+
+/**
+ * HR 直接改了条件：条件已经在记录上，把候选人里还没确认过的经历读完。名单每次按确认过的算，
+ * 读完不用改记录上的条件。
+ */
+async function confirmTurn(
+	row: SearchTurn,
+	record: RecordStep,
+	replaced: AbortSignal,
+): Promise<Settled> {
+	// 没有原话的一轮一定有条件（`search_turn_state`）
+	if (row.spec)
+		await confirm(
+			queryOfSpec(row.spec),
+			agentTools({ base: [], record, rootTurnId: row.rootTurnId }),
+			replaced,
+		);
+	return {};
+}
+
+/**
+ * 理解一句话。这一轮的基线是父记录的条件：一句「再加上带过团队的」只有放在那张表上才有意思。
+ * 写进记录的是提交检查录取的那份：跑不了的条件已经丢掉，丢空了就是没作答（`understand` 抛出）。
+ */
+async function understandTurn(
+	row: SearchTurn,
+	rawText: string,
+	record: RecordStep,
+	replaced: AbortSignal,
+): Promise<Settled> {
 	const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
 	const base = parent?.spec ? queryOfSpec(parent.spec).conditions : [];
 
@@ -304,33 +426,16 @@ async function understandTurn(
 		streamFacts(),
 		companyFacts(),
 	]);
-	const record = async (step: TraceStep) => {
-		await db
-			.update(searchTurn)
-			.set({
-				trace: sql`${searchTurn.trace} || ${JSON.stringify([step])}::jsonb`,
-			})
-			.where(ownedBy(turnId, attempt));
-	};
-	const agent = agentTools({ base, record });
-	// 写进记录的是提交检查录取的那份：跑不了的条件已经丢掉，丢空了就是没作答
-	const { submitted, admitted: result } = await understand(
+	const { query, notes } = await understand(
 		rawText,
 		{ vocab, streams, company },
-		base,
-		agent,
+		agentTools({ base, record, rootTurnId: row.rootTurnId }),
+		replaced,
 	);
-	const failure = unanswered(submitted, result);
-	if (failure) throw new UnansweredError(failure);
-
-	await db
-		.update(searchTurn)
-		.set({ spec: { query: result.query }, notes: result.notes })
-		.where(ownedBy(turnId, attempt));
-	return null;
+	return { spec: { query }, notes };
 }
 
-function interpretFault(error: unknown): InterpretFault {
+function faultOf(error: unknown): AttemptFault {
 	const fault = endpointFault(error);
 	if (fault) return fault;
 	if (error instanceof UnansweredError) return "unanswered";
@@ -339,25 +444,25 @@ function interpretFault(error: unknown): InterpretFault {
 
 /**
  * 人点了重试：上一次已经失败、或进程没了，就换一个编号重新开始，返回这个编号交给
- * `interpret`。上一次还在跑、或这一轮已经理解好，什么都不做，返回 null。
+ * `processTurn`。上一次还在跑、或这一轮已经处理完，什么都不做，返回 null。
  * 新的一次从头计时，上一次走到一半的步骤不算进来。
  */
 export async function restartTurn(turnId: string): Promise<string | null> {
 	const [row] = await db
 		.update(searchTurn)
 		.set({
-			interpretAttempt: newId(),
-			interpretStartedAt: sql`now()`,
-			interpretFault: null,
+			attempt: newId(),
+			attemptStartedAt: sql`now()`,
+			attemptFault: null,
 			trace: [],
 		})
 		.where(
 			and(
 				eq(searchTurn.id, turnId),
-				sql`(${searchTurn.interpretFault} is not null or ${abandoned})`,
+				sql`(${searchTurn.attemptFault} is not null or ${abandoned})`,
 			),
 		)
-		.returning({ attempt: searchTurn.interpretAttempt });
+		.returning({ attempt: searchTurn.attempt });
 	return row?.attempt ?? null;
 }
 
@@ -369,26 +474,27 @@ export async function restartTurn(turnId: string): Promise<string | null> {
 export async function loadThread(id: string): Promise<Turn[] | null> {
 	const { rows } = await db.execute<{
 		id: string;
-		root_turn_id: string;
 		raw_text: string | null;
 		spec: SearchSpec | null;
-		notes: NotesRecord | null;
+		notes: TurnNotes | null;
 		trace: TraceStep[] | null;
 		started_at: number | null;
-		fault: InterpretFault | null;
+		fault: AttemptFault | null;
+		settled: boolean;
 		at: number;
 	}>(sql`
 		with recursive line as (
-			select id, 0 as depth from search_turn
-			where id = (select root_turn_id from search_turn where id = ${id})
+			select id, 0 as depth from ${searchTurn}
+			where id = (select root_turn_id from ${searchTurn} where id = ${id})
 			union all
 			select t.id, line.depth + 1
-			from search_turn t join line on t.parent_turn_id = line.id
+			from ${searchTurn} t join line on t.parent_turn_id = line.id
 		)
-		select ${searchTurn.id}, ${searchTurn.rootTurnId}, ${searchTurn.rawText},
+		select ${searchTurn.id}, ${searchTurn.rawText},
 			${searchTurn.spec}, ${searchTurn.notes}, ${searchTurn.trace},
-			(extract(epoch from ${searchTurn.interpretStartedAt}) * 1000)::float8 as started_at,
+			(extract(epoch from ${searchTurn.attemptStartedAt}) * 1000)::float8 as started_at,
 			${currentFault} as fault,
+			(${searchTurn.attempt} is null or ${searchTurn.attemptDone}) as settled,
 			(extract(epoch from ${searchTurn.createdAt}) * 1000)::float8 as at
 		from line join ${searchTurn} using (id) order by line.depth`);
 	if (rows.length === 0) return null;
@@ -396,60 +502,32 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 	const mode = modeOf(root?.raw_text);
 	return rows.map((row) => ({
 		id: row.id,
-		rootTurnId: row.root_turn_id,
 		mode,
 		title: root?.raw_text ?? null,
 		said: row.raw_text,
 		spec: row.spec,
-		notes: row.notes && notesOfRecord(row.notes),
+		notes: row.notes,
 		trace: row.trace,
 		startedAt: row.started_at,
 		fault: row.fault,
+		settled: row.settled,
 		at: row.at,
 	}));
 }
 
-/**
- * 记录里的说明 → 界面读的说明：选项里关键词链形状的条件表经 `compile.ts` 编译成查询，和那一轮
- * 的条件编译出同样的 id。
- */
-function notesOfRecord(notes: NotesRecord): TurnNotes {
-	if (!notes.choices) return { says: notes.says, choices: null };
-	const others = notes.choices.others.map((o) => ({
-		...o,
-		conditions: isKeywordShape(o.conditions)
-			? compileConditions(o.conditions).conditions
-			: o.conditions,
-	}));
-	return { ...notes, choices: { ...notes.choices, others } };
-}
-
-function isKeywordShape(
-	list: QueryCondition[] | Condition[],
-): list is Condition[] {
-	return list.some((c) => "about" in c);
-}
-
-/** 这一轮的理解现在怎样了；没有这一轮或这一轮没说话为 null。 */
-export async function loadInterpretation(
-	id: string,
-): Promise<Interpretation | null> {
+/** AI 对这一轮的处理现在怎样了；没有这一轮或这一轮不用 AI 处理为 null。 */
+export async function loadAttempt(id: string): Promise<Attempt | null> {
 	const [row] = await db
 		.select({
 			trace: sql<TraceStep[]>`${searchTurn.trace}`,
 			startedAt: sql<
 				number | null
-			>`(extract(epoch from ${searchTurn.interpretStartedAt}) * 1000)::float8`,
+			>`(extract(epoch from ${searchTurn.attemptStartedAt}) * 1000)::float8`,
 			fault: currentFault,
-			settled: sql<boolean>`${searchTurn.spec} is not null`,
+			settled: searchTurn.attemptDone,
 		})
 		.from(searchTurn)
-		.where(
-			and(
-				eq(searchTurn.id, id),
-				sql`${searchTurn.interpretAttempt} is not null`,
-			),
-		);
+		.where(and(eq(searchTurn.id, id), sql`${searchTurn.attempt} is not null`));
 	return row ?? null;
 }
 

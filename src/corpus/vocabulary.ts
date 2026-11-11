@@ -1,15 +1,16 @@
 /**
- * 短说法的词表：整理收集的归并组。相近的短说法（`SHORT_ROUTES`）圈成组送进队列，
- * 判定方判每个词和谁是同一件事、属于哪个更宽的词，生效时写进 `term`。
- * 整理只写词表，不碰人身上的词：边上永远是简历里的原话。检索按词表把命中往细的词
- * 带、对更宽的词挡住（`src/search/phrases.ts` 的 `throughVocabulary`），筛选栏按它
- * 把写法摆成一项项（`src/search/search.ts` 的 `FACT_COLUMNS.skills`）。
+ * 短说法的词表：相近的短说法（`SHORT_ROUTES`）按向量圈成组送进队列，判定方判每个词
+ * 和谁是同一件事、属于哪个更宽的词，生效时写进 `term`。
+ * 整理只写词表，不碰人身上的词：边上永远是简历里的原话。检索按词表把同一件事的几种
+ * 写法当成一条说法（`src/search/phrases.ts`），词表页按宽细把一支词摆出来
+ * （`src/server/terms.ts`）。
  * 归并和归属规则见 vocabulary-rules.ts；判定队列在 judgment.ts；模型和外部判定方共用 GUIDE。
  */
 
 import "@tanstack/react-start/server-only";
 import { SHORT_ROUTES } from "#/db/schema";
 import { complete, reviewModel, standardOf } from "#/server/chat";
+import { embedConfigured } from "#/server/embed";
 import { embed } from "./embed";
 import {
 	busyWords,
@@ -38,23 +39,23 @@ import {
 
 /**
  * 判定的标准。发给自带模型的是它，通过接口交给外部 agent 的也是它
- * （`src/server/review.ts` 的 `guides.group`）——标准只有一份，改了这段字，
+ * （`src/server/review.ts` 的 `guide`）——标准只有一份，改了这段字，
  * 模型和接口读到的都变。
  */
 export const GUIDE = `## 背景
 
 这是一个公司内部的人才库。招聘的人和业务负责人要找做过某件事的人：输入一个词搜索，或在筛选栏里点一项，再读这个人简历里的原话确认。每个人的简历被读成几个字的短说法：能力词、做过的事、入职前的岗位名。人身上留的永远是他自己的写法，证据用的都是原话。
 
-词表不改人身上的词，它记两件事：哪些写法是同一件事；一个词属于哪个更宽的词。搜索和筛选都按它走：搜一个词或点一项，写了它的其他写法、写了属于它的细词的人一起出来；搜细的词时，只写了更宽的词的人不算，因为没法确认他做过细的那件。这两件事由你来判。判过的词过一段时间会连同之前判成同一件事的写法再拿出来重判。
+词表不改人身上的词，它记两件事：哪些写法是同一件事；一个词属于哪个更宽的词。同一件事的写法在搜索里互相带出：搜到其中一种，写了另一种的人一起出来。更宽的词是筛选栏里的一项：点它，写了属于它的细词的人一起出来；点细的词时，只写了更宽的词的人不算，因为没法确认他做过细的那件。这两件事由你来判。判过的词过一段时间会连同之前判成同一件事的写法再拿出来重判。
 
 ## 判错的代价
 
 - 两件事判成同一件事：搜其中一个会混进不符合要求的人，筛选栏里更精确的那个选项也没了。
 - 同一件事判成两件：搜其中一个会漏掉写了另一种写法的人，筛选栏里多一项。
-- 归属挂错：搜宽的词时，写了这个词的人整批算作符合，和真正做过的人排在一起；搜细的词时，只写了宽词的人被挡掉。
-- 归属漏挂：搜索仍会直接判断这个词像不像要找的，像的照样找得到；只是筛选栏里点宽的那一项时不含它。
+- 归属挂错：筛选栏里点宽的那一项时，写了这个词的人整批算进去，和真正做过的人排在一起。
+- 归属漏挂：筛选栏里点宽的那一项时不含它；输入词搜索不受影响，搜索只按字面和同一件事的写法找。
 
-合成一项会抹掉一个选项，挂归属不会。所以两个词一个比另一个宽的，用归属表达，不写成同一件事。拿不准是不是同一件事、拿不准属不属于某个更宽的词，都不写：漏写了搜索还能补上，写错了没有。
+合成一项会抹掉一个选项，挂归属不会。所以两个词一个比另一个宽的，用归属表达，不写成同一件事。拿不准是不是同一件事、拿不准属不属于某个更宽的词，都不写：漏写了按字面照样搜得到，写错了会混进不该有的人。
 
 ## 任务
 
@@ -239,7 +240,7 @@ export async function applyGroups(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
-	const rows = await judged(client, "group", groupIdentity());
+	const rows = await judged(client, groupIdentity());
 	if (rows.length === 0) return;
 
 	const now = new Date();
@@ -291,15 +292,21 @@ export async function applyGroups(
  *
  * 带上写法之后一组可以超过分组的上限（`vocabulary-rules.ts`）：上限管的是有多少件要分辨的事，
  * 已经判成同一件事的写法摆在标准词旁边，是让判定方重新确认这一片，不是多出来的候选。
+ *
+ * 分组要词的向量：嵌入端点没配就不收集，队列里已有的组照常判、照常生效。
  */
 export async function collectGroups(
 	client: CorpusClient,
 	report: Report,
 ): Promise<void> {
+	if (!embedConfigured()) {
+		report("  未配置嵌入端点，分不出相近的写法，这一轮不收集新的组");
+		return;
+	}
 	const table = await read(client);
 	const all = await vocabulary(client);
 	const identity = groupIdentity();
-	const busy = await busyWords(client, "group", identity);
+	const busy = await busyWords(client, identity);
 	const decided = all.words.filter((word) => table.has(word)).length;
 	report(
 		`  词表 ${all.words.length} 个词，其中 ${decided} 个已有决定；` +
@@ -330,7 +337,6 @@ export async function collectGroups(
 	);
 	await collect(
 		client,
-		"group",
 		identity,
 		clusters.map((cluster) =>
 			cluster.flatMap((word) => [
@@ -347,7 +353,7 @@ export async function judgeGroupsByModel(
 	report: Report,
 ): Promise<void> {
 	const identity = groupIdentity();
-	const pending = await openGroups(client, "group", identity);
+	const pending = await openGroups(client, identity);
 	if (pending.length === 0) return;
 	const model = reviewModel();
 	report(`  判 ${pending.length} 组归并`);

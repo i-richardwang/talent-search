@@ -1,5 +1,5 @@
 /**
- * 四个端点适配层（`embed` / `rerank` / `llm` / `chat`）共用的两样东西：把配置里的
+ * 三个端点适配层（`embed` / `llm` / `chat`）共用的两样东西：把配置里的
  * 数读出来，以及每一次 HTTP 请求的超时与重试。
  */
 
@@ -16,8 +16,8 @@ const FIRST_DELAY_MS = 2_000;
 const RETRY_AFTER_MAX_MS = 60_000;
 
 /**
- * 一次 HTTP 请求的超时与重试，四个适配层只经过这一处：SDK 的 provider 拿它当
- * `fetch`、调用时 `maxRetries: 0`，重排直接调它。重试的单位是这一个请求，所以
+ * 一次 HTTP 请求的超时与重试，三个适配层只经过这一处：SDK 的 provider 拿它当
+ * `fetch`、调用时 `maxRetries: 0`。重试的单位是这一个请求，所以
  * 多步对话里第几步超时就只重发第几步，分批嵌入里哪一批超时就只重发哪一批。
  *
  * - 每次尝试各有 `timeoutMs` 的预算，最多重发 `retries` 次。超时的那次已经等满了预算，
@@ -114,4 +114,20 @@ export function endpointFault(error: unknown): EndpointFault | null {
 			return current.statusCode === undefined ? "unreachable" : "rejected";
 	}
 	return null;
+}
+
+/**
+ * 思考开关写进 provider 的配置。它是网关自己的字段，兼容层的选项里没有，只能在请求体成形之后
+ * 补上；没设置时不动请求体。
+ */
+export function thinkingSwitch(setting: string | undefined) {
+	if (!setting) return {};
+	const on = setting === "true";
+	return {
+		transformRequestBody: (body: Record<string, unknown>) => ({
+			...body,
+			enable_thinking: on,
+			thinking: { type: on ? "enabled" : "disabled" },
+		}),
+	};
 }

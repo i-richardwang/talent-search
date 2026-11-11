@@ -2,31 +2,31 @@ import { Tag } from "#/components/ui/tag";
 import type { CompanyMeta } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
 import { routeLabel } from "#/search/evidence";
-import { type EmployeeDetail, type Hit, placeOf } from "#/search/result";
+import { type EmployeeDetail, type Evidence, placeOf } from "#/search/result";
 import { Dot, phraseLabel } from "./evidence";
 
-/** 命中按 experienceId 索引，一段可能同时命中多条主张。 */
-type HitIndex = Map<number, Hit[]>;
+/** 证据按 experienceId 索引，一段可能同时是几条主张的证据。 */
+type EvidenceIndex = Map<number, Evidence[]>;
 
-export function buildHitIndex(hits: Hit[]): HitIndex {
-	const index: HitIndex = new Map();
-	for (const h of hits) {
-		const list = index.get(h.experienceId);
-		if (list) list.push(h);
-		else index.set(h.experienceId, [h]);
+export function buildEvidenceIndex(evidence: Evidence[]): EvidenceIndex {
+	const index: EvidenceIndex = new Map();
+	for (const e of evidence) {
+		const list = index.get(e.experienceId);
+		if (list) list.push(e);
+		else index.set(e.experienceId, [e]);
 	}
 	return index;
 }
 
-/** 任职经历时间线，最近的在最上面；每段的节点是证据点，说这一段的证据有多强。 */
+/** 任职经历时间线，最近的在最上面；每段的节点是证据点，说这一段是不是证据。 */
 export function Timeline({
 	rows,
-	hitIndex,
+	evidenceIndex,
 	names,
 }: {
 	rows: EmployeeDetail["timeline"];
-	hitIndex: HitIndex;
-	/** 每条主张的名字，按 `Hit.claim` 的下标。 */
+	evidenceIndex: EvidenceIndex;
+	/** 每条主张的名字，按 `Evidence.claim` 的下标。 */
 	names: readonly string[];
 }) {
 	const ordered = [...rows].reverse();
@@ -34,7 +34,7 @@ export function Timeline({
 		<ol>
 			{ordered.map((x, i) => (
 				<Segment
-					hits={hitIndex.get(x.id)}
+					evidence={evidenceIndex.get(x.id)}
 					isLast={i === ordered.length - 1}
 					key={x.id}
 					names={names}
@@ -47,12 +47,12 @@ export function Timeline({
 
 function Segment({
 	row: x,
-	hits,
+	evidence,
 	isLast,
 	names,
 }: {
 	row: EmployeeDetail["timeline"][number];
-	hits: Hit[] | undefined;
+	evidence: Evidence[] | undefined;
 	isLast: boolean;
 	names: readonly string[];
 }) {
@@ -70,7 +70,7 @@ function Segment({
 		>
 			<span className="flex flex-col items-center">
 				<span className="flex h-(--text-base--line-height) items-center">
-					<Dot className="size-2.5" hit={(hits?.length ?? 0) > 0} />
+					<Dot className="size-2.5" found={(evidence?.length ?? 0) > 0} />
 				</span>
 				{!isLast && <span className="w-px flex-1 bg-border" />}
 			</span>
@@ -98,9 +98,11 @@ function Segment({
 					<p className="text-fg-tertiary text-xs">{x.departmentPath}</p>
 				)}
 
-				{hits && hits.length > 0 && <MatchedClaims hits={hits} names={names} />}
+				{evidence && evidence.length > 0 && (
+					<MatchedClaims evidence={evidence} names={names} />
+				)}
 
-				{/* 语义命中的查询词未必原样出现在自述中，因此原文不做字面高亮。 */}
+				{/* 算数的是从自述里读出的说法，原话里未必有这几个字，因此原文不做字面高亮。 */}
 				{x.description && (
 					<p className="read-cjk mt-2 text-fg-secondary text-base" lang="zh">
 						{x.description}
@@ -111,23 +113,25 @@ function Segment({
 	);
 }
 
-/** 这一段为哪些主张提供了证据。强度由节点说，标签不按强度上色。 */
+/** 这一段为哪些主张提供了证据。是不是证据由节点说，标签不另上色。 */
 function MatchedClaims({
-	hits,
+	evidence,
 	names,
 }: {
-	hits: Hit[];
+	evidence: Evidence[];
 	names: readonly string[];
 }) {
 	const seen = new Set<number>();
-	const unique = hits.filter((h) => !seen.has(h.claim) && seen.add(h.claim));
+	const unique = evidence.filter(
+		(e) => !seen.has(e.claim) && seen.add(e.claim),
+	);
 
 	return (
 		<div className="mt-2 flex flex-wrap items-center gap-1.5">
-			{unique.map((h) => (
-				<Tag key={h.claim} size="small">
-					{/* 抽取的能力带上命中的那条说法，和旁边的原文对得上 */}
-					{dots(names[h.claim], routeLabel(h.route), phraseLabel(h))}
+			{unique.map((e) => (
+				<Tag key={e.claim} size="small">
+					{/* 抽取的能力带上算数的那条说法，和旁边的原文对得上 */}
+					{dots(names[e.claim], routeLabel(e.route), phraseLabel(e))}
 				</Tag>
 			))}
 		</div>

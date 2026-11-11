@@ -1,13 +1,11 @@
 /** 界面规则测试的内存行工厂。与数据库夹具分开；姓名、工号和经历均为合成。 */
 import type { Experience } from "#/db/schema";
-import type { Hit } from "#/search/result";
+import type { Evidence } from "#/search/result";
 
-export const hit = (over: Partial<Hit> = {}): Hit => ({
+export const evidence = (over: Partial<Evidence> = {}): Evidence => ({
 	experienceId: 1,
 	claim: 0,
-	value: "算法",
 	route: "role",
-	relevance: 1,
 	phrase: null,
 	engagement: null,
 	startDate: "2020-01-01",

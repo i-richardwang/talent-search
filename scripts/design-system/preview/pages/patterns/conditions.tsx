@@ -24,12 +24,7 @@ import { KEYWORD_LABEL } from "#/search/keywords";
 import { labelsInSentence, type QueryCondition } from "#/search/query";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-import {
-	asQuery,
-	CONDITIONS,
-	COUNTS,
-	EXCLUDE_INTERN,
-} from "../../samples/conditions";
+import { asQuery, CONDITIONS, EXCLUDE_INTERN } from "../../samples/conditions";
 import { FACETS } from "../../samples/people";
 
 /** 试用区一开始的搜索条件：名单那一次的三条，加一条排除。 */
@@ -102,11 +97,7 @@ function Playground() {
 					</>
 				}
 			>
-				<QueryChips
-					conditions={conditions}
-					counts={COUNTS}
-					onChange={setConditions}
-				/>
+				<QueryChips conditions={conditions} onChange={setConditions} />
 			</Stage>
 			<Stage
 				className="items-stretch p-0"
@@ -147,7 +138,6 @@ function Looks() {
 									{one ? (
 										<QueryChips
 											conditions={[one]}
-											counts={COUNTS}
 											onChange={(next) =>
 												setRows((old) =>
 													old.map((c, j) => (j === i ? (next[0] ?? c) : c)),
@@ -239,11 +229,7 @@ function Usage() {
 				title="直接改条件"
 			>
 				<div className="flex flex-col gap-3">
-					<QueryChips
-						conditions={conditions}
-						counts={COUNTS}
-						onChange={setConditions}
-					/>
+					<QueryChips conditions={conditions} onChange={setConditions} />
 					<span className="text-fg-secondary text-xs">
 						{sentenceOf(conditions)}
 					</span>
@@ -265,7 +251,6 @@ function Usage() {
 			>
 				<QueryChips
 					conditions={asQuery([CONDITIONS[1] as Condition])}
-					counts={{}}
 					onChange={() => {}}
 				/>
 			</Example>
@@ -289,14 +274,13 @@ export function ConditionsPage() {
 			rules={{
 				notes: [
 					"强度写成字：必须是默认，不写；加分、排除跟在标签后面，和写进句子里的「（加分）」同一个说法。停用按条件记着，下次整理原样保留。",
-					"chip 最右边是这一条单独能找到的人数，不随筛选变，和线程里「试搜」的是同一个数；停用的不写人数。名单上的总数才是几条合起来的。",
 					"条件之间是「且」、同一个人；一项里的几个取值是「或」且同权。",
 					"改条件是换一个问题，记成新的一次搜索；筛选是同一次搜索换个看法，写进地址，浏览器后退可撤销。",
 					"关键词搜索的查询面只放填词的维，有限取值的维只在筛选栏：同一维不在两处出现。",
 					"累计年限（搜索条件）和经历时长（筛选）不是一件事，各有各的标签。",
 					"筛选的计数单位是人；多选的维是菜单里的勾选项，单选的维是单选项，最前面是「不限」。",
 				],
-				usage: `<QueryChips conditions={query.conditions} counts={counts} onChange={revise} />\n<FilterBar\n  fields={filterFields(facets, view)}\n  onChange={updateView}\n  textFilters={textFilters(view)}\n/>`,
+				usage: `<QueryChips conditions={query.conditions} onChange={revise} />\n<FilterBar\n  fields={filterFields(facets, view)}\n  onChange={updateView}\n  textFilters={textFilters(view)}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用" },

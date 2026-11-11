@@ -1,11 +1,10 @@
 /**
  * 外部判定接口负责鉴权和 HTTP 格式转换，队列规则归 corpus/judgment.ts。
- * 接口只保存组上的判定原话，词表、释义和边由整理任务在拿到锁之后校验并写入。
+ * 接口只保存组上的判定原话，词表由整理任务在拿到锁之后校验并写入。
  * 对外提供短说法、人数和判定标准；部署限流由网关承担。
  */
 
 import "@tanstack/react-start/server-only";
-import { GLOSS_GUIDE } from "#/corpus/gloss";
 import {
 	agentJudge,
 	type Judge,
@@ -15,10 +14,8 @@ import {
 	type Submission,
 	submitJudgment,
 } from "#/corpus/judgment";
-import { guideIdentities } from "#/corpus/review";
-import { GUIDE } from "#/corpus/vocabulary";
+import { GUIDE, groupIdentity } from "#/corpus/vocabulary";
 import { pool } from "#/db";
-import type { GroupKind } from "#/db/schema";
 import { reviewConfigured as chatReviewConfigured } from "./chat";
 
 /** 一次最多取几组。要得更多就多取一次——一份响应大到要翻页就没人读得完。 */
@@ -65,13 +62,12 @@ export function authorized(request: Request): boolean {
 }
 
 /**
- * 一组在响应里的样子：哪一种组，一组词各带人数。归并组里没有谁是「标准词」——标准
- * 写法由生效时按人数定，归属由判定方起名。`expiresAt` 说这一组还能判到什么时候，
- * 判定方据此安排自己的工作。
+ * 一组在响应里的样子：一组词各带人数。组里没有谁是「标准词」——标准写法由生效时
+ * 按人数定，归属由判定方起名。`expiresAt` 说这一组还能判到什么时候，判定方据此安排
+ * 自己的工作。
  */
 type GroupView = {
 	id: number;
-	kind: GroupKind;
 	guideIdentity: string;
 	words: Member[];
 	collectedAt: string;
@@ -79,30 +75,15 @@ type GroupView = {
 };
 
 /**
- * 未判定且未过期的组按收集顺序返回，可被多个读者取走，接受首份提交。给了 `kind`
- * 就只取那一种：两种组各有各的标准，判定方可以先做或只做其中一种。
- * guides 与自带模型共用各类组的判定标准。
+ * 未判定且未过期的组按收集顺序返回，可被多个读者取走，接受首份提交。
+ * `guide` 是判定标准，和自带模型读的是同一份。
  */
-export async function pending(
-	limit: number,
-	kind?: GroupKind,
-): Promise<{
+export async function pending(limit: number): Promise<{
 	groups: GroupView[];
-	guides: Record<GroupKind, { identity: string; text: string }>;
+	guide: { identity: string; text: string };
 }> {
-	const identities = guideIdentities();
-	const kinds: GroupKind[] = kind ? [kind] : ["group", "gloss"];
-	const rows = (
-		await Promise.all(
-			kinds.map((one) => openGroups(pool, one, identities[one], limit)),
-		)
-	)
-		.flat()
-		.sort(
-			(a, b) =>
-				a.collectedAt.getTime() - b.collectedAt.getTime() || a.id - b.id,
-		)
-		.slice(0, limit);
+	const identity = groupIdentity();
+	const rows = await openGroups(pool, identity, limit);
 	return {
 		groups: rows.map((one) => ({
 			collectedAt: one.collectedAt.toISOString(),
@@ -110,14 +91,10 @@ export async function pending(
 				one.collectedAt.getTime() + REVIEW_INTERVAL_DAYS * 86_400_000,
 			).toISOString(),
 			id: one.id,
-			kind: one.kind,
 			guideIdentity: one.guideIdentity,
 			words: one.words,
 		})),
-		guides: {
-			gloss: { identity: identities.gloss, text: GLOSS_GUIDE },
-			group: { identity: identities.group, text: GUIDE },
-		},
+		guide: { identity, text: GUIDE },
 	};
 }
 
@@ -126,12 +103,6 @@ export function limitOf(url: string): number {
 	const raw = Number(new URL(url).searchParams.get("limit"));
 	if (!Number.isInteger(raw) || raw <= 0) return DEFAULT_LIMIT;
 	return Math.min(raw, MAX_LIMIT);
-}
-
-/** 从 URL 上读 `kind`。缺失或不认得时两种都取，和 `limit` 一样不为一个参数否掉整次请求。 */
-export function kindOf(url: string): GroupKind | undefined {
-	const raw = new URL(url).searchParams.get("kind");
-	return raw === "group" || raw === "gloss" ? raw : undefined;
 }
 
 /** 提交的结果：`Submission` 加上两种形状不对。 */
@@ -177,13 +148,11 @@ export async function submit(request: Request): Promise<Submitted> {
 	}
 	if (typeof body !== "object" || body === null)
 		return { ok: false, why: "这份判定不是 JSON" };
-	const { guideIdentity, id, judge, judgments, kind } = body as Record<
+	const { guideIdentity, id, judge, judgments } = body as Record<
 		string,
 		unknown
 	>;
 	if (!Number.isInteger(id)) return { ok: false, why: "缺 id" };
-	if (kind !== "group" && kind !== "gloss")
-		return { ok: false, why: "kind 不是 group 或 gloss" };
 	if (
 		typeof guideIdentity !== "string" ||
 		!/^[a-f0-9]{64}$/.test(guideIdentity)
@@ -197,14 +166,13 @@ export async function submit(request: Request): Promise<Submitted> {
 		};
 	if (!Array.isArray(judgments))
 		return { ok: false, why: "judgments 不是数组" };
-	if (guideIdentity !== guideIdentities()[kind])
+	if (guideIdentity !== groupIdentity())
 		return { ok: true, submission: "missing" };
 	return {
 		ok: true,
 		submission: await submitJudgment(
 			pool,
 			id as number,
-			kind,
 			guideIdentity,
 			name,
 			judgments,

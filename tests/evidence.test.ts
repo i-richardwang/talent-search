@@ -3,13 +3,13 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { bestHitPerClaim, routeLabel } from "#/search/evidence";
+import { bestEvidencePerClaim, routeLabel } from "#/search/evidence";
 import type { Claim } from "#/search/query";
 import type { Route } from "#/search/weights";
 import { compiledClaim } from "./conditions";
-import { hit as row } from "./rows";
+import { evidence as row } from "./rows";
 
-const hit = (claim: number, route: Route) => row({ claim, route });
+const evidence = (claim: number, route: Route) => row({ claim, route });
 
 const claims = (...what: string[]): Claim[] =>
 	what.map((w) => compiledClaim(w));
@@ -32,8 +32,8 @@ describe("来源的写法", () => {
 
 describe("每条主张取最好的那条命中", () => {
 	test("按主张的顺序对齐，不按命中的顺序", () => {
-		const best = bestHitPerClaim(
-			[hit(1, "skill"), hit(0, "role")],
+		const best = bestEvidencePerClaim(
+			[evidence(1, "skill"), evidence(0, "role")],
 			claims("算法", "运营"),
 		);
 		assert.deepEqual(
@@ -43,8 +43,8 @@ describe("每条主张取最好的那条命中", () => {
 	});
 
 	test("同一条主张有多条时取展示列表中排在第一的那条", () => {
-		const best = bestHitPerClaim(
-			[hit(0, "description"), hit(0, "role")],
+		const best = bestEvidencePerClaim(
+			[evidence(0, "description"), evidence(0, "role")],
 			claims("算法"),
 		);
 		assert.equal(best[0]?.route, "description");

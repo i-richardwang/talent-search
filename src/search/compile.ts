@@ -4,9 +4,10 @@
  * 编译，显示和执行都用编译出的查询。模板固定：每一项落到目录列上的一个谓词，名字走
  * `escapeLike` 后作绑定参数，取值和词都不改写。
  *
- * - 经历主张：经历词是 `terms`，在哪、哪一档、入职前还是公司内写进 `where`，累计时长是 `minMonths`。
- * - 背景（没写经历词的经历主张）：同上，没有 `terms`。
- * - 排除：时长按单段判，写进 `where`（`e.months >= :months`），否决问的是「这一段是不是 X」。
+ * - 经历主张：每个经历词是 `seek` 里按字面包含它的一条正则，不写判据：关键词搜的就是字面。
+ *   在哪、哪一档、入职前还是公司内写进 `where`，累计时长是 `minMonths`。
+ * - 背景（没写经历词的经历主张）：同上，没有 `seek`。
+ * - 排除：时长按单段判，写进 `where`（`e.months >= :months`），问的是「有没有一段是 X」。
  * - 人的条件：词表维按档名，「某档及以上」按档高，学校按名字包含。
  *
  * 身份由条件的 `conditionKey` 散列而来：同一张表每次编译出同样的 id，停用状态和一轮前后
@@ -23,8 +24,16 @@ import {
 import { conditionLabel } from "./condition-label";
 import type { Query, QueryCondition } from "./query";
 
-/** 经历主张的 `what` 在 `terms` 里的键。 */
-const WHAT_KEY = "what";
+/**
+ * 一个经历词 → 按字面包含它的正则。词的两头是英文或数字时，不接别的英文数字：
+ * 搜「Java」不带出「JavaScript」，搜「BI」不带出「mobile」。
+ */
+function literalPattern(word: string): string {
+	const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const lead = /^[a-z0-9]/i.test(word) ? "(?<![a-z0-9])" : "";
+	const tail = /[a-z0-9]$/i.test(word) ? "(?![a-z0-9])" : "";
+	return `${lead}${escaped}${tail}`;
+}
 
 /** 人的条件里词表维对应的 `person` 列。 */
 const PERSON_COLUMN = {
@@ -129,7 +138,7 @@ export function compileCondition(c: Condition): QueryCondition {
 	return {
 		...base,
 		from: "experience",
-		...(c.what && { terms: { [WHAT_KEY]: [...c.what] } }),
+		...(c.what && { seek: { patterns: c.what.map(literalPattern) } }),
 		...trimmed(segment(c).built()),
 		...(c.mode !== "exclude" && c.minMonths && { minMonths: c.minMonths }),
 	};
