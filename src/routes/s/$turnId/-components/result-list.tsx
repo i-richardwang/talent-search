@@ -121,6 +121,8 @@ export function ResultList({
 
 	// 按人排的名单没有主张，一行只有姓名和岗位
 	const evidenced = claims.length > 0;
+	// 必须的条件名单上人人都命中，几条里命中几条只在有加分条件时因人而异
+	const graded = claims.some((claim) => claim.mode === "boost");
 	const rows = picks.rows.map(({ employee: e, lines }) => {
 		const current = e.empId === empId;
 		return (
@@ -128,7 +130,7 @@ export function ResultList({
 				className={cn("scroll-my-12", wait?.list === "dim" && "opacity-60")}
 				current={current}
 				data-emp={e.empId}
-				extra={evidenced && <ClaimProgress lines={lines} name={e.name} />}
+				extra={graded && <ClaimProgress lines={lines} name={e.name} />}
 				key={e.empId}
 				pick={
 					<Checkbox

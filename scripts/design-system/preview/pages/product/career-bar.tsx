@@ -11,37 +11,27 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
-import type { Route, Experience as StoredExperience } from "#/db/schema";
+import type { Experience as StoredExperience } from "#/db/schema";
 import {
 	CareerBar,
 	packLanes,
 	ym,
 } from "#/routes/s/$turnId/-components/career-bar";
-import {
-	buildEvidenceIndex,
-	Timeline,
-} from "#/routes/s/$turnId/-components/timeline";
+import { Timeline } from "#/routes/s/$turnId/-components/timeline";
+import { countedOf } from "#/routes/s/$turnId/-lib/claim-lines";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-import { CLAIMS } from "../../samples/conditions";
-import {
-	EMPLOYEES,
-	evidenceOf,
-	evidenceOn,
-	experiencesOf,
-} from "../../samples/people";
+import { EMPLOYEES, evidenceOf, experiencesOf } from "../../samples/people";
 
 type Experience = StoredExperience & { mainIndustries: string[] };
 
-const NAMES = CLAIMS.map((claim) => claim.label);
-
-/** 一个人的带子要的三样：经历段、证据索引、入职日。 */
+/** 一个人的带子要的三样：经历段、算数的段、入职日。 */
 function barOf(empId: string, withEvidence = true) {
 	const employee = EMPLOYEES.find((e) => e.empId === empId);
 	return {
 		hireDate: employee?.hireDate ?? null,
-		evidenceIndex: buildEvidenceIndex(withEvidence ? evidenceOf(empId) : []),
+		counted: countedOf(withEvidence ? evidenceOf(empId) : []),
 		rows: experiencesOf(empId),
 	};
 }
@@ -70,13 +60,11 @@ const [FIRST, SECOND, THIRD] = experiencesOf("T0101") as [
 	Experience,
 ];
 
-/** 编码表的一行：三段经历，中间那段按给定来源命中，或都不命中。 */
-function encodingRow(route: Route | null) {
+/** 编码表的一行：三段经历，中间那段命中，或都不命中。 */
+function encodingRow(hit: boolean) {
 	return {
 		hireDate: SECOND.startDate,
-		evidenceIndex: buildEvidenceIndex(
-			route ? [evidenceOn(SECOND, { route })] : [],
-		),
+		counted: new Set(hit ? [SECOND.id] : []),
 		rows: [FIRST, SECOND, THIRD],
 	};
 }
@@ -89,16 +77,13 @@ const OVERLAP = [
 ];
 
 const ENCODINGS: [label: string, bar: ReturnType<typeof encodingRow>][] = [
-	["命中 · 任职记录", encodingRow("role")],
-	["命中 · 简历里的技能", encodingRow("skill")],
-	["未命中", encodingRow(null)],
+	["命中", encodingRow(true)],
+	["未命中", encodingRow(false)],
 	[
 		"重叠的两段分两条轨",
 		{
 			hireDate: "2019-03-01",
-			evidenceIndex: buildEvidenceIndex([
-				evidenceOn(OVERLAP[1] as Experience, { route: "title" }),
-			]),
+			counted: new Set([(OVERLAP[1] as Experience).id]),
 			rows: OVERLAP,
 		},
 	],
@@ -144,14 +129,14 @@ function Playground() {
 					<>
 						<span>{bar.rows.length} 段经历</span>
 						<span>{Math.max(...lanes) + 1} 条轨</span>
-						<span>命中 {bar.evidenceIndex.size} 段</span>
+						<span>命中 {bar.counted.size} 段</span>
 					</>
 				}
 			>
 				<div className="w-full max-w-(--container-detail)">
 					<CareerBar
 						hireDate={hire ? bar.hireDate : null}
-						evidenceIndex={bar.evidenceIndex}
+						counted={bar.counted}
 						rows={bar.rows}
 					/>
 				</div>
@@ -209,11 +194,7 @@ function Usage() {
 				<div className="flex w-full flex-col">
 					<CareerBar {...reading} />
 					<ScrollArea className="h-60 w-full">
-						<Timeline
-							evidenceIndex={reading.evidenceIndex}
-							names={NAMES}
-							rows={reading.rows}
-						/>
+						<Timeline counted={reading.counted} rows={reading.rows} />
 					</ScrollArea>
 				</div>
 			</Example>
@@ -224,7 +205,7 @@ function Usage() {
 				<div className="w-full">
 					<CareerBar
 						hireDate="2024-05-20"
-						evidenceIndex={detail.evidenceIndex}
+						counted={detail.counted}
 						rows={detail.rows}
 					/>
 				</div>
@@ -233,7 +214,7 @@ function Usage() {
 				description="一段经历都没有时不画，不留一条空带子。下面这一格因此是空的。"
 				title="没有经历"
 			>
-				<CareerBar hireDate={null} evidenceIndex={new Map()} rows={[]} />
+				<CareerBar hireDate={null} counted={new Set()} rows={[]} />
 			</Example>
 		</ExampleGrid>
 	);
@@ -246,13 +227,13 @@ export function CareerBarPage() {
 			facts={["命中一种颜色", "未命中细线", "重叠分轨"]}
 			rules={{
 				notes: [
-					"高度和颜色都只说这一段命中了没有：命中的颜色取自 evidence.tsx 的 EVIDENCE_FILL，和证据行的点同色，不分来源。",
+					"高度和颜色都只说这一段命中了没有：命中的颜色取自 evidence.tsx 的 EVIDENCE_FILL，和证据行的点同色。",
 					"未命中的段是一道 fill 色的细条。",
 					"段与段之间留一道缝，四角是最小的圆角；深浅两色下都看得出每一段。",
 					"在职与入职前连续排，转折点只由「入职」那根竖线说明。",
 					"每个色块是一个按钮，点了滚到经历时间线上对应的那一段。",
 				],
-				usage: `<CareerBar\n  hireDate={employee.hireDate}\n  evidenceIndex={buildEvidenceIndex(evidence)}\n  rows={timeline}\n/>`,
+				usage: `<CareerBar\n  hireDate={employee.hireDate}\n  counted={countedOf(evidence)}\n  rows={timeline}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用轨迹条" },

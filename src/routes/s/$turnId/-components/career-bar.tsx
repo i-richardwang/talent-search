@@ -1,6 +1,6 @@
 import { duration, period } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import { type EmployeeDetail, type Evidence, placeOf } from "#/search/result";
+import { type EmployeeDetail, placeOf } from "#/search/result";
 import { EVIDENCE_FILL } from "./evidence";
 
 /**
@@ -14,7 +14,7 @@ const MISS_H = 4;
 /** 相邻两段之间留的缝。 */
 const SEAM = 2;
 
-/** 有证据的段的最小宽度（px）：再窄，「简历自述」那一档的描边就看不清了。 */
+/** 有证据的段的最小宽度（px）：再窄就和没有证据的细条分不开了。 */
 const MIN_EVIDENCE_W = 8;
 
 /** 没有证据的段的最小宽度（px）：只有一个月也看得见。 */
@@ -52,11 +52,12 @@ export function packLanes(spans: { start: number; end: number }[]): number[] {
 
 export function CareerBar({
 	rows,
-	evidenceIndex,
+	counted,
 	hireDate,
 }: {
 	rows: EmployeeDetail["timeline"];
-	evidenceIndex: Map<number, Evidence[]>;
+	/** 算数的经历段（`claim-lines.ts` 的 `countedOf`）。 */
+	counted: ReadonlySet<number>;
 	hireDate: string | null;
 }) {
 	if (rows.length === 0) return null;
@@ -89,16 +90,16 @@ export function CareerBar({
 		<figure className="mb-4">
 			<div className="relative" style={{ height }}>
 				{rows.map((x, i) => {
-					const counted = (evidenceIndex.get(x.id)?.length ?? 0) > 0;
+					const hit = counted.has(x.id);
 					const s = spans[i];
 					if (!s) return null;
 					const laneTop = (lanes[i] ?? 0) * (LANE_H + LANE_GAP);
 					return (
 						<button
-							aria-label={`${placeOf(x)} ${x.title}，${period(x.startDate, x.endDate)}，${duration(x.months)}${counted ? "，与本次条件相关" : ""}`}
+							aria-label={`${placeOf(x)} ${x.title}，${period(x.startDate, x.endDate)}，${duration(x.months)}${hit ? "，与本次条件相关" : ""}`}
 							className={cn(
 								"absolute rounded-xs after:absolute after:-inset-x-1 after:-inset-y-4 after:content-['']",
-								counted ? EVIDENCE_FILL : "bg-fill",
+								hit ? EVIDENCE_FILL : "bg-fill",
 							)}
 							key={x.id}
 							onClick={() =>
@@ -109,9 +110,9 @@ export function CareerBar({
 							style={{
 								left: `${pct(s.start - from)}%`,
 								width: `calc(${pct(Math.max(s.end - s.start, 1))}% - ${SEAM}px)`,
-								minWidth: counted ? MIN_EVIDENCE_W : MIN_W,
-								top: counted ? laneTop : laneTop + (LANE_H - MISS_H) / 2,
-								height: counted ? LANE_H : MISS_H,
+								minWidth: hit ? MIN_EVIDENCE_W : MIN_W,
+								top: hit ? laneTop : laneTop + (LANE_H - MISS_H) / 2,
+								height: hit ? LANE_H : MISS_H,
 							}}
 							type="button"
 						/>

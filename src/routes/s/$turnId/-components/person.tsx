@@ -1,14 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import {
-	BriefcaseBusinessIcon,
-	type LucideIcon,
-	ScanSearchIcon,
-	XIcon,
-} from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { BriefcaseBusinessIcon, XIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { NavHeaderTitle } from "#/components/ui/app-layout";
-import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { Empty } from "#/components/ui/empty";
@@ -17,11 +11,10 @@ import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
 import { dots } from "#/lib/format";
 import type { EmployeeDetail, Evidence } from "#/search/result";
-import type { ClaimLine } from "../-lib/claim-lines";
+import { countedOf } from "../-lib/claim-lines";
 import { CareerBar } from "./career-bar";
-import { ClaimEvidence } from "./claim-evidence";
 import { PaneHeader } from "./pane-header";
-import { buildEvidenceIndex, Timeline } from "./timeline";
+import { Timeline } from "./timeline";
 
 /* 一个人的详情（`p.$empId.tsx` 的三种内容）：详情、换人途中的骨架、找不到这个工号。 */
 
@@ -47,31 +40,21 @@ function Pane({
 	);
 }
 
-function Section({
-	id,
-	icon,
-	title,
-	children,
-}: {
-	id: string;
-	icon: LucideIcon;
-	title: string;
-	children: ReactNode;
-}) {
-	const [open, setOpen] = useState(true);
+/** 「任职经历」一节：标题和时间线。 */
+function Career({ children }: { children: ReactNode }) {
 	return (
 		<section className="flex flex-col gap-2">
-			<h3>
-				<CollapsibleTrigger onOpenChange={setOpen} open={open} panelId={id}>
-					<Icon className="text-fg-tertiary" icon={icon} size={16} />
-					<Text size="sm" type="secondary" weight="medium">
-						{title}
-					</Text>
-				</CollapsibleTrigger>
+			<h3 className="flex items-center gap-2 px-2 py-1">
+				<Icon
+					className="text-fg-tertiary"
+					icon={BriefcaseBusinessIcon}
+					size={16}
+				/>
+				<Text size="sm" type="secondary" weight="medium">
+					任职经历
+				</Text>
 			</h3>
-			<Collapsible id={id} open={open}>
-				<div className="px-3 py-1">{children}</div>
-			</Collapsible>
+			<div className="px-3 py-1">{children}</div>
 		</section>
 	);
 }
@@ -129,11 +112,7 @@ export function PersonPending() {
 					</DescriptionsItem>
 				))}
 			</Descriptions>
-			<Section
-				icon={BriefcaseBusinessIcon}
-				id="career-pending"
-				title="任职经历"
-			>
+			<Career>
 				<div className="mb-4">
 					<Skeleton height={10} />
 					<div className="mt-1.5 flex h-4 items-center justify-between">
@@ -147,7 +126,7 @@ export function PersonPending() {
 							className="grid grid-cols-[1rem_minmax(0,1fr)] gap-x-2"
 							key={stage}
 						>
-							<span className="flex flex-col items-center">
+							<span className="flex flex-col items-center pt-2">
 								<span className="flex h-(--text-base--line-height) items-center">
 									<Skeleton.Avatar size={10} />
 								</span>
@@ -155,14 +134,16 @@ export function PersonPending() {
 									<span className="w-px flex-1 bg-border" />
 								)}
 							</span>
-							<div className={stage < PENDING_STAGES.length - 1 ? "pb-5" : ""}>
-								<Skeleton.Text width="45%" />
-								<Skeleton.Text className="mt-0.5" size="xs" width="65%" />
+							<div className={stage < PENDING_STAGES.length - 1 ? "pb-3" : ""}>
+								<div className="px-3 py-2">
+									<Skeleton.Text width="45%" />
+									<Skeleton.Text className="mt-0.5" size="xs" width="65%" />
+								</div>
 							</div>
 						</li>
 					))}
 				</ol>
-			</Section>
+			</Career>
 		</Pane>
 	);
 }
@@ -178,24 +159,21 @@ export function PersonNotFound() {
 }
 
 /**
- * 一个人的详情，用来逐段核对：当前的几条属性、每条条件的匹配依据、任职经历。
+ * 一个人的详情，用来逐段核对：当前的几条属性和任职经历。
  *
- * `evidence` 是这个人在当前检索里的全部证据（时间线据此标出段落），`lines` 是逐条的依据，
- * 和主张同序；不在名单上、或名单按人排时两者都是空的。
+ * `evidence` 是这个人在当前检索里的全部证据，轨迹条和时间线据此标出算数的段；
+ * 不在名单上、或名单按人排时是空的。
  */
 export function Person({
 	employee: e,
 	timeline,
 	evidence,
-	lines,
 }: {
 	employee: EmployeeDetail["employee"];
 	timeline: EmployeeDetail["timeline"];
 	evidence: Evidence[];
-	lines: ClaimLine[];
 }) {
-	const evidenceIndex = buildEvidenceIndex(evidence);
-	const names = lines.map((line) => line.claim.label);
+	const counted = countedOf(evidence);
 
 	return (
 		/* 换人时整栏淡入一次；按 empId 换 key 让动画重播。 */
@@ -239,24 +217,10 @@ export function Person({
 					))}
 				</Descriptions>
 
-				{lines.length > 0 && (
-					<Section icon={ScanSearchIcon} id="evidence" title="匹配依据">
-						<ClaimEvidence lines={lines} />
-					</Section>
-				)}
-
-				<Section icon={BriefcaseBusinessIcon} id="career" title="任职经历">
-					<CareerBar
-						hireDate={e.hireDate}
-						evidenceIndex={evidenceIndex}
-						rows={timeline}
-					/>
-					<Timeline
-						evidenceIndex={evidenceIndex}
-						names={names}
-						rows={timeline}
-					/>
-				</Section>
+				<Career>
+					<CareerBar counted={counted} hireDate={e.hireDate} rows={timeline} />
+					<Timeline counted={counted} rows={timeline} />
+				</Career>
 			</Pane>
 		</div>
 	);

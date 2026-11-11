@@ -222,7 +222,7 @@ function Usage() {
 		<ExampleGrid>
 			{first && (
 				<Example
-					description="一个人一组证据行，名单行尾的气泡和人的详情里都是这一组：必须的在前，加分的条件词后面写「加分」。"
+					description="一个人一组证据行，名单行尾的气泡里是这一组：必须的在前，加分的条件词后面写「加分」。"
 					title="一个人的匹配依据"
 				>
 					<ClaimEvidence lines={claimLines(first, CLAIMS)} />
@@ -274,7 +274,7 @@ export function EvidencePage() {
 					"点只说命中没有：Dot 和 EVIDENCE_FILL 不分来源，职业轨迹条和时间线读同一套。来源用字写在证据行上：任职记录、岗位、技能、简历原文；技能前面带投入档（主导、做过、提到）。",
 					"来源不决定名次也不决定去留：名次只看投入、做了多久、离现在多近。",
 					"右端显示的时长和排序用的时长是同一份，不另算。",
-					"证据行出现在名单行尾的依据气泡和人的详情「匹配依据」里，12px：条件词和时长是次要色（做完的时长退到三级灰），命中的字段与字段名三级灰，上下文四级灰。",
+					"证据行出现在名单行尾的依据气泡里，12px：条件词和时长是次要色（做完的时长退到三级灰），命中的字段与字段名三级灰，上下文四级灰。",
 					"必须不带标记，加分在条件词后面写「加分」；不显示分数和名次。",
 				],
 				usage: `<EvidenceLine\n  basis={basis}\n  boost={claim.mode === "boost"}\n  evidence={evidence}\n  name={claim.label}\n/>`,

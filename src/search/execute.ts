@@ -68,7 +68,6 @@ import {
 import { criterionKey, SEGMENT_CONTENT } from "./verdict";
 import {
 	ENGAGEMENT_FACTOR,
-	EVIDENCE_PER_CLAIM,
 	FACT_MAX,
 	RESULT_PAGE,
 	type Route,
@@ -752,13 +751,7 @@ async function present(
 	if (page.length === 0)
 		return { order: "evidence", claims, results: [], ...counted, empty };
 
-	const kept = pageEvidence(
-		facts,
-		claims,
-		filters,
-		new Set(empIds),
-		EVIDENCE_PER_CLAIM,
-	);
+	const kept = pageEvidence(facts, claims, filters, new Set(empIds));
 	const ids = [...new Set([...kept.values()].flat().map((fact) => fact.id))];
 	const segments = await store
 		.select()

@@ -35,7 +35,7 @@ export function ProgressTagPage() {
 			facts={["圆环加几/几", "点开看依据", "按钮"]}
 			rules={{
 				notes: [
-					"名单一行行尾的 ProgressTag 写这个人几条条件里命中了几条，点开是逐条的依据。",
+					"有加分条件时，名单一行行尾的 ProgressTag 写这个人几条条件里命中了几条，点开是逐条的依据。",
 					"圆环只画比例；数字写在右边，读的是数字。",
 				],
 				usage: `<Popover content={<ClaimEvidence lines={lines} />} trigger="click">

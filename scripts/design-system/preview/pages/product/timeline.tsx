@@ -11,57 +11,38 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import { Dot } from "#/routes/s/$turnId/-components/evidence";
-import {
-	buildEvidenceIndex,
-	Timeline,
-} from "#/routes/s/$turnId/-components/timeline";
-import type { Route } from "#/search/weights";
+import { Timeline } from "#/routes/s/$turnId/-components/timeline";
+import { countedOf } from "#/routes/s/$turnId/-lib/claim-lines";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-import { CLAIMS } from "../../samples/conditions";
 import {
 	EMPLOYEES,
 	evidenceOf,
-	evidenceOn,
 	experience,
 	experiencesOf,
 } from "../../samples/people";
 
-const NAMES = CLAIMS.map((claim) => claim.label);
-
 /**
- * 节点状态表的一行：一段经历配一条指定来源的证据。编号加一个偏移，
+ * 节点状态表的一行：一段经历，算数或不算数。编号加一个偏移，
  * 同一页上的几条时间线不共用锚点 id。
  */
-function nodeRow(route: Route | null, offset: number) {
-	const base = route === "skill" ? experience(101) : experience(103);
+function nodeRow(hit: boolean, offset: number) {
+	const base = experience(103);
 	const row = { ...base, id: base.id + offset };
-	const evidence = route
-		? [
-				evidenceOn(row, {
-					engagement: route === "skill" ? "主导" : null,
-					phrase: route === "skill" ? "实时推荐系统" : null,
-					route,
-				}),
-			]
-		: [];
-	return { evidenceIndex: buildEvidenceIndex(evidence), rows: [row] };
+	return { counted: new Set(hit ? [row.id] : []), rows: [row] };
 }
 
-const NODES: [label: string, route: Route | null][] = [
-	["命中 · 任职记录", "role"],
-	["命中 · 简历里的技能", "skill"],
-	["未命中", null],
+const NODES: [label: string, hit: boolean][] = [
+	["命中", true],
+	["未命中", false],
 ];
 
 function Playground() {
 	const [empId, setEmpId] = useState("T0101");
 	const [withEvidence, setWithEvidence] = useState(true);
 	const rows = experiencesOf(empId);
-	const evidenceIndex = buildEvidenceIndex(
-		withEvidence ? evidenceOf(empId) : [],
-	);
+	const counted = countedOf(withEvidence ? evidenceOf(empId) : []);
 	const external = rows.filter((x) => x.kind === "external").length;
 	return (
 		<div className="flex flex-col gap-4">
@@ -88,12 +69,12 @@ function Playground() {
 					<>
 						<span>公司内 {rows.length - external} 段</span>
 						<span>入职前 {external} 段</span>
-						<span>命中 {evidenceIndex.size} 段</span>
+						<span>命中 {counted.size} 段</span>
 					</>
 				}
 			>
 				<div className="mx-auto w-full max-w-(--container-detail)">
-					<Timeline evidenceIndex={evidenceIndex} names={NAMES} rows={rows} />
+					<Timeline counted={counted} rows={rows} />
 				</div>
 			</Stage>
 		</div>
@@ -111,19 +92,19 @@ function Nodes() {
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{NODES.map(([label, route], i) => {
-						const node = nodeRow(route, 1000 * (i + 1));
+					{NODES.map(([label, hit], i) => {
+						const node = nodeRow(hit, 1000 * (i + 1));
 						return (
 							<TableRow key={label}>
 								<TableCell className="whitespace-nowrap">
 									<span className="flex items-center gap-1.5 text-xs">
-										<Dot found={route !== null} />
+										<Dot found={hit} />
 										{label}
 									</span>
 								</TableCell>
 								<TableCell className="w-full">
 									<div className="max-w-(--container-detail)">
-										<Timeline names={NAMES} {...node} />
+										<Timeline {...node} />
 									</div>
 								</TableCell>
 							</TableRow>
@@ -138,37 +119,27 @@ function Nodes() {
 /** 使用场景里单独画一段：编号加偏移，不和试用里的锚点重名。 */
 function single(id: number, empId: string, offset: number) {
 	const row = { ...experience(id), id: id + offset };
-	const evidence = evidenceOf(empId)
-		.filter((e) => e.experienceId === id)
-		.map((e) => ({ ...e, experienceId: row.id }));
-	return { evidenceIndex: buildEvidenceIndex(evidence), rows: [row] };
+	const hit = countedOf(evidenceOf(empId)).has(id);
+	return { counted: new Set(hit ? [row.id] : []), rows: [row] };
 }
 
 function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="一段经历同时是两条主张的证据：节点是实心点，下面每条主张一枚描边标签。"
-				title="一段命中两条"
-			>
-				<div className="w-full">
-					<Timeline names={NAMES} {...single(303, "T0103", 5000)} />
-				</div>
-			</Example>
-			<Example
 				description="入职前的段标「入职前」，序列是按岗位名推断的一对，后面注「推断」；公司档、行业、性质接在起止后面。"
 				title="入职前的经历"
 			>
 				<div className="w-full">
-					<Timeline names={NAMES} {...single(602, "T0106", 6000)} />
+					<Timeline {...single(602, "T0106", 6000)} />
 				</div>
 			</Example>
 			<Example
-				description="抽取出的说法写进标签，HR 对着下面的简历原文就能看出凭什么算命中；原文不做字面高亮。"
+				description="算不算是读过整段之后的结论：HR 读这一段的岗位和原文核对，原文不做字面高亮。"
 				title="技能与原文"
 			>
 				<div className="w-full">
-					<Timeline names={NAMES} {...single(101, "T0101", 7000)} />
+					<Timeline {...single(101, "T0101", 7000)} />
 				</div>
 			</Example>
 			<Example
@@ -176,7 +147,7 @@ function Usage() {
 				title="公司内的任职"
 			>
 				<div className="w-full">
-					<Timeline names={NAMES} {...single(202, "T0102", 8000)} />
+					<Timeline {...single(202, "T0102", 8000)} />
 				</div>
 			</Example>
 		</ExampleGrid>
@@ -187,16 +158,17 @@ function Usage() {
 export function TimelinePage() {
 	return (
 		<DocPage
-			facts={[`${NODES.length} 种节点`, "入职前标签", "命中标签"]}
+			facts={[`${NODES.length} 种节点`, "入职前标签", "命中铺底"]}
 			rules={{
 				notes: [
-					"节点就是证据行那颗 Dot，只说这一段命中了没有；不分来源，不另画一套命中点。",
+					"节点就是证据行那颗 Dot，只说这一段命中了没有，不另画一套命中点。",
 					"「入职前」用描边标签说，不靠节点的样子区分。",
-					"命中标签全部描边、不上色；来源写在标签里的字上。",
+					"算数的段整段铺一块填充的 Block，不写它为哪条条件算数、凭哪个字段：条件名只在条件那一排出现。",
+					"不算数的段是无底的 Block，边距相同，各段的字对齐。",
 					"推断序列只标「推断」，不和登记的序列混为一谈。",
 					"时间线放在人的详情里：宽屏在名单旁的右栏，窄屏在详情浮层，不另开一栏。",
 				],
-				usage: `<Timeline\n  evidenceIndex={buildEvidenceIndex(evidence)}\n  names={claims.map((claim) => claim.label)}\n  rows={timeline}\n/>`,
+				usage: `<Timeline counted={countedOf(evidence)} rows={timeline} />`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用时间线" },
