@@ -5,8 +5,8 @@ import { Icon } from "./icon";
 
 /*
  * 一条搜索条件：左边是打开这一条菜单的开关（`FilterChipTrigger`），右边是清掉这一条的
- * 关闭格（`FilterChipClear`）。`dashed` 表示这一条停用了。开关里依次是取值、强度
- * （`FilterChipNote`）和这一条单独的人数（`FilterChipCount`）。
+ * 关闭格（`FilterChipClear`）。`dashed` 表示这一条停用了。开关里依次是取值和强度
+ * （`FilterChipNote`）。
  */
 
 export function FilterChip({
@@ -45,11 +45,6 @@ export function FilterChipValue({ children }: { children: ReactNode }) {
 
 export function FilterChipNote({ children }: { children: ReactNode }) {
 	return <span className="ui-filter-chip-note">{children}</span>;
-}
-
-/** 这一条单独能找到的人数，写在开关的最右边。 */
-export function FilterChipCount({ children }: { children: ReactNode }) {
-	return <span className="ui-filter-chip-count">{children}</span>;
 }
 
 /** 关闭格：`label` 是读屏读出的那句，要说得出清掉的是哪一条。 */

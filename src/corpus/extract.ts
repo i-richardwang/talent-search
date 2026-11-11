@@ -77,7 +77,7 @@ export function promptInput(row: {
 }
 
 function keep(word: string, company: string): boolean {
-	// 公司名不进说法：专有名词在向量空间里和同类名字是邻居。描述里也会写公司名，
+	// 公司名不进说法：它只回答「在哪」，由按名字找的条件使用。描述里也会写公司名，
 	// 抽出的词含这段的公司名或被它包含的都丢掉。
 	if (!word || [...word].length > MAX_TAG_LEN) return false;
 	return !(company && (word.includes(company) || company.includes(word)));

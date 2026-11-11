@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { internalWordsIn } from "#/lib/internal-words";
 import { ZeroState } from "#/routes/-components/zero-state";
+import {
+	IncompleteNotice,
+	incompleteText,
+	NotCompleted,
+} from "#/routes/s/$turnId/-components/completeness";
 import { QueryHeader } from "#/routes/s/$turnId/-components/query-header";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { ResultHeader } from "#/routes/s/$turnId/-components/result-state";
@@ -9,7 +15,7 @@ import type { Picks } from "#/routes/s/$turnId/-lib/picks";
 import type { Condition } from "#/search/condition";
 import { conditionLabel } from "#/search/condition-label";
 import { emptyFacets } from "#/search/result";
-import type { InterpretFault } from "#/server/turn";
+import type { AttemptFault } from "#/server/turn";
 import { compiledClaim, person } from "./conditions";
 import { visibleText } from "./render";
 import { routed } from "./routed";
@@ -97,7 +103,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 	});
 
 	/** 没理解出来时名单那一列说的话。 */
-	const failed = async (fault: InterpretFault) =>
+	const failed = async (fault: AttemptFault) =>
 		visibleText(
 			await routed(() => (
 				<ResultList
@@ -118,7 +124,6 @@ describe("产品文案使用常规 SaaS 语言", () => {
 						results: [],
 						facets: emptyFacets(),
 						total: 0,
-						counts: {},
 						empty: null,
 					}}
 					picks={NO_PICKS}
@@ -192,7 +197,6 @@ describe("产品文案使用常规 SaaS 语言", () => {
 					results: [],
 					facets: emptyFacets(),
 					total: 0,
-					counts: {},
 					empty: { kind: "unmet" },
 				}}
 				spec={{
@@ -207,5 +211,68 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.match(text, /没有同时满足必须条件的人/);
 		assert.doesNotMatch(text, /0\s*人/);
 		assert.doesNotMatch(text, /按证据排序/);
+	});
+
+	test("AI 还在补人、名单上一个人都没有：只说在做什么，不抢先说没有这样的人", () => {
+		const text = seen(
+			<ResultList
+				canMore={false}
+				empId={undefined}
+				failure={null}
+				growing={false}
+				wait={{ list: "keep", phase: "completing", since: null }}
+				mode="conversation"
+				onAll={() => {}}
+				onChange={() => {}}
+				onEditQuery={() => {}}
+				onMore={() => {}}
+				onReviseQuery={() => {}}
+				picks={NO_PICKS}
+				outcome={{
+					order: "evidence",
+					claims: [compiledClaim("量子炼金")],
+					results: [],
+					facets: emptyFacets(),
+					total: 0,
+					empty: { kind: "unmet" },
+				}}
+				spec={{
+					conditions: [
+						{ about: "experience", mode: "must", what: ["量子炼金"] },
+					],
+				}}
+				turnId="t1"
+			/>,
+		);
+		assert.match(text, /正在补充符合新条件的人…/);
+		assert.doesNotMatch(text, /没有同时满足必须条件的人|0\s*人/);
+	});
+
+	test("名单还不完整时说覆盖到了哪一档职级；最高一档也没覆盖完就不说职级", () => {
+		const covered = incompleteText({ above: "P7" });
+		const open = incompleteText({ above: null });
+		assert.equal(
+			covered,
+			"候选人较多，当前名单从高职级起完整覆盖到 P7。补充需求、缩小范围后可以覆盖到更低的职级。",
+		);
+		assert.equal(
+			open,
+			"候选人较多，当前名单还不完整。补充需求、缩小范围后可以覆盖更多人。",
+		);
+		assert.deepEqual(internalWordsIn(covered + open), []);
+		assert.equal(
+			seen(<IncompleteNotice incomplete={{ above: "P7" }} />),
+			covered,
+		);
+	});
+
+	test("补人没成：说名单可能不完整和哪个环节出了问题，能重试的给重试", () => {
+		const text = seen(<NotCompleted fault="unreachable" onRetry={() => {}} />);
+		assert.match(text, /名单可能不完整：AI 服务暂时不可用/);
+		assert.match(text, /重试/);
+		assert.doesNotMatch(
+			seen(<NotCompleted fault="unconfigured" onRetry={() => {}} />),
+			/重试/,
+		);
 	});
 });

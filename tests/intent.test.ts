@@ -1,6 +1,5 @@
 /**
- * 查询理解的校验。**不连数据库，也不调模型**：模型输出的每一种偏差都能在这里测出来，
- * `src/server/llm.ts` 里剩下的只有「发出去、拿回来」。`where` 合不合白名单、能不能跑由
+ * 查询理解的纯校验，不连数据库，也不调模型。`where` 合不合白名单、能不能跑由
  * 提交工具试跑（`tests/agent-tools.test.ts`），这里只看形状、身份、停用与说明。
  *
  * 每个用例读成一句「模型这么写的时候，这一轮的条件应该是什么」。
@@ -30,15 +29,18 @@ const person = (label: string, where: string, mode: unknown = "must") => ({
 	from: "person",
 	where,
 });
-const algo = exp("做过算法", { terms: { what: ["算法"] } });
+const algo = exp("做过算法", { seek: { patterns: ["算法"] } });
 
 describe("模型写出的查询就是查询", () => {
-	test("标签、强度、语义词、where、参数、累计时长原样留下", () => {
+	test("标签、强度、做过什么、where、参数、累计时长原样留下", () => {
 		const raw = [
 			exp(
 				"在甲辰科技做过推荐",
 				{
-					terms: { what: ["推荐算法", "推荐系统"] },
+					seek: {
+						criterion: "做过推荐算法或推荐系统",
+						patterns: ["推荐算法", "推荐系统"],
+					},
 					where: "e.company = :company",
 					params: { company: "甲辰科技" },
 					minMonths: 36,
@@ -52,7 +54,10 @@ describe("模型写出的查询就是查询", () => {
 				label: "在甲辰科技做过推荐",
 				mode: "must",
 				from: "experience",
-				terms: { what: ["推荐算法", "推荐系统"] },
+				seek: {
+					patterns: ["推荐算法", "推荐系统"],
+					criterion: "做过推荐算法或推荐系统",
+				},
 				where: "e.company = :company",
 				params: { company: "甲辰科技" },
 				minMonths: 36,
@@ -66,13 +71,36 @@ describe("模型写出的查询就是查询", () => {
 		]);
 	});
 
-	test("语义词是模型的表达：只做边界，不改字；重复的写法只留一次", () => {
+	test("正则和判据是模型写的：只做边界，不改字；重复的正则只留一次", () => {
 		const [c] = of(
 			exp("做过增长", {
-				terms: { what: [" 用户增长 ", "用户增长", "算".repeat(25)] },
+				seek: {
+					criterion: " 做过用户增长 ",
+					patterns: [" 用户增长 ", "用户增长", "算".repeat(125), 7],
+				},
 			}),
 		);
-		assert.deepEqual(c?.terms, { what: ["用户增长"] });
+		assert.deepEqual(c?.seek, {
+			patterns: ["用户增长"],
+			criterion: "做过用户增长",
+		});
+	});
+
+	test("只写判据的 seek 留下；显式写了但无效的 seek 使整条条件无效", () => {
+		const [judged] = of(
+			exp("带过团队", { seek: { criterion: "本人带过团队" } }),
+		);
+		assert.deepEqual(judged?.seek, { patterns: [], criterion: "本人带过团队" });
+		for (const seek of [
+			null,
+			[],
+			{},
+			{ patterns: [" "] },
+			{ patterns: [], criterion: " " },
+			{ patterns: ["字".repeat(121)] },
+		])
+			assert.deepEqual(of(exp("做过增长", { seek })), [], JSON.stringify(seek));
+		assert.equal(of(exp("有工作经历"))[0]?.seek, undefined);
 	});
 
 	test("人的条件上的排除没有表示，整条丢掉", () => {
@@ -82,18 +110,22 @@ describe("模型写出的查询就是查询", () => {
 		);
 	});
 
-	test("语义词只写在经历上，累计时长只在经历的必须与加分上", () => {
+	test("做过什么只写在经历上，累计时长只在经历的必须与加分上", () => {
 		const [p, ex] = of(
 			{
 				...person("硕士", "p.education = '硕士'"),
-				terms: { what: ["算法"] },
+				seek: { patterns: ["算法"] },
 				minMonths: 12,
 			},
-			exp("不要外包", { terms: { what: ["外包"] }, minMonths: 12 }, "exclude"),
+			exp(
+				"不要外包",
+				{ seek: { patterns: ["外包"] }, minMonths: 12 },
+				"exclude",
+			),
 		);
-		assert.equal(p?.terms, undefined);
+		assert.equal(p?.seek, undefined);
 		assert.equal(p?.minMonths, undefined);
-		assert.deepEqual(ex?.terms, { what: ["外包"] });
+		assert.deepEqual(ex?.seek, { patterns: ["外包"] });
 		assert.equal(ex?.minMonths, undefined);
 	});
 
@@ -112,16 +144,18 @@ describe("模型写出的查询就是查询", () => {
 
 	test("累计时长不是正整数或超过五十年就不写，条件留下", () => {
 		for (const minMonths of ["三年", 0, -3, 1.5, 601]) {
-			const [c] = of(exp("做过算法", { terms: { what: ["算法"] }, minMonths }));
+			const [c] = of(
+				exp("做过算法", { seek: { patterns: ["算法"] }, minMonths }),
+			);
 			assert.ok(c, String(minMonths));
 			assert.equal(c.minMonths, undefined, String(minMonths));
 		}
 	});
 
-	test("参数名和语义词名要像标识符；参数只收数字和短文字", () => {
+	test("参数名要像标识符；参数只收数字和短文字", () => {
 		const [c] = of(
 			exp("参数", {
-				terms: { what: ["算法"], "坏 名": ["推荐"] },
+				seek: { patterns: ["算法"] },
 				params: {
 					ok: 1,
 					s: "甲辰科技",
@@ -131,7 +165,6 @@ describe("模型写出的查询就是查询", () => {
 				},
 			}),
 		);
-		assert.deepEqual(c?.terms, { what: ["算法"] });
 		assert.deepEqual(c?.params, { ok: 1, s: "甲辰科技" });
 	});
 });
@@ -143,7 +176,7 @@ describe("条件的身份", () => {
 			label: "做过算法",
 			mode: "must",
 			from: "experience",
-			terms: { what: ["算法"] },
+			seek: { patterns: ["算法"] },
 			where: "true",
 		},
 		{
@@ -192,8 +225,14 @@ describe("条件的身份", () => {
 			{
 				conditions: [
 					{ ...algo, id: "made-up" },
-					{ ...exp("做过推荐", { terms: { what: ["推荐"] } }), id: "keep01" },
-					{ ...exp("做过搜索", { terms: { what: ["搜索"] } }), id: "keep01" },
+					{
+						...exp("做过推荐", { seek: { patterns: ["推荐"] } }),
+						id: "keep01",
+					},
+					{
+						...exp("做过搜索", { seek: { patterns: ["搜索"] } }),
+						id: "keep01",
+					},
 				],
 			},
 			base,
@@ -252,7 +291,7 @@ describe("停用跟着条件走", () => {
 			mode: "must",
 			off: "user",
 			from: "experience",
-			terms: { what: ["算法"] },
+			seek: { patterns: ["算法"] },
 			where: "true",
 		},
 		{
@@ -260,7 +299,7 @@ describe("停用跟着条件走", () => {
 			label: "做过产品",
 			mode: "must",
 			from: "experience",
-			terms: { what: ["产品"] },
+			seek: { patterns: ["产品"] },
 			where: "true",
 		},
 	];
@@ -270,7 +309,7 @@ describe("停用跟着条件走", () => {
 			{
 				conditions: [
 					{ ...algo, id: "a", label: "算法方向" },
-					{ ...exp("做过产品", { terms: { what: ["产品"] } }), id: "b" },
+					{ ...exp("做过产品", { seek: { patterns: ["产品"] } }), id: "b" },
 				],
 			},
 			base,
@@ -297,7 +336,7 @@ describe("停用跟着条件走", () => {
 			{
 				conditions: [
 					{ ...algo, id: "a", mode: "boost" },
-					{ ...exp("做过销售", { terms: { what: ["销售"] } }), off: "user" },
+					{ ...exp("做过销售", { seek: { patterns: ["销售"] } }), off: "user" },
 				],
 			},
 			base,
@@ -310,149 +349,104 @@ describe("停用跟着条件走", () => {
 });
 
 describe("说明", () => {
-	const recommend = exp("做过推荐", { terms: { what: ["推荐"] } });
+	const noted = (note: unknown) => read({ conditions: [algo], note }).notes;
 
-	test("一句话和选项原样留下，选项的表走同一道校验", () => {
-		const { query, notes } = read({
-			conditions: [algo],
-			note: {
-				says: " 算法有几种常见的意思，要不要把推荐也算上？ ",
-				current: "只看算法",
-				options: [
-					{
-						label: "把推荐也算上",
-						detail: "做过推荐的有二十多位",
-						conditions: [
-							algo,
-							recommend,
-							person("不要本科", "true", "exclude"),
-						],
-					},
-				],
-			},
-		});
-		assert.equal(notes?.says, "算法有几种常见的意思，要不要把推荐也算上？");
-		assert.equal(notes?.choices?.current, "只看算法");
-		const [option] = notes?.choices?.others ?? [];
-		assert.equal(option?.label, "把推荐也算上");
-		assert.equal(option?.detail, "做过推荐的有二十多位");
+	test("一句话和可选的回答原样留下，只去两头的空白；没写说明的回答不带说明", () => {
 		assert.deepEqual(
-			option?.conditions.map((c) => c.label),
-			["做过算法", "做过推荐"],
-		);
-		assert.equal(
-			option?.conditions[0]?.id,
-			query.conditions[0]?.id,
-			"选项里和现在一样的条件用同一个 id：选了它，chip 的身份不变",
-		);
-	});
-
-	test("选项的表沿用上一轮的停用", () => {
-		const base: QueryCondition[] = [
+			noted({
+				says: " 算法有几种常见的意思，要不要把推荐也算上？ ",
+				current: " 只看算法 ",
+				options: [
+					{ label: " 把做推荐的也算上 ", detail: " 做过推荐的有二十多位 " },
+					{ label: "只看最近三年还在做的", detail: " " },
+				],
+			}),
 			{
-				id: "p",
-				label: "做过产品",
-				mode: "must",
-				off: "user",
-				from: "experience",
-				terms: { what: ["产品"] },
-				where: "true",
-			},
-		];
-		const { notes } = read(
-			{
-				conditions: [algo],
-				note: {
-					says: "要不要把做过产品的也带上？",
+				says: "算法有几种常见的意思，要不要把推荐也算上？",
+				choices: {
 					current: "只看算法",
-					options: [
-						{
-							label: "带上",
-							detail: "",
-							conditions: [
-								algo,
-								exp("做过产品", { terms: { what: ["产品"] } }),
-							],
-						},
+					others: [
+						{ label: "把做推荐的也算上", detail: "做过推荐的有二十多位" },
+						{ label: "只看最近三年还在做的" },
 					],
 				},
 			},
-			base,
-		);
-		assert.deepEqual(
-			notes?.choices?.others[0]?.conditions.map((c) => [c.label, c.off]),
-			[
-				["做过算法", undefined],
-				["做过产品", "user"],
-			],
 		);
 	});
 
-	test("和现在一样、和前面的选项一样、或校验后一条不剩的表不算一种理解", () => {
-		const { notes } = read({
-			conditions: [algo],
-			note: {
-				says: "算法有几种常见的意思，你要的是哪种？",
-				current: "算法工程",
-				options: [
-					{
-						label: "一样",
-						detail: "",
-						conditions: [{ ...algo, label: "换个说法" }],
-					},
-					{ label: "加上推荐", detail: "", conditions: [algo, recommend] },
-					{ label: "还是加上推荐", detail: "", conditions: [recommend, algo] },
-					{
-						label: "全不合规",
-						detail: "",
-						conditions: [person("x", "true", "exclude")],
-					},
-				],
-			},
+	test("没写话的回答、和现在这一种一样的、和前面重复的回答不用", () => {
+		const notes = noted({
+			says: "算法有几种常见的意思，你要的是哪种？",
+			current: "只看算法工程",
+			options: [
+				{ label: "只看算法工程", detail: "和现在一样" },
+				{ label: " ", detail: "没写话" },
+				{ detail: "没有 label" },
+				{ label: "把做推荐的也算上", detail: "" },
+				{ label: "把做推荐的也算上", detail: "又写了一遍" },
+				"不是对象",
+				null,
+			],
+		});
+		assert.deepEqual(notes?.choices?.others, [{ label: "把做推荐的也算上" }]);
+	});
+
+	test("除了现在这一种，最多再给三种回答：多的不用", () => {
+		const notes = noted({
+			says: "想找哪个方向的算法？",
+			current: "先不分方向",
+			options: ["推荐", "搜索", "广告", "风控", "视觉"].map((word) => ({
+				label: `只看做${word}的`,
+				detail: "",
+			})),
 		});
 		assert.deepEqual(
 			notes?.choices?.others.map((o) => o.label),
-			["加上推荐"],
+			["只看做推荐的", "只看做搜索的", "只看做广告的"],
 		);
 	});
 
-	test("最多再给两种理解", () => {
-		const { notes } = read({
-			conditions: [algo],
-			note: {
-				says: "要不要放宽？",
-				current: "不放宽",
-				options: ["推荐", "搜索", "广告"].map((word) => ({
-					label: word,
-					detail: "",
-					conditions: [algo, exp(`做过${word}`, { terms: { what: [word] } })],
-				})),
-			},
-		});
-		assert.equal(notes?.choices?.others.length, 2);
-	});
-
-	test("没写现在是哪种、或者没有一种能用的选项，只留那句话", () => {
-		const options = [
-			{ label: "加上推荐", detail: "", conditions: [algo, recommend] },
-		];
+	test("没写现在是按哪种理解找的、或者没有一种能用的回答，整组不用，只留那句话", () => {
+		const options = [{ label: "把做推荐的也算上", detail: "" }];
 		for (const note of [
 			{ says: "要不要加上推荐？", current: null, options },
+			{ says: "要不要加上推荐？", current: " ", options },
+			{ says: "要不要加上推荐？", options },
 			{ says: "要不要加上推荐？", current: "不加", options: [] },
-		])
-			assert.deepEqual(read({ conditions: [algo], note }).notes, {
+			{
 				says: "要不要加上推荐？",
-				choices: null,
-			});
+				current: "不加",
+				options: [{ label: "不加", detail: "" }],
+			},
+			{ says: "要不要加上推荐？", current: "不加", options: "不是数组" },
+		])
+			assert.deepEqual(
+				noted(note),
+				{ says: "要不要加上推荐？", choices: null },
+				JSON.stringify(note),
+			);
+	});
+
+	test("回答只留标签和说明：模型多写的键不进说明", () => {
+		const notes = noted({
+			says: "要不要加上推荐？",
+			current: "不加",
+			options: [{ label: "把做推荐的也算上", detail: "", why: "推荐也算算法" }],
+		});
+		assert.deepEqual(notes?.choices?.others, [{ label: "把做推荐的也算上" }]);
 	});
 
 	test("没有那句话就是 null", () => {
 		assert.equal(read({ conditions: [algo] }).notes, null);
-		assert.equal(read({ conditions: [algo], note: null }).notes, null);
+		assert.equal(noted(null), null);
+		assert.equal(noted({ says: " ", options: "不是数组" }), null);
 		assert.equal(
-			read({ conditions: [algo], note: { says: " ", options: "不是数组" } })
-				.notes,
+			noted({
+				current: "不加",
+				options: [{ label: "把做推荐的也算上", detail: "" }],
+			}),
 			null,
+			"只有回答、没有问话",
 		);
 	});
 });
@@ -475,11 +469,16 @@ describe("模型是不可信输入", () => {
 });
 
 describe("发给模型的形状", () => {
+	/** 交给模型的形状里 seek 的判据和正则都要写。 */
+	const judged = exp("做过算法", {
+		seek: { criterion: "做过算法研发", patterns: ["算法"] },
+	});
+
 	test("合法输出解析得过", () => {
 		assert.ok(
 			submissionSchema.safeParse({
 				conditions: [
-					{ ...algo, minMonths: 12 },
+					{ ...judged, minMonths: 12 },
 					{
 						...person("P7 及以上", "p.level_rank >= :r", "boost"),
 						params: { r: 7 },
@@ -492,11 +491,29 @@ describe("发给模型的形状", () => {
 						{
 							label: "高潜名单上的优先",
 							detail: "最近一期高潜名单上有二十多位",
-							conditions: [algo, person("最近一期高潜", "true", "boost")],
 						},
 					],
 				},
 			}).success,
+		);
+	});
+
+	test("回答的两项都要写，问了问题没有现在这一种时 current 写 null", () => {
+		const note = (options: unknown[], current: unknown = "先不管这条") => ({
+			conditions: [judged],
+			note: { says: "要不要先看高潜名单上的？", current, options },
+		});
+		assert.ok(submissionSchema.safeParse(note([], null)).success);
+		assert.ok(!submissionSchema.safeParse(note([{ label: "优先" }])).success);
+		assert.ok(
+			!submissionSchema.safeParse(note([{ detail: "二十多位" }])).success,
+		);
+		assert.ok(
+			!submissionSchema.safeParse({
+				conditions: [judged],
+				note: { says: "要不要先看高潜名单上的？", options: [] },
+			}).success,
+			"current 不能省",
 		);
 	});
 
@@ -505,7 +522,9 @@ describe("发给模型的形状", () => {
 		assert.ok(
 			submissionSchema.safeParse({
 				conditions: Array.from({ length: 20 }, (_, i) =>
-					exp(`条件${i}`, { terms: { what: [`词${i}`] } }),
+					exp(`条件${i}`, {
+						seek: { criterion: `做过词${i}`, patterns: [`词${i}`] },
+					}),
 				),
 				note: null,
 			}).success,

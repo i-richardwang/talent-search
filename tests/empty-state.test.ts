@@ -5,7 +5,7 @@
  * 空态是这个界面里唯一「没有数据可看」的时刻，它说什么就是产品在这一刻的
  * 全部价值。出口分两类，这一层测：改筛选走 `onChange`（同一条查询，换个
  * 看法），改条件走 `onReviseQuery`（换一个问题，会记一条新的查询记录）。
- * 两者在界面上都是一个按钮，走错了不会报错，只会让「启用全部」变成一次
+ * 它们在界面上都是一个按钮，走错了不会报错，只会让「启用全部」变成一次
  * 不留痕迹的改动。
  */
 import assert from "node:assert/strict";
@@ -91,16 +91,33 @@ describe("条件全被停用", () => {
 	});
 });
 
+describe("候选人较多，名单还不完整", () => {
+	test("说的是候选人多、找到了哪一档职级，出口是去补充需求，不改条件也不改筛选", () => {
+		const s = run({ kind: "incomplete", above: "P7" }, "算法");
+		assert.equal(s.title, "候选人较多，暂时没有找到符合的人");
+		assert.equal(
+			s.hint,
+			"已经从高职级起完整覆盖到 P7。补充需求、缩小范围后可以覆盖到更低的职级。",
+		);
+		assert.equal(s.action.label, "补充需求");
+		assert.deepEqual(
+			[s.changed, s.revised, s.focused],
+			[undefined, undefined, true],
+		);
+	});
+
+	test("最高一档也没找完时不说职级，只说下一步", () => {
+		const s = run({ kind: "incomplete", above: null }, "算法");
+		assert.equal(s.hint, "补充需求、缩小范围后可以覆盖更多人。");
+	});
+});
+
 describe("其余分支各有各的文案", () => {
 	test("缺少可搜的条件时让人补一个能力，不让人去动筛选", () => {
-		const kinds = ["excludeOnly", "noConditions"] as const;
-		for (const kind of kinds) {
-			const s = run({ kind });
-			assert.equal(s.focused, true, kind);
-			assert.equal(s.changed, undefined, kind);
-		}
-		assert.equal(run({ kind: "excludeOnly" }).title, "还缺一项条件");
-		assert.equal(run({ kind: "noConditions" }).title, "没有可用的搜索条件");
+		const s = run({ kind: "noConditions" });
+		assert.equal(s.focused, true);
+		assert.equal(s.changed, undefined);
+		assert.equal(s.title, "没有可用的搜索条件");
 	});
 
 	test("只有人的条件且无人匹配时报无结果，不报解析失败", () => {
@@ -120,7 +137,7 @@ describe("其余分支各有各的文案", () => {
 	});
 
 	test("全是加分条件却没人：下一步是换词，不能再让人「改成加分」", () => {
-		const s = run({ kind: "noHits" });
+		const s = run({ kind: "noneMatched" });
 		assert.doesNotMatch(s.hint, /改为「加分」/);
 		assert.match(s.hint, /加分/);
 		assert.equal(s.focused, true);

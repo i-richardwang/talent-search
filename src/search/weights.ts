@@ -2,16 +2,7 @@ import type { Engagement } from "#/lib/engagement";
 
 export type { Route } from "#/db/schema";
 
-// 向量只排除明显无关的说法，过线的全部交给重排；重排分数决定是否命中。
-export const RECALL_MIN = 0.5;
-// 重排对短查询词给分偏低：对得上的说法常在 0.3 到 0.6 之间，不相干的几乎都在 0.1 以下。
-// 线再高就挡掉做过的人，再低开始放进只是沾边的岗位。
-export const RELEVANCE_MIN = 0.3;
-
-// 排除错误会让证据无声消失，因此采用更严格的相关度门槛。
-export const RELEVANCE_MIN_EXCLUDE = 0.75;
-
-// 技能的相关度按投入档打折：结果归他的不打折，只说会、熟悉的打七折。任职记录、岗位名和
+// 技能按投入档打折：结果归他的不打折，只说会、熟悉的打七折。任职记录、岗位名和
 // 简历原文没有档，不打折；模型没判出档的技能按「做过」算。
 export const ENGAGEMENT_FACTOR: Record<Engagement, number> = {
 	主导: 1,
@@ -19,7 +10,7 @@ export const ENGAGEMENT_FACTOR: Record<Engagement, number> = {
 	提到: 0.7,
 };
 
-// 时长使用 m / (m + half) 的饱和曲线，并累计所有命中经历。
+// 时长使用 m / (m + half) 的饱和曲线，并累计所有算数的经历。
 export const TENURE_HALF = 48;
 
 // 离开相关方向后的月数按半衰曲线降低深度，但不使旧经历失效。
@@ -33,7 +24,8 @@ export const RESULT_PAGE = 50;
 // 超过此人数时明确返回达到加载上限，不静默截断总数和分面。
 export const RESULT_MAX = 500;
 
-export const HITS_PER_CLAIM = 3;
+// 名单上每个人每条主张最多列几段证据。
+export const EVIDENCE_PER_CLAIM = 3;
 
 // 筛选栏的常用单段时长选项；解析仍接受任意正整数月数。
 export const MIN_MONTHS_BUCKETS = [6, 12, 24, 36] as const;

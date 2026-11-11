@@ -1,16 +1,14 @@
 import type { Employee, Experience, Route } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
-import type { EmptyReason } from "./empty";
+import type { EmptyReason, Incomplete } from "./empty";
 import type { Claim } from "./query";
 
-export type Hit = {
+/** 名单上一个人在一条主张上的一段证据：确认过算数的那一段，和它算数的那一类说法。 */
+export type Evidence = {
 	experienceId: number;
 	claim: number;
-	/** 命中的经历词。 */
-	value: string;
 	route: Route;
-	relevance: number;
 	phrase: string | null;
 	engagement: Engagement | null;
 	startDate: string;
@@ -82,15 +80,12 @@ type PopulationResult = {
 export type RankedResult = PopulationResult & {
 	depth: number;
 	basis: (ClaimBasis | null)[];
-	hits: Hit[];
+	evidence: Evidence[];
 };
 
 export type SearchResult = PopulationResult | RankedResult;
 
 export type ClaimBasis = {
-	route: Route;
-	value: string;
-	relevance: number;
 	months: number;
 	endDate: string | null;
 	/** 累计时长是否全部来自入职前经历。 */
@@ -103,12 +98,9 @@ export type Facets = { [K in DimKey]: Facet<K>[] };
 type Outcome = {
 	facets: Facets;
 	total: number;
+	/** 名单还不完整时带这一项（见 `Incomplete`）；候选人都确认过时没有。 */
+	incomplete?: Incomplete;
 	empty: EmptyReason | null;
-	/**
-	 * chip 上的人数：每条条件单独能找到多少人，按条件 id。和查询理解试跑是同一个数，不随名单上的
-	 * 筛选变；停用的、跑不了的，以及查询没有可找人的条件、没去检索时，没有人数。
-	 */
-	counts: Record<string, number>;
 };
 
 /** evidence 按深度排序；employee 用于没有经历证据的人员查询。 */

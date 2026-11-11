@@ -48,11 +48,6 @@ export const LANE_FACTS: Record<TaskKind, (corpus: CorpusCounts) => LaneFacts> =
 				{ label: "个标签", value: corpus.words },
 				{ label: "种写法已归并", value: corpus.merged },
 			],
-			progress: {
-				done: corpus.glossed,
-				label: "条说法已写释义",
-				total: corpus.glossable,
-			},
 		}),
 		sync: (corpus) => ({
 			counts: [

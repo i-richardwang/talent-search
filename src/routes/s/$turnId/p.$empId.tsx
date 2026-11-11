@@ -3,7 +3,6 @@ import {
 	notFound,
 	useLoaderData,
 } from "@tanstack/react-router";
-import { claimName } from "#/search/query";
 import { fetchEmployee } from "#/server/functions";
 import { Person, PersonNotFound, PersonPending } from "./-components/person";
 import { claimLines } from "./-lib/claim-lines";
@@ -23,11 +22,11 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 	pendingComponent: PersonPending,
 });
 
-/** 这个人的档案用父路由那次检索里他的命中，命中不另查库。 */
+/** 这个人的档案用父路由那次检索里他的证据，证据不另查库。 */
 function Detail() {
 	const { employee, timeline } = Route.useLoaderData();
 	const { result: search } = useLoaderData({ from: "/s/$turnId" });
-	// 按人排的名单没有主张也没有命中：档案只有时间线
+	// 按人排的名单没有主张也没有证据：档案只有时间线
 	const { claims, result } =
 		search?.order === "evidence"
 			? {
@@ -40,9 +39,8 @@ function Detail() {
 	return (
 		<Person
 			employee={employee}
-			hits={result?.hits ?? []}
+			evidence={result?.evidence ?? []}
 			lines={result ? claimLines(result, claims) : []}
-			names={claims.map(claimName)}
 			timeline={timeline}
 		/>
 	);

@@ -3,17 +3,17 @@ import { overseasValue } from "#/search/dimensions";
 import { type PopulationFact, rank } from "#/search/rank";
 import {
 	type EmployeeDetail,
+	type Evidence,
 	emptyFacets,
 	type Facets,
-	type Hit,
 	type RankedResult,
 	type SearchOutcome,
 } from "#/search/result";
 import { RESULT_MAX, RESULT_PAGE } from "#/search/weights";
-import { CLAIMS } from "./conditions";
+import { CLAIMS, COVERED } from "./conditions";
 
 /*
- * 候选人：六位候选人的档案、经历与命中，名单、分面与几种检索结果。
+ * 候选人：六位候选人的档案、经历与证据，名单、分面与几种检索结果。
  * 人名、工号、公司、部门、学校全是编的，和人才库无关；类型都从产品代码导入。
  */
 
@@ -414,13 +414,13 @@ export function experiencesOf(empId: string): SampleExperience[] {
 }
 
 /**
- * 一条命中：起止、组织、岗位和序列从经历段 `x` 抄，默认第一条主张、相关度 0.9、
- * 没有说法与投入档；`over` 里写这条命中自己的几项，也可以盖掉抄来的。
+ * 一段证据：起止、组织、岗位和序列从经历段 `x` 抄，默认第一条主张、没有说法与投入档；
+ * `over` 里写这段证据自己的几项，也可以盖掉抄来的。
  */
-export function hitOn(
+export function evidenceOn(
 	x: SampleExperience,
-	over: Pick<Hit, "value" | "route"> & Partial<Hit>,
-): Hit {
+	over: Pick<Evidence, "route"> & Partial<Evidence>,
+): Evidence {
 	const seq =
 		x.kind === "internal"
 			? [x.seqL1, x.seqL2, x.seqL3]
@@ -428,7 +428,6 @@ export function hitOn(
 	return {
 		experienceId: x.id,
 		claim: 0,
-		relevance: 0.9,
 		phrase: null,
 		engagement: null,
 		startDate: x.startDate,
@@ -448,46 +447,34 @@ export function experience(id: number): SampleExperience {
 }
 
 /**
- * 名单上的六个人，按名次排好：对得上、做得久、离现在近的在前。
+ * 名单上的六个人，按名次排好：做得久、离现在近的在前。
  * 第一条主张是「推荐系统」，第二条是「团队管理」（加分，有的人没命中）。
  */
 export const RESULTS: RankedResult[] = [
 	{
 		employee: EMPLOYEES[0] as Employee,
 		depth: 86,
-		hits: [
-			hitOn(experience(103), {
-				value: "推荐系统",
+		evidence: [
+			evidenceOn(experience(103), {
 				route: "role",
-				relevance: 0.93,
 			}),
-			hitOn(experience(102), {
-				value: "推荐系统",
+			evidenceOn(experience(102), {
 				route: "role",
-				relevance: 0.93,
 			}),
-			hitOn(experience(101), {
+			evidenceOn(experience(101), {
 				claim: 1,
-				value: "团队管理",
 				route: "skill",
-				relevance: 0.81,
 				phrase: "算法团队管理",
 				engagement: "主导",
 			}),
 		],
 		basis: [
 			{
-				route: "role",
-				value: "推荐系统",
-				relevance: 0.93,
 				months: 86,
 				endDate: null,
 				external: false,
 			},
 			{
-				route: "skill",
-				value: "团队管理",
-				relevance: 0.81,
 				months: 48,
 				endDate: "2019-06-30",
 				external: true,
@@ -497,18 +484,13 @@ export const RESULTS: RankedResult[] = [
 	{
 		employee: EMPLOYEES[1] as Employee,
 		depth: 78,
-		hits: [
-			hitOn(experience(202), {
-				value: "推荐系统",
+		evidence: [
+			evidenceOn(experience(202), {
 				route: "role",
-				relevance: 0.9,
 			}),
 		],
 		basis: [
 			{
-				route: "role",
-				value: "推荐系统",
-				relevance: 0.9,
 				months: 78,
 				endDate: null,
 				external: false,
@@ -519,37 +501,25 @@ export const RESULTS: RankedResult[] = [
 	{
 		employee: EMPLOYEES[2] as Employee,
 		depth: 102,
-		hits: [
-			hitOn(experience(303), {
-				value: "推荐算法",
+		evidence: [
+			evidenceOn(experience(303), {
 				route: "role",
-				relevance: 0.74,
 			}),
-			hitOn(experience(302), {
-				value: "推荐算法",
+			evidenceOn(experience(302), {
 				route: "role",
-				relevance: 0.74,
 			}),
-			hitOn(experience(303), {
+			evidenceOn(experience(303), {
 				claim: 1,
-				value: "带团队",
 				route: "role",
-				relevance: 0.78,
 			}),
 		],
 		basis: [
 			{
-				route: "role",
-				value: "推荐算法",
-				relevance: 0.74,
 				months: 102,
 				endDate: null,
 				external: false,
 			},
 			{
-				route: "role",
-				value: "带团队",
-				relevance: 0.78,
 				months: 45,
 				endDate: null,
 				external: false,
@@ -559,35 +529,25 @@ export const RESULTS: RankedResult[] = [
 	{
 		employee: EMPLOYEES[5] as Employee,
 		depth: 76,
-		hits: [
-			hitOn(experience(602), {
-				value: "推荐算法",
+		evidence: [
+			evidenceOn(experience(602), {
 				route: "skill",
-				relevance: 0.88,
 				phrase: "推荐算法",
 			}),
-			hitOn(experience(602), {
+			evidenceOn(experience(602), {
 				claim: 1,
-				value: "团队管理",
 				route: "skill",
-				relevance: 0.86,
 				phrase: "算法团队管理",
 				engagement: "主导",
 			}),
 		],
 		basis: [
 			{
-				route: "skill",
-				value: "推荐算法",
-				relevance: 0.88,
 				months: 76,
 				endDate: "2024-04-30",
 				external: true,
 			},
 			{
-				route: "skill",
-				value: "团队管理",
-				relevance: 0.86,
 				months: 76,
 				endDate: "2024-04-30",
 				external: true,
@@ -597,20 +557,15 @@ export const RESULTS: RankedResult[] = [
 	{
 		employee: EMPLOYEES[3] as Employee,
 		depth: 67,
-		hits: [
-			hitOn(experience(401), {
-				value: "推荐系统",
+		evidence: [
+			evidenceOn(experience(401), {
 				route: "skill",
-				relevance: 0.84,
 				phrase: "短视频推荐多目标排序",
 				engagement: "做过",
 			}),
 		],
 		basis: [
 			{
-				route: "skill",
-				value: "推荐系统",
-				relevance: 0.84,
 				months: 67,
 				endDate: "2023-01-31",
 				external: true,
@@ -621,18 +576,9 @@ export const RESULTS: RankedResult[] = [
 	{
 		employee: EMPLOYEES[4] as Employee,
 		depth: 36,
-		hits: [
-			hitOn(experience(501), {
-				value: "推荐系统",
-				route: "description",
-				relevance: 0.66,
-			}),
-		],
+		evidence: [evidenceOn(experience(501), { route: "description" })],
 		basis: [
 			{
-				route: "description",
-				value: "推荐系统",
-				relevance: 0.66,
 				months: 36,
 				endDate: "2022-06-30",
 				external: true,
@@ -647,8 +593,8 @@ export function resultOf(empId: string): RankedResult | null {
 	return RESULTS.find((r) => r.employee.empId === empId) ?? null;
 }
 
-export function hitsOf(empId: string): Hit[] {
-	return resultOf(empId)?.hits ?? [];
+export function evidenceOf(empId: string): Evidence[] {
+	return resultOf(empId)?.evidence ?? [];
 }
 
 /** 各段经历抽出的能力词，已是标准写法；筛选「技能」一维从这里数。 */
@@ -721,8 +667,16 @@ export const OUTCOME: SearchOutcome = {
 	results: RESULTS,
 	facets: FACETS,
 	total: RESULTS.length,
-	counts: {},
 	empty: null,
+};
+
+/**
+ * 候选人较多，名单还不完整：名单上只有 AI 确认过的人，从职级高的人确认起，名单上方说明
+ * 现在完整覆盖到哪一档。
+ */
+export const INCOMPLETE_OUTCOME: SearchOutcome = {
+	...OUTCOME,
+	incomplete: COVERED,
 };
 
 /** 只有人的条件时的结果：没有证据行，按人排。 */
@@ -732,7 +686,6 @@ export const PEOPLE_OUTCOME: SearchOutcome = {
 	results: RESULTS.map((r) => ({ employee: r.employee })),
 	facets: FACETS,
 	total: RESULTS.length,
-	counts: {},
 	empty: null,
 };
 
@@ -743,6 +696,12 @@ export const EMPTY_OUTCOME: SearchOutcome = {
 	results: [],
 	facets: emptyFacets(),
 	total: 0,
-	counts: {},
 	empty: { kind: "unmet" },
+};
+
+/** 名单上一个人都没有，但候选人还没确认完：空态说找到了哪一档职级，下一步是补充需求。 */
+export const INCOMPLETE_EMPTY_OUTCOME: SearchOutcome = {
+	...EMPTY_OUTCOME,
+	incomplete: COVERED,
+	empty: { kind: "incomplete", ...COVERED },
 };

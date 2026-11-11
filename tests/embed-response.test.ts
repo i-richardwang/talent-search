@@ -26,7 +26,7 @@ const second = { index: 1, embedding: fakeEmbedding(values[1]) };
 
 test("端点回答乱序时按索引返回，每个向量属于自己的文本", async () => {
 	await responding([second, first], async () => {
-		assert.deepEqual(await embedFresh(values, 0), [
+		assert.deepEqual(await embedFresh(values), [
 			first.embedding,
 			second.embedding,
 		]);
@@ -45,9 +45,9 @@ for (const [name, data] of [
 ] as const) {
 	test(`${name}的回答不能成为嵌入结果，纠正后可以重新请求`, async () => {
 		await responding(data, async () => {
-			await assert.rejects(embedFresh(values, 0), /嵌入端点/);
+			await assert.rejects(embedFresh(values), /嵌入端点/);
 		});
-		assert.deepEqual(await embedFresh(values, 0), [
+		assert.deepEqual(await embedFresh(values), [
 			first.embedding,
 			second.embedding,
 		]);
@@ -71,7 +71,7 @@ test("SDK 分批时每批索引从零开始，所有输入仍按完整顺序返�
 		});
 	};
 	try {
-		assert.deepEqual(await embedFresh(texts, 0), texts.map(fakeEmbedding));
+		assert.deepEqual(await embedFresh(texts), texts.map(fakeEmbedding));
 		assert.equal(calls, 2);
 	} finally {
 		globalThis.fetch = original;

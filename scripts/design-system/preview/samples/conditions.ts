@@ -1,6 +1,6 @@
 import { compileConditions } from "#/search/compile";
 import type { Condition } from "#/search/condition";
-import type { EmptyReason } from "#/search/empty";
+import type { EmptyReason, Incomplete } from "#/search/empty";
 import { conditionsOfKeywords } from "#/search/keywords";
 import { type Claim, type QueryCondition, rolesOf } from "#/search/query";
 import type { SearchSpec } from "#/search/spec";
@@ -32,10 +32,12 @@ const TEAM: Condition = {
 	what: ["团队管理"],
 };
 
-/** 学历硕士及以上（加分）：第二轮补充的人的条件，第三轮被移除。 */
+/**
+ * 学历硕士及以上（必须）：第二轮补充的人的条件，第三轮被移除，不是硕士的候选人随之进了范围。
+ */
 const MASTER: Condition = {
 	about: "person",
-	mode: "boost",
+	mode: "must",
 	field: "education",
 	atLeast: "硕士",
 };
@@ -78,20 +80,6 @@ export function asQuery(list: readonly Condition[]): QueryCondition[] {
 /** 名单展示的这一轮的完整查询。 */
 export const SPEC: SearchSpec = { query: { conditions: asQuery(CONDITIONS) } };
 
-/** 每条条件单独能找到的人数（chip 最右边），按条件 id；数是编的。 */
-export const COUNTS: Record<string, number> = Object.fromEntries(
-	(
-		[
-			[RECOMMEND, 186],
-			[BIG_COMPANY, 412],
-			[TEAM, 97],
-			[MASTER, 1240],
-			[SHARING, 58],
-			[EXCLUDE_INTERN, 23],
-		] as const
-	).map(([c, people]) => [asQuery([c])[0]?.id, people]),
-);
-
 /** 名单上证据行按的主张：做过推荐系统、带过团队。 */
 export const CLAIMS: Claim[] = rolesOf(compileConditions(CONDITIONS)).claims;
 
@@ -106,6 +94,9 @@ export const KEYWORD_SPEC: { conditions: Condition[] } = {
 	}),
 };
 
+/** 候选人较多、一轮确认不完时，名单完整覆盖到的那一档职级。 */
+export const COVERED: Incomplete = { above: "L7" };
+
 /**
  * 每种空态的成因，和一份让它出现的搜索条件。按成因穷尽：检索层多一种成因，
  * 这里少写一行就过不了类型检查。
@@ -116,8 +107,9 @@ export const EMPTY_CASES: {
 		spec: SearchSpec,
 	];
 } = {
+	incomplete: [{ kind: "incomplete", ...COVERED }, SPEC],
 	unmet: [{ kind: "unmet" }, SPEC],
-	noHits: [{ kind: "noHits" }, SPEC],
+	noneMatched: [{ kind: "noneMatched" }, SPEC],
 	filtered: [{ kind: "filtered" }, SPEC],
 	gatesUnmet: [
 		{ kind: "gatesUnmet" },
@@ -133,6 +125,5 @@ export const EMPTY_CASES: {
 		{ kind: "allDisabled" },
 		{ conditions: [{ ...RECOMMEND, off: "user" }] },
 	],
-	excludeOnly: [{ kind: "excludeOnly" }, { conditions: [EXCLUDE_INTERN] }],
 	noConditions: [{ kind: "noConditions" }, { conditions: [] }],
 };

@@ -14,6 +14,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
+import { FAULT_COPY, FAULT_EXIT_LABEL } from "#/routes/s/$turnId/-lib/attempt";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { px, useMeasured } from "../../kit/readings";
@@ -195,10 +196,10 @@ function Usage() {
 				<Alert
 					action={
 						<Button loading={retrying} onClick={retry} size="small">
-							重试
+							{FAULT_EXIT_LABEL.retry}
 						</Button>
 					}
-					title="AI 服务暂时连不上，这句需求还没有被读过。"
+					title={FAULT_COPY.unreachable.title}
 					type="error"
 				/>
 			</Example>

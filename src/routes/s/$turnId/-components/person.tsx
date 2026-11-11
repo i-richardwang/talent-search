@@ -16,12 +16,12 @@ import { Icon } from "#/components/ui/icon";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
 import { dots } from "#/lib/format";
-import type { EmployeeDetail, Hit } from "#/search/result";
+import type { EmployeeDetail, Evidence } from "#/search/result";
 import type { ClaimLine } from "../-lib/claim-lines";
 import { CareerBar } from "./career-bar";
 import { ClaimEvidence } from "./claim-evidence";
 import { PaneHeader } from "./pane-header";
-import { buildHitIndex, Timeline } from "./timeline";
+import { buildEvidenceIndex, Timeline } from "./timeline";
 
 /* 一个人的详情（`p.$empId.tsx` 的三种内容）：详情、换人途中的骨架、找不到这个工号。 */
 
@@ -180,23 +180,22 @@ export function PersonNotFound() {
 /**
  * 一个人的详情，用来逐段核对：当前的几条属性、每条条件的匹配依据、任职经历。
  *
- * `hits` 是这个人在当前检索里的全部命中（时间线据此标出段落），`names` 是各条主张的
- * 名字，`lines` 是逐条的依据；不在名单上、或名单按人排时三者都是空的。
+ * `evidence` 是这个人在当前检索里的全部证据（时间线据此标出段落），`lines` 是逐条的依据，
+ * 和主张同序；不在名单上、或名单按人排时两者都是空的。
  */
 export function Person({
 	employee: e,
 	timeline,
-	hits,
-	names,
+	evidence,
 	lines,
 }: {
 	employee: EmployeeDetail["employee"];
 	timeline: EmployeeDetail["timeline"];
-	hits: Hit[];
-	names: string[];
+	evidence: Evidence[];
 	lines: ClaimLine[];
 }) {
-	const hitIndex = buildHitIndex(hits);
+	const evidenceIndex = buildEvidenceIndex(evidence);
+	const names = lines.map((line) => line.claim.label);
 
 	return (
 		/* 换人时整栏淡入一次；按 empId 换 key 让动画重播。 */
@@ -249,10 +248,14 @@ export function Person({
 				<Section icon={BriefcaseBusinessIcon} id="career" title="任职经历">
 					<CareerBar
 						hireDate={e.hireDate}
-						hitIndex={hitIndex}
+						evidenceIndex={evidenceIndex}
 						rows={timeline}
 					/>
-					<Timeline hitIndex={hitIndex} names={names} rows={timeline} />
+					<Timeline
+						evidenceIndex={evidenceIndex}
+						names={names}
+						rows={timeline}
+					/>
 				</Section>
 			</Pane>
 		</div>

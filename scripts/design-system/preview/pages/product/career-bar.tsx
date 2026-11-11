@@ -18,26 +18,30 @@ import {
 	ym,
 } from "#/routes/s/$turnId/-components/career-bar";
 import {
-	buildHitIndex,
+	buildEvidenceIndex,
 	Timeline,
 } from "#/routes/s/$turnId/-components/timeline";
-import { claimName } from "#/search/query";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { CLAIMS } from "../../samples/conditions";
-import { EMPLOYEES, experiencesOf, hitOn, hitsOf } from "../../samples/people";
+import {
+	EMPLOYEES,
+	evidenceOf,
+	evidenceOn,
+	experiencesOf,
+} from "../../samples/people";
 
 type Experience = StoredExperience & { mainIndustries: string[] };
 
-const NAMES = CLAIMS.map(claimName);
+const NAMES = CLAIMS.map((claim) => claim.label);
 
-/** 一个人的带子要的三样：经历段、命中索引、入职日。 */
-function barOf(empId: string, withHits = true) {
+/** 一个人的带子要的三样：经历段、证据索引、入职日。 */
+function barOf(empId: string, withEvidence = true) {
 	const employee = EMPLOYEES.find((e) => e.empId === empId);
 	return {
 		hireDate: employee?.hireDate ?? null,
-		hitIndex: buildHitIndex(withHits ? hitsOf(empId) : []),
+		evidenceIndex: buildEvidenceIndex(withEvidence ? evidenceOf(empId) : []),
 		rows: experiencesOf(empId),
 	};
 }
@@ -70,8 +74,8 @@ const [FIRST, SECOND, THIRD] = experiencesOf("T0101") as [
 function encodingRow(route: Route | null) {
 	return {
 		hireDate: SECOND.startDate,
-		hitIndex: buildHitIndex(
-			route ? [hitOn(SECOND, { route, value: "推荐系统" })] : [],
+		evidenceIndex: buildEvidenceIndex(
+			route ? [evidenceOn(SECOND, { route })] : [],
 		),
 		rows: [FIRST, SECOND, THIRD],
 	};
@@ -92,8 +96,8 @@ const ENCODINGS: [label: string, bar: ReturnType<typeof encodingRow>][] = [
 		"重叠的两段分两条轨",
 		{
 			hireDate: "2019-03-01",
-			hitIndex: buildHitIndex([
-				hitOn(OVERLAP[1] as Experience, { route: "title", value: "推荐系统" }),
+			evidenceIndex: buildEvidenceIndex([
+				evidenceOn(OVERLAP[1] as Experience, { route: "title" }),
 			]),
 			rows: OVERLAP,
 		},
@@ -102,9 +106,9 @@ const ENCODINGS: [label: string, bar: ReturnType<typeof encodingRow>][] = [
 
 function Playground() {
 	const [empId, setEmpId] = useState("T0101");
-	const [hits, setHits] = useState(true);
+	const [withEvidence, setWithEvidence] = useState(true);
 	const [hire, setHire] = useState(true);
-	const bar = barOf(empId, hits);
+	const bar = barOf(empId, withEvidence);
 	const lanes = packLanes(
 		bar.rows.map((x) => ({
 			end: ym(x.endDate ?? "2026-09-01"),
@@ -125,7 +129,7 @@ function Playground() {
 					/>
 				</Control>
 				<Control>
-					<Checkbox checked={hits} onChange={setHits}>
+					<Checkbox checked={withEvidence} onChange={setWithEvidence}>
 						带上本次命中
 					</Checkbox>
 				</Control>
@@ -140,14 +144,14 @@ function Playground() {
 					<>
 						<span>{bar.rows.length} 段经历</span>
 						<span>{Math.max(...lanes) + 1} 条轨</span>
-						<span>命中 {bar.hitIndex.size} 段</span>
+						<span>命中 {bar.evidenceIndex.size} 段</span>
 					</>
 				}
 			>
 				<div className="w-full max-w-(--container-detail)">
 					<CareerBar
 						hireDate={hire ? bar.hireDate : null}
-						hitIndex={bar.hitIndex}
+						evidenceIndex={bar.evidenceIndex}
 						rows={bar.rows}
 					/>
 				</div>
@@ -206,7 +210,7 @@ function Usage() {
 					<CareerBar {...reading} />
 					<ScrollArea className="h-60 w-full">
 						<Timeline
-							hitIndex={reading.hitIndex}
+							evidenceIndex={reading.evidenceIndex}
 							names={NAMES}
 							rows={reading.rows}
 						/>
@@ -220,7 +224,7 @@ function Usage() {
 				<div className="w-full">
 					<CareerBar
 						hireDate="2024-05-20"
-						hitIndex={detail.hitIndex}
+						evidenceIndex={detail.evidenceIndex}
 						rows={detail.rows}
 					/>
 				</div>
@@ -229,7 +233,7 @@ function Usage() {
 				description="一段经历都没有时不画，不留一条空带子。下面这一格因此是空的。"
 				title="没有经历"
 			>
-				<CareerBar hireDate={null} hitIndex={new Map()} rows={[]} />
+				<CareerBar hireDate={null} evidenceIndex={new Map()} rows={[]} />
 			</Example>
 		</ExampleGrid>
 	);
@@ -242,13 +246,13 @@ export function CareerBarPage() {
 			facts={["命中一种颜色", "未命中细线", "重叠分轨"]}
 			rules={{
 				notes: [
-					"高度和颜色都只说这一段命中了没有：命中的颜色取自 evidence.tsx 的 HIT_FILL，和证据行的点同色，不分来源。",
+					"高度和颜色都只说这一段命中了没有：命中的颜色取自 evidence.tsx 的 EVIDENCE_FILL，和证据行的点同色，不分来源。",
 					"未命中的段是一道 fill 色的细条。",
 					"段与段之间留一道缝，四角是最小的圆角；深浅两色下都看得出每一段。",
 					"在职与入职前连续排，转折点只由「入职」那根竖线说明。",
 					"每个色块是一个按钮，点了滚到经历时间线上对应的那一段。",
 				],
-				usage: `<CareerBar\n  hireDate={employee.hireDate}\n  hitIndex={buildHitIndex(hits)}\n  rows={timeline}\n/>`,
+				usage: `<CareerBar\n  hireDate={employee.hireDate}\n  evidenceIndex={buildEvidenceIndex(evidence)}\n  rows={timeline}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用轨迹条" },

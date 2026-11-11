@@ -66,7 +66,7 @@ export type KeywordBarHandle = {
 	focus: () => void;
 };
 
-/** 候选第一项（输入的字）旁的说明：经历按语义搜，名称按包含找。 */
+/** 候选第一项（输入的字）旁的说明：经历按输入的字搜，名称按包含找。 */
 const AS_TYPED: Record<KeywordField, string> = {
 	what: "直接搜索",
 	company: "名称包含",

@@ -4,21 +4,20 @@ import {
 	boolean,
 	check,
 	date,
-	doublePrecision,
 	foreignKey,
-	halfvec,
 	index,
 	integer,
 	jsonb,
 	pgSchema,
 	pgTable,
 	primaryKey,
+	real,
 	text,
 	timestamp,
 } from "drizzle-orm/pg-core";
 import { ENGAGEMENTS } from "#/lib/engagement";
 import { TASK_KINDS } from "#/lib/task";
-import type { NotesRecord } from "#/search/intent";
+import type { TurnNotes } from "#/search/intent";
 import type { SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 
@@ -189,8 +188,8 @@ export const experience = pgTable(
 		seqL3: text("seq_l3").notNull().default(""),
 		/**
 		 * 外部：模型按岗位名、公司名与描述对到公司序列树上的一对一级二级
-		 * （`src/corpus/align.ts`），两列要么都有要么都空。只有序列筛选读它（search.ts 的
-		 * `FACT_COLUMNS`：登记的优先，没有才读这两列），人页上标「按岗位名对齐」；
+		 * （`src/corpus/align.ts`），两列要么都有要么都空。只有序列筛选读它（目录视图的
+		 * `seq_l1`、`seq_l2`：登记的优先，没有才读这两列），人页上标「按岗位名对齐」；
 		 * 不进说法：推断的序列不是这个人登记过的任职，拿来当做过什么的证据就是在猜。
 		 */
 		seqInferredL1: text("seq_inferred_l1").notNull().default(""),
@@ -344,8 +343,8 @@ export const employeeRecord = pgTable(
 
 /**
  * 数据目录：查询条件里模型写的 SQL 只能读这个 schema 里的视图（`server/sandbox.ts`
- * 以只读角色执行）。视图不含姓名，也不含简历原文：按意思找的经历由语义命中表 `hit`
- * 回答，模型不按原文筛。每一列的中文名、含义和口径在 `search/catalog.ts`。
+ * 以只读角色执行）。视图不含姓名，也不含简历原文：做过什么由命中表 `hit`
+ * 回答（按字面捞到、AI 确认过的段），模型不按原文筛。每一列的中文名、含义和口径在 `search/catalog.ts`。
  * 空串一律读成 null：模型写 `is null` 就是「没有记录」。
  */
 export const catalog = pgSchema("catalog");
@@ -481,30 +480,30 @@ export const CATALOG_VIEWS = [
 	catalogScale,
 ] as const;
 
-/** 嵌入维数的唯一来源；更换维数必须同时更换嵌入空间。 */
+/** 嵌入维数的唯一来源；更换维数必须同时更换 `EMBED_SPACE_ID`。 */
 export const EMBED_DIM = 1024;
 
-/** 当前语料的唯一嵌入空间；查询同时核对元数据与 canary。 */
-export const embeddingSpace = pgTable("embedding_space", {
-	spaceId: text("space_id").primaryKey(),
-	model: text("model").notNull(),
-	dimension: integer("dimension").notNull(),
-	canaryText: text("canary_text").notNull(),
-	canaryEmbedding: halfvec("canary_embedding", {
-		dimensions: EMBED_DIM,
-	}).notNull(),
-});
-
-/** 跨语料保留的向量缓存；文本用 sha256 键入，避免超长 btree 索引项。 */
+/**
+ * 词的向量缓存，整理把相近的写法凑成组时用（`corpus/embed.ts`）。跨语料保留；
+ * 文本用 sha256 键入，避免超长 btree 索引项。
+ */
 export const embeddingCache = pgTable(
 	"embedding_cache",
 	{
 		spaceId: text("space_id").notNull(),
 		model: text("model").notNull(),
 		textSha: text("text_sha").notNull(),
-		embedding: halfvec("embedding", { dimensions: EMBED_DIM }).notNull(),
+		embedding: real("embedding").array().notNull(),
 	},
-	(t) => [primaryKey({ columns: [t.spaceId, t.model, t.textSha] })],
+	(t) => [
+		primaryKey({ columns: [t.spaceId, t.model, t.textSha] }),
+		// 一维、正好 `EMBED_DIM` 个分量：维数不对的向量进不了缓存
+		check(
+			"embedding_cache_dim",
+			sql`array_ndims(${t.embedding}) = 1
+				and cardinality(${t.embedding}) = ${sql.raw(String(EMBED_DIM))}`,
+		),
+	],
 );
 
 /** 聊天完成缓存。identity 包含模型、提示词和回答 schema；payload 保留未经领域校验的原话。 */
@@ -550,15 +549,11 @@ export const term = pgTable(
 	],
 );
 
-const GROUP_KINDS = ["group", "gloss"] as const;
-export type GroupKind = (typeof GROUP_KINDS)[number];
-
-/** 待判队列。归并组写 term，释义组写 phrase_gloss；生效或过期后删除。 */
+/** 待判队列：一组写法相近的词等着判归并与归属，判定生效时写进 `term`；生效或过期后删除。 */
 export const reviewGroup = pgTable(
 	"review_group",
 	{
 		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-		kind: text("kind", { enum: GROUP_KINDS }).notNull(),
 		/** 收集与判定这组词所依据的 GUIDE 与回答形状摘要。 */
 		guideIdentity: text("guide_identity").notNull(),
 		words: jsonb("words").$type<{ word: string; people: number }[]>().notNull(),
@@ -577,14 +572,6 @@ export const reviewGroup = pgTable(
 	],
 );
 
-/** 短说法的释义；文本与释义共同组成重排缓存的输入身份。 */
-export const phraseGloss = pgTable("phrase_gloss", {
-	text: text("text").primaryKey(),
-	gloss: text("gloss").notNull(),
-	/** 释义标准的摘要；标准变化后旧释义重新收集。 */
-	guideIdentity: text("guide_identity").notNull(),
-});
-
 /**
  * 一段经历说自己做过什么的四类说法（组合方式见 `corpus/route-texts.ts`）：公司内一段任职
  * 整句一条，入职前的岗位名，读出来的能力，没读过的简历原文。
@@ -592,11 +579,9 @@ export const phraseGloss = pgTable("phrase_gloss", {
  */
 const ROUTES = ["role", "title", "description", "skill"] as const;
 export type Route = (typeof ROUTES)[number];
-/** 文本只存在 phrase 表中的那类说法。 */
-export const EXTRACTED_ROUTES = ["skill"] as const satisfies readonly Route[];
 /**
- * 短说法：几个字的能力词、入职前岗位名。只有当前仍有这些边的说法使用释义、
- * 进词表；释义和词表的收集、计数、版本核验与召回共用此范围。
+ * 短说法：几个字的能力词、入职前岗位名。只有当前仍有这些边的说法进词表；
+ * 词表的收集、计数和关键词搜索的候选词共用此范围。
  */
 export const SHORT_ROUTES = [
 	"skill",
@@ -604,7 +589,7 @@ export const SHORT_ROUTES = [
 ] as const satisfies readonly Route[];
 
 /**
- * 去重后的说法及其半精度向量。未读段的整段原文也是说法，可以长过 btree 一行的上限，
+ * 去重后的说法。未读段的整段原文也是说法，可以长过 btree 一行的上限，
  * 所以唯一性落在库生成的摘要 `text_key` 上，按文字等值查找走 hash 索引。
  */
 export const phrase = pgTable(
@@ -616,7 +601,6 @@ export const phrase = pgTable(
 			.notNull()
 			.unique()
 			.generatedAlwaysAs(sql`md5(text)`),
-		embedding: halfvec("embedding", { dimensions: EMBED_DIM }).notNull(),
 	},
 	(t) => [index("phrase_text").using("hash", t.text)],
 );
@@ -632,7 +616,7 @@ export const experiencePhrase = pgTable(
 		phraseId: integer("phrase_id")
 			.notNull()
 			.references(() => phrase.id, { onDelete: "cascade" }),
-		/** 能力那一类的投入档（`lib/engagement.ts`），不进向量，排名时给相关度打折；其余类为空。 */
+		/** 能力那一类的投入档（`lib/engagement.ts`），排名时给深度打折；其余类为空。 */
 		engagement: text("engagement", { enum: ENGAGEMENTS }),
 	},
 	(t) => [
@@ -696,25 +680,12 @@ export const experiencePhraseNext = pgTable(
 	],
 );
 
-/** 按模型实际输入缓存相关度，与语料行的生命周期无关。 */
-export const rerankCache = pgTable(
-	"rerank_cache",
-	{
-		space: text("space").notNull(),
-		query: text("query").notNull(),
-		documentSha: text("document_sha").notNull(),
-		relevance: doublePrecision("relevance").notNull(),
-	},
-	(t) => [
-		primaryKey({ columns: [t.space, t.query, t.documentSha] }),
-		check(
-			"rerank_cache_range",
-			sql`${t.relevance} >= 0 and ${t.relevance} <= 1`,
-		),
-	],
-);
-
-/** 不可变查询记录；仅待理解记录允许把 spec 从 null 补全一次。 */
+/**
+ * 不可变查询记录；仅待理解记录允许把 spec 从 null 补全一次。
+ *
+ * 对话的一轮写下之后 AI 接着处理它（`attempt` 开头的这几列）：说了一句话的一轮是理解这句话、写出
+ * 条件、把候选人的经历确认完；直接改条件的一轮条件已经有了，只把新进范围的候选人确认完。
+ */
 export const searchTurn = pgTable(
 	"search_turn",
 	{
@@ -731,24 +702,29 @@ export const searchTurn = pgTable(
 		/** 查询条件快照；null 表示仍待理解。 */
 		spec: jsonb("spec").$type<SearchSpec>(),
 		/** 理解这一轮时模型的说明：替用户选定的理解、搜不了的要求。没有就是 null。 */
-		notes: jsonb("notes").$type<NotesRecord>(),
-		/** 理解这一轮时模型用工具走过的步骤，边跑边追加；关键词的记录没有。 */
+		notes: jsonb("notes").$type<TurnNotes>(),
+		/** AI 处理这一轮时用工具走过的步骤，边跑边追加；不用 AI 处理的一轮没有。 */
 		trace: jsonb("trace").$type<TraceStep[]>(),
 		/**
-		 * 这一次理解的编号。说了一句话的一轮写入时就开始理解，重试换一个新编号；理解写步骤、
-		 * 结果和失败原因都只写编号还是自己的那一行，被换掉的那一次写不进来。
-		 * 没说话的一轮没有，`trace` 和开始的时刻也没有（`search_turn_interpret`）。
+		 * AI 这一次处理的编号。一轮写入时就开始，重试换一个新编号；写步骤、结果和失败原因都只写
+		 * 编号还是自己的那一行，被换掉的那一次写不进来。说了一句话的一轮一定有；直接改条件的一轮
+		 * 条件里有要 AI 确认的经历时才有。没有编号的一轮，`trace` 和开始的时刻也没有（`search_turn_attempt`）。
 		 */
-		interpretAttempt: text("interpret_attempt"),
+		attempt: text("attempt"),
 		/**
-		 * 这一次理解开始的时刻，和编号、清空 `trace` 同时写：等理解时的计时和完成后的用时
+		 * 这一次处理开始的时刻，和编号、清空 `trace` 同时写：等待时的计时和完成后的用时
 		 * 都从它算，重试过也只算这一次。
 		 */
-		interpretStartedAt: timestamp("interpret_started_at", {
+		attemptStartedAt: timestamp("attempt_started_at", {
 			withTimezone: true,
 		}),
-		/** 这一次理解为什么没成（`server/turn.ts` 的 `InterpretFault`）；还在理解或已理解为 null。 */
-		interpretFault: text("interpret_fault"),
+		/** 这一次处理为什么没成（`server/turn.ts` 的 `AttemptFault`）；还在处理或已完成为 null。 */
+		attemptFault: text("attempt_fault"),
+		/**
+		 * 这一次处理做完了。说了一句话的一轮，它和条件同时写下；直接改条件的一轮，候选人确认完
+		 * 时写下。
+		 */
+		attemptDone: boolean("attempt_done").notNull().default(false),
 		createdAt: timestamp("created_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
@@ -773,17 +749,48 @@ export const searchTurn = pgTable(
 			sql`${t.notes} is null or ${t.spec} is not null`,
 		),
 		check(
-			"search_turn_interpret",
-			sql`(${t.rawText} is null) = (${t.interpretAttempt} is null)
-				and (${t.interpretAttempt} is null) = (${t.interpretStartedAt} is null)
-				and (${t.interpretAttempt} is null) = (${t.trace} is null)`,
+			"search_turn_attempt",
+			sql`(${t.rawText} is null or ${t.attempt} is not null)
+				and (${t.attempt} is null) = (${t.attemptStartedAt} is null)
+				and (${t.attempt} is null) = (${t.trace} is null)`,
 		),
 		check(
-			"search_turn_fault",
-			sql`${t.interpretFault} is null or ${t.spec} is null`,
+			"search_turn_done",
+			sql`case when ${t.rawText} is null
+				then not ${t.attemptDone} or ${t.attempt} is not null
+				else ${t.attemptDone} = (${t.spec} is not null) end`,
+		),
+		check(
+			"search_turn_failed",
+			sql`${t.attemptFault} is null
+				or (${t.attempt} is not null and not ${t.attemptDone})`,
 		),
 		index("search_turn_root").on(t.rootTurnId),
 	],
 );
 
 export type SearchTurn = typeof searchTurn.$inferSelect;
+
+/**
+ * 查询理解确认一段经历之后的结论：一次找人任务里，一条判据下这一段算不算。结论只在产生它的
+ * 那次任务里算数（`root_turn_id` 是那条链的链头），链删掉时一起删。`criterion_key` 是判据文字的
+ * 摘要，`content` 是确认的时候这一段的内容键和解析版本（`search/verdict.ts`），段的内容或解析结果
+ * 变了就对不上，按没确认过算。不算的也存。
+ */
+export const experienceVerdict = pgTable(
+	"experience_verdict",
+	{
+		rootTurnId: text("root_turn_id").notNull(),
+		criterionKey: text("criterion_key").notNull(),
+		content: text("content").notNull(),
+		fits: boolean("fits").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.rootTurnId, t.criterionKey, t.content] }),
+		foreignKey({
+			name: "experience_verdict_root",
+			columns: [t.rootTurnId],
+			foreignColumns: [searchTurn.id],
+		}).onDelete("cascade"),
+	],
+);

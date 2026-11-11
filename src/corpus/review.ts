@@ -1,24 +1,13 @@
 /**
- * 整理一轮：清掉过期的组、让判过的生效、收集新的，自带模型还要当场判一轮再生效
+ * 整理一轮：清掉作废和过期的组、让判过的生效、收集新的，自带模型还要当场判一轮再生效
  * 一次。过程报出来。
  *
- * 两种组各管各的落表（归并写 `term`，释义写 `phrase_gloss`），共用一条队列
- * 和一个判定方（`judgment.ts`）。整理只写这两张表，不碰人身上的词与边。
+ * 队列和判定方在 `judgment.ts`，标准、校验与写表在 `vocabulary.ts`。整理只写词表，
+ * 不碰人身上的词与边。
  */
 
 import "@tanstack/react-start/server-only";
-import {
-	applyGlosses,
-	collectGlosses,
-	glossIdentity,
-	judgeGlossesByModel,
-} from "./gloss";
-import {
-	expire,
-	type GuideIdentities,
-	type Judge,
-	openGroups,
-} from "./judgment";
+import { expire, type Judge, openGroups } from "./judgment";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
 import {
@@ -28,31 +17,20 @@ import {
 	judgeGroupsByModel,
 } from "./vocabulary";
 
-export function guideIdentities(): GuideIdentities {
-	return { gloss: glossIdentity(), group: groupIdentity() };
-}
-
 export async function review(
 	client: CorpusClient,
 	report: Report,
 	judge: Exclude<Judge, "off">,
 ): Promise<void> {
-	const guides = guideIdentities();
-	await expire(client, report, guides);
+	const identity = groupIdentity();
+	await expire(client, report, identity);
 	await applyGroups(client, report);
-	await applyGlosses(client, report);
 	await collectGroups(client, report);
-	await collectGlosses(client, report);
 	if (judge === "model") {
 		await judgeGroupsByModel(client, report);
-		await judgeGlossesByModel(client, report);
 		await applyGroups(client, report);
-		await applyGlosses(client, report);
 		return;
 	}
-	const waiting = [
-		...(await openGroups(client, "group", guides.group)),
-		...(await openGroups(client, "gloss", guides.gloss)),
-	];
+	const waiting = await openGroups(client, identity);
 	report(`  判定由外部完成，队列里还有 ${waiting.length} 组等着判`);
 }

@@ -12,8 +12,7 @@
  *     "has": "education:>=本科",       // 可选：新表里必须有一条同强度、选中同样的段或人的条件
  *     "add": ["+团队"],                // 可选：新加的条件里必须提到的词，前缀 + / - 是加分 / 排除
  *     "tells": true,                   // 可选：必须对 HR 说一句话（有搜不了的要求）
- *     "asks": true,                    // 可选：必须给出可以换成的理解（一个词有几种意思）
- *     "offer": ["iOS"],                // 可选：某个选项新加的条件里必须提到的词
+ *     "asks": true,                    // 可选：必须问一个问题，并给出 HR 可以选的回答
  *     "quiet": true,                   // 可选：不该对 HR 说任何话
  *     "together": [["字节", "算法"]],  // 可选：每组词写在同一条新条件里（同一段经历）
  *     "apart": [["字节", "算法"]],     // 可选：每组词分写在不同的新条件里（只要求同一个人）
@@ -27,18 +26,20 @@
  *
  * 没有 rewrite 的题，base 里除了 drop 的每一条都必须原样留在新表里（同一个 id、同样的内容）——
  * 模型不能顺手丢掉或改掉用户没提到的条件。词比对折叠全半角、大小写和空白，按包含算，
- * 比的是条件拿来搜的字（语义词、文字参数、where 里的文字取值）：模型写「团队管理」也算提到了「团队」。
+ * 比的是条件拿来搜的字（seek 的正则和判据、文字参数、where 里的文字取值）：模型写「团队管理」也算提到了「团队」。
  *
  * 名单这一半（has、includes、excludes、before、evidence）按搜索的真实执行打分：模型写的 SQL
- * 搜出谁、证据是哪几段、累计多久，和工作台同一条路（`search/execute.ts`）。标签只是写给 HR
- * 的话，不当作已验证的解释；名单对了才算对。这一半要在有对应数据的库上跑：按期记录和
+ * 搜出谁、证据是哪几段、累计多久，和工作台同一条路（`search/execute.ts`）。哪一段经历算数是
+ * 模型这一轮读完下的结论（`server/judged.ts`）：每道题是一次找人任务，名单只读它名下的结论，
+ * 题做完连同任务一起删。标签只是
+ * 写给 HR 的话，不当作已验证的解释；名单对了才算对。这一半要在有对应数据的库上跑：按期记录和
  * 限定公司的经历那几题用合成样例同步出的库（`TALENT_SOURCE=csv-dir`，样例目录 `src/corpus/sources/sample`）。
  *
- * 设了 `EVAL_SHOW_SQL=1` 时每题下面列出每条的 FROM、语义词、where 和参数，给人对照标签读。
+ * 设了 `EVAL_SHOW_SQL=1` 时每题下面列出每条的 FROM、seek、where 和参数，给人对照标签读。
  *
  * 一题只要有一处不对就打叉，退出码看的是有没有打叉的题。模型写的说明原样显示在界面上，
  * 里面出现内部用词（`lib/internal-words.ts`）也算一处不对；那句话要书面简洁：一句话、
- * 不带括号，说明和选项带括号也算。
+ * 不带括号，可选的回答和它的说明带括号也算。
  *
  * 调用与工作台相同的入口（`server/llm.ts` 的 `understand`，评的是提交检查录取、会写进记录
  * 的那份），用当前配置的端点和模型；词表和记录流从当前库里取，和线上发给模型的是同一份。
@@ -48,24 +49,24 @@
 import "@tanstack/react-start/server-only";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { pool } from "#/db";
+import { db, pool } from "#/db";
 import { internalWordsIn } from "#/lib/internal-words";
 import { compileConditions } from "#/search/compile";
 import { execute, selection } from "#/search/execute";
-import { unanswered } from "#/search/intent";
 import {
 	contentKey,
 	labelsInSentence,
 	type QueryCondition,
-	termValues,
 } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import { vocabulary } from "#/search/search";
-import { changesOf } from "#/search/spec";
+import { changesOf, emptySpec } from "#/search/spec";
 import { RESULT_MAX } from "#/search/weights";
-import { agentToolsWithoutTrace } from "#/server/agent-tools";
+import { agentTools } from "#/server/agent-tools";
 import { companyFacts, streamFacts } from "#/server/discover";
+import { saveVerdicts } from "#/server/judged";
 import { understand } from "#/server/llm";
+import { createTurn, deleteSearch } from "#/server/turn";
 
 type Mode = QueryCondition["mode"];
 
@@ -78,7 +79,6 @@ type Case = {
 	add: { mode: Mode; word: string }[];
 	tells: boolean;
 	asks: boolean;
-	offer: string[];
 	quiet: boolean;
 	together: string[][];
 	apart: string[][];
@@ -152,7 +152,6 @@ function loadCases(file: string): Case[] {
 			add,
 			tells: c.tells === true,
 			asks: c.asks === true,
-			offer: list("offer"),
 			quiet: c.quiet === true,
 			together: groups("together"),
 			apart: groups("apart"),
@@ -167,7 +166,6 @@ function loadCases(file: string): Case[] {
 			parsed.add.length,
 			parsed.tells,
 			parsed.asks,
-			parsed.offer.length,
 			parsed.quiet,
 			parsed.drop.length,
 			parsed.has.length,
@@ -179,7 +177,7 @@ function loadCases(file: string): Case[] {
 		];
 		if (!checks.some(Boolean))
 			throw new Error(
-				`${where}：至少要有 add、drop、has、tells、asks、offer、quiet、empty、includes、excludes、before、evidence 之一`,
+				`${where}：至少要有 add、drop、has、tells、asks、quiet、empty、includes、excludes、before、evidence 之一`,
 			);
 		return parsed;
 	});
@@ -200,12 +198,12 @@ const norm = (word: string) =>
 	word.normalize("NFKC").toLowerCase().replace(/\s/g, "");
 
 /**
- * 一条条件拿来搜的字：语义词、文字参数和 where 里直接写的文字取值。标签不算：它只是写给 HR
+ * 一条条件拿来搜的字：捞说法的正则和判据、文字参数和 where 里直接写的文字取值。标签不算：它只是写给 HR
  * 的话，「不要求做算法」里有「算法」，搜的却不是算法。
  */
 function wordsOf(c: QueryCondition): string[] {
 	return [
-		...termValues(c),
+		...(c.seek ? [...c.seek.patterns, c.seek.criterion ?? ""] : []),
 		...Object.values(c.params ?? {}).filter(
 			(v): v is string => typeof v === "string",
 		),
@@ -217,7 +215,7 @@ const mentions = (c: QueryCondition, word: string) =>
 
 /**
  * 一条条件的身份，用来比两条条件是不是同一个要求：经历条件比选中的段，人的条件比满足的人；
- * 强度不改写，排除按排除的门槛比它实际否决的段。跑不了的条件抛出原因。
+ * 强度不改写，排除比的也是它选中的段。跑不了的条件抛出原因。
  */
 async function selectedBy(c: QueryCondition): Promise<string> {
 	const [one] = await selection({ conditions: [c] });
@@ -235,15 +233,22 @@ try {
 	for (const c of cases) {
 		const problems: string[] = [];
 		let summary = "";
+		// 每道题是一次找人任务：模型读过的经历算不算记在它名下，名单也只认它名下的；题做完连同
+		// 任务一起删掉，不留给下一道题。步骤不用记，结论照存
+		const { turnId: rootTurnId } = await createTurn({
+			kind: "spec",
+			spec: emptySpec(),
+		});
 		try {
-			const { submitted, admitted: result } = await understand(
+			const result = await understand(
 				c.say,
 				facts,
-				c.base,
-				agentToolsWithoutTrace(c.base),
+				agentTools({
+					base: c.base,
+					rootTurnId,
+					record: (_step, verdicts) => saveVerdicts(rootTurnId, verdicts, db),
+				}),
 			);
-			const failure = unanswered(submitted, result);
-			if (failure) problems.push(failure);
 			const next = result.query.conditions;
 			const sameAs = (a: QueryCondition) => (b: QueryCondition) =>
 				contentKey(a) === contentKey(b);
@@ -290,16 +295,10 @@ try {
 			const notes = result.notes;
 			const others = notes?.choices?.others ?? [];
 			if ((c.tells || c.asks) && !notes) problems.push("没对 HR 说那句话");
-			if (c.asks && others.length === 0) problems.push("没给可以换成的理解");
+			if (c.asks && others.length === 0) problems.push("没给可以选的回答");
 			if (c.quiet && notes) problems.push(`不该说话：${notes.says}`);
-			const offered = others.flatMap(
-				(o) => changesOf(next, o.conditions).added,
-			);
-			for (const word of c.offer)
-				if (!offered.some((one) => mentions(one, word)))
-					problems.push(`选项里没有「${word}」`);
 			if (c.empty && next.length > 0) problems.push("条件表应当是空的");
-			// 那句话、选项和每条标签原样显示给 HR：不能带代码和模型那一侧的词，要书面简洁
+			// 那句话、可选的回答和每条标签原样显示给 HR：不能带代码和模型那一侧的词，要书面简洁
 			const shown = notes
 				? [
 						notes.says,
@@ -330,9 +329,14 @@ try {
 				0;
 			let roster = "";
 			if (listed) {
-				const outcome = await execute({ conditions: next }, {}, RESULT_MAX);
+				const outcome = await execute(
+					{ conditions: next },
+					rootTurnId,
+					{},
+					RESULT_MAX,
+				);
 				const order = outcome.results.map((r) => r.employee.empId);
-				roster = `名单 ${outcome.total} 人：${order.slice(0, 12).join(" ")}${order.length > 12 ? " …" : ""}`;
+				roster = `名单 ${outcome.total} 人${outcome.incomplete ? `（候选人没确认完，完整覆盖到 ${outcome.incomplete.above ?? "无"}）` : ""}：${order.slice(0, 12).join(" ")}${order.length > 12 ? " …" : ""}`;
 				for (const id of c.includes)
 					if (!order.includes(id)) problems.push(`名单上没有 ${id}`);
 				for (const id of c.excludes)
@@ -357,7 +361,7 @@ try {
 						);
 					const place = want.place;
 					if (place) {
-						const elsewhere = row.hits.filter(
+						const elsewhere = row.evidence.filter(
 							(h) => !(h.company || h.department).includes(place),
 						);
 						if (elsewhere.length > 0)
@@ -373,8 +377,7 @@ try {
 				...(notes ? [`说：${notes.says}`] : []),
 				...(notes?.choices ? [`现在：${notes.choices.current}`] : []),
 				...others.map(
-					(o) =>
-						`可选：${o.label}——${o.detail ?? ""}（${labelsInSentence(changesOf(next, o.conditions).added) || "只去掉条件"}）`,
+					(o) => `可选：${o.label}${o.detail ? `——${o.detail}` : ""}`,
 				),
 				...(roster ? [roster] : []),
 			].join(" | ");
@@ -382,11 +385,13 @@ try {
 				summary += next
 					.map(
 						(n) =>
-							`\n     ${n.label}：${n.from} ${JSON.stringify(n.terms ?? {})} where ${n.where} ${JSON.stringify(n.params ?? {})}${n.minMonths ? ` ≥${n.minMonths}月` : ""}`,
+							`\n     ${n.label}：${n.from} ${JSON.stringify(n.seek ?? {})} where ${n.where} ${JSON.stringify(n.params ?? {})}${n.minMonths ? ` ≥${n.minMonths}月` : ""}`,
 					)
 					.join("");
 		} catch (e) {
 			problems.push(e instanceof Error ? e.message : String(e));
+		} finally {
+			await deleteSearch(rootTurnId);
 		}
 		if (problems.length > 0) failed++;
 		console.log(`${problems.length === 0 ? "✓" : "✗"} ${c.name}`);

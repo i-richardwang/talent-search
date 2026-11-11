@@ -1,4 +1,4 @@
-/** 名称视图筛选与背景、人员门槛共用匹配规则，排除只否决经历段。 */
+/** 名称视图筛选与背景、人员门槛共用匹配规则；排除照常按人生效。 */
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import type { Condition, ExperienceCondition } from "#/search/condition";
@@ -31,7 +31,7 @@ await seed([
 	},
 	{
 		empId: "N2",
-		name: "合成全部否决",
+		name: "合成排除事业部",
 		school: "合成大学_%",
 		segments: [{ title: "工程师", department: "合成排除事业部", months: 12 }],
 	},
@@ -57,10 +57,12 @@ await seed([
 	},
 ]);
 
-const exclude: Condition[] = [
-	{ about: "experience", mode: "exclude", company: ["合成排除"] },
-	{ about: "experience", mode: "exclude", department: ["合成排除"] },
-];
+/** 在「合成排除」开头的公司待过的人不要：N1。 */
+const exclude: Condition = {
+	about: "experience",
+	mode: "exclude",
+	company: ["合成排除"],
+};
 const ids = (result: Awaited<ReturnType<typeof search>>) =>
 	result.results.map((row) => row.employee.empId);
 
@@ -71,26 +73,31 @@ for (const [name, base] of [
 	],
 	["经历查询", { about: "experience", mode: "must", what: ["工程师"] }],
 ] as const satisfies readonly (readonly [string, Condition])[]) {
-	test(`${name}的公司筛选与背景门槛一致，被否决的公司或部门不提供筛选依据`, async () => {
-		for (const [field, names, expected] of [
-			["company", ["合成排除公司"], []],
-			["department", ["合成排除部门"], []],
-			["company", ["合成保留公司"], ["N1"]],
-			["company", ["合成排除公司", "合成保留公司"], ["N1"]],
+	test(`${name}的公司、部门筛选与背景门槛一致，和排除同时生效`, async () => {
+		for (const [more, field, names, expected] of [
+			[[], "company", ["合成排除公司"], ["N1"]],
+			[[], "department", ["合成排除部门"], ["N1"]],
+			[[], "department", ["合成排除"], ["N1", "N2"]],
+			[[], "company", ["合成排除公司", "合成保留公司"], ["N1"]],
+			[[exclude], "department", ["合成排除"], ["N2"]],
+			[[exclude], "company", ["合成保留公司"], []],
 		] as const) {
-			const conditions = [base, ...exclude];
-			const view = await search({ conditions }, { [field]: names });
-			const gate = await search({
-				conditions: [
-					...conditions,
-					{
-						about: "experience",
-						mode: "must",
-						[field]: names,
-					} satisfies ExperienceCondition,
-				],
-			});
-			assert.deepEqual(ids(view), expected);
+			const conditions = [base, ...more];
+			const view = await search({ conditions }, null, { [field]: names });
+			const gate = await search(
+				{
+					conditions: [
+						...conditions,
+						{
+							about: "experience",
+							mode: "must",
+							[field]: names,
+						} satisfies ExperienceCondition,
+					],
+				},
+				null,
+			);
+			assert.deepEqual(ids(view).sort(), expected);
 			assert.equal(view.total, expected.length);
 			assert.deepEqual(ids(view), ids(gate));
 			assert.deepEqual(view.facets, gate.facets);
@@ -98,22 +105,25 @@ for (const [name, base] of [
 	});
 
 	test(`${name}的学校筛选与人员门槛一致，百分号和下划线按字面匹配`, async () => {
-		const conditions = [base, ...exclude];
-		const view = await search({ conditions }, { school: ["合成大学_%"] });
-		const gate = await search({
-			conditions: [
-				...conditions,
-				{
-					about: "person",
-					mode: "must",
-					field: "school",
-					values: ["合成大学_%"],
-				},
-			],
-		});
+		const conditions = [base];
+		const view = await search({ conditions }, null, { school: ["合成大学_%"] });
+		const gate = await search(
+			{
+				conditions: [
+					...conditions,
+					{
+						about: "person",
+						mode: "must",
+						field: "school",
+						values: ["合成大学_%"],
+					},
+				],
+			},
+			null,
+		);
 		assert.deepEqual(
 			ids(view),
-			name === "人员查询" ? ["N1", "N2", "N4", "N5"] : ["N1"],
+			name === "人员查询" ? ["N1", "N2", "N4", "N5"] : ["N1", "N2"],
 		);
 		assert.deepEqual(ids(view), ids(gate));
 		assert.deepEqual(view.facets, gate.facets);

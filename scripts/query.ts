@@ -4,15 +4,15 @@ import "@tanstack/react-start/server-only";
 import { pool } from "#/db";
 import { dots, period } from "#/lib/format";
 import { routeLabel } from "#/search/evidence";
-import { type Claim, claimName, termValues } from "#/search/query";
+import type { Claim } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import { placeOf } from "#/search/result";
 import { search } from "#/search/search";
 
-/** 一条主张在命令行上怎么写：语义词，加上编译出的 `where` 和累计时长，可以和输入对照。 */
+/** 一条主张在命令行上怎么写：捞说法的正则，加上编译出的 `where` 和累计时长，可以和输入对照。 */
 function claimText(c: Claim) {
 	return [
-		termValues(c).join("/"),
+		c.seek.patterns.join("/"),
 		c.where !== "true" && `where:${c.where}`,
 		c.params && `params:${JSON.stringify(c.params)}`,
 		c.minMonths && `minMonths:${c.minMonths}`,
@@ -21,18 +21,21 @@ function claimText(c: Claim) {
 		.join(" ");
 }
 
+/** 打印排在最前的几个人。 */
+const SHOWN = 8;
+
 const q = process.argv.slice(2).join(" ");
 if (!q) throw new Error('用法：bun run query "查询词"');
 
 const t0 = Date.now();
-const outcome = await search({ conditions: parseQuery(q) });
+const outcome = await search({ conditions: parseQuery(q) }, null);
 if (outcome.order === "employee")
 	throw new Error("查询得有说了做过什么的经历主张，只有门槛排不出名次");
 const { claims, results, total } = outcome;
 const ms = Date.now() - t0;
 
 const shown = claims.map(claimText).join(", ");
-const top = results.slice(0, Number(process.env.TOPN ?? 8));
+const top = results.slice(0, SHOWN);
 
 console.log(`查询「${q}」→ 条件 [${shown}]`);
 // 报 total 不报 results.length：后者被 RESULT_PAGE 截过，调权重要看命中的总人数。
@@ -44,13 +47,13 @@ for (const r of top) {
 		`${r.depth.toFixed(3)}  ${e.name} ${e.empId}  ${e.curDept} / ${e.curTitle}`,
 	);
 	const seen = new Set<number>();
-	for (const h of r.hits) {
+	for (const h of r.evidence) {
 		if (seen.has(h.claim)) continue;
 		seen.add(h.claim);
-		const name = claimName(claims[h.claim] as Claim);
+		const name = (claims[h.claim] as Claim).label;
 		// 起止用界面上那一份写法（`lib/format.ts`），和界面对照时不用换算。
 		console.log(
-			`     ${name}${h.value === name ? "" : ` ≈${h.value}`} ←[${routeLabel(h.route)}${h.phrase ? `「${dots(h.engagement, h.phrase)}」` : ""} ${Math.round(h.relevance * 100)}%] ${period(h.startDate, h.endDate)} ${placeOf(h)} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
+			`     ${name} ←[${routeLabel(h.route)}${h.phrase ? `「${dots(h.engagement, h.phrase)}」` : ""}] ${period(h.startDate, h.endDate)} ${placeOf(h)} ${h.title}${h.seq ? ` (${h.seq})` : ""}`,
 		);
 	}
 }

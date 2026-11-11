@@ -74,7 +74,7 @@ export const TASK_LANES: TaskLane[] = [
 			"09-25 20:00",
 			87,
 			"failed",
-			"AI 服务连续 3 次没有作答：POST /v1/chat/completions 超时（60s），重试 3 次后放弃；这一轮已写入的 12 条释义保留。",
+			"AI 服务连续 3 次没有作答：POST /v1/chat/completions 超时（60s），重试 3 次后放弃；已经判完的组下一轮生效。",
 		),
 		run(26, "review", "09-24 20:00", 132, "done"),
 	]),
@@ -92,8 +92,6 @@ export const CORPUS_COUNTS: CorpusCounts = {
 	phrases: 84,
 	words: 37,
 	merged: 5,
-	glossable: 12,
-	glossed: 9,
 };
 
 /** 数据页上 Talent 0101 的几段，连同解析出的技能和投入档。 */
@@ -253,14 +251,11 @@ export const SKILL_ROWS: TermEntry[] = [
 	},
 ];
 
-/** 「标签」页上点开的一个词：「推荐系统」。关系与人数从词表的行里取，释义是它自己的。 */
-export const SKILL_DETAIL: TermDetail = detailOf(
-	"推荐系统",
-	"为用户挑选内容或商品的系统，含召回、排序与效果评估。",
-);
+/** 「标签」页上点开的一个词：「推荐系统」。关系与人数从词表的行里取。 */
+export const SKILL_DETAIL: TermDetail = detailOf("推荐系统");
 
 /** 词表里一个词点开后的样子：它那一行，加上往上一层与往下一层的词。 */
-function detailOf(canonical: string, gloss: string): TermDetail {
+function detailOf(canonical: string): TermDetail {
 	const row = SKILL_ROWS.find((entry) => entry.canonical === canonical);
 	if (!row) throw new Error(`词表里没有 ${canonical}`);
 	const parent = SKILL_ROWS.find((entry) => entry.canonical === row.parent);
@@ -270,7 +265,6 @@ function detailOf(canonical: string, gloss: string): TermDetail {
 		children: SKILL_ROWS.filter((entry) => entry.parent === canonical).map(
 			(entry) => ({ canonical: entry.canonical, people: entry.people }),
 		),
-		gloss,
 		parent: parent
 			? { canonical: parent.canonical, people: parent.people }
 			: null,

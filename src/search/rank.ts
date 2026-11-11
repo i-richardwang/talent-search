@@ -30,25 +30,19 @@ import {
 /** 候选人的分面属性；没有工作经历时经历单值为空，集合为空数组。 */
 export type PopulationFact = DimSource & { empId: string };
 
-/** 一段真实工作经历对一条主张的命中，包含排序属性与证据身份，不包含人员评分。 */
+/** 一段真实工作经历在一条主张上算数，包含排序属性与证据身份，不包含人员评分。 */
 export type Fact = PopulationFact & {
 	months: number;
 	kind: "internal" | "external";
-	seqL1: string;
-	seqL2: string;
 	id: number;
 	/** 属于第几条主张 */
 	claim: number;
-	/** 命中的是这条主张的哪个经历词。只进证据行，不进分。 */
-	value: string;
-	/** 命中的那一类，证据行上照实写出来源。 */
+	/** 算数的那一类说法，证据行上照实写出来源。 */
 	route: Route;
-	/** 说法与这一类原文的相关度，已过 RELEVANCE_MIN */
-	relevance: number;
 	/**
-	 * 命中的那条说法的文本，只有抽取的那类带（其余类的文本就是经历行上的
+	 * 算数的那条说法的文本，只有抽取的那类带（其余类的文本就是经历行上的
 	 * 字段，回表取得到；简历原文太长，不放进事实行）。不参与计算，只为在
-	 * 证据行上说出「命中的是哪个能力词」。
+	 * 证据行上说出「算数的是哪个能力词」。
 	 */
 	phrase: string | null;
 	/** 能力那一类的投入档（「主导」），参与深度并在证据行显示，其余类为 null。 */
@@ -58,18 +52,16 @@ export type Fact = PopulationFact & {
 };
 
 /**
- * 两条证据谁更对得上：比相关度乘投入系数，同强度再比原始相关度。来源不参与比较——任职记录和简历里写的都在说
- * 这个人做过什么，来源写在证据行上，信不信由 HR 判断。投入档只有抽取的技能上有：
- * 「负责搭建数据仓库」比「熟悉数据仓库」更像要找的人。一条主张的几个经历词同权：
- * 它们都是模型对「要找什么」的表达，没有哪个更像原话。
+ * 两条证据谁更对得上：比投入。来源不参与比较——任职记录和简历里写的都在说这个人做过什么，
+ * 来源写在证据行上，信不信由 HR 判断。投入档只有抽取的技能上有：「负责搭建数据仓库」比
+ * 「熟悉数据仓库」更像要找的人。
  */
 function closer(a: Fact, b: Fact) {
-	return weighted(a) - weighted(b) || a.relevance - b.relevance;
+	return weighted(a) - weighted(b);
 }
 
 function weighted(f: Fact) {
-	if (f.route !== "skill") return f.relevance;
-	return f.relevance * ENGAGEMENT_FACTOR[f.engagement ?? "做过"];
+	return f.route === "skill" ? ENGAGEMENT_FACTOR[f.engagement ?? "做过"] : 1;
 }
 
 /**
@@ -97,15 +89,14 @@ export function gapMonths(endDate: string | null, now: Date) {
 }
 
 /**
- * 一条主张对一个人的**深度 = 相关度 × 投入 × 时长 × 近因**，四个都是 (0, 1] 内的因子。
- * 相关度和投入取最对得上的那条证据的（见 closer）；**时长是全部命中段的累计**，近因取其中最近的一段。
- * 它们回答的是「做的事有多对得上、做了多久、离现在多近」。
+ * 一条主张对一个人的**深度 = 投入 × 时长 × 近因**，三个都是 (0, 1] 内的因子。
+ * 投入取最对得上的那条证据的（见 closer）；**时长是算数的那几段的累计**，近因取其中最近的一段。
+ * 它们回答的是「投入多深、做了多久、离现在多近」；对不对得上在成为事实之前已经定了。
  * 主张上的 `minMonths` 判的就是这个累计值：筛和排看的是同一个数，证据行上写的也是它。
  */
-function claimValue(facts: Fact[], now: Date) {
-	let best: Fact | undefined;
-	for (const f of facts) if (!best || closer(f, best) > 0) best = f;
-	if (!best) return null;
+function claimValue(claim: Claim, facts: Fact[] | undefined, now: Date) {
+	if (!facts || !enough(claim, facts)) return null;
+	const best = facts.reduce((a, b) => (closer(b, a) > 0 ? b : a));
 	const months = monthsOf(facts);
 	let gap = Number.POSITIVE_INFINITY;
 	let endDate: string | null | undefined;
@@ -122,9 +113,6 @@ function claimValue(facts: Fact[], now: Date) {
 		depth:
 			weighted(best) * saturate(months, TENURE_HALF) * decay(gap, RECENCY_HALF),
 		basis: {
-			route: best.route,
-			value: best.value,
-			relevance: best.relevance,
 			months,
 			endDate: endDate ?? null,
 			external,
@@ -133,7 +121,7 @@ function claimValue(facts: Fact[], now: Date) {
 }
 
 /**
- * 累计命中段的月数；同一段 id 只计一次。
+ * 累计证据段的月数；同一段 id 只计一次。
  */
 function monthsOf(facts: readonly Fact[]) {
 	const seen = new Set<number>();
@@ -146,13 +134,13 @@ function monthsOf(facts: readonly Fact[]) {
 	return months;
 }
 
-/** 满足这条主张：有证据段，而且累计时长够。 */
-function satisfies(claim: Claim, facts: Fact[] | undefined): facts is Fact[] {
-	if (!facts || facts.length === 0) return false;
+/** 这几段够不够这条主张：有证据段，而且累计时长够。 */
+function enough(claim: Claim, facts: readonly Fact[]) {
+	if (facts.length === 0) return false;
 	return !claim.minMonths || monthsOf(facts) >= claim.minMonths;
 }
 
-/** 一个人在一次检索里的全部事实：主张下标 → 命中的段 */
+/** 一个人在一次检索里的全部事实：主张下标 → 算数的段 */
 type Person = Map<number, Fact[]>;
 
 function addFact(p: Person, f: Fact) {
@@ -191,7 +179,7 @@ function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 function complete(p: Person, claims: Claim[]) {
 	for (const [i, claim] of claims.entries()) {
 		if (claim.mode !== "must") continue;
-		if (!satisfies(claim, p.get(i))) return false;
+		if (!enough(claim, p.get(i) ?? [])) return false;
 	}
 	return true;
 }
@@ -213,15 +201,14 @@ function measure(
 	let depth = 1;
 	const basis: (ClaimBasis | null)[] = [];
 	for (const [i, claim] of claims.entries()) {
-		const fs = p.get(i);
-		const value = claimValue(fs ?? [], now);
+		const value = claimValue(claim, p.get(i), now);
 		if (claim.mode === "must") {
 			// `complete` 已经保证必须的主张都有证据；没有就是调用方漏了判定
 			if (!value) throw new Error(`必须的主张 ${i} 没有证据却进了打分`);
 			basis.push(value.basis);
 			depth *= value.depth;
-		} else if (value && satisfies(claim, fs)) {
-			// 够不上时长的加分主张不加分，依据也不留：留了它就会画成一行命中，
+		} else if (value) {
+			// 没满足的加分主张不加分，依据也不留：留了它就会画成一行证据，
 			// 而名次里没有它——「看得见的东西能解释看到的名次」就不成立了
 			basis.push(value.basis);
 			depth *= 1 + BOOST_WEIGHT * value.depth;
@@ -361,10 +348,8 @@ function byDepth(a: Ranked, b: Ranked) {
 	return b.depth - a.depth || a.empId.localeCompare(b.empId);
 }
 
-/**
- * 对同一份事实计算名次与分面。now 是本次检索的共同时间依据。
- */
-export function rank(
+/** 这份事实下谁在名单上、按什么顺序。now 是本次检索的共同时间依据。 */
+export function order(
 	facts: Fact[],
 	population: PopulationFact[],
 	claims: Claim[],
@@ -372,7 +357,7 @@ export function rank(
 	now: Date,
 	/** 每条人的偏好各一份满足它的人（`execute.ts` 的 `fetchPreferred`）。 */
 	preferred: readonly ReadonlySet<string>[] = [],
-): { ranked: Ranked[]; facets: Facets; total: number } {
+): Ranked[] {
 	const ranked: Ranked[] = [];
 	const evidence = bucket(facts, keeps(filters));
 	const candidates = new Set(
@@ -383,7 +368,23 @@ export function rank(
 		if (!complete(p, claims)) continue;
 		ranked.push({ empId, ...measure(p, claims, preferred, empId, now) });
 	}
-	ranked.sort(byDepth);
+	return ranked.sort(byDepth);
+}
+
+/** 对同一份事实计算名次与分面。 */
+export function rank(
+	facts: Fact[],
+	population: PopulationFact[],
+	claims: Claim[],
+	filters: SearchFilters,
+	now: Date,
+	preferred: readonly ReadonlySet<string>[] = [],
+): {
+	ranked: Ranked[];
+	facets: Facets;
+	total: number;
+} {
+	const ranked = order(facts, population, claims, filters, now, preferred);
 	return {
 		ranked,
 		facets: claims.some((claim) => claim.mode === "must")
@@ -404,10 +405,9 @@ const PER_CLAIM = "\u0001";
  * 同一次查询刷新两次证据会换位置。这里刻意不用主张的深度：那是**人**的属性
  * （累计、近因都跨段），而这里要选的是单独一段，两者不是同一个量。
  *
- * 没满足的主张一段都不留（`satisfies`，和打分同一条判定）：够不上累计时长的
- * 加分主张在名次里没有份，证据行和时间线上也不能有它。
+ * 没满足的主张一段都不留（`enough`，和打分同一条判定）。
  */
-export function pageHits(
+export function pageEvidence(
 	facts: Fact[],
 	claims: readonly Claim[],
 	filters: SearchFilters,
@@ -426,7 +426,7 @@ export function pageHits(
 	const out = new Map<string, Fact[]>();
 	for (const { empId, facts: list } of byKey.values()) {
 		const claim = claims[list[0]?.claim ?? -1];
-		if (!claim || !satisfies(claim, list)) continue;
+		if (!claim || !enough(claim, list)) continue;
 		list.sort((a, b) => closer(b, a) || b.months - a.months || a.id - b.id);
 		const acc = out.get(empId) ?? [];
 		acc.push(...list.slice(0, perClaim));

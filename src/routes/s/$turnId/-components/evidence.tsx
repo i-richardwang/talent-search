@@ -2,7 +2,7 @@ import { Text } from "#/components/ui/text";
 import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
 import { routeLabel } from "#/search/evidence";
-import { type ClaimBasis, type Hit, placeOf } from "#/search/result";
+import { type ClaimBasis, type Evidence, placeOf } from "#/search/result";
 
 /**
  * 证据行与未命中行共用的四列：点、条件词、匹配到的字段、右端时长。
@@ -11,74 +11,83 @@ import { type ClaimBasis, type Hit, placeOf } from "#/search/result";
 const LINE_GRID =
 	"grid grid-cols-[auto_--spacing(24)_minmax(0,1fr)_auto] items-baseline gap-x-2.5 gap-y-0.5 text-xs";
 
-const MATCHED_BY = "匹配依据";
+/** 时间带上有证据的段；和证据行的点同一个颜色。 */
+export const EVIDENCE_FILL = "bg-fg-tertiary";
 
-/** 时间带上命中的段；和证据行的点同一个颜色。 */
-export const HIT_FILL = "bg-fg-tertiary";
-
-/** 证据行前的点：命中是深一档的实心点，没命中是浅色的点。 */
-export function Dot({ hit, className }: { hit: boolean; className?: string }) {
+/** 证据行前的点：有证据是深一档的实心点，没有是浅色的点。 */
+export function Dot({
+	found,
+	className,
+}: {
+	found: boolean;
+	className?: string;
+}) {
 	return (
 		<span
 			aria-hidden="true"
 			className={cn(
 				"size-2 shrink-0 rounded-full",
-				hit ? HIT_FILL : "bg-border",
+				found ? EVIDENCE_FILL : "bg-border",
 				className,
 			)}
 		/>
 	);
 }
 
-export function phraseLabel(hit: Hit) {
-	return hit.phrase === null ? null : dots(hit.engagement, hit.phrase);
+export function phraseLabel(evidence: Evidence) {
+	return evidence.phrase === null
+		? null
+		: dots(evidence.engagement, evidence.phrase);
 }
 
-function matchedField(hit: Hit): {
+function matchedField(evidence: Evidence): {
 	label: string;
 	value: string | null;
 	context: string;
 } {
-	const label = routeLabel(hit.route);
-	switch (hit.route) {
+	const label = routeLabel(evidence.route);
+	switch (evidence.route) {
 		case "role":
-			return { label, value: dots(hit.title, placeOf(hit)), context: hit.seq };
+			return {
+				label,
+				value: dots(evidence.title, placeOf(evidence)),
+				context: evidence.seq,
+			};
 		case "title":
-			return { label, value: hit.title, context: placeOf(hit) };
+			return { label, value: evidence.title, context: placeOf(evidence) };
 		case "description":
-			return { label, value: null, context: dots(hit.title, placeOf(hit)) };
+			return {
+				label,
+				value: null,
+				context: dots(evidence.title, placeOf(evidence)),
+			};
 		case "skill":
 			return {
 				label,
-				value: phraseLabel(hit),
-				context: dots(hit.title, placeOf(hit)),
+				value: phraseLabel(evidence),
+				context: dots(evidence.title, placeOf(evidence)),
 			};
 	}
 }
 
-export function evidenceText(name: string, hit: Hit, basis: ClaimBasis) {
-	const field = matchedField(hit);
+export function evidenceText(evidence: Evidence, basis: ClaimBasis) {
+	const field = matchedField(evidence);
 	return dots(
-		byOther(name, hit) ? `${MATCHED_BY} ${hit.value}` : null,
 		[field.label, field.value ?? field.context].filter(Boolean).join(" "),
 		field.value === null ? null : field.context,
 		`${basis.external ? "入职前" : "公司内"} ${years(basis.months)}`,
 	);
 }
 
-function byOther(name: string, hit: Hit) {
-	return hit.value !== name;
-}
-
 export function EvidenceLine({
 	name,
 	boost,
-	hit,
+	evidence,
 	basis,
 }: {
 	name: string;
 	boost: boolean;
-	hit: Hit;
+	evidence: Evidence;
 	basis: ClaimBasis;
 }) {
 	const head = (
@@ -94,20 +103,15 @@ export function EvidenceLine({
 		</span>
 	);
 
-	const field = matchedField(hit);
+	const field = matchedField(evidence);
 	const ongoing = basis.endDate === null;
 
 	return (
 		<div className="@container">
 			<div className={LINE_GRID}>
-				<Dot className="translate-y-0.5" hit />
+				<Dot className="translate-y-0.5" found />
 				<span className="col-span-2 min-w-0 @xl:col-span-1">{head}</span>
 				<span className="col-span-3 col-start-2 row-start-2 flex min-w-0 items-baseline gap-1.5 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1">
-					{byOther(name, hit) && (
-						<span className="shrink-0 text-fg-tertiary">
-							{MATCHED_BY} {hit.value}
-						</span>
-					)}
 					{field.label ? (
 						<span className="shrink-0 text-fg-tertiary">{field.label}</span>
 					) : null}
@@ -138,7 +142,7 @@ export function MissedClaims({ names }: { names: string[] }) {
 	if (names.length === 0) return null;
 	return (
 		<div className={`${LINE_GRID} text-fg-tertiary`}>
-			<Dot className="translate-y-0.5" hit={false} />
+			<Dot className="translate-y-0.5" found={false} />
 			<span>未命中</span>
 			<Text className="col-span-2 min-w-0" ellipsis>
 				{names.join("、")}

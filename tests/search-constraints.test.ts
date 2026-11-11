@@ -109,18 +109,8 @@ describe("检索数据约束", () => {
 	test("同一串字只存一次：说法表按原文的摘要唯一", async () => {
 		await assert.rejects(
 			db.execute(sql`
-				insert into phrase (text, embedding)
-				select text, embedding from phrase limit 1`),
+				insert into phrase (text) select text from phrase limit 1`),
 			violates("phrase_text_key_unique"),
-		);
-	});
-
-	test("重排相关度只能在零到一之间", async () => {
-		await assert.rejects(
-			db.execute(sql`
-				insert into rerank_cache (space, query, document_sha, relevance)
-				values ('fake-v1', '非法分数', 'synthetic', 1.1)`),
-			violates("rerank_cache_range"),
 		);
 	});
 });

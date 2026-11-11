@@ -13,8 +13,8 @@ import {
  * 边界。两种存法：
  *
  * - `{ query }`：对话写下的查询（`query.ts`），每条条件是固定 FROM 加一段 `where`。
- * - `{ conditions }`：关键词框写下的条件表（`keywords.ts` 能写回框里的那种），以及较早的对话
- *   记录。读取时经 `compile.ts` 编译成查询，不迁数据。
+ * - `{ conditions }`：关键词框写下的条件表（`keywords.ts` 能写回框里的那种）；对话链上也有这种
+ *   形状的记录。读取时经 `compile.ts` 编译成查询。
  */
 export type SearchSpec = { conditions: Condition[] } | { query: Query };
 
@@ -29,10 +29,6 @@ export function emptySpec(): SearchSpec {
 /** 一份记录要执行、要显示的查询：关键词链形状的条件表当场编译。 */
 export function queryOfSpec(spec: SearchSpec): Query {
 	return "query" in spec ? spec.query : compileConditions(spec.conditions);
-}
-
-export function hasMeaning(spec: SearchSpec) {
-	return queryOfSpec(spec).conditions.length > 0;
 }
 
 /**

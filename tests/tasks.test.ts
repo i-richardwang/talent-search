@@ -1,8 +1,8 @@
 /**
- * 语料侧三种任务连起来跑：同步读仓库自带的合成样例、解析给段算说法与向量、
+ * 语料侧三种任务连起来跑：同步读仓库自带的合成样例、解析给段算说法、
  * 任务的记录与活性。
  *
- * 端点是进程内那三台假的，所以这里量的是**机制**，不是抽得准不准。
+ * 端点是进程内假的，所以这里量的是**机制**，不是抽得准不准。
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -263,7 +263,7 @@ describe("同步与解析", () => {
 	});
 
 	/*
-	 * 说法只有作为边的终点才有意义。没有边指向的行留着，召回照样把它交给重排判断，
+	 * 说法只有作为边的终点才有意义。没有边指向的行留着，按字面找照样捞到它，
 	 * 却一条命中都产生不了。
 	 */
 	test("没有边指向的说法不留在表里", async () => {
@@ -275,9 +275,7 @@ describe("同步与解析", () => {
 		assert.equal(await orphans(), 0);
 
 		// 造一条没有边指向的：换过一次抽取提示词之后，失去所有边的旧说法就是这个样子
-		await db.execute(sql`
-			insert into phrase (text, embedding)
-			values ('没人会指的说法', (select embedding from phrase limit 1))`);
+		await db.execute(sql`insert into phrase (text) values ('没人会指的说法')`);
 		assert.equal(await orphans(), 1);
 
 		const run = await runTask("sync");
@@ -437,48 +435,26 @@ describe("同步与解析", () => {
 		// 失败的同步一行都没动
 		assert.equal(await count("employee"), 29);
 	});
-
-	test("向量模型更换：说法整张作废，所有段重新解析，空间记录重写", async () => {
-		await db.execute(sql`update embedding_space set space_id = 'old-space'`);
-		const run = await runTask("derive");
-		assert.ok(run);
-		assert.equal(run.failure, null);
-		assert.match(
-			await logText(latest(await tasksState(), "derive")?.id),
-			/向量模型已更换/,
-		);
-		const { rows } = await db.execute<{ space_id: string }>(
-			sql`select space_id from embedding_space`,
-		);
-		assert.deepEqual(
-			rows.map((row) => row.space_id),
-			["fake-v1"],
-		);
-		assert.equal(await underived(), 0);
-		assert.ok((await count("experience_phrase")) > 0);
-	});
 });
 
-test("词表跨嵌入空间保留，生效一条技能边都不动", async () => {
+test("词表的判定生效，一条技能边都不动", async () => {
 	const previous = process.env.REVIEW_JUDGE;
 	process.env.REVIEW_JUDGE = "external";
 	const restore = answers();
 	try {
 		await db.execute(sql`delete from review_group`);
-		await db.execute(sql`insert into review_group (kind, guide_identity, words, judge, judgment) values (
-			'group', ${groupIdentity()}, '[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
+		await db.execute(sql`insert into review_group (guide_identity, words, judge, judgment) values (
+			${groupIdentity()}, '[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
 			'{"judgments":[{"word":"数据分析","why":"属于业务分析","sameAs":"","parent":"业务分析"}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
-		await db.execute(sql`update embedding_space set space_id = 'reset-space'`);
-		assert.equal((await runTask("derive"))?.failure, null);
 		assert.equal(await count("term", "word = '业务分析'"), 1);
 		const edges = sql`select array_agg(ep.experience_id || ':' || p.text order by ep.experience_id, p.text)::text as all
 			from experience_phrase ep join phrase p on p.id = ep.phrase_id where ep.route = 'skill'`;
 		const before = (await db.execute<{ all: string }>(edges)).rows[0]?.all;
 		assert.ok(before);
 		await db.execute(sql`delete from review_group`);
-		await db.execute(sql`insert into review_group (kind, guide_identity, words, judge, judgment) values (
-			'group', ${groupIdentity()}, '[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
+		await db.execute(sql`insert into review_group (guide_identity, words, judge, judgment) values (
+			${groupIdentity()}, '[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
 			'{"judgments":[{"word":"业务分析","why":"采用标准写法","sameAs":"","parent":""},{"word":"数据分析","why":"同一能力的写法","sameAs":"业务分析","parent":""}]}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
 		assert.equal(
@@ -641,8 +617,6 @@ describe("页面文案", () => {
 	const corpus = (over: Partial<CorpusCounts> = {}): CorpusCounts => ({
 		employees: 8,
 		external: 4,
-		glossable: 30,
-		glossed: 12,
 		internal: 6,
 		derived: 10,
 		merged: 2,
@@ -681,15 +655,12 @@ describe("页面文案", () => {
 			"4 / 10 段已按新标准解析，解析完之前检索沿用上一版；30 条说法、0 段 AI 未能作答",
 		);
 	});
-	test("同步说构成，整理说释义写到哪了和词表", () => {
+	test("同步说构成，整理说词表", () => {
 		assert.equal(
 			read(LANE_FACTS.sync(corpus())),
 			"8 人、10 段经历（公司内 6 / 入职前 4）",
 		);
-		assert.equal(
-			read(LANE_FACTS.review(corpus())),
-			"12 / 30 条说法已写释义；9 个标签、2 种写法已归并",
-		);
+		assert.equal(read(LANE_FACTS.review(corpus())), "9 个标签、2 种写法已归并");
 	});
 	test("用时一小时以内到秒，以上到分，满一天进位成天", () => {
 		assert.equal(formatDuration(0), "0s");

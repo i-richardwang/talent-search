@@ -1,11 +1,14 @@
 import type { Ref } from "react";
 import { KeywordBar, type KeywordBarHandle } from "#/components/keyword-bar";
 import type { Condition } from "#/search/condition";
+import type { Incomplete } from "#/search/empty";
 import type { Keywords } from "#/search/keywords";
 import type { QueryCondition } from "#/search/query";
 import type { Facets } from "#/search/result";
+import type { AttemptFault } from "#/server/turn";
 import { filterFields, textFilters } from "../-lib/filters";
 import type { View } from "../-lib/view-params";
+import { IncompleteNotice, NotCompleted } from "./completeness";
 import { Earlier } from "./earlier";
 import { FilterBar } from "./filter-bar";
 import { QueryChips } from "./query-chips";
@@ -17,8 +20,6 @@ type ConditionsRow =
 	| {
 			mode: "conversation";
 			list: readonly QueryCondition[];
-			/** 每条条件单独的人数，按 id */
-			counts: Readonly<Record<string, number>>;
 			onRevise: (conditions: QueryCondition[]) => boolean | Promise<boolean>;
 	  }
 	| {
@@ -29,11 +30,15 @@ type ConditionsRow =
 			bar?: Ref<KeywordBarHandle>;
 	  };
 
-/** 名单上方那一组：正看着较早的一次时的提示、搜索条件、筛选。 */
+/**
+ * 名单上方那一组：正看着较早的一次时的提示、名单还不完整时的说明、搜索条件、筛选。
+ */
 export function WorkspaceNotices({
 	earlier,
 	latestId,
 	turnId,
+	incomplete,
+	notCompleted,
 	conditions,
 	facets,
 	view,
@@ -42,6 +47,10 @@ export function WorkspaceNotices({
 	earlier: boolean;
 	latestId: string;
 	turnId: string;
+	/** 候选人较多、名单还不完整时覆盖到了哪里；名单完整、是空的、或还在补人时为 null。 */
+	incomplete: Incomplete | null;
+	/** 改完条件后新进范围的人没能补上、名单上已有人：哪个环节出了问题；没有出错为 null。 */
+	notCompleted: { fault: AttemptFault; onRetry: () => void } | null;
 	conditions: ConditionsRow;
 	facets: Facets;
 	view: View;
@@ -56,11 +65,15 @@ export function WorkspaceNotices({
 	return (
 		<>
 			{earlier && <Earlier latestId={latestId} />}
+			{notCompleted ? (
+				<NotCompleted {...notCompleted} />
+			) : (
+				incomplete && <IncompleteNotice incomplete={incomplete} />
+			)}
 			{conditions.mode === "conversation" ? (
 				conditions.list.length > 0 && (
 					<QueryChips
 						conditions={conditions.list}
-						counts={conditions.counts}
 						onChange={conditions.onRevise}
 					/>
 				)

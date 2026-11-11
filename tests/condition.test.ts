@@ -17,14 +17,13 @@ import {
 import { conditionLabel } from "#/search/condition-label";
 import { dimCompare, FILTER_LIST_MAX } from "#/search/dimensions";
 import { parseQuery } from "#/search/query-syntax";
-import { hasMeaning } from "#/search/spec";
 import { boundedText, TEXT_MAX } from "#/search/text";
 import { claim } from "./conditions";
 
 const exp = (...what: [string, ...string[]]): Condition => claim(what);
 
 /**
- * 取值只做边界工作，不改写字面：屏幕上写的那几个字和拿去比相似度的那几个字
+ * 取值只做边界工作，不改写字面：屏幕上写的那几个字和拿去匹配的那几个字
  * 必须是同一串。任何「剥掉句式」「切开连接词」都是一次看不见的查询变更。
  */
 describe("经历词的边界", () => {
@@ -282,16 +281,6 @@ describe("身份", () => {
 			conditionKey(boost),
 			conditionKey({ ...boost, mode: "must" }),
 		);
-	});
-});
-
-describe("查询是否为空", () => {
-	test("有一条条件就算说了，哪怕它是停用的；一条都没有就是空查询", () => {
-		const one = conditionsOf([
-			{ about: "experience", what: ["算法"], off: "user" },
-		]);
-		assert.equal(hasMeaning({ conditions: one }), true);
-		assert.equal(hasMeaning({ conditions: [] }), false);
 	});
 });
 

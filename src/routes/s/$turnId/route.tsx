@@ -22,11 +22,11 @@ import { KeyHelp } from "./-components/key-help";
 import { QueryHeader } from "./-components/query-header";
 import { ResultList } from "./-components/result-list";
 import { SidePanel } from "./-components/side-panel";
-import { choiceAt, Thread } from "./-components/thread";
+import { answerAt, Thread } from "./-components/thread";
 import { WorkspaceLayout } from "./-components/workspace-layout";
 import { WorkspaceNotices } from "./-components/workspace-notices";
+import { useAttempt } from "./-lib/attempt";
 import { useCloseDetail, useEditQuery } from "./-lib/edit-query";
-import { useInterpretation } from "./-lib/interpret";
 import { useKeyboardFlow } from "./-lib/keyboard-flow";
 import { useIsWide } from "./-lib/media";
 import { listWait, useNavPhase } from "./-lib/nav-phase";
@@ -48,7 +48,6 @@ const NO_OUTCOME: SearchOutcome = {
 	results: [],
 	facets: emptyFacets(),
 	total: 0,
-	counts: {},
 	empty: null,
 };
 const EMPTY_SPEC = emptySpec();
@@ -90,16 +89,18 @@ function Workbench() {
 	}, [commitError]);
 
 	const nav = useNavPhase();
-	// 理解属于链上最后一轮，不属于正看着的这一轮：回头看早先的结果时，
-	// 最后一轮照样在理解，线程照样在追加步骤
+	// AI 的处理属于链上最后一轮，不属于正看着的这一轮：回头看早先的结果时，
+	// 最后一轮照样在处理，线程照样在追加步骤
 	const {
-		interpreting,
-		fault: interpretFault,
-		retry: retryInterpret,
+		working,
+		fault: attemptFault,
+		retry: retryAttempt,
 		progress,
-	} = useInterpretation(latest);
+	} = useAttempt(latest);
 	// 没理解出来的只可能是最后一轮；名单停在等待或失败，只当看着的就是它
 	const pending = settledSpec === null;
+	// 看着的是最后一轮、条件已经有了：AI 要做的只剩补上新进范围的人
+	const completable = !pending && !earlier;
 
 	const { mode } = turn;
 	// 对话的链在没配查询理解时没有输入框，条件只能在 chip 上改
@@ -113,8 +114,19 @@ function Workbench() {
 	const spec = settledSpec ?? EMPTY_SPEC;
 	const outcome = result ?? NO_OUTCOME;
 	const { results, total } = outcome;
+	// 名单上有人时，读到第一批经历才算在补人：改完没有新进范围的人时这一次转眼就结束，不提示。
+	// 名单是空的就一直算：没补完之前不能说没有这样的人
+	const completing =
+		completable &&
+		working &&
+		((progress?.trace.length ?? 0) > 0 || results.length === 0);
+	// AI 没处理成：名单上没有人可看时说在名单那一列，有人时名单照常、说在名单上方
+	const failed =
+		!earlier && attemptFault
+			? { fault: attemptFault, onRetry: retryAttempt }
+			: null;
 	const wait = listWait(
-		pending && interpreting,
+		pending && working ? "understanding" : completing ? "completing" : null,
 		progress?.startedAt ?? null,
 		nav,
 	);
@@ -131,20 +143,23 @@ function Workbench() {
 	const reviseSpec = (next: SearchSpec) =>
 		commit({ kind: "spec", spec: next }, { from: turnId });
 
-	/** 对话的条件在 chip 和问题的选项上改，改完是一份查询；关键词的条件在框里改。 */
+	/** 对话的条件在 chip 上改，改完是一份查询；关键词的条件在框里改。 */
 	const reviseTo = (conditions: QueryCondition[]) =>
 		reviseSpec({ query: { conditions } });
 	const reviseKeywords = (conditions: Condition[]) =>
 		reviseSpec({ conditions });
 
+	// AI 问的是最后一轮的条件，回答接在最后一轮后面，看着哪一轮都一样
+	const answer = (text: string) =>
+		commit({ kind: "sentence", text }, { from: latest.id });
 	// 最后一轮 AI 问的那一问：按选项前的数字选。线程看不见时不接
 	const choices =
 		latest.spec && (wide || threadOpen) ? latest.notes?.choices : null;
 	const choose =
 		choices &&
 		((n: number) => {
-			const table = choiceAt(choices, n);
-			if (table) reviseTo(table);
+			const picked = answerAt(choices, n);
+			if (picked) answer(picked);
 		});
 
 	const picks = usePicks(turnId, outcome);
@@ -162,15 +177,15 @@ function Workbench() {
 			autoFocus={threadOpen}
 			composer={composer}
 			earlier={thread.slice(0, -1)}
-			fault={interpretFault}
+			fault={attemptFault}
 			latest={latest}
 			progress={progress}
-			onRevise={reviseTo}
+			onAnswer={answer}
 			onQuery={(input) => commit(input, { from: turnId })}
-			onRetry={retryInterpret}
+			onRetry={retryAttempt}
 			understanding={understanding}
 			viewing={turnId}
-			waiting={interpreting}
+			waiting={working && latest.spec === null}
 		/>
 	);
 
@@ -218,11 +233,7 @@ function Workbench() {
 					<ResultList
 						canMore={canMore}
 						empId={empId}
-						failure={
-							pending && interpretFault
-								? { fault: interpretFault, onRetry: retryInterpret }
-								: null
-						}
+						failure={results.length === 0 ? failed : null}
 						growing={nav.growing}
 						mode={mode}
 						onAll={pickAll}
@@ -244,7 +255,6 @@ function Workbench() {
 								? {
 										mode,
 										list: query.conditions,
-										counts: outcome.counts,
 										onRevise: reviseTo,
 									}
 								: {
@@ -256,6 +266,13 @@ function Workbench() {
 						}
 						earlier={earlier}
 						facets={outcome.facets}
+						incomplete={
+							// 空名单的原因在空态里说；还在补人时这句话还没定
+							results.length > 0 && !(completable && working)
+								? (outcome.incomplete ?? null)
+								: null
+						}
+						notCompleted={results.length > 0 ? failed : null}
 						latestId={latest.id}
 						onViewChange={updateView}
 						turnId={turnId}

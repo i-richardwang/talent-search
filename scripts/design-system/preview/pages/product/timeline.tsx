@@ -12,10 +12,9 @@ import {
 } from "#/components/ui/table";
 import { Dot } from "#/routes/s/$turnId/-components/evidence";
 import {
-	buildHitIndex,
+	buildEvidenceIndex,
 	Timeline,
 } from "#/routes/s/$turnId/-components/timeline";
-import { claimName } from "#/search/query";
 import type { Route } from "#/search/weights";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
@@ -23,32 +22,31 @@ import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { CLAIMS } from "../../samples/conditions";
 import {
 	EMPLOYEES,
+	evidenceOf,
+	evidenceOn,
 	experience,
 	experiencesOf,
-	hitOn,
-	hitsOf,
 } from "../../samples/people";
 
-const NAMES = CLAIMS.map(claimName);
+const NAMES = CLAIMS.map((claim) => claim.label);
 
 /**
- * 节点状态表的一行：一段经历配一条指定来源的命中。编号加一个偏移，
+ * 节点状态表的一行：一段经历配一条指定来源的证据。编号加一个偏移，
  * 同一页上的几条时间线不共用锚点 id。
  */
 function nodeRow(route: Route | null, offset: number) {
 	const base = route === "skill" ? experience(101) : experience(103);
 	const row = { ...base, id: base.id + offset };
-	const hits = route
+	const evidence = route
 		? [
-				hitOn(row, {
+				evidenceOn(row, {
 					engagement: route === "skill" ? "主导" : null,
 					phrase: route === "skill" ? "实时推荐系统" : null,
 					route,
-					value: "推荐系统",
 				}),
 			]
 		: [];
-	return { hitIndex: buildHitIndex(hits), rows: [row] };
+	return { evidenceIndex: buildEvidenceIndex(evidence), rows: [row] };
 }
 
 const NODES: [label: string, route: Route | null][] = [
@@ -59,9 +57,11 @@ const NODES: [label: string, route: Route | null][] = [
 
 function Playground() {
 	const [empId, setEmpId] = useState("T0101");
-	const [hits, setHits] = useState(true);
+	const [withEvidence, setWithEvidence] = useState(true);
 	const rows = experiencesOf(empId);
-	const hitIndex = buildHitIndex(hits ? hitsOf(empId) : []);
+	const evidenceIndex = buildEvidenceIndex(
+		withEvidence ? evidenceOf(empId) : [],
+	);
 	const external = rows.filter((x) => x.kind === "external").length;
 	return (
 		<div className="flex flex-col gap-4">
@@ -77,7 +77,7 @@ function Playground() {
 					/>
 				</Control>
 				<Control>
-					<Checkbox checked={hits} onChange={setHits}>
+					<Checkbox checked={withEvidence} onChange={setWithEvidence}>
 						带上本次命中
 					</Checkbox>
 				</Control>
@@ -88,12 +88,12 @@ function Playground() {
 					<>
 						<span>公司内 {rows.length - external} 段</span>
 						<span>入职前 {external} 段</span>
-						<span>命中 {hitIndex.size} 段</span>
+						<span>命中 {evidenceIndex.size} 段</span>
 					</>
 				}
 			>
 				<div className="mx-auto w-full max-w-(--container-detail)">
-					<Timeline hitIndex={hitIndex} names={NAMES} rows={rows} />
+					<Timeline evidenceIndex={evidenceIndex} names={NAMES} rows={rows} />
 				</div>
 			</Stage>
 		</div>
@@ -117,7 +117,7 @@ function Nodes() {
 							<TableRow key={label}>
 								<TableCell className="whitespace-nowrap">
 									<span className="flex items-center gap-1.5 text-xs">
-										<Dot hit={route !== null} />
+										<Dot found={route !== null} />
 										{label}
 									</span>
 								</TableCell>
@@ -138,10 +138,10 @@ function Nodes() {
 /** 使用场景里单独画一段：编号加偏移，不和试用里的锚点重名。 */
 function single(id: number, empId: string, offset: number) {
 	const row = { ...experience(id), id: id + offset };
-	const hits = hitsOf(empId)
-		.filter((h) => h.experienceId === id)
-		.map((h) => ({ ...h, experienceId: row.id }));
-	return { hitIndex: buildHitIndex(hits), rows: [row] };
+	const evidence = evidenceOf(empId)
+		.filter((e) => e.experienceId === id)
+		.map((e) => ({ ...e, experienceId: row.id }));
+	return { evidenceIndex: buildEvidenceIndex(evidence), rows: [row] };
 }
 
 function Usage() {
@@ -196,7 +196,7 @@ export function TimelinePage() {
 					"推断序列只标「推断」，不和登记的序列混为一谈。",
 					"时间线放在人的详情里：宽屏在名单旁的右栏，窄屏在详情浮层，不另开一栏。",
 				],
-				usage: `<Timeline\n  hitIndex={buildHitIndex(hits)}\n  names={claims.map(claimName)}\n  rows={timeline}\n/>`,
+				usage: `<Timeline\n  evidenceIndex={buildEvidenceIndex(evidence)}\n  names={claims.map((claim) => claim.label)}\n  rows={timeline}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用时间线" },

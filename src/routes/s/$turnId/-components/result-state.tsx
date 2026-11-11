@@ -10,10 +10,10 @@ import { Text } from "#/components/ui/text";
 import type { QueryCondition } from "#/search/query";
 import type { SearchOutcome } from "#/search/result";
 import { queryOfSpec, type SearchSpec } from "#/search/spec";
-import type { InterpretFault, SearchMode } from "#/server/turn";
+import type { AttemptFault, SearchMode } from "#/server/turn";
+import { FAULT_COPY, FAULT_EXIT_LABEL, faultExits } from "../-lib/attempt";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { emptyState } from "../-lib/empty-state";
-import { FAULT_COPY, FAULT_EXIT_LABEL, faultExits } from "../-lib/interpret";
 import type { ListWait, SearchPhase } from "../-lib/nav-phase";
 import type { View } from "../-lib/view-params";
 
@@ -22,7 +22,10 @@ const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	employee: "默认顺序",
 };
 
-/** 名单的表头：这份名单有多少人、按什么排。等待时这一格写在做什么。 */
+/**
+ * 名单的表头：这份名单有多少人、按什么排。等待时这一格写在做什么；名单上已有的人照常成立、
+ * 只是还在补人时（`keep`），人数照写，后面跟着在做什么。
+ */
 export function ResultHeader({
 	wait,
 	order,
@@ -32,15 +35,18 @@ export function ResultHeader({
 	order: SearchOutcome["order"];
 	total: number;
 }) {
+	const counted = !wait || (wait.list === "keep" && total > 0);
 	return (
 		<p className="flex min-w-0 items-center gap-1" role="status">
-			{wait ? (
-				<Waiting key={wait.phase} phase={wait.phase} since={wait.since} />
-			) : (
+			{counted && (
 				<>
 					<span className="tabular-nums">{total.toLocaleString()}</span>
 					{` 人 · ${ORDER_LABEL[order]}`}
 				</>
+			)}
+			{counted && wait && " · "}
+			{wait && (
+				<Waiting key={wait.phase} phase={wait.phase} since={wait.since} />
 			)}
 		</p>
 	);
@@ -89,16 +95,16 @@ export function NoResults({
 }
 
 /**
- * 这一轮没理解出来。记录停在「待理解」，名单那一列就停在这里——不是一份空名单：
- * 空名单在这个界面里的意思是「没有这样的人」。说的是哪个环节出了问题（`FAULT_COPY`），
- * 连不上时不能说成这句话没读懂。重试放在这里而不是右栏：窄屏上右栏是收着的，
- * 名单这一列总在眼前。
+ * AI 没处理成，名单上又没有人可看：一句话没理解出来，或者改完条件、要补的人没补上而名单是
+ * 空的。名单那一列就停在这里——不是一份空名单：空名单在这个界面里的意思是「没有这样的人」。
+ * 说的是哪个环节出了问题（`FAULT_COPY`），连不上时不能说成这句话没读懂。重试放在这里而不是
+ * 右栏：窄屏上右栏是收着的，名单这一列总在眼前。
  */
-export function NotUnderstood({
+export function ListFailed({
 	fault,
 	onRetry,
 }: {
-	fault: InterpretFault;
+	fault: AttemptFault;
 	onRetry: () => void;
 }) {
 	const copy = FAULT_COPY[fault];
@@ -137,8 +143,9 @@ export function NotUnderstood({
 }
 
 const PHASE_TEXT: Record<SearchPhase, string> = {
-	interpreting: "正在理解你的需求…",
+	understanding: "正在理解你的需求…",
 	searching: "正在搜索…",
+	completing: "正在补充符合新条件的人…",
 };
 
 /** 在做什么，后面跟已等的秒数。每一步重新计：调用处按 `phase` 换 key。 */

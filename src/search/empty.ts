@@ -5,39 +5,48 @@ type EmptyOverflow =
 	| { kind: "overflowEvidence"; claims: Claim[] }
 	| { kind: "overflowPopulation" };
 
+/**
+ * 名单还不完整：还有候选人在必须或排除的条件上有没确认过的经历。没确认过的不算数，这些人里
+ * 该上名单的还没上。经历从职级高的人确认起，`above` 是已经完整确认到的最低一档职级：这一档和
+ * 更高的人都确认完了。最高一档也没确认完时为 null。
+ */
+export type Incomplete = { above: string | null };
+
 export type EmptyReason =
 	| EmptyOverflow
 	| { kind: "allDisabled" }
-	| { kind: "excludeOnly" }
 	| { kind: "noConditions" }
 	| { kind: "gatesUnmet" }
 	| { kind: "filtered" }
 	| { kind: "unmet" }
-	| { kind: "noHits" };
+	| { kind: "noneMatched" }
+	/** 名单上没有人，但候选人还没确认完：确认到了哪一档职级 */
+	| ({ kind: "incomplete" } & Incomplete);
 
 /** 空态成因由检索层判定，界面只负责翻译。 */
 export function emptyReason(input: {
 	query: Query;
 	filters: SearchFilters;
 	total: number;
-	overflow: EmptyOverflow | null;
+	/** 候选人还没确认完时确认到了哪里 */
+	incomplete?: Incomplete;
 }): EmptyReason | null {
-	const { query, filters, total } = input;
-	const { claims, gates, prefer } = rolesOf(query);
-	const people = gates.length + prefer.length;
-	if (input.overflow) return input.overflow;
+	const { query, filters, total, incomplete } = input;
+	const { claims, gates, prefer, excludes } = rolesOf(query);
+	// 只定去留的条件：门槛和排除
+	const gating = gates.length + excludes.length;
 	if (total > 0) return null;
+	if (incomplete) return { kind: "incomplete", ...incomplete };
 
-	if (claims.length > 0 || people > 0) {
+	if (claims.length + gating + prefer.length > 0) {
 		if (narrows(filters)) return { kind: "filtered" };
 		if (claims.some((c) => c.mode === "must")) return { kind: "unmet" };
-		if (claims.length === 0 && gates.length > 0) return { kind: "gatesUnmet" };
-		return { kind: "noHits" };
+		if (claims.length === 0 && gating > 0) return { kind: "gatesUnmet" };
+		return { kind: "noneMatched" };
 	}
 
-	if (query.conditions.some((c) => c.off && c.mode !== "exclude"))
-		return { kind: "allDisabled" };
-	// 走到这里剩下的都是排除，启用的或停用的
-	if (query.conditions.length > 0) return { kind: "excludeOnly" };
-	return { kind: "noConditions" };
+	// 走到这里没有启用的条件
+	return query.conditions.length > 0
+		? { kind: "allDisabled" }
+		: { kind: "noConditions" };
 }

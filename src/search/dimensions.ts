@@ -1,7 +1,8 @@
 /**
  * 筛选维度的唯一声明：取值、身份、解析、匹配方式、排序和文案。
  * 条件与 URL/RPC 共用 parse；分面与内存筛选共用 values。
- * SQL 求值器在 search.ts 按 match 家族执行；自由文本公司名、学校名属于 SearchFilters。
+ * 筛选在 rank.ts 的内存事实上按 match 家族求值（`dimValues`）；自由文本公司名、学校名属于
+ * SearchFilters。
  */
 import { duration } from "#/lib/format";
 import { boundedText } from "./text";
@@ -61,7 +62,7 @@ export type Picked = {
 /** 分面读取的人员与经历属性；没有有效经历时，单值经历属性为空。 */
 export type DimSource = {
 	months: number | null;
-	/** 登记的序列，入职前的段是模型对齐的序列（`search.ts` 的 `FACT_COLUMNS`） */
+	/** 登记的序列，入职前的段是模型对齐的序列（目录视图的 `seq_l1`、`seq_l2`） */
 	seqL1: string | null;
 	seqL2: string | null;
 	companyTag: string | null;
@@ -71,7 +72,7 @@ export type DimSource = {
 	 */
 	mainIndustries: string[];
 	/**
-	 * 这一段抽出来的能力词，连同每个词往上的每一层更宽的词（`search.ts` 的 `FACT_COLUMNS.skills`）：
+	 * 这一段抽出来的能力词，连同每个词往上的每一层更宽的词（目录视图的 `skills`）：
 	 * 写了「销售数据分析」的段在这里也有「数据分析」，点宽的词能看到细的人。每个词取的是
 	 * 词表里的标准写法，别名不成为一项。没有就是空数组
 	 */
@@ -85,7 +86,7 @@ export type DimSource = {
 	educationRank: number | null;
 	/** 最高学历那所学校的档（`employee.school_tier`），档与档之间不比高低 */
 	schoolTier: string;
-	/** 最高学历是不是海外取得（`overseasValue`）；没有记录时为空 */
+	/** 最高学历是不是海外取得，目录视图写成「是」「否」；没有记录时为空 */
 	overseas: string | null;
 };
 
@@ -140,7 +141,8 @@ export const FILTER_LIST_MAX = 64;
 
 /**
  * 一列不可信的文本。空列表归为 `undefined`——「一项都没选」和「这一维不筛」是同
- * 一件事，留一个空数组在 URL 上只会让筛选栏的组名数出一项没有行可以点掉的筛选。哪些串不算这一维的取值由维度自己说（`plain` 的 `isValue`）。
+ * 一件事，留一个空数组在 URL 上只会让筛选栏的组名数出一项没有行可以点掉的筛选。
+ * 哪些串不算这一维的取值由维度自己说（`plain` 的 `isValue`）。
  * 公司名与学校名（`params.ts`）走同一条：它们不在这张表里，但「一列名字」和
  * 「一列取值」是同一种东西，上限也是同一个。
  */
@@ -337,7 +339,7 @@ export const DIM_KEYS = Object.keys(DIMENSIONS) as DimKey[];
  * 有语料词表的那几维：查询理解时模型只能从库里真实存在的取值里挑。其余三维挑
  * 不了——序列要先知道全套序列树，经历来源是二选一，经历时长是连续量。
  *
- * 取值从哪张表数出来是 SQL 那一半的事（`search.ts` 的 `VOCAB_SOURCE`），那份表
+ * 取值从哪张表数出来是 SQL 那一半的事（`search.ts` 的 `VOCAB_COLUMN`），那份表
  * 按这里穷尽；词表的形状（`intent.ts` 的 `Vocabulary`）也从这里来。
  */
 export const VOCAB_KEYS = [
@@ -350,10 +352,6 @@ export const VOCAB_KEYS = [
 ] as const satisfies readonly DimKey[];
 
 export type VocabKey = (typeof VOCAB_KEYS)[number];
-
-export function isVocabKey(key: unknown): key is VocabKey {
-	return (VOCAB_KEYS as readonly unknown[]).includes(key);
-}
 
 /** 一段经历在这一维上的候选取值。空值不出现：它说的是「没记录」，不是取值。 */
 export function dimValues<K extends DimKey>(

@@ -15,7 +15,7 @@ after(teardown);
 
 const { groupIdentity, GUIDE, read } = await import("#/corpus/vocabulary");
 const { openGroups, submitJudgment } = await import("#/corpus/judgment");
-const { guideIdentities, review } = await import("#/corpus/review");
+const { review } = await import("#/corpus/review");
 const { pool } = await import("#/db");
 const { reviewJudge } = await import("#/server/review");
 
@@ -66,7 +66,7 @@ async function runReview(): Promise<string[]> {
 }
 
 function openGroup(connection: Awaited<ReturnType<typeof client>>) {
-	return openGroups(connection, "group", groupIdentity());
+	return openGroups(connection, groupIdentity());
 }
 
 function submitGroup(
@@ -75,15 +75,7 @@ function submitGroup(
 	judge: string,
 	judgments: unknown[],
 ) {
-	const guides = guideIdentities();
-	return submitJudgment(
-		connection,
-		id,
-		"group",
-		guides.group,
-		judge,
-		judgments,
-	);
+	return submitJudgment(connection, id, groupIdentity(), judge, judgments);
 }
 
 /** 库里能力词那一类上每个词的人数。 */
@@ -198,14 +190,7 @@ describe("整轮整理", () => {
 	test("只问到期的中心词，结论写回表，人身上的词不动", async () => {
 		const asked: string[] = [];
 		const restore = answerChat((system, prompt) => {
-			// 同一轮里释义组也会问到模型（gloss.test.ts 管它），这里只看归并那一问
-			if (system !== GUIDE)
-				return {
-					judgments: prompt
-						.split("\n")
-						.map((line) => line.replace(/（\d+ 人）$/, ""))
-						.map((word) => ({ word, gloss: `${word}的释义` })),
-				};
+			assert.equal(system, GUIDE);
 			asked.push(prompt);
 			return {
 				judgments: [
@@ -384,8 +369,8 @@ describe("判定交给外部", () => {
 		try {
 			await connection.query("delete from review_group");
 			await connection.query(
-				`insert into review_group (kind, guide_identity, words, collected_at)
-				 values ('group', $1, '[{"word":"陈年词","people":3},{"word":"陈年写法","people":2}]'::jsonb,
+				`insert into review_group (guide_identity, words, collected_at)
+				 values ($1, '[{"word":"陈年词","people":3},{"word":"陈年写法","people":2}]'::jsonb,
 				         now() - interval '30 days')`,
 				[groupIdentity()],
 			);
@@ -445,8 +430,8 @@ describe("判定交给外部", () => {
 			// 那个没人写过的名字就要做标准写法
 			await connection.query("delete from review_group");
 			const { rows } = await connection.query<{ id: number }>(
-				`insert into review_group (kind, guide_identity, words)
-				 values ('group', $1, '[{"word":"销售数据分析","people":5},{"word":"线上销售数据分析","people":3}]'::jsonb)
+				`insert into review_group (guide_identity, words)
+				 values ($1, '[{"word":"销售数据分析","people":5},{"word":"线上销售数据分析","people":3}]'::jsonb)
 				 returning id`,
 				[groupIdentity()],
 			);

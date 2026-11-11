@@ -85,24 +85,44 @@ describe("导航阶段", () => {
 
 describe("名单等待的样子", () => {
 	test("正在理解时画占位行，哪怕导航只是改筛选", () => {
-		assert.deepEqual(listWait(true, 1000, { ...IDLE, refreshing: true }), {
-			list: "skeleton",
-			phase: "interpreting",
-			since: 1000,
-		});
+		assert.deepEqual(
+			listWait("understanding", 1000, { ...IDLE, refreshing: true }),
+			{ list: "skeleton", phase: "understanding", since: 1000 },
+		);
 	});
 
 	test("换记录画占位行，改筛选把旧名单调暗，翻页不算等待", () => {
-		assert.deepEqual(listWait(false, null, { ...IDLE, replacing: true }), {
+		assert.deepEqual(listWait(null, null, { ...IDLE, replacing: true }), {
 			list: "skeleton",
 			phase: "searching",
 			since: null,
 		});
-		assert.deepEqual(listWait(false, null, { ...IDLE, refreshing: true }), {
+		assert.deepEqual(listWait(null, null, { ...IDLE, refreshing: true }), {
 			list: "dim",
 			phase: "searching",
 			since: null,
 		});
-		assert.equal(listWait(false, null, { ...IDLE, growing: true }), null);
+		assert.equal(listWait(null, null, { ...IDLE, growing: true }), null);
+	});
+
+	test("AI 在补人：名单留着照常可用，从这一次开始的时刻计时；这时改筛选、换记录，先按导航的样子等", () => {
+		assert.deepEqual(listWait("completing", 1000, IDLE), {
+			list: "keep",
+			phase: "completing",
+			since: 1000,
+		});
+		assert.deepEqual(listWait("completing", 1000, { ...IDLE, growing: true }), {
+			list: "keep",
+			phase: "completing",
+			since: 1000,
+		});
+		assert.equal(
+			listWait("completing", 1000, { ...IDLE, refreshing: true })?.list,
+			"dim",
+		);
+		assert.equal(
+			listWait("completing", 1000, { ...IDLE, replacing: true })?.list,
+			"skeleton",
+		);
 	});
 });

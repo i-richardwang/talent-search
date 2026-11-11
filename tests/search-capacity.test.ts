@@ -1,4 +1,4 @@
-/** 载荷上限针对实际参与检索的事实，被否决的经历不占用载荷。 */
+/** 载荷上限针对实际参与检索的事实，被排除的人的经历不占用载荷。 */
 import assert from "node:assert/strict";
 import { after, beforeEach, test } from "node:test";
 import { sql } from "drizzle-orm";
@@ -14,11 +14,11 @@ beforeEach(async () => {
 	await db.execute(sql`truncate employee, phrase restart identity cascade`);
 });
 
-test("超过事实载荷上限的被否决段不导致有效候选溢出", async () => {
+test("被排除的人有再多段经历，也不导致有效候选溢出", async () => {
 	await seed([
 		{
 			empId: "C1",
-			name: "合成被否决",
+			name: "合成被排除",
 			segments: [
 				{ kind: "external", title: "工程师", company: "排除部门", months: 12 },
 			],
@@ -37,12 +37,15 @@ test("超过事实载荷上限的被否决段不导致有效候选溢出", async
 		from generate_series(1, ${FACT_MAX}) n returning id)
 		insert into experience_phrase (experience_id, route, phrase_id)
 		select a.id, 'title', p.id from added a cross join phrase p where p.text = '工程师'`);
-	const result = await search({
-		conditions: [
-			{ about: "experience", mode: "must", what: ["工程师"] },
-			{ about: "experience", mode: "exclude", company: ["排除部门"] },
-		],
-	});
+	const result = await search(
+		{
+			conditions: [
+				{ about: "experience", mode: "must", what: ["工程师"] },
+				{ about: "experience", mode: "exclude", company: ["排除部门"] },
+			],
+		},
+		null,
+	);
 	assert.equal(result.total, 1);
 	assert.equal(result.empty, null);
 	assert.deepEqual(
@@ -65,26 +68,37 @@ test("人员候选超过单语句参数上限时，加分门槛保留全部人�
 		field: "school",
 		values: ["合成大学"],
 	} as const;
-	const baseline = await search({ conditions: [required] });
+	const baseline = await search({ conditions: [required] }, null);
 	assert.equal(baseline.total, 66000);
 	assert.equal(baseline.results[0]?.employee.empId, "S00001");
-	const boosted = await search({
-		conditions: [
-			required,
-			{ about: "person", mode: "boost", field: "education", values: ["硕士"] },
-		],
-	});
+	const boosted = await search(
+		{
+			conditions: [
+				required,
+				{
+					about: "person",
+					mode: "boost",
+					field: "education",
+					values: ["硕士"],
+				},
+			],
+		},
+		null,
+	);
 	assert.equal(boosted.total, baseline.total);
 	assert.equal(boosted.empty, null);
 	assert.equal(boosted.results[0]?.employee.empId, "S00002");
 	assert.equal(boosted.results[1]?.employee.empId, "S00004");
 	assert.deepEqual(boosted.facets, baseline.facets);
-	const background = await search({
-		conditions: [
-			required,
-			{ about: "experience", mode: "boost", department: ["合成偏好部门"] },
-		],
-	});
+	const background = await search(
+		{
+			conditions: [
+				required,
+				{ about: "experience", mode: "boost", department: ["合成偏好部门"] },
+			],
+		},
+		null,
+	);
 	assert.equal(background.total, baseline.total);
 	assert.equal(background.empty, null);
 	assert.equal(background.results[0]?.employee.empId, "S00002");
@@ -125,15 +139,23 @@ test("经历候选超过单语句参数上限时，加分门槛保留全部证�
 		mode: "must",
 		what: ["工程师"],
 	} as const;
-	const baseline = await search({ conditions: [required] });
+	const baseline = await search({ conditions: [required] }, null);
 	assert.equal(baseline.total, 66000);
 	assert.equal(baseline.results[0]?.employee.empId, "S00001");
-	const boosted = await search({
-		conditions: [
-			required,
-			{ about: "person", mode: "boost", field: "education", values: ["硕士"] },
-		],
-	});
+	const boosted = await search(
+		{
+			conditions: [
+				required,
+				{
+					about: "person",
+					mode: "boost",
+					field: "education",
+					values: ["硕士"],
+				},
+			],
+		},
+		null,
+	);
 	assert.equal(boosted.total, baseline.total);
 	assert.equal(boosted.empty, null);
 	assert.equal(boosted.results[0]?.employee.empId, "S00002");

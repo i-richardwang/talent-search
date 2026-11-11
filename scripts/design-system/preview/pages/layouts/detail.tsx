@@ -8,7 +8,6 @@ import {
 } from "#/routes/s/$turnId/-components/person";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
 import { claimLines } from "#/routes/s/$turnId/-lib/claim-lines";
-import { claimName } from "#/search/query";
 import { Routed } from "../../routed";
 import { CLAIMS } from "../../samples/conditions";
 import { EMPLOYEES, experiencesOf, resultOf } from "../../samples/people";
@@ -17,11 +16,9 @@ import { Shell } from "./home";
 
 /*
  * 人的详情：`src/routes/s/$turnId/-components/person.tsx` 的三种内容（详情、换人途中、
- * 找不到），数据换成样例里的候选人和这次搜索的命中。搜索结果页那一页的右栏也用这里的
+ * 找不到），数据换成样例里的候选人和这次搜索的证据。搜索结果页那一页的右栏也用这里的
  * `PersonPane`。
  */
-
-const NAMES = CLAIMS.map(claimName);
 
 /** 样例里一个人的详情；工号不在样例里就是找不到。 */
 export function PersonPane({ empId }: { empId: string }) {
@@ -31,9 +28,8 @@ export function PersonPane({ empId }: { empId: string }) {
 	return (
 		<Person
 			employee={employee}
-			hits={result?.hits ?? []}
+			evidence={result?.evidence ?? []}
 			lines={result ? claimLines(result, CLAIMS) : []}
-			names={NAMES}
 			timeline={experiencesOf(empId)}
 		/>
 	);

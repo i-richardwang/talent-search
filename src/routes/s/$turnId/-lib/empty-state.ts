@@ -1,17 +1,18 @@
 import { SEARCHABLE } from "#/search/condition-label";
-import type { EmptyReason } from "#/search/empty";
-import { claimName, type QueryCondition, withOff } from "#/search/query";
+import type { EmptyReason, Incomplete } from "#/search/empty";
+import { type QueryCondition, withOff } from "#/search/query";
 import type { SearchMode } from "#/server/turn";
 import { CLEARED_FILTERS, type View } from "./view-params";
 
 /**
- * 名单空了该说什么，以及给一条什么样的下一步。成因由检索层判定（`search/empty.ts`
- * 的 `emptyReason`），这里只翻译成文案，不用计数反推。
- *
- * 每种成因配一个一键可做的动作：改视图走 `onChange`（同一条查询），改条件走
- * `onReviseQuery`（记一条新的查询记录）。表是穷尽的 `Record`，检索层多一种成因
- * 这里就编译不过。
+ * 候选人较多、名单还不完整时的下一步。名单上方的提示（`completeness.tsx`）和空态说同一句。
  */
+export function coverMore({ above }: Incomplete): string {
+	return above
+		? "补充需求、缩小范围后可以覆盖到更低的职级。"
+		: "补充需求、缩小范围后可以覆盖更多人。";
+}
+
 type EmptyCopy = {
 	title: string;
 	hint: string;
@@ -33,6 +34,11 @@ type Handlers = {
 	onEditQuery: () => void;
 };
 
+/**
+ * 名单空了该说什么，以及给一条什么样的下一步。成因由检索层判定（`search/empty.ts`
+ * 的 `emptyReason`），这里只翻译成文案，不用计数反推。
+ * 改视图走 `onChange`，改条件走 `onReviseQuery`。成因在这里穷尽。
+ */
 const COPY: {
 	[K in EmptyReason["kind"]]: (
 		reason: Extract<EmptyReason, { kind: K }>,
@@ -41,7 +47,7 @@ const COPY: {
 } = {
 	overflowEvidence: (reason, h) => ({
 		title: "条件范围过大",
-		hint: `「${reason.claims.map(claimName).join("」「")}」几乎所有人都满足，${h.mode === "keyword" ? "请换一个更具体的词" : "请描述得更具体，或先停用这一项"}。`,
+		hint: `「${reason.claims.map((claim) => claim.label).join("」「")}」几乎所有人都满足，${h.mode === "keyword" ? "请换一个更具体的词" : "请描述得更具体，或先停用这一项"}。`,
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	overflowPopulation: (_reason, h) => ({
@@ -56,11 +62,6 @@ const COPY: {
 			label: "启用全部",
 			onClick: () => h.onReviseQuery(h.conditions.map((c) => withOff(c, null))),
 		},
-	}),
-	excludeOnly: (_reason, h) => ({
-		title: "还缺一项条件",
-		hint: "目前只有排除条件，请再添加一项要找的条件。",
-		action: { label: "添加条件", onClick: h.onEditQuery },
 	}),
 	// 搜索条件为空时仍保留查询记录，用户可以继续添加需求或回退。
 	noConditions: (_reason, h) => ({
@@ -92,10 +93,17 @@ const COPY: {
 				: "把次要条件改为「加分」可以扩大范围。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
-	noHits: (_reason, h) => ({
+	noneMatched: (_reason, h) => ({
 		title: "没有相关的人",
 		hint: "所有条件都是加分项，但没有人满足其中任何一项。",
 		action: { label: "调整条件", onClick: h.onEditQuery },
+	}),
+	incomplete: (reason, h) => ({
+		title: "候选人较多，暂时没有找到符合的人",
+		hint: reason.above
+			? `已经从高职级起完整覆盖到 ${reason.above}。${coverMore(reason)}`
+			: coverMore(reason),
+		action: { label: "补充需求", onClick: h.onEditQuery },
 	}),
 };
 

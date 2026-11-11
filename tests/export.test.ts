@@ -6,7 +6,7 @@ import { evidenceText } from "#/routes/s/$turnId/-components/evidence";
 import { exportName, exportWorkbook } from "#/routes/s/$turnId/-lib/export";
 import type { Pick } from "#/routes/s/$turnId/-lib/picks";
 import type { ClaimBasis } from "#/search/result";
-import { hit } from "./rows";
+import { evidence } from "./rows";
 
 const pick = (over: Partial<Pick> = {}): Pick => ({
 	empId: "T0001",
@@ -20,9 +20,6 @@ const pick = (over: Partial<Pick> = {}): Pick => ({
 });
 
 const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
-	route: "role",
-	value: "算法",
-	relevance: 0.83,
 	months: 27,
 	endDate: null,
 	external: false,
@@ -100,19 +97,13 @@ describe("导出的工作簿", () => {
 
 describe("单元格里的证据", () => {
 	test("和屏幕上那一行说的是同一件事", () => {
-		const text = evidenceText("算法", hit({ route: "title" }), basis());
+		const text = evidenceText(evidence({ route: "title" }), basis());
 		assert.equal(text, "岗位 算法工程师 · 云梯物流 · 公司内 2.3 年");
-	});
-
-	test("命中的不是代表词时把词写出来", () => {
-		const text = evidenceText("算法", hit({ value: "推荐算法" }), basis());
-		assert.match(text, /^匹配依据 推荐算法 · /);
 	});
 
 	test("入职前的累计带「前」", () => {
 		const text = evidenceText(
-			"算法",
-			hit(),
+			evidence(),
 			basis({ external: true, endDate: "2021-06-30" }),
 		);
 		assert.match(text, /入职前 2\.3 年$/);

@@ -31,19 +31,19 @@ import { ScrollArea } from "#/components/ui/scroll-area";
 import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
-import { type TurnNotes, tableKey } from "#/search/intent";
+import type { TurnNotes } from "#/search/intent";
 import { labelsInSentence, type QueryCondition } from "#/search/query";
 import { changesOf, type QueryInput, queryOfSpec } from "#/search/spec";
 import type {
-	Discovery,
-	Matched,
+	DiscoveryTrace,
+	FoundTrace,
 	Probe,
 	SubmitIssue,
 	TraceStep,
 } from "#/search/trace";
-import type { InterpretFault, Progress, Turn } from "#/server/turn";
+import type { AttemptFault, Progress, Turn } from "#/server/turn";
+import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/attempt";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
-import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/interpret";
 
 function diff(previous: Turn | null, spec: QueryCondition[]) {
 	if (previous === null) return { added: spec, removed: [] };
@@ -210,16 +210,16 @@ type Phase = "running" | "settled" | "failed";
 /**
  * 对话栏：这次找人任务的整条记录链。
  *
- * 动作作用在正看着的条件上，新的一轮记在链尾（`server/turn.ts` 的 `createTurn`）。
- * 理解失败时最后一轮底下给重试；名单那一列另有同样的下一步（`result-state.tsx`），
- * 窄屏上这一栏收着时那边也看得见。
+ * 动作作用在正看着的条件上，新的一轮记在链尾（`server/turn.ts` 的 `createTurn`）；回答 AI 的
+ * 那一问接在最后一轮后面。AI 没处理成时最后一轮底下给重试；名单那一侧另有同样的下一步
+ * （`result-state.tsx`、`completeness.tsx`），窄屏上这一栏收着时那边也看得见。
  */
 export function Thread({
 	earlier,
 	latest,
 	viewing,
-	onRevise,
 	onQuery,
+	onAnswer,
 	onRetry,
 	waiting,
 	understanding,
@@ -234,14 +234,14 @@ export function Thread({
 	latest: Turn;
 	/** 名单正显示的那一轮。 */
 	viewing: string;
-	/** 最后一轮这一次理解的进度；理解完成后为 null，读记录上的。 */
+	/** AI 对最后一轮这一次处理的进度；处理完后为 null，读记录上的。 */
 	progress: Progress | null;
-	/** 最后一轮没理解出来时哪个环节出了问题；没有出错为 null。 */
-	fault: InterpretFault | null;
-	/** 换成 AI 给的另一种理解：整张条件表记成新的一轮。 */
-	onRevise: (conditions: QueryCondition[]) => unknown;
+	/** AI 没处理成最后一轮时哪个环节出了问题；没有出错为 null。 */
+	fault: AttemptFault | null;
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
-	/** 再理解一次最后一轮。 */
+	/** 选了最后一轮那一问的一句回答。 */
+	onAnswer: (text: string) => unknown;
+	/** 让 AI 重新处理最后一轮。 */
 	onRetry: () => void;
 	/** 最后一轮还没理解完：可以接着写，先不能提交。 */
 	waiting: boolean;
@@ -253,7 +253,11 @@ export function Thread({
 	const rounds = [...earlier, latest];
 	const last = earlier.length;
 	const latestTrace = progress?.trace ?? latest.trace ?? [];
-	const phase: Phase = latest.spec ? "settled" : fault ? "failed" : "running";
+	const phase: Phase = latest.settled
+		? "settled"
+		: fault
+			? "failed"
+			: "running";
 	const { atBottom, toBottom, viewportRef } = useFollow(
 		latest.id,
 		`${phase}:${latestTrace.length}`,
@@ -281,7 +285,7 @@ export function Thread({
 									round.id !== viewing ? "link" : previewing ? "viewing" : null
 								}
 								onRetry={onRetry}
-								onRevise={onRevise}
+								onAnswer={onAnswer}
 								phase={i === last ? phase : "settled"}
 								previous={rounds[i - 1] ?? null}
 								round={round}
@@ -373,7 +377,7 @@ function Round({
 	phase,
 	failure,
 	progress: { trace, startedAt },
-	onRevise,
+	onAnswer,
 	onRetry,
 }: {
 	round: Turn;
@@ -387,9 +391,10 @@ function Round({
 	mark: "link" | "viewing" | null;
 	phase: Phase;
 	/** 没理解出来时哪个环节出了问题，不是「这句话没读懂」。 */
-	failure: InterpretFault | null;
+	failure: AttemptFault | null;
 	progress: Progress;
-	onRevise: (conditions: QueryCondition[]) => unknown;
+	/** 选了 AI 那一问的一句回答：把它当成下一句话说给 AI。 */
+	onAnswer: (answer: string) => unknown;
 	onRetry: () => void;
 }) {
 	const { said, spec, notes } = round;
@@ -397,7 +402,7 @@ function Round({
 	const viewingTag = mark === "viewing" && <Tag size="small">正在查看</Tag>;
 	const link = mark === "link" && <ViewResult turnId={round.id} />;
 
-	// 直接改条件的一轮没有人说话，也没有 AI 的回应
+	// 直接改条件的一轮没有人说话，AI 也不回话；改完有新进范围的人要补时，底下是补的过程
 	if (said === null)
 		return (
 			<li
@@ -414,6 +419,18 @@ function Round({
 						{link && <Actions>{link}</Actions>}
 					</span>
 				</Divider>
+				{(trace.length > 0 || failure) && (
+					<div className="flex w-full min-w-0 flex-col gap-2 pb-2">
+						{trace.length > 0 && (
+							<Process
+								live={phase === "running"}
+								since={startedAt}
+								steps={trace}
+							/>
+						)}
+						{failure && <Fault fault={failure} onRetry={onRetry} />}
+					</div>
+				)}
 			</li>
 		);
 
@@ -458,7 +475,7 @@ function Round({
 					)}
 					{spec && <p>{replyText(previous, queryOfSpec(spec).conditions)}</p>}
 					{spec && notes && (
-						<Note next={next} notes={notes} onRevise={onRevise} />
+						<Note next={next} notes={notes} onAnswer={onAnswer} />
 					)}
 					{failure && <Fault fault={failure} onRetry={onRetry} />}
 				</div>
@@ -482,12 +499,12 @@ function lastStepAt(at: number, trace: readonly TraceStep[]) {
 	return trace[trace.length - 1]?.at ?? at;
 }
 
-/** 按下重试之后到这一轮重新进入理解之前，钮停在等待态，免得被连按两次。 */
+/** 按下重试之后到 AI 重新开始处理这一轮之前，钮停在等待态，免得被连按两次。 */
 function Fault({
 	fault,
 	onRetry,
 }: {
-	fault: InterpretFault;
+	fault: AttemptFault;
 	onRetry: () => void;
 }) {
 	const [retrying, setRetrying] = useState(false);
@@ -518,32 +535,28 @@ function Fault({
 }
 
 /**
- * AI 对 HR 说的那句话。带选项时是一问：最后一轮的问题可以点，点了就换成那张表、记成新的一轮；
- * 有了下一轮就收起来，下一轮恰好是换成某一项的那张表时写出答的是哪一项。
+ * AI 对 HR 说的那句话。带回答时是一问：最后一轮的问题可以点，点了就是把那句回答说给 AI，
+ * 记成新的一轮；有了下一轮就收起来，下一轮说的恰好是其中一句回答时写出答的是哪一句。
  */
 function Note({
 	notes: { says, choices },
 	next,
-	onRevise,
+	onAnswer,
 }: {
 	notes: TurnNotes;
 	next: Turn | null;
-	onRevise: (conditions: QueryCondition[]) => unknown;
+	onAnswer: (answer: string) => unknown;
 }) {
 	if (!choices) return <p>{says}</p>;
 	if (next) {
-		const picked = choices.others.find(
-			(o) =>
-				next.spec &&
-				tableKey(o.conditions) === tableKey(queryOfSpec(next.spec).conditions),
-		);
+		const picked = choices.others.find((o) => o.label === next.said);
 		return <AnsweredQuestion answer={picked?.label ?? null} question={says} />;
 	}
 	return (
 		<Question
 			onChoose={(key) => {
-				const table = choiceAt(choices, Number(key));
-				return table && onRevise(table);
+				const answer = answerAt(choices, Number(key));
+				return answer && onAnswer(answer);
 			}}
 			options={[
 				{ current: true, key: "1", label: choices.current },
@@ -559,24 +572,21 @@ function Note({
 }
 
 /**
- * 问题里第 n 项（从 1 数，和选项前的编号一样）换成的整张表。第 1 项是现在用着的那一种，
- * 和没有这一项一样，不换。
+ * 问题里第 n 项（从 1 数，和选项前的编号一样）是哪句回答。第 1 项是现在用着的那一种，
+ * 和没有这一项一样，不用再说。
  */
-export function choiceAt(
+export function answerAt(
 	choices: NonNullable<TurnNotes["choices"]>,
 	n: number,
-): QueryCondition[] | null {
-	return choices.others[n - 2]?.conditions ?? null;
+): string | null {
+	return choices.others[n - 2]?.label ?? null;
 }
 
 /** 说的是找了什么，不是调了什么——调的是哪样东西对人没有意义。 */
 function stepTitle(step: TraceStep) {
 	switch (step.tool) {
-		case "lookup_experience":
-			return {
-				action: "查找",
-				keyword: step.terms.map((t) => t.text).join("、"),
-			};
+		case "find":
+			return { action: "查看人才库里的说法", keyword: "" };
 		case "discover":
 			return discoveryTitle(step.discovery);
 		case "probe":
@@ -584,6 +594,10 @@ function stepTitle(step: TraceStep) {
 				action: "试搜",
 				keyword: step.probe.conditions.map((c) => c.label).join("、"),
 			};
+		case "read":
+			return { action: "查看候选人的经历", keyword: "" };
+		case "judge":
+			return { action: "判断这些经历是否符合", keyword: "" };
 		case "submit":
 			return {
 				action: "调整搜索条件",
@@ -596,7 +610,7 @@ function stepTitle(step: TraceStep) {
 	}
 }
 
-function discoveryTitle(d: Discovery) {
+function discoveryTitle(d: DiscoveryTrace) {
 	if (d.kind === "overview") return { action: "查看人才库概况", keyword: "" };
 	if (d.kind === "values") return { action: `查看${d.subject}`, keyword: "" };
 	if (d.kind === "names")
@@ -608,7 +622,7 @@ function discoveryTitle(d: Discovery) {
 }
 
 /** 概况只说有哪些记录、从什么时候起；人数是全库的，不放在名单旁边。 */
-function discoveryFindings(d: Discovery): string[] {
+function discoveryFindings(d: DiscoveryTrace): string[] {
 	if (d.kind === "overview")
 		return d.streams.length > 0
 			? d.streams.map(
@@ -616,47 +630,60 @@ function discoveryFindings(d: Discovery): string[] {
 						`人才库中有${s.label}记录${s.first ? `，${s.first} 起` : "，还没有内容"}`,
 				)
 			: ["人才库中没有绩效、高潜这类记录"];
-	if (d.kind === "values")
-		return [d.values.map((x) => x.name).join("、") || "人才库中没有取值"];
+	if (d.kind === "values") return [d.values.join("、") || "人才库中没有取值"];
 	if (d.kind === "names")
-		return d.found.map((f) => findingLine(f.query, f.people, f.values));
+		return d.found.map((f) => findingLine(f.query, f.values));
 	return ["这一项人才库中查不到"];
 }
 
 /**
- * 试搜的人数就是这条条件单独能找到的人，和 chip 上的人数是同一个数；排除数的是它排除了
- * 多少人的经历。
+ * 试搜的人数：每条条件单独搜到多少人——说到某种经历的条件（要找的和排除的）是简历里提到的人，
+ * 其中多少人符合要确认过才知道。合起来那一行说的是确认之后的名单。
  */
 function probeFindings(p: Probe): string[] {
 	const people = (c: Probe["conditions"][number]) =>
-		c.problem
-			? "这样写搜不了"
-			: c.people === null
-				? "已停用"
-				: `${c.mode === "exclude" ? "排除 " : ""}${c.people} 人`;
+		c.people === null ? "这样写搜不了" : `搜到 ${c.people} 人`;
+	const fit = `${p.total} 人符合`;
 	return [
-		...p.conditions.map((c) => `${c.label}：${people(c)}`),
-		...(p.total !== null ? [`合起来：${p.total} 人`] : []),
+		...p.conditions.map((c) => `${labelsInSentence([c])}：${people(c)}`),
+		...(p.total !== null
+			? [
+					p.unread > 0
+						? `合起来：${p.candidates === null ? "" : `候选 ${p.candidates} 人，`}还没确认完${p.total > 0 ? `，已确认 ${fit}` : ""}`
+						: `合起来：${fit}`,
+				]
+			: []),
 	];
 }
 
 /** 整理出的搜索条件哪里还要改：和试搜、查找的说法一致，AI 改完再交。 */
 function issueLine({ kind, subject }: SubmitIssue): string {
 	if (kind === "wording") return "有一条的说法要换成更直白的话";
+	if (kind === "unread") return "还有候选人没确认完";
 	if (kind === "form" || subject === null) return "有的搜索条件没写完整";
 	if (kind === "unrunnable") return `「${subject}」这样写搜不了`;
 	if (kind === "unfound") return `人才库中没有「${subject}」`;
 	return `「${subject}」找出的太多，名单出不来`;
 }
 
+/** 一步查到的结论：人才库里有没有、有哪些写法。人数是全库写过的人，步骤里不记。 */
+function findingLine(query: string, values: readonly string[]) {
+	if (values.length === 0) return `人才库中没有「${query}」`;
+	return `人才库中有「${query}」，包括${values.join("、")}`;
+}
+
 /**
- * 一步查到的结论：人才库里有没有、有哪些写法。人数是全库写过的人，只给模型挑词用；
- * 放在名单旁边会被读成这条条件搜出的人，所以不显示。
+ * 按字面在人才库里找到了哪些说法。找的时候用的写法是给搜索用的，不上屏；一种写法什么都
+ * 没找到不单独说，整步都没找到才说一句。
  */
-function findingLine(query: string, people: number, list: readonly Matched[]) {
-	if (people === 0) return `人才库中没有「${query}」`;
-	const names = list.map((x) => x.name).join("、");
-	return `人才库中有「${query}」${names ? `，包括${names}` : ""}`;
+function foundLine(f: FoundTrace): string[] {
+	if (f.phrases === 0) return [];
+	const names = f.top.join("、");
+	return [
+		f.phrases > f.top.length
+			? `人才库中有${names}等 ${f.phrases} 种说法`
+			: `人才库中有${names}`,
+	];
 }
 
 function StatusCell({ live }: { live: boolean }) {
@@ -717,7 +744,7 @@ function Process({
 }: {
 	steps: readonly TraceStep[];
 	live: boolean;
-	/** 这一次理解开始的时刻：进行中的计时和完成后的用时都从它算。 */
+	/** 这一次处理开始的时刻：进行中的计时和完成后的用时都从它算。 */
 	since: number | null;
 }) {
 	const [open, setOpen] = useState(live);
@@ -805,12 +832,31 @@ function Process({
 
 export function stepFindings(step: TraceStep): string[] {
 	switch (step.tool) {
-		case "lookup_experience":
-			return step.terms.map((t) => findingLine(t.text, t.people, t.terms));
+		case "find": {
+			const lines = step.found.flatMap(foundLine);
+			return lines.length > 0 ? lines : ["人才库中没有找到这样的说法"];
+		}
 		case "discover":
 			return discoveryFindings(step.discovery);
 		case "probe":
 			return probeFindings(step.probe);
+		case "read":
+			if ("unlisted" in step) return ["这份条件还出不了名单"];
+			return [
+				step.segments > 0
+					? step.left > step.segments
+						? `取了 ${step.segments} 段经历，后面还有 ${step.left - step.segments} 段`
+						: `取了 ${step.segments} 段经历`
+					: step.left > 0
+						? "这一次能确认的经历已经到上限"
+						: "候选人的经历都确认过了",
+			];
+		case "judge":
+			return [
+				"redo" in step
+					? "这一批要重新判断"
+					: `${step.fits} 段符合，${step.unfit} 段不符合`,
+			];
 		case "submit":
 			return step.issues.map(issueLine);
 	}

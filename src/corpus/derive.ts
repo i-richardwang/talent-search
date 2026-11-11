@@ -1,5 +1,5 @@
 /**
- * 为待处理经历段抽取说法、对齐序列、嵌入并连边。
+ * 为待处理经历段抽取说法、对齐序列并连边。
  * 模型调用在事务外，结果按批提交说法、边和解析版本。模型答不出的段同样有结果：
  * 记为未能作答，判定标准变了才重新问；端点故障让这一轮中止，下一轮接着。
  * 每轮按 id 向后处理，时间预算耗尽后退出。判定标准变了以后，新结果先写进
@@ -8,11 +8,8 @@
 
 import "@tanstack/react-start/server-only";
 import { createHash } from "node:crypto";
-import { EMBED_DIM } from "#/db/schema";
 import { chatConfigured } from "#/server/chat";
-import { assertCanary, embedSpace } from "#/server/embed";
 import { align, alignIdentity, type SeqPair, seqTree } from "./align";
-import { embed, probe } from "./embed";
 import {
 	type Extraction,
 	type ExtractionResult,
@@ -25,13 +22,7 @@ import type { Report } from "./report";
 import { PHRASING, type Phrasing, phrasesOf } from "./route-texts";
 import type { CorpusClient, CorpusSession } from "./session";
 
-/** 查询侧核对嵌入空间时重新嵌的那一串字。改它等于让已有语料的 canary 失效。 */
-const CANARY_TEXT = "talent-search embedding canary";
-
 const BATCH = 200;
-
-/** 说法一条语句写多少行：一行带一个一千多维的向量，几百行已经是几兆的语句。 */
-const PHRASE_ROWS_PER_STATEMENT = 500;
 
 type StoredRow = ExperienceRow & { id: number };
 
@@ -47,7 +38,7 @@ type Link = Phrasing & { experienceId: number };
 
 /**
  * 这一批段的说法与边（组合方式见 `route-texts.ts`）。四类进同一张说法表：一个能力词
- * 恰好和某个岗位名是同一串字时只嵌一次，两条边各指向它。能力的投入档存在边的
+ * 恰好和某个岗位名是同一串字时只存一行，两条边各指向它。能力的投入档存在边的
  * 第四列，其余类那一列是空。
  *
  * `extractions` 按段对齐：null 是这一段没有抽取（未配置、无需调用或模型答不出），
@@ -76,60 +67,6 @@ export function phrasePlan(
 	return { texts: [...new Set(links.map((link) => link.text))], links };
 }
 
-/** 核验当前空间的端点输出；换嵌入空间时清空说法和解析版本。 */
-async function ensureSpace(client: CorpusClient, report: Report) {
-	const space = embedSpace();
-	const { rows } = await client.query<{
-		space_id: string;
-		model: string;
-		dimension: number;
-		canary_text: string;
-		canary_embedding: string;
-	}>(
-		"select space_id, model, dimension, canary_text, canary_embedding from embedding_space",
-	);
-	if (rows.length > 1) throw new Error("语料的嵌入空间元数据不唯一");
-	const current = rows[0];
-	if (current?.space_id === space.spaceId) {
-		if (current.model !== space.model || current.dimension !== EMBED_DIM)
-			throw new Error("嵌入空间身份发生变化，请更换 EMBED_SPACE_ID");
-		assertCanary(
-			JSON.parse(current.canary_embedding),
-			await probe(current.canary_text),
-		);
-		return;
-	}
-	const canary = await probe(CANARY_TEXT);
-
-	await client.query("begin");
-	try {
-		if (current) {
-			report("  向量模型已更换，既有结果全部作废，所有段重新解析");
-			await client.query("truncate phrase restart identity cascade");
-			await client.query(
-				"update experience set derived_identity = null, unanswered = false, seq_inferred_l1 = '', seq_inferred_l2 = ''",
-			);
-		}
-		await client.query("delete from embedding_space");
-		await client.query(
-			`insert into embedding_space
-				(space_id, model, dimension, canary_text, canary_embedding)
-			 values ($1, $2, $3, $4, $5::halfvec)`,
-			[
-				space.spaceId,
-				space.model,
-				EMBED_DIM,
-				CANARY_TEXT,
-				`[${canary.join(",")}]`,
-			],
-		);
-		await client.query("commit");
-	} catch (error) {
-		await client.query("rollback");
-		throw error;
-	}
-}
-
 export async function currentTree(client: CorpusClient): Promise<SeqPair[]> {
 	const { rows } = await client.query<{ seq_l1: string; seq_l2: string }>(
 		"select distinct seq_l1, seq_l2 from experience where kind = 'internal'",
@@ -138,12 +75,11 @@ export async function currentTree(client: CorpusClient): Promise<SeqPair[]> {
 }
 
 /**
- * 当前的解析版本：嵌入空间、说法的组合方式，以及抽取和对齐的标准。抽取和对齐没配端点时
+ * 当前的解析版本：说法的组合方式，以及抽取和对齐的标准。抽取和对齐没配端点时
  * 它们不在版本里：配上了就该重新解析。
  */
 export function identity(tree: SeqPair[]): string {
-	const space = embedSpace();
-	const parts = [space.spaceId, space.model, PHRASING];
+	const parts = [PHRASING];
 	if (chatConfigured()) parts.push(extractIdentity(), alignIdentity(tree));
 	return createHash("sha256").update(parts.join("")).digest("hex");
 }
@@ -252,31 +188,16 @@ async function commitBatch(
 	staged: boolean,
 	rows: DerivedRow[],
 	texts: string[],
-	vectors: number[][],
 	links: Link[],
 ): Promise<void> {
 	await client.query("begin");
 	try {
-		for (
-			let start = 0;
-			start < texts.length;
-			start += PHRASE_ROWS_PER_STATEMENT
-		) {
-			const part = texts.slice(start, start + PHRASE_ROWS_PER_STATEMENT);
-			await client.query(
-				`insert into phrase (text, embedding)
-				 select * from unnest($1::text[], $2::halfvec[])
-				 on conflict (text_key) do nothing`,
-				[
-					part,
-					part.map((_, index) => {
-						const vector = vectors[start + index];
-						if (!vector) throw new Error(`说法没有向量：${part[index]}`);
-						return `[${vector.join(",")}]`;
-					}),
-				],
-			);
-		}
+		await client.query(
+			`insert into phrase (text)
+			 select * from unnest($1::text[])
+			 on conflict (text_key) do nothing`,
+			[texts],
+		);
 		const ids = rows.map((row) => row.id);
 		const inferred = [
 			ids,
@@ -378,13 +299,12 @@ export async function derive(
 	const { client } = session;
 	const deadline = Date.now() + budgetMs;
 
-	await ensureSpace(client, report);
 	const tree = await currentTree(client);
 	const version = identity(tree);
 	const staged = await staging(client, version);
 	const total = await underived(client, version);
 	if (!chatConfigured())
-		report("  未配置语义模型，自述按整段原文处理，入职前经历不推断序列");
+		report("  未配置抽取模型，自述按整段原文处理，入职前经历不推断序列");
 	report(`  待解析 ${total} 段`);
 	if (staged)
 		report("  判定标准已更新：每一段都有新结果之前，检索继续使用上一版结果");
@@ -422,8 +342,7 @@ export async function derive(
 			results,
 			extractions.map((one) => (one.status === "done" ? one.value : null)),
 		);
-		const vectors = await embed(texts, report);
-		await commitBatch(client, version, staged, results, texts, vectors, links);
+		await commitBatch(client, version, staged, results, texts, links);
 		done += rows.length;
 		report(`  已解析 ${done}/${total} 段`);
 	}

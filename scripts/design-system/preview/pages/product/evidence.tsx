@@ -20,29 +20,22 @@ import {
 } from "#/routes/s/$turnId/-components/evidence";
 import { claimLines } from "#/routes/s/$turnId/-lib/claim-lines";
 import { routeLabel } from "#/search/evidence";
-import type { ClaimBasis, Hit } from "#/search/result";
+import type { ClaimBasis, Evidence } from "#/search/result";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { CLAIMS } from "../../samples/conditions";
-import { experience, hitOn, RESULTS } from "../../samples/people";
+import { evidenceOn, experience, RESULTS } from "../../samples/people";
 
-/** 每类来源在试用里配的命中：命中的词、抽取出的说法和投入档。 */
-const ROUTE_HIT: Record<
+/** 每类来源在试用里配的证据：抽取出的说法和投入档。 */
+const ROUTE_EVIDENCE: Record<
 	Route,
 	Pick<
-		Hit,
-		| "value"
-		| "phrase"
-		| "engagement"
-		| "company"
-		| "department"
-		| "title"
-		| "seq"
+		Evidence,
+		"phrase" | "engagement" | "company" | "department" | "title" | "seq"
 	>
 > = {
 	role: {
-		value: "推荐系统",
 		phrase: null,
 		engagement: null,
 		company: "",
@@ -51,7 +44,6 @@ const ROUTE_HIT: Record<
 		seq: "技术 · 算法 · 推荐",
 	},
 	title: {
-		value: "推荐系统",
 		phrase: null,
 		engagement: null,
 		company: "某乙网络",
@@ -60,7 +52,6 @@ const ROUTE_HIT: Record<
 		seq: "技术 · 算法",
 	},
 	skill: {
-		value: "推荐系统",
 		phrase: "实时推荐系统",
 		engagement: "主导",
 		company: "某甲科技",
@@ -69,7 +60,6 @@ const ROUTE_HIT: Record<
 		seq: "技术 · 算法",
 	},
 	description: {
-		value: "推荐系统",
 		phrase: null,
 		engagement: null,
 		company: "某戊电商",
@@ -79,35 +69,31 @@ const ROUTE_HIT: Record<
 	},
 };
 
-const ROUTES = Object.keys(ROUTE_HIT) as Route[];
+const ROUTES = Object.keys(ROUTE_EVIDENCE) as Route[];
 
-/** 按来源拼一条命中和它的累计依据；`other` 时命中的是同组的另一个写法。 */
+/** 按来源拼一段证据和它的累计依据。 */
 function sample(
 	route: Route,
 	{
 		external = false,
 		ongoing = true,
-		other = false,
 		months = 52,
 	}: {
 		external?: boolean;
 		ongoing?: boolean;
-		other?: boolean;
 		months?: number;
 	} = {},
-): { hit: Hit; basis: ClaimBasis } {
-	const base = ROUTE_HIT[route];
-	const value = other ? "推荐算法" : base.value;
+): { evidence: Evidence; basis: ClaimBasis } {
+	const base = ROUTE_EVIDENCE[route];
 	const endDate = ongoing ? null : "2023-06-30";
 	return {
-		hit: hitOn(experience(102), {
+		evidence: evidenceOn(experience(102), {
 			...base,
-			value,
 			route,
 			startDate: "2019-07-01",
 			endDate,
 		}),
-		basis: { route, value, relevance: 0.9, months, endDate, external },
+		basis: { months, endDate, external },
 	};
 }
 
@@ -116,8 +102,7 @@ function Playground() {
 	const [boost, setBoost] = useState(false);
 	const [external, setExternal] = useState(false);
 	const [ongoing, setOngoing] = useState(true);
-	const [other, setOther] = useState(false);
-	const { hit, basis } = sample(route, { external, ongoing, other });
+	const { evidence, basis } = sample(route, { external, ongoing });
 	const name = "推荐系统";
 	return (
 		<div className="flex flex-col gap-4">
@@ -147,15 +132,15 @@ function Playground() {
 						仍在这段经历里
 					</Checkbox>
 				</Control>
-				<Control>
-					<Checkbox checked={other} onChange={setOther}>
-						命中的是另一个写法
-					</Checkbox>
-				</Control>
 			</Controls>
-			<Stage footer={<span>导出为：{evidenceText(name, hit, basis)}</span>}>
+			<Stage footer={<span>导出为：{evidenceText(evidence, basis)}</span>}>
 				<div className="w-full max-w-xl">
-					<EvidenceLine basis={basis} boost={boost} hit={hit} name={name} />
+					<EvidenceLine
+						basis={basis}
+						boost={boost}
+						evidence={evidence}
+						name={name}
+					/>
 				</div>
 			</Stage>
 		</div>
@@ -174,7 +159,7 @@ function Routes() {
 				</TableHeader>
 				<TableBody>
 					{ROUTES.map((route) => {
-						const { hit, basis } = sample(route, {
+						const { evidence, basis } = sample(route, {
 							external: route !== "role",
 						});
 						return (
@@ -184,7 +169,7 @@ function Routes() {
 									<EvidenceLine
 										basis={basis}
 										boost={false}
-										hit={hit}
+										evidence={evidence}
 										name="推荐系统"
 									/>
 								</TableCell>
@@ -206,11 +191,11 @@ function Parts() {
 			>
 				<div className="flex items-center gap-3 text-xs">
 					<span className="flex items-center gap-1.5">
-						<Dot hit />
+						<Dot found />
 						命中
 					</span>
 					<span className="flex items-center gap-1.5">
-						<Dot hit={false} />
+						<Dot found={false} />
 						未命中
 					</span>
 				</div>
@@ -237,7 +222,7 @@ function Usage() {
 		<ExampleGrid>
 			{first && (
 				<Example
-					description="一个人一组证据行，名单行尾的气泡和人的详情里都是这一组：必须的在前，加分的名字前带 +。"
+					description="一个人一组证据行，名单行尾的气泡和人的详情里都是这一组：必须的在前，加分的条件词后面写「加分」。"
 					title="一个人的匹配依据"
 				>
 					<ClaimEvidence lines={claimLines(first, CLAIMS)} />
@@ -245,7 +230,7 @@ function Usage() {
 			)}
 			{last && (
 				<Example
-					description="证据都来自简历的人和其他人一样按对得上多少、做了多久、离现在多近排，来源写在每一行上；没命中的加分条件合成一行。"
+					description="证据都来自简历的人和其他人一样按投入、做了多久、离现在多近排，来源写在每一行上；没命中的加分条件合成一行。"
 					title="证据来自简历"
 				>
 					<ClaimEvidence lines={claimLines(last, CLAIMS)} />
@@ -264,11 +249,11 @@ function Usage() {
 				title="时长对齐"
 			>
 				<div className="flex w-full flex-col gap-1.5">
-					{aligned.map(({ months, hit, basis }) => (
+					{aligned.map(({ months, evidence, basis }) => (
 						<EvidenceLine
 							basis={basis}
 							boost={false}
-							hit={hit}
+							evidence={evidence}
 							key={months}
 							name="推荐系统"
 						/>
@@ -286,13 +271,13 @@ export function EvidencePage() {
 			facts={[`${ROUTES.length} 类来源`, "命中与未命中两种点", "加分标记"]}
 			rules={{
 				notes: [
-					"点只说命中没有：Dot 和 HIT_FILL 不分来源，职业轨迹条和时间线读同一套。来源用字写在证据行上：任职记录、岗位、技能、简历原文；技能前面带投入档（主导、做过、提到）。",
-					"来源不决定名次也不决定去留：名次只看对得上多少、做了多久、离现在多近。",
+					"点只说命中没有：Dot 和 EVIDENCE_FILL 不分来源，职业轨迹条和时间线读同一套。来源用字写在证据行上：任职记录、岗位、技能、简历原文；技能前面带投入档（主导、做过、提到）。",
+					"来源不决定名次也不决定去留：名次只看投入、做了多久、离现在多近。",
 					"右端显示的时长和排序用的时长是同一份，不另算。",
 					"证据行出现在名单行尾的依据气泡和人的详情「匹配依据」里，12px：条件词和时长是次要色（做完的时长退到三级灰），命中的字段与字段名三级灰，上下文四级灰。",
-					"必须 / 加分靠符号区分，必须不带标记；不显示分数和名次。",
+					"必须不带标记，加分在条件词后面写「加分」；不显示分数和名次。",
 				],
-				usage: `<EvidenceLine\n  basis={basis}\n  boost={claim.mode === "boost"}\n  hit={hit}\n  name={claimName(claim)}\n/>`,
+				usage: `<EvidenceLine\n  basis={basis}\n  boost={claim.mode === "boost"}\n  evidence={evidence}\n  name={claim.label}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用证据行" },

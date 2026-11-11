@@ -1,14 +1,12 @@
 /**
- * 整理的判定队列：收集、取走、提交判定、过期，以及生效时取回判定结果。两种组
- * （归并、释义）共用这一条队列和这一个判定方，各自的标准、校验与写表在
- * `vocabulary.ts` 和 `gloss.ts`；整轮的顺序在 `review.ts`。
+ * 整理的判定队列：收集、取走、提交判定、过期，以及生效时取回判定结果。判定的标准、
+ * 校验与写表在 `vocabulary.ts`；整轮的顺序在 `review.ts`。
  *
  * 队列只认一件事：一份标准下的一组词、谁判的、判成什么。它不读判定结果的内容——
- * 什么算一条有效的判断是生效时各自那一种组的事；标准变化时旧组整体作废并重新收集。
+ * 什么算一条有效的判断是生效时的事；标准变化时旧组整体作废并重新收集。
  */
 
 import "@tanstack/react-start/server-only";
-import type { GroupKind } from "#/db/schema";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
 
@@ -45,7 +43,6 @@ export function promptOf(words: Member[]): string {
 /** 队列里的一组待判的词。 */
 type Group = {
 	id: number;
-	kind: GroupKind;
 	guideIdentity: string;
 	words: Member[];
 	collectedAt: Date;
@@ -58,7 +55,6 @@ const FRESH = `collected_at > now() - interval '${REVIEW_INTERVAL_DAYS} days'`;
 
 type Row = {
 	id: number;
-	kind: GroupKind;
 	guide_identity: string;
 	words: Member[];
 	collected_at: Date;
@@ -71,12 +67,9 @@ function group(row: Row): Group {
 		collectedAt: row.collected_at,
 		guideIdentity: row.guide_identity,
 		id: row.id,
-		kind: row.kind,
 		words: row.words,
 	};
 }
-
-export type GuideIdentities = Record<GroupKind, string>;
 
 /**
  * 队列里还等着人判的组，最早收集的在前。
@@ -87,17 +80,16 @@ export type GuideIdentities = Record<GroupKind, string>;
  */
 export async function openGroups(
 	client: CorpusClient,
-	kind: GroupKind,
 	guideIdentity: string,
 	limit?: number,
 ): Promise<Group[]> {
 	const { rows } = await client.query<Row>(
-		`select id, kind, guide_identity, words, collected_at, judge, judgment
+		`select id, guide_identity, words, collected_at, judge, judgment
 		 from review_group
-		 where kind = $1 and guide_identity = $2 and judge is null and ${FRESH}
+		 where guide_identity = $1 and judge is null and ${FRESH}
 		 order by collected_at, id
-		 ${limit === undefined ? "" : "limit $3"}`,
-		limit === undefined ? [kind, guideIdentity] : [kind, guideIdentity, limit],
+		 ${limit === undefined ? "" : "limit $2"}`,
+		limit === undefined ? [guideIdentity] : [guideIdentity, limit],
 	);
 	return rows.map(group);
 }
@@ -105,29 +97,26 @@ export async function openGroups(
 /** 队列里（没判的和判了还没生效的）组上出现的所有词：这一轮收集要绕开它们。 */
 export async function busyWords(
 	client: CorpusClient,
-	kind: GroupKind,
 	guideIdentity: string,
 ): Promise<Set<string>> {
 	const { rows } = await client.query<{ words: Member[] }>(
-		`select words from review_group
-		 where kind = $1 and guide_identity = $2 and ${FRESH}`,
-		[kind, guideIdentity],
+		`select words from review_group where guide_identity = $1 and ${FRESH}`,
+		[guideIdentity],
 	);
 	return new Set(rows.flatMap((row) => row.words.map((one) => one.word)));
 }
 
-/** 收集方用 busyWords 绕开同类队列里已有的词，一个词同时只属于一组。 */
+/** 收集方用 busyWords 绕开队列里已有的词，一个词同时只属于一组。 */
 export async function collect(
 	client: CorpusClient,
-	kind: GroupKind,
 	guideIdentity: string,
 	groups: Member[][],
 ): Promise<void> {
 	if (groups.length === 0) return;
 	await client.query(
-		`insert into review_group (kind, guide_identity, words)
-		 select $1, $2, * from unnest($3::jsonb[])`,
-		[kind, guideIdentity, groups.map((one) => JSON.stringify(one))],
+		`insert into review_group (guide_identity, words)
+		 select $1, * from unnest($2::jsonb[])`,
+		[guideIdentity, groups.map((one) => JSON.stringify(one))],
 	);
 }
 
@@ -137,7 +126,7 @@ export async function collect(
 export type Submission = "accepted" | "missing" | "taken";
 
 /**
- * 把一份判定记在组上。**只写组这一行**，不碰词表、释义也不碰边——那些只在生效时改，
+ * 把一份判定记在组上。**只写组这一行**，不碰词表也不碰边——词表只在生效时改，
  * 而生效拿着语料的写者锁。所以外部提交不必等解析让出锁。
  *
  * 一组只记下第一份判定，后续提交返回 taken。
@@ -145,22 +134,20 @@ export type Submission = "accepted" | "missing" | "taken";
 export async function submitJudgment(
 	client: CorpusClient,
 	id: number,
-	kind: GroupKind,
 	guideIdentity: string,
 	judge: string,
 	judgments: unknown,
 ): Promise<Submission> {
 	const { rowCount } = await client.query(
-		`update review_group set judge = $4, judgment = $5
-		 where id = $1 and kind = $2 and guide_identity = $3
-		   and judge is null and ${FRESH}`,
-		[id, kind, guideIdentity, judge, JSON.stringify({ judgments })],
+		`update review_group set judge = $3, judgment = $4
+		 where id = $1 and guide_identity = $2 and judge is null and ${FRESH}`,
+		[id, guideIdentity, judge, JSON.stringify({ judgments })],
 	);
 	if (rowCount) return "accepted";
 	const { rows } = await client.query<{ judge: string | null }>(
 		`select judge from review_group
-		 where id = $1 and kind = $2 and guide_identity = $3 and ${FRESH}`,
-		[id, kind, guideIdentity],
+		 where id = $1 and guide_identity = $2 and ${FRESH}`,
+		[id, guideIdentity],
 	);
 	return rows[0]?.judge ? "taken" : "missing";
 }
@@ -190,17 +177,18 @@ export async function recordJudgments(
 	);
 }
 
-/** 到期没人判的组过期：一周没人来判，说明这一轮没有判定方，下一轮重新收集。 */
+/**
+ * 不是这一份标准的组作废；到期没人判的组过期：一周没人来判，说明这一轮没有判定方，
+ * 下一轮重新收集。
+ */
 export async function expire(
 	client: CorpusClient,
 	report: Report,
-	guides: GuideIdentities,
+	guideIdentity: string,
 ): Promise<void> {
 	const { rowCount: stale } = await client.query(
-		`delete from review_group
-		 where (kind = 'group' and guide_identity <> $1)
-		    or (kind = 'gloss' and guide_identity <> $2)`,
-		[guides.group, guides.gloss],
+		"delete from review_group where guide_identity <> $1",
+		[guideIdentity],
 	);
 	if (stale) report(`  ${stale} 组判定标准已更新，已作废并按新标准重收`);
 
@@ -211,18 +199,17 @@ export async function expire(
 		report(`  ${rowCount} 组过了 ${REVIEW_INTERVAL_DAYS} 天没人判，已过期`);
 }
 
-/** 某一种组里判过的、等着生效的，按收集顺序。 */
+/** 判过的、等着生效的组，按收集顺序。 */
 export async function judged(
 	client: CorpusClient,
-	kind: GroupKind,
 	guideIdentity: string,
 ): Promise<Judged[]> {
 	const { rows } = await client.query<Row>(
-		`select id, kind, guide_identity, words, collected_at, judge, judgment
+		`select id, guide_identity, words, collected_at, judge, judgment
 		 from review_group
-		 where kind = $1 and guide_identity = $2 and judge is not null
+		 where guide_identity = $1 and judge is not null
 		 order by id`,
-		[kind, guideIdentity],
+		[guideIdentity],
 	);
 	// `judge is not null` 是这条查询的谓词，所以这一列在这里一定有值
 	return rows.map((row) => ({

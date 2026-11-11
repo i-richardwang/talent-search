@@ -24,10 +24,10 @@ import { describeTerm, listTerms } from "./terms";
 import {
 	createTurn,
 	deleteSearch,
-	interpret,
 	listRecent,
-	loadInterpretation,
+	loadAttempt,
 	loadThread,
+	processTurn,
 	restartTurn,
 	type Turn,
 } from "./turn";
@@ -35,7 +35,6 @@ import {
 /**
  * 按记录 id 载入完整线程和当前筛选下的结果。条件来自已校验的查询记录；
  * 视图入参在此独立校验。待理解记录只返回线程，工作台读进度等它理解完。
- * 对话的条件画成 chip，连同每条单独的人数一起返回；关键词的条件在框里，没有人数。
  */
 export const loadWorkbench = createServerFn({ method: "GET" })
 	.middleware([authenticated])
@@ -51,11 +50,12 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 			// 整条链一次取回：对话栏画的是全部，名单是正看着的这一轮
 			const thread = await loadThread(data.turnId);
 			const turn = thread?.find((t) => t.id === data.turnId);
-			if (!thread || !turn) return null;
+			const head = thread?.[0];
+			if (!thread || !turn || !head) return null;
 			if (!turn.spec) return { thread, result: null };
 			return {
 				thread,
-				result: await search(turn.spec, data.filters, data.limit),
+				result: await search(turn.spec, head.id, data.filters, data.limit),
 			};
 		},
 	);
@@ -68,25 +68,26 @@ export const fetchEmployee = createServerFn({ method: "GET" })
 
 /**
  * 提交一次查询：写一条记录，返回它的 id。入参校验在 `search/commit-input.ts`。
- * 说了一句话就在这里开始理解，不等它完成：页面先进工作台，在那里读进度。
+ * 要 AI 接着处理的一轮（说了一句话，或者改完条件有候选人要确认）在这里开始，不等它完成：
+ * 页面先进工作台，在那里读进度。
  */
 export const commitTurn = createServerFn({ method: "POST" })
 	.middleware([authenticated])
 	.validator(validateCommit)
 	.handler(async ({ data }) => {
 		const { turnId, attempt } = await createTurn(data.input, data.from);
-		if (attempt) void interpret(turnId, attempt);
+		if (attempt) void processTurn(turnId, attempt);
 		return { turnId };
 	});
 
-/** 理解走到哪一步了、这一次从哪一刻开始、成没成。界面串行轮询，相邻读取间隔一秒。 */
-export const turnInterpretation = createServerFn({ method: "GET" })
+/** AI 处理到哪一步了、这一次从哪一刻开始、成没成。界面串行轮询，相邻读取间隔一秒。 */
+export const turnAttempt = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
-	.handler(({ data }) => loadInterpretation(data.turnId));
+	.handler(({ data }) => loadAttempt(data.turnId));
 
 /**
- * 人点了重试：上一次失败了就重新开始理解（`restartTurn`），返回这一轮现在的样子。
+ * 人点了重试：上一次失败了就重新开始（`restartTurn`），返回这一轮现在的样子。
  * 上一次还在跑时什么都不做，返回的就是它的进度。
  */
 export const retryTurn = createServerFn({ method: "POST" })
@@ -94,8 +95,8 @@ export const retryTurn = createServerFn({ method: "POST" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
 	.handler(async ({ data }) => {
 		const attempt = await restartTurn(data.turnId);
-		if (attempt) void interpret(data.turnId, attempt);
-		return loadInterpretation(data.turnId);
+		if (attempt) void processTurn(data.turnId, attempt);
+		return loadAttempt(data.turnId);
 	});
 
 /**
@@ -151,7 +152,7 @@ export const termTable = createServerFn({ method: "GET" })
 	}))
 	.handler(({ data }) => listTerms(data.q, data.page));
 
-/** 词表页点开的那一个词：释义、上下从属、其他写法，各自的人数。 */
+/** 词表页点开的那一个词：上下从属、其他写法，各自的人数。 */
 export const termDetail = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator((d: { word: unknown }) => ({

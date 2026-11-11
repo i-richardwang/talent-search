@@ -364,9 +364,7 @@ function ConditionMenu() {
 	const [conditions, setConditions] = useState<QueryCondition[]>(
 		asQuery([{ ...RECOMMEND, off: "user" }]),
 	);
-	return (
-		<QueryChips conditions={conditions} counts={{}} onChange={setConditions} />
-	);
+	return <QueryChips conditions={conditions} onChange={setConditions} />;
 }
 
 function Usage() {

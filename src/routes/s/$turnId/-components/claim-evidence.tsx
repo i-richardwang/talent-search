@@ -10,18 +10,18 @@ import { Dot, EvidenceLine, MissedClaims } from "./evidence";
  */
 
 export function ClaimEvidence({ lines }: { lines: ClaimLine[] }) {
-	const missed = lines.filter((l) => !l.found).map((l) => l.name);
+	const missed = lines.filter((l) => !l.found).map((l) => l.claim.label);
 	return (
 		<div className="flex flex-col gap-1">
 			{lines.map(
-				({ claim, name, found }) =>
+				({ claim, found }) =>
 					found && (
 						<EvidenceLine
 							basis={found.basis}
 							boost={claim.mode === "boost"}
-							hit={found.hit}
+							evidence={found.evidence}
 							key={claim.id}
-							name={name}
+							name={claim.label}
 						/>
 					),
 			)}
@@ -37,7 +37,7 @@ export function ClaimEvidence({ lines }: { lines: ClaimLine[] }) {
 export function ClaimRow({ lines }: { lines: ClaimLine[] }) {
 	return (
 		<ul className="mt-1 flex h-(--text-xs--line-height) flex-wrap items-center gap-x-3 overflow-hidden text-xs">
-			{lines.map(({ claim, name, found }) => (
+			{lines.map(({ claim, found }) => (
 				<li
 					className={cn(
 						"flex h-(--text-xs--line-height) min-w-0 items-center gap-1.5",
@@ -45,8 +45,8 @@ export function ClaimRow({ lines }: { lines: ClaimLine[] }) {
 					)}
 					key={claim.id}
 				>
-					<Dot hit={Boolean(found)} />
-					<span className="truncate">{name}</span>
+					<Dot found={Boolean(found)} />
+					<span className="truncate">{claim.label}</span>
 				</li>
 			))}
 		</ul>
@@ -60,7 +60,7 @@ export function ClaimProgress({
 	name: string;
 	lines: ClaimLine[];
 }) {
-	const hit = lines.filter((l) => l.found).length;
+	const met = lines.filter((l) => l.found).length;
 	return (
 		<Popover
 			content={
@@ -73,9 +73,9 @@ export function ClaimProgress({
 			trigger="click"
 		>
 			<ProgressTag
-				aria-label={`命中 ${hit} 条，共 ${lines.length} 条，查看${name}的匹配依据`}
+				aria-label={`命中 ${met} 条，共 ${lines.length} 条，查看${name}的匹配依据`}
 				total={lines.length}
-				value={hit}
+				value={met}
 			/>
 		</Popover>
 	);
