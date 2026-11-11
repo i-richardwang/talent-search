@@ -272,8 +272,7 @@ describe("累计时长的门槛", () => {
 		// 名次里没有它，证据行上就不能有它：留一条「+ 词0 · 1 年」画成命中，
 		// 读者会问为什么它没把 A 排到前面
 		assert.equal(ranked.find((r) => r.empId === "A")?.basis[1], null);
-		const shown =
-			pageEvidence(facts, list, {}, new Set(["A"]), 3).get("A") ?? [];
+		const shown = pageEvidence(facts, list, {}, new Set(["A"])).get("A") ?? [];
 		assert.deepEqual(
 			shown.map((f) => f.claim),
 			[0],
@@ -299,12 +298,8 @@ describe("排名依据", () => {
 		]);
 
 		const shown =
-			pageEvidence(facts, claims("must"), {}, new Set(["A"]), 3).get("A") ?? [];
-		assert.equal(shown.length, 3, "时间线只需保留有限条原始命中");
-		assert.ok(
-			shown.every((item) => item.endDate !== null),
-			"聚合依据不能再从截断后的原始命中反推",
-		);
+			pageEvidence(facts, claims("must"), {}, new Set(["A"])).get("A") ?? [];
+		assert.equal(shown.length, 4, "算数的段一段不少，详情要把每一段都标出来");
 	});
 
 	test("没有命中的加分主张保留空依据", () => {

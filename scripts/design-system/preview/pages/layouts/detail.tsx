@@ -7,9 +7,7 @@ import {
 	PersonPending,
 } from "#/routes/s/$turnId/-components/person";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
-import { claimLines } from "#/routes/s/$turnId/-lib/claim-lines";
 import { Routed } from "../../routed";
-import { CLAIMS } from "../../samples/conditions";
 import { EMPLOYEES, experiencesOf, resultOf } from "../../samples/people";
 import { LATEST_TURN_ID } from "../../samples/thread";
 import { Shell } from "./home";
@@ -29,7 +27,6 @@ export function PersonPane({ empId }: { empId: string }) {
 		<Person
 			employee={employee}
 			evidence={result?.evidence ?? []}
-			lines={result ? claimLines(result, CLAIMS) : []}
 			timeline={experiencesOf(empId)}
 		/>
 	);

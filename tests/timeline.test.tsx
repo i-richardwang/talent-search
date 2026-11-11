@@ -5,9 +5,7 @@ import { Timeline } from "#/routes/s/$turnId/-components/timeline";
 import { type Segment, experience as seg } from "./rows";
 
 const html = (rows: Segment[]) =>
-	renderToStaticMarkup(
-		<Timeline evidenceIndex={new Map()} names={[]} rows={rows} />,
-	);
+	renderToStaticMarkup(<Timeline counted={new Set()} rows={rows} />);
 
 describe("时间轴卡片内容", () => {
 	test("入职前经历显示日期、公司属性和自述", () => {

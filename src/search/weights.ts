@@ -24,9 +24,6 @@ export const RESULT_PAGE = 50;
 // 超过此人数时明确返回达到加载上限，不静默截断总数和分面。
 export const RESULT_MAX = 500;
 
-// 名单上每个人每条主张最多列几段证据。
-export const EVIDENCE_PER_CLAIM = 3;
-
 // 筛选栏的常用单段时长选项；解析仍接受任意正整数月数。
 export const MIN_MONTHS_BUCKETS = [6, 12, 24, 36] as const;
 

@@ -5,7 +5,6 @@ import {
 } from "@tanstack/react-router";
 import { fetchEmployee } from "#/server/functions";
 import { Person, PersonNotFound, PersonPending } from "./-components/person";
-import { claimLines } from "./-lib/claim-lines";
 
 export const Route = createFileRoute("/s/$turnId/p/$empId")({
 	loader: async ({ params }) => {
@@ -26,21 +25,15 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 function Detail() {
 	const { employee, timeline } = Route.useLoaderData();
 	const { result: search } = useLoaderData({ from: "/s/$turnId" });
-	// 按人排的名单没有主张也没有证据：档案只有时间线
-	const { claims, result } =
+	// 按人排的名单没有证据：档案只有时间线
+	const result =
 		search?.order === "evidence"
-			? {
-					claims: search.claims,
-					result: search.results.find(
-						(r) => r.employee.empId === employee.empId,
-					),
-				}
-			: { claims: [], result: undefined };
+			? search.results.find((r) => r.employee.empId === employee.empId)
+			: undefined;
 	return (
 		<Person
 			employee={employee}
 			evidence={result?.evidence ?? []}
-			lines={result ? claimLines(result, claims) : []}
 			timeline={timeline}
 		/>
 	);

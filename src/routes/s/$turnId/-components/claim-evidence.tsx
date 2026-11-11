@@ -1,12 +1,13 @@
 import { Popover } from "#/components/ui/popover";
 import { ProgressTag } from "#/components/ui/progress-tag";
-import { cn } from "#/lib/utils";
+import { dots, years } from "#/lib/format";
+import { placeOf } from "#/search/result";
 import type { ClaimLine } from "../-lib/claim-lines";
-import { Dot, EvidenceLine, MissedClaims } from "./evidence";
+import { EvidenceLine, MissedClaims } from "./evidence";
 
 /*
- * 一个人在各条主张上的证据，三种画法：名单一行里的一排词（`ClaimRow`）、行尾的
- * 进度标签（`ClaimProgress`）和点开它的气泡、人的详情里逐条的依据（`ClaimEvidence`）。
+ * 一个人在各条主张上的证据，三种画法：名单一行的第二行（`ClaimRow`）、行尾的
+ * 进度标签（`ClaimProgress`）和点开它的气泡里逐条的依据（`ClaimEvidence`）。
  */
 
 export function ClaimEvidence({ lines }: { lines: ClaimLine[] }) {
@@ -31,25 +32,42 @@ export function ClaimEvidence({ lines }: { lines: ClaimLine[] }) {
 }
 
 /**
- * 名单一行的第二行：每条主张一个词和一颗点，顺序和条件那一排相同。只占一行：
- * 放不下的词整个收掉，不截半个词。
+ * 名单一行的第二行：这个人凭哪段经历进的名单。写第一条命中的主张里最对得上的那一段：
+ * 是现在这份任职时写「现任岗位」，不重抄第一行的部门和岗位；不止一段时写出段数，时长写
+ * 累计（排名用的就是累计）。哪几段在人的详情里铺底标出，条件名只在条件那一排出现。
+ * 只占一行，没有命中的主张时空着，行高不变。
  */
 export function ClaimRow({ lines }: { lines: ClaimLine[] }) {
+	const found = lines.find((l) => l.found)?.found;
 	return (
-		<ul className="mt-1 flex h-(--text-xs--line-height) flex-wrap items-center gap-x-3 overflow-hidden text-xs">
-			{lines.map(({ claim, found }) => (
-				<li
-					className={cn(
-						"flex h-(--text-xs--line-height) min-w-0 items-center gap-1.5",
-						found ? "text-fg-secondary" : "text-fg-tertiary",
-					)}
-					key={claim.id}
-				>
-					<Dot found={Boolean(found)} />
-					<span className="truncate">{claim.label}</span>
-				</li>
-			))}
-		</ul>
+		<p className="mt-1 flex h-(--text-xs--line-height) min-w-0 items-baseline whitespace-pre text-fg-secondary text-xs">
+			{found && <RowEvidence found={found} />}
+		</p>
+	);
+}
+
+function RowEvidence({ found }: { found: NonNullable<ClaimLine["found"]> }) {
+	const { evidence: segment, segments, basis } = found;
+	// 公司内、还没结束的一段就是现在这份任职
+	const current = !segment.company && segment.endDate === null;
+	const span =
+		segments > 1
+			? `累计 ${years(basis.months)}`
+			: current
+				? years(basis.months)
+				: `${basis.external ? "入职前" : "公司内"} ${years(basis.months)}`;
+	return (
+		<>
+			<span className="truncate">
+				{current ? "现任岗位" : dots(placeOf(segment), segment.title)}
+				{segments > 1 && (
+					<span className="text-fg-tertiary"> 等 {segments} 段</span>
+				)}
+			</span>
+			<span className="shrink-0 text-fg-tertiary tabular-nums">
+				{` · ${span}`}
+			</span>
+		</>
 	);
 }
 

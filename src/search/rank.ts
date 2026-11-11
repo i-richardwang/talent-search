@@ -398,7 +398,8 @@ export function rank(
 const PER_CLAIM = "\u0001";
 
 /**
- * 这一页的人各自留哪几段经历当证据。
+ * 这一页的人各自算数的经历段，一段不少：人的详情把每一段都标出来，名单那一行写最前的
+ * 一段和段数。
  *
  * 只对已经定好名次的那一页算，所以它不进排序的开销。排序键：最对得上的在前
  * （`closer`），再取长的，再按 id——展示顺序必须是确定的，否则
@@ -412,7 +413,6 @@ export function pageEvidence(
 	claims: readonly Claim[],
 	filters: SearchFilters,
 	empIds: Set<string>,
-	perClaim: number,
 ): Map<string, Fact[]> {
 	const keep = keeps(filters);
 	const byKey = new Map<string, { empId: string; facts: Fact[] }>();
@@ -429,7 +429,7 @@ export function pageEvidence(
 		if (!claim || !enough(claim, list)) continue;
 		list.sort((a, b) => closer(b, a) || b.months - a.months || a.id - b.id);
 		const acc = out.get(empId) ?? [];
-		acc.push(...list.slice(0, perClaim));
+		acc.push(...list);
 		out.set(empId, acc);
 	}
 	// 主张的顺序即行序：结果里每个人的每条证据对应一条主张，按下标排好再返回
