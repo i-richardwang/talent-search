@@ -12,7 +12,7 @@
  *
  * `reject` 衡量精度。多写几个取值这类改动同时可能找回漏掉的人和放进不相干的人，
  * 只报召回的话，往查询里多塞几个词永远是「变好」。
- * 真实评估用例不进版本库（题目和答案指向真人）；仓库只带 `evals/search/sample.json`——
+ * 真实评估用例不进版本库（问题和期望结果指向真人）；仓库只带 `evals/search/sample.json`——
  * 全部指向合成样例语料（src/corpus/sources/sample/）的可执行基线，干净克隆也能跑通。
  *
  * query 用一行查询语法而不是原话：这里衡量的是**检索与排序**，不含模型理解这一步；
@@ -29,7 +29,7 @@ import { RESULT_MAX } from "#/search/weights";
 type Case = { name: string; query: string; expect: string[]; reject: string[] };
 
 /**
- * 形状校验从严：没有 expect 的题会得出 0/0，却显示成绿色的 ✓，所以直接报错。
+ * 形状校验从严：没有 expect 的用例会得出 0/0，却显示成绿色的 ✓，所以直接报错。
  */
 function loadCases(file: string): Case[] {
 	const data: unknown = JSON.parse(readFileSync(file, "utf8"));
@@ -37,7 +37,7 @@ function loadCases(file: string): Case[] {
 		throw new Error(`${file}：应是一个非空 JSON 数组，格式见文件头注释`);
 	return data.map((raw, i) => {
 		const c = (raw ?? {}) as Record<string, unknown>;
-		const where = `${file} 第 ${i + 1} 题`;
+		const where = `${file} 第 ${i + 1} 个用例`;
 		if (typeof c.name !== "string" || !c.name.trim())
 			throw new Error(`${where}：name 必须是非空字符串`);
 		const name = c.name.trim();
@@ -52,7 +52,7 @@ function loadCases(file: string): Case[] {
 			)
 		)
 			throw new Error(
-				`${where}「${name}」：expect 至少要有一个已确认的工号——没有期望的题无法衡量`,
+				`${where}「${name}」：expect 至少要有一个已确认的工号——没有期望的用例无法衡量`,
 			);
 		const expect = rawExpect.map((x) => x.trim());
 		if (new Set(expect).size !== expect.length)
@@ -133,7 +133,7 @@ try {
 		console.log(`   ${marks}`);
 	}
 	console.log(
-		`\n总召回 ${recalled}/${expected}（${expected ? Math.round((recalled / expected) * 100) : 0}%），误召 ${intruded}，共 ${cases.length} 题`,
+		`\n总召回 ${recalled}/${expected}（${expected ? Math.round((recalled / expected) * 100) : 0}%），误召 ${intruded}，共 ${cases.length} 个用例`,
 	);
 	if (recalled !== expected || intruded > 0) process.exitCode = 1;
 } finally {
