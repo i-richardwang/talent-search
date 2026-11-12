@@ -34,7 +34,7 @@ import {
 	industry,
 	phrase,
 	recordStream,
-	reviewGroup,
+	reviewWord,
 	scale,
 	searchTurn,
 	taskRun,
@@ -150,7 +150,7 @@ function ddl(schema: string, table: PgTable) {
 
 /**
  * 假嵌入：字符袋。每个字占一个维度（按出现顺序分配），向量归一化，
- * 所以两串字的余弦 = 共有字数 / √(字数 × 字数)：整理把哪些词分进一组在测试里算得出来。
+ * 所以两串字的余弦 = 共有字数 / √(字数 × 字数)：整理给一个词配哪些参考词在测试里算得出来。
  */
 const charDims = new Map<string, number>();
 export function fakeEmbedding(text: string): number[] {
@@ -370,6 +370,11 @@ function baseIn(prompt: string): unknown[] {
 		.find((l) => l.startsWith(BASE_PREFIX))
 		?.slice(BASE_PREFIX.length);
 	return line ? (JSON.parse(line) as unknown[]) : [];
+}
+
+/** 整理发给判定方的一段提问里要判的是哪个词。 */
+export function askedWord(prompt: string): string {
+	return /^要判的词：(.+)（\d+ 人）$/m.exec(prompt)?.[1] ?? "";
 }
 
 /**
@@ -616,7 +621,7 @@ export async function setup() {
 		searchTurn,
 		experienceVerdict,
 		term,
-		reviewGroup,
+		reviewWord,
 		embeddingCache,
 		completionCache,
 		taskRun,

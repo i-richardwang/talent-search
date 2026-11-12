@@ -84,8 +84,9 @@ before(async () => {
 					months: 36,
 					company: "分面外卖公司",
 					companyTag: "头部互联网T1",
-					// 能力词那一维是一段多个值：两个词都得成为候选，各数一个人
-					extracted: { skills: ["推荐系统", "Python"] },
+					// 能力词那一维是一段多个值：两个词都得成为候选，各数一个人；
+					// 「算法周会」判成了不是能力，不成为候选
+					extracted: { skills: ["推荐系统", "Python", "算法周会"] },
 				},
 			],
 		},
@@ -148,6 +149,7 @@ before(async () => {
 			parent: "推荐系统",
 			reviewedAt,
 		},
+		{ word: "算法周会", canonical: "算法周会", excluded: true, reviewedAt },
 	]);
 });
 
@@ -162,6 +164,14 @@ describe("候选与计数", () => {
 		assert.equal(skills.get("Python"), 1);
 		// 别名自己不成为一项：写了它的人在标准词那一项里
 		assert.equal(skills.get("推荐算法"), undefined);
+	});
+
+	test("判成不是能力的词不是能力词那一维的取值", async () => {
+		const { facets } = await run("算法");
+		assert.equal(
+			facets.skill.some((s) => s.value === "算法周会"),
+			false,
+		);
 	});
 
 	test("宽的词把写了细的词的人也数进去，细的词只有写了它的人", async () => {

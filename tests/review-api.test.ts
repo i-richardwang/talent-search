@@ -14,8 +14,8 @@ after(teardown);
 const { authorized, configured, limitOf, pending, submit } = await import(
 	"#/server/review"
 );
-const { openGroups } = await import("#/corpus/judgment");
-const { groupIdentity } = await import("#/corpus/vocabulary");
+const { openWords } = await import("#/corpus/judgment");
+const { guideIdentity } = await import("#/corpus/vocabulary");
 const { pool } = await import("#/db");
 
 const TOKEN = "test-token";
@@ -29,19 +29,17 @@ test("判定已持久化时，调度故障不把接收结果改成失败", async
 	const logged = mock.method(console, "error", () => {});
 	try {
 		const { rows } = await pool.query<{ id: number }>(
-			`insert into review_group (guide_identity, words)
-			 values ($1, '[{"word":"合成调度能力","people":3}]'::jsonb) returning id`,
-			[groupIdentity()],
+			`insert into review_word (guide_identity, word, people, near)
+			 values ($1, '合成调度能力', 3, '[]'::jsonb) returning id`,
+			[guideIdentity()],
 		);
 		const id = rows[0]?.id;
 		assert.ok(id);
 		const input = request({
 			id,
-			guideIdentity: groupIdentity(),
+			guideIdentity: guideIdentity(),
 			judge: "synthetic",
-			judgments: [
-				{ word: "合成调度能力", why: "独立能力", sameAs: "", parent: "" },
-			],
+			judgment: { why: "独立能力", kind: "自成一项", target: "" },
 		});
 		input.headers.set("authorization", `Bearer ${TOKEN}`);
 		const handlers = Route.options.server?.handlers;
@@ -56,7 +54,7 @@ test("判定已持久化时，调度故障不把接收结果改成失败", async
 		assert.equal(response.status, 200);
 		assert.deepEqual(await response.json(), { accepted: true });
 		assert.equal(
-			(await pool.query("select judge from review_group where id = $1", [id]))
+			(await pool.query("select judge from review_word where id = $1", [id]))
 				.rows[0]?.judge,
 			"agent:synthetic",
 		);
@@ -131,7 +129,7 @@ describe("鉴权", () => {
 	});
 });
 
-describe("取组的 limit", () => {
+describe("取词的 limit", () => {
 	test("缺失、非法用默认值，超上限取上限，不否掉整次请求", () => {
 		assert.equal(limitOf("http://x/api/review"), 20);
 		assert.equal(limitOf("http://x/api/review?limit=abc"), 20);
@@ -143,24 +141,46 @@ describe("取组的 limit", () => {
 });
 
 describe("提交判定的形状", () => {
-	const judgments = [{ word: "数据分析工作", why: "同义", alias: true }];
-	const guideIdentity = groupIdentity();
+	const judgment = { why: "同义", kind: "同一件事", target: "数据分析" };
+	const identity = guideIdentity();
 
 	test("格式不对的判定不写库", async () => {
 		for (const [body, why] of [
 			["不是 JSON", /不是 JSON/],
 			[[1, 2, 3], /缺 id/],
-			[{ judge: "hr-bot", judgments }, /缺 id/],
-			[{ id: 1.5, judge: "hr-bot", judgments }, /缺 id/],
-			[{ id: 1, judgments }, /guideIdentity/],
-			[{ id: 1, guideIdentity: "old", judgments }, /guideIdentity/],
-			[{ id: 1, guideIdentity, judgments }, /judge/],
-			[{ id: 1, guideIdentity, judge: "名字里有汉字", judgments }, /judge/],
-			[{ id: 1, guideIdentity, judge: "a".repeat(41), judgments }, /judge/],
-			[{ id: 1, guideIdentity, judge: "hr-bot" }, /judgments/],
+			[{ judge: "hr-bot", judgment }, /缺 id/],
+			[{ id: 1.5, judge: "hr-bot", judgment }, /缺 id/],
+			[{ id: 1, judgment }, /guideIdentity/],
+			[{ id: 1, guideIdentity: "old", judgment }, /guideIdentity/],
+			[{ id: 1, guideIdentity: identity, judgment }, /judge/],
 			[
-				{ id: 1, guideIdentity, judge: "hr-bot", judgments: "都并" },
-				/judgments/,
+				{ id: 1, guideIdentity: identity, judge: "名字里有汉字", judgment },
+				/judge/,
+			],
+			[
+				{ id: 1, guideIdentity: identity, judge: "a".repeat(41), judgment },
+				/judge/,
+			],
+			[
+				{ id: 1, guideIdentity: identity, judge: "hr-bot" },
+				/judgment 不是对象/,
+			],
+			[
+				{ id: 1, guideIdentity: identity, judge: "hr-bot", judgment: [] },
+				/judgment 不是对象/,
+			],
+			[
+				{
+					id: 1,
+					guideIdentity: identity,
+					judge: "hr-bot",
+					judgment: "同一件事",
+				},
+				/judgment 不是对象/,
+			],
+			[
+				{ id: 1, guideIdentity: identity, judge: "hr-bot", judgment: null },
+				/judgment 不是对象/,
 			],
 		] as [unknown, RegExp][]) {
 			const got = await submit(request(body));
@@ -244,10 +264,10 @@ describe("提交判定", () => {
 		const connection = await pool.connect();
 		try {
 			const { rows } = await connection.query<{ id: number }>(
-				`insert into review_group (guide_identity, words)
-				 values ($1, '[{"word":"数据分析","people":3},{"word":"数据分析工作","people":2}]'::jsonb)
+				`insert into review_word (guide_identity, word, people, near)
+				 values ($1, '数据分析工作', 2, '[{"word":"数据分析","people":3}]'::jsonb)
 				 returning id`,
-				[groupIdentity()],
+				[guideIdentity()],
 			);
 			id = rows[0]?.id ?? 0;
 		} finally {
@@ -255,27 +275,27 @@ describe("提交判定", () => {
 		}
 	});
 
-	test("取组同时给出组与标准的同一份身份", async () => {
+	test("取词同时给出词、参考词与标准的同一份身份", async () => {
 		const view = await pending(20);
-		const group = view.groups.find((one) => one.id === id);
-		assert.ok(group);
-		assert.equal(group.guideIdentity, groupIdentity());
-		assert.equal(view.guide.identity, group.guideIdentity);
+		const word = view.words.find((one) => one.id === id);
+		assert.ok(word);
+		assert.equal(word.word, "数据分析工作");
+		assert.equal(word.people, 2);
+		assert.deepEqual(word.near, [{ word: "数据分析", people: 3 }]);
+		assert.equal(word.guideIdentity, guideIdentity());
+		assert.equal(view.guide.identity, word.guideIdentity);
 		assert.match(view.guide.text, /同一件事/);
 	});
 
-	test("原话原样存进组里，这里不校验内容", async () => {
-		// 「别的词」不在组里、`sameAs` 指向外人——两样都留到生效时才被 `conform` 丢掉
-		const raw = [
-			{ word: "数据分析工作", why: "同义", sameAs: "数据分析", parent: "" },
-			{ word: "别的词", why: "…", sameAs: "外人", parent: "" },
-		];
+	test("原话原样存在词上，这里不校验内容", async () => {
+		// `kind` 不是四种之一、`target` 指向参考词以外的词——都留到生效时才被 `conform` 丢掉
+		const raw = { why: "…", kind: "差不多", target: "外人", extra: 1 };
 		const got = await submit(
 			request({
-				guideIdentity: groupIdentity(),
+				guideIdentity: guideIdentity(),
 				id,
 				judge: "hr-bot",
-				judgments: raw,
+				judgment: raw,
 			}),
 		);
 		assert.deepEqual(got, { ok: true, submission: "accepted" });
@@ -284,14 +304,14 @@ describe("提交判定", () => {
 		try {
 			const { rows } = await connection.query<{
 				judge: string;
-				judgment: { judgments: unknown[] };
-			}>("select judge, judgment from review_group where id = $1", [id]);
+				judgment: unknown;
+			}>("select judge, judgment from review_word where id = $1", [id]);
 			assert.equal(rows[0]?.judge, "agent:hr-bot");
-			assert.deepEqual(rows[0]?.judgment.judgments, raw);
-			// 判过的组不再出现在待判的那一份里
+			assert.deepEqual(rows[0]?.judgment, raw);
+			// 判过的词不再出现在待判的那一份里
 			assert.equal(
-				(await openGroups(connection, groupIdentity())).some(
-					(one: { id: number }) => one.id === id,
+				(await openWords(connection, guideIdentity())).some(
+					(one) => one.id === id,
 				),
 				false,
 			);
@@ -300,17 +320,15 @@ describe("提交判定", () => {
 		}
 	});
 
-	test("第二份判定不算，不存在的组分开说", async () => {
-		const judgments = [
-			{ word: "数据分析工作", why: "同义", sameAs: "数据分析", parent: "" },
-		];
+	test("第二份判定不算，不存在的词分开说", async () => {
+		const judgment = { why: "同义", kind: "同一件事", target: "数据分析" };
 		assert.deepEqual(
 			await submit(
 				request({
-					guideIdentity: groupIdentity(),
+					guideIdentity: guideIdentity(),
 					id,
 					judge: "another",
-					judgments,
+					judgment,
 				}),
 			),
 			{ ok: true, submission: "taken" },
@@ -318,10 +336,10 @@ describe("提交判定", () => {
 		assert.deepEqual(
 			await submit(
 				request({
-					guideIdentity: groupIdentity(),
+					guideIdentity: guideIdentity(),
 					id: 10_000_000,
 					judge: "hr-bot",
-					judgments,
+					judgment,
 				}),
 			),
 			{ ok: true, submission: "missing" },
@@ -332,7 +350,7 @@ describe("提交判定", () => {
 					guideIdentity: "0".repeat(64),
 					id,
 					judge: "hr-bot",
-					judgments,
+					judgment,
 				}),
 			),
 			{ ok: true, submission: "missing" },

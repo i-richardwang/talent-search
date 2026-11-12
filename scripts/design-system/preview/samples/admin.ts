@@ -74,7 +74,7 @@ export const TASK_LANES: TaskLane[] = [
 			"09-25 20:00",
 			87,
 			"failed",
-			"AI 服务连续 3 次没有作答：POST /v1/chat/completions 超时（60s），重试 3 次后放弃；已经判完的组下一轮生效。",
+			"AI 服务连续 3 次没有作答：POST /v1/chat/completions 超时（60s），重试 3 次后放弃；已经判完的词下一轮生效。",
 		),
 		run(26, "review", "09-24 20:00", 132, "done"),
 	]),
@@ -247,27 +247,46 @@ export const SKILL_ROWS: TermEntry[] = [
 		aliases: ["计算广告"],
 		children: 0,
 		people: 1,
-		reviewedDaysAgo: 6,
+		reviewedDaysAgo: null,
 	},
 ];
 
+/** 「标签」页上「不是能力」那张表：判定方认定说的不是一项能力的词。 */
+export const EXCLUDED_ROWS: TermEntry[] = ["周报", "策略会", "沟通协调"].map(
+	(canonical, index) => ({
+		aliases: [],
+		canonical,
+		children: 0,
+		parent: null,
+		people: 3 - index,
+		reviewedDaysAgo: index,
+	}),
+);
+
 /** 「标签」页上点开的一个词：「推荐系统」。关系与人数从词表的行里取。 */
-export const SKILL_DETAIL: TermDetail = detailOf("推荐系统");
+export const SKILL_DETAIL: TermDetail = detailOf(SKILL_ROWS, "推荐系统");
+
+/** 「标签」页上备了详情的词：「推荐系统」，和判成不是能力的「周报」。 */
+export const TERM_DETAILS: TermDetail[] = [
+	SKILL_DETAIL,
+	{ ...detailOf(EXCLUDED_ROWS, "周报"), excluded: true },
+];
 
 /** 词表里一个词点开后的样子：它那一行，加上往上一层与往下一层的词。 */
-function detailOf(canonical: string): TermDetail {
-	const row = SKILL_ROWS.find((entry) => entry.canonical === canonical);
+function detailOf(rows: TermEntry[], canonical: string): TermDetail {
+	const row = rows.find((entry) => entry.canonical === canonical);
 	if (!row) throw new Error(`词表里没有 ${canonical}`);
-	const parent = SKILL_ROWS.find((entry) => entry.canonical === row.parent);
+	const parent = rows.find((entry) => entry.canonical === row.parent);
 	return {
 		aliases: row.aliases,
 		canonical,
-		children: SKILL_ROWS.filter((entry) => entry.parent === canonical).map(
-			(entry) => ({ canonical: entry.canonical, people: entry.people }),
-		),
+		children: rows
+			.filter((entry) => entry.parent === canonical)
+			.map((entry) => ({ canonical: entry.canonical, people: entry.people })),
 		parent: parent
 			? { canonical: parent.canonical, people: parent.people }
 			: null,
+		excluded: false,
 		people: row.people,
 		reviewedDaysAgo: row.reviewedDaysAgo,
 	};

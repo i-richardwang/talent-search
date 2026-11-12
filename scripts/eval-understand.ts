@@ -24,20 +24,20 @@
  *     "evidence": { "E1026": { "months": 12, "place": "甲辰科技" } } }
  *                                      // 可选：这个人第一条主张的累计月数；每一行证据都在这个地方
  *
- * 没有 rewrite 的题，base 里除了 drop 的每一条都必须原样留在新表里（同一个 id、同样的内容）——
+ * 没有 rewrite 的用例，base 里除了 drop 的每一条都必须原样留在新表里（同一个 id、同样的内容）——
  * 模型不能顺手丢掉或改掉用户没提到的条件。词比对折叠全半角、大小写和空白，按包含算，
  * 比的是条件拿来搜的字（seek 的正则和判据、文字参数、where 里的文字取值）：模型写「团队管理」也算提到了「团队」。
  *
  * 名单这一半（has、includes、excludes、before、evidence）按搜索的真实执行打分：模型写的 SQL
  * 搜出谁、证据是哪几段、累计多久，和工作台同一条路（`search/execute.ts`）。哪一段经历算数是
- * 模型这一轮读完下的结论（`server/judged.ts`）：每道题是一次找人任务，名单只读它名下的结论，
- * 题做完连同任务一起删。标签只是
+ * 模型这一轮读完下的结论（`server/judged.ts`）：每个用例是一次找人任务，名单只读它名下的结论，
+ * 用例跑完连同任务一起删。标签只是
  * 写给 HR 的话，不当作已验证的解释；名单对了才算对。这一半要在有对应数据的库上跑：按期记录和
- * 限定公司的经历那几题用合成样例同步出的库（`TALENT_SOURCE=csv-dir`，样例目录 `src/corpus/sources/sample`）。
+ * 限定公司的经历那几个用例用合成样例同步出的库（`TALENT_SOURCE=csv-dir`，样例目录 `src/corpus/sources/sample`）。
  *
- * 设了 `EVAL_SHOW_SQL=1` 时每题下面列出每条的 FROM、seek、where 和参数，给人对照标签读。
+ * 设了 `EVAL_SHOW_SQL=1` 时每个用例下面列出每条的 FROM、seek、where 和参数，给人对照标签读。
  *
- * 一题只要有一处不对就打叉，退出码看的是有没有打叉的题。模型写的说明原样显示在界面上，
+ * 一个用例只要有一处不对就打叉，退出码看的是有没有打叉的用例。模型写的说明原样显示在界面上，
  * 里面出现内部用词（`lib/internal-words.ts`）也算一处不对；那句话要书面简洁：一句话、
  * 不带括号，可选的回答和它的说明带括号也算。
  *
@@ -100,7 +100,7 @@ function loadCases(file: string): Case[] {
 		throw new Error(`${file}：应是一个非空 JSON 数组，格式见文件头注释`);
 	return data.map((raw, i) => {
 		const c = (raw ?? {}) as Record<string, unknown>;
-		const where = `${file} 第 ${i + 1} 题`;
+		const where = `${file} 第 ${i + 1} 个用例`;
 		if (typeof c.name !== "string" || !c.name.trim())
 			throw new Error(`${where}：name 必须是非空字符串`);
 		if (typeof c.say !== "string" || !c.say.trim())
@@ -233,8 +233,8 @@ try {
 	for (const c of cases) {
 		const problems: string[] = [];
 		let summary = "";
-		// 每道题是一次找人任务：模型读过的经历算不算记在它名下，名单也只认它名下的；题做完连同
-		// 任务一起删掉，不留给下一道题。步骤不用记，结论照存
+		// 每个用例是一次找人任务：模型读过的经历算不算记在它名下，名单也只认它名下的；用例跑完连同
+		// 任务一起删掉，不留给下一个用例。步骤不用记，结论照存
 		const { turnId: rootTurnId } = await createTurn({
 			kind: "spec",
 			spec: emptySpec(),
@@ -398,7 +398,7 @@ try {
 		if (summary) console.log(`   ${summary}`);
 		for (const p of problems) console.log(`   ! ${p}`);
 	}
-	console.log(`\n${cases.length - failed}/${cases.length} 题通过`);
+	console.log(`\n${cases.length - failed}/${cases.length} 个用例通过`);
 	if (failed > 0) process.exitCode = 1;
 } finally {
 	await pool.end();

@@ -241,7 +241,7 @@ function Usage() {
 			)}
 			{third && (
 				<Example
-					description="命中的是同组的另一个写法时，前面写出「匹配依据」，HR 看得到凭什么算命中。"
+					description="命中的是同一项的另一种写法时，前面写出「匹配依据」，HR 看得到凭什么算命中。"
 					title="换了写法的命中"
 				>
 					<ClaimEvidence lines={claimLines(third, CLAIMS)} />

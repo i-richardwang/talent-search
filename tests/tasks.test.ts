@@ -25,7 +25,7 @@ async function underived() {
 	const { done, total } = await deriveProgress();
 	return total - done;
 }
-const { groupIdentity } = await import("#/corpus/vocabulary");
+const { guideIdentity } = await import("#/corpus/vocabulary");
 const { formatDuration, LANE_FACTS } = await import(
 	"#/routes/tasks/-lib/labels"
 );
@@ -54,7 +54,7 @@ function answers() {
 		if (system.includes("属于哪个序列")) {
 			return { seq: /^- (.+)$/m.exec(system)?.[1] ?? "" };
 		}
-		return { judgments: [] };
+		return { why: "合成", kind: "自成一项", target: "" };
 	});
 }
 
@@ -442,20 +442,20 @@ test("词表的判定生效，一条技能边都不动", async () => {
 	process.env.REVIEW_JUDGE = "external";
 	const restore = answers();
 	try {
-		await db.execute(sql`delete from review_group`);
-		await db.execute(sql`insert into review_group (guide_identity, words, judge, judgment) values (
-			${groupIdentity()}, '[{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
-			'{"judgments":[{"word":"数据分析","why":"属于业务分析","sameAs":"","parent":"业务分析"}]}'::jsonb)`);
+		await db.execute(sql`delete from review_word`);
+		await db.execute(sql`insert into review_word (guide_identity, word, people, near, judge, judgment) values (
+			${guideIdentity()}, '数据分析', 3, '[]'::jsonb, 'agent:test',
+			'{"why":"属于业务分析","kind":"属于","target":"业务分析"}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
 		assert.equal(await count("term", "word = '业务分析'"), 1);
 		const edges = sql`select array_agg(ep.experience_id || ':' || p.text order by ep.experience_id, p.text)::text as all
 			from experience_phrase ep join phrase p on p.id = ep.phrase_id where ep.route = 'skill'`;
 		const before = (await db.execute<{ all: string }>(edges)).rows[0]?.all;
 		assert.ok(before);
-		await db.execute(sql`delete from review_group`);
-		await db.execute(sql`insert into review_group (guide_identity, words, judge, judgment) values (
-			${groupIdentity()}, '[{"word":"业务分析","people":100},{"word":"数据分析","people":3}]'::jsonb, 'agent:test',
-			'{"judgments":[{"word":"业务分析","why":"采用标准写法","sameAs":"","parent":""},{"word":"数据分析","why":"同一能力的写法","sameAs":"业务分析","parent":""}]}'::jsonb)`);
+		await db.execute(sql`delete from review_word`);
+		await db.execute(sql`insert into review_word (guide_identity, word, people, near, judge, judgment) values (
+			${guideIdentity()}, '数据分析', 3, '[{"word":"业务分析","people":100}]'::jsonb, 'agent:test',
+			'{"why":"同一能力的写法","kind":"同一件事","target":"业务分析"}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
 		assert.equal(
 			await count("term", "word = '数据分析' and canonical = '业务分析'"),

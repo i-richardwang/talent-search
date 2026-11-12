@@ -4,7 +4,7 @@
  */
 
 import { createServerFn } from "@tanstack/react-start";
-import { TASK_KINDS } from "#/lib/task";
+import { rejudgeOf, TASK_KINDS } from "#/lib/task";
 import { validateCommit } from "#/search/commit-input";
 import { KEYWORD_FIELDS, KEYWORD_RULES } from "#/search/keywords";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
@@ -19,6 +19,7 @@ import {
 } from "./data";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
+import { reviewJudge } from "./review";
 import { taskLog as runLog, type TaskPages, tasksState } from "./tasks";
 import { describeTerm, listTerms } from "./terms";
 import {
@@ -143,14 +144,15 @@ export const deleteRecent = createServerFn({ method: "POST" })
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
 	.handler(({ data }) => deleteSearch(data.turnId));
 
-/** 词表页的表：按标准词、写法或所属的词找，一页一页地给。 */
+/** 词表页的表：按标准词、写法或所属的词找，一页一页地给；`excluded` 看判成不是能力的那些。 */
 export const termTable = createServerFn({ method: "GET" })
 	.middleware([authenticated])
-	.validator((d: { q: unknown; page: unknown }) => ({
+	.validator((d: { q: unknown; page: unknown; excluded: unknown }) => ({
+		excluded: d.excluded === true,
 		q: String(d.q ?? "").slice(0, 64),
 		page: Number(d.page) || 1,
 	}))
-	.handler(({ data }) => listTerms(data.q, data.page));
+	.handler(({ data }) => listTerms(data.q, data.page, data.excluded));
 
 /** 词表页点开的那一个词：上下从属、其他写法，各自的人数。 */
 export const termDetail = createServerFn({ method: "GET" })
@@ -159,6 +161,23 @@ export const termDetail = createServerFn({ method: "GET" })
 		word: String(d.word ?? "").slice(0, 64),
 	}))
 	.handler(({ data }) => describeTerm(data.word));
+
+/**
+ * 把一个范围里的词退回重新判定：发一轮带着这个范围的整理，立刻返回。词表在那一轮
+ * 拿到写者锁之后才动。整理关着时不发（`off`）；排着或在跑的已经有一轮时也不发（`busy`），
+ * 范围不会并进那一轮，等它跑完再点。
+ */
+export const rejudgeTerms = createServerFn({ method: "POST" })
+	.middleware([administrator])
+	.validator((raw: unknown) => {
+		const rejudge = rejudgeOf(raw);
+		if (!rejudge) throw new Error("没有这种重新判定的范围");
+		return rejudge;
+	})
+	.handler(async ({ data }): Promise<"queued" | "busy" | "off"> => {
+		if (reviewJudge() === "off") return "off";
+		return (await requestJob("review", data)) ? "queued" : "busy";
+	});
 
 /**
  * 任务台的全部数据：三种任务各自跑过的记录里的一页，和语料此刻有多少东西。

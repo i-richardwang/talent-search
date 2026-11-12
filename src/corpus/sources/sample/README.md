@@ -7,11 +7,11 @@
 列名就是 `src/corpus/contract.ts` 的契约列，格式见 `src/corpus/sources/csv-dir.ts`。
 `levels.csv` 是一套编的分档：P7 与 M1 同档、P8 与 M2 同档，用来说明几条职级线可以并进同一档。
 学校档有 C9、985、211、QS100 和普通高校；C9 是 985 里更窄的一档（只有 E1008），说「985 毕业」时
-要连 C9 一起找，`evals/understand/sample.json` 有一题查的就是它。
+要连 C9 一起找，`evals/understand/sample.json` 有一个用例查的就是它。
 接自己的数据时把 `TALENT_CSV_DIR` 指向你自己的目录，或者写一个私有适配器。
 
 入职前经历的描述里故意写了几句能抽出能力词和投入档的话（「从 0 到 1 搭建实时推荐系统」
-「使用 Python 和 Spark」「配合风控团队」）。`evals/search/sample.json` 最后两题找的「推荐系统」和
+「使用 Python 和 Spark」「配合风控团队」）。`evals/search/sample.json` 最后两个用例找的「推荐系统」和
 「Spark」就在其中：没配 `EXTRACT_*` 时按字面在整段描述里找到，配好之后命中换成抽出的短说法
 （证据行上写「技能」和那条说法）。抽取未配置时能力词为空，解析会报告并跳过。配好之后入职前的段还会对到
 `assignments.csv` 里登记过的序列（比如 E1003 在云枢智能的算法经历对到「技术 · 算法」），

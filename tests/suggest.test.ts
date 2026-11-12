@@ -25,7 +25,7 @@ describe("关键词候选", () => {
 						kind: "external",
 						months: 12,
 						company: "星河科技",
-						extracted: { skills: ["推荐系统"] },
+						extracted: { skills: ["推荐系统", "推荐周会"] },
 					},
 				],
 			},
@@ -58,6 +58,8 @@ describe("关键词候选", () => {
 			{ word: "个性化推荐", canonical: "推荐系统", reviewedAt },
 			// 词表里有、语料里没人写过的词不给
 			{ word: "推荐广告", canonical: "推荐广告", reviewedAt },
+			// 判成不是能力的词有人写也不给
+			{ word: "推荐周会", canonical: "推荐周会", excluded: true, reviewedAt },
 		]);
 	});
 
@@ -68,6 +70,10 @@ describe("关键词候选", () => {
 		assert.deepEqual(await suggest("what", "推荐"), [
 			{ value: "推荐系统", people: null },
 		]);
+	});
+
+	test("判成不是能力的词不给", async () => {
+		assert.deepEqual(await suggest("what", "周会"), []);
 	});
 
 	test("公司只给入职前的公司名，部门只给公司内的部门名；开头是这几个字的排前面，人数按人不按段", async () => {

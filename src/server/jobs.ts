@@ -6,7 +6,7 @@
 
 import "@tanstack/react-start/server-only";
 import { PgBoss, type UpdateQueueOptions } from "pg-boss";
-import type { TaskKind } from "#/lib/task";
+import { type Rejudge, rejudgeOf, type TaskKind } from "#/lib/task";
 import { reviewJudge } from "./review";
 import { deriveProgress, runTask } from "./tasks";
 
@@ -15,8 +15,8 @@ export type JobKind = Exclude<TaskKind, "sync">;
 
 /**
  * 排班。解析只看「有没有还没有当前标准结果、或暂存结果还没替换进去的段」，同步之后几分钟内解析会自动继续；整理一天一次，
- * 一个词一周判一次的节奏在它里面（`corpus/vocabulary.ts`）。判定归外部时这一轮
- * 仍然会跑——它要让外部提交的判定生效，并且收集新的组。
+ * 只判还没判过的词（`corpus/vocabulary.ts`）。判定归外部时这一轮
+ * 仍然会跑——它要让外部提交的判定生效，并且收集新的词。
  */
 const SCHEDULE: Record<JobKind, string> = {
 	derive: "*/5 * * * *",
@@ -69,10 +69,10 @@ async function setup(boss: PgBoss): Promise<void> {
 		if (done === total && !staging) return;
 		await runTask("derive");
 	});
-	await boss.work("review", async () => {
+	await boss.work<{ rejudge?: unknown }>("review", async ([job]) => {
 		// 关掉的时候不留一行记录：任务台上另有说法（`tasksState`）
 		if (reviewJudge() === "off") return;
-		await runTask("review");
+		await runTask("review", { rejudge: rejudgeOf(job?.data.rejudge) });
 	});
 }
 
@@ -87,11 +87,14 @@ export function startJobs(): Promise<void> {
 
 /**
  * 现在就来一次。排着或在跑的已经有一个时什么都不发，返回 false——任务台据此
- * 说「已经有一次在排队了」。
+ * 说「已经有一次在排队了」。整理可以带一个重新判定的范围，由这一轮在拿到锁之后退回。
  */
-export async function requestJob(kind: JobKind): Promise<boolean> {
+export async function requestJob(
+	kind: JobKind,
+	rejudge?: Rejudge,
+): Promise<boolean> {
 	const handle = registry[HANDLE];
 	if (!handle) throw new Error("后台任务没有启动：这条路只在应用进程里通");
 	await handle.ready;
-	return (await handle.boss.send(kind, {})) !== null;
+	return (await handle.boss.send(kind, rejudge ? { rejudge } : {})) !== null;
 }

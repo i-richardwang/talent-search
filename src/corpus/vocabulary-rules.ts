@@ -1,41 +1,41 @@
-/** 能力词判定的校验、分组与词表归并。生产的生效一步和验收共用这些纯函数。 */
+/** 词表判定的校验、找参考词与生效。生产的生效一步和验收共用这些纯函数。 */
 import { z } from "zod";
-import type { Member } from "./judgment";
+import type { Question } from "./judgment";
 import { MAX_TAG_LEN, tag } from "./tag";
 
-/** 模型回答与外部判定共用的形状；空字符串表示明确没有关系，缺字段不是判断。 */
-export const GROUP_SCHEMA = z.object({
-	judgments: z.array(
-		z.object({
-			word: z.string(),
-			why: z.string(),
-			sameAs: z.string(),
-			parent: z.string(),
-		}),
-	),
+/** 模型回答与外部判定共用的形状；`kind` 取值和 `target` 的规则由 `conform` 校验。 */
+export const PLACEMENT_SCHEMA = z.object({
+	why: z.string(),
+	kind: z.string(),
+	target: z.string(),
 });
 
 /**
- * 两个能力词的向量相似度到这个数才分进同一组。bge-m3 上同一项能力的不同写法
- * 多在 0.8 以上；再低会把「数据分析」和「数据仓库」这种相邻领域分到一起——
- * 判定方能拆，但每组的词一多它就开始漏。
+ * 一个要判的词带几个参考词。参考词只按向量取最接近的几个，不设相似度门槛：
+ * 词表里没有相近写法的词也要判，判定方看过参考词之后可以说一个都对不上。
  */
-const SIMILARITY = 0.8;
-/** 一组最多几个词。组再大就是阈值定低了，判定方面对二十个词会成片地判成同一项。 */
-const GROUP_MAX = 12;
-/** 中心词至少几个人才值得整理。 */
-const HEAD_MIN = 3;
+const NEAR = 8;
 
 /**
  * 一个词的决定：它的标准写法（等于自己就是标准词）、标准词属于哪个更宽的词
- * （别名上恒为 null）和上次判它的时间。
+ * （别名上恒为 null）、判定方是不是认定它不是一项能力，和上次判它的时间；
+ * 时间是 null 的词还没判过或被退回重判，下一轮整理会收集它。
+ * 不是能力的词自成一行：没有别名，没有归属，也没有词指向它。
  */
 export type Decision = {
 	canonical: string;
 	parent: string | null;
-	reviewedAt: Date;
+	excluded: boolean;
+	reviewedAt: Date | null;
 };
 export type Table = Map<string, Decision>;
+
+/** 判定方对一个词说了什么，校验之后的样子。 */
+export type Verdict =
+	| { kind: "same"; as: string }
+	| { kind: "under"; parent: string }
+	| { kind: "alone" }
+	| { kind: "excluded" };
 
 /** 一个词的上一级：别名走它标准词的归属。没有就是 null。 */
 function ancestor(table: Table, word: string): string | null {
@@ -46,35 +46,37 @@ function ancestor(table: Table, word: string): string | null {
 		: (table.get(decision.canonical)?.parent ?? null);
 }
 
-/** 拒绝别名链、归属于别名和归属环。 */
+/** 拒绝别名链、归属于别名、归属环，以及带着关系的「不是能力」。 */
 export function validate(table: Table): void {
-	const chained = [...table]
-		.filter(([word, decision]) => {
-			const target = table.get(decision.canonical);
-			return (
-				decision.canonical !== word &&
-				target !== undefined &&
-				target.canonical !== decision.canonical
-			);
-		})
-		.map(([word]) => word)
-		.sort();
-	if (chained.length)
-		throw new Error(
-			`term 表里 ${chained.join("、")} 的标准词自己又是别名，表被改坏了`,
+	const broken = (
+		what: string,
+		bad: (word: string, decision: Decision) => boolean,
+	) => {
+		const words = [...table]
+			.filter(([word, decision]) => bad(word, decision))
+			.map(([word]) => word)
+			.sort();
+		if (words.length)
+			throw new Error(`term 表里 ${words.join("、")} ${what}，表被改坏了`);
+	};
+	broken("的标准词自己又是别名", (word, decision) => {
+		const target = table.get(decision.canonical);
+		return (
+			decision.canonical !== word &&
+			target !== undefined &&
+			target.canonical !== decision.canonical
 		);
-	const underAlias = [...table]
-		.filter(([, decision]) => {
-			if (decision.parent === null) return false;
-			const target = table.get(decision.parent);
-			return target !== undefined && target.canonical !== decision.parent;
-		})
-		.map(([word]) => word)
-		.sort();
-	if (underAlias.length)
-		throw new Error(
-			`term 表里 ${underAlias.join("、")} 归属于一个别名，表被改坏了`,
-		);
+	});
+	broken("归属于一个别名", (_, decision) => {
+		const target = decision.parent ? table.get(decision.parent) : undefined;
+		return target !== undefined && target.canonical !== decision.parent;
+	});
+	broken("对到或归属于一个不是能力的词", (word, decision) =>
+		[decision.canonical, decision.parent].some(
+			(target) =>
+				target !== null && target !== word && table.get(target)?.excluded,
+		),
+	);
 	for (const [word] of table) {
 		const seen = new Set<string>();
 		for (let at: string | null = word; at !== null; at = ancestor(table, at)) {
@@ -86,212 +88,185 @@ export function validate(table: Table): void {
 }
 
 /**
- * 把相似的词分成组，每组第一个词是中心词，后面至少一个候选。
- *
- * 人最多的词先做中心词，把还没分组、和它相似度够的词收进来。组和组不重叠：
- * 「数据分析 - 数据监控 - 监控告警」这种一环扣一环的链不会连成一大组。
- * 只有 `due` 里的词做中心词；人不够 `HEAD_MIN` 的词也不做中心词，只能被收进别人的组。
+ * 在一批候选词里找参考词：给一个词和它的向量，返回候选里最接近的几个，近的在前，
+ * 和它同一个写法的那个不算。候选只归一化一次，之后每问一个词是一趟点积。
  */
-export function groups(
-	words: string[],
-	counts: number[],
+export function nearest(
+	pool: string[],
 	vectors: number[][],
-	due: Set<string>,
-): string[][] {
-	const units = vectors.map((vector) => {
+): (word: string, vector: number[]) => string[] {
+	const unit = (vector: number[]) => {
 		const norm = Math.hypot(...vector) || 1;
 		return Float32Array.from(vector, (value) => value / norm);
-	});
-	const order = [...words.keys()].sort(
-		(a, b) =>
-			(counts[b] ?? 0) - (counts[a] ?? 0) ||
-			(words[a] as string).localeCompare(words[b] as string),
-	);
-	const free = new Array(words.length).fill(true);
-	const out: string[][] = [];
-	for (const head of order) {
-		if ((counts[head] ?? 0) < HEAD_MIN) break;
-		if (!free[head] || !due.has(words[head] as string)) continue;
-		free[head] = false;
-		const anchor = units[head] as Float32Array;
-		const members: number[] = [];
-		for (const candidate of order) {
-			if (members.length === GROUP_MAX - 1) break;
-			if (!free[candidate]) continue;
-			if (similarity(anchor, units[candidate] as Float32Array) >= SIMILARITY)
-				members.push(candidate);
+	};
+	const candidates = vectors.map(unit);
+	return (word, vector) => {
+		const anchor = unit(vector);
+		const best: { at: number; score: number }[] = [];
+		for (let at = 0; at < candidates.length; at++) {
+			if (pool[at] === word) continue;
+			const score = similarity(anchor, candidates[at] as Float32Array);
+			if (best.length === NEAR && score <= (best[NEAR - 1]?.score ?? 0))
+				continue;
+			const slot = best.findIndex((one) => score > one.score);
+			best.splice(slot === -1 ? best.length : slot, 0, { at, score });
+			if (best.length > NEAR) best.pop();
 		}
-		if (members.length) {
-			for (const member of members) free[member] = false;
-			out.push([
-				words[head] as string,
-				...members.map((index) => words[index] as string),
-			]);
-		}
-	}
-	return out;
+		return best.map((one) => pool[one.at] as string);
+	};
 }
-
-/** 两个已经归一化的向量的余弦。 */
-function similarity(a: Float32Array, b: Float32Array): number {
-	let sum = 0;
-	for (let i = 0; i < a.length; i++) sum += (a[i] as number) * (b[i] as number);
-	return sum;
-}
-
-/** 判定方对一个词说了什么，校验之后的样子。 */
-type Verdict = { sameAs: string | null; parent: string | null };
 
 /**
- * 校验判定方的原话，整理成逐词的判断：只认这一组里的词，一个词只认第一条。
- * 原样命中的词保留组内写法，否则清理全半角会让简历里的原词失去身份。
+ * 两个已经归一化的向量的余弦。四路分开累加：一路累加每一步都等上一步的结果，
+ * 几万个词各扫一遍候选时要多花一倍多的时间。
+ */
+function similarity(a: Float32Array, b: Float32Array): number {
+	const even = a.length - (a.length % 4);
+	let s0 = 0;
+	let s1 = 0;
+	let s2 = 0;
+	let s3 = 0;
+	for (let i = 0; i < even; i += 4) {
+		s0 += (a[i] as number) * (b[i] as number);
+		s1 += (a[i + 1] as number) * (b[i + 1] as number);
+		s2 += (a[i + 2] as number) * (b[i + 2] as number);
+		s3 += (a[i + 3] as number) * (b[i + 3] as number);
+	}
+	for (let i = even; i < a.length; i++)
+		s0 += (a[i] as number) * (b[i] as number);
+	return s0 + s1 + s2 + s3;
+}
+
+/**
+ * 校验判定方对一个词的原话；不成一条判断的返回 null，这个词仍是没判过的，下一轮再判。
  *
- * `sameAs` 必须是这一组里的另一个词；`parent` 可以引用组内原词或由判定方起名，
- * 不超过 `MAX_TAG_LEN` 且不是自己。宽细关系由判定方按 GUIDE 判断，不按字面包含推断。
+ * 「同一件事」必须指向它的一个参考词；「属于」可以指向参考词或由判定方起名，
+ * 不超过 `MAX_TAG_LEN` 且不是自己。原样命中的参考词保留它的写法，否则清理全半角
+ * 会让简历里的原词失去身份。宽细关系由判定方按 GUIDE 判断，不按字面包含推断。
  *
  * **自带模型和外部 agent 走的是这同一处。** 外部交上来的东西比模型的更不可信，
- * 不给它第二个入口；接口那一侧只把原话原样存进组里，不在写入时校验。
+ * 不给它第二个入口；接口那一侧只把原话原样存下，不在写入时校验。
  */
-export function conform(raw: unknown, words: string[]): Map<string, Verdict> {
-	const out = new Map<string, Verdict>();
-	if (typeof raw !== "object" || raw === null) return out;
-	const judgments = (raw as { judgments?: unknown }).judgments;
-	const allowed = new Set(words);
-	const spellingOf = (value: unknown) =>
-		typeof value === "string" && allowed.has(value) ? value : tag(value);
-	for (const item of Array.isArray(judgments) ? judgments : []) {
-		const parsed = GROUP_SCHEMA.shape.judgments.element.safeParse(item);
-		if (!parsed.success) continue;
-		const judgment = parsed.data;
-		const word = spellingOf(judgment.word);
-		if (!allowed.has(word) || out.has(word)) continue;
-		const sameAs = spellingOf(judgment.sameAs);
-		const parent = spellingOf(judgment.parent);
-		const validParent =
-			parent !== "" && [...parent].length <= MAX_TAG_LEN && parent !== word;
-		out.set(word, {
-			parent: validParent ? parent : null,
-			sameAs: allowed.has(sameAs) && sameAs !== word ? sameAs : null,
-		});
-	}
-	return out;
+export function conform(
+	raw: unknown,
+	word: string,
+	near: string[],
+): Verdict | null {
+	const parsed = PLACEMENT_SCHEMA.safeParse(raw);
+	if (!parsed.success) return null;
+	const kind = tag(parsed.data.kind);
+	const target = near.includes(parsed.data.target)
+		? parsed.data.target
+		: tag(parsed.data.target);
+	if (kind === "自成一项") return { kind: "alone" };
+	if (kind === "不是能力") return { kind: "excluded" };
+	if (target === "" || target === word) return null;
+	if (kind === "同一件事")
+		return near.includes(target) ? { as: target, kind: "same" } : null;
+	if (kind === "属于")
+		return [...target].length <= MAX_TAG_LEN
+			? { kind: "under", parent: target }
+			: null;
+	return null;
 }
 
 /**
- * 记下一组的结论，返回决定变了的词。
+ * 让一个词的判定生效，返回决定变了的词。只有被判的这个词记下这一次的时间。
+ * 跟着它换了标准写法或归属的词保持原来的时间；判定方新起名的更宽的词、从一个
+ * 不是能力的词上放开的词没有时间，下一轮各自判一次。
  *
- * `sameAs` 连成的每一片是同一件事，片里人最多的词做标准写法；片里的其他词对到它。
- * 表里此前对到它们、归属于它们、又不在这一组里的词也一起跟过去，表里于是不会出现
- * 「别名的别名」和「归属于别名」；这一次被判过的词各有自己的判断，不跟。片的归属由片里的判断按人数投出来；它若是这一组里另一片的词就取那一片的
- * 标准写法，若是表里的别名就取它的标准词；沿表往上走会走回自己的归属丢掉，表里于是
- * 不会成环。归属是表里没有的词时给它写一行——它从此是一个标准词。
+ * - 同一件事：它和它名下的写法并进那个词所在的一项，属于它的词改属于这一项。两边人多的
+ *   那个做标准写法；这一项的归属沿用被并进去的那一项的。
+ * - 属于：它自己是一个标准词（原来是别名的就此拆出来），归属取那个词的标准写法；
+ *   表里没有的词给它写一行，它从此是一个标准词。
+ * - 自成一项：它自己是一个标准词，没有归属。
+ * - 不是能力：它名下的写法和属于它的词各自放开，各自重判。
  *
- * 判过的每个词都记时间：判定方看过它，一周内不必再看。
+ * 指向「不是能力」的词的判定不成立：同一件事的整条不记，归属丢掉。归属沿表往上会走回
+ * 自己的也丢掉，表里于是不会成环，也不会出现别名的别名和归属于别名。
  */
-export function merge(
+export function place(
 	table: Table,
-	members: Member[],
-	verdicts: Map<string, Verdict>,
+	question: Question,
+	verdict: Verdict,
 	now: Date,
 ): [string, Decision][] {
-	const people = new Map(members.map((one) => [one.word, one.people]));
-	const classes = sameClasses(
-		[...verdicts].map(([word, verdict]) => [word, verdict.sameAs]),
-	);
-	const headOf = new Map<string, string>();
-	for (const cluster of classes) {
-		const head = cluster
-			.slice()
-			.sort(
-				(a, b) =>
-					(people.get(b) ?? 0) - (people.get(a) ?? 0) || a.localeCompare(b),
-			)[0] as string;
-		for (const word of cluster) headOf.set(word, head);
-	}
-
+	const word = question.word;
 	const changed = new Map<string, Decision>();
-	const decide = (word: string, canonical: string, parent: string | null) => {
-		const decision: Decision = { canonical, parent, reviewedAt: now };
-		table.set(word, decision);
-		changed.set(word, decision);
+	const released = new Set<string>();
+	const decide = (
+		one: string,
+		canonical: string,
+		parent: string | null,
+		excluded = false,
+	) => {
+		const decision: Decision = {
+			canonical,
+			excluded,
+			parent,
+			reviewedAt:
+				one === word
+					? now
+					: released.has(one)
+						? null
+						: (table.get(one)?.reviewedAt ?? null),
+		};
+		table.set(one, decision);
+		changed.set(one, decision);
 	};
-
-	// 拆开的旧别名先成为标准词，归属遍历才不会沿旧别名回到新父词。
-	for (const head of new Set(headOf.values())) {
-		const previous = table.get(head);
-		if (previous && previous.canonical !== head) decide(head, head, null);
-	}
-
-	for (const cluster of classes) {
-		const head = headOf.get(cluster[0] as string) as string;
-		const parent = electParent(table, cluster, head, headOf, verdicts, people);
-		if (parent !== null && !table.has(parent)) decide(parent, parent, null);
-		for (const word of cluster) {
-			if (word === head) continue;
-			// 遍历的是快照：`decide` 往同一张表里写，边遍历边写会把刚写的行再走一遍
-			for (const [other, decision] of [...table]) {
-				if (verdicts.has(other)) continue;
-				if (decision.canonical === word) decide(other, head, null);
-				else if (decision.parent === word) decide(other, other, head);
-			}
-			decide(word, head, null);
+	/** 把对到、归属于 `from` 的词改到 `to` 上；`to` 为 null 就各自放开。 */
+	const move = (from: string, to: string | null) => {
+		// 遍历的是快照：`decide` 往同一张表里写
+		for (const [other, decision] of [...table]) {
+			if (other === from || other === to) continue;
+			if (decision.canonical !== from && decision.parent !== from) continue;
+			if (to === null) released.add(other);
+			if (decision.canonical === from) decide(other, to ?? other, null);
+			else if (decision.parent === from) decide(other, other, to);
 		}
-		decide(head, head, parent);
-	}
-	return [...changed];
-}
-
-/** `sameAs` 连成的片：无向、传递，孤立的词自成一片。 */
-function sameClasses(links: [string, string | null][]): string[][] {
-	const parentOf = new Map<string, string>();
-	const find = (word: string): string => {
-		let at = word;
-		while (parentOf.get(at) !== undefined && parentOf.get(at) !== at)
-			at = parentOf.get(at) as string;
-		return at;
 	};
-	for (const [word, sameAs] of links) {
-		parentOf.set(word, find(word));
-		if (sameAs === null) continue;
-		if (!parentOf.has(sameAs)) parentOf.set(sameAs, sameAs);
-		const a = find(word);
-		const b = find(sameAs);
-		if (a !== b) parentOf.set(a, b);
-	}
-	const byRoot = new Map<string, string[]>();
-	for (const word of parentOf.keys()) {
-		const root = find(word);
-		byRoot.set(root, [...(byRoot.get(root) ?? []), word]);
-	}
-	return [...byRoot.values()];
-}
+	/** 一项的归属：是这一项自己、沿表往上会走回这一项的都不要。 */
+	const above = (head: string, parent: string | null) => {
+		for (let at = parent; at !== null; at = ancestor(table, at))
+			if (at === head) return null;
+		return parent;
+	};
+	/** 判定方写的那个更宽的词落到表里的哪个标准词上。 */
+	const standard = (named: string): string | null => {
+		const decision = table.get(named);
+		if (decision?.excluded) return null;
+		return decision?.canonical ?? named;
+	};
 
-/** 一片的归属：片里的判断按人数投票，再按表和这一组的其他片解析成一个标准词。 */
-function electParent(
-	table: Table,
-	cluster: string[],
-	head: string,
-	headOf: Map<string, string>,
-	verdicts: Map<string, Verdict>,
-	people: Map<string, number>,
-): string | null {
-	const votes = new Map<string, number>();
-	for (const word of cluster) {
-		const named = verdicts.get(word)?.parent;
-		if (!named) continue;
-		votes.set(named, (votes.get(named) ?? 0) + (people.get(word) ?? 0));
+	if (verdict.kind === "excluded") {
+		move(word, null);
+		decide(word, word, null, true);
+		return [...changed];
 	}
-	const elected = [...votes].sort(
-		(a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
-	)[0]?.[0];
-	if (elected === undefined) return null;
-	const resolved =
-		headOf.get(elected) ??
-		(table.get(elected)?.canonical !== undefined
-			? (table.get(elected) as Decision).canonical
-			: elected);
-	if (cluster.includes(resolved)) return null;
-	for (let at: string | null = resolved; at !== null; at = ancestor(table, at))
-		if (at === head || cluster.includes(at)) return null;
-	return resolved;
+
+	if (verdict.kind === "same") {
+		const joined = standard(verdict.as);
+		if (joined === null) return [];
+		const before = table.get(word);
+		if (joined === word || before?.canonical === joined) {
+			decide(word, before?.canonical ?? word, before?.parent ?? null);
+			return [...changed];
+		}
+		const rival = question.near.find((one) => one.word === joined)?.people;
+		const head = rival !== undefined && question.people > rival ? word : joined;
+		const other = head === word ? joined : word;
+		const inherited = table.get(joined)?.parent ?? null;
+		move(other, head);
+		decide(other, head, null);
+		decide(head, head, null);
+		decide(head, head, above(head, inherited === other ? null : inherited));
+		return [...changed];
+	}
+
+	const named = verdict.kind === "under" ? standard(verdict.parent) : null;
+	decide(word, word, null);
+	const parent = above(word, named);
+	if (parent !== null && !table.has(parent)) decide(parent, parent, null);
+	decide(word, word, parent);
+	return [...changed];
 }
