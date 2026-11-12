@@ -33,9 +33,7 @@ const STATEMENT_TIMEOUT = "20s";
 const WORK_MEM = "64MB";
 
 /** 条件的两种 FROM：经历的段 `e`（写了 `seek` 时还有命中 `h`），或人 `p`。 */
-export type WhereScope =
-	| { from: "experience"; seeks: boolean }
-	| { from: "person" };
+type WhereScope = { from: "experience"; seeks: boolean } | { from: "person" };
 
 type ParamValue = string | number;
 

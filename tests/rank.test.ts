@@ -135,13 +135,18 @@ describe("投入档", () => {
 });
 
 describe("同一段", () => {
-	test("同一段有几条说法命中时月份只算一次", () => {
-		const both = depthOf([
+	test("同一段有几条说法命中时月份和段数都只算一次", () => {
+		const both = run([
 			fact({ empId: "A", id: 7 }),
 			fact({ empId: "A", id: 7, route: "skill", engagement: "主导" }),
 		]);
 		const one = depthOf([fact({ empId: "A", id: 7 })]);
-		assert.equal(both, one);
+		assert.equal(both.ranked[0]?.depth, one);
+		assert.deepEqual(both.ranked[0]?.basis[0], {
+			months: 24,
+			endDate: null,
+			segments: 1,
+		});
 	});
 });
 
@@ -293,7 +298,7 @@ describe("排名依据", () => {
 			{
 				months: 145,
 				endDate: null,
-				external: false,
+				segments: 4,
 			},
 		]);
 
@@ -311,7 +316,7 @@ describe("排名依据", () => {
 			{
 				months: 24,
 				endDate: null,
-				external: false,
+				segments: 1,
 			},
 			null,
 		]);
@@ -326,26 +331,25 @@ describe("排名依据", () => {
 		assert.equal(ranked[0]?.basis[0]?.months, 90);
 	});
 
-	/**
-	 * 证据行那一格显示的是累计值，「前」这个前缀因此不能由某一段的 kind 决定。
-	 * 判定必须和累计发生在同一个循环里，否则一个跨了在职与入职前的累计
-	 * 会被贴上只描述其中一半的标签。
-	 */
-	test("累计横跨在职与入职前时，依据里不算「入职前」", () => {
+	test("累计横跨公司内与入职前时，月份和段数一起累计", () => {
 		const mixed = run([
 			fact({ empId: "A", kind: "external", months: 24 }),
 			fact({ empId: "A", kind: "internal", months: 12 }),
 		]);
-		assert.equal(mixed.ranked[0]?.basis[0]?.external, false);
+		assert.deepEqual(mixed.ranked[0]?.basis[0], {
+			months: 36,
+			endDate: null,
+			segments: 2,
+		});
 
 		const pure = run([
 			fact({ empId: "A", kind: "external", months: 24 }),
 			fact({ empId: "A", kind: "external", months: 12 }),
 		]);
-		assert.equal(pure.ranked[0]?.basis[0]?.external, true);
+		assert.deepEqual(pure.ranked[0]?.basis, mixed.ranked[0]?.basis);
 	});
 
-	test("「入职前」和累计看的是同一批段：原文捞到的段也算", () => {
+	test("原文捞到的段同样进入累计时长和段数", () => {
 		const { ranked } = run([
 			fact({ empId: "A", route: "title", kind: "external", months: 24 }),
 			fact({
@@ -355,7 +359,7 @@ describe("排名依据", () => {
 				months: 240,
 			}),
 		]);
-		assert.equal(ranked[0]?.basis[0]?.external, false);
+		assert.equal(ranked[0]?.basis[0]?.segments, 2);
 		assert.equal(ranked[0]?.basis[0]?.months, 264);
 	});
 });

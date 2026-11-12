@@ -27,7 +27,7 @@ const evidence = (over: Partial<Evidence> = {}) =>
 const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
 	months: 27,
 	endDate: null,
-	external: false,
+	segments: 1,
 	...over,
 });
 
@@ -48,13 +48,17 @@ describe("一行证据看得见的部分", () => {
 		assert.match(seen(evidence(), basis({ months: 60 })), /5\.0 年/);
 	});
 
-	test("「前」由累计的那些段一起决定", () => {
-		// 累计里只要有在职的段，这个数就不配叫「前」
+	test("一段时按经历来源写，多段时写累计", () => {
+		assert.match(seen(evidence(), basis()), /公司内 2\.3 年/);
 		assert.match(
-			seen(evidence(), basis({ external: false })),
-			/公司内 2\.3 年/,
+			seen(evidence({ kind: "external" }), basis()),
+			/入职前 2\.3 年/,
 		);
-		assert.match(seen(evidence(), basis({ external: true })), /入职前 2\.3 年/);
+		for (const kind of ["external", "internal"] as const)
+			assert.match(
+				seen(evidence({ kind }), basis({ segments: 2 })),
+				/累计 2\.3 年/,
+			);
 	});
 
 	test("还在做的把数字提到次要色，做完了的留在三级灰", () => {

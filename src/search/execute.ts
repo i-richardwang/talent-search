@@ -767,6 +767,7 @@ async function present(
 			return [
 				{
 					experienceId: segment.id,
+					kind: segment.kind,
 					claim: fact.claim,
 					route: fact.route,
 					phrase: fact.phrase,

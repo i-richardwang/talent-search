@@ -4,6 +4,7 @@ import type { Evidence } from "#/search/result";
 
 export const evidence = (over: Partial<Evidence> = {}): Evidence => ({
 	experienceId: 1,
+	kind: "internal",
 	claim: 0,
 	route: "role",
 	phrase: null,

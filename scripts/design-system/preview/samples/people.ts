@@ -427,6 +427,7 @@ export function evidenceOn(
 			: [x.seqInferredL1, x.seqInferredL2];
 	return {
 		experienceId: x.id,
+		kind: x.kind,
 		claim: 0,
 		phrase: null,
 		engagement: null,
@@ -472,12 +473,12 @@ export const RESULTS: RankedResult[] = [
 			{
 				months: 86,
 				endDate: null,
-				external: false,
+				segments: 2,
 			},
 			{
 				months: 48,
 				endDate: "2019-06-30",
-				external: true,
+				segments: 1,
 			},
 		],
 	},
@@ -493,7 +494,7 @@ export const RESULTS: RankedResult[] = [
 			{
 				months: 78,
 				endDate: null,
-				external: false,
+				segments: 1,
 			},
 			null,
 		],
@@ -517,12 +518,12 @@ export const RESULTS: RankedResult[] = [
 			{
 				months: 102,
 				endDate: null,
-				external: false,
+				segments: 2,
 			},
 			{
 				months: 45,
 				endDate: null,
-				external: false,
+				segments: 1,
 			},
 		],
 	},
@@ -545,12 +546,12 @@ export const RESULTS: RankedResult[] = [
 			{
 				months: 76,
 				endDate: "2024-04-30",
-				external: true,
+				segments: 1,
 			},
 			{
 				months: 76,
 				endDate: "2024-04-30",
-				external: true,
+				segments: 1,
 			},
 		],
 	},
@@ -568,7 +569,7 @@ export const RESULTS: RankedResult[] = [
 			{
 				months: 67,
 				endDate: "2023-01-31",
-				external: true,
+				segments: 1,
 			},
 			null,
 		],
@@ -581,7 +582,7 @@ export const RESULTS: RankedResult[] = [
 			{
 				months: 36,
 				endDate: "2022-06-30",
-				external: true,
+				segments: 1,
 			},
 			null,
 		],

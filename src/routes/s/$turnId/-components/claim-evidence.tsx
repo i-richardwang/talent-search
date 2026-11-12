@@ -1,8 +1,9 @@
 import { Popover } from "#/components/ui/popover";
 import { ProgressTag } from "#/components/ui/progress-tag";
-import { dots, years } from "#/lib/format";
+import { dots } from "#/lib/format";
 import { placeOf } from "#/search/result";
 import type { ClaimLine } from "../-lib/claim-lines";
+import { tenureOf } from "../-lib/evidence";
 import { EvidenceLine, MissedClaims } from "./evidence";
 
 /*
@@ -47,15 +48,15 @@ export function ClaimRow({ lines }: { lines: ClaimLine[] }) {
 }
 
 function RowEvidence({ found }: { found: NonNullable<ClaimLine["found"]> }) {
-	const { evidence: segment, segments, basis } = found;
+	const { evidence: segment, basis } = found;
+	const { segments } = basis;
 	// 公司内、还没结束的一段就是现在这份任职
-	const current = !segment.company && segment.endDate === null;
+	const current = segment.kind === "internal" && segment.endDate === null;
+	const tenure = tenureOf(segment, basis);
 	const span =
-		segments > 1
-			? `累计 ${years(basis.months)}`
-			: current
-				? years(basis.months)
-				: `${basis.external ? "入职前" : "公司内"} ${years(basis.months)}`;
+		current && segments === 1
+			? tenure.duration
+			: `${tenure.label} ${tenure.duration}`;
 	return (
 		<>
 			<span className="truncate">

@@ -17,7 +17,7 @@ const claim = compiledClaim("商家服务");
 const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
 	months: 38,
 	endDate: null,
-	external: false,
+	segments: 1,
 	...over,
 });
 
@@ -25,6 +25,7 @@ const seen = (found: ClaimLine["found"]) =>
 	visibleText(renderToStaticMarkup(<ClaimRow lines={[{ claim, found }]} />));
 
 const past: Partial<Evidence> = {
+	kind: "external",
 	company: "某公司",
 	department: "",
 	endDate: "2020-01-01",
@@ -34,8 +35,7 @@ describe("名单一行的第二行", () => {
 	test("一段入职前经历：公司、岗位和那一段的时长，不写条件名", () => {
 		const text = seen({
 			evidence: evidence(past),
-			segments: 1,
-			basis: basis({ external: true, endDate: "2020-01-01" }),
+			basis: basis({ endDate: "2020-01-01" }),
 		});
 		assert.equal(text, "某公司 · 算法工程师 · 入职前 3.2 年");
 		assert.ok(!text.includes(claim.label));
@@ -43,9 +43,9 @@ describe("名单一行的第二行", () => {
 
 	test("凭的是现在这份任职：不重抄部门和岗位", () => {
 		const one = { evidence: evidence(), basis: basis() };
-		assert.equal(seen({ ...one, segments: 1 }), "现任岗位 · 3.2 年");
+		assert.equal(seen(one), "现任岗位 · 3.2 年");
 		assert.equal(
-			seen({ ...one, segments: 3 }),
+			seen({ ...one, basis: basis({ segments: 3 }) }),
 			"现任岗位 等 3 段 · 累计 3.2 年",
 		);
 	});

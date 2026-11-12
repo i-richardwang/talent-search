@@ -61,7 +61,7 @@ export type Claim = QueryCondition & {
 };
 
 /** 只定去留或加分的条件：人的条件和背景。背景说的是待过哪、待了多久，不是做得多深。 */
-export type Gate = QueryCondition & { mode: "must" | "boost" };
+type Gate = QueryCondition & { mode: "must" | "boost" };
 
 /** 排除：这个人没有任何一段这样的经历。只定去留，不产出证据。 */
 export type Exclusion = QueryCondition & {

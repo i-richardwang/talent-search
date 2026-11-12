@@ -21,7 +21,7 @@ import type { Report } from "#/corpus/report";
 import { db } from "#/db";
 import { completionCache } from "#/db/schema";
 import { concurrently } from "#/lib/concurrent";
-import { endpointFetch, positiveInt, thinkingSwitch } from "./endpoint";
+import { endpointPolicy, positiveInt, thinkingSwitch } from "./endpoint";
 
 const BASE_URL = process.env.EXTRACT_BASE_URL?.trim();
 const API_KEY = process.env.EXTRACT_API_KEY;
@@ -93,7 +93,7 @@ function getModel(model: string, endpoint: ChatEndpoint) {
 		supportsStructuredOutputs: STRUCTURED,
 		...(apiKey && { apiKey }),
 		// 每一次请求各自超时、各自重试（见 `endpoint.ts`）
-		fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
+		fetch: endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES }).fetch,
 		...thinkingSwitch(ENABLE_THINKING),
 	})(model);
 }
@@ -176,7 +176,7 @@ async function store(identity: string, text: string, payload: unknown) {
 /**
  * 一段文字的回答；答不出合法 JSON 就说一句、放弃这一段。
  *
- * 瞬时故障由 `endpointFetch` 重试，整次调用（含重试与正文读取）受 `EXTRACT_TIMEOUT_MS`
+ * 瞬时故障由 `endpointPolicy` 重试，整次调用（含重试与正文读取）受 `EXTRACT_TIMEOUT_MS`
  * 限制；不发送输出 token 上限，让模型在时限内完成思考与回答。持续失败让这一轮解析中止。
  */
 async function ask(

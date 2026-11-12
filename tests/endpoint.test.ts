@@ -1,5 +1,5 @@
 /**
- * 四个端点适配层共用的那一层：每一次 HTTP 请求各自超时、各自重试。
+ * 三个端点适配层共用的那一层：每一次 HTTP 请求各自超时、各自重试。
  *
  * 这里穿过真正的 AI SDK 打一台进程内的端点，不 mock 它：要钉住的是重试的单位——
  * 多步对话里超时的那一步只重发它自己，前面的步不重来；以及用尽之后 SDK 交出来的错误
@@ -12,7 +12,7 @@ import { describe, test } from "node:test";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { embedMany, generateText, isStepCount, tool } from "ai";
 import { z } from "zod";
-import { endpointFault, endpointFetch } from "#/server/endpoint";
+import { endpointFault, endpointPolicy } from "#/server/endpoint";
 
 type Reply =
 	| { status: number; headers?: Record<string, string>; body?: unknown }
@@ -79,7 +79,7 @@ function providerAt(url: string, retries: number) {
 	return createOpenAICompatible({
 		name: "t",
 		baseURL: url,
-		fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries }),
+		fetch: endpointPolicy({ timeoutMs: TIMEOUT_MS, retries }).fetch,
 	});
 }
 
@@ -91,6 +91,28 @@ async function failure(run: () => Promise<unknown>) {
 }
 
 describe("每一次请求各自超时、各自重试", () => {
+	test("重试等待独立于单次尝试，完整时限容纳端点允许的最长退避", async () => {
+		const server = await endpoint((_body, hit) =>
+			hit === 1
+				? { status: 429, headers: { "retry-after-ms": "150" } }
+				: { status: 200, body: EMBEDDING },
+		);
+		const policy = endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: 1 });
+		try {
+			assert.equal(policy.limitMs, 60_200);
+			const started = Date.now();
+			const response = await policy.fetch(server.url, {
+				method: "POST",
+				body: "{}",
+			});
+			assert.deepEqual(await response.json(), EMBEDDING);
+			assert.equal(server.bodies.length, 2);
+			assert.ok(Date.now() - started >= 150);
+		} finally {
+			await server.stop();
+		}
+	});
+
 	test("重试成功后释放调用方的取消监听器", async () => {
 		const server = await endpoint((_body, hit) =>
 			hit === 1
@@ -99,10 +121,14 @@ describe("每一次请求各自超时、各自重试", () => {
 		);
 		const controller = new AbortController();
 		try {
-			const response = await endpointFetch({
+			const response = await endpointPolicy({
 				timeoutMs: TIMEOUT_MS,
 				retries: 1,
-			})(server.url, { method: "POST", body: "{}", signal: controller.signal });
+			}).fetch(server.url, {
+				method: "POST",
+				body: "{}",
+				signal: controller.signal,
+			});
 			await response.json();
 			assert.equal(server.bodies.length, 2);
 			assert.equal(getEventListeners(controller.signal, "abort").length, 0);

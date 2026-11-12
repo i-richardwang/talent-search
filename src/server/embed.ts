@@ -9,7 +9,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { embedMany, InvalidResponseDataError } from "ai";
 import { z } from "zod";
 import { EMBED_DIM } from "#/db/schema";
-import { endpointFetch, positiveInt } from "./endpoint";
+import { endpointPolicy, positiveInt } from "./endpoint";
 
 const BASE_URL = process.env.EMBED_BASE_URL?.trim();
 const API_KEY = process.env.EMBED_API_KEY;
@@ -57,7 +57,7 @@ function getModel() {
 		baseURL: config.baseURL,
 		...(API_KEY && { apiKey: API_KEY }),
 		// 每一批的请求各自超时、各自重试（见 `endpoint.ts`）
-		fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
+		fetch: endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES }).fetch,
 	}).embeddingModel(config.model);
 	return model;
 }
@@ -73,7 +73,7 @@ const EMBEDDING_RESPONSE = z.object({
 
 /**
  * 按响应索引对应请求文本，拒绝重复、越界或无效向量。SDK 负责分批并核对每批的向量数，
- * 每一批的超时与重试在 `endpointFetch`。SDK 按回答里的先后排列向量、不读索引，所以
+ * 每一批的超时与重试在 `endpointPolicy`。SDK 按回答里的先后排列向量、不读索引，所以
  * 对应关系在这里按原始响应体里的索引重排。
  */
 async function request(values: string[]): Promise<Map<string, number[]>> {

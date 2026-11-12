@@ -95,49 +95,38 @@ export function gapMonths(endDate: string | null, now: Date) {
  * 主张上的 `minMonths` 判的就是这个累计值：筛和排看的是同一个数，证据行上写的也是它。
  */
 function claimValue(claim: Claim, facts: Fact[] | undefined, now: Date) {
-	if (!facts || !enough(claim, facts)) return null;
+	if (!facts) return null;
+	const basis = basisOf(claim, facts);
+	if (!basis) return null;
 	const best = facts.reduce((a, b) => (closer(b, a) > 0 ? b : a));
-	const months = monthsOf(facts);
-	let gap = Number.POSITIVE_INFINITY;
-	let endDate: string | null | undefined;
-	// 只有全部段都来自入职前，这个累计值才配叫「前」（见 result.ts 的 external）
-	let external = true;
-	for (const f of facts) {
-		if (f.kind !== "external") external = false;
-		gap = Math.min(gap, gapMonths(f.endDate, now));
-		if (f.endDate === null) endDate = null;
-		else if (endDate !== null && (!endDate || f.endDate > endDate))
-			endDate = f.endDate;
-	}
 	return {
 		depth:
-			weighted(best) * saturate(months, TENURE_HALF) * decay(gap, RECENCY_HALF),
-		basis: {
-			months,
-			endDate: endDate ?? null,
-			external,
-		} satisfies ClaimBasis,
+			weighted(best) *
+			saturate(basis.months, TENURE_HALF) *
+			decay(gapMonths(basis.endDate, now), RECENCY_HALF),
+		basis,
 	};
 }
 
 /**
- * 累计证据段的月数；同一段 id 只计一次。
+ * 一条主张算数的依据：去重后的段数、累计月数与最近结束日；累计不够时没有依据。
+ * AND 判定、打分和展示选择共用它。
  */
-function monthsOf(facts: readonly Fact[]) {
+function basisOf(claim: Claim, facts: readonly Fact[]): ClaimBasis | null {
+	if (facts.length === 0) return null;
 	const seen = new Set<number>();
 	let months = 0;
-	for (const f of facts)
-		if (!seen.has(f.id)) {
-			seen.add(f.id);
-			months += f.months;
-		}
-	return months;
-}
-
-/** 这几段够不够这条主张：有证据段，而且累计时长够。 */
-function enough(claim: Claim, facts: readonly Fact[]) {
-	if (facts.length === 0) return false;
-	return !claim.minMonths || monthsOf(facts) >= claim.minMonths;
+	let endDate: string | null | undefined;
+	for (const f of facts) {
+		if (seen.has(f.id)) continue;
+		seen.add(f.id);
+		months += f.months;
+		if (f.endDate === null) endDate = null;
+		else if (endDate !== null && (!endDate || f.endDate > endDate))
+			endDate = f.endDate;
+	}
+	if (claim.minMonths && months < claim.minMonths) return null;
+	return { segments: seen.size, months, endDate: endDate ?? null };
 }
 
 /** 一个人在一次检索里的全部事实：主张下标 → 算数的段 */
@@ -179,7 +168,7 @@ function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 function complete(p: Person, claims: Claim[]) {
 	for (const [i, claim] of claims.entries()) {
 		if (claim.mode !== "must") continue;
-		if (!enough(claim, p.get(i) ?? [])) return false;
+		if (!basisOf(claim, p.get(i) ?? [])) return false;
 	}
 	return true;
 }
@@ -406,7 +395,7 @@ const PER_CLAIM = "\u0001";
  * 同一次查询刷新两次证据会换位置。这里刻意不用主张的深度：那是**人**的属性
  * （累计、近因都跨段），而这里要选的是单独一段，两者不是同一个量。
  *
- * 没满足的主张一段都不留（`enough`，和打分同一条判定）。
+ * 没满足的主张一段都不留（`basisOf`，和打分同一条判定）。
  */
 export function pageEvidence(
 	facts: Fact[],
@@ -426,7 +415,7 @@ export function pageEvidence(
 	const out = new Map<string, Fact[]>();
 	for (const { empId, facts: list } of byKey.values()) {
 		const claim = claims[list[0]?.claim ?? -1];
-		if (!claim || !enough(claim, list)) continue;
+		if (!claim || !basisOf(claim, list)) continue;
 		list.sort((a, b) => closer(b, a) || b.months - a.months || a.id - b.id);
 		const acc = out.get(empId) ?? [];
 		acc.push(...list);

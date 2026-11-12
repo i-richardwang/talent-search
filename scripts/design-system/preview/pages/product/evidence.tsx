@@ -15,10 +15,10 @@ import { ClaimEvidence } from "#/routes/s/$turnId/-components/claim-evidence";
 import {
 	Dot,
 	EvidenceLine,
-	evidenceText,
 	MissedClaims,
 } from "#/routes/s/$turnId/-components/evidence";
 import { claimLines } from "#/routes/s/$turnId/-lib/claim-lines";
+import { evidenceText } from "#/routes/s/$turnId/-lib/evidence";
 import { routeLabel } from "#/search/evidence";
 import type { ClaimBasis, Evidence } from "#/search/result";
 import { Control, Controls } from "../../kit/controls";
@@ -89,11 +89,14 @@ function sample(
 	return {
 		evidence: evidenceOn(experience(102), {
 			...base,
+			kind: external ? "external" : "internal",
+			company: external ? base.company || "某甲科技" : "",
+			department: external ? "" : base.department || "某研发部",
 			route,
 			startDate: "2019-07-01",
 			endDate,
 		}),
-		basis: { months, endDate, external },
+		basis: { months, endDate, segments: 1 },
 	};
 }
 

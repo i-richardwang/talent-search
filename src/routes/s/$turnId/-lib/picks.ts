@@ -5,8 +5,8 @@ import type {
 	ResultEmployee,
 	SearchOutcome,
 } from "#/search/result";
-import { evidenceText } from "../-components/evidence";
 import { type ClaimLine, claimLines } from "./claim-lines";
+import { evidenceText } from "./evidence";
 
 /**
  * 选中待导出的一个人：名单上那一行的快照。改筛选后被筛掉的人仍算选中，导出的就是选中的这些
