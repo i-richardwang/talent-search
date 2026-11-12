@@ -1,5 +1,5 @@
 /**
- * 外部判定方的接口：`GET /api/review` 取走待判的组，`POST /api/review` 提交判定。
+ * 外部判定方的接口：`GET /api/review` 取走待判的词，`POST /api/review` 提交判定。
  *
  * 不走给页面使用的 `createServerFn`：外部判定方要的是普通的 JSON 和状态码。
  * 鉴权与请求格式校验都在 `src/server/review.ts`，这里只把结果译成状态码。
@@ -41,12 +41,12 @@ export const Route = createFileRoute("/api/review")({
 					return Response.json({ error: result.why }, { status: 400 });
 				if (result.submission === "missing")
 					return Response.json(
-						{ error: "这一组不在队列里，或者已经过期" },
+						{ error: "这个词不在队列里，或者判定标准已经更新" },
 						{ status: 404 },
 					);
 				if (result.submission === "taken")
 					return Response.json(
-						{ error: "这一组已经有人判过了" },
+						{ error: "这个词已经有人判过了" },
 						{ status: 409 },
 					);
 				// 接收以判定持久化为准；立即整理未排上时，由定时整理继续处理。

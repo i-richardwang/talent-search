@@ -1,6 +1,6 @@
 /**
  * 外部判定接口负责鉴权和 HTTP 格式转换，队列规则归 corpus/judgment.ts。
- * 接口只保存组上的判定原话，词表由整理任务在拿到锁之后校验并写入。
+ * 接口只保存队列那一行上的判定原话，词表由整理任务在拿到锁之后校验并写入。
  * 对外提供短说法、人数和判定标准；部署限流由网关承担。
  */
 
@@ -8,21 +8,20 @@ import "@tanstack/react-start/server-only";
 import {
 	agentJudge,
 	type Judge,
-	type Member,
-	openGroups,
-	REVIEW_INTERVAL_DAYS,
+	openWords,
+	type Question,
 	type Submission,
 	submitJudgment,
 } from "#/corpus/judgment";
-import { GUIDE, groupIdentity } from "#/corpus/vocabulary";
+import { GUIDE, guideIdentity } from "#/corpus/vocabulary";
 import { pool } from "#/db";
 import { reviewConfigured as chatReviewConfigured } from "./chat";
 
-/** 一次最多取几组。要得更多就多取一次——一份响应大到要翻页就没人读得完。 */
+/** 一次最多取几个词。要得更多就多取一次——一份响应大到要翻页就没人读得完。 */
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
 
-/** 一份判定最大多少字节。判定方只回答一组几十个词，超出这个数的不是判定。 */
+/** 一份判定最大多少字节。判定方只回答一个词，超出这个数的不是判定。 */
 const MAX_BODY = 64 * 1024;
 
 function token(): string {
@@ -61,38 +60,31 @@ export function authorized(request: Request): boolean {
 	return configured() && header === expected;
 }
 
-/**
- * 一组在响应里的样子：一组词各带人数。组里没有谁是「标准词」——标准写法由生效时
- * 按人数定，归属由判定方起名。`expiresAt` 说这一组还能判到什么时候，判定方据此安排
- * 自己的工作。
- */
-type GroupView = {
+/** 一个待判的词在响应里的样子：它和人数，加上词表里最接近的几个参考词。 */
+type PendingView = Question & {
 	id: number;
 	guideIdentity: string;
-	words: Member[];
 	collectedAt: string;
-	expiresAt: string;
 };
 
 /**
- * 未判定且未过期的组按收集顺序返回，可被多个读者取走，接受首份提交。
+ * 未判定的词按收集顺序返回，可被多个读者取走，接受首份提交。
  * `guide` 是判定标准，和自带模型读的是同一份。
  */
 export async function pending(limit: number): Promise<{
-	groups: GroupView[];
+	words: PendingView[];
 	guide: { identity: string; text: string };
 }> {
-	const identity = groupIdentity();
-	const rows = await openGroups(pool, identity, limit);
+	const identity = guideIdentity();
+	const rows = await openWords(pool, identity, limit);
 	return {
-		groups: rows.map((one) => ({
+		words: rows.map((one) => ({
 			collectedAt: one.collectedAt.toISOString(),
-			expiresAt: new Date(
-				one.collectedAt.getTime() + REVIEW_INTERVAL_DAYS * 86_400_000,
-			).toISOString(),
-			id: one.id,
 			guideIdentity: one.guideIdentity,
-			words: one.words,
+			id: one.id,
+			near: one.near,
+			people: one.people,
+			word: one.word,
 		})),
 		guide: { identity, text: GUIDE },
 	};
@@ -134,8 +126,8 @@ async function readBody(request: Request): Promise<string | null> {
 }
 
 /**
- * 校验请求大小、组身份、判定方和判定数组形状，原话原样保存。
- * 内容按组的当前标准在整理任务生效时校验。
+ * 校验请求大小、标准身份、判定方和判定是不是一个对象，原话原样保存。
+ * 内容按当前标准在整理任务生效时校验。
  */
 export async function submit(request: Request): Promise<Submitted> {
 	const raw = await readBody(request);
@@ -148,15 +140,14 @@ export async function submit(request: Request): Promise<Submitted> {
 	}
 	if (typeof body !== "object" || body === null)
 		return { ok: false, why: "这份判定不是 JSON" };
-	const { guideIdentity, id, judge, judgments } = body as Record<
-		string,
-		unknown
-	>;
+	const {
+		guideIdentity: identity,
+		id,
+		judge,
+		judgment,
+	} = body as Record<string, unknown>;
 	if (!Number.isInteger(id)) return { ok: false, why: "缺 id" };
-	if (
-		typeof guideIdentity !== "string" ||
-		!/^[a-f0-9]{64}$/.test(guideIdentity)
-	)
+	if (typeof identity !== "string" || !/^[a-f0-9]{64}$/.test(identity))
 		return { ok: false, why: "缺 guideIdentity" };
 	const name = agentJudge(judge);
 	if (!name)
@@ -164,18 +155,21 @@ export async function submit(request: Request): Promise<Submitted> {
 			ok: false,
 			why: "judge 要是 1 到 40 个字母、数字、-、_ 或 .",
 		};
-	if (!Array.isArray(judgments))
-		return { ok: false, why: "judgments 不是数组" };
-	if (guideIdentity !== groupIdentity())
-		return { ok: true, submission: "missing" };
+	if (
+		typeof judgment !== "object" ||
+		judgment === null ||
+		Array.isArray(judgment)
+	)
+		return { ok: false, why: "judgment 不是对象" };
+	if (identity !== guideIdentity()) return { ok: true, submission: "missing" };
 	return {
 		ok: true,
 		submission: await submitJudgment(
 			pool,
 			id as number,
-			guideIdentity,
+			identity,
 			name,
-			judgments,
+			judgment,
 		),
 	};
 }

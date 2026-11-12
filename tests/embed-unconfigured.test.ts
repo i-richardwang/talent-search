@@ -1,4 +1,4 @@
-/** 嵌入端点没配：解析照常，整理不收集新的组，已经判过的照常生效。 */
+/** 嵌入端点没配：解析照常，整理不收集要判的词，已经判过的照常生效。 */
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { answerChat, seed, setup } from "./fixture";
@@ -10,7 +10,7 @@ delete process.env.EMBED_BASE_URL;
 
 const { derive } = await import("#/corpus/derive");
 const { review } = await import("#/corpus/review");
-const { groupIdentity } = await import("#/corpus/vocabulary");
+const { guideIdentity } = await import("#/corpus/vocabulary");
 const { pool } = await import("#/db");
 
 test("解析不需要嵌入端点", async () => {
@@ -40,7 +40,7 @@ test("解析不需要嵌入端点", async () => {
 	}
 });
 
-test("整理说出没法收集，队列里判过的组照常生效", async () => {
+test("整理说出没法收集，队列里判过的词照常生效", async () => {
 	await seed(
 		["U1", "U2", "U3"].map((empId) => ({
 			empId,
@@ -55,13 +55,13 @@ test("整理说出没法收集，队列里判过的组照常生效", async () =>
 		})),
 	);
 	await pool.query(
-		`insert into review_group (guide_identity, words, judge, judgment) values (
-			$1, '[{"word":"合成能力","people":3},{"word":"合成能力工作","people":3}]'::jsonb, 'agent:test',
-			'{"judgments":[{"word":"合成能力","why":"标准写法","sameAs":"","parent":""},{"word":"合成能力工作","why":"同义","sameAs":"合成能力","parent":""}]}'::jsonb)`,
-		[groupIdentity()],
+		`insert into review_word (guide_identity, word, people, near, judge, judgment) values (
+			$1, '合成能力工作', 3, '[{"word":"合成能力","people":3}]'::jsonb, 'agent:test',
+			'{"why":"同义","kind":"同一件事","target":"合成能力"}'::jsonb)`,
+		[guideIdentity()],
 	);
 	const said: string[] = [];
-	await review(pool, (line) => said.push(line), "external");
+	await review(pool, (line) => said.push(line), "external", null);
 	assert.match(said.join("\n"), /未配置嵌入端点/);
 	const { rows } = await pool.query<{ word: string; canonical: string }>(
 		"select word, canonical from term order by word",
@@ -70,6 +70,6 @@ test("整理说出没法收集，队列里判过的组照常生效", async () =>
 		{ word: "合成能力", canonical: "合成能力" },
 		{ word: "合成能力工作", canonical: "合成能力" },
 	]);
-	const queued = await pool.query("select 1 from review_group");
+	const queued = await pool.query("select 1 from review_word");
 	assert.equal(queued.rowCount, 0);
 });

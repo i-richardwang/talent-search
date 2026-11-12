@@ -1,17 +1,15 @@
 /**
- * 整理的判定队列：收集、取走、提交判定、过期，以及生效时取回判定结果。判定的标准、
+ * 整理的判定队列：收集、取走、提交判定，以及生效时取回判定结果。判定的标准、
  * 校验与写表在 `vocabulary.ts`；整轮的顺序在 `review.ts`。
  *
- * 队列只认一件事：一份标准下的一组词、谁判的、判成什么。它不读判定结果的内容——
- * 什么算一条有效的判断是生效时的事；标准变化时旧组整体作废并重新收集。
+ * 队列里一行是一个要判的词和它的参考词，等到有人判、判定生效为止。队列只认一件事：
+ * 一份标准下的这个词、谁判的、判成什么。它不读判定结果的内容——什么算一条有效的判断
+ * 是生效时的事；标准变化时队列里的行整体作废，那些词仍是没判过的，下一轮按新标准重新收集。
  */
 
 import "@tanstack/react-start/server-only";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
-
-/** 一个词判过之后多久才再做中心词；也是一组在队列里没人判的话多久过期。 */
-export const REVIEW_INTERVAL_DAYS = 7;
 
 export type Judge = "model" | "external" | "off";
 
@@ -32,128 +30,139 @@ export function agentJudge(name: unknown): string | null {
 	return /^[A-Za-z0-9._-]{1,40}$/.test(trimmed) ? `agent:${trimmed}` : null;
 }
 
-/** 组里的一个词，和收集那一刻它下面的人数。 */
+/** 一个词，和收集那一刻它下面的人数。 */
 export type Member = { word: string; people: number };
 
-/** 一组发给判定方时长的样子。人数就在组上，不另查一遍语料。 */
-export function promptOf(words: Member[]): string {
-	return words.map((one) => `${one.word}（${one.people} 人）`).join("\n");
+/** 一个要判的词，和词表里与它写法最接近的几个参考词。 */
+export type Question = Member & { near: Member[] };
+
+/** 一个要判的词发给判定方时长的样子。人数就在行上，不另查一遍语料。 */
+export function promptOf(question: Question): string {
+	const line = (one: Member) => `${one.word}（${one.people} 人）`;
+	return `要判的词：${line(question)}\n参考词：\n${question.near.map(line).join("\n")}`;
 }
 
-/** 队列里的一组待判的词。 */
-type Group = {
+/** 队列里的一个待判的词。 */
+type Pending = Question & {
 	id: number;
 	guideIdentity: string;
-	words: Member[];
 	collectedAt: Date;
 };
 
-type Judged = Group & { judge: string; judgment: unknown };
-
-/** 一组还没过期的 SQL 条件，判断的是 `collected_at`。读队列的地方共用它。 */
-const FRESH = `collected_at > now() - interval '${REVIEW_INTERVAL_DAYS} days'`;
+type Judged = Pending & { judge: string; judgment: unknown };
 
 type Row = {
 	id: number;
 	guide_identity: string;
-	words: Member[];
+	word: string;
+	people: number;
+	near: Member[];
 	collected_at: Date;
 	judge: string | null;
 	judgment: unknown;
 };
 
-function group(row: Row): Group {
+const COLUMNS =
+	"id, guide_identity, word, people, near, collected_at, judge, judgment";
+
+function pending(row: Row): Pending {
 	return {
 		collectedAt: row.collected_at,
 		guideIdentity: row.guide_identity,
 		id: row.id,
-		words: row.words,
+		near: row.near,
+		people: row.people,
+		word: row.word,
 	};
 }
 
 /**
- * 队列里还等着人判的组，最早收集的在前。
+ * 队列里还等着人判的词，最早收集的在前。
  *
  * 两个读者：外部判定方取走（`src/server/review.ts`），以及自带模型判——模型判的
- * 是**所有**没判的组，不只是这一轮刚收的那些，于是上一次端点抖动漏掉的组下一轮
- * 会补上，从 `external` 切回 `model` 时队列里剩下的组也能接着判。
+ * 是**所有**没判的词，不只是这一轮刚收的那些，于是上一次端点抖动漏掉的下一轮
+ * 会补上，从 `external` 切回 `model` 时队列里剩下的也能接着判。
  */
-export async function openGroups(
+export async function openWords(
 	client: CorpusClient,
 	guideIdentity: string,
 	limit?: number,
-): Promise<Group[]> {
+): Promise<Pending[]> {
 	const { rows } = await client.query<Row>(
-		`select id, guide_identity, words, collected_at, judge, judgment
-		 from review_group
-		 where guide_identity = $1 and judge is null and ${FRESH}
+		`select ${COLUMNS}
+		 from review_word
+		 where guide_identity = $1 and judge is null
 		 order by collected_at, id
 		 ${limit === undefined ? "" : "limit $2"}`,
 		limit === undefined ? [guideIdentity] : [guideIdentity, limit],
 	);
-	return rows.map(group);
+	return rows.map(pending);
 }
 
-/** 队列里（没判的和判了还没生效的）组上出现的所有词：这一轮收集要绕开它们。 */
+/** 队列里（没判的和判了还没生效的）所有的词：这一轮收集要绕开它们。 */
 export async function busyWords(
 	client: CorpusClient,
 	guideIdentity: string,
 ): Promise<Set<string>> {
-	const { rows } = await client.query<{ words: Member[] }>(
-		`select words from review_group where guide_identity = $1 and ${FRESH}`,
+	const { rows } = await client.query<{ word: string }>(
+		"select word from review_word where guide_identity = $1",
 		[guideIdentity],
 	);
-	return new Set(rows.flatMap((row) => row.words.map((one) => one.word)));
+	return new Set(rows.map((row) => row.word));
 }
 
-/** 收集方用 busyWords 绕开队列里已有的词，一个词同时只属于一组。 */
+/** 收集方用 busyWords 绕开队列里已有的词，一个词在队列里只有一行。 */
 export async function collect(
 	client: CorpusClient,
 	guideIdentity: string,
-	groups: Member[][],
+	questions: Question[],
 ): Promise<void> {
-	if (groups.length === 0) return;
+	if (questions.length === 0) return;
 	await client.query(
-		`insert into review_group (guide_identity, words)
-		 select $1, * from unnest($2::jsonb[])`,
-		[guideIdentity, groups.map((one) => JSON.stringify(one))],
+		`insert into review_word (guide_identity, word, people, near)
+		 select $1, * from unnest($2::text[], $3::int[], $4::jsonb[])`,
+		[
+			guideIdentity,
+			questions.map((one) => one.word),
+			questions.map((one) => one.people),
+			questions.map((one) => JSON.stringify(one.near)),
+		],
 	);
 }
 
 /**
- * 一次提交的结果。组不在了和已经有人判过分开说：提交的一方要据此决定重不重试。
+ * 一次提交的结果。这一行不在了和已经有人判过分开说：提交的一方要据此决定重不重试。
  */
 export type Submission = "accepted" | "missing" | "taken";
 
 /**
- * 把一份判定记在组上。**只写组这一行**，不碰词表也不碰边——词表只在生效时改，
+ * 把一份判定记在词上。**只写队列的这一行**，不碰词表也不碰边——词表只在生效时改，
  * 而生效拿着语料的写者锁。所以外部提交不必等解析让出锁。
  *
- * 一组只记下第一份判定，后续提交返回 taken。
+ * 一个词只记下第一份判定，后续提交返回 taken。
  */
 export async function submitJudgment(
 	client: CorpusClient,
 	id: number,
 	guideIdentity: string,
 	judge: string,
-	judgments: unknown,
+	judgment: unknown,
 ): Promise<Submission> {
 	const { rowCount } = await client.query(
-		`update review_group set judge = $3, judgment = $4
-		 where id = $1 and guide_identity = $2 and judge is null and ${FRESH}`,
-		[id, guideIdentity, judge, JSON.stringify({ judgments })],
+		`update review_word set judge = $3, judgment = $4
+		 where id = $1 and guide_identity = $2 and judge is null`,
+		[id, guideIdentity, judge, JSON.stringify(judgment)],
 	);
 	if (rowCount) return "accepted";
 	const { rows } = await client.query<{ judge: string | null }>(
-		`select judge from review_group
-		 where id = $1 and guide_identity = $2 and ${FRESH}`,
+		"select judge from review_word where id = $1 and guide_identity = $2",
 		[id, guideIdentity],
 	);
 	return rows[0]?.judge ? "taken" : "missing";
 }
 
 /**
- * 自带模型的判定成批记在组上。答不出合法 JSON 的那几组（回答是 undefined）留在
+ * 自带模型的判定成批记在词上。答不出合法 JSON 的那几个（回答是 undefined）留在
  * 队列里，下一轮再问。
  */
 export async function recordJudgments(
@@ -165,7 +174,7 @@ export async function recordJudgments(
 	const done = replies.filter(([, payload]) => payload !== undefined);
 	if (done.length === 0) return;
 	await client.query(
-		`update review_group r set judge = a.judge, judgment = a.judgment
+		`update review_word r set judge = a.judge, judgment = a.judgment
 		 from unnest($1::int[], $2::text[], $3::jsonb[]) as a(id, judge, judgment)
 		 where r.id = a.id and r.guide_identity = $4 and r.judge is null`,
 		[
@@ -177,55 +186,47 @@ export async function recordJudgments(
 	);
 }
 
-/**
- * 不是这一份标准的组作废；到期没人判的组过期：一周没人来判，说明这一轮没有判定方，
- * 下一轮重新收集。
- */
-export async function expire(
+/** 不是这一份标准的行作废：按旧标准问的、按旧标准答的都不算数。 */
+export async function discardStale(
 	client: CorpusClient,
 	report: Report,
 	guideIdentity: string,
 ): Promise<void> {
-	const { rowCount: stale } = await client.query(
-		"delete from review_group where guide_identity <> $1",
+	const { rowCount } = await client.query(
+		"delete from review_word where guide_identity <> $1",
 		[guideIdentity],
 	);
-	if (stale) report(`  ${stale} 组判定标准已更新，已作废并按新标准重收`);
-
-	const { rowCount } = await client.query(
-		`delete from review_group where judge is null and not (${FRESH})`,
-	);
 	if (rowCount)
-		report(`  ${rowCount} 组过了 ${REVIEW_INTERVAL_DAYS} 天没人判，已过期`);
+		report(`  ${rowCount} 个词的判定标准已更新，已作废并按新标准重收`);
 }
 
-/** 判过的、等着生效的组，按收集顺序。 */
+/** 判过的、等着生效的词，按收集顺序。 */
 export async function judged(
 	client: CorpusClient,
 	guideIdentity: string,
 ): Promise<Judged[]> {
 	const { rows } = await client.query<Row>(
-		`select id, guide_identity, words, collected_at, judge, judgment
-		 from review_group
+		`select ${COLUMNS}
+		 from review_word
 		 where guide_identity = $1 and judge is not null
 		 order by id`,
 		[guideIdentity],
 	);
 	// `judge is not null` 是这条查询的谓词，所以这一列在这里一定有值
 	return rows.map((row) => ({
-		...group(row),
+		...pending(row),
 		judge: row.judge as string,
 		judgment: row.judgment,
 	}));
 }
 
-/** 生效完的组从队列里删掉。和写表在同一笔事务里，否则下一轮会把同一份判定再算一遍。 */
+/** 生效完的词从队列里删掉。和写表在同一笔事务里，否则下一轮会把同一份判定再算一遍。 */
 export async function remove(
 	client: CorpusClient,
 	ids: number[],
 ): Promise<void> {
 	if (ids.length === 0) return;
-	await client.query("delete from review_group where id = any($1::int[])", [
+	await client.query("delete from review_word where id = any($1::int[])", [
 		ids,
 	]);
 }
@@ -235,5 +236,5 @@ export function byJudge(rows: Judged[]): string {
 	const counts = new Map<string, number>();
 	for (const row of rows)
 		counts.set(row.judge, (counts.get(row.judge) ?? 0) + 1);
-	return [...counts].map(([judge, count]) => `${judge} ${count} 组`).join("、");
+	return [...counts].map(([judge, count]) => `${judge} ${count} 个`).join("、");
 }

@@ -423,6 +423,7 @@ export const catalogExperience = catalog
 				from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
 				left join term t on t.word = ph.text
 				where ep.experience_id = e.id and ep.route = 'skill'
+					and t.excluded is not true
 				union
 				select t.parent from up join term t on t.word = up.word
 				where t.parent is not null
@@ -539,24 +540,38 @@ export const term = pgTable(
 		word: text("word").primaryKey(),
 		canonical: text("canonical").notNull(),
 		parent: text("parent").references((): AnyPgColumn => term.word),
-		reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull(),
+		/** 判定方认定它不是一项能力：不进筛选栏、候选词和参考词，人身上的说法不动。 */
+		excluded: boolean("excluded").notNull().default(false),
+		/**
+		 * 上次判它的时间；null 是还没判过或被退回重判。收集只看此刻有人写的词：
+		 * 没人写的词留着空值，等有人写它时再判。
+		 */
+		reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
 	},
 	(t) => [
 		check(
 			"term_parent_on_canonical",
 			sql`${t.parent} is null or (${t.canonical} = ${t.word} and ${t.parent} <> ${t.word})`,
 		),
+		check(
+			"term_excluded_alone",
+			sql`not ${t.excluded} or (${t.canonical} = ${t.word} and ${t.parent} is null)`,
+		),
 	],
 );
 
-/** 待判队列：一组写法相近的词等着判归并与归属，判定生效时写进 `term`；生效或过期后删除。 */
-export const reviewGroup = pgTable(
-	"review_group",
+/** 待判队列：一个词连同它的参考词等着判它在词表里的位置，判定生效时写进 `term` 并删除这一行。 */
+export const reviewWord = pgTable(
+	"review_word",
 	{
 		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-		/** 收集与判定这组词所依据的 GUIDE 与回答形状摘要。 */
+		/** 收集与判定这个词所依据的 GUIDE 与回答形状摘要。 */
 		guideIdentity: text("guide_identity").notNull(),
-		words: jsonb("words").$type<{ word: string; people: number }[]>().notNull(),
+		word: text("word").notNull().unique(),
+		/** 收集那一刻的人数：标准词连同它的其他写法和它下面的词一起数，别名只数写了这个写法的人。 */
+		people: integer("people").notNull(),
+		/** 词表里和它写法最接近的几个词，各带人数。 */
+		near: jsonb("near").$type<{ word: string; people: number }[]>().notNull(),
 		collectedAt: timestamp("collected_at", { withTimezone: true })
 			.notNull()
 			.defaultNow(),
@@ -566,7 +581,7 @@ export const reviewGroup = pgTable(
 	},
 	(t) => [
 		check(
-			"review_group_judged_1",
+			"review_word_judged",
 			sql`(${t.judge} is null) = (${t.judgment} is null)`,
 		),
 	],

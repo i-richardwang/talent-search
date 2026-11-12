@@ -3,6 +3,7 @@ import { Empty } from "#/components/ui/empty";
 import { termDetail } from "#/server/functions";
 import { DetailDrawer } from "../-components/detail-drawer";
 import { TermRecord } from "./-components/term-drawer";
+import { rejudge } from "./-lib/rejudge";
 
 /**
  * 一个能力词：往上属于谁，往下带着哪几支、各有多少人。
@@ -26,14 +27,21 @@ function useClose() {
 }
 
 function Term() {
-	return <TermRecord close={useClose()} term={Route.useLoaderData()} />;
+	const { user } = Route.useRouteContext();
+	return (
+		<TermRecord
+			close={useClose()}
+			rejudge={user?.admin ? rejudge : undefined}
+			term={Route.useLoaderData()}
+		/>
+	);
 }
 
 function TermNotFound() {
 	return (
 		<DetailDrawer close={useClose()} title="没有这个词">
 			<Empty
-				description="它可能是上一轮整理并进了别的词，也可能还没被整理到。"
+				description="它可能还没被整理到，也可能已经没有人写它了。"
 				title="词表里没有这个词"
 			/>
 		</DetailDrawer>

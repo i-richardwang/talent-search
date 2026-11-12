@@ -11,11 +11,12 @@ import { Routed } from "../../routed";
 import {
 	CORPUS_COUNTS,
 	EMPLOYEE_ROWS,
+	EXCLUDED_ROWS,
 	SEGMENTS,
-	SKILL_DETAIL,
 	SKILL_ROWS,
 	STREAM_ROWS,
 	TASK_LANES,
+	TERM_DETAILS,
 } from "../../samples/admin";
 import { EMPLOYEES } from "../../samples/people";
 import { LayoutSwitch, Shell } from "./home";
@@ -26,7 +27,8 @@ import { LayoutSwitch, Shell } from "./home";
  * router 的地址决定，导航栏「管理」一组的三项和页底的切换都能换。服务端函数
  * 在设计系统里是调用即失败的桩：找词和翻页按地址上的 `q`、`page` 在样例上算，
  * 一页的行数是产品的 `pageAt` 给的；「立即运行」和「日志」落在各自取不到的那一支。
- * 点开 Talent 0101 或「推荐系统」那一行，右侧出产品的详情抽屉（样例只备了这两份）。
+ * 点开 Talent 0101、「推荐系统」或「不是能力」那张表里的「周报」，右侧出产品的详情抽屉
+ *（样例只备了这三份）。
  */
 
 type Page = "tasks" | "data" | "terms";
@@ -43,13 +45,22 @@ function usePage(): Page {
 	});
 }
 
-/** 地址上的词和页码，以及路径最后一段（开着详情的那个工号或词）。 */
+/** 地址上的词、页码和看的是不是「不是能力」那张表，以及路径最后一段（开着详情的那个工号或词）。 */
 function useListView() {
 	const { search, pathname } = useRouterState({
 		select: (state) => state.location,
 	});
-	const { q = "", page } = search as { q?: string; page?: number };
-	return { opened: /^\/[^/]+\/([^/]+)$/.exec(pathname)?.[1], page, q };
+	const {
+		q = "",
+		page,
+		excluded = false,
+	} = search as { q?: string; page?: number; excluded?: boolean };
+	return {
+		excluded,
+		opened: /^\/[^/]+\/([^/]+)$/.exec(pathname)?.[1],
+		page,
+		q,
+	};
 }
 
 /** 服务端那一套算术用在样例上：按地址上的页码取一页。 */
@@ -104,21 +115,35 @@ function Data() {
 
 /** 「标签」页：词、其他写法或所属的词里有这个词就算匹配。 */
 function Terms() {
-	const { opened, page, q } = useListView();
-	const found = SKILL_ROWS.filter((row) =>
+	const { excluded, opened, page, q } = useListView();
+	const found = (excluded ? EXCLUDED_ROWS : SKILL_ROWS).filter((row) =>
 		[row.canonical, ...row.aliases, row.parent ?? ""].some((word) =>
 			word.includes(q),
 		),
 	);
 	const navigate = useNavigate();
 	const word = opened && decodeURIComponent(opened);
+	const detail = TERM_DETAILS.find((term) => term.canonical === word);
 	return (
 		<AdminPage title="标签">
-			<TermTable q={q} selected={word} table={pageOfRows(found, page)} />
-			{word === SKILL_DETAIL.canonical && (
+			<TermTable
+				excluded={excluded}
+				q={q}
+				rejudge={() => {}}
+				selected={word}
+				table={pageOfRows(found, page)}
+			/>
+			{detail && (
 				<TermRecord
-					close={() => void navigate({ search: { page, q }, to: "/terms" })}
-					term={SKILL_DETAIL}
+					close={() =>
+						void navigate({
+							search: { excluded: excluded || undefined, page, q },
+							to: "/terms",
+						})
+					}
+					key={detail.canonical}
+					rejudge={() => {}}
+					term={detail}
 				/>
 			)}
 		</AdminPage>

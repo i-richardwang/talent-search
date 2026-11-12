@@ -30,7 +30,7 @@ import { db } from "#/db";
 import { SHORT_ROUTES, taskRun } from "#/db/schema";
 import { withReadSnapshot } from "#/db/snapshot";
 import { pageAt, RUNS_PAGE, type TablePage, tablePage } from "#/lib/paging";
-import { TASK_KINDS, type TaskKind } from "#/lib/task";
+import { type Rejudge, TASK_KINDS, type TaskKind } from "#/lib/task";
 import { configured, reviewJudge } from "./review";
 
 /** 攒多久写一次日志。够短，页面上看着是在动的；够长，上千行不变成上千次往返。 */
@@ -49,23 +49,23 @@ const DERIVE_BUDGET_MS = 10 * 60_000;
 type TaskWork = (
 	session: CorpusSession,
 	report: Report,
-	source: SourceConfig | null,
+	input: { source: SourceConfig | null; rejudge: Rejudge | null },
 ) => Promise<void>;
 
 /** 各自的道理在 `src/corpus/` 下的同名模块里。 */
 const WORK: Record<TaskKind, TaskWork> = {
-	sync: (session, report, source) => {
+	sync: (session, report, { source }) => {
 		if (!source) throw new Error("同步任务缺少数据源配置");
 		return sync(session, source, report);
 	},
 	derive: async (session, report) => {
 		await derive(session, report, DERIVE_BUDGET_MS);
 	},
-	review: async (session, report) => {
+	review: async (session, report, { rejudge }) => {
 		const judge = reviewJudge();
 		if (judge === "off") return;
-		await review(session.client, report, judge);
-		// 判定归外部却没配凭据，接口是关着的，组会一直留到过期。这是配错了，得在记录里
+		await review(session.client, report, judge, rejudge);
+		// 判定归外部却没配凭据，接口是关着的，词会一直留在队列里。这是配错了，得在记录里
 		// 说出来：整理一轮轮照跑、词表一动不动，没有这句没人看得出为什么
 		if (judge === "external" && !configured())
 			report("  ✖ 判定归外部，但 REVIEW_TOKEN 没配，接口关着，没人能提交判定");
@@ -389,11 +389,12 @@ type TaskResult = { runId: number; failure: string | null };
  *
  * 任务执行失败写入运行记录并返回 failure；取得会话或创建运行记录失败时抛出错误。
  * 任务执行后记录失败的错误写入服务端日志。
- * 过程同时回显到 `echo`（命令行给标准输出，后台任务不给）。
+ * 过程同时回显到 `echo`（命令行给标准输出，后台任务不给）。`rejudge` 只有整理用：
+ * 这一轮把这个范围里的词退回重新判定。
  */
 export async function runTask(
 	kind: TaskKind,
-	options: { wait?: boolean; echo?: Report } = {},
+	options: { wait?: boolean; echo?: Report; rejudge?: Rejudge | null } = {},
 ): Promise<TaskResult | null> {
 	const session = await acquireCorpusSession(options.wait ?? false);
 	if (!session) return null;
@@ -433,7 +434,10 @@ export async function runTask(
 	let failure: string | null = null;
 	try {
 		try {
-			await WORK[kind](session, say, source);
+			await WORK[kind](session, say, {
+				rejudge: options.rejudge ?? null,
+				source,
+			});
 		} catch (error) {
 			const chain = causeChain(error);
 			failure = chain[0] ?? String(error);

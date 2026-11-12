@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
-import { answerChat, seed, setup } from "./fixture";
+import { answerChat, askedWord, seed, setup } from "./fixture";
 
 const teardown = await setup();
 const dir = mkdtempSync(join(tmpdir(), "talent-eval-"));
@@ -80,7 +80,9 @@ async function runCorpus(
 ) {
 	const file = join(dir, `${kind}-${++corpusCase}.json`);
 	writeFileSync(file, JSON.stringify(cases));
-	const restore = answerChat(() => answer);
+	const restore = answerChat((_system, prompt) =>
+		typeof answer === "function" ? answer(prompt) : answer,
+	);
 	try {
 		return await exitCodeOf(`scripts/eval-${kind}.ts`, file, "ignore");
 	} finally {
@@ -144,7 +146,7 @@ describe("语料验收门禁", () => {
 		assert.equal(await judged("做过"), 0);
 		assert.equal(await judged("主导"), 0);
 	});
-	test("只要求了一部分词的题也检查每个词的作答覆盖", async () => {
+	test("只要求了一部分词的用例也检查每个词的作答覆盖", async () => {
 		const words = ["数据分析", "数据统计", "团队管理"].map((word) => ({
 			word,
 			people: 3,
@@ -155,16 +157,20 @@ describe("语料验收门禁", () => {
 			found: [["数据分析", "数据统计"]],
 			notFound: [["数据统计", "团队管理"]],
 		};
+		// 答案要求的两条都成立，只有「团队管理」没答
 		assert.equal(
-			await runCorpus("review", [c], {
-				judgments: [
-					{ word: "数据分析", why: "同义", sameAs: "数据统计", parent: "" },
-				],
-			}),
+			await runCorpus(
+				"review",
+				[c],
+				byWord({
+					数据分析: { why: "同义", kind: "同一件事", target: "数据统计" },
+					数据统计: { why: "同义", kind: "同一件事", target: "数据分析" },
+				}),
+			),
 			1,
 		);
 	});
-	test("带不带出按生产归并的最终结果验收", async () => {
+	test("带不带出按生产生效的最终结果验收", async () => {
 		const words = [
 			{ word: "数据分析", people: 10 },
 			{ word: "数据统计", people: 3 },
@@ -177,10 +183,48 @@ describe("语料验收门禁", () => {
 				["业务分析", "数据统计"],
 			],
 		};
-		const judgments = [
-			{ word: "数据分析", why: "归属", sameAs: "", parent: "业务分析" },
-			{ word: "数据统计", why: "同义", sameAs: "数据分析", parent: "报表分析" },
-		];
-		assert.equal(await runCorpus("review", [c], { judgments }), 0);
+		const answer = byWord({
+			数据分析: { why: "归属", kind: "属于", target: "业务分析" },
+			数据统计: { why: "同义", kind: "同一件事", target: "数据分析" },
+		});
+		assert.equal(await runCorpus("review", [c], answer), 0);
+	});
+	test("该判成不是能力的没判成也使验收失败", async () => {
+		// 两次的人数不同：同一个问题的回答进了缓存，第二次不会再问
+		const c = (people: number) => ({
+			name: "不是能力",
+			words: [
+				{ word: "数据分析", people },
+				{ word: "策略会", people },
+			],
+			excluded: ["策略会"],
+		});
+		const alone = { why: "能力", kind: "自成一项", target: "" };
+		assert.equal(
+			await runCorpus(
+				"review",
+				[c(3)],
+				byWord({ 数据分析: alone, 策略会: alone }),
+			),
+			1,
+		);
+		assert.equal(
+			await runCorpus(
+				"review",
+				[c(4)],
+				byWord({
+					数据分析: alone,
+					策略会: { why: "会议的名字", kind: "不是能力", target: "" },
+				}),
+			),
+			0,
+		);
 	});
 });
+
+/** 整理验收的模型回答按要判的词给；没写到的词答一句不成判断的话。 */
+function byWord(answers: Record<string, unknown>) {
+	return (prompt: string) => {
+		return answers[askedWord(prompt)] ?? { why: "", kind: "", target: "" };
+	};
+}

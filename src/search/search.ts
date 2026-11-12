@@ -197,7 +197,7 @@ const SUGGEST_MAX = 8;
 
 /**
  * 关键词候选只查询所属维度，前缀匹配优先，再按人数。经历词给的是人才库里含这几个字的短说法
- * （词表里并了的给标准写法），不显示人数：搜的时候按字面包含匹配，找到的人比写这一条的多。
+ * （词表里并了的给标准写法，判成不是能力的不给），不显示人数：搜的时候按字面包含匹配，找到的人比写这一条的多。
  */
 export async function suggest(
 	field: KeywordField,
@@ -220,7 +220,7 @@ export async function suggest(
 			)})
 			join experience e on e.id = ep.experience_id and not e.unemployed
 			left join term t on t.word = p.text
-			where p.text ilike ${contains}
+			where p.text ilike ${contains} and t.excluded is not true
 			group by 1
 			order by lead desc, people desc, value
 			limit ${SUGGEST_MAX}`);
