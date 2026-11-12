@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import readExcelFile from "read-excel-file/node";
-import { evidenceText } from "#/routes/s/$turnId/-components/evidence";
+import { evidenceText } from "#/routes/s/$turnId/-lib/evidence";
 import { exportName, exportWorkbook } from "#/routes/s/$turnId/-lib/export";
 import type { Pick } from "#/routes/s/$turnId/-lib/picks";
 import type { ClaimBasis } from "#/search/result";
@@ -22,7 +22,7 @@ const pick = (over: Partial<Pick> = {}): Pick => ({
 const basis = (over: Partial<ClaimBasis> = {}): ClaimBasis => ({
 	months: 27,
 	endDate: null,
-	external: false,
+	segments: 1,
 	...over,
 });
 
@@ -101,11 +101,15 @@ describe("单元格里的证据", () => {
 		assert.equal(text, "岗位 算法工程师 · 云梯物流 · 公司内 2.3 年");
 	});
 
-	test("入职前的累计带「前」", () => {
+	test("一段入职前经历写它的来源，多段时写累计", () => {
 		const text = evidenceText(
-			evidence(),
-			basis({ external: true, endDate: "2021-06-30" }),
+			evidence({ kind: "external" }),
+			basis({ endDate: "2021-06-30" }),
 		);
 		assert.match(text, /入职前 2\.3 年$/);
+		assert.match(
+			evidenceText(evidence({ kind: "external" }), basis({ segments: 2 })),
+			/累计 2\.3 年$/,
+		);
 	});
 });

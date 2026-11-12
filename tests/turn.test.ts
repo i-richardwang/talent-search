@@ -1163,6 +1163,13 @@ describe("这一次理解还在不在", () => {
 		return (await loadAttempt(turnId))?.fault ?? null;
 	}
 
+	test("请求的重试退避也在存活时限内，等待期间不能重试取代它", async () => {
+		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		// 两次六十秒的尝试之间，端点可以要求再等六十秒。
+		assert.equal(await quietFor(turnId, 140_000), null);
+		assert.equal(await restartTurn(turnId), null);
+	});
+
 	test("开始之后一直没有新的一步：过了一步的上限读到 broken，没过的不算", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		assert.equal(await quietFor(turnId, STEP_LIMIT_MS - 5_000), null);

@@ -1,8 +1,7 @@
 import { Text } from "#/components/ui/text";
-import { dots, years } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import { routeLabel } from "#/search/evidence";
-import { type ClaimBasis, type Evidence, placeOf } from "#/search/result";
+import type { ClaimBasis, Evidence } from "#/search/result";
+import { evidenceField, tenureOf } from "../-lib/evidence";
 
 /**
  * 证据行与未命中行共用的四列：点、条件词、匹配到的字段、右端时长。
@@ -34,51 +33,6 @@ export function Dot({
 	);
 }
 
-export function phraseLabel(evidence: Evidence) {
-	return evidence.phrase === null
-		? null
-		: dots(evidence.engagement, evidence.phrase);
-}
-
-function matchedField(evidence: Evidence): {
-	label: string;
-	value: string | null;
-	context: string;
-} {
-	const label = routeLabel(evidence.route);
-	switch (evidence.route) {
-		case "role":
-			return {
-				label,
-				value: dots(evidence.title, placeOf(evidence)),
-				context: evidence.seq,
-			};
-		case "title":
-			return { label, value: evidence.title, context: placeOf(evidence) };
-		case "description":
-			return {
-				label,
-				value: null,
-				context: dots(evidence.title, placeOf(evidence)),
-			};
-		case "skill":
-			return {
-				label,
-				value: phraseLabel(evidence),
-				context: dots(evidence.title, placeOf(evidence)),
-			};
-	}
-}
-
-export function evidenceText(evidence: Evidence, basis: ClaimBasis) {
-	const field = matchedField(evidence);
-	return dots(
-		[field.label, field.value ?? field.context].filter(Boolean).join(" "),
-		field.value === null ? null : field.context,
-		`${basis.external ? "入职前" : "公司内"} ${years(basis.months)}`,
-	);
-}
-
 export function EvidenceLine({
 	name,
 	boost,
@@ -103,7 +57,8 @@ export function EvidenceLine({
 		</span>
 	);
 
-	const field = matchedField(evidence);
+	const field = evidenceField(evidence);
+	const tenure = tenureOf(evidence, basis);
 	const ongoing = basis.endDate === null;
 
 	return (
@@ -128,10 +83,8 @@ export function EvidenceLine({
 						ongoing ? "text-fg-secondary" : "text-fg-tertiary",
 					)}
 				>
-					<span className="text-fg-tertiary">
-						{basis.external ? "入职前 " : "公司内 "}
-					</span>
-					{years(basis.months)}
+					<span className="text-fg-tertiary">{tenure.label} </span>
+					{tenure.duration}
 				</span>
 			</div>
 		</div>

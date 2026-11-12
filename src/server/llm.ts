@@ -24,7 +24,7 @@ import {
 	READ_MAX,
 	SUBMIT,
 } from "./agent-tools";
-import { endpointFetch, positiveInt, thinkingSwitch } from "./endpoint";
+import { endpointPolicy, positiveInt, thinkingSwitch } from "./endpoint";
 
 const BASE_URL = process.env.LLM_BASE_URL;
 const API_KEY = process.env.LLM_API_KEY;
@@ -45,6 +45,7 @@ const MAX_OUTPUT_TOKENS = positiveInt(
 );
 /** 一次请求失败再试几次：人在等结果，只多等一次。 */
 const RETRIES = 1;
+const REQUEST = endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES });
 
 /** 一轮最多读的经历要分几批交结论。 */
 const READ_STEPS = Math.ceil(READ_MAX / READ_BATCH);
@@ -61,11 +62,10 @@ const AGENT_STEPS = READ_STEPS + 8;
 const CONFIRM_STEPS = READ_STEPS + 2;
 
 /**
- * 一次模型请求最多等多久：每次尝试一份超时，连重试一共 `RETRIES + 1` 次。`server/turn.ts`
- * 拿它判断一次处理还在不在：模型每调一次工具都写一步（通过了的提交随后就写结果），隔了这么
- * 久还没有新的一步，进程就是没了。重试前的退避和工具自己查库的时间不算在里面。
+ * 一次模型请求的总时限，包含全部尝试和退避，与执行请求使用同一份策略。`server/turn.ts`
+ * 按这个时限加上步骤落库的时间判断一次处理还在不在。
  */
-export const STEP_LIMIT_MS = TIMEOUT_MS * (RETRIES + 1);
+export const STEP_LIMIT_MS = REQUEST.limitMs;
 
 const LAST_STEP =
 	"查询的次数用完了。不要再查，按已经查到的结果，现在用 submit 提交搜索条件。";
@@ -88,7 +88,7 @@ function getModel() {
 			baseURL: BASE_URL,
 			...(API_KEY && { apiKey: API_KEY }),
 			// 每一步的请求各自超时、各自重试（见 `endpoint.ts`）
-			fetch: endpointFetch({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
+			fetch: REQUEST.fetch,
 			...thinkingSwitch(ENABLE_THINKING),
 		})(MODEL);
 	return model;
@@ -462,7 +462,7 @@ export async function understand(
 ): Promise<Understood> {
 	const result = await generateText({
 		model: getModel(),
-		// 重试在 `endpointFetch` 里，以一次请求为单位
+		// 重试在 `endpointPolicy` 里，以一次请求为单位
 		maxRetries: 0,
 		tools: agent.tools,
 		toolChoice: "required",

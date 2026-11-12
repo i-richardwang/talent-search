@@ -3,13 +3,13 @@ import type { Claim } from "#/search/query";
 import type { ClaimBasis, Evidence, RankedResult } from "#/search/result";
 
 /**
- * 一条主张在一个人身上的样子：命中了带着排在最前的那一段证据（`evidence`）、算数的
- * 段数（`segments`）和聚合依据（`basis`），没命中是 null。名单那一行、它的依据气泡和
+ * 一条主张在一个人身上的样子：命中了带着排在最前的那一段证据（`evidence`）和
+ * 聚合依据（`basis`），没命中是 null。名单那一行、它的依据气泡和
  * 导出读的都是这一份。
  */
 export type ClaimLine = {
 	claim: Claim;
-	found: { evidence: Evidence; segments: number; basis: ClaimBasis } | null;
+	found: { evidence: Evidence; basis: ClaimBasis } | null;
 };
 
 /**
@@ -26,8 +26,7 @@ export function claimLines(
 		const evidence = best[i];
 		const basis = ranked?.basis[i];
 		if (!evidence || !basis) return { claim, found: null };
-		const segments = countedOf(all.filter((e) => e.claim === i)).size;
-		return { claim, found: { basis, evidence, segments } };
+		return { claim, found: { basis, evidence } };
 	});
 }
 

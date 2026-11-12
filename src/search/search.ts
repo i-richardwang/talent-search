@@ -119,13 +119,7 @@ export async function lookupNames(
 }
 
 /**
- * 一列最多列几个取值。这是一条**读语料的上限**，不是模型契约：有限取值的列都是个位数到
- * 两位数量级，取 100 已经是「全都要」，它挡的是脏数据把一整列不同的公司名当成档位灌进 prompt。
- */
-const LISTED_MAX = 100;
-
-/**
- * 一列的取值和有这个值的人数：词表（`vocabulary`）和看目录（`server/discover.ts`）共用这一条
+ * 有限取值列的全部取值和有这个值的人数：词表（`vocabulary`）和看目录（`server/discover.ts`）共用这一条
  * 语句。空值与 `NOT_A_VALUE` 不算取值；有高低的列按档高从低到高（`catalog.ts` 声明的 `rank`），
  * 其余人多的在前。数组列的每个取值各数各的。给了 `stream` 只数这一条记录流。
  */
@@ -151,8 +145,7 @@ export async function valuesOf(
 			sql`, `,
 		)}) ${stream ? sql`and t.stream = ${stream}` : sql``}
 		group by 1
-		order by ${rank ? sql`min(t.${sql.identifier(rank)}), ` : sql``}people desc, name
-		limit ${LISTED_MAX}`);
+		order by ${rank ? sql`min(t.${sql.identifier(rank)}), ` : sql``}people desc, name`);
 	return rows;
 }
 

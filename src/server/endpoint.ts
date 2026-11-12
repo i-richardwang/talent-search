@@ -16,8 +16,8 @@ const FIRST_DELAY_MS = 2_000;
 const RETRY_AFTER_MAX_MS = 60_000;
 
 /**
- * 一次 HTTP 请求的超时与重试，三个适配层只经过这一处：SDK 的 provider 拿它当
- * `fetch`、调用时 `maxRetries: 0`。重试的单位是这一个请求，所以
+ * 一次 HTTP 请求的执行策略：`fetch` 负责超时和重试，`limitMs` 是包含全部尝试和退避的总时限。
+ * SDK 的 provider 使用这份 `fetch`、调用时 `maxRetries: 0`。重试的单位是这一个请求，所以
  * 多步对话里第几步超时就只重发第几步，分批嵌入里哪一批超时就只重发哪一批。
  *
  * - 每次尝试各有 `timeoutMs` 的预算，最多重发 `retries` 次。超时的那次已经等满了预算，
@@ -25,18 +25,24 @@ const RETRY_AFTER_MAX_MS = 60_000;
  * - 调用方的 signal 触发（整次调用的时限、取消）立即停下，不再重发。
  * - 用尽后交回最后一次的结果：HTTP 错误原样作为应答交给调用方，超时与连不上原样抛出。
  */
-export function endpointFetch({
+export function endpointPolicy({
 	timeoutMs,
 	retries,
 }: {
 	timeoutMs: number;
 	retries: number;
-}): typeof fetch {
-	return async (input, init) => {
+}): { fetch: typeof fetch; limitMs: number } {
+	let limitMs = timeoutMs;
+	for (let attempt = 0; attempt < retries; attempt++)
+		limitMs += timeoutMs + Math.max(RETRY_AFTER_MAX_MS, backoff(attempt));
+	const request: typeof fetch = async (input, init) => {
 		const caller = init?.signal ?? undefined;
+		const deadline = AbortSignal.timeout(limitMs);
+		const lifetime = caller ? AbortSignal.any([caller, deadline]) : deadline;
 		for (let attempt = 0; ; attempt++) {
+			lifetime.throwIfAborted();
 			const own = AbortSignal.timeout(timeoutMs);
-			const signal = caller ? AbortSignal.any([caller, own]) : own;
+			const signal = AbortSignal.any([lifetime, own]);
 			let wait: number;
 			try {
 				const response = await fetch(input, { ...init, signal });
@@ -44,15 +50,20 @@ export function endpointFetch({
 				wait = delayOf(response, attempt);
 				await response.body?.cancel();
 			} catch (error) {
-				if (caller?.aborted || attempt >= retries) throw error;
+				if (lifetime.aborted || attempt >= retries) throw error;
 				if (isTimeout(error)) continue;
 				// 按 Fetch 标准，请求没发出去（拒绝连接、断网、DNS）一律是 TypeError
 				if (!(error instanceof TypeError)) throw error;
-				wait = FIRST_DELAY_MS * 2 ** attempt;
+				wait = backoff(attempt);
 			}
-			await sleep(wait, caller);
+			await sleep(wait, lifetime);
 		}
 	};
+	return { fetch: request, limitMs };
+}
+
+function backoff(attempt: number): number {
+	return FIRST_DELAY_MS * 2 ** attempt;
 }
 
 function retryable(status: number) {
@@ -64,16 +75,16 @@ function isTimeout(error: unknown) {
 }
 
 function delayOf(response: Response, attempt: number) {
-	const backoff = FIRST_DELAY_MS * 2 ** attempt;
+	const fallback = backoff(attempt);
 	const ms = Number.parseFloat(response.headers.get("retry-after-ms") ?? "");
 	if (ms >= 0 && ms <= RETRY_AFTER_MAX_MS) return ms;
 	const after = response.headers.get("retry-after");
-	if (!after) return backoff;
+	if (!after) return fallback;
 	const seconds = Number.parseFloat(after);
 	const wait = Number.isNaN(seconds)
 		? Date.parse(after) - Date.now()
 		: seconds * 1000;
-	return wait >= 0 && wait <= RETRY_AFTER_MAX_MS ? wait : backoff;
+	return wait >= 0 && wait <= RETRY_AFTER_MAX_MS ? wait : fallback;
 }
 
 async function sleep(ms: number, signal: AbortSignal | undefined) {

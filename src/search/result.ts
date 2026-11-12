@@ -7,6 +7,7 @@ import type { Claim } from "./query";
 /** 名单上一个人在一条主张上的一段证据：确认过算数的那一段，和它算数的那一类说法。 */
 export type Evidence = {
 	experienceId: number;
+	kind: Experience["kind"];
 	claim: number;
 	route: Route;
 	phrase: string | null;
@@ -86,10 +87,10 @@ export type RankedResult = PopulationResult & {
 export type SearchResult = PopulationResult | RankedResult;
 
 export type ClaimBasis = {
+	/** 算数的经历段数，同一段只计一次。 */
+	segments: number;
 	months: number;
 	endDate: string | null;
-	/** 累计时长是否全部来自入职前经历。 */
-	external: boolean;
 };
 
 /** 当前查询下的筛选候选，以及选中该项后的剩余人数。 */

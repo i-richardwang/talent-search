@@ -5,6 +5,8 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
+import { claimLines } from "#/routes/s/$turnId/-lib/claim-lines";
+import { evidenceText } from "#/routes/s/$turnId/-lib/evidence";
 import { compileConditions } from "#/search/compile";
 import { NOT_A_VALUE, VOCAB_KEYS } from "#/search/dimensions";
 import type { SearchFilters } from "#/search/params";
@@ -1283,4 +1285,39 @@ test("同段按投入选择证据：主导的技能压过提到的，岗位不�
 	assert.equal(results[0]?.evidence[0]?.phrase, `${what}甲`);
 	assert.equal(results[0]?.evidence[0]?.engagement, "主导");
 	assert.equal(results[2]?.evidence[0]?.route, "title");
+});
+
+test("跨公司内与入职前的依据保留每段来源，累计月份与段数传到导出", async () => {
+	const title = "合成累计核对工程师";
+	await seed([
+		{
+			empId: "BASIS_MIXED",
+			name: "合成累计样例",
+			segments: [
+				{
+					kind: "external",
+					title,
+					company: "合成外部公司",
+					months: 24,
+					endDate: "2020-01-01",
+				},
+				{ kind: "internal", title, department: "合成部门", months: 12 },
+			],
+		},
+	]);
+	const outcome = await run(title);
+	const result = outcome.results[0];
+	assert.ok(result);
+	assert.equal(outcome.total, 1);
+	assert.deepEqual(result.basis, [{ months: 36, endDate: null, segments: 2 }]);
+	assert.deepEqual(result.evidence.map((e) => e.kind).toSorted(), [
+		"external",
+		"internal",
+	]);
+	const found = claimLines(result, outcome.claims)[0]?.found;
+	assert.ok(found);
+	assert.equal(
+		evidenceText(found.evidence, found.basis),
+		`岗位 ${title} · 合成外部公司 · 累计 3.0 年`,
+	);
 });
