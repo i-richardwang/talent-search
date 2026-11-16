@@ -105,7 +105,9 @@ export type DiscoveryTrace =
 export type FoundTrace = { phrases: number; top: string[] };
 
 /**
- * 试跑一份条件得到的：每条单独选中多少人，名单上多少人，候选人多少、还有多少段经历没确认过。
+ * 试跑一份条件得到的：每条单独选中多少人，名单上多少人，还有多少段经历没确认过。线程里只说
+ * 确定的事（哪一条没有人、写不对，合起来没有人），不上屏人数：字面对得上的人数和名单上确认过的
+ * 人数不是一回事，名单上的人数只在名单上说。
  */
 export type Probe = {
 	conditions: {
@@ -119,8 +121,6 @@ export type Probe = {
 	}[];
 	/** 名单上的人数 */
 	total: number | null;
-	/** 候选人数：还没确认过的经历都按对这个人有利的算，名单上会有多少人 */
-	candidates: number | null;
 	/** 候选人还没确认过的经历有几段：先数必须和排除的条件上的，它们确认完了才数加分的 */
 	unread: number;
 };
@@ -135,11 +135,9 @@ export type Probe = {
  * - `unrunnable`：这样写搜不了。
  * - `unfound`：人才库里一个人都找不到。
  * - `tooBroad`：找出的太多，名单出不来。
- * - `unread`：候选人还有经历没确认完：还没读完，或者读过之后改了那一条的判据、读过的结论
- *   用不上（这时 `subject` 是那一条）。
  */
 export type SubmitIssue = {
-	kind: "form" | "wording" | "unrunnable" | "unfound" | "tooBroad" | "unread";
+	kind: "form" | "wording" | "unrunnable" | "unfound" | "tooBroad";
 	subject: string | null;
 };
 

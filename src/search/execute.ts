@@ -38,7 +38,12 @@ import {
 	shareTemp,
 } from "#/server/sandbox";
 import type { DimSource } from "./dimensions";
-import { emptyReason, type Incomplete } from "./empty";
+import {
+	type EmptyReason,
+	emptyReason,
+	type Incomplete,
+	inactiveReason,
+} from "./empty";
 import type { SearchFilters } from "./params";
 import { type MatchedPhrases, withMatchedPhrases } from "./phrases";
 import {
@@ -583,7 +588,7 @@ export async function execute(
 				order: "evidence" as const,
 				claims,
 				...noOne(),
-				empty: emptyReason({ query, filters, total: 0 }),
+				empty: inactiveReason(query),
 			};
 		const found = await restricted(store, () =>
 			evaluate(store, new Shell(query, ready), roles, filters),
@@ -602,7 +607,36 @@ export async function execute(
 			found.candidates,
 			deciding(query, found.unconfirmed),
 		);
-		return present(store, found, claims, filters, limit, query, incomplete);
+		const empty = await emptyReason({
+			filters,
+			total: found.ranked.total,
+			incomplete,
+			nobody: () => nobodyOf(store, ready, query),
+		});
+		return present(store, found, claims, filters, limit, { incomplete, empty });
+	});
+}
+
+/**
+ * 名单空了时，必须条件里单独一条就没有人的那几条（`Unmet`）：和 `probe` 单条数人是同一条路，
+ * 对得上的段都确认过不算的条件也数成没有人。
+ */
+async function nobodyOf(
+	store: DbExecutor,
+	ready: readonly (Compiled | null)[],
+	query: Query,
+): Promise<string[]> {
+	const musts = ready.map((one, i) =>
+		query.conditions[i]?.mode === "must" ? one : null,
+	);
+	const counts = await eachSelected<number>(
+		store,
+		musts,
+		sql`count(distinct s.emp_id)::int`,
+	);
+	return query.conditions.flatMap((c, i) => {
+		const n = counts[i];
+		return n && "value" in n && n.value === 0 ? [c.id] : [];
 	});
 }
 
@@ -721,11 +755,15 @@ async function present(
 	claims: Claim[],
 	filters: SearchFilters,
 	limit: number,
-	query: Query,
-	/** 候选人没确认完时确认到了哪里 */
-	incomplete: Incomplete | undefined,
+	{
+		incomplete,
+		empty,
+	}: {
+		/** 候选人没确认完时确认到了哪里 */
+		incomplete: Incomplete | undefined;
+		empty: EmptyReason | null;
+	},
 ): Promise<SearchOutcome> {
-	const empty = emptyReason({ query, filters, total, incomplete });
 	const counted = { facets, total, ...(incomplete && { incomplete }) };
 	const page = ranked.slice(0, limit);
 	const empIds = page.map((row) => row.empId);

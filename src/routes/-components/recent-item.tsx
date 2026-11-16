@@ -147,7 +147,7 @@ export function LoadFailed({ onRetry }: { onRetry: () => unknown }) {
 	return (
 		<div className="flex items-center justify-center gap-2 py-2">
 			<Icon className="text-fg-tertiary" icon={TriangleAlertIcon} size={14} />
-			<span className="text-fg-secondary text-sm">搜索记录加载失败</span>
+			<span className="text-fg-secondary text-sm">没能加载最近搜索</span>
 			<Button onClick={onRetry} size="small" type="text">
 				重试
 			</Button>

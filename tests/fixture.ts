@@ -45,7 +45,7 @@ import { compileConditions } from "#/search/compile";
 import type { QueryCondition } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
-import type { Batch, Judge } from "#/server/reading";
+import type { Batch, Judge, RecordStep } from "#/server/reading";
 import { catalogOf, tempSchema } from "./temp-schema";
 
 /**
@@ -295,21 +295,27 @@ export async function agentOn(
 	judge: Judge = fitsAll,
 ) {
 	const { agentTools } = await import("#/server/agent-tools");
+	const { reader } = await import("#/server/reading");
 	const { saveVerdicts } = await import("#/server/judged");
 	const { db } = await import("#/db");
 	const steps: TraceStep[] = [];
 	const seen: Batch[] = [];
+	const record: RecordStep = async (step, verdicts) => {
+		await saveVerdicts(rootTurnId, verdicts, db);
+		steps.push(step);
+	};
 	const agent = agentTools({
 		rootTurnId,
 		base,
-		record: async (step, verdicts) => {
-			await saveVerdicts(rootTurnId, verdicts, db);
-			steps.push(step);
-		},
-		judge: (batch, abortSignal) => {
-			seen.push(batch);
-			return judge(batch, abortSignal);
-		},
+		record,
+		reading: reader({
+			rootTurnId,
+			record,
+			judge: (batch, abortSignal) => {
+				seen.push(batch);
+				return judge(batch, abortSignal);
+			},
+		}),
 	});
 	const call = <T = unknown>(
 		name: keyof typeof agent.tools,
@@ -395,6 +401,7 @@ export function answerChat(
 }
 
 let intentBroken = false;
+let strayBraces = false;
 type IntentAnswer = (text: string, base: unknown[]) => unknown;
 let intentAnswer: IntentAnswer | null = null;
 
@@ -413,6 +420,16 @@ export async function answering<T>(
 	} finally {
 		intentAnswer = null;
 	}
+}
+
+/**
+ * 让假模型交提交时在参数后面多写两个右括号，直到调用返回的恢复函数为止：真实端点偶尔这样写。
+ */
+export function bracesAfterSubmit(): () => void {
+	strayBraces = true;
+	return () => {
+		strayBraces = false;
+	};
 }
 
 /**
@@ -483,7 +500,12 @@ function startModelServer() {
 							tool_calls: list.map(([name, input], n) => ({
 								id: `call-${messages.length}-${n}`,
 								type: "function",
-								function: { name, arguments: JSON.stringify(input) },
+								function: {
+									name,
+									arguments:
+										JSON.stringify(input) +
+										(strayBraces && name === "submit" ? "}}" : ""),
+								},
 							})),
 						},
 						"tool_calls",

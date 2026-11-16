@@ -1,8 +1,9 @@
-import { Link } from "@tanstack/react-router";
-import { BriefcaseBusinessIcon, XIcon } from "lucide-react";
+import { Link, useRouter } from "@tanstack/react-router";
+import { BriefcaseBusinessIcon, RotateCwIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { NavHeaderTitle } from "#/components/ui/app-layout";
+import { Button } from "#/components/ui/button";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
 import { Empty } from "#/components/ui/empty";
@@ -148,12 +149,43 @@ export function PersonPending() {
 	);
 }
 
-/** 和页面不存在、记录不存在同一个组件族，不给插图。 */
+/** 和页面不存在、记录不存在同一个组件族，不给插图。名单还在，下一步是关掉这一栏回去。 */
 export function PersonNotFound() {
 	return (
 		<Empty
-			description="链接可能已失效，或记录已被清理。"
-			title="未找到这位员工"
+			action={
+				<Button
+					render={
+						<Link
+							from="/s/$turnId/p/$empId"
+							params={(prev) => prev}
+							replace
+							search={(prev) => prev}
+							to="/s/$turnId"
+						/>
+					}
+				>
+					回到名单
+				</Button>
+			}
+			description="可能已经离职或调出，人才库里没有这个人的记录了。"
+			title="找不到这个人"
+		/>
+	);
+}
+
+/** 取这个人的详情时出了错：只换这一栏，名单留着，重新取一次。 */
+export function PersonFailed() {
+	const router = useRouter();
+	return (
+		<Empty
+			action={
+				<Button icon={RotateCwIcon} onClick={() => router.invalidate()}>
+					重新加载
+				</Button>
+			}
+			description="可能是网络或服务器的临时问题，重新加载一次试试。"
+			title="没能打开这个人的详情"
 		/>
 	);
 }

@@ -68,7 +68,12 @@ import { agentTools } from "#/server/agent-tools";
 import { companyFacts, streamFacts } from "#/server/discover";
 import { saveVerdicts } from "#/server/judged";
 import { judgeSegments, understand } from "#/server/llm";
+import { type RecordStep, reader } from "#/server/reading";
 import { createTurn, deleteSearch } from "#/server/turn";
+
+/** 说明里的人数：「12 人」「两百多位」「几十个人」 */
+const PEOPLE_COUNT =
+	/\d+\s*(人|位|名)|[一二两三四五六七八九十百千万几多]+(个人|位|名)/;
 
 type Mode = QueryCondition["mode"];
 
@@ -167,7 +172,8 @@ function loadCases(file: string): Case[] {
 			base: conversational(syntax("base")),
 			history: list("history"),
 			say: c.say.trim(),
-			drop: syntax("drop"),
+			// 去掉的是 base 里的条件，和 base 一样补上判据才认得出
+			drop: conversational(syntax("drop")),
 			has: syntax("has"),
 			add,
 			tells: c.tells === true,
@@ -260,16 +266,16 @@ try {
 			spec: emptySpec(),
 		});
 		try {
+			const record: RecordStep = (_step, verdicts) =>
+				saveVerdicts(rootTurnId, verdicts, db);
+			const reading = reader({ rootTurnId, record, judge: judgeSegments });
 			const result = await understand(
 				c.say,
 				{ ...facts, history: c.history },
-				agentTools({
-					base: c.base,
-					rootTurnId,
-					record: (_step, verdicts) => saveVerdicts(rootTurnId, verdicts, db),
-					judge: judgeSegments,
-				}),
+				agentTools({ base: c.base, rootTurnId, record, reading }),
 			);
+			// 和生产的一轮一样：理解之后把候选人读完，名单和证据才是定稿
+			await reading.read(result.query);
 			const next = result.query.conditions;
 			const sameAs = (a: QueryCondition) => (b: QueryCondition) =>
 				contentKey(a) === contentKey(b);
@@ -339,6 +345,9 @@ try {
 			}
 			for (const line of shown)
 				if (/[（）()[\]【】]/.test(line)) problems.push(`说明带括号：${line}`);
+			// 名单上的人数只在名单上说：AI 查到的是字面写到的人，写进说明 HR 会对不上
+			for (const line of shown)
+				if (PEOPLE_COUNT.test(line)) problems.push(`说明里写了人数：${line}`);
 			if (notes && /[。！？!?].+/.test(notes.says))
 				problems.push(`那句话不止一句：${notes.says}`);
 

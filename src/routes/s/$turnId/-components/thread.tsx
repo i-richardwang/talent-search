@@ -63,7 +63,7 @@ function replyText(previous: Turn | null, spec: QueryCondition[]) {
 	if (previous === null)
 		return spec.length > 0
 			? `已按以下条件搜索：${labelsInSentence(spec)}`
-			: "没有整理出可用的搜索条件";
+			: "这段需求还搜不了";
 	const { added, removed } = diff(previous, spec);
 	if (added.length === 0 && removed.length === 0) return "搜索条件未变";
 	return [
@@ -235,6 +235,7 @@ export function Thread({
 	waiting,
 	understanding,
 	composer,
+	example,
 	progress,
 	fault,
 	autoFocus = false,
@@ -259,6 +260,8 @@ export function Thread({
 	/** 配了查询理解才有输入框；没配时线程只能看，条件在 chip 上改。 */
 	understanding: boolean;
 	composer?: Ref<QueryBarHandle>;
+	/** 输入框里换上的示范说法（空态请 HR 再说一句时）；没有就用默认的那句。 */
+	example?: string | null;
 	autoFocus?: boolean;
 }) {
 	const rounds = [...earlier, latest];
@@ -325,7 +328,7 @@ export function Thread({
 						autoFocus={autoFocus}
 						focusKey="/"
 						onQuery={onQuery}
-						placeholder="补充或修改需求，例如：最好带过团队"
+						placeholder={example ?? "补充或修改需求，例如：最好带过团队"}
 						ref={composer}
 						waiting={waiting}
 					/>
@@ -642,32 +645,32 @@ function discoveryFindings(d: DiscoveryTrace): string[] {
 }
 
 /**
- * 试搜的人数：每条条件单独搜到多少人——说到某种经历的条件（要找的和排除的）是简历里提到的人，
- * 其中多少人符合要确认过才知道。合起来那一行说的是确认之后的名单。
+ * 试搜只说确定的事：哪一条在人才库中没有人、哪一条这样写搜不了，每一条都找得到却合起来没有人。
+ * 不写人数：一条单独搜到的是简历里写到的人，其中谁符合要确认过才知道，和名单上的人数说的不是
+ * 一回事；名单上有多少人只在名单上说。
  */
 function probeFindings(p: Probe): string[] {
-	const people = (c: Probe["conditions"][number]) =>
-		c.people === null ? "这样写搜不了" : `搜到 ${c.people} 人`;
-	const fit = `${p.total} 人符合`;
+	const problems = p.conditions.flatMap((c) =>
+		c.people === null
+			? [`${labelsInSentence([c])}：这样写搜不了`]
+			: c.people === 0
+				? [`人才库中没有符合「${c.label}」的人`]
+				: [],
+	);
+	if (problems.length > 0) return problems;
 	return [
-		...p.conditions.map((c) => `${labelsInSentence([c])}：${people(c)}`),
-		...(p.total !== null
-			? [
-					p.unread > 0
-						? `合起来：${p.candidates === null ? "" : `候选 ${p.candidates} 人，`}还没确认完${p.total > 0 ? `，已确认 ${fit}` : ""}`
-						: `合起来：${fit}`,
-				]
-			: []),
+		p.total === 0 && p.unread === 0
+			? "每一项都找得到，合起来没有人符合"
+			: "每一项在人才库中都找得到",
 	];
 }
 
 /** 整理出的搜索条件哪里还要改：和试搜、查找的说法一致，AI 改完再交。 */
 function issueLine({ kind, subject }: SubmitIssue): string {
 	if (kind === "wording") return "有一条的说法要换成更直白的话";
-	if (kind === "unread") return "还有候选人没确认完";
 	if (kind === "form" || subject === null) return "有的搜索条件没写完整";
 	if (kind === "unrunnable") return `「${subject}」这样写搜不了`;
-	if (kind === "unfound") return `人才库中没有「${subject}」`;
+	if (kind === "unfound") return `人才库中没有符合「${subject}」的人`;
 	return `「${subject}」找出的太多，名单出不来`;
 }
 

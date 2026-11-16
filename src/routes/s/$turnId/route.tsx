@@ -14,7 +14,7 @@ import type { QueryCondition } from "#/search/query";
 import { emptyFacets, type SearchOutcome } from "#/search/result";
 import { emptySpec, queryOfSpec, type SearchSpec } from "#/search/spec";
 import { loadWorkbench } from "#/server/functions";
-import { TurnNotFound } from "../../-components/not-found";
+import { TurnNotFound } from "../../-components/dead-end";
 import { useCommit } from "../../-lib/commit";
 import { ConversationDrawer } from "./-components/conversation-drawer";
 import { DetailModal } from "./-components/detail-modal";
@@ -108,8 +108,14 @@ function Workbench() {
 	const wide = useIsWide();
 	const open = Boolean(empId);
 	const closeDetail = useCloseDetail(turnId, view);
-	const { composer, editQuery, keywordBar, setThreadOpen, threadOpen } =
-		useEditQuery({ closeDetail, mode, open, wide });
+	const {
+		composer,
+		editQuery,
+		example,
+		keywordBar,
+		setThreadOpen,
+		threadOpen,
+	} = useEditQuery({ closeDetail, mode, open, turnId, wide });
 
 	const spec = settledSpec ?? EMPTY_SPEC;
 	const outcome = result ?? NO_OUTCOME;
@@ -156,6 +162,13 @@ function Workbench() {
 	const reviseKeywords = (conditions: Condition[]) =>
 		reviseSpec({ conditions });
 
+	// 空态替 HR 说的一句话：和他在输入框里补充的一样，作用在正看着的这一轮上。
+	// 没配查询理解时没有谁听
+	const say =
+		mode === "conversation" && understanding
+			? (text: string) => commit({ kind: "sentence", text }, { from: turnId })
+			: undefined;
+
 	// AI 问的是最后一轮的条件，回答接在最后一轮后面，看着哪一轮都一样
 	const answer = (text: string) =>
 		commit({ kind: "sentence", text }, { from: latest.id });
@@ -183,6 +196,7 @@ function Workbench() {
 		<Thread
 			autoFocus={threadOpen}
 			composer={composer}
+			example={example}
 			earlier={thread.slice(0, -1)}
 			fault={attemptFault}
 			latest={latest}
@@ -246,9 +260,10 @@ function Workbench() {
 						onAll={pickAll}
 						onChange={updateView}
 						onContinue={continueSearch}
-						onEditQuery={editQuery}
+						onEditQuery={editable ? editQuery : undefined}
 						onMore={() => updateView(morePage(view))}
 						onReviseQuery={reviseTo}
+						onSay={say}
 						outcome={outcome}
 						picks={picks}
 						spec={spec}

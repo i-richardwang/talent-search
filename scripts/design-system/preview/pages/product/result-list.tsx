@@ -24,7 +24,7 @@ import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid } from "../../kit/stage";
 import { Routed } from "../../routed";
-import { EMPTY_CASES, KEYWORD_SPEC, SPEC } from "../../samples/conditions";
+import { EMPTIES, KEYWORD_SPEC, SPEC } from "../../samples/conditions";
 import {
 	EMPTY_OUTCOME,
 	firstOf,
@@ -170,8 +170,6 @@ function Playground() {
 	);
 }
 
-const EMPTIES = Object.values(EMPTY_CASES);
-
 function Empties() {
 	return (
 		<Block className="overflow-hidden" variant="outlined">
@@ -183,9 +181,9 @@ function Empties() {
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{EMPTIES.map(([reason, spec]) => (
-						<TableRow key={reason.kind}>
-							<TableCell className="font-mono text-xs">{reason.kind}</TableCell>
+					{EMPTIES.map(([name, reason, spec]) => (
+						<TableRow key={name}>
+							<TableCell className="font-mono text-xs">{name}</TableCell>
 							<TableCell className="w-full">
 								<List
 									outcome={{ ...EMPTY_OUTCOME, empty: reason }}

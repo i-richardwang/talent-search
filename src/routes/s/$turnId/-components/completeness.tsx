@@ -6,16 +6,17 @@ import type { AttemptFault } from "#/server/turn";
 import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/attempt";
 import { CONTINUE_LABEL, NARROW } from "../-lib/empty-state";
 
-/** 符合的人较多时名单列到了哪里，写成一句话。 */
+/**
+ * 名单列到了哪里，写成一句话。不说符合的人多不多：还没确认的人里有几个符合，确认过才知道。
+ */
 export function incompleteText(incomplete: Incomplete) {
-	const listed = incomplete.above
-		? `已列出 ${incomplete.above} 及以上的`
-		: "名单还没列全";
-	return `符合的人较多，${listed}。${NARROW}`;
+	return incomplete.above
+		? `已列出 ${incomplete.above} 及以上的，更低职级的还没找完。${NARROW}`
+		: `名单还没列全。${NARROW}`;
 }
 
 /**
- * 符合的人较多，名单还没列全。名单从职级高的人列起，这里说清现在列到哪一档；句子里说的
+ * 名单还没列全。名单从职级高的人列起，这里说清现在列到哪一档；句子里说的
  * 下一步是补充条件，按钮是条件不变接着往下找（`onContinue`，没有谁能接着找时不给），
  * 按下之后到换去新的一轮之前停在等待态。
  */

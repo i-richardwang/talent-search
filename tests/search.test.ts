@@ -35,6 +35,9 @@ const run = async (query: string, filters = {}, limit?: number) => {
 	return outcome;
 };
 const { RESULT_PAGE } = await import("#/search/weights");
+/** 一行查询语法编译出的条件 id，和检索读到的是同一份编译 */
+const idsOf = (query: string) =>
+	compileConditions(parseQuery(query)).conditions.map((c) => c.id);
 
 before(async () => {
 	await seed([
@@ -853,9 +856,20 @@ describe("为什么没有人", () => {
 	});
 
 	test("AND 没满足和「筛没了」是两种成因，下一步正好不同", async () => {
-		assert.deepEqual((await run("量子炼金")).empty, { kind: "unmet" });
+		assert.deepEqual((await run("量子炼金")).empty, {
+			kind: "unmet",
+			nobody: idsOf("量子炼金"),
+		});
 		assert.deepEqual((await run("算法", { level: ["P0"] })).empty, {
 			kind: "filtered",
+		});
+	});
+
+	test("没满足时点名单独就没有人的那一项：有人的那一项不算", async () => {
+		const [, alchemy] = idsOf("算法,量子炼金");
+		assert.deepEqual((await run("算法,量子炼金")).empty, {
+			kind: "unmet",
+			nobody: [alchemy],
 		});
 	});
 
@@ -1017,7 +1031,8 @@ describe("排除：这个人没有任何一段这样的经历", () => {
 			conditions: parseQuery("-机甲实习,kind:external minMonths:999"),
 		});
 		assert.equal(outcome.total, 0);
-		assert.deepEqual(outcome.empty, { kind: "gatesUnmet" });
+		const [, longest] = idsOf("-机甲实习,kind:external minMonths:999");
+		assert.deepEqual(outcome.empty, { kind: "unmet", nobody: [longest] });
 	});
 
 	test("排除也是「同一段满足每一项」：只认同时满足的段", async () => {

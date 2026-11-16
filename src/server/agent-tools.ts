@@ -10,14 +10,15 @@
  * - 试跑（`probe`）：一份完整的条件，每条单独选中多少人、名单上多少人，哪一条写不对、跑不了，
  *   候选人多少、还有多少段经历没确认过。
  * - 读经历（`read`）：把候选人还没确认过的经历读完，回给模型每条读了多少段、多少段算数、还剩
- *   多少段没读。经历的文字不进这段对话：读是另外的请求，按判据逐段判（`reading.ts`）。
+ *   多少段没读。经历的文字不进这段对话：读是另外的请求，按判据逐段判（`reading.ts`）。读是模型
+ *   看判据和正则写得准不准的办法，不是它的义务：提交之后，没读完的由这一轮接着读完
+ *   （`turn.ts` 的 `performAttempt`），和它在对话里读的是同一个 `Reader`、同一份额度。
  * - 提交（`submit`）：先检查再收下。查的是：形状和白名单、标签里有没有内部用词、这一轮新写或
- *   改过的「做过什么」有没有写判据、新写或改过的条件是不是一个人都找不到、这一轮读得到的经历
- *   是不是都确认过了、读过之后判据有没有改字、整份是不是宽到名单出不来、是不是没作答。有问题
- *   就告诉模型，让它改了再提交。只是找不到人或太宽、而这正是用户明说的要求时，模型把同一份
- *   条件原样再提交一次就算通过：没有这样的人也是一个结果。别的问题原样再交也不收。每份条件
- *   都在沙箱里真跑一遍，跑通的那份是录取的：写进记录的只有它，次数用完时最后一次没通过也一样。
- *   没通过的提交记一步。
+ *   改过的「做过什么」有没有写判据、新写或改过的条件是不是一个人都找不到、整份是不是宽到名单
+ *   出不来、是不是没作答。有问题就告诉模型，让它改了再提交。只是找不到人或太宽、而这正是
+ *   用户明说的要求时，模型把同一份条件原样再提交一次就算通过：没有这样的人也是一个结果。别的
+ *   问题原样再交也不收。每份条件都在沙箱里真跑一遍，跑通的那份是录取的：写进记录的只有它，
+ *   次数用完时最后一次没通过也一样。没通过的提交记一步。
  *
  * 候选人只从搜索来：读经历判的是搜索找到的段算不算，不添加候选人，也不排序。没确认过的段不算数：
  * 名单上只有确认过的人；一轮读不完时没读到的人不上名单，名单上方写明列到了哪一档职级
@@ -49,13 +50,7 @@ import type {
 	TraceStep,
 } from "#/search/trace";
 import { discover } from "./discover";
-import {
-	type Judge,
-	type RecordStep,
-	reader,
-	type Trial,
-	trial,
-} from "./reading";
+import { type Reader, type RecordStep, type Trial, trial } from "./reading";
 
 /** 提交搜索条件的工具名。 */
 export const SUBMIT = "submit" as const;
@@ -98,7 +93,6 @@ function probeTrace(tried: Trial): Probe {
 			people: problem === null ? people : null,
 		})),
 		total: tried.total,
-		candidates: tried.candidates,
 		unread: tried.unconfirmed.length,
 	};
 }
@@ -142,10 +136,10 @@ function discoveryTrace(discovery: Discovery): DiscoveryTrace {
 
 /** 对模型说的下一步：候选人还有 `unread` 段经历没读，这一轮还能读 `room` 段。 */
 function nextOf(unread: number, room: number): string {
-	if (unread === 0) return "候选人的经历都读过了，可以提交";
+	if (unread === 0) return "候选人的经历都读过了";
 	if (room === 0)
-		return "这一轮能读的经历读完了，其余的候选人名单上方会向 HR 说明：直接提交";
-	return "候选人还有经历没读过，没读过的不上名单：用 read 读完";
+		return "这一轮能读的经历到上限了，其余的候选人名单上方会向 HR 说明，不用为此改条件";
+	return "候选人还有经历没读：用 read 读，看判据和正则准不准；没读的提交之后也会读完";
 }
 
 /** 提交检查找出的一处问题：回给模型的那句话，和记进步骤给 HR 看的那一类。 */
@@ -158,18 +152,14 @@ type Problem = SubmitIssue & { message: string };
  *   （`contentKey`）丢掉，和 `understood` 丢形状不合规的条件同一条规则。
  * - `unanswered`：录取的那份算不算作答（`search/intent.ts` 的 `unanswered`），不算时是原因。
  * - `hard`：形状不对被丢、标签里有内部用词、这一轮新写或改过的「做过什么」没写判据、
- *   `where` 编不过、正则写不对、执行报错、这一轮还读得到的经历没确认（`room` 是还能读几段）、
- *   读过之后改了判据的字（`given` 是这一轮读过的判据：其中有的不在提交里了，提交里又多出
- *   一条哪一轮都没读过的判据。结论按判据的文字存，改一个字读过的就都用不上）、没作答。写成这样
- *   HR 看到的不是用户要的，或者根本搜不了，原样再交也不收，一定要改。
+ *   `where` 编不过、正则写不对、执行报错、没作答。写成这样 HR 看到的不是用户要的，或者根本
+ *   搜不了，原样再交也不收，一定要改。
  * - `soft`：新写的条件一个人都找不到、宽到名单出不来。人才库里可能本来就没有这样的人，或者
  *   用户要的就这么宽：模型确认是用户的原意，同一份原样再交就收。
  */
 async function checkSubmission(
 	submitted: Submission,
 	base: readonly QueryCondition[],
-	room: number,
-	given: ReadonlySet<string>,
 	rootTurnId: string,
 ): Promise<{
 	admitted: Understood;
@@ -229,7 +219,7 @@ async function checkSubmission(
 			add(soft, {
 				kind: "unfound",
 				subject: c.label,
-				message: `「${c.label}」在人才库里一个人都找不到：字面对不上，或者对得上的经历读下来都不算。先用 find 看看人才库里这件事怎么叫，改正则；确实没有这样的人、而用户点名要，照原样再提交，在 note 里说一句`,
+				message: `「${c.label}」在人才库里一个人都找不到：字面对不上，或者对得上的经历读下来都不算。先用 find 看看人才库里这件事怎么叫，改正则；确实没有这样的人、而用户点名要，照原样再提交；哪一项没有人名单上会说，note 里不用说`,
 			});
 	}
 	for (const label of tried.overflow)
@@ -238,35 +228,6 @@ async function checkSubmission(
 			subject: label,
 			message: `「${label}」找出的经历太多，名单出不来：写得更具体一些`,
 		});
-	if (tried.unconfirmed.length > 0) {
-		const active = tried.conditions.map(({ condition }) => condition);
-		const criteriaOf = (list: readonly QueryCondition[]) =>
-			list.flatMap((c) => (c.seek?.criterion ? [c.seek.criterion] : []));
-		const kept = new Set(criteriaOf(active));
-		const lost = [...given].filter((criterion) => !kept.has(criterion));
-		const before = new Set(criteriaOf(base));
-		const rewritten =
-			lost.length > 0
-				? active.filter(
-						(c) =>
-							c.seek?.criterion &&
-							!given.has(c.seek.criterion) &&
-							!before.has(c.seek.criterion),
-					)
-				: [];
-		for (const c of rewritten)
-			add(hard, {
-				kind: "unread",
-				subject: c.label,
-				message: `「${c.label}」的 criterion 和读经历时用的不一样，读过的结论用不上：改回读的时候那一份，一个字都不要改——${lost.map((criterion) => `「${criterion}」`).join("；")}${room > 0 ? "。确实要换判据，就用 read 按新的重新读" : ""}`,
-			});
-		if (rewritten.length === 0 && room > 0)
-			add(hard, {
-				kind: "unread",
-				subject: null,
-				message: "候选人还有经历没读过，没读过的不上名单：用 read 读完再提交",
-			});
-	}
 	const admitted =
 		failed.size > 0
 			? understood(submitted, base, (d) => !failed.has(contentKey(d)))
@@ -285,7 +246,7 @@ async function checkSubmission(
 
 /**
  * AI 处理一轮用的工具，连同模型最后一次提交的条件。
- * `record` 在模型每调一次工具时记下一步，读经历时同时交出每一批的结论；`judge` 读一批经历；
+ * `record` 在模型每调一次工具时记下一步；`reading` 是这一轮的读经历，交出的结论由它记；
  * `base` 是上一轮的条件，用来定 id、沿用停用、判断哪些是新写的；
  * `rootTurnId` 是这一轮所在的找人任务（链头的 id）：读过的结论记在它名下，也只认它名下的。
  */
@@ -293,12 +254,12 @@ export function agentTools({
 	base,
 	record,
 	rootTurnId,
-	judge,
+	reading,
 }: {
 	base: readonly QueryCondition[];
 	record: RecordStep;
 	rootTurnId: string;
-	judge: Judge;
+	reading: Reader;
 }) {
 	/** 最后一次检查完的提交：原话、录取的那份、算不算作答、过没过。 */
 	let last: {
@@ -308,7 +269,6 @@ export function agentTools({
 		passed: boolean;
 	} | null = null;
 	const answered = new Map<string, Promise<unknown>>();
-	const reading = reader({ rootTurnId, record, judge });
 	const log = (step: TraceStep) => record(step, []);
 
 	/** 同样的输入只查一次库；查失败的不留着，下一次重新查。 */
@@ -431,19 +391,13 @@ export function agentTools({
 		}),
 		[SUBMIT]: tool({
 			description:
-				"提交整份新的条件和说明。检查通过，这一轮就结束；没通过会告诉你哪里有问题，改好再提交。只是找不到人或太宽、而这正是用户明说的要求时，把同一份条件原样再提交一次；写不对、跑不了、还有经历没读的原样再交也不收。",
+				"提交整份新的条件和说明。检查通过，理解就结束，候选人还没读的经历接着读完；没通过会告诉你哪里有问题，改好再提交。只是找不到人或太宽、而这正是用户明说的要求时，把同一份条件原样再提交一次；写不对、跑不了的原样再交也不收。",
 			inputSchema: submissionSchema,
 			execute: async (submitted) => {
 				const resubmitted =
 					last !== null &&
 					JSON.stringify(last.submitted) === JSON.stringify(submitted);
-				const checked = await checkSubmission(
-					submitted,
-					base,
-					reading.room(),
-					reading.given,
-					rootTurnId,
-				);
+				const checked = await checkSubmission(submitted, base, rootTurnId);
 				const problems = resubmitted
 					? checked.hard
 					: [...checked.hard, ...checked.soft];

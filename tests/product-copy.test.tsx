@@ -142,25 +142,25 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		const text = await failed("unanswered");
 		assert.match(text, /没能理解这段需求/);
 		assert.match(text, /重试/);
-		assert.match(text, /换一种说法/);
+		assert.match(text, /换个说法/);
 		assert.doesNotMatch(text, /没有符合|0\s*人/);
 	});
 
 	test("AI 服务连不上、报错时不怪这段描述，也不叫人换说法", async () => {
 		for (const fault of ["unreachable", "rejected"] as const) {
 			const text = await failed(fault);
-			assert.match(text, /你的描述没有问题/);
-			assert.doesNotMatch(text, /换一种说法|没能理解/);
+			assert.match(text, /这句需求已经记下/);
+			assert.doesNotMatch(text, /换个说法|没能理解/);
 			assert.match(text, /重试/);
 			assert.match(text, /改用关键词搜索/, "不经过 AI 的那条路照样能用");
 		}
-		assert.match(await failed("unreachable"), /AI 服务暂时不可用/);
-		assert.match(await failed("rejected"), /AI 服务出错/);
+		assert.match(await failed("unreachable"), /AI 服务暂时连不上/);
+		assert.match(await failed("rejected"), /AI 服务出了问题/);
 	});
 
 	test("AI 搜索没开启时不给重试：重试也一样", async () => {
 		const text = await failed("unconfigured");
-		assert.match(text, /AI 搜索未开启/);
+		assert.match(text, /AI 搜索还没开通/);
 		assert.doesNotMatch(text, /重试/);
 		assert.match(text, /用关键词搜索/);
 	});
@@ -197,7 +197,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 					results: [],
 					facets: emptyFacets(),
 					total: 0,
-					empty: { kind: "unmet" },
+					empty: { kind: "unmet", nobody: [compiledClaim("量子炼金").id] },
 				}}
 				spec={{
 					conditions: [
@@ -208,7 +208,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			/>,
 		);
 		// 先确认画出来的确实是空态那一支：两条 doesNotMatch 在一片空白上也成立
-		assert.match(text, /没有找到符合的人/);
+		assert.match(text, /人才库里没有符合「量子炼金」的人/);
 		assert.doesNotMatch(text, /0\s*人/);
 		assert.doesNotMatch(text, /按证据排序/);
 	});
@@ -234,7 +234,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 					results: [],
 					facets: emptyFacets(),
 					total: 0,
-					empty: { kind: "unmet" },
+					empty: { kind: "unmet", nobody: [] },
 				}}
 				spec={{
 					conditions: [
@@ -245,7 +245,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			/>,
 		);
 		assert.match(text, /正在补充符合条件的人…/);
-		assert.doesNotMatch(text, /没有找到符合的人|0\s*人/);
+		assert.doesNotMatch(text, /没有找到符合|0\s*人/);
 	});
 
 	test("名单还没列全时说列到了哪一档职级；最高一档也没列全就不说职级", () => {
@@ -253,12 +253,9 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		const open = incompleteText({ above: null });
 		assert.equal(
 			covered,
-			"符合的人较多，已列出 P7 及以上的。补充职级、部门等条件可以找得更准。",
+			"已列出 P7 及以上的，更低职级的还没找完。补充职级、部门等条件可以找得更准。",
 		);
-		assert.equal(
-			open,
-			"符合的人较多，名单还没列全。补充职级、部门等条件可以找得更准。",
-		);
+		assert.equal(open, "名单还没列全。补充职级、部门等条件可以找得更准。");
 		assert.deepEqual(internalWordsIn(covered + open), []);
 		assert.equal(
 			seen(<IncompleteNotice incomplete={{ above: "P7" }} />),
@@ -281,7 +278,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 
 	test("补人没成：说名单可能不完整和哪个环节出了问题，能重试的给重试", () => {
 		const text = seen(<NotCompleted fault="unreachable" onRetry={() => {}} />);
-		assert.match(text, /名单可能不完整：AI 服务暂时不可用/);
+		assert.match(text, /名单可能不完整：AI 服务暂时连不上/);
 		assert.match(text, /重试/);
 		assert.doesNotMatch(
 			seen(<NotCompleted fault="unconfigured" onRetry={() => {}} />),
