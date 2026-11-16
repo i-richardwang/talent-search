@@ -45,7 +45,7 @@ import { compileConditions } from "#/search/compile";
 import type { QueryCondition } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
-import type { Group, Judge } from "#/server/reading";
+import type { Batch, Judge } from "#/server/reading";
 import { catalogOf, tempSchema } from "./temp-schema";
 
 /**
@@ -256,18 +256,16 @@ export type Read = {
 };
 
 /** 读一批经历时每一段都算。 */
-export const fitsAll: Judge = async (groups) =>
-	groups.flatMap((group) => group.segments.map((segment) => segment.n));
+export const fitsAll: Judge = async (batch) =>
+	batch.segments.map((segment) => segment.n);
 
 /** 读一批经历时，文字过得了 `keep` 的段才算。 */
 export const fitsWhere =
-	(keep: (text: string, group: Group) => boolean): Judge =>
-	async (groups) =>
-		groups.flatMap((group) =>
-			group.segments
-				.filter((segment) => keep(segment.text, group))
-				.map((segment) => segment.n),
-		);
+	(keep: (text: string, batch: Batch) => boolean): Judge =>
+	async (batch) =>
+		batch.segments
+			.filter((segment) => keep(segment.text, batch))
+			.map((segment) => segment.n);
 
 /** `probe` 带回的样子。 */
 export type Tried = {
@@ -300,7 +298,7 @@ export async function agentOn(
 	const { saveVerdicts } = await import("#/server/judged");
 	const { db } = await import("#/db");
 	const steps: TraceStep[] = [];
-	const seen: Group[][] = [];
+	const seen: Batch[] = [];
 	const agent = agentTools({
 		rootTurnId,
 		base,
@@ -308,9 +306,9 @@ export async function agentOn(
 			await saveVerdicts(rootTurnId, verdicts, db);
 			steps.push(step);
 		},
-		judge: (groups, abortSignal) => {
-			seen.push([...groups]);
-			return judge(groups, abortSignal);
+		judge: (batch, abortSignal) => {
+			seen.push(batch);
+			return judge(batch, abortSignal);
 		},
 	});
 	const call = <T = unknown>(
@@ -326,24 +324,12 @@ export async function agentOn(
 	return { ...agent, call, steps, seen };
 }
 
-/** 读经历的请求里给的那一批（`llm.ts` 的 `judgeSegments`）。 */
-function groupsIn(text: string | null | undefined): Group[] {
-	try {
-		const groups = JSON.parse(text ?? "") as unknown;
-		return Array.isArray(groups) ? (groups as Group[]) : [];
-	} catch {
-		return [];
-	}
-}
-
 /** 假模型交的结论：这一批里符合的段的编号。 */
-function fitsIn(groups: readonly Group[]) {
+function fitsIn(batch: Batch) {
 	return {
-		fits: groups.flatMap((group) =>
-			group.segments
-				.filter((segment) => fakeFits(group.criterion, segment.text))
-				.map((segment) => segment.n),
-		),
+		fits: batch.segments
+			.filter((segment) => fakeFits(batch.criterion, segment.text))
+			.map((segment) => segment.n),
 	};
 }
 
@@ -509,7 +495,7 @@ function startModelServer() {
 					request.tools[0]?.function.name === "judge"
 				) {
 					exploring?.push(body);
-					calls([["judge", fitsIn(groupsIn(users.at(-1)))]]);
+					calls([["judge", fitsIn(JSON.parse(users.at(-1) ?? "") as Batch)]]);
 					return;
 				}
 				// 识别出查询理解的提示词：先让候选人的经历读完，再用提交工具提交那张表

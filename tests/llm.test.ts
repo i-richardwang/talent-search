@@ -144,20 +144,18 @@ async function answeringJudge(fits: number[], run: () => Promise<unknown>) {
 	}
 }
 
-const GROUPS = [
-	{
-		label: "做过巡检",
-		criterion: "本人做设备巡检",
-		segments: [
-			{ n: 1, text: "岗位：巡检员" },
-			{ n: 2, text: "岗位：销售" },
-		],
-	},
-];
+const BATCH = {
+	label: "做过巡检",
+	criterion: "本人做设备巡检",
+	segments: [
+		{ n: 1, text: "岗位：巡检员" },
+		{ n: 2, text: "岗位：销售" },
+	],
+};
 
 test("读一批经历：交回这一批里符合的段的编号", async () => {
 	const { result, requests } = await answeringJudge([1, 1], () =>
-		judgeSegments(GROUPS),
+		judgeSegments(BATCH),
 	);
 	assert.deepEqual(result, [1]);
 	assert.equal(requests, 1);
@@ -165,7 +163,7 @@ test("读一批经历：交回这一批里符合的段的编号", async () => {
 
 test("读一批经历交的编号不在这一批里：再问一次，还不对就失败，不收一份对不上号的结论；这不算没读懂 HR 的话", async () => {
 	const { result, requests } = await answeringJudge([1, 9], () =>
-		judgeSegments(GROUPS),
+		judgeSegments(BATCH),
 	);
 	assert.ok(result instanceof Error, String(result));
 	assert.ok(!(result instanceof UnansweredError));

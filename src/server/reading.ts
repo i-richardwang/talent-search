@@ -2,19 +2,20 @@
  * 读经历：把一份条件的候选人还没确认过的段读完，一条判据下一段算不算，存成结论。
  *
  * 读是独立的一件事，不在查询理解的对话里：每一批是一次单独的模型请求（`Judge`，生产中是
- * `llm.ts` 的 `judgeSegments`），拿到的只有这一批经历和它们所属条件的标签、判据；HR 的话、
- * 别的条件、别的批次都不给。判据是全部的标准，所以同一条判据下同样内容的段在哪一轮读都是
+ * `llm.ts` 的 `judgeSegments`），拿到的只有一条条件的标签、判据和这条条件的一批经历；HR 的话、
+ * 别的条件、别的批次都不给。一批只有一条判据：模型只交符合的段，没交的按不算存下，一次请求里
+ * 有几条判据时漏交一条看不出来。判据是全部的标准，所以同一条判据下同样内容的段在哪一轮读都是
  * 同一个结论，结论才能按「判据 × 段的内容」保存和沿用（`judged.ts`）。查询理解只看得到读的
  * 结果：每条读了多少段、多少段算数（`agent-tools.ts` 的 `read`）；HR 直接改条件、或者条件不变
  * 接着往下找时，没有对话，直接读（`turn.ts` 的 `confirmTurn`）。
  *
- * 一次读一波，一波分成几批同时读；一波的结论都写入后重新取当前候选，再读下一波：已经出局的人
+ * 一次读一波，一波是同时读的几批；一波的结论都写入后重新取当前候选，再读下一波：已经出局的人
  * 的其余经历不占额度，必须和排除的条件确认完才轮到加分的。职级高的人在前，一轮最多读
  * `READ_MAX` 段：人在等，读到这里为止，没读到的人不上名单（`search/empty.ts` 的 `Incomplete`）。
  */
 import "@tanstack/react-start/server-only";
 import { probe as probeQuery } from "#/search/execute";
-import type { Query } from "#/search/query";
+import type { Query, QueryCondition } from "#/search/query";
 import type { TraceStep } from "#/search/trace";
 import { positiveInt } from "./endpoint";
 import { segmentTexts, type Verdict } from "./judged";
@@ -28,9 +29,6 @@ export const READ_BATCH = 160;
  */
 const READ_PARALLEL = 2;
 
-/** 一波读几段：同时读的那几批。 */
-export const READ_WAVE = READ_BATCH * READ_PARALLEL;
-
 /**
  * 一轮最多读几段：人在等，读到这里为止。`LLM_READ_MAX` 可以改，读得越多一轮等得越久、花得
  * 越多。
@@ -43,8 +41,8 @@ export type RecordStep = (
 	verdicts: readonly Verdict[],
 ) => Promise<void>;
 
-/** 给模型读的一组经历：同一条条件下的几段，每段一个这一批之内的编号。 */
-export type Group = {
+/** 给模型读的一批经历：同一条条件下的几段，每段一个这一批之内的编号。 */
+export type Batch = {
 	label: string;
 	criterion: string;
 	segments: { n: number; text: string }[];
@@ -52,7 +50,7 @@ export type Group = {
 
 /** 读一批经历：交回符合的段的编号，只能是这一批里的编号。 */
 export type Judge = (
-	groups: readonly Group[],
+	batch: Batch,
 	abortSignal?: AbortSignal,
 ) => Promise<number[]>;
 
@@ -95,43 +93,42 @@ export type Reading =
 
 type Unconfirmed = Trial["unconfirmed"];
 
-function chunks<T>(list: readonly T[], size: number): T[][] {
-	const out: T[][] = [];
-	for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
-	return out;
-}
+/** 一批要读的段：同一条条件的，读的时候照它的判据。 */
+type Part = {
+	condition: QueryCondition;
+	criterion: string;
+	experienceIds: number[];
+};
 
-/** 一批要读的段写成给模型读的几组，连同编号对回哪条条件、哪条判据下的哪一段。 */
-function batchOf(
-	part: Unconfirmed,
-	texts: Map<number, { content: string; text: string }>,
-) {
-	const segments = new Map<
-		number,
-		{ conditionId: string; label: string; criterion: string; content: string }
-	>();
-	const groups = new Map<string, Group>();
-	for (const { condition, experienceId } of part) {
+/**
+ * 这一波读哪几批：没确认过的段按条件分开，一条条件每 `READ_BATCH` 段一批，批按第一段出现的先后
+ * 排（段的顺序是职级高的人在前），取最前的 `READ_PARALLEL` 批，总共不超过 `room` 段。
+ */
+function waveOf(unconfirmed: Unconfirmed, room: number): Part[] {
+	// 每条条件正在攒的那一批；攒满了，下一段另起一批
+	const open = new Map<string, Part>();
+	const parts: Part[] = [];
+	for (const { condition, experienceId } of unconfirmed) {
 		const criterion = condition.seek?.criterion;
-		const segment = texts.get(experienceId);
-		// 候选的段都出自写了判据的条件；段不在了，是人才库在这期间刚同步过
-		if (!criterion || !segment)
-			throw new Error("候选人的经历刚有变动，这一次没有读完");
-		const n = segments.size + 1;
-		segments.set(n, {
-			conditionId: condition.id,
-			label: condition.label,
-			criterion,
-			content: segment.content,
-		});
-		let group = groups.get(condition.id);
-		if (!group) {
-			group = { label: condition.label, criterion, segments: [] };
-			groups.set(condition.id, group);
+		// 没写判据的条件没有要确认的段
+		if (!criterion) continue;
+		let part = open.get(condition.id);
+		if (!part || part.experienceIds.length === READ_BATCH) {
+			part = { condition, criterion, experienceIds: [] };
+			open.set(condition.id, part);
+			parts.push(part);
 		}
-		group.segments.push({ n, text: segment.text });
+		part.experienceIds.push(experienceId);
 	}
-	return { segments, groups: [...groups.values()] };
+	const wave: Part[] = [];
+	let taken = 0;
+	for (const part of parts.slice(0, READ_PARALLEL)) {
+		const experienceIds = part.experienceIds.slice(0, room - taken);
+		if (experienceIds.length === 0) break;
+		wave.push({ ...part, experienceIds });
+		taken += experienceIds.length;
+	}
+	return wave;
 }
 
 /**
@@ -166,47 +163,67 @@ export function reader({
 			const tried = await trial(query, rootTurnId);
 			if (tried.total === null) return { kind: "unlisted", tried };
 			const left = tried.unconfirmed.length;
-			const wave = tried.unconfirmed.slice(0, Math.min(READ_WAVE, room()));
+			const wave = waveOf(tried.unconfirmed, room());
 			if (wave.length === 0)
 				return { kind: "read", conditions: [...tally.values()], left };
+			const experienceIds = wave.flatMap((part) => part.experienceIds);
 			await record(
-				{ at: Date.now(), tool: "read", segments: wave.length, left },
+				{ at: Date.now(), tool: "read", segments: experienceIds.length, left },
 				[],
 			);
-			const texts = await segmentTexts([
-				...new Set(wave.map((u) => u.experienceId)),
-			]);
+			const texts = await segmentTexts([...new Set(experienceIds)]);
 			const batches = await Promise.all(
-				chunks(wave, READ_BATCH).map(async (part) => {
-					const batch = batchOf(part, texts);
-					const chosen = new Set(await judge(batch.groups, abortSignal));
-					const judged = [...batch.segments].map(([n, segment]) => ({
-						...segment,
-						fits: chosen.has(n),
-					}));
+				wave.map(async ({ condition, criterion, experienceIds }) => {
+					const segments = experienceIds.map((id) => {
+						const segment = texts.get(id);
+						// 段不在了，是人才库在这期间刚同步过
+						if (!segment)
+							throw new Error("候选人的经历刚有变动，这一次没有读完");
+						return segment;
+					});
+					// 一段的编号是它在这一批里排第几
+					const chosen = new Set(
+						await judge(
+							{
+								label: condition.label,
+								criterion,
+								segments: segments.map(({ text }, i) => ({ n: i + 1, text })),
+							},
+							abortSignal,
+						),
+					);
 					await record(
 						{
 							at: Date.now(),
 							tool: "judge",
 							fits: chosen.size,
-							unfit: judged.length - chosen.size,
+							unfit: segments.length - chosen.size,
 						},
-						judged.map(({ criterion, content, fits }) => ({
+						segments.map(({ content }, i) => ({
 							criterion,
 							content,
-							fits,
+							fits: chosen.has(i + 1),
 						})),
 					);
-					return judged;
+					return {
+						condition,
+						criterion,
+						read: segments.length,
+						fits: chosen.size,
+					};
 				}),
 			);
-			for (const { conditionId, label, criterion, fits } of batches.flat()) {
-				const counted = tally.get(conditionId) ?? { label, read: 0, fits: 0 };
-				tally.set(conditionId, counted);
-				counted.read++;
-				if (fits) counted.fits++;
+			for (const { condition, criterion, read, fits } of batches) {
+				const counted = tally.get(condition.id) ?? {
+					label: condition.label,
+					read: 0,
+					fits: 0,
+				};
+				tally.set(condition.id, counted);
+				counted.read += read;
+				counted.fits += fits;
 				given.add(criterion);
-				concluded++;
+				concluded += read;
 			}
 		}
 	}
