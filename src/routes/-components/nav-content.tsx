@@ -34,11 +34,11 @@ import { Icon } from "#/components/ui/icon";
 import { NavGroup, NavGroups, NavItem } from "#/components/ui/nav-item";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { toast } from "#/components/ui/toast";
-import type { RecentPage } from "#/server/turn";
 import { authClient } from "../-lib/auth-client";
 import { RECENT_COUNTS, type RecentCount } from "../-lib/nav-prefs";
+import { useRecents } from "../-lib/recents";
 import { ToggleNavButton, useNavControl } from "./nav-control";
-import { LoadFailed, RecentItem, useRetryRoot } from "./recent-item";
+import { LoadFailed, RecentItem } from "./recent-item";
 
 /** 导航栏里能收起的组。 */
 const GROUPS = ["recent"] as const;
@@ -48,7 +48,9 @@ const GROUPS = ["recent"] as const;
  * 还没有搜索记录时最近搜索这一组整个不画：首页那一栏有起步的例子。
  */
 export function NavContent() {
-	const { recent, user } = useLoaderData({ from: "__root__" });
+	const { user } = useLoaderData({ from: "__root__" });
+	const { page: recent } = useRecents();
+	// 退出成功后页面要换走：从按下到换走都算正在离开，比退出那一次请求长
 	const [leaving, setLeaving] = useState(false);
 	const control = useNavControl();
 	const matchRoute = useMatchRoute();
@@ -82,7 +84,7 @@ export function NavContent() {
 						}
 						value={GROUPS.filter((key) => !folded.includes(key))}
 					>
-						<RecentGroup recent={recent} />
+						<RecentGroup />
 					</NavGroups>
 				)}
 				<div aria-hidden className="min-h-0 flex-1" />
@@ -148,9 +150,9 @@ export function NavContent() {
  * 最近搜索这一组：条数在组名旁的菜单里选，列不完时最后一行「更多」打开全部记录的抽屉。
  * 组名上按右键打开和行尾「…」同一份菜单。
  */
-function RecentGroup({ recent }: { recent: RecentPage | null }) {
+function RecentGroup() {
 	const control = useNavControl();
-	const { retry, retrying } = useRetryRoot();
+	const { page: recent, reload } = useRecents();
 	const count = control?.prefs.recentCount ?? RECENT_COUNTS[0];
 	const menu = (
 		<RecentMenuItems
@@ -182,7 +184,7 @@ function RecentGroup({ recent }: { recent: RecentPage | null }) {
 			value="recent"
 		>
 			{recent === null ? (
-				<LoadFailed onRetry={retry} retrying={retrying} />
+				<LoadFailed onRetry={reload} />
 			) : (
 				<>
 					{recent.rows.slice(0, count).map((record) => (

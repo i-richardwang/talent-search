@@ -190,19 +190,15 @@ function Sizes() {
 }
 
 function Usage() {
-	const [saving, setSaving] = useState(false);
-	const save = () => {
-		setSaving(true);
-		window.setTimeout(() => setSaving(false), 1200);
-	};
+	const save = () => new Promise((done) => window.setTimeout(done, 1200));
 	return (
 		<ExampleGrid>
 			<Example
-				description="提交后按钮进入加载态，挡住重复点击，完成后恢复。"
+				description="动作交回 Promise，按钮自己进入加载态，挡住重复点击，有结果后恢复。"
 				title="提交与反馈"
 			>
-				<Button icon={Send} loading={saving} onClick={save} type="primary">
-					{saving ? "保存中" : "保存为模板"}
+				<Button icon={Send} onClick={save} type="primary">
+					保存为模板
 				</Button>
 			</Example>
 			<Example
@@ -238,7 +234,7 @@ export function ButtonPage() {
 					"一组按钮里最多一个 primary；不自己改按钮的颜色，确认删除用 primary 加 danger。",
 					"站内跳转用 render 传路由的 <Link>，不写 href。",
 					"尺寸用 size，不覆盖高度、圆角和内边距；宽度属于外层布局。",
-					"加载中用 loading，按钮文字可以跟着换成进行时。",
+					"按下去要等结果的动作，onClick 交回它的 Promise，按钮自己停在加载态；加载态由别处的状态决定时才传 loading。",
 				],
 				usage: `<Button icon={Plus} type="primary">\n  新建搜索\n</Button>`,
 			}}

@@ -76,13 +76,12 @@ function Home() {
 	const asked = useRouterState({
 		select: (state) => (state.location.search as { mode?: "keyword" }).mode,
 	});
-	const { recent, understanding } = useLoaderData({ from: "__root__" });
+	const { understanding } = useLoaderData({ from: "__root__" });
 	return (
 		<HomeScreen
 			asked={asked}
 			error={null}
 			onQuery={() => true}
-			recent={recent}
 			understanding={understanding}
 		/>
 	);

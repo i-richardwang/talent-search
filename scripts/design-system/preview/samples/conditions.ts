@@ -94,7 +94,7 @@ export const KEYWORD_SPEC: { conditions: Condition[] } = {
 	}),
 };
 
-/** 候选人较多、一轮确认不完时，名单完整覆盖到的那一档职级。 */
+/** 符合的人较多、一轮读不完时，名单列到的那一档职级。 */
 export const COVERED: Incomplete = { above: "L7" };
 
 /**

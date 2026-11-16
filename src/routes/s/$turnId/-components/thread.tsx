@@ -33,7 +33,12 @@ import { Text } from "#/components/ui/text";
 import { cn } from "#/lib/utils";
 import type { TurnNotes } from "#/search/intent";
 import { labelsInSentence, type QueryCondition } from "#/search/query";
-import { changesOf, type QueryInput, queryOfSpec } from "#/search/spec";
+import {
+	changesOf,
+	type QueryInput,
+	queryOfSpec,
+	sameConditions,
+} from "#/search/spec";
 import type {
 	DiscoveryTrace,
 	FoundTrace,
@@ -69,7 +74,13 @@ function replyText(previous: Turn | null, spec: QueryCondition[]) {
 		.join("；");
 }
 
+/** 直接改条件的一轮做了什么。条件和上一轮是同一张表的，是名单还没列全时接着往下找。 */
 function editText(previous: Turn | null, spec: QueryCondition[]) {
+	if (
+		previous?.spec &&
+		sameConditions(queryOfSpec(previous.spec).conditions, spec)
+	)
+		return "你选择了继续找";
 	const { added, removed } = diff(previous, spec);
 	const parts = [
 		added.length > 0 ? `添加 ${labelsInSentence(added)}` : null,
@@ -242,7 +253,7 @@ export function Thread({
 	/** 选了最后一轮那一问的一句回答。 */
 	onAnswer: (text: string) => unknown;
 	/** 让 AI 重新处理最后一轮。 */
-	onRetry: () => void;
+	onRetry: () => unknown;
 	/** 最后一轮还没理解完：可以接着写，先不能提交。 */
 	waiting: boolean;
 	/** 配了查询理解才有输入框；没配时线程只能看，条件在 chip 上改。 */
@@ -395,7 +406,7 @@ function Round({
 	progress: Progress;
 	/** 选了 AI 那一问的一句回答：把它当成下一句话说给 AI。 */
 	onAnswer: (answer: string) => unknown;
-	onRetry: () => void;
+	onRetry: () => unknown;
 }) {
 	const { said, spec, notes } = round;
 	const viewing = mark !== "link";
@@ -499,15 +510,13 @@ function lastStepAt(at: number, trace: readonly TraceStep[]) {
 	return trace[trace.length - 1]?.at ?? at;
 }
 
-/** 按下重试之后到 AI 重新开始处理这一轮之前，钮停在等待态，免得被连按两次。 */
 function Fault({
 	fault,
 	onRetry,
 }: {
 	fault: AttemptFault;
-	onRetry: () => void;
+	onRetry: () => unknown;
 }) {
-	const [retrying, setRetrying] = useState(false);
 	const copy = FAULT_COPY[fault];
 	return (
 		<Alert
@@ -515,11 +524,7 @@ function Fault({
 				copy.retry && (
 					<Button
 						icon={RotateCwIcon}
-						loading={retrying}
-						onClick={() => {
-							setRetrying(true);
-							onRetry();
-						}}
+						onClick={onRetry}
 						size="small"
 						type="fill"
 					>
@@ -852,11 +857,7 @@ export function stepFindings(step: TraceStep): string[] {
 						: "候选人的经历都确认过了",
 			];
 		case "judge":
-			return [
-				"redo" in step
-					? "这一批要重新判断"
-					: `${step.fits} 段符合，${step.unfit} 段不符合`,
-			];
+			return [`${step.fits} 段符合，${step.unfit} 段不符合`];
 		case "submit":
 			return step.issues.map(issueLine);
 	}

@@ -7,6 +7,8 @@
  * 用例文件是一个 JSON 数组，每项：
  *   { "name": "补充需求，去掉一条",
  *     "base": "推荐算法, +company:字节",   // 可选：当前条件，一行查询语法（search/query-syntax.ts），编译成查询
+ *     "history": ["HR：找做推荐算法的", "你：按这些条件找：推荐算法。"],
+ *                                      // 可选：这次找人之前的对话，写成发给模型的样子（search/history.ts）
  *     "say": "不用非得是字节",          // 这一句话
  *     "drop": "+company:字节",             // 可选：新表里必须没有的条件，一行查询语法
  *     "has": "education:>=本科",       // 可选：新表里必须有一条同强度、选中同样的段或人的条件
@@ -65,7 +67,7 @@ import { RESULT_MAX } from "#/search/weights";
 import { agentTools } from "#/server/agent-tools";
 import { companyFacts, streamFacts } from "#/server/discover";
 import { saveVerdicts } from "#/server/judged";
-import { understand } from "#/server/llm";
+import { judgeSegments, understand } from "#/server/llm";
 import { createTurn, deleteSearch } from "#/server/turn";
 
 type Mode = QueryCondition["mode"];
@@ -73,6 +75,7 @@ type Mode = QueryCondition["mode"];
 type Case = {
 	name: string;
 	base: QueryCondition[];
+	history: string[];
 	say: string;
 	drop: QueryCondition[];
 	has: QueryCondition[];
@@ -113,6 +116,22 @@ function loadCases(file: string): Case[] {
 				throw new Error(`${where}：${key} 解析不出任何条件`);
 			return compileConditions(parsed).conditions;
 		};
+		/**
+		 * 当前条件写成对话记录里的样子：对话里写了「做过什么」的条件都带判据（提交检查不收没写的），
+		 * 一行语法编不出判据，这里补上。不补的话模型沿用时会替它写一条，就不是原样保留了。
+		 */
+		const conversational = (conditions: QueryCondition[]) =>
+			conditions.map((c) =>
+				c.seek && !c.seek.criterion
+					? {
+							...c,
+							seek: {
+								...c.seek,
+								criterion: `本人做过${c.label}相关的工作；只是提到、配合的不算。`,
+							},
+						}
+					: c,
+			);
 		const list = (key: string) => {
 			const value = c[key] ?? [];
 			if (!strings(value)) throw new Error(`${where}：${key} 只能是字符串数组`);
@@ -145,7 +164,8 @@ function loadCases(file: string): Case[] {
 			throw new Error(`${where}：evidence 是工号到 { months, place } 的对象`);
 		const parsed: Case = {
 			name: c.name.trim(),
-			base: syntax("base"),
+			base: conversational(syntax("base")),
+			history: list("history"),
 			say: c.say.trim(),
 			drop: syntax("drop"),
 			has: syntax("has"),
@@ -242,11 +262,12 @@ try {
 		try {
 			const result = await understand(
 				c.say,
-				facts,
+				{ ...facts, history: c.history },
 				agentTools({
 					base: c.base,
 					rootTurnId,
 					record: (_step, verdicts) => saveVerdicts(rootTurnId, verdicts, db),
+					judge: judgeSegments,
 				}),
 			);
 			const next = result.query.conditions;
@@ -336,7 +357,7 @@ try {
 					RESULT_MAX,
 				);
 				const order = outcome.results.map((r) => r.employee.empId);
-				roster = `名单 ${outcome.total} 人${outcome.incomplete ? `（候选人没确认完，完整覆盖到 ${outcome.incomplete.above ?? "无"}）` : ""}：${order.slice(0, 12).join(" ")}${order.length > 12 ? " …" : ""}`;
+				roster = `名单 ${outcome.total} 人${outcome.incomplete ? `（候选人没读完，列到 ${outcome.incomplete.above ?? "无"}）` : ""}：${order.slice(0, 12).join(" ")}${order.length > 12 ? " …" : ""}`;
 				for (const id of c.includes)
 					if (!order.includes(id)) problems.push(`名单上没有 ${id}`);
 				for (const id of c.excludes)

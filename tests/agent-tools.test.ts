@@ -1,5 +1,5 @@
 /**
- * 查询理解的工具里看目录、捞说法、试跑、提交这四个；读经历、下结论和提交前要看完的检查在
+ * 查询理解的工具里看目录、捞说法、试跑、提交这四个；读经历和提交前要读完的检查在
  * `tests/agent-read.test.ts`。跑在临时 schema 上的真 SQL，数据全是合成的。工具给的是人数和
  * 人才库里的写法，和搜索用同一套匹配；提交的条件有问题就不通过，只是找不到人的原样再提交就通过。
  *
@@ -374,7 +374,7 @@ describe("试跑", () => {
 		);
 		assert.equal(result.total, 9);
 		assert.equal(result.unread, 0);
-		assert.match(result.todo, /都看过了，可以提交/);
+		assert.match(result.todo, /都读过了，可以提交/);
 	});
 
 	test("写了判据的条件：看过的经历听结论，判成不算的人不在 people 里，也不在名单上", async () => {
@@ -392,7 +392,7 @@ describe("试跑", () => {
 		assert.equal(result.unread, 0);
 	});
 
-	test("还没看过的经历：people 照数字面对得上的人，名单上一个人都没有，告诉模型去读", async () => {
+	test("还没读过的经历：people 照数字面对得上的人，名单上一个人都没有，告诉模型去读", async () => {
 		const { call } = await agentOn(SEARCH);
 		const [fresh] = drafted("推荐");
 		const result = await call<Tried>("probe", {
@@ -412,7 +412,7 @@ describe("试跑", () => {
 		assert.equal(result.unread, 9);
 		assert.match(
 			result.todo,
-			/候选人还有经历没看过，没看过的不上名单：用 read 取来看/,
+			/候选人还有经历没读过，没读过的不上名单：用 read 读完/,
 		);
 	});
 

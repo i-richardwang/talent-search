@@ -1,6 +1,6 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
-import type { LucideIcon } from "lucide-react";
+import { LoaderCircleIcon, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "#/lib/utils";
 import {
@@ -17,12 +17,14 @@ import { Text } from "./text";
 
 /*
  * 一行就是一条链接：`render` 传路由的 `<Link>`；只打开什么的一行传 `render={<button type="button" />}`。
- * `actions` 画在链接外、盖在行尾，于是链接里不嵌别的动作。
+ * `actions` 画在链接外、盖在行尾，于是链接里不嵌别的动作。这一行说的那件事还在进行时给
+ * `loading`：图标的位置换成转着的圈，做完换回图标。
  */
 
 export function NavItem({
 	icon,
 	iconSize,
+	loading,
 	active,
 	actions,
 	children,
@@ -33,6 +35,7 @@ export function NavItem({
 	icon: LucideIcon;
 	/** `small` 给一长串同类的记录（最近搜索）；缺省给几个固定的入口。 */
 	iconSize?: "small";
+	loading?: boolean;
 	active?: boolean;
 	actions?: ReactNode;
 	children: ReactNode;
@@ -45,7 +48,11 @@ export function NavItem({
 			children: (
 				<>
 					<span className="ui-nav-item-icon">
-						<Icon icon={icon} size={iconSize === "small" ? 14 : 18} />
+						<Icon
+							icon={loading ? LoaderCircleIcon : icon}
+							size={iconSize === "small" ? 14 : 18}
+							spin={loading}
+						/>
 					</span>
 					<Text className="ui-nav-item-title" ellipsis={{ tooltip: true }}>
 						{children}

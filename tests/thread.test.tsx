@@ -148,6 +148,15 @@ describe("后面每一轮", () => {
 		]);
 		assert.match(text, /你修改了搜索条件：移除 带团队/);
 	});
+
+	test("条件和上一轮一样的一轮是接着往下找，不说成改了条件", async () => {
+		const { text } = await seen([
+			{ said: "算法，带团队", spec: "算法, 带团队" },
+			{ said: null, spec: "算法, 带团队" },
+		]);
+		assert.match(text, /你选择了继续找/);
+		assert.doesNotMatch(text, /你修改了搜索条件/);
+	});
 });
 
 describe("第一轮", () => {
@@ -422,13 +431,11 @@ describe("检索人才库的过程", () => {
 				{ at: 5, tool: "read", segments: 0, left: 0 } as const,
 				{ at: 6, tool: "read", segments: 0, left: 40 } as const,
 				{ at: 7, tool: "read", unlisted: true } as const,
-				{ at: 8, tool: "judge", redo: true } as const,
 			].map(stepFindings),
 			[
 				["候选人的经历都确认过了"],
 				["这一次能确认的经历已经到上限"],
 				["这份条件还出不了名单"],
-				["这一批要重新判断"],
 			],
 		);
 		const { text } = await seen([{ said: "做风控策略的", spec: null }], {

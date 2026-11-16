@@ -89,7 +89,6 @@ export function TaskCard({
 	onDone: () => void;
 }) {
 	const { kind, latest } = lane;
-	const [requesting, setRequesting] = useState(false);
 	const job =
 		kind === "sync" || (kind === "review" && judge === "off")
 			? null
@@ -97,7 +96,6 @@ export function TaskCard({
 
 	async function request() {
 		if (!job) return;
-		setRequesting(true);
 		try {
 			const { queued } = await requestTask({ data: job });
 			if (!queued)
@@ -112,8 +110,6 @@ export function TaskCard({
 				title: "没能确认任务是否加入队列",
 				description: "请刷新任务状态后再试。",
 			});
-		} finally {
-			setRequesting(false);
 		}
 	}
 
@@ -126,8 +122,7 @@ export function TaskCard({
 						<Button
 							disabled={busy}
 							icon={PlayIcon}
-							loading={requesting}
-							onClick={() => void request()}
+							onClick={request}
 							type="primary"
 						>
 							立即运行

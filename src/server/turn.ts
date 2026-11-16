@@ -16,22 +16,24 @@ import { db } from "#/db";
 import type { SearchTurn } from "#/db/schema";
 import { searchTurn } from "#/db/schema";
 import { compileCondition } from "#/search/execute";
+import { historyLines } from "#/search/history";
 import type { TurnNotes } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
 import { vocabulary } from "#/search/search";
 import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
-import { agentTools, type RecordStep } from "./agent-tools";
+import { agentTools } from "./agent-tools";
 import { companyFacts, streamFacts } from "./discover";
 import { type EndpointFault, endpointFault } from "./endpoint";
 import { saveVerdicts } from "./judged";
 import {
-	confirm,
+	judgeSegments,
 	STEP_LIMIT_MS,
 	UnansweredError,
 	understand,
 	understandingConfigured,
 } from "./llm";
+import { type RecordStep, reader } from "./reading";
 
 function newId() {
 	return randomBytes(8).toString("base64url");
@@ -259,7 +261,7 @@ export async function createTurn(
  * - `unconfigured`：没配查询理解端点。
  * - `unreachable` / `rejected`：见 `endpointFault`；一次请求等满超时也算没答上来。
  * - `unanswered`：端点答了，没按约定作答——只有这一种换个说法可能有用。
- * - `broken`：别的，我们自己这一侧的意外，包括处理到一半进程没了。原错误写进服务端日志。
+ * - `broken`：别的意外，包括读经历的回答对不上号、处理到一半进程没了。原错误写进服务端日志。
  */
 export type AttemptFault =
 	| "unconfigured"
@@ -395,18 +397,20 @@ async function confirmTurn(
 	record: RecordStep,
 	replaced: AbortSignal,
 ): Promise<Settled> {
-	// 没有原话的一轮一定有条件（`search_turn_state`）
+	// 没有原话的一轮一定有条件（`search_turn_state`）。这份条件出不了名单时没有经历可读，
+	// 名单那一侧有自己的说法
 	if (row.spec)
-		await confirm(
-			queryOfSpec(row.spec),
-			agentTools({ base: [], record, rootTurnId: row.rootTurnId }),
-			replaced,
-		);
+		await reader({
+			rootTurnId: row.rootTurnId,
+			record,
+			judge: judgeSegments,
+		}).read(queryOfSpec(row.spec), replaced);
 	return {};
 }
 
 /**
  * 理解一句话。这一轮的基线是父记录的条件：一句「再加上带过团队的」只有放在那张表上才有意思。
+ * 连同这次找人之前几轮的经过一起交给模型：一句「不是这个意思」要知道之前说过什么才读得懂。
  * 写进记录的是提交检查录取的那份：跑不了的条件已经丢掉，丢空了就是没作答（`understand` 抛出）。
  */
 async function understandTurn(
@@ -415,8 +419,22 @@ async function understandTurn(
 	record: RecordStep,
 	replaced: AbortSignal,
 ): Promise<Settled> {
-	const parent = row.parentTurnId ? await getRow(row.parentTurnId) : null;
-	const base = parent?.spec ? queryOfSpec(parent.spec).conditions : [];
+	// 这一轮之前的几轮都处理完了：没理解出来的只可能是链尾，追加这一轮时已经删掉
+	const earlier = ((await loadThread(row.id)) ?? []).filter(
+		(turn) => turn.id !== row.id,
+	);
+	const past = earlier.flatMap((turn) =>
+		turn.spec
+			? [
+					{
+						said: turn.said,
+						conditions: queryOfSpec(turn.spec).conditions,
+						notes: turn.notes,
+					},
+				]
+			: [],
+	);
+	const base = past.at(-1)?.conditions ?? [];
 
 	// 读词表和调用模型各自读数据库，不共用一个快照：调用模型可能要一分钟，如果开着
 	// 快照等它，一次理解就占着连接池里的一条连接一分钟。模型的工具在自己的快照里读
@@ -428,8 +446,13 @@ async function understandTurn(
 	]);
 	const { query, notes } = await understand(
 		rawText,
-		{ vocab, streams, company },
-		agentTools({ base, record, rootTurnId: row.rootTurnId }),
+		{ vocab, streams, company, history: historyLines(past) },
+		agentTools({
+			base,
+			record,
+			rootTurnId: row.rootTurnId,
+			judge: judgeSegments,
+		}),
 		replaced,
 	);
 	return { spec: { query }, notes };
@@ -532,8 +555,12 @@ export async function loadAttempt(id: string): Promise<Attempt | null> {
 }
 
 export type RecentSearch = {
+	/** 链上最后一轮。 */
 	turnId: string;
-	spec: SearchSpec;
+	/** 这次任务最后整理出来的条件；第一句话还没理解出来时为 null。 */
+	spec: SearchSpec | null;
+	/** AI 对最后一轮的处理：还在处理、没处理成；处理完了或这一轮不用 AI 处理为 null。 */
+	status: "working" | "failed" | null;
 	/** 这次找人任务的标题：链头那句话。关键词搜索没有。 */
 	title: string | null;
 	/** 最后一轮是多少秒以前写入的记录。在库里算，服务端直出与水合读到的是同一个数。 */
@@ -576,7 +603,9 @@ function recentCursor(raw: unknown): [string, string] | null {
 }
 
 /**
- * 每条链最后一份完整条件表，按记录时间排列。待理解末轮之前的完整记录仍可回放。
+ * 每次找人任务一行，按最后一轮的记录时间排列。任务从第一句话提交那一刻起就在这里，不等 AI
+ * 处理完：一行指向链上最后一轮，带着 AI 对它的处理现在怎样了；条件是最后整理出来的那一份，
+ * 最后一轮还没理解出来时是它上一轮的。
  * 链序由 parent_turn_id 决定；时间仅用于跨任务展示与排序。
  */
 export async function listRecent(
@@ -588,21 +617,25 @@ export async function listRecent(
 	return db.transaction(
 		async (store) => {
 			const found = await store.execute<{ n: number }>(
-				sql`select count(distinct root_turn_id)::int as n from search_turn where spec is not null`,
+				sql`select count(*)::int as n from search_turn where parent_turn_id is null`,
 			);
 			const result = await store.execute<
 				RecentSearch & { cursorAt: string }
 			>(sql`
-				select latest.id as "turnId", latest.spec, root.raw_text as title,
-					extract(epoch from now() - latest.created_at)::int as "ageSeconds",
-					to_char(latest.created_at, 'YYYY-MM-DD HH24:MI') as at,
-					to_char(latest.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z' as "cursorAt"
-				from search_turn latest join search_turn root on root.id = latest.root_turn_id
-				where latest.spec is not null and not exists (
-					select 1 from search_turn next
-					where next.parent_turn_id = latest.id and next.spec is not null)
-				${cursor ? sql`and (latest.created_at, latest.id) < (${cursor[0]}::timestamptz, ${cursor[1]})` : sql``}
-				order by latest.created_at desc, latest.id desc limit ${limit + 1}`);
+				select ${searchTurn.id} as "turnId",
+					coalesce(${searchTurn.spec}, parent.spec) as spec, root.raw_text as title,
+					case when ${searchTurn.attempt} is null or ${searchTurn.attemptDone} then null
+						when ${currentFault} is not null then 'failed' else 'working' end as status,
+					extract(epoch from now() - ${searchTurn.createdAt})::int as "ageSeconds",
+					to_char(${searchTurn.createdAt}, 'YYYY-MM-DD HH24:MI') as at,
+					to_char(${searchTurn.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z' as "cursorAt"
+				from ${searchTurn}
+					join search_turn root on root.id = ${searchTurn.rootTurnId}
+					left join search_turn parent on parent.id = ${searchTurn.parentTurnId}
+				where not exists (
+					select 1 from search_turn next where next.parent_turn_id = ${searchTurn.id})
+				${cursor ? sql`and (${searchTurn.createdAt}, ${searchTurn.id}) < (${cursor[0]}::timestamptz, ${cursor[1]})` : sql``}
+				order by ${searchTurn.createdAt} desc, ${searchTurn.id} desc limit ${limit + 1}`);
 			const rows = result.rows.slice(0, limit);
 			const last = rows.at(-1);
 			return {

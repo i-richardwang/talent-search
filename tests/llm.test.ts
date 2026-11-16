@@ -14,7 +14,9 @@ import { z } from "zod";
 // 端口 1 上没有人接：这次调用必然失败，而失败正是这里要看的东西。
 process.env.LLM_BASE_URL = "http://127.0.0.1:1";
 process.env.LLM_MODEL = "fake";
-const { understand, UnansweredError } = await import("#/server/llm");
+const { judgeSegments, understand, UnansweredError } = await import(
+	"#/server/llm"
+);
 const { endpointFault } = await import("#/server/endpoint");
 const { APICallError, tool } = await import("ai");
 
@@ -28,6 +30,7 @@ const FACTS = {
 		overseas: [],
 	},
 	streams: [],
+	history: [],
 	company: {
 		industries: [],
 		circles: [],
@@ -49,7 +52,6 @@ const STUB_AGENT = {
 	},
 	passed: () => false,
 	answer: () => null,
-	advance: () => {},
 } as never;
 
 test("端点连不上时抛给调用方，不返回一份假理解；认作 unreachable：那句话根本没被读过", async () => {
@@ -101,4 +103,71 @@ test("端点没理会必须调用工具、只回了正文，算没作答，不�
 	} finally {
 		globalThis.fetch = original;
 	}
+});
+
+/** 读一批经历的请求每次都这样答的假端点；返回发了几次请求。 */
+async function answeringJudge(fits: number[], run: () => Promise<unknown>) {
+	const original = globalThis.fetch;
+	let requests = 0;
+	globalThis.fetch = async () => {
+		requests++;
+		return Response.json({
+			id: "c",
+			created: 0,
+			model: "fake",
+			choices: [
+				{
+					index: 0,
+					message: {
+						role: "assistant",
+						content: null,
+						tool_calls: [
+							{
+								id: "call",
+								type: "function",
+								function: {
+									name: "judge",
+									arguments: JSON.stringify({ fits }),
+								},
+							},
+						],
+					},
+					finish_reason: "tool_calls",
+				},
+			],
+		});
+	};
+	try {
+		return { result: await run().catch((e) => e), requests };
+	} finally {
+		globalThis.fetch = original;
+	}
+}
+
+const GROUPS = [
+	{
+		label: "做过巡检",
+		criterion: "本人做设备巡检",
+		segments: [
+			{ n: 1, text: "岗位：巡检员" },
+			{ n: 2, text: "岗位：销售" },
+		],
+	},
+];
+
+test("读一批经历：交回这一批里符合的段的编号", async () => {
+	const { result, requests } = await answeringJudge([1, 1], () =>
+		judgeSegments(GROUPS),
+	);
+	assert.deepEqual(result, [1]);
+	assert.equal(requests, 1);
+});
+
+test("读一批经历交的编号不在这一批里：再问一次，还不对就失败，不收一份对不上号的结论；这不算没读懂 HR 的话", async () => {
+	const { result, requests } = await answeringJudge([1, 9], () =>
+		judgeSegments(GROUPS),
+	);
+	assert.ok(result instanceof Error, String(result));
+	assert.ok(!(result instanceof UnansweredError));
+	assert.equal(requests, 2);
 });

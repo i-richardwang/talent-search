@@ -129,6 +129,7 @@ export function GroupBlockPage() {
 					'一条整行可点：render 传路由的 <Link>，只填进输入框的一条传 render={<button type="button" />}。',
 					"组名后的 count 数的是这一组列出来的条数；列不完时组名行尾放 GroupBlockAction「查看全部」。",
 					"行尾的 extra 放时间，几行的时间竖着对成一列。",
+					"这一条说的那件事还在进行时给 loading：图标的位置换成转着的圈。",
 					"条目的字和组名、上面的输入框对齐，悬停的底比它们宽一截。",
 				],
 				usage: `<GroupBlock title="最近搜索" count={8} action={<GroupBlockAction>查看全部</GroupBlockAction>}>\n  <GroupBlockItem icon={MessageSquareTextIcon} title="…" description="…" extra="3 分钟前" render={<Link … />} />\n</GroupBlock>`,

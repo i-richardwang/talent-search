@@ -6,17 +6,18 @@ import {
 	GroupBlockItem,
 } from "#/components/ui/group-block";
 import type { QueryInput } from "#/search/spec";
-import type { RecentPage, SearchMode } from "#/server/turn";
+import type { SearchMode } from "#/server/turn";
 import {
 	ago,
 	HOME_RECENT_COUNT,
 	recentLabel,
 	recentSummary,
 } from "../-lib/recent";
+import { useRecents } from "../-lib/recents";
 import { ModeSelect } from "./mode-select";
 import { useNavControl } from "./nav-control";
 import { PageHeader } from "./page-header";
-import { LoadFailed, recentIcon, useRetryRoot } from "./recent-item";
+import { LoadFailed, recentIcon } from "./recent-item";
 import { ZeroState } from "./zero-state";
 
 /**
@@ -30,15 +31,13 @@ export function HomeScreen({
 	asked,
 	error,
 	onQuery,
-	recent,
 }: {
 	understanding: boolean;
 	asked: "keyword" | undefined;
 	error: string | null;
 	onQuery: (input: QueryInput) => boolean | Promise<boolean>;
-	/** 根路由取的最近搜索第一页；取不到是 null。 */
-	recent: RecentPage | null;
 }) {
+	const { page: recent } = useRecents();
 	const mode: SearchMode =
 		understanding && asked !== "keyword" ? "conversation" : "keyword";
 	return (
@@ -52,7 +51,7 @@ export function HomeScreen({
 					title="想找什么样的人？"
 				>
 					{recent === null || recent.total > 0 ? (
-						<RecentBlock recent={recent} />
+						<RecentBlock />
 					) : (
 						parts.starters
 					)}
@@ -66,9 +65,9 @@ export function HomeScreen({
 }
 
 /** 首页的最近搜索；列不完时「查看全部」打开全部记录的抽屉。 */
-function RecentBlock({ recent }: { recent: RecentPage | null }) {
+function RecentBlock() {
 	const control = useNavControl();
-	const { retry, retrying } = useRetryRoot();
+	const { page: recent, reload } = useRecents();
 	const shown = recent?.rows.slice(0, HOME_RECENT_COUNT) ?? [];
 	return (
 		<GroupBlock
@@ -84,7 +83,7 @@ function RecentBlock({ recent }: { recent: RecentPage | null }) {
 			title="最近搜索"
 		>
 			{recent === null ? (
-				<LoadFailed onRetry={retry} retrying={retrying} />
+				<LoadFailed onRetry={reload} />
 			) : (
 				shown.map((record) => (
 					<GroupBlockItem
@@ -92,6 +91,7 @@ function RecentBlock({ recent }: { recent: RecentPage | null }) {
 						extra={<span title={record.at}>{ago(record)}</span>}
 						icon={recentIcon(record)}
 						key={record.turnId}
+						loading={record.status === "working"}
 						render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}
 						title={recentLabel(record)}
 					/>

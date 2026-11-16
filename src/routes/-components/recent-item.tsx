@@ -1,17 +1,10 @@
-import {
-	Link,
-	useMatch,
-	useNavigate,
-	useParams,
-	useRouter,
-} from "@tanstack/react-router";
+import { Link, useMatch, useNavigate, useParams } from "@tanstack/react-router";
 import {
 	EllipsisIcon,
 	LinkIcon,
 	TrashIcon,
 	TriangleAlertIcon,
 } from "lucide-react";
-import { useState } from "react";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Button } from "#/components/ui/button";
 import { ContextMenu } from "#/components/ui/context-menu";
@@ -31,27 +24,32 @@ import { toast } from "#/components/ui/toast";
 import { deleteRecent } from "#/server/functions";
 import type { RecentSearch } from "#/server/turn";
 import { recentLabel } from "../-lib/recent";
+import { useRecents } from "../-lib/recents";
 import { SEARCH_MODE_ICON } from "./mode-select";
 
-/** 链头有原话的是对话，没有的是关键词搜索。 */
-export const recentIcon = (record: Pick<RecentSearch, "title">) =>
-	SEARCH_MODE_ICON[record.title === null ? "keyword" : "conversation"];
+/**
+ * 一行记录的图标：AI 没处理成的任务画警示；否则画搜索方式，链头有原话的是对话，没有的是
+ * 关键词搜索。AI 还在处理的任务，图标的位置是转着的圈（行的 `loading`）。
+ */
+export const recentIcon = (record: Pick<RecentSearch, "status" | "title">) =>
+	record.status === "failed"
+		? TriangleAlertIcon
+		: SEARCH_MODE_ICON[record.title === null ? "keyword" : "conversation"];
 
 /**
  * 删掉一条记录，也就是那一次找人任务的整条链，先确认。人正看着的那一屏就在这条链上
- * 时回首页，留在原地的话下一次载入就是死链；否则叫根路由重取最近搜索。
+ * 时回首页，留在原地的话下一次载入就是死链。最近搜索重取一遍。
  */
-function useRemoveRecent(onRemoved?: (turnId: string) => void) {
-	const router = useRouter();
+function useRemoveRecent() {
+	const { reload } = useRecents();
 	const navigate = useNavigate();
 	const { turnId: current } = useParams({ strict: false });
 
 	async function remove(record: RecentSearch) {
 		try {
 			const gone = await deleteRecent({ data: { turnId: record.turnId } });
-			onRemoved?.(record.turnId);
 			if (current && gone.includes(current)) await navigate({ to: "/" });
-			else await router.invalidate();
+			await reload();
 		} catch {
 			toast.error({
 				actions: [{ label: "重试", onClick: () => void remove(record) }],
@@ -86,20 +84,13 @@ async function copyLink(turnId: string) {
  * 正开着的那次搜索是当前项，看的是它的哪一轮都算：记录上的 `turnId` 是链上
  * 最后一轮，拿正开着的那条链的最后一轮来比。
  */
-export function RecentItem({
-	record,
-	onRemoved,
-}: {
-	record: RecentSearch;
-	/** 全部记录的抽屉据此从自己取到的那几页里拿掉这一行。 */
-	onRemoved?: (turnId: string) => void;
-}) {
+export function RecentItem({ record }: { record: RecentSearch }) {
 	const latest = useMatch({
 		from: "/s/$turnId",
 		select: (match) => match.loaderData?.thread.at(-1)?.id,
 		shouldThrow: false,
 	});
-	const remove = useRemoveRecent(onRemoved);
+	const remove = useRemoveRecent();
 	const label = recentLabel(record);
 	const items: DropdownItem[] = [
 		{
@@ -140,6 +131,7 @@ export function RecentItem({
 				active={record.turnId === latest}
 				icon={recentIcon(record)}
 				iconSize="small"
+				loading={record.status === "working"}
 				render={<Link params={{ turnId: record.turnId }} to="/s/$turnId" />}
 			>
 				{label}
@@ -151,35 +143,14 @@ export function RecentItem({
 /**
  * 最近搜索取不到时的一行。取不到不能借用「还没有记录」那一句：失败该重试，空了该去搜一次。
  */
-export function LoadFailed({
-	onRetry,
-	retrying,
-}: {
-	onRetry: () => void;
-	retrying: boolean;
-}) {
+export function LoadFailed({ onRetry }: { onRetry: () => unknown }) {
 	return (
 		<div className="flex items-center justify-center gap-2 py-2">
 			<Icon className="text-fg-tertiary" icon={TriangleAlertIcon} size={14} />
 			<span className="text-fg-secondary text-sm">搜索记录加载失败</span>
-			<Button loading={retrying} onClick={onRetry} size="small" type="text">
+			<Button onClick={onRetry} size="small" type="text">
 				重试
 			</Button>
 		</div>
 	);
-}
-
-/** 根路由重取一次（最近搜索取不到时的重试）；`retrying` 是正在重取。 */
-export function useRetryRoot() {
-	const router = useRouter();
-	const [retrying, setRetrying] = useState(false);
-	async function retry() {
-		setRetrying(true);
-		try {
-			await router.invalidate();
-		} finally {
-			setRetrying(false);
-		}
-	}
-	return { retry: () => void retry(), retrying };
 }

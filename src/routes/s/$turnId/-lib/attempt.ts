@@ -1,5 +1,6 @@
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
+import { useRecents } from "#/routes/-lib/recents";
 import { retryTurn, turnAttempt } from "#/server/functions";
 import type { Attempt, AttemptFault, Progress, Turn } from "#/server/turn";
 import { poll } from "./poll";
@@ -88,6 +89,7 @@ export function useAttempt(latest: Turn): {
 	progress: Progress | null;
 } {
 	const router = useRouter();
+	const { reload } = useRecents();
 	const turnId = latest.id;
 	const { settled } = latest;
 	// 最近一次读到的这一轮；还没读过就是载入页面时记录上的那份
@@ -126,14 +128,17 @@ export function useAttempt(latest: Turn): {
 		});
 	}, [working, turnId, show]);
 
-	const retry = () => {
+	const retry = () =>
 		retryTurn({ data: { turnId } })
-			.then(show)
+			.then((next) => {
+				show(next);
+				// 最近搜索里这一行从没处理成变回还在处理
+				void reload();
+			})
 			.catch(() => {
 				// 连 RPC 都没走通：自家服务器这一侧的事
 				setRead({ turnId, state: { ...state, fault: "broken" } });
 			});
-	};
 
 	return {
 		working,

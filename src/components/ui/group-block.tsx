@@ -1,6 +1,6 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
-import type { LucideIcon } from "lucide-react";
+import { LoaderCircleIcon, type LucideIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "#/lib/utils";
 import { Icon } from "./icon";
@@ -51,6 +51,7 @@ export function GroupBlockItem({
 	title,
 	description,
 	extra,
+	loading,
 	variant = "record",
 	className,
 	render,
@@ -61,6 +62,8 @@ export function GroupBlockItem({
 	description?: ReactNode;
 	/** 行尾的时间；占住固定的最小宽度，一列时间竖着对齐。 */
 	extra?: ReactNode;
+	/** 这一条说的那件事还在进行：图标的位置换成转着的圈。 */
+	loading?: boolean;
 	variant?: "record" | "prose";
 }) {
 	const prose = variant === "prose";
@@ -75,7 +78,11 @@ export function GroupBlockItem({
 			children: (
 				<>
 					<span className="ui-group-block-item-icon">
-						<Icon icon={icon} size={prose ? 18 : 16} />
+						<Icon
+							icon={loading ? LoaderCircleIcon : icon}
+							size={prose ? 18 : 16}
+							spin={loading}
+						/>
 					</span>
 					<span className="ui-group-block-item-text">
 						<span className="ui-group-block-item-title">{title}</span>

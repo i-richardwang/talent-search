@@ -182,11 +182,7 @@ function ClosableExample() {
 }
 
 function Usage() {
-	const [retrying, setRetrying] = useState(false);
-	const retry = () => {
-		setRetrying(true);
-		window.setTimeout(() => setRetrying(false), 1200);
-	};
+	const retry = () => new Promise((done) => window.setTimeout(done, 1200));
 	return (
 		<ExampleGrid>
 			<Example
@@ -195,7 +191,7 @@ function Usage() {
 			>
 				<Alert
 					action={
-						<Button loading={retrying} onClick={retry} size="small">
+						<Button onClick={retry} size="small">
 							{FAULT_EXIT_LABEL.retry}
 						</Button>
 					}

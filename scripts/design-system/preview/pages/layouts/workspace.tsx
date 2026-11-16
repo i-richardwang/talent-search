@@ -137,6 +137,7 @@ function Workspace({ scene }: { scene: ListScene }) {
 						notCompleted={
 							notCompleted ? { fault: "unreachable", onRetry: noop } : null
 						}
+						onContinue={noop}
 						onViewChange={updateView}
 						turnId={LATEST_TURN_ID}
 						view={view}
