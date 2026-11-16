@@ -11,12 +11,7 @@ import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search, suggest } from "#/search/search";
 import { administrator, authenticated } from "./auth-functions";
-import {
-	employeeData,
-	employeeDetail,
-	listEmployees,
-	streamCoverage,
-} from "./data";
+import { employeeData, employeeDetail, listEmployees } from "./data";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
 import { reviewJudge } from "./review";
@@ -233,11 +228,6 @@ export const dataList = createServerFn({ method: "GET" })
 		page: Number(d.page) || 1,
 	}))
 	.handler(({ data }) => listEmployees(data.q, data.page));
-
-/** 数据页的记录流：每条流覆盖多少人、哪些期、最近一期。 */
-export const dataStreams = createServerFn({ method: "GET" })
-	.middleware([authenticated])
-	.handler(() => streamCoverage());
 
 /** 数据页的一个人：档案、每一段、每一段的解析结果。 */
 export const dataEmployee = createServerFn({ method: "GET" })

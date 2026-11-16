@@ -66,23 +66,3 @@
 		transition-duration: 0s;
 	}
 }
-
-.ui-accordion-action {
-	display: flex;
-	flex-shrink: 0;
-	gap: 4px;
-	align-items: center;
-	padding-block: 4px;
-	padding-inline-end: 8px;
-	opacity: 0;
-	transition: opacity 150ms var(--ease-out);
-
-	.ui-accordion-header:is(:hover, :focus-within) > & {
-		opacity: 1;
-	}
-
-	/* 没有悬停的设备上常显，否则摸不到。 */
-	@media (hover: none) {
-		opacity: 1;
-	}
-}

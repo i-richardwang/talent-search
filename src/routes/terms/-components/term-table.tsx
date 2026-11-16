@@ -20,12 +20,8 @@ import type { TablePage } from "#/lib/paging";
 import type { Rejudge } from "#/lib/task";
 import type { TermEntry } from "#/server/terms";
 import { listSearch, useSearchDraft } from "../../-components/admin-page";
+import { StatusBadge } from "../../-components/status-badge";
 import { TablePager } from "../../-components/table-pager";
-
-/** 上次判定是几天前；null 是在等判定。 */
-export function daysAgo(days: number | null) {
-	return days === null ? "等待判定" : days === 0 ? "今天" : `${days} 天前`;
-}
 
 type View = "terms" | "excluded";
 const VIEWS: { label: string; value: View }[] = [
@@ -144,13 +140,12 @@ export function TermTable({
 										<TableHead className="w-full">其他写法</TableHead>
 									</>
 								)}
-								<TableHead className="text-end">上次判定</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{pending ? (
 								<TableSkeletonRows
-									columns={excluded ? 3 : 6}
+									columns={excluded ? 2 : 5}
 									rows={Math.max(table.rows.length, 1)}
 								/>
 							) : (
@@ -173,6 +168,11 @@ export function TermTable({
 												<TextLink render={<Link {...detail} />} tabIndex={-1}>
 													{e.canonical}
 												</TextLink>
+												{e.pending && (
+													<span className="ms-2 inline-flex align-middle">
+														<StatusBadge tone="pending">等待判定</StatusBadge>
+													</span>
+												)}
 											</TableCell>
 											<TableCell
 												cellLabel="人数"
@@ -203,12 +203,6 @@ export function TermTable({
 													</TableCell>
 												</>
 											)}
-											<TableCell
-												cellLabel="上次判定"
-												className="whitespace-nowrap text-end text-fg-secondary tabular-nums"
-											>
-												{daysAgo(e.reviewedDaysAgo)}
-											</TableCell>
 										</TableRow>
 									);
 								})

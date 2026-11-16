@@ -1,11 +1,11 @@
 import { PAGE_SIZE, pageAt, RUNS_PAGE, tablePage } from "#/lib/paging";
-import type { EmployeeRow, SegmentView, StreamCoverage } from "#/server/data";
-import type { CorpusCounts, TaskLane, TaskRunView } from "#/server/tasks";
+import type { EmployeeRow, SegmentView } from "#/server/data";
+import type { TaskLane, TaskRunView } from "#/server/tasks";
 import type { TermDetail, TermEntry } from "#/server/terms";
 import { EMPLOYEES, EXPERIENCES, experiencesOf } from "./people";
 
 /*
- * 管理页：任务台的运行记录、库存数、数据页与「标签」页的表。
+ * 管理页：任务台的运行记录、数据页与「标签」页的表。
  * 人名、工号、公司、部门、学校全是编的，和人才库无关；类型都从产品代码导入。
  */
 
@@ -36,12 +36,17 @@ function run(
 }
 
 /** 一栏：看的是第一页，最新的一次在最前面，也就是组头说的那一次。 */
-function lane(kind: TaskLane["kind"], rows: TaskRunView[]): TaskLane {
+function lane(
+	kind: TaskLane["kind"],
+	rows: TaskRunView[],
+	progress?: TaskLane["progress"],
+): TaskLane {
 	const at = pageAt(rows.length, 1, RUNS_PAGE);
 	return {
 		kind,
 		latest: rows[0] ?? null,
 		runs: tablePage(rows.slice(0, at.limit), rows.length, at),
+		...(progress && { progress }),
 	};
 }
 
@@ -63,10 +68,15 @@ export const TASK_LANES: TaskLane[] = [
 		run(24, "sync", "09-24 08:00", null, "interrupted"),
 		...[3, 4, 5, 6, 7, 8].map(dailySync),
 	]),
-	lane("derive", [
-		run(32, "derive", "09-26 08:01", null, "running"),
-		run(29, "derive", "09-25 08:01", 611, "done"),
-	]),
+	lane(
+		"derive",
+		[
+			run(32, "derive", "09-26 08:01", null, "running"),
+			run(29, "derive", "09-25 08:01", 611, "done"),
+		],
+		// 正在跑，还差两段
+		{ done: EXPERIENCES.length - 2, staging: false, total: EXPERIENCES.length },
+	),
 	lane("review", [
 		run(
 			30,
@@ -79,20 +89,6 @@ export const TASK_LANES: TaskLane[] = [
 		run(26, "review", "09-24 20:00", 132, "done"),
 	]),
 ];
-
-/** 任务台卡片上的库存数。 */
-export const CORPUS_COUNTS: CorpusCounts = {
-	employees: EMPLOYEES.length,
-	internal: EXPERIENCES.filter((x) => x.kind === "internal").length,
-	external: EXPERIENCES.filter((x) => x.kind === "external").length,
-	segments: EXPERIENCES.length,
-	derived: EXPERIENCES.length - 2,
-	unanswered: 1,
-	staging: false,
-	phrases: 84,
-	words: 37,
-	merged: 5,
-};
 
 /** 数据页上 Talent 0101 的几段，连同解析出的技能和投入档。 */
 export const SEGMENTS: SegmentView[] = experiencesOf("T0101").map((x) => ({
@@ -135,30 +131,6 @@ const ROSTER_JOBS: [dept: string, title: string][] = [
 	["商业化部", "销售经理"],
 ];
 
-/** 数据页上方的记录流：半年一期的绩效和一条高潜池。 */
-export const STREAM_ROWS: StreamCoverage[] = [
-	{
-		first: "2023-07-01",
-		kind: "status",
-		label: "高潜人才池",
-		latest: { end: null, start: "2025-01-01" },
-		people: 38,
-		period: "",
-		periods: 5,
-		stream: "hipo",
-	},
-	{
-		first: "2023-07-01",
-		kind: "rating",
-		label: "绩效",
-		latest: { end: "2026-06-30", start: "2026-01-01" },
-		people: 412,
-		period: "半年",
-		periods: 6,
-		stream: "perf",
-	},
-];
-
 /**
  * 数据页那张表的全部行，按工号排：六位候选人（段数和待处理数按他们的经历算），
  * 后面补上只在表里出现的人，一共比一页多十个，表脚的翻页才出现。
@@ -199,7 +171,7 @@ export const SKILL_ROWS: TermEntry[] = [
 		aliases: ["ML"],
 		children: 2,
 		people: 9,
-		reviewedDaysAgo: 1,
+		pending: false,
 	},
 	{
 		canonical: "推荐系统",
@@ -207,7 +179,7 @@ export const SKILL_ROWS: TermEntry[] = [
 		aliases: ["推荐算法", "个性化推荐"],
 		children: 2,
 		people: 5,
-		reviewedDaysAgo: 2,
+		pending: false,
 	},
 	{
 		canonical: "推荐排序",
@@ -215,7 +187,7 @@ export const SKILL_ROWS: TermEntry[] = [
 		aliases: ["精排"],
 		children: 0,
 		people: 3,
-		reviewedDaysAgo: 2,
+		pending: false,
 	},
 	{
 		canonical: "数据分析",
@@ -223,7 +195,7 @@ export const SKILL_ROWS: TermEntry[] = [
 		aliases: ["数据挖掘"],
 		children: 0,
 		people: 3,
-		reviewedDaysAgo: 5,
+		pending: false,
 	},
 	{
 		canonical: "召回",
@@ -231,7 +203,7 @@ export const SKILL_ROWS: TermEntry[] = [
 		aliases: [],
 		children: 0,
 		people: 2,
-		reviewedDaysAgo: 0,
+		pending: false,
 	},
 	{
 		canonical: "实时特征",
@@ -239,7 +211,7 @@ export const SKILL_ROWS: TermEntry[] = [
 		aliases: ["实时特征工程"],
 		children: 0,
 		people: 2,
-		reviewedDaysAgo: 3,
+		pending: false,
 	},
 	{
 		canonical: "广告算法",
@@ -247,7 +219,7 @@ export const SKILL_ROWS: TermEntry[] = [
 		aliases: ["计算广告"],
 		children: 0,
 		people: 1,
-		reviewedDaysAgo: null,
+		pending: true,
 	},
 ];
 
@@ -259,7 +231,7 @@ export const EXCLUDED_ROWS: TermEntry[] = ["周报", "策略会", "沟通协调"
 		children: 0,
 		parent: null,
 		people: 3 - index,
-		reviewedDaysAgo: index,
+		pending: false,
 	}),
 );
 
@@ -288,6 +260,6 @@ function detailOf(rows: TermEntry[], canonical: string): TermDetail {
 			: null,
 		excluded: false,
 		people: row.people,
-		reviewedDaysAgo: row.reviewedDaysAgo,
+		pending: row.pending,
 	};
 }

@@ -20,27 +20,18 @@ import { Progress } from "#/components/ui/progress";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
 import { toast } from "#/components/ui/toast";
+import type { DeriveProgress } from "#/corpus/derive";
 import type { Judge } from "#/corpus/judgment";
 import { integer } from "#/lib/format";
 import type { TaskKind } from "#/lib/task";
 import { cn } from "#/lib/utils";
 import { requestTask, taskLog } from "#/server/functions";
 import type { JobKind } from "#/server/jobs";
-import type {
-	CorpusCounts,
-	TaskLane,
-	TaskPages,
-	TaskRunView,
-} from "#/server/tasks";
+import type { TaskLane, TaskPages, TaskRunView } from "#/server/tasks";
 import { StatusIcon } from "../../-components/status-badge";
 import { TablePager } from "../../-components/table-pager";
 import { ago } from "../../-lib/recent";
-import {
-	formatDuration,
-	LANE_FACTS,
-	RUN_STATUS,
-	TASK_NAME,
-} from "../-lib/labels";
+import { formatDuration, RUN_STATUS, TASK_NAME } from "../-lib/labels";
 
 const agoOf = (run: TaskRunView) =>
 	ago({ ageSeconds: run.ageSeconds, at: run.startedAt });
@@ -74,25 +65,27 @@ function Latest({ latest }: { latest: TaskRunView | null }) {
 	);
 }
 
-/** `onDone` 在请求运行之后调用，让页面重新取一次状态。 */
+/**
+ * 一类任务：最近一次怎么样、立即运行、按次的运行记录。解析那张在还有段没解析完时
+ * 画进度。`onDone` 在请求运行之后调用，让页面重新取一次状态。
+ */
 export function TaskCard({
 	lane,
-	corpus,
 	busy,
 	judge,
 	onDone,
 }: {
 	lane: TaskLane;
-	corpus: CorpusCounts;
 	busy: boolean;
 	judge: Judge;
 	onDone: () => void;
 }) {
-	const { kind, latest } = lane;
-	const job =
-		kind === "sync" || (kind === "review" && judge === "off")
-			? null
-			: (kind as JobKind);
+	const { kind, latest, progress } = lane;
+	const off = kind === "review" && judge === "off";
+	const job = kind === "sync" || off ? null : (kind as JobKind);
+	const unfinished =
+		progress && progress.done < progress.total ? progress : null;
+	const history = lane.runs.total > 0;
 
 	async function request() {
 		if (!job) return;
@@ -131,13 +124,15 @@ export function TaskCard({
 				}
 				title={TASK_NAME[kind]}
 			>
-				<div className="flex flex-col gap-4">
-					{kind === "review" && judge === "off" && (
-						<Alert title="自动整理已关闭，标签不再更新" type="secondary" />
-					)}
-					<Facts corpus={corpus} kind={kind} />
-					{lane.runs.total > 0 && <RunHistory lane={lane} />}
-				</div>
+				{(off || unfinished || history) && (
+					<div className="flex flex-col gap-4">
+						{off && (
+							<Alert title="自动整理已关闭，标签不再更新" type="secondary" />
+						)}
+						{unfinished && <DeriveBar progress={unfinished} />}
+						{history && <RunHistory lane={lane} />}
+					</div>
+				)}
 			</GroupCard>
 		</li>
 	);
@@ -147,44 +142,25 @@ export function TaskCard({
 const percentOf = (done: number, total: number) =>
 	Math.floor((done / total) * 100);
 
-function Facts({ kind, corpus }: { kind: TaskKind; corpus: CorpusCounts }) {
-	const { progress, counts } = LANE_FACTS[kind](corpus);
+/** 解析到哪了。标准更新期间说检索还在用上一版。 */
+function DeriveBar({ progress }: { progress: DeriveProgress }) {
+	const label = progress.staging
+		? "段已按新标准解析，解析完之前检索沿用上一版"
+		: "段经历已解析";
 	return (
-		<Block gap={12} padding={16}>
-			{progress && (
-				<div className="flex flex-col gap-2.5">
-					<div className="flex items-baseline justify-between gap-2 text-fg-tertiary text-xs tabular-nums">
-						<span>
-							<span className="font-medium text-fg text-sm">
-								{integer(progress.done)}
-							</span>
-							{` / ${integer(progress.total)} ${progress.label}`}
-						</span>
-						{progress.total > 0 && (
-							<span className="text-fg-secondary">
-								{percentOf(progress.done, progress.total)}%
-							</span>
-						)}
-					</div>
-					<Progress
-						aria-label={progress.label}
-						max={progress.total}
-						value={progress.done}
-					/>
-				</div>
-			)}
-			<p className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-fg-tertiary text-xs">
-				{counts.map((count) => (
-					<span className="flex items-baseline gap-1" key={count.label}>
-						<span className="font-medium text-fg text-sm tabular-nums">
-							{integer(count.value)}
-						</span>
-						{count.label}
-						{count.parts &&
-							`（${count.parts.map((part) => `${part.label} ${integer(part.value)}`).join(" / ")}）`}
+		<Block gap={10} padding={16}>
+			<div className="flex items-baseline justify-between gap-2 text-fg-tertiary text-xs tabular-nums">
+				<span>
+					<span className="font-medium text-fg text-sm">
+						{integer(progress.done)}
 					</span>
-				))}
-			</p>
+					{` / ${integer(progress.total)} ${label}`}
+				</span>
+				<span className="text-fg-secondary">
+					{percentOf(progress.done, progress.total)}%
+				</span>
+			</div>
+			<Progress aria-label={label} max={progress.total} value={progress.done} />
 		</Block>
 	);
 }

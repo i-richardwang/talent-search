@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "#/lib/utils";
 
-/* 带标题的一组内容，行尾 `extra` 放这一组的动作。 */
+/* 带标题的一组内容，行尾 `extra` 放这一组的动作。没有内容时只有标题那一行。 */
 
 export function GroupCard({
 	children,
@@ -25,7 +25,7 @@ export function GroupCard({
 				</div>
 				{extra && <div className="ui-group-card-extra">{extra}</div>}
 			</div>
-			<div className="ui-group-card-body">{children}</div>
+			{children ? <div className="ui-group-card-body">{children}</div> : null}
 		</div>
 	);
 }

@@ -141,16 +141,12 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="最近搜索一行一条记录：小图标说是 AI 搜索还是关键词搜索，行尾的「…」画在链接外。列不完时最后一行是「更多」。组名整行可点，收起或展开；组名行尾也有一枚「…」，悬停时出现。"
+				description="最近搜索一行一条记录：小图标说是 AI 搜索还是关键词搜索，行尾的「…」画在链接外。列不完时最后一行是「更多」。组名整行可点，收起或展开。"
 				title="最近搜索"
 			>
 				<div className="w-nav bg-layout p-1">
 					<NavGroups onValueChange={setOpen} value={open}>
-						<NavGroup
-							action={<More label="最近搜索" />}
-							title="最近搜索"
-							value="recent"
-						>
+						<NavGroup title="最近搜索" value="recent">
 							<NavItem
 								actions={<More label="找做过支付风控、学校 B 毕业的" />}
 								href="#recent-1"
@@ -227,10 +223,10 @@ export function NavItemPage() {
 					'不去别处、只打开什么的一行（「更多」）传 render={<button type="button" />}。',
 					"这一行说的那件事还在进行（一次搜索 AI 还在处理）给 loading：图标的位置换成转着的圈，做完换回图标。",
 					"标题一行放不下就截断，指针停在被截断的标题上时提示完整的一行。",
-					"几项同属一类时用 NavGroup 包起来，几组放进一个 NavGroups：组名整行可点、收起或展开，展开着哪几组（value）由使用方记住；组名行尾的 action 悬停时出现。",
+					"几项同属一类时用 NavGroup 包起来，几组放进一个 NavGroups：组名整行可点、收起或展开，展开着哪几组（value）由使用方记住。",
 					'一长串同类的记录（最近搜索）给 iconSize="small"；几个固定入口用缺省尺寸。',
 				],
-				usage: `<NavGroups value={open} onValueChange={setOpen}>\n  <NavGroup value="recent" title="最近搜索" action={menu}>\n    <NavItem icon={TextSearchIcon} iconSize="small" render={<Link to="/s/$turnId" params={params} />}>\n      推荐系统 · 某甲科技\n    </NavItem>\n  </NavGroup>\n</NavGroups>`,
+				usage: `<NavGroups value={open} onValueChange={setOpen}>\n  <NavGroup value="recent" title="最近搜索">\n    <NavItem icon={TextSearchIcon} iconSize="small" render={<Link to="/s/$turnId" params={params} />}>\n      推荐系统 · 某甲科技\n    </NavItem>\n  </NavGroup>\n</NavGroups>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用导航项" },

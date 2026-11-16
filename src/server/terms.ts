@@ -47,17 +47,15 @@ export type TermEntry = {
 	children: number;
 	/** 写了这个词、它的其他写法或它任一项细分的人数，和筛选栏计数方法一致 */
 	people: number;
-	/** 上次判这一项是几天前，0 是今天；这一项有词在队列里等着判、或者一个词都没判过时是 null */
-	reviewedDaysAgo: number | null;
+	/** 这一项有词在队列里等着判 */
+	pending: boolean;
 };
 
 /**
- * 这一项最近一次判定是几天前；有词在队列里就是在等判定。按队列而不按 `reviewed_at` 的空值说：
- * 没人写的词退回之后不会被收集，它不在等任何人。
+ * 这一项在不在等判定：按队列说，不按 `reviewed_at` 的空值说——没人写的词退回之后
+ * 不会被收集，它不在等任何人。
  */
-const REVIEWED_DAYS_AGO = sql`case
-	when not bool_or(exists (select 1 from review_word r where r.word = a.word))
-	then (current_date - max(a.reviewed_at)::date)::int end`;
+const PENDING = sql`bool_or(exists (select 1 from review_word r where r.word = a.word))`;
 
 export type TermDetail = Omit<TermEntry, "parent" | "children"> & {
 	/** 判定方认定它不是一项能力：它不在筛选栏和候选词里，没有归属、细分和其他写法 */
@@ -78,7 +76,7 @@ function childrenOf(term: SQL) {
  * 管理页的标准能力词列表，服务端搜索并分页。
  * 匹配标准词、别名与父词；人数包含别名和全部后代，与筛选栏共用统计。
  * 判定方命名的父词同样参与展示。判成不是能力的词不是标签，单独一张表（`excluded`）：
- * 判错了的在那里才看得见。整理时间在数据库中换算为天数。
+ * 判错了的在那里才看得见。
  */
 export function listTerms(
 	needle: string,
@@ -110,7 +108,7 @@ export function listTerms(
 				coalesce(array_agg(a.word order by a.word) filter (where a.word <> a.canonical), '{}') as aliases,
 				${peopleUnder(sql`a.canonical`)} as people,
 				${childrenOf(sql`a.canonical`)} as children,
-				${REVIEWED_DAYS_AGO} as "reviewedDaysAgo"
+				${PENDING} as pending
 			${MATCHED}
 			order by people desc, a.canonical
 			limit ${at.limit} offset ${at.offset}`);
@@ -146,7 +144,7 @@ export function describeTerm(word: string): Promise<TermDetail | null> {
 				coalesce(array_agg(a.word order by a.word) filter (where a.word <> a.canonical), '{}') as aliases,
 				${peopleUnder(sql`a.canonical`)} as people,
 				bool_or(a.excluded) as excluded,
-				${REVIEWED_DAYS_AGO} as "reviewedDaysAgo"
+				${PENDING} as pending
 			from term a
 			where a.canonical = ${canonical}
 			group by a.canonical`);

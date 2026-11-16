@@ -1,5 +1,5 @@
 import type { Judge } from "#/corpus/judgment";
-import type { CorpusCounts, TaskLane } from "#/server/tasks";
+import type { TaskLane } from "#/server/tasks";
 import { TaskCard } from "./task-card";
 
 /**
@@ -8,13 +8,11 @@ import { TaskCard } from "./task-card";
  */
 export function TaskBoard({
 	lanes,
-	corpus,
 	judge,
 	busy,
 	onDone,
 }: {
 	lanes: TaskLane[];
-	corpus: CorpusCounts;
 	judge: Judge;
 	busy: boolean;
 	onDone: () => void;
@@ -24,7 +22,6 @@ export function TaskBoard({
 			{lanes.map((lane) => (
 				<TaskCard
 					busy={busy}
-					corpus={corpus}
 					judge={judge}
 					key={lane.kind}
 					lane={lane}

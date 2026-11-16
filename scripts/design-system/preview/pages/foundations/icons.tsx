@@ -21,7 +21,6 @@ import {
 	FileQuestionMark,
 	GitMerge,
 	GraduationCap,
-	Hash,
 	Keyboard,
 	Link,
 	List,
@@ -128,7 +127,6 @@ export const PRODUCT_ICONS: [
 		"需要留意：没有采用的一条要求、没加载出来的搜索记录",
 	],
 	["FileQuestionMark", FileQuestionMark, "页面不存在"],
-	["Hash", Hash, "最近搜索列几条"],
 	["Link", Link, "复制一条搜索记录的链接"],
 	["Trash", Trash, "删除一条搜索记录"],
 ];

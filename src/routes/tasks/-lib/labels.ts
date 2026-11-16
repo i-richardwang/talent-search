@@ -1,6 +1,6 @@
 import type { TaskKind } from "#/lib/task";
 import type { StatusTone } from "#/routes/-components/status-badge";
-import type { CorpusCounts, TaskRunView } from "#/server/tasks";
+import type { TaskRunView } from "#/server/tasks";
 
 /** 三种任务在管理页上的名字。 */
 export const TASK_NAME: Record<TaskKind, string> = {
@@ -19,50 +19,6 @@ export const RUN_STATUS: Record<
 	failed: { label: "失败", tone: "error" },
 	done: { label: "成功", tone: "success" },
 };
-
-type Count = { value: number; label: string };
-
-type LaneFacts = {
-	progress?: { label: string; done: number; total: number };
-	counts: (Count & { parts?: Count[] })[];
-};
-
-/** 每类任务在库里的现状。 */
-export const LANE_FACTS: Record<TaskKind, (corpus: CorpusCounts) => LaneFacts> =
-	{
-		derive: (corpus) => ({
-			counts: [
-				{ label: "条说法", value: corpus.phrases },
-				{ label: "段 AI 未能作答", value: corpus.unanswered },
-			],
-			progress: {
-				done: corpus.derived,
-				label: corpus.staging
-					? "段已按新标准解析，解析完之前检索沿用上一版"
-					: "段经历已解析",
-				total: corpus.segments,
-			},
-		}),
-		review: (corpus) => ({
-			counts: [
-				{ label: "个标签", value: corpus.words },
-				{ label: "种写法已归并", value: corpus.merged },
-			],
-		}),
-		sync: (corpus) => ({
-			counts: [
-				{ label: "人", value: corpus.employees },
-				{
-					label: "段经历",
-					parts: [
-						{ label: "公司内", value: corpus.internal },
-						{ label: "入职前", value: corpus.external },
-					],
-					value: corpus.segments,
-				},
-			],
-		}),
-	};
 
 /** 用时写成 `42s`、`3m 7s`、`1h 23m`、`1d 2h 5m`：一小时以内到秒，以上到分。 */
 export function formatDuration(seconds: number): string {

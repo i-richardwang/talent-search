@@ -1,7 +1,6 @@
 import {
 	ActivityIcon,
 	CheckIcon,
-	EllipsisIcon,
 	MessageSquareTextIcon,
 	TableIcon,
 	TagsIcon,
@@ -9,14 +8,12 @@ import {
 import { type ReactNode, useState } from "react";
 import {
 	Accordion,
-	AccordionAction,
 	AccordionHeader,
 	AccordionItem,
 	AccordionPanel,
 	AccordionRoot,
 	AccordionTrigger,
 } from "#/components/ui/accordion";
-import { ActionIcon } from "#/components/ui/action-icon";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Icon } from "#/components/ui/icon";
@@ -80,9 +77,6 @@ function SidebarGroups() {
 						{title}
 					</span>
 				</AccordionTrigger>
-				<AccordionAction>
-					<ActionIcon icon={EllipsisIcon} size="small" title="更多" />
-				</AccordionAction>
 			</AccordionHeader>
 			<AccordionPanel>
 				<div className="flex flex-col gap-px">{rows}</div>
@@ -220,7 +214,6 @@ export function AccordionPage() {
 				notes: [
 					"一行标题管一块内容的开合用 Accordion；整组一次画完传 items，行上要套别的东西时用 AccordionRoot、AccordionItem、AccordionHeader、AccordionTrigger、AccordionPanel 拼。",
 					"箭头是紧跟在标题后的小三角，用在侧栏组名和过程摘要这类次要的行上。",
-					"行尾的动作放进 AccordionAction：悬停或焦点落进行里才出现，没有悬停的设备上常显。",
 					"展开状态用 value 受控或 defaultValue 自管，值是各项 value 的数组。",
 					"收起时内容卸载，里面不放要保住的输入状态。",
 					"高度和淡入的过渡由组件给，不另加动效。",

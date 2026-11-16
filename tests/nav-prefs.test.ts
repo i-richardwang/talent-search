@@ -9,25 +9,22 @@ import { navPrefsOf } from "#/routes/-lib/nav-prefs";
 import { ago } from "#/routes/-lib/recent";
 
 describe("导航栏记住的样子", () => {
-	test("没记过是默认值：展开、默认宽、组都开着、最近搜索列五条", () => {
+	test("没记过是默认值：展开、默认宽、组都开着", () => {
 		assert.deepEqual(navPrefsOf(undefined), {
 			collapsed: false,
 			folded: [],
-			recentCount: 5,
 			width: NAV_WIDTH.default,
 		});
 	});
 
-	test("记过的原样读回，宽夹在拖动的范围里，读不懂的条数回到默认", () => {
-		assert.deepEqual(navPrefsOf("c=1&g=recent,admin&n=15&w=320"), {
+	test("记过的原样读回，宽夹在拖动的范围里", () => {
+		assert.deepEqual(navPrefsOf("c=1&g=recent,admin&w=320"), {
 			collapsed: true,
 			folded: ["recent", "admin"],
-			recentCount: 15,
 			width: 320,
 		});
 		assert.equal(navPrefsOf("w=9999").width, NAV_WIDTH.max);
 		assert.equal(navPrefsOf("w=abc").width, NAV_WIDTH.default);
-		assert.equal(navPrefsOf("n=7").recentCount, 5);
 	});
 });
 

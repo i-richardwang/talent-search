@@ -22,13 +22,6 @@
 	min-width: 0;
 }
 
-.ui-group-block-title-row {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	min-width: 0;
-}
-
 .ui-group-block-title {
 	overflow: hidden;
 	margin: 0;
@@ -39,23 +32,6 @@
 	letter-spacing: 0.04em;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-
-.ui-group-block-count {
-	display: inline-flex;
-	flex: none;
-	align-items: center;
-	justify-content: center;
-	min-width: 20px;
-	height: 18px;
-	padding-inline: 5px;
-	border-radius: 5px;
-	font-size: var(--text-xs);
-	font-weight: 500;
-	font-variant-numeric: tabular-nums;
-	line-height: 1;
-	color: var(--color-fg-tertiary);
-	background: var(--color-fill-tertiary);
 }
 
 .ui-group-block-description {

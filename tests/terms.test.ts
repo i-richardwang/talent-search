@@ -95,7 +95,7 @@ describe("能力词词表", () => {
 				aliases: ["个性化推荐", "推荐算法"],
 				children: 1,
 				people: 4,
-				reviewedDaysAgo: 0,
+				pending: false,
 			},
 			{
 				canonical: "Python",
@@ -103,7 +103,7 @@ describe("能力词词表", () => {
 				aliases: [],
 				children: 0,
 				people: 1,
-				reviewedDaysAgo: 7,
+				pending: false,
 			},
 			{
 				canonical: "电商推荐系统",
@@ -111,7 +111,7 @@ describe("能力词词表", () => {
 				aliases: [],
 				children: 0,
 				people: 1,
-				reviewedDaysAgo: 0,
+				pending: false,
 			},
 			{
 				canonical: "Hadoop",
@@ -119,7 +119,7 @@ describe("能力词词表", () => {
 				aliases: [],
 				children: 0,
 				people: 0,
-				reviewedDaysAgo: 7,
+				pending: false,
 			},
 			{
 				canonical: "大数据",
@@ -127,7 +127,7 @@ describe("能力词词表", () => {
 				aliases: [],
 				children: 0,
 				people: 0,
-				reviewedDaysAgo: null,
+				pending: false,
 			},
 		]);
 		assert.equal(table.total, 5);
@@ -172,20 +172,20 @@ describe("能力词词表", () => {
 		assert.equal(await describeTerm("没有这个词"), null);
 	});
 
-	test("一项里有词在队列里等着判时写成等待判定；退回了但没人写的词不算在等", async () => {
+	test("一项里有词在队列里等着判时是等待判定；退回了但没人写的词不算在等", async () => {
 		const { pool } = await import("#/db");
 		await pool.query(
 			"update term set reviewed_at = null where word = 'Hadoop'",
 		);
-		assert.equal((await describeTerm("Hadoop"))?.reviewedDaysAgo, null);
+		assert.equal((await describeTerm("Hadoop"))?.pending, false);
 		await pool.query(
 			"update term set reviewed_at = null where word = '个性化推荐'",
 		);
-		assert.equal((await describeTerm("推荐系统"))?.reviewedDaysAgo, 0);
+		assert.equal((await describeTerm("推荐系统"))?.pending, false);
 		await pool.query(
 			`insert into review_word (guide_identity, word, people, near)
 			 values ('${"0".repeat(64)}', '推荐算法', 1, '[]'::jsonb)`,
 		);
-		assert.equal((await describeTerm("推荐系统"))?.reviewedDaysAgo, null);
+		assert.equal((await describeTerm("推荐系统"))?.pending, true);
 	});
 });

@@ -22,7 +22,7 @@ import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
-import { CORPUS_COUNTS, TASK_LANES } from "../../samples/admin";
+import { TASK_LANES } from "../../samples/admin";
 
 /** 五种状态各是什么意思；字取任务台的说法（`RUN_STATUS`），待处理是数据页的。 */
 const TONES: [tone: StatusTone, meaning: string][] = [
@@ -115,13 +115,7 @@ function Lane({ kind }: { kind: TaskLane["kind"] }) {
 	return (
 		<Routed url="/tasks">
 			<ul className="w-full list-none">
-				<TaskCard
-					busy={false}
-					corpus={CORPUS_COUNTS}
-					judge="model"
-					lane={lane}
-					onDone={() => {}}
-				/>
+				<TaskCard busy={false} judge="model" lane={lane} onDone={() => {}} />
 			</ul>
 		</Routed>
 	);
