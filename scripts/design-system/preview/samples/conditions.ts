@@ -97,33 +97,61 @@ export const KEYWORD_SPEC: { conditions: Condition[] } = {
 /** 符合的人较多、一轮读不完时，名单列到的那一档职级。 */
 export const COVERED: Incomplete = { above: "L7" };
 
-/**
- * 每种空态的成因，和一份让它出现的搜索条件。按成因穷尽：检索层多一种成因，
- * 这里少写一行就过不了类型检查。
- */
-export const EMPTY_CASES: {
-	[K in EmptyReason["kind"]]: [
-		reason: Extract<EmptyReason, { kind: K }>,
-		spec: SearchSpec,
-	];
-} = {
-	incomplete: [{ kind: "incomplete", ...COVERED }, SPEC],
-	unmet: [{ kind: "unmet" }, SPEC],
-	noneMatched: [{ kind: "noneMatched" }, SPEC],
-	filtered: [{ kind: "filtered" }, SPEC],
-	gatesUnmet: [
-		{ kind: "gatesUnmet" },
-		{
-			conditions: [
-				{ about: "person", mode: "must", field: "school", values: ["学校 E"] },
-			],
-		},
-	],
-	overflowEvidence: [{ kind: "overflowEvidence", claims: CLAIMS }, SPEC],
-	overflowPopulation: [{ kind: "overflowPopulation" }, SPEC],
-	allDisabled: [
-		{ kind: "allDisabled" },
-		{ conditions: [{ ...RECOMMEND, off: "user" }] },
-	],
-	noConditions: [{ kind: "noConditions" }, { conditions: [] }],
+/** 学校 E（必须）：人才库里没有这所学校的人，空态点名它。 */
+const SCHOOL_E: Condition = {
+	about: "person",
+	mode: "must",
+	field: "school",
+	values: ["学校 E"],
 };
+
+/** 做过推荐系统、毕业于学校 E：后一项单独就没有人。 */
+const NOBODY_CONDITIONS = asQuery([RECOMMEND, SCHOOL_E]);
+
+/** 一种空态：在设计系统里叫什么，成因，和一份让它出现的搜索条件。 */
+type EmptyCase<K extends EmptyReason["kind"]> = [
+	name: string,
+	reason: Extract<EmptyReason, { kind: K }>,
+	spec: SearchSpec,
+];
+
+/**
+ * 每种空态的成因，和让它出现的搜索条件。按成因穷尽：检索层多一种成因，这里少写一行就过不了
+ * 类型检查；同一种成因说法不同的几种情形各占一行。
+ */
+const EMPTY_CASES: { [K in EmptyReason["kind"]]: EmptyCase<K>[] } = {
+	incomplete: [["incomplete", { kind: "incomplete", ...COVERED }, SPEC]],
+	unmet: [
+		[
+			"unmet · 一项没有人",
+			{ kind: "unmet", nobody: NOBODY_CONDITIONS.slice(1).map((c) => c.id) },
+			{ query: { conditions: NOBODY_CONDITIONS } },
+		],
+		[
+			"unmet · 凑不到一起",
+			{ kind: "unmet", nobody: [] },
+			{ query: { conditions: asQuery(ROUND2_CONDITIONS) } },
+		],
+	],
+	filtered: [["filtered", { kind: "filtered" }, SPEC]],
+	overflowEvidence: [
+		["overflowEvidence", { kind: "overflowEvidence", claims: CLAIMS }, SPEC],
+	],
+	overflowPopulation: [
+		["overflowPopulation", { kind: "overflowPopulation" }, SPEC],
+	],
+	allDisabled: [
+		[
+			"allDisabled",
+			{ kind: "allDisabled" },
+			{ conditions: [{ ...RECOMMEND, off: "user" }] },
+		],
+	],
+	noConditions: [
+		["noConditions", { kind: "noConditions" }, { conditions: [] }],
+	],
+};
+
+/** 设计系统一行一种空态。 */
+export const EMPTIES: EmptyCase<EmptyReason["kind"]>[] =
+	Object.values(EMPTY_CASES).flat();

@@ -16,7 +16,7 @@ import { currentUser } from "#/server/auth-functions";
 import { recentSearches, understandingOn } from "#/server/functions";
 import appCss from "../styles.css?url";
 import { AppShell } from "./-components/app-shell";
-import { PageNotFound } from "./-components/not-found";
+import { PageNotFound } from "./-components/dead-end";
 import { NAV_COOKIE, navPrefsOf } from "./-lib/nav-prefs";
 import { RECENT_PAGE_SIZE } from "./-lib/recent";
 import { RecentsProvider } from "./-lib/recents";

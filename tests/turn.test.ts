@@ -17,6 +17,7 @@ import { queryOfSpec, type SearchSpec } from "#/search/spec";
 import { lately, sleeper } from "./conditions";
 import {
 	answering,
+	bracesAfterSubmit,
 	breakUnderstanding,
 	drafted,
 	seed,
@@ -645,6 +646,16 @@ describe("理解失败", () => {
 	 * 一个不剩。这一份空条件走下去，界面画的是「一个条件都没解析出来」，
 	 * 也就是把一次故障画成了「你没说条件」。它和端点报错走同一条路。
 	 */
+	test("模型交的提交在对象后面多了右括号：取那个对象照常检查、写入", async () => {
+		const restore = bracesAfterSubmit();
+		try {
+			const { spec } = await sentence("算法");
+			assert.deepEqual(shapeOf(spec), expected("算法"));
+		} finally {
+			restore();
+		}
+	});
+
 	test("模型给了条件、校验后一个不剩：也是失败，不写入", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		await assert.rejects(
@@ -801,6 +812,40 @@ describe("理解时把候选人的经历看完", () => {
 			outcome.results.map((r) => r.employee.empId).sort(),
 			["JB01", "JB02"],
 			"判成不算的那一位不在名单上",
+		);
+		assert.equal(outcome.incomplete, undefined);
+		assert.equal((await loadTurn(turnId))?.settled, true);
+	});
+
+	test("交上来的判据和读的时候不一样：照收，这一轮按交上来的那份把候选人读完，名单是定稿", async () => {
+		// 对话里按一条判据读了，交的时候改了判据的字：新判据下的经历一段都还没读
+		const reworded = {
+			...appraising,
+			seek: { ...appraising.seek, criterion: "符合：鉴定师；不算：直播、销售" },
+		};
+		let asked = 0;
+		const { turnId } = await createTurn({ kind: "sentence", text: "鉴宝师" });
+		const spec = await answering(
+			() => ({
+				conditions: [asked++ === 0 ? appraising : reworded],
+				note: null,
+			}),
+			() => settle(turnId),
+		);
+		assert.deepEqual(
+			(await loadTurn(turnId))?.trace?.map(({ at: _at, ...step }) => step),
+			[
+				{ tool: "read", segments: 3, left: 3 },
+				{ tool: "judge", fits: 2, unfit: 1 },
+				{ tool: "read", segments: 3, left: 3 },
+				{ tool: "judge", fits: 1, unfit: 2 },
+			],
+			"提交一次就收，之后按交上来的判据读完",
+		);
+		const outcome = await search(spec, turnId);
+		assert.deepEqual(
+			outcome.results.map((r) => r.employee.empId),
+			["JB01"],
 		);
 		assert.equal(outcome.incomplete, undefined);
 		assert.equal((await loadTurn(turnId))?.settled, true);
@@ -1172,7 +1217,6 @@ describe("这一次理解还在不在", () => {
 									probe: {
 										conditions: [],
 										total: null,
-										candidates: null,
 										unread: 0,
 									},
 								},

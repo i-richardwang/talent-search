@@ -24,32 +24,32 @@ export const FAULT_COPY: Record<
 	}
 > = {
 	unconfigured: {
-		title: "AI 搜索未开启",
-		hint: "请使用关键词搜索。",
+		title: "AI 搜索还没开通",
+		hint: "可以先用关键词搜索。",
 		retry: false,
 		keyword: true,
 	},
 	unreachable: {
-		title: "AI 服务暂时不可用",
-		hint: "你的描述没有问题。请稍后重试，或先使用关键词搜索。",
+		title: "AI 服务暂时连不上",
+		hint: "这句需求已经记下，稍后点重试就行；着急的话可以先用关键词搜索。",
 		retry: true,
 		keyword: true,
 	},
 	rejected: {
-		title: "AI 服务出错",
-		hint: "你的描述没有问题。请稍后重试；如果持续出现，请联系管理员。",
+		title: "AI 服务出了问题",
+		hint: "这句需求已经记下，稍后点重试就行；一直不行请联系管理员。",
 		retry: true,
 		keyword: true,
 	},
 	unanswered: {
 		title: "没能理解这段需求",
-		hint: "请重试，或换一种说法。",
+		hint: "重试一次，或者换个说法再说一遍。",
 		retry: true,
 		keyword: false,
 	},
 	broken: {
-		title: "出错了",
-		hint: "请重试。",
+		title: "这次没有完成",
+		hint: "多半是网络或服务器的临时问题，重试一下；一直不行请联系管理员。",
 		retry: true,
 		keyword: false,
 	},

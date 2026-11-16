@@ -127,7 +127,7 @@ describe("后面每一轮", () => {
 			],
 			{ fault: "unreachable" },
 		);
-		assert.match(text, /AI 服务暂时不可用/);
+		assert.match(text, /AI 服务暂时连不上/);
 		assert.doesNotMatch(text, /正在理解|没能理解/);
 	});
 
@@ -135,9 +135,9 @@ describe("后面每一轮", () => {
 		const rounds = [{ said: "再资深一点", spec: null }];
 		const retry = { onRetry: () => {} };
 		const down = await seen(rounds, { fault: "unreachable", ...retry });
-		assert.match(down.text, /AI 服务暂时不可用\s*重试/);
+		assert.match(down.text, /AI 服务暂时连不上\s*重试/);
 		const off = await seen(rounds, { fault: "unconfigured", ...retry });
-		assert.match(off.text, /AI 搜索未开启/);
+		assert.match(off.text, /AI 搜索还没开通/);
 		assert.doesNotMatch(off.text, /重试/);
 	});
 
@@ -399,16 +399,14 @@ describe("检索人才库的过程", () => {
 				{ kind: "unrunnable", subject: "近三年两次 A" },
 				{ kind: "unfound", subject: "量子炼金" },
 				{ kind: "tooBroad", subject: "做过开发" },
-				{ kind: "unread", subject: null },
 			],
 		});
 		assert.deepEqual(findings, [
 			"有的搜索条件没写完整",
 			"有一条的说法要换成更直白的话",
 			"「近三年两次 A」这样写搜不了",
-			"人才库中没有「量子炼金」",
+			"人才库中没有符合「量子炼金」的人",
 			"「做过开发」找出的太多，名单出不来",
-			"还有候选人没确认完",
 		]);
 		assert.deepEqual(internalWordsIn(findings.join("")), []);
 	});
@@ -487,7 +485,7 @@ describe("检索人才库的过程", () => {
 				progress: { trace: [], startedAt: null },
 			});
 			assert.match(text, /你修改了搜索条件：添加 后端/);
-			assert.match(text, /AI 服务暂时不可用/);
+			assert.match(text, /AI 服务暂时连不上/);
 			assert.match(text, /重试/);
 		});
 	});
@@ -497,75 +495,52 @@ describe("检索人才库的过程", () => {
 			stepFindings({ at: 0, tool: "probe", probe });
 		const must = { mode: "must" as const };
 
-		test("每条单独搜到几个人；有一条写不对时说搜不了，不写合起来的人数", () => {
+		test("只说哪一条写不对、哪一条没有人；排除和 chip 上一样标出来", () => {
 			assert.deepEqual(
 				probed({
 					conditions: [
 						{ ...must, label: "做过推荐", people: 12 },
 						{ ...must, label: "近三年两次 A", people: null },
+						{ label: "做过销售", mode: "exclude", people: 0 },
+						{ ...must, label: "量子炼金", people: 0 },
 					],
 					total: null,
-					candidates: null,
-					unread: 0,
-				}),
-				["做过推荐：搜到 12 人", "近三年两次 A：这样写搜不了"],
-			);
-		});
-
-		test("经历都确认过了：合起来写符合的人数；排除和 chip 上一样标出来", () => {
-			assert.deepEqual(
-				probed({
-					conditions: [
-						{ ...must, label: "做过推荐", people: 20 },
-						{ label: "做过销售", mode: "exclude", people: 2 },
-					],
-					total: 12,
-					candidates: 12,
 					unread: 0,
 				}),
 				[
-					"做过推荐：搜到 20 人",
-					"做过销售（排除）：搜到 2 人",
-					"合起来：12 人符合",
+					"近三年两次 A：这样写搜不了",
+					"人才库中没有符合「做过销售」的人",
+					"人才库中没有符合「量子炼金」的人",
 				],
 			);
 		});
 
-		test("还没确认完：写候选多少人，已确认的里面有人时接着写符合的人数，不把没确认的人说成符合", () => {
+		test("不写人数：搜到的人数和名单上的人数说的不是一回事，名单上的人数只在名单上说", () => {
 			const conditions = [
 				{ ...must, label: "做过推荐", people: 40 },
 				{ ...must, label: "硕士及以上", people: 300 },
 			];
-			const each = ["做过推荐：搜到 40 人", "硕士及以上：搜到 300 人"];
-			const unseen = probed({
-				conditions,
-				total: 0,
-				candidates: 30,
-				unread: 37,
-			});
-			assert.deepEqual(unseen, [...each, "合起来：候选 30 人，还没确认完"]);
-			const partly = probed({
-				conditions,
-				total: 2,
-				candidates: 30,
-				unread: 20,
-			});
-			assert.deepEqual(partly, [
-				...each,
-				"合起来：候选 30 人，还没确认完，已确认 2 人符合",
-			]);
-			assert.deepEqual(internalWordsIn([...unseen, ...partly].join("")), []);
+			const lines = [
+				probed({ conditions, total: 0, unread: 37 }),
+				probed({ conditions, total: 2, unread: 20 }),
+				probed({ conditions, total: 12, unread: 0 }),
+			];
+			for (const found of lines)
+				assert.deepEqual(found, ["每一项在人才库中都找得到"]);
+			assert.deepEqual(internalWordsIn(lines.flat().join("")), []);
 		});
 
-		test("字面一个都对不上的条件写搜到 0 人，不说成还没确认", () => {
+		test("每一项都找得到、确认完了合起来没有人：说出来，AI 接着改条件", () => {
 			assert.deepEqual(
 				probed({
-					conditions: [{ ...must, label: "量子炼金", people: 0 }],
+					conditions: [
+						{ ...must, label: "做过推荐", people: 40 },
+						{ ...must, label: "硕士及以上", people: 300 },
+					],
 					total: 0,
-					candidates: 0,
 					unread: 0,
 				}),
-				["量子炼金：搜到 0 人", "合起来：0 人符合"],
+				["每一项都找得到，合起来没有人符合"],
 			);
 		});
 	});

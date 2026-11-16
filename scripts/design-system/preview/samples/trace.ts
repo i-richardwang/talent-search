@@ -12,14 +12,10 @@ import { asQuery, ROUND1_CONDITIONS, ROUND2_CONDITIONS } from "./conditions";
 const SEARCHED = [186, 412, 97, 1240];
 
 /**
- * 试搜一份条件，经历还没看：每条只知道搜到多少人，名单上还没有人；`candidates` 是没看过的都
- * 算数时名单上会有的人数，`unread` 是接下来要看的经历有几段。
+ * 试搜一份条件，经历还没看：每条只知道搜到多少人，名单上还没有人；`unread` 是接下来要看的
+ * 经历有几段。
  */
-function tried(
-	list: readonly Condition[],
-	candidates: number,
-	unread: number,
-): Probe {
+function tried(list: readonly Condition[], unread: number): Probe {
 	return {
 		conditions: asQuery(list).map((c, i) => ({
 			label: c.label,
@@ -27,7 +23,6 @@ function tried(
 			people: SEARCHED[i] ?? null,
 		})),
 		total: 0,
-		candidates,
 		unread,
 	};
 }
@@ -64,7 +59,7 @@ export const ROUND1_TRACE: TraceStep[] = [
 			},
 		],
 	},
-	{ at: T0 + 2400, tool: "probe", probe: tried(ROUND1_CONDITIONS, 138, 212) },
+	{ at: T0 + 2400, tool: "probe", probe: tried(ROUND1_CONDITIONS, 212) },
 	{ at: T0 + 3100, tool: "read", segments: 160, left: 212 },
 	{ at: T0 + 19_000, tool: "judge", fits: 97, unfit: 63 },
 	{ at: T0 + 19_600, tool: "read", segments: 52, left: 52 },
@@ -93,14 +88,11 @@ export const ROUND2_TRACE: TraceStep[] = [
 			values: ["本科", "硕士", "博士"],
 		},
 	},
-	{ at: T0 + 63_000, tool: "probe", probe: tried(ROUND2_CONDITIONS, 21, 26) },
+	{ at: T0 + 63_000, tool: "probe", probe: tried(ROUND2_CONDITIONS, 26) },
 	{
 		at: T0 + 64_500,
 		tool: "submit",
-		issues: [
-			{ kind: "unfound", subject: "技术口碑" },
-			{ kind: "unread", subject: null },
-		],
+		issues: [{ kind: "unfound", subject: "技术口碑" }],
 	},
 	{ at: T0 + 65_200, tool: "read", segments: 26, left: 26 },
 	{ at: T0 + 71_000, tool: "judge", fits: 15, unfit: 11 },

@@ -4,7 +4,12 @@ import {
 	useLoaderData,
 } from "@tanstack/react-router";
 import { fetchEmployee } from "#/server/functions";
-import { Person, PersonNotFound, PersonPending } from "./-components/person";
+import {
+	Person,
+	PersonFailed,
+	PersonNotFound,
+	PersonPending,
+} from "./-components/person";
 
 export const Route = createFileRoute("/s/$turnId/p/$empId")({
 	loader: async ({ params }) => {
@@ -15,6 +20,8 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 	component: Detail,
 	/* 找不到工号时只换这一栏：`notFound()` 由抛它的 loader 所属的路由处理，名单留着。 */
 	notFoundComponent: PersonNotFound,
+	/* 取数据出错同样只换这一栏 */
+	errorComponent: PersonFailed,
 	/* 换人时 loader 要查一次库：快的时候不画骨架，免得闪一下；画出来就留够一段，也免得闪。 */
 	pendingMs: 200,
 	pendingMinMs: 300,

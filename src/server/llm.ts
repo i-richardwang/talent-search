@@ -7,7 +7,15 @@
 
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateText, isStepCount, ToolChoiceViolationError, tool } from "ai";
+import {
+	generateText,
+	InvalidToolInputError,
+	isStepCount,
+	type ToolCallRepairFunction,
+	ToolChoiceViolationError,
+	type ToolSet,
+	tool,
+} from "ai";
 import { z } from "zod";
 import { gate } from "#/lib/concurrent";
 import { catalogText } from "#/search/catalog";
@@ -41,9 +49,9 @@ const REQUEST = endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES });
 
 /**
  * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。通常捞一次说法、试跑一次、读一次
- * 经历、提交一次；提交没通过检查、改完再读再提交，再多几次。最后一次只留提交这一个工具，并在
- * 消息里明说（`LAST_STEP`），保证用完次数时模型提交了一份搜索条件。读经历的请求不算在里面：
- * 它们不在这段对话里（`reading.ts`）。
+ * 经历、提交一次；提交没通过检查、改完再提交，再多几次。最后一次只留提交这一个工具，并在
+ * 消息里明说（`LAST_STEP`），保证用完次数时模型提交了一份搜索条件。次数只管理解：读经历的
+ * 请求不在这段对话里（`reading.ts`），模型没读完的，理解结束后这一轮接着读完（`turn.ts`）。
  */
 const AGENT_STEPS = 10;
 
@@ -109,10 +117,9 @@ criterion 说的事。只是提到、配合，或者做的是相近的另一件�
  * 数据目录是提示词的一部分（`catalogText`）：目录变了，`eval:understand` 要重跑。
  */
 const SYSTEM = `你在帮 HR 从公司内部的人才库里找人。给你的是当前的搜索条件（第一句话时是空的）和 HR
-这一次说的话；不是第一句话时，还有这次找人之前的对话。你要做两件事：写出整份新的搜索条件；
-让条件搜出来的候选人的经历按你写的判据读一遍。两件事都做完，用 submit 提交，有需要时再对 HR
-说一句话。名单上的人只从搜索来：搜到的经历算不算按你写的判据定，不添加搜索没找到的人，也不排
-名次。没读过的经历不算数：名单上只有读过、算数的人。
+这一次说的话；不是第一句话时，还有这次找人之前的对话。你要写出整份新的搜索条件，用 submit 提交，
+有需要时再对 HR 说一句话。提交之后，条件搜出来的候选人的经历会按你写的判据逐段读完：名单上的人
+只从搜索来，搜到的经历算不算按你写的判据定，不添加搜索没找到的人，也不排名次。
 
 之前的对话写着 HR 前几轮说过的话、自己改过什么，每一轮之后条件加了什么、去掉了什么，你对 HR
 说过、问过什么。用它读懂这句话接的是哪一句、指的是什么（「不是这个意思」「还是按刚才那样」
@@ -123,6 +130,9 @@ const SYSTEM = `你在帮 HR 从公司内部的人才库里找人。给你的是
 - 这句话没提到的条件原样抄回来，id、label、where、params 一个字都不改。
 - 要改的改那一条，id 照抄；要去掉的不写；要加的加上，不写 id。「再资深一点」改职级那一条；
   「不要外包」是加一条；「运营那条不要了」是去掉。
+- 「不用都符合」「其中一样就行」是把那几条合成一条：原来的几条不写，新写一条（不写 id）。
+  做过什么的，criterion 写其中任一样都算，patterns 把几条的都带上；人的条件把几条的
+  where 用 or 连起来。不要改成几条加分：加分只排先后，不缩小范围，只剩加分时名单是全公司的人。
 - 这句话和当前的条件说的是另一件事（换了一个岗位、一类人），就按这句话重写整份。
 
 一条条件是：
@@ -162,16 +172,14 @@ from 决定这条在问什么：
 - 只关心命中的是哪一类说法或投入时才用 h（h.route、h.engagement）；平常 where 里不必提 h。
 
 读经历：
-- 条件写好先用 probe 试跑，再用 read 把候选人还没读过的经历读完。read 按每条条件的 criterion 逐段
-  判断这一段算不算、把结论记下，回给你每条这一次读了多少段、多少段算数，候选人还剩多少段没读。
-  经历的文字不给你看。
-- 一条读了很多段、算数的却很少，而且还剩很多没读，多半是正则带进了一大类不相干的经历：把正则
-  改窄、重新 probe，再 read；读过的不用再读。
-- 结论是按 criterion 的文字记下的：读过之后 criterion 一个字都不要改，提交的要和读的时候是同一份，
-  改了读过的结论就都用不上。
-- 上一轮留下来、原样沿用的条件，以前读过的经历结论还在，read 只读没读过的。
-- 候选人很多时 read 从职级高的人读起，一轮读到上限为止。到了上限就提交：名单上方会告诉 HR
-  现在列到了哪一级职级，你不用说，也不用为此改条件或问 HR。
+- 条件写好先用 probe 试跑。read 把候选人还没读过的经历按每条条件的 criterion 逐段判断、记下结论，
+  回给你每条这一次读了多少段、多少段算数，候选人还剩多少段没读。经历的文字不给你看。
+- 提交之后没读的经历也会读完，read 用来看你写得准不准：一条读了很多段、算数的却很少，多半是
+  正则带进了一大类不相干的经历，把正则改窄、重新 probe 再读；读过的不用再读。
+- 结论是按 criterion 的文字记下的：读过之后改一个字，读过的就要按新的重读。没有理由不要改。
+- 上一轮留下来、原样沿用的条件，以前读过的经历结论还在，不用再读。
+- 候选人很多时从职级高的人读起，一轮读到上限为止：名单上方会告诉 HR 现在列到了哪一级职级，
+  你不用说，也不用为此改条件或问 HR。
 
 在哪、哪一档、入职前还是公司内、多久：
 - 入职前的公司名、公司档只在 e.kind = 'external' 的段上；公司内的部门只在 e.kind = 'internal'
@@ -227,14 +235,15 @@ label 写给 HR 看，HR 靠它核对你是怎么理解的：说清找的是什�
 只说名单和条件上看不出、又要 HR 知道或拿主意的一件事。没有这样的事就写 null。值得说的有两种：
 - 这句话里有人才库表达不了的要求。人才库里有什么看下面的数据目录和记录流；地点、年龄、性别、薪资、
   性格、潜力、像某某一样，这些不写进条件；HR 不知道的话会以为名单已经按它筛过了。
-  点名的公司、学校表达得了，只是人才库里没有人：条件照写，说一句人才库里没有这一家。
+  点名的公司、学校表达得了，人才库里没有人也照写，不用说：哪一项没有人，名单上会说。
 - 一个词在人才库里有几种常见的意思，按哪种理解找出来的人差很多，条件上又看不出按的是哪种。
-一次只说最要紧的那一件；几条要求都搜不了时，在一句话里一起说。整份条件搜出多少人、是不是
-一个都没有，HR 在名单上看得到：不用说，也不用替 HR 提议放宽。
+一次只说最要紧的那一件；几条要求都搜不了时，在一句话里一起说。名单上有多少人、哪一项没有人，
+HR 在名单上看得到：不用说，也不用替 HR 提议放宽。says 和 detail 都不写人数：你查到的是简历里
+字面写到的人，名单上是确认过的人，两个数对不上，HR 会以为哪里错了。
 
 HR 可以有别的回答时给 options，没有就空着、只说那一句。每一项的 label 是 HR 选它时会说的一句
 完整的话（「有外卖业务的公司也算」「只看做用户运营的」）：HR 点了，这句话就作为下一句话交给你，
-你照它改条件、接着找。detail 用一句话说选了会怎样，人数只用你查到的结果，说清是什么人的人数。
+你照它改条件、接着找。detail 用一句话说选了名单会怎样变。
 给了 options 就写 current：现在这份条件是按哪种理解找的，也写成 HR 会回的话。HR 不理这句话，
 名单就按现在这份条件。
 
@@ -267,14 +276,13 @@ company_circles 名企组合。
   （candidates）、他们还有多少段经历没读（unread）。人数和你理解的对不上时，回头看 where 和正则。
 - read：把候选人还没读过的经历读完，见上面。
 调用的次数有限：通常 find 一次、probe 一次、read 一次，再 submit。
-当前条件里原样留下的不用再 find；它们以前读过的经历结论还在，probe 的 unread 不是 0 时照样要 read。
+当前条件里原样留下的不用再 find。
 
-写好了用 submit 提交，检查通过这一轮就结束。没通过会告诉你哪里有问题，改好再提交。只有一种问题
+写好了用 submit 提交，检查通过就完成了。没通过会告诉你哪里有问题，改好再提交。只有一种问题
 可以不改：说找不到人或找出的太多，而那正是用户明说的要求、人才库里本来就没有这样的人时，把同一份
-原样再提交一次，没有这样的人也是一个结果。label、where、正则写不对或跑不了的，原样再交也不收；
-候选人还有经历没读的也不收，读完再交。
+原样再提交一次，没有这样的人也是一个结果。label、where、正则写不对或跑不了的，原样再交也不收。
 用户点名的公司、学校、档找不到人，不换成别的名字、别的档，也不因此拆开或改写修饰语挂在哪；
-照用户说的写，在 note 里说一句人才库里没有。
+照用户说的写，哪一项没有人名单上会说，note 里不用说。
 
 提交给 submit 的是 {"conditions": [条件……], "note": {"says": "", "current": "", "options":
 [{"label": "", "detail": ""}]}}。没有要说的 note 写 null，没有别的回答时 current 写 null、
@@ -286,7 +294,7 @@ ${catalogText()}
 
 下面的例子假设 level_band 有 P5、P6、P7、P8；company_tag 有 头部大厂、知名公司；行业里有
 消费/零售 和它下面的 外卖；记录流 perf 是半年一期的绩效，档从低到高 C、B、B+、A、A+。例子里的正则和名字都已经查过，
-人才库里就是这样叫的；候选人的经历也都用 read 读过。例子只写最后提交的内容。
+人才库里就是这样叫的。例子只写最后提交的内容。
 
 例一。当前的条件：[]。这句话：算法和后端都做过的，比较资深的，最好是字节来的
 {"conditions": [
@@ -320,7 +328,14 @@ ${catalogText()}
   {"label": "带过团队", "mode": "must", "from": "experience", "seek": {"criterion": "本人带过团队：有下属，负责团队的管理。只做项目协调、只带过实习生或新人的不算。", "patterns": ["团队管理", "带团队", "团队负责人", "人员管理", "主管|总监|组长"]}, "where": "true"}],
  "note": null}
 
-例六。当前的条件：[]。这句话：北京的大模型方向，有管理潜力，硕士
+例六。当前的条件是例一提交的四条（带着各自的 id）。这句话：算法和后端不用都做过，做过其中一样就行
+{"conditions": [
+  {"label": "做过算法或后端开发", "mode": "must", "from": "experience", "seek": {"criterion": "本人做算法研发或写服务端代码，有一样就算：机器学习、推荐、搜索、视觉、NLP 这类算法的设计、训练和优化，后端、服务端开发，用 Java、Go 这类语言做业务系统研发都算。只是使用算法结果的业务岗位、算法团队里的项目管理和招聘不算；前端、客户端、测试、运维不算。", "patterns": ["算法", "机器学习", "深度学习", "(?<![a-z])(nlp|cv)(?![a-z])", "后端", "服务端", "后台开发", "(?<![a-z])(java|golang)(?![a-z])"]}, "where": "true"},
+  {"id": "沿用例一第三条的 id", "label": "职级 P7 及以上", "mode": "boost", "from": "person", "where": "p.level_rank >= (select s.rank from scale s where s.stream = 'level' and s.value = :band)", "params": {"band": "P7"}},
+  {"id": "沿用例一第四条的 id", "label": "入职前在字节待过", "mode": "boost", "from": "experience", "where": "e.kind = 'external' and e.company ilike :c", "params": {"c": "%字节%"}}],
+ "note": null}
+
+例七。当前的条件：[]。这句话：北京的大模型方向，有管理潜力，硕士
 {"conditions": [
   {"label": "做过大模型", "mode": "must", "from": "experience", "seek": {"criterion": "本人做大模型的研发或应用开发：大语言模型的训练、微调、推理，基于大模型做应用（RAG、Agent、提示词工程）都算。只是用 AI 工具办公的、只做传统 NLP 或机器学习的不算。", "patterns": ["大模型", "大语言模型", "生成式", "(?<![a-z])(llm|aigc|gpt|rag)(?![a-z])", "提示词|prompt"]}, "where": "true"},
   {"label": "硕士及以上", "mode": "must", "from": "person", "where": "p.education_rank >= (select s.rank from scale s where s.stream = 'education' and s.value = :edu)", "params": {"edu": "硕士"}}],
@@ -328,16 +343,16 @@ ${catalogText()}
   "says": "人才库里没有工作地点，简历里也看不出管理潜力，要不要先看带过团队的？",
   "current": "先不管这两条",
   "options": [
-   {"label": "带过团队的优先", "detail": "简历里写过带团队的有两百多位"}]}}
+   {"label": "带过团队的优先", "detail": "带过团队的人排在前面"}]}}
 
-例七。当前的条件：[]。这句话：外卖行业的运营，甲辰系的优先，不要咨询行业出来的
+例八。当前的条件：[]。这句话：外卖行业的运营，甲辰系的优先，不要咨询行业出来的
 {"conditions": [
   {"label": "在主营外卖的公司做运营", "mode": "must", "from": "experience", "seek": {"criterion": "本人做运营：商家运营、用户运营、活动运营、城市运营这些运营岗位都算。销售、客服、产品经理不算。", "patterns": ["运营"]}, "where": ":ind = any(e.main_industries)", "params": {"ind": "外卖"}},
   {"label": "入职前在甲辰集团旗下的公司待过", "mode": "boost", "from": "experience", "where": "e.company_group ilike :g", "params": {"g": "%甲辰%"}},
   {"label": "在主营咨询的公司待过", "mode": "exclude", "from": "experience", "where": ":ind = any(e.main_industries)", "params": {"ind": "咨询"}}],
  "note": null}
 
-例八。当前的条件：[]。这句话：做过用户运营，但没做过销售的
+例九。当前的条件：[]。这句话：做过用户运营，但没做过销售的
 {"conditions": [
   {"label": "做过用户运营", "mode": "must", "from": "experience", "seek": {"criterion": "本人做用户运营：用户分层、活跃、留存、社群、会员这类面向用户的运营都算。商家运营、内容审核、客服不算。", "patterns": ["用户运营", "社群", "会员运营", "用户(活跃|留存|分层)"]}, "where": "true"},
   {"label": "做过销售", "mode": "exclude", "from": "experience", "seek": {"criterion": "本人做销售：背销售指标、直接面向客户卖产品或签单的岗位都算。售前支持、销售运营、给销售团队做培训的不算。", "patterns": ["销售", "(?<![a-z])(bd|sales)(?![a-z])", "大客户", "客户经理"]}, "where": "true"}],
@@ -408,7 +423,7 @@ export class UnansweredError extends Error {
 /**
  * 当前条件（`agent` 的 `base`）+ 之前的对话 + 一句话 → 提交检查录取的条件和说明，写进记录的就是它。
  *
- * 模型先捞说法、查名字、试跑、让候选人的经历读完（`agent-tools.ts`），再用 `submit`
+ * 模型先捞说法、查名字、试跑、读经历（`agent-tools.ts`），再用 `submit`
  * 提交；没通过检查就改了再提交，通过了就停，最多调用 `AGENT_STEPS` 次模型。次数用完时最后
  * 一次提交即使没通过检查也用它：录取的那份里没有跑不了的条件，形状不合规的也已去掉。一次都
  * 没提交、或者录取的那份不算作答（提交检查判的），抛 `UnansweredError`。
@@ -438,6 +453,7 @@ export async function understand(
 		maxRetries: 0,
 		tools: agent.tools,
 		toolChoice: "required",
+		repairToolCall: trailingBrackets,
 		// 一步里的几次工具调用按顺序执行：读经历和试跑共用这一轮读了多少的那份状态
 		toolCallConcurrency: 1,
 		abortSignal,
@@ -491,6 +507,43 @@ export async function understand(
 	return answer.admitted;
 }
 
+/**
+ * 工具参数是一个 JSON 对象，模型偶尔在它后面多写几个右括号：同样的输入它每次都这样写，回给它
+ * 改也改不过来。参数开头就是一个完整的对象、后面只剩右括号和空白时，取这个对象；别的写坏了
+ * 不动，照常作为这一次调用的错误回给模型。取出来的对象照常过 schema 和提交检查。
+ */
+const trailingBrackets: ToolCallRepairFunction<ToolSet> = async ({
+	toolCall,
+	error,
+}) => {
+	if (!InvalidToolInputError.isInstance(error)) return null;
+	const object = leadingObject(toolCall.input);
+	return object === null ? null : { ...toolCall, input: object };
+};
+
+/** 文字开头的那个完整 JSON 对象，后面只剩右括号和空白时；否则 null。 */
+function leadingObject(text: string): string | null {
+	const start = text.search(/\S/);
+	if (text[start] !== "{") return null;
+	let depth = 0;
+	let quoted = false;
+	let escaped = false;
+	for (let i = start; i < text.length; i++) {
+		const ch = text[i];
+		if (quoted) {
+			if (escaped) escaped = false;
+			else if (ch === "\\") escaped = true;
+			else if (ch === '"') quoted = false;
+		} else if (ch === '"') quoted = true;
+		else if (ch === "{" || ch === "[") depth++;
+		else if ((ch === "}" || ch === "]") && --depth === 0)
+			return /^[\s}\]]*$/.test(text.slice(i + 1))
+				? text.slice(start, i + 1)
+				: null;
+	}
+	return null;
+}
+
 /** 读一批经历的回答不合约定时，同一批最多再问几次。 */
 const JUDGE_RETRIES = 1;
 
@@ -520,6 +573,7 @@ export const judgeSegments: Judge = (batch, abortSignal) =>
 				maxRetries: 0,
 				tools: { judge: judgeTool },
 				toolChoice: { type: "tool", toolName: "judge" },
+				repairToolCall: trailingBrackets,
 				abortSignal,
 				instructions: READING,
 				prompt: JSON.stringify(batch),

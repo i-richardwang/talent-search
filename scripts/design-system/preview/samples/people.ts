@@ -697,7 +697,7 @@ export const EMPTY_OUTCOME: SearchOutcome = {
 	results: [],
 	facets: emptyFacets(),
 	total: 0,
-	empty: { kind: "unmet" },
+	empty: { kind: "unmet", nobody: [] },
 };
 
 /** 名单上一个人都没有，但候选人还没确认完：空态说找到了哪一档职级，下一步是接着找。 */

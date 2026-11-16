@@ -172,7 +172,7 @@ describe("读经历", () => {
 			{ label: "做过巡检", read: 3, fits: 3 },
 		]);
 		assert.equal(done.left, 0);
-		assert.match(done.todo ?? "", /都读过了，可以提交/);
+		assert.match(done.todo ?? "", /候选人的经历都读过了/);
 		assert.doesNotMatch(
 			JSON.stringify(done),
 			/巡检员|乙未机械/,
@@ -408,14 +408,14 @@ describe("读经历", () => {
 			{ label: "做过装配", read: READ_MAX, fits: READ_MAX },
 		]);
 		assert.equal(done.left, TOO_MANY - READ_MAX);
-		assert.match(done.todo ?? "", /这一轮能读的经历读完了.*直接提交/);
+		assert.match(done.todo ?? "", /这一轮能读的经历到上限了.*不用为此改条件/);
 		assert.equal(seen.length, READ_MAX / READ_BATCH);
 		assert.equal((await saved(search, criterion)).length, READ_MAX);
 
 		const again = await call<Read>("read", { conditions });
 		assert.deepEqual(again.conditions, [], "到了上限不再读");
 		assert.equal(again.left, TOO_MANY - READ_MAX);
-		assert.match(again.todo ?? "", /直接提交/, "不说成都读过了");
+		assert.match(again.todo ?? "", /到上限了/, "不说成都读过了");
 		assert.deepEqual(plain(steps).at(-1), {
 			tool: "read",
 			segments: 0,
@@ -426,8 +426,8 @@ describe("读经历", () => {
 			[tried.total, tried.candidates, tried.unread],
 			[READ_MAX, TOO_MANY, TOO_MANY - READ_MAX],
 		);
-		assert.match(tried.todo, /直接提交/);
-		// 必须的没读完，轮不到加分的：它的判据这一轮没读过，不算读过之后改了字
+		assert.match(tried.todo, /到上限了/);
+		// 到了上限照常提交，加上一条还没读过的加分条件也收
 		const boost = seeking("带过班组", ["装配班长"], "带过装配班组", {
 			mode: "boost",
 		});
@@ -484,62 +484,27 @@ describe("读经历", () => {
 	});
 });
 
-describe("提交前候选人的经历要读完", () => {
-	test("还有读得完的经历没读：不通过，原样再交也不收；读完再交就通过", async () => {
-		const { call, steps, passed, answer } = await agent();
-		const criterion = "本人做设备巡检";
-		const conditions = [seeking("做过巡检", ["巡检"], criterion)];
-		for (const _ of [1, 2]) {
-			const refused = await call<Checked>("submit", table(conditions));
-			assert.equal(refused.passed, false);
-			assert.equal(refused.problems?.length, 1);
-			assert.match(
-				refused.problems?.[0] ?? "",
-				/候选人还有经历没读过，没读过的不上名单.*read/,
-			);
-			assert.equal(passed(), false);
-		}
-		assert.deepEqual(
-			plain(steps),
-			Array.from({ length: 2 }, () => ({
-				tool: "submit",
-				issues: [{ kind: "unread", subject: null }],
-			})),
-		);
-		assert.deepEqual(
-			answer()?.admitted.query.conditions.map((c) => c.label),
-			["做过巡检"],
-			"条件本身跑得通，录取的那份里有它",
-		);
-
-		await call("read", { conditions });
-		assert.deepEqual(await call("submit", table(conditions)), {
-			passed: true,
-		});
+describe("读经历和提交", () => {
+	test("没读的经历不挡提交：读是模型看自己写得准不准的办法，没读完的这一轮最后接着读", async () => {
+		const { call, steps, passed } = await agent();
+		const submitted = table([seeking("做过巡检", ["巡检"], "本人做设备巡检")]);
+		assert.deepEqual(await call("submit", submitted), { passed: true });
 		assert.equal(passed(), true);
+		assert.deepEqual(steps, [], "通过的提交不记步骤，也没有替模型读");
 	});
 
-	test("读过之后改了判据的文字：读过的结论用不上，不收，原样再交也不收；改回读的时候那一份就通过", async () => {
-		const { call, steps } = await agent();
+	test("读过之后改了判据的字：照收；新判据下的段按没读过算，读过的结论还在旧判据名下", async () => {
+		const { call } = await agent();
 		const criterion = "本人做设备巡检";
-		const conditions = [seeking("做过巡检", ["巡检"], criterion)];
-		await call("read", { conditions });
-		const rewritten = table([
+		await call("read", {
+			conditions: [seeking("做过巡检", ["巡检"], criterion)],
+		});
+		const reworded = [
 			seeking("做过巡检", ["巡检"], `${criterion}，带过班组的更好`),
-		]);
-		for (const _ of [1, 2]) {
-			const refused = await call<Checked>("submit", rewritten);
-			assert.equal(refused.passed, false);
-			assert.equal(refused.problems?.length, 1);
-			assert.match(
-				refused.problems?.[0] ?? "",
-				/「做过巡检」的 criterion 和读经历时用的不一样/,
-			);
-		}
-		assert.deepEqual(plain(steps).slice(-1), [
-			{ tool: "submit", issues: [{ kind: "unread", subject: "做过巡检" }] },
-		]);
-		assert.deepEqual(await call("submit", table(conditions)), {
+		];
+		const tried = await call<Tried>("probe", { conditions: reworded });
+		assert.equal(tried.unread, 3, "按新判据的字，三段都还没读");
+		assert.deepEqual(await call("submit", table(reworded)), {
 			passed: true,
 		});
 	});
@@ -564,20 +529,6 @@ describe("提交前候选人的经历要读完", () => {
 		assert.deepEqual(await call("submit", table([must, boost])), {
 			passed: true,
 		});
-	});
-
-	test("问了问题不能代替读：读得完的经历没读，问了也不收", async () => {
-		const { call } = await agent();
-		const refused = await call<Checked>(
-			"submit",
-			table([seeking("做过巡检", ["巡检"], "本人做设备巡检")], {
-				says: "想找哪一类巡检？",
-				current: "先不分",
-				options: [{ label: "只看设备巡检", detail: "" }],
-			}),
-		);
-		assert.equal(refused.passed, false);
-		assert.match(refused.problems?.join() ?? "", /候选人还有经历没读过/);
 	});
 
 	test("找不到人看的是字面对不对得上：读完都不算，才是一个人都找不到，原样再交就收", async () => {

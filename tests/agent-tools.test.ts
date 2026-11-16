@@ -374,7 +374,7 @@ describe("试跑", () => {
 		);
 		assert.equal(result.total, 9);
 		assert.equal(result.unread, 0);
-		assert.match(result.todo, /都读过了，可以提交/);
+		assert.match(result.todo, /候选人的经历都读过了/);
 	});
 
 	test("写了判据的条件：看过的经历听结论，判成不算的人不在 people 里，也不在名单上", async () => {
@@ -392,7 +392,7 @@ describe("试跑", () => {
 		assert.equal(result.unread, 0);
 	});
 
-	test("还没读过的经历：people 照数字面对得上的人，名单上一个人都没有，告诉模型去读", async () => {
+	test("还没读过的经历：people 照数字面对得上的人，名单上一个人都没有，告诉模型可以读来看看", async () => {
 		const { call } = await agentOn(SEARCH);
 		const [fresh] = drafted("推荐");
 		const result = await call<Tried>("probe", {
@@ -410,10 +410,7 @@ describe("试跑", () => {
 		assert.equal(result.total, 0);
 		assert.equal(result.candidates, 9, "都算数的话名单上会有的人");
 		assert.equal(result.unread, 9);
-		assert.match(
-			result.todo,
-			/候选人还有经历没读过，没读过的不上名单：用 read 读完/,
-		);
+		assert.match(result.todo, /候选人还有经历没读：用 read 读/);
 	});
 
 	test("按行业、按集团找：主营和涉足人数不同；「不要某行业来的」是排除的经历", async () => {
@@ -768,7 +765,6 @@ test("每查一次记一步，步里只有线程画得出的：说法、写法�
 				probe: {
 					conditions: [{ label: "推荐", mode: "must", people: 8 }],
 					total: 8,
-					candidates: 8,
 					unread: 0,
 				},
 			},

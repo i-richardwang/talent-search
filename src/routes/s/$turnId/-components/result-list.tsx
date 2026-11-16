@@ -70,6 +70,7 @@ export function ResultList({
 	onChange,
 	onReviseQuery,
 	onEditQuery,
+	onSay,
 	onContinue,
 	picks,
 	failure,
@@ -88,7 +89,10 @@ export function ResultList({
 	turnId: string;
 	onChange: (next: Partial<View>) => void;
 	onReviseQuery: (next: QueryCondition[]) => unknown;
-	onEditQuery: () => void;
+	/** 光标进输入框，对话的输入框换上示范说法；没有地方可写时不给。 */
+	onEditQuery?: (example?: string) => void;
+	/** 替 HR 对 AI 说一句话；没配 AI 服务时不给。 */
+	onSay?: (text: string) => unknown;
 	/** 名单还没列全时条件不变接着找；不给就没有这一步。 */
 	onContinue?: () => unknown;
 	picks: Picks;
@@ -199,6 +203,7 @@ export function ResultList({
 				onContinue={onContinue}
 				onEditQuery={onEditQuery}
 				onReviseQuery={onReviseQuery}
+				onSay={onSay}
 				outcome={outcome}
 				spec={spec}
 			/>

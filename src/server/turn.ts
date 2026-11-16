@@ -3,9 +3,9 @@
  * 记录不可变；待理解末轮可以补全一次，或由下一次动作取代。AI 的处理只属于链上最后一轮：
  * 追加新的一轮时，上一轮没做完的那一次随之结束。
  *
- * 条件决定名单，条件怎么变的都一样：说一句话，AI 理解它、写出条件、把候选人的经历确认完
- * （`understandTurn`）；直接在条件上改，条件立刻生效，名单先按确认过的出，AI 接着把新进范围的
- * 候选人确认完（`confirmTurn`）。处理是写入这一轮的那个动作的后半段，服务端随即开始。
+ * 条件决定名单，条件怎么变的都一样：说一句话，AI 理解它、写出条件；直接在条件上改，条件立刻
+ * 生效，名单先按确认过的出。之后都是把候选人的经历确认完（`performAttempt`）。处理是写入这一轮
+ * 的那个动作的后半段，服务端随即开始。
  * 页面只读进度，打开、刷新、多开几次都不会再开始一次；重新开始只有一个入口，人点「重试」
  * （`restartTurn`）。
  */
@@ -33,7 +33,7 @@ import {
 	understand,
 	understandingConfigured,
 } from "./llm";
-import { type RecordStep, reader } from "./reading";
+import { type Reader, type RecordStep, reader } from "./reading";
 
 function newId() {
 	return randomBytes(8).toString("base64url");
@@ -331,9 +331,10 @@ export async function processTurn(turnId: string, attempt: string) {
 type Settled = Partial<Pick<SearchTurn, "spec" | "notes">>;
 
 /**
- * 真正做这一次处理：理解一句话，或者把直接改条件之后的候选人确认完；做完时写下「做完了」，
- * 理解一句话的连同条件和说明。没配查询理解返回失败原因，别的失败照常抛出，由 `processTurn`
- * 接住写进记录。
+ * 真正做这一次处理。一轮的条件从哪来有两种：说了一句话的由 AI 理解出来（`understandTurn`），
+ * 直接改条件的已经在记录上。之后都一样：把这份条件的候选人还没确认的经历读完，名单才是定稿。
+ * AI 在理解时读过的不再读，读的额度是这一轮共用的一份。做完时写下「做完了」，理解一句话的连同
+ * 条件和说明。没配查询理解返回失败原因，别的失败照常抛出，由 `processTurn` 接住写进记录。
  * 这一次已被换掉时返回 null，什么都不写。
  */
 async function performAttempt(
@@ -370,12 +371,27 @@ async function performAttempt(
 			replaced.signal.throwIfAborted();
 		}
 	};
+	const reading = reader({
+		rootTurnId: row.rootTurnId,
+		record,
+		judge: judgeSegments,
+	});
 	let settled: Settled;
 	try {
 		settled =
 			row.rawText !== null
-				? await understandTurn(row, row.rawText, record, replaced.signal)
-				: await confirmTurn(row, record, replaced.signal);
+				? await understandTurn(
+						row,
+						row.rawText,
+						record,
+						reading,
+						replaced.signal,
+					)
+				: {};
+		// 没有原话的一轮一定有条件（`search_turn_state`）。这份条件出不了名单时没有经历可读，
+		// 名单那一侧有自己的说法
+		const spec = settled.spec ?? row.spec;
+		if (spec) await reading.read(queryOfSpec(spec), replaced.signal);
 	} catch (error) {
 		// 被取代之后停下来的那一下不是失败
 		if (replaced.signal.aborted) return null;
@@ -389,26 +405,6 @@ async function performAttempt(
 }
 
 /**
- * HR 直接改了条件：条件已经在记录上，把候选人里还没确认过的经历读完。名单每次按确认过的算，
- * 读完不用改记录上的条件。
- */
-async function confirmTurn(
-	row: SearchTurn,
-	record: RecordStep,
-	replaced: AbortSignal,
-): Promise<Settled> {
-	// 没有原话的一轮一定有条件（`search_turn_state`）。这份条件出不了名单时没有经历可读，
-	// 名单那一侧有自己的说法
-	if (row.spec)
-		await reader({
-			rootTurnId: row.rootTurnId,
-			record,
-			judge: judgeSegments,
-		}).read(queryOfSpec(row.spec), replaced);
-	return {};
-}
-
-/**
  * 理解一句话。这一轮的基线是父记录的条件：一句「再加上带过团队的」只有放在那张表上才有意思。
  * 连同这次找人之前几轮的经过一起交给模型：一句「不是这个意思」要知道之前说过什么才读得懂。
  * 写进记录的是提交检查录取的那份：跑不了的条件已经丢掉，丢空了就是没作答（`understand` 抛出）。
@@ -417,6 +413,7 @@ async function understandTurn(
 	row: SearchTurn,
 	rawText: string,
 	record: RecordStep,
+	reading: Reader,
 	replaced: AbortSignal,
 ): Promise<Settled> {
 	// 这一轮之前的几轮都处理完了：没理解出来的只可能是链尾，追加这一轮时已经删掉
@@ -447,12 +444,7 @@ async function understandTurn(
 	const { query, notes } = await understand(
 		rawText,
 		{ vocab, streams, company, history: historyLines(past) },
-		agentTools({
-			base,
-			record,
-			rootTurnId: row.rootTurnId,
-			judge: judgeSegments,
-		}),
+		agentTools({ base, record, rootTurnId: row.rootTurnId, reading }),
 		replaced,
 	);
 	return { spec: { query }, notes };

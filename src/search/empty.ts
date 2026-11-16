@@ -1,5 +1,5 @@
 import { narrows, type SearchFilters } from "./params";
-import { type Claim, type Query, rolesOf } from "./query";
+import type { Claim, Query } from "./query";
 
 type EmptyOverflow =
 	| { kind: "overflowEvidence"; claims: Claim[] }
@@ -12,41 +12,44 @@ type EmptyOverflow =
  */
 export type Incomplete = { above: string | null };
 
+/**
+ * 决定谁上名单的条件（启用着的必须条件，经历的和人的）合起来没有人。`nobody` 是其中单独一条
+ * 就一个人都没有的那几条（条件 id）：经历条件字面就对不上、或者对得上的段都确认过不算，人的
+ * 条件没有人满足。这是确定的事实，不是估计；为空时每一条单独都有人，只是凑不到同一个人身上
+ * （或者被排除条件拦下了）。
+ */
+export type Unmet = { nobody: string[] };
+
 export type EmptyReason =
 	| EmptyOverflow
 	| { kind: "allDisabled" }
 	| { kind: "noConditions" }
-	| { kind: "gatesUnmet" }
 	| { kind: "filtered" }
-	| { kind: "unmet" }
-	| { kind: "noneMatched" }
+	| ({ kind: "unmet" } & Unmet)
 	/** 名单上没有人，但候选人还没确认完：确认到了哪一档职级 */
 	| ({ kind: "incomplete" } & Incomplete);
 
-/** 空态成因由检索层判定，界面只负责翻译。 */
-export function emptyReason(input: {
-	query: Query;
-	filters: SearchFilters;
-	total: number;
-	/** 候选人还没确认完时确认到了哪里 */
-	incomplete?: Incomplete;
-}): EmptyReason | null {
-	const { query, filters, total, incomplete } = input;
-	const { claims, gates, prefer, excludes } = rolesOf(query);
-	// 只定去留的条件：门槛和排除
-	const gating = gates.length + excludes.length;
-	if (total > 0) return null;
-	if (incomplete) return { kind: "incomplete", ...incomplete };
-
-	if (claims.length + gating + prefer.length > 0) {
-		if (narrows(filters)) return { kind: "filtered" };
-		if (claims.some((c) => c.mode === "must")) return { kind: "unmet" };
-		if (claims.length === 0 && gating > 0) return { kind: "gatesUnmet" };
-		return { kind: "noneMatched" };
-	}
-
-	// 走到这里没有启用的条件
+/** 没有启用的条件时名单为什么是空的：条件都停用了，还是一条条件都没有。 */
+export function inactiveReason(query: Query): EmptyReason {
 	return query.conditions.length > 0
 		? { kind: "allDisabled" }
 		: { kind: "noConditions" };
+}
+
+/**
+ * 有启用的条件时名单为什么是空的；名单上有人时为 null。空态成因由检索层判定，界面只负责翻译。
+ * 单独一条就没有人的条件只在成因是 `unmet` 时才数。
+ */
+export async function emptyReason(input: {
+	filters: SearchFilters;
+	total: number;
+	/** 候选人还没确认完时确认到了哪里 */
+	incomplete: Incomplete | undefined;
+	nobody: () => Promise<string[]>;
+}): Promise<EmptyReason | null> {
+	const { filters, total, incomplete, nobody } = input;
+	if (total > 0) return null;
+	if (incomplete) return { kind: "incomplete", ...incomplete };
+	if (narrows(filters)) return { kind: "filtered" };
+	return { kind: "unmet", nobody: await nobody() };
 }

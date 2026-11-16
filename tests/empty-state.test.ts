@@ -3,14 +3,16 @@
  * 归 `tests/empty.test.ts`（那一半在检索层，只有那里有事实）。
  *
  * 空态是这个界面里唯一「没有数据可看」的时刻，它说什么就是产品在这一刻的
- * 全部价值。出口分两类，这一层测：改筛选走 `onChange`（同一条查询，换个
- * 看法），改条件走 `onReviseQuery`（换一个问题，会记一条新的查询记录）。
- * 它们在界面上都是一个按钮，走错了不会报错，只会让「启用全部」变成一次
- * 不留痕迹的改动。
+ * 全部价值。下一步分两种：按下去名单就变的（改筛选走 `onChange`，改条件走
+ * `onReviseQuery`，要 AI 改写条件的走 `onSay`），和请 HR 自己再说一句的（`say`，
+ * 只放光标、换示范说法）。按钮上和提示里都不出现条件强度这类 HR 不懂的说法。
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { emptyState } from "#/routes/s/$turnId/-lib/empty-state";
+import {
+	type EmptyNext,
+	emptyState,
+} from "#/routes/s/$turnId/-lib/empty-state";
 import {
 	CLEARED_FILTERS,
 	type View,
@@ -24,66 +26,176 @@ import { parseQuery } from "#/search/query-syntax";
 const compiled = (query: string) =>
 	compileConditions(parseQuery(query)).conditions;
 
-/** 跑一次空态，把按钮按下去，回收它想改的东西 */
+/** HR 不懂的机制词：空态的任何一句都不该有 */
+const MECHANISM = /加分|必须|强度|停用这一项|范围过大/;
+
+/** 跑一次空态，按下按钮（有的话），回收它想改的东西 */
 function run(
-	reason: EmptyReason,
+	reason: EmptyReason | ((conditions: QueryCondition[]) => EmptyReason),
 	query = "",
-	mode: "conversation" | "keyword" = "conversation",
-	canContinue = true,
+	{
+		mode = "conversation",
+		ai = true,
+	}: { mode?: "conversation" | "keyword"; ai?: boolean } = {},
 ) {
+	const conditions = compiled(query);
 	let changed: Partial<View> | undefined;
 	let revised: QueryCondition[] | undefined;
-	let focused = false;
+	let said: string | undefined;
 	let continued = false;
-	const copy = emptyState(reason, {
-		mode,
-		conditions: compiled(query),
-		onChange: (next) => {
-			changed = next;
-		},
-		onReviseQuery: (next) => {
-			revised = next;
-		},
-		onEditQuery: () => {
-			focused = true;
-		},
-		...(canContinue && {
-			onContinue: () => {
-				continued = true;
+	const copy = emptyState(
+		typeof reason === "function" ? reason(conditions) : reason,
+		{
+			mode,
+			conditions,
+			onChange: (next) => {
+				changed = next;
 			},
-		}),
-	});
-	copy.action.onClick();
-	return { ...copy, changed, revised, focused, continued };
+			onReviseQuery: (next) => {
+				revised = next;
+			},
+			...(ai && {
+				onSay: (text: string) => {
+					said = text;
+				},
+				onContinue: () => {
+					continued = true;
+				},
+			}),
+			canSay: mode === "keyword" || ai,
+		},
+	);
+	if (copy.next?.kind === "act") copy.next.onClick();
+	assert.doesNotMatch(
+		`${copy.title}${copy.hint}${label(copy.next)}`,
+		MECHANISM,
+	);
+	return { ...copy, conditions, changed, revised, said, continued };
 }
 
-describe("取数超限：是一种结果，不是一次失败", () => {
-	test("只列出实际贡献事实行最多的条件，出口是改条件不是清筛选", () => {
-		const s = run(
-			{
-				kind: "overflowEvidence",
-				claims: rolesOf(compileConditions(parseQuery("经理"))).claims,
-			},
-			"算法,经理",
-		);
-		assert.equal(s.title, "条件范围过大");
-		assert.match(s.hint, /「经理」/);
-		assert.doesNotMatch(s.hint, /算法/, "贡献较少的词不背锅");
-		assert.equal(s.focused, true);
+const label = (next: EmptyNext | null) =>
+	next?.kind === "act" ? next.label : "";
+
+/** 条件里哪几条的经历最宽：成因带的是同一份条件里的那几条 */
+const widest =
+	(...labels: string[]) =>
+	(conditions: QueryCondition[]): EmptyReason => ({
+		kind: "overflowEvidence",
+		claims: rolesOf({ conditions }).claims.filter((c) =>
+			labels.includes(c.label),
+		),
+	});
+
+/** 每一项单独都有人，只是凑不到一起 */
+const together: EmptyReason = { kind: "unmet", nobody: [] };
+
+/** 单独就没有人的是这几项（按标签点名） */
+const nobody =
+	(...labels: string[]) =>
+	(conditions: QueryCondition[]): EmptyReason => ({
+		kind: "unmet",
+		nobody: conditions
+			.filter((c) => labels.some((l) => c.label.includes(l)))
+			.map((c) => c.id),
+	});
+
+describe("有一项在人才库里就没有人", () => {
+	test("标题说人才库里没有；还有别的要求时一键去掉它再找，不用 AI", () => {
+		const s = run(nobody("兽医"), "算法,兽医,+产品");
+		assert.equal(s.title, "人才库里没有符合「兽医」的人");
+		assert.equal(label(s.next), "去掉「兽医」再找");
+		const off = s.revised?.filter((c) => c.off).map((c) => c.label);
+		assert.deepEqual(off, ["兽医"], "只去掉没有人的那一项");
+		assert.equal(s.said, undefined);
+	});
+
+	test("职级、学校这类条件没有人也一样", () => {
+		const s = run(nobody("北京大学"), "department:增长中心,school:北京大学");
+		assert.match(s.title, /^人才库里没有符合「.*北京大学」的人$/);
+		assert.match(label(s.next), /^去掉「.*」再找$/);
+	});
+
+	test("几项都没有人时按钮说「这几项」", () => {
+		const s = run(nobody("兽医", "潜水"), "算法,兽医,潜水");
+		assert.equal(s.title, "「兽医」「潜水」在人才库里都没有符合的人");
+		assert.equal(label(s.next), "去掉这几项再找");
+	});
+
+	test("只有这一项要求：去掉就什么都不剩，请 HR 换个说法", () => {
+		const s = run(nobody("兽医"), "兽医,+产品");
+		assert.deepEqual(s.next, {
+			kind: "say",
+			example: "换个说法，或把「兽医」说得宽一点",
+		});
+		assert.equal(s.revised, undefined);
+	});
+});
+
+describe("每一项都有人，只是没有人同时符合", () => {
+	test("标题点名是哪几项；按钮替 HR 对 AI 说「符合其中一项就行」", () => {
+		const s = run(together, "算法,后端,+产品");
+		assert.equal(s.title, "没有人同时符合：算法、后端");
+		assert.equal(label(s.next), "符合其中一项就行");
+		assert.match(s.said ?? "", /算法、后端符合其中一项就行/);
+		assert.equal(s.revised, undefined, "「或者」要 AI 改写成一条，不是改强度");
+	});
+
+	test("只有职级、部门这类条件凑不到一起，也是同一句话", () => {
+		const s = run(together, "department:增长中心,school:北京大学");
+		assert.match(s.title, /^没有人同时符合：/);
+		assert.equal(label(s.next), "符合其中一项就行");
+	});
+
+	test("没配 AI 服务时没有谁能改写，不给按钮", () => {
+		const s = run(together, "算法,后端", { ai: false });
+		assert.equal(s.next, null);
+	});
+
+	test("只有一项要求，人都被排除了：说是排除拦下的", () => {
+		const s = run(together, "算法,-实习");
+		assert.equal(s.title, "符合「算法」的人都被排除了");
+		assert.equal(s.next?.kind, "say");
+	});
+
+	test("只剩加分时一项决定去留的都没有：是人才库里还没有人", () => {
+		const s = run(together, "+算法");
+		assert.equal(s.title, "人才库里还没有人");
+		assert.equal(s.next, null);
+	});
+});
+
+describe("找到的人太多", () => {
+	test("太宽的那一项去掉之后还有别的条件：一键去掉再找", () => {
+		const s = run(widest("经理"), "算法,经理");
+		assert.equal(s.title, "「经理」太常见，找到的人太多");
+		assert.equal(label(s.next), "去掉「经理」再找");
+		const off = s.revised?.filter((c) => c.off).map((c) => c.label);
+		assert.deepEqual(off, ["经理"], "只去掉太宽的那一项");
 		assert.equal(s.changed, undefined, "筛选不是病因");
 	});
 
-	test("人太多时提示继续缩小范围，不报成没有结果", () => {
+	test("几项都太宽时按钮说「这几项」", () => {
+		const s = run(widest("经理", "沟通"), "算法,经理,沟通");
+		assert.equal(label(s.next), "去掉这几项再找");
+	});
+
+	test("太宽的就是全部条件：去掉就什么都不剩，请 HR 说得具体些", () => {
+		const s = run(widest("经理"), "经理");
+		assert.equal(s.next?.kind, "say");
+		assert.equal(s.revised, undefined);
+	});
+
+	test("只有职级这类条件、人太多：请 HR 补充一句", () => {
 		const s = run({ kind: "overflowPopulation" });
-		assert.equal(s.title, "范围过大");
-		assert.equal(s.focused, true);
+		assert.equal(s.title, "找到的人太多，列不出来");
+		assert.equal(s.next?.kind, "say");
 	});
 });
 
 describe("条件全被停用", () => {
-	test("说的是停用，出口是一键开回来，而且是改查询不是改视图", () => {
+	test("一键开回来，而且是改查询不是改视图", () => {
 		const s = run({ kind: "allDisabled" }, "~渠道运营,~+带团队");
-		assert.match(s.title, /没有启用/);
+		assert.equal(s.title, "搜索条件都停用了");
 		assert.deepEqual(
 			s.revised,
 			compiled("渠道运营,+带团队"),
@@ -98,52 +210,33 @@ describe("条件全被停用", () => {
 	});
 });
 
-describe("符合的人较多，名单还没列全", () => {
-	test("说的是找到了哪一档职级、更低的还没找完，出口是条件不变接着找，不改条件也不改筛选", () => {
+describe("名单还没列全", () => {
+	test("说找到了哪一档职级、更低的还在后面，出口是条件不变接着找", () => {
 		const s = run({ kind: "incomplete", above: "P7" }, "算法");
 		assert.equal(s.title, "P7 及以上没有符合的人");
 		assert.equal(
 			s.hint,
-			"符合的人较多，更低职级的还没找完。补充职级、部门等条件可以找得更准。",
+			"更低职级的还没找完。补充职级、部门等条件可以找得更准。",
 		);
-		assert.equal(s.action.label, "继续找");
+		assert.equal(label(s.next), "继续找");
 		assert.deepEqual(
-			[s.changed, s.revised, s.focused, s.continued],
-			[undefined, undefined, false, true],
+			[s.changed, s.revised, s.continued],
+			[undefined, undefined, true],
 		);
 	});
 
 	test("最高一档也没找完时不说职级", () => {
 		const s = run({ kind: "incomplete", above: null }, "算法");
 		assert.equal(s.title, "暂时没有找到符合的人");
-		assert.equal(
-			s.hint,
-			"符合的人较多，还没找完。补充职级、部门等条件可以找得更准。",
-		);
-	});
-
-	test("没有谁能接着找时，出口是去补充需求", () => {
-		const s = run(
-			{ kind: "incomplete", above: "P7" },
-			"算法",
-			"conversation",
-			false,
-		);
-		assert.equal(s.action.label, "补充需求");
-		assert.deepEqual([s.focused, s.continued], [true, false]);
 	});
 });
 
-describe("其余分支各有各的文案", () => {
-	test("缺少可搜的条件时让人补一个能力，不让人去动筛选", () => {
+describe("其余情形", () => {
+	test("AI 搜不了这段需求：请 HR 换个说法，给示范", () => {
 		const s = run({ kind: "noConditions" });
-		assert.equal(s.focused, true);
-		assert.equal(s.changed, undefined);
-		assert.equal(s.title, "没有可用的搜索条件");
-	});
-
-	test("只有人的条件且无人匹配时报无结果，不报解析失败", () => {
-		assert.equal(run({ kind: "gatesUnmet" }).title, "没有符合条件的人");
+		assert.equal(s.title, "这段需求还搜不了");
+		assert.equal(s.next?.kind, "say");
+		assert.ok(s.next?.kind === "say" && s.next.example);
 	});
 
 	test("筛选太窄：一键清掉全部筛选", () => {
@@ -151,48 +244,35 @@ describe("其余分支各有各的文案", () => {
 		// 名单仍然是空的，而屏幕上那条下一步刚承诺过它能走通。
 		assert.deepEqual(run({ kind: "filtered" }).changed, CLEARED_FILTERS);
 	});
-
-	test("几项条件没有人都符合：说出是哪几项，指向把其中一项改成加分", () => {
-		const s = run({ kind: "unmet" }, "算法,渠道运营,+产品");
-		assert.equal(s.title, "没有人同时符合这几项条件");
-		assert.match(s.hint, /^算法、渠道运营，/, "加分的那一项不决定谁上名单");
-		assert.match(s.hint, /改为「加分」/);
-		assert.equal(s.focused, true);
-	});
-
-	test("只有一项条件没有人符合：没有哪一项可以改成加分，下一步是换说法", () => {
-		const s = run({ kind: "unmet" }, "算法,+产品");
-		assert.equal(s.title, "没有找到符合的人");
-		assert.match(s.hint, /没有找到符合「算法」的人/);
-		assert.doesNotMatch(s.hint, /加分/);
-	});
-
-	test("全是加分条件却没人：下一步是换词，不能再让人「改成加分」", () => {
-		const s = run({ kind: "noneMatched" });
-		assert.doesNotMatch(s.hint, /改为「加分」/);
-		assert.match(s.hint, /加分/);
-		assert.equal(s.focused, true);
-	});
 });
 
 describe("关键词搜索的下一步只说框里能做的事", () => {
-	test("没有加分，也没有停用：只说换词、去掉词", () => {
-		const unmet = run({ kind: "unmet" }, "算法,渠道运营", "keyword");
-		assert.doesNotMatch(unmet.hint, /加分/);
-		assert.match(unmet.hint, /移除一个关键词/);
-		assert.equal(unmet.focused, true);
-		const single = run({ kind: "unmet" }, "算法", "keyword");
-		assert.doesNotMatch(single.hint, /加分|移除/);
-		assert.match(single.hint, /换一个说法/);
+	const keyword = { mode: "keyword" } as const;
 
-		const overflow = run(
-			{
-				kind: "overflowEvidence",
-				claims: rolesOf(compileConditions(parseQuery("经理"))).claims,
-			},
-			"经理",
-			"keyword",
+	test("没有 AI 可说话：几个词没人都写到，请 HR 去掉一个词", () => {
+		const s = run(together, "算法,渠道运营", keyword);
+		assert.match(s.hint, /去掉一个词/);
+		assert.deepEqual(s.next, { kind: "say", example: undefined });
+		assert.equal(s.said, undefined);
+	});
+
+	test("有一个词没有人写过：说出是哪个词，请 HR 去掉或换一个，不去停用", () => {
+		const s = run(nobody("兽医"), "算法,兽医", keyword);
+		assert.equal(s.title, "人才库里没有符合「兽医」的人");
+		assert.deepEqual(s.next, { kind: "say", example: undefined });
+		assert.equal(s.revised, undefined);
+	});
+
+	test("太宽的词：请 HR 换一个，不去停用", () => {
+		const s = run(widest("经理"), "算法,经理", keyword);
+		assert.equal(s.next?.kind, "say");
+		assert.equal(s.revised, undefined);
+	});
+
+	test("还没填词：说在上方填", () => {
+		assert.equal(
+			run({ kind: "noConditions" }, "", keyword).title,
+			"还没有填关键词",
 		);
-		assert.doesNotMatch(overflow.hint, /停用/);
 	});
 });

@@ -5,9 +5,11 @@
  * `llm.ts` 的 `judgeSegments`），拿到的只有一条条件的标签、判据和这条条件的一批经历；HR 的话、
  * 别的条件、别的批次都不给。一批只有一条判据：模型只交符合的段，没交的按不算存下，一次请求里
  * 有几条判据时漏交一条看不出来。判据是全部的标准，所以同一条判据下同样内容的段在哪一轮读都是
- * 同一个结论，结论才能按「判据 × 段的内容」保存和沿用（`judged.ts`）。查询理解只看得到读的
- * 结果：每条读了多少段、多少段算数（`agent-tools.ts` 的 `read`）；HR 直接改条件、或者条件不变
- * 接着往下找时，没有对话，直接读（`turn.ts` 的 `confirmTurn`）。
+ * 同一个结论，结论才能按「判据 × 段的内容」保存和沿用（`judged.ts`）。
+ *
+ * 一轮处理里只有一个读经历（`Reader`）：查询理解在对话里读（`agent-tools.ts` 的 `read`，它只看得到
+ * 每条读了多少段、多少段算数），这一轮最后把候选人读完（`turn.ts` 的 `performAttempt`），不论
+ * 条件是说一句话写出来的、HR 直接改的，还是条件不变接着往下找。
  *
  * 一次读一波，一波是同时读的几批；一波的结论都写入后重新取当前候选，再读下一波：已经出局的人
  * 的其余经历不占额度，必须和排除的条件确认完才轮到加分的。职级高的人在前，一轮最多读
@@ -146,8 +148,6 @@ export function reader({
 }) {
 	/** 这一轮已经存下结论的段数。 */
 	let concluded = 0;
-	/** 这一轮读过的判据。 */
-	const given = new Set<string>();
 	const room = () => READ_MAX - concluded;
 
 	/** 把这份条件的候选人还没确认过的经历读完，或者读到这一轮的上限。 */
@@ -207,13 +207,12 @@ export function reader({
 					);
 					return {
 						condition,
-						criterion,
 						read: segments.length,
 						fits: chosen.size,
 					};
 				}),
 			);
-			for (const { condition, criterion, read, fits } of batches) {
+			for (const { condition, read, fits } of batches) {
 				const counted = tally.get(condition.id) ?? {
 					label: condition.label,
 					read: 0,
@@ -222,7 +221,6 @@ export function reader({
 				tally.set(condition.id, counted);
 				counted.read += read;
 				counted.fits += fits;
-				given.add(criterion);
 				concluded += read;
 			}
 		}
@@ -232,9 +230,10 @@ export function reader({
 		read,
 		/** 这一轮还能读几段。 */
 		room,
-		/** 这一轮读过的判据。 */
-		given: given as ReadonlySet<string>,
 		/** 这一轮已经存下结论的段数：试跑的结果随它变。 */
 		concluded: () => concluded,
 	};
 }
+
+/** 一轮处理里唯一的读经历：AI 在对话里读和这一轮最后把候选人读完，共用它的额度。 */
+export type Reader = ReturnType<typeof reader>;

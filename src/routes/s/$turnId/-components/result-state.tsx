@@ -52,6 +52,12 @@ export function ResultHeader({
 	);
 }
 
+/** 请 HR 自己再说一句时按钮上的字：对话里是补充一句，关键词是去改框里的词。 */
+const SAY_LABEL: Record<SearchMode, string> = {
+	conversation: "去补充一句",
+	keyword: "去改关键词",
+};
+
 export function NoResults({
 	outcome,
 	spec,
@@ -59,6 +65,7 @@ export function NoResults({
 	onChange,
 	onReviseQuery,
 	onEditQuery,
+	onSay,
 	onContinue,
 }: {
 	outcome: SearchOutcome;
@@ -66,33 +73,44 @@ export function NoResults({
 	mode: SearchMode;
 	onChange: (next: Partial<View>) => void;
 	onReviseQuery: (next: QueryCondition[]) => unknown;
-	onEditQuery: () => void;
+	/** 光标进输入框；对话的输入框换上示范说法。没有地方可写时不给。 */
+	onEditQuery?: (example?: string) => void;
+	onSay?: (text: string) => unknown;
 	onContinue?: () => unknown;
 }) {
 	const reason = outcome.empty ?? { kind: "noConditions" };
-	const state = emptyState(reason, {
+	const { title, hint, next } = emptyState(reason, {
 		mode,
 		conditions: queryOfSpec(spec).conditions,
 		onChange,
 		onContinue,
-		onEditQuery,
 		onReviseQuery,
+		onSay,
+		canSay: onEditQuery !== undefined,
 	});
 	return (
 		<Empty
 			action={
-				/* 筛掉了所有人时下一步是清掉筛选，一次撤回，不是主操作 */
-				<Button
-					onClick={state.action.onClick}
-					type={reason.kind === "filtered" ? "default" : "primary"}
-				>
-					{state.action.label}
-				</Button>
+				next &&
+				(next.kind === "act" ? (
+					/* 筛掉了所有人时下一步是清掉筛选，一次撤回，不是主操作 */
+					<Button
+						onClick={next.onClick}
+						type={reason.kind === "filtered" ? "default" : "primary"}
+					>
+						{next.label}
+					</Button>
+				) : (
+					/* 按下去名单不会变，只是去输入框：不做主操作 */
+					<Button onClick={() => onEditQuery?.(next.example)}>
+						{SAY_LABEL[mode]}
+					</Button>
+				))
 			}
 			size="large"
-			description={state.hint}
+			description={hint}
 			icon={SearchXIcon}
-			title={state.title}
+			title={title}
 		/>
 	);
 }

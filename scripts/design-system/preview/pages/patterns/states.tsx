@@ -11,7 +11,7 @@ import {
 	TableRow,
 } from "#/components/ui/table";
 import { toast } from "#/components/ui/toast";
-import { PageNotFound, TurnNotFound } from "#/routes/-components/not-found";
+import { PageNotFound, TurnNotFound } from "#/routes/-components/dead-end";
 import { COMMIT_FAILED } from "#/routes/-lib/commit";
 import {
 	IncompleteNotice,
@@ -41,12 +41,7 @@ import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
-import {
-	COVERED,
-	EMPTY_CASES,
-	KEYWORD_SPEC,
-	SPEC,
-} from "../../samples/conditions";
+import { COVERED, EMPTIES, KEYWORD_SPEC, SPEC } from "../../samples/conditions";
 import {
 	EMPTY_OUTCOME,
 	INCOMPLETE_EMPTY_OUTCOME,
@@ -57,8 +52,6 @@ import { LATEST_TURN_ID, ROOT_TURN_ID } from "../../samples/thread";
 
 /** 理解失败的每种原因，按产品的文案表列。 */
 const FAULTS = Object.keys(FAULT_COPY) as AttemptFault[];
-
-const EMPTIES = Object.values(EMPTY_CASES);
 
 /* ---------- 试用：一次提交从等待走到结果 ---------- */
 
@@ -370,11 +363,9 @@ function Empties() {
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{EMPTIES.map(([reason, spec]) => (
-							<TableRow key={reason.kind}>
-								<TableCell className="font-mono text-xs">
-									{reason.kind}
-								</TableCell>
+						{EMPTIES.map(([name, reason, spec]) => (
+							<TableRow key={name}>
+								<TableCell className="font-mono text-xs">{name}</TableCell>
 								<TableCell className="w-full">
 									<NoResults
 										mode={mode}
@@ -384,15 +375,20 @@ function Empties() {
 												? () => setLast("条件不变接着找，记成新的一次搜索")
 												: undefined
 										}
-										onEditQuery={() =>
+										onEditQuery={(example) =>
 											setLast(
 												mode === "keyword"
 													? `光标落进「${KEYWORD_LABEL.what}」框`
-													: "光标落进右栏的输入框",
+													: `光标落进右栏的输入框${example ? `，占位换成「${example}」` : ""}`,
 											)
 										}
 										onReviseQuery={() =>
-											setLast("启用了全部条件，记成新的一次搜索")
+											setLast("改了搜索条件，记成新的一次搜索")
+										}
+										onSay={
+											mode === "conversation"
+												? (text) => setLast(`替 HR 对 AI 说：${text}`)
+												: undefined
 										}
 										outcome={{ ...EMPTY_OUTCOME, empty: reason }}
 										spec={mode === "keyword" ? KEYWORD_SPEC : spec}
@@ -405,7 +401,7 @@ function Empties() {
 			</Block>
 			<p className="text-fg-secondary text-xs">
 				{last ??
-					"成因由检索判定，这里只把它写成结论和一条一键就能执行的下一步。"}
+					"成因由检索判定，这里只把它写成结论和一条下一步：按下去名单就变的，或者请 HR 再说一句。"}
 			</p>
 		</div>
 	);

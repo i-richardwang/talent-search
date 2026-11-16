@@ -21,7 +21,7 @@ export function Earlier({ latestId }: { latestId: string }) {
 				</Button>
 			}
 			icon={RotateCcwClockIcon}
-			title="正在查看较早的一次结果。在此基础上修改，会记为最新的一次。"
+			title="你在看较早的一次结果。在这里改条件或补充需求，会从这一次的条件接着找。"
 			type="info"
 		/>
 	);
