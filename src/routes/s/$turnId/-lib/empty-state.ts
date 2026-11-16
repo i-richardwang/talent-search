@@ -1,22 +1,21 @@
 import { SEARCHABLE } from "#/search/condition-label";
-import type { EmptyReason, Incomplete } from "#/search/empty";
+import type { EmptyReason } from "#/search/empty";
 import { type QueryCondition, withOff } from "#/search/query";
 import type { SearchMode } from "#/server/turn";
 import { CLEARED_FILTERS, type View } from "./view-params";
 
 /**
- * 候选人较多、名单还不完整时的下一步。名单上方的提示（`completeness.tsx`）和空态说同一句。
+ * 符合的人较多、名单还没列全时的下一步：句子里说补充条件，按钮是条件不变接着往下找。
+ * 名单上方的提示（`completeness.tsx`）和空态说同一句、用同一个按钮。
  */
-export function coverMore({ above }: Incomplete): string {
-	return above
-		? "补充需求、缩小范围后可以覆盖到更低的职级。"
-		: "补充需求、缩小范围后可以覆盖更多人。";
-}
+export const NARROW = "补充职级、部门等条件可以找得更准。";
+export const CONTINUE_LABEL = "继续找";
 
 type EmptyCopy = {
 	title: string;
 	hint: string;
-	action: { label: string; onClick: () => void };
+	/** 下一步。要等结果的动作交回它的 Promise，按钮等它（`Button` 的 `onClick`）。 */
+	action: { label: string; onClick: () => unknown };
 };
 
 type Handlers = {
@@ -30,8 +29,10 @@ type Handlers = {
 	/** 改视图：筛选、翻页。不产生新的查询记录。 */
 	onChange: (next: Partial<View>) => void;
 	/** 改查询：记一条新记录。 */
-	onReviseQuery: (next: QueryCondition[]) => void;
+	onReviseQuery: (next: QueryCondition[]) => unknown;
 	onEditQuery: () => void;
+	/** 条件不变，接着往下找：记一条新记录。没有谁能接着找时（没配 AI 服务）不给。 */
+	onContinue?: () => unknown;
 };
 
 /**
@@ -99,11 +100,13 @@ const COPY: {
 		action: { label: "调整条件", onClick: h.onEditQuery },
 	}),
 	incomplete: (reason, h) => ({
-		title: "候选人较多，暂时没有找到符合的人",
-		hint: reason.above
-			? `已经从高职级起完整覆盖到 ${reason.above}。${coverMore(reason)}`
-			: coverMore(reason),
-		action: { label: "补充需求", onClick: h.onEditQuery },
+		title: reason.above
+			? `${reason.above} 及以上没有符合的人`
+			: "暂时没有找到符合的人",
+		hint: `符合的人较多，${reason.above ? "更低职级的" : ""}还没找完。${NARROW}`,
+		action: h.onContinue
+			? { label: CONTINUE_LABEL, onClick: h.onContinue }
+			: { label: "补充需求", onClick: h.onEditQuery },
 	}),
 };
 

@@ -29,10 +29,12 @@ function run(
 	reason: EmptyReason,
 	query = "",
 	mode: "conversation" | "keyword" = "conversation",
+	canContinue = true,
 ) {
 	let changed: Partial<View> | undefined;
 	let revised: QueryCondition[] | undefined;
 	let focused = false;
+	let continued = false;
 	const copy = emptyState(reason, {
 		mode,
 		conditions: compiled(query),
@@ -45,9 +47,14 @@ function run(
 		onEditQuery: () => {
 			focused = true;
 		},
+		...(canContinue && {
+			onContinue: () => {
+				continued = true;
+			},
+		}),
 	});
 	copy.action.onClick();
-	return { ...copy, changed, revised, focused };
+	return { ...copy, changed, revised, focused, continued };
 }
 
 describe("取数超限：是一种结果，不是一次失败", () => {
@@ -91,24 +98,39 @@ describe("条件全被停用", () => {
 	});
 });
 
-describe("候选人较多，名单还不完整", () => {
-	test("说的是候选人多、找到了哪一档职级，出口是去补充需求，不改条件也不改筛选", () => {
+describe("符合的人较多，名单还没列全", () => {
+	test("说的是找到了哪一档职级、更低的还没找完，出口是条件不变接着找，不改条件也不改筛选", () => {
 		const s = run({ kind: "incomplete", above: "P7" }, "算法");
-		assert.equal(s.title, "候选人较多，暂时没有找到符合的人");
+		assert.equal(s.title, "P7 及以上没有符合的人");
 		assert.equal(
 			s.hint,
-			"已经从高职级起完整覆盖到 P7。补充需求、缩小范围后可以覆盖到更低的职级。",
+			"符合的人较多，更低职级的还没找完。补充职级、部门等条件可以找得更准。",
 		);
-		assert.equal(s.action.label, "补充需求");
+		assert.equal(s.action.label, "继续找");
 		assert.deepEqual(
-			[s.changed, s.revised, s.focused],
-			[undefined, undefined, true],
+			[s.changed, s.revised, s.focused, s.continued],
+			[undefined, undefined, false, true],
 		);
 	});
 
-	test("最高一档也没找完时不说职级，只说下一步", () => {
+	test("最高一档也没找完时不说职级", () => {
 		const s = run({ kind: "incomplete", above: null }, "算法");
-		assert.equal(s.hint, "补充需求、缩小范围后可以覆盖更多人。");
+		assert.equal(s.title, "暂时没有找到符合的人");
+		assert.equal(
+			s.hint,
+			"符合的人较多，还没找完。补充职级、部门等条件可以找得更准。",
+		);
+	});
+
+	test("没有谁能接着找时，出口是去补充需求", () => {
+		const s = run(
+			{ kind: "incomplete", above: "P7" },
+			"算法",
+			"conversation",
+			false,
+		);
+		assert.equal(s.action.label, "补充需求");
+		assert.deepEqual([s.focused, s.continued], [true, false]);
 	});
 });
 

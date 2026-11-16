@@ -9,8 +9,8 @@ import { RECENT_COUNTS } from "./nav-prefs";
 /** 首页「最近搜索」列几条。 */
 export const HOME_RECENT_COUNT = 8;
 
-/** 根路由一次取多少条：导航栏和首页都从这一页里切。 */
-export const RECENT_FIRST_PAGE = Math.max(...RECENT_COUNTS, HOME_RECENT_COUNT);
+/** 最近搜索一页取多少条：导航栏和首页都从第一页里切。 */
+export const RECENT_PAGE_SIZE = Math.max(...RECENT_COUNTS, HOME_RECENT_COUNT);
 
 /**
  * 一行记录读的是**任务标题**：对话的任务是链头那句话，回头找一次搜过的东西，
@@ -19,24 +19,34 @@ export const RECENT_FIRST_PAGE = Math.max(...RECENT_COUNTS, HOME_RECENT_COUNT);
 export function recentLabel(record: Pick<RecentSearch, "spec" | "title">) {
 	if (record.title) return record.title;
 	const keywords =
-		"conditions" in record.spec ? keywordsOf(record.spec.conditions) : null;
+		record.spec && "conditions" in record.spec
+			? keywordsOf(record.spec.conditions)
+			: null;
 	if (keywords) return keywordTitle(keywords);
 	// 读不回框里的条件照条件写，停用的没参与检索、不写
 	return active(record) || "无搜索条件";
 }
 
+/** AI 还在处理、没处理成的任务，一行上各说什么。 */
+export const RECENT_STATUS_TEXT = {
+	working: "正在搜索…",
+	failed: "没有完成，打开可以重试",
+} as const;
+
 /**
- * 标题下面那一行：对话的任务最后停在了哪些搜索条件上。关键词搜索的标题就是条件，
- * 没有这一行。
+ * 标题下面那一行：AI 还在处理或没处理成时说这件事；否则是对话的任务最后停在了哪些搜索
+ * 条件上。关键词搜索的标题就是条件，没有这一行。
  */
 export function recentSummary(
-	record: Pick<RecentSearch, "spec" | "title">,
+	record: Pick<RecentSearch, "spec" | "status" | "title">,
 ): string | undefined {
+	if (record.status) return RECENT_STATUS_TEXT[record.status];
 	if (!record.title) return undefined;
 	return active(record) || undefined;
 }
 
 function active(record: Pick<RecentSearch, "spec">) {
+	if (!record.spec) return "";
 	return labelsInSentence(
 		queryOfSpec(record.spec).conditions.filter((c) => !c.off),
 	);

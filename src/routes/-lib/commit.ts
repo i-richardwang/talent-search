@@ -9,12 +9,14 @@ import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import type { QueryInput } from "#/search/spec";
 import { commitTurn } from "#/server/functions";
+import { useRecents } from "./recents";
 
 /** 写入记录失败时说什么。区分不了原因，也不必区分：能做的只有重试。 */
 export const COMMIT_FAILED = "没能提交这次搜索，请重试。";
 
 export function useCommit() {
 	const navigate = useNavigate();
+	const { reload } = useRecents();
 	// 同一时刻只发一个提交请求：两个请求并发时，先返回的结果会被后返回的覆盖。
 	const inFlight = useRef(false);
 	const [error, setError] = useState<string | null>(null);
@@ -38,6 +40,8 @@ export function useCommit() {
 				params: { turnId },
 				search: {},
 			});
+			// 这次任务从这一刻起就在最近搜索里
+			void reload();
 			return true;
 		} catch {
 			// 网络断了、服务端或库出错：不说的话转圈停了、什么都没发生

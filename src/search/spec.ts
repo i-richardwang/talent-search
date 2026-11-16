@@ -72,3 +72,24 @@ export function changesOf(
 		removed: base.filter((c) => !has.has(identityKey(c))),
 	};
 }
+
+/**
+ * 两张条件表是不是同一张：每条的身份、停用与否、先后都一样。直接改条件的一轮和上一轮是
+ * 同一张表时，那一轮是「条件不变，接着往下找」。
+ */
+export function sameConditions(
+	base: readonly QueryCondition[],
+	next: readonly QueryCondition[],
+): boolean {
+	return (
+		base.length === next.length &&
+		base.every((c, i) => {
+			const n = next[i];
+			return (
+				n !== undefined &&
+				identityKey(c) === identityKey(n) &&
+				Boolean(c.off) === Boolean(n.off)
+			);
+		})
+	);
+}

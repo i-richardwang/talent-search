@@ -673,7 +673,7 @@ export const OUTCOME: SearchOutcome = {
 
 /**
  * 候选人较多，名单还不完整：名单上只有 AI 确认过的人，从职级高的人确认起，名单上方说明
- * 现在完整覆盖到哪一档。
+ * 现在列到哪一档。
  */
 export const INCOMPLETE_OUTCOME: SearchOutcome = {
 	...OUTCOME,
@@ -700,7 +700,7 @@ export const EMPTY_OUTCOME: SearchOutcome = {
 	empty: { kind: "unmet" },
 };
 
-/** 名单上一个人都没有，但候选人还没确认完：空态说找到了哪一档职级，下一步是补充需求。 */
+/** 名单上一个人都没有，但候选人还没确认完：空态说找到了哪一档职级，下一步是接着找。 */
 export const INCOMPLETE_EMPTY_OUTCOME: SearchOutcome = {
 	...EMPTY_OUTCOME,
 	incomplete: COVERED,

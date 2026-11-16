@@ -143,6 +143,13 @@ function Workbench() {
 	const reviseSpec = (next: SearchSpec) =>
 		commit({ kind: "spec", spec: next }, { from: turnId });
 
+	// 名单还没列全时接着往下找：条件不变再记一轮，AI 接着确认还没轮到的人。
+	// 没配查询理解时没有谁来确认，不给这一步
+	const continueSearch =
+		mode === "conversation" && understanding
+			? () => reviseSpec(spec)
+			: undefined;
+
 	/** 对话的条件在 chip 上改，改完是一份查询；关键词的条件在框里改。 */
 	const reviseTo = (conditions: QueryCondition[]) =>
 		reviseSpec({ query: { conditions } });
@@ -238,6 +245,7 @@ function Workbench() {
 						mode={mode}
 						onAll={pickAll}
 						onChange={updateView}
+						onContinue={continueSearch}
 						onEditQuery={editQuery}
 						onMore={() => updateView(morePage(view))}
 						onReviseQuery={reviseTo}
@@ -273,6 +281,7 @@ function Workbench() {
 								: null
 						}
 						notCompleted={results.length > 0 ? failed : null}
+						onContinue={continueSearch}
 						latestId={latest.id}
 						onViewChange={updateView}
 						turnId={turnId}

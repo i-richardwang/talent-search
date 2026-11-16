@@ -96,22 +96,29 @@ test("一次理解发给模型的请求体里没有姓名和工号", async () =>
 	assert.match(answered, /硕士.{0,8}people.{0,4}3/, "一列的取值和人数发出去了");
 	assert.match(answered, /绩效/, "记录流的概况发出去了");
 	assert.match(answered, /推荐系统.{0,8}people.{0,4}3/, "捞到的说法发出去了");
-	// 读经历把每一段的公司、岗位、技能发了出去：三个人各一段，写法一样
-	const read = bodies
-		.flatMap(answersIn)
-		.map((m) => JSON.parse(m.content) as { groups?: unknown })
-		.find((answer) => Array.isArray(answer.groups));
+	// 读经历是另外的请求，把每一段的公司、岗位、技能发了出去：三个人各一段，写法一样
+	const reading = bodies
+		.map(
+			(body) =>
+				JSON.parse(body) as {
+					tools?: { function: { name: string } }[];
+					messages: { role: string; content: string }[];
+				},
+		)
+		.filter(
+			(request) =>
+				request.tools?.length === 1 &&
+				request.tools[0]?.function.name === "judge",
+		);
+	assert.equal(reading.length, 1, "三段一批读完");
+	const read = reading[0]?.messages.find((m) => m.role === "user")?.content;
 	const texts = [
-		...JSON.stringify(read).matchAll(
+		...(read ?? "").matchAll(
 			/入职前的经历，公司：星河科技\\n岗位：首席观星官\\n技能：推荐系统/g,
 		),
 	];
-	assert.equal(texts.length, 3, JSON.stringify(read));
-	assert.doesNotMatch(
-		answered,
-		/首席观星官/,
-		"交过结论的那一批不再跟着之后的请求发出去",
-	);
+	assert.equal(texts.length, 3, read ?? "");
+	assert.doesNotMatch(answered, /首席观星官/, "经历的文字不进查询理解的对话");
 	// 前四个工具是同一次回答里一起用的，谁先记下不一定；读和交结论在它们之后
 	assert.deepEqual(steps.slice(0, 4).sort(), [
 		"discover",
@@ -126,4 +133,36 @@ test("一次理解发给模型的请求体里没有姓名和工号", async () =>
 	for (const body of bodies)
 		for (const secret of [...SECRETS.names, ...SECRETS.empIds])
 			assert.ok(!body.includes(secret), `请求体里出现了「${secret}」`);
+});
+
+test("接着说的一句话带着之前的对话：前面说过什么、条件怎么变的都在请求里", async () => {
+	const first = await createTurn({ kind: "sentence", text: "推荐系统" });
+	const attemptOf = async (turnId: string) => {
+		const [row] = await db
+			.select({ attempt: searchTurn.attempt })
+			.from(searchTurn)
+			.where(eq(searchTurn.id, turnId));
+		assert.ok(row?.attempt);
+		return row.attempt;
+	};
+	await processTurn(first.turnId, await attemptOf(first.turnId));
+	const capture = exploreAndCapture();
+	try {
+		const next = await createTurn(
+			{ kind: "sentence", text: "推荐系统, company:星河科技" },
+			first.turnId,
+		);
+		await processTurn(next.turnId, await attemptOf(next.turnId));
+	} finally {
+		capture.stop();
+	}
+	const asked = (
+		JSON.parse(capture.bodies[0] ?? "{}") as {
+			messages: { role: string; content: string }[];
+		}
+	).messages.find((m) => m.role === "user")?.content;
+	assert.match(
+		asked ?? "",
+		/之前的对话：\nHR：推荐系统\n你：按这些条件找：推荐系统。\n/,
+	);
 });

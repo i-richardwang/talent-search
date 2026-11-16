@@ -161,6 +161,16 @@ function Usage() {
 								找做过支付风控、学校 B 毕业的
 							</NavItem>
 							<NavItem
+								actions={<More label="做过增长的产品经理" />}
+								href="#recent-working"
+								icon={MessageSquareTextIcon}
+								iconSize="small"
+								loading
+								onClick={stay}
+							>
+								做过增长的产品经理
+							</NavItem>
+							<NavItem
 								actions={<More label="推荐系统 · 某甲科技" />}
 								href="#recent-2"
 								icon={TextSearchIcon}
@@ -215,6 +225,7 @@ export function NavItemPage() {
 					"当前所在的一项给 active，不另加选中装饰。",
 					"行尾的动作放 actions，画在链接外；链接里不嵌别的动作。平时透明也不接指针，指针进入这一行、键盘焦点落到动作上或它的菜单开着时出现。",
 					'不去别处、只打开什么的一行（「更多」）传 render={<button type="button" />}。',
+					"这一行说的那件事还在进行（一次搜索 AI 还在处理）给 loading：图标的位置换成转着的圈，做完换回图标。",
 					"标题一行放不下就截断，指针停在被截断的标题上时提示完整的一行。",
 					"几项同属一类时用 NavGroup 包起来，几组放进一个 NavGroups：组名整行可点、收起或展开，展开着哪几组（value）由使用方记住；组名行尾的 action 悬停时出现。",
 					'一长串同类的记录（最近搜索）给 iconSize="small"；几个固定入口用缺省尺寸。',

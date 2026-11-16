@@ -18,7 +18,8 @@ import appCss from "../styles.css?url";
 import { AppShell } from "./-components/app-shell";
 import { PageNotFound } from "./-components/not-found";
 import { NAV_COOKIE, navPrefsOf } from "./-lib/nav-prefs";
-import { RECENT_FIRST_PAGE } from "./-lib/recent";
+import { RECENT_PAGE_SIZE } from "./-lib/recent";
+import { RecentsProvider } from "./-lib/recents";
 
 // 首帧绘制前按系统深浅色切换 `dark` 类，深色令牌不会先以浅色闪一下。
 const SYNC_COLOR_MODE = `(()=>{try{const m=matchMedia("(prefers-color-scheme: dark)"),a=e=>{const d=document.documentElement;d.classList.toggle("dark",e.matches);d.style.colorScheme=e.matches?"dark":"light"};a(m);m.addEventListener("change",a)}catch(e){}})()`;
@@ -57,12 +58,13 @@ export const Route = createRootRoute({
 		}
 		return { user };
 	},
-	// 最近搜索取不到时是 null：导航栏和首页各自说取不到并给重试，不当成还没有记录。
+	// 最近搜索的第一页，之后由 `RecentsProvider` 接手。取不到时是 null：导航栏和首页各自说
+	// 取不到并给重试，不当成还没有记录。
 	loader: async ({ context }) => {
 		const base = { nav: readNavPrefs(), user: context.user };
 		if (!context.user) return { ...base, recent: null, understanding: false };
 		const [recent, understanding] = await Promise.all([
-			recentSearches({ data: { size: RECENT_FIRST_PAGE } }).catch(() => null),
+			recentSearches({ data: { size: RECENT_PAGE_SIZE } }).catch(() => null),
 			understandingOn(),
 		]);
 		return { ...base, recent, understanding };
@@ -73,14 +75,17 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+	const { recent } = Route.useLoaderData();
 	const login = useLocation({
 		select: (location) => location.pathname === "/login",
 	});
 	if (login) return <Outlet />;
 	return (
-		<AppShell>
-			<Outlet />
-		</AppShell>
+		<RecentsProvider initial={recent}>
+			<AppShell>
+				<Outlet />
+			</AppShell>
+		</RecentsProvider>
 	);
 }
 

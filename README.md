@@ -136,7 +136,7 @@ REVIEW_TOKEN=...        # external 模式必需
 |---|---|---|
 | `DATABASE_URL` | 是 | Postgres 17 连接串 |
 | `EMBED_BASE_URL` / `EMBED_MODEL` / `EMBED_SPACE_ID` | 否 | 嵌入端点、模型与向量缓存的空间身份；只有词表整理找参考词用，不配时整理不收集要判的词 |
-| `LLM_BASE_URL` / `LLM_MODEL` | 否 | 查询理解端点与模型；不配时不能用一句话找人。一轮里它要读上百段经历，用不带思考的快模型（带思考的模型设 `LLM_ENABLE_THINKING=false`） |
+| `LLM_BASE_URL` / `LLM_MODEL` | 否 | 查询理解端点与模型；不配时不能用一句话找人。一轮里要读上千段经历，一次查询同时读两批，整个服务同时发出的请求数另有上限（`LLM_READ_CONCURRENCY`，默认 8，不超过端点能接的并发；一轮最多读 `LLM_READ_MAX` 段，默认 2560），用不带思考的快模型（带思考的模型设 `LLM_ENABLE_THINKING=false`） |
 | `EXTRACT_BASE_URL` / `EXTRACT_MODEL` | 否 | 抽取与模型整理的聊天端点，对齐默认沿用 |
 | `ALIGN_MODEL` | 否 | 序列对齐模型，默认使用 `EXTRACT_MODEL` |
 | `ALIGN_BASE_URL` / `ALIGN_API_KEY` | 否 | 对齐专用端点；未设地址时沿用抽取端点与密钥，设了地址则只使用对齐密钥 |

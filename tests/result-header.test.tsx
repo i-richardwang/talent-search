@@ -37,8 +37,8 @@ describe("这份名单是什么", () => {
 			since: null,
 		} as const;
 		const seen = render(completing);
-		assert.match(seen, /^38\s*人 · 按匹配度排序 · 正在补充符合新条件的人…$/);
+		assert.match(seen, /^38\s*人 · 按匹配度排序 · 正在补充符合条件的人…$/);
 		assert.deepEqual(internalWordsIn(seen), []);
-		assert.equal(render(completing, 0), "正在补充符合新条件的人…");
+		assert.equal(render(completing, 0), "正在补充符合条件的人…");
 	});
 });

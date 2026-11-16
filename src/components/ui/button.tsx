@@ -3,26 +3,31 @@
 import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 import type { LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { type MouseEvent, type ReactNode, useState } from "react";
 import { resolveIcon } from "#/components/ui/icon";
 import { cn } from "#/lib/utils";
 
 /*
  * 按钮。链接用 `render`（传路由的 `<Link>` 或 `<a>`），不用 `href` / `target`：站内跳转要
  * 走路由。
+ *
+ * 按下去要等结果的动作，`onClick` 把它的 Promise 交回来：到有结果之前按钮自己停在加载态，
+ * 挡住连按，调用处不用另记一份「正在等」。加载态由别处的状态决定时（一次表单提交、一次
+ * 导航）才传 `loading`。
  */
 
 type ButtonType = "default" | "primary" | "fill" | "text";
 type ButtonSize = "small" | "middle" | "large";
 
 export interface ButtonProps
-	extends Omit<useRender.ComponentProps<"button">, "type"> {
+	extends Omit<useRender.ComponentProps<"button">, "type" | "onClick"> {
 	block?: boolean;
 	/** 只对 primary：换成危险色。 */
 	danger?: boolean;
 	htmlType?: "button" | "submit" | "reset";
 	icon?: LucideIcon | ReactNode;
 	loading?: boolean;
+	onClick?: (event: MouseEvent<HTMLButtonElement>) => unknown;
 	size?: ButtonSize;
 	type?: ButtonType;
 }
@@ -54,7 +59,7 @@ export function Button({
 	disabled,
 	htmlType = "button",
 	icon,
-	loading,
+	loading: loadingProp,
 	onClick,
 	ref,
 	render,
@@ -62,6 +67,8 @@ export function Button({
 	type = "default",
 	...props
 }: ButtonProps) {
+	const [waiting, setWaiting] = useState(false);
+	const loading = Boolean(loadingProp || waiting);
 	const interactionDisabled = Boolean(disabled || loading);
 
 	const hasChildren =
@@ -98,12 +105,16 @@ export function Button({
 			</>
 		),
 		disabled: render ? undefined : disabled,
-		onClick: (event: React.MouseEvent<HTMLButtonElement>) => {
+		onClick: (event: MouseEvent<HTMLButtonElement>) => {
 			if (interactionDisabled) {
 				event.preventDefault();
 				return;
 			}
-			onClick?.(event);
+			const result = onClick?.(event);
+			if (result instanceof Promise) {
+				setWaiting(true);
+				void result.finally(() => setWaiting(false));
+			}
 		},
 		type: render ? undefined : htmlType,
 	};

@@ -70,6 +70,7 @@ export function ResultList({
 	onChange,
 	onReviseQuery,
 	onEditQuery,
+	onContinue,
 	picks,
 	failure,
 }: {
@@ -86,11 +87,13 @@ export function ResultList({
 	mode: SearchMode;
 	turnId: string;
 	onChange: (next: Partial<View>) => void;
-	onReviseQuery: (next: QueryCondition[]) => void;
+	onReviseQuery: (next: QueryCondition[]) => unknown;
 	onEditQuery: () => void;
+	/** 名单还没列全时条件不变接着找；不给就没有这一步。 */
+	onContinue?: () => unknown;
 	picks: Picks;
 	/** AI 没处理成、名单上又没有人：名单停在这里，说出哪个环节出了问题；没有出错为 null。 */
-	failure: { fault: AttemptFault; onRetry: () => void } | null;
+	failure: { fault: AttemptFault; onRetry: () => unknown } | null;
 }) {
 	const { results, claims, order, total } = outcome;
 	const reach = reachOf(total);
@@ -193,6 +196,7 @@ export function ResultList({
 			<NoResults
 				mode={mode}
 				onChange={onChange}
+				onContinue={onContinue}
 				onEditQuery={onEditQuery}
 				onReviseQuery={onReviseQuery}
 				outcome={outcome}

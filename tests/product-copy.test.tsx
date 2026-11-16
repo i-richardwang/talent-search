@@ -244,25 +244,38 @@ describe("产品文案使用常规 SaaS 语言", () => {
 				turnId="t1"
 			/>,
 		);
-		assert.match(text, /正在补充符合新条件的人…/);
+		assert.match(text, /正在补充符合条件的人…/);
 		assert.doesNotMatch(text, /没有同时满足必须条件的人|0\s*人/);
 	});
 
-	test("名单还不完整时说覆盖到了哪一档职级；最高一档也没覆盖完就不说职级", () => {
+	test("名单还没列全时说列到了哪一档职级；最高一档也没列全就不说职级", () => {
 		const covered = incompleteText({ above: "P7" });
 		const open = incompleteText({ above: null });
 		assert.equal(
 			covered,
-			"候选人较多，当前名单从高职级起完整覆盖到 P7。补充需求、缩小范围后可以覆盖到更低的职级。",
+			"符合的人较多，已列出 P7 及以上的。补充职级、部门等条件可以找得更准。",
 		);
 		assert.equal(
 			open,
-			"候选人较多，当前名单还不完整。补充需求、缩小范围后可以覆盖更多人。",
+			"符合的人较多，名单还没列全。补充职级、部门等条件可以找得更准。",
 		);
 		assert.deepEqual(internalWordsIn(covered + open), []);
 		assert.equal(
 			seen(<IncompleteNotice incomplete={{ above: "P7" }} />),
 			covered,
+		);
+	});
+
+	test("名单还没列全时给「继续找」；没有谁能接着找时不给", () => {
+		assert.match(
+			seen(
+				<IncompleteNotice incomplete={{ above: "P7" }} onContinue={() => {}} />,
+			),
+			/找得更准。\s*继续找$/,
+		);
+		assert.doesNotMatch(
+			seen(<IncompleteNotice incomplete={{ above: "P7" }} />),
+			/继续找/,
 		);
 	});
 

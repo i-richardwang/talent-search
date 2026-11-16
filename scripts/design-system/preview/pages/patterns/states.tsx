@@ -79,9 +79,9 @@ const OUTCOMES: Record<Ending, typeof OUTCOME> = {
 const ENDING_NOTE: Record<Ending, string | null> = {
 	results: null,
 	incomplete:
-		"候选人多到一次确认不完：名单上只有 AI 确认过的人，从职级高的人确认起；名单上方说清现在完整覆盖到哪一档，下一步是把条件说得更具体",
+		"候选人多到一次确认不完：名单上只有 AI 确认过的人，从职级高的人确认起；名单上方说清现在列到哪一档，句子里的下一步是补充条件，按钮是条件不变接着往下找",
 	incompleteEmpty:
-		"候选人还没确认完、名单上一个人都没有：空态说已经找到哪一档职级，下一步是补充需求，不说成没有这样的人",
+		"候选人还没确认完、名单上一个人都没有：空态说已经找到哪一档职级，下一步是接着找，不说成没有这样的人",
 	empty: null,
 	failed: null,
 };
@@ -114,7 +114,7 @@ function Run({ ending, step }: { ending: Ending; step: Step }) {
 		<Routed url={`/s/${LATEST_TURN_ID}`}>
 			{incomplete && (
 				<div className="mb-4">
-					<IncompleteNotice incomplete={incomplete} />
+					<IncompleteNotice incomplete={incomplete} onContinue={noop} />
 				</div>
 			)}
 			<ResultList
@@ -125,6 +125,7 @@ function Run({ ending, step }: { ending: Ending; step: Step }) {
 				mode="conversation"
 				onAll={noop}
 				onChange={noop}
+				onContinue={noop}
 				onEditQuery={noop}
 				onMore={noop}
 				onReviseQuery={noop}
@@ -289,18 +290,21 @@ function Completeness() {
 						</TableRow>
 						<TableRow>
 							<TableCell className="whitespace-nowrap">
-								候选人较多，覆盖到某一档职级
+								符合的人较多，列到某一档职级
 							</TableCell>
 							<TableCell className="whitespace-nowrap text-fg-secondary text-xs">
 								名单上方
 							</TableCell>
 							<TableCell className="w-full">
-								<IncompleteNotice incomplete={COVERED} />
+								<IncompleteNotice
+									incomplete={COVERED}
+									onContinue={() => setLast("点了继续找")}
+								/>
 							</TableCell>
 						</TableRow>
 						<TableRow>
 							<TableCell className="whitespace-nowrap">
-								候选人较多，最高一档也没覆盖完
+								符合的人较多，最高一档也没列全
 							</TableCell>
 							<TableCell className="whitespace-nowrap text-fg-secondary text-xs">
 								名单上方
@@ -375,6 +379,11 @@ function Empties() {
 									<NoResults
 										mode={mode}
 										onChange={() => setLast("清除了筛选，同一次搜索换个看法")}
+										onContinue={
+											mode === "conversation"
+												? () => setLast("条件不变接着找，记成新的一次搜索")
+												: undefined
+										}
 										onEditQuery={() =>
 											setLast(
 												mode === "keyword"
@@ -488,7 +497,7 @@ export function StatesPage() {
 					"理解失败时说清是哪个环节出了问题：连不上和报错时需求没被读过，不能说成没读懂，也不叫人换说法。",
 					"空态原因由检索层判定，界面为每种原因都给出文案和下一步，不用二手计数重新推断。",
 					"空态文案说明当前问题和可执行的下一步，标题已说明的内容不重复。",
-					"没被 AI 确认过的经历不算数：名单上只有确认过的人。候选人多到一次确认不完时，从职级高的人确认起，名单上方说清完整覆盖到哪一档；名单因此空着时是一种空态，不说成没有这样的人。",
+					"没被 AI 确认过的经历不算数：名单上只有确认过的人。候选人多到一次确认不完时，从职级高的人确认起，名单上方说清列到哪一档，可以补充条件，也可以条件不变接着找；名单因此空着时是一种空态，不说成没有这样的人。",
 					"HR 直接改条件之后 AI 接着补上新进范围的人：名单照常可用，表头写在做什么；没补成时名单上方说哪个环节出了问题，给重试。",
 					"一次动作的结果（提交失败、导出完成）用通知；一直成立的状态（正在看较早的一次）用 Alert；查询条件的注解用行内文字。",
 				],

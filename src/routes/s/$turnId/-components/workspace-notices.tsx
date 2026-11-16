@@ -38,6 +38,7 @@ export function WorkspaceNotices({
 	latestId,
 	turnId,
 	incomplete,
+	onContinue,
 	notCompleted,
 	conditions,
 	facets,
@@ -47,10 +48,12 @@ export function WorkspaceNotices({
 	earlier: boolean;
 	latestId: string;
 	turnId: string;
-	/** 候选人较多、名单还不完整时覆盖到了哪里；名单完整、是空的、或还在补人时为 null。 */
+	/** 符合的人较多、名单还没列全时列到了哪里；名单完整、是空的、或还在补人时为 null。 */
 	incomplete: Incomplete | null;
+	/** 条件不变接着往下找；没有谁能接着找时不给。 */
+	onContinue?: () => unknown;
 	/** 改完条件后新进范围的人没能补上、名单上已有人：哪个环节出了问题；没有出错为 null。 */
-	notCompleted: { fault: AttemptFault; onRetry: () => void } | null;
+	notCompleted: { fault: AttemptFault; onRetry: () => unknown } | null;
 	conditions: ConditionsRow;
 	facets: Facets;
 	view: View;
@@ -68,7 +71,9 @@ export function WorkspaceNotices({
 			{notCompleted ? (
 				<NotCompleted {...notCompleted} />
 			) : (
-				incomplete && <IncompleteNotice incomplete={incomplete} />
+				incomplete && (
+					<IncompleteNotice incomplete={incomplete} onContinue={onContinue} />
+				)
 			)}
 			{conditions.mode === "conversation" ? (
 				conditions.list.length > 0 && (

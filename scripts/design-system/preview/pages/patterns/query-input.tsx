@@ -56,7 +56,6 @@ function Home({
 			asked={search.mode === "keyword" ? "keyword" : undefined}
 			error={failing ? COMMIT_FAILED : null}
 			onQuery={onQuery}
-			recent={NO_RECENT}
 			understanding={understanding}
 		/>
 	);
@@ -86,7 +85,7 @@ function Playground() {
 					<span>{last ?? "点一条示例填进输入框，或写一句需求后回车"}</span>
 				}
 			>
-				<Routed url="/">
+				<Routed root={{ recent: NO_RECENT }} url="/">
 					<Home
 						failing={failing}
 						key={String(understanding)}

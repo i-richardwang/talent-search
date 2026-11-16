@@ -164,7 +164,7 @@ describe("补充需求", () => {
 			await appended;
 		}
 	});
-	test("最近搜索取链上最后一份完整条件，同刻记录和待理解末轮不改变链序", async () => {
+	test("最近搜索一次任务一行，指向链上最后一轮：待理解的末轮带着处理中的状态和上一轮的条件，同刻记录不改变链序", async () => {
 		const first = { conditions: parseQuery("算法") };
 		const last = { conditions: parseQuery("算法, 渠道运营") };
 		await db.execute(sql`insert into search_turn
@@ -178,12 +178,31 @@ describe("补充需求", () => {
 				'2020-01-01', 'a-A', '2020-01-01', '[]', false)`);
 		const inChain = async () =>
 			(await recent()).find((row) => row.title === "合成同刻任务");
-		assert.equal((await inChain())?.turnId, "recent-Y");
+		assert.equal((await inChain())?.turnId, "recent-A");
+		assert.deepEqual((await inChain())?.spec, first);
+		// 开始的时刻是很久以前、之后再没有下文：这一次处理的进程没了
+		assert.equal((await inChain())?.status, "failed");
 		await db.execute(sql`update search_turn
 			set spec = ${JSON.stringify(last)}::jsonb, attempt_done = true
 			where id = 'recent-A' and spec is null`);
 		assert.equal((await inChain())?.turnId, "recent-A");
 		assert.deepEqual((await inChain())?.spec, last);
+		assert.equal((await inChain())?.status, null);
+	});
+
+	test("第一句话一提交就在最近搜索里：还没理解出来时没有条件、状态是处理中，理解完带上条件", async () => {
+		const { turnId } = await createTurn({
+			kind: "sentence",
+			text: "合成新任务",
+		});
+		const row = async () => (await recent()).find((r) => r.turnId === turnId);
+		assert.deepEqual(
+			[(await row())?.title, (await row())?.spec, (await row())?.status],
+			["合成新任务", null, "working"],
+		);
+		await settle(turnId);
+		assert.equal((await row())?.status, null);
+		assert.ok((await row())?.spec);
 	});
 
 	test("一句话作用在上一轮的条件上，链上仍是同一次找人任务", async () => {

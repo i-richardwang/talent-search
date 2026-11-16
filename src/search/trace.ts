@@ -151,13 +151,11 @@ export type TraceStep = Stamped &
 		| { tool: "find"; found: FoundTrace[] }
 		| { tool: "discover"; discovery: DiscoveryTrace }
 		| { tool: "probe"; probe: Probe }
-		/** 取了一批候选人的经历来读：这一批几段，连这一批还剩几段没确认 */
+		/** 取了一波候选人的经历来读：这一波几段，连这一波还剩几段没确认 */
 		| { tool: "read"; segments: number; left: number }
 		/** 去取经历时这份条件出不了名单（有一条跑不了，或者找出的太多），没有经历可读 */
 		| { tool: "read"; unlisted: true }
-		/** 读完一批下的结论：符合的几段，不符合的几段 */
+		/** 读完一批的结论：符合的几段，不符合的几段 */
 		| { tool: "judge"; fits: number; unfit: number }
-		/** 交的结论没收（手上没有这一批，或者交的编号不在这一批里）：这一批要重新判断 */
-		| { tool: "judge"; redo: true }
 		| { tool: "submit"; issues: SubmitIssue[] }
 	);

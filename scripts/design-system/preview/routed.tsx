@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { createContext, type ReactNode, use, useState } from "react";
 import { type NavPrefs, navPrefsOf } from "#/routes/-lib/nav-prefs";
+import { StaticRecents } from "#/routes/-lib/recents";
 import type { viewer } from "#/server/access";
 import type { RecentPage } from "#/server/turn";
 import { OUTCOME } from "./samples/people";
@@ -59,7 +60,9 @@ const TURN_DATA = { result: OUTCOME, thread: THREAD };
 
 function memoryRouter(url: string, rootData: RootData) {
 	const root = createRootRoute({
-		component: () => use(Content),
+		component: () => (
+			<StaticRecents page={rootData.recent}>{use(Content)}</StaticRecents>
+		),
 		loader: () => rootData,
 	});
 	const turn = createRoute({

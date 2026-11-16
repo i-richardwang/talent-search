@@ -45,6 +45,7 @@ import { compileConditions } from "#/search/compile";
 import type { QueryCondition } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
+import type { Group, Judge } from "#/server/reading";
 import { catalogOf, tempSchema } from "./temp-schema";
 
 /**
@@ -240,28 +241,33 @@ export function judged(
 
 /**
  * 假理解写的条件：把那句话按一行查询语法读，接在当前条件后面提交整份——真模型遇到「再加上……」
- * 就是这么做的。提交之前它先用 `read` 把候选人没看过的经历取来，一批一批用 `judge` 交上符合
- * 的段的编号（`fakeFits`），都看完了再交（见 `startModelServer`）。
+ * 就是这么做的。提交之前它先用 `read` 让候选人没读过的经历读完，读完再交（见 `startModelServer`）；
+ * 读经历的请求按 `fakeFits` 交上符合的段的编号。
  */
 function fakeIntent(text: string, base: unknown[]) {
 	return { conditions: [...base, ...drafted(text)], note: null };
 }
 
-/**
- * `read` 和 `judge` 带回的样子（`server/agent-tools.ts`）：还剩几段，一批经历按条件分组、每段有
- * 编号；没有可读的时没有 `groups`。
- */
-export type Batch = {
+/** `read` 带回的样子（`server/agent-tools.ts`）：每条读了多少段、多少段算数，还剩几段。 */
+export type Read = {
+	conditions?: { label: string; read: number; fits: number }[];
 	left: number;
-	groups?: {
-		label: string;
-		criterion: string;
-		segments: { n: number; text: string }[];
-	}[];
 	todo?: string;
-	saved?: number;
-	problem?: string;
 };
+
+/** 读一批经历时每一段都算。 */
+export const fitsAll: Judge = async (groups) =>
+	groups.flatMap((group) => group.segments.map((segment) => segment.n));
+
+/** 读一批经历时，文字过得了 `keep` 的段才算。 */
+export const fitsWhere =
+	(keep: (text: string, group: Group) => boolean): Judge =>
+	async (groups) =>
+		groups.flatMap((group) =>
+			group.segments
+				.filter((segment) => keep(segment.text, group))
+				.map((segment) => segment.n),
+		);
 
 /** `probe` 带回的样子。 */
 export type Tried = {
@@ -281,18 +287,20 @@ export function table(conditions: unknown[], note: unknown = null) {
 }
 
 /**
- * 一套查询理解的工具，连同它记下的步骤；结论和生产一样存在这次找人任务名下。`call` 按工具的
- * 入参直接调：SDK 的工具外壳只在模型调用时才有上下文。每调一次就是模型的一步，调之前先走到
- * 下一步（`advance`），上一步给出的那一批才到模型眼前。
+ * 一套查询理解的工具，连同它记下的步骤和读经历时每一批给出去的内容（`seen`）；结论和生产一样
+ * 存在这次找人任务名下。`call` 按工具的入参直接调：SDK 的工具外壳只在模型调用时才有上下文。
+ * 读经历不经过模型：每一批算不算由 `judge` 给，默认每一段都算。
  */
 export async function agentOn(
 	rootTurnId: string,
 	base: readonly QueryCondition[] = [],
+	judge: Judge = fitsAll,
 ) {
 	const { agentTools } = await import("#/server/agent-tools");
 	const { saveVerdicts } = await import("#/server/judged");
 	const { db } = await import("#/db");
 	const steps: TraceStep[] = [];
+	const seen: Group[][] = [];
 	const agent = agentTools({
 		rootTurnId,
 		base,
@@ -300,43 +308,38 @@ export async function agentOn(
 			await saveVerdicts(rootTurnId, verdicts, db);
 			steps.push(step);
 		},
+		judge: (groups, abortSignal) => {
+			seen.push([...groups]);
+			return judge(groups, abortSignal);
+		},
 	});
 	const call = <T = unknown>(
 		name: keyof typeof agent.tools,
 		input: unknown,
 	): Promise<T> => {
-		agent.advance();
 		const execute = agent.tools[name].execute as (
 			input: unknown,
 			options: unknown,
 		) => Promise<T>;
 		return execute(input, { toolCallId: "t", messages: [] });
 	};
-	return { ...agent, call, steps };
+	return { ...agent, call, steps, seen };
 }
 
-/** 一段文字是不是一批要读的经历。 */
-function batchOf(text: string | null | undefined) {
-	if (!text) return null;
+/** 读经历的请求里给的那一批（`llm.ts` 的 `judgeSegments`）。 */
+function groupsIn(text: string | null | undefined): Group[] {
 	try {
-		const result = JSON.parse(text) as Partial<Batch>;
-		return Array.isArray(result.groups) ? (result as Batch) : null;
+		const groups = JSON.parse(text ?? "") as unknown;
+		return Array.isArray(groups) ? (groups as Group[]) : [];
 	} catch {
-		return null;
+		return [];
 	}
 }
 
-/** 最后一条消息是不是工具带回的一批要读的经历。 */
-function batchIn(
-	message: { role: string; content: string | null } | undefined,
-) {
-	return message?.role === "tool" ? batchOf(message.content) : null;
-}
-
 /** 假模型交的结论：这一批里符合的段的编号。 */
-function fitsIn(batch: Batch | null) {
+function fitsIn(groups: readonly Group[]) {
 	return {
-		fits: (batch?.groups ?? []).flatMap((group) =>
+		fits: groups.flatMap((group) =>
 			group.segments
 				.filter((segment) => fakeFits(group.criterion, segment.text))
 				.map((segment) => segment.n),
@@ -499,17 +502,17 @@ function startModelServer() {
 						},
 						"tool_calls",
 					);
-				// 只给了交结论这一个工具：HR 直接改条件之后把候选人确认完（`llm.ts` 的 `confirm`）。
-				// 每一批都在最后一条工具消息里：第一批也是作为一次交结论带回的结果给的
+				// 只给了交结论这一个工具：读一批经历的请求（`llm.ts` 的 `judgeSegments`），
+				// 这一批写在用户消息里
 				if (
 					request.tools?.length === 1 &&
 					request.tools[0]?.function.name === "judge"
 				) {
 					exploring?.push(body);
-					calls([["judge", fitsIn(batchIn(messages.at(-1)))]]);
+					calls([["judge", fitsIn(groupsIn(users.at(-1)))]]);
 					return;
 				}
-				// 识别出查询理解的提示词：先把候选人的经历读完、交上结论，再用提交工具提交那张表
+				// 识别出查询理解的提示词：先让候选人的经历读完，再用提交工具提交那张表
 				const understanding = users.find((u) => u.includes(SENTENCE_PREFIX));
 				if (understanding !== undefined) {
 					const at = understanding.lastIndexOf(SENTENCE_PREFIX);
@@ -525,7 +528,6 @@ function startModelServer() {
 						),
 					);
 					const conditions = table?.conditions ?? [];
-					const batch = batchIn(messages.at(-1));
 					// 最后一次只剩提交这一个工具
 					const submitOnly =
 						typeof request.tool_choice === "object" &&
@@ -545,7 +547,6 @@ function startModelServer() {
 							],
 							["probe", { conditions }],
 						]);
-					else if (batch) calls([["judge", fitsIn(batch)]]);
 					else if (!called.has("read")) calls([["read", { conditions }]]);
 					else calls([["submit", table]]);
 					return;

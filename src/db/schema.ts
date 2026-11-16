@@ -787,7 +787,7 @@ export const searchTurn = pgTable(
 export type SearchTurn = typeof searchTurn.$inferSelect;
 
 /**
- * 查询理解确认一段经历之后的结论：一次找人任务里，一条判据下这一段算不算。结论只在产生它的
+ * 读过一段经历之后的结论：一次找人任务里，一条判据下这一段算不算。结论只在产生它的
  * 那次任务里算数（`root_turn_id` 是那条链的链头），链删掉时一起删。`criterion_key` 是判据文字的
  * 摘要，`content` 是确认的时候这一段的内容键和解析版本（`search/verdict.ts`），段的内容或解析结果
  * 变了就对不上，按没确认过算。不算的也存。

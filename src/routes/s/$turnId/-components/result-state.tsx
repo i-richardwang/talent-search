@@ -59,19 +59,22 @@ export function NoResults({
 	onChange,
 	onReviseQuery,
 	onEditQuery,
+	onContinue,
 }: {
 	outcome: SearchOutcome;
 	spec: SearchSpec;
 	mode: SearchMode;
 	onChange: (next: Partial<View>) => void;
-	onReviseQuery: (next: QueryCondition[]) => void;
+	onReviseQuery: (next: QueryCondition[]) => unknown;
 	onEditQuery: () => void;
+	onContinue?: () => unknown;
 }) {
 	const reason = outcome.empty ?? { kind: "noConditions" };
 	const state = emptyState(reason, {
 		mode,
 		conditions: queryOfSpec(spec).conditions,
 		onChange,
+		onContinue,
 		onEditQuery,
 		onReviseQuery,
 	});
@@ -105,7 +108,7 @@ export function ListFailed({
 	onRetry,
 }: {
 	fault: AttemptFault;
-	onRetry: () => void;
+	onRetry: () => unknown;
 }) {
 	const copy = FAULT_COPY[fault];
 	const exits = faultExits(fault);
@@ -145,7 +148,7 @@ export function ListFailed({
 const PHASE_TEXT: Record<SearchPhase, string> = {
 	understanding: "正在理解你的需求…",
 	searching: "正在搜索…",
-	completing: "正在补充符合新条件的人…",
+	completing: "正在补充符合条件的人…",
 };
 
 /** 在做什么，后面跟已等的秒数。每一步重新计：调用处按 `phase` 换 key。 */

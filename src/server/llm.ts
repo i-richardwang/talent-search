@@ -1,30 +1,22 @@
 /**
- * 查询理解的端点适配层：发送需求、当前条件、数据目录与语料词表，消费提交工具的条件
- * （`understand`）；HR 直接改条件之后，只把新进范围的候选人的经历交给它读完（`confirm`）。
+ * 查询理解的端点适配层：发送需求、当前条件、这次找人之前的对话、数据目录与语料词表，消费提交
+ * 工具的条件（`understand`）；读一批经历、交回符合的段（`judgeSegments`，由 `reading.ts` 调度）。
  * 模型写的是条件，名单只从搜索来：它不可增删或重排候选人。
  * 未配置、超过时限或未能作答时抛出错误，查询记录保持未完成供重试。
  */
 
 import "@tanstack/react-start/server-only";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import {
-	generateText,
-	isStepCount,
-	type ModelMessage,
-	ToolChoiceViolationError,
-} from "ai";
+import { generateText, isStepCount, ToolChoiceViolationError, tool } from "ai";
+import { z } from "zod";
+import { gate } from "#/lib/concurrent";
 import { catalogText } from "#/search/catalog";
 import type { Understood, Vocabulary } from "#/search/intent";
-import { type Query, withOff } from "#/search/query";
+import { withOff } from "#/search/query";
 import type { CompanyFacts, Matched, StreamFact } from "#/search/trace";
-import {
-	type AgentTools,
-	BATCH_TOOLS,
-	READ_BATCH,
-	READ_MAX,
-	SUBMIT,
-} from "./agent-tools";
+import { type AgentTools, SUBMIT } from "./agent-tools";
 import { endpointPolicy, positiveInt, thinkingSwitch } from "./endpoint";
+import type { Judge } from "./reading";
 
 const BASE_URL = process.env.LLM_BASE_URL;
 const API_KEY = process.env.LLM_API_KEY;
@@ -47,19 +39,20 @@ const MAX_OUTPUT_TOKENS = positiveInt(
 const RETRIES = 1;
 const REQUEST = endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES });
 
-/** 一轮最多读的经历要分几批交结论。 */
-const READ_STEPS = Math.ceil(READ_MAX / READ_BATCH);
+/**
+ * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。通常捞一次说法、试跑一次、读一次
+ * 经历、提交一次；提交没通过检查、改完再读再提交，再多几次。最后一次只留提交这一个工具，并在
+ * 消息里明说（`LAST_STEP`），保证用完次数时模型提交了一份搜索条件。读经历的请求不算在里面：
+ * 它们不在这段对话里（`reading.ts`）。
+ */
+const AGENT_STEPS = 10;
 
 /**
- * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。通常捞一次说法、试跑一次、
- * 取一批经历来读、一批一批交结论、提交一次；提交没通过检查、改完再提交，再多一两次。最后一次
- * 只留提交这一个工具，并在消息里明说（`LAST_STEP`），保证用完次数时模型提交了一份搜索条件。
- * 整轮的时间由它和每次请求的超时、重试（`endpoint.ts`）一起封顶。
+ * 读经历同时发出几个请求。整个进程共用这一个上限：几个人同时找人时一起排队，不超过端点
+ * 那一侧能接的并发。
  */
-const AGENT_STEPS = READ_STEPS + 8;
-
-/** 直接改条件之后确认一轮最多调用几次模型：一批交一次结论，外加两次结论没收、重交。 */
-const CONFIRM_STEPS = READ_STEPS + 2;
+const READ_CONCURRENCY = positiveInt(process.env.LLM_READ_CONCURRENCY, 8);
+const readGate = gate(READ_CONCURRENCY);
 
 /**
  * 一次模型请求的总时限，包含全部尝试和退避，与执行请求使用同一份策略。`server/turn.ts`
@@ -95,17 +88,18 @@ function getModel() {
 }
 
 /**
- * 怎么读一批经历、下结论：理解一句话（`SYSTEM`）和直接改条件之后的确认（`CONFIRMING`）共用
- * 这一份，判断的标准只有一处。
+ * 读一批经历的请求（`judgeSegments`）的全部指令。它看不到 HR 的话，也看不到别的条件：算和不算
+ * 全凭每一组的 criterion。
  */
-const JUDGING = `- 经历一次给一批，按所属的条件分组，每组写着条件的 label 和 criterion。每段写着在哪家公司
-  或哪个部门、序列、岗位、从简历读出的技能（前面是投入：主导、做过、提到）和简历原文。
-- 每一段按它所属条件的 criterion 判，用 judge 把符合的段的编号交上来（fits）：这一段里看得出
-  他本人做过 criterion 说的事。只是提到、配合，或者做的是相近的另一件事，不交。没交的就是
-  不算，不用写出来。字面对得上不等于做的就是这件事：公司、部门、序列、岗位、技能、原文合起来看。
-  exclude 的条件一样判：这一段是不是 criterion 说的那种经历，是就交；人该不该排除不用你管。
-  只看写出来的内容，不猜没写的；不看这段离现在多久、做了多长。每一段都要看到，符合的不要漏。
-- 一批只交一次 judge，符合的编号全写在这一次里；交完会带回下一批，直到看完。`;
+const READING = `你在帮 HR 从公司内部的人才库里筛经历。给你一批经历，按所属的条件分组，每组写着条件的
+label 和 criterion。每段前面有编号 n，写着在哪家公司或哪个部门、序列、岗位、从简历读出的技能
+（前面是投入：主导、做过、提到）和简历原文。
+
+每一段按它所属那一组的 criterion 判，用 judge 把符合的段的编号交上来（fits）：这一段里看得出
+他本人做过 criterion 说的事。只是提到、配合，或者做的是相近的另一件事，不交。没交的就是不算，
+不用写出来。字面对得上不等于做的就是这件事：公司、部门、序列、岗位、技能、原文合起来看。
+照 criterion 里写明的算和不算来判；只看写出来的内容，不猜没写的；不看这段离现在多久、做了多长。
+每一段都要看到，符合的不要漏。只交一次，符合的编号全写在这一次里；一段都不符合就交空数组。`;
 
 /**
  * 模型提交整份条件和本轮说明；未提到的条件保持原样，无法表达的需求说明原因。
@@ -113,10 +107,15 @@ const JUDGING = `- 经历一次给一批，按所属的条件分组，每组写�
  * 数据目录是提示词的一部分（`catalogText`）：目录变了，`eval:understand` 要重跑。
  */
 const SYSTEM = `你在帮 HR 从公司内部的人才库里找人。给你的是当前的搜索条件（第一句话时是空的）和 HR
-这一次说的话。你要做两件事：写出整份新的搜索条件；把条件搜出来的候选人的经历读一遍，挑出
-HR 要的。两件事都做完，用 submit 提交，有需要时再对 HR 说一句话。名单上的人只从搜索来：
-你决定搜到的经历算不算，不添加搜索没找到的人，也不排名次。你没读过的经历不算数：名单上只有
-你读过、认可的人。
+这一次说的话；不是第一句话时，还有这次找人之前的对话。你要做两件事：写出整份新的搜索条件；
+让条件搜出来的候选人的经历按你写的判据读一遍。两件事都做完，用 submit 提交，有需要时再对 HR
+说一句话。名单上的人只从搜索来：搜到的经历算不算按你写的判据定，不添加搜索没找到的人，也不排
+名次。没读过的经历不算数：名单上只有读过、算数的人。
+
+之前的对话写着 HR 前几轮说过的话、自己改过什么，每一轮之后条件加了什么、去掉了什么，你对 HR
+说过、问过什么。用它读懂这句话接的是哪一句、指的是什么（「不是这个意思」「还是按刚才那样」
+「第二种」）。条件以当前的条件表为准：之前说过、后来去掉的要求，这句话没有再提就不要加回来；
+之前的对话里也没有的要求不要自己补。
 
 改条件的规则：
 - 这句话没提到的条件原样抄回来，id、label、where、params 一个字都不改。
@@ -142,32 +141,35 @@ from 决定这条在问什么：
 （几个字的短语，写法很散）。
 - patterns 是一组正则（不分大小写），在全部说法里按字面把候选的经历找出来，命中的写在 h 上。
   这件事按字面找不出来、只能读了才知道（「能独当一面」「不是辅助性的工作」）时，patterns 给
-  空数组：where 圈出的每一段都是候选，都要你读，所以 where 要先把范围圈小。能按字面找的
+  空数组：where 圈出的每一段都是候选，都要读，所以 where 要先把范围圈小。能按字面找的
   一定写 patterns。
   宁可找宽：写这件事的词根，不要把每一种说法列一遍——说法列不全，漏掉的人就不在名单上。
   找商家服务写「商家」「商户」，不要写成「商家运营」「商家维护」「商家培训」一长串；同义词、
   行业叫法、英文和缩写、公司内部序列和岗位可能的叫法都要想到。英文缩写两头用 (?<![a-z]) 和
-  (?![a-z]) 挡住别的单词。找宽了不要紧，字面对得上的经历你会逐段读、把不算的判掉；只有会带进
-  几百上千段不相干经历的单字和泛词不要写（找用户增长时只写「增长」会带进销售业绩的增长）。
-  需求本身就是一个宽的方向（做运营的）时，写那个词。
+  (?![a-z]) 挡住别的单词。找宽了不要紧，字面对得上的经历会按 criterion 逐段读、把不算的判掉；
+  只有会带进几百上千段不相干经历的单字和泛词不要写（找用户增长时只写「增长」会带进销售业绩的
+  增长）。需求本身就是一个宽的方向（做运营的）时，写那个词。
 - criterion 用两三句话写清什么样的经历算 HR 要的、什么不算（字面像但做的是另一件事的、比需求
-  宽得多的、只是沾一点边的）。它是你读经历时下结论的标准，之后几轮沿用这条条件时还是它：
-  要离开这句话也读得懂。HR 对这件事的限定（「推荐方向的不算」「纯执行的不算」）也写在这里。
+  宽得多的、只是沾一点边的）。它是读经历时下结论的全部标准：读的时候只看得到这条的 label、
+  criterion 和那一段经历，看不到 HR 的话、这段对话和别的条件，之后几轮沿用这条条件时还是它。
+  所以要离开这句话也判得出来：HR 对这件事的限定（「推荐方向的不算」「纯执行的不算」）、之前的
+  对话里说定的算和不算，都写在这里。
 - 写之前先用 find 看这件事在人才库里有哪些叫法、各有多少人。
 - 不要用 e.title、e.department 的字面去筛做过什么。
-- 写了 seek 的条件，名次按投入多深、多久、多近来排，你认可的那段就是名单上的证据。
+- 写了 seek 的条件，名次按投入多深、多久、多近来排，读下来算数的那段就是名单上的证据。
 - 只关心命中的是哪一类说法或投入时才用 h（h.route、h.engagement）；平常 where 里不必提 h。
 
-读经历、下结论：
-- 条件写好先用 probe 试跑，再用 read 把候选人还没看过的经历取来。取来的一批紧接着就交 judge，
-  中间不插别的调用。看的时候发现正则带进了一大类不相干的经历，先把手上这一批交了，再把正则
-  改窄、重新 probe；看过的不用再看。
-${JUDGING}
+读经历：
+- 条件写好先用 probe 试跑，再用 read 把候选人还没读过的经历读完。read 按每条条件的 criterion 逐段
+  判断这一段算不算、把结论记下，回给你每条这一次读了多少段、多少段算数，候选人还剩多少段没读。
+  经历的文字不给你看。
+- 一条读了很多段、算数的却很少，而且还剩很多没读，多半是正则带进了一大类不相干的经历：把正则
+  改窄、重新 probe，再 read；读过的不用再读。
 - 结论是按 criterion 的文字记下的：读过之后 criterion 一个字都不要改，提交的要和读的时候是同一份，
   改了读过的结论就都用不上。
-- 上一轮留下来、原样沿用的条件，以前看过的经历结论还在，read 只给没看过的。
-- 候选人很多时 read 从职级高的人给起，一轮给到上限为止。到了上限就提交：名单上方会告诉 HR
-  现在覆盖到了哪一级职级，你不用说，也不用为此改条件或问 HR。
+- 上一轮留下来、原样沿用的条件，以前读过的经历结论还在，read 只读没读过的。
+- 候选人很多时 read 从职级高的人读起，一轮读到上限为止。到了上限就提交：名单上方会告诉 HR
+  现在列到了哪一级职级，你不用说，也不用为此改条件或问 HR。
 
 在哪、哪一档、入职前还是公司内、多久：
 - 入职前的公司名、公司档只在 e.kind = 'external' 的段上；公司内的部门只在 e.kind = 'internal'
@@ -259,16 +261,16 @@ company_circles 名企组合。
   里怎么叫、正则有没有漏掉的叫法或捞宽了。它只列正则自己捞到的短说法；搜索时还会带上同一个词
   的其他写法和没读过的经历的简历原文，probe 数到的人可能更多。
 - probe：试跑一份完整的条件，看每条单独选中多少人（people；写了 seek 的是字面对得上的人，
-  含还没看的；exclude 数的是它最多会拦下的人）、名单上多少人、哪一条写不对，候选人有多少
-  （candidates）、他们还有多少段经历没看（unread）。人数和你理解的对不上时，回头看 where 和正则。
-- read、judge：读候选人还没看过的经历、交结论，见上面。
-调用的次数有限：通常 find 一次、probe 一次，然后 read 和 judge 把经历看完，再 submit。
-当前条件里原样留下的不用再 find；它们以前看过的经历结论还在，probe 的 unread 不是 0 时照样要 read。
+  含还没读的；exclude 数的是它最多会拦下的人）、名单上多少人、哪一条写不对，候选人有多少
+  （candidates）、他们还有多少段经历没读（unread）。人数和你理解的对不上时，回头看 where 和正则。
+- read：把候选人还没读过的经历读完，见上面。
+调用的次数有限：通常 find 一次、probe 一次、read 一次，再 submit。
+当前条件里原样留下的不用再 find；它们以前读过的经历结论还在，probe 的 unread 不是 0 时照样要 read。
 
 写好了用 submit 提交，检查通过这一轮就结束。没通过会告诉你哪里有问题，改好再提交。只有一种问题
 可以不改：说找不到人或找出的太多，而那正是用户明说的要求、人才库里本来就没有这样的人时，把同一份
 原样再提交一次，没有这样的人也是一个结果。label、where、正则写不对或跑不了的，原样再交也不收；
-候选人还有经历没看的也不收，看完再交。
+候选人还有经历没读的也不收，读完再交。
 用户点名的公司、学校、档找不到人，不换成别的名字、别的档，也不因此拆开或改写修饰语挂在哪；
 照用户说的写，在 note 里说一句人才库里没有。
 
@@ -282,7 +284,7 @@ ${catalogText()}
 
 下面的例子假设 level_band 有 P5、P6、P7、P8；company_tag 有 头部大厂、知名公司；行业里有
 消费/零售 和它下面的 外卖；记录流 perf 是半年一期的绩效，档从低到高 C、B、B+、A、A+。例子里的正则和名字都已经查过，
-人才库里就是这样叫的；候选人的经历也都读过、交过结论。例子只写最后提交的内容。
+人才库里就是这样叫的；候选人的经历也都用 read 读过。例子只写最后提交的内容。
 
 例一。当前的条件：[]。这句话：算法和后端都做过的，比较资深的，最好是字节来的
 {"conditions": [
@@ -338,14 +340,6 @@ ${catalogText()}
   {"label": "做过用户运营", "mode": "must", "from": "experience", "seek": {"criterion": "本人做用户运营：用户分层、活跃、留存、社群、会员这类面向用户的运营都算。商家运营、内容审核、客服不算。", "patterns": ["用户运营", "社群", "会员运营", "用户(活跃|留存|分层)"]}, "where": "true"},
   {"label": "做过销售", "mode": "exclude", "from": "experience", "seek": {"criterion": "本人做销售：背销售指标、直接面向客户卖产品或签单的岗位都算。售前支持、销售运营、给销售团队做培训的不算。", "patterns": ["销售", "(?<![a-z])(bd|sales)(?![a-z])", "大客户", "客户经理"]}, "where": "true"}],
  "note": null}`;
-
-/** HR 直接改条件之后：条件已经定了，模型只读经历、下结论，只有 `judge` 这一个工具。 */
-const CONFIRMING = `你在帮 HR 从公司内部的人才库里找人。HR 自己在名单上方改了搜索条件，条件已经定了，
-不用你写。名单上只有你读过、认可的人：把这份条件找出的候选人里你还没读过的经历读完，挑出 HR
-要的，用 judge 交上来。
-
-读经历、下结论：
-${JUDGING}`;
 
 /** 有限取值的几维写进提示词时的标题（目录里的列），按提示词里的顺序。 */
 const VOCAB_HEADING: readonly (readonly [keyof Vocabulary, string])[] = [
@@ -409,37 +403,10 @@ export class UnansweredError extends Error {
 	override name = "UnansweredError";
 }
 
-/** 交过结论的那一批经历留给模型的一句话。 */
-const BATCH_DONE = { note: "这一批已经交过结论" };
-
 /**
- * 模型眼前只留一批经历。读经历和下结论的工具结果里带着一整批经历的内容，它能交结论的只有
- * 最后一条工具消息里的那一批（`agent-tools.ts` 的 `advance` 是同一条规则）；之前的换成一句话，
- * 一轮读上千段时每次请求也只带一批。换过的消息沿用到之后的每一步。
- */
-function onlyLatestBatch(messages: ModelMessage[]): ModelMessage[] {
-	const last = messages.map((message) => message.role).lastIndexOf("tool");
-	return messages.map((message, i) =>
-		message.role !== "tool" || i === last
-			? message
-			: {
-					...message,
-					content: message.content.map((part) =>
-						part.type === "tool-result" && BATCH_TOOLS.includes(part.toolName)
-							? {
-									...part,
-									output: { type: "json" as const, value: BATCH_DONE },
-								}
-							: part,
-					),
-				},
-	);
-}
-
-/**
- * 当前条件（`agent` 的 `base`）+ 一句话 → 提交检查录取的条件和说明，写进记录的就是它。
+ * 当前条件（`agent` 的 `base`）+ 之前的对话 + 一句话 → 提交检查录取的条件和说明，写进记录的就是它。
  *
- * 模型先捞说法、查名字、试跑、读候选人的经历并挑出符合的（`agent-tools.ts`），再用 `submit`
+ * 模型先捞说法、查名字、试跑、让候选人的经历读完（`agent-tools.ts`），再用 `submit`
  * 提交；没通过检查就改了再提交，通过了就停，最多调用 `AGENT_STEPS` 次模型。次数用完时最后
  * 一次提交即使没通过检查也用它：录取的那份里没有跑不了的条件，形状不合规的也已去掉。一次都
  * 没提交、或者录取的那份不算作答（提交检查判的），抛 `UnansweredError`。
@@ -451,10 +418,13 @@ export async function understand(
 		vocab,
 		streams,
 		company,
+		history,
 	}: {
 		vocab: Vocabulary;
 		streams: readonly StreamFact[];
 		company: CompanyFacts;
+		/** 这次找人之前几轮的经过（`search/history.ts`）；第一句话时为空。 */
+		history: readonly string[];
 	},
 	agent: AgentTools,
 	/** 这一次处理被取代时触发：不再往下调模型。 */
@@ -466,21 +436,18 @@ export async function understand(
 		maxRetries: 0,
 		tools: agent.tools,
 		toolChoice: "required",
-		// 一步里的几次工具调用按顺序执行：读经历和下结论共用一份状态
+		// 一步里的几次工具调用按顺序执行：读经历和试跑共用这一轮读了多少的那份状态
 		toolCallConcurrency: 1,
 		abortSignal,
 		stopWhen: [isStepCount(AGENT_STEPS), agent.passed],
-		prepareStep: ({ stepNumber, messages }) => {
-			agent.advance();
-			const kept = onlyLatestBatch(messages);
-			return stepNumber === AGENT_STEPS - 1
+		prepareStep: ({ stepNumber, messages }) =>
+			stepNumber === AGENT_STEPS - 1
 				? {
 						activeTools: [SUBMIT],
 						toolChoice: { type: "tool", toolName: SUBMIT },
-						messages: [...kept, { role: "user", content: LAST_STEP }],
+						messages: [...messages, { role: "user", content: LAST_STEP }],
 					}
-				: { messages: kept };
-		},
+				: {},
 		instructions: SYSTEM,
 		prompt: [
 			"取值",
@@ -488,12 +455,13 @@ export async function understand(
 			...companyLines(company),
 			"\n记录流",
 			...(streams.length > 0 ? streams.map(streamLine) : ["（没有）"]),
+			...(history.length > 0 ? ["\n之前的对话：", ...history] : []),
 			// 停用是用户在 chip 上的操作，模型写不出也不必看见：它原样写回这一条，
 			// 停用状态由 `understood` 从上一轮带回来
 			`\n当前的条件表：${JSON.stringify(agent.base.map((c) => withOff(c, null)))}`,
 			`\n这句话：${text}`,
 		].join("\n"),
-		// 同一句话每次写出同一组条件，同一批经历每次给出同样的结论
+		// 同一句话每次写出同一组条件
 		temperature: 0,
 		maxOutputTokens: MAX_OUTPUT_TOKENS,
 	}).then(
@@ -521,73 +489,57 @@ export async function understand(
 	return answer.admitted;
 }
 
-/** 第一批经历在消息里的那次 `read` 的编号：服务端替模型取的，取的就是这份条件的第一批。 */
-const FIRST_READ = "first-read";
+/** 读一批经历的回答不合约定时，同一批最多再问几次。 */
+const JUDGE_RETRIES = 1;
+
+const judgeInput = z.object({
+	fits: z.array(z.int()).meta({
+		description: "这一批里符合的段的编号；一段都不符合就给空数组",
+	}),
+});
+const judgeTool = tool({
+	description: "交上这一批经历里符合的段的编号。",
+	inputSchema: judgeInput,
+});
 
 /**
- * 条件已经定了（HR 自己改的），只把候选人里还没确认过的经历读完。同一个模型，读经历的规则和
- * 理解一句话时是同一份（`JUDGING`），只给 `judge` 这一个工具：第一批由服务端按这份条件取来，
- * 作为一次 `read` 的结果放在消息里，之后每交一次结论带回下一批，直到读到头或到这一轮的上限。
- * 没有要读的，或者这份条件出不了名单（搜索那一侧有自己的说法），不调模型。没读到头就停下的
- * （工具出错、模型不交结论、次数用完）抛错：名单还不完整，要让人看得到、能重试。
+ * 读一批经历：一次单独的请求，只给这一批和每组的标签、判据（`READING`），交回符合的段的编号。
+ * 回答不合约定（没交、交的编号不在这一批里）时同一批再问一次，还不行这一次读经历就失败：
+ * 没交的按不算存，存错了没有机会重读，所以不收一份对不上号的回答。这不是没读懂 HR 的话，
+ * 抛的是普通的错误，不是 `UnansweredError`。同时发出的请求数由 `READ_CONCURRENCY` 封顶。
  */
-export async function confirm(
-	query: Query,
-	agent: AgentTools,
-	/** 这一次处理被取代时触发：不再往下调模型。 */
-	abortSignal?: AbortSignal,
-): Promise<void> {
-	const first = await agent.begin(query);
-	if (!first) return;
-	const { steps } = await generateText({
-		model: getModel(),
-		maxRetries: 0,
-		tools: { judge: agent.tools.judge },
-		toolChoice: "required",
-		toolCallConcurrency: 1,
-		abortSignal,
-		stopWhen: [isStepCount(CONFIRM_STEPS), () => !agent.awaiting()],
-		prepareStep: ({ messages }) => {
-			agent.advance();
-			return { messages: onlyLatestBatch(messages) };
-		},
-		instructions: CONFIRMING,
-		messages: [
-			{
-				role: "user",
-				content: "HR 刚改过搜索条件。读下面这份条件取来的经历，交上符合的段。",
-			},
-			{
-				role: "assistant",
-				content: [
-					{
-						type: "tool-call",
-						toolCallId: FIRST_READ,
-						toolName: "read",
-						input: { conditions: query.conditions.filter((c) => !c.off) },
-					},
-				],
-			},
-			{
-				role: "tool",
-				content: [
-					{
-						type: "tool-result",
-						toolCallId: FIRST_READ,
-						toolName: "read",
-						output: { type: "json", value: first },
-					},
-				],
-			},
-		],
-		temperature: 0,
-		maxOutputTokens: MAX_OUTPUT_TOKENS,
+export const judgeSegments: Judge = (groups, abortSignal) =>
+	readGate(async () => {
+		const numbers = new Set(
+			groups.flatMap((group) => group.segments.map((segment) => segment.n)),
+		);
+		for (let attempt = 0; ; attempt++) {
+			const fits = await generateText({
+				model: getModel(),
+				maxRetries: 0,
+				tools: { judge: judgeTool },
+				toolChoice: { type: "tool", toolName: "judge" },
+				abortSignal,
+				instructions: READING,
+				prompt: JSON.stringify(groups),
+				// 同一批经历每次给出同样的结论
+				temperature: 0,
+				maxOutputTokens: MAX_OUTPUT_TOKENS,
+			}).then(
+				({ toolCalls }) =>
+					judgeInput.safeParse(
+						toolCalls.find((call) => call.toolName === "judge")?.input,
+					).data?.fits,
+				(error) => {
+					// 必须调用工具的一步没有调用：和交了一份对不上号的一样，再问一次
+					if (!ToolChoiceViolationError.isInstance(error)) throw error;
+					return undefined;
+				},
+			);
+			if (fits?.every((n) => numbers.has(n))) return [...new Set(fits)];
+			if (attempt >= JUDGE_RETRIES)
+				throw new Error(
+					"读经历的模型没有按约定交结论：没交，或者交的编号不在这一批里",
+				);
+		}
 	});
-	if (agent.finished()) return;
-	const failed = steps
-		.flatMap((step) => step.content)
-		.find((part) => part.type === "tool-error");
-	throw (
-		failed?.error ?? new Error("候选人的经历没有读到头：模型没有把结论交完")
-	);
-}
