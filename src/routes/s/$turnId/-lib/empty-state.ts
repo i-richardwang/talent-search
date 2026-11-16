@@ -1,6 +1,6 @@
 import { SEARCHABLE } from "#/search/condition-label";
 import type { EmptyReason } from "#/search/empty";
-import { type QueryCondition, withOff } from "#/search/query";
+import { labelsInSentence, type QueryCondition, withOff } from "#/search/query";
 import type { SearchMode } from "#/server/turn";
 import { CLEARED_FILTERS, type View } from "./view-params";
 
@@ -86,14 +86,30 @@ const COPY: {
 			onClick: () => h.onChange(CLEARED_FILTERS),
 		},
 	}),
-	unmet: (_reason, h) => ({
-		title: "没有同时满足必须条件的人",
-		hint:
-			h.mode === "keyword"
-				? "移除一个关键词可以扩大范围。"
-				: "把次要条件改为「加分」可以扩大范围。",
-		action: { label: "调整条件", onClick: h.onEditQuery },
-	}),
+	// 决定谁上名单的是启用着、不是加分的那几项：只有一项时是这一项没有人，几项时是没有人都符合
+	unmet: (_reason, h) => {
+		const deciding = h.conditions.filter((c) => !c.off && c.mode !== "boost");
+		const named = labelsInSentence(deciding);
+		const [title, hint] =
+			deciding.length > 1
+				? [
+						"没有人同时符合这几项条件",
+						h.mode === "keyword"
+							? "没有人的简历同时写到这几个关键词，移除一个关键词可以扩大范围。"
+							: `${named}，这几项要都符合才会列出。把其中一项改为「加分」，符合其余几项的人也会列出，都符合的排在前面。`,
+					]
+				: [
+						"没有找到符合的人",
+						h.mode === "keyword"
+							? "人才库里没有简历写到这个词，换一个说法试试。"
+							: `人才库里没有找到符合「${named}」的人，可以换一种说法，或把要求放宽一些。`,
+					];
+		return {
+			title,
+			hint,
+			action: { label: "调整条件", onClick: h.onEditQuery },
+		};
+	},
 	noneMatched: (_reason, h) => ({
 		title: "没有相关的人",
 		hint: "所有条件都是加分项，但没有人满足其中任何一项。",

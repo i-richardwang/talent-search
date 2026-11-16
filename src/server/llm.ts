@@ -89,15 +89,17 @@ function getModel() {
 
 /**
  * 读一批经历的请求（`judgeSegments`）的全部指令。它看不到 HR 的话，也看不到别的条件：算和不算
- * 全凭每一组的 criterion。
+ * 全凭这一批的 criterion。
  */
-const READING = `你在帮 HR 从公司内部的人才库里筛经历。给你一批经历，按所属的条件分组，每组写着条件的
-label 和 criterion。每段前面有编号 n，写着在哪家公司或哪个部门、序列、岗位、从简历读出的技能
+const READING = `你在帮 HR 从公司内部的人才库里筛经历。给你一条条件的 label 和 criterion，和要按它判的
+一批经历（segments）。每段前面有编号 n，写着在哪家公司或哪个部门、序列、岗位、从简历读出的技能
 （前面是投入：主导、做过、提到）和简历原文。
 
-每一段按它所属那一组的 criterion 判，用 judge 把符合的段的编号交上来（fits）：这一段里看得出
-他本人做过 criterion 说的事。只是提到、配合，或者做的是相近的另一件事，不交。没交的就是不算，
-不用写出来。字面对得上不等于做的就是这件事：公司、部门、序列、岗位、技能、原文合起来看。
+每一段都按 criterion 判，用 judge 把符合的段的编号交上来（fits）：这一段里看得出他本人做过
+criterion 说的事。只是提到、配合，或者做的是相近的另一件事，不交。没交的就是不算，不用写出来。
+字面对得上不等于做的就是这件事：公司、部门、序列、岗位、技能、原文合起来看。很多段只登记了
+序列和岗位，没有技能和原文：序列或岗位本身就是 criterion 说的那类工作就算（criterion 问做没做过
+招聘，岗位是「招聘专员」），不因为没有更多描述判成不算；岗位看不出做的是哪一类才不算。
 照 criterion 里写明的算和不算来判；只看写出来的内容，不猜没写的；不看这段离现在多久、做了多长。
 每一段都要看到，符合的不要漏。只交一次，符合的编号全写在这一次里；一段都不符合就交空数组。`;
 
@@ -503,16 +505,15 @@ const judgeTool = tool({
 });
 
 /**
- * 读一批经历：一次单独的请求，只给这一批和每组的标签、判据（`READING`），交回符合的段的编号。
+ * 读一批经历：一次单独的请求，只给一条条件的标签、判据和它的一批经历（`READING`），交回符合的
+ * 段的编号。
  * 回答不合约定（没交、交的编号不在这一批里）时同一批再问一次，还不行这一次读经历就失败：
  * 没交的按不算存，存错了没有机会重读，所以不收一份对不上号的回答。这不是没读懂 HR 的话，
  * 抛的是普通的错误，不是 `UnansweredError`。同时发出的请求数由 `READ_CONCURRENCY` 封顶。
  */
-export const judgeSegments: Judge = (groups, abortSignal) =>
+export const judgeSegments: Judge = (batch, abortSignal) =>
 	readGate(async () => {
-		const numbers = new Set(
-			groups.flatMap((group) => group.segments.map((segment) => segment.n)),
-		);
+		const numbers = new Set(batch.segments.map((segment) => segment.n));
 		for (let attempt = 0; ; attempt++) {
 			const fits = await generateText({
 				model: getModel(),
@@ -521,7 +522,7 @@ export const judgeSegments: Judge = (groups, abortSignal) =>
 				toolChoice: { type: "tool", toolName: "judge" },
 				abortSignal,
 				instructions: READING,
-				prompt: JSON.stringify(groups),
+				prompt: JSON.stringify(batch),
 				// 同一批经历每次给出同样的结论
 				temperature: 0,
 				maxOutputTokens: MAX_OUTPUT_TOKENS,

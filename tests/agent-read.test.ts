@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import type { TraceStep } from "#/search/trace";
-import type { Group, Judge } from "#/server/reading";
+import type { Judge } from "#/server/reading";
 import {
 	agentOn,
 	type Checked,
@@ -24,7 +24,7 @@ import {
 const teardown = await setup();
 after(teardown);
 
-const { READ_BATCH, READ_MAX, READ_WAVE } = await import("#/server/reading");
+const { READ_BATCH, READ_MAX } = await import("#/server/reading");
 const { criterionKey } = await import("#/search/verdict");
 const { execute } = await import("#/search/execute");
 const { pool } = await import("#/db");
@@ -118,8 +118,6 @@ async function agent(judge?: Judge) {
 	return { ...(await agentOn(search, [], judge)), search };
 }
 
-const segmentsOf = (batch: readonly Group[]) =>
-	batch.flatMap((group) => group.segments);
 /** 这次找人任务里一条判据下存了哪些结论。 */
 async function saved(search: string, criterion: string) {
 	const { rows } = await pool.query<{ fits: boolean }>(
@@ -131,7 +129,7 @@ async function saved(search: string, criterion: string) {
 const plain = (steps: TraceStep[]) => steps.map(({ at: _at, ...step }) => step);
 
 describe("读经历", () => {
-	test("读候选人没读过的经历：按条件分组，每段有编号，职级高的人在前；给的是在哪、序列、岗位、技能和原文，没有姓名、工号和起止时间；回来的是每条读了多少、多少算数", async () => {
+	test("读候选人没读过的经历：一批只读一条条件的，每段有编号，职级高的人在前；给的是在哪、序列、岗位、技能和原文，没有姓名、工号和起止时间；回来的是每条读了多少、多少算数", async () => {
 		const { call, steps, seen, search } = await agent();
 		const criterion = "本人做设备巡检";
 		const done = await call<Read>("read", {
@@ -140,11 +138,8 @@ describe("读经历", () => {
 		assert.equal(seen.length, 1, "三段一批读完");
 		const [batch] = seen;
 		assert.ok(batch);
-		assert.deepEqual(
-			batch.map((g) => [g.label, g.criterion]),
-			[["做过巡检", criterion]],
-		);
-		const segments = segmentsOf(batch);
+		assert.deepEqual([batch.label, batch.criterion], ["做过巡检", criterion]);
+		const { segments } = batch;
 		assert.deepEqual(
 			segments.map((s) => [s.n, /岗位：(.*)/.exec(s.text)?.[1]]),
 			[
@@ -216,7 +211,7 @@ describe("读经历", () => {
 			[1],
 			"字面只在原文末尾对得上",
 		);
-		assert.ok(segmentsOf(seen[0] ?? [])[0]?.text.endsWith(tail));
+		assert.ok(seen[0]?.segments[0]?.text.endsWith(tail));
 	});
 
 	test("排除的条件一样读、一样判：判成符合，这个人就不在名单上；没读之前他是候选，不上名单", async () => {
@@ -242,12 +237,12 @@ describe("读经历", () => {
 		assert.deepEqual(await listed(), [[], { above: null }]);
 		const read = await call<Read>("read", { conditions });
 		assert.deepEqual(
-			seen[0]?.map((g) => [g.label, g.segments.length]),
+			seen.map((batch) => [batch.label, batch.segments.length]),
 			[
 				["做过巡检", 3],
 				["做过销售", 1],
 			],
-			"XJ03 的岗位里有「销售」",
+			"两条条件各读各的一批；XJ03 的岗位里有「销售」",
 		);
 		assert.equal(read.left, 0);
 		assert.deepEqual(await listed(), [["XJ01", "XJ02"], undefined]);
@@ -301,22 +296,18 @@ describe("读经历", () => {
 			done.conditions?.map((c) => c.read),
 			[2],
 		);
-		assert.ok(
-			segmentsOf(seen[0] ?? []).every((s) => !s.text.includes("巡检组长")),
-		);
+		assert.ok(seen[0]?.segments.every((s) => !s.text.includes("巡检组长")));
 	});
 
 	test("一批读不完的分成几批同时读：每一批自己从 1 编号，各交各的结论", async () => {
 		let reading = 0;
 		let together = 0;
-		const { call, steps, seen, search } = await agent(async (groups) => {
+		const { call, steps, seen, search } = await agent(async (batch) => {
 			together = Math.max(together, ++reading);
 			// 让出一拍：别的批这时已经发出去了
 			await new Promise((resolve) => setTimeout(resolve, 5));
 			reading--;
-			return seen.length > 0 && groups === seen[0]
-				? []
-				: segmentsOf(groups).map((s) => s.n);
+			return batch.segments.map((s) => s.n);
 		});
 		const criterion = "本人做叉车调度";
 		const done = await call<Read>("read", {
@@ -324,7 +315,7 @@ describe("读经历", () => {
 		});
 		assert.equal(together, 2, "两批同时在读");
 		assert.deepEqual(
-			seen.map((batch) => segmentsOf(batch).map((s) => s.n)),
+			seen.map((batch) => batch.segments.map((s) => s.n)),
 			[
 				Array.from({ length: READ_BATCH }, (_, i) => i + 1),
 				Array.from({ length: MANY - READ_BATCH }, (_, i) => i + 1),
@@ -350,8 +341,8 @@ describe("读经历", () => {
 	});
 
 	test("读完一波重新取当前候选：已经确定不满足必须条件的人，其余经历不再占读取额度", async () => {
-		// 一波读不完的一个人：一段铸件检测，其余是模具设计
-		const WAVE = READ_WAVE;
+		// 模具设计两批才读得完的一个人：一段铸件检测，其余是模具设计
+		const MOULDS = READ_BATCH * 2;
 		await seed([
 			{
 				empId: "CAST_HIGH",
@@ -359,7 +350,7 @@ describe("读经历", () => {
 				curLevel: "P8",
 				segments: [
 					{ months: 12, title: "铸件检测高档" },
-					...Array.from({ length: WAVE }, (_, i) => ({
+					...Array.from({ length: MOULDS }, (_, i) => ({
 						months: 12,
 						title: `模具设计高档${i}`,
 					})),
@@ -384,9 +375,13 @@ describe("读经历", () => {
 		];
 		const done = await call<Read>("read", { conditions });
 		assert.equal(done.left, 0);
-		const texts = seen.flatMap((batch) => segmentsOf(batch).map((s) => s.text));
-		assert.equal(texts.length, WAVE + 2, "甲剩下的那一段没有再读");
-		assert.ok(texts.slice(WAVE).every((text) => text.includes("低档")));
+		const texts = seen.flatMap((batch) => batch.segments.map((s) => s.text));
+		assert.equal(
+			texts.filter((text) => text.includes("模具设计高档")).length,
+			READ_BATCH,
+			"甲的模具设计只读了第一波里的那一批，判出局之后剩下的没有再读",
+		);
+		assert.equal(texts.length, READ_BATCH + 3);
 		const query = {
 			conditions: [
 				judged("铸件检测", ["铸件检测"], "本人做铸件检测"),
@@ -405,7 +400,7 @@ describe("读经历", () => {
 		const conditions = [seeking("做过装配", ["装配"], criterion)];
 		const done = await call<Read>("read", { conditions });
 		assert.deepEqual(
-			segmentsOf(seen[0] ?? []).map((s) => s.text.includes("装配班长")),
+			seen[0]?.segments.map((s) => s.text.includes("装配班长")),
 			Array.from({ length: READ_BATCH }, (_, i) => i < LEADS),
 			"职级高的那几位在最前面",
 		);
@@ -472,9 +467,9 @@ describe("读经历", () => {
 	});
 
 	test("有一批没读成：这一次读经历失败，别的批交上来的结论照存", async () => {
-		const { call, search } = await agent(async (groups) => {
-			if (segmentsOf(groups).length < READ_BATCH) throw new Error("端点坏了");
-			return segmentsOf(groups).map((s) => s.n);
+		const { call, search } = await agent(async (batch) => {
+			if (batch.segments.length < READ_BATCH) throw new Error("端点坏了");
+			return batch.segments.map((s) => s.n);
 		});
 		const criterion = "本人做叉车调度";
 		await assert.rejects(
@@ -559,8 +554,11 @@ describe("提交前候选人的经历要读完", () => {
 		});
 		const done = await call<Read>("read", { conditions: [must, boost] });
 		assert.deepEqual(
-			seen.map((batch) => batch.map((g) => [g.label, g.segments.length])),
-			[[["做过巡检", 3]], [["带过班组", 2]]],
+			seen.map((batch) => [batch.label, batch.segments.length]),
+			[
+				["做过巡检", 3],
+				["带过班组", 2],
+			],
 		);
 		assert.equal(done.left, 0);
 		assert.deepEqual(await call("submit", table([must, boost])), {

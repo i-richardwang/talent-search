@@ -152,10 +152,19 @@ describe("其余分支各有各的文案", () => {
 		assert.deepEqual(run({ kind: "filtered" }).changed, CLEARED_FILTERS);
 	});
 
-	test("AND 没满足：指向把某条必须的主张改成加分", () => {
-		const s = run({ kind: "unmet" });
-		assert.match(s.hint, /加分/);
+	test("几项条件没有人都符合：说出是哪几项，指向把其中一项改成加分", () => {
+		const s = run({ kind: "unmet" }, "算法,渠道运营,+产品");
+		assert.equal(s.title, "没有人同时符合这几项条件");
+		assert.match(s.hint, /^算法、渠道运营，/, "加分的那一项不决定谁上名单");
+		assert.match(s.hint, /改为「加分」/);
 		assert.equal(s.focused, true);
+	});
+
+	test("只有一项条件没有人符合：没有哪一项可以改成加分，下一步是换说法", () => {
+		const s = run({ kind: "unmet" }, "算法,+产品");
+		assert.equal(s.title, "没有找到符合的人");
+		assert.match(s.hint, /没有找到符合「算法」的人/);
+		assert.doesNotMatch(s.hint, /加分/);
 	});
 
 	test("全是加分条件却没人：下一步是换词，不能再让人「改成加分」", () => {
@@ -172,6 +181,9 @@ describe("关键词搜索的下一步只说框里能做的事", () => {
 		assert.doesNotMatch(unmet.hint, /加分/);
 		assert.match(unmet.hint, /移除一个关键词/);
 		assert.equal(unmet.focused, true);
+		const single = run({ kind: "unmet" }, "算法", "keyword");
+		assert.doesNotMatch(single.hint, /加分|移除/);
+		assert.match(single.hint, /换一个说法/);
 
 		const overflow = run(
 			{

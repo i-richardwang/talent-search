@@ -208,7 +208,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			/>,
 		);
 		// 先确认画出来的确实是空态那一支：两条 doesNotMatch 在一片空白上也成立
-		assert.match(text, /没有同时满足必须条件的人/);
+		assert.match(text, /没有找到符合的人/);
 		assert.doesNotMatch(text, /0\s*人/);
 		assert.doesNotMatch(text, /按证据排序/);
 	});
@@ -245,7 +245,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			/>,
 		);
 		assert.match(text, /正在补充符合条件的人…/);
-		assert.doesNotMatch(text, /没有同时满足必须条件的人|0\s*人/);
+		assert.doesNotMatch(text, /没有找到符合的人|0\s*人/);
 	});
 
 	test("名单还没列全时说列到了哪一档职级；最高一档也没列全就不说职级", () => {
