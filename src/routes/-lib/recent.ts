@@ -2,15 +2,15 @@ import { keywordsOf, keywordTitle } from "#/search/keywords";
 import { labelsInSentence } from "#/search/query";
 import { queryOfSpec } from "#/search/spec";
 import type { RecentSearch } from "#/server/turn";
-import { RECENT_COUNTS } from "./nav-prefs";
 
 /* 最近搜索的一条记录在导航栏、首页和全部记录的抽屉里怎么读。 */
 
-/** 首页「最近搜索」列几条。 */
+/** 导航栏和首页的「最近搜索」各列几条。 */
+export const NAV_RECENT_COUNT = 10;
 export const HOME_RECENT_COUNT = 8;
 
 /** 最近搜索一页取多少条：导航栏和首页都从第一页里切。 */
-export const RECENT_PAGE_SIZE = Math.max(...RECENT_COUNTS, HOME_RECENT_COUNT);
+export const RECENT_PAGE_SIZE = Math.max(NAV_RECENT_COUNT, HOME_RECENT_COUNT);
 
 /**
  * 一行记录读的是**任务标题**：对话的任务是链头那句话，回头找一次搜过的东西，

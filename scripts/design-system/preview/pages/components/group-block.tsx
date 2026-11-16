@@ -38,17 +38,11 @@ const RECORDS = [
 ];
 
 function Playground() {
-	const [count, setCount] = useState(true);
 	const [action, setAction] = useState(true);
 	const [description, setDescription] = useState(true);
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
-				<Control>
-					<Checkbox checked={count} onChange={setCount}>
-						组名后的数
-					</Checkbox>
-				</Control>
 				<Control>
 					<Checkbox checked={action} onChange={setAction}>
 						组名行尾的动作
@@ -64,7 +58,6 @@ function Playground() {
 				<div className="w-full max-w-page px-6">
 					<GroupBlock
 						action={action && <GroupBlockAction>查看全部</GroupBlockAction>}
-						count={count ? RECORDS.length : undefined}
 						title="最近搜索"
 					>
 						{RECORDS.map((record) => (
@@ -122,17 +115,17 @@ function Usage() {
 export function GroupBlockPage() {
 	return (
 		<DocPage
-			facts={["组名与数", "两行条目", "时间一列"]}
+			facts={["组名", "两行条目", "时间一列"]}
 			rules={{
 				notes: [
 					"首页输入框下面的一组条目用它：做过的事（最近搜索）用缺省的 record，一句可以拿去用的话（起步的例子）用 prose。",
 					'一条整行可点：render 传路由的 <Link>，只填进输入框的一条传 render={<button type="button" />}。',
-					"组名后的 count 数的是这一组列出来的条数；列不完时组名行尾放 GroupBlockAction「查看全部」。",
+					"列不完时组名行尾放 GroupBlockAction「查看全部」。",
 					"行尾的 extra 放时间，几行的时间竖着对成一列。",
 					"这一条说的那件事还在进行时给 loading：图标的位置换成转着的圈。",
 					"条目的字和组名、上面的输入框对齐，悬停的底比它们宽一截。",
 				],
-				usage: `<GroupBlock title="最近搜索" count={8} action={<GroupBlockAction>查看全部</GroupBlockAction>}>\n  <GroupBlockItem icon={MessageSquareTextIcon} title="…" description="…" extra="3 分钟前" render={<Link … />} />\n</GroupBlock>`,
+				usage: `<GroupBlock title="最近搜索" action={<GroupBlockAction>查看全部</GroupBlockAction>}>\n  <GroupBlockItem icon={MessageSquareTextIcon} title="…" description="…" extra="3 分钟前" render={<Link … />} />\n</GroupBlock>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用条目分组" },

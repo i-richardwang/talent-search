@@ -29,7 +29,7 @@ const POLL_BUSY_MS = 2000;
 const POLL_IDLE_MS = 10_000;
 
 function Tasks() {
-	const { corpus, judge, lanes, running } = Route.useLoaderData();
+	const { judge, lanes, running } = Route.useLoaderData();
 	const router = useRouter();
 
 	useEffect(() => {
@@ -44,7 +44,6 @@ function Tasks() {
 		<AdminPage title="任务">
 			<TaskBoard
 				busy={running}
-				corpus={corpus}
 				judge={judge}
 				lanes={lanes}
 				onDone={() => router.invalidate()}

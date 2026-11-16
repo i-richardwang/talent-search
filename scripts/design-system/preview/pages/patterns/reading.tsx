@@ -14,12 +14,7 @@ import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Stage } from "../../kit/stage";
 import { Routed, useOpenEmpId } from "../../routed";
-import {
-	CORPUS_COUNTS,
-	SEGMENTS,
-	SKILL_DETAIL,
-	TASK_LANES,
-} from "../../samples/admin";
+import { SEGMENTS, SKILL_DETAIL, TASK_LANES } from "../../samples/admin";
 import { SPEC } from "../../samples/conditions";
 import { EMPLOYEES, OUTCOME } from "../../samples/people";
 import { LATEST_TURN, LATEST_TURN_ID, THREAD } from "../../samples/thread";
@@ -75,7 +70,6 @@ function Logs() {
 					{SYNC_LANE && (
 						<TaskCard
 							busy={false}
-							corpus={CORPUS_COUNTS}
 							judge="model"
 							lane={SYNC_LANE}
 							onDone={() => {}}

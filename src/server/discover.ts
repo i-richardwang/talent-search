@@ -2,9 +2,8 @@
  * 数据目录的活统计：查询理解的 `discover` 工具和提示词里预先给的那一份。
  *
  * 只给人数和写法，不给人：有限取值的列给每个取值有多少人（和词表同一条语句，`search.ts`
- * 的 `valuesOf`）；公司、部门、学校按名字包含匹配，和条件一样
- * （`search.ts` 的 `lookupNames`）；记录流给覆盖
- * 的人数、期数和起止，不给任何一个人的记录。
+ * 的 `valuesOf`）；公司、部门、学校按名字包含匹配，和条件一样（`search.ts` 的 `lookupNames`）；
+ * 记录流给覆盖的人数、期数和起止，不给任何一个人的记录。
  */
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
@@ -13,7 +12,6 @@ import { CATALOG, catalogSchema, columnOf } from "#/search/catalog";
 import type { NameField } from "#/search/condition-label";
 import { lookupNames, valuesOf } from "#/search/search";
 import type { CompanyFacts, Discovery, StreamFact } from "#/search/trace";
-import { streamCoverage } from "./data";
 
 /** 按名字匹配的列，对应 `lookupNames` 的哪一种。 */
 const NAME_COLUMNS: Record<string, Record<string, NameField>> = {
@@ -22,32 +20,37 @@ const NAME_COLUMNS: Record<string, Record<string, NameField>> = {
 };
 
 /**
- * 每条记录流的覆盖与取值，提示词和 `discover` 的总览共用。评级流的取值是档位表里的档，
- * 从低到高；状态流的取值和看这条流的 `value` 列得到的是同一份，人多的在前。
+ * 每条记录流的覆盖与取值，提示词和 `discover` 的总览共用，按流名排；没有记录流的数据源是空表。
+ * 覆盖是多少人有记录、从哪一期到哪一期、最近一期：评级按期数（不同的开始日）计，状态按段的
+ * 开始日。评级流的取值是档位表里的档，从低到高；状态流的取值和看这条流的 `value` 列得到的是
+ * 同一份（`valuesOf`），人多的在前。
  */
 export async function streamFacts(): Promise<StreamFact[]> {
-	const [coverage, scales] = await Promise.all([
-		streamCoverage(),
-		withCorpusSnapshot((store) =>
-			store.execute<{ stream: string; values: string[] }>(sql`
-				select stream, array_agg(value order by rank) as values
-				from scale group by stream`),
-		),
-	]);
-	const scaleOf = new Map(scales.rows.map((r) => [r.stream, r.values]));
-	return Promise.all(
-		coverage.map(async (c) => ({
-			...c,
-			values:
-				c.kind === "rating"
-					? (scaleOf.get(c.stream) ?? [])
-					: (
-							await withCorpusSnapshot((store) =>
-								valuesOf(store, "status", "value", c.stream),
-							)
-						).map((v) => v.name),
-		})),
-	);
+	return withCorpusSnapshot(async (store) => {
+		const { rows } = await store.execute<StreamFact>(sql`
+			select s.stream, s.label, s.kind, s.period,
+				count(distinct r.emp_id)::int as people,
+				count(distinct r.period_start)::int as periods,
+				to_char(min(r.period_start), 'YYYY-MM-DD') as first,
+				(select json_build_object(
+					'start', to_char(l.period_start, 'YYYY-MM-DD'),
+					'end', to_char(max(l.period_end), 'YYYY-MM-DD'))
+				 from employee_record l
+				 where l.stream = s.stream
+				   and l.period_start = (select max(m.period_start) from employee_record m
+					where m.stream = s.stream)
+				 group by l.period_start) as latest,
+				coalesce((select array_agg(v.value order by v.rank) from scale v
+					where v.stream = s.stream), '{}') as values
+			from record_stream s left join employee_record r on r.stream = s.stream
+			group by s.stream order by s.stream`);
+		for (const fact of rows)
+			if (fact.kind === "status")
+				fact.values = (
+					await valuesOf(store, "status", "value", fact.stream)
+				).map((v) => v.name);
+		return rows;
+	});
 }
 
 /**

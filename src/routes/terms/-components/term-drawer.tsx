@@ -21,7 +21,7 @@ import {
 	DetailDrawer,
 	DetailSection,
 } from "../../-components/detail-drawer";
-import { daysAgo } from "./term-table";
+import { StatusBadge } from "../../-components/status-badge";
 
 /**
  * 一个词的人数、往上属于谁、往下带着谁；判成不是能力的词只有人数和这一句结论。
@@ -49,9 +49,13 @@ export function TermRecord({
 						{term.excluded ? " 人" : " 人（含细分）"}
 					</span>
 				</DescriptionsItem>
-				{term.excluded && (
+				{(term.pending || term.excluded) && (
 					<DescriptionsItem label="判定">
-						不是能力，不出现在筛选和候选词里
+						{term.pending ? (
+							<StatusBadge tone="pending">等待判定</StatusBadge>
+						) : (
+							"不是能力，不出现在筛选和候选词里"
+						)}
 					</DescriptionsItem>
 				)}
 				{term.parent && (
@@ -67,9 +71,6 @@ export function TermRecord({
 						{term.aliases.join("、")}
 					</DescriptionsItem>
 				)}
-				<DescriptionsItem label="上次判定">
-					{daysAgo(term.reviewedDaysAgo)}
-				</DescriptionsItem>
 			</Descriptions>
 			{term.children.length > 0 && (
 				<DetailSection count={`${term.children.length} 项`} title="细分">

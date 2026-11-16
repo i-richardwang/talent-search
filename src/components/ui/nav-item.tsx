@@ -4,14 +4,12 @@ import { LoaderCircleIcon, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "#/lib/utils";
 import {
-	AccordionAction,
 	AccordionHeader,
 	AccordionItem,
 	AccordionPanel,
 	AccordionRoot,
 	AccordionTrigger,
 } from "./accordion";
-import { ContextMenu } from "./context-menu";
 import { Icon } from "./icon";
 import { Text } from "./text";
 
@@ -92,36 +90,22 @@ export function NavGroups({
 	);
 }
 
-/** `headerMenu` 只挂在组名那一行上，组里的行各有各的右键菜单。 */
 export function NavGroup({
 	value,
 	title,
-	action,
-	headerMenu,
 	children,
 }: {
 	value: string;
 	title: string;
-	action?: ReactNode;
-	/** `renderDropdownMenuItems(...)` 或下拉菜单的原子件。 */
-	headerMenu?: ReactNode;
 	children: ReactNode;
 }) {
-	const header = (
-		<AccordionHeader>
-			<AccordionTrigger className="ui-nav-group-title">
-				{title}
-			</AccordionTrigger>
-			{action && <AccordionAction>{action}</AccordionAction>}
-		</AccordionHeader>
-	);
 	return (
 		<AccordionItem value={value}>
-			{headerMenu ? (
-				<ContextMenu menu={headerMenu}>{header}</ContextMenu>
-			) : (
-				header
-			)}
+			<AccordionHeader>
+				<AccordionTrigger className="ui-nav-group-title">
+					{title}
+				</AccordionTrigger>
+			</AccordionHeader>
 			<AccordionPanel contentClassName="ui-nav-group-items">
 				{children}
 			</AccordionPanel>

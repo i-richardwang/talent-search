@@ -78,11 +78,6 @@ export function AccordionTrigger({
 	);
 }
 
-/** 行尾的动作格，放在 AccordionHeader 里、AccordionTrigger 之后。 */
-export function AccordionAction({ children }: { children: ReactNode }) {
-	return <div className="ui-accordion-action">{children}</div>;
-}
-
 type AccordionPanelProps = Omit<
 	ComponentProps<typeof BaseAccordion.Panel>,
 	"className" | "render"

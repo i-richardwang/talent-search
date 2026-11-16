@@ -13,14 +13,12 @@ import { Icon } from "./icon";
 export function GroupBlock({
 	title,
 	description,
-	count,
 	action,
 	className,
 	children,
 }: {
 	title: string;
 	description?: ReactNode;
-	count?: number;
 	action?: ReactNode;
 	className?: string;
 	children: ReactNode;
@@ -29,12 +27,7 @@ export function GroupBlock({
 		<section aria-label={title} className={cn("ui-group-block", className)}>
 			<div className="ui-group-block-header">
 				<div className="ui-group-block-heading">
-					<div className="ui-group-block-title-row">
-						<h2 className="ui-group-block-title">{title}</h2>
-						{count !== undefined && (
-							<span className="ui-group-block-count">{count}</span>
-						)}
-					</div>
+					<h2 className="ui-group-block-title">{title}</h2>
 					{description && (
 						<p className="ui-group-block-description">{description}</p>
 					)}

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { after, before, describe, mock, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { CorpusCounts, TaskOutcome } from "#/server/tasks";
+import type { TaskOutcome } from "#/server/tasks";
 import { answerChat, setup } from "./fixture";
 
 const teardown = await setup();
@@ -26,9 +26,7 @@ async function underived() {
 	return total - done;
 }
 const { guideIdentity } = await import("#/corpus/vocabulary");
-const { formatDuration, LANE_FACTS } = await import(
-	"#/routes/tasks/-lib/labels"
-);
+const { formatDuration } = await import("#/routes/tasks/-lib/labels");
 const { acquireCorpusSession, corpusSessionOwner } = await import(
 	"#/corpus/session"
 );
@@ -117,22 +115,8 @@ describe("同步与解析", () => {
 		assert.equal(sync?.outcome, "done");
 		assert.equal(sync?.source, "csv-dir");
 		assert.match(await logText(sync?.id), /人群 29 人/);
-		assert.equal(state.corpus.derived, 0);
-	});
-
-	test("任务页的归并计数只包含当前短说法，不包含保留的旧词表", async () => {
-		await db.execute(sql`insert into term (word, canonical, parent, reviewed_at) values
-			('合成过往能力', '合成过往能力', null, now()),
-			('合成过往写法', '合成过往能力', null, now())`);
-		try {
-			const { corpus } = await tasksState();
-			assert.equal(corpus.words, 0);
-			assert.equal(corpus.merged, 0);
-		} finally {
-			await db.execute(
-				sql`delete from term where word in ('合成过往能力', '合成过往写法')`,
-			);
-		}
+		const derive = state.lanes.find((lane) => lane.kind === "derive");
+		assert.equal(derive?.progress?.done, 0);
 	});
 
 	test("解析给每一段算说法、连边、对齐序列，做完一段不剩", async () => {
@@ -186,9 +170,9 @@ describe("同步与解析", () => {
 		assert.deepEqual(after.rows[0], original);
 	});
 
-	test("数据页列出每条记录流的覆盖", async () => {
-		const { streamCoverage } = await import("#/server/data");
-		assert.deepEqual(await streamCoverage(), [
+	test("数据目录给出每条记录流的覆盖和取值", async () => {
+		const { streamFacts } = await import("#/server/discover");
+		assert.deepEqual(await streamFacts(), [
 			{
 				first: "2023-01-01",
 				kind: "status",
@@ -198,6 +182,7 @@ describe("同步与解析", () => {
 				period: "",
 				periods: 2,
 				stream: "hipo",
+				values: ["入池"],
 			},
 			{
 				first: "2023-01-01",
@@ -208,6 +193,7 @@ describe("同步与解析", () => {
 				period: "半年",
 				periods: 7,
 				stream: "perf",
+				values: ["C", "B", "B+", "A", "A+"],
 			},
 		]);
 	});
@@ -614,54 +600,6 @@ describe("说法规划", () => {
 });
 
 describe("页面文案", () => {
-	const corpus = (over: Partial<CorpusCounts> = {}): CorpusCounts => ({
-		employees: 8,
-		external: 4,
-		internal: 6,
-		derived: 10,
-		merged: 2,
-		phrases: 30,
-		segments: 10,
-		staging: false,
-		unanswered: 0,
-		words: 9,
-		...over,
-	});
-
-	/** 一组现状读成一句，方便比对。 */
-	const read = ({ progress, counts }: ReturnType<typeof LANE_FACTS.sync>) => {
-		const line = counts
-			.map((c) => {
-				const parts = c.parts
-					?.map((part) => `${part.label} ${part.value}`)
-					.join(" / ");
-				return `${c.value} ${c.label}${parts ? `（${parts}）` : ""}`;
-			})
-			.join("、");
-		return progress
-			? `${progress.done} / ${progress.total} ${progress.label}；${line}`
-			: line;
-	};
-
-	test("解析那一组说经历解析到哪了、有多少说法和几段没能作答", () => {
-		assert.equal(
-			read(LANE_FACTS.derive(corpus({ derived: 7, unanswered: 1 }))),
-			"7 / 10 段经历已解析；30 条说法、1 段 AI 未能作答",
-		);
-	});
-	test("标准更新期间解析那一组说检索还在用上一版", () => {
-		assert.equal(
-			read(LANE_FACTS.derive(corpus({ derived: 4, staging: true }))),
-			"4 / 10 段已按新标准解析，解析完之前检索沿用上一版；30 条说法、0 段 AI 未能作答",
-		);
-	});
-	test("同步说构成，整理说词表", () => {
-		assert.equal(
-			read(LANE_FACTS.sync(corpus())),
-			"8 人、10 段经历（公司内 6 / 入职前 4）",
-		);
-		assert.equal(read(LANE_FACTS.review(corpus())), "9 个标签、2 种写法已归并");
-	});
 	test("用时一小时以内到秒，以上到分，满一天进位成天", () => {
 		assert.equal(formatDuration(0), "0s");
 		assert.equal(formatDuration(42), "42s");

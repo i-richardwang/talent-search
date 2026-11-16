@@ -10,9 +10,9 @@ import "@tanstack/react-start/server-only";
 import { eq, sql } from "drizzle-orm";
 import {
 	currentTree,
+	type DeriveProgress,
 	derive,
 	identity,
-	type Progress,
 	progress,
 } from "#/corpus/derive";
 import type { Judge } from "#/corpus/judgment";
@@ -20,14 +20,13 @@ import type { Report } from "#/corpus/report";
 import { review } from "#/corpus/review";
 import {
 	acquireCorpusSession,
-	type CorpusClient,
 	type CorpusSession,
 	corpusSessionOwner,
 } from "#/corpus/session";
 import { type SourceConfig, sourceConfig } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
 import { db } from "#/db";
-import { SHORT_ROUTES, taskRun } from "#/db/schema";
+import { taskRun } from "#/db/schema";
 import { withReadSnapshot } from "#/db/snapshot";
 import { pageAt, RUNS_PAGE, type TablePage, tablePage } from "#/lib/paging";
 import { type Rejudge, TASK_KINDS, type TaskKind } from "#/lib/task";
@@ -119,35 +118,16 @@ export type TaskLane = {
 	latest: TaskRunView | null;
 	/** 页码由 `pageAt` 定夺，越界收回最后一页 */
 	runs: TablePage<TaskRunView>;
+	/** 解析那一栏带着解析做到哪了，卡片在还有段没解析完时画进度 */
+	progress?: DeriveProgress;
 };
 
 /** 每一栏要看第几页。没说的那一栏是第一页。 */
 export type TaskPages = Partial<Record<TaskKind, number>>;
 
-/**
- * 任务台三张卡片共用的语料计数，每次载入读取数据库当前状态。
- */
-export type CorpusCounts = {
-	employees: number;
-	/** 段：公司内、入职前，以及两者之和 */
-	internal: number;
-	external: number;
-	segments: number;
-	/** 已有当前标准结果的段，其中 AI 未能作答的段，以及检索是否还在读上一版 */
-	derived: number;
-	unanswered: number;
-	staging: boolean;
-	/** 说法条数 */
-	phrases: number;
-	/** 能力词个数，以及其中已经并到别的写法上的 */
-	words: number;
-	merged: number;
-};
-
 /** 任务台一次载入要的全部。 */
 type TasksState = {
 	lanes: TaskLane[];
-	corpus: CorpusCounts;
 	/**
 	 * 此刻有没有人在跑（按运行记录的身份核对锁的持有者）。页面照它决定轮询快慢，以及
 	 * 「立即运行」能不能按——跑着的时候按下去只会被回绝。
@@ -193,7 +173,7 @@ async function readTaskHeads(
 }
 
 export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
-	const corpus = await corpusCounts();
+	const derive = await deriveProgress();
 	return db.transaction(async (store) => {
 		// 锁住当前运行行，再读拿到锁的那个连接；收尾在这次观察完成后才能更新行、释放锁。
 		const heads = await readTaskHeads(store);
@@ -243,7 +223,6 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 		order by recent.started_at desc, recent.id desc`);
 
 		return {
-			corpus,
 			judge: reviewJudge(),
 			lanes: lanes.map(({ at, kind, latest, total }) => ({
 				kind,
@@ -253,49 +232,9 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 					total,
 					at,
 				),
+				...(kind === "derive" && { progress: derive }),
 			})),
 			running: active,
-		};
-	});
-}
-/**
- * 语料此刻的几个数，一趟问完。
- *
- * 「词」数的是短说法（`SHORT_ROUTES`）那几类边指到的说法，也就是人身上此刻有的、进词表的词；
- * 「已经并到别的写法上」只数当前短说法中已归并的词；全部计数读取同一份快照。
- */
-async function corpusCounts(): Promise<CorpusCounts> {
-	return withReadSnapshot(async (client) => {
-		const derived = await readDeriveProgress(client);
-		const counted = await client.query<Record<string, string>>(
-			`select
-				(select count(*) from employee) as employees,
-				(select count(*) from experience where kind = 'internal') as internal,
-				(select count(*) from experience where kind = 'external') as external,
-				(select count(*) from phrase) as phrases,
-				(select count(distinct phrase_id) from experience_phrase
-					where route = any($1::text[])) as words,
-				(select count(*) from term t join phrase p on p.text = t.word
-				 where t.canonical <> t.word and exists (
-				   select 1 from experience_phrase ep
-				   where ep.phrase_id = p.id and ep.route = any($1::text[]))) as merged`,
-			[[...SHORT_ROUTES]],
-		);
-		const row = counted.rows[0];
-		const n = (name: string) => Number(row?.[name] ?? 0);
-		const internal = n("internal");
-		const external = n("external");
-		return {
-			employees: n("employees"),
-			external,
-			internal,
-			merged: n("merged"),
-			derived: derived.done,
-			unanswered: derived.unanswered,
-			staging: derived.staging,
-			phrases: n("phrases"),
-			segments: internal + external,
-			words: n("words"),
 		};
 	});
 }
@@ -308,12 +247,10 @@ export async function taskLog(runId: number): Promise<string[]> {
 }
 
 /** 当前标准下的解析进度。后台任务用它决定这一轮有没有活，任务台用它画进度。 */
-export async function deriveProgress(): Promise<Progress> {
-	return withReadSnapshot(readDeriveProgress);
-}
-
-async function readDeriveProgress(client: CorpusClient): Promise<Progress> {
-	return progress(client, identity(await currentTree(client)));
+export async function deriveProgress(): Promise<DeriveProgress> {
+	return withReadSnapshot(async (client) =>
+		progress(client, identity(await currentTree(client))),
+	);
 }
 
 /**

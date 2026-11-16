@@ -85,29 +85,26 @@ export function identity(tree: SeqPair[]): string {
 }
 
 /**
- * 解析进度。`done` 是已有这一版结果的段，正式表里的和暂存的新结果都算，其中 `unanswered`
- * 段未能作答；`staging` 是检索此刻还在读上一版。后台任务看它决定有没有活，任务台画它。
+ * 解析进度。`done` 是已有这一版结果的段，正式表里的和暂存的新结果都算；`staging` 是
+ * 检索此刻还在读上一版。后台任务看它决定有没有活，任务台画它。
  */
-export type Progress = {
+export type DeriveProgress = {
 	total: number;
 	done: number;
-	unanswered: number;
 	staging: boolean;
 };
 
 export async function progress(
 	client: CorpusClient,
 	version: string,
-): Promise<Progress> {
+): Promise<DeriveProgress> {
 	const { rows } = await client.query<{
 		total: string;
 		done: string;
-		unanswered: string;
 		staging: boolean | null;
 	}>(
 		`select count(*) as total,
 			count(r.unanswered) as done,
-			count(*) filter (where r.unanswered) as unanswered,
 			bool_or(e.derived_identity <> $1) as staging
 		 from experience e
 		 left join experience_next n on n.experience_id = e.id and n.derived_identity = $1
@@ -120,7 +117,6 @@ export async function progress(
 	return {
 		total: Number(row?.total ?? 0),
 		done: Number(row?.done ?? 0),
-		unanswered: Number(row?.unanswered ?? 0),
 		staging: row?.staging ?? false,
 	};
 }

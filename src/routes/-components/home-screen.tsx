@@ -79,7 +79,6 @@ function RecentBlock() {
 					</GroupBlockAction>
 				)
 			}
-			count={recent ? shown.length : undefined}
 			title="最近搜索"
 		>
 			{recent === null ? (

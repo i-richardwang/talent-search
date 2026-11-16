@@ -1,7 +1,5 @@
 import {
-	CheckIcon,
 	EllipsisIcon,
-	HashIcon,
 	LinkIcon,
 	MessageSquareTextIcon,
 	TextSearchIcon,
@@ -14,24 +12,13 @@ import { Checkbox } from "#/components/ui/checkbox";
 import { ContextMenu } from "#/components/ui/context-menu";
 import {
 	type DropdownItem,
-	DropdownMenuItemContent,
-	DropdownMenuItemExtra,
-	DropdownMenuItemIcon,
-	DropdownMenuItemLabel,
 	DropdownMenuPopup,
 	DropdownMenuPortal,
 	DropdownMenuPositioner,
-	DropdownMenuRadioGroup,
-	DropdownMenuRadioItemIndicator,
-	DropdownMenuRadioItemPrimitive,
 	DropdownMenuRoot,
-	DropdownMenuSubmenuArrow,
-	DropdownMenuSubmenuRoot,
-	DropdownMenuSubmenuTrigger,
 	DropdownMenuTrigger,
 	renderDropdownMenuItems,
 } from "#/components/ui/dropdown-menu";
-import { Icon } from "#/components/ui/icon";
 import { NavGroup, NavGroups, NavItem } from "#/components/ui/nav-item";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
@@ -47,8 +34,6 @@ const RECORDS = [
 		label: "带过十人以上团队的测试负责人",
 	},
 ];
-
-const COUNTS = ["5", "10", "15"] as const;
 
 function Playground() {
 	const [danger, setDanger] = useState(true);
@@ -115,112 +100,49 @@ const recordItems = (onPick: (label: string) => void): DropdownItem[] => [
 
 function RecentGroupSample() {
 	const [open, setOpen] = useState(["recent"]);
-	const [count, setCount] = useState<string>(COUNTS[0]);
 	const [picked, setPicked] = useState<string | null>(null);
-	const groupMenu = (
-		<DropdownMenuSubmenuRoot>
-			<DropdownMenuSubmenuTrigger label="显示">
-				<DropdownMenuItemContent>
-					<DropdownMenuItemIcon>
-						<Icon icon={HashIcon} />
-					</DropdownMenuItemIcon>
-					<DropdownMenuItemLabel>显示</DropdownMenuItemLabel>
-					<DropdownMenuItemExtra>{count}</DropdownMenuItemExtra>
-					<DropdownMenuSubmenuArrow />
-				</DropdownMenuItemContent>
-			</DropdownMenuSubmenuTrigger>
-			<DropdownMenuPortal>
-				<DropdownMenuPositioner submenu>
-					<DropdownMenuPopup>
-						<DropdownMenuRadioGroup
-							onValueChange={(next) => setCount(next as string)}
-							value={count}
-						>
-							{COUNTS.map((n) => (
-								<DropdownMenuRadioItemPrimitive
-									key={n}
-									label={`${n} 条`}
-									value={n}
-								>
-									<DropdownMenuItemContent>
-										<DropdownMenuItemIcon>
-											<DropdownMenuRadioItemIndicator>
-												<Icon icon={CheckIcon} />
-											</DropdownMenuRadioItemIndicator>
-										</DropdownMenuItemIcon>
-										<DropdownMenuItemLabel>{n} 条</DropdownMenuItemLabel>
-									</DropdownMenuItemContent>
-								</DropdownMenuRadioItemPrimitive>
-							))}
-						</DropdownMenuRadioGroup>
-					</DropdownMenuPopup>
-				</DropdownMenuPositioner>
-			</DropdownMenuPortal>
-		</DropdownMenuSubmenuRoot>
-	);
 	return (
 		<div className="flex w-full max-w-(--container-nav) flex-col gap-2">
 			<NavGroups onValueChange={setOpen} value={open}>
-				<ContextMenu menu={groupMenu}>
-					<NavGroup
-						action={
-							<DropdownMenuRoot>
-								<DropdownMenuTrigger>
-									<ActionIcon
-										aria-label="最近搜索的更多操作"
-										icon={EllipsisIcon}
-										size="small"
-									/>
-								</DropdownMenuTrigger>
-								<DropdownMenuPortal>
-									<DropdownMenuPositioner>
-										<DropdownMenuPopup>{groupMenu}</DropdownMenuPopup>
-									</DropdownMenuPositioner>
-								</DropdownMenuPortal>
-							</DropdownMenuRoot>
-						}
-						title="最近搜索"
-						value="recent"
-					>
-						{RECORDS.map((record) => {
-							const items = recordItems((label) =>
-								setPicked(`${record.label} · ${label}`),
-							);
-							return (
-								<ContextMenu
-									key={record.id}
-									menu={renderDropdownMenuItems(items)}
+				<NavGroup title="最近搜索" value="recent">
+					{RECORDS.map((record) => {
+						const items = recordItems((label) =>
+							setPicked(`${record.label} · ${label}`),
+						);
+						return (
+							<ContextMenu
+								key={record.id}
+								menu={renderDropdownMenuItems(items)}
+							>
+								<NavItem
+									actions={
+										<DropdownMenuRoot>
+											<DropdownMenuTrigger>
+												<ActionIcon
+													aria-label={`「${record.label}」的更多操作`}
+													icon={EllipsisIcon}
+													size="small"
+												/>
+											</DropdownMenuTrigger>
+											<DropdownMenuPortal>
+												<DropdownMenuPositioner>
+													<DropdownMenuPopup>
+														{renderDropdownMenuItems(items)}
+													</DropdownMenuPopup>
+												</DropdownMenuPositioner>
+											</DropdownMenuPortal>
+										</DropdownMenuRoot>
+									}
+									icon={record.icon}
+									iconSize="small"
+									render={<button type="button" />}
 								>
-									<NavItem
-										actions={
-											<DropdownMenuRoot>
-												<DropdownMenuTrigger>
-													<ActionIcon
-														aria-label={`「${record.label}」的更多操作`}
-														icon={EllipsisIcon}
-														size="small"
-													/>
-												</DropdownMenuTrigger>
-												<DropdownMenuPortal>
-													<DropdownMenuPositioner>
-														<DropdownMenuPopup>
-															{renderDropdownMenuItems(items)}
-														</DropdownMenuPopup>
-													</DropdownMenuPositioner>
-												</DropdownMenuPortal>
-											</DropdownMenuRoot>
-										}
-										icon={record.icon}
-										iconSize="small"
-										render={<button type="button" />}
-									>
-										{record.label}
-									</NavItem>
-								</ContextMenu>
-							);
-						})}
-					</NavGroup>
-				</ContextMenu>
+									{record.label}
+								</NavItem>
+							</ContextMenu>
+						);
+					})}
+				</NavGroup>
 			</NavGroups>
 			<span className="px-2 text-fg-tertiary text-xs">
 				上一次点的是 {picked ?? "（还没有）"}
@@ -233,7 +155,7 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="组名上按右键是这一组的菜单（列几条）；按在一条记录上只开那一条自己的菜单（复制链接、删除）。两处都和行尾「…」是同一份项。"
+				description="按在一条记录上右键，打开那一条自己的菜单（复制链接、删除），和行尾「…」是同一份项。"
 				title="最近搜索"
 			>
 				<RecentGroupSample />
@@ -245,12 +167,12 @@ function Usage() {
 export function ContextMenuPage() {
 	return (
 		<DocPage
-			facts={["在指针处打开", "项与下拉菜单同一套", "可嵌套"]}
+			facts={["在指针处打开", "项与下拉菜单同一套"]}
 			rules={{
 				notes: [
 					"只给已经有「…」菜单的东西加右键菜单，项和「…」打开的是同一份，不多也不少。",
 					"弹层、项、子菜单都用下拉菜单的 renderDropdownMenuItems 与原子件；右键菜单只管在哪儿打开，没有展开动画。",
-					"触发区不占版面，包住的元素按平常排；里面再有右键菜单时，按在里面那一块上只开里面那一个。",
+					"触发区不占版面，包住的元素按平常排。",
 					"触屏上长按打开；键盘用户走行尾的「…」，右键菜单不是唯一的入口。",
 				],
 				usage: `<ContextMenu menu={renderDropdownMenuItems(items)}>\n  <NavItem actions={…} icon={…} render={<Link … />}>\n    做过推荐系统的后端\n  </NavItem>\n</ContextMenu>`,
