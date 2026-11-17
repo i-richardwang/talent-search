@@ -18,6 +18,10 @@ describe("导航阶段", () => {
 		);
 	});
 
+	test("去别的页面时名单保持原样，等的是那一页，不是名单", () => {
+		assert.deepEqual(navPhase(true, undefined, spot("a", QUERY)), IDLE);
+	});
+
 	test("换人不动名单——扫一遍三十个人不该把列表清空三十次", () => {
 		// 同一条查询记录、同一份视图，变的只是详情路由那一段
 		assert.deepEqual(navPhase(true, spot("a", QUERY), spot("a", QUERY)), IDLE);
