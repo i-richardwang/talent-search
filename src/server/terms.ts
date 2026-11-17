@@ -6,36 +6,32 @@ import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
 
 /**
- * 一个标准词连同它的其他写法、它的细分，全部展开成 `(term, word)`。
+ * 一批标准词各自底下有多少人，给出 `(term, people)` 的一张表；`terms` 是这批词，一个值或一条查询。
+ * 底下没有人的词不在表里。
  *
- * 人数是按这一堆词一起数的：`term` 是某一个标准词，`word` 是算进它那个数里的每一种
- * 写法——它自己、并进它的写法，以及它的细分连各自的写法，一层层往下。
+ * 一个词底下的人：短说法里写了它、它的其他写法，或它任一项细分（连细分的写法，一层层往下）的人，
+ * 各算一次。这是词表页呈现一支词有多大用的数；检索不顺着词表往下带。词表里的词有可能已经
+ * 不在语料里（写它的人的简历改了），那就没有人。只从这批词往下展开、整批一起数，花的工夫跟着
+ * 要的词数走。
  */
-const UNDER = sql`
-	with recursive under(term, word) as (
-		select canonical, word from term
-		union
-		select u.term, a.word from under u
-		join term c on c.parent = u.word
-		join term a on a.canonical = c.word
-	)`;
-
-/**
- * 一个标准词底下有多少人：短说法里写了它、它的其他写法，或它任一项细分的人，各算一次。
- * 这是词表页呈现一支词有多大用的数；检索不顺着词表往下带。词表里的词有可能已经不在语料里（写它的人的简历
- * 改了），那就是 0。
- */
-function peopleUnder(term: SQL | string) {
-	return sql`coalesce((
-		select count(distinct e.emp_id)::int
+function peopleUnder(terms: SQL) {
+	return sql`
+		with recursive under(term, word) as (
+			select canonical, word from term where canonical in (${terms})
+			union
+			select u.term, a.word from under u
+			join term c on c.parent = u.word
+			join term a on a.canonical = c.word
+		)
+		select u.term, count(distinct e.emp_id)::int as people
 		from under u
 		join phrase p on p.text = u.word
 		join experience_phrase ep on ep.phrase_id = p.id and ep.route in (${sql.join(
 			SHORT_ROUTES.map((route) => sql`${route}`),
 			sql`, `,
 		)})
-		join experience e on e.id = ep.experience_id
-		where u.term = ${term} and not e.unemployed), 0)`;
+		join experience e on e.id = ep.experience_id and not e.unemployed
+		group by u.term`;
 }
 
 export type TermEntry = {
@@ -57,6 +53,13 @@ export type TermEntry = {
  */
 const PENDING = sql`bool_or(exists (select 1 from review_word r where r.word = a.word))`;
 
+/**
+ * 每个词底下有几项属于它的标准词，给出 `(parent, children)`。并进去的写法不算：那是同一件事的
+ * 另一种写法。
+ */
+const CHILDREN = sql`select parent, count(*)::int as children from term
+	where word = canonical group by parent`;
+
 export type TermDetail = Omit<TermEntry, "parent" | "children"> & {
 	/** 判定方认定它不是一项能力：它不在筛选栏和候选词里，没有归属、细分和其他写法 */
 	excluded: boolean;
@@ -65,12 +68,6 @@ export type TermDetail = Omit<TermEntry, "parent" | "children"> & {
 	/** 属于它的标准词，人多的在前；每个各带自己那一支的人数 */
 	children: { canonical: string; people: number }[];
 };
-
-/** 属于这个标准词的标准词有几项。并进去的写法不算：那是同一件事的另一种写法。 */
-function childrenOf(term: SQL) {
-	return sql`(select count(*)::int from term c
-		where c.parent = ${term} and c.word = c.canonical)`;
-}
 
 /**
  * 管理页的标准能力词列表，服务端搜索并分页。
@@ -85,10 +82,7 @@ export function listTerms(
 ): Promise<TablePage<TermEntry>> {
 	const pattern = `%${escapeLike(needle.trim())}%`;
 	return withCorpusSnapshot(async (store) => {
-		/*
-		 * 哪些词算搜到了，只说一遍：数总数和取这一页共用 `MATCHED`。数总数那一条
-		 * 不碰人数——它是这里最贵的一段（每一行一次递归展开），而数行数用不着它。
-		 */
+		/* 哪些词算搜到了，只说一遍：数总数和取这一页共用 `MATCHED`。 */
 		const MATCHED = sql`
 			from term a
 			where a.excluded = ${excluded}
@@ -101,16 +95,22 @@ export function listTerms(
 		const total = found.rows[0]?.n ?? 0;
 		const at = pageAt(total, page);
 		const { rows } = await store.execute<TermEntry>(sql`
-			${UNDER}
+			with matched as (
+				select
+					a.canonical,
+					max(a.parent) filter (where a.word = a.canonical) as parent,
+					coalesce(array_agg(a.word order by a.word) filter (where a.word <> a.canonical), '{}') as aliases,
+					${PENDING} as pending
+				${MATCHED}
+			)
 			select
-				a.canonical,
-				max(a.parent) filter (where a.word = a.canonical) as parent,
-				coalesce(array_agg(a.word order by a.word) filter (where a.word <> a.canonical), '{}') as aliases,
-				${peopleUnder(sql`a.canonical`)} as people,
-				${childrenOf(sql`a.canonical`)} as children,
-				${PENDING} as pending
-			${MATCHED}
-			order by people desc, a.canonical
+				m.*,
+				coalesce(p.people, 0) as people,
+				coalesce(c.children, 0) as children
+			from matched m
+			left join (${peopleUnder(sql`select canonical from matched`)}) p on p.term = m.canonical
+			left join (${CHILDREN}) c on c.parent = m.canonical
+			order by people desc, m.canonical
 			limit ${at.limit} offset ${at.offset}`);
 		return tablePage(rows, total, at);
 	});
@@ -137,12 +137,11 @@ export function describeTerm(word: string): Promise<TermDetail | null> {
 		const self = await store.execute<
 			Omit<TermDetail, "parent" | "children"> & { parent: string | null }
 		>(sql`
-			${UNDER}
 			select
 				a.canonical,
 				max(a.parent) filter (where a.word = a.canonical) as parent,
 				coalesce(array_agg(a.word order by a.word) filter (where a.word <> a.canonical), '{}') as aliases,
-				${peopleUnder(sql`a.canonical`)} as people,
+				coalesce((select people from (${peopleUnder(sql`${canonical}`)}) p), 0) as people,
 				bool_or(a.excluded) as excluded,
 				${PENDING} as pending
 			from term a
@@ -156,16 +155,15 @@ export function describeTerm(word: string): Promise<TermDetail | null> {
 			canonical: string;
 			people: number;
 		}>(sql`
-			${UNDER}
-			select c.word as canonical, ${peopleUnder(sql`c.word`)} as people
+			select c.word as canonical, coalesce(p.people, 0) as people
 			from term c
+			left join (${peopleUnder(sql`select word from term where parent = ${canonical}`)}) p on p.term = c.word
 			where c.parent = ${canonical} and c.word = c.canonical
 			order by people desc, c.word`);
 
 		const above = row.parent
 			? await store.execute<{ people: number }>(sql`
-				${UNDER}
-				select ${peopleUnder(row.parent)} as people`)
+				select coalesce((select people from (${peopleUnder(sql`${row.parent}`)}) p), 0) as people`)
 			: null;
 
 		return {
