@@ -5,7 +5,8 @@ import { integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
 
 /**
- * 管理页一张表的表脚。
+ * 管理页一张表多于一页时的表脚：这一页是第几到第几行、一共多少，和翻页。只有一页时不用它：
+ * 行都在眼前，不另写一遍总数。
  * `units.row` 数行、`units.total` 数总数：人的表写「第 1–50 个，共 320 人」。
  */
 export function TablePager({
@@ -21,14 +22,10 @@ export function TablePager({
 	return (
 		<div className="flex items-center justify-between gap-3">
 			<p className="whitespace-nowrap text-fg-secondary text-sm tabular-nums">
-				{pages > 1 && (
-					<>
-						第 {integer(from)}–{integer(from + rows.length - 1)} {units.row}，
-					</>
-				)}
-				共 {integer(total)} {units.total}
+				第 {integer(from)}–{integer(from + rows.length - 1)} {units.row}，共{" "}
+				{integer(total)} {units.total}
 			</p>
-			{pages > 1 && <PageNav linkTo={linkTo} page={page} pages={pages} />}
+			<PageNav linkTo={linkTo} page={page} pages={pages} />
 		</div>
 	);
 }

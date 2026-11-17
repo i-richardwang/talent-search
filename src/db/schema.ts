@@ -14,14 +14,19 @@ import {
 	real,
 	text,
 	timestamp,
+	unique,
 } from "drizzle-orm/pg-core";
+import { AUDIT_ACTIONS } from "#/lib/audit";
 import { ENGAGEMENTS } from "#/lib/engagement";
 import { TASK_KINDS } from "#/lib/task";
 import type { TurnNotes } from "#/search/intent";
 import type { SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 
-/** 登录身份独立于人才库，认证表的外键只在认证表之间连接。 */
+/**
+ * 登录身份独立于人才库：和员工档案之间没有外键。搜索记录和操作记录引用账号（谁发起的、谁做的），
+ * 所以账号只停用、不删除。
+ */
 export const authUser = pgTable("auth_user", {
 	id: text("id").primaryKey(),
 	name: text("name").notNull(),
@@ -35,7 +40,7 @@ export const authUser = pgTable("auth_user", {
 		.notNull()
 		.defaultNow()
 		.$onUpdate(() => new Date()),
-	username: text("username").unique(),
+	username: text("username").notNull().unique(),
 	role: text("role"),
 	banned: boolean("banned").default(false),
 	banReason: text("ban_reason"),
@@ -707,6 +712,13 @@ export const searchTurn = pgTable(
 	"search_turn",
 	{
 		id: text("id").primaryKey(),
+		/**
+		 * 发起这次找人任务的账号。一次任务只属于一个人，整条链同一个值（`search_turn_chain`）；
+		 * 读、追加、重试、删除都只对它开放（`server/turn.ts`）。
+		 */
+		ownerId: text("owner_id")
+			.notNull()
+			.references(() => authUser.id),
 		/** 同一次找人任务的链头：最近搜索按它去重，它的原话是这次任务的标题。 */
 		rootTurnId: text("root_turn_id").notNull(),
 		/**
@@ -755,10 +767,12 @@ export const searchTurn = pgTable(
 			"search_turn_state",
 			sql`${t.spec} is not null or ${t.rawText} is not null`,
 		),
+		unique("search_turn_owner").on(t.id, t.ownerId),
+		// 链上每一轮的归属都是链头的归属：换不了人，也接不到别人的链上
 		foreignKey({
-			name: "search_turn_root",
-			columns: [t.rootTurnId],
-			foreignColumns: [t.id],
+			name: "search_turn_chain",
+			columns: [t.rootTurnId, t.ownerId],
+			foreignColumns: [t.id, t.ownerId],
 		}).onDelete("cascade"),
 		foreignKey({
 			name: "search_turn_parent",
@@ -787,6 +801,7 @@ export const searchTurn = pgTable(
 				or (${t.attempt} is not null and not ${t.attemptDone})`,
 		),
 		index("search_turn_root").on(t.rootTurnId),
+		index("search_turn_recent").on(t.ownerId, t.createdAt),
 	],
 );
 
@@ -813,5 +828,40 @@ export const experienceVerdict = pgTable(
 			columns: [t.rootTurnId],
 			foreignColumns: [searchTurn.id],
 		}).onDelete("cascade"),
+	],
+);
+
+/**
+ * 操作记录：哪个账号在什么时候做了什么（`lib/audit.ts`），只追加。一行只有一个对象：搜索记的是
+ * 那一轮说的话或改完的条件，查看和导出一个人一行、记工号，管理账号记那个账号。它自己带着内容，
+ * 不引用搜索记录和员工档案：搜索被删、员工随同步消失之后，这一行照样读得出来；账号不删除，可以引用。
+ * 读者是管理员的审计页（`server/audit.ts`）。
+ */
+export const auditEvent = pgTable(
+	"audit_event",
+	{
+		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+		at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => authUser.id),
+		action: text("action", { enum: AUDIT_ACTIONS }).notNull(),
+		/** 查看、导出的是谁。 */
+		empId: text("emp_id"),
+		/** 搜索的内容。 */
+		text: text("text"),
+		/** 管理的是哪个账号。 */
+		accountId: text("account_id").references(() => authUser.id),
+	},
+	(t) => [
+		check(
+			"audit_event_object",
+			sql`num_nonnulls(${t.text}, ${t.empId}, ${t.accountId}) = 1 and
+				case ${t.action}
+					when 'search' then ${t.text} is not null
+					when 'view' then ${t.empId} is not null
+					when 'export' then ${t.empId} is not null
+					else ${t.accountId} is not null end`,
+		),
 	],
 );

@@ -44,7 +44,7 @@ export function EmployeeTable({
 		<div className="flex flex-col gap-4">
 			<SearchBar
 				aria-label="搜索姓名或工号"
-				className="max-w-70"
+				className="max-w-60"
 				loading={pending}
 				onChange={setNeedle}
 				onSearch={search}
@@ -69,13 +69,15 @@ export function EmployeeTable({
 					<Table
 						busy={pending}
 						footer={
-							<TablePager
-								linkTo={(page) => (
-									<Link search={listSearch(page, q)} to="/data" />
-								)}
-								table={list}
-								units={{ row: "个", total: "人" }}
-							/>
+							list.pages > 1 && (
+								<TablePager
+									linkTo={(page) => (
+										<Link search={listSearch(page, q)} to="/data" />
+									)}
+									table={list}
+									units={{ row: "个", total: "人" }}
+								/>
+							)
 						}
 						narrow="cards"
 					>
@@ -117,7 +119,11 @@ export function EmployeeTable({
 											</TableCell>
 											{/* 整行已在 Tab 序里；姓名是给中键、右键用的真链接，不另占 Tab 位 */}
 											<TableCell cellSlot="title" className="whitespace-nowrap">
-												<TextLink render={<Link {...detail} />} tabIndex={-1}>
+												{/* 不预取：取一个人的详情会记一行「查看」，指针划过不算看过 */}
+												<TextLink
+													render={<Link {...detail} preload={false} />}
+													tabIndex={-1}
+												>
 													{row.name}
 												</TextLink>
 											</TableCell>

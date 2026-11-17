@@ -11,7 +11,15 @@ process.env.BETTER_AUTH_URL = "http://localhost:3100";
 
 const { getAuth, handleAuth } = await import("#/server/auth");
 const { requireViewer, viewer } = await import("#/server/access");
-const { manageAccount } = await import("#/server/accounts");
+const {
+	changeOwnPassword,
+	createUser,
+	listAccounts,
+	manageAccount,
+	resetUserPassword,
+	setUserDisabled,
+} = await import("#/server/accounts");
+const { listAudit } = await import("#/server/audit");
 const { pool } = await import("#/db");
 const PASSWORD = "Synthetic-login-42!";
 const ORIGIN = "http://localhost:3100";
@@ -130,12 +138,12 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 		manageAccount({ action: "create", username: "weak", password: "short" }),
 		/密码/,
 	);
-	const user = await manageAccount({
+	await manageAccount({
 		action: "create",
 		username: "Sample.User",
 		password: PASSWORD,
 	});
-	const admin = await manageAccount({
+	await manageAccount({
 		action: "create",
 		username: "sample.admin",
 		role: "admin",
@@ -159,24 +167,24 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 		requireViewer(userHeaders, true),
 		(e: unknown) => e instanceof Response && e.status === 403,
 	);
-	assert.equal((await requireViewer(adminHeaders, true)).id, admin.id);
-	await pool.query("update auth_user set role = 'user' where id = $1", [
-		admin.id,
-	]);
+	assert.equal((await requireViewer(adminHeaders, true)).name, "sample.admin");
+	await pool.query(
+		"update auth_user set role = 'user' where username = 'sample.admin'",
+	);
 	await assert.rejects(
 		requireViewer(adminHeaders, true),
 		(e: unknown) => e instanceof Response && e.status === 403,
 	);
-	await pool.query("update auth_user set banned = true where id = $1", [
-		admin.id,
-	]);
-	assert.equal(await viewer(adminHeaders), null);
-	await pool.query("update auth_user set banned = false where id = $1", [
-		admin.id,
-	]);
 	await pool.query(
-		"update auth_session set expires_at = now() - interval '1 minute' where user_id = $1",
-		[admin.id],
+		"update auth_user set banned = true where username = 'sample.admin'",
+	);
+	assert.equal(await viewer(adminHeaders), null);
+	await pool.query(
+		"update auth_user set banned = false where username = 'sample.admin'",
+	);
+	await pool.query(
+		`update auth_session set expires_at = now() - interval '1 minute'
+		 where user_id = (select id from auth_user where username = 'sample.admin')`,
 	);
 	assert.equal(await viewer(adminHeaders), null);
 
@@ -236,13 +244,178 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 		401,
 	);
 	const fresh = await login("sample.user", replacement);
-	assert.equal((await requireViewer(fresh)).id, user.id);
+	assert.equal((await requireViewer(fresh)).name, "sample.user");
 	assert.equal(
 		(await request("/sign-out", {}, fresh.get("cookie") ?? "")).status,
 		200,
 	);
 	assert.equal(await viewer(fresh), null);
 	assert.deepEqual(await corpus(), before);
+});
+
+test("停用撤销登录并挡住再登录，恢复后照常；改角色下一次请求生效；账号不删除", async () => {
+	await manageAccount({
+		action: "create",
+		username: "leaving.user",
+		name: "合成离职同事",
+		password: PASSWORD,
+	});
+	const headers = await login("leaving.user");
+	await manageAccount({ action: "disable", username: "Leaving.User" });
+	assert.equal(await viewer(headers), null);
+	const refused = await request("/sign-in/username", {
+		username: "leaving.user",
+		password: PASSWORD,
+	});
+	assert.notEqual(refused.status, 200);
+	assert.equal(refused.headers.getSetCookie().length, 0);
+	assert.deepEqual((await listAccounts("离职", 1)).rows, [
+		{
+			username: "leaving.user",
+			name: "合成离职同事",
+			admin: false,
+			disabled: true,
+		},
+	]);
+
+	await manageAccount({ action: "enable", username: "leaving.user" });
+	const back = await login("leaving.user");
+	await manageAccount({
+		action: "set-role",
+		username: "leaving.user",
+		role: "admin",
+	});
+	assert.equal((await requireViewer(back, true)).admin, true);
+	await manageAccount({
+		action: "set-role",
+		username: "leaving.user",
+		role: "user",
+	});
+	await assert.rejects(
+		requireViewer(back, true),
+		(e: unknown) => e instanceof Response && e.status === 403,
+	);
+	await assert.rejects(
+		manageAccount({
+			action: "set-role",
+			username: "leaving.user",
+			role: "owner",
+		}),
+		/角色/,
+	);
+	await assert.rejects(
+		manageAccount({ action: "disable", username: "nobody.here" }),
+		/用户名不存在/,
+	);
+});
+
+test("改自己的密码要当前密码；改完别处的登录失效，旧密码不能再用", async () => {
+	await manageAccount({
+		action: "create",
+		username: "changing.user",
+		password: PASSWORD,
+	});
+	const here = await login("changing.user");
+	const elsewhere = await login("changing.user");
+	const next = "Changed-synthetic-42!";
+	assert.equal(
+		await changeOwnPassword(here, "not-the-password", next),
+		"wrong",
+	);
+	assert.equal(await changeOwnPassword(here, PASSWORD, "short"), "length");
+	assert.ok(await viewer(elsewhere), "没改成时别处的登录还在");
+	assert.equal(await changeOwnPassword(here, PASSWORD, next), null);
+	assert.equal(await viewer(elsewhere), null);
+	assert.equal(
+		(
+			await request("/sign-in/username", {
+				username: "changing.user",
+				password: PASSWORD,
+			})
+		).status,
+		401,
+	);
+	await login("changing.user", next);
+	assert.equal(
+		(
+			await request(
+				"/change-password",
+				{ currentPassword: next, newPassword: PASSWORD },
+				here.get("cookie") ?? "",
+			)
+		).status,
+		404,
+		"认证接口不直接开放改密码：只走服务端函数，由它撤销别处的登录",
+	);
+});
+
+test("账号页只管普通账号：建号和重置交出生成的密码，停用恢复照常，每件都记进操作记录", async () => {
+	await manageAccount({
+		action: "create",
+		username: "page.admin",
+		name: "合成管理员",
+		role: "admin",
+		password: PASSWORD,
+	});
+	const adminId = (
+		await pool.query<{ id: string }>(
+			"select id from auth_user where username = 'page.admin'",
+		)
+	).rows[0]?.id;
+	assert.ok(adminId);
+
+	const initial = await createUser(adminId, " Page.User ", "");
+	assert.ok(initial && initial.length === 16);
+	assert.equal(await createUser(adminId, "PAGE.USER", "合成重名"), null);
+	await assert.rejects(createUser(adminId, "x", ""), /用户名/);
+	assert.deepEqual((await listAccounts("page.user", 1)).rows, [
+		{ username: "page.user", name: "page.user", admin: false, disabled: false },
+	]);
+	const headers = await login("page.user", initial);
+	assert.equal((await requireViewer(headers)).admin, false);
+
+	const replacement = await resetUserPassword(adminId, "page.user");
+	assert.notEqual(replacement, initial);
+	assert.equal(await viewer(headers), null, "重置撤销原来的登录");
+	assert.equal(
+		(
+			await request("/sign-in/username", {
+				username: "page.user",
+				password: initial,
+			})
+		).status,
+		401,
+	);
+	const again = await login("page.user", replacement);
+	await setUserDisabled(adminId, "page.user", true);
+	assert.equal(await viewer(again), null, "停用撤销登录");
+	await setUserDisabled(adminId, "page.user", false);
+	await login("page.user", replacement);
+
+	for (const attempt of [
+		() => resetUserPassword(adminId, "page.admin"),
+		() => setUserDisabled(adminId, "page.admin", true),
+	])
+		await assert.rejects(attempt(), /管理员账号只能在服务器上用命令行管理/);
+	await assert.rejects(
+		setUserDisabled(adminId, "nobody.here", true),
+		/用户名不存在/,
+	);
+
+	assert.deepEqual(
+		(await listAudit("page.user", 1)).rows.map((row) => [
+			row.username,
+			row.action,
+			row.accountUsername,
+		]),
+		[
+			["page.admin", "enable-account", "page.user"],
+			["page.admin", "disable-account", "page.user"],
+			["page.admin", "reset-password", "page.user"],
+			["page.admin", "create-account", "page.user"],
+		],
+		"被拒绝和没建成的不留痕",
+	);
 });
 
 test("同一来源连续尝试登录会被限流", async () => {

@@ -8,6 +8,7 @@ import { isValidElement, type ReactNode } from "react";
 
 const NATIVE_BUTTON_COMPONENTS = new Set([
 	"ActionIcon",
+	"AppNavIdentity",
 	"ChatInputAction",
 	"Button",
 	"CopyButton",

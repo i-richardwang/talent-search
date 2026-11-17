@@ -15,7 +15,7 @@ import { cn } from "#/lib/utils";
  *   控件上时归控件自己。通往详情的名字仍是一个真链接（`TextLink`），所在的格标
  *   `cellSlot="title"`。
  * - `narrow="cards"`：表的宽度不到 600px 时每一行排成一张卡片，每格左边是 `cellLabel`；
- *   默认 `"scroll"` 是窄于表时横向滚动。
+ *   行尾那一格动作（`cellSlot="extra"`）排在卡片标题的右边。默认 `"scroll"` 是窄于表时横向滚动。
  */
 
 interface TableProps
@@ -48,7 +48,7 @@ export function Table({
 						<table {...props} />
 					</div>
 				</div>
-				{footer != null && <div className="ui-table-footer">{footer}</div>}
+				{footer && <div className="ui-table-footer">{footer}</div>}
 			</div>
 		</div>
 	);
@@ -131,8 +131,8 @@ export function TableHead({ className, ...props }: ComponentProps<"th">) {
 interface TableCellProps extends ComponentProps<"td"> {
 	/** 卡片形态里这一格左边的标签，通常就是列头的字。 */
 	cellLabel?: string;
-	/** 名字那一格：卡片形态里是卡片标题。 */
-	cellSlot?: "title";
+	/** `title` 是名字那一格，卡片形态里是卡片标题；`extra` 是行尾的动作，卡片形态里在标题右边。 */
+	cellSlot?: "title" | "extra";
 }
 
 export function TableCell({

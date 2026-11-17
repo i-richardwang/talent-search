@@ -160,8 +160,10 @@ export function ResultList({
 						aria-current={current ? "page" : undefined}
 						className="min-w-0 shrink-0"
 						render={
+							// 不预取：取一个人的详情会记一行「查看」，指针划过不算看过
 							<Link
 								params={{ turnId, empId: e.empId }}
+								preload={false}
 								replace
 								search={(prev) => prev}
 								to="/s/$turnId/p/$empId"

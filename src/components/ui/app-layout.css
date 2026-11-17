@@ -176,7 +176,8 @@
 	}
 }
 
-.ui-app-nav-brand {
+.ui-app-nav-identity {
+	user-select: none;
 	display: flex;
 	flex: 0 1 auto;
 	align-items: center;
@@ -189,28 +190,21 @@
 	color: var(--color-fg);
 	@apply focus-ring;
 
-	&:hover {
-		color: var(--color-fg);
+	&:hover,
+	&[data-popup-open] {
 		background: var(--color-fill-tertiary);
 	}
 }
 
-.ui-app-nav-brand-logo {
-	display: flex;
-	flex: none;
-	align-items: center;
-	justify-content: center;
-	width: 28px;
-	height: 28px;
-	border-radius: calc(28px / 6);
-	color: var(--color-canvas);
-	background: var(--color-primary);
-}
-
-.ui-app-nav-brand-name {
+.ui-app-nav-identity-name {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.ui-app-nav-identity-arrow {
+	flex: none;
+	color: var(--color-fg-tertiary);
 }
 
 .ui-app-nav-drawer {

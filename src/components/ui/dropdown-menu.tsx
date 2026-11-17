@@ -117,9 +117,12 @@ export function DropdownMenuPortal({ children }: { children: ReactNode }) {
 
 /** 定位器。`submenu` 时贴着那一项的右边，上沿抵掉弹层的内边距，和那一项齐平。 */
 export function DropdownMenuPositioner({
+	align = "start",
 	children,
 	submenu = false,
 }: {
+	/** 弹层和触发器哪一边对齐：行尾、栏尾的触发器用 `end`，菜单往里展开。子菜单不用。 */
+	align?: "start" | "end";
 	children: ReactNode;
 	submenu?: boolean;
 }) {
@@ -129,7 +132,7 @@ export function DropdownMenuPositioner({
 			data-submenu={submenu || undefined}
 			{...(submenu
 				? { alignOffset: -4, sideOffset: -1 }
-				: { align: "start", side: "bottom", sideOffset: 6 })}
+				: { align, side: "bottom", sideOffset: 6 })}
 		>
 			{children}
 		</Menu.Positioner>

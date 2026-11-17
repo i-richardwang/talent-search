@@ -10,6 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountsRouteRouteImport } from './routes/accounts/route'
+import { Route as AuditRouteRouteImport } from './routes/audit/route'
 import { Route as DataRouteRouteImport } from './routes/data/route'
 import { Route as LoginRouteRouteImport } from './routes/login/route'
 import { Route as TasksRouteRouteImport } from './routes/tasks/route'
@@ -24,6 +26,16 @@ import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountsRouteRoute = AccountsRouteRouteImport.update({
+  id: '/accounts',
+  path: '/accounts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuditRouteRoute = AuditRouteRouteImport.update({
+  id: '/audit',
+  path: '/audit',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DataRouteRoute = DataRouteRouteImport.update({
@@ -79,6 +91,8 @@ const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/accounts': typeof AccountsRouteRoute
+  '/audit': typeof AuditRouteRoute
   '/data': typeof DataRouteRouteWithChildren
   '/login': typeof LoginRouteRoute
   '/tasks': typeof TasksRouteRoute
@@ -92,6 +106,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/accounts': typeof AccountsRouteRoute
+  '/audit': typeof AuditRouteRoute
   '/data': typeof DataRouteRouteWithChildren
   '/login': typeof LoginRouteRoute
   '/tasks': typeof TasksRouteRoute
@@ -106,6 +122,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/accounts': typeof AccountsRouteRoute
+  '/audit': typeof AuditRouteRoute
   '/data': typeof DataRouteRouteWithChildren
   '/login': typeof LoginRouteRoute
   '/tasks': typeof TasksRouteRoute
@@ -121,6 +139,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/accounts'
+    | '/audit'
     | '/data'
     | '/login'
     | '/tasks'
@@ -134,6 +154,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/accounts'
+    | '/audit'
     | '/data'
     | '/login'
     | '/tasks'
@@ -147,6 +169,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/accounts'
+    | '/audit'
     | '/data'
     | '/login'
     | '/tasks'
@@ -161,6 +185,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountsRouteRoute: typeof AccountsRouteRoute
+  AuditRouteRoute: typeof AuditRouteRoute
   DataRouteRoute: typeof DataRouteRouteWithChildren
   LoginRouteRoute: typeof LoginRouteRoute
   TasksRouteRoute: typeof TasksRouteRoute
@@ -177,6 +203,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/accounts': {
+      id: '/accounts'
+      path: '/accounts'
+      fullPath: '/accounts'
+      preLoaderRoute: typeof AccountsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/audit': {
+      id: '/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AuditRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/data': {
@@ -290,6 +330,8 @@ const STurnIdRouteRouteWithChildren = STurnIdRouteRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountsRouteRoute: AccountsRouteRoute,
+  AuditRouteRoute: AuditRouteRoute,
   DataRouteRoute: DataRouteRouteWithChildren,
   LoginRouteRoute: LoginRouteRoute,
   TasksRouteRoute: TasksRouteRoute,

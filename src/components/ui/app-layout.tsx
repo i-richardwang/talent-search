@@ -1,6 +1,4 @@
-import { mergeProps } from "@base-ui/react/merge-props";
-import { useRender } from "@base-ui/react/use-render";
-import { type LucideIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, XIcon } from "lucide-react";
 import {
 	type ComponentProps,
 	createContext,
@@ -91,38 +89,19 @@ export function AppNav({
 }
 
 /**
- * 导航栏顶上那一行：左边是身份链接（`render` 传路由的 `<Link>`），右边是收起导航栏的
+ * 导航栏顶上那一行：左边是当前账号（`AppNavIdentity`，点开账号菜单），右边是收起导航栏的
  * 开关 `toggle`，平时藏着，指针进入导航栏或焦点落到它身上时出现。
  */
 export function AppNavHeader({
-	logo,
-	name,
+	children,
 	toggle,
-	render,
-	...props
-}: Omit<useRender.ComponentProps<"a">, "children"> & {
-	logo: LucideIcon;
-	name: string;
+}: {
+	children?: ReactNode;
 	toggle?: ReactNode;
 }) {
-	const brand = useRender({
-		defaultTagName: "a",
-		props: mergeProps<"a">(props, {
-			className: "ui-app-nav-brand",
-			children: (
-				<>
-					<span className="ui-app-nav-brand-logo">
-						<Icon icon={logo} size={16} />
-					</span>
-					<span className="ui-app-nav-brand-name">{name}</span>
-				</>
-			),
-		}),
-		render,
-	});
 	return (
 		<div className="ui-app-nav-header">
-			{brand}
+			{children}
 			{toggle && (
 				<div className="ui-app-nav-header-actions">
 					<div className="ui-app-nav-toggle">{toggle}</div>
@@ -131,6 +110,39 @@ export function AppNavHeader({
 		</div>
 	);
 }
+
+/**
+ * 导航栏顶上的当前账号：头像、名字和一个向下的箭头，整行是一个按钮，放进
+ * `DropdownMenuTrigger` 打开账号菜单。悬停和菜单开着时出底，名字太长省略。
+ */
+export function AppNavIdentity({
+	avatar,
+	name,
+	className,
+	...props
+}: Omit<ComponentProps<"button">, "children"> & {
+	avatar: ReactNode;
+	name: string;
+}) {
+	return (
+		<button
+			className={cn("ui-app-nav-identity", className)}
+			type="button"
+			{...props}
+		>
+			{avatar}
+			<span className="ui-app-nav-identity-name">{name}</span>
+			<Icon
+				className="ui-app-nav-identity-arrow"
+				icon={ChevronDownIcon}
+				size="small"
+			/>
+		</button>
+	);
+}
+
+/** 浮层触发器按它认出这是原生 `<button>`（见 `native-button.ts`）。 */
+AppNavIdentity.displayName = "AppNavIdentity";
 
 /**
  * 贴着左边滑出的一栏。`title` 不给时不画顶上那一行，由内容自己出头部和关闭钮

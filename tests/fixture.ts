@@ -14,6 +14,7 @@ import {
 import { Pool } from "pg";
 import { phrasesOf } from "#/corpus/route-texts";
 import {
+	auditEvent,
 	authAccount,
 	authSession,
 	authUser,
@@ -143,7 +144,7 @@ function ddl(schema: string, table: PgTable) {
 			.map((column) => `"${column.name}"`)
 			.join(", ");
 		constraints.push(
-			`constraint "${foreignKey.getName()}" foreign key (${local}) references ${schema}."${foreignName}" (${foreign}) on delete ${foreignKey.onDelete}`,
+			`constraint "${foreignKey.getName()}" foreign key (${local}) references ${schema}."${foreignName}" (${foreign}) on delete ${foreignKey.onDelete ?? "no action"}`,
 		);
 	}
 	return `create table ${schema}."${name}" (${[...cols, ...constraints].join(", ")})`;
@@ -604,6 +605,9 @@ function startModelServer() {
 	});
 }
 
+/** 每个临时 schema 里都有的一个账号：测试里的找人任务记在它名下。 */
+export const OWNER = "synthetic-owner";
+
 /**
  * 建立临时 schema 和合成端点，配置环境后才加载服务端单例。
  * 调用方必须 await setup() 后动态导入被测服务端模块；各文件使用 --parallel 隔离模块与环境。
@@ -629,6 +633,7 @@ export async function setup() {
 		experiencePhraseNext,
 		searchTurn,
 		experienceVerdict,
+		auditEvent,
 		term,
 		reviewWord,
 		embeddingCache,
@@ -642,6 +647,11 @@ export async function setup() {
 		companyAlias,
 	])
 		await admin.query(ddl(SCHEMA, t));
+	await admin.query(
+		`insert into ${SCHEMA}.auth_user (id, name, email, username)
+		 values ($1, '合成账号', 'owner@users.invalid', 'synthetic.owner')`,
+		[OWNER],
+	);
 	// 视图里的表名不带 schema，建视图时按本文件的 schema 解析，绑定的就是本文件的表
 	await admin.query(`create schema ${CATALOG}`);
 	const viewClient = await admin.connect();
@@ -956,7 +966,10 @@ export async function seed(rows: Seed[]) {
 export async function openSearch(): Promise<string> {
 	const { createTurn } = await import("#/server/turn");
 	const { emptySpec } = await import("#/search/spec");
-	const { turnId } = await createTurn({ kind: "spec", spec: emptySpec() });
+	const { turnId } = await createTurn(OWNER, {
+		kind: "spec",
+		spec: emptySpec(),
+	});
 	return turnId;
 }
 

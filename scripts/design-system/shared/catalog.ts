@@ -147,6 +147,7 @@ const CATALOG = [
 			component("icon", "图标", "Icon"),
 			component("text", "文字", "Text"),
 			component("tag", "标签", "Tag", { sizing: "tag" }),
+			component("avatar", "头像", "Avatar"),
 			component("hotkey", "快捷键", "Hotkey"),
 			component("input", "输入框", "Input", { sizing: "input" }),
 			component("auto-complete", "自动补全", "AutoComplete", {
@@ -340,6 +341,9 @@ const CATALOG = [
 				source: [
 					"src/routes/-components/admin-page.tsx",
 					"src/routes/tasks/-components/task-board.tsx",
+					"src/routes/audit/-components/audit-table.tsx",
+					"src/routes/accounts/-components/account-table.tsx",
+					"src/routes/accounts/-components/account-dialogs.tsx",
 				],
 				title: "管理页",
 				tokenGroups: ["layout"],

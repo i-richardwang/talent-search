@@ -29,20 +29,28 @@ AI 搜索在只读角色 `talent_query` 下查询人才库：应用的数据库�
 
 ## 登录与账号管理
 
-所有页面都要求登录，不开放注册，没有默认账号。普通用户可以搜索、查看人才库与标签；只有管理员能看「任务」、
-手动触发解析或整理。搜索记录由登录用户共享，包括查看、追加和删除。
+所有页面都要求登录，不开放注册，没有默认账号。普通用户可以搜索、查看人才库与标签；只有管理员能看「任务」「审计」和「账号」、
+手动触发解析或整理。搜索记录只属于发起它的账号，别人的记录打不开，管理员也一样。
 外部 `GET/POST /api/review` 使用独立的 `REVIEW_TOKEN`，不使用浏览器会话。
 
-账号由能登录部署机器的管理员在终端里管理，密码输入不回显：
+搜索、查看个人详情、导出名单和账号页上的每一件事各留一行操作记录，只追加，管理员在「审计」页查。
+
+管理员在「账号」页建普通账号、给普通账号重置密码、停用和恢复；新密码由服务端生成，只显示一次。
+账号页碰不到管理员账号：建管理员、改角色由能登录部署机器的人在终端里做，密码输入不回显，不记进操作记录：
 
 ```bash
+bun run auth:user list
 bun run auth:user create --username admin --name 管理员 --role admin
 bun run auth:user create --username hr_user --name 招聘同事
 bun run auth:user reset-password --username hr_user
+bun run auth:user set-role --username hr_user --role admin
+bun run auth:user disable --username hr_user
+bun run auth:user enable --username hr_user
 ```
 
 用户名不区分大小写，由 3–30 个英文字母、数字、下划线或点组成；密码长度为 12–128 个字符。
-重置密码会让该账号已登录的会话全部失效。
+重置密码和停用会让该账号已登录的会话全部失效。账号只停用、不删除：搜索记录和操作记录引用它。
+登录的人点导航栏左上角自己的名字可以改自己的密码。
 
 `BETTER_AUTH_SECRET` 至少 32 个字符；`BETTER_AUTH_URL` 是用户在浏览器里打开的那个固定来源地址。
 公网部署要用 HTTPS，并在网关限制登录及查询理解请求的频率。

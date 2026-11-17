@@ -406,6 +406,7 @@ export function DropdownMenuPage() {
 					"项可以带 icon；有一项带图标，其余项自动留出图标位。",
 					"一项下面还有一层选择时用子菜单：那一项行尾写当前值（DropdownMenuItemExtra）和小三角，子菜单贴着它的右边打开。",
 					"用原子件拼：Root › Trigger + Portal › Positioner › Popup；显示标签、键盘和触控行为要人工检查。",
+					'弹层默认和触发器左边对齐；行尾、栏尾的触发器给 Positioner 传 align="end"，菜单往里展开。',
 					"触发器是单个按钮组件，属性合进这个按钮，不另包一层。",
 				],
 				usage: `<DropdownMenuRoot>\n  <DropdownMenuTrigger>\n    <Button>名单操作</Button>\n  </DropdownMenuTrigger>\n  <DropdownMenuPortal>\n    <DropdownMenuPositioner>\n      <DropdownMenuPopup>\n        {renderDropdownMenuItems([\n          { key: "export", label: "导出名单", onClick },\n          { checked, key: "on", label: "启用", onCheckedChange, type: "switch" },\n        ])}\n      </DropdownMenuPopup>\n    </DropdownMenuPositioner>\n  </DropdownMenuPortal>\n</DropdownMenuRoot>`,

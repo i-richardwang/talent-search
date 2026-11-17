@@ -8,6 +8,10 @@
  * 的那个动作的后半段，服务端随即开始。
  * 页面只读进度，打开、刷新、多开几次都不会再开始一次；重新开始只有一个入口，人点「重试」
  * （`restartTurn`）。
+ *
+ * 一次找人任务只属于发起它的账号（`owner_id`）。从请求进来的每个入口都带着当前账号，只在他自己的
+ * 记录里找：别人的记录和不存在的记录是同一个结果。AI 的处理（`processTurn`）接在写入之后，
+ * 不再核对归属。
  */
 import "@tanstack/react-start/server-only";
 import { randomBytes } from "node:crypto";
@@ -19,10 +23,12 @@ import { compileCondition } from "#/search/execute";
 import { historyLines } from "#/search/history";
 import type { TurnNotes } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
+import { labelsInSentence } from "#/search/query";
 import { vocabulary } from "#/search/search";
 import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { agentTools } from "./agent-tools";
+import { recordSearch } from "./audit";
 import { companyFacts, streamFacts } from "./discover";
 import { type EndpointFault, endpointFault } from "./endpoint";
 import { saveVerdicts } from "./judged";
@@ -85,6 +91,7 @@ type Db = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 async function insertTurn(
 	tx: Db,
 	row: {
+		owner: string;
 		parent: SearchTurn | null;
 		rawText: string | null;
 		spec: SearchSpec | null;
@@ -96,6 +103,7 @@ async function insertTurn(
 		.insert(searchTurn)
 		.values({
 			id,
+			ownerId: row.owner,
 			rootTurnId: row.parent ? row.parent.rootTurnId : id,
 			parentTurnId: row.parent?.id ?? null,
 			rawText: row.rawText,
@@ -114,6 +122,19 @@ async function insertTurn(
 async function getRow(id: string, tx: Db = db): Promise<SearchTurn | null> {
 	const [row] = await tx.select().from(searchTurn).where(eq(searchTurn.id, id));
 	return row ?? null;
+}
+
+/** 这个账号名下的那一轮；别人的和不存在的一样对不上。 */
+function turnOf(owner: string, id: string) {
+	return and(eq(searchTurn.id, id), eq(searchTurn.ownerId, owner));
+}
+
+/** 操作记录里这一轮搜的是什么：说的话，或者直接改完之后还在用的条件。 */
+function searched(input: QueryInput): string {
+	if (input.kind === "sentence") return input.text;
+	return labelsInSentence(
+		queryOfSpec(input.spec).conditions.filter((c) => !c.off),
+	);
 }
 
 /** 锁住链尾再读取状态，追加与模型补全在这条记录上串行化。调用方已持有链头锁。 */
@@ -180,6 +201,7 @@ function needsConfirming(mode: SearchMode, spec: SearchSpec): boolean {
  * 要 AI 接着处理的那一轮带着它第一次处理的编号返回：事务提交之后由调用方交给 `processTurn`。
  */
 export async function createTurn(
+	owner: string,
 	input: QueryInput,
 	from?: string,
 ): Promise<{ turnId: string; attempt: string | null }> {
@@ -187,10 +209,13 @@ export async function createTurn(
 	return db.transaction(async (tx) => {
 		const text = input.kind === "sentence" ? input.text : null;
 		const spec = input.kind === "spec" ? input.spec : null;
+		// 和这一轮同一个事务：记录写下了，操作记录里就有这一行
+		await recordSearch(tx, owner, searched(input));
 		if (!from) {
 			admit(modeOf(text), input);
 			// 链头直接是条件的是关键词搜索：按字面找，不用 AI
 			const head = await insertTurn(tx, {
+				owner,
 				parent: null,
 				rawText: text,
 				spec,
@@ -199,12 +224,15 @@ export async function createTurn(
 			return { turnId: head.id, attempt: head.attempt };
 		}
 
-		const rootTurnId = (await getRow(from, tx))?.rootTurnId;
-		const [root] = rootTurnId
+		const [viewed] = await tx
+			.select({ rootTurnId: searchTurn.rootTurnId })
+			.from(searchTurn)
+			.where(turnOf(owner, from));
+		const [root] = viewed
 			? await tx
 					.select()
 					.from(searchTurn)
-					.where(eq(searchTurn.id, rootTurnId))
+					.where(eq(searchTurn.id, viewed.rootTurnId))
 					.for("update")
 			: [];
 		// 排在别的追加后面时，看着的那一轮可能刚被取代：拿到锁再读一遍
@@ -237,6 +265,7 @@ export async function createTurn(
 		let parent = tail;
 		if (text !== null && base && tail && base.id !== tail.id)
 			parent = await insertTurn(tx, {
+				owner,
 				parent: tail,
 				rawText: null,
 				spec: base.spec,
@@ -245,6 +274,7 @@ export async function createTurn(
 		// 原话只记这一轮说了什么。直接改条件的一轮没有说话；任务的标题是链头那句，
 		// 不必往下抄。
 		const turn = await insertTurn(tx, {
+			owner,
 			parent,
 			rawText: text,
 			spec,
@@ -453,7 +483,7 @@ async function understandTurn(
 	replaced: AbortSignal,
 ): Promise<Settled> {
 	// 这一轮之前的几轮都处理完了：没理解出来的只可能是链尾，追加这一轮时已经删掉
-	const earlier = ((await loadThread(row.id)) ?? []).filter(
+	const earlier = ((await loadThread(row.ownerId, row.id)) ?? []).filter(
 		(turn) => turn.id !== row.id,
 	);
 	const past = earlier.flatMap((turn) =>
@@ -498,7 +528,10 @@ function faultOf(error: unknown): AttemptFault {
  * `processTurn`。上一次还在跑、或这一轮已经处理完，什么都不做，返回 null。
  * 新的一次从头计时，上一次走到一半的步骤不算进来。
  */
-export async function restartTurn(turnId: string): Promise<string | null> {
+export async function restartTurn(
+	owner: string,
+	turnId: string,
+): Promise<string | null> {
 	const [row] = await db
 		.update(searchTurn)
 		.set({
@@ -510,7 +543,7 @@ export async function restartTurn(turnId: string): Promise<string | null> {
 		})
 		.where(
 			and(
-				eq(searchTurn.id, turnId),
+				turnOf(owner, turnId),
 				sql`(${searchTurn.attemptFault} is not null or ${abandoned})`,
 			),
 		)
@@ -523,7 +556,10 @@ export async function restartTurn(turnId: string): Promise<string | null> {
  * 条件从哪张表改到哪张表（上一项的 `spec` 就是这一轮的基线）。看的是哪一轮都
  * 取整条链——回头看早先的结果，不会把后面的几轮藏起来。
  */
-export async function loadThread(id: string): Promise<Turn[] | null> {
+export async function loadThread(
+	owner: string,
+	id: string,
+): Promise<Turn[] | null> {
 	const { rows } = await db.execute<{
 		id: string;
 		raw_text: string | null;
@@ -537,7 +573,8 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 	}>(sql`
 		with recursive line as (
 			select id, 0 as depth from ${searchTurn}
-			where id = (select root_turn_id from ${searchTurn} where id = ${id})
+			where id = (select root_turn_id from ${searchTurn}
+				where id = ${id} and owner_id = ${owner})
 			union all
 			select t.id, line.depth + 1
 			from ${searchTurn} t join line on t.parent_turn_id = line.id
@@ -568,7 +605,10 @@ export async function loadThread(id: string): Promise<Turn[] | null> {
 }
 
 /** AI 对这一轮的处理现在怎样了；没有这一轮或这一轮不用 AI 处理为 null。 */
-export async function loadAttempt(id: string): Promise<Attempt | null> {
+export async function loadAttempt(
+	owner: string,
+	id: string,
+): Promise<Attempt | null> {
 	const [row] = await db
 		.select({
 			trace: sql<TraceStep[]>`${searchTurn.trace}`,
@@ -579,7 +619,7 @@ export async function loadAttempt(id: string): Promise<Attempt | null> {
 			settled: searchTurn.attemptDone,
 		})
 		.from(searchTurn)
-		.where(and(eq(searchTurn.id, id), sql`${searchTurn.attempt} is not null`));
+		.where(and(turnOf(owner, id), sql`${searchTurn.attempt} is not null`));
 	return row ?? null;
 }
 
@@ -638,6 +678,7 @@ function recentCursor(raw: unknown): [string, string] | null {
  * 链序由 parent_turn_id 决定；时间仅用于跨任务展示与排序。
  */
 export async function listRecent(
+	owner: string,
 	size: number,
 	after?: unknown,
 ): Promise<RecentPage> {
@@ -646,7 +687,8 @@ export async function listRecent(
 	return db.transaction(
 		async (store) => {
 			const found = await store.execute<{ n: number }>(
-				sql`select count(*)::int as n from search_turn where parent_turn_id is null`,
+				sql`select count(*)::int as n from search_turn
+					where parent_turn_id is null and owner_id = ${owner}`,
 			);
 			const result = await store.execute<
 				RecentSearch & { cursorAt: string }
@@ -661,7 +703,7 @@ export async function listRecent(
 				from ${searchTurn}
 					join search_turn root on root.id = ${searchTurn.rootTurnId}
 					left join search_turn parent on parent.id = ${searchTurn.parentTurnId}
-				where not exists (
+				where ${searchTurn.ownerId} = ${owner} and not exists (
 					select 1 from search_turn next where next.parent_turn_id = ${searchTurn.id})
 				${cursor ? sql`and (${searchTurn.createdAt}, ${searchTurn.id}) < (${cursor[0]}::timestamptz, ${cursor[1]})` : sql``}
 				order by ${searchTurn.createdAt} desc, ${searchTurn.id} desc limit ${limit + 1}`);
@@ -683,7 +725,10 @@ export async function listRecent(
 /**
  * 删除给定记录所属的整条链，并返回全部被删 id，供当前页面离开已删记录。
  */
-export async function deleteSearch(turnId: string): Promise<string[]> {
+export async function deleteSearch(
+	owner: string,
+	turnId: string,
+): Promise<string[]> {
 	const rows = await db
 		.delete(searchTurn)
 		.where(
@@ -692,7 +737,7 @@ export async function deleteSearch(turnId: string): Promise<string[]> {
 				db
 					.select({ root: searchTurn.rootTurnId })
 					.from(searchTurn)
-					.where(eq(searchTurn.id, turnId)),
+					.where(turnOf(owner, turnId)),
 			),
 		)
 		.returning({ id: searchTurn.id });

@@ -20,6 +20,7 @@ import {
 	bracesAfterSubmit,
 	breakUnderstanding,
 	drafted,
+	OWNER,
 	seed,
 	setup,
 	violates,
@@ -44,7 +45,7 @@ const { eq, sql } = await import("drizzle-orm");
 
 /** 从生产接口返回的完整线程中取得断言所需的一轮。 */
 async function loadTurn(id: string) {
-	return (await loadThread(id))?.find((turn) => turn.id === id) ?? null;
+	return (await loadThread(OWNER, id))?.find((turn) => turn.id === id) ?? null;
 }
 
 /** 这一轮现在这一次理解的编号。 */
@@ -61,18 +62,18 @@ async function attemptOf(turnId: string) {
 async function settle(turnId: string) {
 	await processTurn(turnId, await attemptOf(turnId));
 	const spec = (await loadTurn(turnId))?.spec;
-	if (!spec) throw new Error((await loadAttempt(turnId))?.fault ?? "");
+	if (!spec) throw new Error((await loadAttempt(OWNER, turnId))?.fault ?? "");
 	return spec;
 }
 
 /** 人点了重试：换一次理解，跑完。 */
 async function retried(turnId: string) {
-	assert.ok(await restartTurn(turnId), "上一次失败了，可以重试");
+	assert.ok(await restartTurn(OWNER, turnId), "上一次失败了，可以重试");
 	return settle(turnId);
 }
 
 /** 最近搜索的第一页，取得够多，这个文件建的链都在里面。 */
-const recent = async () => (await listRecent(50)).rows;
+const recent = async () => (await listRecent(OWNER, 50)).rows;
 
 /** 每条条件的标签：一个经历词编出来的条件，标签就是那个词。 */
 const wordsOf = (spec: SearchSpec) =>
@@ -94,7 +95,7 @@ const expected = (syntax: string) => {
 };
 
 async function sentence(text: string, from?: string) {
-	const { turnId } = await createTurn({ kind: "sentence", text }, from);
+	const { turnId } = await createTurn(OWNER, { kind: "sentence", text }, from);
 	const spec = await settle(turnId);
 	return { turnId, spec, words: wordsOf(spec) };
 }
@@ -110,6 +111,7 @@ async function talkedTo(query: string) {
 		withOff(c, asked[i]?.off ? "user" : null),
 	);
 	const { turnId } = await createTurn(
+		OWNER,
 		{ kind: "spec", spec: { query: { conditions } } },
 		root.turnId,
 	);
@@ -120,6 +122,7 @@ describe("补充需求", () => {
 	test("追加等待链尾补全后保留已完成的一轮，不按等待前的状态删除", async () => {
 		const root = await sentence("算法");
 		const pending = await createTurn(
+			OWNER,
 			{ kind: "sentence", text: "渠道运营" },
 			root.turnId,
 		);
@@ -135,7 +138,11 @@ describe("补充需求", () => {
 			const { rows: owners } = await writer.query<{ pid: number }>(
 				"select pg_backend_pid() as pid",
 			);
-			appended = createTurn({ kind: "spec", spec: root.spec }, root.turnId);
+			appended = createTurn(
+				OWNER,
+				{ kind: "spec", spec: root.spec },
+				root.turnId,
+			);
 			const deadline = Date.now() + 3000;
 			let blocked = false;
 			while (Date.now() < deadline) {
@@ -152,7 +159,7 @@ describe("补充需求", () => {
 			assert.ok(blocked, "追加已经等待补全事务的行锁");
 			await writer.query("commit");
 			const next = await appended;
-			const thread = await loadThread(next.turnId);
+			const thread = await loadThread(OWNER, next.turnId);
 			assert.deepEqual(
 				thread?.map((turn) => turn.id),
 				[root.turnId, pending.turnId, next.turnId],
@@ -168,13 +175,13 @@ describe("补充需求", () => {
 		const first = { conditions: parseQuery("算法") };
 		const last = { conditions: parseQuery("算法, 渠道运营") };
 		await db.execute(sql`insert into search_turn
-			(id, root_turn_id, parent_turn_id, raw_text, spec, created_at,
+			(owner_id, id, root_turn_id, parent_turn_id, raw_text, spec, created_at,
 				attempt, attempt_started_at, trace, attempt_done) values
-			('recent-Z', 'recent-Z', null, '合成同刻任务', ${JSON.stringify(first)}::jsonb,
+			(${OWNER}, 'recent-Z', 'recent-Z', null, '合成同刻任务', ${JSON.stringify(first)}::jsonb,
 				'2020-01-01', 'a-Z', '2020-01-01', '[]', true),
-			('recent-Y', 'recent-Z', 'recent-Z', null, ${JSON.stringify(first)}::jsonb,
+			(${OWNER}, 'recent-Y', 'recent-Z', 'recent-Z', null, ${JSON.stringify(first)}::jsonb,
 				'2020-01-01', null, null, null, false),
-			('recent-A', 'recent-Z', 'recent-Y', '再加渠道运营', null,
+			(${OWNER}, 'recent-A', 'recent-Z', 'recent-Y', '再加渠道运营', null,
 				'2020-01-01', 'a-A', '2020-01-01', '[]', false)`);
 		const inChain = async () =>
 			(await recent()).find((row) => row.title === "合成同刻任务");
@@ -191,7 +198,7 @@ describe("补充需求", () => {
 	});
 
 	test("第一句话一提交就在最近搜索里：还没理解出来时没有条件、状态是处理中，理解完带上条件", async () => {
-		const { turnId } = await createTurn({
+		const { turnId } = await createTurn(OWNER, {
 			kind: "sentence",
 			text: "合成新任务",
 		});
@@ -209,7 +216,7 @@ describe("补充需求", () => {
 		const root = await sentence("算法");
 		const child = await sentence("渠道运营", root.turnId);
 		assert.deepEqual(child.words, ["算法", "渠道运营"]);
-		const thread = await loadThread(child.turnId);
+		const thread = await loadThread(OWNER, child.turnId);
 		assert.deepEqual(
 			thread?.map((t) => t.id),
 			[root.turnId, child.turnId],
@@ -223,8 +230,11 @@ describe("补充需求", () => {
 	});
 
 	test("理解随这一轮写下开始：步骤和开始的时刻记在记录上，写入后能读回", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
-		const started = await loadAttempt(turnId);
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
+		const started = await loadAttempt(OWNER, turnId);
 		assert.deepEqual(
 			{ ...started, startedAt: typeof started?.startedAt },
 			{
@@ -236,7 +246,7 @@ describe("补充需求", () => {
 		);
 		await settle(turnId);
 		// 人才库是空的，假模型去取经历没有可读的：记下一步空的读和没通过的提交；别的步在 agent-tools.test.ts 里
-		const done = await loadAttempt(turnId);
+		const done = await loadAttempt(OWNER, turnId);
 		assert.deepEqual(
 			done?.trace.map((step) => step.tool),
 			["read", "submit"],
@@ -247,7 +257,7 @@ describe("补充需求", () => {
 		const turn = await loadTurn(turnId);
 		assert.deepEqual(turn?.trace, done?.trace);
 		assert.equal(turn?.startedAt, done?.startedAt);
-		assert.equal(await loadAttempt("nope"), null);
+		assert.equal(await loadAttempt(OWNER, "nope"), null);
 	});
 
 	test("从哪一轮取线程都是整条链；不存在的记录没有线程", async () => {
@@ -255,20 +265,21 @@ describe("补充需求", () => {
 		const next = await sentence("渠道运营", root.turnId);
 		for (const id of [root.turnId, next.turnId])
 			assert.deepEqual(
-				(await loadThread(id))?.map((t) => t.id),
+				(await loadThread(OWNER, id))?.map((t) => t.id),
 				[root.turnId, next.turnId],
 			);
-		assert.equal(await loadThread("nope"), null);
+		assert.equal(await loadThread(OWNER, "nope"), null);
 	});
 
 	test("在早先一轮上补充一句：先记一轮恢复那时的条件，话接在最后", async () => {
 		const root = await sentence("算法");
 		const later = await sentence("渠道运营", root.turnId);
 		const { turnId } = await createTurn(
+			OWNER,
 			{ kind: "sentence", text: "带团队" },
 			root.turnId,
 		);
-		const thread = (await loadThread(turnId)) ?? [];
+		const thread = (await loadThread(OWNER, turnId)) ?? [];
 		assert.deepEqual(
 			thread.slice(0, 2).map((t) => t.id),
 			[root.turnId, later.turnId],
@@ -288,10 +299,10 @@ describe("补充需求", () => {
 			spec: { conditions: parseQuery(q) },
 		});
 		const [a, b] = await Promise.all([
-			createTurn(spec("+算法"), root.turnId),
-			createTurn(spec("算法, 后端"), root.turnId),
+			createTurn(OWNER, spec("+算法"), root.turnId),
+			createTurn(OWNER, spec("算法, 后端"), root.turnId),
 		]);
-		const ids = (await loadThread(root.turnId))?.map((t) => t.id);
+		const ids = (await loadThread(OWNER, root.turnId))?.map((t) => t.id);
 		assert.equal(ids?.length, 3);
 		assert.deepEqual(new Set(ids?.slice(1)), new Set([a.turnId, b.turnId]));
 	});
@@ -300,11 +311,12 @@ describe("补充需求", () => {
 		const root = await sentence("算法");
 		const later = await sentence("渠道运营", root.turnId);
 		const { turnId } = await createTurn(
+			OWNER,
 			{ kind: "spec", spec: { conditions: parseQuery("+算法") } },
 			root.turnId,
 		);
 		assert.deepEqual(
-			(await loadThread(turnId))?.map((t) => t.id),
+			(await loadThread(OWNER, turnId))?.map((t) => t.id),
 			[root.turnId, later.turnId, turnId],
 		);
 	});
@@ -319,6 +331,7 @@ describe("补充需求", () => {
 			},
 			async () => {
 				const { turnId } = await createTurn(
+					OWNER,
 					{ kind: "sentence", text: "就这样" },
 					at,
 				);
@@ -340,6 +353,7 @@ describe("补充需求", () => {
 			() => ({ conditions: drafted("产品经理"), note: null }),
 			async () => {
 				const { turnId } = await createTurn(
+					OWNER,
 					{ kind: "sentence", text: "换成找产品经理" },
 					root.turnId,
 				);
@@ -352,24 +366,27 @@ describe("补充需求", () => {
 	test("没理解出来的最后一轮被下一句取代，不留在链上", async () => {
 		const root = await sentence("算法");
 		const stuck = await createTurn(
+			OWNER,
 			{ kind: "sentence", text: "渠道运营" },
 			root.turnId,
 		);
 		const { turnId } = await createTurn(
+			OWNER,
 			{ kind: "sentence", text: "带团队" },
 			stuck.turnId,
 		);
 		assert.equal(await loadTurn(stuck.turnId), null);
 		assert.deepEqual(
-			(await loadThread(turnId))?.map((t) => t.id),
+			(await loadThread(OWNER, turnId))?.map((t) => t.id),
 			[root.turnId, turnId],
 		);
 		assert.deepEqual(wordsOf(await settle(turnId)), ["算法", "带团队"]);
 	});
 
 	test("链头就没理解出来：下一句成了新的链头", async () => {
-		const stuck = await createTurn({ kind: "sentence", text: "算法" });
+		const stuck = await createTurn(OWNER, { kind: "sentence", text: "算法" });
 		const { turnId } = await createTurn(
+			OWNER,
 			{ kind: "sentence", text: "渠道运营" },
 			stuck.turnId,
 		);
@@ -377,15 +394,16 @@ describe("补充需求", () => {
 		const turn = await loadTurn(turnId);
 		assert.equal(turn?.title, "渠道运营");
 		assert.deepEqual(
-			(await loadThread(turnId))?.map((t) => t.id),
+			(await loadThread(OWNER, turnId))?.map((t) => t.id),
 			[turnId],
 		);
 	});
 
 	test("还没有条件时不能直接改条件", async () => {
-		const stuck = await createTurn({ kind: "sentence", text: "算法" });
+		const stuck = await createTurn(OWNER, { kind: "sentence", text: "算法" });
 		await assert.rejects(
 			createTurn(
+				OWNER,
 				{ kind: "spec", spec: { conditions: parseQuery("算法") } },
 				stuck.turnId,
 			),
@@ -396,7 +414,7 @@ describe("补充需求", () => {
 
 describe("说明", () => {
 	test("那句话和可选的回答跟着这一轮写入；回答只是一句话，不带条件", async () => {
-		const { turnId } = await createTurn({
+		const { turnId } = await createTurn(OWNER, {
 			kind: "sentence",
 			text: "北京的算法，有潜力",
 		});
@@ -443,7 +461,7 @@ describe("说明", () => {
 		assert.ok(answer);
 		const next = await sentence(answer.label, asked.turnId);
 		assert.deepEqual(next.words, ["算法", "带团队"]);
-		const thread = await loadThread(next.turnId);
+		const thread = await loadThread(OWNER, next.turnId);
 		assert.deepEqual(
 			thread?.map((t) => [t.id, t.said]),
 			[
@@ -455,7 +473,10 @@ describe("说明", () => {
 	});
 
 	test("一条都搜不了的话是一个合法的结果：条件为空，那句话在", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "北京的" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "北京的",
+		});
 		const spec = await answering(
 			() => ({
 				conditions: [],
@@ -477,6 +498,7 @@ describe("直接改条件", () => {
 	test("这一轮没有说话；任务标题仍是链头那句", async () => {
 		const root = await sentence("算法");
 		const tuned = await createTurn(
+			OWNER,
 			{ kind: "spec", spec: { conditions: parseQuery("+算法") } },
 			root.turnId,
 		);
@@ -503,20 +525,20 @@ describe("任务标题", () => {
 	test("最近搜索按游标读取，删除或新增记录不会使后续记录错位", async () => {
 		const first = await sentence("数据分析");
 		const second = await sentence("用户研究");
-		const page = await listRecent(1);
+		const page = await listRecent(OWNER, 1);
 		assert.equal(page.rows[0]?.turnId, second.turnId);
 		assert.ok(page.next);
-		await deleteSearch(second.turnId);
+		await deleteSearch(OWNER, second.turnId);
 		const inserted = await sentence("合成新需求");
-		const next = await listRecent(1, page.next);
+		const next = await listRecent(OWNER, 1, page.next);
 		assert.equal(next.rows[0]?.turnId, first.turnId);
 		assert.ok(!next.rows.some((row) => row.turnId === inserted.turnId));
 		assert.ok((next.rows[0]?.ageSeconds ?? -1) >= 0);
-		await assert.rejects(listRecent(1, "invalid"), /游标无效/);
+		await assert.rejects(listRecent(OWNER, 1, "invalid"), /游标无效/);
 	});
 
 	test("关键词搜索没有标题", async () => {
-		const { turnId } = await createTurn({
+		const { turnId } = await createTurn(OWNER, {
 			kind: "spec",
 			spec: { conditions: parseQuery("算法") },
 		});
@@ -531,11 +553,12 @@ describe("两种搜索各走各的链", () => {
 			const root =
 				mode === "conversation"
 					? await sentence("算法")
-					: await createTurn({
+					: await createTurn(OWNER, {
 							kind: "spec",
 							spec: { conditions: parseQuery("算法") },
 						});
 			const empty = await createTurn(
+				OWNER,
 				{ kind: "spec", spec: { conditions: [] } },
 				root.turnId,
 			);
@@ -551,10 +574,11 @@ describe("两种搜索各走各的链", () => {
 					: contentOf(compiled("算法")),
 			);
 			const next = await createTurn(
+				OWNER,
 				{ kind: "spec", spec: { conditions: parseQuery("运营") } },
 				empty.turnId,
 			);
-			const thread = await loadThread(next.turnId);
+			const thread = await loadThread(OWNER, next.turnId);
 			assert.deepEqual(
 				thread?.map((turn) => turn.id),
 				[root.turnId, empty.turnId, next.turnId],
@@ -566,16 +590,18 @@ describe("两种搜索各走各的链", () => {
 	test("链头定下种类：有原话是对话，直接是条件是关键词，整条链不变", async () => {
 		const talk = await sentence("算法");
 		const tuned = await createTurn(
+			OWNER,
 			{ kind: "spec", spec: { conditions: parseQuery("+算法") } },
 			talk.turnId,
 		);
 		assert.equal((await loadTurn(tuned.turnId))?.mode, "conversation");
 
-		const typed = await createTurn({
+		const typed = await createTurn(OWNER, {
 			kind: "spec",
 			spec: { conditions: parseQuery("算法") },
 		});
 		const next = await createTurn(
+			OWNER,
 			{ kind: "spec", spec: { conditions: parseQuery("算法, 渠道运营") } },
 			typed.turnId,
 		);
@@ -583,12 +609,12 @@ describe("两种搜索各走各的链", () => {
 	});
 
 	test("关键词搜索不收一句话的需求", async () => {
-		const typed = await createTurn({
+		const typed = await createTurn(OWNER, {
 			kind: "spec",
 			spec: { conditions: parseQuery("算法") },
 		});
 		await assert.rejects(
-			createTurn({ kind: "sentence", text: "渠道运营" }, typed.turnId),
+			createTurn(OWNER, { kind: "sentence", text: "渠道运营" }, typed.turnId),
 			/关键词搜索不收一句话/,
 		);
 	});
@@ -596,15 +622,19 @@ describe("两种搜索各走各的链", () => {
 	test("关键词搜索只收框里写得出的条件表", async () => {
 		// 加分、停用都不是框能写出来的：落了库，结果页就填不回框里
 		await assert.rejects(
-			createTurn({ kind: "spec", spec: { conditions: parseQuery("+算法") } }),
+			createTurn(OWNER, {
+				kind: "spec",
+				spec: { conditions: parseQuery("+算法") },
+			}),
 			/关键词框里写得出/,
 		);
-		const typed = await createTurn({
+		const typed = await createTurn(OWNER, {
 			kind: "spec",
 			spec: { conditions: parseQuery("算法") },
 		});
 		await assert.rejects(
 			createTurn(
+				OWNER,
 				{ kind: "spec", spec: { conditions: parseQuery("~算法") } },
 				typed.turnId,
 			),
@@ -620,7 +650,10 @@ describe("理解失败", () => {
 	 * 而故障在屏幕上和「没有这样的人」长得一模一样。
 	 */
 	test("模型报错时不写入，记下原因；重试换一次理解，能成立", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		const restore = breakUnderstanding();
 		try {
 			await assert.rejects(settle(turnId), /rejected/);
@@ -656,7 +689,10 @@ describe("理解失败", () => {
 	});
 
 	test("模型给了条件、校验后一个不剩：也是失败，不写入", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		await assert.rejects(
 			answering(
 				() => ({
@@ -675,7 +711,10 @@ describe("理解失败", () => {
 	});
 
 	test("条件和说明都空着：没作答，不写入", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		await assert.rejects(
 			answering(
 				() => ({ conditions: [], note: null }),
@@ -687,7 +726,10 @@ describe("理解失败", () => {
 	});
 
 	test("一部分条件无效也不发布剩余条件，不能静默放宽要求", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		await assert.rejects(
 			answering(
 				() => ({
@@ -708,7 +750,10 @@ describe("理解失败", () => {
 
 describe("写进记录的是提交检查录取的那份", () => {
 	test("次数用完仍有跑不了的条件：条件和说明都不发布", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		await assert.rejects(
 			answering(
 				() => ({
@@ -728,7 +773,10 @@ describe("写进记录的是提交检查录取的那份", () => {
 	});
 
 	test("执行才报错也不能发布，没通过的提交仍记在步骤里", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		await assert.rejects(
 			answering(
 				() => ({ conditions: [...drafted("算法"), lately], note: null }),
@@ -754,7 +802,7 @@ describe("写进记录的是提交检查录取的那份", () => {
 	});
 
 	test("AI 新条件缺判据不能退化成字面搜索，即使最后一次也不发布", async () => {
-		const { turnId } = await createTurn({
+		const { turnId } = await createTurn(OWNER, {
 			kind: "sentence",
 			text: "本人做过算法研发",
 		});
@@ -780,7 +828,10 @@ describe("写进记录的是提交检查录取的那份", () => {
 	});
 
 	test("条件全都跑不了：按没作答失败，不写入", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		await assert.rejects(
 			answering(
 				() => ({ conditions: [sleeper], note: null }),
@@ -824,7 +875,10 @@ describe("理解时把候选人的经历看完", () => {
 	});
 
 	test("模型取经历来读、交上结论再提交：步骤记下读了几段、几段符合，名单听这些结论，候选人都确认过", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "鉴宝的" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "鉴宝的",
+		});
 		const spec = await answering(
 			() => ({ conditions: [appraising], note: null }),
 			() => settle(turnId),
@@ -855,7 +909,10 @@ describe("理解时把候选人的经历看完", () => {
 			seek: { ...appraising.seek, criterion: "符合：鉴定师；不算：直播、销售" },
 		};
 		let asked = 0;
-		const { turnId } = await createTurn({ kind: "sentence", text: "鉴宝师" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "鉴宝师",
+		});
 		const spec = await answering(
 			() => ({
 				conditions: [asked++ === 0 ? appraising : reworded],
@@ -901,7 +958,7 @@ describe("理解时把候选人的经历看完", () => {
 
 	test("AI 读过的结论属于那一次找人任务：另一次任务写了同一条判据也从头读，任务删掉结论一起删", async () => {
 		const read = async (text: string) => {
-			const { turnId } = await createTurn({ kind: "sentence", text });
+			const { turnId } = await createTurn(OWNER, { kind: "sentence", text });
 			const spec = await answering(
 				() => ({ conditions: [appraising], note: null }),
 				() => settle(turnId),
@@ -927,7 +984,7 @@ describe("理解时把候选人的经历看完", () => {
 		);
 		assert.deepEqual([await kept(first), await kept(second)], [3, 3]);
 
-		await deleteSearch(first);
+		await deleteSearch(OWNER, first);
 		assert.deepEqual([await kept(first), await kept(second)], [0, 3]);
 		assert.equal((await search(spec, second)).total, 2);
 	});
@@ -950,6 +1007,7 @@ describe("理解时把候选人的经历看完", () => {
 		};
 
 		const { turnId, attempt } = await createTurn(
+			OWNER,
 			{ kind: "spec", spec },
 			root.turnId,
 		);
@@ -960,7 +1018,7 @@ describe("理解时把候选人的经历看完", () => {
 		await processTurn(turnId, attempt);
 		const turn = await loadTurn(turnId);
 		assert.equal(turn?.settled, true);
-		assert.equal((await loadAttempt(turnId))?.settled, true);
+		assert.equal((await loadAttempt(OWNER, turnId))?.settled, true);
 		assert.deepEqual(turn?.spec, spec, "条件还是 HR 改成的那一份");
 		assert.deepEqual(
 			turn?.trace?.map(({ at: _at, ...step }) => step),
@@ -987,6 +1045,7 @@ describe("理解时把候选人的经历看完", () => {
 			},
 		};
 		const { turnId, attempt } = await createTurn(
+			OWNER,
 			{ kind: "spec", spec },
 			root.turnId,
 		);
@@ -1009,6 +1068,7 @@ describe("理解时把候选人的经历看完", () => {
 			query: { conditions: queryOfSpec(root.spec).conditions.slice(0, 1) },
 		};
 		const { turnId, attempt } = await createTurn(
+			OWNER,
 			{ kind: "spec", spec },
 			root.turnId,
 		);
@@ -1037,6 +1097,7 @@ describe("理解时把候选人的经历看完", () => {
 		);
 		const conditions = queryOfSpec(root.spec).conditions;
 		const first = await createTurn(
+			OWNER,
 			{
 				kind: "spec",
 				spec: {
@@ -1049,11 +1110,12 @@ describe("理解时把候选人的经历看完", () => {
 		);
 		assert.ok(first.attempt);
 		const second = await createTurn(
+			OWNER,
 			{ kind: "spec", spec: root.spec },
 			first.turnId,
 		);
 		assert.ok(second.attempt, "AI 的处理只属于最后一轮");
-		assert.equal(await loadAttempt(first.turnId), null);
+		assert.equal(await loadAttempt(OWNER, first.turnId), null);
 
 		await processTurn(first.turnId, first.attempt);
 		const replaced = await loadTurn(first.turnId);
@@ -1086,7 +1148,11 @@ describe("理解时把候选人的经历看完", () => {
 					],
 				},
 			};
-			const first = await createTurn({ kind: "spec", spec }, root.turnId);
+			const first = await createTurn(
+				OWNER,
+				{ kind: "spec", spec },
+				root.turnId,
+			);
 			assert.ok(first.attempt);
 			let entered!: () => void;
 			let release!: () => void;
@@ -1122,7 +1188,11 @@ describe("理解时把候选人的经历看完", () => {
 			try {
 				await waiting;
 				if (action === "revise")
-					current = await createTurn({ kind: "spec", spec }, first.turnId);
+					current = await createTurn(
+						OWNER,
+						{ kind: "spec", spec },
+						first.turnId,
+					);
 				else {
 					await db
 						.update(searchTurn)
@@ -1134,7 +1204,7 @@ describe("理解时把候选人的经历看完", () => {
 						.where(eq(searchTurn.id, first.turnId));
 					current = {
 						turnId: first.turnId,
-						attempt: await restartTurn(first.turnId),
+						attempt: await restartTurn(OWNER, first.turnId),
 					};
 				}
 			} finally {
@@ -1163,18 +1233,20 @@ describe("理解时把候选人的经历看完", () => {
 	test("不用 AI 接着处理的改动不带处理的编号：条件里没有判据的、关键词搜索的、在早先一轮上补充时恢复条件的那一轮", async () => {
 		const plain = await sentence("education:硕士");
 		const tuned = await createTurn(
+			OWNER,
 			{ kind: "spec", spec: plain.spec },
 			plain.turnId,
 		);
 		assert.equal(tuned.attempt, null);
 		assert.equal((await loadTurn(tuned.turnId))?.settled, true);
-		assert.equal(await loadAttempt(tuned.turnId), null);
+		assert.equal(await loadAttempt(OWNER, tuned.turnId), null);
 
-		const typed = await createTurn({
+		const typed = await createTurn(OWNER, {
 			kind: "spec",
 			spec: { conditions: parseQuery("鉴宝") },
 		});
 		const retyped = await createTurn(
+			OWNER,
 			{ kind: "spec", spec: { conditions: parseQuery("鉴宝, 直播") } },
 			typed.turnId,
 		);
@@ -1186,10 +1258,11 @@ describe("理解时把候选人的经历看完", () => {
 		);
 		await sentence("直播", root.turnId);
 		const again = await createTurn(
+			OWNER,
 			{ kind: "sentence", text: "再想想" },
 			root.turnId,
 		);
-		const restored = (await loadThread(again.turnId))?.at(-2);
+		const restored = (await loadThread(OWNER, again.turnId))?.at(-2);
 		assert.deepEqual(restored?.spec, root.spec, "恢复的是早先那一轮的条件");
 		assert.deepEqual(
 			[restored?.said, restored?.trace, restored?.settled],
@@ -1204,10 +1277,13 @@ describe("一轮只有一次理解", () => {
 	 * 重试顶掉：否则两次理解同时往一条记录上写步骤，线程里就是两遍的步骤混在一起。
 	 */
 	test("理解还在跑时点重试：什么都不做", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
-		assert.equal(await restartTurn(turnId), null);
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
+		assert.equal(await restartTurn(OWNER, turnId), null);
 		await settle(turnId);
-		assert.equal(await restartTurn(turnId), null, "理解好了也不再开始");
+		assert.equal(await restartTurn(OWNER, turnId), null, "理解好了也不再开始");
 	});
 
 	/**
@@ -1215,16 +1291,19 @@ describe("一轮只有一次理解", () => {
 	 * 可以重试。万一那一次其实还活着、后来才写回来，编号已经换掉，它写不进来。
 	 */
 	test("没了的那一次算作失败；重试之后，它写不进来", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		const lost = await attemptOf(turnId);
 		await db
 			.update(searchTurn)
 			.set({ attemptStartedAt: sql`now() - interval '1 hour'` })
 			.where(eq(searchTurn.id, turnId));
-		assert.equal((await loadAttempt(turnId))?.fault, "broken");
+		assert.equal((await loadAttempt(OWNER, turnId))?.fault, "broken");
 
-		assert.ok(await restartTurn(turnId));
-		assert.equal((await loadAttempt(turnId))?.fault, null);
+		assert.ok(await restartTurn(OWNER, turnId));
+		assert.equal((await loadAttempt(OWNER, turnId))?.fault, null);
 
 		await processTurn(turnId, lost);
 		assert.equal((await loadTurn(turnId))?.spec, null, "换掉的那一次没写进来");
@@ -1246,29 +1325,38 @@ describe("这一次理解还在不在", () => {
 				trace: [],
 			})
 			.where(eq(searchTurn.id, turnId));
-		return (await loadAttempt(turnId))?.fault ?? null;
+		return (await loadAttempt(OWNER, turnId))?.fault ?? null;
 	}
 
 	test("请求排队或重试再久，有心跳就不能重试取代它", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		assert.equal(await quietFor(turnId, 3_600_000, 1_000), null);
-		assert.equal(await restartTurn(turnId), null);
+		assert.equal(await restartTurn(OWNER, turnId), null);
 	});
 
 	test("创建后没有启动：租约过期读到 broken，没过的不算", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		assert.equal(await quietFor(turnId, 55_000), null);
 		assert.equal(await quietFor(turnId, 65_000), "broken");
 	});
 
 	test("心跳过期才算没了，重试清掉旧心跳", async () => {
-		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
+		const { turnId } = await createTurn(OWNER, {
+			kind: "sentence",
+			text: "算法",
+		});
 		const hour = 3_600_000;
 		assert.equal(await quietFor(turnId, hour, 1_000), null);
 		assert.equal(await quietFor(turnId, hour, 55_000), null);
 		assert.equal(await quietFor(turnId, hour, 65_000), "broken");
-		assert.ok(await restartTurn(turnId), "没了的那一次可以重试");
-		assert.equal((await loadAttempt(turnId))?.fault, null);
+		assert.ok(await restartTurn(OWNER, turnId), "没了的那一次可以重试");
+		assert.equal((await loadAttempt(OWNER, turnId))?.fault, null);
 	});
 
 	test("模型仍在等待时进程独立续租，开始时间和展示步骤不变", {
@@ -1288,7 +1376,7 @@ describe("这一次理解还在不在", () => {
 			await held;
 			return original(...args);
 		};
-		const { turnId, attempt } = await createTurn({
+		const { turnId, attempt } = await createTurn(OWNER, {
 			kind: "sentence",
 			text: "算法",
 		});
@@ -1297,15 +1385,15 @@ describe("这一次理解还在不在", () => {
 		try {
 			await started;
 			await quietFor(turnId, 3_600_000, 65_000);
-			const before = await loadAttempt(turnId);
+			const before = await loadAttempt(OWNER, turnId);
 			const deadline = Date.now() + 13_000;
-			while ((await loadAttempt(turnId))?.fault && Date.now() < deadline)
+			while ((await loadAttempt(OWNER, turnId))?.fault && Date.now() < deadline)
 				await new Promise((resolve) => setTimeout(resolve, 50));
-			const alive = await loadAttempt(turnId);
+			const alive = await loadAttempt(OWNER, turnId);
 			assert.equal(alive?.fault, null);
 			assert.equal(alive?.startedAt, before?.startedAt);
 			assert.deepEqual(alive?.trace, before?.trace);
-			assert.equal(await restartTurn(turnId), null);
+			assert.equal(await restartTurn(OWNER, turnId), null);
 		} finally {
 			release();
 			await running;
@@ -1320,6 +1408,7 @@ describe("查询记录状态", () => {
 		await sentence("渠道运营", root.turnId);
 		await assert.rejects(
 			db.insert(searchTurn).values({
+				ownerId: OWNER,
 				id: "forked_turn",
 				rootTurnId: root.turnId,
 				parentTurnId: root.turnId,
@@ -1336,6 +1425,7 @@ describe("查询记录状态", () => {
 		const root = await sentence("算法");
 		await assert.rejects(
 			db.insert(searchTurn).values({
+				ownerId: OWNER,
 				id: "said_without_attempt",
 				rootTurnId: root.turnId,
 				rawText: "带团队",
@@ -1344,6 +1434,7 @@ describe("查询记录状态", () => {
 		);
 		await assert.rejects(
 			db.insert(searchTurn).values({
+				ownerId: OWNER,
 				id: "attempt_without_start",
 				rootTurnId: root.turnId,
 				spec: root.spec,
@@ -1363,6 +1454,7 @@ describe("查询记录状态", () => {
 		};
 		await assert.rejects(
 			db.insert(searchTurn).values({
+				ownerId: OWNER,
 				id: "said_done_without_spec",
 				rootTurnId: root.turnId,
 				rawText: "带团队",
@@ -1373,6 +1465,7 @@ describe("查询记录状态", () => {
 		);
 		await assert.rejects(
 			db.insert(searchTurn).values({
+				ownerId: OWNER,
 				id: "edited_done_without_attempt",
 				rootTurnId: root.turnId,
 				spec: root.spec,
@@ -1382,6 +1475,7 @@ describe("查询记录状态", () => {
 		);
 		await assert.rejects(
 			db.insert(searchTurn).values({
+				ownerId: OWNER,
 				id: "done_and_failed",
 				rootTurnId: root.turnId,
 				spec: root.spec,
@@ -1396,6 +1490,7 @@ describe("查询记录状态", () => {
 	test("数据库不接受既没原话也没条件的记录", async () => {
 		await assert.rejects(
 			db.insert(searchTurn).values({
+				ownerId: OWNER,
 				id: "invalid_pending_spec",
 				rootTurnId: "invalid_pending_spec",
 				spec: null,
@@ -1410,7 +1505,7 @@ describe("删除", () => {
 		const root = await sentence("产品经理");
 		const rewritten = await sentence("渠道运营", root.turnId);
 
-		const gone = await deleteSearch(rewritten.turnId);
+		const gone = await deleteSearch(OWNER, rewritten.turnId);
 		assert.deepEqual(gone.sort(), [root.turnId, rewritten.turnId].sort());
 		assert.equal(await loadTurn(root.turnId), null);
 		assert.equal(await loadTurn(rewritten.turnId), null);
@@ -1421,6 +1516,71 @@ describe("删除", () => {
 	});
 
 	test("不存在的记录：什么都没删", async () => {
-		assert.deepEqual(await deleteSearch("no-such-turn"), []);
+		assert.deepEqual(await deleteSearch(OWNER, "no-such-turn"), []);
+	});
+});
+
+describe("一次找人任务只属于发起它的账号", () => {
+	const OTHER = "synthetic-other";
+	before(async () => {
+		await pool.query(
+			`insert into auth_user (id, name, email, username)
+			 values ($1, '另一个合成账号', 'other@users.invalid', 'synthetic.other')`,
+			[OTHER],
+		);
+	});
+
+	test("别人的记录和不存在的一样：读不到、接不上、重试不了、删不掉，也不在最近搜索里", async () => {
+		const mine = await sentence("算法");
+		const failed = await createTurn(
+			OWNER,
+			{ kind: "sentence", text: "渠道运营" },
+			mine.turnId,
+		);
+		const restore = breakUnderstanding();
+		try {
+			await processTurn(failed.turnId, await attemptOf(failed.turnId));
+		} finally {
+			restore();
+		}
+		assert.equal(await loadAttempt(OTHER, failed.turnId), null);
+		assert.equal(await restartTurn(OTHER, failed.turnId), null);
+		assert.ok(
+			(await loadAttempt(OWNER, failed.turnId))?.fault,
+			"别人的重试没有换掉这一次",
+		);
+		assert.equal(await loadThread(OTHER, mine.turnId), null);
+		await assert.rejects(
+			createTurn(OTHER, { kind: "sentence", text: "带团队" }, mine.turnId),
+			/要修改的查询记录不存在/,
+		);
+		assert.deepEqual(await deleteSearch(OTHER, mine.turnId), []);
+		assert.ok(await loadTurn(mine.turnId), "别人的删除没有删掉它");
+
+		const theirs = await createTurn(OTHER, {
+			kind: "spec",
+			spec: { conditions: parseQuery("产品经理") },
+		});
+		const listed = await listRecent(OTHER, 50);
+		assert.deepEqual(
+			listed.rows.map((row) => row.turnId),
+			[theirs.turnId],
+		);
+		assert.equal(listed.total, 1, "总数也只数自己的");
+		assert.ok(!(await recent()).some((row) => row.turnId === theirs.turnId));
+	});
+
+	test("链上每一轮的归属都是链头的归属：数据库不接受接到别人链上的一轮", async () => {
+		const root = await sentence("算法");
+		await assert.rejects(
+			db.insert(searchTurn).values({
+				ownerId: OTHER,
+				id: "grafted_turn",
+				rootTurnId: root.turnId,
+				parentTurnId: root.turnId,
+				spec: { conditions: [] },
+			}),
+			violates("search_turn_chain"),
+		);
 	});
 });
