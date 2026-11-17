@@ -16,6 +16,7 @@ import {
 	ToolbarButton,
 	ToolbarSeparator,
 } from "#/components/ui/toolbar";
+import { logExport } from "#/server/functions";
 import { download, exportName, exportWorkbook, FIXED } from "../-lib/export";
 import type { Pick, Picks } from "../-lib/picks";
 import { reachOf } from "../-lib/view-params";
@@ -174,6 +175,10 @@ function ExportDialog({
 				onCancel={() => setOpen(false)}
 				onOk={async () => {
 					try {
+						// 先记进操作记录，记下了才生成文件
+						await logExport({
+							data: { empIds: picked.map((one) => one.empId) },
+						});
 						download(exportName(), await exportWorkbook(picked, names, on));
 					} catch {
 						toast.error("没能导出名单，请重试。");

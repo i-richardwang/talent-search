@@ -62,6 +62,7 @@ const ROOT: Record<HomeState, Partial<RootData>> = {
 		user: {
 			id: "sample-user",
 			name: "演示用户",
+			username: "hr_user",
 			admin: false,
 		},
 	},

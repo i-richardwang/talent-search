@@ -2,20 +2,18 @@ import { Link, useLoaderData, useMatchRoute } from "@tanstack/react-router";
 import {
 	ActivityIcon,
 	EllipsisIcon,
+	ShieldCheckIcon,
 	SquarePenIcon,
 	TableIcon,
 	TagsIcon,
-	UsersRoundIcon,
+	UserCogIcon,
 } from "lucide-react";
-import { useState } from "react";
 import { AppNavHeader } from "#/components/ui/app-layout";
-import { Button } from "#/components/ui/button";
 import { NavGroup, NavGroups, NavItem } from "#/components/ui/nav-item";
 import { ScrollArea } from "#/components/ui/scroll-area";
-import { toast } from "#/components/ui/toast";
-import { authClient } from "../-lib/auth-client";
 import { NAV_RECENT_COUNT } from "../-lib/recent";
 import { useRecents } from "../-lib/recents";
+import { AccountMenu } from "./account-menu";
 import { ToggleNavButton, useNavControl } from "./nav-control";
 import { LoadFailed, RecentItem } from "./recent-item";
 
@@ -29,21 +27,17 @@ const GROUPS = ["recent"] as const;
 export function NavContent() {
 	const { user } = useLoaderData({ from: "__root__" });
 	const { page: recent } = useRecents();
-	// 退出成功后页面要换走：从按下到换走都算正在离开，比退出那一次请求长
-	const [leaving, setLeaving] = useState(false);
 	const control = useNavControl();
 	const matchRoute = useMatchRoute();
-	const on = (to: "/" | "/data" | "/terms" | "/tasks") =>
-		Boolean(matchRoute({ to, fuzzy: to !== "/" }));
+	const on = (
+		to: "/" | "/data" | "/terms" | "/tasks" | "/audit" | "/accounts",
+	) => Boolean(matchRoute({ to, fuzzy: to !== "/" }));
 	const folded = control?.prefs.folded ?? [];
 	return (
 		<>
-			<AppNavHeader
-				logo={UsersRoundIcon}
-				name="人才搜索"
-				render={<Link to="/" />}
-				toggle={<ToggleNavButton />}
-			/>
+			<AppNavHeader toggle={<ToggleNavButton />}>
+				{user && <AccountMenu user={user} />}
+			</AppNavHeader>
 			<div className="mt-px flex flex-col px-1">
 				<NavItem active={on("/")} icon={SquarePenIcon} render={<Link to="/" />}>
 					新搜索
@@ -90,37 +84,25 @@ export function NavContent() {
 						任务
 					</NavItem>
 				)}
-			</ScrollArea>
-			{user && (
-				<div className="flex items-center justify-between gap-2 px-3 py-3">
-					<div className="min-w-0 text-sm">
-						<p className="truncate" title={user.name}>
-							{user.name}
-						</p>
-						<p className="text-xs text-fg-tertiary">
-							{user.admin ? "管理员" : "普通用户"}
-						</p>
-					</div>
-					<Button
-						loading={leaving}
-						onClick={async () => {
-							setLeaving(true);
-							try {
-								const { error } = await authClient.signOut();
-								if (error) throw error;
-								window.location.replace("/login");
-							} catch {
-								toast.error("退出失败，请重试");
-								setLeaving(false);
-							}
-						}}
-						size="small"
-						type="text"
+				{user?.admin && (
+					<NavItem
+						active={on("/audit")}
+						icon={ShieldCheckIcon}
+						render={<Link search={{ page: undefined, q: "" }} to="/audit" />}
 					>
-						退出登录
-					</Button>
-				</div>
-			)}
+						审计
+					</NavItem>
+				)}
+				{user?.admin && (
+					<NavItem
+						active={on("/accounts")}
+						icon={UserCogIcon}
+						render={<Link search={{ page: undefined, q: "" }} to="/accounts" />}
+					>
+						账号
+					</NavItem>
+				)}
+			</ScrollArea>
 		</>
 	);
 }

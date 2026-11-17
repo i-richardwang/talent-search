@@ -36,6 +36,8 @@ const PATHS = [
 	"/terms",
 	"/terms/$word",
 	"/tasks",
+	"/audit",
+	"/accounts",
 ];
 
 /** 根路由提供的数据：导航栏记住的样子取默认值，最近搜索是样例的第一页。 */
@@ -50,6 +52,7 @@ const ROOT_DATA: RootData = {
 	user: {
 		id: "sample-admin",
 		name: "演示管理员",
+		username: "admin",
 		admin: true,
 	},
 	nav: navPrefsOf(undefined),

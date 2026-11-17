@@ -71,7 +71,7 @@ export function TermTable({
 				/>
 				<SearchBar
 					aria-label={excluded ? "搜索不是能力的词" : "搜索标签"}
-					className="max-w-70"
+					className="max-w-60"
 					loading={pending}
 					onChange={setNeedle}
 					onSearch={search}
@@ -121,11 +121,13 @@ export function TermTable({
 					<Table
 						busy={pending}
 						footer={
-							<TablePager
-								linkTo={(page) => <Link search={at(page, q)} to="/terms" />}
-								table={table}
-								units={{ row: "项", total: "项" }}
-							/>
+							table.pages > 1 && (
+								<TablePager
+									linkTo={(page) => <Link search={at(page, q)} to="/terms" />}
+									table={table}
+									units={{ row: "项", total: "项" }}
+								/>
+							)
 						}
 						narrow="cards"
 					>

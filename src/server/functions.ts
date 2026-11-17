@@ -10,6 +10,8 @@ import { KEYWORD_FIELDS, KEYWORD_RULES } from "#/search/keywords";
 import { sanitizeFilters, sanitizeLimit } from "#/search/params";
 import type { SearchOutcome } from "#/search/result";
 import { search, suggest } from "#/search/search";
+import { RESULT_MAX } from "#/search/weights";
+import { listAudit, recordExport, recordView } from "./audit";
 import { administrator, authenticated } from "./auth-functions";
 import { employeeData, employeeDetail, listEmployees } from "./data";
 import { type JobKind, requestJob } from "./jobs";
@@ -31,6 +33,7 @@ import {
 /**
  * 按记录 id 载入完整线程和当前筛选下的结果。条件来自已校验的查询记录；
  * 视图入参在此独立校验。待理解记录只返回线程，工作台读进度等它理解完。
+ * 只在当前账号自己的记录里找（`turn.ts`）：别人的记录和不存在的一样是 null。
  */
 export const loadWorkbench = createServerFn({ method: "GET" })
 	.middleware([authenticated])
@@ -42,9 +45,10 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 	.handler(
 		async ({
 			data,
+			context,
 		}): Promise<{ thread: Turn[]; result: SearchOutcome | null } | null> => {
 			// 整条链一次取回：对话栏画的是全部，名单是正看着的这一轮
-			const thread = await loadThread(data.turnId);
+			const thread = await loadThread(context.viewer.id, data.turnId);
 			const turn = thread?.find((t) => t.id === data.turnId);
 			const head = thread?.[0];
 			if (!thread || !turn || !head) return null;
@@ -56,11 +60,26 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 		},
 	);
 
+/**
+ * 把一个人的详情交给这个账号：有这个人就先记一行「查看」。取个人详情的入口都经过这里。
+ */
+async function viewed<T>(
+	viewer: { id: string },
+	empId: string,
+	load: (empId: string) => Promise<T | null>,
+): Promise<T | null> {
+	const detail = await load(empId);
+	if (detail) await recordView(viewer.id, empId);
+	return detail;
+}
+
 /** 单人详情的显示属性与经历时间线。 */
 export const fetchEmployee = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
-	.handler(({ data }) => employeeDetail(data.empId));
+	.handler(({ data, context }) =>
+		viewed(context.viewer, data.empId, employeeDetail),
+	);
 
 /**
  * 提交一次查询：写一条记录，返回它的 id。入参校验在 `search/commit-input.ts`。
@@ -70,8 +89,12 @@ export const fetchEmployee = createServerFn({ method: "GET" })
 export const commitTurn = createServerFn({ method: "POST" })
 	.middleware([authenticated])
 	.validator(validateCommit)
-	.handler(async ({ data }) => {
-		const { turnId, attempt } = await createTurn(data.input, data.from);
+	.handler(async ({ data, context }) => {
+		const { turnId, attempt } = await createTurn(
+			context.viewer.id,
+			data.input,
+			data.from,
+		);
 		if (attempt) void processTurn(turnId, attempt);
 		return { turnId };
 	});
@@ -80,7 +103,7 @@ export const commitTurn = createServerFn({ method: "POST" })
 export const turnAttempt = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
-	.handler(({ data }) => loadAttempt(data.turnId));
+	.handler(({ data, context }) => loadAttempt(context.viewer.id, data.turnId));
 
 /**
  * 人点了重试：上一次失败了就重新开始（`restartTurn`），返回这一轮现在的样子。
@@ -89,10 +112,10 @@ export const turnAttempt = createServerFn({ method: "GET" })
 export const retryTurn = createServerFn({ method: "POST" })
 	.middleware([authenticated])
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
-	.handler(async ({ data }) => {
-		const attempt = await restartTurn(data.turnId);
+	.handler(async ({ data, context }) => {
+		const attempt = await restartTurn(context.viewer.id, data.turnId);
 		if (attempt) void processTurn(data.turnId, attempt);
-		return loadAttempt(data.turnId);
+		return loadAttempt(context.viewer.id, data.turnId);
 	});
 
 /**
@@ -105,7 +128,9 @@ export const recentSearches = createServerFn({ method: "GET" })
 		after: d.after,
 		size: Number(d.size),
 	}))
-	.handler(({ data }) => listRecent(data.size, data.after));
+	.handler(({ data, context }) =>
+		listRecent(context.viewer.id, data.size, data.after),
+	);
 
 /**
  * 能不能说一句话来找人。和最近搜索一起由根路由取：零态和工作台都据此决定
@@ -137,7 +162,42 @@ export const suggestTerms = createServerFn({ method: "GET" })
 export const deleteRecent = createServerFn({ method: "POST" })
 	.middleware([authenticated])
 	.validator((d: { turnId: unknown }) => ({ turnId: String(d.turnId ?? "") }))
-	.handler(({ data }) => deleteSearch(data.turnId));
+	.handler(({ data, context }) => deleteSearch(context.viewer.id, data.turnId));
+
+/**
+ * 一次导出最多记多少人。全选一次是 `RESULT_MAX` 人，换一组筛选可以接着选，所以留出十倍；
+ * 再多的不是在名单上选出来的。
+ */
+const EXPORT_MAX = RESULT_MAX * 10;
+
+/**
+ * 导出名单之前调：把要导出的人记进操作记录。文件在页面上生成，页面等这一步成了才生成。
+ */
+export const logExport = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator((d: { empIds: unknown }) => {
+		const empIds = Array.isArray(d.empIds) ? [...new Set(d.empIds)] : [];
+		if (
+			empIds.length === 0 ||
+			empIds.length > EXPORT_MAX ||
+			!empIds.every(
+				(id): id is string =>
+					typeof id === "string" && id.length > 0 && id.length <= 64,
+			)
+		)
+			throw new Error("导出的名单无效");
+		return { empIds };
+	})
+	.handler(({ data, context }) => recordExport(context.viewer.id, data.empIds));
+
+/** 审计页的表：按账号、被查看或导出的人、搜索的内容找，一页一页地给。 */
+export const auditList = createServerFn({ method: "GET" })
+	.middleware([administrator])
+	.validator((d: { q: unknown; page: unknown }) => ({
+		q: String(d.q ?? "").slice(0, 64),
+		page: Number(d.page) || 1,
+	}))
+	.handler(({ data }) => listAudit(data.q, data.page));
 
 /** 词表页的表：按标准词、写法或所属的词找，一页一页地给；`excluded` 看判成不是能力的那些。 */
 export const termTable = createServerFn({ method: "GET" })
@@ -233,4 +293,6 @@ export const dataList = createServerFn({ method: "GET" })
 export const dataEmployee = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
-	.handler(({ data }) => employeeData(data.empId));
+	.handler(({ data, context }) =>
+		viewed(context.viewer, data.empId, employeeData),
+	);

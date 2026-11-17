@@ -31,6 +31,7 @@
 @import "./components/ui/input.css" layer(components);
 @import "./components/ui/segmented.css" layer(components);
 @import "./components/ui/tag.css" layer(components);
+@import "./components/ui/avatar.css" layer(components);
 @import "./components/ui/alert.css" layer(components);
 @import "./components/ui/code-block.css" layer(components);
 @import "./components/ui/collapsible.css" layer(components);

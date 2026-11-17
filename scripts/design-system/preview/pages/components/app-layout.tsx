@@ -3,7 +3,6 @@ import {
 	MessageSquareTextIcon,
 	PanelLeftOpenIcon,
 	PlusIcon,
-	UsersRoundIcon,
 	XIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -15,9 +14,11 @@ import {
 	AppNav,
 	AppNavDrawer,
 	AppNavHeader,
+	AppNavIdentity,
 	NavHeader,
 	NavHeaderTitle,
 } from "#/components/ui/app-layout";
+import { Avatar } from "#/components/ui/avatar";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { DraggablePanel } from "#/components/ui/draggable-panel";
@@ -43,12 +44,12 @@ function Nav() {
 	const [all, setAll] = useState(false);
 	return (
 		<>
-			<AppNavHeader
-				href="#home"
-				logo={UsersRoundIcon}
-				name="人才搜索"
-				onClick={stay}
-			/>
+			<AppNavHeader>
+				<AppNavIdentity
+					avatar={<Avatar seed="hr_user" size={28} />}
+					name="招聘同事"
+				/>
+			</AppNavHeader>
 			<div className="mt-px flex flex-col px-1">
 				<NavItem active href="#home" icon={PlusIcon} onClick={stay}>
 					新搜索
@@ -243,16 +244,22 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="导航栏顶上是身份：主色方块图标加产品名，整行是回首页的链接，悬停出底。"
-				title="导航栏的身份"
+				description="导航栏顶上是当前账号：方形头像、名字和向下的箭头，整行是打开账号菜单的按钮，悬停出底；名字太长省略。"
+				title="导航栏的当前账号"
 			>
-				<div className="w-nav bg-layout">
-					<AppNavHeader
-						href="#home"
-						logo={UsersRoundIcon}
-						name="人才搜索"
-						onClick={stay}
-					/>
+				<div className="flex w-nav flex-col gap-2 bg-layout">
+					<AppNavHeader>
+						<AppNavIdentity
+							avatar={<Avatar seed="hr_user" size={28} />}
+							name="招聘同事"
+						/>
+					</AppNavHeader>
+					<AppNavHeader>
+						<AppNavIdentity
+							avatar={<Avatar seed="admin" size={28} />}
+							name="一个很长很长的显示名称会在这里省略"
+						/>
+					</AppNavHeader>
 				</div>
 			</Example>
 			<Example
@@ -320,6 +327,7 @@ export function AppLayoutPage() {
 					"每一屏都画在 AppContent 的卡片里；导航栏落在画布上，不描边。",
 					"导航栏 lg 以上常驻，右边缘拖动调宽（240–400px，默认 280px），可以收起到 0 宽；lg 以下不渲染，同一份内容由使用方放进左边的抽屉。",
 					"收起导航栏的开关放在 AppNavHeader 的 toggle 里，平时藏着，指针进入导航栏才出现；导航栏收起后开关挪到主栏页头的左端。",
+					"导航栏左上角是当前账号（AppNavIdentity，头像用 Avatar，按用户名生成），点开账号菜单：修改密码、退出登录。导航栏底部不另放账号。",
 					"卡片自己不滚动：卡片里的每一栏各自决定滚动归谁。",
 					"每一栏顶上一条 NavHeader，高度读 --nav-header-height；标题用 NavHeaderTitle，主栏是 h1，侧栏是 h2。",
 					"并排的侧栏用 DraggablePanel，它的边就是两栏之间的竖线，不另画面。",
@@ -327,7 +335,7 @@ export function AppLayoutPage() {
 					"导航栏里打开的 AppNavDrawer 传 anchored：它从导航栏右缘滑出、盖在卡片上，没有背板，点别处不收起，Esc 或关闭钮收起。",
 					"首页那一屏用 AppHome：页头浮在顶上不占高，问句、输入面和下面的内容排成一列；放得下时整列上下居中、输入面靠近中线，放不下就从顶上排起。",
 				],
-				usage: `<AppLayout>\n  <AppNav aria-label="导航">\n    <AppNavHeader logo={UsersRoundIcon} name="人才搜索" render={<Link to="/" />} />\n  </AppNav>\n  <AppContent>\n    <NavHeader left={<NavHeaderTitle>任务</NavHeaderTitle>} />\n  </AppContent>\n</AppLayout>`,
+				usage: `<AppLayout>\n  <AppNav aria-label="导航">\n    <AppNavHeader toggle={<ToggleNavButton />}>\n      <AccountMenu user={user} />\n    </AppNavHeader>\n  </AppNav>\n  <AppContent>\n    <NavHeader left={<NavHeaderTitle>任务</NavHeaderTitle>} />\n  </AppContent>\n</AppLayout>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用应用外壳" },

@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { exploreAndCapture, seed, seedStream, setup } from "./fixture";
+import { exploreAndCapture, OWNER, seed, seedStream, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -67,7 +67,7 @@ test("一次理解发给模型的请求体里没有姓名和工号", async () =>
 	const capture = exploreAndCapture();
 	let steps: string[] = [];
 	try {
-		const { turnId } = await createTurn({
+		const { turnId } = await createTurn(OWNER, {
 			kind: "sentence",
 			text: "推荐系统, company:星河科技",
 		});
@@ -77,7 +77,9 @@ test("一次理解发给模型的请求体里没有姓名和工号", async () =>
 			.where(eq(searchTurn.id, turnId));
 		assert.ok(row?.attempt);
 		await processTurn(turnId, row.attempt);
-		const turn = (await loadThread(turnId))?.find((t) => t.id === turnId);
+		const turn = (await loadThread(OWNER, turnId))?.find(
+			(t) => t.id === turnId,
+		);
 		assert.ok(turn?.spec, "理解完成，条件写进了记录");
 		steps = (turn.trace ?? []).map((step) => step.tool);
 	} finally {
@@ -136,7 +138,7 @@ test("一次理解发给模型的请求体里没有姓名和工号", async () =>
 });
 
 test("接着说的一句话带着之前的对话：前面说过什么、条件怎么变的都在请求里", async () => {
-	const first = await createTurn({ kind: "sentence", text: "推荐系统" });
+	const first = await createTurn(OWNER, { kind: "sentence", text: "推荐系统" });
 	const attemptOf = async (turnId: string) => {
 		const [row] = await db
 			.select({ attempt: searchTurn.attempt })
@@ -149,6 +151,7 @@ test("接着说的一句话带着之前的对话：前面说过什么、条件�
 	const capture = exploreAndCapture();
 	try {
 		const next = await createTurn(
+			OWNER,
 			{ kind: "sentence", text: "推荐系统, company:星河科技" },
 			first.turnId,
 		);

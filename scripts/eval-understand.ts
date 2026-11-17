@@ -54,6 +54,7 @@ import "@tanstack/react-start/server-only";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { db, pool } from "#/db";
+import { authUser } from "#/db/schema";
 import { internalWordsIn } from "#/lib/internal-words";
 import { compileConditions } from "#/search/compile";
 import { execute, selection } from "#/search/execute";
@@ -254,6 +255,11 @@ async function selectedBy(c: QueryCondition): Promise<string> {
 	return one.selected.join(",");
 }
 
+/**
+ * 用例的找人任务记在这个账号名下。它没有密码凭据，登录不了；库里没有就建一个。
+ */
+const EVAL_ACCOUNT = "eval";
+
 let failed = 0;
 try {
 	const { rows: pending } = await pool.query<{ total: number }>(
@@ -263,6 +269,15 @@ try {
 		throw new Error(
 			"人才库还有未解析的经历；先在验收库运行 derive，再验收名单，不能把尚未生成的说法当作无人匹配",
 		);
+	await db
+		.insert(authUser)
+		.values({
+			id: EVAL_ACCOUNT,
+			name: "验收脚本",
+			email: "eval@users.invalid",
+			username: EVAL_ACCOUNT,
+		})
+		.onConflictDoNothing();
 	const facts = {
 		vocab: await vocabulary(),
 		streams: await streamFacts(),
@@ -273,7 +288,7 @@ try {
 		let summary = "";
 		// 每个用例是一次找人任务：模型读过的经历算不算记在它名下，名单也只认它名下的；用例跑完连同
 		// 任务一起删掉，不留给下一个用例。步骤不用记，结论照存
-		const { turnId: rootTurnId } = await createTurn({
+		const { turnId: rootTurnId } = await createTurn(EVAL_ACCOUNT, {
 			kind: "spec",
 			spec: emptySpec(),
 		});
@@ -443,7 +458,7 @@ try {
 		} catch (e) {
 			problems.push(e instanceof Error ? e.message : String(e));
 		} finally {
-			await deleteSearch(rootTurnId);
+			await deleteSearch(EVAL_ACCOUNT, rootTurnId);
 		}
 		if (problems.length > 0) failed++;
 		console.log(`${problems.length === 0 ? "✓" : "✗"} ${c.name}`);

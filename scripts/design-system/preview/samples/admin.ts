@@ -1,11 +1,13 @@
 import { PAGE_SIZE, pageAt, RUNS_PAGE, tablePage } from "#/lib/paging";
+import type { AccountRow } from "#/server/accounts";
+import type { AuditRow } from "#/server/audit";
 import type { EmployeeRow, SegmentView } from "#/server/data";
 import type { TaskLane, TaskRunView } from "#/server/tasks";
 import type { TermDetail, TermEntry } from "#/server/terms";
 import { EMPLOYEES, EXPERIENCES, experiencesOf } from "./people";
 
 /*
- * 管理页：任务台的运行记录、数据页与「标签」页的表。
+ * 管理页：任务台的运行记录、数据页与「标签」页的表、审计页的操作记录、账号页的账号。
  * 人名、工号、公司、部门、学校全是编的，和人才库无关；类型都从产品代码导入。
  */
 
@@ -263,3 +265,62 @@ function detailOf(rows: TermEntry[], canonical: string): TermDetail {
 		pending: row.pending,
 	};
 }
+
+/** 审计页的一行：`minute` 是 9 月 26 日上午八点几分。 */
+function audited(
+	id: number,
+	minute: number,
+	account: Pick<AuditRow, "name" | "username">,
+	did:
+		| { action: "search"; text: string }
+		| { action: "view" | "export"; person: number }
+		| {
+				action: "create-account" | "disable-account";
+				target: Pick<AccountRow, "name" | "username">;
+		  },
+): AuditRow {
+	const person = "person" in did ? EMPLOYEES[did.person] : undefined;
+	const target = "target" in did ? did.target : undefined;
+	return {
+		...account,
+		accountName: target?.name ?? null,
+		accountUsername: target?.username ?? null,
+		action: did.action,
+		at: `2026-09-26 08:${String(minute).padStart(2, "0")}:10`,
+		empId: person?.empId ?? null,
+		empName: person?.name ?? null,
+		id,
+		text: "text" in did ? did.text : null,
+	};
+}
+
+const HR = { name: "招聘同事", username: "hr_user" };
+const ADMIN = { name: "管理员", username: "admin" };
+const LEFT = { name: "离职同事", username: "former_user" };
+
+/**
+ * 账号页的账号：一个管理员，一个在用的普通账号，一个停用了的。
+ */
+export const ACCOUNT_ROWS: AccountRow[] = [
+	{ ...ADMIN, admin: true, disabled: false },
+	{ ...LEFT, admin: false, disabled: true },
+	{ ...HR, admin: false, disabled: false },
+];
+
+/**
+ * 审计页的操作记录，新的在前：管理员建了招聘同事的账号、停用了离职同事；招聘同事搜了一次，
+ * 看了名单上的两个人，导出了三个人。
+ */
+export const AUDIT_ROWS: AuditRow[] = [
+	audited(8, 52, HR, { action: "export", person: 2 }),
+	audited(7, 52, HR, { action: "export", person: 1 }),
+	audited(6, 52, HR, { action: "export", person: 0 }),
+	audited(5, 47, HR, { action: "view", person: 1 }),
+	audited(4, 45, HR, { action: "view", person: 0 }),
+	audited(3, 41, HR, {
+		action: "search",
+		text: "做过推荐系统、带过团队的后端",
+	}),
+	audited(2, 12, ADMIN, { action: "disable-account", target: LEFT }),
+	audited(1, 10, ADMIN, { action: "create-account", target: HR }),
+];

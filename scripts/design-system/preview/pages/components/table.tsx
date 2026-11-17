@@ -375,10 +375,11 @@ export function TablePage() {
 					'通往详情的是整行：TableRow 的 onActivate。名字那格标 cellSlot="title"，里面仍是一个真链接（tabIndex -1），中键、右键、新标签页也能用。',
 					"格里的按钮、链接、勾选框点下去归它们自己，不会触发整行。",
 					"加载中保留表头和外框，表体放 TableSkeletonRows，Table 带 busy。",
-					'narrow="cards" 的表在不到 600px 宽时每行排成卡片；除标题格外每格写 cellLabel。',
+					'narrow="cards" 的表在不到 600px 宽时每行排成卡片；除标题格和动作格外每格写 cellLabel。',
+					'行尾的「…」菜单放在 cellSlot="extra" 的一格里，卡片形态里它排在标题右边（管理页 › 账号）。',
 					"短列（名字、数、日期）不折行，留一列长文字吃掉剩下的宽度（w-full）。",
 					"选中行用 TableRow 的 data-state，不加勾选列或额外的选中装饰。",
-					"列表不静默截断：表脚写已显示数、总数、排序和加载上限。",
+					"列表不静默截断：多于一页时表脚写这一页是第几到第几行、总数和翻页；只有一页时行都在眼前，不另写总数。",
 				],
 				usage: `<Block className="overflow-hidden" variant="outlined">\n  <Table footer="共 3 人，按匹配程度排序" narrow="cards">\n    <TableHeader>\n      <TableRow>\n        <TableHead>候选人</TableHead>\n        <TableHead>部门</TableHead>\n      </TableRow>\n    </TableHeader>\n    <TableBody>\n      <TableRow data-state="selected" onActivate={open}>\n        <TableCell cellSlot="title">\n          <TextLink render={<Link {...detail} />} tabIndex={-1}>Talent 0123</TextLink>\n        </TableCell>\n        <TableCell cellLabel="部门">数据平台部</TableCell>\n      </TableRow>\n    </TableBody>\n  </Table>\n</Block>`,
 			}}
