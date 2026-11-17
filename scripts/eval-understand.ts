@@ -15,6 +15,7 @@
  *     "add": ["+团队"],                // 可选：新加的条件里必须提到的词，前缀 + / - 是加分 / 排除
  *     "tells": true,                   // 可选：必须对 HR 说一句话（有搜不了的要求）
  *     "asks": true,                    // 可选：必须问一个问题，并给出 HR 可以选的回答
+ *     "choices": [["Web", "网页"], ["芯片前端", "数字前端"]], // 可选：current 与选项的标签须覆盖每组解释，每组命中一种写法即可；仍需人工核对含义
  *     "quiet": true,                   // 可选：不该对 HR 说任何话
  *     "together": [["字节", "算法"]],  // 可选：每组词写在同一条新条件里（同一段经历）
  *     "apart": [["字节", "算法"]],     // 可选：每组词分写在不同的新条件里（只要求同一个人）
@@ -35,7 +36,8 @@
  * 模型这一轮读完下的结论（`server/judged.ts`）：每个用例是一次找人任务，名单只读它名下的结论，
  * 用例跑完连同任务一起删。标签只是
  * 写给 HR 的话，不当作已验证的解释；名单对了才算对。这一半要在有对应数据的库上跑：按期记录和
- * 限定公司的经历那几个用例用合成样例同步出的库（`TALENT_SOURCE=csv-dir`，样例目录 `src/corpus/sources/sample`）。
+ * 限定公司的经历那几个用例用合成样例同步并完成一轮解析的库（`TALENT_SOURCE=csv-dir`，样例目录
+ * `src/corpus/sources/sample`）；不配置抽取端点也要运行 derive，生成岗位与原文的说法边。
  *
  * 设了 `EVAL_SHOW_SQL=1` 时每个用例下面列出每条的 FROM、seek、where 和参数，给人对照标签读。
  *
@@ -87,6 +89,7 @@ type Case = {
 	add: { mode: Mode; word: string }[];
 	tells: boolean;
 	asks: boolean;
+	choices: string[][];
 	quiet: boolean;
 	together: string[][];
 	apart: string[][];
@@ -149,18 +152,18 @@ function loadCases(file: string): Case[] {
 					? { mode: "exclude" as const, word: word.slice(1) }
 					: { mode: "must" as const, word },
 		);
-		const groups = (key: string, size?: number) => {
+		const groups = (key: string, size?: number, minimum = 2) => {
 			const value = c[key] ?? [];
 			if (
 				!Array.isArray(value) ||
 				!value.every(
 					(g) =>
 						strings(g) &&
-						(size === undefined ? g.length > 1 : g.length === size),
+						(size === undefined ? g.length >= minimum : g.length === size),
 				)
 			)
 				throw new Error(
-					`${where}：${key} 只能是字符串数组的数组，每组${size ? ` ${size} 个` : "至少两个"}词`,
+					`${where}：${key} 只能是字符串数组的数组，每组${size ? ` ${size} 个` : `至少 ${minimum} 个`}词`,
 				);
 			return value as string[][];
 		};
@@ -178,6 +181,7 @@ function loadCases(file: string): Case[] {
 			add,
 			tells: c.tells === true,
 			asks: c.asks === true,
+			choices: groups("choices", undefined, 1),
 			quiet: c.quiet === true,
 			together: groups("together"),
 			apart: groups("apart"),
@@ -192,6 +196,7 @@ function loadCases(file: string): Case[] {
 			parsed.add.length,
 			parsed.tells,
 			parsed.asks,
+			parsed.choices.length,
 			parsed.quiet,
 			parsed.drop.length,
 			parsed.has.length,
@@ -203,7 +208,7 @@ function loadCases(file: string): Case[] {
 		];
 		if (!checks.some(Boolean))
 			throw new Error(
-				`${where}：至少要有 add、drop、has、tells、asks、quiet、empty、includes、excludes、before、evidence 之一`,
+				`${where}：至少要有 add、drop、has、tells、asks、choices、quiet、empty、includes、excludes、before、evidence 之一`,
 			);
 		return parsed;
 	});
@@ -251,6 +256,13 @@ async function selectedBy(c: QueryCondition): Promise<string> {
 
 let failed = 0;
 try {
+	const { rows: pending } = await pool.query<{ total: number }>(
+		"select count(*)::int as total from experience where not unemployed and derived_identity is null",
+	);
+	if (pending[0]?.total)
+		throw new Error(
+			"人才库还有未解析的经历；先在验收库运行 derive，再验收名单，不能把尚未生成的说法当作无人匹配",
+		);
 	const facts = {
 		vocab: await vocabulary(),
 		streams: await streamFacts(),
@@ -323,6 +335,16 @@ try {
 			const others = notes?.choices?.others ?? [];
 			if ((c.tells || c.asks) && !notes) problems.push("没对 HR 说那句话");
 			if (c.asks && others.length === 0) problems.push("没给可以选的回答");
+			const choices = notes?.choices
+				? [notes.choices.current, ...others.map((o) => o.label)]
+				: [];
+			for (const words of c.choices)
+				if (
+					!choices.some((label) =>
+						words.some((w) => norm(label).includes(norm(w))),
+					)
+				)
+					problems.push(`当前解释和选项没有说明「${words.join(" / ")}」`);
 			if (c.quiet && notes) problems.push(`不该说话：${notes.says}`);
 			if (c.empty && next.length > 0) problems.push("条件表应当是空的");
 			// 那句话、可选的回答和每条标签原样显示给 HR：不能带代码和模型那一侧的词，要书面简洁

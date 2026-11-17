@@ -27,11 +27,8 @@ function createAuth() {
 		url.password
 	)
 		throw new Error("BETTER_AUTH_URL 必须是应用的完整来源地址，不含路径");
-	if (
-		url.protocol !== "https:" &&
-		!(url.protocol === "http:" && process.env.NODE_ENV !== "production")
-	)
-		throw new Error("生产环境的 BETTER_AUTH_URL 必须使用 HTTPS");
+	if (url.protocol !== "https:" && url.protocol !== "http:")
+		throw new Error("BETTER_AUTH_URL 必须是 http 或 https 地址");
 	return betterAuth({
 		appName: "人才搜索",
 		baseURL: url.origin,

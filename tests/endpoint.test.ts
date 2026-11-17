@@ -79,7 +79,7 @@ function providerAt(url: string, retries: number) {
 	return createOpenAICompatible({
 		name: "t",
 		baseURL: url,
-		fetch: endpointPolicy({ timeoutMs: TIMEOUT_MS, retries }).fetch,
+		fetch: endpointPolicy({ timeoutMs: TIMEOUT_MS, retries }),
 	});
 }
 
@@ -91,17 +91,16 @@ async function failure(run: () => Promise<unknown>) {
 }
 
 describe("每一次请求各自超时、各自重试", () => {
-	test("重试等待独立于单次尝试，完整时限容纳端点允许的最长退避", async () => {
+	test("重试等待独立于单次尝试", async () => {
 		const server = await endpoint((_body, hit) =>
 			hit === 1
 				? { status: 429, headers: { "retry-after-ms": "150" } }
 				: { status: 200, body: EMBEDDING },
 		);
-		const policy = endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: 1 });
+		const request = endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: 1 });
 		try {
-			assert.equal(policy.limitMs, 60_200);
 			const started = Date.now();
-			const response = await policy.fetch(server.url, {
+			const response = await request(server.url, {
 				method: "POST",
 				body: "{}",
 			});
@@ -124,7 +123,7 @@ describe("每一次请求各自超时、各自重试", () => {
 			const response = await endpointPolicy({
 				timeoutMs: TIMEOUT_MS,
 				retries: 1,
-			}).fetch(server.url, {
+			})(server.url, {
 				method: "POST",
 				body: "{}",
 				signal: controller.signal,

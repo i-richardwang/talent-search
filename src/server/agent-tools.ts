@@ -17,14 +17,14 @@
  *   改过的「做过什么」有没有写判据、新写或改过的条件是不是一个人都找不到、整份是不是宽到名单
  *   出不来、是不是没作答。有问题就告诉模型，让它改了再提交。只是找不到人或太宽、而这正是
  *   用户明说的要求时，模型把同一份条件原样再提交一次就算通过：没有这样的人也是一个结果。别的
- *   问题原样再交也不收。每份条件都在沙箱里真跑一遍，跑通的那份是录取的：写进记录的只有它，
- *   次数用完时最后一次没通过也一样。没通过的提交记一步。
+ *   问题原样再交也不收。每份条件都在沙箱里真跑一遍，硬错误必须改好才能发布，次数用完也不例外。
+ *   没通过的提交记一步。
  *
  * 候选人只从搜索来：读经历判的是搜索找到的段算不算，不添加候选人，也不排序。没确认过的段不算数：
  * 名单上只有确认过的人；一轮读不完时没读到的人不上名单，名单上方写明列到了哪一档职级
  * （`search/empty.ts` 的 `Incomplete`）。
  * 模型每调一次工具记一步，读经历每读一波、每交一批结论各记一步（`search/trace.ts`，只记线程
- * 画得出的那几样），界面边跑边画，也是这一次处理还在的凭据；通过了的提交不记，结果随后就写进
+ * 画得出的那几样），界面边跑边画；通过了的提交不记，结果随后就写进
  * 记录。同一次理解里同样的问题只查一次库。
  */
 import "@tanstack/react-start/server-only";
@@ -134,23 +134,24 @@ function discoveryTrace(discovery: Discovery): DiscoveryTrace {
 	}
 }
 
-/** 对模型说的下一步：候选人还有 `unread` 段经历没读，这一轮还能读 `room` 段。 */
+/** 对模型说候选人的经历读到哪了：要不要先试读由它定，没读的提交之后都会读完。 */
 function nextOf(unread: number, room: number): string {
 	if (unread === 0) return "候选人的经历都读过了";
 	if (room === 0)
 		return "这一轮能读的经历到上限了，其余的候选人名单上方会向 HR 说明，不用为此改条件";
-	return "候选人还有经历没读：用 read 读，看判据和正则准不准；没读的提交之后也会读完";
+	return "候选人还有经历没读，提交后会继续读；需要检验判据与召回范围时可用 read 试读";
 }
 
 /** 提交检查找出的一处问题：回给模型的那句话，和记进步骤给 HR 看的那一类。 */
 type Problem = SubmitIssue & { message: string };
 
+/** 一份提交的检查结果，见 `checkSubmission`。 */
+type Checked = { result: Understood; hard: Problem[]; soft: Problem[] };
+
 /**
  * 检查一份提交。条件在沙箱里真跑一遍。
  *
- * - `admitted`：跑通了的那份，写进记录的就是它。编不过白名单或执行报错的条件按内容
- *   （`contentKey`）丢掉，和 `understood` 丢形状不合规的条件同一条规则。
- * - `unanswered`：录取的那份算不算作答（`search/intent.ts` 的 `unanswered`），不算时是原因。
+ * - `result`：这份提交整理出的条件和说明，没有硬问题时写进记录的就是它。
  * - `hard`：形状不对被丢、标签里有内部用词、这一轮新写或改过的「做过什么」没写判据、
  *   `where` 编不过、正则写不对、执行报错、没作答。写成这样 HR 看到的不是用户要的，或者根本
  *   搜不了，原样再交也不收，一定要改。
@@ -161,12 +162,7 @@ async function checkSubmission(
 	submitted: Submission,
 	base: readonly QueryCondition[],
 	rootTurnId: string,
-): Promise<{
-	admitted: Understood;
-	unanswered: string | null;
-	hard: Problem[];
-	soft: Problem[];
-}> {
+): Promise<Checked> {
 	const result = understood(submitted, base);
 	const table = result.query.conditions;
 	const known = new Set(base.map(identityKey));
@@ -206,10 +202,8 @@ async function checkSubmission(
 			});
 	}
 	const tried = await trial({ conditions: table }, rootTurnId);
-	const failed = new Set<string>();
 	for (const { condition: c, people, problem } of tried.conditions) {
 		if (problem) {
-			failed.add(contentKey(c));
 			add(hard, {
 				kind: "unrunnable",
 				subject: c.label,
@@ -219,7 +213,7 @@ async function checkSubmission(
 			add(soft, {
 				kind: "unfound",
 				subject: c.label,
-				message: `「${c.label}」在人才库里一个人都找不到：字面对不上，或者对得上的经历读下来都不算。先用 find 看看人才库里这件事怎么叫，改正则；确实没有这样的人、而用户点名要，照原样再提交；哪一项没有人名单上会说，note 里不用说`,
+				message: `「${c.label}」一个人都找不到，这不是条件写错。如果只是叫法没对上，用 find 核对后改正则；如果条件已准确表达 HR 的要求，照原样再提交。不要为得到结果拆开同一段经历的要求、删除限定或换成其他要求；哪一项没有人名单上会说，note 里不用说`,
 			});
 	}
 	for (const label of tried.overflow)
@@ -228,17 +222,12 @@ async function checkSubmission(
 			subject: label,
 			message: `「${label}」找出的经历太多，名单出不来：写得更具体一些`,
 		});
-	const admitted =
-		failed.size > 0
-			? understood(submitted, base, (d) => !failed.has(contentKey(d)))
-			: result;
-	const failure = unanswered(submitted, admitted);
-	// 丢空了的原因上面已经说了（形状不对、跑不了）；什么都没写的，告诉模型的就是这一句
+	const failure = unanswered(submitted, result);
+	// 丢掉的原因上面已经说了（形状不对）；什么都没写的，告诉模型的就是这一句
 	if (failure && hard.size === 0)
 		add(hard, { kind: "form", subject: null, message: failure });
 	return {
-		admitted,
-		unanswered: failure,
+		result,
 		hard: [...hard.values()],
 		soft: [...soft.values()],
 	};
@@ -261,11 +250,10 @@ export function agentTools({
 	rootTurnId: string;
 	reading: Reader;
 }) {
-	/** 最后一次检查完的提交：原话、录取的那份、算不算作答、过没过。 */
+	/** 最后一次检查完的提交：原话、检查结果、过没过（同一份原样再交时只看硬问题）。 */
 	let last: {
 		submitted: Submission;
-		admitted: Understood;
-		unanswered: string | null;
+		checked: Checked;
 		passed: boolean;
 	} | null = null;
 	const answered = new Map<string, Promise<unknown>>();
@@ -403,12 +391,11 @@ export function agentTools({
 					: [...checked.hard, ...checked.soft];
 				last = {
 					submitted,
-					admitted: checked.admitted,
-					unanswered: checked.unanswered,
+					checked,
 					passed: problems.length === 0,
 				};
 				if (last.passed) return { passed: true };
-				// 没通过的提交也记一步：HR 看得到哪里要改，这一次理解也留下了还在进行的痕迹
+				// 没通过的提交也记一步：HR 看得到哪一条、哪一类问题，回给模型的话不记
 				await log({
 					at: Date.now(),
 					tool: SUBMIT,
@@ -423,11 +410,16 @@ export function agentTools({
 		tools,
 		passed: () => last?.passed ?? false,
 		/**
-		 * 最后一次检查完的提交录取的那份，和它算不算作答。次数用完时最后一次没通过也用它：
-		 * 录取的那份里没有跑不了的条件，写进记录的就是它。还没提交过为 null。
+		 * 最后一次提交能写进记录的结果，或者它还有的硬问题；还没提交过为 null。次数用完时
+		 * 只有找不到人、找出的太多这两类问题可以带着交。
 		 */
-		answer: () =>
-			last && { admitted: last.admitted, unanswered: last.unanswered },
+		answer: (): { result: Understood } | { error: string } | null => {
+			if (!last) return null;
+			const { result, hard } = last.checked;
+			return hard.length > 0
+				? { error: hard.map((problem) => problem.message).join("；") }
+				: { result };
+		},
 	};
 }
 

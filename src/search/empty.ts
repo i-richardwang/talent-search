@@ -1,8 +1,9 @@
 import { narrows, type SearchFilters } from "./params";
-import type { Claim, Query } from "./query";
+import type { Claim, Exclusion, Query } from "./query";
 
-type EmptyOverflow =
-	| { kind: "overflowEvidence"; claims: Claim[] }
+/** 检索载荷超过上限；经历超限带上涉及的主张或排除条件。 */
+export type Overflow =
+	| { kind: "overflowEvidence"; conditions: (Claim | Exclusion)[] }
 	| { kind: "overflowPopulation" };
 
 /**
@@ -21,7 +22,7 @@ export type Incomplete = { above: string | null };
 export type Unmet = { nobody: string[] };
 
 export type EmptyReason =
-	| EmptyOverflow
+	| Overflow
 	| { kind: "allDisabled" }
 	| { kind: "noConditions" }
 	| { kind: "filtered" }

@@ -134,15 +134,19 @@ export async function read(client: CorpusClient): Promise<Table> {
 	const { rows } = await client.query<{
 		word: string;
 		canonical: string;
+		alias_sent_back: boolean;
 		parent: string | null;
 		excluded: boolean;
 		reviewed_at: Date | null;
-	}>("select word, canonical, parent, excluded, reviewed_at from term");
+	}>(
+		"select word, canonical, alias_sent_back, parent, excluded, reviewed_at from term",
+	);
 	const table: Table = new Map(
 		rows.map((row) => [
 			row.word,
 			{
 				canonical: row.canonical,
+				aliasSentBack: row.alias_sent_back,
 				excluded: row.excluded,
 				parent: row.parent,
 				reviewedAt: row.reviewed_at,
@@ -159,20 +163,22 @@ export async function read(client: CorpusClient): Promise<Table> {
 async function write(client: CorpusClient, decisions: [string, Decision][]) {
 	if (decisions.length === 0) return;
 	await client.query(
-		`insert into term (word, canonical, parent, excluded, reviewed_at)
+		`insert into term (word, canonical, parent, excluded, reviewed_at, alias_sent_back)
 		 select * from unnest(
-		   $1::text[], $2::text[], $3::text[], $4::boolean[], $5::timestamptz[])
+		   $1::text[], $2::text[], $3::text[], $4::boolean[], $5::timestamptz[], $6::boolean[])
 		 on conflict (word) do update
 		 set canonical = excluded.canonical,
 		     parent = excluded.parent,
 		     excluded = excluded.excluded,
-		     reviewed_at = excluded.reviewed_at`,
+		     reviewed_at = excluded.reviewed_at,
+		     alias_sent_back = excluded.alias_sent_back`,
 		[
 			decisions.map(([word]) => word),
 			decisions.map(([, decision]) => decision.canonical),
 			decisions.map(([, decision]) => decision.parent),
 			decisions.map(([, decision]) => decision.excluded),
 			decisions.map(([, decision]) => decision.reviewedAt),
+			decisions.map(([, decision]) => decision.aliasSentBack),
 		],
 	);
 }
@@ -181,9 +187,11 @@ async function write(client: CorpusClient, decisions: [string, Decision][]) {
  * 让自带的模型判一批词，按入参顺序返回它的原话；答不出一条有效判断的是 undefined
  * （`complete` 已经说过是哪一个）。整理的判定一步和整理质量验收（`scripts/eval-review.ts`）
  * 共用它：验收量的正是这一步，提示词、模型、温度都和整理时一样。
+ * 队列里的问题按 id 认缓存：同一个问题重试用同一份回答，退回之后的新问题文字一样也重新问。
+ * 验收的问题不在队列里、没有 id，按文字认。
  */
 export async function askModel(
-	questions: Question[],
+	questions: (Question & { id?: number })[],
 	report: Report,
 ): Promise<(unknown | undefined)[]> {
 	const byInput = new Map(questions.map((one) => [promptOf(one), one]));
@@ -204,6 +212,12 @@ export async function askModel(
 					asked.near.map((one) => one.word),
 				) !== null
 			);
+		},
+		{
+			cacheKey: (input) => {
+				const id = byInput.get(input)?.id;
+				return id === undefined ? input : `review_word:${id}\u001f${input}`;
+			},
 		},
 	);
 	return questions.map((one) => payloads.get(promptOf(one)));
@@ -277,6 +291,10 @@ export async function applyJudgments(
 
 	const now = new Date();
 	const table = await read(client);
+	const all = await vocabulary(client);
+	const people = new Map(
+		[...all.heads, ...all.aliases].map((one) => [one.word, one.people]),
+	);
 	const changed = new Map<string, Decision>();
 	const lines: string[] = [];
 	const tally = { alone: 0, excluded: 0, invalid: 0, same: 0, under: 0 };
@@ -286,7 +304,9 @@ export async function applyJudgments(
 			row.word,
 			row.near.map((one) => one.word),
 		);
-		const decisions = verdict ? place(table, row, verdict, now) : [];
+		const decisions = verdict
+			? place(table, row.word, verdict, people, now)
+			: [];
 		if (!verdict || decisions.length === 0) {
 			tally.invalid++;
 			continue;
@@ -337,13 +357,21 @@ export async function sendBack(
 					   union
 					   select c.word from item i
 					   join term c on c.parent = i.word and $2
-					 )
-					 update term t set reviewed_at = null
-					 from item i where t.canonical = i.word`,
+					 ), returned as (
+					   update term t set reviewed_at = null, alias_sent_back = t.word <> t.canonical
+					   from item i where t.canonical = i.word returning t.word
+					 ), discarded as (
+					   delete from review_word where word in (select word from returned)
+					 ) select word from returned`,
 					[rejudge.word, rejudge.branch],
 				)
 			: await client.query(
-					`update term set reviewed_at = null where excluded or $1`,
+					`with returned as (
+					   update term set reviewed_at = null, alias_sent_back = word <> canonical
+					   where excluded or $1 returning word
+					 ), discarded as (
+					   delete from review_word where word in (select word from returned)
+					 ) select word from returned`,
 					[rejudge.scope === "all"],
 				);
 	const range =

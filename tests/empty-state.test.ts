@@ -81,7 +81,17 @@ const widest =
 	(...labels: string[]) =>
 	(conditions: QueryCondition[]): EmptyReason => ({
 		kind: "overflowEvidence",
-		claims: rolesOf({ conditions }).claims.filter((c) =>
+		conditions: rolesOf({ conditions }).claims.filter((c) =>
+			labels.includes(c.label),
+		),
+	});
+
+/** 太宽的是排除条件：成因带的是那几条排除 */
+const widestExcluded =
+	(...labels: string[]) =>
+	(conditions: QueryCondition[]): EmptyReason => ({
+		kind: "overflowEvidence",
+		conditions: rolesOf({ conditions }).excludes.filter((c) =>
 			labels.includes(c.label),
 		),
 	});
@@ -183,6 +193,15 @@ describe("找到的人太多", () => {
 		const s = run(widest("经理"), "经理");
 		assert.equal(s.next?.kind, "say");
 		assert.equal(s.revised, undefined);
+	});
+
+	test("太宽的是排除条件：说要排除的那种经历太常见，一键去掉它再找", () => {
+		const s = run(widestExcluded("外包"), "算法,-外包");
+		assert.equal(s.title, "要排除的「外包」太常见，名单列不出来");
+		assert.match(s.hint, /要排除的经历说得更具体/);
+		assert.equal(label(s.next), "去掉「外包」再找");
+		const off = s.revised?.filter((c) => c.off).map((c) => c.label);
+		assert.deepEqual(off, ["外包"]);
 	});
 
 	test("只有职级这类条件、人太多：请 HR 补充一句", () => {

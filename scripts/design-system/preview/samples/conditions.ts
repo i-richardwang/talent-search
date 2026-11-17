@@ -105,6 +105,9 @@ const SCHOOL_E: Condition = {
 	values: ["学校 E"],
 };
 
+/** 做过推荐系统、不要实习经历：排除那一条太宽时的空态用它。 */
+const EXCLUDING = asQuery([RECOMMEND, EXCLUDE_INTERN]);
+
 /** 做过推荐系统、毕业于学校 E：后一项单独就没有人。 */
 const NOBODY_CONDITIONS = asQuery([RECOMMEND, SCHOOL_E]);
 
@@ -135,7 +138,19 @@ const EMPTY_CASES: { [K in EmptyReason["kind"]]: EmptyCase<K>[] } = {
 	],
 	filtered: [["filtered", { kind: "filtered" }, SPEC]],
 	overflowEvidence: [
-		["overflowEvidence", { kind: "overflowEvidence", claims: CLAIMS }, SPEC],
+		[
+			"overflowEvidence",
+			{ kind: "overflowEvidence", conditions: CLAIMS },
+			SPEC,
+		],
+		[
+			"overflowEvidence · 排除",
+			{
+				kind: "overflowEvidence",
+				conditions: rolesOf({ conditions: EXCLUDING }).excludes,
+			},
+			{ query: { conditions: EXCLUDING } },
+		],
 	],
 	overflowPopulation: [
 		["overflowPopulation", { kind: "overflowPopulation" }, SPEC],

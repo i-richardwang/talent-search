@@ -99,7 +99,7 @@ export async function align(
 		"对齐",
 		report,
 		(payload) => conform(payload, tree) !== null,
-		"align",
+		{ endpoint: "align" },
 	);
 
 	let aligned = 0;

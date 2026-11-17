@@ -98,8 +98,15 @@ describe("模型写出的查询就是查询", () => {
 			{ patterns: [" "] },
 			{ patterns: [], criterion: " " },
 			{ patterns: ["字".repeat(121)] },
+			{ patterns: ["增长"], criterion: `${"字".repeat(600)}售前不算` },
+			{ patterns: ["增长"], criterion: `${"字".repeat(600)}售前算` },
 		])
 			assert.deepEqual(of(exp("做过增长", { seek })), [], JSON.stringify(seek));
+		assert.equal(
+			of(exp("边界", { seek: { criterion: "字".repeat(600) } }))[0]?.seek
+				?.criterion?.length,
+			600,
+		);
 		assert.equal(of(exp("有工作经历"))[0]?.seek, undefined);
 	});
 

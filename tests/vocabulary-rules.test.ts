@@ -21,6 +21,7 @@ function tableOf(rows: [string, string, (string | null)?, boolean?][]): Table {
 			word,
 			{
 				canonical,
+				aliasSentBack: false,
 				excluded: excluded ?? false,
 				parent: parent ?? null,
 				reviewedAt: BEFORE,
@@ -38,7 +39,13 @@ function judge(
 	verdict: Verdict,
 	near: Member[] = [],
 ) {
-	place(table, { ...word, near }, verdict, NOW);
+	place(
+		table,
+		word.word,
+		verdict,
+		new Map([word, ...near].map((one) => [one.word, one.people])),
+		NOW,
+	);
 	validate(table);
 	return Object.fromEntries(
 		[...table].map(([one, decision]: [string, Decision]) => [
@@ -129,6 +136,88 @@ describe("找参考词", () => {
 });
 
 describe("同一件事", () => {
+	test("同义链与环按不同顺序生效，始终合并整个等价类", () => {
+		const words = [member("甲", 100), member("乙", 10), member("丙", 1)];
+		for (const links of [
+			[1, 2, 0],
+			[1, 2, 1],
+		]) {
+			for (const order of [
+				[0, 1, 2],
+				[2, 1, 0],
+				[1, 0, 2],
+			]) {
+				const table: Table = new Map();
+				for (const i of order) {
+					const word = words[i];
+					const target = words[links[i] as number];
+					assert.ok(word && target);
+					judge(
+						table,
+						word,
+						{ kind: "same", as: target.word },
+						words.filter((one) => one.word !== word.word),
+					);
+				}
+				assert.equal(
+					new Set([...table.values()].map((d) => d.canonical)).size,
+					1,
+				);
+				for (const word of words) {
+					assert.deepEqual(table.get(word.word)?.reviewedAt, NOW);
+					assert.equal(table.get(word.word)?.canonical, "甲");
+				}
+			}
+		}
+	});
+
+	test("退回的别名在任一端都只改归自身，人数决定标准词，新关系仍可传递", () => {
+		for (const [source, target] of [
+			["乙", "丙"],
+			["丙", "乙"],
+		] as const) {
+			for (const head of ["乙", "丙"]) {
+				const table = tableOf([
+					["甲", "甲"],
+					["乙", "甲"],
+					["甲的细项", "甲的细项", "甲"],
+					["丙", "丙"],
+					["丙的旧别名", "丙"],
+					["丙的别名", "丙"],
+				]);
+				for (const word of ["乙", "丙的旧别名"]) {
+					const decision = table.get(word);
+					assert.ok(decision);
+					decision.aliasSentBack = true;
+					decision.reviewedAt = null;
+				}
+				const people = new Map([
+					["乙", head === "乙" ? 100 : 10],
+					["丙", head === "丙" ? 100 : 10],
+					["丁", 1],
+				]);
+				place(table, source, { kind: "same", as: target }, people, NOW);
+				validate(table);
+				assert.equal(table.get("甲")?.canonical, "甲");
+				assert.equal(table.get("甲的细项")?.parent, "甲");
+				for (const word of ["乙", "丙", "丙的别名", "丙的旧别名"])
+					assert.equal(table.get(word)?.canonical, head);
+				assert.equal(table.get("乙")?.aliasSentBack, false);
+				assert.equal(table.get("丙的旧别名")?.aliasSentBack, true);
+				assert.equal(table.get("丙的别名")?.aliasSentBack, false);
+				assert.deepEqual(table.get(source)?.reviewedAt, NOW);
+				if (target === "乙") assert.equal(table.get("乙")?.reviewedAt, null);
+
+				place(table, "丁", { kind: "same", as: "乙" }, people, NOW);
+				validate(table);
+				for (const word of ["乙", "丙", "丁"])
+					assert.equal(table.get(word)?.canonical, head);
+				assert.equal(table.get("甲")?.canonical, "甲");
+				assert.equal(table.get("丙的旧别名")?.aliasSentBack, true);
+			}
+		}
+	});
+
 	test("并进人多的那个词，时间只记在被判的词上", () => {
 		const table: Table = new Map();
 		assert.deepEqual(
@@ -203,6 +292,7 @@ describe("同一件事", () => {
 		assert.partialDeepStrictEqual(
 			judge(table, member("数据分析能力"), { as: "数分", kind: "same" }, [
 				member("数分", 5),
+				member("数据分析", 5),
 			]),
 			{ 数据分析能力: "=数据分析" },
 		);
@@ -224,12 +314,7 @@ describe("同一件事", () => {
 	test("指向不是能力的词不成立，这个词不记", () => {
 		const table = tableOf([["策略会", "策略会", null, true]]);
 		assert.deepEqual(
-			place(
-				table,
-				{ ...member("周会"), near: [] },
-				{ as: "策略会", kind: "same" },
-				NOW,
-			),
+			place(table, "周会", { as: "策略会", kind: "same" }, new Map(), NOW),
 			[],
 		);
 		assert.equal(table.has("周会"), false);

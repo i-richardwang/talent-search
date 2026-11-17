@@ -85,14 +85,15 @@ export const submissionSchema = z.object({
 						}),
 						detail: z
 							.string()
-							.meta({ description: "一句说明，人数来自查到的结果" }),
+							.meta({ description: "一句说明选了名单会怎样变，不写人数" }),
 					}),
 				)
 				.meta({ description: "HR 可以选的别的回答；没有就空着" }),
 		})
 		.nullable()
 		.meta({
-			description: "名单上看不出、要 HR 知道或拿主意的一件事；没有就写 null",
+			description:
+				"只说明搜不了的要求或需要 HR 选择的歧义；不复述条件、不解释人数或无人匹配，没有就写 null",
 		}),
 });
 
@@ -143,8 +144,7 @@ function resolveIds(
 }
 
 /**
- * 模型输出 → 这一轮的查询与说明。形状不合规的条件局部丢弃，不牵连整份；`admit` 不收的
- * 条件（提交检查里跑不通的，见 `server/agent-tools.ts`）按同一条规则丢弃。
+ * 模型输出 → 形状合规的条件与说明。提交工具核对条件是否完整、能否执行，决定整份是否可发布。
  *
  * 停用状态跟着条件走：模型写不出停用，提交的条件和上一轮同一个 id、内容也没变时，那一条的
  * 停用原样带过来；用户停掉的不会因为又说了一句话就复活。
@@ -152,14 +152,11 @@ function resolveIds(
 export function understood(
 	raw: unknown,
 	base: readonly QueryCondition[],
-	admit: (draft: DraftCondition) => boolean = () => true,
 ): Understood {
 	const value = (raw ?? {}) as Record<string, unknown>;
 	const prior = new Map(base.map((c) => [c.id, c]));
 	const conditions = resolveIds(
-		draftsOf(value.conditions)
-			.filter(admit)
-			.map((d) => withOff(d, null)),
+		draftsOf(value.conditions).map((d) => withOff(d, null)),
 		base,
 	).map((c) => {
 		const before = prior.get(c.id);

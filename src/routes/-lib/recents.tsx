@@ -60,11 +60,19 @@ export function RecentsProvider({
 			const request = new AbortController();
 			pending.current = request;
 			try {
-				const fetched = await recentSearches({
-					data: { after, size },
-					signal: request.signal,
-				});
-				return request.signal.aborted ? null : fetched;
+				// 服务端一次给的条数有上限：要的比上限多（重取已经翻过几页的列表）时接着往下取
+				let page: RecentPage | null = null;
+				const rows: RecentPage["rows"] = [];
+				do {
+					const fetched: RecentPage = await recentSearches({
+						data: { after: page ? page.next : after, size: size - rows.length },
+						signal: request.signal,
+					});
+					if (request.signal.aborted) return null;
+					rows.push(...fetched.rows);
+					page = { ...fetched, rows };
+				} while (page.next !== null && page.rows.length < size);
+				return page;
 			} catch (error) {
 				if (request.signal.aborted) return null;
 				throw error;

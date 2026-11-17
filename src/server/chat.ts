@@ -93,7 +93,7 @@ function getModel(model: string, endpoint: ChatEndpoint) {
 		supportsStructuredOutputs: STRUCTURED,
 		...(apiKey && { apiKey }),
 		// 每一次请求各自超时、各自重试（见 `endpoint.ts`）
-		fetch: endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES }).fetch,
+		fetch: endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
 		...thinkingSwitch(ENABLE_THINKING),
 	})(model);
 }
@@ -234,11 +234,22 @@ export async function complete(
 	report: Report,
 	/** 调用方决定何为可用回答；合法空结果可接受，完全无效的回答不缓存。 */
 	accept: (payload: unknown, text: string) => boolean,
-	endpoint: ChatEndpoint = "extract",
+	{
+		endpoint = "extract",
+		cacheKey = (text) => text,
+	}: {
+		endpoint?: ChatEndpoint;
+		/** 缓存按它认一条输入，默认就是原文；发给模型的总是原文。 */
+		cacheKey?: (text: string) => string;
+	} = {},
 ): Promise<Map<string, unknown>> {
 	const identity = identityOf(model, system, schema);
 	const unique = [...new Set(texts)];
-	const payloads = await cached(identity, unique);
+	const inputs = new Map(unique.map((text) => [cacheKey(text), text]));
+	const hits = await cached(identity, [...inputs.keys()]);
+	const payloads = new Map(
+		[...hits].map(([key, payload]) => [inputs.get(key) as string, payload]),
+	);
 	for (const [text, payload] of payloads) {
 		if (schema.safeParse(payload).success && accept(payload, text)) continue;
 		await db
@@ -246,7 +257,7 @@ export async function complete(
 			.where(
 				and(
 					eq(completionCache.identity, identity),
-					eq(completionCache.textSha, sha(text)),
+					eq(completionCache.textSha, sha(cacheKey(text))),
 					eq(completionCache.payload, payload),
 				),
 			);
@@ -267,7 +278,7 @@ export async function complete(
 		);
 		done++;
 		if (payload !== undefined && accept(payload, text)) {
-			payloads.set(text, await store(identity, text, payload));
+			payloads.set(text, await store(identity, cacheKey(text), payload));
 		} else if (payload !== undefined) {
 			report(`  ${what}回答不符合领域规则，未保存`);
 		}

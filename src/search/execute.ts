@@ -43,6 +43,7 @@ import {
 	emptyReason,
 	type Incomplete,
 	inactiveReason,
+	type Overflow,
 } from "./empty";
 import type { SearchFilters } from "./params";
 import { type MatchedPhrases, withMatchedPhrases } from "./phrases";
@@ -498,27 +499,28 @@ type Candidate = { empId: string; level: string; levelRank: number | null };
 type Unconfirmed = { cond: number; id: number; empId: string };
 
 /**
- * 排除条件上还没确认过的段：过得了门槛的人里，谁在哪条排除上还有段没确认。只有写了判据的排除
- * 才有没确认过的段。
+ * 排除条件上还没确认过的段：`empIds` 这些候选人在哪条排除上还有段没确认。`excludes` 是写了
+ * 判据的那几条，只有它们才有没确认过的段。超过 `FACT_MAX` 行时为 null，这几条太宽。
  */
 async function fetchUnconfirmedExclusions(
 	store: DbExecutor,
 	shell: Shell,
 	excludes: readonly Exclusion[],
-	person: readonly SQL[],
-): Promise<Unconfirmed[]> {
-	const judged = excludes.filter((c) => c.seek?.criterion);
-	if (judged.length === 0) return [];
+	empIds: string[],
+): Promise<Unconfirmed[] | null> {
+	if (excludes.length === 0 || empIds.length === 0) return [];
+	// 候选人已经过了门槛，这里只按人圈
+	const eligible = [sql`p.emp_id = any(${sql.param(empIds)}::text[])`];
+	const pending = sql.join(
+		excludes.map((c) => sql`(${shell.unconfirmed(shell.at(c), eligible)})`),
+		sql` union all `,
+	);
 	const { rows } = await store.execute<{
 		cond: number;
 		id: number;
 		emp_id: string;
-	}>(
-		sql.join(
-			judged.map((c) => sql`(${shell.unconfirmed(shell.at(c), person)})`),
-			sql` union all `,
-		),
-	);
+	}>(sql`select * from (${pending}) pending limit ${FACT_MAX + 1}`);
+	if (rows.length > FACT_MAX) return null;
 	return rows.map((row) => ({ cond: row.cond, id: row.id, empId: row.emp_id }));
 }
 
@@ -641,10 +643,7 @@ async function nobodyOf(
 }
 
 type Evaluated =
-	/** 事实超过内存上限：哪几条主张太宽 */
-	| { kind: "overflowEvidence"; claims: Claim[] }
-	/** 人员候选超过内存上限 */
-	| { kind: "overflowPopulation" }
+	| Overflow
 	| {
 			kind: "ranked";
 			/** 名单上的人算数的事实：名单、分面和证据只读它 */
@@ -681,15 +680,9 @@ async function evaluate(
 		const contributors = new Set(loaded.claims);
 		return {
 			kind: "overflowEvidence",
-			claims: claims.filter((_, i) => contributors.has(i)),
+			conditions: claims.filter((_, i) => contributors.has(i)),
 		};
 	}
-	const onExclusions = await fetchUnconfirmedExclusions(
-		store,
-		shell,
-		excludes,
-		person,
-	);
 	const all = [...loaded.facts, ...loaded.unconfirmed];
 	// 必须经历限定候选；没有必须经历时，偏好只排序，候选来自人员。
 	const people = claims.some((claim) => claim.mode === "must")
@@ -703,6 +696,22 @@ async function evaluate(
 		(people ?? all).map((f) => f.empId),
 	);
 	const now = new Date();
+	const judgedExcludes = excludes.filter((c) => c.seek?.criterion);
+	// 要确认的是可能上名单的人。按不加筛选的名次取：分面列的是筛选以外的取值，那些人也要确认
+	const eligible =
+		judgedExcludes.length > 0
+			? order(all, people ?? all, claims, {}, now, preferred).map(
+					(row) => row.empId,
+				)
+			: [];
+	const onExclusions = await fetchUnconfirmedExclusions(
+		store,
+		shell,
+		judgedExcludes,
+		eligible,
+	);
+	if (onExclusions === null)
+		return { kind: "overflowEvidence", conditions: judgedExcludes };
 	// 在排除上还有段没确认的人不上名单：他该不该排除还不知道
 	const undecided = new Set(onExclusions.map((u) => u.empId));
 	const decided = <T extends { empId: string }>(rows: T[]) =>
@@ -901,7 +910,7 @@ export async function probe(
 				...none,
 				overflow:
 					found.kind === "overflowEvidence"
-						? found.claims.map((c) => c.id)
+						? found.conditions.map((c) => c.id)
 						: [],
 			};
 		const byId = new Map(found.candidates.map((c) => [c.empId, c]));

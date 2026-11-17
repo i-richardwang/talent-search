@@ -61,11 +61,15 @@ const COPY: {
 		h: Handlers,
 	) => EmptyCopy;
 } = {
-	// 太宽的那几项去掉之后还有别的条件，去掉就能出名单；没有别的了，只能换个具体的说法
+	// 太宽的那几项去掉之后还有别的条件，去掉就能出名单；没有别的了，只能换个具体的说法。
+	// 太宽的是排除条件时，太常见的是要排除的那种经历
 	overflowEvidence: (reason, h) => {
-		const wide = new Set(reason.claims.map((c) => c.id));
+		const wide = new Set(reason.conditions.map((c) => c.id));
 		const rest = h.conditions.filter((c) => !c.off && !wide.has(c.id));
-		const title = `${quoted(reason.claims)}太常见，找到的人太多`;
+		const excluding = reason.conditions.every((c) => c.mode === "exclude");
+		const title = excluding
+			? `要排除的${quoted(reason.conditions)}太常见，名单列不出来`
+			: `${quoted(reason.conditions)}太常见，找到的人太多`;
 		if (h.mode === "keyword")
 			return {
 				title,
@@ -75,13 +79,15 @@ const COPY: {
 		if (rest.length > 0)
 			return {
 				title,
-				hint: "去掉后按其余的条件找，或者换一个更具体的说法。",
+				hint: excluding
+					? "去掉后按其余的条件找，或者把要排除的经历说得更具体。"
+					: "去掉后按其余的条件找，或者换一个更具体的说法。",
 				next: {
 					kind: "act",
 					label:
-						reason.claims.length > 1
+						reason.conditions.length > 1
 							? "去掉这几项再找"
-							: `去掉${quoted(reason.claims)}再找`,
+							: `去掉${quoted(reason.conditions)}再找`,
 					onClick: () =>
 						h.onReviseQuery(
 							h.conditions.map((c) =>

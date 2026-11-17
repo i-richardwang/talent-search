@@ -28,7 +28,6 @@ import { type EndpointFault, endpointFault } from "./endpoint";
 import { saveVerdicts } from "./judged";
 import {
 	judgeSegments,
-	STEP_LIMIT_MS,
 	UnansweredError,
 	understand,
 	understandingConfigured,
@@ -225,6 +224,7 @@ export async function createTurn(
 				.set({
 					attempt: null,
 					attemptStartedAt: null,
+					attemptHeartbeatAt: null,
 					attemptFault: null,
 					trace: null,
 				})
@@ -269,24 +269,24 @@ export type AttemptFault =
 	| "unanswered"
 	| "broken";
 
-/** 一步的工具跑完、写下这一步要的那一点时间，也是最后一步之后校验和写入结果的时间。 */
-const SETTLE_MS = 10_000;
-
 /**
- * 这一次处理最近一次写下东西的时刻：开始的时刻，或者最后一步的时刻（步骤的 `at`，见
- * `search/trace.ts`）。模型每调一次工具都记一步，所以它就是心跳。
+ * 处理进程多久续一次租，租约多久没续就算进程没了：容得下连着漏几次。和模型请求的时限无关，
+ * 排队等并发名额、等模型回答时照样续。
  */
-const lastBeat = sql`greatest(${searchTurn.attemptStartedAt},
-	to_timestamp((${searchTurn.trace} -> -1 ->> 'at')::float8 / 1000))`;
+const HEARTBEAT_MS = 10_000;
+const LEASE_MS = 60_000;
+
+/** 最近一次续租的时刻；还没续过时是这一次开始的时刻。工具步骤只是进度，不算续租。 */
+const lastBeat = sql`coalesce(${searchTurn.attemptHeartbeatAt}, ${searchTurn.attemptStartedAt})`;
 
 /**
- * 还没做完也没写下失败、而且隔了一步的上限还没有新的一步的那一次：它的进程没了，
- * 不会再写了。读记录时把它当作 `broken`，重试也只换掉这样的和已经失败的那一次。
+ * 还没做完也没写下失败、租约过期了的那一次：它的进程没了。读记录时当作 `broken`，
+ * 重试也只换掉这样的和已经失败的那一次；换了编号，原来的进程就续不了租、写不进结果。
  */
 const abandoned = sql`(${searchTurn.attempt} is not null
 	and not ${searchTurn.attemptDone}
 	and ${searchTurn.attemptFault} is null
-	and ${lastBeat} < now() - make_interval(secs => ${(STEP_LIMIT_MS + SETTLE_MS) / 1000}))`;
+	and ${lastBeat} < now() - make_interval(secs => ${LEASE_MS / 1000}))`;
 
 const currentFault = sql<AttemptFault | null>`case when ${abandoned}
 	then 'broken' else ${searchTurn.attemptFault} end`;
@@ -310,11 +310,15 @@ function ownedBy(turnId: string, attempt: string) {
  */
 export async function processTurn(turnId: string, attempt: string) {
 	let fault: AttemptFault | null;
+	const replaced = new AbortController();
+	const stopBeating = keepAlive(turnId, attempt, replaced);
 	try {
-		fault = await performAttempt(turnId, attempt);
+		fault = await performAttempt(turnId, attempt, replaced);
 	} catch (error) {
 		console.error(`AI 处理查询失败（记录 ${turnId}）：`, error);
 		fault = faultOf(error);
+	} finally {
+		await stopBeating();
 	}
 	if (!fault) return;
 	try {
@@ -325,6 +329,38 @@ export async function processTurn(turnId: string, attempt: string) {
 	} catch (error) {
 		console.error(`AI 处理查询的失败原因没能写入（记录 ${turnId}）：`, error);
 	}
+}
+
+/**
+ * 处理期间每 `HEARTBEAT_MS` 续一次租，开始时先续一次。续不上（这一次被换掉了）就 `replaced`，
+ * 手里的模型调用随之停下。交回停止续租的函数，它等在途的那一次写完。
+ */
+function keepAlive(turnId: string, attempt: string, replaced: AbortController) {
+	let beating: Promise<void> | null = null;
+	const beat = () => {
+		beating ??= db
+			.update(searchTurn)
+			.set({ attemptHeartbeatAt: sql`now()` })
+			.where(ownedBy(turnId, attempt))
+			.returning({ id: searchTurn.id })
+			.then(
+				(rows) => {
+					if (rows.length === 0) replaced.abort();
+				},
+				(error) => {
+					console.error(`AI 处理续租失败（记录 ${turnId}）：`, error);
+				},
+			)
+			.finally(() => {
+				beating = null;
+			});
+	};
+	beat();
+	const timer = setInterval(beat, HEARTBEAT_MS);
+	return async () => {
+		clearInterval(timer);
+		await beating;
+	};
 }
 
 /** 一次处理做完时和「做完了」一起写进这一轮的：理解一句话写条件和说明，直接改条件的不动条件。 */
@@ -340,12 +376,12 @@ type Settled = Partial<Pick<SearchTurn, "spec" | "notes">>;
 async function performAttempt(
 	turnId: string,
 	attempt: string,
+	replaced: AbortController,
 ): Promise<AttemptFault | null> {
 	if (!understandingConfigured()) return "unconfigured";
 	const row = await getRow(turnId);
 	// 这一轮已被下一句话取代，或这一次已被重试换掉
 	if (row?.attempt !== attempt) return null;
-	const replaced = new AbortController();
 	const record: RecordStep = async (step, verdicts) => {
 		const written = await db.transaction(async (tx) => {
 			// 结论与追加都先锁链头：归属核验、进度和结论在同一事务里生效。
@@ -407,7 +443,7 @@ async function performAttempt(
 /**
  * 理解一句话。这一轮的基线是父记录的条件：一句「再加上带过团队的」只有放在那张表上才有意思。
  * 连同这次找人之前几轮的经过一起交给模型：一句「不是这个意思」要知道之前说过什么才读得懂。
- * 写进记录的是提交检查录取的那份：跑不了的条件已经丢掉，丢空了就是没作答（`understand` 抛出）。
+ * 只有没有硬错误的条件才发布；条件无效或没作答由 `understand` 抛出。
  */
 async function understandTurn(
 	row: SearchTurn,
@@ -468,6 +504,7 @@ export async function restartTurn(turnId: string): Promise<string | null> {
 		.set({
 			attempt: newId(),
 			attemptStartedAt: sql`now()`,
+			attemptHeartbeatAt: null,
 			attemptFault: null,
 			trace: [],
 		})
