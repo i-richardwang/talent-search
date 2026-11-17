@@ -57,7 +57,7 @@ function getModel() {
 		baseURL: config.baseURL,
 		...(API_KEY && { apiKey: API_KEY }),
 		// 每一批的请求各自超时、各自重试（见 `endpoint.ts`）
-		fetch: endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES }).fetch,
+		fetch: endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES }),
 	}).embeddingModel(config.model);
 	return model;
 }

@@ -109,7 +109,7 @@ describe("聊天端点", () => {
 					"对齐",
 					quiet,
 					() => true,
-					"align",
+					{ endpoint: "align" },
 				);
 				assert.deepEqual(got.get(`对齐${expected}`), { a: expected });
 			}
@@ -216,7 +216,7 @@ describe("聊天端点", () => {
 				"对齐",
 				quiet,
 				() => true,
-				"align",
+				{ endpoint: "align" },
 			);
 			process.env.ALIGN_BASE_URL = "http://127.0.0.1:1";
 			const got = await complete(
@@ -227,7 +227,7 @@ describe("聊天端点", () => {
 				"对齐",
 				quiet,
 				() => true,
-				"align",
+				{ endpoint: "align" },
 			);
 			assert.deepEqual(got.get("同一输入"), { a: 7 });
 			assert.deepEqual(asked, ["同一输入"]);

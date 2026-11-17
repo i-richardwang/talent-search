@@ -16,6 +16,7 @@
  * `READ_MAX` 段：人在等，读到这里为止，没读到的人不上名单（`search/empty.ts` 的 `Incomplete`）。
  */
 import "@tanstack/react-start/server-only";
+import { concurrently, gate } from "#/lib/concurrent";
 import { probe as probeQuery } from "#/search/execute";
 import type { Query, QueryCondition } from "#/search/query";
 import type { TraceStep } from "#/search/trace";
@@ -24,6 +25,15 @@ import { segmentTexts, type Verdict } from "./judged";
 
 /** 一次请求给模型读几段经历。 */
 export const READ_BATCH = 160;
+
+/**
+ * 一批 JSON 的 UTF-8 字节上限（`LLM_READ_BATCH_BYTES`），给上下文放不下 `READ_BATCH` 段长原文的
+ * 模型用；不设时只按段数分批。单段超出时完整单发，不截断。
+ */
+const READ_BATCH_BYTES = positiveInt(
+	process.env.LLM_READ_BATCH_BYTES,
+	Number.POSITIVE_INFINITY,
+);
 
 /**
  * 一次查询同时读几批。定得小：几个人同时找人时各读各的，谁也不把端点的并发占满；整个进程
@@ -133,6 +143,53 @@ function waveOf(unconfirmed: Unconfirmed, room: number): Part[] {
 	return wave;
 }
 
+/** 一次请求：给模型的那一批，和每段的内容（按编号顺序），结论按它存。 */
+type Planned = { condition: QueryCondition; batch: Batch; contents: string[] };
+
+/**
+ * 把这一波的段装成请求，一批的编号从 1 起。设了 `READ_BATCH_BYTES` 时一批再按字节装，
+ * 装出来超过 `READ_PARALLEL` 批的，多出的段下一波再取。
+ */
+function batchesOf(
+	parts: Part[],
+	texts: Awaited<ReturnType<typeof segmentTexts>>,
+): Planned[] {
+	const batches: Planned[] = [];
+	for (const { condition, criterion, experienceIds } of parts) {
+		let open: Planned | undefined;
+		let bytes = 0;
+		for (const id of experienceIds) {
+			const segment = texts.get(id);
+			// 段不在了，是人才库在这期间刚同步过
+			if (!segment) throw new Error("候选人的经历刚有变动，这一次没有读完");
+			// 按这一批里最大的编号估，再算上分隔的逗号：估多不估少
+			const size =
+				Buffer.byteLength(
+					JSON.stringify({ n: READ_BATCH, text: segment.text }),
+				) + 1;
+			if (
+				!open ||
+				(open.contents.length > 0 && bytes + size > READ_BATCH_BYTES)
+			) {
+				open = {
+					condition,
+					batch: { label: condition.label, criterion, segments: [] },
+					contents: [],
+				};
+				batches.push(open);
+				bytes = Buffer.byteLength(JSON.stringify(open.batch));
+			}
+			open.batch.segments.push({
+				n: open.contents.length + 1,
+				text: segment.text,
+			});
+			open.contents.push(segment.content);
+			bytes += size;
+		}
+	}
+	return batches.slice(0, READ_PARALLEL);
+}
+
 /**
  * 一轮处理里的读经历。`rootTurnId` 是这一轮所在的找人任务：结论记在它名下，也只认它名下的；
  * `record` 把每一步和这一步的结论一起写入；`judge` 读一批。
@@ -149,6 +206,8 @@ export function reader({
 	/** 这一轮已经存下结论的段数。 */
 	let concluded = 0;
 	const room = () => READ_MAX - concluded;
+	// AI 可能在一步里同时调两次 read：一次读完再开始下一次，同一段不会读两遍、占两份额度
+	const serial = gate(1);
 
 	/** 把这份条件的候选人还没确认过的经历读完，或者读到这一轮的上限。 */
 	async function read(
@@ -163,71 +222,60 @@ export function reader({
 			const tried = await trial(query, rootTurnId);
 			if (tried.total === null) return { kind: "unlisted", tried };
 			const left = tried.unconfirmed.length;
-			const wave = waveOf(tried.unconfirmed, room());
-			if (wave.length === 0)
+			const parts = waveOf(tried.unconfirmed, room());
+			if (parts.length === 0)
 				return { kind: "read", conditions: [...tally.values()], left };
-			const experienceIds = wave.flatMap((part) => part.experienceIds);
+			const texts = await segmentTexts([
+				...new Set(parts.flatMap((part) => part.experienceIds)),
+			]);
+			const wave = batchesOf(parts, texts);
 			await record(
-				{ at: Date.now(), tool: "read", segments: experienceIds.length, left },
+				{
+					at: Date.now(),
+					tool: "read",
+					segments: wave.reduce((n, { contents }) => n + contents.length, 0),
+					left,
+				},
 				[],
 			);
-			const texts = await segmentTexts([...new Set(experienceIds)]);
-			const batches = await Promise.all(
-				wave.map(async ({ condition, criterion, experienceIds }) => {
-					const segments = experienceIds.map((id) => {
-						const segment = texts.get(id);
-						// 段不在了，是人才库在这期间刚同步过
-						if (!segment)
-							throw new Error("候选人的经历刚有变动，这一次没有读完");
-						return segment;
-					});
-					// 一段的编号是它在这一批里排第几
-					const chosen = new Set(
-						await judge(
-							{
-								label: condition.label,
-								criterion,
-								segments: segments.map(({ text }, i) => ({ n: i + 1, text })),
-							},
-							abortSignal,
-						),
-					);
+			await concurrently(
+				wave,
+				READ_PARALLEL,
+				async ({ condition, batch, contents }) => {
+					const chosen = new Set(await judge(batch, abortSignal));
 					await record(
 						{
 							at: Date.now(),
 							tool: "judge",
 							fits: chosen.size,
-							unfit: segments.length - chosen.size,
+							unfit: contents.length - chosen.size,
 						},
-						segments.map(({ content }, i) => ({
-							criterion,
+						contents.map((content, i) => ({
+							criterion: batch.criterion,
 							content,
 							fits: chosen.has(i + 1),
 						})),
 					);
-					return {
-						condition,
-						read: segments.length,
-						fits: chosen.size,
+					concluded += contents.length;
+					const counted = tally.get(condition.id) ?? {
+						label: condition.label,
+						read: 0,
+						fits: 0,
 					};
-				}),
+					tally.set(condition.id, counted);
+					counted.read += contents.length;
+					counted.fits += chosen.size;
+				},
 			);
-			for (const { condition, read, fits } of batches) {
-				const counted = tally.get(condition.id) ?? {
-					label: condition.label,
-					read: 0,
-					fits: 0,
-				};
-				tally.set(condition.id, counted);
-				counted.read += read;
-				counted.fits += fits;
-				concluded += read;
-			}
 		}
 	}
 
 	return {
-		read,
+		read: (query: Query, abortSignal?: AbortSignal) =>
+			serial(() => {
+				abortSignal?.throwIfAborted();
+				return read(query, abortSignal);
+			}),
 		/** 这一轮还能读几段。 */
 		room,
 		/** 这一轮已经存下结论的段数：试跑的结果随它变。 */

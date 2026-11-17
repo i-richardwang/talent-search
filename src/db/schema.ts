@@ -539,6 +539,8 @@ export const term = pgTable(
 	{
 		word: text("word").primaryKey(),
 		canonical: text("canonical").notNull(),
+		/** 别名被退回、还没重新判：检索照旧按原来那一项算，新的同义判定不顺着它合并整项。 */
+		aliasSentBack: boolean("alias_sent_back").notNull().default(false),
 		parent: text("parent").references((): AnyPgColumn => term.word),
 		/** 判定方认定它不是一项能力：不进筛选栏、候选词和参考词，人身上的说法不动。 */
 		excluded: boolean("excluded").notNull().default(false),
@@ -731,6 +733,10 @@ export const searchTurn = pgTable(
 		 * 都从它算，重试过也只算这一次。
 		 */
 		attemptStartedAt: timestamp("attempt_started_at", {
+			withTimezone: true,
+		}),
+		/** 处理进程的最近心跳，排队和模型调用期间也更新；不用于界面的用时计算。 */
+		attemptHeartbeatAt: timestamp("attempt_heartbeat_at", {
 			withTimezone: true,
 		}),
 		/** 这一次处理为什么没成（`server/turn.ts` 的 `AttemptFault`）；还在处理或已完成为 null。 */

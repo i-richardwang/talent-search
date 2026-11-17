@@ -224,6 +224,7 @@ try {
 	for (const [index, c] of cases.entries()) {
 		const problems: string[] = [];
 		const table: Table = new Map();
+		const people = new Map(c.words.map((one) => [one.word, one.people]));
 		const unanswered: string[] = [];
 		for (const [at, question] of questionsOf(c).entries()) {
 			const verdict = conform(
@@ -231,7 +232,7 @@ try {
 				question.word,
 				question.near.map((one) => one.word),
 			);
-			if (verdict) place(table, question, verdict, new Date());
+			if (verdict) place(table, question.word, verdict, people, new Date());
 			else unanswered.push(question.word);
 		}
 		if (unanswered.length) problems.push(`漏答 ${unanswered.join("、")}`);

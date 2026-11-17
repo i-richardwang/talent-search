@@ -16,8 +16,8 @@ const FIRST_DELAY_MS = 2_000;
 const RETRY_AFTER_MAX_MS = 60_000;
 
 /**
- * 一次 HTTP 请求的执行策略：`fetch` 负责超时和重试，`limitMs` 是包含全部尝试和退避的总时限。
- * SDK 的 provider 使用这份 `fetch`、调用时 `maxRetries: 0`。重试的单位是这一个请求，所以
+ * 一次 HTTP 请求的执行策略：交回的 `fetch` 自己管超时和重试，整次（全部尝试和退避）另有一个
+ * 总时限。SDK 的 provider 使用这份 `fetch`、调用时 `maxRetries: 0`。重试的单位是这一个请求，所以
  * 多步对话里第几步超时就只重发第几步，分批嵌入里哪一批超时就只重发哪一批。
  *
  * - 每次尝试各有 `timeoutMs` 的预算，最多重发 `retries` 次。超时的那次已经等满了预算，
@@ -31,7 +31,7 @@ export function endpointPolicy({
 }: {
 	timeoutMs: number;
 	retries: number;
-}): { fetch: typeof fetch; limitMs: number } {
+}): typeof fetch {
 	let limitMs = timeoutMs;
 	for (let attempt = 0; attempt < retries; attempt++)
 		limitMs += timeoutMs + Math.max(RETRY_AFTER_MAX_MS, backoff(attempt));
@@ -59,7 +59,7 @@ export function endpointPolicy({
 			await sleep(wait, lifetime);
 		}
 	};
-	return { fetch: request, limitMs };
+	return request;
 }
 
 function backoff(attempt: number): number {

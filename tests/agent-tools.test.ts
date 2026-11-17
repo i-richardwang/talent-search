@@ -410,7 +410,8 @@ describe("试跑", () => {
 		assert.equal(result.total, 0);
 		assert.equal(result.candidates, 9, "都算数的话名单上会有的人");
 		assert.equal(result.unread, 9);
-		assert.match(result.todo, /候选人还有经历没读：用 read 读/);
+		assert.match(result.todo, /提交后会继续读/);
+		assert.match(result.todo, /可用 read 试读/);
 	});
 
 	test("按行业、按集团找：主营和涉足人数不同；「不要某行业来的」是排除的经历", async () => {
@@ -496,12 +497,13 @@ describe("提交搜索条件", () => {
 			passed: true,
 		});
 		assert.equal(agent.passed(), true);
+		const answer = agent.answer();
+		assert.ok(answer && "result" in answer);
 		assert.deepEqual(
-			agent.answer()?.admitted.query.conditions.map((c) => c.label),
+			answer.result.query.conditions.map((c) => c.label),
 			drafted("推荐").map((c) => c.label),
 			"跑得通的全部录取",
 		);
-		assert.equal(agent.answer()?.unanswered, null);
 	});
 
 	test("找不到人的经历、匹配不到的名字不通过；原样再提交就通过：没有这样的人也是一个结果", async () => {
@@ -514,10 +516,12 @@ describe("提交搜索条件", () => {
 		assert.match(problems, /量子炼金/);
 		assert.match(problems, /北辰/);
 		assert.equal(agent.passed(), false);
+		const answer = agent.answer();
+		assert.ok(answer && "result" in answer);
 		assert.equal(
-			agent.answer()?.admitted.query.conditions.length,
+			answer.result.query.conditions.length,
 			2,
-			"没通过的也记着录取的那份",
+			"合法零匹配可在次数用完时交回完整条件",
 		);
 		assert.deepEqual(await agent.call("submit", submitted), { passed: true });
 	});
@@ -546,11 +550,10 @@ describe("提交搜索条件", () => {
 			assert.doesNotMatch(problems, /量子炼金/);
 			assert.equal(agent.passed(), false);
 		}
-		assert.deepEqual(
-			agent.answer()?.admitted.query.conditions.map((c) => c.label),
-			[unfound?.label],
-			"录取的只有跑得通的那条，找不到人不妨碍录取",
-		);
+		const answer = agent.answer();
+		assert.ok(answer && "error" in answer, "硬错误不交回删减后的条件");
+		assert.match(answer.error, /学历很高/);
+		assert.match(answer.error, /睡一会儿/);
 		const { steps } = agent;
 		assert.equal(steps.length, 3, "没通过的提交每次记一步");
 		assert.deepEqual(steps[0], {
@@ -565,7 +568,7 @@ describe("提交搜索条件", () => {
 		assert.doesNotMatch(JSON.stringify(steps), /pg_sleep|where|label/);
 	});
 
-	test("编得过、执行才报错的条件不录取；说明里的回答照留", async () => {
+	test("编得过、执行才报错也只交回错误，不提供部分条件和说明", async () => {
 		const agent = await agentOn(SEARCH);
 		const { compileWhere } = await import("#/server/sandbox");
 		assert.ok(
@@ -584,15 +587,9 @@ describe("提交搜索条件", () => {
 			result.problems?.join() ?? "",
 			/最近有过绩效.*原样再提交也不收/,
 		);
-		const admitted = agent.answer()?.admitted;
-		assert.deepEqual(
-			admitted?.query.conditions.map((c) => c.label),
-			drafted("推荐").map((c) => c.label),
-		);
-		assert.deepEqual(admitted?.notes?.choices, {
-			current: "不加",
-			others: [{ label: "加上做过考古的", detail: "做过考古的有四十位" }],
-		});
+		const answer = agent.answer();
+		assert.ok(answer && "error" in answer);
+		assert.match(answer.error, /最近有过绩效/);
 	});
 
 	test("写了做过什么却没写判据：原样再提交也不通过", async () => {
@@ -632,7 +629,8 @@ describe("提交搜索条件", () => {
 		for (const _ of [1, 2]) {
 			const checked = await agent.call<Checked>("submit", submitted);
 			assert.equal(checked.passed, false);
-			assert.deepEqual(agent.answer()?.admitted.query.conditions, []);
+			const answer = agent.answer();
+			assert.ok(answer && "error" in answer);
 		}
 	});
 
@@ -708,17 +706,21 @@ describe("提交搜索条件", () => {
 		assert.deepEqual(await agent.call("submit", asking("只看推荐")), {
 			passed: true,
 		});
-		assert.deepEqual(agent.answer()?.admitted.notes?.choices, {
+		const answer = agent.answer();
+		assert.ok(answer && "result" in answer);
+		assert.deepEqual(answer.result.notes?.choices, {
 			current: "只看推荐",
 			others: [{ label: "带上做过考古的" }],
 		});
 	});
 
-	test("什么都没写不通过：录取的那份不算作答", async () => {
+	test("什么都没写不通过：没有可交回的结果", async () => {
 		const agent = await agentOn(SEARCH);
 		const empty = await agent.call<Checked>("submit", table([]));
 		assert.equal(empty.passed, false);
-		assert.match(agent.answer()?.unanswered ?? "", /也没有说明/);
+		const answer = agent.answer();
+		assert.ok(answer && "error" in answer);
+		assert.match(answer.error, /也没有说明/);
 	});
 });
 

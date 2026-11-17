@@ -37,7 +37,6 @@ const {
 	loadAttempt,
 	restartTurn,
 } = await import("#/server/turn");
-const { STEP_LIMIT_MS } = await import("#/server/llm");
 const { search } = await import("#/search/search");
 const { db, pool } = await import("#/db");
 const { searchTurn } = await import("#/db/schema");
@@ -687,51 +686,57 @@ describe("理解失败", () => {
 		assert.equal((await loadTurn(turnId))?.spec, null);
 	});
 
-	test("只丢一部分是设计内的：剩下的条件继续写入", async () => {
+	test("一部分条件无效也不发布剩余条件，不能静默放宽要求", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
-		const spec = await answering(
-			() => ({
-				conditions: [
-					{ label: "资深", mode: "exclude", from: "person", where: "true" },
-					{ label: " ", mode: "must", from: "experience", where: "true" },
-					...drafted("算法"),
-				],
-				note: null,
-			}),
-			() => settle(turnId),
+		await assert.rejects(
+			answering(
+				() => ({
+					conditions: [
+						{ label: "资深", mode: "exclude", from: "person", where: "true" },
+						{ label: " ", mode: "must", from: "experience", where: "true" },
+						...drafted("算法"),
+					],
+					note: null,
+				}),
+				() => settle(turnId),
+			),
+			/unanswered/,
 		);
-		assert.deepEqual(shapeOf(spec), expected("算法"));
+		assert.equal((await loadTurn(turnId))?.spec, null);
 	});
 });
 
 describe("写进记录的是提交检查录取的那份", () => {
-	test("次数用完时最后一次交了跑不了的条件：那一条不进记录，说明照留", async () => {
+	test("次数用完仍有跑不了的条件：条件和说明都不发布", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
-		const spec = await answering(
-			() => ({
-				conditions: [...drafted("算法"), sleeper],
-				note: {
-					says: "要不要只看带过团队的？",
-					current: "不限",
-					options: [{ label: "只看带过团队的", detail: "" }],
-				},
-			}),
-			() => settle(turnId),
+		await assert.rejects(
+			answering(
+				() => ({
+					conditions: [...drafted("算法"), sleeper],
+					note: {
+						says: "要不要只看带过团队的？",
+						current: "不限",
+						options: [{ label: "只看带过团队的", detail: "" }],
+					},
+				}),
+				() => settle(turnId),
+			),
+			/unanswered/,
 		);
-		assert.deepEqual(shapeOf(spec), expected("算法"));
-		assert.deepEqual((await loadTurn(turnId))?.notes?.choices, {
-			current: "不限",
-			others: [{ label: "只看带过团队的" }],
-		});
+		assert.equal((await loadTurn(turnId))?.spec, null);
+		assert.equal((await loadTurn(turnId))?.notes, null);
 	});
 
-	test("编得过、执行才报错的条件：最后一次交了它，记录里没有它，没通过的提交记在步骤里", async () => {
+	test("执行才报错也不能发布，没通过的提交仍记在步骤里", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
-		const spec = await answering(
-			() => ({ conditions: [...drafted("算法"), lately], note: null }),
-			() => settle(turnId),
+		await assert.rejects(
+			answering(
+				() => ({ conditions: [...drafted("算法"), lately], note: null }),
+				() => settle(turnId),
+			),
+			/unanswered/,
 		);
-		assert.deepEqual(shapeOf(spec), expected("算法"));
+		assert.equal((await loadTurn(turnId))?.spec, null);
 		const trace = (await loadTurn(turnId))?.trace ?? [];
 		const submits = trace.filter((step) => step.tool === "submit");
 		assert.ok(submits.length > 0);
@@ -746,6 +751,32 @@ describe("写进记录的是提交检查录取的那份", () => {
 						]
 					: [{ kind: "unrunnable", subject: "最近有过绩效" }],
 			);
+	});
+
+	test("AI 新条件缺判据不能退化成字面搜索，即使最后一次也不发布", async () => {
+		const { turnId } = await createTurn({
+			kind: "sentence",
+			text: "本人做过算法研发",
+		});
+		await assert.rejects(
+			answering(
+				() => ({
+					conditions: [
+						{
+							label: "本人做过算法研发",
+							mode: "must",
+							from: "experience",
+							where: "true",
+							seek: { patterns: ["算法"], criterion: "" },
+						},
+					],
+					note: null,
+				}),
+				() => settle(turnId),
+			),
+			/unanswered/,
+		);
+		assert.equal((await loadTurn(turnId))?.spec, null);
 	});
 
 	test("条件全都跑不了：按没作答失败，不写入", async () => {
@@ -1097,6 +1128,7 @@ describe("理解时把候选人的经历看完", () => {
 						.update(searchTurn)
 						.set({
 							attemptStartedAt: sql`now() - interval '1 hour'`,
+							attemptHeartbeatAt: sql`now() - interval '1 hour'`,
 							trace: [],
 						})
 						.where(eq(searchTurn.id, first.turnId));
@@ -1201,54 +1233,84 @@ describe("一轮只有一次理解", () => {
 });
 
 describe("这一次理解还在不在", () => {
-	/** 把这一次理解的开始和最后一步挪到若干毫秒以前：进程没了时记录停在的样子。 */
-	async function quietFor(turnId: string, started: number, lastStep?: number) {
+	/** 模拟持久化时钟，进度不参与存活判断。 */
+	async function quietFor(turnId: string, started: number, heartbeat?: number) {
 		await db
 			.update(searchTurn)
 			.set({
 				attemptStartedAt: sql`now() - make_interval(secs => ${started / 1000})`,
-				trace:
-					lastStep === undefined
-						? []
-						: [
-								{
-									at: Date.now() - lastStep,
-									tool: "probe",
-									probe: {
-										conditions: [],
-										total: null,
-										unread: 0,
-									},
-								},
-							],
+				attemptHeartbeatAt:
+					heartbeat === undefined
+						? null
+						: sql`now() - make_interval(secs => ${heartbeat / 1000})`,
+				trace: [],
 			})
 			.where(eq(searchTurn.id, turnId));
 		return (await loadAttempt(turnId))?.fault ?? null;
 	}
 
-	test("请求的重试退避也在存活时限内，等待期间不能重试取代它", async () => {
+	test("请求排队或重试再久，有心跳就不能重试取代它", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
-		// 两次六十秒的尝试之间，端点可以要求再等六十秒。
-		assert.equal(await quietFor(turnId, 140_000), null);
+		assert.equal(await quietFor(turnId, 3_600_000, 1_000), null);
 		assert.equal(await restartTurn(turnId), null);
 	});
 
-	test("开始之后一直没有新的一步：过了一步的上限读到 broken，没过的不算", async () => {
+	test("创建后没有启动：租约过期读到 broken，没过的不算", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
-		assert.equal(await quietFor(turnId, STEP_LIMIT_MS - 5_000), null);
-		assert.equal(await quietFor(turnId, STEP_LIMIT_MS + 15_000), "broken");
+		assert.equal(await quietFor(turnId, 55_000), null);
+		assert.equal(await quietFor(turnId, 65_000), "broken");
 	});
 
-	test("心跳看最近一步：开始得再早，一步刚写过就还活着；最后一步也停了太久才算没了", async () => {
+	test("心跳过期才算没了，重试清掉旧心跳", async () => {
 		const { turnId } = await createTurn({ kind: "sentence", text: "算法" });
 		const hour = 3_600_000;
 		assert.equal(await quietFor(turnId, hour, 1_000), null);
-		assert.equal(await quietFor(turnId, hour, STEP_LIMIT_MS - 5_000), null);
-		assert.equal(
-			await quietFor(turnId, hour, STEP_LIMIT_MS + 15_000),
-			"broken",
-		);
+		assert.equal(await quietFor(turnId, hour, 55_000), null);
+		assert.equal(await quietFor(turnId, hour, 65_000), "broken");
 		assert.ok(await restartTurn(turnId), "没了的那一次可以重试");
+		assert.equal((await loadAttempt(turnId))?.fault, null);
+	});
+
+	test("模型仍在等待时进程独立续租，开始时间和展示步骤不变", {
+		timeout: 20_000,
+	}, async () => {
+		const original = globalThis.fetch;
+		let release!: () => void;
+		let entered!: () => void;
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const started = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		globalThis.fetch = async (...args) => {
+			entered();
+			await held;
+			return original(...args);
+		};
+		const { turnId, attempt } = await createTurn({
+			kind: "sentence",
+			text: "算法",
+		});
+		assert.ok(attempt);
+		const running = processTurn(turnId, attempt);
+		try {
+			await started;
+			await quietFor(turnId, 3_600_000, 65_000);
+			const before = await loadAttempt(turnId);
+			const deadline = Date.now() + 13_000;
+			while ((await loadAttempt(turnId))?.fault && Date.now() < deadline)
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			const alive = await loadAttempt(turnId);
+			assert.equal(alive?.fault, null);
+			assert.equal(alive?.startedAt, before?.startedAt);
+			assert.deepEqual(alive?.trace, before?.trace);
+			assert.equal(await restartTurn(turnId), null);
+		} finally {
+			release();
+			await running;
+			globalThis.fetch = original;
+		}
 	});
 });
 

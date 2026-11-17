@@ -126,7 +126,7 @@ try {
 					: "") +
 				`，命中 ${total} 人${
 					empty?.kind === "overflowEvidence"
-						? `（匹配事实过多：${empty.claims.map((claim) => claim.label).join("、")}）`
+						? `（匹配事实过多：${empty.conditions.map((c) => c.label).join("、")}）`
 						: ""
 				}`,
 		);

@@ -142,9 +142,8 @@ function seekOf(raw: unknown): Seek | undefined {
 		if (patterns.length === PATTERNS_MAX) break;
 	}
 	const criterion =
-		typeof entry.criterion === "string"
-			? entry.criterion.trim().slice(0, CRITERION_MAX)
-			: "";
+		typeof entry.criterion === "string" ? entry.criterion.trim() : "";
+	if (criterion.length > CRITERION_MAX) return undefined;
 	if (patterns.length === 0 && !criterion) return undefined;
 	return { patterns, ...(criterion && { criterion }) };
 }

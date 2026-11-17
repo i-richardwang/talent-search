@@ -45,13 +45,13 @@ const MAX_OUTPUT_TOKENS = positiveInt(
 );
 /** 一次请求失败再试几次：人在等结果，只多等一次。 */
 const RETRIES = 1;
-const REQUEST = endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES });
+const request = endpointPolicy({ timeoutMs: TIMEOUT_MS, retries: RETRIES });
 
 /**
- * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。通常捞一次说法、试跑一次、读一次
- * 经历、提交一次；提交没通过检查、改完再提交，再多几次。最后一次只留提交这一个工具，并在
- * 消息里明说（`LAST_STEP`），保证用完次数时模型提交了一份搜索条件。次数只管理解：读经历的
- * 请求不在这段对话里（`reading.ts`），模型没读完的，理解结束后这一轮接着读完（`turn.ts`）。
+ * 一轮理解最多调用几次模型，每次调用里模型可以用几个工具。最后一次只留提交这一个工具，并在
+ * 消息里明说（`LAST_STEP`）；这一次没提交、或提交的还有硬问题，这一轮就没理解出来。次数只管
+ * 理解：读经历的请求不在这段对话里（`reading.ts`），模型没读完的，理解结束后这一轮接着读完
+ * （`turn.ts`）。
  */
 const AGENT_STEPS = 10;
 
@@ -61,12 +61,6 @@ const AGENT_STEPS = 10;
  */
 const READ_CONCURRENCY = positiveInt(process.env.LLM_READ_CONCURRENCY, 8);
 const readGate = gate(READ_CONCURRENCY);
-
-/**
- * 一次模型请求的总时限，包含全部尝试和退避，与执行请求使用同一份策略。`server/turn.ts`
- * 按这个时限加上步骤落库的时间判断一次处理还在不在。
- */
-export const STEP_LIMIT_MS = REQUEST.limitMs;
 
 const LAST_STEP =
 	"查询的次数用完了。不要再查，按已经查到的结果，现在用 submit 提交搜索条件。";
@@ -89,7 +83,7 @@ function getModel() {
 			baseURL: BASE_URL,
 			...(API_KEY && { apiKey: API_KEY }),
 			// 每一步的请求各自超时、各自重试（见 `endpoint.ts`）
-			fetch: REQUEST.fetch,
+			fetch: request,
 			...thinkingSwitch(ENABLE_THINKING),
 		})(MODEL);
 	return model;
@@ -142,11 +136,15 @@ const SYSTEM = `你在帮 HR 从公司内部的人才库里找人。给你的是
  "params": {名字: 取值}, "minMonths": 月数}
 
 from 决定这条在问什么：
-- experience：这个人有一段工作经历 e，同时满足 where 里写的每一项。where 里只能直接用 e，
-  写了 seek 时还能用 h。一条之内说的是同一段经历：「入职前在大厂做过三年增长」的公司档、
-  入职前、增长和三年都写在一条里。条件之间说的是同一个人。
+- experience：存在一段工作经历 e，同时满足这一条的 where 和 seek；不是分别找两段来满足。
+  where 里只能直接用 e，写了 seek 时还能用 h。不同条件可以由同一个人的不同经历满足。
 - person：这个人整体的情况，where 里只能直接用 p。职级、学历、学校、招聘渠道写在 p 上；
   评级、状态这类记录用子查询读 rating、status，用 r.emp_id = p.emp_id 关联到这个人。
+
+按 HR 要求的经历分条，不按公司、岗位、技能这些数据维度分条：
+- 「在甲公司做研发」「甲公司来的研发工程师」是一条：公司写在 where，研发写在 seek。只在甲公司做销售、在乙公司做研发的人不符合；拆成两条就会把他选进来。
+- 「做过研发，也在甲公司待过，不要求在那里做研发」才是两条；「做研发，最好是甲公司来的」也分开，公司那条是 boost。
+- 同一件事的时间、时长、任职性质也放在这一条里；没有明确说成独立要求的，不拆出去。零匹配时仍保持这层关系，不为找到人把同段改成跨段。
 
 做过什么（方向、领域、技能、职责）写进 seek。人才库里每个人的每段经历都读成了若干条说法：
 公司内的一段任职是「序列｜岗位名」；入职前的经历是岗位名，加上从简历描述里读出来的技能词
@@ -172,9 +170,9 @@ from 决定这条在问什么：
 - 只关心命中的是哪一类说法或投入时才用 h（h.route、h.engagement）；平常 where 里不必提 h。
 
 读经历：
-- 条件写好先用 probe 试跑。read 把候选人还没读过的经历按每条条件的 criterion 逐段判断、记下结论，
+- read 把候选人还没读过的经历按每条条件的 criterion 逐段判断、记下结论，
   回给你每条这一次读了多少段、多少段算数，候选人还剩多少段没读。经历的文字不给你看。
-- 提交之后没读的经历也会读完，read 用来看你写得准不准：一条读了很多段、算数的却很少，多半是
+- 提交之后没读的经历也会读完；read 不是提交前置条件，只在需要检验判据与召回范围时试读，不为取得名单人数而读。一条读了很多段、算数的却很少，多半是
   正则带进了一大类不相干的经历，把正则改窄、重新 probe 再读；读过的不用再读。
 - 结论是按 criterion 的文字记下的：读过之后改一个字，读过的就要按新的重读。没有理由不要改。
 - 上一轮留下来、原样沿用的条件，以前读过的经历结论还在，不用再读。
@@ -184,21 +182,22 @@ from 决定这条在问什么：
 在哪、哪一档、入职前还是公司内、多久：
 - 入职前的公司名、公司档只在 e.kind = 'external' 的段上；公司内的部门只在 e.kind = 'internal'
   的段上，一段只有其一。名字按包含匹配：e.company ilike :c，params 里写 "%名字%"。
-- 和一件做过的事说在一起的修饰语，默认说的是同一段经历，写进同一条的 where。用户把它们说成
-  两件事（「做过推荐，也待过字节」），或者修饰的是整个人（「最好是字节来的」）时分成两条：
-  一条写 seek，一条只写 where（没有 seek 的经历条件只定去留或加分，不排名次）。
-- 一段任职的性质（实习、兼职）写在岗位名里，不是做过什么：按字面写 e.title ilike :t，不写 seek。
+- 实习、兼职是任职性质，不表示没有亲自做过这件事。只有 HR 限定了这种性质才筛它，没提到就不添加，
+  也不在 criterion 里自行排除。任职性质登记在岗位名里，按字面写 e.title ilike :t，不写 seek。
   「实习不算」是对那一条的限定：在那一条的 where 里加 e.title not ilike :t。
 - minMonths 是满足这条的段累计的月数，三年以上就是 36。只说一段要多长时写 e.months >= 36。
-- 拿不准挂在哪时按同一段写：label 上看得出是这样读的，HR 不同意会说。
 
 人的条件：
 - 有限取值的几列，取值下面给了，原样用。职级、学历说「某档以上」「至少某档」时比档高：
   p.level_rank >= (select s.rank from scale s where s.stream = 'level' and s.value = :band)；
   学历说一档（「要硕士」）是最低要求，同样写成比档高；职级说具体的一两档时写
   p.level_band in (:a, :b)。
-- 学校档是学校的档（985、211 这类），档之间不比高低；说一个统称时把它包含的档都写上。
+- 学校档不比高低；统称包含的档在同一条里用 in 列全：985 包含 C9，211 包含 985 和 C9。
+  只使用下面目录里实际存在的档名；QS 这类另一种分法不混进去。
 - 学校名按包含匹配：p.school ilike :s。
+  学校名、学校档只记录最高学历的学校。HR 指定本科或其他较早学历的学校时，这一要求搜不了，
+  只在 note 说明，保留其他条件；不筛 p.school、p.school_tier 或 p.education 来代替这项要求。
+  可以在 options 提供「改按最高学历的学校找」，HR 选了再加，不提前替 HR 选。
 
 记录（绩效这类评级、高潜池这类状态）：
 - 有哪些记录流、覆盖哪几期、档从低到高是什么，下面给了；要看人数用 discover。
@@ -231,12 +230,14 @@ label 上要看得出是哪一种。exclude 的 label 写被排除的那种经�
 label 写给 HR 看，HR 靠它核对你是怎么理解的：说清找的是什么经历或什么人，修饰语挂在哪里
 （「在甲公司做推荐系统的那段」和「做过推荐系统，也在甲公司待过」不一样），不写 SQL、表名、列名。
 
-你提交之后 HR 就看到名单，名单上方列着每一条条件的 label。note 是你在名单旁边对 HR 说的一句话，
-只说名单和条件上看不出、又要 HR 知道或拿主意的一件事。没有这样的事就写 null。值得说的有两种：
+你提交之后 HR 就看到名单，名单上方列着每一条条件的 label。note 只处理两件事：没有实现的要求，或 HR 尚未确定的解释；其余写 null。
 - 这句话里有人才库表达不了的要求。人才库里有什么看下面的数据目录和记录流；地点、年龄、性别、薪资、
   性格、潜力、像某某一样，这些不写进条件；HR 不知道的话会以为名单已经按它筛过了。
+  不用相近但含义不同的条件替代；替代要求放在 options，等 HR 选择后再生效。
   点名的公司、学校表达得了，人才库里没有人也照写，不用说：哪一项没有人，名单上会说。
-- 一个词在人才库里有几种常见的意思，按哪种理解找出来的人差很多，条件上又看不出按的是哪种。
+- HR 的话或对话已经留下两个可能的领域或方向、还没选定时，note 必须保留这个选择：current 写这次先按的解释，options 给另一种，says 说明尚未确定的分歧。人才库里只找到其中一种、或 label 已写清你选的那一种，都不等于 HR 已选择。
+  HR 没提多个方向，但人才库里的叫法显示这个需求有两种在本次任务中都合理的解释时，同样处理。
+  对话已明确领域，或另一种解释只是脱离本次任务的字面可能性时，不追问、不凑选项；按本次任务的通常含义找，在 label 写清楚。
 一次只说最要紧的那一件；几条要求都搜不了时，在一句话里一起说。名单上有多少人、哪一项没有人，
 HR 在名单上看得到：不用说，也不用替 HR 提议放宽。says 和 detail 都不写人数：你查到的是简历里
 字面写到的人，名单上是确认过的人，两个数对不上，HR 会以为哪里错了。
@@ -275,8 +276,7 @@ company_circles 名企组合。
   含还没读的；exclude 数的是它最多会拦下的人）、名单上多少人、哪一条写不对，候选人有多少
   （candidates）、他们还有多少段经历没读（unread）。人数和你理解的对不上时，回头看 where 和正则。
 - read：把候选人还没读过的经历读完，见上面。
-调用的次数有限：通常 find 一次、probe 一次、read 一次，再 submit。
-当前条件里原样留下的不用再 find。
+这些工具不是固定流程。查清必要的名字与说法后就用 submit 提交，它本身会试跑、校验；只有需要定位问题或比较匹配范围时才单独 probe。当前条件里原样留下的不用再 find，已给出的取值不用再 discover。
 
 写好了用 submit 提交，检查通过就完成了。没通过会告诉你哪里有问题，改好再提交。只有一种问题
 可以不改：说找不到人或找出的太多，而那正是用户明说的要求、人才库里本来就没有这样的人时，把同一份
@@ -421,12 +421,11 @@ export class UnansweredError extends Error {
 }
 
 /**
- * 当前条件（`agent` 的 `base`）+ 之前的对话 + 一句话 → 提交检查录取的条件和说明，写进记录的就是它。
+ * 当前条件（`agent` 的 `base`）+ 之前的对话 + 一句话 → 提交检查通过的条件和说明，写进记录的就是它。
  *
- * 模型先捞说法、查名字、试跑、读经历（`agent-tools.ts`），再用 `submit`
- * 提交；没通过检查就改了再提交，通过了就停，最多调用 `AGENT_STEPS` 次模型。次数用完时最后
- * 一次提交即使没通过检查也用它：录取的那份里没有跑不了的条件，形状不合规的也已去掉。一次都
- * 没提交、或者录取的那份不算作答（提交检查判的），抛 `UnansweredError`。
+ * 模型按需查目录、捞说法、试跑、试读（`agent-tools.ts`），用 `submit` 提交；通过检查就停，
+ * 最多调用 `AGENT_STEPS` 次模型。次数用完时只有找不到人、找出的太多这两类问题可以带着交。
+ * 一次都没提交、或者最后一次提交还有硬问题，抛 `UnansweredError`。
  */
 export async function understand(
 	text: string,
@@ -479,7 +478,6 @@ export async function understand(
 			`\n当前的条件表：${JSON.stringify(agent.base.map((c) => withOff(c, null)))}`,
 			`\n这句话：${text}`,
 		].join("\n"),
-		// 同一句话每次写出同一组条件
 		temperature: 0,
 		maxOutputTokens: MAX_OUTPUT_TOKENS,
 	}).then(
@@ -503,8 +501,8 @@ export async function understand(
 			`查询理解模型没有提交搜索条件：finishReason=${result.finishReason}，` +
 				`text=${JSON.stringify(result.text.slice(0, 200))}`,
 		);
-	if (answer.unanswered) throw new UnansweredError(answer.unanswered);
-	return answer.admitted;
+	if ("error" in answer) throw new UnansweredError(answer.error);
+	return answer.result;
 }
 
 /**
@@ -566,6 +564,7 @@ const judgeTool = tool({
  */
 export const judgeSegments: Judge = (batch, abortSignal) =>
 	readGate(async () => {
+		abortSignal?.throwIfAborted();
 		const numbers = new Set(batch.segments.map((segment) => segment.n));
 		for (let attempt = 0; ; attempt++) {
 			const fits = await generateText({
@@ -577,7 +576,6 @@ export const judgeSegments: Judge = (batch, abortSignal) =>
 				abortSignal,
 				instructions: READING,
 				prompt: JSON.stringify(batch),
-				// 同一批经历每次给出同样的结论
 				temperature: 0,
 				maxOutputTokens: MAX_OUTPUT_TOKENS,
 			}).then(

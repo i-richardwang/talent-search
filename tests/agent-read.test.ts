@@ -21,6 +21,10 @@ import {
 	table,
 } from "./fixture";
 
+/** 按字节装批只在设了上限时生效；这里设上，长原文的用例才分得出批。 */
+const BATCH_BYTES = 65536;
+process.env.LLM_READ_BATCH_BYTES = String(BATCH_BYTES);
+
 const teardown = await setup();
 after(teardown);
 
@@ -212,6 +216,87 @@ describe("读经历", () => {
 			"字面只在原文末尾对得上",
 		);
 		assert.ok(seen[0]?.segments[0]?.text.endsWith(tail));
+	});
+
+	test("设了字节上限时长短经历按完整输入大小分批，不截断、不漏读，批内编号和最终名单保持一致", async () => {
+		const descriptions = [
+			`甲${'中文\n"\\'.repeat(2000)}末尾符合`,
+			`乙${'中文\n"\\'.repeat(2000)}末尾不符`,
+			`丙${'中文\n"\\'.repeat(2000)}末尾符合`,
+			`丁${"很长的登记原文".repeat(7000)}末尾符合`,
+			"戊短经历末尾符合",
+		];
+		await seed(
+			descriptions.map((description, i) => ({
+				empId: `BUDGET${i}`,
+				name: "合成分批",
+				curLevel: i === 0 ? "P8" : "P5",
+				segments: [{ months: 12, title: "合成输入分批", description }],
+			})),
+		);
+		let active = 0;
+		let peak = 0;
+		const { call, steps, seen, search } = await agent(async (batch) => {
+			peak = Math.max(peak, ++active);
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			active--;
+			return batch.segments
+				.filter((s) => s.text.endsWith("末尾符合"))
+				.map((s) => s.n);
+		});
+		const criterion = "本人符合这一项要求";
+		const done = await call<Read>("read", {
+			conditions: [seeking("合成分批", ["合成输入分批"], criterion)],
+		});
+		assert.equal(peak, 2);
+		assert.equal(done.left, 0);
+		assert.deepEqual(done.conditions, [
+			{ label: "合成分批", read: 5, fits: 4 },
+		]);
+		assert.equal(
+			seen[0]?.segments[0]?.text.endsWith(descriptions[0] as string),
+			true,
+		);
+		for (const batch of seen) {
+			assert.ok(
+				batch.segments.length === 1 ||
+					Buffer.byteLength(JSON.stringify(batch)) <= BATCH_BYTES,
+			);
+			assert.deepEqual(
+				batch.segments.map((s) => s.n),
+				batch.segments.map((_, i) => i + 1),
+			);
+		}
+		assert.deepEqual(
+			seen
+				.flatMap((b) => b.segments.map((s) => s.text.split("简历原文：")[1]))
+				.sort(),
+			[...descriptions].sort(),
+		);
+		assert.deepEqual(await saved(search, criterion), [
+			true,
+			true,
+			true,
+			true,
+			false,
+		]);
+		assert.equal(
+			steps.reduce(
+				(n, s) => n + (s.tool === "read" && "segments" in s ? s.segments : 0),
+				0,
+			),
+			5,
+		);
+		const outcome = await execute(
+			{ conditions: [judged("分批", ["合成输入分批"], criterion)] },
+			search,
+		);
+		assert.deepEqual(outcome.results.map((r) => r.employee.empId).sort(), [
+			"BUDGET0",
+			"BUDGET2",
+			"BUDGET3",
+			"BUDGET4",
+		]);
 	});
 
 	test("排除的条件一样读、一样判：判成符合，这个人就不在名单上；没读之前他是候选，不上名单", async () => {
@@ -466,21 +551,63 @@ describe("读经历", () => {
 		assert.equal(whole.incomplete, undefined);
 	});
 
-	test("有一批没读成：这一次读经历失败，别的批交上来的结论照存", async () => {
+	test("同一轮同时调用两次读经历，共用候选、并发和额度，不重复确认", async () => {
+		let active = 0;
+		let peak = 0;
+		const { call, seen } = await agent(async (batch) => {
+			peak = Math.max(peak, ++active);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			active--;
+			return batch.segments.map((s) => s.n);
+		});
+		const input = {
+			conditions: [seeking("叉车调度", ["叉车"], "本人做叉车调度")],
+		};
+		const results = await Promise.all([
+			call<Read>("read", input),
+			call<Read>("read", input),
+		]);
+		assert.equal(peak, 2);
+		assert.equal(
+			seen.reduce((n, b) => n + b.segments.length, 0),
+			MANY,
+		);
+		assert.equal(
+			results
+				.flatMap((r) => {
+					assert.ok(r.conditions);
+					return r.conditions;
+				})
+				.reduce((n, c) => n + c.read, 0),
+			MANY,
+		);
+	});
+
+	test("有一批没读成：等其余批收尾，已保存的结论计入额度并刷新试跑", async () => {
 		const { call, search } = await agent(async (batch) => {
 			if (batch.segments.length < READ_BATCH) throw new Error("端点坏了");
+			await new Promise((resolve) => setTimeout(resolve, 50));
 			return batch.segments.map((s) => s.n);
 		});
 		const criterion = "本人做叉车调度";
-		await assert.rejects(
-			call("read", {
-				conditions: [seeking("做过叉车调度", ["叉车"], criterion)],
-			}),
-			/端点坏了/,
-		);
-		// 读成的那一批在失败之后才写完也算数：等它落库
-		await new Promise((resolve) => setTimeout(resolve, 200));
+		const input = {
+			conditions: [seeking("做过叉车调度", ["叉车"], criterion)],
+		};
+		assert.equal((await call<Tried>("probe", input)).unread, MANY);
+		await assert.rejects(call("read", input), /端点坏了/);
 		assert.equal((await saved(search, criterion)).length, READ_BATCH);
+		assert.equal((await call<Tried>("probe", input)).unread, MANY - READ_BATCH);
+		const rest = await call<Read>("read", {
+			conditions: [seeking("做过装配", ["装配"], "本人做装配")],
+		});
+		assert.deepEqual(rest.conditions, [
+			{
+				label: "做过装配",
+				read: READ_MAX - READ_BATCH,
+				fits: READ_MAX - READ_BATCH,
+			},
+		]);
+		assert.equal(rest.left, TOO_MANY - (READ_MAX - READ_BATCH));
 	});
 });
 

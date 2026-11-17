@@ -108,9 +108,10 @@ function submitWord(id: number, judge: string, judgment: unknown) {
 
 /** 只把这一个词退回成没判过，同一项的其他写法不动。 */
 async function unjudge(word: string) {
-	await pool.query("update term set reviewed_at = null where word = $1", [
-		word,
-	]);
+	await pool.query(
+		"update term set reviewed_at = null, alias_sent_back = word <> canonical where word = $1",
+		[word],
+	);
 }
 
 /** 词表里还没判过或被退回的词，按字排。 */
@@ -620,6 +621,7 @@ describe("判定交给外部", () => {
 				{ ...table.get("Java"), reviewedAt: undefined },
 				{
 					canonical: "Java",
+					aliasSentBack: false,
 					excluded: true,
 					parent: null,
 					reviewedAt: undefined,
@@ -677,6 +679,212 @@ describe("判定交给外部", () => {
 describe("退回重新判定", () => {
 	const said: string[] = [];
 	const report = (line: string) => said.push(line);
+
+	test("同义链跨批生效，标准词人数取自完整语料，不依赖当前问题的参考词", async () => {
+		await seedTable([]);
+		await seed(
+			Array.from({ length: 7 }, (_, i) => ({
+				empId: `SYN${i}`,
+				name: `合成人${i}`,
+				segments: [
+					{
+						months: 12,
+						extracted: {
+							skills: [i < 4 ? "合成甲" : i < 6 ? "合成乙" : "合成丙"],
+						},
+					},
+				],
+			})),
+		);
+		const { collect } = await import("#/corpus/judgment");
+		const { applyJudgments } = await import("#/corpus/vocabulary");
+		const connection = await client();
+		try {
+			const words = [
+				{ word: "合成甲", people: 4 },
+				{ word: "合成乙", people: 2 },
+				{ word: "合成丙", people: 1 },
+			];
+			await collect(
+				connection,
+				guideIdentity(),
+				words
+					.slice(0, 2)
+					.map((one, i) => ({ ...one, near: words.slice(i + 1, i + 2) })),
+			);
+			for (const question of await openWords(connection, guideIdentity())) {
+				await submitJudgment(
+					connection,
+					question.id,
+					guideIdentity(),
+					"agent:test",
+					{
+						kind: "同一件事",
+						target: question.near[0]?.word,
+						why: "合成同义链",
+					},
+				);
+				await applyJudgments(connection, report);
+			}
+			const table = await read(connection);
+			for (const { word } of words)
+				assert.equal(table.get(word)?.canonical, "合成甲");
+		} finally {
+			connection.release();
+		}
+	});
+
+	test("旧别名改归另一项，分批和逆序生效都不会把旧项带过去", async () => {
+		const { collect } = await import("#/corpus/judgment");
+		const { applyJudgments } = await import("#/corpus/vocabulary");
+		for (const order of [
+			["甲", "乙"],
+			["乙", "甲"],
+			["甲", "丙"],
+			["丙", "甲"],
+		]) {
+			const source = order.includes("乙") ? "乙" : "丙";
+			const target = source === "乙" ? "丙" : "乙";
+			await seedTable([
+				["甲", "甲", JUDGED],
+				["乙", "甲", JUDGED],
+				["丙", "丙", JUDGED],
+			]);
+			const connection = await client();
+			try {
+				await sendBack(connection, report, {
+					scope: "term",
+					word: "甲",
+					branch: false,
+				});
+				assert.equal(
+					(await read(connection)).get("乙")?.canonical,
+					"甲",
+					"新判定前仍使用原来的词表",
+				);
+				await collect(connection, guideIdentity(), [
+					{ word: "甲", people: 100, near: [] },
+					{ word: source, people: 10, near: [{ word: target, people: 1 }] },
+				]);
+				const questions = await openWords(connection, guideIdentity());
+				for (const word of order) {
+					const question = questions.find((one) => one.word === word);
+					assert.ok(question);
+					await submitJudgment(
+						connection,
+						question.id,
+						guideIdentity(),
+						"agent:test",
+						{
+							kind: word === "甲" ? "自成一项" : "同一件事",
+							target: word === "甲" ? "" : target,
+							why: "纠正旧别名",
+						},
+					);
+					await applyJudgments(connection, report);
+				}
+				const table = await read(connection);
+				assert.equal(table.get("甲")?.canonical, "甲");
+				assert.notEqual(table.get("乙")?.canonical, "甲");
+				assert.equal(table.get("乙")?.canonical, table.get("丙")?.canonical);
+				// 纠正后的关系可以继续传递，不会每次合并都把刚确认的同义拆开。
+				await collect(connection, guideIdentity(), [
+					{ word: source, people: 1, near: [{ word: "丁", people: 1 }] },
+				]);
+				const [next] = await openWords(connection, guideIdentity());
+				assert.ok(next);
+				await submitJudgment(
+					connection,
+					next.id,
+					guideIdentity(),
+					"agent:test",
+					{
+						kind: "同一件事",
+						target: "丁",
+						why: "继续合并新同义关系",
+					},
+				);
+				await applyJudgments(connection, report);
+				const merged = await read(connection);
+				assert.equal(merged.get("甲")?.canonical, "甲");
+				for (const word of ["乙", "丙", "丁"])
+					assert.equal(merged.get(word)?.canonical, "丁");
+			} finally {
+				connection.release();
+			}
+		}
+	});
+
+	test("同一个队列问题复用回答，人工退回后的新问题重新问，模型看到的文字不变", async () => {
+		await seedTable([["合成纠错能力", "合成纠错能力", JUDGED]]);
+		const { collect } = await import("#/corpus/judgment");
+		const { askModel } = await import("#/corpus/vocabulary");
+		const prompts: string[] = [];
+		const restore = answerChat((_system, prompt) => {
+			prompts.push(prompt);
+			return {
+				kind: prompts.length === 1 ? "不是能力" : "自成一项",
+				target: "",
+				why: "合成纠错",
+			};
+		});
+		const connection = await client();
+		try {
+			const questions = [{ word: "合成纠错能力", people: 1, near: [] }];
+			await collect(connection, guideIdentity(), questions);
+			const old = await openWords(connection, guideIdentity());
+			const first = await askModel(old, report);
+			assert.deepEqual(await askModel(old, report), first);
+			assert.equal(prompts.length, 1);
+			await sendBack(connection, report, { scope: "all" });
+			await collect(connection, guideIdentity(), questions);
+			const fresh = await askModel(
+				await openWords(connection, guideIdentity()),
+				report,
+			);
+			assert.notDeepEqual(fresh, first);
+			assert.equal(prompts.length, 2);
+			assert.equal(prompts[0], prompts[1]);
+		} finally {
+			restore();
+			connection.release();
+		}
+	});
+
+	test("退回作废范围内的旧问题，范围外的在途回答仍可提交", async () => {
+		await seedTable([
+			["培训", "培训", JUDGED],
+			["Java", "Java", JUDGED],
+		]);
+		const { collect } = await import("#/corpus/judgment");
+		const connection = await client();
+		try {
+			await collect(connection, guideIdentity(), [
+				{ word: "培训", people: 1, near: [] },
+				{ word: "Java", people: 1, near: [] },
+			]);
+			const old = await openWords(connection, guideIdentity());
+			await sendBack(connection, report, {
+				scope: "term",
+				word: "培训",
+				branch: false,
+			});
+			for (const question of old) {
+				assert.equal(
+					await submitJudgment(
+						connection,
+						question.id,
+						guideIdentity(),
+						"agent:test",
+						{ kind: "自成一项", target: "", why: "合成" },
+					),
+					question.word === "培训" ? "missing" : "accepted",
+				);
+			}
+		} finally {
+			connection.release();
+		}
+	});
 
 	async function back(rejudge: Rejudge): Promise<string[]> {
 		await seedTable([

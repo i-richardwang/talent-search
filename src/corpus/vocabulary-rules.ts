@@ -1,6 +1,5 @@
 /** 词表判定的校验、找参考词与生效。生产的生效一步和验收共用这些纯函数。 */
 import { z } from "zod";
-import type { Question } from "./judgment";
 import { MAX_TAG_LEN, tag } from "./tag";
 
 /** 模型回答与外部判定共用的形状；`kind` 取值和 `target` 的规则由 `conform` 校验。 */
@@ -20,10 +19,13 @@ const NEAR = 8;
  * 一个词的决定：它的标准写法（等于自己就是标准词）、标准词属于哪个更宽的词
  * （别名上恒为 null）、判定方是不是认定它不是一项能力，和上次判它的时间；
  * 时间是 null 的词还没判过或被退回重判，下一轮整理会收集它。
+ * `aliasSentBack`：别名被退回、还没重新判，检索照旧按它原来那一项算，但那层同义关系不再作数，
+ * 新的同义判定不顺着它合并整项。
  * 不是能力的词自成一行：没有别名，没有归属，也没有词指向它。
  */
 export type Decision = {
 	canonical: string;
+	aliasSentBack: boolean;
 	parent: string | null;
 	excluded: boolean;
 	reviewedAt: Date | null;
@@ -175,8 +177,9 @@ export function conform(
  * 跟着它换了标准写法或归属的词保持原来的时间；判定方新起名的更宽的词、从一个
  * 不是能力的词上放开的词没有时间，下一轮各自判一次。
  *
- * - 同一件事：它和它名下的写法并进那个词所在的一项，属于它的词改属于这一项。两边人多的
- *   那个做标准写法；这一项的归属沿用被并进去的那一项的。
+ * - 同一件事：两端各自所在的整项合成一项；退回还没重判的别名只带它自己，不带原来那一项。
+ *   人多的那一端做标准写法（`people` 是整张词表的人数），一样多时用 `as` 那一项的；
+ *   归属沿用 `as` 那一项的。
  * - 属于：它自己是一个标准词（原来是别名的就此拆出来），归属取那个词的标准写法；
  *   表里没有的词给它写一行，它从此是一个标准词。
  * - 自成一项：它自己是一个标准词，没有归属。
@@ -187,11 +190,11 @@ export function conform(
  */
 export function place(
 	table: Table,
-	question: Question,
+	word: string,
 	verdict: Verdict,
+	people: ReadonlyMap<string, number>,
 	now: Date,
 ): [string, Decision][] {
-	const word = question.word;
 	const changed = new Map<string, Decision>();
 	const released = new Set<string>();
 	const decide = (
@@ -202,6 +205,12 @@ export function place(
 	) => {
 		const decision: Decision = {
 			canonical,
+			// 还没重判的别名跟着搬到别处时留着标记；被判的词和它同义的那个词这一次有了结论
+			aliasSentBack:
+				canonical !== one &&
+				one !== word &&
+				!(verdict.kind === "same" && one === verdict.as) &&
+				(table.get(one)?.aliasSentBack ?? false),
 			excluded,
 			parent,
 			reviewedAt:
@@ -245,21 +254,26 @@ export function place(
 	}
 
 	if (verdict.kind === "same") {
-		const joined = standard(verdict.as);
+		// 退回还没重判的别名只代表它自己，不代表它挂着的那一项
+		const target = table.get(verdict.as);
+		const joined = target?.aliasSentBack ? verdict.as : standard(verdict.as);
 		if (joined === null) return [];
 		const before = table.get(word);
-		if (joined === word || before?.canonical === joined) {
+		const source = before?.aliasSentBack ? word : (before?.canonical ?? word);
+		if (joined === source) {
 			decide(word, before?.canonical ?? word, before?.parent ?? null);
 			return [...changed];
 		}
-		const rival = question.near.find((one) => one.word === joined)?.people;
-		const head = rival !== undefined && question.people > rival ? word : joined;
-		const other = head === word ? joined : word;
+		const own = people.get(source) ?? 0;
+		const rival = people.get(joined) ?? 0;
+		const head = own > rival ? source : joined;
+		const other = head === source ? joined : source;
 		const inherited = table.get(joined)?.parent ?? null;
 		move(other, head);
 		decide(other, head, null);
 		decide(head, head, null);
 		decide(head, head, above(head, inherited === other ? null : inherited));
+		if (word !== head) decide(word, head, null);
 		return [...changed];
 	}
 

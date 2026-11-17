@@ -9,7 +9,6 @@
  * `Discovery`），由 `search.ts` 和 `server/discover.ts` 产出；一步只记线程画得出的那几样
  * （`TraceStep`），回给模型的人数、正则和原因不记。提交通过不记步，它的结果就是这一轮的
  * 条件；没通过的记一步，只记哪一条、哪一类问题，回给模型的那句话不记（里面是写给模型的词）。
- * 步骤也是这一次理解还在进行的心跳（`server/turn.ts`）。
  */
 import type { Mode } from "./condition";
 
