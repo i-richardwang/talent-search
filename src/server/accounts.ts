@@ -3,10 +3,10 @@
  *
  * - 本机命令行（`manageAccount`，`scripts/auth-user.ts`）什么账号都能管，包括建管理员、改角色。
  *   操作的是登录了服务器的人，不是一个账号，不进操作记录。
- * - 浏览器里的账号页（`createUser`、`resetUserPassword`、`setUserDisabled`）由管理员用，只管普通
- *   账号：建出来的都是普通账号，重置密码、停用、恢复碰不到管理员账号。管理员的浏览器登录被人
- *   拿到，也建不出新的管理员，接管或锁不住别的管理员。新密码由这里生成、只交出一次；每一件都和
- *   改动同一个事务记进操作记录。
+ * - 浏览器里的账号页（`createUser`、`resetUserPassword`、`setUserRole`、`setUserDisabled`）由管理员
+ *   用，管除自己以外的全部账号：建账号时选角色，重置密码、设为或取消管理员、停用、恢复。自己的
+ *   账号在这里不能动，动手的管理员在改动的事务里锁住并核对仍是在用的管理员，所以库里至少剩一个
+ *   管理员。新密码由这里生成、只交出一次；每一件都和改动同一个事务记进操作记录。
  *
  * 账号不删除：搜索记录和操作记录引用它，离开的人停用即可。浏览器里另有改自己的密码
  * （`changeOwnPassword`），要当前密码。
@@ -15,7 +15,7 @@ import "@tanstack/react-start/server-only";
 import { randomInt, randomUUID } from "node:crypto";
 import { APIError } from "better-auth/api";
 import { hashPassword } from "better-auth/crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, or } from "drizzle-orm";
 import { db } from "#/db";
 import { authAccount, authSession, authUser } from "#/db/schema";
 import { withReadSnapshot } from "#/db/snapshot";
@@ -53,11 +53,15 @@ function checkedUsername(raw: string): string {
 	return username;
 }
 
-function roleOf(raw: string): "user" | "admin" {
+type Role = "user" | "admin";
+
+function roleOf(raw: string): Role {
 	if (raw !== "user" && raw !== "admin")
 		throw new Error("角色只能是 user 或 admin");
 	return raw;
 }
+
+const roleFor = (admin: boolean): Role => (admin ? "admin" : "user");
 
 const validLength = (password: string) =>
 	password.length >= PASSWORD_MIN && password.length <= PASSWORD_MAX;
@@ -83,7 +87,7 @@ function generatedPassword() {
 type NewAccount = {
 	username: string;
 	name: string;
-	role: "user" | "admin";
+	role: Role;
 	/** 已经取过哈希 */
 	password: string;
 };
@@ -117,21 +121,19 @@ async function insertAccount(tx: Tx, account: NewAccount) {
 	return id;
 }
 
-type Locked = { id: string; role: string | null };
-
-/** 锁住这个账号再改它：同一个账号上的两件事不交错。 */
+/** 锁住这个账号再改它：同一个账号上的两件事不交错。`change` 拿到的是账号 id。 */
 function withAccount(
 	username: string,
-	change: (tx: Tx, account: Locked) => Promise<void>,
+	change: (tx: Tx, userId: string) => Promise<void>,
 ) {
 	return db.transaction(async (tx) => {
 		const [account] = await tx
-			.select({ id: authUser.id, role: authUser.role })
+			.select({ id: authUser.id })
 			.from(authUser)
 			.where(eq(authUser.username, username))
 			.for("update");
 		if (!account) throw new Error("用户名不存在");
-		await change(tx, account);
+		await change(tx, account.id);
 	});
 }
 
@@ -152,6 +154,11 @@ async function setPassword(tx: Tx, userId: string, password: string) {
 		.returning({ id: authAccount.id });
 	if (!changed.length) throw new Error("账号没有密码凭据，未作修改");
 	await signOutEverywhere(tx, userId);
+}
+
+/** 改角色；角色每次请求都从库里读，下一次请求就按新的。 */
+async function setRole(tx: Tx, userId: string, role: Role) {
+	await tx.update(authUser).set({ role }).where(eq(authUser.id, userId));
 }
 
 /** 停用时同时撤销全部登录。 */
@@ -183,71 +190,104 @@ export async function manageAccount(change: AccountChange): Promise<string> {
 		}
 		case "reset-password": {
 			const password = await hashed(change.password);
-			await withAccount(username, (tx, account) =>
-				setPassword(tx, account.id, password),
+			await withAccount(username, (tx, userId) =>
+				setPassword(tx, userId, password),
 			);
 			break;
 		}
 		case "set-role": {
 			const role = roleOf(change.role);
-			await withAccount(username, async (tx, account) => {
-				await tx
-					.update(authUser)
-					.set({ role })
-					.where(eq(authUser.id, account.id));
-			});
+			await withAccount(username, (tx, userId) => setRole(tx, userId, role));
 			break;
 		}
 		case "disable":
 		case "enable":
-			await withAccount(username, (tx, account) =>
-				setDisabled(tx, account.id, change.action === "disable"),
+			await withAccount(username, (tx, userId) =>
+				setDisabled(tx, userId, change.action === "disable"),
 			);
 			break;
 	}
 	return username;
 }
 
-/** 账号页对一个已有的普通账号做一件事，和改动同一个事务记下是哪个管理员做的。 */
+const LOCKED = {
+	id: authUser.id,
+	username: authUser.username,
+	role: authUser.role,
+	banned: authUser.banned,
+};
+
+/**
+ * 动手的管理员此刻还在用、还是管理员。中间件的检查在事务之外：两个管理员同时互相取消或停用，
+ * 后一个锁在这里等前一个提交，再看到自己已经不是管理员；所以库里总剩一个管理员。
+ */
+function checkActor(
+	actor: { role: string | null; banned: boolean | null } | undefined,
+) {
+	if (!actor || !isAdmin(actor.role) || actor.banned)
+		throw new Error("只有在用的管理员能管理账号");
+}
+
+/**
+ * 账号页对别人的一个账号做一件事，和改动同一个事务记下是哪个管理员做的。动手的管理员和这个
+ * 账号按 id 的顺序一起锁住，两件事互相等也不会死锁。
+ */
 function changeUser(
 	adminId: string,
 	username: string,
 	action: AccountAction,
 	change: (tx: Tx, userId: string) => Promise<void>,
 ) {
-	return withAccount(checkedUsername(username), async (tx, account) => {
-		if (isAdmin(account.role))
-			throw new Error("管理员账号只能在服务器上用命令行管理");
+	const target = checkedUsername(username);
+	return db.transaction(async (tx) => {
+		const locked = await tx
+			.select(LOCKED)
+			.from(authUser)
+			.where(or(eq(authUser.id, adminId), eq(authUser.username, target)))
+			.orderBy(authUser.id)
+			.for("update");
+		checkActor(locked.find((row) => row.id === adminId));
+		const account = locked.find((row) => row.username === target);
+		if (!account) throw new Error("用户名不存在");
+		if (account.id === adminId) throw new Error("不能在账号页改自己的账号");
 		await change(tx, account.id);
 		await recordAccount(tx, adminId, action, account.id);
 	});
 }
 
 /**
- * 账号页建一个普通账号，返回生成的初始密码；用户名已被占用时为 null。
- * `name` 为空时显示名称用用户名。
+ * 账号页建一个账号，返回生成的初始密码；用户名已被占用时为 null。`name` 为空时显示名称用
+ * 用户名。建成管理员时另记一行「设为管理员」。
  */
 export async function createUser(
 	adminId: string,
 	username: string,
 	name: string,
+	admin: boolean,
 ): Promise<string | null> {
 	const password = generatedPassword();
 	const account = {
 		username: checkedUsername(username),
 		name,
-		role: "user" as const,
+		role: roleFor(admin),
 		password: await hashPassword(password),
 	};
 	return db.transaction(async (tx) => {
+		const [actor] = await tx
+			.select(LOCKED)
+			.from(authUser)
+			.where(eq(authUser.id, adminId))
+			.for("update");
+		checkActor(actor);
 		const id = await insertAccount(tx, account);
 		if (!id) return null;
 		await recordAccount(tx, adminId, "create-account", id);
+		if (admin) await recordAccount(tx, adminId, "grant-admin", id);
 		return password;
 	});
 }
 
-/** 账号页给一个普通账号换一个生成的密码并撤销它的全部登录，返回新密码。 */
+/** 账号页给别人的账号换一个生成的密码并撤销它的全部登录，返回新密码。 */
 export async function resetUserPassword(
 	adminId: string,
 	username: string,
@@ -260,7 +300,21 @@ export async function resetUserPassword(
 	return password;
 }
 
-/** 账号页停用或恢复一个普通账号。 */
+/** 账号页把别人的账号设为管理员或普通用户。 */
+export async function setUserRole(
+	adminId: string,
+	username: string,
+	admin: boolean,
+) {
+	await changeUser(
+		adminId,
+		username,
+		admin ? "grant-admin" : "revoke-admin",
+		(tx, userId) => setRole(tx, userId, roleFor(admin)),
+	);
+}
+
+/** 账号页停用或恢复别人的账号。 */
 export async function setUserDisabled(
 	adminId: string,
 	username: string,

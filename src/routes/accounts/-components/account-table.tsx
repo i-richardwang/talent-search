@@ -4,6 +4,8 @@ import {
 	KeyRoundIcon,
 	PlusIcon,
 	SearchXIcon,
+	ShieldMinusIcon,
+	ShieldPlusIcon,
 	UserCheckIcon,
 	UserXIcon,
 } from "lucide-react";
@@ -45,24 +47,32 @@ import { type AccountDialog, AccountModal } from "./account-dialogs";
  * 返回 null，建成了返回初始密码；`reset` 返回新密码。
  */
 export type AccountActions = {
-	create: (username: string, name: string) => Promise<string | null>;
+	create: (
+		username: string,
+		name: string,
+		admin: boolean,
+	) => Promise<string | null>;
 	reset: (username: string) => Promise<string>;
+	setAdmin: (username: string, admin: boolean) => Promise<void>;
 	setDisabled: (username: string, disabled: boolean) => Promise<void>;
 };
 
 /**
  * 账号页的内容：按用户名或显示名称找、新建账号，和全部账号那张表。停用了的账号名字后面
- * 跟一个「已停用」。普通账号行尾的菜单里是重置密码和停用（或恢复）；管理员账号没有菜单，
- * 只能在服务器上用命令行管理。`pending` 是换词或翻页后新的一页还没取回，表体画同样行数的占位。
+ * 跟一个「已停用」。别人的账号行尾有菜单：重置密码、设为或取消管理员、停用（或恢复）；
+ * 自己那一行（`self` 是当前账号的用户名）标着「当前账号」，没有菜单，自己的密码在导航栏的
+ * 账号菜单里改。`pending` 是换词或翻页后新的一页还没取回，表体画同样行数的占位。
  */
 export function AccountTable({
 	list,
 	q,
+	self,
 	actions,
 	pending = false,
 }: {
 	list: TablePage<AccountRow>;
 	q: string;
+	self: string;
 	actions: AccountActions;
 	pending?: boolean;
 }) {
@@ -115,6 +125,31 @@ export function AccountTable({
 			await actions.setDisabled(account.username, false);
 		} catch {
 			toast.error("账号没有恢复成功，请稍后重试");
+		}
+	};
+
+	const grant = (account: AccountRow) =>
+		confirmModal({
+			content:
+				"管理员能看任务和审计，能管理除自己以外的全部账号，包括别的管理员。之后可以随时取消。",
+			okText: "设为管理员",
+			onOk: async () => {
+				try {
+					await actions.setAdmin(account.username, true);
+				} catch (error) {
+					toast.error("没有设成管理员，请稍后重试");
+					throw error;
+				}
+			},
+			title: `把「${account.username}」设为管理员？`,
+		});
+
+	// 取消管理员收得回，不先问；角色那一格变了就是结果
+	const revoke = async (account: AccountRow) => {
+		try {
+			await actions.setAdmin(account.username, false);
+		} catch {
+			toast.error("没有取消管理员，请稍后重试");
 		}
 	};
 
@@ -184,6 +219,9 @@ export function AccountTable({
 										<TableCell cellSlot="title">
 											<span className="flex items-center gap-2">
 												{dots(account.name, account.username)}
+												{account.username === self && (
+													<Tag size="small">当前账号</Tag>
+												)}
 												{account.disabled && <Tag size="small">已停用</Tag>}
 											</span>
 										</TableCell>
@@ -191,12 +229,14 @@ export function AccountTable({
 											{account.admin ? "管理员" : "普通用户"}
 										</TableCell>
 										<TableCell cellSlot="extra">
-											{!account.admin && (
+											{account.username !== self && (
 												<AccountRowMenu
 													account={account}
 													onDisable={() => disable(account)}
 													onEnable={() => void enable(account)}
+													onGrant={() => grant(account)}
 													onReset={() => reset(account)}
+													onRevoke={() => void revoke(account)}
 												/>
 											)}
 										</TableCell>
@@ -210,8 +250,8 @@ export function AccountTable({
 			<AccountModal
 				dialog={dialog}
 				onClose={() => setDialog(null)}
-				onCreate={async (username, name) => {
-					const password = await actions.create(username, name);
+				onCreate={async (username, name, admin) => {
+					const password = await actions.create(username, name, admin);
 					if (password === null) return false;
 					setDialog({
 						issued: { kind: "created", password, username },
@@ -224,15 +264,22 @@ export function AccountTable({
 	);
 }
 
-/** 一个普通账号行尾的菜单：重置密码，停用或恢复。停用了的账号不用重置密码，恢复之后再说。 */
+/**
+ * 别人的账号行尾的菜单：重置密码，设为或取消管理员，停用或恢复。停用了的账号只有恢复，
+ * 别的事恢复之后再做。
+ */
 function AccountRowMenu({
 	account,
 	onReset,
+	onGrant,
+	onRevoke,
 	onDisable,
 	onEnable,
 }: {
 	account: AccountRow;
 	onReset: () => void;
+	onGrant: () => void;
+	onRevoke: () => void;
 	onDisable: () => void;
 	onEnable: () => void;
 }) {
@@ -245,6 +292,19 @@ function AccountRowMenu({
 					label: "重置密码",
 					onClick: onReset,
 				},
+				account.admin
+					? {
+							icon: ShieldMinusIcon,
+							key: "revoke",
+							label: "取消管理员",
+							onClick: onRevoke,
+						}
+					: {
+							icon: ShieldPlusIcon,
+							key: "grant",
+							label: "设为管理员",
+							onClick: onGrant,
+						},
 				{
 					danger: true,
 					icon: UserXIcon,
