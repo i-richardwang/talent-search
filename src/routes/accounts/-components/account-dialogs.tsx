@@ -7,6 +7,7 @@ import { Form } from "#/components/ui/form";
 import { Icon } from "#/components/ui/icon";
 import { Input } from "#/components/ui/input";
 import { Modal } from "#/components/ui/modal";
+import { Radio, RadioGroup } from "#/components/ui/radio";
 import { toast } from "#/components/ui/toast";
 import { NAME_MAX, usernameOf } from "#/lib/auth";
 
@@ -16,6 +17,13 @@ export type IssuedPassword = {
 	username: string;
 	password: string;
 };
+
+/** 交给服务端建账号；用户名已被占用时返回 false，对话框留在填写这一步。 */
+type SubmitAccount = (
+	username: string,
+	name: string,
+	admin: boolean,
+) => Promise<boolean>;
 
 /** 账号页的对话框在哪一步：填新账号，或把一个密码交给管理员。 */
 export type AccountDialog =
@@ -33,8 +41,7 @@ export function AccountModal({
 }: {
 	dialog: AccountDialog | null;
 	onClose: () => void;
-	/** 交给服务端建账号；用户名已被占用时返回 false，对话框留在填写这一步。 */
-	onCreate: (username: string, name: string) => Promise<boolean>;
+	onCreate: SubmitAccount;
 }) {
 	const [shown, setShown] = useState(dialog);
 	if (dialog && dialog !== shown) setShown(dialog);
@@ -55,12 +62,8 @@ export function AccountModal({
 	);
 }
 
-/** 填用户名和显示名称。提交归表单自己：回车和按钮是同一件事。 */
-function NewAccountForm({
-	onCreate,
-}: {
-	onCreate: (username: string, name: string) => Promise<boolean>;
-}) {
+/** 填用户名、显示名称，选角色，默认普通用户。提交归表单自己：回车和按钮是同一件事。 */
+function NewAccountForm({ onCreate }: { onCreate: SubmitAccount }) {
 	const [busy, setBusy] = useState(false);
 	return (
 		<Form
@@ -74,7 +77,8 @@ function NewAccountForm({
 					);
 				setBusy(true);
 				try {
-					if (!(await onCreate(username, String(fields.name ?? "").trim())))
+					const name = String(fields.name ?? "").trim();
+					if (!(await onCreate(username, name, fields.role === "admin")))
 						toast.error(`用户名 ${username} 已被占用，换一个再建`);
 				} catch {
 					toast.error("账号没有建成，请稍后重试");
@@ -103,6 +107,16 @@ function NewAccountForm({
 					maxLength={NAME_MAX}
 					name="name"
 				/>
+			</Form.Field>
+			<Form.Field
+				desc="管理员能看任务和审计，能管理除自己以外的全部账号"
+				label="角色"
+				name="role"
+			>
+				<RadioGroup className="flex gap-6" defaultValue="user" name="role">
+					<Radio value="user">普通用户</Radio>
+					<Radio value="admin">管理员</Radio>
+				</RadioGroup>
 			</Form.Field>
 			<Button block htmlType="submit" loading={busy} type="primary">
 				新建账号

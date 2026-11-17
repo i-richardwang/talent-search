@@ -30,8 +30,9 @@ import { LayoutSwitch, Shell } from "./home";
  * 在设计系统里是调用即失败的桩：找词和翻页按地址上的 `q`、`page` 在样例上算，
  * 一页的行数是产品的 `pageAt` 给的；「立即运行」和「日志」落在各自取不到的那一支。
  * 点开 Talent 0101、「推荐系统」或「不是能力」那张表里的「周报」，右侧出产品的详情抽屉
- *（样例只备了这三份）。账号页上新建账号、重置密码交出的是同一个样例密码，停用、恢复
- * 只出提示，表不变；新建时用户名填 `admin` 看用户名被占用的那一支。
+ *（样例只备了这三份）。账号页上新建账号、重置密码交出的是同一个样例密码，改角色、停用、
+ * 恢复不改样例，表不变；当前账号是样例里的管理员 `admin`；新建时用户名填 `admin` 看用户名
+ * 被占用的那一支。
  */
 
 type Page = "tasks" | "data" | "terms" | "audit" | "accounts";
@@ -195,10 +196,12 @@ function Accounts() {
 							? null
 							: SAMPLE_PASSWORD,
 					reset: async () => SAMPLE_PASSWORD,
+					setAdmin: async () => {},
 					setDisabled: async () => {},
 				}}
 				list={pageOfRows(found, page)}
 				q={q}
+				self="admin"
 			/>
 		</AdminPage>
 	);

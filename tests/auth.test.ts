@@ -18,6 +18,7 @@ const {
 	manageAccount,
 	resetUserPassword,
 	setUserDisabled,
+	setUserRole,
 } = await import("#/server/accounts");
 const { listAudit } = await import("#/server/audit");
 const { pool } = await import("#/db");
@@ -349,7 +350,7 @@ test("改自己的密码要当前密码；改完别处的登录失效，旧密�
 	);
 });
 
-test("账号页只管普通账号：建号和重置交出生成的密码，停用恢复照常，每件都记进操作记录", async () => {
+test("账号页管别人的账号：建号和重置交出生成的密码，改角色、停用恢复照常，自己的账号动不了，每件都记进操作记录", async () => {
 	await manageAccount({
 		action: "create",
 		username: "page.admin",
@@ -364,10 +365,10 @@ test("账号页只管普通账号：建号和重置交出生成的密码，停�
 	).rows[0]?.id;
 	assert.ok(adminId);
 
-	const initial = await createUser(adminId, " Page.User ", "");
+	const initial = await createUser(adminId, " Page.User ", "", false);
 	assert.ok(initial && initial.length === 16);
-	assert.equal(await createUser(adminId, "PAGE.USER", "合成重名"), null);
-	await assert.rejects(createUser(adminId, "x", ""), /用户名/);
+	assert.equal(await createUser(adminId, "PAGE.USER", "合成重名", false), null);
+	await assert.rejects(createUser(adminId, "x", "", false), /用户名/);
 	assert.deepEqual((await listAccounts("page.user", 1)).rows, [
 		{ username: "page.user", name: "page.user", admin: false, disabled: false },
 	]);
@@ -390,25 +391,55 @@ test("账号页只管普通账号：建号和重置交出生成的密码，停�
 	await setUserDisabled(adminId, "page.user", true);
 	assert.equal(await viewer(again), null, "停用撤销登录");
 	await setUserDisabled(adminId, "page.user", false);
-	await login("page.user", replacement);
+	const back = await login("page.user", replacement);
+	await setUserRole(adminId, "page.user", true);
+	assert.equal(
+		(await requireViewer(back, true)).admin,
+		true,
+		"下一次请求就是管理员",
+	);
+	await setUserRole(adminId, "page.user", false);
+	assert.equal((await requireViewer(back)).admin, false);
+
+	const second = await createUser(
+		adminId,
+		"page.second",
+		"合成第二管理员",
+		true,
+	);
+	assert.ok(second);
+	assert.equal(
+		(await requireViewer(await login("page.second", second), true)).admin,
+		true,
+	);
+	assert.ok(
+		await resetUserPassword(adminId, "page.second"),
+		"别的管理员也能管",
+	);
 
 	for (const attempt of [
 		() => resetUserPassword(adminId, "page.admin"),
+		() => setUserRole(adminId, "page.admin", false),
 		() => setUserDisabled(adminId, "page.admin", true),
 	])
-		await assert.rejects(attempt(), /管理员账号只能在服务器上用命令行管理/);
+		await assert.rejects(attempt(), /不能在账号页改自己的账号/);
 	await assert.rejects(
 		setUserDisabled(adminId, "nobody.here", true),
 		/用户名不存在/,
 	);
 
 	assert.deepEqual(
-		(await listAudit("page.user", 1)).rows.map((row) => [
+		(await listAudit("page.", 1)).rows.map((row) => [
 			row.username,
 			row.action,
 			row.accountUsername,
 		]),
 		[
+			["page.admin", "reset-password", "page.second"],
+			["page.admin", "grant-admin", "page.second"],
+			["page.admin", "create-account", "page.second"],
+			["page.admin", "revoke-admin", "page.user"],
+			["page.admin", "grant-admin", "page.user"],
 			["page.admin", "enable-account", "page.user"],
 			["page.admin", "disable-account", "page.user"],
 			["page.admin", "reset-password", "page.user"],
@@ -416,6 +447,41 @@ test("账号页只管普通账号：建号和重置交出生成的密码，停�
 		],
 		"被拒绝和没建成的不留痕",
 	);
+});
+
+test("两个管理员同时互相取消管理员：一个成，一个被拒，总剩一个管理员", async () => {
+	const admin = async (username: string) => {
+		await manageAccount({
+			action: "create",
+			username,
+			role: "admin",
+			password: PASSWORD,
+		});
+		const { rows } = await pool.query<{ id: string }>(
+			"select id from auth_user where username = $1",
+			[username],
+		);
+		const id = rows[0]?.id;
+		assert.ok(id);
+		return id;
+	};
+	const a = await admin("duel.a");
+	const b = await admin("duel.b");
+	const outcomes = await Promise.allSettled([
+		setUserRole(a, "duel.b", false),
+		setUserRole(b, "duel.a", false),
+	]);
+	assert.deepEqual(outcomes.map((o) => o.status).sort(), [
+		"fulfilled",
+		"rejected",
+	]);
+	for (const outcome of outcomes)
+		if (outcome.status === "rejected")
+			assert.match(String(outcome.reason), /只有在用的管理员能管理账号/);
+	const { rows } = await pool.query<{ n: number }>(
+		"select count(*)::int as n from auth_user where username like 'duel.%' and role = 'admin'",
+	);
+	assert.equal(rows[0]?.n, 1);
 });
 
 test("同一来源连续尝试登录会被限流", async () => {

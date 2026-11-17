@@ -26,6 +26,8 @@ const ACTION_TEXT: Record<AuditAction, string> = {
 	export: "导出",
 	"create-account": "新建账号",
 	"reset-password": "重置密码",
+	"grant-admin": "设为管理员",
+	"revoke-admin": "取消管理员",
 	"disable-account": "停用账号",
 	"enable-account": "恢复账号",
 };

@@ -7,6 +7,7 @@ import {
 	listAccounts,
 	resetUserPassword,
 	setUserDisabled,
+	setUserRole,
 } from "./accounts";
 
 export const currentUser = createServerFn({ method: "GET" }).handler(() =>
@@ -50,18 +51,19 @@ export const accountTable = createServerFn({ method: "GET" })
 
 const username = (d: { username: unknown }) => String(d.username ?? "");
 
-/** 建一个普通账号，返回初始密码；用户名已被占用时为 null。 */
+/** 建一个账号，返回初始密码；用户名已被占用时为 null。 */
 export const createAccount = createServerFn({ method: "POST" })
 	.middleware([administrator])
-	.validator((d: { username: unknown; name: unknown }) => ({
+	.validator((d: { username: unknown; name: unknown; admin: unknown }) => ({
 		username: username(d),
 		name: String(d.name ?? ""),
+		admin: d.admin === true,
 	}))
 	.handler(({ data, context }) =>
-		createUser(context.viewer.id, data.username, data.name),
+		createUser(context.viewer.id, data.username, data.name, data.admin),
 	);
 
-/** 给一个普通账号换一个新密码并撤销它的全部登录，返回新密码。 */
+/** 给别人的账号换一个新密码并撤销它的全部登录，返回新密码。 */
 export const resetPassword = createServerFn({ method: "POST" })
 	.middleware([administrator])
 	.validator((d: { username: unknown }) => ({ username: username(d) }))
@@ -69,7 +71,18 @@ export const resetPassword = createServerFn({ method: "POST" })
 		resetUserPassword(context.viewer.id, data.username),
 	);
 
-/** 停用或恢复一个普通账号；停用同时撤销它的全部登录。 */
+/** 把别人的账号设为管理员或普通用户。 */
+export const setAccountRole = createServerFn({ method: "POST" })
+	.middleware([administrator])
+	.validator((d: { username: unknown; admin: unknown }) => ({
+		username: username(d),
+		admin: d.admin === true,
+	}))
+	.handler(({ data, context }) =>
+		setUserRole(context.viewer.id, data.username, data.admin),
+	);
+
+/** 停用或恢复别人的账号；停用同时撤销它的全部登录。 */
 export const setAccountDisabled = createServerFn({ method: "POST" })
 	.middleware([administrator])
 	.validator((d: { username: unknown; disabled: unknown }) => ({
