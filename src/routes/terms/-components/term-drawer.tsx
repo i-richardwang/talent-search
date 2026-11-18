@@ -25,7 +25,8 @@ import { StatusBadge } from "../../-components/status-badge";
 
 /**
  * 一个词的人数、往上属于谁、往下带着谁；判成不是能力的词只有人数和这一句结论。
- * `rejudge`：把这一项（连同它的其他写法），或再带上它的细分，退回重新判定。
+ * `rejudge` 只有管理员有，有它才画判定的情况（等待判定、不是能力），以及把这一项
+ * （连同它的其他写法）或再带上它的细分退回重新判定。
  */
 export function TermRecord({
 	term,
@@ -34,12 +35,12 @@ export function TermRecord({
 }: {
 	term: TermDetail;
 	close: () => void;
-	rejudge: (scope: Rejudge) => void;
+	rejudge?: (scope: Rejudge) => void;
 }) {
 	return (
 		<DetailDrawer
 			close={close}
-			extra={<RejudgeMenu rejudge={rejudge} term={term} />}
+			extra={rejudge && <RejudgeMenu rejudge={rejudge} term={term} />}
 			title={term.canonical}
 		>
 			<Descriptions labelWidth={DETAIL_LABEL_WIDTH}>
@@ -49,7 +50,7 @@ export function TermRecord({
 						{term.excluded ? " 人" : " 人（含细分）"}
 					</span>
 				</DescriptionsItem>
-				{(term.pending || term.excluded) && (
+				{rejudge && (term.pending || term.excluded) && (
 					<DescriptionsItem label="判定">
 						{term.pending ? (
 							<StatusBadge tone="pending">等待判定</StatusBadge>

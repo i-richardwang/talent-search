@@ -4,6 +4,7 @@
  */
 
 import { createServerFn } from "@tanstack/react-start";
+import { tableQuery } from "#/lib/paging";
 import { rejudgeOf, TASK_KINDS } from "#/lib/task";
 import { validateCommit } from "#/search/commit-input";
 import { KEYWORD_FIELDS, KEYWORD_RULES } from "#/search/keywords";
@@ -193,29 +194,34 @@ export const logExport = createServerFn({ method: "POST" })
 /** 审计页的表：按账号、被查看或导出的人、搜索的内容找，一页一页地给。 */
 export const auditList = createServerFn({ method: "GET" })
 	.middleware([administrator])
-	.validator((d: { q: unknown; page: unknown }) => ({
-		q: String(d.q ?? "").slice(0, 64),
-		page: Number(d.page) || 1,
-	}))
+	.validator(tableQuery)
 	.handler(({ data }) => listAudit(data.q, data.page));
 
-/** 标签页的表：按标准词、写法或所属的词找，一页一页地给；`excluded` 看判成不是能力的那些。 */
+/** 标签页的表：按标准词、写法或所属的词找，一页一页地给。 */
 export const termTable = createServerFn({ method: "GET" })
-	.middleware([administrator])
-	.validator((d: { q: unknown; page: unknown; excluded: unknown }) => ({
-		excluded: d.excluded === true,
-		q: String(d.q ?? "").slice(0, 64),
-		page: Number(d.page) || 1,
-	}))
-	.handler(({ data }) => listTerms(data.q, data.page, data.excluded));
+	.middleware([authenticated])
+	.validator(tableQuery)
+	.handler(({ data }) => listTerms(data.q, data.page, false));
 
-/** 标签页点开的那一个词：上下从属、其他写法，各自的人数。 */
-export const termDetail = createServerFn({ method: "GET" })
+/** 判成不是能力的词那张表，供管理员复查判定。 */
+export const excludedTable = createServerFn({ method: "GET" })
 	.middleware([administrator])
+	.validator(tableQuery)
+	.handler(({ data }) => listTerms(data.q, data.page, true));
+
+/**
+ * 标签页点开的那一个词：上下从属、其他写法，各自的人数。判成不是能力的词不是标签，
+ * 只有管理员看得到它。
+ */
+export const termDetail = createServerFn({ method: "GET" })
+	.middleware([authenticated])
 	.validator((d: { word: unknown }) => ({
 		word: String(d.word ?? "").slice(0, 64),
 	}))
-	.handler(({ data }) => describeTerm(data.word));
+	.handler(async ({ data, context }) => {
+		const term = await describeTerm(data.word);
+		return term?.excluded && !context.viewer.admin ? null : term;
+	});
 
 /**
  * 把一个范围里的词退回重新判定：发一轮带着这个范围的整理，立刻返回。词表在那一轮
@@ -283,10 +289,7 @@ export const requestTask = createServerFn({ method: "POST" })
 /** 数据页的人员列表：按名字或工号找，一页一页地给。 */
 export const dataList = createServerFn({ method: "GET" })
 	.middleware([authenticated])
-	.validator((d: { q: unknown; page: unknown }) => ({
-		q: String(d.q ?? "").slice(0, 64),
-		page: Number(d.page) || 1,
-	}))
+	.validator(tableQuery)
 	.handler(({ data }) => listEmployees(data.q, data.page));
 
 /** 数据页的一个人：档案、每一段、每一段的解析结果。 */

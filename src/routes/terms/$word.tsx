@@ -27,23 +27,21 @@ function useClose() {
 }
 
 function Term() {
+	const { user } = Route.useRouteContext();
 	return (
 		<TermRecord
 			close={useClose()}
-			rejudge={rejudge}
+			rejudge={user?.admin ? rejudge : undefined}
 			term={Route.useLoaderData()}
 		/>
 	);
 }
 
-/** 地址上的词此刻没有人写：标签页只列有人写的词。 */
+/** 地址上的词不是标签：此刻没有人写，或者判成了不是能力而看的人不是管理员。 */
 function TermNotFound() {
 	return (
 		<DetailDrawer close={useClose()} title={Route.useParams().word}>
-			<Empty
-				description="在表上方搜一下相近的写法。"
-				title="现在没有人写这个词"
-			/>
+			<Empty description="在表上方搜一下相近的写法。" title="没有这个标签" />
 		</DetailDrawer>
 	);
 }

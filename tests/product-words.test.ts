@@ -11,8 +11,8 @@ import { test } from "node:test";
 import ts from "typescript";
 import { internalWordsIn } from "#/lib/internal-words";
 
-/** 管理页的读者是管理员；`api/` 是给外部判定方的接口，不上屏。 */
-const ADMIN = /^src\/routes\/(api\/|tasks|terms|data)/;
+/** 管理页和标签页上复查判定的部分，读者是管理员；`api/` 是给外部判定方的接口，不上屏。 */
+const ADMIN = /^src\/routes\/(api\/|tasks|data|terms\/-lib\/rejudge)/;
 
 function sources(dir: string): string[] {
 	return readdirSync(dir, { withFileTypes: true, recursive: true })

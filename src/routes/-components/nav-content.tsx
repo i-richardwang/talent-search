@@ -68,15 +68,15 @@ export function NavContent() {
 				>
 					数据
 				</NavItem>
+				<NavItem
+					active={on("/terms")}
+					icon={TagsIcon}
+					render={<Link search={{ page: undefined, q: "" }} to="/terms" />}
+				>
+					标签
+				</NavItem>
 				{user?.admin && (
 					<>
-						<NavItem
-							active={on("/terms")}
-							icon={TagsIcon}
-							render={<Link search={{ page: undefined, q: "" }} to="/terms" />}
-						>
-							标签
-						</NavItem>
 						<NavItem
 							active={on("/tasks")}
 							icon={ActivityIcon}
