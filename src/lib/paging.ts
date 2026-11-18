@@ -39,6 +39,14 @@ export function pageParam(value: unknown): number | undefined {
 	return Number.isFinite(n) && n > 1 ? n : undefined;
 }
 
+/** 一张表的一次请求：搜索词和想看的页码都来自地址栏，什么都可能。越界的页码由 `pageAt` 收。 */
+export function tableQuery(d: { q: unknown; page: unknown }): {
+	q: string;
+	page: number;
+} {
+	return { q: String(d.q ?? "").slice(0, 64), page: Number(d.page) || 1 };
+}
+
 /** 把想看的页码（`want` 来自地址栏）换算成实际的一页，越界收回最后一页。 */
 export function pageAt(
 	total: number,

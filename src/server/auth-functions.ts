@@ -1,5 +1,6 @@
 import { createMiddleware, createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
+import { tableQuery } from "#/lib/paging";
 import { requireViewer, viewer } from "./access";
 import {
 	changeOwnPassword,
@@ -43,10 +44,7 @@ export const changePassword = createServerFn({ method: "POST" })
 /** 账号页的表：按用户名或显示名称找，一页一页地给。 */
 export const accountTable = createServerFn({ method: "GET" })
 	.middleware([administrator])
-	.validator((d: { q: unknown; page: unknown }) => ({
-		q: String(d.q ?? "").slice(0, 64),
-		page: Number(d.page) || 1,
-	}))
+	.validator(tableQuery)
 	.handler(({ data }) => listAccounts(data.q, data.page));
 
 const username = (d: { username: unknown }) => String(d.username ?? "");

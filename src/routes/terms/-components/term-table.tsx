@@ -30,10 +30,12 @@ const VIEWS: { label: string; value: View }[] = [
 ];
 
 /**
- * 标签页的内容：找词，和标签那张表。`excluded` 看的是判成不是能力的词：它们没有归属、
- * 细分和其他写法，那三列不画。`selected` 是右侧开着详情的词；`pending` 是换词
- * 或翻页后新的一页还没取回，表体画同样行数的占位。`rejudge`：没在找词时，
- * 把眼前这一整张表退回重新判定。
+ * 标签页的内容：找词，和标签那张表。`selected` 是右侧开着详情的词；`pending` 是换词
+ * 或翻页后新的一页还没取回，表体画同样行数的占位。
+ *
+ * `rejudge` 只有管理员有，有它才画复查用的部分：切到判成不是能力的那张表（`excluded`，
+ * 这些词没有归属、细分和其他写法，那三列不画）、词旁的等待判定，以及没在找词时把眼前
+ * 这一整张表退回重新判定。
  */
 export function TermTable({
 	table,
@@ -48,7 +50,7 @@ export function TermTable({
 	excluded: boolean;
 	selected: string | undefined;
 	pending?: boolean;
-	rejudge: (scope: Rejudge) => void;
+	rejudge?: (scope: Rejudge) => void;
 }) {
 	const navigate = useNavigate({ from: "/terms" });
 	const [needle, setNeedle] = useSearchDraft(q);
@@ -61,14 +63,16 @@ export function TermTable({
 	return (
 		<div className="flex flex-col gap-4">
 			<div className="flex flex-wrap items-center gap-3">
-				<Segmented
-					aria-label="看哪一类词"
-					onChange={(view) =>
-						void navigate({ search: at(1, "", view === "excluded") })
-					}
-					options={VIEWS}
-					value={excluded ? "excluded" : "terms"}
-				/>
+				{rejudge && (
+					<Segmented
+						aria-label="看哪一类词"
+						onChange={(view) =>
+							void navigate({ search: at(1, "", view === "excluded") })
+						}
+						options={VIEWS}
+						value={excluded ? "excluded" : "terms"}
+					/>
+				)}
 				<SearchBar
 					aria-label={excluded ? "搜索不是能力的词" : "搜索标签"}
 					className="max-w-60"
@@ -78,7 +82,7 @@ export function TermTable({
 					placeholder={excluded ? "搜索词" : "搜索标签、写法或所属的标签"}
 					value={needle}
 				/>
-				{!q && table.total > 0 && (
+				{rejudge && !q && table.total > 0 && (
 					<Button
 						className="ms-auto"
 						icon={ListRestartIcon}
@@ -102,7 +106,7 @@ export function TermTable({
 								? undefined
 								: excluded
 									? "整理时判成不是一项能力的词会列在这里，它们不出现在筛选和候选词里。"
-									: "经历解析完成后，这里会列出简历里读出的标签及相关写法。"
+									: "简历里写到的技能和岗位会作为标签列在这里，连同它们的其他写法。"
 						}
 						icon={q ? SearchXIcon : TagsIcon}
 						size="large"
@@ -170,7 +174,7 @@ export function TermTable({
 												<TextLink render={<Link {...detail} />} tabIndex={-1}>
 													{e.canonical}
 												</TextLink>
-												{e.pending && (
+												{rejudge && e.pending && (
 													<span className="ms-2 inline-flex align-middle">
 														<StatusBadge tone="pending">等待判定</StatusBadge>
 													</span>
