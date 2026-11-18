@@ -7,7 +7,7 @@ import { rejudgeTerms } from "#/server/functions";
 const WHOLE = {
 	all: {
 		content:
-			"词表里的每个词都会重新判定一遍，词多时要跑很久。判定生效之前，现有的标签照常使用。",
+			"现在有人写的每个词都会重新判定一遍，词多时要跑很久。判定生效之前，现有的标签照常使用。",
 		title: "重新判定整张词表",
 	},
 	excluded: {

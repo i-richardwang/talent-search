@@ -30,9 +30,9 @@ const VIEWS: { label: string; value: View }[] = [
 ];
 
 /**
- * 词表页的内容：找词，和词表那张表。`excluded` 看的是判成不是能力的词：它们没有归属、
+ * 标签页的内容：找词，和标签那张表。`excluded` 看的是判成不是能力的词：它们没有归属、
  * 细分和其他写法，那三列不画。`selected` 是右侧开着详情的词；`pending` 是换词
- * 或翻页后新的一页还没取回，表体画同样行数的占位。`rejudge` 只有管理员有：没在找词时，
+ * 或翻页后新的一页还没取回，表体画同样行数的占位。`rejudge`：没在找词时，
  * 把眼前这一整张表退回重新判定。
  */
 export function TermTable({
@@ -48,7 +48,7 @@ export function TermTable({
 	excluded: boolean;
 	selected: string | undefined;
 	pending?: boolean;
-	rejudge?: (scope: Rejudge) => void;
+	rejudge: (scope: Rejudge) => void;
 }) {
 	const navigate = useNavigate({ from: "/terms" });
 	const [needle, setNeedle] = useSearchDraft(q);
@@ -78,7 +78,7 @@ export function TermTable({
 					placeholder={excluded ? "搜索词" : "搜索标签、写法或所属的标签"}
 					value={needle}
 				/>
-				{rejudge && !q && table.total > 0 && (
+				{!q && table.total > 0 && (
 					<Button
 						className="ms-auto"
 						icon={ListRestartIcon}

@@ -1,16 +1,15 @@
 /**
- * 短说法的词表：每个还没判过的短说法（`SHORT_ROUTES`）连同词表里最接近的几个词送进队列，
+ * 短说法的词表：每个还没判过、此刻有人写的短说法（`term_in_use`）连同词表里最接近的几个词送进队列，
  * 判定方判它在词表里的位置（和谁是同一件事、属于哪个更宽的词、自成一项，或者不是一项
  * 能力），生效时写进 `term`。
  * 整理只写词表，不碰人身上的词：边上永远是简历里的原话。检索按词表把同一件事的几种
- * 写法当成一条说法（`src/search/phrases.ts`），词表页按宽细把一支词摆出来
+ * 写法当成一条说法（`src/search/phrases.ts`），标签页按宽细把一支词摆出来
  * （`src/server/terms.ts`）。
  * 校验和生效规则见 vocabulary-rules.ts；判定队列在 judgment.ts；模型和外部判定方共用 GUIDE。
  */
 
 import "@tanstack/react-start/server-only";
 import { setImmediate } from "node:timers/promises";
-import { SHORT_ROUTES } from "#/db/schema";
 import type { Rejudge } from "#/lib/task";
 import { complete, reviewModel, standardOf } from "#/server/chat";
 import { embedConfigured } from "#/server/embed";
@@ -36,6 +35,7 @@ import {
 	nearest,
 	PLACEMENT_SCHEMA,
 	place,
+	rename,
 	type Table,
 	validate,
 } from "./vocabulary-rules";
@@ -224,56 +224,25 @@ export async function askModel(
 }
 
 /**
- * 此刻有人写的短说法，分两种：标准词（词表里的标准词，加上还没进词表的语料词）各带
- * 它下面的人数，连别名与后代一起数；别名带写了这个写法的人数。
+ * 此刻有人写的短说法（`term_in_use`），分两种：标准词（词表里的标准词和判定方起名的
+ * 更宽的词，加上还没进词表的语料词）各带它下面的人数，连别名与后代一起数；别名带写了
+ * 这个写法的人数。
  */
 async function vocabulary(client: CorpusClient) {
-	const { rows: heads } = await client.query<{ word: string; people: string }>(
-		`with recursive head(word) as (
-		   select word from term where word = canonical
-		   union
-		   select p.text from phrase p
-		   where exists (select 1 from experience_phrase ep
-		                 where ep.phrase_id = p.id and ep.route = any($1::text[]))
-		     and not exists (select 1 from term t where t.word = p.text)
-		 ), under(term, word) as (
-		   select word, word from head
-		   union
-		   select canonical, word from term where word <> canonical
-		   union
-		   select u.term, a.word from under u
-		   join term c on c.parent = u.word
-		   join term a on a.canonical = c.word
-		 )
-		 select u.term as word, count(distinct e.emp_id) as people
-		 from under u
-		 join head h on h.word = u.term
-		 join phrase p on p.text = u.word
-		 join experience_phrase ep on ep.phrase_id = p.id and ep.route = any($1::text[])
-		 join experience e on e.id = ep.experience_id
-		 group by u.term
-		 order by u.term`,
-		[[...SHORT_ROUTES]],
-	);
-	const { rows: aliases } = await client.query<{
+	const { rows } = await client.query<{
 		word: string;
-		people: string;
+		people: number;
+		alias: boolean;
 	}>(
-		`select t.word, count(distinct e.emp_id) as people
-		 from term t
-		 join phrase p on p.text = t.word
-		 join experience_phrase ep on ep.phrase_id = p.id and ep.route = any($1::text[])
-		 join experience e on e.id = ep.experience_id
-		 where t.word <> t.canonical
-		 group by t.word
-		 order by t.word`,
-		[[...SHORT_ROUTES]],
+		`select u.word, u.people, coalesce(t.word <> t.canonical, false) as alias
+		 from term_in_use u left join term t on t.word = u.word
+		 order by u.word`,
 	);
-	const member = (row: { word: string; people: string }): Member => ({
-		people: Number(row.people),
-		word: row.word,
-	});
-	return { aliases: aliases.map(member), heads: heads.map(member) };
+	const member = ({ word, people }: Member): Member => ({ word, people });
+	return {
+		aliases: rows.filter((row) => row.alias).map(member),
+		heads: rows.filter((row) => !row.alias).map(member),
+	};
 }
 
 /**
@@ -291,10 +260,6 @@ export async function applyJudgments(
 
 	const now = new Date();
 	const table = await read(client);
-	const all = await vocabulary(client);
-	const people = new Map(
-		[...all.heads, ...all.aliases].map((one) => [one.word, one.people]),
-	);
 	const changed = new Map<string, Decision>();
 	const lines: string[] = [];
 	const tally = { alone: 0, excluded: 0, invalid: 0, same: 0, under: 0 };
@@ -304,9 +269,7 @@ export async function applyJudgments(
 			row.word,
 			row.near.map((one) => one.word),
 		);
-		const decisions = verdict
-			? place(table, row.word, verdict, people, now)
-			: [];
+		const decisions = verdict ? place(table, row.word, verdict, now) : [];
 		if (!verdict || decisions.length === 0) {
 			tally.invalid++;
 			continue;
@@ -338,6 +301,35 @@ export async function applyJudgments(
 			(tally.invalid ? `，不成判断 ${tally.invalid} 个` : ""),
 	);
 	for (const line of lines) report(line);
+}
+
+/**
+ * 按此刻的人数给每一项定名字（`rename`）：判定生效之后跑，合进来的写法也参与。
+ * 名字换了，属于它的词跟着改挂；人身上的词不动。
+ */
+export async function renameItems(
+	client: CorpusClient,
+	report: Report,
+): Promise<void> {
+	const table = await read(client);
+	const { rows } = await client.query<{ word: string; writers: number }>(
+		"select word, writers from term_in_use where writers > 0",
+	);
+	const heads = new Set(
+		[...table.keys()].filter((word) => table.get(word)?.canonical === word),
+	);
+	const changed = rename(
+		table,
+		new Map(rows.map((row) => [row.word, row.writers])),
+	);
+	if (changed.length === 0) return;
+	await write(client, changed);
+	const renamed = changed.filter(
+		([word, decision]) => heads.has(word) && decision.canonical !== word,
+	);
+	report(`  按现在的人数换了 ${renamed.length} 项的名字`);
+	for (const [word, decision] of renamed)
+		report(`    ${word} 改叫 ${decision.canonical}`);
 }
 
 /**

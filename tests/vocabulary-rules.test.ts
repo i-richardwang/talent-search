@@ -6,6 +6,7 @@ import {
 	type Decision,
 	nearest,
 	place,
+	rename,
 	type Table,
 	type Verdict,
 	validate,
@@ -32,21 +33,8 @@ function tableOf(rows: [string, string, (string | null)?, boolean?][]): Table {
 
 const member = (word: string, people = 1): Member => ({ people, word });
 
-/** 判一个词并让它生效，返回表里每个词现在的样子。 */
-function judge(
-	table: Table,
-	word: Member,
-	verdict: Verdict,
-	near: Member[] = [],
-) {
-	place(
-		table,
-		word.word,
-		verdict,
-		new Map([word, ...near].map((one) => [one.word, one.people])),
-		NOW,
-	);
-	validate(table);
+/** 表里每个词现在的样子：`=标准写法`、归属，或「不是能力」。 */
+function shapeOf(table: Table) {
 	return Object.fromEntries(
 		[...table].map(([one, decision]: [string, Decision]) => [
 			one,
@@ -57,6 +45,22 @@ function judge(
 					: (decision.parent ?? ""),
 		]),
 	);
+}
+
+/**
+ * 判一个词并让它生效，再像整理一样按人数定名字（`member` 的人数当作写了这个写法的人），
+ * 返回表里每个词现在的样子。
+ */
+function judge(
+	table: Table,
+	word: Member,
+	verdict: Verdict,
+	near: Member[] = [],
+) {
+	place(table, word.word, verdict, NOW);
+	rename(table, new Map([word, ...near].map((one) => [one.word, one.people])));
+	validate(table);
+	return shapeOf(table);
 }
 
 describe("校验判定方的原话", () => {
@@ -196,7 +200,8 @@ describe("同一件事", () => {
 					["丙", head === "丙" ? 100 : 10],
 					["丁", 1],
 				]);
-				place(table, source, { kind: "same", as: target }, people, NOW);
+				place(table, source, { kind: "same", as: target }, NOW);
+				rename(table, people);
 				validate(table);
 				assert.equal(table.get("甲")?.canonical, "甲");
 				assert.equal(table.get("甲的细项")?.parent, "甲");
@@ -208,7 +213,8 @@ describe("同一件事", () => {
 				assert.deepEqual(table.get(source)?.reviewedAt, NOW);
 				if (target === "乙") assert.equal(table.get("乙")?.reviewedAt, null);
 
-				place(table, "丁", { kind: "same", as: "乙" }, people, NOW);
+				place(table, "丁", { kind: "same", as: "乙" }, NOW);
+				rename(table, people);
 				validate(table);
 				for (const word of ["乙", "丙", "丁"])
 					assert.equal(table.get(word)?.canonical, head);
@@ -218,7 +224,7 @@ describe("同一件事", () => {
 		}
 	});
 
-	test("并进人多的那个词，时间只记在被判的词上", () => {
+	test("合成的一项用人多的写法当名字，时间只记在被判的词上", () => {
 		const table: Table = new Map();
 		assert.deepEqual(
 			judge(table, member("数分", 2), { as: "数据分析", kind: "same" }, [
@@ -314,7 +320,7 @@ describe("同一件事", () => {
 	test("指向不是能力的词不成立，这个词不记", () => {
 		const table = tableOf([["策略会", "策略会", null, true]]);
 		assert.deepEqual(
-			place(table, "周会", { as: "策略会", kind: "same" }, new Map(), NOW),
+			place(table, "周会", { as: "策略会", kind: "same" }, NOW),
 			[],
 		);
 		assert.equal(table.has("周会"), false);
@@ -480,6 +486,57 @@ describe("读表时的检查", () => {
 					]),
 				),
 			/不是能力的词/,
+		);
+	});
+});
+
+describe("名字跟着人数", () => {
+	test("标准写法没人写了，换成这一项里写的人最多的写法，归属和细词跟过来，时间不动", () => {
+		const table = tableOf([
+			["管理", "管理"],
+			["项目节奏把控", "项目节奏把控", "管理"],
+			["项目进度把控", "项目节奏把控"],
+			["项目进度管理", "项目节奏把控"],
+			["研发节奏把控", "研发节奏把控", "项目节奏把控"],
+		]);
+		rename(
+			table,
+			new Map([
+				["项目进度把控", 6],
+				["项目进度管理", 2],
+			]),
+		);
+		validate(table);
+		assert.deepEqual(shapeOf(table), {
+			管理: "",
+			项目节奏把控: "=项目进度把控",
+			项目进度把控: "管理",
+			项目进度管理: "=项目进度把控",
+			研发节奏把控: "项目进度把控",
+		});
+		for (const decision of table.values())
+			assert.deepEqual(decision.reviewedAt, BEFORE);
+	});
+
+	test("一样多时不换，退回还没重判的写法不当名字", () => {
+		const table = tableOf([
+			["数据分析", "数据分析"],
+			["数分", "数据分析"],
+			["数据挖掘", "数据分析"],
+		]);
+		const sentBack = table.get("数据挖掘");
+		assert.ok(sentBack);
+		sentBack.aliasSentBack = true;
+		assert.deepEqual(
+			rename(
+				table,
+				new Map([
+					["数据分析", 3],
+					["数分", 3],
+					["数据挖掘", 50],
+				]),
+			),
+			[],
 		);
 	});
 });

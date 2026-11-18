@@ -1,5 +1,6 @@
 /**
- * 管理页「词表」的数据：按标准词收拢，人数连同下面的词一起数，和检索顺着词表找到的同一批人。
+ * 管理页「标签」的数据：此刻有人写的词按标准词收拢，人数连同下面的词一起数，
+ * 和检索顺着词表找到的同一批人。没人写的词留在词表里，不在这一页上。
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
@@ -10,7 +11,7 @@ after(teardown);
 
 const { describeTerm, listTerms } = await import("#/server/terms");
 
-describe("能力词词表", () => {
+describe("标签页", () => {
 	before(async () => {
 		const { db } = await import("#/db");
 		const { term } = await import("#/db/schema");
@@ -37,6 +38,10 @@ describe("能力词词表", () => {
 						months: 12,
 						extracted: { skills: ["电商推荐系统"] },
 					},
+					// 「Spark」属于判定方起名的「大数据」：没人写「大数据」，它下面有人
+					{ kind: "external", months: 6, extracted: { skills: ["Spark"] } },
+					// 还没进词表的词：此刻有人写，就是一项
+					{ kind: "external", months: 6, extracted: { skills: ["Flink"] } },
 				],
 			},
 			{
@@ -71,30 +76,46 @@ describe("能力词词表", () => {
 				parent: "推荐系统",
 				reviewedAt: today,
 			},
-			{ word: "推荐算法", canonical: "推荐系统", reviewedAt: today },
 			{
 				word: "个性化推荐",
 				canonical: "推荐系统",
 				reviewedAt: lastWeek,
 			},
 			{ word: "Python", canonical: "Python", reviewedAt: lastWeek },
-			// 标准词已不在语料里：照样列出，人数 0
+			// 已经没人写的词和写法：判断留在词表里，不在标签页上
 			{ word: "Hadoop", canonical: "Hadoop", reviewedAt: lastWeek },
+			{ word: "推荐算法", canonical: "推荐系统", reviewedAt: today },
+			{ word: "推荐引擎", canonical: "推荐系统", reviewedAt: lastWeek },
+			{ word: "日报", canonical: "日报", excluded: true, reviewedAt: today },
 			{ word: "周报", canonical: "周报", excluded: true, reviewedAt: today },
 			// 判定方起的名字，还没判过
 			{ word: "大数据", canonical: "大数据" },
+			{
+				word: "Spark",
+				canonical: "Spark",
+				parent: "大数据",
+				reviewedAt: today,
+			},
 		]);
 	});
 
-	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段、连同别名和下面的词", async () => {
+	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段、连同别名和下面的词；只列此刻有人写的", async () => {
 		const table = await listTerms("", 1, false);
 		assert.deepEqual(table.rows, [
 			{
 				canonical: "推荐系统",
 				parent: null,
-				aliases: ["个性化推荐", "推荐算法"],
+				aliases: ["个性化推荐"],
 				children: 1,
 				people: 4,
+				pending: false,
+			},
+			{
+				canonical: "Flink",
+				parent: null,
+				aliases: [],
+				children: 0,
+				people: 1,
 				pending: false,
 			},
 			{
@@ -106,6 +127,22 @@ describe("能力词词表", () => {
 				pending: false,
 			},
 			{
+				canonical: "Spark",
+				parent: "大数据",
+				aliases: [],
+				children: 0,
+				people: 1,
+				pending: false,
+			},
+			{
+				canonical: "大数据",
+				parent: null,
+				aliases: [],
+				children: 1,
+				people: 1,
+				pending: false,
+			},
+			{
 				canonical: "电商推荐系统",
 				parent: "推荐系统",
 				aliases: [],
@@ -113,24 +150,8 @@ describe("能力词词表", () => {
 				people: 1,
 				pending: false,
 			},
-			{
-				canonical: "Hadoop",
-				parent: null,
-				aliases: [],
-				children: 0,
-				people: 0,
-				pending: false,
-			},
-			{
-				canonical: "大数据",
-				parent: null,
-				aliases: [],
-				children: 0,
-				people: 0,
-				pending: false,
-			},
 		]);
-		assert.equal(table.total, 5);
+		assert.equal(table.total, 6);
 		assert.equal(table.pages, 1);
 	});
 
@@ -152,6 +173,9 @@ describe("能力词词表", () => {
 			byParent.rows.map((row) => row.canonical),
 			["推荐系统", "电商推荐系统"],
 		);
+		// 没人写的写法和词不算搜到
+		assert.deepEqual((await listTerms("推荐引擎", 1, false)).rows, []);
+		assert.deepEqual((await listTerms("Hadoop", 1, false)).rows, []);
 		const none = await listTerms("没有这个词", 1, false);
 		assert.deepEqual(none.rows, []);
 		assert.equal(none.total, 0);
@@ -162,6 +186,7 @@ describe("能力词词表", () => {
 		const found = await listTerms("周报", 1, false);
 		assert.deepEqual(found.rows, []);
 		assert.equal(found.total, 0);
+		// 「日报」也判成了不是能力，但没人写：不列
 		const excluded = await listTerms("", 1, true);
 		assert.deepEqual(
 			excluded.rows.map((row) => row.canonical),
@@ -172,19 +197,29 @@ describe("能力词词表", () => {
 		assert.equal(await describeTerm("没有这个词"), null);
 	});
 
-	test("一项里有词在队列里等着判时是等待判定；退回了但没人写的词不算在等", async () => {
+	test("详情从并进去的写法认回标准词，细分和更宽的词各带人数；没人写的词没有详情", async () => {
+		const detail = await describeTerm("推荐算法");
+		assert.equal(detail?.canonical, "推荐系统");
+		// 「推荐算法」「推荐引擎」没人写，不算其他写法
+		assert.deepEqual(detail?.aliases, ["个性化推荐"]);
+		assert.deepEqual(detail?.children, [
+			{ canonical: "电商推荐系统", people: 1 },
+		]);
+		assert.deepEqual((await describeTerm("Spark"))?.parent, {
+			canonical: "大数据",
+			people: 1,
+		});
+		assert.equal(await describeTerm("Hadoop"), null);
+		// 地址上手写一个没人写了的写法，它那一项还有人写：给那一项
+		assert.equal((await describeTerm("推荐引擎"))?.canonical, "推荐系统");
+	});
+
+	test("一项里有词在队列里等着判时是等待判定", async () => {
 		const { pool } = await import("#/db");
-		await pool.query(
-			"update term set reviewed_at = null where word = 'Hadoop'",
-		);
-		assert.equal((await describeTerm("Hadoop"))?.pending, false);
-		await pool.query(
-			"update term set reviewed_at = null where word = '个性化推荐'",
-		);
 		assert.equal((await describeTerm("推荐系统"))?.pending, false);
 		await pool.query(
 			`insert into review_word (guide_identity, word, people, near)
-			 values ('${"0".repeat(64)}', '推荐算法', 1, '[]'::jsonb)`,
+			 values ('${"0".repeat(64)}', '个性化推荐', 1, '[]'::jsonb)`,
 		);
 		assert.equal((await describeTerm("推荐系统"))?.pending, true);
 	});

@@ -40,6 +40,7 @@ import {
 	searchTurn,
 	taskRun,
 	term,
+	termInUse,
 } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
 import { compileConditions } from "#/search/compile";
@@ -664,6 +665,12 @@ export async function setup() {
 				`create view ${CATALOG}."${name}" as ${new PgDialect().sqlToQuery(query).sql}`,
 			);
 		}
+		// 现在用着的词不在数据目录里，和表建在同一个 schema
+		const inUse = getViewConfig(termInUse);
+		if (!inUse.query) throw new Error(`视图 ${inUse.name} 没有定义`);
+		await viewClient.query(
+			`create view ${SCHEMA}."${inUse.name}" as ${new PgDialect().sqlToQuery(inUse.query).sql}`,
+		);
 		await viewClient.query("reset search_path");
 	} finally {
 		viewClient.release();

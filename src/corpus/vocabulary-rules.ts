@@ -1,4 +1,4 @@
-/** 词表判定的校验、找参考词与生效。生产的生效一步和验收共用这些纯函数。 */
+/** 词表判定的校验、找参考词、生效与定名字。生产的整理和验收共用这些纯函数。 */
 import { z } from "zod";
 import { MAX_TAG_LEN, tag } from "./tag";
 
@@ -178,8 +178,7 @@ export function conform(
  * 不是能力的词上放开的词没有时间，下一轮各自判一次。
  *
  * - 同一件事：两端各自所在的整项合成一项；退回还没重判的别名只带它自己，不带原来那一项。
- *   人多的那一端做标准写法（`people` 是整张词表的人数），一样多时用 `as` 那一项的；
- *   归属沿用 `as` 那一项的。
+ *   合成的一项先用 `as` 那一项的标准写法，归属也沿用它的；用哪个写法当名字由 `rename` 定。
  * - 属于：它自己是一个标准词（原来是别名的就此拆出来），归属取那个词的标准写法；
  *   表里没有的词给它写一行，它从此是一个标准词。
  * - 自成一项：它自己是一个标准词，没有归属。
@@ -192,7 +191,6 @@ export function place(
 	table: Table,
 	word: string,
 	verdict: Verdict,
-	people: ReadonlyMap<string, number>,
 	now: Date,
 ): [string, Decision][] {
 	const changed = new Map<string, Decision>();
@@ -264,16 +262,16 @@ export function place(
 			decide(word, before?.canonical ?? word, before?.parent ?? null);
 			return [...changed];
 		}
-		const own = people.get(source) ?? 0;
-		const rival = people.get(joined) ?? 0;
-		const head = own > rival ? source : joined;
-		const other = head === source ? joined : source;
 		const inherited = table.get(joined)?.parent ?? null;
-		move(other, head);
-		decide(other, head, null);
-		decide(head, head, null);
-		decide(head, head, above(head, inherited === other ? null : inherited));
-		if (word !== head) decide(word, head, null);
+		move(source, joined);
+		decide(source, joined, null);
+		decide(joined, joined, null);
+		decide(
+			joined,
+			joined,
+			above(joined, inherited === source ? null : inherited),
+		);
+		if (word !== joined) decide(word, joined, null);
 		return [...changed];
 	}
 
@@ -282,5 +280,48 @@ export function place(
 	const parent = above(word, named);
 	if (parent !== null && !table.has(parent)) decide(parent, parent, null);
 	decide(word, word, parent);
+	return [...changed];
+}
+
+/**
+ * 每一项用哪个写法当名字：这一项里此刻写的人最多的那个写法，一样多时不换。判定只说哪些写法
+ * 是同一件事、属于哪个更宽的词；名字跟着简历走，写法的人数变了，名字跟着换。返回变了的词。
+ *
+ * `writers` 是每个写法本身有多少人写。退回还没重判的别名不当名字：它在不在这一项里还没定。
+ * 换名字不是一次判定，谁的判定时间都不动；属于这一项的词改挂到新名字上。
+ */
+export function rename(
+	table: Table,
+	writers: ReadonlyMap<string, number>,
+): [string, Decision][] {
+	const spellings = Map.groupBy(
+		[...table].filter(
+			([word, decision]) =>
+				decision.canonical !== word && !decision.aliasSentBack,
+		),
+		([, decision]) => decision.canonical,
+	);
+	const count = (word: string) => writers.get(word) ?? 0;
+	const changed = new Map<string, Decision>();
+	const update = (word: string, change: Partial<Decision>) => {
+		const decision = { ...(table.get(word) as Decision), ...change };
+		table.set(word, decision);
+		changed.set(word, decision);
+	};
+	for (const [head, others] of spellings) {
+		const name = others.reduce(
+			(best, [word]) => (count(word) > count(best) ? word : best),
+			head,
+		);
+		if (name === head) continue;
+		const parent = table.get(head)?.parent ?? null;
+		// 遍历的是快照：`update` 往同一张表里写
+		for (const [word, decision] of [...table]) {
+			if (decision.canonical === head) update(word, { canonical: name });
+			else if (decision.parent === head) update(word, { parent: name });
+		}
+		update(name, { parent });
+		update(head, { parent: null });
+	}
 	return [...changed];
 }

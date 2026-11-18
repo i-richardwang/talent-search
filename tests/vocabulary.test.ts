@@ -299,7 +299,7 @@ describe("整轮整理", () => {
 			const table = await read(later);
 			assert.equal(table.get("团队管理工作")?.canonical, "团队管理");
 			assert.equal(table.get("团队管理")?.canonical, "团队管理");
-			// 人一样多时取被对到的那个词做标准写法；它的归属沿用，判定方起的名字自己也是一行
+			// 人一样多时名字不换，用被对到的那个词；它的归属沿用，判定方起的名字自己也是一行
 			assert.equal(table.get("团队管理")?.parent, "管理");
 			assert.equal(table.get("管理")?.canonical, "管理");
 			// 起的名字自己还没判过，下一轮判它；被判的词记下了时间
@@ -522,11 +522,10 @@ describe("判定交给外部", () => {
 		assert.equal(await openWord("线下销售数据分析"), undefined);
 	});
 
-	test("判定方起的名字可以做标准写法：写了别的写法的人身上的词不动", async () => {
+	test("判定方起的名字没人写，并进来的写法有人写：用有人写的当名字，人身上的词不动", async () => {
 		const connection = await client();
 		try {
-			// 人数上「销售数据分析」占优：判定方说「线上销售数据分析」和它是同一件事，
-			// 那个没人写过的名字就要做标准写法
+			// 判定方说「线上销售数据分析」和它起的「销售数据分析」是同一件事
 			await connection.query("delete from review_word");
 			const { rows } = await connection.query<{ id: number }>(
 				`insert into review_word (guide_identity, word, people, near)
@@ -547,11 +546,17 @@ describe("判定交给外部", () => {
 		}
 		const said = await runReview();
 		assert.match(said.join("\n"), /线上销售数据分析 → 销售数据分析/);
+		assert.match(said.join("\n"), /销售数据分析 改叫 线上销售数据分析/);
 		const later = await client();
 		try {
 			const table = await read(later);
-			assert.equal(table.get("线上销售数据分析")?.canonical, "销售数据分析");
-			assert.equal(table.get("线上销售数据分析")?.parent, null);
+			assert.equal(table.get("销售数据分析")?.canonical, "线上销售数据分析");
+			assert.equal(
+				table.get("线上销售数据分析")?.canonical,
+				"线上销售数据分析",
+			);
+			// 属于这一项的词改挂到新名字上
+			assert.equal(table.get("线下销售数据分析")?.parent, "线上销售数据分析");
 		} finally {
 			later.release();
 		}
@@ -567,22 +572,37 @@ describe("判定交给外部", () => {
 
 	test("别名退回重判，这一次判开就拆出来", async () => {
 		await pool.query("delete from review_word");
-		await unjudge("线上销售数据分析");
+		const { rows } = await pool.query<{ id: number }>(
+			`insert into review_word (guide_identity, word, people, near)
+			 values ($1, '线下销售数据分析', 2, '[{"word":"线上销售数据分析","people":3}]'::jsonb)
+			 returning id`,
+			[guideIdentity()],
+		);
+		assert.equal(
+			await submitWord(rows[0]?.id as number, AGENT, {
+				why: "同一件事",
+				kind: "同一件事",
+				target: "线上销售数据分析",
+			}),
+			"accepted",
+		);
+		await runReview();
+		await unjudge("线下销售数据分析");
 		await runReview();
 
-		const word = await openWord("线上销售数据分析");
-		assert.ok(word, "别名「线上销售数据分析」该进队列");
+		const word = await openWord("线下销售数据分析");
+		assert.ok(word, "别名「线下销售数据分析」该进队列");
 		// 别名的人数是写了这个写法的人；它的标准词连同它和下面的词一起数
-		assert.equal(word.people, 3);
+		assert.equal(word.people, 2);
 		assert.deepEqual(
-			word.near.find((one) => one.word === "销售数据分析"),
-			{ word: "销售数据分析", people: 3 },
+			word.near.find((one) => one.word === "线上销售数据分析"),
+			{ word: "线上销售数据分析", people: 3 },
 		);
 		assert.equal(
 			await submitWord(word.id, AGENT, {
-				why: "只是线上那一种",
-				kind: "属于",
-				target: "销售数据分析",
+				why: "线下和线上是两批人",
+				kind: "自成一项",
+				target: "",
 			}),
 			"accepted",
 		);
@@ -592,10 +612,10 @@ describe("判定交给外部", () => {
 		try {
 			const table = await read(settled);
 			assert.equal(
-				table.get("线上销售数据分析")?.canonical,
-				"线上销售数据分析",
+				table.get("线下销售数据分析")?.canonical,
+				"线下销售数据分析",
 			);
-			assert.equal(table.get("线上销售数据分析")?.parent, "销售数据分析");
+			assert.equal(table.get("线下销售数据分析")?.parent, null);
 		} finally {
 			settled.release();
 		}
@@ -680,7 +700,7 @@ describe("退回重新判定", () => {
 	const said: string[] = [];
 	const report = (line: string) => said.push(line);
 
-	test("同义链跨批生效，标准词人数取自完整语料，不依赖当前问题的参考词", async () => {
+	test("同义链跨批生效，名字按完整语料的人数定，不依赖当前问题的参考词", async () => {
 		await seedTable([]);
 		await seed(
 			Array.from({ length: 7 }, (_, i) => ({
@@ -697,7 +717,7 @@ describe("退回重新判定", () => {
 			})),
 		);
 		const { collect } = await import("#/corpus/judgment");
-		const { applyJudgments } = await import("#/corpus/vocabulary");
+		const { applyJudgments, renameItems } = await import("#/corpus/vocabulary");
 		const connection = await client();
 		try {
 			const words = [
@@ -726,6 +746,7 @@ describe("退回重新判定", () => {
 				);
 				await applyJudgments(connection, report);
 			}
+			await renameItems(connection, report);
 			const table = await read(connection);
 			for (const { word } of words)
 				assert.equal(table.get(word)?.canonical, "合成甲");

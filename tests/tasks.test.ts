@@ -443,8 +443,9 @@ test("词表的判定生效，一条技能边都不动", async () => {
 			${guideIdentity()}, '数据分析', 3, '[{"word":"业务分析","people":100}]'::jsonb, 'agent:test',
 			'{"why":"同一能力的写法","kind":"同一件事","target":"业务分析"}'::jsonb)`);
 		assert.equal((await runTask("review"))?.failure, null);
+		// 合成一项后名字跟着人数：「业务分析」是判定方起的、没人写，名字用有人写的「数据分析」
 		assert.equal(
-			await count("term", "word = '数据分析' and canonical = '业务分析'"),
+			await count("term", "word = '业务分析' and canonical = '数据分析'"),
 			1,
 		);
 		// 词表只决定筛选栏怎么摆：人身上仍是简历里的原话

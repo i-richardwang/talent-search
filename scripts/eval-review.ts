@@ -24,7 +24,7 @@
  * 前一个词可以不在用例里（判定方会起的更宽的词）。违反 notFound 是混人：找的人看到不符合要求的人；
  * 违反 found 是漏人：词表本该带出的人没出来。`excluded` 里的词没判成不是能力是没删掉；
  * 别的词判成不是能力是误删。另查起出来的归属名是不是能力词的写法（超 8 字、
- * 带「能力」「相关」「工作」的都不是招聘的人会点的）。验收共用生产的 `conform` 与 `place`，
+ * 带「能力」「相关」「工作」的都不是招聘的人会点的）。验收共用生产的 `conform`、`place` 与 `rename`，
  * 从这个用例建立词表再判断带不带出。用例里的每个词都必须作答；任何一项失败均返回非零退出码。
  *
  * 合成用例进仓库（sample.json）；真实的词是从库里取的，不进版本库。自带模型作答时调用与整理
@@ -38,7 +38,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import type { Member, Question } from "#/corpus/judgment";
 import { askModel, GUIDE } from "#/corpus/vocabulary";
-import { conform, place, type Table } from "#/corpus/vocabulary-rules";
+import { conform, place, rename, type Table } from "#/corpus/vocabulary-rules";
 import { pool } from "#/db";
 
 type Case = {
@@ -224,7 +224,8 @@ try {
 	for (const [index, c] of cases.entries()) {
 		const problems: string[] = [];
 		const table: Table = new Map();
-		const people = new Map(c.words.map((one) => [one.word, one.people]));
+		// 用例里一个词的人数当作写了这个写法的人，名字和整理时一样按它定
+		const writers = new Map(c.words.map((one) => [one.word, one.people]));
 		const unanswered: string[] = [];
 		for (const [at, question] of questionsOf(c).entries()) {
 			const verdict = conform(
@@ -232,9 +233,10 @@ try {
 				question.word,
 				question.near.map((one) => one.word),
 			);
-			if (verdict) place(table, question.word, verdict, people, new Date());
+			if (verdict) place(table, question.word, verdict, new Date());
 			else unanswered.push(question.word);
 		}
+		rename(table, writers);
 		if (unanswered.length) problems.push(`漏答 ${unanswered.join("、")}`);
 		const lost = c.found.filter(([q, w]) => !carries(table, q, w));
 		found += c.found.length;
