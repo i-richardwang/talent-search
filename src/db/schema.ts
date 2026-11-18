@@ -721,15 +721,17 @@ export const termInUse = pgView("term_in_use", {
 	people: integer("people").notNull(),
 	/** 写了这一种写法本身的人；判定方起名、没人照这个写法写的更宽的词是 0 */
 	writers: integer("writers").notNull(),
-}).as(sql`with recursive written as (
-		select p.text as word, coalesce(t.canonical, p.text) as head, e.emp_id
+}).as(
+	/* 「谁写了哪个词」是不重复的集合（`written` 去重，`up` 的 union 不留重复），人数就是行数 */
+	sql`with recursive written as (
+		select distinct p.text as word, coalesce(t.canonical, p.text) as head, e.emp_id
 		from experience_phrase ep
 		join phrase p on p.id = ep.phrase_id
 		join experience e on e.id = ep.experience_id and not e.unemployed
 		left join term t on t.word = p.text
 		where ep.route in (${sql.raw(SHORT_ROUTES.map((route) => `'${route}'`).join(", "))})
 	), own as (
-		select word, head, count(distinct emp_id)::int as writers from written group by word, head
+		select word, head, count(*)::int as writers from written group by word, head
 	), up(word, emp_id) as (
 		select head, emp_id from written
 		union
@@ -737,10 +739,11 @@ export const termInUse = pgView("term_in_use", {
 		join term t on t.word = up.word and t.parent is not null
 	)
 	select under.word, under.people, coalesce(own.writers, 0) as writers
-	from (select word, count(distinct emp_id)::int as people from up group by word) under
+	from (select word, count(*)::int as people from up group by word) under
 	left join own on own.word = under.word
 	union all
-	select word, writers, writers from own where word <> head`);
+	select word, writers, writers from own where word <> head`,
+);
 
 /**
  * 不可变查询记录；仅待理解记录允许把 spec 从 null 补全一次。
