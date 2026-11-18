@@ -26,19 +26,24 @@ const SPELLINGS = sql`spellings as (
 	join u on u.word = a.word
 	where a.word <> a.canonical)`;
 
-/** 这一项此刻有人写的其他写法，按字排。 */
-const aliasesOf = (head: SQL) => sql`coalesce(
-	(select array_agg(s.word order by s.word) from spellings s where s.head = ${head}),
-	'{}')`;
+/** 每一项此刻有人写的细分（更窄的词），各带人数。 */
+const NARROWER = sql`narrower as (
+	select t.parent as head, t.word, u.people from term t
+	join u on u.word = t.word
+	where t.parent is not null)`;
+
+/** 这几项此刻有人写的其他写法，一项一行，按字排。 */
+const aliasesOf = (heads: SQL) => sql`
+	select head, array_agg(word order by word) as aliases
+	from spellings where head in (${heads}) group by head`;
 
 /**
- * 这一项在不在等判定：按队列说，不按 `reviewed_at` 的空值说——没人写的词退回之后
- * 不会被收集，它不在等任何人。还没进词表的词也可能在队列里。
+ * 有词在等判定的项：按队列说，不按 `reviewed_at` 的空值说——没人写的词退回之后
+ * 不会被收集，它不在等任何人。队列里的词落到它所在的那一项；还没进词表的词就是它自己。
  */
-const pendingOf = (head: SQL) => sql`(
-	exists (select 1 from review_word r where r.word = ${head})
-	or exists (select 1 from term a join review_word r on r.word = a.word
-		where a.canonical = ${head}))`;
+const QUEUED = sql`queued as (
+	select coalesce(t.canonical, r.word) as head from review_word r
+	left join term t on t.word = r.word)`;
 
 export type TermEntry = {
 	canonical: string;
@@ -85,18 +90,25 @@ export function listTerms(
 		);
 		const total = found.rows[0]?.n ?? 0;
 		const at = pageAt(total, page);
-		const { rows } = await store.execute<TermEntry>(sql`${MATCHED}
+		const { rows } =
+			await store.execute<TermEntry>(sql`${MATCHED}, ${NARROWER}, ${QUEUED},
+			/* 先定这一页是哪几项，其他写法、细分和判定只给这几项算 */
+			shown as (
+				select * from matched order by people desc, word
+				limit ${at.limit} offset ${at.offset})
 			select
-				m.word as canonical,
-				m.parent,
-				${aliasesOf(sql`m.word`)} as aliases,
-				(select count(*)::int from term c join u on u.word = c.word
-					where c.parent = m.word and c.word = c.canonical) as children,
-				m.people,
-				${pendingOf(sql`m.word`)} as pending
-			from matched m
-			order by m.people desc, m.word
-			limit ${at.limit} offset ${at.offset}`);
+				s.word as canonical,
+				s.parent,
+				coalesce(a.aliases, '{}') as aliases,
+				coalesce(c.children, 0) as children,
+				s.people,
+				s.word in (select head from queued) as pending
+			from shown s
+			left join (${aliasesOf(sql`select word from shown`)}) a on a.head = s.word
+			left join (
+				select head, count(*)::int as children from narrower
+				where head in (select word from shown) group by head) c on c.head = s.word
+			order by s.people desc, s.word`);
 		return tablePage(rows, total, at);
 	});
 }
@@ -114,26 +126,25 @@ export function listTerms(
 export function describeTerm(word: string): Promise<TermDetail | null> {
 	return withCorpusSnapshot(async (store) => {
 		const { rows } = await store.execute<TermDetail>(sql`
-			with ${IN_USE}, ${SPELLINGS},
+			with ${IN_USE}, ${SPELLINGS}, ${NARROWER}, ${QUEUED},
 			named as (select coalesce(
 				(select canonical from term where word = ${word}), ${word}) as word)
 			select
 				h.word as canonical,
 				h.people,
 				coalesce(t.excluded, false) as excluded,
-				${aliasesOf(sql`h.word`)} as aliases,
-				${pendingOf(sql`h.word`)} as pending,
+				coalesce(a.aliases, '{}') as aliases,
+				h.word in (select head from queued) as pending,
 				(select json_build_object('canonical', p.word, 'people', p.people)
 					from u p where p.word = t.parent) as parent,
-				/* 细分只认标准词那一行：并进去的写法不是细分，它们在「其他写法」里 */
 				coalesce((
-					select json_agg(json_build_object('canonical', c.word, 'people', cu.people)
-						order by cu.people desc, c.word)
-					from term c join u cu on cu.word = c.word
-					where c.parent = h.word and c.word = c.canonical), '[]') as children
+					select json_agg(json_build_object('canonical', d.word, 'people', d.people)
+						order by d.people desc, d.word)
+					from narrower d where d.head = h.word), '[]') as children
 			from named n
 			join u h on h.word = n.word
-			left join term t on t.word = h.word`);
+			left join term t on t.word = h.word
+			left join (${aliasesOf(sql`select word from named`)}) a on a.head = h.word`);
 		return rows[0] ?? null;
 	});
 }

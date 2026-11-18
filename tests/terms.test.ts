@@ -216,11 +216,29 @@ describe("标签页", () => {
 
 	test("一项里有词在队列里等着判时是等待判定", async () => {
 		const { pool } = await import("#/db");
+		const pendingRows = async () =>
+			Object.fromEntries(
+				(await listTerms("", 1, false)).rows.map((row) => [
+					row.canonical,
+					row.pending,
+				]),
+			);
 		assert.equal((await describeTerm("推荐系统"))?.pending, false);
+		// 并进去的写法在队列里，等的是它所在的那一项；还没进词表的词等的是它自己
 		await pool.query(
 			`insert into review_word (guide_identity, word, people, near)
-			 values ('${"0".repeat(64)}', '个性化推荐', 1, '[]'::jsonb)`,
+			 values ('${"0".repeat(64)}', '个性化推荐', 1, '[]'::jsonb),
+			        ('${"0".repeat(64)}', 'Flink', 1, '[]'::jsonb)`,
 		);
 		assert.equal((await describeTerm("推荐系统"))?.pending, true);
+		assert.equal((await describeTerm("Flink"))?.pending, true);
+		assert.deepEqual(await pendingRows(), {
+			推荐系统: true,
+			Flink: true,
+			Python: false,
+			电商推荐系统: false,
+			Spark: false,
+			大数据: false,
+		});
 	});
 });
