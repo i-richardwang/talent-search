@@ -10,6 +10,7 @@ import {
 	jsonb,
 	pgSchema,
 	pgTable,
+	pgView,
 	primaryKey,
 	real,
 	text,
@@ -538,7 +539,10 @@ export const taskRun = pgTable("task_run", {
 	error: text("error"),
 });
 
-/** 词表：短说法的标准写法与宽细归属。跨语料保留，不改经历上的原始说法。 */
+/**
+ * 词表：对一个短说法的判断——标准写法、宽细归属、是不是能力。判断说的是这个词本身，
+ * 跨语料保留，没人写了也不删；此刻用着哪些词由 `termInUse` 推出来。不改经历上的原始说法。
+ */
 export const term = pgTable(
 	"term",
 	{
@@ -601,10 +605,7 @@ export const reviewWord = pgTable(
  */
 const ROUTES = ["role", "title", "description", "skill"] as const;
 export type Route = (typeof ROUTES)[number];
-/**
- * 短说法：几个字的能力词、入职前岗位名。只有当前仍有这些边的说法进词表；
- * 词表的收集、计数和关键词搜索的候选词共用此范围。
- */
+/** 短说法：几个字的能力词、入职前岗位名。现在用着的词（`termInUse`）和关键词搜索的候选词共用此范围。 */
 export const SHORT_ROUTES = [
 	"skill",
 	"title",
@@ -701,6 +702,45 @@ export const experiencePhraseNext = pgTable(
 		),
 	],
 );
+
+/**
+ * 现在用着的词：词表的判断套在此刻的简历上推出来，每次读都是当下的语料，不另存一份。
+ *
+ * 一行一个词：有人写的每种短说法（标准词、并进去的写法、还没进词表的词），以及下面有人写的
+ * 更宽的词。判成不是能力的词也在，读的一方自己挑。
+ *
+ * 词表本身（`term`）是对一个词的判断，跟有没有人写它无关，所以没人写了也留着，词再出现时
+ * 不用重判；没人写的词不在这里，标签页和整理只读这里。
+ */
+export const termInUse = pgView("term_in_use", {
+	word: text("word").notNull(),
+	/**
+	 * 标准词（还没进词表的词按它自己算）和更宽的词：连同其他写法和全部细分一起数的人；
+	 * 并进去的写法只数写了这一种的人。
+	 */
+	people: integer("people").notNull(),
+	/** 写了这一种写法本身的人；判定方起名、没人照这个写法写的更宽的词是 0 */
+	writers: integer("writers").notNull(),
+}).as(sql`with recursive written as (
+		select p.text as word, coalesce(t.canonical, p.text) as head, e.emp_id
+		from experience_phrase ep
+		join phrase p on p.id = ep.phrase_id
+		join experience e on e.id = ep.experience_id and not e.unemployed
+		left join term t on t.word = p.text
+		where ep.route in (${sql.raw(SHORT_ROUTES.map((route) => `'${route}'`).join(", "))})
+	), own as (
+		select word, head, count(distinct emp_id)::int as writers from written group by word, head
+	), up(word, emp_id) as (
+		select head, emp_id from written
+		union
+		select t.parent, up.emp_id from up
+		join term t on t.word = up.word and t.parent is not null
+	)
+	select under.word, under.people, coalesce(own.writers, 0) as writers
+	from (select word, count(distinct emp_id)::int as people from up group by word) under
+	left join own on own.word = under.word
+	union all
+	select word, writers, writers from own where word <> head`);
 
 /**
  * 不可变查询记录；仅待理解记录允许把 spec 从 null 补全一次。

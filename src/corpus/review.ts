@@ -1,6 +1,6 @@
 /**
  * 整理一轮：清掉按旧标准收的行、让判过的生效、把人指定的范围退回重判、收集没判过的词，
- * 自带模型还要当场判一轮再生效一次。过程报出来。
+ * 自带模型还要当场判一轮再生效一次，最后按此刻的人数给每一项定名字。过程报出来。
  *
  * 队列和判定方在 `judgment.ts`，标准、校验与写表在 `vocabulary.ts`。整理只写词表，
  * 不碰人身上的词与边。
@@ -16,6 +16,7 @@ import {
 	collectWords,
 	guideIdentity,
 	judgeByModel,
+	renameItems,
 	sendBack,
 } from "./vocabulary";
 
@@ -34,8 +35,9 @@ export async function review(
 	if (judge === "model") {
 		await judgeByModel(client, report);
 		await applyJudgments(client, report);
-		return;
+	} else {
+		const waiting = await openWords(client, identity);
+		report(`  判定由外部完成，队列里还有 ${waiting.length} 个词等着判`);
 	}
-	const waiting = await openWords(client, identity);
-	report(`  判定由外部完成，队列里还有 ${waiting.length} 个词等着判`);
+	await renameItems(client, report);
 }

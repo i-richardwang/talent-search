@@ -81,7 +81,6 @@ export type TaskOutcome = "running" | "interrupted" | "failed" | "done";
  *
  * 时刻和用时**在库里算好**：服务端直出和浏览器水合各算一次的话，服务端的时区和浏览器
  * 不同就会渲染出两个不一样的字符串，而 React 只会在控制台打一条警告。
- * 管理页 `/terms` 的「几天前」是同一个道理。
  */
 export type TaskRunView = {
 	id: number;

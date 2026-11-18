@@ -25,7 +25,7 @@ import { StatusBadge } from "../../-components/status-badge";
 
 /**
  * 一个词的人数、往上属于谁、往下带着谁；判成不是能力的词只有人数和这一句结论。
- * `rejudge` 只有管理员有：把这一项（连同它的其他写法），或再带上它的细分，退回重新判定。
+ * `rejudge`：把这一项（连同它的其他写法），或再带上它的细分，退回重新判定。
  */
 export function TermRecord({
 	term,
@@ -34,12 +34,12 @@ export function TermRecord({
 }: {
 	term: TermDetail;
 	close: () => void;
-	rejudge?: (scope: Rejudge) => void;
+	rejudge: (scope: Rejudge) => void;
 }) {
 	return (
 		<DetailDrawer
 			close={close}
-			extra={rejudge && <RejudgeMenu rejudge={rejudge} term={term} />}
+			extra={<RejudgeMenu rejudge={rejudge} term={term} />}
 			title={term.canonical}
 		>
 			<Descriptions labelWidth={DETAIL_LABEL_WIDTH}>

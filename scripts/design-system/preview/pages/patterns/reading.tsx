@@ -52,7 +52,9 @@ function Drawers() {
 			</div>
 			<Routed url="/terms">
 				{open === "person" && <PersonDrawer close={close} />}
-				{open === "term" && <TermRecord close={close} term={SKILL_DETAIL} />}
+				{open === "term" && (
+					<TermRecord close={close} rejudge={() => {}} term={SKILL_DETAIL} />
+				)}
 			</Routed>
 		</Stage>
 	);

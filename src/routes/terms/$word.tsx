@@ -27,22 +27,22 @@ function useClose() {
 }
 
 function Term() {
-	const { user } = Route.useRouteContext();
 	return (
 		<TermRecord
 			close={useClose()}
-			rejudge={user?.admin ? rejudge : undefined}
+			rejudge={rejudge}
 			term={Route.useLoaderData()}
 		/>
 	);
 }
 
+/** 地址上的词此刻没有人写：标签页只列有人写的词。 */
 function TermNotFound() {
 	return (
-		<DetailDrawer close={useClose()} title="没有这个词">
+		<DetailDrawer close={useClose()} title={Route.useParams().word}>
 			<Empty
-				description="它可能还没被整理到，也可能已经没有人写它了。"
-				title="词表里没有这个词"
+				description="在表上方搜一下相近的写法。"
+				title="现在没有人写这个词"
 			/>
 		</DetailDrawer>
 	);
