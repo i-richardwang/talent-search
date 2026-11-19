@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	EllipsisIcon,
 	KeyRoundIcon,
+	NetworkIcon,
 	PlusIcon,
 	SearchXIcon,
 	ShieldMinusIcon,
@@ -36,6 +37,7 @@ import {
 import { Tag } from "#/components/ui/tag";
 import { toast } from "#/components/ui/toast";
 import { dots } from "#/lib/format";
+import { type OrgNode, orgName } from "#/lib/org";
 import type { TablePage } from "#/lib/paging";
 import type { AccountRow } from "#/server/accounts";
 import { listSearch, useSearchDraft } from "../../-components/admin-page";
@@ -44,22 +46,26 @@ import { type AccountDialog, AccountModal } from "./account-dialogs";
 
 /**
  * 账号页能做的事，各自交给服务端，改成了之后由调用处重取这张表。`create` 在用户名已被占用时
- * 返回 null，建成了返回初始密码；`reset` 返回新密码。
+ * 返回 null，建成了返回初始密码；`reset` 返回新密码；`orgs` 取此刻的组织树，选数据范围用。
  */
 export type AccountActions = {
 	create: (
 		username: string,
 		name: string,
 		admin: boolean,
+		orgs: string[],
 	) => Promise<string | null>;
 	reset: (username: string) => Promise<string>;
+	setScope: (username: string, orgs: string[]) => Promise<void>;
+	orgs: () => Promise<OrgNode[]>;
 	setAdmin: (username: string, admin: boolean) => Promise<void>;
 	setDisabled: (username: string, disabled: boolean) => Promise<void>;
 };
 
 /**
  * 账号页的内容：按用户名或显示名称找、新建账号，和全部账号那张表。停用了的账号名字后面
- * 跟一个「已停用」。别人的账号行尾有菜单：重置密码、设为或取消管理员、停用（或恢复）；
+ * 跟一个「已停用」。每个账号写着它的数据范围（组织的名字）和此刻范围里有多少人。
+ * 别人的账号行尾有菜单：重置密码、改数据范围、设为或取消管理员、停用（或恢复）；
  * 自己那一行（`self` 是当前账号的用户名）标着「当前账号」，没有菜单，自己的密码在导航栏的
  * 账号菜单里改。`pending` 是换词或翻页后新的一页还没取回，表体画同样行数的占位。
  */
@@ -81,6 +87,16 @@ export function AccountTable({
 	const search = (needle: string) =>
 		void navigate({ search: listSearch(1, needle) });
 	const [dialog, setDialog] = useState<AccountDialog | null>(null);
+	const [tree, setTree] = useState<OrgNode[] | null>(null);
+
+	// 选数据范围的两步：打开时取一次此刻的组织树
+	const choose = (next: AccountDialog) => {
+		setDialog(next);
+		setTree(null);
+		actions
+			.orgs()
+			.then(setTree, () => toast.error("组织树没有取到，请关上再打开"));
+	};
 
 	const reset = (account: AccountRow) =>
 		confirmModal({
@@ -167,7 +183,7 @@ export function AccountTable({
 				/>
 				<Button
 					icon={PlusIcon}
-					onClick={() => setDialog({ step: "create" })}
+					onClick={() => choose({ step: "create" })}
 					type="primary"
 				>
 					新建账号
@@ -200,7 +216,8 @@ export function AccountTable({
 					>
 						<TableHeader>
 							<TableRow>
-								<TableHead className="w-full">账号</TableHead>
+								<TableHead className="w-1/2">账号</TableHead>
+								<TableHead className="w-1/2">数据范围</TableHead>
 								<TableHead>角色</TableHead>
 								<TableHead>
 									<span className="sr-only">操作</span>
@@ -210,7 +227,7 @@ export function AccountTable({
 						<TableBody>
 							{pending ? (
 								<TableSkeletonRows
-									columns={3}
+									columns={4}
 									rows={Math.max(list.rows.length, 1)}
 								/>
 							) : (
@@ -225,6 +242,9 @@ export function AccountTable({
 												{account.disabled && <Tag size="small">已停用</Tag>}
 											</span>
 										</TableCell>
+										<TableCell cellLabel="数据范围">
+											<ScopeCell account={account} />
+										</TableCell>
 										<TableCell cellLabel="角色" className="whitespace-nowrap">
 											{account.admin ? "管理员" : "普通用户"}
 										</TableCell>
@@ -237,6 +257,13 @@ export function AccountTable({
 													onGrant={() => grant(account)}
 													onReset={() => reset(account)}
 													onRevoke={() => void revoke(account)}
+													onScope={() =>
+														choose({
+															orgs: account.orgs,
+															step: "scope",
+															username: account.username,
+														})
+													}
 												/>
 											)}
 										</TableCell>
@@ -250,8 +277,8 @@ export function AccountTable({
 			<AccountModal
 				dialog={dialog}
 				onClose={() => setDialog(null)}
-				onCreate={async (username, name, admin) => {
-					const password = await actions.create(username, name, admin);
+				onCreate={async (username, name, admin, orgs) => {
+					const password = await actions.create(username, name, admin, orgs);
 					if (password === null) return false;
 					setDialog({
 						issued: { kind: "created", password, username },
@@ -259,18 +286,43 @@ export function AccountTable({
 					});
 					return true;
 				}}
+				onScope={actions.setScope}
+				tree={tree}
 			/>
 		</div>
 	);
 }
 
 /**
- * 别人的账号行尾的菜单：重置密码，设为或取消管理员，停用或恢复。停用了的账号只有恢复，
- * 别的事恢复之后再做。
+ * 一个账号的数据范围：几个组织的名字（完整路径在提示里）和此刻范围里的人数。没有数据范围的
+ * 账号什么人都看不到，明说出来。
+ */
+function ScopeCell({ account }: { account: AccountRow }) {
+	if (account.orgs.length === 0)
+		return (
+			<span className="text-fg-secondary">没有数据范围，看不到任何人</span>
+		);
+	return (
+		<span
+			className="flex min-w-0 items-baseline gap-2"
+			title={account.orgs.join("\n")}
+		>
+			<span className="truncate">{account.orgs.map(orgName).join("、")}</span>
+			<span className="shrink-0 text-fg-secondary text-xs">
+				{account.people} 人
+			</span>
+		</span>
+	);
+}
+
+/**
+ * 别人的账号行尾的菜单：重置密码，改数据范围，设为或取消管理员，停用或恢复。停用了的账号只有
+ * 恢复，别的事恢复之后再做。
  */
 function AccountRowMenu({
 	account,
 	onReset,
+	onScope,
 	onGrant,
 	onRevoke,
 	onDisable,
@@ -278,6 +330,7 @@ function AccountRowMenu({
 }: {
 	account: AccountRow;
 	onReset: () => void;
+	onScope: () => void;
 	onGrant: () => void;
 	onRevoke: () => void;
 	onDisable: () => void;
@@ -291,6 +344,12 @@ function AccountRowMenu({
 					key: "reset",
 					label: "重置密码",
 					onClick: onReset,
+				},
+				{
+					icon: NetworkIcon,
+					key: "scope",
+					label: "改数据范围",
+					onClick: onScope,
 				},
 				account.admin
 					? {

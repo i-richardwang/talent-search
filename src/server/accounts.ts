@@ -3,10 +3,14 @@
  *
  * - 本机命令行（`manageAccount`，`scripts/auth-user.ts`）什么账号都能管，包括建管理员、改角色。
  *   操作的是登录了服务器的人，不是一个账号，不进操作记录。
- * - 浏览器里的账号页（`createUser`、`resetUserPassword`、`setUserRole`、`setUserDisabled`）由管理员
- *   用，管除自己以外的全部账号：建账号时选角色，重置密码、设为或取消管理员、停用、恢复。自己的
- *   账号在这里不能动，动手的管理员在改动的事务里锁住并核对仍是在用的管理员，所以库里至少剩一个
- *   管理员。新密码由这里生成、只交出一次；每一件都和改动同一个事务记进操作记录。
+ * - 浏览器里的账号页（`createUser`、`resetUserPassword`、`setUserRole`、`setUserScope`、
+ *   `setUserDisabled`）由管理员用，管除自己以外的全部账号：建账号时选角色和数据范围，重置密码、
+ *   改数据范围、设为或取消管理员、停用、恢复。自己的账号在这里不能动，动手的管理员在改动的事务里
+ *   锁住并核对仍是在用的管理员，所以库里至少剩一个管理员。新密码由这里生成、只交出一次；每一件
+ *   都和改动同一个事务记进操作记录。
+ *
+ * 每个账号都有数据范围（`account_scope`）：建账号时必须给，最大是集团（最上一级的组织）。
+ * 管理员的身份管能做什么，数据范围管看得到谁，两者互不替代。
  *
  * 账号不删除：搜索记录和操作记录引用它，离开的人停用即可。浏览器里另有改自己的密码
  * （`changeOwnPassword`），要当前密码。
@@ -17,7 +21,7 @@ import { APIError } from "better-auth/api";
 import { hashPassword } from "better-auth/crypto";
 import { and, eq, or } from "drizzle-orm";
 import { db } from "#/db";
-import { authAccount, authSession, authUser } from "#/db/schema";
+import { accountScope, authAccount, authSession, authUser } from "#/db/schema";
 import { withReadSnapshot } from "#/db/snapshot";
 import {
 	isAdmin,
@@ -26,6 +30,7 @@ import {
 	PASSWORD_MIN,
 	usernameOf,
 } from "#/lib/auth";
+import { type OrgNode, orgsOf, orgTree } from "#/lib/org";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
 import { type AccountAction, recordAccount } from "./audit";
@@ -37,9 +42,11 @@ export type AccountChange =
 			action: "create";
 			username: string;
 			password: string;
+			orgs: string[];
 			name?: string;
 			role?: string;
 	  }
+	| { action: "set-scope"; username: string; orgs: string[] }
 	| { action: "reset-password"; username: string; password: string }
 	| { action: "set-role"; username: string; role: string }
 	| { action: "disable" | "enable"; username: string };
@@ -90,9 +97,37 @@ type NewAccount = {
 	role: Role;
 	/** 已经取过哈希 */
 	password: string;
+	/** 已经规范化（`checkedOrgs`） */
+	orgs: string[];
 };
 
-/** 建一个账号和它的密码凭据，返回账号 id；用户名已被占用时为 null。 */
+/** 规范化一个账号的几个组织；一个都没有或有一个是空的时报错。 */
+function checkedOrgs(raws: readonly string[]): string[] {
+	const orgs = orgsOf(raws);
+	if (!orgs) throw new Error("数据范围至少要有一个组织");
+	return orgs;
+}
+
+/**
+ * 账号页给的组织都得在此刻的组织树上：页面上的树可能已经过时。命令行不经过这里，第一次同步
+ * 之前就要建第一个管理员。
+ */
+async function onTree(orgs: readonly string[]) {
+	const tree = new Set((await organizations()).map((node) => node.path));
+	const unknown = orgs.filter((org) => !tree.has(org));
+	if (unknown.length > 0)
+		throw new Error(`组织树上没有：${unknown.join("、")}`);
+}
+
+/** 换掉这个账号的数据范围。 */
+async function setScope(tx: Tx, userId: string, orgs: readonly string[]) {
+	await tx.delete(accountScope).where(eq(accountScope.userId, userId));
+	await tx
+		.insert(accountScope)
+		.values(orgs.map((orgPath) => ({ userId, orgPath })));
+}
+
+/** 建一个账号、它的密码凭据和数据范围，返回账号 id；用户名已被占用时为 null。 */
 async function insertAccount(tx: Tx, account: NewAccount) {
 	const name = account.name.trim() || account.username;
 	if (name.length > NAME_MAX)
@@ -118,6 +153,7 @@ async function insertAccount(tx: Tx, account: NewAccount) {
 		userId: id,
 		password: account.password,
 	});
+	await setScope(tx, id, account.orgs);
 	return id;
 }
 
@@ -183,6 +219,7 @@ export async function manageAccount(change: AccountChange): Promise<string> {
 				name: change.name ?? "",
 				role: roleOf(change.role ?? "user"),
 				password: await hashed(change.password),
+				orgs: checkedOrgs(change.orgs),
 			};
 			const id = await db.transaction((tx) => insertAccount(tx, account));
 			if (!id) throw new Error("用户名已存在");
@@ -198,6 +235,11 @@ export async function manageAccount(change: AccountChange): Promise<string> {
 		case "set-role": {
 			const role = roleOf(change.role);
 			await withAccount(username, (tx, userId) => setRole(tx, userId, role));
+			break;
+		}
+		case "set-scope": {
+			const orgs = checkedOrgs(change.orgs);
+			await withAccount(username, (tx, userId) => setScope(tx, userId, orgs));
 			break;
 		}
 		case "disable":
@@ -264,6 +306,7 @@ export async function createUser(
 	username: string,
 	name: string,
 	admin: boolean,
+	orgs: readonly string[],
 ): Promise<string | null> {
 	const password = generatedPassword();
 	const account = {
@@ -271,7 +314,9 @@ export async function createUser(
 		name,
 		role: roleFor(admin),
 		password: await hashPassword(password),
+		orgs: checkedOrgs(orgs),
 	};
+	await onTree(account.orgs);
 	return db.transaction(async (tx) => {
 		const [actor] = await tx
 			.select(LOCKED)
@@ -314,6 +359,19 @@ export async function setUserRole(
 	);
 }
 
+/** 账号页换掉别人的账号的数据范围；下一次读取就按新的。 */
+export async function setUserScope(
+	adminId: string,
+	username: string,
+	orgs: readonly string[],
+) {
+	const checked = checkedOrgs(orgs);
+	await onTree(checked);
+	await changeUser(adminId, username, "set-scope", (tx, userId) =>
+		setScope(tx, userId, checked),
+	);
+}
+
 /** 账号页停用或恢复别人的账号。 */
 export async function setUserDisabled(
 	adminId: string,
@@ -333,6 +391,10 @@ export type AccountRow = {
 	name: string;
 	admin: boolean;
 	disabled: boolean;
+	/** 数据范围里的组织（部门路径）；没有数据范围的账号是空的，什么人都看不到 */
+	orgs: string[];
+	/** 此刻数据范围里有多少人 */
+	people: number;
 };
 
 /** 账号页的表：用户名或显示名称含这个词的账号，按用户名排，一页 `PAGE_SIZE` 行。 */
@@ -342,7 +404,7 @@ export async function listAccounts(
 ): Promise<TablePage<AccountRow>> {
 	const pattern = `%${escapeLike(needle.trim())}%`;
 	const from = "from auth_user where username ilike $1 or name ilike $1";
-	return withReadSnapshot(async (client) => {
+	return withReadSnapshot("all", async (client) => {
 		const found = await client.query<{ n: string }>(
 			`select count(*) as n ${from}`,
 			[pattern],
@@ -354,10 +416,17 @@ export async function listAccounts(
 			name: string;
 			role: string | null;
 			banned: boolean | null;
+			orgs: string[];
+			people: number;
 		}>(
-			`select username, name, role, banned ${from}
-			order by username
-			limit ${at.limit} offset ${at.offset}`,
+			`select u.username, u.name, u.role, u.banned,
+				array(select org_path from account_scope s
+					where s.user_id = u.id order by org_path) as orgs,
+				(select count(*)::int from scope_member m where m.user_id = u.id) as people
+			from (select * ${from}
+				order by username
+				limit ${at.limit} offset ${at.offset}) u
+			order by u.username`,
 			[pattern],
 		);
 		return tablePage(
@@ -366,10 +435,33 @@ export async function listAccounts(
 				name: row.name,
 				admin: isAdmin(row.role),
 				disabled: row.banned === true,
+				orgs: row.orgs,
+				people: row.people,
 			})),
 			total,
 			at,
 		);
+	});
+}
+
+/** 这个账号的数据范围里的组织，按路径排。 */
+export async function accountOrgs(userId: string): Promise<string[]> {
+	const rows = await db
+		.select({ org: accountScope.orgPath })
+		.from(accountScope)
+		.where(eq(accountScope.userId, userId))
+		.orderBy(accountScope.orgPath);
+	return rows.map((row) => row.org);
+}
+
+/** 此刻的组织树：账号页选数据范围时用，每个节点带它下面有多少人。 */
+export async function organizations(): Promise<OrgNode[]> {
+	return withReadSnapshot("all", async (client) => {
+		const { rows } = await client.query<{ path: string; people: number }>(
+			`select cur_dept_path as path, count(*)::int as people from employee
+			where cur_dept_path <> '' group by cur_dept_path`,
+		);
+		return orgTree(rows);
 	});
 }
 

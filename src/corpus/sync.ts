@@ -39,19 +39,20 @@ async function stageEmployee(
 	for (const chunk of chunked(rows, ROWS_PER_STATEMENT))
 		await client.query(
 			`insert into staged_employee (
-				emp_id, name, cur_dept, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3,
-				cur_level, cur_level_band, cur_level_rank, hire_date,
+				emp_id, name, cur_dept, cur_dept_path, cur_title, cur_seq_l1, cur_seq_l2,
+				cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date,
 				education_level, education_rank, school, school_tier, overseas_educated,
 				recruitment)
 			 select * from unnest(
 				$1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[],
-				$7::text[], $8::text[], $9::text[], $10::int[], $11::date[],
-				$12::text[], $13::int[], $14::text[], $15::text[], $16::boolean[],
-				$17::text[])`,
+				$7::text[], $8::text[], $9::text[], $10::text[], $11::int[], $12::date[],
+				$13::text[], $14::int[], $15::text[], $16::text[], $17::boolean[],
+				$18::text[])`,
 			[
 				chunk.map((row) => row.emp_id),
 				chunk.map((row) => row.name),
 				chunk.map((row) => row.cur_dept),
+				chunk.map((row) => row.cur_dept_path),
 				chunk.map((row) => row.cur_title),
 				chunk.map((row) => row.cur_seq_l1),
 				chunk.map((row) => row.cur_seq_l2),
@@ -114,7 +115,7 @@ async function stageExperience(
 }
 
 const EMPLOYEE_COLUMNS =
-	"emp_id, name, cur_dept, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date, education_level, education_rank, school, school_tier, overseas_educated, recruitment";
+	"emp_id, name, cur_dept, cur_dept_path, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date, education_level, education_rank, school, school_tier, overseas_educated, recruitment";
 const EXPERIENCE_COLUMNS =
 	"emp_id, kind, unemployed, start_date, end_date, company, department, department_path, company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months";
 

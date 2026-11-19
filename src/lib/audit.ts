@@ -12,6 +12,7 @@ export const AUDIT_ACTIONS = [
 	"revoke-admin",
 	"disable-account",
 	"enable-account",
+	"set-scope",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

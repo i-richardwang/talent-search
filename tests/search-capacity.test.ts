@@ -10,6 +10,13 @@ after(teardown);
 const { db } = await import("#/db");
 const { search } = await import("#/search/search");
 
+/**
+ * 成批写进来之后更新统计信息，和生产的表由 autovacuum 维护一样：读取策略让执行计划依赖它，
+ * 统计信息停在写入之前的表会选出慢得多的计划。
+ */
+const analyze = () =>
+	db.execute(sql`analyze employee, experience, experience_phrase`);
+
 beforeEach(async () => {
 	await db.execute(sql`truncate employee, phrase restart identity cascade`);
 });
@@ -37,6 +44,7 @@ test("被排除的人有再多段经历，也不导致有效候选溢出", async
 		from generate_series(1, ${FACT_MAX}) n returning id)
 		insert into experience_phrase (experience_id, route, phrase_id)
 		select a.id, 'title', p.id from added a cross join phrase p where p.text = '工程师'`);
+	await analyze();
 	const result = await search(
 		{
 			conditions: [
@@ -62,6 +70,7 @@ test("人员候选超过单语句参数上限时，加分门槛保留全部人�
 		from generate_series(1, 66000) n`);
 	await db.execute(sql`insert into experience (emp_id, kind, start_date, department, months)
 		values ('S00002', 'internal', date '2000-01-01', '合成偏好部门', 12)`);
+	await analyze();
 	const required = {
 		about: "person",
 		mode: "must",
@@ -134,6 +143,7 @@ test("经历候选超过单语句参数上限时，加分门槛保留全部证�
 		from generate_series(2, 66000) n returning id)
 		insert into experience_phrase (experience_id, route, phrase_id)
 		select a.id, 'title', p.id from added a cross join phrase p where p.text = '工程师'`);
+	await analyze();
 	const required = {
 		about: "experience",
 		mode: "must",

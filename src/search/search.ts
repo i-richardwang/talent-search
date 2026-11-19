@@ -5,11 +5,11 @@
 
 import "@tanstack/react-start/server-only";
 import { type SQL, sql } from "drizzle-orm";
-import { db } from "#/db";
+import { catalogSchema } from "#/db/catalog-schema";
 import { SHORT_ROUTES } from "#/db/schema";
-import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
+import { type DbExecutor, type Scope, withCorpusSnapshot } from "#/db/snapshot";
 import { escapeLike } from "#/lib/sql";
-import { catalogSchema, columnOf, rankOf } from "./catalog";
+import { columnOf, rankOf } from "./catalog";
 import type { NameField } from "./condition-label";
 import { NOT_A_VALUE, VOCAB_KEYS, type VocabKey } from "./dimensions";
 import { anyLike, execute, placeLike } from "./execute";
@@ -43,9 +43,10 @@ const MAX_FOUND = 40;
  * 正则写不对或跑得太久的给出原因。
  */
 export async function findPhrases(
+	scope: Scope,
 	patterns: readonly string[],
 ): Promise<PatternFinding[]> {
-	return withCorpusSnapshot(async (store) => {
+	return withCorpusSnapshot(scope, async (store) => {
 		const out: PatternFinding[] = [];
 		for (const pattern of new Set(patterns)) {
 			// 一种说法一行，外加不分说法的合计那一行（`name` 为空）
@@ -91,11 +92,12 @@ export async function findPhrases(
  * 公司名（`placeLike`），部门按公司内任职的部门名和部门路径，学校按人员档案。
  */
 export async function lookupNames(
+	scope: Scope,
 	field: NameField,
 	names: string[],
 ): Promise<NameFinding[]> {
 	const asked = [...new Set(names)];
-	return withCorpusSnapshot(async (store) => {
+	return withCorpusSnapshot(scope, async (store) => {
 		const out: NameFinding[] = [];
 		for (const name of asked) {
 			const matched =
@@ -166,8 +168,8 @@ const VOCAB_COLUMN: Record<
 };
 
 /** 查询理解能选择的语料取值和有这个值的人数（`valuesOf`）。各维在同一语料快照中读取。 */
-export async function vocabulary(): Promise<Vocabulary> {
-	return withCorpusSnapshot(async (store) => {
+export async function vocabulary(scope: Scope): Promise<Vocabulary> {
+	return withCorpusSnapshot(scope, async (store) => {
 		const vocab = {} as { [K in VocabKey]: Matched[] };
 		for (const key of VOCAB_KEYS) {
 			const { relation, column } = VOCAB_COLUMN[key];
@@ -200,16 +202,25 @@ const SUGGEST_MAX = 8;
  * （词表里并了的给标准写法，判成不是能力的不给），不显示人数：搜的时候按字面包含匹配，找到的人比写这一条的多。
  */
 export async function suggest(
+	scope: Scope,
 	field: KeywordField,
 	needle: string,
 ): Promise<Suggestion[]> {
 	const q = needle.trim();
 	if (!q) return [];
+	return withCorpusSnapshot(scope, (store) => suggestIn(store, field, q));
+}
+
+async function suggestIn(
+	store: DbExecutor,
+	field: KeywordField,
+	q: string,
+): Promise<Suggestion[]> {
 	const contains = `%${escapeLike(q)}%`;
 	const prefix = `${escapeLike(q)}%`;
 
 	if (field === "what") {
-		const { rows } = await db.execute<{ value: string }>(sql`
+		const { rows } = await store.execute<{ value: string }>(sql`
 			select coalesce(t.canonical, p.text) as value,
 				count(distinct e.emp_id)::int as people,
 				bool_or(p.text ilike ${prefix}) as lead
@@ -232,7 +243,7 @@ export async function suggest(
 			? sql`select school as value, emp_id from employee where school ilike ${contains}`
 			: sql`select ${PLACE_NAME[field]} as value, e.emp_id from experience e
 				where not e.unemployed and ${PLACE_NAME[field]} ilike ${contains}`;
-	const { rows } = await db.execute<{ value: string; people: number }>(sql`
+	const { rows } = await store.execute<{ value: string; people: number }>(sql`
 		select value, count(distinct emp_id)::int as people
 		from (${source}) t
 		where value <> ''

@@ -40,11 +40,11 @@ test("行业树、目录取值和提示词人数完整一致，超过一百项�
 			months: 12,
 		})),
 	);
-	const facts = await companyFacts();
+	const facts = await companyFacts("all");
 	assert.equal(facts.industries.length, names.length);
 	assert.equal(facts.recognized, names.length);
 	for (const column of ["main_industries", "industries"]) {
-		const found = await discover({ relation: "experience", column });
+		const found = await discover("all", { relation: "experience", column });
 		if (found.kind !== "values") throw new Error("该是一列取值");
 		assert.deepEqual(found.values.map((v) => v.name).toSorted(), names);
 		assert.ok(found.values.every((v) => v.people === 1));

@@ -17,7 +17,11 @@ import {
 	employee,
 	experience,
 } from "#/db/schema";
-import { withCorpusSnapshot, withReadSnapshot } from "#/db/snapshot";
+import {
+	type Scope,
+	withCorpusSnapshot,
+	withReadSnapshot,
+} from "#/db/snapshot";
 import type { Engagement } from "#/lib/engagement";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
@@ -34,13 +38,17 @@ export type EmployeeRow = Pick<
 	pending: number;
 };
 
-/** 按名字或工号找人，一页 `PAGE_SIZE` 个（`lib/paging.ts`）；不给词就按工号从头列。 */
+/**
+ * 在 `scope` 看得到的人里按名字或工号找，一页 `PAGE_SIZE` 个（`lib/paging.ts`）；不给词就按
+ * 工号从头列。
+ */
 export async function listEmployees(
+	scope: Scope,
 	needle: string,
 	page: unknown,
 ): Promise<TablePage<EmployeeRow>> {
 	const pattern = `%${escapeLike(needle.trim())}%`;
-	return withReadSnapshot(async (client) => {
+	return withReadSnapshot(scope, async (client) => {
 		const version = identity(await currentTree(client));
 		const found = await client.query<{ n: string }>(
 			"select count(*) as n from employee where name ilike $1 or emp_id ilike $1",
@@ -62,6 +70,20 @@ export async function listEmployees(
 			[version, pattern],
 		);
 		return tablePage(rows, total, at);
+	});
+}
+
+/** 这些工号是不是都在 `scope` 里。 */
+export async function allVisible(
+	scope: Scope,
+	empIds: readonly string[],
+): Promise<boolean> {
+	return withReadSnapshot(scope, async (client) => {
+		const { rows } = await client.query<{ n: number }>(
+			"select count(*)::int as n from employee where emp_id = any($1::text[])",
+			[empIds],
+		);
+		return rows[0]?.n === new Set(empIds).size;
 	});
 }
 
@@ -98,10 +120,12 @@ type EmployeeData = {
 	segments: SegmentView[];
 };
 
+/** `scope` 看得到的一个人的档案和每一段；看不到和没有这个人一样是 null。 */
 export async function employeeData(
+	scope: Scope,
 	empId: string,
 ): Promise<EmployeeData | null> {
-	return withReadSnapshot(async (client) => {
+	return withReadSnapshot(scope, async (client) => {
 		const version = identity(await currentTree(client));
 		const found = await client.query<EmployeeProfile>(
 			`select emp_id as "empId", name, cur_dept as "curDept", cur_title as "curTitle",
@@ -141,9 +165,15 @@ export async function employeeData(
 	});
 }
 
-/** 单人详情只读取展示所需的字段，存储身份与解析状态留在服务端。 */
-export function employeeDetail(empId: string): Promise<EmployeeDetail | null> {
-	return withCorpusSnapshot(async (store) => {
+/**
+ * 单人详情只读取展示所需的字段，存储身份与解析状态留在服务端。`scope` 看不到的人和没有
+ * 这个人一样是 null。
+ */
+export function employeeDetail(
+	scope: Scope,
+	empId: string,
+): Promise<EmployeeDetail | null> {
+	return withCorpusSnapshot(scope, async (store) => {
 		const [emp] = await store
 			.select({
 				empId: employee.empId,

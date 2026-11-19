@@ -14,6 +14,7 @@ import {
 import { Pool } from "pg";
 import { phrasesOf } from "#/corpus/route-texts";
 import {
+	accountScope,
 	auditEvent,
 	authAccount,
 	authSession,
@@ -36,11 +37,14 @@ import {
 	phrase,
 	recordStream,
 	reviewWord,
+	SCOPED_TABLES,
 	scale,
+	scopeMember,
 	searchTurn,
 	taskRun,
 	term,
 	termInUse,
+	visibleEmployee,
 } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
 import { compileConditions } from "#/search/compile";
@@ -609,6 +613,25 @@ function startModelServer() {
 /** 每个临时 schema 里都有的一个账号：测试里的找人任务记在它名下。 */
 export const OWNER = "synthetic-owner";
 
+/** 夹具里的人默认在的组织，也是 `OWNER` 的数据范围：没写组织的人 `OWNER` 都看得到。 */
+export const ORG = "合成集团";
+
+/** 建一个账号，数据范围是这几个组织；返回它的 id。 */
+export async function account(id: string, orgs: readonly string[]) {
+	const { db } = await import("#/db");
+	await db.insert(authUser).values({
+		id,
+		name: id,
+		email: `${id}@users.invalid`,
+		username: id,
+	});
+	if (orgs.length > 0)
+		await db
+			.insert(accountScope)
+			.values(orgs.map((orgPath) => ({ userId: id, orgPath })));
+	return id;
+}
+
 /**
  * 建立临时 schema 和合成端点，配置环境后才加载服务端单例。
  * 调用方必须 await setup() 后动态导入被测服务端模块；各文件使用 --parallel 隔离模块与环境。
@@ -623,6 +646,7 @@ export async function setup() {
 	await admin.query(`create schema ${SCHEMA}`);
 	for (const t of [
 		authUser,
+		accountScope,
 		authSession,
 		authAccount,
 		authVerification,
@@ -653,23 +677,51 @@ export async function setup() {
 		 values ($1, '合成账号', 'owner@users.invalid', 'synthetic.owner')`,
 		[OWNER],
 	);
+	await admin.query(
+		`insert into ${SCHEMA}.account_scope (user_id, org_path) values ($1, $2)`,
+		[OWNER, ORG],
+	);
 	// 视图里的表名不带 schema，建视图时按本文件的 schema 解析，绑定的就是本文件的表
 	await admin.query(`create schema ${CATALOG}`);
 	const viewClient = await admin.connect();
 	try {
 		await viewClient.query(`set search_path to ${SCHEMA}, public`);
+		const dialect = new PgDialect();
+		// 数据范围：先建「这一次读取看得到谁」，读取策略和目录视图都按它过滤
+		for (const view of [scopeMember, visibleEmployee]) {
+			const { name, query } = getViewConfig(view);
+			if (!query) throw new Error(`视图 ${name} 没有定义`);
+			await viewClient.query(
+				`create view ${SCHEMA}."${name}" as ${dialect.sqlToQuery(query).sql}`,
+			);
+		}
+		// 读取策略照 db:push 的样子建，不带条件：条件由 `db/snapshot.ts` 在第一次读之前写上，
+		// 和生产走同一条路
+		for (const t of SCOPED_TABLES) {
+			const { name, policies } = getTableConfig(t);
+			await viewClient.query(
+				`alter table ${SCHEMA}."${name}" enable row level security`,
+			);
+			for (const p of policies)
+				await viewClient.query(
+					`create policy "${p.name}" on ${SCHEMA}."${name}" for ${p.for} to ${String(p.to)}`,
+				);
+		}
 		for (const view of CATALOG_VIEWS) {
 			const { name, query } = getViewConfig(view);
 			if (!query) throw new Error(`目录视图 ${name} 没有定义`);
 			await viewClient.query(
-				`create view ${CATALOG}."${name}" as ${new PgDialect().sqlToQuery(query).sql}`,
+				`create view ${CATALOG}."${name}" as ${dialect.sqlToQuery(query).sql}`,
 			);
 		}
 		// 现在用着的词不在数据目录里，和表建在同一个 schema
 		const inUse = getViewConfig(termInUse);
 		if (!inUse.query) throw new Error(`视图 ${inUse.name} 没有定义`);
+		const invoker = inUse.with?.securityInvoker
+			? " with (security_invoker = true)"
+			: "";
 		await viewClient.query(
-			`create view ${SCHEMA}."${inUse.name}" as ${new PgDialect().sqlToQuery(inUse.query).sql}`,
+			`create view ${SCHEMA}."${inUse.name}"${invoker} as ${dialect.sqlToQuery(inUse.query).sql}`,
 		);
 		await viewClient.query("reset search_path");
 	} finally {
@@ -731,6 +783,8 @@ type Seed = {
 	name: string;
 	/** 夹具里职级自成一档，档高取名字里的数字（P6 → 6） */
 	curLevel?: string;
+	/** 此刻所在的部门路径，数据范围按它判断；默认在 `ORG` */
+	org?: string;
 	recruitment?: string;
 	education?: string;
 	school?: string;
@@ -849,7 +903,19 @@ export async function seedStream(s: StreamSeed) {
 			.values(s.records.map((r) => ({ ...r, stream: s.stream })));
 }
 
+/**
+ * 写进合成的人和经历，再更新这几张表的统计信息。生产的表由 autovacuum 维护统计信息；读取策略的
+ * 子查询让执行计划依赖它，从没分析过的表会选出慢得多的计划。
+ */
 export async function seed(rows: Seed[]) {
+	await insertSeed(rows);
+	const { db } = await import("#/db");
+	await db.execute(
+		sql`analyze employee, experience, experience_phrase, phrase, scale`,
+	);
+}
+
+async function insertSeed(rows: Seed[]) {
 	const { db } = await import("#/db");
 	const {
 		employee: emp,
@@ -868,6 +934,7 @@ export async function seed(rows: Seed[]) {
 			empId: r.empId,
 			name: r.name,
 			curLevel: r.curLevel ?? "",
+			curDeptPath: r.org ?? ORG,
 			curLevelBand: r.curLevel ?? "",
 			curLevelRank: r.curLevel ? rankOf(r.curLevel) : null,
 			recruitment: r.recruitment ?? "",
@@ -998,7 +1065,10 @@ export async function conclude(
 		select id from experience
 		where emp_id = any(${sql.param([...empIds])}::text[])
 			and (${title ?? null}::text is null or title = ${title ?? null})`);
-	const segments = await segmentTexts(rows.map((row) => row.id));
+	const segments = await segmentTexts(
+		rootTurnId,
+		rows.map((row) => row.id),
+	);
 	if (segments.size !== rows.length || rows.length === 0)
 		throw new Error(`没有找到要存结论的经历：${empIds.join("、")}`);
 	await saveVerdicts(

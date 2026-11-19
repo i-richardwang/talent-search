@@ -27,7 +27,7 @@
 import "@tanstack/react-start/server-only";
 import { inArray, type SQL, sql } from "drizzle-orm";
 import { employee, experience } from "#/db/schema";
-import type { DbExecutor } from "#/db/snapshot";
+import { chainScope, type DbExecutor } from "#/db/snapshot";
 import type { Engagement } from "#/lib/engagement";
 import { dots } from "#/lib/format";
 import { escapeLike } from "#/lib/sql";
@@ -990,6 +990,7 @@ async function prepared<T>(
 		c && seeks(c.condition) ? [{ index: i, seek: c.condition.seek }] : [],
 	);
 	return withMatchedPhrases(
+		chainScope(rootTurnId),
 		seeking.map((s) => s.seek),
 		async (store, perSeek) => {
 			const matched = new Map(

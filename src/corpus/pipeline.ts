@@ -5,6 +5,7 @@
  */
 
 import { type CompanyMeta, ORDINAL_STREAM } from "#/db/schema";
+import { orgPathOf } from "#/lib/org";
 import {
 	EDUCATION_LADDER,
 	type SourceAssignment,
@@ -27,6 +28,8 @@ export type EmployeeRow = {
 	emp_id: string;
 	name: string;
 	cur_dept: string;
+	/** 当前所在部门的完整路径，账号的数据范围按它判断；没有当前公司内任职时为空 */
+	cur_dept_path: string;
 	cur_title: string;
 	cur_seq_l1: string;
 	cur_seq_l2: string;
@@ -61,7 +64,7 @@ export type ExperienceRow = {
 	company: string;
 	/** 公司内任职的末级部门；入职前经历为空 */
 	department: string;
-	/** 公司内任职在段起始日有效的完整部门路径；入职前经历为空 */
+	/** 公司内任职在段起始日有效的完整部门路径（`lib/org.ts` 的写法）；入职前经历为空 */
 	department_path: string;
 	company_meta: CompanyMeta | null;
 	title: string;
@@ -232,7 +235,7 @@ function buildInternal(
 		start: parseDate(row.start_date),
 		end: parseDate(row.end_date),
 		department: row.department.trim(),
-		department_path: row.department_path.trim(),
+		department_path: orgPathOf(row.department_path),
 		title: row.title.trim(),
 		level: row.level.trim(),
 		seq_l1: row.seq_l1.trim(),
@@ -575,6 +578,7 @@ function buildEmployee(
 				emp_id: profile.emp_id,
 				name: profile.name,
 				cur_dept: current?.department ?? "",
+				cur_dept_path: current?.department_path ?? "",
 				cur_title: current?.title ?? "",
 				cur_seq_l1: current?.seq_l1 ?? "",
 				cur_seq_l2: current?.seq_l2 ?? "",
@@ -593,6 +597,9 @@ function buildEmployee(
 		});
 	if (unbanded.size)
 		report(`  当前职级不在职级表里 ${tallied(unbanded, "人")}，不进任何一档`);
+	const placeless = rows.filter((row) => !row.cur_dept_path).length;
+	if (placeless)
+		report(`  没有当前部门路径 ${placeless} 人，不在任何账号的数据范围里`);
 	return rows;
 }
 

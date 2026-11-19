@@ -8,6 +8,7 @@ import {
 	index,
 	integer,
 	jsonb,
+	pgPolicy,
 	pgSchema,
 	pgTable,
 	pgView,
@@ -19,6 +20,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { AUDIT_ACTIONS } from "#/lib/audit";
 import { ENGAGEMENTS } from "#/lib/engagement";
+import { ORG_SEPARATOR } from "#/lib/org";
 import { TASK_KINDS } from "#/lib/task";
 import type { TurnNotes } from "#/search/intent";
 import type { SearchSpec } from "#/search/spec";
@@ -47,6 +49,25 @@ export const authUser = pgTable("auth_user", {
 	banReason: text("ban_reason"),
 	banExpires: timestamp("ban_expires", { withTimezone: true }),
 });
+
+/**
+ * 账号的数据范围：一行一个组织（部门路径，`lib/org.ts` 的写法），
+ * 连同下面的各级。一个账号看得到的人，是此刻所在部门落在其中某个组织下的人
+ * （`visible_employee`）；最上一级（集团）就是全部有部门的人。建账号时必须给，账号页上改。
+ */
+export const accountScope = pgTable(
+	"account_scope",
+	{
+		userId: text("user_id")
+			.notNull()
+			.references(() => authUser.id, { onDelete: "cascade" }),
+		orgPath: text("org_path").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.userId, t.orgPath] }),
+		check("account_scope_org_path_set", sql`${t.orgPath} <> ''`),
+	],
+);
 
 export const authSession = pgTable(
 	"auth_session",
@@ -124,6 +145,57 @@ export type CompanyMeta = {
 	nature?: string;
 };
 
+/** 部门路径的分隔，写进视图定义的字面量。 */
+const SEPARATOR = sql.raw(`'${ORG_SEPARATOR}'`);
+
+/**
+ * 每个账号的数据范围里有谁：此刻所在部门是它某个组织本身或在它下面的人（`account_scope`，
+ * 和 `lib/org.ts` 的 `within` 同一条规则）。账号的组织互不包含（`orgsOf`），一个人在一个账号下
+ * 只有一行。谁看得见谁只在这里判断。
+ */
+const MEMBERS = sql`select s.user_id, e.emp_id
+	from account_scope s
+	join employee e
+		on starts_with(e.cur_dept_path || ${SEPARATOR}, s.org_path || ${SEPARATOR})`;
+
+/**
+ * 这一次读取看得到谁。读的一方在事务开头声明替谁读（`db/snapshot.ts`）：`talent.scope` 是一个
+ * 账号的 id，或 `*`（全部：命令行、验收、管理员管整个系统的页面）。没有声明时一个人都没有。
+ *
+ * 人员、经历、记录、边四张表的读取策略按它过滤（只约束切到读者角色的读取；写入方是表的属主，
+ * 不受策略约束）。数据目录的视图以属主身份执行，把它嵌进各自的条件里：db:push 先建目录的视图，
+ * 目录不能引用别的 schema 里的视图。
+ */
+const VISIBLE = sql`select emp_id from employee
+	where current_setting('talent.scope', true) = '*'
+	union all
+	select m.emp_id from (${MEMBERS}) m
+	where m.user_id = current_setting('talent.scope', true)`;
+
+/** 账号页数每个账号的范围里有多少人。 */
+export const scopeMember = pgView("scope_member", {
+	user_id: text("user_id").notNull(),
+	emp_id: text("emp_id").notNull(),
+}).as(MEMBERS);
+
+/** 这一次读取看得到的人，读取策略按它过滤。 */
+export const visibleEmployee = pgView("visible_employee", {
+	emp_id: text("emp_id").notNull(),
+}).as(VISIBLE);
+
+/**
+ * 这张表的一行属于看得见的人才读得到。db:push 建策略时不带条件、之后也不比较条件，条件由
+ * 每个进程第一次读之前照这里写上（`db/snapshot.ts`）：没写上之前读者一行都读不到。
+ * `visible_employee` 以属主身份执行，读 `employee` 时不再经过这条策略。
+ */
+function inScope(name: string, empId: AnyPgColumn) {
+	return pgPolicy(name, {
+		for: "select",
+		to: "public",
+		using: sql`${empId} in (select emp_id from visible_employee)`,
+	});
+}
+
 /**
  * 职级存原文、档名和档高，学历存档名和档高：筛选按档名，「某档及以上」按档高比
  * （`search/compile.ts`，模型写的条件同样查 `scale` 的档高）。档高和档名同有同无。
@@ -134,6 +206,8 @@ export const employee = pgTable(
 		empId: text("emp_id").primaryKey(),
 		name: text("name").notNull(),
 		curDept: text("cur_dept").notNull().default(""),
+		/** 当前所在部门的完整路径；账号的数据范围按它判断（`visible_employee`） */
+		curDeptPath: text("cur_dept_path").notNull().default(""),
 		curTitle: text("cur_title").notNull().default(""),
 		curSeqL1: text("cur_seq_l1").notNull().default(""),
 		curSeqL2: text("cur_seq_l2").notNull().default(""),
@@ -163,6 +237,7 @@ export const employee = pgTable(
 			"employee_education_ranked",
 			sql`(${t.educationLevel} = '') = (${t.educationRank} is null)`,
 		),
+		inScope("employee_in_scope", t.empId),
 	],
 );
 
@@ -238,6 +313,7 @@ export const experience = pgTable(
 			sql`${t.endDate} is null or ${t.endDate} >= ${t.startDate}`,
 		),
 		index("experience_emp").on(t.empId, t.startDate),
+		inScope("experience_in_scope", t.empId),
 	],
 );
 
@@ -344,6 +420,7 @@ export const employeeRecord = pgTable(
 			"employee_record_period_ordered",
 			sql`${t.periodEnd} is null or ${t.periodEnd} >= ${t.periodStart}`,
 		),
+		inScope("employee_record_in_scope", t.empId),
 	],
 );
 
@@ -352,6 +429,7 @@ export const employeeRecord = pgTable(
  * 以只读角色执行）。视图不含姓名，也不含简历原文：做过什么由命中表 `hit`
  * 回答（按字面捞到、AI 确认过的段），模型不按原文筛。每一列的中文名、含义和口径在 `search/catalog.ts`。
  * 空串一律读成 null：模型写 `is null` 就是「没有记录」。
+ * 视图以属主身份执行，带人的四个视图各自只留这一次读取看得到的人（`VISIBLE`）。
  */
 export const catalog = pgSchema("catalog");
 
@@ -380,7 +458,8 @@ export const catalogPerson = catalog
 		nullif(recruitment, '') as recruitment, hire_date,
 		nullif(cur_dept, '') as cur_dept, nullif(cur_seq_l1, '') as cur_seq_l1,
 		nullif(cur_seq_l2, '') as cur_seq_l2, nullif(cur_seq_l3, '') as cur_seq_l3
-	from employee`);
+	from employee
+	where emp_id in (${VISIBLE})`);
 
 /**
  * 一段工作经历；待业段不在这里。序列登记的优先，没有才取模型对齐的（两级成对）；
@@ -438,7 +517,7 @@ export const catalogExperience = catalog
 	from experience e
 	left join company_alias ca on ca.raw_name = e.company and e.kind = 'external'
 	left join company c on c.name = ca.company
-	where not e.unemployed`);
+	where not e.unemployed and e.emp_id in (${VISIBLE})`);
 
 /** 一期评级。`value_rank` 是这一档在档位表里的高低。 */
 export const catalogRating = catalog
@@ -454,7 +533,8 @@ export const catalogRating = catalog
 		s.rank as value_rank
 	from employee_record r
 	join record_stream rs on rs.stream = r.stream and rs.kind = 'rating'
-	left join scale s on s.stream = r.stream and s.value = r.value`);
+	left join scale s on s.stream = r.stream and s.value = r.value
+	where r.emp_id in (${VISIBLE})`);
 
 /** 一段状态；`valid_to` 为空表示仍有效。 */
 export const catalogStatus = catalog
@@ -468,7 +548,8 @@ export const catalogStatus = catalog
 	.as(sql`select r.emp_id, r.stream, r.value,
 		r.period_start as valid_from, r.period_end as valid_to
 	from employee_record r
-	join record_stream rs on rs.stream = r.stream and rs.kind = 'status'`);
+	join record_stream rs on rs.stream = r.stream and rs.kind = 'status'
+	where r.emp_id in (${VISIBLE})`);
 
 export const catalogScale = catalog
 	.view("scale", {
@@ -654,6 +735,12 @@ export const experiencePhrase = pgTable(
 			"experience_phrase_engagement_valid_1",
 			sql`${t.engagement} in ('主导', '做过', '提到')`,
 		),
+		// 段看得见，它的边才看得见：子查询读 experience 时那张表自己的策略同样生效
+		pgPolicy("experience_phrase_in_scope", {
+			for: "select",
+			to: "public",
+			using: sql`${t.experienceId} in (select id from experience)`,
+		}),
 	],
 );
 
@@ -721,29 +808,32 @@ export const termInUse = pgView("term_in_use", {
 	people: integer("people").notNull(),
 	/** 写了这一种写法本身的人；判定方起名、没人照这个写法写的更宽的词是 0 */
 	writers: integer("writers").notNull(),
-}).as(
-	/* 「谁写了哪个词」是不重复的集合（`written` 去重，`up` 的 union 不留重复），人数就是行数 */
-	sql`with recursive written as (
-		select distinct p.text as word, coalesce(t.canonical, p.text) as head, e.emp_id
-		from experience_phrase ep
-		join phrase p on p.id = ep.phrase_id
-		join experience e on e.id = ep.experience_id and not e.unemployed
-		left join term t on t.word = p.text
-		where ep.route in (${sql.raw(SHORT_ROUTES.map((route) => `'${route}'`).join(", "))})
-	), own as (
-		select word, head, count(*)::int as writers from written group by word, head
-	), up(word, emp_id) as (
-		select head, emp_id from written
-		union
-		select t.parent, up.emp_id from up
-		join term t on t.word = up.word and t.parent is not null
-	)
-	select under.word, under.people, coalesce(own.writers, 0) as writers
-	from (select word, count(*)::int as people from up group by word) under
-	left join own on own.word = under.word
-	union all
-	select word, writers, writers from own where word <> head`,
-);
+})
+	// 以读的一方的身份执行：请求读到的人数只数它数据范围里的人，整理（表的属主）数全部
+	.with({ securityInvoker: true })
+	.as(
+		/* 「谁写了哪个词」是不重复的集合（`written` 去重，`up` 的 union 不留重复），人数就是行数 */
+		sql`with recursive written as (
+			select distinct p.text as word, coalesce(t.canonical, p.text) as head, e.emp_id
+			from experience_phrase ep
+			join phrase p on p.id = ep.phrase_id
+			join experience e on e.id = ep.experience_id and not e.unemployed
+			left join term t on t.word = p.text
+			where ep.route in (${sql.raw(SHORT_ROUTES.map((route) => `'${route}'`).join(", "))})
+		), own as (
+			select word, head, count(*)::int as writers from written group by word, head
+		), up(word, emp_id) as (
+			select head, emp_id from written
+			union
+			select t.parent, up.emp_id from up
+			join term t on t.word = up.word and t.parent is not null
+		)
+		select under.word, under.people, coalesce(own.writers, 0) as writers
+		from (select word, count(*)::int as people from up group by word) under
+		left join own on own.word = under.word
+		union all
+		select word, writers, writers from own where word <> head`,
+	);
 
 /**
  * 不可变查询记录；仅待理解记录允许把 spec 从 null 补全一次。
@@ -908,3 +998,11 @@ export const auditEvent = pgTable(
 		),
 	],
 );
+
+/** 带读取策略的四张表：人员、经历、记录、边。 */
+export const SCOPED_TABLES = [
+	employee,
+	experience,
+	employeeRecord,
+	experiencePhrase,
+] as const;

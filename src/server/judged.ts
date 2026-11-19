@@ -11,8 +11,7 @@
 
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
-import { db } from "#/db";
-import type { DbExecutor } from "#/db/snapshot";
+import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
 import { dots } from "#/lib/format";
 import { criterionKey, SEGMENT_CONTENT } from "#/search/verdict";
 
@@ -59,13 +58,15 @@ function segmentText(row: SegmentRow): string {
 	return lines.join("\n");
 }
 
-/** 这些段各自的文字和内容，按段的 id。 */
+/** 这次找人任务看得到的这些段各自的文字和内容，按段的 id。 */
 export async function segmentTexts(
+	rootTurnId: string,
 	ids: readonly number[],
 ): Promise<Map<number, { content: string; text: string }>> {
 	const out = new Map<number, { content: string; text: string }>();
 	if (ids.length === 0) return out;
-	const { rows } = await db.execute<SegmentRow>(sql`
+	const { rows } = await withCorpusSnapshot({ chain: rootTurnId }, (store) =>
+		store.execute<SegmentRow>(sql`
 		select e.id, ${SEGMENT_CONTENT} as content, e.kind, e.company, e.department,
 			e.department_path, e.title, e.seq_l1, e.seq_l2, e.seq_l3, e.description,
 			coalesce((
@@ -74,7 +75,8 @@ export async function segmentTexts(
 				from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
 				where ep.experience_id = e.id and ep.route = 'skill'), '[]') as skills
 		from experience e
-		where e.id = any(${sql.param([...ids])}::int[])`);
+		where e.id = any(${sql.param([...ids])}::int[])`),
+	);
 	for (const row of rows)
 		out.set(row.id, { content: row.content, text: segmentText(row) });
 	return out;

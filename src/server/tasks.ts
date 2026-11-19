@@ -247,7 +247,7 @@ export async function taskLog(runId: number): Promise<string[]> {
 
 /** 当前标准下的解析进度。后台任务用它决定这一轮有没有活，任务台用它画进度。 */
 export async function deriveProgress(): Promise<DeriveProgress> {
-	return withReadSnapshot(async (client) =>
+	return withReadSnapshot("all", async (client) =>
 		progress(client, identity(await currentTree(client))),
 	);
 }

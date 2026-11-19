@@ -703,7 +703,7 @@ describe("跟人走的筛选", () => {
 	 * 没人验，而症状是模型对那一维永远挑不出值——不报错，只是少认一维。
 	 */
 	test("每一维都有词表，取值都是语料里真有的", async () => {
-		const v = await vocabulary();
+		const v = await vocabulary("all");
 		assert.deepEqual(Object.keys(v).sort(), [...VOCAB_KEYS].sort());
 		for (const key of VOCAB_KEYS) {
 			const names = v[key].map((x) => x.name);
@@ -1229,7 +1229,8 @@ describe("待业只属于时间线", () => {
 		assert.equal(gate.total, 0);
 		const { lookupNames } = await import("#/search/search");
 		assert.equal(
-			(await lookupNames("company", ["只在待业里的合成公司"]))[0]?.people,
+			(await lookupNames("all", "company", ["只在待业里的合成公司"]))[0]
+				?.people,
 			0,
 		);
 	});

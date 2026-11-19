@@ -64,36 +64,36 @@ describe("关键词候选", () => {
 	});
 
 	test("做过什么给标准词，写法也认，不带人数；没人写过的不给", async () => {
-		assert.deepEqual(await suggest("what", "个性化"), [
+		assert.deepEqual(await suggest("all", "what", "个性化"), [
 			{ value: "推荐系统", people: null },
 		]);
-		assert.deepEqual(await suggest("what", "推荐"), [
+		assert.deepEqual(await suggest("all", "what", "推荐"), [
 			{ value: "推荐系统", people: null },
 		]);
 	});
 
 	test("判成不是能力的词不给", async () => {
-		assert.deepEqual(await suggest("what", "周会"), []);
+		assert.deepEqual(await suggest("all", "what", "周会"), []);
 	});
 
 	test("公司只给入职前的公司名，部门只给公司内的部门名；开头是这几个字的排前面，人数按人不按段", async () => {
-		assert.deepEqual(await suggest("company", "星河"), [
+		assert.deepEqual(await suggest("all", "company", "星河"), [
 			{ value: "星河科技", people: 2 },
 			{ value: "银河星河事业部", people: 1 },
 		]);
-		assert.deepEqual(await suggest("department", "星河"), [
+		assert.deepEqual(await suggest("all", "department", "星河"), [
 			{ value: "银河星河事业部", people: 1 },
 		]);
 	});
 
 	test("学校按人员表数人", async () => {
-		assert.deepEqual(await suggest("school", "大学"), [
+		assert.deepEqual(await suggest("all", "school", "大学"), [
 			{ value: "东海大学", people: 2 },
 		]);
-		assert.deepEqual(await suggest("school", "  "), []);
+		assert.deepEqual(await suggest("all", "school", "  "), []);
 	});
 
 	test("通配符按字面匹配", async () => {
-		assert.deepEqual(await suggest("company", "%"), []);
+		assert.deepEqual(await suggest("all", "company", "%"), []);
 	});
 });

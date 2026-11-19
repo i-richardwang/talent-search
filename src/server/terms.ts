@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
 import { type SQL, sql } from "drizzle-orm";
-import { withCorpusSnapshot } from "#/db/snapshot";
+import { type Scope, withCorpusSnapshot } from "#/db/snapshot";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
 
@@ -70,8 +70,10 @@ export type TermDetail = Omit<TermEntry, "parent" | "children"> & {
 
 /**
  * 标签页的表，服务端搜索并分页。匹配标准词、此刻有人写的其他写法与它属于的那个词。
+ * 有没有人写、人数多少，都只数 `scope` 看得到的人。
  */
 export function listTerms(
+	scope: Scope,
 	needle: string,
 	page: unknown,
 	excluded: boolean,
@@ -84,7 +86,7 @@ export function listTerms(
 			where h.word ilike ${pattern} or h.parent ilike ${pattern}
 				or exists (select 1 from spellings s
 					where s.head = h.word and s.word ilike ${pattern}))`;
-	return withCorpusSnapshot(async (store) => {
+	return withCorpusSnapshot(scope, async (store) => {
 		const found = await store.execute<{ n: number }>(
 			sql`${MATCHED} select count(*)::int as n from matched`,
 		);
@@ -123,8 +125,11 @@ export function listTerms(
  * 更宽的那个词和每一项细分各带自己那一支的人数：这一层要答的是「这个词底下的人是从
  * 哪几支来的」，而光有名字答不了——顺着往下点之前，得先看得出哪一支下面有人。
  */
-export function describeTerm(word: string): Promise<TermDetail | null> {
-	return withCorpusSnapshot(async (store) => {
+export function describeTerm(
+	scope: Scope,
+	word: string,
+): Promise<TermDetail | null> {
+	return withCorpusSnapshot(scope, async (store) => {
 		const { rows } = await store.execute<TermDetail>(sql`
 			with ${IN_USE}, ${SPELLINGS}, ${NARROWER}, ${QUEUED},
 			named as (select coalesce(

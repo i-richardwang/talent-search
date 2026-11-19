@@ -100,7 +100,7 @@ describe("标签页", () => {
 	});
 
 	test("按标准词收拢，别名按字排，人多的在前，人数按人不按段、连同别名和下面的词；只列此刻有人写的", async () => {
-		const table = await listTerms("", 1, false);
+		const table = await listTerms("all", "", 1, false);
 		assert.deepEqual(table.rows, [
 			{
 				canonical: "推荐系统",
@@ -156,82 +156,85 @@ describe("标签页", () => {
 	});
 
 	test("找词认标准词、并进去的写法和它属于的那个更宽的词", async () => {
-		const byCanonical = await listTerms("Python", 1, false);
+		const byCanonical = await listTerms("all", "Python", 1, false);
 		assert.deepEqual(
 			byCanonical.rows.map((row) => row.canonical),
 			["Python"],
 		);
 		// 「个性化推荐」是并进「推荐系统」的写法，搜它出的是标准词那一行
-		const byAlias = await listTerms("个性化推荐", 1, false);
+		const byAlias = await listTerms("all", "个性化推荐", 1, false);
 		assert.deepEqual(
 			byAlias.rows.map((row) => row.canonical),
 			["推荐系统"],
 		);
 		// 「电商推荐系统」属于「推荐系统」，搜父词时两行都在
-		const byParent = await listTerms("推荐系统", 1, false);
+		const byParent = await listTerms("all", "推荐系统", 1, false);
 		assert.deepEqual(
 			byParent.rows.map((row) => row.canonical),
 			["推荐系统", "电商推荐系统"],
 		);
 		// 没人写的写法和词不算搜到
-		assert.deepEqual((await listTerms("推荐引擎", 1, false)).rows, []);
-		assert.deepEqual((await listTerms("Hadoop", 1, false)).rows, []);
-		const none = await listTerms("没有这个词", 1, false);
+		assert.deepEqual((await listTerms("all", "推荐引擎", 1, false)).rows, []);
+		assert.deepEqual((await listTerms("all", "Hadoop", 1, false)).rows, []);
+		const none = await listTerms("all", "没有这个词", 1, false);
 		assert.deepEqual(none.rows, []);
 		assert.equal(none.total, 0);
 		assert.equal(none.pages, 1);
 	});
 
 	test("判成不是能力的词不在标签那张表里，单独一张表，详情写明它不是能力", async () => {
-		const found = await listTerms("周报", 1, false);
+		const found = await listTerms("all", "周报", 1, false);
 		assert.deepEqual(found.rows, []);
 		assert.equal(found.total, 0);
 		// 「日报」也判成了不是能力，但没人写：不列
-		const excluded = await listTerms("", 1, true);
+		const excluded = await listTerms("all", "", 1, true);
 		assert.deepEqual(
 			excluded.rows.map((row) => row.canonical),
 			["周报"],
 		);
-		assert.equal((await describeTerm("周报"))?.excluded, true);
-		assert.equal((await describeTerm("推荐系统"))?.excluded, false);
-		assert.equal(await describeTerm("没有这个词"), null);
+		assert.equal((await describeTerm("all", "周报"))?.excluded, true);
+		assert.equal((await describeTerm("all", "推荐系统"))?.excluded, false);
+		assert.equal(await describeTerm("all", "没有这个词"), null);
 	});
 
 	test("详情从并进去的写法认回标准词，细分和更宽的词各带人数；没人写的词没有详情", async () => {
-		const detail = await describeTerm("推荐算法");
+		const detail = await describeTerm("all", "推荐算法");
 		assert.equal(detail?.canonical, "推荐系统");
 		// 「推荐算法」「推荐引擎」没人写，不算其他写法
 		assert.deepEqual(detail?.aliases, ["个性化推荐"]);
 		assert.deepEqual(detail?.children, [
 			{ canonical: "电商推荐系统", people: 1 },
 		]);
-		assert.deepEqual((await describeTerm("Spark"))?.parent, {
+		assert.deepEqual((await describeTerm("all", "Spark"))?.parent, {
 			canonical: "大数据",
 			people: 1,
 		});
-		assert.equal(await describeTerm("Hadoop"), null);
+		assert.equal(await describeTerm("all", "Hadoop"), null);
 		// 地址上手写一个没人写了的写法，它那一项还有人写：给那一项
-		assert.equal((await describeTerm("推荐引擎"))?.canonical, "推荐系统");
+		assert.equal(
+			(await describeTerm("all", "推荐引擎"))?.canonical,
+			"推荐系统",
+		);
 	});
 
 	test("一项里有词在队列里等着判时是等待判定", async () => {
 		const { pool } = await import("#/db");
 		const pendingRows = async () =>
 			Object.fromEntries(
-				(await listTerms("", 1, false)).rows.map((row) => [
+				(await listTerms("all", "", 1, false)).rows.map((row) => [
 					row.canonical,
 					row.pending,
 				]),
 			);
-		assert.equal((await describeTerm("推荐系统"))?.pending, false);
+		assert.equal((await describeTerm("all", "推荐系统"))?.pending, false);
 		// 并进去的写法在队列里，等的是它所在的那一项；还没进词表的词等的是它自己
 		await pool.query(
 			`insert into review_word (guide_identity, word, people, near)
 			 values ('${"0".repeat(64)}', '个性化推荐', 1, '[]'::jsonb),
 			        ('${"0".repeat(64)}', 'Flink', 1, '[]'::jsonb)`,
 		);
-		assert.equal((await describeTerm("推荐系统"))?.pending, true);
-		assert.equal((await describeTerm("Flink"))?.pending, true);
+		assert.equal((await describeTerm("all", "推荐系统"))?.pending, true);
+		assert.equal((await describeTerm("all", "Flink"))?.pending, true);
 		assert.deepEqual(await pendingRows(), {
 			推荐系统: true,
 			Flink: true,

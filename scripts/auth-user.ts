@@ -6,11 +6,14 @@ import { listAccounts, manageAccount } from "../src/server/accounts";
 
 const USAGE = `用法：
   bun run auth:user list
-  bun run auth:user create --username 用户名 [--name 显示名称] [--role user|admin]
+  bun run auth:user create --username 用户名 --org 组织 [--org 组织…] [--name 显示名称] [--role user|admin]
+  bun run auth:user set-scope --username 用户名 --org 组织 [--org 组织…]
   bun run auth:user reset-password --username 用户名
   bun run auth:user set-role --username 用户名 --role user|admin
   bun run auth:user disable --username 用户名
-  bun run auth:user enable --username 用户名`;
+  bun run auth:user enable --username 用户名
+
+组织写完整的部门路径，级与级之间用「>」，要加引号，如 --org "示例科技>技术中心"；写最上一级（集团）就是全部有部门的人。`;
 
 const { values, positionals } = parseArgs({
 	args: process.argv.slice(2),
@@ -19,6 +22,7 @@ const { values, positionals } = parseArgs({
 		username: { type: "string" },
 		name: { type: "string" },
 		role: { type: "string" },
+		org: { type: "string", multiple: true },
 	},
 });
 
@@ -61,7 +65,7 @@ async function askPassword(): Promise<string> {
 /** 做命令行说的那件事，返回要打印的内容。每个动作只收它用得上的参数，多了少了都给用法。 */
 async function run(): Promise<string> {
 	const [action, ...rest] = positionals;
-	const { username, name, role } = values;
+	const { username, name, role, org } = values;
 	const given = Object.keys(values).sort().join(" ");
 	const takes = (...options: string[]) => {
 		if (rest.length > 0 || given !== options.sort().join(" "))
@@ -84,6 +88,7 @@ async function run(): Promise<string> {
 							account.username,
 							account.name,
 							account.admin ? "管理员" : "普通用户",
+							account.orgs.join("、") || "没有数据范围",
 							account.disabled ? "已停用" : "",
 						]
 							.filter(Boolean)
@@ -93,8 +98,14 @@ async function run(): Promise<string> {
 			return lines.join("\n");
 		}
 		case "create": {
-			if (rest.length > 0) throw new Error(USAGE);
-			const account = { action, username: need(username), name, role };
+			if (rest.length > 0 || !org?.length) throw new Error(USAGE);
+			const account = {
+				action,
+				username: need(username),
+				name,
+				role,
+				orgs: org,
+			};
 			const password = await askPassword();
 			return `已创建账号：${await manageAccount({ ...account, password })}`;
 		}
@@ -110,6 +121,13 @@ async function run(): Promise<string> {
 				action,
 				username: need(username),
 				role: need(role),
+			})}`;
+		case "set-scope":
+			takes("org", "username");
+			return `已修改数据范围：${await manageAccount({
+				action,
+				username: need(username),
+				orgs: org ?? [],
 			})}`;
 		case "disable":
 			takes("username");

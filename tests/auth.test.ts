@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { isAdmin, loginDestination } from "#/lib/auth";
-import { seed, setup } from "./fixture";
+import { ORG, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
@@ -19,6 +19,7 @@ const {
 	resetUserPassword,
 	setUserDisabled,
 	setUserRole,
+	setUserScope,
 } = await import("#/server/accounts");
 const { listAudit } = await import("#/server/audit");
 const { pool } = await import("#/db");
@@ -136,16 +137,23 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 		(e: unknown) => e instanceof Response && e.status === 401,
 	);
 	await assert.rejects(
-		manageAccount({ action: "create", username: "weak", password: "short" }),
+		manageAccount({
+			action: "create",
+			orgs: [ORG],
+			username: "weak",
+			password: "short",
+		}),
 		/密码/,
 	);
 	await manageAccount({
 		action: "create",
+		orgs: [ORG],
 		username: "Sample.User",
 		password: PASSWORD,
 	});
 	await manageAccount({
 		action: "create",
+		orgs: [ORG],
 		username: "sample.admin",
 		role: "admin",
 		password: PASSWORD,
@@ -153,6 +161,7 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 	await assert.rejects(
 		manageAccount({
 			action: "create",
+			orgs: [ORG],
 			username: "SAMPLE.USER",
 			password: PASSWORD,
 		}),
@@ -257,6 +266,7 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 test("停用撤销登录并挡住再登录，恢复后照常；改角色下一次请求生效；账号不删除", async () => {
 	await manageAccount({
 		action: "create",
+		orgs: [ORG],
 		username: "leaving.user",
 		name: "合成离职同事",
 		password: PASSWORD,
@@ -276,6 +286,8 @@ test("停用撤销登录并挡住再登录，恢复后照常；改角色下一�
 			name: "合成离职同事",
 			admin: false,
 			disabled: true,
+			orgs: [ORG],
+			people: 1,
 		},
 	]);
 
@@ -313,6 +325,7 @@ test("停用撤销登录并挡住再登录，恢复后照常；改角色下一�
 test("改自己的密码要当前密码；改完别处的登录失效，旧密码不能再用", async () => {
 	await manageAccount({
 		action: "create",
+		orgs: [ORG],
 		username: "changing.user",
 		password: PASSWORD,
 	});
@@ -353,6 +366,7 @@ test("改自己的密码要当前密码；改完别处的登录失效，旧密�
 test("账号页管别人的账号：建号和重置交出生成的密码，改角色、停用恢复照常，自己的账号动不了，每件都记进操作记录", async () => {
 	await manageAccount({
 		action: "create",
+		orgs: [ORG],
 		username: "page.admin",
 		name: "合成管理员",
 		role: "admin",
@@ -365,13 +379,47 @@ test("账号页管别人的账号：建号和重置交出生成的密码，改�
 	).rows[0]?.id;
 	assert.ok(adminId);
 
-	const initial = await createUser(adminId, " Page.User ", "", false);
-	assert.ok(initial && initial.length === 16);
-	assert.equal(await createUser(adminId, "PAGE.USER", "合成重名", false), null);
-	await assert.rejects(createUser(adminId, "x", "", false), /用户名/);
-	assert.deepEqual((await listAccounts("page.user", 1)).rows, [
-		{ username: "page.user", name: "page.user", admin: false, disabled: false },
+	await seed([
+		{
+			empId: "P1",
+			name: "合成员工甲",
+			org: `${ORG}>出行事业部>运营部`,
+			segments: [],
+		},
+		{ empId: "P2", name: "合成员工乙", org: `${ORG}>金融事业部`, segments: [] },
 	]);
+	const moving = `${ORG}>出行事业部`;
+	await assert.rejects(
+		createUser(adminId, "page.user", "", false, []),
+		/数据范围/,
+		"建账号必须给数据范围",
+	);
+	await assert.rejects(
+		createUser(adminId, "page.user", "", false, [`${ORG}>没有这个部门`]),
+		/组织树上没有/,
+	);
+	const initial = await createUser(adminId, " Page.User ", "", false, [
+		` ${moving} > 运营部 `,
+		moving,
+	]);
+	assert.ok(initial && initial.length === 16);
+	assert.equal(
+		await createUser(adminId, "PAGE.USER", "合成重名", false, [ORG]),
+		null,
+	);
+	await assert.rejects(createUser(adminId, "x", "", false, [ORG]), /用户名/);
+	assert.deepEqual((await listAccounts("page.user", 1)).rows, [
+		{
+			username: "page.user",
+			name: "page.user",
+			admin: false,
+			disabled: false,
+			orgs: [moving],
+			people: 1,
+		},
+	]);
+	await setUserScope(adminId, "page.user", [`${ORG}>金融事业部`, moving]);
+	assert.equal((await listAccounts("page.user", 1)).rows[0]?.people, 2);
 	const headers = await login("page.user", initial);
 	assert.equal((await requireViewer(headers)).admin, false);
 
@@ -406,6 +454,7 @@ test("账号页管别人的账号：建号和重置交出生成的密码，改�
 		"page.second",
 		"合成第二管理员",
 		true,
+		[ORG],
 	);
 	assert.ok(second);
 	assert.equal(
@@ -421,6 +470,7 @@ test("账号页管别人的账号：建号和重置交出生成的密码，改�
 		() => resetUserPassword(adminId, "page.admin"),
 		() => setUserRole(adminId, "page.admin", false),
 		() => setUserDisabled(adminId, "page.admin", true),
+		() => setUserScope(adminId, "page.admin", [ORG]),
 	])
 		await assert.rejects(attempt(), /不能在账号页改自己的账号/);
 	await assert.rejects(
@@ -443,6 +493,7 @@ test("账号页管别人的账号：建号和重置交出生成的密码，改�
 			["page.admin", "enable-account", "page.user"],
 			["page.admin", "disable-account", "page.user"],
 			["page.admin", "reset-password", "page.user"],
+			["page.admin", "set-scope", "page.user"],
 			["page.admin", "create-account", "page.user"],
 		],
 		"被拒绝和没建成的不留痕",
@@ -453,6 +504,7 @@ test("两个管理员同时互相取消管理员：一个成，一个被拒，�
 	const admin = async (username: string) => {
 		await manageAccount({
 			action: "create",
+			orgs: [ORG],
 			username,
 			role: "admin",
 			password: PASSWORD,

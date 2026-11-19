@@ -1,3 +1,4 @@
+import { type OrgNode, orgTree } from "#/lib/org";
 import { PAGE_SIZE, pageAt, RUNS_PAGE, tablePage } from "#/lib/paging";
 import type { AccountRow } from "#/server/accounts";
 import type { AuditRow } from "#/server/audit";
@@ -298,13 +299,38 @@ const HR = { name: "招聘同事", username: "hr_user" };
 const ADMIN = { name: "管理员", username: "admin" };
 const LEFT = { name: "离职同事", username: "former_user" };
 
+/** 账号页选数据范围时的组织树：每个部门路径此刻有多少人，由 `orgTree` 拼成树。 */
+export const ORG_TREE: OrgNode[] = orgTree([
+	{ path: "示例科技>技术中心>平台技术部", people: 412 },
+	{ path: "示例科技>技术中心>推荐算法部", people: 268 },
+	{ path: "示例科技>技术中心>搜索推荐部", people: 197 },
+	{ path: "示例科技>技术中心>推荐平台部", people: 387 },
+	{ path: "示例科技>增长中心>用户增长部", people: 203 },
+	{ path: "示例科技>增长中心>渠道运营部", people: 115 },
+	{ path: "示例科技>出行事业部>运营部", people: 1630 },
+	{ path: "示例科技>出行事业部>产品部", people: 540 },
+	{ path: "示例科技>职能中心>人力资源部", people: 458 },
+]);
+
 /**
  * 账号页的账号：一个管理员，一个在用的普通账号，一个停用了的。
  */
 export const ACCOUNT_ROWS: AccountRow[] = [
-	{ ...ADMIN, admin: true, disabled: false },
-	{ ...LEFT, admin: false, disabled: true },
-	{ ...HR, admin: false, disabled: false },
+	{ ...ADMIN, admin: true, disabled: false, orgs: ["示例科技"], people: 4210 },
+	{
+		...LEFT,
+		admin: false,
+		disabled: true,
+		orgs: ["示例科技>增长中心"],
+		people: 318,
+	},
+	{
+		...HR,
+		admin: false,
+		disabled: false,
+		orgs: ["示例科技>技术中心", "示例科技>增长中心>用户增长部"],
+		people: 1467,
+	},
 ];
 
 /**
