@@ -225,7 +225,7 @@ export function reader({
 			const parts = waveOf(tried.unconfirmed, room());
 			if (parts.length === 0)
 				return { kind: "read", conditions: [...tally.values()], left };
-			const texts = await segmentTexts([
+			const texts = await segmentTexts(rootTurnId, [
 				...new Set(parts.flatMap((part) => part.experienceIds)),
 			]);
 			const wave = batchesOf(parts, texts);

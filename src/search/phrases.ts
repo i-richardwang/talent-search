@@ -10,7 +10,7 @@
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
 import { db } from "#/db";
-import { type DbExecutor, withCorpusSnapshot } from "#/db/snapshot";
+import { type DbExecutor, type Scope, withCorpusSnapshot } from "#/db/snapshot";
 import type { Seek } from "./query";
 
 /** 一条「做过什么」捞到的说法，或者它为什么找不了。 */
@@ -91,13 +91,14 @@ async function patternProblem(seek: Seek): Promise<string | null> {
 	return null;
 }
 
-/** 在同一语料快照里给出每条「做过什么」捞到的说法，再交给 `use` 取数。结果按 `seeks` 的下标。 */
+/** 在替 `scope` 读的同一语料快照里给出每条「做过什么」捞到的说法，再交给 `use` 取数。结果按 `seeks` 的下标。 */
 export async function withMatchedPhrases<T>(
+	scope: Scope,
 	seeks: readonly Seek[],
 	use: (store: DbExecutor, matched: MatchedPhrases[]) => Promise<T>,
 ): Promise<T> {
 	const problems = await Promise.all(seeks.map(patternProblem));
-	return withCorpusSnapshot(async (store) => {
+	return withCorpusSnapshot(scope, async (store) => {
 		const matched: MatchedPhrases[] = [];
 		for (const [i, seek] of seeks.entries()) {
 			const problem = problems[i];

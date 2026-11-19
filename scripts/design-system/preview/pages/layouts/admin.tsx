@@ -14,6 +14,7 @@ import {
 	AUDIT_ROWS,
 	EMPLOYEE_ROWS,
 	EXCLUDED_ROWS,
+	ORG_TREE,
 	SEGMENTS,
 	SKILL_ROWS,
 	TASK_LANES,
@@ -196,6 +197,8 @@ function Accounts() {
 							? null
 							: SAMPLE_PASSWORD,
 					reset: async () => SAMPLE_PASSWORD,
+					setScope: async () => {},
+					orgs: async () => ORG_TREE,
 					setAdmin: async () => {},
 					setDisabled: async () => {},
 				}}

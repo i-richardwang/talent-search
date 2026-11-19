@@ -254,7 +254,7 @@ const CATALOG = [
 	},
 	{
 		content: "document",
-		description: "人才搜索自己的组件：证据、经历、名单、对话与状态。",
+		description: "人才搜索自己的组件：证据、经历、名单、对话、状态与组织树。",
 		icon: BriefcaseBusiness,
 		id: "product",
 		pages: [
@@ -293,6 +293,12 @@ const CATALOG = [
 				slug: "status-badge",
 				source: ["src/routes/-components/status-badge.tsx"],
 				title: "运行状态",
+			},
+			{
+				name: "OrgPicker",
+				slug: "org-picker",
+				source: ["src/routes/accounts/-components/org-picker.tsx"],
+				title: "组织树",
 			},
 		],
 		title: "业务组件",

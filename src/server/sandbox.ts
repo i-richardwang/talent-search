@@ -13,13 +13,9 @@ import "@tanstack/react-start/server-only";
 import { type SQL, sql } from "drizzle-orm";
 import { loadModule, parseSync, type ScanToken, scanSync } from "libpg-query";
 import { pool } from "#/db";
+import { catalogSchema } from "#/db/catalog-schema";
 import type { DbExecutor } from "#/db/snapshot";
-import {
-	CATALOG,
-	type CatalogRelation,
-	catalogSchema,
-	HIT,
-} from "#/search/catalog";
+import { CATALOG, type CatalogRelation, HIT } from "#/search/catalog";
 import { WHERE_MAX } from "#/search/query";
 
 /** 只读角色的名字。它只有目录视图的 SELECT，由 `ensureQueryRole` 建好并授权。 */

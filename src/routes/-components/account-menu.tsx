@@ -13,18 +13,19 @@ import {
 } from "#/components/ui/dropdown-menu";
 import { toast } from "#/components/ui/toast";
 import { dots } from "#/lib/format";
+import { orgName } from "#/lib/org";
 import { changePassword } from "#/server/auth-functions";
 import { authClient } from "../-lib/auth-client";
 import { PasswordDialog } from "./password-dialog";
 
 /**
- * 导航栏顶上的当前账号。点开是账号菜单：上面是头像、名字、用户名和角色，下面是修改密码和
- * 退出登录。退出成功后整页换到登录页，没退成给一句提示。
+ * 导航栏顶上的当前账号。点开是账号菜单：上面是头像、名字、用户名和角色，再下一行是数据范围
+ * （看得到哪些组织的人）；下面是修改密码和退出登录。退出成功后整页换到登录页，没退成给一句提示。
  */
 export function AccountMenu({
 	user,
 }: {
-	user: { name: string; username: string; admin: boolean };
+	user: { name: string; username: string; admin: boolean; orgs: string[] };
 }) {
 	const [changing, setChanging] = useState(false);
 	const signOut = async () => {
@@ -54,6 +55,14 @@ export function AccountMenu({
 									<p className="truncate font-semibold">{user.name}</p>
 									<p className="truncate text-fg-secondary text-xs">
 										{dots(user.username, user.admin ? "管理员" : null)}
+									</p>
+									<p
+										className="truncate text-fg-secondary text-xs"
+										title={user.orgs.join("\n")}
+									>
+										{user.orgs.length > 0
+											? `数据范围：${user.orgs.map(orgName).join("、")}`
+											: "还没有数据范围，请联系管理员"}
 									</p>
 								</div>
 							</DropdownMenuHeader>

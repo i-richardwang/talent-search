@@ -70,6 +70,7 @@ import { ReadingPage } from "./patterns/reading";
 import { StatesPage } from "./patterns/states";
 import { CareerBarPage } from "./product/career-bar";
 import { EvidencePage } from "./product/evidence";
+import { OrgPickerPage } from "./product/org-picker";
 import { ResultListPage } from "./product/result-list";
 import { StatusBadgePage } from "./product/status-badge";
 import { ThreadPage } from "./product/thread";
@@ -146,6 +147,7 @@ export const PAGES: Record<PreviewPageId, ComponentType> = {
 	"product/result-list": ResultListPage,
 	"product/thread": ThreadPage,
 	"product/status-badge": StatusBadgePage,
+	"product/org-picker": OrgPickerPage,
 	"layouts/login": LoginPage,
 	"layouts/home": HomePage,
 	"layouts/workspace": WorkspacePage,

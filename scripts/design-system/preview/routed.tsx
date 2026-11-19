@@ -9,7 +9,7 @@ import {
 import { createContext, type ReactNode, use, useState } from "react";
 import { type NavPrefs, navPrefsOf } from "#/routes/-lib/nav-prefs";
 import { StaticRecents } from "#/routes/-lib/recents";
-import type { viewer } from "#/server/access";
+import type { currentUser } from "#/server/auth-functions";
 import type { RecentPage } from "#/server/turn";
 import { OUTCOME } from "./samples/people";
 import { RECENT, THREAD } from "./samples/thread";
@@ -45,7 +45,7 @@ export type RootData = {
 	nav: NavPrefs;
 	recent: RecentPage | null;
 	understanding: boolean;
-	user: Awaited<ReturnType<typeof viewer>>;
+	user: Awaited<ReturnType<typeof currentUser>>;
 };
 
 const ROOT_DATA: RootData = {
@@ -54,6 +54,7 @@ const ROOT_DATA: RootData = {
 		name: "演示管理员",
 		username: "admin",
 		admin: true,
+		orgs: ["示例科技"],
 	},
 	nav: navPrefsOf(undefined),
 	recent: { next: null, rows: RECENT, total: RECENT.length },

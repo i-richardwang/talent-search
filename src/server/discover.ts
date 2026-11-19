@@ -7,8 +7,9 @@
  */
 import "@tanstack/react-start/server-only";
 import { sql } from "drizzle-orm";
-import { withCorpusSnapshot } from "#/db/snapshot";
-import { CATALOG, catalogSchema, columnOf } from "#/search/catalog";
+import { catalogSchema } from "#/db/catalog-schema";
+import { type Scope, withCorpusSnapshot } from "#/db/snapshot";
+import { CATALOG, columnOf } from "#/search/catalog";
 import type { NameField } from "#/search/condition-label";
 import { lookupNames, valuesOf } from "#/search/search";
 import type { CompanyFacts, Discovery, StreamFact } from "#/search/trace";
@@ -25,8 +26,8 @@ const NAME_COLUMNS: Record<string, Record<string, NameField>> = {
  * 开始日。评级流的取值是档位表里的档，从低到高；状态流的取值和看这条流的 `value` 列得到的是
  * 同一份（`valuesOf`），人多的在前。
  */
-export async function streamFacts(): Promise<StreamFact[]> {
-	return withCorpusSnapshot(async (store) => {
+export async function streamFacts(scope: Scope): Promise<StreamFact[]> {
+	return withCorpusSnapshot(scope, async (store) => {
 		const { rows } = await store.execute<StreamFact>(sql`
 			select s.stream, s.label, s.kind, s.period,
 				count(distinct r.emp_id)::int as people,
@@ -57,8 +58,8 @@ export async function streamFacts(): Promise<StreamFact[]> {
  * 入职前那些公司的概况。行业两列的人数和看这两列取值得到的是同一份（`valuesOf`），
  * 这里按行业树排好：上级在前，下级跟在它后面。
  */
-export async function companyFacts(): Promise<CompanyFacts> {
-	return withCorpusSnapshot(async (store) => {
+export async function companyFacts(scope: Scope): Promise<CompanyFacts> {
+	return withCorpusSnapshot(scope, async (store) => {
 		const view = sql`${sql.identifier(catalogSchema())}.experience`;
 		const [tree, main, any, circles, natures, coverage] = [
 			await store.execute<{ name: string; parent: string | null }>(
@@ -121,9 +122,12 @@ type DiscoverInput = {
 	match?: string[];
 };
 
-/** 一问 → 一份回答。问不了的（没有这一列、这一列不能列取值）回一句原因。 */
-export async function discover(input: DiscoverInput): Promise<Discovery> {
-	if (!input.relation) return overview();
+/** 替 `scope` 一问 → 一份回答。问不了的（没有这一列、这一列不能列取值）回一句原因。 */
+export async function discover(
+	scope: Scope,
+	input: DiscoverInput,
+): Promise<Discovery> {
+	if (!input.relation) return overview(scope);
 	const relation = CATALOG.find((r) => r.name === input.relation);
 	if (!relation)
 		return problem(
@@ -140,7 +144,11 @@ export async function discover(input: DiscoverInput): Promise<Discovery> {
 		const names = input.match ?? [];
 		if (names.length === 0)
 			return problem(`${column} 按名字包含匹配：在 match 里写要找的名字`);
-		return { kind: "names", subject, found: await lookupNames(field, names) };
+		return {
+			kind: "names",
+			subject,
+			found: await lookupNames(scope, field, names),
+		};
 	}
 	if (!declared.values)
 		return problem(
@@ -150,19 +158,19 @@ export async function discover(input: DiscoverInput): Promise<Discovery> {
 	const stream = byStream ? input.stream : undefined;
 	if (byStream && column === "value" && !stream)
 		return problem("各条记录流的取值不一样：在 stream 里写是哪一条流");
-	const streamLabel = stream ? await labelOf(stream) : null;
+	const streamLabel = stream ? await labelOf(scope, stream) : null;
 	if (stream && !streamLabel) return problem(`没有 ${stream} 这条记录流`);
 	return {
 		kind: "values",
 		subject: streamLabel ? `${streamLabel}的${subject}` : subject,
-		values: await withCorpusSnapshot((store) =>
+		values: await withCorpusSnapshot(scope, (store) =>
 			valuesOf(store, relation.name, column, stream),
 		),
 	};
 }
 
-async function labelOf(stream: string): Promise<string | null> {
-	const { rows } = await withCorpusSnapshot((store) =>
+async function labelOf(scope: Scope, stream: string): Promise<string | null> {
+	const { rows } = await withCorpusSnapshot(scope, (store) =>
 		store.execute<{ label: string }>(
 			sql`select label from record_stream where stream = ${stream}`,
 		),
@@ -174,10 +182,10 @@ function problem(text: string): Discovery {
 	return { kind: "problem", problem: text };
 }
 
-async function overview(): Promise<Discovery> {
+async function overview(scope: Scope): Promise<Discovery> {
 	const schema = sql.identifier(catalogSchema());
 	const [counts, streams] = await Promise.all([
-		withCorpusSnapshot(async (store) => {
+		withCorpusSnapshot(scope, async (store) => {
 			// 各视图的行数在一条语句里数完，每个视图一列
 			const { rows } = await store.execute<Record<string, number>>(
 				sql`select ${sql.join(
@@ -194,7 +202,7 @@ async function overview(): Promise<Discovery> {
 				rows: rows[0]?.[`n${i}`] ?? 0,
 			}));
 		}),
-		streamFacts(),
+		streamFacts(scope),
 	]);
 	return { kind: "overview", relations: counts, streams };
 }

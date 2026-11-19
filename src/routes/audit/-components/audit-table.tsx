@@ -30,6 +30,7 @@ const ACTION_TEXT: Record<AuditAction, string> = {
 	"revoke-admin": "取消管理员",
 	"disable-account": "停用账号",
 	"enable-account": "恢复账号",
+	"set-scope": "改数据范围",
 };
 
 /** 一行说的是什么：搜索写内容，查看和导出写那个人，管理账号写那个账号。 */

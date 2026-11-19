@@ -64,6 +64,7 @@ const ROOT: Record<HomeState, Partial<RootData>> = {
 			name: "演示用户",
 			username: "hr_user",
 			admin: false,
+			orgs: ["示例科技>出行事业部"],
 		},
 	},
 	empty: { recent: { next: null, rows: [], total: 0 } },

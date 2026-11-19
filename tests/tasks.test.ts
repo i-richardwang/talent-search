@@ -172,7 +172,7 @@ describe("同步与解析", () => {
 
 	test("数据目录给出每条记录流的覆盖和取值", async () => {
 		const { streamFacts } = await import("#/server/discover");
-		assert.deepEqual(await streamFacts(), [
+		assert.deepEqual(await streamFacts("all"), [
 			{
 				first: "2023-01-01",
 				kind: "status",
@@ -200,7 +200,7 @@ describe("同步与解析", () => {
 
 	test("数据页看得到每一段的解析结果", async () => {
 		const { listEmployees, employeeData } = await import("#/server/data");
-		const list = await listEmployees("", 1);
+		const list = await listEmployees("all", "", 1);
 		assert.equal(list.total, 29);
 		assert.equal(list.rows.length, 29);
 		// 20 个人装得下一页，所以只有一页，第一个人排第一
@@ -210,18 +210,18 @@ describe("同步与解析", () => {
 		const one = list.rows.find((row) => row.segments > 0);
 		assert.ok(one);
 		assert.deepEqual(
-			(await listEmployees(one.name, 1)).rows.map((row) => row.empId),
+			(await listEmployees("all", one.name, 1)).rows.map((row) => row.empId),
 			[one.empId],
 		);
 		await db.execute(
 			sql`update employee set name = ${`含%号`} where emp_id = ${one.empId}`,
 		);
 		assert.deepEqual(
-			(await listEmployees("%", 1)).rows.map((row) => row.empId),
+			(await listEmployees("all", "%", 1)).rows.map((row) => row.empId),
 			[one.empId],
 		);
 
-		const person = await employeeData(one.empId);
+		const person = await employeeData("all", one.empId);
 		assert.ok(person);
 		assert.equal(person.segments.length, one.segments);
 		assert.ok(person.segments.every((segment) => segment.derived));
@@ -235,7 +235,7 @@ describe("同步与解析", () => {
 				{ text: "数据分析", engagement: "做过" },
 			]);
 		}
-		assert.equal(await employeeData("没有这个人"), null);
+		assert.equal(await employeeData("all", "没有这个人"), null);
 	});
 
 	test("再同步一次是幂等的：段按内容认，解析结果原样留下", async () => {

@@ -4,6 +4,7 @@
  */
 
 import { createServerFn } from "@tanstack/react-start";
+import type { Scope } from "#/db/snapshot";
 import { tableQuery } from "#/lib/paging";
 import { rejudgeOf, TASK_KINDS } from "#/lib/task";
 import { validateCommit } from "#/search/commit-input";
@@ -14,7 +15,12 @@ import { search, suggest } from "#/search/search";
 import { RESULT_MAX } from "#/search/weights";
 import { listAudit, recordExport, recordView } from "./audit";
 import { administrator, authenticated } from "./auth-functions";
-import { employeeData, employeeDetail, listEmployees } from "./data";
+import {
+	allVisible,
+	employeeData,
+	employeeDetail,
+	listEmployees,
+} from "./data";
 import { explainThread, type ThreadTurn } from "./explain";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
@@ -67,14 +73,15 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 	);
 
 /**
- * 把一个人的详情交给这个账号：有这个人就先记一行「查看」。取个人详情的入口都经过这里。
+ * 把一个人的详情交给这个账号：它的数据范围里有这个人就先记一行「查看」。取个人详情的入口
+ * 都经过这里；范围外的人和没有这个人一样是 null。
  */
 async function viewed<T>(
 	viewer: { id: string },
 	empId: string,
-	load: (empId: string) => Promise<T | null>,
+	load: (scope: Scope, empId: string) => Promise<T | null>,
 ): Promise<T | null> {
-	const detail = await load(empId);
+	const detail = await load({ account: viewer.id }, empId);
 	if (detail) await recordView(viewer.id, empId);
 	return detail;
 }
@@ -162,7 +169,9 @@ export const suggestTerms = createServerFn({ method: "GET" })
 				.slice(0, KEYWORD_RULES[field].max),
 		};
 	})
-	.handler(({ data }) => suggest(data.field, data.q));
+	.handler(({ data, context }) =>
+		suggest({ account: context.viewer.id }, data.field, data.q),
+	);
 
 /** 删掉「最近搜索」里的一行，也就是那一次找人任务的整条链。返回删掉的记录 id。 */
 export const deleteRecent = createServerFn({ method: "POST" })
@@ -178,6 +187,7 @@ const EXPORT_MAX = RESULT_MAX * 10;
 
 /**
  * 导出名单之前调：把要导出的人记进操作记录。文件在页面上生成，页面等这一步成了才生成。
+ * 名单上的人都在这个账号的数据范围里；有范围外的工号说明名单不是从名单上选的，整份拒绝。
  */
 export const logExport = createServerFn({ method: "POST" })
 	.middleware([authenticated])
@@ -194,7 +204,11 @@ export const logExport = createServerFn({ method: "POST" })
 			throw new Error("导出的名单无效");
 		return { empIds };
 	})
-	.handler(({ data, context }) => recordExport(context.viewer.id, data.empIds));
+	.handler(async ({ data, context }) => {
+		if (!(await allVisible({ account: context.viewer.id }, data.empIds)))
+			throw new Error("导出的名单无效");
+		await recordExport(context.viewer.id, data.empIds);
+	});
 
 /** 审计页的表：按账号、被查看或导出的人、搜索的内容找，一页一页地给。 */
 export const auditList = createServerFn({ method: "GET" })
@@ -206,13 +220,17 @@ export const auditList = createServerFn({ method: "GET" })
 export const termTable = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator(tableQuery)
-	.handler(({ data }) => listTerms(data.q, data.page, false));
+	.handler(({ data, context }) =>
+		listTerms({ account: context.viewer.id }, data.q, data.page, false),
+	);
 
 /** 判成不是能力的词那张表，供管理员复查判定。 */
 export const excludedTable = createServerFn({ method: "GET" })
 	.middleware([administrator])
 	.validator(tableQuery)
-	.handler(({ data }) => listTerms(data.q, data.page, true));
+	.handler(({ data, context }) =>
+		listTerms({ account: context.viewer.id }, data.q, data.page, true),
+	);
 
 /**
  * 标签页点开的那一个词：上下从属、其他写法，各自的人数。判成不是能力的词不是标签，
@@ -224,7 +242,7 @@ export const termDetail = createServerFn({ method: "GET" })
 		word: String(d.word ?? "").slice(0, 64),
 	}))
 	.handler(async ({ data, context }) => {
-		const term = await describeTerm(data.word);
+		const term = await describeTerm({ account: context.viewer.id }, data.word);
 		return term?.excluded && !context.viewer.admin ? null : term;
 	});
 
@@ -295,7 +313,9 @@ export const requestTask = createServerFn({ method: "POST" })
 export const dataList = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator(tableQuery)
-	.handler(({ data }) => listEmployees(data.q, data.page));
+	.handler(({ data, context }) =>
+		listEmployees({ account: context.viewer.id }, data.q, data.page),
+	);
 
 /** 数据页的一个人：档案、每一段、每一段的解析结果。 */
 export const dataEmployee = createServerFn({ method: "GET" })

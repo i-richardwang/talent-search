@@ -297,7 +297,7 @@ export function agentTools({
 						input.stream,
 						...match.toSorted(),
 					]),
-					() => discover({ ...input, match }),
+					() => discover({ chain: rootTurnId }, { ...input, match }),
 				);
 				await log({
 					at: Date.now(),
@@ -319,7 +319,7 @@ export function agentTools({
 				const inputs = lookupInputs(patterns);
 				const found = await once(
 					JSON.stringify(["find", ...inputs.toSorted()]),
-					() => findPhrases(inputs),
+					() => findPhrases({ chain: rootTurnId }, inputs),
 				);
 				await log({
 					at: Date.now(),

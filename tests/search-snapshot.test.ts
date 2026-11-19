@@ -58,7 +58,7 @@ describe("语料快照", () => {
 		// 写者在这次读取**中途**提交了一笔。快照是事务开头拍的，第二条语句看到的
 		// 仍然是那一张；读提交隔离下它会看见多出来的那一段。
 		let before: number | undefined;
-		await withCorpusSnapshot(async (store) => {
+		await withCorpusSnapshot("all", async (store) => {
 			before = await count(store);
 			await writeOne("SNAP002");
 			assert.equal(await count(store), before, "同一次快照里两次读取必须一致");

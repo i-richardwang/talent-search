@@ -18,14 +18,16 @@ cp .env.example .env.local
 # 编辑 .env.local：设置数据库、模型配置；用 openssl rand -base64 32 生成 BETTER_AUTH_SECRET。
 bun install
 bun run db:push
-bun run auth:user create --username admin --name 管理员 --role admin
+bun run auth:user create --username admin --name 管理员 --role admin --org 示例科技
 bun run sync
 bun run dev
 ```
 
 应用默认监听 `http://localhost:3100`。默认数据源是 `src/corpus/sources/sample/` 中的合成样例；启动后，后台任务会继续完成抽取、序列对齐和词表整理。
 
-AI 搜索在只读角色 `talent_query` 下查询人才库：应用的数据库用户要么能建角色，要么事先建好 `talent_query` 并授予应用用户。
+页面和 AI 的读取在读者角色 `talent_reader` 下进行，人员、经历、记录和边四张表的读取策略只让它读到这一次替谁读的那个账号范围里的人；
+AI 写的筛选在只读角色 `talent_query` 下执行。应用的数据库用户要么能建角色，要么事先建好这两个角色并授予应用用户。
+应用的数据库用户是表的属主：同步、解析和整理以它的身份写入，不受读取策略约束；读取一律先切到读者角色，范围不随应用用户的权限扩大。
 
 ## 登录与账号管理
 
@@ -35,14 +37,20 @@ AI 搜索在只读角色 `talent_query` 下查询人才库：应用的数据库�
 
 搜索、查看个人详情、导出名单和账号页上的每一件事各留一行操作记录，只追加，管理员在「审计」页查。
 
-管理员在「账号」页建账号（选普通用户或管理员）、重置密码、设为或取消管理员、停用和恢复，自己的账号除外；
+每个账号有自己的数据范围：几个组织，连同它们下面的各级。一个账号能搜到、能看到的人，是此刻所在部门落在这些组织下的员工；
+人调了部门，下一次同步之后就跟着进出各账号的范围。名单、人数、筛选、关键词候选、标签页的人数、数据页、个人详情、导出和 AI 看到的人才库
+都只有范围里的人，范围外的人和不存在的人一样。最大的范围是集团（组织树的最上一级）。没有当前部门的人不在任何账号的范围里，
+同步报告会写出人数。管理员的身份管能做什么，数据范围管看得到谁；任务、审计和账号页管的是整个系统，不按范围过滤。
+
+管理员在「账号」页建账号（选普通用户或管理员，选数据范围）、重置密码、改数据范围、设为或取消管理员、停用和恢复，自己的账号除外；
 新密码由服务端生成，只显示一次。第一个管理员由能登录部署机器的人在终端里建；命令行什么账号都能管，
-密码输入不回显，操作不记进操作记录：
+密码输入不回显，操作不记进操作记录。组织写完整的部门路径，级与级之间用 `>`；`>` 在终端里是重定向，路径要加引号：
 
 ```bash
 bun run auth:user list
-bun run auth:user create --username admin --name 管理员 --role admin
-bun run auth:user create --username hr_user --name 招聘同事
+bun run auth:user create --username admin --name 管理员 --role admin --org 示例科技
+bun run auth:user create --username hr_user --name 招聘同事 --org "示例科技>出行事业部"
+bun run auth:user set-scope --username hr_user --org "示例科技>出行事业部" --org "示例科技>增长中心"
 bun run auth:user reset-password --username hr_user
 bun run auth:user set-role --username hr_user --role admin
 bun run auth:user disable --username hr_user
@@ -70,9 +78,11 @@ bun run auth:user enable --username hr_user
 
 `src/db/schema.ts` 变了（比如新增一列）要上线时：先停应用和后台任务，备份整个 Postgres 并确认能恢复，备份含业务数据，不进版本库。然后运行 `bun run db:push`，逐项核对它列出的差异，只应用这次的结构调整；出现计划外的删除、重建或截断就取消、先查明原因，不用 `--force`。完成后再启动应用。
 
+`db:push` 不比较视图的定义，也不写读取策略的条件：改了视图先删掉库里的旧视图再 push；读取策略的条件由应用在每个进程第一次读之前照 `schema.ts` 写上，没写上之前读者一行都读不到。
+
 ## 接入数据源
 
-所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments`、`external` 和 `levels`，可选再给记录的三批：`streams`（记录流：评级或状态）、`scales`（评级流的档位表）和 `records`（一期一档的评级、一段一段的状态）；以及公司知识的五批：`industries`（行业树）、`companies`（公司和所属集团）、`company_industries`（公司做哪些行业、哪些是主营）、`company_circles`（名企组合）和 `company_aliases`（经历上的公司写法对到哪家公司）。公司是什么不由本项目判断，数据源给结论；对不上的公司写法按人数列在同步报告里。同一人同一期的几条修订按登记时刻只留最终一条，分不出的整组拒绝并报告。契约逐行核验必需列，显式空值可以保留，缺列则报告表名、行号和列名并拒绝。通用校验、切段与解析在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
+所有适配器输出 [`src/corpus/contract.ts`](src/corpus/contract.ts) 定义的 `employees`、`assignments`、`external` 和 `levels`，可选再给记录的三批：`streams`（记录流：评级或状态）、`scales`（评级流的档位表）和 `records`（一期一档的评级、一段一段的状态）；以及公司知识的五批：`industries`（行业树）、`companies`（公司和所属集团）、`company_industries`（公司做哪些行业、哪些是主营）、`company_circles`（名企组合）和 `company_aliases`（经历上的公司写法对到哪家公司）。公司是什么不由本项目判断，数据源给结论；对不上的公司写法按人数列在同步报告里。同一人同一期的几条修订按登记时刻只留最终一条，分不出的整组拒绝并报告。契约逐行核验必需列，显式空值可以保留，缺列则报告表名、行号和列名并拒绝。`assignments` 的 `department_path` 从最上一级（集团）写到这一段所在的部门，级与级之间用 `>`，账号的数据范围按它一级一级地分。通用校验、切段与解析在 `src/corpus/pipeline.ts`，适配器只负责源字段转换。
 
 职级和学历按档检索。`levels` 是职级表，写明每个职级归哪一档、档有多高，分档方法由数据源自己定；学历写契约里的五档之一（高中及以下、大专、本科、硕士、博士），源里的写法由适配器归档。筛选和「某档及以上」都按档走，职级原文只在详情里显示。
 

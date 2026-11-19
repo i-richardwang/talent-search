@@ -56,6 +56,7 @@ import { join } from "node:path";
 import { db, pool } from "#/db";
 import { authUser } from "#/db/schema";
 import { internalWordsIn } from "#/lib/internal-words";
+import { ORG_SEPARATOR } from "#/lib/org";
 import { compileConditions } from "#/search/compile";
 import { execute, selection } from "#/search/execute";
 import {
@@ -256,7 +257,8 @@ async function selectedBy(c: QueryCondition): Promise<string> {
 }
 
 /**
- * 用例的找人任务记在这个账号名下。它没有密码凭据，登录不了；库里没有就建一个。
+ * 用例的找人任务记在这个账号名下。它没有密码凭据，登录不了；库里没有就建一个。数据范围是
+ * 库里每一个最上一级的组织，验收的名单数的是全部有部门的人。
  */
 const EVAL_ACCOUNT = "eval";
 
@@ -278,10 +280,18 @@ try {
 			username: EVAL_ACCOUNT,
 		})
 		.onConflictDoNothing();
+	await pool.query(
+		`insert into account_scope (user_id, org_path)
+		 select distinct $1, split_part(cur_dept_path, $2, 1) from employee
+		 where cur_dept_path <> ''
+		 on conflict do nothing`,
+		[EVAL_ACCOUNT, ORG_SEPARATOR],
+	);
+	const scope = { account: EVAL_ACCOUNT };
 	const facts = {
-		vocab: await vocabulary(),
-		streams: await streamFacts(),
-		company: await companyFacts(),
+		vocab: await vocabulary(scope),
+		streams: await streamFacts(scope),
+		company: await companyFacts(scope),
 	};
 	for (const c of cases) {
 		const problems: string[] = [];

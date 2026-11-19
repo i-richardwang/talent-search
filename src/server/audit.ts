@@ -81,7 +81,8 @@ export async function listAudit(
 		where u.username ilike $1 or u.name ilike $1 or a.emp_id ilike $1
 			or e.name ilike $1 or a.text ilike $1
 			or t.username ilike $1 or t.name ilike $1`;
-	return withReadSnapshot(async (client) => {
+	// 管理员查整个系统的操作，被查看、导出的人不按谁的数据范围过滤
+	return withReadSnapshot("all", async (client) => {
 		const found = await client.query<{ n: string }>(
 			`select count(*) as n ${from}`,
 			[pattern],

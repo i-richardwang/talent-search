@@ -123,7 +123,7 @@ before(async () => {
 describe("捞说法", () => {
 	test("每条正则捞到多少种说法、多少人，写的人多的在前；不带词表里的其他写法，没读过的原文不列也不数", async () => {
 		// 「推荐」按字面捞到两种写法；丙那段没读过的原文「推荐召回」不算
-		assert.deepEqual(await findPhrases(["推荐", "个性化", "量子炼金"]), [
+		assert.deepEqual(await findPhrases("all", ["推荐", "个性化", "量子炼金"]), [
 			{
 				pattern: "推荐",
 				phrases: 2,
@@ -146,7 +146,7 @@ describe("捞说法", () => {
 	});
 
 	test("正则写不对的给出原因，别的照捞", async () => {
-		const [broken, fine] = await findPhrases(["推荐(", "考古"]);
+		const [broken, fine] = await findPhrases("all", ["推荐(", "考古"]);
 		assert.match(broken?.problem ?? "", /^正则写不对/);
 		assert.equal(broken?.people, 0);
 		assert.equal(fine?.people, 40);
@@ -155,7 +155,7 @@ describe("捞说法", () => {
 
 describe("看目录", () => {
 	test("公司只匹配入职前的公司名，部门只匹配公司内的部门名和路径，各给匹配到的写法和人数", async () => {
-		const [company] = await lookupNames("company", ["星河"]);
+		const [company] = await lookupNames("all", "company", ["星河"]);
 		assert.deepEqual(company, {
 			query: "星河",
 			people: 8,
@@ -164,7 +164,7 @@ describe("看目录", () => {
 				{ name: "星河小厂", people: 2 },
 			],
 		});
-		const [department] = await lookupNames("department", ["星河"]);
+		const [department] = await lookupNames("all", "department", ["星河"]);
 		assert.deepEqual(
 			department,
 			{ query: "星河", people: 1, values: [{ name: "推荐中台", people: 1 }] },
@@ -173,7 +173,7 @@ describe("看目录", () => {
 	});
 
 	test("学校名按包含匹配；匹配不到的是 0", async () => {
-		const found = await lookupNames("school", ["银河", "北辰大学"]);
+		const found = await lookupNames("all", "school", ["银河", "北辰大学"]);
 		assert.deepEqual(found, [
 			{
 				query: "银河",
@@ -186,15 +186,19 @@ describe("看目录", () => {
 
 	test("名字列按包含匹配，和查名字是同一份；有限取值的列和提示词里预先给的是同一份", async () => {
 		assert.deepEqual(
-			await discover({ relation: "person", column: "school", match: ["银河"] }),
+			await discover("all", {
+				relation: "person",
+				column: "school",
+				match: ["银河"],
+			}),
 			{
 				kind: "names",
 				subject: "学校",
-				found: await lookupNames("school", ["银河"]),
+				found: await lookupNames("all", "school", ["银河"]),
 			},
 		);
-		const vocab = await vocabulary();
-		const values = await discover({
+		const vocab = await vocabulary("all");
+		const values = await discover("all", {
 			relation: "experience",
 			column: "company_tag",
 		});
@@ -207,7 +211,7 @@ describe("看目录", () => {
 
 	test("行业是数组列：每个取值各数各的人，上级行业数进它下面的每个细分", async () => {
 		const byName = async (column: string) => {
-			const found = await discover({ relation: "experience", column });
+			const found = await discover("all", { relation: "experience", column });
 			if (found.kind !== "values") throw new Error("该是一列取值");
 			return Object.fromEntries(found.values.map((v) => [v.name, v.people]));
 		};
@@ -228,7 +232,7 @@ describe("看目录", () => {
 	});
 
 	test("提示词里预先给的公司概况：行业按树排，带两种人数和认出公司的段数", async () => {
-		const facts = await companyFacts();
+		const facts = await companyFacts("all");
 		assert.deepEqual(facts.industries, [
 			{ name: "物流", parent: null, main: 2, any: 8 },
 			{ name: "即时配送", parent: "物流", main: 2, any: 2 },
@@ -243,7 +247,7 @@ describe("看目录", () => {
 	});
 
 	test("总览给出各关系的行数，不给人", async () => {
-		const overview = await discover({});
+		const overview = await discover("all", {});
 		assert.equal(overview.kind, "overview");
 		if (overview.kind !== "overview") return;
 		assert.deepEqual(
@@ -252,12 +256,14 @@ describe("看目录", () => {
 		);
 		assert.doesNotMatch(JSON.stringify(overview), /甲|乙|A0|星河科技/);
 		// 一条语句里数出的每一列，和逐个视图单独数的一样，没有错位
-		const { db } = await import("#/db");
-		const { catalogSchema } = await import("#/search/catalog");
+		const { withCorpusSnapshot } = await import("#/db/snapshot");
+		const { catalogSchema } = await import("#/db/catalog-schema");
 		const { sql } = await import("drizzle-orm");
 		for (const r of overview.relations) {
-			const { rows } = await db.execute<{ n: number }>(
-				sql`select count(*)::int as n from ${sql.identifier(catalogSchema())}.${sql.identifier(r.name)}`,
+			const { rows } = await withCorpusSnapshot("all", (store) =>
+				store.execute<{ n: number }>(
+					sql`select count(*)::int as n from ${sql.identifier(catalogSchema())}.${sql.identifier(r.name)}`,
+				),
 			);
 			assert.equal(r.rows, rows[0]?.n, r.name);
 		}
@@ -272,14 +278,17 @@ describe("看目录", () => {
 
 	test("问不了的给一句原因：岗位名不列取值，评级的档要说是哪条流", async () => {
 		assert.equal(
-			(await discover({ relation: "experience", column: "title" })).kind,
+			(await discover("all", { relation: "experience", column: "title" })).kind,
 			"problem",
 		);
 		assert.equal(
-			(await discover({ relation: "rating", column: "value" })).kind,
+			(await discover("all", { relation: "rating", column: "value" })).kind,
 			"problem",
 		);
-		assert.equal((await discover({ relation: "employee" })).kind, "problem");
+		assert.equal(
+			(await discover("all", { relation: "employee" })).kind,
+			"problem",
+		);
 	});
 
 	test("记录流的档按档高排，标题写流的名字；没有这条流给一句原因", async () => {
@@ -299,7 +308,11 @@ describe("看目录", () => {
 		});
 		try {
 			assert.deepEqual(
-				await discover({ relation: "rating", column: "value", stream: "perf" }),
+				await discover("all", {
+					relation: "rating",
+					column: "value",
+					stream: "perf",
+				}),
 				{
 					kind: "values",
 					subject: "绩效的档",
@@ -310,8 +323,13 @@ describe("看目录", () => {
 				},
 			);
 			assert.equal(
-				(await discover({ relation: "rating", column: "value", stream: "x" }))
-					.kind,
+				(
+					await discover("all", {
+						relation: "rating",
+						column: "value",
+						stream: "x",
+					})
+				).kind,
 				"problem",
 			);
 		} finally {
@@ -332,7 +350,11 @@ describe("看目录", () => {
 		});
 		try {
 			assert.deepEqual(
-				await discover({ relation: "status", column: "value", stream: "hipo" }),
+				await discover("all", {
+					relation: "status",
+					column: "value",
+					stream: "hipo",
+				}),
 				{
 					kind: "values",
 					subject: "高潜的状态",
@@ -343,11 +365,11 @@ describe("看目录", () => {
 				},
 			);
 			assert.equal(
-				(await discover({ relation: "status", column: "value" })).kind,
+				(await discover("all", { relation: "status", column: "value" })).kind,
 				"problem",
 				"不写是哪条流，问不了",
 			);
-			const overview = await discover({});
+			const overview = await discover("all", {});
 			assert.equal(overview.kind, "overview");
 			if (overview.kind !== "overview") return;
 			assert.deepEqual(

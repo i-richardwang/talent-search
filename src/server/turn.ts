@@ -502,10 +502,12 @@ async function understandTurn(
 	// 读词表和调用模型各自读数据库，不共用一个快照：调用模型可能要一分钟，如果开着
 	// 快照等它，一次理解就占着连接池里的一条连接一分钟。模型的工具在自己的快照里读
 	// （`search/phrases.ts` 的 withMatchedPhrases）。
+	// 提示词里的取值和人数只数发起这次任务的账号看得到的人
+	const scope = { chain: row.rootTurnId };
 	const [vocab, streams, company] = await Promise.all([
-		vocabulary(),
-		streamFacts(),
-		companyFacts(),
+		vocabulary(scope),
+		streamFacts(scope),
+		companyFacts(scope),
 	]);
 	const { query, notes } = await understand(
 		rawText,
