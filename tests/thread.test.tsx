@@ -14,7 +14,8 @@ import { compileConditions } from "#/search/compile";
 import type { TurnNotes } from "#/search/intent";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
-import type { AttemptFault, Progress, Turn } from "#/server/turn";
+import type { ThreadTurn } from "#/server/explain";
+import type { AttemptFault, Progress } from "#/server/turn";
 import { visibleText } from "./render";
 import { routed } from "./routed";
 
@@ -27,7 +28,7 @@ type Round = {
 	settled?: boolean;
 };
 
-function turns(rounds: Round[]): Turn[] {
+function turns(rounds: Round[]): ThreadTurn[] {
 	return rounds.map((r, i) => ({
 		id: `t${i}`,
 		rootTurnId: "t0",
@@ -42,6 +43,7 @@ function turns(rounds: Round[]): Turn[] {
 		fault: null,
 		settled: r.settled ?? r.spec !== null,
 		at: 0,
+		explained: {},
 	}));
 }
 
@@ -95,7 +97,7 @@ describe("后面每一轮", () => {
 			{ said: "再加上带过团队的，不用非得是字节", spec: "算法, 带团队" },
 		]);
 		assert.match(text, /再加上带过团队的，不用非得是字节/);
-		assert.match(text, /已添加 带团队；已移除 字节（加分）/);
+		assert.match(text, /已添加：\s*带团队\s*已移除 字节（加分）/);
 	});
 
 	test("条件没动也说出来：不是没反应", async () => {
@@ -163,7 +165,7 @@ describe("第一轮", () => {
 	test("说出按哪几条条件搜索", async () => {
 		const { text } = await seen([{ said: "算法和后端", spec: "算法, 后端" }]);
 		assert.match(text, /算法和后端/);
-		assert.match(text, /已按以下条件搜索：算法、后端/);
+		assert.match(text, /已按以下条件搜索：\s*算法\s*后端/);
 	});
 
 	test("AI 说的那句话写在回应里", async () => {
@@ -176,7 +178,7 @@ describe("第一轮", () => {
 		]);
 		assert.match(
 			text,
-			/已按以下条件搜索：算法\s*人才库里没有工作地点，这条先没管。/,
+			/已按以下条件搜索：\s*算法\s*人才库里没有工作地点，这条先没管。/,
 		);
 	});
 });

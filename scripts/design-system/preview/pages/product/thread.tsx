@@ -10,6 +10,10 @@ import {
 	TableHeader,
 	TableRow,
 } from "#/components/ui/table";
+import {
+	ConditionDetail,
+	ConditionList,
+} from "#/routes/s/$turnId/-components/condition-detail";
 import { Thread } from "#/routes/s/$turnId/-components/thread";
 import {
 	FAULT_COPY,
@@ -17,11 +21,13 @@ import {
 	faultExits,
 } from "#/routes/s/$turnId/-lib/attempt";
 import { ELAPSED_SHOW_AFTER_MS } from "#/routes/s/$turnId/-lib/elapsed";
-import type { AttemptFault, Progress, Turn } from "#/server/turn";
+import type { ThreadTurn } from "#/server/explain";
+import type { AttemptFault, Progress } from "#/server/turn";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { Routed } from "../../routed";
+import { EXPLAIN_SAMPLES } from "../../samples/explain";
 import {
 	ANSWERED_TURN,
 	ASKING_TURN,
@@ -50,8 +56,8 @@ type State =
 const STATES: Record<
 	State,
 	{
-		earlier: Turn[];
-		latest: Turn;
+		earlier: ThreadTurn[];
+		latest: ThreadTurn;
 		viewing: string;
 		progress: Progress | null;
 		fault: AttemptFault | null;
@@ -361,6 +367,38 @@ function Usage() {
 	);
 }
 
+/** 搜索条件点开后的详情：一行收着的样子，和几种典型条件展开后的样子。 */
+function Conditions() {
+	return (
+		<ExampleGrid>
+			<Example
+				description="AI 的回应里一条条件一行，和检索过程的步骤同一种行：图标格、名称，点开是详情，末尾一条虚线。"
+				title="收着的几条"
+			>
+				<Column>
+					<ConditionList
+						conditions={EXPLAIN_SAMPLES.map((s) => s.condition)}
+						explained={Object.fromEntries(
+							EXPLAIN_SAMPLES.map((s) => [s.condition.id, s.explained]),
+						)}
+					/>
+				</Column>
+			</Example>
+			{EXPLAIN_SAMPLES.map((s) => (
+				<Example
+					description={s.description}
+					key={s.condition.id}
+					title={s.title}
+				>
+					<Column>
+						<ConditionDetail condition={s.condition} explained={s.explained} />
+					</Column>
+				</Example>
+			))}
+		</ExampleGrid>
+	);
+}
+
 /** 对话线程：一次找人任务从第一句到最后一句，底下是补充需求的输入框。 */
 export function ThreadPage() {
 	return (
@@ -373,7 +411,7 @@ export function ThreadPage() {
 			rules={{
 				notes: [
 					"线程总是整条链；查看早先一次的结果只换名单，不截断线程，正在看的那一次标「正在查看」。",
-					"每次的回应按前后两组条件的差别说加了什么、去掉了什么，条件写进句子用 labelsInSentence。",
+					"每次的回应按前后两组条件的差别说加了什么、去掉了什么：加上的条件一条一行，点开是它实际要什么（工作内容、经历范围、累计时长），由服务端照真正执行的条件解析出来，属性名和名单上方的筛选同一套；去掉的写进句子用 labelsInSentence。",
 					"理解失败时说清是哪个环节出了问题：连不上和报错时需求没被读过，不能说成没读懂；线程里的提示带重试，名单那一列另有同样的下一步。",
 					"AI 每次最多问一件事：一句问话，第一项是现在按的那一种，其余每项是一句回答，点一下或按数字键就是把它当下一句需求说给 AI；不理就照现在的名单。最后一次才能点，有了下一次就收成一行。",
 					"检索人才库的过程进行中展开、完成后收起；查找的步骤只说人才库里有没有、有哪些写法，试搜只说哪一条没有人、哪一条写不对，不写人数（名单上的人数只在名单上说）；读经历的步骤写看了几段、几段符合，不给出任何一个人。",
@@ -386,6 +424,7 @@ export function ThreadPage() {
 				{ children: <Playground />, id: "playground", title: "试用线程" },
 				{ children: <Faults />, id: "appearance", title: "理解失败" },
 				{ children: <Usage />, id: "usage", title: "使用场景" },
+				{ children: <Conditions />, id: "conditions", title: "搜索条件的详情" },
 			]}
 		/>
 	);

@@ -25,7 +25,6 @@ import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Divider } from "#/components/ui/divider";
-import { Icon } from "#/components/ui/icon";
 import { AnsweredQuestion, Question } from "#/components/ui/question";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { Tag } from "#/components/ui/tag";
@@ -46,9 +45,12 @@ import type {
 	SubmitIssue,
 	TraceStep,
 } from "#/search/trace";
+import type { ThreadTurn } from "#/server/explain";
 import type { AttemptFault, Progress, Turn } from "#/server/turn";
 import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/attempt";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
+import { ConditionList } from "./condition-detail";
+import { IconCell } from "./icon-cell";
 
 function diff(previous: Turn | null, spec: QueryCondition[]) {
 	if (previous === null) return { added: spec, removed: [] };
@@ -58,20 +60,41 @@ function diff(previous: Turn | null, spec: QueryCondition[]) {
 	);
 }
 
-/** 模型丢掉一条用户要的条件，在这里就是一行看得见的字。 */
-function replyText(previous: Turn | null, spec: QueryCondition[]) {
+/**
+ * AI 这一轮怎么回的：第一轮列出全部条件，之后列出加了哪几条、说出去掉了哪几条。
+ * 模型丢掉一条用户要的条件，在这里就是一行看得见的字；列出的每一条点开是它实际要什么。
+ */
+function Reply({
+	previous,
+	spec,
+	explained,
+}: {
+	previous: Turn | null;
+	spec: QueryCondition[];
+	explained: ThreadTurn["explained"];
+}) {
 	if (previous === null)
-		return spec.length > 0
-			? `已按以下条件搜索：${labelsInSentence(spec)}`
-			: "这段需求还搜不了";
+		return spec.length > 0 ? (
+			<div className="flex flex-col gap-1">
+				<p>已按以下条件搜索：</p>
+				<ConditionList conditions={spec} explained={explained} />
+			</div>
+		) : (
+			<p>这段需求还搜不了</p>
+		);
 	const { added, removed } = diff(previous, spec);
-	if (added.length === 0 && removed.length === 0) return "搜索条件未变";
-	return [
-		added.length > 0 ? `已添加 ${labelsInSentence(added)}` : null,
-		removed.length > 0 ? `已移除 ${labelsInSentence(removed)}` : null,
-	]
-		.filter((part) => part !== null)
-		.join("；");
+	if (added.length === 0 && removed.length === 0) return <p>搜索条件未变</p>;
+	return (
+		<div className="flex flex-col gap-1">
+			{added.length > 0 && (
+				<>
+					<p>已添加：</p>
+					<ConditionList conditions={added} explained={explained} />
+				</>
+			)}
+			{removed.length > 0 && <p>已移除 {labelsInSentence(removed)}</p>}
+		</div>
+	);
 }
 
 /** 直接改条件的一轮做了什么。条件和上一轮是同一张表的，是名单还没列全时接着往下找。 */
@@ -241,9 +264,9 @@ export function Thread({
 	autoFocus = false,
 }: {
 	/** 链上最后一轮之前的几轮，链头在前。 */
-	earlier: readonly Turn[];
+	earlier: readonly ThreadTurn[];
 	/** 链上最后一轮：理解属于它。 */
-	latest: Turn;
+	latest: ThreadTurn;
 	/** 名单正显示的那一轮。 */
 	viewing: string;
 	/** AI 对最后一轮这一次处理的进度；处理完后为 null，读记录上的。 */
@@ -394,7 +417,7 @@ function Round({
 	onAnswer,
 	onRetry,
 }: {
-	round: Turn;
+	round: ThreadTurn;
 	previous: Turn | null;
 	/** 下一轮；这一轮的问题答没答、答了哪一项，看它。 */
 	next: Turn | null;
@@ -487,7 +510,13 @@ function Round({
 							</p>
 						)
 					)}
-					{spec && <p>{replyText(previous, queryOfSpec(spec).conditions)}</p>}
+					{spec && (
+						<Reply
+							explained={round.explained}
+							previous={previous}
+							spec={queryOfSpec(spec).conditions}
+						/>
+					)}
 					{spec && notes && (
 						<Note next={next} notes={notes} onAnswer={onAnswer} />
 					)}
@@ -695,33 +724,10 @@ function foundLine(f: FoundTrace): string[] {
 }
 
 function StatusCell({ live }: { live: boolean }) {
-	return (
-		<Block
-			align="center"
-			className="shrink-0"
-			height={24}
-			horizontal
-			justify="center"
-			variant="outlined"
-			width={24}
-		>
-			{live ? (
-				<Icon
-					aria-hidden="true"
-					className="text-fg-secondary"
-					icon={LoaderCircleIcon}
-					size={12}
-					spin
-				/>
-			) : (
-				<Icon
-					aria-hidden="true"
-					className="text-success"
-					icon={CheckIcon}
-					size={12}
-				/>
-			)}
-		</Block>
+	return live ? (
+		<IconCell className="text-fg-secondary" icon={LoaderCircleIcon} spin />
+	) : (
+		<IconCell className="text-success" icon={CheckIcon} />
 	);
 }
 
