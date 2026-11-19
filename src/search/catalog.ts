@@ -2,8 +2,10 @@
  * 数据目录：查询理解的模型能读的数据，每个关系、每一列的中文名、含义和口径。
  *
  * 关系就是 `db/schema.ts` 里 `catalog` schema 的视图，加上每次检索由外壳物化的命中表
- * `hit`。这里的声明有三个读者：查询理解的系统提示词（静态的一份目录）、SQL 白名单
- * （`server/sandbox.ts` 按它核对引用的关系和列）、`discover` 工具（活的统计）。
+ * `hit`。这里的声明有四个读者：查询理解的系统提示词（静态的一份目录）、SQL 白名单
+ * （`server/sandbox.ts` 按它核对引用的关系和列）、`discover` 工具（活的统计）、搜索条件的
+ * 详情（`server/explain.ts` 把条件翻给 HR 看，列名换成筛选里那一维的名字、代码换成说法；
+ * 这两样不进提示词）。
  * 视图的列名由类型和 schema 绑定：视图多一列、这里少写一列，类型检查不过。
  *
  * 目录文本是提示词的一部分，所以它也是一份「标准」：目录变了，查询理解的验收要重跑。
@@ -16,6 +18,7 @@ import type {
 	catalogScale,
 	catalogStatus,
 } from "#/db/schema";
+import { type DimKey, KIND_NAMES } from "./dimensions";
 
 type ColumnsOf<V> =
 	V extends PgViewWithSelection<string, boolean, infer F>
@@ -30,6 +33,10 @@ type CatalogColumn<C extends string = string> = {
 	type: "text" | "int" | "date" | "text[]";
 	label: string;
 	meaning: string;
+	/** 取值是代码时，每个代码对 HR 怎么说（条件的说明用，`server/explain.ts`） */
+	says?: Record<string, string>;
+	/** 这一列就是名单上方筛选的哪一维：给 HR 看时用那一维的名字（`server/explain.ts`） */
+	dimension?: DimKey;
 } & ({ values?: "enum" } | { values: "ordinal"; rank: C });
 
 export type CatalogRelation<C extends string = string> = {
@@ -56,6 +63,7 @@ const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> = {
 		level_band: {
 			type: "text",
 			label: "职级档",
+			dimension: "level",
 			meaning: "当前职级归入的档",
 			values: "ordinal",
 			rank: "level_rank",
@@ -68,6 +76,7 @@ const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> = {
 		education: {
 			type: "text",
 			label: "学历",
+			dimension: "education",
 			meaning: "最高学历：高中及以下、大专、本科、硕士、博士",
 			values: "ordinal",
 			rank: "education_rank",
@@ -85,6 +94,7 @@ const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> = {
 		school_tier: {
 			type: "text",
 			label: "学校档",
+			dimension: "schoolTier",
 			meaning:
 				"最高学历那所学校的档（985、211、QS100 这类），档与档之间不比高低",
 			values: "enum",
@@ -92,12 +102,14 @@ const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> = {
 		overseas: {
 			type: "text",
 			label: "海外学历",
+			dimension: "overseas",
 			meaning: "最高学历是不是海外取得：是、否；为空表示没有记录",
 			values: "enum",
 		},
 		recruitment: {
 			type: "text",
 			label: "招聘渠道",
+			dimension: "recruitment",
 			meaning: "校招、社招这类",
 			values: "enum",
 		},
@@ -132,8 +144,10 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 		kind: {
 			type: "text",
 			label: "来源",
+			dimension: "kind",
 			meaning: "internal 是公司内的任职，external 是入职前的经历",
 			values: "enum",
+			says: KIND_NAMES,
 		},
 		start_date: { type: "date", label: "开始", meaning: "这一段的开始日" },
 		end_date: {
@@ -141,7 +155,12 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 			label: "结束",
 			meaning: "这一段的结束日；为空表示至今",
 		},
-		months: { type: "int", label: "月数", meaning: "这一段有多少个月" },
+		months: {
+			type: "int",
+			label: "月数",
+			dimension: "minMonths",
+			meaning: "这一段有多少个月",
+		},
 		company: {
 			type: "text",
 			label: "公司",
@@ -150,6 +169,7 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 		company_tag: {
 			type: "text",
 			label: "公司档",
+			dimension: "companyTag",
 			meaning: "人事登记的入职前那家公司的档；公司内的任职为空",
 			values: "enum",
 		},
@@ -172,6 +192,7 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 		main_industries: {
 			type: "text[]",
 			label: "主营行业",
+			dimension: "industry",
 			meaning: "那家公司的主营行业，连同每一级上级行业",
 			values: "enum",
 		},
@@ -206,12 +227,14 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 		seq_l1: {
 			type: "text",
 			label: "一级序列",
+			dimension: "seq",
 			meaning: "登记的序列；入职前的经历是按岗位名对齐的序列",
 		},
 		seq_l2: { type: "text", label: "二级序列", meaning: "和一级序列成对" },
 		skills: {
 			type: "text[]",
 			label: "能力词",
+			dimension: "skill",
 			meaning: "从入职前简历读出的能力词的标准写法，连同它们更宽的词",
 		},
 	},
@@ -326,6 +349,12 @@ export const HIT: CatalogRelation<
 			meaning:
 				"命中的是哪一类说法：role 公司内任职整句、title 入职前岗位名、skill 简历读出的能力词、description 没读过的简历原文",
 			values: "enum",
+			says: {
+				role: "任职记录",
+				title: "岗位",
+				skill: "技能",
+				description: "简历原文",
+			},
 		},
 		phrase: {
 			type: "text",

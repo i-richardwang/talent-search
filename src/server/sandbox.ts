@@ -4,7 +4,7 @@
  * - **解析层**（`compileWhere`）：用 Postgres 自己的解析器（libpg-query）把 `where` 读成语法树，
  *   必须是单个布尔表达式；只能引用数据目录（`search/catalog.ts`）里的关系和这一种条件允许的别名；
  *   节点、函数、类型都按白名单；`:name` 换成绑定参数。执行的是按词法单元重新拼出的文本
- *   （去掉注释、括号配平），不是模型的原文。
+ *   （去掉注释、括号配平），不是模型的原文。同一棵语法树也交给搜索条件的详情（`whereTree`）。
  * - **数据库层**（`restricted`）：在保存点里切到只读角色 `talent_query`，它只有目录视图的
  *   SELECT；同时只读、限时、限内存，`search_path` 先临时关系后目录。回滚到保存点后一切
  *   设置还原，调用方接着用应用角色读名单要显示的东西。
@@ -508,18 +508,31 @@ export async function compileWhere(
 	try {
 		return { ok: true, sql: build(where, params, scope) };
 	} catch (error) {
-		if (error instanceof Rejected) return { ok: false, problem: error.message };
-		if (error instanceof Error && error.name === "SqlError")
-			return { ok: false, problem: `SQL 写错了：${error.message}` };
-		throw error;
+		const problem = problemOf(error);
+		if (problem === null) throw error;
+		return { ok: false, problem };
 	}
 }
 
-function build(
+/** 写法不对时告诉模型的那句话；不是写法问题的异常为 null，由调用方照常抛出。 */
+function problemOf(error: unknown): string | null {
+	if (error instanceof Rejected) return error.message;
+	if (error instanceof Error && error.name === "SqlError")
+		return `SQL 写错了：${error.message}`;
+	return null;
+}
+
+/** 一份 `where` 拆成的语法树：顶层的布尔表达式，和 `$n` 依次对应的参数名。 */
+export type WhereTree = { clause: unknown; order: string[] };
+
+/**
+ * 按词法单元重拼 `where`、换掉参数、解析成语法树。只核对写法（分号、括号、参数、单个表达式），
+ * 关系、列和函数的白名单在 `walk` 里。
+ */
+function parseWhere(
 	where: string,
 	params: Readonly<Record<string, ParamValue>>,
-	scope: WhereScope,
-): SQL {
+): WhereTree & { pieces: Piece[] } {
 	if (!where.trim()) reject("where 是空的；不限就写 true");
 	if (where.length > WHERE_MAX) reject(`where 超过 ${WHERE_MAX} 字`);
 	for (const [name, value] of Object.entries(params)) {
@@ -584,6 +597,34 @@ function build(
 	)
 		reject("只能写一个表达式");
 
+	return { clause: body.whereClause, order, pieces };
+}
+
+/**
+ * 读出一份 `where` 的语法树，给条件的说明用（`server/explain.ts`）。进了记录的条件都核对
+ * 过；写法不对时为 null。
+ */
+export async function whereTree(
+	where: string,
+	params: Readonly<Record<string, ParamValue>>,
+): Promise<WhereTree | null> {
+	loaded ??= loadModule();
+	await loaded;
+	try {
+		const { clause, order } = parseWhere(where, params);
+		return { clause, order };
+	} catch (error) {
+		if (problemOf(error) === null) throw error;
+		return null;
+	}
+}
+
+function build(
+	where: string,
+	params: Readonly<Record<string, ParamValue>>,
+	scope: WhereScope,
+): SQL {
+	const { clause, pieces } = parseWhere(where, params);
 	const base: Scope = new Map();
 	const unavailable = (why: string) => ({ unavailable: why });
 	if (scope.from === "person") {
@@ -601,7 +642,7 @@ function build(
 		base.set("h", scope.seeks ? HIT : unavailable("这条没有 seek，不能引用 h"));
 		base.set("p", unavailable("经历条件里没有 p；人的要求另写一条人的条件"));
 	}
-	walk(body.whereClause, [base]);
+	walk(clause, [base]);
 
 	const chunks = pieces.map((p) => {
 		if ("text" in p) return sql.raw(p.text);

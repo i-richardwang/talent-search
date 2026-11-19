@@ -1,5 +1,6 @@
 import type { TraceStep } from "#/search/trace";
-import type { RecentSearch, Turn } from "#/server/turn";
+import type { ConditionExplained, ThreadTurn } from "#/server/explain";
+import type { RecentSearch } from "#/server/turn";
 import {
 	asQuery,
 	KEYWORD_SPEC,
@@ -21,6 +22,62 @@ import {
  * 人名、工号、公司、部门、学校全是编的，和人才库无关；类型都从产品代码导入。
  */
 
+/** 每条条件点开后的说明，按条件的名称写，和服务端照条件解析出来的一样（`server/explain.ts`）。 */
+const EXPLAINED_BY_LABEL: Record<string, ConditionExplained> = {
+	推荐系统: {
+		options: [],
+		work: {
+			written: [{ tag: "推荐系统" }, { word: "/" }, { tag: "推荐算法" }],
+		},
+		months: null,
+	},
+	"大厂 · 3 年以上": {
+		work: null,
+		options: [
+			{
+				lead: null,
+				rows: [{ kind: "fact", field: "入职前公司", value: [{ tag: "大厂" }] }],
+			},
+		],
+		months: 36,
+	},
+	团队管理: {
+		options: [],
+		work: { written: [{ tag: "团队管理" }] },
+		months: null,
+	},
+	"学历 · 硕士及以上": {
+		work: null,
+		options: [
+			{
+				lead: null,
+				rows: [
+					{
+						kind: "fact",
+						field: "学历",
+						value: [{ tag: "硕士" }, { word: "及以上" }],
+					},
+				],
+			},
+		],
+		months: null,
+	},
+	技术分享: {
+		options: [],
+		work: { written: [{ tag: "技术分享" }] },
+		months: null,
+	},
+};
+
+/** 各轮出现过的条件按 id 配上说明；每一轮都带这一份，线程按条件 id 取。 */
+const EXPLAINED: ThreadTurn["explained"] = Object.fromEntries(
+	asQuery(SHARING_CONDITIONS).map((c) => {
+		const explained = EXPLAINED_BY_LABEL[c.label];
+		if (!explained) throw new Error(`样例条件「${c.label}」没有说明`);
+		return [c.id, explained];
+	}),
+);
+
 /** 链头那一轮的 id，也是这次找人任务的 id。 */
 export const ROOT_TURN_ID = "turn-a1";
 
@@ -28,7 +85,7 @@ export const ROOT_TURN_ID = "turn-a1";
 export const TASK_TITLE = "找做过推荐系统的算法工程师，最好在大厂待过三年以上";
 
 /** 链头：一句需求，整理出两条条件，意思都明确，AI 不多说。 */
-const ROUND1: Turn = {
+const ROUND1: ThreadTurn = {
 	id: ROOT_TURN_ID,
 	mode: "conversation",
 	title: TASK_TITLE,
@@ -40,10 +97,11 @@ const ROUND1: Turn = {
 	fault: null,
 	settled: true,
 	at: T0 - 1500,
+	explained: EXPLAINED,
 };
 
 /** 第二轮：补充一句，加了两条；两处要求人才库里搜不了，AI 问要不要换成相近的找法，给一句可以选的回答。 */
-const ROUND2: Turn = {
+const ROUND2: ThreadTurn = {
 	id: "turn-a2",
 	mode: "conversation",
 	title: TASK_TITLE,
@@ -66,13 +124,14 @@ const ROUND2: Turn = {
 	fault: null,
 	settled: true,
 	at: T0 + 58_000,
+	explained: EXPLAINED,
 };
 
 /**
  * 第三轮：HR 在条件上直接移除了学历，没有说话。不是硕士的候选人进了范围，AI 接着把他们的
  * 经历看完，这一轮底下是补人的过程。
  */
-const ROUND3: Turn = {
+const ROUND3: ThreadTurn = {
 	id: "turn-a3",
 	mode: "conversation",
 	title: TASK_TITLE,
@@ -84,10 +143,11 @@ const ROUND3: Turn = {
 	fault: null,
 	settled: true,
 	at: T0 + 90_000,
+	explained: EXPLAINED,
 };
 
 /** 第二轮之后 HR 选了 AI 给的那句回答：它就是下一句话，AI 照着再理解一轮，多了一条加分的条件。 */
-export const ANSWERED_TURN: Turn = {
+export const ANSWERED_TURN: ThreadTurn = {
 	id: "turn-a3-chosen",
 	mode: "conversation",
 	title: TASK_TITLE,
@@ -99,10 +159,11 @@ export const ANSWERED_TURN: Turn = {
 	fault: null,
 	settled: true,
 	at: T0 + 80_000,
+	explained: EXPLAINED,
 };
 
 /** 整条对话链，链头在前；名单看的是最后一轮。 */
-export const THREAD: Turn[] = [ROUND1, ROUND2, ROUND3];
+export const THREAD: ThreadTurn[] = [ROUND1, ROUND2, ROUND3];
 
 /** 链头那一轮；只看它时它也是最后一轮。 */
 export const ROOT_TURN = ROUND1;
@@ -123,12 +184,13 @@ const JUST_NOW = Date.now() - 3000;
  * 第三轮刚改完、AI 还在补人时的样子：条件已经有了，名单先按确认过的出；补人没成时也是它，
  * 配上出错的环节。
  */
-export const COMPLETING_TURN: Turn = {
+export const COMPLETING_TURN: ThreadTurn = {
 	...ROUND3,
 	trace: [],
 	startedAt: JUST_NOW,
 	settled: false,
 	at: JUST_NOW,
+	explained: EXPLAINED,
 };
 
 /** 补人补到一半时已经走过的步骤：刚取来新进范围的那些经历。 */
@@ -137,7 +199,7 @@ export const COMPLETING_TRACE: TraceStep[] = [
 ];
 
 /** 刚说完、AI 还在理解的一轮：还没有条件，步骤走到一半。 */
-export const PENDING_TURN: Turn = {
+export const PENDING_TURN: ThreadTurn = {
 	id: "turn-a4",
 	mode: "conversation",
 	title: TASK_TITLE,
@@ -149,6 +211,7 @@ export const PENDING_TURN: Turn = {
 	fault: null,
 	settled: false,
 	at: JUST_NOW,
+	explained: EXPLAINED,
 };
 
 /** 理解到一半时已经走过的步骤，线程在运行中逐步显示它：正看到第一批经历。 */
@@ -171,7 +234,7 @@ export const PENDING_TRACE: TraceStep[] = [
 ];
 
 /** 一条新任务的链头，还在理解：没有上一轮，也还没有步骤。 */
-export const FRESH_TURN: Turn = {
+export const FRESH_TURN: ThreadTurn = {
 	id: "turn-b1",
 	mode: "conversation",
 	title: "找做过支付风控的后端",
@@ -183,6 +246,7 @@ export const FRESH_TURN: Turn = {
 	fault: null,
 	settled: false,
 	at: JUST_NOW,
+	explained: EXPLAINED,
 };
 
 /** 一条对话记录的样例：只有一条必须的经历主张。 */

@@ -15,6 +15,7 @@ import { RESULT_MAX } from "#/search/weights";
 import { listAudit, recordExport, recordView } from "./audit";
 import { administrator, authenticated } from "./auth-functions";
 import { employeeData, employeeDetail, listEmployees } from "./data";
+import { explainThread, type ThreadTurn } from "./explain";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
 import { reviewJudge } from "./review";
@@ -28,12 +29,12 @@ import {
 	loadThread,
 	processTurn,
 	restartTurn,
-	type Turn,
 } from "./turn";
 
 /**
- * 按记录 id 载入完整线程和当前筛选下的结果。条件来自已校验的查询记录；
- * 视图入参在此独立校验。待理解记录只返回线程，工作台读进度等它理解完。
+ * 按记录 id 载入完整线程和当前筛选下的结果。线程上每条条件带着它实际要什么的说明
+ * （`explain.ts`）。条件来自已校验的查询记录；视图入参在此独立校验。
+ * 待理解记录只返回线程，工作台读进度等它理解完。
  * 只在当前账号自己的记录里找（`turn.ts`）：别人的记录和不存在的一样是 null。
  */
 export const loadWorkbench = createServerFn({ method: "GET" })
@@ -47,12 +48,16 @@ export const loadWorkbench = createServerFn({ method: "GET" })
 		async ({
 			data,
 			context,
-		}): Promise<{ thread: Turn[]; result: SearchOutcome | null } | null> => {
+		}): Promise<{
+			thread: ThreadTurn[];
+			result: SearchOutcome | null;
+		} | null> => {
 			// 整条链一次取回：对话栏画的是全部，名单是正看着的这一轮
-			const thread = await loadThread(context.viewer.id, data.turnId);
-			const turn = thread?.find((t) => t.id === data.turnId);
-			const head = thread?.[0];
-			if (!thread || !turn || !head) return null;
+			const chain = await loadThread(context.viewer.id, data.turnId);
+			const turn = chain?.find((t) => t.id === data.turnId);
+			const head = chain?.[0];
+			if (!chain || !turn || !head) return null;
+			const thread = await explainThread(chain);
 			if (!turn.spec) return { thread, result: null };
 			return {
 				thread,

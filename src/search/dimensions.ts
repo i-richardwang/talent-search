@@ -208,6 +208,12 @@ function plain(label: string, column: (fact: DimSource) => string | null) {
 	};
 }
 
+/** 经历来源的两种取值叫什么：筛选的选项和搜索条件的详情（`search/catalog.ts`）同一套。 */
+export const KIND_NAMES = {
+	internal: "公司内经历",
+	external: "入职前经历",
+} as const;
+
 /**
  * 这张表是维度在全站的唯一定义。
  *
@@ -253,7 +259,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		match: "set",
 		values: (f) => (f.kind === null ? [] : [f.kind]),
 		id: (v) => v,
-		option: (v) => (v === "internal" ? "公司内经历" : "入职前经历"),
+		option: (v) => KIND_NAMES[v],
 		parse: (raw) =>
 			raw === "internal" || raw === "external" ? raw : undefined,
 		compare: (a, b) => b.n - a.n || a.value.localeCompare(b.value),
