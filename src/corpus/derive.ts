@@ -1,36 +1,41 @@
 /**
  * 为待处理经历段抽取说法、对齐序列并连边。
  * 模型调用在事务外，结果按批提交说法、边和解析版本。模型答不出的段同样有结果：
- * 记为未能作答，判定标准变了才重新问；端点故障让这一轮中止，下一轮接着。
+ * 记录为解析失败，判定标准变了才重新问；端点故障让这一轮中止，下一轮接着。
  * 每轮按 id 向后处理，时间预算耗尽后退出。判定标准变了以后，新结果先写进
  * `experience_next`，每一段都有了新结果再一次替换正式表：检索一直读一份完整的标准。
  */
 
 import "@tanstack/react-start/server-only";
-import { createHash } from "node:crypto";
-import { chatConfigured } from "#/server/chat";
-import { align, alignIdentity, type SeqPair, seqTree } from "./align";
+import { align, alignmentOf, type SeqPair } from "./align";
 import {
-	type Extraction,
+	type DeriveStandard,
+	deriveStandard,
+	deriveToken,
+	UNDERIVED,
+} from "./derive-standard";
+import { inputKeySql, prepareExternal } from "./external-derive";
+import {
+	type DeriveInput,
 	type ExtractionResult,
 	extract,
-	extractIdentity,
+	extractionOf,
 } from "./extract";
 import { prunePhrases } from "./phrases";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
-import { PHRASING, type Phrasing, phrasesOf } from "./route-texts";
+import { type Phrasing, phrasesOf } from "./route-texts";
 import type { CorpusClient, CorpusSession } from "./session";
 
 const BATCH = 200;
 
-type StoredRow = ExperienceRow & { id: number };
+type StoredRow = DeriveInput &
+	Pick<ExperienceRow, "seq_l1" | "seq_l2" | "seq_l3"> & { id: number };
 
-/** 这一版标准下的一段结果；`unanswered` 见 schema 同名列。 */
-type DerivedRow = StoredRow & {
-	seq_inferred_l1: string;
-	seq_inferred_l2: string;
-	unanswered: boolean;
+type ParsedRow = {
+	row: StoredRow;
+	extraction: ExtractionResult;
+	sequence: SeqPair | null;
 };
 
 /** 一段经历指向一条说法的边。 */
@@ -40,16 +45,13 @@ type Link = Phrasing & { experienceId: number };
  * 这一批段的说法与边（组合方式见 `route-texts.ts`）。四类进同一张说法表：一个能力词
  * 恰好和某个岗位名是同一串字时只存一行，两条边各指向它。能力的投入档存在边的
  * 第四列，其余类那一列是空。
- *
- * `extractions` 按段对齐：null 是这一段没有抽取（未配置、无需调用或模型答不出），
- * 它的自述证据退回整段原文。
  */
-export function phrasePlan(
-	rows: StoredRow[],
-	extractions: (Extraction | null)[],
-): { texts: string[]; links: Link[] } {
+export function phrasePlan(batch: Pick<ParsedRow, "row" | "extraction">[]): {
+	texts: string[];
+	links: Link[];
+} {
 	const links: Link[] = [];
-	for (const [index, row] of rows.entries()) {
+	for (const { row, extraction } of batch) {
 		const phrasings = phrasesOf(
 			{
 				kind: row.kind,
@@ -60,28 +62,11 @@ export function phrasePlan(
 				seqL3: row.seq_l3,
 				description: row.description,
 			},
-			extractions[index] ?? null,
+			extraction.status === "done" ? extraction.value : null,
 		);
 		for (const p of phrasings) links.push({ experienceId: row.id, ...p });
 	}
 	return { texts: [...new Set(links.map((link) => link.text))], links };
-}
-
-export async function currentTree(client: CorpusClient): Promise<SeqPair[]> {
-	const { rows } = await client.query<{ seq_l1: string; seq_l2: string }>(
-		"select distinct seq_l1, seq_l2 from experience where kind = 'internal'",
-	);
-	return seqTree(rows.map((row) => ({ kind: "internal", ...row })));
-}
-
-/**
- * 当前的解析版本：说法的组合方式，以及抽取和对齐的标准。抽取和对齐没配端点时
- * 它们不在版本里：配上了就该重新解析。
- */
-export function identity(tree: SeqPair[]): string {
-	const parts = [PHRASING];
-	if (chatConfigured()) parts.push(extractIdentity(), alignIdentity(tree));
-	return createHash("sha256").update(parts.join("")).digest("hex");
 }
 
 /**
@@ -92,39 +77,39 @@ export type DeriveProgress = {
 	total: number;
 	done: number;
 	staging: boolean;
+	externalPending?: number;
 };
 
-export async function progress(
-	client: CorpusClient,
-	version: string,
-): Promise<DeriveProgress> {
+export async function progress(client: CorpusClient): Promise<DeriveProgress> {
+	const { mode, version, extract, align } = await deriveStandard(client);
 	const { rows } = await client.query<{
 		total: string;
 		done: string;
 		staging: boolean | null;
 	}>(
 		`select count(*) as total,
-			count(r.unanswered) as done,
+			count(*) filter (where n.experience_id is not null or e.derived_identity=$1) as done,
 			bool_or(e.derived_identity <> $1) as staging
 		 from experience e
-		 left join experience_next n on n.experience_id = e.id and n.derived_identity = $1
-		 cross join lateral (select case
-			when n.experience_id is not null then n.unanswered
-			when e.derived_identity = $1 then e.unanswered end as unanswered) r`,
+		 left join experience_next n on n.experience_id = e.id and n.derived_identity = $1`,
 		[version],
 	);
 	const row = rows[0];
-	return {
+	const state: DeriveProgress = {
 		total: Number(row?.total ?? 0),
 		done: Number(row?.done ?? 0),
 		staging: row?.staging ?? false,
 	};
+	if (mode === "external") {
+		const { rows } = await client.query<{ n: number }>(
+			`select count(*)::int as n from derive_request where standard=any($1::text[])
+			 and experience_id is not null and result is null and failed_version is null`,
+			[[extract.standard, align.standard]],
+		);
+		state.externalPending = rows[0]?.n ?? 0;
+	}
+	return state;
 }
-
-/** 还要调模型的段：正式表里不是这一版，暂存的新结果里也没有。 */
-const UNDERIVED = `e.derived_identity is distinct from $1
-	and not exists (select 1 from experience_next n
-		where n.experience_id = e.id and n.derived_identity = $1)`;
 
 async function underived(client: CorpusClient, version: string) {
 	const { rows } = await client.query<{ n: string }>(
@@ -157,21 +142,63 @@ async function staging(
 	return staged;
 }
 
-async function nextBatch(
+/** 按 id 读取下一批。外部模式只处理所需结果已经齐备的段。 */
+async function parseBatch(
 	client: CorpusClient,
-	version: string,
+	standard: DeriveStandard,
 	afterId: number,
-): Promise<StoredRow[]> {
+	report: Report,
+): Promise<ParsedRow[]> {
+	const { mode, version, tree } = standard;
+	const fields =
+		"e.id,e.kind,e.unemployed,e.company,e.title,e.description,e.seq_l1,e.seq_l2,e.seq_l3";
+	const pending = `${UNDERIVED} and e.id > $2`;
+	const page = `order by e.id limit ${BATCH}`;
+	if (mode === "external") {
+		const { rows } = await client.query<
+			StoredRow & { extraction: unknown; alignment: unknown }
+		>(
+			`select ${fields}, x.result as extraction, a.result as alignment
+			 from experience e
+			 left join derive_request x on x.standard=$3 and x.input_key=${inputKeySql}
+			 left join derive_request a on a.standard=$4 and a.input_key=${inputKeySql}
+			 where ${pending} and (e.kind <> 'external' or e.unemployed or (
+				(e.description='' or x.result is not null or x.failed_version=$1)
+				and (not $5::boolean or a.result is not null or a.failed_version=$1)))
+			 ${page}`,
+			[
+				version,
+				afterId,
+				standard.extract.standard,
+				standard.align.standard,
+				tree.length > 0,
+			],
+		);
+		return rows.map((row) => ({
+			row,
+			extraction: extractionOf(row, row.extraction),
+			sequence: alignmentOf(row, tree, row.alignment),
+		}));
+	}
 	const { rows } = await client.query<StoredRow>(
-		`select id, emp_id, kind, unemployed, start_date::text, end_date::text, company, department,
-			department_path, company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months
-		 from experience e
-		 where ${UNDERIVED} and id > $2
-		 order by id
-		 limit ${BATCH}`,
+		`select ${fields} from experience e where ${pending} ${page}`,
 		[version, afterId],
 	);
-	return rows;
+	if (mode === "text" || rows.length === 0)
+		return rows.map((row) => ({
+			row,
+			extraction: { status: "skipped" },
+			sequence: ["", ""],
+		}));
+	const extractions = await extract(rows, report);
+	const sequences = await align(rows, tree, report, standard.align);
+	return rows.map((row, index) => {
+		const extraction = extractions[index];
+		const sequence = sequences[index];
+		if (!extraction || sequence === undefined)
+			throw new Error("这一批经历缺少解析结果");
+		return { row, extraction, sequence };
+	});
 }
 
 /**
@@ -182,10 +209,13 @@ async function commitBatch(
 	client: CorpusClient,
 	version: string,
 	staged: boolean,
-	rows: DerivedRow[],
-	texts: string[],
-	links: Link[],
-): Promise<void> {
+	batch: ParsedRow[],
+) {
+	const { texts, links } = phrasePlan(batch);
+	const unanswered = batch.map(
+		({ extraction, sequence }) =>
+			extraction.status === "failed" || sequence === null,
+	);
 	await client.query("begin");
 	try {
 		await client.query(
@@ -194,12 +224,12 @@ async function commitBatch(
 			 on conflict (text_key) do nothing`,
 			[texts],
 		);
-		const ids = rows.map((row) => row.id);
+		const ids = batch.map(({ row }) => row.id);
 		const inferred = [
 			ids,
-			rows.map((row) => row.seq_inferred_l1),
-			rows.map((row) => row.seq_inferred_l2),
-			rows.map((row) => row.unanswered),
+			batch.map(({ sequence }) => sequence?.[0] ?? ""),
+			batch.map(({ sequence }) => sequence?.[1] ?? ""),
+			unanswered,
 			version,
 		];
 		if (staged)
@@ -247,6 +277,7 @@ async function commitBatch(
 				inferred,
 			);
 		await client.query("commit");
+		return unanswered.filter(Boolean).length;
 	} catch (error) {
 		await client.query("rollback");
 		throw error;
@@ -295,11 +326,20 @@ export async function derive(
 	const { client } = session;
 	const deadline = Date.now() + budgetMs;
 
-	const tree = await currentTree(client);
-	const version = identity(tree);
+	const standard = await deriveStandard(client);
+	const { mode, version } = standard;
+	if (mode === "external" && !deriveToken())
+		throw new Error(
+			"外部解析需要独立的 DERIVE_TOKEN，请使用与 REVIEW_TOKEN 不同的凭据",
+		);
 	const staged = await staging(client, version);
 	const total = await underived(client, version);
-	if (!chatConfigured())
+	if (mode === "external") await prepareExternal(client, standard);
+	else
+		await client.query(
+			"delete from derive_request where result is null and failed_version is null",
+		);
+	if (mode === "text")
 		report("  未配置抽取模型，自述按整段原文处理，入职前经历不推断序列");
 	report(`  待解析 ${total} 段`);
 	if (staged)
@@ -308,38 +348,14 @@ export async function derive(
 	let done = 0;
 	let afterId = 0;
 	while (Date.now() < deadline) {
-		const rows = await nextBatch(client, version, afterId);
-		if (rows.length === 0) break;
-		afterId = rows[rows.length - 1]?.id ?? afterId;
-		report("");
-		report(`处理一批 ${rows.length} 段…`);
-
-		// 没配抽取端点，每一段都是「没读过」：自述证据退回整段原文（route-texts.ts）
-		let extractions: ExtractionResult[] = rows.map(() => ({
-			status: "skipped",
-		}));
-		let aligned: (SeqPair | null)[] = rows.map(() => ["", ""]);
-		if (chatConfigured()) {
-			extractions = await extract(rows, report);
-			aligned = await align(rows, tree, report);
-		}
-		// 抽取未能作答使用原文；对齐未能作答的结果为空序列。
-		const results: DerivedRow[] = rows.map((row, index) => ({
-			...row,
-			seq_inferred_l1: aligned[index]?.[0] ?? "",
-			seq_inferred_l2: aligned[index]?.[1] ?? "",
-			unanswered:
-				extractions[index]?.status === "failed" || aligned[index] === null,
-		}));
-		const unanswered = results.filter((row) => row.unanswered).length;
+		const batch = await parseBatch(client, standard, afterId, report);
+		const last = batch.at(-1);
+		if (!last) break;
+		afterId = last.row.id;
+		const unanswered = await commitBatch(client, version, staged, batch);
 		if (unanswered > 0)
-			report(`  ${unanswered} 段未能作答，记下结果，判定标准变了再问`);
-		const { texts, links } = phrasePlan(
-			results,
-			extractions.map((one) => (one.status === "done" ? one.value : null)),
-		);
-		await commitBatch(client, version, staged, results, texts, links);
-		done += rows.length;
+			report(`  ${unanswered} 段无法解析，已记录；标准变更后会再处理`);
+		done += batch.length;
 		report(`  已解析 ${done}/${total} 段`);
 	}
 	report("");

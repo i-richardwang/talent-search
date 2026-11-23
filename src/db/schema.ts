@@ -317,6 +317,13 @@ export const experience = pgTable(
 	],
 );
 
+/** 解析标准使用全库登记的序列。视图仅提供序列名，各账号在同一个快照中按同一标准核对经历。 */
+export const deriveSequence = pgView("derive_sequence", {
+	seq_l1: text("seq_l1").notNull(),
+	seq_l2: text("seq_l2").notNull(),
+}).as(sql`select distinct seq_l1, seq_l2 from experience
+	where kind='internal' and seq_l1<>'' and seq_l2<>''`);
+
 export type Employee = typeof employee.$inferSelect;
 export type Experience = typeof experience.$inferSelect;
 
@@ -603,6 +610,32 @@ export const completionCache = pgTable(
 		payload: jsonb("payload").notNull(),
 	},
 	(t) => [primaryKey({ columns: [t.identity, t.textSha] })],
+);
+
+/** 外部解析共用同一输入的一份结果；原文从仍在库里的经历读取。 */
+export const deriveRequest = pgTable(
+	"derive_request",
+	{
+		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+		standard: text("standard").notNull(),
+		inputKey: text("input_key").notNull(),
+		experienceId: integer("experience_id").references(() => experience.id, {
+			onDelete: "set null",
+		}),
+		result: jsonb("result"),
+		failedVersion: text("failed_version"),
+	},
+	(t) => [
+		unique().on(t.standard, t.inputKey),
+		index("derive_request_experience").on(t.experienceId),
+		index("derive_request_pending")
+			.on(t.standard, t.id)
+			.where(sql`${t.result} is null and ${t.failedVersion} is null`),
+		check(
+			"derive_request_one_result",
+			sql`num_nonnulls(${t.result},${t.failedVersion}) <= 1`,
+		),
+	],
 );
 
 /** 一次语料任务的持久记录；实时运行状态由会话锁判断。 */
@@ -975,11 +1008,9 @@ export const auditEvent = pgTable(
 	{
 		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
 		at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
-		userId: text("user_id")
-			.notNull()
-			.references(() => authUser.id),
+		userId: text("user_id").references(() => authUser.id),
 		action: text("action", { enum: AUDIT_ACTIONS }).notNull(),
-		/** 查看、导出的是谁。 */
+		/** 查看详情、导出或交给外部解析服务的是谁。 */
 		empId: text("emp_id"),
 		/** 搜索的内容。 */
 		text: text("text"),
@@ -988,9 +1019,11 @@ export const auditEvent = pgTable(
 	},
 	(t) => [
 		check(
-			"audit_event_object",
+			"audit_event_object_and_actor",
 			sql`num_nonnulls(${t.text}, ${t.empId}, ${t.accountId}) = 1 and
+				(${t.userId} is null) = (${t.action} = 'derive-read') and
 				case ${t.action}
+					when 'derive-read' then ${t.empId} is not null
 					when 'search' then ${t.text} is not null
 					when 'view' then ${t.empId} is not null
 					when 'export' then ${t.empId} is not null

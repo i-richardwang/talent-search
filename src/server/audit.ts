@@ -1,8 +1,6 @@
 /**
- * 操作记录：写一行，和管理员审计页读的那张表。写入的地方有四处——记下一轮搜索
- * （`turn.ts`，和那一轮同一个事务）、取一个人的详情、导出名单（`functions.ts`）、管理员在
- * 账号页改一个账号（`accounts.ts`，和改动同一个事务）。前三处都在把数据交出去之前写，写不进去
- * 这次请求就失败：没有留痕的数据不出服务端。
+ * 搜索和账号变更在业务事务中留存记录。查看详情、导出名单和外部服务读取经历时，
+ * 先记录本次涉及的人员，写入成功后才能返回数据。
  */
 import "@tanstack/react-start/server-only";
 import { db } from "#/db";
@@ -15,7 +13,10 @@ import { escapeLike } from "#/lib/sql";
 type Store = Pick<typeof db, "insert">;
 
 /** 账号页上对一个账号做的事。 */
-export type AccountAction = Exclude<AuditAction, "search" | "view" | "export">;
+export type AccountAction = Exclude<
+	AuditAction,
+	"search" | "view" | "export" | "derive-read"
+>;
 
 /** 这个账号搜了什么。`store` 是写下那一轮的事务。 */
 export async function recordSearch(store: Store, userId: string, text: string) {
@@ -36,6 +37,16 @@ export async function recordExport(userId: string, empIds: string[]) {
 		);
 }
 
+/** 发给外部解析服务之前记录本批提供了哪些人的经历。 */
+export async function recordDeriveRead(empIds: string[]) {
+	if (empIds.length)
+		await db
+			.insert(auditEvent)
+			.values(
+				empIds.map((empId) => ({ action: "derive-read" as const, empId })),
+			);
+}
+
 /** 这个管理员对这个账号做了这件事。`store` 是改这个账号的事务。 */
 export async function recordAccount(
 	store: Store,
@@ -54,7 +65,7 @@ export type AuditRow = {
 	/** 账号的显示名称 */
 	name: string;
 	action: AuditAction;
-	/** 查看、导出的是谁；其余为 null */
+	/** 查看、导出或交给外部解析服务的员工 */
 	empId: string | null;
 	/** 那个人现在的名字；已经不在人才库里为 null */
 	empName: string | null;
@@ -75,10 +86,10 @@ export async function listAudit(
 ): Promise<TablePage<AuditRow>> {
 	const pattern = `%${escapeLike(needle.trim())}%`;
 	const from = `from audit_event a
-		join auth_user u on u.id = a.user_id
+		left join auth_user u on u.id = a.user_id
 		left join employee e on e.emp_id = a.emp_id
 		left join auth_user t on t.id = a.account_id
-		where u.username ilike $1 or u.name ilike $1 or a.emp_id ilike $1
+		where u.username ilike $1 or coalesce(u.name, '外部解析服务') ilike $1 or a.emp_id ilike $1
 			or e.name ilike $1 or a.text ilike $1
 			or t.username ilike $1 or t.name ilike $1`;
 	// 管理员查整个系统的操作，被查看、导出的人不按谁的数据范围过滤
@@ -91,7 +102,7 @@ export async function listAudit(
 		const at = pageAt(total, page);
 		const { rows } = await client.query<AuditRow>(
 			`select a.id, to_char(a.at, 'YYYY-MM-DD HH24:MI:SS') as at,
-				u.username, u.name, a.action, a.emp_id as "empId",
+				coalesce(u.username, '') as username, coalesce(u.name, '外部解析服务') as name, a.action, a.emp_id as "empId",
 				e.name as "empName", a.text,
 				t.username as "accountUsername", t.name as "accountName"
 			${from}

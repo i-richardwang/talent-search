@@ -1,7 +1,7 @@
 /**
  * 读取入职前经历中能拿来找人的能力，以及这个人在每一项上投入多深；自述证据只来自这份抽取。
  * 模型负责领域判断，schema 校验回答形状，conform 按领域规则过滤单条说法。
- * 未调用、未能作答与成功抽取分别返回，成功的空抽取也是已读结果。
+ * 分别记录跳过、解析失败和成功。成功时允许能力列表为空。
  */
 
 import { z } from "zod";
@@ -63,9 +63,15 @@ export const SYSTEM = `你在帮 HR 整理员工入职前的工作经历。HR �
 {"items": [{"text": "数据仓库", "depth": "主导"}, {"text": "ETL", "depth": "做过"}, {"text": "Spark", "depth": "做过"}, {"text": "Hive", "depth": "做过"}, {"text": "数据质量", "depth": "做过"}, {"text": "推荐算法优化", "depth": "做过"}, {"text": "Flink", "depth": "提到"}]}`;
 
 /** 回答形状；取值规则由 conform 校验。 */
-const SCHEMA = z.object({
+const extractionSchema = z.object({
 	items: z.array(z.object({ text: z.string(), depth: z.string() })),
 });
+
+export const extraction = {
+	system: SYSTEM,
+	schema: extractionSchema,
+	standard: standardOf(SYSTEM, extractionSchema),
+};
 
 /** 送给模型的那段话。它也是缓存的键：同一段话永远得到同一份抽取。 */
 export function promptInput(row: {
@@ -120,38 +126,41 @@ function deeper(a: Engagement, b: Engagement): boolean {
 	return ENGAGEMENTS.indexOf(a) < ENGAGEMENTS.indexOf(b);
 }
 
-/** 抽取标准，只由提示词和回答形状决定，不随执行模型变化。 */
-export function extractIdentity(): string {
-	return standardOf(SYSTEM, SCHEMA);
+export type DeriveInput = Pick<
+	ExperienceRow,
+	"kind" | "unemployed" | "title" | "company" | "description"
+>;
+
+function needsExtraction(row: DeriveInput) {
+	return row.kind === "external" && !row.unemployed && Boolean(row.description);
+}
+
+export function extractionOf(
+	row: DeriveInput,
+	payload: unknown,
+): ExtractionResult {
+	if (!needsExtraction(row)) return { status: "skipped" };
+	if (payload == null) return { status: "failed" };
+	return { status: "done", value: conform(payload, row.company) };
 }
 
 /** 按入参顺序返回调用状态与抽取；验收和解析共用此入口。 */
 export async function extract(
-	rows: Pick<
-		ExperienceRow,
-		"kind" | "unemployed" | "title" | "company" | "description"
-	>[],
+	rows: DeriveInput[],
 	report: Report,
 ): Promise<ExtractionResult[]> {
 	const asked = rows.map((row) =>
-		row.kind === "external" && !row.unemployed && row.description
-			? promptInput(row)
-			: null,
+		needsExtraction(row) ? promptInput(row) : null,
 	);
 	const payloads = await complete(
 		extractModel(),
-		SYSTEM,
-		SCHEMA,
+		extraction.system,
+		extraction.schema,
 		asked.filter((text): text is string => text !== null),
 		"抽取",
 		report,
-		// 单条无效说法由 conform 丢弃，合法空列表同样是一份已读结果。
-		(payload) => SCHEMA.safeParse(payload).success,
 	);
-	return rows.map((row, index) => {
-		const text = asked[index];
-		if (text == null) return { status: "skipped" };
-		if (!payloads.has(text)) return { status: "failed" };
-		return { status: "done", value: conform(payloads.get(text), row.company) };
-	});
+	return rows.map((row, index) =>
+		extractionOf(row, payloads.get(asked[index] ?? "")),
+	);
 }

@@ -8,13 +8,7 @@
 
 import "@tanstack/react-start/server-only";
 import { eq, sql } from "drizzle-orm";
-import {
-	currentTree,
-	type DeriveProgress,
-	derive,
-	identity,
-	progress,
-} from "#/corpus/derive";
+import { type DeriveProgress, derive, progress } from "#/corpus/derive";
 import type { Judge } from "#/corpus/judgment";
 import type { Report } from "#/corpus/report";
 import { review } from "#/corpus/review";
@@ -247,9 +241,7 @@ export async function taskLog(runId: number): Promise<string[]> {
 
 /** 当前标准下的解析进度。后台任务用它决定这一轮有没有活，任务台用它画进度。 */
 export async function deriveProgress(): Promise<DeriveProgress> {
-	return withReadSnapshot("all", async (client) =>
-		progress(client, identity(await currentTree(client))),
-	);
+	return withReadSnapshot("all", progress);
 }
 
 /**

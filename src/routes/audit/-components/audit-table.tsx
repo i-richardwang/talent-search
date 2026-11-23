@@ -22,6 +22,7 @@ import { TablePager } from "../../-components/table-pager";
 
 const ACTION_TEXT: Record<AuditAction, string> = {
 	search: "搜索",
+	"derive-read": "读取待解析经历",
 	view: "查看",
 	export: "导出",
 	"create-account": "新建账号",
@@ -33,11 +34,9 @@ const ACTION_TEXT: Record<AuditAction, string> = {
 	"set-scope": "改数据范围",
 };
 
-/** 一行说的是什么：搜索写内容，查看和导出写那个人，管理账号写那个账号。 */
 function subject(row: AuditRow): string {
-	if (row.action === "search") return row.text || "无搜索条件";
-	if (row.action === "view" || row.action === "export")
-		return dots(row.empId, row.empName);
+	if (row.text !== null) return row.text || "无搜索条件";
+	if (row.empId !== null) return dots(row.empId, row.empName);
 	return dots(row.accountName, row.accountUsername);
 }
 
@@ -77,11 +76,6 @@ export function AuditTable({
 							q ? (
 								<Button onClick={() => search("")}>清除搜索</Button>
 							) : undefined
-						}
-						description={
-							q
-								? undefined
-								: "有人搜索、查看、导出或管理账号之后，这里会有记录。"
 						}
 						icon={q ? SearchXIcon : ShieldCheckIcon}
 						size="large"

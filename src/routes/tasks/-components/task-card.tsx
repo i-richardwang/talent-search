@@ -85,6 +85,7 @@ export function TaskCard({
 	const job = kind === "sync" || off ? null : (kind as JobKind);
 	const unfinished =
 		progress && progress.done < progress.total ? progress : null;
+	const pending = unfinished?.externalPending ?? 0;
 	const history = lane.runs.total > 0;
 
 	async function request() {
@@ -130,6 +131,12 @@ export function TaskCard({
 							<Alert title="自动整理已关闭，标签不再更新" type="secondary" />
 						)}
 						{unfinished && <DeriveBar progress={unfinished} />}
+						{pending > 0 && (
+							<Text size="sm" type="secondary">
+								还有 {integer(pending)}{" "}
+								份能力抽取或序列对齐结果等待外部服务提交。
+							</Text>
+						)}
 						{history && <RunHistory lane={lane} />}
 					</div>
 				)}
