@@ -37,6 +37,7 @@ function read(files: Partial<Record<string, string>> = {}) {
 		"assignments.csv": ASSIGNMENTS,
 		"external.csv": EXTERNAL,
 		"levels.csv": LEVELS,
+		"sequences.csv": "seq_l1,seq_l2\n技术,算法\n",
 		...files,
 	};
 	for (const [name, text] of Object.entries(contents))

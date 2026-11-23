@@ -1,5 +1,5 @@
 /**
- * 数据源与管线的唯一契约：员工档案、公司内任职、入职前经历、公司自己的职级分档，
+ * 数据源与管线的唯一契约：员工档案、公司内任职、入职前经历、公司现行的岗位序列、职级分档，
  * 按期登记的记录（绩效评级、高潜池这类状态），以及入职前那些公司是什么（行业、集团、名企组合）。
  * 适配器提供摊平的事实，决定人群和源特有的切段、字段翻译；
  * 管线处理来源无关的区间校验、相邻段合并、时长及当前信息计算。
@@ -93,6 +93,9 @@ const EXTERNAL_COLUMNS = [
  * 表里没有的职级不进任何一档，管线会报出人数。
  */
 const LEVEL_COLUMNS = ["level", "band", "rank"] as const;
+
+/** 可供入职前经历对齐的公司现行序列，一对一级、二级序列一行。 */
+const SEQUENCE_COLUMNS = ["seq_l1", "seq_l2"] as const;
 
 /**
  * 记录流，一条流一行：`perf` 是一条绩效流，`hipo` 是一条高潜池。`kind` 说这条流的记录是什么：
@@ -192,6 +195,7 @@ export type SourceData = {
 	assignments: SourceAssignment[];
 	external: SourceExternal[];
 	levels: SourceLevel[];
+	sequences: Record<(typeof SEQUENCE_COLUMNS)[number], string>[];
 	streams: SourceStream[];
 	scales: SourceScale[];
 	records: SourceRecord[];
@@ -261,6 +265,7 @@ export function sourceData(raw: {
 	assignments: RawRow[];
 	external: RawRow[];
 	levels: RawRow[];
+	sequences: RawRow[];
 	streams?: RawRow[];
 	scales?: RawRow[];
 	records?: RawRow[];
@@ -292,6 +297,7 @@ export function sourceData(raw: {
 			}),
 		),
 		levels: conform(raw.levels, LEVEL_COLUMNS, "levels"),
+		sequences: conform(raw.sequences, SEQUENCE_COLUMNS, "sequences"),
 		streams: conform(raw.streams ?? [], STREAM_COLUMNS, "streams"),
 		scales: conform(raw.scales ?? [], SCALE_COLUMNS, "scales"),
 		records: conform(raw.records ?? [], RECORD_COLUMNS, "records"),

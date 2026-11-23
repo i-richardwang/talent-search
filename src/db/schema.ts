@@ -317,12 +317,21 @@ export const experience = pgTable(
 	],
 );
 
-/** 解析标准使用全库登记的序列。视图仅提供序列名，各账号在同一个快照中按同一标准核对经历。 */
-export const deriveSequence = pgView("derive_sequence", {
-	seq_l1: text("seq_l1").notNull(),
-	seq_l2: text("seq_l2").notNull(),
-}).as(sql`select distinct seq_l1, seq_l2 from experience
-	where kind='internal' and seq_l1<>'' and seq_l2<>''`);
+/** 入职前经历可对齐的公司现行序列，随数据源整表同步。 */
+export const sequenceCatalog = pgTable(
+	"sequence_catalog",
+	{
+		seqL1: text("seq_l1").notNull(),
+		seqL2: text("seq_l2").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.seqL1, t.seqL2] }),
+		check(
+			"sequence_catalog_names",
+			sql`btrim(${t.seqL1}) <> '' and btrim(${t.seqL2}) <> ''`,
+		),
+	],
+);
 
 export type Employee = typeof employee.$inferSelect;
 export type Experience = typeof experience.$inferSelect;

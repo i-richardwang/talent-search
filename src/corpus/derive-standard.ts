@@ -22,7 +22,7 @@ export function deriveToken() {
 
 export async function currentTree(client: CorpusClient): Promise<SeqPair[]> {
 	const { rows } = await client.query<SeqPair>({
-		text: "select seq_l1, seq_l2 from derive_sequence",
+		text: "select seq_l1, seq_l2 from sequence_catalog",
 		rowMode: "array",
 	});
 	// 沿用提示词的字序，排序不受数据库语言设置影响。

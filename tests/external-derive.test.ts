@@ -206,7 +206,7 @@ test("序列树变化会拒收旧的对齐结果，抽取标准仍然有效，�
 	const old = await read("align");
 	const extract = await read("extract");
 	await pool.query(
-		"update experience set seq_l2='合成新序列' where kind='internal'",
+		"insert into sequence_catalog values ('合成类别','合成新序列')",
 	);
 	assert.deepEqual(
 		await submit("align", old.standard, [

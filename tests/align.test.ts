@@ -76,22 +76,19 @@ function corpus(...external: [string, string][]): ExperienceRow[] {
 }
 
 describe("序列树", () => {
-	test("只取内部任职登记的完整序列，重复登记保留一对", async () => {
+	test("全公司使用同一份现行目录，历史登记和当前人才库的人群不决定可选序列", async () => {
 		await seed([
 			{
 				empId: "TREE",
 				name: "合成甲",
-				segments: [
-					{ months: 1, seqL1: "运营", seqL2: "渠道运营" },
-					{ months: 1, seqL1: "技术", seqL2: "算法" },
-					{ months: 1, seqL1: "技术", seqL2: "算法" },
-					{ months: 1, seqL1: "技术" },
-					{ months: 1, kind: "external", seqL1: "管理", seqL2: "项目管理" },
-				],
+				segments: [{ months: 1, seqL1: "历史", seqL2: "旧岗位" }],
 			},
 		]);
 		const { currentTree } = await import("#/corpus/derive-standard");
 		const { pool } = await import("#/db");
+		await pool.query(
+			"insert into sequence_catalog values ('运营','渠道运营'), ('技术','算法')",
+		);
 		assert.deepEqual(await currentTree(pool), tree);
 	});
 

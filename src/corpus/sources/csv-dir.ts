@@ -1,5 +1,5 @@
 /**
- * 参考数据源：一个目录里的四个 CSV，加上可选的三个记录 CSV 和五个公司知识 CSV，列名就是
+ * 参考数据源：一个目录里的五个 CSV，加上可选的三个记录 CSV 和五个公司知识 CSV，列名就是
  * `src/corpus/contract.ts` 的契约列。
  *
  * 未配置输入目录时读取仓库自带的合成样例。
@@ -12,6 +12,7 @@
  *       external.csv     emp_id,start_date,end_date,company,title,description,
  *                        company_tag,nature,unemployed
  *       levels.csv       level,band,rank
+ *       sequences.csv    seq_l1,seq_l2
  *       streams.csv      stream,kind,label,period,notes            （可选）
  *       scales.csv       stream,value,rank                         （可选）
  *       records.csv      emp_id,stream,period_start,period_end,value,recorded_at（可选）
@@ -114,6 +115,7 @@ export async function extract(report: Report): Promise<SourceData> {
 		assignments,
 		external,
 		levels,
+		sequences,
 		streams,
 		scales,
 		records,
@@ -127,6 +129,7 @@ export async function extract(report: Report): Promise<SourceData> {
 		read(directory, "assignments.csv"),
 		read(directory, "external.csv"),
 		read(directory, "levels.csv"),
+		read(directory, "sequences.csv"),
 		readOptional(directory, "streams.csv"),
 		readOptional(directory, "scales.csv"),
 		readOptional(directory, "records.csv"),
@@ -150,6 +153,7 @@ export async function extract(report: Report): Promise<SourceData> {
 		assignments,
 		external,
 		levels,
+		sequences,
 		streams,
 		scales,
 		records,
