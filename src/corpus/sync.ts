@@ -274,6 +274,15 @@ export async function sync(
 		await stageEmployee(session, employee);
 		await stageExperience(session, experience);
 		counts = await reconcile(session);
+		await client.query("delete from sequence_catalog");
+		await client.query(
+			`insert into sequence_catalog (seq_l1, seq_l2)
+			 select * from unnest($1::text[], $2::text[])`,
+			[
+				data.sequences.map((row) => row.seq_l1.trim()),
+				data.sequences.map((row) => row.seq_l2.trim()),
+			],
+		);
 		await replaceRecords(session, streams, scale, records);
 		await replaceCompanies(session, industries, companies, companyAliases);
 		await client.query("commit");
@@ -282,7 +291,7 @@ export async function sync(
 		throw error;
 	}
 	report(
-		`  人员 ${employee.length} 人，其中离开 ${counts.employeesGone} 人；` +
+		`  现行岗位序列 ${data.sequences.length} 对；人员 ${employee.length} 人，其中离开 ${counts.employeesGone} 人；` +
 			`经历 ${experience.length} 段，新增 ${counts.experienceNew} 段、` +
 			`离开 ${counts.experienceGone} 段`,
 	);

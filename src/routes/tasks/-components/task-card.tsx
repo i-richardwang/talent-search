@@ -10,6 +10,7 @@ import { ActionIcon } from "#/components/ui/action-icon";
 import { Alert } from "#/components/ui/alert";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
+import { Checkbox } from "#/components/ui/checkbox";
 import { CodeBlock } from "#/components/ui/code-block";
 import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
 import { Drawer } from "#/components/ui/drawer";
@@ -25,8 +26,11 @@ import type { Judge } from "#/corpus/judgment";
 import { integer } from "#/lib/format";
 import type { TaskKind } from "#/lib/task";
 import { cn } from "#/lib/utils";
-import { requestTask, taskLog } from "#/server/functions";
-import type { JobKind } from "#/server/jobs";
+import {
+	requestTask,
+	setAutomaticDeriveEnabled,
+	taskLog,
+} from "#/server/functions";
 import type { TaskLane, TaskPages, TaskRunView } from "#/server/tasks";
 import { StatusIcon } from "../../-components/status-badge";
 import { TablePager } from "../../-components/table-pager";
@@ -78,13 +82,27 @@ export function TaskCard({
 	lane: TaskLane;
 	busy: boolean;
 	judge: Judge;
-	onDone: () => void;
+	onDone: () => void | Promise<void>;
 }) {
-	const { kind, latest, progress } = lane;
+	const { kind, latest, derivation } = lane;
+	const progress = derivation?.progress;
+	const [saving, setSaving] = useState(false);
+	async function setSchedule(enabled: boolean) {
+		setSaving(true);
+		try {
+			await setAutomaticDeriveEnabled({ data: enabled });
+			await onDone();
+		} catch {
+			toast.error({ title: "未能确认自动解析设置，请刷新后查看" });
+		} finally {
+			setSaving(false);
+		}
+	}
 	const off = kind === "review" && judge === "off";
-	const job = kind === "sync" || off ? null : (kind as JobKind);
+	const job = kind === "sync" || off ? null : kind;
 	const unfinished =
 		progress && progress.done < progress.total ? progress : null;
+	const pending = unfinished?.externalPending ?? 0;
 	const history = lane.runs.total > 0;
 
 	async function request() {
@@ -97,7 +115,7 @@ export function TaskCard({
 					id: "task-queued",
 					title: `已有任务在排队，这次${TASK_NAME[kind]}没有加入`,
 				});
-			onDone();
+			await onDone();
 		} catch {
 			toast.error({
 				title: "没能确认任务是否加入队列",
@@ -124,12 +142,27 @@ export function TaskCard({
 				}
 				title={TASK_NAME[kind]}
 			>
-				{(off || unfinished || history) && (
+				{(derivation || off || history) && (
 					<div className="flex flex-col gap-4">
+						{derivation && (
+							<Checkbox
+								checked={derivation.automatic}
+								disabled={saving}
+								onChange={setSchedule}
+							>
+								自动解析经历
+							</Checkbox>
+						)}
 						{off && (
 							<Alert title="自动整理已关闭，标签不再更新" type="secondary" />
 						)}
 						{unfinished && <DeriveBar progress={unfinished} />}
+						{pending > 0 && (
+							<Text size="sm" type="secondary">
+								还有 {integer(pending)}{" "}
+								份能力抽取或序列对齐结果等待外部服务提交。
+							</Text>
+						)}
 						{history && <RunHistory lane={lane} />}
 					</div>
 				)}

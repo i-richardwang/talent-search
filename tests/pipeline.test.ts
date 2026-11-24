@@ -97,6 +97,7 @@ function source(rows: {
 		external: (rows.external ?? []).map(
 			(row): RawRow => ({ ...EXTERNAL, ...row }),
 		),
+		sequences: [],
 		levels: rows.levels ?? LEVELS,
 		streams: rows.streams ?? STREAMS,
 		scales: rows.scales ?? SCALES,
@@ -405,6 +406,7 @@ describe("入职前经历", () => {
 					employees: [{ ...PERSON }],
 					assignments: [],
 					external: [{ ...EXTERNAL, unemployed: "false" }],
+					sequences: [],
 					levels: [],
 				}),
 			/unemployed 不是布尔值/,
@@ -831,6 +833,7 @@ describe("契约", () => {
 				employees: [],
 				assignments: [],
 				external: [],
+				sequences: [],
 				levels: [],
 				[table]: [row, empty],
 			};
@@ -851,6 +854,7 @@ describe("契约", () => {
 					employees: [{ emp_id: "E1" }],
 					assignments: [],
 					external: [],
+					sequences: [],
 					levels: [],
 				}),
 			/hire_date/,

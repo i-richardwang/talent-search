@@ -16,6 +16,7 @@ import { Route as DataRouteRouteImport } from './routes/data/route'
 import { Route as LoginRouteRouteImport } from './routes/login/route'
 import { Route as TasksRouteRouteImport } from './routes/tasks/route'
 import { Route as TermsRouteRouteImport } from './routes/terms/route'
+import { Route as ApiDeriveRouteImport } from './routes/api/derive'
 import { Route as ApiReviewRouteImport } from './routes/api/review'
 import { Route as DataEmpIdRouteImport } from './routes/data/$empId'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
@@ -58,6 +59,11 @@ const TermsRouteRoute = TermsRouteRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDeriveRoute = ApiDeriveRouteImport.update({
+  id: '/api/derive',
+  path: '/api/derive',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiReviewRoute = ApiReviewRouteImport.update({
   id: '/api/review',
   path: '/api/review',
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/tasks': typeof TasksRouteRoute
   '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
+  '/api/derive': typeof ApiDeriveRoute
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
   '/terms/$word': typeof TermsWordRoute
@@ -113,6 +120,7 @@ export interface FileRoutesByTo {
   '/tasks': typeof TasksRouteRoute
   '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
+  '/api/derive': typeof ApiDeriveRoute
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
   '/terms/$word': typeof TermsWordRoute
@@ -129,6 +137,7 @@ export interface FileRoutesById {
   '/tasks': typeof TasksRouteRoute
   '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
+  '/api/derive': typeof ApiDeriveRoute
   '/api/review': typeof ApiReviewRoute
   '/data/$empId': typeof DataEmpIdRoute
   '/terms/$word': typeof TermsWordRoute
@@ -146,6 +155,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/terms'
     | '/s/$turnId'
+    | '/api/derive'
     | '/api/review'
     | '/data/$empId'
     | '/terms/$word'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/terms'
     | '/s/$turnId'
+    | '/api/derive'
     | '/api/review'
     | '/data/$empId'
     | '/terms/$word'
@@ -176,6 +187,7 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/terms'
     | '/s/$turnId'
+    | '/api/derive'
     | '/api/review'
     | '/data/$empId'
     | '/terms/$word'
@@ -192,6 +204,7 @@ export interface RootRouteChildren {
   TasksRouteRoute: typeof TasksRouteRoute
   TermsRouteRoute: typeof TermsRouteRouteWithChildren
   STurnIdRouteRoute: typeof STurnIdRouteRouteWithChildren
+  ApiDeriveRoute: typeof ApiDeriveRoute
   ApiReviewRoute: typeof ApiReviewRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/derive': {
+      id: '/api/derive'
+      path: '/api/derive'
+      fullPath: '/api/derive'
+      preLoaderRoute: typeof ApiDeriveRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/review': {
@@ -337,6 +357,7 @@ const rootRouteChildren: RootRouteChildren = {
   TasksRouteRoute: TasksRouteRoute,
   TermsRouteRoute: TermsRouteRouteWithChildren,
   STurnIdRouteRoute: STurnIdRouteRouteWithChildren,
+  ApiDeriveRoute: ApiDeriveRoute,
   ApiReviewRoute: ApiReviewRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }

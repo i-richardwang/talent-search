@@ -13,7 +13,9 @@ const { search } = await import("#/search/search");
 const { employeeDetail } = await import("#/server/data");
 
 beforeEach(async () => {
-	await db.execute(sql`truncate employee, phrase restart identity cascade`);
+	await db.execute(
+		sql`truncate employee, phrase, sequence_catalog restart identity cascade`,
+	);
 });
 
 async function runDerive(budgetMs = 10_000) {
@@ -92,6 +94,7 @@ for (const [label, invalid] of [
 	["序列只有一级", { seq: "技术" }],
 ] as const) {
 	test(`对齐${label}记为未能作答，不推断序列，抽取结果照旧写入`, async () => {
+		await db.execute(sql`insert into sequence_catalog values ('技术', '算法')`);
 		await seed([
 			{
 				empId: "E1",

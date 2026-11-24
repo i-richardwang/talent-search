@@ -77,7 +77,7 @@ const SAMPLE: RouteSource = {
 };
 
 /**
- * 组合方式的身份，进解析版本（`derive.ts` 的 `identity`）：几段写满各项的样例经历走一遍
+ * 组合方式的身份，由 `deriveStandard` 计入解析版本：几段写满各项的样例经历走一遍
  * 组合方式，得到的说法就是身份。组合方式一变，这串字跟着变，所有段按新组合方式重新解析。
  */
 export const PHRASING = JSON.stringify(

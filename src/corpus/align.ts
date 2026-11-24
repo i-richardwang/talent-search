@@ -1,12 +1,11 @@
 /**
  * 入职前经历对齐到登记序列树上完整的一对，存入推断列，仅用于筛选。
- * 两级均空是合法的无法对齐；无效回答返回 null，解析把这一段记为未能作答。
+ * 两级均空是合法的无法对齐；无效回答返回 null，解析把这一段记为无法判断。
  */
 
 import { z } from "zod";
 import { alignModel, complete, standardOf } from "#/server/chat";
-import { promptInput } from "./extract";
-import type { ExperienceRow } from "./pipeline";
+import { type DeriveInput, promptInput } from "./extract";
 import type { Report } from "./report";
 
 const SCHEMA = z.object({ seq: z.string() });
@@ -20,23 +19,6 @@ export type SeqPair = [string, string];
  */
 function line([l1, l2]: SeqPair): string {
 	return `${l2}（${l1}）`;
-}
-
-/** 拼一对序列时的分隔符：控制字符，序列名里不可能出现它。 */
-const PAIR = "\u001f";
-
-/**
- * 公司内任职段登记过的（一级，二级）全集，去重排序。只有一级的登记不算：
- * 对齐要的是能进筛选的一对，而序列筛选只认成对的值。
- */
-export function seqTree(
-	experience: Pick<ExperienceRow, "kind" | "seq_l1" | "seq_l2">[],
-): SeqPair[] {
-	const pairs = new Set<string>();
-	for (const row of experience)
-		if (row.kind === "internal" && row.seq_l1 && row.seq_l2)
-			pairs.add(`${row.seq_l1}${PAIR}${row.seq_l2}`);
-	return [...pairs].sort().map((key) => key.split(PAIR) as SeqPair);
 }
 
 export function systemPrompt(tree: SeqPair[]): string {
@@ -64,37 +46,45 @@ export function conform(raw: unknown, tree: SeqPair[]): SeqPair | null {
 }
 
 /** 取值是树上的整行，一级和二级必定出自同一行；随树进入回答形状和版本身份。 */
-function alignmentSchema(tree: SeqPair[]) {
-	return z.object({ seq: z.enum(["", ...tree.map(line)]) });
+export function alignment(tree: SeqPair[]) {
+	const system = systemPrompt(tree);
+	const schema = z.object({ seq: z.enum(["", ...tree.map(line)]) });
+	return { system, schema, standard: standardOf(system, schema) };
 }
 
-/** 对齐标准随提示词、回答形状和序列树变化，不随执行模型变化。 */
-export function alignIdentity(tree: SeqPair[]): string {
-	return standardOf(systemPrompt(tree), alignmentSchema(tree));
+export function alignmentOf(
+	row: DeriveInput,
+	tree: SeqPair[],
+	payload: unknown,
+): SeqPair | null {
+	if (!tree.length || row.kind !== "external" || row.unemployed)
+		return ["", ""];
+	return conform(payload, tree);
 }
 
 /**
- * 按输入顺序返回推断序列；无需对齐为两级均空，未能作答为 null。
+ * 按输入顺序返回推断序列；无需对齐为两级均空，无法判断为 null。
  *
  * 待业段没有岗位可对，不去问。序列树写在提示词里，也就在缓存的键里：树变了，
  * 旧回答是对着另一棵树给的，自然失效。树是空的（语料里没有登记的序列）就
  * 什么都对不上，返回两级均空。
  */
 export async function align(
-	experience: ExperienceRow[],
+	experience: DeriveInput[],
 	tree: SeqPair[],
 	report: Report,
+	spec = alignment(tree),
 ): Promise<(SeqPair | null)[]> {
 	if (tree.length === 0) return experience.map(() => ["", ""]);
 
 	const asked = experience.map((row) =>
 		row.kind === "external" && !row.unemployed ? promptInput(row) : null,
 	);
-	const texts = asked.filter((text): text is string => text !== null);
+	const texts = asked.filter((text) => text !== null);
 	const payloads = await complete(
 		alignModel(),
-		systemPrompt(tree),
-		alignmentSchema(tree),
+		spec.system,
+		spec.schema,
 		texts,
 		"对齐",
 		report,
@@ -102,19 +92,10 @@ export async function align(
 		{ endpoint: "align" },
 	);
 
-	let aligned = 0;
-	const out = experience.map((_, index): SeqPair | null => {
-		const text = asked[index];
-		if (text === null || text === undefined) return ["", ""];
-		if (!payloads.has(text)) return null;
-		const pair = conform(payloads.get(text), tree);
-		if (!pair) {
-			report("  对齐回答不是序列树上的完整一对或两级均空，这一段不推断序列");
-			return null;
-		}
-		if (pair[0]) aligned++;
-		return pair;
-	});
+	const out = experience.map((row, index) =>
+		alignmentOf(row, tree, payloads.get(asked[index] ?? "")),
+	);
+	const aligned = out.filter((pair) => pair?.[0]).length;
 	report(`  入职前 ${texts.length} 段里 ${aligned} 段有推断序列`);
 	return out;
 }

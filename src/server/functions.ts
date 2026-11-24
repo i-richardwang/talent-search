@@ -25,7 +25,12 @@ import { explainThread, type ThreadTurn } from "./explain";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
 import { reviewJudge } from "./review";
-import { taskLog as runLog, type TaskPages, tasksState } from "./tasks";
+import {
+	taskLog as runLog,
+	setAutomaticDerive,
+	type TaskPages,
+	tasksState,
+} from "./tasks";
 import { describeTerm, listTerms } from "./terms";
 import {
 	createTurn,
@@ -260,7 +265,9 @@ export const rejudgeTerms = createServerFn({ method: "POST" })
 	})
 	.handler(async ({ data }): Promise<"queued" | "busy" | "off"> => {
 		if (reviewJudge() === "off") return "off";
-		return (await requestJob("review", data)) ? "queued" : "busy";
+		return (await requestJob({ kind: "review", rejudge: data }))
+			? "queued"
+			: "busy";
 	});
 
 /**
@@ -278,6 +285,15 @@ export const tasksStatus = createServerFn({ method: "GET" })
 			),
 	)
 	.handler(({ data }) => tasksState(data));
+
+export const setAutomaticDeriveEnabled = createServerFn({ method: "POST" })
+	.middleware([administrator])
+	.validator((enabled: boolean) => {
+		if (typeof enabled !== "boolean")
+			throw new Error("请选择开启或关闭自动解析");
+		return enabled;
+	})
+	.handler(({ data }) => setAutomaticDerive(data));
 
 /**
  * 某一次运行输出的每一行。任务台上打开那一次的日志时才取。
@@ -305,7 +321,9 @@ export const requestTask = createServerFn({ method: "POST" })
 	})
 	.handler(
 		async ({ data }): Promise<{ queued: boolean }> => ({
-			queued: await requestJob(data),
+			queued: await requestJob(
+				data === "derive" ? { kind: data, manual: true } : { kind: data },
+			),
 		}),
 	);
 

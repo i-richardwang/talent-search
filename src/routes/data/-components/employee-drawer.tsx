@@ -165,12 +165,11 @@ function Segment({ segment: s }: { segment: SegmentView }) {
 						{dots(period(s.startDate, s.endDate), duration(s.months), s.level)}
 					</p>
 				</div>
-				{/* 徽章只标待处理和 AI 没能作答的段；已处理是常态，不标 */}
 				{!s.derived ? (
 					<StatusBadge tone="pending">待处理</StatusBadge>
 				) : (
 					s.unanswered && (
-						<StatusBadge tone="interrupted">AI 未能作答</StatusBadge>
+						<StatusBadge tone="interrupted">未能完整解析</StatusBadge>
 					)
 				)}
 			</div>

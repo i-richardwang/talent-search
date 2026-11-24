@@ -5,12 +5,12 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { MAX_TERM_LEN } from "#/lib/term";
 import {
 	CONDITION_MAX,
 	type Condition,
 	conditionKey,
 	conditionsOf,
-	MAX_TERM_LEN,
 	termOf,
 	VALUES_MAX,
 } from "#/search/condition";

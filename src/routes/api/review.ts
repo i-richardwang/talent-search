@@ -51,7 +51,7 @@ export const Route = createFileRoute("/api/review")({
 					);
 				// 接收以判定持久化为准；立即整理未排上时，由定时整理继续处理。
 				try {
-					await requestJob("review");
+					await requestJob({ kind: "review" });
 				} catch (error) {
 					console.error("判定已接收，立即整理调度失败：", error);
 				}

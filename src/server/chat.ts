@@ -221,6 +221,47 @@ async function ask(
 	}
 }
 
+/** 按同一模型、提示词、回答形状和输入读取可用结果。 */
+export function savedCompletions(
+	model: string,
+	system: string,
+	schema: z.ZodType,
+	texts: string[],
+) {
+	return validatedCache(
+		identityOf(model, system, schema),
+		texts,
+		(payload) => schema.safeParse(payload).success,
+	);
+}
+
+async function validatedCache(
+	identity: string,
+	texts: string[],
+	accept: (payload: unknown, text: string) => boolean,
+	cacheKey = (text: string) => text,
+) {
+	const inputs = new Map(texts.map((text) => [cacheKey(text), text]));
+	const hits = await cached(identity, [...inputs.keys()]);
+	const payloads = new Map<string, unknown>();
+	for (const [key, payload] of hits) {
+		const text = inputs.get(key);
+		if (text === undefined) continue;
+		if (accept(payload, text)) payloads.set(text, payload);
+		else
+			await db
+				.delete(completionCache)
+				.where(
+					and(
+						eq(completionCache.identity, identity),
+						eq(completionCache.textSha, sha(key)),
+						eq(completionCache.payload, payload),
+					),
+				);
+	}
+	return payloads;
+}
+
 /**
  * 对每段文字要一份 JSON；返回文字 → 模型给的 JSON，放弃的段不在里面。
  * `what` 是进度和报错里的名字（「抽取」「对齐」）。
@@ -233,7 +274,7 @@ export async function complete(
 	what: string,
 	report: Report,
 	/** 调用方决定何为可用回答；合法空结果可接受，完全无效的回答不缓存。 */
-	accept: (payload: unknown, text: string) => boolean,
+	accept?: (payload: unknown, text: string) => boolean,
 	{
 		endpoint = "extract",
 		cacheKey = (text) => text,
@@ -245,24 +286,10 @@ export async function complete(
 ): Promise<Map<string, unknown>> {
 	const identity = identityOf(model, system, schema);
 	const unique = [...new Set(texts)];
-	const inputs = new Map(unique.map((text) => [cacheKey(text), text]));
-	const hits = await cached(identity, [...inputs.keys()]);
-	const payloads = new Map(
-		[...hits].map(([key, payload]) => [inputs.get(key) as string, payload]),
-	);
-	for (const [text, payload] of payloads) {
-		if (schema.safeParse(payload).success && accept(payload, text)) continue;
-		await db
-			.delete(completionCache)
-			.where(
-				and(
-					eq(completionCache.identity, identity),
-					eq(completionCache.textSha, sha(cacheKey(text))),
-					eq(completionCache.payload, payload),
-				),
-			);
-		payloads.delete(text);
-	}
+	const valid = (payload: unknown, text: string) =>
+		schema.safeParse(payload).success && (!accept || accept(payload, text));
+	const payloads = await validatedCache(identity, unique, valid, cacheKey);
+
 	const missing = unique.filter((text) => !payloads.has(text));
 
 	let done = 0;
@@ -277,7 +304,7 @@ export async function complete(
 			endpoint,
 		);
 		done++;
-		if (payload !== undefined && accept(payload, text)) {
+		if (payload !== undefined && valid(payload, text)) {
 			payloads.set(text, await store(identity, cacheKey(text), payload));
 		} else if (payload !== undefined) {
 			report(`  ${what}回答不符合领域规则，未保存`);

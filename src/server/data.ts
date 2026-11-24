@@ -8,7 +8,7 @@
 
 import "@tanstack/react-start/server-only";
 import { asc, eq, sql } from "drizzle-orm";
-import { currentTree, identity } from "#/corpus/derive";
+import { deriveStandard } from "#/corpus/derive-standard";
 import {
 	company,
 	companyAlias,
@@ -49,7 +49,7 @@ export async function listEmployees(
 ): Promise<TablePage<EmployeeRow>> {
 	const pattern = `%${escapeLike(needle.trim())}%`;
 	return withReadSnapshot(scope, async (client) => {
-		const version = identity(await currentTree(client));
+		const { version } = await deriveStandard(client);
 		const found = await client.query<{ n: string }>(
 			"select count(*) as n from employee where name ilike $1 or emp_id ilike $1",
 			[pattern],
@@ -126,7 +126,7 @@ export async function employeeData(
 	empId: string,
 ): Promise<EmployeeData | null> {
 	return withReadSnapshot(scope, async (client) => {
-		const version = identity(await currentTree(client));
+		const { version } = await deriveStandard(client);
 		const found = await client.query<EmployeeProfile>(
 			`select emp_id as "empId", name, cur_dept as "curDept", cur_title as "curTitle",
 			cur_seq_l1 as "curSeqL1", cur_seq_l2 as "curSeqL2", cur_seq_l3 as "curSeqL3",

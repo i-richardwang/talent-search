@@ -40,6 +40,8 @@ before(async () => {
 				{
 					months: 24,
 					title: "调度运营",
+					seqL1: "运营",
+					seqL2: "调度",
 					extracted: { skills: ["运力调度"] },
 				},
 			],
@@ -52,12 +54,18 @@ before(async () => {
 				{
 					months: 36,
 					title: "风控建模",
+					seqL1: "技术",
+					seqL2: "算法",
 					extracted: { skills: ["运力调度", "风控模型"] },
 				},
 			],
 		},
 		{ empId: "N1", name: "合成无部门丙", org: "", segments: [] },
 	]);
+	const { deriveStandard } = await import("#/corpus/derive-standard");
+	const { pool } = await import("#/db");
+	const { version } = await deriveStandard(pool);
+	await pool.query("update experience set derived_identity=$1", [version]);
 	ride = await account("hr.ride", [RIDE]);
 	none = await account("hr.none", []);
 	chain = (await createTurn(ride, { kind: "spec", spec: emptySpec() })).turnId;
@@ -121,6 +129,16 @@ describe("详情、数据页和导出", () => {
 			(await listEmployees({ account: id }, "", 1)).rows.map((r) => r.empId);
 		assert.deepEqual(await rows(ride), ["R1"]);
 		assert.deepEqual(await rows(none), []);
+	});
+
+	test("其他部门有不同的序列时，账号看到的解析进度仍按全库标准计算", async () => {
+		const scope = { account: ride };
+		const list = await listEmployees(scope, "", 1);
+		assert.deepEqual(
+			list.rows.map((r) => [r.empId, r.pending]),
+			[["R1", 0]],
+		);
+		assert.equal((await employeeData(scope, "R1"))?.segments[0]?.derived, true);
 	});
 
 	test("导出的名单里有范围外的工号就不收", async () => {

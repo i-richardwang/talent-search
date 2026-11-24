@@ -1,3 +1,4 @@
+import type { DeriveProgress } from "#/corpus/derive";
 import { type OrgNode, orgTree } from "#/lib/org";
 import { PAGE_SIZE, pageAt, RUNS_PAGE, tablePage } from "#/lib/paging";
 import type { AccountRow } from "#/server/accounts";
@@ -42,14 +43,14 @@ function run(
 function lane(
 	kind: TaskLane["kind"],
 	rows: TaskRunView[],
-	progress?: TaskLane["progress"],
+	progress?: DeriveProgress,
 ): TaskLane {
 	const at = pageAt(rows.length, 1, RUNS_PAGE);
 	return {
 		kind,
 		latest: rows[0] ?? null,
 		runs: tablePage(rows.slice(0, at.limit), rows.length, at),
-		...(progress && { progress }),
+		...(progress && { derivation: { progress, automatic: true } }),
 	};
 }
 

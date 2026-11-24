@@ -55,7 +55,7 @@ const answer = (...items: (string | { text: string; depth: string })[]) => ({
 	),
 });
 const texts = (raw: unknown, company = "") =>
-	conform(raw, company).items.map((one) => one.text);
+	conform(raw, segment({ company })).items.map((one) => one.text);
 
 describe("校验", () => {
 	test("短说法按顺序留下，全半角折叠后去重", () => {
@@ -68,7 +68,7 @@ describe("校验", () => {
 		);
 	});
 
-	test("公司名和过长的说法一律丢掉", () => {
+	test("公司名和复述原文的长句不进入能力词", () => {
 		assert.deepEqual(
 			texts(
 				answer(
@@ -94,7 +94,7 @@ describe("校验", () => {
 						"not an object",
 					],
 				},
-				"",
+				segment({}),
 			).items,
 			[
 				{ text: "推荐系统", engagement: null },
@@ -102,6 +102,49 @@ describe("校验", () => {
 				{ text: "排序模型", engagement: null },
 			],
 		);
+	});
+
+	test("原文长名称只占剩余名额，不挤掉排在后面的短能力词", () => {
+		const name = "Example Cloud Toolkit";
+		const source = segment({ description: `用 ${name} 完成部署` });
+		const skills = Array.from({ length: 30 }, (_, i) => `测试能力${i}`);
+		for (const short of [skills, skills.slice(1)]) {
+			const { items } = conform(answer(name, ...short), source);
+			assert.deepEqual(
+				items.map((item) => item.text),
+				short.length === 30 ? short : [...short, name],
+			);
+		}
+	});
+
+	test("长英文名即使在原文出现，也要排除包含公司的写法", () => {
+		const name = "Northwind Workflow Tools";
+		assert.deepEqual(
+			conform(
+				answer(name),
+				segment({
+					company: "ＮＯＲＴＨＷＩＮＤ",
+					description: `维护 ${name}。`,
+				}),
+			),
+			EMPTY,
+		);
+	});
+
+	test("名额已满时，短词和原文长名都保留重复项里最深的投入档", () => {
+		for (const prefix of ["合成能力", "Synthetic Tool Name "]) {
+			const names = Array.from({ length: 31 }, (_, i) => prefix + i);
+			const first = `${prefix}0`;
+			const { items } = conform(
+				answer(...names, { text: first, depth: "主导" }),
+				segment({ description: names.join("，") }),
+			);
+			assert.deepEqual(
+				items.map(({ text }) => text),
+				names.slice(0, 30),
+			);
+			assert.deepEqual(items[0], { text: first, engagement: "主导" });
+		}
 	});
 
 	test("同一个词只留一条，档取最深的那次", () => {
@@ -114,7 +157,7 @@ describe("校验", () => {
 					{ text: "搜索系统", depth: "无效" },
 					{ text: "推荐系统", depth: "提到" },
 				),
-				"",
+				segment({}),
 			).items,
 			[
 				{ text: "推荐系统", engagement: "主导" },
@@ -124,12 +167,45 @@ describe("校验", () => {
 	});
 
 	test("格式不对的原话解析为空", () => {
-		assert.deepEqual(conform("nope", ""), EMPTY);
-		assert.deepEqual(conform({ items: "Python" }, ""), EMPTY);
+		assert.deepEqual(conform("nope", segment({})), EMPTY);
+		assert.deepEqual(conform({ items: "Python" }, segment({})), EMPTY);
 	});
 });
 
 describe("抽取哪些段", () => {
+	test("保留岗位与描述里有依据的英文长名称，排除公司名、标识符片段与原文长句", async () => {
+		const row = segment({
+			title: "Example Cloud Toolkit 工程师",
+			company: "Northwind Test Systems",
+			description:
+				"用Ｓｐｒｉｎｇ Cloud Alibaba 开发服务，维护 CustomDiagnosticAdapterPro。团队口号是 we deliver all projects on time。",
+		});
+		const restore = answerChat(() =>
+			answer(
+				"Example Cloud Toolkit",
+				"SpringCloudAlibaba",
+				"CustomDiagnosticAdapter",
+				"Northwind Test Systems",
+				"Unlisted Data Tools",
+				"we deliver all projects on time",
+			),
+		);
+		try {
+			assert.deepEqual(await extract([row], quiet), [
+				{
+					status: "done",
+					value: {
+						items: [
+							{ text: "Example Cloud Toolkit", engagement: "做过" },
+							{ text: "SpringCloudAlibaba", engagement: "做过" },
+						],
+					},
+				},
+			]);
+		} finally {
+			restore();
+		}
+	});
 	test("只有入职前且写了描述的段会去问端点", async () => {
 		const asked: string[] = [];
 		const restore = answerChat((_system, prompt) => {

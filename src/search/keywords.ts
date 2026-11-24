@@ -19,12 +19,12 @@
  * 写出来的表照样过 `conditionsOf`，和别的入口是同一道校验。
  */
 import { dots, duration } from "#/lib/format";
+import { MAX_TERM_LEN } from "#/lib/term";
 import {
 	CONDITION_MAX,
 	type Condition,
 	conditionsOf,
 	type ExperienceCondition,
-	MAX_TERM_LEN,
 	MIN_TERM_LEN,
 	type PersonCondition,
 	termOf,

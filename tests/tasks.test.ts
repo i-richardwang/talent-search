@@ -8,15 +8,15 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { after, before, describe, mock, test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
+import type { ExperienceRow } from "#/corpus/pipeline";
 import type { TaskOutcome } from "#/server/tasks";
 import { answerChat, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
 
-const { runTask, tasksState, taskLog, deriveProgress } = await import(
-	"#/server/tasks"
-);
+const { runTask, tasksState, taskLog, deriveProgress, setAutomaticDerive } =
+	await import("#/server/tasks");
 const { phrasePlan } = await import("#/corpus/derive");
 const { SYSTEM: EXTRACT_SYSTEM } = await import("#/corpus/extract");
 
@@ -116,7 +116,49 @@ describe("同步与解析", () => {
 		assert.equal(sync?.source, "csv-dir");
 		assert.match(await logText(sync?.id), /人群 29 人/);
 		const derive = state.lanes.find((lane) => lane.kind === "derive");
-		assert.equal(derive?.progress?.done, 0);
+		assert.equal(derive?.derivation?.progress.done, 0);
+	});
+
+	test("自动解析遵从部署默认值和管理员设置，关闭期间仍可手动运行", async () => {
+		const previous = process.env.DERIVE_SCHEDULE_ENABLED;
+		const enabled = async () =>
+			lane(await tasksState(), "derive").derivation?.automatic;
+		try {
+			delete process.env.DERIVE_SCHEDULE_ENABLED;
+			assert.equal(await enabled(), true);
+			process.env.DERIVE_SCHEDULE_ENABLED = "false";
+			assert.equal(await enabled(), false);
+			const runs = await count("task_run");
+			await setAutomaticDerive(false);
+			delete process.env.DERIVE_SCHEDULE_ENABLED;
+			assert.ok((await underived()) > 0);
+			assert.equal(
+				await runTask("derive", { queuedDerive: "automatic" }),
+				null,
+			);
+			assert.equal(await count("task_run"), runs);
+			const manual = await runTask("derive", { queuedDerive: "manual" });
+			assert.equal(manual?.failure, null);
+			assert.equal(await enabled(), false);
+			await setAutomaticDerive(true);
+			process.env.DERIVE_SCHEDULE_ENABLED = "false";
+			assert.equal(await enabled(), true);
+			await db.execute(
+				sql`update experience set derived_identity=null where id=(select min(id) from experience)`,
+			);
+			assert.equal(
+				(await runTask("derive", { queuedDerive: "automatic" }))?.failure,
+				null,
+			);
+			assert.equal(await underived(), 0);
+			assert.equal(
+				await runTask("derive", { queuedDerive: "automatic" }),
+				null,
+			);
+		} finally {
+			if (previous === undefined) delete process.env.DERIVE_SCHEDULE_ENABLED;
+			else process.env.DERIVE_SCHEDULE_ENABLED = previous;
+		}
 	});
 
 	test("解析给每一段算说法、连边、对齐序列，做完一段不剩", async () => {
@@ -506,7 +548,7 @@ test("运行记录一页一页地给，最近那一次不随翻页走", async ()
 });
 
 describe("说法规划", () => {
-	const segment = (row: Partial<Parameters<typeof phrasePlan>[0][number]>) => ({
+	const segment = (row: Partial<ExperienceRow & { id: number }>) => ({
 		id: 1,
 		emp_id: "E1",
 		kind: "internal" as const,
@@ -541,7 +583,12 @@ describe("说法规划", () => {
 	});
 
 	test("公司内一段序列和岗位一句，入职前岗位一条，部门名和公司名不进；没读过的段把整段原文当说法", () => {
-		const { texts, links } = phrasePlan([segment({}), outside], [null, null]);
+		const { texts, links } = phrasePlan(
+			[segment({}), outside].map((row) => ({
+				row,
+				extraction: { status: "skipped" },
+			})),
+		);
 		const role = "技术 · 算法｜算法工程师";
 		assert.deepEqual(texts, [role, "算法工程师", "负责推荐系统召回"]);
 		assert.deepEqual(
@@ -555,24 +602,27 @@ describe("说法规划", () => {
 	});
 
 	test("空语料不产出说法和边", () => {
-		assert.deepEqual(phrasePlan([], []), { texts: [], links: [] });
+		assert.deepEqual(phrasePlan([]), { texts: [], links: [] });
 	});
 
 	test("抽出来的能力和岗位共用同一张说法表；读过的段原文不再是说法", () => {
 		// 能力词「算法工程师」和第 7 段的岗位名是同一串字：只嵌一次，两条边各指向它
-		const { texts, links } = phrasePlan(
-			[segment({}), outside],
-			[
-				null,
-				{
-					items: [
-						{ text: "算法工程师", engagement: "做过" },
-						{ text: "召回", engagement: null },
-						{ text: "推荐系统", engagement: "主导" },
-					],
+		const { texts, links } = phrasePlan([
+			{ row: segment({}), extraction: { status: "skipped" } },
+			{
+				row: outside,
+				extraction: {
+					status: "done",
+					value: {
+						items: [
+							{ text: "算法工程师", engagement: "做过" },
+							{ text: "召回", engagement: null },
+							{ text: "推荐系统", engagement: "主导" },
+						],
+					},
 				},
-			],
-		);
+			},
+		]);
 		assert.equal(texts.filter((t) => t === "算法工程师").length, 1);
 		// 说法只是词，投入档存在边上
 		assert.deepEqual(texts.slice(-2), ["召回", "推荐系统"]);

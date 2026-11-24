@@ -3,19 +3,22 @@
  */
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
+import type { SeqPair } from "#/corpus/align";
 import type { ExperienceRow } from "#/corpus/pipeline";
-import { answerChat, setup } from "./fixture";
+import { answerChat, seed, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
 
-const { align, conform, seqTree, systemPrompt } = await import(
-	"#/corpus/align"
-);
+const { align, conform, systemPrompt } = await import("#/corpus/align");
 const { extract, SYSTEM: EXTRACT_SYSTEM } = await import("#/corpus/extract");
 const { UNEMPLOYED } = await import("#/corpus/pipeline");
 
 const quiet = () => {};
+const tree: SeqPair[] = [
+	["技术", "算法"],
+	["运营", "渠道运营"],
+];
 
 function segment(row: Partial<ExperienceRow>): ExperienceRow {
 	return {
@@ -73,11 +76,20 @@ function corpus(...external: [string, string][]): ExperienceRow[] {
 }
 
 describe("序列树", () => {
-	test("只取公司内经历里两级都登记了的那些对", () => {
-		assert.deepEqual(seqTree(corpus(["算法工程师", ""])), [
-			["技术", "算法"],
-			["运营", "渠道运营"],
+	test("全公司使用同一份现行目录，历史登记和当前人才库的人群不决定可选序列", async () => {
+		await seed([
+			{
+				empId: "TREE",
+				name: "合成甲",
+				segments: [{ months: 1, seqL1: "历史", seqL2: "旧岗位" }],
+			},
 		]);
+		const { currentTree } = await import("#/corpus/derive-standard");
+		const { pool } = await import("#/db");
+		await pool.query(
+			"insert into sequence_catalog values ('运营','渠道运营'), ('技术','算法')",
+		);
+		assert.deepEqual(await currentTree(pool), tree);
 	});
 
 	test("提示词把每一对都列出来", () => {
@@ -151,10 +163,7 @@ describe("对齐", () => {
 			] as const) {
 				if (model === undefined) delete process.env.ALIGN_MODEL;
 				else process.env.ALIGN_MODEL = model;
-				assert.equal(
-					(await align(rows, seqTree(rows), quiet)).at(-1)?.[1],
-					expected,
-				);
+				assert.equal((await align(rows, tree, quiet)).at(-1)?.[1], expected);
 				assert.deepEqual((await extract(rows, quiet)).at(-1), {
 					status: "done",
 					value: { items: [{ text: "数据分析", engagement: "做过" }] },
@@ -174,7 +183,10 @@ describe("对齐", () => {
 		];
 		const restore = answerChat(() => ({ seq: "算法Ｂ（技术Ａ）" }));
 		try {
-			assert.equal((await align(rows, seqTree(rows), quiet))[1]?.[1], "算法Ｂ");
+			assert.equal(
+				(await align(rows, [["技术Ａ", "算法Ｂ"]], quiet))[1]?.[1],
+				"算法Ｂ",
+			);
 		} finally {
 			restore();
 		}
@@ -187,7 +199,7 @@ describe("对齐", () => {
 	] as const) {
 		test(`${label}不缓存，下一次成功后才复用回答`, async () => {
 			const rows = corpus(["算法工程师", `${label}重试样例`]);
-			const tree = seqTree(rows);
+
 			let calls = 0;
 			const restore = answerChat(() => {
 				calls++;
@@ -216,7 +228,7 @@ describe("对齐", () => {
 			asked.push(prompt);
 			return prompt.includes("推荐") ? { seq: "算法（技术）" } : { seq: "" };
 		});
-		const out = await align(rows, seqTree(rows), quiet);
+		const out = await align(rows, tree, quiet);
 		restore();
 
 		assert.equal(asked.length, 2);
@@ -245,7 +257,7 @@ describe("对齐", () => {
 		const restore = answerChat(() => {
 			throw new Error("不该打端点");
 		});
-		const out = await align(rows, seqTree(rows), quiet);
+		const out = await align(rows, [], quiet);
 		restore();
 
 		assert.deepEqual(
@@ -261,12 +273,12 @@ describe("对齐", () => {
 			asked++;
 			return { seq: "" };
 		});
-		await align(rows, seqTree(rows), quiet);
-		await align(rows, seqTree(rows), quiet);
+		await align(rows, tree, quiet);
+		await align(rows, tree, quiet);
 		assert.equal(asked, 1);
 
 		const grown = [...rows, segment({ seq_l1: "技术", seq_l2: "数据" })];
-		await align(grown, seqTree(grown), quiet);
+		await align(grown, [...tree, ["技术", "数据"]], quiet);
 		restore();
 		assert.equal(asked, 2);
 	});

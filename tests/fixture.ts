@@ -24,6 +24,8 @@ import {
 	company,
 	companyAlias,
 	completionCache,
+	deriveRequest,
+	deriveSchedule,
 	EMBED_DIM,
 	embeddingCache,
 	employee,
@@ -41,6 +43,7 @@ import {
 	scale,
 	scopeMember,
 	searchTurn,
+	sequenceCatalog,
 	taskRun,
 	term,
 	termInUse,
@@ -652,6 +655,7 @@ export async function setup() {
 		authVerification,
 		employee,
 		experience,
+		sequenceCatalog,
 		phrase,
 		experiencePhrase,
 		experienceNext,
@@ -663,6 +667,8 @@ export async function setup() {
 		reviewWord,
 		embeddingCache,
 		completionCache,
+		deriveRequest,
+		deriveSchedule,
 		taskRun,
 		recordStream,
 		scale,
@@ -687,7 +693,7 @@ export async function setup() {
 	try {
 		await viewClient.query(`set search_path to ${SCHEMA}, public`);
 		const dialect = new PgDialect();
-		// 数据范围：先建「这一次读取看得到谁」，读取策略和目录视图都按它过滤
+		// 先建公共视图，读取策略和目录随后使用它们。
 		for (const view of [scopeMember, visibleEmployee]) {
 			const { name, query } = getViewConfig(view);
 			if (!query) throw new Error(`视图 ${name} 没有定义`);

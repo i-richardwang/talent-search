@@ -80,6 +80,6 @@ test("一行只有一个对象：搜索带内容，查看和导出带人，管�
 	])
 		await assert.rejects(
 			db.insert(auditEvent).values({ userId: OWNER, ...row }),
-			violates("audit_event_object"),
+			violates("audit_event_object_and_actor"),
 		);
 });

@@ -1,21 +1,19 @@
 /**
  * 读取入职前经历中能拿来找人的能力，以及这个人在每一项上投入多深；自述证据只来自这份抽取。
  * 模型负责领域判断，schema 校验回答形状，conform 按领域规则过滤单条说法。
- * 未调用、未能作答与成功抽取分别返回，成功的空抽取也是已读结果。
+ * 分别记录跳过、解析失败和成功。成功时允许能力列表为空。
  */
 
 import { z } from "zod";
 import { ENGAGEMENTS, type Engagement, isEngagement } from "#/lib/engagement";
+import { MAX_TAG_LEN, MAX_TERM_LEN, tag } from "#/lib/term";
 import { complete, extractModel, standardOf } from "#/server/chat";
 import type { ExperienceRow } from "./pipeline";
 import type { Report } from "./report";
-import { MAX_TAG_LEN, tag } from "./tag";
 
-/**
- * 一段最多几项。这是防模型逐句复述描述的上限，不是取舍：正常回答远低于它，
- * 哪些该写由提示词决定。
- */
+/** 一段最多保留的能力数，防止把描述逐句列成标签。 */
 const MAX_ITEMS = 30;
+const LATIN_NAME = /^[a-z][a-z\d.+_/#-]*(?: [a-z\d][a-z\d.+_/#-]*){0,3}$/i;
 
 /** 一段经历抽出来的能力。词是说法；投入档存在边上，模型没给出合法档时是 null。 */
 export type Extraction = {
@@ -63,9 +61,23 @@ export const SYSTEM = `你在帮 HR 整理员工入职前的工作经历。HR �
 {"items": [{"text": "数据仓库", "depth": "主导"}, {"text": "ETL", "depth": "做过"}, {"text": "Spark", "depth": "做过"}, {"text": "Hive", "depth": "做过"}, {"text": "数据质量", "depth": "做过"}, {"text": "推荐算法优化", "depth": "做过"}, {"text": "Flink", "depth": "提到"}]}`;
 
 /** 回答形状；取值规则由 conform 校验。 */
-const SCHEMA = z.object({
+const extractionSchema = z.object({
 	items: z.array(z.object({ text: z.string(), depth: z.string() })),
 });
+
+export const extraction = {
+	system: SYSTEM,
+	schema: extractionSchema,
+	standard: standardOf(SYSTEM, extractionSchema),
+	// 这些规则决定原回答里哪些词成为经历说法，只进入语料版本。
+	wordRules: JSON.stringify([
+		MAX_ITEMS,
+		MAX_TAG_LEN,
+		MAX_TERM_LEN,
+		LATIN_NAME.source,
+		"deepest-per-term",
+	]),
+};
 
 /** 送给模型的那段话。它也是缓存的键：同一段话永远得到同一份抽取。 */
 export function promptInput(row: {
@@ -76,11 +88,28 @@ export function promptInput(row: {
 	return `岗位：${row.title}\n公司：${row.company}\n描述：${row.description}`;
 }
 
-function keep(word: string, company: string): boolean {
-	// 公司名不进说法：它只回答「在哪」，由按名字找的条件使用。描述里也会写公司名，
-	// 抽出的词含这段的公司名或被它包含的都丢掉。
-	if (!word || [...word].length > MAX_TAG_LEN) return false;
-	return !(company && (word.includes(company) || company.includes(word)));
+type SkillSource = Pick<ExperienceRow, "title" | "company" | "description">;
+
+function sourceName(
+	word: string,
+	{ company, title, description }: SkillSource,
+): boolean {
+	if (word.length > MAX_TERM_LEN || !LATIN_NAME.test(word)) return false;
+	const compact = (s: string) => tag(s).toLowerCase().replaceAll(" ", "");
+	const employer = compact(company);
+	const spelling = compact(word);
+	if (employer && (employer.includes(spelling) || spelling.includes(employer)))
+		return false;
+
+	// 较长的英文名称须在岗位或描述里完整出现。允许空格和驼峰写法互换。
+	const parts = word.split(/ |(?<=[a-z\d])(?=[A-Z])/u);
+	const literal = parts
+		.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+		.join("\\s*");
+	const name = new RegExp(`(?<![a-z0-9_+#-])${literal}(?![a-z0-9_+#-])`, "iu");
+	return [title, description].some((source) =>
+		name.test(source.normalize("NFKC")),
+	);
 }
 
 function items(value: unknown): unknown[] {
@@ -94,64 +123,81 @@ function field(value: unknown, name: string): unknown {
 }
 
 /** 校验模型的原话，得到一份合法的抽取。不合规的只丢单条，不丢整段。 */
-export function conform(raw: unknown, company: string): Extraction {
-	const found: Extraction["items"] = [];
-	// 只认数组：字符串也可迭代，"Python" 会被拆成六个单字标签
+export function conform(raw: unknown, source: SkillSource): Extraction {
+	const short = new Map<string, Extraction["items"][number]>();
+	const longNames = new Map<string, Extraction["items"][number]>();
+	const { company } = source;
 	for (const item of items(field(raw, "items"))) {
-		if (found.length === MAX_ITEMS) break;
 		const text = tag(field(item, "text"));
-		if (!keep(text, company)) continue;
-		// 回答里这一项叫 depth：给模型看的是「投入多深」
-		const said = tag(field(item, "depth"));
-		const engagement = isEngagement(said) ? said : null;
-		// 边的主键是（段、路、说法）：同一个词只留一条，档取最深的那次
-		const seen = found.find((one) => one.text === text);
-		if (!seen) found.push({ text, engagement });
+		if (
+			!text ||
+			(company && (text.includes(company) || company.includes(text)))
+		)
+			continue;
+
+		const isLong = [...text].length > MAX_TAG_LEN;
+		const group = isLong ? longNames : short;
+		const seen = group.get(text);
+		if (
+			!seen &&
+			(group.size === MAX_ITEMS || (isLong && !sourceName(text, source)))
+		)
+			continue;
+
+		const depth = tag(field(item, "depth"));
+		const engagement = isEngagement(depth) ? depth : null;
+		if (!seen) group.set(text, { text, engagement });
 		else if (
 			engagement &&
 			(!seen.engagement || deeper(engagement, seen.engagement))
 		)
 			seen.engagement = engagement;
 	}
-	return { items: found };
+	// 短能力词优先，剩余名额保留原文中的长名称。
+	return {
+		items: [...short.values(), ...longNames.values()].slice(0, MAX_ITEMS),
+	};
 }
 
 function deeper(a: Engagement, b: Engagement): boolean {
 	return ENGAGEMENTS.indexOf(a) < ENGAGEMENTS.indexOf(b);
 }
 
-/** 抽取标准，只由提示词和回答形状决定，不随执行模型变化。 */
-export function extractIdentity(): string {
-	return standardOf(SYSTEM, SCHEMA);
+export type DeriveInput = Pick<
+	ExperienceRow,
+	"kind" | "unemployed" | "title" | "company" | "description"
+>;
+
+function needsExtraction(row: DeriveInput) {
+	return row.kind === "external" && !row.unemployed && Boolean(row.description);
+}
+
+export function extractionOf(
+	row: DeriveInput,
+	payload: unknown,
+): ExtractionResult {
+	if (!needsExtraction(row)) return { status: "skipped" };
+	if (payload == null) return { status: "failed" };
+	return { status: "done", value: conform(payload, row) };
 }
 
 /** 按入参顺序返回调用状态与抽取；验收和解析共用此入口。 */
 export async function extract(
-	rows: Pick<
-		ExperienceRow,
-		"kind" | "unemployed" | "title" | "company" | "description"
-	>[],
+	rows: DeriveInput[],
 	report: Report,
 ): Promise<ExtractionResult[]> {
 	const asked = rows.map((row) =>
-		row.kind === "external" && !row.unemployed && row.description
-			? promptInput(row)
-			: null,
+		needsExtraction(row) ? promptInput(row) : null,
 	);
 	const payloads = await complete(
 		extractModel(),
-		SYSTEM,
-		SCHEMA,
-		asked.filter((text): text is string => text !== null),
+		extraction.system,
+		extraction.schema,
+		asked.filter((text) => text !== null),
 		"抽取",
 		report,
-		// 单条无效说法由 conform 丢弃，合法空列表同样是一份已读结果。
-		(payload) => SCHEMA.safeParse(payload).success,
 	);
-	return rows.map((row, index) => {
-		const text = asked[index];
-		if (text == null) return { status: "skipped" };
-		if (!payloads.has(text)) return { status: "failed" };
-		return { status: "done", value: conform(payloads.get(text), row.company) };
-	});
+	return rows.map((row, index) =>
+		extractionOf(row, payloads.get(asked[index] ?? "")),
+	);
 }

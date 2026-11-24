@@ -18,9 +18,9 @@
  * `depth` 是这一项的档，两档都说得通时写「主导|做过」，判成任一个都算对，隔一档
  * （主导与提到互换）是严重错。抽出的词对不上任何一项、也不在 `ok` 里，算多写。
  *
- * 没有 gold 的段只检查形状——动作尾（「……搭建」）、超 8 字——这些不用答案也看得出提示词
- * 是不是有偏差。一段只要有一处不对就打叉，退出码看的是有没有打叉的段：屏幕上的叉和退出码
- * 是同一个判断。合成用例进仓库（sample.json，干净克隆也能跑通）；真实段是真人的简历原文，
+ * gold 为空数组表示原文没有可提取的能力。没有 gold 的段仍检查动作尾、长度和用例指定的限定语。
+ * 明确列为可接受的写法按全名验收。任一段未通过，进程以非零退出码退出。
+ * 合成用例进仓库（sample.json，干净克隆也能跑通）；真实段是真人的简历原文，
  * 不进版本库。各文件分别汇总：合成段偏短偏整齐，和真实段的数字不能相加着看。
  *
  * 调用与解析相同的入口（`corpus/extract.ts` 的 `extract`）：当前提示词、当前模型、温度 0，回答进
@@ -79,10 +79,6 @@ function loadCases(file: string): Case[] {
 		const gold = c.gold ?? null;
 		if (gold !== null && !Array.isArray(gold))
 			throw new Error(`${where}：gold 是一项项金标的数组`);
-		if (gold !== null && gold.length === 0)
-			throw new Error(
-				`${where}：gold 为空就无法衡量；不知道答案就不要写这个字段`,
-			);
 		const ok = c.ok ?? [];
 		const keep = c.keep ?? [];
 		const reject = c.reject ?? [];
@@ -166,10 +162,11 @@ function summary(label: string, t: Tally) {
 		.filter((d) => t.depths[d])
 		.map((d) => `${d} ${t.depths[d]}`)
 		.join("、");
-	const scored = t.goldItems
-		? `召回 ${t.hit}/${t.goldItems}（${pct(t.hit, t.goldItems)}），精确 ${t.fine}/${t.written}（${pct(t.fine, t.written)}），` +
-			`档判对 ${t.right}/${t.judged}（${pct(t.right, t.judged)}），隔档 ${t.far}，`
-		: "";
+	const scored =
+		t.goldItems || t.written
+			? `召回 ${t.hit}/${t.goldItems}（${pct(t.hit, t.goldItems)}），精确 ${t.fine}/${t.written}（${pct(t.fine, t.written)}），` +
+				`档判对 ${t.right}/${t.judged}（${pct(t.right, t.judged)}），隔档 ${t.far}，`
+			: "";
 	return (
 		`${label}：${scored}限定语保住 ${t.kept}/${t.keeps}，不该出现 ${t.rejected}，` +
 		`动作尾 ${t.tails}，超 8 字 ${t.over8}；档分布 ${depths || "—"}；${t.failed} 段没过，共 ${t.cases} 段`
@@ -200,19 +197,21 @@ try {
 			t.depths[d] = (t.depths[d] ?? 0) + 1;
 		}
 		let recall = "";
+		const accepted = new Set(
+			[...(c.gold ?? []).flatMap((g) => g.words), ...c.ok].map(norm),
+		);
 		if (c.gold) {
 			const gold = c.gold;
 			const missed = gold.filter(
 				(g) => !items.some((i) => same(g.words, i.text)),
 			);
-			const extra = items.filter(
-				(i) => !gold.some((g) => same(g.words, i.text)) && !same(c.ok, i.text),
-			);
+			const extra = items.filter((i) => !accepted.has(norm(i.text)));
 			t.goldItems += gold.length;
 			t.hit += gold.length - missed.length;
 			t.written += items.length;
 			t.fine += items.length - extra.length;
-			recall = `  召回 ${gold.length - missed.length}/${gold.length}`;
+			if (gold.length)
+				recall = `  召回 ${gold.length - missed.length}/${gold.length}`;
 			if (missed.length)
 				problems.push(`漏了 ${missed.map((g) => g.words[0]).join("、")}`);
 			if (extra.length)
@@ -249,7 +248,9 @@ try {
 		t.rejected += leaks.length;
 		if (leaks.length) problems.push(`不该出现 ${leaks.join("、")}`);
 		const tailed = words.filter((w) => ACTION_TAIL.test(w));
-		const long = words.filter((w) => [...w].length > 8);
+		const long = words.filter(
+			(w) => [...w].length > 8 && !accepted.has(norm(w)),
+		);
 		t.tails += tailed.length;
 		t.over8 += long.length;
 		if (tailed.length) problems.push(`动作尾 ${tailed.join("、")}`);
