@@ -80,7 +80,7 @@ export async function align(
 	const asked = experience.map((row) =>
 		row.kind === "external" && !row.unemployed ? promptInput(row) : null,
 	);
-	const texts = asked.filter((text): text is string => text !== null);
+	const texts = asked.filter((text) => text !== null);
 	const payloads = await complete(
 		alignModel(),
 		spec.system,

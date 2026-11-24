@@ -14,13 +14,14 @@ import type { Report } from "#/corpus/report";
 import { review } from "#/corpus/review";
 import {
 	acquireCorpusSession,
+	type CorpusClient,
 	type CorpusSession,
 	corpusSessionOwner,
 } from "#/corpus/session";
 import { type SourceConfig, sourceConfig } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
-import { db } from "#/db";
-import { taskRun } from "#/db/schema";
+import { db, pool } from "#/db";
+import { deriveSchedule, taskRun } from "#/db/schema";
 import { withReadSnapshot } from "#/db/snapshot";
 import { pageAt, RUNS_PAGE, type TablePage, tablePage } from "#/lib/paging";
 import { type Rejudge, TASK_KINDS, type TaskKind } from "#/lib/task";
@@ -111,8 +112,8 @@ export type TaskLane = {
 	latest: TaskRunView | null;
 	/** 页码由 `pageAt` 定夺，越界收回最后一页 */
 	runs: TablePage<TaskRunView>;
-	/** 解析那一栏带着解析做到哪了，卡片在还有段没解析完时画进度 */
-	progress?: DeriveProgress;
+	/** 解析卡片显示当前进度和生效的排班设置。 */
+	derivation?: { progress: DeriveProgress; automatic: boolean };
 };
 
 /** 每一栏要看第几页。没说的那一栏是第一页。 */
@@ -165,8 +166,30 @@ async function readTaskHeads(
 	return rows;
 }
 
+async function automaticDeriveEnabled(
+	client: CorpusClient = pool,
+): Promise<boolean> {
+	const { rows } = await client.query<{ enabled: boolean }>(
+		"select enabled from derive_schedule where kind='derive'",
+	);
+	return rows[0]?.enabled ?? process.env.DERIVE_SCHEDULE_ENABLED !== "false";
+}
+
+export async function setAutomaticDerive(enabled: boolean): Promise<void> {
+	await db
+		.insert(deriveSchedule)
+		.values({ kind: "derive", enabled })
+		.onConflictDoUpdate({
+			target: deriveSchedule.kind,
+			set: { enabled },
+		});
+}
+
 export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
-	const derive = await deriveProgress();
+	const [progress, automatic] = await Promise.all([
+		deriveProgress(),
+		automaticDeriveEnabled(),
+	]);
 	return db.transaction(async (store) => {
 		// 锁住当前运行行，再读拿到锁的那个连接；收尾在这次观察完成后才能更新行、释放锁。
 		const heads = await readTaskHeads(store);
@@ -225,7 +248,7 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 					total,
 					at,
 				),
-				...(kind === "derive" && { progress: derive }),
+				...(kind === "derive" && { derivation: { progress, automatic } }),
 			})),
 			running: active,
 		};
@@ -308,8 +331,53 @@ function causeChain(error: unknown): string[] {
 	return lines.length ? lines : [String(error)];
 }
 
+/** 持有语料锁时检查。共享表锁使管理员的切换与本轮运行记录的发布串行。 */
+async function queuedDeriveNeeded(
+	client: CorpusClient,
+	trigger: "automatic" | "manual",
+) {
+	if (trigger === "automatic") {
+		await client.query("lock table derive_schedule in share mode");
+		if (!(await automaticDeriveEnabled(client))) return false;
+	}
+	const { done, total, staging } = await progress(client);
+	return done !== total || staging;
+}
+
 /** 一次跑完的任务。`failure` 是那一行上的失败原因，成功是 null。 */
 type TaskResult = { runId: number; failure: string | null };
+
+/** 在同一事务中检查是否应启动、登记持锁者并发布运行记录。 */
+async function registerRun(
+	client: CorpusClient,
+	kind: TaskKind,
+	source: string,
+	trigger?: "automatic" | "manual",
+): Promise<number | null> {
+	try {
+		await client.query("begin");
+		if (trigger && !(await queuedDeriveNeeded(client, trigger))) {
+			await client.query("commit");
+			return null;
+		}
+		const { rows } = await client.query<{ id: number }>(
+			"insert into task_run (kind, source, log) values ($1, $2, '{}'::text[]) returning id",
+			[kind, source],
+		);
+		const row = rows[0];
+		if (!row) throw new Error("没能写入这次任务的记录");
+		const runId = row.id;
+		// 运行行发布前，拿到锁的那个连接先登记自己的运行身份。
+		await client.query("select set_config('application_name', $1, false)", [
+			taskSessionName(runId),
+		]);
+		await client.query("commit");
+		return runId;
+	} catch (error) {
+		await client.query("rollback");
+		throw error;
+	}
+}
 
 /**
  * 跑一次任务，跑完才返回。已经有写者在跑时：`wait` 为 false 返回 `null`，
@@ -320,70 +388,58 @@ type TaskResult = { runId: number; failure: string | null };
  * 过程同时回显到 `echo`（命令行给标准输出，后台任务不给）。`rejudge` 只有整理用：
  * 这一轮把这个范围里的词退回重新判定。
  */
-export async function runTask(
-	kind: TaskKind,
-	options: { wait?: boolean; echo?: Report; rejudge?: Rejudge | null } = {},
+export async function runTask<K extends TaskKind>(
+	kind: K,
+	options: {
+		wait?: boolean;
+		echo?: Report;
+		rejudge?: K extends "review" ? Rejudge | null : never;
+		queuedDerive?: K extends "derive" ? "automatic" | "manual" : never;
+	} = {},
 ): Promise<TaskResult | null> {
 	const session = await acquireCorpusSession(options.wait ?? false);
 	if (!session) return null;
-	const source = kind === "sync" ? sourceConfig() : null;
-
-	let runId: number;
-	const { client } = session;
 	try {
-		await client.query("begin");
-		const { rows } = await client.query<{ id: number }>(
-			"insert into task_run (kind, source, log) values ($1, $2, '{}'::text[]) returning id",
-			[kind, source?.name ?? ""],
+		const source = kind === "sync" ? sourceConfig() : null;
+		const runId = await registerRun(
+			session.client,
+			kind,
+			source?.name ?? "",
+			options.queuedDerive,
 		);
-		const row = rows[0];
-		if (!row) throw new Error("没能写入这次任务的记录");
-		runId = row.id;
-		// 运行行发布前，拿到锁的那个连接先登记自己的运行身份。
-		await client.query("select set_config('application_name', $1, false)", [
-			taskSessionName(runId),
-		]);
-		await client.query("commit");
-	} catch (error) {
-		try {
-			await client.query("rollback");
-		} finally {
-			await session.release();
-		}
-		throw error;
-	}
+		if (runId === null) return null;
 
-	const { report, finish } = logger(runId);
-	const say: Report = (line) => {
-		options.echo?.(line);
-		report(line);
-	};
+		const { report, finish } = logger(runId);
+		const say: Report = (line) => {
+			options.echo?.(line);
+			report(line);
+		};
 
-	let failure: string | null = null;
-	try {
+		let failure: string | null = null;
 		try {
-			await WORK[kind](session, say, {
-				rejudge: options.rejudge ?? null,
-				source,
-			});
+			try {
+				await WORK[kind](session, say, {
+					rejudge: options.rejudge ?? null,
+					source,
+				});
+			} catch (error) {
+				const chain = causeChain(error);
+				failure = chain[0] ?? String(error);
+				// 来由逐层进日志：一句话装不下的诊断，本来就该是多行
+				for (const [depth, line] of chain.entries())
+					say(depth === 0 ? `✖ ${line}` : `  ${"  ".repeat(depth)}↳ ${line}`);
+			}
+			const log = await finish();
+			await db
+				.update(taskRun)
+				.set({ finishedAt: new Date(), error: failure, log })
+				.where(eq(taskRun.id, runId));
 		} catch (error) {
-			const chain = causeChain(error);
-			failure = chain[0] ?? String(error);
-			// 来由逐层进日志：一句话装不下的诊断，本来就该是多行
-			for (const [depth, line] of chain.entries())
-				say(depth === 0 ? `✖ ${line}` : `  ${"  ".repeat(depth)}↳ ${line}`);
+			console.error(`任务 ${runId} 的记录没能收尾：`, error);
+			failure ??= causeChain(error)[0] ?? String(error);
 		}
-		const log = await finish();
-		await db
-			.update(taskRun)
-			.set({ finishedAt: new Date(), error: failure, log })
-			.where(eq(taskRun.id, runId));
-	} catch (error) {
-		console.error(`任务 ${runId} 的记录没能收尾：`, error);
-		failure ??= causeChain(error)[0] ?? String(error);
+		return { runId, failure };
 	} finally {
-		// 运行记录写完才释放写者锁；记录更新使用连接池。
 		await session.release();
 	}
-	return { runId, failure };
 }

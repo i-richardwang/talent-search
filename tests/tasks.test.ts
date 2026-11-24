@@ -15,9 +15,8 @@ import { answerChat, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { runTask, tasksState, taskLog, deriveProgress } = await import(
-	"#/server/tasks"
-);
+const { runTask, tasksState, taskLog, deriveProgress, setAutomaticDerive } =
+	await import("#/server/tasks");
 const { phrasePlan } = await import("#/corpus/derive");
 const { SYSTEM: EXTRACT_SYSTEM } = await import("#/corpus/extract");
 
@@ -117,7 +116,49 @@ describe("同步与解析", () => {
 		assert.equal(sync?.source, "csv-dir");
 		assert.match(await logText(sync?.id), /人群 29 人/);
 		const derive = state.lanes.find((lane) => lane.kind === "derive");
-		assert.equal(derive?.progress?.done, 0);
+		assert.equal(derive?.derivation?.progress.done, 0);
+	});
+
+	test("自动解析遵从部署默认值和管理员设置，关闭期间仍可手动运行", async () => {
+		const previous = process.env.DERIVE_SCHEDULE_ENABLED;
+		const enabled = async () =>
+			lane(await tasksState(), "derive").derivation?.automatic;
+		try {
+			delete process.env.DERIVE_SCHEDULE_ENABLED;
+			assert.equal(await enabled(), true);
+			process.env.DERIVE_SCHEDULE_ENABLED = "false";
+			assert.equal(await enabled(), false);
+			const runs = await count("task_run");
+			await setAutomaticDerive(false);
+			delete process.env.DERIVE_SCHEDULE_ENABLED;
+			assert.ok((await underived()) > 0);
+			assert.equal(
+				await runTask("derive", { queuedDerive: "automatic" }),
+				null,
+			);
+			assert.equal(await count("task_run"), runs);
+			const manual = await runTask("derive", { queuedDerive: "manual" });
+			assert.equal(manual?.failure, null);
+			assert.equal(await enabled(), false);
+			await setAutomaticDerive(true);
+			process.env.DERIVE_SCHEDULE_ENABLED = "false";
+			assert.equal(await enabled(), true);
+			await db.execute(
+				sql`update experience set derived_identity=null where id=(select min(id) from experience)`,
+			);
+			assert.equal(
+				(await runTask("derive", { queuedDerive: "automatic" }))?.failure,
+				null,
+			);
+			assert.equal(await underived(), 0);
+			assert.equal(
+				await runTask("derive", { queuedDerive: "automatic" }),
+				null,
+			);
+		} finally {
+			if (previous === undefined) delete process.env.DERIVE_SCHEDULE_ENABLED;
+			else process.env.DERIVE_SCHEDULE_ENABLED = previous;
+		}
 	});
 
 	test("解析给每一段算说法、连边、对齐序列，做完一段不剩", async () => {

@@ -7,7 +7,7 @@ export const Route = createFileRoute("/api/derive")({
 		handlers: {
 			GET: ({ request }) => readDeriveInputs(request),
 			POST: ({ request }) =>
-				receiveDeriveResults(request, () => requestJob("derive")),
+				receiveDeriveResults(request, () => requestJob({ kind: "derive" })),
 		},
 	},
 });

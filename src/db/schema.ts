@@ -647,6 +647,16 @@ export const deriveRequest = pgTable(
 	],
 );
 
+/** 此部署的解析排班偏好，管理员第一次设置后覆盖环境默认值。 */
+export const deriveSchedule = pgTable(
+	"derive_schedule",
+	{
+		kind: text("kind").primaryKey(),
+		enabled: boolean("enabled").notNull(),
+	},
+	(t) => [check("derive_schedule_kind_derive", sql`${t.kind} = 'derive'`)],
+);
+
 /** 一次语料任务的持久记录；实时运行状态由会话锁判断。 */
 export const taskRun = pgTable("task_run", {
 	id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

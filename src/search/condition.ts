@@ -16,6 +16,7 @@
  * 一条主张之内是同一段经历，条件之间是同一个人。这里还有校验不可信输入的边界
  * （`conditionsOf`）和经历词的长短上限（`termOf`）。
  */
+import { MAX_TERM_LEN } from "#/lib/term";
 import {
 	DIMENSIONS,
 	type DimUnit,
@@ -109,9 +110,6 @@ export type Condition = ExperienceCondition | PersonCondition;
 function isPersonDim(field: PersonField): field is PersonDim {
 	return field !== "school";
 }
-
-/** 关键词搜索里一个经历词最长几个字。 */
-export const MAX_TERM_LEN = 24;
 
 /** 一个经历词最短几个字。单字按字面包含会捞进几乎所有说法。 */
 export const MIN_TERM_LEN = 2;

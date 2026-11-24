@@ -84,6 +84,12 @@ test("外部服务提交结果后由解析任务写入，与内置模型生成�
 		400,
 	);
 	await run("sync");
+	const tool = "Example Cloud Toolkit";
+	await pool.query(
+		`update experience set description=$1 where id=(
+			select min(id) from experience where kind='external' and not unemployed and description<>'')`,
+		[`使用 ${tool} 发布测试服务。`],
+	);
 	await pool.query("update experience set derived_identity='previous'");
 	await run("derive");
 	const progress = await deriveProgress();
@@ -116,7 +122,12 @@ test("外部服务提交结果后由解析任务写入，与内置模型生成�
 		parts.map((r) => r.id).sort(),
 		align.inputs.map((r) => r.id).sort(),
 	);
-	const expected = { items: [{ text: "合成能力", depth: "主导" }] };
+	const expected = {
+		items: [
+			{ text: "合成能力", depth: "主导" },
+			{ text: tool, depth: "做过" },
+		],
+	};
 	const first = extract.inputs[0] as Input;
 	assert.deepEqual(
 		await submit("extract", extract.standard, [
@@ -174,6 +185,13 @@ test("外部服务提交结果后由解析任务写入，与内置模型生成�
 	assert.equal(complete.done, complete.total);
 	assert.equal(complete.staging, false);
 	const external = await facts();
+	assert.equal(
+		external.filter(
+			(row) =>
+				row.route === "skill" && row.text === tool && row.engagement === "做过",
+		).length,
+		1,
+	);
 	await pool.query("update experience set derived_identity='previous'");
 	process.env.EXTRACT_MODEL = model;
 	process.env.DERIVE_MODE = "model";

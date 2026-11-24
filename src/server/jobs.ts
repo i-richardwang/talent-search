@@ -8,13 +8,13 @@ import "@tanstack/react-start/server-only";
 import { PgBoss, type UpdateQueueOptions } from "pg-boss";
 import { type Rejudge, rejudgeOf, type TaskKind } from "#/lib/task";
 import { reviewJudge } from "./review";
-import { deriveProgress, runTask } from "./tasks";
+import { runTask } from "./tasks";
 
 /** 后台跑的两种任务。同步不在其中：它读的是别处的数据，由命令行按外面的节奏跑。 */
 export type JobKind = Exclude<TaskKind, "sync">;
 
 /**
- * 排班。解析只看「有没有还没有当前标准结果、或暂存结果还没替换进去的段」，同步之后几分钟内解析会自动继续；整理一天一次，
+ * 自动解析开启时，每五分钟检查待解析的段和待发布的暂存结果。整理一天一次，
  * 只判还没判过的词（`corpus/vocabulary.ts`）。判定归外部时这一轮
  * 仍然会跑——它要让外部提交的判定生效，并且收集新的词。
  */
@@ -63,16 +63,15 @@ async function setup(boss: PgBoss): Promise<void> {
 		await boss.updateQueue(kind, QUEUE);
 		await boss.schedule(kind, SCHEDULE[kind], null, { tz });
 	}
-	await boss.work("derive", async () => {
-		// 没有活就不留一行记录：每五分钟一行「没事」的历史没人要看
-		const { done, total, staging } = await deriveProgress();
-		if (done === total && !staging) return;
-		await runTask("derive");
+	await boss.work<{ manual?: boolean }>("derive", async ([job]) => {
+		await runTask("derive", {
+			queuedDerive: job?.data?.manual === true ? "manual" : "automatic",
+		});
 	});
 	await boss.work<{ rejudge?: unknown }>("review", async ([job]) => {
 		// 关掉的时候不留一行记录：任务台上另有说法（`tasksState`）
 		if (reviewJudge() === "off") return;
-		await runTask("review", { rejudge: rejudgeOf(job?.data.rejudge) });
+		await runTask("review", { rejudge: rejudgeOf(job?.data?.rejudge) });
 	});
 }
 
@@ -89,12 +88,14 @@ export function startJobs(): Promise<void> {
  * 现在就来一次。排着或在跑的已经有一个时什么都不发，返回 false——任务台据此
  * 说「已经有一次在排队了」。整理可以带一个重新判定的范围，由这一轮在拿到锁之后退回。
  */
-export async function requestJob(
-	kind: JobKind,
-	rejudge?: Rejudge,
-): Promise<boolean> {
+export async function requestJob({
+	kind,
+	...payload
+}:
+	| { kind: "derive"; manual?: true }
+	| { kind: "review"; rejudge?: Rejudge }): Promise<boolean> {
 	const handle = registry[HANDLE];
 	if (!handle) throw new Error("后台任务没有启动：这条路只在应用进程里通");
 	await handle.ready;
-	return (await handle.boss.send(kind, rejudge ? { rejudge } : {})) !== null;
+	return (await handle.boss.send(kind, payload)) !== null;
 }

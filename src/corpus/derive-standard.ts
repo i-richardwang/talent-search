@@ -25,7 +25,7 @@ export async function currentTree(client: CorpusClient): Promise<SeqPair[]> {
 		text: "select seq_l1, seq_l2 from sequence_catalog",
 		rowMode: "array",
 	});
-	// 沿用提示词的字序，排序不受数据库语言设置影响。
+	// 序列按固定字序进入提示词和解析版本。
 	return rows.sort((a, b) => {
 		const left = a.join("\u001f");
 		const right = b.join("\u001f");
@@ -39,7 +39,8 @@ export async function deriveStandard(client: CorpusClient) {
 	const parts = [PHRASING];
 	const tree = mode === "text" ? [] : await currentTree(client);
 	const align = alignment(tree);
-	if (mode !== "text") parts.push(extraction.standard, align.standard);
+	if (mode !== "text")
+		parts.push(extraction.standard, extraction.wordRules, align.standard);
 	const version = createHash("sha256")
 		.update(parts.join("\u001f"))
 		.digest("hex");

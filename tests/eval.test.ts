@@ -126,6 +126,33 @@ describe("语料验收门禁", () => {
 			0,
 		);
 	});
+	test("明确没有能力的原文只接受空抽取，列在答案里的长工具名按全名验收", async () => {
+		const c = {
+			name: "合成验收",
+			title: "工程师",
+			company: "某公司",
+			description: "本年度目标提高产量",
+			gold: [],
+		};
+		assert.equal(await runCorpus("extract", [c], { items: [] }), 0);
+		assert.equal(
+			await runCorpus(
+				"extract",
+				[{ ...c, description: "计划提升下年度产量" }],
+				{ items: [{ text: "产量", depth: "提到" }] },
+			),
+			1,
+		);
+		const name = "Example Cloud Toolkit";
+		assert.equal(
+			await runCorpus(
+				"extract",
+				[{ ...c, description: `熟悉 ${name}。`, gold: [{ words: [name] }] }],
+				{ items: [{ text: name, depth: "提到" }] },
+			),
+			0,
+		);
+	});
 	test("投入档判错也使验收失败，两档都对的写法判成哪一档都通过", async () => {
 		// 每次换一段描述：同一段的回答进了缓存，第二次不会再问
 		const judged = (depth: string) =>

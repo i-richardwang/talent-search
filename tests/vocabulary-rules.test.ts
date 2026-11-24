@@ -92,6 +92,16 @@ describe("校验判定方的原话", () => {
 		);
 	});
 
+	test("较长的英文名可以选为上级参考词", () => {
+		const target = "Example Cloud Toolkit";
+		const raw = { kind: "属于", target, why: "" };
+		assert.deepEqual(conform(raw, "示例组件", [target]), {
+			kind: "under",
+			parent: target,
+		});
+		assert.equal(conform(raw, "示例组件", []), null);
+	});
+
 	test("指向自己、缺目标、归属名太长、不认识的位置都不成判断", () => {
 		const said = (kind: string, target: string) =>
 			conform({ kind, target, why: "" }, "数分", [...near, "数分"]);

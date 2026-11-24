@@ -15,7 +15,7 @@ export function TaskBoard({
 	lanes: TaskLane[];
 	judge: Judge;
 	busy: boolean;
-	onDone: () => void;
+	onDone: () => void | Promise<void>;
 }) {
 	return (
 		<ul className="flex flex-col gap-9">

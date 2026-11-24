@@ -1,6 +1,6 @@
 /** 词表判定的校验、找参考词、生效与定名字。生产的整理和验收共用这些纯函数。 */
 import { z } from "zod";
-import { MAX_TAG_LEN, tag } from "./tag";
+import { MAX_TAG_LEN, tag } from "#/lib/term";
 
 /** 模型回答与外部判定共用的形状；`kind` 取值和 `target` 的规则由 `conform` 校验。 */
 export const PLACEMENT_SCHEMA = z.object({
@@ -143,7 +143,7 @@ function similarity(a: Float32Array, b: Float32Array): number {
  * 校验判定方对一个词的原话；不成一条判断的返回 null，这个词仍是没判过的，下一轮再判。
  *
  * 「同一件事」必须指向它的一个参考词；「属于」可以指向参考词或由判定方起名，
- * 不超过 `MAX_TAG_LEN` 且不是自己。原样命中的参考词保留它的写法，否则清理全半角
+ * 新起的名字不超过 `MAX_TAG_LEN`。两种关系都不能指向自己。原样命中的参考词保留它的写法，否则清理全半角
  * 会让简历里的原词失去身份。宽细关系由判定方按 GUIDE 判断，不按字面包含推断。
  *
  * **自带模型和外部 agent 走的是这同一处。** 外部交上来的东西比模型的更不可信，
@@ -166,7 +166,7 @@ export function conform(
 	if (kind === "同一件事")
 		return near.includes(target) ? { as: target, kind: "same" } : null;
 	if (kind === "属于")
-		return [...target].length <= MAX_TAG_LEN
+		return near.includes(target) || [...target].length <= MAX_TAG_LEN
 			? { kind: "under", parent: target }
 			: null;
 	return null;
