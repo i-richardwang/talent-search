@@ -63,10 +63,20 @@ export async function segmentTexts(
 	rootTurnId: string,
 	ids: readonly number[],
 ): Promise<Map<number, { content: string; text: string }>> {
+	if (ids.length === 0) return new Map();
+	return withCorpusSnapshot({ chain: rootTurnId }, (store) =>
+		readSegmentTexts(store, ids),
+	);
+}
+
+/** 在检索的同一快照里读取指定经历，供读经历和离线验收复用。 */
+export async function readSegmentTexts(
+	store: DbExecutor,
+	ids: readonly number[],
+) {
 	const out = new Map<number, { content: string; text: string }>();
 	if (ids.length === 0) return out;
-	const { rows } = await withCorpusSnapshot({ chain: rootTurnId }, (store) =>
-		store.execute<SegmentRow>(sql`
+	const { rows } = await store.execute<SegmentRow>(sql`
 		select e.id, ${SEGMENT_CONTENT} as content, e.kind, e.company, e.department,
 			e.department_path, e.title, e.seq_l1, e.seq_l2, e.seq_l3, e.description,
 			coalesce((
@@ -75,8 +85,7 @@ export async function segmentTexts(
 				from experience_phrase ep join phrase ph on ph.id = ep.phrase_id
 				where ep.experience_id = e.id and ep.route = 'skill'), '[]') as skills
 		from experience e
-		where e.id = any(${sql.param([...ids])}::int[])`),
-	);
+		where e.id = any(${sql.param([...ids])}::int[])`);
 	for (const row of rows)
 		out.set(row.id, { content: row.content, text: segmentText(row) });
 	return out;
@@ -102,4 +111,54 @@ export async function saveVerdicts(
 			${sql.param(verdicts.map((v) => v.content))}::text[],
 			${sql.param(verdicts.map((v) => v.fits))}::boolean[])
 		on conflict do nothing`);
+}
+
+/** 分数只补到已经存在的肯定结论上。textKey 标识模型实际读到的完整文字。 */
+type ScoreUpdate = {
+	criterion: string;
+	content: string;
+	textKey: string;
+	score: number;
+};
+
+/** 同一任务内按判据和评分文字一起查找，返回已经有分数的输入。 */
+export async function savedScores<
+	T extends Pick<ScoreUpdate, "criterion" | "textKey">,
+>(store: DbExecutor, rootTurnId: string, input: readonly T[]) {
+	const cached = new Map<T, number>();
+	if (!input.length) return cached;
+	const { rows } = await store.execute<{ position: number; score: number }>(sql`
+		select w.ord::int as position, prior.match_score as score
+		from unnest(
+			${sql.param(input.map((e) => criterionKey(e.criterion)))}::text[],
+			${sql.param(input.map((e) => e.textKey))}::text[]
+		) with ordinality w(criterion_key, text_key, ord)
+		cross join lateral (
+			select v.match_score from experience_verdict v
+			where v.root_turn_id = ${rootTurnId} and v.criterion_key = w.criterion_key
+				and v.score_text_key = w.text_key limit 1
+		) prior`);
+	for (const { position, score } of rows) {
+		const entry = input[position - 1];
+		if (entry) cached.set(entry, score);
+	}
+	return cached;
+}
+
+export async function saveScores(
+	rootTurnId: string,
+	scores: readonly ScoreUpdate[],
+	store: Pick<DbExecutor, "execute">,
+) {
+	if (!scores.length) return;
+	await store.execute(sql`
+		update experience_verdict v set match_score = s.score, score_text_key = s.text_key
+		from unnest(
+			${sql.param(scores.map((s) => criterionKey(s.criterion)))}::text[],
+			${sql.param(scores.map((s) => s.content))}::text[],
+			${sql.param(scores.map((s) => s.textKey))}::text[],
+			${sql.param(scores.map((s) => s.score))}::int[]
+		) s(criterion_key, content, text_key, score)
+		where v.root_turn_id = ${rootTurnId} and v.criterion_key = s.criterion_key and v.content = s.content
+			and v.fits and v.match_score is null`);
 }

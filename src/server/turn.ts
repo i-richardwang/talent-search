@@ -31,7 +31,6 @@ import { agentTools } from "./agent-tools";
 import { recordSearch } from "./audit";
 import { companyFacts, streamFacts } from "./discover";
 import { type EndpointFault, endpointFault } from "./endpoint";
-import { saveVerdicts } from "./judged";
 import {
 	judgeSegments,
 	UnansweredError,
@@ -39,6 +38,7 @@ import {
 	understandingConfigured,
 } from "./llm";
 import { type Reader, type RecordStep, reader } from "./reading";
+import { ScoreUnavailable, scoreEvidence } from "./scoring";
 
 function newId() {
 	return randomBytes(8).toString("base64url");
@@ -412,10 +412,10 @@ async function performAttempt(
 	const row = await getRow(turnId);
 	// 这一轮已被下一句话取代，或这一次已被重试换掉
 	if (row?.attempt !== attempt) return null;
-	const record: RecordStep = async (step, verdicts) => {
+	const record: RecordStep = async (step, persist) => {
 		const written = await db.transaction(async (tx) => {
 			// 结论与追加都先锁链头：归属核验、进度和结论在同一事务里生效。
-			if (verdicts.length > 0)
+			if (persist)
 				await tx
 					.select({ id: searchTurn.id })
 					.from(searchTurn)
@@ -429,7 +429,7 @@ async function performAttempt(
 				.where(ownedBy(turnId, attempt))
 				.returning({ id: searchTurn.id });
 			if (rows.length === 0) return false;
-			await saveVerdicts(row.rootTurnId, verdicts, tx);
+			await persist?.(tx);
 			return true;
 		});
 		if (!written) {
@@ -457,7 +457,18 @@ async function performAttempt(
 		// 没有原话的一轮一定有条件（`search_turn_state`）。这份条件出不了名单时没有经历可读，
 		// 名单那一侧有自己的说法
 		const spec = settled.spec ?? row.spec;
-		if (spec) await reading.read(queryOfSpec(spec), replaced.signal);
+		if (spec) {
+			const query = queryOfSpec(spec);
+			const read = await reading.read(query, replaced.signal);
+			if (read.kind === "read") {
+				try {
+					await scoreEvidence(query, row.rootTurnId, record, replaced.signal);
+				} catch (error) {
+					if (!(error instanceof ScoreUnavailable)) throw error;
+					await record({ at: Date.now(), tool: "score", unavailable: true });
+				}
+			}
+		}
 	} catch (error) {
 		// 被取代之后停下来的那一下不是失败
 		if (replaced.signal.aborted) return null;

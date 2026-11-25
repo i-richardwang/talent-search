@@ -14,9 +14,8 @@ import { z } from "zod";
 // 端口 1 上没有人接：这次调用必然失败，而失败正是这里要看的东西。
 process.env.LLM_BASE_URL = "http://127.0.0.1:1";
 process.env.LLM_MODEL = "fake";
-const { judgeSegments, understand, UnansweredError } = await import(
-	"#/server/llm"
-);
+const { judgeSegments, scoreSegments, understand, UnansweredError } =
+	await import("#/server/llm");
 const { endpointFault } = await import("#/server/endpoint");
 const { APICallError, tool } = await import("ai");
 
@@ -106,7 +105,11 @@ test("端点没理会必须调用工具、只回了正文，算没作答，不�
 });
 
 /** 读一批经历的请求每次都这样答的假端点；返回发了几次请求。 */
-async function answeringJudge(fits: number[], run: () => Promise<unknown>) {
+async function answeringTool(
+	name: "judge" | "score",
+	replies: unknown[],
+	run: () => Promise<unknown>,
+) {
 	const original = globalThis.fetch;
 	let requests = 0;
 	globalThis.fetch = async () => {
@@ -121,16 +124,11 @@ async function answeringJudge(fits: number[], run: () => Promise<unknown>) {
 					message: {
 						role: "assistant",
 						content: null,
-						tool_calls: [
-							{
-								id: "call",
-								type: "function",
-								function: {
-									name: "judge",
-									arguments: JSON.stringify({ fits }),
-								},
-							},
-						],
+						tool_calls: replies.map((reply, i) => ({
+							id: `call${i}`,
+							type: "function",
+							function: { name, arguments: JSON.stringify(reply) },
+						})),
 					},
 					finish_reason: "tool_calls",
 				},
@@ -154,18 +152,80 @@ const BATCH = {
 };
 
 test("读一批经历：交回这一批里符合的段的编号", async () => {
-	const { result, requests } = await answeringJudge([1, 1], () =>
-		judgeSegments(BATCH),
+	const { result, requests } = await answeringTool(
+		"judge",
+		[{ fits: [1, 1] }],
+		() => judgeSegments(BATCH),
 	);
 	assert.deepEqual(result, [1]);
 	assert.equal(requests, 1);
 });
 
 test("读一批经历交的编号不在这一批里：再问一次，还不对就失败，不收一份对不上号的结论；这不算没读懂 HR 的话", async () => {
-	const { result, requests } = await answeringJudge([1, 9], () =>
-		judgeSegments(BATCH),
+	const { result, requests } = await answeringTool(
+		"judge",
+		[{ fits: [1, 9] }],
+		() => judgeSegments(BATCH),
 	);
 	assert.ok(result instanceof Error, String(result));
 	assert.ok(!(result instanceof UnansweredError));
 	assert.equal(requests, 2);
+});
+
+test("一批经历必须一次交齐，分成两次提交会重试且不写结论", async () => {
+	const { result, requests } = await answeringTool(
+		"judge",
+		[{ fits: [1] }, { fits: [2] }],
+		() => judgeSegments(BATCH),
+	);
+	assert.ok(result instanceof Error);
+	assert.equal(requests, 2);
+});
+
+test("评分严格覆盖已确认的每个编号，拒绝越界、遗漏、重复、非整数或超出百分制的数值和附带的是否判断", async () => {
+	const a = { n: 1, score: 1 },
+		b = { n: 2, score: 2 };
+	for (const reply of [
+		{ scores: [a, { n: 9, score: 1 }] },
+		{ scores: [a] },
+		{ scores: [a, b, b] },
+		{ scores: [a, { n: 2, score: 0 }] },
+		{ scores: [a, { n: 2, score: 101 }] },
+		{ scores: [a, { n: 2, score: 79.5 }] },
+		{ scores: [a, b], fits: [1, 2] },
+	]) {
+		const { result, requests } = await answeringTool("score", [reply], () =>
+			scoreSegments(BATCH),
+		);
+		assert.ok(result instanceof Error);
+		assert.equal(requests, 2);
+	}
+});
+
+test("模型返回的百分制整数原样保留，含两端和相邻的中间分", async () => {
+	for (const [x, y] of [
+		[1, 100],
+		[81, 82],
+	] as const) {
+		const { result, requests } = await answeringTool(
+			"score",
+			[
+				{
+					scores: [
+						{ n: 2, score: y },
+						{ n: 1, score: x },
+					],
+				},
+			],
+			() => scoreSegments(BATCH),
+		);
+		assert.deepEqual(
+			result,
+			new Map([
+				[1, x],
+				[2, y],
+			]),
+		);
+		assert.equal(requests, 1);
+	}
 });

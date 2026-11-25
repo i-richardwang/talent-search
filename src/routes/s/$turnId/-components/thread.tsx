@@ -633,6 +633,8 @@ function stepTitle(step: TraceStep) {
 			};
 		case "read":
 			return { action: "查看候选人的经历", keyword: "" };
+		case "score":
+			return { action: "评估经历与要求的匹配程度", keyword: "" };
 		case "judge":
 			return { action: "判断这些经历是否符合", keyword: "" };
 		case "submit":
@@ -864,6 +866,12 @@ export function stepFindings(step: TraceStep): string[] {
 					: step.left > 0
 						? "这一次能确认的经历已经到上限"
 						: "候选人的经历都确认过了",
+			];
+		case "score":
+			return [
+				"unavailable" in step
+					? "本轮匹配评分暂不可用，名单按已有依据排序"
+					: `已评估 ${step.segments} 段符合要求的经历`,
 			];
 		case "judge":
 			return [`${step.fits} 段符合，${step.unfit} 段不符合`];

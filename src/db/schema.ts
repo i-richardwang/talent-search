@@ -1005,9 +1005,19 @@ export const experienceVerdict = pgTable(
 		criterionKey: text("criterion_key").notNull(),
 		content: text("content").notNull(),
 		fits: boolean("fits").notNull(),
+		matchScore: integer("match_score"),
+		scoreTextKey: text("score_text_key"),
 	},
 	(t) => [
 		primaryKey({ columns: [t.rootTurnId, t.criterionKey, t.content] }),
+		check(
+			"experience_verdict_positive_score",
+			sql`(${t.matchScore} is null) = (${t.scoreTextKey} is null)
+			and (${t.matchScore} is null or (${t.fits} and ${t.matchScore} between 1 and 100))`,
+		),
+		index("experience_verdict_scored_text")
+			.on(t.rootTurnId, t.criterionKey, t.scoreTextKey)
+			.where(sql`${t.scoreTextKey} is not null`),
 		foreignKey({
 			name: "experience_verdict_root",
 			columns: [t.rootTurnId],

@@ -1,6 +1,6 @@
 /**
  * 查询理解的端点适配层：发送需求、当前条件、这次找人之前的对话、数据目录与语料词表，消费提交
- * 工具的条件（`understand`）；读一批经历、交回符合的段（`judgeSegments`，由 `reading.ts` 调度）。
+ * 工具的条件（`understand`）；读一批经历、交回符合的段（`judgeSegments`），为已确认的证据交回匹配分（`scoreSegments`）。
  * 模型写的是条件，名单只从搜索来：它不可增删或重排候选人。
  * 未配置、超过时限或未能作答时抛出错误，查询记录保持未完成供重试。
  */
@@ -22,9 +22,11 @@ import { catalogText } from "#/search/catalog";
 import type { Understood, Vocabulary } from "#/search/intent";
 import { withOff } from "#/search/query";
 import type { CompanyFacts, Matched, StreamFact } from "#/search/trace";
+import { MAX_MATCH_SCORE } from "#/search/weights";
 import { type AgentTools, SUBMIT } from "./agent-tools";
 import { endpointPolicy, positiveInt, thinkingSwitch } from "./endpoint";
 import type { Judge } from "./reading";
+import type { SegmentBatch } from "./segment-batches";
 
 const BASE_URL = process.env.LLM_BASE_URL;
 const API_KEY = process.env.LLM_API_KEY;
@@ -166,7 +168,7 @@ from 决定这条在问什么：
   对话里说定的算和不算，都写在这里。
 - 写之前先用 find 看这件事在人才库里有哪些叫法、各有多少人。
 - 不要用 e.title、e.department 的字面去筛做过什么。
-- 写了 seek 的条件，名次按投入多深、多久、多近来排，读下来算数的那段就是名单上的证据。
+- 写了 seek 的条件，名次按工作与判据的贴合程度、投入、时长和远近来排，读下来算数的那段就是名单上的证据。
 - 只关心命中的是哪一类说法或投入时才用 h（h.route、h.engagement）；平常 where 里不必提 h。
 
 读经历：
@@ -233,7 +235,7 @@ label 写给 HR 看，HR 靠它核对你是怎么理解的：说清找的是什�
 你提交之后 HR 就看到名单，名单上方列着每一条条件的 label。note 只处理两件事：没有实现的要求，或 HR 尚未确定的解释；其余写 null。
 - 这句话里有人才库表达不了的要求。人才库里有什么看下面的数据目录和记录流；地点、年龄、性别、薪资、
   性格、潜力、像某某一样，这些不写进条件；HR 不知道的话会以为名单已经按它筛过了。
-  不用相近但含义不同的条件替代；替代要求放在 options，等 HR 选择后再生效。
+  替代要求放在 options，等 HR 选择后再写入条件。例如「有潜力」可提议改查高潜池，只有 HR 选定或点名入池记录时才筛这条记录。
   点名的公司、学校表达得了，人才库里没有人也照写，不用说：哪一项没有人，名单上会说。
 - HR 的话或对话已经留下两个可能的领域或方向、还没选定时，note 必须保留这个选择：current 写这次先按的解释，options 给另一种，says 说明尚未确定的分歧。人才库里只找到其中一种、或 label 已写清你选的那一种，都不等于 HR 已选择。
   HR 没提多个方向，但人才库里的叫法显示这个需求有两种在本次任务中都合理的解释时，同样处理。
@@ -543,7 +545,7 @@ function leadingObject(text: string): string | null {
 }
 
 /** 读一批经历的回答不合约定时，同一批最多再问几次。 */
-const JUDGE_RETRIES = 1;
+const SEGMENT_RETRIES = 1;
 
 const judgeInput = z.object({
 	fits: z.array(z.int()).meta({
@@ -555,44 +557,106 @@ const judgeTool = tool({
 	inputSchema: judgeInput,
 });
 
-/**
- * 读一批经历：一次单独的请求，只给一条条件的标签、判据和它的一批经历（`READING`），交回符合的
- * 段的编号。
- * 回答不合约定（没交、交的编号不在这一批里）时同一批再问一次，还不行这一次读经历就失败：
- * 没交的按不算存，存错了没有机会重读，所以不收一份对不上号的回答。这不是没读懂 HR 的话，
- * 抛的是普通的错误，不是 `UnansweredError`。同时发出的请求数由 `READ_CONCURRENCY` 封顶。
- */
-export const judgeSegments: Judge = (batch, abortSignal) =>
-	readGate(async () => {
-		abortSignal?.throwIfAborted();
-		const numbers = new Set(batch.segments.map((segment) => segment.n));
-		for (let attempt = 0; ; attempt++) {
-			const fits = await generateText({
-				model: getModel(),
-				maxRetries: 0,
-				tools: { judge: judgeTool },
-				toolChoice: { type: "tool", toolName: "judge" },
-				repairToolCall: trailingBrackets,
-				abortSignal,
-				instructions: READING,
-				prompt: JSON.stringify(batch),
-				temperature: 0,
-				maxOutputTokens: MAX_OUTPUT_TOKENS,
-			}).then(
-				({ toolCalls }) =>
-					judgeInput.safeParse(
-						toolCalls.find((call) => call.toolName === "judge")?.input,
-					).data?.fits,
-				(error) => {
-					// 必须调用工具的一步没有调用：和交了一份对不上号的一样，再问一次
-					if (!ToolChoiceViolationError.isInstance(error)) throw error;
-					return undefined;
-				},
-			);
-			if (fits?.every((n) => numbers.has(n))) return [...new Set(fits)];
-			if (attempt >= JUDGE_RETRIES)
-				throw new Error(
-					"读经历的模型没有按约定交结论：没交，或者交的编号不在这一批里",
-				);
+/** 每批只接受一次完整提交。未提交或编号无效时重读同一批；传输故障由端点策略处理。 */
+function segmentAnswer<T>(
+	name: "judge" | "score",
+	tools: ToolSet,
+	instructions: string,
+	batch: SegmentBatch,
+	abortSignal: AbortSignal | undefined,
+	parse: (input: unknown, expected: Set<number>) => T | null,
+	failure: string,
+): Promise<T> {
+	return readGate(async () => {
+		const expected = new Set(batch.segments.map(({ n }) => n));
+		const prompt = JSON.stringify(batch);
+		for (let attempt = 0; attempt <= SEGMENT_RETRIES; attempt++) {
+			abortSignal?.throwIfAborted();
+			try {
+				const { toolCalls } = await generateText({
+					model: getModel(),
+					maxRetries: 0,
+					tools,
+					toolChoice: { type: "tool", toolName: name },
+					repairToolCall: trailingBrackets,
+					abortSignal,
+					instructions,
+					prompt,
+					temperature: 0,
+					maxOutputTokens: MAX_OUTPUT_TOKENS,
+				});
+				const [call] = toolCalls;
+				if (toolCalls.length === 1 && call?.toolName === name) {
+					const result = parse(call.input, expected);
+					if (result !== null) return result;
+				}
+			} catch (error) {
+				if (!ToolChoiceViolationError.isInstance(error)) throw error;
+			}
 		}
+		throw new Error(failure);
 	});
+}
+
+export const judgeSegments: Judge = (batch, signal) =>
+	segmentAnswer(
+		"judge",
+		{ judge: judgeTool },
+		READING,
+		batch,
+		signal,
+		(input, expected) => {
+			const answer = judgeInput.safeParse(input);
+			if (!answer.success) return null;
+			const fits = new Set(answer.data.fits);
+			for (const n of fits) if (!expected.has(n)) return null;
+			return [...fits];
+		},
+		"读经历的模型没有按约定交结论：需要一份来自本批编号的回答",
+	);
+
+const SCORING = `每段经历已经按 criterion 确认符合。给每段一个 1 到 100 的整数，表示本人承担的实际工作与这条具体要求贴合到什么程度。
+根据工作对象、本人负责的任务、任务所处环节和职责范围来定分。要求只找一个具体环节时，亲自完成那个环节就可以很贴合。
+只做了目标工作中很有限的一步，靠近低端；直接承担其中有实质作用的一部分，靠近中间；本人职责与目标工作大部分重合，靠近高端；职责、对象和范围完全对上，可以给满分。按实际贴合程度取中间的任意整数。
+例如找「建设数据仓库」：只维护一条既有入仓任务，可以给 24；负责交易主题的分层建模和入仓，可以给 73；直接负责新仓从建模到上线，可以给 96。若改为找「维护入仓任务」，第一段也可以得高分。
+看已有文字能支持的职责。岗位本身已清楚表明做了目标工作也可给高分；描述长短、关键词数量、公司名气、职级、年限和材料是否写了业绩数字不单独加分。
+逐段按同一尺度判断。证据确有差异才给不同分，能支持的职责相同可以同分，不按批次分配名次。用 score 提交每个编号 n 和它的匹配分。`;
+
+const scoreInput = z.strictObject({
+	scores: z.array(
+		z.strictObject({
+			n: z.int(),
+			score: z.int().min(1).max(MAX_MATCH_SCORE),
+		}),
+	),
+});
+const scoreTool = tool({
+	description: "提交已符合的每段经历的匹配分。",
+	inputSchema: scoreInput,
+});
+
+/** 回答必须完整覆盖已确认的输入，不能补段、漏段或修改是否符合。 */
+export function scoreSegments(batch: SegmentBatch, signal?: AbortSignal) {
+	return segmentAnswer(
+		"score",
+		{ score: scoreTool },
+		SCORING,
+		batch,
+		signal,
+		(input, expected) => {
+			const answer = scoreInput.safeParse(input);
+			if (!answer.success) return null;
+			const scores = new Map(
+				answer.data.scores.map(({ n, score }) => [n, score]),
+			);
+			if (
+				scores.size !== expected.size ||
+				scores.size !== answer.data.scores.length
+			)
+				return null;
+			for (const n of expected) if (!scores.has(n)) return null;
+			return scores;
+		},
+		"匹配评分未完整覆盖已确认的经历",
+	);
+}

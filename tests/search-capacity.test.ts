@@ -21,7 +21,10 @@ beforeEach(async () => {
 	await db.execute(sql`truncate employee, phrase restart identity cascade`);
 });
 
-test("被排除的人有再多段经历，也不导致有效候选溢出", async () => {
+// 计时包含批量写入合成数据和更新数据库统计信息。
+const capacity = { timeout: 20_000 };
+
+test("被排除的经历不占候选事实额度", capacity, async () => {
 	await seed([
 		{
 			empId: "C1",
@@ -62,7 +65,7 @@ test("被排除的人有再多段经历，也不导致有效候选溢出", async
 	);
 });
 
-test("人员候选超过单语句参数上限时，加分门槛保留全部人员并正确排序", async () => {
+test("加分门槛支持超过单语句参数上限的人员候选", capacity, async () => {
 	await db.execute(sql`insert into employee (emp_id, name, school, education_level, education_rank)
 		select 'S' || lpad(n::text, 5, '0'), '合成大候选', '合成大学',
 			case when n % 2 = 0 then '硕士' else '本科' end,
@@ -115,7 +118,7 @@ test("人员候选超过单语句参数上限时，加分门槛保留全部人�
 	assert.deepEqual(background.facets, baseline.facets);
 });
 
-test("经历候选超过单语句参数上限时，加分门槛保留全部证据并正确排序", async () => {
+test("加分门槛支持超过单语句参数上限的候选经历", capacity, async () => {
 	await seed([
 		{
 			empId: "S00001",

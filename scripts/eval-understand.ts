@@ -70,9 +70,9 @@ import { changesOf, emptySpec } from "#/search/spec";
 import { RESULT_MAX } from "#/search/weights";
 import { agentTools } from "#/server/agent-tools";
 import { companyFacts, streamFacts } from "#/server/discover";
-import { saveVerdicts } from "#/server/judged";
 import { judgeSegments, understand } from "#/server/llm";
 import { type RecordStep, reader } from "#/server/reading";
+import { scoreEvidence } from "#/server/scoring";
 import { createTurn, deleteSearch } from "#/server/turn";
 
 /** 说明里的人数：「12 人」「两百多位」「几十个人」 */
@@ -303,16 +303,19 @@ try {
 			spec: emptySpec(),
 		});
 		try {
-			const record: RecordStep = (_step, verdicts) =>
-				saveVerdicts(rootTurnId, verdicts, db);
+			const record: RecordStep = async (_step, persist) => {
+				await persist?.(db);
+			};
 			const reading = reader({ rootTurnId, record, judge: judgeSegments });
 			const result = await understand(
 				c.say,
 				{ ...facts, history: c.history },
 				agentTools({ base: c.base, rootTurnId, record, reading }),
 			);
-			// 和生产的一轮一样：理解之后把候选人读完，名单和证据才是定稿
-			await reading.read(result.query);
+			const read = await reading.read(result.query);
+			// 核对名次的用例使用正式匹配分，核对名单和条件只需确认是否符合。
+			if (c.before.length && read.kind === "read")
+				await scoreEvidence(result.query, rootTurnId, record);
 			const next = result.query.conditions;
 			const sameAs = (a: QueryCondition) => (b: QueryCondition) =>
 				contentKey(a) === contentKey(b);

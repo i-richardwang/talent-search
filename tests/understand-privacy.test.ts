@@ -93,7 +93,7 @@ test("一次理解发给模型的请求体里没有姓名和工号", async () =>
 			JSON.parse(body) as { messages: { role: string; content: string }[] }
 		).messages.filter((m) => m.role === "tool");
 	const answered = JSON.stringify(
-		answersIn(bodies.at(-1) ?? "").map((m) => m.content),
+		bodies.flatMap(answersIn).map((m) => m.content),
 	);
 	assert.match(answered, /硕士.{0,8}people.{0,4}3/, "一列的取值和人数发出去了");
 	assert.match(answered, /绩效/, "记录流的概况发出去了");
@@ -128,7 +128,14 @@ test("一次理解发给模型的请求体里没有姓名和工号", async () =>
 		"find",
 		"probe",
 	]);
-	assert.deepEqual(steps.slice(4), ["read", "judge"]);
+	assert.deepEqual(steps.slice(4), ["read", "judge", "score"]);
+	const scoreRequests = bodies
+		.map((body) => JSON.parse(body))
+		.filter((r) => r.tools?.[0]?.function.name === "score");
+	assert.equal(scoreRequests.length, 1);
+	const scoreBatch = JSON.parse(scoreRequests[0].messages.at(-1).content);
+	assert.equal(scoreBatch.segments.length, 1, "同判据的三段相同文字只评分一次");
+	assert.deepEqual(Object.keys(scoreBatch).sort(), ["criterion", "segments"]);
 	const prompt = bodies[0] ?? "";
 	assert.match(prompt, /档从低到高 C、B、A/, "评级流写档");
 	assert.match(prompt, /取值有 高潜池/, "状态流写取值");

@@ -6,9 +6,10 @@
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
 import type { TraceStep } from "#/search/trace";
-import type { Judge } from "#/server/reading";
+import type { Judge, RecordStep } from "#/server/reading";
 import {
 	agentOn,
+	answeringScores,
 	type Checked,
 	conclude,
 	fitsWhere,
@@ -28,10 +29,14 @@ process.env.LLM_READ_BATCH_BYTES = String(BATCH_BYTES);
 const teardown = await setup();
 after(teardown);
 
-const { READ_BATCH, READ_MAX } = await import("#/server/reading");
+const { READ_BATCH, segmentBatches } = await import("#/server/segment-batches");
+const { READ_MAX } = await import("#/server/reading");
 const { criterionKey } = await import("#/search/verdict");
-const { execute } = await import("#/search/execute");
-const { pool } = await import("#/db");
+const { execute, probe } = await import("#/search/execute");
+const { db, pool } = await import("#/db");
+const record: RecordStep = async (_step, persist) => {
+	await persist?.(db);
+};
 
 /** 一批读不完、一轮读得完的那一组有多少人。 */
 const MANY = READ_BATCH + 40;
@@ -87,6 +92,11 @@ before(async () => {
 				},
 			],
 		},
+		...["A", "B"].map((id) => ({
+			empId: `PZ${id}`,
+			name: `合成配载${id}`,
+			segments: [{ months: 24, title: `配载员${id}` }],
+		})),
 		...numbered("CC", MANY).map((empId) => ({
 			empId,
 			name: `合成${empId}`,
@@ -132,7 +142,109 @@ async function saved(search: string, criterion: string) {
 }
 const plain = (steps: TraceStep[]) => steps.map(({ at: _at, ...step }) => step);
 
+test("经历分批以请求 JSON 的实际字节为界，恰好装满的批次保留完整原文", () => {
+	const header = { criterion: "负责配载" };
+	const input = Array.from({ length: 10 }, () => ({ text: '中文"\n' }));
+	const size = () =>
+		Buffer.byteLength(
+			JSON.stringify({
+				...header,
+				segments: input.map(({ text }, i) => ({ n: i + 1, text })),
+			}),
+		);
+	const last = input.at(-1);
+	assert.ok(last);
+	last.text += "x".repeat(BATCH_BYTES - size());
+	assert.equal(size(), BATCH_BYTES);
+	const batches = [...segmentBatches(header, [...input, { text: "下一段" }])];
+	assert.deepEqual(
+		batches.map(({ entries }) => entries.length),
+		[10, 1],
+	);
+	assert.deepEqual(batches[1]?.batch.segments, [{ n: 1, text: "下一段" }]);
+});
+
+test("同一任务里相同的证据文字跨轮沿用匹配分，即使文字相同，否决仍是无分", async () => {
+	const { scoreEvidence } = await import("#/server/scoring");
+	const root = await openSearch();
+	const criterion = "承担叉车调度工作";
+	const q = { conditions: [judged("调度", ["叉车调度"], criterion)] };
+	const score = () => scoreEvidence(q, root, record);
+	await conclude(root, criterion, true, ["CC0"]);
+	await conclude(root, criterion, false, ["CC2"]);
+	await answeringScores(
+		(segments) => ({ scores: segments.map(({ n }) => ({ n, score: 73 })) }),
+		score,
+	);
+	await conclude(root, criterion, true, ["CC1"]);
+	let calls = 0;
+	await answeringScores(() => {
+		calls++;
+		return { scores: [] };
+	}, score);
+	assert.equal(calls, 0);
+	const { rows } = await pool.query(
+		"select fits, match_score from experience_verdict where root_turn_id = $1 order by fits",
+		[root],
+	);
+	assert.deepEqual(rows, [
+		{ fits: false, match_score: null },
+		{ fits: true, match_score: 73 },
+		{ fits: true, match_score: 73 },
+	]);
+});
+
+test("已入围者按匹配分排序，待确认的加分经历仍按相同顺序读取", async () => {
+	const root = await openSearch();
+	const criterion = "本人做配载";
+	const query = {
+		conditions: [
+			judged("配载", ["配载员"], criterion),
+			judged("复核", ["配载员"], "本人复核配载方案", { mode: "boost" }),
+		],
+	};
+	await conclude(root, criterion, true, ["PZA", "PZB"]);
+	const listed = async () =>
+		(await execute(query, root)).results.map((r) => r.employee.empId);
+	const pending = async () =>
+		(await probe(query, root)).unconfirmed.map((s) => s.experienceId);
+	const before = await pending();
+	assert.equal(before.length, 2);
+	assert.deepEqual(await listed(), ["PZA", "PZB"]);
+	const { scoreEvidence } = await import("#/server/scoring");
+	await answeringScores(
+		(segments) => ({
+			scores: segments.map(({ n, text }) => ({
+				n,
+				score: text.includes("配载员B") ? 100 : 1,
+			})),
+		}),
+		() => scoreEvidence(query, root, record),
+	);
+	assert.deepEqual(await listed(), ["PZB", "PZA"]);
+	assert.deepEqual(await pending(), before);
+});
+
 describe("读经历", () => {
+	test("两个条件在同一波捞到同一判据的相同段时只确认一次", async () => {
+		const { call, seen, search } = await agent();
+		const criterion = "本人做配载";
+		const conditions = [
+			seeking("配载岗位", ["配载员"], criterion),
+			seeking("配载经历", [], criterion, {
+				where: "e.title ilike :title",
+				params: { title: "%配载员%" },
+			}),
+		];
+		assert.equal((await call<Tried>("probe", { conditions })).unread, 2);
+		await call<Read>("read", { conditions });
+		assert.deepEqual(
+			seen.map((b) => b.segments.length),
+			[2],
+		);
+		assert.deepEqual(await saved(search, criterion), [true, true]);
+	});
+
 	test("读候选人没读过的经历：一批只读一条条件的，每段有编号，职级高的人在前；给的是在哪、序列、岗位、技能和原文，没有姓名、工号和起止时间；回来的是每条读了多少、多少算数", async () => {
 		const { call, steps, seen, search } = await agent();
 		const criterion = "本人做设备巡检";

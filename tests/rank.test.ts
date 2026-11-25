@@ -23,6 +23,7 @@ function fact(p: Partial<Fact> & { empId: string }): Fact {
 		route: "role",
 		phrase: null,
 		engagement: null,
+		matchScore: null,
 		months: 24,
 		endDate: null,
 		seqL1: "技术",
@@ -132,6 +133,50 @@ describe("投入档", () => {
 			["B", "A"],
 		);
 	});
+});
+
+test("同样投入、时长和近因时，百分制每相邻一分都能排开", () => {
+	const facts = Array.from({ length: 100 }, (_, i) =>
+		fact({ empId: String(i + 1).padStart(3, "0"), matchScore: i + 1 }),
+	);
+	const ranked = run(facts).ranked;
+	assert.deepEqual(
+		ranked.map((r) => r.empId),
+		facts.map((f) => f.empId).reverse(),
+	);
+	assert.equal(new Set(ranked.map((r) => r.depth)).size, 100);
+	const neutral = depthOf([fact({ empId: "旧" })]);
+	assert.equal(ranked.at(-1)?.depth, neutral);
+	assert.equal(ranked[0]?.depth, neutral * 1.5);
+});
+
+test("评分只调整合格主张的名次，缺少另一条必须经历或累计月数不足时仍然出局", () => {
+	const must = claims("must", "must");
+	const facts = [
+		fact({ empId: "A", matchScore: 1 }),
+		fact({ empId: "B", matchScore: 100 }),
+		fact({ empId: "C", matchScore: 100 }),
+		fact({ empId: "D", matchScore: 100, months: 1 }),
+		...["A", "B", "D"].map((empId) => fact({ empId, claim: 1 })),
+	];
+	const requirements = must.map((c, i) =>
+		i === 0 ? { ...c, minMonths: 12 } : c,
+	);
+	assert.deepEqual(orderOf(facts, requirements), ["B", "A"]);
+	assert.deepEqual(
+		orderOf(
+			facts.map((f) => ({ ...f, matchScore: null })),
+			requirements,
+		),
+		["A", "B"],
+	);
+	assert.deepEqual(
+		orderOf([
+			fact({ empId: "A", months: 96, matchScore: 1 }),
+			fact({ empId: "B", months: 3, matchScore: 100 }),
+		]),
+		["A", "B"],
+	);
 });
 
 describe("同一段", () => {
