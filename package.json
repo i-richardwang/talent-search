@@ -26,6 +26,7 @@
     "derive": "bun --env-file=.env.local scripts/derive.ts",
     "query": "bun --env-file=.env.local scripts/query.ts",
     "eval": "bun --env-file=.env.local scripts/eval.ts",
+    "eval:match": "bun --env-file=.env.local scripts/eval-match.ts",
     "eval:extract": "bun --env-file=.env.local scripts/eval-extract.ts",
     "eval:review": "bun --env-file=.env.local scripts/eval-review.ts",
     "eval:understand": "bun --env-file=.env.local scripts/eval-understand.ts",

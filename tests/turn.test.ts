@@ -17,6 +17,7 @@ import { queryOfSpec, type SearchSpec } from "#/search/spec";
 import { lately, sleeper } from "./conditions";
 import {
 	answering,
+	answeringScores,
 	bracesAfterSubmit,
 	breakUnderstanding,
 	drafted,
@@ -889,6 +890,7 @@ describe("理解时把候选人的经历看完", () => {
 			[
 				{ tool: "read", segments: 3, left: 3 },
 				{ tool: "judge", fits: 2, unfit: 1 },
+				{ tool: "score", segments: 2 },
 			],
 			"看完再交，提交一次就过，不记没通过的提交",
 		);
@@ -900,6 +902,123 @@ describe("理解时把候选人的经历看完", () => {
 		);
 		assert.equal(outcome.incomplete, undefined);
 		assert.equal((await loadTurn(turnId))?.settled, true);
+	});
+
+	test("评分故障仍发布已确认名单；下一轮只补肯定结论的分数，否决保持无分", async () => {
+		const { turnId, spec } = await answeringScores(
+			() => ({ scores: [] }),
+			() =>
+				answering(
+					() => ({ conditions: [appraising], note: null }),
+					() => sentence("鉴宝"),
+				),
+		);
+		const state = async () =>
+			(
+				await pool.query(
+					"select fits, match_score from experience_verdict where root_turn_id = $1 order by fits, match_score",
+					[turnId],
+				)
+			).rows;
+		assert.deepEqual(await state(), [
+			{ fits: false, match_score: null },
+			{ fits: true, match_score: null },
+			{ fits: true, match_score: null },
+		]);
+		assert.deepEqual(
+			(await search(spec, turnId)).results.map((r) => r.employee.empId),
+			["JB01", "JB02"],
+		);
+		assert.equal((await loadTurn(turnId))?.trace?.at(-1)?.tool, "score");
+		let scored: string[] = [];
+		const next = await answeringScores(
+			(segments) => {
+				scored = segments.map((s) => s.text);
+				return {
+					scores: segments.map(({ n, text }) => ({
+						n,
+						score: text.includes("直播") ? 84 : 83,
+					})),
+				};
+			},
+			() =>
+				answering(
+					(_said, base) => ({ conditions: base, note: null }),
+					() => sentence("接着找", turnId),
+				),
+		);
+		assert.equal(scored.length, 2);
+		assert.ok(scored.every((s) => !s.includes("销售")));
+		assert.ok(
+			!(await loadTurn(next.turnId))?.trace?.some(
+				(step) => step.tool === "judge",
+			),
+		);
+		assert.deepEqual(await state(), [
+			{ fits: false, match_score: null },
+			{ fits: true, match_score: 83 },
+			{ fits: true, match_score: 84 },
+		]);
+		assert.deepEqual(
+			(await search(next.spec, turnId)).results.map((r) => r.employee.empId),
+			["JB02", "JB01"],
+		);
+		for (const invalid of [0, 101]) {
+			await assert.rejects(
+				db.execute(
+					sql`update experience_verdict set match_score = ${invalid} where root_turn_id = ${turnId} and fits`,
+				),
+				violates("experience_verdict_positive_score"),
+			);
+		}
+		await assert.rejects(
+			db.execute(sql`update experience_verdict set match_score = 1, score_text_key = 'test'
+			where root_turn_id = ${turnId} and not fits`),
+			violates("experience_verdict_positive_score"),
+		);
+	});
+
+	test("某一批评分失败时保留已完成的分数，下一轮只读缺分批次", async () => {
+		let calls = 0;
+		const root = await answeringScores(
+			(segments) => ({
+				scores:
+					++calls === 1 ? segments.map(({ n }) => ({ n, score: 67 })) : [],
+			}),
+			() =>
+				answering(
+					() => ({ conditions: [appraising, live], note: null }),
+					() => sentence("做过鉴宝和直播"),
+				),
+		);
+		const scores = async () =>
+			(
+				await pool.query<{ match_score: number }>(
+					"select match_score from experience_verdict where root_turn_id = $1 and match_score is not null order by match_score",
+					[root.turnId],
+				)
+			).rows.map((r) => r.match_score);
+		assert.deepEqual(await scores(), [67]);
+		assert.deepEqual(
+			(await search(root.spec, root.turnId)).results.map(
+				(r) => r.employee.empId,
+			),
+			["JB02"],
+		);
+		calls = 0;
+		await answeringScores(
+			(segments) => {
+				calls++;
+				return { scores: segments.map(({ n }) => ({ n, score: 90 })) };
+			},
+			() =>
+				answering(
+					(_text, base) => ({ conditions: base, note: null }),
+					() => sentence("继续", root.turnId),
+				),
+		);
+		assert.equal(calls, 1);
+		assert.deepEqual(await scores(), [67, 90]);
 	});
 
 	test("交上来的判据和读的时候不一样：照收，这一轮按交上来的那份把候选人读完，名单是定稿", async () => {
@@ -927,6 +1046,7 @@ describe("理解时把候选人的经历看完", () => {
 				{ tool: "judge", fits: 2, unfit: 1 },
 				{ tool: "read", segments: 3, left: 3 },
 				{ tool: "judge", fits: 1, unfit: 2 },
+				{ tool: "score", segments: 1 },
 			],
 			"提交一次就收，之后按交上来的判据读完",
 		);
@@ -979,6 +1099,7 @@ describe("理解时把候选人的经历看完", () => {
 			[
 				{ tool: "read", segments: 3, left: 3 },
 				{ tool: "judge", fits: 2, unfit: 1 },
+				{ tool: "score", segments: 2 },
 			],
 			"头一次读过的不算数，三段都重新读",
 		);
@@ -1025,6 +1146,7 @@ describe("理解时把候选人的经历看完", () => {
 			[
 				{ tool: "read", segments: 2, left: 2 },
 				{ tool: "judge", fits: 1, unfit: 1 },
+				{ tool: "score", segments: 1 },
 			],
 			"只读新进范围的那两位",
 		);

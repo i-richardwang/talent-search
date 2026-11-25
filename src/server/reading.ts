@@ -16,30 +16,19 @@
  * `READ_MAX` 段：人在等，读到这里为止，没读到的人不上名单（`search/empty.ts` 的 `Incomplete`）。
  */
 import "@tanstack/react-start/server-only";
+import type { DbExecutor } from "#/db/snapshot";
 import { concurrently, gate } from "#/lib/concurrent";
 import { probe as probeQuery } from "#/search/execute";
 import type { Query, QueryCondition } from "#/search/query";
 import type { TraceStep } from "#/search/trace";
 import { positiveInt } from "./endpoint";
-import { segmentTexts, type Verdict } from "./judged";
-
-/** 一次请求给模型读几段经历。 */
-export const READ_BATCH = 160;
-
-/**
- * 一批 JSON 的 UTF-8 字节上限（`LLM_READ_BATCH_BYTES`），给上下文放不下 `READ_BATCH` 段长原文的
- * 模型用；不设时只按段数分批。单段超出时完整单发，不截断。
- */
-const READ_BATCH_BYTES = positiveInt(
-	process.env.LLM_READ_BATCH_BYTES,
-	Number.POSITIVE_INFINITY,
-);
-
-/**
- * 一次查询同时读几批。定得小：几个人同时找人时各读各的，谁也不把端点的并发占满；整个进程
- * 同时发出几个请求另有上限（`llm.ts`），超出的排队。
- */
-const READ_PARALLEL = 2;
+import { saveVerdicts, segmentTexts } from "./judged";
+import {
+	READ_BATCH,
+	READ_PARALLEL,
+	type SegmentBatch,
+	segmentBatches,
+} from "./segment-batches";
 
 /**
  * 一轮最多读几段：人在等，读到这里为止。`LLM_READ_MAX` 可以改，读得越多一轮等得越久、花得
@@ -47,18 +36,13 @@ const READ_PARALLEL = 2;
  */
 export const READ_MAX = positiveInt(process.env.LLM_READ_MAX, 2560);
 
-/** 记一步，连同这一步存下的结论（没有结论的步给空数组）：调用方把两样一起写入。 */
+/** 记录进度时核验运行归属，本步产生的写入共用该事务。 */
 export type RecordStep = (
 	step: TraceStep,
-	verdicts: readonly Verdict[],
+	persist?: (store: DbExecutor) => Promise<void>,
 ) => Promise<void>;
 
-/** 给模型读的一批经历：同一条条件下的几段，每段一个这一批之内的编号。 */
-export type Batch = {
-	label: string;
-	criterion: string;
-	segments: { n: number; text: string }[];
-};
+export type Batch = SegmentBatch & { label: string };
 
 /** 读一批经历：交回符合的段的编号，只能是这一批里的编号。 */
 export type Judge = (
@@ -147,7 +131,7 @@ function waveOf(unconfirmed: Unconfirmed, room: number): Part[] {
 type Planned = { condition: QueryCondition; batch: Batch; contents: string[] };
 
 /**
- * 把这一波的段装成请求，一批的编号从 1 起。设了 `READ_BATCH_BYTES` 时一批再按字节装，
+ * 把这一波的段装成请求，一批的编号从 1 起。设了 `LLM_READ_BATCH_BYTES` 时一批再按字节装，
  * 装出来超过 `READ_PARALLEL` 批的，多出的段下一波再取。
  */
 function batchesOf(
@@ -156,38 +140,24 @@ function batchesOf(
 ): Planned[] {
 	const batches: Planned[] = [];
 	for (const { condition, criterion, experienceIds } of parts) {
-		let open: Planned | undefined;
-		let bytes = 0;
-		for (const id of experienceIds) {
+		const input = experienceIds.map((id) => {
 			const segment = texts.get(id);
-			// 段不在了，是人才库在这期间刚同步过
 			if (!segment) throw new Error("候选人的经历刚有变动，这一次没有读完");
-			// 按这一批里最大的编号估，再算上分隔的逗号：估多不估少
-			const size =
-				Buffer.byteLength(
-					JSON.stringify({ n: READ_BATCH, text: segment.text }),
-				) + 1;
-			if (
-				!open ||
-				(open.contents.length > 0 && bytes + size > READ_BATCH_BYTES)
-			) {
-				open = {
-					condition,
-					batch: { label: condition.label, criterion, segments: [] },
-					contents: [],
-				};
-				batches.push(open);
-				bytes = Buffer.byteLength(JSON.stringify(open.batch));
-			}
-			open.batch.segments.push({
-				n: open.contents.length + 1,
-				text: segment.text,
+			return segment;
+		});
+		for (const { batch, entries } of segmentBatches(
+			{ label: condition.label, criterion },
+			input,
+		)) {
+			batches.push({
+				condition,
+				batch,
+				contents: entries.map((s) => s.content),
 			});
-			open.contents.push(segment.content);
-			bytes += size;
+			if (batches.length === READ_PARALLEL) return batches;
 		}
 	}
-	return batches.slice(0, READ_PARALLEL);
+	return batches;
 }
 
 /**
@@ -229,15 +199,12 @@ export function reader({
 				...new Set(parts.flatMap((part) => part.experienceIds)),
 			]);
 			const wave = batchesOf(parts, texts);
-			await record(
-				{
-					at: Date.now(),
-					tool: "read",
-					segments: wave.reduce((n, { contents }) => n + contents.length, 0),
-					left,
-				},
-				[],
-			);
+			await record({
+				at: Date.now(),
+				tool: "read",
+				segments: wave.reduce((n, { contents }) => n + contents.length, 0),
+				left,
+			});
 			await concurrently(
 				wave,
 				READ_PARALLEL,
@@ -250,11 +217,16 @@ export function reader({
 							fits: chosen.size,
 							unfit: contents.length - chosen.size,
 						},
-						contents.map((content, i) => ({
-							criterion: batch.criterion,
-							content,
-							fits: chosen.has(i + 1),
-						})),
+						(store) =>
+							saveVerdicts(
+								rootTurnId,
+								contents.map((content, i) => ({
+									criterion: batch.criterion,
+									content,
+									fits: chosen.has(i + 1),
+								})),
+								store,
+							),
 					);
 					concluded += contents.length;
 					const counted = tally.get(condition.id) ?? {

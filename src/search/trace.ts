@@ -154,5 +154,7 @@ export type TraceStep = Stamped &
 		| { tool: "read"; unlisted: true }
 		/** 读完一批的结论：符合的几段，不符合的几段 */
 		| { tool: "judge"; fits: number; unfit: number }
+		| { tool: "score"; segments: number }
+		| { tool: "score"; unavailable: true }
 		| { tool: "submit"; issues: SubmitIssue[] }
 	);

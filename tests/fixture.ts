@@ -305,12 +305,11 @@ export async function agentOn(
 ) {
 	const { agentTools } = await import("#/server/agent-tools");
 	const { reader } = await import("#/server/reading");
-	const { saveVerdicts } = await import("#/server/judged");
 	const { db } = await import("#/db");
 	const steps: TraceStep[] = [];
 	const seen: Batch[] = [];
-	const record: RecordStep = async (step, verdicts) => {
-		await saveVerdicts(rootTurnId, verdicts, db);
+	const record: RecordStep = async (step, persist) => {
+		await persist?.(db);
 		steps.push(step);
 	};
 	const agent = agentTools({
@@ -407,6 +406,20 @@ export function answerChat(
 	return () => {
 		chatAnswer = null;
 	};
+}
+
+type ScoreAnswer = (segments: Batch["segments"]) => unknown;
+let scoreAnswer: ScoreAnswer | null = null;
+export async function answeringScores<T>(
+	answer: ScoreAnswer,
+	run: () => Promise<T>,
+) {
+	scoreAnswer = answer;
+	try {
+		return await run();
+	} finally {
+		scoreAnswer = null;
+	}
 }
 
 let intentBroken = false;
@@ -527,6 +540,22 @@ function startModelServer() {
 				) {
 					exploring?.push(body);
 					calls([["judge", fitsIn(JSON.parse(users.at(-1) ?? "") as Batch)]]);
+					return;
+				}
+				if (
+					request.tools?.length === 1 &&
+					request.tools[0]?.function.name === "score"
+				) {
+					exploring?.push(body);
+					const { segments } = JSON.parse(users.at(-1) ?? "") as Batch;
+					calls([
+						[
+							"score",
+							scoreAnswer
+								? scoreAnswer(segments)
+								: { scores: segments.map(({ n }) => ({ n, score: 1 })) },
+						],
+					]);
 					return;
 				}
 				// 识别出查询理解的提示词：先让候选人的经历读完，再用提交工具提交那张表

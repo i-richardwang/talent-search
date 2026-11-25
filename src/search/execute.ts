@@ -57,10 +57,12 @@ import {
 	seeks,
 } from "./query";
 import {
+	engagementWeight,
 	type Fact,
 	order,
 	type PopulationFact,
 	pageEvidence,
+	type Ranked,
 	rank,
 } from "./rank";
 import {
@@ -255,7 +257,7 @@ async function materializeHits(
 		)
 		select k.cond, e.id as experience_id, e.emp_id, k.route,
 			case when c.criterion_key is null then true else v.fits end as fits,
-			k.phrase, k.phrase_id, k.engagement
+			v.match_score, k.phrase, k.phrase_id, k.engagement
 		from caught k
 		join unnest(
 			${sql.param(criteria.map((c) => c.cond))}::int[],
@@ -375,7 +377,7 @@ class Shell {
 			else 1 end`;
 		return sql`
 			select distinct on (e.id) ${i}::int as cond, h.route,
-				h.fits, h.phrase, h.engagement, e.id, e.emp_id,
+				h.fits, h.match_score as "matchScore", h.phrase, h.engagement, e.id, e.emp_id,
 				to_char(e.end_date, 'YYYY-MM-DD') as end_date, ${factSelect}
 			from ${segmentsOf(c, i)}
 			join person p on p.emp_id = e.emp_id
@@ -391,6 +393,7 @@ type FactRow = {
 	route: Route;
 	/** 还没确认过的段为空 */
 	fits: true | null;
+	matchScore: Fact["matchScore"];
 	phrase: string | null;
 	engagement: Engagement | null;
 	emp_id: string;
@@ -648,6 +651,8 @@ type Evaluated =
 			kind: "ranked";
 			/** 名单上的人算数的事实：名单、分面和证据只读它 */
 			facts: Fact[];
+			/** 候选排序所依据的全部段，包含尚未确认的经历。 */
+			candidateFacts: Fact[];
 			ranked: ReturnType<typeof rank>;
 			/**
 			 * 候选人，按没确认过的段都对他有利时的名次。查询理解接下来读的就是这些人没确认过的段。
@@ -700,9 +705,15 @@ async function evaluate(
 	// 要确认的是可能上名单的人。按不加筛选的名次取：分面列的是筛选以外的取值，那些人也要确认
 	const eligible =
 		judgedExcludes.length > 0
-			? order(all, people ?? all, claims, {}, now, preferred).map(
-					(row) => row.empId,
-				)
+			? order(
+					all,
+					people ?? all,
+					claims,
+					{},
+					now,
+					preferred,
+					engagementWeight,
+				).map((row) => row.empId)
 			: [];
 	const onExclusions = await fetchUnconfirmedExclusions(
 		store,
@@ -728,7 +739,15 @@ async function evaluate(
 	// 没有还没确认的段时候选人就是名单上的人，不用再排一遍
 	const hoped =
 		loaded.unconfirmed.length > 0 || undecided.size > 0
-			? order(all, people ?? all, claims, filters, now, preferred)
+			? order(
+					all,
+					people ?? all,
+					claims,
+					filters,
+					now,
+					preferred,
+					engagementWeight,
+				)
 			: ranked.ranked;
 	const among = new Set(hoped.map((row) => row.empId));
 	const levels = new Map<string, PopulationFact>();
@@ -736,6 +755,7 @@ async function evaluate(
 		if (!levels.has(row.empId)) levels.set(row.empId, row);
 	return {
 		kind: "ranked",
+		candidateFacts: all,
 		facts,
 		ranked,
 		candidates: hoped.map(({ empId }) => ({
@@ -916,18 +936,26 @@ export async function probe(
 		const byId = new Map(found.candidates.map((c) => [c.empId, c]));
 		const order = new Map(found.candidates.map((c, at) => [c.empId, at]));
 		const first = deciding(query, found.unconfirmed);
-		const unconfirmed = (first.length > 0 ? first : found.unconfirmed)
-			.sort(
-				(a, b) =>
-					higherFirst(byId.get(a.empId), byId.get(b.empId)) ||
-					(order.get(a.empId) ?? 0) - (order.get(b.empId) ?? 0) ||
-					a.cond - b.cond ||
-					a.id - b.id,
-			)
-			.flatMap(({ cond, id }) => {
-				const condition = query.conditions[cond];
-				return condition ? [{ condition, experienceId: id }] : [];
-			});
+		const pending = (first.length > 0 ? first : found.unconfirmed).sort(
+			(a, b) =>
+				higherFirst(byId.get(a.empId), byId.get(b.empId)) ||
+				(order.get(a.empId) ?? 0) - (order.get(b.empId) ?? 0) ||
+				a.cond - b.cond ||
+				a.id - b.id,
+		);
+		// 同一快照里，同一判据只需确认某段一次，多个条件共享这份结论和额度。
+		const seen = new Map<string, Set<number>>();
+		const unconfirmed: ProbeResult["unconfirmed"] = [];
+		for (const { cond, id } of pending) {
+			const condition = query.conditions[cond];
+			const criterion = condition?.seek?.criterion;
+			if (!criterion) continue;
+			const ids = seen.get(criterion) ?? new Set<number>();
+			if (ids.has(id)) continue;
+			ids.add(id);
+			seen.set(criterion, ids);
+			unconfirmed.push({ condition, experienceId: id });
+		}
 		return {
 			conditions: results,
 			total: found.ranked.total,
@@ -935,6 +963,37 @@ export async function probe(
 			unconfirmed,
 			overflow: [],
 		};
+	});
+}
+
+/** 在同一快照内读取入围名单或候选人及其经历，离开回调后才可调用模型。 */
+export async function withSearchFacts<T>(
+	query: Query,
+	rootTurnId: string | null,
+	read: (
+		store: DbExecutor,
+		snapshot: {
+			ranked: Ranked[];
+			facts: Fact[];
+			candidates: Candidate[];
+			candidateFacts: Fact[];
+		},
+	) => Promise<T>,
+): Promise<T | null> {
+	const roles = rolesOf(query);
+	return prepared(query, rootTurnId, async (store, ready, problems) => {
+		if (problems.some((p) => p !== null) || !active(roles)) return null;
+		const found = await restricted(store, () =>
+			evaluate(store, new Shell(query, ready), roles, {}),
+		);
+		if (found.kind !== "ranked") return null;
+		const { ranked, facts, candidates, candidateFacts } = found;
+		return read(store, {
+			ranked: ranked.ranked,
+			facts,
+			candidates,
+			candidateFacts,
+		});
 	});
 }
 

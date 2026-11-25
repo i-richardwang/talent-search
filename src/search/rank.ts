@@ -22,6 +22,7 @@ import { type ClaimBasis, emptyFacets, type Facets } from "./result";
 import {
 	BOOST_WEIGHT,
 	ENGAGEMENT_FACTOR,
+	matchFactor,
 	RECENCY_HALF,
 	type Route,
 	TENURE_HALF,
@@ -47,22 +48,31 @@ export type Fact = PopulationFact & {
 	phrase: string | null;
 	/** 能力那一类的投入档（「主导」），参与深度并在证据行显示，其余类为 null。 */
 	engagement: Engagement | null;
+	/** 只有已确认且完成评分的主张证据带匹配分。 */
+	matchScore: number | null;
 	/** null 表示至今 */
 	endDate: string | null;
 };
 
 /**
- * 两条证据谁更对得上：比投入。来源不参与比较——任职记录和简历里写的都在说这个人做过什么，
+ * 两条证据谁更对得上：比匹配系数与投入的乘积。来源不参与比较——任职记录和简历里写的都在说这个人做过什么，
  * 来源写在证据行上，信不信由 HR 判断。投入档只有抽取的技能上有：「负责搭建数据仓库」比
  * 「熟悉数据仓库」更像要找的人。
  */
 function closer(a: Fact, b: Fact) {
-	return weighted(a) - weighted(b);
+	return matchWeight(a) - matchWeight(b);
 }
 
-function weighted(f: Fact) {
+/** 候选人按基础投入排序，先确认谁与已打的匹配分无关。 */
+export function engagementWeight(f: Fact) {
 	return f.route === "skill" ? ENGAGEMENT_FACTOR[f.engagement ?? "做过"] : 1;
 }
+
+function matchWeight(f: Fact) {
+	return engagementWeight(f) * matchFactor(f.matchScore);
+}
+
+type WeightOf = (fact: Fact) => number;
 
 /**
  * 饱和函数 `x / (x + half)`：恒在 [0, 1) 内、处处单调、没有断崖，所以拿它当因子
@@ -89,19 +99,23 @@ export function gapMonths(endDate: string | null, now: Date) {
 }
 
 /**
- * 一条主张对一个人的**深度 = 投入 × 时长 × 近因**，三个都是 (0, 1] 内的因子。
- * 投入取最对得上的那条证据的（见 closer）；**时长是算数的那几段的累计**，近因取其中最近的一段。
- * 它们回答的是「投入多深、做了多久、离现在多近」；对不对得上在成为事实之前已经定了。
+ * 一条主张对一个人的**深度 = 单段最佳权重 × 累计时长系数 × 近因系数**。
+ * 单段权重取匹配系数与投入系数的乘积（见 closer）；**时长是算数的那几段的累计**，近因取其中最近的一段。
  * 主张上的 `minMonths` 判的就是这个累计值：筛和排看的是同一个数，证据行上写的也是它。
  */
-function claimValue(claim: Claim, facts: Fact[] | undefined, now: Date) {
+function claimValue(
+	claim: Claim,
+	facts: Fact[] | undefined,
+	now: Date,
+	weightOf: WeightOf,
+) {
 	if (!facts) return null;
 	const basis = basisOf(claim, facts);
 	if (!basis) return null;
-	const best = facts.reduce((a, b) => (closer(b, a) > 0 ? b : a));
+	const best = facts.reduce((max, fact) => Math.max(max, weightOf(fact)), 0);
 	return {
 		depth:
-			weighted(best) *
+			best *
 			saturate(basis.months, TENURE_HALF) *
 			decay(gapMonths(basis.endDate, now), RECENCY_HALF),
 		basis,
@@ -186,11 +200,12 @@ function measure(
 	preferred: readonly ReadonlySet<string>[],
 	empId: string,
 	now: Date,
+	weightOf: WeightOf,
 ) {
 	let depth = 1;
 	const basis: (ClaimBasis | null)[] = [];
 	for (const [i, claim] of claims.entries()) {
-		const value = claimValue(claim, p.get(i), now);
+		const value = claimValue(claim, p.get(i), now, weightOf);
 		if (claim.mode === "must") {
 			// `complete` 已经保证必须的主张都有证据；没有就是调用方漏了判定
 			if (!value) throw new Error(`必须的主张 ${i} 没有证据却进了打分`);
@@ -322,7 +337,7 @@ function populationFacets(
 	return out;
 }
 
-type Ranked = {
+export type Ranked = {
 	empId: string;
 	depth: number;
 	basis: (ClaimBasis | null)[];
@@ -346,6 +361,7 @@ export function order(
 	now: Date,
 	/** 每条人的偏好各一份满足它的人（`execute.ts` 的 `fetchPreferred`）。 */
 	preferred: readonly ReadonlySet<string>[] = [],
+	weightOf: WeightOf = matchWeight,
 ): Ranked[] {
 	const ranked: Ranked[] = [];
 	const evidence = bucket(facts, keeps(filters));
@@ -355,7 +371,10 @@ export function order(
 	for (const empId of candidates) {
 		const p = evidence.get(empId) ?? new Map<number, Fact[]>();
 		if (!complete(p, claims)) continue;
-		ranked.push({ empId, ...measure(p, claims, preferred, empId, now) });
+		ranked.push({
+			empId,
+			...measure(p, claims, preferred, empId, now, weightOf),
+		});
 	}
 	return ranked.sort(byDepth);
 }

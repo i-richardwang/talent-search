@@ -47,7 +47,6 @@ import type {
 	PatternFinding,
 	Probe,
 	SubmitIssue,
-	TraceStep,
 } from "#/search/trace";
 import { discover } from "./discover";
 import { type Reader, type RecordStep, type Trial, trial } from "./reading";
@@ -257,7 +256,6 @@ export function agentTools({
 		passed: boolean;
 	} | null = null;
 	const answered = new Map<string, Promise<unknown>>();
-	const log = (step: TraceStep) => record(step, []);
 
 	/** 同样的输入只查一次库；查失败的不留着，下一次重新查。 */
 	const once = <T>(key: string, look: () => Promise<T>): Promise<T> => {
@@ -299,7 +297,7 @@ export function agentTools({
 					]),
 					() => discover({ chain: rootTurnId }, { ...input, match }),
 				);
-				await log({
+				await record({
 					at: Date.now(),
 					tool: "discover",
 					discovery: discoveryTrace(discovery),
@@ -321,7 +319,7 @@ export function agentTools({
 					JSON.stringify(["find", ...inputs.toSorted()]),
 					() => findPhrases({ chain: rootTurnId }, inputs),
 				);
-				await log({
+				await record({
 					at: Date.now(),
 					tool: "find",
 					found: found.map(foundTrace),
@@ -341,7 +339,11 @@ export function agentTools({
 					JSON.stringify(["probe", reading.concluded(), key]),
 					() => trial(query, rootTurnId),
 				);
-				await log({ at: Date.now(), tool: "probe", probe: probeTrace(tried) });
+				await record({
+					at: Date.now(),
+					tool: "probe",
+					probe: probeTrace(tried),
+				});
 				return {
 					...probeReply(tried),
 					todo: nextOf(tried.unconfirmed.length, reading.room()),
@@ -356,7 +358,7 @@ export function agentTools({
 				const { query } = understood({ conditions }, base);
 				const done = await reading.read(query, abortSignal);
 				if (done.kind === "unlisted") {
-					await log({ at: Date.now(), tool: "read", unlisted: true });
+					await record({ at: Date.now(), tool: "read", unlisted: true });
 					return {
 						...probeReply(done.tried),
 						todo: "这份条件跑不出名单，没有经历可读：先把有问题的那一条改好",
@@ -364,7 +366,7 @@ export function agentTools({
 				}
 				// 一段都没读：都读过了，或者到了这一轮的上限
 				if (done.conditions.length === 0)
-					await log({
+					await record({
 						at: Date.now(),
 						tool: "read",
 						segments: 0,
@@ -396,7 +398,7 @@ export function agentTools({
 				};
 				if (last.passed) return { passed: true };
 				// 没通过的提交也记一步：HR 看得到哪一条、哪一类问题，回给模型的话不记
-				await log({
+				await record({
 					at: Date.now(),
 					tool: SUBMIT,
 					issues: problems.map(({ kind, subject }) => ({ kind, subject })),

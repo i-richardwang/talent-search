@@ -10,6 +10,15 @@ export const ENGAGEMENT_FACTOR: Record<Engagement, number> = {
 	提到: 0.7,
 };
 
+// 每一分都参与排序。未评分与最低分的系数为 1，满分的单段权重提高一半。
+export const MAX_MATCH_SCORE = 100;
+const MAX_MATCH_UPLIFT = 0.5;
+export function matchFactor(score: number | null) {
+	return score === null
+		? 1
+		: 1 + (MAX_MATCH_UPLIFT * (score - 1)) / (MAX_MATCH_SCORE - 1);
+}
+
 // 时长使用 m / (m + half) 的饱和曲线，并累计所有算数的经历。
 export const TENURE_HALF = 48;
 
