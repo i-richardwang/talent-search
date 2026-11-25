@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { HexColorPicker } from "react-colorful";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
+import { copyText } from "#/components/ui/copy-text";
 import { Input } from "#/components/ui/input";
 import {
 	formatColor,
@@ -149,7 +150,7 @@ export function ColorEditor({
 				<ActionIcon
 					icon={copyState === "copied" ? Check : Copy}
 					onClick={() =>
-						navigator.clipboard.writeText(hex).then(
+						copyText(hex).then(
 							() => setCopyState("copied"),
 							() => setCopyState("failed"),
 						)

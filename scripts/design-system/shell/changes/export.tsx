@@ -2,6 +2,7 @@ import { ArrowDownToLine, Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
+import { copyText } from "#/components/ui/copy-text";
 import { requirePage } from "../../shared/catalog";
 import { href } from "../../shared/routes";
 import { sources } from "../../shared/source-files";
@@ -58,7 +59,7 @@ export function ExportCode({
 				<Button
 					icon={copied ? Check : Copy}
 					onClick={() =>
-						navigator.clipboard.writeText(css).then(
+						copyText(css).then(
 							() => {
 								setCopied(true);
 								onNotice("CSS 已复制");
