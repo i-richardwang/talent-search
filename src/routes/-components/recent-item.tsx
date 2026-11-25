@@ -8,6 +8,7 @@ import {
 import { ActionIcon } from "#/components/ui/action-icon";
 import { Button } from "#/components/ui/button";
 import { ContextMenu } from "#/components/ui/context-menu";
+import { copyText } from "#/components/ui/copy-text";
 import {
 	type DropdownItem,
 	DropdownMenuPopup,
@@ -70,9 +71,7 @@ function useRemoveRecent() {
 
 async function copyLink(turnId: string) {
 	try {
-		await navigator.clipboard.writeText(
-			new URL(`/s/${turnId}`, location.origin).toString(),
-		);
+		await copyText(new URL(`/s/${turnId}`, location.origin).toString());
 		toast.success("已复制链接");
 	} catch {
 		toast.error("没能复制链接");

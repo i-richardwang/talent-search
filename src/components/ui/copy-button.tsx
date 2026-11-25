@@ -3,6 +3,7 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ActionIcon, type ActionIconProps } from "#/components/ui/action-icon";
+import { copyText } from "#/components/ui/copy-text";
 import { toast } from "#/components/ui/toast";
 
 /*
@@ -42,9 +43,7 @@ export function CopyButton({
 			icon={copied ? Check : (icon ?? Copy)}
 			onClick={async (event) => {
 				try {
-					await navigator.clipboard.writeText(
-						typeof content === "function" ? content() : content,
-					);
+					await copyText(typeof content === "function" ? content() : content);
 				} catch {
 					toast.error("复制失败，请选中文字后手动复制");
 					return;
