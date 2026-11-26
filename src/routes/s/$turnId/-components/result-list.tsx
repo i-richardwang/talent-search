@@ -194,7 +194,7 @@ export function ResultList({
 					<RowSkeleton key={i} />
 				))}
 		</ListView>
-	) : results.length === 0 ? (
+	) : outcome.empty ? (
 		<div
 			aria-busy={wait ? "true" : undefined}
 			className={cn("transition-opacity", wait?.list === "dim" && "opacity-60")}
@@ -206,11 +206,11 @@ export function ResultList({
 				onEditQuery={onEditQuery}
 				onReviseQuery={onReviseQuery}
 				onSay={onSay}
-				outcome={outcome}
+				reason={outcome.empty}
 				spec={spec}
 			/>
 		</div>
-	) : (
+	) : results.length > 0 ? (
 		// 还在补人的名单照常可用，不算没就绪
 		<div aria-busy={wait && wait.list !== "keep" ? "true" : undefined}>
 			<ListView>
@@ -237,7 +237,7 @@ export function ResultList({
 				</div>
 			)}
 		</div>
-	);
+	) : null;
 
 	return (
 		<CheckboxGroup

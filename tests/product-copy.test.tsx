@@ -102,14 +102,14 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		assert.match(text, /按匹配度排序/);
 	});
 
-	/** 没理解出来时名单那一列说的话。 */
-	const failed = async (fault: AttemptFault) =>
+	/** 检索结果尚未就位时，名单一栏的文字。 */
+	const beforeResults = async (fault: AttemptFault | null) =>
 		visibleText(
 			await routed(() => (
 				<ResultList
 					canMore={false}
 					empId={undefined}
-					failure={{ fault, onRetry: () => {} }}
+					failure={fault && { fault, onRetry: () => {} }}
 					growing={false}
 					wait={null}
 					mode="conversation"
@@ -133,13 +133,20 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			)),
 		);
 
+	test("尚无结果时不声称没有搜索条件，也不报零人", async () => {
+		assert.doesNotMatch(
+			await beforeResults(null),
+			/没有搜索条件|搜不了|0\s*人/,
+		);
+	});
+
 	test("理解失败必须说出来，并且给出一步可执行的动作，不画成空名单", async () => {
 		/*
 		 * 一句话只有模型能读成条件。它失败时记录停在「待理解」，名单那一列必须是
 		 * 一条看得见的错误加一个下一步——不是一份空名单，空名单在这个界面里的
 		 * 意思是「没有这样的人」。
 		 */
-		const text = await failed("unanswered");
+		const text = await beforeResults("unanswered");
 		assert.match(text, /没能理解这段需求/);
 		assert.match(text, /重试/);
 		assert.match(text, /换个说法/);
@@ -148,18 +155,18 @@ describe("产品文案使用常规 SaaS 语言", () => {
 
 	test("AI 服务连不上、报错时不怪这段描述，也不叫人换说法", async () => {
 		for (const fault of ["unreachable", "rejected"] as const) {
-			const text = await failed(fault);
+			const text = await beforeResults(fault);
 			assert.match(text, /这句需求已经记下/);
 			assert.doesNotMatch(text, /换个说法|没能理解/);
 			assert.match(text, /重试/);
 			assert.match(text, /改用关键词搜索/, "不经过 AI 的那条路照样能用");
 		}
-		assert.match(await failed("unreachable"), /AI 服务暂时连不上/);
-		assert.match(await failed("rejected"), /AI 服务出了问题/);
+		assert.match(await beforeResults("unreachable"), /AI 服务暂时连不上/);
+		assert.match(await beforeResults("rejected"), /AI 服务出了问题/);
 	});
 
 	test("AI 搜索没开启时不给重试：重试也一样", async () => {
-		const text = await failed("unconfigured");
+		const text = await beforeResults("unconfigured");
 		assert.match(text, /AI 搜索还没开通/);
 		assert.doesNotMatch(text, /重试/);
 		assert.match(text, /用关键词搜索/);

@@ -24,16 +24,21 @@
 	gap: 6px;
 	align-items: center;
 	padding-block: 0;
-	padding-inline: 12px 6px;
+	padding-inline: 12px;
 	border: 0;
-	border-start-start-radius: 16px;
-	border-end-start-radius: 16px;
+	border-radius: inherit;
 	font: inherit;
 	font-size: var(--text-sm);
 	color: var(--color-fg);
 	background: none;
 
 	@apply focus-ring;
+
+	&:has(~ .ui-filter-chip-clear) {
+		padding-inline-end: 6px;
+		border-start-end-radius: 0;
+		border-end-end-radius: 0;
+	}
 
 	.ui-filter-chip-dashed > & {
 		color: var(--color-fg-secondary);
@@ -56,8 +61,8 @@
 	padding-block: 0;
 	padding-inline: 8px 12px;
 	border: 0;
-	border-start-end-radius: 16px;
-	border-end-end-radius: 16px;
+	border-start-end-radius: inherit;
+	border-end-end-radius: inherit;
 	color: var(--color-fg-tertiary);
 	background: none;
 

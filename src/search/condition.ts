@@ -41,7 +41,7 @@ import { boundedText } from "./text";
 export const MODES = ["must", "boost", "exclude"] as const;
 export type Mode = (typeof MODES)[number];
 /** 人的条件能有的强度：没有排除。 */
-const PERSON_MODES = ["must", "boost"] as const;
+export const PERSON_MODES = ["must", "boost"] as const;
 export type PersonMode = (typeof PERSON_MODES)[number];
 
 /** 人的条件能写在哪几维：有词表的几维是 `employee` 上的列，学校名是自由文本。 */

@@ -4,9 +4,8 @@ import { cn } from "#/lib/utils";
 import { Icon } from "./icon";
 
 /*
- * 一条搜索条件：左边是打开这一条菜单的开关（`FilterChipTrigger`），右边是清掉这一条的
- * 关闭格（`FilterChipClear`）。`dashed` 表示这一条停用了。开关里依次是取值和强度
- * （`FilterChipNote`）。
+ * FilterChipTrigger 打开条件菜单，FilterChipClear 是可选的删除按钮。
+ * dashed 表示条件已停用。菜单开关里依次显示取值和强度（FilterChipNote）。
  */
 
 export function FilterChip({

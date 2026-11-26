@@ -62,16 +62,17 @@ describe("提交查询的服务端边界", () => {
 			/查询格式无效/,
 		);
 	});
-	test("删除最后一条条件后仍能保存完整的空表，畸形条件不能伪装为空表", () => {
-		assert.deepEqual(
-			validateCommit({
-				from: "seen",
-				input: { kind: "spec", spec: { conditions: [] } },
-			}),
-			{
-				from: "seen",
-				input: { kind: "spec", spec: { conditions: [] } },
-			},
+	test("形状校验保留显式空表，拒绝全部无效的条件", () => {
+		for (const spec of [{ conditions: [] }, { query: { conditions: [] } }]) {
+			const request = { from: "seen", input: { kind: "spec", spec } };
+			assert.deepEqual(validateCommit(request), request);
+		}
+		assert.throws(
+			() =>
+				validateCommit({
+					input: { kind: "spec", spec: { query: null, conditions: [] } },
+				}),
+			/查询格式无效/,
 		);
 		assert.throws(
 			() =>

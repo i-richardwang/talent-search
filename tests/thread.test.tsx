@@ -181,6 +181,17 @@ describe("第一轮", () => {
 			/已按以下条件搜索：\s*算法\s*人才库里没有工作地点，这条先没管。/,
 		);
 	});
+
+	test("需求没有可搜索的条件时，对话给出 AI 的具体说明", async () => {
+		const { text } = await seen([
+			{
+				said: "找在附近工作的人",
+				spec: "",
+				notes: { says: "人才库里没有工作地点。", choices: null },
+			},
+		]);
+		assert.match(text, /这段需求还搜不了\s*人才库里没有工作地点。/);
+	});
 });
 
 const ASKED: TurnNotes = {

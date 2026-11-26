@@ -119,19 +119,21 @@ const COPY: {
 			onClick: () => h.onReviseQuery(h.conditions.map((c) => withOff(c, null))),
 		},
 	}),
-	// 搜索条件为空时仍保留查询记录，用户可以继续补充需求或回退
-	noConditions: (_reason, h) =>
-		h.mode === "keyword"
-			? {
-					title: "还没有填关键词",
-					hint: "在上方填一个经历或技能，比如：推荐算法。",
-					next: say(h),
-				}
-			: {
-					title: "这段需求还搜不了",
-					hint: "对话里有 AI 的说明。换个说法描述要找的人，比如做过什么工作、带没带过团队。",
-					next: say(h, "比如：做过线下渠道运营、带过团队的人"),
-				},
+	noConditions: (_reason, h) => {
+		if (h.mode === "keyword")
+			return {
+				title: "还没有填关键词",
+				hint: "在上方填一个经历或技能，比如：推荐算法。",
+				next: say(h),
+			};
+		return {
+			title: "当前没有搜索条件",
+			hint: h.canSay
+				? "在对话里说说要找的人做过什么工作。"
+				: "可以在对话里查看这次的搜索记录。",
+			next: say(h, "比如：做过线下渠道运营、带过团队的人"),
+		};
+	},
 	filtered: (_reason, h) => ({
 		title: "筛选后一个人也没有",
 		hint: "名单上的人都不在当前筛选里。",
