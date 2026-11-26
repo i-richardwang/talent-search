@@ -284,6 +284,20 @@ describe("线程就是记录链", () => {
 		assert.match(text, /正在查看/);
 	});
 
+	test("回看直接修改条件的一轮，当前轮次标在这条编辑记录上", async () => {
+		const { html, text } = await seen(
+			[
+				{ said: "算法", spec: "算法" },
+				{ said: null, spec: "算法, 后端" },
+				{ said: "再加搜索", spec: "算法, 后端, 搜索" },
+			],
+			{ viewing: 1 },
+		);
+		assert.equal(html.match(/<li\b[^>]*aria-current="page"/g)?.length, 1);
+		assert.match(text, /你修改了搜索条件：添加 后端\s*正在查看/);
+		assert.doesNotMatch(html, /href="\/s\/t1"/);
+	});
+
 	test("AI 搜索没开启就没有输入框", async () => {
 		const with_ = await seen([{ said: "算法", spec: "算法" }]);
 		const without = await seen([{ said: "算法", spec: "算法" }], {

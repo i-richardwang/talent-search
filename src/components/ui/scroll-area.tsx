@@ -10,7 +10,11 @@ import { cn } from "#/lib/utils";
  * （如 `<pre>`）时，它的固有宽度会一路撑宽外层，把滚动区挤出父元素。
  */
 
-interface ScrollAreaProps {
+interface ScrollAreaProps
+	extends Pick<
+		ComponentProps<typeof BaseScrollArea.Root>,
+		"overflowEdgeThreshold"
+	> {
 	children?: ReactNode;
 	className?: string;
 	/** 在视口上下还能滚的一端用渐变遮罩淡出内容。 */
@@ -30,11 +34,15 @@ export function ScrollArea({
 	children,
 	className,
 	contentClassName,
+	overflowEdgeThreshold,
 	scrollFade = false,
 	viewportProps,
 }: ScrollAreaProps) {
 	return (
-		<BaseScrollArea.Root className={cn("ui-scroll-area", className)}>
+		<BaseScrollArea.Root
+			className={cn("ui-scroll-area", className)}
+			overflowEdgeThreshold={overflowEdgeThreshold}
+		>
 			<BaseScrollArea.Viewport
 				{...viewportProps}
 				className={cn(
