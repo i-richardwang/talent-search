@@ -251,11 +251,18 @@ describe("名单还没列全", () => {
 });
 
 describe("其余情形", () => {
-	test("AI 搜不了这段需求：请 HR 换个说法，给示范", () => {
+	test("对话没有搜索条件时，可以补充需求", () => {
 		const s = run({ kind: "noConditions" });
-		assert.equal(s.title, "这段需求还搜不了");
-		assert.equal(s.next?.kind, "say");
+		assert.equal(s.title, "当前没有搜索条件");
+		assert.match(s.hint, /在对话里说说/);
 		assert.ok(s.next?.kind === "say" && s.next.example);
+	});
+
+	test("只读对话提示查看记录", () => {
+		const s = run({ kind: "noConditions" }, "", { ai: false });
+		assert.equal(s.title, "当前没有搜索条件");
+		assert.match(s.hint, /查看这次的搜索记录/);
+		assert.equal(s.next, null);
 	});
 
 	test("筛选太窄：一键清掉全部筛选", () => {

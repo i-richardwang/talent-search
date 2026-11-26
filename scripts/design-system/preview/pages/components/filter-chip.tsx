@@ -62,7 +62,7 @@ export function FilterChipPage() {
 			rules={{
 				notes: [
 					"名单上方的一排条件用 FilterChip，一条一枚，间隔 6px。",
-					"点药丸打开这一条的菜单；右边的关闭格删掉这一条，菜单里没有删除项。",
+					"点条件打开菜单。传入 FilterChipClear 时，右侧显示删除按钮。",
 					"强度写成字跟在取值后面（FilterChipNote），必须是默认，不写。",
 				],
 				usage: `<FilterChip dashed={off}>
@@ -72,7 +72,7 @@ export function FilterChipPage() {
     </DropdownMenuTrigger>
     …
   </DropdownMenuRoot>
-  <FilterChipClear label="删除条件「推荐算法」" onClear={remove} />
+  {onRemove && <FilterChipClear label="删除条件「推荐算法」" onClear={onRemove} />}
 </FilterChip>`,
 			}}
 			sections={[

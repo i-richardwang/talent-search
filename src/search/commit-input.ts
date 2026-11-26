@@ -2,17 +2,9 @@
  * RPC 查询写入边界的纯校验：不可信入参转换为完整的 QueryInput。
  */
 
-import {
-	askedConditions,
-	type QueryInput,
-	queryOfSpec,
-	sanitizeSpec,
-} from "./spec";
+import { type QueryInput, sanitizeSpec } from "./spec";
 import { boundedText } from "./text";
 
-/**
- * 校验原话、完整条件表与基线记录 id；显式空表合法，非空但全部无效的表拒绝。
- */
 export function validateCommit(d: unknown): {
 	from: string | undefined;
 	input: QueryInput;
@@ -27,10 +19,5 @@ export function validateCommit(d: unknown): {
 		return { from, input: { kind: "sentence", text } };
 	}
 	if (input.kind !== "spec") throw new Error("查询格式无效");
-	const asked = askedConditions(input.spec);
-	if (!asked) throw new Error("查询格式无效");
-	const spec = sanitizeSpec(input.spec);
-	if (asked.length > 0 && queryOfSpec(spec).conditions.length === 0)
-		throw new Error("搜索条件无效");
-	return { from, input: { kind: "spec", spec } };
+	return { from, input: { kind: "spec", spec: sanitizeSpec(input.spec) } };
 }

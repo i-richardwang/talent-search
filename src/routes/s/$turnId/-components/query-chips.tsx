@@ -25,7 +25,7 @@ import {
 	FilterChipValue,
 } from "#/components/ui/filter-chip";
 import { Icon } from "#/components/ui/icon";
-import type { Mode } from "#/search/condition";
+import { MODES, type Mode, PERSON_MODES } from "#/search/condition";
 import { MODE_NAME } from "#/search/condition-label";
 import { type QueryCondition, withOff } from "#/search/query";
 
@@ -34,13 +34,6 @@ const MODE_HINT: Record<Mode, string> = {
 	boost: "满足此条件的人排在前面",
 	exclude: "不保留有这类经历的人",
 };
-
-/** 一条条件能换成的强度：排除只用于经历。 */
-function modesOf(c: QueryCondition): readonly Mode[] {
-	return c.from === "experience"
-		? ["must", "boost", "exclude"]
-		: ["must", "boost"];
-}
 
 /** 换强度。换成排除时累计时长不再有意义（有一段就排除），去掉。 */
 function withMode(c: QueryCondition, mode: Mode): QueryCondition {
@@ -62,24 +55,20 @@ export function QueryChips({
 }) {
 	if (conditions.length === 0) return null;
 
-	const replaceAt = (i: number, next: QueryCondition | null) =>
-		onChange(
-			next === null
-				? conditions.filter((_, j) => j !== i)
-				: conditions.map((c, j) => (j === i ? next : c)),
-		);
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
-			{conditions.map((chip, i) => {
+			{conditions.map((chip, index) => {
 				const { label } = chip;
+				const modes = chip.from === "person" ? PERSON_MODES : MODES;
+				const update = (next: QueryCondition) =>
+					onChange(conditions.with(index, next));
 				const actions: DropdownItem[] = [
 					{ type: "divider" },
 					{
 						checked: !chip.off,
 						key: "on",
 						label: "启用",
-						onCheckedChange: (on) =>
-							replaceAt(i, withOff(chip, on ? null : "user")),
+						onCheckedChange: (on) => update(withOff(chip, on ? null : "user")),
 						type: "switch",
 					},
 				];
@@ -113,12 +102,12 @@ export function QueryChips({
 											</DropdownMenuHeader>
 										)}
 										<DropdownMenuRadioGroup
-											onValueChange={(mode) =>
-												replaceAt(i, withMode(chip, mode as Mode))
+											onValueChange={(mode: Mode) =>
+												update(withMode(chip, mode))
 											}
 											value={chip.mode}
 										>
-											{modesOf(chip).map((mode) => (
+											{modes.map((mode) => (
 												<DropdownMenuRadioItemPrimitive
 													key={mode}
 													label={MODE_NAME[mode]}
@@ -149,10 +138,12 @@ export function QueryChips({
 								</DropdownMenuPositioner>
 							</DropdownMenuPortal>
 						</DropdownMenuRoot>
-						<FilterChipClear
-							label={`删除条件「${label}」`}
-							onClear={() => replaceAt(i, null)}
-						/>
+						{conditions.length > 1 && (
+							<FilterChipClear
+								label={`删除条件「${label}」`}
+								onClear={() => onChange(conditions.toSpliced(index, 1))}
+							/>
+						)}
 					</FilterChip>
 				);
 			})}

@@ -26,6 +26,11 @@ export function emptySpec(): SearchSpec {
 	return { conditions: [] };
 }
 
+/** 停用的条件仍在表里。 */
+export function hasConditions(spec: SearchSpec): boolean {
+	return ("query" in spec ? spec.query : spec).conditions.length > 0;
+}
+
 /** 一份记录要执行、要显示的查询：关键词链形状的条件表当场编译。 */
 export function queryOfSpec(spec: SearchSpec): Query {
 	return "query" in spec ? spec.query : compileConditions(spec.conditions);
@@ -36,24 +41,23 @@ export function queryOfSpec(spec: SearchSpec): Query {
  * 两边用同一份 `draftsOf`。条件里 `where` 合不合白名单在服务端写入前再查（`server/turn.ts`）。
  */
 export function sanitizeSpec(raw: unknown): SearchSpec {
-	const value = (raw ?? {}) as Record<string, unknown>;
-	if (value.query !== undefined) {
-		const query = (value.query ?? {}) as Record<string, unknown>;
-		return { query: { conditions: withIds(draftsOf(query.conditions)) } };
-	}
-	return { conditions: conditionsOf(value.conditions) };
-}
-
-/**
- * 一份不可信查询里写下的条件，校验之前的原样，用来认出「写了却一条不剩」；不是数组时为 null。
- */
-export function askedConditions(raw: unknown): unknown[] | null {
-	const value = (raw ?? {}) as Record<string, unknown>;
-	const list =
-		value.query !== undefined
-			? ((value.query ?? {}) as Record<string, unknown>).conditions
-			: value.conditions;
-	return Array.isArray(list) ? list : null;
+	const query =
+		raw && typeof raw === "object" && "query" in raw ? raw.query : undefined;
+	const table = query === undefined ? raw : query;
+	if (
+		!table ||
+		typeof table !== "object" ||
+		!("conditions" in table) ||
+		!Array.isArray(table.conditions)
+	)
+		throw new Error("查询格式无效");
+	const list = table.conditions;
+	const spec =
+		query === undefined
+			? { conditions: conditionsOf(list) }
+			: { query: { conditions: withIds(draftsOf(list)) } };
+	if (list.length > 0 && !hasConditions(spec)) throw new Error("搜索条件无效");
+	return spec;
 }
 
 /**

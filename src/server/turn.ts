@@ -25,7 +25,12 @@ import type { TurnNotes } from "#/search/intent";
 import { keywordsOf } from "#/search/keywords";
 import { labelsInSentence } from "#/search/query";
 import { vocabulary } from "#/search/search";
-import { type QueryInput, queryOfSpec, type SearchSpec } from "#/search/spec";
+import {
+	hasConditions,
+	type QueryInput,
+	queryOfSpec,
+	type SearchSpec,
+} from "#/search/spec";
 import type { TraceStep } from "#/search/trace";
 import { agentTools } from "./agent-tools";
 import { recordSearch } from "./audit";
@@ -159,13 +164,18 @@ function modeOf(rootRawText: string | null | undefined): SearchMode {
 }
 
 /**
- * 关键词链只接受关键词框可完整读写的条件表；对话链可保存任意合法条件表。
+ * 对话里直接改条件至少保留一条。关键词链只接受关键词框可完整读写的条件表。
  */
 function admit(mode: SearchMode, input: QueryInput) {
-	if (mode !== "keyword") return;
-	if (input.kind === "sentence") throw new Error("关键词搜索不收一句话的需求");
-	if (!("conditions" in input.spec) || !keywordsOf(input.spec.conditions))
-		throw new Error("关键词搜索只收关键词框里写得出的条件");
+	if (mode === "keyword") {
+		if (input.kind === "sentence")
+			throw new Error("关键词搜索不收一句话的需求");
+		if (!("conditions" in input.spec) || !keywordsOf(input.spec.conditions))
+			throw new Error("关键词搜索只收关键词框里写得出的条件");
+		return;
+	}
+	if (input.kind === "spec" && !hasConditions(input.spec))
+		throw new Error("请至少保留一条搜索条件");
 }
 
 /**

@@ -10,7 +10,6 @@
  */
 import assert from "node:assert/strict";
 import { after, before, describe, test } from "node:test";
-import { compileConditions } from "#/search/compile";
 import { type QueryCondition, withOff } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import { queryOfSpec, type SearchSpec } from "#/search/spec";
@@ -84,9 +83,6 @@ const wordsOf = (spec: SearchSpec) =>
 const contentOf = (list: readonly QueryCondition[]) =>
 	list.map(({ id: _id, ...rest }) => rest);
 const shapeOf = (spec: SearchSpec) => contentOf(queryOfSpec(spec).conditions);
-/** 一行查询语法编译成的条件，和关键词链的记录读取时编译的是同一份。 */
-const compiled = (syntax: string) =>
-	compileConditions(parseQuery(syntax)).conditions;
 /** 对话记录里的条件：假模型按这行语法写下的内容（`drafted`），`~` 是用户后来停用的。 */
 const expected = (syntax: string) => {
 	const asked = parseQuery(syntax);
@@ -549,44 +545,51 @@ describe("任务标题", () => {
 });
 
 describe("两种搜索各走各的链", () => {
-	for (const mode of ["conversation", "keyword"] as const) {
-		test(`${mode} 移除全部条件后仍在同一条链上，并可继续填写`, async () => {
-			const root =
-				mode === "conversation"
-					? await sentence("算法")
-					: await createTurn(OWNER, {
-							kind: "spec",
-							spec: { conditions: parseQuery("算法") },
-						});
-			const empty = await createTurn(
-				OWNER,
-				{ kind: "spec", spec: { conditions: [] } },
-				root.turnId,
+	test("AI 搜索直接清空条件时拒绝追加，原条件仍可修改", async () => {
+		const root = await sentence("算法");
+		for (const spec of [{ query: { conditions: [] } }, { conditions: [] }]) {
+			await assert.rejects(
+				createTurn(OWNER, { kind: "spec", spec }, root.turnId),
+				/至少保留一条搜索条件/,
 			);
-			assert.deepEqual((await loadTurn(empty.turnId))?.spec, {
-				conditions: [],
-			});
-			const rootSpec = (await loadTurn(root.turnId))?.spec;
-			assert.ok(rootSpec);
-			assert.deepEqual(
-				shapeOf(rootSpec),
-				mode === "conversation"
-					? expected("算法")
-					: contentOf(compiled("算法")),
-			);
-			const next = await createTurn(
-				OWNER,
-				{ kind: "spec", spec: { conditions: parseQuery("运营") } },
-				empty.turnId,
-			);
-			const thread = await loadThread(OWNER, next.turnId);
-			assert.deepEqual(
-				thread?.map((turn) => turn.id),
-				[root.turnId, empty.turnId, next.turnId],
-			);
-			assert.equal((await loadTurn(next.turnId))?.mode, mode);
+		}
+		const next = await createTurn(
+			OWNER,
+			{ kind: "spec", spec: { conditions: parseQuery("+算法") } },
+			root.turnId,
+		);
+		const thread = await loadThread(OWNER, next.turnId);
+		assert.deepEqual(
+			thread?.map((turn) => turn.id),
+			[root.turnId, next.turnId],
+		);
+		assert.deepEqual(thread?.[0]?.spec, root.spec);
+	});
+
+	test("关键词清空后仍在同一条链上，可继续填写", async () => {
+		const root = await createTurn(OWNER, {
+			kind: "spec",
+			spec: { conditions: parseQuery("算法") },
 		});
-	}
+		const empty = await createTurn(
+			OWNER,
+			{ kind: "spec", spec: { conditions: [] } },
+			root.turnId,
+		);
+		const next = await createTurn(
+			OWNER,
+			{ kind: "spec", spec: { conditions: parseQuery("运营") } },
+			empty.turnId,
+		);
+		const thread = await loadThread(OWNER, next.turnId);
+		assert.deepEqual(
+			thread?.map((turn) => turn.id),
+			[root.turnId, empty.turnId, next.turnId],
+		);
+		assert.deepEqual(thread?.[0]?.spec, { conditions: parseQuery("算法") });
+		assert.deepEqual(thread?.[1]?.spec, { conditions: [] });
+		assert.equal(thread?.[2]?.mode, "keyword");
+	});
 
 	test("链头定下种类：有原话是对话，直接是条件是关键词，整条链不变", async () => {
 		const talk = await sentence("算法");

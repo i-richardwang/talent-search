@@ -7,6 +7,7 @@ import {
 import { Button } from "#/components/ui/button";
 import { Empty } from "#/components/ui/empty";
 import { Text } from "#/components/ui/text";
+import type { EmptyReason } from "#/search/empty";
 import type { QueryCondition } from "#/search/query";
 import type { SearchOutcome } from "#/search/result";
 import { queryOfSpec, type SearchSpec } from "#/search/spec";
@@ -59,7 +60,7 @@ const SAY_LABEL: Record<SearchMode, string> = {
 };
 
 export function NoResults({
-	outcome,
+	reason,
 	spec,
 	mode,
 	onChange,
@@ -68,7 +69,7 @@ export function NoResults({
 	onSay,
 	onContinue,
 }: {
-	outcome: SearchOutcome;
+	reason: EmptyReason;
 	spec: SearchSpec;
 	mode: SearchMode;
 	onChange: (next: Partial<View>) => void;
@@ -78,7 +79,6 @@ export function NoResults({
 	onSay?: (text: string) => unknown;
 	onContinue?: () => unknown;
 }) {
-	const reason = outcome.empty ?? { kind: "noConditions" };
 	const { title, hint, next } = emptyState(reason, {
 		mode,
 		conditions: queryOfSpec(spec).conditions,

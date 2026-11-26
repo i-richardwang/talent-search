@@ -390,7 +390,7 @@ function Empties() {
 												? (text) => setLast(`替 HR 对 AI 说：${text}`)
 												: undefined
 										}
-										outcome={{ ...EMPTY_OUTCOME, empty: reason }}
+										reason={reason}
 										spec={mode === "keyword" ? KEYWORD_SPEC : spec}
 									/>
 								</TableCell>

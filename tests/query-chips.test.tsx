@@ -71,8 +71,16 @@ describe("查询 chip", () => {
 		assert.doesNotMatch(visibleText(html), /\d\s*人/);
 	});
 
-	test("删除钮说清删的是哪一条", () => {
-		assert.match(markup([chip("算法")]), /删除条件「算法」/);
+	test("多条条件各自可删，只剩一条时只保留条件菜单", () => {
+		const other = chip("带团队", "boost", { off: "user" });
+		const both = markup([chip("算法"), other]);
+		assert.match(both, /aria-label="删除条件「算法」"/);
+		assert.match(both, /aria-label="删除条件「带团队」"/);
+		for (const last of [chip("算法"), other]) {
+			const html = markup([last]);
+			assert.match(html, /aria-haspopup="menu"/);
+			assert.doesNotMatch(html, /删除条件/);
+		}
 	});
 
 	test("没有条件就不画", () => {
