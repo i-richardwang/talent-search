@@ -1,6 +1,5 @@
 import { Link, useHydrated } from "@tanstack/react-router";
 import {
-	ArrowDownIcon,
 	CheckIcon,
 	EyeIcon,
 	LoaderCircleIcon,
@@ -8,15 +7,7 @@ import {
 	RotateCwIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import {
-	type ReactNode,
-	type Ref,
-	type RefObject,
-	useEffect,
-	useLayoutEffect,
-	useRef,
-	useState,
-} from "react";
+import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
 import { QueryBar, type QueryBarHandle } from "#/components/query-bar";
 import { Accordion } from "#/components/ui/accordion";
 import { ActionIcon } from "#/components/ui/action-icon";
@@ -26,10 +17,8 @@ import { Button } from "#/components/ui/button";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Divider } from "#/components/ui/divider";
 import { AnsweredQuestion, Question } from "#/components/ui/question";
-import { ScrollArea } from "#/components/ui/scroll-area";
 import { Tag } from "#/components/ui/tag";
 import { Text } from "#/components/ui/text";
-import { cn } from "#/lib/utils";
 import type { TurnNotes } from "#/search/intent";
 import { labelsInSentence, type QueryCondition } from "#/search/query";
 import {
@@ -51,6 +40,7 @@ import { FAULT_COPY, FAULT_EXIT_LABEL } from "../-lib/attempt";
 import { ELAPSED_SHOW_AFTER_MS, lasting, useElapsed } from "../-lib/elapsed";
 import { ConditionList } from "./condition-detail";
 import { IconCell } from "./icon-cell";
+import { ThreadScrollArea } from "./thread-scroll-area";
 
 function diff(previous: Turn | null, spec: QueryCondition[]) {
 	if (previous === null) return { added: spec, removed: [] };
@@ -149,99 +139,6 @@ function Elapsed({
 }
 
 /**
- * 离底多近算「在底下」。模型运行中不断追加内容时，在底下就跟着滚；翻上去超过这个
- * 距离就不跟，右下角出现回到底部的按钮。
- */
-const AT_BOTTOM_PX = 300;
-
-/**
- * 线程内容变多时的滚动：链上多了一轮就滚到底，人刚说的话不该藏在滚动条底下；最后一轮
- * 运行中追加内容时，只有人本来就在底下才跟着滚，翻上去看过去的轮次时不拽回来。
- * 回头看早先那一轮的结果不算多了一轮，线程不动。
- *
- * 滚的是这一栏自己的视口，不用 `scrollIntoView`：那个会连外层一起滚，
- * 首帧会把整页滚走。
- *
- * @param growth 最后一轮当前的内容进度；它一变就重看一次要不要滚。
- */
-function useFollow(latestId: string, growth: string) {
-	const viewportRef = useRef<HTMLDivElement>(null);
-	const [atBottom, setAtBottom] = useState(true);
-	const stuck = useRef(true);
-
-	useEffect(() => {
-		const viewport = viewportRef.current;
-		if (!viewport) return;
-		const onScroll = () => {
-			const near =
-				viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <=
-				AT_BOTTOM_PX;
-			stuck.current = near;
-			setAtBottom(near);
-		};
-		viewport.addEventListener("scroll", onScroll, { passive: true });
-		return () => viewport.removeEventListener("scroll", onScroll);
-	}, []);
-
-	// 多了一轮强制到底；同一轮追加内容只在停在底部时到底
-	const seen = useRef<string | null>(null);
-	// biome-ignore lint/correctness/useExhaustiveDependencies: 每追加一点内容就要重看一次
-	useLayoutEffect(() => {
-		if (seen.current !== latestId) {
-			seen.current = latestId;
-			stuck.current = true;
-		}
-		const viewport = viewportRef.current;
-		if (viewport && stuck.current) viewport.scrollTop = viewport.scrollHeight;
-	}, [latestId, growth]);
-
-	const toBottom = () => {
-		const viewport = viewportRef.current;
-		viewport?.scrollTo({ behavior: "smooth", top: viewport.scrollHeight });
-	};
-
-	return { atBottom, toBottom, viewportRef };
-}
-
-/**
- * 换到哪一轮的结果，就把那一轮滚进视口并闪一下，人看得出名单换成了线程里的
- * 哪一次。首次画出时不闪：那是默认的样子。
- */
-function useLocate(
-	viewportRef: RefObject<HTMLDivElement | null>,
-	viewing: string,
-) {
-	const shown = useRef(viewing);
-	useEffect(() => {
-		if (shown.current === viewing) return;
-		shown.current = viewing;
-		const viewport = viewportRef.current;
-		const round = viewport?.querySelector<HTMLElement>(
-			`[data-turn="${CSS.escape(viewing)}"]`,
-		);
-		if (!viewport || !round) return;
-		const top = round.offsetTop;
-		const bottom = top + round.offsetHeight;
-		if (
-			top < viewport.scrollTop ||
-			bottom > viewport.scrollTop + viewport.clientHeight
-		)
-			viewport.scrollTo({ behavior: "smooth", top: Math.max(0, top - 8) });
-		const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-		const lit = { background: "var(--color-primary-bg)" };
-		const off = { background: "transparent" };
-		round.animate(
-			still
-				? [lit, lit]
-				: [off, { ...lit, offset: 0.15 }, { ...lit, offset: 0.55 }, off],
-			{ duration: 1400, easing: "cubic-bezier(0.215, 0.61, 0.355, 1)" },
-		);
-	}, [viewing, viewportRef]);
-}
-
-type Phase = "running" | "settled" | "failed";
-
-/**
  * 对话栏：这次找人任务的整条记录链。
  *
  * 动作作用在正看着的条件上，新的一轮记在链尾（`server/turn.ts` 的 `createTurn`）；回答 AI 的
@@ -289,62 +186,34 @@ export function Thread({
 }) {
 	const rounds = [...earlier, latest];
 	const last = earlier.length;
-	const latestTrace = progress?.trace ?? latest.trace ?? [];
-	const phase: Phase = latest.settled
-		? "settled"
-		: fault
-			? "failed"
-			: "running";
-	const { atBottom, toBottom, viewportRef } = useFollow(
-		latest.id,
-		`${phase}:${latestTrace.length}`,
-	);
-	useLocate(viewportRef, viewing);
-	const previewing = latest.id !== viewing;
+	const latestProgress = progress ?? progressOf(latest);
+	const phase = latest.settled ? "settled" : fault ? "failed" : "running";
 
 	return (
 		<section aria-label="对话" className="flex h-full flex-col">
-			<div className="relative min-h-0 flex-1">
-				<ScrollArea
-					className="size-full"
-					viewportProps={{
-						className: "data-has-overflow-y:overscroll-y-contain",
-						ref: viewportRef,
-					}}
-				>
-					<ol className="flex flex-col px-4 pb-6">
-						{rounds.map((round, i) => (
-							<Round
-								failure={i === last ? fault : null}
-								key={round.id}
-								next={rounds[i + 1] ?? null}
-								mark={
-									round.id !== viewing ? "link" : previewing ? "viewing" : null
-								}
-								onRetry={onRetry}
-								onAnswer={onAnswer}
-								phase={i === last ? phase : "settled"}
-								previous={rounds[i - 1] ?? null}
-								round={round}
-								progress={i === last && progress ? progress : progressOf(round)}
-							/>
-						))}
-					</ol>
-				</ScrollArea>
-				<ActionIcon
-					className={cn(
-						"absolute end-4 bottom-4 z-raise transition-[opacity,translate] duration-200 ease-out",
-						atBottom && "pointer-events-none translate-y-4 opacity-0",
-					)}
-					glass
-					icon={ArrowDownIcon}
-					onClick={toBottom}
-					size="floating"
-					tabIndex={atBottom ? -1 : undefined}
-					title="跳转到最新"
-					variant="outlined"
-				/>
-			</div>
+			<ThreadScrollArea
+				latestId={latest.id}
+				phase={phase}
+				stepCount={latestProgress.trace.length}
+				viewing={viewing}
+			>
+				<ol className="flex flex-col px-4 pb-6">
+					{rounds.map((round, i) => (
+						<Round
+							current={round.id === viewing}
+							failure={i === last ? fault : null}
+							key={round.id}
+							next={rounds[i + 1] ?? null}
+							onRetry={onRetry}
+							onAnswer={onAnswer}
+							running={i === last && phase === "running"}
+							previous={rounds[i - 1] ?? null}
+							round={round}
+							progress={i === last ? latestProgress : progressOf(round)}
+						/>
+					))}
+				</ol>
+			</ThreadScrollArea>
 			{understanding && (
 				<div className="flex-none px-3 pb-3">
 					<QueryBar
@@ -410,8 +279,8 @@ function Round({
 	round,
 	previous,
 	next,
-	mark,
-	phase,
+	current,
+	running,
 	failure,
 	progress: { trace, startedAt },
 	onAnswer,
@@ -421,12 +290,8 @@ function Round({
 	previous: Turn | null;
 	/** 下一轮；这一轮的问题答没答、答了哪一项，看它。 */
 	next: Turn | null;
-	/**
-	 * 这一轮的记号：别的轮次带查看结果的链接；正看着的一轮不是最后一轮时
-	 * 标出来，是最后一轮就什么都不标——那是默认的样子。
-	 */
-	mark: "link" | "viewing" | null;
-	phase: Phase;
+	current: boolean;
+	running: boolean;
 	/** 没理解出来时哪个环节出了问题，不是「这句话没读懂」。 */
 	failure: AttemptFault | null;
 	progress: Progress;
@@ -435,35 +300,30 @@ function Round({
 	onRetry: () => unknown;
 }) {
 	const { said, spec, notes } = round;
-	const viewing = mark !== "link";
-	const viewingTag = mark === "viewing" && <Tag size="small">正在查看</Tag>;
-	const link = mark === "link" && <ViewResult turnId={round.id} />;
+	const resultNav = current ? (
+		next && <Tag size="small">正在查看</Tag>
+	) : (
+		<Actions>
+			<ViewResult turnId={round.id} />
+		</Actions>
+	);
 
 	// 直接改条件的一轮没有人说话，AI 也不回话；改完有新进范围的人要补时，底下是补的过程
 	if (said === null)
 		return (
-			<li
-				aria-current={viewing ? "page" : undefined}
-				className="group/reveal rounded-lg"
-				data-turn={round.id}
-			>
+			<li aria-current={current ? "page" : undefined} className="group/reveal">
 				<Divider className="my-0 py-5">
 					<span className="flex min-w-0 items-center gap-1">
 						<Tag className="min-w-0 whitespace-normal" icon={PencilLineIcon}>
 							{spec && editText(previous, queryOfSpec(spec).conditions)}
 						</Tag>
-						{viewingTag}
-						{link && <Actions>{link}</Actions>}
+						{resultNav}
 					</span>
 				</Divider>
 				{(trace.length > 0 || failure) && (
 					<div className="flex w-full min-w-0 flex-col gap-2 pb-2">
 						{trace.length > 0 && (
-							<Process
-								live={phase === "running"}
-								since={startedAt}
-								steps={trace}
-							/>
+							<Process live={running} since={startedAt} steps={trace} />
 						)}
 						{failure && <Fault fault={failure} onRetry={onRetry} />}
 					</div>
@@ -472,11 +332,7 @@ function Round({
 		);
 
 	return (
-		<li
-			aria-current={viewing ? "page" : undefined}
-			className="flex flex-col rounded-lg"
-			data-turn={round.id}
-		>
+		<li aria-current={current ? "page" : undefined} className="flex flex-col">
 			<div className="group/reveal flex flex-col items-end gap-2 py-2 ps-9">
 				<Clock at={round.at} />
 				<p className="max-w-full whitespace-pre-wrap break-words rounded-lg bg-fill-tertiary px-3 py-2">
@@ -495,13 +351,9 @@ function Round({
 				</div>
 				<div className="flex w-full min-w-0 flex-col gap-2">
 					{trace.length > 0 ? (
-						<Process
-							live={phase === "running"}
-							since={startedAt}
-							steps={trace}
-						/>
+						<Process live={running} since={startedAt} steps={trace} />
 					) : (
-						phase === "running" && (
+						running && (
 							<p className="flex items-center gap-1" role="status">
 								<Text shiny type="secondary">
 									正在理解你的需求…
@@ -522,12 +374,7 @@ function Round({
 					)}
 					{failure && <Fault fault={failure} onRetry={onRetry} />}
 				</div>
-				{(link || viewingTag) && (
-					<div className="flex items-center gap-1">
-						{viewingTag}
-						{link && <Actions>{link}</Actions>}
-					</div>
-				)}
+				{resultNav}
 			</div>
 		</li>
 	);

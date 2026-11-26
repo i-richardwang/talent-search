@@ -125,7 +125,7 @@ export function ScrollAreaPage() {
 					"高度由外层布局给（如 size-full min-h-0），滚动区自己不定高。",
 					"内容里有断不开的宽元素时，滚动区不被它撑宽外层。",
 					"只有还能滚的一端需要提示时用 scrollFade，不另画渐变遮罩。",
-					"只带一根纵向滚动条；视口的类名和 ref 经 viewportProps 交进去。",
+					"viewportProps 设置视口的类名和 ref。overflowEdgeThreshold 可指定离边缘多远时显示对应的溢出状态。",
 				],
 				usage: `<ScrollArea className="size-full min-h-0" scrollFade>\n  {children}\n</ScrollArea>`,
 			}}
