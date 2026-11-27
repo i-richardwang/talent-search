@@ -16,7 +16,7 @@ import {
 	acquireCorpusSession,
 	type CorpusClient,
 	type CorpusSession,
-	corpusSessionOwner,
+	corpusSessionOwners,
 } from "#/corpus/session";
 import { type SourceConfig, sourceConfig } from "#/corpus/sources";
 import { sync } from "#/corpus/sync";
@@ -58,11 +58,9 @@ const WORK: Record<TaskKind, TaskWork> = {
 	review: async (session, report, { rejudge }) => {
 		const judge = reviewJudge();
 		if (judge === "off") return;
-		await review(session.client, report, judge, rejudge);
-		// 判定归外部却没配凭据，接口是关着的，词会一直留在队列里。这是配错了，得在记录里
-		// 说出来：整理一轮轮照跑、词表一动不动，没有这句没人看得出为什么
+		await review(session, report, judge, rejudge);
 		if (judge === "external" && !configured())
-			report("  ✖ 判定归外部，但 REVIEW_TOKEN 没配，接口关着，没人能提交判定");
+			report("  外部整理接口未启用，请配置独立于 DERIVE_TOKEN 的 REVIEW_TOKEN");
 	},
 };
 
@@ -193,14 +191,14 @@ export async function tasksState(want: TaskPages = {}): Promise<TasksState> {
 	return db.transaction(async (store) => {
 		// 锁住当前运行行，再读拿到锁的那个连接；收尾在这次观察完成后才能更新行、释放锁。
 		const heads = await readTaskHeads(store);
-		const owner = await corpusSessionOwner(store);
-		const active = owner !== null;
+		const owners = await corpusSessionOwners(store);
+		const active = owners.length > 0;
 		/** 逐个字段写出来，行上别的列不跟着发到页面。 */
 		const seen = (row: StoredRun): TaskRunView => ({
 			error: row.error,
 			id: row.id,
 			kind: row.kind,
-			outcome: outcome(row, owner === taskSessionName(row.id)),
+			outcome: outcome(row, owners.includes(taskSessionName(row.id))),
 			seconds: row.seconds,
 			source: row.source,
 			startedAt: row.startedAt,
@@ -397,7 +395,7 @@ export async function runTask<K extends TaskKind>(
 		queuedDerive?: K extends "derive" ? "automatic" | "manual" : never;
 	} = {},
 ): Promise<TaskResult | null> {
-	const session = await acquireCorpusSession(options.wait ?? false);
+	const session = await acquireCorpusSession(options.wait ?? false, kind);
 	if (!session) return null;
 	try {
 		const source = kind === "sync" ? sourceConfig() : null;

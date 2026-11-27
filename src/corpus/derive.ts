@@ -7,18 +7,18 @@
  */
 
 import "@tanstack/react-start/server-only";
-import { align, alignmentOf, type SeqPair } from "./align";
+import { runCorpusAgent } from "#/server/corpus-agent";
+import { alignmentOf, type SeqPair } from "./align";
+import { inputKeySql, prepareDeriveRequests } from "./derive-requests";
 import {
 	type DeriveStandard,
 	deriveStandard,
 	deriveToken,
 	UNDERIVED,
 } from "./derive-standard";
-import { inputKeySql, prepareExternal } from "./external-derive";
 import {
 	type DeriveInput,
 	type ExtractionResult,
-	extract,
 	extractionOf,
 } from "./extract";
 import { prunePhrases } from "./phrases";
@@ -142,19 +142,18 @@ async function staging(
 	return staged;
 }
 
-/** 按 id 读取下一批。外部模式只处理所需结果已经齐备的段。 */
+/** 按 id 读取下一批。抽取与对齐所需回答齐备后，才能写这一段。 */
 async function parseBatch(
 	client: CorpusClient,
 	standard: DeriveStandard,
 	afterId: number,
-	report: Report,
 ): Promise<ParsedRow[]> {
 	const { mode, version, tree } = standard;
 	const fields =
 		"e.id,e.kind,e.unemployed,e.company,e.title,e.description,e.seq_l1,e.seq_l2,e.seq_l3";
 	const pending = `${UNDERIVED} and e.id > $2`;
 	const page = `order by e.id limit ${BATCH}`;
-	if (mode === "external") {
+	if (mode !== "text") {
 		const { rows } = await client.query<
 			StoredRow & { extraction: unknown; alignment: unknown }
 		>(
@@ -184,21 +183,11 @@ async function parseBatch(
 		`select ${fields} from experience e where ${pending} ${page}`,
 		[version, afterId],
 	);
-	if (mode === "text" || rows.length === 0)
-		return rows.map((row) => ({
-			row,
-			extraction: { status: "skipped" },
-			sequence: ["", ""],
-		}));
-	const extractions = await extract(rows, report);
-	const sequences = await align(rows, tree, report, standard.align);
-	return rows.map((row, index) => {
-		const extraction = extractions[index];
-		const sequence = sequences[index];
-		if (!extraction || sequence === undefined)
-			throw new Error("这一批经历缺少解析结果");
-		return { row, extraction, sequence };
-	});
+	return rows.map((row) => ({
+		row,
+		extraction: { status: "skipped" },
+		sequence: ["", ""],
+	}));
 }
 
 /**
@@ -315,6 +304,23 @@ async function promote(client: CorpusClient, version: string) {
 	}
 }
 
+/** 写者拿到锁后按此刻的目录登记请求。同步可能在模型作答期间更新目录。 */
+async function prepare(client: CorpusClient) {
+	const standard = await deriveStandard(client);
+	if (standard.mode === "text") {
+		await client.query(
+			"delete from derive_request where result is null and failed_version is null",
+		);
+	} else {
+		if (standard.mode === "external" && !deriveToken())
+			throw new Error(
+				"外部解析需要独立的 DERIVE_TOKEN，请使用与 REVIEW_TOKEN 不同的凭据",
+			);
+		await prepareDeriveRequests(client, standard);
+	}
+	return standard;
+}
+
 type DeriveOutcome = { done: number; left: number };
 
 /** 一批一批地做，直到做完或时间预算用完。连接与锁由调用方给（`session.ts`）。 */
@@ -326,19 +332,41 @@ export async function derive(
 	const { client } = session;
 	const deadline = Date.now() + budgetMs;
 
-	const standard = await deriveStandard(client);
-	const { mode, version } = standard;
-	if (mode === "external" && !deriveToken())
-		throw new Error(
-			"外部解析需要独立的 DERIVE_TOKEN，请使用与 REVIEW_TOKEN 不同的凭据",
+	let standard = await prepare(client);
+	let agentFailure: { error: unknown } | undefined;
+	if (standard.mode === "model") {
+		const { rows } = await client.query<{ kind: "extract" | "align" }>(
+			`select kind from unnest($1::text[],$2::text[]) as s(kind,standard)
+			 where exists(select 1 from derive_request q where q.standard=s.standard
+			 and q.experience_id is not null and q.result is null and q.failed_version is null)
+			 order by array_position($1,kind)`,
+			[
+				["extract", "align"],
+				[standard.extract.standard, standard.align.standard],
+			],
 		);
+		if (rows.length) {
+			agentFailure = await session.outsideWriter(async () => {
+				try {
+					for (const [index, { kind }] of rows.entries()) {
+						const now = Date.now();
+						if (now >= deadline) break;
+						await runCorpusAgent(
+							kind,
+							report,
+							now + (deadline - now) / (rows.length - index),
+						);
+					}
+				} catch (error) {
+					return { error };
+				}
+			});
+			standard = await prepare(client);
+		}
+	}
+	const { mode, version } = standard;
 	const staged = await staging(client, version);
 	const total = await underived(client, version);
-	if (mode === "external") await prepareExternal(client, standard);
-	else
-		await client.query(
-			"delete from derive_request where result is null and failed_version is null",
-		);
 	if (mode === "text")
 		report("  未配置抽取模型，自述按整段原文处理，入职前经历不推断序列");
 	report(`  待解析 ${total} 段`);
@@ -347,8 +375,8 @@ export async function derive(
 
 	let done = 0;
 	let afterId = 0;
-	while (Date.now() < deadline) {
-		const batch = await parseBatch(client, standard, afterId, report);
+	while (afterId === 0 || Date.now() < deadline) {
+		const batch = await parseBatch(client, standard, afterId);
 		const last = batch.at(-1);
 		if (!last) break;
 		afterId = last.row.id;
@@ -367,5 +395,6 @@ export async function derive(
 	report(
 		left > 0 ? `这一轮到此为止，还剩 ${left} 段下一轮接着` : "全部解析完毕",
 	);
+	if (agentFailure) throw agentFailure.error;
 	return { done, left };
 }

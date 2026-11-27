@@ -273,7 +273,6 @@ export async function sync(
 	try {
 		await stageEmployee(session, employee);
 		await stageExperience(session, experience);
-		counts = await reconcile(session);
 		await client.query("delete from sequence_catalog");
 		await client.query(
 			`insert into sequence_catalog (seq_l1, seq_l2)
@@ -283,6 +282,7 @@ export async function sync(
 				data.sequences.map((row) => row.seq_l2.trim()),
 			],
 		);
+		counts = await reconcile(session);
 		await replaceRecords(session, streams, scale, records);
 		await replaceCompanies(session, industries, companies, companyAliases);
 		await client.query("commit");

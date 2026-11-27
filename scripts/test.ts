@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { Pool } from "pg";
-import { ownerOf } from "../tests/temp-schema";
+import { ownerOf } from "./evaluation/schema-name";
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) throw new Error("测试需要在 .env.local 中配置 DATABASE_URL");

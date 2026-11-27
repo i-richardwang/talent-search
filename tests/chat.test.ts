@@ -1,415 +1,117 @@
-/**
- * 语料侧调用聊天端点的那一层：去重、缓存，以及答不出合法 JSON 时只丢那一段。
- *
- * 缓存跟着库走，所以这里连真库；端点是进程内那台假的（`fixture.ts`），回答由
- * 测试自己装。
- */
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { after, describe, test } from "node:test";
-import { z } from "zod";
+import { text } from "node:stream/consumers";
+import { after, test } from "node:test";
 import { answerChat, setup } from "./fixture";
 
 const teardown = await setup();
 after(teardown);
-
-const TIMEOUT_MS = 200;
-process.env.EXTRACT_TIMEOUT_MS = String(TIMEOUT_MS);
-process.env.EXTRACT_MAX_OUTPUT_TOKENS = "8";
-process.env.EXTRACT_API_KEY = "extraction-only-test-key";
-const { complete } = await import("#/server/chat");
-
-const SCHEMA = z.object({ a: z.number() });
+process.env.EXTRACT_TIMEOUT_MS = "900";
+process.env.EXTRACT_API_KEY = "synthetic-extract-only";
+const { evaluateExtraction, experienceAnswers } = await import(
+	"../scripts/evaluation/corpus"
+);
+const example = {
+	kind: "external" as const,
+	unemployed: false,
+	title: "合成岗位",
+	company: "合成公司",
+	description: "合成描述",
+};
 const quiet = () => {};
 
-function asking(answer: unknown = { a: 1 }) {
-	const asked: string[] = [];
-	const restore = answerChat((_system, prompt) => {
-		asked.push(prompt);
-		return answer;
-	});
-	return { asked, restore };
-}
-
-test("领域不接受的回答不缓存，缓存读取也服从同一道校验", async () => {
-	let calls = 0;
-	const restore = answerChat(() => ({ a: ++calls === 1 ? -1 : 2 }));
-	const accept = (raw: unknown) => SCHEMA.parse(raw).a > 0;
-	const ask = () =>
-		complete("fake", "领域缓存", SCHEMA, ["合成问题"], "校验", quiet, accept);
-	try {
-		assert.equal((await ask()).size, 0);
-		assert.deepEqual((await ask()).get("合成问题"), { a: 2 });
-		await ask();
-		assert.equal(calls, 2);
-		// 同一缓存记录在当前领域规则下不再有效时，重新请求并保存合规结果。
-		const stronger = await complete(
-			"fake",
-			"领域缓存",
-			SCHEMA,
-			["合成问题"],
-			"校验",
-			quiet,
-			(raw) => SCHEMA.parse(raw).a > 2,
+test("对齐 agent 在同名模型上使用对齐端点的凭据，未配置密钥时也能独立使用", async () => {
+	const target = process.env.EXTRACT_BASE_URL;
+	assert.ok(target);
+	const seen = new Set<string | undefined>();
+	const server = createServer(async (req, res) => {
+		seen.add(req.headers.authorization);
+		const response = await fetch(
+			new URL("chat/completions", target.endsWith("/") ? target : `${target}/`),
+			{
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: await text(req),
+			},
 		);
-		assert.equal(stronger.size, 0);
-		assert.equal(calls, 3);
+		res
+			.writeHead(response.status, { "content-type": "application/json" })
+			.end(await response.text());
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	const address = server.address();
+	assert.ok(address && typeof address === "object");
+	const restore = answerChat(() => ({ seq: "" }));
+	try {
+		process.env.ALIGN_BASE_URL = `http://127.0.0.1:${address.port}`;
+		for (const key of ["synthetic-align-only", undefined]) {
+			if (key) process.env.ALIGN_API_KEY = key;
+			else delete process.env.ALIGN_API_KEY;
+			seen.clear();
+			const answers = await experienceAnswers(
+				"align",
+				[{ ...example, description: `测试 ${key ?? "无密钥"}` }],
+				[["技术", "算法"]],
+				quiet,
+			);
+			assert.deepEqual(answers, [{ seq: "" }]);
+			assert.deepEqual([...seen], [key ? `Bearer ${key}` : undefined]);
+		}
 	} finally {
+		restore();
+		delete process.env.ALIGN_BASE_URL;
+		delete process.env.ALIGN_API_KEY;
+		server.closeAllConnections();
+		await new Promise<void>((resolve) => server.close(() => resolve()));
+	}
+});
+
+test("对话时限覆盖整批工具调用，超时的题仍可领取", async () => {
+	const resume = Promise.withResolvers<void>();
+	const restore = answerChat(async () => {
+		await resume.promise;
+		return { items: [] };
+	});
+	try {
+		const start = Date.now();
+		await assert.rejects(evaluateExtraction([example], quiet), {
+			name: "TimeoutError",
+		});
+		assert.ok(Date.now() - start < 3000);
+		const { pool } = await import("#/db");
+		assert.equal(
+			(
+				await pool.query(
+					"select count(*)::int as n from derive_request where result is null and failed_version is null",
+				)
+			).rows[0].n,
+			1,
+		);
+	} finally {
+		resume.resolve();
 		restore();
 	}
 });
 
-describe("聊天端点", () => {
-	test("未缓存的对齐调用使用独立端点和密钥，同名模型也不转发抽取密钥", async () => {
-		const originalURL = process.env.ALIGN_BASE_URL;
-		const originalKey = process.env.ALIGN_API_KEY;
-		const server = createServer((req, res) => {
-			const auth = req.headers.authorization;
-			const a =
-				auth === "Bearer alignment-only-test-key"
-					? 42
-					: auth === undefined
-						? 43
-						: -1;
-			res.writeHead(200, { "content-type": "application/json" }).end(
-				JSON.stringify({
-					id: "alignment",
-					object: "chat.completion",
-					created: 0,
-					model: "fake",
-					choices: [
-						{
-							index: 0,
-							message: { role: "assistant", content: JSON.stringify({ a }) },
-							finish_reason: "stop",
-						},
-					],
-				}),
-			);
-		});
-		await new Promise<void>((resolve) =>
-			server.listen(0, "127.0.0.1", resolve),
-		);
-		const address = server.address();
-		assert.ok(address && typeof address === "object");
-		process.env.ALIGN_BASE_URL = `http://127.0.0.1:${address.port}`;
-		const { restore } = asking({ a: 7 });
-		try {
-			for (const [key, expected] of [
-				["alignment-only-test-key", 42],
-				[undefined, 43],
-			] as const) {
-				if (key === undefined) delete process.env.ALIGN_API_KEY;
-				else process.env.ALIGN_API_KEY = key;
-				const got = await complete(
-					"fake",
-					"独立端点",
-					SCHEMA,
-					[`对齐${expected}`],
-					"对齐",
-					quiet,
-					() => true,
-					{ endpoint: "align" },
-				);
-				assert.deepEqual(got.get(`对齐${expected}`), { a: expected });
-			}
-			const extracted = await complete(
-				"fake",
-				"独立端点",
-				SCHEMA,
-				["抽取"],
-				"抽取",
-				quiet,
-				() => true,
-			);
-			assert.deepEqual(extracted.get("抽取"), { a: 7 });
-		} finally {
-			if (originalURL === undefined) delete process.env.ALIGN_BASE_URL;
-			else process.env.ALIGN_BASE_URL = originalURL;
-			if (originalKey === undefined) delete process.env.ALIGN_API_KEY;
-			else process.env.ALIGN_API_KEY = originalKey;
-			restore();
-			await new Promise<void>((resolve) => {
-				server.close(() => resolve());
-				server.closeAllConnections();
-			});
-		}
-	});
-
-	test("同一段文字只问一次，每个位置都答得上", async () => {
-		const { asked, restore } = asking();
-		const got = await complete(
-			"fake",
-			"提示",
-			SCHEMA,
-			["甲", "乙", "甲"],
-			"抽取",
-			quiet,
-			() => true,
-		);
-		restore();
-
-		assert.deepEqual(asked.sort(), ["乙", "甲"]);
-		assert.deepEqual(got.get("甲"), { a: 1 });
-		assert.deepEqual(got.get("乙"), { a: 1 });
-	});
-
-	test("再跑一次读缓存；换提示词或换模型就重新问", async () => {
-		const first = asking();
-		await complete(
-			"fake",
-			"缓存提示",
-			SCHEMA,
-			["丙"],
-			"抽取",
-			quiet,
-			() => true,
-		);
-		first.restore();
-		assert.equal(first.asked.length, 1);
-
-		const again = asking();
-		const got = await complete(
-			"fake",
-			"缓存提示",
-			SCHEMA,
-			["丙"],
-			"抽取",
-			quiet,
-			() => true,
-		);
-		assert.equal(again.asked.length, 0);
-		assert.deepEqual(got.get("丙"), { a: 1 });
-
-		await complete(
-			"fake",
-			"另一份提示",
-			SCHEMA,
-			["丙"],
-			"抽取",
-			quiet,
-			() => true,
-		);
-		await complete(
-			"another",
-			"缓存提示",
-			SCHEMA,
-			["丙"],
-			"抽取",
-			quiet,
-			() => true,
-		);
-		again.restore();
-		assert.equal(again.asked.length, 2);
-	});
-
-	test("模型、标准和输入相同，换端点仍复用已保存的回答", async () => {
-		const originalURL = process.env.ALIGN_BASE_URL;
-		const { asked, restore } = asking({ a: 7 });
-		try {
-			delete process.env.ALIGN_BASE_URL;
-			await complete(
-				"fake",
-				"端点不改变回答身份",
-				SCHEMA,
-				["同一输入"],
-				"对齐",
-				quiet,
-				() => true,
-				{ endpoint: "align" },
-			);
-			process.env.ALIGN_BASE_URL = "http://127.0.0.1:1";
-			const got = await complete(
-				"fake",
-				"端点不改变回答身份",
-				SCHEMA,
-				["同一输入"],
-				"对齐",
-				quiet,
-				() => true,
-				{ endpoint: "align" },
-			);
-			assert.deepEqual(got.get("同一输入"), { a: 7 });
-			assert.deepEqual(asked, ["同一输入"]);
-		} finally {
-			if (originalURL === undefined) delete process.env.ALIGN_BASE_URL;
-			else process.env.ALIGN_BASE_URL = originalURL;
-			restore();
-		}
-	});
-
-	test("不向端点限制输出 token，旧配置也不截断回答", async () => {
-		const restore = answerChat((_system, _prompt, request) => {
-			if (
-				request.max_tokens !== undefined ||
-				request.max_completion_tokens !== undefined
-			)
-				return { a: "输出预算耗尽" };
-			return { a: 42 };
-		});
-		try {
-			const got = await complete(
-				"fake",
-				"输出由模型服务决定",
-				SCHEMA,
-				["长思考后的回答"],
-				"抽取",
-				quiet,
-				() => true,
-			);
-			assert.deepEqual(got.get("长思考后的回答"), { a: 42 });
-		} finally {
-			restore();
-		}
-	});
-
-	test("整次调用到时终止，不为重试再等一份预算", async () => {
-		const restore = answerChat(() => new Promise(() => {}));
-		try {
-			const started = Date.now();
-			await assert.rejects(
-				complete(
-					"fake",
-					"限时回答",
-					SCHEMA,
-					["一直思考"],
-					"抽取",
-					quiet,
-					() => true,
-				),
-				{ name: "TimeoutError" },
-			);
-			assert.ok(Date.now() - started < 3 * TIMEOUT_MS);
-		} finally {
-			restore();
-		}
-	});
-
-	test("一段失败后等在途请求收尾，不再领取新段；已完成的回答仍可复用", async () => {
-		let enter!: () => void;
-		const entered = new Promise<void>((resolve) => {
-			enter = resolve;
-		});
-		let release!: () => void;
-		const waiting = new Promise<void>((resolve) => {
-			release = resolve;
-		});
-		const asked: string[] = [];
-		const restore = answerChat(async (_system, prompt) => {
-			asked.push(prompt);
-			if (prompt === "失败段") {
-				await entered;
-				return undefined;
-			}
-			if (prompt === "在途段") {
-				enter();
-				await waiting;
-			}
-			return { a: 7 };
-		});
-		let finished = false;
-		const result = complete(
-			"fake",
-			"失败时收尾",
-			SCHEMA,
-			["失败段", "在途段", "未开始甲", "未开始乙"],
-			"抽取",
-			quiet,
-			() => true,
-		).then(
-			() => assert.fail("应当报告端点失败"),
-			(error: unknown) => {
-				finished = true;
-				return error;
-			},
-		);
-		try {
-			await entered;
-			await new Promise((resolve) => setTimeout(resolve, 30));
-			assert.equal(finished, false, "在途段未收尾时不能报告整批已退出");
-			release();
-			assert.equal(((await result) as { statusCode: number }).statusCode, 400);
-			assert.deepEqual(asked.sort(), ["失败段", "在途段"].sort());
-
-			const saved = await complete(
-				"fake",
-				"失败时收尾",
-				SCHEMA,
-				["在途段"],
-				"抽取",
-				quiet,
-				() => true,
-			);
-			assert.deepEqual(saved.get("在途段"), { a: 7 });
-			assert.equal(asked.length, 2);
-		} finally {
-			release();
-			await result;
-			restore();
-		}
-	});
-
-	test("答不出合法 JSON 的那一段被丢掉，也不进缓存", async () => {
-		const said: string[] = [];
-		const bad = asking({ a: "不是数字" });
-		const got = await complete(
-			"fake",
-			"坏提示",
-			SCHEMA,
-			["丁"],
-			"抽取",
-			(line) => said.push(line),
-			() => true,
-		);
-		bad.restore();
-
-		assert.equal(got.size, 0);
-		assert.match(said.join("\n"), /放弃这一段/);
-
-		// 没进缓存，所以下一轮还会再问一次
-		const retry = asking();
-		const second = await complete(
-			"fake",
-			"坏提示",
-			SCHEMA,
-			["丁"],
-			"抽取",
-			quiet,
-			() => true,
-		);
-		retry.restore();
-		assert.equal(retry.asked.length, 1);
-		assert.deepEqual(second.get("丁"), { a: 1 });
-	});
-});
-
-test("并发合法回答统一采用第一个成功写入的值", async () => {
-	let release!: () => void;
-	const both = new Promise<void>((resolve) => {
-		release = resolve;
-	});
+test("字段名出现在经历原文时，模型缓存仍区分岗位与公司", async () => {
+	const first = { ...example, title: "甲\n公司：乙", company: "丙" };
+	const second = { ...example, title: "甲", company: "乙\n公司：丙" };
 	let calls = 0;
-	const restore = answerChat(async () => {
-		const a = ++calls;
-		if (calls === 2) release();
-		await both;
-		return { a };
-	});
+	const restore = answerChat(() => ({
+		items: [{ text: ++calls === 1 ? "计算" : "管理", depth: "做过" }],
+	}));
 	try {
-		const ask = () =>
-			complete(
-				"fake",
-				"并发缓存",
-				SCHEMA,
-				["相同问题"],
-				"抽取",
-				quiet,
-				() => true,
-			);
-		const [a, b] = await Promise.all([ask(), ask()]);
+		await evaluateExtraction([first], quiet);
+		const secondResult = await evaluateExtraction([second], quiet);
 		assert.equal(calls, 2);
-		assert.deepEqual(a, b);
-		assert.deepEqual(await ask(), a);
+		assert.deepEqual(secondResult, [
+			{
+				status: "done",
+				value: { items: [{ text: "管理", engagement: "做过" }] },
+			},
+		]);
+		assert.deepEqual(await evaluateExtraction([second], quiet), secondResult);
+		assert.equal(calls, 2);
 	} finally {
 		restore();
 	}

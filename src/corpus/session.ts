@@ -15,29 +15,35 @@ import type { DbExecutor } from "#/db/snapshot";
 export type CorpusClient = Pick<PoolClient, "query">;
 
 /** 锁的键，拼出来是 "talent" 六个字节。同一个库上的写者靠它排队。 */
-const CORPUS_LOCK = String(BigInt("0x74616c656e74"));
+const CORPUS_LOCK = 0x74616c656e74n;
+const RUN_LOCK = { derive: CORPUS_LOCK + 1n, review: CORPUS_LOCK + 2n };
 
-/** 一个写者独占的连接。用完必须 `release`，否则连接池会漏一条。 */
-export type CorpusSession = {
+/** 语料操作拿着写者锁，等待模型期间释放它，恢复后才能继续写入。 */
+export type CorpusWriter = {
+	client: CorpusClient;
+	outsideWriter: <T>(work: () => Promise<T>) => Promise<T>;
+};
+
+export type CorpusSession = CorpusWriter & {
 	client: PoolClient;
 	release: () => Promise<void>;
 };
 
-/** 当前数据库里拿到锁的那个连接的会话名；没有连接拿到锁时为 null。 */
-export async function corpusSessionOwner(
+/** 本库持有写者锁或同类任务运行锁的连接名，用来识别仍在执行的任务。 */
+export async function corpusSessionOwners(
 	store: DbExecutor = db,
-): Promise<string | null> {
+): Promise<string[]> {
 	const { rows } = await store.execute<{
 		name: string;
-	}>(sql`select a.application_name as name from pg_locks l
+	}>(sql`select distinct a.application_name as name from pg_locks l
 		 join pg_stat_activity a on a.pid = l.pid
 		 where l.locktype = 'advisory'
 		   and l.objsubid = 1
 		   and l.database = (select oid from pg_database where datname = current_database())
-		   and l.classid = (${CORPUS_LOCK}::bigint >> 32)::int
-		   and l.objid = (${CORPUS_LOCK}::bigint & x'ffffffff'::bigint)::int
+		   and ((l.classid::bigint << 32) | l.objid::bigint) in
+		     (${String(CORPUS_LOCK)}::bigint, ${String(RUN_LOCK.derive)}::bigint, ${String(RUN_LOCK.review)}::bigint)
 		   and l.granted`);
-	return rows[0]?.name ?? null;
+	return rows.map((row) => row.name);
 }
 
 /**
@@ -47,7 +53,7 @@ export async function corpusSessionOwner(
 async function reset(client: PoolClient): Promise<boolean> {
 	if (client.getTransactionStatus() !== "I") return false;
 	try {
-		await client.query(`select pg_advisory_unlock(${CORPUS_LOCK}::bigint)`);
+		await client.query("select pg_advisory_unlock_all()");
 		await client.query("discard temp");
 		await client.query("reset application_name");
 		return true;
@@ -62,16 +68,23 @@ async function reset(client: PoolClient): Promise<boolean> {
  */
 export async function acquireCorpusSession(
 	wait = false,
+	kind?: "sync" | "derive" | "review",
 ): Promise<CorpusSession | null> {
 	const client = await pool.connect();
+	let broken = false;
+	const locks =
+		kind === "derive" || kind === "review"
+			? [RUN_LOCK[kind], CORPUS_LOCK]
+			: [CORPUS_LOCK];
 	try {
-		if (wait) {
-			await client.query(`select pg_advisory_lock(${CORPUS_LOCK}::bigint)`);
-		} else {
-			const { rows } = await client.query<{ locked: boolean }>(
-				`select pg_try_advisory_lock(${CORPUS_LOCK}::bigint) as locked`,
-			);
-			if (!rows[0]?.locked) {
+		for (const key of locks) {
+			if (wait) await client.query(`select pg_advisory_lock(${key}::bigint)`);
+			else {
+				const { rows } = await client.query<{ locked: boolean }>(
+					`select pg_try_advisory_lock(${key}::bigint) as locked`,
+				);
+				if (rows[0]?.locked) continue;
+				await client.query("select pg_advisory_unlock_all()");
 				client.release();
 				return null;
 			}
@@ -81,9 +94,27 @@ export async function acquireCorpusSession(
 		client.release(true);
 		throw error;
 	}
+	async function writerLock(action: "lock" | "unlock") {
+		try {
+			await client.query(
+				`select pg_advisory_${action}(${CORPUS_LOCK}::bigint)`,
+			);
+		} catch (error) {
+			broken = true;
+			throw error;
+		}
+	}
 	return {
 		client,
+		outsideWriter: async (work) => {
+			await writerLock("unlock");
+			try {
+				return await work();
+			} finally {
+				await writerLock("lock");
+			}
+		},
 		// 收不了尾的连接销毁而不还回池里，销毁连接同时释放锁
-		release: async () => client.release(!(await reset(client))),
+		release: async () => client.release(broken || !(await reset(client))),
 	};
 }

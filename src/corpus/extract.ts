@@ -7,9 +7,8 @@
 import { z } from "zod";
 import { ENGAGEMENTS, type Engagement, isEngagement } from "#/lib/engagement";
 import { MAX_TAG_LEN, MAX_TERM_LEN, tag } from "#/lib/term";
-import { complete, extractModel, standardOf } from "#/server/chat";
+import { standardOf } from "./answer-standard";
 import type { ExperienceRow } from "./pipeline";
-import type { Report } from "./report";
 
 /** 一段最多保留的能力数，防止把描述逐句列成标签。 */
 const MAX_ITEMS = 30;
@@ -79,7 +78,7 @@ export const extraction = {
 	]),
 };
 
-/** 送给模型的那段话。它也是缓存的键：同一段话永远得到同一份抽取。 */
+/** 岗位、公司和描述的文字表示，用于标识模型回答的输入。 */
 export function promptInput(row: {
 	title: string;
 	company: string;
@@ -179,25 +178,4 @@ export function extractionOf(
 	if (!needsExtraction(row)) return { status: "skipped" };
 	if (payload == null) return { status: "failed" };
 	return { status: "done", value: conform(payload, row) };
-}
-
-/** 按入参顺序返回调用状态与抽取；验收和解析共用此入口。 */
-export async function extract(
-	rows: DeriveInput[],
-	report: Report,
-): Promise<ExtractionResult[]> {
-	const asked = rows.map((row) =>
-		needsExtraction(row) ? promptInput(row) : null,
-	);
-	const payloads = await complete(
-		extractModel(),
-		extraction.system,
-		extraction.schema,
-		asked.filter((text) => text !== null),
-		"抽取",
-		report,
-	);
-	return rows.map((row, index) =>
-		extractionOf(row, payloads.get(asked[index] ?? "")),
-	);
 }

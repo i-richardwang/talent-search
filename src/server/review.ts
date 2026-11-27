@@ -8,12 +8,15 @@ import "@tanstack/react-start/server-only";
 import {
 	agentJudge,
 	type Judge,
+	modelJudge,
 	openWords,
 	type Question,
 	type Submission,
 	submitJudgment,
+	submitPlacement,
 } from "#/corpus/judgment";
-import { GUIDE, guideIdentity } from "#/corpus/vocabulary";
+import { GUIDE, guideIdentity } from "#/corpus/review-guide";
+
 import { pool } from "#/db";
 import { reviewConfigured as chatReviewConfigured } from "./chat";
 import { readBody } from "./request-body";
@@ -23,7 +26,7 @@ const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
 
 /** 一份判定最大多少字节。判定方只回答一个词，超出这个数的不是判定。 */
-const MAX_BODY = 64 * 1024;
+export const REVIEW_BODY_BYTES = 64 * 1024;
 
 function token(): string {
 	return process.env.REVIEW_TOKEN?.trim() ?? "";
@@ -52,13 +55,25 @@ export function reviewJudge(): Judge {
  * 路由据此区分接口不可用（404）与凭据错误（401）。
  */
 export function configured(): boolean {
-	return reviewJudge() === "external" && token().length > 0;
+	const secret = token();
+	return (
+		reviewJudge() === "external" &&
+		secret.length > 0 &&
+		secret !== process.env.DERIVE_TOKEN?.trim()
+	);
 }
 
 export function authorized(request: Request): boolean {
 	const header = request.headers.get("authorization") ?? "";
 	const expected = `Bearer ${token()}`;
 	return configured() && header === expected;
+}
+
+export function rejectReview(request: Request) {
+	if (!configured())
+		return Response.json({ error: "not found" }, { status: 404 });
+	if (!authorized(request))
+		return Response.json({ error: "unauthorized" }, { status: 401 });
 }
 
 /** 一个待判的词在响应里的样子：它和人数，加上词表里最接近的几个参考词。 */
@@ -72,12 +87,15 @@ type PendingView = Question & {
  * 未判定的词按收集顺序返回，可被多个读者取走，接受首份提交。
  * `guide` 是判定标准，和自带模型读的是同一份。
  */
-export async function pending(limit: number): Promise<{
+export async function pending(
+	limit = DEFAULT_LIMIT,
+	skipped?: number[],
+): Promise<{
 	words: PendingView[];
 	guide: { identity: string; text: string };
 }> {
 	const identity = guideIdentity();
-	const rows = await openWords(pool, identity, limit);
+	const rows = await openWords(pool, identity, limit, skipped);
 	return {
 		words: rows.map((one) => ({
 			collectedAt: one.collectedAt.toISOString(),
@@ -100,15 +118,18 @@ export function limitOf(url: string): number {
 
 /** 提交的结果：`Submission` 加上两种形状不对。 */
 type Submitted =
-	| { ok: true; submission: Submission }
+	| { ok: true; submission: Submission | "invalid" }
 	| { ok: false; why: string };
 
 /**
  * 校验请求大小、标准身份、判定方和判定是不是一个对象，原话原样保存。
  * 内容按当前标准在整理任务生效时校验。
  */
-export async function submit(request: Request): Promise<Submitted> {
-	const raw = await readBody(request, MAX_BODY);
+export async function submit(
+	request: Request,
+	schedule?: () => Promise<unknown>,
+): Promise<Submitted> {
+	const raw = await readBody(request, REVIEW_BODY_BYTES);
 	if (raw === null) return { ok: false, why: "这份判定太大" };
 	let body: unknown;
 	try {
@@ -116,6 +137,23 @@ export async function submit(request: Request): Promise<Submitted> {
 	} catch {
 		return { ok: false, why: "这份判定不是 JSON" };
 	}
+	return recordDecision(body, submitJudgment, schedule);
+}
+
+export function submitReviewTool(
+	body: unknown,
+	model?: string,
+	schedule?: () => Promise<unknown>,
+) {
+	return recordDecision(body, submitPlacement, schedule, model);
+}
+
+async function recordDecision(
+	body: unknown,
+	write: typeof submitPlacement,
+	schedule?: () => Promise<unknown>,
+	builtinModel?: string,
+): Promise<Submitted> {
 	if (typeof body !== "object" || body === null)
 		return { ok: false, why: "这份判定不是 JSON" };
 	const {
@@ -127,7 +165,7 @@ export async function submit(request: Request): Promise<Submitted> {
 	if (!Number.isInteger(id)) return { ok: false, why: "缺 id" };
 	if (typeof identity !== "string" || !/^[a-f0-9]{64}$/.test(identity))
 		return { ok: false, why: "缺 guideIdentity" };
-	const name = agentJudge(judge);
+	const name = builtinModel ? modelJudge(builtinModel) : agentJudge(judge);
 	if (!name)
 		return {
 			ok: false,
@@ -140,14 +178,33 @@ export async function submit(request: Request): Promise<Submitted> {
 	)
 		return { ok: false, why: "judgment 不是对象" };
 	if (identity !== guideIdentity()) return { ok: true, submission: "missing" };
-	return {
-		ok: true,
-		submission: await submitJudgment(
-			pool,
-			id as number,
-			identity,
-			name,
-			judgment,
-		),
-	};
+	const submission = await write(pool, id as number, identity, name, judgment);
+	if (submission === "accepted" && schedule) {
+		try {
+			await schedule();
+		} catch (error) {
+			console.error("判定已接收，立即整理调度失败：", error);
+		}
+	}
+	return { ok: true, submission };
+}
+
+export function reviewReceipt(result: Submitted) {
+	if (!result.ok) return { status: "invalid" as const, error: result.why };
+	switch (result.submission) {
+		case "accepted":
+			return { accepted: true as const };
+		case "invalid":
+			return {
+				status: result.submission,
+				error: "判定不符合当前词和参考词的指南",
+			};
+		case "missing":
+			return {
+				status: result.submission,
+				error: "这个词不在队列里，或者判定标准已经更新",
+			};
+		case "taken":
+			return { status: result.submission, error: "这个词已经有人判过了" };
+	}
 }

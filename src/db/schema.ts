@@ -610,7 +610,7 @@ export const embeddingCache = pgTable(
 	],
 );
 
-/** 聊天完成缓存。identity 包含模型、提示词和回答 schema；payload 保留未经领域校验的原话。 */
+/** 解析模型回答缓存。identity 包含模型、提示词和回答形状，payload 是工具接收的回答。 */
 export const completionCache = pgTable(
 	"completion_cache",
 	{
@@ -621,7 +621,7 @@ export const completionCache = pgTable(
 	(t) => [primaryKey({ columns: [t.identity, t.textSha] })],
 );
 
-/** 外部解析共用同一输入的一份结果；原文从仍在库里的经历读取。 */
+/** 内置和外部解析共用同一输入的一份结果；原文从仍在库里的经历读取。 */
 export const deriveRequest = pgTable(
 	"derive_request",
 	{

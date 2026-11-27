@@ -10,7 +10,7 @@ delete process.env.EMBED_BASE_URL;
 
 const { derive } = await import("#/corpus/derive");
 const { review } = await import("#/corpus/review");
-const { guideIdentity } = await import("#/corpus/vocabulary");
+const { guideIdentity } = await import("#/corpus/review-guide");
 const { pool } = await import("#/db");
 
 test("解析不需要嵌入端点", async () => {
@@ -28,7 +28,11 @@ test("解析不需要嵌入端点", async () => {
 	try {
 		assert.deepEqual(
 			await derive(
-				{ client, release: async () => client.release() },
+				{
+					client,
+					outsideWriter: (work) => work(),
+					release: async () => client.release(),
+				},
 				() => {},
 				10_000,
 			),
@@ -61,7 +65,12 @@ test("整理说出没法收集，队列里判过的词照常生效", async () =>
 		[guideIdentity()],
 	);
 	const said: string[] = [];
-	await review(pool, (line) => said.push(line), "external", null);
+	await review(
+		{ client: pool, outsideWriter: (work) => work() },
+		(line) => said.push(line),
+		"external",
+		null,
+	);
 	assert.match(said.join("\n"), /未配置嵌入端点/);
 	const { rows } = await pool.query<{ word: string; canonical: string }>(
 		"select word, canonical from term order by word",

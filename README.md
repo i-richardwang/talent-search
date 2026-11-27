@@ -105,7 +105,7 @@ bun run auth:user enable --username hr_user
 |---|---|---|
 | 查询理解 | 用户输入、当前条件、工具查到的人数与人才库里的写法（说法、公司、部门、学校），以及要读的候选经历：公司或部门、序列、岗位、技能和简历原文。评分请求只含判据和已经确认符合的经历文字。以上请求均不附姓名和工号 | 只有关键词搜索 |
 | 抽取与对齐 | 入职前岗位、公司和描述 | 内置模式缺少模型配置时使用原文，外部模式从接口接收结果 |
-| 词表整理 | 短说法与人数 | `REVIEW_JUDGE=off` 时不运行 |
+| 词表整理 | 待判词、参考词及其人数 | `REVIEW_JUDGE=off` 时不运行 |
 | 嵌入 | 进词表的短说法 | 整理不收集要判的词 |
 
 真实员工数据、导出结果和真实验收用例不得进入版本库。
@@ -158,6 +158,39 @@ REVIEW_TOKEN=...        # external 模式必需
 
 `judgment` 是 `why`、`kind` 与 `target` 三项，均为字符串：`kind` 取「同一件事」「属于」「自成一项」「不是能力」之一；`target` 在同一件事时是一个参考词，在属于时是更宽的词（参考词或判定方起的名字），其余两种为空字符串。缺字段不算有效判定。请求正文最多 64 KiB，按 UTF-8 字节计算。接口只保存判定原话，整理任务在写者锁内校验并生效；它不允许直接修改词表或经历边。请求封装格式错误返回 400，凭据错误返回 401，不可用、词不在队列里或判定标准已更新返回 404，重复提交返回 409。
 
+## 内置和外部 agent 通过 MCP 处理解析和整理
+
+`DERIVE_MODE=model` 和 `REVIEW_JUDGE=model` 使用应用内置的 agent。任务收集待办后，模型调用 `derive_list` 读取经历、标准和回答格式，调用 `derive_submit` 提交抽取或对齐结果。整理模型用 `review_list` 读取词和参考词，用 `review_submit` 逐词提交判定。每批独立对话，模型能根据工具回执修正解析答案。只有工具接收的答案才计入进度，任务中断后下一轮从剩下的待办继续。
+
+内置客户端通过进程内的 Streamable HTTP 请求调用同一套 MCP 工具，后台任务和 `bun run derive` 都可直接运行。模型端点须支持 OpenAI 兼容的多轮工具调用，包括 `tools`、`tool_choice=required` 和工具返回消息。抽取与对齐端点会收到当批岗位、公司和经历描述，整理端点会收到词、人数和参考词。部署方须选择允许接收这些数据的端点。
+
+模型作答期间释放语料写者锁。工具只保存队列答案，解析和整理任务拿到写者锁后才让结果生效。切换内置和外部模式时，相同问题已接收的答案继续有效。
+
+### 配置外部 agent
+
+应用通过 **Streamable HTTP** 提供两个 MCP 连接。客户端直接连接部署地址，在每个请求的 `Authorization` 头发送对应的 Bearer 凭据。只做词表整理的 agent 配置第二个连接即可；同一个 agent 需要两组工具时配置两个连接。
+
+| MCP 地址（相对于 `BETTER_AUTH_URL`） | 应用端配置 | 提供的工具 |
+|---|---|---|
+| `/api/mcp/derive` | `DERIVE_MODE=external` 和 `DERIVE_TOKEN` | `derive_list`、`derive_submit` |
+| `/api/mcp/review` | `REVIEW_JUDGE=external` 和 `REVIEW_TOKEN` | `review_list`、`review_submit` |
+
+例如应用在 `http://localhost:3100` 运行时，解析连接的 URL 为 `http://localhost:3100/api/mcp/derive`，请求头为 `Authorization: Bearer <外部解析凭据>`。远程部署使用应用的 HTTPS 地址，通过客户端的密钥配置传入凭据。反向代理须保留对外的 Host 并透传 SSE 响应流。能读取经历的 agent、它使用的模型和会话记录均须处于允许处理简历原文的范围内。
+
+以 Codex CLI 为例，在运行客户端的环境中提供相应的令牌，再添加需要的连接。下列命令按环境变量名引用凭据。[Codex MCP 配置文档](https://developers.openai.com/codex/mcp/)
+
+```bash
+codex mcp add talent-derive --url http://localhost:3100/api/mcp/derive --bearer-token-env-var DERIVE_TOKEN
+codex mcp add talent-review --url http://localhost:3100/api/mcp/review --bearer-token-env-var REVIEW_TOKEN
+```
+
+解析和整理任务负责准备待办，词表整理需要嵌入端点来收集待判词。MCP 单次请求（含协议字段）上限分别为 512 KiB 和 64 KiB。连接后可以直接交代以下任务。
+
+- “把当前待处理的入职前经历做完能力抽取和序列对齐。” Agent 分别用 `derive_list` 取 `extract` 和 `align`，按各批的说明和格式作答，用 `derive_submit` 交回，逐项核对回执，再取下一批。
+- “按当前指南判完待整理的词。” Agent 用 `review_list` 取词，按 `guide` 判断，用 `review_submit` 逐词交回。回执中的 `taken` 表示已有判定，`missing` 表示问题已经失效。收到 `invalid` 时，可按指南修正后再交。
+
+某一类取到空列表表示当下没有可领的题。应用随后运行解析、整理任务，让收到的结果生效。关闭自动解析时，可在任务页运行解析。
+
 ## 配置
 
 配置放在 `.env.local` 或运行环境中。完整示例见 [.env.example](.env.example)。
@@ -167,9 +200,9 @@ REVIEW_TOKEN=...        # external 模式必需
 | `DATABASE_URL` | 是 | Postgres 17 连接串 |
 | `EMBED_BASE_URL` / `EMBED_MODEL` / `EMBED_SPACE_ID` | 否 | 嵌入端点、模型与向量缓存的空间身份；只有词表整理找参考词用，不配时整理不收集要判的词 |
 | `LLM_BASE_URL` / `LLM_MODEL` | 否 | 查询理解端点与模型，须支持工具调用；不配时只有关键词搜索。一轮要读上千段经历，用不带思考的快模型（带思考的模型设 `LLM_ENABLE_THINKING=false`） |
-| `EXTRACT_BASE_URL` / `EXTRACT_MODEL` | 否 | 抽取与模型整理的聊天端点，对齐默认沿用 |
+| `EXTRACT_BASE_URL` / `EXTRACT_MODEL` | 否 | 支持工具调用的抽取与词表整理端点，对齐默认沿用 |
 | `ALIGN_MODEL` | 否 | 序列对齐模型，默认使用 `EXTRACT_MODEL` |
-| `ALIGN_BASE_URL` / `ALIGN_API_KEY` | 否 | 对齐专用端点；未设地址时沿用抽取端点与密钥，设了地址则只使用对齐密钥 |
+| `ALIGN_BASE_URL` / `ALIGN_API_KEY` | 否 | 支持工具调用的对齐专用端点，未设地址时沿用抽取端点与密钥，设了地址则只使用对齐密钥 |
 | `REVIEW_MODEL` | 否 | 整理模型，默认使用 `EXTRACT_MODEL` |
 | `DERIVE_MODE` / `DERIVE_TOKEN` | 否 | 经历解析方式和独立的外部服务凭据 |
 | `REVIEW_JUDGE` / `REVIEW_TOKEN` | 否 | 判定方与外部接口凭据 |
@@ -195,6 +228,8 @@ bun run db:push
 bun run verify       # 格式、类型、测试、生产构建
 bun run ui           # 设计系统：浏览、调整设计令牌与组件，导出改动
 ```
+
+`eval:extract` 和 `eval:review` 各自创建临时语料库，用配置的模型运行正式 MCP 工具。每次调用独立评分，在命令退出时清理用例和回答。
 
 测试需要可连接的 Postgres 17，只用合成样例和进程内假模型，不会访问真实数据源或模型端点。
 

@@ -20,7 +20,11 @@ beforeEach(async () => {
 
 async function runDerive(budgetMs = 10_000) {
 	const client = await pool.connect();
-	const session = { client, release: async () => client.release() };
+	const session = {
+		client,
+		outsideWriter: <T>(work: () => Promise<T>) => work(),
+		release: async () => client.release(),
+	};
 	try {
 		return await derive(session, () => {}, budgetMs);
 	} finally {
@@ -149,6 +153,9 @@ test("答不出的段标准不变不再问，标准变了重新问", async () =>
 	assert.equal(asked, 1);
 	await db.execute(
 		sql`update experience set derived_identity = 'old-standard'`,
+	);
+	await db.execute(
+		sql`update derive_request set failed_version = 'old-standard' where failed_version is not null`,
 	);
 	restore = answerChat(() => {
 		asked++;
