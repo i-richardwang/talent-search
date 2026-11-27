@@ -27,9 +27,7 @@
  * 带「能力」「相关」「工作」的都不是招聘的人会点的）。验收共用生产的 `conform`、`place` 与 `rename`，
  * 从这个用例建立词表再判断带不带出。用例里的每个词都必须作答；任何一项失败均返回非零退出码。
  *
- * 合成用例进仓库（sample.json）；真实的词是从库里取的，不进版本库。自带模型作答时调用与整理
- * 判定相同的入口（`corpus/vocabulary.ts` 的 `askModel`）：当前提示词、`REVIEW_MODEL`、温度 0，
- * 回答进同一份缓存。
+ * 合成用例进仓库（sample.json）；真实的词是从库里取的，不进版本库。内置模型在独立语料库里使用整理 MCP 工具，各用例按相同的校验和生效规则计分。
  */
 
 import "@tanstack/react-start/server-only";
@@ -37,9 +35,9 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import type { Member, Question } from "#/corpus/judgment";
-import { askModel, GUIDE } from "#/corpus/vocabulary";
+import { GUIDE } from "#/corpus/review-guide";
 import { conform, place, rename, type Table } from "#/corpus/vocabulary-rules";
-import { pool } from "#/db";
+import { withEvaluation } from "./evaluation/database";
 
 type Case = {
 	name: string;
@@ -172,19 +170,10 @@ function answersFrom(file: string): (unknown | undefined)[][] {
 	);
 }
 
-/** 自带模型的回答：全部用例的词一次问完，再按用例切回去。 */
-async function answersFromModel(): Promise<(unknown | undefined)[][]> {
-	const questions = cases.map(questionsOf);
-	const payloads = await askModel(questions.flat(), (line) =>
-		console.error(line),
+function answersFromModel() {
+	return withEvaluation(({ evaluateReview }) =>
+		evaluateReview(cases.map(questionsOf), console.error),
 	);
-	const starts = questions.map((_, index) =>
-		questions.slice(0, index).reduce((sum, one) => sum + one.length, 0),
-	);
-	return questions.map((one, index) => {
-		const start = starts[index] ?? 0;
-		return payloads.slice(start, start + one.length);
-	});
 }
 
 /** 招聘的人不会点的归属名：太长，或者是「……能力」「……相关」这种概括。 */
@@ -217,82 +206,74 @@ let dropped = 0;
 let unclickable = 0;
 const names = new Set<string>();
 let failed = 0;
-try {
-	const answers = flags.answers
-		? answersFrom(flags.answers)
-		: await answersFromModel();
-	for (const [index, c] of cases.entries()) {
-		const problems: string[] = [];
-		const table: Table = new Map();
-		// 用例里一个词的人数当作写了这个写法的人，名字和整理时一样按它定
-		const writers = new Map(c.words.map((one) => [one.word, one.people]));
-		const unanswered: string[] = [];
-		for (const [at, question] of questionsOf(c).entries()) {
-			const verdict = conform(
-				answers[index]?.[at],
-				question.word,
-				question.near.map((one) => one.word),
-			);
-			if (verdict) place(table, question.word, verdict, new Date());
-			else unanswered.push(question.word);
-		}
-		rename(table, writers);
-		if (unanswered.length) problems.push(`漏答 ${unanswered.join("、")}`);
-		const lost = c.found.filter(([q, w]) => !carries(table, q, w));
-		found += c.found.length;
-		missed += lost.length;
-		if (lost.length)
-			problems.push(
-				`漏人 ${lost.map(([q, w]) => `点${q}不带${w}`).join("、")}`,
-			);
-		const wrong = c.notFound.filter(([q, w]) => carries(table, q, w));
-		notFound += c.notFound.length;
-		mixed += wrong.length;
-		if (wrong.length)
-			problems.push(
-				`混人 ${wrong.map(([q, w]) => `点${q}带出${w}`).join("、")}`,
-			);
-		const gone = c.words
-			.map((one) => one.word)
-			.filter((word) => table.get(word)?.excluded);
-		const stayed = c.excluded.filter((word) => !gone.includes(word));
-		kept += stayed.length;
-		if (stayed.length) problems.push(`没删掉 ${stayed.join("、")}`);
-		const lostWords = gone.filter((word) => !c.excluded.includes(word));
-		dropped += lostWords.length;
-		if (lostWords.length) problems.push(`误删 ${lostWords.join("、")}`);
-		const bad: string[] = [];
-		for (const decision of table.values()) {
-			const parent = decision.parent;
-			if (parent === null) continue;
-			names.add(parent);
-			if ([...parent].length > 8 || UNCLICKABLE.test(parent)) bad.push(parent);
-		}
-		unclickable += bad.length;
-		if (bad.length) problems.push(`归属名不像能力词 ${bad.join("、")}`);
-		const said = c.words
-			.map(({ word }) => {
-				if (unanswered.includes(word)) return `${word}（漏答）`;
-				const decision = table.get(word);
-				if (decision?.excluded) return `${word}✗`;
-				const canonical = decision?.canonical ?? word;
-				const parent = table.get(canonical)?.parent;
-				return `${word}${canonical === word ? "" : `=${canonical}`}${parent ? `∈${parent}` : ""}`;
-			})
-			.join(" | ");
-		console.log(`${problems.length ? "✗" : "✓"} ${c.name}  ${said}`);
-		if (problems.length) {
-			failed++;
-			console.log(`   ${problems.join("；")}`);
-		}
+const answers = flags.answers
+	? answersFrom(flags.answers)
+	: await answersFromModel();
+for (const [index, c] of cases.entries()) {
+	const problems: string[] = [];
+	const table: Table = new Map();
+	// 用例里一个词的人数当作写了这个写法的人，名字和整理时一样按它定
+	const writers = new Map(c.words.map((one) => [one.word, one.people]));
+	const unanswered: string[] = [];
+	for (const [at, question] of questionsOf(c).entries()) {
+		const verdict = conform(
+			answers[index]?.[at],
+			question.word,
+			question.near.map((one) => one.word),
+		);
+		if (verdict) place(table, question.word, verdict, new Date());
+		else unanswered.push(question.word);
 	}
-	const expected = cases.reduce((sum, c) => sum + c.excluded.length, 0);
-	console.log(
-		`\n混人 ${mixed}/${notFound}，漏人 ${missed}/${found}，没删掉 ${kept}/${expected}，误删 ${dropped}，` +
-			`归属名不像能力词 ${unclickable}，起了 ${names.size} 个不同的归属名，` +
-			`${failed} 个用例没过，共 ${cases.length} 个`,
-	);
-	if (failed > 0) process.exitCode = 1;
-} finally {
-	await pool.end();
+	rename(table, writers);
+	if (unanswered.length) problems.push(`漏答 ${unanswered.join("、")}`);
+	const lost = c.found.filter(([q, w]) => !carries(table, q, w));
+	found += c.found.length;
+	missed += lost.length;
+	if (lost.length)
+		problems.push(`漏人 ${lost.map(([q, w]) => `点${q}不带${w}`).join("、")}`);
+	const wrong = c.notFound.filter(([q, w]) => carries(table, q, w));
+	notFound += c.notFound.length;
+	mixed += wrong.length;
+	if (wrong.length)
+		problems.push(`混人 ${wrong.map(([q, w]) => `点${q}带出${w}`).join("、")}`);
+	const gone = c.words
+		.map((one) => one.word)
+		.filter((word) => table.get(word)?.excluded);
+	const stayed = c.excluded.filter((word) => !gone.includes(word));
+	kept += stayed.length;
+	if (stayed.length) problems.push(`没删掉 ${stayed.join("、")}`);
+	const lostWords = gone.filter((word) => !c.excluded.includes(word));
+	dropped += lostWords.length;
+	if (lostWords.length) problems.push(`误删 ${lostWords.join("、")}`);
+	const bad: string[] = [];
+	for (const decision of table.values()) {
+		const parent = decision.parent;
+		if (parent === null) continue;
+		names.add(parent);
+		if ([...parent].length > 8 || UNCLICKABLE.test(parent)) bad.push(parent);
+	}
+	unclickable += bad.length;
+	if (bad.length) problems.push(`归属名不像能力词 ${bad.join("、")}`);
+	const said = c.words
+		.map(({ word }) => {
+			if (unanswered.includes(word)) return `${word}（漏答）`;
+			const decision = table.get(word);
+			if (decision?.excluded) return `${word}✗`;
+			const canonical = decision?.canonical ?? word;
+			const parent = table.get(canonical)?.parent;
+			return `${word}${canonical === word ? "" : `=${canonical}`}${parent ? `∈${parent}` : ""}`;
+		})
+		.join(" | ");
+	console.log(`${problems.length ? "✗" : "✓"} ${c.name}  ${said}`);
+	if (problems.length) {
+		failed++;
+		console.log(`   ${problems.join("；")}`);
+	}
 }
+const expected = cases.reduce((sum, c) => sum + c.excluded.length, 0);
+console.log(
+	`\n混人 ${mixed}/${notFound}，漏人 ${missed}/${found}，没删掉 ${kept}/${expected}，误删 ${dropped}，` +
+		`归属名不像能力词 ${unclickable}，起了 ${names.size} 个不同的归属名，` +
+		`${failed} 个用例没过，共 ${cases.length} 个`,
+);
+if (failed > 0) process.exitCode = 1;

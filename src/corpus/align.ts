@@ -4,9 +4,8 @@
  */
 
 import { z } from "zod";
-import { alignModel, complete, standardOf } from "#/server/chat";
-import { type DeriveInput, promptInput } from "./extract";
-import type { Report } from "./report";
+import { standardOf } from "./answer-standard";
+import type { DeriveInput } from "./extract";
 
 const SCHEMA = z.object({ seq: z.string() });
 
@@ -60,42 +59,4 @@ export function alignmentOf(
 	if (!tree.length || row.kind !== "external" || row.unemployed)
 		return ["", ""];
 	return conform(payload, tree);
-}
-
-/**
- * 按输入顺序返回推断序列；无需对齐为两级均空，无法判断为 null。
- *
- * 待业段没有岗位可对，不去问。序列树写在提示词里，也就在缓存的键里：树变了，
- * 旧回答是对着另一棵树给的，自然失效。树是空的（语料里没有登记的序列）就
- * 什么都对不上，返回两级均空。
- */
-export async function align(
-	experience: DeriveInput[],
-	tree: SeqPair[],
-	report: Report,
-	spec = alignment(tree),
-): Promise<(SeqPair | null)[]> {
-	if (tree.length === 0) return experience.map(() => ["", ""]);
-
-	const asked = experience.map((row) =>
-		row.kind === "external" && !row.unemployed ? promptInput(row) : null,
-	);
-	const texts = asked.filter((text) => text !== null);
-	const payloads = await complete(
-		alignModel(),
-		spec.system,
-		spec.schema,
-		texts,
-		"对齐",
-		report,
-		(payload) => conform(payload, tree) !== null,
-		{ endpoint: "align" },
-	);
-
-	const out = experience.map((row, index) =>
-		alignmentOf(row, tree, payloads.get(asked[index] ?? "")),
-	);
-	const aligned = out.filter((pair) => pair?.[0]).length;
-	report(`  入职前 ${texts.length} 段里 ${aligned} 段有推断序列`);
-	return out;
 }

@@ -4,159 +4,18 @@
  * 验证机制，真实模型的语义质量由 eval 验收。测试运行不读取真实人才数据或模型密钥。
  */
 import { createServer } from "node:http";
-import { type SQL, sql } from "drizzle-orm";
-import {
-	getTableConfig,
-	getViewConfig,
-	PgDialect,
-	type PgTable,
-} from "drizzle-orm/pg-core";
-import { Pool } from "pg";
+import { sql } from "drizzle-orm";
+import { Client } from "pg";
+import type { Member, Question } from "#/corpus/judgment";
 import { phrasesOf } from "#/corpus/route-texts";
-import {
-	accountScope,
-	auditEvent,
-	authAccount,
-	authSession,
-	authUser,
-	authVerification,
-	CATALOG_VIEWS,
-	company,
-	companyAlias,
-	completionCache,
-	deriveRequest,
-	deriveSchedule,
-	EMBED_DIM,
-	embeddingCache,
-	employee,
-	employeeRecord,
-	experience,
-	experienceNext,
-	experiencePhrase,
-	experiencePhraseNext,
-	experienceVerdict,
-	industry,
-	phrase,
-	recordStream,
-	reviewWord,
-	SCOPED_TABLES,
-	scale,
-	scopeMember,
-	searchTurn,
-	sequenceCatalog,
-	taskRun,
-	term,
-	termInUse,
-	visibleEmployee,
-} from "#/db/schema";
+import { accountScope, authUser, EMBED_DIM } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
 import { compileConditions } from "#/search/compile";
 import type { QueryCondition } from "#/search/query";
 import { parseQuery } from "#/search/query-syntax";
 import type { TraceStep } from "#/search/trace";
 import type { Batch, Judge, RecordStep } from "#/server/reading";
-import { catalogOf, tempSchema } from "./temp-schema";
-
-/**
- * 每个测试文件使用进程号和随机值组成的临时 schema。
- * bun test --parallel 隔离模块与环境，但多个文件可共用同一 worker 进程。
- */
-const SCHEMA = tempSchema();
-
-/** 这个测试文件的数据目录（`schema.ts` 的 `catalog`）：视图建在这里，指向本文件的表。 */
-const CATALOG = catalogOf(SCHEMA);
-
-/** Postgres 把更长的名字静默截短；截短后和 schema 里的名字对不上，db:push 每次都会删了重建。 */
-const NAME_MAX_BYTES = 63;
-
-function ddl(schema: string, table: PgTable) {
-	const {
-		name,
-		columns,
-		checks,
-		foreignKeys,
-		indexes,
-		uniqueConstraints,
-		primaryKeys,
-	} = getTableConfig(table);
-	for (const named of [
-		...checks.map((c) => c.name),
-		...foreignKeys.map((f) => f.getName()),
-		...indexes.map((i) => i.config.name ?? ""),
-		...uniqueConstraints.map((u) => u.getName() ?? ""),
-	])
-		if (Buffer.byteLength(named) > NAME_MAX_BYTES)
-			throw new Error(
-				`${name} 的约束或索引名超过 ${NAME_MAX_BYTES} 字节：${named}`,
-			);
-	const dialect = new PgDialect();
-	const cols = columns.map((c) => {
-		const parts = [`"${c.name}"`, c.getSQLType()];
-		if (c.primary) parts.push("primary key");
-		// 约束名照 drizzle 的默认（`<表>_<列>_unique`），测试才能按名字识别它
-		if (c.isUnique)
-			parts.push(
-				`constraint "${c.uniqueName ?? `${name}_${c.name}_unique`}" unique`,
-			);
-		if (c.notNull && !c.primary) parts.push("not null");
-		if (c.generatedIdentity)
-			parts.push(
-				`generated ${c.generatedIdentity.type === "always" ? "always" : "by default"} as identity`,
-			);
-		if (c.generated) {
-			// 库自己算的列（experience.content_key）。表达式是 SQL 或字符串，照 drizzle 的形态取
-			const as =
-				typeof c.generated.as === "function"
-					? c.generated.as()
-					: c.generated.as;
-			const expression =
-				typeof as === "string" ? as : dialect.sqlToQuery(as as SQL).sql;
-			parts.push(`generated always as (${expression}) stored`);
-		}
-		if (c.default !== undefined) {
-			// 三种形态：字符串字面量、SQL 表达式（defaultNow）、jsonb 的对象默认值
-			const d =
-				typeof c.default === "string"
-					? `'${c.default}'`
-					: typeof c.default === "object" && c.default !== null
-						? "queryChunks" in c.default
-							? dialect.sqlToQuery(c.default as SQL).sql
-							: `'${JSON.stringify(c.default)}'`
-						: c.default;
-			parts.push(`default ${d}`);
-		}
-		return parts.join(" ");
-	});
-	const constraints = checks.map((c) => {
-		const expression = dialect
-			.sqlToQuery(c.value)
-			.sql.replaceAll(`"${name}".`, "");
-		return `constraint "${c.name}" check (${expression})`;
-	});
-	for (const pk of primaryKeys) {
-		const cols = pk.columns.map((c) => `"${c.name}"`).join(", ");
-		constraints.push(`primary key (${cols})`);
-	}
-	// 表级 unique（列上那些由 `c.isUnique` 建）
-	for (const u of uniqueConstraints) {
-		const cols = u.columns.map((c) => `"${c.name}"`).join(", ");
-		constraints.push(`constraint "${u.name}" unique (${cols})`);
-	}
-	for (const foreignKey of foreignKeys) {
-		const reference = foreignKey.reference();
-		const foreignName = getTableConfig(reference.foreignTable).name;
-		const local = reference.columns
-			.map((column) => `"${column.name}"`)
-			.join(", ");
-		const foreign = reference.foreignColumns
-			.map((column) => `"${column.name}"`)
-			.join(", ");
-		constraints.push(
-			`constraint "${foreignKey.getName()}" foreign key (${local}) references ${schema}."${foreignName}" (${foreign}) on delete ${foreignKey.onDelete ?? "no action"}`,
-		);
-	}
-	return `create table ${schema}."${name}" (${[...cols, ...constraints].join(", ")})`;
-}
+import { isolatedDatabase } from "../scripts/evaluation/database";
 
 /**
  * 假嵌入：字符袋。每个字占一个维度（按出现顺序分配），向量归一化，
@@ -195,10 +54,11 @@ function fakeFits(criterion: string, text: string): boolean {
 	return !has("不算") && has("符合");
 }
 
-let embeddingAnswer = fakeEmbedding;
+let embeddingAnswer: (text: string) => number[] | Promise<number[]> =
+	fakeEmbedding;
 
 /** 设置嵌入端点的输出，用来验证端点漂移的拒绝行为。 */
-export function answerEmbedding(answer: (text: string) => number[]) {
+export function answerEmbedding(answer: typeof embeddingAnswer) {
 	embeddingAnswer = answer;
 	return () => {
 		embeddingAnswer = fakeEmbedding;
@@ -376,6 +236,11 @@ function baseIn(prompt: string): unknown[] {
 }
 
 /** 整理发给判定方的一段提问里要判的是哪个词。 */
+function promptOf(question: Question): string {
+	const line = (one: Member) => `${one.word}（${one.people} 人）`;
+	return `要判的词：${line(question)}\n参考词：\n${question.near.map(line).join("\n")}`;
+}
+
 export function askedWord(prompt: string): string {
 	return /^要判的词：(.+)（\d+ 人）$/m.exec(prompt)?.[1] ?? "";
 }
@@ -405,6 +270,20 @@ export function answerChat(
 	chatAnswer = fn;
 	return () => {
 		chatAnswer = null;
+	};
+}
+
+type CorpusStep = (
+	replies: Record<string, unknown>[],
+	kind: "extract" | "align" | "review",
+) => string | [string, unknown][] | undefined;
+let corpusStep: CorpusStep | undefined;
+
+/** 让合成处理员在指定步骤自行选择工具，或只回答一段文字。 */
+export function answerCorpusStep(step: CorpusStep) {
+	corpusStep = step;
+	return () => {
+		corpusStep = undefined;
 	};
 }
 
@@ -504,7 +383,6 @@ function startModelServer() {
 				const users = messages
 					.filter((m) => m.role === "user")
 					.map((m) => m.content ?? "");
-				const system = messages.find((m) => m.role === "system")?.content ?? "";
 				const reply = (message: Record<string, unknown>, finish: string) =>
 					json({
 						id: "fake",
@@ -532,6 +410,87 @@ function startModelServer() {
 						},
 						"tool_calls",
 					);
+				// 语料 agent 从工具结果读题，并以真正的 tool_calls 作答。
+				const deriveAgent = request.tools?.some(
+					(t) => t.function.name === "derive_list",
+				);
+				const reviewAgent = request.tools?.some(
+					(t) => t.function.name === "review_list",
+				);
+				if (deriveAgent || reviewAgent) {
+					const kind = reviewAgent
+						? "review"
+						: users.at(-1)?.includes("align")
+							? "align"
+							: "extract";
+					const replies = messages
+						.filter((m) => m.role === "tool")
+						.map((m) => JSON.parse(m.content ?? "null"));
+					const step = corpusStep?.(replies, kind);
+					if (step !== undefined) {
+						if (typeof step === "string")
+							reply({ role: "assistant", content: step }, "stop");
+						else calls(step);
+						return;
+					}
+					if (!replies.length) {
+						calls([
+							[
+								reviewAgent ? "review_list" : "derive_list",
+								reviewAgent ? {} : { kind },
+							],
+						]);
+						return;
+					}
+					const batch = replies[0];
+					if (!chatAnswer) {
+						res.writeHead(400).end("假处理员没有设置回答");
+						return;
+					}
+					if (reviewAgent) {
+						const decisions: [string, unknown][] = [];
+						const retry = new Set(replies.slice(1).map((r) => r.retry));
+						for (const word of batch.words.filter(
+							(w: { id: number }) => replies.length === 1 || retry.has(w.id),
+						))
+							decisions.push([
+								"review_submit",
+								{
+									id: word.id,
+									guideIdentity: word.guideIdentity,
+									judge: "builtin",
+									judgment: await chatAnswer(
+										batch.guide.text,
+										promptOf(word),
+										request,
+									),
+								},
+							]);
+						calls(decisions);
+					} else {
+						const { promptInput } = await import("#/corpus/extract");
+						const results = [];
+						if (replies.length > 1) {
+							for (const item of replies.at(-1).results)
+								if (item.status === "invalid")
+									results.push({ id: item.id, unable: true });
+						} else {
+							for (const input of batch.inputs)
+								results.push({
+									id: input.id,
+									result: await chatAnswer(
+										batch.instructions,
+										promptInput(input),
+										request,
+									),
+								});
+						}
+						calls([
+							["derive_submit", { kind, standard: batch.standard, results }],
+						]);
+					}
+					return;
+				}
 				// 只给了交结论这一个工具：读一批经历的请求（`llm.ts` 的 `judgeSegments`），
 				// 这一批写在用户消息里
 				if (
@@ -597,16 +556,7 @@ function startModelServer() {
 					else calls([["submit", table]]);
 					return;
 				}
-				const prompt = users.at(-1);
-				const content =
-					prompt !== undefined && chatAnswer
-						? JSON.stringify(await chatAnswer(system, prompt, request))
-						: undefined;
-				if (content === undefined) {
-					res.writeHead(400).end("没有与这份提示词对应的假回答");
-					return;
-				}
-				reply({ role: "assistant", content }, "stop");
+				res.writeHead(400).end("没有匹配的工具调用");
 				return;
 			}
 			const { input } = JSON.parse(body) as { input: string | string[] };
@@ -614,11 +564,13 @@ function startModelServer() {
 			json({
 				object: "list",
 				model: "fake",
-				data: texts.map((t, index) => ({
-					object: "embedding",
-					index,
-					embedding: embeddingAnswer(t),
-				})),
+				data: await Promise.all(
+					texts.map(async (t, index) => ({
+						object: "embedding",
+						index,
+						embedding: await embeddingAnswer(t),
+					})),
+				),
 				usage: { prompt_tokens: 0, total_tokens: 0 },
 			});
 		});
@@ -668,105 +620,28 @@ export async function account(id: string, orgs: readonly string[]) {
  * 建立临时 schema 和合成端点，配置环境后才加载服务端单例。
  * 调用方必须 await setup() 后动态导入被测服务端模块；各文件使用 --parallel 隔离模块与环境。
  */
-export async function setup() {
+export async function setup({ corpusWriter = false } = {}) {
 	const base = process.env.DATABASE_URL;
 	if (!base)
 		throw new Error("DATABASE_URL 未配置，集成测试需要一个本地 Postgres 17");
 
-	const admin = new Pool({ connectionString: base });
-	await admin.query(`drop schema if exists ${SCHEMA} cascade`);
-	await admin.query(`create schema ${SCHEMA}`);
-	for (const t of [
-		authUser,
-		accountScope,
-		authSession,
-		authAccount,
-		authVerification,
-		employee,
-		experience,
-		sequenceCatalog,
-		phrase,
-		experiencePhrase,
-		experienceNext,
-		experiencePhraseNext,
-		searchTurn,
-		experienceVerdict,
-		auditEvent,
-		term,
-		reviewWord,
-		embeddingCache,
-		completionCache,
-		deriveRequest,
-		deriveSchedule,
-		taskRun,
-		recordStream,
-		scale,
-		employeeRecord,
-		industry,
-		company,
-		companyAlias,
-	])
-		await admin.query(ddl(SCHEMA, t));
-	await admin.query(
-		`insert into ${SCHEMA}.auth_user (id, name, email, username)
-		 values ($1, '合成账号', 'owner@users.invalid', 'synthetic.owner')`,
-		[OWNER],
-	);
-	await admin.query(
-		`insert into ${SCHEMA}.account_scope (user_id, org_path) values ($1, $2)`,
-		[OWNER, ORG],
-	);
-	// 视图里的表名不带 schema，建视图时按本文件的 schema 解析，绑定的就是本文件的表
-	await admin.query(`create schema ${CATALOG}`);
-	const viewClient = await admin.connect();
+	const isolated = await isolatedDatabase(base);
+	process.env.DATABASE_URL = isolated.url;
+	process.env.TALENT_CATALOG_SCHEMA = isolated.catalog;
+	const accountClient = new Client({ connectionString: isolated.url });
+	await accountClient.connect();
 	try {
-		await viewClient.query(`set search_path to ${SCHEMA}, public`);
-		const dialect = new PgDialect();
-		// 先建公共视图，读取策略和目录随后使用它们。
-		for (const view of [scopeMember, visibleEmployee]) {
-			const { name, query } = getViewConfig(view);
-			if (!query) throw new Error(`视图 ${name} 没有定义`);
-			await viewClient.query(
-				`create view ${SCHEMA}."${name}" as ${dialect.sqlToQuery(query).sql}`,
-			);
-		}
-		// 读取策略照 db:push 的样子建，不带条件：条件由 `db/snapshot.ts` 在第一次读之前写上，
-		// 和生产走同一条路
-		for (const t of SCOPED_TABLES) {
-			const { name, policies } = getTableConfig(t);
-			await viewClient.query(
-				`alter table ${SCHEMA}."${name}" enable row level security`,
-			);
-			for (const p of policies)
-				await viewClient.query(
-					`create policy "${p.name}" on ${SCHEMA}."${name}" for ${p.for} to ${String(p.to)}`,
-				);
-		}
-		for (const view of CATALOG_VIEWS) {
-			const { name, query } = getViewConfig(view);
-			if (!query) throw new Error(`目录视图 ${name} 没有定义`);
-			await viewClient.query(
-				`create view ${CATALOG}."${name}" as ${dialect.sqlToQuery(query).sql}`,
-			);
-		}
-		// 现在用着的词不在数据目录里，和表建在同一个 schema
-		const inUse = getViewConfig(termInUse);
-		if (!inUse.query) throw new Error(`视图 ${inUse.name} 没有定义`);
-		const invoker = inUse.with?.securityInvoker
-			? " with (security_invoker = true)"
-			: "";
-		await viewClient.query(
-			`create view ${SCHEMA}."${inUse.name}"${invoker} as ${dialect.sqlToQuery(inUse.query).sql}`,
+		await accountClient.query(
+			"insert into auth_user (id,name,email,username) values ($1,'合成账号','owner@users.invalid','synthetic.owner')",
+			[OWNER],
 		);
-		await viewClient.query("reset search_path");
+		await accountClient.query(
+			"insert into account_scope (user_id,org_path) values ($1,$2)",
+			[OWNER, ORG],
+		);
 	} finally {
-		viewClient.release();
+		await accountClient.end();
 	}
-	await admin.end();
-
-	const url = new URL(base);
-	url.searchParams.set("options", `-c search_path=${SCHEMA},public`);
-	process.env.DATABASE_URL = url.toString();
 
 	const modelServer = await startModelServer();
 	process.env.EMBED_BASE_URL = modelServer.url;
@@ -777,7 +652,6 @@ export async function setup() {
 	// 语料侧那三处聊天调用也指向同一台假端点，回答由 `answerChat` 设置
 	process.env.EXTRACT_BASE_URL = modelServer.url;
 	process.env.EXTRACT_MODEL = "fake";
-	process.env.EXTRACT_STRUCTURED_OUTPUTS = "true";
 	delete process.env.ALIGN_MODEL;
 	delete process.env.ALIGN_BASE_URL;
 	delete process.env.ALIGN_API_KEY;
@@ -785,19 +659,26 @@ export async function setup() {
 	// 判定默认交给自带模型：测试外部判定的用例自己开启外部模式
 	process.env.REVIEW_JUDGE = "model";
 	delete process.env.REVIEW_TOKEN;
-	process.env.EXTRACT_CONCURRENCY = "2";
 	process.env.TALENT_SOURCE = "csv-dir";
 	process.env.TALENT_CSV_DIR = "";
-	process.env.TALENT_CATALOG_SCHEMA = CATALOG;
 
+	// 写者锁属于整个数据库。要验证拿锁、放锁的测试文件即使各用一个 schema 也要排队。
+	const writer = corpusWriter ? new Client({ connectionString: base }) : null;
+	if (writer) {
+		await writer.connect();
+		await writer.query(
+			"select pg_advisory_lock(hashtext('talent-search'), hashtext('test-writers'))",
+		);
+	}
 	return async function teardown() {
 		const { pool } = await import("#/db");
-		await pool.end();
+		try {
+			await pool.end();
+		} finally {
+			await writer?.end();
+		}
 		await modelServer.close();
-		const a = new Pool({ connectionString: base });
-		await a.query(`drop schema if exists ${CATALOG} cascade`);
-		await a.query(`drop schema if exists ${SCHEMA} cascade`);
-		await a.end();
+		await isolated.close();
 	};
 }
 

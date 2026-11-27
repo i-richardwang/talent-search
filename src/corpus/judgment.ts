@@ -1,15 +1,12 @@
 /**
- * 整理的判定队列：收集、取走、提交判定，以及生效时取回判定结果。判定的标准、
- * 校验与写表在 `vocabulary.ts`；整轮的顺序在 `review.ts`。
- *
- * 队列里一行是一个要判的词和它的参考词，等到有人判、判定生效为止。队列只认一件事：
- * 一份标准下的这个词、谁判的、判成什么。它不读判定结果的内容——什么算一条有效的判断
- * 是生效时的事；标准变化时队列里的行整体作废，那些词仍是没判过的，下一轮按新标准重新收集。
+ * 一行队列保存一个词、出题时的参考词和首份判定。工具提交时按这道题核对判定，
+ * 整理任务在写者锁内应用。指南变化后重新收集待判词。
  */
 
 import "@tanstack/react-start/server-only";
 import type { Report } from "./report";
 import type { CorpusClient } from "./session";
+import { conform } from "./vocabulary-rules";
 
 export type Judge = "model" | "external" | "off";
 
@@ -35,12 +32,6 @@ export type Member = { word: string; people: number };
 
 /** 一个要判的词，和词表里与它写法最接近的几个参考词。 */
 export type Question = Member & { near: Member[] };
-
-/** 一个要判的词发给判定方时长的样子。人数就在行上，不另查一遍语料。 */
-export function promptOf(question: Question): string {
-	const line = (one: Member) => `${one.word}（${one.people} 人）`;
-	return `要判的词：${line(question)}\n参考词：\n${question.near.map(line).join("\n")}`;
-}
 
 /** 队列里的一个待判的词。 */
 type Pending = Question & {
@@ -76,25 +67,19 @@ function pending(row: Row): Pending {
 	};
 }
 
-/**
- * 队列里还等着人判的词，最早收集的在前。
- *
- * 两个读者：外部判定方取走（`src/server/review.ts`），以及自带模型判——模型判的
- * 是**所有**没判的词，不只是这一轮刚收的那些，于是上一次端点抖动漏掉的下一轮
- * 会补上，从 `external` 切回 `model` 时队列里剩下的也能接着判。
- */
+/** 按收集顺序领取当前指南下的待判词。内置 agent 可暂缓本轮反复作答无效的题。 */
 export async function openWords(
 	client: CorpusClient,
 	guideIdentity: string,
 	limit?: number,
+	skipped: number[] = [],
 ): Promise<Pending[]> {
 	const { rows } = await client.query<Row>(
 		`select ${COLUMNS}
 		 from review_word
-		 where guide_identity = $1 and judge is null
-		 order by collected_at, id
-		 ${limit === undefined ? "" : "limit $2"}`,
-		limit === undefined ? [guideIdentity] : [guideIdentity, limit],
+		 where guide_identity = $1 and judge is null and not (id=any($2::int[]))
+		 order by collected_at, id limit $3`,
+		[guideIdentity, skipped, limit ?? null],
 	);
 	return rows.map(pending);
 }
@@ -161,29 +146,30 @@ export async function submitJudgment(
 	return rows[0]?.judge ? "taken" : "missing";
 }
 
-/**
- * 自带模型的判定成批记在词上。答不出合法 JSON 的那几个（回答是 undefined）留在
- * 队列里，下一轮再问。
- */
-export async function recordJudgments(
+/** 工具即时核对这道题的参考词，让判定方能在第一份答案保存前修正。 */
+export async function submitPlacement(
 	client: CorpusClient,
+	id: number,
+	identity: string,
 	judge: string,
-	guideIdentity: string,
-	replies: [id: number, payload: unknown][],
-): Promise<void> {
-	const done = replies.filter(([, payload]) => payload !== undefined);
-	if (done.length === 0) return;
-	await client.query(
-		`update review_word r set judge = a.judge, judgment = a.judgment
-		 from unnest($1::int[], $2::text[], $3::jsonb[]) as a(id, judge, judgment)
-		 where r.id = a.id and r.guide_identity = $4 and r.judge is null`,
-		[
-			done.map(([id]) => id),
-			done.map(() => judge),
-			done.map(([, payload]) => JSON.stringify(payload)),
-			guideIdentity,
-		],
+	judgment: unknown,
+) {
+	const { rows } = await client.query<Pick<Row, "word" | "near" | "judge">>(
+		"select word,near,judge from review_word where id=$1 and guide_identity=$2",
+		[id, identity],
 	);
+	const row = rows[0];
+	if (!row) return "missing";
+	if (row.judge) return "taken";
+	if (
+		!conform(
+			judgment,
+			row.word,
+			row.near.map((r) => r.word),
+		)
+	)
+		return "invalid";
+	return submitJudgment(client, id, identity, judge, judgment);
 }
 
 /** 不是这一份标准的行作废：按旧标准问的、按旧标准答的都不算数。 */

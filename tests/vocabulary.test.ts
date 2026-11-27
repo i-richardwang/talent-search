@@ -14,9 +14,8 @@ import { answerChat, askedWord, seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { guideIdentity, GUIDE, read, sendBack } = await import(
-	"#/corpus/vocabulary"
-);
+const { guideIdentity, GUIDE } = await import("#/corpus/review-guide");
+const { read, sendBack } = await import("#/corpus/vocabulary");
 const { openWords, submitJudgment } = await import("#/corpus/judgment");
 const { review } = await import("#/corpus/review");
 const { pool } = await import("#/db");
@@ -61,7 +60,7 @@ async function runReview(rejudge: Rejudge | null = null): Promise<string[]> {
 		const judge = reviewJudge();
 		assert.notEqual(judge, "off");
 		await review(
-			connection,
+			{ client: connection, outsideWriter: (work) => work() },
 			(line: string) => said.push(line),
 			judge as "model" | "external",
 			rejudge,
@@ -229,7 +228,13 @@ describe("读表", () => {
 
 /** 模型的回答按要判的词给；没写到的词答一句不成判断的话。 */
 function answerByWord(answers: Record<string, unknown>, asked: string[]) {
-	return answerChat((system, prompt) => {
+	return answerChat((system, prompt, request) => {
+		assert.deepEqual(
+			(request.tools as { function: { name: string } }[])
+				.map((t) => t.function.name)
+				.sort(),
+			["review_list", "review_submit"],
+		);
 		assert.equal(system, GUIDE);
 		asked.push(prompt);
 		return answers[askedWord(prompt)] ?? { why: "", kind: "", target: "" };
@@ -332,6 +337,8 @@ describe("整轮整理", () => {
 		// 上一轮判定方起的「管理」这一轮也要判
 		assert.deepEqual(asked.map((prompt) => prompt.split("\n")[0]).sort(), [
 			"要判的词：Java（1 人）",
+			"要判的词：Java（1 人）",
+			"要判的词：管理（5 人）",
 			"要判的词：管理（5 人）",
 		]);
 		assert.match(said.join("\n"), /整理回答不符合领域规则，未保存/);
@@ -839,7 +846,8 @@ describe("退回重新判定", () => {
 	test("同一个队列问题复用回答，人工退回后的新问题重新问，模型看到的文字不变", async () => {
 		await seedTable([["合成纠错能力", "合成纠错能力", JUDGED]]);
 		const { collect } = await import("#/corpus/judgment");
-		const { askModel } = await import("#/corpus/vocabulary");
+		const { runCorpusAgent } = await import("#/server/corpus-agent");
+		const { judged } = await import("#/corpus/judgment");
 		const prompts: string[] = [];
 		const restore = answerChat((_system, prompt) => {
 			prompts.push(prompt);
@@ -853,16 +861,18 @@ describe("退回重新判定", () => {
 		try {
 			const questions = [{ word: "合成纠错能力", people: 1, near: [] }];
 			await collect(connection, guideIdentity(), questions);
-			const old = await openWords(connection, guideIdentity());
-			const first = await askModel(old, report);
-			assert.deepEqual(await askModel(old, report), first);
+			const answer = async () => {
+				await runCorpusAgent("review", report);
+				return (await judged(connection, guideIdentity())).map(
+					(r) => r.judgment,
+				);
+			};
+			const first = await answer();
+			assert.deepEqual(await answer(), first);
 			assert.equal(prompts.length, 1);
 			await sendBack(connection, report, { scope: "all" });
 			await collect(connection, guideIdentity(), questions);
-			const fresh = await askModel(
-				await openWords(connection, guideIdentity()),
-				report,
-			);
+			const fresh = await answer();
 			assert.notDeepEqual(fresh, first);
 			assert.equal(prompts.length, 2);
 			assert.equal(prompts[0], prompts[1]);
@@ -950,4 +960,31 @@ describe("退回重新判定", () => {
 		assert.equal((await back({ scope: "all" })).length, 7);
 		assert.match(said.at(-1) ?? "", /整张词表退回重新判定，共 7 个词/);
 	});
+});
+
+test("内置判定方读到 invalid 后可修正同一词，首份有效回答进入队列", async () => {
+	await seedTable([]);
+	const { collect, judged } = await import("#/corpus/judgment");
+	const { runCorpusAgent } = await import("#/server/corpus-agent");
+	const connection = await client();
+	let attempts = 0;
+	const restore = answerChat(() =>
+		++attempts === 1
+			? { kind: "同一件事", target: "样例词", why: "无效自指" }
+			: { kind: "自成一项", target: "", why: "修正" },
+	);
+	try {
+		await collect(connection, guideIdentity(), [
+			{ word: "样例词", people: 1, near: [] },
+		]);
+		await runCorpusAgent("review", () => {});
+		assert.equal(attempts, 2);
+		assert.deepEqual(
+			(await judged(connection, guideIdentity())).map((r) => r.judgment),
+			[{ kind: "自成一项", target: "", why: "修正" }],
+		);
+	} finally {
+		restore();
+		connection.release();
+	}
 });

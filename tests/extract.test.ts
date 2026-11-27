@@ -12,7 +12,10 @@ import { answerChat, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { conform, extract, SYSTEM } = await import("#/corpus/extract");
+const { evaluateExtraction: extract } = await import(
+	"../scripts/evaluation/corpus"
+);
+const { conform, SYSTEM } = await import("#/corpus/extract");
 
 /** 读了但什么都没读出来。 */
 const EMPTY = { items: [] };

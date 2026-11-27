@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, afterEach, test } from "node:test";
 import { answerChat, setup } from "./fixture";
 
-const teardown = await setup();
+const teardown = await setup({ corpusWriter: true });
 after(teardown);
 const { readDeriveInputs, receiveDeriveResults } = await import(
 	"#/server/derive-api"
@@ -195,17 +195,26 @@ test("外部服务提交结果后由解析任务写入，与内置模型生成�
 	await pool.query("update experience set derived_identity='previous'");
 	process.env.EXTRACT_MODEL = model;
 	process.env.DERIVE_MODE = "model";
-	const restore = answerChat((system) =>
-		system.includes("HR 整理") ? expected : { seq: "" },
-	);
+	// 内置模式先沿用外部提交，再用同一组合成经历独立验证 agent 的处理结果。
+	await run("derive");
+	assert.deepEqual(await facts(), external);
+	await pool.query("delete from derive_request");
+	await pool.query("update experience set derived_identity='previous'");
+	const toolsSeen = new Set<string>();
+	const restore = answerChat((system, _prompt, request) => {
+		assert.equal(request.tool_choice, "required");
+		for (const tool of request.tools as { function: { name: string } }[])
+			toolsSeen.add(tool.function.name);
+		return system.includes("HR 整理") ? expected : { seq: "" };
+	});
 	try {
 		await run("derive");
 	} finally {
 		restore();
 	}
 	assert.deepEqual(await facts(), external);
-	// 已有模型缓存可用于相同输入和标准，外部服务无须重复处理。
-	await pool.query("delete from derive_request");
+	assert.deepEqual([...toolsSeen].sort(), ["derive_list", "derive_submit"]);
+	// 内置 agent 已提交的答案在外部模式继续有效。
 	await pool.query("update experience set derived_identity='previous'");
 	process.env.DERIVE_MODE = "external";
 	await run("derive");
@@ -223,15 +232,28 @@ test("序列树变化会拒收旧的对齐结果，抽取标准仍然有效，�
 	await run("derive");
 	const old = await read("align");
 	const extract = await read("extract");
-	await pool.query(
-		"insert into sequence_catalog values ('合成类别','合成新序列')",
-	);
-	assert.deepEqual(
-		await submit("align", old.standard, [
+	const catalog = await pool.connect();
+	try {
+		await catalog.query("begin");
+		await catalog.query(
+			"insert into sequence_catalog values ('合成类别','合成新序列')",
+		);
+		const receipt = submit("align", old.standard, [
 			{ id: old.inputs[0]?.id, unable: true },
-		]),
-		["expired"],
-	);
+		]);
+		assert.equal(
+			await Promise.race([
+				receipt,
+				new Promise((resolve) => setTimeout(() => resolve("waiting"), 50)),
+			]),
+			"waiting",
+		);
+		await catalog.query("commit");
+		assert.deepEqual(await receipt, ["expired"]);
+	} finally {
+		if (catalog.getTransactionStatus() !== "I") await catalog.query("rollback");
+		catalog.release();
+	}
 	await submit(
 		"extract",
 		extract.standard,
@@ -333,4 +355,54 @@ test("并发批次以相反顺序提交不同结果，每项只保存第一份",
 		"accepted,accepted",
 		"conflict,conflict",
 	]);
+});
+
+test("按标准与模型复用已保存的回答，外部取题跳过已有答案", async () => {
+	process.env.DERIVE_MODE = "external";
+	process.env.DERIVE_TOKEN = token;
+	await run("sync");
+	await pool.query("delete from derive_request");
+	const source = await pool.query<{
+		id: number;
+		title: string;
+		company: string;
+	}>(
+		"select id,title,company from experience where kind='external' and not unemployed order by id limit 1",
+	);
+	const row = source.rows[0];
+	assert.ok(row);
+	const description = "合成用例积累的指标分析经历。";
+	await pool.query(
+		"update experience set description=$1, derived_identity=null where id=$2",
+		[description, row.id],
+	);
+	const restore = answerChat((system) =>
+		system.includes("HR 整理")
+			? {
+					items: [{ text: "指标分析", depth: "做过" }],
+				}
+			: { seq: "" },
+	);
+	process.env.DERIVE_MODE = "model";
+	try {
+		await run("derive");
+	} finally {
+		restore();
+	}
+	await pool.query("delete from derive_request");
+	await pool.query("update experience set derived_identity=null");
+	process.env.DERIVE_MODE = "external";
+	await run("derive");
+	assert.ok(
+		!(await read("extract")).inputs.some(
+			(input) => input.description === description,
+		),
+	);
+	const saved = await pool.query(
+		"select result from derive_request where experience_id=$1 and result is not null",
+		[row.id],
+	);
+	assert.ok(
+		saved.rows.some((one) => one.result?.items?.[0]?.text === "指标分析"),
+	);
 });

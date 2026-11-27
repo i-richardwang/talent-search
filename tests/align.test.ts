@@ -10,8 +10,19 @@ import { answerChat, seed, setup } from "./fixture";
 const teardown = await setup();
 after(teardown);
 
-const { align, conform, systemPrompt } = await import("#/corpus/align");
-const { extract, SYSTEM: EXTRACT_SYSTEM } = await import("#/corpus/extract");
+const { experienceAnswers, evaluateExtraction: extract } = await import(
+	"../scripts/evaluation/corpus"
+);
+async function align(
+	rows: ExperienceRow[],
+	tree: SeqPair[],
+	report: () => void,
+) {
+	const answers = await experienceAnswers("align", rows, tree, report);
+	return rows.map((row, i) => alignmentOf(row, tree, answers[i]));
+}
+const { alignmentOf, conform, systemPrompt } = await import("#/corpus/align");
+const { SYSTEM: EXTRACT_SYSTEM } = await import("#/corpus/extract");
 const { UNEMPLOYED } = await import("#/corpus/pipeline");
 
 const quiet = () => {};

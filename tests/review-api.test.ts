@@ -15,7 +15,7 @@ const { authorized, configured, limitOf, pending, submit } = await import(
 	"#/server/review"
 );
 const { openWords } = await import("#/corpus/judgment");
-const { guideIdentity } = await import("#/corpus/vocabulary");
+const { guideIdentity } = await import("#/corpus/review-guide");
 const { pool } = await import("#/db");
 
 const TOKEN = "test-token";

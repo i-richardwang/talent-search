@@ -11,7 +11,6 @@
 import "@tanstack/react-start/server-only";
 import { setImmediate } from "node:timers/promises";
 import type { Rejudge } from "#/lib/task";
-import { complete, reviewModel, standardOf } from "#/server/chat";
 import { embedConfigured } from "#/server/embed";
 import { embed } from "./embed";
 import {
@@ -20,110 +19,21 @@ import {
 	collect,
 	judged,
 	type Member,
-	modelJudge,
-	openWords,
-	promptOf,
 	type Question,
-	recordJudgments,
 	remove,
 } from "./judgment";
 import type { Report } from "./report";
-import type { CorpusClient } from "./session";
+import { guideIdentity } from "./review-guide";
+import type { CorpusClient, CorpusWriter } from "./session";
 import {
 	conform,
 	type Decision,
 	nearest,
-	PLACEMENT_SCHEMA,
 	place,
 	rename,
 	type Table,
 	validate,
 } from "./vocabulary-rules";
-
-/**
- * 判定的标准。发给自带模型的是它，通过接口交给外部 agent 的也是它
- * （`src/server/review.ts` 的 `guide`）——标准只有一份，改了这段字，
- * 模型和接口读到的都变。
- */
-export const GUIDE = `## 背景
-
-这是一个公司内部的人才库。招聘的人和业务负责人要找做过某件事的人：输入一个词搜索，或在筛选栏里点一项，再读这个人简历里的原话确认。每个人的简历被读成几个字的短说法：能力词、做过的事、入职前的岗位名。人身上留的永远是他自己的写法，证据用的都是原话。
-
-词表不改人身上的词，它记三件事：哪些写法是同一件事；一个词属于哪个更宽的词；哪些词说的不是一项能力。同一件事的写法在搜索里互相带出：搜到其中一种，写了另一种的人一起出来。更宽的词是筛选栏里的一项：点它，写了属于它的细词的人一起出来；点细的词时，只写了更宽的词的人不算，因为没法确认他做过细的那件。不是能力的词不出现在筛选栏和搜索的候选词里。这三件事由你来判。
-
-## 判错的代价
-
-- 两件事判成同一件事：搜其中一个会混进不符合要求的人，筛选栏里更精确的那个选项也没了。
-- 同一件事判成两件：搜其中一个会漏掉写了另一种写法的人，筛选栏里多一项。
-- 归属挂错：筛选栏里点宽的那一项时，写了这个词的人整批算进去，和真正做过的人排在一起。
-- 归属漏挂：筛选栏里点宽的那一项时不含它；输入词搜索不受影响，搜索只按字面和同一件事的写法找。
-- 能力判成不是能力：筛选栏和候选词里没有它，要找这项能力的人点不到；按字面照样搜得到。
-- 不是能力的判成能力：筛选栏和候选词里多一项没人会点的。
-
-合成一项会抹掉一个选项，挂归属不会。所以两个词一个比另一个宽的，用归属表达，不写成同一件事。拿不准是不是同一件事、拿不准属不属于某个更宽的词，都不写，判成自成一项：漏写了按字面照样搜得到，写错了会混进不该有的人。
-
-拿不准指的是这个词有两种常见的读法，按两种读法找出来的是两批人：「方案设计」可以是给客户写售前方案，也可以是做系统的技术设计。只有一种读法、按下面的检验方法能判出来的，就写，不因为这层关系少见、写法生僻而不写。短说法记的都是这个人自己做过的事：「法务培训」是他做过法务方面的培训工作，不按「他参加过培训」去读。
-
-## 任务
-
-下面是一个要判的词，括号里是人数（写了它的人；词表里已经归在它名下的其他写法和更细的词，写了那些的人也算）；后面列着词表里和它写法最接近的几个参考词，人数的算法相同。参考词只是按写法找出来的，可能一个都对不上。回答这个词在词表里的位置，四种里选一种写在 kind：
-
-- 「同一件事」：它和某个参考词是同一件事，target 写那个参考词，原样照抄。
-- 「属于」：它是某个更宽的词的一种，target 写那个更宽的词，可以是参考词，也可以由你起名。
-- 「自成一项」：它是一项能力，但和参考词都不是同一件事，也说不出它属于哪个更宽的词。target 写空字符串。
-- 「不是能力」：它说的不是这个人做过的一项工作或会的一样东西。target 写空字符串。
-
-why 先用一句话说理由，再给 kind 和 target。先看它是不是能力，是能力再看同一件事，不是同一件事再看属于。
-
-## 不是能力
-
-招聘要求里「熟悉 ___」「有 ___ 经验」填不进去的，不是能力：
-- 目标、指标和结果：「GMV 目标」「成本下降」。
-- 会议、材料、页面这类东西的名字，没说做了哪项工作：「策略会」「周报」「留言板」。
-- 谁都会做的泛泛动作：「沟通协调」「问题跟进」。
-- 只交代身份、处境或场景的词：「普通员工」「找工作」「三甲医院」。
-- 公司、产品、项目、活动的名字。
-
-你看不懂的缩写和行话不在此列：看不出它说的是什么，就判自成一项。它可能是你不熟悉的一门技术或一行里的叫法，判成不是能力会让要找它的人点不到。
-
-带着地名、时间、对象这些限定语的词仍然是能力，它属于去掉限定语之后的那个词：「淡季定价」属于「定价」，「华南区域督导」属于「区域督导」。
-
-## 同一件事
-
-检验方法：招聘要求里写其中一个词，写了另一个词的人完全符合；反过来也完全符合。两个方向都成立才是同一件事，最终用哪个写法由系统按人数定，你不用选。
-
-通常是这几种：大小写、空格、标点不同；中英文或缩写（「推荐算法」「Recommendation」）；同义词（「人员管理」「团队管理」）；语序颠倒而意思不变（「销售策略运营」「销售运营策略」；「活动培训」和「培训活动」意思变了，不算）；多了不改变要找的人的字（「工作」「能力」，「指标体系」和「指标体系搭建」）。
-
-只有一个方向成立的，不是同一件事：
-- 一个比另一个细。写了「销售数据分析」的人符合「数据分析」，反过来不成立。细的属于宽的。
-- 一个词太笼统，能指好几件事。「开发」可以是写代码，也可以是开发客户、开发课程，它和「代码开发」不是同一件事。
-- 岗位名多了级别或带人的字：「高级」「资深」「主管」「总监」。招「X 主管」要的是带过人的，做过 X 的人不一定符合。带级别的岗位名属于不带级别的那个。「X 助理」「X 实习生」是给 X 打下手的另一个职位，不属于「X」这个职位：「律师助理」不是律师。
-- 岗位名和它做的那件事。「X 工程师」「X 经理」「X 专员」「X 师」「X 岗」是一个职位，「X」是一件事：招这个职位要的是在这个职位上干过的人，写了做过 X 的人不一定干过这个职位。岗位名属于它做的那件事，不和那件事合成一项：「精算师」「精算岗」属于「精算」。两个岗位名只是叫法不同、级别和职责一样，它们之间才是同一件事：「精算师」「精算岗」。
-
-两个方向都不成立的，更不是：
-- 兄弟：去掉限定语后一样。「销售数据分析」和「运营数据分析」找的是两批人，各自属于「数据分析」；「线下门店运营」和「电商店铺运营」对象不同，也是两批人。
-- 同一件事里的不同角色或环节。「培训授课」是当讲师，「培训组织」是办培训。
-- 邻居。「营销策略」和「运营策略」，「推荐系统」和「搜索推荐」。
-
-## 属于
-
-检验方法：招聘要求里写更宽的词，写了这个词的人都符合。也就是这个词是更宽的词的一种，只是限定了行业、对象、产品、渠道或技术。「销售数据分析」属于「数据分析」，「技术招聘」属于「招聘」，「品牌营销」属于「营销」。「团队培训」不属于「团队管理」，做过培训不等于管过团队；「数据分析报告」不属于「数据分析」，写报告不等于会分析。
-
-分清「是一种」和「用来做」。一个产品、一门技术本身就是更宽的词的一种，就属于它：「PostgreSQL」是一种数据库，属于「数据库」；「Go」是一门编程语言。只是做那件事时用到的环节、产出物、工具、平台，不属于它服务的那项能力：用过 Jira 不等于做过项目管理，会做 PPT 不等于做过方案策划。给某件事做系统、产品或工具，做的是开发或产品，不是那件事本身：「财务系统开发」属于开发，不属于「财务」。业绩结果和指标也不是一件事：「成本下降」「销量提升」说的是做成了什么，没说做了哪项工作，不属于任何一项能力。
-
-按这个人做的是哪一行的活来判，不按两个词共有几个字。几个词拼成的说法，表示「做什么」的那个词决定它属于哪一行，其余的词只说对象、领域或场景：「法务培训」做的是培训，属于「培训」，不属于「法务」；「物流数据分析」做的是数据分析，属于「数据分析」。岗位名里，称呼（经理、专员、工程师）前面的那个词说的是哪一行：「商家运营经理」做的是运营，和「商家经理」「产品经理」共有的字不说明他做过那一行。
-
-更宽的词可以不在参考词里，也可以是简历里没人写过的，由你起名。参考词是按写法找的，所以最常见的更宽的词往往不在里面：按招聘时的行当去想，岗位名属于它所在的那一行。这个名字会成为筛选栏里的一项，也是招聘的人搜索时会输入的词，所以它得是：招聘要求里「熟悉 ___」「有 ___ 经验」能填进去的业务通名，一般不超过八个字，不带动作、程度词，不带「能力」「相关」「工作」这类字。「销售数据分析」的更宽的词写「数据分析」，不写「数据相关」「分析能力」。别的词也在各自起名，用这项能力最通行的叫法，起出来的才会是同一个词。
-
-写最近的一层：「电商销售数据分析」属于「销售数据分析」，不直接写「数据分析」。最近的一层从参考词里找；参考词里没有更近的一层时，直接写这一行的通名，不自己起中间层：「仓储物流数据分析」在参考词里找不到「物流数据分析」时写「数据分析」。更宽的词永远是更宽的那个：「数据分析」不属于「销售数据分析」。`;
-
-/** 找参考词时每找完几个词让出一次事件循环。 */
-const YIELD_EVERY = 16;
-
-/** 一个词在词表里的位置这件事此刻的判定标准。队列与外部判定接口都按它隔离版本。 */
-export function guideIdentity(): string {
-	return standardOf(GUIDE, PLACEMENT_SCHEMA);
-}
 
 /**
  * 表被手改坏的几种样子在这里抛错：别名的标准词自己又是别名、归属指向一个别名、
@@ -181,46 +91,6 @@ async function write(client: CorpusClient, decisions: [string, Decision][]) {
 			decisions.map(([, decision]) => decision.aliasSentBack),
 		],
 	);
-}
-
-/**
- * 让自带的模型判一批词，按入参顺序返回它的原话；答不出一条有效判断的是 undefined
- * （`complete` 已经说过是哪一个）。整理的判定一步和整理质量验收（`scripts/eval-review.ts`）
- * 共用它：验收量的正是这一步，提示词、模型、温度都和整理时一样。
- * 队列里的问题按 id 认缓存：同一个问题重试用同一份回答，退回之后的新问题文字一样也重新问。
- * 验收的问题不在队列里、没有 id，按文字认。
- */
-export async function askModel(
-	questions: (Question & { id?: number })[],
-	report: Report,
-): Promise<(unknown | undefined)[]> {
-	const byInput = new Map(questions.map((one) => [promptOf(one), one]));
-	const payloads = await complete(
-		reviewModel(),
-		GUIDE,
-		PLACEMENT_SCHEMA,
-		[...byInput.keys()],
-		"整理",
-		report,
-		(payload, input) => {
-			const asked = byInput.get(input);
-			return (
-				asked !== undefined &&
-				conform(
-					payload,
-					asked.word,
-					asked.near.map((one) => one.word),
-				) !== null
-			);
-		},
-		{
-			cacheKey: (input) => {
-				const id = byInput.get(input)?.id;
-				return id === undefined ? input : `review_word:${id}\u001f${input}`;
-			},
-		},
-	);
-	return questions.map((one) => payloads.get(promptOf(one)));
 }
 
 /**
@@ -386,71 +256,61 @@ export async function sendBack(
  * 找参考词要词的向量：嵌入端点没配就不收集，队列里已有的词照常判、照常生效。
  */
 export async function collectWords(
-	client: CorpusClient,
+	{ client, outsideWriter }: CorpusWriter,
 	report: Report,
 ): Promise<void> {
 	if (!embedConfigured()) {
 		report("  未配置嵌入端点，找不出相近的写法，这一轮不收集要判的词");
 		return;
 	}
-	const table = await read(client);
-	const all = await vocabulary(client);
 	const identity = guideIdentity();
-	const busy = await busyWords(client, identity);
-	const words = [...all.heads, ...all.aliases];
-	const decided = words.filter((one) => table.get(one.word)?.reviewedAt).length;
-	report(
-		`  词表 ${words.length} 个词，其中 ${decided} 个已经判过；` +
-			`队列里还有 ${busy.size} 个词`,
-	);
-
-	const due = words.filter(
-		(one) => !busy.has(one.word) && !table.get(one.word)?.reviewedAt,
-	);
-	report(`  ${due.length} 个词要判`);
-	if (due.length === 0) return;
-
-	const pool = all.heads.filter((one) => !table.get(one.word)?.excluded);
-	const texts = [...new Set([...pool, ...due].map((one) => one.word))];
-	const embedded = await embed(texts, report);
-	const vectors = new Map(texts.map((text, index) => [text, embedded[index]]));
-	const vectorOf = (one: Member) => vectors.get(one.word) as number[];
-	const people = new Map(pool.map((one) => [one.word, one.people]));
-	const near = nearest(
-		pool.map((one) => one.word),
-		pool.map(vectorOf),
-	);
-	const questions: Question[] = [];
-	for (const one of due) {
-		// 几万个词各扫一遍候选要几分钟：隔一会儿让出事件循环，别的请求才进得来
-		if (questions.length % YIELD_EVERY === 0) await setImmediate();
-		questions.push({
-			...one,
-			near: near(one.word, vectorOf(one)).map((word) => ({
-				people: people.get(word) ?? 0,
-				word,
-			})),
-		});
+	const vectors = new Map<string, number[]>();
+	// 等嵌入期间语料可能变化。拿回写者锁后按当前词和人数组题，只补新增词的向量。
+	while (true) {
+		const table = await read(client);
+		const all = await vocabulary(client);
+		const busy = await busyWords(client, identity);
+		const words = [...all.heads, ...all.aliases];
+		const due = words.filter(
+			(one) => !busy.has(one.word) && !table.get(one.word)?.reviewedAt,
+		);
+		const pool = all.heads.filter((one) => !table.get(one.word)?.excluded);
+		const missing = [
+			...new Set([...pool, ...due].map((one) => one.word)),
+		].filter((word) => !vectors.has(word));
+		if (due.length && missing.length) {
+			const embedded = await outsideWriter(() => embed(missing, report));
+			for (const [i, word] of missing.entries())
+				vectors.set(word, embedded[i] as number[]);
+			continue;
+		}
+		const decided = words.filter(
+			(one) => table.get(one.word)?.reviewedAt,
+		).length;
+		report(
+			`  词表 ${words.length} 个词，其中 ${decided} 个已经判过；队列里还有 ${busy.size} 个词`,
+		);
+		report(`  ${due.length} 个词要判`);
+		if (!due.length) return;
+		const vectorOf = (one: Member) => vectors.get(one.word) as number[];
+		const people = new Map(pool.map((one) => [one.word, one.people]));
+		const near = nearest(
+			pool.map((one) => one.word),
+			pool.map(vectorOf),
+		);
+		const questions: Question[] = [];
+		for (const one of due) {
+			// 几万个词各扫一遍候选要几分钟：隔一会儿让出事件循环，别的请求才进得来
+			if (questions.length % 16 === 0) await setImmediate();
+			questions.push({
+				...one,
+				near: near(one.word, vectorOf(one)).map((word) => ({
+					people: people.get(word) ?? 0,
+					word,
+				})),
+			});
+		}
+		await collect(client, identity, questions);
+		return;
 	}
-	await collect(client, identity, questions);
-}
-
-/** 自带的模型判定方：把队列里没判的词一次问完，回答记在词上。 */
-export async function judgeByModel(
-	client: CorpusClient,
-	report: Report,
-): Promise<void> {
-	const identity = guideIdentity();
-	const pending = await openWords(client, identity);
-	if (pending.length === 0) return;
-	const model = reviewModel();
-	report(`  判 ${pending.length} 个词`);
-
-	const payloads = await askModel(pending, report);
-	await recordJudgments(
-		client,
-		modelJudge(model),
-		identity,
-		pending.map((one, index) => [one.id, payloads[index]]),
-	);
 }

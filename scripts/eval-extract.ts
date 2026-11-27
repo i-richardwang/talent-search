@@ -23,17 +23,14 @@
  * 合成用例进仓库（sample.json，干净克隆也能跑通）；真实段是真人的简历原文，
  * 不进版本库。各文件分别汇总：合成段偏短偏整齐，和真实段的数字不能相加着看。
  *
- * 调用与解析相同的入口（`corpus/extract.ts` 的 `extract`）：当前提示词、当前模型、温度 0，回答进
- * 同一份缓存。同一段、同一提示词、同一模型不会再问端点；改了提示词会重新请求。所以这个验收衡量的是
- * 「此刻配置下的抽取」，换模型也用它。
+ * 在独立语料库中通过解析 agent 取题和提交，按正式解析规则评估回答。
  */
 
 import "@tanstack/react-start/server-only";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { extract } from "#/corpus/extract";
-import { pool } from "#/db";
 import { ENGAGEMENTS, type Engagement, isEngagement } from "#/lib/engagement";
+import { withEvaluation } from "./evaluation/database";
 
 type Gold = { words: string[]; depth: Engagement[] | null };
 
@@ -174,8 +171,8 @@ function summary(label: string, t: Tally) {
 }
 
 const totals = new Map(files.map((f) => [f, tally()]));
-try {
-	const extractions = await extract(
+const extractions = await withEvaluation(({ evaluateExtraction }) =>
+	evaluateExtraction(
 		cases.map((c) => ({
 			kind: "external",
 			unemployed: false,
@@ -184,90 +181,86 @@ try {
 			description: c.description,
 		})),
 		(line) => console.error(line),
+	),
+);
+for (const [index, c] of cases.entries()) {
+	const t = totals.get(c.file) as Tally;
+	t.cases++;
+	const result = extractions[index];
+	const items = result?.status === "done" ? result.value.items : [];
+	const problems: string[] = [];
+	if (result?.status !== "done") problems.push("未收到有效的抽取结果");
+	for (const item of items) {
+		const d = item.engagement ?? "未判断";
+		t.depths[d] = (t.depths[d] ?? 0) + 1;
+	}
+	let recall = "";
+	const accepted = new Set(
+		[...(c.gold ?? []).flatMap((g) => g.words), ...c.ok].map(norm),
 	);
-	for (const [index, c] of cases.entries()) {
-		const t = totals.get(c.file) as Tally;
-		t.cases++;
-		const result = extractions[index];
-		const items = result?.status === "done" ? result.value.items : [];
-		const problems: string[] = [];
-		if (result?.status !== "done") problems.push("没有得到合法 JSON");
-		for (const item of items) {
-			const d = item.engagement ?? "未判断";
-			t.depths[d] = (t.depths[d] ?? 0) + 1;
-		}
-		let recall = "";
-		const accepted = new Set(
-			[...(c.gold ?? []).flatMap((g) => g.words), ...c.ok].map(norm),
+	if (c.gold) {
+		const gold = c.gold;
+		const missed = gold.filter(
+			(g) => !items.some((i) => same(g.words, i.text)),
 		);
-		if (c.gold) {
-			const gold = c.gold;
-			const missed = gold.filter(
-				(g) => !items.some((i) => same(g.words, i.text)),
-			);
-			const extra = items.filter((i) => !accepted.has(norm(i.text)));
-			t.goldItems += gold.length;
-			t.hit += gold.length - missed.length;
-			t.written += items.length;
-			t.fine += items.length - extra.length;
-			if (gold.length)
-				recall = `  召回 ${gold.length - missed.length}/${gold.length}`;
-			if (missed.length)
-				problems.push(`漏了 ${missed.map((g) => g.words[0]).join("、")}`);
-			if (extra.length)
-				problems.push(`多写 ${extra.map((i) => i.text).join("、")}`);
-			for (const g of gold) {
-				const found = items.find((i) => same(g.words, i.text));
-				if (!found || !g.depth) continue;
-				t.judged++;
-				if (found.engagement && g.depth.includes(found.engagement)) {
-					t.right++;
-					continue;
-				}
-				const far =
-					found.engagement === null ||
-					g.depth.every(
-						(d) =>
-							Math.abs(
-								ENGAGEMENTS.indexOf(d) -
-									ENGAGEMENTS.indexOf(found.engagement as Engagement),
-							) >= 2,
-					);
-				if (far) t.far++;
-				problems.push(
-					`${g.words[0]} 应是${g.depth.join("或")}，判成${found.engagement ?? "未判断"}${far ? "（隔档）" : ""}`,
-				);
+		const extra = items.filter((i) => !accepted.has(norm(i.text)));
+		t.goldItems += gold.length;
+		t.hit += gold.length - missed.length;
+		t.written += items.length;
+		t.fine += items.length - extra.length;
+		if (gold.length)
+			recall = `  召回 ${gold.length - missed.length}/${gold.length}`;
+		if (missed.length)
+			problems.push(`漏了 ${missed.map((g) => g.words[0]).join("、")}`);
+		if (extra.length)
+			problems.push(`多写 ${extra.map((i) => i.text).join("、")}`);
+		for (const g of gold) {
+			const found = items.find((i) => same(g.words, i.text));
+			if (!found || !g.depth) continue;
+			t.judged++;
+			if (found.engagement && g.depth.includes(found.engagement)) {
+				t.right++;
+				continue;
 			}
-		}
-		const words = items.map((i) => i.text);
-		const lost = c.keep.filter((q) => !words.some((w) => w.includes(q)));
-		t.keeps += c.keep.length;
-		t.kept += c.keep.length - lost.length;
-		if (lost.length) problems.push(`丢了限定语 ${lost.join("、")}`);
-		const leaks = words.filter((w) => c.reject.some((r) => w.includes(r)));
-		t.rejected += leaks.length;
-		if (leaks.length) problems.push(`不该出现 ${leaks.join("、")}`);
-		const tailed = words.filter((w) => ACTION_TAIL.test(w));
-		const long = words.filter(
-			(w) => [...w].length > 8 && !accepted.has(norm(w)),
-		);
-		t.tails += tailed.length;
-		t.over8 += long.length;
-		if (tailed.length) problems.push(`动作尾 ${tailed.join("、")}`);
-		if (long.length) problems.push(`超 8 字 ${long.join("、")}`);
-		console.log(
-			`${problems.length ? "✗" : "✓"} ${c.name}${recall}  ${items
-				.map((i) => `${i.text}/${i.engagement ?? "?"}`)
-				.join(" | ")}`,
-		);
-		if (problems.length) {
-			t.failed++;
-			console.log(`   ${problems.join("；")}`);
+			const far =
+				found.engagement === null ||
+				g.depth.every(
+					(d) =>
+						Math.abs(
+							ENGAGEMENTS.indexOf(d) -
+								ENGAGEMENTS.indexOf(found.engagement as Engagement),
+						) >= 2,
+				);
+			if (far) t.far++;
+			problems.push(
+				`${g.words[0]} 应是${g.depth.join("或")}，判成${found.engagement ?? "未判断"}${far ? "（隔档）" : ""}`,
+			);
 		}
 	}
-	console.log("");
-	for (const [file, t] of totals) console.log(summary(file, t));
-	if ([...totals.values()].some((t) => t.failed > 0)) process.exitCode = 1;
-} finally {
-	await pool.end();
+	const words = items.map((i) => i.text);
+	const lost = c.keep.filter((q) => !words.some((w) => w.includes(q)));
+	t.keeps += c.keep.length;
+	t.kept += c.keep.length - lost.length;
+	if (lost.length) problems.push(`丢了限定语 ${lost.join("、")}`);
+	const leaks = words.filter((w) => c.reject.some((r) => w.includes(r)));
+	t.rejected += leaks.length;
+	if (leaks.length) problems.push(`不该出现 ${leaks.join("、")}`);
+	const tailed = words.filter((w) => ACTION_TAIL.test(w));
+	const long = words.filter((w) => [...w].length > 8 && !accepted.has(norm(w)));
+	t.tails += tailed.length;
+	t.over8 += long.length;
+	if (tailed.length) problems.push(`动作尾 ${tailed.join("、")}`);
+	if (long.length) problems.push(`超 8 字 ${long.join("、")}`);
+	console.log(
+		`${problems.length ? "✗" : "✓"} ${c.name}${recall}  ${items
+			.map((i) => `${i.text}/${i.engagement ?? "?"}`)
+			.join(" | ")}`,
+	);
+	if (problems.length) {
+		t.failed++;
+		console.log(`   ${problems.join("；")}`);
+	}
 }
+console.log("");
+for (const [file, t] of totals) console.log(summary(file, t));
+if ([...totals.values()].some((t) => t.failed > 0)) process.exitCode = 1;

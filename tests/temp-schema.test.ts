@@ -3,7 +3,11 @@
  */
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { catalogOf, ownerOf, tempSchema } from "./temp-schema";
+import {
+	catalogOf,
+	ownerOf,
+	tempSchema,
+} from "../scripts/evaluation/schema-name";
 
 describe("测试临时 schema 的名字", () => {
 	test("夹具起的名字和它的数据目录都认得出是哪个进程建的", () => {

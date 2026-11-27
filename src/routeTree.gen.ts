@@ -22,6 +22,7 @@ import { Route as DataEmpIdRouteImport } from './routes/data/$empId'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
 import { Route as TermsWordRouteImport } from './routes/terms/$word'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiMcpScopeRouteImport } from './routes/api/mcp/$scope'
 import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -89,6 +90,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMcpScopeRoute = ApiMcpScopeRouteImport.update({
+  id: '/api/mcp/$scope',
+  path: '/api/mcp/$scope',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
   id: '/p/$empId',
   path: '/p/$empId',
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/data/$empId': typeof DataEmpIdRoute
   '/terms/$word': typeof TermsWordRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/mcp/$scope': typeof ApiMcpScopeRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesByTo {
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/data/$empId': typeof DataEmpIdRoute
   '/terms/$word': typeof TermsWordRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/mcp/$scope': typeof ApiMcpScopeRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRoutesById {
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   '/data/$empId': typeof DataEmpIdRoute
   '/terms/$word': typeof TermsWordRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/mcp/$scope': typeof ApiMcpScopeRoute
   '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
 }
 export interface FileRouteTypes {
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/data/$empId'
     | '/terms/$word'
     | '/api/auth/$'
+    | '/api/mcp/$scope'
     | '/s/$turnId/p/$empId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/data/$empId'
     | '/terms/$word'
     | '/api/auth/$'
+    | '/api/mcp/$scope'
     | '/s/$turnId/p/$empId'
   id:
     | '__root__'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/data/$empId'
     | '/terms/$word'
     | '/api/auth/$'
+    | '/api/mcp/$scope'
     | '/s/$turnId/p/$empId'
   fileRoutesById: FileRoutesById
 }
@@ -207,6 +219,7 @@ export interface RootRouteChildren {
   ApiDeriveRoute: typeof ApiDeriveRoute
   ApiReviewRoute: typeof ApiReviewRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiMcpScopeRoute: typeof ApiMcpScopeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -302,6 +315,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mcp/$scope': {
+      id: '/api/mcp/$scope'
+      path: '/api/mcp/$scope'
+      fullPath: '/api/mcp/$scope'
+      preLoaderRoute: typeof ApiMcpScopeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/s/$turnId/p/$empId': {
       id: '/s/$turnId/p/$empId'
       path: '/p/$empId'
@@ -360,6 +380,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiDeriveRoute: ApiDeriveRoute,
   ApiReviewRoute: ApiReviewRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiMcpScopeRoute: ApiMcpScopeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

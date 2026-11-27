@@ -12,7 +12,7 @@ import type { ExperienceRow } from "#/corpus/pipeline";
 import type { TaskOutcome } from "#/server/tasks";
 import { answerChat, setup } from "./fixture";
 
-const teardown = await setup();
+const teardown = await setup({ corpusWriter: true });
 after(teardown);
 
 const { runTask, tasksState, taskLog, deriveProgress, setAutomaticDerive } =
@@ -25,9 +25,9 @@ async function underived() {
 	const { done, total } = await deriveProgress();
 	return total - done;
 }
-const { guideIdentity } = await import("#/corpus/vocabulary");
+const { guideIdentity } = await import("#/corpus/review-guide");
 const { formatDuration } = await import("#/routes/tasks/-lib/labels");
-const { acquireCorpusSession, corpusSessionOwner } = await import(
+const { acquireCorpusSession, corpusSessionOwners } = await import(
 	"#/corpus/session"
 );
 const { db, pool } = await import("#/db");
@@ -89,11 +89,11 @@ describe("同步与解析", () => {
 	test("已经有写者的时候后台任务当场放弃，而活性问的是锁", async () => {
 		const held = await acquireCorpusSession();
 		assert.ok(held);
-		assert.notEqual(await corpusSessionOwner(), null);
+		assert.ok((await corpusSessionOwners()).length);
 		assert.equal(await runTask("derive"), null);
 		await held.release();
 		// 拿到锁的连接一断，这件事当场就不成立了——不需要谁来打扫
-		assert.equal(await corpusSessionOwner(), null);
+		assert.equal((await corpusSessionOwners()).length, 0);
 	});
 
 	test("同步只搬原始的一半：人和段进来了，说法一条都没有", async () => {
@@ -666,7 +666,7 @@ describe("页面文案", () => {
  */
 async function lockReleased() {
 	for (const started = Date.now(); Date.now() - started < 2_000; ) {
-		if ((await corpusSessionOwner()) === null) return true;
+		if ((await corpusSessionOwners()).length === 0) return true;
 		await sleep(20);
 	}
 	return false;
