@@ -31,47 +31,43 @@ function* chunked<T>(rows: T[], size: number): Generator<T[]> {
 		yield rows.slice(start, start + size);
 }
 
-async function stageEmployee(
-	{ client }: CorpusSession,
-	rows: EmployeeRow[],
-): Promise<void> {
+/** 一次解析整批工号与已确认的跨源关联，人员和雇佣关系各按自己的表结构暂存。 */
+async function stageEmployees({ client }: CorpusSession, rows: EmployeeRow[]) {
 	await client.query(
-		`create temp table staged_employee on commit drop as
-		 select person_id, ${BIO_COLUMNS}, ${JOB_COLUMNS} from person join employment using(person_id) with no data`,
+		"create temp table staged_person (like person including generated, emp_id text primary key, linked_person_id text) on commit drop",
 	);
-	for (const chunk of chunked(rows, ROWS_PER_STATEMENT))
+	await client.query(
+		"create temp table staged_employment (like employment including generated) on commit drop",
+	);
+	for (const chunk of chunked(rows, ROWS_PER_STATEMENT)) {
+		const params = [JSON.stringify(chunk)];
 		await client.query(
-			`insert into staged_employee (
-				emp_id, name, cur_dept, cur_dept_path, cur_title, cur_seq_l1, cur_seq_l2,
-				cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date,
-				education_level, education_rank, school, school_tier, overseas_educated,
-				recruitment)
-			 select * from unnest(
-				$1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[],
-				$7::text[], $8::text[], $9::text[], $10::text[], $11::int[], $12::date[],
-				$13::text[], $14::int[], $15::text[], $16::text[], $17::boolean[],
-				$18::text[])`,
-			[
-				chunk.map((row) => row.emp_id),
-				chunk.map((row) => row.name),
-				chunk.map((row) => row.cur_dept),
-				chunk.map((row) => row.cur_dept_path),
-				chunk.map((row) => row.cur_title),
-				chunk.map((row) => row.cur_seq_l1),
-				chunk.map((row) => row.cur_seq_l2),
-				chunk.map((row) => row.cur_seq_l3),
-				chunk.map((row) => row.cur_level),
-				chunk.map((row) => row.cur_level_band),
-				chunk.map((row) => row.cur_level_rank),
-				chunk.map((row) => row.hire_date),
-				chunk.map((row) => row.education_level),
-				chunk.map((row) => row.education_rank),
-				chunk.map((row) => row.school),
-				chunk.map((row) => row.school_tier),
-				chunk.map((row) => row.overseas_educated),
-				chunk.map((row) => row.recruitment),
-			],
+			`insert into staged_person(person_id, emp_id, linked_person_id, ${BIO_COLUMNS})
+			select coalesce(i.person_id,r.linked_person_id,gen_random_uuid()::text),r.emp_id,r.linked_person_id,${BIO_COLUMNS}
+			from jsonb_populate_recordset(null::staged_person,$1) r left join person_identity i on i.kind='emp_id' and i.value=r.emp_id`,
+			params,
 		);
+		await client.query(
+			`insert into staged_employment(person_id,${JOB_COLUMNS})
+			select s.person_id, ${JOB_COLUMNS} from jsonb_populate_recordset(null::employment,$1) r
+			join staged_person s using(emp_id)`,
+			params,
+		);
+	}
+	const duplicate = await client.query(
+		"select 1 from staged_person group by person_id having count(*)>1 limit 1",
+	);
+	if (duplicate.rowCount)
+		throw new Error("同一批人事数据中的多个工号关联了同一个人员编号");
+	const occupied = await client.query(
+		"select 1 from staged_person s join employment e using(person_id) where s.emp_id<>e.emp_id limit 1",
+	);
+	if (occupied.rowCount) throw new Error("关联的人员编号已绑定其他在职工号");
+	const invalid =
+		await client.query(`select 1 from staged_person s left join person p on p.person_id=s.linked_person_id
+		where s.linked_person_id is not null and (p.person_id is null or s.person_id<>s.linked_person_id) limit 1`);
+	if (invalid.rowCount)
+		throw new Error("人事源的已确认人员关联无效或与现有工号冲突");
 }
 
 async function stageExperience(
@@ -99,7 +95,7 @@ async function stageExperience(
 				$8::text[], $9::jsonb[], $10::text[], $11::text[], $12::text[], $13::text[],
 				$14::text[], $15::text[], $16::int[]) r(emp_id, kind, unemployed, start_date, end_date, company, department, department_path,
 				company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months)
-			 join staged_employee s using(emp_id)`,
+			 join staged_person s using(emp_id)`,
 			[
 				chunk.map((r) => r.emp_id),
 				chunk.map((r) => r.kind),
@@ -141,24 +137,24 @@ async function reconcile({ client }: CorpusSession): Promise<{
 		["person", BIO_COLUMNS],
 		["employment", JOB_COLUMNS],
 	] as const) {
-		await client.query(`insert into ${table}(person_id,${columns}) select person_id,${columns} from staged_employee
+		await client.query(`insert into ${table}(person_id,${columns}) select person_id,${columns} from staged_${table}
 			on conflict(person_id) do update set (${columns})=(${columns
 				.split(", ")
 				.map((c) => `excluded.${c}`)
 				.join(",")})`);
 	}
 	await client.query(
-		`insert into person_identity(kind,value,person_id) select 'emp_id',emp_id,person_id from staged_employee on conflict do nothing`,
+		`insert into person_identity(kind,value,person_id) select 'emp_id',emp_id,person_id from staged_person on conflict do nothing`,
 	);
 	await client.query(
-		`insert into profile_source(person_id,source_kind) select person_id,'hris' from staged_employee
+		`insert into profile_source(person_id,source_kind) select person_id,'hris' from staged_person
 			on conflict(person_id) where source_kind='hris' do nothing`,
 	);
 	const employeesGone = await client.query(
-		"delete from employment e where not exists(select from staged_employee s where s.person_id=e.person_id)",
+		"delete from employment e where not exists(select from staged_person s where s.person_id=e.person_id)",
 	);
 	await client.query(
-		"delete from profile_source f where f.source_kind='hris' and not exists(select from staged_employee s where s.person_id=f.person_id)",
+		"delete from profile_source f where f.source_kind='hris' and not exists(select from staged_person s where s.person_id=f.person_id)",
 	);
 	await client.query(`delete from profile_experience pe using profile_source f,experience e
 		where f.id=pe.profile_id and f.source_kind='hris' and e.id=pe.experience_id
@@ -221,7 +217,7 @@ async function replaceRecords(
 	for (const chunk of chunked(records, ROWS_PER_STATEMENT))
 		await client.query(
 			`insert into employee_record (person_id, stream, period_start, period_end, value)
-			 select e.person_id,r.stream,r.start,r.finish,r.value from unnest($1::text[], $2::text[], $3::date[], $4::date[], $5::text[]) r(emp_id,stream,start,finish,value) join staged_employee e using(emp_id)`,
+			 select e.person_id,r.stream,r.start,r.finish,r.value from unnest($1::text[], $2::text[], $3::date[], $4::date[], $5::text[]) r(emp_id,stream,start,finish,value) join staged_person e using(emp_id)`,
 			[
 				chunk.map((r) => r.emp_id),
 				chunk.map((r) => r.stream),
@@ -268,37 +264,6 @@ async function replaceCompanies(
 		);
 }
 
-/** 已确认的入职关联由人事源提供，联系方式只用于提示人工核对。 */
-async function stageHrisLinks(
-	{ client }: CorpusSession,
-	profiles: SourceEmployee[],
-) {
-	const links = profiles
-		.filter((p) => p.linked_person_id)
-		.map((p) => ({ emp_id: p.emp_id.trim(), linked: p.linked_person_id }));
-	for (const batch of chunked(links, ROWS_PER_STATEMENT)) {
-		await client.query(
-			"update staged_employee s set person_id=k.linked from jsonb_to_recordset($1) k(emp_id text,linked text) where s.emp_id=k.emp_id",
-			[JSON.stringify(batch)],
-		);
-	}
-	if (!links.length) return;
-	const duplicate = await client.query(
-		"select 1 from staged_employee where person_id is not null group by person_id having count(distinct emp_id)>1 limit 1",
-	);
-	if (duplicate.rowCount)
-		throw new Error("同一批人事数据中的多个工号关联了同一个人员编号");
-	const occupied = await client.query(
-		"select 1 from staged_employee s join employment e using(person_id) where s.emp_id<>e.emp_id limit 1",
-	);
-	if (occupied.rowCount) throw new Error("关联的人员编号已绑定其他在职工号");
-	const conflict =
-		await client.query(`select 1 from staged_employee s left join person p using(person_id)
-			left join person_identity i on i.kind='emp_id' and i.value=s.emp_id
-			where s.person_id is not null and (p.person_id is null or i.person_id<>s.person_id) limit 1`);
-	if (conflict.rowCount)
-		throw new Error("人事源的已确认人员关联无效或与现有工号冲突");
-}
 async function replaceHrisContacts(
 	{ client }: CorpusSession,
 	profiles: SourceEmployee[],
@@ -319,7 +284,7 @@ async function replaceHrisContacts(
 		await client.query(
 			`insert into person_identity(person_id,kind,value,origin)
 			select s.person_id,k.kind,k.value,'hris' from jsonb_to_recordset($1) k(emp_id text,kind text,value text)
-			join staged_employee s using(emp_id) on conflict do nothing`,
+			join staged_person s using(emp_id) on conflict do nothing`,
 			[JSON.stringify(keys)],
 		);
 	}
@@ -358,10 +323,7 @@ export async function sync(
 	let counts: Awaited<ReturnType<typeof reconcile>> | undefined;
 	try {
 		if (part !== "knowledge") {
-			await stageEmployee(session, employee);
-			await stageHrisLinks(session, data.employees);
-			await client.query(`update staged_employee s set person_id=coalesce(
-				(select i.person_id from person_identity i where i.kind='emp_id' and i.value=s.emp_id),s.person_id,gen_random_uuid()::text)`);
+			await stageEmployees(session, employee);
 			await stageExperience(session, experience);
 			counts = await reconcile(session);
 			await replaceHrisContacts(session, data.employees);

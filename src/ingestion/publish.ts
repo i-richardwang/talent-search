@@ -1,6 +1,7 @@
 import "@tanstack/react-start/server-only";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
+import { educationRank } from "#/corpus/contract";
 import { prunePhrases } from "#/corpus/phrases";
 import { phrasesOf } from "#/corpus/route-texts";
 import { asReader, authorizedPool } from "#/db/snapshot";
@@ -180,8 +181,8 @@ async function publish(
 	const id = existing ?? randomUUID();
 	if (!existing)
 		await c.query(
-			"insert into person(person_id,name,school,education_level,education_rank) values($1,$2,$3,$4,array_position(array['高中及以下','大专','本科','硕士','博士'],$4))",
-			[id, r.name, r.school, r.education],
+			"insert into person(person_id,name,school,education_level,education_rank) values($1,$2,$3,$4,$5)",
+			[id, r.name, r.school, r.education, educationRank(r.education)],
 		);
 	const original = await c.query(
 		"select 1 from profile_source where person_id=$1 and pool_id=$2 and resume_file_id=$3",

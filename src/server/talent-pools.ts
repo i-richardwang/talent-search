@@ -7,7 +7,6 @@ import type { Touch } from "#/ingestion/touch";
 import { appendTouch, TOUCH_ORDER } from "#/ingestion/touch-store";
 import { orgPathOf } from "#/lib/org";
 import { pageAt, tablePage } from "#/lib/paging";
-import { collectFiles } from "./resume-files";
 
 const DEFAULT_POOL = "external";
 export async function ensureDefaultPool() {
@@ -91,7 +90,6 @@ export async function removeMember(
 			[user, personId],
 		);
 	});
-	await collectFiles();
 }
 
 export async function setTalentPool(

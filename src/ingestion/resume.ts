@@ -25,10 +25,15 @@ type Contacts = Resume["contacts"];
 const EMAIL = /[\w.%+-]+\s*@\s*[\w.-]+\s*\.\s*[a-z]{2,}/gi;
 const PHONE =
 	/(?<!\d)(?:\+?\d{1,4}[ ()-]*)?(?:\(?\d{2,4}\)?[ .-]*)?\d(?:[ -]?\d){6,13}(?!\d)/g;
-const CONTACT_LINE =
-	/(?:微信(?:号)?|微讯|we\s*chat|wx(?:id)?\s*[:：]|vx\s*[:：]|电子邮箱|手机号|联系电话|e-?mail|电话|联系方式)\s*[:：=]?\s*[^\n，。；;]+/gi;
+const CONTACT_FIELD =
+	/(?:微信(?:号)?|微讯|we\s*chat(?:\s+id)?|wx(?:id)?|vx|电子邮箱|手机号|联系电话|e-?mail|电话|联系方式)[ \t]*[:=][ \t]*[^\r\n,。;]+/gi;
+const WECHAT_HANDLE =
+	/(?:微信(?:号)?|微讯|we[ \t]*chat(?:[ \t]+id)?|\bwx(?:id)?\b|\bvx\b)[ \t]*(?:为|是)?[ \t]*[a-z\d][\w.-]*/gi;
 function clean(text: string, contacts: Contacts) {
-	let result = text.normalize("NFKC");
+	let result = text
+		.normalize("NFKC")
+		.replace(CONTACT_FIELD, "")
+		.replace(WECHAT_HANDLE, "");
 	for (const raw of Object.values(contacts)) {
 		const value = raw.normalize("NFKC").trim();
 		if (value)
@@ -37,11 +42,7 @@ function clean(text: string, contacts: Contacts) {
 				"",
 			);
 	}
-	return result
-		.replace(CONTACT_LINE, "")
-		.replace(EMAIL, "")
-		.replace(PHONE, "")
-		.trim();
+	return result.replace(EMAIL, "").replace(PHONE, "").trim();
 }
 export function sanitized(r: Resume): Resume {
 	return {

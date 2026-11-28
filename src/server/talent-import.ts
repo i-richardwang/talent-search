@@ -7,7 +7,7 @@ import {
 	withCorpusWrite,
 } from "#/corpus/session";
 import { pool } from "#/db";
-import { authorizedPool, withReadSnapshot } from "#/db/snapshot";
+import { asReader, authorizedPool, withReadSnapshot } from "#/db/snapshot";
 import { matches } from "#/identity/match";
 import type { Decision } from "#/ingestion/decision";
 import { parseResume } from "#/ingestion/parser";
@@ -118,24 +118,23 @@ async function processClaimed(worker: PoolClient) {
 	if (!task) return "idle" as const;
 	let stage: ImportStage = "资料权限";
 	try {
-		// 同一原件在允许读取的范围里已入过池，复用该文件的资料，不再向模型发送。
-		const saved = await withReadSnapshot(
+		const input = await withReadSnapshot(
 			{ account: task.owner_id },
 			async (c) => {
-				const entitled = await c.query(
-					"select id from resume_import where id=$1 and status='processing'",
+				const {
+					rows: [row],
+				} = await c.query<{ draft: Resume | null; source: string | null }>(
+					`select t.draft,(
+                select s.id from profile_source s where s.resume_file_id=t.file_id order by s.captured_at desc,s.seq desc limit 1
+            ) as source from resume_import t where t.id=$1 and t.status='processing'`,
 					[task.id],
 				);
-				if (!entitled.rowCount) throw new Error("资料权限已变更");
-				const { rows } = await c.query<{ parsed: Resume }>(
-					`select parsed from profile_source where resume_file_id=$1 order by captured_at desc,seq desc limit 1`,
-					[task.file_id],
-				);
-				return rows[0]?.parsed;
+				if (!row) throw new Error("资料权限已变更");
+				return row;
 			},
 		);
-		let draft = saved;
-		if (!draft) {
+		let draft = input.draft;
+		if (!draft && !input.source) {
 			stage = "原件读取";
 			const original = await files.get(task.sha256);
 			stage = "PDF 解析";
@@ -146,14 +145,36 @@ async function processClaimed(worker: PoolClient) {
 			} finally {
 				await pdf.close();
 			}
+			stage = "资料发布";
+			await worker.query(
+				"update resume_import set draft=$2 where id=$1 and status='processing'",
+				[task.id, draft],
+			);
 		}
 		stage = "资料发布";
 		const published = await corpusTransaction(async (c) => {
-			const lock = await c.query(
-				"select 1 from resume_import where id=$1 and status='processing' for update",
-				[task.id],
-			);
-			return !!lock.rowCount && classifyImport(c, task, draft);
+			// 资料版本可能在等待写者锁时撤权或删除，复用其内容前须在发布事务内读取。
+			const current =
+				draft ??
+				(await asReader(
+					c,
+					task.owner_id,
+					async () =>
+						(
+							await c.query<{ parsed: Resume }>(
+								"select parsed from profile_source where id=$1",
+								[input.source],
+							)
+						).rows[0]?.parsed,
+				));
+			if (!current) {
+				await authorizedPool(c, task.owner_id, task.pool_id);
+				await c.query("update resume_import set status='queued' where id=$1", [
+					task.id,
+				]);
+				return false;
+			}
+			return classifyImport(c, task, current);
 		});
 		return published ? "published" : "processed";
 	} catch (error) {
@@ -193,7 +214,7 @@ export async function decideImport(
 		if (choice === "retry") {
 			await authorizedPool(c, user, task.pool_id);
 			await c.query(
-				"update resume_import set status='queued',message='' where id=$1",
+				"update resume_import set status='queued',draft=null,message='' where id=$1",
 				[id],
 			);
 			return;

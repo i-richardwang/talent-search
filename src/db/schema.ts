@@ -19,6 +19,7 @@ import {
 	unique,
 	uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { EDUCATION_LADDER } from "#/corpus/contract";
 import type { Resume } from "#/ingestion/resume";
 import type { Touch } from "#/ingestion/touch";
 import { AUDIT_ACTIONS } from "#/lib/audit";
@@ -430,21 +431,27 @@ export const resumeImport = pgTable(
 const CARDS = sql`with hr as (select * from employment where person_id in (${HR})),
 	accessible as (select m.person_id, array_agg(distinct p.name order by p.name) as pools, array_agg(p.id order by p.id) as ids from pool_member m
 	join talent_pool p on p.id=m.pool_id where p.id in (${POOLS}) group by m.person_id),
-	pdf as (select distinct on (s.person_id) s.person_id,s.parsed,j.company as recent_company,j.title as recent_title from profile_source s
-	left join lateral(select w->>'company' as company,w->>'title' as title from jsonb_array_elements(s.parsed->'experiences') w order by (w->>'end'='至今') desc, (w->>'end') desc, (w->>'start') desc limit 1) j on true
+	pdf as (select distinct on (s.person_id) s.id,s.person_id,s.parsed from profile_source s
 	where s.pool_id in (${POOLS}) order by s.person_id,s.captured_at desc,s.seq desc)
 	select p.person_id,h.emp_id,case when h.person_id is not null then '在职员工' else '外部候选人' end as talent_type,
-	md5(coalesce(h.person_id,'') || coalesce(array_to_json(a.ids)::text,'') || coalesce((select string_agg(s.id,',' order by s.id) from profile_source s where s.person_id=p.person_id and s.pool_id=any(a.ids)), '')) as access_key, coalesce(a.pools,'{}') as pools,coalesce(d.recent_company,'') as recent_company,coalesce(d.recent_title,'') as recent_title,
+	md5(coalesce(h.person_id,'') || coalesce(array_to_json(a.ids)::text,'') || coalesce((select string_agg(s.id,',' order by s.id) from profile_source s where s.person_id=p.person_id and s.pool_id=any(a.ids)), '')) as access_key, coalesce(a.pools,'{}') as pools,coalesce(j.company,'') as recent_company,coalesce(j.title,'') as recent_title,
 	case when h.person_id is not null then p.name else d.parsed->>'name' end as name,
 	case when h.person_id is not null then p.school else coalesce(d.parsed->>'school','') end as school,
 	case when h.person_id is not null then p.education_level else coalesce(d.parsed->>'education','') end as education_level,
-	case when h.person_id is not null then p.education_rank else array_position(array['高中及以下','大专','本科','硕士','博士'],d.parsed->>'education') end as education_rank,
+	case when h.person_id is not null then p.education_rank else array_position(array[${sql
+		.join(
+			EDUCATION_LADDER.map((level) => sql`${level}`),
+			sql`,`,
+		)
+		.inlineParams()}],d.parsed->>'education') end as education_rank,
 	case when h.person_id is not null then p.school_tier else '' end as school_tier,
 	case when h.person_id is not null then p.overseas_educated end as overseas_educated,
 	coalesce(h.cur_dept,'') as cur_dept,coalesce(h.cur_dept_path,'') as cur_dept_path,coalesce(h.cur_title,'') as cur_title,
 	coalesce(h.cur_seq_l1,'') as cur_seq_l1,coalesce(h.cur_seq_l2,'') as cur_seq_l2,coalesce(h.cur_seq_l3,'') as cur_seq_l3,
 	coalesce(h.cur_level,'') as cur_level,coalesce(h.cur_level_band,'') as cur_level_band,h.cur_level_rank,h.hire_date,coalesce(h.recruitment,'') as recruitment
 	from person p left join hr h using(person_id) left join accessible a using(person_id) left join pdf d using(person_id)
+	left join lateral(select e.company,e.title from profile_experience pe join experience e on e.id=pe.experience_id
+		where pe.profile_id=d.id order by e.end_date desc nulls first,e.start_date desc,e.id limit 1) j on true
 	where h.person_id is not null or a.person_id is not null`;
 export const personCard = pgView("person_card", {
 	personId: text("person_id").notNull(),

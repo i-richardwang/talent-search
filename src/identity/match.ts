@@ -60,13 +60,21 @@ export async function matches(
 			r.school === draft.school &&
 			r.education === draft.education;
 		const overlaps = work.some((e) =>
-			r.jobs.some(
-				(j) =>
-					!!e.company &&
-					e.company === j.company &&
-					e.startDate <= (j.end ?? asOf) &&
-					j.start <= (e.endDate ?? asOf),
-			),
+			r.jobs.some((j) => {
+				if (e.company)
+					return (
+						e.company === j.company &&
+						e.startDate <= (j.end ?? asOf) &&
+						j.start <= (e.endDate ?? asOf)
+					);
+				return (
+					!j.company &&
+					!!e.title &&
+					e.title === j.title &&
+					e.startDate === j.start &&
+					e.endDate === j.end
+				);
+			}),
 		);
 		const contactsMatch =
 			r.contacts.some(

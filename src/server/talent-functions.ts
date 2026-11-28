@@ -5,7 +5,6 @@ import { touchSchema } from "#/ingestion/touch";
 import { organizations } from "./accounts";
 import { administrator, authenticated } from "./auth-functions";
 import { wakeIngestionJob } from "./jobs";
-import { collectFiles } from "./resume-files";
 import { decideImport, reviewImport, uploadResume } from "./talent-import";
 import {
 	addTouch,
@@ -19,7 +18,7 @@ export const loadPoolBoard = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator(
 		z.object({
-			page: z.number().int().positive(),
+			page: z.int().positive(),
 			pool: z.string().optional(),
 			tab: z.enum(["members", "imports"]),
 		}),
@@ -52,7 +51,7 @@ export const reviseTouch = createServerFn({ method: "POST" })
 	.validator(
 		z.object({
 			pool: z.string(),
-			id: z.number().int().positive(),
+			id: z.int().positive(),
 			touch: touchSchema.nullable(),
 		}),
 	)
@@ -62,9 +61,10 @@ export const reviseTouch = createServerFn({ method: "POST" })
 export const dropMember = createServerFn({ method: "POST" })
 	.middleware([authenticated])
 	.validator(z.object({ pool: z.string(), person: z.string() }))
-	.handler(({ context, data }) =>
-		removeMember(context.viewer.id, data.pool, data.person),
-	);
+	.handler(async ({ context, data }) => {
+		await removeMember(context.viewer.id, data.pool, data.person);
+		await wakeIngestionJob("resume-import");
+	});
 export const submitDecision = createServerFn({ method: "POST" })
 	.middleware([authenticated])
 	.validator(
@@ -76,9 +76,8 @@ export const submitDecision = createServerFn({ method: "POST" })
 	.handler(async ({ context, data }) => {
 		const added = await decideImport(context.viewer.id, data.id, data.choice);
 		if (added) await wakeIngestionJob("derive");
-		if (data.choice === "retry") await wakeIngestionJob("resume-import");
-		if (data.choice !== "retry" && data.choice.action === "cancel")
-			await collectFiles();
+		if (data.choice === "retry" || data.choice.action === "cancel")
+			await wakeIngestionJob("resume-import");
 	});
 export const addResume = createServerFn({ method: "POST" })
 	.middleware([authenticated])

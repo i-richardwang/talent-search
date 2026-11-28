@@ -14,7 +14,7 @@ export async function parseResume(
 	const pendingText = new Set<number>();
 	const pendingImages: { page: number; png: Uint8Array }[] = [];
 	const pageInput = z.object({
-		page: z.number().int().min(1).max(pdf.pageCount),
+		page: z.int().min(1).max(pdf.pageCount),
 	});
 	const tools = {
 		read_page_text: tool({

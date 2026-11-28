@@ -70,6 +70,8 @@ bun run db:import-employees employee_archive
 
 ## 已经使用统一人员编号的库
 
-在停写的副本上运行 `bun run db:push` 建立每人唯一的 HRIS 资料索引，再运行 `bun run db:upgrade-queries`。已有资料沿用原编号。它在一个事务里转换保存的查询条件中的人员关联列，保留条件编号、命名参数和字面值。可以重复运行。员工单表归档导入已包含这一步。
+停写副本上先执行 `drop view if exists public.person_card cascade;`，再运行 `bun run db:push` 重建名片及依赖它的目录视图，同时建立每人唯一的 HRIS 资料索引。名片从最新一份可见简历的经历中按数据库日期选择最近岗位。已有资料沿用原编号。若前面的版本序号升级已删除视图，这些步骤共用一次 push。
+
+运行 `bun run db:upgrade-queries` 转换已保存查询中的人员关联列。命令保留条件编号、命名参数和字面值，可以重复运行。员工单表归档导入已包含这一步。
 
 详情链接使用 `person_id`。按工号收藏的链接，仅在当前账号有权查看该雇佣关系时可打开。

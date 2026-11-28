@@ -18,8 +18,13 @@ export const EDUCATION_LADDER = [
 	"博士",
 ] as const;
 
+export function educationRank(education: string) {
+	const index = (EDUCATION_LADDER as readonly string[]).indexOf(education);
+	return index < 0 ? null : index + 1;
+}
+
 /**
- * 一人一行。`emp_id` 是全库主键，其余是详情页会读的档案字段。
+ * 一人一行。`emp_id` 是 HRIS 的员工标识，其余是详情页会读的档案字段。
  *
  * `school` 和 `school_tier` 说的都是最高学历那所学校；学校档的分法（985、QS100……）
  * 由数据源给，档与档之间没有高低，只按取值筛。`overseas_educated` 是最高学历是不是

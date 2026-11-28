@@ -199,6 +199,71 @@ test("日期保留原始粒度、未知日期和未来起始日需核对", async
 		/15500000001|hidden_handle|@|555/,
 	);
 });
+test("脱敏保留通信产品和客服职责，剥离未登记的联系信息", async () => {
+	const { sanitized } = await import("#/ingestion/resume");
+	const description =
+		"微信支付对账，维护电子邮箱系统；电话客服培训。微信 wx_hidden42，训练排班模型。微信号wxid_private123；电子邮箱：hidden@example.invalid";
+	const [job] = sanitized({
+		...draft,
+		experiences: [
+			{
+				company: "微信支付服务",
+				title: "电话客服主管",
+				description,
+				start: "2021",
+				end: "2022",
+			},
+		],
+	}).experiences;
+	assert.equal(job?.company, "微信支付服务");
+	assert.equal(job?.title, "电话客服主管");
+	assert.match(
+		job?.description ?? "",
+		/微信支付对账.*维护电子邮箱系统.*电话客服培训.*训练排班模型/,
+	);
+	assert.doesNotMatch(
+		job?.description ?? "",
+		/wx_hidden42|wxid_private123|hidden@/,
+	);
+});
+
+test("只有岗位和日期的相同履历可去重，最近岗位按完整日期确定", async () => {
+	await pools.ensureDefaultPool();
+	const resume: Resume = {
+		name: "合成无公司名",
+		school: "",
+		education: "",
+		contacts: { phone: "", email: "", wechat: "" },
+		experiences: [
+			{
+				company: "",
+				title: "合成年末岗位",
+				description: "全年负责",
+				start: "2020",
+				end: "2023",
+			},
+			{
+				company: "",
+				title: "合成年初岗位",
+				description: "年初负责",
+				start: "2022",
+				end: "2023-01",
+			},
+		],
+	};
+	const first = await ingest("missing company original", resume);
+	const repeat = await ingest("missing company second file", resume);
+	assert.equal(first.status, "added");
+	assert.equal(repeat.status, "duplicate");
+	assert.equal(repeat.person_id, first.person_id);
+	const { rows } = await withReadSnapshot({ account: OWNER }, (c) =>
+		c.query("select recent_title from person_card where person_id=$1", [
+			first.person_id,
+		]),
+	);
+	assert.equal(rows[0]?.recent_title, "合成年末岗位");
+});
+
 test("离线工具回执纠错、立即检索、重复版本、资料权限、同步及原件清理", async () => {
 	await pools.ensureDefaultPool();
 	await pool.query(
@@ -567,6 +632,10 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 		const conflicting = linkedRow.replace("SYN-JOIN", "SYN-OTHER");
 		for (const [input, message] of [
 			[`${valid}${conflicting}\n`, /多个工号/],
+			[
+				valid.replace(linkedRow, `${sample.join(",")},\n${conflicting}`),
+				/多个工号/,
+			],
 			[valid.replace(linkedRow, conflicting), /已绑定其他在职工号/],
 		] as const) {
 			await writeFile(employeesFile, input);
@@ -620,6 +689,11 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 		pdf("Synthetic resume"),
 	);
 	await pools.removeMember(OWNER, "nested", first.person_id);
+	assert.equal(
+		(await originals.resumeResponse(OWNER, src.id, false)).status,
+		404,
+	);
+	await originals.collectFiles();
 	await assert.rejects(files.get(blob));
 	const audit = await pool.query(
 		"select action from audit_event where person_id=$1",
@@ -884,6 +958,118 @@ test("asReader 在应用异常和 SQL 异常后恢复写入角色，并保留原
 	}
 });
 
+test("等待发布期间撤销原资料权限，下一轮从上传原件解析", async () => {
+	await pools.ensureDefaultPool();
+	const sourcePool = "synthetic-revoked-source";
+	const actor = "synthetic-uploader";
+	await pool.query(
+		"insert into auth_user(id,name,email,username) values ($1,$1,'synthetic-uploader@example.invalid',$1)",
+		[actor],
+	);
+	await pool.query("insert into talent_pool(id,name) values($1,$1)", [
+		sourcePool,
+	]);
+	const token = "revocable pdf";
+	const privateVersion = {
+		...draft,
+		name: "合成私有核对结果",
+		contacts: { phone: "", email: "", wechat: "" },
+	};
+	assert.equal(
+		(await ingest(token, privateVersion, sourcePool)).status,
+		"added",
+	);
+	const id = await api.uploadResume(
+		actor,
+		"external",
+		"合成原件.pdf",
+		pdf(token),
+	);
+	const { acquireCorpusSession } = await import("#/corpus/session");
+	const writer = await acquireCorpusSession(true);
+	assert.ok(writer);
+	const attempt = api.processNextResume();
+	try {
+		const deadline = Date.now() + 4000;
+		let blocked = false;
+		while (Date.now() < deadline && !blocked) {
+			const { rows } = await writer.client.query<{ blocked: boolean }>(
+				"select exists(select from pg_stat_activity where pg_backend_pid()=any(pg_blocking_pids(pid))) as blocked",
+			);
+			blocked = !!rows[0]?.blocked;
+			if (!blocked) await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		assert.ok(blocked, "导入任务正在等待发布");
+		await writer.client.query(
+			"update talent_pool set visibility='org',org_path='合成受限部门' where id=$1",
+			[sourcePool],
+		);
+	} finally {
+		await writer.release();
+		await attempt;
+	}
+	assert.equal((await state(id)).status, "queued");
+	const trace = answerResume({ ...privateVersion, name: "合成原件姓名" });
+	await api.processNextResume();
+	const stored = await state(id);
+	assert.equal(stored.status, "added");
+	assert.ok(trace.tools.includes("submit_resume"));
+	const result = await withReadSnapshot({ account: actor }, (c) =>
+		c.query("select name from person_card where person_id=$1", [
+			stored.person_id,
+		]),
+	);
+	assert.equal(result.rows[0]?.name, "合成原件姓名");
+});
+
+test("中断后继续发布已解析的草稿，显式重试才再次解析原件", async () => {
+	await pools.ensureDefaultPool();
+	const cached = {
+		...draft,
+		name: "合成恢复发布",
+		contacts: { phone: "", email: "", wechat: "" },
+		school: "",
+		education: "" as const,
+	};
+	const next = { ...cached, name: "合成重新解析" };
+	const task = await api.uploadResume(
+		OWNER,
+		"external",
+		"合成恢复.pdf",
+		pdf("resume checkpoint"),
+	);
+	await pool.query(
+		"update resume_import set status='processing',draft=$2 where id=$1",
+		[task, cached],
+	);
+	const trace = answerResume(next);
+	assert.equal(await api.processNextResume(), "published");
+	assert.equal(trace.tools.length, 0);
+	const saved = await state(task);
+	assert.equal(
+		(
+			await withReadSnapshot({ account: OWNER }, (c) =>
+				c.query("select name from person_card where person_id=$1", [
+					saved.person_id,
+				]),
+			)
+		).rows[0]?.name,
+		cached.name,
+	);
+	const retry = await api.uploadResume(
+		OWNER,
+		"external",
+		"合成重试.pdf",
+		pdf("resume reparse"),
+	);
+	await pool.query(
+		"update resume_import set status='failed',draft=$2 where id=$1",
+		[retry, cached],
+	);
+	await api.decideImport(OWNER, retry, "retry");
+	await api.processNextResume();
+	assert.ok(trace.tools.includes("submit_resume"));
+});
 test("解析失败按阶段记录脱敏原因，上传者可预览失败原件，队列未启动也能唤醒", async () => {
 	await pools.ensureDefaultPool();
 	const { wakeIngestionJob } = await import("#/server/jobs");

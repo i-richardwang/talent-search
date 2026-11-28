@@ -76,8 +76,8 @@ async function setup(boss: PgBoss): Promise<void> {
 			if (outcome === "idle") break;
 			if (outcome === "published") published = true;
 		}
-		await collectFiles();
 		if (published) await boss.send("derive", {});
+		await collectFiles();
 	});
 	await boss.work<{ manual?: boolean }>("derive", async ([job]) => {
 		await runTask("derive", {
