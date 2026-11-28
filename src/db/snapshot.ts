@@ -131,10 +131,10 @@ export async function asReader<T>(
 		}
 		return await read();
 	} finally {
-		if (client.getTransactionStatus() === "E")
-			await client.query("rollback to savepoint corpus_reader");
-		await client.query("reset role");
-		await client.query("release savepoint corpus_reader");
+		// 回到切换身份之前，同时还原 role 与 talent.scope，包含读操作已触发 SQL 异常的情形。
+		await client.query(
+			"rollback to savepoint corpus_reader; release savepoint corpus_reader",
+		);
 	}
 }
 

@@ -1,5 +1,4 @@
 import "@tanstack/react-start/server-only";
-import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, join, sep } from "node:path";
 import {
@@ -19,40 +18,7 @@ type Factory = {
 	destroy: (canvas: Canvas) => void;
 };
 
-async function recognize(page: PDFPageProxy, factory: Factory, bin: string) {
-	const original = page.getViewport({ scale: 1 });
-	const scale = Math.min(2, 2048 / Math.max(original.width, original.height));
-	const viewport = page.getViewport({ scale });
-	const surface = factory.create(
-		Math.ceil(viewport.width),
-		Math.ceil(viewport.height),
-	);
-	try {
-		await page.render({ canvas: surface.canvas, viewport }).promise;
-		const png = surface.canvas.toBuffer("image/png");
-		return await new Promise<string>((resolve, reject) => {
-			const child = execFile(
-				bin,
-				["stdin", "stdout", "-l", process.env.RESUME_OCR_LANG || "chi_sim+eng"],
-				{ timeout: 30000, maxBuffer: 2 * 1024 * 1024 },
-				(err, out) =>
-					err
-						? reject(new Error("本地 OCR 未能读取该页"))
-						: resolve(out.trim()),
-			);
-			child.stdin?.on("error", () => {});
-			child.stdin?.end(png);
-		});
-	} finally {
-		factory.destroy(surface);
-	}
-}
-export class ScanNeedsText extends Error {
-	constructor() {
-		super("扫描件缺少文字，请上传可选取文字的 PDF 或手动填写档案");
-	}
-}
-export async function pdfPages(bytes: Uint8Array) {
+export async function openResumePdf(bytes: Uint8Array) {
 	const task = getDocument({
 		data: Uint8Array.from(bytes),
 		verbosity: VerbosityLevel.ERRORS,
@@ -67,30 +33,54 @@ export async function pdfPages(bytes: Uint8Array) {
 	try {
 		const doc = await task.promise;
 		if (doc.numPages > 120) throw new Error("每份简历最多支持 120 页");
-		const pages: string[] = [];
-		for (let n = 1; n <= doc.numPages; n++) {
-			const page = await doc.getPage(n);
+		async function usePage<T>(
+			number: number,
+			read: (page: PDFPageProxy) => Promise<T>,
+		) {
+			const page = await doc.getPage(number);
 			try {
-				const content = await page.getTextContent();
-				let text = content.items
-					.flatMap((item) =>
-						"str" in item ? [item.str + (item.hasEOL ? "\n" : " ")] : [],
-					)
-					.join("")
-					.trim();
-				if (!text) {
-					const bin = process.env.RESUME_OCR_BIN?.trim();
-					if (!bin) throw new ScanNeedsText();
-					text = await recognize(page, doc.canvasFactory as Factory, bin);
-				}
-				pages.push(text);
+				return await read(page);
 			} finally {
 				page.cleanup();
 			}
 		}
-		if (!pages.some(Boolean)) throw new ScanNeedsText();
-		return pages;
-	} finally {
+		return {
+			pageCount: doc.numPages,
+			readPageText: (number: number) =>
+				usePage(number, async (page) => {
+					const content = await page.getTextContent();
+					return content.items
+						.flatMap((item) =>
+							"str" in item ? [item.str + (item.hasEOL ? "\n" : " ")] : [],
+						)
+						.join("")
+						.trim();
+				}),
+			renderPagePng: (number: number) =>
+				usePage(number, async (page) => {
+					const original = page.getViewport({ scale: 1 });
+					const viewport = page.getViewport({
+						scale: Math.min(
+							2,
+							2048 / Math.max(original.width, original.height),
+						),
+					});
+					const factory = doc.canvasFactory as Factory;
+					const surface = factory.create(
+						Math.ceil(viewport.width),
+						Math.ceil(viewport.height),
+					);
+					try {
+						await page.render({ canvas: surface.canvas, viewport }).promise;
+						return surface.canvas.toBuffer("image/png");
+					} finally {
+						factory.destroy(surface);
+					}
+				}),
+			close: () => task.destroy(),
+		};
+	} catch (error) {
 		await task.destroy();
+		throw error;
 	}
 }

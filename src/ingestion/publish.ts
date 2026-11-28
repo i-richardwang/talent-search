@@ -6,8 +6,9 @@ import { phrasesOf } from "#/corpus/route-texts";
 import { asReader, authorizedPool } from "#/db/snapshot";
 import { contactKeys } from "#/identity/contacts";
 import { exactMatch, matches } from "#/identity/match";
-import { memberForWrite } from "./membership";
 import { periods, type Resume, resumeSchema, sanitized } from "./resume";
+import type { Touch } from "./touch";
+import { appendTouch } from "./touch-store";
 
 export type ImportRow = {
 	id: string;
@@ -17,10 +18,10 @@ export type ImportRow = {
 	sha256: string;
 	day: string;
 	draft: Resume | null;
+	touch: Touch | null;
 };
 
 async function saveProfile(c: PoolClient, t: ImportRow, r: Resume, id: string) {
-	const member = await memberForWrite(c, t.owner_id, t.pool_id, id);
 	const created = await c.query<{ id: string }>(
 		`insert into profile_source(person_id,source_kind,pool_id,resume_file_id,filename,created_by,captured_at,parsed)
 		select $1,'pdf_resume',pool_id,file_id,filename,owner_id,created_at,$3 from resume_import where id=$2 returning id`,
@@ -33,6 +34,12 @@ async function saveProfile(c: PoolClient, t: ImportRow, r: Resume, id: string) {
 		[id, t.pool_id],
 	);
 	if (latest.rows[0]?.id !== profile) return;
+	const member = (
+		await c.query<{ contacts: Resume["contacts"] }>(
+			"select contacts from pool_member where pool_id=$1 and person_id=$2",
+			[t.pool_id, id],
+		)
+	).rows[0];
 	const contacts = {
 		phone: r.contacts.phone || member?.contacts.phone || "",
 		email: r.contacts.email || member?.contacts.email || "",
@@ -101,8 +108,8 @@ async function saveProfile(c: PoolClient, t: ImportRow, r: Resume, id: string) {
 	await prunePhrases(c);
 }
 export type Decision =
-	| { action: "new"; draft?: Resume }
-	| { action: "link"; personId: string; draft?: Resume }
+	| { action: "new"; draft?: Resume; touch?: Touch }
+	| { action: "link"; personId: string; draft?: Resume; touch?: Touch }
 	| { action: "cancel" };
 
 function candidates(c: PoolClient, t: ImportRow, r: Resume) {
@@ -148,16 +155,17 @@ export async function adjudicateImport(
 	await authorizedPool(c, t.owner_id, t.pool_id);
 	if (choice.action === "cancel") {
 		await c.query(
-			"update resume_import set status='cancelled',file_id=null,draft=null,message='' where id=$1",
+			"update resume_import set status='cancelled',file_id=null,draft=null,touch=null,message='' where id=$1",
 			[t.id],
 		);
 		return false;
 	}
 	const r = sanitized(resumeSchema.parse(choice.draft ?? t.draft));
-	if (choice.action === "new") return publish(c, t, r, null, "added");
+	const task = { ...t, touch: choice.touch ?? t.touch };
+	if (choice.action === "new") return publish(c, task, r, null, "added");
 	if (!(await candidates(c, t, r)).some((m) => m.personId === choice.personId))
 		throw new Error("找不到可关联的档案，请重新核对");
-	return publish(c, t, r, choice.personId, "added");
+	return publish(c, task, r, choice.personId, "added");
 }
 
 async function publish(
@@ -185,8 +193,10 @@ async function publish(
 			[t.owner_id, existing ? "talent-link" : "talent-add", id],
 		);
 	}
+	if (t.touch && (t.touch.touched || t.touch.notes))
+		await appendTouch(c, t.owner_id, t.pool_id, id, t.touch);
 	await c.query(
-		"update resume_import set status=$2,draft=null,file_id=null,person_id=$3,message='' where id=$1",
+		"update resume_import set status=$2,draft=null,touch=null,file_id=null,person_id=$3,message='' where id=$1",
 		[t.id, status, id],
 	);
 	return !original.rowCount;

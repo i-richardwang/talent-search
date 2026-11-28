@@ -3,6 +3,7 @@ import { corpusTransaction } from "#/corpus/session";
 import { pool } from "#/db";
 import { withReadSnapshot } from "#/db/snapshot";
 import type { Resume } from "#/ingestion/resume";
+import { TOUCH_ORDER } from "#/ingestion/touch-store";
 import { files } from "#/storage/files";
 
 // 所有创建和清理共用写者锁。失败时元数据留存，下次继续清理。
@@ -33,20 +34,42 @@ export async function sourcesFor(user: string, personId: string) {
 					pool: string;
 					day: string;
 					contacts: Resume["contacts"];
-					notes: string;
+					touches: {
+						id: number;
+						author: string;
+						touched: string | null;
+						notes: string;
+						created: string;
+						canEdit: boolean;
+					}[];
 					periods: {
 						company: string;
 						title: string;
 						start: string;
 						end: string;
 					}[];
-					touched: string | null;
 					can_remove: boolean;
+					latest: boolean;
 				}>(
-					`select s.id,s.filename,coalesce(u.name,'') as uploader,s.pool_id,p.name as pool,to_char(s.captured_at,'YYYY-MM-DD') as day,(select coalesce(jsonb_agg(jsonb_build_object('company',e->>'company','title',e->>'title','start',e->>'start','end',e->>'end')),'[]') from jsonb_array_elements(s.parsed->'experiences') e) as periods,m.contacts,m.notes,m.touched_at::text as touched,
-		(m.added_by=$2 or exists(select from auth_user where id=$2 and role='admin')) as can_remove
-		from profile_source s left join auth_user u on u.id=s.created_by join talent_pool p on p.id=s.pool_id join pool_member m using(pool_id,person_id)
-		where s.person_id=$1 order by s.captured_at desc,s.seq desc`,
+					`with versions as (
+  select s.*,row_number() over(partition by s.pool_id order by s.captured_at desc,s.seq desc) as version_rank
+  from profile_source s where s.person_id=$1 and s.source_kind='pdf_resume'
+), viewer as (select role is not distinct from 'admin' as admin from auth_user where id=$2)
+select s.id,s.filename,coalesce(u.name,'') as uploader,s.pool_id,p.name as pool,
+  to_char(s.captured_at,'YYYY-MM-DD') as day,m.contacts,s.version_rank=1 as latest,
+  (select coalesce(jsonb_agg(jsonb_build_object('company',e->>'company','title',e->>'title',
+    'start',e->>'start','end',e->>'end')),'[]') from jsonb_array_elements(s.parsed->'experiences') e) as periods,
+  case when s.version_rank=1 then (
+    select coalesce(jsonb_agg(jsonb_build_object('id',t.id,'author',coalesce(a.name,'历史记录（作者未登记）'),
+      'touched',t.touched_at,'notes',t.notes,'created',to_char(t.created_at,'YYYY-MM-DD'),
+      'canEdit',coalesce(t.author_id=$2,false) or viewer.admin) order by ${TOUCH_ORDER}),'[]')
+    from pool_touch t left join auth_user a on a.id=t.author_id
+    where t.pool_id=s.pool_id and t.person_id=s.person_id
+  ) else '[]' end as touches,
+  (m.added_by=$2 or viewer.admin) as can_remove
+from versions s join talent_pool p on p.id=s.pool_id join pool_member m using(pool_id,person_id)
+left join auth_user u on u.id=s.created_by cross join viewer
+order by s.captured_at desc,s.seq desc`,
 					[personId, user],
 				)
 			).rows,

@@ -10,7 +10,7 @@ import { pool } from "#/db";
 import { authorizedPool, withReadSnapshot } from "#/db/snapshot";
 import { matches } from "#/identity/match";
 import { parseResume } from "#/ingestion/parser";
-import { pdfPages, ScanNeedsText } from "#/ingestion/pdf";
+import { openResumePdf } from "#/ingestion/pdf";
 import {
 	adjudicateImport,
 	classifyImport,
@@ -18,6 +18,7 @@ import {
 	type ImportRow,
 } from "#/ingestion/publish";
 import type { Resume } from "#/ingestion/resume";
+import type { Touch } from "#/ingestion/touch";
 import { digest, files } from "#/storage/files";
 
 const taskQuery = `select t.*,f.sha256,to_char(t.created_at at time zone 'UTC','YYYY-MM-DD') as day from resume_import t join resume_file f on f.id=t.file_id`;
@@ -27,6 +28,7 @@ export async function uploadResume(
 	poolId: string,
 	name: string,
 	bytes: Uint8Array,
+	touch: Touch | null = null,
 ) {
 	if (
 		!bytes.length ||
@@ -49,8 +51,14 @@ export async function uploadResume(
 		});
 		await files.put(bytes);
 		const task = await c.query<{ id: string }>(
-			"insert into resume_import(pool_id,owner_id,file_id,filename) values ($1,$2,$3,$4) returning id",
-			[poolId, user, fileId, name.slice(0, 255)],
+			"insert into resume_import(pool_id,owner_id,file_id,filename,touch) values ($1,$2,$3,$4,$5) returning id",
+			[
+				poolId,
+				user,
+				fileId,
+				name.slice(0, 255),
+				touch?.touched || touch?.notes ? touch : null,
+			],
 		);
 		const id = task.rows[0]?.id;
 		if (!id) throw new Error("未创建导入任务");
@@ -88,7 +96,6 @@ type ImportStage =
 	| "离线模型"
 	| "资料发布";
 function failureReason(stage: ImportStage, error: unknown) {
-	if (error instanceof ScanNeedsText) return "扫描页缺少可用文字";
 	if (stage !== "离线模型") return "处理失败";
 	if (!process.env.RESUME_BASE_URL?.trim() || !process.env.RESUME_MODEL?.trim())
 		return "端点未配置";
@@ -129,9 +136,13 @@ async function processClaimed(worker: PoolClient) {
 			stage = "原件读取";
 			const original = await files.get(task.sha256);
 			stage = "PDF 解析";
-			const pages = await pdfPages(original);
-			stage = "离线模型";
-			draft = await parseResume(pages, task.day);
+			const pdf = await openResumePdf(original);
+			try {
+				stage = "离线模型";
+				draft = await parseResume(pdf, task.day);
+			} finally {
+				await pdf.close();
+			}
 		}
 		stage = "资料发布";
 		await corpusTransaction(async (c) => {
@@ -157,12 +168,7 @@ async function processClaimed(worker: PoolClient) {
 		});
 		await pool.query(
 			"update resume_import set status='failed',message=$2 where id=$1 and status='processing'",
-			[
-				task.id,
-				error instanceof ScanNeedsText
-					? error.message
-					: "解析未完成，可重试或手动核对",
-			],
+			[task.id, "解析未完成，可重试或手动核对"],
 		);
 	}
 	return true;
@@ -204,7 +210,7 @@ export async function reviewImport(user: string, id: string) {
 		const candidates = t.draft
 			? await matches(c, t.draft, t.day, t.file_id)
 			: [];
-		return { draft: t.draft, candidates };
+		return { draft: t.draft, touch: t.touch, candidates };
 	});
 	if (review.candidates.length)
 		await pool.query(

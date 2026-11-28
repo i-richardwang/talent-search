@@ -1,6 +1,7 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { BriefcaseBusinessIcon, RotateCwIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { ExternalProfile } from "#/components/external-profile";
 import { ResumeSources } from "#/components/resume-sources";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { NavHeaderTitle } from "#/components/ui/app-layout";
@@ -247,11 +248,15 @@ export function Person({
 				}
 			>
 				<Descriptions>
-					{ATTRIBUTES.map(({ label, value }) => (
-						<DescriptionsItem key={label} label={label}>
-							{value(e)}
-						</DescriptionsItem>
-					))}
+					{e.talentType === "外部候选人" ? (
+						<ExternalProfile person={e} />
+					) : (
+						ATTRIBUTES.map(({ label, value }) => (
+							<DescriptionsItem key={label} label={label}>
+								{value(e)}
+							</DescriptionsItem>
+						))
+					)}
 				</Descriptions>
 
 				<ResumeSources items={sources} personId={e.personId} />

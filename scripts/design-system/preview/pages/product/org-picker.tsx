@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { OrgPicker } from "#/routes/accounts/-components/org-picker";
+import { OrgPicker } from "#/components/org-picker";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import { ORG_TREE } from "../../samples/admin";
@@ -8,14 +8,17 @@ import { ORG_TREE } from "../../samples/admin";
 function Picker({
 	initial = [],
 	loading = false,
+	single = false,
 }: {
 	initial?: string[];
 	loading?: boolean;
+	single?: boolean;
 }) {
 	const [value, setValue] = useState(initial);
 	return (
 		<div className="w-full max-w-sm">
 			<OrgPicker
+				single={single}
 				onChange={setValue}
 				tree={loading ? null : ORG_TREE}
 				value={value}
@@ -47,6 +50,12 @@ function Usage() {
 			>
 				<Picker loading />
 			</Example>
+			<Example
+				title="人才池所属部门"
+				description="选择一个部门后，持有该部门或上级范围的账号可访问人才池。"
+			>
+				<Picker single initial={["示例科技>技术中心"]} />
+			</Example>
 		</ExampleGrid>
 	);
 }
@@ -55,7 +64,7 @@ function Usage() {
 export function OrgPickerPage() {
 	return (
 		<DocPage
-			facts={["账号页的新建账号和改数据范围"]}
+			facts={["账号页的数据范围", "人才池的所属部门"]}
 			rules={{
 				notes: [
 					"树按此刻的部门路径拼出来，每个组织后面是此刻在它下面的人数；默认展开最上一级。",

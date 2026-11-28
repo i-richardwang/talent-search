@@ -30,7 +30,7 @@ import type { EmployeeDetail } from "#/search/result";
 /** 数据页那张表的一行。 */
 export type EmployeeRow = Pick<
 	Employee,
-	"personId" | "name" | "curDept" | "curTitle"
+	"personId" | "name" | "curDept" | "curTitle" | "recentCompany" | "recentTitle"
 > & {
 	/** 这个人有几段 */
 	empId?: string | null;
@@ -41,7 +41,7 @@ export type EmployeeRow = Pick<
 };
 
 /**
- * 在 `scope` 看得到的人里按名字或工号找，一页 `PAGE_SIZE` 个（`lib/paging.ts`）；不给词就按
+ * 在 `scope` 看得到的人里按名字、工号或最近公司找，一页 `PAGE_SIZE` 个（`lib/paging.ts`）；不给词就按
  * 工号从头列。
  */
 export async function listEmployees(
@@ -52,24 +52,26 @@ export async function listEmployees(
 	const pattern = `%${escapeLike(needle.trim())}%`;
 	return withReadSnapshot(scope, async (client) => {
 		const { version } = await deriveStandard(client);
+		const match =
+			"(e.name ilike $1 or e.emp_id ilike $1 or e.recent_company ilike $1)";
 		const found = await client.query<{ n: string }>(
-			"select count(*) as n from person_card where name ilike $1 or emp_id ilike $1",
+			`select count(*) as n from person_card e where ${match}`,
 			[pattern],
 		);
 		const total = Number(found.rows[0]?.n ?? 0);
 		const at = pageAt(total, page);
 		const { rows } = await client.query<EmployeeRow>(
 			`select e.person_id as "personId", e.name,e.emp_id as "empId",e.talent_type as "talentType",e.cur_dept as "curDept",
-			case when e.talent_type='外部候选人' then e.recent_title else e.cur_title end as "curTitle",
+			e.cur_title as "curTitle",e.recent_company as "recentCompany",e.recent_title as "recentTitle",
 			count(x.id)::int as segments,
-			count(x.id) filter (where x.derived_identity is distinct from $1)::int as pending
+			count(x.id) filter (where x.derived_identity is distinct from $2)::int as pending
 		 from person_card e
 		 left join experience x on x.person_id = e.person_id
-		 where e.name ilike $2 or e.emp_id ilike $2
-		 group by e.person_id,e.emp_id,e.name,e.cur_dept,e.cur_title,e.talent_type,e.recent_title
+		 where ${match}
+		 group by e.person_id,e.emp_id,e.name,e.cur_dept,e.cur_title,e.talent_type,e.recent_company,e.recent_title
 		 order by e.person_id
 		 limit ${at.limit} offset ${at.offset}`,
-			[version, pattern],
+			[pattern, version],
 		);
 		return tablePage(rows, total, at);
 	});
@@ -145,7 +147,7 @@ export async function employeeData(
 	return withReadSnapshot(scope, async (client) => {
 		const { version } = await deriveStandard(client);
 		const found = await client.query<EmployeeProfile>(
-			`select person_id as "personId", name,emp_id as "empId",talent_type as "talentType",recent_company as "recentCompany",recent_title as "recentTitle", cur_dept as "curDept", cur_title as "curTitle",
+			`select person_id as "personId", name,pools,emp_id as "empId",talent_type as "talentType",recent_company as "recentCompany",recent_title as "recentTitle", cur_dept as "curDept", cur_title as "curTitle",
 			cur_seq_l1 as "curSeqL1", cur_seq_l2 as "curSeqL2", cur_seq_l3 as "curSeqL3",
 			cur_level as "curLevel", hire_date::text as "hireDate",
 			education_level as "educationLevel", school, school_tier as "schoolTier",
@@ -196,6 +198,7 @@ export function employeeDetail(
 				personId: personCard.personId,
 				empId: personCard.empId,
 				talentType: personCard.talentType,
+				pools: personCard.pools,
 				recentCompany: personCard.recentCompany,
 				recentTitle: personCard.recentTitle,
 				name: personCard.name,

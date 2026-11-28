@@ -345,10 +345,14 @@ export function breakUnderstanding(): () => void {
 }
 
 let resumeAnswer: unknown;
-export function answerResume(value: unknown) {
+let resumeImageFirst = false;
+let resumeTrace = { tools: [] as string[], images: [] as string[] };
+export function answerResume(value: unknown, imageFirst = false) {
 	resumeAnswer = value;
+	resumeImageFirst = imageFirst;
+	resumeTrace = { tools: [], images: [] };
+	return resumeTrace;
 }
-
 /**
  * OpenAI 兼容的 `/embeddings` 与 `/chat/completions`，只认这两个路径。
  */
@@ -415,15 +419,55 @@ function startModelServer() {
 						},
 						"tool_calls",
 					);
-				if (request.tools?.some((t) => t.function.name === "read_page")) {
-					const n = messages.filter((m) => m.role === "tool").length;
-					return calls(
-						n === 0
-							? [["read_page", { page: 1 }]]
-							: n === 1
-								? [["submit_resume", { resume: { name: 7 } }]]
-								: [["submit_resume", { resume: resumeAnswer }]],
+				if (request.tools?.some((t) => t.function.name === "read_page_text")) {
+					const replies = messages.filter((m) => m.role === "tool");
+					const previous = messages.flatMap(
+						(m) => m.tool_calls?.map((t) => t.function.name) ?? [],
 					);
+					const lastTool = previous.at(-1);
+					const imageParts = messages.flatMap((m) =>
+						m.role === "user" && Array.isArray(m.content)
+							? m.content
+									.filter((p) => p.type === "image_url")
+									.map((p) => p.image_url.url as string)
+							: [],
+					);
+					if (
+						messages.some(
+							(m) =>
+								m.role === "tool" &&
+								JSON.stringify(m.content).includes("base64,"),
+						) ||
+						(previous.includes("view_page_image") && !imageParts.length)
+					) {
+						res.writeHead(400).end("缺少标准 user 图片消息");
+						return;
+					}
+					let next: string, input: unknown;
+					if (!previous.length) {
+						next = resumeImageFirst ? "view_page_image" : "read_page_text";
+						input = { page: 1 };
+					} else if (
+						lastTool === "submit_resume" &&
+						JSON.parse(replies.at(-1)?.content ?? "{}").error === "请先读完各页"
+					) {
+						next = "read_page_text";
+						input = { page: 2 };
+					} else if (
+						lastTool === "read_page_text" &&
+						JSON.parse(replies.at(-1)?.content ?? "{}").text === ""
+					) {
+						next = "view_page_image";
+						input = { page: 1 };
+					} else {
+						next = "submit_resume";
+						input = {
+							resume: lastTool === "submit_resume" ? resumeAnswer : { name: 7 },
+						};
+					}
+					resumeTrace.tools.push(next);
+					if (imageParts.length) resumeTrace.images = imageParts;
+					return calls([[next, input]]);
 				}
 				// 语料 agent 从工具结果读题，并以真正的 tool_calls 作答。
 				const deriveAgent = request.tools?.some(

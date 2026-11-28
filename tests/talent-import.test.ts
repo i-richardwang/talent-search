@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -22,14 +22,22 @@ const originals = await import("#/server/resume-files");
 const { runTask } = await import("#/server/tasks");
 const { files } = await import("#/storage/files");
 
-function pdf(text: string) {
-	const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+function pdf(text: string | string[], imageOnly = false) {
+	const pages = typeof text === "string" ? [text] : text;
+	const kids = pages.map((_, i) => `${4 + i * 2} 0 R`).join(" ");
 	const objects = [
 		"<< /Type /Catalog /Pages 2 0 R >>",
-		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+		`<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`,
 		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-		`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+		...pages.flatMap((value, i) => {
+			const stream = imageOnly
+				? "q 200 0 0 200 50 50 cm BI /W 1 /H 1 /CS /RGB /BPC 8 /F /AHx ID ff0000> EI Q"
+				: `BT /F1 12 Tf 72 720 Td (${value}) Tj ET`;
+			return [
+				`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`,
+				`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+			];
+		}),
 	];
 	let buffer = "%PDF-1.4\n";
 	const offsets = [0];
@@ -38,10 +46,12 @@ function pdf(text: string) {
 		buffer += `${i + 1} 0 obj\n${o}\nendobj\n`;
 	}
 	const xref = buffer.length;
-	buffer += `xref\n0 6\n0000000000 65535 f \n${offsets
+	buffer += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets
 		.slice(1)
 		.map((n) => `${String(n).padStart(10, "0")} 00000 n \n`)
-		.join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+		.join(
+			"",
+		)}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
 	return new TextEncoder().encode(buffer);
 }
 const draft: Resume = {
@@ -77,25 +87,53 @@ async function ingest(
 	await api.processNextResume();
 	return state(id);
 }
-test("没有文字层的页由本地 OCR 收到 PNG，未配置时提示人工核对", async () => {
-	const { pdfPages } = await import("#/ingestion/pdf");
-	delete process.env.RESUME_OCR_BIN;
-	await assert.rejects(pdfPages(pdf("")), /扫描件/);
-	const binary = join(dir, "synthetic-ocr");
-	await writeFile(
-		binary,
-		`#!/usr/bin/env bun
-const chunks=[]; for await(const chunk of Bun.stdin.stream())chunks.push(chunk);
-if(Buffer.concat(chunks).subarray(1,4).toString()!=="PNG")process.exit(2);
-process.stdout.write("Synthetic scanned page");
-`,
+test("离线 Agent 自选文字或图像工具，PNG 进入标准 user 消息且各页均需观察", async () => {
+	const { openResumePdf } = await import("#/ingestion/pdf");
+	const { parseResume } = await import("#/ingestion/parser");
+	for (const [imageOnly, imageFirst] of [
+		[false, false],
+		[true, false],
+		[true, true],
+	] as const) {
+		const document = await openResumePdf(pdf("Synthetic text", imageOnly));
+		const trace = answerResume(draft, imageFirst);
+		try {
+			const out = await parseResume(document, "2025-04-07");
+			assert.equal(out.name, draft.name);
+			assert.deepEqual(trace.tools, [
+				...(imageFirst ? [] : ["read_page_text"]),
+				...(imageOnly ? ["view_page_image"] : []),
+				"submit_resume",
+				"submit_resume",
+			]);
+			assert.equal(trace.images.length, Number(imageOnly));
+			if (imageOnly) {
+				const png = trace.images[0] ?? "";
+				assert.ok(png.startsWith("data:image/png;base64,"));
+				assert.deepEqual(
+					Buffer.from(png.split(",")[1] ?? "", "base64"),
+					await document.renderPagePng(1),
+				);
+			}
+		} finally {
+			await document.close();
+		}
+	}
+	const document = await openResumePdf(
+		pdf(["synthetic first", "synthetic second"]),
 	);
-	await chmod(binary, 0o700);
-	process.env.RESUME_OCR_BIN = binary;
+	const trace = answerResume(draft);
 	try {
-		assert.deepEqual(await pdfPages(pdf("")), ["Synthetic scanned page"]);
+		assert.equal((await parseResume(document, "2025-04-07")).name, draft.name);
+		assert.deepEqual(trace.tools, [
+			"read_page_text",
+			"submit_resume",
+			"read_page_text",
+			"submit_resume",
+			"submit_resume",
+		]);
 	} finally {
-		delete process.env.RESUME_OCR_BIN;
+		await document.close();
 	}
 });
 test("日期保留原始粒度、未知日期和未来起始日需核对", async () => {
@@ -216,19 +254,17 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 	);
 	const remaining = await probe(query, root);
 	assert.equal(remaining.unconfirmed[0]?.experienceId, firstTwo[1]);
-	await pools.updateContactNote(
-		OWNER,
-		"external",
-		first.person_id,
-		"2024-04-05",
-		"合成接触记录",
-	);
-	assert.equal(
-		(await originals.sourcesFor("limited", first.person_id))[0]?.touched,
-		"2024-04-05",
-	);
+	await pools.addTouch(OWNER, "external", first.person_id, {
+		touched: "2024-04-05",
+		notes: "合成接触记录",
+	});
+	const savedTouch = (await originals.sourcesFor("limited", first.person_id))[0]
+		?.touches[0];
+	assert.equal(savedTouch?.touched, "2024-04-05");
+	assert.ok(savedTouch);
+	assert.equal(savedTouch.canEdit, false);
 	await assert.rejects(
-		pools.updateContactNote("limited", "external", first.person_id, null, ""),
+		pools.changeTouch("limited", "external", savedTouch.id, null),
 	);
 	const jobs = await pool.query(
 		"select description,end_date from experience where person_id=$1",
@@ -598,7 +634,7 @@ test("人工选择独立入池优先于编辑后完全相同的姓名、联系�
 	}
 });
 
-test("同池资料按成员写权更新，同一采集时刻按发布次序选版并保留缺失的联系方式", async () => {
+test("同池其他账号可补传但不能移出成员，同一采集时刻按发布次序选版并保留缺失的联系方式", async () => {
 	await pools.ensureDefaultPool();
 	const author = "version-author",
 		reader = "version-reader";
@@ -661,19 +697,23 @@ test("同池资料按成员写权更新，同一采集时刻按发布次序选�
 		contacts: { phone: "15500000056", email: "", wechat: "" },
 		experiences: [{ ...ongoing, title: "更新后的主业" }, finished],
 	};
-	const refused = await version("Another account", updated, reader);
-	assert.equal(refused.status, "review");
+	const shared = await version("Another account", updated, reader);
+	assert.equal(shared.status, "review");
+	await api.decideImport(reader, shared.id, {
+		action: "link",
+		personId: first.person_id,
+	});
+	assert.equal((await state(shared.id)).status, "added");
 	await assert.rejects(
-		api.decideImport(reader, refused.id, {
-			action: "link",
-			personId: first.person_id,
-		}),
+		pools.removeMember(reader, "external", first.person_id),
 		/录入者或管理员/,
 	);
-	assert.equal((await state(refused.id)).status, "review");
 	let sources = await originals.sourcesFor(reader, first.person_id);
-	assert.equal(sources.length, 1);
-	assert.deepEqual(sources[0]?.contacts, original.contacts);
+	assert.equal(sources.length, 2);
+	assert.deepEqual(sources[0]?.contacts, {
+		...original.contacts,
+		phone: updated.contacts.phone,
+	});
 	for (let i = 1; i <= 3; i++) {
 		const current = {
 			...updated,
@@ -687,7 +727,7 @@ test("同池资料按成员写权更新，同一采集时刻按发布次序选�
 		});
 		sources = await originals.sourcesFor(reader, first.person_id);
 		assert.equal(sources[0]?.filename, `Revision ${i}.pdf`);
-		assert.equal(sources.length, i + 1);
+		assert.equal(sources.length, i + 2);
 		assert.deepEqual(sources[0]?.contacts, {
 			...original.contacts,
 			phone: updated.contacts.phone,
@@ -727,6 +767,23 @@ test("asReader 在应用异常和 SQL 异常后恢复写入角色，并保留原
 		const role = async () =>
 			(await client.query("select current_user as role")).rows[0].role;
 		const writer = await role();
+		await client.query(
+			"select set_config('talent.scope','outer-test-scope',true)",
+		);
+		const scope = async () =>
+			(await client.query("select current_setting('talent.scope') as scope"))
+				.rows[0].scope;
+		await asReader(client, OWNER, async () => {
+			assert.equal(await scope(), OWNER);
+			await asReader(client, "nested-test-account", async () =>
+				assert.equal(await scope(), "nested-test-account"),
+			);
+			assert.equal(await role(), "talent_reader");
+			assert.equal(await scope(), OWNER);
+		});
+		assert.equal(await role(), writer);
+		assert.equal(await scope(), "outer-test-scope");
+
 		await assert.rejects(
 			asReader(client, OWNER, async () => {
 				assert.equal(await role(), "talent_reader");
@@ -778,12 +835,15 @@ test("解析失败按阶段记录脱敏原因，上传者可预览失败原件�
 		const rejected = await ingest("Private endpoint error", draft);
 		assert.equal(rejected.status, "failed");
 		assert.ok(logs.some((log) => JSON.stringify(log).includes("HTTP 404")));
-		const scanned = await ingest("", draft);
-		assert.equal(scanned.status, "failed");
-		assert.match(scanned.message, /扫描件/);
-		assert.ok(
-			logs.some((log) => JSON.stringify(log).includes("扫描页缺少可用文字")),
+		const damaged = await api.uploadResume(
+			OWNER,
+			"external",
+			"合成.pdf",
+			new TextEncoder().encode("%PDF-broken"),
 		);
+		await api.processNextResume();
+		assert.equal((await state(damaged)).status, "failed");
+		assert.ok(logs.some((log) => JSON.stringify(log).includes("PDF 解析")));
 		assert.doesNotMatch(
 			JSON.stringify(logs),
 			/synthetic-private|example\.invalid|合成\.pdf|15500000001/,
@@ -793,4 +853,218 @@ test("解析失败按阶段记录脱敏原因，上传者可预览失败原件�
 		process.env.RESUME_MODEL = model;
 		process.env.RESUME_BASE_URL = endpoint;
 	}
+});
+
+test("上传和核对中的接触记录随入池发布，多人共享名单与详情并按作者修改", async () => {
+	const author = "touch-author",
+		peer = "touch-peer",
+		admin = "touch-admin",
+		org = "合成接触业务组",
+		poolId = "touch-pool";
+	for (const id of [author, peer, admin]) {
+		await pool.query(
+			"insert into auth_user(id,name,email,username,role) values($1,$1,$2,$1,$3)",
+			[id, `${id}@example.invalid`, id === admin ? "admin" : "user"],
+		);
+		await pool.query(
+			"insert into account_scope(user_id,org_path) values($1,$2)",
+			[id, org],
+		);
+	}
+	await pool.query(
+		"insert into talent_pool(id,name,visibility,org_path) values($1,'合成协作池','org',$2)",
+		[poolId, org],
+	);
+	const job = {
+		company: "合成海桥实业",
+		title: "合成设备工程师",
+		start: "2021-03",
+		end: "至今",
+		description: "设计合成测试设备",
+	};
+	const resume: Resume = {
+		...draft,
+		name: "合成接触样本",
+		contacts: { email: "touch-test@example.invalid", phone: "", wechat: "" },
+		experiences: [job],
+	};
+	const firstTouch = { touched: "2024-03-06", notes: "初次沟通" };
+	answerResume(resume);
+	const task = await api.uploadResume(
+		author,
+		poolId,
+		"初版.pdf",
+		pdf("touch initial"),
+		firstTouch,
+	);
+	await api.processNextResume();
+	const published = await state(task);
+	assert.equal(published.status, "added");
+	assert.equal(published.touch, null);
+	const person = published.person_id as string;
+	const originalTouch = { touched: "2024-03-07", notes: "尚待核对" };
+	answerResume({
+		...resume,
+		experiences: [{ ...job, description: "改进合成测试设备" }],
+	});
+	const revision = await api.uploadResume(
+		peer,
+		poolId,
+		"新版.pdf",
+		pdf("touch revision"),
+		originalTouch,
+	);
+	await api.processNextResume();
+	assert.deepEqual(
+		(await api.reviewImport(peer, revision)).touch,
+		originalTouch,
+	);
+	await assert.rejects(api.reviewImport(author, revision));
+	const revised = { touched: "2024-04-05", notes: "二次沟通" };
+	await api.decideImport(peer, revision, {
+		action: "link",
+		personId: person,
+		touch: revised,
+	});
+	assert.equal((await state(revision)).touch, null);
+	const sources = await originals.sourcesFor(author, person);
+	assert.equal(sources.length, 2);
+	assert.deepEqual(
+		sources.map((s) => s.latest),
+		[true, false],
+	);
+	assert.deepEqual(sources[1]?.touches, []);
+	const history = sources[0]?.touches;
+	assert.ok(history);
+	assert.deepEqual(
+		history.map(({ author, touched, notes, canEdit }) => ({
+			author,
+			touched,
+			notes,
+			canEdit,
+		})),
+		[
+			{ author: peer, ...revised, canEdit: false },
+			{ author, ...firstTouch, canEdit: true },
+		],
+	);
+	const second = history[0];
+	assert.ok(second);
+	await assert.rejects(pools.changeTouch(author, poolId, second.id, null));
+	await pools.changeTouch(peer, poolId, second.id, {
+		...revised,
+		notes: "确认后续意向",
+	});
+	await pools.addTouch(peer, poolId, person, {
+		touched: "2024-05-02",
+		notes: "",
+	});
+	// 同一原件可随任务登记一次新的联系，同池资料及其导入审计不重复。
+	const repeat = await api.uploadResume(
+		peer,
+		poolId,
+		"同一版.pdf",
+		pdf("touch revision"),
+		{ touched: null, notes: "约定稍后联系" },
+	);
+	await api.processNextResume();
+	assert.equal((await state(repeat)).status, "duplicate");
+	await assert.rejects(
+		api.decideImport(peer, repeat, { action: "link", personId: person }),
+	);
+	const details = await originals.sourcesFor(peer, person);
+	assert.equal(details.length, 2);
+	assert.equal(details[0]?.touches.length, 4);
+	const board = await pools.importBoard(peer, {
+		pool: poolId,
+		tab: "members",
+		page: 5,
+	});
+	assert.equal(board.list.tab, "members");
+	assert.deepEqual(board.list.table.rows, [
+		{
+			personId: person,
+			name: resume.name,
+			company: job.company,
+			title: job.title,
+			touched: "2024-05-02",
+			notes: "约定稍后联系",
+		},
+	]);
+	assert.equal(board.list.table.page, 1);
+	const inbox = await pools.importBoard(peer, {
+		pool: poolId,
+		tab: "imports",
+		page: 1,
+	});
+	assert.equal(inbox.list.tab, "imports");
+	assert.equal(inbox.list.table.total, 2);
+	await assert.rejects(pools.removeMember(peer, poolId, person));
+	await pools.changeTouch(admin, poolId, second.id, null);
+	const { listEmployees, employeeDetail, employeeData } = await import(
+		"#/server/data"
+	);
+	const scope = { account: peer };
+	const table = await listEmployees(scope, "海桥", 1);
+	assert.equal(table.total, 1);
+	assert.equal(table.rows[0]?.personId, person);
+	const workbench = await employeeDetail(scope, person),
+		drawer = await employeeData(scope, person);
+	assert.ok(workbench && drawer);
+	assert.deepEqual(drawer.employee.pools, ["合成协作池"]);
+	assert.deepEqual(workbench.employee.pools, drawer.employee.pools);
+	const { createElement } = await import("react");
+	const { visibleText } = await import("./render");
+	const { routed } = await import("./routed");
+	const { EmployeeTable } = await import(
+		"#/routes/data/-components/employee-table"
+	);
+	const { Person } = await import("#/routes/s/$turnId/-components/person");
+	const tableHtml = await routed(
+		() =>
+			createElement(EmployeeTable, {
+				list: table,
+				q: "海桥",
+				selected: undefined,
+			}),
+		{ path: "/data" },
+	);
+	assert.ok(visibleText(tableHtml).includes(`${job.company} · ${job.title}`));
+	const page = await routed(
+		() => createElement(Person, { ...workbench, evidence: [] }),
+		{ path: "/s/$turnId/p/$personId", url: "/s/test/p/sample" },
+	);
+	const header = visibleText(page);
+	for (const label of [
+		"最近公司",
+		job.company,
+		"最近岗位",
+		job.title,
+		"所属人才池",
+		"合成协作池",
+		"学历",
+		resume.school,
+	])
+		assert.ok(header.includes(label), label);
+	assert.doesNotMatch(header, /招聘渠道|入职时间/);
+	await pool.query("delete from account_scope where user_id=$1", [peer]);
+	assert.deepEqual(await originals.sourcesFor(peer, person), []);
+	assert.equal((await listEmployees(scope, "海桥", 1)).total, 0);
+	assert.ok(
+		!(
+			await pools.importBoard(peer, { pool: poolId, tab: "members", page: 1 })
+		).pools.some((p) => p.id === poolId),
+	);
+	await assert.rejects(pools.addTouch(peer, poolId, person, firstTouch));
+	const peerEntry = details[0]?.touches.find(
+		(t) => t.author === peer && t.notes === "约定稍后联系",
+	);
+	assert.ok(peerEntry);
+	await assert.rejects(pools.changeTouch(peer, poolId, peerEntry.id, null));
+	await pools.removeMember(author, poolId, person);
+	assert.equal(
+		(await pool.query("select from pool_touch where pool_id=$1", [poolId]))
+			.rowCount,
+		0,
+	);
 });

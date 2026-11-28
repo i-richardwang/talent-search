@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ExternalProfile } from "#/components/external-profile";
 import { ResumeSources } from "#/components/resume-sources";
 import { Block } from "#/components/ui/block";
 import { CopyButton } from "#/components/ui/copy-button";
@@ -75,12 +76,16 @@ export function EmployeeRecord({
 			close={close}
 			description={
 				<Descriptions labelWidth={DETAIL_LABEL_WIDTH}>
-					{profile.map(([label, value]) =>
-						value ? (
-							<DescriptionsItem key={label} label={label}>
-								{value}
-							</DescriptionsItem>
-						) : null,
+					{employee.talentType === "外部候选人" ? (
+						<ExternalProfile person={employee} />
+					) : (
+						profile.map(([label, value]) =>
+							value ? (
+								<DescriptionsItem key={label} label={label}>
+									{value}
+								</DescriptionsItem>
+							) : null,
+						)
 					)}
 				</Descriptions>
 			}

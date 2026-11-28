@@ -297,7 +297,7 @@ const CATALOG = [
 			{
 				name: "OrgPicker",
 				slug: "org-picker",
-				source: ["src/routes/accounts/-components/org-picker.tsx"],
+				source: ["src/components/org-picker.tsx"],
 				title: "组织树",
 			},
 		],

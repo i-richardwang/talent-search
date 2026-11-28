@@ -104,6 +104,36 @@ commit;
 
 随后运行 `bun run db:push` 重建视图与依赖的读取策略。遇到 `profile_original_per_pool_person` 的唯一约束提示，选择保留表数据（`No, add the constraint without truncating the table`）。重启应用后首次读取会装载 RLS 条件。切换连接前用授权账号与受限账号分别核对资料。
 
+### 将已有池成员的接触信息转为逐条记录
+
+已有 `pool_member.touched_at`、`pool_member.notes` 的库，在停用应用和作业的备份副本上先保存非空记录，再执行 `bun run db:push`。同时需要补版本序号时，先执行上一节的 SQL，两节共用一次 push。归档仅部署角色可读。
+
+```sql
+begin;
+create schema touch_archive;
+revoke all on schema touch_archive from public;
+create table touch_archive.member_touch as
+  select pool_id, person_id, touched_at, coalesce(notes, '') as notes
+  from public.pool_member where touched_at is not null or btrim(notes) <> '';
+alter table public.pool_member drop column touched_at, drop column notes;
+commit;
+```
+
+push 提示是否清空 `profile_source` 时选择保留数据（`No, add the constraint without truncating the table`）。创建 `pool_touch` 后执行以下回填。旧版只保存最后一次填写的日期和备注，无法还原撰写人，详情显示「历史记录（作者未登记）」。登记时间取回填时间，接触日期保留原值。
+
+```sql
+begin;
+insert into public.pool_touch (pool_id, person_id, touched_at, notes)
+  select a.pool_id, a.person_id, a.touched_at, a.notes from touch_archive.member_touch a
+  where not exists (select from public.pool_touch t where t.pool_id=a.pool_id
+                    and t.person_id=a.person_id and t.author_id is null);
+select (select count(*) from touch_archive.member_touch) as archived,
+       (select count(*) from public.pool_touch where author_id is null) as restored;
+commit;
+```
+
+两项计数一致后，再用有权限的账号抽查详情并切换应用连接。新装库直接执行 `bun run db:push`。
+
 ### 从员工单表版本升级
 
 在独立数据库恢复原库备份，保留原库作为回退点。停用副本上的应用和作业，先将旧 `public` 和 `catalog` 分别重命名为 `employee_archive`、`catalog_archive`，创建新的 `public`。归档 schema 仅部署角色可访问，撤回读者角色及 PUBLIC 的使用权限。让 `DATABASE_URL` 指向副本，依次执行：
@@ -117,12 +147,13 @@ bun run db:import-employees employee_archive
 
 ## 从 PDF 导入人才
 
-1. 登录后打开「人才池」，选目标池，选择一份或多份 PDF。每份最多 20 MiB、120 页。内置的「外部人才池」初始对所有登录账号公开。管理员可新建人才池，或将已有池挂靠到授权范围内的部门。
-2. 后台按页取文字，由独立的离线模型通过工具提交结构化简历。上传页显示排队、解析、待确认和入池结果。识别不清的页、缺失的日期或疑似同一人的资料可人工核对。上传者可在核对窗口打开本次原件，对照修改或删除经历，也可以重试失败文件。核对原件要求同时拥有该任务和目标池的读取权限。
-3. 同一原件或核心身份及完整经历相同的简历自动去重。手机号、邮箱相同，或姓名与学校学历、任职公司及时间相符，会提示并排核对。选择关联已有档案、另建一人或放弃。比对的范围与操作者的搜索权限一致。人工选择另建会分配独立的人员编号。同池同人的同一原件再次上传只产生导入记录。
-4. 入池后可立即按岗位、职责原文和人才池检索，能力标签和序列随后由现有解析流程补齐。可在详情登记最近接触日期和备注。在个人详情查看原始日期粒度、预览或下载历次 PDF。录入者或管理员可更新该池成员的资料，新版只覆盖非空的联系方式。每个池用最近采集的简历提供搜索经历，采集时刻相同时使用后发布的一版。同一段经历有多个来源时只计一次。
+1. 打开「外部人才池」，选择目标池并上传一份或多份 PDF，每份最多 20 MiB、120 页。可同时填写接触日期或备注，批量上传时每份简历各记一条。默认池对所有登录账号公开。管理员可在组织树中选择部门来限定可见范围。
+2. 在「我的导入记录」查看进度。离线模型按需读取每页文字或查看页面图像，把独立项目区块按时间与上下文并入对应工作的职责。上传者可在核对窗口对照原件，调整经历及待登记的接触记录。核对要求上传者仍能访问目标池。
+3. 同一原件或核心身份及全部经历一致时自动去重。手机号、邮箱一致，或姓名与学校学历、任职公司及时间重合时，上传者对照有权查看的资料，选择关联、另建或放弃。同池同一原件再次上传保留导入结果，随任务填写的接触记录在确认入池时写入一次。
+4. 「池内候选人」展示最近公司、岗位、接触日期和最新备注。详情保留每版原件和原始日期。能访问该池的同事都可以补传简历、追加接触记录。每条记录由作者或管理员修改、删除，成员由录入者或管理员移出。新版简历以非空联系方式更新成员档案，按采集时间、发布序号选最近一版参与检索。
+5. 入池后可立即按岗位和职责检索，能力标签和序列随后由解析流程补齐。数据页支持按最近公司查找外部候选人。同一段经历有多个来源时只计一次。
 
-配置 `RESUME_BASE_URL`、`RESUME_MODEL` 和可选的 `RESUME_API_KEY`，指向允许接收**完整简历和联系方式**的自部署工具调用模型。端点独立于查询和能力抽取。PDF 和扫描页在本机处理，扫描页可配置本地 Tesseract 和语言包（`RESUME_OCR_BIN`、`RESUME_OCR_LANG`）。经历入库前剥离电话、邮箱与微信等联系方式。下游模型仍会收到公司、岗位和清理后的经历原文，部署范围应允许处理这些资料。
+配置 `RESUME_BASE_URL`、`RESUME_MODEL` 和可选的 `RESUME_API_KEY`，指向允许接收**完整简历文字、页面图像和联系方式**的自部署视觉模型。端点需支持 OpenAI 兼容的多轮工具调用和 `user` 消息内的 PNG `image_url`。页面在本机按需渲染。查询和能力抽取使用各自的端点，接收的是公司、岗位和剥离电话、邮箱、微信等联系方式后的经历原文。
 
 原件按 SHA-256 写入 `TALENT_FILES_DIR`，默认是工作目录下的 `.talent-files/`。生产使用持久卷，多实例共享同一目录。备份与恢复需要同时覆盖数据库和原件目录。移出某一人才池会撤回该池的资料和版本，其他来源继续有效，最后一条引用消失后回收文件。
 
@@ -152,7 +183,7 @@ PDF 解析端点部署在允许读取完整简历的离线环境。其他模型�
 | 能力 | 接收的数据 | 未配置时 |
 |---|---|---|
 | 查询理解 | 用户输入、当前条件、工具查到的人数与人才库里的写法（说法、公司、部门、学校），以及要读的候选经历：公司或部门、序列、岗位、技能和简历原文。评分请求只含判据和已经确认符合的经历文字。以上请求均不附姓名和工号 | 只有关键词搜索 |
-| PDF 解析 | PDF 各页完整文字、姓名与联系方式，仅交给独立配置的离线端点 | 可手工核对入池或配置后重试 |
+| PDF 解析 | 按需读取的完整页文字、页面图像（可含照片）、姓名与联系方式，仅交给独立配置的离线端点 | 可手工核对入池或配置后重试 |
 | 抽取与对齐 | 外部岗位、公司和描述 | 内置模式缺少模型配置时使用原文，外部模式从接口接收结果 |
 | 词表整理 | 待判词、参考词及其人数 | `REVIEW_JUDGE=off` 时不运行 |
 | 嵌入 | 进词表的短说法 | 整理不收集要判的词 |

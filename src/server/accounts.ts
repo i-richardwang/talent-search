@@ -30,7 +30,7 @@ import {
 	PASSWORD_MIN,
 	usernameOf,
 } from "#/lib/auth";
-import { type OrgNode, orgsOf, orgTree } from "#/lib/org";
+import { type OrgNode, orgsOf, orgTree, within } from "#/lib/org";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
 import { type AccountAction, recordAccount } from "./audit";
@@ -455,13 +455,23 @@ export async function accountOrgs(userId: string): Promise<string[]> {
 }
 
 /** 此刻的组织树：账号页选数据范围时用，每个节点带它下面有多少人。 */
-export async function organizations(): Promise<OrgNode[]> {
-	return withReadSnapshot("all", async (client) => {
+export async function organizations(account?: string): Promise<OrgNode[]> {
+	return withReadSnapshot(account ? { account } : "all", async (client) => {
 		const { rows } = await client.query<{ path: string; people: number }>(
 			`select cur_dept_path as path, count(*)::int as people from employment
 			where cur_dept_path <> '' group by cur_dept_path`,
 		);
-		return orgTree(rows);
+		const tree = orgTree(rows);
+		if (!account) return tree;
+		const scopes = (
+			await client.query<{ org_path: string }>(
+				"select org_path from account_scope where user_id=$1",
+				[account],
+			)
+		).rows;
+		return tree.filter((node) =>
+			scopes.some((s) => within(node.path, s.org_path)),
+		);
 	});
 }
 

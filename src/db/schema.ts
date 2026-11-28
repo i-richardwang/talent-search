@@ -20,6 +20,7 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/pg-core";
 import type { Resume } from "#/ingestion/resume";
+import type { Touch } from "#/ingestion/touch";
 import { AUDIT_ACTIONS } from "#/lib/audit";
 import { ENGAGEMENTS } from "#/lib/engagement";
 import { ORG_SEPARATOR } from "#/lib/org";
@@ -299,8 +300,6 @@ export const poolMember = pgTable(
 		poolId: poolKey().notNull(),
 		personId: personKey(),
 		addedBy: accountId("added_by").notNull(),
-		touchedAt: date("touched_at"),
-		notes: text("notes").notNull().default(""),
 		contacts: jsonb("contacts")
 			.$type<{ phone: string; email: string; wechat: string }>()
 			.notNull(),
@@ -310,6 +309,34 @@ export const poolMember = pgTable(
 		index("pool_member_person").on(t.personId),
 		readPolicy(
 			"member_scope",
+			sql`${t.poolId} in (select id from visible_pool)`,
+		),
+	],
+);
+export const poolTouch = pgTable(
+	"pool_touch",
+	{
+		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+		poolId: text("pool_id").notNull(),
+		personId: text("person_id").notNull(),
+		// 旧版接触记录只有成员录入者，实际撰写人没有登记。
+		authorId: accountId("author_id"),
+		touchedAt: date("touched_at"),
+		notes: text("notes").notNull(),
+		createdAt: created(),
+	},
+	(t) => [
+		foreignKey({
+			columns: [t.poolId, t.personId],
+			foreignColumns: [poolMember.poolId, poolMember.personId],
+		}).onDelete("cascade"),
+		check(
+			"touch_has_date_or_notes",
+			sql`${t.touchedAt} is not null or btrim(${t.notes})<>''`,
+		),
+		index("touch_member_date").on(t.poolId, t.personId, t.touchedAt, t.id),
+		readPolicy(
+			"touch_pool_scope",
 			sql`${t.poolId} in (select id from visible_pool)`,
 		),
 	],
@@ -376,6 +403,7 @@ export const resumeImport = pgTable(
 		createdAt: created(),
 		status: text("status").notNull().default("queued"),
 		draft: jsonb("draft").$type<Resume>(),
+		touch: jsonb("touch").$type<Touch>(),
 		personId: text("person_id").references(() => person.personId, {
 			onDelete: "set null",
 		}),
@@ -1289,6 +1317,7 @@ export const auditEvent = pgTable(
 
 /** 每张含个人或来源资料的表都随读者角色安装这里定义的策略。 */
 export const SCOPED_TABLES = [
+	poolTouch,
 	resumeImport,
 	person,
 	personIdentity,

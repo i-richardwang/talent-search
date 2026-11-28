@@ -142,6 +142,8 @@ const ROSTER_JOBS: [dept: string, title: string][] = [
 export const EMPLOYEE_ROWS: EmployeeRow[] = [
 	...EMPLOYEES.map((e) => ({
 		curDept: e.curDept,
+		recentCompany: "",
+		recentTitle: "",
 		curTitle: e.curTitle,
 		personId: e.personId,
 		name: e.name,
@@ -156,6 +158,8 @@ export const EMPLOYEE_ROWS: EmployeeRow[] = [
 		return {
 			curDept,
 			curTitle,
+			recentCompany: "",
+			recentTitle: "",
 			personId: `T${no}`,
 			name: `Talent ${no}`,
 			pending: i % 7 === 0 ? 1 : 0,

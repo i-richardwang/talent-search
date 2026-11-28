@@ -65,7 +65,12 @@ export function NavContent() {
 				<NavItem
 					active={on("/pools")}
 					icon={FolderOpenIcon}
-					render={<Link to="/pools" search={{ page: undefined }} />}
+					render={
+						<Link
+							to="/pools"
+							search={{ page: undefined, poolId: undefined, tab: undefined }}
+						/>
+					}
 				>
 					外部人才池
 				</NavItem>

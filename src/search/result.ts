@@ -56,7 +56,10 @@ export type EmployeeDetail = {
 		| "recruitment"
 	> &
 		Partial<
-			Pick<Employee, "empId" | "talentType" | "recentCompany" | "recentTitle">
+			Pick<
+				Employee,
+				"empId" | "talentType" | "recentCompany" | "recentTitle" | "pools"
+			>
 		>;
 	timeline: (Pick<
 		Experience,

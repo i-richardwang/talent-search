@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { emptyTouch, TouchFields } from "#/components/touch-fields";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
@@ -7,6 +8,7 @@ import { EDUCATION_LADDER } from "#/corpus/contract";
 import type { Match } from "#/identity/match";
 import type { Decision } from "#/ingestion/publish";
 import type { Resume } from "#/ingestion/resume";
+import type { Touch } from "#/ingestion/touch";
 
 const blank: Resume = {
 	name: "",
@@ -17,15 +19,18 @@ const blank: Resume = {
 };
 export function ResumeReview({
 	initial,
+	initialTouch,
 	taskId,
 	candidates,
 	onDecision,
 }: {
 	initial: Resume | null;
+	initialTouch: Touch | null;
 	taskId: string;
 	candidates: Match[];
 	onDecision: (c: Decision) => Promise<void>;
 }) {
+	const [touch, setTouch] = useState(initialTouch ?? emptyTouch);
 	const [profile, set] = useState(() => {
 		const { experiences: _, ...fields } = initial ?? blank;
 		return fields;
@@ -109,6 +114,9 @@ export function ResumeReview({
 						/>
 					</label>
 				))}
+				<p className="text-sm text-fg-secondary">
+					无明确时间的项目可按上下文并入对应工作段的职责描述。
+				</p>
 				{jobs.map(({ id, value: job }, i) => (
 					<fieldset key={id} className="grid gap-2">
 						<legend>工作经历 {i + 1}</legend>
@@ -166,7 +174,8 @@ export function ResumeReview({
 				>
 					添加经历
 				</Button>
-				<Button onClick={() => onDecision({ action: "new", draft })}>
+				<TouchFields value={touch} onChange={setTouch} />
+				<Button onClick={() => onDecision({ action: "new", draft, touch })}>
 					作为独立人才入池
 				</Button>
 			</Block>
@@ -182,7 +191,12 @@ export function ResumeReview({
 						))}
 						<Button
 							onClick={() =>
-								onDecision({ action: "link", personId: m.personId, draft })
+								onDecision({
+									action: "link",
+									personId: m.personId,
+									draft,
+									touch,
+								})
 							}
 						>
 							是同一人，关联这份简历

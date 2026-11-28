@@ -4,8 +4,16 @@ import { loadImports } from "#/server/talent-functions";
 import { AdminPage } from "../-components/admin-page";
 import { PoolBoard } from "./-pool-board";
 export const Route = createFileRoute("/pools")({
-	validateSearch: (s: Record<string, unknown>) => ({ page: pageParam(s.page) }),
-	loaderDeps: ({ search }) => ({ page: search.page ?? 1 }),
+	validateSearch: (s: Record<string, unknown>) => ({
+		page: pageParam(s.page),
+		poolId: typeof s.poolId === "string" ? s.poolId : undefined,
+		tab: s.tab === "imports" ? ("imports" as const) : undefined,
+	}),
+	loaderDeps: ({ search }) => ({
+		pool: search.poolId,
+		tab: search.tab ?? ("members" as const),
+		page: search.page ?? 1,
+	}),
 	loader: ({ deps }) => loadImports({ data: deps }),
 	component: Page,
 });
