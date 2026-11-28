@@ -339,7 +339,7 @@ test("整理等待嵌入期间允许同步，取回写者锁后按当前经历�
 	await pool.query("delete from review_word");
 	await seed([
 		{
-			empId: "embed-writer-fixture",
+			personId: "embed-writer-fixture",
 			name: "合成整理样例",
 			segments: [
 				{

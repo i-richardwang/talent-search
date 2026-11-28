@@ -19,11 +19,13 @@ import {
 	allVisible,
 	employeeData,
 	employeeDetail,
+	employeeNumberToPerson,
 	listEmployees,
 } from "./data";
 import { explainThread, type ThreadTurn } from "./explain";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
+import { sourcesFor } from "./resume-files";
 import { reviewJudge } from "./review";
 import {
 	taskLog as runLog,
@@ -81,22 +83,31 @@ export const loadWorkbench = createServerFn({ method: "GET" })
  * 把一个人的详情交给这个账号：它的数据范围里有这个人就先记一行「查看」。取个人详情的入口
  * 都经过这里；范围外的人和没有这个人一样是 null。
  */
-async function viewed<T>(
+async function viewed<T extends { employee: { personId: string } }>(
 	viewer: { id: string },
-	empId: string,
-	load: (scope: Scope, empId: string) => Promise<T | null>,
-): Promise<T | null> {
-	const detail = await load({ account: viewer.id }, empId);
-	if (detail) await recordView(viewer.id, empId);
-	return detail;
+	personId: string,
+	load: (scope: Scope, personId: string) => Promise<T | null>,
+) {
+	const scope = { account: viewer.id };
+	let detail = await load(scope, personId);
+	if (!detail) {
+		const mapped = await employeeNumberToPerson(scope, personId);
+		if (mapped) detail = await load(scope, mapped);
+	}
+	if (!detail) return null;
+	const sources = await sourcesFor(viewer.id, detail.employee.personId);
+	await recordView(viewer.id, detail.employee.personId);
+	return { ...detail, sources };
 }
 
 /** 单人详情的显示属性与经历时间线。 */
 export const fetchEmployee = createServerFn({ method: "GET" })
 	.middleware([authenticated])
-	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
+	.validator((d: { personId: unknown }) => ({
+		personId: String(d.personId ?? ""),
+	}))
 	.handler(({ data, context }) =>
-		viewed(context.viewer, data.empId, employeeDetail),
+		viewed(context.viewer, data.personId, employeeDetail),
 	);
 
 /**
@@ -196,23 +207,34 @@ const EXPORT_MAX = RESULT_MAX * 10;
  */
 export const logExport = createServerFn({ method: "POST" })
 	.middleware([authenticated])
-	.validator((d: { empIds: unknown }) => {
-		const empIds = Array.isArray(d.empIds) ? [...new Set(d.empIds)] : [];
+	.validator((d: { personIds: unknown; accessKeys: unknown }) => {
+		const personIds = Array.isArray(d.personIds)
+			? [...new Set(d.personIds)]
+			: [];
 		if (
-			empIds.length === 0 ||
-			empIds.length > EXPORT_MAX ||
-			!empIds.every(
+			!Array.isArray(d.accessKeys) ||
+			d.accessKeys.length !== personIds.length ||
+			!d.accessKeys.every((x) => typeof x === "string" && x.length === 32) ||
+			personIds.length === 0 ||
+			personIds.length > EXPORT_MAX ||
+			!personIds.every(
 				(id): id is string =>
 					typeof id === "string" && id.length > 0 && id.length <= 64,
 			)
 		)
 			throw new Error("导出的名单无效");
-		return { empIds };
+		return { personIds, accessKeys: d.accessKeys as string[] };
 	})
 	.handler(async ({ data, context }) => {
-		if (!(await allVisible({ account: context.viewer.id }, data.empIds)))
+		if (
+			!(await allVisible(
+				{ account: context.viewer.id },
+				data.personIds,
+				data.accessKeys,
+			))
+		)
 			throw new Error("导出的名单无效");
-		await recordExport(context.viewer.id, data.empIds);
+		await recordExport(context.viewer.id, data.personIds);
 	});
 
 /** 审计页的表：按账号、被查看或导出的人、搜索的内容找，一页一页地给。 */
@@ -338,7 +360,9 @@ export const dataList = createServerFn({ method: "GET" })
 /** 数据页的一个人：档案、每一段、每一段的解析结果。 */
 export const dataEmployee = createServerFn({ method: "GET" })
 	.middleware([authenticated])
-	.validator((d: { empId: unknown }) => ({ empId: String(d.empId ?? "") }))
+	.validator((d: { personId: unknown }) => ({
+		personId: String(d.personId ?? ""),
+	}))
 	.handler(({ data, context }) =>
-		viewed(context.viewer, data.empId, employeeData),
+		viewed(context.viewer, data.personId, employeeData),
 	);

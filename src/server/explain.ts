@@ -28,7 +28,7 @@ export type Row =
 	/** 一组自己的要求：一条子记录（「至少 2 期绩效」）、「并非」或展开不下的那层「或」 */
 	| { kind: "nested"; head: string; options: Option[] };
 
-/** 一种：`lead` 是这一种经历的来源（入职前经历、公司内经历），各行都要满足。 */
+/** 一种：`lead` 是这一种经历的来源（外部经历、公司内经历），各行都要满足。 */
 export type Option = { lead: string | null; rows: Row[] };
 
 /** 工作内容：判据原文，或没写判据时简历里要写到的字（写到其中一个就算：甲 / 乙）。 */
@@ -581,7 +581,7 @@ function mergeable(value: Piece[]): { lead: string | null } | null {
 	return ok ? { lead } : null;
 }
 
-/** 「或」起来的几项；同一属性、同一种比较的合成一行：入职前行业 甲 / 乙，部门路径 含 甲 / 乙。 */
+/** 「或」起来的几项；同一属性、同一种比较的合成一行：外部行业 甲 / 乙，部门路径 含 甲 / 乙。 */
 function or(items: Expr[]): Expr {
 	const flat = items.flatMap((i) => (i.t === "or" ? i.items : [i]));
 	if (flat.some((i) => i.t === "skip")) return SKIP;

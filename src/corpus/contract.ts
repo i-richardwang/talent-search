@@ -160,7 +160,12 @@ const COMPANY_ALIAS_COLUMNS = ["raw_name", "company"] as const;
 export type SourceEmployee = Record<
 	Exclude<(typeof EMPLOYEE_COLUMNS)[number], "overseas_educated">,
 	string
-> & { overseas_educated: boolean | null };
+> & {
+	overseas_educated: boolean | null;
+	linked_person_id?: string;
+	phone?: string;
+	email?: string;
+};
 export type SourceAssignment = Record<
 	(typeof ASSIGNMENT_COLUMNS)[number],
 	string
@@ -190,6 +195,9 @@ export type SourceCompanyAlias = Record<
 >;
 
 /** 一次抽取的全部产出。适配器的 `extract()` 返回它。 */
+/** 员工快照与公共公司、序列目录可由同一适配器分别发布。 */
+export type SyncPart = "all" | "people" | "knowledge";
+
 export type SourceData = {
 	employees: SourceEmployee[];
 	assignments: SourceAssignment[];
@@ -280,6 +288,12 @@ export function sourceData(raw: {
 		employees: conform(raw.employees, EMPLOYEE_COLUMNS, "employees").map(
 			(row, index) => ({
 				...row,
+				...Object.fromEntries(
+					["linked_person_id", "phone", "email"].flatMap((k) => {
+						const v = raw.employees[index]?.[k];
+						return typeof v === "string" && v.trim() ? [[k, v.trim()]] : [];
+					}),
+				),
 				overseas_educated: flag(
 					raw.employees,
 					"employees",

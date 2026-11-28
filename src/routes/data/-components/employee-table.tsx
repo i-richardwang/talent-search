@@ -99,23 +99,23 @@ export function EmployeeTable({
 							) : (
 								list.rows.map((row) => {
 									const detail = {
-										params: { empId: row.empId },
+										params: { personId: row.personId },
 										search: listSearch(list.page, q),
-										to: "/data/$empId",
+										to: "/data/$personId",
 									} as const;
 									return (
 										<TableRow
 											data-state={
-												row.empId === selected ? "selected" : undefined
+												row.personId === selected ? "selected" : undefined
 											}
-											key={row.empId}
+											key={row.personId}
 											onActivate={() => void navigate(detail)}
 										>
 											<TableCell
 												cellLabel="工号"
 												className="whitespace-nowrap font-mono text-fg-secondary"
 											>
-												{row.empId}
+												{row.empId ?? row.talentType}
 											</TableCell>
 											{/* 整行已在 Tab 序里；姓名是给中键、右键用的真链接，不另占 Tab 位 */}
 											<TableCell cellSlot="title" className="whitespace-nowrap">

@@ -14,8 +14,8 @@ import {
 	companyAlias,
 	type Employee,
 	type Experience,
-	employee,
 	experience,
+	personCard,
 } from "#/db/schema";
 import {
 	type Scope,
@@ -30,9 +30,11 @@ import type { EmployeeDetail } from "#/search/result";
 /** 数据页那张表的一行。 */
 export type EmployeeRow = Pick<
 	Employee,
-	"empId" | "name" | "curDept" | "curTitle"
+	"personId" | "name" | "curDept" | "curTitle"
 > & {
 	/** 这个人有几段 */
+	empId?: string | null;
+	talentType?: string;
 	segments: number;
 	/** 其中几段还没解析到当前版本 */
 	pending: number;
@@ -51,21 +53,21 @@ export async function listEmployees(
 	return withReadSnapshot(scope, async (client) => {
 		const { version } = await deriveStandard(client);
 		const found = await client.query<{ n: string }>(
-			"select count(*) as n from employee where name ilike $1 or emp_id ilike $1",
+			"select count(*) as n from person_card where name ilike $1 or emp_id ilike $1",
 			[pattern],
 		);
 		const total = Number(found.rows[0]?.n ?? 0);
 		const at = pageAt(total, page);
 		const { rows } = await client.query<EmployeeRow>(
-			`select e.emp_id as "empId", e.name, e.cur_dept as "curDept",
-			e.cur_title as "curTitle",
+			`select e.person_id as "personId", e.name,e.emp_id as "empId",e.talent_type as "talentType",e.cur_dept as "curDept",
+			case when e.talent_type='外部候选人' then e.recent_title else e.cur_title end as "curTitle",
 			count(x.id)::int as segments,
 			count(x.id) filter (where x.derived_identity is distinct from $1)::int as pending
-		 from employee e
-		 left join experience x on x.emp_id = e.emp_id
+		 from person_card e
+		 left join experience x on x.person_id = e.person_id
 		 where e.name ilike $2 or e.emp_id ilike $2
-		 group by e.emp_id
-		 order by e.emp_id
+		 group by e.person_id,e.emp_id,e.name,e.cur_dept,e.cur_title,e.talent_type,e.recent_title
+		 order by e.person_id
 		 limit ${at.limit} offset ${at.offset}`,
 			[version, pattern],
 		);
@@ -73,17 +75,32 @@ export async function listEmployees(
 	});
 }
 
+/** 已收藏的旧链接以工号寻址；只有能读到雇佣关系的账号可以解析它。 */
+export function employeeNumberToPerson(scope: Scope, number: string) {
+	return withReadSnapshot(
+		scope,
+		async (c) =>
+			(
+				await c.query<{ person_id: string }>(
+					"select person_id from employment where emp_id=$1",
+					[number],
+				)
+			).rows[0]?.person_id,
+	);
+}
 /** 这些工号是不是都在 `scope` 里。 */
 export async function allVisible(
 	scope: Scope,
-	empIds: readonly string[],
+	personIds: readonly string[],
+	accessKeys?: readonly string[],
 ): Promise<boolean> {
 	return withReadSnapshot(scope, async (client) => {
 		const { rows } = await client.query<{ n: number }>(
-			"select count(*)::int as n from employee where emp_id = any($1::text[])",
-			[empIds],
+			`select count(*)::int as n from person_card c join unnest($1::text[],$2::text[]) pick(id,stamp) on pick.id=c.person_id
+				where ($2::text[] is null or pick.stamp=c.access_key)`,
+			[personIds, accessKeys ?? null],
 		);
-		return rows[0]?.n === new Set(empIds).size;
+		return rows[0]?.n === new Set(personIds).size;
 	});
 }
 
@@ -123,18 +140,18 @@ type EmployeeData = {
 /** `scope` 看得到的一个人的档案和每一段；看不到和没有这个人一样是 null。 */
 export async function employeeData(
 	scope: Scope,
-	empId: string,
+	personId: string,
 ): Promise<EmployeeData | null> {
 	return withReadSnapshot(scope, async (client) => {
 		const { version } = await deriveStandard(client);
 		const found = await client.query<EmployeeProfile>(
-			`select emp_id as "empId", name, cur_dept as "curDept", cur_title as "curTitle",
+			`select person_id as "personId", name,emp_id as "empId",talent_type as "talentType",recent_company as "recentCompany",recent_title as "recentTitle", cur_dept as "curDept", cur_title as "curTitle",
 			cur_seq_l1 as "curSeqL1", cur_seq_l2 as "curSeqL2", cur_seq_l3 as "curSeqL3",
 			cur_level as "curLevel", hire_date::text as "hireDate",
 			education_level as "educationLevel", school, school_tier as "schoolTier",
 			overseas_educated as "overseasEducated", recruitment
-		 from employee where emp_id = $1`,
-			[empId],
+		 from person_card where person_id = $1`,
+			[personId],
 		);
 		const employee = found.rows[0];
 		if (!employee) return null;
@@ -151,9 +168,9 @@ export async function employeeData(
 			 from experience_phrase ep join phrase p on p.id = ep.phrase_id
 			 where ep.experience_id = x.id and ep.route = 'skill') as skills
 		 from experience x
-		 where x.emp_id = $1
+		 where x.person_id = $1
 		 order by x.start_date, x.id`,
-			[empId, version],
+			[personId, version],
 		);
 		return {
 			employee,
@@ -171,28 +188,32 @@ export async function employeeData(
  */
 export function employeeDetail(
 	scope: Scope,
-	empId: string,
+	personId: string,
 ): Promise<EmployeeDetail | null> {
 	return withCorpusSnapshot(scope, async (store) => {
 		const [emp] = await store
 			.select({
-				empId: employee.empId,
-				name: employee.name,
-				curDept: employee.curDept,
-				curTitle: employee.curTitle,
-				curSeqL1: employee.curSeqL1,
-				curSeqL2: employee.curSeqL2,
-				curSeqL3: employee.curSeqL3,
-				curLevel: employee.curLevel,
-				hireDate: employee.hireDate,
-				educationLevel: employee.educationLevel,
-				school: employee.school,
-				schoolTier: employee.schoolTier,
-				overseasEducated: employee.overseasEducated,
-				recruitment: employee.recruitment,
+				personId: personCard.personId,
+				empId: personCard.empId,
+				talentType: personCard.talentType,
+				recentCompany: personCard.recentCompany,
+				recentTitle: personCard.recentTitle,
+				name: personCard.name,
+				curDept: personCard.curDept,
+				curTitle: personCard.curTitle,
+				curSeqL1: personCard.curSeqL1,
+				curSeqL2: personCard.curSeqL2,
+				curSeqL3: personCard.curSeqL3,
+				curLevel: personCard.curLevel,
+				hireDate: personCard.hireDate,
+				educationLevel: personCard.educationLevel,
+				school: personCard.school,
+				schoolTier: personCard.schoolTier,
+				overseasEducated: personCard.overseasEducated,
+				recruitment: personCard.recruitment,
 			})
-			.from(employee)
-			.where(eq(employee.empId, empId));
+			.from(personCard)
+			.where(eq(personCard.personId, personId));
 		if (!emp) return null;
 		const timeline = await store
 			.select({
@@ -224,7 +245,7 @@ export function employeeDetail(
 			.from(experience)
 			.leftJoin(companyAlias, eq(companyAlias.rawName, experience.company))
 			.leftJoin(company, eq(company.name, companyAlias.company))
-			.where(eq(experience.empId, empId))
+			.where(eq(experience.personId, personId))
 			.orderBy(asc(experience.startDate), asc(experience.id));
 		return { employee: emp, timeline };
 	});

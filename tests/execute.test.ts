@@ -33,8 +33,8 @@ beforeEach(async () => {
 });
 
 const query = (...conditions: QueryCondition[]): Query => ({ conditions });
-const ids = (list: { employee: { empId: string } }[]) =>
-	list.map((r) => r.employee.empId);
+const ids = (list: { employee: { personId: string } }[]) =>
+	list.map((r) => r.employee.personId);
 /** 有经历主张的名单：每个人带着证据。 */
 const evidence = (outcome: SearchOutcome) => {
 	if (outcome.order !== "evidence") throw new Error("该是按证据排的名单");
@@ -48,7 +48,7 @@ const highTwice: QueryCondition = {
 	mode: "must",
 	from: "person",
 	where:
-		"(select count(*) from rating r where r.emp_id = p.emp_id and r.stream = 'perf' and r.period_end >= current_date - interval '3 years' and r.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band)) >= :times",
+		"(select count(*) from rating r where r.person_id = p.person_id and r.stream = 'perf' and r.period_end >= current_date - interval '3 years' and r.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band)) >= :times",
 	params: { band: "A", times: 2 },
 };
 
@@ -58,7 +58,7 @@ const twoInARow: QueryCondition = {
 	mode: "must",
 	from: "person",
 	where:
-		"exists (select 1 from rating a join rating b on b.emp_id = a.emp_id and b.stream = a.stream and b.period_start = a.period_end + 1 where a.emp_id = p.emp_id and a.stream = 'perf' and a.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band) and b.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band))",
+		"exists (select 1 from rating a join rating b on b.person_id = a.person_id and b.stream = a.stream and b.period_start = a.period_end + 1 where a.person_id = p.person_id and a.stream = 'perf' and a.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band) and b.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band))",
 	params: { band: "A" },
 };
 
@@ -68,7 +68,7 @@ const neverC: QueryCondition = {
 	mode: "must",
 	from: "person",
 	where:
-		"exists (select 1 from rating r where r.emp_id = p.emp_id and r.stream = 'perf') and not exists (select 1 from rating r where r.emp_id = p.emp_id and r.stream = 'perf' and r.value = :low)",
+		"exists (select 1 from rating r where r.person_id = p.person_id and r.stream = 'perf') and not exists (select 1 from rating r where r.person_id = p.person_id and r.stream = 'perf' and r.value = :low)",
 	params: { low: "C" },
 };
 
@@ -112,8 +112,8 @@ before(async () => {
 			: { periodStart: `${year}-07-01`, periodEnd: `${year}-12-31` };
 	};
 	/** 近三年六期，按 k = 1..6 给档。 */
-	const sixHalves = (empId: string, values: string[]) =>
-		values.map((value, i) => ({ empId, value, ...half(i + 1) }));
+	const sixHalves = (personId: string, values: string[]) =>
+		values.map((value, i) => ({ personId, value, ...half(i + 1) }));
 	const threeYearsAndADayAgo = new Date(today);
 	threeYearsAndADayAgo.setUTCFullYear(today.getUTCFullYear() - 3);
 	threeYearsAndADayAgo.setUTCDate(threeYearsAndADayAgo.getUTCDate() - 1);
@@ -129,13 +129,13 @@ before(async () => {
 		...more,
 	});
 	await seed([
-		...["R1", "R2", "R3", "R4", "R5", "R6"].map((empId) => ({
-			empId,
-			name: `合成${empId}`,
+		...["R1", "R2", "R3", "R4", "R5", "R6"].map((personId) => ({
+			personId,
+			name: `合成${personId}`,
 			segments: [],
 		})),
 		{
-			empId: "E1",
+			personId: "E1",
 			name: "合成E1",
 			education: "硕士",
 			segments: [
@@ -144,19 +144,19 @@ before(async () => {
 			],
 		},
 		{
-			empId: "E2",
+			personId: "E2",
 			name: "合成E2",
 			education: "硕士",
 			segments: [external("甲辰科技", 36)],
 		},
 		{
-			empId: "E3",
+			personId: "E3",
 			name: "合成E3",
 			education: "硕士",
 			segments: [external("乙未网络", 60)],
 		},
 		{
-			empId: "E4",
+			personId: "E4",
 			name: "合成E4",
 			education: "硕士",
 			segments: [external("甲辰科技", 6, { title: "推荐系统实习生" })],
@@ -172,7 +172,7 @@ before(async () => {
 			...sixHalves("R1", ["A", "B", "A", "B", "B", "B"]),
 			...sixHalves("R2", ["B", "A", "B", "B", "B", "B"]),
 			{
-				empId: "R2",
+				personId: "R2",
 				value: "A",
 				periodStart: iso(outside),
 				periodEnd: iso(threeYearsAndADayAgo),
@@ -208,7 +208,7 @@ describe("按期记录的门槛：三年内两次高绩效", () => {
 
 	test("记录只是门槛：和经历主张一起时只定去留，证据和累计时长仍只来自那段经历", async () => {
 		const records = ["2025-01-01", "2025-07-01"].map((periodStart) => ({
-			empId: "E1",
+			personId: "E1",
 			stream: "perf",
 			value: "A+",
 			periodStart,
@@ -231,7 +231,7 @@ describe("按期记录的门槛：三年内两次高绩效", () => {
 			assert.equal(e1?.basis[0]?.months, 12);
 			assert.equal(e1?.basis.length, 1, "只有经历主张有依据");
 		} finally {
-			await pool.query("delete from employee_record where emp_id = 'E1'");
+			await pool.query("delete from employee_record where person_id = 'E1'");
 		}
 	});
 });
@@ -245,7 +245,7 @@ describe("限定公司的经历", () => {
 		const [e2, e1] = outcome.results;
 		for (const r of outcome.results)
 			for (const e of r.evidence)
-				assert.equal(e.company, "甲辰科技", `${r.employee.empId} 的证据`);
+				assert.equal(e.company, "甲辰科技", `${r.employee.personId} 的证据`);
 		assert.equal(e1?.basis[0]?.months, 12, "乙未那 96 个月不算");
 		assert.equal(e2?.basis[0]?.months, 36);
 		assert.equal(outcome.total, 2);
@@ -321,7 +321,7 @@ describe("限定公司的经历", () => {
 			mode: "must",
 			from: "person",
 			where:
-				"exists (select 1 from experience x where x.emp_id = p.emp_id and x.company ilike :c)",
+				"exists (select 1 from experience x where x.person_id = p.person_id and x.company ilike :c)",
 			params: { c: "%甲辰科技%" },
 		};
 		const asSegment = await execute(query(atCompany, noIntern), task);
@@ -371,27 +371,28 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 	) => {
 		const { rows } = await pool.query<{
 			id: number;
-			emp_id: string;
+			person_id: string;
 			title: string;
-		}>("select id, emp_id, title from experience where id = any($1::int[])", [
-			unconfirmed.map((u) => u.experienceId),
-		]);
+		}>(
+			"select id, person_id, title from experience where id = any($1::int[])",
+			[unconfirmed.map((u) => u.experienceId)],
+		);
 		const byId = new Map(rows.map((row) => [row.id, row]));
 		return unconfirmed.map((u) => {
 			const row = byId.get(u.experienceId);
-			return [u.condition.id, row?.emp_id, row?.title];
+			return [u.condition.id, row?.person_id, row?.title];
 		});
 	};
 
 	before(async () => {
 		const one = (
-			empId: string,
+			personId: string,
 			curLevel: string,
 			title: string,
 			more = {},
 		) => ({
-			empId,
-			name: `合成${empId}`,
+			personId,
+			name: `合成${personId}`,
 			curLevel,
 			segments: [{ title, months: 36, ...more }],
 		});
@@ -402,7 +403,7 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 			// 没读过的段：整段原文是一条说法
 			one("T4", "P5", "产品经理", { description: "负责过风控策略的项目" }),
 			{
-				empId: "T5",
+				personId: "T5",
 				name: "合成T5",
 				segments: [
 					{ title: "风控策略负责人", months: 24 },
@@ -447,7 +448,7 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 		assert.equal(outcome.empty, null);
 		const hitsOfT5 = (o: typeof outcome) =>
 			o.results
-				.find((r) => r.employee.empId === "T5")
+				.find((r) => r.employee.personId === "T5")
 				?.evidence.map((e) => e.title);
 		assert.deepEqual(
 			hitsOfT5(outcome),
@@ -473,7 +474,7 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 			["风控策略负责人"],
 			"判成不算的那一段不是证据",
 		);
-		const t5 = read.results.find((r) => r.employee.empId === "T5");
+		const t5 = read.results.find((r) => r.employee.personId === "T5");
 		assert.equal(t5?.basis[0]?.months, 24, "累计时长也不算它");
 	});
 
@@ -528,20 +529,20 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 		assert.deepEqual(await seen(), read);
 		try {
 			await pool.query(
-				"update experience set description = '后来补的一句' where emp_id = 'T1'",
+				"update experience set description = '后来补的一句' where person_id = 'T1'",
 			);
 			assert.deepEqual(await seen(), unread, "内容变了");
 			await pool.query(
-				"update experience set description = '' where emp_id = 'T1'",
+				"update experience set description = '' where person_id = 'T1'",
 			);
 			assert.deepEqual(await seen(), read);
 			await pool.query(
-				"update experience set derived_identity = '新一版' where emp_id = 'T1'",
+				"update experience set derived_identity = '新一版' where person_id = 'T1'",
 			);
 			assert.deepEqual(await seen(), unread, "解析结果换了一版");
 		} finally {
 			await pool.query(
-				"update experience set description = '', derived_identity = null where emp_id = 'T1'",
+				"update experience set description = '', derived_identity = null where person_id = 'T1'",
 			);
 		}
 	});
@@ -604,7 +605,7 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 			mode: "must",
 			from: "person",
 			where:
-				"exists (select 1 from experience x where x.emp_id = p.emp_id and x.title = '产品经理')",
+				"exists (select 1 from experience x where x.person_id = p.person_id and x.title = '产品经理')",
 		};
 		const pending = await probe(query(product, noRisk), task);
 		assert.equal(pending.total, 0);
@@ -675,7 +676,7 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 	test("试跑列出的段职级高的人在前，没有职级的在最后", async () => {
 		const tried = await probe(query(risk("本人做风控策略")), task);
 		assert.deepEqual(
-			(await named(tried.unconfirmed)).map(([, empId]) => empId),
+			(await named(tried.unconfirmed)).map(([, personId]) => personId),
 			["T1", "T2", "T3", "T4", "T5", "T5"],
 		);
 	});
@@ -691,7 +692,7 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 		assert.equal(tried.conditions[0]?.people, 3);
 		assert.equal(tried.total, 0, "一段都没确认过");
 		assert.deepEqual(
-			(await named(tried.unconfirmed)).map(([, empId]) => empId).sort(),
+			(await named(tried.unconfirmed)).map(([, personId]) => personId).sort(),
 			["E1", "E2", "E4"],
 			"E1 在乙未的那段、E3 都不在这条条件里",
 		);
@@ -760,7 +761,9 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 			[...new Set(second.unconfirmed.map((u) => u.condition.id))],
 			["策略优先"],
 		);
-		const owners = (await named(second.unconfirmed)).map(([, empId]) => empId);
+		const owners = (await named(second.unconfirmed)).map(
+			([, personId]) => personId,
+		);
 		assert.deepEqual(
 			owners,
 			["T1", "T2", "T4", "T5", "T5"],
@@ -823,7 +826,7 @@ describe("选中了什么：验收给条件认身份", () => {
 	test("试跑的人数就是选中的人数：同一份语句", async () => {
 		const longOnes: QueryCondition = {
 			id: "long",
-			label: "入职前累计五年",
+			label: "外部累计五年",
 			mode: "must",
 			from: "experience",
 			where: "e.kind = 'external'",

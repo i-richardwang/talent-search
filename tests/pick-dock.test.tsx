@@ -16,7 +16,7 @@ import type { Pick, Picks } from "#/routes/s/$turnId/-lib/picks";
 import { visibleText } from "./render";
 
 const pick = (name: string, rank: number): Pick => ({
-	empId: `T000${rank}`,
+	personId: `T000${rank}`,
 	name,
 	dept: null,
 	title: null,
@@ -27,14 +27,14 @@ const pick = (name: string, rank: number): Pick => ({
 
 const picks = (chosen: Pick[]): Picks => ({
 	clear: () => {},
-	picked: new Map(chosen.map((p) => [p.empId, p])),
+	picked: new Map(chosen.map((p) => [p.personId, p])),
 	pickAll: () => {},
 	pointAt: () => false,
 	remove: () => {},
 	rows: [],
 	setShown: () => {},
-	shownIds: chosen.map((p) => p.empId),
-	shownPicked: chosen.map((p) => p.empId),
+	shownIds: chosen.map((p) => p.personId),
+	shownPicked: chosen.map((p) => p.personId),
 	toggle: () => {},
 });
 

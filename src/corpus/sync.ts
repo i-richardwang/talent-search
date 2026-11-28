@@ -6,6 +6,8 @@
  */
 
 import "@tanstack/react-start/server-only";
+import { contactKeys } from "#/identity/contacts";
+import type { SourceEmployee, SyncPart } from "./contract";
 import { prunePhrases } from "./phrases";
 import {
 	build,
@@ -34,7 +36,7 @@ async function stageEmployee(
 	rows: EmployeeRow[],
 ): Promise<void> {
 	await client.query(
-		"create temp table staged_employee (like employee) on commit drop",
+		"create temp table staged_employee (like person_card) on commit drop",
 	);
 	for (const chunk of chunked(rows, ROWS_PER_STATEMENT))
 		await client.query(
@@ -87,7 +89,7 @@ async function stageExperience(
 	for (const chunk of chunked(rows, ROWS_PER_STATEMENT))
 		await client.query(
 			`insert into staged_experience (
-				emp_id, kind, unemployed, start_date, end_date, company, department, department_path, company_meta,
+				person_id, kind, unemployed, start_date, end_date, company, department, department_path, company_meta,
 				title, seq_l1, seq_l2, seq_l3, level, description, months)
 			 select * from unnest(
 				$1::text[], $2::text[], $3::boolean[], $4::date[], $5::date[], $6::text[], $7::text[],
@@ -114,10 +116,12 @@ async function stageExperience(
 		);
 }
 
-const EMPLOYEE_COLUMNS =
-	"emp_id, name, cur_dept, cur_dept_path, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date, education_level, education_rank, school, school_tier, overseas_educated, recruitment";
+const BIO_COLUMNS =
+	"name, education_level, education_rank, school, school_tier, overseas_educated";
+const JOB_COLUMNS =
+	"emp_id, cur_dept, cur_dept_path, cur_title, cur_seq_l1, cur_seq_l2, cur_seq_l3, cur_level, cur_level_band, cur_level_rank, hire_date, recruitment";
 const EXPERIENCE_COLUMNS =
-	"emp_id, kind, unemployed, start_date, end_date, company, department, department_path, company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months";
+	"person_id, kind, unemployed, start_date, end_date, company, department, department_path, company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months";
 
 /**
  * 把暂存的两张表和正式表做差：删这次没有的，插这次新来的，改了档案的人更新。
@@ -128,21 +132,36 @@ async function reconcile({ client }: CorpusSession): Promise<{
 	experienceGone: number;
 	experienceNew: number;
 }> {
-	const employeesGone = await client.query(
-		"delete from employee where emp_id not in (select emp_id from staged_employee)",
-	);
-	// 档案没有解析的那一半，整行照这一次的写
+	await client.query(`update staged_employee s set person_id=coalesce(
+		(select i.person_id from person_identity i where i.kind='emp_id' and i.value=s.emp_id),s.person_id,gen_random_uuid()::text)`);
+	for (const [table, columns] of [
+		["person", BIO_COLUMNS],
+		["employment", JOB_COLUMNS],
+	] as const) {
+		await client.query(`insert into ${table}(person_id,${columns}) select person_id,${columns} from staged_employee
+			on conflict(person_id) do update set (${columns})=(${columns
+				.split(", ")
+				.map((c) => `excluded.${c}`)
+				.join(",")})`);
+	}
 	await client.query(
-		`insert into employee (${EMPLOYEE_COLUMNS})
-		 select ${EMPLOYEE_COLUMNS} from staged_employee
-		 on conflict (emp_id) do update set ${EMPLOYEE_COLUMNS.split(", ")
-				.filter((column) => column !== "emp_id")
-				.map((column) => `${column} = excluded.${column}`)
-				.join(", ")}`,
+		`insert into person_identity(kind,value,person_id) select 'emp_id',emp_id,person_id from staged_employee on conflict do nothing`,
 	);
-	const experienceGone = await client.query(
-		"delete from experience where content_key not in (select content_key from staged_experience)",
+	await client.query(
+		`insert into profile_source(id,person_id,source_kind) select 'hr:'||person_id,person_id,'hris' from staged_employee on conflict do nothing`,
 	);
+	const employeesGone = await client.query(
+		"delete from employment e where not exists(select from staged_employee s where s.person_id=e.person_id)",
+	);
+	await client.query(
+		"delete from profile_source f where f.source_kind='hris' and not exists(select from staged_employee s where s.person_id=f.person_id)",
+	);
+	await client.query(
+		"update staged_experience x set person_id=s.person_id from staged_employee s where x.person_id=s.emp_id",
+	);
+	await client.query(`delete from profile_experience pe using profile_source f,experience e
+		where f.id=pe.profile_id and f.source_kind='hris' and e.id=pe.experience_id
+		and not exists(select from staged_experience s where s.content_key=e.content_key)`);
 	await client.query(
 		`update experience e set months = s.months
 		 from staged_experience s where e.content_key = s.content_key and e.months <> s.months`,
@@ -152,6 +171,13 @@ async function reconcile({ client }: CorpusSession): Promise<{
 		 select ${EXPERIENCE_COLUMNS} from staged_experience s
 		 where not exists (select 1 from experience e where e.content_key = s.content_key)`,
 	);
+	await client.query(`insert into profile_experience(profile_id,person_id,experience_id)
+		select 'hr:'||s.person_id,s.person_id,e.id from staged_experience s join experience e using(content_key) on conflict do nothing`);
+	const experienceGone = await client.query(
+		"delete from experience e where not exists(select from profile_experience pe where pe.experience_id=e.id)",
+	);
+	await client.query(`delete from person p where not exists(select from profile_source s where s.person_id=p.person_id)
+		and not exists(select from pool_member m where m.person_id=p.person_id)`);
 	await prunePhrases(client);
 	return {
 		employeesGone: employeesGone.rowCount ?? 0,
@@ -192,8 +218,8 @@ async function replaceRecords(
 	);
 	for (const chunk of chunked(records, ROWS_PER_STATEMENT))
 		await client.query(
-			`insert into employee_record (emp_id, stream, period_start, period_end, value)
-			 select * from unnest($1::text[], $2::text[], $3::date[], $4::date[], $5::text[])`,
+			`insert into employee_record (person_id, stream, period_start, period_end, value)
+			 select e.person_id,r.stream,r.start,r.finish,r.value from unnest($1::text[], $2::text[], $3::date[], $4::date[], $5::text[]) r(emp_id,stream,start,finish,value) join staged_employee e using(emp_id)`,
 			[
 				chunk.map((r) => r.emp_id),
 				chunk.map((r) => r.stream),
@@ -240,6 +266,55 @@ async function replaceCompanies(
 		);
 }
 
+/** 已确认的入职关联由人事源提供，联系方式只用于提示人工核对。 */
+async function hrisIdentities(
+	session: CorpusSession,
+	profiles: SourceEmployee[],
+	apply: boolean,
+) {
+	const { client } = session;
+	if (apply)
+		await client.query(
+			"delete from person_identity where origin='hris' and kind in ('phone','email')",
+		);
+	const known = profiles.filter(
+		(p) => p.linked_person_id || p.phone || p.email,
+	);
+	for (const rows of chunked(known, ROWS_PER_STATEMENT)) {
+		if (apply) {
+			const keys = rows.flatMap((p) =>
+				contactKeys({ phone: p.phone ?? "", email: p.email ?? "" }).map(
+					(k) => ({ ...k, emp_id: p.emp_id.trim() }),
+				),
+			);
+			await client.query(
+				`insert into person_identity(person_id,kind,value,origin)
+			select s.person_id,k.kind,k.value,'hris' from jsonb_to_recordset($1) k(emp_id text,kind text,value text)
+			join staged_employee s using(emp_id) on conflict do nothing`,
+				[JSON.stringify(keys)],
+			);
+		} else {
+			const links = rows
+				.filter((p) => p.linked_person_id)
+				.map((p) => ({ emp_id: p.emp_id.trim(), linked: p.linked_person_id }));
+			const q =
+				"from jsonb_to_recordset($1) k(emp_id text,linked text) join staged_employee s using(emp_id)";
+			const conflict = await client.query(
+				`select 1 ${q} left join person p on p.person_id=k.linked
+				left join person_identity i on i.kind='emp_id' and i.value=k.emp_id
+				where p.person_id is null or i.person_id<>k.linked limit 1`,
+				[JSON.stringify(links)],
+			);
+			if (conflict.rowCount)
+				throw new Error("人事源的已确认人员关联无效或与现有工号冲突");
+			await client.query(
+				"update staged_employee s set person_id=k.linked from jsonb_to_recordset($1) k(emp_id text,linked text) where s.emp_id=k.emp_id",
+				[JSON.stringify(links)],
+			);
+		}
+	}
+}
+
 /**
  * 同内容的段保留身份，累计月数按本次日期刷新。连接与锁由调用方给（`session.ts`）。
  */
@@ -247,10 +322,11 @@ export async function sync(
 	session: CorpusSession,
 	sourceConfig: SourceConfig,
 	report: Report,
+	part: SyncPart = "all",
 ): Promise<void> {
 	report(`读取数据源 ${sourceConfig.name}…`);
 	const source = await loadSource(sourceConfig);
-	const data = await source.extract(report);
+	const data = await source.extract(report, part);
 
 	report("");
 	report("切段与校验…");
@@ -269,30 +345,39 @@ export async function sync(
 	report("写入…");
 	const { client } = session;
 	await client.query("begin");
-	let counts: Awaited<ReturnType<typeof reconcile>>;
+	let counts: Awaited<ReturnType<typeof reconcile>> | undefined;
 	try {
-		await stageEmployee(session, employee);
-		await stageExperience(session, experience);
-		await client.query("delete from sequence_catalog");
-		await client.query(
-			`insert into sequence_catalog (seq_l1, seq_l2)
+		if (part !== "knowledge") {
+			await stageEmployee(session, employee);
+			await hrisIdentities(session, data.employees, false);
+			await stageExperience(session, experience);
+			counts = await reconcile(session);
+			await hrisIdentities(session, data.employees, true);
+			await replaceRecords(session, streams, scale, records);
+		}
+		if (part !== "people") {
+			await client.query("delete from sequence_catalog");
+			await client.query(
+				`insert into sequence_catalog (seq_l1, seq_l2)
 			 select * from unnest($1::text[], $2::text[])`,
-			[
-				data.sequences.map((row) => row.seq_l1.trim()),
-				data.sequences.map((row) => row.seq_l2.trim()),
-			],
-		);
-		counts = await reconcile(session);
-		await replaceRecords(session, streams, scale, records);
-		await replaceCompanies(session, industries, companies, companyAliases);
+				[
+					data.sequences.map((row) => row.seq_l1.trim()),
+					data.sequences.map((row) => row.seq_l2.trim()),
+				],
+			);
+			await replaceCompanies(session, industries, companies, companyAliases);
+		}
+
 		await client.query("commit");
 	} catch (error) {
 		await client.query("rollback");
 		throw error;
 	}
-	report(
-		`  现行岗位序列 ${data.sequences.length} 对；人员 ${employee.length} 人，其中离开 ${counts.employeesGone} 人；` +
-			`经历 ${experience.length} 段，新增 ${counts.experienceNew} 段、` +
-			`离开 ${counts.experienceGone} 段`,
-	);
+	if (part !== "people") report(`  现行岗位序列 ${data.sequences.length} 对`);
+	if (counts)
+		report(
+			`  人员 ${employee.length} 人，其中离开 ${counts.employeesGone} 人；` +
+				`经历 ${experience.length} 段，新增 ${counts.experienceNew} 段、` +
+				`离开 ${counts.experienceGone} 段`,
+		);
 }

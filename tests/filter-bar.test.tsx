@@ -25,6 +25,8 @@ import type { Facets } from "#/search/result";
 import { visibleText } from "./render";
 
 const FACETS: Facets = {
+	talentType: [],
+	pool: [],
 	seq: [
 		{ value: { l1: "技术", l2: "算法" }, n: 100 },
 		{ value: { l1: "技术", l2: "工程" }, n: 80 },
@@ -85,7 +87,7 @@ describe("钮上的字", () => {
 		const text = seen({});
 		for (const title of ["序列", "经历来源", "经历时长", "职级"])
 			assert.ok(text.includes(title), `看不到「${title}」：${text}`);
-		assert.ok(!text.includes("入职前公司"), text);
+		assert.ok(!text.includes("外部公司"), text);
 	});
 
 	test("选了一项，钮上跟着那一项，不是地址里的裸值", () => {

@@ -15,7 +15,15 @@ type Store = Pick<typeof db, "insert">;
 /** 账号页上对一个账号做的事。 */
 export type AccountAction = Exclude<
 	AuditAction,
-	"search" | "view" | "export" | "derive-read"
+	| "search"
+	| "view"
+	| "export"
+	| "derive-read"
+	| "resume-preview"
+	| "resume-download"
+	| "talent-add"
+	| "talent-link"
+	| "talent-remove"
 >;
 
 /** 这个账号搜了什么。`store` 是写下那一轮的事务。 */
@@ -24,27 +32,30 @@ export async function recordSearch(store: Store, userId: string, text: string) {
 }
 
 /** 这个账号打开了这个人的详情。 */
-export async function recordView(userId: string, empId: string) {
-	await db.insert(auditEvent).values({ userId, action: "view", empId });
+export async function recordView(userId: string, personId: string) {
+	await db.insert(auditEvent).values({ userId, action: "view", personId });
 }
 
 /** 这个账号导出了这些人，一个人一行。 */
-export async function recordExport(userId: string, empIds: string[]) {
-	await db
-		.insert(auditEvent)
-		.values(
-			empIds.map((empId) => ({ userId, action: "export" as const, empId })),
-		);
+export async function recordExport(userId: string, personIds: string[]) {
+	await db.insert(auditEvent).values(
+		personIds.map((personId) => ({
+			userId,
+			action: "export" as const,
+			personId,
+		})),
+	);
 }
 
 /** 发给外部解析服务之前记录本批提供了哪些人的经历。 */
-export async function recordDeriveRead(empIds: string[]) {
-	if (empIds.length)
-		await db
-			.insert(auditEvent)
-			.values(
-				empIds.map((empId) => ({ action: "derive-read" as const, empId })),
-			);
+export async function recordDeriveRead(personIds: string[]) {
+	if (personIds.length)
+		await db.insert(auditEvent).values(
+			personIds.map((personId) => ({
+				action: "derive-read" as const,
+				personId,
+			})),
+		);
 }
 
 /** 这个管理员对这个账号做了这件事。`store` 是改这个账号的事务。 */
@@ -66,7 +77,7 @@ export type AuditRow = {
 	name: string;
 	action: AuditAction;
 	/** 查看、导出或交给外部解析服务的员工 */
-	empId: string | null;
+	personId: string | null;
 	/** 那个人现在的名字；已经不在人才库里为 null */
 	empName: string | null;
 	/** 搜索的内容；其余为 null */
@@ -87,10 +98,10 @@ export async function listAudit(
 	const pattern = `%${escapeLike(needle.trim())}%`;
 	const from = `from audit_event a
 		left join auth_user u on u.id = a.user_id
-		left join employee e on e.emp_id = a.emp_id
+		left join person_card e on e.person_id = a.person_id
 		left join auth_user t on t.id = a.account_id
-		where u.username ilike $1 or coalesce(u.name, '外部解析服务') ilike $1 or a.emp_id ilike $1
-			or e.name ilike $1 or a.text ilike $1
+		where u.username ilike $1 or coalesce(u.name, '外部解析服务') ilike $1 or a.person_id ilike $1
+			or e.emp_id ilike $1 or e.name ilike $1 or a.text ilike $1
 			or t.username ilike $1 or t.name ilike $1`;
 	// 管理员查整个系统的操作，被查看、导出的人不按谁的数据范围过滤
 	return withReadSnapshot("all", async (client) => {
@@ -102,7 +113,7 @@ export async function listAudit(
 		const at = pageAt(total, page);
 		const { rows } = await client.query<AuditRow>(
 			`select a.id, to_char(a.at, 'YYYY-MM-DD HH24:MI:SS') as at,
-				coalesce(u.username, '') as username, coalesce(u.name, '外部解析服务') as name, a.action, a.emp_id as "empId",
+				coalesce(u.username, '') as username, coalesce(u.name, '外部解析服务') as name, a.action, a.person_id as "personId",
 				e.name as "empName", a.text,
 				t.username as "accountUsername", t.name as "accountName"
 			${from}

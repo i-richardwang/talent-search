@@ -50,10 +50,7 @@ describe("一行证据看得见的部分", () => {
 
 	test("一段时按经历来源写，多段时写累计", () => {
 		assert.match(seen(evidence(), basis()), /公司内 2\.3 年/);
-		assert.match(
-			seen(evidence({ kind: "external" }), basis()),
-			/入职前 2\.3 年/,
-		);
+		assert.match(seen(evidence({ kind: "external" }), basis()), /外部 2\.3 年/);
 		for (const kind of ["external", "internal"] as const)
 			assert.match(
 				seen(evidence({ kind }), basis({ segments: 2 })),

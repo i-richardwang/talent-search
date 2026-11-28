@@ -40,7 +40,7 @@ type ListProps = {
 	outcome?: SearchOutcome;
 	spec?: SearchSpec;
 	mode?: SearchMode;
-	empId?: string;
+	personId?: string;
 	wait?: ListWait | null;
 	canMore?: boolean;
 	fault?: AttemptFault | null;
@@ -51,7 +51,7 @@ function List({
 	outcome = OUTCOME,
 	spec = SPEC,
 	mode = "conversation",
-	empId,
+	personId,
 	wait = null,
 	canMore = false,
 	fault = null,
@@ -67,7 +67,7 @@ function List({
 		<Routed url={`/s/${LATEST_TURN_ID}`}>
 			<ResultList
 				canMore={canMore}
-				empId={empId}
+				personId={personId}
 				failure={fault ? { fault, onRetry: noop } : null}
 				growing={growing}
 				mode={mode}
@@ -126,7 +126,7 @@ function Playground() {
 	const props: ListProps = {
 		...base,
 		canMore: many,
-		empId: open ? "T0101" : undefined,
+		personId: open ? "T0101" : undefined,
 		outcome: many
 			? firstOf(outcome, outcome.results.length, TWO_PAGES)
 			: outcome,

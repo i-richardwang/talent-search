@@ -143,12 +143,12 @@ export const EMPLOYEE_ROWS: EmployeeRow[] = [
 	...EMPLOYEES.map((e) => ({
 		curDept: e.curDept,
 		curTitle: e.curTitle,
-		empId: e.empId,
+		personId: e.personId,
 		name: e.name,
 		pending: SEGMENTS.filter(
-			(s) => !s.derived && experiencesOf(e.empId).some((x) => x.id === s.id),
+			(s) => !s.derived && experiencesOf(e.personId).some((x) => x.id === s.id),
 		).length,
-		segments: experiencesOf(e.empId).length,
+		segments: experiencesOf(e.personId).length,
 	})),
 	...Array.from({ length: PAGE_SIZE + 10 - EMPLOYEES.length }, (_, i) => {
 		const no = String(107 + i).padStart(4, "0");
@@ -156,7 +156,7 @@ export const EMPLOYEE_ROWS: EmployeeRow[] = [
 		return {
 			curDept,
 			curTitle,
-			empId: `T${no}`,
+			personId: `T${no}`,
 			name: `Talent ${no}`,
 			pending: i % 7 === 0 ? 1 : 0,
 			segments: 1 + (i % 4),
@@ -289,7 +289,7 @@ function audited(
 		accountUsername: target?.username ?? null,
 		action: did.action,
 		at: `2026-09-26 08:${String(minute).padStart(2, "0")}:10`,
-		empId: person?.empId ?? null,
+		personId: person?.personId ?? null,
 		empName: person?.name ?? null,
 		id,
 		text: "text" in did ? did.text : null,

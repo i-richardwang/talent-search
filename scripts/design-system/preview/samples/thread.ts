@@ -36,7 +36,7 @@ const EXPLAINED_BY_LABEL: Record<string, ConditionExplained> = {
 		options: [
 			{
 				lead: null,
-				rows: [{ kind: "fact", field: "入职前公司", value: [{ tag: "大厂" }] }],
+				rows: [{ kind: "fact", field: "外部公司", value: [{ tag: "大厂" }] }],
 			},
 		],
 		months: 36,

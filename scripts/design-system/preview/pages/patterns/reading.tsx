@@ -13,7 +13,7 @@ import { TermRecord } from "#/routes/terms/-components/term-drawer";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Stage } from "../../kit/stage";
-import { Routed, useOpenEmpId } from "../../routed";
+import { Routed, useOpenPersonId } from "../../routed";
 import { SEGMENTS, SKILL_DETAIL, TASK_LANES } from "../../samples/admin";
 import { SPEC } from "../../samples/conditions";
 import { EMPLOYEES, OUTCOME } from "../../samples/people";
@@ -95,7 +95,7 @@ function Names({ selected }: { selected: string | undefined }) {
 	return (
 		<ResultList
 			canMore={false}
-			empId={selected}
+			personId={selected}
 			failure={null}
 			growing={false}
 			wait={null}
@@ -115,11 +115,11 @@ function Names({ selected }: { selected: string | undefined }) {
 
 /** 宽屏：名单和产品的右栏并排，右栏平时是对话线程，点开人换成详情。 */
 function Wide() {
-	const empId = useOpenEmpId();
+	const personId = useOpenPersonId();
 	return (
 		<div className="flex h-160 overflow-hidden">
 			<div className="min-w-0 flex-1 overflow-y-auto p-4">
-				<Names selected={empId} />
+				<Names selected={personId} />
 			</div>
 			<SidePanel
 				conversation={
@@ -136,7 +136,7 @@ function Wide() {
 						waiting={false}
 					/>
 				}
-				detail={empId ? <PersonPane empId={empId} /> : null}
+				detail={personId ? <PersonPane personId={personId} /> : null}
 			/>
 		</div>
 	);
@@ -144,11 +144,11 @@ function Wide() {
 
 /** 窄屏：没有右栏，点开人是产品的详情浮层，关掉回到名单。 */
 function Narrow() {
-	const empId = useOpenEmpId();
+	const personId = useOpenPersonId();
 	const router = useRouter();
 	return (
 		<div className="p-4">
-			<Names selected={empId} />
+			<Names selected={personId} />
 			<DetailModal
 				onClose={() =>
 					void router.navigate({
@@ -157,9 +157,9 @@ function Narrow() {
 						to: "/s/$turnId",
 					})
 				}
-				open={Boolean(empId)}
+				open={Boolean(personId)}
 			>
-				{empId && <PersonPane empId={empId} />}
+				{personId && <PersonPane personId={personId} />}
 			</DetailModal>
 		</div>
 	);

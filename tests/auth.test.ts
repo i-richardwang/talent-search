@@ -85,7 +85,7 @@ test("只接受本站返回地址，角色必须完整匹配", () => {
 test("账号生命周期与权限检查不改变已有语料、抽取结果或词表", async () => {
 	await seed([
 		{
-			empId: "synthetic-1",
+			personId: "synthetic-1",
 			name: "合成员工",
 			segments: [
 				{
@@ -381,12 +381,17 @@ test("账号页管别人的账号：建号和重置交出生成的密码，改�
 
 	await seed([
 		{
-			empId: "P1",
+			personId: "P1",
 			name: "合成员工甲",
 			org: `${ORG}>出行事业部>运营部`,
 			segments: [],
 		},
-		{ empId: "P2", name: "合成员工乙", org: `${ORG}>金融事业部`, segments: [] },
+		{
+			personId: "P2",
+			name: "合成员工乙",
+			org: `${ORG}>金融事业部`,
+			segments: [],
+		},
 	]);
 	const moving = `${ORG}>出行事业部`;
 	await assert.rejects(

@@ -2,7 +2,7 @@ import { DIM_KEYS, type Picked, parsePicked, textList } from "./dimensions";
 import { RESULT_MAX, RESULT_PAGE } from "./weights";
 
 export type SearchFilters = Picked & {
-	/** 入职前公司名的文本条件。 */
+	/** 外部公司名的文本条件。 */
 	company?: readonly string[];
 	/** 公司内部门名或部门路径的文本条件。 */
 	department?: readonly string[];

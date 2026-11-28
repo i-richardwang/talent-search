@@ -32,12 +32,12 @@ const past: Partial<Evidence> = {
 };
 
 describe("名单一行的第二行", () => {
-	test("一段入职前经历：公司、岗位和那一段的时长，不写条件名", () => {
+	test("一段外部经历：公司、岗位和那一段的时长，不写条件名", () => {
 		const text = seen({
 			evidence: evidence(past),
 			basis: basis({ endDate: "2020-01-01" }),
 		});
-		assert.equal(text, "某公司 · 算法工程师 · 入职前 3.2 年");
+		assert.equal(text, "某公司 · 算法工程师 · 外部 3.2 年");
 		assert.ok(!text.includes(claim.label));
 	});
 

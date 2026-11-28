@@ -47,7 +47,7 @@ export function DetailDrawer({
 	);
 }
 
-/** 详情正文里带计数的一节，例如「入职前 3 段」「细分 12 项」。 */
+/** 详情正文里带计数的一节，例如「外部 3 段」「细分 12 项」。 */
 export function DetailSection({
 	title,
 	count,

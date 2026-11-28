@@ -102,10 +102,10 @@ function Tasks() {
 function Data() {
 	const { opened, page, q } = useListView();
 	const found = EMPLOYEE_ROWS.filter(
-		(row) => row.name.includes(q) || row.empId.includes(q),
+		(row) => row.name.includes(q) || row.personId.includes(q),
 	);
 	const navigate = useNavigate();
-	const employee = EMPLOYEES.find((e) => e.empId === opened);
+	const employee = EMPLOYEES.find((e) => e.personId === opened);
 	return (
 		<AdminPage title="数据">
 			<EmployeeTable list={pageOfRows(found, page)} q={q} selected={opened} />
@@ -114,7 +114,7 @@ function Data() {
 					close={() => void navigate({ search: { page, q }, to: "/data" })}
 					employee={employee}
 					segments={SEGMENTS}
-					key={employee.empId}
+					key={employee.personId}
 				/>
 			)}
 		</AdminPage>
@@ -165,7 +165,7 @@ function Audit() {
 		[
 			row.username,
 			row.name,
-			row.empId,
+			row.personId,
 			row.empName,
 			row.text,
 			row.accountUsername,

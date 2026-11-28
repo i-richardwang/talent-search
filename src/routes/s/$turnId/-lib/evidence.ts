@@ -44,7 +44,7 @@ export function tenureOf(evidence: Evidence, basis: ClaimBasis) {
 			basis.segments > 1
 				? "累计"
 				: evidence.kind === "external"
-					? "入职前"
+					? "外部"
 					: "公司内",
 		duration: years(basis.months),
 	};

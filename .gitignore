@@ -27,3 +27,6 @@ evals/*/*
 
 # 个人工具配置，不是产品依赖
 .mcp.json
+
+# 本地简历原件
+.talent-files/

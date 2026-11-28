@@ -27,12 +27,12 @@ import { EMPLOYEES, evidenceOf, experiencesOf } from "../../samples/people";
 type Experience = StoredExperience & { mainIndustries: string[] };
 
 /** 一个人的带子要的三样：经历段、算数的段、入职日。 */
-function barOf(empId: string, withEvidence = true) {
-	const employee = EMPLOYEES.find((e) => e.empId === empId);
+function barOf(personId: string, withEvidence = true) {
+	const employee = EMPLOYEES.find((e) => e.personId === personId);
 	return {
 		hireDate: employee?.hireDate ?? null,
-		counted: countedOf(withEvidence ? evidenceOf(empId) : []),
-		rows: experiencesOf(empId),
+		counted: countedOf(withEvidence ? evidenceOf(personId) : []),
+		rows: experiencesOf(personId),
 	};
 }
 
@@ -90,10 +90,10 @@ const ENCODINGS: [label: string, bar: ReturnType<typeof encodingRow>][] = [
 ];
 
 function Playground() {
-	const [empId, setEmpId] = useState("T0101");
+	const [personId, setPersonId] = useState("T0101");
 	const [withEvidence, setWithEvidence] = useState(true);
 	const [hire, setHire] = useState(true);
-	const bar = barOf(empId, withEvidence);
+	const bar = barOf(personId, withEvidence);
 	const lanes = packLanes(
 		bar.rows.map((x) => ({
 			end: ym(x.endDate ?? "2026-09-01"),
@@ -105,12 +105,12 @@ function Playground() {
 			<Controls>
 				<Control label="候选人">
 					<Segmented<string>
-						onChange={setEmpId}
+						onChange={setPersonId}
 						options={EMPLOYEES.map((e) => ({
 							label: e.name,
-							value: e.empId,
+							value: e.personId,
 						}))}
-						value={empId}
+						value={personId}
 					/>
 				</Control>
 				<Control>
@@ -230,7 +230,7 @@ export function CareerBarPage() {
 					"高度和颜色都只说这一段命中了没有：命中的颜色取自 evidence.tsx 的 EVIDENCE_FILL，和证据行的点同色。",
 					"未命中的段是一道 fill 色的细条。",
 					"段与段之间留一道缝，四角是最小的圆角；深浅两色下都看得出每一段。",
-					"在职与入职前连续排，转折点只由「入职」那根竖线说明。",
+					"在职与外部连续排，转折点只由「入职」那根竖线说明。",
 					"每个色块是一个按钮，点了滚到经历时间线上对应的那一段。",
 				],
 				usage: `<CareerBar\n  hireDate={employee.hireDate}\n  counted={countedOf(evidence)}\n  rows={timeline}\n/>`,

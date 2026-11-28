@@ -15,7 +15,7 @@ import { listWait } from "#/routes/s/$turnId/-lib/nav-phase";
 import { usePicks } from "#/routes/s/$turnId/-lib/picks";
 import { type View, validateView } from "#/routes/s/$turnId/-lib/view-params";
 import { queryOfSpec, type SearchSpec } from "#/search/spec";
-import { Routed, useOpenEmpId } from "../../routed";
+import { Routed, useOpenPersonId } from "../../routed";
 import { SPEC } from "../../samples/conditions";
 import { INCOMPLETE_OUTCOME, OUTCOME } from "../../samples/people";
 import {
@@ -49,7 +49,7 @@ const STILL = { growing: false, refreshing: false, replacing: false };
 
 function Workspace({ scene }: { scene: ListScene }) {
 	const navigate = useNavigate();
-	const empId = useOpenEmpId();
+	const personId = useOpenPersonId();
 	const wide = useIsWide();
 	const composer = useRef<QueryBarHandle>(null);
 	const [threadOpen, setThreadOpen] = useState(false);
@@ -99,7 +99,7 @@ function Workspace({ scene }: { scene: ListScene }) {
 			waiting={false}
 		/>
 	);
-	const detail = empId ? <PersonPane empId={empId} /> : null;
+	const detail = personId ? <PersonPane personId={personId} /> : null;
 
 	return (
 		<>
@@ -146,7 +146,7 @@ function Workspace({ scene }: { scene: ListScene }) {
 				list={
 					<ResultList
 						canMore={false}
-						empId={empId}
+						personId={personId}
 						failure={null}
 						growing={false}
 						wait={
@@ -168,7 +168,7 @@ function Workspace({ scene }: { scene: ListScene }) {
 				}
 				panel={<SidePanel conversation={conversation} detail={detail} />}
 				detailModal={
-					<DetailModal onClose={close} open={Boolean(empId)}>
+					<DetailModal onClose={close} open={Boolean(personId)}>
 						{detail}
 					</DetailModal>
 				}
@@ -195,8 +195,8 @@ function SceneSwitch({
 	scene: ListScene;
 }) {
 	const navigate = useNavigate();
-	const empId = useOpenEmpId();
-	const first = OUTCOME.results[0]?.employee.empId ?? "T0101";
+	const personId = useOpenPersonId();
+	const first = OUTCOME.results[0]?.employee.personId ?? "T0101";
 	return (
 		<LayoutSwitch<Scene>
 			label="工作台的状态"
@@ -205,9 +205,9 @@ function SceneSwitch({
 				void navigate(
 					next === "detail"
 						? {
-								params: { empId: empId ?? first, turnId: LATEST_TURN_ID },
+								params: { personId: personId ?? first, turnId: LATEST_TURN_ID },
 								replace: true,
-								to: "/s/$turnId/p/$empId",
+								to: "/s/$turnId/p/$personId",
 							}
 						: {
 								params: { turnId: LATEST_TURN_ID },
@@ -224,7 +224,7 @@ function SceneSwitch({
 				{ label: "改条件后补人", value: "completing" },
 				{ label: "补人没成", value: "notCompleted" },
 			]}
-			value={empId ? "detail" : scene}
+			value={personId ? "detail" : scene}
 		/>
 	);
 }

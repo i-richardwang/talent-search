@@ -20,21 +20,27 @@ export type Evidence = {
 	seq: string;
 };
 
-/** 一段经历在哪：入职前是公司，公司内是部门，两者只有其一。 */
+/** 一段经历在哪：外部是公司，公司内是部门，两者只有其一。 */
 export function placeOf(segment: { company: string; department: string }) {
 	return segment.company || segment.department;
 }
 
 export type ResultEmployee = Pick<
 	Employee,
-	"empId" | "name" | "curDept" | "curTitle" | "curLevel"
->;
+	"personId" | "name" | "curDept" | "curTitle" | "curLevel"
+> &
+	Partial<
+		Pick<
+			Employee,
+			"empId" | "talentType" | "recentCompany" | "recentTitle" | "accessKey"
+		>
+	>;
 
 /** 单人详情的显示契约；不包含内容键、解析版本或筛选档高。 */
 export type EmployeeDetail = {
 	employee: Pick<
 		Employee,
-		| "empId"
+		| "personId"
 		| "name"
 		| "curDept"
 		| "curTitle"
@@ -48,7 +54,10 @@ export type EmployeeDetail = {
 		| "schoolTier"
 		| "overseasEducated"
 		| "recruitment"
-	>;
+	> &
+		Partial<
+			Pick<Employee, "empId" | "talentType" | "recentCompany" | "recentTitle">
+		>;
 	timeline: (Pick<
 		Experience,
 		| "id"
@@ -69,7 +78,7 @@ export type EmployeeDetail = {
 		| "description"
 		| "months"
 	> & {
-		/** 入职前那家公司的主营行业，只写最细的一级；没认出公司或没有行业时为空 */
+		/** 外部那家公司的主营行业，只写最细的一级；没认出公司或没有行业时为空 */
 		mainIndustries: string[];
 	})[];
 };

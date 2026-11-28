@@ -6,7 +6,7 @@
  *
  *     <TALENT_CSV_DIR>/
  *       employees.csv    emp_id,name,hire_date,education_level,school,school_tier,
- *                        overseas_educated,recruitment
+ *                        overseas_educated,recruitment[,phone,email,linked_person_id]
  *       assignments.csv  emp_id,start_date,end_date,department,department_path,title,level,
  *                        seq_l1,seq_l2,seq_l3[,segment_key]
  *       external.csv     emp_id,start_date,end_date,company,title,description,
@@ -39,7 +39,12 @@
 import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parse } from "csv-parse/sync";
-import { type RawRow, type SourceData, sourceData } from "../contract";
+import {
+	type RawRow,
+	type SourceData,
+	type SyncPart,
+	sourceData,
+} from "../contract";
 import type { Report } from "../report";
 
 /**
@@ -104,7 +109,10 @@ function trimmed(row: RawRow, column: string): string {
 	return typeof value === "string" ? value.trim() : "";
 }
 
-export async function extract(report: Report): Promise<SourceData> {
+export async function extract(
+	report: Report,
+	part: SyncPart = "all",
+): Promise<SourceData> {
 	const configured = process.env.TALENT_CSV_DIR?.trim();
 	if (!configured) report("  未配置 TALENT_CSV_DIR，读取仓库自带的合成样例");
 	const directory = resolve(configured || SAMPLE_DIR);
@@ -125,19 +133,19 @@ export async function extract(report: Report): Promise<SourceData> {
 		companyCircles,
 		companyAliases,
 	] = await Promise.all([
-		read(directory, "employees.csv"),
-		read(directory, "assignments.csv"),
-		read(directory, "external.csv"),
-		read(directory, "levels.csv"),
-		read(directory, "sequences.csv"),
-		readOptional(directory, "streams.csv"),
-		readOptional(directory, "scales.csv"),
-		readOptional(directory, "records.csv"),
-		readOptional(directory, "industries.csv"),
-		readOptional(directory, "companies.csv"),
-		readOptional(directory, "company_industries.csv"),
-		readOptional(directory, "company_circles.csv"),
-		readOptional(directory, "company_aliases.csv"),
+		part === "knowledge" ? [] : read(directory, "employees.csv"),
+		part === "knowledge" ? [] : read(directory, "assignments.csv"),
+		part === "knowledge" ? [] : read(directory, "external.csv"),
+		part === "knowledge" ? [] : read(directory, "levels.csv"),
+		part === "people" ? [] : read(directory, "sequences.csv"),
+		part === "knowledge" ? [] : readOptional(directory, "streams.csv"),
+		part === "knowledge" ? [] : readOptional(directory, "scales.csv"),
+		part === "knowledge" ? [] : readOptional(directory, "records.csv"),
+		part === "people" ? [] : readOptional(directory, "industries.csv"),
+		part === "people" ? [] : readOptional(directory, "companies.csv"),
+		part === "people" ? [] : readOptional(directory, "company_industries.csv"),
+		part === "people" ? [] : readOptional(directory, "company_circles.csv"),
+		part === "people" ? [] : readOptional(directory, "company_aliases.csv"),
 	]);
 
 	for (const row of assignments)

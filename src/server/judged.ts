@@ -43,7 +43,7 @@ function segmentText(row: SegmentRow): string {
 			? [
 					`公司内的任职，部门：${row.department_path || row.department || "未登记"}`,
 				]
-			: [`入职前的经历，公司：${row.company || "未登记"}`];
+			: [`外部的经历，公司：${row.company || "未登记"}`];
 	const seq = dots(row.seq_l1, row.seq_l2, row.seq_l3);
 	if (seq) lines.push(`序列：${seq}`);
 	lines.push(`岗位：${row.title || "未登记"}`);

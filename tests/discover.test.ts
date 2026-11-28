@@ -17,7 +17,7 @@ test("行业树、目录取值和提示词人数完整一致，超过一百项�
 	);
 	await seed(
 		names.map((_, i) => ({
-			empId: `IND${i}`,
+			personId: `IND${i}`,
 			name: `合成样例${i}`,
 			segments: [],
 		})),
@@ -32,7 +32,7 @@ test("行业树、目录取值和提示词人数完整一致，超过一百项�
 	);
 	await db.insert(experience).values(
 		names.map((_, i) => ({
-			empId: `IND${i}`,
+			personId: `IND${i}`,
 			kind: "external" as const,
 			company: `合成公司${i}`,
 			startDate: "2020-01-01",

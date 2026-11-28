@@ -1,0 +1,102 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { resumeSchema } from "#/ingestion/resume";
+import { administrator, authenticated } from "./auth-functions";
+import { requestJob, wakeResumeImports } from "./jobs";
+import { collectFiles } from "./resume-files";
+import { decideImport, reviewImport, uploadResume } from "./talent-import";
+import {
+	importBoard,
+	removeMember,
+	setTalentPool,
+	updateContactNote,
+} from "./talent-pools";
+
+export const loadImports = createServerFn({ method: "GET" })
+	.middleware([authenticated])
+	.validator(z.object({ page: z.number().int().positive() }))
+	.handler(({ context, data }) => importBoard(context.viewer.id, data.page));
+export const reviewResume = createServerFn({ method: "GET" })
+	.middleware([authenticated])
+	.validator(z.string())
+	.handler(({ context, data }) => reviewImport(context.viewer.id, data));
+export const changePool = createServerFn({ method: "POST" })
+	.middleware([administrator])
+	.validator(
+		z.object({
+			id: z.string().optional(),
+			name: z.string().trim().min(1).max(100),
+			org: z.string().max(500).nullable(),
+		}),
+	)
+	.handler(({ context, data }) => setTalentPool(context.viewer.id, data));
+export const editContactNote = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator(
+		z.object({
+			pool: z.string(),
+			person: z.string(),
+			touched: z.iso.date().nullable(),
+			notes: z.string().trim().max(2000),
+		}),
+	)
+	.handler(({ context, data }) =>
+		updateContactNote(
+			context.viewer.id,
+			data.pool,
+			data.person,
+			data.touched,
+			data.notes,
+		),
+	);
+export const dropMember = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator(z.object({ pool: z.string(), person: z.string() }))
+	.handler(({ context, data }) =>
+		removeMember(context.viewer.id, data.pool, data.person),
+	);
+export const submitDecision = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator(
+		z.object({
+			id: z.string(),
+			choice: z.union([
+				z.literal("retry"),
+				z.object({
+					action: z.enum(["new", "link", "cancel"]),
+					personId: z.string().optional(),
+					draft: resumeSchema.optional(),
+				}),
+			]),
+		}),
+	)
+	.handler(async ({ context, data }) => {
+		const added = await decideImport(context.viewer.id, data.id, data.choice);
+		if (added) await requestJob({ kind: "derive" });
+		await collectFiles();
+		await wakeResumeImports();
+	});
+export const addResume = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator((input: FormData) => {
+		if (!(input instanceof FormData)) throw new Error("请选择 PDF 文件");
+		const file = input.get("file"),
+			pool = input.get("pool");
+		if (
+			!(file instanceof File) ||
+			typeof pool !== "string" ||
+			file.size > 20 * 1024 * 1024
+		)
+			throw new Error("请选择 20 MB 以内的 PDF 文件");
+		return { file, pool };
+	})
+	.handler(async ({ context, data }) => {
+		const id = await uploadResume(
+			context.viewer.id,
+			data.pool,
+			data.file.name,
+			new Uint8Array(await data.file.arrayBuffer()),
+		);
+		await wakeResumeImports();
+		return id;
+	});

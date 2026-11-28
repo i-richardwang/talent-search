@@ -58,7 +58,7 @@ function RowSkeleton() {
 
 export function ResultList({
 	outcome,
-	empId,
+	personId,
 	wait,
 	canMore,
 	growing,
@@ -76,7 +76,7 @@ export function ResultList({
 	failure,
 }: {
 	outcome: SearchOutcome;
-	empId: string | undefined;
+	personId: string | undefined;
 	/** 在等什么；null 是名单已经就位。 */
 	wait: ListWait | null;
 	canMore: boolean;
@@ -131,19 +131,19 @@ export function ResultList({
 	// 必须的条件名单上人人都命中，几条里命中几条只在有加分条件时因人而异
 	const graded = claims.some((claim) => claim.mode === "boost");
 	const rows = picks.rows.map(({ employee: e, lines }) => {
-		const current = e.empId === empId;
+		const current = e.personId === personId;
 		return (
 			<ListViewRow
 				className={cn("scroll-my-12", wait?.list === "dim" && "opacity-60")}
 				current={current}
-				data-emp={e.empId}
+				data-emp={e.personId}
 				extra={graded && <ClaimProgress lines={lines} name={e.name} />}
-				key={e.empId}
+				key={e.personId}
 				pick={
 					<Checkbox
 						aria-label={`选择 ${e.name}`}
 						onClick={(event) => {
-							if (picks.pointAt(e.empId, event.shiftKey))
+							if (picks.pointAt(e.personId, event.shiftKey))
 								event.preventBaseUIHandler();
 						}}
 						onPointerDown={(event) => {
@@ -151,7 +151,7 @@ export function ResultList({
 							if (event.shiftKey) event.preventDefault();
 						}}
 						size={18}
-						value={e.empId}
+						value={e.personId}
 					/>
 				}
 			>
@@ -162,11 +162,11 @@ export function ResultList({
 						render={
 							// 不预取：取一个人的详情会记一行「查看」，指针划过不算看过
 							<Link
-								params={{ turnId, empId: e.empId }}
+								params={{ turnId, personId: e.personId }}
 								preload={false}
 								replace
 								search={(prev) => prev}
-								to="/s/$turnId/p/$empId"
+								to="/s/$turnId/p/$personId"
 							/>
 						}
 					>

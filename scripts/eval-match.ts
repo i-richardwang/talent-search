@@ -79,7 +79,7 @@ type Comparison = {
 function fact(s: Segment, id: number): Fact {
 	return {
 		id,
-		empId: s.person,
+		personId: s.person,
 		months: s.months,
 		endDate: s.end,
 		kind: s.route === "role" ? "internal" : "external",
@@ -140,7 +140,7 @@ async function liveTrial(label: string, claims: JudgedClaim[]): Promise<Trial> {
 		{ conditions: claims },
 		null,
 		async (store, { candidates, candidateFacts }) => {
-			const people = candidates.map((r) => r.empId);
+			const people = candidates.map((r) => r.personId);
 			// 保留字面名次前 20；从剩余名次等距抽至多 20 人，给有短经历的人进前十的机会。
 			const rest = people.slice(20);
 			const chosen = new Set(people.slice(0, 20));
@@ -149,7 +149,7 @@ async function liveTrial(label: string, claims: JudgedClaim[]): Promise<Trial> {
 				chosen.add(
 					rest[Math.floor(((i + 0.5) * rest.length) / count)] as string,
 				);
-			const facts = candidateFacts.filter((f) => chosen.has(f.empId));
+			const facts = candidateFacts.filter((f) => chosen.has(f.personId));
 			const rows = await readSegmentTexts(store, [
 				...new Set(facts.map((f) => f.id)),
 			]);
@@ -219,12 +219,12 @@ async function compare(trial: Trial, now: Date, id: string) {
 	const confirmed = decisions.map((d) => new Set(d.fits));
 	const evidence = trial.facts.filter((f) => confirmed[f.claim]?.has(f.id));
 	const baseline = order(evidence, evidence, trial.claims, {}, now).map(
-		(r) => r.empId,
+		(r) => r.personId,
 	);
 	const { scoreTexts } = await import("#/server/scoring");
 	const eligible = new Set(baseline);
 	const inputs = evidence
-		.filter((f) => eligible.has(f.empId))
+		.filter((f) => eligible.has(f.personId))
 		.map((f) => {
 			const decision = decisions[f.claim];
 			if (!decision) throw new Error("入围证据缺少所属判据");
@@ -252,7 +252,7 @@ async function compare(trial: Trial, now: Date, id: string) {
 		trial.claims,
 		{},
 		now,
-	).map((r) => r.empId);
+	).map((r) => r.personId);
 	if (graded.length !== baseline.length || graded.some((p) => !eligible.has(p)))
 		throw new Error("评分改变了入围名单");
 	const pool = shuffled([
@@ -273,7 +273,7 @@ async function compare(trial: Trial, now: Date, id: string) {
 	for (const p of pool) {
 		const code = aliases.get(p) as string;
 		blind.push(`**候选 ${code}**`, "");
-		const rows = evidence.filter((f) => f.empId === p);
+		const rows = evidence.filter((f) => f.personId === p);
 		people[code] = [...new Set(rows.map((f) => f.id))];
 		for (const segId of people[code]) {
 			const f = rows.find((f) => f.id === segId) as Fact;
@@ -294,7 +294,7 @@ async function compare(trial: Trial, now: Date, id: string) {
 		baseline: encoded(baseline),
 		graded: encoded(graded),
 		population: trial.population,
-		sampled: new Set(trial.facts.map((f) => f.empId)).size,
+		sampled: new Set(trial.facts.map((f) => f.personId)).size,
 		poolSize: baseline.length,
 		decisions,
 		people,
@@ -369,7 +369,7 @@ async function prepare(file: string, parent: string, live: boolean) {
 					label: q.label,
 					claims: [claim(q, 0)],
 					facts,
-					population: new Set(facts.map((f) => f.empId)).size,
+					population: new Set(facts.map((f) => f.personId)).size,
 					texts: new Map(group.segments.map((s, i) => [i + 1, s.text])),
 				});
 		}

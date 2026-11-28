@@ -47,9 +47,20 @@ async function text(
 }
 
 describe("解析白名单接受的写法", () => {
+	test("旧搜索的人员关联键继续编译，字符串和参数保留原值", async () => {
+		const result = await text(
+			"exists(select 1 from rating r where r.emp_id=p.emp_id and r.stream=:emp_id and r.value='emp_id')",
+			PERSON,
+			{ emp_id: "emp_id" },
+		);
+		assert.deepEqual(result.params, ["emp_id"]);
+		assert.match(result.sql, /person_id/);
+		assert.match(result.sql, /'emp_id'/);
+	});
+
 	test("三年内至少两期 A 及以上：评级子查询、档位表、日期运算", async () => {
 		const q = await text(
-			`(select count(*) from rating r where r.emp_id = p.emp_id
+			`(select count(*) from rating r where r.person_id = p.person_id
 				and r.stream = :stream and r.period_end >= current_date - interval '3 years'
 				and r.value_rank >= (select s.rank from scale s where s.stream = :stream and s.value = :band)) >= 2`,
 			PERSON,
@@ -59,20 +70,22 @@ describe("解析白名单接受的写法", () => {
 	});
 
 	test("工号作关联键：和另一列工号比相等、在 count 里、在 group by 里", async () => {
-		await text("exists (select 1 from rating r where p.emp_id = r.emp_id)");
 		await text(
-			"(select count(r.emp_id) from rating r where r.emp_id = p.emp_id) >= 2",
+			"exists (select 1 from rating r where p.person_id = r.person_id)",
 		);
 		await text(
-			`exists (select 1 from rating r where r.emp_id = p.emp_id
-				group by r.emp_id having count(*) >= 2)`,
+			"(select count(r.person_id) from rating r where r.person_id = p.person_id) >= 2",
+		);
+		await text(
+			`exists (select 1 from rating r where r.person_id = p.person_id
+				group by r.person_id having count(*) >= 2)`,
 		);
 	});
 
 	test("从没拿过 C：否定同时要求有记录", async () => {
 		await text(
-			`exists (select 1 from rating r where r.emp_id = p.emp_id and r.stream = 'perf')
-			and not exists (select 1 from rating r where r.emp_id = p.emp_id and r.stream = 'perf' and r.value = 'C')`,
+			`exists (select 1 from rating r where r.person_id = p.person_id and r.stream = 'perf')
+			and not exists (select 1 from rating r where r.person_id = p.person_id and r.stream = 'perf' and r.value = 'C')`,
 		);
 	});
 
@@ -162,18 +175,18 @@ describe("解析白名单拒绝的写法", () => {
 		],
 		[
 			"工号只和工号比",
-			"exists (select 1 from experience x where p.emp_id = x.title)",
-			/emp_id 只作关联键/,
+			"exists (select 1 from experience x where p.person_id = x.title)",
+			/person_id 只作关联键/,
 		],
-		["工号和常量比", "p.emp_id = 'S1'", /emp_id 只作关联键/],
+		["工号和常量比", "p.person_id = 'S1'", /person_id 只作关联键/],
 		[
 			"别名带列名表",
-			"exists (select 1 from rating x(a, b) where x.a = p.emp_id)",
+			"exists (select 1 from rating x(a, b) where x.a = p.person_id)",
 			/别名只换关系名/,
 		],
 		[
 			"连接带别名",
-			"exists (select 1 from (rating r join status s on r.emp_id = s.emp_id) as j)",
+			"exists (select 1 from (rating r join status s on r.person_id = s.person_id) as j)",
 			/连接不带别名/,
 		],
 		["不是布尔表达式里的语句", "true union select 1", /一个表达式/],
@@ -186,7 +199,7 @@ describe("解析白名单拒绝的写法", () => {
 	test("派生表把工号换成参数：一次计数缩到一个人，不放行", async () => {
 		assert.match(
 			await problem(
-				"exists (select 1 from (select :target as k) x where p.emp_id = x.k)",
+				"exists (select 1 from (select :target as k) x where p.person_id = x.k)",
 				PERSON,
 				{ target: "S1" },
 			),
@@ -237,9 +250,7 @@ describe("只读角色", () => {
 			)
 		).rows;
 		assert.equal(
-			await refused(
-				sql`select count(*) from ${sql.identifier(schema)}.employee`,
-			),
+			await refused(sql`select count(*) from ${sql.identifier(schema)}.person`),
 			"42501",
 		);
 		assert.equal(

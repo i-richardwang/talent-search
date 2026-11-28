@@ -871,7 +871,7 @@ describe("理解时把候选人的经历看完", () => {
 	before(async () => {
 		await seed(
 			["鉴宝鉴定师", "鉴宝直播运营", "鉴宝销售"].map((title, i) => ({
-				empId: `JB0${i + 1}`,
+				personId: `JB0${i + 1}`,
 				name: `合成鉴宝${i + 1}`,
 				segments: [{ months: 24, title }],
 			})),
@@ -899,7 +899,7 @@ describe("理解时把候选人的经历看完", () => {
 		);
 		const outcome = await search(spec, turnId);
 		assert.deepEqual(
-			outcome.results.map((r) => r.employee.empId).sort(),
+			outcome.results.map((r) => r.employee.personId).sort(),
 			["JB01", "JB02"],
 			"判成不算的那一位不在名单上",
 		);
@@ -929,7 +929,7 @@ describe("理解时把候选人的经历看完", () => {
 			{ fits: true, match_score: null },
 		]);
 		assert.deepEqual(
-			(await search(spec, turnId)).results.map((r) => r.employee.empId),
+			(await search(spec, turnId)).results.map((r) => r.employee.personId),
 			["JB01", "JB02"],
 		);
 		assert.equal((await loadTurn(turnId))?.trace?.at(-1)?.tool, "score");
@@ -963,7 +963,7 @@ describe("理解时把候选人的经历看完", () => {
 			{ fits: true, match_score: 84 },
 		]);
 		assert.deepEqual(
-			(await search(next.spec, turnId)).results.map((r) => r.employee.empId),
+			(await search(next.spec, turnId)).results.map((r) => r.employee.personId),
 			["JB02", "JB01"],
 		);
 		for (const invalid of [0, 101]) {
@@ -1004,7 +1004,7 @@ describe("理解时把候选人的经历看完", () => {
 		assert.deepEqual(await scores(), [67]);
 		assert.deepEqual(
 			(await search(root.spec, root.turnId)).results.map(
-				(r) => r.employee.empId,
+				(r) => r.employee.personId,
 			),
 			["JB02"],
 		);
@@ -1055,7 +1055,7 @@ describe("理解时把候选人的经历看完", () => {
 		);
 		const outcome = await search(spec, turnId);
 		assert.deepEqual(
-			outcome.results.map((r) => r.employee.empId),
+			outcome.results.map((r) => r.employee.personId),
 			["JB01"],
 		);
 		assert.equal(outcome.incomplete, undefined);
@@ -1125,7 +1125,7 @@ describe("理解时把候选人的经历看完", () => {
 		const listed = async () => {
 			const outcome = await search(spec, root.turnId);
 			return [
-				outcome.results.map((r) => r.employee.empId).sort(),
+				outcome.results.map((r) => r.employee.personId).sort(),
 				outcome.incomplete,
 			];
 		};
@@ -1347,7 +1347,7 @@ describe("理解时把候选人的经历看完", () => {
 			assert.equal((await loadTurn(current.turnId))?.settled, true);
 			assert.deepEqual(
 				(await search(spec, root.turnId)).results
-					.map((r) => r.employee.empId)
+					.map((r) => r.employee.personId)
 					.sort(),
 				["JB01", "JB02"],
 				`${action}：当前运行的结论生效，名单没有被旧运行清空`,

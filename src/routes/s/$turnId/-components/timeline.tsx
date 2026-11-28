@@ -42,7 +42,7 @@ function Segment({
 	isLast: boolean;
 }) {
 	const external = x.kind === "external";
-	// 入职前的段没有登记的序列，只有推断出的一对
+	// 外部的段没有登记的序列，只有推断出的一对
 	const seq = external
 		? dots(x.seqInferredL1, x.seqInferredL2)
 		: dots(x.seqL1, x.seqL2, x.seqL3);
@@ -70,7 +70,7 @@ function Segment({
 						{x.level && (
 							<span className="text-fg-secondary text-xs">{x.level}</span>
 						)}
-						{external && <Tag size="small">入职前</Tag>}
+						{external && <Tag size="small">外部</Tag>}
 					</div>
 
 					<div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-fg-secondary text-xs">
@@ -98,7 +98,7 @@ function Segment({
 	);
 }
 
-/** 入职前那家公司是什么：人事登记的公司档和企业性质，中间是它的主营行业。 */
+/** 外部那家公司是什么：人事登记的公司档和企业性质，中间是它的主营行业。 */
 function CompanyLine({
 	meta,
 	industries,

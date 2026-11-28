@@ -24,7 +24,7 @@ import { RESULT_PAGE } from "./weights";
 
 type Place = "company" | "department";
 
-/** 一段经历在哪的名字：入职前是公司名，公司内是末级部门名。 */
+/** 一段经历在哪的名字：外部是公司名，公司内是末级部门名。 */
 const PLACE_NAME: Record<Place, SQL> = {
 	company: sql`e.company`,
 	department: sql`e.department`,
@@ -52,7 +52,7 @@ export async function findPhrases(
 			// 一种说法一行，外加不分说法的合计那一行（`name` 为空）
 			const found = await matching(store, () =>
 				store.execute<{ name: string | null; people: number }>(sql`
-					select p.text as name, count(distinct e.emp_id)::int as people
+					select p.text as name, count(distinct e.person_id)::int as people
 					from phrase p
 					join experience_phrase ep on ep.phrase_id = p.id and ep.route <> 'description'
 					join experience e on e.id = ep.experience_id and not e.unemployed
@@ -88,7 +88,7 @@ export async function findPhrases(
 /**
  * 这些名字各能匹配到多少人、匹配到人才库里哪些公司或学校。
  *
- * 和搜索条件用同一套匹配：名字是专有名词，按包含匹配。公司按入职前经历的
+ * 和搜索条件用同一套匹配：名字是专有名词，按包含匹配。公司按外部经历的
  * 公司名（`placeLike`），部门按公司内任职的部门名和部门路径，学校按人员档案。
  */
 export async function lookupNames(
@@ -102,16 +102,16 @@ export async function lookupNames(
 		for (const name of asked) {
 			const matched =
 				field === "school"
-					? sql`select p.school as name, p.emp_id from employee p
+					? sql`select p.school as name, p.person_id from person_card p
 						where ${anyLike([name], [sql`p.school`])}`
-					: sql`select ${PLACE_NAME[field]} as name, e.emp_id from experience e
+					: sql`select ${PLACE_NAME[field]} as name, e.person_id from experience e
 						where not e.unemployed and ${placeLike(field, [name])}`;
 			const [people] = (
 				await store.execute<{ n: number }>(sql`
-				select count(distinct emp_id)::int as n from (${matched}) m`)
+				select count(distinct person_id)::int as n from (${matched}) m`)
 			).rows;
 			const shown = await store.execute<Matched>(sql`
-				select name, count(distinct emp_id)::int as people
+				select name, count(distinct person_id)::int as people
 				from (${matched}) m group by name
 				order by people desc, name limit ${MAX_TO_SHOW}`);
 			out.push({ query: name, people: people?.n ?? 0, values: shown.rows });
@@ -139,7 +139,7 @@ export async function valuesOf(
 			? sql`unnest(${col})`
 			: sql`(values (${col}::text))`;
 	const { rows } = await store.execute<Matched>(sql`
-		select v.name, count(distinct t.emp_id)::int as people
+		select v.name, count(distinct t.person_id)::int as people
 		from ${sql.identifier(catalogSchema())}.${sql.identifier(relation)} t
 		cross join lateral ${value} as v(name)
 		where v.name is not null and v.name not in (${sql.join(
@@ -222,7 +222,7 @@ async function suggestIn(
 	if (field === "what") {
 		const { rows } = await store.execute<{ value: string }>(sql`
 			select coalesce(t.canonical, p.text) as value,
-				count(distinct e.emp_id)::int as people,
+				count(distinct e.person_id)::int as people,
 				bool_or(p.text ilike ${prefix}) as lead
 			from phrase p
 			join experience_phrase ep on ep.phrase_id = p.id and ep.route in (${sql.join(
@@ -240,11 +240,11 @@ async function suggestIn(
 
 	const source =
 		field === "school"
-			? sql`select school as value, emp_id from employee where school ilike ${contains}`
-			: sql`select ${PLACE_NAME[field]} as value, e.emp_id from experience e
+			? sql`select school as value, person_id from person_card where school ilike ${contains}`
+			: sql`select ${PLACE_NAME[field]} as value, e.person_id from experience e
 				where not e.unemployed and ${PLACE_NAME[field]} ilike ${contains}`;
 	const { rows } = await store.execute<{ value: string; people: number }>(sql`
-		select value, count(distinct emp_id)::int as people
+		select value, count(distinct person_id)::int as people
 		from (${source}) t
 		where value <> ''
 		group by value

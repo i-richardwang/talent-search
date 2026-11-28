@@ -458,7 +458,7 @@ export async function accountOrgs(userId: string): Promise<string[]> {
 export async function organizations(): Promise<OrgNode[]> {
 	return withReadSnapshot("all", async (client) => {
 		const { rows } = await client.query<{ path: string; people: number }>(
-			`select cur_dept_path as path, count(*)::int as people from employee
+			`select cur_dept_path as path, count(*)::int as people from employment
 			where cur_dept_path <> '' group by cur_dept_path`,
 		);
 		return orgTree(rows);

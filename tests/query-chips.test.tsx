@@ -35,7 +35,8 @@ describe("查询 chip", () => {
 			chip("近三年两次绩效 A 及以上", "must", {
 				from: "person",
 				seek: undefined,
-				where: "(select count(*) from rating r where r.emp_id = p.emp_id) >= 2",
+				where:
+					"(select count(*) from rating r where r.person_id = p.person_id) >= 2",
 			}),
 			chip("在甲辰科技做过推荐", "must", {
 				seek: { patterns: ["推荐算法", "推荐系统"] },

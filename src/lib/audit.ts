@@ -4,6 +4,11 @@
 export const AUDIT_ACTIONS = [
 	"search",
 	"derive-read",
+	"resume-preview",
+	"resume-download",
+	"talent-add",
+	"talent-link",
+	"talent-remove",
 	"view",
 	"export",
 	"create-account",

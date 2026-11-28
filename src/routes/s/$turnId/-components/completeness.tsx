@@ -10,6 +10,7 @@ import { CONTINUE_LABEL, NARROW } from "../-lib/empty-state";
  * 名单列到了哪里，写成一句话。不说符合的人多不多：还没确认的人里有几个符合，确认过才知道。
  */
 export function incompleteText(incomplete: Incomplete) {
+	if (incomplete.mixed) return `还有候选人待确认。${NARROW}`;
 	return incomplete.above
 		? `已列出 ${incomplete.above} 及以上的，更低职级的还没找完。${NARROW}`
 		: `名单还没列全。${NARROW}`;

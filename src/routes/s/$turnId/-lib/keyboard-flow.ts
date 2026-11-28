@@ -14,7 +14,7 @@ export function useKeyboardFlow({
 	onEditQuery,
 	onCloseDetail,
 	results,
-	empId,
+	personId,
 	turnId,
 	view,
 	onPick,
@@ -28,12 +28,12 @@ export function useKeyboardFlow({
 	onEditQuery: () => void;
 	onCloseDetail: () => void;
 	results: SearchResult[];
-	empId: string | undefined;
+	personId: string | undefined;
 	/** 换人只换详情面板，仍然停在这一条查询记录上 */
 	turnId: string;
 	view: View;
 	/** 选中或取消正在看的这个人。 */
-	onPick: (empId: string) => void;
+	onPick: (personId: string) => void;
 	picked: number;
 	onClearPicks: () => void;
 	onHelp: () => void;
@@ -82,7 +82,7 @@ export function useKeyboardFlow({
 			}
 			if (e.key === "Escape") {
 				if (busy) return;
-				if (empId) {
+				if (personId) {
 					e.preventDefault();
 					onCloseDetail();
 					return;
@@ -95,16 +95,16 @@ export function useKeyboardFlow({
 			}
 			if (busy || control || reading || results.length === 0) return;
 
-			// 长按不连发：按键重复比导航快，连续几次会读到同一个 empId，按住空格则会
+			// 长按不连发：按键重复比导航快，连续几次会读到同一个 personId，按住空格则会
 			// 反复选中又取消。
 			if (e.repeat) return;
 
-			const at = results.findIndex((r) => r.employee.empId === empId);
+			const at = results.findIndex((r) => r.employee.personId === personId);
 
 			// 空格选中／取消正在看的这个人：↑↓ 移到谁，选的就是谁。没在看任何人时空格只翻页。
 			if (e.key === " " && at >= 0) {
 				e.preventDefault();
-				const one = results[at]?.employee.empId;
+				const one = results[at]?.employee.personId;
 				if (one) onPick(one);
 				return;
 			}
@@ -124,13 +124,13 @@ export function useKeyboardFlow({
 						? 0
 						: results.length - 1
 					: Math.min(Math.max(at + step, 0), results.length - 1);
-			const target = results[next]?.employee.empId;
-			if (!target || target === empId) return;
+			const target = results[next]?.employee.personId;
+			if (!target || target === personId) return;
 
 			// replace：换人不进历史栈，后退键仍回到上一次查询。
 			navigate({
-				to: "/s/$turnId/p/$empId",
-				params: { turnId, empId: target },
+				to: "/s/$turnId/p/$personId",
+				params: { turnId, personId: target },
 				search: view,
 				replace: true,
 			});
@@ -151,7 +151,7 @@ export function useKeyboardFlow({
 		onClearPicks,
 		onHelp,
 		results,
-		empId,
+		personId,
 		turnId,
 		view,
 		navigate,

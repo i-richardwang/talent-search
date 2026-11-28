@@ -9,7 +9,9 @@ import type { ClaimBasis } from "#/search/result";
 import { evidence } from "./rows";
 
 const pick = (over: Partial<Pick> = {}): Pick => ({
+	personId: "synthetic-1",
 	empId: "T0001",
+	talentType: "在职员工",
 	name: "林岚",
 	dept: "算法平台",
 	title: "算法工程师",
@@ -33,7 +35,37 @@ async function read(picks: Pick[], names: string[], evidence: boolean) {
 }
 
 describe("导出的工作簿", () => {
-	test("固定六列，条件一条一列，空证据为空格", async () => {
+	test("内外混搜导出保留同一列顺序，候选人以最近任职展示", async () => {
+		const rows = await read(
+			[
+				pick(),
+				pick({
+					personId: "outside",
+					empId: null,
+					talentType: "外部候选人",
+					dept: "",
+					level: "",
+					rank: 2,
+					recentCompany: "合成公司",
+					title: "合成岗位",
+				}),
+			],
+			[],
+			false,
+		);
+		assert.deepEqual(rows[2], [
+			2,
+			null,
+			"林岚",
+			null,
+			"合成岗位",
+			null,
+			"外部候选人",
+			"合成公司",
+		]);
+	});
+
+	test("固定八列，条件一条一列，空证据为空格", async () => {
 		const rows = await read([pick()], ["算法", "推荐"], true);
 		assert.deepEqual(rows[0], [
 			"序号",
@@ -42,6 +74,8 @@ describe("导出的工作簿", () => {
 			"部门",
 			"岗位",
 			"职级",
+			"人才类型",
+			"最近公司",
 			"算法",
 			"推荐",
 		]);
@@ -52,6 +86,8 @@ describe("导出的工作簿", () => {
 			"算法平台",
 			"算法工程师",
 			"P6",
+			"在职员工",
+			null,
 			"序列 技术 · 算法 · 公司内 2.3 年",
 			null,
 		]);
@@ -81,14 +117,16 @@ describe("导出的工作簿", () => {
 			"+123",
 			"-123",
 			"@text",
+			"在职员工",
+			null,
 			text,
 		]);
-		assert.equal(rows[0]?.[6], "=1+1");
+		assert.equal(rows[0]?.[8], "=1+1");
 	});
 	test("不要证据时只导出固定列", async () => {
 		const rows = await read([pick()], ["算法"], false);
-		assert.equal(rows[0]?.length, 6);
-		assert.equal(rows[1]?.length, 6);
+		assert.equal(rows[0]?.length, 8);
+		assert.equal(rows[1]?.length, 8);
 	});
 	test("文件名带日期", () => {
 		assert.equal(exportName(new Date(2026, 8, 10)), "人才搜索-2026-09-10.xlsx");
@@ -101,12 +139,12 @@ describe("单元格里的证据", () => {
 		assert.equal(text, "岗位 算法工程师 · 云梯物流 · 公司内 2.3 年");
 	});
 
-	test("一段入职前经历写它的来源，多段时写累计", () => {
+	test("一段外部经历写它的来源，多段时写累计", () => {
 		const text = evidenceText(
 			evidence({ kind: "external" }),
 			basis({ endDate: "2021-06-30" }),
 		);
-		assert.match(text, /入职前 2\.3 年$/);
+		assert.match(text, /外部 2\.3 年$/);
 		assert.match(
 			evidenceText(evidence({ kind: "external" }), basis({ segments: 2 })),
 			/累计 2\.3 年$/,

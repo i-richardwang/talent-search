@@ -16,7 +16,7 @@ const { pool } = await import("#/db");
 test("解析不需要嵌入端点", async () => {
 	await seed([
 		{
-			empId: "E1",
+			personId: "E1",
 			name: "合成解析",
 			segments: [
 				{ kind: "external", title: "分析师", description: "样例", months: 12 },
@@ -46,8 +46,8 @@ test("解析不需要嵌入端点", async () => {
 
 test("整理说出没法收集，队列里判过的词照常生效", async () => {
 	await seed(
-		["U1", "U2", "U3"].map((empId) => ({
-			empId,
+		["U1", "U2", "U3"].map((personId) => ({
+			personId,
 			name: "合成整理",
 			segments: [
 				{

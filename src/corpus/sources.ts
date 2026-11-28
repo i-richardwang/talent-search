@@ -1,10 +1,12 @@
 import { basename, extname, isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { SourceData } from "./contract";
+import type { SourceData, SyncPart } from "./contract";
 import type { Report } from "./report";
 import * as csvDir from "./sources/csv-dir";
 
-type Source = { extract: (report: Report) => Promise<SourceData> };
+type Source = {
+	extract: (report: Report, part?: SyncPart) => Promise<SourceData>;
+};
 
 export type SourceConfig = {
 	name: string;

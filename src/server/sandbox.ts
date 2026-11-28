@@ -220,13 +220,13 @@ function walkAll(list: unknown, scopes: Scope[]) {
 }
 
 /** 工号列：只作关联键。 */
-const KEY_COLUMN = "emp_id";
+const KEY_COLUMN = "person_id";
 
 function isColumn(node: unknown) {
 	return Boolean(node && typeof node === "object" && "ColumnRef" in node);
 }
 
-/** 一个工号列的引用，比如 `p.emp_id`。 */
+/** 一个工号列的引用，比如 `p.person_id`。 */
 function isKey(node: unknown) {
 	if (!isColumn(node)) return false;
 	const fields = (node as { ColumnRef: AnyNode }).ColumnRef.fields;
@@ -257,7 +257,7 @@ function walk(node: unknown, scopes: Scope[], key = false): void {
 			return;
 		case "ColumnRef":
 			if (!key && names(body.fields).at(-1) === KEY_COLUMN)
-				reject("emp_id 只作关联键：只能和另一列 emp_id 比相等");
+				reject("person_id 只作关联键：只能和另一列 person_id 比相等");
 			column(body, scopes);
 			return;
 		case "A_Expr": {
@@ -567,7 +567,10 @@ function parseWhere(
 			i++;
 			continue;
 		}
-		pieces.push({ text: t.text });
+		// 历史查询的 emp_id 是人员关联键。只翻译标识符，参数和字符串按原值绑定。
+		const legacyKey =
+			t.tokenName === "IDENT" && /^(?:emp_id|"emp_id")$/i.test(t.text);
+		pieces.push({ text: legacyKey ? "person_id" : t.text });
 	}
 	if (depth !== 0) reject("括号没有配对");
 	const used = new Set(pieces.flatMap((p) => ("param" in p ? [p.param] : [])));

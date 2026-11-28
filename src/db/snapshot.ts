@@ -10,7 +10,7 @@ import { SCOPED_TABLES } from "./schema";
 export type DbExecutor = Pick<typeof db, "execute" | "select">;
 
 /**
- * 这一次读取替谁读，决定读得到哪些人（`schema.ts` 的 `VISIBLE`）。
+ * 这一次读取替谁读，决定读得到哪些人（`schema.ts` 的资料可见性视图）。
  *
  * - 一个账号：它的数据范围。
  * - 一次找人任务（链头的 id）：发起它的账号此刻的数据范围。名单、查询理解的工具、
@@ -23,7 +23,7 @@ export type Scope = "all" | { account: string } | { chain: string };
 export const chainScope = (rootTurnId: string | null): Scope =>
 	rootTurnId === null ? "all" : { chain: rootTurnId };
 
-/** 读者角色：人员、经历、记录、边四张表的读取策略约束它。表的属主（写入方）不受约束。 */
+/** 读者角色：各资料来源、人员和经历的读取策略约束它。表的属主（写入方）不受约束。 */
 const READER_ROLE = "talent_reader";
 
 const dialect = new PgDialect();
@@ -32,7 +32,7 @@ let provisioned: Promise<void> | null = null;
 
 /**
  * 读者角色和它的授权：没有就建，当前 schema 和数据目录里的表与视图都给 SELECT，应用角色要能
- * 切过去。四张带人的表的读取策略照 `schema.ts` 改上条件：db:push 建策略时不带条件，也不比较
+ * 切过去。带有人员和资料的表的读取策略照 `schema.ts` 改上条件：db:push 建策略时不带条件，也不比较
  * 条件。表没开行级安全（还没 db:push）就不读。每个进程第一次读之前做一次，部署不另设一步；
  * 之后新建的表靠默认授权。几个进程同时做时用 advisory lock 排队。
  */
@@ -116,6 +116,22 @@ function declare(scope: Scope): SQL[] {
 	];
 }
 
+/** 在写者的事务内以同一账号重新读取并核对资料权限，随后恢复写者角色。 */
+export async function asReader<T>(
+	client: PoolClient,
+	account: string,
+	read: () => Promise<T>,
+) {
+	await provision();
+	for (const statement of declare({ account })) {
+		const q = dialect.sqlToQuery(statement);
+		await client.query(q.sql, q.params);
+	}
+	const result = await read();
+	await client.query("reset role");
+	return result;
+}
+
 /** 在一个只读、可重复读的 PostgreSQL 快照里，替 `scope` 完成多条原生查询。 */
 export async function withReadSnapshot<T>(
 	scope: Scope,
@@ -171,4 +187,11 @@ export async function withCorpusSnapshot<T>(
 		},
 		{ isolationLevel: "repeatable read" },
 	);
+}
+
+export async function authorizedPool(c: PoolClient, user: string, id: string) {
+	const ok = await asReader(c, user, () =>
+		c.query("select id from talent_pool where id=$1", [id]),
+	);
+	if (!ok.rowCount) throw new Error("找不到这个人才池");
 }

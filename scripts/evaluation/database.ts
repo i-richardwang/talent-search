@@ -21,26 +21,38 @@ import {
 	deriveRequest,
 	deriveSchedule,
 	embeddingCache,
-	employee,
 	employeeRecord,
+	employment,
 	experience,
 	experienceNext,
 	experiencePhrase,
 	experiencePhraseNext,
 	experienceVerdict,
 	industry,
+	person,
+	personCard,
+	personIdentity,
 	phrase,
+	poolMember,
+	profileExperience,
+	profileSource,
 	recordStream,
+	resumeFile,
+	resumeImport,
 	reviewWord,
 	SCOPED_TABLES,
 	scale,
 	scopeMember,
 	searchTurn,
 	sequenceCatalog,
+	talentPool,
 	taskRun,
 	term,
 	termInUse,
-	visibleEmployee,
+	visibleEmployment,
+	visiblePool,
+	visibleProfile,
+	visibleSegment,
 } from "#/db/schema";
 import { catalogOf, tempSchema } from "./schema-name";
 
@@ -152,8 +164,16 @@ export async function isolatedDatabase(base: string) {
 			authSession,
 			authAccount,
 			authVerification,
-			employee,
+			person,
+			personIdentity,
+			employment,
+			talentPool,
+			poolMember,
+			resumeFile,
+			profileSource,
 			experience,
+			profileExperience,
+			resumeImport,
 			sequenceCatalog,
 			phrase,
 			experiencePhrase,
@@ -179,7 +199,14 @@ export async function isolatedDatabase(base: string) {
 			await connection.query(ddl(schema, t));
 		const dialect = new PgDialect();
 		// 先建公共视图，读取策略和目录随后使用它们。
-		for (const view of [scopeMember, visibleEmployee]) {
+		for (const view of [
+			scopeMember,
+			visibleEmployment,
+			visiblePool,
+			visibleProfile,
+			visibleSegment,
+			personCard,
+		]) {
 			const { name, query } = getViewConfig(view);
 			if (!query) throw new Error(`视图 ${name} 没有定义`);
 			await connection.query(

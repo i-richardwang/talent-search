@@ -6,10 +6,15 @@ export function dots(...parts: (string | null | undefined)[]) {
 }
 
 export function positionLabel(e: {
+	talentType?: string;
+	recentCompany?: string;
+	recentTitle?: string;
 	curDept: string;
 	curTitle: string;
 	curLevel: string;
 }) {
+	if (e.talentType === "外部候选人")
+		return dots(e.talentType, e.recentCompany, e.recentTitle);
 	return dots(e.curDept, e.curTitle, e.curLevel);
 }
 

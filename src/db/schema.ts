@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import {
 	type AnyPgColumn,
 	boolean,
@@ -17,7 +17,9 @@ import {
 	text,
 	timestamp,
 	unique,
+	uniqueIndex,
 } from "drizzle-orm/pg-core";
+import type { Resume } from "#/ingestion/resume";
 import { AUDIT_ACTIONS } from "#/lib/audit";
 import { ENGAGEMENTS } from "#/lib/engagement";
 import { ORG_SEPARATOR } from "#/lib/org";
@@ -148,107 +150,290 @@ export type CompanyMeta = {
 /** 部门路径的分隔，写进视图定义的字面量。 */
 const SEPARATOR = sql.raw(`'${ORG_SEPARATOR}'`);
 
-/**
- * 每个账号的数据范围里有谁：此刻所在部门是它某个组织本身或在它下面的人（`account_scope`，
- * 和 `lib/org.ts` 的 `within` 同一条规则）。账号的组织互不包含（`orgsOf`），一个人在一个账号下
- * 只有一行。谁看得见谁只在这里判断。
- */
-const MEMBERS = sql`select s.user_id, e.emp_id
-	from account_scope s
-	join employee e
-		on starts_with(e.cur_dept_path || ${SEPARATOR}, s.org_path || ${SEPARATOR})`;
-
-/**
- * 这一次读取看得到谁。读的一方在事务开头声明替谁读（`db/snapshot.ts`）：`talent.scope` 是一个
- * 账号的 id，或 `*`（全部：命令行、验收、管理员管整个系统的页面）。没有声明时一个人都没有。
- *
- * 人员、经历、记录、边四张表的读取策略按它过滤（只约束切到读者角色的读取；写入方是表的属主，
- * 不受策略约束）。数据目录的视图以属主身份执行，把它嵌进各自的条件里：db:push 先建目录的视图，
- * 目录不能引用别的 schema 里的视图。
- */
-const VISIBLE = sql`select emp_id from employee
-	where current_setting('talent.scope', true) = '*'
-	union all
-	select m.emp_id from (${MEMBERS}) m
-	where m.user_id = current_setting('talent.scope', true)`;
-
-/** 账号页数每个账号的范围里有多少人。 */
+const SCOPE = sql`current_setting('talent.scope', true)`;
+const ALL = sql`${SCOPE} = '*'`;
+const MEMBERS = sql`select distinct s.user_id, e.person_id from account_scope s join employment e
+	on starts_with(e.cur_dept_path || ${SEPARATOR}, s.org_path || ${SEPARATOR})`;
+const HR = sql`select e.person_id from employment e where ${ALL}
+	union all select m.person_id from (${MEMBERS}) m where m.user_id = ${SCOPE}`;
+const POOLS = sql`select p.id from talent_pool p where ${ALL} or (
+	exists(select from auth_user u where u.id=${SCOPE} and u.banned is not true)
+	and (p.visibility='public' or exists(select from account_scope s where s.user_id=${SCOPE}
+		and p.visibility='org' and starts_with(p.org_path || ${SEPARATOR},s.org_path || ${SEPARATOR}))))`;
+const PROFILES = sql`select id from profile_source where
+	(source_kind = 'hris' and person_id in (${HR})) or pool_id in (${POOLS})`;
+const SEGMENTS = sql`select pe.experience_id from profile_experience pe where pe.profile_id in (${PROFILES})`;
+function readPolicy(name: string, using: SQL) {
+	return pgPolicy(name, { for: "select", to: "public", using });
+}
 export const scopeMember = pgView("scope_member", {
 	user_id: text("user_id").notNull(),
-	emp_id: text("emp_id").notNull(),
-}).as(MEMBERS);
-
-/** 这一次读取看得到的人，读取策略按它过滤。 */
-export const visibleEmployee = pgView("visible_employee", {
-	emp_id: text("emp_id").notNull(),
-}).as(VISIBLE);
-
-/**
- * 这张表的一行属于看得见的人才读得到。db:push 建策略时不带条件、之后也不比较条件，条件由
- * 每个进程第一次读之前照这里写上（`db/snapshot.ts`）：没写上之前读者一行都读不到。
- * `visible_employee` 以属主身份执行，读 `employee` 时不再经过这条策略。
- */
-function inScope(name: string, empId: AnyPgColumn) {
-	return pgPolicy(name, {
-		for: "select",
-		to: "public",
-		using: sql`${empId} in (select emp_id from visible_employee)`,
-	});
-}
-
-/**
- * 职级存原文、档名和档高，学历存档名和档高：筛选按档名，「某档及以上」按档高比
- * （`search/compile.ts`，模型写的条件同样查 `scale` 的档高）。档高和档名同有同无。
- */
-export const employee = pgTable(
-	"employee",
+	person_id: text("person_id").notNull(),
+}).as(sql`select h.* from (${MEMBERS}) h where ${ALL} or h.user_id=${SCOPE}
+	union select u.id,m.person_id from auth_user u join talent_pool p on p.visibility='public' or exists(
+		select from account_scope s where s.user_id=u.id and starts_with(p.org_path||${SEPARATOR},s.org_path||${SEPARATOR}))
+	join pool_member m on m.pool_id=p.id where ${ALL} or u.id=${SCOPE}`);
+export const visibleEmployment = pgView("visible_employment", {
+	person_id: text("person_id").notNull(),
+}).as(HR);
+export const visiblePool = pgView("visible_pool", {
+	id: text("id").notNull(),
+}).as(POOLS);
+export const visibleProfile = pgView("visible_profile", {
+	id: text("id").notNull(),
+}).as(PROFILES);
+export const visibleSegment = pgView("visible_segment", {
+	experience_id: integer("experience_id").notNull(),
+}).as(SEGMENTS);
+const id = () => text("id").primaryKey().default(sql`gen_random_uuid()::text`);
+const created = () =>
+	timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
+const accountId = (column: string) =>
+	text(column).references(() => authUser.id);
+const bio = () => ({
+	name: text("name").notNull(),
+	educationLevel: text("education_level").notNull().default(""),
+	educationRank: integer("education_rank"),
+	school: text("school").notNull().default(""),
+	schoolTier: text("school_tier").notNull().default(""),
+	overseasEducated: boolean("overseas_educated"),
+});
+export const person = pgTable(
+	"person",
 	{
-		empId: text("emp_id").primaryKey(),
-		name: text("name").notNull(),
-		curDept: text("cur_dept").notNull().default(""),
-		/** 当前所在部门的完整路径；账号的数据范围按它判断（`visible_employee`） */
-		curDeptPath: text("cur_dept_path").notNull().default(""),
-		curTitle: text("cur_title").notNull().default(""),
-		curSeqL1: text("cur_seq_l1").notNull().default(""),
-		curSeqL2: text("cur_seq_l2").notNull().default(""),
-		curSeqL3: text("cur_seq_l3").notNull().default(""),
-		/** 登记的职级原文，详情里显示 */
-		curLevel: text("cur_level").notNull().default(""),
-		/** 职级归入的档（源契约的 `levels`），筛选与条件读它 */
-		curLevelBand: text("cur_level_band").notNull().default(""),
-		curLevelRank: integer("cur_level_rank"),
-		hireDate: date("hire_date"),
-		/** 学历五档之一（`EDUCATION_LADDER`） */
-		educationLevel: text("education_level").notNull().default(""),
-		educationRank: integer("education_rank"),
-		school: text("school").notNull().default(""),
-		/** 最高学历那所学校的档，数据源的写法，档与档之间不比高低 */
-		schoolTier: text("school_tier").notNull().default(""),
-		/** 最高学历是不是在海外取得；没有记录时为空 */
-		overseasEducated: boolean("overseas_educated"),
-		recruitment: text("recruitment").notNull().default(""),
+		personId: text("person_id").primaryKey(),
+		...bio(),
 	},
 	(t) => [
 		check(
-			"employee_level_band_ranked",
-			sql`(${t.curLevelBand} = '') = (${t.curLevelRank} is null)`,
+			"person_education_ranked",
+			sql`(${t.educationLevel}='')=(${t.educationRank} is null)`,
 		),
-		check(
-			"employee_education_ranked",
-			sql`(${t.educationLevel} = '') = (${t.educationRank} is null)`,
+		readPolicy(
+			"person_canonical_hr",
+			sql`${ALL} or ${t.personId} in (select person_id from visible_employment)`,
 		),
-		inScope("employee_in_scope", t.empId),
 	],
 );
+const personKey = () =>
+	text("person_id")
+		.notNull()
+		.references(() => person.personId, { onDelete: "cascade" });
+export const personIdentity = pgTable(
+	"person_identity",
+	{
+		personId: personKey(),
+		kind: text("kind").notNull(),
+		value: text("value").notNull(),
+		origin: text("origin").notNull().default("hris"),
+	},
+	(t) => [
+		primaryKey({ columns: [t.kind, t.value, t.personId, t.origin] }),
+		// 人工分开的人可以共用联系方式。只有人事系统的工号唯一。
+		uniqueIndex("external_emp_identity")
+			.on(t.value)
+			.where(sql`${t.kind}='emp_id'`),
+		index("identity_person").on(t.personId),
+		readPolicy(
+			"identity_channel",
+			sql`(${t.origin}='hris' and ${t.personId} in (select person_id from visible_employment)) or ${t.origin} in (select id from visible_pool)`,
+		),
+	],
+);
+const job = () => ({
+	curDept: text("cur_dept").notNull().default(""),
+	curDeptPath: text("cur_dept_path").notNull().default(""),
+	curTitle: text("cur_title").notNull().default(""),
+	curSeqL1: text("cur_seq_l1").notNull().default(""),
+	curSeqL2: text("cur_seq_l2").notNull().default(""),
+	curSeqL3: text("cur_seq_l3").notNull().default(""),
+	curLevel: text("cur_level").notNull().default(""),
+	curLevelBand: text("cur_level_band").notNull().default(""),
+	curLevelRank: integer("cur_level_rank"),
+	hireDate: date("hire_date"),
+	recruitment: text("recruitment").notNull().default(""),
+});
+export const employment = pgTable(
+	"employment",
+	{
+		personId: personKey().primaryKey(),
+		empId: text("emp_id").notNull().unique(),
+		...job(),
+	},
+	(t) => [
+		check(
+			"employment_level_ranked",
+			sql`(${t.curLevelBand}='')=(${t.curLevelRank} is null)`,
+		),
+		readPolicy(
+			"employment_scope",
+			sql`${t.personId} in (select person_id from visible_employment)`,
+		),
+	],
+);
+export const talentPool = pgTable(
+	"talent_pool",
+	{
+		id: id(),
+		name: text("name").notNull().unique(),
+		visibility: text("visibility", { enum: ["public", "org"] })
+			.notNull()
+			.default("public"),
+		orgPath: text("org_path"),
+		createdBy: accountId("created_by"),
+		createdAt: created(),
+	},
+	(t) => [
+		check(
+			"pool_visibility_org",
+			sql`(${t.visibility}='public' and ${t.orgPath} is null) or
+	(${t.visibility}='org' and ${t.orgPath} is not null and btrim(${t.orgPath})<>'')`,
+		),
+		readPolicy("pool_scope", sql`${t.id} in (select id from visible_pool)`),
+	],
+);
+const poolKey = () => text("pool_id").references(() => talentPool.id);
+export const poolMember = pgTable(
+	"pool_member",
+	{
+		poolId: poolKey().notNull(),
+		personId: personKey(),
+		addedBy: accountId("added_by").notNull(),
+		touchedAt: date("touched_at"),
+		notes: text("notes").notNull().default(""),
+		contacts: jsonb("contacts")
+			.$type<{ phone: string; email: string; wechat: string }>()
+			.notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.poolId, t.personId] }),
+		index("pool_member_person").on(t.personId),
+		readPolicy(
+			"member_scope",
+			sql`${t.poolId} in (select id from visible_pool)`,
+		),
+	],
+);
+export const resumeFile = pgTable(
+	"resume_file",
+	{
+		id: id(),
+		sha256: text("sha256").notNull().unique(),
+		sizeBytes: integer("size_bytes").notNull(),
+		createdAt: created(),
+	},
+	(t) => [
+		readPolicy(
+			"file_scope",
+			sql`${t.id} in (select resume_file_id from profile_source where resume_file_id is not null)`,
+		),
+	],
+);
+export const profileSource = pgTable(
+	"profile_source",
+	{
+		id: id(),
+		personId: personKey(),
+		sourceKind: text("source_kind").notNull(),
+		poolId: poolKey(),
+		resumeFileId: text("resume_file_id").references(() => resumeFile.id),
+		filename: text("filename"),
+		createdBy: accountId("created_by"),
+		capturedAt: timestamp("captured_at", { withTimezone: true })
+			.notNull()
+			.defaultNow(),
+		// PDF 的个人档案属于该资料的权限范围。HRIS 的通用档案在 person 上。
+		parsed: jsonb("parsed").$type<Resume>(),
+	},
+	(t) => [
+		unique("profile_person_identity").on(t.id, t.personId),
+		unique("profile_original_per_pool_person").on(
+			t.resumeFileId,
+			t.poolId,
+			t.personId,
+		),
+		index("profile_versions").on(t.personId, t.poolId, t.capturedAt),
+		check(
+			"profile_origin",
+			sql`(${t.sourceKind}='hris' and ${t.poolId} is null and ${t.resumeFileId} is null and ${t.parsed} is null) or
+	(${t.sourceKind}='pdf_resume' and ${t.poolId} is not null and ${t.resumeFileId} is not null and ${t.parsed} is not null and ${t.filename} is not null)`,
+		),
+		readPolicy(
+			"profile_scope",
+			sql`${t.id} in (select id from visible_profile)`,
+		),
+	],
+);
+export const resumeImport = pgTable(
+	"resume_import",
+	{
+		id: id(),
+		poolId: poolKey().notNull(),
+		ownerId: accountId("owner_id").notNull(),
+		fileId: text("file_id").references(() => resumeFile.id),
+		filename: text("filename").notNull(),
+		createdAt: created(),
+		status: text("status").notNull().default("queued"),
+		draft: jsonb("draft").$type<Resume>(),
+		personId: text("person_id").references(() => person.personId, {
+			onDelete: "set null",
+		}),
+		message: text("message").notNull().default(""),
+	},
+	(t) => [
+		index("resume_import_work")
+			.on(t.createdAt, t.id)
+			.where(sql`${t.status} in ('queued','processing')`),
+		check(
+			"resume_import_state_valid_2",
+			sql`${t.status} in ('queued','processing','review','failed','added','duplicate','cancelled')`,
+		),
+		readPolicy(
+			"import_owner_scope",
+			sql`${t.ownerId}=${SCOPE} and ${t.poolId} in (select id from visible_pool)`,
+		),
+	],
+);
+// 每个账号只从可见资料合成一张名片。有内部授权时用人事档案，否则用最近一份可见简历。
+const CARDS = sql`with hr as (select * from employment where person_id in (${HR})),
+	accessible as (select m.person_id, array_agg(distinct p.name order by p.name) as pools, array_agg(p.id order by p.id) as ids from pool_member m
+	join talent_pool p on p.id=m.pool_id where p.id in (${POOLS}) group by m.person_id),
+	pdf as (select distinct on (s.person_id) s.person_id,s.parsed,j.company as recent_company,j.title as recent_title from profile_source s
+	left join lateral(select w->>'company' as company,w->>'title' as title from jsonb_array_elements(s.parsed->'experiences') w order by (w->>'start') desc limit 1) j on true
+	where s.pool_id in (${POOLS}) order by s.person_id,s.captured_at desc,s.id)
+	select p.person_id,h.emp_id,case when h.person_id is not null then '在职员工' else '外部候选人' end as talent_type,
+	md5(coalesce(h.person_id,'') || coalesce(array_to_json(a.ids)::text,'') || coalesce((select string_agg(s.id,',' order by s.id) from profile_source s where s.person_id=p.person_id and s.pool_id=any(a.ids)), '')) as access_key, coalesce(a.pools,'{}') as pools,coalesce(d.recent_company,'') as recent_company,coalesce(d.recent_title,'') as recent_title,
+	case when h.person_id is not null then p.name else d.parsed->>'name' end as name,
+	case when h.person_id is not null then p.school else coalesce(d.parsed->>'school','') end as school,
+	case when h.person_id is not null then p.education_level else coalesce(d.parsed->>'education','') end as education_level,
+	case when h.person_id is not null then p.education_rank else array_position(array['高中及以下','大专','本科','硕士','博士'],d.parsed->>'education') end as education_rank,
+	case when h.person_id is not null then p.school_tier else '' end as school_tier,
+	case when h.person_id is not null then p.overseas_educated end as overseas_educated,
+	coalesce(h.cur_dept,'') as cur_dept,coalesce(h.cur_dept_path,'') as cur_dept_path,coalesce(h.cur_title,'') as cur_title,
+	coalesce(h.cur_seq_l1,'') as cur_seq_l1,coalesce(h.cur_seq_l2,'') as cur_seq_l2,coalesce(h.cur_seq_l3,'') as cur_seq_l3,
+	coalesce(h.cur_level,'') as cur_level,coalesce(h.cur_level_band,'') as cur_level_band,h.cur_level_rank,h.hire_date,coalesce(h.recruitment,'') as recruitment
+	from person p left join hr h using(person_id) left join accessible a using(person_id) left join pdf d using(person_id)
+	where h.person_id is not null or a.person_id is not null`;
+export const personCard = pgView("person_card", {
+	personId: text("person_id").notNull(),
+	empId: text("emp_id"),
+	accessKey: text("access_key").notNull(),
+	talentType: text("talent_type").notNull(),
+	recentCompany: text("recent_company").notNull(),
+	recentTitle: text("recent_title").notNull(),
+	pools: text("pools").array().notNull(),
+	...bio(),
+	...job(),
+}).as(CARDS);
 
 /** 原始字段由同步写，推断序列与解析版本由解析任务写。`content_key` 是原始内容的数据库生成摘要。 */
 export const experience = pgTable(
 	"experience",
 	{
 		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-		empId: text("emp_id")
+		personId: text("person_id")
 			.notNull()
-			.references(() => employee.empId, { onDelete: "cascade" }),
+			.references(() => person.personId, { onDelete: "cascade" }),
 		kind: text("kind", { enum: ["internal", "external"] }).notNull(),
 		/** 待业只保留在时间线上，不进入检索、累计工作年限或模型解析。 */
 		unemployed: boolean("unemployed").notNull().default(false),
@@ -282,7 +467,7 @@ export const experience = pgTable(
 			.notNull()
 			.unique()
 			.generatedAlwaysAs(
-				sql`md5(emp_id || E'\\x1f' || kind || E'\\x1f' || unemployed::text || E'\\x1f' || (start_date - date '1970-01-01')::text || E'\\x1f' || coalesce((end_date - date '1970-01-01')::text, '') || E'\\x1f' || company || E'\\x1f' || department || E'\\x1f' || department_path || E'\\x1f' || coalesce(company_meta::text, '') || E'\\x1f' || title || E'\\x1f' || seq_l1 || E'\\x1f' || seq_l2 || E'\\x1f' || seq_l3 || E'\\x1f' || level || E'\\x1f' || description)`,
+				sql`md5(person_id || E'\\x1f' || kind || E'\\x1f' || unemployed::text || E'\\x1f' || (start_date - date '1970-01-01')::text || E'\\x1f' || coalesce((end_date - date '1970-01-01')::text, '') || E'\\x1f' || company || E'\\x1f' || department || E'\\x1f' || department_path || E'\\x1f' || coalesce(company_meta::text, '') || E'\\x1f' || title || E'\\x1f' || seq_l1 || E'\\x1f' || seq_l2 || E'\\x1f' || seq_l3 || E'\\x1f' || level || E'\\x1f' || description)`,
 			),
 		derivedIdentity: text("derived_identity"),
 		/**
@@ -312,11 +497,42 @@ export const experience = pgTable(
 			"experience_dates_ordered",
 			sql`${t.endDate} is null or ${t.endDate} >= ${t.startDate}`,
 		),
-		index("experience_emp").on(t.empId, t.startDate),
-		inScope("experience_in_scope", t.empId),
+		index("experience_person").on(t.personId, t.startDate),
+		unique("segment_person_identity").on(t.id, t.personId),
+		readPolicy(
+			"experience_in_scope",
+			sql`${ALL} or ${t.id} in (select experience_id from visible_segment)`,
+		),
 	],
 );
 
+/** 一段内容可由多份资料共同证明。相同内容只存、解析、计分一次。 */
+export const profileExperience = pgTable(
+	"profile_experience",
+	{
+		profileId: text("profile_id").notNull(),
+		personId: personKey(),
+		experienceId: integer("experience_id").notNull(),
+	},
+	(t) => [
+		primaryKey({ columns: [t.profileId, t.experienceId] }),
+		index("profile_experience_segment").on(t.experienceId),
+		foreignKey({
+			name: "origin_same_person",
+			columns: [t.profileId, t.personId],
+			foreignColumns: [profileSource.id, profileSource.personId],
+		}).onDelete("cascade"),
+		foreignKey({
+			name: "segment_same_person",
+			columns: [t.experienceId, t.personId],
+			foreignColumns: [experience.id, experience.personId],
+		}).onDelete("cascade"),
+		readPolicy(
+			"origin_scope",
+			sql`${t.profileId} in (select id from visible_profile)`,
+		),
+	],
+);
 /** 入职前经历可对齐的公司现行序列，随数据源整表同步。 */
 export const sequenceCatalog = pgTable(
 	"sequence_catalog",
@@ -333,7 +549,7 @@ export const sequenceCatalog = pgTable(
 	],
 );
 
-export type Employee = typeof employee.$inferSelect;
+export type Employee = typeof personCard.$inferSelect;
 export type Experience = typeof experience.$inferSelect;
 
 const RECORD_KINDS = ["rating", "status"] as const;
@@ -419,9 +635,9 @@ export const companyAlias = pgTable("company_alias", {
 export const employeeRecord = pgTable(
 	"employee_record",
 	{
-		empId: text("emp_id")
+		personId: text("person_id")
 			.notNull()
-			.references(() => employee.empId, { onDelete: "cascade" }),
+			.references(() => employment.personId, { onDelete: "cascade" }),
 		stream: text("stream")
 			.notNull()
 			.references(() => recordStream.stream, { onDelete: "cascade" }),
@@ -431,12 +647,15 @@ export const employeeRecord = pgTable(
 		value: text("value").notNull(),
 	},
 	(t) => [
-		primaryKey({ columns: [t.empId, t.stream, t.periodStart] }),
+		primaryKey({ columns: [t.personId, t.stream, t.periodStart] }),
 		check(
 			"employee_record_period_ordered",
 			sql`${t.periodEnd} is null or ${t.periodEnd} >= ${t.periodStart}`,
 		),
-		inScope("employee_record_in_scope", t.empId),
+		readPolicy(
+			"employee_record_in_scope",
+			sql`${t.personId} in (select person_id from visible_employment)`,
+		),
 	],
 );
 
@@ -451,7 +670,9 @@ export const catalog = pgSchema("catalog");
 
 export const catalogPerson = catalog
 	.view("person", {
-		emp_id: text("emp_id"),
+		talent_type: text("talent_type"),
+		pools: text("pools").array(),
+		person_id: text("person_id"),
 		level_band: text("level_band"),
 		level_rank: integer("level_rank"),
 		education: text("education"),
@@ -466,7 +687,7 @@ export const catalogPerson = catalog
 		cur_seq_l2: text("cur_seq_l2"),
 		cur_seq_l3: text("cur_seq_l3"),
 	})
-	.as(sql`select emp_id,
+	.as(sql`select person_id,talent_type,pools,
 		nullif(cur_level_band, '') as level_band, cur_level_rank as level_rank,
 		nullif(education_level, '') as education, education_rank,
 		nullif(school, '') as school, nullif(school_tier, '') as school_tier,
@@ -474,8 +695,7 @@ export const catalogPerson = catalog
 		nullif(recruitment, '') as recruitment, hire_date,
 		nullif(cur_dept, '') as cur_dept, nullif(cur_seq_l1, '') as cur_seq_l1,
 		nullif(cur_seq_l2, '') as cur_seq_l2, nullif(cur_seq_l3, '') as cur_seq_l3
-	from employee
-	where emp_id in (${VISIBLE})`);
+	from (${CARDS}) card`);
 
 /**
  * 一段工作经历；待业段不在这里。序列登记的优先，没有才取模型对齐的（两级成对）；
@@ -484,7 +704,7 @@ export const catalogPerson = catalog
 export const catalogExperience = catalog
 	.view("experience", {
 		id: integer("id"),
-		emp_id: text("emp_id"),
+		person_id: text("person_id"),
 		kind: text("kind"),
 		start_date: date("start_date"),
 		end_date: date("end_date"),
@@ -505,7 +725,7 @@ export const catalogExperience = catalog
 		seq_l2: text("seq_l2"),
 		skills: text("skills").array(),
 	})
-	.as(sql`select e.id, e.emp_id, e.kind, e.start_date, e.end_date, e.months,
+	.as(sql`select e.id, e.person_id, e.kind, e.start_date, e.end_date, e.months,
 		nullif(e.company, '') as company,
 		nullif(e.company_meta ->> 'company_tag', '') as company_tag,
 		nullif(e.company_meta ->> 'nature', '') as company_nature,
@@ -533,39 +753,39 @@ export const catalogExperience = catalog
 	from experience e
 	left join company_alias ca on ca.raw_name = e.company and e.kind = 'external'
 	left join company c on c.name = ca.company
-	where not e.unemployed and e.emp_id in (${VISIBLE})`);
+	where not e.unemployed and (${ALL} or e.id in (${SEGMENTS}))`);
 
 /** 一期评级。`value_rank` 是这一档在档位表里的高低。 */
 export const catalogRating = catalog
 	.view("rating", {
-		emp_id: text("emp_id"),
+		person_id: text("person_id"),
 		stream: text("stream"),
 		period_start: date("period_start"),
 		period_end: date("period_end"),
 		value: text("value"),
 		value_rank: integer("value_rank"),
 	})
-	.as(sql`select r.emp_id, r.stream, r.period_start, r.period_end, r.value,
+	.as(sql`select r.person_id, r.stream, r.period_start, r.period_end, r.value,
 		s.rank as value_rank
 	from employee_record r
 	join record_stream rs on rs.stream = r.stream and rs.kind = 'rating'
 	left join scale s on s.stream = r.stream and s.value = r.value
-	where r.emp_id in (${VISIBLE})`);
+	where r.person_id in (${HR})`);
 
 /** 一段状态；`valid_to` 为空表示仍有效。 */
 export const catalogStatus = catalog
 	.view("status", {
-		emp_id: text("emp_id"),
+		person_id: text("person_id"),
 		stream: text("stream"),
 		value: text("value"),
 		valid_from: date("valid_from"),
 		valid_to: date("valid_to"),
 	})
-	.as(sql`select r.emp_id, r.stream, r.value,
+	.as(sql`select r.person_id, r.stream, r.value,
 		r.period_start as valid_from, r.period_end as valid_to
 	from employee_record r
 	join record_stream rs on rs.stream = r.stream and rs.kind = 'status'
-	where r.emp_id in (${VISIBLE})`);
+	where r.person_id in (${HR})`);
 
 export const catalogScale = catalog
 	.view("scale", {
@@ -866,7 +1086,7 @@ export const termInUse = pgView("term_in_use", {
 	.as(
 		/* 「谁写了哪个词」是不重复的集合（`written` 去重，`up` 的 union 不留重复），人数就是行数 */
 		sql`with recursive written as (
-			select distinct p.text as word, coalesce(t.canonical, p.text) as head, e.emp_id
+			select distinct p.text as word, coalesce(t.canonical, p.text) as head, e.person_id
 			from experience_phrase ep
 			join phrase p on p.id = ep.phrase_id
 			join experience e on e.id = ep.experience_id and not e.unemployed
@@ -874,10 +1094,10 @@ export const termInUse = pgView("term_in_use", {
 			where ep.route in (${sql.raw(SHORT_ROUTES.map((route) => `'${route}'`).join(", "))})
 		), own as (
 			select word, head, count(*)::int as writers from written group by word, head
-		), up(word, emp_id) as (
-			select head, emp_id from written
+		), up(word, person_id) as (
+			select head, person_id from written
 			union
-			select t.parent, up.emp_id from up
+			select t.parent, up.person_id from up
 			join term t on t.word = up.word and t.parent is not null
 		)
 		select under.word, under.people, coalesce(own.writers, 0) as writers
@@ -1040,7 +1260,7 @@ export const auditEvent = pgTable(
 		userId: text("user_id").references(() => authUser.id),
 		action: text("action", { enum: AUDIT_ACTIONS }).notNull(),
 		/** 查看详情、导出或交给外部解析服务的是谁。 */
-		empId: text("emp_id"),
+		personId: text("person_id"),
 		/** 搜索的内容。 */
 		text: text("text"),
 		/** 管理的是哪个账号。 */
@@ -1048,22 +1268,35 @@ export const auditEvent = pgTable(
 	},
 	(t) => [
 		check(
-			"audit_event_object_and_actor",
-			sql`num_nonnulls(${t.text}, ${t.empId}, ${t.accountId}) = 1 and
+			"audit_object_source_v2",
+			sql`num_nonnulls(${t.text}, ${t.personId}, ${t.accountId}) = 1 and
 				(${t.userId} is null) = (${t.action} = 'derive-read') and
 				case ${t.action}
-					when 'derive-read' then ${t.empId} is not null
+					when 'derive-read' then ${t.personId} is not null
 					when 'search' then ${t.text} is not null
-					when 'view' then ${t.empId} is not null
-					when 'export' then ${t.empId} is not null
+					when 'view' then ${t.personId} is not null
+					when 'resume-preview' then ${t.personId} is not null
+ when 'resume-download' then ${t.personId} is not null
+ when 'talent-add' then ${t.personId} is not null
+ when 'talent-link' then ${t.personId} is not null
+ when 'talent-remove' then ${t.personId} is not null
+ when 'export' then ${t.personId} is not null
 					else ${t.accountId} is not null end`,
 		),
 	],
 );
 
-/** 带读取策略的四张表：人员、经历、记录、边。 */
+/** 每张含个人或来源资料的表都随读者角色安装这里定义的策略。 */
 export const SCOPED_TABLES = [
-	employee,
+	resumeImport,
+	person,
+	personIdentity,
+	employment,
+	talentPool,
+	poolMember,
+	resumeFile,
+	profileSource,
+	profileExperience,
 	experience,
 	employeeRecord,
 	experiencePhrase,

@@ -13,7 +13,11 @@ import { evidenceText } from "./evidence";
  * 人，留着他最后一次在名单上的样子；还在名单上的，名单更新时快照跟着换成新的那一行。
  */
 export type Pick = {
-	empId: string;
+	empId?: string | null;
+	accessKey?: string;
+	talentType?: string;
+	recentCompany?: string;
+	personId: string;
 	name: string;
 	dept: string | null;
 	title: string | null;
@@ -52,8 +56,8 @@ type Action =
 	| { type: "show"; turnId: string; rows: readonly Listed[] }
 	/** 名单上这些复选框的新状态：勾着的是这几个工号。 */
 	| { type: "check"; ids: readonly string[] }
-	| { type: "toggle"; empId: string }
-	| { type: "remove"; empId: string }
+	| { type: "toggle"; personId: string }
+	| { type: "remove"; personId: string }
 	/** 选中名单上全部的人；`more` 为真时下一份名单上的人也选中。 */
 	| { type: "pickAll"; more: boolean }
 	/** 选中名单上第 `from` 到第 `to` 个人（含两端）。 */
@@ -66,7 +70,7 @@ function withAll(
 	rows: readonly Listed[],
 ): ReadonlyMap<string, Pick> {
 	const next = new Map(old);
-	for (const { pick } of rows) next.set(pick.empId, pick);
+	for (const { pick } of rows) next.set(pick.personId, pick);
 	return next;
 }
 
@@ -88,14 +92,14 @@ export function select(state: Selection, action: Action): Selection {
 			if (!state.sweeping && state.picked.size === 0) return { ...state, rows };
 			const picked = new Map(state.picked);
 			for (const { pick } of rows)
-				if (state.sweeping || picked.has(pick.empId))
-					picked.set(pick.empId, pick);
+				if (state.sweeping || picked.has(pick.personId))
+					picked.set(pick.personId, pick);
 			return { ...state, picked, rows, sweeping: false };
 		}
 		case "check": {
 			// 不在名单上的已选人原样保留
 			const on = new Set(action.ids);
-			const listed = new Map(state.rows.map((r) => [r.pick.empId, r.pick]));
+			const listed = new Map(state.rows.map((r) => [r.pick.personId, r.pick]));
 			const picked = new Map(
 				[...state.picked].filter(([id]) => !listed.has(id) || on.has(id)),
 			);
@@ -107,16 +111,18 @@ export function select(state: Selection, action: Action): Selection {
 		}
 		case "toggle": {
 			const picked = new Map(state.picked);
-			if (picked.delete(action.empId)) return { ...state, picked };
-			const pick = state.rows.find((r) => r.pick.empId === action.empId)?.pick;
+			if (picked.delete(action.personId)) return { ...state, picked };
+			const pick = state.rows.find(
+				(r) => r.pick.personId === action.personId,
+			)?.pick;
 			if (!pick) return state;
-			picked.set(action.empId, pick);
+			picked.set(action.personId, pick);
 			return { ...state, picked };
 		}
 		case "remove": {
-			if (!state.picked.has(action.empId)) return state;
+			if (!state.picked.has(action.personId)) return state;
 			const picked = new Map(state.picked);
-			picked.delete(action.empId);
+			picked.delete(action.personId);
 			return { ...state, picked };
 		}
 		case "pickAll":
@@ -155,13 +161,17 @@ function rowOf(
 		pick: {
 			dept: e.curDept,
 			empId: e.empId,
+			accessKey: e.accessKey,
+			talentType: e.talentType,
+			recentCompany: e.recentCompany,
+			personId: e.personId,
 			evidence: lines.map(({ found }) =>
 				found ? evidenceText(found.evidence, found.basis) : null,
 			),
 			level: e.curLevel,
 			name: e.name,
 			rank,
-			title: e.curTitle,
+			title: e.curTitle || e.recentTitle || null,
 		},
 	};
 }
@@ -192,7 +202,7 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	const { picked } = state;
 
 	/** 当前名单上这批人的工号，按屏幕顺序。表头的全选读它。 */
-	const shownIds = useMemo(() => rows.map((r) => r.pick.empId), [rows]);
+	const shownIds = useMemo(() => rows.map((r) => r.pick.personId), [rows]);
 
 	/**
 	 * 当前名单上勾选了哪几个，即交给 `CheckboxGroup` 的值。被筛掉的已选人不在其中，
@@ -210,12 +220,12 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	);
 
 	// 连选的起点：上一次点选或空格选过的那个人，只在选他的那条记录里算数。
-	const anchor = useRef<{ turnId: string; empId: string } | null>(null);
+	const anchor = useRef<{ turnId: string; personId: string } | null>(null);
 
 	const toggle = useCallback(
-		(empId: string) => {
-			anchor.current = { empId, turnId };
-			dispatch({ empId, type: "toggle" });
+		(personId: string) => {
+			anchor.current = { personId, turnId };
+			dispatch({ personId, type: "toggle" });
 		},
 		[turnId],
 	);
@@ -225,7 +235,7 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	 * 工具栏上的清单用它（`-components/pick-dock.tsx`）。
 	 */
 	const remove = useCallback(
-		(empId: string) => dispatch({ empId, type: "remove" }),
+		(personId: string) => dispatch({ personId, type: "remove" }),
 		[],
 	);
 
@@ -244,11 +254,11 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 	 * 否则只把这个人记作下一次连选的起点，返回 false，框按它自己的切换来。
 	 */
 	const pointAt = useCallback(
-		(empId: string, shift: boolean) => {
+		(personId: string, shift: boolean) => {
 			const last = anchor.current?.turnId === turnId ? anchor.current : null;
-			anchor.current = { empId, turnId };
-			const from = rows.findIndex((r) => r.pick.empId === last?.empId);
-			const to = rows.findIndex((r) => r.pick.empId === empId);
+			anchor.current = { personId, turnId };
+			const from = rows.findIndex((r) => r.pick.personId === last?.personId);
+			const to = rows.findIndex((r) => r.pick.personId === personId);
 			if (!shift || from < 0 || to < 0) return false;
 			dispatch({
 				from: Math.min(from, to),

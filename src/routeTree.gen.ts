@@ -14,16 +14,18 @@ import { Route as AccountsRouteRouteImport } from './routes/accounts/route'
 import { Route as AuditRouteRouteImport } from './routes/audit/route'
 import { Route as DataRouteRouteImport } from './routes/data/route'
 import { Route as LoginRouteRouteImport } from './routes/login/route'
+import { Route as PoolsRouteRouteImport } from './routes/pools/route'
 import { Route as TasksRouteRouteImport } from './routes/tasks/route'
 import { Route as TermsRouteRouteImport } from './routes/terms/route'
 import { Route as ApiDeriveRouteImport } from './routes/api/derive'
 import { Route as ApiReviewRouteImport } from './routes/api/review'
-import { Route as DataEmpIdRouteImport } from './routes/data/$empId'
+import { Route as DataPersonIdRouteImport } from './routes/data/$personId'
 import { Route as STurnIdRouteRouteImport } from './routes/s/$turnId/route'
 import { Route as TermsWordRouteImport } from './routes/terms/$word'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiMcpScopeRouteImport } from './routes/api/mcp/$scope'
-import { Route as STurnIdPEmpIdRouteImport } from './routes/s/$turnId/p.$empId'
+import { Route as ApiResumesSourceRouteImport } from './routes/api/resumes/$source'
+import { Route as STurnIdPPersonIdRouteImport } from './routes/s/$turnId/p.$personId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -50,6 +52,11 @@ const LoginRouteRoute = LoginRouteRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PoolsRouteRoute = PoolsRouteRouteImport.update({
+  id: '/pools',
+  path: '/pools',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TasksRouteRoute = TasksRouteRouteImport.update({
   id: '/tasks',
   path: '/tasks',
@@ -70,9 +77,9 @@ const ApiReviewRoute = ApiReviewRouteImport.update({
   path: '/api/review',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DataEmpIdRoute = DataEmpIdRouteImport.update({
-  id: '/$empId',
-  path: '/$empId',
+const DataPersonIdRoute = DataPersonIdRouteImport.update({
+  id: '/$personId',
+  path: '/$personId',
   getParentRoute: () => DataRouteRoute,
 } as any)
 const STurnIdRouteRoute = STurnIdRouteRouteImport.update({
@@ -95,9 +102,14 @@ const ApiMcpScopeRoute = ApiMcpScopeRouteImport.update({
   path: '/api/mcp/$scope',
   getParentRoute: () => rootRouteImport,
 } as any)
-const STurnIdPEmpIdRoute = STurnIdPEmpIdRouteImport.update({
-  id: '/p/$empId',
-  path: '/p/$empId',
+const ApiResumesSourceRoute = ApiResumesSourceRouteImport.update({
+  id: '/api/resumes/$source',
+  path: '/api/resumes/$source',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const STurnIdPPersonIdRoute = STurnIdPPersonIdRouteImport.update({
+  id: '/p/$personId',
+  path: '/p/$personId',
   getParentRoute: () => STurnIdRouteRoute,
 } as any)
 
@@ -107,16 +119,18 @@ export interface FileRoutesByFullPath {
   '/audit': typeof AuditRouteRoute
   '/data': typeof DataRouteRouteWithChildren
   '/login': typeof LoginRouteRoute
+  '/pools': typeof PoolsRouteRoute
   '/tasks': typeof TasksRouteRoute
   '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/derive': typeof ApiDeriveRoute
   '/api/review': typeof ApiReviewRoute
-  '/data/$empId': typeof DataEmpIdRoute
+  '/data/$personId': typeof DataPersonIdRoute
   '/terms/$word': typeof TermsWordRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/mcp/$scope': typeof ApiMcpScopeRoute
-  '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
+  '/api/resumes/$source': typeof ApiResumesSourceRoute
+  '/s/$turnId/p/$personId': typeof STurnIdPPersonIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -124,16 +138,18 @@ export interface FileRoutesByTo {
   '/audit': typeof AuditRouteRoute
   '/data': typeof DataRouteRouteWithChildren
   '/login': typeof LoginRouteRoute
+  '/pools': typeof PoolsRouteRoute
   '/tasks': typeof TasksRouteRoute
   '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/derive': typeof ApiDeriveRoute
   '/api/review': typeof ApiReviewRoute
-  '/data/$empId': typeof DataEmpIdRoute
+  '/data/$personId': typeof DataPersonIdRoute
   '/terms/$word': typeof TermsWordRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/mcp/$scope': typeof ApiMcpScopeRoute
-  '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
+  '/api/resumes/$source': typeof ApiResumesSourceRoute
+  '/s/$turnId/p/$personId': typeof STurnIdPPersonIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -142,16 +158,18 @@ export interface FileRoutesById {
   '/audit': typeof AuditRouteRoute
   '/data': typeof DataRouteRouteWithChildren
   '/login': typeof LoginRouteRoute
+  '/pools': typeof PoolsRouteRoute
   '/tasks': typeof TasksRouteRoute
   '/terms': typeof TermsRouteRouteWithChildren
   '/s/$turnId': typeof STurnIdRouteRouteWithChildren
   '/api/derive': typeof ApiDeriveRoute
   '/api/review': typeof ApiReviewRoute
-  '/data/$empId': typeof DataEmpIdRoute
+  '/data/$personId': typeof DataPersonIdRoute
   '/terms/$word': typeof TermsWordRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/mcp/$scope': typeof ApiMcpScopeRoute
-  '/s/$turnId/p/$empId': typeof STurnIdPEmpIdRoute
+  '/api/resumes/$source': typeof ApiResumesSourceRoute
+  '/s/$turnId/p/$personId': typeof STurnIdPPersonIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -161,16 +179,18 @@ export interface FileRouteTypes {
     | '/audit'
     | '/data'
     | '/login'
+    | '/pools'
     | '/tasks'
     | '/terms'
     | '/s/$turnId'
     | '/api/derive'
     | '/api/review'
-    | '/data/$empId'
+    | '/data/$personId'
     | '/terms/$word'
     | '/api/auth/$'
     | '/api/mcp/$scope'
-    | '/s/$turnId/p/$empId'
+    | '/api/resumes/$source'
+    | '/s/$turnId/p/$personId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -178,16 +198,18 @@ export interface FileRouteTypes {
     | '/audit'
     | '/data'
     | '/login'
+    | '/pools'
     | '/tasks'
     | '/terms'
     | '/s/$turnId'
     | '/api/derive'
     | '/api/review'
-    | '/data/$empId'
+    | '/data/$personId'
     | '/terms/$word'
     | '/api/auth/$'
     | '/api/mcp/$scope'
-    | '/s/$turnId/p/$empId'
+    | '/api/resumes/$source'
+    | '/s/$turnId/p/$personId'
   id:
     | '__root__'
     | '/'
@@ -195,16 +217,18 @@ export interface FileRouteTypes {
     | '/audit'
     | '/data'
     | '/login'
+    | '/pools'
     | '/tasks'
     | '/terms'
     | '/s/$turnId'
     | '/api/derive'
     | '/api/review'
-    | '/data/$empId'
+    | '/data/$personId'
     | '/terms/$word'
     | '/api/auth/$'
     | '/api/mcp/$scope'
-    | '/s/$turnId/p/$empId'
+    | '/api/resumes/$source'
+    | '/s/$turnId/p/$personId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -213,6 +237,7 @@ export interface RootRouteChildren {
   AuditRouteRoute: typeof AuditRouteRoute
   DataRouteRoute: typeof DataRouteRouteWithChildren
   LoginRouteRoute: typeof LoginRouteRoute
+  PoolsRouteRoute: typeof PoolsRouteRoute
   TasksRouteRoute: typeof TasksRouteRoute
   TermsRouteRoute: typeof TermsRouteRouteWithChildren
   STurnIdRouteRoute: typeof STurnIdRouteRouteWithChildren
@@ -220,6 +245,7 @@ export interface RootRouteChildren {
   ApiReviewRoute: typeof ApiReviewRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiMcpScopeRoute: typeof ApiMcpScopeRoute
+  ApiResumesSourceRoute: typeof ApiResumesSourceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -259,6 +285,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pools': {
+      id: '/pools'
+      path: '/pools'
+      fullPath: '/pools'
+      preLoaderRoute: typeof PoolsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tasks': {
       id: '/tasks'
       path: '/tasks'
@@ -287,11 +320,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiReviewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/data/$empId': {
-      id: '/data/$empId'
-      path: '/$empId'
-      fullPath: '/data/$empId'
-      preLoaderRoute: typeof DataEmpIdRouteImport
+    '/data/$personId': {
+      id: '/data/$personId'
+      path: '/$personId'
+      fullPath: '/data/$personId'
+      preLoaderRoute: typeof DataPersonIdRouteImport
       parentRoute: typeof DataRouteRoute
     }
     '/s/$turnId': {
@@ -322,22 +355,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMcpScopeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/s/$turnId/p/$empId': {
-      id: '/s/$turnId/p/$empId'
-      path: '/p/$empId'
-      fullPath: '/s/$turnId/p/$empId'
-      preLoaderRoute: typeof STurnIdPEmpIdRouteImport
+    '/api/resumes/$source': {
+      id: '/api/resumes/$source'
+      path: '/api/resumes/$source'
+      fullPath: '/api/resumes/$source'
+      preLoaderRoute: typeof ApiResumesSourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/s/$turnId/p/$personId': {
+      id: '/s/$turnId/p/$personId'
+      path: '/p/$personId'
+      fullPath: '/s/$turnId/p/$personId'
+      preLoaderRoute: typeof STurnIdPPersonIdRouteImport
       parentRoute: typeof STurnIdRouteRoute
     }
   }
 }
 
 interface DataRouteRouteChildren {
-  DataEmpIdRoute: typeof DataEmpIdRoute
+  DataPersonIdRoute: typeof DataPersonIdRoute
 }
 
 const DataRouteRouteChildren: DataRouteRouteChildren = {
-  DataEmpIdRoute: DataEmpIdRoute,
+  DataPersonIdRoute: DataPersonIdRoute,
 }
 
 const DataRouteRouteWithChildren = DataRouteRoute._addFileChildren(
@@ -357,11 +397,11 @@ const TermsRouteRouteWithChildren = TermsRouteRoute._addFileChildren(
 )
 
 interface STurnIdRouteRouteChildren {
-  STurnIdPEmpIdRoute: typeof STurnIdPEmpIdRoute
+  STurnIdPPersonIdRoute: typeof STurnIdPPersonIdRoute
 }
 
 const STurnIdRouteRouteChildren: STurnIdRouteRouteChildren = {
-  STurnIdPEmpIdRoute: STurnIdPEmpIdRoute,
+  STurnIdPPersonIdRoute: STurnIdPPersonIdRoute,
 }
 
 const STurnIdRouteRouteWithChildren = STurnIdRouteRoute._addFileChildren(
@@ -374,6 +414,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuditRouteRoute: AuditRouteRoute,
   DataRouteRoute: DataRouteRouteWithChildren,
   LoginRouteRoute: LoginRouteRoute,
+  PoolsRouteRoute: PoolsRouteRoute,
   TasksRouteRoute: TasksRouteRoute,
   TermsRouteRoute: TermsRouteRouteWithChildren,
   STurnIdRouteRoute: STurnIdRouteRouteWithChildren,
@@ -381,6 +422,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiReviewRoute: ApiReviewRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiMcpScopeRoute: ApiMcpScopeRoute,
+  ApiResumesSourceRoute: ApiResumesSourceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

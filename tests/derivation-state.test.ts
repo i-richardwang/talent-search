@@ -14,7 +14,7 @@ const { employeeDetail } = await import("#/server/data");
 
 beforeEach(async () => {
 	await db.execute(
-		sql`truncate employee, phrase, sequence_catalog restart identity cascade`,
+		sql`truncate person, phrase, sequence_catalog restart identity cascade`,
 	);
 });
 
@@ -64,19 +64,19 @@ async function unanswered() {
 	).rows.map((r) => r.unanswered);
 }
 
-async function routes(empId: string) {
+async function routes(personId: string) {
 	return (
 		await db.execute<{ route: string }>(sql`
 		select distinct ep.route from experience_phrase ep
 		join experience e on e.id = ep.experience_id
-		where e.emp_id = ${empId} order by ep.route`)
+		where e.person_id = ${personId} order by ep.route`)
 	).rows.map((r) => r.route);
 }
 
 test("抽取答不出记为未能作答、按原文检索，成功的空抽取不退回原文", async () => {
 	await seed([
-		{ empId: "E1", name: "合成抽取", segments: [segment("答不出样例")] },
-		{ empId: "E2", name: "合成抽取", segments: [segment("空抽取样例")] },
+		{ personId: "E1", name: "合成抽取", segments: [segment("答不出样例")] },
+		{ personId: "E2", name: "合成抽取", segments: [segment("空抽取样例")] },
 	]);
 	const restore = answerChat((_system, prompt) =>
 		prompt.includes("答不出样例") ? { items: "invalid" } : { items: [] },
@@ -101,7 +101,7 @@ for (const [label, invalid] of [
 		await db.execute(sql`insert into sequence_catalog values ('技术', '算法')`);
 		await seed([
 			{
-				empId: "E1",
+				personId: "E1",
 				name: "合成对齐",
 				segments: [
 					{
@@ -137,7 +137,7 @@ for (const [label, invalid] of [
 
 test("答不出的段标准不变不再问，标准变了重新问", async () => {
 	await seed([
-		{ empId: "E1", name: "合成重问", segments: [segment("一直答不出样例")] },
+		{ personId: "E1", name: "合成重问", segments: [segment("一直答不出样例")] },
 	]);
 	let asked = 0;
 	let restore = answerChat(() => {
@@ -181,7 +181,7 @@ async function staged() {
 test("标准更新期间检索读上一版，换模型保留暂存进度，完成后换模型和端点也不重跑", async () => {
 	await seed(
 		Array.from({ length: 201 }, (_, i) => ({
-			empId: `E${i}`,
+			personId: `E${i}`,
 			name: `合成标准${i}`,
 			segments: [segment("统一标准样例")],
 		})),
@@ -230,8 +230,8 @@ test("标准更新期间检索读上一版，换模型保留暂存进度，完�
 
 test("暂存结果替换进去时，答不出的段带着未能作答进去，仍按原文留在检索里", async () => {
 	await seed([
-		{ empId: "E1", name: "合成替换", segments: [segment("替换成功样例")] },
-		{ empId: "E2", name: "合成替换", segments: [segment("替换失败样例")] },
+		{ personId: "E1", name: "合成替换", segments: [segment("替换成功样例")] },
+		{ personId: "E2", name: "合成替换", segments: [segment("替换失败样例")] },
 	]);
 	await db.execute(
 		sql`update experience set derived_identity = 'old-standard'`,
@@ -254,14 +254,14 @@ test("暂存结果替换进去时，答不出的段带着未能作答进去，�
 
 test("正式表混着两版时替换进去，已是这一版的段保留自己的边", async () => {
 	await seed([
-		{ empId: "E1", name: "合成混合", segments: [segment("已是新版样例")] },
-		{ empId: "E2", name: "合成混合", segments: [segment("仍是旧版样例")] },
+		{ personId: "E1", name: "合成混合", segments: [segment("已是新版样例")] },
+		{ personId: "E2", name: "合成混合", segments: [segment("仍是旧版样例")] },
 	]);
 	const restore = answerChat(() => ({ items: [] }));
 	try {
 		assert.deepEqual(await runDerive(), { done: 2, left: 0 });
 		await db.execute(
-			sql`update experience set derived_identity = 'old-standard' where emp_id = 'E2'`,
+			sql`update experience set derived_identity = 'old-standard' where person_id = 'E2'`,
 		);
 		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
 	} finally {
@@ -274,12 +274,12 @@ test("正式表混着两版时替换进去，已是这一版的段保留自己�
 
 test("正式表里有两份解析标准时拒绝检索，统一后恢复", async () => {
 	await seed([
-		{ empId: "E1", name: "合成两版", segments: [segment("一版样例")] },
-		{ empId: "E2", name: "合成两版", segments: [segment("另一版样例")] },
+		{ personId: "E1", name: "合成两版", segments: [segment("一版样例")] },
+		{ personId: "E2", name: "合成两版", segments: [segment("另一版样例")] },
 	]);
 	await db.execute(sql`update experience set derived_identity = 'standard-a'`);
 	await db.execute(
-		sql`update experience set derived_identity = 'standard-b' where emp_id = 'E2'`,
+		sql`update experience set derived_identity = 'standard-b' where person_id = 'E2'`,
 	);
 	await assert.rejects(find(), /人才库正在更新判定标准/);
 	await db.execute(sql`update experience set derived_identity = 'standard-a'`);
@@ -289,7 +289,7 @@ test("正式表里有两份解析标准时拒绝检索，统一后恢复", async
 test("详情仅返回展示字段，记录身份与排序工作值留在服务端", async () => {
 	await seed([
 		{
-			empId: "E1",
+			personId: "E1",
 			name: "合成详情",
 			curLevel: "P6",
 			segments: [segment("详情边界样例")],
@@ -301,7 +301,12 @@ test("详情仅返回展示字段，记录身份与排序工作值留在服务�
 	assert.equal(detail.timeline[0]?.description, "详情边界样例");
 	for (const field of ["curLevelRank", "curLevelBand", "educationRank"])
 		assert.ok(!(field in detail.employee));
-	for (const field of ["empId", "contentKey", "derivedIdentity", "unemployed"])
+	for (const field of [
+		"personId",
+		"contentKey",
+		"derivedIdentity",
+		"unemployed",
+	])
 		assert.ok(!(field in (detail.timeline[0] ?? {})));
 	assert.equal(await employeeDetail("all", "missing"), null);
 });

@@ -60,7 +60,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		};
 		assert.equal(
 			conditionLabel(claim),
-			"入职前经历 · 大厂 · 字节 · 增长 · 2 年以上",
+			"外部经历 · 大厂 · 字节 · 增长 · 2 年以上",
 		);
 		assert.equal(
 			conditionLabel({ about: "experience", mode: "boost", company: ["字节"] }),
@@ -108,7 +108,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 			await routed(() => (
 				<ResultList
 					canMore={false}
-					empId={undefined}
+					personId={undefined}
 					failure={fault && { fault, onRetry: () => {} }}
 					growing={false}
 					wait={null}
@@ -187,7 +187,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		const text = seen(
 			<ResultList
 				canMore={false}
-				empId={undefined}
+				personId={undefined}
 				failure={null}
 				growing={false}
 				wait={null}
@@ -224,7 +224,7 @@ describe("产品文案使用常规 SaaS 语言", () => {
 		const text = seen(
 			<ResultList
 				canMore={false}
-				empId={undefined}
+				personId={undefined}
 				failure={null}
 				growing={false}
 				wait={{ list: "keep", phase: "completing", since: null }}

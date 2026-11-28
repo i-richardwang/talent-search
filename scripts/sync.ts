@@ -8,9 +8,21 @@ import "@tanstack/react-start/server-only";
 import { pool } from "#/db";
 import { runTask } from "#/server/tasks";
 
+const [flag, ...extra] = process.argv.slice(2);
+if (
+	extra.length ||
+	(flag && flag !== "--people-only" && flag !== "--knowledge-only")
+)
+	throw new Error("用法：bun run sync [--people-only | --knowledge-only]");
 const started = Date.now();
 const run = await runTask("sync", {
 	wait: true,
+	part:
+		flag === "--people-only"
+			? "people"
+			: flag === "--knowledge-only"
+				? "knowledge"
+				: "all",
 	echo: (line) => console.log(line),
 }).finally(() => pool.end());
 if (!run) throw new Error("排队等锁的调用不会返回 null");

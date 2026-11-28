@@ -22,7 +22,7 @@ before(async () => {
 	// 一个人加一段经历：外键要有人可指，说法表要有一行原文可引用
 	await seed([
 		{
-			empId: "C001",
+			personId: "C001",
 			name: "约束用例",
 			segments: [{ title: "深潜考据", months: 12 }],
 		},
@@ -32,17 +32,17 @@ before(async () => {
 describe("检索数据约束", () => {
 	test("待业标记属于内容身份，其他原始字段相同也区分两段", async () => {
 		const { rows } = await db.execute<{ content_key: string }>(sql`
-			insert into experience (emp_id, kind, unemployed, start_date, title, months)
+			insert into experience (person_id, kind, unemployed, start_date, title, months)
 			values ('C001', 'external', false, '2019-01-01', '相同原始字段', 12),
 				('C001', 'external', true, '2019-01-01', '相同原始字段', 12)
 			returning content_key`);
 		assert.equal(new Set(rows.map((row) => row.content_key)).size, 2);
 	});
 
-	test("待业只能属于入职前经历", async () => {
+	test("待业只能属于外部经历", async () => {
 		await assert.rejects(
 			db.execute(sql`
-			insert into experience (emp_id, kind, unemployed, start_date, months)
+			insert into experience (person_id, kind, unemployed, start_date, months)
 			values ('C001', 'internal', true, '2018-01-01', 12)`),
 			violates("experience_unemployed_external"),
 		);
@@ -55,9 +55,9 @@ describe("检索数据约束", () => {
 		months: number,
 	) =>
 		db.execute(sql`
-			insert into experience (emp_id, kind, start_date, end_date, months)
+			insert into experience (person_id, kind, start_date, end_date, months)
 			values ('C001', ${kind}, ${start}, ${end}, ${months})`);
-	test("经历来源只能是公司内或入职前", async () => {
+	test("经历来源只能是公司内或外部", async () => {
 		await assert.rejects(
 			insert("contractor", "2020-01-01", null, 1),
 			violates("experience_kind_valid"),
@@ -81,9 +81,9 @@ describe("检索数据约束", () => {
 	test("经历必须属于已存在的员工", async () => {
 		await assert.rejects(
 			db.execute(sql`
-				insert into experience (emp_id, kind, start_date, months)
+				insert into experience (person_id, kind, start_date, months)
 				values ('不存在', 'internal', '2020-01-01', 1)`),
-			violates("experience_emp_id_employee_emp_id_fk"),
+			violates("experience_person_id_person_person_id_fk"),
 		);
 	});
 

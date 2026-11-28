@@ -60,14 +60,14 @@ export async function scoreEvidence(
 		query,
 		rootTurnId,
 		async (store, { ranked, facts }) => {
-			const basis = new Map(ranked.map((r) => [r.empId, r.basis]));
+			const basis = new Map(ranked.map((r) => [r.personId, r.basis]));
 			const ids = new Map<string, Set<number>>();
 			for (const f of facts) {
 				const criterion = claims[f.claim]?.seek.criterion;
 				if (
 					!criterion ||
 					f.matchScore !== null ||
-					!basis.get(f.empId)?.[f.claim]
+					!basis.get(f.personId)?.[f.claim]
 				)
 					continue;
 				const group = ids.get(criterion) ?? new Set<number>();

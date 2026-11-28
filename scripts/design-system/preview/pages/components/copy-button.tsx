@@ -62,7 +62,7 @@ export function CopyButtonPage() {
 					"按下之后图标换成对勾，2 秒后回来；不另弹提示。",
 					"只有图标，title 写清复制的是什么，它同时是按钮的名字。",
 				],
-				usage: `<CopyButton content={empId} size="small" title="复制工号" />`,
+				usage: `<CopyButton content={personId} size="small" title="复制工号" />`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用复制按钮" },

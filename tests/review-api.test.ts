@@ -254,7 +254,7 @@ describe("提交判定", () => {
 	before(async () => {
 		await seed([
 			{
-				empId: "R001",
+				personId: "R001",
 				name: "甲",
 				segments: [
 					{ kind: "external", months: 12, extracted: { skills: ["数据分析"] } },

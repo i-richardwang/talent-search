@@ -120,19 +120,19 @@ export async function pendingInputs(
 		kind === "extract" ? extraction : alignment(await currentTree(client));
 	const { rows } = await client.query<{
 		id: number;
-		emp_id: string;
+		person_id: string;
 		title: string;
 		company: string;
 		description: string;
 	}>(
-		`select q.id,e.emp_id,e.title,e.company,e.description
+		`select q.id,e.person_id,e.title,e.company,e.description
 		from derive_request q join experience e on e.id=q.experience_id
 		where q.standard=$1 and q.result is null and q.failed_version is null and q.id % $2=$3
 		order by q.id limit $4`,
 		[spec.standard, parts, part, limit],
 	);
 	return {
-		empIds: [...new Set(rows.map((row) => row.emp_id))],
+		personIds: [...new Set(rows.map((row) => row.person_id))],
 		instructions: spec.system,
 		schema: z.toJSONSchema(spec.schema),
 		standard: spec.standard,

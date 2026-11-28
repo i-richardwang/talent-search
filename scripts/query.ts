@@ -44,7 +44,7 @@ for (const r of top) {
 	const e = r.employee;
 	// 打印名次依据：深度就是排序键
 	console.log(
-		`${r.depth.toFixed(3)}  ${e.name} ${e.empId}  ${e.curDept} / ${e.curTitle}`,
+		`${r.depth.toFixed(3)}  ${e.name} ${e.personId}  ${e.curDept} / ${e.curTitle}`,
 	);
 	const seen = new Set<number>();
 	for (const h of r.evidence) {

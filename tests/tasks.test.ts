@@ -102,7 +102,7 @@ describe("同步与解析", () => {
 		assert.equal(run.failure, null);
 
 		// 样例里是编出来的二十九个人，连同他们的绩效与高潜记录
-		assert.equal(await count("employee"), 29);
+		assert.equal(await count("person"), 29);
 		assert.equal(await count("record_stream"), 2);
 		// 48 行记录里同一期的两条修订只留最终一条
 		assert.equal(await count("employee_record"), 47);
@@ -252,18 +252,18 @@ describe("同步与解析", () => {
 		const one = list.rows.find((row) => row.segments > 0);
 		assert.ok(one);
 		assert.deepEqual(
-			(await listEmployees("all", one.name, 1)).rows.map((row) => row.empId),
-			[one.empId],
+			(await listEmployees("all", one.name, 1)).rows.map((row) => row.personId),
+			[one.personId],
 		);
 		await db.execute(
-			sql`update employee set name = ${`含%号`} where emp_id = ${one.empId}`,
+			sql`update person set name = ${`含%号`} where person_id = ${one.personId}`,
 		);
 		assert.deepEqual(
-			(await listEmployees("all", "%", 1)).rows.map((row) => row.empId),
-			[one.empId],
+			(await listEmployees("all", "%", 1)).rows.map((row) => row.personId),
+			[one.personId],
 		);
 
-		const person = await employeeData("all", one.empId);
+		const person = await employeeData("all", one.personId);
 		assert.ok(person);
 		assert.equal(person.segments.length, one.segments);
 		assert.ok(person.segments.every((segment) => segment.derived));
@@ -285,7 +285,7 @@ describe("同步与解析", () => {
 		const run = await runTask("sync");
 		assert.ok(run);
 		assert.equal(run.failure, null);
-		assert.equal(await count("employee"), 29);
+		assert.equal(await count("person"), 29);
 		assert.equal(await count("experience_phrase"), edges);
 		assert.equal(await underived(), 0);
 	});
@@ -461,7 +461,7 @@ describe("同步与解析", () => {
 		// 来由那一层：模块加载自己报的话，不是我们替它编的
 		assert.match(log, /↳/);
 		// 失败的同步一行都没动
-		assert.equal(await count("employee"), 29);
+		assert.equal(await count("person"), 29);
 	});
 });
 

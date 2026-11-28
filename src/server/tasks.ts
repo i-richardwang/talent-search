@@ -8,6 +8,7 @@
 
 import "@tanstack/react-start/server-only";
 import { eq, sql } from "drizzle-orm";
+import type { SyncPart } from "#/corpus/contract";
 import { type DeriveProgress, derive, progress } from "#/corpus/derive";
 import type { Judge } from "#/corpus/judgment";
 import type { Report } from "#/corpus/report";
@@ -43,14 +44,18 @@ const DERIVE_BUDGET_MS = 10 * 60_000;
 type TaskWork = (
 	session: CorpusSession,
 	report: Report,
-	input: { source: SourceConfig | null; rejudge: Rejudge | null },
+	input: {
+		source: SourceConfig | null;
+		rejudge: Rejudge | null;
+		part: SyncPart;
+	},
 ) => Promise<void>;
 
 /** 各自的道理在 `src/corpus/` 下的同名模块里。 */
 const WORK: Record<TaskKind, TaskWork> = {
-	sync: (session, report, { source }) => {
+	sync: (session, report, { source, part }) => {
 		if (!source) throw new Error("同步任务缺少数据源配置");
-		return sync(session, source, report);
+		return sync(session, source, report, part);
 	},
 	derive: async (session, report) => {
 		await derive(session, report, DERIVE_BUDGET_MS);
@@ -390,6 +395,7 @@ export async function runTask<K extends TaskKind>(
 	kind: K,
 	options: {
 		wait?: boolean;
+		part?: K extends "sync" ? SyncPart : never;
 		echo?: Report;
 		rejudge?: K extends "review" ? Rejudge | null : never;
 		queuedDerive?: K extends "derive" ? "automatic" | "manual" : never;
@@ -418,6 +424,7 @@ export async function runTask<K extends TaskKind>(
 			try {
 				await WORK[kind](session, say, {
 					rejudge: options.rejudge ?? null,
+					part: options.part ?? "all",
 					source,
 				});
 			} catch (error) {

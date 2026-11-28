@@ -17,7 +17,7 @@ describe("关键词候选", () => {
 		const { term } = await import("#/db/schema");
 		await seed([
 			{
-				empId: "S001",
+				personId: "S001",
 				name: "甲",
 				school: "东海大学",
 				segments: [
@@ -30,7 +30,7 @@ describe("关键词候选", () => {
 				],
 			},
 			{
-				empId: "S002",
+				personId: "S002",
 				name: "乙",
 				school: "东海大学",
 				segments: [
@@ -39,7 +39,7 @@ describe("关键词候选", () => {
 				],
 			},
 			{
-				empId: "S003",
+				personId: "S003",
 				name: "丙",
 				school: "南山理工学院",
 				segments: [
@@ -76,7 +76,7 @@ describe("关键词候选", () => {
 		assert.deepEqual(await suggest("all", "what", "周会"), []);
 	});
 
-	test("公司只给入职前的公司名，部门只给公司内的部门名；开头是这几个字的排前面，人数按人不按段", async () => {
+	test("公司只给外部的公司名，部门只给公司内的部门名；开头是这几个字的排前面，人数按人不按段", async () => {
 		assert.deepEqual(await suggest("all", "company", "星河"), [
 			{ value: "星河科技", people: 2 },
 			{ value: "银河星河事业部", people: 1 },

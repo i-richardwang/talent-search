@@ -54,7 +54,7 @@ function deriveServer({ builtin, schedule }: Caller) {
 		"derive_list",
 		{
 			description:
-				"取一批待抽取能力（extract）或对齐序列（align）的入职前经历。按返回的 instructions 与 schema 作答。inputs 为空表示当前这一类没有待办。多个处理方可约定同一 parts，各取不同的 part（从 0 开始）。",
+				"取一批待抽取能力（extract）或对齐序列（align）的外部经历。按返回的 instructions 与 schema 作答。inputs 为空表示当前这一类没有待办。多个处理方可约定同一 parts，各取不同的 part（从 0 开始）。",
 			inputSchema: deriveOptions,
 		},
 		(query) => readDeriveBatch(query, !builtin).then(toolResult, toolFailure),

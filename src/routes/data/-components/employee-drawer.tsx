@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ResumeSources } from "#/components/resume-sources";
 import { Block } from "#/components/ui/block";
 import { CopyButton } from "#/components/ui/copy-button";
 import { Descriptions, DescriptionsItem } from "#/components/ui/descriptions";
@@ -45,10 +46,12 @@ export function EmployeeDrawer({
 /** 一个人的档案和他名下的每一段：登记的字段和解析出的结果并排。 */
 export function EmployeeRecord({
 	employee,
+	sources = [],
 	segments,
 	close,
 }: {
 	employee: EmployeeProfile;
+	sources?: Parameters<typeof ResumeSources>[0]["items"];
 	segments: SegmentView[];
 	close: () => void;
 }) {
@@ -81,16 +84,21 @@ export function EmployeeRecord({
 					)}
 				</Descriptions>
 			}
-			extra={<CopyButton content={employee.empId} title="复制工号" />}
+			extra={
+				employee.empId && (
+					<CopyButton content={employee.empId} title="复制工号" />
+				)
+			}
 			title={
 				<>
 					{employee.name}
 					<span className="ms-2 font-normal text-fg-secondary text-base tabular-nums">
-						{employee.empId}
+						{employee.empId ?? employee.talentType}
 					</span>
 				</>
 			}
 		>
+			<ResumeSources items={sources} personId={employee.personId} />
 			{segments.length === 0 ? (
 				<Empty
 					description="名下还没有经历记录，请联系管理员。"
@@ -123,7 +131,7 @@ export function EmployeeRecord({
  * 内部经历的开始日可能早于入职日（并购、转正）。
  */
 const KINDS = [
-	["external", "入职前"],
+	["external", "外部"],
 	["internal", "公司内"],
 ] as const;
 

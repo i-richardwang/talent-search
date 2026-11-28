@@ -17,7 +17,9 @@ import { CLAIMS, COVERED } from "./conditions";
  * 人名、工号、公司、部门、学校全是编的，和人才库无关；类型都从产品代码导入。
  */
 
-type SampleExperience = EmployeeDetail["timeline"][number] & { empId: string };
+type SampleExperience = EmployeeDetail["timeline"][number] & {
+	personId: string;
+};
 
 /** 本公司在部门路径里的写法。 */
 const HOME = "某某科技";
@@ -25,7 +27,13 @@ const HOME = "某某科技";
 /** 六位候选人的档案，名单顺序就是这个顺序。 */
 export const EMPLOYEES: Employee[] = [
 	{
+		personId: "T0101",
 		empId: "T0101",
+		talentType: "在职员工",
+		accessKey: "synthetic",
+		pools: [],
+		recentCompany: "",
+		recentTitle: "",
 		name: "Talent 0101",
 		curDept: "推荐算法部",
 		curDeptPath: "示例科技>技术中心>推荐算法部",
@@ -45,7 +53,13 @@ export const EMPLOYEES: Employee[] = [
 		recruitment: "社招",
 	},
 	{
+		personId: "T0102",
 		empId: "T0102",
+		talentType: "在职员工",
+		accessKey: "synthetic",
+		pools: [],
+		recentCompany: "",
+		recentTitle: "",
 		name: "Talent 0102",
 		curDept: "搜索推荐部",
 		curDeptPath: "示例科技>技术中心>搜索推荐部",
@@ -65,7 +79,13 @@ export const EMPLOYEES: Employee[] = [
 		recruitment: "社招",
 	},
 	{
+		personId: "T0103",
 		empId: "T0103",
+		talentType: "在职员工",
+		accessKey: "synthetic",
+		pools: [],
+		recentCompany: "",
+		recentTitle: "",
 		name: "Talent 0103",
 		curDept: "推荐平台部",
 		curDeptPath: "示例科技>技术中心>推荐平台部",
@@ -85,7 +105,13 @@ export const EMPLOYEES: Employee[] = [
 		recruitment: "社招",
 	},
 	{
+		personId: "T0104",
 		empId: "T0104",
+		talentType: "在职员工",
+		accessKey: "synthetic",
+		pools: [],
+		recentCompany: "",
+		recentTitle: "",
 		name: "Talent 0104",
 		curDept: "内容理解部",
 		curDeptPath: "示例科技>技术中心>内容理解部",
@@ -105,7 +131,13 @@ export const EMPLOYEES: Employee[] = [
 		recruitment: "社招",
 	},
 	{
+		personId: "T0105",
 		empId: "T0105",
+		talentType: "在职员工",
+		accessKey: "synthetic",
+		pools: [],
+		recentCompany: "",
+		recentTitle: "",
 		name: "Talent 0105",
 		curDept: "用户增长部",
 		curDeptPath: "示例科技>技术中心>用户增长部",
@@ -125,7 +157,13 @@ export const EMPLOYEES: Employee[] = [
 		recruitment: "校招",
 	},
 	{
+		personId: "T0106",
 		empId: "T0106",
+		talentType: "在职员工",
+		accessKey: "synthetic",
+		pools: [],
+		recentCompany: "",
+		recentTitle: "",
 		name: "Talent 0106",
 		curDept: "广告算法部",
 		curDeptPath: "示例科技>技术中心>广告算法部",
@@ -151,7 +189,7 @@ function internal(
 	row: Pick<
 		SampleExperience,
 		| "id"
-		| "empId"
+		| "personId"
 		| "startDate"
 		| "endDate"
 		| "department"
@@ -182,7 +220,7 @@ function external(
 	row: Pick<
 		SampleExperience,
 		| "id"
-		| "empId"
+		| "personId"
 		| "startDate"
 		| "endDate"
 		| "company"
@@ -212,7 +250,7 @@ function external(
 export const EXPERIENCES: SampleExperience[] = [
 	external({
 		id: 101,
-		empId: "T0101",
+		personId: "T0101",
 		startDate: "2015-07-01",
 		endDate: "2019-06-30",
 		company: "某甲科技",
@@ -226,7 +264,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	internal({
 		id: 102,
-		empId: "T0101",
+		personId: "T0101",
 		startDate: "2019-07-01",
 		endDate: "2021-03-31",
 		department: "推荐算法部",
@@ -239,7 +277,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	internal({
 		id: 103,
-		empId: "T0101",
+		personId: "T0101",
 		startDate: "2021-04-01",
 		endDate: null,
 		department: "推荐算法部",
@@ -252,7 +290,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	external({
 		id: 201,
-		empId: "T0102",
+		personId: "T0102",
 		startDate: "2016-03-01",
 		endDate: "2020-02-29",
 		company: "某乙网络",
@@ -265,7 +303,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	internal({
 		id: 202,
-		empId: "T0102",
+		personId: "T0102",
 		startDate: "2020-03-02",
 		endDate: null,
 		department: "搜索推荐部",
@@ -278,7 +316,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	external({
 		id: 301,
-		empId: "T0103",
+		personId: "T0103",
 		startDate: "2013-07-01",
 		endDate: "2018-03-31",
 		company: "某丙数据",
@@ -292,7 +330,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	internal({
 		id: 302,
-		empId: "T0103",
+		personId: "T0103",
 		startDate: "2018-04-09",
 		endDate: "2022-12-31",
 		department: "推荐平台部",
@@ -305,7 +343,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	internal({
 		id: 303,
-		empId: "T0103",
+		personId: "T0103",
 		startDate: "2023-01-01",
 		endDate: null,
 		department: "推荐平台部",
@@ -318,7 +356,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	external({
 		id: 401,
-		empId: "T0104",
+		personId: "T0104",
 		startDate: "2017-07-01",
 		endDate: "2023-01-31",
 		company: "某丁智能",
@@ -333,7 +371,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	internal({
 		id: 402,
-		empId: "T0104",
+		personId: "T0104",
 		startDate: "2023-02-13",
 		endDate: null,
 		department: "内容理解部",
@@ -346,7 +384,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	external({
 		id: 501,
-		empId: "T0105",
+		personId: "T0105",
 		startDate: "2019-07-01",
 		endDate: "2022-06-30",
 		company: "某戊电商",
@@ -360,7 +398,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	internal({
 		id: 502,
-		empId: "T0105",
+		personId: "T0105",
 		startDate: "2022-07-04",
 		endDate: null,
 		department: "用户增长部",
@@ -374,7 +412,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	external({
 		id: 601,
-		empId: "T0106",
+		personId: "T0106",
 		startDate: "2012-07-01",
 		endDate: "2017-12-31",
 		company: "某己科技",
@@ -387,7 +425,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	external({
 		id: 602,
-		empId: "T0106",
+		personId: "T0106",
 		startDate: "2018-01-01",
 		endDate: "2024-04-30",
 		company: "某甲科技",
@@ -401,7 +439,7 @@ export const EXPERIENCES: SampleExperience[] = [
 	}),
 	internal({
 		id: 603,
-		empId: "T0106",
+		personId: "T0106",
 		startDate: "2024-05-20",
 		endDate: null,
 		department: "广告算法部",
@@ -415,8 +453,8 @@ export const EXPERIENCES: SampleExperience[] = [
 ];
 
 /** 一个人的全部经历段，按开始时间从早到晚。 */
-export function experiencesOf(empId: string): SampleExperience[] {
-	return EXPERIENCES.filter((x) => x.empId === empId);
+export function experiencesOf(personId: string): SampleExperience[] {
+	return EXPERIENCES.filter((x) => x.personId === personId);
 }
 
 /**
@@ -596,12 +634,12 @@ export const RESULTS: RankedResult[] = [
 ];
 
 /** 一个人在这次搜索里的那一条结果；不在名单上是 null。 */
-export function resultOf(empId: string): RankedResult | null {
-	return RESULTS.find((r) => r.employee.empId === empId) ?? null;
+export function resultOf(personId: string): RankedResult | null {
+	return RESULTS.find((r) => r.employee.personId === personId) ?? null;
 }
 
-export function evidenceOf(empId: string): Evidence[] {
-	return resultOf(empId)?.evidence ?? [];
+export function evidenceOf(personId: string): Evidence[] {
+	return resultOf(personId)?.evidence ?? [];
 }
 
 /** 各段经历抽出的能力词，已是标准写法；筛选「技能」一维从这里数。 */
@@ -617,10 +655,10 @@ const SKILLS: Record<number, string[]> = {
 
 /** 六个人的每段经历写成分面要读的那几列，和检索层取回的事实同形。 */
 const FACTS: PopulationFact[] = EXPERIENCES.map((x) => {
-	const person = EMPLOYEES.find((row) => row.empId === x.empId);
-	if (!person) throw new Error(`样例里没有 ${x.empId}`);
+	const person = EMPLOYEES.find((row) => row.personId === x.personId);
+	if (!person) throw new Error(`样例里没有 ${x.personId}`);
 	return {
-		empId: x.empId,
+		personId: x.personId,
 		months: x.months,
 		seqL1: x.seqL1 || x.seqInferredL1,
 		seqL2: x.seqL2 || x.seqInferredL2,
