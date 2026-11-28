@@ -281,7 +281,7 @@ describe("没作答", () => {
 		for (const raw of [
 			{
 				conditions: [
-					exp("入职前在甲辰科技待过", { where: "e.company = '甲辰科技'" }),
+					exp("外部在甲辰科技待过", { where: "e.company = '甲辰科技'" }),
 				],
 			},
 			{ conditions: [person("硕士", "p.education = '硕士'", "boost")] },

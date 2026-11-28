@@ -1,3 +1,4 @@
+import { durationMonths } from "#/lib/dates";
 /**
  * 源契约转换为 employee、experience、记录与公司知识各表写入行的纯管线。
  * 拒绝并报告非法、倒置、缺开始日或未来生效的区间；补齐开放区间，合并相邻同键段，
@@ -8,6 +9,7 @@ import { type CompanyMeta, ORDINAL_STREAM } from "#/db/schema";
 import { orgPathOf } from "#/lib/org";
 import {
 	EDUCATION_LADDER,
+	educationRank,
 	type SourceAssignment,
 	type SourceCompany,
 	type SourceCompanyAlias,
@@ -26,6 +28,7 @@ import type { Report } from "./report";
 
 export type EmployeeRow = {
 	emp_id: string;
+	linked_person_id: string | null;
 	name: string;
 	cur_dept: string;
 	/** 当前所在部门的完整路径，账号的数据范围按它判断；没有当前公司内任职时为空 */
@@ -116,7 +119,6 @@ export const UNEMPLOYED = "待业";
 
 const DAY_MS = 86_400_000;
 /** 一个月按多少天算：公历年平均 365.25 天 ÷ 12。 */
-const DAYS_PER_MONTH = 30.44;
 
 /** 源里的一个日期还没读出来时的三种状态。 */
 type Maybe = Date | null | "invalid";
@@ -164,15 +166,6 @@ function today(): Date {
 
 function isoDate(at: Date): string {
 	return at.toISOString().slice(0, 10);
-}
-
-/** 已校验闭区间按含首尾日的天数换算月数；倒置区间拒绝写库。 */
-function durationMonths(start: Date, end: Date): number {
-	if (end < start)
-		throw new Error(`无效日期区间：${isoDate(start)} — ${isoDate(end)}`);
-	const days = (end.getTime() - start.getTime()) / DAY_MS;
-	const months = Math.round((days + 1) / DAYS_PER_MONTH);
-	return months > 0 ? months : 1;
 }
 
 /**
@@ -468,6 +461,7 @@ function companyMeta(row: {
 /** 已归一化的档案行：日期读过，文本修剪过。 */
 type Profile = {
 	emp_id: string;
+	linked_person_id: string | null;
 	name: string;
 	hire_date: Date | null;
 	education_level: string;
@@ -492,6 +486,7 @@ function normalizeProfiles(rows: SourceEmployee[], report: Report): Profile[] {
 		if (!known) offLadder.set(education, (offLadder.get(education) ?? 0) + 1);
 		return {
 			emp_id: row.emp_id.trim(),
+			linked_person_id: row.linked_person_id?.trim() || null,
 			name: row.name.trim(),
 			hire_date: hire === "invalid" ? null : hire,
 			education_level: known ? education : "",
@@ -505,12 +500,6 @@ function normalizeProfiles(rows: SourceEmployee[], report: Report): Profile[] {
 	if (offLadder.size)
 		report(`  学历不在五档之内 ${tallied(offLadder, "行")}，学历已留空`);
 	return out;
-}
-
-/** 学历在五档里的位置，从 1 起。 */
-function educationRank(education: string): number | null {
-	const index = (EDUCATION_LADDER as readonly string[]).indexOf(education);
-	return index < 0 ? null : index + 1;
 }
 
 type Band = { band: string; rank: number };
@@ -576,6 +565,7 @@ function buildEmployee(
 			if (level && !band) unbanded.set(level, (unbanded.get(level) ?? 0) + 1);
 			return {
 				emp_id: profile.emp_id,
+				linked_person_id: profile.linked_person_id,
 				name: profile.name,
 				cur_dept: current?.department ?? "",
 				cur_dept_path: current?.department_path ?? "",

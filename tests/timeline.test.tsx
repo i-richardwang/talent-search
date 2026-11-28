@@ -8,7 +8,7 @@ const html = (rows: Segment[]) =>
 	renderToStaticMarkup(<Timeline counted={new Set()} rows={rows} />);
 
 describe("时间轴卡片内容", () => {
-	test("入职前经历显示日期、公司属性和自述", () => {
+	test("外部经历显示日期、公司属性和自述", () => {
 		const s = html([
 			seg({
 				kind: "external",
@@ -23,16 +23,16 @@ describe("时间轴卡片内容", () => {
 				mainIndustries: ["某行业", "另一行业"],
 			}),
 		]);
-		assert.ok(s.includes("入职前"));
+		assert.ok(s.includes("外部"));
 		assert.ok(s.includes("某档 · 某行业、另一行业 · 某性质"));
 		assert.ok(s.includes("负责渠道拓展与团队管理。"));
 	});
 
-	test("公司内的段不显示「入职前」", () => {
-		assert.ok(!html([seg()]).includes("入职前"));
+	test("公司内的段不显示「外部」", () => {
+		assert.ok(!html([seg()]).includes("外部"));
 	});
 
-	test("入职前的段写的是推断的序列并标明；登记的序列照原样写", () => {
+	test("外部的段写的是推断的序列并标明；登记的序列照原样写", () => {
 		const aligned = html([
 			seg({
 				kind: "external",

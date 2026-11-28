@@ -18,8 +18,13 @@ export const EDUCATION_LADDER = [
 	"博士",
 ] as const;
 
+export function educationRank(education: string) {
+	const index = (EDUCATION_LADDER as readonly string[]).indexOf(education);
+	return index < 0 ? null : index + 1;
+}
+
 /**
- * 一人一行。`emp_id` 是全库主键，其余是详情页会读的档案字段。
+ * 一人一行。`emp_id` 是 HRIS 的员工标识，其余是详情页会读的档案字段。
  *
  * `school` 和 `school_tier` 说的都是最高学历那所学校；学校档的分法（985、QS100……）
  * 由数据源给，档与档之间没有高低，只按取值筛。`overseas_educated` 是最高学历是不是
@@ -160,7 +165,12 @@ const COMPANY_ALIAS_COLUMNS = ["raw_name", "company"] as const;
 export type SourceEmployee = Record<
 	Exclude<(typeof EMPLOYEE_COLUMNS)[number], "overseas_educated">,
 	string
-> & { overseas_educated: boolean | null };
+> & {
+	overseas_educated: boolean | null;
+	linked_person_id?: string;
+	phone?: string;
+	email?: string;
+};
 export type SourceAssignment = Record<
 	(typeof ASSIGNMENT_COLUMNS)[number],
 	string
@@ -190,6 +200,9 @@ export type SourceCompanyAlias = Record<
 >;
 
 /** 一次抽取的全部产出。适配器的 `extract()` 返回它。 */
+/** 员工快照与公共公司、序列目录可由同一适配器分别发布。 */
+export type SyncPart = "all" | "people" | "knowledge";
+
 export type SourceData = {
 	employees: SourceEmployee[];
 	assignments: SourceAssignment[];
@@ -280,6 +293,12 @@ export function sourceData(raw: {
 		employees: conform(raw.employees, EMPLOYEE_COLUMNS, "employees").map(
 			(row, index) => ({
 				...row,
+				...Object.fromEntries(
+					["linked_person_id", "phone", "email"].flatMap((k) => {
+						const v = raw.employees[index]?.[k];
+						return typeof v === "string" && v.trim() ? [[k, v.trim()]] : [];
+					}),
+				),
 				overseas_educated: flag(
 					raw.employees,
 					"employees",

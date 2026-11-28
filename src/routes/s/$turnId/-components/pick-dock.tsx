@@ -95,7 +95,7 @@ function Chosen({
 	chosen: Pick[];
 	/** 此刻名单上有哪些人；不在里面的已选人标「不在名单上」。 */
 	onList: ReadonlySet<string>;
-	onRemove: (empId: string) => void;
+	onRemove: (personId: string) => void;
 }) {
 	return (
 		<Popover
@@ -112,12 +112,14 @@ function Chosen({
 									<ActionIcon
 										aria-label={`移除 ${one.name}`}
 										icon={XIcon}
-										onClick={() => onRemove(one.empId)}
+										onClick={() => onRemove(one.personId)}
 										size="small"
 									/>
 								}
-								description={onList.has(one.empId) ? undefined : "不在名单上"}
-								key={one.empId}
+								description={
+									onList.has(one.personId) ? undefined : "不在名单上"
+								}
+								key={one.personId}
 								title={one.name}
 							/>
 						))}
@@ -177,7 +179,10 @@ function ExportDialog({
 					try {
 						// 先记进操作记录，记下了才生成文件
 						await logExport({
-							data: { empIds: picked.map((one) => one.empId) },
+							data: picked.map(({ personId, accessKey }) => ({
+								personId,
+								accessKey,
+							})),
 						});
 						download(exportName(), await exportWorkbook(picked, names, on));
 					} catch {

@@ -11,7 +11,11 @@ import { opened, type Pick, select } from "#/routes/s/$turnId/-lib/picks";
 const row = (rank: number, title: string | null = null) => ({
 	pick: {
 		dept: null,
-		empId: `T000${rank}`,
+		personId: `T000${rank}`,
+		empId: `E${rank}`,
+		talentType: "在职员工",
+		accessKey: "0".repeat(32),
+		recentCompany: "",
 		evidence: [],
 		level: null,
 		name: `样例${rank}`,
@@ -28,11 +32,14 @@ const ids = (state: ReturnType<typeof opened>) => [...state.picked.keys()];
 
 describe("选择状态", () => {
 	test("点一下选中名单上的人，再点一下取消；不在名单上的人点不中", () => {
-		let state = select(opened(TURN, LIST), { empId: "T0002", type: "toggle" });
+		let state = select(opened(TURN, LIST), {
+			personId: "T0002",
+			type: "toggle",
+		});
 		assert.deepEqual(ids(state), ["T0002"]);
-		state = select(state, { empId: "T0002", type: "toggle" });
+		state = select(state, { personId: "T0002", type: "toggle" });
 		assert.deepEqual(ids(state), []);
-		const same = select(state, { empId: "T0009", type: "toggle" });
+		const same = select(state, { personId: "T0009", type: "toggle" });
 		assert.equal(same, state);
 	});
 
@@ -86,15 +93,21 @@ describe("选择状态", () => {
 	});
 
 	test("连选把两人之间的都选中，已选的不取消", () => {
-		let state = select(opened(TURN, LIST), { empId: "T0004", type: "toggle" });
+		let state = select(opened(TURN, LIST), {
+			personId: "T0004",
+			type: "toggle",
+		});
 		state = select(state, { from: 0, to: 2, type: "pickRange" });
 		assert.deepEqual(ids(state).sort(), ["T0001", "T0002", "T0003", "T0004"]);
 	});
 
 	test("移除不要求那个人在名单上", () => {
-		let state = select(opened(TURN, LIST), { empId: "T0001", type: "toggle" });
+		let state = select(opened(TURN, LIST), {
+			personId: "T0001",
+			type: "toggle",
+		});
 		state = select(state, { rows: [row(2)], turnId: TURN, type: "show" });
-		state = select(state, { empId: "T0001", type: "remove" });
+		state = select(state, { personId: "T0001", type: "remove" });
 		assert.equal(state.picked.size, 0);
 	});
 

@@ -47,17 +47,17 @@ before(async () => {
 	});
 	await seed([
 		...Array.from({ length: 6 }, (_, i) => ({
-			empId: `A${i}`,
+			personId: `A${i}`,
 			name: `甲${i}`,
 			segments: [external("星河科技", ["推荐系统"])],
 		})),
 		...Array.from({ length: 2 }, (_, i) => ({
-			empId: `B${i}`,
+			personId: `B${i}`,
 			name: `乙${i}`,
 			segments: [external("星河小厂", ["个性化推荐"])],
 		})),
 		{
-			empId: "C0",
+			personId: "C0",
 			name: "丙",
 			segments: [
 				{
@@ -69,18 +69,18 @@ before(async () => {
 			],
 		},
 		...Array.from({ length: 2 }, (_, i) => ({
-			empId: `E${i}`,
+			personId: `E${i}`,
 			name: `戊${i}`,
 			segments: [external("星图工作室", ["星图测绘"])],
 		})),
 		...Array.from({ length: 40 }, (_, i) => ({
-			empId: `D${i}`,
+			personId: `D${i}`,
 			name: `丁${i}`,
 			school: "银河学院",
 			segments: [external("考古研究所", ["考古"])],
 		})),
 		...Array.from({ length: 5 }, (_, i) => ({
-			empId: `F${i}`,
+			personId: `F${i}`,
 			name: `己${i}`,
 			segments: [external("测年实验室", ["碳十四测年"])],
 		})),
@@ -154,7 +154,7 @@ describe("捞说法", () => {
 });
 
 describe("看目录", () => {
-	test("公司只匹配入职前的公司名，部门只匹配公司内的部门名和路径，各给匹配到的写法和人数", async () => {
+	test("公司只匹配外部的公司名，部门只匹配公司内的部门名和路径，各给匹配到的写法和人数", async () => {
 		const [company] = await lookupNames("all", "company", ["星河"]);
 		assert.deepEqual(company, {
 			query: "星河",
@@ -286,7 +286,7 @@ describe("看目录", () => {
 			"problem",
 		);
 		assert.equal(
-			(await discover("all", { relation: "employee" })).kind,
+			(await discover("all", { relation: "person" })).kind,
 			"problem",
 		);
 	});
@@ -299,8 +299,8 @@ describe("看目录", () => {
 			label: "绩效",
 			period: "半年",
 			scale: ["B", "A"],
-			records: ["A0", "A1", "A2"].map((empId, i) => ({
-				empId,
+			records: ["A0", "A1", "A2"].map((personId, i) => ({
+				personId,
 				periodStart: "2025-01-01",
 				periodEnd: "2025-06-30",
 				value: i === 0 ? "B" : "A",
@@ -342,8 +342,8 @@ describe("看目录", () => {
 			stream: "hipo",
 			kind: "status",
 			label: "高潜",
-			records: ["A0", "A1", "A2"].map((empId, i) => ({
-				empId,
+			records: ["A0", "A1", "A2"].map((personId, i) => ({
+				personId,
 				periodStart: "2025-01-01",
 				value: i === 0 ? "观察" : "高潜",
 			})),
@@ -389,7 +389,7 @@ describe("试跑", () => {
 			conditions: compileConditions(parseQuery("推荐, +company:星河"))
 				.conditions,
 		});
-		// 丙那段没读过的原文「推荐召回」也是字面对得上的；公司只认入职前的公司名
+		// 丙那段没读过的原文「推荐召回」也是字面对得上的；公司只认外部的公司名
 		assert.deepEqual(
 			result.conditions.map((c) => c.people),
 			[9, 8],
@@ -483,12 +483,12 @@ describe("试跑", () => {
 					label: "按工号找",
 					mode: "must",
 					from: "person",
-					where: "p.emp_id = 'A0'",
+					where: "p.person_id = 'A0'",
 				},
 			],
 		});
 		assert.equal(result.conditions[0]?.people, 8);
-		assert.match(result.conditions[1]?.problem ?? "", /emp_id/);
+		assert.match(result.conditions[1]?.problem ?? "", /person_id/);
 		assert.equal(result.total, null);
 		assert.equal(result.unread, 0, "整份没跑，没有要读的");
 	});

@@ -30,7 +30,7 @@ export async function streamFacts(scope: Scope): Promise<StreamFact[]> {
 	return withCorpusSnapshot(scope, async (store) => {
 		const { rows } = await store.execute<StreamFact>(sql`
 			select s.stream, s.label, s.kind, s.period,
-				count(distinct r.emp_id)::int as people,
+				count(distinct r.person_id)::int as people,
 				count(distinct r.period_start)::int as periods,
 				to_char(min(r.period_start), 'YYYY-MM-DD') as first,
 				(select json_build_object(
@@ -55,7 +55,7 @@ export async function streamFacts(scope: Scope): Promise<StreamFact[]> {
 }
 
 /**
- * 入职前那些公司的概况。行业两列的人数和看这两列取值得到的是同一份（`valuesOf`），
+ * 外部那些公司的概况。行业两列的人数和看这两列取值得到的是同一份（`valuesOf`），
  * 这里按行业树排好：上级在前，下级跟在它后面。
  */
 export async function companyFacts(scope: Scope): Promise<CompanyFacts> {

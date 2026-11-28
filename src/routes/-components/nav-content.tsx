@@ -2,6 +2,7 @@ import { Link, useLoaderData, useMatchRoute } from "@tanstack/react-router";
 import {
 	ActivityIcon,
 	EllipsisIcon,
+	FolderOpenIcon,
 	ShieldCheckIcon,
 	SquarePenIcon,
 	TableIcon,
@@ -30,7 +31,7 @@ export function NavContent() {
 	const control = useNavControl();
 	const matchRoute = useMatchRoute();
 	const on = (
-		to: "/" | "/data" | "/terms" | "/tasks" | "/audit" | "/accounts",
+		to: "/" | "/pools" | "/data" | "/terms" | "/tasks" | "/audit" | "/accounts",
 	) => Boolean(matchRoute({ to, fuzzy: to !== "/" }));
 	const folded = control?.prefs.folded ?? [];
 	return (
@@ -61,6 +62,18 @@ export function NavContent() {
 					</NavGroups>
 				)}
 				<div aria-hidden className="min-h-0 flex-1" />
+				<NavItem
+					active={on("/pools")}
+					icon={FolderOpenIcon}
+					render={
+						<Link
+							to="/pools"
+							search={{ page: undefined, poolId: undefined, tab: undefined }}
+						/>
+					}
+				>
+					外部人才池
+				</NavItem>
 				<NavItem
 					active={on("/data")}
 					icon={TableIcon}

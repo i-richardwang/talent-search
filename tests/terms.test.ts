@@ -17,7 +17,7 @@ describe("标签页", () => {
 		const { term } = await import("#/db/schema");
 		await seed([
 			{
-				empId: "U001",
+				personId: "U001",
 				name: "甲",
 				segments: [
 					{
@@ -29,7 +29,7 @@ describe("标签页", () => {
 				],
 			},
 			{
-				empId: "U003",
+				personId: "U003",
 				name: "丙",
 				segments: [
 					// 只写了细的词：宽的「推荐系统」把他也数进去，细的那一行只有他
@@ -45,7 +45,7 @@ describe("标签页", () => {
 				],
 			},
 			{
-				empId: "U002",
+				personId: "U002",
 				name: "乙",
 				segments: [
 					// 同一个人两段都写了推荐系统：按人数只算一次
@@ -54,7 +54,7 @@ describe("标签页", () => {
 				],
 			},
 			{
-				empId: "U004",
+				personId: "U004",
 				name: "丁",
 				segments: [
 					// 只写了别名：标准词「推荐系统」那一行把他数进去

@@ -102,10 +102,10 @@ try {
 			{},
 			RESULT_MAX,
 		);
-		if (outcome.order === "employee")
+		if (outcome.order === "person")
 			throw new Error(`${c.name}：用例得有经历主张，只有人的条件排不出名次`);
 		const { results, total, empty } = outcome;
-		const rankOf = new Map(results.map((r, i) => [r.employee.empId, i + 1]));
+		const rankOf = new Map(results.map((r, i) => [r.person.personId, i + 1]));
 		const found = c.expect.filter((id) => rankOf.has(id));
 		const intruders = c.reject.filter((id) => rankOf.has(id));
 		recalled += found.length;

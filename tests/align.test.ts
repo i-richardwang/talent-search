@@ -90,7 +90,7 @@ describe("序列树", () => {
 	test("全公司使用同一份现行目录，历史登记和当前人才库的人群不决定可选序列", async () => {
 		await seed([
 			{
-				empId: "TREE",
+				personId: "TREE",
 				name: "合成甲",
 				segments: [{ months: 1, seqL1: "历史", seqL2: "旧岗位" }],
 			},

@@ -111,7 +111,7 @@ test("外部服务提交结果后由解析任务写入，与内置模型生成�
 	);
 	assert.ok(
 		(await listAudit("", 1)).rows.some(
-			(r) => r.action === "derive-read" && r.empId,
+			(r) => r.action === "derive-read" && r.personId,
 		),
 	);
 	const parts = [
@@ -292,8 +292,8 @@ test("同步删除了提供原文的经历时拒收旧请求，同样的输入�
 		])
 	).rows[0].experience_id;
 	await pool.query(
-		`insert into experience (emp_id,kind,unemployed,start_date,end_date,title,description,company,months)
-		select emp_id,kind,false,start_date-1,end_date,title,description,company,months from experience where id=$1`,
+		`insert into experience (person_id,kind,unemployed,start_date,end_date,title,description,company,months)
+		select person_id,kind,false,start_date-1,end_date,title,description,company,months from experience where id=$1`,
 		[original],
 	);
 	await pool.query("delete from experience where id=$1", [original]);
@@ -315,8 +315,8 @@ test("同步删除了提供原文的经历时拒收旧请求，同样的输入�
 	const { deriveStandard } = await import("#/corpus/derive-standard");
 	const { version } = await deriveStandard(pool);
 	await pool.query(
-		`insert into experience (emp_id,kind,unemployed,start_date,end_date,title,description,company,months,derived_identity)
-		select emp_id,kind,false,start_date-1,end_date,title,description,company,months,$2 from experience where id=$1`,
+		`insert into experience (person_id,kind,unemployed,start_date,end_date,title,description,company,months,derived_identity)
+		select person_id,kind,false,start_date-1,end_date,title,description,company,months,$2 from experience where id=$1`,
 		[source.experience_id, version],
 	);
 	await pool.query("delete from experience where id=$1", [

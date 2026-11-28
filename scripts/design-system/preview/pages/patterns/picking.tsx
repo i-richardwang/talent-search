@@ -55,7 +55,7 @@ function Playground() {
 					<Routed url={`/s/${LATEST_TURN_ID}`}>
 						<ResultList
 							canMore={false}
-							empId={undefined}
+							personId={undefined}
 							failure={null}
 							growing={growing}
 							wait={null}
@@ -136,7 +136,7 @@ function Dock({
 	const picks = usePicks(LATEST_TURN_ID, shown);
 	const { setShown: pick } = picks;
 	useEffect(() => {
-		pick(OUTCOME.results.slice(0, count).map((r) => r.employee.empId));
+		pick(OUTCOME.results.slice(0, count).map((r) => r.person.personId));
 		setShown(outcome);
 	}, [count, outcome, pick]);
 	return (

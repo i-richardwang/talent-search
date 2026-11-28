@@ -31,18 +31,18 @@ export async function experienceAnswers(
 	try {
 		await client.query("begin");
 		await client.query("delete from derive_request");
-		await client.query("delete from employee");
+		await client.query("delete from person");
 		await client.query("delete from sequence_catalog");
 		await client.query(
 			"insert into sequence_catalog select * from unnest($1::text[],$2::text[])",
 			[tree.map((r) => r[0]), tree.map((r) => r[1])],
 		);
 		await client.query(
-			"insert into employee(emp_id,name) select n::text,'验收样例' from generate_series(1,$1::int) n",
+			"insert into person(person_id,name) select n::text,'验收样例' from generate_series(1,$1::int) n",
 			[rows.length],
 		);
 		await client.query(
-			`insert into experience(emp_id,kind,unemployed,title,company,description,start_date,months)
+			`insert into experience(person_id,kind,unemployed,title,company,description,start_date,months)
 			select n::text,r.kind,r.unemployed,r.title,r.company,r.description,date '2020-01-01',1
 			from jsonb_array_elements($1::jsonb) with ordinality as v(item,n),
 			lateral jsonb_to_record(v.item) as r(kind text,unemployed boolean,title text,company text,description text)`,
@@ -65,7 +65,7 @@ export async function experienceAnswers(
 	);
 	if (pending.rowCount) await runCorpusAgent(kind, report);
 	const answers = await pool.query<{ result: unknown }>(
-		`select q.result from experience e left join derive_request q on q.standard=$1 and q.input_key=${inputKeySql} order by e.emp_id::int`,
+		`select q.result from experience e left join derive_request q on q.standard=$1 and q.input_key=${inputKeySql} order by e.person_id::int`,
 		[standard],
 	);
 	return answers.rows.map((r) => r.result);

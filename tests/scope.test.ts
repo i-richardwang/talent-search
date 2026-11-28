@@ -15,8 +15,9 @@ const { execute, probe } = await import("#/search/execute");
 const { findPhrases, suggest } = await import("#/search/search");
 const { discover } = await import("#/server/discover");
 const { listTerms } = await import("#/server/terms");
-const { allVisible, employeeData, employeeDetail, listEmployees } =
-	await import("#/server/data");
+const { canExport, personData, personDetail, listPeople } = await import(
+	"#/server/data"
+);
 const { segmentTexts } = await import("#/server/judged");
 const { createTurn } = await import("#/server/turn");
 const { emptySpec } = await import("#/search/spec");
@@ -33,7 +34,7 @@ let chain: string;
 before(async () => {
 	await seed([
 		{
-			empId: "R1",
+			personId: "R1",
 			name: "合成出行甲",
 			org: `${RIDE}>运营部`,
 			segments: [
@@ -47,7 +48,7 @@ before(async () => {
 			],
 		},
 		{
-			empId: "F1",
+			personId: "F1",
 			name: "合成金融乙",
 			org: `${ORG}>金融事业部`,
 			segments: [
@@ -60,7 +61,7 @@ before(async () => {
 				},
 			],
 		},
-		{ empId: "N1", name: "合成无部门丙", org: "", segments: [] },
+		{ personId: "N1", name: "合成无部门丙", org: "", segments: [] },
 	]);
 	const { deriveStandard } = await import("#/corpus/derive-standard");
 	const { pool } = await import("#/db");
@@ -87,8 +88,8 @@ const everyone: QueryCondition = {
 	from: "person",
 	where: "true",
 };
-const ids = (list: { employee: { empId: string } }[]) =>
-	list.map((r) => r.employee.empId).sort();
+const ids = (list: { person: { personId: string } }[]) =>
+	list.map((r) => r.person.personId).sort();
 
 describe("名单和试跑只有范围里的人", () => {
 	test("同一份条件，替出行的任务找只有出行的人；不属于任何任务的读全部", async () => {
@@ -118,32 +119,47 @@ describe("名单和试跑只有范围里的人", () => {
 describe("详情、数据页和导出", () => {
 	test("范围外的人的详情和不存在的人一样是 null", async () => {
 		const scope = { account: ride };
-		assert.equal((await employeeDetail(scope, "R1"))?.employee.empId, "R1");
-		assert.equal(await employeeDetail(scope, "F1"), null);
-		assert.equal((await employeeData(scope, "R1"))?.employee.empId, "R1");
-		assert.equal(await employeeData(scope, "F1"), null);
+		assert.equal((await personDetail(scope, "R1"))?.person.personId, "R1");
+		assert.equal(await personDetail(scope, "F1"), null);
+		assert.equal((await personData(scope, "R1"))?.person.personId, "R1");
+		assert.equal(await personData(scope, "F1"), null);
 	});
 
 	test("数据页只列范围里的人；没有数据范围的账号一个人都看不到", async () => {
 		const rows = async (id: string) =>
-			(await listEmployees({ account: id }, "", 1)).rows.map((r) => r.empId);
+			(await listPeople({ account: id }, "", 1)).rows.map((r) => r.personId);
 		assert.deepEqual(await rows(ride), ["R1"]);
 		assert.deepEqual(await rows(none), []);
 	});
 
 	test("其他部门有不同的序列时，账号看到的解析进度仍按全库标准计算", async () => {
 		const scope = { account: ride };
-		const list = await listEmployees(scope, "", 1);
+		const list = await listPeople(scope, "", 1);
 		assert.deepEqual(
-			list.rows.map((r) => [r.empId, r.pending]),
+			list.rows.map((r) => [r.personId, r.pending]),
 			[["R1", 0]],
 		);
-		assert.equal((await employeeData(scope, "R1"))?.segments[0]?.derived, true);
+		assert.equal((await personData(scope, "R1"))?.segments[0]?.derived, true);
 	});
 
-	test("导出的名单里有范围外的工号就不收", async () => {
-		assert.equal(await allVisible({ account: ride }, ["R1"]), true);
-		assert.equal(await allVisible({ account: ride }, ["R1", "F1"]), false);
+	test("导出逐人核对范围、资料标记和重复选择", async () => {
+		const scope = { account: ride };
+		const result = await execute(query(everyone), chain);
+		const person = result.results.find(
+			(r) => r.person.personId === "R1",
+		)?.person;
+		assert.ok(person);
+		const entry = { personId: person.personId, accessKey: person.accessKey };
+		assert.equal(await canExport(scope, [entry]), true);
+		assert.equal(
+			await canExport(scope, [entry, { ...entry, personId: "F1" }]),
+			false,
+		);
+		assert.equal(await canExport(scope, [entry, entry]), false);
+		assert.equal(
+			await canExport(scope, [{ ...entry, accessKey: "0".repeat(32) }]),
+			false,
+		);
 	});
 });
 
@@ -177,8 +193,8 @@ describe("查询理解的工具和读经历", () => {
 	});
 
 	test("读经历拿不到范围外的段", async () => {
-		const { rows } = await db.execute<{ id: number; emp_id: string }>(
-			sql`select id, emp_id from experience`,
+		const { rows } = await db.execute<{ id: number; person_id: string }>(
+			sql`select id, person_id from experience`,
 		);
 		const texts = await segmentTexts(
 			chain,
@@ -186,7 +202,7 @@ describe("查询理解的工具和读经历", () => {
 		);
 		assert.deepEqual(
 			[...texts.keys()],
-			rows.filter((r) => r.emp_id === "R1").map((r) => r.id),
+			rows.filter((r) => r.person_id === "R1").map((r) => r.id),
 		);
 	});
 });
@@ -203,7 +219,7 @@ describe("没有声明替谁读", () => {
 describe("范围跟着人现在在哪", () => {
 	test("调进出行的人，下一次读取就在出行的范围里", async () => {
 		await db.execute(
-			sql`update employee set cur_dept_path = ${`${RIDE}>风控部`} where emp_id = 'F1'`,
+			sql`update employment set cur_dept_path = ${`${RIDE}>风控部`} where person_id = 'F1'`,
 		);
 		assert.deepEqual(ids((await execute(query(dispatch), chain)).results), [
 			"F1",

@@ -17,10 +17,10 @@ import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import {
-	EMPLOYEES,
 	evidenceOf,
 	experience,
 	experiencesOf,
+	PEOPLE,
 } from "../../samples/people";
 
 /**
@@ -39,22 +39,22 @@ const NODES: [label: string, hit: boolean][] = [
 ];
 
 function Playground() {
-	const [empId, setEmpId] = useState("T0101");
+	const [personId, setPersonId] = useState("T0101");
 	const [withEvidence, setWithEvidence] = useState(true);
-	const rows = experiencesOf(empId);
-	const counted = countedOf(withEvidence ? evidenceOf(empId) : []);
+	const rows = experiencesOf(personId);
+	const counted = countedOf(withEvidence ? evidenceOf(personId) : []);
 	const external = rows.filter((x) => x.kind === "external").length;
 	return (
 		<div className="flex flex-col gap-4">
 			<Controls>
 				<Control label="候选人">
 					<Segmented<string>
-						onChange={setEmpId}
-						options={EMPLOYEES.map((e) => ({
+						onChange={setPersonId}
+						options={PEOPLE.map((e) => ({
 							label: e.name,
-							value: e.empId,
+							value: e.personId,
 						}))}
-						value={empId}
+						value={personId}
 					/>
 				</Control>
 				<Control>
@@ -68,7 +68,7 @@ function Playground() {
 				footer={
 					<>
 						<span>公司内 {rows.length - external} 段</span>
-						<span>入职前 {external} 段</span>
+						<span>外部 {external} 段</span>
 						<span>命中 {counted.size} 段</span>
 					</>
 				}
@@ -117,9 +117,9 @@ function Nodes() {
 }
 
 /** 使用场景里单独画一段：编号加偏移，不和试用里的锚点重名。 */
-function single(id: number, empId: string, offset: number) {
+function single(id: number, personId: string, offset: number) {
 	const row = { ...experience(id), id: id + offset };
-	const hit = countedOf(evidenceOf(empId)).has(id);
+	const hit = countedOf(evidenceOf(personId)).has(id);
 	return { counted: new Set(hit ? [row.id] : []), rows: [row] };
 }
 
@@ -127,8 +127,8 @@ function Usage() {
 	return (
 		<ExampleGrid>
 			<Example
-				description="入职前的段标「入职前」，序列是按岗位名推断的一对，后面注「推断」；公司档、行业、性质接在起止后面。"
-				title="入职前的经历"
+				description="外部的段标「外部」，序列是按岗位名推断的一对，后面注「推断」；公司档、行业、性质接在起止后面。"
+				title="外部的经历"
 			>
 				<div className="w-full">
 					<Timeline {...single(602, "T0106", 6000)} />
@@ -154,15 +154,15 @@ function Usage() {
 	);
 }
 
-/** 经历时间线：人的详情里在职与入职前连续排的经历段，最近的在最上面。 */
+/** 经历时间线：人的详情里在职与外部连续排的经历段，最近的在最上面。 */
 export function TimelinePage() {
 	return (
 		<DocPage
-			facts={[`${NODES.length} 种节点`, "入职前标签", "命中铺底"]}
+			facts={[`${NODES.length} 种节点`, "外部标签", "命中铺底"]}
 			rules={{
 				notes: [
 					"节点就是证据行那颗 Dot，只说这一段命中了没有，不另画一套命中点。",
-					"「入职前」用描边标签说，不靠节点的样子区分。",
+					"「外部」用描边标签说，不靠节点的样子区分。",
 					"算数的段整段铺一块填充的 Block，不写它为哪条条件算数、凭哪个字段：条件名只在条件那一排出现。",
 					"不算数的段是无底的 Block，边距相同，各段的字对齐。",
 					"推断序列只标「推断」，不和登记的序列混为一谈。",

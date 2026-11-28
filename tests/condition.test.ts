@@ -154,7 +154,7 @@ describe("不可信输入 → 条件", () => {
 		);
 	});
 
-	test("一段经历满足不了的主张整条丢掉：公司和公司档只在入职前，部门只在公司内", () => {
+	test("一段经历满足不了的主张整条丢掉：公司和公司档只在外部，部门只在公司内", () => {
 		const department = { about: "experience", department: ["推荐平台部"] };
 		assert.deepEqual(
 			conditionsOf([

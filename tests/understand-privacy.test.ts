@@ -18,13 +18,13 @@ const { eq } = await import("drizzle-orm");
 /** 认得出是谁的东西：一样都不该出现在请求体里。 */
 const SECRETS = {
 	names: ["龙骧甲", "龙骧乙", "龙骧丙"],
-	empIds: ["ZQ7301", "ZQ7302", "ZQ7303"],
+	personIds: ["ZQ7301", "ZQ7302", "ZQ7303"],
 };
 
 before(async () => {
 	await seed(
 		SECRETS.names.map((name, i) => ({
-			empId: SECRETS.empIds[i] as string,
+			personId: SECRETS.personIds[i] as string,
 			name,
 			education: "硕士",
 			segments: [
@@ -44,8 +44,8 @@ before(async () => {
 		label: "绩效",
 		period: "半年",
 		scale: ["C", "B", "A"],
-		records: SECRETS.empIds.map((empId) => ({
-			empId,
+		records: SECRETS.personIds.map((personId) => ({
+			personId,
 			periodStart: "2025-01-01",
 			periodEnd: "2025-06-30",
 			value: "A",
@@ -55,8 +55,8 @@ before(async () => {
 		stream: "hipo",
 		kind: "status",
 		label: "高潜",
-		records: SECRETS.empIds.map((empId) => ({
-			empId,
+		records: SECRETS.personIds.map((personId) => ({
+			personId,
 			periodStart: "2025-01-01",
 			value: "高潜池",
 		})),
@@ -116,7 +116,7 @@ test("一次理解发给模型的请求体里没有姓名和工号", async () =>
 	const read = reading[0]?.messages.find((m) => m.role === "user")?.content;
 	const texts = [
 		...(read ?? "").matchAll(
-			/入职前的经历，公司：星河科技\\n岗位：首席观星官\\n技能：推荐系统/g,
+			/外部的经历，公司：星河科技\\n岗位：首席观星官\\n技能：推荐系统/g,
 		),
 	];
 	assert.equal(texts.length, 3, read ?? "");
@@ -140,7 +140,7 @@ test("一次理解发给模型的请求体里没有姓名和工号", async () =>
 	assert.match(prompt, /档从低到高 C、B、A/, "评级流写档");
 	assert.match(prompt, /取值有 高潜池/, "状态流写取值");
 	for (const body of bodies)
-		for (const secret of [...SECRETS.names, ...SECRETS.empIds])
+		for (const secret of [...SECRETS.names, ...SECRETS.personIds])
 			assert.ok(!body.includes(secret), `请求体里出现了「${secret}」`);
 });
 

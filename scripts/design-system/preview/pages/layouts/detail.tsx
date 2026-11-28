@@ -8,7 +8,7 @@ import {
 } from "#/routes/s/$turnId/-components/person";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
 import { Routed } from "../../routed";
-import { EMPLOYEES, experiencesOf, resultOf } from "../../samples/people";
+import { experiencesOf, PEOPLE, resultOf } from "../../samples/people";
 import { LATEST_TURN_ID } from "../../samples/thread";
 import { Shell } from "./home";
 
@@ -19,15 +19,15 @@ import { Shell } from "./home";
  */
 
 /** 样例里一个人的详情；工号不在样例里就是找不到。 */
-export function PersonPane({ empId }: { empId: string }) {
-	const employee = EMPLOYEES.find((row) => row.empId === empId);
-	if (!employee) return <PersonNotFound />;
-	const result = resultOf(empId);
+export function PersonPane({ personId }: { personId: string }) {
+	const person = PEOPLE.find((row) => row.personId === personId);
+	if (!person) return <PersonNotFound />;
+	const result = resultOf(personId);
 	return (
 		<Person
-			employee={employee}
+			person={person}
 			evidence={result?.evidence ?? []}
-			timeline={experiencesOf(empId)}
+			timeline={experiencesOf(personId)}
 		/>
 	);
 }
@@ -39,10 +39,10 @@ type State = "loaded" | "pending" | "missing";
  * 候选人的控件。
  */
 export function DetailPage() {
-	const [empId, setEmpId] = useState("T0101");
+	const [personId, setPersonId] = useState("T0101");
 	const [state, setState] = useState<State>("loaded");
 	return (
-		<Routed url={`/s/${LATEST_TURN_ID}/p/${empId}`}>
+		<Routed url={`/s/${LATEST_TURN_ID}/p/${personId}`}>
 			<Shell>
 				<PageHeader
 					right={
@@ -60,13 +60,13 @@ export function DetailPage() {
 							/>
 							<Segmented<string>
 								aria-label="候选人"
-								onChange={setEmpId}
-								options={EMPLOYEES.map((e) => ({
+								onChange={setPersonId}
+								options={PEOPLE.map((e) => ({
 									label: e.name,
-									value: e.empId,
+									value: e.personId,
 								}))}
 								size="small"
-								value={empId}
+								value={personId}
 							/>
 						</div>
 					}
@@ -77,7 +77,7 @@ export function DetailPage() {
 						conversation={null}
 						detail={
 							state === "loaded" ? (
-								<PersonPane empId={empId} />
+								<PersonPane personId={personId} />
 							) : state === "pending" ? (
 								<PersonPending />
 							) : (

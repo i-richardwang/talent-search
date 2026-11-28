@@ -16,6 +16,8 @@ import type { View } from "#/routes/s/$turnId/-lib/view-params";
 import type { Facets } from "#/search/result";
 
 const FACETS: Facets = {
+	talentType: [{ value: "外部候选人", n: 5 }],
+	pool: [{ value: "示例池", n: 5 }],
 	seq: [
 		{ value: { l1: "技术", l2: "数据科学" }, n: 114 },
 		{ value: { l1: "商业分析", l2: "数据科学" }, n: 27 },
@@ -62,7 +64,7 @@ const labels = (view: View) =>
 describe("选中项的文案", () => {
 	test("URL 里的裸值一律翻成界面文案", () => {
 		assert.deepEqual(labels({ kind: "internal" }), ["公司内经历"]);
-		assert.deepEqual(labels({ kind: "external" }), ["入职前经历"]);
+		assert.deepEqual(labels({ kind: "external" }), ["外部经历"]);
 		assert.deepEqual(labels({ minMonths: 12 }), ["1 年"]);
 		assert.deepEqual(labels({ minMonths: 6 }), ["6 个月"]);
 	});
@@ -200,13 +202,15 @@ describe("控件侧", () => {
 		assert.deepEqual(
 			fields({}).map((f) => f.title),
 			[
+				"人才类型",
+				"人才池",
 				"序列",
 				"职级",
 				"经历来源",
 				"经历时长",
-				"入职前公司",
-				"入职前行业",
-				"入职前技能",
+				"外部公司",
+				"外部行业",
+				"外部技能",
 				"招聘渠道",
 				"学历",
 				"学校档",

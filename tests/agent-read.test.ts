@@ -50,7 +50,7 @@ const numbered = (prefix: string, n: number) =>
 before(async () => {
 	await seed([
 		{
-			empId: "XJ01",
+			personId: "XJ01",
 			name: "合成巡检甲",
 			curLevel: "P5",
 			segments: [
@@ -67,7 +67,7 @@ before(async () => {
 			],
 		},
 		{
-			empId: "XJ02",
+			personId: "XJ02",
 			name: "合成巡检乙",
 			curLevel: "P7",
 			segments: [
@@ -81,7 +81,7 @@ before(async () => {
 			],
 		},
 		{
-			empId: "XJ03",
+			personId: "XJ03",
 			name: "合成巡检丙",
 			segments: [
 				{
@@ -93,18 +93,18 @@ before(async () => {
 			],
 		},
 		...["A", "B"].map((id) => ({
-			empId: `PZ${id}`,
+			personId: `PZ${id}`,
 			name: `合成配载${id}`,
 			segments: [{ months: 24, title: `配载员${id}` }],
 		})),
-		...numbered("CC", MANY).map((empId) => ({
-			empId,
-			name: `合成${empId}`,
+		...numbered("CC", MANY).map((personId) => ({
+			personId,
+			name: `合成${personId}`,
 			segments: [{ months: 24, title: "叉车调度" }],
 		})),
-		...numbered("ZP", TOO_MANY).map((empId, i) => ({
-			empId,
-			name: `合成${empId}`,
+		...numbered("ZP", TOO_MANY).map((personId, i) => ({
+			personId,
+			name: `合成${personId}`,
 			curLevel: i < LEADS ? "P8" : "P5",
 			segments: [{ months: 12, title: i < LEADS ? "装配班长" : "装配工" }],
 		})),
@@ -205,7 +205,7 @@ test("已入围者按匹配分排序，待确认的加分经历仍按相同顺�
 	};
 	await conclude(root, criterion, true, ["PZA", "PZB"]);
 	const listed = async () =>
-		(await execute(query, root)).results.map((r) => r.employee.empId);
+		(await execute(query, root)).results.map((r) => r.person.personId);
 	const pending = async () =>
 		(await probe(query, root)).unconfirmed.map((s) => s.experienceId);
 	const before = await pending();
@@ -278,7 +278,7 @@ describe("读经历", () => {
 		assert.equal(
 			segments[0]?.text,
 			[
-				"入职前的经历，公司：乙未机械",
+				"外部的经历，公司：乙未机械",
 				"岗位：巡检员",
 				"简历原文：负责夜班巡检",
 			].join("\n"),
@@ -305,7 +305,7 @@ describe("读经历", () => {
 		const tail = "后期转去做钢轨探伤作业";
 		await seed([
 			{
-				empId: "TS01",
+				personId: "TS01",
 				name: "合成探伤",
 				segments: [
 					{
@@ -340,7 +340,7 @@ describe("读经历", () => {
 		];
 		await seed(
 			descriptions.map((description, i) => ({
-				empId: `BUDGET${i}`,
+				personId: `BUDGET${i}`,
 				name: "合成分批",
 				curLevel: i === 0 ? "P8" : "P5",
 				segments: [{ months: 12, title: "合成输入分批", description }],
@@ -403,7 +403,7 @@ describe("读经历", () => {
 			{ conditions: [judged("分批", ["合成输入分批"], criterion)] },
 			search,
 		);
-		assert.deepEqual(outcome.results.map((r) => r.employee.empId).sort(), [
+		assert.deepEqual(outcome.results.map((r) => r.person.personId).sort(), [
 			"BUDGET0",
 			"BUDGET2",
 			"BUDGET3",
@@ -427,7 +427,7 @@ describe("读经历", () => {
 		const listed = async () => {
 			const outcome = await execute(query, search);
 			return [
-				outcome.results.map((r) => r.employee.empId).sort(),
+				outcome.results.map((r) => r.person.personId).sort(),
 				outcome.incomplete,
 			];
 		};
@@ -542,7 +542,7 @@ describe("读经历", () => {
 		const MOULDS = READ_BATCH * 2;
 		await seed([
 			{
-				empId: "CAST_HIGH",
+				personId: "CAST_HIGH",
 				name: "合成铸件甲",
 				curLevel: "P8",
 				segments: [
@@ -554,7 +554,7 @@ describe("读经历", () => {
 				],
 			},
 			{
-				empId: "CAST_LOW",
+				personId: "CAST_LOW",
 				name: "合成铸件乙",
 				curLevel: "P5",
 				segments: [
@@ -586,7 +586,7 @@ describe("读经历", () => {
 			],
 		};
 		assert.deepEqual(
-			(await execute(query, search)).results.map((r) => r.employee.empId),
+			(await execute(query, search)).results.map((r) => r.person.personId),
 			["CAST_LOW"],
 		);
 	});

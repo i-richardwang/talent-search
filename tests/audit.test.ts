@@ -21,7 +21,7 @@ const told = async (needle = "") =>
 	(await listAudit(needle, 1)).rows.map((row) => [
 		row.username,
 		row.action,
-		row.empId ?? row.text,
+		row.personId ?? row.text,
 	]);
 
 test("搜索和记录同一个事务写下：说的话或改完的条件；没写成的一轮不留痕，删掉搜索不带走它", async () => {
@@ -46,8 +46,8 @@ test("搜索和记录同一个事务写下：说的话或改完的条件；没�
 
 test("查看和导出一个人一行；按账号、工号、姓名、搜索内容都找得到，新的在前", async () => {
 	await seed([
-		{ empId: "synthetic-1", name: "合成甲", segments: [] },
-		{ empId: "synthetic-2", name: "合成乙", segments: [] },
+		{ personId: "synthetic-1", name: "合成甲", segments: [] },
+		{ personId: "synthetic-2", name: "合成乙", segments: [] },
 	]);
 	await recordView(OWNER, "synthetic-1");
 	await recordExport(OWNER, ["synthetic-1", "synthetic-2"]);
@@ -63,23 +63,23 @@ test("查看和导出一个人一行；按账号、工号、姓名、搜索内�
 	]);
 	const all = await listAudit("synthetic.owner", 1);
 	assert.equal(all.total, 5);
-	assert.equal(all.rows[0]?.empName, "合成乙");
+	assert.equal(all.rows[0]?.personName, "合成乙");
 	assert.match(all.rows[0]?.at ?? "", /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/);
 	assert.equal((await listAudit("没有这个词", 1)).total, 0);
 });
 
 test("一行只有一个对象：搜索带内容，查看和导出带人，管理账号带那个账号", async () => {
 	for (const row of [
-		{ action: "search" as const, empId: "synthetic-1", text: "算法" },
+		{ action: "search" as const, personId: "synthetic-1", text: "算法" },
 		{ action: "search" as const },
 		{ action: "view" as const, text: "算法" },
 		{ action: "export" as const },
 		{ action: "view" as const, accountId: OWNER },
-		{ action: "disable-account" as const, empId: "synthetic-1" },
+		{ action: "disable-account" as const, personId: "synthetic-1" },
 		{ action: "create-account" as const },
 	])
 		await assert.rejects(
 			db.insert(auditEvent).values({ userId: OWNER, ...row }),
-			violates("audit_event_object_and_actor"),
+			violates("audit_object_source_v2"),
 		);
 });

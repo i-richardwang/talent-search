@@ -3,8 +3,8 @@ import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { AdminPage } from "#/routes/-components/admin-page";
 import { AccountTable } from "#/routes/accounts/-components/account-table";
 import { AuditTable } from "#/routes/audit/-components/audit-table";
-import { EmployeeRecord } from "#/routes/data/-components/employee-drawer";
-import { EmployeeTable } from "#/routes/data/-components/employee-table";
+import { PeopleTable } from "#/routes/data/-components/people-table";
+import { PersonRecord } from "#/routes/data/-components/person-drawer";
 import { TaskBoard } from "#/routes/tasks/-components/task-board";
 import { TermRecord } from "#/routes/terms/-components/term-drawer";
 import { TermTable } from "#/routes/terms/-components/term-table";
@@ -12,20 +12,20 @@ import { Routed } from "../../routed";
 import {
 	ACCOUNT_ROWS,
 	AUDIT_ROWS,
-	EMPLOYEE_ROWS,
 	EXCLUDED_ROWS,
 	ORG_TREE,
+	PEOPLE_ROWS,
 	SEGMENTS,
 	SKILL_ROWS,
 	TASK_LANES,
 	TERM_DETAILS,
 } from "../../samples/admin";
-import { EMPLOYEES } from "../../samples/people";
+import { PEOPLE } from "../../samples/people";
 import { LayoutSwitch, Shell } from "./home";
 
 /*
  * 管理页：`src/routes/-components/admin-page.tsx` 的外壳里放任务、数据、词表、审计、账号五页的
- * 产品内容（`task-board.tsx`、`employee-table.tsx`、`term-table.tsx`、`audit-table.tsx`、
+ * 产品内容（`task-board.tsx`、`people-table.tsx`、`term-table.tsx`、`audit-table.tsx`、
  * `account-table.tsx`）。
  * 哪一页由内存 router 的地址决定，导航栏底上的几项和页底的切换都能换。服务端函数
  * 在设计系统里是调用即失败的桩：找词和翻页按地址上的 `q`、`page` 在样例上算，
@@ -101,20 +101,20 @@ function Tasks() {
 /** 数据页：按姓名或工号找人。 */
 function Data() {
 	const { opened, page, q } = useListView();
-	const found = EMPLOYEE_ROWS.filter(
-		(row) => row.name.includes(q) || row.empId.includes(q),
+	const found = PEOPLE_ROWS.filter(
+		(row) => row.name.includes(q) || row.personId.includes(q),
 	);
 	const navigate = useNavigate();
-	const employee = EMPLOYEES.find((e) => e.empId === opened);
+	const person = PEOPLE.find((e) => e.personId === opened);
 	return (
 		<AdminPage title="数据">
-			<EmployeeTable list={pageOfRows(found, page)} q={q} selected={opened} />
-			{employee && (
-				<EmployeeRecord
+			<PeopleTable list={pageOfRows(found, page)} q={q} selected={opened} />
+			{person && (
+				<PersonRecord
 					close={() => void navigate({ search: { page, q }, to: "/data" })}
-					employee={employee}
+					person={person}
 					segments={SEGMENTS}
-					key={employee.empId}
+					key={person.personId}
 				/>
 			)}
 		</AdminPage>
@@ -165,8 +165,8 @@ function Audit() {
 		[
 			row.username,
 			row.name,
-			row.empId,
-			row.empName,
+			row.personId,
+			row.personName,
 			row.text,
 			row.accountUsername,
 			row.accountName,

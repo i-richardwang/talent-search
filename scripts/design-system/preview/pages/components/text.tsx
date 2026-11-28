@@ -238,7 +238,7 @@ export function TextPage() {
 					"shiny 只给「正在进行」的几个字；配 type 时静止色就是那一档。",
 					"工号等要对齐位数的编号用 code，不另写 font-mono。",
 				],
-				usage: `<Text ellipsis={{ tooltip: true }}>{department}</Text>\n<Text code size="xs" type="tertiary">{empId}</Text>\n<Text shiny type="secondary">正在理解需求</Text>`,
+				usage: `<Text ellipsis={{ tooltip: true }}>{department}</Text>\n<Text code size="xs" type="tertiary">{personId}</Text>\n<Text shiny type="secondary">正在理解需求</Text>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用文字" },

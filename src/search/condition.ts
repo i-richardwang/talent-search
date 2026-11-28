@@ -5,7 +5,7 @@
  * 一张条件表里有两种条件：
  *
  * - **经历主张**（`about: "experience"`）：这个人有一段（或几段）经历，**同时**满足写下的
- *   每一项——做过什么（`what`）、在哪（入职前的 `company` / `companyTag`，公司内的
+ *   每一项——做过什么（`what`）、在哪（外部的 `company` / `companyTag`，公司内的
  *   `department`）、什么时候（`kind`）、多久（`minMonths`，满足其余各项的段累计的月数）。
  * - **人的条件**（`about: "person"`）：职级、学历、招聘渠道、学校档、海外学历、学校。
  *   有高低的两维（职级档、学历）还可以说「某档及以上」（`atLeast`）。
@@ -44,7 +44,7 @@ export type Mode = (typeof MODES)[number];
 export const PERSON_MODES = ["must", "boost"] as const;
 export type PersonMode = (typeof PERSON_MODES)[number];
 
-/** 人的条件能写在哪几维：有词表的几维是 `employee` 上的列，学校名是自由文本。 */
+/** 人的条件能写在哪几维：有词表的几维是 `person_card` 上的列，学校名是自由文本。 */
 export const PERSON_FIELDS = [
 	"level",
 	"education",
@@ -75,13 +75,13 @@ export type ExperienceCondition = {
 	mode: Mode;
 	/** 做过什么。取值 OR，各按字面包含匹配；`what[0]` 是代表词。 */
 	what?: Some<string>;
-	/** 入职前在名字含这几个字之一的公司。 */
+	/** 外部在名字含这几个字之一的公司。 */
 	company?: Some<string>;
 	/** 公司内在名字或部门路径含这几个字之一的部门。 */
 	department?: Some<string>;
 	/** 在这几档公司之一。取值是词表里的档。 */
 	companyTag?: Some<string>;
-	/** 公司内的任职，还是入职前的经历。 */
+	/** 公司内的任职，还是外部的经历。 */
 	kind?: Kind;
 	/** 满足其余各项的段累计至少这么多个月。 */
 	minMonths?: number;
@@ -211,7 +211,7 @@ function experienceOf(
 	const minMonths = DIMENSIONS.minMonths.parse(entry.minMonths);
 	if (!what && !company && !department && !companyTag && !kind && !minMonths)
 		return null;
-	// 公司和公司档只在入职前经历上，部门只在公司内任职上：一段经历不能两样都是
+	// 公司和公司档只在外部经历上，部门只在公司内任职上：一段经历不能两样都是
 	const external = Boolean(company || companyTag) || kind === "external";
 	const internal = Boolean(department) || kind === "internal";
 	if (external && internal) return null;

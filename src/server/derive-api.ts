@@ -45,10 +45,10 @@ export async function readDeriveBatch(
 	options: z.output<typeof deriveOptions>,
 	external = true,
 ) {
-	const { empIds, ...body } = await withReadSnapshot("all", (client) =>
+	const { personIds, ...body } = await withReadSnapshot("all", (client) =>
 		pendingInputs(client, options),
 	);
-	if (external) await recordDeriveRead(empIds);
+	if (external) await recordDeriveRead(personIds);
 	return body;
 }
 

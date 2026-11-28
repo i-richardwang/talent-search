@@ -1,6 +1,6 @@
 /**
  * 集成测试使用临时 schema、真实 PostgreSQL 和进程内合成模型端点。
- * 表结构由 schema.ts 推导；不创建索引。字符袋嵌入、按查询语法读句子和按字面读经历的假理解用于
+ * 表结构、约束与唯一索引由 schema.ts 推导。字符袋嵌入、按查询语法读句子和按字面读经历的假理解用于
  * 验证机制，真实模型的语义质量由 eval 验收。测试运行不读取真实人才数据或模型密钥。
  */
 import { createServer } from "node:http";
@@ -344,6 +344,15 @@ export function breakUnderstanding(): () => void {
 	};
 }
 
+let resumeAnswer: unknown;
+let resumeImageFirst = false;
+let resumeTrace = { tools: [] as string[], images: [] as string[] };
+export function answerResume(value: unknown, imageFirst = false) {
+	resumeAnswer = value;
+	resumeImageFirst = imageFirst;
+	resumeTrace = { tools: [], images: [] };
+	return resumeTrace;
+}
 /**
  * OpenAI 兼容的 `/embeddings` 与 `/chat/completions`，只认这两个路径。
  */
@@ -410,6 +419,56 @@ function startModelServer() {
 						},
 						"tool_calls",
 					);
+				if (request.tools?.some((t) => t.function.name === "read_page_text")) {
+					const replies = messages.filter((m) => m.role === "tool");
+					const previous = messages.flatMap(
+						(m) => m.tool_calls?.map((t) => t.function.name) ?? [],
+					);
+					const lastTool = previous.at(-1);
+					const imageParts = messages.flatMap((m) =>
+						m.role === "user" && Array.isArray(m.content)
+							? m.content
+									.filter((p) => p.type === "image_url")
+									.map((p) => p.image_url.url as string)
+							: [],
+					);
+					if (
+						messages.some(
+							(m) =>
+								m.role === "tool" &&
+								JSON.stringify(m.content).includes("base64,"),
+						) ||
+						(previous.includes("view_page_image") && !imageParts.length)
+					) {
+						res.writeHead(400).end("缺少标准 user 图片消息");
+						return;
+					}
+					let next: string, input: unknown;
+					if (!previous.length) {
+						next = resumeImageFirst ? "view_page_image" : "read_page_text";
+						input = { page: 1 };
+					} else if (
+						lastTool === "submit_resume" &&
+						JSON.parse(replies.at(-1)?.content ?? "{}").error === "请先读完各页"
+					) {
+						next = "read_page_text";
+						input = { page: 2 };
+					} else if (
+						lastTool === "read_page_text" &&
+						JSON.parse(replies.at(-1)?.content ?? "{}").text === ""
+					) {
+						next = "view_page_image";
+						input = { page: 1 };
+					} else {
+						next = "submit_resume";
+						input = {
+							resume: lastTool === "submit_resume" ? resumeAnswer : { name: 7 },
+						};
+					}
+					resumeTrace.tools.push(next);
+					if (imageParts.length) resumeTrace.images = imageParts;
+					return calls([[next, input]]);
+				}
 				// 语料 agent 从工具结果读题，并以真正的 tool_calls 作答。
 				const deriveAgent = request.tools?.some(
 					(t) => t.function.name === "derive_list",
@@ -650,6 +709,9 @@ export async function setup({ corpusWriter = false } = {}) {
 	process.env.LLM_BASE_URL = modelServer.url;
 	process.env.LLM_MODEL = "fake";
 	// 语料侧那三处聊天调用也指向同一台假端点，回答由 `answerChat` 设置
+	process.env.RESUME_BASE_URL = modelServer.url;
+	process.env.RESUME_MODEL = "fake-resume";
+	delete process.env.RESUME_API_KEY;
 	process.env.EXTRACT_BASE_URL = modelServer.url;
 	process.env.EXTRACT_MODEL = "fake";
 	delete process.env.ALIGN_MODEL;
@@ -695,7 +757,7 @@ export const violates = (constraint: string) => (error: unknown) =>
 
 /** 一个人 + 他的若干段经历。字段用默认值兜底，测试里只写与断言相关的那几个。 */
 type Seed = {
-	empId: string;
+	personId: string;
 	name: string;
 	/** 夹具里职级自成一档，档高取名字里的数字（P6 → 6） */
 	curLevel?: string;
@@ -712,7 +774,7 @@ type Seed = {
 		months: number;
 		/** 省略表示至今。近因因子看的就是它。 */
 		endDate?: string;
-		/** 入职前的公司名 */
+		/** 外部的公司名 */
 		company?: string;
 		/** 公司内的部门名与部门路径 */
 		department?: string;
@@ -720,7 +782,7 @@ type Seed = {
 		title?: string;
 		seqL1?: string;
 		seqL2?: string;
-		/** 入职前的段由模型对齐的序列（真语料里由 src/corpus/align.ts 写；夹具直接给）。 */
+		/** 外部的段由模型对齐的序列（真语料里由 src/corpus/align.ts 写；夹具直接给）。 */
 		seqInferredL1?: string;
 		seqInferredL2?: string;
 		description?: string;
@@ -745,7 +807,7 @@ type StreamSeed = {
 	period?: string;
 	scale?: readonly string[];
 	records: {
-		empId: string;
+		personId: string;
 		value: string;
 		periodStart: string;
 		periodEnd?: string;
@@ -827,14 +889,16 @@ export async function seed(rows: Seed[]) {
 	await insertSeed(rows);
 	const { db } = await import("#/db");
 	await db.execute(
-		sql`analyze employee, experience, experience_phrase, phrase, scale`,
+		sql`analyze person,employment,profile_source,profile_experience, experience, experience_phrase, phrase, scale`,
 	);
 }
 
 async function insertSeed(rows: Seed[]) {
 	const { db } = await import("#/db");
 	const {
-		employee: emp,
+		person,
+		employment,
+		profileSource,
 		experience: exp,
 		phrase: ph,
 		experiencePhrase: ep,
@@ -845,20 +909,32 @@ async function insertSeed(rows: Seed[]) {
 	const rankOf = (level: string) => Number(level.replace(/\D/g, ""));
 	const educationRank = (education: string) =>
 		(EDUCATION_LADDER as readonly string[]).indexOf(education) + 1;
-	await db.insert(emp).values(
+	await db.insert(person).values(
 		rows.map((r) => ({
-			empId: r.empId,
+			personId: r.personId,
 			name: r.name,
-			curLevel: r.curLevel ?? "",
-			curDeptPath: r.org ?? ORG,
-			curLevelBand: r.curLevel ?? "",
-			curLevelRank: r.curLevel ? rankOf(r.curLevel) : null,
-			recruitment: r.recruitment ?? "",
 			educationLevel: r.education ?? "",
 			educationRank: r.education ? educationRank(r.education) : null,
 			school: r.school ?? "",
 			schoolTier: r.schoolTier ?? "",
 			overseasEducated: r.overseasEducated ?? null,
+		})),
+	);
+	await db.insert(employment).values(
+		rows.map((r) => ({
+			personId: r.personId,
+			empId: r.personId,
+			curLevel: r.curLevel ?? "",
+			curDeptPath: r.org ?? ORG,
+			curLevelBand: r.curLevel ?? "",
+			curLevelRank: r.curLevel ? rankOf(r.curLevel) : null,
+			recruitment: r.recruitment ?? "",
+		})),
+	);
+	await db.insert(profileSource).values(
+		rows.map((r) => ({
+			personId: r.personId,
+			sourceKind: "hris",
 		})),
 	);
 	// 档位表和同步写的一样（`corpus/pipeline.ts` 的 `scaleRows`）：职级档取人身上出现过的档和
@@ -891,7 +967,7 @@ async function insertSeed(rows: Seed[]) {
 					// 起始日只要自洽即可：打分看的是 months 与 endDate，不看它
 					const start = `20${String(10 + (day++ % 80)).padStart(2, "0")}-01-01`;
 					return {
-						empId: r.empId,
+						personId: r.personId,
 						kind: s.kind ?? "internal",
 						unemployed: s.unemployed ?? false,
 						startDate: start,
@@ -917,6 +993,10 @@ async function insertSeed(rows: Seed[]) {
 			),
 		)
 		.returning();
+	await db.execute(sql`insert into profile_experience(profile_id,person_id,experience_id)
+			select f.id,e.person_id,e.id from experience e join profile_source f using(person_id)
+			where f.source_kind='hris' and e.id=any(${sql.param(inserted.map((e) => e.id))}::int[])`);
+
 	// 说法去重后各存一行，经历段按路指向它们——组合方式和 src/corpus/derive.ts 是
 	// 同一个函数。抽取结果夹具直接给：seed 的入参和 inserted 顺序一致，按下标对回去。
 	const specs = rows.flatMap((r) => r.segments);
@@ -972,21 +1052,21 @@ export async function conclude(
 	rootTurnId: string,
 	criterion: string,
 	fits: boolean,
-	empIds: readonly string[],
+	personIds: readonly string[],
 	title?: string,
 ) {
 	const { db } = await import("#/db");
 	const { saveVerdicts, segmentTexts } = await import("#/server/judged");
 	const { rows } = await db.execute<{ id: number }>(sql`
 		select id from experience
-		where emp_id = any(${sql.param([...empIds])}::text[])
+		where person_id = any(${sql.param([...personIds])}::text[])
 			and (${title ?? null}::text is null or title = ${title ?? null})`);
 	const segments = await segmentTexts(
 		rootTurnId,
 		rows.map((row) => row.id),
 	);
 	if (segments.size !== rows.length || rows.length === 0)
-		throw new Error(`没有找到要存结论的经历：${empIds.join("、")}`);
+		throw new Error(`没有找到要存结论的经历：${personIds.join("、")}`);
 	await saveVerdicts(
 		rootTurnId,
 		[...segments.values()].map(({ content }) => ({

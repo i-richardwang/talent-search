@@ -16,21 +16,21 @@ import {
 import { TextLink } from "#/components/ui/text-link";
 import { dots, integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
-import type { EmployeeRow } from "#/server/data";
+import type { PersonRow } from "#/server/data";
 import { listSearch, useSearchDraft } from "../../-components/admin-page";
 import { TablePager } from "../../-components/table-pager";
 
 /**
- * 数据页的内容：按姓名或工号找人，和库里的人那张表。`selected` 是右侧开着详情的工号；
+ * 数据页的内容：按姓名、工号或最近公司找人。`selected` 是右侧详情的人员编号；
  * `pending` 是换词或翻页后新的一页还没取回，表体画同样行数的占位。
  */
-export function EmployeeTable({
+export function PeopleTable({
 	list,
 	q,
 	selected,
 	pending = false,
 }: {
-	list: TablePage<EmployeeRow>;
+	list: TablePage<PersonRow>;
 	q: string;
 	selected: string | undefined;
 	pending?: boolean;
@@ -43,12 +43,12 @@ export function EmployeeTable({
 	return (
 		<div className="flex flex-col gap-4">
 			<SearchBar
-				aria-label="搜索姓名或工号"
+				aria-label="搜索姓名、工号或最近公司"
 				className="max-w-60"
 				loading={pending}
 				onChange={setNeedle}
 				onSearch={search}
-				placeholder="搜索姓名或工号"
+				placeholder="搜索姓名、工号或最近公司"
 				value={needle}
 			/>
 			<Block className="overflow-hidden" variant="outlined">
@@ -99,23 +99,23 @@ export function EmployeeTable({
 							) : (
 								list.rows.map((row) => {
 									const detail = {
-										params: { empId: row.empId },
+										params: { personId: row.personId },
 										search: listSearch(list.page, q),
-										to: "/data/$empId",
+										to: "/data/$personId",
 									} as const;
 									return (
 										<TableRow
 											data-state={
-												row.empId === selected ? "selected" : undefined
+												row.personId === selected ? "selected" : undefined
 											}
-											key={row.empId}
+											key={row.personId}
 											onActivate={() => void navigate(detail)}
 										>
 											<TableCell
 												cellLabel="工号"
 												className="whitespace-nowrap font-mono text-fg-secondary"
 											>
-												{row.empId}
+												{row.empId ?? row.talentType}
 											</TableCell>
 											{/* 整行已在 Tab 序里；姓名是给中键、右键用的真链接，不另占 Tab 位 */}
 											<TableCell cellSlot="title" className="whitespace-nowrap">
@@ -128,7 +128,9 @@ export function EmployeeTable({
 												</TextLink>
 											</TableCell>
 											<TableCell cellLabel="当前" className="text-fg-secondary">
-												{dots(row.curDept, row.curTitle)}
+												{row.talentType === "外部候选人"
+													? dots(row.recentCompany, row.recentTitle)
+													: dots(row.curDept, row.curTitle)}
 											</TableCell>
 											<TableCell
 												cellLabel="经历"

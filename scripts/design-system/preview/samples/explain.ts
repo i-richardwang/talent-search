@@ -40,10 +40,10 @@ export const EXPLAIN_SAMPLES: Sample[] = [
 			months: null,
 			options: [
 				{
-					lead: "入职前经历",
+					lead: "外部经历",
 					rows: [
 						{
-							field: "入职前行业",
+							field: "外部行业",
 							kind: "fact",
 							value: [
 								{ tag: "到店与本地生活" },
@@ -90,9 +90,9 @@ export const EXPLAIN_SAMPLES: Sample[] = [
 			months: 36,
 			options: [
 				{
-					lead: "入职前经历",
+					lead: "外部经历",
 					rows: [
-						{ field: "入职前公司", kind: "fact", value: [{ tag: "头部大厂" }] },
+						{ field: "外部公司", kind: "fact", value: [{ tag: "头部大厂" }] },
 						{
 							field: "岗位",
 							kind: "fact",
@@ -112,7 +112,7 @@ export const EXPLAIN_SAMPLES: Sample[] = [
 			id: "sample-perf",
 			params: { band: "A", times: 2 },
 			where:
-				"(select count(*) from rating r where r.emp_id = p.emp_id and r.stream = 'perf' and r.period_end >= current_date - interval '3 years' and r.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band)) >= :times",
+				"(select count(*) from rating r where r.person_id = p.person_id and r.stream = 'perf' and r.period_end >= current_date - interval '3 years' and r.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band)) >= :times",
 			label: "近三年绩效 A 及以上至少两次",
 			mode: "must",
 		},

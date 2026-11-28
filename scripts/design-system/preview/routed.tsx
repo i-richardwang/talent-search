@@ -32,7 +32,7 @@ const Content = createContext<ReactNode>(null);
 const PATHS = [
 	"/",
 	"/data",
-	"/data/$empId",
+	"/data/$personId",
 	"/terms",
 	"/terms/$word",
 	"/tasks",
@@ -79,7 +79,7 @@ function memoryRouter(url: string, rootData: RootData) {
 		routeTree: root.addChildren([
 			...PATHS.map((path) => createRoute({ getParentRoute: () => root, path })),
 			turn.addChildren([
-				createRoute({ getParentRoute: () => turn, path: "p/$empId" }),
+				createRoute({ getParentRoute: () => turn, path: "p/$personId" }),
 			]),
 		]),
 	});
@@ -119,10 +119,10 @@ export function Routed({
 }
 
 /**
- * 内存 router 地址上开着的是哪个人：`/s/:turnId/p/:empId` 的最后一段，没开是 undefined。
+ * 内存 router 地址上开着的是哪个人：`/s/:turnId/p/:personId` 的最后一段，没开是 undefined。
  * 页的内容处在根路由的匹配里，读不到子路由的参数，所以从地址上取。
  */
-export function useOpenEmpId() {
+export function useOpenPersonId() {
 	return useRouterState({
 		select: (state) => /\/p\/([^/]+)$/.exec(state.location.pathname)?.[1],
 	});

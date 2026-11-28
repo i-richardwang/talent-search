@@ -22,19 +22,19 @@ const { withCorpusSnapshot } = await import("#/db/snapshot");
 
 describe("语料快照", () => {
 	/** 一笔写者的短事务：加一个人一段经历。解析和同步写入都是这种事务。 */
-	async function writeOne(empId: string) {
+	async function writeOne(personId: string) {
 		const writer = await pool.connect();
 		try {
 			await writer.query("begin");
 			await writer.query("set local lock_timeout = '3s'");
 			await writer.query(
-				"insert into employee (emp_id, name) values ($1, $1)",
-				[empId],
+				"insert into person (person_id, name) values ($1, $1)",
+				[personId],
 			);
 			await writer.query(
-				`insert into experience (emp_id, kind, start_date, months)
+				`insert into experience (person_id, kind, start_date, months)
 				 values ($1, 'internal', '2020-01-01', 12)`,
-				[empId],
+				[personId],
 			);
 			await writer.query("commit");
 		} finally {
@@ -45,7 +45,7 @@ describe("语料快照", () => {
 	test("一次快照里的多条语句只看得见一个整体", async () => {
 		await seed([
 			{
-				empId: "SNAP001",
+				personId: "SNAP001",
 				name: "快照前就在",
 				segments: [{ title: "快照读取验证", months: 12 }],
 			},

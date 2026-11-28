@@ -127,7 +127,7 @@ function Playground() {
 				</Control>
 				<Control>
 					<Checkbox checked={external} onChange={setExternal}>
-						入职前
+						外部
 					</Checkbox>
 				</Control>
 				<Control>

@@ -19,9 +19,9 @@ const search = (spec: SearchSpec) => find(spec, SEARCH);
 before(async () => {
 	const { db } = await import("#/db");
 	const { term } = await import("#/db/schema");
-	const person = (empId: string, skill: string) => ({
-		empId,
-		name: `合成${empId}`,
+	const person = (personId: string, skill: string) => ({
+		personId,
+		name: `合成${personId}`,
 		segments: [
 			{ kind: "external" as const, months: 24, extracted: { skills: [skill] } },
 		],
@@ -45,8 +45,8 @@ before(async () => {
 	]);
 });
 
-const ids = (outcome: { results: { employee: { empId: string } }[] }) =>
-	outcome.results.map((r) => r.employee.empId).sort();
+const ids = (outcome: { results: { person: { personId: string } }[] }) =>
+	outcome.results.map((r) => r.person.personId).sort();
 
 test("捞到一项的一种写法，整项的写法都算；属于它的细词不跟着带", async () => {
 	assert.deepEqual(ids(await search({ conditions: [claim("服务端")] })), [

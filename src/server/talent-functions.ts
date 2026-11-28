@@ -1,0 +1,114 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { decisionSchema } from "#/ingestion/decision";
+import { touchSchema } from "#/ingestion/touch";
+import { organizations } from "./accounts";
+import { administrator, authenticated } from "./auth-functions";
+import { wakeIngestionJob } from "./jobs";
+import { decideImport, reviewImport, uploadResume } from "./talent-import";
+import {
+	addTouch,
+	changeTouch,
+	poolBoard,
+	removeMember,
+	setTalentPool,
+} from "./talent-pools";
+
+export const loadPoolBoard = createServerFn({ method: "GET" })
+	.middleware([authenticated])
+	.validator(
+		z.object({
+			page: z.int().positive(),
+			pool: z.string().optional(),
+			tab: z.enum(["members", "imports"]),
+		}),
+	)
+	.handler(({ context, data }) => poolBoard(context.viewer.id, data));
+export const reviewResume = createServerFn({ method: "GET" })
+	.middleware([authenticated])
+	.validator(z.string())
+	.handler(({ context, data }) => reviewImport(context.viewer.id, data));
+export const changePool = createServerFn({ method: "POST" })
+	.middleware([administrator])
+	.validator(
+		z.object({
+			id: z.string().optional(),
+			name: z.string().trim().min(1).max(100),
+			org: z.string().max(500).nullable(),
+		}),
+	)
+	.handler(({ context, data }) => setTalentPool(context.viewer.id, data));
+export const recordTouch = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator(
+		z.object({ pool: z.string(), person: z.string(), touch: touchSchema }),
+	)
+	.handler(({ context, data }) =>
+		addTouch(context.viewer.id, data.pool, data.person, data.touch),
+	);
+export const reviseTouch = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator(
+		z.object({
+			pool: z.string(),
+			id: z.int().positive(),
+			touch: touchSchema.nullable(),
+		}),
+	)
+	.handler(({ context, data }) =>
+		changeTouch(context.viewer.id, data.pool, data.id, data.touch),
+	);
+export const dropMember = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator(z.object({ pool: z.string(), person: z.string() }))
+	.handler(async ({ context, data }) => {
+		await removeMember(context.viewer.id, data.pool, data.person);
+		await wakeIngestionJob("resume-import");
+	});
+export const submitDecision = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator(
+		z.object({
+			id: z.string(),
+			choice: z.union([z.literal("retry"), decisionSchema]),
+		}),
+	)
+	.handler(async ({ context, data }) => {
+		const added = await decideImport(context.viewer.id, data.id, data.choice);
+		if (added) await wakeIngestionJob("derive");
+		if (data.choice === "retry" || data.choice.action === "cancel")
+			await wakeIngestionJob("resume-import");
+	});
+export const addResume = createServerFn({ method: "POST" })
+	.middleware([authenticated])
+	.validator((input: FormData) => {
+		if (!(input instanceof FormData)) throw new Error("请选择 PDF 文件");
+		const file = input.get("file"),
+			pool = input.get("pool");
+		if (
+			!(file instanceof File) ||
+			typeof pool !== "string" ||
+			file.size > 20 * 1024 * 1024
+		)
+			throw new Error("请选择 20 MB 以内的 PDF 文件");
+		const touch = touchSchema.parse({
+			touched: input.get("touched") || null,
+			notes: input.get("notes") ?? "",
+		});
+		return { file, pool, touch };
+	})
+	.handler(async ({ context, data }) => {
+		const id = await uploadResume(
+			context.viewer.id,
+			data.pool,
+			data.file.name,
+			new Uint8Array(await data.file.arrayBuffer()),
+			data.touch,
+		);
+		await wakeIngestionJob("resume-import");
+		return id;
+	});
+
+export const poolOrganizations = createServerFn({ method: "GET" })
+	.middleware([administrator])
+	.handler(({ context }) => organizations(context.viewer.id));

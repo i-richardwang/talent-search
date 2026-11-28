@@ -3,7 +3,7 @@ import {
 	notFound,
 	useLoaderData,
 } from "@tanstack/react-router";
-import { fetchEmployee } from "#/server/functions";
+import { fetchPerson } from "#/server/functions";
 import {
 	Person,
 	PersonFailed,
@@ -11,9 +11,9 @@ import {
 	PersonPending,
 } from "./-components/person";
 
-export const Route = createFileRoute("/s/$turnId/p/$empId")({
+export const Route = createFileRoute("/s/$turnId/p/$personId")({
 	loader: async ({ params }) => {
-		const data = await fetchEmployee({ data: { empId: params.empId } });
+		const data = await fetchPerson({ data: { personId: params.personId } });
 		if (!data) throw notFound();
 		return data;
 	},
@@ -30,16 +30,17 @@ export const Route = createFileRoute("/s/$turnId/p/$empId")({
 
 /** 这个人的档案用父路由那次检索里他的证据，证据不另查库。 */
 function Detail() {
-	const { employee, timeline } = Route.useLoaderData();
+	const { person, timeline, sources } = Route.useLoaderData();
 	const { result: search } = useLoaderData({ from: "/s/$turnId" });
 	// 按人排的名单没有证据：档案只有时间线
 	const result =
 		search?.order === "evidence"
-			? search.results.find((r) => r.employee.empId === employee.empId)
+			? search.results.find((r) => r.person.personId === person.personId)
 			: undefined;
 	return (
 		<Person
-			employee={employee}
+			person={person}
+			sources={sources}
 			evidence={result?.evidence ?? []}
 			timeline={timeline}
 		/>

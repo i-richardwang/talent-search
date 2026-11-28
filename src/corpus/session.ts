@@ -1,5 +1,5 @@
 /**
- * 同步、解析、整理共用一个会话级 advisory lock；写者独占一个连接，跨批次的短事务
+ * HRIS 同步、简历入池、解析和整理共用一个会话级 advisory lock；写者独占一个连接，跨批次的短事务
  * 都拿着锁。
  * 后台任务拿不到锁就返回，命令行同步排队等待。检索使用自己的数据库快照。
  * 拿到锁的那个连接用 application_name 标记自己在跑哪一次，连接断开后锁跟着释放。
@@ -69,6 +69,7 @@ async function reset(client: PoolClient): Promise<boolean> {
 export async function acquireCorpusSession(
 	wait = false,
 	kind?: "sync" | "derive" | "review",
+	maxWaitMs?: number,
 ): Promise<CorpusSession | null> {
 	const client = await pool.connect();
 	let broken = false;
@@ -77,6 +78,10 @@ export async function acquireCorpusSession(
 			? [RUN_LOCK[kind], CORPUS_LOCK]
 			: [CORPUS_LOCK];
 	try {
+		if (maxWaitMs)
+			await client.query("select set_config('lock_timeout',$1,false)", [
+				String(maxWaitMs),
+			]);
 		for (const key of locks) {
 			if (wait) await client.query(`select pg_advisory_lock(${key}::bigint)`);
 			else {
@@ -89,6 +94,7 @@ export async function acquireCorpusSession(
 				return null;
 			}
 		}
+		if (maxWaitMs) await client.query("reset lock_timeout");
 	} catch (error) {
 		// 请求失败时可能已取得锁；销毁连接才能释放未知的会话状态。
 		client.release(true);
@@ -117,4 +123,34 @@ export async function acquireCorpusSession(
 		// 收不了尾的连接销毁而不还回池里，销毁连接同时释放锁
 		release: async () => client.release(broken || !(await reset(client))),
 	};
+}
+
+/** 网页提交语料时与同步、解析共用写者锁，磁盘写入与数据库提交可分阶段完成。 */
+export async function withCorpusWrite<T>(
+	work: (client: PoolClient) => Promise<T>,
+) {
+	const session = await acquireCorpusSession(true, undefined, 8000);
+	if (!session) throw new Error("无法取得语料写入连接");
+	try {
+		return await work(session.client);
+	} finally {
+		await session.release();
+	}
+}
+export async function inTransaction<T>(
+	client: PoolClient,
+	work: () => Promise<T>,
+) {
+	await client.query("begin");
+	try {
+		const value = await work();
+		await client.query("commit");
+		return value;
+	} catch (error) {
+		await client.query("rollback");
+		throw error;
+	}
+}
+export function corpusTransaction<T>(work: (client: PoolClient) => Promise<T>) {
+	return withCorpusWrite((c) => inTransaction(c, () => work(c)));
 }

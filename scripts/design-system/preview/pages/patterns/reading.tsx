@@ -2,7 +2,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "#/components/ui/button";
 import { Segmented } from "#/components/ui/segmented";
-import { EmployeeRecord } from "#/routes/data/-components/employee-drawer";
+import { PersonRecord } from "#/routes/data/-components/person-drawer";
 import { DetailModal } from "#/routes/s/$turnId/-components/detail-modal";
 import { ResultList } from "#/routes/s/$turnId/-components/result-list";
 import { SidePanel } from "#/routes/s/$turnId/-components/side-panel";
@@ -13,10 +13,10 @@ import { TermRecord } from "#/routes/terms/-components/term-drawer";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Stage } from "../../kit/stage";
-import { Routed, useOpenEmpId } from "../../routed";
+import { Routed, useOpenPersonId } from "../../routed";
 import { SEGMENTS, SKILL_DETAIL, TASK_LANES } from "../../samples/admin";
 import { SPEC } from "../../samples/conditions";
-import { EMPLOYEES, OUTCOME } from "../../samples/people";
+import { OUTCOME, PEOPLE } from "../../samples/people";
 import { LATEST_TURN, LATEST_TURN_ID, THREAD } from "../../samples/thread";
 import { PersonPane } from "../layouts/detail";
 
@@ -24,11 +24,9 @@ import { PersonPane } from "../layouts/detail";
 
 /** 数据页点开 Talent 0101：登记的内容和解析出的技能、职责并排。 */
 function PersonDrawer({ close }: { close: () => void }) {
-	const employee = EMPLOYEES[0];
-	if (!employee) return null;
-	return (
-		<EmployeeRecord close={close} employee={employee} segments={SEGMENTS} />
-	);
+	const person = PEOPLE[0];
+	if (!person) return null;
+	return <PersonRecord close={close} person={person} segments={SEGMENTS} />;
 }
 
 function Drawers() {
@@ -95,7 +93,7 @@ function Names({ selected }: { selected: string | undefined }) {
 	return (
 		<ResultList
 			canMore={false}
-			empId={selected}
+			personId={selected}
 			failure={null}
 			growing={false}
 			wait={null}
@@ -115,11 +113,11 @@ function Names({ selected }: { selected: string | undefined }) {
 
 /** 宽屏：名单和产品的右栏并排，右栏平时是对话线程，点开人换成详情。 */
 function Wide() {
-	const empId = useOpenEmpId();
+	const personId = useOpenPersonId();
 	return (
 		<div className="flex h-160 overflow-hidden">
 			<div className="min-w-0 flex-1 overflow-y-auto p-4">
-				<Names selected={empId} />
+				<Names selected={personId} />
 			</div>
 			<SidePanel
 				conversation={
@@ -136,7 +134,7 @@ function Wide() {
 						waiting={false}
 					/>
 				}
-				detail={empId ? <PersonPane empId={empId} /> : null}
+				detail={personId ? <PersonPane personId={personId} /> : null}
 			/>
 		</div>
 	);
@@ -144,11 +142,11 @@ function Wide() {
 
 /** 窄屏：没有右栏，点开人是产品的详情浮层，关掉回到名单。 */
 function Narrow() {
-	const empId = useOpenEmpId();
+	const personId = useOpenPersonId();
 	const router = useRouter();
 	return (
 		<div className="p-4">
-			<Names selected={empId} />
+			<Names selected={personId} />
 			<DetailModal
 				onClose={() =>
 					void router.navigate({
@@ -157,9 +155,9 @@ function Narrow() {
 						to: "/s/$turnId",
 					})
 				}
-				open={Boolean(empId)}
+				open={Boolean(personId)}
 			>
-				{empId && <PersonPane empId={empId} />}
+				{personId && <PersonPane personId={personId} />}
 			</DetailModal>
 		</div>
 	);
@@ -207,7 +205,7 @@ export function ReadingPage() {
 					"一个对象的几条属性用 Descriptions：抽屉里的词、数据页的一段经历、右栏的人，写法同一种。",
 					"整块可点的名单行是真链接，支持中键、右键和键盘；详情里不画名单上已有的分数和名次。",
 				],
-				usage: `<DetailDrawer\n  close={() => navigate({ search, to: "/data" })}\n  description={…}\n  title={employee.name}\n  width="var(--container-detail-wide)"\n>\n  …\n</DetailDrawer>`,
+				usage: `<DetailDrawer\n  close={() => navigate({ search, to: "/data" })}\n  description={…}\n  title={person.name}\n  width="var(--container-detail-wide)"\n>\n  …\n</DetailDrawer>`,
 			}}
 			sections={[
 				{

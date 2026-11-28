@@ -1,5 +1,6 @@
 import { CircleCheckIcon } from "lucide-react";
 import { useState } from "react";
+import { OrgPicker } from "#/components/org-picker";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
 import { CopyButton } from "#/components/ui/copy-button";
@@ -11,10 +12,9 @@ import { Radio, RadioGroup } from "#/components/ui/radio";
 import { toast } from "#/components/ui/toast";
 import { NAME_MAX, usernameOf } from "#/lib/auth";
 import type { OrgNode } from "#/lib/org";
-import { OrgPicker } from "./org-picker";
 
 /** 交出去的一个密码：建账号的初始密码，或重置后的新密码。 */
-export type IssuedPassword = {
+type IssuedPassword = {
 	kind: "created" | "reset";
 	username: string;
 	password: string;

@@ -10,7 +10,7 @@ const { search } = await import("#/search/search");
 
 await seed([
 	{
-		empId: "P1",
+		personId: "P1",
 		name: "合成无经历",
 		school: "合成大学",
 		education: "本科",
@@ -19,7 +19,7 @@ await seed([
 		segments: [],
 	},
 	{
-		empId: "P2",
+		personId: "P2",
 		name: "合成待业",
 		school: "合成大学",
 		education: "硕士",
@@ -28,7 +28,7 @@ await seed([
 		segments: [{ kind: "external", unemployed: true, months: 6 }],
 	},
 	{
-		empId: "P3",
+		personId: "P3",
 		name: "合成任职",
 		school: "合成大学",
 		education: "硕士",
@@ -37,7 +37,7 @@ await seed([
 		segments: [{ title: "工程师", months: 12 }],
 	},
 	{
-		empId: "P4",
+		personId: "P4",
 		name: "合成其他学校",
 		school: "另一大学",
 		education: "博士",
@@ -53,7 +53,7 @@ const school: Condition = {
 const find = (more: Condition[] = [], filters = {}) =>
 	search({ conditions: [school, ...more] }, null, filters);
 const ids = (result: Awaited<ReturnType<typeof find>>) =>
-	result.results.map((row) => row.employee.empId);
+	result.results.map((row) => row.person.personId);
 
 test("人的条件不要求工作经历；人员分面含全部候选，经历分面只含实际工作经历", async () => {
 	const result = await find();

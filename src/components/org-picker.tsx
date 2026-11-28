@@ -5,6 +5,7 @@ import { Block } from "#/components/ui/block";
 import { Checkbox } from "#/components/ui/checkbox";
 import { Icon } from "#/components/ui/icon";
 import { Input } from "#/components/ui/input";
+import { Radio, RadioGroup } from "#/components/ui/radio";
 import { ScrollArea } from "#/components/ui/scroll-area";
 import { Skeleton } from "#/components/ui/skeleton";
 import { ORG_SEPARATOR, type OrgNode, within } from "#/lib/org";
@@ -17,6 +18,7 @@ type Choice = {
 	value: readonly string[];
 	onChange: (orgs: string[]) => void;
 	disabled?: boolean;
+	single?: boolean;
 };
 
 /**
@@ -29,11 +31,32 @@ export function OrgPicker({
 	value,
 	onChange,
 	disabled = false,
+	single = false,
 }: Choice & { tree: OrgNode[] | null }) {
 	const [q, setQ] = useState("");
 	const people = value.reduce(
 		(sum, org) => sum + (tree?.find((n) => n.path === org)?.people ?? 0),
 		0,
+	);
+	const rows = (
+		<ul className="flex flex-col py-1">
+			{tree ? (
+				<OrgRows
+					single={single}
+					disabled={disabled}
+					needle={q.trim().toLowerCase()}
+					onChange={onChange}
+					tree={tree}
+					value={value}
+				/>
+			) : (
+				[0, 1, 2].map((i) => (
+					<li className="px-3 py-1.5" key={i}>
+						<Skeleton height="1rem" width={`${60 - i * 12}%`} />
+					</li>
+				))
+			)}
+		</ul>
 	);
 	return (
 		<div className="flex flex-col gap-2">
@@ -47,29 +70,25 @@ export function OrgPicker({
 			/>
 			<Block variant="outlined">
 				<ScrollArea className="max-h-64" scrollFade>
-					<ul className="flex flex-col py-1">
-						{tree ? (
-							<OrgRows
-								disabled={disabled}
-								needle={q.trim().toLowerCase()}
-								onChange={onChange}
-								tree={tree}
-								value={value}
-							/>
-						) : (
-							[0, 1, 2].map((i) => (
-								<li className="px-3 py-1.5" key={i}>
-									<Skeleton height="1rem" width={`${60 - i * 12}%`} />
-								</li>
-							))
-						)}
-					</ul>
+					{single ? (
+						<RadioGroup
+							aria-label="人才池所属部门"
+							value={value[0] ?? ""}
+							onChange={(v) => onChange([v])}
+						>
+							{rows}
+						</RadioGroup>
+					) : (
+						rows
+					)}
 				</ScrollArea>
 			</Block>
 			<p className="text-fg-secondary text-xs">
-				{value.length === 0
-					? "至少选一个组织；选最上一级就是全部有部门的人"
-					: `已选 ${value.length} 个组织，此刻共 ${people} 人`}
+				{single
+					? (value[0] ?? "请选择一个部门")
+					: value.length === 0
+						? "至少选一个组织；选最上一级就是全部有部门的人"
+						: `已选 ${value.length} 个组织，此刻共 ${people} 人`}
 			</p>
 		</div>
 	);
@@ -86,16 +105,23 @@ const parentOf = (path: string) =>
 function OrgRows({
 	tree,
 	needle,
+	single,
 	value,
 	onChange,
 	disabled,
 }: Choice & { tree: OrgNode[]; needle: string }) {
+	const paths = new Set(tree.map((n) => n.path));
 	const [open, setOpen] = useState<ReadonlySet<string>>(
-		() => new Set(tree.filter((n) => n.depth === 0).map((n) => n.path)),
+		() =>
+			new Set(
+				tree
+					.filter((n) => !paths.has(parentOf(n.path) ?? ""))
+					.map((n) => n.path),
+			),
 	);
 	const hasChildren = new Set(tree.flatMap((n) => parentOf(n.path) ?? []));
 	const shown = (n: OrgNode) => {
-		for (let p = parentOf(n.path); p !== null; p = parentOf(p))
+		for (let p = parentOf(n.path); p !== null && paths.has(p); p = parentOf(p))
 			if (!open.has(p)) return false;
 		return true;
 	};
@@ -122,6 +148,16 @@ function OrgRows({
 			{rows.map((n) => {
 				const covered = value.some(
 					(org) => org !== n.path && within(n.path, org),
+				);
+				const label = (
+					<span className="flex min-w-0 flex-1 items-baseline gap-2">
+						<span className="truncate">
+							{found ? n.path.split(ORG_SEPARATOR).join(" / ") : n.name}
+						</span>
+						<span className="shrink-0 text-fg-secondary text-xs">
+							{n.people} 人
+						</span>
+					</span>
 				);
 				const expandable = !found && hasChildren.has(n.path);
 				return (
@@ -152,21 +188,18 @@ function OrgRows({
 								)}
 							</span>
 						)}
-						<Checkbox
-							checked={covered || value.includes(n.path)}
-							className="min-w-0 flex-1"
-							disabled={disabled || covered}
-							onChange={(checked) => toggle(n.path, checked)}
-						>
-							<span className="flex min-w-0 flex-1 items-baseline gap-2">
-								<span className="truncate">
-									{found ? n.path.split(ORG_SEPARATOR).join(" / ") : n.name}
-								</span>
-								<span className="shrink-0 text-fg-secondary text-xs">
-									{n.people} 人
-								</span>
-							</span>
-						</Checkbox>
+						{single ? (
+							<Radio value={n.path}>{label}</Radio>
+						) : (
+							<Checkbox
+								checked={covered || value.includes(n.path)}
+								className="min-w-0 flex-1"
+								disabled={disabled || covered}
+								onChange={(checked) => toggle(n.path, checked)}
+							>
+								{label}
+							</Checkbox>
+						)}
 					</li>
 				);
 			})}

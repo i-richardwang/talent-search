@@ -11,7 +11,7 @@ import { TermTable } from "./-components/term-table";
 import { rejudge } from "./-lib/rejudge";
 
 /**
- * 标签：此刻简历里有人写的短说法（能力词、入职前岗位名）哪些写法归并成了同一个词、
+ * 标签：此刻简历里有人写的短说法（能力词、外部岗位名）哪些写法归并成了同一个词、
  * 哪个词属于哪个更宽的词。点一个词看它的人数和上下从属（`/terms/$word`）。
  *
  * 词表由后台整理写（`src/corpus/vocabulary.ts`），一个词只判一次。管理员在这一页复查：

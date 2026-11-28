@@ -1,6 +1,6 @@
 import { duration, period } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import { type EmployeeDetail, placeOf } from "#/search/result";
+import { type PersonDetail, placeOf } from "#/search/result";
 import { EVIDENCE_FILL } from "./evidence";
 
 /**
@@ -30,7 +30,7 @@ export function ym(date: string) {
 }
 
 /**
- * 把重叠的经历段分到不同的轨上。入职前与在职的记录来自两张表，同一段时间各登记一次
+ * 把重叠的经历段分到不同的轨上。外部与在职的记录来自两张表，同一段时间各登记一次
  * 是常态；放在一条轨上，后画的会把前一段整个盖住。
  *
  * 贪心装箱：按开始时间排，每一段放进第一条已经空出来的轨；不重叠的人只有一条轨。
@@ -55,7 +55,7 @@ export function CareerBar({
 	counted,
 	hireDate,
 }: {
-	rows: EmployeeDetail["timeline"];
+	rows: PersonDetail["timeline"];
 	/** 算数的经历段（`claim-lines.ts` 的 `countedOf`）。 */
 	counted: ReadonlySet<number>;
 	hireDate: string | null;

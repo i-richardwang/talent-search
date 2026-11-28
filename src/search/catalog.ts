@@ -52,13 +52,28 @@ export type CatalogRelation<C extends string = string> = {
 
 const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> = {
 	name: "person",
-	label: "员工",
-	rows: "一个员工",
+	label: "人才",
+	rows: "一个可见的人",
 	columns: {
-		emp_id: {
+		talent_type: {
 			type: "text",
-			label: "工号",
-			meaning: "只作关联键：rating.emp_id = p.emp_id",
+			label: "人才类型",
+			dimension: "talentType",
+			values: "enum",
+			meaning:
+				"有权查看的在职员工或外部候选人；仅有池资料时没有内部职级、部门、入职日、绩效",
+		},
+		pools: {
+			type: "text[]",
+			label: "人才池",
+			dimension: "pool",
+			meaning: "这个人在当前账号可见的人才池",
+			values: "enum",
+		},
+		person_id: {
+			type: "text",
+			label: "人员编号",
+			meaning: "只作关联键：rating.person_id = p.person_id",
 		},
 		level_band: {
 			type: "text",
@@ -137,15 +152,15 @@ const person: CatalogRelation<ColumnsOf<typeof catalogPerson>> = {
 const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 	name: "experience",
 	label: "工作经历",
-	rows: "一段工作经历（公司内的一段任职，或入职前的一段经历）",
+	rows: "一段工作经历（公司内的一段任职，或外部的一段经历）",
 	columns: {
 		id: { type: "int", label: "段", meaning: "这一段的身份" },
-		emp_id: { type: "text", label: "工号", meaning: "只作关联键" },
+		person_id: { type: "text", label: "人员编号", meaning: "只作关联键" },
 		kind: {
 			type: "text",
 			label: "来源",
 			dimension: "kind",
-			meaning: "internal 是公司内的任职，external 是入职前的经历",
+			meaning: "internal 是公司内的任职，external 是外部的经历",
 			values: "enum",
 			says: KIND_NAMES,
 		},
@@ -164,19 +179,19 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 		company: {
 			type: "text",
 			label: "公司",
-			meaning: "入职前那家公司的名字；公司内的任职为空",
+			meaning: "外部那家公司的名字；公司内的任职为空",
 		},
 		company_tag: {
 			type: "text",
 			label: "公司档",
 			dimension: "companyTag",
-			meaning: "人事登记的入职前那家公司的档；公司内的任职为空",
+			meaning: "人事登记的外部那家公司的档；公司内的任职为空",
 			values: "enum",
 		},
 		company_nature: {
 			type: "text",
 			label: "企业性质",
-			meaning: "人事登记的入职前那家公司的性质：民企、外企、国企这类",
+			meaning: "人事登记的外部那家公司的性质：民企、外企、国企这类",
 			values: "enum",
 		},
 		company_name: {
@@ -211,12 +226,12 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 		department: {
 			type: "text",
 			label: "部门",
-			meaning: "公司内任职的末级部门；入职前的经历为空",
+			meaning: "公司内任职的末级部门；外部的经历为空",
 		},
 		department_path: {
 			type: "text",
 			label: "部门路径",
-			meaning: "公司内任职的完整部门路径；入职前的经历为空",
+			meaning: "公司内任职的完整部门路径；外部的经历为空",
 		},
 		title: { type: "text", label: "岗位", meaning: "岗位名" },
 		level: {
@@ -228,19 +243,19 @@ const experience: CatalogRelation<ColumnsOf<typeof catalogExperience>> = {
 			type: "text",
 			label: "一级序列",
 			dimension: "seq",
-			meaning: "登记的序列；入职前的经历是按岗位名对齐的序列",
+			meaning: "登记的序列；外部的经历是按岗位名对齐的序列",
 		},
 		seq_l2: { type: "text", label: "二级序列", meaning: "和一级序列成对" },
 		skills: {
 			type: "text[]",
 			label: "能力词",
 			dimension: "skill",
-			meaning: "从入职前简历读出的能力词的标准写法，连同它们更宽的词",
+			meaning: "从外部简历读出的能力词的标准写法，连同它们更宽的词",
 		},
 	},
 	notes: [
 		"待业不是一段工作经历，不在这里。",
-		"公司和公司的各项属性只在入职前的经历上，部门只在公司内的任职上，一段只有其一。",
+		"公司和公司的各项属性只在外部的经历上，部门只在公司内的任职上，一段只有其一。",
 		"行业、集团、名企组合说的是那家公司，不是这个人做的事：在外卖公司待过不等于做过外卖业务，做过什么仍写进 seek。",
 		"行业是一棵树，取值连同上级都在数组里：:v = any(e.main_industries) 写上级行业就包含它下面的每一个细分。",
 		"公司没认出来、或认出来了但没有行业时，行业两列为空，不满足任何行业条件；「不是某行业」同样不成立。",
@@ -253,7 +268,7 @@ const rating: CatalogRelation<ColumnsOf<typeof catalogRating>> = {
 	label: "评级",
 	rows: "一个人在一条评级流里的一期评级（例如一期绩效）",
 	columns: {
-		emp_id: { type: "text", label: "工号", meaning: "只作关联键" },
+		person_id: { type: "text", label: "人员编号", meaning: "只作关联键" },
 		stream: {
 			type: "text",
 			label: "记录流",
@@ -289,7 +304,7 @@ const status: CatalogRelation<ColumnsOf<typeof catalogStatus>> = {
 	label: "状态",
 	rows: "一个人在一条状态流里的一段（例如在高潜池里的一段时间）",
 	columns: {
-		emp_id: { type: "text", label: "工号", meaning: "只作关联键" },
+		person_id: { type: "text", label: "人员编号", meaning: "只作关联键" },
 		stream: {
 			type: "text",
 			label: "记录流",
@@ -335,19 +350,19 @@ const scale: CatalogRelation<ColumnsOf<typeof catalogScale>> = {
  * `seek` 物化，只能通过别名 `h` 读，不能在子查询里另外 from 它。
  */
 export const HIT: CatalogRelation<
-	"experience_id" | "emp_id" | "route" | "phrase" | "engagement"
+	"experience_id" | "person_id" | "route" | "phrase" | "engagement"
 > = {
 	name: "hit",
 	label: "命中",
 	rows: "这条条件的 seek 在一段经历上命中的一条说法",
 	columns: {
 		experience_id: { type: "int", label: "段", meaning: "命中的段，等于 e.id" },
-		emp_id: { type: "text", label: "工号", meaning: "命中的人" },
+		person_id: { type: "text", label: "人员编号", meaning: "命中的人" },
 		route: {
 			type: "text",
 			label: "说法",
 			meaning:
-				"命中的是哪一类说法：role 公司内任职整句、title 入职前岗位名、skill 简历读出的能力词、description 没读过的简历原文",
+				"命中的是哪一类说法：role 公司内任职整句、title 外部岗位名、skill 简历读出的能力词、description 没读过的简历原文",
 			values: "enum",
 			says: {
 				role: "任职记录",
@@ -370,7 +385,7 @@ export const HIT: CatalogRelation<
 	},
 	notes: [
 		"命中只说明这一段是候选；写了判据的条件，确认过符合的段才算数，排除也只认确认过符合的段。",
-		"seek 没写 patterns 时每一段各有一行，route 是它登记的那条说法：公司内 role、入职前 title。",
+		"seek 没写 patterns 时每一段各有一行，route 是它登记的那条说法：公司内 role、外部 title。",
 		"一段可以有几行命中；外壳按段去重，留最对得上的一行。",
 	],
 };

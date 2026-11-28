@@ -26,7 +26,7 @@
 
 import "@tanstack/react-start/server-only";
 import { inArray, type SQL, sql } from "drizzle-orm";
-import { employee, experience } from "#/db/schema";
+import { experience, personCard } from "#/db/schema";
 import { chainScope, type DbExecutor } from "#/db/snapshot";
 import type { Engagement } from "#/lib/engagement";
 import { dots } from "#/lib/format";
@@ -70,7 +70,7 @@ import {
 	emptyFacets,
 	type Facets,
 	type RankedResult,
-	type ResultEmployee,
+	type ResultPerson,
 	type SearchOutcome,
 } from "./result";
 import { criterionKey, SEGMENT_CONTENT } from "./verdict";
@@ -125,7 +125,7 @@ export function anyLike(
 	)})`;
 }
 
-/** 一段经历 `e` 在哪的名字含其中一个：入职前按公司名，公司内按末级部门名或部门路径。 */
+/** 一段经历 `e` 在哪的名字含其中一个：外部按公司名，公司内按末级部门名或部门路径。 */
 export function placeLike(
 	field: "company" | "department",
 	names: readonly string[],
@@ -145,12 +145,17 @@ function noOne(): { results: []; facets: Facets; total: number } {
 
 /** 名单的展示投影。 */
 const RESULT_COLUMNS = {
-	empId: employee.empId,
-	name: employee.name,
-	curDept: employee.curDept,
-	curTitle: employee.curTitle,
-	curLevel: employee.curLevel,
-} satisfies Record<keyof ResultEmployee, unknown>;
+	personId: personCard.personId,
+	empId: personCard.empId,
+	accessKey: personCard.accessKey,
+	talentType: personCard.talentType,
+	recentCompany: personCard.recentCompany,
+	recentTitle: personCard.recentTitle,
+	name: personCard.name,
+	curDept: personCard.curDept,
+	curTitle: personCard.curTitle,
+	curLevel: personCard.curLevel,
+} satisfies Record<keyof ResultPerson, unknown>;
 
 /**
  * 从各主张的事实行数里找出造成超载的主要贡献者。
@@ -180,6 +185,8 @@ export function overflowContributors(
  * 外连接没有经历时经历属性为空、能力词为空数组；人员属性始终从 `p` 读取。
  */
 const FACT_COLUMNS: Record<keyof DimSource, SQL> = {
+	talentType: sql`p.talent_type`,
+	pools: sql`p.pools`,
 	months: sql`e.months`,
 	seqL1: sql`e.seq_l1`,
 	seqL2: sql`e.seq_l2`,
@@ -211,7 +218,7 @@ function whereAll(conds: readonly SQL[]): SQL {
 
 /**
  * 物化命中：每条写了「做过什么」的条件的候选段。写了正则的是捞到的说法经边落到的段；没写正则
- * 的是全部的段，各按它登记的那条说法（公司内的任职、入职前的岗位名）记一行。`fits` 是这一段
+ * 的是全部的段，各按它登记的那条说法（公司内的任职、外部的岗位名）记一行。`fits` 是这一段
  * 算不算：写了判据的接上查询理解在这次找人任务里（`rootTurnId`）对这一段的结论，还没确认过的
  * 为空，判成不算的不进表；不属于任何一次任务的查询没有结论。没写判据的都算。`cond` 是条件在
  * 查询里的下标，它和 `fits`、`phrase_id` 只给外壳用，模型写的 `where` 读不到（`catalog.ts` 的
@@ -255,7 +262,7 @@ async function materializeHits(
 			from unnest(${sql.param(whole)}::int[]) as w(cond)
 			cross join experience e
 		)
-		select k.cond, e.id as experience_id, e.emp_id, k.route,
+		select k.cond, e.id as experience_id, e.person_id, k.route,
 			case when c.criterion_key is null then true else v.fits end as fits,
 			v.match_score, k.phrase, k.phrase_id, k.engagement
 		from caught k
@@ -314,7 +321,7 @@ class Shell {
 		const c = this.compiled(i);
 		const { condition } = c;
 		if (condition.from === "person") return c.where;
-		const own = sql`e.emp_id = p.emp_id`;
+		const own = sql`e.person_id = p.person_id`;
 		if (condition.mode === "exclude")
 			return sql`not exists (select 1 from ${segmentsOf(c, i)} ${whereAll([
 				own,
@@ -331,9 +338,9 @@ class Shell {
 	unconfirmed(i: number, person: readonly SQL[]): SQL {
 		const c = this.compiled(i);
 		return sql`
-			select distinct ${i}::int as cond, e.id, e.emp_id
+			select distinct ${i}::int as cond, e.id, e.person_id
 			from ${segmentsOf(c, i)}
-			join person p on p.emp_id = e.emp_id
+			join person p on p.person_id = e.person_id
 			${whereAll([c.where, UNCONFIRMED, ...person])}`;
 	}
 
@@ -347,7 +354,7 @@ class Shell {
 			names: readonly string[],
 		) =>
 			sql`exists (select 1 from experience e ${whereAll([
-				sql`e.emp_id = p.emp_id`,
+				sql`e.person_id = p.person_id`,
 				placeLike(field, names),
 			])})`;
 		const out: SQL[] = [];
@@ -377,10 +384,10 @@ class Shell {
 			else 1 end`;
 		return sql`
 			select distinct on (e.id) ${i}::int as cond, h.route,
-				h.fits, h.match_score as "matchScore", h.phrase, h.engagement, e.id, e.emp_id,
+				h.fits, h.match_score as "matchScore", h.phrase, h.engagement, e.id, e.person_id,
 				to_char(e.end_date, 'YYYY-MM-DD') as end_date, ${factSelect}
 			from ${segmentsOf(c, i)}
-			join person p on p.emp_id = e.emp_id
+			join person p on p.person_id = e.person_id
 			${whereAll([c.where, ...person])}
 			order by e.id, ${engagement} desc,
 				(h.route = 'description'), h.route, h.phrase_id`;
@@ -396,7 +403,7 @@ type FactRow = {
 	matchScore: Fact["matchScore"];
 	phrase: string | null;
 	engagement: Engagement | null;
-	emp_id: string;
+	person_id: string;
 	end_date: string | null;
 } & Pick<Fact, keyof DimSource>;
 
@@ -443,16 +450,16 @@ async function fetchFacts(
 	}
 	const counted: Fact[] = [];
 	const unconfirmed: Fact[] = [];
-	for (const { emp_id, cond, end_date, fits, ...dims } of rows.rows) {
+	for (const { person_id, cond, end_date, fits, ...dims } of rows.rows) {
 		const at = position.get(cond);
 		if (at === undefined) throw new Error(`取数返回了不存在的主张 ${cond}`);
-		const fact = { ...dims, empId: emp_id, claim: at, endDate: end_date };
+		const fact = { ...dims, personId: person_id, claim: at, endDate: end_date };
 		(fits ? counted : unconfirmed).push(fact);
 	}
 	return { kind: "loaded", facts: counted, unconfirmed };
 }
 
-type PopulationRow = { emp_id: string } & DimSource;
+type PopulationRow = { person_id: string } & DimSource;
 
 /** 人员候选及其有效工作经历；无经历时仍保留人员属性。 */
 async function fetchPopulation(
@@ -460,12 +467,15 @@ async function fetchPopulation(
 	person: readonly SQL[],
 ): Promise<PopulationFact[] | null> {
 	const rows = await store.execute<PopulationRow>(sql`
-		select p.emp_id, ${factSelect}
-		from person p left join experience e on e.emp_id = p.emp_id
+		select p.person_id, ${factSelect}
+		from person p left join experience e on e.person_id = p.person_id
 		${whereAll(person)}
-		order by p.emp_id, e.id limit ${FACT_MAX + 1}`);
+		order by p.person_id, e.id limit ${FACT_MAX + 1}`);
 	if (rows.rows.length > FACT_MAX) return null;
-	return rows.rows.map(({ emp_id, ...dims }) => ({ ...dims, empId: emp_id }));
+	return rows.rows.map(({ person_id, ...dims }) => ({
+		...dims,
+		personId: person_id,
+	}));
 }
 
 /**
@@ -476,18 +486,18 @@ async function fetchPreferred(
 	store: DbExecutor,
 	shell: Shell,
 	prefer: readonly number[],
-	empIds: Iterable<string>,
+	personIds: Iterable<string>,
 ): Promise<Set<string>[]> {
 	const sets = prefer.map(() => new Set<string>());
-	const ids = [...new Set(empIds)];
+	const ids = [...new Set(personIds)];
 	if (prefer.length === 0 || ids.length === 0) return sets;
 	const met = prefer.map((i) => sql`coalesce(${shell.gate(i)}, false)`);
-	const rows = await store.execute<{ emp_id: string; met: boolean[] }>(sql`
-		select p.emp_id, array[${sql.join(met, sql`, `)}] as met from person p
-		where p.emp_id = any(${sql.param(ids)}::text[])`);
+	const rows = await store.execute<{ person_id: string; met: boolean[] }>(sql`
+		select p.person_id, array[${sql.join(met, sql`, `)}] as met from person p
+		where p.person_id = any(${sql.param(ids)}::text[])`);
 	for (const row of rows.rows)
 		row.met.forEach((yes, i) => {
-			if (yes) sets[i]?.add(row.emp_id);
+			if (yes) sets[i]?.add(row.person_id);
 		});
 	return sets;
 }
@@ -496,24 +506,29 @@ async function fetchPreferred(
  * 候选人：没确认过的段都按对他有利的算（主张上的算数，排除上的不算）会在名单上的人，连同
  * 职级归入的档。名单上的人都在里面。
  */
-type Candidate = { empId: string; level: string; levelRank: number | null };
+type Candidate = {
+	external: boolean;
+	personId: string;
+	level: string;
+	levelRank: number | null;
+};
 
 /** 候选人没确认过的一段：哪一条条件（下标）上的哪一段，是谁的。 */
-type Unconfirmed = { cond: number; id: number; empId: string };
+type Unconfirmed = { cond: number; id: number; personId: string };
 
 /**
- * 排除条件上还没确认过的段：`empIds` 这些候选人在哪条排除上还有段没确认。`excludes` 是写了
+ * 排除条件上还没确认过的段：`personIds` 这些候选人在哪条排除上还有段没确认。`excludes` 是写了
  * 判据的那几条，只有它们才有没确认过的段。超过 `FACT_MAX` 行时为 null，这几条太宽。
  */
 async function fetchUnconfirmedExclusions(
 	store: DbExecutor,
 	shell: Shell,
 	excludes: readonly Exclusion[],
-	empIds: string[],
+	personIds: string[],
 ): Promise<Unconfirmed[] | null> {
-	if (excludes.length === 0 || empIds.length === 0) return [];
+	if (excludes.length === 0 || personIds.length === 0) return [];
 	// 候选人已经过了门槛，这里只按人圈
-	const eligible = [sql`p.emp_id = any(${sql.param(empIds)}::text[])`];
+	const eligible = [sql`p.person_id = any(${sql.param(personIds)}::text[])`];
 	const pending = sql.join(
 		excludes.map((c) => sql`(${shell.unconfirmed(shell.at(c), eligible)})`),
 		sql` union all `,
@@ -521,10 +536,14 @@ async function fetchUnconfirmedExclusions(
 	const { rows } = await store.execute<{
 		cond: number;
 		id: number;
-		emp_id: string;
+		person_id: string;
 	}>(sql`select * from (${pending}) pending limit ${FACT_MAX + 1}`);
 	if (rows.length > FACT_MAX) return null;
-	return rows.map((row) => ({ cond: row.cond, id: row.id, empId: row.emp_id }));
+	return rows.map((row) => ({
+		cond: row.cond,
+		id: row.id,
+		personId: row.person_id,
+	}));
 }
 
 /**
@@ -558,9 +577,11 @@ function incompleteOf(
 	unconfirmed: readonly Unconfirmed[],
 ): Incomplete | undefined {
 	if (unconfirmed.length === 0) return undefined;
-	const byId = new Map(candidates.map((c) => [c.empId, c]));
+	if (candidates.some((c) => c.external)) return { above: null, mixed: true };
+	const byId = new Map(candidates.map((c) => [c.personId, c]));
 	let top = Number.NEGATIVE_INFINITY;
-	for (const u of unconfirmed) top = Math.max(top, heightOf(byId.get(u.empId)));
+	for (const u of unconfirmed)
+		top = Math.max(top, heightOf(byId.get(u.personId)));
 	let above: Candidate | null = null;
 	for (const c of candidates)
 		if (heightOf(c) > top && (!above || heightOf(c) < heightOf(above)))
@@ -604,7 +625,7 @@ export async function execute(
 			return {
 				...(claims.length > 0
 					? { order: "evidence" as const, claims }
-					: { order: "employee" as const, claims: [] as [] }),
+					: { order: "person" as const, claims: [] as [] }),
 				...noOne(),
 				empty: found,
 			};
@@ -637,7 +658,7 @@ async function nobodyOf(
 	const counts = await eachSelected<number>(
 		store,
 		musts,
-		sql`count(distinct s.emp_id)::int`,
+		sql`count(distinct s.person_id)::int`,
 	);
 	return query.conditions.flatMap((c, i) => {
 		const n = counts[i];
@@ -698,7 +719,7 @@ async function evaluate(
 		store,
 		shell,
 		prefer.map((c) => shell.at(c)),
-		(people ?? all).map((f) => f.empId),
+		(people ?? all).map((f) => f.personId),
 	);
 	const now = new Date();
 	const judgedExcludes = excludes.filter((c) => c.seek?.criterion);
@@ -713,7 +734,7 @@ async function evaluate(
 					now,
 					preferred,
 					engagementWeight,
-				).map((row) => row.empId)
+				).map((row) => row.personId)
 			: [];
 	const onExclusions = await fetchUnconfirmedExclusions(
 		store,
@@ -724,9 +745,9 @@ async function evaluate(
 	if (onExclusions === null)
 		return { kind: "overflowEvidence", conditions: judgedExcludes };
 	// 在排除上还有段没确认的人不上名单：他该不该排除还不知道
-	const undecided = new Set(onExclusions.map((u) => u.empId));
-	const decided = <T extends { empId: string }>(rows: T[]) =>
-		rows.filter((row) => !undecided.has(row.empId));
+	const undecided = new Set(onExclusions.map((u) => u.personId));
+	const decided = <T extends { personId: string }>(rows: T[]) =>
+		rows.filter((row) => !undecided.has(row.personId));
 	const facts = decided(loaded.facts);
 	const ranked = rank(
 		facts,
@@ -749,28 +770,29 @@ async function evaluate(
 					engagementWeight,
 				)
 			: ranked.ranked;
-	const among = new Set(hoped.map((row) => row.empId));
+	const among = new Set(hoped.map((row) => row.personId));
 	const levels = new Map<string, PopulationFact>();
 	for (const row of people ?? all)
-		if (!levels.has(row.empId)) levels.set(row.empId, row);
+		if (!levels.has(row.personId)) levels.set(row.personId, row);
 	return {
 		kind: "ranked",
 		candidateFacts: all,
 		facts,
 		ranked,
-		candidates: hoped.map(({ empId }) => ({
-			empId,
-			level: levels.get(empId)?.level ?? "",
-			levelRank: levels.get(empId)?.levelRank ?? null,
+		candidates: hoped.map(({ personId }) => ({
+			personId,
+			external: levels.get(personId)?.talentType === "外部候选人",
+			level: levels.get(personId)?.level ?? "",
+			levelRank: levels.get(personId)?.levelRank ?? null,
 		})),
 		unconfirmed: [
 			...loaded.unconfirmed.map((fact) => ({
 				cond: conds[fact.claim] as number,
 				id: fact.id,
-				empId: fact.empId,
+				personId: fact.personId,
 			})),
 			...onExclusions,
-		].filter((u) => among.has(u.empId)),
+		].filter((u) => among.has(u.personId)),
 	};
 }
 
@@ -795,30 +817,30 @@ async function present(
 ): Promise<SearchOutcome> {
 	const counted = { facets, total, ...(incomplete && { incomplete }) };
 	const page = ranked.slice(0, limit);
-	const empIds = page.map((row) => row.empId);
-	const employees =
-		empIds.length === 0
+	const personIds = page.map((row) => row.personId);
+	const people =
+		personIds.length === 0
 			? []
 			: await store
 					.select(RESULT_COLUMNS)
-					.from(employee)
-					.where(inArray(employee.empId, empIds));
-	const empById = new Map(employees.map((person) => [person.empId, person]));
+					.from(personCard)
+					.where(inArray(personCard.personId, personIds));
+	const personById = new Map(people.map((person) => [person.personId, person]));
 	if (claims.length === 0)
 		return {
-			order: "employee",
+			order: "person",
 			claims: [],
 			...counted,
 			empty,
 			results: page.flatMap((row) => {
-				const person = empById.get(row.empId);
-				return person ? [{ employee: person }] : [];
+				const person = personById.get(row.personId);
+				return person ? [{ person }] : [];
 			}),
 		};
 	if (page.length === 0)
 		return { order: "evidence", claims, results: [], ...counted, empty };
 
-	const kept = pageEvidence(facts, claims, filters, new Set(empIds));
+	const kept = pageEvidence(facts, claims, filters, new Set(personIds));
 	const ids = [...new Set([...kept.values()].flat().map((fact) => fact.id))];
 	const segments = await store
 		.select()
@@ -826,31 +848,33 @@ async function present(
 		.where(inArray(experience.id, ids));
 	const segById = new Map(segments.map((segment) => [segment.id, segment]));
 	const results: RankedResult[] = page.flatMap((row) => {
-		const person = empById.get(row.empId);
+		const person = personById.get(row.personId);
 		if (!person) return [];
-		const evidence = (kept.get(row.empId) ?? []).flatMap<Evidence>((fact) => {
-			const segment = segById.get(fact.id);
-			if (!segment) return [];
-			return [
-				{
-					experienceId: segment.id,
-					kind: segment.kind,
-					claim: fact.claim,
-					route: fact.route,
-					phrase: fact.phrase,
-					engagement: fact.engagement,
-					startDate: segment.startDate,
-					endDate: segment.endDate,
-					company: segment.company,
-					department: segment.department,
-					title: segment.title,
-					seq: dots(segment.seqL1, segment.seqL2, segment.seqL3),
-				},
-			];
-		});
+		const evidence = (kept.get(row.personId) ?? []).flatMap<Evidence>(
+			(fact) => {
+				const segment = segById.get(fact.id);
+				if (!segment) return [];
+				return [
+					{
+						experienceId: segment.id,
+						kind: segment.kind,
+						claim: fact.claim,
+						route: fact.route,
+						phrase: fact.phrase,
+						engagement: fact.engagement,
+						startDate: segment.startDate,
+						endDate: segment.endDate,
+						company: segment.company,
+						department: segment.department,
+						title: segment.title,
+						seq: dots(segment.seqL1, segment.seqL2, segment.seqL3),
+					},
+				];
+			},
+		);
 		return [
 			{
-				employee: person,
+				person,
 				depth: row.depth,
 				basis: row.basis,
 				evidence,
@@ -902,7 +926,7 @@ export async function probe(
 		const counts = await eachSelected<number>(
 			store,
 			ready,
-			sql`count(distinct s.emp_id)::int`,
+			sql`count(distinct s.person_id)::int`,
 		);
 		const results: ConditionProbe[] = query.conditions.map((c, i) => {
 			const n = counts[i];
@@ -933,20 +957,51 @@ export async function probe(
 						? found.conditions.map((c) => c.id)
 						: [],
 			};
-		const byId = new Map(found.candidates.map((c) => [c.empId, c]));
-		const order = new Map(found.candidates.map((c, at) => [c.empId, at]));
+		const byId = new Map(found.candidates.map((c) => [c.personId, c]));
+		const order = new Map(found.candidates.map((c, at) => [c.personId, at]));
 		const first = deciding(query, found.unconfirmed);
 		const pending = (first.length > 0 ? first : found.unconfirmed).sort(
 			(a, b) =>
-				higherFirst(byId.get(a.empId), byId.get(b.empId)) ||
-				(order.get(a.empId) ?? 0) - (order.get(b.empId) ?? 0) ||
+				higherFirst(byId.get(a.personId), byId.get(b.personId)) ||
+				(order.get(a.personId) ?? 0) - (order.get(b.personId) ?? 0) ||
 				a.cond - b.cond ||
 				a.id - b.id,
 		);
+		// 先维持各自队内的顺序，再把两侧的段交替交给批次装配器。
+		const outside = pending.filter((u) => byId.get(u.personId)?.external);
+		const inside = pending.filter((u) => !byId.get(u.personId)?.external);
+		let firstQueue = inside,
+			secondQueue = outside;
+		if (inside.length && outside.length) {
+			// 一轮只剩一个名额时，下轮从此前确认较少的一侧开始；否定结论也占用过额度。
+			const keys = [
+				...new Set(
+					pending
+						.map((u) => query.conditions[u.cond]?.seek?.criterion)
+						.filter((s): s is string => !!s)
+						.map(criterionKey),
+				),
+			];
+			const balance = await store.execute<{ outside_first: boolean }>(sql`select
+				count(*) filter(where p.talent_type='在职员工')>count(*) filter(where p.talent_type='外部候选人') as outside_first
+				from experience_verdict v join experience e on v.content=${SEGMENT_CONTENT} join person_card p using(person_id)
+				where v.root_turn_id=${rootTurnId} and v.criterion_key=any(${sql.param(keys)}::text[])`);
+			if (balance.rows[0]?.outside_first) {
+				firstQueue = outside;
+				secondQueue = inside;
+			}
+		}
+		const ordered: typeof pending = [];
+		for (let i = 0; i < Math.max(firstQueue.length, secondQueue.length); i++) {
+			const a = firstQueue[i],
+				b = secondQueue[i];
+			if (a) ordered.push(a);
+			if (b) ordered.push(b);
+		}
 		// 同一快照里，同一判据只需确认某段一次，多个条件共享这份结论和额度。
 		const seen = new Map<string, Set<number>>();
 		const unconfirmed: ProbeResult["unconfirmed"] = [];
-		for (const { cond, id } of pending) {
+		for (const { cond, id } of ordered) {
 			const condition = query.conditions[cond];
 			const criterion = condition?.seek?.criterion;
 			if (!criterion) continue;
@@ -997,7 +1052,7 @@ export async function withSearchFacts<T>(
 	});
 }
 
-/** 一条条件选中了谁：经历条件是段（`工号:段 id`），人的条件是人（工号），按字面排好。 */
+/** 一条条件选中了谁：经历条件是段（`人员编号:段 id`），人的条件是人员编号，按字面排好。 */
 type ConditionSelection = {
 	id: string;
 	selected: string[] | null;
@@ -1013,7 +1068,7 @@ export async function selection(query: Query): Promise<ConditionSelection[]> {
 		const lists = await eachSelected<string[]>(
 			store,
 			ready,
-			sql`coalesce(array_agg(concat_ws(':', s.emp_id, s.id)), '{}')`,
+			sql`coalesce(array_agg(concat_ws(':', s.person_id, s.id)), '{}')`,
 		);
 		return query.conditions.map((c, i) => {
 			const n = lists[i];
@@ -1098,19 +1153,19 @@ async function eachSelected<T>(
 }
 
 /**
- * 一条条件选中了什么，`emp_id, id` 的行；规则见 `probe`。经历条件是选中的段，写了「做过什么」
+ * 一条条件选中了什么，`person_id, id` 的行；规则见 `probe`。经历条件是选中的段，写了「做过什么」
  * 的是候选的段，写了累计时长的只留累计够了的人的段；人的条件是满足它的人，id 为 null。
  */
 function selectedOf(one: Compiled, i: number): SQL {
 	const c = one.condition;
 	if (c.from === "person")
-		return sql`select p.emp_id, null::int as id from person p where ${one.where}`;
-	const segments = sql`select distinct e.emp_id, e.id, e.months
+		return sql`select p.person_id, null::int as id from person p where ${one.where}`;
+	const segments = sql`select distinct e.person_id, e.id, e.months
 		from ${segmentsOf(one, i)} ${whereAll([one.where])}`;
 	return c.minMonths
 		? sql`with s as (${segments})
-			select s.emp_id, s.id from s
-			where s.emp_id in (
-				select emp_id from s group by emp_id having sum(months) >= ${c.minMonths})`
-		: sql`select s.emp_id, s.id from (${segments}) s`;
+			select s.person_id, s.id from s
+			where s.person_id in (
+				select person_id from s group by person_id having sum(months) >= ${c.minMonths})`
+		: sql`select s.person_id, s.id from (${segments}) s`;
 }

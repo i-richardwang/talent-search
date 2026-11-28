@@ -1,6 +1,8 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { BriefcaseBusinessIcon, RotateCwIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { ExternalProfile } from "#/components/external-profile";
+import { ResumeSources } from "#/components/resume-sources";
 import { ActionIcon } from "#/components/ui/action-icon";
 import { NavHeaderTitle } from "#/components/ui/app-layout";
 import { Button } from "#/components/ui/button";
@@ -11,13 +13,13 @@ import { Icon } from "#/components/ui/icon";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
 import { dots } from "#/lib/format";
-import type { EmployeeDetail, Evidence } from "#/search/result";
+import type { Evidence, PersonDetail } from "#/search/result";
 import { countedOf } from "../-lib/claim-lines";
 import { CareerBar } from "./career-bar";
 import { PaneHeader } from "./pane-header";
 import { Timeline } from "./timeline";
 
-/* 一个人的详情（`p.$empId.tsx` 的三种内容）：详情、换人途中的骨架、找不到这个工号。 */
+/* 一个人的详情（`p.$personId.tsx` 的三种内容）：详情、换人途中的骨架、找不到这个工号。 */
 
 /** 详情的外壳：页头吸在顶上，滚到哪都看得见在看谁。骨架和详情共用它，换人时页头不跳。 */
 function Pane({
@@ -63,7 +65,7 @@ function Career({ children }: { children: ReactNode }) {
 /** 详情顶上的几条属性。骨架按同一张表画标签，换人时标签一栏不跳。 */
 const ATTRIBUTES: {
 	label: string;
-	value: (e: EmployeeDetail["employee"]) => ReactNode;
+	value: (e: PersonDetail["person"]) => ReactNode;
 }[] = [
 	{ label: "部门", value: (e) => e.curDept || "—" },
 	{ label: "岗位", value: (e) => dots(e.curTitle, e.curLevel) || "—" },
@@ -95,7 +97,7 @@ const PENDING_WIDTHS = ["60%", "45%", "70%", "30%", "40%", "55%"];
 const PENDING_STAGES = [0, 1, 2] as const;
 
 /**
- * 换人途中的骨架，和详情同一个形状，属性标签是真的字。等过 `p.$empId.tsx` 的
+ * 换人途中的骨架，和详情同一个形状，属性标签是真的字。等过 `p.$personId.tsx` 的
  * `pendingMs` 才画，快的时候上一个人留着，直到下一个人画出来。
  */
 export function PersonPending() {
@@ -157,7 +159,7 @@ export function PersonNotFound() {
 				<Button
 					render={
 						<Link
-							from="/s/$turnId/p/$empId"
+							from="/s/$turnId/p/$personId"
 							params={(prev) => prev}
 							replace
 							search={(prev) => prev}
@@ -197,29 +199,33 @@ export function PersonFailed() {
  * 不在名单上、或名单按人排时是空的。
  */
 export function Person({
-	employee: e,
+	person: e,
+	sources = [],
 	timeline,
 	evidence,
 }: {
-	employee: EmployeeDetail["employee"];
-	timeline: EmployeeDetail["timeline"];
+	person: PersonDetail["person"];
+	sources?: Parameters<typeof ResumeSources>[0]["items"];
+	timeline: PersonDetail["timeline"];
 	evidence: Evidence[];
 }) {
 	const counted = countedOf(evidence);
 
 	return (
-		/* 换人时整栏淡入一次；按 empId 换 key 让动画重播。 */
-		<div className="settle" key={e.empId}>
+		/* 换人时整栏淡入一次；按 personId 换 key 让动画重播。 */
+		<div className="settle" key={e.personId}>
 			<Pane
 				close={
 					<>
-						<CopyButton content={e.empId} size="header" title="复制工号" />
+						{e.empId && (
+							<CopyButton content={e.empId} size="header" title="复制工号" />
+						)}
 						{/* 关闭是 Link 渲染成的图标按钮：<a> 里嵌 <button> 是非法嵌套。 */}
 						<ActionIcon
 							icon={XIcon}
 							render={
 								<Link
-									from="/s/$turnId/p/$empId"
+									from="/s/$turnId/p/$personId"
 									params={(prev) => prev}
 									replace
 									search={(prev) => prev}
@@ -236,19 +242,24 @@ export function Person({
 					<>
 						<NavHeaderTitle as="h2">{e.name}</NavHeaderTitle>
 						<Text className="shrink-0 tabular-nums" type="secondary">
-							{e.empId}
+							{e.empId ?? e.talentType}
 						</Text>
 					</>
 				}
 			>
 				<Descriptions>
-					{ATTRIBUTES.map(({ label, value }) => (
-						<DescriptionsItem key={label} label={label}>
-							{value(e)}
-						</DescriptionsItem>
-					))}
+					{e.talentType === "外部候选人" ? (
+						<ExternalProfile person={e} />
+					) : (
+						ATTRIBUTES.map(({ label, value }) => (
+							<DescriptionsItem key={label} label={label}>
+								{value(e)}
+							</DescriptionsItem>
+						))
+					)}
 				</Descriptions>
 
+				<ResumeSources items={sources} personId={e.personId} />
 				<Career>
 					<CareerBar counted={counted} hireDate={e.hireDate} rows={timeline} />
 					<Timeline counted={counted} rows={timeline} />

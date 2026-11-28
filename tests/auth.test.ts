@@ -85,7 +85,7 @@ test("只接受本站返回地址，角色必须完整匹配", () => {
 test("账号生命周期与权限检查不改变已有语料、抽取结果或词表", async () => {
 	await seed([
 		{
-			empId: "synthetic-1",
+			personId: "synthetic-1",
 			name: "合成员工",
 			segments: [
 				{
@@ -106,7 +106,11 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 	);
 	const corpus = async () => {
 		const tables = [
-			"employee",
+			"person",
+			"employment",
+			"person_identity",
+			"profile_source",
+			"profile_experience",
 			"experience",
 			"experience_next",
 			"experience_phrase",
@@ -125,6 +129,10 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 			),
 		);
 	};
+	const path = await pool.query<{ local: boolean }>(
+		"select current_schemas(false) = array[current_schema()] as local",
+	);
+	assert.equal(path.rows[0]?.local, true);
 	const before = await corpus();
 	assert.equal(await viewer(new Headers()), null);
 	await assert.rejects(
@@ -287,11 +295,12 @@ test("停用撤销登录并挡住再登录，恢复后照常；改角色下一�
 			admin: false,
 			disabled: true,
 			orgs: [ORG],
-			people: 1,
+			people: 0,
 		},
 	]);
 
 	await manageAccount({ action: "enable", username: "leaving.user" });
+	assert.equal((await listAccounts("离职", 1)).rows[0]?.people, 1);
 	const back = await login("leaving.user");
 	await manageAccount({
 		action: "set-role",
@@ -381,12 +390,17 @@ test("账号页管别人的账号：建号和重置交出生成的密码，改�
 
 	await seed([
 		{
-			empId: "P1",
+			personId: "P1",
 			name: "合成员工甲",
 			org: `${ORG}>出行事业部>运营部`,
 			segments: [],
 		},
-		{ empId: "P2", name: "合成员工乙", org: `${ORG}>金融事业部`, segments: [] },
+		{
+			personId: "P2",
+			name: "合成员工乙",
+			org: `${ORG}>金融事业部`,
+			segments: [],
+		},
 	]);
 	const moving = `${ORG}>出行事业部`;
 	await assert.rejects(

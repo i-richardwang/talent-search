@@ -155,7 +155,7 @@ function SizeRow({ size }: { size: TagSize }) {
 			</TableCell>
 			<TableCell>
 				<Tag size={size} variant="outlined">
-					入职前
+					外部
 				</Tag>
 			</TableCell>
 		</TableRow>
@@ -219,7 +219,7 @@ function Usage() {
 					<span className="font-semibold text-base">某支付公司</span>
 					<span className="text-base">后端工程师</span>
 					<Tag size="small" variant="outlined">
-						入职前
+						外部
 					</Tag>
 				</div>
 			</Example>
@@ -253,7 +253,7 @@ export function TagPage() {
 					"关闭钮只调 onClose，标签由调用处从数据里移除。",
 					"尺寸用 size，不覆盖高度、圆角和内边距。",
 				],
-				usage: `<Tag size="small" variant="outlined">\n  入职前\n</Tag>`,
+				usage: `<Tag size="small" variant="outlined">\n  外部\n</Tag>`,
 			}}
 			sections={[
 				{

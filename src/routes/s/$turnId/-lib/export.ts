@@ -1,7 +1,16 @@
 import type { Pick } from "./picks";
 
 /** 名单与匹配证据的唯一导出列定义，导出对话框共用这些名字。 */
-export const FIXED = ["序号", "工号", "姓名", "部门", "岗位", "职级"] as const;
+export const FIXED = [
+	"序号",
+	"工号",
+	"姓名",
+	"部门",
+	"岗位",
+	"职级",
+	"人才类型",
+	"最近公司",
+] as const;
 
 /** XLSX 显式保留文本类型；工号、原文和条件都不参与公式或数字推断。 */
 export async function exportWorkbook(
@@ -20,6 +29,8 @@ export async function exportWorkbook(
 		p.dept,
 		p.title,
 		p.level,
+		p.talentType,
+		p.recentCompany || null,
 		...(evidence ? names.map((_, i) => p.evidence[i] ?? null) : []),
 	]);
 	return writeExcelFile([head, ...rows], { sheet: "人才名单" }).toBlob();

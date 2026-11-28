@@ -11,7 +11,7 @@ export type Overflow =
  * 该上名单的还没上。经历从职级高的人确认起，`above` 是已经完整确认到的最低一档职级：这一档和
  * 更高的人都确认完了。最高一档也没确认完时为 null。
  */
-export type Incomplete = { above: string | null };
+export type Incomplete = { above: string | null; mixed?: boolean };
 
 /**
  * 决定谁上名单的条件（启用着的必须条件，经历的和人的）合起来没有人。`nobody` 是其中单独一条

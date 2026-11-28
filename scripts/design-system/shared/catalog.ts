@@ -233,7 +233,7 @@ const CATALOG = [
 				slug: "reading",
 				source: [
 					"src/routes/-components/detail-drawer.tsx",
-					"src/routes/data/-components/employee-drawer.tsx",
+					"src/routes/data/-components/person-drawer.tsx",
 					"src/routes/terms/-components/term-drawer.tsx",
 					"src/routes/tasks/-components/task-card.tsx",
 					"src/routes/s/$turnId/-components/person.tsx",
@@ -297,7 +297,7 @@ const CATALOG = [
 			{
 				name: "OrgPicker",
 				slug: "org-picker",
-				source: ["src/routes/accounts/-components/org-picker.tsx"],
+				source: ["src/components/org-picker.tsx"],
 				title: "组织树",
 			},
 		],

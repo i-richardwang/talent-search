@@ -29,7 +29,7 @@ import {
 } from "./weights";
 
 /** 候选人的分面属性；没有工作经历时经历单值为空，集合为空数组。 */
-export type PopulationFact = DimSource & { empId: string };
+export type PopulationFact = DimSource & { personId: string };
 
 /** 一段真实工作经历在一条主张上算数，包含排序属性与证据身份，不包含人员评分。 */
 export type Fact = PopulationFact & {
@@ -164,10 +164,10 @@ function bucket(facts: Fact[], keep: (f: Fact) => boolean) {
 	const byEmp = new Map<string, Person>();
 	for (const f of facts) {
 		if (!keep(f)) continue;
-		let p = byEmp.get(f.empId);
+		let p = byEmp.get(f.personId);
 		if (!p) {
 			p = new Map();
-			byEmp.set(f.empId, p);
+			byEmp.set(f.personId, p);
 		}
 		addFact(p, f);
 	}
@@ -198,7 +198,7 @@ function measure(
 	p: Person,
 	claims: Claim[],
 	preferred: readonly ReadonlySet<string>[],
-	empId: string,
+	personId: string,
 	now: Date,
 	weightOf: WeightOf,
 ) {
@@ -218,7 +218,7 @@ function measure(
 			depth *= 1 + BOOST_WEIGHT * value.depth;
 		} else basis.push(null);
 	}
-	for (const set of preferred) if (set.has(empId)) depth *= 1 + BOOST_WEIGHT;
+	for (const set of preferred) if (set.has(personId)) depth *= 1 + BOOST_WEIGHT;
 	return { depth, basis };
 }
 
@@ -274,9 +274,9 @@ function tally<K extends DimKey, F extends PopulationFact>(
 				bucket = { value, rank: dimRank(key, f), people: new Map() };
 				byValue.set(id, bucket);
 			}
-			const list = bucket.people.get(f.empId);
+			const list = bucket.people.get(f.personId);
 			if (list) list.push(f);
-			else bucket.people.set(f.empId, [f]);
+			else bucket.people.set(f.personId, [f]);
 		}
 	}
 	const out = new Map<
@@ -338,7 +338,7 @@ function populationFacets(
 }
 
 export type Ranked = {
-	empId: string;
+	personId: string;
 	depth: number;
 	basis: (ClaimBasis | null)[];
 };
@@ -349,7 +349,7 @@ export type Ranked = {
  * 同分按工号保持确定的顺序，增加 limit 翻页时已有名单逐位不变。
  */
 function byDepth(a: Ranked, b: Ranked) {
-	return b.depth - a.depth || a.empId.localeCompare(b.empId);
+	return b.depth - a.depth || a.personId.localeCompare(b.personId);
 }
 
 /** 这份事实下谁在名单上、按什么顺序。now 是本次检索的共同时间依据。 */
@@ -366,14 +366,14 @@ export function order(
 	const ranked: Ranked[] = [];
 	const evidence = bucket(facts, keeps(filters));
 	const candidates = new Set(
-		population.filter(keeps(filters)).map((row) => row.empId),
+		population.filter(keeps(filters)).map((row) => row.personId),
 	);
-	for (const empId of candidates) {
-		const p = evidence.get(empId) ?? new Map<number, Fact[]>();
+	for (const personId of candidates) {
+		const p = evidence.get(personId) ?? new Map<number, Fact[]>();
 		if (!complete(p, claims)) continue;
 		ranked.push({
-			empId,
-			...measure(p, claims, preferred, empId, now, weightOf),
+			personId,
+			...measure(p, claims, preferred, personId, now, weightOf),
 		});
 	}
 	return ranked.sort(byDepth);
@@ -420,25 +420,25 @@ export function pageEvidence(
 	facts: Fact[],
 	claims: readonly Claim[],
 	filters: SearchFilters,
-	empIds: Set<string>,
+	personIds: Set<string>,
 ): Map<string, Fact[]> {
 	const keep = keeps(filters);
-	const byKey = new Map<string, { empId: string; facts: Fact[] }>();
+	const byKey = new Map<string, { personId: string; facts: Fact[] }>();
 	for (const f of facts) {
-		if (!empIds.has(f.empId) || !keep(f)) continue;
-		const k = f.empId + PER_CLAIM + f.claim;
+		if (!personIds.has(f.personId) || !keep(f)) continue;
+		const k = f.personId + PER_CLAIM + f.claim;
 		const bucket = byKey.get(k);
 		if (bucket) bucket.facts.push(f);
-		else byKey.set(k, { empId: f.empId, facts: [f] });
+		else byKey.set(k, { personId: f.personId, facts: [f] });
 	}
 	const out = new Map<string, Fact[]>();
-	for (const { empId, facts: list } of byKey.values()) {
+	for (const { personId, facts: list } of byKey.values()) {
 		const claim = claims[list[0]?.claim ?? -1];
 		if (!claim || !basisOf(claim, list)) continue;
 		list.sort((a, b) => closer(b, a) || b.months - a.months || a.id - b.id);
-		const acc = out.get(empId) ?? [];
+		const acc = out.get(personId) ?? [];
 		acc.push(...list);
-		out.set(empId, acc);
+		out.set(personId, acc);
 	}
 	// 主张的顺序即行序：结果里每个人的每条证据对应一条主张，按下标排好再返回
 	for (const list of out.values())

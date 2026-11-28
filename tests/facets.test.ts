@@ -34,7 +34,7 @@ const run = async (query: string, filters: SearchFilters = {}) => {
 		null,
 		filters,
 	);
-	if (outcome.order === "employee")
+	if (outcome.order === "person")
 		throw new Error("要求查询得有经历主张，只有人的条件排不出名次");
 	return outcome;
 };
@@ -44,7 +44,7 @@ before(async () => {
 		// 跟人走的那几维也要有值：不然「分面计数方法和主检索一致」那条穷举
 		// 在它们身上一个候选都拿不到，会安静地少验几维。
 		{
-			empId: "F001",
+			personId: "F001",
 			name: "分面甲",
 			curLevel: "P6",
 			recruitment: "校招",
@@ -54,7 +54,7 @@ before(async () => {
 			segments: [{ seqL1: "技术", seqL2: "算法", months: 36 }],
 		},
 		{
-			empId: "F002",
+			personId: "F002",
 			name: "分面乙",
 			curLevel: "P7",
 			recruitment: "社招",
@@ -64,7 +64,7 @@ before(async () => {
 			segments: [{ seqL1: "技术", seqL2: "算法", months: 36 }],
 		},
 		{
-			empId: "F003",
+			personId: "F003",
 			name: "分面丙",
 			curLevel: "P7",
 			recruitment: "校招",
@@ -73,7 +73,7 @@ before(async () => {
 			segments: [{ seqL1: "运营", seqL2: "渠道", title: "算法", months: 36 }],
 		},
 		{
-			empId: "F004",
+			personId: "F004",
 			name: "分面丁",
 			segments: [
 				{
@@ -92,7 +92,7 @@ before(async () => {
 		},
 		// 只写了细的词：词表里它属于「推荐系统」，点宽的词要看到他，细的那一行只有他
 		{
-			empId: "F005",
+			personId: "F005",
 			name: "分面戊",
 			segments: [
 				{
@@ -107,7 +107,7 @@ before(async () => {
 		},
 		// 公司档没被标过的那一段：「未知」在这一维里哪儿都不是取值
 		{
-			empId: "U001",
+			personId: "U001",
 			name: "公司档没标过",
 			segments: [
 				{
@@ -176,7 +176,7 @@ describe("候选与计数", () => {
 
 	test("宽的词把写了细的词的人也数进去，细的词只有写了它的人", async () => {
 		const { facets, results } = await run("算法", { skill: ["推荐系统"] });
-		assert.deepEqual(results.map((r) => r.employee.empId).sort(), [
+		assert.deepEqual(results.map((r) => r.person.personId).sort(), [
 			"F004",
 			"F005",
 			"U001",
@@ -185,7 +185,7 @@ describe("候选与计数", () => {
 		assert.equal(skills.get("电商推荐系统"), 1);
 		const narrow = await run("算法", { skill: ["电商推荐系统"] });
 		assert.deepEqual(
-			narrow.results.map((r) => r.employee.empId),
+			narrow.results.map((r) => r.person.personId),
 			["F005"],
 		);
 	});
@@ -217,7 +217,7 @@ describe("候选与计数", () => {
 	});
 
 	test("别的维度的筛选继续减少计数，但不让选项消失", async () => {
-		// 只看入职前时，三位只有内部事实的人不能为任何序列贡献计数；
+		// 只看外部时，三位只有内部事实的人不能为任何序列贡献计数；
 		// 「运营/渠道」因此归零，但它留在列表里（界面上是禁用的那一行）——
 		// 列表只随查询变形，不随筛选变形，见 rank.ts 的 facetRows
 		const { facets } = await run("算法", { kind: "external" });
@@ -242,7 +242,7 @@ describe("候选与计数", () => {
 		const { facets } = await run("算法");
 		// 「未知」不是公司档（见下面那条），所以这一维只有 F004 那一个取值
 		assert.deepEqual(facets.companyTag, [{ value: "头部互联网T1", n: 1 }]);
-		// 入职前的三个人：F004、只写了细的词的 F005，和公司档没标过的 U001
+		// 外部的三个人：F004、只写了细的词的 F005，和公司档没标过的 U001
 		assert.equal(facets.kind.find((k) => k.value === "external")?.n, 3);
 	});
 
@@ -301,6 +301,8 @@ describe("分面预告的数就是点下去会得到的数", () => {
 		// 和视图筛选的单段计数不是同一件事（`tests/conditions.ts`）
 		const scopable = DIM_KEYS.filter(
 			(key) =>
+				key !== "pool" &&
+				key !== "talentType" &&
 				key !== "seq" &&
 				key !== "skill" &&
 				key !== "industry" &&
@@ -319,8 +321,8 @@ describe("分面预告的数就是点下去会得到的数", () => {
 					{},
 				);
 				assert.deepEqual(
-					scoped.results.map((r) => r.employee.empId),
-					filtered.results.map((r) => r.employee.empId),
+					scoped.results.map((r) => r.person.personId),
+					filtered.results.map((r) => r.person.personId),
 					`${key} ${dimId(key, row.value)}`,
 				);
 			}
@@ -346,7 +348,7 @@ describe("分面预告的数就是点下去会得到的数", () => {
 			],
 		);
 		const { results } = await run(QUERY, { industry: ["消费/零售"] });
-		assert.deepEqual(results.map((r) => r.employee.empId).sort(), [
+		assert.deepEqual(results.map((r) => r.person.personId).sort(), [
 			"F004",
 			"F005",
 		]);

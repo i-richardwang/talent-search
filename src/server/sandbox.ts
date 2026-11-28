@@ -219,14 +219,14 @@ function walkAll(list: unknown, scopes: Scope[]) {
 	for (const item of Array.isArray(list) ? list : []) walk(item, scopes);
 }
 
-/** 工号列：只作关联键。 */
-const KEY_COLUMN = "emp_id";
+/** 人员编号列：只作关联键。 */
+const KEY_COLUMN = "person_id";
 
 function isColumn(node: unknown) {
 	return Boolean(node && typeof node === "object" && "ColumnRef" in node);
 }
 
-/** 一个工号列的引用，比如 `p.emp_id`。 */
+/** 一个人员编号列的引用，比如 `p.person_id`。 */
 function isKey(node: unknown) {
 	if (!isColumn(node)) return false;
 	const fields = (node as { ColumnRef: AnyNode }).ColumnRef.fields;
@@ -234,8 +234,8 @@ function isKey(node: unknown) {
 }
 
 /**
- * `key` 为真时这里可以出现工号列：和另一列工号比相等、在聚合 count 里、在 group by 里。别处
- * 不行——工号和常量比、和别的列比、转成别的类型、写进子查询的输出，都能把一次计数缩到一个人
+ * `key` 为真时这里可以出现人员编号列：和另一列人员编号比相等、在聚合 count 里、在 group by 里。别处
+ * 不行——人员编号和常量比、和别的列比、转成别的类型、写进子查询的输出，都能把一次计数缩到一个人
  * 身上。
  */
 function walk(node: unknown, scopes: Scope[], key = false): void {
@@ -257,7 +257,7 @@ function walk(node: unknown, scopes: Scope[], key = false): void {
 			return;
 		case "ColumnRef":
 			if (!key && names(body.fields).at(-1) === KEY_COLUMN)
-				reject("emp_id 只作关联键：只能和另一列 emp_id 比相等");
+				reject("person_id 只作关联键：只能和另一列 person_id 比相等");
 			column(body, scopes);
 			return;
 		case "A_Expr": {
@@ -448,7 +448,7 @@ function select(body: AnyNode, outer: Scope[]) {
 
 /**
  * FROM 里只有目录里的关系和它们之间的连接。别名只换关系名：列名始终是目录里的那一套，
- * 白名单按列名认列（工号是关联键、学校是取值列）。别名带列名表会按位置给列改名，把工号
+ * 白名单按列名认列（人员编号是关联键、学校是取值列）。别名带列名表会按位置给列改名，把人员编号
  * 叫成学校就能拿它和参数比；连接带别名也能这样改名。
  */
 function fromItem(node: unknown, scope: Scope, scopes: Scope[]) {
@@ -519,7 +519,7 @@ function problemOf(error: unknown): string | null {
 }
 
 /** 一份 `where` 拆成的语法树：顶层的布尔表达式，和 `$n` 依次对应的参数名。 */
-export type WhereTree = { clause: unknown; order: string[] };
+type WhereTree = { clause: unknown; order: string[] };
 
 /**
  * 按词法单元重拼 `where`、换掉参数、解析成语法树。只核对写法（分号、括号、参数、单个表达式），

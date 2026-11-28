@@ -105,6 +105,6 @@ export const lately = {
 	mode: "must",
 	from: "person",
 	where:
-		"exists (select 1 from rating r where r.emp_id = p.emp_id and r.period_end >= current_date - :days)",
+		"exists (select 1 from rating r where r.person_id = p.person_id and r.period_end >= current_date - :days)",
 	params: { days: "九十" },
 };

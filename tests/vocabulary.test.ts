@@ -126,7 +126,7 @@ async function peopleByWord(): Promise<[string, number][]> {
 	const connection = await client();
 	try {
 		const { rows } = await connection.query<{ word: string; people: string }>(
-			`select p.text as word, count(distinct e.emp_id) as people
+			`select p.text as word, count(distinct e.person_id) as people
 			 from experience_phrase ep
 			 join phrase p on p.id = ep.phrase_id
 			 join experience e on e.id = ep.experience_id
@@ -256,7 +256,7 @@ describe("整轮整理", () => {
 				["团队管理", "团队管理工作", "Python"],
 				["团队管理", "团队管理工作", "Java"],
 			].map((skills, index) => ({
-				empId: `u${index + 1}`,
+				personId: `u${index + 1}`,
 				name: `人${index + 1}`,
 				segments: [{ kind: "external", months: 12, extracted: { skills } }],
 			})),
@@ -373,7 +373,7 @@ describe("判定交给外部", () => {
 				["线上销售数据分析", "线下销售数据分析"],
 				["线上销售数据分析", "线下销售数据分析"],
 			].map((skills, index) => ({
-				empId: `d${index + 1}`,
+				personId: `d${index + 1}`,
 				name: `数${index + 1}`,
 				segments: [{ kind: "external", months: 12, extracted: { skills } }],
 			})),
@@ -711,7 +711,7 @@ describe("退回重新判定", () => {
 		await seedTable([]);
 		await seed(
 			Array.from({ length: 7 }, (_, i) => ({
-				empId: `SYN${i}`,
+				personId: `SYN${i}`,
 				name: `合成人${i}`,
 				segments: [
 					{

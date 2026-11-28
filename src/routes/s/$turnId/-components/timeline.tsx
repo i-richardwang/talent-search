@@ -2,7 +2,7 @@ import { Block } from "#/components/ui/block";
 import { Tag } from "#/components/ui/tag";
 import type { CompanyMeta } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
-import { type EmployeeDetail, placeOf } from "#/search/result";
+import { type PersonDetail, placeOf } from "#/search/result";
 import { Dot } from "./evidence";
 
 /**
@@ -13,7 +13,7 @@ export function Timeline({
 	rows,
 	counted,
 }: {
-	rows: EmployeeDetail["timeline"];
+	rows: PersonDetail["timeline"];
 	/** 算数的经历段（`claim-lines.ts` 的 `countedOf`）。 */
 	counted: ReadonlySet<number>;
 }) {
@@ -37,12 +37,12 @@ function Segment({
 	hit,
 	isLast,
 }: {
-	row: EmployeeDetail["timeline"][number];
+	row: PersonDetail["timeline"][number];
 	hit: boolean;
 	isLast: boolean;
 }) {
 	const external = x.kind === "external";
-	// 入职前的段没有登记的序列，只有推断出的一对
+	// 外部的段没有登记的序列，只有推断出的一对
 	const seq = external
 		? dots(x.seqInferredL1, x.seqInferredL2)
 		: dots(x.seqL1, x.seqL2, x.seqL3);
@@ -70,7 +70,7 @@ function Segment({
 						{x.level && (
 							<span className="text-fg-secondary text-xs">{x.level}</span>
 						)}
-						{external && <Tag size="small">入职前</Tag>}
+						{external && <Tag size="small">外部</Tag>}
 					</div>
 
 					<div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-fg-secondary text-xs">
@@ -98,7 +98,7 @@ function Segment({
 	);
 }
 
-/** 入职前那家公司是什么：人事登记的公司档和企业性质，中间是它的主营行业。 */
+/** 外部那家公司是什么：人事登记的公司档和企业性质，中间是它的主营行业。 */
 function CompanyLine({
 	meta,
 	industries,

@@ -7,7 +7,10 @@
 import "@tanstack/react-start/server-only";
 import { PgBoss, type UpdateQueueOptions } from "pg-boss";
 import { type Rejudge, rejudgeOf, type TaskKind } from "#/lib/task";
+import { collectFiles } from "./resume-files";
 import { reviewJudge } from "./review";
+import { processNextResume } from "./talent-import";
+import { ensureDefaultPool } from "./talent-pools";
 import { runTask } from "./tasks";
 
 /** 后台跑的两种任务。同步不在其中：它读的是别处的数据，由命令行按外面的节奏跑。 */
@@ -63,6 +66,19 @@ async function setup(boss: PgBoss): Promise<void> {
 		await boss.updateQueue(kind, QUEUE);
 		await boss.schedule(kind, SCHEDULE[kind], null, { tz });
 	}
+	await ensureDefaultPool();
+	await boss.createQueue("resume-import", { policy: "exclusive" });
+	await boss.schedule("resume-import", "* * * * *");
+	await boss.work("resume-import", async () => {
+		let published = false;
+		for (let i = 0; i < 8; i++) {
+			const outcome = await processNextResume();
+			if (outcome === "idle") break;
+			if (outcome === "published") published = true;
+		}
+		if (published) await boss.send("derive", {});
+		await collectFiles();
+	});
 	await boss.work<{ manual?: boolean }>("derive", async ([job]) => {
 		await runTask("derive", {
 			queuedDerive: job?.data?.manual === true ? "manual" : "automatic",
@@ -98,4 +114,16 @@ export async function requestJob({
 	if (!handle) throw new Error("后台任务没有启动：这条路只在应用进程里通");
 	await handle.ready;
 	return (await handle.boss.send(kind, payload)) !== null;
+}
+
+export async function wakeIngestionJob(kind: "resume-import" | "derive") {
+	const handle = registry[HANDLE];
+	if (handle) {
+		try {
+			await handle.ready;
+			await handle.boss.send(kind, {});
+		} catch {
+			console.warn("后台任务等待下一轮调度", kind);
+		}
+	}
 }

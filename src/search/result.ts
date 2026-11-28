@@ -1,4 +1,4 @@
-import type { Employee, Experience, Route } from "#/db/schema";
+import type { Experience, PersonCard, Route } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason, Incomplete } from "./empty";
@@ -20,21 +20,30 @@ export type Evidence = {
 	seq: string;
 };
 
-/** 一段经历在哪：入职前是公司，公司内是部门，两者只有其一。 */
+/** 一段经历在哪：外部是公司，公司内是部门，两者只有其一。 */
 export function placeOf(segment: { company: string; department: string }) {
 	return segment.company || segment.department;
 }
 
-export type ResultEmployee = Pick<
-	Employee,
-	"empId" | "name" | "curDept" | "curTitle" | "curLevel"
+export type ResultPerson = Pick<
+	PersonCard,
+	| "personId"
+	| "name"
+	| "curDept"
+	| "curTitle"
+	| "curLevel"
+	| "empId"
+	| "talentType"
+	| "recentCompany"
+	| "recentTitle"
+	| "accessKey"
 >;
 
 /** 单人详情的显示契约；不包含内容键、解析版本或筛选档高。 */
-export type EmployeeDetail = {
-	employee: Pick<
-		Employee,
-		| "empId"
+export type PersonDetail = {
+	person: Pick<
+		PersonCard,
+		| "personId"
 		| "name"
 		| "curDept"
 		| "curTitle"
@@ -48,6 +57,11 @@ export type EmployeeDetail = {
 		| "schoolTier"
 		| "overseasEducated"
 		| "recruitment"
+		| "empId"
+		| "talentType"
+		| "recentCompany"
+		| "recentTitle"
+		| "pools"
 	>;
 	timeline: (Pick<
 		Experience,
@@ -69,13 +83,13 @@ export type EmployeeDetail = {
 		| "description"
 		| "months"
 	> & {
-		/** 入职前那家公司的主营行业，只写最细的一级；没认出公司或没有行业时为空 */
+		/** 外部那家公司的主营行业，只写最细的一级；没认出公司或没有行业时为空 */
 		mainIndustries: string[];
 	})[];
 };
 
 type PopulationResult = {
-	employee: ResultEmployee;
+	person: ResultPerson;
 };
 
 export type RankedResult = PopulationResult & {
@@ -104,7 +118,7 @@ type Outcome = {
 	empty: EmptyReason | null;
 };
 
-/** evidence 按深度排序；employee 用于没有经历证据的人员查询。 */
+/** evidence 按深度排序；person 用于没有经历证据的人员查询。 */
 export type SearchOutcome =
 	| (Outcome & {
 			order: "evidence";
@@ -112,7 +126,7 @@ export type SearchOutcome =
 			results: RankedResult[];
 	  })
 	| (Outcome & {
-			order: "employee";
+			order: "person";
 			claims: [];
 			results: PopulationResult[];
 	  });

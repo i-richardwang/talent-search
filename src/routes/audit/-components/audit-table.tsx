@@ -22,6 +22,11 @@ import { TablePager } from "../../-components/table-pager";
 
 const ACTION_TEXT: Record<AuditAction, string> = {
 	search: "搜索",
+	"resume-preview": "预览简历",
+	"resume-download": "下载简历",
+	"talent-add": "导入候选人",
+	"talent-link": "关联候选人",
+	"talent-remove": "移出人才池",
 	"derive-read": "读取待解析经历",
 	view: "查看",
 	export: "导出",
@@ -36,7 +41,7 @@ const ACTION_TEXT: Record<AuditAction, string> = {
 
 function subject(row: AuditRow): string {
 	if (row.text !== null) return row.text || "无搜索条件";
-	if (row.empId !== null) return dots(row.empId, row.empName);
+	if (row.personId !== null) return dots(row.personId, row.personName);
 	return dots(row.accountName, row.accountUsername);
 }
 

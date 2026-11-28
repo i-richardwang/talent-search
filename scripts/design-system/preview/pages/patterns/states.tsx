@@ -112,7 +112,7 @@ function Run({ ending, step }: { ending: Ending; step: Step }) {
 			)}
 			<ResultList
 				canMore={false}
-				empId={undefined}
+				personId={undefined}
 				failure={failed ? { fault: "unreachable", onRetry: noop } : null}
 				growing={false}
 				mode="conversation"

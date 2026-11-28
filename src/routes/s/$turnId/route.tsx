@@ -81,7 +81,7 @@ function Workbench() {
 	const { spec: settledSpec } = turn;
 	const view = Route.useSearch();
 	const navigate = useNavigate();
-	const { empId } = useParams({ strict: false });
+	const { personId } = useParams({ strict: false });
 	const { commit, error: commitError } = useCommit();
 	// 动作没提交上去：名单没变，说一句、让人再点一次
 	useEffect(() => {
@@ -106,7 +106,7 @@ function Workbench() {
 	// 对话的链在没配查询理解时没有输入框，条件只能在 chip 上改
 	const editable = mode === "keyword" || understanding;
 	const wide = useIsWide();
-	const open = Boolean(empId);
+	const open = Boolean(personId);
 	const closeDetail = useCloseDetail(turnId, view);
 	const {
 		composer,
@@ -221,7 +221,7 @@ function Workbench() {
 		onPick: picks.toggle,
 		picked: picks.picked.size,
 		results,
-		empId,
+		personId,
 		turnId,
 		view,
 	});
@@ -253,7 +253,7 @@ function Workbench() {
 				list={
 					<ResultList
 						canMore={canMore}
-						empId={empId}
+						personId={personId}
 						failure={results.length === 0 ? failed : null}
 						growing={nav.growing}
 						mode={mode}

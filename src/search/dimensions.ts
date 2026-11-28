@@ -15,6 +15,8 @@ type SeqPick = { l1: string; l2: string };
 
 /** 每一维**一个取值**的类型。选中的那些是它的集合还是单个取值，由 `Picked` 说。 */
 export type DimUnit = {
+	talentType: string;
+	pool: string;
 	seq: SeqPick;
 	level: string;
 	kind: "internal" | "external";
@@ -33,10 +35,12 @@ export type DimKey = keyof DimUnit;
 /**
  * 集合维：一维之内可以选多项，它们之间是「或」。
  *
- * 其余两维不是集合，只装一个取值：「在职」和「入职前」两个都要就是不筛，
+ * 其余两维不是集合，只装一个取值：「在职」和「外部」两个都要就是不筛，
  * 「至少 6 个月」或「至少 1 年」两个都要说不清是哪个。
  */
 const MULTI_KEYS = [
+	"pool",
+	"talentType",
 	"seq",
 	"level",
 	"companyTag",
@@ -61,13 +65,15 @@ export type Picked = {
 
 /** 分面读取的人员与经历属性；没有有效经历时，单值经历属性为空。 */
 export type DimSource = {
+	talentType?: string;
+	pools?: string[];
 	months: number | null;
-	/** 登记的序列，入职前的段是模型对齐的序列（目录视图的 `seq_l1`、`seq_l2`） */
+	/** 登记的序列，外部的段是模型对齐的序列（目录视图的 `seq_l1`、`seq_l2`） */
 	seqL1: string | null;
 	seqL2: string | null;
 	companyTag: string | null;
 	/**
-	 * 入职前那家公司的主营行业，连同每一级上级（目录视图的 `main_industries`）：点上级行业
+	 * 外部那家公司的主营行业，连同每一级上级（目录视图的 `main_industries`）：点上级行业
 	 * 能看到它下面每个细分的人。没认出公司、公司没有行业时是空数组
 	 */
 	mainIndustries: string[];
@@ -78,13 +84,13 @@ export type DimSource = {
 	 */
 	skills: string[];
 	kind: "internal" | "external" | null;
-	/** 当前职级归入的档（`employee.cur_level_band`），不是职级原文 */
+	/** 当前职级归入的档（`employment.cur_level_band`），不是职级原文 */
 	level: string;
 	levelRank: number | null;
 	recruitment: string;
 	education: string;
 	educationRank: number | null;
-	/** 最高学历那所学校的档（`employee.school_tier`），档与档之间不比高低 */
+	/** 最高学历那所学校的档（`person_card.school_tier`），档与档之间不比高低 */
 	schoolTier: string;
 	/** 最高学历是不是海外取得，目录视图写成「是」「否」；没有记录时为空 */
 	overseas: string | null;
@@ -211,7 +217,7 @@ function plain(label: string, column: (fact: DimSource) => string | null) {
 /** 经历来源的两种取值叫什么：筛选的选项和搜索条件的详情（`search/catalog.ts`）同一套。 */
 export const KIND_NAMES = {
 	internal: "公司内经历",
-	external: "入职前经历",
+	external: "外部经历",
 } as const;
 
 /**
@@ -220,6 +226,8 @@ export const KIND_NAMES = {
  * 顺序就是筛选栏里从上到下的顺序。
  */
 export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
+	talentType: plain("人才类型", (f) => f.talentType ?? null),
+	pool: { ...plain("人才池", () => null), values: (f) => f.pools ?? [] },
 	seq: {
 		label: "序列",
 		match: "set",
@@ -282,10 +290,10 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 		compare: (a, b) => a.value - b.value,
 	},
 
-	companyTag: plain("入职前公司", (f) => f.companyTag),
+	companyTag: plain("外部公司", (f) => f.companyTag),
 
 	industry: {
-		label: "入职前行业",
+		label: "外部行业",
 		match: "set",
 		// 按主营算：涉足的业务一家大公司能有十来个，都算进来每个行业下都是同一批人
 		values: (f) => f.mainIndustries,
@@ -296,9 +304,9 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 	},
 
 	skill: {
-		label: "入职前技能",
+		label: "外部技能",
 		match: "set",
-		// 技能来自入职前自述，只说明写过；没有技能边的段不满足此筛选。
+		// 技能来自外部自述，只说明写过；没有技能边的段不满足此筛选。
 		values: (f) => f.skills,
 		id: (v) => v,
 		option: (v) => v,
@@ -320,7 +328,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 };
 
 /**
- * 有高低的维：职级档和学历。取值是档名，档高来自语料（`employee` 上的档高列），
+ * 有高低的维：职级档和学历。取值是档名，档高来自语料（`person_card` 上的档高列），
  * 条件可以说「某档及以上」（`condition.ts` 的 `atLeast`）。
  */
 const ORDINAL_KEYS = [

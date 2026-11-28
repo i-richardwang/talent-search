@@ -17,12 +17,12 @@ after(async () => {
 before(async () => {
 	await seed([
 		{
-			empId: "V001",
+			personId: "V001",
 			name: "评估样例",
 			segments: [{ seqL2: "算法", months: 12 }],
 		},
 		{
-			empId: "V002",
+			personId: "V002",
 			name: "只被第二个取值找到",
 			segments: [{ seqL2: "运算", months: 12 }],
 		},

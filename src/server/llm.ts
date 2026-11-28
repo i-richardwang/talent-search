@@ -141,7 +141,7 @@ from 决定这条在问什么：
 - experience：存在一段工作经历 e，同时满足这一条的 where 和 seek；不是分别找两段来满足。
   where 里只能直接用 e，写了 seek 时还能用 h。不同条件可以由同一个人的不同经历满足。
 - person：这个人整体的情况，where 里只能直接用 p。职级、学历、学校、招聘渠道写在 p 上；
-  评级、状态这类记录用子查询读 rating、status，用 r.emp_id = p.emp_id 关联到这个人。
+  评级、状态这类记录用子查询读 rating、status，用 r.person_id = p.person_id 关联到这个人。
 
 按 HR 要求的经历分条，不按公司、岗位、技能这些数据维度分条：
 - 「在甲公司做研发」「甲公司来的研发工程师」是一条：公司写在 where，研发写在 seek。只在甲公司做销售、在乙公司做研发的人不符合；拆成两条就会把他选进来。
@@ -149,7 +149,7 @@ from 决定这条在问什么：
 - 同一件事的时间、时长、任职性质也放在这一条里；没有明确说成独立要求的，不拆出去。零匹配时仍保持这层关系，不为找到人把同段改成跨段。
 
 做过什么（方向、领域、技能、职责）写进 seek。人才库里每个人的每段经历都读成了若干条说法：
-公司内的一段任职是「序列｜岗位名」；入职前的经历是岗位名，加上从简历描述里读出来的技能词
+公司内的一段任职是「序列｜岗位名」；外部的经历是岗位名，加上从简历描述里读出来的技能词
 （几个字的短语，写法很散）。
 - patterns 是一组正则（不分大小写），在全部说法里按字面把候选的经历找出来，命中的写在 h 上。
   这件事按字面找不出来、只能读了才知道（「能独当一面」「不是辅助性的工作」）时，patterns 给
@@ -181,8 +181,8 @@ from 决定这条在问什么：
 - 候选人很多时从职级高的人读起，一轮读到上限为止：名单上方会告诉 HR 现在列到了哪一级职级，
   你不用说，也不用为此改条件或问 HR。
 
-在哪、哪一档、入职前还是公司内、多久：
-- 入职前的公司名、公司档只在 e.kind = 'external' 的段上；公司内的部门只在 e.kind = 'internal'
+在哪、哪一档、外部还是公司内、多久：
+- 外部的公司名、公司档只在 e.kind = 'external' 的段上；公司内的部门只在 e.kind = 'internal'
   的段上，一段只有其一。名字按包含匹配：e.company ilike :c，params 里写 "%名字%"。
 - 实习、兼职是任职性质，不表示没有亲自做过这件事。只有 HR 限定了这种性质才筛它，没提到就不添加，
   也不在 criterion 里自行排除。任职性质登记在岗位名里，按字面写 e.title ilike :t，不写 seek。
@@ -211,7 +211,7 @@ from 决定这条在问什么：
 - 「连续两期」：两期首尾相接，后一期的 period_start 是前一期 period_end 的下一天。
 
 写 where 的规矩：一个布尔表达式，不写分号和注释；关系名不带 schema；列都带别名；取值放进
-params，用 :名字 引用；emp_id 只作关联键，只能和另一列 emp_id 比相等；不限就写 true。
+params，用 :名字 引用；person_id 只作关联键，只能和另一列 person_id 比相等；不限就写 true。
 函数只用常用的日期、聚合、字符串、数值函数。
 
 mode 看语气：默认 must。最好、优先、加分是 boost。exclude 只用于经历，说的是这个人：他不能有
@@ -254,7 +254,7 @@ says 写给 HR 看：书面、简洁，一句话说清一件事，不复述条�
 says、label、detail 都不用括号。用 HR 的话写：说「人才库」「简历」「职级」「绩效」，不说表、
 词表、库、字段、工具、模型、SQL；不说你做了什么操作。
 
-入职前那家公司是什么，人才库里有两类说法。人事登记的：company_tag 公司档、company_nature 企业性质。
+外部那家公司是什么，人才库里有两类说法。人事登记的：company_tag 公司档、company_nature 企业性质。
 公司知识给的：company_name 规范名、company_group 集团、main_industries 与 industries 行业、
 company_circles 名企组合。
 - 「某行业来的」「某行业背景」说的是在哪类公司待过，是经历条件的 where，不是 seek。在那个行业里
@@ -303,12 +303,12 @@ ${catalogText()}
   {"label": "做过算法", "mode": "must", "from": "experience", "seek": {"criterion": "本人做算法研发：机器学习、推荐、搜索、视觉、NLP 这类算法的设计、训练和优化都算。只是使用算法结果的业务岗位、算法团队里的项目管理和招聘不算。", "patterns": ["算法", "机器学习", "深度学习", "(?<![a-z])(nlp|cv)(?![a-z])"]}, "where": "true"},
   {"label": "做过后端开发", "mode": "must", "from": "experience", "seek": {"criterion": "本人写服务端代码：后端、服务端开发，用 Java、Go 这类语言做业务系统研发都算。前端、客户端、测试、运维不算；看不出是哪一端的研发工程师也不算。", "patterns": ["后端", "服务端", "后台开发", "(?<![a-z])(java|golang)(?![a-z])"]}, "where": "true"},
   {"label": "职级 P7 及以上", "mode": "boost", "from": "person", "where": "p.level_rank >= (select s.rank from scale s where s.stream = 'level' and s.value = :band)", "params": {"band": "P7"}},
-  {"label": "入职前在字节待过", "mode": "boost", "from": "experience", "where": "e.kind = 'external' and e.company ilike :c", "params": {"c": "%字节%"}}],
+  {"label": "外部在字节待过", "mode": "boost", "from": "experience", "where": "e.kind = 'external' and e.company ilike :c", "params": {"c": "%字节%"}}],
  "note": null}
 
-例二。当前的条件：[]。这句话：入职前在大厂做过三年以上增长，实习不算
+例二。当前的条件：[]。这句话：外部在大厂做过三年以上增长，实习不算
 {"conditions": [
-  {"label": "入职前在头部大厂做增长，累计三年以上，实习不算", "mode": "must", "from": "experience", "seek": {"criterion": "本人负责用户增长：拉新、获客、激活、留存、裂变这类让用户规模变大的工作都算。泛泛的运营、销售业绩的增长、只做投放素材的不算。", "patterns": ["用户增长", "增长(运营|策略|产品|黑客)", "拉新", "获客", "留存", "growth"]}, "where": "e.kind = 'external' and e.company_tag = :tag and e.title not ilike :t", "params": {"tag": "头部大厂", "t": "%实习%"}, "minMonths": 36}],
+  {"label": "外部在头部大厂做增长，累计三年以上，实习不算", "mode": "must", "from": "experience", "seek": {"criterion": "本人负责用户增长：拉新、获客、激活、留存、裂变这类让用户规模变大的工作都算。泛泛的运营、销售业绩的增长、只做投放素材的不算。", "patterns": ["用户增长", "增长(运营|策略|产品|黑客)", "拉新", "获客", "留存", "growth"]}, "where": "e.kind = 'external' and e.company_tag = :tag and e.title not ilike :t", "params": {"tag": "头部大厂", "t": "%实习%"}, "minMonths": 36}],
  "note": null}
 
 例三。当前的条件：[]。这句话：在甲辰科技做过推荐系统的，只算在甲辰那段
@@ -318,8 +318,8 @@ ${catalogText()}
 
 例四。当前的条件：[]。这句话：近三年至少两次绩效 A 以上，现在在高潜池里的优先
 {"conditions": [
-  {"label": "近三年绩效至少两次 A 及以上", "mode": "must", "from": "person", "where": "(select count(*) from rating r where r.emp_id = p.emp_id and r.stream = 'perf' and r.period_end >= current_date - interval '3 years' and r.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band)) >= :times", "params": {"band": "A", "times": 2}},
-  {"label": "目前在高潜池里", "mode": "boost", "from": "person", "where": "exists (select 1 from status t where t.emp_id = p.emp_id and t.stream = 'hipo' and (t.valid_to is null or t.valid_to >= current_date))"}],
+  {"label": "近三年绩效至少两次 A 及以上", "mode": "must", "from": "person", "where": "(select count(*) from rating r where r.person_id = p.person_id and r.stream = 'perf' and r.period_end >= current_date - interval '3 years' and r.value_rank >= (select s.rank from scale s where s.stream = 'perf' and s.value = :band)) >= :times", "params": {"band": "A", "times": 2}},
+  {"label": "目前在高潜池里", "mode": "boost", "from": "person", "where": "exists (select 1 from status t where t.person_id = p.person_id and t.stream = 'hipo' and (t.valid_to is null or t.valid_to >= current_date))"}],
  "note": null}
 
 例五。当前的条件是例一提交的四条（带着各自的 id）。这句话：再加上带过团队的，不用非得是字节
@@ -334,7 +334,7 @@ ${catalogText()}
 {"conditions": [
   {"label": "做过算法或后端开发", "mode": "must", "from": "experience", "seek": {"criterion": "本人做算法研发或写服务端代码，有一样就算：机器学习、推荐、搜索、视觉、NLP 这类算法的设计、训练和优化，后端、服务端开发，用 Java、Go 这类语言做业务系统研发都算。只是使用算法结果的业务岗位、算法团队里的项目管理和招聘不算；前端、客户端、测试、运维不算。", "patterns": ["算法", "机器学习", "深度学习", "(?<![a-z])(nlp|cv)(?![a-z])", "后端", "服务端", "后台开发", "(?<![a-z])(java|golang)(?![a-z])"]}, "where": "true"},
   {"id": "沿用例一第三条的 id", "label": "职级 P7 及以上", "mode": "boost", "from": "person", "where": "p.level_rank >= (select s.rank from scale s where s.stream = 'level' and s.value = :band)", "params": {"band": "P7"}},
-  {"id": "沿用例一第四条的 id", "label": "入职前在字节待过", "mode": "boost", "from": "experience", "where": "e.kind = 'external' and e.company ilike :c", "params": {"c": "%字节%"}}],
+  {"id": "沿用例一第四条的 id", "label": "外部在字节待过", "mode": "boost", "from": "experience", "where": "e.kind = 'external' and e.company ilike :c", "params": {"c": "%字节%"}}],
  "note": null}
 
 例七。当前的条件：[]。这句话：北京的大模型方向，有管理潜力，硕士
@@ -350,7 +350,7 @@ ${catalogText()}
 例八。当前的条件：[]。这句话：外卖行业的运营，甲辰系的优先，不要咨询行业出来的
 {"conditions": [
   {"label": "在主营外卖的公司做运营", "mode": "must", "from": "experience", "seek": {"criterion": "本人做运营：商家运营、用户运营、活动运营、城市运营这些运营岗位都算。销售、客服、产品经理不算。", "patterns": ["运营"]}, "where": ":ind = any(e.main_industries)", "params": {"ind": "外卖"}},
-  {"label": "入职前在甲辰集团旗下的公司待过", "mode": "boost", "from": "experience", "where": "e.company_group ilike :g", "params": {"g": "%甲辰%"}},
+  {"label": "外部在甲辰集团旗下的公司待过", "mode": "boost", "from": "experience", "where": "e.company_group ilike :g", "params": {"g": "%甲辰%"}},
   {"label": "在主营咨询的公司待过", "mode": "exclude", "from": "experience", "where": ":ind = any(e.main_industries)", "params": {"ind": "咨询"}}],
  "note": null}
 
@@ -395,7 +395,7 @@ function companyLines(company: CompanyFacts): string[] {
 		lines.push(`${"  ".repeat(level + 1)}${i.name} ${i.main} / ${i.any}`);
 	}
 	lines.push(
-		`入职前的经历 ${company.segments} 段，其中认出公司的 ${company.recognized} 段、有行业的 ${company.labelled} 段。`,
+		`外部的经历 ${company.segments} 段，其中认出公司的 ${company.recognized} 段、有行业的 ${company.labelled} 段。`,
 	);
 	return lines;
 }

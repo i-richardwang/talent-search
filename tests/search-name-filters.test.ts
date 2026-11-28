@@ -10,7 +10,7 @@ const { search } = await import("#/search/search");
 
 await seed([
 	{
-		empId: "N1",
+		personId: "N1",
 		name: "合成保留经历",
 		school: "合成大学_%",
 		segments: [
@@ -30,20 +30,20 @@ await seed([
 		],
 	},
 	{
-		empId: "N2",
+		personId: "N2",
 		name: "合成排除事业部",
 		school: "合成大学_%",
 		segments: [{ title: "工程师", department: "合成排除事业部", months: 12 }],
 	},
 	{
-		empId: "N3",
+		personId: "N3",
 		name: "合成相近校名",
 		school: "合成大学甲乙",
 		segments: [{ title: "工程师", department: "合成其他部门", months: 12 }],
 	},
-	{ empId: "N4", name: "合成无经历", school: "合成大学_%", segments: [] },
+	{ personId: "N4", name: "合成无经历", school: "合成大学_%", segments: [] },
 	{
-		empId: "N5",
+		personId: "N5",
 		name: "合成待业",
 		school: "合成大学_%",
 		segments: [
@@ -64,7 +64,7 @@ const exclude: Condition = {
 	company: ["合成排除"],
 };
 const ids = (result: Awaited<ReturnType<typeof search>>) =>
-	result.results.map((row) => row.employee.empId);
+	result.results.map((row) => row.person.personId);
 
 for (const [name, base] of [
 	[

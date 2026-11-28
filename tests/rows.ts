@@ -24,7 +24,7 @@ export type Segment = Experience & { mainIndustries: string[] };
 export const experience = (over: Partial<Segment> = {}): Segment => ({
 	id: 1,
 	contentKey: "",
-	empId: "T0001",
+	personId: "T0001",
 	kind: "internal",
 	unemployed: false,
 	startDate: "2020-01-01",
