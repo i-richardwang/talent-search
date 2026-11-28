@@ -63,7 +63,7 @@ test("查看和导出一个人一行；按账号、工号、姓名、搜索内�
 	]);
 	const all = await listAudit("synthetic.owner", 1);
 	assert.equal(all.total, 5);
-	assert.equal(all.rows[0]?.empName, "合成乙");
+	assert.equal(all.rows[0]?.personName, "合成乙");
 	assert.match(all.rows[0]?.at ?? "", /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/);
 	assert.equal((await listAudit("没有这个词", 1)).total, 0);
 });

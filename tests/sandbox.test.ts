@@ -47,15 +47,10 @@ async function text(
 }
 
 describe("解析白名单接受的写法", () => {
-	test("旧搜索的人员关联键继续编译，字符串和参数保留原值", async () => {
-		const result = await text(
-			"exists(select 1 from rating r where r.emp_id=p.emp_id and r.stream=:emp_id and r.value='emp_id')",
-			PERSON,
-			{ emp_id: "emp_id" },
+	test("目录只接受现行的人员关联键", async () => {
+		assert.ok(
+			await problem("exists(select 1 from rating r where r.emp_id=p.emp_id)"),
 		);
-		assert.deepEqual(result.params, ["emp_id"]);
-		assert.match(result.sql, /person_id/);
-		assert.match(result.sql, /'emp_id'/);
 	});
 
 	test("三年内至少两期 A 及以上：评级子查询、档位表、日期运算", async () => {
@@ -69,7 +64,7 @@ describe("解析白名单接受的写法", () => {
 		assert.deepEqual(q.params, ["perf", "perf", "A"]);
 	});
 
-	test("工号作关联键：和另一列工号比相等、在 count 里、在 group by 里", async () => {
+	test("人员编号作关联键：和另一列人员编号比相等、在 count 里、在 group by 里", async () => {
 		await text(
 			"exists (select 1 from rating r where p.person_id = r.person_id)",
 		);
@@ -174,11 +169,11 @@ describe("解析白名单拒绝的写法", () => {
 			/只能写目录里的关系/,
 		],
 		[
-			"工号只和工号比",
+			"人员编号只和人员编号比",
 			"exists (select 1 from experience x where p.person_id = x.title)",
 			/person_id 只作关联键/,
 		],
-		["工号和常量比", "p.person_id = 'S1'", /person_id 只作关联键/],
+		["人员编号和常量比", "p.person_id = 'S1'", /person_id 只作关联键/],
 		[
 			"别名带列名表",
 			"exists (select 1 from rating x(a, b) where x.a = p.person_id)",
@@ -196,7 +191,7 @@ describe("解析白名单拒绝的写法", () => {
 			assert.match(await problem(where, scope), reason);
 		});
 
-	test("派生表把工号换成参数：一次计数缩到一个人，不放行", async () => {
+	test("派生表把人员编号换成参数：一次计数缩到一个人，不放行", async () => {
 		assert.match(
 			await problem(
 				"exists (select 1 from (select :target as k) x where p.person_id = x.k)",
@@ -207,7 +202,7 @@ describe("解析白名单拒绝的写法", () => {
 		);
 	});
 
-	test("别名按位置把工号改名成学校：拿它和参数比，不放行", async () => {
+	test("别名按位置把人员编号改名成学校：拿它和参数比，不放行", async () => {
 		assert.match(
 			await problem(
 				"exists (select 1 from person x(school) where x.school = :target)",

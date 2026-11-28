@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { pageParam } from "#/lib/paging";
-import { loadImports } from "#/server/talent-functions";
+import { loadPoolBoard } from "#/server/talent-functions";
 import { AdminPage } from "../-components/admin-page";
 import { PoolBoard } from "./-pool-board";
 export const Route = createFileRoute("/pools")({
@@ -14,7 +14,7 @@ export const Route = createFileRoute("/pools")({
 		tab: search.tab ?? ("members" as const),
 		page: search.page ?? 1,
 	}),
-	loader: ({ deps }) => loadImports({ data: deps }),
+	loader: ({ deps }) => loadPoolBoard({ data: deps }),
 	component: Page,
 });
 function Page() {

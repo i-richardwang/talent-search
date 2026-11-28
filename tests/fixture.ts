@@ -1,6 +1,6 @@
 /**
  * 集成测试使用临时 schema、真实 PostgreSQL 和进程内合成模型端点。
- * 表结构由 schema.ts 推导；不创建索引。字符袋嵌入、按查询语法读句子和按字面读经历的假理解用于
+ * 表结构、约束与唯一索引由 schema.ts 推导。字符袋嵌入、按查询语法读句子和按字面读经历的假理解用于
  * 验证机制，真实模型的语义质量由 eval 验收。测试运行不读取真实人才数据或模型密钥。
  */
 import { createServer } from "node:http";
@@ -899,7 +899,6 @@ async function insertSeed(rows: Seed[]) {
 		person,
 		employment,
 		profileSource,
-		profileExperience,
 		experience: exp,
 		phrase: ph,
 		experiencePhrase: ep,
@@ -934,7 +933,6 @@ async function insertSeed(rows: Seed[]) {
 	);
 	await db.insert(profileSource).values(
 		rows.map((r) => ({
-			id: `hr:${r.personId}`,
 			personId: r.personId,
 			sourceKind: "hris",
 		})),
@@ -995,13 +993,9 @@ async function insertSeed(rows: Seed[]) {
 			),
 		)
 		.returning();
-	await db.insert(profileExperience).values(
-		inserted.map((e) => ({
-			profileId: `hr:${e.personId}`,
-			personId: e.personId,
-			experienceId: e.id,
-		})),
-	);
+	await db.execute(sql`insert into profile_experience(profile_id,person_id,experience_id)
+			select f.id,e.person_id,e.id from experience e join profile_source f using(person_id)
+			where f.source_kind='hris' and e.id=any(${sql.param(inserted.map((e) => e.id))}::int[])`);
 
 	// 说法去重后各存一行，经历段按路指向它们——组合方式和 src/corpus/derive.ts 是
 	// 同一个函数。抽取结果夹具直接给：seed 的入参和 inserted 顺序一致，按下标对回去。

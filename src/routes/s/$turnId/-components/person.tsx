@@ -13,7 +13,7 @@ import { Icon } from "#/components/ui/icon";
 import { Skeleton } from "#/components/ui/skeleton";
 import { Text } from "#/components/ui/text";
 import { dots } from "#/lib/format";
-import type { EmployeeDetail, Evidence } from "#/search/result";
+import type { Evidence, PersonDetail } from "#/search/result";
 import { countedOf } from "../-lib/claim-lines";
 import { CareerBar } from "./career-bar";
 import { PaneHeader } from "./pane-header";
@@ -65,7 +65,7 @@ function Career({ children }: { children: ReactNode }) {
 /** 详情顶上的几条属性。骨架按同一张表画标签，换人时标签一栏不跳。 */
 const ATTRIBUTES: {
 	label: string;
-	value: (e: EmployeeDetail["employee"]) => ReactNode;
+	value: (e: PersonDetail["person"]) => ReactNode;
 }[] = [
 	{ label: "部门", value: (e) => e.curDept || "—" },
 	{ label: "岗位", value: (e) => dots(e.curTitle, e.curLevel) || "—" },
@@ -199,14 +199,14 @@ export function PersonFailed() {
  * 不在名单上、或名单按人排时是空的。
  */
 export function Person({
-	employee: e,
+	person: e,
 	sources = [],
 	timeline,
 	evidence,
 }: {
-	employee: EmployeeDetail["employee"];
+	person: PersonDetail["person"];
 	sources?: Parameters<typeof ResumeSources>[0]["items"];
-	timeline: EmployeeDetail["timeline"];
+	timeline: PersonDetail["timeline"];
 	evidence: Evidence[];
 }) {
 	const counted = countedOf(evidence);

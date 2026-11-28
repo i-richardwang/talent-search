@@ -17,10 +17,10 @@ import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
 import {
-	EMPLOYEES,
 	evidenceOf,
 	experience,
 	experiencesOf,
+	PEOPLE,
 } from "../../samples/people";
 
 /**
@@ -50,7 +50,7 @@ function Playground() {
 				<Control label="候选人">
 					<Segmented<string>
 						onChange={setPersonId}
-						options={EMPLOYEES.map((e) => ({
+						options={PEOPLE.map((e) => ({
 							label: e.name,
 							value: e.personId,
 						}))}

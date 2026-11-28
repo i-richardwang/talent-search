@@ -70,7 +70,7 @@ import {
 	emptyFacets,
 	type Facets,
 	type RankedResult,
-	type ResultEmployee,
+	type ResultPerson,
 	type SearchOutcome,
 } from "./result";
 import { criterionKey, SEGMENT_CONTENT } from "./verdict";
@@ -155,7 +155,7 @@ const RESULT_COLUMNS = {
 	curDept: personCard.curDept,
 	curTitle: personCard.curTitle,
 	curLevel: personCard.curLevel,
-} satisfies Record<keyof ResultEmployee, unknown>;
+} satisfies Record<keyof ResultPerson, unknown>;
 
 /**
  * 从各主张的事实行数里找出造成超载的主要贡献者。
@@ -625,7 +625,7 @@ export async function execute(
 			return {
 				...(claims.length > 0
 					? { order: "evidence" as const, claims }
-					: { order: "employee" as const, claims: [] as [] }),
+					: { order: "person" as const, claims: [] as [] }),
 				...noOne(),
 				empty: found,
 			};
@@ -818,23 +818,23 @@ async function present(
 	const counted = { facets, total, ...(incomplete && { incomplete }) };
 	const page = ranked.slice(0, limit);
 	const personIds = page.map((row) => row.personId);
-	const employees =
+	const people =
 		personIds.length === 0
 			? []
 			: await store
 					.select(RESULT_COLUMNS)
 					.from(personCard)
 					.where(inArray(personCard.personId, personIds));
-	const empById = new Map(employees.map((person) => [person.personId, person]));
+	const personById = new Map(people.map((person) => [person.personId, person]));
 	if (claims.length === 0)
 		return {
-			order: "employee",
+			order: "person",
 			claims: [],
 			...counted,
 			empty,
 			results: page.flatMap((row) => {
-				const person = empById.get(row.personId);
-				return person ? [{ employee: person }] : [];
+				const person = personById.get(row.personId);
+				return person ? [{ person }] : [];
 			}),
 		};
 	if (page.length === 0)
@@ -848,7 +848,7 @@ async function present(
 		.where(inArray(experience.id, ids));
 	const segById = new Map(segments.map((segment) => [segment.id, segment]));
 	const results: RankedResult[] = page.flatMap((row) => {
-		const person = empById.get(row.personId);
+		const person = personById.get(row.personId);
 		if (!person) return [];
 		const evidence = (kept.get(row.personId) ?? []).flatMap<Evidence>(
 			(fact) => {
@@ -874,7 +874,7 @@ async function present(
 		);
 		return [
 			{
-				employee: person,
+				person,
 				depth: row.depth,
 				basis: row.basis,
 				evidence,
@@ -1052,7 +1052,7 @@ export async function withSearchFacts<T>(
 	});
 }
 
-/** 一条条件选中了谁：经历条件是段（`工号:段 id`），人的条件是人（工号），按字面排好。 */
+/** 一条条件选中了谁：经历条件是段（`人员编号:段 id`），人的条件是人员编号，按字面排好。 */
 type ConditionSelection = {
 	id: string;
 	selected: string[] | null;

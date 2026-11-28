@@ -53,7 +53,7 @@ const school: Condition = {
 const find = (more: Condition[] = [], filters = {}) =>
 	search({ conditions: [school, ...more] }, null, filters);
 const ids = (result: Awaited<ReturnType<typeof find>>) =>
-	result.results.map((row) => row.employee.personId);
+	result.results.map((row) => row.person.personId);
 
 test("人的条件不要求工作经历；人员分面含全部候选，经历分面只含实际工作经历", async () => {
 	const result = await find();

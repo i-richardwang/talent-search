@@ -41,7 +41,7 @@ const ACTION_TEXT: Record<AuditAction, string> = {
 
 function subject(row: AuditRow): string {
 	if (row.text !== null) return row.text || "无搜索条件";
-	if (row.personId !== null) return dots(row.personId, row.empName);
+	if (row.personId !== null) return dots(row.personId, row.personName);
 	return dots(row.accountName, row.accountUsername);
 }
 

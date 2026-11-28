@@ -136,7 +136,7 @@ function Dock({
 	const picks = usePicks(LATEST_TURN_ID, shown);
 	const { setShown: pick } = picks;
 	useEffect(() => {
-		pick(OUTCOME.results.slice(0, count).map((r) => r.employee.personId));
+		pick(OUTCOME.results.slice(0, count).map((r) => r.person.personId));
 		setShown(outcome);
 	}, [count, outcome, pick]);
 	return (

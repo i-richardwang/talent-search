@@ -7,17 +7,19 @@
  */
 
 import "@tanstack/react-start/server-only";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { deriveStandard } from "#/corpus/derive-standard";
 import {
 	company,
 	companyAlias,
-	type Employee,
 	type Experience,
 	experience,
+	type PersonCard,
 	personCard,
 } from "#/db/schema";
 import {
+	type DbExecutor,
 	type Scope,
 	withCorpusSnapshot,
 	withReadSnapshot,
@@ -25,16 +27,21 @@ import {
 import type { Engagement } from "#/lib/engagement";
 import { pageAt, type TablePage, tablePage } from "#/lib/paging";
 import { escapeLike } from "#/lib/sql";
-import type { EmployeeDetail } from "#/search/result";
+import type { PersonDetail, ResultPerson } from "#/search/result";
 
 /** 数据页那张表的一行。 */
-export type EmployeeRow = Pick<
-	Employee,
-	"personId" | "name" | "curDept" | "curTitle" | "recentCompany" | "recentTitle"
+export type PersonRow = Pick<
+	PersonCard,
+	| "personId"
+	| "name"
+	| "curDept"
+	| "curTitle"
+	| "recentCompany"
+	| "recentTitle"
+	| "empId"
+	| "talentType"
 > & {
 	/** 这个人有几段 */
-	empId?: string | null;
-	talentType?: string;
 	segments: number;
 	/** 其中几段还没解析到当前版本 */
 	pending: number;
@@ -42,13 +49,13 @@ export type EmployeeRow = Pick<
 
 /**
  * 在 `scope` 看得到的人里按名字、工号或最近公司找，一页 `PAGE_SIZE` 个（`lib/paging.ts`）；不给词就按
- * 工号从头列。
+ * 人员编号从头列。
  */
-export async function listEmployees(
+export async function listPeople(
 	scope: Scope,
 	needle: string,
 	page: unknown,
-): Promise<TablePage<EmployeeRow>> {
+): Promise<TablePage<PersonRow>> {
 	const pattern = `%${escapeLike(needle.trim())}%`;
 	return withReadSnapshot(scope, async (client) => {
 		const { version } = await deriveStandard(client);
@@ -60,7 +67,7 @@ export async function listEmployees(
 		);
 		const total = Number(found.rows[0]?.n ?? 0);
 		const at = pageAt(total, page);
-		const { rows } = await client.query<EmployeeRow>(
+		const { rows } = await client.query<PersonRow>(
 			`select e.person_id as "personId", e.name,e.emp_id as "empId",e.talent_type as "talentType",e.cur_dept as "curDept",
 			e.cur_title as "curTitle",e.recent_company as "recentCompany",e.recent_title as "recentTitle",
 			count(x.id)::int as segments,
@@ -77,32 +84,21 @@ export async function listEmployees(
 	});
 }
 
-/** 已收藏的旧链接以工号寻址；只有能读到雇佣关系的账号可以解析它。 */
-export function employeeNumberToPerson(scope: Scope, number: string) {
-	return withReadSnapshot(
-		scope,
-		async (c) =>
-			(
-				await c.query<{ person_id: string }>(
-					"select person_id from employment where emp_id=$1",
-					[number],
-				)
-			).rows[0]?.person_id,
-	);
-}
-/** 这些工号是不是都在 `scope` 里。 */
-export async function allVisible(
+/** 导出快照中的每个人及其资料范围须与当前账号可见的名片一致。 */
+export function canExport(
 	scope: Scope,
-	personIds: readonly string[],
-	accessKeys?: readonly string[],
-): Promise<boolean> {
+	selected: readonly Pick<ResultPerson, "personId" | "accessKey">[],
+) {
 	return withReadSnapshot(scope, async (client) => {
-		const { rows } = await client.query<{ n: number }>(
-			`select count(*)::int as n from person_card c join unnest($1::text[],$2::text[]) pick(id,stamp) on pick.id=c.person_id
-				where ($2::text[] is null or pick.stamp=c.access_key)`,
-			[personIds, accessKeys ?? null],
+		const {
+			rows: [result],
+		} = await client.query<{ n: number }>(
+			`select count(distinct p.person_id)::int as n
+			from jsonb_to_recordset($1) selection("personId" text, "accessKey" text)
+			join person_card p on p.person_id=selection."personId" and p.access_key=selection."accessKey"`,
+			[JSON.stringify(selected)],
 		);
-		return rows[0]?.n === new Set(personIds).size;
+		return selected.length > 0 && result?.n === selected.length;
 	});
 }
 
@@ -132,31 +128,58 @@ export type SegmentView = Pick<
 	skills: { text: string; engagement: Engagement | null }[];
 };
 
-export type EmployeeProfile = EmployeeDetail["employee"];
+export type PersonProfile = PersonDetail["person"];
 
-type EmployeeData = {
-	employee: EmployeeProfile;
+type PersonData = {
+	person: PersonProfile;
 	segments: SegmentView[];
 };
 
+/** 两个详情入口共用可见名片。人员编号优先，可见的工号也能定位到同一份档案。 */
+async function profileFor(
+	store: Pick<DbExecutor, "select">,
+	reference: string,
+) {
+	const [person] = await store
+		.select({
+			personId: personCard.personId,
+			empId: personCard.empId,
+			talentType: personCard.talentType,
+			pools: personCard.pools,
+			recentCompany: personCard.recentCompany,
+			recentTitle: personCard.recentTitle,
+			name: personCard.name,
+			curDept: personCard.curDept,
+			curTitle: personCard.curTitle,
+			curSeqL1: personCard.curSeqL1,
+			curSeqL2: personCard.curSeqL2,
+			curSeqL3: personCard.curSeqL3,
+			curLevel: personCard.curLevel,
+			hireDate: personCard.hireDate,
+			educationLevel: personCard.educationLevel,
+			school: personCard.school,
+			schoolTier: personCard.schoolTier,
+			overseasEducated: personCard.overseasEducated,
+			recruitment: personCard.recruitment,
+		})
+		.from(personCard)
+		.where(
+			sql`${personCard.personId} in (${reference}, (select person_id from employment where emp_id=${reference}))`,
+		)
+		.orderBy(desc(eq(personCard.personId, reference)))
+		.limit(1);
+	return person ?? null;
+}
+
 /** `scope` 看得到的一个人的档案和每一段；看不到和没有这个人一样是 null。 */
-export async function employeeData(
+export async function personData(
 	scope: Scope,
-	personId: string,
-): Promise<EmployeeData | null> {
+	reference: string,
+): Promise<PersonData | null> {
 	return withReadSnapshot(scope, async (client) => {
 		const { version } = await deriveStandard(client);
-		const found = await client.query<EmployeeProfile>(
-			`select person_id as "personId", name,pools,emp_id as "empId",talent_type as "talentType",recent_company as "recentCompany",recent_title as "recentTitle", cur_dept as "curDept", cur_title as "curTitle",
-			cur_seq_l1 as "curSeqL1", cur_seq_l2 as "curSeqL2", cur_seq_l3 as "curSeqL3",
-			cur_level as "curLevel", hire_date::text as "hireDate",
-			education_level as "educationLevel", school, school_tier as "schoolTier",
-			overseas_educated as "overseasEducated", recruitment
-		 from person_card where person_id = $1`,
-			[personId],
-		);
-		const employee = found.rows[0];
-		if (!employee) return null;
+		const person = await profileFor(drizzle(client), reference);
+		if (!person) return null;
 
 		const { rows } = await client.query<
 			Omit<SegmentView, "skills"> & { skills: SegmentView["skills"] | null }
@@ -172,10 +195,10 @@ export async function employeeData(
 		 from experience x
 		 where x.person_id = $1
 		 order by x.start_date, x.id`,
-			[personId, version],
+			[person.personId, version],
 		);
 		return {
-			employee,
+			person,
 			segments: rows.map((row) => ({
 				...row,
 				skills: row.skills ?? [],
@@ -188,36 +211,13 @@ export async function employeeData(
  * 单人详情只读取展示所需的字段，存储身份与解析状态留在服务端。`scope` 看不到的人和没有
  * 这个人一样是 null。
  */
-export function employeeDetail(
+export function personDetail(
 	scope: Scope,
-	personId: string,
-): Promise<EmployeeDetail | null> {
+	reference: string,
+): Promise<PersonDetail | null> {
 	return withCorpusSnapshot(scope, async (store) => {
-		const [emp] = await store
-			.select({
-				personId: personCard.personId,
-				empId: personCard.empId,
-				talentType: personCard.talentType,
-				pools: personCard.pools,
-				recentCompany: personCard.recentCompany,
-				recentTitle: personCard.recentTitle,
-				name: personCard.name,
-				curDept: personCard.curDept,
-				curTitle: personCard.curTitle,
-				curSeqL1: personCard.curSeqL1,
-				curSeqL2: personCard.curSeqL2,
-				curSeqL3: personCard.curSeqL3,
-				curLevel: personCard.curLevel,
-				hireDate: personCard.hireDate,
-				educationLevel: personCard.educationLevel,
-				school: personCard.school,
-				schoolTier: personCard.schoolTier,
-				overseasEducated: personCard.overseasEducated,
-				recruitment: personCard.recruitment,
-			})
-			.from(personCard)
-			.where(eq(personCard.personId, personId));
-		if (!emp) return null;
+		const person = await profileFor(store, reference);
+		if (!person) return null;
 		const timeline = await store
 			.select({
 				id: experience.id,
@@ -248,8 +248,8 @@ export function employeeDetail(
 			.from(experience)
 			.leftJoin(companyAlias, eq(companyAlias.rawName, experience.company))
 			.leftJoin(company, eq(company.name, companyAlias.company))
-			.where(eq(experience.personId, personId))
+			.where(eq(experience.personId, person.personId))
 			.orderBy(asc(experience.startDate), asc(experience.id));
-		return { employee: emp, timeline };
+		return { person, timeline };
 	});
 }

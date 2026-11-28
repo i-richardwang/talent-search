@@ -1,4 +1,4 @@
-import type { Employee, Experience, Route } from "#/db/schema";
+import type { Experience, PersonCard, Route } from "#/db/schema";
 import type { Engagement } from "#/lib/engagement";
 import { DIM_KEYS, type DimKey, type Facet } from "./dimensions";
 import type { EmptyReason, Incomplete } from "./empty";
@@ -25,21 +25,24 @@ export function placeOf(segment: { company: string; department: string }) {
 	return segment.company || segment.department;
 }
 
-export type ResultEmployee = Pick<
-	Employee,
-	"personId" | "name" | "curDept" | "curTitle" | "curLevel"
-> &
-	Partial<
-		Pick<
-			Employee,
-			"empId" | "talentType" | "recentCompany" | "recentTitle" | "accessKey"
-		>
-	>;
+export type ResultPerson = Pick<
+	PersonCard,
+	| "personId"
+	| "name"
+	| "curDept"
+	| "curTitle"
+	| "curLevel"
+	| "empId"
+	| "talentType"
+	| "recentCompany"
+	| "recentTitle"
+	| "accessKey"
+>;
 
 /** 单人详情的显示契约；不包含内容键、解析版本或筛选档高。 */
-export type EmployeeDetail = {
-	employee: Pick<
-		Employee,
+export type PersonDetail = {
+	person: Pick<
+		PersonCard,
 		| "personId"
 		| "name"
 		| "curDept"
@@ -54,13 +57,12 @@ export type EmployeeDetail = {
 		| "schoolTier"
 		| "overseasEducated"
 		| "recruitment"
-	> &
-		Partial<
-			Pick<
-				Employee,
-				"empId" | "talentType" | "recentCompany" | "recentTitle" | "pools"
-			>
-		>;
+		| "empId"
+		| "talentType"
+		| "recentCompany"
+		| "recentTitle"
+		| "pools"
+	>;
 	timeline: (Pick<
 		Experience,
 		| "id"
@@ -87,7 +89,7 @@ export type EmployeeDetail = {
 };
 
 type PopulationResult = {
-	employee: ResultEmployee;
+	person: ResultPerson;
 };
 
 export type RankedResult = PopulationResult & {
@@ -116,7 +118,7 @@ type Outcome = {
 	empty: EmptyReason | null;
 };
 
-/** evidence 按深度排序；employee 用于没有经历证据的人员查询。 */
+/** evidence 按深度排序；person 用于没有经历证据的人员查询。 */
 export type SearchOutcome =
 	| (Outcome & {
 			order: "evidence";
@@ -124,7 +126,7 @@ export type SearchOutcome =
 			results: RankedResult[];
 	  })
 	| (Outcome & {
-			order: "employee";
+			order: "person";
 			claims: [];
 			results: PopulationResult[];
 	  });

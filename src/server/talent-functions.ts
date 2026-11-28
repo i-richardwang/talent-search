@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { resumeSchema } from "#/ingestion/resume";
+import { decisionSchema } from "#/ingestion/decision";
 import { touchSchema } from "#/ingestion/touch";
 import { organizations } from "./accounts";
 import { administrator, authenticated } from "./auth-functions";
@@ -10,12 +10,12 @@ import { decideImport, reviewImport, uploadResume } from "./talent-import";
 import {
 	addTouch,
 	changeTouch,
-	importBoard,
+	poolBoard,
 	removeMember,
 	setTalentPool,
 } from "./talent-pools";
 
-export const loadImports = createServerFn({ method: "GET" })
+export const loadPoolBoard = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator(
 		z.object({
@@ -24,7 +24,7 @@ export const loadImports = createServerFn({ method: "GET" })
 			tab: z.enum(["members", "imports"]),
 		}),
 	)
-	.handler(({ context, data }) => importBoard(context.viewer.id, data));
+	.handler(({ context, data }) => poolBoard(context.viewer.id, data));
 export const reviewResume = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator(z.string())
@@ -70,21 +70,7 @@ export const submitDecision = createServerFn({ method: "POST" })
 	.validator(
 		z.object({
 			id: z.string(),
-			choice: z.union([
-				z.literal("retry"),
-				z.object({
-					action: z.literal("new"),
-					touch: touchSchema.optional(),
-					draft: resumeSchema.optional(),
-				}),
-				z.object({
-					action: z.literal("link"),
-					personId: z.string().min(1),
-					touch: touchSchema.optional(),
-					draft: resumeSchema.optional(),
-				}),
-				z.object({ action: z.literal("cancel") }),
-			]),
+			choice: z.union([z.literal("retry"), decisionSchema]),
 		}),
 	)
 	.handler(async ({ context, data }) => {

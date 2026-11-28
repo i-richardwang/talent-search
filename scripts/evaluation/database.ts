@@ -146,7 +146,25 @@ function ddl(schema: string, table: PgTable) {
 			`constraint "${foreignKey.getName()}" foreign key (${local}) references ${schema}."${foreignName}" (${foreign}) on delete ${foreignKey.onDelete ?? "no action"}`,
 		);
 	}
-	return `create table ${schema}."${name}" (${[...cols, ...constraints].join(", ")})`;
+	const tableName = `${schema}."${name}"`;
+	const statements = [
+		`create table ${tableName} (${[...cols, ...constraints].join(", ")})`,
+	];
+	for (const { config } of indexes) {
+		if (!config.unique) continue;
+		const keys = config.columns.map((c) => {
+			if (!("name" in c) || !c.name)
+				throw new Error(`测试库无法创建索引 ${config.name}`);
+			return `"${c.name}"`;
+		});
+		const predicate = config.where
+			? ` where ${dialect.sqlToQuery(config.where).sql}`
+			: "";
+		statements.push(
+			`create unique index "${config.name}" on ${tableName} (${keys.join(",")})${predicate}`,
+		);
+	}
+	return statements.join(";");
 }
 
 export async function isolatedDatabase(base: string) {
@@ -158,7 +176,7 @@ export async function isolatedDatabase(base: string) {
 		await connection.query("begin");
 		await connection.query(`create schema ${schema}`);
 		await connection.query(`create schema ${catalog}`);
-		await connection.query(`set local search_path to ${schema}, public`);
+		await connection.query(`set local search_path to ${schema}`);
 		for (const t of [
 			authUser,
 			accountScope,
@@ -248,7 +266,7 @@ export async function isolatedDatabase(base: string) {
 		await connection.end();
 	}
 	const url = new URL(base);
-	url.searchParams.set("options", `-c search_path=${schema},public`);
+	url.searchParams.set("options", `-c search_path=${schema}`);
 	return {
 		url: url.toString(),
 		catalog,

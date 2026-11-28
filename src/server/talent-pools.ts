@@ -129,20 +129,22 @@ export async function setTalentPool(
 	});
 }
 
-export async function importBoard(
+export type PoolSummary = {
+	id: string;
+	name: string;
+	org_path: string | null;
+	created: string;
+	creator: string;
+};
+
+export async function poolBoard(
 	user: string,
 	query: { pool?: string; tab: "members" | "imports"; page: number },
 ) {
 	await ensureDefaultPool();
 	return withReadSnapshot({ account: user }, async (c) => {
 		const pools = (
-			await c.query<{
-				id: string;
-				name: string;
-				org_path: string | null;
-				created: string;
-				creator: string;
-			}>(
+			await c.query<PoolSummary>(
 				"select p.id,p.name,p.org_path,to_char(p.created_at,'YYYY-MM-DD') as created,coalesce(u.name,'系统') as creator from talent_pool p left join auth_user u on u.id=p.created_by order by p.name",
 			)
 		).rows;

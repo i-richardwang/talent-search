@@ -1,6 +1,6 @@
 import { dots, duration } from "#/lib/format";
-import { type Condition, type Mode, PERSON_FIELDS } from "#/search/condition";
-import { DIMENSIONS, dimOption, dimText, orAbove } from "#/search/dimensions";
+import type { Condition, Mode } from "#/search/condition";
+import { dimOption, dimText, orAbove } from "#/search/dimensions";
 
 /**
  * 外部公司、公司内部门与学校怎么称呼。这三维不在 `dimensions.ts` 那张表里
@@ -14,18 +14,6 @@ export const NAME_LABEL = {
 
 /** 按名字包含匹配的三种属性：外部公司、公司内部门、学校。 */
 export type NameField = keyof typeof NAME_LABEL;
-
-/**
- * 这里能按什么搜索：一段经历，加上人的几项条件。整句都搜不了的空态说这一句；
- * 人的条件多一维，这句话跟着长。
- */
-export const SEARCHABLE = (() => {
-	const person = PERSON_FIELDS.map((field) =>
-		field === "school" ? NAME_LABEL.school : DIMENSIONS[field].label,
-	);
-	const last = person.pop();
-	return `按经历、${person.join("、")}和${last}搜索`;
-})();
 
 /**
  * 强度的名字。chip 上和句子里都写名字：必须是默认，不写；加分、排除写出来。

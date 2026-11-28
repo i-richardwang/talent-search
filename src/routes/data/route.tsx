@@ -2,7 +2,7 @@ import { createFileRoute, Outlet, useParams } from "@tanstack/react-router";
 import { pageParam } from "#/lib/paging";
 import { dataList } from "#/server/functions";
 import { AdminPage, useListPending } from "../-components/admin-page";
-import { EmployeeTable } from "./-components/employee-table";
+import { PeopleTable } from "./-components/people-table";
 
 /**
  * 数据页：库里此刻有谁。点一个人看他的每一段和解析结果（`/data/$personId`）。
@@ -28,7 +28,7 @@ function Data() {
 
 	return (
 		<AdminPage title="数据">
-			<EmployeeTable list={list} q={q} selected={personId} pending={pending} />
+			<PeopleTable list={list} q={q} selected={personId} pending={pending} />
 			{/* 点开的那个人从右侧覆盖（`data/$personId.tsx`），表在底下保持原样 */}
 			<Outlet />
 		</AdminPage>

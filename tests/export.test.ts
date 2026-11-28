@@ -11,6 +11,8 @@ import { evidence } from "./rows";
 const pick = (over: Partial<Pick> = {}): Pick => ({
 	personId: "synthetic-1",
 	empId: "T0001",
+	accessKey: "0".repeat(32),
+	recentCompany: "",
 	talentType: "在职员工",
 	name: "林岚",
 	dept: "算法平台",

@@ -9,19 +9,20 @@ import {
 import { pool } from "#/db";
 import { authorizedPool, withReadSnapshot } from "#/db/snapshot";
 import { matches } from "#/identity/match";
+import type { Decision } from "#/ingestion/decision";
 import { parseResume } from "#/ingestion/parser";
 import { openResumePdf } from "#/ingestion/pdf";
 import {
 	adjudicateImport,
 	classifyImport,
-	type Decision,
 	type ImportRow,
 } from "#/ingestion/publish";
 import type { Resume } from "#/ingestion/resume";
 import type { Touch } from "#/ingestion/touch";
 import { digest, files } from "#/storage/files";
 
-const taskQuery = `select t.*,f.sha256,to_char(t.created_at at time zone 'UTC','YYYY-MM-DD') as day from resume_import t join resume_file f on f.id=t.file_id`;
+const capturedDay =
+	"to_char(t.created_at at time zone 'UTC','YYYY-MM-DD') as day";
 
 export async function uploadResume(
 	user: string,
@@ -49,7 +50,7 @@ export async function uploadResume(
 			if (!id) throw new Error("未登记文件");
 			return id;
 		});
-		await files.put(bytes);
+		await files.put(sha, bytes);
 		const task = await c.query<{ id: string }>(
 			"insert into resume_import(pool_id,owner_id,file_id,filename,touch) values ($1,$2,$3,$4,$5) returning id",
 			[
@@ -75,7 +76,7 @@ export async function processNextResume() {
 		);
 		if (!lock.rows[0]?.ok) {
 			discard = false;
-			return false;
+			return "idle" as const;
 		}
 		try {
 			return await processClaimed(worker);
@@ -108,11 +109,13 @@ function failureReason(stage: ImportStage, error: unknown) {
 	return "连接失败或未提交有效结果";
 }
 async function processClaimed(worker: PoolClient) {
-	const { rows } = await worker.query<ImportRow>(`with next as (
+	const { rows } = await worker.query<
+		ImportRow & { sha256: string }
+	>(`with next as (
 		update resume_import set status='processing' where id=(select id from resume_import where status in ('queued','processing') order by created_at,id limit 1) returning *)
-		select t.*,f.sha256,to_char(t.created_at at time zone 'UTC','YYYY-MM-DD') as day from next t join resume_file f on f.id=t.file_id`);
+		select t.*,f.sha256,${capturedDay} from next t join resume_file f on f.id=t.file_id`);
 	const task = rows[0];
-	if (!task) return false;
+	if (!task) return "idle" as const;
 	let stage: ImportStage = "资料权限";
 	try {
 		// 同一原件在允许读取的范围里已入过池，复用该文件的资料，不再向模型发送。
@@ -145,20 +148,21 @@ async function processClaimed(worker: PoolClient) {
 			}
 		}
 		stage = "资料发布";
-		await corpusTransaction(async (c) => {
+		const published = await corpusTransaction(async (c) => {
 			const lock = await c.query(
 				"select 1 from resume_import where id=$1 and status='processing' for update",
 				[task.id],
 			);
-			if (lock.rowCount) await classifyImport(c, task, draft);
+			return !!lock.rowCount && classifyImport(c, task, draft);
 		});
+		return published ? "published" : "processed";
 	} catch (error) {
 		if (error instanceof Error && "code" in error && error.code === "55P03") {
 			await pool.query(
 				"update resume_import set status='queued' where id=$1 and status='processing'",
 				[task.id],
 			);
-			return false;
+			return "idle" as const;
 		}
 		// PDF 与端点异常都可能含原件内容，仅记录步骤、系统任务编号和受控原因。
 		console.error("简历导入失败", {
@@ -171,7 +175,7 @@ async function processClaimed(worker: PoolClient) {
 			[task.id, "解析未完成，可重试或手动核对"],
 		);
 	}
-	return true;
+	return "processed" as const;
 }
 
 export async function decideImport(
@@ -181,8 +185,7 @@ export async function decideImport(
 ) {
 	return corpusTransaction(async (c) => {
 		const { rows } = await c.query<ImportRow>(
-			taskQuery +
-				" where t.id=$1 and t.owner_id=$2 and t.status in ('failed','review') for update of t",
+			`select t.*,${capturedDay} from resume_import t where t.id=$1 and t.owner_id=$2 and t.status in ('failed','review') for update`,
 			[id, user],
 		);
 		const task = rows[0];
@@ -202,7 +205,7 @@ export async function decideImport(
 export async function reviewImport(user: string, id: string) {
 	const review = await withReadSnapshot({ account: user }, async (c) => {
 		const { rows } = await c.query<ImportRow>(
-			"select *,to_char(created_at at time zone 'UTC','YYYY-MM-DD') as day from resume_import where id=$1 and status in ('review','failed')",
+			`select t.*,${capturedDay} from resume_import t where id=$1 and status in ('review','failed')`,
 			[id],
 		);
 		const t = rows[0];
@@ -210,7 +213,19 @@ export async function reviewImport(user: string, id: string) {
 		const candidates = t.draft
 			? await matches(c, t.draft, t.day, t.file_id)
 			: [];
-		return { draft: t.draft, touch: t.touch, candidates };
+		return {
+			draft: t.draft,
+			touch: t.touch,
+			candidates: candidates.map(
+				({ personId, name, school, education, jobs }) => ({
+					personId,
+					name,
+					school,
+					education,
+					jobs,
+				}),
+			),
+		};
 	});
 	if (review.candidates.length)
 		await pool.query(

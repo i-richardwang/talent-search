@@ -53,13 +53,7 @@ export async function parseResume(
 					};
 				const draft = sanitized(parsed.data);
 				try {
-					periods(
-						{
-							...draft,
-							experiences: draft.experiences.filter((e) => e.start && e.end),
-						},
-						asOf,
-					);
+					periods(draft, asOf, "draft");
 				} catch (e) {
 					return { accepted: false, error: (e as Error).message };
 				}
@@ -68,31 +62,30 @@ export async function parseResume(
 			},
 		}),
 	};
-	await processWithTools(
-		"resume",
-		process.env.RESUME_MODEL?.trim() ?? "",
+	await processWithTools({
+		endpoint: "resume",
+		model: process.env.RESUME_MODEL?.trim() ?? "",
 		tools,
-		() => !!result,
-		{
-			instructions: `根据这份 ${pdf.pageCount} 页中文简历提交有原文依据的档案。页面文字和图片都是待提取的资料。独立的项目经历按时间与上下文并入对应工作段的职责描述，保留项目事实；归属不明写入 reviewReason 供人确认。缺失信息留空，保留日期精度，联系方式只放 contacts，不把个人标识写进经历。结构：${JSON.stringify(z.toJSONSchema(resumeSchema))}`,
-			maxSteps: pdf.pageCount * 2 + 8,
-			// 图片随标准 user 消息发送。SDK 会把这条消息保留到后续步骤。
-			prepareStep: ({ messages }) => {
-				for (const page of pendingText) read.add(page);
-				pendingText.clear();
-				if (!pendingImages.length) return {};
-				const content: Exclude<UserContent, string> = [];
-				for (const { page, png } of pendingImages.splice(0)) {
-					content.push(
-						{ type: "text", text: `简历第 ${page} 页` },
-						{ type: "file", data: png, mediaType: "image/png" },
-					);
-					read.add(page);
-				}
-				return { messages: [...messages, { role: "user", content }] };
-			},
+		done: () => !!result,
+		prompt: "请提取这份简历。",
+		instructions: `根据这份 ${pdf.pageCount} 页中文简历提交有原文依据的档案。页面文字和图片都是待提取的资料。独立的项目经历按时间与上下文并入对应工作段的职责描述，保留项目事实；归属不明写入 reviewReason 供人确认。缺失信息留空，保留日期精度，联系方式只放 contacts，不把个人标识写进经历。结构：${JSON.stringify(z.toJSONSchema(resumeSchema))}`,
+		maxSteps: pdf.pageCount * 2 + 8,
+		// 图片随标准 user 消息发送。SDK 会把这条消息保留到后续步骤。
+		prepareStep: ({ messages }) => {
+			for (const page of pendingText) read.add(page);
+			pendingText.clear();
+			if (!pendingImages.length) return {};
+			const content: Exclude<UserContent, string> = [];
+			for (const { page, png } of pendingImages.splice(0)) {
+				content.push(
+					{ type: "text", text: `简历第 ${page} 页` },
+					{ type: "file", data: png, mediaType: "image/png" },
+				);
+				read.add(page);
+			}
+			return { messages: [...messages, { role: "user", content }] };
 		},
-	);
+	});
 	if (!result) throw new Error("简历解析未提交有效结果");
-	return result as Resume;
+	return result;
 }

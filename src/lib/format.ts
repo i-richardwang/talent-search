@@ -6,9 +6,9 @@ export function dots(...parts: (string | null | undefined)[]) {
 }
 
 export function positionLabel(e: {
-	talentType?: string;
-	recentCompany?: string;
-	recentTitle?: string;
+	talentType: string;
+	recentCompany: string;
+	recentTitle: string;
 	curDept: string;
 	curTitle: string;
 	curLevel: string;

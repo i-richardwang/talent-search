@@ -196,7 +196,7 @@ function SceneSwitch({
 }) {
 	const navigate = useNavigate();
 	const personId = useOpenPersonId();
-	const first = OUTCOME.results[0]?.employee.personId ?? "T0101";
+	const first = OUTCOME.results[0]?.person.personId ?? "T0101";
 	return (
 		<LayoutSwitch<Scene>
 			label="工作台的状态"

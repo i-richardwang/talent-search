@@ -92,7 +92,7 @@ export async function readSegmentTexts(
 }
 
 /** 一条判据下，一段内容的结论。 */
-export type Verdict = { criterion: string; content: string; fits: boolean };
+type Verdict = { criterion: string; content: string; fits: boolean };
 
 /**
  * 存下这次找人任务的一批结论。同一条判据下同样内容的段已经有结论时不改。`store` 是写入用的

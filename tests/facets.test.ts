@@ -34,7 +34,7 @@ const run = async (query: string, filters: SearchFilters = {}) => {
 		null,
 		filters,
 	);
-	if (outcome.order === "employee")
+	if (outcome.order === "person")
 		throw new Error("要求查询得有经历主张，只有人的条件排不出名次");
 	return outcome;
 };
@@ -176,7 +176,7 @@ describe("候选与计数", () => {
 
 	test("宽的词把写了细的词的人也数进去，细的词只有写了它的人", async () => {
 		const { facets, results } = await run("算法", { skill: ["推荐系统"] });
-		assert.deepEqual(results.map((r) => r.employee.personId).sort(), [
+		assert.deepEqual(results.map((r) => r.person.personId).sort(), [
 			"F004",
 			"F005",
 			"U001",
@@ -185,7 +185,7 @@ describe("候选与计数", () => {
 		assert.equal(skills.get("电商推荐系统"), 1);
 		const narrow = await run("算法", { skill: ["电商推荐系统"] });
 		assert.deepEqual(
-			narrow.results.map((r) => r.employee.personId),
+			narrow.results.map((r) => r.person.personId),
 			["F005"],
 		);
 	});
@@ -321,8 +321,8 @@ describe("分面预告的数就是点下去会得到的数", () => {
 					{},
 				);
 				assert.deepEqual(
-					scoped.results.map((r) => r.employee.personId),
-					filtered.results.map((r) => r.employee.personId),
+					scoped.results.map((r) => r.person.personId),
+					filtered.results.map((r) => r.person.personId),
 					`${key} ${dimId(key, row.value)}`,
 				);
 			}
@@ -348,7 +348,7 @@ describe("分面预告的数就是点下去会得到的数", () => {
 			],
 		);
 		const { results } = await run(QUERY, { industry: ["消费/零售"] });
-		assert.deepEqual(results.map((r) => r.employee.personId).sort(), [
+		assert.deepEqual(results.map((r) => r.person.personId).sort(), [
 			"F004",
 			"F005",
 		]);

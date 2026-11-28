@@ -205,7 +205,7 @@ test("已入围者按匹配分排序，待确认的加分经历仍按相同顺�
 	};
 	await conclude(root, criterion, true, ["PZA", "PZB"]);
 	const listed = async () =>
-		(await execute(query, root)).results.map((r) => r.employee.personId);
+		(await execute(query, root)).results.map((r) => r.person.personId);
 	const pending = async () =>
 		(await probe(query, root)).unconfirmed.map((s) => s.experienceId);
 	const before = await pending();
@@ -403,7 +403,7 @@ describe("读经历", () => {
 			{ conditions: [judged("分批", ["合成输入分批"], criterion)] },
 			search,
 		);
-		assert.deepEqual(outcome.results.map((r) => r.employee.personId).sort(), [
+		assert.deepEqual(outcome.results.map((r) => r.person.personId).sort(), [
 			"BUDGET0",
 			"BUDGET2",
 			"BUDGET3",
@@ -427,7 +427,7 @@ describe("读经历", () => {
 		const listed = async () => {
 			const outcome = await execute(query, search);
 			return [
-				outcome.results.map((r) => r.employee.personId).sort(),
+				outcome.results.map((r) => r.person.personId).sort(),
 				outcome.incomplete,
 			];
 		};
@@ -586,7 +586,7 @@ describe("读经历", () => {
 			],
 		};
 		assert.deepEqual(
-			(await execute(query, search)).results.map((r) => r.employee.personId),
+			(await execute(query, search)).results.map((r) => r.person.personId),
 			["CAST_LOW"],
 		);
 	});

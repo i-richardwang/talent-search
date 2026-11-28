@@ -5,8 +5,8 @@ import { Button } from "#/components/ui/button";
 import { Input } from "#/components/ui/input";
 import { Segmented } from "#/components/ui/segmented";
 import { EDUCATION_LADDER } from "#/corpus/contract";
-import type { Match } from "#/identity/match";
-import type { Decision } from "#/ingestion/publish";
+import type { IdentityCandidate } from "#/identity/match";
+import type { Decision } from "#/ingestion/decision";
 import type { Resume } from "#/ingestion/resume";
 import type { Touch } from "#/ingestion/touch";
 
@@ -27,11 +27,11 @@ export function ResumeReview({
 	initial: Resume | null;
 	initialTouch: Touch | null;
 	taskId: string;
-	candidates: Match[];
+	candidates: IdentityCandidate[];
 	onDecision: (c: Decision) => Promise<void>;
 }) {
 	const [touch, setTouch] = useState(initialTouch ?? emptyTouch);
-	const [profile, set] = useState(() => {
+	const [profile, setProfile] = useState(() => {
 		const { experiences: _, ...fields } = initial ?? blank;
 		return fields;
 	});
@@ -79,7 +79,7 @@ export function ResumeReview({
 					<Input
 						id="resume-name"
 						value={draft.name}
-						onChange={(e) => set({ ...profile, name: e.target.value })}
+						onChange={(e) => setProfile({ ...profile, name: e.target.value })}
 					/>
 				</label>
 				<label htmlFor="resume-school">
@@ -87,13 +87,13 @@ export function ResumeReview({
 					<Input
 						id="resume-school"
 						value={draft.school}
-						onChange={(e) => set({ ...profile, school: e.target.value })}
+						onChange={(e) => setProfile({ ...profile, school: e.target.value })}
 					/>
 				</label>
 				<Segmented
 					aria-label="学历"
 					value={draft.education}
-					onChange={(education) => set({ ...profile, education })}
+					onChange={(education) => setProfile({ ...profile, education })}
 					options={[
 						{ value: "", label: "学历未知" },
 						...EDUCATION_LADDER.map((value) => ({ value, label: value })),
@@ -106,7 +106,7 @@ export function ResumeReview({
 							id={`contact-${k}`}
 							value={draft.contacts[k]}
 							onChange={(e) =>
-								set({
+								setProfile({
 									...profile,
 									contacts: { ...draft.contacts, [k]: e.target.value },
 								})
@@ -185,7 +185,7 @@ export function ResumeReview({
 						<h3>已有档案 · {m.name}</h3>
 						<p>{[m.school, m.education].filter(Boolean).join(" · ")}</p>
 						{m.jobs.map((j) => (
-							<p key={[j.company, j.title, j.start].join("|")}>
+							<p key={j.id}>
 								{j.company} {j.title}（{j.start} 至 {j.end ?? "今"}）
 							</p>
 						))}

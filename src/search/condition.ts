@@ -44,7 +44,7 @@ export type Mode = (typeof MODES)[number];
 export const PERSON_MODES = ["must", "boost"] as const;
 export type PersonMode = (typeof PERSON_MODES)[number];
 
-/** 人的条件能写在哪几维：有词表的几维是 `employee` 上的列，学校名是自由文本。 */
+/** 人的条件能写在哪几维：有词表的几维是 `person_card` 上的列，学校名是自由文本。 */
 export const PERSON_FIELDS = [
 	"level",
 	"education",

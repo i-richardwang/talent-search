@@ -45,8 +45,8 @@ before(async () => {
 	]);
 });
 
-const ids = (outcome: { results: { employee: { personId: string } }[] }) =>
-	outcome.results.map((r) => r.employee.personId).sort();
+const ids = (outcome: { results: { person: { personId: string } }[] }) =>
+	outcome.results.map((r) => r.person.personId).sort();
 
 test("捞到一项的一种写法，整项的写法都算；属于它的细词不跟着带", async () => {
 	assert.deepEqual(ids(await search({ conditions: [claim("服务端")] })), [

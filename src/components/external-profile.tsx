@@ -1,11 +1,11 @@
 import { DescriptionsItem } from "#/components/ui/descriptions";
 import { dots } from "#/lib/format";
-import type { EmployeeDetail } from "#/search/result";
+import type { PersonDetail } from "#/search/result";
 
 export function ExternalProfile({
 	person,
 }: {
-	person: EmployeeDetail["employee"];
+	person: PersonDetail["person"];
 }) {
 	return (
 		<>
@@ -16,7 +16,7 @@ export function ExternalProfile({
 				{person.recentTitle || "—"}
 			</DescriptionsItem>
 			<DescriptionsItem label="所属人才池">
-				{person.pools?.join("、") || "—"}
+				{person.pools.join("、") || "—"}
 			</DescriptionsItem>
 			<DescriptionsItem label="学历">
 				{dots(person.educationLevel, person.school, person.schoolTier) || "—"}

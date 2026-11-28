@@ -17,6 +17,10 @@ import { visibleText } from "./render";
 
 const pick = (name: string, rank: number): Pick => ({
 	personId: `T000${rank}`,
+	empId: `E${rank}`,
+	talentType: "在职员工",
+	accessKey: "0".repeat(32),
+	recentCompany: "",
 	name,
 	dept: null,
 	title: null,

@@ -2,6 +2,7 @@
 import type { PoolClient } from "pg";
 import { corpusTransaction } from "#/corpus/session";
 import { pool } from "#/db";
+import { upgradePersonQueries } from "./upgrade-person-queries";
 
 function ident(name: string) {
 	return `"${name.replaceAll('"', '""')}"`;
@@ -83,6 +84,7 @@ async function importEmployeeArchive(archive: string) {
 				select ${select.join(",")} from ${src}.${ident(source)} s ${from}`);
 		}
 		for (const table of commonBefore) await copy(table);
+		const queries = await upgradePersonQueries(c);
 		await c.query(`create temp table archive_person on commit drop as select emp_id,gen_random_uuid()::text as person_id from
 			(select emp_id from ${src}.employee union select emp_id from ${src}.audit_event where emp_id is not null) u`);
 		await c.query("create unique index on archive_person(emp_id)");
@@ -95,13 +97,13 @@ async function importEmployeeArchive(archive: string) {
 			"insert into person_identity(person_id,kind,value) select person_id,'emp_id',emp_id from employment",
 		);
 		await c.query(
-			"insert into profile_source(id,source_kind,person_id) select 'hr:'||person_id,'hris',person_id from person",
+			"insert into profile_source(source_kind,person_id) select 'hris',person_id from person",
 		);
 		const work = await copy("experience", "experience", linked, {
 			person_id: "m.person_id",
 		});
 		await c.query(
-			"insert into profile_experience(profile_id,person_id,experience_id) select 'hr:'||person_id,person_id,id from experience",
+			"insert into profile_experience(profile_id,person_id,experience_id) select f.id,e.person_id,e.id from experience e join profile_source f using(person_id) where f.source_kind='hris'",
 		);
 		await copy("employee_record", "employee_record", linked, {
 			person_id: "m.person_id",
@@ -126,6 +128,7 @@ async function importEmployeeArchive(archive: string) {
 			);
 		}
 		return {
+			queries,
 			people: people.rowCount,
 			experiences: work.rowCount,
 			audits: audits.rowCount,

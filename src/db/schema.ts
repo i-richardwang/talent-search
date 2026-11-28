@@ -56,7 +56,7 @@ export const authUser = pgTable("auth_user", {
 /**
  * 账号的数据范围：一行一个组织（部门路径，`lib/org.ts` 的写法），
  * 连同下面的各级。一个账号看得到的人，是此刻所在部门落在其中某个组织下的人
- * （`visible_employee`）；最上一级（集团）就是全部有部门的人。建账号时必须给，账号页上改。
+ * （`visible_employment`）；最上一级（集团）就是全部有部门的人。建账号时必须给，账号页上改。
  */
 export const accountScope = pgTable(
 	"account_scope",
@@ -319,7 +319,7 @@ export const poolTouch = pgTable(
 		id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
 		poolId: text("pool_id").notNull(),
 		personId: text("person_id").notNull(),
-		// 旧版接触记录只有成员录入者，实际撰写人没有登记。
+		// 作者未知的接触记录保留空值。
 		authorId: accountId("author_id"),
 		touchedAt: date("touched_at"),
 		notes: text("notes").notNull(),
@@ -375,6 +375,9 @@ export const profileSource = pgTable(
 	},
 	(t) => [
 		unique("profile_person_identity").on(t.id, t.personId),
+		uniqueIndex("hris_profile_per_person")
+			.on(t.personId)
+			.where(sql`${t.sourceKind}='hris'`),
 		unique("profile_original_per_pool_person").on(
 			t.resumeFileId,
 			t.poolId,
@@ -578,7 +581,7 @@ export const sequenceCatalog = pgTable(
 	],
 );
 
-export type Employee = typeof personCard.$inferSelect;
+export type PersonCard = typeof personCard.$inferSelect;
 export type Experience = typeof experience.$inferSelect;
 
 const RECORD_KINDS = ["rating", "status"] as const;

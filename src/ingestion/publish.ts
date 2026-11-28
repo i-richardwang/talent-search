@@ -5,7 +5,8 @@ import { prunePhrases } from "#/corpus/phrases";
 import { phrasesOf } from "#/corpus/route-texts";
 import { asReader, authorizedPool } from "#/db/snapshot";
 import { contactKeys } from "#/identity/contacts";
-import { exactMatch, matches } from "#/identity/match";
+import { exactPersonId, matches } from "#/identity/match";
+import type { Decision } from "./decision";
 import { periods, type Resume, resumeSchema, sanitized } from "./resume";
 import type { Touch } from "./touch";
 import { appendTouch } from "./touch-store";
@@ -15,13 +16,18 @@ export type ImportRow = {
 	owner_id: string;
 	pool_id: string;
 	file_id: string;
-	sha256: string;
 	day: string;
 	draft: Resume | null;
 	touch: Touch | null;
 };
 
-async function saveProfile(c: PoolClient, t: ImportRow, r: Resume, id: string) {
+async function saveProfile(
+	c: PoolClient,
+	t: ImportRow,
+	r: Resume,
+	id: string,
+	work: ReturnType<typeof periods>,
+) {
 	const created = await c.query<{ id: string }>(
 		`insert into profile_source(person_id,source_kind,pool_id,resume_file_id,filename,created_by,captured_at,parsed)
 		select $1,'pdf_resume',pool_id,file_id,filename,owner_id,created_at,$3 from resume_import where id=$2 returning id`,
@@ -64,7 +70,7 @@ async function saveProfile(c: PoolClient, t: ImportRow, r: Resume, id: string) {
 		"delete from profile_experience pe using profile_source s where pe.profile_id=s.id and s.person_id=$1 and s.pool_id=$2",
 		[id, t.pool_id],
 	);
-	for (const e of periods(r, t.day)) {
+	for (const e of work) {
 		const segment = await c.query<{
 			id: number;
 			derived_identity: string | null;
@@ -107,11 +113,6 @@ async function saveProfile(c: PoolClient, t: ImportRow, r: Resume, id: string) {
 	);
 	await prunePhrases(c);
 }
-export type Decision =
-	| { action: "new"; draft?: Resume; touch?: Touch }
-	| { action: "link"; personId: string; draft?: Resume; touch?: Touch }
-	| { action: "cancel" };
-
 function candidates(c: PoolClient, t: ImportRow, r: Resume) {
 	return asReader(c, t.owner_id, () => matches(c, r, t.day, t.file_id));
 }
@@ -120,8 +121,8 @@ export async function classifyImport(c: PoolClient, t: ImportRow, raw: Resume) {
 	const r = sanitized(resumeSchema.parse(raw));
 	await authorizedPool(c, t.owner_id, t.pool_id);
 	const alternatives = await candidates(c, t, r);
-	const exact = await exactMatch(c, alternatives, r, t.day, t.owner_id);
-	if (exact) return publish(c, t, r, exact.personId, "duplicate");
+	const exact = await exactPersonId(c, alternatives, r, t.day, t.owner_id);
+	if (exact) return publish(c, t, r, exact, "duplicate");
 	const missing = r.experiences.some(
 		(e) => !e.start || !e.end || (!e.title && !e.company),
 	);
@@ -175,7 +176,7 @@ async function publish(
 	existing: string | null,
 	status: "added" | "duplicate",
 ) {
-	periods(r, t.day);
+	const work = periods(r, t.day);
 	const id = existing ?? randomUUID();
 	if (!existing)
 		await c.query(
@@ -187,7 +188,7 @@ async function publish(
 		[id, t.pool_id, t.file_id],
 	);
 	if (!original.rowCount) {
-		await saveProfile(c, t, r, id);
+		await saveProfile(c, t, r, id, work);
 		await c.query(
 			"insert into audit_event(user_id,action,person_id) values($1,$2,$3)",
 			[t.owner_id, existing ? "talent-link" : "talent-add", id],

@@ -33,8 +33,8 @@ beforeEach(async () => {
 });
 
 const query = (...conditions: QueryCondition[]): Query => ({ conditions });
-const ids = (list: { employee: { personId: string } }[]) =>
-	list.map((r) => r.employee.personId);
+const ids = (list: { person: { personId: string } }[]) =>
+	list.map((r) => r.person.personId);
 /** 有经历主张的名单：每个人带着证据。 */
 const evidence = (outcome: SearchOutcome) => {
 	if (outcome.order !== "evidence") throw new Error("该是按证据排的名单");
@@ -245,7 +245,7 @@ describe("限定公司的经历", () => {
 		const [e2, e1] = outcome.results;
 		for (const r of outcome.results)
 			for (const e of r.evidence)
-				assert.equal(e.company, "甲辰科技", `${r.employee.personId} 的证据`);
+				assert.equal(e.company, "甲辰科技", `${r.person.personId} 的证据`);
 		assert.equal(e1?.basis[0]?.months, 12, "乙未那 96 个月不算");
 		assert.equal(e2?.basis[0]?.months, 36);
 		assert.equal(outcome.total, 2);
@@ -269,7 +269,7 @@ describe("限定公司的经历", () => {
 			[{ ...atJiachen, off: "user" as const }, noIntern],
 		]) {
 			const outcome = await execute(query(...conditions), task);
-			assert.equal(outcome.order, "employee");
+			assert.equal(outcome.order, "person");
 			const listed = ids(outcome.results);
 			assert.ok(listed.includes("E1") && listed.includes("R1"));
 			assert.ok(!listed.includes("E4"), "E4 有一段实习");
@@ -448,7 +448,7 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 		assert.equal(outcome.empty, null);
 		const hitsOfT5 = (o: typeof outcome) =>
 			o.results
-				.find((r) => r.employee.personId === "T5")
+				.find((r) => r.person.personId === "T5")
 				?.evidence.map((e) => e.title);
 		assert.deepEqual(
 			hitsOfT5(outcome),
@@ -474,7 +474,7 @@ describe("写了判据的条件：一段经历算不算听确认过的结论", (
 			["风控策略负责人"],
 			"判成不算的那一段不是证据",
 		);
-		const t5 = read.results.find((r) => r.employee.personId === "T5");
+		const t5 = read.results.find((r) => r.person.personId === "T5");
 		assert.equal(t5?.basis[0]?.months, 24, "累计时长也不算它");
 	});
 

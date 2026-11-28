@@ -106,7 +106,11 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 	);
 	const corpus = async () => {
 		const tables = [
-			"employee",
+			"person",
+			"employment",
+			"person_identity",
+			"profile_source",
+			"profile_experience",
 			"experience",
 			"experience_next",
 			"experience_phrase",
@@ -125,6 +129,10 @@ test("账号生命周期与权限检查不改变已有语料、抽取结果或�
 			),
 		);
 	};
+	const path = await pool.query<{ local: boolean }>(
+		"select current_schemas(false) = array[current_schema()] as local",
+	);
+	assert.equal(path.rows[0]?.local, true);
 	const before = await corpus();
 	assert.equal(await viewer(new Headers()), null);
 	await assert.rejects(

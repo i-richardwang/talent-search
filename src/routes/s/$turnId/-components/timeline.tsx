@@ -2,7 +2,7 @@ import { Block } from "#/components/ui/block";
 import { Tag } from "#/components/ui/tag";
 import type { CompanyMeta } from "#/db/schema";
 import { dots, duration, period } from "#/lib/format";
-import { type EmployeeDetail, placeOf } from "#/search/result";
+import { type PersonDetail, placeOf } from "#/search/result";
 import { Dot } from "./evidence";
 
 /**
@@ -13,7 +13,7 @@ export function Timeline({
 	rows,
 	counted,
 }: {
-	rows: EmployeeDetail["timeline"];
+	rows: PersonDetail["timeline"];
 	/** 算数的经历段（`claim-lines.ts` 的 `countedOf`）。 */
 	counted: ReadonlySet<number>;
 }) {
@@ -37,7 +37,7 @@ function Segment({
 	hit,
 	isLast,
 }: {
-	row: EmployeeDetail["timeline"][number];
+	row: PersonDetail["timeline"][number];
 	hit: boolean;
 	isLast: boolean;
 }) {

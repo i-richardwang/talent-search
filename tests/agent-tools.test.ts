@@ -286,7 +286,7 @@ describe("看目录", () => {
 			"problem",
 		);
 		assert.equal(
-			(await discover("all", { relation: "employee" })).kind,
+			(await discover("all", { relation: "person" })).kind,
 			"problem",
 		);
 	});

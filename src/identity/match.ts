@@ -5,16 +5,16 @@ import type { Resume } from "#/ingestion/resume";
 import { periods } from "#/ingestion/resume";
 import { contactKeys } from "./contacts";
 
-export type Match = {
+export type IdentityCandidate = {
 	personId: string;
 	name: string;
 	school: string;
 	education: string;
-	sameFile: boolean;
-	sameIdentity: boolean;
-	jobs: { company: string; title: string; start: string; end: string | null }[];
+	jobs: Job[];
 };
+type Match = IdentityCandidate & { sameFile: boolean; sameIdentity: boolean };
 type Job = {
+	id: number;
 	company: string;
 	title: string;
 	start: string;
@@ -27,14 +27,9 @@ export async function matches(
 	asOf: string,
 	fileId: string,
 ): Promise<Match[]> {
-	const work = periods(
-		{
-			...draft,
-			experiences: draft.experiences.filter((e) => e.start && e.end),
-		},
-		asOf,
-	);
+	const work = periods(draft, asOf, "draft");
 	const hashes = contactKeys(draft.contacts);
+	const identityKeys = hashes.map((h) => `${h.kind}:${h.value}`).sort();
 	const { rows } = await client.query<{
 		id: string;
 		name: string;
@@ -51,11 +46,11 @@ export async function matches(
 		exists(select from person_identity i where i.person_id=c.person_id and (i.kind||':'||i.value)=any($3::text[])) as strong,
 		array(select i.kind||':'||i.value from person_identity i where i.person_id=c.person_id and i.origin='hris' and i.kind in ('phone','email') order by i.kind) as hr_contacts,
 		coalesce((select jsonb_agg(m.contacts) from pool_member m where m.person_id=c.person_id),'[]') as contacts,
-		coalesce((select jsonb_agg(jsonb_build_object('company',e.company,'title',e.title,
-			'start',e.start_date,'end',e.end_date)) from experience e where e.person_id=c.person_id and not e.unemployed),'[]') as jobs
+		coalesce((select jsonb_agg(jsonb_build_object('id',e.id,'company',e.company,'title',e.title,
+			'start',e.start_date,'end',e.end_date) order by e.start_date desc,e.id) from experience e where e.person_id=c.person_id and not e.unemployed),'[]') as jobs
 		from person_card c where c.name=$1 or exists(select from profile_source s where s.person_id=c.person_id and s.resume_file_id=$2)
 		or exists(select from person_identity i where i.person_id=c.person_id and (i.kind||':'||i.value)=any($3::text[]))`,
-		[draft.name, fileId, hashes.map((h) => `${h.kind}:${h.value}`)],
+		[draft.name, fileId, identityKeys],
 	);
 	const out: Match[] = [];
 	for (const r of rows) {
@@ -73,7 +68,6 @@ export async function matches(
 					j.start <= (e.endDate ?? asOf),
 			),
 		);
-		const fromHR = hashes.map((h) => `${h.kind}:${h.value}`).sort();
 		const contactsMatch =
 			r.contacts.some(
 				(c) =>
@@ -82,7 +76,7 @@ export async function matches(
 			) ||
 			(!r.contacts.length &&
 				!draft.contacts.wechat &&
-				JSON.stringify(fromHR) === JSON.stringify(r.hr_contacts));
+				JSON.stringify(identityKeys) === JSON.stringify(r.hr_contacts));
 		const sameIdentity =
 			contactsMatch &&
 			r.name === draft.name &&
@@ -102,19 +96,14 @@ export async function matches(
 				school: r.school,
 				education: r.education,
 				sameIdentity,
-				jobs: r.jobs.map(({ company, title, start, end }) => ({
-					company,
-					title,
-					start,
-					end,
-				})),
+				jobs: r.jobs,
 			});
 	}
 	return out;
 }
 
 /** 完整性按数据库生成的内容键集合验证。候选人的经历始终在提交人的资料范围内读取。 */
-export async function exactMatch(
+export async function exactPersonId(
 	c: PoolClient,
 	alternatives: Match[],
 	r: Resume,
@@ -122,39 +111,38 @@ export async function exactMatch(
 	user: string,
 ) {
 	const identical = alternatives.filter((m) => m.sameFile);
-	const compare = alternatives.filter((m) => m.sameIdentity && !m.sameFile);
-	if (compare.length) {
-		await c.query(
-			"create temp table proposed_work(like experience including generated including defaults) on commit drop",
-		);
-		await c.query("alter table proposed_work drop column id");
-		const work = periods(r, day);
-		await c.query(
-			`insert into proposed_work(person_id,kind,company,title,description,start_date,end_date,months)
+	if (identical.length)
+		return identical.length === 1 ? identical[0]?.personId : undefined;
+	const compare = alternatives.filter((m) => m.sameIdentity);
+	if (!compare.length) return;
+	await c.query(
+		"create temp table proposed_work(like experience including generated including defaults) on commit drop",
+	);
+	await c.query("alter table proposed_work drop column id");
+	const work = periods(r, day);
+	await c.query(
+		`insert into proposed_work(person_id,kind,company,title,description,start_date,end_date,months)
 			select id,'external',w.company,w.title,w.description,w."startDate",w."endDate",w.months
 			from unnest($1::text[]) id cross join jsonb_to_recordset($2) w(company text,title text,description text,"startDate" date,"endDate" date,months int)`,
-			[compare.map((m) => m.personId), JSON.stringify(work)],
+		[compare.map((m) => m.personId), JSON.stringify(work)],
+	);
+	const proposed = await c.query<{ person_id: string; keys: string[] }>(
+		"select person_id,array_agg(distinct content_key order by content_key) as keys from proposed_work group by person_id",
+	);
+	const visible = await asReader(c, user, () =>
+		c.query<{ person_id: string; keys: string[] }>(
+			`select person_id,array_agg(content_key order by content_key) as keys from experience
+			where person_id=any($1::text[]) and not unemployed group by person_id`,
+			[compare.map((m) => m.personId)],
+		),
+	);
+	const keysByPerson = new Map(visible.rows.map((p) => [p.person_id, p.keys]));
+	const same = proposed.rows.filter((p) => {
+		const keys = keysByPerson.get(p.person_id);
+		return (
+			keys?.length === p.keys.length &&
+			keys.every((key, i) => key === p.keys[i])
 		);
-		const proposed = await c.query<{ person_id: string; keys: string[] }>(
-			"select person_id,array_agg(distinct content_key order by content_key) as keys from proposed_work group by person_id",
-		);
-		for (const candidate of compare) {
-			const visible = await asReader(c, user, () =>
-				c.query<{ content_key: string }>(
-					"select content_key from experience where person_id=$1 and not unemployed order by content_key",
-					[candidate.personId],
-				),
-			);
-			const keys = proposed.rows.find(
-				(p) => p.person_id === candidate.personId,
-			)?.keys;
-			if (
-				keys &&
-				JSON.stringify(keys) ===
-					JSON.stringify(visible.rows.map((v) => v.content_key))
-			)
-				identical.push(candidate);
-		}
-	}
-	return identical.length === 1 ? identical[0] : undefined;
+	});
+	return same.length === 1 ? same[0]?.person_id : undefined;
 }

@@ -5,22 +5,11 @@ import {
 	useRouter,
 } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { OrgPicker } from "#/components/org-picker";
-import { emptyTouch, TouchFields } from "#/components/touch-fields";
 import { Alert } from "#/components/ui/alert";
 import { Block } from "#/components/ui/block";
 import { Button } from "#/components/ui/button";
-import { Collapsible, CollapsibleTrigger } from "#/components/ui/collapsible";
-import {
-	DropdownMenuPopup,
-	DropdownMenuPortal,
-	DropdownMenuPositioner,
-	DropdownMenuRoot,
-	DropdownMenuTrigger,
-	renderDropdownMenuItems,
-} from "#/components/ui/dropdown-menu";
+
 import { Empty } from "#/components/ui/empty";
-import { Input } from "#/components/ui/input";
 import { Modal } from "#/components/ui/modal";
 import { Segmented } from "#/components/ui/segmented";
 import {
@@ -33,25 +22,23 @@ import {
 } from "#/components/ui/table";
 import { TextLink } from "#/components/ui/text-link";
 import { toast } from "#/components/ui/toast";
-import type { Decision } from "#/ingestion/publish";
+import type { Decision } from "#/ingestion/decision";
 import { dots } from "#/lib/format";
-import type { OrgNode } from "#/lib/org";
 import {
 	StatusBadge,
 	type StatusTone,
 } from "#/routes/-components/status-badge";
 import { TablePager } from "#/routes/-components/table-pager";
 import {
-	addResume,
-	changePool,
-	type loadImports,
-	poolOrganizations,
+	type loadPoolBoard,
 	reviewResume,
 	submitDecision,
 } from "#/server/talent-functions";
+import { PoolSettings } from "./-pool-settings";
 import { ResumeReview } from "./-resume-review";
+import { ResumeUpload } from "./-resume-upload";
 
-type Board = Awaited<ReturnType<typeof loadImports>>;
+type Board = Awaited<ReturnType<typeof loadPoolBoard>>;
 const statuses: Record<string, [string, StatusTone]> = {
 	queued: ["等待解析", "pending"],
 	processing: ["正在解析", "running"],
@@ -69,15 +56,12 @@ function showError(error: unknown) {
 }
 
 export function PoolBoard({ board }: { board: Board }) {
-	const { user } = useLoaderData({ from: "__root__" }),
-		router = useRouter();
+	const { user } = useLoaderData({ from: "__root__" });
+	const router = useRouter();
 	const navigate = useNavigate({ from: "/pools" });
 	const selected = board.pools.find((p) => p.id === board.selected);
 	const { list } = board;
 	const tasks = list.tab === "imports" ? list.table : null;
-	const [touch, setTouch] = useState(emptyTouch),
-		[uploadError, setUploadError] = useState(""),
-		[uploading, setUploading] = useState(false);
 	function search(
 		pool: string | undefined,
 		tab: "members" | "imports",
@@ -102,37 +86,6 @@ export function PoolBoard({ board }: { board: Board }) {
 		const timer = setInterval(() => void router.invalidate(), 2000);
 		return () => clearInterval(timer);
 	}, [pending, router]);
-	async function upload(files: File[], poolId: string) {
-		if (!files.length) return;
-		setUploading(true);
-		setUploadError("");
-		try {
-			const failed: string[] = [];
-			for (const file of files) {
-				const form = new FormData();
-				form.set("pool", poolId);
-				form.set("file", file);
-				form.set("notes", touch.notes);
-				if (touch.touched) form.set("touched", touch.touched);
-				try {
-					await addResume({ data: form });
-				} catch {
-					failed.push(file.name);
-				}
-			}
-			if (failed.length) setUploadError(`上传失败：${failed.join("、")}`);
-			if (failed.length < files.length) {
-				toast.success(`${files.length - failed.length} 份简历已提交`);
-				setTouch(emptyTouch);
-				await navigate({ search: search(poolId, "imports") });
-				await router.invalidate();
-			}
-		} catch (e) {
-			showError(e);
-		} finally {
-			setUploading(false);
-		}
-	}
 	function closeReview() {
 		requested.current = null;
 		setOpen(null);
@@ -160,84 +113,16 @@ export function PoolBoard({ board }: { board: Board }) {
 	);
 	return (
 		<div className="flex flex-col gap-5">
-			<Block
-				variant="outlined"
-				className="flex flex-wrap items-center gap-3 p-4"
-			>
-				<DropdownMenuRoot>
-					<DropdownMenuTrigger>
-						<Button disabled={uploading}>
-							目标人才池 · {selected?.name ?? "选择"}
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuPortal>
-						<DropdownMenuPositioner>
-							<DropdownMenuPopup>
-								{renderDropdownMenuItems([
-									{
-										type: "radio",
-										value: selected?.id ?? "",
-										onValueChange: (id) => {
-											setTouch(emptyTouch);
-											void navigate({ search: search(id, list.tab) });
-										},
-										options: board.pools.map((p) => ({
-											value: p.id,
-											label: p.name,
-											extra: p.org_path ?? "所有登录账号",
-										})),
-									},
-								])}
-							</DropdownMenuPopup>
-						</DropdownMenuPositioner>
-					</DropdownMenuPortal>
-				</DropdownMenuRoot>
-				{selected && (
-					<span className="text-fg-secondary text-sm">
-						可见范围 · {selected.org_path ?? "所有登录账号"}
-					</span>
-				)}
-				<form
-					key={selected?.id}
-					className="grid w-full gap-3"
-					onSubmit={async (e) => {
-						e.preventDefault();
-						if (!selected || uploading) return;
-						const form = e.currentTarget;
-						const input = form.elements.namedItem("files") as HTMLInputElement;
-						const files = Array.from(input.files ?? []);
-						input.value = "";
-						await upload(files, selected.id);
-					}}
-				>
-					<label htmlFor="pool-upload">
-						PDF 简历
-						<Input
-							id="pool-upload"
-							name="files"
-							required
-							type="file"
-							accept="application/pdf,.pdf"
-							multiple
-							disabled={!selected || uploading}
-						/>
-					</label>
-					<TouchFields value={touch} onChange={setTouch} />
-					<p className="text-sm text-fg-secondary">
-						接触信息选填。批量上传时，每份简历分别记入这条接触记录。
-					</p>
-					<Button htmlType="submit" loading={uploading} disabled={!selected}>
-						上传简历
-					</Button>
-				</form>
-			</Block>
-			{uploadError && (
-				<Alert
-					type="error"
-					title={uploadError}
-					onClose={() => setUploadError("")}
-				/>
-			)}
+			<ResumeUpload
+				key={selected?.id}
+				pools={board.pools}
+				selected={selected}
+				onPoolChange={(id) => void navigate({ search: search(id, list.tab) })}
+				onUploaded={async (id) => {
+					await navigate({ search: search(id, "imports") });
+					await router.invalidate();
+				}}
+			/>
 			{user?.admin && <PoolSettings selected={selected} key={selected?.id} />}
 			<section className="grid gap-3">
 				<Segmented
@@ -421,127 +306,5 @@ export function PoolBoard({ board }: { board: Board }) {
 				)}
 			</Modal>
 		</div>
-	);
-}
-
-type Pool = Board["pools"][number];
-function PoolSettings({ selected }: { selected?: Pool }) {
-	const [opened, setOpened] = useState(false),
-		[mode, setMode] = useState<"edit" | "new">(selected ? "edit" : "new");
-	return (
-		<section>
-			<CollapsibleTrigger
-				open={opened}
-				panelId="pool-settings"
-				onOpenChange={setOpened}
-			>
-				管理人才池
-			</CollapsibleTrigger>
-			<Collapsible id="pool-settings" open={opened}>
-				{selected && (
-					<Segmented
-						aria-label="管理方式"
-						value={mode}
-						onChange={setMode}
-						options={[
-							{ value: "edit", label: "调整所选池" },
-							{ value: "new", label: "新建人才池" },
-						]}
-					/>
-				)}
-				<PoolForm
-					key={mode}
-					selected={mode === "edit" ? selected : undefined}
-				/>
-			</Collapsible>
-		</section>
-	);
-}
-function PoolForm({ selected }: { selected?: Pool }) {
-	const router = useRouter();
-	const [visibility, setVisibility] = useState<"public" | "org">(
-			selected?.org_path ? "org" : "public",
-		),
-		[org, setOrg] = useState(selected?.org_path ?? ""),
-		[tree, setTree] = useState<OrgNode[] | null>(null),
-		[saving, setSaving] = useState(false);
-	useEffect(() => {
-		if (visibility !== "org") return;
-		let alive = true;
-		poolOrganizations()
-			.then((nodes) => {
-				if (alive) setTree(nodes);
-			})
-			.catch((e) => {
-				if (alive) showError(e);
-			});
-		return () => {
-			alive = false;
-		};
-	}, [visibility]);
-	return (
-		<form
-			className="grid gap-3 py-3"
-			onSubmit={async (e) => {
-				e.preventDefault();
-				if (saving || (visibility === "org" && !org)) return;
-				const name = String(new FormData(e.currentTarget).get("name"));
-				setSaving(true);
-				try {
-					await changePool({
-						data: {
-							id: selected?.id,
-							name,
-							org: visibility === "org" ? org : null,
-						},
-					});
-					await router.invalidate();
-					toast.success("人才池已保存");
-				} catch (e) {
-					showError(e);
-				} finally {
-					setSaving(false);
-				}
-			}}
-		>
-			{selected && (
-				<span>
-					{selected.creator} · 创建于 {selected.created}
-				</span>
-			)}
-			<label htmlFor="pool-name">
-				池名
-				<Input
-					id="pool-name"
-					name="name"
-					defaultValue={selected?.name ?? ""}
-					required
-				/>
-			</label>
-			<Segmented
-				aria-label="可见范围"
-				value={visibility}
-				onChange={setVisibility}
-				options={[
-					{ value: "public", label: "所有登录账号" },
-					{ value: "org", label: "按部门授权" },
-				]}
-			/>
-			{visibility === "org" && (
-				<OrgPicker
-					single
-					tree={tree}
-					value={org ? [org] : []}
-					onChange={(paths) => setOrg(paths[0] ?? "")}
-				/>
-			)}
-			<Button
-				htmlType="submit"
-				loading={saving}
-				disabled={visibility === "org" && !org}
-			>
-				保存人才池
-			</Button>
-		</form>
 	);
 }

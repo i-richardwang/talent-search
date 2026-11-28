@@ -16,7 +16,7 @@ import {
 import { TextLink } from "#/components/ui/text-link";
 import { dots, integer } from "#/lib/format";
 import type { TablePage } from "#/lib/paging";
-import type { EmployeeRow } from "#/server/data";
+import type { PersonRow } from "#/server/data";
 import { listSearch, useSearchDraft } from "../../-components/admin-page";
 import { TablePager } from "../../-components/table-pager";
 
@@ -24,13 +24,13 @@ import { TablePager } from "../../-components/table-pager";
  * 数据页的内容：按姓名、工号或最近公司找人。`selected` 是右侧详情的人员编号；
  * `pending` 是换词或翻页后新的一页还没取回，表体画同样行数的占位。
  */
-export function EmployeeTable({
+export function PeopleTable({
 	list,
 	q,
 	selected,
 	pending = false,
 }: {
-	list: TablePage<EmployeeRow>;
+	list: TablePage<PersonRow>;
 	q: string;
 	selected: string | undefined;
 	pending?: boolean;

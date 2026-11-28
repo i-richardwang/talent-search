@@ -179,10 +179,10 @@ function ExportDialog({
 					try {
 						// 先记进操作记录，记下了才生成文件
 						await logExport({
-							data: {
-								personIds: picked.map((one) => one.personId),
-								accessKeys: picked.map((one) => one.accessKey),
-							},
+							data: picked.map(({ personId, accessKey }) => ({
+								personId,
+								accessKey,
+							})),
 						});
 						download(exportName(), await exportWorkbook(picked, names, on));
 					} catch {

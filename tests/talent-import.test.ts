@@ -160,6 +160,27 @@ test("日期保留原始粒度、未知日期和未来起始日需核对", async
 				"2024-03-12",
 			),
 		);
+	for (const [start, end] of [
+		["2024-02-30", ""],
+		["", "2024-02-30"],
+	] as const) {
+		assert.throws(
+			() =>
+				periods(
+					{
+						...draft,
+						experiences: [
+							{ ...job, start: "" },
+							{ ...job, start, end },
+						],
+					},
+					"2024-03-12",
+					"draft",
+				),
+			/第 2 段：日期不存在/,
+		);
+	}
+
 	const clean = sanitized({
 		...draft,
 		experiences: [
@@ -204,6 +225,12 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 			],
 		},
 	]);
+	await pool.query(
+		"update employment set emp_id='synthetic-staff' where person_id='internal-test'",
+	);
+	await pool.query(
+		"insert into person_identity(kind,value,person_id) values('emp_id','synthetic-staff','internal-test')",
+	);
 	const first = await ingest("Synthetic resume", draft);
 	assert.equal(first.status, "added", first.message);
 	assert.ok(first.person_id);
@@ -223,7 +250,7 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 		{ talentType: ["外部候选人"], pool: ["外部人才池"] },
 	);
 	assert.equal(hit.total, 1);
-	assert.equal(hit.results[0]?.employee.personId, first.person_id);
+	assert.equal(hit.results[0]?.person.personId, first.person_id);
 	const { probe } = await import("#/search/execute");
 	const root = await openSearch();
 	const query = {
@@ -401,7 +428,18 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 		(await originals.resumeResponse("limited", privateFile.id, false)).status,
 		404,
 	);
-	const { allVisible } = await import("#/server/data");
+	const { canExport, personDetail, personData } = await import("#/server/data");
+	for (const lookup of [personData, personDetail]) {
+		assert.equal(
+			(await lookup({ account: OWNER }, "synthetic-staff"))?.person.personId,
+			"internal-test",
+		);
+		assert.equal(await lookup({ account: "limited" }, "synthetic-staff"), null);
+		assert.equal(
+			(await lookup({ account: "limited" }, "internal-test"))?.person.empId,
+			null,
+		);
+	}
 	const visibleStamp = await withReadSnapshot(
 		{ account: OWNER },
 		async (c) =>
@@ -412,11 +450,15 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 			).rows[0].access_key,
 	);
 	assert.equal(
-		await allVisible({ account: OWNER }, ["internal-test"], [visibleStamp]),
+		await canExport({ account: OWNER }, [
+			{ personId: "internal-test", accessKey: visibleStamp },
+		]),
 		true,
 	);
 	assert.equal(
-		await allVisible({ account: "limited" }, ["internal-test"], [visibleStamp]),
+		await canExport({ account: "limited" }, [
+			{ personId: "internal-test", accessKey: visibleStamp },
+		]),
 		false,
 	);
 	await assert.rejects(
@@ -593,6 +635,39 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 		assert.ok(audit.rows.some((r) => r.action === a));
 });
 
+test("归档查询按 PostgreSQL 标识符升级一次，保留参数、文字和编号", async () => {
+	const id = await openSearch();
+	const clause = (keys: string[]) =>
+		`/* 合成 */ exists(select 1 from rating r where r.${keys[0]}=p.${keys[1]} and r.stream=:emp_id and r.value='emp_id')`;
+	const condition = {
+		id: "saved",
+		mode: "must",
+		from: "person",
+		label: "工号关联",
+		where: clause(['"emp_id"', "EMP_ID"]),
+		params: { emp_id: "emp_id" },
+	};
+	const spec = { query: { conditions: [condition] } };
+	await pool.query("update search_turn set spec=$2 where id=$1", [id, spec]);
+	const { upgradePersonQueries } = await import(
+		"../scripts/upgrade-person-queries"
+	);
+	const { corpusTransaction } = await import("#/corpus/session");
+	assert.equal(await corpusTransaction(upgradePersonQueries), 1);
+	assert.equal(await corpusTransaction(upgradePersonQueries), 0);
+	assert.deepEqual(
+		(await pool.query("select spec from search_turn where id=$1", [id])).rows[0]
+			.spec,
+		{
+			query: {
+				conditions: [
+					{ ...condition, where: clause(['"person_id"', "person_id"]) },
+				],
+			},
+		},
+	);
+});
+
 test("人工选择独立入池优先于编辑后完全相同的姓名、联系信息与经历", async () => {
 	await pools.ensureDefaultPool();
 	const original: Resume = {
@@ -620,6 +695,12 @@ test("人工选择独立入池优先于编辑后完全相同的姓名、联系�
 	const created = await state(second.id);
 	assert.equal(created.status, "added");
 	assert.notEqual(created.person_id, first.person_id);
+	const repeated = await ingest("Distinct identity baseline", original);
+	assert.equal(repeated.status, "duplicate");
+	assert.equal(repeated.person_id, first.person_id);
+	const ambiguous = await ingest("Separate original matching both", original);
+	assert.equal(ambiguous.status, "review");
+	await api.decideImport(OWNER, ambiguous.id, { action: "cancel" });
 	for (const person of [first.person_id, created.person_id]) {
 		assert.equal((await originals.sourcesFor(OWNER, person)).length, 1);
 		assert.equal(
@@ -897,7 +978,7 @@ test("上传和核对中的接触记录随入池发布，多人共享名单与�
 		pdf("touch initial"),
 		firstTouch,
 	);
-	await api.processNextResume();
+	assert.equal(await api.processNextResume(), "published");
 	const published = await state(task);
 	assert.equal(published.status, "added");
 	assert.equal(published.touch, null);
@@ -967,7 +1048,7 @@ test("上传和核对中的接触记录随入池发布，多人共享名单与�
 		pdf("touch revision"),
 		{ touched: null, notes: "约定稍后联系" },
 	);
-	await api.processNextResume();
+	assert.equal(await api.processNextResume(), "processed");
 	assert.equal((await state(repeat)).status, "duplicate");
 	await assert.rejects(
 		api.decideImport(peer, repeat, { action: "link", personId: person }),
@@ -975,7 +1056,7 @@ test("上传和核对中的接触记录随入池发布，多人共享名单与�
 	const details = await originals.sourcesFor(peer, person);
 	assert.equal(details.length, 2);
 	assert.equal(details[0]?.touches.length, 4);
-	const board = await pools.importBoard(peer, {
+	const board = await pools.poolBoard(peer, {
 		pool: poolId,
 		tab: "members",
 		page: 5,
@@ -992,7 +1073,7 @@ test("上传和核对中的接触记录随入池发布，多人共享名单与�
 		},
 	]);
 	assert.equal(board.list.table.page, 1);
-	const inbox = await pools.importBoard(peer, {
+	const inbox = await pools.poolBoard(peer, {
 		pool: poolId,
 		tab: "imports",
 		page: 1,
@@ -1001,28 +1082,28 @@ test("上传和核对中的接触记录随入池发布，多人共享名单与�
 	assert.equal(inbox.list.table.total, 2);
 	await assert.rejects(pools.removeMember(peer, poolId, person));
 	await pools.changeTouch(admin, poolId, second.id, null);
-	const { listEmployees, employeeDetail, employeeData } = await import(
+	const { listPeople, personDetail, personData } = await import(
 		"#/server/data"
 	);
 	const scope = { account: peer };
-	const table = await listEmployees(scope, "海桥", 1);
+	const table = await listPeople(scope, "海桥", 1);
 	assert.equal(table.total, 1);
 	assert.equal(table.rows[0]?.personId, person);
-	const workbench = await employeeDetail(scope, person),
-		drawer = await employeeData(scope, person);
+	const workbench = await personDetail(scope, person),
+		drawer = await personData(scope, person);
 	assert.ok(workbench && drawer);
-	assert.deepEqual(drawer.employee.pools, ["合成协作池"]);
-	assert.deepEqual(workbench.employee.pools, drawer.employee.pools);
+	assert.deepEqual(drawer.person.pools, ["合成协作池"]);
+	assert.deepEqual(workbench.person.pools, drawer.person.pools);
 	const { createElement } = await import("react");
 	const { visibleText } = await import("./render");
 	const { routed } = await import("./routed");
-	const { EmployeeTable } = await import(
-		"#/routes/data/-components/employee-table"
+	const { PeopleTable } = await import(
+		"#/routes/data/-components/people-table"
 	);
 	const { Person } = await import("#/routes/s/$turnId/-components/person");
 	const tableHtml = await routed(
 		() =>
-			createElement(EmployeeTable, {
+			createElement(PeopleTable, {
 				list: table,
 				q: "海桥",
 				selected: undefined,
@@ -1049,10 +1130,10 @@ test("上传和核对中的接触记录随入池发布，多人共享名单与�
 	assert.doesNotMatch(header, /招聘渠道|入职时间/);
 	await pool.query("delete from account_scope where user_id=$1", [peer]);
 	assert.deepEqual(await originals.sourcesFor(peer, person), []);
-	assert.equal((await listEmployees(scope, "海桥", 1)).total, 0);
+	assert.equal((await listPeople(scope, "海桥", 1)).total, 0);
 	assert.ok(
 		!(
-			await pools.importBoard(peer, { pool: poolId, tab: "members", page: 1 })
+			await pools.poolBoard(peer, { pool: poolId, tab: "members", page: 1 })
 		).pools.some((p) => p.id === poolId),
 	);
 	await assert.rejects(pools.addTouch(peer, poolId, person, firstTouch));

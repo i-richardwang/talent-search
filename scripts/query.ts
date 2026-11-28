@@ -29,7 +29,7 @@ if (!q) throw new Error('用法：bun run query "查询词"');
 
 const t0 = Date.now();
 const outcome = await search({ conditions: parseQuery(q) }, null);
-if (outcome.order === "employee")
+if (outcome.order === "person")
 	throw new Error("查询得有说了做过什么的经历主张，只有门槛排不出名次");
 const { claims, results, total } = outcome;
 const ms = Date.now() - t0;
@@ -41,7 +41,7 @@ console.log(`查询「${q}」→ 条件 [${shown}]`);
 // 报 total 不报 results.length：后者被 RESULT_PAGE 截过，调权重要看命中的总人数。
 console.log(`命中 ${total} 人，${ms}ms；以下是排在最前的 ${top.length} 个\n`);
 for (const r of top) {
-	const e = r.employee;
+	const e = r.person;
 	// 打印名次依据：深度就是排序键
 	console.log(
 		`${r.depth.toFixed(3)}  ${e.name} ${e.personId}  ${e.curDept} / ${e.curTitle}`,

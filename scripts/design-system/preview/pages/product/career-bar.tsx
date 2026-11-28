@@ -22,15 +22,15 @@ import { countedOf } from "#/routes/s/$turnId/-lib/claim-lines";
 import { Control, Controls } from "../../kit/controls";
 import { DocPage } from "../../kit/page";
 import { Example, ExampleGrid, Stage } from "../../kit/stage";
-import { EMPLOYEES, evidenceOf, experiencesOf } from "../../samples/people";
+import { evidenceOf, experiencesOf, PEOPLE } from "../../samples/people";
 
 type Experience = StoredExperience & { mainIndustries: string[] };
 
 /** 一个人的带子要的三样：经历段、算数的段、入职日。 */
 function barOf(personId: string, withEvidence = true) {
-	const employee = EMPLOYEES.find((e) => e.personId === personId);
+	const person = PEOPLE.find((e) => e.personId === personId);
 	return {
-		hireDate: employee?.hireDate ?? null,
+		hireDate: person?.hireDate ?? null,
 		counted: countedOf(withEvidence ? evidenceOf(personId) : []),
 		rows: experiencesOf(personId),
 	};
@@ -106,7 +106,7 @@ function Playground() {
 				<Control label="候选人">
 					<Segmented<string>
 						onChange={setPersonId}
-						options={EMPLOYEES.map((e) => ({
+						options={PEOPLE.map((e) => ({
 							label: e.name,
 							value: e.personId,
 						}))}
@@ -233,7 +233,7 @@ export function CareerBarPage() {
 					"在职与外部连续排，转折点只由「入职」那根竖线说明。",
 					"每个色块是一个按钮，点了滚到经历时间线上对应的那一段。",
 				],
-				usage: `<CareerBar\n  hireDate={employee.hireDate}\n  counted={countedOf(evidence)}\n  rows={timeline}\n/>`,
+				usage: `<CareerBar\n  hireDate={person.hireDate}\n  counted={countedOf(evidence)}\n  rows={timeline}\n/>`,
 			}}
 			sections={[
 				{ children: <Playground />, id: "playground", title: "试用轨迹条" },

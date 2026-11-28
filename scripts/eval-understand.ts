@@ -415,7 +415,7 @@ try {
 					{},
 					RESULT_MAX,
 				);
-				const order = outcome.results.map((r) => r.employee.personId);
+				const order = outcome.results.map((r) => r.person.personId);
 				roster = `名单 ${outcome.total} 人${outcome.incomplete ? `（候选人没读完，列到 ${outcome.incomplete.above ?? "无"}）` : ""}：${order.slice(0, 12).join(" ")}${order.length > 12 ? " …" : ""}`;
 				for (const id of c.includes)
 					if (!order.includes(id)) problems.push(`名单上没有 ${id}`);
@@ -428,7 +428,7 @@ try {
 				for (const [id, want] of Object.entries(c.evidence)) {
 					const row =
 						outcome.order === "evidence"
-							? outcome.results.find((r) => r.employee.personId === id)
+							? outcome.results.find((r) => r.person.personId === id)
 							: undefined;
 					if (!row) {
 						problems.push(`${id} 没有证据行`);

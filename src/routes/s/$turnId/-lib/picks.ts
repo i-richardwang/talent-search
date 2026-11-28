@@ -2,7 +2,7 @@ import { useCallback, useMemo, useReducer, useRef } from "react";
 import type { Claim } from "#/search/query";
 import type {
 	RankedResult,
-	ResultEmployee,
+	ResultPerson,
 	SearchOutcome,
 } from "#/search/result";
 import { type ClaimLine, claimLines } from "./claim-lines";
@@ -13,10 +13,10 @@ import { evidenceText } from "./evidence";
  * 人，留着他最后一次在名单上的样子；还在名单上的，名单更新时快照跟着换成新的那一行。
  */
 export type Pick = {
-	empId?: string | null;
-	accessKey?: string;
-	talentType?: string;
-	recentCompany?: string;
+	empId: string | null;
+	accessKey: string;
+	talentType: string;
+	recentCompany: string;
 	personId: string;
 	name: string;
 	dept: string | null;
@@ -30,7 +30,7 @@ export type Pick = {
 
 /** 名单上的一项：渲染需要的数据和选中需要的数据出自同一次推导。 */
 type Row = {
-	employee: ResultEmployee;
+	person: ResultPerson;
 	/** 每条主张一格，和 `SearchOutcome.claims` 同序 */
 	lines: ClaimLine[];
 	pick: Pick;
@@ -54,7 +54,7 @@ type Selection = {
 type Action =
 	/** 这一次渲染的记录和名单。 */
 	| { type: "show"; turnId: string; rows: readonly Listed[] }
-	/** 名单上这些复选框的新状态：勾着的是这几个工号。 */
+	/** 名单上这些复选框的新状态：勾着的人员编号。 */
 	| { type: "check"; ids: readonly string[] }
 	| { type: "toggle"; personId: string }
 	| { type: "remove"; personId: string }
@@ -149,14 +149,14 @@ export function select(state: Selection, action: Action): Selection {
  * 按人排时传 `null`。
  */
 function rowOf(
-	e: ResultEmployee,
+	e: ResultPerson,
 	ranked: RankedResult | null,
 	rank: number,
 	claims: Claim[],
 ): Row {
 	const lines = claimLines(ranked, claims);
 	return {
-		employee: e,
+		person: e,
 		lines,
 		pick: {
 			dept: e.curDept,
@@ -171,7 +171,8 @@ function rowOf(
 			level: e.curLevel,
 			name: e.name,
 			rank,
-			title: e.curTitle || e.recentTitle || null,
+			title:
+				(e.talentType === "外部候选人" ? e.recentTitle : e.curTitle) || null,
 		},
 	};
 }
@@ -185,12 +186,12 @@ function rowOf(
 export function usePicks(turnId: string, outcome: SearchOutcome) {
 	const rows = useMemo(
 		() =>
-			outcome.order === "employee"
+			outcome.order === "person"
 				? outcome.results.map((r, i) =>
-						rowOf(r.employee, null, i + 1, outcome.claims),
+						rowOf(r.person, null, i + 1, outcome.claims),
 					)
 				: outcome.results.map((r, i) =>
-						rowOf(r.employee, r, i + 1, outcome.claims),
+						rowOf(r.person, r, i + 1, outcome.claims),
 					),
 		[outcome.order, outcome.results, outcome.claims],
 	);
@@ -201,7 +202,7 @@ export function usePicks(turnId: string, outcome: SearchOutcome) {
 		dispatch({ rows, turnId, type: "show" });
 	const { picked } = state;
 
-	/** 当前名单上这批人的工号，按屏幕顺序。表头的全选读它。 */
+	/** 当前名单上这批人的编号，按屏幕顺序。表头的全选读它。 */
 	const shownIds = useMemo(() => rows.map((r) => r.pick.personId), [rows]);
 
 	/**

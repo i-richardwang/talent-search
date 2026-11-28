@@ -36,7 +36,8 @@ async function stageEmployee(
 	rows: EmployeeRow[],
 ): Promise<void> {
 	await client.query(
-		"create temp table staged_employee (like person_card) on commit drop",
+		`create temp table staged_employee on commit drop as
+		 select person_id, ${BIO_COLUMNS}, ${JOB_COLUMNS} from person join employment using(person_id) with no data`,
 	);
 	for (const chunk of chunked(rows, ROWS_PER_STATEMENT))
 		await client.query(
@@ -91,10 +92,14 @@ async function stageExperience(
 			`insert into staged_experience (
 				person_id, kind, unemployed, start_date, end_date, company, department, department_path, company_meta,
 				title, seq_l1, seq_l2, seq_l3, level, description, months)
-			 select * from unnest(
+			 select s.person_id, r.kind, r.unemployed, r.start_date, r.end_date, r.company, r.department,
+				r.department_path, r.company_meta, r.title, r.seq_l1, r.seq_l2, r.seq_l3, r.level, r.description, r.months
+			 from unnest(
 				$1::text[], $2::text[], $3::boolean[], $4::date[], $5::date[], $6::text[], $7::text[],
 				$8::text[], $9::jsonb[], $10::text[], $11::text[], $12::text[], $13::text[],
-				$14::text[], $15::text[], $16::int[])`,
+				$14::text[], $15::text[], $16::int[]) r(emp_id, kind, unemployed, start_date, end_date, company, department, department_path,
+				company_meta, title, seq_l1, seq_l2, seq_l3, level, description, months)
+			 join staged_employee s using(emp_id)`,
 			[
 				chunk.map((r) => r.emp_id),
 				chunk.map((r) => r.kind),
@@ -132,8 +137,6 @@ async function reconcile({ client }: CorpusSession): Promise<{
 	experienceGone: number;
 	experienceNew: number;
 }> {
-	await client.query(`update staged_employee s set person_id=coalesce(
-		(select i.person_id from person_identity i where i.kind='emp_id' and i.value=s.emp_id),s.person_id,gen_random_uuid()::text)`);
 	for (const [table, columns] of [
 		["person", BIO_COLUMNS],
 		["employment", JOB_COLUMNS],
@@ -148,16 +151,14 @@ async function reconcile({ client }: CorpusSession): Promise<{
 		`insert into person_identity(kind,value,person_id) select 'emp_id',emp_id,person_id from staged_employee on conflict do nothing`,
 	);
 	await client.query(
-		`insert into profile_source(id,person_id,source_kind) select 'hr:'||s.person_id,s.person_id,'hris' from staged_employee s where not exists(select from profile_source f where f.person_id=s.person_id and f.source_kind='hris')`,
+		`insert into profile_source(person_id,source_kind) select person_id,'hris' from staged_employee
+			on conflict(person_id) where source_kind='hris' do nothing`,
 	);
 	const employeesGone = await client.query(
 		"delete from employment e where not exists(select from staged_employee s where s.person_id=e.person_id)",
 	);
 	await client.query(
 		"delete from profile_source f where f.source_kind='hris' and not exists(select from staged_employee s where s.person_id=f.person_id)",
-	);
-	await client.query(
-		"update staged_experience x set person_id=s.person_id from staged_employee s where x.person_id=s.emp_id",
 	);
 	await client.query(`delete from profile_experience pe using profile_source f,experience e
 		where f.id=pe.profile_id and f.source_kind='hris' and e.id=pe.experience_id
@@ -172,7 +173,8 @@ async function reconcile({ client }: CorpusSession): Promise<{
 		 where not exists (select 1 from experience e where e.content_key = s.content_key)`,
 	);
 	await client.query(`insert into profile_experience(profile_id,person_id,experience_id)
-		select 'hr:'||s.person_id,s.person_id,e.id from staged_experience s join experience e using(content_key) on conflict do nothing`);
+		select f.id,s.person_id,e.id from staged_experience s join experience e using(content_key)
+		join profile_source f on f.person_id=s.person_id and f.source_kind='hris' on conflict do nothing`);
 	const experienceGone = await client.query(
 		"delete from experience e where not exists(select from profile_experience pe where pe.experience_id=e.id)",
 	);
@@ -358,6 +360,8 @@ export async function sync(
 		if (part !== "knowledge") {
 			await stageEmployee(session, employee);
 			await stageHrisLinks(session, data.employees);
+			await client.query(`update staged_employee s set person_id=coalesce(
+				(select i.person_id from person_identity i where i.kind='emp_id' and i.value=s.emp_id),s.person_id,gen_random_uuid()::text)`);
 			await stageExperience(session, experience);
 			counts = await reconcile(session);
 			await replaceHrisContacts(session, data.employees);

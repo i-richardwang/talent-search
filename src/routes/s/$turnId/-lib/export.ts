@@ -24,13 +24,13 @@ export async function exportWorkbook(
 	const head = evidence ? [...FIXED, ...names] : [...FIXED];
 	const rows = picks.map((p) => [
 		p.rank,
-		p.empId ?? null,
+		p.empId,
 		p.name,
 		p.dept,
 		p.title,
 		p.level,
-		p.talentType ?? null,
-		p.recentCompany ?? null,
+		p.talentType,
+		p.recentCompany || null,
 		...(evidence ? names.map((_, i) => p.evidence[i] ?? null) : []),
 	]);
 	return writeExcelFile([head, ...rows], { sheet: "人才名单" }).toBlob();

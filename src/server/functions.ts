@@ -4,6 +4,7 @@
  */
 
 import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
 import type { Scope } from "#/db/snapshot";
 import { tableQuery } from "#/lib/paging";
 import { rejudgeOf, TASK_KINDS } from "#/lib/task";
@@ -15,13 +16,7 @@ import { search, suggest } from "#/search/search";
 import { RESULT_MAX } from "#/search/weights";
 import { listAudit, recordExport, recordView } from "./audit";
 import { administrator, authenticated } from "./auth-functions";
-import {
-	allVisible,
-	employeeData,
-	employeeDetail,
-	employeeNumberToPerson,
-	listEmployees,
-} from "./data";
+import { canExport, listPeople, personData, personDetail } from "./data";
 import { explainThread, type ThreadTurn } from "./explain";
 import { type JobKind, requestJob } from "./jobs";
 import { understandingConfigured } from "./llm";
@@ -83,31 +78,27 @@ export const loadWorkbench = createServerFn({ method: "GET" })
  * 把一个人的详情交给这个账号：它的数据范围里有这个人就先记一行「查看」。取个人详情的入口
  * 都经过这里；范围外的人和没有这个人一样是 null。
  */
-async function viewed<T extends { employee: { personId: string } }>(
+async function viewed<T extends { person: { personId: string } }>(
 	viewer: { id: string },
 	personId: string,
 	load: (scope: Scope, personId: string) => Promise<T | null>,
 ) {
 	const scope = { account: viewer.id };
-	let detail = await load(scope, personId);
-	if (!detail) {
-		const mapped = await employeeNumberToPerson(scope, personId);
-		if (mapped) detail = await load(scope, mapped);
-	}
+	const detail = await load(scope, personId);
 	if (!detail) return null;
-	const sources = await sourcesFor(viewer.id, detail.employee.personId);
-	await recordView(viewer.id, detail.employee.personId);
+	const sources = await sourcesFor(viewer.id, detail.person.personId);
+	await recordView(viewer.id, detail.person.personId);
 	return { ...detail, sources };
 }
 
 /** 单人详情的显示属性与经历时间线。 */
-export const fetchEmployee = createServerFn({ method: "GET" })
+export const fetchPerson = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator((d: { personId: unknown }) => ({
 		personId: String(d.personId ?? ""),
 	}))
 	.handler(({ data, context }) =>
-		viewed(context.viewer, data.personId, employeeDetail),
+		viewed(context.viewer, data.personId, personDetail),
 	);
 
 /**
@@ -203,38 +194,28 @@ const EXPORT_MAX = RESULT_MAX * 10;
 
 /**
  * 导出名单之前调：把要导出的人记进操作记录。文件在页面上生成，页面等这一步成了才生成。
- * 名单上的人都在这个账号的数据范围里；有范围外的工号说明名单不是从名单上选的，整份拒绝。
+ * 名单上的人都在这个账号的数据范围里；按勾选时的资料范围重新校验每个人，权限变动时整份拒绝。
  */
 export const logExport = createServerFn({ method: "POST" })
 	.middleware([authenticated])
-	.validator((d: { personIds: unknown; accessKeys: unknown }) => {
-		const personIds = Array.isArray(d.personIds)
-			? [...new Set(d.personIds)]
-			: [];
-		if (
-			!Array.isArray(d.accessKeys) ||
-			d.accessKeys.length !== personIds.length ||
-			!d.accessKeys.every((x) => typeof x === "string" && x.length === 32) ||
-			personIds.length === 0 ||
-			personIds.length > EXPORT_MAX ||
-			!personIds.every(
-				(id): id is string =>
-					typeof id === "string" && id.length > 0 && id.length <= 64,
+	.validator(
+		z
+			.array(
+				z.object({
+					personId: z.string().min(1).max(64),
+					accessKey: z.string().regex(/^[a-f0-9]{32}$/),
+				}),
 			)
-		)
-			throw new Error("导出的名单无效");
-		return { personIds, accessKeys: d.accessKeys as string[] };
-	})
+			.min(1)
+			.max(EXPORT_MAX),
+	)
 	.handler(async ({ data, context }) => {
-		if (
-			!(await allVisible(
-				{ account: context.viewer.id },
-				data.personIds,
-				data.accessKeys,
-			))
-		)
+		if (!(await canExport({ account: context.viewer.id }, data)))
 			throw new Error("导出的名单无效");
-		await recordExport(context.viewer.id, data.personIds);
+		await recordExport(
+			context.viewer.id,
+			data.map((p) => p.personId),
+		);
 	});
 
 /** 审计页的表：按账号、被查看或导出的人、搜索的内容找，一页一页地给。 */
@@ -354,15 +335,15 @@ export const dataList = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator(tableQuery)
 	.handler(({ data, context }) =>
-		listEmployees({ account: context.viewer.id }, data.q, data.page),
+		listPeople({ account: context.viewer.id }, data.q, data.page),
 	);
 
 /** 数据页的一个人：档案、每一段、每一段的解析结果。 */
-export const dataEmployee = createServerFn({ method: "GET" })
+export const dataPerson = createServerFn({ method: "GET" })
 	.middleware([authenticated])
 	.validator((d: { personId: unknown }) => ({
 		personId: String(d.personId ?? ""),
 	}))
 	.handler(({ data, context }) =>
-		viewed(context.viewer, data.personId, employeeData),
+		viewed(context.viewer, data.personId, personData),
 	);

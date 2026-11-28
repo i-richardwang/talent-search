@@ -70,13 +70,14 @@ async function setup(boss: PgBoss): Promise<void> {
 	await boss.createQueue("resume-import", { policy: "exclusive" });
 	await boss.schedule("resume-import", "* * * * *");
 	await boss.work("resume-import", async () => {
-		let any = false;
-		for (let i = 0; i < 8 && (await processNextResume()); i++) any = true;
-		await collectFiles();
-		if (any) {
-			await boss.send("derive", {});
-			await boss.send("resume-import", {});
+		let published = false;
+		for (let i = 0; i < 8; i++) {
+			const outcome = await processNextResume();
+			if (outcome === "idle") break;
+			if (outcome === "published") published = true;
 		}
+		await collectFiles();
+		if (published) await boss.send("derive", {});
 	});
 	await boss.work<{ manual?: boolean }>("derive", async ([job]) => {
 		await runTask("derive", {

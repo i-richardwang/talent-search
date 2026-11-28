@@ -84,13 +84,13 @@ export type DimSource = {
 	 */
 	skills: string[];
 	kind: "internal" | "external" | null;
-	/** 当前职级归入的档（`employee.cur_level_band`），不是职级原文 */
+	/** 当前职级归入的档（`employment.cur_level_band`），不是职级原文 */
 	level: string;
 	levelRank: number | null;
 	recruitment: string;
 	education: string;
 	educationRank: number | null;
-	/** 最高学历那所学校的档（`employee.school_tier`），档与档之间不比高低 */
+	/** 最高学历那所学校的档（`person_card.school_tier`），档与档之间不比高低 */
 	schoolTier: string;
 	/** 最高学历是不是海外取得，目录视图写成「是」「否」；没有记录时为空 */
 	overseas: string | null;
@@ -328,7 +328,7 @@ export const DIMENSIONS: { [K in DimKey]: Dimension<K> } = {
 };
 
 /**
- * 有高低的维：职级档和学历。取值是档名，档高来自语料（`employee` 上的档高列），
+ * 有高低的维：职级档和学历。取值是档名，档高来自语料（`person_card` 上的档高列），
  * 条件可以说「某档及以上」（`condition.ts` 的 `atLeast`）。
  */
 const ORDINAL_KEYS = [

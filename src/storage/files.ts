@@ -8,7 +8,7 @@ export function digest(bytes: Uint8Array) {
 }
 
 type FileStore = {
-	put(bytes: Uint8Array): Promise<string>;
+	put(sha: string, bytes: Uint8Array): Promise<void>;
 	get(sha: string): Promise<Uint8Array>;
 	delete(sha: string): Promise<void>;
 };
@@ -20,8 +20,7 @@ function location(sha: string) {
 }
 
 export const files: FileStore = {
-	async put(bytes) {
-		const sha = digest(bytes);
+	async put(sha, bytes) {
 		const { dir, path } = location(sha);
 		await mkdir(dir, { recursive: true, mode: 0o700 });
 		// 该内容的写入和回收持有同一把语料写锁。固定临时名让中断的写入也能回收。
@@ -32,7 +31,6 @@ export const files: FileStore = {
 		} finally {
 			await rm(temp, { force: true });
 		}
-		return sha;
 	},
 	get: (sha) => readFile(location(sha).path),
 	async delete(sha) {

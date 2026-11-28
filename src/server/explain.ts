@@ -32,7 +32,7 @@ export type Row =
 export type Option = { lead: string | null; rows: Row[] };
 
 /** 工作内容：判据原文，或没写判据时简历里要写到的字（写到其中一个就算：甲 / 乙）。 */
-export type Work = { criterion: string } | { written: Piece[] };
+type Work = { criterion: string } | { written: Piece[] };
 
 export type ConditionExplained = {
 	/** 没写做过什么的条件（背景、人的条件）没有 */

@@ -1,6 +1,6 @@
 import { duration, period } from "#/lib/format";
 import { cn } from "#/lib/utils";
-import { type EmployeeDetail, placeOf } from "#/search/result";
+import { type PersonDetail, placeOf } from "#/search/result";
 import { EVIDENCE_FILL } from "./evidence";
 
 /**
@@ -55,7 +55,7 @@ export function CareerBar({
 	counted,
 	hireDate,
 }: {
-	rows: EmployeeDetail["timeline"];
+	rows: PersonDetail["timeline"];
 	/** 算数的经历段（`claim-lines.ts` 的 `countedOf`）。 */
 	counted: ReadonlySet<number>;
 	hireDate: string | null;

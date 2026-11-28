@@ -10,7 +10,7 @@ const { db, pool } = await import("#/db");
 const { derive } = await import("#/corpus/derive");
 const { SYSTEM: EXTRACT_SYSTEM } = await import("#/corpus/extract");
 const { search } = await import("#/search/search");
-const { employeeDetail } = await import("#/server/data");
+const { personDetail } = await import("#/server/data");
 
 beforeEach(async () => {
 	await db.execute(
@@ -205,13 +205,13 @@ test("标准更新期间检索读上一版，换模型保留暂存进度，完�
 		process.env.ALIGN_MODEL = "another-alignment-model";
 		assert.deepEqual(await runDerive(), { done: 1, left: 0 });
 		const completedVersions = await identities();
-		const saved = await employeeDetail("all", "E0");
+		const saved = await personDetail("all", "E0");
 		process.env.EXTRACT_MODEL = "latest-qualified-model";
 		process.env.ALIGN_MODEL = "latest-alignment-model";
 		process.env.ALIGN_BASE_URL = "http://127.0.0.1:1";
 		assert.deepEqual(await runDerive(), { done: 0, left: 0 });
 		assert.deepEqual(await identities(), completedVersions);
-		assert.deepEqual(await employeeDetail("all", "E0"), saved);
+		assert.deepEqual(await personDetail("all", "E0"), saved);
 	} finally {
 		process.env.EXTRACT_MODEL = originalModel;
 		if (originalAlignModel === undefined) delete process.env.ALIGN_MODEL;
@@ -295,12 +295,12 @@ test("详情仅返回展示字段，记录身份与排序工作值留在服务�
 			segments: [segment("详情边界样例")],
 		},
 	]);
-	const detail = await employeeDetail("all", "E1");
+	const detail = await personDetail("all", "E1");
 	assert.ok(detail);
-	assert.equal(detail.employee.curLevel, "P6");
+	assert.equal(detail.person.curLevel, "P6");
 	assert.equal(detail.timeline[0]?.description, "详情边界样例");
 	for (const field of ["curLevelRank", "curLevelBand", "educationRank"])
-		assert.ok(!(field in detail.employee));
+		assert.ok(!(field in detail.person));
 	for (const field of [
 		"personId",
 		"contentKey",
@@ -308,5 +308,5 @@ test("详情仅返回展示字段，记录身份与排序工作值留在服务�
 		"unemployed",
 	])
 		assert.ok(!(field in (detail.timeline[0] ?? {})));
-	assert.equal(await employeeDetail("all", "missing"), null);
+	assert.equal(await personDetail("all", "missing"), null);
 });

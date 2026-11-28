@@ -83,22 +83,31 @@ function boundary(value: string, last: boolean, asOf: string) {
 	}
 	return date;
 }
-export function periods(r: Resume, asOf: string) {
-	return r.experiences.map((e, i) => {
+/** 草稿中缺少日期的段留待核对，已填写的日期始终按原段号校验。 */
+export function periods(
+	r: Resume,
+	asOf: string,
+	stage: "draft" | "publish" = "publish",
+) {
+	return r.experiences.flatMap((e, i) => {
 		try {
-			if (!e.start || !e.end)
+			const startDate = e.start ? boundary(e.start, false, asOf) : null;
+			const endDate =
+				e.end && e.end !== "至今" ? boundary(e.end, true, asOf) : null;
+			if (!startDate || !e.end) {
+				if (stage === "draft") return [];
 				throw new Error("请核对缺少的起止日期，仍在职请填「至今」");
-			const start = boundary(e.start, false, asOf);
-			const end = e.end === "至今" ? null : boundary(e.end, true, asOf);
-			const stop = end ?? asOf;
-			if (stop < start) throw new Error("结束日期早于开始日期");
-
-			return {
-				...e,
-				startDate: start,
-				endDate: end,
-				months: durationMonths(new Date(start), new Date(stop)),
-			};
+			}
+			const stop = endDate ?? asOf;
+			if (stop < startDate) throw new Error("结束日期早于开始日期");
+			return [
+				{
+					...e,
+					startDate,
+					endDate,
+					months: durationMonths(new Date(startDate), new Date(stop)),
+				},
+			];
 		} catch (error) {
 			throw new Error(`第 ${i + 1} 段：${(error as Error).message}`);
 		}

@@ -17,6 +17,7 @@
     "preview": "bun --env-file=.env.local --bun vite preview",
     "db:push": "bun --env-file=.env.local --bun drizzle-kit push",
     "db:import-employees": "bun --env-file=.env.local scripts/import-employee-archive.ts",
+    "db:upgrade-queries": "bun --env-file=.env.local scripts/upgrade-person-queries.ts",
     "db:studio": "bun --env-file=.env.local --bun drizzle-kit studio",
     "auth:user": "bun --env-file=.env.local scripts/auth-user.ts",
     "format": "biome check --write",

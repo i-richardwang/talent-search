@@ -64,7 +64,7 @@ const exclude: Condition = {
 	company: ["合成排除"],
 };
 const ids = (result: Awaited<ReturnType<typeof search>>) =>
-	result.results.map((row) => row.employee.personId);
+	result.results.map((row) => row.person.personId);
 
 for (const [name, base] of [
 	[

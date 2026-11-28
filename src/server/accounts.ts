@@ -37,7 +37,7 @@ import { type AccountAction, recordAccount } from "./audit";
 import { getAuth } from "./auth";
 
 /** 命令行上来的一件事。字面都没校验过，在这里校验。 */
-export type AccountChange =
+type AccountChange =
 	| {
 			action: "create";
 			username: string;

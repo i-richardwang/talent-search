@@ -44,7 +44,7 @@ export function useKeyboardFlow({
 		const onKey = (e: KeyboardEvent) => {
 			if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
 			// 输入法组合输入期间的按键归输入法。
-			if (e.isComposing || e.keyCode === 229) return;
+			if (e.isComposing || e.key === "Process") return;
 			const el = document.activeElement;
 			// 正在输入，或焦点落在下拉／弹层里时，键盘归它们
 			const busy =
@@ -99,12 +99,12 @@ export function useKeyboardFlow({
 			// 反复选中又取消。
 			if (e.repeat) return;
 
-			const at = results.findIndex((r) => r.employee.personId === personId);
+			const at = results.findIndex((r) => r.person.personId === personId);
 
 			// 空格选中／取消正在看的这个人：↑↓ 移到谁，选的就是谁。没在看任何人时空格只翻页。
 			if (e.key === " " && at >= 0) {
 				e.preventDefault();
-				const one = results[at]?.employee.personId;
+				const one = results[at]?.person.personId;
 				if (one) onPick(one);
 				return;
 			}
@@ -124,7 +124,7 @@ export function useKeyboardFlow({
 						? 0
 						: results.length - 1
 					: Math.min(Math.max(at + step, 0), results.length - 1);
-			const target = results[next]?.employee.personId;
+			const target = results[next]?.person.personId;
 			if (!target || target === personId) return;
 
 			// replace：换人不进历史栈，后退键仍回到上一次查询。
@@ -136,7 +136,7 @@ export function useKeyboardFlow({
 			});
 			// 名单行带 scroll-my，落点离容器边缘留一点余量
 			document
-				.querySelector(`[data-emp="${CSS.escape(target)}"]`)
+				.querySelector(`[data-person-id="${CSS.escape(target)}"]`)
 				?.scrollIntoView({ block: "nearest" });
 		};
 

@@ -8,7 +8,7 @@ import { Empty } from "#/components/ui/empty";
 import { ENGAGEMENTS } from "#/lib/engagement";
 import { dots, duration, integer, period } from "#/lib/format";
 import { overseasValue } from "#/search/dimensions";
-import type { EmployeeProfile, SegmentView } from "#/server/data";
+import type { PersonProfile, SegmentView } from "#/server/data";
 import {
 	DETAIL_LABEL_WIDTH,
 	DetailDrawer,
@@ -17,7 +17,7 @@ import {
 import { StatusBadge } from "../../-components/status-badge";
 
 /** 数据页一个人的抽屉，这个人和「没有这个工号」共用，宽度只写这一次。 */
-export function EmployeeDrawer({
+export function PersonDrawer({
 	close,
 	title,
 	extra,
@@ -45,39 +45,39 @@ export function EmployeeDrawer({
 }
 
 /** 一个人的档案和他名下的每一段：登记的字段和解析出的结果并排。 */
-export function EmployeeRecord({
-	employee,
+export function PersonRecord({
+	person,
 	sources = [],
 	segments,
 	close,
 }: {
-	employee: EmployeeProfile;
+	person: PersonProfile;
 	sources?: Parameters<typeof ResumeSources>[0]["items"];
 	segments: SegmentView[];
 	close: () => void;
 }) {
-	const sequence = [employee.curSeqL1, employee.curSeqL2, employee.curSeqL3]
+	const sequence = [person.curSeqL1, person.curSeqL2, person.curSeqL3]
 		.filter(Boolean)
 		.join(" · ");
 	const profile: [label: string, value: string | null][] = [
-		["部门", employee.curDept],
-		["岗位", employee.curTitle],
-		["职级", employee.curLevel],
+		["部门", person.curDept],
+		["岗位", person.curTitle],
+		["职级", person.curLevel],
 		["序列", sequence || null],
-		["入职时间", employee.hireDate],
-		["招聘渠道", employee.recruitment],
-		["学历", employee.educationLevel],
-		["学校", employee.school],
-		["学校档", employee.schoolTier],
-		["海外学历", overseasValue(employee.overseasEducated)],
+		["入职时间", person.hireDate],
+		["招聘渠道", person.recruitment],
+		["学历", person.educationLevel],
+		["学校", person.school],
+		["学校档", person.schoolTier],
+		["海外学历", overseasValue(person.overseasEducated)],
 	];
 	return (
-		<EmployeeDrawer
+		<PersonDrawer
 			close={close}
 			description={
 				<Descriptions labelWidth={DETAIL_LABEL_WIDTH}>
-					{employee.talentType === "外部候选人" ? (
-						<ExternalProfile person={employee} />
+					{person.talentType === "外部候选人" ? (
+						<ExternalProfile person={person} />
 					) : (
 						profile.map(([label, value]) =>
 							value ? (
@@ -90,20 +90,18 @@ export function EmployeeRecord({
 				</Descriptions>
 			}
 			extra={
-				employee.empId && (
-					<CopyButton content={employee.empId} title="复制工号" />
-				)
+				person.empId && <CopyButton content={person.empId} title="复制工号" />
 			}
 			title={
 				<>
-					{employee.name}
+					{person.name}
 					<span className="ms-2 font-normal text-fg-secondary text-base tabular-nums">
-						{employee.empId ?? employee.talentType}
+						{person.empId ?? person.talentType}
 					</span>
 				</>
 			}
 		>
-			<ResumeSources items={sources} personId={employee.personId} />
+			<ResumeSources items={sources} personId={person.personId} />
 			{segments.length === 0 ? (
 				<Empty
 					description="名下还没有经历记录，请联系管理员。"
@@ -127,7 +125,7 @@ export function EmployeeRecord({
 					);
 				})
 			)}
-		</EmployeeDrawer>
+		</PersonDrawer>
 	);
 }
 

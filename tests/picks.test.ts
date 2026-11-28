@@ -12,6 +12,10 @@ const row = (rank: number, title: string | null = null) => ({
 	pick: {
 		dept: null,
 		personId: `T000${rank}`,
+		empId: `E${rank}`,
+		talentType: "在职员工",
+		accessKey: "0".repeat(32),
+		recentCompany: "",
 		evidence: [],
 		level: null,
 		name: `样例${rank}`,

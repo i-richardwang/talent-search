@@ -14,7 +14,7 @@ import { NAME_MAX, usernameOf } from "#/lib/auth";
 import type { OrgNode } from "#/lib/org";
 
 /** 交出去的一个密码：建账号的初始密码，或重置后的新密码。 */
-export type IssuedPassword = {
+type IssuedPassword = {
 	kind: "created" | "reset";
 	username: string;
 	password: string;

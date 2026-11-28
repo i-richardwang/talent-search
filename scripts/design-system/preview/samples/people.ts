@@ -1,11 +1,11 @@
-import type { Employee } from "#/db/schema";
+import type { PersonCard } from "#/db/schema";
 import { overseasValue } from "#/search/dimensions";
 import { type PopulationFact, rank } from "#/search/rank";
 import {
-	type EmployeeDetail,
 	type Evidence,
 	emptyFacets,
 	type Facets,
+	type PersonDetail,
 	type RankedResult,
 	type SearchOutcome,
 } from "#/search/result";
@@ -17,7 +17,7 @@ import { CLAIMS, COVERED } from "./conditions";
  * 人名、工号、公司、部门、学校全是编的，和人才库无关；类型都从产品代码导入。
  */
 
-type SampleExperience = EmployeeDetail["timeline"][number] & {
+type SampleExperience = PersonDetail["timeline"][number] & {
 	personId: string;
 };
 
@@ -25,7 +25,7 @@ type SampleExperience = EmployeeDetail["timeline"][number] & {
 const HOME = "某某科技";
 
 /** 六位候选人的档案，名单顺序就是这个顺序。 */
-export const EMPLOYEES: Employee[] = [
+export const PEOPLE: PersonCard[] = [
 	{
 		personId: "T0101",
 		empId: "T0101",
@@ -497,7 +497,7 @@ export function experience(id: number): SampleExperience {
  */
 export const RESULTS: RankedResult[] = [
 	{
-		employee: EMPLOYEES[0] as Employee,
+		person: PEOPLE[0] as PersonCard,
 		depth: 86,
 		evidence: [
 			evidenceOn(experience(103), {
@@ -527,7 +527,7 @@ export const RESULTS: RankedResult[] = [
 		],
 	},
 	{
-		employee: EMPLOYEES[1] as Employee,
+		person: PEOPLE[1] as PersonCard,
 		depth: 78,
 		evidence: [
 			evidenceOn(experience(202), {
@@ -544,7 +544,7 @@ export const RESULTS: RankedResult[] = [
 		],
 	},
 	{
-		employee: EMPLOYEES[2] as Employee,
+		person: PEOPLE[2] as PersonCard,
 		depth: 102,
 		evidence: [
 			evidenceOn(experience(303), {
@@ -572,7 +572,7 @@ export const RESULTS: RankedResult[] = [
 		],
 	},
 	{
-		employee: EMPLOYEES[5] as Employee,
+		person: PEOPLE[5] as PersonCard,
 		depth: 76,
 		evidence: [
 			evidenceOn(experience(602), {
@@ -600,7 +600,7 @@ export const RESULTS: RankedResult[] = [
 		],
 	},
 	{
-		employee: EMPLOYEES[3] as Employee,
+		person: PEOPLE[3] as PersonCard,
 		depth: 67,
 		evidence: [
 			evidenceOn(experience(401), {
@@ -619,7 +619,7 @@ export const RESULTS: RankedResult[] = [
 		],
 	},
 	{
-		employee: EMPLOYEES[4] as Employee,
+		person: PEOPLE[4] as PersonCard,
 		depth: 36,
 		evidence: [evidenceOn(experience(501), { route: "description" })],
 		basis: [
@@ -635,7 +635,7 @@ export const RESULTS: RankedResult[] = [
 
 /** 一个人在这次搜索里的那一条结果；不在名单上是 null。 */
 export function resultOf(personId: string): RankedResult | null {
-	return RESULTS.find((r) => r.employee.personId === personId) ?? null;
+	return RESULTS.find((r) => r.person.personId === personId) ?? null;
 }
 
 export function evidenceOf(personId: string): Evidence[] {
@@ -655,7 +655,7 @@ const SKILLS: Record<number, string[]> = {
 
 /** 六个人的每段经历写成分面要读的那几列，和检索层取回的事实同形。 */
 const FACTS: PopulationFact[] = EXPERIENCES.map((x) => {
-	const person = EMPLOYEES.find((row) => row.personId === x.personId);
+	const person = PEOPLE.find((row) => row.personId === x.personId);
 	if (!person) throw new Error(`样例里没有 ${x.personId}`);
 	return {
 		personId: x.personId,
@@ -726,9 +726,9 @@ export const INCOMPLETE_OUTCOME: SearchOutcome = {
 
 /** 只有人的条件时的结果：没有证据行，按人排。 */
 export const PEOPLE_OUTCOME: SearchOutcome = {
-	order: "employee",
+	order: "person",
 	claims: [],
-	results: RESULTS.map((r) => ({ employee: r.employee })),
+	results: RESULTS.map((r) => ({ person: r.person })),
 	facets: FACETS,
 	total: RESULTS.length,
 	empty: null,

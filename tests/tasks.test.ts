@@ -194,6 +194,14 @@ describe("同步与解析", () => {
 			from experience e where end_date is null and months > 12 order by id limit 1`);
 		const original = before.rows[0];
 		assert.ok(original);
+		await assert.rejects(
+			db.execute(sql`insert into profile_source(source_kind,person_id)
+			select 'hris',person_id from experience where id=${original.id}`),
+			(e: Error) =>
+				(e.cause as { code?: string; constraint?: string })?.code === "23505" &&
+				(e.cause as { constraint?: string }).constraint ===
+					"hris_profile_per_person",
+		);
 		await db.execute(
 			sql`update experience set months = 1 where id = ${original.id}`,
 		);
@@ -241,8 +249,8 @@ describe("同步与解析", () => {
 	});
 
 	test("数据页看得到每一段的解析结果", async () => {
-		const { listEmployees, employeeData } = await import("#/server/data");
-		const list = await listEmployees("all", "", 1);
+		const { listPeople, personData } = await import("#/server/data");
+		const list = await listPeople("all", "", 1);
 		assert.equal(list.total, 29);
 		assert.equal(list.rows.length, 29);
 		// 20 个人装得下一页，所以只有一页，第一个人排第一
@@ -252,18 +260,18 @@ describe("同步与解析", () => {
 		const one = list.rows.find((row) => row.segments > 0);
 		assert.ok(one);
 		assert.deepEqual(
-			(await listEmployees("all", one.name, 1)).rows.map((row) => row.personId),
+			(await listPeople("all", one.name, 1)).rows.map((row) => row.personId),
 			[one.personId],
 		);
 		await db.execute(
 			sql`update person set name = ${`含%号`} where person_id = ${one.personId}`,
 		);
 		assert.deepEqual(
-			(await listEmployees("all", "%", 1)).rows.map((row) => row.personId),
+			(await listPeople("all", "%", 1)).rows.map((row) => row.personId),
 			[one.personId],
 		);
 
-		const person = await employeeData("all", one.personId);
+		const person = await personData("all", one.personId);
 		assert.ok(person);
 		assert.equal(person.segments.length, one.segments);
 		assert.ok(person.segments.every((segment) => segment.derived));
@@ -277,7 +285,7 @@ describe("同步与解析", () => {
 				{ text: "数据分析", engagement: "做过" },
 			]);
 		}
-		assert.equal(await employeeData("all", "没有这个人"), null);
+		assert.equal(await personData("all", "没有这个人"), null);
 	});
 
 	test("再同步一次是幂等的：段按内容认，解析结果原样留下", async () => {

@@ -20,7 +20,7 @@ import type { View } from "../-lib/view-params";
 
 const ORDER_LABEL: Record<SearchOutcome["order"], string> = {
 	evidence: "按匹配度排序",
-	employee: "默认顺序",
+	person: "默认顺序",
 };
 
 /**

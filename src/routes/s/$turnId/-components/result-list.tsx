@@ -130,13 +130,13 @@ export function ResultList({
 	const evidenced = claims.length > 0;
 	// 必须的条件名单上人人都命中，几条里命中几条只在有加分条件时因人而异
 	const graded = claims.some((claim) => claim.mode === "boost");
-	const rows = picks.rows.map(({ employee: e, lines }) => {
+	const rows = picks.rows.map(({ person: e, lines }) => {
 		const current = e.personId === personId;
 		return (
 			<ListViewRow
 				className={cn("scroll-my-12", wait?.list === "dim" && "opacity-60")}
 				current={current}
-				data-emp={e.personId}
+				data-person-id={e.personId}
 				extra={graded && <ClaimProgress lines={lines} name={e.name} />}
 				key={e.personId}
 				pick={

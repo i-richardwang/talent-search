@@ -64,7 +64,7 @@ test("被排除的经历不占候选事实额度", capacity, async () => {
 	assert.equal(result.total, 1);
 	assert.equal(result.empty, null);
 	assert.deepEqual(
-		result.results.map((row) => row.employee.personId),
+		result.results.map((row) => row.person.personId),
 		["C2"],
 	);
 });
@@ -86,7 +86,7 @@ test("加分门槛支持超过单语句参数上限的人员候选", capacity, a
 	} as const;
 	const baseline = await search({ conditions: [required] }, null);
 	assert.equal(baseline.total, 66000);
-	assert.equal(baseline.results[0]?.employee.personId, "S00001");
+	assert.equal(baseline.results[0]?.person.personId, "S00001");
 	const boosted = await search(
 		{
 			conditions: [
@@ -103,8 +103,8 @@ test("加分门槛支持超过单语句参数上限的人员候选", capacity, a
 	);
 	assert.equal(boosted.total, baseline.total);
 	assert.equal(boosted.empty, null);
-	assert.equal(boosted.results[0]?.employee.personId, "S00002");
-	assert.equal(boosted.results[1]?.employee.personId, "S00004");
+	assert.equal(boosted.results[0]?.person.personId, "S00002");
+	assert.equal(boosted.results[1]?.person.personId, "S00004");
 	assert.deepEqual(boosted.facets, baseline.facets);
 	const background = await search(
 		{
@@ -117,8 +117,8 @@ test("加分门槛支持超过单语句参数上限的人员候选", capacity, a
 	);
 	assert.equal(background.total, baseline.total);
 	assert.equal(background.empty, null);
-	assert.equal(background.results[0]?.employee.personId, "S00002");
-	assert.equal(background.results[1]?.employee.personId, "S00001");
+	assert.equal(background.results[0]?.person.personId, "S00002");
+	assert.equal(background.results[1]?.person.personId, "S00001");
 	assert.deepEqual(background.facets, baseline.facets);
 });
 
@@ -158,7 +158,7 @@ test("加分门槛支持超过单语句参数上限的候选经历", capacity, a
 	} as const;
 	const baseline = await search({ conditions: [required] }, null);
 	assert.equal(baseline.total, 66000);
-	assert.equal(baseline.results[0]?.employee.personId, "S00001");
+	assert.equal(baseline.results[0]?.person.personId, "S00001");
 	const boosted = await search(
 		{
 			conditions: [
@@ -175,7 +175,7 @@ test("加分门槛支持超过单语句参数上限的候选经历", capacity, a
 	);
 	assert.equal(boosted.total, baseline.total);
 	assert.equal(boosted.empty, null);
-	assert.equal(boosted.results[0]?.employee.personId, "S00002");
-	assert.equal(boosted.results[1]?.employee.personId, "S00004");
+	assert.equal(boosted.results[0]?.person.personId, "S00002");
+	assert.equal(boosted.results[1]?.person.personId, "S00004");
 	assert.deepEqual(boosted.facets, baseline.facets);
 });

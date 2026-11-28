@@ -79,7 +79,7 @@ export type AuditRow = {
 	/** 查看、导出或交给外部解析服务的员工 */
 	personId: string | null;
 	/** 那个人现在的名字；已经不在人才库里为 null */
-	empName: string | null;
+	personName: string | null;
 	/** 搜索的内容；其余为 null */
 	text: string | null;
 	/** 管理的那个账号的用户名和显示名称；其余为 null */
@@ -114,7 +114,7 @@ export async function listAudit(
 		const { rows } = await client.query<AuditRow>(
 			`select a.id, to_char(a.at, 'YYYY-MM-DD HH24:MI:SS') as at,
 				coalesce(u.username, '') as username, coalesce(u.name, '外部解析服务') as name, a.action, a.person_id as "personId",
-				e.name as "empName", a.text,
+				e.name as "personName", a.text,
 				t.username as "accountUsername", t.name as "accountName"
 			${from}
 			order by a.id desc

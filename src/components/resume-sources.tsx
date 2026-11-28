@@ -35,8 +35,8 @@ export function ResumeSources({
 function Source({ s, personId }: { s: Sources[number]; personId: string }) {
 	const router = useRouter(),
 		id = useId();
-	const [periods, setPeriods] = useState(false),
-		[notes, setNotes] = useState(false);
+	const [periods, setPeriods] = useState(false);
+	const [notes, setNotes] = useState(false);
 	return (
 		<div className="flex flex-wrap items-center gap-2">
 			<span>
@@ -172,8 +172,8 @@ function TouchEntry({
 	entry: Sources[number]["touches"][number];
 	pool: string;
 }) {
-	const router = useRouter(),
-		[editing, setEditing] = useState(false);
+	const router = useRouter();
+	const [editing, setEditing] = useState(false);
 	async function revise(touch: Touch | null) {
 		await reviseTouch({ data: { pool, id: entry.id, touch } });
 		setEditing(false);
