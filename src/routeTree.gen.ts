@@ -25,6 +25,7 @@ import { Route as TermsWordRouteImport } from './routes/terms/$word'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiMcpScopeRouteImport } from './routes/api/mcp/$scope'
 import { Route as ApiResumesSourceRouteImport } from './routes/api/resumes/$source'
+import { Route as ApiResumesPendingTaskRouteImport } from './routes/api/resumes/pending.$task'
 import { Route as STurnIdPPersonIdRouteImport } from './routes/s/$turnId/p.$personId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -107,6 +108,11 @@ const ApiResumesSourceRoute = ApiResumesSourceRouteImport.update({
   path: '/api/resumes/$source',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiResumesPendingTaskRoute = ApiResumesPendingTaskRouteImport.update({
+  id: '/api/resumes/pending/$task',
+  path: '/api/resumes/pending/$task',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const STurnIdPPersonIdRoute = STurnIdPPersonIdRouteImport.update({
   id: '/p/$personId',
   path: '/p/$personId',
@@ -130,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/mcp/$scope': typeof ApiMcpScopeRoute
   '/api/resumes/$source': typeof ApiResumesSourceRoute
+  '/api/resumes/pending/$task': typeof ApiResumesPendingTaskRoute
   '/s/$turnId/p/$personId': typeof STurnIdPPersonIdRoute
 }
 export interface FileRoutesByTo {
@@ -149,6 +156,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/mcp/$scope': typeof ApiMcpScopeRoute
   '/api/resumes/$source': typeof ApiResumesSourceRoute
+  '/api/resumes/pending/$task': typeof ApiResumesPendingTaskRoute
   '/s/$turnId/p/$personId': typeof STurnIdPPersonIdRoute
 }
 export interface FileRoutesById {
@@ -169,6 +177,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/mcp/$scope': typeof ApiMcpScopeRoute
   '/api/resumes/$source': typeof ApiResumesSourceRoute
+  '/api/resumes/pending/$task': typeof ApiResumesPendingTaskRoute
   '/s/$turnId/p/$personId': typeof STurnIdPPersonIdRoute
 }
 export interface FileRouteTypes {
@@ -190,6 +199,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/mcp/$scope'
     | '/api/resumes/$source'
+    | '/api/resumes/pending/$task'
     | '/s/$turnId/p/$personId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -209,6 +219,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/mcp/$scope'
     | '/api/resumes/$source'
+    | '/api/resumes/pending/$task'
     | '/s/$turnId/p/$personId'
   id:
     | '__root__'
@@ -228,6 +239,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/mcp/$scope'
     | '/api/resumes/$source'
+    | '/api/resumes/pending/$task'
     | '/s/$turnId/p/$personId'
   fileRoutesById: FileRoutesById
 }
@@ -246,6 +258,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiMcpScopeRoute: typeof ApiMcpScopeRoute
   ApiResumesSourceRoute: typeof ApiResumesSourceRoute
+  ApiResumesPendingTaskRoute: typeof ApiResumesPendingTaskRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -362,6 +375,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiResumesSourceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/resumes/pending/$task': {
+      id: '/api/resumes/pending/$task'
+      path: '/api/resumes/pending/$task'
+      fullPath: '/api/resumes/pending/$task'
+      preLoaderRoute: typeof ApiResumesPendingTaskRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/s/$turnId/p/$personId': {
       id: '/s/$turnId/p/$personId'
       path: '/p/$personId'
@@ -423,6 +443,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiMcpScopeRoute: ApiMcpScopeRoute,
   ApiResumesSourceRoute: ApiResumesSourceRoute,
+  ApiResumesPendingTaskRoute: ApiResumesPendingTaskRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

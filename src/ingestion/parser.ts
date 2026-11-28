@@ -2,13 +2,9 @@ import "@tanstack/react-start/server-only";
 import { tool } from "ai";
 import { z } from "zod";
 import { processWithTools } from "#/server/chat";
-import { pdfPages } from "./pdf";
 import { periods, type Resume, resumeSchema, sanitized } from "./resume";
 
-export async function parseResume(bytes: Uint8Array, asOf: string) {
-	const pages = await pdfPages(bytes);
-	if (!pages.some(Boolean))
-		throw new Error("扫描件缺少文字，请上传可选取文字的 PDF 或填写档案");
+export async function parseResume(pages: string[], asOf: string) {
 	let result: Resume | undefined;
 	const read = new Set<number>();
 	const tools = {

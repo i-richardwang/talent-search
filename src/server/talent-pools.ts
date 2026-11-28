@@ -3,8 +3,9 @@ import { prunePhrases } from "#/corpus/phrases";
 import { corpusTransaction } from "#/corpus/session";
 import { pool } from "#/db";
 import { authorizedPool, withReadSnapshot } from "#/db/snapshot";
+import { memberForWrite } from "#/ingestion/membership";
 import { orgPathOf } from "#/lib/org";
-import { pageAt } from "#/lib/paging";
+import { pageAt, tablePage } from "#/lib/paging";
 import { collectFiles } from "./resume-files";
 
 const DEFAULT_POOL = "external";
@@ -15,19 +16,6 @@ export async function ensureDefaultPool() {
 	);
 }
 
-async function writableMember(
-	c: import("pg").PoolClient,
-	user: string,
-	poolId: string,
-	personId: string,
-) {
-	await authorizedPool(c, user, poolId);
-	const permitted = await c.query(
-		"select 1 from pool_member m join auth_user u on u.id=$3 where m.person_id=$1 and m.pool_id=$2 and u.banned is not true and (m.added_by=$3 or u.role='admin')",
-		[personId, poolId, user],
-	);
-	if (!permitted.rowCount) throw new Error("无法修改该成员");
-}
 export function updateContactNote(
 	user: string,
 	poolId: string,
@@ -36,7 +24,8 @@ export function updateContactNote(
 	notes: string,
 ) {
 	return corpusTransaction(async (c) => {
-		await writableMember(c, user, poolId, personId);
+		if (!(await memberForWrite(c, user, poolId, personId)))
+			throw new Error("找不到该成员");
 		await c.query(
 			"update pool_member set touched_at=$3,notes=$4 where pool_id=$1 and person_id=$2",
 			[poolId, personId, touched, notes],
@@ -49,7 +38,8 @@ export async function removeMember(
 	personId: string,
 ) {
 	await corpusTransaction(async (c) => {
-		await writableMember(c, user, poolId, personId);
+		if (!(await memberForWrite(c, user, poolId, personId)))
+			throw new Error("找不到该成员");
 		await c.query(
 			"delete from profile_source where person_id=$1 and pool_id=$2",
 			[personId, poolId],
@@ -146,6 +136,6 @@ export async function importBoard(user: string, page: number) {
 				[at.limit, at.offset],
 			)
 		).rows;
-		return { pools, tasks, total, page: at.page, pages: at.pages };
+		return { pools, tasks: tablePage(tasks, total, at) };
 	});
 }

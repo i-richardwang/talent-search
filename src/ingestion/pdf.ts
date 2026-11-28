@@ -5,6 +5,7 @@ import { dirname, join, sep } from "node:path";
 import {
 	getDocument,
 	type PDFPageProxy,
+	VerbosityLevel,
 } from "pdfjs-dist/legacy/build/pdf.mjs";
 
 const root = dirname(
@@ -46,9 +47,15 @@ async function recognize(page: PDFPageProxy, factory: Factory, bin: string) {
 		factory.destroy(surface);
 	}
 }
+export class ScanNeedsText extends Error {
+	constructor() {
+		super("扫描件缺少文字，请上传可选取文字的 PDF 或手动填写档案");
+	}
+}
 export async function pdfPages(bytes: Uint8Array) {
 	const task = getDocument({
 		data: Uint8Array.from(bytes),
+		verbosity: VerbosityLevel.ERRORS,
 		standardFontDataUrl: join(root, "standard_fonts") + sep,
 		cMapUrl: join(root, "cmaps") + sep,
 		wasmUrl: join(root, "wasm") + sep,
@@ -73,10 +80,7 @@ export async function pdfPages(bytes: Uint8Array) {
 					.trim();
 				if (!text) {
 					const bin = process.env.RESUME_OCR_BIN?.trim();
-					if (!bin)
-						throw new Error(
-							"扫描件缺少文字，请上传可选取文字的 PDF 或手动填写档案",
-						);
+					if (!bin) throw new ScanNeedsText();
 					text = await recognize(page, doc.canvasFactory as Factory, bin);
 				}
 				pages.push(text);
@@ -84,6 +88,7 @@ export async function pdfPages(bytes: Uint8Array) {
 				page.cleanup();
 			}
 		}
+		if (!pages.some(Boolean)) throw new ScanNeedsText();
 		return pages;
 	} finally {
 		await task.destroy();

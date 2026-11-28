@@ -1,4 +1,5 @@
 import "@tanstack/react-start/server-only";
+import { APICallError } from "ai";
 import type { PoolClient } from "pg";
 import {
 	corpusTransaction,
@@ -9,12 +10,14 @@ import { pool } from "#/db";
 import { authorizedPool, withReadSnapshot } from "#/db/snapshot";
 import { matches } from "#/identity/match";
 import { parseResume } from "#/ingestion/parser";
+import { pdfPages, ScanNeedsText } from "#/ingestion/pdf";
 import {
+	adjudicateImport,
+	classifyImport,
 	type Decision,
 	type ImportRow,
-	resolveImport,
 } from "#/ingestion/publish";
-import { type Resume, resumeSchema } from "#/ingestion/resume";
+import type { Resume } from "#/ingestion/resume";
 import { digest, files } from "#/storage/files";
 
 const taskQuery = `select t.*,f.sha256,to_char(t.created_at at time zone 'UTC','YYYY-MM-DD') as day from resume_import t join resume_file f on f.id=t.file_id`;
@@ -78,12 +81,32 @@ export async function processNextResume() {
 		worker.release(discard);
 	}
 }
+type ImportStage =
+	| "资料权限"
+	| "原件读取"
+	| "PDF 解析"
+	| "离线模型"
+	| "资料发布";
+function failureReason(stage: ImportStage, error: unknown) {
+	if (error instanceof ScanNeedsText) return "扫描页缺少可用文字";
+	if (stage !== "离线模型") return "处理失败";
+	if (!process.env.RESUME_BASE_URL?.trim() || !process.env.RESUME_MODEL?.trim())
+		return "端点未配置";
+	for (let e = error; e instanceof Error; e = e.cause) {
+		if (e.name === "TimeoutError" || e.name === "AbortError")
+			return "请求超时或中止";
+		if (APICallError.isInstance(e) && Number.isInteger(e.statusCode))
+			return `HTTP ${e.statusCode}`;
+	}
+	return "连接失败或未提交有效结果";
+}
 async function processClaimed(worker: PoolClient) {
 	const { rows } = await worker.query<ImportRow>(`with next as (
 		update resume_import set status='processing' where id=(select id from resume_import where status in ('queued','processing') order by created_at,id limit 1) returning *)
 		select t.*,f.sha256,to_char(t.created_at at time zone 'UTC','YYYY-MM-DD') as day from next t join resume_file f on f.id=t.file_id`);
 	const task = rows[0];
 	if (!task) return false;
+	let stage: ImportStage = "资料权限";
 	try {
 		// 同一原件在允许读取的范围里已入过池，复用该文件的资料，不再向模型发送。
 		const saved = await withReadSnapshot(
@@ -95,35 +118,48 @@ async function processClaimed(worker: PoolClient) {
 				);
 				if (!entitled.rowCount) throw new Error("资料权限已变更");
 				const { rows } = await c.query<{ parsed: Resume }>(
-					`select parsed from profile_source where resume_file_id=$1 order by captured_at desc,id limit 1`,
+					`select parsed from profile_source where resume_file_id=$1 order by captured_at desc,seq desc limit 1`,
 					[task.file_id],
 				);
 				return rows[0]?.parsed;
 			},
 		);
-		const draft =
-			saved ?? (await parseResume(await files.get(task.sha256), task.day));
+		let draft = saved;
+		if (!draft) {
+			stage = "原件读取";
+			const original = await files.get(task.sha256);
+			stage = "PDF 解析";
+			const pages = await pdfPages(original);
+			stage = "离线模型";
+			draft = await parseResume(pages, task.day);
+		}
+		stage = "资料发布";
 		await corpusTransaction(async (c) => {
 			const lock = await c.query(
 				"select 1 from resume_import where id=$1 and status='processing' for update",
 				[task.id],
 			);
-			if (lock.rowCount) await resolveImport(c, task, draft);
+			if (lock.rowCount) await classifyImport(c, task, draft);
 		});
 	} catch (error) {
-		if ((error as { code?: string }).code === "55P03") {
+		if (error instanceof Error && "code" in error && error.code === "55P03") {
 			await pool.query(
 				"update resume_import set status='queued' where id=$1 and status='processing'",
 				[task.id],
 			);
 			return false;
 		}
-		// 模型错误可能带原文，只有面向用户的固定内容进入任务。
+		// PDF 与端点异常都可能含原件内容，仅记录步骤、系统任务编号和受控原因。
+		console.error("简历导入失败", {
+			task: task.id,
+			stage,
+			reason: failureReason(stage, error),
+		});
 		await pool.query(
 			"update resume_import set status='failed',message=$2 where id=$1 and status='processing'",
 			[
 				task.id,
-				error instanceof Error && error.message.startsWith("扫描件")
+				error instanceof ScanNeedsText
 					? error.message
 					: "解析未完成，可重试或手动核对",
 			],
@@ -145,27 +181,15 @@ export async function decideImport(
 		);
 		const task = rows[0];
 		if (!task) throw new Error("找不到待处理的简历");
-		await authorizedPool(c, user, task.pool_id);
 		if (choice === "retry") {
+			await authorizedPool(c, user, task.pool_id);
 			await c.query(
 				"update resume_import set status='queued',message='' where id=$1",
 				[id],
 			);
 			return;
 		}
-		if (choice.action === "cancel") {
-			await c.query(
-				"update resume_import set status='cancelled',file_id=null,draft=null,message='' where id=$1",
-				[id],
-			);
-			return;
-		}
-		return resolveImport(
-			c,
-			task,
-			resumeSchema.parse(choice.draft ?? task.draft),
-			choice,
-		);
+		return adjudicateImport(c, task, choice);
 	});
 }
 

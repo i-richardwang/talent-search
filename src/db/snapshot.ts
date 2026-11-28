@@ -123,13 +123,19 @@ export async function asReader<T>(
 	read: () => Promise<T>,
 ) {
 	await provision();
-	for (const statement of declare({ account })) {
-		const q = dialect.sqlToQuery(statement);
-		await client.query(q.sql, q.params);
+	await client.query("savepoint corpus_reader");
+	try {
+		for (const statement of declare({ account })) {
+			const q = dialect.sqlToQuery(statement);
+			await client.query(q.sql, q.params);
+		}
+		return await read();
+	} finally {
+		if (client.getTransactionStatus() === "E")
+			await client.query("rollback to savepoint corpus_reader");
+		await client.query("reset role");
+		await client.query("release savepoint corpus_reader");
 	}
-	const result = await read();
-	await client.query("reset role");
-	return result;
 }
 
 /** 在一个只读、可重复读的 PostgreSQL 快照里，替 `scope` 完成多条原生查询。 */

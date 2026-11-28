@@ -6,6 +6,7 @@ import { phrasesOf } from "#/corpus/route-texts";
 import { asReader, authorizedPool } from "#/db/snapshot";
 import { contactKeys } from "#/identity/contacts";
 import { exactMatch, matches } from "#/identity/match";
+import { memberForWrite } from "./membership";
 import { periods, type Resume, resumeSchema, sanitized } from "./resume";
 
 export type ImportRow = {
@@ -14,36 +15,39 @@ export type ImportRow = {
 	pool_id: string;
 	file_id: string;
 	sha256: string;
-	filename: string;
 	day: string;
-	created_at: Date;
-	status: string;
 	draft: Resume | null;
 };
 
 async function saveProfile(c: PoolClient, t: ImportRow, r: Resume, id: string) {
+	const member = await memberForWrite(c, t.owner_id, t.pool_id, id);
 	const created = await c.query<{ id: string }>(
 		`insert into profile_source(person_id,source_kind,pool_id,resume_file_id,filename,created_by,captured_at,parsed)
-		values($1,'pdf_resume',$2,$3,$4,$5,$6,$7) returning id`,
-		[id, t.pool_id, t.file_id, t.filename, t.owner_id, t.created_at, r],
+		select $1,'pdf_resume',pool_id,file_id,filename,owner_id,created_at,$3 from resume_import where id=$2 returning id`,
+		[id, t.id, r],
 	);
 	const profile = created.rows[0]?.id;
 	if (!profile) throw new Error("未创建资料");
 	const latest = await c.query<{ id: string }>(
-		"select id from profile_source where person_id=$1 and pool_id=$2 order by captured_at desc,id limit 1",
+		"select id from profile_source where person_id=$1 and pool_id=$2 order by captured_at desc,seq desc limit 1",
 		[id, t.pool_id],
 	);
 	if (latest.rows[0]?.id !== profile) return;
+	const contacts = {
+		phone: r.contacts.phone || member?.contacts.phone || "",
+		email: r.contacts.email || member?.contacts.email || "",
+		wechat: r.contacts.wechat || member?.contacts.wechat || "",
+	};
 	await c.query(
 		`insert into pool_member(pool_id,person_id,added_by,contacts) values($1,$2,$3,$4)
 			on conflict(pool_id,person_id) do update set contacts=excluded.contacts`,
-		[t.pool_id, id, t.owner_id, r.contacts],
+		[t.pool_id, id, t.owner_id, contacts],
 	);
 	await c.query(
 		"delete from person_identity where person_id=$1 and origin=$2",
 		[id, t.pool_id],
 	);
-	for (const h of contactKeys(r.contacts))
+	for (const h of contactKeys(contacts))
 		await c.query(
 			"insert into person_identity(person_id,kind,value,origin) values($1,$2,$3,$4) on conflict do nothing",
 			[id, h.kind, h.value, t.pool_id],
@@ -96,30 +100,29 @@ async function saveProfile(c: PoolClient, t: ImportRow, r: Resume, id: string) {
 	);
 	await prunePhrases(c);
 }
-export type Decision = {
-	action: "new" | "link" | "cancel";
-	personId?: string;
-	draft?: Resume;
-};
-export async function resolveImport(
-	c: PoolClient,
-	t: ImportRow,
-	raw: Resume,
-	choice?: Decision,
-) {
+export type Decision =
+	| { action: "new"; draft?: Resume }
+	| { action: "link"; personId: string; draft?: Resume }
+	| { action: "cancel" };
+
+function candidates(c: PoolClient, t: ImportRow, r: Resume) {
+	return asReader(c, t.owner_id, () => matches(c, r, t.day, t.file_id));
+}
+
+export async function classifyImport(c: PoolClient, t: ImportRow, raw: Resume) {
 	const r = sanitized(resumeSchema.parse(raw));
 	await authorizedPool(c, t.owner_id, t.pool_id);
-	const alternatives = await asReader(c, t.owner_id, () =>
-		matches(c, r, t.day, t.file_id),
-	);
+	const alternatives = await candidates(c, t, r);
 	const exact = await exactMatch(c, alternatives, r, t.day, t.owner_id);
+	if (exact) return publish(c, t, r, exact.personId, "duplicate");
 	const missing = r.experiences.some(
 		(e) => !e.start || !e.end || (!e.title && !e.company),
 	);
 	if (
-		!choice &&
-		!exact &&
-		(alternatives.length || missing || r.reviewReason || !r.experiences.length)
+		alternatives.length ||
+		missing ||
+		r.reviewReason ||
+		!r.experiences.length
 	) {
 		await c.query(
 			"update resume_import set status='review',draft=$2,message=$3 where id=$1",
@@ -134,15 +137,37 @@ export async function resolveImport(
 		);
 		return false;
 	}
-	if (
-		choice?.action === "link" &&
-		!alternatives.some((m) => m.personId === choice.personId)
-	)
+	return publish(c, t, r, null, "added");
+}
+
+export async function adjudicateImport(
+	c: PoolClient,
+	t: ImportRow,
+	choice: Decision,
+) {
+	await authorizedPool(c, t.owner_id, t.pool_id);
+	if (choice.action === "cancel") {
+		await c.query(
+			"update resume_import set status='cancelled',file_id=null,draft=null,message='' where id=$1",
+			[t.id],
+		);
+		return false;
+	}
+	const r = sanitized(resumeSchema.parse(choice.draft ?? t.draft));
+	if (choice.action === "new") return publish(c, t, r, null, "added");
+	if (!(await candidates(c, t, r)).some((m) => m.personId === choice.personId))
 		throw new Error("找不到可关联的档案，请重新核对");
+	return publish(c, t, r, choice.personId, "added");
+}
+
+async function publish(
+	c: PoolClient,
+	t: ImportRow,
+	r: Resume,
+	existing: string | null,
+	status: "added" | "duplicate",
+) {
 	periods(r, t.day);
-	const existing =
-		exact?.personId ??
-		(choice?.action === "link" ? choice.personId : undefined);
 	const id = existing ?? randomUUID();
 	if (!existing)
 		await c.query(
@@ -155,14 +180,14 @@ export async function resolveImport(
 	);
 	if (!original.rowCount) {
 		await saveProfile(c, t, r, id);
+		await c.query(
+			"insert into audit_event(user_id,action,person_id) values($1,$2,$3)",
+			[t.owner_id, existing ? "talent-link" : "talent-add", id],
+		);
 	}
 	await c.query(
-		"insert into audit_event(user_id,action,person_id) values($1,$2,$3)",
-		[t.owner_id, existing ? "talent-link" : "talent-add", id],
-	);
-	await c.query(
 		"update resume_import set status=$2,draft=null,file_id=null,person_id=$3,message='' where id=$1",
-		[t.id, exact ? "duplicate" : "added", id],
+		[t.id, status, id],
 	);
 	return !original.rowCount;
 }

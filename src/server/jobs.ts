@@ -115,10 +115,14 @@ export async function requestJob({
 	return (await handle.boss.send(kind, payload)) !== null;
 }
 
-export async function wakeResumeImports() {
+export async function wakeIngestionJob(kind: "resume-import" | "derive") {
 	const handle = registry[HANDLE];
 	if (handle) {
-		await handle.ready;
-		await handle.boss.send("resume-import", {});
+		try {
+			await handle.ready;
+			await handle.boss.send(kind, {});
+		} catch {
+			console.warn("后台任务等待下一轮调度", kind);
+		}
 	}
 }

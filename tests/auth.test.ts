@@ -287,11 +287,12 @@ test("停用撤销登录并挡住再登录，恢复后照常；改角色下一�
 			admin: false,
 			disabled: true,
 			orgs: [ORG],
-			people: 1,
+			people: 0,
 		},
 	]);
 
 	await manageAccount({ action: "enable", username: "leaving.user" });
+	assert.equal((await listAccounts("离职", 1)).rows[0]?.people, 1);
 	const back = await login("leaving.user");
 	await manageAccount({
 		action: "set-role",

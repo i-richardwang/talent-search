@@ -148,7 +148,7 @@ async function reconcile({ client }: CorpusSession): Promise<{
 		`insert into person_identity(kind,value,person_id) select 'emp_id',emp_id,person_id from staged_employee on conflict do nothing`,
 	);
 	await client.query(
-		`insert into profile_source(id,person_id,source_kind) select 'hr:'||person_id,person_id,'hris' from staged_employee on conflict do nothing`,
+		`insert into profile_source(id,person_id,source_kind) select 'hr:'||s.person_id,s.person_id,'hris' from staged_employee s where not exists(select from profile_source f where f.person_id=s.person_id and f.source_kind='hris')`,
 	);
 	const employeesGone = await client.query(
 		"delete from employment e where not exists(select from staged_employee s where s.person_id=e.person_id)",
@@ -267,51 +267,59 @@ async function replaceCompanies(
 }
 
 /** 已确认的入职关联由人事源提供，联系方式只用于提示人工核对。 */
-async function hrisIdentities(
-	session: CorpusSession,
+async function stageHrisLinks(
+	{ client }: CorpusSession,
 	profiles: SourceEmployee[],
-	apply: boolean,
 ) {
-	const { client } = session;
-	if (apply)
+	const links = profiles
+		.filter((p) => p.linked_person_id)
+		.map((p) => ({ emp_id: p.emp_id.trim(), linked: p.linked_person_id }));
+	for (const batch of chunked(links, ROWS_PER_STATEMENT)) {
 		await client.query(
-			"delete from person_identity where origin='hris' and kind in ('phone','email')",
+			"update staged_employee s set person_id=k.linked from jsonb_to_recordset($1) k(emp_id text,linked text) where s.emp_id=k.emp_id",
+			[JSON.stringify(batch)],
 		);
-	const known = profiles.filter(
-		(p) => p.linked_person_id || p.phone || p.email,
+	}
+	if (!links.length) return;
+	const duplicate = await client.query(
+		"select 1 from staged_employee where person_id is not null group by person_id having count(distinct emp_id)>1 limit 1",
 	);
-	for (const rows of chunked(known, ROWS_PER_STATEMENT)) {
-		if (apply) {
-			const keys = rows.flatMap((p) =>
-				contactKeys({ phone: p.phone ?? "", email: p.email ?? "" }).map(
-					(k) => ({ ...k, emp_id: p.emp_id.trim() }),
-				),
-			);
-			await client.query(
-				`insert into person_identity(person_id,kind,value,origin)
+	if (duplicate.rowCount)
+		throw new Error("同一批人事数据中的多个工号关联了同一个人员编号");
+	const occupied = await client.query(
+		"select 1 from staged_employee s join employment e using(person_id) where s.emp_id<>e.emp_id limit 1",
+	);
+	if (occupied.rowCount) throw new Error("关联的人员编号已绑定其他在职工号");
+	const conflict =
+		await client.query(`select 1 from staged_employee s left join person p using(person_id)
+			left join person_identity i on i.kind='emp_id' and i.value=s.emp_id
+			where s.person_id is not null and (p.person_id is null or i.person_id<>s.person_id) limit 1`);
+	if (conflict.rowCount)
+		throw new Error("人事源的已确认人员关联无效或与现有工号冲突");
+}
+async function replaceHrisContacts(
+	{ client }: CorpusSession,
+	profiles: SourceEmployee[],
+) {
+	await client.query(
+		"delete from person_identity where origin='hris' and kind in ('phone','email')",
+	);
+	for (const batch of chunked(
+		profiles.filter((p) => p.phone || p.email),
+		ROWS_PER_STATEMENT,
+	)) {
+		const keys = batch.flatMap((p) =>
+			contactKeys({ phone: p.phone ?? "", email: p.email ?? "" }).map((k) => ({
+				...k,
+				emp_id: p.emp_id.trim(),
+			})),
+		);
+		await client.query(
+			`insert into person_identity(person_id,kind,value,origin)
 			select s.person_id,k.kind,k.value,'hris' from jsonb_to_recordset($1) k(emp_id text,kind text,value text)
 			join staged_employee s using(emp_id) on conflict do nothing`,
-				[JSON.stringify(keys)],
-			);
-		} else {
-			const links = rows
-				.filter((p) => p.linked_person_id)
-				.map((p) => ({ emp_id: p.emp_id.trim(), linked: p.linked_person_id }));
-			const q =
-				"from jsonb_to_recordset($1) k(emp_id text,linked text) join staged_employee s using(emp_id)";
-			const conflict = await client.query(
-				`select 1 ${q} left join person p on p.person_id=k.linked
-				left join person_identity i on i.kind='emp_id' and i.value=k.emp_id
-				where p.person_id is null or i.person_id<>k.linked limit 1`,
-				[JSON.stringify(links)],
-			);
-			if (conflict.rowCount)
-				throw new Error("人事源的已确认人员关联无效或与现有工号冲突");
-			await client.query(
-				"update staged_employee s set person_id=k.linked from jsonb_to_recordset($1) k(emp_id text,linked text) where s.emp_id=k.emp_id",
-				[JSON.stringify(links)],
-			);
-		}
+			[JSON.stringify(keys)],
+		);
 	}
 }
 
@@ -349,10 +357,10 @@ export async function sync(
 	try {
 		if (part !== "knowledge") {
 			await stageEmployee(session, employee);
-			await hrisIdentities(session, data.employees, false);
+			await stageHrisLinks(session, data.employees);
 			await stageExperience(session, experience);
 			counts = await reconcile(session);
-			await hrisIdentities(session, data.employees, true);
+			await replaceHrisContacts(session, data.employees);
 			await replaceRecords(session, streams, scale, records);
 		}
 		if (part !== "people") {

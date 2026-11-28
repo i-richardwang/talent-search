@@ -35,7 +35,7 @@ AI 写的筛选在只读角色 `talent_query` 下执行。应用的数据库用�
 手动触发解析或整理，在「标签」页复查判成不是能力的词、退回重新判定。搜索记录只属于发起它的账号，别人的记录打不开，管理员也一样。
 外部解析和词表整理分别使用独立的 `DERIVE_TOKEN` 和 `REVIEW_TOKEN`。
 
-管理员在「审计」页可以查看搜索、个人详情、导出、账号变更和外部服务读取经历的记录。导出、外部读取、简历原件预览和下载按人记录。候选人入池、关联和移除同样留痕。
+管理员在「审计」页可以查看搜索、个人详情、导出、账号变更和外部服务读取经历的记录。导出、外部读取、已入池原件的预览和下载按人记录。候选人入池、关联和移除同样留痕。
 
 每个账号有几个组织路径。员工资料随当前部门授权，能看上级组织的账号也能看其下级。人才池可设为所有登录账号可见，或挂靠到某个组织，沿用同一方向的授权。员工资料和池内资料分别授权，同一个人只展示一次。只有人才池权限时，搜索、详情、导出和 AI 只读该池公开给这个账号的资料。管理员管全局任务、审计和账号，搜索时也遵守资料权限。
 
@@ -79,6 +79,31 @@ bun run auth:user enable --username hr_user
 
 `db:push` 不比较视图的定义，也不写读取策略的条件：改了视图先删掉库里的旧视图再 push；读取策略的条件由应用在每个进程第一次读之前照 `schema.ts` 写上，没写上之前读者一行都读不到。
 
+### 已使用 PDF 人才池的数据库补入版本序号
+
+此步骤适用于已有 `profile_source` 且尚无 `seq` 列的数据库。先停应用及作业，在备份副本执行下列事务。已有资料沿用原先的同刻排序，随后发布的资料由数据库分配序号。
+
+```sql
+begin;
+alter table public.profile_source add column seq integer;
+with ordered as (
+  select id, row_number() over (order by captured_at, id desc) as n
+  from public.profile_source
+)
+update public.profile_source s set seq = o.n from ordered o where o.id = s.id;
+alter table public.profile_source
+  alter column seq set not null,
+  alter column seq add generated always as identity;
+select setval(pg_get_serial_sequence('public.profile_source', 'seq'),
+              coalesce(max(seq), 1), count(*) > 0) from public.profile_source;
+drop view catalog.person, catalog.experience, catalog.rating, catalog.status,
+  public.scope_member, public.person_card, public.visible_employment,
+  public.visible_pool, public.visible_profile, public.visible_segment cascade;
+commit;
+```
+
+随后运行 `bun run db:push` 重建视图与依赖的读取策略。遇到 `profile_original_per_pool_person` 的唯一约束提示，选择保留表数据（`No, add the constraint without truncating the table`）。重启应用后首次读取会装载 RLS 条件。切换连接前用授权账号与受限账号分别核对资料。
+
 ### 从员工单表版本升级
 
 在独立数据库恢复原库备份，保留原库作为回退点。停用副本上的应用和作业，先将旧 `public` 和 `catalog` 分别重命名为 `employee_archive`、`catalog_archive`，创建新的 `public`。归档 schema 仅部署角色可访问，撤回读者角色及 PUBLIC 的使用权限。让 `DATABASE_URL` 指向副本，依次执行：
@@ -93,9 +118,9 @@ bun run db:import-employees employee_archive
 ## 从 PDF 导入人才
 
 1. 登录后打开「人才池」，选目标池，选择一份或多份 PDF。每份最多 20 MiB、120 页。内置的「外部人才池」初始对所有登录账号公开。管理员可新建人才池，或将已有池挂靠到授权范围内的部门。
-2. 后台按页取文字，由独立的离线模型通过工具提交结构化简历。上传页显示排队、解析、待确认和入池结果。识别不清的页、缺失的日期或疑似同一人的资料可人工核对。可以重试失败文件，也可以手工录入档案。
-3. 同一原件或核心身份及完整经历相同的简历自动去重。手机号、邮箱相同，或姓名与学校学历、任职公司及时间相符，会提示并排核对。选择关联已有档案、另建一人或放弃。比对的范围与操作者的搜索权限一致。
-4. 入池后可立即按岗位、职责原文和人才池检索，能力标签和序列随后由现有解析流程补齐。可在详情登记最近接触日期和备注。在个人详情查看原始日期粒度、预览或下载历次 PDF。每个池用最近一版简历提供搜索经历，其他版本留作核对。同一段经历有多个来源时只计一次。
+2. 后台按页取文字，由独立的离线模型通过工具提交结构化简历。上传页显示排队、解析、待确认和入池结果。识别不清的页、缺失的日期或疑似同一人的资料可人工核对。上传者可在核对窗口打开本次原件，对照修改或删除经历，也可以重试失败文件。核对原件要求同时拥有该任务和目标池的读取权限。
+3. 同一原件或核心身份及完整经历相同的简历自动去重。手机号、邮箱相同，或姓名与学校学历、任职公司及时间相符，会提示并排核对。选择关联已有档案、另建一人或放弃。比对的范围与操作者的搜索权限一致。人工选择另建会分配独立的人员编号。同池同人的同一原件再次上传只产生导入记录。
+4. 入池后可立即按岗位、职责原文和人才池检索，能力标签和序列随后由现有解析流程补齐。可在详情登记最近接触日期和备注。在个人详情查看原始日期粒度、预览或下载历次 PDF。录入者或管理员可更新该池成员的资料，新版只覆盖非空的联系方式。每个池用最近采集的简历提供搜索经历，采集时刻相同时使用后发布的一版。同一段经历有多个来源时只计一次。
 
 配置 `RESUME_BASE_URL`、`RESUME_MODEL` 和可选的 `RESUME_API_KEY`，指向允许接收**完整简历和联系方式**的自部署工具调用模型。端点独立于查询和能力抽取。PDF 和扫描页在本机处理，扫描页可配置本地 Tesseract 和语言包（`RESUME_OCR_BIN`、`RESUME_OCR_LANG`）。经历入库前剥离电话、邮箱与微信等联系方式。下游模型仍会收到公司、岗位和清理后的经历原文，部署范围应允许处理这些资料。
 
@@ -111,7 +136,7 @@ bun run db:import-employees employee_archive
 
 `bun run sync --people-only` 只读取员工、经历、职级和按期记录，保留现有的公司与序列目录。`bun run sync --knowledge-only` 只发布公司、行业、别名与序列目录，可以从独立的 CSV 目录运行。默认 `bun run sync` 仍在同一事务内发布完整快照。
 
-员工源可以额外提供 `phone`、`email` 及已人工确认的 `linked_person_id`。前两项归一化后保存摘要用于比对。已确认的人员编号用于将新工号关联到已有候选人，冲突会中止本次同步。HRIS 快照只对账自身的雇佣关系、履历和按期记录。公共公司、行业和序列目录供两类经历共用，上传 PDF 时无需重复提交。
+员工源可以额外提供 `phone`、`email` 及已人工确认的 `linked_person_id`。前两项归一化后保存摘要用于比对。已确认的人员编号用于将新工号关联到已有候选人，冲突会中止本次同步。多个工号在同一快照指向一人，或指向已绑定其他在职工号的人时，整批回滚。HRIS 快照只对账自身的雇佣关系、履历和按期记录。公共公司、行业和序列目录供两类经历共用，上传 PDF 时无需重复提交。
 
 两种接入方式：
 

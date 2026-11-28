@@ -152,14 +152,15 @@ const SEPARATOR = sql.raw(`'${ORG_SEPARATOR}'`);
 
 const SCOPE = sql`current_setting('talent.scope', true)`;
 const ALL = sql`${SCOPE} = '*'`;
-const MEMBERS = sql`select distinct s.user_id, e.person_id from account_scope s join employment e
+const MEMBERS = sql`select distinct s.user_id, e.person_id from account_scope s join auth_user u on u.id=s.user_id and u.banned is not true join employment e
 	on starts_with(e.cur_dept_path || ${SEPARATOR}, s.org_path || ${SEPARATOR})`;
 const HR = sql`select e.person_id from employment e where ${ALL}
 	union all select m.person_id from (${MEMBERS}) m where m.user_id = ${SCOPE}`;
-const POOLS = sql`select p.id from talent_pool p where ${ALL} or (
-	exists(select from auth_user u where u.id=${SCOPE} and u.banned is not true)
-	and (p.visibility='public' or exists(select from account_scope s where s.user_id=${SCOPE}
-		and p.visibility='org' and starts_with(p.org_path || ${SEPARATOR},s.org_path || ${SEPARATOR}))))`;
+const POOL_MEMBERS = sql`select u.id as user_id,p.id as pool_id from auth_user u join talent_pool p
+	on p.visibility='public' or (p.visibility='org' and exists(select from account_scope s where s.user_id=u.id
+		and starts_with(p.org_path || ${SEPARATOR},s.org_path || ${SEPARATOR}))) where u.banned is not true`;
+const POOLS = sql`select id from talent_pool where ${ALL} union all
+	select pool_id from (${POOL_MEMBERS}) members where members.user_id=${SCOPE}`;
 const PROFILES = sql`select id from profile_source where
 	(source_kind = 'hris' and person_id in (${HR})) or pool_id in (${POOLS})`;
 const SEGMENTS = sql`select pe.experience_id from profile_experience pe where pe.profile_id in (${PROFILES})`;
@@ -170,9 +171,8 @@ export const scopeMember = pgView("scope_member", {
 	user_id: text("user_id").notNull(),
 	person_id: text("person_id").notNull(),
 }).as(sql`select h.* from (${MEMBERS}) h where ${ALL} or h.user_id=${SCOPE}
-	union select u.id,m.person_id from auth_user u join talent_pool p on p.visibility='public' or exists(
-		select from account_scope s where s.user_id=u.id and starts_with(p.org_path||${SEPARATOR},s.org_path||${SEPARATOR}))
-	join pool_member m on m.pool_id=p.id where ${ALL} or u.id=${SCOPE}`);
+	union select a.user_id,m.person_id from (${POOL_MEMBERS}) a join pool_member m using(pool_id)
+	where ${ALL} or a.user_id=${SCOPE}`);
 export const visibleEmployment = pgView("visible_employment", {
 	person_id: text("person_id").notNull(),
 }).as(HR);
@@ -325,7 +325,7 @@ export const resumeFile = pgTable(
 	(t) => [
 		readPolicy(
 			"file_scope",
-			sql`${t.id} in (select resume_file_id from profile_source where resume_file_id is not null)`,
+			sql`${t.id} in (select resume_file_id from profile_source where resume_file_id is not null) or ${t.id} in (select file_id from resume_import where status in ('review','failed'))`,
 		),
 	],
 );
@@ -333,6 +333,7 @@ export const profileSource = pgTable(
 	"profile_source",
 	{
 		id: id(),
+		seq: integer("seq").generatedAlwaysAsIdentity(),
 		personId: personKey(),
 		sourceKind: text("source_kind").notNull(),
 		poolId: poolKey(),
@@ -399,8 +400,8 @@ const CARDS = sql`with hr as (select * from employment where person_id in (${HR}
 	accessible as (select m.person_id, array_agg(distinct p.name order by p.name) as pools, array_agg(p.id order by p.id) as ids from pool_member m
 	join talent_pool p on p.id=m.pool_id where p.id in (${POOLS}) group by m.person_id),
 	pdf as (select distinct on (s.person_id) s.person_id,s.parsed,j.company as recent_company,j.title as recent_title from profile_source s
-	left join lateral(select w->>'company' as company,w->>'title' as title from jsonb_array_elements(s.parsed->'experiences') w order by (w->>'start') desc limit 1) j on true
-	where s.pool_id in (${POOLS}) order by s.person_id,s.captured_at desc,s.id)
+	left join lateral(select w->>'company' as company,w->>'title' as title from jsonb_array_elements(s.parsed->'experiences') w order by (w->>'end'='至今') desc, (w->>'end') desc, (w->>'start') desc limit 1) j on true
+	where s.pool_id in (${POOLS}) order by s.person_id,s.captured_at desc,s.seq desc)
 	select p.person_id,h.emp_id,case when h.person_id is not null then '在职员工' else '外部候选人' end as talent_type,
 	md5(coalesce(h.person_id,'') || coalesce(array_to_json(a.ids)::text,'') || coalesce((select string_agg(s.id,',' order by s.id) from profile_source s where s.person_id=p.person_id and s.pool_id=any(a.ids)), '')) as access_key, coalesce(a.pools,'{}') as pools,coalesce(d.recent_company,'') as recent_company,coalesce(d.recent_title,'') as recent_title,
 	case when h.person_id is not null then p.name else d.parsed->>'name' end as name,

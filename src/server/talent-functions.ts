@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { resumeSchema } from "#/ingestion/resume";
 import { administrator, authenticated } from "./auth-functions";
-import { requestJob, wakeResumeImports } from "./jobs";
+import { wakeIngestionJob } from "./jobs";
 import { collectFiles } from "./resume-files";
 import { decideImport, reviewImport, uploadResume } from "./talent-import";
 import {
@@ -62,19 +62,22 @@ export const submitDecision = createServerFn({ method: "POST" })
 			id: z.string(),
 			choice: z.union([
 				z.literal("retry"),
+				z.object({ action: z.literal("new"), draft: resumeSchema.optional() }),
 				z.object({
-					action: z.enum(["new", "link", "cancel"]),
-					personId: z.string().optional(),
+					action: z.literal("link"),
+					personId: z.string().min(1),
 					draft: resumeSchema.optional(),
 				}),
+				z.object({ action: z.literal("cancel") }),
 			]),
 		}),
 	)
 	.handler(async ({ context, data }) => {
 		const added = await decideImport(context.viewer.id, data.id, data.choice);
-		if (added) await requestJob({ kind: "derive" });
-		await collectFiles();
-		await wakeResumeImports();
+		if (added) await wakeIngestionJob("derive");
+		if (data.choice === "retry") await wakeIngestionJob("resume-import");
+		if (data.choice !== "retry" && data.choice.action === "cancel")
+			await collectFiles();
 	});
 export const addResume = createServerFn({ method: "POST" })
 	.middleware([authenticated])
@@ -97,6 +100,6 @@ export const addResume = createServerFn({ method: "POST" })
 			data.file.name,
 			new Uint8Array(await data.file.arrayBuffer()),
 		);
-		await wakeResumeImports();
+		await wakeIngestionJob("resume-import");
 		return id;
 	});

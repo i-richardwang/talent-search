@@ -243,6 +243,26 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 		(await originals.resumeResponse("limited", src.id, false)).status,
 		200,
 	);
+	const scopeRows = async (user: string) =>
+		withReadSnapshot("all", async (c) =>
+			(
+				await c.query("select person_id from scope_member where user_id=$1", [
+					user,
+				])
+			).rows.map((r) => r.person_id),
+		);
+	assert.ok((await scopeRows(OWNER)).includes("internal-test"));
+	assert.ok((await scopeRows(OWNER)).includes(first.person_id));
+	await pool.query("update auth_user set banned=true where id=$1", [OWNER]);
+	try {
+		assert.deepEqual(await scopeRows(OWNER), []);
+		assert.equal(
+			(await originals.resumeResponse(OWNER, src.id, false)).status,
+			404,
+		);
+	} finally {
+		await pool.query("update auth_user set banned=false where id=$1", [OWNER]);
+	}
 	const reviewOnly = await ingest("Needs manual", {
 		...draft,
 		name: "合成核对乙",
@@ -251,12 +271,46 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 		school: "",
 	});
 	assert.equal(reviewOnly.status, "review");
+	const pendingPdf = await originals.pendingResumeResponse(
+		OWNER,
+		reviewOnly.id,
+	);
+	assert.equal(pendingPdf.status, 200);
+	assert.deepEqual(
+		new Uint8Array(await pendingPdf.arrayBuffer()),
+		pdf("Needs manual"),
+	);
+	for (const [key, value] of [
+		["Content-Security-Policy", "sandbox"],
+		["X-Content-Type-Options", "nosniff"],
+		["Cache-Control", "private, no-store"],
+	] as const)
+		assert.equal(pendingPdf.headers.get(key), value);
+	assert.match(pendingPdf.headers.get("Content-Disposition") ?? "", /^inline;/);
+	assert.equal(
+		(await originals.pendingResumeResponse("limited", reviewOnly.id)).status,
+		404,
+	);
 	await api.decideImport(OWNER, reviewOnly.id, { action: "cancel" });
 	assert.equal((await state(reviewOnly.id)).status, "cancelled");
+	assert.equal(
+		(await originals.pendingResumeResponse(OWNER, reviewOnly.id)).status,
+		404,
+	);
+	const linkAudits = async () =>
+		(
+			await pool.query(
+				"select count(*)::int as n from audit_event where person_id=$1 and action='talent-link'",
+				[first.person_id],
+			)
+		).rows[0].n;
+	const beforeDuplicate = await linkAudits();
 	const repeated = await ingest("Synthetic resume", draft);
+	assert.equal(await linkAudits(), beforeDuplicate);
 	assert.equal(repeated.status, "duplicate");
 	assert.equal(repeated.person_id, first.person_id);
 	assert.equal((await ingest("Different bytes", draft)).status, "duplicate");
+	assert.equal(await linkAudits(), beforeDuplicate + 1);
 	const job = draft.experiences[0];
 	assert.ok(job);
 	const other = await ingest("Same contact", {
@@ -430,6 +484,24 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 			(await originals.sourcesFor(OWNER, restricted.person_id)).length,
 			1,
 		);
+		const valid = await readFile(employeesFile, "utf8");
+		const linkedRow = `${sample.join(",")},${restricted.person_id}`;
+		const conflicting = linkedRow.replace("SYN-JOIN", "SYN-OTHER");
+		for (const [input, message] of [
+			[`${valid}${conflicting}\n`, /多个工号/],
+			[valid.replace(linkedRow, conflicting), /已绑定其他在职工号/],
+		] as const) {
+			await writeFile(employeesFile, input);
+			const result = await runTask("sync", { wait: true, part: "people" });
+			assert.match(result?.failure ?? "", message);
+			const assignments = await pool.query(
+				"select emp_id,person_id from employment where emp_id in ('SYN-JOIN','SYN-OTHER')",
+			);
+			assert.deepEqual(assignments.rows, [
+				{ emp_id: "SYN-JOIN", person_id: restricted.person_id },
+			]);
+		}
+		await writeFile(employeesFile, valid);
 	} finally {
 		process.env.TALENT_CSV_DIR = current ?? "";
 	}
@@ -483,4 +555,242 @@ test("离线工具回执纠错、立即检索、重复版本、资料权限、�
 		"talent-remove",
 	])
 		assert.ok(audit.rows.some((r) => r.action === a));
+});
+
+test("人工选择独立入池优先于编辑后完全相同的姓名、联系信息与经历", async () => {
+	await pools.ensureDefaultPool();
+	const original: Resume = {
+		...draft,
+		name: "合成独立裁决",
+		contacts: { phone: "", email: "separate@example.invalid", wechat: "" },
+		experiences: [
+			{
+				company: "合成独立公司",
+				title: "合成岗位",
+				start: "2020",
+				end: "2021",
+				description: "合成项目经历",
+			},
+		],
+	};
+	const first = await ingest("Distinct identity baseline", original);
+	assert.equal(first.status, "added");
+	const second = await ingest("Different original manually corrected", {
+		...original,
+		name: "合成待核对",
+	});
+	assert.equal(second.status, "review");
+	await api.decideImport(OWNER, second.id, { action: "new", draft: original });
+	const created = await state(second.id);
+	assert.equal(created.status, "added");
+	assert.notEqual(created.person_id, first.person_id);
+	for (const person of [first.person_id, created.person_id]) {
+		assert.equal((await originals.sourcesFor(OWNER, person)).length, 1);
+		assert.equal(
+			(
+				await pool.query(
+					"select from audit_event where person_id=$1 and action='talent-add'",
+					[person],
+				)
+			).rowCount,
+			1,
+		);
+	}
+});
+
+test("同池资料按成员写权更新，同一采集时刻按发布次序选版并保留缺失的联系方式", async () => {
+	await pools.ensureDefaultPool();
+	const author = "version-author",
+		reader = "version-reader";
+	for (const id of [author, reader])
+		await pool.query(
+			"insert into auth_user(id,name,email,username) values($1,$1,$2,$1)",
+			[id, `${id}@example.invalid`],
+		);
+	const ongoing = {
+		company: "合成长期公司",
+		title: "长期主业",
+		start: "2017-02",
+		end: "至今",
+		description: "长期工作",
+	};
+	const finished = {
+		company: "合成短期公司",
+		title: "短期兼职",
+		start: "2022",
+		end: "2023",
+		description: "短期工作",
+	};
+	const original: Resume = {
+		...draft,
+		name: "合成版本顺序",
+		contacts: {
+			phone: "15500000055",
+			email: "versioned@example.invalid",
+			wechat: "sample_version",
+		},
+		experiences: [ongoing, finished],
+	};
+	async function version(file: string, r: Resume, actor = author) {
+		answerResume(r);
+		const task = await api.uploadResume(
+			actor,
+			"external",
+			`${file}.pdf`,
+			pdf(file),
+		);
+		await pool.query(
+			"update resume_import set created_at='2025-04-07T00:00:00Z' where id=$1",
+			[task],
+		);
+		await api.processNextResume();
+		return state(task);
+	}
+	// 第一版的 UUID 排在所有 v4 UUID 之前，按 UUID 选版一定会选错。
+	await pool.query(
+		"alter table profile_source alter column id set default '00000000-0000-0000-0000-000000000000'",
+	);
+	const first = await version("First version", original).finally(() =>
+		pool.query(
+			"alter table profile_source alter column id set default gen_random_uuid()::text",
+		),
+	);
+	assert.equal(first.status, "added");
+	const updated = {
+		...original,
+		contacts: { phone: "15500000056", email: "", wechat: "" },
+		experiences: [{ ...ongoing, title: "更新后的主业" }, finished],
+	};
+	const refused = await version("Another account", updated, reader);
+	assert.equal(refused.status, "review");
+	await assert.rejects(
+		api.decideImport(reader, refused.id, {
+			action: "link",
+			personId: first.person_id,
+		}),
+		/录入者或管理员/,
+	);
+	assert.equal((await state(refused.id)).status, "review");
+	let sources = await originals.sourcesFor(reader, first.person_id);
+	assert.equal(sources.length, 1);
+	assert.deepEqual(sources[0]?.contacts, original.contacts);
+	for (let i = 1; i <= 3; i++) {
+		const current = {
+			...updated,
+			experiences: [{ ...ongoing, title: `新版主业${i}` }, finished],
+		};
+		const task = await version(`Revision ${i}`, current);
+		assert.equal(task.status, "review");
+		await api.decideImport(author, task.id, {
+			action: "link",
+			personId: first.person_id,
+		});
+		sources = await originals.sourcesFor(reader, first.person_id);
+		assert.equal(sources[0]?.filename, `Revision ${i}.pdf`);
+		assert.equal(sources.length, i + 1);
+		assert.deepEqual(sources[0]?.contacts, {
+			...original.contacts,
+			phone: updated.contacts.phone,
+		});
+		const { rows } = await withReadSnapshot({ account: reader }, (c) =>
+			c.query(
+				"select c.recent_title,c.recent_company,s.filename from person_card c join profile_source s using(person_id) where c.person_id=$1 and exists(select from profile_experience pe where pe.profile_id=s.id)",
+				[first.person_id],
+			),
+		);
+		assert.deepEqual(rows, [
+			{
+				recent_title: `新版主业${i}`,
+				recent_company: ongoing.company,
+				filename: `Revision ${i}.pdf`,
+			},
+		]);
+	}
+	const { contactKeys } = await import("#/identity/contacts");
+	const refreshed = await pool.query(
+		"select kind,value from person_identity where person_id=$1 order by kind",
+		[first.person_id],
+	);
+	assert.deepEqual(
+		refreshed.rows,
+		contactKeys({ ...original.contacts, phone: updated.contacts.phone }).sort(
+			(a, b) => a.kind.localeCompare(b.kind),
+		),
+	);
+});
+
+test("asReader 在应用异常和 SQL 异常后恢复写入角色，并保留原始异常", async () => {
+	const { asReader } = await import("#/db/snapshot");
+	const client = await pool.connect();
+	try {
+		await client.query("begin");
+		const role = async () =>
+			(await client.query("select current_user as role")).rows[0].role;
+		const writer = await role();
+		await assert.rejects(
+			asReader(client, OWNER, async () => {
+				assert.equal(await role(), "talent_reader");
+				throw new Error("synthetic failure");
+			}),
+			/synthetic failure/,
+		);
+		assert.equal(await role(), writer);
+		await assert.rejects(
+			asReader(client, OWNER, () => client.query("select 1/0")),
+			{ code: "22012" },
+		);
+		assert.equal(await role(), writer);
+	} finally {
+		await client.query("rollback");
+		client.release();
+	}
+});
+
+test("解析失败按阶段记录脱敏原因，上传者可预览失败原件，队列未启动也能唤醒", async () => {
+	await pools.ensureDefaultPool();
+	const { wakeIngestionJob } = await import("#/server/jobs");
+	await wakeIngestionJob("derive");
+	const logs: unknown[][] = [];
+	const originalError = console.error,
+		model = process.env.RESUME_MODEL,
+		endpoint = process.env.RESUME_BASE_URL;
+	assert.ok(model && endpoint);
+	console.error = (...args) => {
+		logs.push(args);
+	};
+	delete process.env.RESUME_MODEL;
+	try {
+		const failed = await ingest("synthetic-private@example.invalid", draft);
+		assert.equal(failed.status, "failed");
+		assert.equal(failed.message, "解析未完成，可重试或手动核对");
+		assert.equal(
+			(await originals.pendingResumeResponse(OWNER, failed.id)).status,
+			200,
+		);
+		assert.equal(
+			(await originals.pendingResumeResponse("not-the-owner", failed.id))
+				.status,
+			404,
+		);
+		assert.ok(logs.some((log) => JSON.stringify(log).includes("端点未配置")));
+		process.env.RESUME_MODEL = model;
+		process.env.RESUME_BASE_URL = `${endpoint}/synthetic-private`;
+		const rejected = await ingest("Private endpoint error", draft);
+		assert.equal(rejected.status, "failed");
+		assert.ok(logs.some((log) => JSON.stringify(log).includes("HTTP 404")));
+		const scanned = await ingest("", draft);
+		assert.equal(scanned.status, "failed");
+		assert.match(scanned.message, /扫描件/);
+		assert.ok(
+			logs.some((log) => JSON.stringify(log).includes("扫描页缺少可用文字")),
+		);
+		assert.doesNotMatch(
+			JSON.stringify(logs),
+			/synthetic-private|example\.invalid|合成\.pdf|15500000001/,
+		);
+	} finally {
+		console.error = originalError;
+		process.env.RESUME_MODEL = model;
+		process.env.RESUME_BASE_URL = endpoint;
+	}
 });
